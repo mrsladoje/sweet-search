@@ -19,14 +19,16 @@ import Database from 'better-sqlite3';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 
 import { createAdmissionPolicy } from '../../core/indexing/admission-policy.js';
 import { discoverFiles } from '../../core/indexing/indexer-utils.js';
 import { scanDirtyAndEnqueue } from '../../core/incremental-indexing/application/dirty-scan.mjs';
 import { runProductionReconcileTick } from '../../core/incremental-indexing/application/production-reconciler.mjs';
-import { createIndexCoverage } from '../../core/search/index-coverage.js';
+import { createIndexCoverage, semanticTargetFor } from '../../core/search/index-coverage.js';
 
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let sandbox;   // holds the project root and an "outside" sibling dir
 let root;
 
@@ -112,6 +114,13 @@ describe('admission policy / symlink predicates', () => {
     expect(p.realRelInsideRoot('docs/schema.json')).toBe('cli/schema.json');
     expect(p.realRelInsideRoot('src/ext/o.js')).toBe(null);    // outside the project
     expect(p.realRelInsideRoot('src/broken.js')).toBe(null);   // broken
+  });
+
+  it('realRelInsideRoot keeps a real directory whose name starts with ".." inside the root', () => {
+    write('..gen/z.js', 'export const z = 1;\n');
+    link('../..gen/z.js', 'src/zlink.js');
+    const p = createAdmissionPolicy({ projectRoot: root });
+    expect(p.realRelInsideRoot('src/zlink.js')).toBe('..gen/z.js');
   });
 });
 
@@ -254,5 +263,35 @@ describe('not-indexed note for a symlinked path', () => {
     expect(outside.text).toMatch(/outside this project/);
     expect(await cov.notIndexedNote('src/a.js')).toBe(null);   // indexed real file: no note
     cov.close();
+  });
+
+  it('carries the real path, and ss-semantic answers from it or refuses (never a whole-file span)', async () => {
+    buildFixture();
+    makeIndex(REAL_FILES);
+    const cov = await createIndexCoverage({ projectRoot: root });
+    const inside = await cov.notIndexedNote('cli/docs/guide.md');
+    expect(inside.realPath).toBe('docs/guide.md');
+    expect(semanticTargetFor('cli/docs/guide.md', inside)).toEqual({ file: 'docs/guide.md', refuse: false, redirected: true });
+    const outside = await cov.notIndexedNote('src/ext/o.js');
+    expect(outside.realPath).toBe(null);
+    expect(semanticTargetFor('src/ext/o.js', outside)).toEqual({ file: 'src/ext/o.js', refuse: true, redirected: false });
+    // Unchanged behaviour for the other kinds.
+    expect(semanticTargetFor('src/a.js', null).refuse).toBe(false);
+    expect(semanticTargetFor('dist/x.js', { kind: 'excluded', isDir: false }).refuse).toBe(true);
+    expect(semanticTargetFor('src/new.js', { kind: 'stale', isDir: false }).refuse).toBe(false);
+    cov.close();
+  });
+
+  it('ss-semantic on a symlink that leads outside the project exits 1 with the link note', () => {
+    buildFixture();
+    makeIndex(REAL_FILES);
+    const helpers = path.resolve(__dirname, '../../eval/agent-read-workflows/bin/_ss-helpers.mjs');
+    const res = spawnSync(process.execPath, [helpers, 'semantic', 'src/ext/o.js', 'what is o'], {
+      cwd: root, encoding: 'utf-8', timeout: 30_000,
+      env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: root },
+    });
+    expect(res.status).toBe(1);
+    expect(res.stderr).toMatch(/does not follow this link/);
+    expect(res.stdout).toBe('');
   });
 });

@@ -67,6 +67,22 @@ function symlinkReason(policy, rel) {
 }
 
 /**
+ * What ss-semantic does with a file's not-indexed note. It ranks the index's chunks, so a
+ * path with no chunks falls back to a WHOLE-FILE span — the costly case the 'excluded'
+ * refusal exists for. A symlinked path whose real file is inside the project is answered
+ * from that real path (the index holds its chunks there). A symlink that leads outside
+ * the project or nowhere has no chunks anywhere, so it is refused like an excluded file.
+ *
+ * @returns {{file: string, refuse: boolean, redirected: boolean}}
+ */
+export function semanticTargetFor(file, note) {
+  if (!note || note.isDir) return { file, refuse: false, redirected: false };
+  if (note.kind === 'symlink' && note.realPath) return { file: note.realPath, refuse: false, redirected: true };
+  if (note.kind === 'excluded' || note.kind === 'symlink') return { file, refuse: true, redirected: false };
+  return { file, refuse: false, redirected: false };
+}
+
+/**
  * @param {object} opts
  * @param {string} opts.projectRoot
  * @param {string} [opts.dbPath]  vector database; defaults to <projectRoot>/.sweet-search/codebase.db
@@ -182,7 +198,7 @@ export async function createIndexCoverage({ projectRoot, dbPath, admissionPolicy
       const abs = path.isAbsolute(scopePath) ? scopePath : path.resolve(root, scopePath);
       if (!existsSync(abs)) return null;
       const rel = path.relative(root, abs).replace(/\\/g, '/');
-      if (!rel || rel.startsWith('..')) return null;
+      if (!rel || rel === '..' || rel.startsWith('../')) return null;   // `..foo/` is inside
       const isDir = statSync(abs).isDirectory();
       if (isDir) {
         if (dirHasIndexedFiles(rel)) return null;
@@ -193,7 +209,7 @@ export async function createIndexCoverage({ projectRoot, dbPath, admissionPolicy
           const reason = symlinkReason(p, rel);
           const advice = reason.realPath ? `Search ${reason.realPath} instead.` : 'Search the tracked source instead.';
           return {
-            kind: reason.kind, reason: reason.text, rel, isDir: true,
+            kind: reason.kind, reason: reason.text, rel, isDir: true, realPath: reason.realPath || null,
             text: `(not indexed: ${scopePath} — ${reason.text}. ${advice})`,
           };
         }
@@ -213,7 +229,7 @@ export async function createIndexCoverage({ projectRoot, dbPath, admissionPolicy
           ? (reason.realPath ? `Search and read ${reason.realPath} instead.` : 'Read it directly; search does not cover it.')
           : 'It is not searchable; look at the source it was built from.';
       return {
-        kind: reason.kind, reason: reason.text, rel, isDir: false,
+        kind: reason.kind, reason: reason.text, rel, isDir: false, realPath: reason.realPath || null,
         text: `(not indexed: ${scopePath} — ${reason.text}. ${advice})`,
       };
     } catch { return null; }
