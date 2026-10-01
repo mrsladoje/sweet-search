@@ -529,7 +529,7 @@ describe('implicitImports', () => {
 // =============================================================================
 
 describe('GraphExtractor — wider import edges', () => {
-  it('adds explicit + implicit importsFile edges; a local C# namespace keeps its legacy row unannotated', async () => {
+  it('adds explicit + implicit importsFile edges; a C# namespace using binds no entity', async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-imports-wire-'));
     try {
       const tree = {
@@ -550,7 +550,10 @@ describe('GraphExtractor — wider import edges', () => {
       const legacy = cs.filter((x) => x.type === 'imports');
       const local = legacy.find((x) => x.target_name === 'Shop.Models');
       const external = legacy.find((x) => x.target_name === 'System.Text');
-      if (local) expect(local.full_import_path).toBeUndefined();
+      // A namespace is never one entity (`using Ocelot.Configuration.File;`
+      // bound a class named Ocelot by name); the file-level edge above
+      // carries the dependency.
+      if (local) expect(local.full_import_path).toBe(`${UNRESOLVED_IMPORT_PREFIX}Shop.Models`);
       if (external) expect(external.full_import_path).toBe(`${UNRESOLVED_IMPORT_PREFIX}System.Text`);
 
       const vue = await edgesOf('web/App.vue');

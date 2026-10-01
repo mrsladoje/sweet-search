@@ -787,14 +787,13 @@ export class GraphExtractor {
     };
     for (const imp of scanned) {
       const target = this.importResolver.resolve(filePath, imp, importLanguage);
-      // A namespace import (C# `using X;`) of a repo namespace names no single
-      // file: its legacy row keeps its name-based resolution.
-      const localNamespace = !target && this.importResolver.isLocalNamespace?.(filePath, imp, importLanguage);
-      if (!localNamespace) {
-        const annotation = target || `${UNRESOLVED_IMPORT_PREFIX}${imp.spec}`;
-        if (!bySpec.has(imp.spec)) bySpec.set(imp.spec, annotation);
-        for (const name of imp.names || []) if (!byBinding.has(name)) byBinding.set(name, annotation);
-      }
+      // A namespace import (C# `using X.Y;`) names a namespace, never one
+      // entity: name matching bound `using Ocelot.Configuration.File;` to a
+      // class called Ocelot. Its file-level dependencies come from
+      // implicitImports below; the legacy row gets no entity target.
+      const annotation = target || `${UNRESOLVED_IMPORT_PREFIX}${imp.spec}`;
+      if (!bySpec.has(imp.spec)) bySpec.set(imp.spec, annotation);
+      for (const name of imp.names || []) if (!byBinding.has(name)) byBinding.set(name, annotation);
       if (!target || target === self || seenTargets.has(target)) continue;
       pushEdge(target, imp.spec, imp.line);
     }

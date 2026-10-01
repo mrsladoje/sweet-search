@@ -42,7 +42,11 @@ const keepNewlines = (m) => (m.indexOf('\n') === -1 ? '' : m.replace(/[^\n]+/g, 
 export function stripNoise(content, language) {
   const re = language === 'elixir' ? ELIXIR_NOISE_RE : language === 'groovy' ? GROOVY_NOISE_RE : C_LIKE_NOISE_RE;
   re.lastIndex = 0;
-  return content.replace(re, keepNewlines);
+  // A UTF-8 byte-order mark (most Visual Studio C# files) would hide the
+  // first line's `namespace` / `package` / `using` from the `^[ \t]*`
+  // directive rules; a space keeps every offset.
+  const text = content.charCodeAt(0) === 0xfeff ? ` ${content.slice(1)}` : content;
+  return text.replace(re, keepNewlines);
 }
 
 // Directive lines name namespaces, not referenced types. C# / Swift

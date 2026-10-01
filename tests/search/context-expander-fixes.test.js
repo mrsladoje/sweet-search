@@ -357,6 +357,28 @@ describe('renderGraphNeighbors', () => {
     expect(out.tokens).toBeLessThanOrEqual(600);
   });
 
+  it('import annotations: no internal marker; a resolved file reads as resolved; Java FQNs unchanged', () => {
+    const repo = mockRepo({
+      outgoing: [
+        { type: 'imports', targetName: 'subprocess', targetId: null, contextLine: 12, fullImportPath: 'unresolved:subprocess', target: null },
+        { type: 'imports', targetName: 'tortoise.context', targetId: null, contextLine: 30, fullImportPath: 'tortoise/context.py', target: null },
+        { type: 'imports', targetName: 'utils', targetId: null, contextLine: 31, fullImportPath: 'utils.py', target: null },
+        { type: 'imports', targetName: 'R', targetId: null, contextLine: 3, fullImportPath: 'com.example.app.R', target: null },
+      ],
+    });
+    const out = renderGraphNeighbors({
+      codeGraphRepo: repo,
+      entity: { id: 'eF', filePath: 'tortoise/__init__.py', startLine: 10, endLine: 40, name: '_get_context', type: 'function' },
+      skipKeys: new Set(),
+      tokenCap: 600,
+    });
+    expect(out.rendered).not.toMatch(/unresolved:/);
+    expect(out.rendered).toMatch(/- imports subprocess \(referenced at line 12\)/);
+    expect(out.rendered).toMatch(/- imports tortoise\.context → tortoise\/context\.py/);
+    expect(out.rendered).toMatch(/- imports utils → utils\.py/);
+    expect(out.rendered).toMatch(/- imports R ← 'com\.example\.app\.R' \(unresolved\)/);
+  });
+
   it('dedupes against skipKeys (already in pack)', () => {
     const repo = mockRepo({
       outgoing: [
