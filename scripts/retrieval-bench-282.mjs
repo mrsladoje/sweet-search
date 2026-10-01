@@ -38,6 +38,7 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { opencodeRulesDir, applyOpencodeRepoCacheKey } from './lib/oc-bench-config.mjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const H = path.join(REPO, 'eval/task-completion-bench/harness');
@@ -424,24 +425,28 @@ async function runOpencode(probe, sweet, arm) {
   // the system prompt, so the random dir broke the provider's prefix cache on every sweet rollout
   // (r282 DeepSeek sweet req-0 cache hit 24% vs native 86%). The product (`init`) uses the stable
   // project path .opencode/sweet-search.md, so the stable path is the production-faithful setting.
-  const rulesDir = STABLE_RULES_PATH ? path.join(STATE, arm === 'sweetB' ? 'oc-rules-B' : 'oc-rules') : stateDir;
-  trim = opencodeRulesInConfig(trim, { rules: sweet ? sweetRulesBlock({ mppText: rulesFor(arm) }) : null, stateDir: rulesDir });
+  // The directory is chosen by the rules TEXT (oc-rules-<sha8>), not by the arm: two arms with identical
+  // rules then send the identical `Instructions from:` line and share the provider prefix cache (the old
+  // oc-rules / oc-rules-B split cut the shared prefix at about 2,150 developer tokens; STATS-HARD S4).
+  const rulesText = sweet ? sweetRulesBlock({ mppText: rulesFor(arm) }) : null;
+  const rulesDir = opencodeRulesDir({ stable: STABLE_RULES_PATH, stateRoot: STATE, stateDir, rulesText });
+  trim = opencodeRulesInConfig(trim, { rules: rulesText, stateDir: rulesDir });
   if (STABLE_RULES_PATH && sweet) {
     fs.mkdirSync(rulesDir, { recursive: true });
     const f = path.join(rulesDir, OPENCODE_RULES_FILE), txt = trim.files[OPENCODE_RULES_FILE];
     if (!fs.existsSync(f) || fs.readFileSync(f, 'utf8') !== txt) { const tmp = `${f}.${process.pid}.tmp`; fs.writeFileSync(tmp, txt); fs.renameSync(tmp, f); }
   }
   for (const [name, text] of Object.entries(trim.files || {})) fs.writeFileSync(path.join(stateDir, name), text);
-  const cfg = buildMainOpencodeConfig({ trim });
+  let cfg = buildMainOpencodeConfig({ trim });
   cfg.provider = { ...cfg.provider, deepseek: { options: { apiKey: '{env:DEEPSEEK_API_KEY}' } } };
-  // SS_VARIANT_OC_CACHE_KEY=repo (final-tuning S4): opencode sends promptCacheKey = session id, so every
-  // rollout routes to its own provider cache and request 0 is cold in ~56% of rollouts although the
-  // prefix is byte-identical. A per-model option overrides it (transform.ts sets the session id first;
-  // request.ts mergeDeep lets model.options win). Key = one stable value per repo.
+  // SS_VARIANT_OC_CACHE_KEY=repo (final-tuning S4): opencode sends promptCacheKey = session id and the
+  // headers session-id / x-session-affinity / X-Session-Id = session id, so every rollout routes to its own
+  // provider cache although the prefix is byte-identical. The switch sets ONE value per repo in both places:
+  // promptCacheKey as a per-model option, the headers through scripts/opencode-cache-key-plugin.mjs.
+  let extraPlugins = [];
   if (envOf(arm).SS_VARIANT_OC_CACHE_KEY === 'repo') {
-    const [prov, ...rest] = CELL.model.split('/'); const modelId = rest.join('/');
-    const key = 'ss-' + crypto.createHash('sha256').update(path.basename(cwd).replace(/^eval__repos__/, '')).digest('hex').slice(0, 16);
-    cfg.provider = { ...cfg.provider, [prov]: { ...(cfg.provider?.[prov] || {}), models: { ...(cfg.provider?.[prov]?.models || {}), [modelId]: { ...(cfg.provider?.[prov]?.models?.[modelId] || {}), options: { ...(cfg.provider?.[prov]?.models?.[modelId]?.options || {}), promptCacheKey: key } } } } };
+    const r = applyOpencodeRepoCacheKey(cfg, { model: CELL.model, cwd });
+    cfg = r.cfg; extraPlugins = [r.plugin];
   }
   const cfgPath = path.join(stateDir, 'opencode.json'); fs.writeFileSync(cfgPath, JSON.stringify(cfg));
   const env = {
@@ -450,7 +455,7 @@ async function runOpencode(probe, sweet, arm) {
     OPENCODE_CONFIG: cfgPath, SS_READ_GUTTER: process.env.SS_READ_GUTTER ?? 'colon',
   };
   if (CELL.ocAuth === 'openai') delete env.OPENAI_API_KEY; // the subscription login must pay, never a key
-  await runOpencodePreflight({ cwd, env, plugins: trim.plugins || [] });
+  await runOpencodePreflight({ cwd, env, plugins: [...(trim.plugins || []), ...extraPlugins] });
   const args = ['run', '--format', 'json', '--agent', 'build', '--auto', '--model', CELL.model, ...(CELL.variant ? ['--variant', CELL.variant] : []), '--dir', cwd];
   const t0 = Date.now();
   const once = () => spawnWithTimeout(path.join(BIN.opencode, 'opencode'), args, { cwd, env, timeoutMs: TIMEOUT_MS, stdinText: opencodeRunMessage(promptFor(probe)) });
