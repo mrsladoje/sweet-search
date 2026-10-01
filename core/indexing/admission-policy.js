@@ -15,6 +15,15 @@
  *   3. NOT oversized      — size ≤ project `maxFileSize`
  *   4. NOT gitignored     — `git check-ignore` alignment (agentic paths exempt),
  *                          only when the worktree is a git repo
+ *   5. NOT via a symlink  — the path is not itself a symlink and no directory
+ *                          component below the project root is one. A symlink
+ *                          is a second path to content that is either indexed
+ *                          at its real path already or lives outside the repo;
+ *                          following it duplicates files (GRDB's
+ *                          `Tests/CustomSQLite/GRDB -> ../..` loop made 97% of
+ *                          the index copies). Matches git, ripgrep and grep -r.
+ *                          Full discovery gets this from a no-follow walk;
+ *                          incremental paths call `isSymlinkedRel`.
  *
  * The exclude/deny component is delegated to `buildPathFilter` (incremental
  * infra) so its rules — and its tests — stay the single source for "deny", and
@@ -27,7 +36,7 @@
  */
 
 import path from 'node:path';
-import { statSync, existsSync } from 'node:fs';
+import { statSync, existsSync, lstatSync, realpathSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { Minimatch } from 'minimatch';
 
@@ -192,6 +201,61 @@ export function createAdmissionPolicy({ projectRoot = process.cwd(), config, all
   }
 
   /**
+   * True when `rel` is a symlink or sits under a symlinked directory below the
+   * project root (rule 5). Only components BELOW the root are checked, so a
+   * project root that is itself reached through a symlink is fine. A missing
+   * path is not a symlink (deletion is handled by the existence checks).
+   *
+   * Cost: one lstat per path component. Pass a `memo` Map to share directory
+   * results across a batch (callers create one per batch, so a symlink created
+   * later is never hidden by a stale entry).
+   */
+  function isSymlinkedRel(rel, memo = null) {
+    const r = normalizeRel(rel);
+    if (!r || path.isAbsolute(r)) return false;
+    const parts = r.split('/');
+    let prefix = '';
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      if (!part || part === '.') continue;
+      if (part === '..') return false; // not below the root; other gates reject it
+      prefix = prefix ? `${prefix}/${part}` : part;
+      const cached = memo ? memo.get(prefix) : undefined;
+      if (cached === true) return true;
+      if (cached === false) continue;
+      let isLink = false;
+      try {
+        isLink = lstatSync(path.join(projectRoot, prefix)).isSymbolicLink();
+      } catch {
+        if (memo) memo.set(prefix, false);
+        return false; // missing component ⇒ nothing deeper exists
+      }
+      if (memo) memo.set(prefix, isLink);
+      if (isLink) return true;
+    }
+    return false;
+  }
+
+  /**
+   * The real (symlink-free) project-relative path that `rel` resolves to, or
+   * null when it resolves outside the project root, is broken, or cannot be
+   * resolved. Lets incremental paths map an edit made through a symlink onto
+   * the real file that full indexing admits.
+   */
+  let rootRealCache = null;
+  function realRelInsideRoot(rel) {
+    try {
+      if (!rootRealCache) rootRealCache = realpathSync.native(projectRoot);
+      const real = realpathSync.native(path.join(projectRoot, normalizeRel(rel)));
+      const out = path.relative(rootRealCache, real);
+      if (!out || out.startsWith('..') || path.isAbsolute(out)) return null;
+      return out.replace(/\\/g, '/');
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Batched gitignore: returns the subset of `rels` that git would ignore
    * (posix-normalised). Empty when gitignore is disabled, the worktree is not a
    * git repo, or git is unavailable — matching full indexing's fallback to
@@ -241,6 +305,8 @@ export function createAdmissionPolicy({ projectRoot = process.cwd(), config, all
     forceAdmit,
     admitsShape,
     isOversizedAbs,
+    isSymlinkedRel,
+    realRelInsideRoot,
     gitignoredSet,
     applyGitignore,
   };

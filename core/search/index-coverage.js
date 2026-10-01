@@ -43,6 +43,9 @@ const normalizeRel = rel => String(rel || '').replace(/\\/g, '/').replace(/^\.\/
  *              its own new code, and it is a measured case: 7 of 1,251 sweet lexical calls
  *              on the fresh pool were genuine stale-index zeros on the agent's own file
  *              (register E3).
+ *   'symlink'  the path runs through a symlink, which the indexer does not follow. The
+ *              content is ordinary source (reading it is fine), but search holds it only
+ *              at its real path, so the note names that path for the agent to re-scope.
  */
 export const REASONS = {
   vendored: { kind: 'excluded', text: 'declared vendored by .gitattributes' },
@@ -52,7 +55,16 @@ export const REASONS = {
   oversized: { kind: 'excluded', text: 'over the index size limit' },
   notYetIndexed: { kind: 'stale', text: 'this index has not seen it yet — it may be new or just written' },
   absent: { kind: 'excluded', text: 'not present in this index' },
+  symlinkOutside: { kind: 'symlink', text: 'reached through a symlink that leads outside this project; the index does not follow symlinks' },
 };
+
+/** Symlink reason naming the real path (dynamic text, so not a fixed REASONS entry). */
+function symlinkReason(policy, rel) {
+  let real = null;
+  try { real = policy.realRelInsideRoot(rel); } catch { real = null; }
+  if (!real) return REASONS.symlinkOutside;
+  return { kind: 'symlink', text: `reached through a symlink; the index holds it at its real path ${real}`, realPath: real };
+}
 
 /**
  * @param {object} opts
@@ -142,6 +154,7 @@ export async function createIndexCoverage({ projectRoot, dbPath, admissionPolicy
     const p = await getPolicy();
     if (p) {
       try {
+        if (typeof p.isSymlinkedRel === 'function' && p.isSymlinkedRel(r)) return symlinkReason(p, r);
         if (p.linguistAttr(r) === 'vendored') return REASONS.vendored;
         if (!p.matchesInclude(r)) return REASONS.unsupported;
         if (p.isOversizedAbs(abs)) return REASONS.oversized;
@@ -174,6 +187,16 @@ export async function createIndexCoverage({ projectRoot, dbPath, admissionPolicy
       if (isDir) {
         if (dirHasIndexedFiles(rel)) return null;
         const p = await getPolicy();
+        let linked = false;
+        try { linked = !!(p && typeof p.isSymlinkedRel === 'function' && p.isSymlinkedRel(rel)); } catch { linked = false; }
+        if (linked) {
+          const reason = symlinkReason(p, rel);
+          const advice = reason.realPath ? `Search ${reason.realPath} instead.` : 'Search the tracked source instead.';
+          return {
+            kind: reason.kind, reason: reason.text, rel, isDir: true,
+            text: `(not indexed: ${scopePath} — ${reason.text}. ${advice})`,
+          };
+        }
         const reason = (p && p.isExcluded(rel)) ? REASONS.denied : REASONS.absent;
         return {
           kind: reason.kind, reason: reason.text, rel, isDir: true,
@@ -186,7 +209,9 @@ export async function createIndexCoverage({ projectRoot, dbPath, admissionPolicy
       const reason = await exclusionReason(rel);
       const advice = reason.kind === 'stale'
         ? 'Search cannot see it yet; read it directly instead.'
-        : 'It is not searchable; look at the source it was built from.';
+        : reason.kind === 'symlink'
+          ? (reason.realPath ? `Search and read ${reason.realPath} instead.` : 'Read it directly; search does not cover it.')
+          : 'It is not searchable; look at the source it was built from.';
       return {
         kind: reason.kind, reason: reason.text, rel, isDir: false,
         text: `(not indexed: ${scopePath} — ${reason.text}. ${advice})`,

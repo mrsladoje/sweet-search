@@ -2396,11 +2396,14 @@ async function performMerkleCheck() {
 
     // H3 FIX: Use dynamic loader with fallback paths
     const fg = await loadFastGlob();
+    // No-follow walk, same as full discovery (admission rule 5): symlinked
+    // directories are not descended and symlinked files are not reported.
     const allFiles = await fg(INDEXABLE_EXTENSIONS, {
       cwd: PROJECT_ROOT,
       ignore: EXCLUDED_DIRS,
       onlyFiles: true,
       absolute: false,
+      followSymbolicLinks: false,
     });
 
     if (allFiles.length === 0) {

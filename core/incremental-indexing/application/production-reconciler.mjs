@@ -758,6 +758,29 @@ class ProductionReconcileAdapter {
       rels.push(rel);
     }
 
+    // Admission rule 5: a path that is a symlink or runs through a symlinked
+    // directory is never admitted (full discovery does not follow symlinks), and
+    // a previously indexed one is retired below. An edit made through such a
+    // path changed the real file, so queue the real path when it is a regular
+    // file inside the project root.
+    const symlinkMemo = new Map();
+    const symlinked = new Set();
+    const canProbe = typeof this.admission.isSymlinkedRel === 'function';
+    for (let k = 0, n = canProbe ? rels.length : 0; k < n; k++) {
+      const rel = rels[k];
+      if (!this.admission.isSymlinkedRel(rel, symlinkMemo)) continue;
+      symlinked.add(rel);
+      const real = this.admission.realRelInsideRoot(rel);
+      if (!real || seen.has(real)) continue;
+      try {
+        if (!fs.statSync(path.join(this.projectRoot, real)).isFile()) continue;
+      } catch {
+        continue;
+      }
+      seen.add(real);
+      rels.push(real);
+    }
+
     // Second admission gate. A queued file that full indexing would skip is
     // dropped if it was never indexed, and retired if it was (so the index
     // converges to a fresh full rebuild). Existence + shape + size are sync;
@@ -766,7 +789,7 @@ class ProductionReconcileAdapter {
     const info = rels.map((rel) => {
       const abs = path.join(this.projectRoot, rel);
       const exists = fs.existsSync(abs);
-      const shapeOk = this.admission.admitsShape(rel);
+      const shapeOk = !symlinked.has(rel) && this.admission.admitsShape(rel);
       const sizeOk = exists && shapeOk ? !this.admission.isOversizedAbs(abs) : false;
       return { rel, exists, shapeOk, sizeOk };
     });
