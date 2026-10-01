@@ -33,7 +33,9 @@ const CPP_MAKE_RE = /\bmake_(?:unique|shared)\s*<\s*((?:\w+::)*[A-Z]\w*)/g;
 // A PascalCase call not preceded by `.`, `@`, `#` or a word character.
 const CTOR_CALL_RE = /(^|[^\w.@#$])([A-Z][A-Za-z0-9_]*)\s*\(/g;
 const RUST_ASSOC_RE = /\b([A-Z]\w*)\s*::\s*(?:new|default|from|builder|with_\w+)\s*\(/g;
-const LITERAL_RE = /(?:[=(,:]|=>|\breturn)\s*&?\s*([A-Z]\w*)\s*\{/g;
+// `:` only as a separator (`field: Foo {`), never the end of a `::` path:
+// Rust `InstallTarget::Project {` builds an enum variant, not struct Project.
+const LITERAL_RE = /(?:[=(,]|(?<!:):(?!:)|=>|\breturn)\s*&?\s*([A-Z]\w*)\s*\{/g;
 const GO_ADDR_LITERAL_RE = /&\s*([A-Za-z_]\w*)\s*\{/g;
 const RUBY_NEW_RE = /\b([A-Z]\w*(?:::[A-Z]\w*)*)\.new\b/g;
 const OBJC_ALLOC_RE = /\[\s*([A-Z]\w*)\s+(?:alloc|new)\b/g;
@@ -64,14 +66,19 @@ function pushAll(re, line, group, out) {
  * Types constructed on one (comment-free) line.
  * @param {string} line trimmed source line
  * @param {string} language
+ * @param {{ typeHeader?: boolean }} [opts] typeHeader: the line belongs to a
+ *   type declaration header (no `X(` constructor calls there)
  * @returns {string[]} short type names, deduplicated
  */
-export function scanInstantiations(line, language) {
+export function scanInstantiations(line, language, opts = {}) {
   if (line.length === 0) return [];
   const out = new Set();
   if (NEW_LANGS.has(language) && line.includes('new')) pushAll(NEW_RE, line, 1, out);
   if (language === 'cpp' && line.includes('make_')) pushAll(CPP_MAKE_RE, line, 1, out);
-  if (CTOR_CALL_LANGS.has(language) && line.includes('(')) {
+  // In a type declaration header, `Base(args)` calls the supertype's
+  // constructor (Kotlin `) : DelegatingSSLSocketFactory(delegate) {`, Scala
+  // `extends Base(a)`): that is the `extends` edge, not an instantiation.
+  if (CTOR_CALL_LANGS.has(language) && line.includes('(') && !opts.typeHeader) {
     CTOR_CALL_RE.lastIndex = 0;
     let m;
     while ((m = CTOR_CALL_RE.exec(line)) !== null) {
@@ -113,13 +120,17 @@ export function scanSignatureTypes(line, language, opts = {}) {
   if (arrow >= 0) sig = sig.slice(0, arrow);
   // Strip string literals (default values) before collecting names.
   sig = sig.replace(/(["'`])(?:\\.|(?!\1).)*\1/g, '""');
-  const declared = declaredTypeParameters(sig);
+  const declared = declaredTypeParameters(sig, opts.ownName);
   const out = new Set();
   PASCAL_TOKEN_RE.lastIndex = 0;
   let m;
   while ((m = PASCAL_TOKEN_RE.exec(sig)) !== null) {
     const name = m[2];
     if (name === opts.ownName || name === opts.ownerName || declared.has(name)) continue;
+    // A `::`-qualified type names another module's type (Rust `clap::Error`,
+    // `io::Result`, C++ `std::Foo`); a same-named local type is not it.
+    const start = m.index + m[1].length;
+    if (start >= 2 && sig[start - 1] === ':' && sig[start - 2] === ':') continue;
     out.add(name);
   }
   return [...out];
@@ -128,17 +139,31 @@ export function scanSignatureTypes(line, language, opts = {}) {
 /**
  * Generic parameters a signature declares before its parameter list:
  * `func f<Key: Hashable, Value>(`, `public <T extends Foo> T get(`,
- * `fn map<Output>(`. The first name of each `<…>` part is declared, not
- * used (`Foo` in `T extends Foo` still counts).
+ * `fn map<Output>(`, Kotlin `fun <T> f(`. A `<…>` group declares parameters
+ * only right after the defined name or a declaration keyword / modifier;
+ * after any other name it is a type argument (`public List<Span> decode(`
+ * USES Span). The first name of each declared part is declared, not used
+ * (`Foo` in `T extends Foo` still counts).
  */
-function declaredTypeParameters(sig) {
+const GENERIC_DECLARATION_HEAD = new Set([
+  'public', 'private', 'protected', 'internal', 'static', 'final', 'abstract', 'synchronized',
+  'native', 'default', 'open', 'override', 'inline', 'suspend', 'operator', 'infix', 'tailrec',
+  'fun', 'def', 'fn', 'func', 'function', 'async', 'export', 'pub', 'unsafe', 'extern', 'const',
+  'virtual', 'sealed', 'new', 'strictfp', 'transient',
+]);
+
+function declaredTypeParameters(sig, ownName) {
   const declared = new Set();
   const paren = sig.indexOf('(');
   const head = paren >= 0 ? sig.slice(0, paren) : sig;
   if (!head.includes('<')) return declared;
-  const groups = head.match(/<([^<>]*(?:<[^<>]*>[^<>]*)*)>/g) || [];
-  for (const g of groups) {
-    for (const part of g.slice(1, -1).split(',')) {
+  const groupRe = /<([^<>]*(?:<[^<>]*>[^<>]*)*)>/g;
+  let g;
+  while ((g = groupRe.exec(head)) !== null) {
+    const before = /([A-Za-z_]\w*)?\s*$/.exec(head.slice(0, g.index));
+    const word = before && before[1];
+    if (word && word !== ownName && !GENERIC_DECLARATION_HEAD.has(word)) continue;
+    for (const part of g[1].split(',')) {
       const name = /^\s*(?:in\s+|out\s+|reified\s+)?([A-Za-z_]\w*)/.exec(part);
       if (name) declared.add(name[1]);
     }

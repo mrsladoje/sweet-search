@@ -512,7 +512,7 @@ function resolveTarget(
       // A base type is always a type. A same-named constructor, property or
       // function is never the target, and neither is the source itself
       // (Python `class Config(Config)` extends the imported Config).
-      let candidates = typeCandidates(byExactName.get(targetName), sourceId);
+      let candidates = typeCandidates(byExactName.get(targetName), sourceId, sourceEntity);
 
       // Qualified base (`Sequel::Model`, `\RuntimeException`, `models.Model`,
       // `drogon::HttpController`, `Call.Base`): entities are stored by their
@@ -526,7 +526,7 @@ function resolveTarget(
       if (candidates.length === 0) {
         const shortName = lastPathSegment(targetName);
         if (shortName && shortName !== targetName) {
-          candidates = typeCandidates(byExactName.get(shortName), sourceId);
+          candidates = typeCandidates(byExactName.get(shortName), sourceId, sourceEntity);
           if (qualifier) candidates = bestQualifierTier(candidates, qualifier);
         }
       }
@@ -659,7 +659,7 @@ const TYPE_REFERENCE_RELATIONSHIPS = new Set([
  * edge beats a wrong one (graphify's exactly-one guard).
  */
 function resolveTypeUsage(targetName, sourceEntity, sourceId, byExactName, callIndex) {
-  let candidates = typeCandidates(byExactName.get(targetName), sourceId);
+  let candidates = typeCandidates(byExactName.get(targetName), sourceId, sourceEntity);
   const srcPath = sourceEntity?.file_path;
   const imported = srcPath ? callIndex?.importsOf?.(srcPath) : null;
   if (srcPath) {
@@ -698,9 +698,42 @@ const CLASS_LIKE_TYPES = new Set([
   'typedef', 'protocol', 'record', 'object', 'module', 'mixin', 'component', 'message', 'union',
 ]);
 
-function typeCandidates(candidates, sourceId) {
+function typeCandidates(candidates, sourceId, sourceEntity = null) {
   if (!candidates) return [];
-  return candidates.filter(c => c.id !== sourceId && CLASS_LIKE_TYPES.has(c.type));
+  const srcFamilies = sourceEntity?.file_path ? pathFacts(sourceEntity.file_path).families : null;
+  return candidates.filter(c => c.id !== sourceId && CLASS_LIKE_TYPES.has(c.type)
+    && sharesLanguageFamily(srcFamilies, c.file_path));
+}
+
+// A type reference names a type of the same language family: Java `List<Span>`
+// is java.util.List, not zipkin-lens's React `List` component. Interop
+// families overlap (Kotlin↔Java, Swift↔Objective-C headers, C↔C++). An
+// unknown extension has no family and is never filtered.
+const LANGUAGE_FAMILY_BY_EXTENSION = new Map(Object.entries({
+  java: ['jvm'], kt: ['jvm'], kts: ['jvm'], scala: ['jvm'], groovy: ['jvm'],
+  js: ['js'], jsx: ['js'], mjs: ['js'], cjs: ['js'], ts: ['js'], tsx: ['js'], mts: ['js'], cts: ['js'],
+  vue: ['js'], svelte: ['js'], astro: ['js'],
+  c: ['c'], cc: ['c'], cpp: ['c'], cxx: ['c'], hpp: ['c'], hh: ['c'], hxx: ['c'], ipp: ['c'], inl: ['c'],
+  h: ['c', 'objc'], m: ['objc', 'c'], mm: ['objc', 'c'],
+  swift: ['swift', 'objc'],
+  go: ['go'], rs: ['rust'], py: ['python'], pyi: ['python'], rb: ['ruby'], php: ['php'],
+  cs: ['dotnet'], fs: ['dotnet'], fsi: ['dotnet'], vb: ['dotnet'], dart: ['dart'],
+  ex: ['elixir'], exs: ['elixir'], erl: ['erlang'], hrl: ['erlang'], jl: ['julia'],
+  lua: ['lua'], zig: ['zig'], sol: ['solidity'], hs: ['haskell'], ml: ['ocaml'], mli: ['ocaml'],
+  graphql: ['graphql'], gql: ['graphql'], proto: ['proto'],
+}));
+
+function languageFamilies(filePath) {
+  const base = filePath.slice(filePath.lastIndexOf('/') + 1);
+  const dot = base.lastIndexOf('.');
+  if (dot < 0) return null;
+  return LANGUAGE_FAMILY_BY_EXTENSION.get(base.slice(dot + 1).toLowerCase()) || null;
+}
+
+function sharesLanguageFamily(srcFamilies, candidatePath) {
+  if (!srcFamilies || !candidatePath) return true;
+  const candidate = pathFacts(candidatePath).families;
+  return !candidate || candidate.some(f => srcFamilies.includes(f));
 }
 
 /** `Sequel::Model` → `Model`, `\Foo\Bar` → `Bar`, `models.Model` → `Model`. */
@@ -726,6 +759,7 @@ function pathFacts(filePath) {
       parts: filePath.split('/'),
       isTest: isTestPath(filePath),
       stemKey: nameKey(fileStem(filePath)),
+      families: languageFamilies(filePath),
     };
     pathFactsCache.set(filePath, facts);
   }
