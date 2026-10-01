@@ -1017,9 +1017,12 @@ class ProductionReconcileAdapter {
         // target-less edges that readers can only match by name.
         const oldNames = new Set(oldRows.map((r) => r.name));
         const newNames = [...new Set(entities.filter((e) => e.type !== 'file' && e.name && !oldNames.has(e.name)).map((e) => e.name))];
+        // The file's own edges (imports, top-level calls) have the file node
+        // as their source, which is in no liveIdFor entry: list it too, or
+        // they stay target-less while a full build resolves them.
         edgeResolution = resolveTouchedEdges(db, {
           epoch,
-          sourceIds: [...liveIdFor.values()],
+          sourceIds: [...liveIdFor.values(), fileLogicalId],
           retiredIds,
           newNames,
         }, resolveRowsScoped);
