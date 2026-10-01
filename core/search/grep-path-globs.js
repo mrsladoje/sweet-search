@@ -72,10 +72,15 @@ export function compilePathGlob(raw) {
   }
   if (body === '' || body === '.') return null;
   if (body.includes('/')) anchored = true;
-  // An unanchored glob matches its name at any depth: rg compiles it as `**/glob`.
-  const pattern = anchored ? body : `**/${body}`;
-  const mm = new Minimatch(pattern, MINIMATCH_OPTIONS);
-  return { raw, exclude, dirOnly, anchored, match: path => mm.match(path) };
+  // An unanchored glob matches its name at any depth: rg compiles it as `**/glob`. With no
+  // `/` in the body, that is exactly "the last segment matches the body", which is far cheaper
+  // to test than `**/body` against the whole path.
+  const mm = new Minimatch(body, MINIMATCH_OPTIONS);
+  return {
+    raw, exclude, dirOnly, anchored,
+    // `path`: whole repo-relative path; `name`: its last segment.
+    match: (path, name) => mm.match(anchored ? path : name),
+  };
 }
 
 /**
@@ -96,20 +101,29 @@ export function compilePathGlobs(globs) {
   const includes = list.filter(g => !g.exclude);
   const excludes = list.filter(g => g.exclude);
   const memo = new Map();
+  // Excluded directories, memoised per directory: the files of one directory share the walk.
+  const dirMemo = new Map();
+  const dirExcluded = (segs, n) => {
+    if (n === 0 || excludes.length === 0) return false;
+    const dir = segs.slice(0, n).join('/');
+    let v = dirMemo.get(dir);
+    if (v === undefined) {
+      v = dirExcluded(segs, n - 1) || excludes.some(g => g.match(dir, segs[n - 1]));
+      dirMemo.set(dir, v);
+    }
+    return v;
+  };
   const decide = (file) => {
     const segs = segmentsOf(file);
     if (segs.length === 0) return false;
     const full = segs.join('/');
+    const name = segs[segs.length - 1];
     // Exclusion wins (deviation 1): the file, or any directory above it.
-    for (const g of excludes) {
-      if (!g.dirOnly && g.match(full)) return false;
-      for (let i = 1; i < segs.length; i++) {
-        if (g.match(segs.slice(0, i).join('/'))) return false;
-      }
-    }
+    if (excludes.some(g => !g.dirOnly && g.match(full, name))) return false;
+    if (dirExcluded(segs, segs.length - 1)) return false;
     if (includes.length === 0) return true;
     // Include: the file itself must match (a directory-only include matches no file, as in rg).
-    return includes.some(g => !g.dirOnly && g.match(full));
+    return includes.some(g => !g.dirOnly && g.match(full, name));
   };
   return {
     includes,

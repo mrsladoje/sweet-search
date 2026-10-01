@@ -269,10 +269,12 @@ export async function bareGrep(query, routing, options = {}) {
   // An explicit --in drill-in renders neither enrichment. The IMPLICIT scope of an
   // ss-grep run from a subdirectory (_cwdScope) is an ordinary grep with fewer hits,
   // so it keeps both, exactly as at the repository root. So does a grep with only -g
-  // globs: it is a grep with fewer files, not a drill-in.
+  // globs: it is a grep with fewer files, not a drill-in. The family then names no member
+  // from a file the globs excluded; the sibling line stays in the hit's own file.
   const unscopedShape = !options.fileFilter || options._cwdScope === true;
   const familyManifest = options._isAgentFormat === true && unscopedShape
-    ? buildIndexedGrepFamilyManifest(results, this?.codeGraphRepo)
+    ? buildIndexedGrepFamilyManifest(results, this?.codeGraphRepo,
+      pathGlobs ? { keepFile: (file) => typeof file === 'string' && pathGlobs.matches(file) } : undefined)
     : null;
   // One to three hits in one file: name the same-file identifier family WITH
   // code lines (the one enrichment a near-singleton grep can take; see
