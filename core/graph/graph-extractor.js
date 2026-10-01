@@ -683,16 +683,57 @@ function definedOnLine(entities, lineNum, name) {
  * through that name are left to the receiver rules.
  */
 export function goNameShadowed(content, name) {
-  const n = name.replace(/[^\w]/g, '');
-  if (!n) return true;
-  const tests = [
-    new RegExp(`(?:^|[^.\\w])${n}\\s*(?:,\\s*[A-Za-z_]\\w*\\s*)*:=`, 'm'),
-    new RegExp(`,\\s*${n}\\s*(?:,\\s*[A-Za-z_]\\w*\\s*)*:=`),
-    new RegExp(`\\bvar\\s+(?:[A-Za-z_]\\w*\\s*,\\s*)*${n}\\b`),
-    new RegExp(`[(,]\\s*${n}\\s+[*\\[A-Za-z_]`),
-    new RegExp(`\\.\\s*${n}\\s*\\.`),
-  ];
-  return tests.some((re) => re.test(content));
+  if (!/^[A-Za-z_]\w*$/.test(name)) return true;
+  // One pass over the name's whole-word occurrences, reading the code
+  // around each one (no per-name regex scans of the whole file).
+  const isWord = (c) => c !== undefined && /\w/.test(c);
+  const isSpace = (c) => c === ' ' || c === '\t' || c === '\n' || c === '\r';
+  for (let at = content.indexOf(name); at !== -1; at = content.indexOf(name, at + 1)) {
+    const end = at + name.length;
+    if (isWord(content[at - 1]) || isWord(content[end])) continue;
+    let b = at - 1;
+    let crossedLine = false;
+    while (b >= 0 && isSpace(content[b])) { if (content[b] === '\n') crossedLine = true; b--; }
+    let before = content[b];
+    // A `.` that ends a `// comment.` line is no member access.
+    if (crossedLine && before === '.') {
+      const lineStart = content.lastIndexOf('\n', b) + 1;
+      if (content.slice(lineStart, b).includes('//')) before = '\n';
+    }
+    let f = end;
+    while (f < content.length && isSpace(content[f])) f++;
+    const after = content[f];
+    // `s.schema.Meta()`, `s.\n\tschema.Meta()`: a field of that name.
+    if (before === '.' && after === '.') return true;
+    // `schema := …`, `a, schema := …`, `for _, schema := range`.
+    let g = f;
+    for (;;) {
+      if (content[g] === ':' && content[g + 1] === '=') return true;
+      if (content[g] !== ',') break;
+      g++;
+      while (g < content.length && isSpace(content[g])) g++;
+      const m = /^[A-Za-z_]\w*/.exec(content.slice(g, g + 64));
+      if (!m) break;
+      g += m[0].length;
+      while (g < content.length && isSpace(content[g])) g++;
+    }
+    // `func f(schema *T)`, `func (schema *T) m()`, `a, schema int`.
+    if ((before === '(' || before === ',') && f > end && /[*[A-Za-z_]/.test(after || '')) return true;
+    // `var schema …`, `var a, schema …`: only `var` or a name list before it.
+    if (after !== '.') {
+      let k = b;
+      for (;;) {
+        if (content[k] === 'r' && content.startsWith('var', k - 2) && !isWord(content[k - 3])) return true;
+        if (content[k] !== ',') break;
+        k--;
+        while (k >= 0 && isSpace(content[k])) k--;
+        if (!isWord(content[k])) break;
+        while (k >= 0 && isWord(content[k])) k--;
+        while (k >= 0 && isSpace(content[k])) k--;
+      }
+    }
+  }
+  return false;
 }
 
 /**
