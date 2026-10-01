@@ -50,6 +50,8 @@ Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 
 ## Decisions log
 
+- 11:30 r3-hard B repos cloned (`r3/repos-b.json`): okhttp (Kotlin, 795 files), sequel (Ruby, 874), composer (PHP, 1,010), drogon (C++, 519; trantor submodule absent → avoid network-layer questions), grdb (Swift, 605). okhttp is in a competitor's public benchmark but never in our dev data — kept. Indexing (~76 min) is in the forensic chain.
+
 - 11:15 **Clean held-out table** (`r3/RESULTS-HELDOUT-FIXED.md`; Opus re-scored to complete panels): Opus V1b vs 2.8.2 cost −11.3% (q<0.001), accuracy −1.2 pt [−2.9, +0.6] (ns; the live-panel read was −0.1 → judge noise ≈ 1 pt; non-inferiority at −2 pt borderline/not formally shown); Opus V1b vs native +6.9% (q 0.026); Sonnet V1b vs 2.8.2 −10.1% (q<0.001), acc +1.3; Sonnet V1b vs native −4.1% (ns). **Codex clean: 2.8.2 vs native cost +2.9% (ns), acc −2.1 (ns) — the earlier "−15.2%" was an artifact of the crashing ss-find (shorter rollouts).** oc-Sol clean (r282 train, interleaved): +0.8% (ns), acc −0.6, calls −20%. Codex rescore running; Codex r3 dev re-run running.
 
 - 10:50 **Held-out Opus re-run with the ss-find fix (clean, 0 crashes; live panels 96–98 pairs):** V1b vs 2.8.2 cost −11.3% [−15.0, −7.5] (q<0.001), **accuracy −0.1 pt [−1.8, +1.6] → non-inferiority at −2 pt SHOWN**; V1b vs native +6.9% (q 0.026), acc −0.9 (ns); 2.8.2 vs native +20.5% (q<0.001). Spec `r3/spec-heldout-fixed.json`. Rescore for complete panels running.
@@ -148,6 +150,8 @@ Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 - 2026-10-01 00:00 — owner message: "if for the best results we require more than until 9AM please take more time … I don't have more than 24h". **End time changed from 09:00 to: when Phase 7 is done or the cash is spent, hard stop ~23:00 on 2026-10-01.**
 
 ## Problems
+
+- 11:30 Third count-only slip by a subagent: the r3-hard B repo agent counted text hits for `composer/composer` in `tasks_full_heldout2.json` (counts only, no content). No decision used it.
 
 - 10:25 After the ss-find fix check I ran `pkill -f sweet-search-daemon -U <me>`, which may have stopped sweet-search daemons I did not start (e.g. the owner's interactive ones). They respawn on demand; recorded as a breach of HANDOFF §2.
 - 10:25 The ss-find crash bug above (introduced by me at 00:08, undetected for 10 h because the screens compared sweet variants with each other).
