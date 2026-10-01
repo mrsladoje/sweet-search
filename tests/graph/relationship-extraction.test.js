@@ -164,10 +164,9 @@ describe('Elixir relationship extraction', () => {
 // =============================================================================
 
 describe('Go relationship extraction — embed', () => {
-  // NOTE: Go embed pattern /^\s+([A-Z]\w*)\s*$/ requires leading whitespace,
-  // but extractGeneric trims lines first, so embed never matches.
-  // This test documents the limitation.
-  it('embed pattern cannot match after trimming (known limitation)', async () => {
+  // The old pattern /^\s+([A-Z]\w*)\s*$/ needed leading whitespace, but lines
+  // are matched after trimStart(), so no embed was ever extracted.
+  it('extracts embedded types inside struct and interface bodies only', async () => {
     const result = await extractor.extractFromFile('/test/server.go', [
       'package main',
       '',
@@ -177,19 +176,32 @@ describe('Go relationship extraction — embed', () => {
       '',
       'type Server struct {',
       '  Router',
-      '  Logger',
+      '  *sync.Mutex',
+      '  io.Reader `json:"r"`',
       '  port int',
       '}',
+      '',
+      'type ReadCloser interface {',
+      '  Reader',
+      '  Close() error',
+      '}',
+      '',
+      'const (',
+      '  A = iota',
+      '  Bconst',
+      ')',
     ].join('\n'));
     // import works (individual lines inside import block)
     expect(result.relationships.some(r =>
       r.type === 'imports' && r.target_name === 'net/http'
     )).toBe(true);
-    // embed does NOT work due to trimming — document this
-    // Pattern /^\s+([A-Z]\w*)\s*$/ requires leading whitespace, but extractGeneric
-    // trims all lines before matching (graph-extractor.js:605)
-    const embedRels = result.relationships.filter(r => r.target_name === 'Router');
-    expect(embedRels.length).toBe(0); // limitation: embed fails after trimStart()
+    const embeds = result.relationships.filter(r => r.type === 'uses').map(r => r.target_name);
+    expect(embeds).toEqual(expect.arrayContaining(['Router', 'sync.Mutex', 'io.Reader', 'Reader']));
+    // A field (`port int`), a method (`Close() error`) and a const-block
+    // member are not embeds.
+    expect(embeds).not.toContain('port');
+    expect(embeds).not.toContain('Bconst');
+    expect(embeds.some(e => e.startsWith('Close'))).toBe(false);
   });
 });
 
@@ -208,10 +220,25 @@ describe('Rust relationship extraction — derive and impl', () => {
       '  pub email: String,',
       '}',
     ].join('\n'));
-    // derive pattern extracts first capture group
-    expect(result.relationships.some(r =>
-      r.target_name === 'Debug, Clone, Serialize'
-    )).toBe(true);
+    // one edge per derived trait, owned by the struct below the attribute
+    const user = result.entities.find(e => e.name === 'User');
+    const derives = result.relationships.filter(r => r.context_line === 3);
+    expect(derives.map(r => r.target_name)).toEqual(['Debug', 'Clone', 'Serialize']);
+    expect(derives.every(r => r.source_id === user.id)).toBe(true);
+  });
+
+  it('extracts impl-for with generics, paths and unsafe', async () => {
+    const result = await extractor.extractFromFile('/test/impls.rs', [
+      'pub struct Foo;',
+      'impl<T: Clone> Validator for Wrapper<T> {}',
+      'impl fmt::Display for Foo {',
+      '}',
+      'unsafe impl Send for Foo {}',
+      "impl<'a> Iterator for Iter<'a> {}",
+      '// impl Fake for Comment {}',
+    ].join('\n'));
+    const impls = result.relationships.filter(r => r.type === 'implements').map(r => r.target_name);
+    expect(impls).toEqual(['Validator', 'fmt::Display', 'Send', 'Iterator']);
   });
 
   it('extracts impl-for relationships', async () => {

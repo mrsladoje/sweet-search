@@ -34,7 +34,8 @@ export const CORE_LANGUAGES = {
         objectMethod: /^\s+(\w+)\s*\([^)]*\)\s*\{/,
       },
       relationships: {
-        extends: /class\s+\w+\s+extends\s+(\w+)/,
+        // Qualified bases keep their qualifier (`React.Component`, not `React`).
+        extends: /\bclass\s+\w+\s+extends\s+([\w$.]+)/,
         import: /import\s+(?:\{([^}]+)\}|(\w+))\s+from\s+['"]([^'"]+)['"]/,
         require: /(?:const|let|var)\s+(?:\{[^}]+\}|\w+)\s*=\s*require\s*\(\s*['"]([^'"]+)['"]\s*\)/,
         reexport: /export\s+(?:\{[^}]+\}|\*)\s+from\s+['"]([^'"]+)['"]/,
@@ -80,8 +81,10 @@ export const CORE_LANGUAGES = {
         namespace: /(?:export\s+)?(?:declare\s+)?namespace\s+(\w+)/,
       },
       relationships: {
-        extends: /class\s+\w+\s+extends\s+(\w+)/,
-        implements: /class\s+\w+(?:\s+extends\s+\w+)?\s+implements\s+([\w,\s]+)/,
+        // Generic classes (`class Foo<T> extends Base<T>`) and qualified
+        // bases (`React.Component`) were missed or cut to the namespace.
+        extends: /\bclass\s+\w+\s*(?:<(?:[^<>]|<[^<>]*>)*>)?\s+extends\s+([\w$.]+)/,
+        implements: /\bclass\s+\w+\s*(?:<(?:[^<>]|<[^<>]*>)*>)?(?:\s+extends\s+[\w$.]+\s*(?:<(?:[^<>]|<[^<>]*>)*>)?)?\s+implements\s+([^{]+)/,
         // TS-specific: interface extends interface(s). Captures the
         // comma-separated list (with optional generics) — splitting is
         // handled by expandRelationshipTargets() via MULTI_TARGET_TYPES.
@@ -137,8 +140,11 @@ export const CORE_LANGUAGES = {
         import: /import\s+(?:static\s+)?([a-zA-Z_][\w.]*(?:\.\*)?)\s*;/,
         package: /package\s+([\w.]+)\s*;/,
         // Capture qualified targets; generic suffixes are normalized downstream.
-        extends: /(?:class|interface)\s+\w+(?:<[^>]*>)?\s+extends\s+([A-Za-z_][\w$.]*)/,
-        implements: /implements\s+([A-Za-z_][\w$.,\s<>?]+)\s*\{/,
+        // The list form covers `interface I extends J, K`; nested type
+        // parameters (`class Foo<T extends Comparable<T>>`) are skipped.
+        extends: /(?:class|interface)\s+\w+(?:<(?:[^<>]|<(?:[^<>]|<[^<>]*>)*>)*>)?\s+extends\s+([A-Za-z_][\w$.<>?,\s]*?)(?=\s+implements\b|\s+permits\b|\s*\{|\s*$)/,
+        // `{` may sit on the next line.
+        implements: /\bimplements\s+([A-Za-z_][\w$.,\s<>?]*?)(?=\s+permits\b|\s*\{|\s*$)/,
         methodCall: /(\w+)\s*\.\s*(\w+)\s*\(/,
         throw: /throw\s+new\s+(\w+)/,
       },
@@ -168,7 +174,9 @@ export const CORE_LANGUAGES = {
       relationships: {
         import: /^from\s+([\w.]+)\s+import/,
         plainImport: /^import\s+([\w.,\s]+)/,
-        extends: /^class\s+\w+\(([^)]+)\)/,
+        // Every base is an edge (`class A(B, C, metaclass=M)` → B, C);
+        // PEP 695 type parameters (`class A[T](B)`) are allowed.
+        extends: /^class\s+\w+\s*(?:\[[^\]]*\])?\s*\(([^)]+)\)/,
         methodCall: /(\w+)\s*\.\s*(\w+)\s*\(/,
         decorator: /^@(\w+(?:\.\w+)*)/,
       },
@@ -203,7 +211,11 @@ export const CORE_LANGUAGES = {
       },
       relationships: {
         import: /^\s*"([^"]+)"/,
-        embed: /^\s+([A-Z]\w*)\s*$/,
+        // Embedded field in a struct/interface body: `RouterGroup`,
+        // `*sync.Mutex`, `io.Reader `json:"r"``. Lines are matched after
+        // trimStart, so the old leading-`\s+` form never fired; the extractor
+        // only accepts it inside a struct or interface.
+        embed: /^\*?((?:\w+\.)?[A-Za-z_]\w*)\s*(?:`[^`]*`)?\s*(?:\/\/.*)?$/,
         methodCall: /(\w+)\s*\.\s*(\w+)\s*\(/,
       },
       isExported: (name) => /^[A-Z]/.test(name),
@@ -240,7 +252,9 @@ export const CORE_LANGUAGES = {
       },
       relationships: {
         use: /^use\s+([\w:]+)(?:::\{([^}]+)\})?/,
-        implFor: /^impl\s+(\w+)\s+for\s+(\w+)/,
+        // `impl<T> Trait for Foo<T>`, `impl fmt::Display for Foo`,
+        // `unsafe impl Send for Foo` — only the plain form matched before.
+        implFor: /^(?:unsafe\s+)?impl\s*(?:<(?:[^<>]|<[^<>]*>)*>)?\s*!?\s*((?:\w+::)*\w+)(?:<(?:[^<>]|<[^<>]*>)*>)?\s+for\s+/,
         derive: /#\[derive\(([^)]+)\)\]/,
         methodCall: /(\w+)\s*\.\s*(\w+)\s*\(/,
       },
@@ -334,7 +348,10 @@ export const CORE_LANGUAGES = {
       },
       relationships: {
         include: /^#include\s+[<"]([^>"]+)[>"]/,
-        inherit: /(?:class|struct)\s+\w+\s*:\s*([^{]+)/,
+        // Anchored: `enum class Color : uint8_t` is not inheritance and
+        // `Foo::bar` is not a base list. Allows a template header, export
+        // macros / attributes before the name and `final` after it.
+        inherit: /^(?:template\s*<.*>\s*)?(?:class|struct)\s+(?:(?:alignas\s*\([^)]*\)|__declspec\s*\([^)]*\)|__attribute__\s*\(\([^)]*\)\)|\[\[[^\]]*\]\]|[A-Z][A-Z0-9_]+)\s+)*\w+\s*(?:<.*>)?\s*(?:final\s*)?:(?!:)\s*([^{;]+)/,
         methodOf: /(\w+)\s*::\s*(\w+)\s*\(/,
         methodCall: /(\w+)\s*(?:\.|->)\s*(\w+)\s*\(/,
       },
@@ -381,7 +398,9 @@ export const CORE_LANGUAGES = {
       relationships: {
         using: /^using\s+([\w.]+)\s*;/,
         namespace: /^namespace\s+([\w.]+)/,
-        inherit: /class\s+\w+\s*:\s*([\w,\s<>]+)/,
+        // Generic classes, structs, interfaces and records (positional
+        // `record R(int X) : Base`) — only non-generic classes matched before.
+        inherit: /^(?:\[[^\]]*\]\s*)*(?:(?:public|private|protected|internal|static|sealed|abstract|partial|readonly|ref|unsafe|new|file)\s+)*(?:class|struct|interface|record(?:\s+(?:class|struct))?)\s+\w+\s*(?:<(?:[^<>]|<[^<>]*>)*>)?\s*(?:\((?:[^()]|\([^()]*\))*\))?\s*:\s*([^{;]+)/,
         methodCall: /(\w+)\s*\.\s*(\w+)\s*\(/,
       },
       skipCallObjects: ["Console", "Debug", "Trace", "String", "Int32", "Math", "Convert", "Task"],

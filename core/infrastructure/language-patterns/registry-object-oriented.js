@@ -55,8 +55,8 @@ export const OBJECT_ORIENTED_LANGUAGES = {
       relationships: {
         use: /^use\s+([\w\\]+)(?:\s+as\s+(\w+))?/,
         namespace: /^namespace\s+([\w\\]+)/,
-        extends: /^(?:abstract\s+|final\s+)?(?:class|interface)\s+\w+\s+extends\s+([\w\\]+(?:\s*,\s*[\w\\]+)*)/,
-        implements: /^(?:abstract\s+|final\s+)?class\s+\w+(?:\s+extends\s+[\w\\]+)?\s+implements\s+([\w\\,\s]+)/,
+        extends: /^(?:(?:abstract|final|readonly)\s+)*(?:class|interface)\s+\w+\s+extends\s+([\w\\]+(?:\s*,\s*[\w\\]+)*)/,
+        implements: /^(?:(?:abstract|final|readonly)\s+)*(?:class|enum)\s+\w+(?:\s*:\s*\w+)?(?:\s+extends\s+[\w\\]+)?\s+implements\s+([\w\\,\s]+)/,
         methodCall: /(\w+)\s*(?:->|::)\s*(\w+)\s*\(/,
       },
       // `self::` / `static::` / `$this->` calls stay (same-class edges).
@@ -95,7 +95,8 @@ export const OBJECT_ORIENTED_LANGUAGES = {
         include: /^\s*include\s+(\w+)/,
         extend: /^\s*extend\s+(\w+)/,
         prepend: /^\s*prepend\s+(\w+)/,
-        inherit: /^\s*class\s+\w+\s*<\s*([\w:]+)/,
+        // `class Foo::Bar < Sequel::Model` — namespaced class names too.
+        inherit: /^\s*class\s+[\w:]+\s*<\s*([\w:]+)/,
         methodCall: /(\w+)\s*\.\s*(\w+)\s*[(!]/,
       },
       skipCallObjects: ["puts", "print", "p", "raise", "require", "attr_accessor", "attr_reader", "attr_writer"],
@@ -127,7 +128,13 @@ export const OBJECT_ORIENTED_LANGUAGES = {
       },
       relationships: {
         import: /^import\s+([\w.]+)/,
-        inherit: /class\s+\w+(?:\s*\([^)]*\))?\s*:\s*([\w,\s<>]+)/,
+        // Whole supertype list after the primary constructor:
+        // `class Foo(x: Int) : Bar(x), Baz, Qux<Int>`, `object O : I`,
+        // `interface I : J, K`, `class Gen<T : Any> : Base<T>()`,
+        // `class Del(b: B) : B by b`. The old form stopped at the first `(`.
+        // An anonymous `object : Task() {` expression is not a type
+        // declaration; only named and companion objects count.
+        inherit: /^(?:@?[\w.]+(?:\([^)]*\))?\s+)*?(?:companion\s+object(?:\s+\w+)?|(?:class|object|interface)\s+\w+)\s*(?:<(?:[^<>]|<[^<>]*>)*>)?\s*(?:(?:@?\w+\s+)*constructor\s*)?(?:\((?:[^()]|\([^()]*\))*\))?\s*:\s*([^{=]+)/,
         methodCall: /(\w+)\s*\.\s*(\w+)\s*\(/,
       },
       skipCallObjects: ["println", "print", "require", "check", "assert", "listOf", "mapOf", "setOf"],
@@ -160,7 +167,10 @@ export const OBJECT_ORIENTED_LANGUAGES = {
       },
       relationships: {
         import: /^import\s+(\w+)/,
-        inherit: /(?:class|struct|enum|extension)\s+\w+\s*:\s*([\w,\s]+)/,
+        // Generic types (`class Foo<T>: Base`), protocols refining protocols,
+        // actors, `extension A.B: P`; a trailing `where` clause is cut
+        // downstream. Anchored so `class var x: Int` is not inheritance.
+        inherit: /^(?:@?\w+(?:\([^)]*\))?\s+)*(?:class|struct|enum|extension|protocol|actor)\s+[\w.]+\s*(?:<(?:[^<>]|<[^<>]*>)*>)?\s*:\s*([^{]+)/,
         methodCall: /(\w+)\s*\.\s*(\w+)\s*\(/,
       },
       skipCallObjects: ["print", "fatalError", "precondition", "assert", "String", "Int", "Double"],
