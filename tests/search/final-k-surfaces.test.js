@@ -3,7 +3,7 @@
  *
  * Every surface (ss-search wrapper -> search server, core CLI, MCP, library API)
  * ends in SweetSearch.search(query, { k }). These tests pin that search():
- *   - runs the seed stage on max(k, 10) candidates,
+ *   - runs the seed stage on k candidates (max(k, SWEET_SEARCH_SEED_POOL_MIN) opt-in),
  *   - returns at most k results after graph expansion,
  *   - computes the agent budget tier on the final <= k list,
  * and that the MCP handler forwards k untouched.
@@ -111,6 +111,50 @@ describe('SweetSearch.search final-k contract (library API, server, core CLI, MC
     const out = await searcher.search('q', { k: 3, mode: 'hybrid' });
     expect(hybridSpy.mock.calls[0][1].k).toBe(10);
     expect(out.results).toHaveLength(3);
+  });
+});
+
+describe('final-k on the non-hybrid search() paths', () => {
+  const hits = (n, path) => Array.from({ length: n }, (_, i) => ({
+    id: `e${i}`, file: `src/f${i}.js`, name: `f${i}`, startLine: 1, endLine: 20,
+    score: 1 - i * 0.01, searchPath: path,
+    metadata: { file: `src/f${i}.js`, name: `f${i}`, type: 'function', startLine: 1, endLine: 20 },
+  }));
+
+  it('structural mode (MCP structural=true) returns at most k of the graph callers', async () => {
+    const db = createGraphDb(0, 0);
+    const findCallers = vi.fn(async () => ({ results: hits(20, 'structural') }));
+    const searcher = await createMockSearcher({
+      projectRoot: '/nonexistent', init: async () => {}, _refreshManifestPins: async () => {},
+      hasGraphIndex: true, hasLateInteractionIndex: false, useLateInteraction: false,
+      cascadeEnabled: false, qualityWeight: 0,
+      graphSearch: { init: async () => {}, db, findCallers },
+      binaryHnswIndex: { getInt8Vector: () => undefined }, codeGraphRepo: null, codebaseRepo: null,
+    });
+    const out = await searcher.search('who calls handleRequest', { k: 5, mode: 'structural' });
+    expect(findCallers).toHaveBeenCalled();
+    expect(out.stats.path).toBe('structural');
+    expect(out.results).toHaveLength(5);
+    expect(out.results.map(r => r.id)).toEqual(['e0', 'e1', 'e2', 'e3', 'e4']);
+  });
+
+  it('confident lexical mode returns at most k and the packager counts <= k', async () => {
+    const db = createGraphDb(0, 0);
+    const graphExpandedSearch = vi.fn(async () => ({
+      results: hits(15, 'lexical'), stats: { confidence: 'exact', bm25_ms: 0 },
+    }));
+    const searcher = await createMockSearcher({
+      projectRoot: '/nonexistent', init: async () => {}, _refreshManifestPins: async () => {},
+      hasGraphIndex: true, hasLateInteractionIndex: false, useLateInteraction: false,
+      cascadeEnabled: false, qualityWeight: 0,
+      graphSearch: { init: async () => {}, db, graphExpandedSearch },
+      binaryHnswIndex: { getInt8Vector: () => undefined }, codeGraphRepo: null, codebaseRepo: null,
+    });
+    const bench = await searcher.search('handleRequest', { k: 4, mode: 'lexical' });
+    expect(bench.results).toHaveLength(4);
+    const agent = await searcher.search('handleRequest', { k: 4, mode: 'lexical', format: 'agent' });
+    expect(agent.results.length).toBeLessThanOrEqual(4);
+    expect(agent.subMode).toBe('agent_preview');
   });
 });
 

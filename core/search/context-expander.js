@@ -1933,6 +1933,13 @@ export function selectAgentBudget(format, signals, opts = {}) {
   //                    might miss.
   //   FULL_MIN_N     = 10 results. Fewer than this and the agent can
   //                    re-read rank 2 (which is shown as a preview anyway).
+  //                    N is the FINAL <= k list (final-k.js), so FULL can
+  //                    only fire for k >= 10. Before the final-k cut, graph
+  //                    expansion inflated N and FULL fired on 273/2456 (11%)
+  //                    r282 ss-search calls (82% of them at k < 10; none
+  //                    asked for --full); within the same task+cell those runs
+  //                    scored -1.6pp (95% CI -3.6..+0.2) at ~2x tokens. No
+  //                    accuracy case for keeping FULL at k=5 — kept as is.
   //   FULL_MAX_DOM   = 1.05. Strictly tied cluster — top-1 is at most 5%
   //                    ahead of top-2. Anything wider and the agent
   //                    can treat top-1 as the answer.

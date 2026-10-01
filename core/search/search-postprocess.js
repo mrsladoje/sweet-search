@@ -903,6 +903,8 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   // stage already cut to k, so the list can be longer than the caller asked
   // for. Every stage that can add or reorder results has run by now; cut to k
   // so the user-visible list and the budget-tier signals use <= k results.
+  // Keep this the LAST list-shaping step: any dedupe/MMR of near-duplicate
+  // neighbours belongs above this line so freed slots refill up to k.
   if (Array.isArray(results)) {
     const beforeFinalCut = results.length;
     results = capToFinalK(results, k);
