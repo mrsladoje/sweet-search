@@ -101,6 +101,112 @@ function receiverMatches(receiver, name) {
   return false;
 }
 
+// Camel/snake tokens, lowercased: `dbQueue` → [db, queue], `DatabaseQueue` → [database, queue].
+function nameTokens(name) {
+  return String(name || '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .replace(/([A-Z]+)([A-Z][a-z])/g, '$1 $2')
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean);
+}
+
+// `db` ↔ database, `conn` ↔ connection, `cfg` ↔ config: same first letter and
+// the short token's letters appear in order in the long one.
+function abbreviates(short, long) {
+  if (short === long) return true;
+  if (short.length < 2 || short.length > long.length || short.charCodeAt(0) !== long.charCodeAt(0)) return false;
+  let j = 0;
+  for (let i = 0; i < long.length && j < short.length; i++) if (long.charCodeAt(i) === short.charCodeAt(j)) j++;
+  return j === short.length;
+}
+
+// Every owner token is covered: `db` → Database, `dbQueue` → DatabaseQueue
+// (not SerializedDatabase, which `db` only matches as a suffix).
+function receiverNamesOwner(receiverKey, recvTokens, ownerKey, ownerTokens) {
+  if (!ownerKey) return false;
+  if (receiverKey === ownerKey) return true;
+  return !!ownerTokens && recvTokens.length === ownerTokens.length && receiverAbbreviatesOwner(recvTokens, ownerTokens);
+}
+
+// The receiver's tokens abbreviate the END of the owner's tokens:
+// `dbQueue` → DatabaseQueue, `db` → Database, `pool` → DatabasePool —
+// never `dbQueue` → DatabasePool.
+function receiverAbbreviatesOwner(recvTokens, ownerTokens) {
+  if (!recvTokens.length || !ownerTokens || recvTokens.length > ownerTokens.length) return false;
+  const off = ownerTokens.length - recvTokens.length;
+  for (let i = 0; i < recvTokens.length; i++) {
+    if (!abbreviates(recvTokens[i], ownerTokens[off + i])) return false;
+  }
+  return true;
+}
+
+// The receiver's declared type in the caller's own signature: a parameter or
+// a Go method receiver. `func (c *Context) Next()` / `func h(c *gin.Context)`,
+// `fun f(client: OkHttpClient)`, `func f(_ db: Database)`, `void m(Context c)`.
+// Parsed once per caller into name → type.
+// `x: Foo[]` / Go `x []Foo` are collections, not a Foo.
+const PARAM_COLON_TYPE = /(?:^|[(,\s])(\w+)\s*:\s*(?:inout\s+|&\s*(?:mut\s+)?|\*\s*)?(?:[a-z_]\w*\.)*([A-Z]\w*)(?![\w[])/g;
+const PARAM_GO_TYPE = /(?:^|[(,]\s*)([a-z_]\w*)\s+\*?(?:[a-z_]\w*\.)?([A-Z]\w*)\b/g;
+const PARAM_TYPE_NAME = /(?:^|[(,]\s*)(?:final\s+|const\s+)?(?:[a-z_]\w*[.:]+)*([A-Z]\w*)(?:<[^<>()]*>)?\s*[*&]*\s+&?([a-z_]\w*)\s*(?=[,)=])/g;
+const declaredTypeMemo = new Map();
+function declaredTypesOf(sourceEntity) {
+  const id = sourceEntity.id;
+  let types = declaredTypeMemo.get(id);
+  if (types) return types;
+  types = new Map();
+  const sig = sourceEntity.signature;
+  if (sig && sig.length < 2000) {
+    let m;
+    PARAM_COLON_TYPE.lastIndex = 0;
+    while ((m = PARAM_COLON_TYPE.exec(sig)) !== null) if (!types.has(m[1])) types.set(m[1], m[2]);
+    PARAM_GO_TYPE.lastIndex = 0;
+    while ((m = PARAM_GO_TYPE.exec(sig)) !== null) if (!types.has(m[1])) types.set(m[1], m[2]);
+    PARAM_TYPE_NAME.lastIndex = 0;
+    while ((m = PARAM_TYPE_NAME.exec(sig)) !== null) if (!types.has(m[2])) types.set(m[2], m[1]);
+  }
+  declaredTypeMemo.set(id, types);
+  return types;
+}
+
+function declaredReceiverType(receiver, sourceEntity) {
+  if (!receiver || !sourceEntity?.id || !sourceEntity.signature) return null;
+  return declaredTypesOf(sourceEntity).get(receiver) || null;
+}
+
+// Return type of a one-line signature: Swift/Rust `-> T`, Kotlin/TS/Scala
+// `): T`, Go `func (r *R) name(…) *T`, Java/C#/Dart/C++ `T name(`.
+const RETURN_ARROW = /->\s*&?\s*(?:mut\s+)?(\w+)(?!\s*[<[.?])/;
+const RETURN_COLON = /\)\s*:\s*(\w+)(?!\s*[<[.?])/;
+const RETURN_GO = /^func\s*\([^)]*\)\s*(\w+)\s*\([^)]*\)\s*\*?(\w+)\b/;
+const RETURN_PREFIX = /(?:^|[\s(])(\w+)(?:<[^<>()]*>)?\s*[*&]?\s+(\w+)\s*[(<]/;
+
+function returnsOwnType(signature, owner, name) {
+  const sig = String(signature || '');
+  if (!sig) return false;
+  const own = (t) => t === owner || t === 'Self' || t === 'this';
+  let m = RETURN_ARROW.exec(sig);
+  if (m) return own(m[1]);
+  m = RETURN_GO.exec(sig);
+  if (m) return m[1] === name && own(m[2]);
+  m = RETURN_COLON.exec(sig);
+  if (m) return own(m[1]);
+  m = RETURN_PREFIX.exec(sig);
+  return !!m && m[2] === name && own(m[1]);
+}
+
+const subtypeTokensMemo = new Map();
+function subtypeNamed(owner, receiverKey, recvTokens, subtypesOf) {
+  const subs = subtypesOf(owner);
+  if (!subs || subs.size === 0) return false;
+  for (const sub of subs) {
+    let t = subtypeTokensMemo.get(sub);
+    if (!t) { t = { key: normalizeName(sub), tokens: nameTokens(sub) }; subtypeTokensMemo.set(sub, t); }
+    if (receiverNamesOwner(receiverKey, recvTokens, t.key, t.tokens)) return true;
+  }
+  return false;
+}
+
 function parentDir(filePath) {
   const parts = String(filePath || '').split(/[\\/]/);
   return parts.length >= 2 ? parts[parts.length - 2] : '';
@@ -135,7 +241,7 @@ const RECEIVER_EVIDENCE_FILE = /\.(?:zig|lua|ex|exs|sol|pl|pm|r|jl|m|mm|sh|bash)
  * containerFiles(name): files that define a container type with exactly this
  *   name, or null when the repo defines no such type.
  */
-export function createCallResolutionIndex(entities, { fileImports = null } = {}) {
+export function createCallResolutionIndex(entities, { fileImports = null, hierarchy = null } = {}) {
   const containersByFile = new Map();
   const filesByContainerName = new Map();
   for (const e of entities) {
@@ -188,6 +294,8 @@ export function createCallResolutionIndex(entities, { fileImports = null } = {})
       f = {
         owner,
         ownerKey: normalizeName(owner),
+        ownerTokens: owner ? nameTokens(owner) : null,
+        setKey: null,
         stemKey: normalizeName(fileStem(filePath)),
         dirKey: normalizeName(parentDir(filePath)),
         moduleFunction: entity.type === 'function' && !owner && MODULE_FUNCTION_FILE.test(filePath),
@@ -197,12 +305,109 @@ export function createCallResolutionIndex(entities, { fileImports = null } = {})
     return f;
   }
 
+  // Owners of the callables with a given name (`prev()` in a chained call).
+  let callablesByName = null;
+  const ownersMemo = new Map();
+  function methodOwners(name) {
+    let set = ownersMemo.get(name);
+    if (set) return set;
+    if (!callablesByName) {
+      callablesByName = new Map();
+      for (const e of entities) {
+        if (!CALLABLE_TYPES.has(e.type)) continue;
+        const key = e.name.split('.').pop();
+        let list = callablesByName.get(key);
+        if (!list) { list = []; callablesByName.set(key, list); }
+        list.push(e);
+      }
+    }
+    // Only fluent methods count: the signature returns the owner itself
+    // (`-> Self`, `): Builder`, `public Builder header(`, Go `) *Builder`).
+    // `toBuilder()` (returns another type) or Rust `as_normal()` (an Option)
+    // say nothing about the next call's owner.
+    set = new Set();
+    for (const e of callablesByName.get(name) || []) {
+      const owner = ownerOf(e);
+      if (owner && returnsOwnType(e.signature, owner, name)) set.add(owner);
+    }
+    ownersMemo.set(name, set);
+    return set;
+  }
+
+  // Transitive super/subtypes by name (extends/implements edges).
+  const closure = (edges, name) => {
+    const out = new Set();
+    if (!edges) return out;
+    const stack = [name];
+    while (stack.length > 0 && out.size < 256) {
+      for (const next of edges.get(stack.pop()) || []) {
+        if (next !== name && !out.has(next)) { out.add(next); stack.push(next); }
+      }
+    }
+    return out;
+  };
+  const superMemo = new Map();
+  const subMemo = new Map();
+  function supertypesOf(name) {
+    let set = superMemo.get(name);
+    if (!set) { set = closure(hierarchy && hierarchy.supers, name); superMemo.set(name, set); }
+    return set;
+  }
+  function subtypesOf(name) {
+    let set = subMemo.get(name);
+    if (!set) { set = closure(hierarchy && hierarchy.subs, name); subMemo.set(name, set); }
+    return set;
+  }
+
   return {
     ownerOf,
     factsOf,
+    methodOwners,
+    supertypesOf,
+    subtypesOf,
     containerFiles: (name) => filesByContainerName.get(name) || null,
     importsOf: (filePath) => (fileImports && fileImports.get(filePath)) || null,
   };
+}
+
+// `Base<T>`, `a.b.Base`, `A::Base`, `\App\Base` → `Base`.
+function baseTypeName(targetName) {
+  const noGenerics = String(targetName || '').replace(/[<([].*$/, '');
+  const parts = noGenerics.split(/::|\\|\.|\//).filter(Boolean);
+  return parts.length > 0 ? parts[parts.length - 1].trim() : '';
+}
+
+/**
+ * Type hierarchy by name from every extends/implements edge — the same
+ * table-wide read in the full pass and the incremental reconciler, so both
+ * resolve a call identically.
+ */
+export function buildTypeHierarchy(db, { liveOnly = false } = {}) {
+  const supers = new Map();
+  const subs = new Map();
+  let rows = [];
+  try {
+    const live = liveOnly && hasColumn(db, 'relationships', 'epoch_retired') ? ' AND r.epoch_retired IS NULL' : '';
+    const entityLive = liveOnly && hasColumn(db, 'entities', 'epoch_retired') ? ' AND e.epoch_retired IS NULL' : '';
+    rows = db.prepare(`
+      SELECT e.name AS sub, r.target_name AS base
+      FROM relationships r JOIN entities e ON e.id = r.source_id
+      WHERE r.type IN ('extends', 'implements')${live}${entityLive}
+    `).all();
+  } catch {
+    rows = [];
+  }
+  for (const { sub, base } of rows) {
+    const b = baseTypeName(base);
+    if (!sub || !b || sub === b) continue;
+    let s = supers.get(sub);
+    if (!s) { s = new Set(); supers.set(sub, s); }
+    s.add(b);
+    let d = subs.get(b);
+    if (!d) { d = new Set(); subs.set(b, d); }
+    d.add(sub);
+  }
+  return { supers, subs };
 }
 
 function defaultFactsOf(entity) {
@@ -216,7 +421,11 @@ function defaultFactsOf(entity) {
   };
 }
 
-const NO_INDEX = { ownerOf: () => null, factsOf: defaultFactsOf, containerFiles: () => null, importsOf: () => null };
+const EMPTY_SET = new Set();
+const NO_INDEX = {
+  ownerOf: () => null, factsOf: defaultFactsOf, containerFiles: () => null, importsOf: () => null,
+  methodOwners: () => EMPTY_SET, supertypesOf: () => EMPTY_SET, subtypesOf: () => EMPTY_SET,
+};
 
 /**
  * Graph id of a file node, as GraphExtractor.makeId(path, 'file', basename)
@@ -274,6 +483,10 @@ export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, inde
   const factsOf = idx.factsOf || ((c) => ({ ...defaultFactsOf(c), owner: ownerOf(c), ownerKey: normalizeName(ownerOf(c)) }));
   const chained = receiverRaw.endsWith('()');
   const receiver = chained ? '' : receiverRaw;
+  const supertypesOf = idx.supertypesOf || NO_INDEX.supertypesOf;
+  const subtypesOf = idx.subtypesOf || NO_INDEX.subtypesOf;
+  const ownedBy = (list, owners) => list.filter((c) => { const o = ownerOf(c); return !!o && owners.has(o); });
+  const withSupertypes = (name) => new Set([name, ...supertypesOf(name)]);
   const selfLike = (!receiverRaw) || SELF_RECEIVERS.has(receiver.toLowerCase());
 
   let pool = candidates;
@@ -304,6 +517,20 @@ export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, inde
     }
     return pool;
   }
+  if (chained && pool.length > 1) {
+    // Fluent chains: `Builder().url(…)` is a Builder method; `a.b(x).c()` is
+    // usually a method of `b`'s owner (builders return themselves).
+    const prev = receiverRaw.slice(0, -2);
+    const viaType = /^[A-Z]/.test(prev) ? ownedBy(pool, withSupertypes(prev)) : [];
+    if (viaType.length > 0) return viaType;
+    // One owning type only: a name many types define fluently (Rust
+    // `new() -> Self`) says nothing about `Command::new(…).current_dir`.
+    const prevOwners = (idx.methodOwners || NO_INDEX.methodOwners)(prev);
+    if (prevOwners.size === 1) {
+      const viaPrev = ownedBy(pool, prevOwners);
+      if (viaPrev.length > 0) return viaPrev;
+    }
+  }
   if (!receiver) return needsEvidence ? [] : preferImported(pool, sourceEntity, importsOf);
 
   if (PASCAL_CASE.test(receiver)) {
@@ -317,6 +544,15 @@ export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, inde
     // `HashMap::new`, `Collections.emptyList()`, `React.useState()`: a type
     // the repo does not define is external — never a same-named local method.
     if (sourceEntity && TYPE_RECEIVER_FILE.test(sourceEntity.file_path || '')) return [];
+  }
+
+  // The caller declares the receiver's type (parameter or Go receiver) and
+  // the repo defines that type: only its own methods qualify. None means the
+  // method lives in a base type or outside the repo — no edge.
+  const declared = declaredReceiverType(receiver, sourceEntity);
+  if (declared) {
+    const own = ownedBy(pool, new Set([declared]));
+    return own.length > 0 ? own : ownedBy(pool, supertypesOf(declared));
   }
 
   const r = normalizeName(receiver);
@@ -343,7 +579,22 @@ export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, inde
     return preferImported(evident, sourceEntity, importsOf);
   }
   if (pool.length > 1) {
-    const byOwner = pool.filter(c => receiverMatches(r, factsOf(c).ownerKey));
+    // Receiver evidence, most specific first: it names the owner in full
+    // (`db` → Database), then a subtype of the owner in full (`body` → the
+    // `Body` subclass of RequestBody), then the owner as a suffix
+    // (`observationBroker` → DatabaseObservationBroker).
+    const recvTokens = nameTokens(receiver);
+    const full = [];
+    const viaSubtype = [];
+    const suffix = [];
+    for (const c of pool) {
+      const f = factsOf(c);
+      if (!f.owner) continue;
+      if (receiverNamesOwner(r, recvTokens, f.ownerKey, f.ownerTokens)) full.push(c);
+      else if (subtypeNamed(f.owner, r, recvTokens, subtypesOf)) viaSubtype.push(c);
+      else if (receiverMatches(r, f.ownerKey) || receiverAbbreviatesOwner(recvTokens, f.ownerTokens)) suffix.push(c);
+    }
+    const byOwner = full.length > 0 ? full : (viaSubtype.length > 0 ? viaSubtype : suffix);
     if (byOwner.length > 0) {
       pool = byOwner;
     } else {
@@ -352,6 +603,49 @@ export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, inde
     }
   }
   return preferImported(pool, sourceEntity, importsOf);
+}
+
+// Types that reopen across files: Swift extensions, C# partial classes,
+// Ruby reopened classes, Objective-C categories. Elsewhere one owner name in
+// two files is two types (`Headers.Builder` vs `Request.Builder`); Go methods
+// of one type spread over its package directory.
+const OPEN_TYPE_FILE = /\.(?:swift|cs|rb|m|mm)$/i;
+
+function ownerSetKey(c, ownerOf) {
+  const owner = ownerOf(c);
+  const file = c.file_path || '';
+  if (!owner) return `file:${file}`;
+  if (OPEN_TYPE_FILE.test(file)) return `type:${owner}`;
+  if (/\.go$/i.test(file)) return `type:${owner}@${file.slice(0, file.lastIndexOf('/') + 1)}`;
+  return `type:${owner}@${file}`;
+}
+
+/**
+ * The call's target set when it is one type's (or one file's) definitions —
+ * overloads, or a protocol extension spread over files — else []. Candidates
+ * in the caller's own file decide first. A call whose receiver evidence
+ * left several unrelated owners (`array.map` → 5 types named nothing like
+ * `array`, `c.String` → a protobuf enum) stays unresolved: a missing edge is
+ * better than a wrong one.
+ */
+export function singleOwnerSet(candidates, sourceEntity, index = NO_INDEX) {
+  if (candidates.length <= 1) return candidates;
+  const ownerOf = (index && index.ownerOf) || NO_INDEX.ownerOf;
+  const factsOf = index && index.factsOf;
+  const keyOf = factsOf
+    ? (c) => { const f = factsOf(c); if (f.setKey === null || f.setKey === undefined) f.setKey = ownerSetKey(c, ownerOf); return f.setKey; }
+    : (c) => ownerSetKey(c, ownerOf);
+  const oneSet = (list) => {
+    const first = keyOf(list[0]);
+    for (let i = 1; i < list.length; i++) if (keyOf(list[i]) !== first) return false;
+    return true;
+  };
+  const src = sourceEntity?.file_path;
+  if (src) {
+    const local = candidates.filter(c => c.file_path === src);
+    if (local.length > 0) return oneSet(local) ? local : [];
+  }
+  return oneSet(candidates) ? candidates : [];
 }
 
 /**
@@ -446,6 +740,10 @@ export function resolveRowsScoped(db, rows, { liveOnly = true } = {}) {
   // Per-run caches; a long-lived maintainer must not grow them without bound.
   if (pathFactsCache.size > 50_000) pathFactsCache.clear();
   if (nameKeyCache.size > 50_000) nameKeyCache.clear();
+  // Declared receiver types are keyed by entity id; an edit can change a
+  // signature under the same id, so they never outlive one run.
+  declaredTypeMemo.clear();
+  if (subtypeTokensMemo.size > 50_000) subtypeTokensMemo.clear();
   const entityLive = liveOnly && hasColumn(db, 'entities', 'epoch_retired') ? ' AND epoch_retired IS NULL' : '';
   const relLive = liveOnly && hasColumn(db, 'relationships', 'epoch_retired') ? ' AND r.epoch_retired IS NULL' : '';
 
@@ -502,7 +800,7 @@ export function resolveRowsScoped(db, rows, { liveOnly = true } = {}) {
       set.add(r.target_name);
     }
   }
-  const callIndex = createCallResolutionIndex(entities, { fileImports });
+  const callIndex = createCallResolutionIndex(entities, { fileImports, hierarchy: buildTypeHierarchy(db, { liveOnly }) });
 
   return rows.map(r => resolveTarget(
     r.source_id, r.target_name, r.type, r.context_line, r.full_import_path,
@@ -530,6 +828,7 @@ export function resolveRelationshipTargets(db) {
   console.log('  Resolving relationship targets...');
   pathFactsCache.clear();
   nameKeyCache.clear();
+  declaredTypeMemo.clear();
 
   // Build entity lookup maps
   const entities = db.prepare(`
@@ -548,7 +847,7 @@ export function resolveRelationshipTargets(db) {
   } catch {
     fileImports = null; // older graph without importsFile edges
   }
-  const callIndex = createCallResolutionIndex(entities, { fileImports });
+  const callIndex = createCallResolutionIndex(entities, { fileImports, hierarchy: buildTypeHierarchy(db) });
 
   // Get all unresolved relationships (include full_import_path for package-aware matching)
   const unresolved = db.prepare(`
@@ -694,9 +993,12 @@ function resolveTarget(
       const receiver = parts.length > 0 ? parts[parts.length - 1] : '';
 
       const allCandidates = byMethodName.get(methodName) || [];
-      const candidates = narrowCallCandidates(allCandidates, receiver, sourceEntity, callIndex || undefined);
+      const narrowed = narrowCallCandidates(allCandidates, receiver, sourceEntity, callIndex || undefined);
+      // Link only when what is left is one type's methods (an overload set);
+      // several unrelated owners with no evidence is a guess — no edge.
+      const candidates = singleOwnerSet(narrowed, sourceEntity, callIndex || NO_INDEX);
 
-      // Several left: same file, then non-test code, then nearest directory.
+      // Overloads left: same file, then non-test code, then nearest directory.
       const picked = pickClosestCandidate(candidates, sourceEntity);
       if (picked && candidates.length > 1 && warnings) {
         warnings.push(`Ambiguous call to ${targetName}: ${candidates.length} matches`);
