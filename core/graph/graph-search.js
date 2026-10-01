@@ -21,6 +21,7 @@ import { applyMMR, shouldApplyMMR } from '../ranking/mmr.js';
 import { SYMBOL_KIND_WEIGHTS, DEFINITION_TYPES } from '../infrastructure/constants.js';
 import { readAdjacentManifest, resolveManifestCodeGraphPath, sqlAliasPrefix } from '../infrastructure/code-graph-visibility.js';
 import { TRACE_ONLY_TYPES_SQL } from './relationship-types.js';
+import { asTopLevelCaller, fileNodeSourceSql, hasFilesTable } from './file-nodes.js';
 
 // Fix 9: Abbreviation expansion dictionary for common software abbreviations
 const ABBREVIATION_EXPANSIONS = {
@@ -2094,12 +2095,12 @@ export class GraphSearch {
 
     // Find callers (reverse 'calls' relationship)
     // Match by target_id (resolved) OR target_name pattern (unresolved)
-    const callers = this.db.prepare(`
+    const callersFrom = (source) => this.db.prepare(`
       SELECT DISTINCT
         e.id, e.name, e.type, e.file_path, e.start_line, e.signature, e.summary,
         r.context_line as call_line, r.target_name
       FROM relationships r
-      JOIN entities e ON e.id = r.source_id
+      JOIN ${source} e ON e.id = r.source_id
       WHERE r.type = 'calls' AND (
         r.target_id = ?
         OR r.target_name LIKE ?
@@ -2117,6 +2118,17 @@ export class GraphSearch {
       ...this._relationshipVisibilityParams(),
       limit,
     );
+    let callers = callersFrom('entities');
+    // Calls from top-level code have the file node as their source
+    // (file-nodes.js): `(top-level)` rows at the call line.
+    if (hasFilesTable(this.db)) {
+      const top = callersFrom(fileNodeSourceSql()).map(row => asTopLevelCaller(row, row.call_line));
+      if (top.length > 0) {
+        callers = [...callers, ...top]
+          .sort((a, b) => String(a.file_path).localeCompare(String(b.file_path)) || ((a.call_line ?? 0) - (b.call_line ?? 0)))
+          .slice(0, limit);
+      }
+    }
 
     return {
       results: callers.map(c => ({
@@ -2224,6 +2236,14 @@ export class GraphSearch {
 
     const impacted = new Map();
     let frontier = [target.id];
+    // Dependents in top-level code are the file's node (file-nodes.js). A
+    // file node is a leaf here: nothing calls a script body.
+    const hasFiles = hasFilesTable(this.db);
+    const withTopLevel = (run) => {
+      const rows = run('entities');
+      if (!hasFiles) return rows;
+      return [...rows, ...run(fileNodeSourceSql()).map(row => asTopLevelCaller(row, null))];
+    };
 
     // For depth 1, also match on target_name pattern (e.g., "employeeService.getEmployee")
     const targetNamePattern = target.name.charAt(0).toLowerCase() + target.name.slice(1) + '.%';
@@ -2237,12 +2257,12 @@ export class GraphSearch {
 
       if (depth === 1) {
         // First depth: match by target_id OR target_name pattern (for instance.method() calls)
-        dependents = this.db.prepare(`
+        dependents = withTopLevel((source) => this.db.prepare(`
           SELECT DISTINCT
             e.id, e.name, e.type, e.file_path, e.start_line, e.signature, e.summary,
             r.type as rel_type
           FROM relationships r
-          JOIN entities e ON e.id = r.source_id
+          JOIN ${source} e ON e.id = r.source_id
           WHERE (r.target_id IN (${placeholders}) OR (r.target_name LIKE ? AND r.type != 'importsFile'))
             AND ${this._entityVisibilitySql('e')}
             AND ${this._relationshipVisibilitySql('r')}
@@ -2252,20 +2272,20 @@ export class GraphSearch {
           targetNamePattern,
           ...this._entityVisibilityParams(),
           ...this._relationshipVisibilityParams(),
-        );
+        ));
       } else {
         // Subsequent depths: only match by target_id
-        dependents = this.db.prepare(`
+        dependents = withTopLevel((source) => this.db.prepare(`
           SELECT DISTINCT
             e.id, e.name, e.type, e.file_path, e.start_line, e.signature, e.summary,
             r.type as rel_type
           FROM relationships r
-          JOIN entities e ON e.id = r.source_id
+          JOIN ${source} e ON e.id = r.source_id
           WHERE r.target_id IN (${placeholders})
             AND ${this._entityVisibilitySql('e')}
             AND ${this._relationshipVisibilitySql('r')}
           LIMIT 50
-        `).all(...frontier, ...this._entityVisibilityParams(), ...this._relationshipVisibilityParams());
+        `).all(...frontier, ...this._entityVisibilityParams(), ...this._relationshipVisibilityParams()));
       }
 
       const nextFrontier = [];
@@ -2277,7 +2297,7 @@ export class GraphSearch {
             depth,
             riskScore: (4 - depth) / 3, // Higher for closer dependencies
           });
-          nextFrontier.push(dep.id);
+          if (dep.type !== 'file') nextFrontier.push(dep.id);
         }
       }
       frontier = nextFrontier.slice(0, 20); // Limit branching

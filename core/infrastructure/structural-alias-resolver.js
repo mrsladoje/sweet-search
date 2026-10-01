@@ -1,5 +1,5 @@
 import path from 'path';
-import { createHash } from 'crypto';
+import { asTopLevelCaller, fileNodeId, fileNodeSourceSql, hasFilesTable } from '../graph/file-nodes.js';
 
 const ACTIVE = 'stale_since IS NULL';
 
@@ -65,11 +65,6 @@ function lineOfIndex(text, index) {
 
 const ALIAS_TARGET_FILE = /\.(?:[cm]?[jt]sx?|rs)$/i;
 
-/** Graph id of a file node in a full build (GraphExtractor.makeId(path, 'file', basename)). */
-function fileNodeId(filePath) {
-  return createHash('sha256').update(`${filePath}:file:${path.basename(filePath)}`).digest('hex').slice(0, 16);
-}
-
 const fileIdCache = new WeakMap();
 
 /**
@@ -94,7 +89,14 @@ function importingFiles(db, targetFile, entitySql, entityParams) {
   let byId = fileIdCache.get(db);
   if (!byId) {
     byId = new Map();
-    for (const { file_path: f } of db.prepare(`SELECT DISTINCT file_path FROM entities WHERE ${entitySql} AND file_path IS NOT NULL`).all(...entityParams)) {
+    // The file-node table lists every indexed file, including importers that
+    // define no symbol (a barrel `index.ts`, a script); older graphs only
+    // have the entity table's files.
+    const fileSql = hasFilesTable(db)
+      ? `SELECT DISTINCT file_path FROM ${fileNodeSourceSql()} e WHERE ${entitySql} UNION SELECT DISTINCT file_path FROM entities WHERE ${entitySql} AND file_path IS NOT NULL`
+      : `SELECT DISTINCT file_path FROM entities WHERE ${entitySql} AND file_path IS NOT NULL`;
+    const fileParams = hasFilesTable(db) ? [...entityParams, ...entityParams] : entityParams;
+    for (const { file_path: f } of db.prepare(fileSql).all(...fileParams)) {
       byId.set(fileNodeId(f), f);
     }
     fileIdCache.set(db, byId);
@@ -135,6 +137,12 @@ export function findAliasCallers({
     ORDER BY (end_line - start_line) ASC
     LIMIT 1
   `);
+  // An alias call in top-level code (a script body) is attributed to the
+  // file's node (graph/file-nodes.js) when the graph has one.
+  const fileNodeAt = hasFilesTable(db)
+    ? db.prepare(`SELECT e.id, e.name, e.type, e.file_path, e.start_line, e.end_line, e.signature, e.summary, e.parent_class, e.package
+        FROM ${fileNodeSourceSql()} e WHERE ${entitySql} AND e.file_path = ? LIMIT 1`)
+    : null;
   const out = [];
   const seen = new Set();
   for (const { file_path: filePath } of files) {
@@ -156,7 +164,11 @@ export function findAliasCallers({
       const re = pattern.re;
       for (const match of text.matchAll(re)) {
         const line = lineOfIndex(text, match.index || 0);
-        const entity = entityAtLine.get(...entityParams, filePath, line, line);
+        let entity = entityAtLine.get(...entityParams, filePath, line, line);
+        if (!entity && fileNodeAt) {
+          const node = fileNodeAt.get(...entityParams, filePath);
+          if (node) entity = asTopLevelCaller(node, line);
+        }
         if (!entity || entity.id === target.id) continue;
         const targetName = match[0].replace(/\s*\($/, '') || pattern.targetName;
         const key = `${entity.id}:${line}:${targetName}`;

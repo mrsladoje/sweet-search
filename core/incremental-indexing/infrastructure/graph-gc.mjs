@@ -154,6 +154,40 @@ export function pruneRetiredCallSites(db, frontier, opts = {}) {
 }
 
 /**
+ * Delete retired `files` rows (file nodes, see graph/file-nodes.js) at or
+ * below `frontier`, same batching as call_sites. Graphs built before the
+ * table existed are skipped.
+ */
+export function pruneRetiredFileNodes(db, frontier, opts = {}) {
+  if (!Number.isInteger(frontier)) {
+    throw new Error(`pruneRetiredFileNodes: frontier must be an integer, got ${frontier}`);
+  }
+  if (!tableExists(db, 'files')) return { deleted: 0, batches: 0, hitCap: false, skipped: 'no-table' };
+  const { batchSize, maxRows } = normalizeBatchOpts(opts);
+  const stmt = db.prepare(`
+    DELETE FROM files
+     WHERE rowid IN (
+       SELECT rowid FROM files
+        WHERE epoch_retired IS NOT NULL AND epoch_retired <= ?
+        LIMIT ?
+     )
+  `);
+  let deleted = 0;
+  let batches = 0;
+  let hitCap = false;
+  for (;;) {
+    const remainingCap = maxRows - deleted;
+    if (remainingCap <= 0) { hitCap = true; break; }
+    const take = Math.min(batchSize, remainingCap);
+    const changes = stmt.run(frontier, take).changes ?? 0;
+    deleted += changes;
+    batches += 1;
+    if (changes < take) break;
+  }
+  return { deleted, batches, hitCap };
+}
+
+/**
  * Delete retired `entities` rows at or below `frontier` in bounded batches,
  * keeping the external-content FTS5 indices consistent. For each row we issue
  * the FTS5 `'delete'` command (rowid + originally-indexed columns) before
@@ -323,6 +357,10 @@ export function runGraphGc(stateDir, deps = {}) {
       ? pruneRetiredCallSites(db, frontier, { batchSize, maxRows: budget })
       : { deleted: 0, batches: 0, hitCap: false };
     budget -= calls.deleted;
+    const fileNodes = budget > 0
+      ? pruneRetiredFileNodes(db, frontier, { batchSize, maxRows: budget })
+      : { deleted: 0, batches: 0, hitCap: false };
+    budget -= fileNodes.deleted;
     const ent = (budget > 0 && tableExists(db, 'entities'))
       ? pruneRetiredEntities(db, frontier, { batchSize, maxRows: budget })
       : { deleted: 0, batches: 0, hitCap: false };
@@ -331,7 +369,7 @@ export function runGraphGc(stateDir, deps = {}) {
       ? pruneRetiredGraphSummaries(db, frontier, { batchSize, maxRows: budget })
       : { deleted: 0, batches: 0, hitCap: false };
 
-    const totalDeleted = rel.deleted + calls.deleted + ent.deleted + sum.deleted;
+    const totalDeleted = rel.deleted + calls.deleted + fileNodes.deleted + ent.deleted + sum.deleted;
     if (totalDeleted > 0) {
       try { db.pragma('wal_checkpoint(PASSIVE)'); } catch { /* best-effort */ }
     }
@@ -341,11 +379,12 @@ export function runGraphGc(stateDir, deps = {}) {
       deletedRelationships: rel.deleted,
       deletedSummaries: sum.deleted,
       deletedCallSites: calls.deleted,
+      deletedFileNodes: fileNodes.deleted,
       ftsDeleted: ent.ftsDeleted ?? 0,
       frontier,
       hadReaders,
-      batches: rel.batches + calls.batches + ent.batches + sum.batches,
-      hitCap: !!(rel.hitCap || calls.hitCap || ent.hitCap || sum.hitCap),
+      batches: rel.batches + calls.batches + fileNodes.batches + ent.batches + sum.batches,
+      hitCap: !!(rel.hitCap || calls.hitCap || fileNodes.hitCap || ent.hitCap || sum.hitCap),
     };
   } finally {
     db.close();

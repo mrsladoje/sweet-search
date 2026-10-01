@@ -11,6 +11,7 @@ import { fetchPageRank, fetchFrontierBackwardEdges, fetchFrontierForwardEdges } 
 import { CodeGraphReaderVisibility } from './code-graph-visibility.js';
 import { TRACE_ONLY_TYPES_SQL } from '../graph/relationship-types.js';
 import { BareCallResolver } from '../graph/bare-call-resolution.js';
+import { asTopLevelCaller, fileNodeSourceSql, hasFilesTable } from '../graph/file-nodes.js';
 import { callTargetAliases, clampLimit, isLikelyCodeEntity, isTestPath, lowerCamel, placeholders, qualifiedTargetName, rowToEntity } from './structural-context-utils.js';
 
 export class StructuralContextRepository {
@@ -210,6 +211,25 @@ export class StructuralContextRepository {
     return rankStructuralCandidates([...members, ...likeRows].filter(Boolean), { queryHint: opts.queryHint, readFileRange: this.readFileRange.bind(this) });
   }
 
+  /**
+   * Run one caller query against symbols (`entities`) and, when the graph has
+   * file nodes, against top-level code (`files`, graph/file-nodes.js) with the
+   * same WHERE clause. Top-level rows render as `(top-level) [file]` with the
+   * call line as their span. Merged in the queries' own order
+   * (weight DESC, file_path, context_line) and cut to `limit`.
+   */
+  _callerRows(db, sqlFor, params, limit) {
+    const rows = db.prepare(sqlFor('entities')).all(...params);
+    if (!hasFilesTable(db)) return rows;
+    const top = db.prepare(sqlFor(fileNodeSourceSql())).all(...params).map(row => asTopLevelCaller(row));
+    if (top.length === 0) return rows;
+    return [...rows, ...top]
+      .sort((a, b) => ((b.weight ?? 1) - (a.weight ?? 1))
+        || String(a.file_path || '').localeCompare(String(b.file_path || ''))
+        || ((a.context_line ?? 0) - (b.context_line ?? 0)))
+      .slice(0, limit);
+  }
+
   getCallers(target, opts = {}) {
     const db = this._open();
     if (!db || !target?.id) return [];
@@ -226,7 +246,7 @@ export class StructuralContextRepository {
     ];
     const entitySql = this._entitySql(db, 'e');
     const relationshipSql = this._relationshipSql(db, 'r');
-    const rows = db.prepare(`
+    const rows = this._callerRows(db, (source) => `
       SELECT DISTINCT
         e.id, e.name, e.type, e.file_path, e.start_line, e.end_line,
         e.signature, e.summary, e.parent_class, e.package,
@@ -234,7 +254,7 @@ export class StructuralContextRepository {
         (SELECT t.file_path FROM entities t WHERE t.id = r.target_id LIMIT 1) AS resolved_file,
         (SELECT t.parent_class FROM entities t WHERE t.id = r.target_id LIMIT 1) AS resolved_parent
       FROM relationships r
-      JOIN entities e ON e.id = r.source_id
+      JOIN ${source} e ON e.id = r.source_id
       WHERE r.type IN (${placeholders(types)})
         AND ${entitySql}
         AND ${relationshipSql}
@@ -251,7 +271,7 @@ export class StructuralContextRepository {
         )
       ORDER BY r.weight DESC, e.file_path, r.context_line
       LIMIT ?
-    `).all(...types, ...this._entityParams(db), ...this._relationshipParams(db), target.id, target.id, ...patterns, limit);
+    `, [...types, ...this._entityParams(db), ...this._relationshipParams(db), target.id, target.id, ...patterns, limit], limit);
     return rows.map(row => ({
       ...this._entityFromRow(row),
       relationship: row.rel_type,
@@ -454,7 +474,7 @@ export class StructuralContextRepository {
     const entitySql = this._entitySql(db, 'e');
     const relationshipSql = this._relationshipSql(db, 'r');
 
-    const rows = db.prepare(`
+    const rows = this._callerRows(db, (source) => `
       SELECT DISTINCT
         e.id, e.name, e.type, e.file_path, e.start_line, e.end_line,
         e.signature, e.summary, e.parent_class, e.package,
@@ -462,14 +482,14 @@ export class StructuralContextRepository {
         (SELECT t.file_path FROM entities t WHERE t.id = r.target_id LIMIT 1) AS resolved_file,
         (SELECT t.parent_class FROM entities t WHERE t.id = r.target_id LIMIT 1) AS resolved_parent
       FROM relationships r
-      JOIN entities e ON e.id = r.source_id
+      JOIN ${source} e ON e.id = r.source_id
       WHERE ${entitySql}
         AND ${relationshipSql}
         AND r.type IN (${placeholders(types)})
         AND (r.target_id IN (${placeholders(ids)}) ${nameClause})
       ORDER BY r.weight DESC, e.file_path, r.context_line
       LIMIT ?
-    `).all(...this._entityParams(db), ...this._relationshipParams(db), ...types, ...ids, ...nameParams, limit);
+    `, [...this._entityParams(db), ...this._relationshipParams(db), ...types, ...ids, ...nameParams, limit], limit);
 
     // Rows admitted by the name-pattern clause (not by target_id) are subject
     // to the same receiver-compat gate as getCallers — otherwise the phantom

@@ -20,6 +20,7 @@ import { CallSiteScanner, EXTRA_CALL_SCAN_LANGUAGES } from './call-site-scanner.
 import { scanImports, SCANNED_IMPORT_LANGUAGES, importLanguageFor } from './import-scanner.js';
 import { UNRESOLVED_IMPORT_PREFIX } from './import-resolver.js';
 import { scanInstantiations, scanSignatureTypes, swiftExtensionTarget } from './type-usage-scanner.js';
+import { ensureFilesSchema, insertFileNodes } from './file-nodes.js';
 
 // Languages whose legacy `imports` rows are all module specifiers that the
 // statement scanner sees (so an unmatched row is a regex false positive).
@@ -749,6 +750,14 @@ export class GraphExtractor {
     if (this.importResolver && result.relationships) {
       this._appendResolvedImports(filePath, content, result.relationships);
     }
+    // Every extracted file has a graph node (file-nodes.js): the source of
+    // its top-level edges. Same id as those edges' source_id, and the same
+    // row from the full build and the incremental maintainer.
+    result.file = {
+      id: this.makeId(filePath, 'file', path.basename(filePath)),
+      file_path: String(filePath).replace(/\\/g, '/'),
+      name: path.basename(filePath),
+    };
     return result;
   }
 
@@ -2688,6 +2697,7 @@ export function createGraphSchema(db) {
   // Index supports `page_rank DESC` lookups for ss-trace ranking and ranking probes.
   db.exec(`CREATE INDEX IF NOT EXISTS idx_entities_page_rank ON entities(page_rank) WHERE stale_since IS NULL`);
   ensureCallSitesSchema(db);
+  ensureFilesSchema(db);
 
   setSchemaVersion(db);
 
@@ -2756,7 +2766,7 @@ export function rebuildGraphFts(db) {
   }
 }
 
-export function insertGraph(db, entities, relationships, hasFts5 = false, { syncFts = true, callSites = null } = {}) {
+export function insertGraph(db, entities, relationships, hasFts5 = false, { syncFts = true, callSites = null, files = null } = {}) {
   // Insert entities with HCGS hierarchy support
   // Includes signature_hash for collision-proof backup/restore
   const entityStmt = db.prepare(`
@@ -2881,6 +2891,10 @@ export function insertGraph(db, entities, relationships, hasFts5 = false, { sync
   if (callSites && callSites.length > 0) {
     ensureCallSitesSchema(db);
     db.transaction(() => insertCallSites(db, callSites))();
+  }
+
+  if (files && files.length > 0) {
+    db.transaction(() => insertFileNodes(db, files))();
   }
 
 

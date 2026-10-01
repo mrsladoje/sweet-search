@@ -15,10 +15,10 @@
  */
 
 import path from 'path';
-import { createHash } from 'crypto';
 import { detectProjectBoundary } from '../infrastructure/project-detector.js';
 import { UNRESOLVED_IMPORT_PREFIX, buildFileImportMap } from './import-resolver.js';
 import { deriveOverrideEdges } from './override-edges.js';
+import { fileNodeId } from './file-nodes.js';
 
 // Entities from config/data/markup files (YAML keys, pom.xml tags, Makefile
 // targets, TOML tables) are never the target of a code import. Name-based
@@ -426,14 +426,6 @@ const NO_INDEX = {
   ownerOf: () => null, factsOf: defaultFactsOf, containerFiles: () => null, importsOf: () => null,
   methodOwners: () => EMPTY_SET, supertypesOf: () => EMPTY_SET, subtypesOf: () => EMPTY_SET,
 };
-
-/**
- * Graph id of a file node, as GraphExtractor.makeId(path, 'file', basename)
- * computes it for the repo-relative paths the indexer passes.
- */
-function fileNodeId(filePath) {
-  return createHash('sha256').update(`${filePath}:file:${path.basename(filePath)}`).digest('hex').slice(0, 16);
-}
 
 /**
  * Prefer candidates defined in a file the caller's file imports
