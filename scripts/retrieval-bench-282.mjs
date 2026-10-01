@@ -525,6 +525,9 @@ async function runOne(probe, arm) {
     calls: calls.length, toolKinds: kinds, ssCalls: kinds.ss || 0, ssUsed: (kinds.ss || 0) > 0,
     nativeSearchCalls: (kinds.nativeGrep || 0) + (kinds.nativeRead || 0),
     ssDeliveredTokens: delivered.reduce((s, d) => s + (d.used || 0), 0),
+    // Same unit in both arms: the SS_FIX_* switches remove the route trailer / budget header that
+    // ssDeliveredTokens reads, so compare switch-on vs switch-off runs on characters.
+    ssDeliveredChars: run.calls.reduce((s, c) => s + (c.kind === 'ss' && typeof c.text === 'string' ? c.text.length : 0), 0),
     answerChars: (answer || '').length, rawLen: rawResponse.length,
   };
 }
