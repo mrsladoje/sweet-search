@@ -375,5 +375,44 @@
    "solved": false
   },
   "drop": false
+ },
+ "r3h-jj-06": {
+  "deepseek/deepseek-v4.1-flash": {
+   "fHit": "0/3",
+   "sHit": "0/6",
+   "solved": false
+  },
+  "openai/gpt-6-luna": {
+   "fHit": "3/3",
+   "sHit": "1/6",
+   "solved": false
+  },
+  "drop": false
+ },
+ "r3h-jj-12": {
+  "deepseek/deepseek-v4.1-flash": {
+   "fHit": "2/4",
+   "sHit": "1/4",
+   "solved": false
+  },
+  "openai/gpt-6-luna": {
+   "fHit": "2/4",
+   "sHit": "1/4",
+   "solved": false
+  },
+  "drop": false
+ },
+ "r3h-jj-07": {
+  "deepseek/deepseek-v4.1-flash": {
+   "fHit": "0/2",
+   "sHit": "0/6",
+   "solved": false
+  },
+  "openai/gpt-6-luna": {
+   "fHit": "2/2",
+   "sHit": "2/6",
+   "solved": false
+  },
+  "drop": false
  }
 }
