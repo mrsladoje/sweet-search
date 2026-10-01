@@ -50,6 +50,8 @@ Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 
 ## Decisions log
 
+- 09:50 **Held-out Codex (interleaved native vs 2.8.2, complete panels, 100–103 pairs): cost −15.2% [−23.2, −7.4] (q<0.001), accuracy −1.3 pt [−3.5, +0.9] (ns).** Sonnet held-out: 2.8.2 + V1b done, native running; rescore chained; spec extended (`r3/spec-heldout.json`).
+
 - 09:40 **Held-out Opus with complete panels (rescored, 100–101 pairs):** V1b vs 2.8.2 cost −14.1% [−18.1, −10.3] (q<0.001), accuracy −1.0 pt [−2.7, +0.6] (ns; non-inferiority at −2 pt NOT formally shown); V1b vs native cost +3.0% (ns), accuracy −0.3 (ns); 2.8.2 vs native cost +19.9% (q<0.001). The interim "−1.9 pt sig" came from incomplete judge panels. Codex rescore pending.
 - 09:35 Swarm results in (6 of 9): ss-trace mostly not useful (56% of calls return nothing usable; works only in callers mode with --in on the real definition); ss-semantic useful when fetching a known function in a big file; ss-search: agents never use score / confidence / sufficient / trailers / gutter, rank 3 rarely, summaries mostly unused, -k is not a cap → 24–34% cut proposed; ss-grep prints fragments not lines, test files 33% of hits; ss-find ~85% waste, misunderstood regex/query split, 41% re-shown code → fold into ss-search --regex or drop from the exact-token rule; first ss-search clearly useful ≈44%, fix file at rank 1 in 61%.
 
