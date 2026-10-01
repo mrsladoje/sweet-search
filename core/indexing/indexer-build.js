@@ -3,7 +3,6 @@
  * Extracted from index-codebase-v21.js for file size compliance (<500 lines).
  */
 
-import { createHash } from 'crypto';
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
@@ -13,6 +12,7 @@ import { GraphExtractor, createGraphSchema, insertGraph, rebuildGraphFts } from 
 import { resolveRelationshipTargets } from '../graph/relationship-resolver.js';
 import { createImportResolver, importEdgesEnabled } from '../graph/import-resolver.js';
 import { populatePageRankColumn } from '../graph/structural-pagerank.js';
+import { fileNodeId } from '../graph/file-nodes.js';
 import { getEmbeddings, getModelInfo } from '../embedding/embedding-service.js';
 import { configureJournalMode, checkpointWal, atomicSwapDatabase, log, logProgress } from './indexer-utils.js';
 import { assignStructuralIds } from '../incremental-indexing/domain/chunk-identity.mjs';
@@ -81,9 +81,9 @@ async function enrichChunksFromGraph(chunks, ASTChunker) {
 
       // Get imports for this file (cached)
       if (!importCache.has(filePath)) {
-        // Replicate GraphExtractor.makeId(filePath, 'file', basename) to get the exact source_id
-        const key = `${filePath}:file:${path.basename(filePath)}`;
-        const fileEntityId = createHash('sha256').update(key).digest('hex').slice(0, 16);
+        // The file node's id (GraphExtractor.makeId(filePath, 'file', basename)):
+        // the source_id of the file's import rows.
+        const fileEntityId = fileNodeId(filePath);
         const importRows = importStmt.all(fileEntityId);
         importCache.set(filePath, importRows.map(r => r.target_name));
       }
@@ -152,6 +152,7 @@ export async function buildCodeGraph(files, dryRun = false) {
   let entityBatch = [];
   let relBatch = [];
   let callSiteBatch = [];
+  let fileBatch = [];
 
   let processed = 0;
   let errors = 0;
@@ -163,7 +164,7 @@ export async function buildCodeGraph(files, dryRun = false) {
     try {
       const filePath = path.join(PROJECT_ROOT, files[i]);
       const content = await fs.readFile(filePath, 'utf-8');
-      const { entities, relationships, callSites } = await extractor.extractFromFile(files[i], content);
+      const { entities, relationships, callSites, file } = await extractor.extractFromFile(files[i], content);
 
       // Element-wise append, not push(...spread): a single generated mega-file
       // (e.g. libsql's 250k-line SQLite amalgamation) can yield 65k+ entities,
@@ -171,6 +172,7 @@ export async function buildCodeGraph(files, dryRun = false) {
       for (let k = 0; k < entities.length; k++) entityBatch.push(entities[k]);
       for (let k = 0; k < relationships.length; k++) relBatch.push(relationships[k]);
       if (callSites) for (let k = 0; k < callSites.length; k++) callSiteBatch.push(callSites[k]);
+      if (file) fileBatch.push(file);
       processed++;
     } catch (err) {
       errors++;
@@ -181,14 +183,15 @@ export async function buildCodeGraph(files, dryRun = false) {
     // whole index from the entities table, so per-batch rebuilds were
     // O(entities × batches) work discarded by the next batch.
     if ((i + 1) % GRAPH_BATCH_SIZE === 0 || i === files.length - 1) {
-      if (entityBatch.length > 0 || relBatch.length > 0) {
-        insertGraph(db, entityBatch, relBatch, hasFts5, { syncFts: false, callSites: callSiteBatch });
+      if (entityBatch.length > 0 || relBatch.length > 0 || fileBatch.length > 0) {
+        insertGraph(db, entityBatch, relBatch, hasFts5, { syncFts: false, callSites: callSiteBatch, files: fileBatch });
         graphFlushed = true;
         totalEntities += entityBatch.length;
         totalRelationships += relBatch.length;
         entityBatch = [];
         relBatch = [];
         callSiteBatch = [];
+        fileBatch = [];
       }
     }
 

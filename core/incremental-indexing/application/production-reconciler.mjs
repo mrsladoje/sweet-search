@@ -29,6 +29,7 @@ import {
 import { FloatVectorStore, getFloatStorePath } from '../../vector-store/float-vector-store.js';
 import { createGraphSchema, GraphExtractor, insertCallSites } from '../../graph/graph-extractor.js';
 import { createImportResolver, importEdgesEnabled } from '../../graph/import-resolver.js';
+import { syncFileNode } from '../../graph/file-nodes.js';
 import { createVectorSchema, ensureVectorSchema, buildInsertItems, insertVectorItems } from '../../indexing/indexer-build.js';
 import { ASTChunker, JAVA_FAMILY } from '../../indexing/ast-chunker.js';
 import { getEmbeddings, getModelInfo } from '../../embedding/embedding-service.js';
@@ -946,20 +947,12 @@ class ProductionReconcileAdapter {
       const entities = [...(parsed.entities || [])];
       const relationships = parsed.relationships || [];
       const callSites = parsed.callSites || [];
+      // File-level edges keep the file's logical id as their source — the
+      // same id a full build writes. The file's node lives in the `files`
+      // table (file-nodes.js), never in `entities`: an entity row here made
+      // maintained graphs differ from fresh builds (PageRank, scope chains,
+      // symbol search) and gave file-level edges a per-epoch source id.
       const fileLogicalId = graphEntityLogicalId(rel, 'file', path.basename(rel));
-      const fileIsSource = relationships.some((r) => r.source_id === fileLogicalId) || callSites.some((c) => c.source_id === fileLogicalId);
-      if (fileIsSource && !entities.some((e) => e.id === fileLogicalId)) {
-        entities.unshift({
-          id: fileLogicalId,
-          file_path: rel,
-          type: 'file',
-          name: path.basename(rel),
-          signature: `file ${rel}`,
-          signature_hash: contentHashSync(`file:${rel}`),
-          start_line: 1,
-          end_line: Math.max(1, hashes.content?.split('\n').length || 1),
-        });
-      }
       let upsert = 0;
       let tombstone = 0;
       let edgeResolution = null;
@@ -980,6 +973,11 @@ class ProductionReconcileAdapter {
           prepareCached(db, 'UPDATE relationships SET epoch_retired = ? WHERE source_id = ? AND epoch_retired IS NULL').run(epoch, fileLogicalId);
           prepareCached(db, 'UPDATE call_sites SET epoch_retired = ? WHERE source_id = ? AND epoch_retired IS NULL').run(epoch, fileLogicalId);
         }
+        // The file's node: one live row while the file exists, retired on
+        // delete. Older maintained graphs also hold a `file` row in
+        // `entities`; it is in oldRows and retires below like any entity
+        // the new extraction no longer emits.
+        syncFileNode(db, rel, { epoch, deleted: !!hashes.deleted, node: parsed.file });
         // A deleted file is no longer an import target of any other file.
         if (hashes.deleted) {
           prepareCached(db, "UPDATE relationships SET epoch_retired = ? WHERE type = 'importsFile' AND target_name = ? AND epoch_retired IS NULL").run(epoch, rel);

@@ -22,10 +22,10 @@
  * defines is never linked.
  */
 
-import { createHash } from 'crypto';
 import path from 'path';
 import { EXTENSION_MAP } from '../infrastructure/language-patterns/maps.js';
 import { createCallResolutionIndex, isTestPath } from './relationship-resolver.js';
+import { asTopLevelCaller, fileNodeId, fileNodeSourceSql, hasFilesTable } from './file-nodes.js';
 
 const OWNER = 'owner';
 const FILE = 'file';
@@ -173,9 +173,6 @@ export function resolveBareCall(caller, candidates, index) {
 }
 
 /** Graph id of a file node in a full build (GraphExtractor.makeId(path, 'file', basename)). */
-function fileNodeId(filePath) {
-  return createHash('sha256').update(`${filePath}:file:${path.basename(filePath)}`).digest('hex').slice(0, 16);
-}
 
 const ENTITY_COLS = 'e.rowid AS _rowid, e.id, e.name, e.type, e.file_path, e.start_line, e.end_line, e.signature, e.parent_class';
 const CONTAINER_TYPES = ['class', 'struct', 'interface', 'trait', 'impl', 'enum', 'extension', 'protocol', 'object', 'namespace', 'module', 'record', 'actor', 'union'];
@@ -278,13 +275,20 @@ export class BareCallResolver {
   /** Entities whose bare calls resolve to `target`: [{ caller row, contextLine }]. */
   callersOf(target, { limit = 120 } = {}) {
     if (!this.available || !target?.id || !target?.name || !BARE_CALLABLE_TYPES.has(target.type)) return [];
-    const sites = this.db.prepare(`
+    const sitesFrom = (source) => this.db.prepare(`
       SELECT ${ENTITY_COLS}, e.summary, e.package, cs.context_line AS context_line
-      FROM call_sites cs JOIN entities e ON e.id = cs.source_id
+      FROM call_sites cs JOIN ${source} e ON e.id = cs.source_id
       WHERE cs.callee_name = ? AND ${this.siteSql('cs')} AND ${this.entitySql('e')} AND e.id <> ?
       ORDER BY e.file_path, cs.context_line
       LIMIT ?
     `).all(target.name, ...this.siteParams, ...this.entityParams, target.id, limit * 4);
+    const sites = sitesFrom('entities');
+    // Bare calls in top-level code have the file node as their source
+    // (graph/file-nodes.js). The site's span is its call line, and it is
+    // keyed by id: a `files` rowid is no entity rowid.
+    if (hasFilesTable(this.db)) {
+      for (const row of sitesFrom(fileNodeSourceSql())) sites.push({ ...asTopLevelCaller(row), _rowid: undefined });
+    }
     if (sites.length === 0) return [];
     const candidates = this._callablesNamed([target.name]);
     if (!candidates.some(c => c.id === target.id)) return [];

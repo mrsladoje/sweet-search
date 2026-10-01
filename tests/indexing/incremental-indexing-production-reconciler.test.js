@@ -87,6 +87,11 @@ function graphRows(stateDir) {
       FROM relationships
       ORDER BY epoch_written, type, target_name
     `).all(),
+    files: db.prepare(`
+      SELECT id, file_path, name, epoch_written, epoch_retired
+      FROM files
+      ORDER BY epoch_written, file_path
+    `).all(),
   }));
 }
 
@@ -206,7 +211,14 @@ describe('production incremental Reconciler', () => {
     });
 
     const graph1 = graphRows(stateDir);
-    const liveEntityIds1 = new Set(graph1.entities.filter((e) => e.epoch_retired == null).map((e) => e.id));
+    // An edge's source is a live symbol, or — for top-level code — the live
+    // file node (graph/file-nodes.js); file nodes are never entity rows.
+    const liveEntityIds1 = new Set([
+      ...graph1.entities.filter((e) => e.epoch_retired == null).map((e) => e.id),
+      ...graph1.files.filter((f) => f.epoch_retired == null).map((f) => f.id),
+    ]);
+    expect(graph1.entities.some((e) => e.type === 'file')).toBe(false);
+    expect(graph1.files.filter((f) => f.epoch_retired == null).map((f) => f.file_path)).toEqual(['src/sample.js']);
     expect(graph1.entities).toContainEqual(expect.objectContaining({
       name: 'alphaThing',
       start_line: 2,
