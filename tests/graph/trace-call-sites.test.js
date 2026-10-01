@@ -139,6 +139,27 @@ describe('ss-trace shows every call site of a caller', () => {
     expect(formatStructuralContext(callers)).toContain('call@11,15');
   });
 
+  it('different receivers of one target are one caller item with every line', async () => {
+    // `a.load()` and `b.load()` are two (caller, target_name) pairs that
+    // resolve to the same method: one caller, three call sites.
+    const graph = await buildGraph({
+      'src/store.ts': ['export class Store {', '  load() {', '    return 1;', '  }', '}'],
+      'src/run.ts': [
+        "import { Store } from './store';",
+        'export function run(a: Store, b: Store) {',
+        '  a.load();',
+        '  b.load();',
+        '  a.load();',
+        '}',
+      ],
+    });
+    const callers = trace(graph, 'load', { filePath: 'src/store.ts', mode: 'callers' });
+    expect(callers.sections.callers.items.map((x) => [x.name, x.contextLines])).toEqual([['run', [3, 4, 5]]]);
+    expect(callers.sections.callers.total).toBe(3);
+    expect(callers.sections.callers.distinct).toBe(1);
+    expect(formatTraceCompact(callers, { mode: 'callers' })).toContain('## callers (3 call sites, 1 distinct caller)\nrun [function] src/run.ts:2 call@3,4,5');
+  });
+
   it('a single-site qualified pair needs no call_lines row: its line comes from relationships', async () => {
     const graph = await buildGraph({
       'app/run.go': [
