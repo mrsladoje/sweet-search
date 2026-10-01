@@ -674,6 +674,28 @@ function definedOnLine(entities, lineNum, name) {
 }
 
 /**
+ * Whether a Go file also uses an import name `name` as something other than
+ * the package: a local variable (`schema := …`, `a, schema := …`, `var
+ * schema`), a parameter or receiver (`func f(schema *T)`), or a field
+ * (`s.schema.Meta()`). The call row `schema.Meta` cannot tell such a use
+ * from the package call (dgraph auth_test.go: `schema :=
+ * test.LoadSchemaFromString(…)` then `schema.Meta()`), so the file's calls
+ * through that name are left to the receiver rules.
+ */
+export function goNameShadowed(content, name) {
+  const n = name.replace(/[^\w]/g, '');
+  if (!n) return true;
+  const tests = [
+    new RegExp(`(?:^|[^.\\w])${n}\\s*(?:,\\s*[A-Za-z_]\\w*\\s*)*:=`, 'm'),
+    new RegExp(`,\\s*${n}\\s*(?:,\\s*[A-Za-z_]\\w*\\s*)*:=`),
+    new RegExp(`\\bvar\\s+(?:[A-Za-z_]\\w*\\s*,\\s*)*${n}\\b`),
+    new RegExp(`[(,]\\s*${n}\\s+[*\\[A-Za-z_]`),
+    new RegExp(`\\.\\s*${n}\\s*\\.`),
+  ];
+  return tests.some((re) => re.test(content));
+}
+
+/**
  * Split a string on commas, but only at the top level — ignoring commas
  * inside <>, (), [], or {} brackets.
  */
@@ -869,6 +891,7 @@ export class GraphExtractor {
     // non-repo package unresolved (`glog.Errorf` is no in-repo
     // ToGlog.Errorf). Legacy target_name stays as written.
     if (goPackages && goPackages.size > 0) {
+      const ambiguous = new Map();
       for (const rel of relationships) {
         if (rel.type !== 'calls' || rel.full_import_path) continue;
         const dot = String(rel.target_name || '').indexOf('.');
@@ -877,7 +900,13 @@ export class GraphExtractor {
         const rest = rel.target_name.slice(dot + 1);
         if (!rest || rest.includes('.') || rest.includes('(')) continue;
         const pkg = goPackages.get(receiver);
-        if (pkg) rel.full_import_path = pkg;
+        if (!pkg) continue;
+        let skip = ambiguous.get(receiver);
+        if (skip === undefined) {
+          skip = goNameShadowed(content, receiver);
+          ambiguous.set(receiver, skip);
+        }
+        if (!skip) rel.full_import_path = pkg;
       }
     }
   }

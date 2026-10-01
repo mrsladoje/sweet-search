@@ -14,7 +14,7 @@ import Database from 'better-sqlite3';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { tmpdir } from 'os';
-import { GraphExtractor, createGraphSchema, insertGraph } from '../../core/graph/graph-extractor.js';
+import { GraphExtractor, createGraphSchema, goNameShadowed, insertGraph } from '../../core/graph/graph-extractor.js';
 import { resolveRelationshipTargets } from '../../core/graph/relationship-resolver.js';
 import { createImportResolver } from '../../core/graph/import-resolver.js';
 import { goImportName, scanImports } from '../../core/graph/import-scanner.js';
@@ -204,6 +204,46 @@ describe('Go package-qualified calls', () => {
     // x.Parse's caller is found by the resolved edge.
     const parse = trace(g, 'Parse', { filePath: 'x/keys.go', mode: 'callers' });
     expect(parse.sections.callers.items.map((i) => i.summary)).toEqual(['detectPending [function] worker/draft.go:13 call@14,18']);
+  });
+
+  it('leaves a file to the receiver rules when it also uses the import name as a value', async () => {
+    // dgraph graphql/resolve/auth_test.go: `schema := test.LoadSchemaFromString(…)`
+    // shadows the imported schema package, so `schema.Meta()` is the method.
+    const g = await buildGraph({
+      'go.mod': [`module ${MODULE}`],
+      'graphql/schema/wrappers.go': ['package schema', '', 'type schema struct{}', '', 'func (s *schema) Meta() int {', '\treturn 0', '}', '', 'func Load() *schema {', '\treturn &schema{}', '}'],
+      'graphql/resolve/auth_test.go': [
+        'package resolve',
+        '',
+        `import "${MODULE}/graphql/schema"`,
+        '',
+        'func TestMeta() {',
+        '\tschema := schema.Load()',
+        '\tschema.Meta()',
+        '}',
+      ],
+    });
+    expect(callTargets(g.dbPath, 'TestMeta')).toEqual({
+      'schema.Load': 'graphql/schema/wrappers.go#Load',
+      'schema.Meta': 'graphql/schema/wrappers.go#schema.Meta',
+    });
+  });
+
+  it('detects the uses of an import name that the call row cannot tell apart', () => {
+    const cases = [
+      ['schema := load()\nschema.Meta()', true],
+      ['a, schema := load()', true],
+      ['for _, schema := range all {', true],
+      ['if schema, err := load(); err != nil {', true],
+      ['var schema *schema.Schema', true],
+      ['func f(schema *schema.Schema) {', true],
+      ['func (schema *T) m() {', true],
+      ['s.schema.Meta()', true],
+      ['func f(s schema.Schema) { schema.Meta() }', false],
+      ['import (\n\tschema "example.com/app/schema"\n)\nfunc f() { schema.Meta() }', false],
+      ['opts := schema.Options{}\nschema.Meta()', false],
+    ];
+    for (const [src, want] of cases) expect([src, goNameShadowed(src, 'schema')]).toEqual([src, want]);
   });
 
   it('leaves calls alone when no go.mod covers the file (GOPATH layout)', async () => {
