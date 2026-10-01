@@ -146,7 +146,8 @@ export function createCallResolutionIndex(entities, { fileImports = null } = {})
   const memo = new Map();
   function ownerOf(entity) {
     if (!entity) return null;
-    if (memo.has(entity.id)) return memo.get(entity.id);
+    const hit = memo.get(entity.id);
+    if (hit !== undefined) return hit;
     let owner = entity.parent_class || null;
     if (!owner && entity.signature) {
       const g = GO_RECEIVER.exec(entity.signature);
@@ -168,14 +169,47 @@ export function createCallResolutionIndex(entities, { fileImports = null } = {})
     return owner;
   }
 
+  // Receiver-matching keys per candidate, computed once per entity instead of
+  // once per (call, candidate): common method names (`new`, `get`, `to_string`)
+  // have thousands of candidates, and every call re-normalised all of them.
+  const factsMemo = new Map();
+  function factsOf(entity) {
+    let f = factsMemo.get(entity.id);
+    if (f === undefined) {
+      const owner = ownerOf(entity);
+      const filePath = entity.file_path || '';
+      f = {
+        owner,
+        ownerKey: normalizeName(owner),
+        stemKey: normalizeName(fileStem(filePath)),
+        dirKey: normalizeName(parentDir(filePath)),
+        moduleFunction: entity.type === 'function' && !owner && MODULE_FUNCTION_FILE.test(filePath),
+      };
+      factsMemo.set(entity.id, f);
+    }
+    return f;
+  }
+
   return {
     ownerOf,
+    factsOf,
     containerFiles: (name) => filesByContainerName.get(name) || null,
     importsOf: (filePath) => (fileImports && fileImports.get(filePath)) || null,
   };
 }
 
-const NO_INDEX = { ownerOf: () => null, containerFiles: () => null, importsOf: () => null };
+function defaultFactsOf(entity) {
+  const filePath = entity.file_path || '';
+  return {
+    owner: null,
+    ownerKey: '',
+    stemKey: normalizeName(fileStem(filePath)),
+    dirKey: normalizeName(parentDir(filePath)),
+    moduleFunction: entity.type === 'function' && MODULE_FUNCTION_FILE.test(filePath),
+  };
+}
+
+const NO_INDEX = { ownerOf: () => null, factsOf: defaultFactsOf, containerFiles: () => null, importsOf: () => null };
 
 /**
  * Graph id of a file node, as GraphExtractor.makeId(path, 'file', basename)
@@ -226,17 +260,24 @@ function isImported(imported, filePath) {
  */
 export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, index = NO_INDEX) {
   if (candidates.length === 0) return candidates;
-  const { ownerOf, containerFiles, importsOf } = { ...NO_INDEX, ...(index || {}) };
+  const idx = index || NO_INDEX;
+  const ownerOf = idx.ownerOf || NO_INDEX.ownerOf;
+  const containerFiles = idx.containerFiles || NO_INDEX.containerFiles;
+  const importsOf = idx.importsOf || NO_INDEX.importsOf;
+  const factsOf = idx.factsOf || ((c) => ({ ...defaultFactsOf(c), owner: ownerOf(c), ownerKey: normalizeName(ownerOf(c)) }));
   const chained = receiverRaw.endsWith('()');
   const receiver = chained ? '' : receiverRaw;
   const selfLike = (!receiverRaw) || SELF_RECEIVERS.has(receiver.toLowerCase());
 
   let pool = candidates;
-  if (sourceEntity && !selfLike) {
+  if (sourceEntity && !selfLike && pool.length > 1) {
     // Recursion through another instance (`child.visit()` inside `visit`)
     // stays possible when the caller is the only definition.
-    const others = pool.filter(c => c.id !== sourceEntity.id);
-    if (others.length > 0) pool = others;
+    const srcId = sourceEntity.id;
+    if (pool.some(c => c.id === srcId)) {
+      const others = pool.filter(c => c.id !== srcId);
+      if (others.length > 0) pool = others;
+    }
   }
 
   if (selfLike) {
@@ -266,19 +307,28 @@ export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, inde
 
   const r = normalizeName(receiver);
   const callerImports = sourceEntity?.file_path ? importsOf(sourceEntity.file_path) : null;
-  pool = pool.filter((c) => {
-    if (c.type !== 'function' || ownerOf(c) || !MODULE_FUNCTION_FILE.test(c.file_path || '')) return true;
+  let kept = null; // copy-on-first-drop keeps the common "nothing filtered" case allocation-free
+  for (let i = 0; i < pool.length; i++) {
+    const c = pool[i];
+    const f = factsOf(c);
     // `import * as h from './helpers'` → `h.foo()`: the import names the module.
-    if (isImported(callerImports, c.file_path)) return true;
-    return receiverMatches(r, normalizeName(fileStem(c.file_path || '')))
-      || receiverMatches(r, normalizeName(parentDir(c.file_path)));
-  });
+    const keep = !f.moduleFunction
+      || isImported(callerImports, c.file_path)
+      || receiverMatches(r, f.stemKey)
+      || receiverMatches(r, f.dirKey);
+    if (keep) {
+      if (kept) kept.push(c);
+    } else if (!kept) {
+      kept = pool.slice(0, i);
+    }
+  }
+  if (kept) pool = kept;
   if (pool.length > 1) {
-    const byOwner = pool.filter(c => receiverMatches(r, normalizeName(ownerOf(c))));
+    const byOwner = pool.filter(c => receiverMatches(r, factsOf(c).ownerKey));
     if (byOwner.length > 0) {
       pool = byOwner;
     } else {
-      const byFile = pool.filter(c => receiverMatches(r, normalizeName(fileStem(c.file_path || ''))));
+      const byFile = pool.filter(c => receiverMatches(r, factsOf(c).stemKey));
       if (byFile.length > 0) pool = byFile;
     }
   }
@@ -374,6 +424,9 @@ function targetNameKeys(targetName) {
  */
 export function resolveRowsScoped(db, rows, { liveOnly = true } = {}) {
   if (!rows || rows.length === 0) return [];
+  // Per-run caches; a long-lived maintainer must not grow them without bound.
+  if (pathFactsCache.size > 50_000) pathFactsCache.clear();
+  if (nameKeyCache.size > 50_000) nameKeyCache.clear();
   const entityLive = liveOnly && hasColumn(db, 'entities', 'epoch_retired') ? ' AND epoch_retired IS NULL' : '';
   const relLive = liveOnly && hasColumn(db, 'relationships', 'epoch_retired') ? ' AND r.epoch_retired IS NULL' : '';
 
@@ -438,6 +491,18 @@ export function resolveRowsScoped(db, rows, { liveOnly = true } = {}) {
   ) || null);
 }
 
+/** Collects the first `limit` warning messages and counts the rest. */
+function createWarningSampler(limit) {
+  return {
+    samples: [],
+    count: 0,
+    push(message) {
+      this.count++;
+      if (this.samples.length < limit) this.samples.push(message);
+    },
+  };
+}
+
 /**
  * Resolve relationship target_ids from target_names
  * This runs AFTER all entities are extracted and inserted
@@ -485,7 +550,9 @@ export function resolveRelationshipTargets(db) {
   let resolved = 0;
   let ambiguous = 0;
   let deduped = 0;
-  const warnings = [];
+  // Only 5 samples are printed: keep those and a count, not one string per
+  // ambiguous row (tens of thousands of template strings on a large repo).
+  const warnings = createWarningSampler(5);
 
   console.log(`  Found ${unresolved.length} unresolved relationships`);
 
@@ -549,13 +616,13 @@ export function resolveRelationshipTargets(db) {
   }
 
   // Show sample warnings (max 5)
-  if (warnings.length > 0) {
+  if (warnings.count > 0) {
     console.log('  Sample resolution warnings:');
-    for (const warning of warnings.slice(0, 5)) {
+    for (const warning of warnings.samples) {
       console.log(`    - ${warning}`);
     }
-    if (warnings.length > 5) {
-      console.log(`    ... and ${warnings.length - 5} more`);
+    if (warnings.count > warnings.samples.length) {
+      console.log(`    ... and ${warnings.count - warnings.samples.length} more`);
     }
   }
 
