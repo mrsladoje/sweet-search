@@ -5,19 +5,16 @@
   "r3h-tortoise-orm-02",
   "r3h-tortoise-orm-03",
   "r3h-tortoise-orm-04",
-  "r3h-tortoise-orm-05",
   "r3h-tortoise-orm-06",
   "r3h-tortoise-orm-07",
   "r3h-tortoise-orm-08",
   "r3h-tortoise-orm-09",
   "r3h-tortoise-orm-10",
   "r3h-tortoise-orm-11",
-  "r3h-tortoise-orm-12",
-  "r3h-tortoise-orm-14",
+  "r3h-tortoise-orm-13",
   "r3h-tortoise-orm-15",
   "r3h-tortoise-orm-16",
   "r3h-tortoise-orm-17",
-  "r3h-tortoise-orm-18",
   "r3h-tortoise-orm-19",
   "r3h-tortoise-orm-20",
   "r3h-tortoise-orm-21",
@@ -79,7 +76,10 @@
   }
  },
  "dropped": {
-  "r3h-tortoise-orm-13": "1-3 step lookup in disguise: the Django-style command name (print SQL of one migration) leads straight to migrations/api/sqlmigrate.py, where the swap is visible, and one grep of the class name lists all three same-named stand-ins with their install lines; the stand-ins are behaviourally identical, so the decoy resolves without reasoning."
+  "r3h-tortoise-orm-05": "closed-book solvable",
+  "r3h-tortoise-orm-12": "closed-book solvable",
+  "r3h-tortoise-orm-14": "closed-book solvable",
+  "r3h-tortoise-orm-18": "closed-book solvable"
  },
  "hardened": []
 }

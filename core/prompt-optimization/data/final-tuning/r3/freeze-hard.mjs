@@ -16,7 +16,14 @@ for (const [grp, reposFile, draftsDir] of groups) {
     const auditPath = path.join(HERE, 'hard-audit', `${r.repo}.json`);
     if (!fs.existsSync(auditPath)) throw new Error(`missing audit ${auditPath}`);
     const a = JSON.parse(fs.readFileSync(auditPath, 'utf8'));
-    const keep = new Set(a.keep);
+    // closed-book screen applied centrally (auditors may have run before it covered their repo):
+    // a question the screen solved is dropped unless the auditor hardened it.
+    const cbPath = path.join(HERE, draftsDir, 'closed-book.json');
+    const cb = fs.existsSync(cbPath) ? JSON.parse(fs.readFileSync(cbPath, 'utf8')) : {};
+    const hardened = new Set(a.hardened || []);
+    const keep = new Set(a.keep.filter(id => !(cb[id]?.drop && !hardened.has(id))));
+    const unscreened = a.keep.filter(id => !cb[id] && !/negative/.test(id)).length;
+    if (unscreened) console.error(`WARN ${r.repo}: ${unscreened} kept question(s) without a closed-book result`);
     const drafts = JSON.parse(fs.readFileSync(path.join(HERE, draftsDir, `${r.repo}.json`), 'utf8')).probes;
     for (const p of drafts) if (keep.has(p.id)) all.push({ ...p, ...(a.fixes?.[p.id] || {}), repo: `r3-${r.repo}`, repoSha: r.sha, language: p.language || r.language, group: grp });
   }
