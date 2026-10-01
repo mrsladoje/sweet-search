@@ -1554,6 +1554,10 @@ export class GraphExtractor {
           const lastEntity = entities[entities.length - 1];
           const declaredType = isInheritance && lastEntity?.start_line === lineNum
             && TYPE_DECLARATION_ENTITY_TYPES.has(lastEntity.type) ? lastEntity.id : null;
+          // A namespace never inherits: the declaration on this line is not an
+          // entity (C++ partial specialization `struct W<std::vector<T>>`).
+          if (isInheritance && !declaredType
+            && activeEntityScopes[activeEntityScopes.length - 1]?.type === 'namespace') continue;
           for (const target of targets) {
             const rel = {
               source_id: declaredType || sourceEntityId || fileEntityId,
@@ -2074,8 +2078,12 @@ export class GraphExtractor {
             continue;
           }
           const weight = GRAPH_CONFIG.relationshipWeights[mappedType] || 1.0;
+          const declaredType = isInheritance ? typeDeclarationAt.get(lineNum) : null;
+          // A namespace never inherits: the declaration on this line is not an
+          // entity (C++ partial specialization `struct W<std::vector<T>>`).
+          if (isInheritance && !declaredType && findScopeType(lineNum) === 'namespace') continue;
           const sourceId = (ATTRIBUTE_RELATIONSHIP_TYPES.has(relType) && findAnnotatedEntity(lineNum))
-            || (isInheritance && typeDeclarationAt.get(lineNum))
+            || declaredType
             || sourceEntityId || fileEntityId;
           for (const target of targets) {
             relationships.push({

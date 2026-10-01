@@ -130,6 +130,22 @@ describe('inheritance precision', () => {
     ])).toEqual(['C:3:Other']);
   });
 
+  it('a namespace never inherits (drogon partial specialization is not an entity)', async () => {
+    expect(await edges('/test/coroutine.h', [
+      'namespace drogon {',
+      'namespace internal {',
+      'template <typename T>',
+      'struct WhenAllAwaiter<std::vector<Task<T>>>',
+      '    : public CallbackAwaiter<std::vector<T>>',
+      '{',
+      '};',
+      'struct Plain : public Base {',
+      '};',
+      '}',
+      '}',
+    ])).toEqual(['Plain:8:Base']);
+  });
+
   it('a one-line declaration: the list belongs to the type, not its first member', async () => {
     expect(await edges('/test/Color.java', [
       'enum Color implements Paint { RED }',
