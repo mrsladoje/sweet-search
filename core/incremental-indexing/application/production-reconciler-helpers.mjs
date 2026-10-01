@@ -110,12 +110,19 @@ export function resolveTouchedEdges(db, { epoch, sourceIds = [], retiredIds = []
   }
   let scanned = 0;
   if (newNames.length > 0) {
+    // SQLite pre-filters by substring in one scan; the exact segment test
+    // runs in JS on the few rows that contain a new name.
     const wanted = new Set(newNames);
+    const names = [...wanted];
     const hits = [];
-    for (const r of db.prepare("SELECT rowid, target_name FROM relationships WHERE epoch_retired IS NULL AND type != 'importsFile' AND target_name IS NOT NULL").iterate()) {
-      scanned++;
-      if (rows.has(r.rowid)) continue;
-      if (nameKeysOf(r.target_name).some(k => wanted.has(k))) hits.push(r.rowid);
+    for (let i = 0; i < names.length; i += 50) {
+      const part = names.slice(i, i + 50);
+      const sql = `SELECT rowid, target_name FROM relationships WHERE epoch_retired IS NULL AND type != 'importsFile' AND target_name IS NOT NULL AND (${part.map(() => 'instr(target_name, ?) > 0').join(' OR ')})`;
+      for (const r of db.prepare(sql).iterate(...part)) {
+        scanned++;
+        if (rows.has(r.rowid)) continue;
+        if (nameKeysOf(r.target_name).some(k => wanted.has(k))) hits.push(r.rowid);
+      }
     }
     for (const r of chunkedAll(db, ph => `SELECT ${REL_SELECT} FROM relationships WHERE rowid IN (${ph})`, hits)) rows.set(r.rowid, r);
   }
