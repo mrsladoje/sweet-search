@@ -122,3 +122,82 @@ line should include this option.
 A/B on dev questions per harness: requests per question, greps per question, cost; accuracy must
 not drop. Also note the rules say "`ss-grep` is file:line only" — that sentence must change when
 the full-line ss-grep output (first entry) lands.
+
+---
+
+## 2026-10-02 — Allow file-name search (find, ls, rg --files); restore only that part of the trimmed harness text
+
+**Observation (owner):** Agree with option 1: the rules should allow native file-name search.
+Re-add to the harness system prompts the trimmed text that mentioned these tools (find, ls, file
+listing), only so that we do not restrict them. This does NOT bring back trimmed text about tools
+and retrieval that competes directly with the ss-* tools and does not help the agent in any other
+way.
+
+**Example — replay `r3hb-drogon-10` (Codex + GPT-6.1 Sol high):** native's first call,
+`rg --files -g '*View*' -g '*csp*' -g '*template*'`, named both gold files for 374 tok. Sweet's
+first `ss-search` used the question's words and missed `drogon_ctl/create_view.cc`; ranks 3-14
+were noise. Sweet still won this task (CSP in the second query), but it had no way to ask "which
+files are named like this?".
+
+**Facts (r282 retrieval runs):**
+- No ss-* tool searches file names; all of them search contents.
+- Native file-name search is common: Codex native used `rg --files` with a name filter in 47 of
+  97 rollouts (never `find` or `ls`). Claude Code native Opus used `ls` in 25 of 97 and `find` in 5
+  of 97; Sonnet `ls` 22 of 103, `find` 2 of 103. Sweet arms obey the ban: Claude Code V1b `ls` 2 of
+  97, `find` 0; Codex sweet 0 of 194.
+- Agents do not use `find` as a content grep: 0 cases of `find … -exec grep` or `find | xargs grep`
+  in about 300 native rollouts.
+- The ban entered with the P7 gen-3 prompt optimisation (`d579280a`, 2026-05-31) as part of a whole
+  prompt; no commit tests that sentence alone. Rule text today: "Reach for raw
+  `grep`/`find`/`cat`/`ls` … only for an edit too recent…" and, in the absence rule, "no
+  `find`/`ls`/`cat` enumeration".
+- What the harness trim removed that touches file-name search:
+  - Codex (`scripts/harness-prompts/NOTICE.md`): the line "When you search for text or files, you
+    reach first for `rg` or `rg --files`…". Text search competes with ss-grep; `rg --files` does not.
+  - opencode (`scripts/harness-prompts/index.js`, `opencodePrompt`): the bullet "When searching for
+    text or files, prefer using Glob and Grep tools". Grep competes; Glob does not.
+  - Claude Code (`scripts/install-claude-lean-harness.js`, `CLAUDE_CODE_THRIFTY_SONIC=0`): the
+    bypass-mode steer "read files with cat, head, or sed -n, search with grep and find". The read and
+    grep parts compete with ss-read / ss-grep; `find` does not.
+
+**Possible product change:**
+1. Rules: one line that allows file-name search, e.g. "To find files by name or see a directory,
+   use `rg --files -g '<glob>'`, `find -name` or `ls`; the ss-* tools search contents, not names."
+   Keep the ban on raw `grep` and `cat`. Drop `find`/`ls` from the absence rule.
+2. Harness prompts: restore only the file-name half of each trimmed line (Codex `rg --files`,
+   opencode Glob, Claude Code `find`), never the text-search or read half.
+A/B on dev questions per harness, together with the rules flag line above. Risk to watch: an
+unfiltered `ls -R` or `find .` (large output, and it lists `.sweet-search/`).
+
+---
+
+## 2026-10-02 — Chunker: C++/C#/Ruby namespace chunks and the export macro (needs reindex — wait)
+
+**Observation (owner):** Fixes C and D change chunk output, so they wait for the end of tuning
+(reindex is frozen) and need a GCSN dev MRR check. The search-time label fix (A) and the C/C++
+receiver-evidence fix (B) are implemented now.
+
+**Example — replay `r3hb-drogon-10`:** summary lines `HttpViewData.h:29 — drogon (namespace)` and
+`OStringStream.h:20 — drogon (namespace)` hide the class inside, and `create_model.h:29-442
+[namespace: drogon_ctl]` points the agent at 413 lines.
+
+**Facts (verified on main 2026-10-02 with the real chunker on copied drogon files):**
+- C. `namespace_definition` is a chunk boundary (`core/infrastructure/tree-sitter-provider.js:125`,
+  label map :293). A large namespace gives a "header" chunk that starts on the `namespace` line; a
+  namespace under 2,000 chars becomes one chunk labelled namespace even when it holds one class.
+  Same in C# (`namespace App { class Store }`) and Ruby (`module App; class Store`); TypeScript
+  `export namespace` only when small. PHP and Rust are correct.
+- D. `31a24287` removes export macros (`class DROGON_EXPORT HttpViewData`) for graph entities only
+  (`extractSymbols`, tree-sitter-provider.js:967). The chunker calls `parse()` (:927), which keeps
+  the macro, so it still labels the class `function: HttpViewData` and adds a phantom one-line chunk
+  `class: DROGON_EXPORT`. The wrong symbol also goes into the embedded text (retrieval cost not
+  measured).
+- Also seen, not measured: a large C++ namespace gives overlapping chunks (29-50, 30-31, 32-54,
+  32-32, 33-77), and some chunks' `line_end` disagrees with their text line count.
+
+**Possible product change:**
+- C. Make namespace/module wrappers transparent in `recursiveChunk`: chunk the body with the
+  namespace as parent info, as for class bodies.
+- D. Move the export-macro blanking (`CPP_CLASS_KEY_MACRO`) from `extractSymbols` into `parse()`, so
+  the chunker and the graph agree.
+Both: GCSN dev MRR before/after, then reindex at the end of tuning.
