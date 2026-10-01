@@ -23,6 +23,8 @@ Re-runnable: partial runs are fine (only finished rows are used; every table pri
 import argparse
 import difflib
 import glob
+import hashlib
+from datetime import datetime
 import json
 import math
 import os
@@ -77,6 +79,18 @@ def jl(path):
                 except Exception:
                     pass
     return out
+
+
+def tsec(x):
+    """Timestamp (ISO string or epoch ms) -> seconds, or None."""
+    if x is None or x == '':
+        return None
+    if isinstance(x, (int, float)):
+        return x / 1000.0 if x > 1e11 else float(x)
+    try:
+        return float(x) / 1000.0 if str(x).isdigit() else datetime.fromisoformat(str(x).replace('Z', '+00:00')).timestamp()
+    except Exception:
+        return None
 
 
 def mean(xs):
@@ -245,9 +259,12 @@ def discover():
 # ----------------------------------------------------------------------------------------------
 # session indexing (per run, per arm-store)
 # ----------------------------------------------------------------------------------------------
-def _cc_meta(path):
+def _cc_meta(path, snaps=None):
     usage, first_user = {}, None
     for d in jl(path):
+        if snaps is not None and d.get('type') == 'attachment' and (d.get('attachment') or {}).get('type') == 'prompt_snapshot':
+            sp = d['attachment'].get('systemPrompt') or []
+            snaps.append(hashlib.md5('\x00'.join(str(x) for x in sp).encode()).hexdigest()[:10])
         m = d.get('message') or {}
         if d.get('type') == 'user' and first_user is None and not d.get('isMeta'):
             c = m.get('content')
@@ -271,7 +288,8 @@ def _cc_meta(path):
 def index_cc(state, arm):
     out = []
     for f in sorted(glob.glob(os.path.join(state, f'claude-home-{arm}', 'projects', '*', '*.jsonl'))):
-        first_user, usage = _cc_meta(f)
+        snaps = []
+        first_user, usage = _cc_meta(f, snaps)
         threads = fx.read_claude(f)
         for th in threads:
             for rq in th['requests']:
@@ -285,7 +303,7 @@ def index_cc(state, arm):
                     for rq in th['requests']:
                         if rq['id'] in su:
                             rq['usage'] = su[rq['id']]
-        out.append({'file': f, 'user': first_user, 'threads': threads})
+        out.append({"file": f, "user": first_user, "threads": threads, "snapHashes": snaps, "prefixHash": snaps[0] if snaps else None})
     return out
 
 
@@ -344,6 +362,17 @@ def index_codex(state):
             if d.get('type') == 'response_item' and p.get('type') == 'message' and p.get('role') == 'user':
                 users.append(''.join((c.get('text') or '') for c in p.get('content') or [] if isinstance(c, dict)))
         user = next((u for u in users if 'Question: ' in u), '\n'.join(users))
+        # byte-stable prefix check: base instructions + developer messages + environment context (not the question)
+        pre = []
+        for d in jl(f):
+            p = d.get('payload') or {}
+            if d.get('type') == 'session_meta':
+                bi = p.get('base_instructions')
+                pre.append(json.dumps(bi, sort_keys=True) if bi is not None else '')
+            if d.get('type') == 'response_item' and p.get('type') == 'message' and p.get('role') in ('developer', 'user'):
+                t = ''.join((c.get('text') or '') for c in p.get('content') or [] if isinstance(c, dict))
+                if 'Question: ' not in t:
+                    pre.append(p.get('role') + ':' + t)
         threads = fx.read_codex(f)
         for rq in threads[0]['requests']:
             for u in rq['units']:
@@ -353,7 +382,8 @@ def index_codex(state):
                 inp, cached = u.get('input_tokens') or 0, u.get('cached_input_tokens') or 0
                 cw = u.get('cache_write_input_tokens') or 0
                 rq['usage'] = {'fresh': max(inp - cached - cw, 0), 'cacheRead': cached, 'cacheWrite': cw, 'out': u.get('output_tokens') or 0}
-        out.append({'file': f, 'user': user, 'threads': threads})
+        out.append({'file': f, 'user': user, 'threads': threads, 'prefixHash': hashlib.md5('\x00'.join(pre).encode()).hexdigest()[:10],
+                    'prefixChars': sum(len(x) for x in pre)})
     return out
 
 
@@ -873,6 +903,14 @@ def analyze_rollout(run, row, probe, sess, cap):
         req_cost.append(((u.get('fresh') or 0) * price['in'] + (u.get('cacheWrite') or 0) * price['in'] * cw_mult
                          + (u.get('cacheRead') or 0) * price['cache'] + (u.get('out') or 0) * price['out']) / 1e6)
     req_cw = [((rq.get('usage') or {}).get('cacheWrite') or 0) + ((rq.get('usage') or {}).get('fresh') or 0) for rq in main_reqs]
+    req_rows = []
+    for k, rq in enumerate(main_reqs):
+        u = rq.get('usage')
+        if not u:
+            continue
+        req_rows.append({'k': k, 'in': u['fresh'] + u['cacheRead'] + u['cacheWrite'], 'cached': u['cacheRead'], 'unc': u['fresh'] + u['cacheWrite'],
+                         'out': u['out'], 'ts': tsec(rq.get('ts')),
+                         'toolChars': sum(c['chars'] for c in main_calls if (c.get('deliveredTurn') or c['turnIndex']) == k)})
     for i, c in enumerate(main_calls):
         c['idx'] = i + 1
     u0 = main_reqs[0].get('usage') if main_reqs else None
@@ -891,7 +929,8 @@ def analyze_rollout(run, row, probe, sess, cap):
         'prefix0': prefix0, 'cw0': cw0, 'fresh0': fresh0, 'inTotal': in_total, 'toolAmp': tool_amp,
         'units': len({(c['thread'], c['unitId']) for c in main_calls}),
         'retrievalCalls': len(retrieval), 'session': sess['file'], 'joinScore': sess.get('joinScore'),
-        'threadsN': len(threads), 'reqCost': req_cost, 'reqUncached': req_cw,
+        'threadsN': len(threads), 'reqCost': req_cost, 'reqUncached': req_cw, 'reqRows': req_rows,
+        'userChars': len(sess.get('user') or ''), 'prefixHash': sess.get('prefixHash'), 'snapHashes': sess.get('snapHashes'), 'prefixChars': sess.get('prefixChars'),
         'tsStart': str(main_reqs[0].get('ts')) if main_reqs and main_reqs[0].get('ts') is not None else '',
     }
 
@@ -1829,6 +1868,213 @@ def write_paired_dossiers(pdata):
 
 
 # ----------------------------------------------------------------------------------------------
+# S4: cache misses per request (why GPT cells hit the cache less than Claude Code)
+# ----------------------------------------------------------------------------------------------
+def b128(x):
+    return (x // 128) * 128
+
+
+def s4_rollout(r):
+    """Split the uncached input tokens of one rollout into causes."""
+    rows = r['reqRows']
+    run = r['run']
+    price = CELLS[run['cell']][1]
+    gpt = run['harness'] != 'cc'
+    miss_px = (price['in'] - price['cache']) if gpt else (price['in'] * 1.25 - price['cache'])   # extra $/token of a miss vs a hit
+    new_px = price['in'] if gpt else price['in'] * 1.25
+    o = {'in': 0, 'cached': 0, 'unc': 0, 'req': len(rows), 'unc0': 0, 'in0': 0, 'cached0': 0, 'cold0': 0, 'user': 0,
+         'avoid0': 0, 'new': 0, 'gran': 0, 'remiss': 0, 'k1': 0, 'full': 0, 'partial': 0, 'zero': 0, 'lag': 0, 'inpre0': 0, 'other': 0,
+         'delta': 0, 'tool': 0, 'prevout': 0}
+    if not rows:
+        return o, miss_px, new_px
+    for q in rows:
+        o['in'] += q['in']
+        o['cached'] += q['cached']
+        o['unc'] += q['unc']
+    a = rows[0]
+    o['in0'], o['cached0'], o['unc0'] = a['in'], a['cached'], a['unc']
+    o['cold0'] = int(a['cached'] == 0)
+    o['user'] = min(a['unc'], math.ceil((r.get('userChars') or 0) / 4))
+    o['avoid0'] = a['unc'] - o['user']
+    for i in range(1, len(rows)):
+        p, q = rows[i - 1], rows[i]
+        d = q['in'] - p['in']
+        o['k1'] += 1
+        o['delta'] += max(d, 0)
+        o['tool'] += math.ceil(q['toolChars'] / 4)
+        o['prevout'] += p['out']
+        gran = (p['in'] - b128(p['in'])) if gpt else 0
+        new = min(q['unc'], max(d, 0))
+        g = min(q['unc'] - new, gran)
+        o['new'] += new
+        o['gran'] += g
+        o['remiss'] += q['unc'] - new - g
+        exp = b128(p['in']) if gpt else p['in']
+        if q['cached'] >= exp - (128 if gpt else 256):
+            o['full'] += 1
+        elif q['cached'] == 0:
+            o['zero'] += 1
+        else:
+            o['partial'] += 1
+            older = [b128(rows[j]['in']) for j in range(i - 1)]
+            if any(abs(q['cached'] - x) <= 256 for x in older):
+                o['lag'] += 1
+            elif q['cached'] <= a['in']:
+                o['inpre0'] += 1
+            else:
+                o['other'] += 1
+    return o, miss_px, new_px
+
+
+def oc_config_check(run):
+    """opencode: are the per-rollout configs identical apart from their own temp dir, and the rules files identical?"""
+    cfgs = Counter()
+    for f in glob.glob(os.path.join(run['state'], 'oc-state-*', 'opencode.json')):
+        try:
+            t = open(f).read()
+        except Exception:
+            continue
+        t = re.sub(r'oc-state-[A-Za-z0-9]+', 'oc-state-X', t)
+        rd = sorted(set(re.findall(r'(oc-rules(?:-B)?)/', t)))
+        cfgs[hashlib.md5(t.encode()).hexdigest()[:10] + ' (rules dir: ' + (','.join(rd) or 'none') + ')'] += 1
+    rules = {os.path.relpath(f, run['state']): hashlib.md5(open(f, 'rb').read()).hexdigest()[:10]
+             for f in glob.glob(os.path.join(run['state'], 'oc-rules*', '*.md'))}
+    return cfgs, rules
+
+
+def sec_s4(G, runs_seen, pairs):
+    T1, T2, T3, T5 = [], [], [], []
+    agg = {}
+    for g, rs in G.items():
+        S = [s4_rollout(r) for r in rs]
+        O = [x[0] for x in S]
+        miss_px, new_px = S[0][1], S[0][2]
+        tot = lambda k: sum(o[k] for o in O)
+        n = len(rs)
+        cost = sum((r['row'].get('costRealizedUsd') or 0) for r in rs)
+        k1 = tot('k1') or 1
+        ideal = 1 - (tot('user') + tot('new') + tot('gran')) / tot('in') if tot('in') else None
+        T1.append([gname(g), n, f2(tot('req') / n), kfmt(tot('in') / n), pm(tot('cached'), tot('in')), pm(ideal, 1) if ideal is not None else '-',
+                   kfmt(tot('in0') / n), kfmt(tot('cached0') / n), pc(tot('cold0'), n), kfmt(tot('unc0') / n),
+                   kfmt(tot('delta') / k1), kfmt(tot('new') / k1), kfmt(tot('remiss') / k1), kfmt(tot('gran') / k1),
+                   pc(tot('full'), k1), pc(tot('partial'), k1), pc(tot('zero'), k1)])
+        d0 = tot('avoid0') * miss_px / 1e6 / n
+        dr = tot('remiss') * miss_px / 1e6 / n
+        dg = tot('gran') * miss_px / 1e6 / n
+        dn = (tot('new') + tot('user')) * new_px / 1e6 / n
+        cq = cost / n
+        T2.append([gname(g), n, fd(cq), f"{fd(dn)} ({pm(dn, cq)})", f"{fd(d0)} ({pm(d0, cq)})", f"{fd(dr)} ({pm(dr, cq)})", f"{fd(dg)} ({pm(dg, cq)})",
+                   pm(d0 + dr + dg, cq)])
+        if tot('partial') and not g[1].startswith('cc'):
+            T3.append([gname(g), tot('partial'), pc(tot('lag'), tot('partial')), pc(tot('inpre0'), tot('partial')), pc(tot('other'), tot('partial')), tot('zero')])
+        T5.append([gname(g), kfmt(tot('delta') / k1), kfmt(tot('tool') / k1), kfmt(tot('prevout') / k1), kfmt((tot('delta') - tot('tool') - tot('prevout')) / k1)])
+        agg[g] = {'O': O, 'n': n, 'cost': cost, 'd0': d0, 'dr': dr, 'dg': dg, 'dn': dn}
+    # request-0 cache levels per GPT run
+    lv_rows = []
+    for g, rs in G.items():
+        if g[1].startswith('cc'):
+            continue
+        c = Counter(r['reqRows'][0]['cached'] for r in rs if r['reqRows'])
+        lv_rows.append([gname(g), len(rs), ', '.join(f'{k:,}×{v}' for k, v in c.most_common(6)), kfmt(mean([r['reqRows'][0]['in'] for r in rs if r['reqRows']]))])
+    # prefix stability
+    st_rows = []
+    for g, rs in G.items():
+        repos = len({r['probe']['repo'] for r in rs})
+        if g[1].startswith('codex'):
+            hs = {r['prefixHash'] for r in rs if r.get('prefixHash')}
+            sizes = Counter(r.get('prefixChars') for r in rs)
+            byrepo = defaultdict(set)
+            for r in rs:
+                byrepo[r['probe']['repo']].add(r.get('prefixHash'))
+            extra = sum(len(v) - 1 for v in byrepo.values())
+            st_rows.append([gname(g), 'session log: base instructions + developer messages + environment context',
+                            f'{len(hs)} distinct prefixes over {repos} repos (n={len(rs)}); {extra} extra variant(s) inside a repo'
+                            + (f"; prefix sizes (chars × rollouts): {', '.join(f'{k:,}×{v}' for k, v in sorted(sizes.items()))}" if extra else '')])
+        elif g[1].startswith('cc'):
+            hs = {r['prefixHash'] for r in rs if r.get('prefixHash')}
+            within = max((len(set(r.get('snapHashes') or [])) for r in rs), default=0)
+            st_rows.append([gname(g), 'prompt_snapshot attachments (system prompt per request)', f'{len(hs)} distinct over {repos} repos; max distinct within one rollout = {within}'])
+        else:
+            full = sum(1 for r in rs if r['reqRows'] and r['reqRows'][0]['cached'] >= r['reqRows'][0]['in'] - math.ceil(r['userChars'] / 4) - 512)
+            st_rows.append([gname(g), 'no request bodies stored; config + rules files on disk; request-0 hits that cover the full static prefix',
+                            f'{full} of {len(rs)} rollouts hit the cache on the whole static prefix at request 0 (only possible when two sessions sent identical bytes)'])
+    oc = []
+    for run in runs_seen:
+        if run['harness'] != 'opencode':
+            continue
+        cfgs, rules = oc_config_check(run)
+        oc.append(f"- `{run['cell']}-{run['tag']}`: {sum(cfgs.values())} leftover per-rollout configs → {len(cfgs)} distinct after normalising the temp-dir name "
+                  f"[{'; '.join(f'{k} ×{v}' for k, v in cfgs.items())}]; "
+                  f"rules files: {', '.join(f'{k} {v}' for k, v in sorted(rules.items())) or 'none'}.")
+    # sweet vs native per request
+    pr_rows = []
+    for ga, gb in pairs:
+        A_ = {r['probe']['id']: r for r in G[ga]}
+        B_ = {r['probe']['id']: r for r in G[gb]}
+        ids = sorted(set(A_) & set(B_))
+        if not ids or ga[1].startswith('cc'):
+            continue
+        def pm_(rs, k, per='k1'):
+            O = [s4_rollout(r)[0] for r in rs]
+            den = sum(o[per] for o in O) or 1
+            return sum(o[k] for o in O) / den
+        ra, rb = [A_[i] for i in ids], [B_[i] for i in ids]
+        pr_rows.append([f'{gname(ga)} → {gname(gb)}', len(ids),
+                        f"{kfmt(pm_(ra, 'unc0', 'req') * 0 + mean([s4_rollout(r)[0]['unc0'] for r in ra]))} → {kfmt(mean([s4_rollout(r)[0]['unc0'] for r in rb]))}",
+                        f"{kfmt(pm_(ra, 'delta'))} → {kfmt(pm_(rb, 'delta'))}", f"{kfmt(pm_(ra, 'remiss'))} → {kfmt(pm_(rb, 'remiss'))}",
+                        f"{f2(mean([len(r['reqRows']) for r in ra]))} → {f2(mean([len(r['reqRows']) for r in rb]))}",
+                        f"{kfmt(mean([s4_rollout(r)[0]['unc'] for r in ra]))} → {kfmt(mean([s4_rollout(r)[0]['unc'] for r in rb]))}"])
+    # computed summary
+    summ = []
+    for g, a in agg.items():
+        if g[1].startswith('cc'):
+            continue
+        cq = a['cost'] / a['n']
+        O = a['O']
+        hit = sum(o['cached'] for o in O) / (sum(o['in'] for o in O) or 1)
+        summ.append(f"- {gname(g)} (n={a['n']}{'†' if a['n'] < SMALL else ''}): cache-hit share {100 * hit:.1f}%. Of the ${cq:.4f}/q cost, a cold request-0 prefix costs "
+                    f"{pm(a['d0'], cq)}, old context re-missed on later requests {pm(a['dr'], cq)}, 128-token rounding {pm(a['dg'], cq)}; "
+                    f"together {pm(a['d0'] + a['dr'] + a['dg'], cq)} of the cost is paid for tokens the provider had seen before. "
+                    f"Request 0 was fully cold in {pc(sum(o['cold0'] for o in O), a['n'])} of rollouts.")
+    # test-retest: same cell + arm label, different tag, same difficulty
+    keys = list(agg.keys())
+    for i, ga in enumerate(keys):
+        for gb in keys[i + 1:]:
+            if ga[0] == gb[0] and ga[1] == gb[1] and ga[2] != gb[2] and arm_label(ga[2], ga[3], ga[1]) == arm_label(gb[2], gb[3], gb[1]) and not ga[1].startswith('cc'):
+                A_, B_ = agg[ga], agg[gb]
+                ca, cb = A_['cost'] / A_['n'], B_['cost'] / B_['n']
+                ma, mb = A_['d0'] + A_['dr'] + A_['dg'], B_['d0'] + B_['dr'] + B_['dg']
+                summ.append(f"- Repeat runs {gname(ga)} vs {ga[2] and gb[2]}: cost {fd(ca)} vs {fd(cb)} ({100 * (cb - ca) / ca:+.1f}%); "
+                            f"the avoidable-miss cost differs by {fd(mb - ma)} ({pm(mb - ma, cb - ca) if abs(cb - ca) > 1e-4 else '-'} of the cost difference); "
+                            f"request 0 fully cold {pc(sum(o['cold0'] for o in A_['O']), A_['n'])} vs {pc(sum(o['cold0'] for o in B_['O']), B_['n'])}.")
+    out = []
+    out.append('**Computed summary**\n\n' + '\n'.join(summ))
+    out.append(md_table(['group', 'n', 'requests/q', 'input tok/q', 'cache-hit share (actual)', 'cache-hit share if only new content missed',
+                         'req-0 input tok', 'req-0 cached tok', 'req-0 fully cold', 'req-0 uncached tok',
+                         'later req: new context tok (Δ input)', 'later req: uncached = new content', 'later req: re-missed old context', 'later req: 128-block rounding',
+                         'later req: full hit', 'partial miss', 'zero cached'], T1))
+    out.append('**Cost of each cause** (per question; a miss costs (input − cache-read) price per token more than a hit; Opus: 1.25 × input − cache-read). '
+               '"New content" is the unavoidable first send of the question and of each new tool output / model turn, at the uncached price.')
+    out.append(md_table(['group', 'n', 'cost/q (runner)', 'new content (unavoidable)', 'request-0: prefix not served from cache, beyond the question',
+                         'later requests: old context re-missed', '128-token block rounding (GPT)', 'request-0 + re-miss + rounding: share of cost'], T2))
+    out.append('Reading: on the GPT cells the static prefix is byte-stable (Codex hashes below), so the request-0 column is an avoidable cache miss. '
+               'On Claude Code the request-0 uncached part is per-session context that Claude Code places after its cached system prompt (and, for V1b, the per-repo rules prompt on the first rollout of a repo); it is not a provider miss, and Claude Code shows no re-miss at all.')
+    out.append('**Where a partial miss stops** (later requests only): "lag" = the cached part equals an EARLIER request of the same session (the newest cache entry was not used); '
+               '"inside request-0 prefix" = only part of the static prefix was found.')
+    out.append(md_table(['group', 'partial misses', 'lag (earlier request of same session)', 'inside request-0 prefix', 'other', 'zero-cached requests'], T3))
+    out.append('**Request-0 cached-token levels** (count of rollouts per level): discrete levels mean the provider found a stored prefix of exactly that length.')
+    out.append(md_table(['group', 'n', 'request-0 cached tokens × rollouts', 'mean request-0 input tok'], lv_rows))
+    out.append('**Is the prefix byte-stable?**')
+    out.append(md_table(['group', 'evidence', 'result'], st_rows))
+    if oc:
+        out.append('\n'.join(oc))
+    out.append('**What a later request adds** (mean per request after the first): Δ input = new tool output + the previous response (text, tool call, reasoning) + harness additions.')
+    out.append(md_table(['group', 'Δ input tok', 'new tool output tok (chars/4)', 'previous response output tok', 'rest (harness text, reasoning not re-sent, estimate error)'], T5))
+    if pr_rows:
+        out.append('**Sweet vs native per request, same questions** (GPT cells):')
+        out.append(md_table(['A → B', 'n', 'request-0 uncached tok', 'later req: Δ input tok', 'later req: re-missed tok', 'requests', 'uncached tok/q'], pr_rows))
+    return '\n\n'.join(out), agg
+# ----------------------------------------------------------------------------------------------
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--no-dossiers', action='store_true')
@@ -1931,6 +2177,15 @@ def main():
               'tool output = Σ output tokens × write price + amplified tokens × cache-read price (write price: Opus 1.25 × input; GPT input price). '
               'On the GPT cells some re-reads miss the cache, so their estimates are lower bounds; the rest column absorbs the difference.\n')
     md.append(sec_fixed(G) + '\n')
+    md.append('## S4 cache misses on GPT cells\n')
+    md.append('Per request, from the token counts each harness logs (Codex `token_count.last_token_usage`, opencode message `tokens`, Claude Code message `usage`). '
+              'Neither Codex nor opencode stores the request body, so a changing prefix is tested indirectly: Codex session logs hold the full instruction prefix (hashed below); '
+              'opencode is tested by its request-0 hit levels and the config files left on disk. '
+              'Static facts from the pinned binaries: opencode 1.18.4 sets the OpenAI `promptCacheKey` to the session id and `store=false`; its environment block holds the working directory and the date at day resolution (no file tree); '
+              'its rules block is `Instructions from: <path>` with the stable rules path. Codex 0.159.2 sends a `prompt_cache_key` field (value not visible in the logs; Codex uses the thread id). '
+              'A per-session cache key means each rollout routes on its own key, so a new session lands on a cache that may or may not hold the shared prefix.\n')
+    s4_text, s4_agg = sec_s4(G, [st['run'] for st in status], pairs_native)
+    md.append(s4_text + '\n')
     md.append('## 8. Bundle A (SS_FIX_A=1) vs shipped output, same questions\n')
     md.append(f1 + '\n\n' + f2_ + '\n')
     if not a.no_dossiers:
