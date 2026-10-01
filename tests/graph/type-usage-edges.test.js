@@ -65,6 +65,31 @@ describe('scanInstantiations', () => {
   ])('%s: no instantiation in %s', (lang, line) => {
     expect(scanInstantiations(line, lang)).toEqual([]);
   });
+
+  it('a Rust enum variant literal is not the same-named struct (uv InstallTarget::Project)', () => {
+    expect(scanInstantiations('[] => InstallTarget::Project {', 'rust')).toEqual([]);
+    expect(scanInstantiations('Delims: Delims{Left: "{"}', 'go')).toEqual(['Delims']);
+  });
+
+  it('a supertype constructor call in a type header is not an instantiation (okhttp)', () => {
+    expect(scanInstantiations(') : DelegatingSSLSocketFactory(delegate) {', 'kotlin', { typeHeader: true })).toEqual([]);
+    expect(scanInstantiations('val f = DelegatingSSLSocketFactory(delegate)', 'kotlin')).toEqual(['DelegatingSSLSocketFactory']);
+  });
+
+  it('the extractor marks header lines: no instantiates row for a Kotlin supertype call', async () => {
+    const extractor = new GraphExtractor({ projectRoot: '/test' });
+    const { relationships } = await extractor.extractFromFile('/test/Factory.kt', [
+      'class CustomSSLSocketFactory(',
+      '  delegate: SSLSocketFactory,',
+      ') : DelegatingSSLSocketFactory(delegate) {',
+      '  fun make() = Helper(1)',
+      '}',
+      'class Single : Base(1)',
+    ].join('\n'));
+    expect(relationships.filter(r => r.type === 'instantiates').map(r => r.target_name)).toEqual(['Helper']);
+    expect(relationships.filter(r => r.type === 'extends').map(r => r.target_name))
+      .toEqual(['DelegatingSSLSocketFactory', 'Base']);
+  });
 });
 
 describe('scanSignatureTypes', () => {
@@ -81,6 +106,19 @@ describe('scanSignatureTypes', () => {
       .toEqual(['Mapper']);
     // Untyped language: no signature types.
     expect(scanSignatureTypes('def fetch(req, Response)', 'ruby', { ownName: 'fetch' })).toEqual([]);
+  });
+
+  it('a generic return type USES its arguments; only declared parameters are skipped', () => {
+    expect(scanSignatureTypes('public List<Span> decode(Span s) {', 'java', { ownName: 'decode' })).toEqual(['List', 'Span']);
+    expect(scanSignatureTypes('fun <T> foo(x: Box<T>): List<Item> {', 'kotlin', { ownName: 'foo' })).toEqual(['Box', 'List', 'Item']);
+    expect(scanSignatureTypes('func f<Key: Hashable, Value>(k: Key) -> Value {', 'swift', { ownName: 'f' })).toEqual(['Hashable']);
+  });
+
+  it('skips `::`-qualified types: another module, not the local same-named type (jj clap::Error)', () => {
+    expect(scanSignatureTypes('fn from(err: clap::Error) -> Self {', 'rust', { ownName: 'from' })).toEqual(['Self']);
+    expect(scanSignatureTypes('pub async fn lock(&self) -> io::Result<LockedFile> {', 'rust', { ownName: 'lock' }))
+      .toEqual(['LockedFile']);
+    expect(scanSignatureTypes('func f(a: Foo) -> Bar {', 'swift', { ownName: 'f' })).toEqual(['Foo', 'Bar']);
   });
 });
 
@@ -132,6 +170,37 @@ describe('type-usage resolution', () => {
     });
     expect(edges(db, 'instantiates')).toEqual(['handle -> Session@src/model.py']);
     expect(edges(db, 'typeRef')).toEqual(['handle -> Request@src/model.py', 'handle -> Session@src/model.py']);
+    db.close();
+  });
+
+  it('a multi-line parameter list contributes its types (Kotlin)', async () => {
+    const db = await build({
+      'src/Model.kt': 'class Request\nclass Response\nclass Cache\n',
+      'src/Client.kt': [
+        'class Client {',
+        '  fun execute(',
+        '    request: Request, // not a Cache',
+        '    retries: Int,',
+        '  ): Response {',
+        '    TODO()',
+        '  }',
+        '}',
+      ].join('\n'),
+    });
+    expect(edges(db, 'typeRef')).toEqual(['execute -> Request@src/Model.kt', 'execute -> Response@src/Model.kt']);
+    db.close();
+  });
+
+  it('a type reference stays in its language family (zipkin Java List vs a React List component)', async () => {
+    const db = await build({
+      'lens/src/SuggestionList.tsx': 'export class List extends React.Component {}\n',
+      'benchmarks/src/Bench.java': 'class Bench {\n  public List<Span> decode(Span s) {\n    return null;\n  }\n}\nclass Span {}\n',
+      'lens/src/app.ts': 'function show(l: List): void {}\n',
+    });
+    expect(edges(db, 'typeRef')).toEqual([
+      'decode -> Span@benchmarks/src/Bench.java',
+      'show -> List@lens/src/SuggestionList.tsx',
+    ]);
     db.close();
   });
 

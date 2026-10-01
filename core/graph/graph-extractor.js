@@ -531,6 +531,31 @@ export function buildTypeHeaderJoins(lines, { lineComment = null, colonBlocks = 
   return { joins, consumed };
 }
 
+/**
+ * A definition's signature when its parameter list continues on later
+ * lines: joined up to the line that closes the brackets (which carries the
+ * return type), max MAX_HEADER_LINES; trailing line comments dropped.
+ */
+function joinDefinitionSignature(lines, i, lineComment) {
+  const strip = (s) => {
+    const t = s.trim();
+    if (!lineComment) return t;
+    const at = t.indexOf(` ${lineComment}`);
+    return at >= 0 ? t.slice(0, at).trimEnd() : (t.startsWith(lineComment) ? '' : t);
+  };
+  let text = strip(lines[i]);
+  for (let j = i + 1; j < lines.length && j - i <= MAX_HEADER_LINES && bracketDepth(text) > 0; j++) {
+    text += ` ${strip(lines[j])}`;
+  }
+  return text;
+}
+
+/** True when line `i` (trimmed text) is part of a type declaration header. */
+function isTypeHeaderLine(trimmed, i, headers) {
+  if (headers && (headers.joins.has(i) || headers.consumed.has(i))) return true;
+  return TYPE_DECL_KEYWORD.test(trimmed) && TYPE_DECL_START.test(trimmed);
+}
+
 /** True when `index` sits inside a `"…"` or `` `…` `` string literal of `text`. */
 function insideStringLiteral(text, index) {
   let quote = null;
@@ -1517,7 +1542,7 @@ export class GraphExtractor {
         const lastEntity = entities[entities.length - 1];
         this._appendTypeUsageEdges(relationships, seenTypeUsage, trimmed, lineNum, language,
           sourceEntityId || fileEntityId, lastEntity?.start_line === lineNum ? lastEntity : null,
-          skipObjects);
+          skipObjects, isTypeHeaderLine(trimmed, i, headers), () => joinDefinitionSignature(lines, i, lineComment));
       }
 
       this._appendDestructuredRequireRelationships(trimmed, sourceEntityId || fileEntityId, relationships);
@@ -2045,7 +2070,8 @@ export class GraphExtractor {
       const sourceEntityId = findScopeEntity(lineNum);
       if (!lineIsComment) {
         this._appendTypeUsageEdges(relationships, seenTypeUsage, trimmed, lineNum, language,
-          sourceEntityId || fileEntityId, definitionAt.get(lineNum), skipObjects);
+          sourceEntityId || fileEntityId, definitionAt.get(lineNum), skipObjects,
+          isTypeHeaderLine(trimmed, i, headers), () => joinDefinitionSignature(lines, i, langInfo.comment?.line || null));
       }
 
       // Call sites (comment-aware; see call-site-scanner.js).
@@ -2128,7 +2154,7 @@ export class GraphExtractor {
    * signature, definition lines only) and Swift `extensionOf`. One row per
    * (source, type, target) per file. SWEET_SEARCH_TYPE_USAGE_EDGES=0 disables.
    */
-  _appendTypeUsageEdges(relationships, seen, trimmed, lineNum, language, sourceId, defEntity, skipObjects = null) {
+  _appendTypeUsageEdges(relationships, seen, trimmed, lineNum, language, sourceId, defEntity, skipObjects = null, typeHeader = false, fullSignature = null) {
     if (!this.typeUsageEdges || !sourceId) return;
     const push = (type, target) => {
       // The registry's skipCallObjects (Scala `Seq(`, Kotlin `listOf`) are
@@ -2139,9 +2165,11 @@ export class GraphExtractor {
       seen.add(key);
       relationships.push({ source_id: sourceId, target_id: null, target_name: target, type, weight: 1.0, context_line: lineNum });
     };
-    for (const name of scanInstantiations(trimmed, language)) push('instantiates', name);
+    for (const name of scanInstantiations(trimmed, language, { typeHeader })) push('instantiates', name);
     if (defEntity && (defEntity.type === 'function' || defEntity.type === 'method')) {
-      for (const name of scanSignatureTypes(trimmed, language, { ownName: defEntity.name, ownerName: defEntity.parent_class })) {
+      // Parameters on later lines count too (`fun f(\n  a: A,\n): B {`).
+      const signature = fullSignature && bracketDepth(trimmed) > 0 ? fullSignature() : trimmed;
+      for (const name of scanSignatureTypes(signature, language, { ownName: defEntity.name, ownerName: defEntity.parent_class })) {
         push('typeRef', name);
       }
     }
