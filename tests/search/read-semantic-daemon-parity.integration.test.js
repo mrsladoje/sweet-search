@@ -197,6 +197,17 @@ describe('warm-daemon JSON clients', () => {
     expect(params.getAll('fileFilter').length).toBe(3);
   });
 
+  // ss-grep -g: each glob is its own `pathGlob` param (filtered in JS, native path kept),
+  // never a ripgrep `glob`, which would push the daemon off the native grep.
+  it('forwards every -g glob as its own pathGlob param, never as a ripgrep glob', async () => {
+    await queryServer('keys', {
+      mode: 'grep', regex: 'keys', pathGlobs: ['!lib/tests/**', '*.{h,cc}'], _isAgentFormat: true,
+    });
+    const params = requests[0].searchParams;
+    expect(params.getAll('pathGlob')).toEqual(['!lib/tests/**', '*.{h,cc}']);
+    expect(params.getAll('glob')).toEqual([]);
+  });
+
   it('a single scope still travels as one plain value (wire format unchanged)', async () => {
     await queryServer('keys', { mode: 'grep', regex: 'keys', fileFilter: 'src/a b.js' });
     expect(requests[0].searchParams.getAll('fileFilter')).toEqual(['src/a b.js']);

@@ -442,6 +442,34 @@ describe('bareGrep — file-diversity options are additive and default-off', () 
     }));
   });
 
+  it('agent grep with -g globs: the family names no member from an excluded file', async () => {
+    const matches = [
+      m('src/i32/ivec2.rs', 22, 'pub struct IVec2'),
+      m('src/i32/ivec3.rs', 22, 'pub struct IVec3'),
+    ];
+    const indexed = [
+      ...[2, 3, 4].map(width => ({ name: `IVec${width}`, type: 'struct', filePath: `src/i32/ivec${width}.rs` })),
+      ...[2, 3, 4].map(width => ({ name: `TVec${width}`, type: 'struct', filePath: `src/tests/tvec${width}.rs` })),
+    ];
+    const searcher = makeSearcher(matches);
+    searcher.codeGraphRepo = {
+      findEntitiesInRange: vi.fn((file) => {
+        const name = matches.find(match => match.file === file)?.matchText.split(' ').at(-1);
+        return name ? [{ name, type: 'struct' }] : [];
+      }),
+      findFamilyCandidates: vi.fn(() => indexed),
+    };
+    const run = pathGlobs => bareGrep.call(searcher, 'IVec', null, {
+      regex: 'IVec', maxMatches: 0, perFileCap: 30, maxFiles: 30, _isAgentFormat: true,
+      ...(pathGlobs ? { pathGlobs } : {}),
+    });
+    expect((await run()).familyManifest.rendered).toContain('TVec{2,3,4}');
+    const res = await run(['!tests/']);
+    expect(res.familyManifest.rendered).toContain('IVec{2,3,4}');
+    expect(res.familyManifest.rendered).not.toContain('TVec');
+    expect((await run(['*.rs', '!ivec4.rs'])).familyManifest.rendered).toContain('IVec{2,3}');
+  });
+
   it('does no symbol-table family work for non-agent grep', async () => {
     const searcher = makeSearcher([m('src/vec2.rs', 1, 'pub struct Vec2')]);
     searcher.codeGraphRepo = {

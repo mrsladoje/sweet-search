@@ -269,7 +269,9 @@ function commonDirectory(filePaths) {
   return prefix;
 }
 
-function findIndexedFamily(indexedSeeds, codeGraphRepo) {
+// `keepFile(filePath)`: when given, a candidate whose file fails it is not a member (ss-grep's
+// `-g` globs: a family must not name a file the agent excluded).
+function findIndexedFamily(indexedSeeds, codeGraphRepo, keepFile = null) {
   const stems = [...new Set(indexedSeeds.map((seed) => familyStem(seed.name)).filter(Boolean))]
     .slice(0, MAX_FAMILY_STEMS);
   let best = null;
@@ -286,6 +288,7 @@ function findIndexedFamily(indexedSeeds, codeGraphRepo) {
     } catch {
       continue;
     }
+    if (keepFile && Array.isArray(candidates)) candidates = candidates.filter((c) => keepFile(c?.filePath));
     const manifest = buildIndexedFamilyManifest(candidates, {
       seedNames: seeds.map((seed) => seed.name),
     });
@@ -296,8 +299,11 @@ function findIndexedFamily(indexedSeeds, codeGraphRepo) {
   return best;
 }
 
-/** Build grep family closure only from symbols indexed at exact match lines. */
-export function buildIndexedGrepFamilyManifest(results, codeGraphRepo) {
+/**
+ * Build grep family closure only from symbols indexed at exact match lines.
+ * `keepFile`: see findIndexedFamily.
+ */
+export function buildIndexedGrepFamilyManifest(results, codeGraphRepo, { keepFile = null } = {}) {
   if (!Array.isArray(results) || results.length < 2
       || typeof codeGraphRepo?.findEntitiesInRange !== 'function'
       || typeof codeGraphRepo?.findFamilyCandidates !== 'function') return null;
@@ -318,7 +324,7 @@ export function buildIndexedGrepFamilyManifest(results, codeGraphRepo) {
     }
   }
   if (seeds.length < 2) return null;
-  return findIndexedFamily(seeds, codeGraphRepo)?.manifest || null;
+  return findIndexedFamily(seeds, codeGraphRepo, keepFile)?.manifest || null;
 }
 
 // ---------------------------------------------------------------------------

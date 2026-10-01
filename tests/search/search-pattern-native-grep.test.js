@@ -424,6 +424,16 @@ describe('patternSearch — fileFilter scope', () => {
     expect(none.stats.pathGlobExcludedMatches).toBe(3);
   });
 
+  it('ss-find -g: a zero-hit GNU dialect retry does not add its exclusions to the count', async () => {
+    // The mock index returns the same three matches for the original and the respelled
+    // pattern; both attempts are wholly excluded, and only the agent's own pattern counts.
+    const res = await patternSearch.call(scopeSearcher(), 'auth', null,
+      { regex: 'Auth\\|Service', k: 10, pathGlobs: ['*.py'], format: 'agent' });
+    expect(res.results).toEqual([]);
+    expect(res.stats.regexDialectHint?.retryAttempted).toBe(true);
+    expect(res.stats.pathGlobExcludedMatches).toBe(3);
+  });
+
   it('a scope with no match returns the empty (agent) package, not an error', async () => {
     const res = await patternSearch.call(scopeSearcher(), 'auth', null,
       { regex: 'AuthService', k: 10, fileFilter: 'docs', format: 'agent' });
