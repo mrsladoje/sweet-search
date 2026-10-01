@@ -65,6 +65,10 @@ Expected saving = share of that tool's output chars (measured on the recorded ou
   function fetch in a big file), and V2 cost Codex accuracy.
 - Changing the confidence/sufficiency logic: agents ignore it — remove the line (A1), do not tune it.
 
+## Owner decision (2026-10-01)
+
+ss-read is NOT changed (B3, B4 and A3-for-ss-read dropped): its wide reads match native reading behaviour that the models are trained for.
+
 ## Caveats
 
 - 13 tasks; two tasks hold half of the trace calls and 30/35 Opus ss-search calls are one task — the
