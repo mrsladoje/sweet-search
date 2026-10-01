@@ -16,6 +16,14 @@ import { personalizedPageRank } from './structural-forward-push.js';
 import { isTraceOnlyRelationship } from './relationship-types.js';
 const BUDGETS = { preview: 4000, full: 8000, xl: 12000 };
 const DEFAULT_MAX_DEPTH = 3;
+// Targets whose signature users (`typeRef`) ss-trace lists as callers, at
+// most TYPE_REF_CALLER_LIMIT of them, scored at TYPE_REF_IMPORTANCE × normal.
+const TYPE_USER_TARGETS = new Set([
+  'class', 'struct', 'interface', 'enum', 'trait', 'protocol', 'record', 'object',
+  'type', 'typeAlias', 'typealias', 'union', 'actor',
+]);
+const TYPE_REF_CALLER_LIMIT = 40;
+const TYPE_REF_IMPORTANCE = 0.5;
 function estimateTokens(text) {
   return text ? Math.ceil(String(text).length / 3.5) : 0;
 }
@@ -434,6 +442,18 @@ export class StructuralContextBuilder {
     const targetHintSites = callsiteHintSites(targetSource, new Set([target.name]));
     const targetCallsiteHints = targetHintSites.map(h => h.name);
     const storedCallers = [...this.repo.getCallers(target, { limit: 160 }), ...(this.repo.getAliasCallers?.(target, { limit: 80 }) || [])];
+    // A type's signature users (`typeRef`: functions that take or return it).
+    // Many types have no other referrer (jj 468 of 755, drogon 142 of 183),
+    // so their callers section would be empty without them; a popular type
+    // has hundreds (GRDB Database: 661), so they come from their own capped
+    // query and rank below every other row. A function already listed by a
+    // stronger relationship (calls, instantiates) is not repeated.
+    if (TYPE_USER_TARGETS.has(target.type)) {
+      const listed = new Set(storedCallers.map(x => x.id));
+      for (const user of this.repo.getCallers(target, { types: ['typeRef'], limit: TYPE_REF_CALLER_LIMIT })) {
+        if (!listed.has(user.id)) storedCallers.push(user);
+      }
+    }
     // Bare calls (`helper(x)`), resolved by scope rules from call_sites. They
     // come from indexed call sites (scope-resolved), so they count as stored,
     // not as the same-file text scan. Indexed items carry every site line
@@ -508,7 +528,11 @@ export class StructuralContextBuilder {
       maxFanIn, maxPageRank,
       maxPpr: safeMax(forwardRun.scores.values()),
     };
-    const callers = callersRaw.map(x => ({ ...x, importance: scoreEntity(x, callerCtx) }));
+    // Signature users rank below callers, constructors and subtypes.
+    const callers = callersRaw.map(x => ({
+      ...x,
+      importance: scoreEntity(x, callerCtx) * (x.relationship === 'typeRef' ? TYPE_REF_IMPORTANCE : 1),
+    }));
     const callees = calleesRaw.map(x => ({ ...x, importance: scoreEntity(x, calleeCtx) }));
     const impactPaths = impactRaw.map(p => ({
       ...p,
