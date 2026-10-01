@@ -105,7 +105,7 @@ export function parseInitArgs(args) {
     enforceTools: false,        // P3: --enforce-tools (default OFF — opt-in strict mode)
     codex: false,                // --codex: Codex CLI harness (rules + base instructions + SessionStart hook)
     opencode: false,             // --opencode: opencode harness (rules + prompt + tool edits)
-    opencodeCacheKey: true,      // --no-opencode-cache-key (or SWEET_SEARCH_OC_CACHE_KEY=0): no per-repo OpenAI cache-key plugin
+    opencodeCacheKey: null,      // per-repo OpenAI cache-key plugin: --opencode-cache-key true, --no-opencode-cache-key (or SWEET_SEARCH_OC_CACHE_KEY=0) false, null = the choice an earlier init recorded (default on)
     codexEnableGlobalHooks: false, // --codex-enable-global-hooks: also enable the flag in ~/.codex/config.toml
     // Contact-surface flags (additive at install, exclusive at consumption):
     //   --mcp     registers the sweet-search MCP server in the project .mcp.json
@@ -224,9 +224,13 @@ export function parseInitArgs(args) {
     } else if (arg === '--no-opencode-cache-key') {
       // Opt out of the per-repo OpenAI prompt-cache key plugin that --opencode
       // installs (.opencode/plugins/sweet-search-cache.mjs); removes one an
-      // earlier init installed. SWEET_SEARCH_OC_CACHE_KEY=0 does the same at
+      // earlier init installed, and later inits keep the opt-out until
+      // --opencode-cache-key. SWEET_SEARCH_OC_CACHE_KEY=0 does the same at
       // init time, and switches an installed plugin off at opencode run time.
       result.opencodeCacheKey = false;
+    } else if (arg === '--opencode-cache-key') {
+      // Undo an earlier --no-opencode-cache-key.
+      result.opencodeCacheKey = true;
     } else if (arg === '--codex-enable-global-hooks') {
       // Legacy/advanced opt-in: also enable the `[features] hooks` feature flag
       // in the user-level ~/.codex/config.toml. NOT required for the normal
@@ -1587,15 +1591,19 @@ Options:
                             x-session-affinity / X-Session-Id headers carry one
                             hashed per-repo key ("ss-<16 hex>") instead of the
                             session id, so a new session reuses the cached
-                            prompt prefix of the last one. Several sessions at
+                            prompt prefix of the last one (title requests and
+                            a promptCacheKey you set yourself stay as they
+                            are). Several sessions at
                             once in one repo: SWEET_SEARCH_OC_CACHE_SHARDS=N
                             (or { "shards": N } on the plugin entry) spreads
                             them over N keys (default 1; OpenAI advises about
                             15 requests per minute per key).
   --no-opencode-cache-key   Skip that cache-key plugin (and remove one an
-                            earlier init installed). SWEET_SEARCH_OC_CACHE_KEY=0
-                            has the same effect at init time, and in opencode's
-                            environment it switches an installed plugin off.
+                            earlier init installed). Later inits keep this
+                            choice; --opencode-cache-key installs it again.
+                            SWEET_SEARCH_OC_CACHE_KEY=0 has the same effect at
+                            init time, and in opencode's environment it
+                            switches an installed plugin off.
   --codex-enable-global-hooks
                             [legacy/advanced] Not needed for normal setup — the
                             project-level flag written by --codex is sufficient.
@@ -2185,7 +2193,7 @@ export async function runInit(args) {
       projectRoot,
       rules: getPolicyBody(promptVariant),
       prompt: !parsed.noCli,
-      cacheKey: parsed.opencodeCacheKey && !opencodeCacheKeyOffByEnv(),
+      cacheKey: opencodeCacheKeyOffByEnv() ? false : (parsed.opencodeCacheKey ?? undefined),
     });
     process.stderr.write(
       `[init] opencode harness: ${opencodeHarnessReport.status}`

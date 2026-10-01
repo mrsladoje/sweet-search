@@ -103,31 +103,66 @@ describe('installOpencodeHarness', () => {
     });
   });
 
-  it('cacheKey: false installs no cache-key plugin, and removes one an earlier init installed', () => {
+  it('cacheKey: false installs no cache-key plugin, removes one an earlier init installed, and sticks', () => {
     installOpencodeHarness({ projectRoot: root, rules: RULES, cacheKey: false });
     expect(existsSync(join(root, OPENCODE_CACHE_PLUGIN_REL))).toBe(false);
     expect(config().plugin).toEqual([TRIM_ENTRY]);
+    expect(JSON.parse(read(OPENCODE_MANIFEST_REL)).cacheKeyOff).toBe(true);
 
-    installOpencodeHarness({ projectRoot: root, rules: RULES });
+    // A later plain init (cacheKey not given) keeps the opt-out.
+    expect(installOpencodeHarness({ projectRoot: root, rules: RULES }).status).toBe('unchanged');
+    expect(existsSync(join(root, OPENCODE_CACHE_PLUGIN_REL))).toBe(false);
+
+    // cacheKey: true (init --opencode-cache-key) undoes it, and plain inits keep the plugin after that.
+    expect(installOpencodeHarness({ projectRoot: root, rules: RULES, cacheKey: true }).status).toBe('installed');
     expect(config().plugin).toEqual([TRIM_ENTRY, OPENCODE_CACHE_PLUGIN_SPEC]);
-    expect(JSON.parse(read(OPENCODE_MANIFEST_REL)).added.cacheKeyPlugin).toBe(true);
+    let manifest = JSON.parse(read(OPENCODE_MANIFEST_REL));
+    expect(manifest.added.cacheKeyPlugin).toBe(true);
+    expect(manifest.cacheKeyOff).toBeUndefined();
+    expect(installOpencodeHarness({ projectRoot: root, rules: RULES }).status).toBe('unchanged');
 
     const r = installOpencodeHarness({ projectRoot: root, rules: RULES, cacheKey: false });
     expect(r.status).toBe('installed');
     expect(existsSync(join(root, OPENCODE_CACHE_PLUGIN_REL))).toBe(false);
     expect(config().plugin).toEqual([TRIM_ENTRY]);
-    const manifest = JSON.parse(read(OPENCODE_MANIFEST_REL));
+    manifest = JSON.parse(read(OPENCODE_MANIFEST_REL));
     expect(manifest.added.cacheKeyPlugin).toBeUndefined();
     expect(manifest.files[OPENCODE_CACHE_PLUGIN_REL]).toBeUndefined();
     expect(installOpencodeHarness({ projectRoot: root, rules: RULES, cacheKey: false }).status).toBe('unchanged');
   });
 
-  it('an older install without the cache-key plugin gains it on re-init', () => {
-    installOpencodeHarness({ projectRoot: root, rules: RULES, cacheKey: false });
+  it('an older install without the cache-key plugin gains it on re-init; the report names it in plain words', () => {
+    installOpencodeHarness({ projectRoot: root, rules: RULES });
+    // What an init before the cache-key plugin left: no file, no entry, nothing in the manifest.
+    rmSync(join(root, OPENCODE_CACHE_PLUGIN_REL));
+    const cfg = config();
+    cfg.plugin = cfg.plugin.filter(e => e !== OPENCODE_CACHE_PLUGIN_SPEC);
+    write(OPENCODE_CONFIG_REL, JSON.stringify(cfg, null, 2) + '\n');
+    const manifest = JSON.parse(read(OPENCODE_MANIFEST_REL));
+    delete manifest.files[OPENCODE_CACHE_PLUGIN_REL];
+    delete manifest.added.cacheKeyPlugin;
+    write(OPENCODE_MANIFEST_REL, JSON.stringify(manifest, null, 2) + '\n');
+
     const r = installOpencodeHarness({ projectRoot: root, rules: RULES });
     expect(r.status).toBe('installed');
     expect(r.detail).toContain(OPENCODE_CACHE_PLUGIN_REL);
+    expect(r.detail).toContain('plugin (OpenAI cache key)');
+    expect(r.detail).not.toContain('cacheKeyPlugin');
     expect(read(OPENCODE_CACHE_PLUGIN_REL)).toBe(readFileSync(OPENCODE_CACHE_KEY_PLUGIN_SOURCE, 'utf8'));
+    expect(config().plugin).toEqual([TRIM_ENTRY, OPENCODE_CACHE_PLUGIN_SPEC]);
+    const dry = removeOpencodeHarness({ projectRoot: root, dryRun: true });
+    expect(dry.detail).toContain('plugin (OpenAI cache key)');
+    expect(dry.detail).not.toContain('cacheKeyPlugin');
+  });
+
+  it('refreshing stale tool edits keeps the tool-description plugin where it stands (first)', () => {
+    write(OPENCODE_CONFIG_REL, JSON.stringify({ plugin: ['my-plugin'] }));
+    installOpencodeHarness({ projectRoot: root, rules: RULES });
+    const cfg = config();
+    cfg.plugin = cfg.plugin.map(e => (Array.isArray(e) && e[0] === OPENCODE_PLUGIN_SPEC ? [OPENCODE_PLUGIN_SPEC, { edits: { old: 1 } }] : e));
+    write(OPENCODE_CONFIG_REL, JSON.stringify(cfg, null, 2) + '\n');
+    expect(installOpencodeHarness({ projectRoot: root, rules: RULES }).status).toBe('installed');
+    expect(config().plugin).toEqual(['my-plugin', TRIM_ENTRY, OPENCODE_CACHE_PLUGIN_SPEC]);
   });
 
   it('keeps a shards option the user put on the cache-key entry, and uninstall removes the entry', () => {
