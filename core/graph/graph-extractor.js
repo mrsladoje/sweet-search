@@ -17,7 +17,7 @@ import { GRAPH_CONFIG, DB_PATHS } from '../infrastructure/config/index.js';
 import { getLanguageByPath, resolveLanguage } from '../infrastructure/language-patterns.js';
 import { getTreeSitterProvider } from '../infrastructure/tree-sitter-provider.js';
 import { CallSiteScanner } from './call-site-scanner.js';
-import { scanImports, SCANNED_IMPORT_LANGUAGES } from './import-scanner.js';
+import { scanImports, SCANNED_IMPORT_LANGUAGES, importLanguageFor } from './import-scanner.js';
 import { UNRESOLVED_IMPORT_PREFIX } from './import-resolver.js';
 import { scanInstantiations, scanSignatureTypes, swiftExtensionTarget } from './type-usage-scanner.js';
 
@@ -762,21 +762,18 @@ export class GraphExtractor {
       }
       return;
     }
-    if (!language || !SCANNED_IMPORT_LANGUAGES.has(language)) return;
+    // .vue/.svelte/.astro are registry `html`; their scripts import like TS.
+    const importLanguage = importLanguageFor(filePath, language);
+    if (!importLanguage || !SCANNED_IMPORT_LANGUAGES.has(importLanguage)) return;
     let scanned;
-    try { scanned = scanImports(content, language); } catch { return; }
+    try { scanned = scanImports(content, importLanguage); } catch { return; }
 
     const fileEntityId = this.makeId(filePath, 'file', path.basename(filePath));
     const self = String(filePath).replace(/\\/g, '/');
     const bySpec = new Map();
     const byBinding = new Map();
     const seenTargets = new Set();
-    for (const imp of scanned) {
-      const target = this.importResolver.resolve(filePath, imp, language);
-      const annotation = target || `${UNRESOLVED_IMPORT_PREFIX}${imp.spec}`;
-      if (!bySpec.has(imp.spec)) bySpec.set(imp.spec, annotation);
-      for (const name of imp.names || []) if (!byBinding.has(name)) byBinding.set(name, annotation);
-      if (!target || target === self || seenTargets.has(target)) continue;
+    const pushEdge = (target, spec, line) => {
       seenTargets.add(target);
       relationships.push({
         source_id: fileEntityId,
@@ -784,9 +781,30 @@ export class GraphExtractor {
         target_name: target,
         type: 'importsFile',
         weight: GRAPH_CONFIG.relationshipWeights.imports,
-        context_line: imp.line,
-        full_import_path: imp.spec,
+        context_line: line,
+        full_import_path: spec,
       });
+    };
+    for (const imp of scanned) {
+      const target = this.importResolver.resolve(filePath, imp, importLanguage);
+      // A namespace import (C# `using X;`) of a repo namespace names no single
+      // file: its legacy row keeps its name-based resolution.
+      const localNamespace = !target && this.importResolver.isLocalNamespace?.(filePath, imp, importLanguage);
+      if (!localNamespace) {
+        const annotation = target || `${UNRESOLVED_IMPORT_PREFIX}${imp.spec}`;
+        if (!bySpec.has(imp.spec)) bySpec.set(imp.spec, annotation);
+        for (const name of imp.names || []) if (!byBinding.has(name)) byBinding.set(name, annotation);
+      }
+      if (!target || target === self || seenTargets.has(target)) continue;
+      pushEdge(target, imp.spec, imp.line);
+    }
+    // Namespace / package / module languages: files whose top-level
+    // declarations this file uses (C# usings, JVM same-package and `*`
+    // imports, Swift modules, Elixir module names).
+    const implicit = this.importResolver.implicitImports?.(filePath, content, importLanguage, scanned) || [];
+    for (const dep of implicit) {
+      if (dep.target === self || seenTargets.has(dep.target)) continue;
+      pushEdge(dep.target, dep.spec, dep.line);
     }
 
     for (const rel of relationships) {

@@ -24,6 +24,11 @@
 
 import fs from 'fs';
 import path from 'path';
+import {
+  stripNoise, csharpDeclarations, braceDeclarations, packageChain, referencedNames,
+  csharpNamespaceRanges, namespaceAt, qualifiedChains, packageClauses, elixirModules,
+  elixirReferences, lineOfIndex,
+} from './import-symbol-index.js';
 
 /**
  * `full_import_path` value for an import whose module is not a repo file
@@ -41,9 +46,17 @@ const JS_EXT_SWAP = { '.js': ['.ts', '.tsx', '.d.ts'], '.jsx': ['.tsx', '.d.ts']
 // Build-output roots a workspace package's `main`/`exports` usually point
 // into; the indexed sources live under src/.
 const BUILD_DIR_RE = /^(dist|lib|build|out|esm|cjs)\//;
-const JS_LANGS = new Set(['javascript', 'typescript', 'tsx']);
+const JS_LANGS = new Set(['javascript', 'typescript', 'tsx', 'sfc']);
 const JVM_EXTS = ['.java', '.kt', '.kts', '.scala', '.groovy'];
-const PROBE_EXT_RE = /\.(?:[cm]?[jt]sx?|d\.ts|vue|svelte|json|py|pyi|rs|go|h|hh|hpp|hxx|c|cc|cpp|cxx|m|mm|java|kt|kts|scala|groovy|rb|php|dart)$/i;
+const JVM_LANG_OF_EXT = { '.java': 'java', '.kt': 'kotlin', '.kts': 'kotlin', '.scala': 'scala', '.groovy': 'groovy' };
+const PROBE_EXT_RE = /\.(?:[cm]?[jt]sx?|d\.ts|vue|svelte|astro|json|py|pyi|rs|go|h|hh|hpp|hxx|c|cc|cpp|cxx|m|mm|java|kt|kts|scala|groovy|rb|php|dart|cs|swift|exs?|lua|zig|hs|lhs|hsc|clj[cs]?|sol|sh|bash|zsh|proto|jl|elm|p[lm]|[rR]|ps[dm]?1|[eh]rl|cr|s[ac]ss|less|css)$/i;
+// Implicit (namespace/package/module) references: at most this many target
+// files per importing file, and a name declared in more than this many
+// files of one namespace (partial classes aside) is too generic to link.
+const MAX_IMPLICIT_EDGES_PER_FILE = 200;
+const MAX_FILES_PER_NAME = 4;
+const SVELTE_CONFIGS = ['svelte.config.js', 'svelte.config.ts', 'svelte.config.mjs'];
+const FILE_SCOPED_MEMO_LANGUAGES =new Set(['rust', 'csharp', 'elixir', 'java', 'kotlin', 'scala', 'groovy']);
 
 /** Normalise to a repo-relative POSIX path; null when it escapes the repo. */
 function norm(p) {
@@ -225,12 +238,20 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     let json;
     try { json = parseJsonc(text); } catch { return null; }
     const dir = dirOf(rel);
-    let cfg = { baseUrl: null, paths: null, pathsDir: null, references: [] };
+    let cfg = { baseUrl: null, paths: null, pathsDir: null, rootDirs: null, references: [] };
     const bases = Array.isArray(json.extends) ? json.extends : json.extends ? [json.extends] : [];
     for (const ext of bases) {
       const baseRel = resolveExtends(dir, String(ext));
       const parent = baseRel ? loadTsconfig(baseRel, depth + 1) : null;
-      if (parent) cfg = { ...cfg, baseUrl: parent.baseUrl ?? cfg.baseUrl, paths: parent.paths ?? cfg.paths, pathsDir: parent.pathsDir ?? cfg.pathsDir };
+      if (parent) {
+        cfg = {
+          ...cfg,
+          baseUrl: parent.baseUrl ?? cfg.baseUrl,
+          paths: parent.paths ?? cfg.paths,
+          pathsDir: parent.pathsDir ?? cfg.pathsDir,
+          rootDirs: parent.rootDirs ?? cfg.rootDirs,
+        };
+      }
     }
     const co = json.compilerOptions || {};
     // TS 5.5 `${configDir}`: the directory of the config that is being
@@ -240,6 +261,12 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     if (co.paths && typeof co.paths === 'object') {
       cfg.paths = Object.fromEntries(Object.entries(co.paths).map(([k, v]) => [k, Array.isArray(v) ? v.map(sub) : v]));
       cfg.pathsDir = dir;
+    }
+    // `rootDirs`: several source roots merged into one virtual directory, so
+    // `./x` from rootA/p/a.ts may load rootB/p/x.ts (TS handbook, "Virtual
+    // Directories with rootDirs").
+    if (Array.isArray(co.rootDirs)) {
+      cfg.rootDirs = co.rootDirs.map((d) => join(dir, sub(d))).filter((d) => d !== null);
     }
     if (Array.isArray(json.references)) {
       cfg.references = json.references.map((r) => r && r.path).filter(Boolean).map((p) => {
@@ -440,12 +467,28 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     return jsCandidates(join(pkg.dir, 'src', 'index')) || jsCandidates(join(pkg.dir, 'index'));
   }
 
+  function viaRootDirs(fromDir, spec) {
+    const cfg = effectiveTsconfig(fromDir);
+    if (!cfg || !cfg.rootDirs || cfg.rootDirs.length < 2) return null;
+    const own = cfg.rootDirs
+      .filter((r) => r === '' || fromDir === r || fromDir.startsWith(r + '/'))
+      .sort((a, b) => b.length - a.length)[0];
+    if (own === undefined) return null;
+    const inner = own === '' ? fromDir : fromDir.slice(own.length).replace(/^\//, '');
+    for (const r of cfg.rootDirs) {
+      if (r === own) continue;
+      const hit = jsCandidates(join(r, inner, spec));
+      if (hit) return hit;
+    }
+    return null;
+  }
+
   function resolveJs(fromFile, spec) {
     if (!spec || spec.startsWith('node:') || /^[a-z]+:\/\//.test(spec)) return null;
     const clean = spec.replace(/[?#].*$/, '') || spec;
     const fromDir = dirOf(fromFile);
     if (clean.startsWith('./') || clean.startsWith('../') || clean === '.' || clean === '..') {
-      return jsCandidates(join(fromDir, clean));
+      return jsCandidates(join(fromDir, clean)) || viaRootDirs(fromDir, clean);
     }
     if (clean.startsWith('/')) return jsCandidates(norm(clean.slice(1)));
     const cfg = effectiveTsconfig(fromDir);
@@ -466,6 +509,10 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     if (cfg && cfg.baseUrl !== null && cfg.baseUrl !== undefined) {
       const hit = jsCandidates(join(cfg.baseUrl, clean));
       if (hit) return hit;
+    }
+    // SvelteKit's built-in `$lib` alias (kit.files.lib, default src/lib).
+    if ((clean === '$lib' || clean.startsWith('$lib/')) && SVELTE_CONFIGS.some((n) => readText(join(pkgDir, n) ?? n) !== null)) {
+      return jsCandidates(join(pkgDir, 'src/lib', clean.slice(4).replace(/^\//, '')));
     }
     // `@/x` and `~/x`: Next.js / Nuxt / Vite source-root convention.
     if (clean.startsWith('@/') || clean.startsWith('~/')) {
@@ -634,6 +681,12 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
   }
 
   function resolveRust(fromFile, imp) {
+    if (imp.kind === 'mod-path') {
+      // Rust reference, "The path attribute": outside inline module blocks
+      // the path is relative to the directory of the current source file.
+      const cand = join(dirOf(fromFile), imp.spec);
+      return cand && hasFile(cand) ? cand : null;
+    }
     if (imp.kind === 'mod') {
       const dir = rustChildDir(fromFile);
       for (const cand of [join(dir, `${imp.spec}.rs`), join(dir, imp.spec, 'mod.rs')]) if (cand && hasFile(cand)) return cand;
@@ -758,7 +811,9 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
         if (hit) return hit;
       }
     }
-    return null;
+    // No file named after the class: a Kotlin top-level function or a type
+    // declared in a differently named file (`import a.b.foo` in Utils.kt).
+    return resolveJvmByIndex(fromFile, imp.spec);
   }
 
   function resolveRuby(fromFile, imp) {
@@ -831,6 +886,897 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     return cand && hasFile(cand) ? cand : null;
   }
 
+  // -------------------------------------------------------------------------
+  // Shared helpers for the languages below
+  // -------------------------------------------------------------------------
+
+  const listMemo = new Map();
+  /** Entry names of a repo directory (memoised); [] when missing. */
+  function listDir(rel) {
+    if (listMemo.has(rel)) return listMemo.get(rel);
+    let names = [];
+    try { names = fs.readdirSync(path.join(root, rel)); } catch { names = []; }
+    listMemo.set(rel, names);
+    return names;
+  }
+
+  /** First existing candidate (repo-relative), or null. */
+  function firstFile(cands) {
+    for (const c of cands) if (c != null && hasFile(c)) return c;
+    return null;
+  }
+
+  /**
+   * Source of a repo file for the declaration indexes. Not memoised in
+   * readMemo: index builds read every file once and keep only declarations.
+   */
+  function sourceText(rel) {
+    try { return fs.readFileSync(path.join(root, rel), 'utf8'); } catch { return null; }
+  }
+
+  // -------------------------------------------------------------------------
+  // Stylesheets (Sass / SCSS / Less / CSS)
+  // -------------------------------------------------------------------------
+
+  // Sass module resolution (sass-lang.com/documentation/at-rules/use,
+  // "Finding the Module"): partial first, then the plain file, then the
+  // folder's `_index` / `index`; `.sass`/`.scss`/`.css` extensions.
+  function sassCandidates(base) {
+    if (base == null) return null;
+    const ext = path.posix.extname(base);
+    const dir = dirOf(base);
+    const name = path.posix.basename(base);
+    if (ext === '.scss' || ext === '.sass' || ext === '.css') {
+      return firstFile([join(dir, `_${name}`), base]);
+    }
+    const c = [];
+    for (const e of ['.scss', '.sass', '.css']) c.push(join(dir, `_${name}${e}`));
+    for (const e of ['.scss', '.sass', '.css']) c.push(join(dir, `${name}${e}`));
+    for (const n of ['_index.scss', '_index.sass', 'index.scss', 'index.sass']) c.push(join(base, n));
+    return firstFile(c);
+  }
+
+  function styleCandidates(base, kind) {
+    if (base == null) return null;
+    if (kind === 'style-sass') return sassCandidates(base);
+    if (kind === 'style-less') return path.posix.extname(base) ? firstFile([base]) : firstFile([`${base}.less`, base]);
+    return firstFile([base, path.posix.extname(base) ? null : `${base}.css`]);
+  }
+
+  function resolveStyle(fromFile, imp) {
+    let spec = imp.spec.replace(/[?#].*$/, '');
+    if (!spec || spec.startsWith('~')) return null; // webpack node_modules lookup
+    const fromDir = dirOf(fromFile);
+    if (spec.startsWith('/')) return styleCandidates(norm(spec.slice(1)), imp.kind);
+    const rel = styleCandidates(join(fromDir, spec), imp.kind);
+    if (rel) return rel;
+    // `@/styles/x` and bundler aliases (Vue / Vite projects).
+    const pkgDir = nearestWith(fromDir, 'package.json') ?? '';
+    for (const { key, target } of bundlerAliases(pkgDir)) {
+      if (spec === key || spec.startsWith(key + '/')) {
+        const hit = styleCandidates(join(target, spec.slice(key.length).replace(/^\//, '')), imp.kind);
+        if (hit) return hit;
+      }
+    }
+    if (spec.startsWith('@/') || spec.startsWith('~/')) {
+      spec = spec.slice(2);
+      return styleCandidates(join(pkgDir, 'src', spec), imp.kind) || styleCandidates(join(pkgDir, spec), imp.kind);
+    }
+    return null;
+  }
+
+  // -------------------------------------------------------------------------
+  // Lua
+  // -------------------------------------------------------------------------
+
+  // LuaRocks rockspec `build.modules = { ["a.b"] = "src/a/b.lua" }`: the
+  // module → file table a builtin build installs from.
+  let rockModules = null;
+  function luaRockspecModules() {
+    if (rockModules) return rockModules;
+    rockModules = new Map();
+    const specs = [];
+    for (const n of listDir('')) if (n.endsWith('.rockspec')) specs.push(n);
+    for (const n of listDir('rockspecs')) if (n.endsWith('.rockspec')) specs.push(`rockspecs/${n}`);
+    // Newest rockspec last so it wins.
+    for (const rel of specs.sort()) {
+      const text = readText(rel) || '';
+      const re = /\[\s*["']([\w.-]+)["']\s*\]\s*=\s*["']([^"']+\.lua)["']/g;
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        const file = norm(m[2]);
+        if (file && hasFile(file)) rockModules.set(m[1], file);
+      }
+    }
+    return rockModules;
+  }
+
+  // package.path templates `?.lua;?/init.lua` (Lua manual §6.3) tried under
+  // the conventional roots, then under each ancestor of the importing file
+  // (nested projects run from their own directory).
+  function resolveLua(fromFile, spec) {
+    if (!/^[\w.\-/]+$/.test(spec)) return null;
+    const mapped = luaRockspecModules().get(spec);
+    if (mapped) return mapped;
+    const rel = spec.includes('/') ? spec.replace(/\.lua$/, '') : spec.replace(/\./g, '/');
+    const tryRoot = (r) => firstFile([join(r, `${rel}.lua`), join(r, rel, 'init.lua')]);
+    for (const r of ['', 'lua', 'src', 'lib']) { const hit = tryRoot(r); if (hit) return hit; }
+    let d = dirOf(fromFile);
+    while (d) {
+      const hit = tryRoot(d) || tryRoot(join(d, 'lua'));
+      if (hit) return hit;
+      d = dirOf(d);
+    }
+    return null;
+  }
+
+  // -------------------------------------------------------------------------
+  // Zig
+  // -------------------------------------------------------------------------
+
+  // build.zig named modules: `b.addModule("name", .{ .root_source_file = b.path("src/x.zig") })`,
+  // `const m = b.createModule(.{ .root_source_file = ... }); x.addImport("name", m)`.
+  const zigModMemo = new Map();
+  function zigBuildModules(buildDir) {
+    if (zigModMemo.has(buildDir)) return zigModMemo.get(buildDir);
+    const mods = new Map();
+    const text = readText(join(buildDir, 'build.zig') ?? 'build.zig') || '';
+    const srcOf = (s) => {
+      const m = /root_source_file\s*=\s*(?:b\.path\(\s*"([^"]+)"\s*\)|\.\{\s*\.(?:path|cwd_relative)\s*=\s*"([^"]+)"\s*\}|[\w.]*path\(\s*"([^"]+)"\s*\))/.exec(s);
+      return m ? join(buildDir, m[1] || m[2] || m[3]) : null;
+    };
+    const addRe = /addModule\(\s*"([^"]+)"\s*,\s*\.\{([\s\S]{0,600}?)\}\s*\)/g;
+    let m;
+    while ((m = addRe.exec(text)) !== null) { const f = srcOf(m[2]); if (f) mods.set(m[1], f); }
+    const varRe = /const\s+(\w+)\s*=\s*b\.(?:createModule|addModule\(\s*"[^"]*"\s*,)\s*\(?\s*\.\{([\s\S]{0,600}?)\}\s*\)/g;
+    const vars = new Map();
+    while ((m = varRe.exec(text)) !== null) { const f = srcOf(m[2]); if (f) vars.set(m[1], f); }
+    const importRe = /addImport\(\s*"([^"]+)"\s*,\s*(\w+)\s*\)/g;
+    while ((m = importRe.exec(text)) !== null) if (vars.has(m[2]) && !mods.has(m[1])) mods.set(m[1], vars.get(m[2]));
+    zigModMemo.set(buildDir, mods);
+    return mods;
+  }
+
+  function resolveZig(fromFile, spec) {
+    if (spec.endsWith('.zig') || spec.endsWith('.zon')) {
+      const cand = join(dirOf(fromFile), spec);
+      return cand && hasFile(cand) ? cand : null;
+    }
+    if (spec === 'std' || spec === 'builtin' || spec === 'root') return null;
+    const buildDir = nearestWith(dirOf(fromFile), 'build.zig');
+    if (buildDir === null) return null;
+    const f = zigBuildModules(buildDir).get(spec);
+    return f && hasFile(f) ? f : null;
+  }
+
+  // -------------------------------------------------------------------------
+  // Haskell
+  // -------------------------------------------------------------------------
+
+  // GHC finds module A.B at <source dir>/A/B.hs; source dirs come from the
+  // package's `hs-source-dirs` (.cabal) / `source-dirs` (package.yaml), as
+  // HLS reads them through hie-bios.
+  const hsDirMemo = new Map();
+  function haskellSourceDirs(fromDir) {
+    if (hsDirMemo.has(fromDir)) return hsDirMemo.get(fromDir);
+    const dirs = [];
+    let d = fromDir;
+    for (;;) {
+      const names = listDir(d);
+      const cabal = names.find((n) => n.endsWith('.cabal'));
+      const yaml = names.includes('package.yaml') ? 'package.yaml' : null;
+      if (cabal || yaml) {
+        for (const cfg of [cabal, yaml]) {
+          if (!cfg) continue;
+          const text = readText(join(d, cfg) ?? cfg) || '';
+          const re = /(?:hs-source-dirs|source-dirs)\s*:\s*(\[[^\]]*\]|[^\n]+)/gi;
+          let m;
+          while ((m = re.exec(text)) !== null) {
+            for (const part of m[1].replace(/[[\]"']/g, ' ').split(/[\s,]+/)) {
+              const j = part ? join(d, part) : null;
+              if (j !== null && !dirs.includes(j)) dirs.push(j);
+            }
+          }
+        }
+        for (const def of ['src', 'lib', 'app', 'test', 'tests', '']) {
+          const j = join(d, def) ?? d;
+          if (!dirs.includes(j)) dirs.push(j);
+        }
+        break;
+      }
+      if (!d) break;
+      d = dirOf(d);
+    }
+    if (dirs.length === 0) dirs.push('src', 'lib', 'app', '');
+    hsDirMemo.set(fromDir, dirs);
+    return dirs;
+  }
+
+  function resolveHaskell(fromFile, spec) {
+    const rel = spec.replace(/\./g, '/');
+    for (const d of haskellSourceDirs(dirOf(fromFile))) {
+      const hit = firstFile([join(d, `${rel}.hs`), join(d, `${rel}.lhs`), join(d, `${rel}.hsc`), join(d, `${rel}.hs-boot`)]);
+      if (hit) return hit;
+    }
+    // A module path is the file path below some source dir; a multi-segment
+    // name is specific enough to match on its suffix.
+    if (!spec.includes('.')) return null;
+    return closest(suffixMatches(`${rel}.hs`), fromFile);
+  }
+
+  // -------------------------------------------------------------------------
+  // Clojure
+  // -------------------------------------------------------------------------
+
+  const cljRootMemo = new Map();
+  function clojureRoots(fromDir) {
+    if (cljRootMemo.has(fromDir)) return cljRootMemo.get(fromDir);
+    let projDir = null;
+    const cfgNames = ['deps.edn', 'project.clj', 'shadow-cljs.edn', 'bb.edn'];
+    for (const n of cfgNames) {
+      const at = nearestWith(fromDir, n);
+      if (at !== null && (projDir === null || at.length > projDir.length)) projDir = at;
+    }
+    const roots = [];
+    const add = (r) => { const j = r === '' ? (projDir ?? '') : join(projDir ?? '', r); if (j !== null && !roots.includes(j)) roots.push(j); };
+    if (projDir !== null) {
+      for (const n of cfgNames) {
+        const text = readText(join(projDir, n) ?? n);
+        if (!text) continue;
+        const re = /:(?:paths|extra-paths|source-paths|test-paths|java-source-paths)\s*\[([^\]]*)\]/g;
+        let m;
+        while ((m = re.exec(text)) !== null) for (const s of m[1].match(/"[^"]+"/g) || []) add(s.slice(1, -1));
+      }
+    }
+    for (const r of ['src', 'test', 'src/main/clojure', 'src/clj', 'src/cljs', 'src/cljc', 'dev', '']) add(r);
+    cljRootMemo.set(fromDir, roots);
+    return roots;
+  }
+
+  // Clojure's loader maps namespace a.b-c to a/b_c.clj(c) on the classpath.
+  function resolveClojure(fromFile, spec) {
+    const rel = spec.replace(/-/g, '_').replace(/\./g, '/');
+    const ext = path.posix.extname(fromFile);
+    const exts = ext === '.cljs' ? ['.cljs', '.cljc'] : ext === '.cljc' ? ['.cljc', '.clj', '.cljs'] : ['.clj', '.cljc'];
+    for (const r of clojureRoots(dirOf(fromFile))) {
+      const hit = firstFile(exts.map((e) => join(r, `${rel}${e}`)));
+      if (hit) return hit;
+    }
+    if (!spec.includes('.')) return null;
+    for (const e of exts) {
+      const hit = closest(suffixMatches(`${rel}${e}`), fromFile);
+      if (hit) return hit;
+    }
+    return null;
+  }
+
+  // -------------------------------------------------------------------------
+  // Solidity
+  // -------------------------------------------------------------------------
+
+  // Remappings (`prefix=target`, optional `context:` scope) from
+  // remappings.txt and foundry.toml, longest prefix first (Solidity docs,
+  // "Import Path Resolution" → Import Remapping).
+  const solRemapMemo = new Map();
+  function solidityProject(fromDir) {
+    if (solRemapMemo.has(fromDir)) return solRemapMemo.get(fromDir);
+    let projDir = null;
+    for (const n of ['foundry.toml', 'remappings.txt', 'hardhat.config.ts', 'hardhat.config.js', 'truffle-config.js']) {
+      const at = nearestWith(fromDir, n);
+      if (at !== null && (projDir === null || at.length > projDir.length)) projDir = at;
+    }
+    const base = projDir ?? '';
+    const remaps = [];
+    const addLine = (line) => {
+      const m = /^\s*(?:([^:=\s]+):)?([^=\s]+)=(\S+)\s*$/.exec(line);
+      if (m) remaps.push({ context: m[1] ? join(base, m[1]) : null, prefix: m[2], target: join(base, m[3]) });
+    };
+    for (const line of (readText(join(base, 'remappings.txt') ?? 'remappings.txt') || '').split('\n')) addLine(line);
+    const toml = readText(join(base, 'foundry.toml') ?? 'foundry.toml') || '';
+    const arr = /remappings\s*=\s*\[([\s\S]*?)\]/.exec(toml);
+    if (arr) for (const s of arr[1].match(/["']([^"']+)["']/g) || []) addLine(s.slice(1, -1));
+    remaps.sort((a, b) => b.prefix.length - a.prefix.length);
+    const out = { base, remaps };
+    solRemapMemo.set(fromDir, out);
+    return out;
+  }
+
+  function resolveSolidity(fromFile, spec) {
+    const fromDir = dirOf(fromFile);
+    if (spec.startsWith('./') || spec.startsWith('../')) {
+      const cand = join(fromDir, spec);
+      return cand && hasFile(cand) ? cand : null;
+    }
+    const { base, remaps } = solidityProject(fromDir);
+    for (const r of remaps) {
+      if (r.target === null || !spec.startsWith(r.prefix)) continue;
+      if (r.context && !(fromFile === r.context || fromFile.startsWith(r.context.replace(/\/?$/, '/')))) continue;
+      const cand = join(r.target, spec.slice(r.prefix.length));
+      if (cand && hasFile(cand)) return cand;
+    }
+    // Base path = project root; Foundry auto-detects lib/<dep>/src remaps.
+    const direct = join(base, spec);
+    if (direct && hasFile(direct)) return direct;
+    const [head, ...rest] = spec.replace(/^@/, '').split('/');
+    if (head && rest.length) {
+      for (const libDir of [join(base, 'lib', head), join(base, 'lib', `${head}-contracts`)]) {
+        if (!libDir || !hasDir(libDir)) continue;
+        const hit = firstFile([join(libDir, 'src', rest.join('/')), join(libDir, rest.join('/')), join(libDir, 'contracts', rest.join('/'))]);
+        if (hit) return hit;
+      }
+    }
+    return null;
+  }
+
+  // -------------------------------------------------------------------------
+  // Protocol Buffers
+  // -------------------------------------------------------------------------
+
+  // protoc resolves `import "a/b.proto"` against its -I roots; buf uses the
+  // module root (buf.yaml) or buf.work.yaml directories.
+  const protoRootMemo = new Map();
+  function protoRoots(fromDir) {
+    if (protoRootMemo.has(fromDir)) return protoRootMemo.get(fromDir);
+    const roots = [];
+    const add = (r) => { if (r !== null && !roots.includes(r)) roots.push(r); };
+    const bufDir = nearestWith(fromDir, 'buf.yaml');
+    if (bufDir !== null) add(bufDir);
+    const workDir = nearestWith(fromDir, 'buf.work.yaml');
+    if (workDir !== null) {
+      const text = readText(join(workDir, 'buf.work.yaml') ?? 'buf.work.yaml') || '';
+      for (const m of text.matchAll(/^\s*-\s*["']?([\w./-]+)["']?\s*$/gm)) add(join(workDir, m[1]));
+    }
+    for (const r of ['', 'proto', 'protos', 'protobuf', 'src/main/proto', 'api']) add(r);
+    let d = fromDir;
+    while (d) { add(d); d = dirOf(d); }
+    protoRootMemo.set(fromDir, roots);
+    return roots;
+  }
+
+  function resolveProto(fromFile, spec) {
+    for (const r of protoRoots(dirOf(fromFile))) {
+      const cand = join(r, spec);
+      if (cand && hasFile(cand)) return cand;
+    }
+    if (!spec.includes('/')) return null;
+    return closest(suffixMatches(norm(spec) ?? spec), fromFile);
+  }
+
+  // -------------------------------------------------------------------------
+  // Small path-based languages
+  // -------------------------------------------------------------------------
+
+  function relativeFile(fromFile, spec, exts = ['']) {
+    return firstFile(exts.map((e) => join(dirOf(fromFile), spec + e)));
+  }
+
+  function resolveElm(fromFile, spec) {
+    const elmDir = nearestWith(dirOf(fromFile), 'elm.json');
+    if (elmDir === null) return null;
+    let dirs = ['src'];
+    try {
+      const json = JSON.parse(readText(join(elmDir, 'elm.json') ?? 'elm.json') || '{}');
+      if (Array.isArray(json['source-directories'])) dirs = json['source-directories'];
+    } catch { /* default */ }
+    const rel = `${spec.replace(/\./g, '/')}.elm`;
+    return firstFile(dirs.map((d) => join(elmDir, d, rel)));
+  }
+
+  // Perl @INC conventions: lib/ of the distribution, the repo root, t/lib.
+  function resolvePerl(fromFile, imp) {
+    if (imp.kind === 'perl-file') return relativeFile(fromFile, imp.spec) || firstFile([norm(imp.spec)]);
+    const rel = `${imp.spec.replace(/::/g, '/')}.pm`;
+    const roots = ['lib', '', 't/lib'];
+    let d = dirOf(fromFile);
+    while (d) { if (path.posix.basename(d) === 'lib') roots.unshift(d); d = dirOf(d); }
+    const hit = firstFile(roots.map((r) => join(r, rel)));
+    if (hit) return hit;
+    return imp.spec.includes('::') ? closest(suffixMatches(rel), fromFile) : null;
+  }
+
+  // Erlang: `-include` searches the file's directory then the include path
+  // (by convention ../include); `-include_lib("app/include/x.hrl")` names
+  // an application directory.
+  function resolveErlang(fromFile, imp) {
+    const fromDir = dirOf(fromFile);
+    if (imp.kind === 'erl-include') {
+      return firstFile([join(fromDir, imp.spec), join(dirOf(fromDir), 'include', imp.spec), join('include', imp.spec)]);
+    }
+    const [app, ...rest] = imp.spec.split('/');
+    if (!rest.length) return null;
+    const tail = rest.join('/');
+    for (const base of [join('apps', app), join('lib', app), app, '']) {
+      const cand = join(base ?? '', tail);
+      if (cand && hasFile(cand)) return cand;
+    }
+    return null;
+  }
+
+  // Crystal: "./x" → x.cr or x/x.cr relative to the file; "x" → src/x.cr.
+  function resolveCrystal(fromFile, spec) {
+    if (spec.includes('*')) return null;
+    const name = path.posix.basename(spec);
+    if (spec.startsWith('./') || spec.startsWith('../')) {
+      return relativeFile(fromFile, spec, ['.cr', `/${name}.cr`]) || relativeFile(fromFile, spec.endsWith('.cr') ? spec : `${spec}.cr`);
+    }
+    return firstFile([join('src', `${spec}.cr`), join('src', spec, `${name}.cr`)]);
+  }
+
+  // Terraform: a local module source is a directory (all its .tf files).
+  function resolveTerraform(fromFile, spec) {
+    const dir = join(dirOf(fromFile), spec.replace(/\/+$/, ''));
+    return dir && hasDir(dir) ? `${dir}/` : null;
+  }
+
+  // Shell `source`: the script-directory idioms resolve against the file's
+  // directory; a literal path is relative to the working directory, which
+  // is unknown — try the file's directory, then the repo root.
+  function resolveShell(fromFile, imp) {
+    if (imp.kind === 'sh-scriptdir') return relativeFile(fromFile, imp.spec);
+    if (imp.spec.startsWith('/') || imp.spec.startsWith('~')) return null;
+    return relativeFile(fromFile, imp.spec) || firstFile([norm(imp.spec)]);
+  }
+
+  // -------------------------------------------------------------------------
+  // Swift (SwiftPM targets)
+  // -------------------------------------------------------------------------
+
+  // Package.swift targets: `.target(name: "X", path: "P")`; default
+  // Sources/<name>, Tests/<name> for test targets (PackageDescription docs).
+  let swiftTargetList = null;
+  function swiftTargets() {
+    if (swiftTargetList) return swiftTargetList;
+    swiftTargetList = [];
+    const manifests = [...fileSet].filter((f) => path.posix.basename(f) === 'Package.swift');
+    if (manifests.length === 0 && readText('Package.swift') !== null) manifests.push('Package.swift');
+    for (const mf of manifests) {
+      // Commented-out targets must not count; target names live in strings,
+      // so only line comments are dropped.
+      const text = (readText(mf) || '').replace(/^[ \t]*\/\/[^\n]*/gm, '');
+      const pkgDir = dirOf(mf);
+      const re = /\.(target|executableTarget|testTarget|macro|plugin)\s*\(\s*name\s*:\s*"([^"]+)"/g;
+      let skipUntil = -1;
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        // `.target(name: "X")` inside a declaration's `dependencies:` is a
+        // reference, not a declaration: skip everything inside the
+        // balanced argument list of the declaration being read.
+        if (m.index < skipUntil) continue;
+        const open = text.indexOf('(', m.index);
+        let depth = 0;
+        let end = open;
+        for (; end < text.length; end++) {
+          const ch = text[end];
+          if (ch === '"') { end++; while (end < text.length && text[end] !== '"') { if (text[end] === '\\') end++; end++; } continue; }
+          if (ch === '(') depth++;
+          else if (ch === ')' && --depth === 0) break;
+        }
+        const args = text.slice(m.index + m[0].length, end);
+        // A bare reference (`.target(name: "X")`, `…, condition: …)`) at top level.
+        if (!/\b(?:dependencies|path|sources|resources|exclude|swiftSettings|cSettings|plugins)\s*:/.test(args) && args.trim().replace(/^,/, '').trim() === '') continue;
+        skipUntil = end;
+        const p = /\bpath\s*:\s*"([^"]+)"/.exec(args.replace(/\.(?:target|product|byName)\s*\([^()]*\)/g, ''));
+        const dir = p ? join(pkgDir, p[1]) : join(pkgDir, m[1] === 'testTarget' ? 'Tests' : 'Sources', m[2]);
+        if (dir !== null && hasDir(dir)) swiftTargetList.push({ name: m[2], dir });
+      }
+    }
+    return swiftTargetList;
+  }
+
+  function swiftTargetOf(file) {
+    let best = null;
+    for (const t of swiftTargets()) {
+      if ((t.dir === '' || file.startsWith(t.dir + '/')) && (!best || t.dir.length > best.dir.length)) best = t;
+    }
+    return best;
+  }
+
+  function swiftTargetNamed(name) {
+    const hits = swiftTargets().filter((t) => t.name === name);
+    return hits.length === 1 ? hits[0] : null;
+  }
+
+  function resolveSwift(fromFile, spec) {
+    const t = swiftTargetNamed(spec);
+    return t && t.dir ? `${t.dir}/` : null;
+  }
+
+  const swiftModuleIndexMemo = new Map();
+  function swiftModuleIndex(target) {
+    if (swiftModuleIndexMemo.has(target.dir)) return swiftModuleIndexMemo.get(target.dir);
+    const byName = new Map();
+    const prefix = target.dir ? `${target.dir}/` : '';
+    for (const f of fileSet) {
+      if (!f.endsWith('.swift') || !f.startsWith(prefix)) continue;
+      if (swiftTargetOf(f) !== target) continue;
+      const text = sourceText(f);
+      if (!text) continue;
+      for (const d of braceDeclarations(stripNoise(text, 'swift')).decls) addDecl(byName, d.name, f, d.kind);
+    }
+    swiftModuleIndexMemo.set(target.dir, byName);
+    return byName;
+  }
+
+  // -------------------------------------------------------------------------
+  // C#
+  // -------------------------------------------------------------------------
+
+  let csIndexMemo = null;
+  function csIndex() {
+    if (csIndexMemo) return csIndexMemo;
+    const types = new Map(); // ns -> Map(name -> [{file, kind}])
+    const namespaces = new Set();
+    const globalUsings = new Map(); // project dir -> [ns]
+    const projectDirs = [...fileSet].filter((f) => f.endsWith('.csproj')).map(dirOf);
+    for (const f of fileSet) {
+      if (!f.endsWith('.cs')) continue;
+      const text = sourceText(f);
+      if (!text) continue;
+      const decl = csharpDeclarations(stripNoise(text, 'csharp'));
+      for (const ns of decl.namespaces) namespaces.add(ns);
+      for (const t of decl.types) {
+        let byName = types.get(t.ns);
+        if (!byName) { byName = new Map(); types.set(t.ns, byName); }
+        addDecl(byName, t.name, f, 'type');
+      }
+      if (decl.globalUsings.length) {
+        const proj = csProjectOf(f, projectDirs);
+        let list = globalUsings.get(proj);
+        if (!list) { list = []; globalUsings.set(proj, list); }
+        for (const u of decl.globalUsings) if (!list.includes(u)) list.push(u);
+      }
+    }
+    csIndexMemo = { types, namespaces, globalUsings, projectDirs };
+    return csIndexMemo;
+  }
+
+  function csProjectOf(file, projectDirs) {
+    let best = '';
+    for (const d of projectDirs) if ((d === '' || file.startsWith(d + '/')) && d.length >= best.length) best = d;
+    return best;
+  }
+
+  function resolveCsharp(fromFile, imp) {
+    if (imp.kind !== 'cs-alias' && imp.kind !== 'cs-static') return null;
+    const dot = imp.spec.lastIndexOf('.');
+    if (dot === -1) return null;
+    const entry = csIndex().types.get(imp.spec.slice(0, dot))?.get(imp.spec.slice(dot + 1));
+    if (!entry) return null;
+    const others = entry.type.filter((f) => f !== fromFile);
+    return others.length >= 1 && others.length <= MAX_FILES_PER_NAME ? others[0] : null;
+  }
+
+  // -------------------------------------------------------------------------
+  // JVM declaration index (Java / Kotlin / Scala / Groovy share packages)
+  // -------------------------------------------------------------------------
+
+  let jvmIndexMemo = null;
+  function jvmIndex() {
+    if (jvmIndexMemo) return jvmIndexMemo;
+    jvmIndexMemo = new Map(); // package -> Map(name -> [{file, kind}])
+    for (const f of fileSet) {
+      const lang = JVM_LANG_OF_EXT[path.posix.extname(f)];
+      if (!lang) continue;
+      const text = sourceText(f);
+      if (!text) continue;
+      const { packages, decls } = braceDeclarations(stripNoise(text, lang));
+      const pkg = packageChain(packages).pop() || '';
+      let byName = jvmIndexMemo.get(pkg);
+      if (!byName) { byName = new Map(); jvmIndexMemo.set(pkg, byName); }
+      for (const d of decls) addDecl(byName, d.name, f, d.kind);
+    }
+    return jvmIndexMemo;
+  }
+
+  /** Kotlin top-level functions and classes in differently named files. */
+  function resolveJvmByIndex(fromFile, spec) {
+    const dot = spec.lastIndexOf('.');
+    if (dot === -1) return null;
+    const entry = jvmIndex().get(spec.slice(0, dot))?.get(spec.slice(dot + 1));
+    if (!entry) return null;
+    const files = [...new Set([...entry.type, ...entry.func])].filter((f) => f !== fromFile);
+    return files.length === 1 ? files[0] : null;
+  }
+
+  // -------------------------------------------------------------------------
+  // Elixir module index
+  // -------------------------------------------------------------------------
+
+  let exIndexMemo = null;
+  function exIndex() {
+    if (exIndexMemo) return exIndexMemo;
+    exIndexMemo = new Map(); // module -> [files]
+    for (const f of fileSet) {
+      if (!f.endsWith('.ex') && !f.endsWith('.exs')) continue;
+      const text = sourceText(f);
+      if (!text) continue;
+      for (const mod of elixirModules(stripNoise(text, 'elixir'))) {
+        const list = exIndexMemo.get(mod);
+        if (!list) exIndexMemo.set(mod, [f]); else if (!list.includes(f)) list.push(f);
+      }
+    }
+    return exIndexMemo;
+  }
+
+  function resolveElixirModule(fromFile, mod) {
+    const files = exIndex().get(mod);
+    if (!files) return null;
+    const others = files.filter((f) => f !== fromFile);
+    return others.length === 1 ? others[0] : null;
+  }
+
+  // -------------------------------------------------------------------------
+  // Implicit references (namespace / package / module languages)
+  // -------------------------------------------------------------------------
+
+  /** Index entry per name: declaring files split by kind ('type' | 'func'). */
+  function addDecl(byName, name, file, kind) {
+    let entry = byName.get(name);
+    if (!entry) { entry = { type: [], func: [] }; byName.set(name, entry); }
+    const list = kind === 'func' ? entry.func : entry.type;
+    if (!list.includes(file)) list.push(file);
+  }
+
+  /**
+   * Resolve `name` through ordered visibility tiers. Each tier is a list of
+   * [scopeKey, Map(name -> entry)]. The first tier that declares the name
+   * wins; two scopes of that tier declaring it is an ambiguity (no edge).
+   */
+  /** Drop scopes the index does not know and tiers left empty. */
+  function liveTiers(tiers) {
+    const out = [];
+    for (const tier of tiers) {
+      const live = tier.filter((s) => s[1]);
+      if (live.length) out.push(live);
+    }
+    return out;
+  }
+
+  function lookupTiers(tiers, name, kind, fromFile) {
+    for (const tier of tiers) {
+      let hitScope = null;
+      let hitFiles = null;
+      for (const [scope, byName] of tier) {
+        const entry = byName && byName.get(name);
+        if (!entry) continue;
+        const list = kind === 'func' ? entry.func : entry.type;
+        if (list.length === 0) continue;
+        if (hitFiles !== null && hitScope !== scope) return null; // ambiguous
+        hitScope = scope;
+        hitFiles = list;
+      }
+      if (hitFiles === null) continue;
+      const files = hitFiles.includes(fromFile) ? hitFiles.filter((f) => f !== fromFile) : hitFiles;
+      if (files.length === 0) return null; // declared by the importing file itself
+      return files.length <= MAX_FILES_PER_NAME ? { scope: hitScope, files } : null;
+    }
+    return null;
+  }
+
+  /**
+   * File-level dependencies a namespace/module language creates without a
+   * file-naming import: names the file uses that resolve, by the language's
+   * lookup rules, to a top-level declaration of another repo file.
+   *
+   * @param {string} fromFile - repo-relative file
+   * @param {string} content - its source
+   * @param {string} language - import language id
+   * @param {Array<{spec: string, kind: string, names?: string[]}>} scanned - scanImports() result
+   * @returns {Array<{target: string, spec: string, line: number}>}
+   */
+  function implicitImports(fromFile, content, language, scanned = []) {
+    const from = norm(String(fromFile));
+    if (from == null || !content) return [];
+    try {
+      switch (language) {
+        case 'csharp': return implicitCsharp(from, content, scanned);
+        case 'java': case 'kotlin': case 'scala': case 'groovy': return implicitJvm(from, content, language, scanned);
+        case 'swift': return implicitSwift(from, content, scanned);
+        case 'elixir': return implicitElixir(from, content, scanned);
+        default: return [];
+      }
+    } catch {
+      return [];
+    }
+  }
+
+  function collectEdges(refs, body, resolveName, seen = new Set()) {
+    const out = [];
+    for (const [name, index] of refs) {
+      const hit = resolveName(name, index);
+      if (!hit) continue;
+      for (const file of hit.files) {
+        if (seen.has(file)) continue;
+        seen.add(file);
+        out.push({ target: file, spec: hit.spec || (hit.scope ? `${hit.scope}.${name}` : name), line: lineOfIndex(body, index) });
+        if (out.length >= MAX_IMPLICIT_EDGES_PER_FILE) return out;
+      }
+    }
+    return out;
+  }
+
+  /**
+   * Namespace prefixes (`a`, `a.b`, `a.b.c` for namespace a.b.c) and the
+   * segments a qualified chain may start with, for one declaration index.
+   */
+  const prefixMemo = new WeakMap();
+  function namespacePrefixes(nsMap) {
+    let p = prefixMemo.get(nsMap);
+    if (p) return p;
+    const prefixes = new Set();
+    const heads = new Set();
+    for (const ns of nsMap.keys()) {
+      if (!ns) continue;
+      const parts = ns.split('.');
+      for (let k = 1; k <= parts.length; k++) prefixes.add(parts.slice(0, k).join('.'));
+      for (const seg of parts) heads.add(seg);
+    }
+    p = { prefixes, heads };
+    prefixMemo.set(nsMap, p);
+    return p;
+  }
+
+  /**
+   * A dotted chain that spells `<namespace>.<Name>` relative to one of
+   * `bases` (innermost first; '' = absolute): the longest namespace prefix
+   * that declares the next segment wins.
+   */
+  function qualifiedHit(chain, bases, nsMap, fromFile) {
+    const segs = chain.split('.');
+    const { prefixes } = namespacePrefixes(nsMap);
+    for (const base of bases) {
+      const head = base ? `${base}.${segs[0]}` : segs[0];
+      if (!prefixes.has(head)) continue;
+      for (let k = segs.length - 1; k >= 1; k--) {
+        const ns = base ? `${base}.${segs.slice(0, k).join('.')}` : segs.slice(0, k).join('.');
+        const entry = nsMap.get(ns)?.get(segs[k]);
+        if (!entry) continue;
+        const list = entry.type.length ? entry.type : entry.func;
+        if (!list.length) continue;
+        const files = list.filter((f) => f !== fromFile);
+        if (files.length === 0 || files.length > MAX_FILES_PER_NAME) return null;
+        return { scope: ns, files, spec: `${ns}.${segs[k]}` };
+      }
+    }
+    return null;
+  }
+
+  function implicitCsharp(from, content, scanned) {
+    const idx = csIndex();
+    if (idx.types.size === 0) return [];
+    const stripped = stripNoise(content, 'csharp');
+    const ranges = csharpNamespaceRanges(stripped);
+    const usings = [];
+    const aliasNames = new Set();
+    for (const imp of scanned) {
+      if (imp.kind === 'cs-namespace' || imp.kind === 'cs-global') { if (!usings.includes(imp.spec)) usings.push(imp.spec); }
+      if (imp.kind === 'cs-alias') for (const n of imp.names || []) aliasNames.add(n);
+    }
+    for (const u of idx.globalUsings.get(csProjectOf(from, idx.projectDirs)) || []) if (!usings.includes(u)) usings.push(u);
+    const scope = (ns) => [ns, idx.types.get(ns)];
+    const outerChain = (ns) => {
+      const parts = ns ? ns.split('.') : [];
+      const out = [];
+      for (let n = parts.length; n >= 1; n--) out.push(parts.slice(0, n).join('.'));
+      out.push('');
+      return out;
+    };
+    // C# spec: the enclosing namespace, then its using directives, then the
+    // outer namespaces innermost first, then the global namespace.
+    const tiersMemo = new Map();
+    const tiersAt = (index) => {
+      const ns = namespaceAt(ranges, index);
+      let t = tiersMemo.get(ns);
+      if (!t) {
+        const chain = outerChain(ns);
+        t = liveTiers([[scope(chain[0])], usings.map(scope), ...chain.slice(1).map((n) => [scope(n)])]);
+        tiersMemo.set(ns, t);
+      }
+      return t;
+    };
+    const { types, body } = referencedNames(stripped, { capitalizedMethods: true });
+    for (const a of aliasNames) types.delete(a);
+    const seen = new Set();
+    const out = collectEdges(types, body, (name, index) => {
+      const tiers = tiersAt(index);
+      const hit = lookupTiers(tiers, name, 'type', from);
+      if (hit || name.endsWith('Attribute')) return hit;
+      // `[Foo]` names attribute class FooAttribute.
+      const attr = lookupTiers(tiers, `${name}Attribute`, 'type', from);
+      return attr ? { ...attr, spec: `${attr.scope ? `${attr.scope}.` : ''}${name}Attribute` } : null;
+    }, seen);
+    // Qualified references: `Ocelot.Configuration.File.FileRoute`, or
+    // `Configuration.File.FileRoute` inside namespace Ocelot.
+    const chains = qualifiedChains(body, namespacePrefixes(idx.types).heads);
+    for (const e of collectEdges(chains, body, (chain, index) => qualifiedHit(chain, outerChain(namespaceAt(ranges, index)), idx.types, from), seen)) out.push(e);
+    return out.slice(0, MAX_IMPLICIT_EDGES_PER_FILE);
+  }
+
+  function implicitJvm(from, content, language, scanned) {
+    const idx = jvmIndex();
+    if (idx.size === 0) return [];
+    const stripped = stripNoise(content, language);
+    const chain = packageChain(packageClauses(stripped));
+    const ownPkg = chain.length ? chain[chain.length - 1] : '';
+    const wildcards = [];
+    const bound = new Set();
+    for (const imp of scanned) {
+      if (imp.kind === 'jvm-wildcard') { if (!wildcards.includes(imp.spec)) wildcards.push(imp.spec); continue; }
+      if (imp.kind !== 'jvm') continue;
+      // `import a.B as C` binds C; `import a.{B => C}` binds C.
+      bound.add(imp.names && imp.names.length ? imp.names[0] : imp.spec.split('.').pop());
+    }
+    const scope = (p) => [p, idx.get(p)];
+    // Java/Kotlin: single-type imports shadow the package, which shadows
+    // on-demand imports. Scala: wildcard imports outrank package members of
+    // other compilation units; chained package clauses keep outer packages visible.
+    const tiers = liveTiers(language === 'scala'
+      ? [wildcards.map(scope), [scope(ownPkg)], ...chain.slice(0, -1).reverse().map((p) => [scope(p)])]
+      : [[scope(ownPkg)], wildcards.map(scope)]);
+    const withCalls = language === 'kotlin' || language === 'scala';
+    const { types, calls, body } = referencedNames(stripped, { calls: withCalls });
+    for (const b of bound) { types.delete(b); calls.delete(b); }
+    const seen = new Set();
+    const out = tiers.length ? collectEdges(types, body, (name) => lookupTiers(tiers, name, 'type', from), seen) : [];
+    if (withCalls && tiers.length) {
+      for (const e of collectEdges(calls, body, (name) => lookupTiers(tiers, name, 'func', from), seen)) out.push(e);
+    }
+    // Fully qualified references (`extends zipkin2.storage.StorageComponent`).
+    const chains = qualifiedChains(body, namespacePrefixes(idx).heads);
+    for (const e of collectEdges(chains, body, (c) => qualifiedHit(c, [''], idx, from), seen)) out.push(e);
+    return out.slice(0, MAX_IMPLICIT_EDGES_PER_FILE);
+  }
+
+  function implicitSwift(from, content, scanned) {
+    const own = swiftTargetOf(from);
+    if (!own) return [];
+    const tiers = [[[own.name, swiftModuleIndex(own)]]];
+    const imported = [];
+    for (const imp of scanned) {
+      const t = imp.kind === 'swift-module' ? swiftTargetNamed(imp.spec) : null;
+      if (t && t !== own) imported.push([t.name, swiftModuleIndex(t)]);
+    }
+    if (imported.length) tiers.push(imported);
+    const { types, calls, body } = referencedNames(stripNoise(content, 'swift'), { calls: true });
+    const out = collectEdges(types, body, (name) => lookupTiers(tiers, name, 'type', from));
+    const seen = new Set(out.map((e) => e.target));
+    for (const e of collectEdges(calls, body, (name) => lookupTiers(tiers, name, 'func', from))) {
+      if (!seen.has(e.target)) { seen.add(e.target); out.push(e); }
+    }
+    return out.slice(0, MAX_IMPLICIT_EDGES_PER_FILE);
+  }
+
+  function implicitElixir(from, content, scanned) {
+    const idx = exIndex();
+    if (idx.size === 0) return [];
+    const stripped = stripNoise(content, 'elixir');
+    const ownMods = new Set(elixirModules(stripped));
+    const aliases = new Map();
+    for (const imp of scanned) if (imp.kind === 'ex-alias') for (const n of imp.names || []) aliases.set(n, imp.spec);
+    const refs = elixirReferences(stripped);
+    return collectEdges(refs, stripped, (name) => {
+      const head = name.split('.')[0];
+      const expanded = aliases.has(head) ? aliases.get(head) + name.slice(head.length) : null;
+      for (const mod of [expanded, name]) {
+        if (!mod || ownMods.has(mod)) continue;
+        const files = (idx.get(mod) || []).filter((f) => f !== from);
+        if (files.length === 1) return { scope: '', spec: mod, files };
+        if (files.length > 1) return null;
+      }
+      return null;
+    });
+  }
+
+  /**
+   * True when a scanned import names a namespace declared in the repo (C#
+   * `using X;`): it maps to no single file, and its legacy row keeps the
+   * name-based resolution it had before.
+   */
+  function isLocalNamespace(fromFile, imp, language) {
+    if (language !== 'csharp' || (imp.kind !== 'cs-namespace' && imp.kind !== 'cs-global')) return false;
+    try { return csIndex().namespaces.has(imp.spec); } catch { return false; }
+  }
+
   /**
    * @param {string} fromFile - repo-relative importing file
    * @param {{spec: string, kind: string, names?: string[]}} imp - scanned import
@@ -841,9 +1787,14 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
   // (Rust: the file, since `x.rs` and `mod.rs` own different child dirs).
   const resolveMemo = new Map();
   function resolve(fromFile, imp, language) {
+    if (!imp || !imp.spec) return null;
+    // A C# namespace using never names one file (see implicitImports).
+    if (imp.kind === 'cs-namespace' || imp.kind === 'cs-global') return null;
     const from = norm(String(fromFile));
-    if (from == null || !imp || !imp.spec) return null;
-    const scope = language === 'rust' ? from : dirOf(from);
+    if (from == null) return null;
+    // Results that exclude the importing file itself (index lookups) or
+    // depend on its own module file must not be shared across a directory.
+    const scope = FILE_SCOPED_MEMO_LANGUAGES.has(language) ? from : dirOf(from);
     const key = `${language}\0${scope}\0${imp.kind}\0${imp.spec}\0${imp.names ? imp.names.join(',') : ''}`;
     if (resolveMemo.has(key)) return resolveMemo.get(key);
     const result = resolveUncached(from, imp, language);
@@ -863,6 +1814,25 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
         case 'ruby': return resolveRuby(from, imp);
         case 'php': return resolvePhp(from, imp);
         case 'dart': return resolveDart(from, imp.spec);
+        case 'scss': case 'sass': case 'less': case 'css': return resolveStyle(from, imp);
+        case 'csharp': return resolveCsharp(from, imp);
+        case 'swift': return resolveSwift(from, imp.spec);
+        case 'elixir': return resolveElixirModule(from, imp.spec);
+        case 'lua': return resolveLua(from, imp.spec);
+        case 'zig': return resolveZig(from, imp.spec);
+        case 'haskell': return resolveHaskell(from, imp.spec);
+        case 'clojure': return resolveClojure(from, imp.spec);
+        case 'solidity': return resolveSolidity(from, imp.spec);
+        case 'shell': return resolveShell(from, imp);
+        case 'proto': return resolveProto(from, imp.spec);
+        case 'hcl': return resolveTerraform(from, imp.spec);
+        case 'julia': return relativeFile(from, imp.spec);
+        case 'elm': return resolveElm(from, imp.spec);
+        case 'perl': return resolvePerl(from, imp);
+        case 'r': return relativeFile(from, imp.spec) || firstFile([norm(imp.spec)]);
+        case 'powershell': return relativeFile(from, imp.spec);
+        case 'erlang': return resolveErlang(from, imp);
+        case 'crystal': return resolveCrystal(from, imp.spec);
         default: return null;
       }
     } catch {
@@ -870,7 +1840,7 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     }
   }
 
-  return { resolve, hasFile, root };
+  return { resolve, implicitImports, isLocalNamespace, hasFile, root };
 }
 
 /**
