@@ -308,6 +308,55 @@ describe('patternSearch — native path requires no ripgrep', () => {
 });
 
 // =============================================================================
+// 2b. patternSearch honours --in (ss-find): it used to ignore fileFilter entirely
+// =============================================================================
+
+describe('patternSearch — fileFilter scope', () => {
+  function scopeSearcher() {
+    const matches = [
+      { file: 'lib/auth.js', line: 3, content: 'class AuthService {}' },
+      { file: 'src/auth.js', line: 7, content: 'class AuthService {}' },
+      { file: 'src/sub/auth.js', line: 2, content: 'const AuthService = 1;' },
+    ];
+    return {
+      verbose: false,
+      projectRoot: '/proj',
+      sparseGramIndexPath: path.join(os.tmpdir(), 'sweet-search-absent-sparse.idx'),
+      hasLateInteractionIndex: true,
+      sparseGramIndex: makeUnifiedIndex({ matches, candidateFiles: 3, totalFiles: 3, scannedFiles: 3 }),
+      lateInteractionIndex: {
+        documents: new Map(), init: vi.fn(), hasTokens: vi.fn(() => new Set()),
+        scoreWithLateInteraction: vi.fn(async () => []),
+      },
+      getChunkLocationMap,
+    };
+  }
+  const files = res => res.results.map(r => r.file).sort();
+
+  it('without --in every file is a candidate (unchanged)', async () => {
+    const res = await patternSearch.call(scopeSearcher(), 'auth', null, { regex: 'AuthService', k: 10 });
+    expect(files(res)).toEqual(['lib/auth.js', 'src/auth.js', 'src/sub/auth.js']);
+  });
+
+  it('a directory, a file, several scopes and an absolute scope each restrict the results', async () => {
+    const run = fileFilter => patternSearch.call(scopeSearcher(), 'auth', null,
+      { regex: 'AuthService', k: 10, fileFilter });
+    expect(files(await run('src'))).toEqual(['src/auth.js', 'src/sub/auth.js']);
+    expect(files(await run('src/auth.js'))).toEqual(['src/auth.js']);
+    expect(files(await run(['lib', 'src/sub']))).toEqual(['lib/auth.js', 'src/sub/auth.js']);
+    expect(files(await run('/proj/src/sub'))).toEqual(['src/sub/auth.js']);
+    expect(files(await run('/elsewhere/src'))).toEqual([]);
+  });
+
+  it('a scope with no match returns the empty (agent) package, not an error', async () => {
+    const res = await patternSearch.call(scopeSearcher(), 'auth', null,
+      { regex: 'AuthService', k: 10, fileFilter: 'docs', format: 'agent' });
+    expect(res.results).toEqual([]);
+    expect(res.stats.grepMatches).toBe(0);
+  });
+});
+
+// =============================================================================
 // 3. Clear, actionable error when neither native nor ripgrep is available
 // =============================================================================
 

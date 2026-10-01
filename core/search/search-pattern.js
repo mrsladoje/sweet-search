@@ -150,6 +150,21 @@ function shapeBareGrepMatches(candidateResult, symbolType, searcher, fileFilter,
   return matches;
 }
 
+/**
+ * A candidate result restricted to an --in scope (ss-find). The same whole-segment rule as
+ * bareGrep's, applied before chunk mapping and ranking, so it can only remove candidates:
+ * it never reorders what remains. No scope = the result unchanged.
+ */
+function scopeCandidateResult(result, fileFilter, projectRoot) {
+  if (!fileFilter || !result) return result;
+  const inScope = match => matchesGrepFileFilter(match.file, fileFilter, projectRoot);
+  return {
+    ...result,
+    indexedMatches: (result.indexedMatches || []).filter(inScope),
+    overlayMatches: (result.overlayMatches || []).filter(inScope),
+  };
+}
+
 // =============================================================================
 // Bare grep (wired onto SweetSearch.prototype)
 // =============================================================================
@@ -337,9 +352,13 @@ export async function patternSearch(query, routing, options = {}) {
   const effectiveQuery = enhanceQuery ? mergeRegexIntoQuery(query, regex) : query;
   log(`Query: "${effectiveQuery}"`);
 
+  // --in: only matches inside the scope become candidates (it used to be ignored here).
+  const scopeRoot = path.resolve(searchDir);
+  const scoped = result => scopeCandidateResult(result, options.fileFilter, scopeRoot);
+
   const parallelStart = performance.now();
   let [candidateResult, encodedQuery] = await Promise.all([
-    generateRegexMatches(this, regex, searchDir, { ...options, lightweightParse: true }),
+    generateRegexMatches(this, regex, searchDir, { ...options, lightweightParse: true }).then(scoped),
     (async () => {
       const encodeStart = performance.now();
       const tokens = await encodeQuery(effectiveQuery);
@@ -358,7 +377,7 @@ export async function patternSearch(query, routing, options = {}) {
     originalResult: candidateResult,
     retry: translatedPattern => generateRegexMatches(
       this, translatedPattern, searchDir, retryOptions,
-    ),
+    ).then(scoped),
   });
   candidateResult = dialectRetry.candidateResult;
   const grepMatches = candidateResult.indexedMatches;

@@ -430,6 +430,19 @@ async function notIndexedNote(scopePath) {
   try { return await cov.notIndexedNote(scopePath); } catch { return null; }
 }
 
+// A scope that does not exist on disk is the loudest case: 10 of 11 such calls in the
+// fresh pool printed a bare `(no matches)`, which says "your pattern is absent" about
+// a directory that was never searched. Usually a mistyped or invented path
+// (`src/b2/build/x` for `src/build/x`). Say so and name the repair. Informative, not a
+// crash: the pattern may still be fine. A distinct exit code (3) lets a wrapper or a
+// script tell "scope wrong" from "searched and found nothing" (0). ss-grep and ss-find.
+function exitScopeNotFound(missing) {
+  process.stdout.write(`(scope not found: ${missing.join(', ')} — nothing was searched under `
+    + `${missing.length > 1 ? 'those paths' : 'that path'}. This is NOT an absence of matches. `
+    + `Locate the real path first: ss-grep "<name>" with no --in, then re-scope.)\n`);
+  process.exit(3);
+}
+
 /** The `--in` scopes that do not exist on disk at all. */
 function missingScopes(scopePaths) {
   return (scopePaths || []).filter((p) => {
@@ -643,19 +656,9 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
       }
     }
     if (result.results.length === 0) {
-      // A scope that does not exist on disk is the loudest case: 10 of 11 such calls in the
-      // fresh pool printed a bare `(no matches)`, which says "your pattern is absent" about
-      // a directory that was never searched. Usually a mistyped or invented path
-      // (`src/b2/build/x` for `src/build/x`). Say so and name the repair.
+      // A scope that does not exist on disk is the loudest case (exitScopeNotFound).
       const missing = missingScopes(inPaths);
-      if (missing.length) {
-        process.stdout.write(`(scope not found: ${missing.join(', ')} — nothing was searched under `
-          + `${missing.length > 1 ? 'those paths' : 'that path'}. This is NOT an absence of matches. `
-          + `Locate the real path first: ss-grep "<name>" with no --in, then re-scope.)\n`);
-        // Informative, not a crash: the pattern may still be fine. A distinct exit code lets
-        // a wrapper or a script tell "scope wrong" from "searched and found nothing" (0).
-        process.exit(3);
-      }
+      if (missing.length) exitScopeNotFound(missing);
       // Then a scope the index cannot answer for: an agent that scoped to a bundle needs to
       // know that before it decides the pattern is absent.
       let note = null;
@@ -857,6 +860,12 @@ async function cmdFind(rawArgs) {
       process.stdout.write(`# confidence=${response.confidence}${response.confidenceReason ? ' (' + response.confidenceReason + ')' : ''}` +
         `${renderSufficiency(response)}\n`);
     }
+  }
+
+  // --in naming a path that does not exist: what ss-grep says, with the same exit code.
+  if (!response.results?.length && inPaths.length) {
+    const missing = missingScopes(inPaths);
+    if (missing.length) exitScopeNotFound(missing);
   }
 
   if (renderFix) {
