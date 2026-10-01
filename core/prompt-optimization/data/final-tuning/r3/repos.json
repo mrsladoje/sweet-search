@@ -1,0 +1,8 @@
+[
+  {"repo": "jj", "dir": "eval/repos/r3-jj", "language": "Rust", "url": "https://github.com/jj-vcs/jj", "sha": "030ecf22c56b98bf6507067dca0df3dffa6de498", "files": 422, "loc": 270967, "size": "large", "indexable_files": 681, "loc_nontest": 147186},
+  {"repo": "dgraph", "dir": "eval/repos/r3-dgraph", "language": "Go", "url": "https://github.com/dgraph-io/dgraph", "sha": "6cd03dca3b003dae29df904c0a09667f7edb703b", "files": 596, "loc": 264708, "size": "large", "indexable_files": 1006, "loc_nontest": 157918},
+  {"repo": "tortoise-orm", "dir": "eval/repos/r3-tortoise-orm", "language": "Python", "url": "https://github.com/tortoise/tortoise-orm", "sha": "1979f27d6a37db991ca5c934e2394faa6c942d52", "files": 451, "loc": 73388, "size": "medium", "indexable_files": 533, "loc_nontest": 34235},
+  {"repo": "typedoc", "dir": "eval/repos/r3-typedoc", "language": "TypeScript", "url": "https://github.com/TypeStrong/typedoc", "sha": "6d8c856bbb46b089371952981f113c3e318818fd", "files": 597, "loc": 67693, "size": "medium", "indexable_files": 838, "loc_nontest": 47541},
+  {"repo": "zipkin", "dir": "eval/repos/r3-zipkin", "language": "Java", "url": "https://github.com/openzipkin/zipkin", "sha": "878ce2a1fad54ca941d17fdcf2e1d924b148eb1f", "files": 428, "loc": 57034, "size": "medium", "indexable_files": 740, "loc_nontest": 30590},
+  {"repo": "ocelot", "dir": "eval/repos/r3-ocelot", "language": "C#", "url": "https://github.com/ThreeMammals/Ocelot", "sha": "fcebf2b96c1811500037e010ee3b09e25ac39b19", "files": 757, "loc": 71824, "size": "medium", "indexable_files": 953, "loc_nontest": 20311}
+]

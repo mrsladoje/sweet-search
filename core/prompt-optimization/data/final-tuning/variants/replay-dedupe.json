@@ -1,0 +1,482 @@
+[
+ {
+  "cell": "oc-dsflash41",
+  "id": "c-ood-02",
+  "off": 1241,
+  "on": 997,
+  "entriesOff": 5,
+  "entriesOn": 4
+ },
+ {
+  "cell": "oc-dsflash41",
+  "id": "c-ood-03",
+  "off": 7619,
+  "on": 7245,
+  "entriesOff": 7,
+  "entriesOn": 5
+ },
+ {
+  "cell": "oc-dsflash41",
+  "id": "cpp-009",
+  "off": 2423,
+  "on": 1934,
+  "entriesOff": 11,
+  "entriesOn": 10
+ },
+ {
+  "cell": "oc-dsflash41",
+  "id": "csharp-007",
+  "off": 7641,
+  "on": 6054,
+  "entriesOff": 21,
+  "entriesOn": 19
+ },
+ {
+  "cell": "oc-dsflash41",
+  "id": "dart-ood-05",
+  "off": 7575,
+  "on": 6433,
+  "entriesOff": 20,
+  "entriesOn": 18
+ },
+ {
+  "cell": "oc-dsflash41",
+  "id": "elixir-ood-02",
+  "off": 9439,
+  "on": 9161,
+  "entriesOff": 5,
+  "entriesOn": 3
+ },
+ {
+  "cell": "oc-dsflash41",
+  "id": "elixir-v60-02",
+  "off": 3838,
+  "on": 2984,
+  "entriesOff": 10,
+  "entriesOn": 3
+ },
+ {
+  "cell": "oc-dsflash41",
+  "id": "java-v60-02",
+  "off": 12375,
+  "on": 11776,
+  "entriesOff": 7,
+  "entriesOn": 5
+ },
+ {
+  "cell": "oc-dsflash41",
+  "id": "lua-ood-05",
+  "off": 1746,
+  "on": 1611,
+  "entriesOff": 5,
+  "entriesOn": 5
+ },
+ {
+  "cell": "oc-dsflash41",
+  "id": "lua-v60-03",
+  "off": 6846,
+  "on": 6477,
+  "entriesOff": 10,
+  "entriesOn": 10
+ },
+ {
+  "cell": "oc-dsflash41",
+  "id": "php-v60-03",
+  "off": 8788,
+  "on": 7303,
+  "entriesOff": 15,
+  "entriesOn": 10
+ },
+ {
+  "cell": "oc-dsflash41",
+  "id": "ruby-009",
+  "off": 7039,
+  "on": 6588,
+  "entriesOff": 7,
+  "entriesOn": 5
+ },
+ {
+  "cell": "oc-dsflash41",
+  "id": "scala-ood-03",
+  "off": 4678,
+  "on": 3686,
+  "entriesOff": 13,
+  "entriesOn": 9
+ },
+ {
+  "cell": "oc-dsflash41",
+  "id": "swift-ood-04",
+  "off": 12495,
+  "on": 11375,
+  "entriesOff": 14,
+  "entriesOn": 10
+ },
+ {
+  "cell": "oc-dsflash41",
+  "id": "swift-v60-01",
+  "off": 5174,
+  "on": 3543,
+  "entriesOff": 20,
+  "entriesOn": 15
+ },
+ {
+  "cell": "oc-dsflash41",
+  "id": "zig-ood-05",
+  "off": 5855,
+  "on": 5417,
+  "entriesOff": 10,
+  "entriesOn": 8
+ },
+ {
+  "cell": "oc-dsflash41",
+  "id": "ts-006",
+  "off": 10128,
+  "on": 9267,
+  "entriesOff": 10,
+  "entriesOn": 5
+ },
+ {
+  "cell": "oc-dsflash41",
+  "id": "ts-007",
+  "off": 11629,
+  "on": 10800,
+  "entriesOff": 10,
+  "entriesOn": 6
+ },
+ {
+  "cell": "oc-dsflash41",
+  "id": "js-010",
+  "off": 2929,
+  "on": 2259,
+  "entriesOff": 12,
+  "entriesOn": 11
+ },
+ {
+  "cell": "oc-dsflash41",
+  "id": "python-v60-02",
+  "off": 12496,
+  "on": 12021,
+  "entriesOff": 9,
+  "entriesOn": 7
+ },
+ {
+  "cell": "codex-sol61-high",
+  "id": "c-ood-01",
+  "off": 4860,
+  "on": 4668,
+  "entriesOff": 5,
+  "entriesOn": 4
+ },
+ {
+  "cell": "codex-sol61-high",
+  "id": "c-ood-05",
+  "off": 4855,
+  "on": 4791,
+  "entriesOff": 5,
+  "entriesOn": 5
+ },
+ {
+  "cell": "codex-sol61-high",
+  "id": "cpp-v60-01",
+  "off": 7322,
+  "on": 6924,
+  "entriesOff": 7,
+  "entriesOn": 6
+ },
+ {
+  "cell": "codex-sol61-high",
+  "id": "csharp-v60-01",
+  "off": 3271,
+  "on": 3029,
+  "entriesOff": 6,
+  "entriesOn": 6
+ },
+ {
+  "cell": "codex-sol61-high",
+  "id": "dart-ood-05",
+  "off": 6522,
+  "on": 6386,
+  "entriesOff": 6,
+  "entriesOn": 6
+ },
+ {
+  "cell": "codex-sol61-high",
+  "id": "elixir-ood-03",
+  "off": 10605,
+  "on": 10298,
+  "entriesOff": 5,
+  "entriesOn": 3
+ },
+ {
+  "cell": "codex-sol61-high",
+  "id": "go-001",
+  "off": 10597,
+  "on": 9937,
+  "entriesOff": 13,
+  "entriesOn": 11
+ },
+ {
+  "cell": "codex-sol61-high",
+  "id": "java-008",
+  "off": 12210,
+  "on": 11219,
+  "entriesOff": 13,
+  "entriesOn": 12
+ },
+ {
+  "cell": "codex-sol61-high",
+  "id": "js-004",
+  "off": 2823,
+  "on": 2525,
+  "entriesOff": 8,
+  "entriesOn": 8
+ },
+ {
+  "cell": "codex-sol61-high",
+  "id": "lua-ood-02",
+  "off": 5612,
+  "on": 5516,
+  "entriesOff": 5,
+  "entriesOn": 5
+ },
+ {
+  "cell": "codex-sol61-high",
+  "id": "lua-v60-03",
+  "off": 1334,
+  "on": 1139,
+  "entriesOff": 5,
+  "entriesOn": 5
+ },
+ {
+  "cell": "codex-sol61-high",
+  "id": "php-ood-04",
+  "off": 10708,
+  "on": 9308,
+  "entriesOff": 15,
+  "entriesOn": 12
+ },
+ {
+  "cell": "codex-sol61-high",
+  "id": "python-001",
+  "off": 5614,
+  "on": 5614,
+  "entriesOff": 3,
+  "entriesOn": 3
+ },
+ {
+  "cell": "codex-sol61-high",
+  "id": "python-v60-02",
+  "off": 4393,
+  "on": 4182,
+  "entriesOff": 8,
+  "entriesOn": 8
+ },
+ {
+  "cell": "codex-sol61-high",
+  "id": "rust-003",
+  "off": 3986,
+  "on": 3778,
+  "entriesOff": 5,
+  "entriesOn": 5
+ },
+ {
+  "cell": "codex-sol61-high",
+  "id": "rust-009",
+  "off": 3394,
+  "on": 2778,
+  "entriesOff": 13,
+  "entriesOn": 13
+ },
+ {
+  "cell": "codex-sol61-high",
+  "id": "scala-ood-04",
+  "off": 10430,
+  "on": 9877,
+  "entriesOff": 7,
+  "entriesOn": 5
+ },
+ {
+  "cell": "codex-sol61-high",
+  "id": "swift-ood-02",
+  "off": 6177,
+  "on": 5588,
+  "entriesOff": 5,
+  "entriesOn": 3
+ },
+ {
+  "cell": "codex-sol61-high",
+  "id": "swift-ood-05",
+  "off": 3484,
+  "on": 3079,
+  "entriesOff": 9,
+  "entriesOn": 9
+ },
+ {
+  "cell": "codex-sol61-high",
+  "id": "ts-007",
+  "off": 9741,
+  "on": 9553,
+  "entriesOff": 3,
+  "entriesOn": 2
+ },
+ {
+  "cell": "cc-opus55-medium",
+  "id": "c-ood-05",
+  "off": 2566,
+  "on": 2498,
+  "entriesOff": 5,
+  "entriesOn": 5
+ },
+ {
+  "cell": "cc-opus55-medium",
+  "id": "cpp-009",
+  "off": 7218,
+  "on": 6861,
+  "entriesOff": 8,
+  "entriesOn": 7
+ },
+ {
+  "cell": "cc-opus55-medium",
+  "id": "cpp-v60-01",
+  "off": 10874,
+  "on": 9874,
+  "entriesOff": 15,
+  "entriesOn": 11
+ },
+ {
+  "cell": "cc-opus55-medium",
+  "id": "dart-ood-01",
+  "off": 3943,
+  "on": 2695,
+  "entriesOff": 16,
+  "entriesOn": 12
+ },
+ {
+  "cell": "cc-opus55-medium",
+  "id": "dart-ood-04",
+  "off": 3677,
+  "on": 3413,
+  "entriesOff": 8,
+  "entriesOn": 8
+ },
+ {
+  "cell": "cc-opus55-medium",
+  "id": "elixir-ood-05",
+  "off": 3532,
+  "on": 2824,
+  "entriesOff": 8,
+  "entriesOn": 2
+ },
+ {
+  "cell": "cc-opus55-medium",
+  "id": "java-006",
+  "off": 20979,
+  "on": 19523,
+  "entriesOff": 15,
+  "entriesOn": 13
+ },
+ {
+  "cell": "cc-opus55-medium",
+  "id": "lua-ood-05",
+  "off": 498,
+  "on": 498,
+  "entriesOff": 1,
+  "entriesOn": 1
+ },
+ {
+  "cell": "cc-opus55-medium",
+  "id": "php-ood-05",
+  "off": 6640,
+  "on": 5444,
+  "entriesOff": 18,
+  "entriesOn": 16
+ },
+ {
+  "cell": "cc-opus55-medium",
+  "id": "scala-ood-01",
+  "off": 2364,
+  "on": 1441,
+  "entriesOff": 8,
+  "entriesOn": 2
+ },
+ {
+  "cell": "cc-opus55-medium",
+  "id": "scala-ood-04",
+  "off": 12511,
+  "on": 11664,
+  "entriesOff": 10,
+  "entriesOn": 6
+ },
+ {
+  "cell": "cc-opus55-medium",
+  "id": "swift-ood-04",
+  "off": 4833,
+  "on": 4210,
+  "entriesOff": 12,
+  "entriesOn": 12
+ },
+ {
+  "cell": "cc-opus55-medium",
+  "id": "swift-ood-05",
+  "off": 4534,
+  "on": 3536,
+  "entriesOff": 17,
+  "entriesOn": 16
+ },
+ {
+  "cell": "cc-opus55-medium",
+  "id": "swift-v60-01",
+  "off": 1948,
+  "on": 1468,
+  "entriesOff": 6,
+  "entriesOn": 4
+ },
+ {
+  "cell": "cc-opus55-medium",
+  "id": "zig-ood-02",
+  "off": 6407,
+  "on": 6287,
+  "entriesOff": 5,
+  "entriesOn": 5
+ },
+ {
+  "cell": "cc-opus55-medium",
+  "id": "zig-ood-04",
+  "off": 5062,
+  "on": 4594,
+  "entriesOff": 8,
+  "entriesOn": 6
+ },
+ {
+  "cell": "cc-opus55-medium",
+  "id": "zig-v60-02",
+  "off": 4322,
+  "on": 4106,
+  "entriesOff": 8,
+  "entriesOn": 7
+ },
+ {
+  "cell": "cc-opus55-medium",
+  "id": "ts-010",
+  "off": 10240,
+  "on": 9734,
+  "entriesOff": 8,
+  "entriesOn": 7
+ },
+ {
+  "cell": "cc-opus55-medium",
+  "id": "js-010",
+  "off": 3249,
+  "on": 2527,
+  "entriesOff": 15,
+  "entriesOn": 14
+ },
+ {
+  "cell": "cc-opus55-medium",
+  "id": "go-010",
+  "off": 3686,
+  "on": 3244,
+  "entriesOff": 14,
+  "entriesOn": 14
+ }
+]

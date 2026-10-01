@@ -1,0 +1,1150 @@
+{
+ "r3-typedoc-03": {
+  "id": "r3-typedoc-03",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "main",
+    "Options.addReader",
+    "Options.read",
+    "ArgumentsReader"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The two-pass command-line argument reader architecture (ArgumentsReader at priority 0 and priority 300) is specifically configured in cli.ts and handled by Options."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Application.bootstrapWithPlugins",
+    "ArgumentsReader",
+    "Options.addReader",
+    "Options.read",
+    "insertOrderSorted"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The provided files directly show the bootstrap reader list, the sorted insertion/read order, and the two-pass ArgumentsReader behavior with ignoreErrors."
+  }
+ },
+ "r3-typedoc-04": {
+  "id": "r3-typedoc-04",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "FileRegistry.getName",
+    "MarkedPlugin.displayPartsToMarkdown",
+    "AssetsPlugin.onRenderEnd"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The tracing of relative media links, unique name assignment with numeric suffixes, and copying to the output media directory is completely and specifically implemented across FileRegistry, MarkedPlugin, and AssetsPlugin."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "FileRegistry.getName",
+    "FileRegistry.getNameToAbsoluteMap",
+    "MarkedPlugin.displayPartsToMarkdown",
+    "AssetsPlugin.onRenderEnd"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The three files form a complete, self-contained pipeline: FileRegistry assigns unique names, MarkedPlugin rewrites relative media links to use those names, and AssetsPlugin copies the named files to the output media folder."
+  }
+ },
+ "r3-typedoc-08": {
+  "id": "r3-typedoc-08",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "run",
+    "ExitCodes",
+    "validateExports"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The conditions under which TypeDoc exits with ExitCodes.ValidationError (4) following validation warnings are unambiguously defined in cli.ts run()."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "validateExports",
+    "Logger.validationWarning",
+    "run",
+    "ExitCodes"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The question and answer are fully resolved by the interaction between cli.ts run(), logger.validationWarning, and validateExports."
+  }
+ },
+ "r3-typedoc-07": {
+  "id": "r3-typedoc-07",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "attachUnionComments",
+    "resolveLinks",
+    "validateLinks",
+    "checkReflection"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The capture, resolution, and validation of per-member union doc comments are specifically handled by attachUnionComments, resolveLinks, and validateLinks (via checkReflection)."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "attachUnionComments",
+    "resolveLinks",
+    "validateLinks"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The code directly shows the capture, resolution, and validation paths for union member comments and their links."
+  }
+ },
+ "r3-typedoc-10": {
+  "id": "r3-typedoc-10",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "getConstructorParamPropertyComment"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The extraction and assignment of a constructor parameter doc comment to its property reflection is handled specifically by getConstructorParamPropertyComment."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "getComment",
+    "getConstructorParamPropertyComment"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The fallback logic and tag lookup are localized in getComment/getConstructorParamPropertyComment, and no other code path constructs property descriptions from constructor parameter docs."
+  }
+ },
+ "r3-typedoc-02": {
+  "id": "r3-typedoc-02",
+  "keep": false,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Options.setCompilerOptions",
+    "CommentPlugin.isHidden"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The automatic connection between TypeScript's `stripInternal` compiler option and TypeDoc's exclusion of `@internal` members is implemented directly in `Options.setCompilerOptions` (which sets `excludeInternal` to true when `stripInternal` is set) and `CommentPlugin.isHidden` (which hides reflections with `@internal` when `excludeInternal` is true)."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "1/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Options.setCompilerOptions"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The code shows a single explicit mapping from TypeScript's stripInternal compiler option to TypeDoc's excludeInternal option in Options.setCompilerOptions, so the connection is not reasonably located elsewhere."
+  }
+ },
+ "r3-typedoc-09": {
+  "id": "r3-typedoc-09",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "parseMeaning",
+    "filterMapByMeaning"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Declaration reference meaning parsing and resolution are centrally handled by parseMeaning and filterMapByMeaning."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "parseMeaning",
+    "filterMapByMeaning",
+    "resolveKeyword",
+    "Comment",
+    "extractLabelTag"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The parser, resolver, and label extraction in these files directly implement the overload-selection syntax and resolution."
+  }
+ },
+ "r3-typedoc-06": {
+  "id": "r3-typedoc-06",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "getHierarchyRoots",
+    "hierarchyTemplate",
+    "fullHierarchy",
+    "TypePlugin"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The full class-hierarchy page rendering and root determination logic are uniquely implemented in hierarchyTemplate, fullHierarchy, getHierarchyRoots, and TypePlugin."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "getHierarchyRoots",
+    "hierarchyTemplate",
+    "fullHierarchy",
+    "TypePlugin.resolve"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The relevant files directly assign root selection to getHierarchyRoots and child entries to fullHierarchy over implementedBy/extendedBy populated by TypePlugin.resolve."
+  }
+ },
+ "r3-typedoc-05": {
+  "id": "r3-typedoc-05",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "IncludePlugin.prototype.checkIncludeTagsParts",
+    "Application.prototype.watchFile",
+    "Application.prototype.convertAndWatch"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "IncludePlugin specifically resolves included files from doc comments and registers them via Application.watchFile, which is backed by the watch mechanism in convertAndWatch."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "IncludePlugin.checkIncludeTagsParts",
+    "Application.watchFile",
+    "Application.convertAndWatch"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The relevant logic is entirely contained in these locations: IncludePlugin registers included markdown paths via Application.watchFile, and Application.convertAndWatch installs the watcher/rebuild behavior."
+  }
+ },
+ "r3-typedoc-15": {
+  "id": "r3-typedoc-15",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "updateResults"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The search ranking and result display logic for the generated site's search box is entirely contained in updateResults in Search.ts."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "updateResults"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The search ordering, filtering, boosting, and limit are all implemented in the single updateResults function in Search.ts."
+  }
+ },
+ "r3-typedoc-13": {
+  "id": "r3-typedoc-13",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "convertVariable",
+    "shouldAutomaticallyConvertAsFunction"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The decision to convert a variable holding an arrow function into a function reflection and the condition checking for type annotations are entirely contained in convertVariable and shouldAutomaticallyConvertAsFunction."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "convertVariable",
+    "shouldAutomaticallyConvertAsFunction"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The decision is fully contained in convertVariable and shouldAutomaticallyConvertAsFunction in this file; the explicit type annotation check directly returns false before automatic conversion."
+  }
+ },
+ "r3-typedoc-17": {
+  "id": "r3-typedoc-17",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "BaseRouter.usedFileNames",
+    "BaseRouter.getFileName"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The handling of case collisions for page file names is specifically implemented in BaseRouter.getFileName using the usedFileNames set."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "BaseRouter.usedFileNames",
+    "BaseRouter.getFileName",
+    "BaseRouter.buildPages"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The prevention mechanism is implemented centrally in BaseRouter's usedFileNames set and getFileName, and the shown buildPages/buildChildPages paths all obtain page URLs through getFileName."
+  }
+ },
+ "r3-typedoc-01": {
+  "id": "r3-typedoc-01",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "SourcePlugin",
+    "SourcePlugin.prototype.onBeginResolve",
+    "RepositoryManager",
+    "RepositoryManager.prototype.getURL",
+    "GitRepository",
+    "GitRepository.prototype.getURL",
+    "AssumedRepository",
+    "guessSourceUrlTemplate"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The logic for constructing source URLs and determining when a source URL is undefined is entirely implemented in SourcePlugin and repository.ts."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "4/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "SourcePlugin.onDeclaration",
+    "SourcePlugin.onSignature",
+    "SourcePlugin.onBeginResolve",
+    "RepositoryManager.getURL",
+    "RepositoryManager.getRepository",
+    "GitRepository.getURL",
+    "GitRepository.tryCreateRepository",
+    "AssumedRepository.getURL",
+    "guessSourceUrlTemplate"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The code in these files unambiguously shows source URL construction and no-link conditions through SourcePlugin and RepositoryManager; only the theme-rendering clause of claim 4 is not present."
+  }
+ },
+ "r3-typedoc-11": {
+  "id": "r3-typedoc-11",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "discoverCommentWorker"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The handling of comments for overloaded versus single-signature functions is unambiguously implemented in discoverCommentWorker."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "discoverCommentWorker",
+    "discoverSignatureComment"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The source explicitly handles overloaded versus single-signature function-likes in discoverCommentWorker and provides a separate signature comment path via discoverSignatureComment."
+  }
+ },
+ "r3-typedoc-19": {
+  "id": "r3-typedoc-19",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "CommentPlugin.onResolve"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "CommentPlugin.onResolve is the unique place where MUTUALLY_EXCLUSIVE_MODIFIERS are checked and a warning is logged when multiple mutually exclusive tags are present."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "CommentPlugin.onResolve",
+    "MUTUALLY_EXCLUSIVE_MODIFIERS",
+    "CommentPlugin.suppressCommentWarnings"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The warning logic is centralized in CommentPlugin.onResolve using MUTUALLY_EXCLUSIVE_MODIFIERS and suppressCommentWarnings, so there is no other plausible location in the provided files."
+  }
+ },
+ "r3-typedoc-20": {
+  "id": "r3-typedoc-20",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "CommentPlugin.validateParamTags",
+    "CommentPlugin.suppressCommentWarnings"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Unused parameter tags are uniquely checked, warned, and suppressed in CommentPlugin.validateParamTags and suppressCommentWarnings."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "CommentPlugin.moveSignatureParamComments",
+    "CommentPlugin.validateParamTags",
+    "CommentPlugin.suppressCommentWarnings",
+    "moveNestedParamTags"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The relevant logic is entirely contained in CommentPlugin.ts, specifically in moveSignatureParamComments, validateParamTags, and suppressCommentWarnings."
+  }
+ },
+ "r3-typedoc-22": {
+  "id": "r3-typedoc-22",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "0/1",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "converters",
+    "toGlobString"
+   ],
+   "claims": [
+    "supported",
+    "unsupported"
+   ],
+   "why": "The check rejecting backslashes in glob patterns is uniquely handled in the GlobArray option converter in src/lib/utils/options/declaration.ts."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "converters",
+    "ParameterType.GlobArray"
+   ],
+   "claims": [
+    "supported",
+    "supported"
+   ],
+   "why": "The rejection logic is uniquely located in the GlobArray converter in declaration.ts; other files only define the createGlobString helper or option types."
+  }
+ },
+ "r3-typedoc-14": {
+  "id": "r3-typedoc-14",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "convertSymbol",
+    "_convertSymbolNow",
+    "createAlias"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The code in symbols.ts explicitly handles this case: conversion of symbols named 'default' is deferred so the named export becomes the declaration reflection, and the default export is then converted via createAlias as a ReferenceReflection."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "convertSymbol",
+    "_convertSymbolNow",
+    "createAlias",
+    "getExports",
+    "ReferenceReflection"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The code explicitly sorts default exports last and defers them, then aliases the deferred default export to the already-created named reflection unless excludeReferences is enabled."
+  }
+ },
+ "r3-typedoc-21": {
+  "id": "r3-typedoc-21",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "validateExports",
+    "makeIntentionallyExportedHelper"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The validation check for unexported referenced types and the exemption for foreign packages are uniquely implemented in src/lib/validation/exports.ts."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "1/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "validateExports",
+    "makeIntentionallyExportedHelper.has"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The relevant warning is localized in validateExports and the third-party package exemption is explicitly handled in the helper's has() method."
+  }
+ },
+ "r3-typedoc-12": {
+  "id": "r3-typedoc-12",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "exampleBlock",
+    "makeCodeBlock"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The parsing of @example tags, conversion into fenced code blocks, and caption/title extraction are uniquely handled in exampleBlock and makeCodeBlock in parser.ts."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "exampleBlock",
+    "makeCodeBlock"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The provided parser is the sole comment-block parser handling @example in the relevant code path, so no alternative implementation is suggested."
+  }
+ },
+ "r3-typedoc-16": {
+  "id": "r3-typedoc-16",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "initTheme",
+    "storage",
+    "noOpStorageImpl"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The theme persistence and storage fallback implementation is specifically and unambiguously handled by Theme.ts and storage.ts."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "2/2",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "initTheme",
+    "setTheme",
+    "storage",
+    "noOpStorageImpl"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The persistence and fallback behavior is specifically implemented by initTheme and the storage wrapper; any layout inline script would only be an early-apply optimization, not a different core answer."
+  }
+ },
+ "r3-typedoc-26": {
+  "id": "r3-typedoc-26",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/1",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "getSortFunction"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The logic for evaluating sorting strategies in sequence and appending unlisted kinds from defaults is completely and unambiguously implemented in getSortFunction."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "1/1",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "getSortFunction"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The behavior is explicitly implemented in getSortFunction in sort.ts, so a careful engineer would not need to look elsewhere."
+  }
+ },
+ "r3-typedoc-28": {
+  "id": "r3-typedoc-28",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "inferEntryPoints",
+    "inferPackageEntryPointPaths",
+    "resolveExport"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The entry point inference logic from package.json and its conditional export resolution are uniquely handled by inferEntryPoints, inferPackageEntryPointPaths, and resolveExport."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "inferPackageEntryPointPaths",
+    "resolveExport",
+    "inferEntryPoints"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The question is directly answered by the provided files: inferPackageEntryPointPaths and resolveExport in fs.ts handle package manifest discovery and conditional export names, while inferEntryPoints in entry-point.ts handles mapping JS paths back to TypeScript sources."
+  }
+ },
+ "r3-typedoc-27": {
+  "id": "r3-typedoc-27",
+  "keep": false,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "getEntryPointsForPaths",
+    "getModuleName"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The entry point lookup logic and module name computation for folder entry points are directly handled by getEntryPointsForPaths and getModuleName."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": true,
+   "symbols": [
+    "getEntryPointsForPaths",
+    "getModuleName"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The question does not specify the entry point strategy, and the Expand strategy via getExpandedEntryPointsForPaths would recursively include all matching files in a directory rather than picking an index file."
+  }
+ },
+ "r3-typedoc-23": {
+  "id": "r3-typedoc-23",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "textContent",
+    "ValidatingFileRegistry.prototype.register"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The parsing and warning logic for non-existent relative markdown links is localized entirely in textContent and ValidatingFileRegistry.register."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "textContent",
+    "ValidatingFileRegistry.register"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The provided files explicitly contain both the validation warning for unresolved relative links and the file existence check with basePath fallback."
+  }
+ },
+ "r3-typedoc-31": {
+  "id": "r3-typedoc-31",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-typedoc-32": {
+  "id": "r3-typedoc-32",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-typedoc-33": {
+  "id": "r3-typedoc-33",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-typedoc-34": {
+  "id": "r3-typedoc-34",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-typedoc-35": {
+  "id": "r3-typedoc-35",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-typedoc-36": {
+  "id": "r3-typedoc-36",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3-typedoc-18": {
+  "id": "r3-typedoc-18",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "getFileComment",
+    "getCommentImpl"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Module vs. statement comment disambiguation is clearly handled in getFileComment and getCommentImpl via the @module tag and @packageDocumentation modifier."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "2/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "getCommentImpl",
+    "getFileComment"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The relevant decision is explicitly split between getCommentImpl and getFileComment in the same file, both using @module or @packageDocumentation as the marker."
+  }
+ },
+ "r3-typedoc-30": {
+  "id": "r3-typedoc-30",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/1",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Outputs.getOutputSpecs"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The logic determining output generation order and fallback behavior is fully defined in Outputs.getOutputSpecs, though option declarations defining specific shortcuts and the './docs' default reside in option declaration files."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "1/1",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Outputs",
+    "Outputs.getOutputSpecs"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The getOutputSpecs method clearly gives precedence to out/shortcut options over the outputs option and falls back to the default html output, so the behavior is unambiguous from this code."
+  }
+ },
+ "r3-typedoc-29": {
+  "id": "r3-typedoc-29",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "PackagePlugin.onBegin",
+    "PackagePlugin"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "PackagePlugin.onBegin contains the entire logic for discovering the readme, the filenames searched, and checking for 'none' to turn it off."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "1/1",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "PackagePlugin.onBegin"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The provided file contains the complete logic for locating the readme and disabling it via the 'none' option, so no alternative location is apparent."
+  }
+ },
+ "r3-typedoc-24": {
+  "id": "r3-typedoc-24",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Deserializer.reviveProjects"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "Deserializer.reviveProjects specifically handles merging multiple JSON exports and checks schemaVersion for each project."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "2/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Deserializer.reviveProjects"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The only merge-specific deserialization path is Deserializer.reviveProjects, which contains the schema-version check; no other shown code handles merging, so the referenced location is unambiguous."
+  }
+ },
+ "r3-typedoc-25": {
+  "id": "r3-typedoc-25",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/1",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "convertType"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "convertType in src/lib/converter/types.ts is the definitive location where depth limits and circular type conversion guards are implemented."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "1/1",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "convertType",
+    "typeConversionDepth",
+    "seenTypes",
+    "UnknownType"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "The stop conditions and \"...\" placeholder are centralized in convertType in this file, so another answer is not reasonable."
+  }
+ }
+}

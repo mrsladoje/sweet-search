@@ -1,0 +1,351 @@
+{
+  "repo": "sequel",
+  "sha": "3acf523e8accb7a745e364b4db3bb51b172162b3",
+  "probes": [
+    {
+      "id": "r3x-sequel-01",
+      "repo": "r3-sequel",
+      "language": "Ruby",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "With the PostgreSQL adapter that wraps the native C client library and default connection options, a query returns rows that have a date column, a time-of-day column and a timestamp-with-zone column. Starting when the result set arrives, trace how each column's raw text becomes a Ruby value: which code chooses a converter for each column from its server-side type number, where the table of converters is first filled and then adjusted when the database object is created, what makes the date converter safe to be so simple, and which code applies the database-side and application-side time zone settings to the timestamp.",
+      "expectedFiles": [
+        "lib/sequel/adapters/postgres.rb",
+        "lib/sequel/adapters/shared/postgres.rb",
+        "lib/sequel/database/misc.rb",
+        "lib/sequel/timezones.rb",
+        "lib/sequel/core.rb"
+      ],
+      "expectedSymbols": [
+        "Sequel::Postgres::Dataset#fetch_rows_set_cols",
+        "Sequel::Postgres::Dataset#yield_hash_rows",
+        "Sequel::Postgres::CONVERSION_PROCS",
+        "Sequel::Postgres::TYPE_TRANSLATOR_DATE",
+        "Sequel::Postgres::DatabaseMethods#initialize_postgres_adapter",
+        "Sequel::Postgres::Database#adapter_initialize",
+        "Sequel::Postgres::Database#connection_configuration_sqls",
+        "Sequel::Database#to_application_timestamp",
+        "Sequel::SequelMethods#convert_timestamp",
+        "Sequel::SequelMethods#string_to_time"
+      ],
+      "expectedFacts": [
+        "Postgres::Dataset#fetch_rows_set_cols (adapters/postgres.rb) looks up each result field's type number (res.ftype) in db.conversion_procs and builds [converter, column symbol] pairs; yield_hash_rows calls the converter on every non-nil value.",
+        "The converter table starts as the shared CONVERSION_PROCS constant (adapters/shared/postgres.rb): type 1082 (date) maps to a date translator, 1083/1266 (time) to Sequel.string_to_time, and 1114/1184 (timestamp, timestamptz) to Sequel.database_to_application_timestamp; each Database duplicates it in initialize_postgres_adapter.",
+        "CRITICAL: initialize_postgres_adapter then replaces the 1114 and 1184 entries with the Database instance's own to_application_timestamp method, so timestamp conversion is per database object (honouring its timezone setting) rather than the global default converter.",
+        "CRITICAL: Postgres::Database#adapter_initialize replaces the date entry (1082) with TYPE_TRANSLATOR_DATE, which only splits the text on '-' and builds Date.new, unless the use_iso_date_format option is false (default true).",
+        "The simple date converter is safe because the same option makes connection_configuration_sqls add the session statement that sets the date output style to ISO on every new connection.",
+        "Database#to_application_timestamp (database/misc.rb) calls Sequel.convert_timestamp(v, timezone) with the Database's timezone (falling back to Sequel.database_timezone); convert_timestamp (timezones.rb) parses the text, uses the database timezone only when the text has no explicit UTC offset, then converts the result to Sequel.application_timezone."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "author": "r3x-sequel-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: adapters/postgres.rb:653-655 fetch_rows -> yield_hash_rows(res, fetch_rows_set_cols(res)); :811-820 fetch_rows_set_cols (procs = db.conversion_procs; cols << [procs[res.ftype(i)], output_identifier(res.fname(i))]); :833-848 yield_hash_rows; :547-555 adapter_initialize (@use_iso_date_format = typecast_value_boolean(@opts.fetch(:use_iso_date_format, true)); add_conversion_proc(1082, TYPE_TRANSLATOR_DATE) if @use_iso_date_format); :564-568 connection_configuration_sqls adds \"SET DateStyle = 'ISO'\" under the same flag; :273 connect runs those statements. adapters/shared/postgres.rb:47-48 date translator object (Date.new(*s.split('-').map(&:to_i))) = TYPE_TRANSLATOR_DATE; :63-79 CONVERSION_PROCS table ([1083,1266]=>string_to_time, [1082]=>string_to_date, [1184,1114]=>database_to_application_timestamp); :1789-1795 initialize_postgres_adapter (procs = @conversion_procs = CONVERSION_PROCS.dup; procs[1184] = procs[1114] = method(:to_application_timestamp)). database/misc.rb:349-351 timezone, :356-358 to_application_timestamp. timezones.rb:84-96 convert_timestamp, :104-106 database_to_application_timestamp, :155-175 convert_input_timestamp (uses input timezone only when !_date_parse(v).has_key?(:offset)), :55-80 convert_output_timestamp. core.rb:353 string_to_time (SQLTime.parse). DECOYS: extensions/pg_extended_date_support.rb (re-registers 1082/1114/1184 only when the extension or the infinite-timestamp option is on; not default), adapters/sqlite.rb:213 to_application_timestamp, shared/postgres.rb:327-340 add_conversion_proc/add_named_conversion_proc (the user-facing API that also writes the same table, not the default seeding), extensions/pg_range.rb and pg_array.rb (register extra type numbers only when loaded). ROUTE: (1) grep fetch_rows|ftype in adapters/postgres.rb, read fetch_rows_set_cols -> reveals db.conversion_procs [G]; (2) grep conversion_procs|CONVERSION_PROCS|TYPE_TRANSLATOR in lib -> shared/postgres.rb + postgres.rb:552 [G: term first seen in call 1]; (3) read shared/postgres.rb 40-80 and 1789-1795 -> reveals string_to_time, database_to_application_timestamp, to_application_timestamp [G]; (4) grep those three names + read database/misc.rb 349-360 [G]; (5) read timezones.rb convert_timestamp/convert_input_timestamp/convert_output_timestamp [G: names appear only in the body of Sequel.database_to_application_timestamp / Database#to_application_timestamp]; (6) read postgres.rb 545-570 for the ISO date-style safety net [G: use_iso_date_format seen in call 2 hit line]. MIN CALLS: 6. FIRST CALL (5 greps from the question's words): grep -rn 'ftype', 'fetch_rows', 'time zone', 'timestamptz', 'converter' -> reach adapters/postgres.rb only among gold files ('converter' hits jdbc/other files; 'time zone' hits docs/timezones.rb comments). est. turns 6-8. Closed-book risk: medium (Sequel is well known, but the TYPE_TRANSLATOR_DATE override and the per-instance replacement of timestamp procs are non-obvious).",
+      "repoSha": "3acf523e8accb7a745e364b4db3bb51b172162b3",
+      "set": "dev"
+    },
+    {
+      "id": "r3x-sequel-02",
+      "repo": "r3-sequel",
+      "language": "Ruby",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "A model has a one-to-many relationship. Application code passes the parent a list of attribute hashes through the generated bulk-assignment setter for that relationship: one hash describes a brand-new child, another matches an existing child by primary key and carries a delete marker, and the configuration for that relationship allows deletion. Nothing has been saved yet. Explain what happens until the parent is saved: how the setter routes each hash, how validation of the new child is postponed and how its errors reach the parent, which mechanism postpones the database work until after the parent's own write and where that mechanism empties itself, which method finally attaches the new child and what it sets on it, and why the child marked for deletion is not first detached from the parent.",
+      "expectedFiles": [
+        "lib/sequel/plugins/nested_attributes.rb",
+        "lib/sequel/plugins/validate_associated.rb",
+        "lib/sequel/plugins/instance_hooks.rb",
+        "lib/sequel/model/associations.rb",
+        "lib/sequel/model/base.rb"
+      ],
+      "expectedSymbols": [
+        "Sequel::Plugins::NestedAttributes::ClassMethods#def_nested_attribute_method",
+        "Sequel::Plugins::NestedAttributes::InstanceMethods#nested_attributes_setter",
+        "Sequel::Plugins::NestedAttributes::InstanceMethods#nested_attributes_create",
+        "Sequel::Plugins::NestedAttributes::InstanceMethods#nested_attributes_remove",
+        "Sequel::Plugins::ValidateAssociated::InstanceMethods#validate_associated_object",
+        "Sequel::Plugins::InstanceHooks::InstanceMethods#after_save",
+        "Sequel::Model::Associations::InstanceMethods#add_associated_object",
+        "Sequel::Model::Associations::ClassMethods#def_one_to_many",
+        "Sequel::Model::Associations::OneToManyAssociationReflection#remove_before_destroy?"
+      ],
+      "expectedFacts": [
+        "The generated '<association>_attributes=' setter (defined by nested_attributes/def_nested_attribute_method) calls set_nested_attributes, which for an array association calls nested_attributes_list_setter and then nested_attributes_setter per hash: a hash whose primary key matches an existing child with the delete flag (allowed by the destroy option) goes to nested_attributes_remove(destroy: true); a hash with no matching key goes to nested_attributes_create.",
+        "nested_attributes_create builds the child with set/set_fields, registers delay_validate_associated_object, appends the child to the cached association array, marks it skip_validation_on_next_save!, and registers an after_save hook that calls the reflection's add_ method.",
+        "validate_associated's delay_validate_associated_object registers an after_validation hook; validate_associated_object fills the child's foreign key from the parent's primary key when missing, validates the child, and copies the child's error messages onto the parent's errors under the association name (ignoring foreign-key errors if the parent has no key yet).",
+        "CRITICAL: the postponing mechanism is the instance_hooks plugin: after_save_hook/after_validation_hook store blocks in @instance_hooks, the overridden after_save runs the after_save hooks after the parent's save and then deletes the :after_save, :before_save, :after_validation and :before_validation entries.",
+        "CRITICAL: the add_ method is add_associated_object (associations.rb), which runs the private _add_ method built from the one_to_many :adder proc; that proc sets the child's foreign key column(s) from the parent's key and saves the child.",
+        "For the doomed child nested_attributes_remove only detaches (remove_ method) when destroy is not requested or reflection.remove_before_destroy? is true; OneToManyAssociationReflection#remove_before_destroy? is false, so it only registers an after_save hook calling obj.destroy and deletes the child from the cached association array."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "author": "r3x-sequel-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: plugins/nested_attributes.rb:131-145 nested_attributes, :147-156 def_nested_attribute_method, :163-175 set_nested_attributes, :227-233 nested_attributes_list_setter, :284-320 nested_attributes_setter (pk match, _delete / _remove flags), :192-225 nested_attributes_create (delay_validate_associated_object, public_send(name) << obj, skip_validation_on_next_save!, after_save_hook{public_send(reflection[:add_method], obj)}), :239-256 nested_attributes_remove (before_save_hook{remove} only if !opts[:destroy] || reflection.remove_before_destroy?; after_save_hook{obj.destroy}; associations[...].delete(obj)), :322-327 nested_attributes_update. plugins/validate_associated.rb:40 (apply loads instance_hooks), :53-55 delay_validate_associated_object (after_validation_hook), :59-85 validate_associated_object. plugins/instance_hooks.rb:36-43 hook-definer loop (after_save_hook etc.), :72-80 after_save (run then delete hooks), :120-123 add_instance_hook, :131-134 run_after_instance_hooks. model/associations.rb:2238-2283 def_association_instance_methods (add_method = :add_<singular>, delegates to add_associated_object), :2808-2821 add_associated_object, :2638-2644 one_to_many opts[:adder] proc (sets keys, o.save(save_opts)), :556-558 default remove_before_destroy? true, :1160-1162 OneToManyAssociationReflection false. model/base.rb:1732-1734 skip_validation_on_next_save!, :2018-2023 _save_valid?. DECOYS: many_to_many adder (inserts join row) and ManyToMany remove_before_destroy? (true), nested_attributes_update path for existing children (after_save_hook{obj.save_changes}), plugins/association_pks.rb, association_multi_add_remove.rb. ROUTE: (1) grep for the plugin by topic (nested|bulk assignment) and read nested_attributes.rb [first gold file]; (2) [G] grep delay_validate_associated_object|after_save_hook|before_save_hook -> validate_associated.rb + instance_hooks.rb (hook helpers defined by a loop, not by name); (3) read instance_hooks.rb to see when hooks run and are cleared [G]; (4) read validate_associated.rb [G]; (5) [G] grep add_method|add_associated_object|:adder in model/associations.rb and read def_association_instance_methods + add_associated_object; (6) [G] read def_one_to_many adder proc (line 2639) which is found only via the :adder key seen in call 5; (7) [G] read remove_before_destroy? overrides (grep) to explain the destroy branch. MIN CALLS: 7. FIRST CALL (5 greps from the question's words): grep -rn 'nested', 'bulk', 'delete marker', 'postpone', 'one_to_many' -> reach plugins/nested_attributes.rb and model/associations.rb (one_to_many) — two gold files; the nested_attributes hit is the entry, associations.rb hits are the decoy-rich 4000-line file. est. turns 7-9. Closed-book risk: medium.",
+      "repoSha": "3acf523e8accb7a745e364b4db3bb51b172162b3",
+      "set": "dev"
+    },
+    {
+      "id": "r3x-sequel-03",
+      "repo": "r3-sequel",
+      "language": "Ruby",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "On PostgreSQL, a model's table has a 32-bit integer column, a decimal column with declared precision and scale, and a timestamp column. The developer turns on the model feature that derives validations automatically from the table definition. Explain where the lower and upper bounds that a too-large integer or a far-future date is compared against come from: which code computes them and from what text, when and where the results are cached, how they reach the model's validation step, under which conditions the bound check is skipped, and why a model on the embedded single-file database gets no integer bounds at all.",
+      "expectedFiles": [
+        "lib/sequel/plugins/auto_validations.rb",
+        "lib/sequel/plugins/validation_helpers.rb",
+        "lib/sequel/model/base.rb",
+        "lib/sequel/database/query.rb",
+        "lib/sequel/adapters/shared/postgres.rb",
+        "lib/sequel/adapters/shared/sqlite.rb"
+      ],
+      "expectedSymbols": [
+        "Sequel::Plugins::AutoValidations::ClassMethods#setup_auto_validations",
+        "Sequel::Plugins::AutoValidations::InstanceMethods#validate",
+        "Sequel::Plugins::ValidationHelpers::InstanceMethods#validates_max_value",
+        "Sequel::Plugins::ValidationHelpers::InstanceMethods#validatable_attributes",
+        "Sequel::Model::ClassMethods#get_db_schema",
+        "Sequel::Database#schema",
+        "Sequel::Database#column_schema_integer_min_max_values",
+        "Sequel::Database#column_schema_decimal_min_max_values",
+        "Sequel::Postgres::DatabaseMethods#schema_parse_table",
+        "Sequel::SQLite::DatabaseMethods#column_schema_integer_min_max_values"
+      ],
+      "expectedFacts": [
+        "setup_auto_validations (auto_validations.rb) builds auto_validate_max_value_columns and auto_validate_min_value_columns from every db_schema entry that has :max_value / :min_value; it runs when the plugin is configured and again after every set_dataset (Plugins.after_set_dataset).",
+        "The bounds are checked in the plugin's validate method, only inside the schema-types branch (skipped if types validation is skipped or disabled), by validates_max_value / validates_min_value with options that allow nil and skip a column that already has an error (e.g. a type error).",
+        "CRITICAL: the db_schema comes from Model.get_db_schema -> Database#schema (database/query.rb), which caches parsed results in @schemas (when cache_schema is true) and, after schema_parse_table, fills :min_value/:max_value for columns that lack both: integer columns via column_schema_integer_min_max_values, decimal columns via column_schema_decimal_min_max_values.",
+        "The integer guess reads the db_type text: names containing big/int8 give the 64-bit range, small/int2 the 16-bit range, otherwise the 32-bit range (unsigned variants for MySQL-style 'unsigned'); the decimal guess uses the declared precision and scale (from :column_size/:scale or the '(p,s)' in db_type) as plus or minus the largest representable value.",
+        "CRITICAL: for PostgreSQL date and timestamp columns the bounds are set earlier, inside Postgres schema_parse_table (server 9.6+): date type 1082 gets MIN_DATE/MAX_DATE and timestamp types 1114/1184 get MIN_TIMESTAMP/MAX_TIMESTAMP only when Sequel.datetime_class is Time; query.rb's guard (skip if :max_value or :min_value already set) leaves them unchanged.",
+        "The SQLite adapter overrides column_schema_integer_min_max_values to return nil (decimal is an alias of it), because SQLite does not restrict integer or decimal columns to a range, so no bounds are stored and no bound validation is added."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "author": "r3x-sequel-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: plugins/auto_validations.rb:222-239 setup_auto_validations (max/min value lists from db_schema), :174 Plugins.after_set_dataset(self, :setup_auto_validations), :109-112 configure calls it if @dataset, :251-300 validate (bounds inside `unless skip.include?(:types) || !model.auto_validate_types?` block, :280-290), :77 MAX_VALUE_OPTIONS = {:from=>:values, :allow_nil=>true, :skip_invalid=>true}. plugins/validation_helpers.rb:153-157 validates_max_value, :167-171 validates_min_value, :317-331 validatable_attributes (next if si && errors.on(a)). model/base.rb:895-938 get_db_schema, :940-942 get_db_schema_array -> db.schema(dataset, :reload=>reload), set_dataset :624-640. database/query.rb:121-193 schema (cache in @schemas :154-155,:190; :177-186 min/max fill guarded by `!c[:max_value] && !c[:min_value]`), :287-295 constants, :297-320 column_schema_integer_min_max_values, :323-340 column_schema_decimal_min_max_values. adapters/shared/postgres.rb:1898-1901 MIN_DATE/MAX_DATE/MIN_TIMESTAMP/MAX_TIMESTAMP, :1911-1950 schema_parse_table with oid case at :1939-1949. adapters/shared/sqlite.rb:330-333 returns nil. DECOYS: adapters/shared/mysql.rb:595-604 (returns nil only when CHECK constraints unsupported), shared/oracle.rb:185, shared/access.rb:63 overrides; plugins/primary_key_lookup_check_values.rb:122-138 also reads :min_value/:max_value but for key lookups, not validation; plugins/constraint_validations.rb. ROUTE: (1) grep 'validations derived|auto' -> plugins/auto_validations.rb read validate/setup (reveals db_schema keys :max_value/:min_value) ; (2) [G] grep max_value|min_value across lib -> query.rb:178-185, shared/postgres.rb:1942-1947, mysql/sqlite/oracle/access overrides, primary_key_lookup_check_values; (3) [G] read query.rb 121-193 and 287-340; (4) [G] read shared/postgres.rb 1895-1950 to see the date/timestamp branch and the guard interplay; (5) [G] read shared/sqlite.rb override; (6) read validation_helpers validatable_attributes for skip_invalid semantics [G: option name seen in auto_validations constants]; (7) read base.rb get_db_schema/set_dataset to explain caching/trigger [G]. MIN CALLS: 6. FIRST CALL (5 greps from the question's words): grep -rn 'derive' plugins/, 'upper bound', 'lower bound', 'precision', 'validat' plugins/ -> only plugins/auto_validations.rb (and validation_helpers.rb) among gold files; 'validat' is the only broad term. est. turns 6-8. Closed-book risk: medium (the schema-side computation is not where most agents look first).",
+      "repoSha": "3acf523e8accb7a745e364b4db3bb51b172162b3",
+      "set": "dev"
+    },
+    {
+      "id": "r3x-sequel-04",
+      "repo": "r3-sequel",
+      "language": "Ruby",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "A model hierarchy keeps each subclass's extra columns in a separate table linked to the parent table by primary key, and the parent table has a type column that names the subclass of each row. Application code loads all rows of the parent model with the call that returns a list, then reads a subclass-only attribute on the first returned object. Trace: how each loaded row becomes an instance of the right subclass; why the subclass-only attribute is missing from the loaded row; what the attribute reader does on first access and which dataset it queries; how one extra query can fill the same attribute for the other objects of that list; and which code made the objects of the list aware of each other.",
+      "expectedFiles": [
+        "lib/sequel/plugins/class_table_inheritance.rb",
+        "lib/sequel/plugins/single_table_inheritance.rb",
+        "lib/sequel/plugins/lazy_attributes.rb",
+        "lib/sequel/plugins/tactical_eager_loading.rb",
+        "lib/sequel/dataset/actions.rb"
+      ],
+      "expectedSymbols": [
+        "Sequel::Plugins::ClassTableInheritance.configure",
+        "Sequel::Plugins::ClassTableInheritance::ClassMethods#inherited",
+        "Sequel::Plugins::SingleTableInheritance.configure",
+        "Sequel::Plugins::SingleTableInheritance::ClassMethods#sti_load",
+        "Sequel::Plugins::SingleTableInheritance::ClassMethods#sti_class",
+        "Sequel::Plugins::LazyAttributes::ClassMethods#define_lazy_attribute_getter",
+        "Sequel::Plugins::LazyAttributes::InstanceMethods#lazy_attribute_lookup",
+        "Sequel::Plugins::TacticalEagerLoading::DatasetMethods#post_load",
+        "Sequel::Dataset#_all"
+      ],
+      "expectedFacts": [
+        "ClassTableInheritance.configure calls SingleTableInheritance.configure with the key column, which sets the parent dataset's row_proc to the model's sti_load; sti_load looks up the class from the row's key value (sti_class_from_sti_key -> sti_class(sti_model_map[key]), constantize, falling back to the root class) and calls it with the row.",
+        "The parent model's dataset selects only the parent table's columns, so subclass-only columns are absent from the loaded values; ClassTableInheritance::inherited defines, on each subclass with its own table, a lazy attribute getter per subclass-only column (define_lazy_attribute_getter with :dataset=>the subclass's joined dataset and :table=>the alias).",
+        "CRITICAL: the generated reader (lazy_attributes.rb) returns the stored value if present or the object is new; otherwise it calls lazy_attribute_lookup, which uses the supplied subclass joined dataset restricted by the object's qualified primary key (ds.get on the qualified column).",
+        "CRITICAL: if the object has retrieved_with (the sibling list), lazy_attribute_lookup runs one query selecting primary key plus the column for all sibling objects that lack the attribute (and are not frozen) and fills their values, so later reads need no query.",
+        "retrieved_with/retrieved_by are set by the tactical_eager_loading plugin's DatasetMethods#post_load for every Sequel::Model in the loaded array; Dataset#all -> _all calls post_load(a) after loading; lazy_attributes applies tactical_eager_loading (and class_table_inheritance applies lazy_attributes) so the plugin is always present."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "author": "r3x-sequel-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: plugins/class_table_inheritance.rb:192-195 apply (single_table_inheritance, lazy_attributes), :215 SingleTableInheritance.configure model, opts[:key], opts, :302-360 inherited (:341 `ds.join(table, pk=>pk).select_append`, :349 row_proc lambda subclass.sti_load, :350 `cols.each{|a| define_lazy_attribute_getter(a, :dataset=>dataset, :table=>@cti_alias)}`). plugins/single_table_inheritance.rb:129 `@dataset.with_row_proc(model.method(:sti_load))`, :174-176 sti_load, :179-181 sti_class_from_sti_key, :234-255 sti_class. plugins/lazy_attributes.rb:31-33 apply tactical_eager_loading, :66-79 define_lazy_attribute_getter (reader checks !values.has_key?(a) && !new?), :88-125 lazy_attribute_lookup (opts[:dataset] -> base_ds.where(qualified_pk_hash(table)); retrieved_with batch select at :103-120). plugins/tactical_eager_loading.rb:209-216 post_load, :134-138 accessors. dataset/actions.rb:1167-1175 _all -> post_load(a). DECOYS: model/associations.rb:3914 another post_load (eager-loading hook; super chain), class_table_inheritance #sti_class_from_key (used only in before_validation, not in loading), `lazy_attributes` explicit-attribute use, CTI insert/update code (_insert/_update), subclass dataset join (what a SUBCLASS query selects eagerly). ROUTE: (1) grep for the hierarchy feature (table per subclass) -> class_table_inheritance.rb read; sees row_proc and lazy getter calls [G]; (2) [G] read single_table_inheritance.rb sti_load/sti_class (configure called from CTI with key); (3) [G] read lazy_attributes.rb getter and lookup; (4) [G] the lookup's retrieved_with -> grep retrieved_with -> tactical_eager_loading.rb; (5) [G] read post_load in tactical_eager_loading.rb; (6) [G] grep post_load -> dataset/actions.rb _all (and associations.rb decoy); (7) check apply chain (CTI->lazy_attributes->tactical) [G]. MIN CALLS: 7. FIRST CALL (5 greps from the question's words): grep -rn 'type column', 'subclass', 'separate table', 'lazy', 'first access' -> reach plugins/class_table_inheritance.rb and single_table_inheritance.rb/lazy_attributes.rb comments (several gold files in plugins/ because 'subclass' is common) — borderline on the 'at most one gold file' rule, but the retrieved_with/post_load hops are still gated. est. turns 7-9. Closed-book risk: medium-low.",
+      "repoSha": "3acf523e8accb7a745e364b4db3bb51b172162b3",
+      "set": "dev"
+    },
+    {
+      "id": "r3x-sequel-05",
+      "repo": "r3-sequel",
+      "language": "Ruby",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "When a model instance is saved on PostgreSQL or on SQLite, its in-memory column values may be refreshed with values the database computed (defaults, generated keys, trigger changes). Which places in the library decide where those values come from for a newly created row or an updated row: in the same statement, in a follow-up read, or not at all? Cover the core model save logic, the capability checks on the query-object side for each of the two databases and their default, and every optional add-on that changes this for creates or updates. Name each place and what it decides.",
+      "expectedFiles": [
+        "lib/sequel/model/base.rb",
+        "lib/sequel/dataset/features.rb",
+        "lib/sequel/adapters/shared/postgres.rb",
+        "lib/sequel/adapters/shared/sqlite.rb",
+        "lib/sequel/plugins/insert_returning_select.rb",
+        "lib/sequel/plugins/skip_create_refresh.rb",
+        "lib/sequel/plugins/update_refresh.rb"
+      ],
+      "expectedSymbols": [
+        "Sequel::Model::InstanceMethods#_use_insert_select?",
+        "Sequel::Model::InstanceMethods#_insert",
+        "Sequel::Model::InstanceMethods#_save_refresh",
+        "Sequel::Dataset#supports_insert_select?",
+        "Sequel::Postgres::DatasetMethods#supports_insert_select?",
+        "Sequel::Postgres::DatasetMethods#insert_select",
+        "Sequel::SQLite::DatasetMethods#supports_returning?",
+        "Sequel::Plugins::InsertReturningSelect::ClassMethods#insert_returning_columns",
+        "Sequel::Plugins::SkipCreateRefresh::InstanceMethods#_save_refresh",
+        "Sequel::Plugins::UpdateRefresh::InstanceMethods#_update_without_checking"
+      ],
+      "expectedFacts": [
+        "CRITICAL: Model::InstanceMethods#_insert uses _use_insert_select?(ds) (true when the dataset has no custom select or already has :returning, and ds.supports_insert_select?) to run one INSERT ... RETURNING via _insert_select_raw and set all values; otherwise it runs a plain insert and returns the primary key.",
+        "In _save, when _insert returned a primary key, _save_refresh does a follow-up read (_refresh_get, using the fast primary-key SQL when available) and replaces @values; when insert_select already filled the values _insert returns nil and no follow-up read happens.",
+        "Dataset#supports_insert_select? defaults to supports_returning?(:insert), which is false by default (dataset/features.rb); PostgreSQL overrides supports_insert_select? to be true unless the dataset was marked disable_insert_returning, and supports_returning? is true (merge needs 17+).",
+        "CRITICAL: on SQLite supports_returning? is true only for SQLite 3.35.0 or newer (db.sqlite_version >= 33500), so older SQLite falls back to insert plus follow-up SELECT; PostgreSQL and SQLite insert_select append RETURNING and fetch the first row (returning false if no row).",
+        "plugins/insert_returning_select makes models whose dataset has a custom select list use an insert dataset with a RETURNING clause limited to those columns (instance_insert_dataset), re-enabling single-statement refresh for them; plugins/skip_create_refresh turns _save_refresh into a no-op.",
+        "plugins/update_refresh overrides _update_without_checking to use UPDATE ... RETURNING (merging the returned row into @values) when supports_returning?(:update), and otherwise refreshes in after_update."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "author": "r3x-sequel-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: model/base.rb:1856-1870 _insert, :2054-2056 _use_insert_select?, :1884-1886 _insert_select_raw, :1918-1936 _save (:1934 `pk ? _save_refresh : _clear_changed_columns(:create)`), :1974-1977 _save_refresh, :1900-1909 _refresh_get. dataset/features.rb:93-95 supports_insert_select? (= supports_returning?(:insert)), :177-179 supports_returning? false. adapters/shared/postgres.rb:2481-2483 supports_insert_select? (!@opts[:disable_insert_returning]), :2512-2518 supports_returning?, :2088-2090 disable_insert_returning, :2306-2312 insert_select, :2314-2317 insert_select_sql. adapters/shared/sqlite.rb:843-845 supports_returning? (sqlite_version >= 33500), :701-712 insert_select(_sql). plugins/insert_returning_select.rb:36-48 reset_instance_dataset, :54-69 insert_returning_columns, :75-77 _insert_dataset. plugins/skip_create_refresh.rb:31-33. plugins/update_refresh.rb:60-66 after_update, :71-86 _update_without_checking. DECOYS (deliberately NOT gold): plugins/prepared_statements.rb:136-141,:175-185 (how insert_select is executed; disabled for sqlite), plugins/modification_detection.rb:88-91 (_save_refresh override that only recomputes hashes), plugins/pg_auto_constraint_validations.rb:349 (wraps _insert_select_raw to convert errors), plugins/class_table_inheritance.rb:413 (own insert_select use), plugins/insert_conflict.rb:74, shared/mysql.rb:819 and shared/mssql.rb:695 (other databases), dataset/actions.rb:456 Dataset#insert. ROUTE: (1) grep 'refresh|returning' in model/base.rb and read _insert/_save/_save_refresh (core decision) ; (2) [G] grep insert_select|supports_returning|_save_refresh across lib -> dataset/features.rb, shared/postgres.rb, shared/sqlite.rb, plugins (names first seen in call 1); (3) [G] read PG capability/insert_select code; (4) [G] read sqlite capability (version gate); (5) [G] read insert_returning_select.rb; (6) [G] read update_refresh.rb (found via _update_without_checking/returning grep); (7) read skip_create_refresh.rb and discard decoys. MIN CALLS: 7. FIRST CALL (5 greps from the question's words): grep -rn 'refresh', 'returning', 'follow-up', 'trigger', 'generated key' -> 'refresh' reaches base.rb, skip_create_refresh/update_refresh/modification_detection; at most 2-3 gold files in one call, but the PG/SQLite capability code and the custom-select plugin need names read in call 1. est. turns 7-9. Closed-book risk: low-medium.",
+      "repoSha": "3acf523e8accb7a745e364b4db3bb51b172162b3",
+      "set": "dev"
+    },
+    {
+      "id": "r3x-sequel-06",
+      "repo": "r3-sequel",
+      "language": "Ruby",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "When a model instance is updated or deleted, the library can verify that exactly one row was touched. Which places decide whether that verification is on by default, perform it, and (for MySQL) make the row count reported by each of the three Ruby-driver MySQL adapters mean 'rows matched by the filter' instead of 'rows whose values changed'? Also name the places that switch the check off by default for some adapters, force it on for a model, or add a workaround for updates that were skipped. Name each place and what it does.",
+      "expectedFiles": [
+        "lib/sequel/model/base.rb",
+        "lib/sequel/dataset/features.rb",
+        "lib/sequel/adapters/mysql.rb",
+        "lib/sequel/adapters/mysql2.rb",
+        "lib/sequel/adapters/trilogy.rb",
+        "lib/sequel/adapters/ado.rb",
+        "lib/sequel/adapters/ado/mssql.rb",
+        "lib/sequel/plugins/instance_filters.rb",
+        "lib/sequel/plugins/select_on_skipped_update.rb"
+      ],
+      "expectedSymbols": [
+        "Sequel::Model::ClassMethods#set_dataset",
+        "Sequel::Model::InstanceMethods#_update",
+        "Sequel::Model::InstanceMethods#_delete",
+        "Sequel::Dataset#provides_accurate_rows_matched?",
+        "Sequel::MySQL::Database#affected_rows",
+        "Sequel::Mysql2::Database#connect",
+        "Sequel::Trilogy::Database#connect",
+        "Sequel::ADO::Dataset#provides_accurate_rows_matched?",
+        "Sequel::Plugins::InstanceFilters.configure",
+        "Sequel::Plugins::SelectOnSkippedUpdate::InstanceMethods#run_select_on_skipped_update"
+      ],
+      "expectedFacts": [
+        "CRITICAL: Model.set_dataset sets @require_modification from @dataset.provides_accurate_rows_matched? when it is still nil; Dataset#provides_accurate_rows_matched? (dataset/features.rb) defaults to true.",
+        "Model::InstanceMethods#_update and #_delete raise NoExistingObject when require_modification is set and the affected-row count is not 1; _update_columns skips _update entirely when the column hash is empty.",
+        "CRITICAL: the three MySQL driver adapters each make the count mean 'matched': the mysql adapter's affected_rows parses the 'Rows matched: N' text from conn.info (falling back to affected_rows), mysql2's connect adds the Mysql2::Client::FOUND_ROWS flag, and trilogy's connect sets found_rows = true.",
+        "The ADO adapter's Dataset overrides provides_accurate_rows_matched? to false, and the ADO MSSQL dataset returns true only when the :provider option is given, so the check is off by default there.",
+        "plugins/instance_filters forces model.require_modification = true on configure (it needs the check to detect filter failures).",
+        "plugins/select_on_skipped_update, when save_changes or _update_columns skipped the UPDATE and require_modification is set, runs a SELECT count and raises NoMatchingRow unless exactly one row exists."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "author": "r3x-sequel-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: model/base.rb:79 attr_accessor :require_modification (doc :74-78), :627 `@require_modification = @dataset.provides_accurate_rows_matched? if require_modification.nil?` inside set_dataset (:624-640), :2030-2032 _update_columns, :2036-2040 _update (raise NoExistingObject if require_modification && n != 1), :1808-1812 _delete. model.rb:54 @require_modification = nil on Sequel::Model. dataset/features.rb:19-21 default true. adapters/mysql.rb:175-177 execute_dui -> affected_rows(c), :245-252 affected_rows (conn.info =~ /Rows matched:\\s+(\\d+).../). adapters/mysql2.rb:41 FOUND_ROWS flag, :67 execute_dui c.affected_rows. adapters/trilogy.rb:20 opts[:found_rows] = true, :45 execute_dui affected_rows. adapters/ado.rb:278-280 (class Dataset at :245) false; adapters/ado/mssql.rb:56-58 `!!db.opts[:provider]`. plugins/instance_filters.rb:50-52. plugins/select_on_skipped_update.rb:37-41 save_changes, :46-50 _update_columns, :54-59 run_select_on_skipped_update. plugins/nested_attributes.rb:299-301 sets obj.require_modification per association option (mentioned as per-object override, not required). DECOYS: shared/mysql.rb calc_found_rows (SELECT SQL_CALC_FOUND_ROWS, unrelated), adapters/sqlite.rb:188 execute_dui, shared/postgres.rb (no override), class_table_inheritance.rb:432 (its own per-table check), JDBC MySQL (no matched-rows handling found: grep affected|matched in adapters/jdbc/*.rb finds nothing). ROUTE: (1) grep 'exactly one row|modif' in model/base.rb, read _update/_delete [first gold]; (2) [G] grep require_modification across lib -> set_dataset line, instance_filters, select_on_skipped_update, nested_attributes; (3) [G] grep provides_accurate_rows_matched -> features.rb, ado.rb, ado/mssql.rb; (4) [G] MySQL adapters: grep 'affected_rows|FOUND_ROWS|found_rows' -> mysql.rb, mysql2.rb, trilogy.rb (term only learned from reading that the check depends on 'matched' counts; the question says 'matched' not these names); (5) read each snippet in context (mysql.rb 175-252, mysql2.rb 35-70, trilogy.rb 15-50) [G]; (6) read plugin files to state their role [G]. MIN CALLS: 6. FIRST CALL (5 greps from the question's words): grep -rn 'rows matched', 'exactly one', 'row count', 'MySQL' (huge), 'workaround' -> 'rows matched' reaches dataset/features.rb and adapters/mysql.rb comments only; 'exactly one' reaches base.rb exceptions/doc; at most 2-3 gold files (borderline), the driver flags need further calls. est. turns 6-8. Closed-book risk: low-medium.",
+      "repoSha": "3acf523e8accb7a745e364b4db3bb51b172162b3",
+      "set": "dev"
+    },
+    {
+      "id": "r3x-sequel-07",
+      "repo": "r3-sequel",
+      "language": "Ruby",
+      "stratum": "condition",
+      "difficulty": "hard",
+      "query": "On PostgreSQL, a table-creation block declares an auto-generated primary key column named id without giving a type. Which SQL text results for that column on a recent server and on an old server (before version 10.2), and what decides between the two? What changes when the block asks for a 64-bit type, and when the column also receives an explicit default value? After the table exists, how does schema inspection decide the key is auto-generated? Name every place whose logic affects the final column text.",
+      "expectedFiles": [
+        "lib/sequel/database/schema_generator.rb",
+        "lib/sequel/database/schema_methods.rb",
+        "lib/sequel/adapters/shared/postgres.rb",
+        "lib/sequel/database/misc.rb",
+        "lib/sequel/database/query.rb"
+      ],
+      "expectedSymbols": [
+        "Sequel::Schema::CreateTableGenerator#primary_key",
+        "Sequel::Postgres::DatabaseMethods#serial_primary_key_options",
+        "Sequel::Postgres::DatabaseMethods#server_version",
+        "Sequel::Database#column_definition_sql",
+        "Sequel::Database#type_literal",
+        "Sequel::Postgres::DatabaseMethods#type_literal_generic_integer",
+        "Sequel::Postgres::DatabaseMethods#type_literal_generic_bignum_symbol",
+        "Sequel::Postgres::DatabaseMethods#column_definition_default_sql",
+        "Sequel::Postgres::DatabaseMethods#schema_parse_table"
+      ],
+      "expectedFacts": [
+        "CreateTableGenerator#primary_key merges @db.serial_primary_key_options with the column name (and any type/options argument); on PostgreSQL that hash is {primary_key: true, identity: true, type: Integer} when server_version >= 100002, otherwise {primary_key: true, serial: true, type: Integer} (the generic Database default with :auto_increment is a decoy).",
+        "server_version (shared/postgres.rb) queries current_setting('server_version_num') once and memoizes it (0 if the query fails, which selects the serial branch).",
+        "CRITICAL: on a recent server the column text is the quoted name, 'integer' (type_literal_generic_integer returns :serial only when column[:serial]), then ' GENERATED BY DEFAULT AS IDENTITY' (added by Postgres column_definition_default_sql because the type is not a serial type and no :default exists), then ' PRIMARY KEY'; on an old server the type becomes 'serial' and the identity clause is skipped.",
+        "A 64-bit request (:Bignum) goes through type_literal_generic_bignum_symbol: 'bigserial' when column[:serial] (old server), otherwise 'bigint' (then the identity clause as above).",
+        "CRITICAL: if the column also has a :default, column_definition_default_sql still emits DEFAULT <value> but silently omits the GENERATED ... AS IDENTITY clause (condition !column[:default]); serial types never get the clause.",
+        "For schema inspection, Postgres schema_parse_table sets :auto_increment for a primary key column when its default starts with nextval or the attidentity flag is 'a' or 'd'; the generic guess in Database#schema (query.rb) only applies if the adapter did not set :auto_increment."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "author": "r3x-sequel-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: database/schema_generator.rb:383-402 primary_key (line 385 `@db.serial_primary_key_options.merge({:name => name})`). adapters/shared/postgres.rb:792-798 serial_primary_key_options (`auto_increment_key = server_version >= 100002 ? :identity : :serial`), :800-806 server_version, :1987-1989 type_literal_generic_bignum_symbol (column[:serial] ? :bigserial : super), :1997-1999 type_literal_generic_integer (column[:serial] ? :serial : super), :1323-1336 column_definition_default_sql (identity only if !column[:serial] && type not serial && !column[:default]), :1932-1935 schema_parse_table auto_increment from nextval/attidentity. database/schema_methods.rb:11 COLUMN_DEFINITION_ORDER, :566-568 column_definition_order, :571-575 column_definition_sql (type_literal then each column_definition_<m>_sql), :1028-1037 type_literal (Class -> type_literal_generic; :Bignum -> type_literal_generic_bignum_symbol), :1041-1049 type_literal_generic, :1092-1094 default :integer, :1057-1059 default :bigint, :616-618 column_definition_primary_key_sql -> ' PRIMARY KEY' (:988-990). database/query.rb:170-174 generic auto_increment guess only `if c[:primary_key] && !auto_increment_set`. DECOYS: database/misc.rb:333-335 serial_primary_key_options default ({:auto_increment=>true}) and schema_methods.rb:561-563 auto_increment_sql 'AUTOINCREMENT' (generic/SQLite path, never used on PG because :auto_increment is not set), shared/postgres.rb:363-430 convert_serial_to_identity (migration helper), extensions/schema_dumper.rb:457-467 (strips defaults when dumping), adapters/jdbc/{derby,h2,hsqldb}.rb and shared/access.rb overrides. ROUTE: (1) grep 'primary_key' in database/schema_generator.rb -> primary_key method, reveals serial_primary_key_options [G]; (2) [G] grep serial_primary_key_options -> shared/postgres.rb + misc.rb + other adapters; read PG version (reveals :identity vs :serial and server_version) ; (3) [G] read schema_methods column_definition_sql/order (reveals the per-part method names) ; (4) [G] grep column_definition_|type_literal_generic in shared/postgres.rb -> default_sql identity clause + integer/bignum overrides; (5) [G] read server_version; (6) [G] read schema_parse_table auto_increment branch for the read-back part, and query.rb guard. MIN CALLS: 6. FIRST CALL (5 greps from the question's words): grep -rn 'primary key', 'auto-generated', 'table-creation', 'serial', 'identity' -> 'serial'/'identity' reaches shared/postgres.rb (gold) and 'primary key' reaches many; at most the PG file + generator in the same call (borderline; the question avoids the words 'serial' and 'identity' on purpose in the text). est. turns 6-8. Closed-book risk: medium (agents may know 'GENERATED BY DEFAULT AS IDENTITY' but not the :default and version conditions).",
+      "repoSha": "3acf523e8accb7a745e364b4db3bb51b172162b3",
+      "set": "dev"
+    },
+    {
+      "id": "r3x-sequel-08",
+      "repo": "r3-sequel",
+      "language": "Ruby",
+      "stratum": "condition",
+      "difficulty": "hard",
+      "query": "On PostgreSQL and on MySQL, a migration file written in block style, with no explicit transaction directive and no transaction option passed to the migration runner, creates a table that also has an index. Which transaction or savepoint scope surrounds the migration body, and which surrounds each index statement, on each of the two databases? Name every place whose rule decides this, and say how the answer changes if the migration declares that it wants no transaction or the runner is told to use transactions explicitly.",
+      "expectedFiles": [
+        "lib/sequel/extensions/migration.rb",
+        "lib/sequel/database/features.rb",
+        "lib/sequel/adapters/shared/postgres.rb",
+        "lib/sequel/database/transactions.rb",
+        "lib/sequel/database/schema_methods.rb",
+        "lib/sequel/adapters/shared/mysql.rb"
+      ],
+      "expectedSymbols": [
+        "Sequel::Migrator#checked_transaction",
+        "Sequel::SimpleMigration#use_transactions",
+        "Sequel::MigrationDSL#no_transaction",
+        "Sequel::Database#supports_transactional_ddl?",
+        "Sequel::Postgres::DatabaseMethods#supports_transactional_ddl?",
+        "Sequel::Database#transaction",
+        "Sequel::Database#create_table_indexes_from_generator",
+        "Sequel::Database#supports_savepoints?"
+      ],
+      "expectedFacts": [
+        "CRITICAL: Migrator#checked_transaction (migration.rb) decides by precedence: the migrator's :use_transactions option if not nil, else the migration's own use_transactions (SimpleMigration default nil; MigrationDSL#no_transaction sets false, #transaction sets true; the old class-based Migration returns nil), else db.supports_transactional_ddl?; it then calls db.transaction(skip_transaction: use_trans == false).",
+        "Database#supports_transactional_ddl? is false by default (database/features.rb) and true for PostgreSQL (shared/postgres.rb; also MSSQL and Derby), so with defaults the PostgreSQL migration body runs inside a real transaction and the MySQL migration body runs with no transaction (skip_transaction).",
+        "Database#transaction (transactions.rb) with :skip_transaction just checks out a connection and yields it, opening no transaction or savepoint.",
+        "CRITICAL: create_table runs create_table_indexes_from_generator after the table statement, which wraps each index statement in transaction(savepoint: :only, skip_transaction: supports_transactional_ddl? == false); on PostgreSQL inside the migration's transaction that opens a savepoint per index (so a swallowed index error, ignore_index_errors/if_not_exists, does not abort the outer transaction).",
+        "On MySQL the index statements get no savepoint even though MySQL supports savepoints, because skip_transaction is true (no transactional DDL); on PostgreSQL with a no-transaction migration, :savepoint=>:only finds no surrounding transaction and simply yields without any savepoint."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "author": "r3x-sequel-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: extensions/migration.rb:504-516 checked_transaction (`use_trans = if @use_transactions.nil? ... migration.use_transactions.nil? ? @db.supports_transactional_ddl? : migration.use_transactions ... db.transaction(:skip_transaction=>use_trans == false, &block)`), :497 @use_transactions = opts[:use_transactions], :95-105 SimpleMigration (attr use_transactions, default nil), :137-144 MigrationDSL no_transaction/transaction, :57-60 old Migration.use_transactions nil, :595 and :756 callers (IntegerMigrator#run, TimestampMigrator#apply_migration). database/features.rb:96-98 default false. adapters/shared/postgres.rb:855-857 true, :845-847 supports_savepoints?. adapters/shared/mysql.rb:151-153 supports_savepoints? (server_version >= 50000), no supports_transactional_ddl? override. database/transactions.rb:179-232 transaction (:198 skip_transaction early yield; :202-210 savepoint :only handling), :255-290 _transaction. database/schema_methods.rb:204-216 create_table (:211-212 table then indexes), :765-775 create_table_indexes_from_generator (:766 e = options[:ignore_index_errors] || options[:if_not_exists]; :769 transaction call). DECOYS: adapters/shared/mssql.rb:233 and adapters/jdbc/derby.rb:55 (other true overrides), schema_methods.rb:451/805 can_add_primary_key_constraint_on_nullable_columns?, Migrator advisory lock (use_advisory_lock), model/base.rb:2305 Model dataset-level destroy transaction and the model save transaction logic near :2097 (different code, same concept, for model saves), schema_methods alter_table. ROUTE: (1) grep 'transaction' in extensions/migration.rb -> checked_transaction [first gold]; (2) [G] grep supports_transactional_ddl -> features.rb, shared/postgres.rb, mssql, derby (name first seen in call 1 body); (3) [G] read transactions.rb Database#transaction for :skip_transaction semantics; (4) [G] grep skip_transaction across lib -> schema_methods.rb:769 create_table_indexes_from_generator (the index-level rule appears only through this grep); (5) [G] read create_table + create_table_indexes_from_generator for ordering and :savepoint=>:only; (6) [G] read :savepoint=>:only branch (transactions.rb:202-210) and supports_savepoints? in PG/MySQL. MIN CALLS: 6. FIRST CALL (5 greps from the question's words): grep -rn 'transaction' extensions/migration.rb, 'no_transaction', 'savepoint', 'migration' , 'index' -> reaches extensions/migration.rb and transactions.rb; 'savepoint' reaches transactions.rb/schema_methods.rb/adapters in one call (borderline), but the index-statement rule requires reading names from migration.rb first. est. turns 6-8. Closed-book risk: medium.",
+      "repoSha": "3acf523e8accb7a745e364b4db3bb51b172162b3",
+      "set": "dev"
+    }
+  ]
+}

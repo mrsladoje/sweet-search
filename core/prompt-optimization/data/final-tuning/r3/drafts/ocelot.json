@@ -1,0 +1,974 @@
+{
+  "repo": "ocelot",
+  "sha": "fcebf2b96c1811500037e010ee3b09e25ac39b19",
+  "probes": [
+    {
+      "id": "r3-ocelot-01",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "multi-hop",
+      "difficulty": "medium",
+      "query": "A client calls the gateway with a Host header that carries a port number, and one configured route is restricted to a single specific host name. Where is the port dropped, and where is the remaining host compared with the route's restriction?",
+      "expectedFiles": [
+        "src/DownstreamRouteFinder/Middleware/DownstreamRouteFinderMiddleware.cs",
+        "src/DownstreamRouteFinder/Finder/DownstreamRouteFinder.cs"
+      ],
+      "expectedSymbols": [
+        "DownstreamRouteFinderMiddleware.Invoke",
+        "DownstreamRouteFinder.RouteIsApplicableToThisRequest"
+      ],
+      "expectedFacts": [
+        "The middleware reads the Host header and, if it contains a colon, keeps only the part before the colon as the upstream host.",
+        "That host value is passed to the selected route provider's Get method together with path, method and headers.",
+        "A route is applicable only if its upstream host is empty or equals the request host exactly (ordinal string equality, so case-sensitive), in addition to the HTTP method check."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/DownstreamRouteFinder/Middleware/DownstreamRouteFinderMiddleware.cs:28-31 (hostHeader, Contains(':') -> Split(':')[0]), :37 (provider.Get(..., upstreamHost, ...)). src/DownstreamRouteFinder/Finder/DownstreamRouteFinder.cs:33-34 (filter by RouteIsApplicableToThisRequest), :57-63 (UpstreamHttpMethod.Count==0 || Contains(method)) && (IsNullOrEmpty(route.UpstreamHost) || route.UpstreamHost == upstreamHost)."
+    },
+    {
+      "id": "r3-ocelot-02",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "multi-hop",
+      "difficulty": "hard",
+      "query": "An operator wants one part of a user's identity claim (split on a separator character) to appear as a query-string parameter on the call to the backend. Where is that setting's text interpreted, and where is the value computed and appended to the outgoing request?",
+      "expectedFiles": [
+        "src/Configuration/Parser/ClaimToThingConfigurationParser.cs",
+        "src/Infrastructure/Claims/ClaimsParser.cs",
+        "src/QueryStrings/AddQueriesToRequest.cs"
+      ],
+      "expectedSymbols": [
+        "ClaimToThingConfigurationParser.Extract",
+        "ClaimsParser.GetValue",
+        "AddQueriesToRequest.SetQueriesOnDownstreamRequest"
+      ],
+      "expectedFacts": [
+        "Extract splits the configured text on the '>' character; it needs at least two parts and the first part must look like Claims[name], otherwise it returns an error response.",
+        "If there are three or more parts and the second looks like value[index], the index is parsed and the trimmed third part becomes the delimiter.",
+        "Per request, AddQueriesToRequest calls ClaimsParser.GetValue, which splits the claim value on the delimiter characters and takes the element at the index (error if the index is out of range).",
+        "If the query key already exists its value is replaced; otherwise the key is added, and the rebuilt query string is stored on the downstream request."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/Configuration/Parser/ClaimToThingConfigurationParser.cs:11 (SplitToken '>'), :23-28 (Length<=1 -> NoInstructionsError), :30-35 (Claims[...] regex else InstructionNotForClaimsError), :41-45 (value[...] index + delimiter = instructions[2].Trim()). src/Infrastructure/Claims/ClaimsParser.cs:9-33 (GetValue with delimiter/index, CannotFindClaimError when splits.Length <= index). src/QueryStrings/AddQueriesToRequest.cs:19-47 (GetValue at :25; replace existing :32-37 / add :40; downstreamRequest.Query assigned :44). Startup parsing path: src/Configuration/Creator/StaticRoutesCreator.cs:93 (claimsToQueries from fileRoute.AddQueriesToRequest via ClaimsToThingCreator.Create src/Configuration/Creator/ClaimsToThingCreator.cs:18-36). Per-request caller: src/QueryStrings/ClaimsToQueryStringMiddleware.cs:25-31."
+    },
+    {
+      "id": "r3-ocelot-03",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "multi-hop",
+      "difficulty": "hard",
+      "query": "A composite endpoint merges several backend calls, and a later call needs an identifier found inside the first call's JSON reply. How is the identifier extracted, and how does it end up in the later call's URL?",
+      "expectedFiles": [
+        "src/Multiplexer/MultiplexingMiddleware.cs",
+        "src/DownstreamUrlCreator/DownstreamPathPlaceholderReplacer.cs"
+      ],
+      "expectedSymbols": [
+        "MultiplexingMiddleware.ProcessRoutesWithRouteKeysAsync",
+        "MultiplexingMiddleware.ProcessRouteWithComplexAggregation",
+        "DownstreamPathPlaceholderReplacer.Replace"
+      ],
+      "expectedFacts": [
+        "The first downstream route is processed first; its response body is read as a string and parsed with JToken.Parse.",
+        "For each later route whose key has a matching route-keys config entry, the configured JSON path is applied with SelectTokens, distinct values are taken, and one downstream call is made per distinct value.",
+        "For each call, a placeholder named after the configured parameter and holding the extracted value is added to a copy of the request's placeholder list.",
+        "DownstreamPathPlaceholderReplacer.Replace substitutes each placeholder name with its value inside the downstream path template, called from DownstreamUrlCreatorMiddleware."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/Multiplexer/MultiplexingMiddleware.cs:54-57 (Case 4: ProcessMainRouteAsync then ProcessRoutesWithRouteKeysAsync), :125-126 (ReadAsStringAsync + JToken.Parse), :130-133 (matchAdvancedAgg by RouteKey), :157-173 (SelectTokens(JsonPath).Select(ToString).Distinct(); new PlaceholderNameAndValue(matchAdvancedAgg.Parameter, value, true) at :167; ProcessRouteAsync per value). src/DownstreamUrlCreator/DownstreamPathPlaceholderReplacer.cs:11-20 (StringBuilder.Replace(name, value)). Caller src/DownstreamUrlCreator/DownstreamUrlCreatorMiddleware.cs:37-38. Placeholders copied to new context at src/Multiplexer/MultiplexingMiddleware.cs:196 (UpsertTemplatePlaceholderNameAndValues(placeholders ?? ...))."
+    },
+    {
+      "id": "r3-ocelot-04",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "multi-hop",
+      "difficulty": "hard",
+      "query": "An operator submits a complete new configuration through the gateway's management HTTP interface. Through which components does it get validated, saved, and made active for the requests that follow, and in what order?",
+      "expectedFiles": [
+        "src/Administration/FileConfigurationController.cs",
+        "src/Configuration/Repository/FileAndInternalConfigurationSetter.cs",
+        "src/Configuration/Repository/InMemoryInternalConfigurationRepository.cs"
+      ],
+      "expectedSymbols": [
+        "FileConfigurationController.Post",
+        "FileAndInternalConfigurationSetter.SetAsync",
+        "InMemoryInternalConfigurationRepository.AddOrReplace"
+      ],
+      "expectedFacts": [
+        "The controller's Post action calls the configuration setter's SetAsync and returns BadRequest with the exception text if anything throws.",
+        "SetAsync first persists the file configuration through the file configuration repository, and only afterwards builds the internal configuration (which runs validation); a failed build throws ConfigurationRepositoryException.",
+        "On success the internal configuration is swapped into the in-memory repository under a lock, and the change token is activated.",
+        "Requests pick up the active configuration through ConfigurationMiddleware, which reads the repository and stores it in HttpContext.Items."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/Administration/FileConfigurationController.cs:43-55 (Post -> _setter.SetAsync :48; catch -> BadRequest :51-54). src/Configuration/Repository/FileAndInternalConfigurationSetter.cs:31-40 (:33 _repo.SetAsync, :35 _configCreator.Create, :36-37 throw ConfigurationRepositoryException, :39 AddOrReplace). Validation happens inside IInternalConfigurationCreator: src/Configuration/Creator/FileInternalConfigurationCreator.cs:32-37. src/Configuration/Repository/InMemoryInternalConfigurationRepository.cs:29-38 (lock; _changeTokenSource.Activate()). src/Middleware/ConfigurationMiddleware.cs:22-24 (Get() + SetIInternalConfiguration)."
+    },
+    {
+      "id": "r3-ocelot-05",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "multi-hop",
+      "difficulty": "hard",
+      "query": "When a caller goes over a route's request quota, how do the configured rejection status code and message text reach the HTTP response, given that most other pipeline failures only produce a bare status code?",
+      "expectedFiles": [
+        "src/RateLimiting/RateLimitingMiddleware.cs",
+        "src/Responder/Middleware/ResponderMiddleware.cs",
+        "src/Responder/ErrorsToHttpStatusCodeMapper.cs",
+        "src/Responder/HttpContextResponder.cs"
+      ],
+      "expectedSymbols": [
+        "RateLimitingMiddleware.Break",
+        "RateLimitingMiddleware.ReturnQuotaExceededResponse",
+        "ResponderMiddleware.SetErrorResponse",
+        "ErrorsToHttpStatusCodeMapper.Map",
+        "HttpContextResponder.SetErrorResponseOnContext"
+      ],
+      "expectedFacts": [
+        "RateLimitingMiddleware.Break stores a downstream response (status from the options, body from the formatted quota message, Retry-After when headers are enabled) and sets a QuotaExceededError carrying the status code.",
+        "ErrorsToHttpStatusCodeMapper returns the QuotaExceededError's own HttpStatusCode rather than a fixed number.",
+        "ResponderMiddleware.SetErrorResponse sets the status code for any error, but only when a QuotaExceededError is present does it also write the stored downstream response body via the responder's SetErrorResponseOnContext overload."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/RateLimiting/RateLimitingMiddleware.cs:88-96 (Break: ReturnQuotaExceededResponse, UpsertDownstreamResponse, SetError(new QuotaExceededError(GetResponseMessage(options), options.StatusCode))), :121-136 (HttpResponseMessage with options.StatusCode, StringContent(message), Retry-After if EnableHeaders). src/Responder/ErrorsToHttpStatusCodeMapper.cs:25-28 (QuotaExceededError -> errors.Single(...).HttpStatusCode). src/Responder/Middleware/ResponderMiddleware.cs:54-67 (status :57-58; body only if any QuotaExceededError :60-66). src/Responder/HttpContextResponder.cs:64-76 (SetErrorResponseOnContext(context, DownstreamResponse) writes body via WriteToUpstreamAsync)."
+    },
+    {
+      "id": "r3-ocelot-06",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "multi-hop",
+      "difficulty": "hard",
+      "query": "An operator wants to flush the stored responses of one particular route through the management interface. What identifies the group of entries to remove, where does a route's group name come from when the operator did not choose one, and how is the flush carried out?",
+      "expectedFiles": [
+        "src/Administration/OutputCacheController.cs",
+        "src/Cache/DefaultMemoryCache.cs",
+        "src/Configuration/CacheOptions.cs",
+        "src/Configuration/Creator/CacheOptionsCreator.cs"
+      ],
+      "expectedSymbols": [
+        "OutputCacheController.Delete",
+        "DefaultMemoryCache.ClearRegion",
+        "CacheOptions.Region",
+        "CacheOptionsCreator.Create"
+      ],
+      "expectedFacts": [
+        "A DELETE to outputcache/{region} calls ClearRegion on the cache and returns 204 No Content.",
+        "DefaultMemoryCache remembers which keys were added under each region and removes each of those keys from the memory cache in ClearRegion.",
+        "When no region is configured, the region falls back to the route's load-balancer key, which StaticRoutesCreator passes into the cache options creator (used by the CacheOptions constructor and by CacheOptionsCreator.Merge).",
+        "OutputCacheMiddleware adds cached entries with options.Region, while lookups in DefaultMemoryCache ignore the region."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/Administration/OutputCacheController.cs:11 ([Route(\"outputcache\")]), :21-27 (HttpDelete, Route {region}, _cache.ClearRegion(region), NoContentResult). src/Cache/DefaultMemoryCache.cs:17-27 (Add -> SetRegion), :50-61 (ClearRegion removes each key), :63-76 (SetRegion), :78-81 (TryGetValue ignores region). src/Cache/OutputCacheMiddleware.cs:63 (_outputCache.Add(key, cached, options.Region, ttl)). src/Configuration/CacheOptions.cs:17-19 (Region = from.Region.IfEmpty(defaultRegion)). src/Configuration/Creator/CacheOptionsCreator.cs:55-58 (Merge: region = options.Region.IfEmpty(global.Region).IfEmpty(defaultRegion)). src/Configuration/Creator/StaticRoutesCreator.cs:108,116 (lbKey passed into _cacheOptionsCreator.Create)."
+    },
+    {
+      "id": "r3-ocelot-07",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "multi-hop",
+      "difficulty": "medium",
+      "query": "A route names a backend service instead of listing fixed addresses. Trace how the load balancer for that route obtains its candidate instances, and what goes wrong when the configured discovery type is not one the gateway knows how to build.",
+      "expectedFiles": [
+        "src/LoadBalancer/LoadBalancerFactory.cs",
+        "src/ServiceDiscovery/ServiceDiscoveryProviderFactory.cs"
+      ],
+      "expectedSymbols": [
+        "LoadBalancerFactory.Get",
+        "ServiceDiscoveryProviderFactory.Get",
+        "ServiceDiscoveryProviderFactory.GetServiceDiscoveryProvider"
+      ],
+      "expectedFacts": [
+        "LoadBalancerFactory.Get first asks the service discovery provider factory for a provider and returns its errors unchanged if that fails; only then does it pick the load balancer creator by type and pass the provider in.",
+        "For routes using service discovery, the provider factory builds a built-in ServiceFabric provider when the type matches (case-insensitive); otherwise it invokes the registered ServiceDiscoveryFinderDelegate and accepts the result only if the provider's type name equals the configured type.",
+        "If neither applies it logs a warning and returns UnableToFindServiceDiscoveryProviderError; routes without service discovery get a ConfigurationServiceProvider built from their fixed downstream addresses."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/LoadBalancer/LoadBalancerFactory.cs:21-47 (:23 _serviceProviderFactory.Get(config, route); :25-28 error passthrough; :31-32 creator by Type; :39 applicableCreator.Create(route, serviceProvider)). src/ServiceDiscovery/ServiceDiscoveryProviderFactory.cs:24-42 (:26 route.UseServiceDiscovery; :32-41 ConfigurationServiceProvider from DownstreamAddresses), :44-67 (:48 ServiceFabric Type equals IgnoreCase; :54-60 delegate invoked, provider.GetType().Name.Equals(config.Type); :63-66 UnableToFindServiceDiscoveryProviderError). Caller: src/LoadBalancer/LoadBalancerHouse.cs:43-46 and LoadBalancingMiddleware.cs:28."
+    },
+    {
+      "id": "r3-ocelot-08",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "multi-hop",
+      "difficulty": "hard",
+      "query": "A route is configured so that a claim in the caller's token must equal a value taken from the request URL path, for example a user-id segment. Follow how the URL-derived value reaches the place where it is compared with the token.",
+      "expectedFiles": [
+        "src/DownstreamRouteFinder/Middleware/DownstreamRouteFinderMiddleware.cs",
+        "src/Authorization/AuthorizationMiddleware.cs",
+        "src/Authorization/ClaimsAuthorizer.cs"
+      ],
+      "expectedSymbols": [
+        "DownstreamRouteFinderMiddleware.Invoke",
+        "AuthorizationMiddleware.Invoke",
+        "ClaimsAuthorizer.Authorize"
+      ],
+      "expectedFacts": [
+        "DownstreamRouteFinderMiddleware stores the matched placeholder names and values in HttpContext.Items.",
+        "AuthorizationMiddleware passes those stored placeholders, the user and the route's claims requirement to ClaimsAuthorizer.Authorize when the route requires authorization.",
+        "ClaimsAuthorizer treats a required value of the form {name} as dynamic, finds the single placeholder with that name, and authorizes only if the user's claim values contain the placeholder's value.",
+        "Zero matching placeholders or more than one produces a ClaimValueNotAuthorizedError describing a configuration error."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/DownstreamRouteFinder/Middleware/DownstreamRouteFinderMiddleware.cs:48 (UpsertTemplatePlaceholderNameAndValues). src/Authorization/AuthorizationMiddleware.cs:52-54 (route.IsAuthorized -> _claimsAuthorizer.Authorize(context.User, route.RouteClaimsRequirement, context.Items.TemplatePlaceholderNameAndValues())). src/Authorization/ClaimsAuthorizer.cs:21-22 (GeneratedRegex ^{(?<variable>.+)}$), :42-58 (Take(2) matching placeholders; Length==1 -> values.Data.Contains(actualValue) else ClaimValueNotAuthorizedError), :59-71 (0 -> 'placeholders does not contain that variable'; >1 -> 'ambiguous')."
+    },
+    {
+      "id": "r3-ocelot-09",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "multi-hop",
+      "difficulty": "hard",
+      "query": "In what order do user-supplied HTTP wrappers, tracing, resilience handling and the overall time limit surround the actual outgoing network call, and which two components arrange that order?",
+      "expectedFiles": [
+        "src/Requester/DelegatingHandlerFactory.cs",
+        "src/Requester/MessageInvokerPool.cs"
+      ],
+      "expectedSymbols": [
+        "DelegatingHandlerFactory.Get",
+        "MessageInvokerPool.CreateMessageInvoker"
+      ],
+      "expectedFacts": [
+        "DelegatingHandlerFactory.Get builds the list in this order: global handlers not named in the route's handler list, then the route's named handlers sorted by configured order, then the tracing handler (if tracing is enabled), then the QoS handler (if QoS is enabled).",
+        "MessageInvokerPool.CreateMessageInvoker reverses that list and sets each handler's InnerHandler, so the last list item (QoS) wraps the SocketsHttpHandler directly and the first list item is the outermost of these handlers.",
+        "A TimeoutDelegatingHandler is added on top of the whole chain, so the route timeout covers every handler including QoS."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/Requester/DelegatingHandlerFactory.cs:27-66 (global not in route config -> handlers.Add :43; route-specific sorted by config order :47-50; tracing :53-57; QoS :59-63), :68-78 (SortByConfigOrder). src/Requester/MessageInvokerPool.cs:39-60 (:41 base SocketsHttpHandler; :42-48 handlers.Reverse() then InnerHandler chain; :55-58 TimeoutDelegatingHandler with InnerHandler = baseHandler). Pool caches invokers per route object: :26-35."
+    },
+    {
+      "id": "r3-ocelot-10",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "concept",
+      "difficulty": "medium",
+      "query": "What HTTP status code does a caller receive when none of the configured routes matches the requested path and method, and which piece decides that number?",
+      "expectedFiles": [
+        "src/Responder/ErrorsToHttpStatusCodeMapper.cs",
+        "src/DownstreamRouteFinder/Finder/DownstreamRouteFinder.cs"
+      ],
+      "expectedSymbols": [
+        "ErrorsToHttpStatusCodeMapper.Map",
+        "DownstreamRouteFinder.Get"
+      ],
+      "expectedFacts": [
+        "The route finder returns an ErrorResponse containing UnableToFindDownstreamRouteError when no applicable route matches.",
+        "ErrorsToHttpStatusCodeMapper maps UnableToFindDownstreamRouteError to 404 Not Found (and unrecognised errors also fall through to 404).",
+        "The response carries only the status code; ResponderMiddleware writes a body only for quota-exceeded errors."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/DownstreamRouteFinder/Finder/DownstreamRouteFinder.cs:54 (ErrorResponse<DownstreamRouteHolder>(new UnableToFindDownstreamRouteError(...))). src/DownstreamRouteFinder/Middleware/DownstreamRouteFinderMiddleware.cs:38-43 (errors upserted, pipeline stops). src/Responder/ErrorsToHttpStatusCodeMapper.cs:44-47 (UnableToFindDownstreamRouteError -> Status404NotFound), :71 (default 404). src/Responder/Middleware/ResponderMiddleware.cs:54-67 (status only; body only for QuotaExceededError)."
+    },
+    {
+      "id": "r3-ocelot-11",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "concept",
+      "difficulty": "hard",
+      "query": "If several configured routes could serve the same incoming request, how does the gateway pick the winner?",
+      "expectedFiles": [
+        "src/DownstreamRouteFinder/Finder/DownstreamRouteFinder.cs",
+        "src/Configuration/Creator/UpstreamTemplatePatternCreator.cs"
+      ],
+      "expectedSymbols": [
+        "DownstreamRouteFinder.Get",
+        "UpstreamTemplatePatternCreator.Create"
+      ],
+      "expectedFacts": [
+        "Only static (non-dynamic) routes that allow the request's HTTP method and host are considered, ordered by the upstream template pattern's Priority in descending order.",
+        "All routes whose path pattern and header conditions match are collected; among them the first route with a non-empty upstream host is preferred, otherwise the first without one.",
+        "A template that is just a slash followed by one placeholder (catch-all) is created with priority 0, while other templates use the route's configured Priority (default 1 in FileRoute)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/DownstreamRouteFinder/Finder/DownstreamRouteFinder.cs:33-35 (!r.IsDynamic && RouteIsApplicableToThisRequest ... OrderByDescending(Priority)), :37-45 (collect matches where urlMatch.Match && headersMatch), :49-51 (notNullOption = first with non-empty UpstreamHost; nullOption = first with empty; return notNullOption ?? nullOption). src/Configuration/Creator/UpstreamTemplatePatternCreator.cs:38-41 (catch-all '/{url}' -> CreateTemplate(RegExForwardSlashAndOnePlaceHolder, 0, ...)), :89 (route.Priority). src/Configuration/File/FileRoute.cs:17 (Priority = 1)."
+    },
+    {
+      "id": "r3-ocelot-12",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "concept",
+      "difficulty": "medium",
+      "query": "Two callers request the identical URL, but send different values for a header the operator nominated for caching purposes. Are their responses stored separately, and what else can be mixed into the identity of a stored response?",
+      "expectedFiles": [
+        "src/Cache/DefaultCacheKeyGenerator.cs",
+        "src/Configuration/CacheOptions.cs"
+      ],
+      "expectedSymbols": [
+        "DefaultCacheKeyGenerator.GenerateRequestCacheKey",
+        "CacheOptions.EnableContentHashing"
+      ],
+      "expectedFacts": [
+        "The key starts with the HTTP method and the original request URL string, joined with '-'.",
+        "If a cache header name is configured, that header's value from the downstream request is appended, so different header values produce different keys; the header name defaults to OC-Cache-Control.",
+        "The request body is appended only when content hashing is enabled and the request has content; the final key is an MD5 hex string."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/Cache/DefaultCacheKeyGenerator.cs:12-15 (Method + '-' + OriginalString), :17-24 (options.Header -> header values appended), :26-29 (if !EnableContentHashing || !HasContent return MD5 of key), :31-33 (content appended). src/Configuration/CacheOptions.cs:14 (Oc_Cache_Control = 'OC-Cache-Control'), :39 (Header = header.IfEmpty(Oc_Cache_Control)), :40 (EnableContentHashing default false). src/Cache/MD5Helper.cs:21-25 (hex string of MD5)."
+    },
+    {
+      "id": "r3-ocelot-13",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "concept",
+      "difficulty": "medium",
+      "query": "How does the gateway keep one browser talking to the same backend instance across requests, how is that browser recognised, and when does the pairing lapse?",
+      "expectedFiles": [
+        "src/LoadBalancer/Balancers/CookieStickySessions.cs",
+        "src/LoadBalancer/Creators/CookieStickySessionsCreator.cs"
+      ],
+      "expectedSymbols": [
+        "CookieStickySessions.LeaseAsync",
+        "CookieStickySessions.CheckExpiry",
+        "CookieStickySessionsCreator.Create"
+      ],
+      "expectedFacts": [
+        "The browser is recognised by a configured cookie (default is the ASP.NET Core session cookie name); the store key is the route's load-balancer key plus the cookie value, kept in a static dictionary.",
+        "On the first request the instance is chosen by a wrapped RoundRobin balancer; on later requests the stored instance is reused and its expiry is pushed forward (sliding expiry).",
+        "A delayed message on an in-memory bus triggers CheckExpiry, which removes the entry and releases the instance if its expiry time has passed; the default expiry is 20 minutes."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/LoadBalancer/Balancers/CookieStickySessions.cs:15 (DefSessionExpiryMinutes = 20), :21 (DefSessionCookieName = SessionDefaults.CookieName), :43 (static Stored dictionary), :56-69 (CheckExpiry), :71-97 (LeaseAsync: key = $'{serviceName}:{cookie}' :76; cached -> refreshed expiry :79-84; else _loadBalancer.LeaseAsync :87, store :93-94), :99-106 (Update publishes to bus with _keyExpiryInMs delay). src/Infrastructure/InMemoryBus.cs:25-29,35-45 (delayed processing). src/LoadBalancer/Creators/CookieStickySessionsCreator.cs:12-19 (RoundRobin wrapped; InMemoryBus; options.Key, options.ExpiryInMs). src/Configuration/LoadBalancerOptions.cs:22-27 (defaults for sticky sessions)."
+    },
+    {
+      "id": "r3-ocelot-14",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "concept",
+      "difficulty": "hard",
+      "query": "How does the gateway decide which correlation identifier to attach to a request, taking one supplied by the client versus using its own, and is that identifier passed on to the backend?",
+      "expectedFiles": [
+        "src/RequestId/Middleware/RequestIdMiddleware.cs",
+        "src/Errors/ExceptionHandlerMiddleware.cs",
+        "src/RequestId/DefaultRequestIdKey.cs"
+      ],
+      "expectedSymbols": [
+        "RequestIdMiddleware.SetOcelotRequestId",
+        "ExceptionHandlerMiddleware.TrySetGlobalRequestId",
+        "DefaultRequestIdKey.Value"
+      ],
+      "expectedFacts": [
+        "The header name is the route's RequestIdKey, falling back to the default 'RequestId' key; if the client sent that header, its first value becomes HttpContext.TraceIdentifier, otherwise ASP.NET's own TraceIdentifier stays.",
+        "ExceptionHandlerMiddleware applies the same idea earlier using the global configuration's request-id key.",
+        "The identifier is added as a header to the downstream request only when the route has a RequestIdKey configured, the value is non-empty, and that header is not already present; the default key alone is not forwarded."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/RequestId/Middleware/RequestIdMiddleware.cs:38 (key = downstreamRoute.RequestIdKey ?? DefaultRequestIdKey.Value), :40-42 (TraceIdentifier = first upstream value), :44-53 (Previous id bookkeeping), :56-62 (requestId built from downstreamRoute.RequestIdKey; ShouldAddRequestId), :66-71 (requires non-empty key & value, and not already in headers). src/RequestId/DefaultRequestIdKey.cs:5-7 (comment: not forwarded unless specified; Value = 'RequestId'). src/Errors/ExceptionHandlerMiddleware.cs:63-72 (TrySetGlobalRequestId)."
+    },
+    {
+      "id": "r3-ocelot-15",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "concept",
+      "difficulty": "medium",
+      "query": "For the header rewriting feature, how does the gateway tell whether a configured entry means 'set this header to a value' versus 'replace some text inside an existing header'?",
+      "expectedFiles": [
+        "src/Configuration/Creator/HeaderFindAndReplaceCreator.cs"
+      ],
+      "expectedSymbols": [
+        "HeaderFindAndReplaceCreator.ProcessHeaders",
+        "HeaderFindAndReplaceCreator.Map"
+      ],
+      "expectedFacts": [
+        "The decision is made when the configuration is turned into route objects: a value containing a comma is treated as a find-and-replace pair, any other value becomes a plain add-header entry.",
+        "If the replacement part contains a placeholder in braces, it is resolved at this time through the placeholders service; if resolution fails the entry is dropped with a warning.",
+        "Route-level entries win over global entries for the same header key (Merge)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/Configuration/Creator/HeaderFindAndReplaceCreator.cs:42-48 (Merge: global.ExceptBy(local.Keys); local wins), :50-74 (ProcessHeaders: input.Value.Contains(HeaderFindAndReplace.Comma) -> Map else AddHeader), :79-101 (Map: split on comma, placeholder braces resolved via _placeholders.Get; error -> null and warning :91-95; unmapped -> warning :65-68). Comma constant: src/Configuration/HeaderFindAndReplace.cs:5. Consumers: src/Headers/Middleware/HttpHeadersTransformationMiddleware.cs:35-57."
+    },
+    {
+      "id": "r3-ocelot-16",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "concept",
+      "difficulty": "hard",
+      "query": "A global authentication setting is restricted to a named subset of routes. What does a route outside that subset end up with if it has its own authentication settings, and what if it has none?",
+      "expectedFiles": [
+        "src/Configuration/Creator/AuthenticationOptionsCreator.cs"
+      ],
+      "expectedSymbols": [
+        "AuthenticationOptionsCreator.Create",
+        "AuthenticationOptionsCreator.Merge"
+      ],
+      "expectedFacts": [
+        "A route counts as covered by the global setting when the global RouteKeys list is missing or empty, or contains the route's key.",
+        "A route outside the subset with its own settings gets only its own settings (no merge with the global ones).",
+        "A route outside the subset with no settings gets default empty options, which have no authentication scheme, so the route is not authenticated.",
+        "For covered routes that also have their own settings, the two are merged with route values taking precedence and null or empty ones falling back to global values."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/Configuration/Creator/AuthenticationOptionsCreator.cs:25-49 (:29-31 isGlobal; :33-36 no route options + global + isGlobal -> new(globalOptions); :43-46 both -> isGlobal ? Merge : new(options); :48 otherwise new()), :51-62 (Merge: ??= and IfEmpty from global). Default options have empty AuthenticationProviderKeys: src/Configuration/AuthenticationOptions.cs:8-13; HasScheme :51; src/Configuration/DownstreamRoute.cs:99 (IsAuthenticated requires HasScheme)."
+    },
+    {
+      "id": "r3-ocelot-17",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "concept",
+      "difficulty": "hard",
+      "query": "How long does the gateway wait for a backend to reply when nothing is configured, and what happens if a route sets the waiting time to zero or a negative number?",
+      "expectedFiles": [
+        "src/Configuration/Creator/StaticRoutesCreator.cs",
+        "src/Configuration/DownstreamRoute.cs",
+        "src/Infrastructure/Extensions/Int32Extensions.cs"
+      ],
+      "expectedSymbols": [
+        "StaticRoutesCreator.CreateTimeout",
+        "DownstreamRoute.DefaultTimeoutSeconds",
+        "Int32Extensions.Positive"
+      ],
+      "expectedFacts": [
+        "The default timeout is 90 seconds (DefTimeout); the static DefaultTimeoutSeconds setter falls back to 90 if assigned a value below 3.",
+        "CreateTimeout evaluates route.Timeout.Positive(default) ?? global.Timeout.Positive(default) ?? default; Positive returns null for null, the value if above zero, otherwise the default.",
+        "So a zero or negative route timeout becomes 90 seconds directly; it does not fall through to the global timeout (only a null route timeout does)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/Configuration/DownstreamRoute.cs:129-137 (LowTimeout=3, DefTimeout=90, DefaultTimeoutSeconds setter value >= LowTimeout ? value : DefTimeout). src/Configuration/Creator/StaticRoutesCreator.cs:75-79 (CreateTimeout). src/Infrastructure/Extensions/Int32Extensions.cs:17-19 (Positive(int?, toDefault)). Timeout applied: src/Requester/MessageInvokerPool.cs:50-58 and :68-84; TimeoutException -> RequestTimedOutError (504): src/Requester/TimeoutDelegatingHandler.cs:32-35, src/Requester/HttpExceptionToErrorMapper.cs:31-34."
+    },
+    {
+      "id": "r3-ocelot-18",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "enforcement",
+      "difficulty": "hard",
+      "query": "Where does the gateway refuse to start because two configured routes are indistinguishable (same incoming path template, host and header conditions) while their HTTP method lists overlap?",
+      "expectedFiles": [
+        "src/Configuration/Validator/FileConfigurationFluentValidator.cs",
+        "src/Middleware/OcelotMiddlewareExtensions.cs"
+      ],
+      "expectedSymbols": [
+        "FileConfigurationFluentValidator.IsNotDuplicateIn",
+        "OcelotMiddlewareExtensions.ThrowToStopOcelotStarting"
+      ],
+      "expectedFacts": [
+        "A rule over every route calls IsNotDuplicateIn with the route list; routes are considered the same when upstream path template, upstream host and the set of upstream header templates are all equal.",
+        "It fails if two such routes both allow all verbs (empty method list), share a specific method (case-insensitive), or one allows all verbs while another lists specific ones; the message says the route has a duplicate.",
+        "At startup UseOcelot builds the internal configuration and, on any validation error, throws an exception (Unable to start Ocelot) via ThrowToStopOcelotStarting."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/Configuration/Validator/FileConfigurationFluentValidator.cs:29-31 (rule + message 'has duplicate'), :121-148 (IsNotDuplicateIn: matching by UpstreamPathTemplate/UpstreamHost/AreTheSame headers :124-126; single match ok :129-132; duplicateAllowAllVerbs/duplicateSpecificVerbs/allowAllVerbs && specificVerbs :134-142). Validation result used: src/Configuration/Creator/FileInternalConfigurationCreator.cs:32-37. Startup throw: src/Middleware/OcelotMiddlewareExtensions.cs:80-86 (internalConfig.IsError -> ThrowToStopOcelotStarting), :121-124."
+    },
+    {
+      "id": "r3-ocelot-19",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "enforcement",
+      "difficulty": "medium",
+      "query": "Where is a route whose rate-limit period text lacks a supported time unit rejected while the settings are being loaded, before any request arrives?",
+      "expectedFiles": [
+        "src/Configuration/Validator/RouteFluentValidator.cs"
+      ],
+      "expectedSymbols": [
+        "RouteFluentValidator.IsValidPeriod",
+        "RouteFluentValidator"
+      ],
+      "expectedFacts": [
+        "The rate-limit rules are checked only when the route has rate limit options and rate limiting is not explicitly disabled.",
+        "The period must be non-empty and, after trimming, match a number followed by ms, s, m, h or d (checked with five regexes).",
+        "On failure the validation message says the period does not contain an integer then ms, s, m, h or d; the limit must also be greater than zero when specified."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/Configuration/Validator/RouteFluentValidator.cs:59-71 (When RateLimitOptions != null && EnableRateLimiting != false: Limit >0 :61-63; Period NotEmpty :64-66; Must(IsValidPeriod) with message :68-70), :99-127 (five GeneratedRegex + IsValidPeriod). Separate runtime parser (not the answer): src/Configuration/RateLimitRule.cs:57-88 ParseTimespan throws FormatException for unknown units."
+    },
+    {
+      "id": "r3-ocelot-20",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "enforcement",
+      "difficulty": "medium",
+      "query": "Where is a caller's network address compared against a route's allowed and blocked address lists, and in what order are the two lists applied?",
+      "expectedFiles": [
+        "src/Security/IPSecurityPolicy.cs",
+        "src/Security/SecurityMiddleware.cs",
+        "src/Configuration/Creator/SecurityOptionsCreator.cs"
+      ],
+      "expectedSymbols": [
+        "IPSecurityPolicy.Security",
+        "SecurityMiddleware.Invoke",
+        "SecurityOptionsCreator.Create"
+      ],
+      "expectedFacts": [
+        "SecurityMiddleware runs every registered security policy and stops at the first error, putting the errors into the pipeline.",
+        "IPSecurityPolicy lets the request through if there are no options or no remote IP; otherwise it checks the blocked list first, then requires membership of the allowed list when that list is non-empty; both failures return a SecurityError (403).",
+        "SecurityOptionsCreator expands configured entries (single addresses or ranges) into concrete address lists at configuration time and can subtract allowed addresses from the blocked list."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/Security/SecurityMiddleware.cs:24-38 (foreach policy; error -> UpsertErrors; return). src/Security/IPSecurityPolicy.cs:9-29 (:13-14 options null or clientIp null -> Ok; :16-20 blocked list; :22-26 allowed list). src/Security/SecurityError.cs:9 (Status403Forbidden). src/Configuration/Creator/SecurityOptionsCreator.cs:8-17 (Parse ranges via IPAddressRange; .Except(allowedIPs) when ExcludeAllowedFromBlocked), :19-27."
+    },
+    {
+      "id": "r3-ocelot-21",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "enforcement",
+      "difficulty": "medium",
+      "query": "Where does the gateway decide that a request to a protected route lacks acceptable credentials, and which requests skip that check entirely?",
+      "expectedFiles": [
+        "src/Authentication/AuthenticationMiddleware.cs",
+        "src/Configuration/DownstreamRoute.cs"
+      ],
+      "expectedSymbols": [
+        "AuthenticationMiddleware.Invoke",
+        "AuthenticationMiddleware.AuthenticateAsync",
+        "DownstreamRoute.IsAuthenticated"
+      ],
+      "expectedFacts": [
+        "The check is skipped for OPTIONS requests and for routes that are not authenticated, i.e. no authentication options, AllowAnonymous set, or no scheme configured.",
+        "Each configured non-blank scheme is tried in order; the first successful result is used, and an exception from one scheme is logged and the next scheme is tried.",
+        "If no principal or an unauthenticated identity results, an UnauthenticatedError is set on the pipeline instead of calling the next middleware."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/Authentication/AuthenticationMiddleware.cs:26-31 (IsOptionsMethod || !route.IsAuthenticated -> skip), :35-40 (AuthenticateAsync; Principal?.Identity == null -> SetUnauthenticatedError), :43-50 (IsAuthenticated else error), :53-59 (UnauthenticatedError), :61-84 (loop over non-blank AuthenticationProviderKeys; Succeeded returns; catch logs). src/Configuration/DownstreamRoute.cs:99 (IsAuthenticated => AuthenticationOptions is not null && !AllowAnonymous && HasScheme). src/Middleware/UnauthenticatedError.cs:9 (401)."
+    },
+    {
+      "id": "r3-ocelot-22",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "enforcement",
+      "difficulty": "medium",
+      "query": "Where is it checked that a caller's token carries at least one of the scopes a route permits, including tokens whose scopes arrive as one space-separated string?",
+      "expectedFiles": [
+        "src/Authorization/ScopesAuthorizer.cs",
+        "src/Authorization/AuthorizationMiddleware.cs"
+      ],
+      "expectedSymbols": [
+        "ScopesAuthorizer.Authorize",
+        "AuthorizationMiddleware.Invoke"
+      ],
+      "expectedFacts": [
+        "If the route lists no allowed scopes, authorization succeeds immediately.",
+        "The scope claim type is 'scope'; if there is exactly one such claim and it contains a space, it is split on spaces into separate scopes.",
+        "Authorization succeeds if the intersection of allowed and user scopes is non-empty; otherwise a ScopeNotAuthorizedError is returned.",
+        "AuthorizationMiddleware performs this scope check only for non-OPTIONS requests on authenticated routes, and stops the pipeline on the error."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/Authorization/ScopesAuthorizer.cs:10 (Scope = 'scope'), :26-29 (no allowed scopes -> true), :31-45 (GetValuesByClaimType; single claim with space split), :47-52 (Intersect; ScopeNotAuthorizedError). src/Authorization/AuthorizationMiddleware.cs:30-40 (!IsOptionsMethod && route.IsAuthenticated -> _scopesAuthorizer.Authorize(context.User, route.AuthenticationOptions.AllowedScopes); error -> UpsertErrors; return)."
+    },
+    {
+      "id": "r3-ocelot-23",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "enforcement",
+      "difficulty": "hard",
+      "query": "Where does a request whose body exceeds the hosting server's maximum get turned into a dedicated 'content too large' reply, and does the gateway itself measure the body against a size limit?",
+      "expectedFiles": [
+        "src/Requester/HttpExceptionToErrorMapper.cs",
+        "src/Request/Mapper/PayloadTooLargeError.cs",
+        "src/Responder/ErrorsToHttpStatusCodeMapper.cs"
+      ],
+      "expectedSymbols": [
+        "HttpExceptionToErrorMapper.Map",
+        "PayloadTooLargeError",
+        "ErrorsToHttpStatusCodeMapper.Map"
+      ],
+      "expectedFacts": [
+        "The gateway does not compare body size with a limit itself; it reacts to an exception raised while sending: an HttpRequestException whose inner exception is a BadHttpRequestException with status 413 becomes a PayloadTooLargeError.",
+        "PayloadTooLargeError carries HTTP status 413, and ErrorsToHttpStatusCodeMapper maps it to 413 Payload Too Large.",
+        "Other HttpRequestExceptions map to ConnectionToDownstreamServiceError (502) instead."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/Requester/HttpExceptionToErrorMapper.cs:50-61 (type == HttpRequestException || TimeoutException; InnerException is BadHttpRequestException { StatusCode: 413 } -> PayloadTooLargeError; else ConnectionToDownstreamServiceError). src/Request/Mapper/PayloadTooLargeError.cs:5-10 (RequestEntityTooLarge). src/Responder/ErrorsToHttpStatusCodeMapper.cs:61-64 (PayloadTooLargeError -> Status413PayloadTooLarge). Caller: src/Requester/MessageInvokerHttpRequester.cs:34-40. No size-limit option exists in src (rg -in 'MaxRequestBodySize|MaxBody|ContentLength >' -> no limit checks other than StreamHttpContent length-consistency at src/Request/Mapper/StreamHttpContent.cs:79-94)."
+    },
+    {
+      "id": "r3-ocelot-24",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "enforcement",
+      "difficulty": "hard",
+      "query": "What happens, and where is it decided, when a request reaches a rate-limited route without the header that identifies the calling client?",
+      "expectedFiles": [
+        "src/RateLimiting/RateLimitingMiddleware.cs"
+      ],
+      "expectedSymbols": [
+        "RateLimitingMiddleware.Invoke",
+        "RateLimitingMiddleware.Identify",
+        "RateLimitingMiddleware.Break"
+      ],
+      "expectedFacts": [
+        "The client id is read from the configured client-id header, or the default header Oc-Client; an unset header yields an empty client id.",
+        "Whitelist membership is checked before the empty-id check.",
+        "An empty client id is treated as a security failure: a warning is logged and the request is rejected with status 503 Service Unavailable (not the normal 429), with the warning text as the message and a Retry-After of -1.",
+        "It is rejected without counting against any quota."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/RateLimiting/RateLimitingMiddleware.cs:98-108 (Identify: header = options.ClientIdHeader.IfEmpty(DefaultClientHeader); clientId default empty), :42-47 (IsWhitelisted before), :50-66 (identity.ClientId.IsEmpty() -> warning; errorOpts with StatusCode = Status503ServiceUnavailable; Break(context, errorOpts, -1.0)), :68 (_limiter.ProcessRequest comes after). src/Configuration/RateLimitOptions.cs:15 (DefaultClientHeader = 'Oc-Client')."
+    },
+    {
+      "id": "r3-ocelot-25",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "enforcement",
+      "difficulty": "hard",
+      "query": "Where does the gateway switch off server certificate checking for outgoing connections when a route opts in, both for ordinary requests and for socket upgrades, and what is logged?",
+      "expectedFiles": [
+        "src/Requester/MessageInvokerPool.cs",
+        "src/WebSockets/WebSocketsProxyMiddleware.cs"
+      ],
+      "expectedSymbols": [
+        "MessageInvokerPool.CreateHandler",
+        "WebSocketsProxyMiddleware.Proxy"
+      ],
+      "expectedFacts": [
+        "For HTTP, CreateHandler builds a SocketsHttpHandler and, when the route's dangerous-certificate option is set, assigns SslOptions with a RemoteCertificateValidationCallback that always returns true.",
+        "For WebSockets, Proxy sets the client's options RemoteCertificateValidationCallback to always return true under the same route option.",
+        "Both paths log a warning that all SSL warnings have been ignored for that route."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/Requester/MessageInvokerPool.cs:89-118 (:106 if !route.DangerousAcceptAnyServerCertificateValidator return; :111-114 SslOptions callback => true; :115-116 LogWarning). src/WebSockets/WebSocketsProxyMiddleware.cs:99-103 (client.Options.RemoteCertificateValidationCallback = ... true; LogWarning(IgnoredSslWarningFormat)), :28 (message format)."
+    },
+    {
+      "id": "r3-ocelot-26",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "locate-explain",
+      "difficulty": "medium",
+      "query": "Where is the client's incoming request body streamed to the backend without being loaded fully into memory, and what protects against the number of bytes differing from what the client announced?",
+      "expectedFiles": [
+        "src/Request/Mapper/StreamHttpContent.cs",
+        "src/Request/Mapper/RequestMapper.cs"
+      ],
+      "expectedSymbols": [
+        "StreamHttpContent.CopyAsync",
+        "RequestMapper.MapContent"
+      ],
+      "expectedFacts": [
+        "RequestMapper.MapContent returns no content when there is no body or neither Content-Length nor Transfer-Encoding is present; a zero Content-Length gives an empty ByteArrayContent; otherwise a StreamHttpContent wraps the request's body.",
+        "StreamHttpContent.CopyAsync copies in a loop using an ArrayPool buffer of up to 64 KiB.",
+        "It throws InvalidOperationException if more bytes arrive than the announced Content-Length, or if the stream ends before the announced length was reached."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/Request/Mapper/RequestMapper.cs:28-46 (:33-36 null when no body or no length/TE; :39-41 ByteArrayContent for 0 else new StreamHttpContent(request.HttpContext)). src/Request/Mapper/StreamHttpContent.cs:8 (DefaultBufferSize = 65536), :38-113 (CopyAsync loop; :46 ArrayPool rent; :79-82 more data than announced -> InvalidOperationException; :85-95 end of stream with mismatch -> InvalidOperationException)."
+    },
+    {
+      "id": "r3-ocelot-27",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "locate-explain",
+      "difficulty": "medium",
+      "query": "Which headers sent by the client are deliberately not copied onto the outgoing backend request for ordinary HTTP calls, and where is that list kept?",
+      "expectedFiles": [
+        "src/Request/Mapper/RequestMapper.cs"
+      ],
+      "expectedSymbols": [
+        "RequestMapper.UnsupportedHeaders",
+        "RequestMapper.MapHeaders"
+      ],
+      "expectedFacts": [
+        "The unsupported set contains 'host' and 'transfer-encoding', compared case-insensitively.",
+        "MapHeaders copies every other request header with TryAddWithoutValidation; content-related headers (such as Content-Length, Content-Encoding, Content-Type) are added to the content object instead."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/Request/Mapper/RequestMapper.cs:10 (UnsupportedHeaders = { 'host', 'transfer-encoding' }, OrdinalIgnoreCase), :11 (ContentHeaders list), :48-68 (AddContentHeaders), :78-90 (MapHeaders / IsSupportedHeader). Lures: WebSocket list src/WebSockets/WebSocketsProxyMiddleware.cs:16-20; response-side Transfer-Encoding removal src/Headers/RemoveOutputHeaders.cs:13-20."
+    },
+    {
+      "id": "r3-ocelot-28",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "locate-explain",
+      "difficulty": "hard",
+      "query": "Where are the compiled matching expressions built from route path templates kept for reuse, and for how long?",
+      "expectedFiles": [
+        "src/Configuration/Creator/UpstreamTemplatePatternCreator.cs",
+        "src/Cache/DefaultMemoryCache.cs"
+      ],
+      "expectedSymbols": [
+        "UpstreamTemplatePatternCreator.GetRegex",
+        "UpstreamTemplatePatternCreator.RegexCachingTTL",
+        "DefaultMemoryCache.Add"
+      ],
+      "expectedFacts": [
+        "GetRegex looks up an IOcelotCache of Regex by the template string under a region named after UpstreamPathTemplate; on a miss it builds the Regex (Singleline, compiled) and adds it to the cache.",
+        "The time-to-live is RegexCachingTTL, a static settable property defaulting to 1 minute.",
+        "The IOcelotCache of Regex is backed by DefaultMemoryCache, which stores the entries in the ASP.NET memory cache."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/Configuration/Creator/UpstreamTemplatePatternCreator.cs:16 (IOcelotCache<Regex> _cache), :94 (RegexCachingTTL = TimeSpan.FromMinutes(1.0D)), :96-110 (GetRegex: _cache.TryGetValue(key, nameof(UpstreamPathTemplate), out rgx); RegexGlobal.New(key, RegexOptions.Singleline); _cache.Add(..., RegexCachingTTL)). src/Infrastructure/RegexGlobal.cs:39-40 (New adds RegexOptions.Compiled). DI: src/DependencyInjection/Features.cs:79 (IOcelotCache<Regex> -> DefaultMemoryCache<Regex>). src/Cache/DefaultMemoryCache.cs:17-27 (_memoryCache.Set(key, value, ttl))."
+    },
+    {
+      "id": "r3-ocelot-29",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "locate-explain",
+      "difficulty": "medium",
+      "query": "For the rotating load-balancing strategy, where does the gateway remember which backend instance comes next, and is that memory separate for each route?",
+      "expectedFiles": [
+        "src/LoadBalancer/Balancers/RoundRobin.cs",
+        "src/LoadBalancer/Creators/RoundRobinCreator.cs"
+      ],
+      "expectedSymbols": [
+        "RoundRobin.LastIndices",
+        "RoundRobin.TryScanNext",
+        "RoundRobinCreator.Create"
+      ],
+      "expectedFacts": [
+        "The next index is kept in a static Dictionary<string,int> named LastIndices, keyed by the balancer's service name, and is read and updated under a static lock in LeaseAsync.",
+        "The creator passes the route's service name if set, otherwise the route's load-balancer key, so entries are separate per service or route key but shared across balancer instances in the process.",
+        "TryScanNext wraps the index back to 0 when it reaches the length and skips services whose host-and-port is null."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/LoadBalancer/Balancers/RoundRobin.cs:25 (static LastIndices), :27-30 (static SyncRoot), :43 (lock (SyncRoot)), :76-98 (TryScanNext: LastIndices.TryGetValue(_serviceName); wrap :80-83; loop skipping null HostAndPort :90-95; write :94). src/LoadBalancer/Creators/RoundRobinCreator.cs:13-17 (service name or LoadBalancerKey)."
+    },
+    {
+      "id": "r3-ocelot-30",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "locate-explain",
+      "difficulty": "hard",
+      "query": "When a folder holds several split configuration files, how are they combined into one configuration, and which of them may supply the global section?",
+      "expectedFiles": [
+        "src/DependencyInjection/ConfigurationBuilderExtensions.cs"
+      ],
+      "expectedSymbols": [
+        "ConfigurationBuilderExtensions.GetMergedOcelotJson",
+        "ConfigurationBuilderExtensions.OcelotMergeConfiguration",
+        "ConfigurationBuilderExtensions.OcelotJMergeSection"
+      ],
+      "expectedFacts": [
+        "Files whose names match the pattern ocelot.*.json (case-insensitive) in the folder are merged, excluding the environment-specific file for the current environment name.",
+        "Routes, Aggregates and DynamicRoutes arrays from every such file are merged into the result; the GlobalConfiguration section is merged only from the global file (ocelot.global.json by default).",
+        "When the global section is merged, an object section replaces the destination section wholesale rather than merging property by property."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/DependencyInjection/ConfigurationBuilderExtensions.cs:97-98 (SubConfigRegex ^ocelot\\.(.*?)\\.json$), :134-139 (environment file excluded from files), :141-143 (merge starts from empty FileConfiguration), :149-162 (per-file merge; isGlobal only for globalFile name :160-161), :284-291 (OcelotMergeConfiguration: GlobalConfiguration only if isGlobal; then Aggregates, Routes, DynamicRoutes), :303-315 (JObject source replaces via OcelotJSetSection; JArray merged)."
+    },
+    {
+      "id": "r3-ocelot-31",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "negative",
+      "difficulty": "hard",
+      "query": "Where does the gateway periodically probe its configured backend instances and take unhealthy ones out of the rotation?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "No active health checking exists: load balancers only skip service entries whose host-and-port is null, and RoundRobin carries a TODO saying real health status is not checked.",
+        "The only health-like logic is the circuit breaker, which reacts to real request failures and lets one probe request through in the half-open state; it is per-route and not a periodic probe.",
+        "Service discovery providers just return their list (ConfigurationServiceProvider returns the configured addresses), with no liveness filtering."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION OF ABSENCE: rg -in 'health|probe|heartbeat|ping\\b|unhealthy' src --glob '*.cs' -> only src/LoadBalancer/Balancers/RoundRobin.cs:89 (TODO Check real health status) and circuit-breaker probe comments (src/Infrastructure/DesignPatterns/CircuitBreaker.cs:14,53-58,138-141; src/QualityOfService/CircuitBreakerDelegatingHandler.cs:18). Grep 2: rg -in 'Timer|PeriodicTimer|BackgroundService|IHostedService' src -> only FileConfigurationPoller (config reload, src/Configuration/Repository/FileConfigurationPoller.cs:19). Grep 3: rg -in 'HealthCheck|IHealthCheck|Unhealthy' src samples manual --glob '*.cs' -> nothing. RoundRobin.TryScanNext: src/LoadBalancer/Balancers/RoundRobin.cs:76-98. ConfigurationServiceProvider: src/ServiceDiscovery/Providers/ConfigurationServiceProvider.cs:9-11."
+    },
+    {
+      "id": "r3-ocelot-32",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "negative",
+      "difficulty": "hard",
+      "query": "Where does the gateway revalidate a stored response with the origin using an entity tag or last-modified timestamp, and answer callers with 'not modified'?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "No conditional-request or entity-tag handling exists; the output cache stores full responses keyed by an MD5 of method, URL, optional header value and optional body, with a fixed TTL, and never revalidates.",
+        "NotModified appears only in HttpContextResponder, where a downstream 304 response simply skips writing a body.",
+        "The OC-Cache-Control header is Ocelot's own cache-option header name, not standard HTTP cache validation."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION OF ABSENCE: rg -in 'etag|last-modified|If-None-Match|If-Modified|revalidat|max-age' src --glob '*.cs' -> no matches except src/Configuration/CacheOptions.cs:12,14 (Cache-Control naming comment / OC-Cache-Control constant). Grep 2: rg -in 'NotModified|Vary\\b' src -> only src/Responder/HttpContextResponder.cs:53. Grep 3: rg -in 'etag|If-None-Match' samples manual build.cake src/Ocelot.csproj -> only unrelated 'beta' tag text. Cache flow: src/Cache/OutputCacheMiddleware.cs:24-65, src/Cache/DefaultCacheKeyGenerator.cs:10-34."
+    },
+    {
+      "id": "r3-ocelot-33",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "negative",
+      "difficulty": "hard",
+      "query": "Where does the gateway automatically re-send a backend call that failed with a connection error, waiting between attempts?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "The request path makes a single SendAsync call: MessageInvokerHttpRequester.GetResponse wraps it in try/catch and maps any exception to an error response without looping.",
+        "The built-in QoS handler is a circuit breaker plus optional timeout: it fails fast with 503 when open and records failures, but never re-sends a request.",
+        "A generic Retry helper (Retry.Operation / OperationAsync) exists under Infrastructure/DesignPatterns but has no callers in src; it is only exercised by unit tests."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION OF ABSENCE: rg -n 'Retry\\.(Operation|OperationAsync)' across repo -> only unit/TestRetry.cs and unit/Infrastructure/DesignPatterns/RetryTests.cs (no src usage). rg -n 'DesignPatterns' src -> only src/QualityOfService/CircuitBreakerDelegatingHandler.cs:2 (imports CircuitBreaker). rg -in 'retry' src -> RateLimiting 'Retry-After' header code and src/Infrastructure/DesignPatterns/Retry.cs only. Request path: src/Requester/MessageInvokerHttpRequester.cs:28-42; src/QualityOfService/CircuitBreakerDelegatingHandler.cs:105-176; Retry helper: src/Infrastructure/DesignPatterns/Retry.cs:13-123."
+    },
+    {
+      "id": "r3-ocelot-34",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "negative",
+      "difficulty": "medium",
+      "query": "Where does the gateway compress responses with gzip or brotli before sending them to callers, or transparently decompress backend replies?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "The outgoing SocketsHttpHandler is configured only with redirect, cookie, proxy, max-connections and connection-lifetime options; no automatic decompression is set.",
+        "The Ocelot pipeline has no compression middleware; response headers and content are copied through, including any Content-Encoding header from the backend.",
+        "The only compression-related code is a WebSocket per-message-deflate options property proxied to the .NET client socket options."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION OF ABSENCE: rg -in 'gzip|deflate|brotli|compress|AutomaticDecompression|Accept-Encoding' src --glob '*.cs' -> only src/WebSockets/ClientWebSocketOptionsProxy.cs:26 and src/WebSockets/IClientWebSocketOptions.cs:20 (DangerousDeflateOptions). Grep 2: rg -in 'UseResponseCompression|ResponseCompression' . -> none. Handler config: src/Requester/MessageInvokerPool.cs:92-99. Pipeline: src/Middleware/OcelotPipelineExtensions.cs:27-117. Content-Encoding passthrough: src/Request/Mapper/RequestMapper.cs:11 and src/Responder/HttpContextResponder.cs:42-45."
+    },
+    {
+      "id": "r3-ocelot-35",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "negative",
+      "difficulty": "hard",
+      "query": "Where can a route define rules to rename or remove fields inside the JSON body of the backend's reply before it reaches the caller?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "Transformations exist only for headers (upstream and downstream find-and-replace or add), claims-derived headers, query strings and downstream path; none edits a response body.",
+        "The response body is streamed straight through HttpContextResponder.WriteToUpstreamAsync via CopyToAsync.",
+        "Aggregation merges several responses under route keys (SimpleJsonResponseAggregator) or delegates to user-supplied IDefinedAggregator code; that is not a per-field rewrite rule."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION OF ABSENCE: rg -in 'JObject|JToken|JsonNode|rewrite|transform.*body|body.*transform' src --glob '*.cs' -> only src/Multiplexer/MultiplexingMiddleware.cs:126-161 (reading first response JSON for aggregation), src/Metadata/DownstreamRouteExtensions.cs:75, and ConfigurationBuilderExtensions (config merge). Grep 2: file model properties in src/Configuration/File/FileRoute.cs:30-51 and FileRouteBase.cs:12-48 list only header/claims/query/path transforms. Grep 3: rg -in 'Body' src/Headers src/Claims src/QueryStrings src/DownstreamPathManipulation -> nothing. Pass-through: src/Responder/HttpContextResponder.cs:78-82. Aggregators: src/Multiplexer/SimpleJsonResponseAggregator.cs:15-81, src/Multiplexer/UserDefinedResponseAggregator.cs:16-31."
+    },
+    {
+      "id": "r3-ocelot-36",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "negative",
+      "difficulty": "medium",
+      "query": "Where does the gateway publish request counts and latency measurements as metrics for a monitoring system such as Prometheus?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "No metrics instrumentation exists: no System.Diagnostics.Metrics Meter, stopwatch or latency measurement and no Prometheus or StatsD code in src.",
+        "Observability consists of OcelotLogger (log lines with RequestId and PreviousRequestId), OcelotDiagnosticListener (logs middleware start and finish at trace level and forwards events to an optional user-supplied IOcelotTracer) and OcelotHttpTracingHandler.",
+        "The project references no metrics or telemetry packages."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION OF ABSENCE: rg -in 'metric|stopwatch|histogram|Meter\\b|prometheus|statsd|latency' src --glob '*.cs' -> only unrelated Metadata/'elapsed' comment matches (no instrumentation). Grep 2: rg -n 'Diagnostics.Metrics|Meter|Counter<' src -> none. Grep 3: src/Ocelot.csproj:44-63 PackageReference list (FluentValidation, IPAddressRange, DiagnosticAdapter, MiddlewareAnalysis, NewtonsoftJson) has no telemetry package. Observability code: src/Logging/OcelotLogger.cs:51-97, src/Logging/OcelotDiagnosticListener.cs:18-40, src/Logging/OcelotHttpTracingHandler.cs:22-26."
+    }
+  ]
+}

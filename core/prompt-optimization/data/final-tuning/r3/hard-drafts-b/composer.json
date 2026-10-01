@@ -1,0 +1,531 @@
+{
+ "repo": "r3-composer",
+ "sha": "6712f83974b4469f764963f3a65852496f254350",
+ "probes": [
+  {
+   "id": "r3hb-composer-01",
+   "repo": "r3-composer",
+   "language": "PHP",
+   "stratum": "chain",
+   "difficulty": "hard",
+   "query": "A team lets each dependency be fetched either as an archive or as a version-control checkout. They choose per package-name pattern, with a catch-all entry, in both their user-level and their project-level settings. Trace how those two layers of settings are combined, how the resulting patterns reach the component that fetches packages, how that component picks the first origin to try for a package that tracks a development branch, and what happens when that first origin fails. Include how an explicit command-line preference interacts with the patterns.",
+   "expectedFiles": [
+    "src/Composer/Config.php",
+    "src/Composer/Factory.php",
+    "src/Composer/Downloader/DownloadManager.php",
+    "src/Composer/Command/BaseCommand.php",
+    "src/Composer/Installer.php"
+   ],
+   "expectedSymbols": [
+    "Config::merge",
+    "Factory::createDownloadManager",
+    "DownloadManager::setPreferences",
+    "DownloadManager::resolvePackageInstallPreference",
+    "DownloadManager::getAvailableSources",
+    "DownloadManager::download",
+    "BaseCommand::getPreferredInstallOptions",
+    "Installer::run"
+   ],
+   "expectedFacts": [
+    "CRITICAL: Config::merge handles the preferred-install key specially: a plain string value is turned into a map with the catch-all pattern, new values are combined with array_merge (patterns already present keep their position, new patterns from the later layer are appended after the earlier layer's patterns), and the catch-all entry is moved to the end so it is matched last.",
+    "Factory::createDownloadManager calls DownloadManager::setPreferences only when the configured value is an array; when it is the plain string 'dist' or 'source' it sets the prefer-dist or prefer-source flag instead.",
+    "DownloadManager::resolvePackageInstallPreference walks the pattern map in order, turns '*' into a case-insensitive anchored regex wildcard, and the first match wins: 'dist' gives dist, 'auto' gives dist for stable packages and source for dev packages, anything else gives source; with no match a dev package gets source and a stable package gets dist.",
+    "CRITICAL: DownloadManager::getAvailableSources lists source before dist by default and reverses to dist-first only when prefer-source is false and (prefer-dist is true or the pattern result is dist); on updates it keeps the previously installed package's source if the new package offers it, except when a stable dist install is replaced by a dev version.",
+    "Command-line choices reach the manager through BaseCommand::getPreferredInstallOptions and Installer::run, which calls setPreferSource and setPreferDist on the DownloadManager before downloading, so an explicit flag takes priority over the pattern map.",
+    "DownloadManager::download retries with the next origin only when the next origin is 'dist' (a source failure may fall back to dist); a dist failure is rethrown without falling back to source, and an IrrecoverableDownloadException is never retried."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-composer-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: Config.php:43 (default 'dist'), :216-232 (preferred-install merge: string->['*'=>v], array_merge, '*' re-appended last); Factory.php:515-530 (switch on string, setPreferences only if is_array); Downloader/DownloadManager.php:85 (setPreferences), :393-408 (resolvePackageInstallPreference), :413-451 (getAvailableSources; :431-444 keep previous source with stable-dist->dev exception; :446-448 array_reverse), :177-240 (download; :198-216 handleError; :204 nextSource !== 'dist' rethrows); Command/BaseCommand.php:323-380 (getPreferredInstallOptions); Installer.php:318-319 (setPreferSource/Dist pushed to manager). DECOYS: DownloadManager::getDownloaderForPackage / getDownloader (pick downloader TYPE not origin order), FileDownloader (dist download implementation), Command/*::--prefer-* options (only declare flags), Config::get 'preferred-install' read in BaseCommand (string path only). CHEAPEST ROUTE: (1) grep prefer/dist/source words -> Config.php:43 and Factory.php:515; (2) read Factory::createDownloadManager -> setPreferences; (3) open DownloadManager, read resolvePackageInstallPreference + getAvailableSources + download; (4) open Config::merge to learn ordering (not discoverable from DownloadManager alone); (5) grep setPreferSource -> Installer + BaseCommand for CLI interaction. >=5 dependent steps; the merge-order hop and the CLI hop are not reachable from the first greps of the question words. est. turns: 7."
+  },
+  {
+   "id": "r3hb-composer-02",
+   "repo": "r3-composer",
+   "language": "PHP",
+   "stratum": "chain",
+   "difficulty": "hard",
+   "query": "When a dependency update is set to refuse versions with known vulnerabilities, the first request for vulnerability data asks for a reduced form of each record. Trace the path from the update's candidate filter to the code that contacts the package index, and identify the exact condition that later makes the tool ask again for the complete records.",
+   "expectedFiles": [
+    "src/Composer/DependencyResolver/SecurityAdvisoryPoolFilter.php",
+    "src/Composer/Repository/RepositorySet.php",
+    "src/Composer/Repository/ComposerRepository.php",
+    "src/Composer/Advisory/PartialSecurityAdvisory.php",
+    "src/Composer/Advisory/Auditor.php",
+    "src/Composer/Policy/AdvisoriesPolicyConfig.php"
+   ],
+   "expectedSymbols": [
+    "SecurityAdvisoryPoolFilter::filter",
+    "RepositorySet::getMatchingSecurityAdvisories",
+    "RepositorySet::getSecurityAdvisoriesForConstraints",
+    "ComposerRepository::getSecurityAdvisories",
+    "PartialSecurityAdvisory::create",
+    "Auditor::needsCompleteAdvisoryLoad",
+    "AdvisoriesPolicyConfig::getIgnoreListForOperation"
+   ],
+   "expectedFacts": [
+    "SecurityAdvisoryPoolFilter::filter first calls RepositorySet::getMatchingSecurityAdvisories with partial records allowed, for pool packages that are not root, not platform and not locked, passing the blocking ignore list and the update-scope ignore-unreachable setting.",
+    "RepositorySet::getMatchingSecurityAdvisories builds one OR-constraint of exact versions per package name (skipping root aliases and unversioned dev branches) and RepositorySet::getSecurityAdvisoriesForConstraints asks each repository that provides advisories; a TransportException is rethrown unless unreachable repositories are ignored, in which case the repository is recorded.",
+    "ComposerRepository::getSecurityAdvisories reads advisories embedded in per-package metadata when the repository advertises metadata and (partial records are allowed or no API URL exists); names not answered that way are sent to the advisory API URL by POST in batches of 500 with a 10 second timeout.",
+    "PartialSecurityAdvisory::create returns a full SecurityAdvisory only when title, sources and reportedAt are present, otherwise a partial record with only ID, package and affected versions; ComposerRepository throws a RuntimeException if a partial record arrives when full records were requested.",
+    "CRITICAL: Auditor::needsCompleteAdvisoryLoad returns true only when at least one advisory is partial AND at least one key of the blocking ignore list does not start with 'PKSA-' (so CVE or remote IDs, and also ignored package names, need full data); then SecurityAdvisoryPoolFilter::filter repeats the lookup with partial records disallowed.",
+    "AdvisoriesPolicyConfig::getIgnoreListForOperation supplies that ignore list, merging ignored advisory IDs with ignored package names for the 'block' operation."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-composer-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: DependencyResolver/SecurityAdvisoryPoolFilter.php:53-80 (filter; :70 skips locked packages; :78 first lookup with allowPartial=true; :79-80 second lookup if needsCompleteAdvisoryLoad); Repository/RepositorySet.php:252-277 (constraint map, skips root alias + isUnversionedBranch), :284-306 (per-repo loop, TransportException handling); Repository/ComposerRepository.php:706-837 (:745 metadata path condition, :779-799 POST in array_chunk(ADVISORY_API_BATCH_SIZE=500, line 61), :786 timeout 10, :735-737 RuntimeException on partial); Advisory/PartialSecurityAdvisory.php:59-62 (title+sources+reportedAt -> full); Advisory/Auditor.php:218-236; Policy/AdvisoriesPolicyConfig.php:88-97. DECOYS: Auditor::audit (does the same two-step for 'composer audit' summary format only, Auditor.php:50-70), Command/AuditCommand.php, FilterList/* (malware lists use a different fetch path: FilterListAuditor::collectFilterLists), RepositorySet::getMatchingSecurityAdvisories callers in Installer.php:467-470 (post-install audit). CHEAPEST ROUTE: (1) grep advisory -> many files incl. Auditor and SecurityAdvisoryPoolFilter; (2) read SecurityAdvisoryPoolFilter::filter; (3) follow getMatchingSecurityAdvisories into RepositorySet; (4) follow getSecurityAdvisories into ComposerRepository; (5) read PartialSecurityAdvisory::create; (6) read Auditor::needsCompleteAdvisoryLoad and trace what the ignore list holds (AdvisoriesPolicyConfig). Six dependent reads. est. turns: 7."
+  },
+  {
+   "id": "r3hb-composer-03",
+   "repo": "r3-composer",
+   "language": "PHP",
+   "stratum": "chain",
+   "difficulty": "hard",
+   "query": "Our build pipeline runs the install command as the administrative account on a plain virtual machine with no terminal attached. The run succeeds, but behaviour supplied by third-party extensions silently never happens and no question is asked. Trace how Composer decides to turn the extensions off in this situation, which environment exemptions skip that decision, and how the decision reaches the code that loads extensions.",
+   "expectedFiles": [
+    "src/Composer/Console/Application.php",
+    "src/Composer/Util/Platform.php",
+    "src/Composer/Command/BaseCommand.php",
+    "src/Composer/Factory.php",
+    "src/Composer/Plugin/PluginManager.php"
+   ],
+   "expectedSymbols": [
+    "Application::doRun",
+    "Application::isRunningAsRoot",
+    "Platform::isDocker",
+    "Application::getDisablePluginsByDefault",
+    "BaseCommand::initialize",
+    "BaseCommand::createComposerInstance",
+    "Factory::create",
+    "Factory::createComposer",
+    "PluginManager::arePluginsDisabled"
+   ],
+   "expectedFacts": [
+    "CRITICAL: Application::doRun only runs the super-user check when the platform is not Windows, exec() is available, the allow-superuser environment variable is unset and Platform::isDocker() is false; the check itself is isRunningAsRoot (posix_getuid() === 0).",
+    "Platform::isDocker returns false when open_basedir is set, true when /.dockerenv, /run/.containerenv or /var/run/.containerenv exists, and otherwise inspects /proc/self/mountinfo and /proc/1/cgroup for Docker or containerd markers.",
+    "For commands that need plugin commands (list, help, an unknown command name) a root user is asked to confirm when interactive and otherwise the run aborts with exit code 1; for every other command in a non-interactive session Application::doRun prints that plugins were disabled for safety and sets disablePluginsByDefault to true.",
+    "CRITICAL: BaseCommand::initialize and BaseCommand::createComposerInstance (and Application::getComposer) read Application::getDisablePluginsByDefault and pass disablePlugins=true to Factory::create, so the Composer instance is built with plugins disabled.",
+    "Factory::createComposer passes the disable flag to Factory::createPluginManager and PluginManager::arePluginsDisabled then makes loadInstalledPlugins, registerPackage and addPlugin skip loading.",
+    "When a script or other failure follows, Application (script-failure handler and hintCommonErrors) prints that plugins were disabled automatically because the run is as root, as a hint for the cause."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-composer-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: Console/Application.php:232-236 (needsSudoCheck), :239-250 (isNonAllowedRoot + sudo -K), :258-300 (plugin-command branch: prompt if interactive else return 1), :316-320 (disablePluginsByDefault=true for non-interactive root), :475 and :585 (hints), :618-629 (getComposer uses disablePluginsByDefault), :842-845 (isRunningAsRoot); Util/Platform.php:415-460 (isDocker); Command/BaseCommand.php:224-232 and :308-310; Factory.php:438-441, :570-572, :615-627; Plugin/PluginManager.php:171, :414, :104-110 (arePluginsDisabled gating), :718-721. DECOYS: --no-plugins option (Application.php:146 sets same field from CLI), PluginManager::isPluginAllowed (trust list, not root), Factory::createGlobal disablePlugins arg, ScriptExecutionException branch at :473-478. CHEAPEST ROUTE: (1) grep for plugins/disabled/root words -> Application.php; (2) read doRun 232-320 and note isDocker + disablePluginsByDefault; (3) open Platform::isDocker; (4) grep getDisablePluginsByDefault -> BaseCommand, Application::getComposer; (5) follow Factory::create -> createComposer -> PluginManager. Five dependent steps. est. turns: 7."
+  },
+  {
+   "id": "r3hb-composer-04",
+   "repo": "r3-composer",
+   "language": "PHP",
+   "stratum": "chain",
+   "difficulty": "hard",
+   "query": "A user installs with the strictest autoloader optimisation, the one that makes the generated class loader trust only its precomputed lookup table. Follow that choice from the install command's option handling to the moment a class that is absent from the table is requested at run time, and name every other behaviour the choice silently forces on the way.",
+   "expectedFiles": [
+    "src/Composer/Command/InstallCommand.php",
+    "src/Composer/Installer.php",
+    "src/Composer/Autoload/AutoloadGenerator.php",
+    "src/Composer/Autoload/ClassLoader.php"
+   ],
+   "expectedSymbols": [
+    "InstallCommand::execute",
+    "Installer::setClassMapAuthoritative",
+    "Installer::setOptimizeAutoloader",
+    "AutoloadGenerator::dump",
+    "AutoloadGenerator::getAutoloadRealFile",
+    "ClassLoader::findFile"
+   ],
+   "expectedFacts": [
+    "InstallCommand::execute treats the mode as enabled when either the command-line option or the matching config setting is true, and passes it to the installer with setClassMapAuthoritative (after setOptimizeAutoloader).",
+    "CRITICAL: Installer::setClassMapAuthoritative(true) also calls setOptimizeAutoloader(true), and setOptimizeAutoloader(false) forces the authoritative flag back to false.",
+    "Installer::run hands the flag to AutoloadGenerator::setClassMapAuthoritative and calls dump with the optimize flag as the scan-PSR-packages argument.",
+    "AutoloadGenerator::dump forces scanPsrPackages to true when the class map is authoritative, so PSR-0/PSR-4 directories are scanned into the generated class map.",
+    "AutoloadGenerator::getAutoloadRealFile writes a call to setClassMapAuthoritative(true) into the generated autoload_real.php.",
+    "CRITICAL: ClassLoader::findFile returns false as soon as a class is not in the class map when the authoritative flag is set, skipping the APCu lookup and the PSR-4/PSR-0 file_exists searches."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-composer-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: Command/InstallCommand.php:119-121 (optimize / authoritative from option OR config), :139-140 (setOptimizeAutoloader then setClassMapAuthoritative); Installer.php:1314-1340 (the two setters force each other), :377-396 (setClassMapAuthoritative on generator, dump(..., 'composer', $this->optimizeAutoloader, ...)); Autoload/AutoloadGenerator.php:176-181 (force scanPsrPackages), :1105-1109 (emit loader->setClassMapAuthoritative(true) in getAutoloadRealFile, defined :1041); Autoload/ClassLoader.php:343-346 (setter) and :442-450 (findFile early return). DECOYS: Command/DumpAutoloadCommand.php and UpdateCommand.php (also set the flag but are not the install path), ClassLoader::loadClass/findFileWithExtension (the lookups that are skipped), apcu setters, ClassMapGenerator. CHEAPEST ROUTE: (1) grep classmap/authoritative -> InstallCommand, Installer, AutoloadGenerator, ClassLoader hits; (2) read InstallCommand lines 115-140; (3) read Installer setters (the forcing is a side effect agents miss); (4) read AutoloadGenerator::dump head + getAutoloadRealFile; (5) read ClassLoader::findFile. Five dependent steps but the words 'authoritative' are not in the question, so first greps must be guessed from 'class map'. est. turns: 6."
+  },
+  {
+   "id": "r3hb-composer-05",
+   "repo": "r3-composer",
+   "language": "PHP",
+   "stratum": "completeness",
+   "difficulty": "hard",
+   "query": "The lock file stores a fingerprint of the project's manifest. List every place in production code that (a) compares the stored fingerprint with the current manifest and then reacts, saying how it reacts, and (b) refreshes the stored fingerprint after the manifest was edited, without computing a new dependency solution for that edit. Do not count code that only reads the fingerprint for another purpose.",
+   "expectedFiles": [
+    "src/Composer/Package/Locker.php",
+    "src/Composer/Installer.php",
+    "src/Composer/Command/ValidateCommand.php",
+    "src/Composer/Command/BumpCommand.php",
+    "src/Composer/Command/RequireCommand.php"
+   ],
+   "expectedSymbols": [
+    "Locker::getContentHash",
+    "Locker::isFresh",
+    "Locker::updateHash",
+    "Installer::doUpdate",
+    "Installer::doInstall",
+    "ValidateCommand::execute",
+    "BumpCommand::doBump",
+    "RequireCommand::updateRequirementsAfterResolution"
+   ],
+   "expectedFacts": [
+    "Locker::isFresh compares the stored content-hash (computed by Locker::getContentHash from a fixed list of manifest keys plus config.platform) with the current hash, falling back to the old md5 'hash' key; Locker::updateHash rewrites it.",
+    "Installer::doUpdate warns that the minimal-changes option is not useful when the update produced nothing to modify, no package arguments were given and the lock is fresh.",
+    "CRITICAL: Installer::doInstall (install from lock) prints a warning that the lock file is not up to date with composer.json but continues the install.",
+    "ValidateCommand::execute adds an error line (the lock file is not up to date) to the lock errors when the lock exists and is not fresh.",
+    "CRITICAL: BumpCommand refuses to run when the lock exists and is not fresh (returns ERROR_LOCK_OUTDATED), and after bumping requirements calls Locker::updateHash on the changed manifest when locking is enabled and there were changes.",
+    "RequireCommand::updateRequirementsAfterResolution calls Locker::updateHash (also merging new stability flags into the lock data) after it writes the new requirements to composer.json, when a lock exists and locking is enabled."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-composer-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: Package/Locker.php:89-117 (getContentHash), :138-152 (isFresh), :429-448 (updateHash); Installer.php:569 (minimal-changes warning inside doUpdate, defined :488), :775 (doInstall warning, defined :752); Command/ValidateCommand.php:96-98; Command/BumpCommand.php:128-131 (refuse, ERROR_LOCK_OUTDATED const :37) and :227-229 (updateHash); Command/RequireCommand.php:515 (function) and :555-563 (updateHash with stability flags). DECOYS: InstalledFilesystemRepository::isFresh / InstalledRepositoryInterface::isFresh (means 'no vendor installed.json yet', used at Installer.php:274 and :349), AutoloadGenerator.php:431-433 (reads content-hash only to seed the autoloader suffix), JsonFile.php:347-350 (rewrites a merge-conflicted content-hash line when reading), Locker::setLockData (:374 writes the hash during a full update). CHEAPEST ROUTE: (1) grep 'lock file is not up to date' / 'content-hash' -> Installer, ValidateCommand, JsonFile, AutoloadGenerator (mixed signal); (2) discover Locker::isFresh and grep its callers -> separates repo isFresh decoys from Locker::isFresh; (3) grep updateHash -> BumpCommand, RequireCommand; (4) read each site to describe the reaction (Installer x2, Validate, Bump, Require). Four-plus dependent steps; members use different messages and layers. est. turns: 8."
+  },
+  {
+   "id": "r3hb-composer-06",
+   "repo": "r3-composer",
+   "language": "PHP",
+   "stratum": "completeness",
+   "difficulty": "hard",
+   "query": "Which hosting-service integrations make a package count as no longer maintained purely because its repository on the hosting service is frozen read-only, without the maintainer writing anything about it in the package manifest? Name the integrations, the extra condition each one needs, and the situation in which the flag is lost.",
+   "expectedFiles": [
+    "src/Composer/Repository/Vcs/GitHubDriver.php",
+    "src/Composer/Repository/Vcs/GitLabDriver.php",
+    "src/Composer/Repository/Vcs/ForgejoDriver.php",
+    "src/Composer/Package/Loader/ArrayLoader.php"
+   ],
+   "expectedSymbols": [
+    "GitHubDriver::getComposerInformation",
+    "GitHubDriver::initialize",
+    "GitLabDriver::getComposerInformation",
+    "ForgejoDriver::getComposerInformation",
+    "ArrayLoader::configureObject"
+   ],
+   "expectedFacts": [
+    "GitHubDriver::getComposerInformation sets abandoned = true when the manifest has no 'abandoned' key and the driver's isArchived flag is set; isArchived comes from the 'archived' field of the GitHub API repository data (set where repoData is read, GitHubDriver.php:605).",
+    "GitLabDriver::getComposerInformation sets abandoned = true when the manifest has no 'abandoned' key and the project data says it is archived (the source comment says this project data is only available if authentication is provided).",
+    "ForgejoDriver::getComposerInformation sets abandoned = true when the manifest has no 'abandoned' key and repositoryData->isArchived is true.",
+    "CRITICAL: an 'abandoned' value written in the package manifest wins; the host flag is applied only when the key is absent (isset check).",
+    "CRITICAL: each of the three drivers returns the GitDriver's manifest untouched when it has switched to the plain-clone fallback (gitDriver set), so the archived status is lost; the Bitbucket, Git, Svn and Hg drivers have no such mapping.",
+    "The resulting 'abandoned' key is turned into the package's abandoned marker by ArrayLoader when loading package data (setAbandoned)."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-composer-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: Repository/Vcs/GitHubDriver.php:47 (isArchived field), :160-195 (getComposerInformation; gitDriver early return :162-164; abandoned :192-194), :605 (isArchived = !empty(repoData['archived'])); GitLabDriver.php:150-185 (gitDriver return :152-154; abandoned :179-181; comment 'only available if authentication is provided' :170); ForgejoDriver.php:163-199 (gitDriver return :165-167; abandoned :197-199); Package/Loader/ArrayLoader.php:305-307 (setAbandoned from config). Negative checks: grep -n 'abandoned\\|archived' over GitBitbucketDriver.php, GitDriver.php, SvnDriver.php, HgDriver.php = no hits. DECOYS: Auditor/Pool/Problem abandoned handling (consumers, not producers), ArrayRepository::search (:185 reports abandoned from package), ArrayDumper (:130 serialises abandoned), CompletePackage::setAbandoned. CHEAPEST ROUTE: (1) grep abandoned -> ~25 files; must filter to producers; (2) notice drivers' archived mapping; (3) read each of three drivers to extract conditions and fallback; (4) confirm absence in other drivers (extra grep); (5) follow to ArrayLoader. Members use 'archived'/'isArchived' in different shapes. est. turns: 6."
+  },
+  {
+   "id": "r3hb-composer-07",
+   "repo": "r3-composer",
+   "language": "PHP",
+   "stratum": "completeness",
+   "difficulty": "hard",
+   "query": "When an install or update is interrupted, either by a failure or by a termination request from the operating system, which separate pieces of leftover state does Composer clean up, and which component does each one? Give the trigger and each distinct cleanup action.",
+   "expectedFiles": [
+    "src/Composer/Installer/InstallationManager.php",
+    "src/Composer/Installer/LibraryInstaller.php",
+    "src/Composer/Downloader/DownloadManager.php",
+    "src/Composer/Downloader/FileDownloader.php",
+    "src/Composer/Downloader/ArchiveDownloader.php",
+    "src/Composer/Downloader/ZipDownloader.php",
+    "src/Composer/Downloader/VcsDownloader.php"
+   ],
+   "expectedSymbols": [
+    "InstallationManager::execute",
+    "InstallationManager::runCleanup",
+    "InstallationManager::downloadAndExecuteBatch",
+    "FileDownloader::cleanup",
+    "ArchiveDownloader::cleanup",
+    "ArchiveDownloader::install",
+    "ZipDownloader::extractWithSystemUnzip",
+    "VcsDownloader::cleanup"
+   ],
+   "expectedFacts": [
+    "CRITICAL: InstallationManager::execute registers a signal handler for SIGINT, SIGTERM and SIGHUP and also catches exceptions; both call InstallationManager::runCleanup, which aborts running HTTP jobs (loop->abortJobs) and runs every queued per-operation cleanup callback.",
+    "InstallationManager::downloadAndExecuteBatch queues one cleanup callback per operation that calls the installer's cleanup (skipped when the package has no installation source yet); LibraryInstaller::cleanup forwards it to DownloadManager::cleanup; the same callbacks also run after a successful operation and in download-only mode.",
+    "FileDownloader::cleanup deletes the downloaded archive file, removes any extra registered cleanup paths, and removes the package directory, the vendor/<vendor> directory, vendor/composer and the vendor directory when each is empty and is not the current working directory.",
+    "ArchiveDownloader::install defines a local cleanup closure run when extraction fails: it clears the cache entry written for the file, removes the temporary extraction directory and the target path (unless it is the current directory) and unregisters those cleanup paths.",
+    "ArchiveDownloader::cleanup records that cleanup was executed for the package, and ZipDownloader's system-unzip failure handler checks that record and throws 'installation was aborted by another package operation' instead of falling back to ZipArchive.",
+    "CRITICAL: VcsDownloader::cleanup, on an 'update' where local changes were stashed in prepare, re-applies those changes to the checkout (reapplyChanges) and forgets the stash marker."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-composer-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: Installer/InstallationManager.php:186-190 (SignalHandler SIGINT/SIGTERM/SIGHUP -> runCleanup), :222-224 (catch -> runCleanup), :269-277 (queued cleanup closure; skip if getInstallationSource() null), :293 (download-only runCleanup), :383 (->then($cleanupPromises[$index]) after success), :650-672 (runCleanup, abortJobs :654); Installer/LibraryInstaller.php:128-135; Downloader/DownloadManager.php:377-387; Downloader/FileDownloader.php:316-343 (unlink file, additionalCleanupPaths, dirsToCleanUp with realpath != cwd), :399-411 (add/removeCleanupPath); Downloader/ArchiveDownloader.php:42-47 (cleanupExecuted), :74-79 (addCleanupPath), :86-101 (cleanup closure incl clearLastCacheWrite), :199-201; Downloader/ZipDownloader.php:186-188; Downloader/VcsDownloader.php:113-120 (+ stash at :99-100). DECOYS: Filesystem::removeDirectory callers, GitDownloader cleanup of stash is not in cleanup(), Cache::gc, Installer::run signal handler in RequireCommand.php:160 (reverts composer.json, different cleanup), Util/Git temp clone dirs. CHEAPEST ROUTE: (1) grep cleanup -> 13 definitions across installers/downloaders; (2) read InstallationManager execute/runCleanup/batch; (3) read LibraryInstaller->DownloadManager->FileDownloader::cleanup; (4) read ArchiveDownloader (cleanup + install closure) and find ZipDownloader's cleanupExecuted use by grep; (5) read VcsDownloader::cleanup and its prepare counterpart. Five+ dependent steps; no shared token among all five members beyond the word cleanup. est. turns: 9."
+  },
+  {
+   "id": "r3hb-composer-08",
+   "repo": "r3-composer",
+   "language": "PHP",
+   "stratum": "decoy",
+   "difficulty": "hard",
+   "query": "A dependency that comes from a local folder was installed as a link to that original folder rather than as a copy. When the dependency is uninstalled, which exact piece of code makes sure only the link disappears and the original folder's files survive? Several removal routines exist for packages. Name the one that applies to this linked case and the routines it delegates to or deliberately avoids.",
+   "expectedFiles": [
+    "src/Composer/Installer/LibraryInstaller.php",
+    "src/Composer/Downloader/DownloadManager.php",
+    "src/Composer/Downloader/PathDownloader.php",
+    "src/Composer/Downloader/FileDownloader.php",
+    "src/Composer/Util/Filesystem.php"
+   ],
+   "expectedSymbols": [
+    "LibraryInstaller::uninstall",
+    "LibraryInstaller::removeCode",
+    "DownloadManager::remove",
+    "PathDownloader::remove",
+    "FileDownloader::remove",
+    "Filesystem::removeDirectoryAsync",
+    "Filesystem::removeEdgeCases",
+    "Filesystem::unlinkSymlinkedDirectory"
+   ],
+   "expectedFacts": [
+    "Uninstall flows through LibraryInstaller::uninstall and removeCode into DownloadManager::remove, which selects the downloader by the package's dist type, so a local-folder package is handled by PathDownloader::remove (not FileDownloader::remove or VcsDownloader::remove).",
+    "CRITICAL: PathDownloader::remove first checks that the install path is not the same as the dist URL (compared without resolving the symlink); if they are equal it only prints that the source is still present and deletes nothing, otherwise it delegates to the parent FileDownloader::remove.",
+    "FileDownloader::remove calls Filesystem::removeDirectoryAsync and throws 'Could not completely delete' if it reports failure.",
+    "CRITICAL: Filesystem::removeDirectoryAsync first runs removeEdgeCases, which detects a symlinked directory (isSymlinkedDirectory) and removes only the link with unlinkSymlinkedDirectory (also junctions via removeJunction and plain links via unlink), returning before any recursive rm -rf or removeDirectoryPhp.",
+    "On Windows, PathDownloader::remove special-cases a junction: it calls removeJunction directly and throws if that fails, deliberately avoiding the recursive fallback that would be dangerous inside a junction."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-composer-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: Installer/LibraryInstaller.php:197-223 (uninstall), :320-325 (removeCode -> DownloadManager::remove); Downloader/DownloadManager.php:357-366 (remove delegates by getDownloaderForPackage :124-149); Downloader/PathDownloader.php:173-217 (remove: Windows junction block :185-195, same-path guard :197-215, parent::remove :217); Downloader/FileDownloader.php:431-441; Util/Filesystem.php:139-166 (removeDirectoryAsync), :171-199 (removeEdgeCases: isSymlinkedDirectory :173, isJunction :177, is_link :181), :791-815 (isSymlinkedDirectory, unlinkSymlinkedDirectory). DECOYS (all named remove/removeDirectory): FileDownloader::remove (generic archive removal, what PathDownloader inherits), VcsDownloader::remove (VcsDownloader.php:225-237, checkout removal, also removeDirectoryAsync), Filesystem::removeDirectory (sync variant used by PathDownloader::install :107 and Cache), Filesystem::removeDirectoryPhp (recursive PHP deletion), Filesystem::remove. CHEAPEST ROUTE: (1) grep 'function remove' / uninstall -> LibraryInstaller + many remove() candidates; (2) trace removeCode -> DownloadManager::remove -> getDownloaderForPackage to learn which downloader class (needs the 'path' dist type knowledge); (3) open PathDownloader::remove; (4) follow parent::remove -> FileDownloader::remove -> Filesystem::removeDirectoryAsync; (5) read removeEdgeCases / isSymlinkedDirectory. Five dependent steps with several same-named decoys. est. turns: 7."
+  },
+  {
+   "id": "r3hb-composer-09",
+   "repo": "r3-composer",
+   "language": "PHP",
+   "stratum": "decoy",
+   "difficulty": "hard",
+   "query": "Composer asks interactively for a username and password because a private package host protecting its files with a login answers with an authorization failure. The user agrees to remember the credentials. Which file receives them, how is the answer recorded there, and which similar-looking storage paths are not used in this case?",
+   "expectedFiles": [
+    "src/Composer/Util/Http/CurlDownloader.php",
+    "src/Composer/Util/AuthHelper.php",
+    "src/Composer/Config.php",
+    "src/Composer/Factory.php",
+    "src/Composer/Config/JsonConfigSource.php"
+   ],
+   "expectedSymbols": [
+    "CurlDownloader::isAuthenticatedRetryNeeded",
+    "AuthHelper::promptAuthIfNeeded",
+    "AuthHelper::storeAuth",
+    "Config::getAuthConfigSource",
+    "Factory::createConfig",
+    "JsonConfigSource::addConfigSetting"
+   ],
+   "expectedFacts": [
+    "CurlDownloader::isAuthenticatedRetryNeeded calls AuthHelper::promptAuthIfNeeded on a 401 or 403 when auth retry is allowed; for an origin that is not a configured GitHub, GitLab or Bitbucket host the generic branch fails if the console is non-interactive, otherwise asks for username and password, sets them in the IO and returns storeAuth from the store-auths setting (default 'prompt').",
+    "CurlDownloader restarts the job with the storeAuth attribute and calls AuthHelper::storeAuth only after the retried request completes without an error status.",
+    "CRITICAL: AuthHelper::storeAuth uses Config::getAuthConfigSource, the user-level auth file in the Composer home directory created in Factory::createConfig, and never the project-local auth source (getLocalAuthConfigSource); with 'prompt' it asks a y/n question defaulting to yes, with true it stores silently.",
+    "CRITICAL: AuthHelper::storeAuth writes it with addConfigSetting('http-basic.<origin>', credentials), and JsonConfigSource (constructed with authConfig = true for auth files) places it under the top-level http-basic key, not under 'config' as for composer.json.",
+    "The GitHub, GitLab and Bitbucket utility classes (and Forgejo) are the code that offer a choice between the local and global auth file for OAuth tokens; they are not used for generic HTTP basic credentials."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-composer-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: Util/Http/CurlDownloader.php:641-660 (isAuthenticatedRetryNeeded), :510-512 (restartJob with storeAuth), :536-538 (storeAuth after success); Util/AuthHelper.php:43-70 (storeAuth: getAuthConfigSource :46, prompt Yn :49-60, addConfigSetting 'http-basic.' :65-69), :84-248 (promptAuthIfNeeded; generic else branch :211-246, non-interactive failures ~:217-229, ask username/password :242-244, storeAuth = config store-auths :245); Config.php:79 (store-auths default 'prompt'), :175-193 (auth sources); Factory.php:217 (global auth.json: setAuthConfigSource(new JsonConfigSource($file, true))), :339 (local auth.json source set separately via setLocalAuthConfigSource); Config/JsonConfigSource.php:43-47, :228-236 (authConfig true -> $config[$key][$host], else $config['config'][$key][$host]). DECOYS: GitHub.php:96-168 / GitLab.php:128-177 / Bitbucket.php:144-206 / Forgejo.php:57-95 (storeInLocalAuthConfig choice, local source), Config::getLocalAuthConfigSource, RemoteFilesystem.php:473-475 (same storeAuth call in the stream fallback), Config::getConfigSource (composer.json), BaseIO::loadConfiguration (reads credentials back). CHEAPEST ROUTE: (1) grep username/password prompt -> AuthHelper; (2) read promptAuthIfNeeded generic branch; (3) grep storeAuth -> CurlDownloader, RemoteFilesystem, Git, AuthHelper::storeAuth; (4) follow getAuthConfigSource -> Config + Factory::createConfig to see WHICH file; (5) open JsonConfigSource::addConfigSetting for authConfig placement. Five dependent steps with several tempting same-purpose classes. est. turns: 7."
+  },
+  {
+   "id": "r3hb-composer-10",
+   "repo": "r3-composer",
+   "language": "PHP",
+   "stratum": "cross-layer",
+   "difficulty": "hard",
+   "query": "A user runs a command with the command-line switch that turns caching off. That switch does not change any setting on the component that stores downloaded metadata and archives. Explain how that component nevertheless stays disabled, and how the folders it would use for its different kinds of data are derived.",
+   "expectedFiles": [
+    "src/Composer/Console/Application.php",
+    "src/Composer/Factory.php",
+    "src/Composer/Config.php",
+    "src/Composer/Cache.php"
+   ],
+   "expectedSymbols": [
+    "Application::doRun",
+    "Factory::getCacheDir",
+    "Config::get",
+    "Cache::isUsable",
+    "Cache::__construct",
+    "Cache::isEnabled"
+   ],
+   "expectedFacts": [
+    "CRITICAL: Application::doRun, on seeing the no-cache option, sets the COMPOSER_CACHE_DIR environment variable to '/dev/null' (or 'nul' on Windows) with Platform::putEnv.",
+    "Factory::getCacheDir returns the COMPOSER_CACHE_DIR value first, and Config::get for the cache directory keys also lets the matching COMPOSER_* environment variable override the config value.",
+    "The files, repository and VCS cache directories are defined by Config defaults as '{$cache-dir}/files', '{$cache-dir}/repo' and '{$cache-dir}/vcs' (resolved through the {$...} reference mechanism), so each ends up below the null path.",
+    "CRITICAL: Cache::__construct calls Cache::isUsable, whose regex rejects any path containing a '$null', 'nul', 'NUL' or '/dev/null' component, and sets enabled to false; every Cache read/write/clear method then checks isEnabled and does nothing.",
+    "Consumers that construct a Cache from those directories (Factory::createDownloadManager for downloaded archives, ComposerRepository and the VCS drivers for repository metadata) therefore get a disabled cache without any extra flag."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-composer-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: Console/Application.php:164-167 (--no-cache -> Platform::putEnv('COMPOSER_CACHE_DIR', /dev/null|nul)); Factory.php:99-104 (getCacheDir env first), :172-178 (cache-dir merged as default); Config.php:51-55 (cache-dir, cache-files-dir '{$cache-dir}/files' etc.), :371-391 (get: env override COMPOSER_<KEY>, process() resolves {$cache-dir}); Cache.php:52-62 (constructor), :73-77 (isUsable regex), :90-110 (isEnabled), :123 etc (every method guarded); Factory.php:507-510 (files cache, only if cache-files-ttl > 0), Repository/ComposerRepository.php:215 and Repository/Vcs/*Driver.php (repo cache). DECOYS: Cache::setReadOnly / cache-read-only config (different mechanism: read-only not disabled), Config 'cache-ttl'/'cache-files-ttl' zero (disables the files cache by ttl, Factory.php:507), ClearCacheCommand, Cache::gc. CHEAPEST ROUTE: (1) grep 'no-cache' -> Application.php:163-166 reveals the env-var trick (user words 'caching off' match the option name only indirectly); (2) grep COMPOSER_CACHE_DIR -> Factory::getCacheDir + Config.php; (3) read Config::get/{$cache-dir} derivation; (4) find what consumes a null path: grep '/dev/null' -> Cache::isUsable; (5) confirm constructor/isEnabled and consumers. Five dependent steps; the answer class (Cache) is not named by the switch. est. turns: 6."
+  },
+  {
+   "id": "r3hb-composer-11",
+   "repo": "r3-composer",
+   "language": "PHP",
+   "stratum": "cross-layer",
+   "difficulty": "hard",
+   "query": "A project-defined shell step that watches files gets killed after about five minutes during a Composer run. Where does that five-minute limit come from, how does the configured value end up on the running child process, and what are the two documented ways to lift it for that run? The limit is unrelated to the separate time limits for network transfers.",
+   "expectedFiles": [
+    "src/Composer/Config.php",
+    "src/Composer/IO/BaseIO.php",
+    "src/Composer/Factory.php",
+    "src/Composer/Util/ProcessExecutor.php",
+    "src/Composer/Command/RunScriptCommand.php"
+   ],
+   "expectedSymbols": [
+    "Config::get",
+    "Config::disableProcessTimeout",
+    "BaseIO::loadConfiguration",
+    "ProcessExecutor::setTimeout",
+    "ProcessExecutor::getTimeout",
+    "ProcessExecutor::runProcess",
+    "RunScriptCommand::execute"
+   ],
+   "expectedFacts": [
+    "Config defaults the 'process-timeout' key to 300 seconds, and Config::get lets the COMPOSER_PROCESS_TIMEOUT environment variable override it and returns max(0, value).",
+    "CRITICAL: BaseIO::loadConfiguration (called from Factory::createComposer once the full Composer is built) copies that value into the static ProcessExecutor::setTimeout.",
+    "CRITICAL: ProcessExecutor::runProcess (and the async variant) builds the Symfony Process with static::getTimeout() as the timeout, so every child command, including script commands run by the EventDispatcher, is bound by it; the static default in ProcessExecutor is also 300.",
+    "RunScriptCommand::execute overrides the timeout for the run when the --timeout option is given (digits only, 0 means forever) by calling ProcessExecutor::setTimeout.",
+    "A script list can include the static PHP callable Composer\\Config::disableProcessTimeout as an earlier entry; it calls ProcessExecutor::setTimeout(0).",
+    "Network transfers are separate: CurlDownloader sets CURLOPT_TIMEOUT to max(default_socket_timeout, 300) and the advisory and filter-list API calls use 10 second timeouts."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-composer-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: Config.php:39 (process-timeout default 300), :371-391 (env override + max(0,...)), :743-757 (disableProcessTimeout docblock + setTimeout(0)); IO/BaseIO.php:211-213 (ProcessExecutor::setTimeout($config->get('process-timeout'))); Factory.php:356-357 ($io->loadConfiguration($config) in fullLoad branch); Util/ProcessExecutor.php:53 (static $timeout = 300), :133 and :139 (Process created with static::getTimeout()), :326-328 (async), :448-461 (getTimeout/setTimeout); Command/RunScriptCommand.php:59 (--timeout option), :130-136; EventDispatcher/EventDispatcher.php:478-485 (executeTty -> $this->process), Console/Application.php:580-583 (ProcessTimedOutException hint). DECOYS: Util/Http/CurlDownloader.php:243-244 (CURLOPT_CONNECTTIMEOUT 10, CURLOPT_TIMEOUT max(default_socket_timeout,300)), Repository/ComposerRepository.php:786 and FilterList/FilterListApiClient.php:62 (10s http timeouts), Installer/InstallationManager.php:594,626 (3s/6s release-check timeouts), ProcessExecutor::checkTimeout. CHEAPEST ROUTE: (1) grep 'timeout' -> ~20 hits across HTTP, process, config; must separate process from network; (2) Config.php process-timeout; (3) find who applies it: grep setTimeout -> BaseIO::loadConfiguration, RunScriptCommand, Config::disableProcessTimeout; (4) read ProcessExecutor to see the static used in Process construction; (5) verify the EventDispatcher uses a ProcessExecutor (Factory wiring). Five dependent steps with strong decoys. est. turns: 7."
+  },
+  {
+   "id": "r3hb-composer-12",
+   "repo": "r3-composer",
+   "language": "PHP",
+   "stratum": "condition",
+   "difficulty": "hard",
+   "query": "Composer can refresh a lock file's package metadata, such as download locations, while keeping every locked version unchanged. With the default policy for blocking by known vulnerabilities and by malware lists, which of the two kinds of blocking is skipped in that mode, and what extra step does the other kind use so that already-locked versions still get checked?",
+   "expectedFiles": [
+    "src/Composer/Installer.php",
+    "src/Composer/DependencyResolver/SecurityAdvisoryPoolFilter.php",
+    "src/Composer/DependencyResolver/FilterListPoolFilter.php",
+    "src/Composer/DependencyResolver/Request.php",
+    "src/Composer/Policy/PolicyConfig.php"
+   ],
+   "expectedSymbols": [
+    "Installer::createSecurityAuditPoolFilter",
+    "Installer::createFilterListPoolFilter",
+    "Installer::requirePackagesForUpdate",
+    "SecurityAdvisoryPoolFilter::filter",
+    "FilterListPoolFilter::filter",
+    "FilterListPoolFilter::buildLockedNameVersionMap",
+    "FilterListPoolFilter::isLockedEquivalent",
+    "Request::isLockedPackage"
+   ],
+   "expectedFacts": [
+    "CRITICAL: Installer::createSecurityAuditPoolFilter returns null when updateMirrors is true, so SecurityAdvisoryPoolFilter (the vulnerability filter) is not applied in that mode.",
+    "The same SecurityAdvisoryPoolFilter also performs the abandoned-package blocking, so that blocking is skipped in this mode too.",
+    "Installer::createFilterListPoolFilter has no updateMirrors check; for the update scope it creates the FilterListPoolFilter whenever any update-scope or install-scope list is active, so the malware list still applies.",
+    "Installer::requirePackagesForUpdate pins the locked packages with requireName(== locked version) in mirror mode instead of Request::lockPackage, so Request::isLockedPackage (identity based) does not recognise them as locked.",
+    "CRITICAL: FilterListPoolFilter::filter in the update scope therefore also computes the install-scope list names, builds a name plus normalised-version map from the locked repository (buildLockedNameVersionMap), and treats a pool package that is locked or matches that map (isLockedEquivalent) as locked.",
+    "Locked-equivalent packages are checked only against the install-scope lists (for example malware), while other packages are checked against the update-scope lists."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-composer-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: Installer.php:1160-1168 (createSecurityAuditPoolFilter: policyConfig->advisories->shouldBlock('update') && !$this->updateMirrors), :1170-1197 (createFilterListPoolFilter: :1183-1194), :1044-1057 (requirePackagesForUpdate mirror branch uses requireName ==), :535 (both filters passed to createPool); DependencyResolver/SecurityAdvisoryPoolFilter.php:96-111 (abandoned blocking inside the same filter); DependencyResolver/FilterListPoolFilter.php:67-146 (filter; :71 checkLockedAgainstInstall; :105 locked map; :115 isLockedEquivalent branch), :227-241 (buildLockedNameVersionMap, docblock :215-226 explains update mirrors), :243-250 (isLockedEquivalent); DependencyResolver/Request.php:179-182 (isLockedPackage identity based); Command/UpdateCommand.php:236-244 (lock/nothing/mirrors args and --lock set updateMirrors). DECOYS: Installer::doInstall's install-scope filter (Installer.php:809), SecurityAdvisoryPoolFilter's own locked exclusion (:70 !isLockedPackage, partial-update locking), PolicyConfig::withBlockingDisabled / --no-blocking (disables all lists, unrelated), Auditor. CHEAPEST ROUTE: (1) grep updateMirrors -> Installer; (2) read Installer pool-filter factories at :1160-1197; (3) open SecurityAdvisoryPoolFilter to confirm abandoned handling lives there; (4) open FilterListPoolFilter::filter + helper docblocks; (5) read Installer::requirePackagesForUpdate and Request::isLockedPackage to understand why name+version matching is needed. Five dependent reads; reasoning about the asymmetry is the point. est. turns: 7."
+  },
+  {
+   "id": "r3hb-composer-13",
+   "repo": "r3-composer",
+   "language": "PHP",
+   "stratum": "condition",
+   "difficulty": "hard",
+   "query": "In a non-interactive build, a plugin package that no trust rule covers is about to be installed, and its own metadata says it is optional. Under which exact circumstances is it silently skipped, and under which exact circumstances does the whole run fail instead? Cover what changes when the lock file is old and when the package is a specific legacy version-detection plugin.",
+   "expectedFiles": [
+    "src/Composer/Plugin/PluginManager.php",
+    "src/Composer/Installer/PluginInstaller.php",
+    "src/Composer/Package/Locker.php"
+   ],
+   "expectedSymbols": [
+    "PluginManager::isPluginAllowed",
+    "PluginManager::parseAllowedPlugins",
+    "PluginManager::registerPackage",
+    "PluginInstaller::prepare",
+    "Locker::getPluginApi",
+    "PluginBlockedException"
+   ],
+   "expectedFacts": [
+    "PluginManager::isPluginAllowed first walks the trust rules (patterns built by parseAllowedPlugins); the first matching pattern decides: true allows, false returns false (silently skipped) without any exception.",
+    "CRITICAL: parseAllowedPlugins returns null (no rules at all) only when the project's allow-plugins config is an empty array and the lock file exists with a plugin-api-version below 2.2.0 (Locker::getPluginApi defaults to 1.1.0 if missing); with null rules a non-interactive run throws a RuntimeException telling the user to run update --lock, regardless of the optional flag.",
+    "When no rule matches, the package 'composer/package-versions-deprecated' always gets false (skipped) before any prompt.",
+    "CRITICAL: otherwise, with no matching rule and a non-interactive session, an optional plugin (extra.plugin-optional === true) returns false and is skipped, while a non-optional plugin throws PluginBlockedException.",
+    "An interactive session with prompting enabled asks the user (y/n/d) instead; the optional flag is read from the package's extra in registerPackage, addPlugin and PluginInstaller::prepare, which calls the check early for install and update operations unless local plugins are disabled."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-composer-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: Plugin/PluginManager.php:690-710 (parseAllowedPlugins: null condition :692-694; true -> {} true; false -> {} false), :734-826 (isPluginAllowed: null rules branch :744-755, rules loop :757-761, package-versions-deprecated :763-765, prompt :767-816 only if isInteractive && prompt, optional :817-819, PluginBlockedException :821-825); :208, :420, :526 (callers; :526 uses prompt=false, optional=true); Installer/PluginInstaller.php:54-62 (prepare); Package/Locker.php:321-326 (getPluginApi default '1.1.0'). DECOYS: arePluginsDisabled (--no-plugins path), Config allow-plugins merge in Config.php:208-212, PluginManager::deactivatePackage, Factory plugin loading. CHEAPEST ROUTE: (1) grep 'optional' / 'plugin' -> PluginManager, PluginInstaller; (2) read isPluginAllowed top to bottom; (3) notice the null-rules branch and follow into parseAllowedPlugins; (4) follow Locker::getPluginApi for the version default; (5) check the three call sites for how the optional flag is read. Five dependent steps and ordering logic. est. turns: 6."
+  },
+  {
+   "id": "r3hb-composer-14",
+   "repo": "r3-composer",
+   "language": "PHP",
+   "stratum": "negative-decoy",
+   "difficulty": "hard",
+   "query": "A team publishes its own remote list of forbidden package versions, registers it with Composer as an extra named dependency policy, and leaves blocking switched on for it. They expect that installing from an existing lock file will refuse a locked version that appears on their list. Does Composer's install-from-lock flow block it?",
+   "expectedFiles": [
+    "src/Composer/Policy/CustomListPolicyConfig.php",
+    "src/Composer/Policy/ListPolicyConfig.php",
+    "src/Composer/Policy/MalwarePolicyConfig.php",
+    "src/Composer/Policy/PolicyConfig.php",
+    "src/Composer/Installer.php"
+   ],
+   "expectedSymbols": [
+    "ListPolicyConfig::supportsInstallBlockScope",
+    "ListPolicyConfig::shouldBlock",
+    "MalwarePolicyConfig::supportsInstallBlockScope",
+    "CustomListPolicyConfig::fromRawConfig",
+    "PolicyConfig::getActiveBlockFilterLists",
+    "Installer::createFilterListPoolFilter"
+   ],
+   "expectedFacts": [
+    "CRITICAL: No, a custom list does not block during install from the lock file: ListPolicyConfig::shouldBlock returns false for the install scope unless the list class overrides supportsInstallBlockScope, and CustomListPolicyConfig does not override it (its block flag defaults to true but only affects update scope).",
+    "Only MalwarePolicyConfig overrides supportsInstallBlockScope to true (and it has a block-scope narrowing option), so malware is the one built-in list with install-time blocking.",
+    "PolicyConfig::getActiveBlockFilterLists for the install scope therefore excludes custom lists, and Installer::createFilterListPoolFilter(install) returns null when no install-scope list is active, so the install pool gets no list filter.",
+    "CRITICAL: CustomListPolicyConfig::fromRawConfig and the config command accept only block, audit, ignore and sources for a custom list; there is no block-scope option to opt into install-time blocking.",
+    "Custom lists still apply to update-scope blocking (new candidate versions) and to audit reporting, but a locked-equivalent package during an update is checked only against install-scope lists, so it is not re-checked against the custom list either."
+   ],
+   "expectedNoMatch": true,
+   "max_turns": 15,
+   "tier": "r3-hard-b",
+   "author": "r3hb-composer-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION (negative, expectedNoMatch): Policy/ListPolicyConfig.php:87-90 (supportsInstallBlockScope default false), :100-112 (shouldBlock returns false for BLOCK_SCOPE_INSTALL when unsupported, even if block true); Policy/CustomListPolicyConfig.php:75-119 (fromRawConfig: block default true, audit, ignore, sources; no block-scope; no supportsInstallBlockScope override); Policy/MalwarePolicyConfig.php:41-44 (the only override, returns true), :76-83 (block-scope narrowing), :123; Policy/PolicyConfig.php:289-300; Installer.php:809 (install pool uses createFilterListPoolFilter(INSTALL)), :1183-1186 (null if no install lists); Command/ConfigCommand.php:708-722 (custom lists accept only .block and .audit). GREPS: (1) grep -rn 'supportsInstallBlockScope' src -> only ListPolicyConfig (def + use) and MalwarePolicyConfig; (2) grep -rn 'block-scope' src -> only MalwarePolicyConfig and ConfigCommand malware key; (3) grep -rn 'BLOCK_SCOPE_INSTALL' src -> Installer, FilterListPoolFilter, IgnoreUnreachable, PolicyConfig, ListPolicyConfig, none involve custom lists. DECOYS (look like it works): CustomListPolicyConfig block default true; FilterListPoolFilter install-scope machinery; Installer.php:809 install-time filter; Auditor/FilterListAuditor (audit applies custom lists); MalwarePolicyConfig block-scope option. CHEAPEST ROUTE: (1) grep 'custom' policy -> CustomListPolicyConfig; (2) read it: block default true, no scope; (3) read ListPolicyConfig::shouldBlock to see the install gate; (4) grep supportsInstallBlockScope -> only Malware; (5) read Installer install-scope factory to confirm no filter. Five dependent steps and a false-positive trail. est. turns: 6."
+  }
+ ]
+}

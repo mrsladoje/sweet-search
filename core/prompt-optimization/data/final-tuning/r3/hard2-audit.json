@@ -1,0 +1,367 @@
+{
+ "keep": [
+  "r3x-composer-01",
+  "r3x-dgraph-01",
+  "r3x-drogon-02",
+  "r3x-jj-01",
+  "r3x-ocelot-03",
+  "r3x-okhttp-08",
+  "r3x-sequel-04",
+  "r3x-tortoise-orm-01",
+  "r3x-typedoc-04",
+  "r3x-zipkin-02",
+  "r3x-zipkin-08"
+ ],
+ "fixes": {
+  "r3x-composer-05": {
+   "expectedFacts": [
+    "CRITICAL: ValidatingArrayLoader::load rejects a bin entry (string or each array element) containing a '..' path component: it records an error and unsets that entry; it also records errors for a source/dist url or reference that starts with '-' (so it cannot be read as a command-line option by the VCS tooling).",
+    "ValidatingArrayLoader::load additionally validates a source url of type perforce with Perforce::isValidPort and records an error when it is not of the form [tcp|ssl:][host:]port.",
+    "CRITICAL: ValidatingArrayLoader::validatePackage re-applies the security subset to an already loaded package (package name structure, leading '-' on source/dist url and reference, perforce port, '..' in bin) and throws SecurityException; LockTransaction::setResultPackages calls it for every package the solver selects, so it also covers packages that were loaded by the non-validating ArrayLoader (root packages are exempt).",
+    "Perforce::isValidPort rejects any value starting with the rsh: or jsh: transport (which would make the p4 client run a local command) and accepts only an optional tcp/ssl transport, a host or bracketed address and an optional port; the Perforce constructor throws SecurityException for an invalid port, while checkServerExists just returns false.",
+    "BinaryInstaller::installBinaries skips a bin (printing a warning and continuing) when its resolved real path is outside the package's install directory, for example a symlink pointing out of the package; isBinPathInsidePackage compares realpath() of both paths and fails closed (false) if either cannot be resolved.",
+    "FileDownloader::install, for a single-file dist, only makes a declared bin executable (chmod) when BinaryInstaller::isBinPathInsidePackage is true and otherwise silently skips it (BinaryInstaller reports it later in the same install).",
+    "The VCS drivers that read package metadata from a repository (GitDriver::getFileContent and getChangeDate, HgDriver::getFileContent and getChangeDate, FossilDriver::getFileContent) throw a RuntimeException ('Invalid git/hg/fossil identifier detected') when the revision identifier starts with '-', before passing it to the git/hg/fossil command."
+   ],
+   "expectedFiles": [
+    "src/Composer/Package/Loader/ValidatingArrayLoader.php",
+    "src/Composer/DependencyResolver/LockTransaction.php",
+    "src/Composer/Util/Perforce.php",
+    "src/Composer/Installer/BinaryInstaller.php",
+    "src/Composer/Downloader/FileDownloader.php",
+    "src/Composer/Repository/Vcs/GitDriver.php",
+    "src/Composer/Repository/Vcs/HgDriver.php",
+    "src/Composer/Repository/Vcs/FossilDriver.php"
+   ],
+   "expectedSymbols": [
+    "ValidatingArrayLoader::load",
+    "ValidatingArrayLoader::validatePackage",
+    "LockTransaction::setResultPackages",
+    "Perforce::isValidPort",
+    "Perforce::__construct",
+    "Perforce::checkServerExists",
+    "BinaryInstaller::installBinaries",
+    "BinaryInstaller::isBinPathInsidePackage",
+    "FileDownloader::install",
+    "GitDriver::getFileContent",
+    "GitDriver::getChangeDate",
+    "HgDriver::getFileContent",
+    "HgDriver::getChangeDate",
+    "FossilDriver::getFileContent"
+   ]
+  },
+  "r3x-dgraph-07": {
+   "expectedFacts": [
+    "CRITICAL: posting/index.go IndexRebuild decides per aspect. Search index: no index before or after means nothing; index removed means delete only; value type changed means delete everything and rebuild; otherwise the tokenizer sets (and vector index specs by name plus options) are diffed, deleting removed ones and rebuilding added ones. Reverse and count: turned on means rebuild, turned off means delete, unchanged means nothing. NeedIndexRebuild is true if any of the three says rebuild.",
+    "Scalar to list is a data rewrite run first (BuildData -> rebuildListType re-keys the untagged value by fingerprint); list to scalar is refused (needsListTypeRebuild error, and checkSchema in worker/mutation.go refuses it when edges exist), as are scalar-uid changes while data exists and password type changes.",
+    "CRITICAL: While rebuilding, schema.State has two views: reads see the 'query schema' from GetQuerySchema, which is a copy of the new definition whose tokenizer list is the OLD tokenizers minus those pending deletion (newly added tokenizers are not served yet), with count and reverse switched off while they rebuild; writes (IsWrite context) see the new definition stored with SetMutSchema. updateSchema clears the mutation entry when done, and on failure undoSchemaUpdate reloads the stored (old) schema.",
+    "runSchemaMutation (worker/mutation.go) starts the rebuild as the opIndexing task (cancelling the rollup task), runs one goroutine per predicate throttled by a Badger-file-based limit, and the leader proposes a snapshot afterwards if the work took at least ten seconds; other group members block in waitForTask(opIndexing) until it finishes.",
+    "Another alter request is rejected by edgraph parseSchemaFromAlterOperation with errIndexingInProgress as long as any mutation schema exists (state.IndexingInProgress); Alter sleeps one second before returning so the client waits.",
+    "While indexing is in progress posting/list.go skips the fast length shortcut in getPostingAndLengthNoSort and uses the slow path."
+   ]
+  },
+  "r3x-drogon-03": {
+   "expectedFacts": [
+    "CRITICAL: The PostgreSQL connection's PgConnection::handleRead sees the error result (PGRES_FATAL_ERROR/PGRES_BAD_RESPONSE) and calls PgConnection::handleFatalError, which invokes the statement's exception callback with a Failure carrying the server error. This holds in both builds: PgConnection.cc (non-batch) and PgBatchConnection.cc (pipeline/batch mode, compiled instead when libpq supports it, which is the CMake default). The exception callback is the wrapper installed by TransactionImpl::execSqlInLoop (or by TransactionImpl::execNewTask if the statement had itself been queued); it first calls TransactionImpl::rollback() and then forwards the original error, so the caller receives the database failure (not a rollback exception).",
+    "rollback() finds the transaction still marked working, so it queues a 'rollback' command at the FRONT of sqlCmdBuffer_ (push_front, flagged isRollbackCmd_), ahead of the two waiting statements.",
+    "When the connection becomes idle after the failed command (non-batch: at the end of PgConnection::handleRead; batch: on PGRES_PIPELINE_SYNC with no pending batch commands) it calls its idle callback; TransactionImpl::doBegin installed that callback to call execNewTask. execNewTask pops the rollback command first and runs it on the connection; when it completes (success or error) isCommitedOrRolledback_ becomes true.",
+    "CRITICAL: On the next idle callback execNewTask sees isCommitedOrRolledback_ true, clears isWorking_ and calls failBufferedCommands: each waiting statement's exception callback gets a TransactionRollback exception ('The transaction has been rolled back'), so they are never sent to the server.",
+    "execNewTask then calls releaseConnection, which runs usedUpCallback_ (built in DbClientImpl::makeTrans). Unless the connection is Bad or no longer in connections_, that callback queues work on the connection's loop that re-installs the pool's idle callback and calls DbClientImpl::handleNewTask.",
+    "handleNewTask serves the oldest pending transaction request in transCallbacks_ first (makeTrans again), otherwise the oldest buffered plain statement in sqlCmdBuffer_, otherwise moves the connection from busyConnections_ to readyConnections_."
+   ],
+   "expectedFiles": [
+    "orm_lib/src/postgresql_impl/PgConnection.cc",
+    "orm_lib/src/TransactionImpl.cc",
+    "orm_lib/src/DbConnection.h",
+    "orm_lib/src/DbClientImpl.cc",
+    "orm_lib/src/postgresql_impl/PgBatchConnection.cc"
+   ]
+  },
+  "r3x-grdb-03": {
+   "expectedFacts": [
+    "QueryInterfaceRequest.makePreparedRequest attaches a supplementary-fetch closure to the PreparedRequest when the relation has prefetched (to-many) associations. The main SQL has no join for them: SQLQualifiedJoin returns nil for the all and bridge child kinds.",
+    "The fetch method runs it: for a decodable record, FetchableRecord.fetchAll(db, request) (Record/FetchableRecord.swift; fetchOne/fetchSet likewise), or Row.fetchAll(db, request) for raw rows, fetches the base rows first, then calls the supplementary closure with those rows (records are decoded after it). fetchCursor (FetchableRecord.fetchCursor and Row.fetchCursor) hits the precondition 'Not implemented: fetchCursor with supplementary fetch', so cursor-style fetching is the unsupported style.",
+    "The private prefetch function returns early when there are no base rows. For each association it gets the foreign key join mapping (SQLForeignKeyCondition.joinMapping), giving the origin (left) columns and the child pivot (right) columns.",
+    "CRITICAL: With a single-column link the child query is filtered with an IN list of the distinct non-NULL parent values (JoinMapping.joinExpression(leftRows:)). With a multi-column link it instead injects the base request as a common table expression named grdb_base (unordered unless limited, prefetches removed, only the link columns selected) and filters on a row-value IN against it, to avoid the SQLite expression-tree depth limit from long OR/AND chains.",
+    "makePrefetchRequest annotates each child row with its pivot column values under grdb_<column> aliases. Child rows are grouped by those values, and each base row receives its group through PrefetchedRowsView.setRows(forKeyPath: association key path) using the left column values.",
+    "CRITICAL: In the keyed decoding container, after checking column and scope, the key is looked up in row.prefetchedRows; if present a PrefetchedRowsDecoder feeds the unkeyed array decoding of the children."
+   ],
+   "expectedFiles": [
+    "GRDB/QueryInterface/Request/QueryInterfaceRequest.swift",
+    "GRDB/Core/FetchRequest.swift",
+    "GRDB/Core/Row.swift",
+    "GRDB/QueryInterface/SQL/SQLRelation.swift",
+    "GRDB/QueryInterface/Request/CommonTableExpression.swift",
+    "GRDB/Record/FetchableRecord+Decodable.swift",
+    "GRDB/Record/FetchableRecord.swift"
+   ],
+   "expectedSymbols": [
+    "QueryInterfaceRequest.makePreparedRequest",
+    "PreparedRequest.supplementaryFetch",
+    "Row.fetchAll(_:_:)",
+    "FetchableRecord.fetchAll(_:_:)",
+    "prefetch(_:associations:from:into:willExecuteSupplementaryRequest:)",
+    "SQLForeignKeyCondition.joinMapping(_:from:)",
+    "makePrefetchRequest",
+    "CommonTableExpression.contains",
+    "Row.PrefetchedRowsView.setRows",
+    "PrefetchedRowsDecoder"
+   ]
+  },
+  "r3x-grdb-04": {
+   "expectedFacts": [
+    "Database.create(table:) runs the body to collect a TableDefinition, builds SQLTableGenerator(db, table:), then executes generator.sql(db). belongsTo only records a ForeignKeyDefinition (name, optional table, actions, deferred flag); it is indexed by default unless used inside a primary-key body, where it is forced NOT NULL and not indexed.",
+    "CRITICAL: Referenced table choice (ForeignKeyDefinition.primaryKey): the explicit table if given; else a table named exactly like the bare name if it exists; else the pluralized name (Inflections.pluralized) if that table exists; else DatabaseError.noSuchTable.",
+    "Self reference: makeForeignKeyGenerator checks this before the table lookup. It treats the reference as auto-referencing when the origin table equals the given table (case-insensitive), or, when no table is given, when the singularized origin table name equals the singularized bare name (case-insensitive). It then uses the forward-declared primary key of the table being defined (because that table does not yet exist in the schema); if no primary key was declared, that is the hidden row id.",
+    "CRITICAL: Column shape follows the key of the referenced table (SQLPrimaryKeyDescriptor.find via db.primaryKey(table).columnInfos, nil for a hidden row id): implicit row id gives one column <name>Id of type INTEGER with a column-level REFERENCES to the table without a named column, which SQLColumnGenerator completes from the table's primary key (rowid; for a self reference the forward key or rowid); a single-column key gives <name><KeyColumn with first letter uppercased> with the key column's declared type and REFERENCES table(keyColumn); a composite key gives one column per key column (same naming and types) plus a table-level FOREIGN KEY ... REFERENCES table (key columns looked up from the schema, or the forward key for a self reference).",
+    "Indexing: for single-column references the column is marked indexed (index named <table>_on_<column>, created by the column generator) or unique (inline UNIQUE, no separate index); for composite references a separate SQLIndexGenerator named index_<table>_on_<col1>_<col2> (unique if requested) is generated."
+   ],
+   "expectedFiles": [
+    "GRDB/QueryInterface/Schema/Database+SchemaDefinition.swift",
+    "GRDB/QueryInterface/Schema/TableDefinition.swift",
+    "GRDB/QueryInterface/Schema/ForeignKeyDefinition.swift",
+    "GRDB/QueryInterface/SQLGeneration/SQLTableGenerator.swift",
+    "GRDB/Utils/Inflections.swift",
+    "GRDB/Core/Database+Schema.swift",
+    "GRDB/QueryInterface/Schema/ColumnDefinition.swift",
+    "GRDB/QueryInterface/Schema/IndexDefinition.swift",
+    "GRDB/QueryInterface/SQLGeneration/SQLColumnGenerator.swift"
+   ]
+  },
+  "r3x-grdb-06": {
+   "expectedFacts": [
+    "CRITICAL: Database.clearSchemaCacheIfNeeded compares PRAGMA schema_version (the 4-byte counter in the file header) with lastSchemaVersion and calls clearSchemaCache only when it changed.",
+    "CRITICAL: DatabasePool calls it on the reader connection at the start of every read flavour: read (sync and async variants), asyncRead, unsafeRead (sync and async), asyncUnsafeRead, unsafeReentrantRead (when it takes a pooled reader), and the concurrent-read start, where the same call doubles as the first SELECT that establishes snapshot isolation. WALSnapshotTransaction.init does it right after BEGIN DEFERRED.",
+    "On the connection that runs the change itself (the writer), staleness is detected per statement: StatementAuthorizer sets invalidatesDatabaseSchemaCache for DROP, CREATE, ALTER, ATTACH and DETACH action codes, and for the internal drop-column function on SQLite older than 3.38; Database.statementDidExecute then calls clearSchemaCache.",
+    "Database.withSchemaSource clears the cache both before running its block and after it (in defer), so information loaded through either schema source does not linger.",
+    "Database.backupInternal clears the schema cache of the destination connection when the copy finishes.",
+    "Database.releaseMemory drops the schema cache directly (schemaCache.clear) together with both statement caches, after sqlite3_db_release_memory; DatabasePool.releaseMemory/releaseMemoryEventually call it on the writer and readers, including on a memory warning or when the app enters the background.",
+    "clearSchemaCache also empties the internal and public prepared-statement caches, because automatic statement recompilation is limited in the number of retries."
+   ],
+   "expectedSymbols": [
+    "Database.clearSchemaCache",
+    "Database.clearSchemaCacheIfNeeded",
+    "Database.schemaVersion",
+    "DatabasePool.read",
+    "DatabasePool.asyncRead",
+    "DatabasePool.unsafeRead",
+    "DatabasePool.asyncUnsafeRead",
+    "DatabasePool.unsafeReentrantRead",
+    "DatabasePool.asyncConcurrentRead",
+    "WALSnapshotTransaction.init",
+    "Database.statementDidExecute",
+    "StatementAuthorizer.authorize",
+    "Database.withSchemaSource",
+    "Database.backupInternal",
+    "Database.releaseMemory"
+   ]
+  },
+  "r3x-jj-03": {
+   "expectedFacts": [
+    "CRITICAL: SignSettings::should_sign (settings.rs) decides per commit from the configured behavior: drop never signs; keep signs only if the commit already has a signature and its author email equals the user email; own signs whenever the author email equals the user email; force always signs. The default behavior is keep and the default backend is none (lib/src/config/misc.toml).",
+    "CRITICAL: commit_builder::write_to_store signs only if store.signer().can_sign() (a main backend is configured) and should_sign is true; it clears the commit's old secure_sig and passes a signing closure (Signer::sign with an optional per-commit key override) into Store::write_commit.",
+    "The Signer is built by signing_factory::signer_from_settings, called when the repo loader is initialized from the file system (RepoLoader::init_from_file_system in repo.rs) and also when a workspace/repo is created (workspace.rs init paths): it instantiates the GPG, GPGSM and SSH backends (plus a test backend only in builds with the testing feature), picks the main backend by the configured backend name (none means no main backend, an unknown name is an UnknownBackend error), and keeps the others only for verification.",
+    "Default key when no override is given: GPG uses the configured signing key, falling back to the user email; GPGSM always falls back to the user email; SSH uses the configured signing key and returns a MissingKey error if there is none.",
+    "GitBackend::write_commit serializes the commit, calls the signing closure on those bytes, and stores the signature as an extra commit header whose name depends on the Git hash kind (signature_field_name), and keeps the signed data in the commit's secure signature.",
+    "On push, when the sign-on-push setting is on (default false), sign_commits_before_push forces the 'own' behavior, signs only mutable unsigned commits authored by the user (reparenting descendants and remapping the pushed ref updates), and warns about immutable commits that need a signature but are skipped."
+   ]
+  },
+  "r3x-jj-05": {
+   "expectedFacts": [
+    "CRITICAL: When Git refs are imported (fetch, import, colocated sync), a remote bookmark seen for the first time starts tracked only if its remote is the internal local-Git pseudo-remote or its name matches that remote's configured auto-track matcher, otherwise it starts untracked; tags always start tracked. This is default_remote_ref_state_for (lib/git.rs), fed by GitImportOptions.remote_auto_track_bookmarks, which load_git_import_options builds with parse_remote_auto_track_bookmarks_map from the per-remote settings (RemoteSettings).",
+    "CRITICAL: Creating a bookmark, or setting one that is new, starts tracking it on every known remote (one that already has a remote view) whose matcher matches its name, where the matcher is the union of the auto-track-bookmarks and auto-track-created-bookmarks expressions (parse_remote_auto_track_bookmarks_map_for_new_bookmarks) and tracking uses MutableRepo::track_remote_bookmark; a warning is printed if the bookmark already exists on that remote.",
+    "When cloning, the remote's default branch is tracked, but only if the chosen working branch is the default branch and the Git setting for tracking the default bookmark on clone is on (default true in misc.toml).",
+    "Exporting local bookmarks to Git records them in the view as tracked entries of the internal Git pseudo-remote (copy_exportable_local_bookmarks_to_remote_view in lib/git.rs).",
+    "After a successful push, push_refs records each pushed bookmark that was exported to Git, and each pushed tag, in the remote view with state Tracked.",
+    "Renaming a bookmark carries tracking over: for each remote where the old bookmark was tracked, the new name is tracked, unless an untracked remote bookmark with the new name already exists (a warning is printed and tracking is dropped)."
+   ]
+  },
+  "r3x-okhttp-07": {
+   "expectedFacts": [
+    "The public DnsCache defaults are minimum TTL 10 s, maximum TTL 300 s, failure TTL 10 s, revalidate-before-expire 2 s and 1000 entries; it wraps a RealDnsCache and is used by DnsOverHttps (Builder default DnsCache(); queryFactory = cache.-delegate.wrap(DnsOverHttpsQuery.Factory)) and also by the opt-in Android AndroidDns (dnsCache parameter, default DnsCache()); the default system resolver (Dns.SYSTEM -> Platform.systemDns = InetAddressDns) never goes through it.",
+    "CRITICAL: Entries are keyed by the DNS Question (name, type, class), so A, AAAA and HTTPS (service metadata) answers are cached separately; DnsOverHttps.newCall builds StateMachineDnsCall, which asks HTTPS (when includeServiceMetadata, with the _port._https. name for a non-443 port), AAAA (when includeIPv6) and A, while DnsOverHttps.lookup runs a copy with includeServiceMetadata = false that shares the same cache.",
+    "CRITICAL: RealDnsCache.CacheQuery.onResponse sets the lifetime to the minimum answer TTL (seconds) coerced into [minimumTimeToLive, maximumTimeToLive], or to failureTimeToLive when the response has no answers; revalidateAt = sentAt + max(0, lifetime - revalidateBeforeExpire) and expireAt = sentAt + lifetime. onFailure stores a Failure result for failureTimeToLive and replays that exception to queries until it expires.",
+    "CacheQuery.enqueue serves the stored result while now < expireAt, and starts a new network query when there is no result or now >= revalidateAt (so within the last revalidate window a still-valid answer is returned immediately while a refresh runs in the background); if the result is expired and a query is already in flight, the caller joins that in-flight call; cancelling a CacheQuery does not cancel the network query, so the cache is still updated.",
+    "MemoryCache.computeIfAbsent never evicts until the entry count reaches twice maxSize and then evicts down to maxSize in one batch (maxSize 0 disables caching: a new Entry each time and nothing stored); RealDnsCache.lastRequestedAt returns null for entries that are expired with no in-flight call (evicted unconditionally) and otherwise the last request time, and MemoryCache.evict removes the least recently requested using a priority queue that drops the newest."
+   ]
+  },
+  "r3x-sequel-03": {
+   "expectedFacts": [
+    "setup_auto_validations (auto_validations.rb) builds auto_validate_max_value_columns and auto_validate_min_value_columns from every db_schema entry that has :max_value / :min_value; it runs when the plugin is configured and again after every set_dataset (Plugins.after_set_dataset).",
+    "The bounds are checked in the plugin's validate method, only inside the schema-types branch (skipped if types validation is skipped or disabled), by validates_max_value / validates_min_value with options that allow nil and skip a column that already has an error (e.g. a type error).",
+    "CRITICAL: the db_schema comes from Model.get_db_schema -> Database#schema (database/query.rb), which caches parsed results in @schemas (when cache_schema is true) and, after schema_parse_table, fills :min_value/:max_value for columns that lack both: integer columns via column_schema_integer_min_max_values, decimal columns via column_schema_decimal_min_max_values.",
+    "The integer guess reads the db_type text (database/query.rb column_schema_integer_min_max_values): names containing big/int8 give the 64-bit range, medium the 24-bit range, small/int2 the 16-bit range, tiny the 8-bit range, otherwise the 32-bit range (unsigned variants when the type text contains 'unsigned'); the decimal guess uses the declared precision and scale (from :column_size/:scale or the '(p,s)' in db_type) and returns plus or minus (precision nines) / 10**scale.",
+    "CRITICAL: for PostgreSQL date and timestamp columns the bounds are set earlier, inside Postgres schema_parse_table (server 9.6+): date type 1082 gets MIN_DATE/MAX_DATE and timestamp types 1114/1184 get MIN_TIMESTAMP/MAX_TIMESTAMP only when Sequel.datetime_class is Time; query.rb's guard (skip if :max_value or :min_value already set) leaves them unchanged.",
+    "The SQLite adapter overrides column_schema_integer_min_max_values to return nil (decimal is an alias of it), because SQLite does not restrict integer or decimal columns to a range, so no bounds are stored and no bound validation is added."
+   ]
+  },
+  "r3x-sequel-05": {
+   "expectedFacts": [
+    "CRITICAL: Model::InstanceMethods#_insert uses _use_insert_select?(ds) (true when the dataset has no custom select or already has :returning, and ds.supports_insert_select?) to run one INSERT ... RETURNING via _insert_select_raw and set all values; otherwise it runs a plain insert and returns the primary key.",
+    "In _save, when _insert returned a primary key, _save_refresh does a follow-up read (_refresh_get, using the fast primary-key SQL when available) and replaces @values; when insert_select already filled the values _insert returns nil and no follow-up read happens.",
+    "Dataset#supports_insert_select? defaults to supports_returning?(:insert), which is false by default (dataset/features.rb); PostgreSQL overrides supports_insert_select? to be true unless the dataset was marked disable_insert_returning, and supports_returning? is true (merge needs 17+).",
+    "CRITICAL: on SQLite supports_returning? is true only for SQLite 3.35.0 or newer (db.sqlite_version >= 33500), so older SQLite falls back to insert plus follow-up SELECT; PostgreSQL and SQLite insert_select append RETURNING and fetch the first row (returning false if no row).",
+    "plugins/insert_returning_select makes models whose dataset has a custom select list use an insert dataset with a RETURNING clause limited to those columns (instance_insert_dataset), re-enabling single-statement refresh for them; plugins/skip_create_refresh turns _save_refresh into a no-op.",
+    "plugins/update_refresh overrides _update_without_checking to use UPDATE ... RETURNING (merging the returned row into @values) when supports_returning?(:update), and otherwise refreshes in after_update.",
+    "The PostgreSQL-only pg_xmin_optimistic_locking plugin also changes this: its _insert_dataset adds RETURNING *, xmin so a create is refreshed from the INSERT statement itself, and its _update_without_checking adds RETURNING xmin to the UPDATE and copies only the new xmin into the values."
+   ],
+   "expectedFiles": [
+    "lib/sequel/model/base.rb",
+    "lib/sequel/dataset/features.rb",
+    "lib/sequel/adapters/shared/postgres.rb",
+    "lib/sequel/adapters/shared/sqlite.rb",
+    "lib/sequel/plugins/insert_returning_select.rb",
+    "lib/sequel/plugins/skip_create_refresh.rb",
+    "lib/sequel/plugins/update_refresh.rb",
+    "lib/sequel/plugins/pg_xmin_optimistic_locking.rb"
+   ],
+   "expectedSymbols": [
+    "Sequel::Model::InstanceMethods#_use_insert_select?",
+    "Sequel::Model::InstanceMethods#_insert",
+    "Sequel::Model::InstanceMethods#_save_refresh",
+    "Sequel::Dataset#supports_insert_select?",
+    "Sequel::Postgres::DatasetMethods#supports_insert_select?",
+    "Sequel::Postgres::DatasetMethods#insert_select",
+    "Sequel::SQLite::DatasetMethods#supports_returning?",
+    "Sequel::Plugins::InsertReturningSelect::ClassMethods#insert_returning_columns",
+    "Sequel::Plugins::SkipCreateRefresh::InstanceMethods#_save_refresh",
+    "Sequel::Plugins::UpdateRefresh::InstanceMethods#_update_without_checking",
+    "Sequel::Plugins::PgXminOptimisticLocking::InstanceMethods#_insert_dataset",
+    "Sequel::Plugins::PgXminOptimisticLocking::InstanceMethods#_update_without_checking"
+   ]
+  },
+  "r3x-tortoise-orm-03": {
+   "expectedFacts": [
+    "CRITICAL: tortoise_test_context builds its config with generate_config(..., testing=True), which calls expand_db_url(testing=True); there the database path has backslash-escaped braces unescaped and is then str.format-ed with a fresh uuid4 hex, so a '{}' placeholder in the address path becomes a unique name (a path without placeholder, like an in-memory SQLite address, stays unchanged).",
+    "The helper then calls ctx.init(config=..., _create_db=True) followed by generate_schemas(safe=False); TortoiseContext.init forwards the flag to ConnectionHandler._init(config, create_db).",
+    "ConnectionHandler._init runs _init_connections, which obtains each connection with get(alias) and awaits its db_create() when the create flag is set.",
+    "CRITICAL: The PostgreSQL and MySQL db_create implementations first call create_connection(with_db=False) so the connection template carries no database name (asyncpg database None, psycopg dbname None, MySQL db None), then execute CREATE DATABASE (PostgreSQL adds OWNER of the configured user) and close the connection.",
+    "SQLite's db_create does nothing because the file is created when first connected.",
+    "On exit TortoiseContext.__aexit__ only closes the connections (close_all with discard) and clears apps; it never drops the database, because db_delete is called only from Tortoise._drop_databases."
+   ]
+  },
+  "r3x-tortoise-orm-05": {
+   "expectedFacts": [
+    "CRITICAL: Apps._init_relations creates three kinds of automatic members: a key column named after the foreign key field plus _id (a copy of the target's referenced field) whose reference attribute points back at that FK field (apps.py:193), a reverse relation on the target model (BackwardFKRelation or BackwardOneToOneRelation), and for many-to-many a reverse M2M field flagged _generated = True.",
+    "CRITICAL: ModelState.make_from_model skips all three kinds when snapshotting: instances of BackwardFKRelation, M2M fields with _generated, and any field whose reference is not None.",
+    "MigrationWriter._format_create_model additionally leaves out any field whose name equals another field's source_field, i.e. the generated key column of an FK.",
+    "ForeignKeyFieldInstance.deconstruct reads the real column name back from the generated key column (the field named by source_field) so the written file carries the column name the developer asked for.",
+    "On replay State._reload re-renders model classes from the states and calls apps._init_relations (StateApps._init_relations defers models whose target is not registered yet), which creates the automatic members again.",
+    "The migration schema editors' _get_m2m_table_definition (base, MySQL, MSSQL, Oracle) return None for a _generated reverse M2M so only the forward side creates the link table, and _get_model_sql_data uses a key column's reference to emit the FK definition; the non-migration table-creation path (BaseSchemaGenerator._get_m2m_tables, used by generate_schemas) applies the same _generated skip."
+   ],
+   "expectedFiles": [
+    "tortoise/apps.py",
+    "tortoise/migrations/schema_generator/state.py",
+    "tortoise/migrations/schema_generator/state_apps.py",
+    "tortoise/migrations/writer.py",
+    "tortoise/fields/relational.py",
+    "tortoise/migrations/schema_editor/base.py",
+    "tortoise/migrations/schema_editor/mysql.py",
+    "tortoise/migrations/schema_editor/mssql.py",
+    "tortoise/migrations/schema_editor/oracle.py",
+    "tortoise/backends/base/schema_generator.py"
+   ],
+   "expectedSymbols": [
+    "Apps._init_relations",
+    "ModelState.make_from_model",
+    "MigrationWriter._format_create_model",
+    "ForeignKeyFieldInstance.deconstruct",
+    "State._reload",
+    "StateApps._init_relations",
+    "BaseSchemaEditor._get_m2m_table_definition",
+    "BaseSchemaEditor._get_model_sql_data",
+    "BaseSchemaGenerator._get_m2m_tables"
+   ]
+  },
+  "r3x-typedoc-01": {
+   "expectedFacts": [
+    "Converting a type mention creates an unresolved ReferenceType that carries a ReflectionSymbolId (referenceConverter -> Context.createSymbolReference -> createSymbolId -> createSymbolIdImpl), not a pointer to a reflection, because B is not part of A's project.",
+    "CRITICAL: The identity is package name + package-relative path + qualified name. The path part comes from the original .ts source found by mapping the compiled declaration file through resolveDeclarationMaps (it reads the sibling .d.ts.map file and takes the first of its sources, joined with any sourceRoot), made relative to the package directory; the package name comes from findPackageForPath on the unmapped declaration-file path. Because the path is that of the mapped source, B's identity is the same wherever B's compiled output lives and matches what B's own run produces from its .ts files.",
+    "resolveDeclarationMaps caches its results; addInferredDeclarationMapPaths (called from getEntryPrograms for the root tsconfig's files, and for each project reference only when the root tsconfig is solution-style with no root files) pre-fills that cache with the declaration path predicted from declarationDir/outDir/rootDir, so the mapping also works before a .map file exists.",
+    "When saving, ReferenceType.toObject writes the numeric reflection id only if the target resolves inside the same project; otherwise it writes symbolId.toObject(), which keeps only package name, package path and qualified name (position and transient id are dropped). ProjectReflection.toObject also writes a symbolIdMap of its own reflections.",
+    "Application._convertPackages serializes each package project (serializer.projectToObject) and then calls Deserializer.reviveProjects, which revives each project as a module under one combined project. Each saved symbolIdMap is re-registered in a deferred step (de.defer) after oldIdToNewId is filled - in DeclarationReflection.fromObject for the project-variant branch used when merging, not in ProjectReflection.fromObject - and ReferenceType.fromObject rebuilds a ReflectionSymbolId and points the reference at the combined project.",
+    "CRITICAL: ProjectReflection keeps symbolToReflectionIdMap as a StableKeyMap keyed by ReflectionSymbolId.getStableKey(), which omits position and transient id when position is not finite (as for deserialized ids). A's deserialized reference and B's deserialized registration therefore share the key packageName/packagePath/qualifiedName, and the lazy ReferenceType.reflection getter resolves it through getReflectionsFromSymbolId, preferring type-like or value-like kinds according to preferValues.",
+    "On the page, formatter.tsx's reference handler uses type.reflection: when it resolves it renders each segment of getUniquePath as an anchor if router.hasUrl(item) (href from urlTo) and as a plain span otherwise; if it does not resolve it falls back to externalUrl or the bare name."
+   ]
+  },
+  "r3x-typedoc-03": {
+   "expectedFacts": [
+    "default.tsx sets the html element's data-base attribute to context.relativeURL('./'); DefaultThemeRenderContext.relativeURL calls router.baseRelativeUrl(page model, url) and appends a '?cache=<render start time>' query only when called with cacheBust=true and the cache-bust option is on. The same helper makes the stylesheet and script addresses in the page head (those calls pass cacheBust=true).",
+    "CRITICAL: BaseRouter.baseRelativeUrl counts the '/' characters in the current page's full URL (getFullUrl) and prefixes that many '../' to the target; for target './' with depth above zero it returns just the repeated '../' (avoiding '.././'), and at depth zero it yields './'.",
+    "The directory-style routers (KindDirRouter, StructureDirRouter) override getFullUrl (and relativeUrl) to strip the trailing 'index.html' through fixLink, so a page's URL ends in '/' and depth is counted on that directory form (e.g. 'classes/Foo/' gives '../../').",
+    "The addresses stored in the data files are site-root-relative strings taken from router.getFullUrl: JavascriptIndexPlugin.buildSearchIndex (row url), HierarchyPlugin.buildHierarchy (url) and DefaultTheme.buildNavigation (path); members carry an anchor suffix assigned by BaseRouter.buildAnchors/createAnchor from the page's Slugger.",
+    "CRITICAL: The browser scripts (Search.ts state.base, Navigation.ts BASE_URL, Hierarchy.ts BASE_URL) read document.documentElement.dataset.base, append a trailing '/' if missing, and build every href as base + stored root-relative url.",
+    "For the default 'kind' router a class page is 'classes/<Name>.html' (for a class inside a module the base name is the dot-joined parent path, e.g. 'classes/mod.Foo.html', still one '/'), so its page carries data-base '../'. The search row url for a method is that page URL + '#<anchor>', where the anchor is the method name passed through the page's Slugger, which lower-cases by default (sluggerConfiguration lowercase: true), so 'getFoo' gives '#getfoo'; the link the script builds from that page is '../classes/<Name>.html#getfoo'."
+   ]
+  },
+  "r3x-typedoc-05": {
+   "expectedFacts": [
+    "CRITICAL: Application applies the language by calling internationalization.setLocale(lang) after the programmatic options are set, again after the configuration files are read (because the language may come from a config file), and then adds the user's 'locales' entries with internationalization.addTranslations(lang, overrides) once reading is finished; messages logged before the config is read use the earlier locale.",
+    "Internationalization.setLocale merges the built-in table for that locale (de, en, fr, ja, ko, zh) with the user's overrides, falling back to the English table for a locale with no built-in text; addTranslations also updates the live table when it is for the loaded locale; Application warns that a language with no translations is unavailable and lists the supported ones (built-in plus any with user entries).",
+    "The i18n proxy in utils-common/i18n.ts looks up the message by key and substitutes {n} placeholders (the key itself is returned when it has no entry); translateTagName looks up 'tag_<name>' and otherwise builds an English title-cased name from the tag.",
+    "CRITICAL: Kind names go through i18n in ReflectionKind.singularString and pluralString. The plural names become the default group titles (GroupPlugin.getGroups, for members with no @group tag or document group) and, when no group order is configured, the default group-order weights (GroupPlugin.setup), so section headings and their order are fixed in the model at conversion time in the language active then; singular names prefix page titles (header.tsx) and feed the browser kind labels (kind_<n> in AssetsPlugin).",
+    "Tag and flag names: comment.tsx (block tag headings and modifier badges) and navigation.tsx (member-visibility filter labels) call translateTagName, and flag badges and filter labels use ReflectionFlags.flagString (flag_* keys).",
+    "Generated pages: the default layout sets the html lang attribute from the language option; AssetsPlugin.getTranslatedStrings builds the window.translations table (interface strings plus kind_<n> singular names) that is prepended to main.js when the render begins (AssetsPlugin.onRenderBegin, default theme only), and the frontend scripts (Application.ts, Search.ts, Navigation.ts, Hierarchy.ts) read it, with English defaults in frontend Application.ts for debugging."
+   ],
+   "expectedFiles": [
+    "src/lib/application.ts",
+    "src/lib/internationalization/internationalization.ts",
+    "src/lib/utils-common/i18n.ts",
+    "src/lib/models/kind.ts",
+    "src/lib/models/Reflection.ts",
+    "src/lib/converter/plugins/GroupPlugin.ts",
+    "src/lib/output/themes/default/partials/comment.tsx",
+    "src/lib/output/themes/default/partials/navigation.tsx",
+    "src/lib/output/themes/default/layouts/default.tsx",
+    "src/lib/output/plugins/AssetsPlugin.ts",
+    "src/frontend/typedoc/Application.ts",
+    "src/lib/output/themes/default/partials/header.tsx"
+   ]
+  },
+  "r3x-typedoc-07": {
+   "expectedFacts": [
+    "CRITICAL: The default strategy list is kind, instance-first, alphabetical-ignoring-documents (OptionDefaults.sort). getSortFunction builds a comparator that tries the strategies in turn and the first that distinguishes the two items decides; the kind strategy uses the user's kind order followed by any missing kinds in the default order (Document, Project, Module, Namespace, Enum, EnumMember, Class, Interface, TypeAlias, Constructor, Property, Variable, Function, Accessor, Method, Reference). Documents therefore come first and are never alphabetized, so they keep their original order.",
+    "Sections (groups) are not ordered by that comparator: GroupPlugin.sortGroupCallback orders them by weights, which by default are the plural kind names in a fixed order (Documents, Modules, Namespaces, ... - so a module page with documents, classes and functions shows Documents, Classes, Functions in that order); a group-order setting replaces the list and '*' marks where unlisted names go, otherwise unlisted names come last, ties broken alphabetically. When categories exist they are the sections instead (or are nested as 'group - category' when categorize-by-group is on) and are ordered by their own order setting with the same wildcard rule; CategoryPlugin re-sorts each category's children with the same comparator.",
+    "CRITICAL: GroupPlugin.group sorts a container's children, documents and combined list only when the sort-entry-points setting (on by default) is on or none of its children is a module; so by default the entry modules are sorted (same kind, so alphabetically by name), and when the project is told to keep the given order (setting off) a container with any module child keeps the order in which the entry points were converted, and its documents are left unsorted too.",
+    "A comment tag naming a strategy on the container replaces the default list for that container only. GroupPlugin.getSortFunction splits the text on commas/whitespace, warns for each invalid name and passes only the valid ones; CategoryPlugin silently drops invalid names. With a single misspelled name the list is empty, the comparator returns 0 for every pair, and the members stay in conversion (declaration) order.",
+    "A section titled 'none' (case-insensitive; the single section built when a container has children but no groups, or a group the user named so) is moved first by sortNoneSectionFirst in getMemberSections and rendered without a heading or collapsible wrapper in members.tsx/moduleReflection.tsx; in the sidebar, DefaultTheme.buildNavigation's filterMapWithNoneCollection lists its children first, directly, but only when sidebar groups or categories are shown (navigation includeGroups/includeCategories, or a @showGroups/@showCategories modifier) - by default the sidebar lists the already-sorted children without sections (flat, or in folders when names contain '/')."
+   ],
+   "expectedFiles": [
+    "src/lib/utils/sort.ts",
+    "src/lib/utils/options/defaults.ts",
+    "src/lib/utils/options/sources/typedoc.ts",
+    "src/lib/converter/plugins/GroupPlugin.ts",
+    "src/lib/converter/plugins/CategoryPlugin.ts",
+    "src/lib/output/themes/lib.tsx",
+    "src/lib/output/themes/default/DefaultTheme.tsx",
+    "src/lib/output/themes/default/partials/members.tsx",
+    "src/lib/output/themes/default/partials/moduleReflection.tsx"
+   ]
+  },
+  "r3x-zipkin-06": {
+   "expectedFacts": [
+    "CRITICAL: Elasticsearch changes the index mapping at template installation: VersionSpecificTemplates.spanIndexTemplate maps traceId as a plain keyword when matching is exact, but when relaxed it uses a text field with fielddata and a custom analyzer (pattern_capture on the trailing hex digits, original preserved); at read time ElasticsearchSpanStore.getTrace and getTraces cut a 32-character id to its lower 16 characters when relaxed, and getTraces(QueryRequest) adds StrictTraceId.filterTraces only when exact.",
+    "CRITICAL: Cassandra changes the stored layout when relaxed: InsertSpan.Factory.newInput splits a 32-character id into trace_id_high (first 16) and trace_id (last 16), and InsertTraceByServiceSpan and InsertTraceByServiceRemoteService index only the lower 16 characters; on read SelectFromSpan.Factory.newCall(traceId) queries both the full and the lower id when relaxed (filterSpans when exact), newCall(traceIds) cuts each 32-character id to its lower 16 characters when relaxed (filterTraces when exact), and SelectSpansByTraceIds applies FilterTraces only when exact.",
+    "MySQL writing is unchanged (the high bits are stored whenever the schema has the column); on read SelectSpansAndAnnotations.Factory.create zeroes traceIdHigh when relaxed, Schema.spanTraceIdCondition(query) compares (high, low) pairs only when the schema has the high column and matching is exact, Schema.traceIdCondition only when some requested id has a non-zero high half and matching is exact, otherwise both use only the low half, and MySQLSpanStore adds StrictTraceId filters only when exact.",
+    "InMemoryStorage always indexes by the lower 64 bits (lowTraceId in doAccept); on read, when relaxed, getTrace, getTraces(QueryRequest) and getTraces(ids) return the merged low-64-bit bucket; when exact, getTraces(QueryRequest) regroups each bucket with strictByTraceId and re-tests the request on each group, getTraces(ids) regroups with strictByTraceId and keeps only requested ids, and getTrace removes spans whose full id differs.",
+    "Shared helpers: GroupByTraceId.map groups spans by the full trace id when exact and by the lower 16 characters when relaxed; StrictTraceId is the client-side filter used when exact (filterSpans drops spans whose trace id differs, filterTraces(ids) drops traces not in the id set, filterTraces(QueryRequest) re-filters only if two returned traces clash on the lower 64 bits).",
+    "The setting (default true) reaches each backend through its server configuration class (InMemoryConfiguration, ZipkinCassandra3StorageConfiguration, ZipkinMySQLStorageConfiguration, ZipkinElasticsearchStorageConfiguration)."
+   ],
+   "expectedFiles": [
+    "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/VersionSpecificTemplates.java",
+    "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/ElasticsearchSpanStore.java",
+    "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/InsertSpan.java",
+    "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/InsertTraceByServiceSpan.java",
+    "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/InsertTraceByServiceRemoteService.java",
+    "zipkin-storage/cassandra/src/main/java/zipkin2/storage/cassandra/SelectFromSpan.java",
+    "zipkin-storage/mysql-v1/src/main/java/zipkin2/storage/mysql/v1/Schema.java",
+    "zipkin-storage/mysql-v1/src/main/java/zipkin2/storage/mysql/v1/SelectSpansAndAnnotations.java",
+    "zipkin-storage/mysql-v1/src/main/java/zipkin2/storage/mysql/v1/MySQLSpanStore.java",
+    "zipkin/src/main/java/zipkin2/storage/InMemoryStorage.java",
+    "zipkin/src/main/java/zipkin2/storage/GroupByTraceId.java",
+    "zipkin/src/main/java/zipkin2/storage/StrictTraceId.java"
+   ]
+  }
+ },
+ "dropped": {}
+}

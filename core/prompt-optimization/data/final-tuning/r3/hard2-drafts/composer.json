@@ -1,0 +1,340 @@
+{
+ "repo": "r3-composer",
+ "sha": "6712f83974b4469f764963f3a65852496f254350",
+ "probes": [
+  {
+   "id": "r3x-composer-01",
+   "repo": "r3-composer",
+   "language": "PHP",
+   "difficulty": "hard",
+   "expectedNoMatch": false,
+   "max_turns": 25,
+   "tier": "r3-hard2",
+   "set": "dev",
+   "author": "r3x-composer-drafter",
+   "date": "2026-10-01",
+   "stratum": "chain",
+   "query": "A team keeps a personal access token, not an OAuth token, for their self-hosted instance of the code-hosting service whose API takes such tokens in a dedicated header instead of the standard authorization header. The instance is not in Composer's built-in host list, and the token sits in the user-level credentials file. Trace: (1) the order in which credential sources are read for a project, and which source wins for the same host; (2) how the host comes to be treated as that service's host, and in what form the token is held in memory; (3) which function builds the request header from that in-memory form, which header name results, and which two network transports call it; (4) what happens when the server answers with an authorization failure for that token; (5) how the same stored credential is turned into URL credentials when a clone over HTTPS from that host fails.",
+   "expectedFiles": [
+    "src/Composer/Factory.php",
+    "src/Composer/IO/BaseIO.php",
+    "src/Composer/Util/AuthHelper.php",
+    "src/Composer/Util/Http/CurlDownloader.php",
+    "src/Composer/Util/RemoteFilesystem.php",
+    "src/Composer/Util/Git.php"
+   ],
+   "expectedSymbols": [
+    "Factory::createConfig",
+    "Factory::createComposer",
+    "Factory::loadComposerAuthEnv",
+    "BaseIO::loadConfiguration",
+    "BaseIO::checkAndSetAuthentication",
+    "AuthHelper::addAuthenticationOptions",
+    "CurlDownloader::initDownload",
+    "RemoteFilesystem::getOptionsForUrl",
+    "CurlDownloader::isAuthenticatedRetryNeeded",
+    "AuthHelper::promptAuthIfNeeded",
+    "Git::runCommand"
+   ],
+   "expectedFacts": [
+    "CRITICAL: Credential sources are merged in this order: the global home config.json, the global auth.json and the COMPOSER_AUTH environment variable (Factory::createConfig); then the project's composer.json config, the auth.json beside it, and COMPOSER_AUTH again (Factory::createComposer). The environment variable is applied last, and a later source overrides an earlier one for the same host.",
+    "CRITICAL: BaseIO::loadConfiguration (called from Factory::createComposer on a full load) takes each gitlab-token entry, adds a host that is missing from gitlab-domains to that list implicitly (source label 'implicit-due-to-auth'), and stores the entry through checkAndSetAuthentication. A plain string token becomes username = the token and password = the literal marker 'private-token'; an object with username and token is stored as that pair with no marker.",
+    "BaseIO::checkAndSetAuthentication overwrites different credentials already held for a host and only prints a warning; BaseIO::loadConfiguration loads http-basic and bearer entries after gitlab-token, so those would replace the token for the same host.",
+    "AuthHelper::addAuthenticationOptions, for a host listed in gitlab-domains whose password is 'private-token', adds the header 'PRIVATE-TOKEN: <username>' (the 'oauth2' marker gives an Authorization Bearer header, 'gitlab-ci-token' gives JOB-TOKEN); it is called from CurlDownloader::initDownload and from RemoteFilesystem::getOptionsForUrl.",
+    "On a 401 or 403 answer CurlDownloader::isAuthenticatedRetryNeeded calls AuthHelper::promptAuthIfNeeded; in its gitlab-domains branch, because credentials with the private-token marker already exist for the host, it throws a TransportException ('Invalid credentials ... aborting') with the status code instead of prompting.",
+    "In Git::runCommand, after a plain clone fails for a host that matches gitlab-domains, a stored credential whose password is one of the markers 'private-token', 'oauth2' or 'gitlab-ci-token' is swapped into URL form https://<marker>:<token>@host/path; any other credential is used as username:password."
+   ],
+   "notes": "VERIFICATION: Factory.php:204-219 (createConfig: global config.json merge, global auth.json merge :209-215, loadComposerAuthEnv :219), :323-344 (createComposer: merge localConfig, local auth.json :334-341, loadComposerAuthEnv again :344), :357 ($io->loadConfiguration($config) only when $fullLoad), :679-699 (loadComposerAuthEnv merges ['config'=>$authData] with source 'COMPOSER_AUTH'); Config.php:205-208 (credential keys are array_merge'd per key so a later source wins per host); IO/BaseIO.php:95-111 (checkAndSetAuthentication: warns, then setAuthentication), :153-162 (gitlab-token: implicit gitlab-domains merge via source 'implicit-due-to-auth', password = 'private-token' only for the string form, object form uses ['username'], ['token']), :173-187 (http-basic, bearer, custom-headers loaded after gitlab-token); Util/AuthHelper.php:273-326 (addAuthenticationOptions; :313-323 oauth2/private-token branch; PRIVATE-TOKEN at :322; gitlab-ci-token branch :306-312 comes first), :155-168 (promptAuthIfNeeded gitlab branch: existing auth with a marker password -> TransportException 'Invalid credentials'); Util/Http/CurlDownloader.php:183 (initDownload), :293 (addAuthenticationOptions call), :643-650 (isAuthenticatedRetryNeeded -> promptAuthIfNeeded); Util/RemoteFilesystem.php:627-647 (getOptionsForUrl -> addAuthenticationOptions); Util/Git.php:103 (runCommand), :283-316 (gitlab branch: marker swap at :303-306). DECOYS: Util/GitLab.php:76-107 (authorizeOAuth: reads git config gitlab.accesstoken, deploy token, then gitlab-token and fixes reversed marker; only reached in the prompt/clone-failure flow, not on the normal header path); Util/RemoteFilesystem.php:258-260 (legacy per-request 'gitlab-token' option appended as access_token query parameter, never set by the normal path); Util/Forgejo + forgejo-token (stored as plain username/token pair = HTTP basic, no marker); Command/ConfigCommand.php:1018-1040 and Config/JsonConfigSource.php:232 (the write side of the same keys). ROUTE: (1) grep for the header/token words under src/Composer/Util -> AuthHelper::addAuthenticationOptions; [G] marker value 'private-token' and 'gitlab-domains' appear only in the branch body; (2) grep those two terms across src -> BaseIO.php:153-162, Git.php:283-306, GitLab.php; [G] read BaseIO::loadConfiguration: reveals checkAndSetAuthentication, implicit-domain merge and the object-form difference; (3) grep callers of addAuthenticationOptions [G name only known after reading AuthHelper] -> CurlDownloader.php:293, RemoteFilesystem.php:647; (4) [G] read CurlDownloader around the 401 handling to find isAuthenticatedRetryNeeded -> promptAuthIfNeeded and read the gitlab branch; (5) [G] grep loadConfiguration callers -> Factory.php:357, then read Factory createConfig/createComposer ranges and loadComposerAuthEnv; (6) read Git.php runCommand gitlab branch. MIN CALLS: 6 (strictly dependent: 1 -> 2 -> 3 -> 4 -> 5; step 6 can share a call with 5, so a careful agent needs 5-6). FIRST CALL: grep -rni 'private.token' src; grep -rn 'PRIVATE-TOKEN\\|Authorization' src/Composer/Util; grep -rn 'auth.json' src; grep -rn 'COMPOSER_AUTH' src; grep -rn 'access.token' src -> reaches AuthHelper, Factory, BaseIO and Git (more than one gold file; the token marker makes it easy, so this question is the easiest of the set on call 1 but needs 5+ distinct reads to cover all six facts). est. turns: 7."
+  },
+  {
+   "id": "r3x-composer-02",
+   "repo": "r3-composer",
+   "language": "PHP",
+   "difficulty": "hard",
+   "expectedNoMatch": false,
+   "max_turns": 25,
+   "tier": "r3-hard2",
+   "set": "dev",
+   "author": "r3x-composer-drafter",
+   "date": "2026-10-01",
+   "stratum": "chain",
+   "query": "A project's manifest has an entry in its scripts section whose name is not one of Composer's lifecycle event names and whose value is the fully qualified name of a class that extends the console framework's command class, rather than a shell string. Explain end to end how typing that name after the tool's name runs that class: when and where the entry becomes a registered command and in which circumstances that registration step is skipped altogether; what prevents a clash with a built-in command or with a lifecycle name; how the project's own classes are made loadable at that moment; and how the class gets invoked. Then say what differs when the same value is reached by referencing the entry from another script entry, or through the generic command that runs a named script.",
+   "expectedFiles": [
+    "src/Composer/Console/Application.php",
+    "src/Composer/Script/ScriptEvents.php",
+    "src/Composer/Command/ScriptAliasCommand.php",
+    "src/Composer/EventDispatcher/EventDispatcher.php",
+    "src/Composer/Command/RunScriptCommand.php"
+   ],
+   "expectedSymbols": [
+    "Application::doRun",
+    "ScriptEvents",
+    "ScriptAliasCommand::execute",
+    "EventDispatcher::dispatchScript",
+    "EventDispatcher::doDispatch",
+    "EventDispatcher::isCommandClass",
+    "EventDispatcher::isComposerScript",
+    "RunScriptCommand::execute"
+   ],
+   "expectedFacts": [
+    "CRITICAL: Application::doRun registers script commands only inside the non-proxy-command block and only when $mayNeedScriptCommand is true: plugin commands may be needed (command name not resolved, empty, list or help, or autocompletion), or the resolved name is the run-script command, or the typed name differs from the resolved built-in name. It reads composer.json directly with json_decode and loops over its 'scripts' keys.",
+    "A script name that equals a Script\\ScriptEvents constant (checked with defined('Composer\\Script\\ScriptEvents::' . UPPER_SNAKE name)) is not registered as a command; a name for which $this->has() is already true is skipped with the warning 'would override a Composer command and has been skipped'.",
+    "Before instantiating the first script command, Application::doRun registers the project's own autoloader once ($projectLoaderRegistered): AutoloadGenerator::buildPackageMap, parseAutoloads and createLoader from the loaded root package, then register(false), so command classes from the project's autoload sections can be resolved.",
+    "CRITICAL: When the value is a string that names an existing subclass of the Symfony Command class, Application::doRun instantiates it with the script name as argument (new $dummy($script)), forces that name if the class defines a different one (with a warning), takes the description from scripts-descriptions, and adds it directly, so typing the name runs the class through the console application without the event dispatcher. Any other value (shell string, array, non-Command class) becomes a ScriptAliasCommand built with the scripts-aliases entry.",
+    "ScriptAliasCommand::execute sets COMPOSER_DEV_MODE and calls EventDispatcher::dispatchScript with the script name, the args and a 'script-alias-input' flag holding the raw input after the name; in EventDispatcher::doDispatch a string listener that contains a backslash, has no space and ends in 'Command' takes the isCommandClass branch, which builds a fresh console Application with that class as default command and runs it with the stored input; it refuses event names that are lifecycle constants ('You cannot bind ... to a Command class').",
+    "Referencing the entry with an at-sign reference from another script goes through the isComposerScript branch of doDispatch, which creates a new ScriptEvent and re-dispatches by name; RunScriptCommand::execute rejects lifecycle names not in its own allowed list, requires hasEventListeners, and dispatches with dispatchScript; there a class name that does not end in 'Command' falls to the final else branch and is executed as a shell command string."
+   ],
+   "notes": "VERIFICATION: Console/Application.php:171-180 ($commandName/$rawCommandName), :257-267 ($mayNeedPluginCommand, $mayNeedScriptCommand at :267), :334 (!$isProxyCommand block), :376-431 (script registration: :378 file read + json_decode, :382 defined('Composer\\Script\\ScriptEvents::...'), :383-384 has() warning, :388-392 descriptions/aliases, :394-406 project autoloader via AutoloadGenerator, :410 is_subclass_of Command, :413-422 name mismatch warning/forced name, :428 ScriptAliasCommand fallback, :431 addCommand/add); Script/ScriptEvents.php:30-130 (12 reserved constants); Command/ScriptAliasCommand.php:77-93 (execute, dispatchScript with flag); EventDispatcher/EventDispatcher.php:138-143 (dispatchScript), :233 (isComposerScript branch -> new ScriptEvent + dispatch :266-268), :274 (isPhpScript Class::method), :295-345 (isCommandClass branch; reserved-name refusal :304-309; run with script-alias-input :341), :639-657 (the three predicates; isCommandClass = contains backslash, no space, ends with 'Command'); Command/RunScriptCommand.php:30-45 and :98-141 (reserved-name check, hasEventListeners, dispatchScript). DECOYS: Console/Application.php:784-810 (getPluginCommands: plugin capability commands, a different registration path), Command/RunScriptCommand::getScripts (only lists), Util/ConfigValidator.php:187-205 (reports aliases/descriptions of missing scripts), EventDispatcher::executeEventPhpScript (the Class::method listener style), Command/ExecCommand (dispatches the internal '__exec_command' script). ROUTE: (1) grep scripts-aliases / scripts-descriptions -> Application.php:388-392 and ScriptAliasCommand; (2) [G] read Application.php:260-431: reveals $mayNeedScriptCommand (defined at :267, outside the grep window), the ScriptEvents constant check, the autoloader registration and the is_subclass_of branch; (3) [G] read ScriptAliasCommand::execute -> dispatchScript with the flag name; read Script/ScriptEvents.php; (4) [G] read EventDispatcher::doDispatch branches (isComposerScript, isCommandClass) and the predicates at :639-657; (5) read RunScriptCommand::execute for the run-script difference. MIN CALLS: 5 (steps 3 and 5 can share a call, so 4-5). FIRST CALL: grep -rn 'scripts-aliases' src; grep -rn 'ScriptAliasCommand' src; grep -rn 'SymfonyCommand' src/Composer/Console; grep -rn 'isCommandClass' src; grep -n 'run-script' src/Composer/Console/Application.php -> reaches Application, ScriptAliasCommand and EventDispatcher (three gold files, because 'scripts' vocabulary is explicit). est. turns: 6."
+  },
+  {
+   "id": "r3x-composer-03",
+   "repo": "r3-composer",
+   "language": "PHP",
+   "difficulty": "hard",
+   "expectedNoMatch": false,
+   "max_turns": 25,
+   "tier": "r3-hard2",
+   "set": "dev",
+   "author": "r3x-composer-drafter",
+   "date": "2026-10-01",
+   "stratum": "chain",
+   "query": "Third-party code can ask, at run time, which package versions are installed (the runtime installed-versions API). When Composer itself runs a project's plugins or scripts, that API has to read the project's data instead of the tool's own bundled copy, and the tool must not execute arbitrary code from the data file. Trace: where, and under which conditions, the tool preloads the project's data at start-up; how the data file's content is checked before it is evaluated and how relative paths inside it are fixed up; how the class's static state is replaced and what that does to its protection against listing one dataset twice; how it later enumerates data when several autoloaders from different vendor folders are registered; and where that data file and a copy of the class are first produced after an install, and how that writer synchronises the in-memory state.",
+   "expectedFiles": [
+    "src/Composer/Factory.php",
+    "src/Composer/Repository/FilesystemRepository.php",
+    "src/Composer/InstalledVersions.php",
+    "src/Composer/Autoload/ClassLoader.php",
+    "src/Composer/Autoload/AutoloadGenerator.php"
+   ],
+   "expectedSymbols": [
+    "Factory::createComposer",
+    "FilesystemRepository::safelyLoadInstalledVersions",
+    "InstalledVersions::reload",
+    "InstalledVersions::getInstalled",
+    "ClassLoader::getRegisteredLoaders",
+    "FilesystemRepository::write",
+    "FilesystemRepository::dumpToPhpCode",
+    "AutoloadGenerator::dump"
+   ],
+   "expectedFacts": [
+    "CRITICAL: Factory::createComposer (full load only) preloads vendor-dir/composer/installed.php only when plugins and scripts are both enabled, Composer\\InstalledVersions is not yet defined (class_exists with autoload false) and the file exists; it first forces class_exists('Composer\\InstalledVersions') so the class comes from the tool itself, then calls FilesystemRepository::safelyLoadInstalledVersions.",
+    "CRITICAL: FilesystemRepository::safelyLoadInstalledVersions reads the file and proceeds only if a recursive regex matches the whole content as '<?php return array(...)' built from numbers, booleans/null, quoted strings (optionally concatenated) and nested arrays (with an optional __DIR__ . prefix on values); it then replaces '=> __DIR__ . ' with the exported dirname of the file path, evals the result into InstalledVersions::reload, and returns false (loads nothing) when the check fails.",
+    "InstalledVersions::reload replaces the static $installed data, empties $installedByVendor and sets $installedIsLocalDir to false, which disables the duplicate protection, so a later listing can contain the same dataset twice.",
+    "InstalledVersions::getInstalled, when ClassLoader::getRegisteredLoaders exists (the static map of registered loaders keyed by vendor dir, filled in ClassLoader::register), requires each registered vendor dir's composer/installed.php once (cached in $installedByVendor), avoids adding its own static copy a second time when it comes from the same directory (selfDir / installedIsLocalDir), and only requires its own installed.php when the class file is not located in a source checkout (the 'C' of 'Composer' at position -8 of __DIR__).",
+    "FilesystemRepository::write, when dumpVersions is on, builds the dataset with generateInstalledVersions, writes vendor/composer/installed.php via dumpToPhpCode (a relative install_path is emitted as a __DIR__ . '/...' concatenation), copies src/Composer/InstalledVersions.php to vendor/composer/InstalledVersions.php if readable, calls InstalledVersions::reload, then sets the private selfDir to the vendor/composer dir and installedIsLocalDir to true through reflection.",
+    "AutoloadGenerator::dump adds the class Composer\\InstalledVersions to the class map with the path vendor/composer/InstalledVersions.php, so the copy inside the vendor folder is the one the project's autoloader serves."
+   ],
+   "notes": "VERIFICATION: Factory.php:355-368 (createComposer preload: guard :361 `false === $disablePlugins && false === $disableScripts && !class_exists('Composer\\InstalledVersions', false) && file_exists(...installed.php)`, :364 class_exists forces tool copy, :365 safelyLoadInstalledVersions); Repository/FilesystemRepository.php:121-193 (write: :163 generateInstalledVersions, :165 installed.php via dumpToPhpCode, :166-171 copy of InstalledVersions.php, :173 reload, :178-190 reflection on selfDir/installedIsLocalDir), :201-225 (safelyLoadInstalledVersions: DEFINE regex :204-212, __DIR__ replace + eval :216), :227-262 (dumpToPhpCode, install_path __DIR__ handling), :269 (generateInstalledVersions); InstalledVersions.php:33-55 (statics), :319-328 (reload), :334-341 (getSelfDir), :347-398 (getInstalled: :349 canGetVendors, :356-376 per-vendor loop, :385 `substr(__DIR__, -8, 1) !== 'C'`); Autoload/ClassLoader.php:101 ($registeredLoaders), :391-399 (register fills it keyed by vendorDir), :482-485 (getRegisteredLoaders); Autoload/AutoloadGenerator.php:360 (classMap->addClass('Composer\\InstalledVersions', $vendorPath.'/composer/InstalledVersions.php')). DECOYS: InstalledVersions::getRawData (deprecated, returns only the first dataset); Compiler.php:100-109 (adds InstalledVersions.php and ClassLoader.php to the phar for the tool's own copy); Autoload/AutoloadGenerator platform_check.php (different runtime file); Repository/InstalledFilesystemRepository (thin subclass). ROUTE: (1) grep the runtime-API vocabulary ('installed versions' / reload / eval) -> InstalledVersions.php and FilesystemRepository.php:201; [G] 'safelyLoadInstalledVersions' name is only visible in the grep hit of the repository file; (2) read FilesystemRepository::safelyLoadInstalledVersions (regex, eval, reload); (3) [G] read InstalledVersions::reload and getInstalled: reveals ClassLoader::getRegisteredLoaders, selfDir, installedIsLocalDir; (4) [G] grep getRegisteredLoaders -> ClassLoader.php (vendorDir map in register); grep callers of safelyLoadInstalledVersions -> Factory.php:365 and read the guard; (5) read FilesystemRepository::write (:121-190) + dumpToPhpCode; (6) [G] grep 'Composer\\\\InstalledVersions' in src -> AutoloadGenerator.php:360 and Compiler.php. MIN CALLS: 6 (4 of them strictly dependent; a batching agent may do it in 5). FIRST CALL: grep -rn 'InstalledVersions' src; grep -rn 'installed.php' src; grep -rn 'eval(' src; grep -rn 'getRegisteredLoaders' src; grep -rn 'reload(' src -> reaches FilesystemRepository, InstalledVersions, ClassLoader, Factory and AutoloadGenerator (5 gold files, because the class name is a strong anchor); the question therefore depends on reading depth, not on discovery. est. turns: 6."
+  },
+  {
+   "id": "r3x-composer-04",
+   "repo": "r3-composer",
+   "language": "PHP",
+   "difficulty": "hard",
+   "expectedNoMatch": false,
+   "max_turns": 25,
+   "tier": "r3-hard2",
+   "set": "dev",
+   "author": "r3x-composer-drafter",
+   "date": "2026-10-01",
+   "stratum": "chain",
+   "query": "A project depends on packages published through a remote package index that uses the newer per-package metadata protocol. Trace what happens from the moment the dependency-pool builder asks its repositories for a batch of package names until the candidate versions come back: how repositories are queried in order and when a name found in one stops being asked of later ones; how a repository wrapper that restricts names, or that declares itself non-authoritative, changes that; how the index's root file tells the repository where the per-package files live and which names it can know; which extra companion file is requested for development versions; how the cached copy is revalidated and what the user sees when the server fails; how the compact version list is expanded; and which versions are finally accepted.",
+   "expectedFiles": [
+    "src/Composer/DependencyResolver/PoolBuilder.php",
+    "src/Composer/Repository/FilterRepository.php",
+    "src/Composer/Repository/ComposerRepository.php"
+   ],
+   "expectedSymbols": [
+    "PoolBuilder::loadPackagesMarkedForLoading",
+    "FilterRepository::loadPackages",
+    "ComposerRepository::loadPackages",
+    "ComposerRepository::loadRootServerFile",
+    "ComposerRepository::lazyProvidersRepoContains",
+    "ComposerRepository::loadAsyncPackages",
+    "ComposerRepository::startCachedAsyncDownload",
+    "ComposerRepository::asyncFetchFile",
+    "ComposerRepository::isVersionAcceptable"
+   ],
+   "expectedFacts": [
+    "CRITICAL: PoolBuilder::loadPackagesMarkedForLoading splits the names into batches of 50 (LOAD_BATCH_SIZE), walks the repositories in priority order (skipping the platform repository and the locked repository), and removes every name returned in namesFound from the remaining batches, so lower-priority repositories are not asked for a name an earlier one already found.",
+    "FilterRepository::loadPackages drops names not allowed by its only/exclude patterns before delegating; when its canonical option is false it empties namesFound in the result, so later repositories are still queried for those names.",
+    "ComposerRepository::loadRootServerFile reads packages.json (cached copy, revalidated with its stored last-modified value) and, when it contains a metadata-url, treats the repository as the newer protocol: the URL pattern becomes lazyProvidersUrl, the legacy provider keys are discarded, and available-packages / available-package-patterns (if present) make the name list finite, so ComposerRepository::loadPackages drops unknown names through lazyProvidersRepoContains before fetching.",
+    "ComposerRepository::loadAsyncPackages also queues a '<name>~dev' file for each name for which dev stability is acceptable (and drops the plain file when only dev stability is acceptable), skips platform packages and the root package, and each file is fetched from the metadata-url with %package% replaced and cached under the key 'provider-<name with / replaced by ~>.json'.",
+    "CRITICAL: startCachedAsyncDownload/asyncFetchFile send If-Modified-Since from the cached last-modified value, treat 304 as 'use the cache', remember a 404 as an empty result, fire the pre/post file-download plugin events, and on any other failure print a warning once ('could not be fully loaded ... may be out of date', degraded mode) and, if a last-modified value exists, fake a 304 so the cached data is used, otherwise rethrow (a 499 'network disabled' error is turned into a not-found result).",
+    "When the response is marked minified ('composer/2.0') the version list is expanded with MetadataMinifier::expand; each version is then kept only if isVersionAcceptable passes: the version or its branch alias satisfies the stability rules (StabilityFilter) and the requested constraint, and it was not already loaded."
+   ],
+   "notes": "VERIFICATION: DependencyResolver/PoolBuilder.php:41 (LOAD_BATCH_SIZE = 50), :426-470 (loadPackagesMarkedForLoading: batches :437, repo loop :440, skip platform/locked :443, namesFound unset :454-457); Repository/FilterRepository.php:114-131 (loadPackages: isAllowed filter, canonical false -> namesFound = []); Repository/ComposerRepository.php:555-624 (loadPackages: hasProviders, hasAvailablePackageList + lazyProvidersRepoContains :614-619, loadAsyncPackages call :620), :1311-1395 (loadAsyncPackages: ~dev queue :1322-1332, platform/root skip :1339, MetadataMinifier::expand :1357-1359, isVersionAcceptable :1371), :1397-1430 (startCachedAsyncDownload: URL :1405, cache key :1406, last-modified :1408-1412), :1440-1463 (isVersionAcceptable), :1477-1606 (loadRootServerFile: cache/last-modified :1487-1499, metadata-url :1538-1581, available lists :1548-1562), :1937-2040 (asyncFetchFile: plugin events :1958-1962/:1998-2000, If-Modified-Since :1965-1970, 404 :1983-1987, 304 :1990-1995, reject/degraded mode :2017-2040), :2079-2098 (lazyProvidersRepoContains); Util/MetadataMinifier.php:20-23 (empty subclass of the external class, so the expansion algorithm itself is outside this repository). DECOYS: Repository/CompositeRepository.php:109-125 (loadPackages queries every repository and merges, it does not stop at the first hit; PoolBuilder does the stopping), ComposerRepository::whatProvides (legacy V1 provider files), fetchFile / fetchFileIfLastModified (synchronous root-file path), Repository/RepositorySet::findPackages (a separate lookup used by commands, not the pool build), r3hb-composer-02 area (advisory fetch in the same class). ROUTE: (1) grep pool/repository loading words -> PoolBuilder::loadPackagesMarkedForLoading; read it [G: loadPackages on each repository, namesFound]; (2) [G] grep 'function loadPackages' across Repository/ -> FilterRepository, CompositeRepository, ComposerRepository; read FilterRepository and ComposerRepository::loadPackages; (3) [G] loadPackages calls hasProviders / lazyProvidersUrl / loadAsyncPackages: read loadRootServerFile (:1477-1606) and loadAsyncPackages; (4) [G] startCachedAsyncDownload -> asyncFetchFile (names only visible inside loadAsyncPackages); read both; (5) [G] isVersionAcceptable + StabilityFilter (names visible in loadAsyncPackages body) and MetadataMinifier. MIN CALLS: 6 (the 2000-line class needs several ranged reads: root file, async loader, async fetch). FIRST CALL: grep -rn 'namesFound' src; grep -rn 'function loadPackages' src; grep -rn 'If-Modified-Since' src; grep -rn 'last-modified' src; grep -rn 'degraded' src -> reaches PoolBuilder, FilterRepository, CompositeRepository and ComposerRepository (the question words are generic, but the grep hits are many and noisy). est. turns: 7."
+  },
+  {
+   "id": "r3x-composer-05",
+   "repo": "r3-composer",
+   "language": "PHP",
+   "difficulty": "hard",
+   "expectedNoMatch": false,
+   "max_turns": 25,
+   "tier": "r3-hard2",
+   "set": "dev",
+   "author": "r3x-composer-drafter",
+   "date": "2026-10-01",
+   "stratum": "completeness",
+   "query": "Composer treats package metadata published by third parties as untrusted. List every place in production code where it defends against (a) a package's declared executable entries, or (b) a package's source or download location and revision strings, being abused to reach files outside the package folder, to be read by external tools as command-line switches, or to launch a local program. For each place, say what is checked, what happens on failure (error, skip, silent removal, false) and at which stage of the install or update flow it runs.",
+   "expectedFiles": [
+    "src/Composer/Package/Loader/ValidatingArrayLoader.php",
+    "src/Composer/DependencyResolver/LockTransaction.php",
+    "src/Composer/Util/Perforce.php",
+    "src/Composer/Installer/BinaryInstaller.php",
+    "src/Composer/Downloader/FileDownloader.php"
+   ],
+   "expectedSymbols": [
+    "ValidatingArrayLoader::load",
+    "ValidatingArrayLoader::validatePackage",
+    "LockTransaction::setResultPackages",
+    "Perforce::isValidPort",
+    "Perforce::__construct",
+    "Perforce::checkServerExists",
+    "BinaryInstaller::installBinaries",
+    "BinaryInstaller::isBinPathInsidePackage",
+    "FileDownloader::install"
+   ],
+   "expectedFacts": [
+    "CRITICAL: ValidatingArrayLoader::load rejects a bin entry (string or each array element) containing a '..' path component: it records an error and unsets that entry; it also records errors for a source/dist url or reference that starts with '-' (so it cannot be read as a command-line option by the VCS tooling).",
+    "ValidatingArrayLoader::load additionally validates a source url of type perforce with Perforce::isValidPort and records an error when it is not of the form [tcp|ssl:][host:]port.",
+    "CRITICAL: ValidatingArrayLoader::validatePackage re-applies the security subset to an already loaded package (package name structure, leading '-' on source/dist url and reference, perforce port, '..' in bin) and throws SecurityException; LockTransaction::setResultPackages calls it for every package the solver selects, so it also covers packages that were loaded by the non-validating ArrayLoader (root packages are exempt).",
+    "Perforce::isValidPort rejects any value starting with the rsh: or jsh: transport (which would make the p4 client run a local command) and accepts only an optional tcp/ssl transport, a host or bracketed address and an optional port; the Perforce constructor throws SecurityException for an invalid port, while checkServerExists just returns false.",
+    "BinaryInstaller::installBinaries skips a bin (printing a warning and continuing) when its resolved real path is outside the package's install directory, for example a symlink pointing out of the package; isBinPathInsidePackage compares realpath() of both paths and fails closed (false) if either cannot be resolved.",
+    "FileDownloader::install, for a single-file dist, only makes a declared bin executable (chmod) when BinaryInstaller::isBinPathInsidePackage is true and otherwise silently skips it (BinaryInstaller reports it later in the same install)."
+   ],
+   "notes": "VERIFICATION: Package/Loader/ValidatingArrayLoader.php:113-136 (bin '..' check: errors :125/:131, unset), :549-563 (source/dist '-' checks :550/:553, perforce isValidPort :556-562), :683-728 (validatePackage: name :694, '-' fields :699-710, perforce :716, bin '..' :722-726, SecurityException); DependencyResolver/LockTransaction.php:65-80 (setResultPackages, validatePackage call :74); Solver::solve builds LockTransaction for update (Installer.php:542), non-dev extraction (:725) and install-from-lock verification (:814); Util/Perforce.php:66-70 (constructor throws SecurityException), :88-95 (checkServerExists returns false), :106-114 (isValidPort: rsh/jsh :109, shape regex :113); Installer/BinaryInstaller.php:52-110 (installBinaries; :74 outside-package skip with warning), :161-171 (isBinPathInsidePackage, realpath fail-closed); Downloader/FileDownloader.php:366-380 (chmod only if inside, :374); Exception/SecurityException.php. DECOYS: Autoload/AutoloadGenerator.php:574 (validatePackage: psr-4/target-dir rules, unrelated), Repository/RepositorySecurityException (ComposerRepository.php:1809: signature mismatch of fetched metadata), Util/TlsHelper.php:160 (CVE-2013-6420 certificate-name handling), Downloader/ZipDownloader.php:241 (zip-bomb ratio check: archive-content defence, not metadata), Package/Loader/ValidatingArrayLoader::hasPackageNamingError (name shape, only reached through validatePackage). ROUTE: (1) grep security-ish comment words (malicious, injection, '..' path component) -> ValidatingArrayLoader, BinaryInstaller, Perforce, FileDownloader (the comments carry GHSA ids); (2) read ValidatingArrayLoader::load ranges and validatePackage [G: Perforce::isValidPort, SecurityException]; (3) [G] grep validatePackage callers -> LockTransaction.php:74 (name only visible after reading); (4) [G] grep isValidPort / isBinPathInsidePackage callers -> Perforce constructor/checkServerExists, FileDownloader.php:374; (5) read BinaryInstaller::installBinaries; (6) confirm the Solver::solve call sites for the 'stage' part (Installer.php:542/725/814). MIN CALLS: 5 (grep of the comments finds most sites in call 1; the stage detail and the caller list need 3-4 dependent reads). FIRST CALL: grep -rniE 'malicious|injection|command-line option|outside' src; grep -rn 'GHSA' src; grep -rn 'SecurityException' src; grep -rn '\\.\\.' src/Composer/Package/Loader; grep -rn 'realpath' src/Composer/Installer -> reaches ValidatingArrayLoader, BinaryInstaller, Perforce and FileDownloader (4 gold files, because the code comments name the threats; this is the weakest question on discovery and relies on completeness of the answer). est. turns: 6."
+  },
+  {
+   "id": "r3x-composer-06",
+   "repo": "r3-composer",
+   "language": "PHP",
+   "difficulty": "hard",
+   "expectedNoMatch": false,
+   "max_turns": 25,
+   "tier": "r3-hard2",
+   "set": "dev",
+   "author": "r3x-composer-drafter",
+   "date": "2026-10-01",
+   "stratum": "completeness",
+   "query": "After an install that left out development-only dependencies, later Composer commands and runtime code must still know that fact without being told again. List every place in production code that (a) writes down, inside the vendor folder's installed-packages record, whether development dependencies were installed or which packages are development-only, and (b) later reads that record back to change behaviour. For each place say what is stored or read and what it changes.",
+   "expectedFiles": [
+    "src/Composer/Installer.php",
+    "src/Composer/Installer/InstallationManager.php",
+    "src/Composer/Repository/FilesystemRepository.php",
+    "src/Composer/Autoload/AutoloadGenerator.php",
+    "src/Composer/Command/ReinstallCommand.php",
+    "src/Composer/Command/CheckPlatformReqsCommand.php",
+    "src/Composer/InstalledVersions.php"
+   ],
+   "expectedSymbols": [
+    "Installer::doInstall",
+    "InstallationManager::execute",
+    "FilesystemRepository::write",
+    "FilesystemRepository::initialize",
+    "FilesystemRepository::generateInstalledVersions",
+    "AutoloadGenerator::dump",
+    "AutoloadGenerator::getPlatformCheck",
+    "ReinstallCommand::execute",
+    "CheckPlatformReqsCommand::execute",
+    "InstalledVersions::isInstalled"
+   ],
+   "expectedFacts": [
+    "CRITICAL: Installer::doInstall copies the lock file's dev package names into the local installed repository (setDevPackageNames) before calling InstallationManager::execute with the dev-mode flag; execute and its batch step call $repo->write($devMode, ...) after each operation and once more at the end.",
+    "CRITICAL: FilesystemRepository::write stores in installed.json a 'dev' boolean and a sorted 'dev-package-names' list limited to packages really installed, and in installed.php the root entry's 'dev' flag plus a per-package 'dev_requirement' flag (also set for names those packages replace or provide).",
+    "FilesystemRepository::initialize reads 'dev-package-names' and 'dev' back (getDevMode stays null for an older file without the key); ReinstallCommand uses getDevMode() and falls back to true when it is null, and CheckPlatformReqsCommand, when dev packages are excluded, skips every package listed by getDevPackageNames.",
+    "AutoloadGenerator::dump, when no dev mode was set explicitly, reads 'dev' from vendor/composer/installed.json (false if the file or key is missing); in dev mode the root package's autoload-dev is merged in and no dev package is filtered, otherwise packages named in the stored dev-package-names list (or, if that list is empty, a legacy computation) are filtered out of the autoload maps.",
+    "AutoloadGenerator::getPlatformCheck skips the requirements of packages listed in the installed record's dev package names when building the platform check file, so dev-only platform requirements do not break production.",
+    "InstalledVersions::isInstalled, when called with includeDevRequirements = false, ignores a package whose installed.php entry has dev_requirement = true."
+   ],
+   "notes": "VERIFICATION: Installer.php:876-877 (setDevPackageNames from locker, then InstallationManager::execute with $this->devMode); Installer/InstallationManager.php:181-238 (execute: final $repo->write($devMode, $this) at :238) and the per-operation write inside executeBatch (->then(function () use ($devMode, $repo) { $repo->write($devMode, $this); })); Repository/FilesystemRepository.php:121-156 (write: :123 data = ['packages','dev','dev-package-names'], :150-151 only really installed names, :155 sort), :269-290 + :391 (generateInstalledVersions: dev_requirement via $devPackages, :304-325 replaced/provided), :402-420 (dumpRootPackage 'dev' => $devMode), :87-96 (initialize: dev-package-names, dev); Repository/WritableArrayRepository.php:29-72 (devMode/devPackageNames storage); Autoload/AutoloadGenerator.php:184-196 (devMode auto-detect from installed.json), :255-263 (filteredDevPackages: false in dev mode, else $devPackageNames ?: true), :461 + :829-860 (getPlatformCheck skips dev packages :848), :1288-1292 (root autoload-dev merged only when devMode); Command/ReinstallCommand.php:164; Command/CheckPlatformReqsCommand.php:62-80 (removePackages = getDevPackageNames when no-dev, skipped in loop); InstalledVersions.php:108-117 (isInstalled with dev_requirement). DECOYS: the COMPOSER_DEV_MODE environment variable (Installer.php:310, AutoloadGenerator.php:199-202, ScriptAliasCommand.php:90, RunScriptCommand.php:138, ReinstallCommand.php:166: runtime-only, not stored in the record), the lock file's packages-dev section and Locker::getDevPackageNames (the lock, not the vendor record), Command/DumpAutoloadCommand.php:100-110 (sets dev mode explicitly from flags), DependencyResolver/LockTransaction.php dev/non-dev maps (lock generation), Installer::requirePackagesForUpdate :1051 (reads locker dev names for mirror updates). ROUTE: (1) grep 'dev-package-names' / getDevPackageNames -> FilesystemRepository, WritableArrayRepository, Installer, AutoloadGenerator, CheckPlatformReqsCommand; (2) [G] read FilesystemRepository write/initialize/generateInstalledVersions for the stored keys (dev, dev-package-names, dev_requirement); (3) [G] grep 'dev_requirement' and getDevMode callers -> InstalledVersions::isInstalled, ReinstallCommand:164 (the key 'dev_requirement' is only learned from step 2); (4) [G] read AutoloadGenerator::dump around :184-263 and getPlatformCheck; (5) read Installer.php:870-880 and InstallationManager::execute for the write path. MIN CALLS: 5 (greps of the two keys find nearly every site; correctness depends on reading each branch). FIRST CALL: grep -rn 'dev-package-names' src; grep -rn 'getDevPackageNames' src; grep -rn 'getDevMode' src; grep -rn 'setDevPackageNames' src; grep -rn 'dev_requirement' src -> reaches 6 of 7 gold files at once; this question therefore tests completeness of reading, not discovery. est. turns: 5."
+  },
+  {
+   "id": "r3x-composer-07",
+   "repo": "r3-composer",
+   "language": "PHP",
+   "difficulty": "hard",
+   "expectedNoMatch": false,
+   "max_turns": 25,
+   "tier": "r3-hard2",
+   "set": "dev",
+   "author": "r3x-composer-drafter",
+   "date": "2026-10-01",
+   "stratum": "condition",
+   "query": "A project has a lock file. A developer updates only one named dependency but also allows that package's own dependencies to move. One of those dependencies is also required directly by the project's own manifest, and another comes from a local-folder (linked) repository. Explain which dependencies are unlocked and which stay at their locked versions, what the user sees, and how the outcome changes with the stricter variant that also frees directly required dependencies. Include how the list of names given by the developer is matched, what happens when a listed name matches nothing, and what is refused when no lock file exists.",
+   "expectedFiles": [
+    "src/Composer/Command/UpdateCommand.php",
+    "src/Composer/Installer.php",
+    "src/Composer/DependencyResolver/Request.php",
+    "src/Composer/DependencyResolver/PoolBuilder.php",
+    "src/Composer/Package/BasePackage.php",
+    "src/Composer/DependencyResolver/SolverProblemsException.php"
+   ],
+   "expectedSymbols": [
+    "UpdateCommand::execute",
+    "Installer::doUpdate",
+    "Request::setUpdateAllowList",
+    "Request::lockPackage",
+    "PoolBuilder::buildPool",
+    "PoolBuilder::isUpdateAllowed",
+    "PoolBuilder::loadPackage",
+    "PoolBuilder::getSkippedRootRequires",
+    "PoolBuilder::unlockPackage",
+    "PoolBuilder::warnAboutNonMatchingUpdateAllowList",
+    "BasePackage::packageNameToRegexp",
+    "SolverProblemsException::getPrettyString"
+   ],
+   "expectedFacts": [
+    "CRITICAL: UpdateCommand::execute maps the dependency options to Request constants: none -> UPDATE_ONLY_LISTED, the 'with dependencies' option -> UPDATE_LISTED_WITH_TRANSITIVE_DEPS_NO_ROOT_REQUIRE, the 'with all dependencies' option -> UPDATE_LISTED_WITH_TRANSITIVE_DEPS (checked first, so it wins); Installer::doUpdate refuses a partial update without a lock file (ERROR_NO_LOCK_FILE_FOR_PARTIAL_UPDATE) and passes list and mode to Request::setUpdateAllowList.",
+    "PoolBuilder::buildPool: every locked package whose name matches none of the listed patterns (BasePackage::packageNameToRegexp: case-insensitive, '*' wildcard) is recorded in skippedLoad (also under the names it replaces) and passed to Request::lockPackage, so only its locked version is loaded.",
+    "A locked package from a path repository (dist type 'path' with symlink not disabled) is not locked: it is recorded in pathRepoUnlocked and loaded from its repository, but loaded without update propagation, so its own dependencies are not unlocked by it; only if it is later unlocked as a dependency of an updated package is it reloaded with propagation.",
+    "CRITICAL: In PoolBuilder::loadPackage, when a package being updated requires a skipped (locked) package and a transitive mode is on, the dependency is unlocked (unlockPackage, then markPackageNameForLoading) only if getSkippedRootRequires finds no root requirement involved (directly or through a replace) or the all-dependencies mode is used; otherwise it stays locked and the warning that the dependency is also a root requirement ('keeping locked at old version') is printed once per name.",
+    "PoolBuilder::unlockPackage also unlocks the replacer of an unlocked name recursively, under the same root-requirement rule; replaced names of an updated package are handled the same way in loadPackage.",
+    "PoolBuilder::warnAboutNonMatchingUpdateAllowList warns for a pattern that matches no locked package and no root requirement ('not locked' for a plain name, 'does not match any locked packages' for a wildcard, 'cannot be updated' for platform packages), and SolverProblemsException::getPrettyString adds a hint to use the all-dependencies option when a problem is caused by the lock and root dependencies are not allowed to move."
+   ],
+   "notes": "VERIFICATION: Command/UpdateCommand.php:271-276 (constants mapping, with-all-dependencies first), :292-293 (setUpdateAllowList / setUpdateAllowTransitiveDependencies); Installer.php:488-533 (doUpdate: :508-512 no lock -> ERROR_NO_LOCK_FILE_FOR_PARTIAL_UPDATE, :531-533 request->setUpdateAllowList), :1488-1513 (setters); DependencyResolver/Request.php:29-41 (constants), :99-102 (lockPackage), :126-148 (setUpdateAllowList, getUpdateAllowTransitive*); DependencyResolver/PoolBuilder.php:214-246 (buildPool partial-update block: skippedLoad :223-226, replaces :227-229, pathRepoUnlocked :231-239, lockPackage :243), :475-571 (loadPackage: skippedLoad branch :517-541, replace branch :555-571), :593-628 (getSkippedRootRequires), :634-644 (isUpdateAllowed), :646-680 (warnAboutNonMatchingUpdateAllowList), :688-720 (unlockPackage); Package/BasePackage.php:268-273 (packageNameToRegexp); DependencyResolver/SolverProblemsException.php:74-76 (hint). DECOYS: Installer::createPolicy minimalUpdate (:996-1005, prefers locked versions but does not lock), Request::fixLockedPackage (install-from-lock integrity, not partial update), the 'lock'/'nothing'/'mirrors' update arguments (UpdateCommand.php:230-246, mirror-only update, mutually exclusive with a list), PoolBuilder::restrictedPackagesList, Installer::requirePackagesForUpdate (updateMirrors branch). ROUTE: (1) grep 'transitive' / 'allow list' -> UpdateCommand constants mapping and Request/PoolBuilder; (2) [G] read UpdateCommand:225-295 (constants, mirror-argument exclusion); (3) [G] read Installer::doUpdate:488-545 (lock requirement, setUpdateAllowList); (4) [G] read PoolBuilder::buildPool partial block :214-246 (isUpdateAllowed, lockPackage, pathRepoUnlocked); (5) [G] read PoolBuilder::loadPackage :475-575 + getSkippedRootRequires + unlockPackage; (6) [G] BasePackage::packageNameToRegexp; SolverProblemsException hint; Request getters. MIN CALLS: 6 (5 dependent: command -> installer -> request -> pool builder -> helpers). FIRST CALL: grep -rn 'TRANSITIVE' src; grep -rn 'updateAllowList' src; grep -rn 'skippedLoad' src; grep -rn 'with-dependencies' src -> reaches UpdateCommand, Installer, Request and PoolBuilder (4 gold files); depth is in reading loadPackage/unlockPackage. est. turns: 6."
+  },
+  {
+   "id": "r3x-composer-08",
+   "repo": "r3-composer",
+   "language": "PHP",
+   "difficulty": "hard",
+   "expectedNoMatch": false,
+   "max_turns": 25,
+   "tier": "r3-hard2",
+   "set": "dev",
+   "author": "r3x-composer-drafter",
+   "date": "2026-10-01",
+   "stratum": "condition",
+   "query": "A developer depends on a package that lives in a local folder and is not fetched from a remote. The package's manifest has no version field. Explain which version label the package receives and in what order of precedence the possible sources are checked (an explicit per-package override in the repository definition, the manifest, an environment-level override of the root project's version, automatic detection from version control, and a last default), and what automatic detection returns when the folder is a checkout on a feature branch, on a detached head, or on a tagged commit. Then explain which value acts as the package's content revision marker and how it is derived, why editing that folder's manifest causes a refresh of the installed package on the next full update, and what a plain install from the existing lock file compares instead.",
+   "expectedFiles": [
+    "src/Composer/Repository/PathRepository.php",
+    "src/Composer/Package/Version/VersionGuesser.php",
+    "src/Composer/Util/Git.php",
+    "src/Composer/DependencyResolver/Transaction.php",
+    "src/Composer/Installer.php"
+   ],
+   "expectedSymbols": [
+    "PathRepository::initialize",
+    "VersionGuesser::guessVersion",
+    "VersionGuesser::guessGitVersion",
+    "VersionGuesser::versionFromGitTags",
+    "VersionGuesser::guessFeatureVersion",
+    "VersionGuesser::isFeatureBranch",
+    "Git::buildRevListCommand",
+    "Transaction::calculateOperations",
+    "Installer::doInstall"
+   ],
+   "expectedFacts": [
+    "CRITICAL: PathRepository::initialize decides the version in this order: a version for the package name in the repository's options.versions overrides everything including the manifest; else the manifest version; else, if COMPOSER_ROOT_VERSION is set and the folder's HEAD commit equals the current project's HEAD, the root version from the environment (VersionGuesser::getRootVersionFromEnv); else VersionGuesser::guessVersion; else 'dev-main'.",
+    "VersionGuesser::guessGitVersion takes the current branch as 'dev-<branch>' (normalised); on a detached head it uses 'dev-<sha>' and then prefers a tag when versionFromGitTags (git describe --exact-match --tags) finds one; if the folder is not a git checkout, guessVersion falls through to the hg, fossil and svn guessers.",
+    "A branch is a feature branch unless it matches master|main|latest|next|current|support|tip|trunk|default|develop|a numeric dotted name, or one of the package's own non-feature-branches; for a feature branch (without a declared branch-alias, or when 'self.version' is used) guessFeatureVersion picks the nearest other non-feature branch by shortest 'git rev-list candidate..branch' output (local branches before remote, ties go to the later entry in natural-descending order, i.e. the older version branch), and PathRepository then registers two packages: the feature-branch version and the nearest-branch version.",
+    "The content revision marker (dist reference) is null when the reference option is 'none'; for 'config' or 'auto' it is sha1 of the manifest JSON text concatenated with serialize(options); for 'auto' with a .git directory and a successful git rev-list it is replaced by the HEAD commit hash.",
+    "CRITICAL: Transaction::calculateOperations creates an UpdateOperation for a present package when its version, dist reference, source reference, or abandonment information differs, so an edited manifest (new hash) makes the next full update, which re-reads the path repository and rewrites the lock, produce a different reference and therefore a refresh.",
+    "A plain install does not re-read the folder: Installer::doInstall builds a LocalRepoTransaction from the locked repository and the installed repository, so it compares the lock's recorded version and references with the installed record."
+   ],
+   "notes": "VERIFICATION: Repository/PathRepository.php:124-225 (initialize): :180-185 reference option ('none' -> null, 'config'/'auto' -> sha1(json . serialize(options))), :190-192 options.versions override, :195-204 root version from environment when HEAD equal, :206-209 'auto' + .git + rev-list -> commit hash, :211-223 guessVersion / feature version second package / 'dev-main'; Package/Version/VersionGuesser.php:72-109 (guessVersion order git, hg, fossil, svn), :112-131 (postprocess), :134-213 (guessGitVersion: detached :154-160, feature branch :182-190, tags :195-203), :216-231 (versionFromGitTags), :276-355 (guessFeatureVersion: skip when branch-alias declared :283-286, non-feature early return :290, sort :298-308, shortest diff :330-336), :358-364 (isFeatureBranch regex), :436-447 (getRootVersionFromEnv); DependencyResolver/Transaction.php:105-210 (calculateOperations, update condition :165-181); Installer.php:752-838 (doInstall: :758 lockedRepository, :838 LocalRepoTransaction($lockedRepository, $localRepo)); Util/Git.php buildRevListCommand/getNoShowSignatureFlags used at PathRepository.php:206. Partial-update note: DependencyResolver/PoolBuilder.php:231-239 (locked path-repo packages are reloaded from the repository, pathRepoUnlocked). DECOYS: Package/Loader/RootPackageLoader.php:96-110 (the root package uses the same guesser and env override but not options.versions), Downloader/PathDownloader.php (symlink/mirror install, getVcsReference :223, not a version or reference source), Package/Loader/ArrayLoader (version normalisation only), Package/Locker.php:552 (git commit date for the lock's time field, unrelated). ROUTE: (1) grep for 'path' repository / 'feature branch' vocabulary -> PathRepository.php (and VersionGuesser); read PathRepository::initialize [G: guessVersion, buildRevListCommand, options keys]; (2) [G] read VersionGuesser guessVersion/guessGitVersion/versionFromGitTags/guessFeatureVersion/isFeatureBranch; (3) [G] getRootVersionFromEnv name appears in PathRepository only after reading it; (4) [G] grep 'getDistReference' under DependencyResolver -> Transaction::calculateOperations; (5) [G] read Installer::doInstall to find LocalRepoTransaction(lockedRepository, localRepo) and confirm that the lock, not the folder, is compared. MIN CALLS: 5 (step 3 can share a call with 2). FIRST CALL: grep -rn 'feature' src/Composer/Package/Version; grep -rn 'class PathRepository' src; grep -rn 'dev-main' src; grep -rn 'getDistReference' src/Composer/DependencyResolver; grep -rn 'guessVersion' src -> reaches PathRepository, VersionGuesser and Transaction (3 gold files; Installer and Git need the later reads). est. turns: 6."
+  }
+ ]
+}

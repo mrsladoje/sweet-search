@@ -1,0 +1,133 @@
+{
+ "repo": "dgraph",
+ "keep": [
+  "r3h-dgraph-01",
+  "r3h-dgraph-02",
+  "r3h-dgraph-03",
+  "r3h-dgraph-04",
+  "r3h-dgraph-05",
+  "r3h-dgraph-06",
+  "r3h-dgraph-07",
+  "r3h-dgraph-08",
+  "r3h-dgraph-09",
+  "r3h-dgraph-10",
+  "r3h-dgraph-11",
+  "r3h-dgraph-12",
+  "r3h-dgraph-13",
+  "r3h-dgraph-14",
+  "r3h-dgraph-15",
+  "r3h-dgraph-16",
+  "r3h-dgraph-17",
+  "r3h-dgraph-18",
+  "r3h-dgraph-19",
+  "r3h-dgraph-20",
+  "r3h-dgraph-21",
+  "r3h-dgraph-22",
+  "r3h-dgraph-23",
+  "r3h-dgraph-24"
+ ],
+ "fixes": {
+  "r3h-dgraph-06": {
+   "expectedFacts": [
+    "node.processTabletSizes (worker/draft.go) runs calculateTabletSizes on a fixed 5-minute tick, and only the group leader does the work.",
+    "CRITICAL: calculateTabletSizes adds up on-disk and uncompressed sizes of Badger tables per predicate, counting only tables whose first and last key belong to the same predicate, and sends them with groupi.doSendMembership (worker/groups.go), which attaches tablets only when the sender is the group leader.",
+    "CRITICAL: Zero's UpdateMembership (dgraph/cmd/zero/zero.go) calls createProposals, which ignores tablet data from non-leaders and proposes a tablet update only when the tablet is removed, goes from size 0 to non-zero, or its on-disk size changed by more than 10 percent.",
+    "Server.chooseTablet (dgraph/cmd/zero/tablet.go), run on the rebalance interval by the Zero leader, ranks groups by summed OnDiskBytes and, starting from the largest, tries to move from a source group to the smallest group, skipping a source whose gap to the smallest is under 10 percent of the smallest group's size (or that has no suitable tablet) and trying the next largest.",
+    "chooseTablet picks the largest non-reserved tablet whose size is at most half the gap and that is not in failure backoff."
+   ]
+  },
+  "r3h-dgraph-07": {
+   "query": "Besides a client choosing to roll back, list the different situations in which the cluster itself forces a transaction to fail or disappear, and say where each is decided. Count only decisions made by server code, across both the coordinator and the data servers."
+  },
+  "r3h-dgraph-09": {
+   "expectedFacts": [
+    "CRITICAL: A fixed set of gRPC method names is never audited: the Raft/join/heartbeat calls, the coordinator's membership, oracle, timestamp, tablet-serving and connect calls, and the health check/watch calls (skipApis in audit/interceptor.go).",
+    "A fixed set of HTTP paths is never audited: /health, /state and /probe/graphql (skipEPs).",
+    "CRITICAL: HTTP upgrade requests that speak the GraphQL websocket subprotocol are skipped by AuditRequestHttp; instead each subscription request is audited separately by AuditWebSockets, called from graphql/admin/http.go.",
+    "The data servers' internal gRPC server (worker/worker.go Init) is built without any audit interceptor, and the coordinator's gRPC server registers only a unary audit interceptor (dgraph/cmd/zero/run.go), so its streaming calls are not audited.",
+    "On the data servers the auditor is enabled only after the server first passes its health check (InitAuditorIfNecessary in dgraph/cmd/alpha/run.go); until then every interceptor returns early because the enabled flag is still 0, so requests served earlier are not audited."
+   ]
+  },
+  "r3h-dgraph-10": {
+   "expectedFacts": [
+    "CRITICAL: authorizePreds (edgraph/predicate_acl.go) builds the permitted list per user from the ACL cache (user-to-predicate permissions whose bits cover the operation); it returns a nil list, meaning 'all', when a group has the wildcard permission on every predicate, and still blocks ACL predicates.",
+    "authorizeQuery (edgraph/access.go) stores that list on every root query block (parsedReq.Query[i].AllowedPreds), and authorizeMutation stores it on the mutation (gmu.AllowedPreds).",
+    "CRITICAL: expandSubgraph (query/query.go) intersects the types' predicate list with sg.Params.AllowedPreds only for the all-fields wildcard (expand(_all_)); newGraph copies the list from the root query block.",
+    "In query/mutation.go the delete-everything-about-a-node expansion intersects its predicate list with the edge's AllowedPreds, and ToDirectedEdges copies the mutation-level list onto the deletion edges.",
+    "worker/acl_cache.go (AclCache.Update / GetUserPredPerms) is the source of the per-user permission map, rebuilt per namespace."
+   ]
+  },
+  "r3h-dgraph-13": {
+   "query": "The automatic data-relocation process between groups tries to relocate a very large field's data and the attempt fails after running a long time. When will it try that same field again, and does a relocation that an operator requests through the data server's admin GraphQL operation obey the same waiting rule? Trace that operator request to the coordinator. Also, how long may one attempt run before it is stopped?",
+   "expectedFiles": [
+    "dgraph/cmd/zero/tablet.go",
+    "graphql/admin/moveTablet.go",
+    "worker/zero.go"
+   ],
+   "expectedSymbols": [
+    "recordMoveResult",
+    "moveCooldown",
+    "skipMove",
+    "chooseTablet",
+    "MoveTablet",
+    "movePredicate",
+    "moveTimeout",
+    "resolveMoveTablet",
+    "MoveTabletOverNetwork"
+   ],
+   "expectedFacts": [
+    "CRITICAL: movePredicate (after its initial validation) records each attempt's outcome through recordMoveResult; only a failed attempt that ran for at least one minute starts or extends a backoff (shorter failures, such as validation errors, are ignored), and a success clears it.",
+    "The cooldown starts at 1 hour, doubles for each consecutive failure, is capped at 24 hours, and is never shorter than the failed attempt's own running time (moveCooldown).",
+    "CRITICAL: Only the automatic path chooseTablet consults skipMove; the operator path MoveTablet calls movePredicate directly with no backoff check, so manual moves are never held back.",
+    "One attempt is cancelled after a minimum of 2 hours, extended for large tablets to size divided by an assumed floor rate of 256 KiB per second (moveTimeout).",
+    "The admin GraphQL operation is resolved by resolveMoveTablet (graphql/admin/moveTablet.go), which calls worker.MoveTabletOverNetwork (worker/zero.go) to send a MoveTablet request to the Zero leader, where Server.MoveTablet calls movePredicate directly."
+   ]
+  },
+  "r3h-dgraph-18": {
+   "expectedFacts": [
+    "CRITICAL: Zero registers four admin endpoints behind adminAuthHandler (dgraph/cmd/zero/run.go): /state and /assign non-strict, /removeNode and /moveTablet strict; all four disappear if the admin-http option is disabled.",
+    "CRITICAL: Strict endpoints (removeNode, moveTablet) always require authorization: a matching token header or a loopback/whitelisted source address, so a remote caller is refused on a fresh install.",
+    "Non-strict endpoints (state, assign) enforce the same authorization only once the operator has configured a token or a whitelist; before that they accept everyone.",
+    "Authorization on Zero is either/or: a correct token passes, otherwise the source IP must be loopback or inside a whitelist range.",
+    "The data server's HTTP admin endpoints use a different rule: alpha's adminAuthHandler (dgraph/cmd/alpha/admin.go) checks only the token, and only when one is set, but the guarded handlers then run the operation through the admin GraphQL server (resolveWithAdminServer), whose middlewares (graphql/admin/admin.go) require a loopback or whitelisted source IP; so on the data server the token rule and the IP rule must both hold."
+   ],
+   "expectedFiles": [
+    "dgraph/cmd/zero/admin.go",
+    "dgraph/cmd/zero/run.go",
+    "x/x.go",
+    "dgraph/cmd/alpha/admin.go",
+    "dgraph/cmd/alpha/http.go",
+    "graphql/admin/admin.go"
+   ],
+   "expectedSymbols": [
+    "adminAuthHandler",
+    "adminSecurityConfigured",
+    "isAdminRequestAuthorized",
+    "IsIpWhitelisted",
+    "resolveWithAdminServer",
+    "IpWhitelistingMW4Mutation"
+   ]
+  },
+  "r3h-dgraph-21": {
+   "expectedFacts": [
+    "CRITICAL: calculatePaginationParams (query/query.go) pushes count and offset into the storage query only if the block has no filter, no ordering, a non-zero count, and its source function is not one of the multi-token string matchers (regular expression, all-of-terms, all-of-text, fuzzy match, n-gram).",
+    "Otherwise it asks for the maximum count with offset 0, so the whole list is read and the count and offset are applied afterwards in the query layer (applyPagination, or the ordering path for blocks with an order).",
+    "CRITICAL: On the worker, uidReadFirst (worker/task.go) turns a positive pushed-down count into count plus max(offset, 0) entries to read; zero or the maximum value means read everything, and a negative count is passed through without adding the offset.",
+    "Bounded reads also disable uid precalculation for the key (shouldPrecalculateUids returns false when the read is bounded), so those lists are not materialized into the cache."
+   ]
+  },
+  "r3h-dgraph-22": {
+   "expectedFacts": [
+    "CRITICAL: In Zero's Connect handler (dgraph/cmd/zero/zero.go) a read-only (learner) replica that names a group is given that group regardless of capacity.",
+    "In Connect, a non-read-only member that names an existing group is proposed for it only if the group's member count (read-only members included) is below the replica target or the forced-group flag is set; otherwise it is placed in some existing group with room, or else under a new group id.",
+    "A forced-group flag, set by the data server whenever a group id was proposed (from the group-id file of an offline-built database or from the group option; worker/groups.go), makes the proposal-creation step admit the member despite capacity.",
+    "CRITICAL: But Zero's Raft apply step (handleMemberProposal in dgraph/cmd/zero/raft.go) counts only non-read-only members and refuses to add a new non-read-only member once that count has reached the replica target ('Group reached replication level'), so the forced path does not actually overfill a group.",
+    "A proposed group id is discarded if the data server's WAL already holds a Raft id."
+   ]
+  }
+ },
+ "dropped": {},
+ "hardened": [
+  "r3h-dgraph-13"
+ ]
+}

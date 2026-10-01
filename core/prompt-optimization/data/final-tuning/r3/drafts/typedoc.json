@@ -1,0 +1,938 @@
+{
+  "repo": "typedoc",
+  "sha": "6d8c856bbb46b089371952981f113c3e318818fd",
+  "probes": [
+    {
+      "id": "r3-typedoc-01",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "multi-hop",
+      "difficulty": "hard",
+      "query": "Each documented item can show a \"Defined in\" line whose file name links to the matching line in the hosted git repository. How is that URL built, and in which situations does the line appear without a link?",
+      "expectedFiles": [
+        "src/lib/converter/plugins/SourcePlugin.ts",
+        "src/lib/converter/utilities/repository.ts"
+      ],
+      "expectedSymbols": [
+        "SourcePlugin.onBeginResolve",
+        "RepositoryManager.getRepository",
+        "GitRepository.getURL",
+        "guessSourceUrlTemplate"
+      ],
+      "expectedFacts": [
+        "SourcePlugin records file, line and column for each declaration and signature, then at resolve-begin makes the file name relative to the base path and sets source.url from the application's repository manager (getURL with the full file name and line).",
+        "GitRepository.getURL returns undefined when the file is not in the set of files tracked by git (filled from git ls-files), so no URL is produced for untracked or ignored files.",
+        "The URL is built by substituting {gitRevision}, {gitRevision:short}, {path} and {line} into a template; the template is the sourceLinkTemplate option if set, otherwise guessed from the git remote URL for GitHub, GitLab and Bitbucket hosts.",
+        "With the disableGit option the manager returns an assumed repository that uses sourceLinkTemplate directly; the theme renders file:line as plain text when a source has no url."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: SourcePlugin.ts:136-163 onBeginResolve (source.url = repos?.getURL(source.fullFileName, source.line) at :160; fileName relative to basePath :157-159); SourcePlugin.ts:69-129 records sources. repository.ts:109-125 GitRepository.getURL with `if (!this.files.has(fileName)) return;` at :110-112; files filled from `git ls-files -z` at :154 and :194-199; template substitution :114-124; template choice :176-183 (sourceLinkTemplate option else guessSourceUrlTemplate(remotes)); guessSourceUrlTemplate :375-407 (github/gitlab/bitbucket); RepositoryManager.getRepository :332-359 returns assumedRepo when disableGit (:333-335); AssumedRepository :52-72. Link built in application.ts:1008-1055 initializeRepositories (called from convert() at application.ts:443). Plain text rendering when no url: src/lib/output/themes/default/partials/member.sources.tsx:5-12."
+    },
+    {
+      "id": "r3-typedoc-02",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "multi-hop",
+      "difficulty": "hard",
+      "query": "My project's TypeScript config makes the compiler drop members tagged as internal from its declaration output. I never configured anything like that for the documentation tool, yet those members are missing from the docs. What connects the two?",
+      "expectedFiles": [
+        "src/lib/utils/options/options.ts",
+        "src/lib/converter/plugins/CommentPlugin.ts",
+        "src/lib/utils/options/readers/tsconfig.ts"
+      ],
+      "expectedSymbols": [
+        "Options.setCompilerOptions",
+        "CommentPlugin.isHidden",
+        "TSConfigReader.read"
+      ],
+      "expectedFacts": [
+        "TSConfigReader.read parses the tsconfig and hands the compiler options, file names and project references to Options.setCompilerOptions.",
+        "Options.setCompilerOptions sets the excludeInternal option to true when the compiler option stripInternal is on and excludeInternal was not explicitly set by the user.",
+        "CommentPlugin.isHidden treats a reflection whose comment has the @internal modifier as hidden when excludeInternal is true, and onBeginResolve removes hidden reflections from the project."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/lib/utils/options/readers/tsconfig.ts:106-110 container.setCompilerOptions(parsed.fileNames, parsed.options, parsed.projectReferences). src/lib/utils/options/options.ts:419-435 setCompilerOptions; `if (options.stripInternal && !this.isSet(\"excludeInternal\")) { this.setValue(\"excludeInternal\", true); }` at :429-431 (comment at :424-428 explains it lives here for API consumers). CommentPlugin.ts:686-688 `(comment.hasModifier(\"@internal\") && this.excludeInternal)`; removal of hidden reflections at CommentPlugin.ts:349-394 (hidden set :359-374, project.removeReflection :374). excludeInternal declared default false in src/lib/utils/options/sources/typedoc.ts:~175-178."
+    },
+    {
+      "id": "r3-typedoc-03",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "multi-hop",
+      "difficulty": "medium",
+      "query": "Command-line flags can both choose which configuration file gets read and also override values that file sets. How does the option loading arrange for both to be true?",
+      "expectedFiles": [
+        "src/lib/cli.ts",
+        "src/lib/utils/options/options.ts",
+        "src/lib/utils/options/readers/arguments.ts"
+      ],
+      "expectedSymbols": [
+        "ArgumentsReader",
+        "Options.addReader",
+        "Options.read"
+      ],
+      "expectedFacts": [
+        "cli.ts bootstraps the application with readers in this list: ArgumentsReader(0), TypeDocReader, PackageJsonReader, TSConfigReader, and a second ArgumentsReader(300) marked ignoreErrors.",
+        "Options.addReader inserts readers sorted by their order number and Options.read runs them in ascending order.",
+        "The first command-line pass at order 0 can set the locations (options and tsconfig) that the typedoc-json reader (order 100) and tsconfig reader (order 200) look for; the second pass at order 300 re-applies the same arguments last so they override config-file values, and it suppresses repeated error reports."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: src/lib/cli.ts:23-29 reader list; arguments.ts:25-33 constructor(priority) sets order, ignoreErrors() sets skipErrorReporting; arguments.ts:63-68,96-101,132-139 errors gated by skipErrorReporting. options.ts:197-199 addReader uses insertOrderSorted; options.ts:201-209 read loops over this._readers; options.ts:87-93 and :24-33 document the order and why argv is both lowest and highest. TypeDocReader order = 100 (readers/typedoc.ts:21) uses container.getValue(\"options\") at :36; TSConfigReader order = 200 (readers/tsconfig.ts:54) uses container.getValue(\"tsconfig\") at :68; PackageJsonReader order = 150 (readers/package-json.ts:12)."
+    },
+    {
+      "id": "r3-typedoc-04",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "multi-hop",
+      "difficulty": "hard",
+      "query": "Two markdown documents each reference a local image; the images live in different folders but have the same file name. Trace how each image ends up reachable from the generated pages without one overwriting the other.",
+      "expectedFiles": [
+        "src/lib/models/FileRegistry.ts",
+        "src/lib/output/plugins/AssetsPlugin.ts",
+        "src/lib/output/themes/MarkedPlugin.tsx"
+      ],
+      "expectedSymbols": [
+        "FileRegistry.getName",
+        "AssetsPlugin.onRenderEnd",
+        "MarkedPlugin.displayPartsToMarkdown"
+      ],
+      "expectedFacts": [
+        "FileRegistry.getName lazily assigns each registered file a unique output name: the first use of a base name keeps it, later files with the same base name get a numeric suffix such as name-1.ext, tracked through the nameUsage map.",
+        "MarkedPlugin turns a relative-link display part whose target is a media file into a URL under media/<assigned name>.",
+        "AssetsPlugin.onRenderEnd copies every entry of files.getNameToAbsoluteMap() (only files that were given a name during rendering, and only if they are real files) into the output media folder."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: FileRegistry.ts:98-122 getName (nameUsage :20, first name :107-110, counter suffix :111-118); names created lazily (comment :18). FileRegistry.ts:138-144 getNameToAbsoluteMap builds from `names`. MarkedPlugin.tsx:223-245 relative-link case; getName at :240 and url = context.relativeURL(`media/${fileName}`) at :242. AssetsPlugin.ts:120-126 media = join(outputDirectory, \"media\"), copySync if isFile(absolute). Only getName caller is MarkedPlugin.tsx:240 and only getNameToAbsoluteMap caller is AssetsPlugin.ts:121 (rg). Registration of the relative paths comes from textParser.ts:221-224 (files.register)."
+    },
+    {
+      "id": "r3-typedoc-05",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "multi-hop",
+      "difficulty": "medium",
+      "query": "In watch mode, editing a markdown file that a doc comment pulls in should trigger a rebuild even though it is not a TypeScript file. Which parts make that happen?",
+      "expectedFiles": [
+        "src/lib/converter/plugins/IncludePlugin.ts",
+        "src/lib/application.ts"
+      ],
+      "expectedSymbols": [
+        "IncludePlugin.checkIncludeTagsParts",
+        "Application.watchFile",
+        "Application.convertAndWatch"
+      ],
+      "expectedFacts": [
+        "IncludePlugin.checkIncludeTagsParts calls application.watchFile on each resolved included file path while processing include tags.",
+        "Application.watchFile forwards to the _watchFile function that convertAndWatch installs, so it has no effect outside watch mode.",
+        "That function registers a TypeScript host file watcher (2000 ms poll) whose callback logs that the file changed and calls runSuccess to convert again; watchers are cleared before each rebuild and registered again during conversion."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: IncludePlugin.ts:66-67 `const file = normalizePath(path.resolve(relative, filename)); this.application.watchFile(file);`. application.ts:506-508 watchFile -> this._watchFile?.(path, shouldRestart); :478 _watchFile declared; :600-624 closure installing host.watchFile with callback (:609-619) and poll interval 2000 (:620); runSuccess :640-; clearWatches :481-484 and call at :678 before conversion; doc comment :488-505 says no effect if a watch build is not running."
+    },
+    {
+      "id": "r3-typedoc-06",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "multi-hop",
+      "difficulty": "medium",
+      "query": "On the site's full class-hierarchy page, which classes or interfaces are the top-level starting points, and where do the subclass entries listed beneath them come from?",
+      "expectedFiles": [
+        "src/lib/output/themes/lib.tsx",
+        "src/lib/converter/plugins/TypePlugin.ts",
+        "src/lib/output/themes/default/templates/hierarchy.tsx"
+      ],
+      "expectedSymbols": [
+        "getHierarchyRoots",
+        "TypePlugin.resolve",
+        "hierarchyTemplate"
+      ],
+      "expectedFacts": [
+        "getHierarchyRoots keeps classes and interfaces that have implementedBy or extendedBy entries and that either extend/implement nothing or whose extended/implemented types are all not reflections in the docs; results are sorted by name.",
+        "hierarchyTemplate renders one list per root from getHierarchyRoots and recurses through each item's implementedBy and extendedBy references (fullHierarchy), showing an item that was already expanded only as a plain link.",
+        "TypePlugin fills implementedBy and extendedBy on the target reflection during the resolve phase, which is what makes a class eligible as a root and supplies its children."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: lib.tsx:139-173 getHierarchyRoots (no extendedBy/implementedBy -> excluded :147-149; extends/implements nothing -> root :152-154; all parents not in docs -> root :158-167; sort by name :170). templates/hierarchy.tsx:7-43 fullHierarchy (seen set :12-22; children from implementedBy + extendedBy :25-29) and :45-56 hierarchyTemplate mapping getHierarchyRoots. TypePlugin.ts:53-90 resolve() pushes into target.implementedBy/extendedBy. Page creation: router.ts:180-186 adds the hierarchy page when includeHierarchySummary (default true, sources/typedoc.ts:639-643) -- note `this.includeHierarchySummary && getHierarchyRoots(project)` is always truthy for an array, so the router does not itself test for emptiness; layouts/default.tsx:89-91 is where .length is tested (script tag only)."
+    },
+    {
+      "id": "r3-typedoc-07",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "multi-hop",
+      "difficulty": "hard",
+      "query": "When each member of a union type alias has its own doc comment, where are those per-member comments captured, and which later steps resolve and check the links written inside them?",
+      "expectedFiles": [
+        "src/lib/converter/symbols.ts",
+        "src/lib/converter/comments/linkResolver.ts",
+        "src/lib/validation/links.ts"
+      ],
+      "expectedSymbols": [
+        "attachUnionComments",
+        "resolveLinks",
+        "validateLinks"
+      ],
+      "expectedFacts": [
+        "attachUnionComments reads the comment attached to each member in the union's syntax list and stores its summary in union.elementSummaries at the member's index; it warns if such a comment has block or modifier tags.",
+        "linkResolver.resolveLinks resolves link tags inside elementSummaries for declarations whose type is a union.",
+        "validation/links.ts checks type aliases with union types and reports broken links found in elementSummaries."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: symbols.ts:407 attachUnionComments called from convertTypeAlias when reflection.type.type === \"union\"; symbols.ts:470-502 attachUnionComments (context.getNodeComment(child,false) :480; warning for block/modifier tags :481-489; union.elementSummaries[unionIndex] = comment.summary :491-498; index not advanced on BarToken :500-502). comments/linkResolver.ts:67-77 maps elementSummaries through resolvePartLinks. validation/links.ts:102-115 iterates reflection.type.elementSummaries for TypeAlias unions. Link pass is triggered by LinkResolverPlugin.ts:33-37 at RESOLVE_END priority -300."
+    },
+    {
+      "id": "r3-typedoc-08",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "multi-hop",
+      "difficulty": "medium",
+      "query": "After a run that only produced a warning about a type which the public API uses but which is missing from the documentation, under what conditions does the command-line tool exit with its dedicated validation-failure status?",
+      "expectedFiles": [
+        "src/lib/cli.ts",
+        "src/lib/utils-common/logger.ts",
+        "src/lib/validation/exports.ts"
+      ],
+      "expectedSymbols": [
+        "run",
+        "Logger.validationWarning",
+        "validateExports"
+      ],
+      "expectedFacts": [
+        "validateExports reports each referenced-but-not-documented type with logger.validationWarning.",
+        "Logger.validationWarning increments validationWarningCount and then logs a regular warning.",
+        "In cli.ts run(), after app.validate, hadValidationWarnings is true if the warning count grew or validationWarningCount is non-zero; it returns ExitCodes.ValidationError (4) when hadValidationWarnings and either treatWarningsAsErrors or treatValidationWarningsAsErrors is enabled (or when any error was logged)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: cli.ts:3-11 ExitCodes (ValidationError: 4); cli.ts:95-108 (preValidationWarnCount :95, app.validate :96, hadValidationWarnings :97-98, hasErrors -> ValidationError :99-101, treat*AsErrors :102-107). utils-common/logger.ts:114-123 validationWarning (validationWarningCount += 1 then this.warn). validation/exports.ts:87-93 logger.validationWarning(type_0_defined_in_1_is_referenced_by_2_but_not_included_in_docs). application.ts:718-726 validate calls validateExports when validation.notExported (default true, sources/typedoc.ts:992-1004) and strategy is not merge."
+    },
+    {
+      "id": "r3-typedoc-09",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "multi-hop",
+      "difficulty": "hard",
+      "query": "A comment link must point at one specific overload of a function instead of the first one. What syntax picks the overload, and where is that choice parsed and resolved?",
+      "expectedFiles": [
+        "src/lib/utils-common/declarationReference.ts",
+        "src/lib/converter/comments/declarationReferenceResolver.ts",
+        "src/lib/models/Comment.ts"
+      ],
+      "expectedSymbols": [
+        "parseMeaning",
+        "filterMapByMeaning",
+        "resolveKeyword"
+      ],
+      "expectedFacts": [
+        "parseMeaning parses a colon suffix on the declaration reference: a keyword (optionally with an index in parentheses), a bare index such as :1 or :(1), or a user label starting with an uppercase letter or underscore.",
+        "filterMapByMeaning picks the reflection whose comment label equals the given label, otherwise picks the element at the given index (default 0) from the keyword-resolved list, which for a function is its list of signatures.",
+        "The label comes from a label inline tag in the signature's comment, extracted into comment.label by the Comment constructor."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: utils-common/declarationReference.ts:340-426 parseMeaning (label branch :363-372 using UserLabelStart :85, parenthesized index :374-392, bare digits :394-405). comments/declarationReferenceResolver.ts:121-132 filterMapByMeaning (label :127-129, index :130); :134-142 resolveKeyword case undefined returns refl.signatures for DeclarationReflection; :112-115 applies meaning. models/Comment.ts:455 constructor calls extractLabelTag; :640-648 extractLabelTag moves the @label inline tag text to comment.label. CommentPlugin.ts:410-421 warns if a label cannot be referenced."
+    },
+    {
+      "id": "r3-typedoc-10",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "concept",
+      "difficulty": "medium",
+      "query": "A class declares a property using the constructor-parameter shorthand and documents it only through an entry for that parameter in the constructor's doc comment. Where does that text become the property's description?",
+      "expectedFiles": [
+        "src/lib/converter/comments/index.ts"
+      ],
+      "expectedSymbols": [
+        "getConstructorParamPropertyComment",
+        "getComment"
+      ],
+      "expectedFacts": [
+        "getComment falls back to getConstructorParamPropertyComment only when no comment was found for a Property reflection.",
+        "getConstructorParamPropertyComment finds the parameter declaration of the symbol, takes its parent constructor's signature comment, and looks up the param tag with the same name.",
+        "If a matching param tag exists, it returns a new Comment built from that tag's content, keeping the constructor comment's source path."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: comments/index.ts:211-216 `if (!comment && kind === ReflectionKind.Property) return getConstructorParamPropertyComment(symbol, context);`; :273-289 function (decl = symbol.declarations?.find(ts.isParameter) :277, ctor = decl.parent :280, getSignatureComment(ctor) :281, getIdentifiedTag(symbol.name, \"@param\") :283, new Comment(paramTag.content) :285-287). Discovery of parameter-property comments on the parameter itself is handled in discovery.ts:14-15 (Parameter in variablePropertyKinds)."
+    },
+    {
+      "id": "r3-typedoc-11",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "concept",
+      "difficulty": "hard",
+      "query": "For a function that has several overload signatures plus a body, which doc comment is treated as belonging to the function as a whole? How does that differ from a function with just one signature?",
+      "expectedFiles": [
+        "src/lib/converter/comments/discovery.ts"
+      ],
+      "expectedSymbols": [
+        "discoverCommentWorker"
+      ],
+      "expectedFacts": [
+        "For overloaded functions, methods or constructors (more than one matching declaration), discoverCommentWorker clears the candidate list and uses only the declaration that has a body (the implementation) as the symbol-level comment source.",
+        "For a function with a single signature, the candidate list is cleared and nothing is pushed, so the function reflection itself gets no comment and its signature owns the comment.",
+        "Signatures get their comments through a separate discovery path (discoverSignatureComment), and a variable that merely holds call signatures is handled like a normal variable."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: discovery.ts:311-346 -- comment block at :311-315 (signatures/symbols have two discovery methods), `kind & ReflectionKind.ContainsCallSignatures` :316, canHaveOverloads :317-323, isOverloaded = canHaveOverloads && wantedDeclarations.length > 1 :325, overloaded branch :327-338 (commentNodes.length = 0; find node with body :330-332; push implementation :333-338), single signature branch :339-342, variable branch :343-345. discoverSignatureComment at :391-437."
+    },
+    {
+      "id": "r3-typedoc-12",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "concept",
+      "difficulty": "hard",
+      "query": "When a doc comment has a usage-sample section whose body is plain code without any fences, how does the tool turn it into a code block, and how is the sample's title determined?",
+      "expectedFiles": [
+        "src/lib/converter/comments/parser.ts"
+      ],
+      "expectedSymbols": [
+        "exampleBlock"
+      ],
+      "expectedFacts": [
+        "exampleBlock treats the body as a literal code block (wrapped by makeCodeBlock in a ts fence) unless the jsDocCompatibility exampleTag flag is off or the content already contains a fenced code block.",
+        "If the body starts with an HTML-style caption element, the caption text becomes the tag's name and the rest becomes the code.",
+        "When the content already has a fenced block (or the flag is off), the first line of the block is taken as the example name and the rest is parsed as normal block content."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: parser.ts:367-390 blockTag dispatches (@example dispatch at :388-390) @example to exampleBlock; parser.ts:485-594 exampleBlock (condition !config.jsDocCompatibility.exampleTag || code part startsWith \"```\" :505-510; name from first line :511-545; fallback literal wrap with caption regex :559-594 -> makeCodeBlock :257-259). Option doc: utils/options/declaration.ts:393-397 (exampleTag: treat @example as code unless it contains a code block; default true sources/typedoc.ts:731-739)."
+    },
+    {
+      "id": "r3-typedoc-13",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "concept",
+      "difficulty": "medium",
+      "query": "A constant that holds an arrow function, with no explicit type annotation, shows up in the docs as a function rather than a variable. Where is that decision made, and what stops it when the constant has a type annotation?",
+      "expectedFiles": [
+        "src/lib/converter/symbols.ts"
+      ],
+      "expectedSymbols": [
+        "shouldAutomaticallyConvertAsFunction",
+        "convertVariable",
+        "isFunctionLikeInitializer"
+      ],
+      "expectedFacts": [
+        "convertVariable calls convertVariableAsFunction when the type has call signatures and no construct signatures and either the comment has the @function modifier or shouldAutomaticallyConvertAsFunction returns true.",
+        "shouldAutomaticallyConvertAsFunction returns false for a variable declaration that has an explicit type annotation or no initializer; otherwise it checks whether the initializer is a function expression or arrow function, looking through satisfies and as expressions.",
+        "It also accepts property assignments with function-like values and assignments like exports.fn = () => {}."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: symbols.ts:1057-1066 call-signature condition and `comment?.hasModifier(\"@function\") || (declaration && shouldAutomaticallyConvertAsFunction(declaration))` at :1062-1063 -> convertVariableAsFunction :1064; symbols.ts:1516-1543 shouldAutomaticallyConvertAsFunction (`if (node.type || !node.initializer) return false;` :1519; property assignment :1524-1526; exports.fn = :1529-1540); :1545-1559 isFunctionLikeInitializer (function/arrow :1546, satisfies :1550, as :1554)."
+    },
+    {
+      "id": "r3-typedoc-14",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "concept",
+      "difficulty": "hard",
+      "query": "A module exports one function both under its own name and as the default export. Which of the two gets documented as the real declaration, and how is the other represented?",
+      "expectedFiles": [
+        "src/lib/converter/symbols.ts",
+        "src/lib/converter/converter.ts"
+      ],
+      "expectedSymbols": [
+        "convertSymbol",
+        "createAlias",
+        "Converter.deferConversion"
+      ],
+      "expectedFacts": [
+        "convertSymbol defers conversion of any symbol named default when the scope is an export container, so the named export is converted first.",
+        "When the deferred default symbol is converted, _convertSymbolNow finds an existing reflection for the same symbol under the module or project and calls createAlias instead of converting again.",
+        "createAlias creates a ReferenceReflection (a re-export) that points at the original reflection, unless the excludeReferences option is enabled, in which case nothing is created."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: symbols.ts:189-207 convertSymbol (comment #1795 :191-192; name check `(exportSymbol?.name ?? symbol.name) === \"default\" && context.scope.kindOf(ReflectionKind.ExportContainer)` :193-196; deferConversion :200-204). symbols.ts:109-125 _convertSymbolNow (previous reflection check :116-124 -> createAlias). symbols.ts:995-1011 createAlias (excludeReferences return :1001; new ReferenceReflection :1003-1007). converter.ts:487-515 permitDeferredConversion / finalizeDeferredConversion / deferConversion (deferred tasks run after all entry points in compile(): converter.ts:551)."
+    },
+    {
+      "id": "r3-typedoc-15",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "concept",
+      "difficulty": "medium",
+      "query": "In the generated site's search box, how are matches ordered and how many are shown at most? Does a name that starts with what I typed rank higher?",
+      "expectedFiles": [
+        "src/frontend/typedoc/components/Search.ts"
+      ],
+      "expectedSymbols": [
+        "updateResults"
+      ],
+      "expectedFacts": [
+        "updateResults turns each space-separated word of the query into a wildcard term (*word*) and runs the lunr index search in the browser.",
+        "Results hidden by active sidebar visibility filters are dropped, using the classes stored in each row and classListWillBeFiltered.",
+        "A result whose name starts with the typed text has its score multiplied by 10 / (1 + |name length - query length|); results are sorted by score and at most 10 are rendered."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: Search.ts:205-306 updateResults; wildcard query :226-231; filtering :233-239; boost :255-266 (startsWith :261, factor :262); sort :268; cap `Math.min(10, res.length)` :270. Index built server-side in src/lib/output/plugins/JavascriptIndexPlugin.ts:66-153 and loaded with Index.load in Search.ts:46-55."
+    },
+    {
+      "id": "r3-typedoc-16",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "concept",
+      "difficulty": "medium",
+      "query": "How does the generated site remember whether a visitor picked light or dark mode, and what happens if the browser does not allow storing data?",
+      "expectedFiles": [
+        "src/frontend/typedoc/Theme.ts",
+        "src/frontend/typedoc/utils/storage.ts"
+      ],
+      "expectedSymbols": [
+        "initTheme",
+        "storage"
+      ],
+      "expectedFacts": [
+        "initTheme reads the saved choice from storage under the key tsd-theme, defaulting to os, applies it as the data-theme attribute of the document element, and saves changes back on the select's change event.",
+        "storage.ts wraps localStorage in a try/catch; if accessing localStorage throws, it substitutes a no-op storage whose getItem returns null and setItem does nothing.",
+        "The generated page layout also sets data-theme from localStorage in an inline script so the theme applies early."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: Theme.ts:5-14 initTheme (key \"tsd-theme\" :6 and :11, default \"os\" :6, setTheme :19-21 sets dataset.theme). storage.ts:12-17 noOpStorageImpl; :21-27 try { localStorageImpl = localStorage } catch -> no-op. Inline script: src/lib/output/themes/default/layouts/default.tsx:97 `document.documentElement.dataset.theme = localStorage.getItem(\"tsd-theme\") || \"os\"`. CSS for light/dark generated by src/lib/utils/highlighter.tsx:87-101."
+    },
+    {
+      "id": "r3-typedoc-17",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "concept",
+      "difficulty": "medium",
+      "query": "Two documented items whose page names differ only by letter case would overwrite each other on a case-insensitive disk. How does the page file naming prevent that?",
+      "expectedFiles": [
+        "src/lib/output/router.ts"
+      ],
+      "expectedSymbols": [
+        "BaseRouter.getFileName",
+        "BaseRouter.usedFileNames"
+      ],
+      "expectedFacts": [
+        "BaseRouter keeps a set of used file names that always contains lowercased names, as a comment states, to avoid case-insensitive filesystem problems.",
+        "getFileName compares the lowercased base name against that set; on a clash it appends -1, -2 and so on until unused, and returns the original-case base name with that suffix and the extension.",
+        "buildPages resets the set for each render and every page URL is obtained through getFileName."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: router.ts:128-130 comment and `protected usedFileNames = new Set<string>()`; :431-445 getFileName (lowerBaseName :432, clash loop :433-440, return `${baseName}-${index}${this.extension}` :440, no clash :443-444); :152 reset in buildPages; used at :161,166,172,182,335."
+    },
+    {
+      "id": "r3-typedoc-18",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "enforcement",
+      "difficulty": "hard",
+      "query": "A big descriptive comment sits at the very top of an entry file, above the first statement. Where does the tool decide whether it describes the whole module or just that first statement, and what marks the difference?",
+      "expectedFiles": [
+        "src/lib/converter/comments/index.ts"
+      ],
+      "expectedSymbols": [
+        "getCommentImpl",
+        "getFileComment"
+      ],
+      "expectedFacts": [
+        "getCommentImpl, for a module-level comment, discards the comment unless it has the @packageDocumentation modifier or a @module tag, because otherwise it belongs to the first statement in the file.",
+        "For non-module reflections, getCommentImpl discards a comment that carries @packageDocumentation or @module so module comments are not attached to other items.",
+        "getFileComment walks the leading comments of the file, skips ones with @license or @import tags, and returns the first one that has @module or @packageDocumentation; if the first non-skipped comment lacks them it returns nothing."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: comments/index.ts:128-167 getCommentImpl (@import/@license dropped :141-143; module comment requires @packageDocumentation or @module :145-154 with comment text at :146-147; non-module comments carrying them dropped :156-164); :233-271 getFileComment (quiet context :237-240; skip license/import :259-261; return on @module/@packageDocumentation :263-268; otherwise return undefined :269). Source-file symbols routed to getFileComment at :186-189."
+    },
+    {
+      "id": "r3-typedoc-19",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "enforcement",
+      "difficulty": "medium",
+      "query": "Where does the tool warn when a single doc comment labels an item with two conflicting release-stage or visibility markers, such as both experimental and internal?",
+      "expectedFiles": [
+        "src/lib/converter/plugins/CommentPlugin.ts"
+      ],
+      "expectedSymbols": [
+        "MUTUALLY_EXCLUSIVE_MODIFIERS",
+        "CommentPlugin.onResolve"
+      ],
+      "expectedFacts": [
+        "MUTUALLY_EXCLUSIVE_MODIFIERS defines one exclusive group made of @alpha, @beta, @experimental, @internal and @public.",
+        "CommentPlugin.onResolve intersects each reflection comment's modifier tags with the group and warns (modifier tag 0 is mutually exclusive with 1) when more than one is present.",
+        "The warning is skipped for comments in declaration files when suppressCommentWarningsInDeclarationFiles is on."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: CommentPlugin.ts:56-66 MUTUALLY_EXCLUSIVE_MODIFIERS; :408 onResolve; :423-438 loop with setIntersection and logger.warn(i18n.modifier_tag_0_is_mutually_exclusive_with_1_in_comment_for_2); suppression via suppressCommentWarnings :743-746 (.d.ts regex). The same constant also guards cascading in cascadeModifiers :558-579 (:568-573)."
+    },
+    {
+      "id": "r3-typedoc-20",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "enforcement",
+      "difficulty": "medium",
+      "query": "Where is a documented parameter that does not correspond to any real parameter of the function reported as a mistake, and when is that report suppressed?",
+      "expectedFiles": [
+        "src/lib/converter/plugins/CommentPlugin.ts"
+      ],
+      "expectedSymbols": [
+        "CommentPlugin.validateParamTags",
+        "CommentPlugin.moveSignatureParamComments"
+      ],
+      "expectedFacts": [
+        "moveSignatureParamComments copies each matching param tag onto the parameter reflection and then calls validateParamTags.",
+        "validateParamTags removes tags that match a parameter name, then lets moveNestedParamTags consume tags for nested paths like a.b, and warns for each remaining tag (signature has unused param with name).",
+        "No warning is given when the comment was inherited from a parent declaration or when suppressCommentWarningsInDeclarationFiles applies to a .d.ts source."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: CommentPlugin.ts:495-545 moveSignatureParamComments (validateParamTags call :539); :718-741 validateParamTags (removeIf matching names :727; moveNestedParamTags :729; condition `!comment.inheritedFromParentDeclaration && !this.suppressCommentWarnings(comment)` :731; warn :733-737); :778-844 moveNestedParamTags; :743-746 suppressCommentWarnings."
+    },
+    {
+      "id": "r3-typedoc-21",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "enforcement",
+      "difficulty": "medium",
+      "query": "Where does the tool warn that a public API mentions a type that is not itself part of the generated docs, and how do types from other packages avoid that warning?",
+      "expectedFiles": [
+        "src/lib/validation/exports.ts"
+      ],
+      "expectedSymbols": [
+        "validateExports",
+        "makeIntentionallyExportedHelper"
+      ],
+      "expectedFacts": [
+        "validateExports walks every reference type in the project and emits a validation warning for types with no reflection, no external URL, not marked intentionally broken, not on the allow list, and whose symbol was not removed.",
+        "The helper's has() returns true (no warning) for types with no declaring package and for types whose package differs from the project's package name.",
+        "The intentionallyNotExported option entries are file:name strings matched against the type's package path and name; unused entries are reported afterwards as a validation warning."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: validation/exports.ts:62-105 validateExports (condition :77-84, warning :87-93, unused allow-list :97-104); :6-60 makeIntentionallyExportedHelper (no package :32-37; third-party `type.package !== project.packageName` :40-42; `file:name` parsing :12-18; match :44-52). Called from application.ts:718-726."
+    },
+    {
+      "id": "r3-typedoc-22",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "enforcement",
+      "difficulty": "medium",
+      "query": "Where is a file-pattern option value rejected because it looks like a Windows path written with backslashes?",
+      "expectedFiles": [
+        "src/lib/utils/options/declaration.ts"
+      ],
+      "expectedSymbols": [
+        "converters[ParameterType.GlobArray]"
+      ],
+      "expectedFacts": [
+        "The GlobArray converter builds each glob with toGlobString and throws an error (glob should use posix slash) when the string contains a backslash followed by a character that is not a special glob character.",
+        "Backslashes before ? * ( ) [ ] \\ { } are allowed as escapes; other values are turned into absolute glob strings relative to the config path by createGlobString."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: utils/options/declaration.ts:814-832 GlobArray converter; the regex `/\\\\[^?*()[\\]\\\\{}]/.test(s)` at :822 and `throw new Error(i18n.glob_0_should_use_posix_slash(s))` at :823; createGlobString at :826 (defined in utils/paths.ts:64-75). Comment explaining the shell-completion case at :818-821 (inside toGlobString)."
+    },
+    {
+      "id": "r3-typedoc-23",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "enforcement",
+      "difficulty": "hard",
+      "query": "Where does the tool flag a markdown link that points to a local file which does not exist, and how is existence checked, including any fallback location?",
+      "expectedFiles": [
+        "src/lib/converter/comments/textParser.ts",
+        "src/lib/utils/ValidatingFileRegistry.ts"
+      ],
+      "expectedSymbols": [
+        "textContent",
+        "ValidatingFileRegistry.register"
+      ],
+      "expectedFacts": [
+        "textContent's addRef emits a validation warning (relative path is not a file and will not be copied) when a relative link has no registry target and the invalidPath validation flag is on.",
+        "ValidatingFileRegistry.register resolves the link against the source file's directory and returns undefined if the path (without anchor) does not exist and either the basePath is empty or the path resolved from basePath also does not exist.",
+        "Only relative paths are checked: links with a protocol, a leading slash or a leading # are not treated as relative links."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: textParser.ts:84-112 addRef (`!ref.target && data.validationOptions.invalidPath` :99, validationWarning :100-110); :454-462 isRelativePath; files.register calls at :221, :283, :378, :416. ValidatingFileRegistry.ts:14-36 register (existsSync :23; basePath fallback :25-30; returns undefined :29,:32). Application uses ValidatingFileRegistry by default: application.ts:150. A related but different check for registered paths that are directories: validation/filePaths.ts:5-15."
+    },
+    {
+      "id": "r3-typedoc-24",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "enforcement",
+      "difficulty": "medium",
+      "query": "When merging several earlier JSON exports, where is one refused because it was produced in an incompatible format version?",
+      "expectedFiles": [
+        "src/lib/serialization/deserializer.ts"
+      ],
+      "expectedSymbols": [
+        "Deserializer.reviveProjects",
+        "Deserializer.reviveProject",
+        "supportedSchemaVersions"
+      ],
+      "expectedFacts": [
+        "Both reviveProject and reviveProjects check that the JSON's schemaVersion is in supportedSchemaVersions and throw an error listing supported versions if not.",
+        "supportedSchemaVersions is a list containing only JSONOutput.SCHEMA_VERSION (currently \"2.0\").",
+        "In reviveProjects, each JSON is checked inside the loop before it is revived as a module under the new project."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: serialization/deserializer.ts:51 `const supportedSchemaVersions = [JSONOutput.SCHEMA_VERSION];`; :233-252 reviveProject check and throw; :287-319 reviveProjects (check in loop :313-319). Version constants: serialization/schema.ts:35 SCHEMA_VERSION = \"2.0\"; models/ProjectReflection.ts:26 JSON_SCHEMA_VERSION = \"2.0\". Merge mode entry: application.ts:938 _merge calls deserializer.reviveProjects at :981 (packages mode also calls it at :924)."
+    },
+    {
+      "id": "r3-typedoc-25",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "enforcement",
+      "difficulty": "hard",
+      "query": "Where does conversion of deeply nested or self-referential type structures stop, and what placeholder appears in the docs at that point?",
+      "expectedFiles": [
+        "src/lib/converter/types.ts"
+      ],
+      "expectedSymbols": [
+        "convertType"
+      ],
+      "expectedFacts": [
+        "convertType keeps a module-level depth counter and, once it exceeds the maxTypeConversionDepth option (default 10), returns an UnknownType named \"...\".",
+        "It also keeps a set of type ids currently being converted; if the same type is seen again during its own conversion it logs a verbose message and returns an UnknownType holding the type's string form.",
+        "The depth counter is incremented around each node or type conversion and decremented afterwards."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: converter/types.ts:111 seenTypes; :124 typeConversionDepth; :125-196 convertType; depth check `typeConversionDepth > context.converter.maxTypeConversionDepth` -> `new UnknownType(\"...\")` at :134-136; ++/-- at :142-144 and :186-193; recursion guard :167-173 (`Refusing to recurse when converting type` :170, UnknownType(typeString) :172). Option: converter/converter.ts:148-149; default 10 in utils/options/sources/typedoc.ts:429-433."
+    },
+    {
+      "id": "r3-typedoc-26",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "locate-explain",
+      "difficulty": "medium",
+      "query": "If several ordering rules are configured for the members of a page, how are ties between two members resolved, and what happens to item kinds the user did not list in a custom kind order?",
+      "expectedFiles": [
+        "src/lib/utils/sort.ts"
+      ],
+      "expectedSymbols": [
+        "getSortFunction"
+      ],
+      "expectedFacts": [
+        "The returned sortReflections comparator goes through the strategies in order; for each it asks sorts[s](a, b) and then sorts[s](b, a), and only falls through to the next strategy when neither reports an ordering.",
+        "The configured kindSortOrder is mapped to ReflectionKind values, then any kinds from the default kindSortOrder not already present are appended at the end.",
+        "The default sort option is kind, instance-first, alphabetical-ignoring-documents (src/lib/utils/options/defaults.ts)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: utils/sort.ts:169-197 getSortFunction (kind order :170-178, comparator loop :185-195: `sorts[s](a,b,data) -> -1` :187-189, `sorts[s](b,a,data) -> 1` :190-192, return 0 :194); defaults at utils/options/defaults.ts:88-92 (sort) and :94-113 (kindSortOrder). Per-container override via @sortStrategy tag in converter/plugins/GroupPlugin.ts:260-277."
+    },
+    {
+      "id": "r3-typedoc-27",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "locate-explain",
+      "difficulty": "medium",
+      "query": "When a folder rather than a file is listed as a documentation starting point, how does the tool pick the source file to document, and what name does the resulting module get?",
+      "expectedFiles": [
+        "src/lib/utils/entry-point.ts"
+      ],
+      "expectedSymbols": [
+        "getEntryPointsForPaths",
+        "getModuleName"
+      ],
+      "expectedFacts": [
+        "If the path does not end in a TS/JS extension, getEntryPointsForPaths also checks index.ts, index.cts, index.mts, index.tsx, index.js, index.cjs, index.mjs and index.jsx inside it, in that order, looking each up in each program's source files.",
+        "The first candidate found in a program becomes the entry point; if none is found it warns that the entry point is not in the program and, for a directory, suggests the expand strategy or globs.",
+        "The display (module) name is the path relative to the base directory with a trailing /index and the file extension removed, via getModuleName."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: utils/entry-point.ts:290-340 getEntryPointsForPaths (candidate list :302-314; loops programs then candidates :316-328; displayName :321; warning :330-332; directory hint :333-336); :279-284 getModuleName regex `/(\\/index)?(\\.d)?\\.([cm][tj]s|[tj]sx?)$/`. Default strategy is resolve (EntryPointStrategy doc :16-20)."
+    },
+    {
+      "id": "r3-typedoc-28",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "locate-explain",
+      "difficulty": "hard",
+      "query": "When no documentation entry points are configured, how does the tool find them from the package manifest, and which conditional-export names does it honor?",
+      "expectedFiles": [
+        "src/lib/utils/fs.ts",
+        "src/lib/utils/entry-point.ts"
+      ],
+      "expectedSymbols": [
+        "inferPackageEntryPointPaths",
+        "resolveExport",
+        "inferEntryPoints"
+      ],
+      "expectedFacts": [
+        "inferPackageEntryPointPaths reads the nearest package.json: a string exports value maps to \".\", an object or array exports value is expanded per subpath, and otherwise the main field is used.",
+        "resolveExport, for an object of conditions, returns the first key (in the object's own order) that is one of typedoc, types, import, node or default; if none match it returns nothing.",
+        "inferEntryPoints maps built JS paths back to TypeScript sources using the program's rootDir and outDir (and declaration maps) and warns when a path cannot be resolved to a TS source."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: utils/fs.ts:339-368 inferPackageEntryPointPaths (string :345-347, main fallback :349-355, array/object :359-365); :370-410 resolveExport (EXPORT_CONDITIONS :396; `for (const cond in exportDeclaration) if (EXPORT_CONDITIONS.includes(cond))` :397-406 -- iteration follows the JSON key order, not the order of the constant); :422-476 resolveStarredExport handles single-star wildcards. utils/entry-point.ts:50-116 inferEntryPoints (jsToTsSource map :70-85; target path :90; warning :99-102). Called from application.ts:390-395 getEntryPoints when entryPoints is not set."
+    },
+    {
+      "id": "r3-typedoc-29",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "locate-explain",
+      "difficulty": "medium",
+      "query": "Where does the tool automatically locate the project's readme when none is named, which file names does it try, and how can the readme be turned off?",
+      "expectedFiles": [
+        "src/lib/converter/plugins/PackagePlugin.ts"
+      ],
+      "expectedSymbols": [
+        "PackagePlugin.onBegin"
+      ],
+      "expectedFacts": [
+        "onBegin starts from the packageDir option or the root directory derived from the entry points and finds the nearest package.json upward (discoverPackageJson).",
+        "If the readme option value ends with \"none\" no readme is used; if a readme path is given, only that file is read and an error is logged if it cannot be read.",
+        "Otherwise it tries README.md, readme.md and Readme.md next to the discovered package.json, in that order, and uses the first that exists."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: PackagePlugin.ts:76-128 onBegin (dirName :81-82; discoverPackageJson :88; `this.readme.endsWith(\"none\")` :92; explicit readme :96-108; auto-detect names :111-121; existsSync pick :117-120). discoverPackageJson: utils/fs.ts:287-307 (walks parent dirs via discoverInParentDirExactMatch :263-285; requires a string name field :296-302). Readme content attached in addEntries :134-154."
+    },
+    {
+      "id": "r3-typedoc-30",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "locate-explain",
+      "difficulty": "hard",
+      "query": "If a user asks for an HTML folder and a JSON file with separate command-line flags and also lists outputs in a config file, which outputs actually get produced, and what is written if nothing is requested?",
+      "expectedFiles": [
+        "src/lib/output/output.ts"
+      ],
+      "expectedSymbols": [
+        "Outputs.getOutputSpecs"
+      ],
+      "expectedFacts": [
+        "getOutputSpecs first adds an output for the generic out option (using the default output name, html) if it is set, then one output for each path option marked as an output shortcut (html, json) that is set.",
+        "The outputs option from the config file is only consulted if no output was added by out or shortcut options.",
+        "If there are still no outputs, it adds the default html output using the out option value, whose default is ./docs."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: output/output.ts:30-73 getOutputSpecs (out :44-49; shortcuts :35-40 and :50-57; fallback to outputs option :59-62; default :64-70); defaultOutput = \"html\" :12. `out` default \"./docs\": utils/options/sources/typedoc.ts:277-283; shortcut declarations html/json with outputShortcut: sources/typedoc.ts:283-296. Writers registered in application.ts:232-241."
+    },
+    {
+      "id": "r3-typedoc-31",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "negative",
+      "difficulty": "medium",
+      "query": "Where does the tool start a local web server with live reload so I can preview the generated documentation in a browser while editing?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "There is no built-in HTTP server or live-reload; the project only has a watch mode (Application.convertAndWatch) that re-converts and rewrites static files when source or included files change.",
+        "Generated output is static HTML, JS and CSS files written by Renderer.render, with no server component in src/lib or bin.",
+        "The package's runtime dependencies are only mini-shiki, lunr, markdown-it, minimatch and yaml; no server library is listed."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION (negative), greps run in src/lib src/frontend bin: (1) rg -i \"createServer|\\.listen\\(\" -> no matches; (2) rg -i \"livereload|websocket|koa|fastify\" -> no matches (the word express only matches 'expression'); (3) rg -i \"from \\\"(node:)?https?\\\"|require\\(\\\"(node:)?https?\\\"\\)\" -> no matches; (4) rg -i \"\\bserve\\b|\\bserver\\b\" -> no matches. http imports exist only in scripts/create_release.js and scripts/download_plugins.cjs (release tooling). package.json dependencies: @gerrit0/mini-shiki, lunr, markdown-it, minimatch, yaml. What exists instead: watch mode application.ts:517-710 convertAndWatch; static write in output/renderer.ts:317-355 render()."
+    },
+    {
+      "id": "r3-typedoc-32",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "negative",
+      "difficulty": "medium",
+      "query": "Where is the documentation coverage percentage (the share of documented public items) calculated and reported?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "No coverage percentage is computed anywhere in src/lib; the notDocumented validation only emits one validation warning per undocumented reflection.",
+        "validateDocumentation collects reflections of the requiredToBeDocumented kinds and warns for each that has no comment, without counting totals or ratios.",
+        "The notDocumented validation flag is off by default."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION (negative), greps in src/lib src/frontend excluding locales/html-entities: (1) rg -i \"coverage\" -> no matches; (2) rg -i \"percent|%\\)\" -> no matches; (3) rg -i \"documented.*(ratio|rate)|undocumented.*count\" -> only two doc comments unrelated to statistics (index.ts:76, application.ts:398); (4) rg -i \"\\bscore\\b\" -> only utils-common/array.ts maxElementByScore. What exists instead: validation/documentation.ts:10-141 validateDocumentation (per-item validationWarning :121-127, no totals); validation default notDocumented: false at utils/options/sources/typedoc.ts:992-1004."
+    },
+    {
+      "id": "r3-typedoc-33",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "negative",
+      "difficulty": "medium",
+      "query": "Where does the generated site build the drop-down that lets readers switch between documentation for different released versions of the project?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "There is no version-switcher or multi-version documentation feature in the output code or frontend.",
+        "The only version feature is the includeVersion option: PackagePlugin copies the package.json version into project.packageVersion, and getDisplayName in output/themes/lib.tsx appends it to the project name as \" - v<version>\".",
+        "Each run documents a single project; merge mode (Deserializer.reviveProjects) revives each input JSON file as a module of one combined project and has no notion of release versions."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION (negative), greps in src/lib/output and src/frontend: (1) rg -i \"version.?(select|switch|dropdown|picker)\" -> no matches; (2) rg -i \"versions\\.json|older version|multiple versions\" -> no matches; (3) rg -i \"\\bversion\" -> only output/router.ts:232 (a comment) and output/themes/lib.tsx:24-29 (getDisplayName appends packageVersion); (4) toolbar.tsx has no 'version' text. What exists instead: PackagePlugin.ts:35-36,156-166 includeVersion -> project.packageVersion; output/themes/lib.tsx:23-30 getDisplayName."
+    },
+    {
+      "id": "r3-typedoc-34",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "negative",
+      "difficulty": "hard",
+      "query": "Where does the tool persist its conversion results to disk between runs so that unchanged files are skipped on the next build?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "There is no on-disk incremental build cache; every run re-creates the TypeScript program and reconverts all entry points.",
+        "Caches are in-memory only: the parsed-comment cache (WeakMap, cleared at the end of each convert via clearCommentCache), symbol-id cache, realpath and package caches, tsconfig cache.",
+        "The cacheBust option only appends a ?cache=<render start time> query to asset URLs in generated HTML; it is not a build cache."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION (negative), greps in src/lib src/frontend excluding locales/html-entities: (1) rg -i \"incremental|buildinfo\" -> no matches; (2) rg -i \"mtime|cacheDir|persist\" -> no matches; (3) rg -i \"writeFile.*cache|\\.cache\" -> only DefaultThemeRenderContext.ts:94 (cacheBust URL parameter); (4) rg -i cache -> in-memory caches only: converter/comments/index.ts:55-63 commentCache WeakMap + clearCommentCache (called at converter/converter.ts:354 at the end of convert), converter/factories/symbol-id.ts:13 symbolIdCache, utils/fs.ts:132 realpathCache and :310 packageCache, utils/tsconfig.ts:65 tsConfigCache, utils/declaration-maps.ts:8; `cacheBust` in output/themes/default/DefaultThemeRenderContext.ts:92-96 and output/renderer.ts:253-254. Watch mode keeps programs only in-process (application.ts:597-700)."
+    },
+    {
+      "id": "r3-typedoc-35",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "negative",
+      "difficulty": "medium",
+      "query": "Where are the code samples inside example sections of doc comments actually compiled or executed to check that they still work?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "Example sections are only parsed into comment tags (exampleBlock in converter/comments/parser.ts) and rendered as highlighted code blocks; nothing compiles or runs them.",
+        "The only child process use is repository.ts spawning git; there is no eval, vm, new Function or doctest-style runner in src/lib.",
+        "Type checking in convert() applies to the project's own source program (ts.getPreEmitDiagnostics), not to sample code inside comments."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION (negative), greps in src/lib: (1) rg -i \"doctest|runExample|executeExample\" -> no matches; (2) rg -i \"new Function|\\bvm\\.|eval\\(\" -> no matches; (3) rg -i child_process -> only converter/utilities/repository.ts:6 (spawns git); (4) rg \"@example\" shows only parsing/tag lists (parser.ts:388, 557-590; utils/options/tsdoc-defaults.ts:6). What exists instead: parser.ts:485-594 exampleBlock; application.ts:450-451 getPreEmitDiagnostics on the program (when skipErrorChecking is false)."
+    },
+    {
+      "id": "r3-typedoc-36",
+      "repo": "typedoc",
+      "language": "TypeScript",
+      "stratum": "negative",
+      "difficulty": "medium",
+      "query": "Where does the tool upload its search index to a hosted search service such as a third-party search API?",
+      "expectedFiles": [],
+      "expectedSymbols": [],
+      "expectedFacts": [
+        "There is no hosted or remote search integration; the search index is built locally with lunr by JavascriptIndexPlugin and written as assets/search.js (compressed JSON) next to the pages.",
+        "The browser loads that file and runs queries locally in components/Search.ts using lunr.",
+        "No network calls exist in src/lib or src/frontend search code."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 6,
+      "tier": "r3",
+      "author": "r3-typedoc-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION (negative), greps in src/lib src/frontend (+package.json): (1) rg -i \"algolia|meilisearch|typesense|elasticsearch|docsearch\" -> no matches; (2) rg \"fetch\\(|XMLHttpRequest|https?\\.request\" -> no matches; (3) rg -i \"upload|remote search|searchApi|apiKey\" -> no matches (apiKey appears only in a test fixture under src/test); (4) dependencies list has only lunr for search. What exists instead: output/plugins/JavascriptIndexPlugin.ts:66-153 (lunr.Builder :85, output assets/search.js :140-153 via compressJson); frontend/typedoc/components/Search.ts:46-55 Index.load, :233 index.search."
+    }
+  ]
+}

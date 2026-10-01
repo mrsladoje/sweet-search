@@ -1,0 +1,73 @@
+{
+ "repo": "composer",
+ "keep": [
+  "r3hb-composer-01",
+  "r3hb-composer-02",
+  "r3hb-composer-03",
+  "r3hb-composer-05",
+  "r3hb-composer-06",
+  "r3hb-composer-07",
+  "r3hb-composer-08",
+  "r3hb-composer-10",
+  "r3hb-composer-11",
+  "r3hb-composer-12",
+  "r3hb-composer-13",
+  "r3hb-composer-14"
+ ],
+ "fixes": {
+  "r3hb-composer-03": {
+   "expectedFacts": [
+    "CRITICAL: Application::doRun only runs the super-user check when the platform is not Windows, exec() is available, the allow-superuser environment variable is unset and Platform::isDocker() is false; the check itself is isRunningAsRoot (posix_getuid() === 0).",
+    "Platform::isDocker returns false when open_basedir is set, true when /.dockerenv, /run/.containerenv or /var/run/.containerenv exists, and otherwise inspects /proc/self/mountinfo and /proc/1/cgroup for Docker or containerd markers.",
+    "For a command that does not need plugin commands (such as install) in a non-interactive session, when the user is root and no exemption applies, Application::doRun prints that plugins were disabled for safety in this non-interactive session and sets disablePluginsByDefault to true; no question is asked.",
+    "CRITICAL: BaseCommand::initialize and BaseCommand::createComposerInstance (and Application::getComposer) read Application::getDisablePluginsByDefault and pass disablePlugins=true to Factory::create, so the Composer instance is built with plugins disabled.",
+    "Factory::createComposer passes the disable flag to Factory::createPluginManager and PluginManager::arePluginsDisabled then makes loadInstalledPlugins, registerPackage and addPlugin skip loading."
+   ]
+  },
+  "r3hb-composer-06": {
+   "expectedFacts": [
+    "GitHubDriver::getComposerInformation sets abandoned = true when the manifest has no 'abandoned' key and the driver's isArchived flag is set; isArchived comes from the 'archived' field of the GitHub API repository data (set where repoData is read, GitHubDriver.php:605).",
+    "GitLabDriver::getComposerInformation sets abandoned = true when the manifest has no 'abandoned' key and the project data says it is archived (the source comment says this project data is only available if authentication is provided).",
+    "ForgejoDriver::getComposerInformation sets abandoned = true when the manifest has no 'abandoned' key and repositoryData->isArchived is true.",
+    "CRITICAL: an 'abandoned' value written in the package manifest wins; the host flag is applied only when the key is absent (isset check).",
+    "CRITICAL: each of the three drivers returns the GitDriver's manifest untouched once it has switched to the plain-clone fallback (gitDriver set), so the archived status is lost. The fallback happens when the hosting API cannot be used: for GitHub also when the API is switched off by configuration (use-github-api false or the repository's no-api option), and for all three in non-interactive runs when the repository-data API request fails (authorization, not-found or similar errors) and attemptCloneFallback succeeds. The Bitbucket, Git, Svn and Hg drivers have no such mapping.",
+    "The resulting 'abandoned' key is turned into the package's abandoned marker by ArrayLoader when loading package data (setAbandoned)."
+   ]
+  },
+  "r3hb-composer-08": {
+   "query": "On a Linux machine, a dependency that comes from a local folder was installed as a link to that original folder rather than as a copy. When the dependency is uninstalled, which exact piece of code makes sure only the link disappears and the original folder's files survive? Several removal routines exist for packages. Name the one that applies to this linked case and the routines it delegates to or deliberately avoids.",
+   "expectedFacts": [
+    "Uninstall flows through LibraryInstaller::uninstall and removeCode into DownloadManager::remove, which selects the downloader by the package's dist type, so a local-folder package is handled by PathDownloader::remove (not FileDownloader::remove or VcsDownloader::remove).",
+    "CRITICAL: Outside the Windows junction case, PathDownloader::remove checks whether the install path is the same as the dist URL (compared after normalising, without resolving the symlink); if they are equal it only prints that the source is still present and deletes nothing, otherwise it delegates to the parent FileDownloader::remove.",
+    "FileDownloader::remove calls Filesystem::removeDirectoryAsync and throws 'Could not completely delete' if it reports failure.",
+    "CRITICAL: Filesystem::removeDirectoryAsync first runs removeEdgeCases, which detects a symlinked directory (isSymlinkedDirectory) and removes only the link with unlinkSymlinkedDirectory (also junctions via removeJunction and plain links via unlink), returning before any recursive rm -rf or removeDirectoryPhp."
+   ]
+  },
+  "r3hb-composer-11": {
+   "query": "A project-defined shell step that watches files gets killed after about five minutes during a Composer run. Where does that five-minute limit come from, how does the configured value end up on the running child process, and, apart from changing the setting itself or an environment variable, which two mechanisms let one script run without the limit? The limit is unrelated to the separate time limits for network transfers.",
+   "expectedFacts": [
+    "Config defaults the 'process-timeout' key to 300 seconds, and Config::get lets the COMPOSER_PROCESS_TIMEOUT environment variable override it and returns max(0, value).",
+    "CRITICAL: BaseIO::loadConfiguration (called from Factory::createComposer once the full Composer is built) copies that value into the static ProcessExecutor::setTimeout.",
+    "CRITICAL: ProcessExecutor::runProcess (and the async variant) builds the Symfony Process with static::getTimeout() as the timeout, so every child command, including script commands run by the EventDispatcher, is bound by it; the static default in ProcessExecutor is also 300.",
+    "RunScriptCommand::execute overrides the timeout for the run when the --timeout option is given (digits only, 0 means forever) by calling ProcessExecutor::setTimeout.",
+    "A script list can include the static PHP callable Composer\\Config::disableProcessTimeout as an earlier entry; it calls ProcessExecutor::setTimeout(0)."
+   ]
+  },
+  "r3hb-composer-14": {
+   "expectedFacts": [
+    "CRITICAL: No, a custom list does not block during install from the lock file: ListPolicyConfig::shouldBlock returns false for the install scope unless the list class overrides supportsInstallBlockScope, and CustomListPolicyConfig does not override it (its block flag defaults to true but only affects update scope).",
+    "Only MalwarePolicyConfig overrides supportsInstallBlockScope to true (and it has a block-scope narrowing option), so malware is the one built-in list with install-time blocking.",
+    "PolicyConfig::getActiveBlockFilterLists for the install scope therefore excludes custom lists, and Installer::createFilterListPoolFilter(install) returns null when no install-scope list is active, so the install pool gets no list filter.",
+    "CRITICAL: CustomListPolicyConfig::fromRawConfig and the config command accept only block, audit, ignore and sources for a custom list; there is no block-scope option to opt into install-time blocking.",
+    "The audit that runs after the install finishes (Installer::run) can report a match on the custom list (and returns exit code 5 only when error-on-audit is set), but the locked version has already been installed by then, so it is not blocked."
+   ]
+  }
+ },
+ "dropped": {
+  "r3hb-composer-04": "closed-book solvable (deepseek/deepseek-v4.1-flash, openai/gpt-6-luna)",
+  "r3hb-composer-09": "closed-book solvable (openai/gpt-6-luna)"
+ },
+ "hardened": [
+  "r3hb-composer-06"
+ ]
+}

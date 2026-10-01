@@ -528,12 +528,19 @@ export function parseClaudeJsonOutput(stdout) {
 
 // ─── deepseek raw API (escape hatch) ─────────────────────────────────────
 
+// SS_JUDGE_DEEPSEEK_VIA_OPENROUTER=1 (final-tuning 2026-10-01, owner-authorized once the direct
+// DeepSeek balance was spent): the same judge model family through OpenRouter. A judge-route change
+// is a measurement change — never compare rows scored on different routes.
+const DEEPSEEK_VIA_OR = () => process.env.SS_JUDGE_DEEPSEEK_VIA_OPENROUTER === '1';
+const DEEPSEEK_OR_MODEL = { 'deepseek-v4-flash': '~deepseek/deepseek-v4-flash-latest' };
 async function runDeepseekDirect({ model, systemPrompt, userPrompt }, timeoutMs) {
-  const apiKey = process.env.DEEPSEEK_API_KEY;
+  const viaOr = DEEPSEEK_VIA_OR();
+  const apiKey = viaOr ? process.env.OPENROUTER_API_KEY : process.env.DEEPSEEK_API_KEY;
   if (!apiKey) {
-    throw new Error('runDeepseekDirect: DEEPSEEK_API_KEY not set in environment');
+    throw new Error(`runDeepseekDirect: ${viaOr ? 'OPENROUTER_API_KEY' : 'DEEPSEEK_API_KEY'} not set in environment`);
   }
   const body = buildDeepseekPayload({ model, systemPrompt, userPrompt });
+  if (viaOr) body.model = DEEPSEEK_OR_MODEL[body.model] || `deepseek/${body.model}`;
   const fetchFn = _internal.fetch || globalThis.fetch;
   if (typeof fetchFn !== 'function') {
     throw new Error('runDeepseekDirect: global fetch unavailable (Node 18+ required)');
@@ -541,7 +548,7 @@ async function runDeepseekDirect({ model, systemPrompt, userPrompt }, timeoutMs)
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetchFn('https://api.deepseek.com/chat/completions', {
+    const res = await fetchFn(viaOr ? 'https://openrouter.ai/api/v1/chat/completions' : 'https://api.deepseek.com/chat/completions', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

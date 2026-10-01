@@ -1,0 +1,1094 @@
+{
+ "r3h-typedoc-03": {
+  "id": "r3h-typedoc-03",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "6/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "NavigationPlugin",
+    "DefaultTheme.getNavigation",
+    "DefaultTheme.buildNavigation",
+    "compressJson",
+    "defaultLayout",
+    "navigation",
+    "initNav",
+    "buildNav",
+    "buildNavElement",
+    "decompressJson"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The complete pipeline from documentation model to browser DOM rendering is uniquely implemented across NavigationPlugin, DefaultTheme, compress/decompress utils, default templates, and the frontend navigation script."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "6/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "NavigationPlugin.onRendererBegin",
+    "NavigationPlugin.buildNavigationIndex",
+    "DefaultTheme.getNavigation",
+    "DefaultTheme.buildNavigation",
+    "NavigationElement",
+    "compressJson",
+    "defaultLayout",
+    "navigation",
+    "initNav",
+    "buildNav",
+    "buildNavElement",
+    "addNavText",
+    "decompressJson"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The question maps directly to the navigation generation, compression, layout, and frontend rendering files, with no alternative implementation indicated in the provided code."
+  }
+ },
+ "r3h-typedoc-06": {
+  "id": "r3h-typedoc-06",
+  "keep": false,
+  "gemini": {
+   "ok": true,
+   "symHit": "6/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "convertParameters",
+    "checkForDestructuredParameterDefaults",
+    "CommentPlugin.moveSignatureParamComments",
+    "moveNestedParamTags",
+    "convertDefaultValue",
+    "convertExpression"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The mechanisms for placeholder parameter naming, renaming/attaching nested property comments via JSDoc @param tags, and extracting destructured default values are implemented directly and uniquely in these specific functions."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "6/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "convertParameters",
+    "checkForDestructuredParameterDefaults",
+    "CommentPlugin.moveSignatureParamComments",
+    "CommentPlugin.validateParamTags",
+    "moveNestedParamTags",
+    "convertDefaultValue",
+    "convertExpression"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The name comes from convertParameters plus moveSignatureParamComments, property descriptions from moveNestedParamTags, and defaults from checkForDestructuredParameterDefaults via convertDefaultValue/convertExpression."
+  }
+ },
+ "r3h-typedoc-04": {
+  "id": "r3h-typedoc-04",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "5/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "CommentPlugin.onBeginResolve",
+    "ProjectReflection._removeReflection",
+    "ProjectReflection.symbolIdHasBeenRemoved",
+    "ImplementsPlugin.doResolve",
+    "validateExports"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The mechanisms for filtering hidden classes from heritage lists and suppressing validation warnings for their removed symbols are uniquely implemented across these specific resolution and validation methods."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "6/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "CommentPlugin.onBeginResolve",
+    "CommentPlugin.isHidden",
+    "ProjectReflection.removeReflection",
+    "ProjectReflection._removeReflection",
+    "ProjectReflection.symbolIdHasBeenRemoved",
+    "ImplementsPlugin.doResolve",
+    "validateExports"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The removal decision is specifically in CommentPlugin.onBeginResolve, the extends-list cleanup is in ImplementsPlugin.doResolve, and the export warning suppression is in validateExports via ProjectReflection.symbolIdHasBeenRemoved; no other reasonable code path answers the scenario."
+  }
+ },
+ "r3h-typedoc-02": {
+  "id": "r3h-typedoc-02",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "settings",
+    "DefaultTheme.prototype.getReflectionClasses",
+    "getReflectionClasses",
+    "Filter"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The question traces a single, concrete end-to-end feature spanning theme settings rendering, reflection class tagging, and client-side Filter handling."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "5/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "addTypeDocOptions (visibilityFilters option)",
+    "settings",
+    "buildFilterItem",
+    "flagOptionNameToReflectionFlag",
+    "ImplementsPlugin.createLink",
+    "ImplementsPlugin.onDeclaration",
+    "DefaultTheme.getReflectionClasses",
+    "getReflectionClasses",
+    "DefaultTheme.buildNavigation",
+    "Filter",
+    "classListWillBeFiltered",
+    "Filter.fromLocalStorage",
+    "Filter.setLocalStorage",
+    "Filter.handleValueChange"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The relevant path is clearly defined by the visibilityFilters option, navigation settings rendering, ImplementsPlugin inheritance marking, DefaultTheme reflection classes, and the frontend Filter component."
+  }
+ },
+ "r3h-typedoc-05": {
+  "id": "r3h-typedoc-05",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "4/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Converter",
+    "resolveLinkTag",
+    "LinkResolverPlugin.resolveLinks",
+    "getBrokenPartLinks",
+    "MarkedPlugin.displayPartsToMarkdown"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The resolution, validation, and rendering pipelines for external symbol link mappings are unambiguously traced across these specific components."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "5/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "addTypeDocOptions",
+    "externalSymbolLinkMappings",
+    "Converter",
+    "userConfiguredSymbolResolver",
+    "Converter.addUnknownSymbolResolver",
+    "Converter.resolveExternalLink",
+    "resolveLinks",
+    "resolvePartLinks",
+    "resolveLinkTag",
+    "ExternalSymbolResolver",
+    "LinkResolverPlugin.resolveLinks",
+    "getBrokenPartLinks",
+    "validateLinks",
+    "reportBrokenCommentLink",
+    "MarkedPlugin.displayPartsToMarkdown",
+    "ReflectionSymbolId.toDeclarationReference"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Not ambiguous: the shown chain is externalSymbolLinkMappings[ref.moduleSource ?? 'global'] in Converter's resolver, with TypeScript-lib symbols using the 'typescript' entry (the package-name derivation is outside these files), and string targets become hrefs while validation/links.ts ignores them."
+  }
+ },
+ "r3h-typedoc-01": {
+  "id": "r3h-typedoc-01",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "5/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Application.convert",
+    "GitRepository.tryCreateRepository",
+    "guessSourceUrlTemplate",
+    "GitRepository.getURL",
+    "RepositoryManager.getURL",
+    "SourcePlugin.onBeginResolve",
+    "sourceLink"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The full pipeline from repository initialization and remote URL template guessing to source resolution and HTML rendering is implemented across these specific files without ambiguity."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "7/7",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Application.convert",
+    "Application.initializeRepositories",
+    "RepositoryManager.initializeRepositoriesForDirs",
+    "GitRepository.tryCreateRepository",
+    "guessSourceUrlTemplate",
+    "RepositoryManager.getURL",
+    "GitRepository.getURL",
+    "AssumedRepository.getURL",
+    "SourcePlugin.onBeginResolve",
+    "sourceLink"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The flow is fully determined by the shown files (Application.convert awaits initializeRepositories -> RepositoryManager.initializeRepositoriesForDirs -> GitRepository.tryCreateRepository/guessSourceUrlTemplate -> GitRepository.getURL -> SourcePlugin.onBeginResolve -> member.sources.tsx sourceLink), so the only plain non-clickable lines under a user-unset sourceLinkTemplate are files missing from git ls-files (untracked/ignored) or files whose repository was never created (no/unrecognized remote, no git, outside every repo)."
+  }
+ },
+ "r3h-typedoc-09": {
+  "id": "r3h-typedoc-09",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "5/8",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Converter.convertExports",
+    "convertSymbol",
+    "_convertSymbolNow",
+    "GroupPlugin.getGroups",
+    "DefaultTheme.buildNavigation"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "The logic governing how re-exported declarations are deferred, aliased as ReferenceReflections, grouped, and rendered in navigation is uniquely handled across these specific converter and theme stages."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "8/8",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Converter.convertExports",
+    "Converter.compile",
+    "Converter.finalizeDeferredConversion",
+    "convertSymbol",
+    "_convertSymbolNow",
+    "convertAlias",
+    "createAlias",
+    "GroupPlugin.getGroups",
+    "DefaultTheme.buildNavigation"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "The real-vs-pointer decision is centralized in convertExports' direct/indirect partition and _convertSymbolNow's existing-reflection alias path, with default-name deferral in convertSymbol and downstream reference handling only in GroupPlugin.getGroups and DefaultTheme.buildNavigation."
+  }
+ },
+ "r3h-typedoc-11": {
+  "id": "r3h-typedoc-11",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "4/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "SourcePlugin.onBeginResolve",
+    "getEntryPointsForPaths",
+    "getDocumentEntryPoints",
+    "Application.initializeRepositories"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The places where common base directories are computed to shorten names and links are specific and identifiable across the entry point, source plugin, and repository initialization logic."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "6/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "SourcePlugin.onBeginResolve",
+    "SourcePlugin.displayBasePath",
+    "getEntryPointsForPaths",
+    "getModuleName",
+    "getDocumentEntryPoints",
+    "Application.initializeRepositories",
+    "RepositoryManager",
+    "AssumedRepository.getURL",
+    "GitRepository.getURL"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "SourcePlugin.onBeginResolve, getEntryPointsForPaths, and getDocumentEntryPoints all use displayBasePath || basePath before falling back to getCommonDirectory; Application.initializeRepositories uses displayBasePath || common entry-source directory and omits basePath, and that base path only affects AssumedRepository when git is disabled."
+  }
+ },
+ "r3h-typedoc-13": {
+  "id": "r3h-typedoc-13",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "TypeDocReader.readFile",
+    "Options.setValue",
+    "converters"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "unsupported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "Option resolution paths for config files versus command-line arguments are specifically handled in Options.setValue and the option converters."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "4/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "TypeDocReader.readFile",
+    "Options.setValue",
+    "converters[ParameterType.PluginArray]",
+    "resolveModulePath",
+    "ParameterType.PluginArray"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "unsupported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "No: TypeDocReader.readFile passes the config file's directory to Options.setValue, which defaults to process.cwd() for command-line values, and PluginArray's resolveModulePath only resolves dot-prefixed paths against that base while leaving bare package names for Node resolution."
+  }
+ },
+ "r3h-typedoc-12": {
+  "id": "r3h-typedoc-12",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/1",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "resolveLinkTag"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The label selection logic is uniquely decided in `resolveLinkTag` within `linkResolver.ts`."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "1/1",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "resolveLinkTag",
+    "LinkResolverOptions"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The label is assigned in resolveLinkTag via part.text = part.text.substring(pos).trim() || defaultDisplayText || part.text, while the other mentioned files/default setting are not present in the shown code."
+  }
+ },
+ "r3h-typedoc-14": {
+  "id": "r3h-typedoc-14",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "shouldExpandReference",
+    "getExpandTypeInfo",
+    "commentSummary"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The @expand modifier tag and @expandType / @preventExpand block tags are explicitly parsed and handled in typeDetails.tsx and comment.tsx to expand reference type details at render time while preserving the reference link."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "4/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "getExpandTypeInfo",
+    "shouldExpandReference",
+    "typeDetailsImpl",
+    "commentSummary"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The provided files clearly identify @expandType/@preventExpand/@expand and their render-time handling; the inline conversion-time markers are not in these files, so that part is unsupported by the shown code."
+  }
+ },
+ "r3h-typedoc-17": {
+  "id": "r3h-typedoc-17",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "5/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "TSConfigReader.read",
+    "TSConfigReader.addTagsFromTsdocJson",
+    "Converter.config",
+    "parseComment",
+    "blockTag"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The resolution, precedence, and parsing logic for tsdoc.json versus TypeDoc configuration options are unambiguously handled by TSConfigReader and the comment parser."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "5/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "TSConfigReader.addTagsFromTsdocJson",
+    "TSConfigReader.read",
+    "TSConfigReader.readTsDoc",
+    "TSConfigReader.order",
+    "mergeConfigs",
+    "Converter._buildCommentParserConfig",
+    "blockTag",
+    "blockContent"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The relevant logic is concentrated in TSConfigReader.addTagsFromTsdocJson and the reader ordering in cli.ts, so a careful engineer would reach the same answer."
+  }
+ },
+ "r3h-typedoc-08": {
+  "id": "r3h-typedoc-08",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "5/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "textContent",
+    "validateLinks",
+    "validateFilePaths",
+    "MarkedPlugin.displayPartsToMarkdown",
+    "MarkedPlugin.onEnd"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The four locations in the codebase comprehensively account for link validation across comment parsing, project validation, rendering, and post-render anchor resolution."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "5/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "validateLinks",
+    "textContent",
+    "addRef",
+    "validateFilePaths",
+    "MarkedPlugin.displayPartsToMarkdown",
+    "MarkedPlugin.onEnd"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The provided files contain the model-build validation warnings (validateLinks, addRef invalidPath, validateFilePaths) and the render-time warnings (displayPartsToMarkdown rewrittenLink, onEnd anchor check), so no reasonable alternative answer exists in the given code."
+  }
+ },
+ "r3h-typedoc-16": {
+  "id": "r3h-typedoc-16",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "1/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "permittedRange",
+    "Converter.commentStyle"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "TypeDoc centralizes comment style filtering in the commentStyle option and the discovery logic in discovery.ts."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "2/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "addTypeDocOptions",
+    "permittedRange"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The commentStyle option and permittedRange in discovery.ts are the only places that select and filter documentation comments by style."
+  }
+ },
+ "r3h-typedoc-18": {
+  "id": "r3h-typedoc-18",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "5/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Application.convert",
+    "Deserializer.reviveProjects",
+    "Options.copyForPackage",
+    "expandPackages",
+    "getPackageDirectories",
+    "run"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "unsupported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "TypeDoc's packages-mode entry discovery, options scoping, project serialization/deserialization, and validation pipeline are implemented in dedicated subsystems without conflicting alternatives elsewhere."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "6/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "getPackageDirectories",
+    "expandPackages",
+    "getPackagePaths",
+    "loadPackageManifest",
+    "Options.copyForPackage",
+    "OptionsReader.supportsPackages",
+    "Application._convertPackages",
+    "rootPackageOptions",
+    "Deserializer.reviveProjects",
+    "Deserializer.reviveProject",
+    "Serializer.projectToObject",
+    "run",
+    "app.validate"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "unsupported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The relevant packages-mode behavior is centralized in these symbols, so a careful engineer would not reasonably give a different answer from elsewhere in the code."
+  }
+ },
+ "r3h-typedoc-20": {
+  "id": "r3h-typedoc-20",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "4/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "MarkedPlugin.onEnd",
+    "MarkedPlugin.displayPartsToMarkdown",
+    "Slugger.hasAnchor",
+    "Slugger.slug"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The anchor validation for relative markdown links and heading slug tracking are uniquely implemented in MarkedPlugin and Slugger."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "5/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "MarkedPlugin.displayPartsToMarkdown",
+    "MarkedPlugin.onEnd",
+    "Slugger.hasAnchor",
+    "Slugger.slug",
+    "FileRegistry.registerAbsolute"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The warning path, slug storage, and fragment handling are all clearly localized to these three files."
+  }
+ },
+ "r3h-typedoc-10": {
+  "id": "r3h-typedoc-10",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "4/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "CommentPlugin.moveSignatureParamComments",
+    "CommentPlugin.onCreateTypeParameter",
+    "CommentPlugin.onResolve",
+    "InheritDocPlugin.copyComment",
+    "ImplementsPlugin.handleInheritedComments",
+    "ImplementsPlugin.copyComment"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The mechanisms that relocate or inherit comment contents across reflections are concentrated specifically in CommentPlugin, InheritDocPlugin, and ImplementsPlugin."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "7/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "CommentPlugin.moveSignatureParamComments",
+    "CommentPlugin.moveNestedParamTags",
+    "CommentPlugin.movePropertyTags",
+    "CommentPlugin.onResolve",
+    "CommentPlugin.onCreateTypeParameter",
+    "InheritDocPlugin.copyComment",
+    "ImplementsPlugin.copyComment",
+    "ImplementsPlugin.handleInheritedComments",
+    "shouldCopyComment",
+    "convertVariableAsFunction"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The question is answered by the listed comment-moving/copying plugin methods and helper functions; a careful engineer would not reasonably give a different answer for the same post-attachment comment-movement steps."
+  }
+ },
+ "r3h-typedoc-23": {
+  "id": "r3h-typedoc-23",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3h-typedoc-24": {
+  "id": "r3h-typedoc-24",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3h-typedoc-19": {
+  "id": "r3h-typedoc-19",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "4/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "JavascriptIndexPlugin.getBoost",
+    "JavascriptIndexPlugin.buildSearchIndex",
+    "GroupPlugin.getGroups",
+    "CategoryPlugin.getCategories"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The search indexing logic, boost calculations, group/category discovery, and unused boost warnings are fully defined across these three plugins."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "4/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "JavascriptIndexPlugin.getBoost",
+    "JavascriptIndexPlugin.buildSearchIndex",
+    "GroupPlugin.getGroups",
+    "CategoryPlugin.getCategories"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The search-boost logic, group/category name extraction, and unused-name warnings are directly implemented in the relevant plugin files, and zero boost skips indexing rather than ranking lowest; no other code path plausibly changes this."
+  }
+ },
+ "r3h-typedoc-21": {
+  "id": "r3h-typedoc-21",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "postProcessComment",
+    "blockTag",
+    "memberSignatureBody",
+    "commentTags"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The parsing logic, bug in the returns tag guard, and signature rendering rules uniquely determine the warning and display behavior for returns and remarks tags."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "postProcessComment",
+    "memberSignatureBody",
+    "commentTags"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The outcomes are determined by the buggy returns guard in postProcessComment and the default theme's rendering/exclusion of @returns, so no other code path reasonably changes the answer."
+  }
+ },
+ "r3h-typedoc-22": {
+  "id": "r3h-typedoc-22",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "5/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "CommentPlugin",
+    "CommentPlugin.cascadeModifiers",
+    "CommentPlugin.onDeclaration",
+    "CommentPlugin.onResolve",
+    "MUTUALLY_EXCLUSIVE_MODIFIERS",
+    "cascadedModifierTags"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The modifier cascading logic, exclusion rules, and signature resolution behavior are explicitly implemented in CommentPlugin and configured in defaults.ts."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "5/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "CommentPlugin",
+    "CommentPlugin.cascadeModifiers",
+    "CommentPlugin.onDeclaration",
+    "CommentPlugin.onResolve",
+    "MUTUALLY_EXCLUSIVE_MODIFIERS",
+    "cascadedModifierTags"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The cascading behavior is fully determined by CommentPlugin.cascadeModifiers/onDeclaration/onResolve and the cascadedModifierTags default, with no other code path changing the condition."
+  }
+ },
+ "r3h-typedoc-15": {
+  "id": "r3h-typedoc-15",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "4/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "createSignature",
+    "Context.finalizeDeclarationReflection",
+    "ReflectionKind.MayContainDocuments",
+    "DefaultTheme.buildNavigation"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The mechanism for converting document references into child pages under reflections and showing them in navigation is uniquely defined in the converter and theme."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "6/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Converter.processDocumentTags",
+    "Converter.addDocument",
+    "Converter.addProjectDocuments",
+    "Context.finalizeDeclarationReflection",
+    "createSignature",
+    "ReflectionKind.MayContainDocuments",
+    "ReflectionKind.SomeExport",
+    "DefaultTheme.buildNavigation"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "No; the code consistently gates document attachment on ReflectionKind.MayContainDocuments, which excludes Method, so the function-vs-method distinction is not ambiguous."
+  }
+ },
+ "r3h-typedoc-07": {
+  "id": "r3h-typedoc-07",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "6/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Converter.convert",
+    "PackagePlugin.addEntries",
+    "Application._convertPackages",
+    "Application._merge",
+    "Deserializer.reviveProject",
+    "Deserializer.reviveProjects"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The logic determining the project name across conversion, packages, merge, and deserialization is uniquely defined in these specific converter, application, and deserializer methods."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "6/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Converter.convert",
+    "PackagePlugin.addEntries",
+    "PackagePlugin.onBeginResolve",
+    "PackagePlugin.onRevive",
+    "Application._convertPackages",
+    "Application._merge",
+    "Deserializer.reviveProject",
+    "Deserializer.reviveProjects"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "The name decision is pinned to well-defined code sites (Converter.convert using the name option, PackagePlugin.addEntries filling it on resolve-begin/revive, and Deserializer.reviveProject(s) for revived projects), so no other reasonable reading exists; the claim that a nameless manifest 'counts as not found' is contradicted by the shown addEntries, which handles a present-but-nameless manifest inside the `if (this.packageJson)` branch (name = packageName || 'Documentation', no warning), and the claim of a distinct 'Documentation' fallback in _convertPackages is not what the revive-based path shows."
+  }
+ }
+}

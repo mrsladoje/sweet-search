@@ -1,0 +1,56 @@
+{
+ "repo": "sequel",
+ "keep": [
+  "r3hb-sequel-01",
+  "r3hb-sequel-02",
+  "r3hb-sequel-03",
+  "r3hb-sequel-04",
+  "r3hb-sequel-05",
+  "r3hb-sequel-06",
+  "r3hb-sequel-07",
+  "r3hb-sequel-08",
+  "r3hb-sequel-09",
+  "r3hb-sequel-11",
+  "r3hb-sequel-14"
+ ],
+ "fixes": {
+  "r3hb-sequel-05": {
+   "expectedFacts": [
+    "CRITICAL: In hold, an exception that is a DatabaseDisconnectError or a driver error classified by disconnect_error? makes the pool disconnect the connection, drop its allocation and call fill_queue(1) (timed queue), then re-raise the error; the failed operation is not retried.",
+    "When the pool is full and a new connection is needed, try_make_new (timed queue) and assign_connection (threaded) find connections allocated to threads that are no longer alive, remove them and disconnect them, then make room (the timed queue also calls fill_queue(count) so waiting threads get connections).",
+    "CRITICAL: The connection_validator extension's acquire checks a connection that has been idle longer than the validation timeout (default 3600 seconds), runs valid_connection?, and if the check is false removes the allocation, disconnects it via disconnect_acquired_connection and redoes acquisition to get another.",
+    "The connection_expiration extension's acquire disconnects any connection older than its expiration time (default 14400 seconds plus a random delay, set when the connection is made) regardless of health, then redoes acquisition.",
+    "The transaction_connection_validator extension turns a disconnect error raised while beginning a transaction into a DisconnectRetry (a DatabaseDisconnectError), so hold discards that connection; Database#transaction then retries with a new connection (at most 5 attempts in total) unless the retry would get the same connection, and otherwise raises the original database error."
+   ]
+  },
+  "r3hb-sequel-07": {
+   "expectedFacts": [
+    "CRITICAL: Dataset#paged_each runs its paging loop inside db.transaction(opts), which can be skipped with the :skip_transaction option; adapter overrides avoid it: the mysql2 adapter streams instead (no transaction) unless streaming is unsupported or stream: false, and the native PostgreSQL adapter pages through a cursor (see cursor_fetch_rows).",
+    "CRITICAL: Dataset#import (through _import_transaction) opens a transaction around multiple statements or per-row inserts, but sets skip_transaction when there is at most one value or statement; the PostgreSQL RETURNING branch of _import (and the MSSQL OUTPUT branch) uses no transaction at all.",
+    "The model dataset's destroy (model/base.rb) wraps all(&:destroy) in db.transaction, with skip_transaction when the model's use_transactions is false; the single_statement_dataset_destroy plugin's destroy opens its own transaction around the batch DELETE (unless around_destroy forces the default path).",
+    "PostgreSQL's Dataset#lock with a block starts a transaction, locks the tables and yields; without a block it only issues LOCK TABLE.",
+    "The native PostgreSQL adapter's cursor_fetch_rows (used when a cursor is requested) declares and fetches the cursor inside db.transaction, skipping it when the cursor is held (hold option / skip_transaction)."
+   ]
+  },
+  "r3hb-sequel-11": {
+   "expectedFacts": [
+    "CRITICAL: The SQLite dataset's fetch_rows picks, for each result column, the conversion proc registered for its declared type name (base_type_name lowercases and strips the parenthesised size) and applies it to every non-nil value.",
+    "SQLite::Database#adapter_initialize registers the database's to_application_timestamp method as the conversion proc for the 'datetime' and 'timestamp' declared types.",
+    "SQLite's to_application_timestamp override handles Integer by Time.at(n).to_s (Unix seconds, rendered with the local system offset) and Float by DateTime.jd(f).to_s (Julian day number, rendered at +00:00, i.e. UTC), passes String to super, and raises Sequel::Error for other types.",
+    "The generic Database#to_application_timestamp (database/misc.rb) calls Sequel.convert_timestamp(value, timezone), where the database's timezone is its own setting or else Sequel.database_timezone.",
+    "CRITICAL: convert_input_timestamp parses the string with Sequel.string_to_datetime and, because the strings made from numbers carry an explicit offset (Date._parse has an :offset), does not reinterpret them in the database timezone; convert_timestamp then calls convert_output_timestamp with Sequel.application_timezone (:utc -> getutc, :local -> getlocal, nil -> unchanged)."
+   ]
+  },
+  "r3hb-sequel-14": {
+   "query": "On the embedded single-file SQL database adapter, when application code takes an exclusive row lock on a record it has already loaded, inside a transaction, so that other writers must wait, does the library send any row-locking clause to the database? If something close exists, say what it does instead."
+  }
+ },
+ "dropped": {
+  "r3hb-sequel-10": "closed-book solvable (deepseek/deepseek-v4.1-flash)",
+  "r3hb-sequel-12": "closed-book solvable (deepseek/deepseek-v4.1-flash, openai/gpt-6-luna)",
+  "r3hb-sequel-13": "closed-book solvable (deepseek/deepseek-v4.1-flash, openai/gpt-6-luna)"
+ },
+ "hardened": [
+  "r3hb-sequel-14"
+ ]
+}

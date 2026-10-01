@@ -1,0 +1,1108 @@
+{
+ "r3h-zipkin-01": {
+  "id": "r3h-zipkin-01",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "4/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.server.internal.ConditionalOnThrottledStorage",
+    "zipkin2.server.internal.ZipkinConfiguration.ThrottledStorageComponentEnhancer",
+    "zipkin2.server.internal.throttle.ThrottledStorageComponent",
+    "zipkin2.server.internal.throttle.ThrottledStorageComponent.ThrottledSpanConsumer.accept",
+    "zipkin2.server.internal.throttle.ThrottledStorageComponent.ThreadPoolExecutorResizer",
+    "zipkin2.server.internal.throttle.ThrottledCall.EnqueueAndAwait.onError",
+    "zipkin2.elasticsearch.ElasticsearchStorage.isOverCapacity",
+    "zipkin2.elasticsearch.internal.BulkCallBuilder.CHECK_FOR_ERRORS"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The throttling and back-off execution path connecting 429 Elasticsearch bulk responses to executor resizing is uniquely implemented across these classes."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "5/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "ConditionalOnThrottledStorage.ThrottledStorageCondition.getMatchOutcome",
+    "ZipkinConfiguration.ThrottledStorageComponentEnhancer.postProcessAfterInitialization",
+    "ThrottledStorageComponent.ThrottledStorageComponent",
+    "ThrottledStorageComponent.ThrottledSpanConsumer.accept",
+    "ThrottledStorageComponent.ThreadPoolExecutorResizer.accept",
+    "ThrottledCall.EnqueueAndAwait.onError",
+    "BulkCallBuilder.CHECK_FOR_ERRORS",
+    "ElasticsearchStorage.isOverCapacity"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The provided files form a direct chain from the throttle-enabled condition through wrapping, bulk 429 handling, over-capacity classification, limiter onDropped, and executor resizing."
+  }
+ },
+ "r3h-zipkin-04": {
+  "id": "r3h-zipkin-04",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "6/7",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.elasticsearch.ElasticsearchSpanConsumer",
+    "zipkin2.elasticsearch.ElasticsearchSpanConsumer.BulkSpanIndexer",
+    "zipkin2.elasticsearch.ElasticsearchSpanConsumer.BulkSpanIndexer#addAutocompleteValues",
+    "zipkin2.elasticsearch.ElasticsearchSpanConsumer.BulkSpanIndexer#newCall",
+    "zipkin2.elasticsearch.ElasticsearchSpanConsumer.AutocompleteContext",
+    "zipkin2.elasticsearch.internal.BulkIndexWriter#AUTOCOMPLETE",
+    "zipkin2.internal.DelayLimiter",
+    "zipkin2.internal.DelayLimiter#shouldInvoke",
+    "zipkin2.internal.DelayLimiter#invalidate"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The flow from incoming span tags to Elasticsearch autocomplete index records, deduplication via DelayLimiter, and failure invalidation is fully and unambiguously implemented across these files."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "7/7",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "ZipkinElasticsearchStorageConfiguration.storage",
+    "ElasticsearchSpanConsumer.ElasticsearchSpanConsumer",
+    "ElasticsearchSpanConsumer.indexSpans",
+    "ElasticsearchSpanConsumer.BulkSpanIndexer.addAutocompleteValues",
+    "ElasticsearchSpanConsumer.BulkSpanIndexer.newCall",
+    "ElasticsearchSpanConsumer.AutocompleteContext",
+    "DelayLimiter.shouldInvoke",
+    "DelayLimiter.invalidate",
+    "BulkIndexWriter.AUTOCOMPLETE",
+    "BulkIndexWriter.writeAutocompleteEntry"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The autocomplete flow is fully specified by the configuration, ElasticsearchSpanConsumer/BulkSpanIndexer, DelayLimiter, and BulkIndexWriter code shown."
+  }
+ },
+ "r3h-zipkin-05": {
+  "id": "r3h-zipkin-05",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "5/7",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.server.internal.elasticsearch.ZipkinElasticsearchStorageConfiguration#dynamicCredentialsScheduledExecutorService",
+    "zipkin2.server.internal.elasticsearch.DynamicCredentialsFileLoader#run",
+    "zipkin2.server.internal.elasticsearch.DynamicCredentialsFileLoader#updateCredentialsFromProperties",
+    "zipkin2.server.internal.elasticsearch.BasicCredentials#updateCredentials",
+    "zipkin2.server.internal.elasticsearch.BasicCredentials#getCredentials",
+    "zipkin2.server.internal.elasticsearch.BasicAuthInterceptor#execute",
+    "zipkin2.server.internal.elasticsearch.HttpClientFactory#configureOptionsExceptHttpLogging"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The dynamic credentials file reloading mechanism and the contrast between startup failure and background refresh logging are uniquely and explicitly implemented in these Elasticsearch server configuration classes."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "7/7",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "ZipkinElasticsearchStorageConfiguration.dynamicCredentialsScheduledExecutorService",
+    "ZipkinElasticsearchStorageConfiguration.BasicAuthRequired",
+    "ZipkinElasticsearchStorageConfiguration.DynamicRefreshRequired",
+    "ZipkinElasticsearchStorageConfiguration.esBasicAuth",
+    "ZipkinElasticsearchStorageConfiguration.basicCredentials",
+    "DynamicCredentialsFileLoader.run",
+    "DynamicCredentialsFileLoader.updateCredentialsFromProperties",
+    "DynamicCredentialsFileLoader.ensureNotEmptyOrNull",
+    "BasicCredentials.updateCredentials",
+    "BasicCredentials.getCredentials",
+    "BasicAuthInterceptor.execute",
+    "HttpClientFactory.configureOptionsExceptHttpLogging"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The relevant path is fully contained in the listed Elasticsearch configuration, loader, credentials, interceptor, and client-factory classes; no other code path changes the startup-vs-runtime behavior."
+  }
+ },
+ "r3h-zipkin-02": {
+  "id": "r3h-zipkin-02",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "6/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.collector.kafka.KafkaCollectorWorker.run",
+    "zipkin2.collector.Collector.accept",
+    "zipkin2.collector.Collector.sample",
+    "zipkin2.collector.Collector.store",
+    "zipkin2.collector.Collector.StoreSpans",
+    "zipkin2.elasticsearch.ElasticsearchSpanConsumer.accept",
+    "zipkin2.elasticsearch.ElasticsearchSpanConsumer.indexSpans",
+    "zipkin2.elasticsearch.ElasticsearchSpanConsumer.BulkSpanIndexer",
+    "zipkin2.elasticsearch.internal.IndexNameFormatter.formatTypeAndTimestampForInsert",
+    "zipkin2.elasticsearch.internal.BulkCallBuilder.build"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The end-to-end execution flow from KafkaCollectorWorker through Collector to ElasticsearchSpanConsumer and BulkCallBuilder is uniquely defined in these components."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "6/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "KafkaCollectorWorker.run",
+    "SpanBytesDecoder.THRIFT.decodeOne",
+    "Collector.accept",
+    "Collector.sample",
+    "Collector.StoreSpans.run",
+    "Collector.store",
+    "ElasticsearchSpanConsumer.indexSpans",
+    "ElasticsearchSpanConsumer.BulkSpanIndexer.add",
+    "ElasticsearchSpanConsumer.BulkSpanIndexer.newCall",
+    "IndexNameFormatter.formatTypeAndTimestampForInsert",
+    "BulkCallBuilder.build",
+    "BulkCallBuilder.BulkRequestSupplier"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The code path is explicit: KafkaCollectorWorker.run decodes the legacy single Thrift span, Collector samples and enqueues storage, ElasticsearchSpanConsumer.indexSpans chooses the index timestamp, IndexNameFormatter builds the index name, and BulkCallBuilder posts the batch to /_bulk."
+  }
+ },
+ "r3h-zipkin-07": {
+  "id": "r3h-zipkin-07",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "6/6",
+   "factsOk": true,
+   "ambiguous": true,
+   "symbols": [
+    "zipkin2.server.internal.throttle.ThrottledStorageComponent",
+    "zipkin2.server.internal.brave.ZipkinSelfTracingConfiguration.reporter",
+    "zipkin2.server.internal.elasticsearch.ZipkinElasticsearchStorageConfiguration.dynamicCredentialsScheduledExecutorService",
+    "zipkin2.server.internal.mysql.ZipkinMySQLStorageConfiguration.mysqlExecutor",
+    "zipkin2.collector.kafka.KafkaCollector.LazyKafkaWorkers.compute",
+    "zipkin2.collector.scribe.NettyScribeServer.start"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The question is broadly scoped across the entire system, and other unlisted collectors or storage components in the codebase may also spawn their own threads or thread pools."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "6/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "ThrottledStorageComponent",
+    "ThreadPoolExecutorResizer",
+    "ThrottledSpanConsumer",
+    "ZipkinSelfTracingConfiguration.reporter",
+    "ZipkinElasticsearchStorageConfiguration.dynamicCredentialsScheduledExecutorService",
+    "ZipkinMySQLStorageConfiguration.mysqlExecutor",
+    "KafkaCollector.LazyKafkaWorkers.compute",
+    "NettyScribeServer.start"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The provided files and symbols directly cover the distinct self-managed thread pools/threads asked about, and no other provided file suggests a conflicting answer."
+  }
+ },
+ "r3h-zipkin-03": {
+  "id": "r3h-zipkin-03",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "5/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.server.internal.ZipkinQueryApiV2.getDependencies",
+    "zipkin2.storage.mysql.v1.MySQLSpanStore.getDependencies",
+    "zipkin2.storage.mysql.v1.AggregateDependencies.apply",
+    "zipkin2.storage.mysql.v1.DependencyLinkV2SpanIterator.ByTraceId",
+    "zipkin2.storage.mysql.v1.DependencyLinkV2SpanIterator.next",
+    "zipkin2.internal.DependencyLinker.putTrace",
+    "zipkin2.internal.DependencyLinker.link"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The flow from the HTTP endpoint down through MySQLSpanStore, AggregateDependencies, DependencyLinkV2SpanIterator, and DependencyLinker is unambiguous and uniquely defined."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "6/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "ZipkinQueryApiV2.getDependencies",
+    "MySQLSpanStore.getDependencies",
+    "Schema.hasPreAggregatedDependencies",
+    "HasPreAggregatedDependencies.test",
+    "AggregateDependencies.apply",
+    "DependencyLinkV2SpanIterator.ByTraceId",
+    "DependencyLinkV2SpanIterator.next",
+    "DependencyLinker.putTrace",
+    "DependencyLinker.link"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The no-preaggregation path is explicit: HTTP handler to MySQLSpanStore.getDependencies to AggregateDependencies to DependencyLinkV2SpanIterator to DependencyLinker, with no alternative shown."
+  }
+ },
+ "r3h-zipkin-09": {
+  "id": "r3h-zipkin-09",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "5/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.storage.mysql.v1.MySQLStorage#schema()",
+    "zipkin2.storage.mysql.v1.Schema#Schema(javax.sql.DataSource, zipkin2.storage.mysql.v1.DSLContexts, boolean)",
+    "zipkin2.storage.cassandra.LazySession#get()",
+    "zipkin2.storage.cassandra.Schema#validate(zipkin2.storage.cassandra.CassandraStorage, com.datastax.oss.driver.api.core.CqlSession)",
+    "zipkin2.storage.cassandra.CassandraSpanStore#CassandraSpanStore(com.datastax.oss.driver.api.core.CqlSession, zipkin2.storage.cassandra.Schema.Metadata, com.datastax.oss.driver.api.core.metadata.schema.KeyspaceMetadata, int, int, boolean, boolean)",
+    "zipkin2.elasticsearch.ElasticsearchStorage#version()",
+    "zipkin2.elasticsearch.ElasticsearchStorage#ensureIndexTemplates()"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The code clearly shows the caching mechanisms and probed schema/cluster capabilities across MySQL, Cassandra, and Elasticsearch storage modules."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "5/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "MySQLStorage.schema() and volatile schema field -> builds Schema once; Schema constructor computes hasTraceIdHigh, hasPreAggregatedDependencies, hasIpv6, hasErrorCount, hasRemoteServiceName",
+    "zipkin2.storage.mysql.v1.Schema fields hasTraceIdHigh, hasPreAggregatedDependencies, hasIpv6, hasErrorCount, hasRemoteServiceName",
+    "LazySession.get() and volatile metadata field -> runs Schema.ensure/Schema.validate once and caches Schema.Metadata.hasAutocompleteTags, hasRemoteService",
+    "zipkin2.storage.cassandra.Schema.Metadata, Schema.ensure, Schema.validate",
+    "CassandraSpanStore constructor -> reads final indexTtl from KeyspaceMetadataUtil.getDefaultTtl(keyspace, TABLE_TRACE_BY_SERVICE_SPAN); branches on metadata.hasRemoteService",
+    "ElasticsearchStorage.version() @Memoized -> BaseVersion.get(http()) caches version on first use",
+    "ElasticsearchStorage.ensureIndexTemplates() and volatile ensuredTemplates -> caches one-time index-template check"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The code explicitly shows three one-time/lazy caches: MySQL Schema flags, Cassandra LazySession Schema.Metadata, and Elasticsearch version/templates; no different reasonable answer appears in these files."
+  }
+ },
+ "r3h-zipkin-06": {
+  "id": "r3h-zipkin-06",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "4/7",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.storage.cassandra.CassandraSpanStore#getTraces",
+    "zipkin2.storage.cassandra.CassandraSpanStore#newBucketedTraceIdCall",
+    "zipkin2.storage.cassandra.SelectTraceIdsFromSpan",
+    "zipkin2.storage.cassandra.SelectTraceIdsFromServiceSpan",
+    "zipkin2.storage.cassandra.internal.call.IntersectKeySets",
+    "zipkin2.storage.cassandra.SelectFromSpan",
+    "zipkin2.storage.cassandra.SelectFromSpan.SelectSpansByTraceIds"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The trace ID lookup, set intersection, and span retrieval logic for Cassandra queries with tags, service, and duration constraints is exclusively handled in CassandraSpanStore and its associated Select classes."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "5/7",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "CassandraSpanStore.getTraces",
+    "CassandraSpanStore.newBucketedTraceIdCall",
+    "CassandraUtil.annotationKeys",
+    "CassandraUtil.durationIndexBucket",
+    "SelectTraceIdsFromSpan.Factory.newCall",
+    "SelectTraceIdsFromServiceSpan.Factory.newInput",
+    "SelectTraceIdsFromServiceSpan.Factory.newCall",
+    "IntersectKeySets.append",
+    "SelectFromSpan.Factory.newFlatMapper",
+    "SelectFromSpan.SelectSpansByTraceIds.map",
+    "SelectFromSpan.Factory",
+    "SelectFromSpan.ReadSpans"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The Cassandra search path is explicit: getTraces builds annotation and service/duration trace-id calls, intersects them, then SelectFromSpan expands the resulting IDs into grouped traces."
+  }
+ },
+ "r3h-zipkin-12": {
+  "id": "r3h-zipkin-12",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.server.internal.ZipkinQueryApiV2",
+    "zipkin2.server.internal.ZipkinQueryApiV2#getTraces",
+    "zipkin2.server.internal.ZipkinQueryApiV2#getDependencies",
+    "zipkin2.server.internal.ui.ZipkinUiProperties"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The query API endpoints in ZipkinQueryApiV2 and the configuration settings in application yaml and ZipkinUiProperties unambiguously define parameter handling and defaults."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "ZipkinQueryApiV2.getTraces",
+    "ZipkinQueryApiV2.getDependencies",
+    "ZipkinQueryApiV2 constructor/defaultLookback",
+    "zipkin.query.lookback",
+    "zipkin.ui.default-lookback",
+    "ZipkinUiProperties.defaultLookback"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The provided files directly show the API defaults in ZipkinQueryApiV2 and the separate UI default in zipkin.ui/ZipkinUiProperties."
+  }
+ },
+ "r3h-zipkin-15": {
+  "id": "r3h-zipkin-15",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.elasticsearch.ElasticsearchSpecificTemplates#indexTypeDelimiter(ElasticsearchVersion)",
+    "zipkin2.elasticsearch.internal.IndexNameFormatter#prefix(String)"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The code clearly defines the ':' delimiter in ElasticsearchSpecificTemplates.indexTypeDelimiter and uses a '*' wildcard in IndexNameFormatter.prefix for reading across conventions."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "4/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "ElasticsearchSpecificTemplates.indexTypeDelimiter",
+    "IndexNameFormatter.prefix",
+    "IndexNameFormatter.formatTypeAndRange",
+    "IndexNameFormatter.formatType"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The delimiter decision and read wildcard are explicitly implemented in ElasticsearchSpecificTemplates.indexTypeDelimiter and IndexNameFormatter.prefix, with no conflicting code in the provided files."
+  }
+ },
+ "r3h-zipkin-14": {
+  "id": "r3h-zipkin-14",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "5/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.elasticsearch.BaseVersion.Parser#convert",
+    "zipkin2.elasticsearch.ElasticsearchSpecificTemplates#get",
+    "zipkin2.elasticsearch.OpensearchSpecificTemplates#get",
+    "zipkin2.elasticsearch.ElasticsearchStorage#ensureIndexTemplates"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The code directly and unambiguously defines version parsing in BaseVersion.Parser, version range rejection in ElasticsearchSpecificTemplates and OpensearchSpecificTemplates, and template-bypass logic in ElasticsearchStorage.ensureIndexTemplates."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "5/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "BaseVersion.Parser.convert",
+    "ElasticsearchSpecificTemplates.get(ElasticsearchVersion)",
+    "OpensearchSpecificTemplates.get(OpensearchVersion)",
+    "ElasticsearchStorage.ensureIndexTemplates",
+    "ElasticsearchStorage.doEnsureIndexTemplates",
+    "ElasticsearchStorage.versionSpecificTemplates",
+    "ElasticsearchStorage.spanConsumer",
+    "ElasticsearchStorage.spanStore",
+    "ElasticsearchStorage.autocompleteTags",
+    "ElasticsearchStorage.ensureTemplates",
+    "ElasticsearchStorage.indexTypeDelimiter"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The rejection is in the version-specific template get methods, distribution is chosen by BaseVersion.Parser.convert, and ElasticsearchStorage.ensureIndexTemplates bypasses it when ensureTemplates is false."
+  }
+ },
+ "r3h-zipkin-13": {
+  "id": "r3h-zipkin-13",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.server.internal.throttle.ZipkinStorageThrottleProperties",
+    "zipkin2.server.internal.throttle.ThrottledStorageComponent.createQueue",
+    "zipkin2.server.internal.throttle.ThrottledStorageComponent.STORAGE_THROTTLE_MAX_QUEUE_SIZE",
+    "zipkin2.server.internal.throttle.ThrottledCall.doEnqueue"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The throttle queue creation and write rejection mechanics are unambiguously defined in ThrottledStorageComponent and ThrottledCall."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "4/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "ZipkinStorageThrottleProperties.maxQueueSize",
+    "ZipkinConfiguration.ThrottledStorageComponentEnhancer.postProcessAfterInitialization",
+    "ThrottledStorageComponent.ThrottledStorageComponent(...)",
+    "ThrottledStorageComponent.createQueue",
+    "ThrottledStorageComponent.STORAGE_THROTTLE_MAX_QUEUE_SIZE",
+    "ThrottledCall.doEnqueue"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "No; the relevant code is unambiguous: max-queue-size controls queued writes, createQueue converts 0 to 1, and a full queue rejects with STORAGE_THROTTLE_MAX_QUEUE_SIZE."
+  }
+ },
+ "r3h-zipkin-08": {
+  "id": "r3h-zipkin-08",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "6/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.storage.InMemoryStorage.doAccept",
+    "zipkin2.storage.InMemoryStorage.lowTraceIdsInRange",
+    "zipkin2.elasticsearch.ElasticsearchSpanConsumer.indexSpans",
+    "zipkin2.elasticsearch.internal.BulkIndexWriter.addSearchFields",
+    "zipkin2.storage.cassandra.CassandraSpanConsumer.accept",
+    "zipkin2.storage.cassandra.CassandraSpanConsumer.guessTimestamp",
+    "zipkin2.storage.mysql.v1.MySQLSpanConsumer.BatchInsertSpans.apply"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Each storage implementation's consumer explicitly defines how missing timestamps are treated during indexing and how that impacts time-bounded queries versus trace ID lookups."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "6/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "InMemoryStorage.doAccept",
+    "InMemoryStorage.lowTraceIdsInRange",
+    "InMemoryStorage.TIMESTAMP_DESCENDING",
+    "InMemoryStorage.deleteOldestTrace",
+    "InMemoryStorage.getTrace",
+    "ElasticsearchSpanConsumer.indexSpans",
+    "BulkIndexWriter.addSearchFields",
+    "CassandraSpanConsumer.accept",
+    "CassandraSpanConsumer.guessTimestamp",
+    "MySQLSpanConsumer.BatchInsertSpans.apply"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The listed write-path code explicitly determines each storage's no-timestamp handling, including the fields/rows used by time-bounded searches and trace-ID retrieval."
+  }
+ },
+ "r3h-zipkin-18": {
+  "id": "r3h-zipkin-18",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "ZipkinElasticsearchStorageProperties.setDateSeparator",
+    "ZipkinElasticsearchStorageProperties.toBuilder",
+    "ElasticsearchStorage.Builder.dateSeparator",
+    "IndexNameFormatter.Builder.build"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The path tracing ES_DATE_SEPARATOR from configuration to Elasticsearch index name formatting is uniquely defined through these classes and methods."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin.storage.elasticsearch.date-separator / ES_DATE_SEPARATOR (zipkin-server-shared.yml)",
+    "ZipkinElasticsearchStorageProperties.setDateSeparator",
+    "ZipkinElasticsearchStorageProperties.toBuilder",
+    "ElasticsearchStorage.Builder.dateSeparator",
+    "ElasticsearchStorage.Builder.indexNameFormatterBuilder",
+    "IndexNameFormatter.Builder.build",
+    "IndexNameFormatter.format"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The chain is deterministic: the empty ES_DATE_SEPARATOR value is kept as \"\" by setDateSeparator, mapped to char 0 in toBuilder, passed via ElasticsearchStorage.Builder.dateSeparator to IndexNameFormatter.Builder.build, which selects the 'yyyyMMdd' pattern."
+  }
+ },
+ "r3h-zipkin-17": {
+  "id": "r3h-zipkin-17",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.storage.cassandra.CassandraSpanStore#timestampRange",
+    "zipkin2.storage.cassandra.CassandraSpanStore#CassandraSpanStore",
+    "zipkin2.storage.cassandra.CassandraSpanStore#indexTtl"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The discrepancy between search availability and direct trace lookup is directly determined by the TTLs in the Cassandra CQL schemas and the timestampRange clamping logic in CassandraSpanStore."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "3/3",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "CassandraSpanStore.timestampRange",
+    "CassandraSpanStore.indexTtl",
+    "CassandraSpanStore(CqlSession, Schema.Metadata, KeyspaceMetadata, int, int, boolean, boolean)",
+    "KeyspaceMetadataUtil.getDefaultTtl",
+    "TABLE_TRACE_BY_SERVICE_SPAN",
+    "trace_by_service_span.default_time_to_live",
+    "zipkin2.span.default_time_to_live"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The search window is clamped using indexTtl, which is read from trace_by_service_span default_time_to_live=259200s (3 days), while the span table default_time_to_live=604800s (7 days) keeps ID lookups working longer."
+  }
+ },
+ "r3h-zipkin-10": {
+  "id": "r3h-zipkin-10",
+  "keep": false,
+  "gemini": {
+   "ok": true,
+   "symHit": "5/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.collector.Collector.accept",
+    "zipkin2.collector.Collector.StoreSpans",
+    "zipkin2.collector.rabbitmq.RabbitMQCollector.LazyInit.compute",
+    "zipkin2.collector.activemq.ActiveMQSpanConsumer.registerInNewSession",
+    "zipkin2.collector.pulsar.PulsarSpanConsumer.ZipkinMessageListener.received",
+    "zipkin2.collector.kafka.KafkaCollector.Builder"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Collector decouples storage execution asynchronously and invokes callbacks before storage occurs, while all four collectors either auto-acknowledge or acknowledge synchronously prior to storage execution."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "6/6",
+   "factsOk": false,
+   "ambiguous": true,
+   "symbols": [
+    "Collector.accept(List<Span>, Callback<Void>, Executor)",
+    "Collector.StoreSpans.run",
+    "Collector.StoreSpans.onError",
+    "Collector.handleStorageError",
+    "RabbitMQCollector.LazyInit.compute",
+    "ActiveMQSpanConsumer.registerInNewSession",
+    "PulsarSpanConsumer.ZipkinMessageListener.received",
+    "KafkaCollector.Builder"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "Kafka's actual commit/ack behavior is in KafkaCollectorWorker, not in the provided files, so the what-decides answer for Kafka could differ."
+  }
+ },
+ "r3h-zipkin-19": {
+  "id": "r3h-zipkin-19",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.server.internal.cassandra3.ZipkinCassandra3StorageProperties",
+    "zipkin2.server.internal.cassandra3.ZipkinCassandra3StorageProperties#keyspace",
+    "zipkin2.server.internal.cassandra3.ZipkinCassandra3StorageProperties#toBuilder",
+    "zipkin2.storage.cassandra.CassandraStorage.Builder",
+    "zipkin2.storage.cassandra.CassandraStorageBuilder#keyspace",
+    "zipkin2.storage.cassandra.Schema#DEFAULT_KEYSPACE",
+    "zipkin2.storage.cassandra.Schema#applyCqlFile"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The configuration and Cassandra storage builder flow unambiguously resolve the keyspace to 'zipkin2'."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin.storage.cassandra3.keyspace",
+    "ZipkinCassandra3StorageProperties.keyspace",
+    "ZipkinCassandra3StorageProperties.toBuilder",
+    "CassandraStorage.Builder()",
+    "CassandraStorage.Builder.keyspace",
+    "Schema.DEFAULT_KEYSPACE",
+    "Schema.applyCqlFile",
+    "CassandraStorageBuilder.keyspace"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The yaml property zipkin.storage.cassandra3.keyspace defaults to zipkin2 and Spring binds it over the Java field default zipkin3; toBuilder passes that bound value to CassandraStorage.Builder, whose constructor also starts from Schema.DEFAULT_KEYSPACE=zipkin2, and Schema.applyCqlFile rewrites ' zipkin2' in CQL to the configured keyspace. The zipkin3 javadoc/default is stale and not effective."
+  }
+ },
+ "r3h-zipkin-23": {
+  "id": "r3h-zipkin-23",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3h-zipkin-24": {
+  "id": "r3h-zipkin-24",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3h-zipkin-11": {
+  "id": "r3h-zipkin-11",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "7/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.internal.DateUtil.midnightUTC",
+    "zipkin2.internal.DateUtil.epochDays",
+    "zipkin2.elasticsearch.internal.IndexNameFormatter.formatTypeAndRange",
+    "zipkin2.storage.cassandra.CassandraUtil.durationIndexBucket",
+    "zipkin2.storage.cassandra.CassandraUtil.getDays",
+    "zipkin2.storage.mysql.v1.MySQLSpanStore.getDependencies"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The methods responsible for flooring timestamps to whole UTC calendar days for storage naming, partitioning, and querying are specifically implemented in DateUtil, IndexNameFormatter, CassandraUtil, and MySQLSpanStore."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "7/7",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "DateUtil.midnightUTC",
+    "DateUtil.epochDays",
+    "IndexNameFormatter.midnightUTC",
+    "IndexNameFormatter.formatTypeAndRange",
+    "CassandraUtil.durationIndexBucket",
+    "CassandraUtil.getDays",
+    "MySQLSpanStore.getDependencies"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The code has explicit methods for UTC day flooring, day-range expansion, day bucketing, and day-based dependency lookup."
+  }
+ },
+ "r3h-zipkin-20": {
+  "id": "r3h-zipkin-20",
+  "keep": false,
+  "gemini": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.collector.kafka.KafkaCollectorWorker.run",
+    "zipkin2.collector.kafka.KafkaCollectorWorker.protobuf3",
+    "zipkin2.SpanBytesDecoderDetector.decoderForListMessage",
+    "zipkin2.collector.Collector.acceptSpans",
+    "zipkin2.collector.Collector.handleDecodeError"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The logic for handling incoming Kafka messages and dispatching them based on byte contents is uniquely defined in KafkaCollectorWorker, SpanBytesDecoderDetector, and Collector."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "4/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "KafkaCollectorWorker.run",
+    "KafkaCollectorWorker.protobuf3",
+    "SpanBytesDecoderDetector.decoderForListMessage",
+    "SpanBytesDecoderDetector.detectDecoder",
+    "Collector.acceptSpans(byte[], Callback)",
+    "Collector.handleDecodeError"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The Kafka worker and decoder/collector code directly define the branching and error handling."
+  }
+ },
+ "r3h-zipkin-21": {
+  "id": "r3h-zipkin-21",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.server.internal.brave.ZipkinSelfTracingConfiguration#sampler",
+    "zipkin2.server.internal.brave.ZipkinSelfTracingConfiguration#httpTracing",
+    "zipkin2.server.internal.brave.ZipkinSelfTracingConfiguration#tracing"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "ZipkinSelfTracingConfiguration fully and unambiguously defines how incoming self-tracing decisions, percentage/rate-limiting interaction, and path filtering are implemented."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "ZipkinSelfTracingConfiguration#sampler(SelfTracingProperties)",
+    "ZipkinSelfTracingConfiguration#httpTracing(Tracing, Sampler)",
+    "ZipkinSelfTracingConfiguration#tracing(AsyncZipkinSpanHandler, CurrentTraceContext)",
+    "SelfTracingProperties#getSampleRate()",
+    "SelfTracingProperties#getTracesPerSecond()"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The sampling policy is centralized in ZipkinSelfTracingConfiguration.sampler and the path filter in its httpTracing.serverSampler, with defaults from SelfTracingProperties, so no other shown file provides a different decision path."
+  }
+ },
+ "r3h-zipkin-16": {
+  "id": "r3h-zipkin-16",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "2/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.elasticsearch.internal.BulkIndexWriter#addSearchFields",
+    "zipkin2.storage.cassandra.CassandraUtil#annotationQuery"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The decisions to exclude long tags from search queries are specifically implemented in BulkIndexWriter.addSearchFields for Elasticsearch and CassandraUtil.annotationQuery for Cassandra."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "BulkIndexWriter.addSearchFields",
+    "BulkIndexWriter.write",
+    "CassandraUtil.annotationQuery",
+    "RecyclableBuffers.SHORT_STRING_LENGTH",
+    "VersionSpecificTemplates.SHORT_STRING_LENGTH",
+    "VersionSpecificTemplates.spanIndexTemplate"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The searchability decisions are localized to BulkIndexWriter.addSearchFields and CassandraUtil.annotationQuery, whose differing length rules are explicit, while the full tags are written separately in BulkIndexWriter.write and excluded only from search fields."
+  }
+ },
+ "r3h-zipkin-22": {
+  "id": "r3h-zipkin-22",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "1/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "zipkin2.storage.mysql.v1.MySQLSpanConsumer.BatchInsertSpans#apply"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The logic governing MySQL span insertion and on-duplicate-key updates for shared vs non-shared spans is uniquely located in MySQLSpanConsumer.BatchInsertSpans.apply."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "1/2",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "BatchInsertSpans.apply",
+    "zipkin_spans PRIMARY KEY (trace_id_high, trace_id, id)"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The write path uses the non-shared client span's timestamp in the duplicate-key update, so it wins regardless of batch order."
+  }
+ }
+}

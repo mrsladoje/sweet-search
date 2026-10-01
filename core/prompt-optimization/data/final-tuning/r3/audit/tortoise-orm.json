@@ -1,0 +1,69 @@
+{
+ "repo": "tortoise-orm",
+ "keep": [
+  "r3-tortoise-orm-01",
+  "r3-tortoise-orm-07",
+  "r3-tortoise-orm-08",
+  "r3-tortoise-orm-09",
+  "r3-tortoise-orm-10",
+  "r3-tortoise-orm-11",
+  "r3-tortoise-orm-12",
+  "r3-tortoise-orm-16",
+  "r3-tortoise-orm-17",
+  "r3-tortoise-orm-18",
+  "r3-tortoise-orm-19",
+  "r3-tortoise-orm-20",
+  "r3-tortoise-orm-22",
+  "r3-tortoise-orm-23",
+  "r3-tortoise-orm-24",
+  "r3-tortoise-orm-25",
+  "r3-tortoise-orm-26",
+  "r3-tortoise-orm-27",
+  "r3-tortoise-orm-28",
+  "r3-tortoise-orm-29",
+  "r3-tortoise-orm-30",
+  "r3-tortoise-orm-31",
+  "r3-tortoise-orm-32",
+  "r3-tortoise-orm-33",
+  "r3-tortoise-orm-35",
+  "r3-tortoise-orm-36"
+ ],
+ "fixes": {
+  "r3-tortoise-orm-01": {
+   "expectedFacts": [
+    "TransactionContextPooled.__aenter__ acquires a pool connection and then calls get_connections().set(connection_name, client) to install the transaction client before begin().",
+    "ConnectionHandler.set copies the alias-to-client dict, puts the transaction client in the copy and stores it in a ContextVar, so the replacement is visible only to the current asyncio task; it returns a token.",
+    "When no explicit connection or router choice applies, a plain query falls back to the model's MetaInfo.db property, which calls get_connection(default_connection) -> ConnectionHandler.get; that reads the same ContextVar storage and so returns the transaction client.",
+    "TransactionContextPooled.__aexit__ commits or rolls back and, in a finally block, calls get_connections().reset(token) to restore the previous storage."
+   ]
+  },
+  "r3-tortoise-orm-08": {
+   "query": "When a brand-new instance is saved through the default PostgreSQL driver and the database assigns its auto-incrementing primary key, how does that database-assigned value get back onto the Python object?"
+  },
+  "r3-tortoise-orm-10": {
+   "expectedFacts": [
+    "DatetimeField.to_db_value emits a RuntimeWarning saying the field received a naive datetime while time zone support is active.",
+    "It then converts the value with timezone.make_aware (using the configured default timezone) and validates it, so the aware value is what is written."
+   ]
+  },
+  "r3-tortoise-orm-20": {
+   "query": "Where is it enforced that a brand-new object cannot be constructed pointing at a related object that has not been stored yet, and is the same rule applied when the relation is later set by plain attribute assignment?"
+  },
+  "r3-tortoise-orm-22": {
+   "expectedFacts": [
+    "BulkCreateQuery._analyze_db_default_fields scans every instance for each db_default column: values that are DatabaseDefault sentinels count as 'default', anything else as 'explicit'.",
+    "If one column has both kinds it raises OperationalError explaining the options (set everywhere, omit everywhere, or split the call).",
+    "If every instance relies on the default, the column is added to the returned omit set; both callers (__await__ and sql()) pass that set to _make_queries so the column is left out of the INSERT and the database default applies."
+   ]
+  },
+  "r3-tortoise-orm-32": {
+   "expectedFacts": [
+    "There is no soft-delete support: Model.delete issues a real DELETE through executor.execute_delete, and the default Manager.get_queryset returns an unfiltered QuerySet (a user may supply a custom Meta.manager that filters, but the library sets no deleted marker).",
+    "No deleted flag, timestamp or default filtering exists anywhere in the package."
+   ]
+  }
+ },
+ "dropped": {
+  "r3-tortoise-orm-34": "Not cleanly absent: Model.save runs pre_save signal listeners (Model._pre_save -> _wait_for_listeners) automatically before the write; a listener receives the whole instance and can compare fields and abort by raising. A careful engineer could answer 'register a pre_save listener', so the 'No match' gold is ambiguous."
+ }
+}

@@ -1,0 +1,351 @@
+{
+  "repo": "r3-drogon",
+  "sha": "bfb3ae2e13572a30cbdbd623da1798794d5f2706",
+  "probes": [
+    {
+      "id": "r3x-drogon-01",
+      "repo": "r3-drogon",
+      "language": "C++",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "A developer uses the project's command-line scaffolding program to generate a new request-gate (filter) class, passing an option that changes the ending of the generated source file names. Trace the full path: how the two words typed after the program name select the code that does the work, how that code obtains the boilerplate text it fills in, how that boilerplate text became part of the program at build time (name the program that converted it and the build rule that runs it), and where the changed file ending is stored and read. Give file and symbol for each step.",
+      "expectedFiles": [
+        "drogon_ctl/main.cc",
+        "drogon_ctl/cmd.cc",
+        "drogon_ctl/create.cc",
+        "drogon_ctl/create_filter.cc",
+        "lib/src/DrTemplateBase.cc",
+        "drogon_ctl/CMakeLists.txt",
+        "drogon_ctl/create_view.cc",
+        "lib/inc/drogon/DrObject.h",
+        "drogon_ctl/extension.h",
+        "CMakeLists.txt"
+      ],
+      "expectedSymbols": [
+        "exeCommand",
+        "create::handleCommand",
+        "create_filter::handleCommand",
+        "DrTemplateBase::newTemplate",
+        "DrClassMap::newObject",
+        "create_view::newViewHeaderFile",
+        "DrObject::DrAllocator",
+        "sourceExtension",
+        "headerExtension",
+        "DROGON_CTL"
+      ],
+      "expectedFacts": [
+        "CRITICAL: exeCommand (drogon_ctl/cmd.cc) builds the registry name 'drogon_ctl::' + the first word, creates the handler through the class registry (DrClassMap::newObject), casts it to CommandHandler and calls handleCommand with the remaining words. main.cc passes the arguments on after stripping the file-extension flags.",
+        "create::handleCommand (drogon_ctl/create.cc) rewrites the second word to 'create_' + word and calls exeCommand again, so the second round resolves to drogon_ctl::create_filter, whose handleCommand writes the header and source files.",
+        "create_filter.cc obtains its boilerplate by calling DrTemplateBase::newTemplate with the names filter_h and filter_cc. newTemplate (lib/src/DrTemplateBase.cc) looks the name up in the class registry and returns a template object that is filled with class name, file name and both extensions.",
+        "CRITICAL: At build time drogon_ctl/CMakeLists.txt globs templates/*.csp and for each file runs a custom command that calls the helper executable _drogon_ctl (variable DROGON_CTL, set in the root CMakeLists.txt; a host-installed copy when cross-compiling) with 'create view <file>'. The generated .cc files are linked into the final drogon_ctl program.",
+        "create_view.cc names the generated class after the .csp file's base name and makes it derive from drogon::DrTemplate<Name>. DrObject's static DrAllocator registers each such class in DrClassMap under its type name, which is why the lookup by 'filter_cc' succeeds.",
+        "The file-ending option is parsed in main.cc into the global inline strings sourceExtension / headerExtension declared in drogon_ctl/extension.h. Their defaults come from compile definitions that drogon_ctl/CMakeLists.txt takes from root CMake cache variables. create_filter.cc uses them for the output file names and passes them to the templates."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "set": "dev",
+      "author": "r3x-drogon-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: main.cc:27,77 exeCommand; cmd.cc:31 handlerName='drogon_ctl::'+command, :37 DrClassMap::newObject; create.cc:55-58 'create_' prefix + exeCommand; create_filter.cc:37,60 newTemplate('filter_h'/'filter_cc'), :90-91 file names from headerExtension/sourceExtension; DrTemplateBase.cc:23-62 newTemplate -> DrClassMap::newObject(name); drogon_ctl/CMakeLists.txt:14-17 _drogon_ctl built from main/cmd/create/create_view only, :44-53 glob templates/*.csp + COMMAND ${DROGON_CTL} create view, :20-23 and :60-63 compile definitions; root CMakeLists.txt:556-562 DROGON_CTL (HOST_DROGON_CTL when CMAKE_CROSSCOMPILING), :20-24 DEFAULT_*_EXTENSION cache vars; create_view.cc:349 className from file base name, :394 'class X : public drogon::DrTemplate<X>'; DrObject.h:109-140 DrAllocator::registerClass -> DrClassMap::registerClass; extension.h:25-26. DECOYS: ctl_sources list (create_filter.cc etc.) is linked only into drogon_ctl, not into the bootstrap _drogon_ctl; cmake/DrogonUtilities.cmake:50 has a similar rule for user projects (not drogon_ctl itself); create_project.cc / create_plugin.cc use the same template mechanism. ROUTE: [1] ls drogon_ctl + cat main.cc cmd.cc create.cc (name 'drogon_ctl::' prefix and 'create_' rewrite are only visible inside bodies) [G: create_filter class name from the rewrite]. [2] read create_filter.cc [G: template names filter_h/filter_cc] + extension.h. [3] read DrTemplateBase.cc [G: DrClassMap::newObject by raw name]. [4] read drogon_ctl/CMakeLists.txt [G: csp glob -> create view command, DROGON_CTL variable]. [5] read create_view.cc generated class + DrObject.h DrAllocator [G: DrTemplate<ClassName>] and root CMakeLists.txt DROGON_CTL / DEFAULT_*_EXTENSION. MIN CALLS: 5 (an agent that cats the whole small drogon_ctl directory blindly in one call could cut this to 3). FIRST CALL: grep -ril filter drogon_ctl; grep -rn 'scaffold\\|command-line' ; ls drogon_ctl; grep -rn 'extension' drogon_ctl; grep -rn 'template' drogon_ctl -> reaches create_filter.cc, create.cc, main.cc, extension.h (more than one gold file; cannot be avoided in a small directory). est. turns: 8."
+    },
+    {
+      "id": "r3x-drogon-02",
+      "repo": "r3-drogon",
+      "language": "C++",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "A controller class declares one of its methods with the class-level registration macro, giving a path pattern that contains a positional placeholder and naming one access-gate (filter) class by its string name. Trace the whole life of that declaration: what triggers registration before the program's main function runs, how the pattern becomes a lookup entry, when and how the gate's name becomes a live object, and how a request for a matching URL is first gated and then has its placeholder text turned into the typed method argument. Give file and symbol for each step.",
+      "expectedFiles": [
+        "lib/inc/drogon/HttpController.h",
+        "lib/inc/drogon/HttpAppFramework.h",
+        "lib/src/HttpAppFrameworkImpl.cc",
+        "lib/src/HttpControllersRouter.cc",
+        "lib/src/MiddlewaresFunction.cc",
+        "lib/inc/drogon/HttpFilter.h",
+        "lib/src/HttpServer.cc",
+        "lib/src/HttpControllerBinder.cc",
+        "lib/inc/drogon/HttpBinder.h"
+      ],
+      "expectedSymbols": [
+        "HttpController::methodRegistrator",
+        "HttpController::registerMethod",
+        "HttpAppFramework::registerHandler",
+        "HttpAppFrameworkImpl::registerHttpController",
+        "HttpControllersRouter::addHttpPath",
+        "HttpControllersRouter::init",
+        "middlewares_function::createMiddlewares",
+        "HttpFilterBase::invoke",
+        "HttpServer::requestPassMiddlewares",
+        "HttpControllersRouter::route",
+        "HttpControllerBinder::handleRequest",
+        "HttpBinder::run",
+        "getHandlerArgumentValue"
+      ],
+      "expectedFacts": [
+        "CRITICAL: HttpController<T> has a static data member registrator_ of type methodRegistrator whose constructor calls T::initPathRouting() when auto-creation is enabled. Its static initialisation runs before main. initPathRouting is the function generated by the list-begin/list-end macros and holds the registerMethod calls.",
+        "registerMethod (HttpController.h) builds the route (for the class-relative macro: '/' + class name with '::' replaced by '/' + pattern) and calls app().registerHandler. The registerHandler template in HttpAppFramework.h splits the constraint list: HTTP-method values become valid methods, strings become middleware names. It then calls registerHttpController, which HttpAppFrameworkImpl forwards to HttpControllersRouter::addHttpPath.",
+        "addHttpPath rewrites each {..} placeholder into the capture group ([^/]*), records the positional index mapping in the binder's parameterPlaces_, and stores the binder either in ctrlMap_ keyed by the lower-cased exact path (no placeholders) or in ctrlVector_ (a regex entry, compiled later in init()).",
+        "CRITICAL: The filter name becomes a live object only when HttpControllersRouter::init runs from HttpAppFrameworkImpl::run (after plugin initialisation): createMiddlewares calls DrClassMap::getSingleInstance(name) and dynamic-casts to HttpMiddlewareBase. A filter qualifies because HttpFilterBase derives from HttpMiddlewareBase and its final invoke() adapts to doFilter. A name that fails the lookup is only logged and skipped, so the route runs without the gate.",
+        "At request time HttpServer::requestPassMiddlewares calls middlewares_function::passMiddlewares on the binder's middlewares after routing and post-routing advices and before pre-handling advices and the handler. The filter's response callback sends its response and stops the chain; its chain callback continues to the next middleware and finally the handler.",
+        "HttpControllersRouter::route matches ctrlMap_ first and then the ctrlVector_ regexes, writes the captures into the parameter list at the positions in parameterPlaces_ and calls setRoutingParameters. HttpControllerBinder::handleRequest copies them into a deque and HttpBinder::run converts each string with getHandlerArgumentValue (for example std::stoi for int); invalid_argument or out_of_range leads to handleBadPathParameter (HTTP 400)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "set": "dev",
+      "author": "r3x-drogon-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: HttpController.h:29-34 macros, :126-149 methodRegistrator ctor calls T::initPathRouting() if AutoCreation, static registrator_; :66-104 registerMethod ('::'->'/'); HttpAppFramework.h:535-570 registerHandler (constraint split, registerHttpController at :565); HttpAppFrameworkImpl.cc:320-332 registerHttpController -> addHttpPath; HttpControllersRouter.cc:335-596 addHttpPath ('([^/]*)' at :564, parameterPlaces_ :555, ctrlMap_.emplace :594, addRegexCtrlBinder -> ctrlVector_ :761); :73,81 regex compile in init(); :36 createMiddlewares in init(); HttpAppFrameworkImpl.cc:671-672 routersInit_ then HttpControllersRouter::instance().init after plugins (:663); MiddlewaresFunction.cc:150-168 createMiddlewares (DrClassMap::getSingleInstance, dynamic_pointer_cast<HttpMiddlewareBase> :158, else LOG_ERROR 'middleware not found'); HttpFilter.h:55 final invoke -> doFilter; HttpServer.cc:557-583 requestPassMiddlewares; HttpControllersRouter.cc:615-696 route; HttpControllerBinder.cc:47-54 handleRequest deque; HttpBinder.h:281-330 run, :110 stoi, :317-322 handleBadPathParameter. DECOYS: registerHandler for ordinary function handlers (no class) uses the same route but no registrator; registerHttpSimpleController / loadControllers (ConfigLoader) is a different registration path that resolves the controller class by name in a queued lambda; HttpControllersRouter::reset. ROUTE: [1] grep registration macro/registrator in inc -> HttpController.h [G: registerMethod, app().registerHandler]. [2] read HttpAppFramework.h registerHandler body [G: registerHttpController, constraint split]. [3] read HttpAppFrameworkImpl.cc registerHttpController [G: addHttpPath] + read HttpControllersRouter.cc (addHttpPath, init, route in one file) [G: createMiddlewares, setRoutingParameters]. [4] read MiddlewaresFunction.cc createMiddlewares [G: DrClassMap::getSingleInstance, HttpMiddlewareBase] + HttpFilter.h [G: invoke adapter]. [5] read HttpServer.cc requestPassMiddlewares [G: passMiddlewares ordering] and HttpAppFrameworkImpl::run order. [6] read HttpControllerBinder.cc + HttpBinder.h run [G: getHandlerArgumentValue]. MIN CALLS: 6. FIRST CALL: grep for 'placeholder|path pattern' in lib/src and inc, grep -rn 'registerMethod', grep -rn 'METHOD_ADD', grep -rn 'initPathRouting', ls lib/inc/drogon -> reaches HttpController.h (gold) plus examples/tests (non-gold); other gold files appear only after reading. est. turns: 8."
+    },
+    {
+      "id": "r3x-drogon-03",
+      "repo": "r3-drogon",
+      "language": "C++",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "On the PostgreSQL backend, an application holds a database transaction object obtained from a pooled client. One statement is executing on it and two more statements are queued behind it on the same transaction. The executing statement fails on the server. Trace what happens next: what the failing statement's caller receives, what the two waiting callers receive and why they never reach the server, how the transaction is closed on the server, and the exact sequence of code by which the physical connection returns to the pool and what the pool does with it next. Give file and symbol for each step.",
+      "expectedFiles": [
+        "orm_lib/src/postgresql_impl/PgConnection.cc",
+        "orm_lib/src/TransactionImpl.cc",
+        "orm_lib/src/DbConnection.h",
+        "orm_lib/src/DbClientImpl.cc"
+      ],
+      "expectedSymbols": [
+        "PgConnection::handleRead",
+        "PgConnection::handleFatalError",
+        "TransactionImpl::execSqlInLoop",
+        "TransactionImpl::rollback",
+        "TransactionImpl::doBegin",
+        "TransactionImpl::execNewTask",
+        "TransactionImpl::failBufferedCommands",
+        "TransactionImpl::releaseConnection",
+        "DbClientImpl::makeTrans",
+        "DbClientImpl::handleNewTask"
+      ],
+      "expectedFacts": [
+        "CRITICAL: PgConnection::handleRead sees an error result and calls handleFatalError, which invokes the statement's exception callback with the database error. TransactionImpl::execSqlInLoop wrapped that callback so that it first calls TransactionImpl::rollback() and then forwards the original error to the caller, who therefore receives the database failure (not a rollback exception).",
+        "rollback() finds the transaction still marked working, so it queues a 'rollback' command at the FRONT of sqlCmdBuffer_ (push_front, flagged isRollbackCmd_), ahead of the two waiting statements.",
+        "After the failed command, PgConnection::handleRead calls the connection's idle callback; TransactionImpl::doBegin installed it to call execNewTask. execNewTask pops the rollback command first and runs it on the connection; when it succeeds isCommitedOrRolledback_ becomes true.",
+        "CRITICAL: On the next idle callback execNewTask sees isCommitedOrRolledback_ true, clears isWorking_ and calls failBufferedCommands: each waiting statement's exception callback gets a TransactionRollback exception ('The transaction has been rolled back'), so they are never sent to the server.",
+        "execNewTask then calls releaseConnection, which runs usedUpCallback_ (built in DbClientImpl::makeTrans). Unless the connection is Bad or no longer in connections_, that callback queues work on the connection's loop that re-installs the pool's idle callback and calls DbClientImpl::handleNewTask.",
+        "handleNewTask serves the oldest pending transaction request in transCallbacks_ first (makeTrans again), otherwise the oldest buffered plain statement in sqlCmdBuffer_, otherwise moves the connection from busyConnections_ to readyConnections_."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "set": "dev",
+      "author": "r3x-drogon-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: PgConnection.cc:321-395 handleRead (error result :350-355 handleFatalError; after the result loop isWorking_=false; idleCb_() at :381), :424-432 handleFatalError calls exceptionCallback_(Failure(PQerrorMessage)); DbConnection.h:103-106 setIdleCallback, :144 idleCb_; TransactionImpl.cc:151-214 execSqlInLoop (exception wrapper at :183-190 calls thisPtr->rollback() then exceptCallback), :216-262 rollback (isWorking_ -> push_front rollback cmd :238-241), :265-315 execNewTask (rollback cmd marks isCommitedOrRolledback_ :288-290; else-branch :309-314 failBufferedCommands + releaseConnection), :318-325 releaseConnection, :327-340 failBufferedCommands, :351-397 doBegin (setIdleCallback -> execNewTask :362-366); DbClientImpl.cc:288-345 makeTrans (usedUp lambda :296-336 checks status Bad and connections_, re-sets idle callback to handleNewTask), :370-409 handleNewTask. DECOYS: TransactionImpl::~TransactionImpl (a transaction dropped without commit/rollback runs 'commit', not rollback); DbClientLockFree has its own pool code; TransactionImpl::execSqlInLoopWithTimeout (timeout path also calls rollback); Sqlite3 commit-failure helper rollbackFailedSqliteCommit; PgBatchConnection idleCb_ path. ROUTE: [1] grep 'transaction' + 'rollback' in orm_lib -> TransactionImpl.cc; read whole file [G: execNewTask, failBufferedCommands, usedUpCallback_, idle callback set in doBegin]. [2] find who calls the idle callback for PostgreSQL: grep idleCb_ in orm_lib -> PgConnection.cc handleRead + handleFatalError [G: exception callback is the one wrapped in TransactionImpl]. [3] find where usedUpCallback_ is created: grep usedUpCallback/makeTrans -> DbClientImpl.cc makeTrans [G: handleNewTask]. [4] read handleNewTask [G: transCallbacks_, sqlCmdBuffer_, readyConnections_]. [5] verify PG error path ordering in PgConnection::handleRead and DbConnection.h. MIN CALLS: 5 (6 if the agent also checks the lock-free client). FIRST CALL: grep -rn 'rollback' orm_lib; grep -rn 'Transaction' orm_lib/src -l; grep -n 'queue' ; grep -rn 'pool' ; ls orm_lib/src -> reaches TransactionImpl.cc and DbClientImpl.cc / Mapper etc. (more than one gold file likely). est. turns: 8."
+    },
+    {
+      "id": "r3x-drogon-04",
+      "repo": "r3-drogon",
+      "language": "C++",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "A browser asks the server to switch an existing connection to the persistent two-way messaging protocol, targeting a path served by a controller written for that protocol. Trace from the point where the connection-level request handler recognises the request as such an upgrade to the point where the controller's message handler runs for the first text message the browser sends afterwards. Cover: what is checked to recognise the upgrade, which routing and pre-handling stages it passes through (and which usual stages it skips), how the handshake reply is produced and sent, what keeps the link alive afterwards, and how later bytes on the same TCP connection are diverted away from the normal request parser. Give file and symbol for each step.",
+      "expectedFiles": [
+        "lib/src/HttpServer.cc",
+        "lib/src/HttpControllersRouter.cc",
+        "lib/src/HttpControllerBinder.cc",
+        "lib/src/WebSocketConnectionImpl.cc",
+        "lib/src/HttpRequestParser.h",
+        "lib/inc/drogon/WebSocketController.h"
+      ],
+      "expectedSymbols": [
+        "HttpServer::onRequests",
+        "isWebSocket",
+        "HttpServer::onWebsocketRequest",
+        "HttpServer::websocketRequestRouting",
+        "HttpControllersRouter::routeWs",
+        "HttpServer::requestPostRouting",
+        "HttpServer::websocketRequestHandling",
+        "WebsocketControllerBinder::handleRequest",
+        "WebsocketControllerBinder::handleNewConnection",
+        "HttpRequestParser::setWebsockConnection",
+        "HttpServer::onMessage",
+        "WebSocketConnectionImpl::onNewMessage",
+        "WebSocketConnectionImpl::setPingMessage"
+      ],
+      "expectedFacts": [
+        "CRITICAL: HttpServer::onRequests treats a request as an upgrade only when exactly one request was parsed, nothing is pipelined, and isWebSocket is true: method GET, both Upgrade and Connection headers present, the Connection value contains 'upgrade' and the Upgrade value equals 'websocket' (case-insensitive). Otherwise it is routed as ordinary HTTP.",
+        "In that branch the sync advices run first, a WebSocketConnectionImpl is created and a ping with an empty payload every 30 seconds is scheduled (setPingMessage). Then onWebsocketRequest runs session lookup and pre-routing advices, websocketRequestRouting calls routeWs (NotFound unless a sec-websocket-key header is present; lower-cased path looked up in wsCtrlMap_, else regex entries in wsCtrlVector_), and the shared requestPostRouting runs post-routing advices, middlewares and requestPreHandling before websocketRequestHandling. The cached-response, static-file, request-decompression and response-compression steps are skipped.",
+        "WebsocketControllerBinder::handleRequest (HttpControllerBinder.cc) computes the accept value as base64 of the SHA-1 of the client key plus the fixed protocol GUID, and builds a 101 Switching Protocols response with Upgrade and Connection headers.",
+        "CRITICAL: The reply callback in onRequests applies session handling and pre-sending advices; only if the status is 101 does it call requestParser->setWebsockConnection(wsConn); it then sends the rendered response directly with conn->send(renderToBuffer()), bypassing the pipelining queue and handleResponse.",
+        "websocketRequestHandling then calls WebsocketControllerBinder::handleNewConnection, which installs the message callback (calls the controller's handleNewMessage) and the close callback (handleConnectionClosed) on the connection object and calls the controller's handleNewConnection.",
+        "For later bytes, HttpServer::onMessage checks requestParser->webSocketConn() first and hands the buffer to WebSocketConnectionImpl::onNewMessage, which parses frames, answers ping with pong, shuts the TCP connection down on a close frame, and calls the stored message callback for each message."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "set": "dev",
+      "author": "r3x-drogon-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: HttpServer.cc:276-326 onRequests websocket branch (:288 isWebSocket(requests[0]) with requests.size()==1 && emptyPipelining; :298 setPingMessage('', 30s); :305-315 reply lambda; :310 setWebsockConnection; :313 renderToBuffer); :1159-1182 isWebSocket; :702-731 onWebsocketRequest; :733-765 websocketRequestRouting; :767-787 websocketRequestHandling; :167-171 onMessage diverts to webSocketConn()->onNewMessage; HttpControllersRouter.cc:699-740 routeWs; HttpControllerBinder.cc:57-72 handleRequest accept key, :74-91 handleNewConnection; WebSocketConnectionImpl.cc:428-473 onNewMessage (ping->pong :442-446, close :447-451, messageCallback_ :458); HttpRequestParser.h:60-68. DECOYS: WebSocketClientImpl.cc (client side, computes the same accept key at :139); WebSocketConnectionImpl::shutdown / forceClose; a request that is not alone in its read batch falls through to plain HTTP routing; the 404 branch of websocketRequestRouting sets close-connection. ROUTE: [1] grep upgrade/websocket in lib/src -> HttpServer.cc onRequests [G: isWebSocket, onWebsocketRequest, setPingMessage]. [2] read onRequests + onWebsocketRequest + websocketRequestRouting + requestPostRouting (same file, 1 read) [G: routeWs, websocketRequestHandling]. [3] read HttpControllersRouter::routeWs and HttpControllerBinder.cc [G: handleNewConnection, wsCtrlMap_ lookups, message callback]. [4] read WebSocketConnectionImpl.cc onNewMessage + HttpRequestParser.h webSocketConn [G: setWebsockConnection]. [5] check HttpServer::onMessage divert. [6] read WebSocketController.h [G: handleNewMessage coroutine/dispatch]. MIN CALLS: 6. FIRST CALL: grep -rn 'websocket' lib/src -il; grep 'upgrade'; grep 'handshake'; ls lib/src; grep -rn 'message' WebSocketController -> reaches HttpServer.cc, HttpControllerBinder.cc, WebSocketConnectionImpl.cc, WebSocketClientImpl.cc (several gold files by file name; the order of stages needs the reads). est. turns: 8."
+    },
+    {
+      "id": "r3x-drogon-05",
+      "repo": "r3-drogon",
+      "language": "C++",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "List every place in the production code where a lost connection to an external peer (a relational database, a key-value cache server, or a remote persistent-messaging server) is opened again automatically after a timed wait, with no new application request needed to trigger it. For each place give the class or function and the length of the wait. Leave out places that only retry a command on a healthy connection, and say which database backend deliberately never gets a replacement connection.",
+      "expectedFiles": [
+        "orm_lib/src/DbClientImpl.cc",
+        "orm_lib/src/DbClientLockFree.cc",
+        "orm_lib/src/postgresql_impl/PgListener.cc",
+        "nosql_lib/redis/src/RedisClientImpl.cc",
+        "nosql_lib/redis/src/RedisClientLockFree.cc",
+        "lib/src/WebSocketClientImpl.cc"
+      ],
+      "expectedSymbols": [
+        "DbClientImpl::newConnection",
+        "DbClientLockFree::newConnection",
+        "PgListener::newConnection",
+        "RedisClientImpl::newConnection",
+        "RedisClientImpl::newSubscribeConnection",
+        "RedisClientLockFree::newConnection",
+        "RedisClientLockFree::newSubscribeConnection",
+        "WebSocketClientImpl::reconnect"
+      ],
+      "expectedFacts": [
+        "CRITICAL: DbClientImpl::newConnection's close callback (orm_lib/src/DbClientImpl.cc) removes the closed connection from the pools and re-creates one after 1 second (loop->runAfter(1, ...)) for PostgreSQL and MySQL.",
+        "DbClientLockFree::newConnection's close callback (orm_lib/src/DbClientLockFree.cc) erases the connection and calls newConnection again after 1 second on the client's own loop (the per-I/O-thread fast client).",
+        "CRITICAL: SQLite is the exception: in the same DbClientImpl close callback the Sqlite3 branch increments failedSqliteConnections_, never schedules a replacement, and once all connections have failed it fails the queued commands and transactions with BrokenConnection.",
+        "PgListener::newConnection's close callback (orm_lib/src/postgresql_impl/PgListener.cc) reconnects after 2*retryCnt seconds for the first four failures and 10 seconds afterwards; retryCnt is reset to 0 when a connection succeeds. The LISTEN/UNLISTEN retries in listenInLoop use the same delay formula but retry a command with a maximum number of attempts and are not reconnects.",
+        "Redis: RedisClientImpl and RedisClientLockFree each schedule a replacement after 2.0 seconds from the disconnect callbacks of both newConnection (ordinary connection) and newSubscribeConnection (the subscribe variants re-attach the same subscriber): four sites in nosql_lib/redis/src.",
+        "WebSocketClientImpl (lib/src/WebSocketClientImpl.cc): both the disconnect branch and the connection-error callback call reconnect() after 1.0 second unless stop_ was set. HttpClientImpl has no timer: it re-creates its TCP client only when the next request is sent."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "set": "dev",
+      "author": "r3x-drogon-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: DbClientImpl.cc:451-512 close callback (Sqlite3 branch ~:457-490 with ++failedSqliteConnections_ at :470, returns without reconnect; non-sqlite reconnect :499-509 runAfter(1,...) at :503); DbClientLockFree.cc:451-472 close callback, :467-468 'Reconnect after 1 second' runAfter(1,...); PgListener.cc:244-280 newConnection close callback (:269 delay = retryCnt<5 ? retryCnt*2 : 10, :270 runAfter), ok callback resets retryCnt at :281; :186-228 listenInLoop retry (MAX_LISTEN_RETRY 10, MAX_UNLISTEN_RETRY 3) = decoy; RedisClientImpl.cc:97-110 and :148-165 runAfter(2.0); RedisClientLockFree.cc:75 and :126 runAfter(2.0); WebSocketClientImpl.cc:84-93 (disconnect) and :98-106 (connect error) runAfter(1.0) -> :307 reconnect(). DECOYS: HttpClientImpl.cc:332 runAfter is the per-request timeout; MysqlConnection.cc:162 runAfter is a query timeout; SharedLibManager runEvery(5.0) polls files; TaskTimeoutFlag.cc:28; HttpClientImpl re-connects lazily (HttpClient.h:64 comment says reconnect happens on sendRequest). ROUTE: [1] grep -rn 'runAfter\\|reconnect' over lib orm_lib nosql_lib: ~25 hits with delay values visible in the hit lines [G: which hits are retries vs timeouts is only visible in context]. [2] read DbClientImpl.cc close callback + DbClientLockFree.cc close callback (sqlite branch decides the exception fact) [G: failedSqliteConnections_]. [3] read PgListener.cc newConnection + listenInLoop (distinguish reconnect from command retry) [G: retryCnt formula]. [4] read RedisClientImpl.cc / RedisClientLockFree.cc disconnect callbacks (4 sites). [5] read WebSocketClientImpl.cc 80-110 and HttpClientImpl createTcpClient (rule out). MIN CALLS: 4. FIRST CALL: grep -rn 'reconnect' ; grep -rn 'runAfter' ; grep -rni 'retry' ; grep -rn 'disconnect' -> reaches most gold files (this question is a locate-and-classify task; difficulty comes from classification, not from hops). est. turns: 6."
+    },
+    {
+      "id": "r3x-drogon-06",
+      "repo": "r3-drogon",
+      "language": "C++",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "When an application running with default settings receives a termination signal, list in order every step the framework performs to stop, from the signal to the point where the event loops are told to end. Include the steps that happen indirectly inside the destructors of the subsystems the framework owns and say what each of those does. Name which subsystem is stopped first, and say which owned subsystems are NOT released as part of this sequence but only later.",
+      "expectedFiles": [
+        "lib/src/HttpAppFrameworkImpl.cc",
+        "lib/src/HttpAppFrameworkImpl.h",
+        "lib/src/ListenerManager.cc",
+        "lib/src/PluginsManager.cc",
+        "nosql_lib/redis/src/RedisClientManager.cc",
+        "orm_lib/src/DbClientManager.cc",
+        "lib/src/StaticFileRouter.cc",
+        "lib/src/HttpControllersRouter.cc"
+      ],
+      "expectedSymbols": [
+        "TERMFunction",
+        "HttpAppFrameworkImpl::quit",
+        "ListenerManager::stopListening",
+        "StaticFileRouter::reset",
+        "HttpControllersRouter::reset",
+        "PluginsManager::~PluginsManager",
+        "RedisClientManager::~RedisClientManager",
+        "DbClientManager::~DbClientManager",
+        "HttpAppFrameworkImpl::~HttpAppFrameworkImpl"
+      ],
+      "expectedFacts": [
+        "CRITICAL: HttpAppFrameworkImpl::run installs the C signal handler TERMFunction for SIGINT and SIGTERM when signal handling is enabled (the default); it logs and calls the configurable term / int signal handler, whose default lambdas (HttpAppFrameworkImpl.h) call app().quit().",
+        "quit() acts only if the main loop is running and running_ flips from true to false (exchange), then queues all its work onto the main loop.",
+        "CRITICAL: The first subsystem stopped is the listeners: ListenerManager::stopListening stops every HttpServer (on non-Linux builds it also quits and joins the dedicated listening thread) and the listener manager is then reset, despite the comment saying 'reverse order of initialization'.",
+        "Next StaticFileRouter::reset and HttpControllersRouter::reset clear the routing state (static locations and caches, controller maps).",
+        "Then pluginsManagerPtr_.reset() runs ~PluginsManager, which calls shutdown() on every initialised plugin in the reverse of initialisation order; then redisClientManagerPtr_.reset() runs ~RedisClientManager and dbClientManagerPtr_.reset() runs ~DbClientManager, each calling closeAll on named clients and closing the per-I/O-thread fast clients on their own loops through a promise/future.",
+        "Last, the main loop quits, every I/O loop quits and ioLoopThreadPool_->wait() blocks. The shared-library (dynamic view) manager and the session manager are not released here but only in ~HttpAppFrameworkImpl."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "set": "dev",
+      "author": "r3x-drogon-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: HttpAppFrameworkImpl.cc:168-176 TERMFunction (SIGTERM -> getTermSignalHandler, SIGINT -> getIntSignalHandler), :575-592 sigaction/signal install under if (handleSigterm_); HttpAppFrameworkImpl.h:746-747 default handlers call app().quit(); HttpAppFrameworkImpl.cc:1044-1065 quit() (:1046 guard, :1049 comment, :1050-1062 sequence); ListenerManager.cc:207-220 stopListening (servers stop; listeningThread_ loop quit + wait); StaticFileRouter.cc:65-71 reset; HttpControllersRouter.cc:87-93 reset; PluginsManager.cc:20-28 reverse-order shutdown; RedisClientManager.cc:115-134 and DbClientManager.cc:264-284 closeAll; HttpAppFrameworkImpl.cc:184-192 ~HttpAppFrameworkImpl resets sharedLibManagerPtr_ and sessionManagerPtr_. Actual initialisation order in run() is listeners, DB, Redis, sessions, plugins, routers (HttpAppFrameworkImpl.cc:623-672), so quit() is not the exact reverse. DECOYS: Hodor/GlobalFilters::shutdown (plugin-level), RedisClientManagerSkipped / DbClientManagerSkipped destructors (stub builds), SharedLibManager::~SharedLibManager (invalidates its timer), a user-installed signal handler. ROUTE: [1] grep 'quit\\|SIGTERM' in lib/src -> HttpAppFrameworkImpl.cc [G: TERMFunction, getTermSignalHandler, quit]. [2] read quit() + TERMFunction + header defaults [G: member names listenerManagerPtr_, pluginsManagerPtr_, redisClientManagerPtr_, dbClientManagerPtr_]. [3] grep destructors/reset/stopListening for those managers (PluginsManager.cc, RedisClientManager.cc, DbClientManager.cc, ListenerManager.cc, StaticFileRouter.cc, HttpControllersRouter.cc) [G: shutdown reverse order, closeAll, fast-client promise]. [4] read those bodies and ~HttpAppFrameworkImpl. MIN CALLS: 4. FIRST CALL: grep -rn 'quit' lib/src; grep -rn 'SIGTERM'; grep -rn 'shutdown()'; grep -rn '~.*Manager'; grep -rn 'stopListening' -> reaches HttpAppFrameworkImpl.cc plus manager files (several gold files; discriminating step is reading what each destructor does). est. turns: 6."
+    },
+    {
+      "id": "r3x-drogon-07",
+      "repo": "r3-drogon",
+      "language": "C++",
+      "stratum": "condition",
+      "difficulty": "hard",
+      "query": "An operator sets up encrypted listening in the application's JSON configuration: a global section with a certificate file, a key file and a list of low-level TLS option commands, plus one listener that is marked encrypted but supplies only its own key file and its own extra TLS option commands (no certificate). Which certificate and key does that listener finally use, which TLS option commands does it get, at what point does the process fail if something is missing, and does the answer depend on the operating system the server runs on? Give file and function for each part of the decision.",
+      "expectedFiles": [
+        "lib/src/ConfigLoader.cc",
+        "lib/src/HttpAppFrameworkImpl.cc",
+        "lib/src/ListenerManager.cc"
+      ],
+      "expectedSymbols": [
+        "loadSSL",
+        "loadListeners",
+        "HttpAppFrameworkImpl::setSSLFiles",
+        "HttpAppFrameworkImpl::setSSLConfigCommands",
+        "HttpAppFrameworkImpl::run",
+        "ListenerManager::addListener",
+        "ListenerManager::createListeners"
+      ],
+      "expectedFacts": [
+        "Loading the configuration only stores values: ConfigLoader::loadSSL calls setSSLFiles / setSSLConfigCommands (members sslCertPath_, sslKeyPath_, sslConfCmds_) and loadListeners calls addListener, which stores each listener's own cert, key, old-TLS flag and option commands. Nothing is merged at load time.",
+        "The merge happens in HttpAppFrameworkImpl::run, which passes the three global values to ListenerManager::createListeners after the I/O thread pool exists and before DB clients, plugins and routers are set up.",
+        "CRITICAL: Certificate and key fall back independently to the global values (an empty listener cert takes the global cert, an empty listener key takes the global key), so a listener with only its own key uses the global certificate together with its own key.",
+        "If cert or key is still empty after the fallback, createListeners prints 'You can't use https without cert file or key file' to stderr and calls exit(1) at startup (not at config load). This is evaluated only for listeners marked encrypted and when TLS support is compiled in.",
+        "CRITICAL: Option commands are OS dependent: the Linux branch of createListeners builds the list as the global commands followed by the listener's own (std::copy with back_inserter); the non-Linux branch uses only the global commands and silently ignores the listener's own commands.",
+        "The old-TLS flag comes only from the listener (policy->setUseOldTLS(listener.useOldTLS_)) on both branches; there is no global value for it."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "set": "dev",
+      "author": "r3x-drogon-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: ConfigLoader.cc:629-661 loadListeners (cert/key/ssl_conf per listener, addListener :658), :663-686 loadSSL (setSSLFiles :669, setSSLConfigCommands :685), :688-696 load order; HttpAppFrameworkImpl.cc:400-413 addListener -> ListenerManager::addListener; :499-512 setSSLConfigCommands/setSSLFiles store members; :623-626 createListeners(sslCertPath_, sslKeyPath_, sslConfCmds_, ioLoops); ListenerManager.cc:68-155 Linux branch (#ifdef __linux__ at :85; fallback :133-136; failure :137-143; commands merged :144-148; policy :149-151), :156-196 non-Linux branch (#else; fallback :175-178; failure :179-185; only global cmds :186; policy :189). DECOYS: the plain TLS 'ssl' app-level option names are only read in loadSSL; trantor TLSPolicy::defaultServerPolicy performs the actual loading; HttpAppFrameworkImpl::reloadSSLFiles re-reads files for all servers but does not re-merge; HttpClientImpl::createTcpClient has its own client-side policy. ROUTE: [1] grep -rn 'ssl\\|cert' lib/src -il (many hits: ConfigLoader, ListenerManager, HttpAppFrameworkImpl, HttpClientImpl, WebSocketClientImpl) -> read ConfigLoader loadListeners + loadSSL [G: addListener, setSSLFiles, setSSLConfigCommands]. [2] read HttpAppFrameworkImpl setters + run() [G: createListeners arguments]. [3] read ListenerManager::createListeners [G: #ifdef __linux__ with two branches]. [4] compare the two branches line by line (command merge only on Linux). MIN CALLS: 4. FIRST CALL: grep -rn 'certificate\\|cert' lib/src; grep -rn 'listener' lib/src/ConfigLoader.cc; grep -rn 'sslConf'; ls lib/src; grep -rn 'https' lib/src -> reaches ConfigLoader.cc, ListenerManager.cc, HttpAppFrameworkImpl.cc, i.e. all three gold files (low hop count; difficulty is the OS-gated branch and independent fallback). est. turns: 6."
+    },
+    {
+      "id": "r3x-drogon-08",
+      "repo": "r3-drogon",
+      "language": "C++",
+      "stratum": "condition",
+      "difficulty": "hard",
+      "query": "A build of the framework found only the embedded single-file database library on the build machine: no PostgreSQL library, no MySQL library and no key-value cache client library. An application's JSON configuration lists, in this order, a PostgreSQL database client (with a database name) and a cache-server client. What happens when the application loads this configuration, which message appears, and how does the process end? Would the outcome change if the build machine had had no database library at all? What happens instead if the configuration names a database kind the framework does not know? Give file and function for each part of the decision.",
+      "expectedFiles": [
+        "CMakeLists.txt",
+        "lib/src/ConfigLoader.cc",
+        "lib/src/HttpAppFrameworkImpl.cc",
+        "orm_lib/src/DbClientManager.cc",
+        "lib/src/DbClientManagerSkipped.cc",
+        "lib/src/RedisClientManagerSkipped.cc"
+      ],
+      "expectedSymbols": [
+        "loadDbClients",
+        "loadRedisClients",
+        "ConfigLoader::load",
+        "HttpAppFrameworkImpl::addDbClient",
+        "DbClientManager::addDbClient",
+        "DbClientManager::addDbClient (Skipped)",
+        "RedisClientManager::createRedisClient (Skipped)"
+      ],
+      "expectedFacts": [
+        "CRITICAL: Which source file implements the database manager is decided by the root CMakeLists.txt: orm_lib/src/DbClientManager.cc is compiled when PostgreSQL, MySQL or SQLite was found (here SQLite, with USE_POSTGRESQL and USE_MYSQL off), otherwise lib/src/DbClientManagerSkipped.cc is compiled; the Redis stubs (lib/src/RedisClientManagerSkipped.cc etc.) are compiled when the Redis client library is not found.",
+        "ConfigLoader::load processes the sections in order app, ssl, listeners, db_clients, redis_clients, so the PostgreSQL entry (loadDbClients -> HttpAppFrameworkImpl::addDbClient with the kind string mapped to a PostgresConfig) fails first and the Redis entry is never reached.",
+        "CRITICAL: In DbClientManager::addDbClient the PostgreSQL branch is compiled out (#else): it prints 'The PostgreSQL is not supported in current drogon build, please install the development library first.' to standard output and calls exit(1), a normal exit with status 1, not an abort.",
+        "With no database library at all, DbClientManagerSkipped::addDbClient instead logs a fatal 'No database is supported by drogon...' message and calls abort() (abnormal termination).",
+        "The cache-server client with no Redis library: RedisClientManagerSkipped::createRedisClient logs fatal 'Redis is not supported by drogon, please install the hiredis library first.' and calls abort(); it matters only if reached. createRedisClients (plural, at run time) is a no-op stub.",
+        "An unknown database kind does not terminate: the else branch of HttpAppFrameworkImpl::addDbClient only logs an error listing the valid kinds (postgresql, mysql, sqlite3); the entry is skipped, so a later lookup of that client name would hit an assert."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "set": "dev",
+      "author": "r3x-drogon-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: CMakeLists.txt:637-645 (DbClientManager.cc if pg_FOUND OR DROGON_FOUND_MYSQL OR DROGON_FOUND_SQLite3, else DbClientManagerSkipped.cc), :653-670 option(USE_POSTGRESQL/USE_MYSQL/USE_SQLITE3 ON/OFF), :492-528 Hiredis found -> real Redis sources + -DUSE_REDIS, else RedisClientSkipped/RedisResultSkipped/RedisClientManagerSkipped; ConfigLoader.cc:688-696 load order, :533-599 loadDbClients (default kind 'postgresql' :539, :548-551 throws runtime_error if dbname empty and kind != sqlite3), :601-627 loadRedisClients -> createRedisClient; HttpAppFrameworkImpl.cc:965-1018 addDbClient(kind string) ('postgresql' or 'postgres', 'mysql', 'sqlite3', else LOG_ERROR :1015), :1020-1025 addDbClient(DbConfig) asserts !running_ then dbClientManagerPtr_->addDbClient; DbClientManager.cc:173-246 addDbClient with #if USE_POSTGRESQL/#else cout + exit(1) (:202-206); DbClientManagerSkipped.cc:28-40 LOG_FATAL + abort(); RedisClientManagerSkipped.cc:19-43 createRedisClients no-op :19-23, createRedisClient abort :25-43; HttpAppFrameworkImpl.cc:1027-1042 createRedisClient asserts !running_ then redisClientManagerPtr_->createRedisClient. DECOYS: nosql_lib/redis/src/RedisClientManager.cc (the real manager, not compiled in this build); the DbClientManager::createDbClients branches for sqlite are the default path when a sqlite entry is configured; test files under orm_lib/tests and nosql_lib/redis/tests use #ifndef USE_REDIS. ROUTE: [1] grep 'not supported' in lib orm_lib nosql_lib -> the three stub / #else sites with their messages [G: the Skipped files and USE_ macros]. [2] read root CMakeLists.txt around :491-525 and :636-670 [G: which file is compiled under which find result]. [3] read ConfigLoader::load and loadDbClients / loadRedisClients [G: section order, addDbClient call]. [4] read HttpAppFrameworkImpl::addDbClient kind dispatch [G: else-branch LOG_ERROR only]. [5] read DbClientManager.cc addDbClient #if/#else branches and the Skipped bodies (exit(1) vs abort()). MIN CALLS: 5. FIRST CALL: grep -rn 'not supported' ; grep -rn 'hiredis' ; grep -rn 'USE_POSTGRESQL' ; grep -rn 'Skipped' ; grep -n 'redis_clients' -> reaches DbClientManager.cc, Skipped files and CMakeLists.txt (several gold files from the message text; the order, exit-vs-abort split and unknown-kind branch need the later reads). est. turns: 7."
+    }
+  ]
+}
