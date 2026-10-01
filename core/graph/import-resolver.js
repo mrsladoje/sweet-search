@@ -1468,9 +1468,14 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
         // A bare reference (`.target(name: "X")`, `…, condition: …)`) at top level.
         if (!/\b(?:dependencies|path|sources|resources|exclude|swiftSettings|cSettings|plugins)\s*:/.test(args) && args.trim().replace(/^,/, '').trim() === '') continue;
         skipUntil = end;
-        const p = /\bpath\s*:\s*"([^"]+)"/.exec(args.replace(/\.(?:target|product|byName)\s*\([^()]*\)/g, ''));
+        const own = args.replace(/\.(?:target|product|byName)\s*\([^()]*\)/g, '');
+        const p = /\bpath\s*:\s*"([^"]+)"/.exec(own);
         const dir = p ? join(pkgDir, p[1]) : join(pkgDir, m[1] === 'testTarget' ? 'Tests' : 'Sources', m[2]);
-        if (dir !== null && hasDir(dir)) swiftTargetList.push({ name: m[2], dir });
+        // `exclude: ["Legacy", "Old.swift"]`: paths inside the target that are
+        // not compiled into it (PackageDescription, Target.exclude).
+        const ex = /\bexclude\s*:\s*\[([^\]]*)\]/.exec(own);
+        const exclude = ex ? (ex[1].match(/"[^"]+"/g) || []).map((s) => join(dir ?? '', s.slice(1, -1))).filter(Boolean) : [];
+        if (dir !== null && hasDir(dir)) swiftTargetList.push({ name: m[2], dir, exclude });
       }
     }
     return swiftTargetList;
@@ -1481,6 +1486,8 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     for (const t of swiftTargets()) {
       if ((t.dir === '' || file.startsWith(t.dir + '/')) && (!best || t.dir.length > best.dir.length)) best = t;
     }
+    // An excluded path belongs to no module: it is not compiled.
+    if (best && best.exclude.some((x) => file === x || file.startsWith(x + '/'))) return null;
     return best;
   }
 
