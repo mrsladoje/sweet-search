@@ -588,7 +588,7 @@ async function cmdFind(rawArgs) {
     }
     if (r.code) {
       process.stdout.write(`\`\`\`\n${gutter(r.code, r.startLine)}\n\`\`\`\n`);
-    } else if (r.summary && !(DEDUPE && /^\S+:\d+ — .+ \([^)]*\)$/.test(String(r.summary).trim()))) {
+    } else if (r.summary) {
       process.stdout.write(`${r.summary}\n`);
     }
     if (r.neighbors && r.neighbors.rendered) {
