@@ -15,8 +15,9 @@
  */
 
 import path from 'path';
+import { createHash } from 'crypto';
 import { detectProjectBoundary } from '../infrastructure/project-detector.js';
-import { UNRESOLVED_IMPORT_PREFIX } from './import-resolver.js';
+import { UNRESOLVED_IMPORT_PREFIX, buildFileImportMap } from './import-resolver.js';
 
 // Entities from config/data/markup files (YAML keys, pom.xml tags, Makefile
 // targets, TOML tables) are never the target of a code import. Name-based
@@ -71,6 +72,218 @@ function isSameProject(path1, path2) {
   return project1 === project2;
 }
 
+// =============================================================================
+// CALL-TARGET HELPERS
+// =============================================================================
+
+// Entity types that own methods. Extractors rarely fill `parent_class`
+// (tree-sitter entities never do), so the owner is derived from spans.
+const CONTAINER_TYPES = new Set([
+  'class', 'struct', 'interface', 'trait', 'impl', 'enum', 'extension',
+  'protocol', 'object', 'namespace', 'module', 'record', 'actor', 'union',
+]);
+// Go method receiver: `func (c *Context) Next()` → Context.
+const GO_RECEIVER = /^func\s*\(\s*(?:\w+\s+)?\*?\s*(\w+)/;
+// Receivers that mean "the enclosing object/type".
+const SELF_RECEIVERS = new Set(['this', 'self', 'cls', 'me', 'static']);
+
+function normalizeName(name) {
+  return String(name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function receiverMatches(receiver, name) {
+  if (!receiver || !name) return false;
+  if (receiver === name) return true;
+  // `observationBroker` ↔ DatabaseObservationBroker, `mainRepository` ↔ Repository.
+  if (receiver.length >= 4 && name.endsWith(receiver)) return true;
+  if (name.length >= 4 && receiver.endsWith(name)) return true;
+  return false;
+}
+
+function parentDir(filePath) {
+  const parts = String(filePath || '').split(/[\\/]/);
+  return parts.length >= 2 ? parts[parts.length - 2] : '';
+}
+
+// A PascalCase receiver names a type (`Foo.bar()`, `Foo::new()`) in these
+// languages. Not in Go (exported variables), C# (properties) or C/C++/Ruby.
+const PASCAL_CASE = /^[A-Z][a-z0-9]\w*$/;
+const TYPE_RECEIVER_FILE = /\.(?:java|kt|kts|swift|py|pyi|js|jsx|mjs|cjs|ts|tsx|mts|cts|php|rs|scala|dart)$/i;
+// Languages where a `.`-qualified call can reach a top-level function only
+// through its module/package (`utils.helper()`, `pkg.Func()`): the receiver
+// must name that module, so `json.loads` / `filepath.Join` never bind to a
+// first-party `loads` / `Join` (code-graph-rag #2636). Not JS/TS: objects
+// that hold functions (`context.commentSummary()` in typedoc) are idiomatic
+// there; not Rust: its `.` calls are always methods.
+const MODULE_FUNCTION_FILE = /\.(?:py|pyi|go)$/i;
+
+/**
+ * Lookups for call-target resolution, built once per resolution pass.
+ *
+ * ownerOf(entity): the owning class/struct/impl/… name — `parent_class`,
+ *   else the Go receiver in the signature, else the innermost container entity
+ *   whose span holds it (extractors rarely fill `parent_class`; tree-sitter
+ *   entities never do). Memoised per entity id.
+ * containerFiles(name): files that define a container type with exactly this
+ *   name, or null when the repo defines no such type.
+ */
+export function createCallResolutionIndex(entities, { fileImports = null } = {}) {
+  const containersByFile = new Map();
+  const filesByContainerName = new Map();
+  for (const e of entities) {
+    if (!CONTAINER_TYPES.has(e.type)) continue;
+    let files = filesByContainerName.get(e.name);
+    if (!files) { files = new Set(); filesByContainerName.set(e.name, files); }
+    files.add(e.file_path);
+    if (e.start_line == null || e.end_line == null) continue;
+    let list = containersByFile.get(e.file_path);
+    if (!list) { list = []; containersByFile.set(e.file_path, list); }
+    list.push(e);
+  }
+  for (const list of containersByFile.values()) list.sort((a, b) => a.start_line - b.start_line);
+
+  const memo = new Map();
+  function ownerOf(entity) {
+    if (!entity) return null;
+    if (memo.has(entity.id)) return memo.get(entity.id);
+    let owner = entity.parent_class || null;
+    if (!owner && entity.signature) {
+      const g = GO_RECEIVER.exec(entity.signature);
+      if (g) owner = g[1];
+    }
+    if (!owner && entity.start_line != null) {
+      const list = containersByFile.get(entity.file_path);
+      if (list) {
+        const end = entity.end_line ?? entity.start_line;
+        let best = null;
+        for (const c of list) {
+          if (c.start_line > entity.start_line) break;
+          if (c.id !== entity.id && c.end_line >= end) best = c;
+        }
+        owner = best ? best.name : null;
+      }
+    }
+    memo.set(entity.id, owner);
+    return owner;
+  }
+
+  return {
+    ownerOf,
+    containerFiles: (name) => filesByContainerName.get(name) || null,
+    importsOf: (filePath) => (fileImports && fileImports.get(filePath)) || null,
+  };
+}
+
+const NO_INDEX = { ownerOf: () => null, containerFiles: () => null, importsOf: () => null };
+
+/**
+ * Graph id of a file node, as GraphExtractor.makeId(path, 'file', basename)
+ * computes it for the repo-relative paths the indexer passes.
+ */
+function fileNodeId(filePath) {
+  return createHash('sha256').update(`${filePath}:file:${path.basename(filePath)}`).digest('hex').slice(0, 16);
+}
+
+/**
+ * Prefer candidates defined in a file the caller's file imports
+ * (`importsFile` edges) — unless one sits in the caller's own file, which
+ * pickClosestCandidate ranks first anyway.
+ */
+function preferImported(pool, sourceEntity, importsOf) {
+  if (pool.length <= 1 || !sourceEntity?.file_path) return pool;
+  const imported = importsOf(sourceEntity.file_path);
+  if (!imported || pool.some(c => c.file_path === sourceEntity.file_path)) return pool;
+  const viaImport = pool.filter(c => isImported(imported, c.file_path));
+  return viaImport.length > 0 ? viaImport : pool;
+}
+
+/** Imported file, or (Go) its package directory `dir/`. */
+function isImported(imported, filePath) {
+  if (!imported || !filePath) return false;
+  if (imported.has(filePath)) return true;
+  const slash = filePath.lastIndexOf('/');
+  return slash > 0 && imported.has(filePath.slice(0, slash + 1));
+}
+
+/**
+ * Narrow same-named call candidates using the call's receiver. An empty
+ * result means "leave unresolved" — a missing edge is better than a wrong one
+ * (graphify's exactly-one guard; code-graph-rag #2636).
+ *
+ * - `other.foo()` inside `foo` is delegation, not recursion: the calling
+ *   entity is never its own target unless the receiver is self-like.
+ * - Type-qualified `Foo.bar()` where the repo defines a type `Foo`: only
+ *   methods owned by `Foo` (or ownerless ones in Foo's file) qualify.
+ * - `.`-qualified call to a top-level function in a module language: the
+ *   receiver must name the function's module (file stem or directory).
+ * - A receiver that names a candidate's owner (`broker.notify` →
+ *   DatabaseObservationBroker.notify) or file wins over the rest.
+ * - `self.foo()` / bare `foo()` prefer the caller's own owner.
+ * - Otherwise a definition in a file the caller's file imports wins.
+ * The caller ranks what is left with pickClosestCandidate (same file, then
+ * non-test code, then nearest directory).
+ */
+export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, index = NO_INDEX) {
+  if (candidates.length === 0) return candidates;
+  const { ownerOf, containerFiles, importsOf } = { ...NO_INDEX, ...(index || {}) };
+  const chained = receiverRaw.endsWith('()');
+  const receiver = chained ? '' : receiverRaw;
+  const selfLike = (!receiverRaw) || SELF_RECEIVERS.has(receiver.toLowerCase());
+
+  let pool = candidates;
+  if (sourceEntity && !selfLike) {
+    // Recursion through another instance (`child.visit()` inside `visit`)
+    // stays possible when the caller is the only definition.
+    const others = pool.filter(c => c.id !== sourceEntity.id);
+    if (others.length > 0) pool = others;
+  }
+
+  if (selfLike) {
+    if (pool.length > 1 && sourceEntity) {
+      const srcOwner = ownerOf(sourceEntity);
+      if (srcOwner) {
+        const sameOwner = pool.filter(c => ownerOf(c) === srcOwner);
+        if (sameOwner.length > 0) pool = sameOwner;
+      }
+    }
+    return pool;
+  }
+  if (!receiver) return preferImported(pool, sourceEntity, importsOf);
+
+  if (PASCAL_CASE.test(receiver)) {
+    const typeFiles = containerFiles(receiver);
+    if (typeFiles) {
+      return pool.filter((c) => {
+        const owner = ownerOf(c);
+        return owner ? owner === receiver : typeFiles.has(c.file_path);
+      });
+    }
+    // `HashMap::new`, `Collections.emptyList()`, `React.useState()`: a type
+    // the repo does not define is external — never a same-named local method.
+    if (sourceEntity && TYPE_RECEIVER_FILE.test(sourceEntity.file_path || '')) return [];
+  }
+
+  const r = normalizeName(receiver);
+  const callerImports = sourceEntity?.file_path ? importsOf(sourceEntity.file_path) : null;
+  pool = pool.filter((c) => {
+    if (c.type !== 'function' || ownerOf(c) || !MODULE_FUNCTION_FILE.test(c.file_path || '')) return true;
+    // `import * as h from './helpers'` → `h.foo()`: the import names the module.
+    if (isImported(callerImports, c.file_path)) return true;
+    return receiverMatches(r, normalizeName(fileStem(c.file_path || '')))
+      || receiverMatches(r, normalizeName(parentDir(c.file_path)));
+  });
+  if (pool.length > 1) {
+    const byOwner = pool.filter(c => receiverMatches(r, normalizeName(ownerOf(c))));
+    if (byOwner.length > 0) {
+      pool = byOwner;
+    } else {
+      const byFile = pool.filter(c => receiverMatches(r, normalizeName(fileStem(c.file_path || ''))));
+      if (byFile.length > 0) pool = byFile;
+    }
+  }
+  return preferImported(pool, sourceEntity, importsOf);
+}
+
 /**
  * Resolve relationship target_ids from target_names
  * This runs AFTER all entities are extracted and inserted
@@ -120,6 +333,15 @@ export function resolveRelationshipTargets(db) {
     }
   }
 
+  // File → imported repo files (`importsFile` edges) for call disambiguation.
+  let fileImports = null;
+  try {
+    fileImports = buildFileImportMap(db, fileNodeId);
+  } catch {
+    fileImports = null; // older graph without importsFile edges
+  }
+  const callIndex = createCallResolutionIndex(entities, { fileImports });
+
   // Get all unresolved relationships (include full_import_path for package-aware matching)
   const unresolved = db.prepare(`
     SELECT rowid, source_id, target_name, type, context_line, full_import_path
@@ -158,7 +380,8 @@ export function resolveRelationshipTargets(db) {
         byFileAndName,
         byId,
         warnings,
-        byFile
+        byFile,
+        callIndex
       );
 
       if (targetId) {
@@ -223,7 +446,8 @@ function resolveTarget(
   byFileAndName,
   byId,
   warnings,
-  byFile = new Map()
+  byFile = new Map(),
+  callIndex = null
 ) {
   // File-level import edges point at a repo path, not an entity; imports of
   // non-repo modules have no local target (not even a same-file namesake).
@@ -251,33 +475,17 @@ function resolveTarget(
       // Method calls: "object.method" or just "method"
       const parts = targetName.split('.');
       const methodName = parts.pop(); // Last part is the method name
+      const receiver = parts.length > 0 ? parts[parts.length - 1] : '';
 
-      const candidates = byMethodName.get(methodName) || [];
+      const allCandidates = byMethodName.get(methodName) || [];
+      const candidates = narrowCallCandidates(allCandidates, receiver, sourceEntity, callIndex || undefined);
 
-      if (candidates.length === 0) {
-        // No match found
-        return null;
-      } else if (candidates.length === 1) {
-        // Single match - use it
-        return candidates[0].id;
-      } else {
-        // Multiple matches - prefer same file, then same package
-        if (sourceEntity) {
-          // Same file
-          const sameFile = candidates.find(c => c.file_path === sourceEntity.file_path);
-          if (sameFile) return sameFile.id;
-
-          // Same project (prefer matches within the same project component)
-          const sameProjectMatch = candidates.find(c => isSameProject(c.file_path, sourceEntity.file_path));
-          if (sameProjectMatch) return sameProjectMatch.id;
-        }
-
-        // Use first match (arbitrary but deterministic)
-        if (warnings) {
-          warnings.push(`Ambiguous call to ${targetName}: ${candidates.length} matches, using first`);
-        }
-        return candidates[0].id;
+      // Several left: same file, then non-test code, then nearest directory.
+      const picked = pickClosestCandidate(candidates, sourceEntity);
+      if (picked && candidates.length > 1 && warnings) {
+        warnings.push(`Ambiguous call to ${targetName}: ${candidates.length} matches`);
       }
+      return picked ? picked.id : null;
     }
 
     case 'overrides': {

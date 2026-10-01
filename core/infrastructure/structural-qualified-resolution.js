@@ -17,7 +17,7 @@ export function shouldTrustQualifiedResolution(targetName, entity) {
 // Receivers that mean "the enclosing object", so a qualified edge like
 // `this.fetch` can only belong to a target in the SAME class or file as the
 // calling entity — never to an unrelated plain function that shares the name.
-const SELF_QUALIFIERS = new Set(['this', 'self', 'super', 'cls', 'me']);
+const SELF_QUALIFIERS = new Set(['this', 'self', 'super', 'cls', 'me', 'static']);
 
 /**
  * Caller-side twin of shouldTrustQualifiedResolution: decide whether a stored
@@ -29,6 +29,14 @@ export function trustedCallerEdge(edge, target) {
   const tn = String(edge?.targetName || '').trim();
   if (!tn || !target?.name) return true;
   if (edge.targetId && edge.targetId === target.id) return true;
+  // Resolution already bound this call to ANOTHER definition (a different
+  // file or owning type): `database.statementDidFail` → Database's method is
+  // not a caller of DatabaseObservationBroker.statementDidFail. Same file and
+  // owner (an overload, or the same definition re-indexed) stays trusted.
+  if (edge.targetId && edge.resolvedFile
+    && (edge.resolvedFile !== target.filePath || (edge.resolvedParent || null) !== (target.parentClass || null))) {
+    return false;
+  }
   const parts = tn.replace(/::/g, '.').split('.').filter(Boolean);
   if (parts.length < 2) return true; // bare-name edge: exact match already
   const qualifier = parts[parts.length - 2].toLowerCase();
