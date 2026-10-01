@@ -9,10 +9,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
+  OPENCODE_CACHE_PLUGIN_REL, OPENCODE_CACHE_PLUGIN_SPEC,
   OPENCODE_CONFIG_JSONC_REL, OPENCODE_CONFIG_REL, OPENCODE_MANIFEST_REL, OPENCODE_PLUGIN_REL, OPENCODE_PLUGIN_SPEC, OPENCODE_PROMPT_REF,
-  OPENCODE_PROMPT_REL, OPENCODE_RULES_ENTRY, OPENCODE_RULES_REL, installOpencodeHarness, removeOpencodeHarness,
+  OPENCODE_PROMPT_REL, OPENCODE_RULES_ENTRY, OPENCODE_RULES_REL, installOpencodeHarness, opencodeCacheKeyOffByEnv,
+  removeOpencodeHarness,
 } from '../../scripts/install-opencode-harness.js';
-import { OPENCODE_TOOL_EDITS, OPENCODE_TRIM_PLUGIN_SOURCE, opencodePrompt } from '../../scripts/harness-prompts/index.js';
+import {
+  OPENCODE_CACHE_KEY_PLUGIN_SOURCE, OPENCODE_TOOL_EDITS, OPENCODE_TRIM_PLUGIN_SOURCE, opencodePrompt,
+} from '../../scripts/harness-prompts/index.js';
 import { CANONICAL_POLICY_BODY, getMcpPolicyBody } from '../../scripts/inject-agent-instructions.js';
 
 let root;
@@ -23,6 +27,7 @@ const read = rel => readFileSync(join(root, rel), 'utf8');
 const write = (rel, text) => { mkdirSync(join(root, rel, '..'), { recursive: true }); writeFileSync(join(root, rel), text); };
 const config = () => JSON.parse(read(OPENCODE_CONFIG_REL));
 const RULES = CANONICAL_POLICY_BODY;
+const TRIM_ENTRY = [OPENCODE_PLUGIN_SPEC, { edits: JSON.parse(JSON.stringify(OPENCODE_TOOL_EDITS)) }];
 
 describe('installOpencodeHarness', () => {
   it('writes the rules, prompt and plugin files and the config that references them', () => {
@@ -31,10 +36,12 @@ describe('installOpencodeHarness', () => {
     expect(read(OPENCODE_RULES_REL)).toBe(`${RULES.trimEnd()}\n`);
     expect(read(OPENCODE_PROMPT_REL)).toBe(opencodePrompt());
     expect(read(OPENCODE_PLUGIN_REL)).toBe(readFileSync(OPENCODE_TRIM_PLUGIN_SOURCE, 'utf8'));
+    expect(read(OPENCODE_CACHE_PLUGIN_REL)).toBe(readFileSync(OPENCODE_CACHE_KEY_PLUGIN_SOURCE, 'utf8'));
     expect(config()).toEqual({
       $schema: 'https://opencode.ai/config.json',
       instructions: [OPENCODE_RULES_ENTRY],
-      plugin: [[OPENCODE_PLUGIN_SPEC, { edits: JSON.parse(JSON.stringify(OPENCODE_TOOL_EDITS)) }]],
+      // The tool-description plugin stays first (the task bench reads plugin[0]).
+      plugin: [TRIM_ENTRY, OPENCODE_CACHE_PLUGIN_SPEC],
       tools: { grep: false },
       agent: {
         build: { prompt: OPENCODE_PROMPT_REF },
@@ -55,9 +62,10 @@ describe('installOpencodeHarness', () => {
 
   it('is idempotent', () => {
     installOpencodeHarness({ projectRoot: root, rules: RULES });
-    const before = [OPENCODE_CONFIG_REL, OPENCODE_MANIFEST_REL, OPENCODE_PROMPT_REL].map(read);
+    const files = [OPENCODE_CONFIG_REL, OPENCODE_MANIFEST_REL, OPENCODE_PROMPT_REL, OPENCODE_CACHE_PLUGIN_REL];
+    const before = files.map(read);
     expect(installOpencodeHarness({ projectRoot: root, rules: RULES }).status).toBe('unchanged');
-    expect([OPENCODE_CONFIG_REL, OPENCODE_MANIFEST_REL, OPENCODE_PROMPT_REL].map(read)).toEqual(before);
+    expect(files.map(read)).toEqual(before);
   });
 
   it('merges into a user config and keeps settings the user made', () => {
@@ -73,7 +81,7 @@ describe('installOpencodeHarness', () => {
     const cfg = config();
     expect(cfg.model).toBe('x/y');
     expect(cfg.instructions).toEqual(['docs/rules.md', OPENCODE_RULES_ENTRY]);
-    expect(cfg.plugin[0]).toBe('my-plugin');
+    expect(cfg.plugin).toEqual(['my-plugin', TRIM_ENTRY, OPENCODE_CACHE_PLUGIN_SPEC]);
     expect(cfg.agent.build).toEqual({ prompt: 'my prompt', temperature: 0.1 });
     expect(cfg.tools.grep).toBe(true);
     expect(cfg.$schema).toBeUndefined();
@@ -83,13 +91,77 @@ describe('installOpencodeHarness', () => {
     expect(existsSync(join(root, OPENCODE_RULES_REL))).toBe(false);
   });
 
-  it('--no-cli form: MCP rules only, opencode keeps its own prompt and tools', () => {
+  it('--no-cli form: MCP rules only, opencode keeps its own prompt and tools; the cache-key plugin stays', () => {
     installOpencodeHarness({ projectRoot: root, rules: RULES });
     installOpencodeHarness({ projectRoot: root, rules: getMcpPolicyBody(), prompt: false });
     expect(read(OPENCODE_RULES_REL)).toBe(`${getMcpPolicyBody().trimEnd()}\n`);
     expect(existsSync(join(root, OPENCODE_PROMPT_REL))).toBe(false);
     expect(existsSync(join(root, OPENCODE_PLUGIN_REL))).toBe(false);
-    expect(config()).toEqual({ $schema: 'https://opencode.ai/config.json', instructions: [OPENCODE_RULES_ENTRY] });
+    expect(existsSync(join(root, OPENCODE_CACHE_PLUGIN_REL))).toBe(true);
+    expect(config()).toEqual({
+      $schema: 'https://opencode.ai/config.json', instructions: [OPENCODE_RULES_ENTRY], plugin: [OPENCODE_CACHE_PLUGIN_SPEC],
+    });
+  });
+
+  it('cacheKey: false installs no cache-key plugin, and removes one an earlier init installed', () => {
+    installOpencodeHarness({ projectRoot: root, rules: RULES, cacheKey: false });
+    expect(existsSync(join(root, OPENCODE_CACHE_PLUGIN_REL))).toBe(false);
+    expect(config().plugin).toEqual([TRIM_ENTRY]);
+
+    installOpencodeHarness({ projectRoot: root, rules: RULES });
+    expect(config().plugin).toEqual([TRIM_ENTRY, OPENCODE_CACHE_PLUGIN_SPEC]);
+    expect(JSON.parse(read(OPENCODE_MANIFEST_REL)).added.cacheKeyPlugin).toBe(true);
+
+    const r = installOpencodeHarness({ projectRoot: root, rules: RULES, cacheKey: false });
+    expect(r.status).toBe('installed');
+    expect(existsSync(join(root, OPENCODE_CACHE_PLUGIN_REL))).toBe(false);
+    expect(config().plugin).toEqual([TRIM_ENTRY]);
+    const manifest = JSON.parse(read(OPENCODE_MANIFEST_REL));
+    expect(manifest.added.cacheKeyPlugin).toBeUndefined();
+    expect(manifest.files[OPENCODE_CACHE_PLUGIN_REL]).toBeUndefined();
+    expect(installOpencodeHarness({ projectRoot: root, rules: RULES, cacheKey: false }).status).toBe('unchanged');
+  });
+
+  it('an older install without the cache-key plugin gains it on re-init', () => {
+    installOpencodeHarness({ projectRoot: root, rules: RULES, cacheKey: false });
+    const r = installOpencodeHarness({ projectRoot: root, rules: RULES });
+    expect(r.status).toBe('installed');
+    expect(r.detail).toContain(OPENCODE_CACHE_PLUGIN_REL);
+    expect(read(OPENCODE_CACHE_PLUGIN_REL)).toBe(readFileSync(OPENCODE_CACHE_KEY_PLUGIN_SOURCE, 'utf8'));
+  });
+
+  it('keeps a shards option the user put on the cache-key entry, and uninstall removes the entry', () => {
+    installOpencodeHarness({ projectRoot: root, rules: RULES });
+    const cfg = config();
+    cfg.plugin = cfg.plugin.map(e => (e === OPENCODE_CACHE_PLUGIN_SPEC ? [OPENCODE_CACHE_PLUGIN_SPEC, { shards: 4 }] : e));
+    write(OPENCODE_CONFIG_REL, JSON.stringify(cfg, null, 2) + '\n');
+    expect(installOpencodeHarness({ projectRoot: root, rules: RULES }).status).toBe('unchanged');
+    expect(config().plugin).toEqual([TRIM_ENTRY, [OPENCODE_CACHE_PLUGIN_SPEC, { shards: 4 }]]);
+    expect(removeOpencodeHarness({ projectRoot: root }).status).toBe('removed');
+    expect(existsSync(join(root, '.opencode'))).toBe(false);
+  });
+
+  it('a hand-edited cache-key plugin file is kept and not referenced', () => {
+    installOpencodeHarness({ projectRoot: root, rules: RULES });
+    write(OPENCODE_CACHE_PLUGIN_REL, '// mine\nexport default async () => ({});\n');
+    const r = installOpencodeHarness({ projectRoot: root, rules: RULES });
+    expect(r.warning).toMatch(/sweet-search-cache\.mjs is user-authored/);
+    expect(read(OPENCODE_CACHE_PLUGIN_REL)).toBe('// mine\nexport default async () => ({});\n');
+    expect(config().plugin).toEqual([TRIM_ENTRY]);
+    removeOpencodeHarness({ projectRoot: root });
+    expect(read(OPENCODE_CACHE_PLUGIN_REL)).toBe('// mine\nexport default async () => ({});\n');
+  });
+
+  it('a non-list "plugin" is left alone with one warning', () => {
+    write(OPENCODE_CONFIG_REL, JSON.stringify({ plugin: 'x' }));
+    const r = installOpencodeHarness({ projectRoot: root, rules: RULES });
+    expect(r.warning.match(/"plugin" is not a list/g)).toHaveLength(1);
+    expect(config().plugin).toBe('x');
+  });
+
+  it('opencodeCacheKeyOffByEnv: 0 / false / off / no switch it off; unset, empty and 1 do not', () => {
+    for (const v of ['0', 'false', 'OFF', ' no ']) expect(opencodeCacheKeyOffByEnv({ SWEET_SEARCH_OC_CACHE_KEY: v })).toBe(true);
+    for (const v of [undefined, '', '1', 'on']) expect(opencodeCacheKeyOffByEnv({ SWEET_SEARCH_OC_CACHE_KEY: v })).toBe(false);
   });
 
   it('refuses to touch an invalid opencode.json', () => {
@@ -123,6 +195,7 @@ describe('removeOpencodeHarness', () => {
     expect(existsSync(join(root, OPENCODE_CONFIG_REL))).toBe(false);
     expect(existsSync(join(root, OPENCODE_PROMPT_REL))).toBe(false);
     expect(existsSync(join(root, OPENCODE_PLUGIN_REL))).toBe(false);
+    expect(existsSync(join(root, OPENCODE_CACHE_PLUGIN_REL))).toBe(false);
   });
 
   it('keeps a user-created opencode.json even when it ends up empty', () => {
@@ -163,7 +236,7 @@ describe('JSONC opencode config', () => {
     expect(cfg.agent.build).toEqual({ temperature: 0.1, prompt: OPENCODE_PROMPT_REF });
     expect(cfg.agent.explore).toEqual({ disable: true });
     expect(cfg.tools).toEqual({ grep: false });
-    expect(cfg.plugin).toEqual([[OPENCODE_PLUGIN_SPEC, { edits: JSON.parse(JSON.stringify(OPENCODE_TOOL_EDITS)) }]]);
+    expect(cfg.plugin).toEqual([TRIM_ENTRY, OPENCODE_CACHE_PLUGIN_SPEC]);
     expect(installOpencodeHarness({ projectRoot: root, rules: RULES }).status).toBe('unchanged');
     removeOpencodeHarness({ projectRoot: root });
     const back = read(OPENCODE_CONFIG_REL);

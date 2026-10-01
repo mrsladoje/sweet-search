@@ -18,9 +18,10 @@ import {
   CODEX_CONFIG_REL, CODEX_INSTRUCTIONS_REL, CODEX_MANIFEST_REL,
 } from '../../scripts/install-codex-harness.js';
 import {
-  OPENCODE_CONFIG_REL, OPENCODE_PLUGIN_REL, OPENCODE_PROMPT_REL, OPENCODE_RULES_REL,
+  OPENCODE_CACHE_PLUGIN_REL, OPENCODE_CACHE_PLUGIN_SPEC, OPENCODE_CONFIG_REL, OPENCODE_MANIFEST_REL, OPENCODE_PLUGIN_REL,
+  OPENCODE_PROMPT_REL, OPENCODE_RULES_REL,
 } from '../../scripts/install-opencode-harness.js';
-import { codexInstructions, opencodePrompt } from '../../scripts/harness-prompts/index.js';
+import { OPENCODE_CACHE_KEY_PLUGIN_SOURCE, codexInstructions, opencodePrompt } from '../../scripts/harness-prompts/index.js';
 import { CLAUDE_LEAN_AGENT_REL } from '../../scripts/install-claude-lean-harness.js';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -39,11 +40,11 @@ afterEach(() => {
 
 const exists = rel => existsSync(join(proj, rel));
 const read = rel => readFileSync(join(proj, rel), 'utf8');
-function run(args, { status = 0 } = {}) {
+function run(args, { status = 0, env = {} } = {}) {
   const r = spawnSync(process.execPath, [CLI, ...args], {
     cwd: proj, encoding: 'utf8', timeout: 90_000,
     env: {
-      ...process.env, HOME: home, CODEX_HOME: join(home, '.codex'), XDG_CONFIG_HOME: join(home, '.config'),
+      ...process.env, ...env, HOME: home, CODEX_HOME: join(home, '.codex'), XDG_CONFIG_HOME: join(home, '.config'),
       XDG_CACHE_HOME: join(home, '.cache'), XDG_DATA_HOME: join(home, '.local', 'share'),
       SWEET_SEARCH_RUNTIME_DIR: join(home, 'runtime'),
     },
@@ -58,6 +59,7 @@ function trustCodexProject() {
   writeFileSync(join(home, '.codex', 'config.toml'), `model = "m"\n\n[projects.${JSON.stringify(`${proj}/`)}]\ntrust_level = "trusted"\n`);
 }
 const init = (...flags) => run(['init', '--profile=core', '--skip-prewarm-hook', '--skip-cuda', ...flags]);
+const initEnv = (env, ...flags) => run(['init', '--profile=core', '--skip-prewarm-hook', '--skip-cuda', ...flags], { env });
 const uninstall = () => run(['uninstall', '--force']);
 const OLD_BLOCK = `${MARKER_BEGIN}\nold policy\n${MARKER_END}\n`;
 
@@ -282,5 +284,43 @@ describe('uninstall restores the harness defaults', () => {
     expect(read(CODEX_INSTRUCTIONS_REL)).toBe('mine\n');
     // The config init created held only our keys, so it goes.
     expect(exists(CODEX_CONFIG_REL)).toBe(false);
+  });
+});
+
+describe('init --opencode: per-repo OpenAI prompt-cache key plugin', () => {
+  const cachePlugin = () => JSON.parse(read(OPENCODE_CONFIG_REL)).plugin?.filter(e => (Array.isArray(e) ? e[0] : e) === OPENCODE_CACHE_PLUGIN_SPEC) ?? [];
+
+  it('installs it by default, re-init is unchanged, uninstall removes it', () => {
+    init('--opencode');
+    expect(read(OPENCODE_CACHE_PLUGIN_REL)).toBe(readFileSync(OPENCODE_CACHE_KEY_PLUGIN_SOURCE, 'utf8'));
+    expect(cachePlugin()).toEqual([OPENCODE_CACHE_PLUGIN_SPEC]);
+    expect(Object.keys(JSON.parse(read(OPENCODE_MANIFEST_REL)).files)).toContain(OPENCODE_CACHE_PLUGIN_REL);
+    expect(init('--opencode').stderr).toContain('opencode harness: unchanged');
+    uninstall();
+    expect(exists('.opencode')).toBe(false);
+  });
+
+  it('--no-opencode-cache-key skips it and removes one an earlier init installed', () => {
+    init('--opencode', '--no-opencode-cache-key');
+    expect(exists(OPENCODE_CACHE_PLUGIN_REL)).toBe(false);
+    expect(cachePlugin()).toEqual([]);
+    init('--opencode');
+    expect(exists(OPENCODE_CACHE_PLUGIN_REL)).toBe(true);
+    init('--opencode', '--no-opencode-cache-key');
+    expect(exists(OPENCODE_CACHE_PLUGIN_REL)).toBe(false);
+    expect(cachePlugin()).toEqual([]);
+    expect(exists(OPENCODE_PLUGIN_REL)).toBe(true);
+  });
+
+  it('SWEET_SEARCH_OC_CACHE_KEY=0 at init time does the same', () => {
+    initEnv({ SWEET_SEARCH_OC_CACHE_KEY: '0' }, '--opencode');
+    expect(exists(OPENCODE_CACHE_PLUGIN_REL)).toBe(false);
+    expect(cachePlugin()).toEqual([]);
+  });
+
+  it('--no-cli keeps the cache-key plugin (it does not depend on the contact surface)', () => {
+    init('--opencode', '--mcp', '--no-cli');
+    expect(exists(OPENCODE_PLUGIN_REL)).toBe(false);
+    expect(cachePlugin()).toEqual([OPENCODE_CACHE_PLUGIN_SPEC]);
   });
 });

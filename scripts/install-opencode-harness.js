@@ -11,12 +11,20 @@
  *                                         steer, plus our lines = the benchmark arm
  *                                         OC_HARNESS_TRIM=conflict3+todo3eff3k)
  *   .opencode/plugins/sweet-search.mjs    the tool-description plugin (`tool.definition` hook)
+ *   .opencode/plugins/sweet-search-cache.mjs  per-repo OpenAI prompt-cache key: promptCacheKey and the
+ *                                         session-id / x-session-affinity / X-Session-Id headers of
+ *                                         `openai` provider requests carry one value per repository
+ *                                         instead of the session id (harness-prompts/
+ *                                         opencode-cache-key-plugin.mjs). Installed with or without
+ *                                         the prompt; off with `init --no-opencode-cache-key`, at
+ *                                         install time or run time with SWEET_SEARCH_OC_CACHE_KEY=0
  *   .opencode/opencode.json               keys that reference them (merged into an existing file,
  *                                         or into .opencode/opencode.jsonc when only that exists;
  *                                         comments, trailing commas and the user's formatting are
  *                                         kept: targeted jsonc-parser edits, never a rewrite):
  *                                           instructions: [".opencode/sweet-search.md"]
- *                                           plugin: [["./plugins/sweet-search.mjs", {edits}]]
+ *                                           plugin: [["./plugins/sweet-search.mjs", {edits}],
+ *                                                    "./plugins/sweet-search-cache.mjs"]
  *                                           tools: {grep: false}
  *                                           agent.build.prompt / agent.general.prompt:
  *                                             "{file:./sweet-search-prompt.txt}\n"
@@ -37,7 +45,9 @@ import {
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { applyEdits, modify, parse as parseJsonc, printParseErrorCode } from 'jsonc-parser';
-import { OPENCODE_TOOL_EDITS, OPENCODE_TRIM_PLUGIN_SOURCE, opencodePrompt } from './harness-prompts/index.js';
+import {
+  OPENCODE_CACHE_KEY_PLUGIN_SOURCE, OPENCODE_TOOL_EDITS, OPENCODE_TRIM_PLUGIN_SOURCE, opencodePrompt,
+} from './harness-prompts/index.js';
 
 export const OPENCODE_DIR_REL = '.opencode';
 export const OPENCODE_CONFIG_REL = '.opencode/opencode.json';
@@ -45,10 +55,14 @@ export const OPENCODE_CONFIG_JSONC_REL = '.opencode/opencode.jsonc';
 export const OPENCODE_RULES_REL = '.opencode/sweet-search.md';
 export const OPENCODE_PROMPT_REL = '.opencode/sweet-search-prompt.txt';
 export const OPENCODE_PLUGIN_REL = '.opencode/plugins/sweet-search.mjs';
+export const OPENCODE_CACHE_PLUGIN_REL = '.opencode/plugins/sweet-search-cache.mjs';
 export const OPENCODE_MANIFEST_REL = '.opencode/sweet-search-harness.json';
 // Config values. `instructions` resolves from the project root; the others from .opencode/.
 export const OPENCODE_RULES_ENTRY = OPENCODE_RULES_REL;
 export const OPENCODE_PLUGIN_SPEC = './plugins/sweet-search.mjs';
+// Listed without options: the plugin reads an optional { shards: N } a user adds to this entry, and
+// re-running init keeps such an entry as it is.
+export const OPENCODE_CACHE_PLUGIN_SPEC = './plugins/sweet-search-cache.mjs';
 export const OPENCODE_PROMPT_REF = '{file:./sweet-search-prompt.txt}\n';
 const SCHEMA_URL = 'https://opencode.ai/config.json';
 const MANIFEST_VERSION = 1;
@@ -72,6 +86,11 @@ export function opencodePluginEntry() {
 }
 
 const pluginSpecOf = e => (Array.isArray(e) ? e[0] : e);
+
+/** SWEET_SEARCH_OC_CACHE_KEY=0 / false / off / no: the cache-key opt-out (the plugin reads the same values). */
+export function opencodeCacheKeyOffByEnv(env = process.env) {
+  return ['0', 'false', 'off', 'no'].includes(String(env.SWEET_SEARCH_OC_CACHE_KEY ?? '').trim().toLowerCase());
+}
 
 function readJson(path) {
   if (!existsSync(path)) return { value: {}, exists: false };
@@ -197,6 +216,17 @@ const SETTINGS = {
     },
     free: cfg => cfg.plugin === undefined || Array.isArray(cfg.plugin),
   },
+  cacheKeyPlugin: {
+    key: 'plugin',
+    has: cfg => Array.isArray(cfg.plugin) && cfg.plugin.some(e => pluginSpecOf(e) === OPENCODE_CACHE_PLUGIN_SPEC),
+    add: cfg => { cfg.plugin = [...(Array.isArray(cfg.plugin) ? cfg.plugin : []), OPENCODE_CACHE_PLUGIN_SPEC]; },
+    remove: cfg => {
+      if (!Array.isArray(cfg.plugin)) return;
+      cfg.plugin = cfg.plugin.filter(e => pluginSpecOf(e) !== OPENCODE_CACHE_PLUGIN_SPEC);
+      if (!cfg.plugin.length) delete cfg.plugin;
+    },
+    free: cfg => cfg.plugin === undefined || Array.isArray(cfg.plugin),
+  },
 };
 
 // Scalar settings at a path, set only when the user has not set them.
@@ -244,9 +274,11 @@ function unsetPath(obj, path) {
  * @param {string} args.projectRoot
  * @param {string|null} [args.rules]  the rules text for .opencode/sweet-search.md; null = none
  * @param {boolean} [args.prompt]     ship our prompt, plugin, grep off and explore off
+ * @param {boolean} [args.cacheKey]   ship the per-repo OpenAI prompt-cache key plugin (false removes
+ *                                    one an earlier init installed)
  * @returns {{status: string, detail: string, warning?: string}} status in { installed, unchanged, error }
  */
-export function installOpencodeHarness({ projectRoot, rules = null, prompt = true } = {}) {
+export function installOpencodeHarness({ projectRoot, rules = null, prompt = true, cacheKey = true } = {}) {
   if (!projectRoot) return { status: 'error', detail: 'install-opencode-harness: projectRoot is required' };
   const manifestPath = join(projectRoot, OPENCODE_MANIFEST_REL);
   const manifestRead = readJson(manifestPath);
@@ -276,6 +308,7 @@ export function installOpencodeHarness({ projectRoot, rules = null, prompt = tru
       [OPENCODE_RULES_REL]: rules != null ? opencodeRulesFile(rules) : null,
       [OPENCODE_PROMPT_REL]: prompt ? opencodePrompt() : null,
       [OPENCODE_PLUGIN_REL]: prompt ? readFileSync(OPENCODE_TRIM_PLUGIN_SOURCE, 'utf8') : null,
+      [OPENCODE_CACHE_PLUGIN_REL]: cacheKey ? readFileSync(OPENCODE_CACHE_KEY_PLUGIN_SOURCE, 'utf8') : null,
     };
     const fileOk = {};
     for (const [rel, content] of Object.entries(wantedFiles)) {
@@ -304,10 +337,15 @@ export function installOpencodeHarness({ projectRoot, rules = null, prompt = tru
     const want = {
       instructions: Boolean(fileOk[OPENCODE_RULES_REL]),
       plugin: Boolean(fileOk[OPENCODE_PLUGIN_REL]),
+      cacheKeyPlugin: Boolean(fileOk[OPENCODE_CACHE_PLUGIN_REL]),
     };
     for (const [name, s] of Object.entries(SETTINGS)) {
       if (want[name]) {
-        if (!s.free(cfg)) { warnings.push(`${configRel} "${name}" is not a list; left as it is.`); continue; }
+        if (!s.free(cfg)) {
+          const msg = `${configRel} "${s.key ?? name}" is not a list; left as it is.`;
+          if (!warnings.includes(msg)) warnings.push(msg);
+          continue;
+        }
         if (!s.has(cfg)) { s.add(cfg); added[name] = true; }
         else if (added[name] && s.current && !same(s.current(cfg), opencodePluginEntry())) s.add(cfg); // refresh our edits
       } else if (added[name]) {
