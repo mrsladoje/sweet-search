@@ -2184,6 +2184,12 @@ def main():
               'Static facts from the pinned binaries: opencode 1.18.4 sets the OpenAI `promptCacheKey` to the session id and `store=false`; its environment block holds the working directory and the date at day resolution (no file tree); '
               'its rules block is `Instructions from: <path>` with the stable rules path. Codex 0.159.2 sends a `prompt_cache_key` field (value not visible in the logs; Codex uses the thread id). '
               'A per-session cache key means each rollout routes on its own key, so a new session lands on a cache that may or may not hold the shared prefix.\n')
+    md.append('**Mock-server check (2026-10-01, $0):** the pinned opencode 1.18.4 with the runner\'s sweet-arm config, pointed at a local mock, sent byte-identical request-0 bodies '
+              'in 4 sessions (same repo, same question), with the default per-session key and with a per-repo key; only `prompt_cache_key` differed. The ChatGPT-login route does not change the body; '
+              'it rewrites the URL to chatgpt.com/backend-api/codex/responses and adds headers (authorization, ChatGPT-Account-Id, originator, User-Agent, and `session-id` = the opencode session id). '
+              'Token map of request 0 (o200k): tools about 3,100–3,200, developer message 3,771 (agent prompt 0–2,027; `<env>` with the working directory at 2,027–2,120; `Instructions from: <rules path>` at about 2,127; rules about 2,180–3,660; skills list to 3,771), question about 140. '
+              'The 2,944-token request-0 level is the prefix that every opencode session shares with sessions of other repos, other runs or the other arm (they differ first at the working-directory or rules path); 6,656 is the full static prefix of the same repo and arm. '
+              'Scripts: scratchpad `ocmock/` (mock.mjs, mkcfg.mjs, run1.sh).\n')
     s4_text, s4_agg = sec_s4(G, [st['run'] for st in status], pairs_native)
     md.append(s4_text + '\n')
     md.append('## 8. Bundle A (SS_FIX_A=1) vs shipped output, same questions\n')
