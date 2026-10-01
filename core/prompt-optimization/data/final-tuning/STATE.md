@@ -50,6 +50,8 @@ Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 
 ## Decisions log
 
+- 11:15 **Clean held-out table** (`r3/RESULTS-HELDOUT-FIXED.md`; Opus re-scored to complete panels): Opus V1b vs 2.8.2 cost −11.3% (q<0.001), accuracy −1.2 pt [−2.9, +0.6] (ns; the live-panel read was −0.1 → judge noise ≈ 1 pt; non-inferiority at −2 pt borderline/not formally shown); Opus V1b vs native +6.9% (q 0.026); Sonnet V1b vs 2.8.2 −10.1% (q<0.001), acc +1.3; Sonnet V1b vs native −4.1% (ns). **Codex clean: 2.8.2 vs native cost +2.9% (ns), acc −2.1 (ns) — the earlier "−15.2%" was an artifact of the crashing ss-find (shorter rollouts).** oc-Sol clean (r282 train, interleaved): +0.8% (ns), acc −0.6, calls −20%. Codex rescore running; Codex r3 dev re-run running.
+
 - 10:50 **Held-out Opus re-run with the ss-find fix (clean, 0 crashes; live panels 96–98 pairs):** V1b vs 2.8.2 cost −11.3% [−15.0, −7.5] (q<0.001), **accuracy −0.1 pt [−1.8, +1.6] → non-inferiority at −2 pt SHOWN**; V1b vs native +6.9% (q 0.026), acc −0.9 (ns); 2.8.2 vs native +20.5% (q<0.001). Spec `r3/spec-heldout-fixed.json`. Rescore for complete panels running.
 
 - 10:20 **Held-out Sonnet (clean: 0 ss-find crashes in these arms; complete panels):** V1b vs 2.8.2 cost −10.1% [−14.4, −5.9] (q<0.001), accuracy +1.3 pt (ns); V1b vs native cost −4.1% (ns), accuracy +0.9 (ns); 2.8.2 vs native +6.6% (q 0.066). Re-runs with the fixed ss-find running (no crash seen so far). `r3/RESULTS-HELDOUT.md` (Opus/Codex rows still pre-fix until the re-runs land).
