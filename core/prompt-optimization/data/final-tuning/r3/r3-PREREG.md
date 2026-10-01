@@ -58,3 +58,21 @@ Secondary: turns, file recall (share of `expectedFiles` basenames named in the a
 
 Same as r282: a question counts only when both compared arms finished (exit 0, no runner error);
 timeouts and errors reported per arm; account-level failures stop the cell.
+
+## ADDENDUM — r3-hard (frozen 2026-10-01)
+
+- **File:** `r3/r3-hard-probes.json`, sha256 `09b0ab9f9f8aabfeaf569a52e0acd810445617c1236c5967c2ec31953d70ea4d`;
+  manifest `r3/MANIFEST-HARD.json`. The original r3 split is unchanged.
+- **Source:** 6 r3 repos (group A, 2 drafters' worth, 24 drafted per repo) + 5 new repos in new languages
+  (group B: okhttp Kotlin, sequel Ruby, composer PHP, drogon C++, grdb Swift; 14 drafted per repo).
+  Pipeline: drafting (HARD-DRAFTING-BRIEF + ADDENDUM: cheapest route ≥ 4 dependent steps, no exposed
+  constants) → 2-model fact flags → closed-book screen (2 non-Claude models, no code; drop if either names
+  ≥ half the gold files AND symbols; negatives not screened) → Opus audit (HARD-AUDIT-BRIEF).
+- **Counts:** 194 kept of 197 drafted (A 133, B 61); closed-book dropped 16, auditors dropped 20, hardened 12.
+  Strata: chain 52, completeness 42, cross-layer 31, decoy 28, condition 25, negative-decoy 16.
+- **Split:** 50/50 stratified by repo × stratum, seed 42 → dev 97 (A 67, B 30), held-out 97 (A 66, B 31).
+  Group A ≥ 2/3 of each half, so the result is not driven by the new languages.
+- **Pilot:** 20 dev questions (seed 4242), native Claude Code + Opus 5.5 medium. Targets: 6–8 turns
+  (median tool calls ≥ 6) and native accuracy 60–85%. If the pilot misses the target, report it; held-out
+  questions are never edited.
+- **Held-out:** aggregates only, run once at the end. Same metrics and analysis as above.
