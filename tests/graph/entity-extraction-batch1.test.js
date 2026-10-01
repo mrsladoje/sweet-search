@@ -207,7 +207,7 @@ class UserService {
     expect(result.relationships.some(r => r.type === 'calls' && r.target_name === 'logger.info')).toBe(true);
   });
 
-  it('filters skipCallObjects: echo, $this, self, parent, etc', async () => {
+  it('filters skipCallObjects: echo, parent, etc; keeps self::/static:: same-class calls', async () => {
     const result = await extractor.extractFromFile('/test/app.php', `
 class Test {
   public function process() {
@@ -226,9 +226,12 @@ class Test {
     expect(result.relationships.some(r => r.target_name === 'print')).toBe(false);
     expect(result.relationships.some(r => r.target_name === 'var_dump')).toBe(false);
     expect(result.relationships.some(r => r.target_name.includes('$this'))).toBe(false);
-    expect(result.relationships.some(r => r.target_name.includes('self'))).toBe(false);
+    // `self::helper()` / `static::factory()` call the same class; ss-trace
+    // trusts self-like edges only within the caller's class/file.
+    expect(result.relationships.some(r => r.type === 'calls' && r.target_name === 'self.helper')).toBe(true);
+    expect(result.relationships.some(r => r.type === 'calls' && r.target_name === 'static.factory')).toBe(true);
+    expect(result.relationships.some(r => r.type === 'calls' && r.target_name === 'repo.find')).toBe(true);
     expect(result.relationships.some(r => r.target_name.includes('parent'))).toBe(false);
-    expect(result.relationships.some(r => r.target_name.includes('static'))).toBe(false);
     expect(result.relationships.some(r => r.type === 'calls' && r.target_name === 'logger.info')).toBe(true);
   });
 });

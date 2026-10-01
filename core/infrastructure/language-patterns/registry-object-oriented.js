@@ -59,7 +59,8 @@ export const OBJECT_ORIENTED_LANGUAGES = {
         implements: /^(?:abstract\s+|final\s+)?class\s+\w+(?:\s+extends\s+[\w\\]+)?\s+implements\s+([\w\\,\s]+)/,
         methodCall: /(\w+)\s*(?:->|::)\s*(\w+)\s*\(/,
       },
-      skipCallObjects: ["$this", "self", "parent", "static", "echo", "print", "var_dump"],
+      // `self::` / `static::` / `$this->` calls stay (same-class edges).
+      skipCallObjects: ["parent", "echo", "print", "var_dump"],
     },
   },
   // ─── Ruby ──────────────────────────────────────────────────────────────────
