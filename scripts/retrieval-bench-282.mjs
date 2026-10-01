@@ -49,7 +49,7 @@ const { parseClaudeStream, excludeAncestorClaudeMd } = await import(path.join(H,
 const { turnsFromTranscript, sidechainTurnSets, addSidechainCostsChecked, selectClaudeMainCosts } = await import(path.join(H, 'claude-code-accounting.mjs'));
 const { parseCodexAgentStream, codexHarnessTrim, codexHarnessTrimArgs, codexRulesConfigArgs, buildPrivateHome, isZeroCallStartFailure, classifyCodexCommand } = await import(path.join(H, 'codex-task-runner.mjs'));
 const { opencodeArmHarnessTrim, opencodeRulesInConfig, buildMainOpencodeConfig, opencodeUnjailedEnv, runOpencodePreflight, parseOpencodeStream, opencodeRunMessage, OPENCODE_TRIM_REPORT } = await import(path.join(H, 'opencode-task-runner.mjs'));
-const { writeClaudeRules, removeClaudeRules } = await imp('scripts/write-claude-rules.js');
+const { writeClaudeRules, removeClaudeRules, resolveClaudeRulesLayout } = await imp('scripts/write-claude-rules.js');
 const { installClaudeLeanHarness, removeClaudeLeanHarness } = await imp('scripts/install-claude-lean-harness.js');
 if (ISOLATION_ON) throw new Error('SS_ISOLATION must be 0 on the Mac');
 
@@ -216,6 +216,10 @@ const claudeHome = (arm) => { const d = path.join(STATE, `claude-home-${arm}`); 
 
 // Sweet-arm install into the bench repos = what `init` writes for Claude Code. Snapshot first,
 // refuse to touch a repo that already has .claude/ product files, and remove them after the arm.
+// Since V1b (2026-10-01, the product default after 2.8.2) the rules ride in the lean agent file and the
+// rules file is the short pointer, exactly as init installs them (lean harness first, then the
+// rules file by its result). SS_VARIANT_CC_RULES_IN_PROMPT=0 reproduces the 2.8.2 layout (full
+// rules file, agent file without rules) for controls; =2 is the default; =1 (V1) writes no rules file.
 const CLAUDE_PRODUCT_FILES = ['.claude/rules/sweet-search.md', '.claude/agents/sweet-search.md', '.claude/agents/general-purpose.md', '.claude/agents/Plan.md', '.claude/sweet-search-harness.json'];
 function installClaudeProduct(cwds, home) {
   const installed = [];
@@ -226,10 +230,12 @@ function installClaudeProduct(cwds, home) {
     const settingsBefore = fs.existsSync(settings) ? fs.readFileSync(settings) : null;
     const claudeDirExisted = fs.existsSync(path.join(cwd, '.claude'));
     installed.push({ cwd, settings, settingsBefore, claudeDirExisted });
-    const rules = writeClaudeRules({ projectRoot: cwd });
-    const lean = installClaudeLeanHarness({ projectRoot: cwd, configDir: home, visibleConfigDir: home });
+    const { layout } = resolveClaudeRulesLayout(process.env, { strict: true });
+    const lean = installClaudeLeanHarness({ projectRoot: cwd, configDir: home, visibleConfigDir: home });   // reads the switch from process.env, as init does
     if (lean.active !== true) throw new Error(`lean harness not active in ${cwd}: ${lean.status} ${lean.detail}`);
-    if (rules !== 'created') throw new Error(`rules not created in ${cwd}: ${rules}`);
+    if (lean.rulesInPrompt !== (layout !== 'file')) throw new Error(`rules placement mismatch in ${cwd}: rulesInPrompt=${lean.rulesInPrompt}, layout=${layout}`);
+    const rules = layout === 'none' ? 'in-prompt' : writeClaudeRules({ projectRoot: cwd, layout: layout === 'pointer' ? 'pointer' : 'full' });
+    if (rules !== 'created' && rules !== 'in-prompt') throw new Error(`rules not created in ${cwd}: ${rules}`);
   }
   return installed;
 }

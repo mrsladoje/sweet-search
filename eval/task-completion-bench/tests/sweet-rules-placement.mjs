@@ -218,8 +218,10 @@ console.log('claude code:');
   const home = join(dir, 'claude-home');
   mkdirSync(home);
   execFileSync('git', ['init', '-q'], { cwd: dir });
-  const lean = installClaudeLeanHarness({ projectRoot: dir, appendOverride: false, env: {}, configDir: home, visibleConfigDir: home });
-  assert(lean.active === true, 'product: lean harness installs into a throwaway project');
+  // rules: false = the runner's call under SWEET_RULES_PLACEMENT=system (rulesInPrompt is off there;
+  // since V1b the installer's own default would put the rules in the main agent file).
+  const lean = installClaudeLeanHarness({ projectRoot: dir, appendOverride: false, env: {}, configDir: home, visibleConfigDir: home, rules: false });
+  assert(lean.active === true && lean.rulesInPrompt === false, 'product: lean harness installs into a throwaway project, without the rules');
   assert(JSON.stringify(CLAUDE_RULES_AGENT_FILES) === JSON.stringify([CLAUDE_LEAN_AGENT_REL, CLAUDE_LEAN_SUBAGENT_REL, CLAUDE_LEAN_PLAN_REL]),
     'product: the rules go to the main, general-purpose and Plan agent files');
   const before = Object.fromEntries(CLAUDE_RULES_AGENT_FILES.map(rel => [rel, readFileSync(join(dir, rel), 'utf8')]));
@@ -323,7 +325,11 @@ for (const [file, needles] of Object.entries({
     "allowedStateEntries: ['opencode.json', ...harnessTrim.stateEntries]"],
   'claude-code-task-runner.mjs': ["if (rulesPlacement === 'config') throw", "resolveSweetRulesPlacement({ sweet, harness: 'claude-code' })",'if (sweet && !systemRules) {', 'appendRulesToLeanAgentFiles(rundir, systemRules)',
     'systemRules: harnessTrim.installLean ? null : systemRules', '...sweetRulesRowFields(rulesPlacement, { sweet })',
-    '...(sweet ? { harnessTrimSource: harnessTrim.origin } : {})', "claudeHarnessTrim(sweet ? process.env.CC_HARNESS_TRIM : '0')"],
+    '...(sweet ? { harnessTrimSource: harnessTrim.origin } : {})', "claudeHarnessTrim(sweet ? process.env.CC_HARNESS_TRIM : '0')",
+    // V1b default: rules in the lean main agent only with the lean harness + the file placement.
+    "resolveClaudeRulesLayout(process.env, { strict: true })",
+    "Boolean(sweet && ccRulesLayout !== 'file' && harnessTrim.installLean && rulesPlacement === 'file')",
+    'rules: rulesInPrompt ? mppText : false', "rulesInPrompt ? CLAUDE_RULES_POINTER : mppText.trimEnd()"],
 })) {
   const src = readFileSync(new URL(`../harness/${file}`, import.meta.url), 'utf8');
   for (const n of needles) assert(src.includes(n), `${file}: ${n}`);
