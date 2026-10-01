@@ -179,7 +179,7 @@ describe('createImportResolver', () => {
       'cpp/lib/inc/drogon/HttpTypes.h': '',
       'cpp/lib/src/Impl.cc': '',
       'cpp/lib/src/Impl.h': '',
-      'jvm/core/src/main/java/com/acme/Foo.java': '',
+      'jvm/core/src/main/java/com/acme/Foo.java': 'package com.acme;\npublic class Foo {}',
       'jvm/app/src/main/kotlin/com/acme/app/App.kt': '',
       'rb/lib/acme/model.rb': '',
       'rb/spec/spec_helper.rb': '',

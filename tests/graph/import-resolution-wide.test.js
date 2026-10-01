@@ -209,13 +209,13 @@ describe('createImportResolver — wider languages', () => {
       'zig/src/main.zig': '',
       // Haskell
       'hs/package.yaml': 'name: x\nlibrary:\n  source-dirs: src\ntests:\n  spec:\n    source-dirs: test\n',
-      'hs/src/Text/Doc.hs': '',
-      'hs/src/Text/Doc/Parser.hs': '',
+      'hs/src/Text/Doc.hs': 'module Text.Doc where',
+      'hs/src/Text/Doc/Parser.hs': 'module Text.Doc.Parser (parse) where',
       'hs/test/Spec.hs': '',
       // Clojure
       'clj/deps.edn': '{:paths ["src" "resources"] :aliases {:test {:extra-paths ["test"]}}}',
-      'clj/src/app/core.clj': '',
-      'clj/src/app/db_util.cljc': '',
+      'clj/src/app/core.clj': '(ns app.core)',
+      'clj/src/app/db_util.cljc': '(ns ^:no-doc app.db-util)',
       'clj/test/app/core_test.clj': '',
       // Solidity
       'sol/foundry.toml': '[profile.default]\nremappings = [\n  "@oz/=lib/openzeppelin-contracts/contracts/",\n]\n',
@@ -237,8 +237,8 @@ describe('createImportResolver — wider languages', () => {
       'elm/elm.json': '{ "source-directories": ["src"] }',
       'elm/src/Api/Endpoint.elm': '',
       'elm/src/Main.elm': '',
-      'perl/lib/PPI/Token.pm': '',
-      'perl/lib/PPI.pm': '',
+      'perl/lib/PPI/Token.pm': 'package PPI::Token;\n1;',
+      'perl/lib/PPI.pm': 'package PPI;\n1;',
       'erl/src/cowboy_http.erl': '',
       'erl/src/cowboy.hrl': '',
       'erl/include/shared.hrl': '',
