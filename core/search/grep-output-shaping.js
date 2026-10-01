@@ -201,10 +201,13 @@ export function allocateGrepBudget(counts, budget) {
  * @param {{files: Array<{file, total, kept}>, hiddenFileCount, hiddenMatchCount,
  *          hiddenSample: Array<{file, total}>}} fileSummary
  * @param {number} k - body line budget
+ * @param {{dropRepeatedText?: boolean}} [opts] - SS_FIX_GREP_ORDER: when every shown hit
+ *   carries the same matched text (and more than one hit shows), print `file:line` only.
+ *   Absent = the original format, byte for byte.
  * @returns {{lines: string[], shownMatches: number, matchedFileCount: number,
  *            truncatedFileCount: number, hiddenLine: string|null}}
  */
-export function renderGrepBody(kept, fileSummary, k) {
+export function renderGrepBody(kept, fileSummary, k, opts = undefined) {
   const groups = new Map();
   for (const m of kept) {
     if (!groups.has(m.file)) groups.set(m.file, []);
@@ -214,7 +217,7 @@ export function renderGrepBody(kept, fileSummary, k) {
   const ordered = [...groups.entries()];
   const alloc = allocateGrepBudget(ordered.map(([, ms]) => ms.length), k);
 
-  const lines = [];
+  const rows = [];
   let shownMatches = 0;
   let truncatedFileCount = 0;
   const unallocated = []; // fetched files that got zero budget (more files than k)
@@ -227,14 +230,21 @@ export function renderGrepBody(kept, fileSummary, k) {
     for (let j = 0; j < alloc[i]; j++) {
       const m = ms[j];
       const text = (m.matchText || '').replace(/\s+/g, ' ').trim().slice(0, 140);
-      let line = `${file}:${m.line}: ${text}`;
+      let more = 0;
       if (j === alloc[i] - 1 && total > alloc[i]) {
-        line += ` (+${total - alloc[i]} more in this file)`;
+        more = total - alloc[i];
         truncatedFileCount++;
       }
-      lines.push(line);
+      rows.push({ file, line: m.line, text, more });
       shownMatches++;
     }
+  });
+  const dropText = opts?.dropRepeatedText === true
+    && rows.length > 1 && rows.every(row => row.text === rows[0].text);
+  const lines = rows.map((row) => {
+    let line = dropText ? `${row.file}:${row.line}` : `${row.file}:${row.line}: ${row.text}`;
+    if (row.more) line += ` (+${row.more} more in this file)`;
+    return line;
   });
 
   // Files that matched but got no body line at all (more matching files than

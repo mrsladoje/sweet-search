@@ -135,6 +135,26 @@ export function collectAgentShownSpans(results, { projectRoot } = {}) {
     .slice(0, MAX_SPANS_PER_CALL);
 }
 
+/**
+ * Same spans as collectAgentShownSpans, but each carries the index of the result it came
+ * from and which part (the result body or its continuation block) it covers. Used by the
+ * SS_FIX_A already-shown omission, which must know which printed block a decision is for.
+ * collectAgentShownSpans itself is unchanged.
+ *
+ * @returns {Array<{span: object, resultIndex: number, part: 'result'|'continuation'}>}
+ */
+export function collectAgentShownSpansIndexed(results, { projectRoot } = {}) {
+  if (!Array.isArray(results)) return [];
+  const out = [];
+  results.forEach((result, resultIndex) => {
+    const body = completeAgentResultSpan(result, projectRoot);
+    if (body) out.push({ span: body, resultIndex, part: 'result' });
+    const cont = completeAgentContinuationSpan(result, projectRoot);
+    if (cont) out.push({ span: cont, resultIndex, part: 'continuation' });
+  });
+  return out.slice(0, MAX_SPANS_PER_CALL);
+}
+
 export function collectReadShownSpans(results, { projectRoot } = {}) {
   const files = Array.isArray(results?.files) ? results.files : [];
   return files.flatMap((result, resultIndex) => {
