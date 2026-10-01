@@ -1370,7 +1370,7 @@ function bestQualifierTier(candidates, qualifier) {
 function pickClosestCandidate(candidates, sourceEntity, qualifier = null) {
   if (candidates.length <= 1) return candidates[0] || null;
   const srcPath = sourceEntity?.file_path;
-  if (!srcPath) return candidates[0];
+  if (!srcPath) return firstByPosition(candidates);
 
   const srcParts = pathFacts(srcPath).parts;
   let top = [];
@@ -1397,10 +1397,26 @@ function pickClosestCandidate(candidates, sourceEntity, qualifier = null) {
   }
   if (top.length > 1 && bestScore % 100 === 0) {
     // No shared directory: fall back to the project boundary.
-    const sameProject = top.find(c => isSameProject(c.file_path, srcPath));
-    if (sameProject) return sameProject;
+    const sameProject = top.filter(c => isSameProject(c.file_path, srcPath));
+    if (sameProject.length > 0) return firstByPosition(sameProject);
   }
-  return top[0];
+  return firstByPosition(top);
+}
+
+/**
+ * Equal candidates (overloads of one owner, or an exact score tie) resolve by
+ * position — file path, then start line — not by row order: an incrementally
+ * maintained graph re-inserts rows, and must pick what a full build picks.
+ */
+function firstByPosition(list) {
+  let best = list[0];
+  for (let i = 1; i < list.length; i++) {
+    const c = list[i];
+    const fp = c.file_path || '';
+    const bp = best.file_path || '';
+    if (fp < bp || (fp === bp && (c.start_line ?? 0) < (best.start_line ?? 0))) best = c;
+  }
+  return best;
 }
 
 export { detectProject, isSameProject };
