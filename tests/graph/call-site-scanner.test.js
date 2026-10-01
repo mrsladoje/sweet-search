@@ -146,3 +146,49 @@ describe('call-site scanner — false positives', () => {
     expect(names('a.ts', 'console.log(x)')).toEqual([]);
   });
 });
+
+describe('call-site scanner — string literals', () => {
+  it('reads no call inside a string literal, in any language', () => {
+    expect(names('a.ts', 'const m = "call obj.method(1) now"; real.call(2);')).toEqual(['real.call']);
+    expect(names('a.py', 'y = "text other.call(4)"; e.f(5)')).toEqual(['e.f']);
+    expect(names('a.java', 'String s = "x.y(1)"; obj.call(2);')).toEqual(['obj.call']);
+    expect(names('a.go', 'w.Write("x.y(1)")')).toEqual(['w.Write']);
+    expect(names('a.rs', 'println!("a.b({})", 1); c.d(2);')).toEqual(['c.d']);
+    expect(names('a.rb', 'puts "a.b(1)"; e.f(2)')).toEqual(['e.f']);
+    expect(names('a.cs', 'var s = "x.Y(1)"; k.L(2);')).toEqual(['k.L']);
+    expect(names('a.cpp', 'auto s = "x.y(1)"; a.b(2);')).toEqual(['a.b']);
+  });
+
+  it('keeps calls inside string interpolation', () => {
+    expect(names('a.ts', 'const t = `tpl ${y.compute(2)} and text.notACall(3)`;')).toEqual(['y.compute']);
+    expect(names('a.kt', 'val t = "v ${k.m(4)} w.z(5)"')).toEqual(['k.m']);
+    expect(names('a.swift', 'let s = "v \\(model.title(1)) w.z(2)"')).toEqual(['model.title']);
+    expect(names('a.rb', 's = "v #{a.b(1)} w.z(2)"')).toEqual(['a.b']);
+    expect(names('a.rb', "t = 'v #{c.d(3)}'")).toEqual([]);
+    expect(names('a.py', 's = f"v {a.b(1)} w.z(2)"')).toEqual(['a.b']);
+    expect(names('a.py', "t = 'q.r(3)'")).toEqual([]);
+    expect(names('a.cs', 'var s = $"v {a.B(1)} w.Z(2)";')).toEqual(['a.B']);
+    expect(names('a.php', '$s = "v {$o->m(1)} w->z(2)";')).toEqual(['o.m']);
+  });
+
+  it('tracks template literals, raw strings and triple quotes across lines', () => {
+    expect(calls('a.ts', ['const q = `', '  SELECT x.y(1) FROM t', '  ${db.quote(v)} // text', '`; real.call(2);'].join('\n')))
+      .toEqual(['3:db.quote', '4:real.call']);
+    expect(calls('a.go', ['s := `raw', 'x.y(1) /* not a comment', '`', 'a.b(2)'].join('\n'))).toEqual(['4:a.b']);
+    expect(calls('a.kt', ['val s = """', '   text a.b(1)', '   ${obj.real(2)}', '"""', 'x.y(3)'].join('\n')))
+      .toEqual(['3:obj.real', '5:x.y']);
+    expect(calls('a.java', ['String s = """', '  text a.b(1)', '  """;', 'x.y(2);'].join('\n'))).toEqual(['4:x.y']);
+  });
+
+  it('does not let a char literal holding a quote open a string', () => {
+    expect(names('a.go', 'r := \'"\'; a.b(2)')).toEqual(['a.b']);
+    expect(names('a.java', "char c = '\"'; x.y(2);")).toEqual(['x.y']);
+    expect(names('a.cpp', "char q = '\\''; e.f(3);")).toEqual(['e.f']);
+    expect(names('a.rs', "fn f<'a>(x: &'a str) { c.d(3) }")).toEqual(['c.d']);
+  });
+
+  it('keeps escapes off in raw strings', () => {
+    expect(names('a.cs', 'var p = @"c:\\path\\" + q.R(3);')).toEqual(['q.R']);
+    expect(names('a.rs', 'let s = r"raw x.y(1) \\"; a.b(2);')).toEqual(['a.b']);
+  });
+});

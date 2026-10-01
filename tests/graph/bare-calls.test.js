@@ -31,6 +31,14 @@ describe('bare call scanning', () => {
     ], ['run'])).toEqual(['check', 'empty', 'execute', 'parse']);
   });
 
+  it('a Go trailing-dot continuation is a qualified call, not a bare call', () => {
+    expect(bareCalls('go', [
+      '\tclient.',
+      '\t\tDo(req)',
+      '\tv := compute(1)',
+    ])).toEqual(['compute']);
+  });
+
   it('skips definitions: def/fn/func/fun/function, typed C-family declarations, receivers', () => {
     expect(bareCalls('python', ['def helper(a, b):', 'class Foo(Base):', '@decorator(arg)'])).toEqual([]);
     expect(bareCalls('rust', ['pub fn new(x: u32) -> Self {', 'fn helper<T>(t: T) {', '    let v = compute(x)?;', '    println!("{}", fmt(x));'])).toEqual(['compute', 'fmt']);
