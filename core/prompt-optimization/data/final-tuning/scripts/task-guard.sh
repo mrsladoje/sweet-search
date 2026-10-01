@@ -2,7 +2,7 @@
 # Task-bench resolution guard for SS_VARIANT_CC_RULES_IN_PROMPT (final-tuning V1), on the owner's Mac.
 # Claude Code 2.1.281 + Opus 5.5 medium (subscription token), SWEET ARM ONLY, the DEV tasks of rotation A
 # (4) + rotation B (6) from the 2026-09 harness hill-climb, REPS reps per arm.
-#   base = shipped 2.8.2 sweet (switch unset)      var = SS_VARIANT_CC_RULES_IN_PROMPT=1
+#   base = shipped 2.8.2 sweet (switch unset)      var = SS_VARIANT_CC_RULES_IN_PROMPT=${GUARD_VAR_VALUE:-1} (2 = V1b)
 # Both arms run THIS worktree's code (same runner, same ss-* bin); only the switch differs.
 #
 #   bash task-guard.sh preflight   # $0: checks + run-pilot PREFLIGHT_ONLY for both arms. No model call.
@@ -74,7 +74,7 @@ conc_of() { ids_of "$1" | tr ',' '\n' | grep -c .; }   # distinct tasks all at o
 
 if [ "$MODE" = preflight ]; then
   for arm in base var; do
-    SW=(); [ $arm = var ] && SW=(SS_VARIANT_CC_RULES_IN_PROMPT=1)
+    SW=(); [ $arm = var ] && SW=(SS_VARIANT_CC_RULES_IN_PROMPT=${GUARD_VAR_VALUE:-1})
     for cell in A B; do
       echo "== preflight $arm cell $cell"
       env "${UNSET[@]}" "${COMMON[@]}" ${SW[@]+"${SW[@]}"} INSTANCES=$(ids_of $cell) PREFLIGHT_ONLY=1 node harness/run-pilot.mjs 2>&1 | grep -E "env-ledger|PRE-FLIGHT|stale|missing|golden" | head -8
@@ -88,7 +88,7 @@ fi
 leg() {
   local arm=$1 cell=$2 rep=$3 idx=$4 run="tg-$STAMP-L$4"
   if grep -q "^$run .* done" "$STATUS" 2>/dev/null; then echo "skip $run (done)"; return 0; fi
-  SW=(); [ "$arm" = var ] && SW=(SS_VARIANT_CC_RULES_IN_PROMPT=1)
+  SW=(); [ "$arm" = var ] && SW=(SS_VARIANT_CC_RULES_IN_PROMPT=${GUARD_VAR_VALUE:-1})
   if [ "${GUARD_DRY:-0}" = 1 ]; then
     printf 'DRY %s %s cell %s rep %s: env' "$run" "$arm" "$cell" "$rep"
     printf ' %q' "${UNSET[@]}" "${COMMON[@]}" ${SW[@]+"${SW[@]}"} "INSTANCES=$(ids_of "$cell")" "CONCURRENCY=$(conc_of "$cell")" "RUN_ID=$run"

@@ -42,7 +42,7 @@ import {
   CLAUDE_LEAN_BASE_PROMPT, CLAUDE_LEAN_BASE_PROMPT_BATCH, CLAUDE_LEAN_ENV,
   CLAUDE_LEAN_SUBAGENT_DESCRIPTION, CLAUDE_LEAN_SUBAGENT_PROMPT,
   CLAUDE_LEAN_AGENT_REL, CLAUDE_LEAN_SUBAGENT_REL, CLAUDE_LEAN_PLAN_REL, CLAUDE_LEAN_MANIFEST_REL,
-  installClaudeLeanHarness,
+  installClaudeLeanHarness, CLAUDE_RULES_POINTER,
 } from '../../../scripts/install-claude-lean-harness.js';
 import { getPolicyBody } from '../../../scripts/inject-agent-instructions.js';
 
@@ -658,7 +658,8 @@ export async function runClaudeCodeTask(task, {
   // written. The general-purpose and Plan subagent files do NOT carry the rules in this variant.
   // Refused unless the agent file can carry them and they are the same bytes the file placement
   // would have written.
-  const rulesInPrompt = sweet && process.env.SS_VARIANT_CC_RULES_IN_PROMPT === '1';
+  const rulesVariant = sweet ? (process.env.SS_VARIANT_CC_RULES_IN_PROMPT || '') : '';
+  const rulesInPrompt = rulesVariant === '1' || rulesVariant === '2';   // '2' = V1b: + pointer file
   if (rulesInPrompt) {
     if (!harnessTrim.installLean) throw new Error('SS_VARIANT_CC_RULES_IN_PROMPT=1 needs the lean harness (CC_HARNESS_TRIM=product, the default): no agent file otherwise');
     if (rulesPlacement !== 'file') throw new Error(`SS_VARIANT_CC_RULES_IN_PROMPT=1 replaces SWEET_RULES_PLACEMENT; unset it (got ${rulesPlacement})`);
@@ -668,10 +669,10 @@ export async function runClaudeCodeTask(task, {
   writeInstructionFile(rundir, 'CLAUDE.md', { sweet: false, mppText });
   const injectedFiles = ['CLAUDE.md'];
   if (sweet && !systemRules) {
-    if (!rulesInPrompt) {   // the variant writes no rules file: the lean main agent file carries them
+    if (!rulesInPrompt || rulesVariant === '2') {   // =1 writes no rules file; =2 writes only the short pointer
       const rulesDir = join(rundir, '.claude', 'rules');
       mkdirSync(rulesDir, { recursive: true });
-      appendFileSync(join(rulesDir, 'sweet-search.md'), `${mppText.trimEnd()}\n`);
+      appendFileSync(join(rulesDir, 'sweet-search.md'), `${rulesVariant === '2' ? CLAUDE_RULES_POINTER : mppText.trimEnd()}\n`);
       injectedFiles.push('.claude/rules/sweet-search.md');
     }
   }
@@ -687,7 +688,7 @@ export async function runClaudeCodeTask(task, {
     // result is byte-identical to installClaudeLeanHarness with its own promptEdits).
     const lean = installClaudeLeanHarness({
       projectRoot: rundir, appendOverride: false, promptEdits: false,
-      env: rulesInPrompt ? { ...routingEnv, SS_VARIANT_CC_RULES_IN_PROMPT: '1' } : routingEnv,
+      env: rulesInPrompt ? { ...routingEnv, SS_VARIANT_CC_RULES_IN_PROMPT: rulesVariant } : routingEnv,
       configDir: claudeHome, visibleConfigDir: unjailed ? claudeHome : join(HOMEDIR, '.claude'),
     });
     if (lean.active !== true) throw new Error(`CC_HARNESS_TRIM=product: lean harness not active (${lean.status}: ${lean.detail})`);
@@ -702,7 +703,9 @@ export async function runClaudeCodeTask(task, {
       // Proof in the run itself: the main agent file carries the rules once, no rules file exists.
       const agentText = readFileSync(join(rundir, CLAUDE_LEAN_AGENT_REL), 'utf8');
       if (agentText.split(mppText.trimEnd()).length !== 2) throw new Error('SS_VARIANT_CC_RULES_IN_PROMPT=1: the main agent file does not carry the rules exactly once');
-      if (existsSync(join(rundir, '.claude', 'rules', 'sweet-search.md'))) throw new Error('SS_VARIANT_CC_RULES_IN_PROMPT=1: a rules file exists');
+      const rf = join(rundir, '.claude', 'rules', 'sweet-search.md');
+      if (rulesVariant === '1' && existsSync(rf)) throw new Error('SS_VARIANT_CC_RULES_IN_PROMPT=1: a rules file exists');
+      if (rulesVariant === '2' && readFileSync(rf, 'utf8').trimEnd() !== CLAUDE_RULES_POINTER) throw new Error('SS_VARIANT_CC_RULES_IN_PROMPT=2: pointer file missing or different');
     }
     if (harnessTrim.skillDesc) {
       const settingsFile = join(rundir, '.claude', 'settings.json');
@@ -886,7 +889,7 @@ export async function runClaudeCodeTask(task, {
     harnessTrim: harnessTrim.mode,
     ...(sweet ? { harnessTrimSource: harnessTrim.origin } : {}),
     ...sweetRulesRowFields(rulesPlacement, { sweet }),
-    ...(rulesInPrompt ? { ccRulesInPrompt: true } : {}),   // stamped only when on: default rows stay byte-identical
+    ...(rulesInPrompt ? { ccRulesInPrompt: rulesVariant === '2' ? 'v1b-pointer' : true } : {}),   // stamped only when on: default rows stay byte-identical
     claudeConfigDir: unjailed ? 'private-config-dir' : 'jail-bind',
     // Marks a run that carried the F2 repair, so an analyzer can tell whether the `pages`
     // asymmetry disclosure describes this run's own data or a pre-repair baseline. Never
