@@ -767,6 +767,7 @@ async function cmdFind(rawArgs) {
 
   // Header (visible to agent). SS_FIX_A (A1) drops the budget/used/subMode header and the
   // confidence/sufficiency line.
+  if (FIX.bundleA) process.stdout.write(compactSufficiencyLine(response));
   if (!FIX.bundleA) {
     process.stdout.write(`# ss-find: ColGrep ${response.results?.length || 0} for "${query}" /${effectiveRegex || '*'}/` +
       ` budget=${response.tokenBudget} used=${response.tokensUsed} subMode=${response.subMode ?? format}\n`);
@@ -999,6 +1000,14 @@ async function cmdRead(rawArgs) {
 }
 
 const SEARCH_USAGE = 'Usage: ss-search "<query>" [--full|--xl] [-k N] [--mode auto|lexical|semantic|hybrid]';
+// SS_FIX_A keeps a compact sufficiency token, printed ONLY when the verdict is YES (the sweet rules
+// tell the agent to trust the top result on `sufficient=YES`). Owner decision 2026-10-01: dropping it
+// is a behaviour change → separate B-switch SS_FIX_DROP_SUFFICIENCY=1 (A/B "keep vs drop").
+function compactSufficiencyLine(response) {
+  if (process.env.SS_FIX_DROP_SUFFICIENCY === '1') return '';
+  return /^ sufficient=YES\b/.test(renderSufficiency(response)) ? '# sufficient=YES\n' : '';
+}
+
 async function cmdAgentSearch(rawArgs) {
   const args = normalizeArgs(rawArgs);
   // Main sweet-search auto/CatBoost search with token-budgeted agent packaging.
@@ -1125,6 +1134,7 @@ async function cmdAgentSearch(rawArgs) {
   }
   // final-tuning: proves a bench run executes this tree's helpers (off = byte-identical).
   if (process.env.SS_VARIANT_SENTINEL === '1') process.stdout.write('# variant-sentinel: final-tuning worktree\n');
+  if (FIX.bundleA) process.stdout.write(compactSufficiencyLine(response));
   if (!FIX.bundleA && response.confidence) {
     process.stdout.write(`# confidence=${response.confidence}${response.confidenceReason ? ' (' + response.confidenceReason + ')' : ''}` +
       `${renderSufficiency(response)}\n`);
