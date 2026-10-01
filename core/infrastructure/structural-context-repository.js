@@ -84,9 +84,15 @@ export class StructuralContextRepository {
         (end_line - start_line) ASC
       LIMIT 8
     `).all(...entityParams, ...names);
-    const entity = rows.map(row => this._entityFromRow(row)).find(isLikelyCodeEntity) || null;
-    if (!entity) return null;
-    return shouldTrustQualifiedResolution(targetName, entity) ? entity : null;
+    // Same rule as build-time resolution: link only when the plausible
+    // definitions are one type's (or one file's). Several owners left is a
+    // guess — `socket.connect` must not land on RealWebSocket.connect.
+    const plausible = rows.map(row => this._entityFromRow(row))
+      .filter(e => e && isLikelyCodeEntity(e) && shouldTrustQualifiedResolution(targetName, e));
+    if (plausible.length === 0) return null;
+    const ownerKey = e => (e.parentClass ? `type:${e.parentClass}` : `file:${e.filePath}`);
+    const first = ownerKey(plausible[0]);
+    return plausible.every(e => ownerKey(e) === first) ? plausible[0] : null;
   }
 
   _resolveQualifiedAlternative(targetName, excludeId) {
