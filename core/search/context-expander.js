@@ -1233,6 +1233,23 @@ export function computeSufficiency(topResult, confidenceInfo, queryContext = {})
 // =============================================================================
 
 /**
+ * Pack modes that never carry the 1-hop graph-neighbour tier. Pattern mode is
+ * ColGrep (ss-find, `sweet-search grep -e`, MCP `regex`): regex plus semantic
+ * rerank. The tier is bloat there, so it is neither computed nor reserved.
+ * This is the ONE place that decides; the printers only render what exists.
+ */
+const GRAPH_NEIGHBORS_EXCLUDED_MODES = new Set(['pattern']);
+
+/**
+ * @param {{ mode?: string|null, ablations?: Set<string> }} ctx
+ * @returns {boolean} true when packageForAgent may build `neighbors` for top-1
+ */
+export function graphNeighborsEnabled({ mode = null, ablations = new Set() } = {}) {
+  if (ablations.has('no-graph-neighbors')) return false;
+  return !GRAPH_NEIGHBORS_EXCLUDED_MODES.has(mode);
+}
+
+/**
  * Extract identifier candidates from a code body that look like type names
  * (struct / interface / class / enum / trait / type). Used by the
  * graph-neighbour tier to find type definitions that the relationships
@@ -2343,10 +2360,12 @@ export function packageForAgent(rankedResults, searchStats, opts) {
     // up to 20% of the budget (capped at 1000 tokens, floored at 600 when
     // the budget allows) for a dedicated 1-hop neighbours tier. Surfaced
     // as `agentResult.neighbors`; rendered for the agent by the CLI shim.
-    // Disabled by 'no-graph-neighbors' ablation. Always opt-OUT, never
+    // Disabled by 'no-graph-neighbors' ablation and in pattern (ColGrep /
+    // ss-find) mode — see graphNeighborsEnabled(). Skipping happens before
+    // any reservation, so tokensUsed stays free for the lower ranks. Never
     // model-specific — the rendering is plain text.
     if (i === 0
-        && !ablations.has('no-graph-neighbors')
+        && graphNeighborsEnabled({ mode: modeOpt, ablations })
         && expansion.entityId
         && codeGraphRepo) {
       // Reserve fraction depends on subMode but never above 20% / 1000 toks.

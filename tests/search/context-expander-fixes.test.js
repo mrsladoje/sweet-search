@@ -556,7 +556,7 @@ describe('packageForAgent (graph-neighbour reservation)', () => {
     return rel;
   }
 
-  it('attaches `neighbors` to top-1 and respects budget reservation', () => {
+  it('attaches `neighbors` to top-1 (non-pattern / ss-search) and respects budget reservation', () => {
     // Create a small file with a function the package can find.
     const rel = write('lib/validation.js', [
       "'use strict'",
@@ -605,7 +605,7 @@ describe('packageForAgent (graph-neighbour reservation)', () => {
     const pack = packageForAgent(ranked, { path: 'pattern', grepMatches: 1, total_ms: 5 }, {
       query: 'validate request',
       regex: '\\bvalidate\\b',
-      mode: 'pattern',
+      mode: 'hybrid',
       format: 'agent',
       tokenBudget: 4000,
       codeGraphRepo: repo,
