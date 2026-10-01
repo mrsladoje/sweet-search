@@ -369,6 +369,17 @@ describe('review — JVM implicit references', () => {
     }, 'Sources/G/Use.swift', 'swift')).toEqual([]);
   });
 
+  it('Swift: paths in a target\'s `exclude:` are not part of the module', () => {
+    const files = {
+      'Package.swift': 'let package = Package(name: "G", targets: [\n  .target(name: "G", path: "Sources/G", exclude: ["Legacy", "Notes.md"]),\n])',
+      'Sources/G/A.swift': 'public struct Gadget {}\n',
+      'Sources/G/Legacy/Old.swift': 'struct Widget {}\nlet g = Gadget()\n',
+      'Sources/G/Use.swift': 'func run() { _ = Widget(); _ = Gadget() }\n',
+    };
+    expect(implicit(files, 'Sources/G/Use.swift', 'swift')).toEqual(['Sources/G/A.swift']);
+    expect(implicit(files, 'Sources/G/Legacy/Old.swift', 'swift')).toEqual([]);
+  });
+
   it('Kotlin top-level function in a differently named file', () => {
     expect(targets({
       'src/a/b/Utils.kt': 'package a.b\n\nfun doThing() {}\n',
