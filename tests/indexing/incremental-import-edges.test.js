@@ -97,4 +97,20 @@ describe('maintainer: file-level import rows from a full build', () => {
     await tick();
     expect(liveImportMap()).toEqual({});
   });
+
+  it('resolves against the indexed file set, like a full build: no edge into excluded build output', async () => {
+    write('src/b.ts', 'export function b() { return 1; }\n');
+    mkdirSync(join(projectRoot, 'dist'), { recursive: true });
+    write('dist/gen.js', 'export const gen = 1;\n'); // build output: never indexed
+    write('src/a.ts', "import { b } from './b';\nexport function a() { return b(); }\n");
+    await fullBuild(['src/a.ts', 'src/b.ts']);
+    enqueue('src/b.ts');
+    await tick();
+    // The edit adds an import of the build output; a full build of the same
+    // files would not link it (dist/ is not indexed).
+    write('src/a.ts', "import { b } from './b';\nimport { gen } from '../dist/gen.js';\nexport function a() { return b() + gen; }\n");
+    enqueue('src/a.ts');
+    await tick();
+    expect(liveImportMap()).toEqual({ 'src/a.ts': ['src/b.ts'] });
+  });
 });
