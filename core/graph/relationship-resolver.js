@@ -742,8 +742,17 @@ function lastPathSegment(name) {
   return parts.length > 0 ? parts[parts.length - 1] : null;
 }
 
-function isTestPath(filePath) {
-  return /(?:^|\/)(?:tests?|spec|specs|__tests__|testing|mocks?|fixtures?)\/|(?:_test|_spec|\.test|\.spec|Tests?)\.[^/.]+$/i.test(filePath || '');
+// Test code by path shape. Directory segments and `_test`/`.spec`-style
+// suffixes match in any case; the `FooTest.java` / `FooTests.swift` /
+// `FooSpec.scala` suffix only as a capitalised word after a lowercase or digit,
+// so `contests.go`, `latest.ts` and `greatest.py` stay production code.
+const TEST_DIR_RE = /(?:^|\/)(?:tests?|spec|specs|__tests__|testing|mocks?|fixtures?)\//i;
+const TEST_FILE_ANY_CASE_RE = /(?:[_.-](?:test|tests|spec))\.[^/.]+$|(?:^|\/)(?:test_[^/]*\.py|conftest\.py)$/i;
+const TEST_FILE_CAMEL_RE = /(?:^|\/|[a-z0-9])(?:Tests?|Specs?)\.[^/.]+$/;
+
+export function isTestPath(filePath) {
+  const p = filePath || '';
+  return TEST_DIR_RE.test(p) || TEST_FILE_ANY_CASE_RE.test(p) || TEST_FILE_CAMEL_RE.test(p);
 }
 
 // Per-path facts used to rank candidates, computed once per file per run
