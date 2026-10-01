@@ -925,6 +925,17 @@ class ProductionReconcileAdapter {
           ? db.prepare(`UPDATE relationships SET epoch_retired = ? WHERE source_id IN (${oldIds.map(() => '?').join(',')}) AND epoch_retired IS NULL`)
           : null;
         if (retireRel) retireRel.run(epoch, ...oldIds);
+        // A full build writes the file-level rows (`imports`, `importsFile`)
+        // under the file's logical id with no file entity row, so oldIds never
+        // lists it and those rows stayed live forever after an edit (a removed
+        // import kept its edge). Retire them with the rest of the file.
+        if (!oldIds.includes(fileLogicalId)) {
+          prepareCached(db, 'UPDATE relationships SET epoch_retired = ? WHERE source_id = ? AND epoch_retired IS NULL').run(epoch, fileLogicalId);
+        }
+        // A deleted file is no longer an import target of any other file.
+        if (hashes.deleted) {
+          prepareCached(db, "UPDATE relationships SET epoch_retired = ? WHERE type = 'importsFile' AND target_name = ? AND epoch_retired IS NULL").run(epoch, rel);
+        }
         const nextLogical = new Set(entities.map((e) => e.id));
         for (const row of oldRows) {
           if (!nextLogical.has(row.logical_entity_id || row.id)) {

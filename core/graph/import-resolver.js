@@ -1989,11 +1989,21 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
  * @returns {Map<string, Set<string>>}
  */
 export function buildFileImportMap(db, fileIdOf) {
-  const rows = db.prepare("SELECT source_id, target_name FROM relationships WHERE type = 'importsFile'").all();
+  // A maintained graph keeps retired rows until GC (epoch_retired set) and
+  // writes rows under the physical id of the file's entity row (`<id>@e<N>`);
+  // a full build writes them under the logical id with no entity row.
+  const relCols = new Set(db.prepare('PRAGMA table_info(relationships)').all().map((c) => c.name));
+  const entCols = new Set(db.prepare('PRAGMA table_info(entities)').all().map((c) => c.name));
+  const liveRel = relCols.has('epoch_retired') ? ' AND epoch_retired IS NULL' : '';
+  const liveEnt = entCols.has('epoch_retired') ? ' AND epoch_retired IS NULL' : '';
+  const rows = db.prepare(`SELECT source_id, target_name FROM relationships WHERE type = 'importsFile'${liveRel}`).all();
   const idToFile = new Map();
   const paths = new Set(db.prepare('SELECT DISTINCT file_path FROM entities').pluck().all());
   for (const r of rows) paths.add(r.target_name);
   for (const p of paths) if (p) idToFile.set(fileIdOf(p), p);
+  for (const e of db.prepare(`SELECT id, file_path FROM entities WHERE type = 'file'${liveEnt}`).all()) {
+    if (e.file_path) idToFile.set(e.id, e.file_path);
+  }
   const map = new Map();
   for (const r of rows) {
     const from = idToFile.get(r.source_id);
