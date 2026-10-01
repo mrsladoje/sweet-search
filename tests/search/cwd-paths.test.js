@@ -138,4 +138,10 @@ describe('ss-find → ss-grep fallback wiring (_ss-helpers.mjs)', () => {
     expect(cmdGrep).toMatch(/if \(!fromFind\) resolveScopePaths\(inPaths\)/);
     expect(cmdGrep).toMatch(/const cwdScope = fromFind \? null\s*: cwdGrepScope\(/);
   });
+
+  it('ss-find reports a missing --in scope the way ss-grep does (shared writer, exit 3)', () => {
+    expect(cmdFind).toMatch(/missingScopes\(inPaths\)[\s\S]{0,40}exitScopeNotFound\(missing\)/);
+    expect(cmdGrep).toMatch(/exitScopeNotFound\(missing\)/);
+    expect(src).toMatch(/function exitScopeNotFound\(missing\) \{[\s\S]*?process\.exit\(3\);/);
+  });
 });
