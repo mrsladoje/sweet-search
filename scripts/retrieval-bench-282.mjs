@@ -35,6 +35,7 @@ process.env.SS_ISOLATION = '0'; // Mac, unjailed — must be set before the harn
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
@@ -433,6 +434,15 @@ async function runOpencode(probe, sweet, arm) {
   for (const [name, text] of Object.entries(trim.files || {})) fs.writeFileSync(path.join(stateDir, name), text);
   const cfg = buildMainOpencodeConfig({ trim });
   cfg.provider = { ...cfg.provider, deepseek: { options: { apiKey: '{env:DEEPSEEK_API_KEY}' } } };
+  // SS_VARIANT_OC_CACHE_KEY=repo (final-tuning S4): opencode sends promptCacheKey = session id, so every
+  // rollout routes to its own provider cache and request 0 is cold in ~56% of rollouts although the
+  // prefix is byte-identical. A per-model option overrides it (transform.ts sets the session id first;
+  // request.ts mergeDeep lets model.options win). Key = one stable value per repo.
+  if (envOf(arm).SS_VARIANT_OC_CACHE_KEY === 'repo') {
+    const [prov, ...rest] = CELL.model.split('/'); const modelId = rest.join('/');
+    const key = 'ss-' + crypto.createHash('sha256').update(path.basename(cwd).replace(/^eval__repos__/, '')).digest('hex').slice(0, 16);
+    cfg.provider = { ...cfg.provider, [prov]: { ...(cfg.provider?.[prov] || {}), models: { ...(cfg.provider?.[prov]?.models || {}), [modelId]: { ...(cfg.provider?.[prov]?.models?.[modelId] || {}), options: { ...(cfg.provider?.[prov]?.models?.[modelId]?.options || {}), promptCacheKey: key } } } } };
+  }
   const cfgPath = path.join(stateDir, 'opencode.json'); fs.writeFileSync(cfgPath, JSON.stringify(cfg));
   const env = {
     ...baseEnv(sweet, cwd, arm),
