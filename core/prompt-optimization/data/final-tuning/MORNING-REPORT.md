@@ -1,23 +1,27 @@
 # FINAL TUNING — morning report (DRAFT, updated during the run)
 
-> Draft written 2026-10-01 03:35 while r3 is indexing. Sections marked *(pending)* are filled in when
+> Draft updated 2026-10-01 08:20 while the held-out runs are in flight. Sections marked *(pending)* are filled in when
 > the runs finish. Branch `final-tuning`; nothing is released, tagged or merged.
 
 ## 1. Verdict
 
-**One champion, for Claude Code: `SS_VARIANT_CC_RULES_IN_PROMPT`** — the sweet rules move from the
-`.claude/rules/sweet-search.md` file (which Claude Code injects into the first user message, after
-the cache marker) into the lean-harness agent file (the cached system prompt). It cuts the Claude
-Code bill by 10–16% with no accuracy or call change. For Codex and opencode no product change
-passed; their r282 cost gaps are explained by measurement (bench artifact, provider cache drift).
+**One champion, for Claude Code: V1b = `SS_VARIANT_CC_RULES_IN_PROMPT=2`.** The sweet rules move from
+`.claude/rules/sweet-search.md` (which Claude Code injects into the first user message, after the
+cache marker, so ~1.4k tokens are re-written to the cache in every session) into the lean-harness agent
+file (the cached system prompt); a ~60-token pointer stays in the rules file so the first user message
+still says "use the ss-* tools". It cuts the Claude Code bill by 8–13% with equal accuracy and equal
+task solves. For Codex and opencode no product change passed (V2 tool pruning and V4 completeness
+wording were rejected); their r282 gaps are measurement effects (bench rules-path artifact, provider
+cache drift). **New finding: on the harder r3 questions, sweet on Codex is 5 points less accurate than
+native** — open item.
 
-| Cell | r282 sweet vs native | Cause found | Champion vs 2.8.2 sweet | Expected champion vs native |
+| Cell | r282 sweet vs native | Cause found | Champion vs 2.8.2 sweet | Champion vs native |
 |---|---|---|---|---|
-| Opus / Claude Code | +22.4% | rules re-written to cache each session (60%), larger tool results (43%) | **−15.8% train, −11.6% validation** (CI < 0), accuracy = | ≈ +6..+8% *(r3 pending)* |
-| Sonnet / Claude Code | −0.7% | same, offset by the lean prompt (27k → 7k chars) | **−9.6..−12.7%** (A-B-A, CI < 0), accuracy = | ≈ −10% |
-| Codex / Sol | −10.5% | not stable: identical runs differ by 24.5% (provider cache drift) | no change (V2 hurt accuracy) | ≈ 0 (± drift) |
-| opencode / Sol | +6.8% (ns) | bench artifact: random rules path broke the prompt cache | no change | *(pending: interleaved re-check)* |
-| opencode / DeepSeek | +54.6% | same bench artifact | no change | +7.9% (ns) with the bench fix |
+| Opus / Claude Code | +22.4% | rules re-written each session (60%), larger tool results (43%) | **V1b: −12.6% train, −8.3% validation, −13.2% r3 dev** (CI < 0), accuracy = | r3 dev: +8.8% (was +25.4%) *(held-out pending)* |
+| Sonnet / Claude Code | −0.7% | same, offset by the lean prompt (27k → 7k chars) | V1 −9.6..−12.7% (A-B-A); V1b *(held-out pending)* | *(pending)* |
+| Codex / Sol | −10.5% | not stable: identical runs differ by 24.5% (provider cache drift) | none (2.8.2) | r3 dev: cost −9.4% (ns), **accuracy −4.9 pt (sig)** |
+| opencode / Sol | +6.8% (ns) | random rules path broke the cache (bench) | none | +3.9% (ns) with the bench fix, interleaved |
+| opencode / DeepSeek | +54.6% | same bench artifact | none | +7.9% (ns) with the bench fix |
 
 ## 2. Trace-analysis headlines
 
@@ -38,16 +42,30 @@ Full analysis: `../r282-TRACE-ANALYSIS.md`.
 
 ## 3. Variants tried
 
-| Variant | Hypothesis / mechanism | Train | Validation | Decision |
+| Variant | Hypothesis / mechanism | Train | Validation / guard | Decision |
 |---|---|---|---|---|
-| V1 `SS_VARIANT_CC_RULES_IN_PROMPT` | rules into the cached system prompt (Claude Code) | Opus −15.8% [−18.5, −13.1], cache write −22%, acc +0.2 pt; Sonnet A-B-A −9.6..−12.7% | Opus −11.6% [−15.5, −8.0], accOR −0.1 pt | **KEEP (champion)** |
-| V2 `SS_VARIANT_PRUNE3` | drop ss-find / ss-semantic / ss-trace (owner hypothesis 2) | DeepSeek (sequential) −9.9..−17%; Codex interleaved −5.0% (ns), **accOR −1.9 pt (sig)** | — | **REJECT** |
-| V3 `SS_VARIANT_SEARCH_DEDUPE` | no repeated ss-search entries/lines (owner hypothesis 1) | $0 replay: ss-search −9.1% chars → ≈ −1% cost (below MDE) | — | optional hygiene, not screened live |
-| bench `SS_BENCH_STABLE_RULES_PATH` | opencode cache break | DeepSeek sweet vs native +7.9% (ns), was +54.6% | — | measurement fix |
+| V1 `=1` rules in prompt | rules into the cached system prompt (Claude Code) | Opus −15.8%, Sonnet A-B-A −9.6..−12.7% | Opus val −11.6%; **task guard: ss-* share 0.53 → 0.32 (native fallbacks up)** | REJECT (guard) |
+| **V1b `=2`** rules in prompt + 60-token pointer | V1, but keep a tool-choice reminder in the first message | Opus −12.6% [−15.9, −9.1], acc +0.6; r3 dev −13.2% | Opus val −8.3% [−12.6, −4.3], accOR +0.8; **guard: solves 9/20 vs 8/20, ss share 0.54 vs 0.53, cost −2..−7%** | **KEEP (champion, Claude Code)** |
+| V2 `SS_VARIANT_PRUNE3` | drop ss-find / ss-semantic / ss-trace (owner hypothesis 2) | DeepSeek (seq.) −10..−17%; **Codex interleaved: cost −5% (ns), accOR −1.9 pt (sig)** | — | REJECT |
+| V3 `SS_VARIANT_SEARCH_DEDUPE` | no repeated ss-search entries (owner hypothesis 1) | $0 replay: ss-search −9.1% chars ≈ −1% cost | — | optional hygiene |
+| V4 rules-v4-complete | name every place before stopping (Codex r3 partial answers) | Codex r3 dev-train interleaved: acc −4.0 pt (ns), cost −0.4% | — | REJECT |
+| bench `SS_BENCH_STABLE_RULES_PATH` | opencode cache break (measurement) | DeepSeek +7.9% (ns, was +54.6%); oc-Sol +3.9% (ns) | — | measurement fix |
 
-Method notes: test-retest showed Codex cost drifts by up to 25% between identical runs 25 minutes
-apart → Codex comparisons were redone **interleaved** (baseline and variant alternate per question in
-one run). DeepSeek drifts ~8%; Opus is stable (fresh baseline reproduced r282 within 0.2 pt).
+Method notes: test-retest showed Codex cost drifts up to 25% between identical runs 25 min apart →
+Codex comparisons were redone **interleaved** (arms alternate per question in one run). DeepSeek drifts
+~8%; Opus is stable (fresh baseline reproduced r282 within 0.2 pt). Claude Code cannot interleave
+(installed files) → A-B-A or fresh sequential baselines.
+
+## 4. Task guard (Opus, 10 dev tasks × 2 reps, interleaved, green ledger)
+
+| Arm | Solved | Ideal $ | Real $ | Calls | ss-* share of search/read | Request-1 cache write |
+|---|---|---|---|---|---|---|
+| 2.8.2 (run 1) | 8/20 | 4.357 | 4.179 | 167 | 0.53 | 10,993 |
+| V1 | 8/20 | 4.079 | 3.690 | 142 | **0.32** | 8,948 |
+| 2.8.2 (run 2) | 8/20 | 4.277 | 4.054 | 162 | 0.53 | 10,498 |
+| **V1b** | **9/20** | 4.151 | 3.769 | 153 | **0.54** | 9,134 |
+
+Cost effect here is below the micro-smoke MDE (15–28%); direction only.
 
 ## 4. Task guard *(pending)*
 
@@ -56,7 +74,12 @@ one run). DeepSeek drifts ~8%; Opus is stable (fresh baseline reproduced r282 wi
 - 6 fresh repos (jj Rust 271k LOC, dgraph Go 265k, tortoise-orm Python, typedoc TS, zipkin Java,
   ocelot C#), 216 drafts → 2-model verification → 2 Opus audits → **163 questions** (held-out 103,
   dev 60), frozen sha256 `ba49df55…`, pre-registered (`r3/r3-PREREG.md`).
-- Headroom, grader consistency, 2.8.2 baseline *(pending)*.
+- Headroom (dev, 60): native Opus 95.2%, native Codex 93.8% → **near ceiling** (pre-registered target
+  60–85%; ≥ 95% = too easy). Held-out questions not edited (pre-registration). Hard enough to expose the
+  Codex sweet deficit (−4.9 pt) that r282 could not.
+- Grader consistency: 49 dev rows re-judged, 0 verdict flips, mean |Δ| 0.015. Hand-read sample: partial
+  scores = one gold file missing.
+- r3 dev read-out with BH: `r3/RESULTS-DEV.md`.
 
 ## 6. Final held-out result *(pending)*
 
