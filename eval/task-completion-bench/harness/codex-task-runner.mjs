@@ -807,9 +807,21 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   // HOME (buildPrivateHome) and CODEX_HOME=codexHome with a bench-owned config and no
   // operator file. Subscription mode needs the operator's ChatGPT login and keeps the
   // seeding; the jailed path is unchanged.
-  const privateCodexHome = !ISOLATION_ON && !codexSubscription;
+  // SS_CODEX_PRIVATE_HOME=1 (opt-in; default off = byte-identical to before) gives a SUBSCRIPTION
+  // rollout the same private HOME and CODEX_HOME. Without it an unjailed subscription rollout
+  // reads the operator's real ~/.codex (config.toml with its MCP servers + notify hook, global
+  // AGENTS.md) and ~/.agents/skills, so the agent's request and tool list carry the operator's
+  // personal setup. Only the ChatGPT login (auth.json, installation_id) is copied in.
+  const privateCodexHome = !ISOLATION_ON && (!codexSubscription || process.env.SS_CODEX_PRIVATE_HOME === '1');
   if (privateCodexHome) {
     writeFileSync(path.join(codexHome, 'config.toml'), codexBenchConfigToml());
+    if (codexSubscription) {
+      for (const f of ['auth.json', 'installation_id']) {
+        const src = path.join(process.env.HOME || '/root', '.codex', f);
+        const dst = path.join(codexHome, f);
+        try { if (existsSync(src) && !existsSync(dst)) { copyFileSync(src, dst); if (f === 'auth.json') chmodSync(dst, 0o600); } } catch { /* codex will report it */ }
+      }
+    }
   } else {
     for (const f of ['config.toml', 'auth.json', 'installation_id']) {
       const src = path.join(process.env.HOME || '/root', '.codex', f);
