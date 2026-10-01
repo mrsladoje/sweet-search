@@ -1,0 +1,64 @@
+{
+ "repo": "drogon",
+ "keep": [
+  "r3hb-drogon-01",
+  "r3hb-drogon-02",
+  "r3hb-drogon-03",
+  "r3hb-drogon-04",
+  "r3hb-drogon-05",
+  "r3hb-drogon-06",
+  "r3hb-drogon-07",
+  "r3hb-drogon-09",
+  "r3hb-drogon-10",
+  "r3hb-drogon-11",
+  "r3hb-drogon-12",
+  "r3hb-drogon-13",
+  "r3hb-drogon-14"
+ ],
+ "fixes": {
+  "r3hb-drogon-05": {
+   "expectedFacts": [
+    "HttpRequestParser::parseRequest compares the declared content length to getClientMaxBodySize and returns 413 (HttpRequestParser.cc:277-279); the chunked path adds each chunk length to the running total and returns 413 when over the same limit (:380-382).",
+    "HttpRequestImpl::decompressBodyGzip stops with TooLarge when the expanded output exceeds getClientMaxBodySize (HttpRequestImpl.cc:1040); HttpServer's tryDecompressRequest turns that status into 413.",
+    "HttpServer::onRequests stops the parser and shuts the connection down when the number of requests parsed on it reaches the keep-alive request limit (HttpServer.cc:333-339).",
+    "HttpServer::onRequests applies the same shutdown when queued pipelined requests plus the new batch reach the pipelining limit (HttpServer.cc:341-347).",
+    "HttpConnectionLimit::tryAddConnection (called from HttpServer::onConnection) refuses a new connection when the global count before it already exceeds the global maximum (fetch_add returns the old count, so one extra connection is admitted) or when the per-IP count exceeds the per-IP maximum; the server then force-closes it (HttpConnectionLimit.cc:30-54, HttpServer.cc:121-125).",
+    "WebSocketMessageParser::parse rejects a masked (client) frame whose length exceeds getClientMaxWebSocketMessageSize (WebSocketConnectionImpl.cc:371-379)."
+   ]
+  },
+  "r3hb-drogon-10": {
+   "query": "In a server-page template, a developer uses the placeholder form that takes only the name of a view-data entry, for an entry that the controller stored as a plain number with the general-purpose insert. The page renders with nothing at that spot, and no error is logged. Why does this happen, which code is responsible, and which other ways of putting a number on the page work?"
+  },
+  "r3hb-drogon-13": {
+   "expectedFacts": [
+    "Session::changeSessionIdToClient only sets two flags (needToChange_ and needToSet_); it does not change the identifier at that moment (Session.h:220-224).",
+    "CRITICAL: HttpAppFrameworkImpl::handleSessionForResponse runs when the response is being sent. If the session needs a change it calls SessionManager::changeSessionId, then adds a session cookie with the new identifier (path '/', configured SameSite, max-age only when it is >= 0) to that response, using a temporary copy when the response is a shared cached object (HttpAppFrameworkImpl.cc:728-770).",
+    "SessionManager::changeSessionId gets the new identifier from the id-generator callback, inserts the same Session object under the new key (CacheMap::insert fires the session-start advice for the new key), and asks the session CacheMap to erase the old key with runAfter(10, ...) (SessionManager.cc:116-127; CacheMap.h:217-247).",
+    "CRITICAL: With a positive session timeout, the session CacheMap ticks once per second, so the old key stays about 10 seconds (low precision): a request carrying the old cookie still finds the same Session through getSession, and CacheMap::erase fires the session-destroy advice for the old identifier only when that delay ends (SessionManager.cc:31-67; CacheMap.h:387-396, 417-421).",
+    "With the default session timeout of 0 (sessions never expire), the session CacheMap is built with no tick and no wheels, so runAfter cannot schedule the task: the CallbackEntry is released at once and its destructor runs the erase immediately. The old identifier stops working at once (a request with it gets a new, empty session) and the destroy advice fires during handleSessionForResponse (SessionManager.cc:69-85; CacheMap.h:39-49, 417-421, 470-506)."
+   ],
+   "expectedSymbols": [
+    "Session::changeSessionIdToClient",
+    "HttpAppFrameworkImpl::handleSessionForResponse",
+    "SessionManager::changeSessionId",
+    "SessionManager::getSession",
+    "CacheMap::insert",
+    "CacheMap::erase",
+    "CacheMap::runAfter"
+   ]
+  }
+ },
+ "dropped": {
+  "r3hb-drogon-08": "closed-book solvable (gpt-6-luna named 2/4 gold files and 3/4 gold symbols without code); not hardenable: the gold is the framework's well-known forward API, so any rewording keeps the same guessable gold"
+ },
+ "hardened": [
+  "r3hb-drogon-10"
+ ],
+ "auditNotes": {
+  "r3hb-drogon-05": "Fact 5 reworded: tryAddConnection uses fetch_add(old) > max, so max+1 connections pass the global check (verifier flag was partly right). All other members verified; brotli check excluded on purpose (status dropped, see drogon-14).",
+  "r3hb-drogon-10": "Hardened: removed the bracket-syntax clue so the agent must learn the template syntax from create_view.cc; '[[ key ]]' is the only form that takes just a view-data key name, so the answer set is unchanged.",
+  "r3hb-drogon-13": "Gold error fixed. Draft said the old id always lives 10 s. SessionManager builds CacheMap(loop,0,0,0) when session_timeout==0 (the default in ConfigLoader.cc:270 and enableSession()); CacheMap::insertEntry loops over 0 wheels, so the CallbackEntry temporary in runAfter is destroyed at once and ~CallbackEntry runs the erase immediately. The 10-second window holds only for a positive timeout. Query unchanged ('State the conditions precisely').",
+  "verifier-flags": "drogon-04/05/06/07/08/09/12 'unsupported' flags were checked in code: all due to truncated gold files except the drogon-05 off-by-one nuance. drogon-14 negative re-verified (decompressBodyBrotli returns Ok unconditionally at HttpRequestImpl.cc:978).",
+  "hardness": "drogon-01/03/04/12: the first grep of a domain word reaches one gold file, but every answer needs >= 4 dependent hops; kept. drogon-06: members share the HEAD/Head token (case-sensitive), about 5-7 calls; kept, weakest completeness item."
+ }
+}

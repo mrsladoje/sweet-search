@@ -1060,5 +1060,57 @@
    ],
    "why": "The namespace RPCs all gate on CapClusterAdmin, and the ACL-off/ACL-on behavior is centralized in authorizeClusterAdmin and breakGlassSource.Grants, so no other code path gives a different answer."
   }
+ },
+ "r3h-dgraph-17": {
+  "id": "r3h-dgraph-17",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "4/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Init",
+    "initMemoryLayer",
+    "MemoryLayer.updateItemInCache",
+    "Txn.UpdateCachedKeys",
+    "MemoryLayer.del",
+    "Cache.del"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "The command-line flag --cache remove-on-update specifically configures MemoryLayer.removeOnUpdate, which directly triggers ml.del in MemoryLayer.updateItemInCache."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "6/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "run",
+    "posting.Init",
+    "initMemoryLayer",
+    "MemoryLayer",
+    "MemoryLayer.removeOnUpdate",
+    "MemoryLayer.updateItemInCache",
+    "MemoryLayer.del",
+    "Cache.del",
+    "Txn.UpdateCachedKeys",
+    "node.commitOrAbort"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The remove-on-update flag is parsed in alpha run(), passed through posting.Init to initMemoryLayer and stored on MemoryLayer; during commit, node.commitOrAbort writes deltas and calls Txn.UpdateCachedKeys, which reaches MemoryLayer.updateItemInCache where ml.del removes the cached entry when removeOnUpdate is set."
+  }
  }
 }

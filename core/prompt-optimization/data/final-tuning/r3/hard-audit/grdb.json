@@ -1,0 +1,59 @@
+{
+ "repo": "grdb",
+ "keep": [
+  "r3hb-grdb-01",
+  "r3hb-grdb-02",
+  "r3hb-grdb-03",
+  "r3hb-grdb-04",
+  "r3hb-grdb-05",
+  "r3hb-grdb-06",
+  "r3hb-grdb-07",
+  "r3hb-grdb-08",
+  "r3hb-grdb-09",
+  "r3hb-grdb-10",
+  "r3hb-grdb-11",
+  "r3hb-grdb-12",
+  "r3hb-grdb-13",
+  "r3hb-grdb-14"
+ ],
+ "fixes": {
+  "r3hb-grdb-05": {
+   "expectedFacts": [
+    "CRITICAL: Read access (SQLITE_READ) builds selectedRegion, stored as Statement.databaseRegion; it records what a statement reads: Database.statementWillExecute passes it to registerAccess(to:), which feeds the region that ValueObservation records while fetching, and FetchRequest.databaseRegion(_:) returns it when a request is used as an observed region (either consumer is acceptable) (StatementAuthorizer.swift:115-125; Statement.swift:162; Database+Statements.swift:452; Database.swift:934-937; FetchRequest.swift:104).",
+    "CRITICAL: Write effects (INSERT, UPDATE, DELETE, including trigger and foreign-key-action effects) build databaseEventKinds, stored as Statement.authorizerEventKinds; TransactionObservation.statementObservation(for:) uses them to decide which observers, and which events, are activated for the statement, and canDeleteRows makes Database.add/remove(transactionObserver:) evict cached statements that delete (StatementAuthorizer.swift:127-161; TransactionObserver.swift:44-45, 66-67, 1045-1090).",
+    "The schema-changing flag (DROP, CREATE, ALTER, ATTACH, DETACH, and the sqlite_drop_column function before SQLite 3.38) becomes Statement.invalidatesDatabaseSchemaCache; Database.statementDidExecute then clears the schema cache (StatementAuthorizer.swift:98-113, 186-203; Database+Statements.swift:461-464).",
+    "The transaction or savepoint effect becomes Statement.transactionEffect: DatabaseObservationBroker.statementDidExecute uses it to maintain the savepoint stack and to detect empty transactions, checkForSuspensionViolation lets rollbacks and read-only commits through, and Statement.releasesDatabaseLock builds on it (StatementAuthorizer.swift:163-185; TransactionObserver.swift:389-430; Database.swift:1367-1374; Statement.swift:808-824).",
+    "The query-only pragma flag becomes Statement.isQueryOnlyPragma, which checkForSuspensionViolation uses to let that pragma run even when the database is suspended (StatementAuthorizer.swift:204-207; Database.swift:1378-1380).",
+    "Besides recording, the callback returns SQLITE_IGNORE for DELETE on tables whose deletions some observer watches, which disables SQLite's truncate optimization so individual row deletions reach the update hook (StatementAuthorizer.swift:132-155)."
+   ]
+  },
+  "r3hb-grdb-06": {
+   "expectedFacts": [
+    "Database.endReadOnly runs the statement that leaves read-only mode inside ignoringInterruption, so an interruption cannot leave the connection permanently unable to write (Database.swift:844-860).",
+    "CRITICAL: Database.rollback runs ROLLBACK inside ignoringInterruption, so an interruption cannot leave a transaction open (which would trip the unsafe-transaction precondition); ignoringInterruption retries the closure once after CancellationError, SQLITE_INTERRUPT or SQLITE_ABORT and resets all prepared statements first (Database.swift:1297-1313, 1782-1795).",
+    "CRITICAL: DatabaseObservationBroker.databaseDidCommit and databaseDidRollback notify transaction observers inside Database.ignoringCancellation, so observers can still use the database even if the committing task was cancelled (TransactionObserver.swift:504-515, 571-587; Database.swift:1279-1292).",
+    "Database.checkForSuspensionViolation never blocks rollbacks, commits on a read-only connection, or the query-only pragma, even when the database is cancelled or suspended (Database.swift:1355-1380).",
+    "Read accesses finish with 'try commit, else try rollback' so the read-only transaction is always left even if commit fails with CancellationError: DatabasePool async read, asyncRead and asyncConcurrentRead, DatabaseQueue.asyncRead and spawnConcurrentRead, DatabaseSnapshot.deinit and WALSnapshotTransaction.commitAndRelease (DatabasePool.swift:362-372, 392-405, 563-571; DatabaseQueue.swift:249-258, 303-312; DatabaseSnapshot.swift:112-123; WALSnapshotTransaction.swift:13-27)."
+   ]
+  },
+  "r3hb-grdb-11": {
+   "expectedFacts": [
+    "CRITICAL: The application sets Configuration.schemaSource to a DatabaseSchemaSource implementing columnsForPrimaryKey(_:inView:); each connection copies it in Database.init (Configuration.swift:441; Database.swift:467).",
+    "CRITICAL: The private Database.primaryKey(_:) first checks, when a schemaSource exists and the name is a view, schemaSource.columnsForPrimaryKey, and turns the columns into key info with fetchPrimitivePrimaryKey(forView:columns:) (a regular key, tableHasRowID false); otherwise it falls back to table introspection, which for a view leads to the 'database view has no primary key' error (Database+Schema.swift:415-437, 534-566, 372-376).",
+    "Several sources are combined with then(_:) into Chained2SchemaSource: the first source returning non-nil wins, results are never merged (DatabaseSchemaSource.swift:195-216).",
+    "Migration.run executes every migration inside db.withSchemaSource(nil), so migrations see the raw SQLite schema; withSchemaSource swaps the source and clears the schema cache before and after the block (Migration.swift:29-33; Database+Schema.swift:42-57).",
+    "The source also affects unique-key lookups: columnsForUniqueKey calls primaryKey(_:), so the columns a source returns for a view count as a unique key of that view (Database+Schema.swift:1101-1121)."
+   ]
+  }
+ },
+ "dropped": {},
+ "hardened": [],
+ "auditNotes": {
+  "r3hb-grdb-05": "Fact 1 widened: FetchRequest.databaseRegion (FetchRequest.swift:104) is a second real consumer of Statement.databaseRegion, so an agent naming it must not lose credit.",
+  "r3hb-grdb-06": "Fact 5 completed: DatabasePool.asyncConcurrentRead (DatabasePool.swift:559-575) uses the same commit-else-rollback idiom and was missing from the list.",
+  "r3hb-grdb-11": "Fact 5 reworded: columnsForUniqueKey does not call the schema source itself; it reaches it through primaryKey(_:).",
+  "verifier-flags": "All BOTH-unsupported flags (grdb-01 f2/3/5/6, grdb-02 f2/3/6, grdb-03 f1/2/3/6, grdb-06 f4, grdb-08 f5, grdb-09 f1-5, grdb-10 f5, grdb-11 f2/5) were read in code. All facts hold; the flags come from truncated gold files (large Swift files), except the grdb-11 f5 wording fixed above.",
+  "closed-book": "No grdb question is flagged. grdb-14 is a negative and is not screened by design.",
+  "hardness": "grdb-08 (decoy): 'trigger' greps reach FTS4.swift and FTS5.swift at once, but deciding between them, finding the didCreate caller in VirtualTableModule.swift and the rebuild step needs about 4-5 calls; kept as the shallowest grdb item. grdb-04: ValueConcurrentObserver.swift:196-232 has a long comment that states the mechanism once the file is found; the compile gate in Package.swift and the WAL fallback still need extra hops."
+ }
+}
