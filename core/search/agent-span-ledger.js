@@ -138,18 +138,20 @@ export function collectAgentShownSpans(results, { projectRoot } = {}) {
 /**
  * Same spans as collectAgentShownSpans, but each carries the index of the result it came
  * from and which part (the result body or its continuation block) it covers. Used by the
- * SS_FIX_A already-shown omission, which must know which printed block a decision is for.
- * collectAgentShownSpans itself is unchanged.
+ * SS_FIX_ALREADY_SHOWN omission, which must know which printed block a decision is for.
+ * `include(resultIndex, part)` keeps only the blocks the caller prints (applied before the
+ * per-call span cap). collectAgentShownSpans itself is unchanged.
  *
  * @returns {Array<{span: object, resultIndex: number, part: 'result'|'continuation'}>}
  */
-export function collectAgentShownSpansIndexed(results, { projectRoot } = {}) {
+export function collectAgentShownSpansIndexed(results, { projectRoot, include = null } = {}) {
   if (!Array.isArray(results)) return [];
   const out = [];
+  const wanted = (resultIndex, part) => typeof include !== 'function' || include(resultIndex, part);
   results.forEach((result, resultIndex) => {
-    const body = completeAgentResultSpan(result, projectRoot);
+    const body = wanted(resultIndex, 'result') ? completeAgentResultSpan(result, projectRoot) : null;
     if (body) out.push({ span: body, resultIndex, part: 'result' });
-    const cont = completeAgentContinuationSpan(result, projectRoot);
+    const cont = wanted(resultIndex, 'continuation') ? completeAgentContinuationSpan(result, projectRoot) : null;
     if (cont) out.push({ span: cont, resultIndex, part: 'continuation' });
   });
   return out.slice(0, MAX_SPANS_PER_CALL);

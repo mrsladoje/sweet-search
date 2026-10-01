@@ -2,6 +2,7 @@
 # ss-trace: unified structural context for one symbol (callers, callees, impact).
 #
 # Usage: ss-trace <symbol> [--in <file>] [--query <hint>] [--depth N] [--budget N]
+#        ss-trace <symbol> callers --in <defining file>   (mode word: callers, callees or impact)
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 . "$DIR/_ss-env.sh"
 TMPERR=$(mktemp)

@@ -32,7 +32,6 @@ import { renderRegexDialectHint } from '../../../core/search/regex-dialect.js';
 import {
   applyReadOmissionDecisions,
   collectAgentShownSpans,
-  collectAgentShownSpansIndexed,
   collectReadShownSpans,
   collectSemanticShownSpans,
   exactRereadOmissionEnabled,
@@ -44,20 +43,25 @@ import {
 import { sendAgentSpanOperation } from '../../../core/search/agent-span-client.js';
 import {
   GREP_COUNTS_THRESHOLD,
+  alreadyShownSessionId,
+  alternativesAfterSwitch,
+  decideAlreadyShown,
   formatTraceCompact,
   isRegexParseError,
-  isSummaryOnly,
   isTestLikePath,
   matchTextIsRepeated,
   orderSourceBeforeTests,
+  printedSpanCandidates,
   readFixFlags,
-  renderAlsoInFile,
-  renderGrepCounts,
-  renderSummaryLine,
+  readSpansForAlreadyShown,
+  renderCompactSufficiency,
+  renderFixedBlocks,
+  renderGrepLineLists,
+  repairRegexBranches,
   resolveThreadKey,
   resultRenderFixActive,
+  resultsForOriginalLedger,
   selectEntries,
-  summaryRestatesHeader,
 } from '../../../core/search/agent-output-fixes.js';
 
 // Diagnostic-log isolation (agent-facing tools). The Sweet Search engine emits
@@ -200,12 +204,14 @@ const SPAN_POLICY_ENABLED = EXACT_REREAD_OMISSION || SHOWN_SPAN_TRAILER;
 // Output-fix switches (all default off; see core/search/agent-output-fixes.js). With every
 // switch unset nothing below changes any output byte.
 const FIX = readFixFlags();
-// SS_FIX_A only. AGENT_SESSION_ID above (and so ss-read) is never changed by it; THREAD_KEY
-// is the wider key that also knows the Claude Code and opencode variables.
-const THREAD_KEY = FIX.bundleA ? resolveThreadKey() : null;
-// A3: omit code the same thread already saw. Needs a thread key and the receipt ledger on.
-const ALREADY_SHOWN_ON = FIX.bundleA && !!THREAD_KEY && EXACT_REREAD_OMISSION;
-// final-tuning variant SS_VARIANT_SEARCH_DEDUPE (module scope: ss-find reads it too).
+// A3 (SS_FIX_ALREADY_SHOWN only; not part of SS_FIX_A). AGENT_SESSION_ID above, the original
+// ledger and so ss-read are never changed by it: A3 keeps its receipts under its own ledger
+// namespace (`a3:<thread key>`), with the wider thread key that also knows the Claude Code and
+// opencode variables. Needs the receipt ledger on. LIMIT: the key cannot tell a subagent from
+// its parent (FIXES-IMPL.md), which is why this switch stays default off.
+const A3_SESSION_ID = FIX.alreadyShown && EXACT_REREAD_OMISSION ? alreadyShownSessionId(resolveThreadKey()) : null;
+const ALREADY_SHOWN_ON = !!A3_SESSION_ID;
+// final-tuning variant SS_VARIANT_SEARCH_DEDUPE (ss-search only since fff75887).
 const DEDUPE = process.env.SS_VARIANT_SEARCH_DEDUPE === '1';
 
 async function recordAgentToolCall({
@@ -214,108 +220,53 @@ async function recordAgentToolCall({
   force = false,
   query,
   regex,
-  sessionId = AGENT_SESSION_ID,
 } = {}) {
-  if (!EXACT_REREAD_OMISSION || !sessionId) return null;
+  if (!EXACT_REREAD_OMISSION || !AGENT_SESSION_ID) return null;
   return sendAgentSpanOperation({
     operation,
     spans,
     force,
-    sessionId,
+    sessionId: AGENT_SESSION_ID,
     query,
     regex,
   });
 }
 
-// A3. Record what this call prints and learn which of its blocks the thread already saw.
-// Returns a Set of `<resultIndex>:<part>` keys to print as one "already shown" line.
-async function decideAlreadyShown(results, { query, regex } = {}) {
-  const indexed = collectAgentShownSpansIndexed(results, { projectRoot: FILE_ROOT });
-  const resp = await recordAgentToolCall({
-    operation: 'read',
-    spans: indexed.map((x) => x.span),
-    query,
-    regex,
-    sessionId: THREAD_KEY,
-  });
-  const omitted = new Set();
-  if (resp?.ok && Array.isArray(resp.decisions)) {
-    indexed.forEach((x, i) => { if (resp.decisions[i]?.omit) omitted.add(`${x.resultIndex}:${x.part}`); });
-  }
-  return omitted;
-}
-
-// Fixed renderer for ss-search / ss-find result blocks. Used only when a switch is on
-// (resultRenderFixActive); otherwise the original loops run unchanged.
-//   A1  rank header without presentation/kind tag and score
-//   A2  summary-only entries on ONE line, dropped when covered by an earlier entry
-//   A3  already-shown code replaced by one line
-//   B1  summary / -k caps       B2  one entry per file
-function writeFixedBlocks(results, { k, omitted = new Set(), allowOnePerFile = false } = {}) {
-  const compact = FIX.bundleA;
-  const { entries, hidden } = selectEntries(results, {
-    dedupe: compact || DEDUPE,
-    onePerFile: allowOnePerFile && FIX.onePerFile,
+// Entry plan for the fixed ss-search / ss-find renderer (see selectEntries).
+function planFixedResults(results, { k, find }) {
+  return selectEntries(results, {
+    dedupe: FIX.compact ? 'a2' : (DEDUPE && !find ? 'v3' : false),
+    onePerFile: !find && FIX.onePerFile,
     summaryCap: FIX.summaryCap,
     k,
   });
-  const out = (text) => process.stdout.write(text);
-  let wroteAny = false;
-  let inSummaryRun = false;
-  const lead = () => (compact ? (wroteAny ? '\n' : '') : '\n');
-  for (const { r, index, also } of entries) {
-    const stale = r.stale ? ' STALE' : '';
-    if (compact && isSummaryOnly(r)) {
-      out(`${inSummaryRun ? '' : lead()}${renderSummaryLine(r)}\n`);
-      if (r.summary && !summaryRestatesHeader(r.summary)) out(`${r.summary}\n`);
-      const alsoLine = renderAlsoInFile(also);
-      if (alsoLine) out(`${alsoLine}\n`);
-      inSummaryRun = true;
-      wroteAny = true;
-      continue;
-    }
-    inSummaryRun = false;
-    const sym = r.symbol ? ` [${r.symbolType || 'code'}: ${r.symbol}]` : '';
-    if (compact) {
-      out(`${lead()}## #${r.rank} ${r.file}:${r.startLine}-${r.endLine}${sym}${stale}\n`);
-    } else {
-      const kind = r.expansionKind ? ` kind=${r.expansionKind}` : '';
-      out(`\n## #${r.rank} ${r.file}:${r.startLine}-${r.endLine}${sym} (${r.presentation}${kind}${stale}) score=${(r.score || 0).toFixed(3)}\n`);
-    }
-    wroteAny = true;
-    if (r.headerContext) {
-      out(`### imports\n\`\`\`\n${r.headerContext}\n\`\`\`\n`);
-    }
-    if (r.code) {
-      if (omitted.has(`${index}:result`)) out(`(lines ${r.startLine}-${r.endLine} already shown above)\n`);
-      else out(`\`\`\`\n${gutter(r.code, r.startLine)}\n\`\`\`\n`);
-    } else if (r.summary && !(DEDUPE && summaryRestatesHeader(r.summary))) {
-      out(`${r.summary}\n`);
-    }
-    if (r.neighbors && r.neighbors.rendered) {
-      out(`### related (1-hop graph, ~${r.neighbors.tokens} tok)\n${r.neighbors.rendered}\n`);
-    }
-    if (r.sameFile && r.sameFile.rendered) out(`${r.sameFile.rendered}\n`);
-    if (r.siblingLine?.rendered) out(`${r.siblingLine.rendered}\n`);
-    if (r.continuation?.rendered) {
-      out(`${r.continuation.rendered}\n`);
-      if (r.continuation.kind === 'symbol' && r.continuation.code) {
-        if (omitted.has(`${index}:continuation`)) {
-          out(`(lines ${r.continuation.startLine}-${r.continuation.endLine} already shown above)\n`);
-        } else {
-          out(`\`\`\`\n${r.continuation.code}\n\`\`\`\n`);
-        }
-      }
-    }
-    if (r.familyManifest?.rendered) out(`${r.familyManifest.rendered}\n`);
-    const alsoLine = renderAlsoInFile(also);
-    if (alsoLine) out(`${alsoLine}\n`);
+}
+
+// A3: which printed blocks this thread already saw (own ledger namespace). Fail open.
+async function alreadyShownFor(results, plan) {
+  if (!ALREADY_SHOWN_ON || !plan) return new Set();
+  try {
+    return await decideAlreadyShown({
+      send: sendAgentSpanOperation,
+      sessionId: A3_SESSION_ID,
+      candidates: printedSpanCandidates(results, plan, { projectRoot: FILE_ROOT }),
+    });
+  } catch {
+    return new Set();
   }
-  if (!results || results.length === 0) {
-    out('(no matches)\n');
-  } else if (hidden > 0) {
-    out(`${wroteAny && compact ? '\n' : ''}(+${hidden} lower-ranked entries not shown)\n`);
-  }
+}
+
+// A3: ss-read / ss-semantic only RECORD what they printed (A3 namespace); their output is not
+// changed and the reply is ignored. Fail open.
+async function recordForAlreadyShown(spans, decisions, printedChars) {
+  if (!ALREADY_SHOWN_ON) return;
+  try {
+    await sendAgentSpanOperation({
+      operation: 'observe',
+      spans: readSpansForAlreadyShown(spans, decisions, printedChars),
+      sessionId: A3_SESSION_ID,
+    });
+  } catch { /* the receipt is best effort */ }
 }
 
 const subcommand = process.argv[2];
@@ -519,22 +470,36 @@ async function cmdGrep(rawArgs) {
     process.exit(2);
   }
 
-  // SS_FIX_A (A5). Off: one call, errors propagate exactly as before. On: a regex the engine
-  // cannot parse is retried once as literal text, and a zero-hit search is retried once
-  // case-insensitively. Each retry is announced in one line; nothing is retried silently.
+  // SS_FIX_GREP_RETRY (A5; part of SS_FIX_A). Off: one call, errors propagate exactly as before.
+  // On: a regex the engine cannot parse is repaired once — only the alternatives that do not
+  // parse are escaped, `|` alternatives stay alternatives — and a zero-hit search is retried
+  // once case-insensitively. Each retry is announced in one line; nothing is retried silently.
   // `fetch(rx)` runs one search for the regex `rx` and returns the engine result.
+  // `repaired` = the pattern did not parse as written. The ORIGINAL ledger is then not told
+  // about this call: with the switch off the call crashed before it recorded anything, so
+  // ss-read's query-aware trailers stay byte-identical.
   async function fetchWithFixes(fetch, { scopeMissing = false } = {}) {
-    if (!FIX.bundleA) return { result: await fetch(regex), usedRegex: regex, notes: [] };
+    if (!FIX.grepRetry) return { result: await fetch(regex), usedRegex: regex, notes: [], repaired: false };
     let usedRegex = regex;
     const notes = [];
+    let repaired = false;
     let result;
     try {
       result = await fetch(regex);
     } catch (err) {
       if (!isRegexParseError(err)) throw err;
-      usedRegex = buildGrepPattern(rawPattern, { ignoreCase, wordBound, fixedString: true });
-      result = await fetch(usedRegex);
-      notes.push(`(invalid regex "${rawPattern}" — searched it as literal text instead)`);
+      const repair = repairRegexBranches(rawPattern);
+      usedRegex = buildGrepPattern(repair.pattern, { ignoreCase, wordBound, fixedString: false });
+      try {
+        result = await fetch(usedRegex);
+      } catch (err2) {
+        if (!isRegexParseError(err2)) throw err2;
+        return { result: null, usedRegex, notes, repaired: true, unparsable: true };
+      }
+      repaired = true;
+      notes.push(repair.wholeLiteral
+        ? `(invalid regex "${rawPattern}" — searched it as literal text instead)`
+        : `(invalid regex "${rawPattern}" — escaped only the part(s) that did not parse; the header shows the pattern searched)`);
     }
     const hits = result.stats?.totalMatches ?? result.results.length;
     if (hits === 0 && !scopeMissing && !/^\(\?[a-z-]*i[a-z-]*[:)]/.test(usedRegex)) {
@@ -548,8 +513,17 @@ async function cmdGrep(rawArgs) {
         }
       } catch { /* keep the zero-hit answer */ }
     }
-    return { result, usedRegex, notes };
+    return { result, usedRegex, notes, repaired };
   }
+  // A5: the repair itself did not parse. One line, no stack trace, no "(no matches)".
+  function exitUnparsable(usedRegex) {
+    process.stdout.write(`# ss-grep: regex parse error for /${regex}/\n`
+      + `(the regex did not parse, and the repaired pattern /${usedRegex}/ did not parse either — `
+      + `escape ( ) [ ] { } with a backslash, or use -F for literal text, and run again)\n`);
+    process.exit(2);
+  }
+  // A5: a repaired pattern with zero hits must not read as a clean absence.
+  const REPAIRED_NO_MATCH = '(no matches — note: the regex did not parse as written; check the escaping of ( [ { and run again)';
 
   if (inPaths.length > 0) {
     // Scoped: flat output, depth up to k across the named scopes.
@@ -569,12 +543,16 @@ async function cmdGrep(rawArgs) {
         });
       }
     };
-    const { result, usedRegex, notes } = await fetchWithFixes(fetchScoped, { scopeMissing: missingScopes(inPaths).length > 0 });
+    const fetched = await fetchWithFixes(fetchScoped, { scopeMissing: FIX.grepRetry && missingScopes(inPaths).length > 0 });
+    if (fetched.unparsable) exitUnparsable(fetched.usedRegex);
+    const { result, usedRegex, notes, repaired } = fetched;
     const total = result.stats?.totalMatches ?? result.results.length;
-    await recordAgentToolCall({
-      query: fixedString ? undefined : regex,
-      regex: fixedString ? undefined : regex,
-    });
+    if (!repaired) {
+      await recordAgentToolCall({
+        query: fixedString ? undefined : regex,
+        regex: fixedString ? undefined : regex,
+      });
+    }
     // Every applied scope is echoed. The header used to print one value however
     // many were supplied, which made the loss look like intended behaviour.
     const scopes = inPaths.map(p => `--in ${p}`).join(' ');
@@ -607,7 +585,7 @@ async function cmdGrep(rawArgs) {
       // know that before it decides the pattern is absent.
       let note = null;
       for (const p of inPaths) { note = await notIndexedNote(p); if (note) break; }
-      process.stdout.write(`${note ? note.text : '(no matches)'}\n`);
+      process.stdout.write(`${note ? note.text : (repaired ? REPAIRED_NO_MATCH : '(no matches)')}\n`);
     }
     writeRegexDialectHint(result.stats);
     process.exit(0);
@@ -642,21 +620,26 @@ async function cmdGrep(rawArgs) {
       });
     }
   };
-  const { result, usedRegex, notes } = await fetchWithFixes(fetchUnscoped);
+  const fetched = await fetchWithFixes(fetchUnscoped);
+  if (fetched.unparsable) exitUnparsable(fetched.usedRegex);
+  const { result, usedRegex, notes, repaired } = fetched;
   const total = result.stats?.totalMatches ?? result.results.length;
   const fileSummary = result.fileSummary
     || { files: [], hiddenFileCount: 0, hiddenMatchCount: 0, hiddenSample: [] };
-  // B7: >= GREP_COUNTS_THRESHOLD hits print per-file counts, not the hit-line flood.
-  const countsMode = FIX.grepOrder && total >= GREP_COUNTS_THRESHOLD;
-  const keptMatches = FIX.grepOrder ? orderSourceBeforeTests(result.results) : result.results;
+  // B7: >= GREP_COUNTS_THRESHOLD hits print a short line list per file, not the hit-line flood.
+  // Source files come first, but a quota of test files stays among the first k files.
+  const listMode = FIX.grepOrder && total >= GREP_COUNTS_THRESHOLD;
+  const keptMatches = FIX.grepOrder ? orderSourceBeforeTests(result.results, { k }) : result.results;
   const body = renderGrepBody(keptMatches, fileSummary, k, FIX.grepOrder ? { dropRepeatedText: true } : undefined);
-  const completed = countsMode
+  const completed = listMode
     ? { lines: [], familyManifest: result.familyManifest?.rendered ? result.familyManifest : null }
     : reallocateGrepTailForManifest(body.lines, result.familyManifest);
-  await recordAgentToolCall({
-    query: fixedString ? undefined : regex,
-    regex: fixedString ? undefined : regex,
-  });
+  if (!repaired) {
+    await recordAgentToolCall({
+      query: fixedString ? undefined : regex,
+      regex: fixedString ? undefined : regex,
+    });
+  }
 
   // Sibling-surface signal (E6, 2026-07-08 trace audit): when a symbol/stem
   // matches in more than one file, say so unconditionally in the header —
@@ -665,11 +648,14 @@ async function cmdGrep(rawArgs) {
   const across = body.matchedFileCount > 1 ? ` across ${body.matchedFileCount} files` : '';
   process.stdout.write(`# ss-grep: ${total} total match(es) for /${usedRegex}/${across}\n`);
   for (const note of notes) process.stdout.write(`${note}\n`);
-  if (countsMode) {
-    const firstLine = new Map();
-    for (const m of result.results) if (!firstLine.has(m.file)) firstLine.set(m.file, m.line);
-    process.stdout.write(`# per-file counts (${total} hits); first hit shown — list one file's hits: ss-grep "<regex>" --in <file>\n`);
-    for (const line of renderGrepCounts(fileSummary.files, firstLine, k)) process.stdout.write(line + '\n');
+  if (listMode) {
+    const linesByFile = new Map();
+    for (const m of result.results) {
+      if (!linesByFile.has(m.file)) linesByFile.set(m.file, []);
+      linesByFile.get(m.file).push(m.line);
+    }
+    process.stdout.write(`# ${total} hits: first hit lines per file — list all of one file's hits: ss-grep "<regex>" --in <file>\n`);
+    for (const line of renderGrepLineLists(fileSummary.files, linesByFile, k)) process.stdout.write(line + '\n');
     if (fileSummary.hiddenFileCount > 0) {
       process.stdout.write(`# +${fileSummary.hiddenFileCount} more file(s) with ${fileSummary.hiddenMatchCount} match(es) not listed; narrow the regex\n`);
     }
@@ -687,7 +673,7 @@ async function cmdGrep(rawArgs) {
   // Singleton hit: the same-file identifier family, with code lines (L1a).
   if (result.siblingLine?.rendered) process.stdout.write(`${result.siblingLine.rendered}\n`);
   if (body.hiddenLine) process.stdout.write(body.hiddenLine + '\n');
-  if (body.shownMatches === 0) process.stdout.write('(no matches)\n');
+  if (body.shownMatches === 0) process.stdout.write(`${repaired ? REPAIRED_NO_MATCH : '(no matches)'}\n`);
   writeRegexDialectHint(result.stats);
   process.exit(0);
 }
@@ -747,28 +733,26 @@ async function cmdFind(rawArgs) {
       ...(envFindBudget ? { tokenBudget: envFindBudget } : {}),
     });
   }
-  let shownSpans = [];
-  let alreadyShown = new Set();
-  if (ALREADY_SHOWN_ON) {
-    // SS_FIX_A (A3): record this call's code and learn which blocks the thread already saw.
-    alreadyShown = await decideAlreadyShown(response.results, {
-      query: fixedString ? undefined : query,
-      regex: fixedString ? undefined : effectiveRegex,
-    });
-  } else {
-    shownSpans = SPAN_POLICY_ENABLED
-      ? collectAgentShownSpans(response.results, { projectRoot: FILE_ROOT }) : [];
-    await recordAgentToolCall({
-      spans: shownSpans,
-      query: fixedString ? undefined : query,
-      regex: fixedString ? undefined : effectiveRegex,
-    });
-  }
+  // Output-fix switches: plan the printed entries first (dedupe / caps), so both ledgers learn
+  // only what this call prints. With every switch off `plan` is null and this is the original.
+  const renderFix = resultRenderFixActive(FIX, { find: true, alreadyShownActive: ALREADY_SHOWN_ON });
+  const plan = renderFix ? planFixedResults(response.results || [], { k, find: true }) : null;
+  const shownSpans = SPAN_POLICY_ENABLED
+    ? collectAgentShownSpans(resultsForOriginalLedger(response.results, plan), { projectRoot: FILE_ROOT }) : [];
+  await recordAgentToolCall({
+    spans: shownSpans,
+    query: fixedString ? undefined : query,
+    regex: fixedString ? undefined : effectiveRegex,
+  });
+  const alreadyShown = await alreadyShownFor(response.results || [], plan);
 
-  // Header (visible to agent). SS_FIX_A (A1) drops the budget/used/subMode header and the
-  // confidence/sufficiency line.
-  if (FIX.bundleA) process.stdout.write(compactSufficiencyLine(response));
-  if (!FIX.bundleA) {
+  // Header (visible to agent). SS_FIX_A (A1): one short header (results, query, regex) and
+  // the compact `# sufficient=YES` line; no budget/used/subMode, no confidence line.
+  if (FIX.compact) {
+    const n = response.results?.length || 0;
+    process.stdout.write(`# ss-find: ${n} result${n === 1 ? '' : 's'} for "${query}" /${effectiveRegex || '*'}/\n`);
+    process.stdout.write(compactSufficiencyLine(response));
+  } else {
     process.stdout.write(`# ss-find: ColGrep ${response.results?.length || 0} for "${query}" /${effectiveRegex || '*'}/` +
       ` budget=${response.tokenBudget} used=${response.tokensUsed} subMode=${response.subMode ?? format}\n`);
     if (response.confidence) {
@@ -777,8 +761,10 @@ async function cmdFind(rawArgs) {
     }
   }
 
-  if (resultRenderFixActive(FIX, { find: true })) {
-    writeFixedBlocks(response.results || [], { k, omitted: alreadyShown, allowOnePerFile: false });
+  if (renderFix) {
+    process.stdout.write(renderFixedBlocks(response.results || [], plan, {
+      compact: FIX.compact, omitted: alreadyShown, dropRestatingSummary: false, gutter,
+    }));
   } else {
   // Per-result blocks — identical shape to ss-search's agent packaging.
   for (const r of response.results || []) {
@@ -815,7 +801,7 @@ async function cmdFind(rawArgs) {
   if (!response.results || response.results.length === 0) process.stdout.write('(no matches)\n');
   }
   writeRegexDialectHint(response.stats);
-  const shownTrailer = (SHOWN_SPAN_TRAILER && !FIX.bundleA) ? renderShownFullTrailer(shownSpans) : '';
+  const shownTrailer = (SHOWN_SPAN_TRAILER && !FIX.compact) ? renderShownFullTrailer(shownSpans) : '';
   if (shownTrailer) process.stdout.write(`\n${shownTrailer}\n`);
   process.exit(0);
 }
@@ -951,12 +937,12 @@ async function cmdRead(rawArgs) {
   if (receiptResponse?.ok && Array.isArray(receiptResponse.decisions)) {
     applyReadOmissionDecisions(readBatch, receiptResponse.decisions);
   }
-  // SS_FIX_A (A3): ss-read prints exactly what it always printed. When the original session
-  // key is missing (Claude Code, opencode) it only RECORDS the lines it showed, so a later
-  // ss-search / ss-find can tell they were already shown. The reply is ignored.
-  if (ALREADY_SHOWN_ON && !AGENT_SESSION_ID) {
-    await recordAgentToolCall({ operation: 'observe', spans: shownSpans, sessionId: THREAD_KEY });
-  }
+  // SS_FIX_ALREADY_SHOWN (A3): ss-read prints exactly what it always printed. It only RECORDS
+  // the lines it printed in the separate A3 ledger namespace (never in the original one, whose
+  // reply above is the only input to this output), so a later ss-search / ss-find can tell
+  // they were already shown. The reply is ignored.
+  await recordForAlreadyShown(shownSpans, receiptResponse?.decisions,
+    readBatch.files.reduce((n, f) => n + (typeof f.text === 'string' ? f.text.length : 0), 0));
   // If the window happened to cover the whole file (file ≤ READ_WINDOW, clamped by
   // readFile), present it EXACTLY like an uncapped whole-file read — no synthetic
   // range, no continue trailer — so small-file reads stay byte-identical to legacy.
@@ -1003,9 +989,10 @@ const SEARCH_USAGE = 'Usage: ss-search "<query>" [--full|--xl] [-k N] [--mode au
 // SS_FIX_A keeps a compact sufficiency token, printed ONLY when the verdict is YES (the sweet rules
 // tell the agent to trust the top result on `sufficient=YES`). Owner decision 2026-10-01: dropping it
 // is a behaviour change → separate B-switch SS_FIX_DROP_SUFFICIENCY=1 (A/B "keep vs drop").
+// Like the original, it is printed only together with a confidence verdict. SS_FIX_DROP_SUFFICIENCY
+// only acts under SS_FIX_A (without SS_FIX_A the original confidence line prints unchanged).
 function compactSufficiencyLine(response) {
-  if (process.env.SS_FIX_DROP_SUFFICIENCY === '1') return '';
-  return /^ sufficient=YES\b/.test(renderSufficiency(response)) ? '# sufficient=YES\n' : '';
+  return renderCompactSufficiency(response, renderSufficiency(response), { drop: FIX.dropSufficiency });
 }
 
 async function cmdAgentSearch(rawArgs) {
@@ -1090,16 +1077,15 @@ async function cmdAgentSearch(rawArgs) {
     })}\n`);
     process.exit(3);
   }
-  let shownSpans = [];
-  let alreadyShown = new Set();
-  if (ALREADY_SHOWN_ON) {
-    // SS_FIX_A (A3): record this call's code and learn which blocks the thread already saw.
-    alreadyShown = await decideAlreadyShown(response.results, { query });
-  } else {
-    shownSpans = SPAN_POLICY_ENABLED
-      ? collectAgentShownSpans(response.results, { projectRoot: FILE_ROOT }) : [];
-    await recordAgentToolCall({ spans: shownSpans, query });
-  }
+  // Output-fix switches: plan the printed entries first (dedupe / one-per-file / caps), so both
+  // ledgers learn only what this call prints. With every switch off `plan` is null and this is
+  // the original.
+  const renderFix = resultRenderFixActive(FIX, { alreadyShownActive: ALREADY_SHOWN_ON });
+  const plan = renderFix ? planFixedResults(response.results || [], { k, find: false }) : null;
+  const shownSpans = SPAN_POLICY_ENABLED
+    ? collectAgentShownSpans(resultsForOriginalLedger(response.results, plan), { projectRoot: FILE_ROOT }) : [];
+  await recordAgentToolCall({ spans: shownSpans, query });
+  const alreadyShown = await alreadyShownFor(response.results || [], plan);
 
   // The packaged response shape comes from packageForAgent (or pattern's own
   // packager when CatBoost routes to pattern). Both include:
@@ -1126,16 +1112,21 @@ async function cmdAgentSearch(rawArgs) {
   const headerCount = (response.results || []).filter(r => r.headerContext).length;
 
   // Header (visible to agent)
-  // SS_FIX_A (A1) drops this header, the confidence/sufficiency line and the route trailer.
+  // SS_FIX_A (A1): one short header (results, query) instead of the route/budget header, the
+  // compact `# sufficient=YES` line instead of the confidence line; the route trailer goes to
+  // stderr (below).
   const conf = routeConfidence != null ? ` conf=${routeConfidence.toFixed(2)}` : '';
-  if (!FIX.bundleA) {
+  if (FIX.compact) {
+    const n = response.results.length;
+    process.stdout.write(`# ss-search: ${n} result${n === 1 ? '' : 's'} for "${query}"\n`);
+  } else {
     process.stdout.write(`# ss-search: routed=${routedMode}${conf} budget=${response.tokenBudget} used=${response.tokensUsed}` +
       ` results=${response.results.length} subMode=${response.subMode}\n`);
   }
   // final-tuning: proves a bench run executes this tree's helpers (off = byte-identical).
   if (process.env.SS_VARIANT_SENTINEL === '1') process.stdout.write('# variant-sentinel: final-tuning worktree\n');
-  if (FIX.bundleA) process.stdout.write(compactSufficiencyLine(response));
-  if (!FIX.bundleA && response.confidence) {
+  if (FIX.compact) process.stdout.write(compactSufficiencyLine(response));
+  if (!FIX.compact && response.confidence) {
     process.stdout.write(`# confidence=${response.confidence}${response.confidenceReason ? ' (' + response.confidenceReason + ')' : ''}` +
       `${renderSufficiency(response)}\n`);
   }
@@ -1146,8 +1137,10 @@ async function cmdAgentSearch(rawArgs) {
   // restates its own header (`file:line — symbol (kind)`) is not printed.
   const seenSpans = [];
   // Per-result blocks
-  if (resultRenderFixActive(FIX)) {
-    writeFixedBlocks(response.results || [], { k, omitted: alreadyShown, allowOnePerFile: true });
+  if (renderFix) {
+    process.stdout.write(renderFixedBlocks(response.results || [], plan, {
+      compact: FIX.compact, omitted: alreadyShown, dropRestatingSummary: DEDUPE, gutter,
+    }));
   } else
   for (const r of response.results || []) {
     if (DEDUPE) {
@@ -1190,12 +1183,11 @@ async function cmdAgentSearch(rawArgs) {
     if (r.familyManifest?.rendered) process.stdout.write(`${r.familyManifest.rendered}\n`);
   }
 
-  if (!resultRenderFixActive(FIX) && (!response.results || response.results.length === 0)) {
+  if (!renderFix && (!response.results || response.results.length === 0)) {
     process.stdout.write('(no matches)\n');
   }
-  const shownTrailer = (SHOWN_SPAN_TRAILER && !FIX.bundleA) ? renderShownFullTrailer(shownSpans) : '';
+  const shownTrailer = (SHOWN_SPAN_TRAILER && !FIX.compact) ? renderShownFullTrailer(shownSpans) : '';
   if (shownTrailer) process.stdout.write(`\n${shownTrailer}\n`);
-  if (FIX.bundleA) process.exit(0);
 
   // Keep complete metadata available to the debug serializer, while normal
   // agent output receives only the fields that can change its next action.
@@ -1230,10 +1222,14 @@ async function cmdAgentSearch(rawArgs) {
     sameFileMapTokens: response.results?.[0]?.sameFile?.tokens ?? null,
     sameFileNeighborCount: response.results?.[0]?.sameFile?.neighbors?.length ?? null,
   };
-  process.stdout.write(`\n${formatRouteMetadata(meta, {
+  const routeLine = formatRouteMetadata(meta, {
     _isAgentFormat: true,
     debug: process.env.SWEET_SEARCH_ROUTE_META_DEBUG === '1',
-  })}\n`);
+  });
+  // SS_FIX_A (A1): the route trailer goes to stderr (the agent never sees it; the wrapper drops
+  // stderr on exit 0). A script that runs this file directly can still read it.
+  if (FIX.compact) process.stderr.write(`${routeLine}\n`);
+  else process.stdout.write(`\n${routeLine}\n`);
   process.exit(0);
 }
 
@@ -1287,9 +1283,9 @@ async function cmdSemantic(rawArgs) {
   const shownSpans = SPAN_POLICY_ENABLED
     ? collectSemanticShownSpans(r, { projectRoot: FILE_ROOT }) : [];
   await recordAgentToolCall({ spans: shownSpans, query });
-  if (ALREADY_SHOWN_ON && !AGENT_SESSION_ID) {
-    await recordAgentToolCall({ operation: 'observe', spans: shownSpans, query, sessionId: THREAD_KEY });
-  }
+  // SS_FIX_ALREADY_SHOWN (A3): record the printed spans in the A3 namespace only (reply ignored).
+  await recordForAlreadyShown(shownSpans, null,
+    (r.spans || []).reduce((n, sp) => n + (typeof sp?.text === 'string' ? sp.text.length : 0), 0));
   process.stdout.write(`# ss-semantic ${r.file} | "${query}" | spans=${r.spans?.length ?? 0} | ~tokens=${r.approxTokensReturned}${r.fellBack ? ' [FALLBACK]' : ''}\n`);
   for (const span of r.spans || []) {
     const fence = r.language ? '```' + r.language : '```';
@@ -1301,7 +1297,15 @@ async function cmdSemantic(rawArgs) {
   process.exit(0);
 }
 
-const TRACE_USAGE = 'Usage: ss-trace <symbol> [callers|callees|impact] [--in <file>] [--query <hint>] [--depth N] [--budget N]';
+// The usage text names each mode word on its own line. A bracketed `[callers|callees|impact]`
+// form was copied by agents into commands (zsh `no matches found: [callees]`), and an
+// unbracketed `callers|callees|impact` would run as a shell pipe.
+const TRACE_USAGE =
+  'Usage: ss-trace <symbol> [--in <file>] [--query <hint>] [--depth N] [--budget N]\n' +
+  '       ss-trace <symbol> callers --in <defining file>\n' +
+  '       ss-trace <symbol> callees\n' +
+  '       ss-trace <symbol> impact\n' +
+  'Mode word (optional, after the symbol): callers, callees or impact.';
 async function cmdTrace(rawArgs) {
   const args = normalizeArgs(rawArgs);
   let json = false;
@@ -1350,9 +1354,9 @@ async function cmdTrace(rawArgs) {
 
   let response = traceSymbol(symbol, opts);
   const traceNotes = [];
-  if (FIX.bundleA) {
-    // A4/A5: a wrong --in file falls back to the repo-wide definition; an ambiguous name
-    // prefers the non-test definition over a test mock.
+  if (FIX.traceCompact) {
+    // SS_FIX_TRACE_COMPACT (A4; part of SS_FIX_A): a wrong --in file falls back to the
+    // repo-wide definition; an ambiguous name prefers the non-test definition over a test mock.
     if (!response.target && opts.filePath) {
       const wide = traceSymbol(symbol, { ...opts, filePath: undefined });
       if (wide.target) {
@@ -1365,6 +1369,8 @@ async function cmdTrace(rawArgs) {
       if (alt) {
         const better = traceSymbol(symbol, { ...opts, filePath: alt.file });
         if (better.target && !isTestLikePath(better.target.filePath)) {
+          // The re-run trace has no alternatives of its own: keep naming the test definition.
+          better.disambiguation = alternativesAfterSwitch(response, better.target.filePath, better.target.startLine);
           response = better;
           traceNotes.push('note: the first match was a test definition; showing the non-test definition.');
         }
@@ -1375,7 +1381,7 @@ async function cmdTrace(rawArgs) {
     query: json ? undefined : `${symbol} ${queryHint}`.trim(),
   });
   if (json) process.stdout.write(JSON.stringify({ ...response, mode }, null, 2) + '\n');
-  else if (FIX.bundleA) process.stdout.write(formatTraceCompact(response, { mode, notes: traceNotes }) + '\n');
+  else if (FIX.traceCompact) process.stdout.write(formatTraceCompact(response, { mode, notes: traceNotes }) + '\n');
   else process.stdout.write(formatStructuralContext(response, { mode }) + '\n');
 
   const meta = {
@@ -1398,9 +1404,10 @@ async function cmdTrace(rawArgs) {
     latencyMs: response.stats?.latencyMs ?? null,
     sufficient: !!response.target,
   };
-  // SS_FIX_A (A4): the meta line goes to stderr. The ss-trace wrapper discards stderr on a
-  // zero exit, so the agent never sees it; a script that runs this file directly still can.
-  if (FIX.bundleA) { if (response.target) process.stderr.write(`<<SS_TRACE_META>>${JSON.stringify(meta)}\n`); }
+  // SS_FIX_TRACE_COMPACT (A4): the meta line goes to stderr. The ss-trace wrapper discards
+  // stderr on a zero exit, so the agent never sees it; a script that runs this file directly
+  // still can.
+  if (FIX.traceCompact) { if (response.target) process.stderr.write(`<<SS_TRACE_META>>${JSON.stringify(meta)}\n`); }
   else process.stdout.write(`\n<<SS_TRACE_META>>${JSON.stringify(meta)}\n`);
   process.exit(response.target ? 0 : 1);
 }

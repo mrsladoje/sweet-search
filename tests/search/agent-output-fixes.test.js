@@ -1,5 +1,7 @@
 /**
- * ss-* output fixes (SS_FIX_A, SS_FIX_SUMMARY_CAP, SS_FIX_ONE_PER_FILE, SS_FIX_GREP_ORDER).
+ * ss-* output fixes (SS_FIX_A and its sub-switches, SS_FIX_ALREADY_SHOWN, SS_FIX_SUMMARY_CAP,
+ * SS_FIX_ONE_PER_FILE, SS_FIX_GREP_ORDER). The wiring (renderer, ledger protocol, regex repair)
+ * is in agent-output-fixes-wiring.test.js.
  *
  * The invariants: every switch is default off, and the pure helpers do what the fix list says.
  * The byte-identical-when-off check for the real CLI is a script run (see FIXES-IMPL.md).
@@ -16,7 +18,7 @@ import {
   orderSourceBeforeTests,
   readFixFlags,
   renderAlsoInFile,
-  renderGrepCounts,
+  renderGrepLineLists,
   renderSummaryLine,
   resolveThreadKey,
   resultRenderFixActive,
@@ -32,15 +34,43 @@ import {
 
 describe('readFixFlags', () => {
   it('is all off with an empty environment', () => {
-    expect(readFixFlags({})).toEqual({ bundleA: false, summaryCap: null, onePerFile: false, grepOrder: false });
+    expect(readFixFlags({})).toEqual({
+      compact: false, traceCompact: false, grepRetry: false, alreadyShown: false,
+      dropSufficiency: false, summaryCap: null, onePerFile: false, grepOrder: false,
+    });
     expect(resultRenderFixActive(readFixFlags({}))).toBe(false);
+    expect(resultRenderFixActive(readFixFlags({}), { find: true })).toBe(false);
+  });
+
+  it('SS_FIX_A turns on A1/A2 (compact), A4 and A5, but never A3', () => {
+    const a = readFixFlags({ SS_FIX_A: '1' });
+    expect(a).toMatchObject({ compact: true, traceCompact: true, grepRetry: true, alreadyShown: false });
+    expect(readFixFlags({ SS_FIX_A: 'yes' }).compact).toBe(true);
+  });
+
+  it('A4 and A5 have their own switches: on alone, or off inside SS_FIX_A', () => {
+    expect(readFixFlags({ SS_FIX_TRACE_COMPACT: '1' })).toMatchObject({ compact: false, traceCompact: true, grepRetry: false });
+    expect(readFixFlags({ SS_FIX_GREP_RETRY: 'on' })).toMatchObject({ compact: false, traceCompact: false, grepRetry: true });
+    expect(readFixFlags({ SS_FIX_A: '1', SS_FIX_TRACE_COMPACT: '0' })).toMatchObject({ compact: true, traceCompact: false, grepRetry: true });
+    expect(readFixFlags({ SS_FIX_A: '1', SS_FIX_GREP_RETRY: 'off' })).toMatchObject({ compact: true, traceCompact: true, grepRetry: false });
+    // An unknown value inherits the umbrella.
+    expect(readFixFlags({ SS_FIX_A: '1', SS_FIX_GREP_RETRY: 'maybe' }).grepRetry).toBe(true);
+  });
+
+  it('A3 and the sufficiency drop are separate switches that accept every on-value', () => {
+    expect(readFixFlags({ SS_FIX_ALREADY_SHOWN: '1' })).toMatchObject({ alreadyShown: true, compact: false });
+    expect(readFixFlags({ SS_FIX_DROP_SUFFICIENCY: 'true' }).dropSufficiency).toBe(true);
+    expect(readFixFlags({ SS_FIX_DROP_SUFFICIENCY: 'on' }).dropSufficiency).toBe(true);
+    expect(readFixFlags({ SS_FIX_DROP_SUFFICIENCY: '0' }).dropSufficiency).toBe(false);
   });
 
   it('reads each switch on its own', () => {
-    expect(readFixFlags({ SS_FIX_A: '1' }).bundleA).toBe(true);
-    expect(readFixFlags({ SS_FIX_A: '0' }).bundleA).toBe(false);
+    expect(readFixFlags({ SS_FIX_A: '1' }).compact).toBe(true);
+    expect(readFixFlags({ SS_FIX_A: '0' }).compact).toBe(false);
     expect(readFixFlags({ SS_FIX_SUMMARY_CAP: '3' }).summaryCap).toBe(3);
-    expect(readFixFlags({ SS_FIX_SUMMARY_CAP: '0' }).summaryCap).toBe(0);
+    // 0 means "cap off", as for every other switch in this codebase.
+    expect(readFixFlags({ SS_FIX_SUMMARY_CAP: '0' }).summaryCap).toBeNull();
+    expect(resultRenderFixActive(readFixFlags({ SS_FIX_SUMMARY_CAP: '0' }))).toBe(false);
     expect(readFixFlags({ SS_FIX_SUMMARY_CAP: '' }).summaryCap).toBeNull();
     expect(readFixFlags({ SS_FIX_SUMMARY_CAP: 'abc' }).summaryCap).toBeNull();
     expect(readFixFlags({ SS_FIX_ONE_PER_FILE: '1' }).onePerFile).toBe(true);
@@ -52,6 +82,12 @@ describe('readFixFlags', () => {
     expect(resultRenderFixActive(readFixFlags({ SS_FIX_ONE_PER_FILE: '1' }), { find: true })).toBe(false);
     expect(resultRenderFixActive(readFixFlags({ SS_FIX_SUMMARY_CAP: '2' }), { find: true })).toBe(true);
     expect(resultRenderFixActive(readFixFlags({ SS_FIX_GREP_ORDER: '1' }))).toBe(false);
+    // Grep / trace sub-switches never touch the ss-search / ss-find renderer.
+    expect(resultRenderFixActive(readFixFlags({ SS_FIX_GREP_RETRY: '1', SS_FIX_TRACE_COMPACT: '1' }))).toBe(false);
+    // A3 uses the renderer only when it is EFFECTIVE (switch + thread key + receipt ledger).
+    expect(resultRenderFixActive(readFixFlags({ SS_FIX_ALREADY_SHOWN: '1' }))).toBe(false);
+    expect(resultRenderFixActive(readFixFlags({}), { alreadyShownActive: true })).toBe(true);
+    expect(resultRenderFixActive(readFixFlags({}), { find: true, alreadyShownActive: true })).toBe(true);
   });
 });
 
@@ -93,15 +129,35 @@ function entry(over) {
 }
 
 describe('selectEntries (A2, B1, B2)', () => {
-  it('drops summary entries covered by an earlier span or repeating file + symbol', () => {
+  it("'v3' keeps the SS_VARIANT_SEARCH_DEDUPE rule: any earlier span, or the same file + symbol", () => {
     const results = [
       entry({ rank: 1, presentation: 'full', code: 'x', startLine: 10, endLine: 50, symbol: 'big' }),
       entry({ rank: 2, startLine: 20, endLine: 30, symbol: 'inner' }),     // inside rank 1
       entry({ rank: 3, startLine: 60, endLine: 70, symbol: 'other' }),
       entry({ rank: 4, startLine: 80, endLine: 90, symbol: 'other' }),     // repeats file + symbol
     ];
-    const { entries } = selectEntries(results, { dedupe: true });
+    const { entries } = selectEntries(results, { dedupe: 'v3' });
     expect(entries.map((e) => e.r.rank)).toEqual([1, 3]);
+  });
+
+  it("'a2' drops a summary only under an earlier CODE entry or an identical span", () => {
+    const results = [
+      entry({ rank: 1, presentation: 'full', code: 'x', startLine: 10, endLine: 50, symbol: 'big' }),
+      entry({ rank: 2, startLine: 20, endLine: 30, symbol: 'inner' }),     // inside code: dropped
+      entry({ rank: 3, startLine: 60, endLine: 70, symbol: 'other' }),
+      entry({ rank: 4, startLine: 80, endLine: 90, symbol: 'other' }),     // same symbol, other span: KEPT
+      entry({ rank: 5, startLine: 60, endLine: 70, symbol: 'other' }),     // identical span: dropped
+    ];
+    expect(selectEntries(results, { dedupe: 'a2' }).entries.map((e) => e.r.rank)).toEqual([1, 3, 4]);
+  });
+
+  it("'a2' never lets a large summary span (a class) swallow its methods", () => {
+    const results = [
+      entry({ rank: 1, file: 'Parser.ts', startLine: 101, endLine: 3257, symbol: 'Parser', symbolType: 'class' }),
+      entry({ rank: 2, file: 'Parser.ts', startLine: 3005, endLine: 3011, symbol: 'check', symbolType: 'method' }),
+    ];
+    expect(selectEntries(results, { dedupe: 'a2' }).entries.map((e) => e.r.rank)).toEqual([1, 2]);
+    expect(selectEntries(results, { dedupe: 'v3' }).entries.map((e) => e.r.rank)).toEqual([1]);
   });
 
   it('never drops a non-summary entry', () => {
@@ -109,7 +165,8 @@ describe('selectEntries (A2, B1, B2)', () => {
       entry({ rank: 1, presentation: 'full', code: 'x', startLine: 10, endLine: 50, symbol: 'big' }),
       entry({ rank: 2, presentation: 'preview', code: 'y', startLine: 20, endLine: 30, symbol: 'inner' }),
     ];
-    expect(selectEntries(results, { dedupe: true }).entries).toHaveLength(2);
+    expect(selectEntries(results, { dedupe: 'v3' }).entries).toHaveLength(2);
+    expect(selectEntries(results, { dedupe: 'a2' }).entries).toHaveLength(2);
   });
 
   it('keeps one entry per file and lists the others', () => {
@@ -121,8 +178,33 @@ describe('selectEntries (A2, B1, B2)', () => {
     ];
     const { entries } = selectEntries(results, { onePerFile: true });
     expect(entries.map((e) => e.r.rank)).toEqual([1, 2]);
-    expect(renderAlsoInFile(entries[0].also)).toBe('also in this file: a2 (l.120), a3 (l.300)');
+    expect(renderAlsoInFile(entries[0].also)).toBe('also in this file: a2 (l.120-130), a3 (l.300-310)');
     expect(renderAlsoInFile(entries[1].also)).toBe('');
+    expect(renderAlsoInFile([{ symbol: null, startLine: 7, endLine: 7 }])).toBe('also in this file: code (l.7)');
+  });
+
+  it('one-per-file keeps the CODE entry of a file, not an earlier summary-only one', () => {
+    const results = [
+      entry({ rank: 1, file: 'x.go', presentation: 'full', code: 'x', symbol: 'X' }),
+      entry({ rank: 2, file: 'a.go', symbol: 'Summary', startLine: 5, endLine: 9 }),
+      entry({ rank: 3, file: 'a.go', presentation: 'full', code: 'fix', symbol: 'Fix', startLine: 50, endLine: 80,
+        familyManifest: { rendered: 'family: ...' } }),
+    ];
+    const { entries, hiddenCode } = selectEntries(results, { onePerFile: true });
+    expect(entries.map((e) => e.r.rank)).toEqual([1, 3]);
+    expect(entries[1].r.familyManifest.rendered).toBe('family: ...');
+    expect(renderAlsoInFile(entries[1].also)).toBe('also in this file: Summary (l.5-9)');
+    expect(hiddenCode).toBe(false); // only a summary entry went into the also line
+  });
+
+  it('reports when a hidden entry carried code', () => {
+    const results = [
+      entry({ rank: 1, file: 'a.go', presentation: 'full', code: 'a', symbol: 'A' }),
+      entry({ rank: 2, file: 'a.go', presentation: 'full', code: 'b', symbol: 'B', startLine: 50, endLine: 60 }),
+    ];
+    expect(selectEntries(results, { onePerFile: true }).hiddenCode).toBe(true);
+    expect(selectEntries(results, {}).hiddenCode).toBe(false);
+    expect(selectEntries(results, { summaryCap: 5, k: 1 }).hiddenCode).toBe(true);
   });
 
   it('caps summary-only entries and makes k a hard cap on all entries', () => {
@@ -283,6 +365,17 @@ describe('ss-grep fixes (A5, B7)', () => {
   it('lists source hits before test hits and keeps the order inside each class', () => {
     const ordered = orderSourceBeforeTests([hit('a_test.go', 1), hit('b.go', 2), hit('tests/c.py', 3), hit('d.go', 4)]);
     expect(ordered.map((m) => m.file)).toEqual(['b.go', 'd.go', 'a_test.go', 'tests/c.py']);
+    // Everything fits in k: a pure reorder, no quota.
+    expect(orderSourceBeforeTests([hit('a_test.go', 1), hit('b.go', 2)], { k: 5 }).map((m) => m.file)).toEqual(['b.go', 'a_test.go']);
+  });
+
+  it('moves a quota of test files into the first k files when there are more files than k', () => {
+    const matches = [hit('t1_test.go', 1), hit('t2_test.go', 1),
+      ...Array.from({ length: 10 }, (_, i) => hit(`s${i}.go`, 1))];
+    const files = [...new Set(orderSourceBeforeTests(matches, { k: 10 }).map((m) => m.file))];
+    // round(10 * 0.3) = 3, capped by the 2 test files: 8 source files, then both tests.
+    expect(files.slice(0, 10)).toEqual(['s0.go', 's1.go', 's2.go', 's3.go', 's4.go', 's5.go', 's6.go', 's7.go', 't1_test.go', 't2_test.go']);
+    expect(files.slice(10)).toEqual(['s8.go', 's9.go']);
   });
 
   it('detects a repeated matched-text column', () => {
@@ -306,14 +399,31 @@ describe('ss-grep fixes (A5, B7)', () => {
       .toEqual(renderGrepBody(varied, summary, 10).lines);
   });
 
-  it('renders per-file counts with source first and tests collapsed', () => {
+  it('flood mode lists up to 3 hit lines per file, source first, tests kept when they fit', () => {
     const files = [
       { file: 'a_test.go', total: 40 }, { file: 'a.go', total: 3 }, { file: 'b.go', total: 9 }, { file: 'tests/x.py', total: 2 },
     ];
-    const lines = renderGrepCounts(files, new Map([['a.go', 11], ['b.go', 4]]), 10);
-    expect(lines[0]).toBe('b.go:4 (9 matches)');
-    expect(lines[1]).toBe('a.go:11 (3 matches)');
-    expect(lines[2]).toContain('test/spec/fixture files: 2 file(s), 42 match(es): a_test.go (40), tests/x.py (2)');
+    const lines = renderGrepLineLists(files, new Map([
+      ['a.go', [11, 12, 13]], ['b.go', [4, 48, 55, 75]], ['a_test.go', [1, 2, 3, 4]], ['tests/x.py', [7, 9]],
+    ]), 10);
+    expect(lines).toEqual([
+      'b.go: lines 4, 48, 55 (+6 more)',
+      'a.go: lines 11, 12, 13',
+      'a_test.go: lines 1, 2, 3 (+37 more)',
+      'tests/x.py: lines 7, 9',
+    ]);
     expect(GREP_COUNTS_THRESHOLD).toBe(50);
+  });
+
+  it('flood mode keeps a test-file quota when there are more files than k', () => {
+    const files = [
+      ...Array.from({ length: 12 }, (_, i) => ({ file: `src/s${i}.go`, total: 10 })),
+      { file: 'a_test.go', total: 30 }, { file: 'b_test.go', total: 5 }, { file: 'c_test.go', total: 2 },
+    ];
+    const lines = renderGrepLineLists(files, new Map(), 10);
+    const rows = lines.filter((l) => !l.startsWith('#'));
+    expect(rows).toHaveLength(10);
+    expect(rows.filter((l) => l.includes('_test.go'))).toEqual(['a_test.go (30 matches)', 'b_test.go (5 matches)', 'c_test.go (2 matches)']);
+    expect(lines).toContain('# +5 more non-test file(s) with 50 match(es): src/s5.go, src/s6.go, src/s7.go, ...');
   });
 });
