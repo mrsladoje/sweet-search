@@ -48,6 +48,9 @@ Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 
 ## Decisions log
 
+- 03:40 Residual Opus gap after V1 (est. +6..+8% vs native) is tool-result size: ss-read is NOT fatter than native `sed -n` (median span 35 vs 31 lines, 52 vs 53 chars/line, 107 vs 89 calls); the extra bytes come from ss-search/ss-find code blocks replacing grep lines. The shape lever for that (pointer tail) is in TRIED-LEVERS (no win) → no new variant; recorded as an open item for the owner.
+- 03:30 r3 indexing: jj done in 33 min (11k chunks); dgraph running; ETA all six ≈ 04:50, then the task guard (~1 h).
+
 - 03:05 **V2 (PRUNE3) REJECTED.** Codex interleaved train (78 pairs): accOR −1.9 pt [−3.8, −0.1] (significant harm), cost −5.0% [−17.4%, +6.9%] (ns), calls +1%, ss-search tokens −14%. The earlier DeepSeek saving (sequential) does not transfer; cross-cell rule fails. Switch kept, default off. Answer to owner hypothesis 2: on Codex the three tools carry accuracy; removing them saves little.
 
 - 02:25 **V1 confirmed on Sonnet (A-B-A, train 78):** vs base A cost −12.7% [−17.7%, −8.1%], vs base B −9.6% [−13.1%, −6.2%]; drift A→B −3.4% (ns); cache write −22..−27%; accuracy +0.9 / 0.0 pt; calls equal. Sonnet validation skipped (subscription; Opus train+val already passed, Sonnet is a confirmation cell). Accuracy re-score (accOR) for the 3 runs in progress.
