@@ -190,6 +190,21 @@ function siteCount(items) {
   return (items || []).reduce((n, item) => n + Math.max(1, siteLines(item).length), 0);
 }
 
+// Rows that are calls of the target: stored and bare calls, and hint
+// handoffs (a name called in the target's body).
+const CALL_ROW_TYPES = new Set(['calls', 'handoff']);
+
+/**
+ * The noun for a section's site count: "call sites" when every counted row
+ * is a call, else "sites" — a callers section also lists the code that
+ * constructs (`instantiates`), extends, implements or overrides the target.
+ */
+export function siteNoun(items) {
+  return (items || []).every((item) => !item?.relationship || CALL_ROW_TYPES.has(item.relationship))
+    ? 'call sites'
+    : 'sites';
+}
+
 function itemSummary(entity) {
   const loc = entity.filePath ? `${entity.filePath}:${entity.startLine || '?'}` : '(external)';
   const lines = siteLines(entity).join(',');
@@ -552,13 +567,14 @@ export class StructuralContextBuilder {
         latencyMs: Math.round(performance.now() - started),
       },
       sections: {
-        // `total` counts call sites (an item lists every line it calls on);
-        // `distinct` counts calling / called entities (= fan-in / fan-out).
+        // `total` counts sites (an item lists every line it calls / constructs
+        // on); `siteNoun` names them; `distinct` counts calling / called
+        // entities (= fan-in / fan-out).
         callers: {
-          total: siteCount(callers), distinct: targetFan.fanIn, shown: callersPack.items.length, items: callersPack.items,
+          total: siteCount(callers), siteNoun: siteNoun(callers), distinct: targetFan.fanIn, shown: callersPack.items.length, items: callersPack.items,
           provenance: callerProvenance,
         },
-        callees: { total: siteCount(callees), distinct: targetFan.fanOut, shown: calleesPack.items.length, items: calleesPack.items },
+        callees: { total: siteCount(callees), siteNoun: siteNoun(callees), distinct: targetFan.fanOut, shown: calleesPack.items.length, items: calleesPack.items },
         impact: { total: impactPaths.length, shown: impactPack.paths.length, paths: impactPack.paths },
       },
     };

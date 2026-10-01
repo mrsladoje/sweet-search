@@ -579,7 +579,7 @@ export function formatTraceCompact(result, { mode = null, notes = [] } = {}) {
     const total = section.total || 0;
     const noun = title === 'callers' ? 'caller' : 'callee';
     const count = section.distinct != null && section.distinct !== total
-      ? `${total} call sites, ${section.distinct} distinct ${noun}${section.distinct === 1 ? '' : 's'}`
+      ? `${total} ${section.siteNoun || 'call sites'}, ${section.distinct} distinct ${noun}${section.distinct === 1 ? '' : 's'}`
       : `${total}`;
     lines.push(`\n## ${title} (${count})`);
     for (const item of internal) {

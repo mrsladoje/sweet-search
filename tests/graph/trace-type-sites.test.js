@@ -128,7 +128,20 @@ describe('ss-trace lists every line of an instantiation', () => {
     expect(result.sections.callers.total).toBe(3);
     expect(result.sections.callers.distinct).toBe(1);
     expect(result.target.fanIn).toBe(1);
-    expect(formatTraceCompact(result, { mode: 'callers' })).toContain('## callers (3 call sites, 1 distinct caller)\nrun [method] src/A.java:3 (instantiates)@4,5,6');
+    // Instantiation rows are not calls: the heading says "sites" (both formats).
+    expect(result.sections.callers.siteNoun).toBe('sites');
+    expect(formatTraceCompact(result, { mode: 'callers' })).toContain('## callers (3 sites, 1 distinct caller)\nrun [method] src/A.java:3 (instantiates)@4,5,6');
+    expect(formatStructuralContext(result)).toContain('## callers (3 sites, 1 distinct caller)');
+    expect(formatTraceCompact(result, { mode: 'callers' })).not.toContain('call sites');
+  });
+
+  it('siteNoun says "call sites" only when every counted row is a call', async () => {
+    const { siteNoun } = await import('../../core/graph/structural-context.js');
+    expect(siteNoun([{ relationship: 'calls' }, { relationship: 'calls' }])).toBe('call sites');
+    expect(siteNoun([{ relationship: 'calls' }, { relationship: 'handoff' }, {}])).toBe('call sites');
+    expect(siteNoun([{ relationship: 'calls' }, { relationship: 'instantiates' }])).toBe('sites');
+    expect(siteNoun([{ relationship: 'extends' }])).toBe('sites');
+    expect(siteNoun([])).toBe('call sites');
   });
 
   it('a single instantiation needs no call_lines row: its line comes from relationships', async () => {

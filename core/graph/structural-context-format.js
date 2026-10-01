@@ -59,7 +59,7 @@ export function formatStructuralContext(result, options = {}) {
     // heading read as one set.
     const noun = title === 'callers' ? 'caller' : 'callee';
     const count = section.distinct != null && section.distinct !== section.total
-      ? `${section.total} call sites, ${section.distinct} distinct ${noun}${section.distinct === 1 ? '' : 's'}`
+      ? `${section.total} ${section.siteNoun || 'call sites'}, ${section.distinct} distinct ${noun}${section.distinct === 1 ? '' : 's'}`
       : `${section.total}`;
     lines.push(`\n## ${title} (${count})`);
     for (const item of section.items) {
