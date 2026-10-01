@@ -208,7 +208,7 @@ export async function runRRFFallback(fused, query, opts = {}) {
   const perKeyword = await Promise.all(
     keywords.map(async (kw) => {
       try {
-        const r = await graphSearch.bm25SearchRaw(kw, perKeywordLimit);
+        const r = await graphSearch.bm25SearchRaw(kw, perKeywordLimit, { format: opts.format });
         return r?.results || [];
       } catch {
         return [];

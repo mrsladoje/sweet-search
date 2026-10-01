@@ -663,6 +663,10 @@ export const TREE_SITTER_ENTITY_PRIORITY = Object.freeze({
   // arrowFunction/interface/enum (20): high enough to win over enum_constant
   // when both match, low enough to never overshadow the owning class.
   property: 20,
+  // Go package-level `const`, Rust `const` / `static` items: state, like
+  // `variable` (Go package-level `var` reuses that label).
+  const: 5,
+  static: 5,
 });
 
 // Module-scope constants for extractJavaScript() — avoid per-call/per-line allocation.
@@ -2139,6 +2143,7 @@ export class GraphExtractor {
           type: normalizedType,
           name: sym.name,
           signature: sym.signature || null,
+          doc_comment: sym.docComment || null,
           start_line: startLine + 1, // tree-sitter is 0-indexed
           end_line: endLine + 1,
           ...(sym.parentClass ? { parent_class: sym.parentClass } : {}),

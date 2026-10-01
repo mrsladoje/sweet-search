@@ -23,6 +23,21 @@ import { readAdjacentManifest, resolveManifestCodeGraphPath, sqlAliasPrefix } fr
 import { TRACE_ONLY_TYPES_SQL } from './relationship-types.js';
 import { asTopLevelCaller, fileNodeSourceSql, hasFilesTable } from './file-nodes.js';
 
+// Entity doc comments (filled from the AST since 2026-10) take part in BM25
+// only for agent formats. GCSN dev: an ungated doc column cost MRR@10 86.92%
+// -> 86.89% (n=3600, seed=42): GCSN keeps docstrings only in its Python
+// corpus, so Python entities won other languages' doc-text queries. Per the
+// CLAUDE.md format-gating rule, other formats keep the pre-doc behaviour:
+// FTS5 matches name/name_alias/signature only, LIKE fallback ignores the doc
+// part of search_text, and rows carry no docComment (the non-agent
+// query-text reranker reads it).
+const DOC_COMMENT_FORMATS = new Set(['agent', 'agent_preview', 'agent_full', 'agent_full_xl']);
+const NON_DOC_FTS_COLUMNS = '{name name_alias signature}';
+
+function usesDocComments(format) {
+  return DOC_COMMENT_FORMATS.has(format);
+}
+
 // Fix 9: Abbreviation expansion dictionary for common software abbreviations
 const ABBREVIATION_EXPANSIONS = {
   auth: ['authentication', 'authorize'],
@@ -342,14 +357,14 @@ export class GraphSearch {
   /**
    * Map a raw FTS5/trigram/LIKE row to a search result object.
    */
-  _mapRow(row, source, scoreMultiplier = 1.0) {
+  _mapRow(row, source, scoreMultiplier = 1.0, format) {
     return {
       id: row.id,
       file: row.file_path,
       type: row.type,
       name: row.name,
       signature: row.signature,
-      docComment: row.doc_comment,
+      docComment: usesDocComments(format) ? row.doc_comment : null,
       startLine: row.start_line,
       endLine: row.end_line,
       package: row.package,
@@ -362,22 +377,35 @@ export class GraphSearch {
   /**
    * Merge new rows into results, deduplicating by id.
    */
-  _mergeRows(results, rows, source, scoreMultiplier = 1.0) {
+  _mergeRows(results, rows, source, scoreMultiplier = 1.0, format) {
     const existingIds = new Set(results.map(r => r.id));
     for (const row of rows) {
       if (!existingIds.has(row.id)) {
-        results.push(this._mapRow(row, source, scoreMultiplier));
+        results.push(this._mapRow(row, source, scoreMultiplier, format));
         existingIds.add(row.id);
       }
     }
   }
 
   /**
+   * FTS5 MATCH expression for `format`: all columns for agent formats, the
+   * non-doc columns otherwise (see DOC_COMMENT_FORMATS).
+   */
+  _ftsScope(expr, format) {
+    return usesDocComments(format) ? expr : `${NON_DOC_FTS_COLUMNS} : (${expr})`;
+  }
+
+  /**
    * LIKE-based fallback search (used when FTS5 is unavailable or returns no results).
    */
-  _likeFallback(results, query, limit, source = 'like') {
+  _likeFallback(results, query, limit, source = 'like', format) {
     const searchTerms = query.toLowerCase().split(/\s+/).filter(t => t.length > 1);
-    const likeConditions = searchTerms.map(() => 'search_text LIKE ?').join(' AND ');
+    // search_text = name + signature + doc_comment; without docs, match the
+    // same text minus the doc part.
+    const haystack = usesDocComments(format)
+      ? 'search_text'
+      : "lower(name || ' ' || coalesce(signature, ''))";
+    const likeConditions = searchTerms.map(() => `${haystack} LIKE ?`).join(' AND ');
     const likeParams = searchTerms.map(t => `%${t}%`);
 
     const stmt = this.db.prepare(`
@@ -401,7 +429,7 @@ export class GraphSearch {
       const nameMatch = row.name.toLowerCase().includes(query.toLowerCase()) ? 2 : 0;
       const exactMatch = row.name.toLowerCase() === query.toLowerCase() ? 5 : 0;
       row.score = -(10 - rank * 0.1 + nameMatch + exactMatch);
-      const mapped = this._mapRow(row, source);
+      const mapped = this._mapRow(row, source, 1.0, format);
       mapped.score = Math.max(0.1, mapped.score);
       results.push(mapped);
     }
@@ -631,7 +659,7 @@ export class GraphSearch {
   async bm25Search(query, options = {}) {
     // Support legacy signature: bm25Search(query, limit)
     const opts = typeof options === 'number' ? { limit: options } : options;
-    const { limit = 20, skipBoosts = false } = opts;
+    const { limit = 20, skipBoosts = false, format } = opts;
     await this.init();
 
     const start = Date.now();
@@ -663,7 +691,7 @@ export class GraphSearch {
         restrictedFallback = restrictedAttempted;
         try {
           rows = this._stmtFts5.all(
-            this.sanitizeFtsQuery(query),
+            this._ftsScope(this.sanitizeFtsQuery(query), format),
             ...this._entityVisibilityParams(),
             limit,
           );
@@ -674,7 +702,7 @@ export class GraphSearch {
       }
 
       for (const row of rows) {
-        results.push(this._mapRow(row, 'fts5'));
+        results.push(this._mapRow(row, 'fts5', 1.0, format));
       }
     }
 
@@ -690,7 +718,7 @@ export class GraphSearch {
           limit,
         );
 
-        this._mergeRows(results, trigramRows, 'trigram', 0.9);
+        this._mergeRows(results, trigramRows, 'trigram', 0.9, format);
       } catch (err) {
         this.log(`[bm25Search] Trigram query failed: ${err.message}`);
       }
@@ -702,11 +730,11 @@ export class GraphSearch {
         const expandedForm = this.expandIdentifierQuery(query);
         if (expandedForm && expandedForm !== this.sanitizeFtsQuery(query)) {
           const expandedRows = this._stmtFts5.all(
-            expandedForm,
+            this._ftsScope(expandedForm, format),
             ...this._entityVisibilityParams(),
             limit,
           );
-          this._mergeRows(results, expandedRows, 'fts5_expanded', 0.85);
+          this._mergeRows(results, expandedRows, 'fts5_expanded', 0.85, format);
         }
       } catch (err) {
         this.log(`[bm25Search] Identifier expansion query failed: ${err.message}`);
@@ -719,11 +747,11 @@ export class GraphSearch {
         const abbrQuery = this.expandAbbreviations(query);
         if (abbrQuery) {
           const abbrRows = this._stmtFts5.all(
-            abbrQuery,
+            this._ftsScope(abbrQuery, format),
             ...this._entityVisibilityParams(),
             limit,
           );
-          this._mergeRows(results, abbrRows, 'fts5_abbr', 0.8);
+          this._mergeRows(results, abbrRows, 'fts5_abbr', 0.8, format);
         }
       } catch (err) {
         this.log(`[bm25Search] Abbreviation expansion failed: ${err.message}`);
@@ -731,7 +759,7 @@ export class GraphSearch {
     }
 
     if (!this.hasFts5 || results.length === 0) {
-      this._likeFallback(results, query, limit, 'like');
+      this._likeFallback(results, query, limit, 'like', format);
     }
 
     const latency = Date.now() - start;
@@ -761,7 +789,8 @@ export class GraphSearch {
    * @param {number} [limit=50] - Maximum results to return
    * @returns {Promise<{results: Array, latency: number}>}
    */
-  async bm25SearchRaw(query, limit = 50) {
+  async bm25SearchRaw(query, limit = 50, options = {}) {
+    const { format } = options;
     await this.init();
 
     const start = Date.now();
@@ -788,7 +817,7 @@ export class GraphSearch {
       if (rows.length === 0) {
         try {
           rows = this._stmtFts5.all(
-            this.sanitizeFtsQuery(query),
+            this._ftsScope(this.sanitizeFtsQuery(query), format),
             ...this._entityVisibilityParams(),
             limit,
           );
@@ -799,7 +828,7 @@ export class GraphSearch {
       }
 
       for (const row of rows) {
-        results.push(this._mapRow(row, 'fts5_raw'));
+        results.push(this._mapRow(row, 'fts5_raw', 1.0, format));
       }
     }
 
@@ -812,7 +841,7 @@ export class GraphSearch {
           ...this._entityVisibilityParams(),
           limit,
         );
-        this._mergeRows(results, trigramRows, 'trigram_raw', 0.9);
+        this._mergeRows(results, trigramRows, 'trigram_raw', 0.9, format);
       } catch (err) {
         this.log(`[bm25SearchRaw] Trigram query failed: ${err.message}`);
       }
@@ -820,7 +849,7 @@ export class GraphSearch {
 
     // LIKE fallback for no FTS5
     if (!this.hasFts5 || results.length === 0) {
-      this._likeFallback(results, query, limit, 'like_raw');
+      this._likeFallback(results, query, limit, 'like_raw', format);
     }
 
     const latency = Date.now() - start;
@@ -1447,6 +1476,7 @@ export class GraphSearch {
       useDefinitionFirst = null, // Auto-detect if null, force on/off if boolean
       skipBoosts = false, // Skip ranking boosts (for fair hybrid fusion)
       deferExpansion = false, // When true, ambiguous queries skip internal expansion (lexical-only path)
+      format, // Output format: agent formats also match entity doc comments
     } = options;
 
     const start = Date.now();
@@ -1459,7 +1489,7 @@ export class GraphSearch {
       this.log(`Using definition-first search for identifier query: "${query}"`);
 
       // Two-pass search: definitions in parallel with BM25
-      const { results: definitionResults, stats: defStats } = await this.hybridDefinitionSearch(query, { k, limit: 20, skipBoosts });
+      const { results: definitionResults, stats: defStats } = await this.hybridDefinitionSearch(query, { k, limit: 20, skipBoosts, format });
 
       // If we got definition results, optionally expand graph from them
       if (definitionResults.length > 0 && expand) {
@@ -1533,7 +1563,7 @@ export class GraphSearch {
                   type: rel.type,
                   name: rel.name,
                   signature: rel.signature,
-                  docComment: rel.doc_comment,
+                  docComment: usesDocComments(format) ? rel.doc_comment : null,
                   startLine: rel.start_line,
                   endLine: rel.end_line,
                   score: relScore,
@@ -1589,7 +1619,7 @@ export class GraphSearch {
     // Standard BM25 path for non-identifier queries
     // Step 1: BM25 search for initial matches
     // Pass skipBoosts for fair hybrid fusion
-    const { results: bm25Results, latency: bm25Latency } = await this.bm25Search(query, { limit: 20, skipBoosts });
+    const { results: bm25Results, latency: bm25Latency } = await this.bm25Search(query, { limit: 20, skipBoosts, format });
 
     if (bm25Results.length === 0) {
       return {
@@ -1682,7 +1712,7 @@ export class GraphSearch {
               type: rel.type,
               name: rel.name,
               signature: rel.signature,
-              docComment: rel.doc_comment,
+              docComment: usesDocComments(format) ? rel.doc_comment : null,
               startLine: rel.start_line,
               endLine: rel.end_line,
               score: relScore,
@@ -1916,7 +1946,7 @@ export class GraphSearch {
   async hybridDefinitionSearch(query, options = {}) {
     await this.init();
 
-    const { k = 10, limit = 20, skipBoosts = false } = options;
+    const { k = 10, limit = 20, skipBoosts = false, format } = options;
     const queryNormalized = query.toLowerCase().replace(/[^a-z0-9]/g, '');
     const queryLower = query.toLowerCase();
     const start = Date.now();
@@ -1976,7 +2006,7 @@ export class GraphSearch {
 
     // Pass 2: Normal BM25/FTS5 search (parallel)
     // Pass skipBoosts through for fair hybrid fusion
-    const fts5Promise = this.bm25Search(query, { limit, skipBoosts });
+    const fts5Promise = this.bm25Search(query, { limit, skipBoosts, format });
 
     // Wait for both searches
     const [definitionResults, fts5Result] = await Promise.all([definitionPromise, fts5Promise]);
@@ -1985,7 +2015,7 @@ export class GraphSearch {
     this.log(`hybridDefinitionSearch: ${definitionResults.length} definitions, ${fts5Result.results.length} FTS5 in ${latency}ms`);
 
     // Merge: definitions first, then FTS5 (deduplicated)
-    const merged = this.mergeWithDefinitionPriority(definitionResults, fts5Result.results, k);
+    const merged = this.mergeWithDefinitionPriority(definitionResults, fts5Result.results, k, format);
 
     return {
       results: merged,
@@ -2005,9 +2035,10 @@ export class GraphSearch {
    * @param {Array} definitions - Results from definition-first search
    * @param {Array} fts5Results - Results from BM25/FTS5 search
    * @param {number} [k=10] - Maximum results to return
+   * @param {string} [format] - Output format (agent formats keep doc comments)
    * @returns {Array} Merged and deduplicated results
    */
-  mergeWithDefinitionPriority(definitions, fts5Results, k = 10) {
+  mergeWithDefinitionPriority(definitions, fts5Results, k = 10, format) {
     const seen = new Set();
     const merged = [];
 
@@ -2022,7 +2053,7 @@ export class GraphSearch {
           type: def.type,
           name: def.name,
           signature: def.signature,
-          docComment: def.doc_comment,
+          docComment: usesDocComments(format) ? def.doc_comment : null,
           startLine: def.start_line,
           endLine: def.end_line,
           package: def.package,

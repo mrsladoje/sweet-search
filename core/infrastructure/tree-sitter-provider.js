@@ -11,6 +11,8 @@
  *   if (!chunks) { // fall back to regex }
  */
 
+import { extractTreeSitterDocComment } from './tree-sitter-doc-comments.js';
+
 // Grammar mapping: language ID -> grammar WASM file stem
 //
 // `tsx` uses tree-sitter-tsx (not tree-sitter-typescript) so that JSX inside
@@ -493,6 +495,15 @@ const TAGS_QUERIES = {
     (function_declaration name: (identifier) @function.definition)
     (method_declaration name: (field_identifier) @method.definition)
     (type_declaration (type_spec name: (type_identifier) @type.definition))
+    ; Package-level \`var\` / \`const\`, single or grouped (\`var ( … )\`).
+    ; Function-local declarations are not entities (source_file parent only).
+    ; dgraph's \`var errHasPendingTxns = errors.New("Pending transactions
+    ; found…")\` was invisible to the graph and to entity BM25.
+    ; Positional \`(identifier)\`, not \`name:\`: the field form matches only
+    ; the first name of \`var a, b int\`. A spec's only direct identifier
+    ; children are its names (types and values are other node types).
+    (source_file (var_declaration (var_spec (identifier) @variable.definition)))
+    (source_file (const_declaration (const_spec (identifier) @constant.definition)))
   `,
   rust: `
     (function_item name: (identifier) @function.definition)
@@ -506,6 +517,12 @@ const TAGS_QUERIES = {
     (function_signature_item name: (identifier) @method.definition)
     (enum_item name: (type_identifier) @enum.definition)
     (macro_definition name: (identifier) @macro.definition)
+    ; Module-level and associated \`const\` / \`static\` items (labels match the
+    ; Rust regex registry). Function-local items are not entities.
+    (source_file (const_item name: (identifier) @constant.definition))
+    (source_file (static_item name: (identifier) @static.definition))
+    (declaration_list (const_item name: (identifier) @constant.definition))
+    (declaration_list (static_item name: (identifier) @static.definition))
   `,
   java: `
     (class_declaration name: (identifier) @class.definition)
@@ -788,7 +805,17 @@ const CAPTURE_TO_ENTITY_TYPE = {
   // ignored, so neither got a proper symbol anchor in the graph.
   'enum_constant.definition': 'enum_constant',
   'field.definition': 'field',
+  // Go package-level `const` and Rust `const` / `static` items. Labels match
+  // the regex registries for both languages ('const', 'static'), which the
+  // IAR anchor lookup already excludes as generic constants.
+  'constant.definition': 'const',
+  'static.definition': 'static',
 };
+
+// Go declaration specs: a spec alone in its `var` / `const` statement takes
+// the statement as extent (signature keeps the keyword); a spec inside a
+// `var ( … )` group keeps its own extent.
+const GO_DECLARATION_SPECS = { var_spec: 'var', const_spec: 'const' };
 
 // Containment for graph entities (`parent_class`): the nearest enclosing
 // type-like declaration of a captured definition. Without it every method
@@ -991,7 +1018,17 @@ export class TreeSitterProvider {
         // the node is the identifier leaf — use node.text for the name and
         // node.parent for the extent (start/end lines, signature).
         const isLeafIdent = IDENT_TYPES.has(node.type);
-        const extentNode = isLeafIdent && node.parent ? node.parent : node;
+        let extentNode = isLeafIdent && node.parent ? node.parent : node;
+        let specKeyword = null;
+        if (languageId === 'go' && GO_DECLARATION_SPECS[extentNode.type]) {
+          const decl = extentNode.parent;
+          let specs = 0;
+          for (let i = 0; i < decl.namedChildCount; i++) {
+            if (decl.namedChild(i).type === extentNode.type) specs++;
+          }
+          if (specs === 1) extentNode = decl;
+          else specKeyword = GO_DECLARATION_SPECS[extentNode.type];
+        }
 
         // Go's grammar collapses every `type X …` declaration into
         // `type_declaration → type_spec` with a single @type.definition
@@ -1021,8 +1058,15 @@ export class TreeSitterProvider {
           }
         }
 
-        // Deduplicate: multiple captures can match the same declaration
-        const key = `${extentNode.startIndex}:${entityType}`;
+        // Deduplicate: multiple captures can match the same declaration.
+        // A Go spec can declare several names (`var a, b int`): one entity each.
+        const isGoSpecName = languageId === 'go' && isLeafIdent
+          && GO_DECLARATION_SPECS[node.parent?.type];
+        // `var _ io.Writer = (*T)(nil)` is a compile-time assertion, not a name.
+        if (isGoSpecName && node.text === '_') continue;
+        const key = isGoSpecName
+          ? `${extentNode.startIndex}:${entityType}:${node.text}`
+          : `${extentNode.startIndex}:${entityType}`;
         if (seen.has(key)) continue;
         seen.add(key);
 
@@ -1031,7 +1075,8 @@ export class TreeSitterProvider {
 
         // Build signature from the extent node's first line
         const nodeText = content.substring(extentNode.startIndex, extentNode.endIndex);
-        const firstLine = nodeText.split('\n')[0].trim();
+        const extentFirstLine = nodeText.split('\n')[0].trim();
+        const firstLine = specKeyword ? `${specKeyword} ${extentFirstLine}` : extentFirstLine;
         const signature = firstLine.length > 120
           ? firstLine.substring(0, 117) + '...'
           : firstLine;
@@ -1073,6 +1118,7 @@ export class TreeSitterProvider {
         }
 
         const parentClass = this._containerName(extentNode, languageId);
+        const docComment = extractTreeSitterDocComment(extentNode, content, languageId);
         symbols.push({
           name: symbolName,
           type: entityType,
@@ -1080,6 +1126,7 @@ export class TreeSitterProvider {
           endLine,
           signature,
           ...(parentClass ? { parentClass } : {}),
+          ...(docComment ? { docComment } : {}),
         });
       }
 

@@ -411,7 +411,9 @@ describe('Fix 4: Narrow Identifier Routing', () => {
   });
 
   it('should fall back to unrestricted FTS5 when name restriction finds nothing', async () => {
-    const result = await graphSearch.bm25Search('Auth2FA');
+    // "Auth2FA" sits only in SecurityManager's doc_comment, which BM25 matches
+    // for agent formats only.
+    const result = await graphSearch.bm25Search('Auth2FA', { format: 'agent' });
     const names = result.results.map(r => r.name);
 
     expect(names).toContain('SecurityManager');
@@ -908,5 +910,56 @@ describe('_mapRow and _mergeRows helpers', () => {
     graphSearch._mergeRows(results, newRows, 'test', 1.0);
     expect(results.length).toBe(2); // '1' deduped, '2' added
     expect(results[1].name).toBe('Bar');
+  });
+});
+
+// =============================================================================
+// DOC COMMENTS IN BM25: AGENT FORMATS ONLY
+// =============================================================================
+
+describe('Doc comments take part in BM25 for agent formats only', () => {
+  let testDir, graphSearch;
+
+  beforeAll(async () => {
+    testDir = mkdtempSync(join(tmpdir(), 'lexical-docgate-'));
+    const dbPath = join(testDir, 'test.db');
+    const db = createLexicalTestDb(dbPath);
+    db.close();
+    graphSearch = new GraphSearch(dbPath);
+    await graphSearch.init();
+  });
+
+  afterAll(() => {
+    graphSearch?.close();
+    rmSync(testDir, { recursive: true, force: true });
+  });
+
+  // "auth" sits only in HelperUtils' doc_comment ("Utility with auth helpers");
+  // "utility" also matches its name_alias ("utils", porter stemming).
+  it('bm25SearchRaw matches the doc column for format=agent', async () => {
+    const { results } = await graphSearch.bm25SearchRaw('utility auth', 10, { format: 'agent' });
+    const hit = results.find(r => r.name === 'HelperUtils');
+    expect(hit).toBeDefined();
+    expect(hit.docComment).toBe('Utility with auth helpers');
+  });
+
+  it('bm25SearchRaw ignores the doc column without an agent format', async () => {
+    for (const options of [undefined, { format: 'json' }]) {
+      const { results } = await graphSearch.bm25SearchRaw('utility auth', 10, options);
+      expect(results.find(r => r.name === 'HelperUtils')).toBeUndefined();
+      expect(results.every(r => r.docComment == null)).toBe(true);
+    }
+  });
+
+  it('bm25Search (lexical path) follows the same gate', async () => {
+    const agent = await graphSearch.bm25Search('utility auth', { limit: 10, format: 'agent' });
+    expect(agent.results.some(r => r.name === 'HelperUtils')).toBe(true);
+    const plain = await graphSearch.bm25Search('utility auth', { limit: 10 });
+    expect(plain.results.some(r => r.name === 'HelperUtils')).toBe(false);
+  });
+
+  it('name and signature matches are unaffected by the gate', async () => {
+    const plain = await graphSearch.bm25SearchRaw('user service', 10);
+    expect(plain.results.some(r => r.name === 'UserService')).toBe(true);
   });
 });

@@ -245,6 +245,14 @@ export class CodeGraphRepository {
     return this.findEntityWithNameInRange(filePath, startLine, endLine, targetName) !== null;
   }
 
+  /**
+   * First entity declared in a chunk range (the chunk's label when no entity
+   * encloses its start). Definitions win over package-level state: Go
+   * `var`/`const` and Rust `const`/`static` items sit at the top of a file,
+   * and a file-head chunk holding them plus functions is labelled by the
+   * first function (gin ginS/gins.go 1-65 stays LoadHTMLGlob, not the
+   * `engine` var). State labels a chunk only when it declares nothing else.
+   */
   findFirstEntityInRange(filePath, startLine, endLine) {
     const db = this._open();
     if (!db) return null;
@@ -256,7 +264,8 @@ export class CodeGraphRepository {
           AND start_line >= ?
           AND start_line <= ?
           AND ${this._entityVisibilitySql(db)}
-        ORDER BY start_line ASC, (end_line - start_line) ASC
+        ORDER BY CASE WHEN type IN ('variable', 'const', 'static') THEN 1 ELSE 0 END,
+          start_line ASC, (end_line - start_line) ASC
         LIMIT 1
       `).get(filePath, startLine, endLine, ...this._entityVisibilityParams(db));
       if (!row) return null;
@@ -686,7 +695,8 @@ export class CodeGraphRepository {
    *
    * Returns a small set per name, preferring the smallest body (canonical
    * definition over re-exports). Excludes obviously-non-symbol kinds
-   * ('chunk', 'message', 'topKey', 'target', 'variable') so we don't
+   * ('chunk', 'message', 'topKey', 'target', 'variable', 'const', 'static'
+   * — Go var/const and Rust const/static are tree-sitter entities) so we don't
    * surface generic constants on hits like "config".
    *
    * @param {string[]} names
@@ -704,7 +714,7 @@ export class CodeGraphRepository {
     if (!uniq.length) return [];
     const exclude = Array.isArray(opts.excludeKinds) && opts.excludeKinds.length
       ? opts.excludeKinds
-      : ['chunk', 'message', 'topKey', 'target', 'variable', 'const'];
+      : ['chunk', 'message', 'topKey', 'target', 'variable', 'const', 'static'];
     const limit = Math.max(1, Math.min(64, opts.limit ?? 16));
     try {
       const sql = `
@@ -755,7 +765,7 @@ export class CodeGraphRepository {
     if (!uniq.length) return new Map();
     const exclude = Array.isArray(opts.excludeKinds) && opts.excludeKinds.length
       ? opts.excludeKinds
-      : ['chunk', 'message', 'topKey', 'target', 'variable', 'const'];
+      : ['chunk', 'message', 'topKey', 'target', 'variable', 'const', 'static'];
     try {
       const sql = `
         SELECT lower(name) as lname, COUNT(*) as count
