@@ -201,3 +201,46 @@ receiver-evidence fix (B) are implemented now.
 - D. Move the export-macro blanking (`CPP_CLASS_KEY_MACRO`) from `extractSymbols` into `parse()`, so
   the chunker and the graph agree.
 Both: GCSN dev MRR before/after, then reindex at the end of tuning.
+
+---
+
+## 2026-10-02 — Chunker: a large function splits into a junk signature chunk and overlapping, reformatted body chunks (needs reindex — wait)
+
+**Observation (owner):** Put the chunker issue seen in `r3h-dgraph-08` into observations. It
+changes chunk output, so it waits for the end of tuning (reindex is frozen) and needs a GCSN dev MRR
+check, like fixes C and D above.
+
+**Example — replay `r3h-dgraph-08` (opencode + GPT-6.1 Sol):** the answer sits in
+`worker/export.go` `ToExportKvList` (606-694) and `exportInternal` (775-944). Both functions are
+over the 2,000-char chunk cap. `ss-semantic worker/export.go "<question>"` returned one span,
+943-1007 `[SchemaExportKv]`, which holds four small functions (`SchemaExportKv`, `TypeExportKv`,
+`grpcWorker.Export`, `handleExportOverNetwork`). The agent then read the file in three windows.
+
+**Facts (verified on main 54db32bf with the real chunker on the r3-dgraph file; the r282 index
+has the same chunks):**
+- An oversized named function gives a 600-char header chunk (`tree-sitter-provider.js:1443-1460`,
+  606-625 `function: ToExportKvList`), then `recursiveChunk` recurses into the function's children.
+- The children `func`, name, parameters and result merge into a junk chunk with one token per line:
+  `func\nToExportKvList\n(pk x.ParsedKey, ...)\n(*bpb.KVList, error)` (606-606, 97 chars). The same
+  happens for `toJSON` (49 chars) and `exportInternal` (117 chars). It duplicates the header chunk.
+- `flushBuffer` builds chunk text by joining sibling node texts with `\n` (:1209-1211), not by
+  slicing the source. Body chunks start `{\ne := &exporter{` and gain blank lines; the first line
+  loses its indentation. The embedded text is not the code the agent reads.
+- The header chunk (606-625) overlaps the body chunks (606-616, 616-662), so the start of every
+  large function is indexed twice.
+- Body chunks are stored with `type: code`, `name: null`. The parent name reaches the embedded
+  header (`parentSymbol`, `core/indexing/ast-chunker.js:158`), but tools that print the stored
+  name show no symbol.
+- Sibling merge labels a chunk after its first function only (943-1007 `SchemaExportKv`); the other
+  names go only into an `# Additional:` embedding header line.
+
+**Possible product change:**
+- Do not emit the signature-token buffer when recursing into an oversized function; the header
+  chunk already holds the signature.
+- Build every chunk's text as one source slice (first node start to last node end), not a `\n`
+  join, so the embedded text equals the file text.
+- End the header chunk where the first body chunk starts (or start the body after the header), so
+  no lines are indexed twice.
+- Store the enclosing function as the body chunk's name (for example `ToExportKvList (part 2)`), so
+  ss-search and ss-semantic can label it.
+Then GCSN dev MRR before/after, and reindex at the end of tuning.
