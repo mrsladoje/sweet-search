@@ -519,6 +519,88 @@ function resolveEntityKindInfo(r, opts = {}) {
   return result;
 }
 
+// Entity kinds that group declarations: C++/C#/TS `namespace`, Ruby/Elixir
+// `module`, `package`. The tightest entity that encloses a chunk is often one
+// of these (the chunker starts a class-header chunk on the `namespace x {`
+// line), and adopting it labelled drogon's HttpViewData.h:29-50 class header
+// `[namespace: drogon]` and widened it to the 147-line namespace.
+const NAMESPACE_ENTITY_KINDS = new Set(['namespace', 'module', 'package']);
+// A `namespace` never declares behaviour itself. A `module` can be the real
+// unit (Ruby mixin, Elixir defmodule), so only a type inside it outranks it.
+const PURE_NAMESPACE_KINDS = new Set(['namespace', 'package']);
+const TYPE_ENTITY_KINDS = new Set([
+  'class', 'struct', 'interface', 'trait', 'enum', 'record', 'object', 'protocol',
+  'union', 'actor', 'impl', 'extension', 'mixin', 'typealias', 'type',
+]);
+const CALLABLE_ENTITY_KINDS = new Set([
+  'function', 'method', 'constructor', 'arrowfunction', 'assignedfunc',
+]);
+// Entities that own other declarations: a chunk inside one is not a fragment
+// of one symbol, so the owner is no label for it.
+const CONTAINER_ENTITY_KINDS = new Set([
+  'class', 'struct', 'interface', 'trait', 'enum', 'record', 'object', 'protocol',
+  'union', 'actor', 'impl', 'extension', 'mixin',
+  ...NAMESPACE_ENTITY_KINDS,
+]);
+
+function entitiesStartingInChunk(r, opts) {
+  const repo = opts.codeGraphRepo;
+  if (!repo || typeof repo.findEntitiesInRange !== 'function') return [];
+  const file = resolveFilePath(r);
+  const meta = r?.metadata || {};
+  const start = Number(meta.startLine ?? r?.startLine);
+  const end = Number(meta.endLine ?? r?.endLine);
+  if (!file || !Number.isFinite(start) || !Number.isFinite(end)) return [];
+  const cache = opts._entityKindCache;
+  const cacheKey = cache ? `in|${file}|${start}|${end}` : null;
+  if (cacheKey && cache.has(cacheKey)) return cache.get(cacheKey);
+  let rows = [];
+  try { rows = repo.findEntitiesInRange(file, start, end) || []; } catch { rows = []; }
+  if (cacheKey) cache.set(cacheKey, rows);
+  return rows;
+}
+
+/**
+ * Agent format: decide what a chunk adopts when the entity found for it
+ * (tightest enclosing entity, else first entity in range) owns other
+ * declarations. Adoption is a label; it must not hide the symbol the chunk
+ * holds or widen the chunk to the owner's span.
+ *
+ *   - A namespace/module is never a range to widen to. A type inside the
+ *     chunk labels it; for a pure namespace a function inside does too;
+ *     otherwise the namespace stays a label only.
+ *   - A chunk the chunker labelled as a named function/method keeps its own
+ *     label and range (C# `77-146 method:Get14` was relabelled
+ *     `[class: Store]` and widened to 5-207).
+ *   - An unnamed function chunk inside a class (C++ `function:null` member
+ *     chunks) takes the first function in its range as label, never the
+ *     class span.
+ *   - Everything else (an unlabelled fragment inside a class, a fragment of
+ *     one long function) keeps the da97c273 behaviour.
+ *
+ * @returns {{ entity: object|null, labelOnly: boolean }}
+ */
+function refineContainedAdoption(r, entity, opts) {
+  const kind = normalizeType(entity?.type);
+  if (!entity || !CONTAINER_ENTITY_KINDS.has(kind)) return { entity, labelOnly: false };
+  const chunkType = normalizeType(resolveResultType(r));
+  const chunkName = resolveResultName(r);
+  const chunkIsCallable = CALLABLE_ENTITY_KINDS.has(chunkType);
+  if (chunkIsCallable && chunkName) return { entity: null, labelOnly: true };
+  const isNamespace = NAMESPACE_ENTITY_KINDS.has(kind);
+  if (!isNamespace && !chunkIsCallable) return { entity, labelOnly: false };
+  const inner = entitiesStartingInChunk(r, opts)
+    .filter(e => e?.name && !NAMESPACE_ENTITY_KINDS.has(normalizeType(e.type)));
+  const firstCallable = inner.find(e => CALLABLE_ENTITY_KINDS.has(normalizeType(e.type)));
+  if (isNamespace) {
+    const firstType = inner.find(e => TYPE_ENTITY_KINDS.has(normalizeType(e.type)));
+    if (firstType) return { entity: firstType, labelOnly: true };
+    if (firstCallable && PURE_NAMESPACE_KINDS.has(kind)) return { entity: firstCallable, labelOnly: true };
+    return { entity, labelOnly: true };
+  }
+  return firstCallable ? { entity: firstCallable, labelOnly: true } : { entity: null, labelOnly: true };
+}
+
 // Boost magnitudes are env-tunable so we can ablate without re-deploying.
 // Defaults softened (2026-05-05) from (1.25, 0.85, 1.20, 1.05) to
 // (1.10, 0.90, 1.10, 1.03) after a 16-query 3-config ablation showed
@@ -2208,9 +2290,19 @@ export function applyResultDemotions(results, opts = {}) {
     const shouldAdoptEntity = shouldAdoptViaExactTarget || shouldAdoptViaAddSym || !!(preferredEntity?.startLine
       && preferredEntity?.endLine
       && preferredKindKeywordSet && preferredKindKeywordSet.has(preferredType));
-    const containedEntity = !shouldAdoptEntity && opts.codeGraphRepo && typeof opts.codeGraphRepo.findFirstEntityInRange === 'function'
+    let containedEntity = !shouldAdoptEntity && opts.codeGraphRepo && typeof opts.codeGraphRepo.findFirstEntityInRange === 'function'
       ? resolveEntityKindInfo(result, opts)
       : null;
+    // Agent format only: a namespace/module or a class that owns the chunk
+    // is no label or range for it (see refineContainedAdoption). Label-only
+    // here, but the second demotion pass reads the adopted label and range,
+    // so it stays behind the same format gate as the other structural rules.
+    let containedLabelOnly = false;
+    if (isAgentFormat && containedEntity) {
+      const refined = refineContainedAdoption(result, containedEntity, opts);
+      containedEntity = refined.entity;
+      containedLabelOnly = refined.labelOnly;
+    }
     const shouldAdoptContained = !!(containedEntity?.name && containedEntity?.startLine && containedEntity?.endLine);
     const entityToAdopt = shouldAdoptEntity ? preferredEntity : shouldAdoptContained ? containedEntity : null;
     if (__profOn) __ruleTime[11] += performance.now() - __ruleT0;
@@ -2242,7 +2334,12 @@ export function applyResultDemotions(results, opts = {}) {
       ? Math.max(0, chunkEnd - chunkStart + 1) : 0;
     const entityRange = entityToAdopt
       ? Math.max(0, (entityToAdopt.endLine || 0) - (entityToAdopt.startLine || 0) + 1) : 0;
-    const adoptRange = !!entityToAdopt && entityRange >= chunkRange;
+    // Agent format: never widen a chunk to a namespace/module span, whichever
+    // path picked the entity.
+    const adoptRange = !!entityToAdopt && entityRange >= chunkRange
+      && !(isAgentFormat && (
+        (!shouldAdoptEntity && containedLabelOnly)
+        || NAMESPACE_ENTITY_KINDS.has(normalizeType(entityToAdopt.type))));
     const adoptedFile = entityToAdopt
       ? (entityToAdopt.file || entityToAdopt.filePath || resolveFilePath(result))
       : null;
