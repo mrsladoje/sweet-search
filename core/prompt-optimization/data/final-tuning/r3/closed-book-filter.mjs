@@ -13,13 +13,12 @@ const done = fs.existsSync(out) ? JSON.parse(fs.readFileSync(out, 'utf8')) : {};
 const MODELS = [['openrouter', 'deepseek/deepseek-v4.1-flash'], ['openrouter', 'openai/gpt-6-luna']];
 async function ask(model, prompt) {
   for (let a = 0; a < 4; a++) {
-    let r;
-    try {
-      r = await fetch('https://openrouter.ai/api/v1/chat/completions', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${process.env.OPENROUTER_API_KEY}` },
+    try {   // request AND body read inside one try: a timeout can fire while the body is read
+      const r = await fetch('https://openrouter.ai/api/v1/chat/completions', { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${process.env.OPENROUTER_API_KEY}` },
         body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], temperature: 0, response_format: { type: 'json_object' } }), signal: AbortSignal.timeout(180000) });
-    } catch { await new Promise(res => setTimeout(res, 3000 * (a + 1))); continue; }   // network error → retry
-    if (r.ok) { const j = await r.json(); try { return JSON.parse(j.choices[0].message.content.replace(/^```(json)?|```$/g, '')); } catch { return null; } }
-    await new Promise(res => setTimeout(res, 2000 * (a + 1)));
+      if (r.ok) { const j = await r.json(); try { return JSON.parse(j.choices[0].message.content.replace(/^```(json)?|```$/g, '')); } catch { return null; } }
+    } catch { /* network error or timeout → retry */ }
+    await new Promise(res => setTimeout(res, 3000 * (a + 1)));
   }
   return null;
 }

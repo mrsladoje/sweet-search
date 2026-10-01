@@ -50,6 +50,8 @@ Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 
 ## Decisions log
 
+- 14:25 Closed-book filter crashed twice (network close; then a timeout during the body read outside the try) → whole request+parse now in one try, concurrency 16, restarted (resumable; 74/132 A done). GRDB index slow: 45,849 chunks (test-heavy Swift) → ~1 h, at 95% embedding at 14:21.
+
 - 12:15 r3-hard pipeline: drafts A 144 (6 old repos × 24) + B 70 (5 new repos × 14). Verifier flags B done (strict-rule keeps 0–6 per repo — used as flags only); A verification running (jj done). Closed-book filter B running (2 drops in first 19). Audit brief `r3/HARD-AUDIT-BRIEF.md` (closed-book drop → drop/harden; facts flagged by BOTH verifiers → fix or drop; hardness + ambiguity checks). Forensic chain: pull + stage done, sweep running, then B-repo indexing, then agent legs.
 
 - 11:50 **The Codex r3 accuracy deficit was the ss-find bug.** Clean re-run `cx-r3dev-ns2` (60, interleaved, 0 crashes): sweet vs native accuracy −0.4 pt [−3.5, +2.7], cost +0.1%; clean held-out (rescored, 101 pairs): accuracy −0.4 pt, cost +2.9% (both ns). → Codex sweet = native on accuracy and cost. V4 (completeness wording) was aimed at a bug artifact.
@@ -137,6 +139,8 @@ Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 - 00:05 Runner `--tag` added (commit on this branch). — `scripts/retrieval-bench-282.mjs`
 
 ## Owner decisions (picked conservatively, owner to review)
+
+- 2026-10-01 ~14:25 — owner (via a side session): **the `sufficient=` / confidence line is used by the rules** ("On `sufficient=YES`, trust the top ranked result…"), so removing it is a behaviour change, not cleanup. A1 split: Bundle A keeps a compact `# sufficient=YES` line (printed only when YES) — implemented on ft-fixes 5000cdec; dropping it entirely = new B-switch `SS_FIX_DROP_SUFFICIENCY=1`, tested as its own A/B ("keep vs drop"). The rules' sufficiency sentence must match whichever variant runs. `same file:` line is untouched by every fix. Evidence strength: strong for score=/trailers/budget header/repeated summary lines; weak (and contradicted by the rules) for sufficiency/confidence. Not yet re-verified (needs a quiet machine: GRDB indexing on GPU).
 
 - 2026-10-01 ~11:25 — owner: hard questions must not come mostly from the new languages. Confirmed design: r3-hard A ≈ 100 (6 old repos, 50 dev / 50 HO) + r3-hard B = 50 (5 new repos, 25 / 25) → hard set 2/3 old repos; ≈ 8 per repo per split; split stratified by repo × stratum (seed 42); results reported pooled AND per language group (old vs new); difficulty pilot on dev from both groups.
 
