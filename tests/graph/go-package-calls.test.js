@@ -242,6 +242,13 @@ describe('Go package-qualified calls', () => {
       ['func f(s schema.Schema) { schema.Meta() }', false],
       ['import (\n\tschema "example.com/app/schema"\n)\nfunc f() { schema.Meta() }', false],
       ['opts := schema.Options{}\nschema.Meta()', false],
+      // A comment that ends in a period is no member access.
+      ['\t// Build the meta.\n\tschema.Meta()', false],
+      ['\t// Two to be pruned.\n\tschema := load()', true],
+      // A chain split across lines is.
+      ['s.\n\tschema.Meta()', true],
+      // The package in a type position after `var name`.
+      ['var CmdAcl schema.SubCommand\nschema.Meta()', false],
     ];
     for (const [src, want] of cases) expect([src, goNameShadowed(src, 'schema')]).toEqual([src, want]);
   });
