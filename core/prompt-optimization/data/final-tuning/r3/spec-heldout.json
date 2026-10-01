@@ -1,0 +1,7 @@
+{ "label": "r3 HELD-OUT (103) — final evaluation, aggregates only",
+  "comparisons": [
+    { "name": "Opus 2.8.2 vs native", "cell": "cc-opus55-medium", "a": {"tag": "ho-op-nat", "arm": "native"}, "b": {"tag": "ho-op-sw", "arm": "sweet"} },
+    { "name": "Opus V1b vs native", "cell": "cc-opus55-medium", "a": {"tag": "ho-op-nat", "arm": "native"}, "b": {"tag": "ho-op-v1b", "arm": "sweet"} },
+    { "name": "Opus V1b vs 2.8.2", "cell": "cc-opus55-medium", "a": {"tag": "ho-op-sw", "arm": "sweet"}, "b": {"tag": "ho-op-v1b", "arm": "sweet"} },
+    { "name": "Codex 2.8.2 vs native", "cell": "codex-sol61-high", "a": {"tag": "ho-cx-ns", "arm": "native"}, "b": {"tag": "ho-cx-ns", "arm": "sweet"} }
+  ] }
