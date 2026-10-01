@@ -602,7 +602,7 @@ describe('packageForAgent (graph-neighbour reservation)', () => {
       getFileIndexInfo: () => null,
     };
 
-    const pack = packageForAgent(ranked, { path: 'pattern', grepMatches: 1, total_ms: 5 }, {
+    const pack = packageForAgent(ranked, { path: 'hybrid', grepMatches: 1, total_ms: 5 }, {
       query: 'validate request',
       regex: '\\bvalidate\\b',
       mode: 'hybrid',

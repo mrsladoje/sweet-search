@@ -1182,6 +1182,10 @@ export function computeSufficiency(topResult, confidenceInfo, queryContext = {})
   const hasHeader = !!topResult.headerContext;
   if (hasHeader) reasons.push('header_resolved');
 
+  // Pattern mode (ss-find) never carries neighbours (graphNeighborsEnabled), so
+  // there resolution rests on header + self-containment: what the agent sees.
+  // Resolution only picks the why-token of an 'unknown' verdict
+  // (well_formed_only vs partial_query_evidence); it never moves the verdict.
   const hasNeighbors = !!(topResult.neighbors && topResult.neighbors.count > 0);
   if (hasNeighbors) reasons.push('neighbors_present');
 
