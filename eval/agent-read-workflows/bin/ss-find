@@ -8,9 +8,6 @@
 # Usage:  ss-find "<query>" --regex "<regex>" [-i|--ignore-case] [--full|--xl] [-k N]
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 . "$DIR/_ss-env.sh"
-TMPERR=$(mktemp)
-node "$DIR/_ss-helpers.mjs" find "$@" 2>"$TMPERR"
-RC=$?
-[ $RC -ne 0 ] && cat "$TMPERR" >&2
-rm -f "$TMPERR"
-exit $RC
+# The product command, exactly as an installed user runs it: the native client hands the
+# call to the warm daemon, or runs it in-process when it cannot (core/agent-tools/).
+exec "$DIR/../../../bin/ss-find" "$@"

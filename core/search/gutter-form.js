@@ -166,6 +166,7 @@ import os from 'node:os';
 import { readFileSync, writeFileSync, renameSync, unlinkSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { currentCall } from '../agent-tools/virtual-process.js';
 
 export const GUTTER_FORMS = Object.freeze({
   tab: '\t',
@@ -284,11 +285,17 @@ export function defaultReadProcess() {
   return process.platform === 'linux' ? readProcessLinux : readProcessPs;
 }
 
+// The process whose ancestry names the harness: the ss-* caller. Inside the
+// resident daemon that is the native client that sent the call, not the daemon.
+function callerPid() {
+  return currentCall()?.pid ?? process.pid;
+}
+
 // Walk up the process tree. Returns { harness, pid, top }: `pid` is the harness
 // process when one was found, `top` the highest ancestor reached otherwise (the
 // stable process a negative result can be cached against).
 // `readProcess(pid) -> { ppid, comm, args } | null` is injectable for tests.
-export function findHarnessAncestor({ pid = process.pid, readProcess = null, maxDepth = MAX_ANCESTRY_DEPTH } = {}) {
+export function findHarnessAncestor({ pid = callerPid(), readProcess = null, maxDepth = MAX_ANCESTRY_DEPTH } = {}) {
   const read = readProcess || defaultReadProcess();
   let cur = pid;
   let top = pid;
@@ -357,7 +364,7 @@ export function detectHarnessCached({ env = process.env, platform = process.plat
   if (hit) return hit.harness;
   const found = findHarnessAncestor({ readProcess });
   const anchor = found.harness ? found.pid : found.top;
-  if (anchor && anchor > 1 && anchor !== process.pid) writeHarnessCache(cacheFile, { harness: found.harness, pid: anchor, now });
+  if (anchor && anchor > 1 && anchor !== callerPid()) writeHarnessCache(cacheFile, { harness: found.harness, pid: anchor, now });
   return found.harness;
 }
 
@@ -371,11 +378,15 @@ export function normalizeForm(value) {
 
 let cached = null;
 
-// Resolve once per process. Returns { form, delimiter, harness, source }.
+// Resolve once per process — or, inside the resident daemon, once per ss-* call,
+// because every call there comes from its own caller in its own harness. Returns
+// { form, delimiter, harness, source }.
 //   source: 'env-override' | 'env-marker' | 'ancestry' | 'default'
 // Order: explicit override → primary markers → ancestry → fallback markers → default.
 export function resolveGutterForm(env = process.env, { ancestry = null, exportToEnv = true } = {}) {
-  if (cached && env === process.env) return cached;
+  const call = currentCall();
+  const memo = call ? call.gutterForm : cached;
+  if (memo && env === process.env) return memo;
   let form = normalizeForm(env.SS_READ_GUTTER);
   let harness = null;
   let source = 'env-override';
@@ -395,7 +406,8 @@ export function resolveGutterForm(env = process.env, { ancestry = null, exportTo
   }
   const result = Object.freeze({ form, delimiter: GUTTER_FORMS[form], harness, source });
   if (env === process.env) {
-    cached = result;
+    if (call) call.gutterForm = result;
+    else cached = result;
     // Children (daemon, maintainer) inherit the decision instead of re-detecting
     // from an ancestry they may no longer have.
     if (exportToEnv && !normalizeForm(process.env.SS_READ_GUTTER)) process.env.SS_READ_GUTTER = form;

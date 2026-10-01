@@ -1,0 +1,4 @@
+#!/usr/bin/env node
+// `ss-semantic` — replaced by the native binary at install time (scripts/link-native-tools.js).
+import { launchAgentTool } from '../core/agent-tools/launch.js';
+await launchAgentTool('ss-semantic');
