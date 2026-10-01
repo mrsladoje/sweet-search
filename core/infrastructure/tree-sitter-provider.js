@@ -498,7 +498,12 @@ const TAGS_QUERIES = {
     (function_item name: (identifier) @function.definition)
     (struct_item name: (type_identifier) @struct.definition)
     (impl_item type: (type_identifier) @impl.definition)
+    ; \`impl<T> Foo<T>\` and \`impl a::Foo\` — named by _extractNodeName.
+    (impl_item type: (generic_type)) @impl.definition
+    (impl_item type: (scoped_type_identifier)) @impl.definition
     (trait_item name: (type_identifier) @trait.definition)
+    ; Trait method declarations without a default body (\`fn len(&self);\`).
+    (function_signature_item name: (identifier) @method.definition)
     (enum_item name: (type_identifier) @enum.definition)
     (macro_definition name: (identifier) @macro.definition)
   `,
@@ -518,8 +523,14 @@ const TAGS_QUERIES = {
     (class name: (constant) @class.definition)
     (singleton_class value: (constant) @class.definition)
     (module name: (constant) @module.definition)
+    ; \`class Foo::Bar\` / \`module Foo::Bar\` — named by the last segment.
+    (class name: (scope_resolution)) @class.definition
+    (module name: (scope_resolution)) @module.definition
     (method name: (identifier) @method.definition)
     (singleton_method name: (identifier) @method.definition)
+    ; Capitalised method names (\`def S(*a)\`) parse as constants.
+    (method name: (constant) @method.definition)
+    (singleton_method name: (constant) @method.definition)
     (alias name: (identifier) @method.definition)
   `,
   php: `
@@ -633,8 +644,8 @@ const TAGS_QUERIES = {
     (operator_declaration) @method.definition
     (conversion_operator_declaration) @method.definition
     (event_declaration name: (identifier) @property.definition)
-    (event_field_declaration (variable_declaration (variable_declarator name: (identifier) @field.definition)))
-    (field_declaration (variable_declaration (variable_declarator name: (identifier) @field.definition)))
+    (event_field_declaration (variable_declaration (variable_declarator (identifier) @field.definition)))
+    (field_declaration (variable_declaration (variable_declarator (identifier) @field.definition)))
     (local_function_statement name: (identifier) @function.definition)
   `,
   // Solidity (tree-sitter-solidity) — every declaration carries name: (identifier).
@@ -770,6 +781,64 @@ const CAPTURE_TO_ENTITY_TYPE = {
   'field.definition': 'field',
 };
 
+// Containment for graph entities (`parent_class`): the nearest enclosing
+// type-like declaration of a captured definition. Without it every method
+// in the graph was parentless, so same-named methods of different types
+// (GRDB's broker `statementDidFail` vs `Database.statementDidFail`) could
+// not be told apart and `Type.method` lookups never matched.
+// Per language: node types that name a container for their members.
+const CONTAINER_NODE_TYPES = {
+  javascript: new Set(['class_declaration', 'class', 'object']),
+  typescript: new Set(['class_declaration', 'abstract_class_declaration', 'class', 'interface_declaration', 'object']),
+  tsx: new Set(['class_declaration', 'abstract_class_declaration', 'class', 'interface_declaration', 'object']),
+  python: new Set(['class_definition']),
+  rust: new Set(['impl_item', 'trait_item']),
+  java: new Set(['class_declaration', 'interface_declaration', 'enum_declaration', 'record_declaration', 'annotation_type_declaration']),
+  ruby: new Set(['class', 'module']),
+  php: new Set(['class_declaration', 'interface_declaration', 'trait_declaration', 'enum_declaration']),
+  kotlin: new Set(['class_declaration', 'object_declaration']),
+  swift: new Set(['class_declaration', 'protocol_declaration']),
+  cpp: new Set(['class_specifier', 'struct_specifier']),
+  csharp: new Set(['class_declaration', 'struct_declaration', 'interface_declaration', 'record_declaration', 'record_struct_declaration', 'enum_declaration']),
+  solidity: new Set(['contract_declaration', 'interface_declaration', 'library_declaration']),
+};
+
+const JS_FAMILY_LANGUAGES = new Set(['javascript', 'typescript', 'tsx']);
+
+// Swift compile-time conditional lines (`#if X`, `#elseif`, `#else`, `#endif`).
+const SWIFT_CONDITIONAL_DIRECTIVE_LINE = /^[ \t]*#(?:if|elseif|else|endif)\b[^\n]*/gm;
+
+// A definition inside a function body (local helper, closure) or inside an
+// anonymous class body is not a member of the outer type: stop the walk.
+const CONTAINER_STOP_NODE_TYPES = new Set([
+  'function_declaration', 'function_definition', 'function_item', 'method_definition',
+  'method_declaration', 'constructor_declaration', 'init_declaration', 'deinit_declaration',
+  'local_function_statement', 'generator_function_declaration', 'function_expression',
+  'generator_function', 'arrow_function', 'lambda', 'lambda_expression', 'lambda_literal',
+  'closure_expression', 'anonymous_function', 'method', 'singleton_method',
+  'object_creation_expression', 'object_literal', 'anonymous_function_creation_expression',
+  // Kotlin `constructor(...) { }` / `init { }` bodies and Swift computed
+  // properties. The shipped Kotlin grammar also misparses
+  // `class Builder constructor(...)` as a secondary constructor of the outer
+  // class: stopping here yields no parent instead of the wrong outer one.
+  'secondary_constructor', 'anonymous_initializer', 'computed_property',
+]);
+
+// Last identifier-like segment of a container name node: Swift
+// `extension Foo.Bar` (user_type), Ruby `class A::B` (scope_resolution),
+// C# `qualified_name`, Rust `impl<T> Foo<T>` / `impl a::Foo`.
+function lastNameSegment(nameNode) {
+  if (!nameNode) return null;
+  if (IDENT_TYPES.has(nameNode.type)) return nameNode.text;
+  const inner = nameNode.childForFieldName?.('name') || nameNode.childForFieldName?.('type');
+  if (inner && inner.id !== nameNode.id) return lastNameSegment(inner);
+  for (let i = nameNode.namedChildCount - 1; i >= 0; i--) {
+    const child = nameNode.namedChild(i);
+    if (IDENT_TYPES.has(child.type)) return child.text;
+  }
+  return null;
+}
+
 export class TreeSitterProvider {
   constructor(options = {}) {
     this.grammarsDir = options.grammarsDir || null;
@@ -867,6 +936,15 @@ export class TreeSitterProvider {
     let tree;
     let query;
     try {
+      // Swift: the grammar cannot parse `#if` / `#endif` lines inside a type
+      // body, and the whole body (with every method in it) became one ERROR
+      // node — GRDB's DatabaseObservationBroker vanished from the graph.
+      // Blank the directive lines (same length, so offsets and line numbers
+      // are unchanged); both branches stay visible as declarations.
+      // GRDB: files with parse errors 61 → 20 of 478, none worse.
+      if (languageId === 'swift' && content.includes('#')) {
+        content = content.replace(SWIFT_CONDITIONAL_DIRECTIVE_LINE, (line) => ' '.repeat(line.length));
+      }
       this._parser.setLanguage(language);
       tree = this._parser.parse(content);
       if (!tree) return null;
@@ -937,9 +1015,23 @@ export class TreeSitterProvider {
           ? firstLine.substring(0, 117) + '...'
           : firstLine;
 
+        // Graph-only naming of scoped declarations (the chunker keeps its own
+        // names): Ruby `class Foo::Bar` → Bar; Rust `impl a::Foo` /
+        // `impl<T> a::Foo<T>` → Foo (not the trait in `impl Trait for a::Foo`).
+        let scopedName = null;
+        if (!isLeafIdent && languageId === 'ruby'
+          && node.childForFieldName?.('name')?.type === 'scope_resolution') {
+          scopedName = lastNameSegment(node.childForFieldName('name'));
+        } else if (!isLeafIdent && node.type === 'impl_item') {
+          const implType = node.childForFieldName('type');
+          if (implType?.type === 'scoped_type_identifier' || implType?.type === 'generic_type') {
+            scopedName = lastNameSegment(implType);
+          }
+        }
         const symbolName = isLeafIdent
           ? node.text
-          : (node.childForFieldName?.('name')?.text
+          : (scopedName
+            || node.childForFieldName?.('name')?.text
             || (C_FAMILY_LANGUAGES.has(languageId) ? this._cFunctionDefinitionName(node) : null)
             || this._extractNodeName(node)
             || `<anonymous:${entityType}>`);
@@ -954,15 +1046,18 @@ export class TreeSitterProvider {
           continue;
         }
 
+        const parentClass = this._containerName(extentNode, languageId);
         symbols.push({
           name: symbolName,
           type: entityType,
           startLine,
           endLine,
           signature,
+          ...(parentClass ? { parentClass } : {}),
         });
       }
 
+      symbols.hasParseError = tree.rootNode.hasError;
       return symbols;
     } catch {
       return null;
@@ -1572,6 +1667,66 @@ export class TreeSitterProvider {
       }
     }
 
+    return null;
+  }
+
+  /**
+   * Name of the type that owns a captured definition (graph `parent_class`),
+   * or null for a top-level / local definition. Walks the ancestors of the
+   * definition's extent node: the nearest container node wins, a function
+   * body or anonymous class body stops the walk. Go receivers and C++
+   * out-of-line `Type::method` definitions name their owner directly.
+   */
+  _containerName(extentNode, languageId) {
+    if (languageId === 'go' && extentNode.type === 'method_declaration') {
+      const param = extentNode.childForFieldName('receiver')?.namedChild(0);
+      let typeNode = param?.childForFieldName('type');
+      while (typeNode && (typeNode.type === 'pointer_type' || typeNode.type === 'parenthesized_type')) {
+        typeNode = typeNode.namedChild(0);
+      }
+      return lastNameSegment(typeNode);
+    }
+    const containers = CONTAINER_NODE_TYPES[languageId];
+    if (languageId === 'cpp' && extentNode.type === 'function_definition') {
+      let decl = extentNode.childForFieldName('declarator');
+      while (decl && decl.type !== 'function_declarator') {
+        decl = decl.childForFieldName('declarator') || decl.namedChild(0);
+      }
+      let qualified = decl?.childForFieldName('declarator');
+      if (qualified?.type === 'qualified_identifier') {
+        let scope = null;
+        while (qualified?.type === 'qualified_identifier') {
+          scope = qualified.childForFieldName('scope');
+          qualified = qualified.childForFieldName('name');
+        }
+        const owner = lastNameSegment(scope);
+        if (owner) return owner;
+      }
+    }
+    if (!containers) return null;
+    for (let node = extentNode.parent; node; node = node.parent) {
+      if (containers.has(node.type)) {
+        if ((node.type === 'object' || node.type === 'class') && JS_FAMILY_LANGUAGES.has(languageId)) {
+          // JS/TS object literal or class expression: owned by the variable
+          // it is assigned to (`const api = { get() {} }`), else anonymous.
+          const own = node.type === 'class' ? node.childForFieldName('name') : null;
+          if (own) return own.text;
+          return node.parent?.type === 'variable_declarator'
+            ? node.parent.childForFieldName('name')?.text || null
+            : null;
+        }
+        if (node.type === 'impl_item') return lastNameSegment(node.childForFieldName('type'));
+        const nameNode = node.childForFieldName('name');
+        if (nameNode) return lastNameSegment(nameNode);
+        // Kotlin declarations carry the name as a positional child.
+        for (let i = 0; i < node.namedChildCount; i++) {
+          const child = node.namedChild(i);
+          if (child.type === 'type_identifier') return child.text;
+        }
+        return null;
+      }
+      if (CONTAINER_STOP_NODE_TYPES.has(node.type)) return null;
+    }
     return null;
   }
 
