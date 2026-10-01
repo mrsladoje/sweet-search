@@ -50,6 +50,8 @@ Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 
 ## Decisions log
 
+- 09:05 **Held-out r3 (103), interim (live judges; 90–96 complete panels per comparison)** — `r3/RESULTS-HELDOUT-opus-codex.md`: Opus 2.8.2 vs native cost +19.9% (q<0.001), acc 0.0; **Opus V1b vs 2.8.2 cost −14.1% (q<0.001) but accuracy −1.9 pt [−3.2, −0.3] (q 0.027)**; V1b vs native cost +3.0% (ns), acc −1.6 (ns); Codex 2.8.2 vs native cost −15.2% (q<0.001), acc −1.8 (ns). Re-scoring all held-out rows on the same route (complete panels) before the final read. Held-out is NOT inspected per question.
+
 - 08:15 Grader consistency (pre-registered): 49 dev rows re-judged on the same route: 12 scores moved (mean |Δ| 0.015), **0 verdict flips** across 0.5. Read 5 scored dev answers by hand: 0.7 scores = one gold file missing (fair partial credit), 1.0 = complete chain. Grader trusted. r3 dev read-out (BH over 12 tests): `r3/RESULTS-DEV.md`.
 
 - 08:05 **Task guard V1b PASSES** (`tg-20261001-0657-v2`, Opus, 10 tasks × 2, interleaved): solves base 8/20, **V1b 9/20** (svgr +1, all else equal); ideal $ −2.0% [−9.7, +6.4], real $ −7.0%; calls −5.6%, turns −2.4%; **ss-* share 0.53 → 0.54 (V1's native-fallback drop is gone)**; request-1 cache write 10,498 → 9,134. Flags at noise level: zlint V1b edited 2 files in one rep (still solved), jupytext patch-count differs (unsolved both arms), degenerate re-runs 1 → 2. → **V1b = Claude Code champion**; held-out arm queued.
