@@ -868,6 +868,9 @@ export class CodeGraphRepository {
 
       for (const row of rows) {
         const tn = row.target_name;
+        // Chained calls (`makeStatement().execute`) have an unknown receiver;
+        // counting them would inflate every bare name's homonym fanout.
+        if (tn.includes('()')) continue;
         const cnt = row.cnt;
         exact.set(tn, (exact.get(tn) || 0) + cnt);
         const dot = tn.lastIndexOf('.');
@@ -878,6 +881,7 @@ export class CodeGraphRepository {
       const suffix = new Map();
       for (const row of rows) {
         const tn = row.target_name;
+        if (tn.includes('()')) continue;
         const cnt = row.cnt;
         const dot = tn.lastIndexOf('.');
         const bareKey = dot > 0 ? tn.slice(dot + 1) : tn;

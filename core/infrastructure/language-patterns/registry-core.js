@@ -172,7 +172,10 @@ export const CORE_LANGUAGES = {
         methodCall: /(\w+)\s*\.\s*(\w+)\s*\(/,
         decorator: /^@(\w+(?:\.\w+)*)/,
       },
-      skipCallObjects: ["self", "cls", "super", "print", "len", "range", "str", "int", "list", "dict", "set", "type"],
+      // `self` / `cls` stay OUT: `self.helper()` is the main intra-class call
+      // form, and ss-trace trusts self-qualified edges only within the same
+      // class/file (structural-qualified-resolution.js).
+      skipCallObjects: ["super", "print", "len", "range", "str", "int", "list", "dict", "set", "type"],
     },
   },
   // ─── Go ────────────────────────────────────────────────────────────────────
@@ -241,7 +244,8 @@ export const CORE_LANGUAGES = {
         derive: /#\[derive\(([^)]+)\)\]/,
         methodCall: /(\w+)\s*\.\s*(\w+)\s*\(/,
       },
-      skipCallObjects: ["self", "Self", "super", "crate", "std", "println", "eprintln", "format", "vec", "String"],
+      // `self.method()` / `Self::new()` are real intra-impl calls; keep them.
+      skipCallObjects: ["super", "crate", "std", "println", "eprintln", "format", "vec", "String"],
     },
   },
   // ─── C ─────────────────────────────────────────────────────────────────────

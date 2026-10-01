@@ -16,6 +16,7 @@ import fs from 'fs/promises';
 import { GRAPH_CONFIG, DB_PATHS } from '../infrastructure/config/index.js';
 import { getLanguageByPath, resolveLanguage } from '../infrastructure/language-patterns.js';
 import { getTreeSitterProvider } from '../infrastructure/tree-sitter-provider.js';
+import { CallSiteScanner } from './call-site-scanner.js';
 import { scanImports, SCANNED_IMPORT_LANGUAGES } from './import-scanner.js';
 import { UNRESOLVED_IMPORT_PREFIX } from './import-resolver.js';
 
@@ -435,6 +436,19 @@ export const TREE_SITTER_ENTITY_PRIORITY = Object.freeze({
 const JS_CALL_SKIP_OBJECTS = new Set([
   'console', 'Math', 'JSON', 'Object', 'Array', 'Promise', 'process', 'Buffer', 'Date',
 ]);
+// Language descriptors for the call scanner in the regex-only Java/JS paths
+// (used when tree-sitter is unavailable).
+const C_STYLE_COMMENTS = Object.freeze({ line: '//', block: ['/*', '*/'] });
+const JS_CALL_SCANNER_LANG = Object.freeze({
+  id: 'javascript',
+  comment: C_STYLE_COMMENTS,
+  graph: { skipCallObjects: [...JS_CALL_SKIP_OBJECTS] },
+});
+const JAVA_CALL_SCANNER_LANG = Object.freeze({
+  id: 'java',
+  comment: C_STYLE_COMMENTS,
+  graph: { skipCallObjects: ['System', 'log', 'LOG', 'logger', 'String', 'Integer', 'Long'] },
+});
 const JS_RESERVED_WORDS = new Set([
   'if', 'else', 'for', 'while', 'switch', 'catch', 'with', 'do', 'try', 'return',
 ]);
@@ -656,6 +670,8 @@ export class GraphExtractor {
     // Extract Java imports (Phase 3.2: Java Import Extraction)
     // Creates 'imports' relationships for dependency tracking
     const fileEntityId = this.makeId(filePath, 'file', path.basename(filePath));
+    const javaCallScanner = new CallSiteScanner(JAVA_CALL_SCANNER_LANG);
+    const seenCalls = new Set(); // one edge per (caller, target) per file
     const importMatches = content.matchAll(JAVA_PATTERNS.import);
 
     for (const match of importMatches) {
@@ -921,24 +937,8 @@ export class GraphExtractor {
         }
       }
 
-      // Method calls (within method bodies)
-      const callMatches = line.matchAll(/(\w+)\s*\.\s*(\w+)\s*\(/g);
-      for (const callMatch of callMatches) {
-        const object = callMatch[1];
-        const method = callMatch[2];
-
-        // Skip common patterns
-        if (['System', 'log', 'LOG', 'logger', 'String', 'Integer', 'Long'].includes(object)) continue;
-
-        relationships.push({
-          source_id: currentClass ? this.makeId(filePath, 'class', currentClass.name) : null,
-          target_id: null,
-          target_name: `${object}.${method}`,
-          type: 'calls',
-          weight: GRAPH_CONFIG.relationshipWeights.calls,
-          context_line: lineNum,
-        });
-      }
+      // Method calls (within method bodies; comment-aware)
+      javaCallScanner.scanLine(line, (targetName) => this._pushCallEdge(relationships, seenCalls, currentClass ? this.makeId(filePath, 'class', currentClass.name) : null, targetName, lineNum));
 
       // Throw statements
       const throwMatch = line.match(/throw\s+new\s+(\w+)/);
@@ -963,6 +963,8 @@ export class GraphExtractor {
     const entities = [];
     const relationships = [];
     const fileEntityId = this.makeId(filePath, 'file', path.basename(filePath));
+    const jsCallScanner = new CallSiteScanner(JS_CALL_SCANNER_LANG);
+    const seenCalls = new Set(); // one edge per (caller, target) per file
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -1093,20 +1095,8 @@ export class GraphExtractor {
       // Destructured require — per-name import relationships
       this._appendDestructuredRequireRelationships(line, fileEntityId, relationships);
 
-      // Method call relationships
-      const methodCalls = line.matchAll(/(\w+)\s*\.\s*(\w+)\s*\(/g);
-      for (const callMatch of methodCalls) {
-        const obj = callMatch[1];
-        const method = callMatch[2];
-        if (!obj || !method || JS_CALL_SKIP_OBJECTS.has(obj)) continue;
-        relationships.push({
-          source_id: fileEntityId,
-          target_id: null,
-          target_name: `${obj}.${method}`,
-          type: 'calls',
-          weight: GRAPH_CONFIG.relationshipWeights.calls,
-        });
-      }
+      // Method call relationships (comment-aware)
+      jsCallScanner.scanLine(line, (targetName) => this._pushCallEdge(relationships, seenCalls, fileEntityId, targetName, lineNum));
     }
 
     return { entities, relationships };
@@ -1205,9 +1195,9 @@ export class GraphExtractor {
       entityPatterns,
       relationshipPatterns,
       methodCallPattern,
-      methodCallPrefilter,
     } = this.getGenericPatternPlan(language, graph);
-    const skipCallObjects = new Set(graph.skipCallObjects || []);
+    const callScanner = methodCallPattern ? new CallSiteScanner(langInfo) : null;
+    const seenCalls = new Set(); // one edge per (caller, target) per file
     const fileEntityId = this.makeId(filePath, 'file', path.basename(filePath));
     const jsonDependencySections = new Set(['dependencies', 'devDependencies', 'peerDependencies']);
     let jsonBraceDepth = 0;
@@ -1245,6 +1235,7 @@ export class GraphExtractor {
       const depthAfter = depthBefore + openBraces - closeBraces;
       if (trimmed.length > this.maxRegexLineLength) {
         this._recordLongLineSkip(language, lineNum, trimmed.length);
+        callScanner?.skipLine();
         if (language === 'json') {
           if (activeJsonDependencyDepth !== null && depthAfter < activeJsonDependencyDepth) {
             activeJsonDependencyDepth = null;
@@ -1319,33 +1310,9 @@ export class GraphExtractor {
       const sourceEntityId = activeEntityScopes.length > 0
         ? activeEntityScopes[activeEntityScopes.length - 1].id
         : null;
-      // Method calls need special handling: group1=object, group2=method.
-      // Reuse compiled global regex to avoid per-line RegExp allocations.
-      if (methodCallPattern && (!methodCallPrefilter || methodCallPrefilter(trimmed))) {
-        methodCallPattern.lastIndex = 0;
-        let m;
-        while ((m = methodCallPattern.exec(trimmed)) !== null) {
-          const obj = m[1];
-          const method = m[2];
-          if (!obj || !method) {
-            this._recordEmptyCapture('relationship', language, 'methodCall', lineNum, trimmed);
-            if (m[0] === '') methodCallPattern.lastIndex++;
-            continue;
-          }
-          if (skipCallObjects.has(obj)) {
-            if (m[0] === '') methodCallPattern.lastIndex++;
-            continue;
-          }
-          relationships.push({
-            source_id: sourceEntityId,
-            target_id: null,
-            target_name: `${obj}.${method}`,
-            type: 'calls',
-            weight: GRAPH_CONFIG.relationshipWeights.calls,
-            context_line: lineNum,
-          });
-          if (m[0] === '') methodCallPattern.lastIndex++;
-        }
+      // Call sites (comment-aware; see call-site-scanner.js).
+      if (callScanner) {
+        callScanner.scanLine(line, (targetName) => this._pushCallEdge(relationships, seenCalls, sourceEntityId, targetName, lineNum));
       }
 
       this._appendDestructuredRequireRelationships(trimmed, sourceEntityId || fileEntityId, relationships);
@@ -1750,9 +1717,9 @@ export class GraphExtractor {
     const {
       relationshipPatterns,
       methodCallPattern,
-      methodCallPrefilter,
     } = this.getGenericPatternPlan(language, graph);
-    const skipCallObjects = new Set(graph.skipCallObjects || []);
+    const callScanner = methodCallPattern ? new CallSiteScanner(langInfo) : null;
+    const seenCalls = new Set(); // one edge per (caller, target) per file
     const fileEntityId = this.makeId(filePath, 'file', path.basename(filePath));
 
     // Build scope lookup from tree-sitter entities for source_id attribution
@@ -1773,35 +1740,16 @@ export class GraphExtractor {
       const trimmed = line.trimStart();
       const lineNum = i + 1;
 
-      if (trimmed.length > this.maxRegexLineLength) continue;
+      if (trimmed.length > this.maxRegexLineLength) {
+        callScanner?.skipLine();
+        continue;
+      }
 
       const sourceEntityId = findScopeEntity(lineNum);
 
-      // Method calls
-      if (methodCallPattern && (!methodCallPrefilter || methodCallPrefilter(trimmed))) {
-        methodCallPattern.lastIndex = 0;
-        let m;
-        while ((m = methodCallPattern.exec(trimmed)) !== null) {
-          const obj = m[1];
-          const method = m[2];
-          if (!obj || !method) {
-            if (m[0] === '') methodCallPattern.lastIndex++;
-            continue;
-          }
-          if (skipCallObjects.has(obj)) {
-            if (m[0] === '') methodCallPattern.lastIndex++;
-            continue;
-          }
-          relationships.push({
-            source_id: sourceEntityId,
-            target_id: null,
-            target_name: `${obj}.${method}`,
-            type: 'calls',
-            weight: GRAPH_CONFIG.relationshipWeights.calls,
-            context_line: lineNum,
-          });
-          if (m[0] === '') methodCallPattern.lastIndex++;
-        }
+      // Call sites (comment-aware; see call-site-scanner.js).
+      if (callScanner) {
+        callScanner.scanLine(line, (targetName) => this._pushCallEdge(relationships, seenCalls, sourceEntityId, targetName, lineNum));
       }
 
       this._appendDestructuredRequireRelationships(trimmed, sourceEntityId || fileEntityId, relationships);
@@ -1835,6 +1783,26 @@ export class GraphExtractor {
     }
 
     return relationships;
+  }
+
+  /**
+   * Record a call edge once per (caller, target) per file; the first call
+   * site's line is kept. Repeat calls added rows the resolver later deleted
+   * (resolved duplicates hit the unique index) or left as duplicate
+   * unresolved rows, so dropping them changes no resolved edge.
+   */
+  _pushCallEdge(relationships, seen, sourceId, targetName, lineNum) {
+    const key = `${sourceId}\u0000${targetName}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    relationships.push({
+      source_id: sourceId,
+      target_id: null,
+      target_name: targetName,
+      type: 'calls',
+      weight: GRAPH_CONFIG.relationshipWeights.calls,
+      context_line: lineNum,
+    });
   }
 
   _recordEmptyCapture(kind, language, patternType, lineNum, line) {
