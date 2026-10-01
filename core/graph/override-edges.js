@@ -16,8 +16,10 @@
  *      Swift extension block have no container entity in their file).
  *
  * Precision: no edge without a RESOLVED base (NSObject, Comparable, Sendable
- * give nothing); the nearest base level that defines the name wins; at most
- * MAX_TARGETS_PER_METHOD targets; constructors never override.
+ * give nothing); the nearest base level that defines the name wins; among
+ * same-named overloads the matching parameter count wins; private members
+ * never take part (except C/C++); at most MAX_TARGETS_PER_METHOD targets;
+ * constructors never override.
  *
  * Trace-only: `overrides` is in TRACE_ONLY_RELATIONSHIP_TYPES, so search
  * ranking never reads these edges (see relationship-types.js).
@@ -40,6 +42,34 @@ const CONSTRUCTOR_NAMES = new Set([
 const OPEN_TYPE_FILE = /\.(?:swift|kt|kts|rs|cs|rb|m|mm|h|scala|dart)$/i;
 const MAX_DEPTH = 4;
 const MAX_TARGETS_PER_METHOD = 4;
+// A private member neither overrides nor is overridden (Swift, Java,
+// Kotlin, C#, Scala, TS, PHP). C/C++ private virtuals do override (NVI).
+const PRIVATE_MEMBER = /^\s*(?:@\w+(?:\([^)]*\))?\s+)*(?:[\w]+\s+)*?(?:private|fileprivate)\b/;
+const PRIVATE_CAN_OVERRIDE = /\.(?:c|cc|cpp|cxx|h|hh|hpp|hxx)$/i;
+
+function isPrivateMember(m) {
+  return !!m.signature && PRIVATE_MEMBER.test(m.signature) && !PRIVATE_CAN_OVERRIDE.test(m.file_path || '');
+}
+
+/** Parameter count of a one-line signature: `f()` → 0, `f(a, b: [X, Y])` → 2; null if unknown. */
+function arity(signature) {
+  if (!signature) return null;
+  const open = signature.indexOf('(');
+  if (open < 0) return null;
+  let depth = 0;
+  let count = 0;
+  let sawToken = false;
+  for (let i = open + 1; i < signature.length; i++) {
+    const ch = signature[i];
+    if (ch === '(' || ch === '[' || ch === '{' || ch === '<') depth++;
+    else if (ch === ')' || ch === ']' || ch === '}' || ch === '>') {
+      if (depth === 0) return sawToken ? count + 1 : 0;
+      depth--;
+    } else if (ch === ',' && depth === 0) count++;
+    else if (!/\s/.test(ch)) sawToken = true;
+  }
+  return null; // parameter list continues on the next line
+}
 
 function langFamily(filePath) {
   const m = /\.([A-Za-z0-9]+)$/.exec(filePath || '');
@@ -56,7 +86,8 @@ function langFamily(filePath) {
  *
  * @param {import('better-sqlite3').Database} db
  * @param {Array<object>} [entities] rows with id, name, type, file_path,
- *   parent_class, start_line, end_line (the resolver passes its own list)
+ *   parent_class, signature, start_line, end_line (the resolver passes its
+ *   own list)
  * @returns {{ edges: number, ms: number }}
  */
 export function deriveOverrideEdges(db, entities = null) {
@@ -67,7 +98,7 @@ export function deriveOverrideEdges(db, entities = null) {
     return { edges: 0, ms: 0 };
   }
   const rows = entities || db.prepare(`
-    SELECT id, name, type, file_path, parent_class, start_line, end_line FROM entities
+    SELECT id, name, type, file_path, parent_class, signature, start_line, end_line FROM entities
   `).all();
 
   // Per-file facts, computed once per path.
@@ -234,18 +265,32 @@ export function deriveOverrideEdges(db, entities = null) {
       const levels = ancestorLevels(childKey);
       if (levels.length === 0) continue;
       for (const [name, methods] of own) {
-        // The nearest level that defines `name` wins.
+        // The nearest level that defines `name` (non-private) wins.
         let targets = null;
         for (const level of levels) {
           for (const owned of level) {
             const baseMethods = owned.get(name);
-            if (baseMethods) (targets ||= []).push(...baseMethods);
+            if (!baseMethods) continue;
+            for (const bm of baseMethods) if (!isPrivateMember(bm)) (targets ||= []).push(bm);
           }
           if (targets) break;
         }
-        if (!targets || targets.length > MAX_TARGETS_PER_METHOD) continue;
+        if (!targets) continue;
         for (const m of methods) {
-          for (const bm of targets) {
+          if (isPrivateMember(m)) continue;
+          // Overloads share a name (Swift `databaseDidChange()` vs
+          // `databaseDidChange(with:)`): with several candidates, keep the
+          // ones whose parameter count matches when any does.
+          let picked = targets;
+          if (targets.length > 1) {
+            const n = arity(m.signature);
+            if (n !== null) {
+              const same = targets.filter(bm => arity(bm.signature) === n);
+              if (same.length > 0) picked = same;
+            }
+          }
+          if (picked.length > MAX_TARGETS_PER_METHOD) continue;
+          for (const bm of picked) {
             if (bm.id === m.id) continue;
             const qualified = bm.parent_class ? `${bm.parent_class}.${bm.name}` : bm.name;
             edges += insert.run(m.id, bm.id, qualified, m.start_line).changes;

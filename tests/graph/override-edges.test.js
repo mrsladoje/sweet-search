@@ -157,6 +157,28 @@ describe('override edges', () => {
     db.close();
   });
 
+  it('overloads match by parameter count; private methods never override (GRDB databaseDidChange, test setup)', async () => {
+    const db = await build({
+      'Sources/Observer.swift': [
+        'public protocol Observer: AnyObject {',
+        '    func databaseDidChange()',
+        '    func databaseDidChange(with event: DatabaseEvent)',
+        '}',
+      ].join('\n'),
+      'Sources/Cancel.swift': [
+        'final class CancelObserver: Observer {',
+        '    func databaseDidChange(with event: DatabaseEvent) { }',
+        '}',
+      ].join('\n'),
+      'Tests/Base.swift': 'class BaseCase {\n    func setup(_ dbWriter: Writer) throws { }\n}\n',
+      'Tests/Sub.swift': 'class SubCase: BaseCase {\n    private func setup(_ db: Database) throws { }\n}\n',
+    });
+    expect(overrides(db)).toEqual([
+      'databaseDidChange@Sources/Cancel.swift:2 -> databaseDidChange@Sources/Observer.swift:3',
+    ]);
+    db.close();
+  });
+
   it('SWEET_SEARCH_OVERRIDE_EDGES=0 derives nothing', async () => {
     process.env.SWEET_SEARCH_OVERRIDE_EDGES = '0';
     const db = await build({
