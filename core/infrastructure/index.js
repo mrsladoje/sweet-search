@@ -27,7 +27,7 @@ export { MODEL_REGISTRY, getModelEntry, getModelsForProfile, getSkippedOptInMode
 // Native platform resolution
 export {
   getPlatformInfo,
-  nativeBinarySupportsBatch,
+  nativeBinarySupportsAgentTools,
   resolveNativeAddon,
   resolveNativeBinary,
 } from './native-resolver.js';

@@ -28,7 +28,7 @@ import { createRequire } from 'module';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..', '..');
 const require = createRequire(import.meta.url);
-const BATCH_CAPABILITY_MARKER = 'sweet-search-batch-protocol=1';
+const AGENT_TOOLS_CAPABILITY_MARKER = 'sweet-search-agent-tools-protocol=1';
 
 // Supported targets — only these get native resolution.
 const SUPPORTED_TARGETS = new Set([
@@ -204,26 +204,27 @@ export function resolveNativeBinary(options = {}) {
 }
 
 /**
- * Fail-closed capability check for the typed batch protocol. Older native
- * packages interpret `batch` as an ordinary search query, so exit status alone
- * is insufficient; only the Rust client's versioned marker admits dispatch.
+ * Fail-closed capability check for the native ss-* agent tools. An older native
+ * binary reads `--agent-tools-protocol` as a search query, so exit status alone
+ * is insufficient; only the Rust client's versioned marker admits it. The
+ * ss-* bin stubs are replaced by this binary only after this check passes.
  *
  * @param {string} binaryPath
  * @param {{ spawn?: typeof spawnSync }} [options]
  * @returns {boolean}
  */
-export function nativeBinarySupportsBatch(binaryPath, options = {}) {
+export function nativeBinarySupportsAgentTools(binaryPath, options = {}) {
   if (typeof binaryPath !== 'string' || binaryPath.length === 0) return false;
   const run = options.spawn ?? spawnSync;
   try {
-    const result = run(binaryPath, ['batch', '--help'], {
+    const result = run(binaryPath, ['--agent-tools-protocol'], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: 5_000,
       maxBuffer: 64 * 1024,
     });
     const output = `${result.stdout || ''}\n${result.stderr || ''}`;
-    return result.status === 0 && !result.error && output.includes(BATCH_CAPABILITY_MARKER);
+    return result.status === 0 && !result.error && output.includes(AGENT_TOOLS_CAPABILITY_MARKER);
   } catch {
     return false;
   }

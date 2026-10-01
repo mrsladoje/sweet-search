@@ -9,7 +9,7 @@
 //
 // `node tests/probe-count.mjs` — exit 1 on any failure. Offline, zero spend.
 import { execFileSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,7 +24,6 @@ import {
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SCRIPT = path.join(HERE, '..', 'stats', 'probe-count.mjs');
 const PACKAGING_SCRIPT = path.join(HERE, '..', 'stats', 'packaging-recompute.mjs');
-const BATCH_WRAPPER = path.join(HERE, '..', '..', 'agent-read-workflows', 'bin', 'ss-batch');
 
 let failures = 0;
 let n = 0;
@@ -204,18 +203,6 @@ const resultRoot = path.join(fixtureRoot, 'result');
 mkdirSync(path.join(resultRoot, 'agent-state'), { recursive: true });
 mkdirSync(path.join(resultRoot, 'turns'), { recursive: true });
 
-// The wrapper must add only the canonical `batch` subcommand and must not eval args.
-const fakeBin = path.join(fixtureRoot, 'fake-bin');
-mkdirSync(fakeBin);
-writeFileSync(path.join(fakeBin, 'node'), '#!/usr/bin/env bash\nprintf \'%s\\0\' "$@"\n');
-chmodSync(path.join(fakeBin, 'node'), 0o755);
-const wrapperArgs = [batch2, '$(printf INJECTED)', 'argument with spaces'];
-const forwarded = execFileSync(BATCH_WRAPPER, wrapperArgs, {
-  encoding: 'utf8', env: { ...process.env, PATH: `${fakeBin}:${process.env.PATH}` },
-}).split('\0').filter(Boolean);
-eq(Boolean(statSync(BATCH_WRAPPER).mode & 0o111), true, 'ss-batch wrapper is executable');
-eq(forwarded, [path.resolve(HERE, '../../..', 'core/cli.js'), 'batch', ...wrapperArgs],
-  'ss-batch delegates to the canonical CLI with arguments unchanged');
 
 function makeRollout(name, tools, modelTurns) {
   const store = path.join(resultRoot, 'agent-state', name, 'opencode-data');

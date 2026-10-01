@@ -5,8 +5,8 @@
 # WHY IT IS NOT ENOUGH TO PIN THIS IN _ss-helpers.mjs. The pins used to live in
 # that one file, which made them true for exactly the entry points that route
 # through it (ss-grep, ss-find, ss-read, ss-search, ss-semantic, ss-trace) and
-# false for the two that do not: `sweet-search` execs core/cli.js directly, and
-# `ss-batch` execs `sweet-search`. A benchmark that mixed the two therefore
+# false for the one that does not: `sweet-search` execs core/cli.js directly. A
+# benchmark that mixed the two therefore
 # started some daemons with a pinned intra-op thread count and some with the
 # fleet-derived share — and ORT partitions its GEMM and reduction kernels by
 # thread count, with floating-point addition not associative across partitions,

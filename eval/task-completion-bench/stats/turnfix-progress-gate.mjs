@@ -242,7 +242,7 @@ export function evaluateAdvisoryBehavior({
 }) {
   try {
     if (![2, 3, 4].includes(h) || !TURNFIX_ARMS.has(arm)
-        || !['off', 'ss-batch', 'parallel-bash'].includes(packing)) throw new Error('invalid arm, H, or packing cell');
+        || !['off', 'parallel-bash'].includes(packing)) throw new Error('invalid arm, H, or packing cell');
     if ([controlPath, treatmentPath, tasksPath].some(forbidden)) throw new Error('forbidden frozen/expansion path');
     const cohort = loadTurnfixCohort(tasksPath, expected);
     if (cohort.problems.length) throw new Error(cohort.problems.join('; '));

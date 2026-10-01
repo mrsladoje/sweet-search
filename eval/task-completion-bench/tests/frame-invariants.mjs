@@ -31,19 +31,16 @@ assert(sOff.startsWith(TASK_POLICY) && sOff.includes(M) && !sOff.includes(FRAME_
 
 console.log('== FROZEN PACKING TREATMENTS ==');
 const offEnv = { SS_PACKING_TREATMENT: 'off' };
-const batchEnv = { SS_PACKING_TREATMENT: 'ss-batch' };
 const parallelEnv = { SS_PACKING_TREATMENT: 'parallel-bash' };
 const instructionOff = buildInstructionFile({ sweet: true, mppText: M, env: offEnv });
-const instructionBatch = buildInstructionFile({ sweet: true, mppText: M, env: batchEnv });
 const instructionParallel = buildInstructionFile({ sweet: true, mppText: M, env: parallelEnv });
 assert(resolvePackingTreatment({}) === 'off', 'packing defaults OFF');
 assert(instructionOff === `${CLI_FRAME_OPEN}\n\n${M}\n\n${CLI_FRAME_CLOSE}`, 'OFF preserves the pre-treatment instruction bytes');
-assert(instructionBatch.startsWith(instructionOff.replace(`\n\n${CLI_FRAME_CLOSE}`, '')), 'batch keeps the frozen frame and M++ prefix');
-assert(instructionBatch.includes('"maxChars":16000') && instructionBatch.indexOf('ss-batch-v1') < instructionBatch.indexOf(CLI_FRAME_CLOSE), 'ss-batch guidance is bounded inside the authority frame');
-assert(instructionParallel.includes('with &, ;, or &&'), 'parallel guidance forbids shell fusion');
-assert(packingTreatmentRowFields({ sweet: true, env: batchEnv }).packingInstructionSha256 !== packingTreatmentRowFields({ sweet: true, env: offEnv }).packingInstructionSha256, 'rows hash the exact treatment instruction');
+assert(instructionParallel.startsWith(instructionOff.replace(`\n\n${CLI_FRAME_CLOSE}`, '')), 'parallel keeps the frozen frame and M++ prefix');
+assert(instructionParallel.includes('with &, ;, or &&') && instructionParallel.indexOf('parallel-bash-v2') < instructionParallel.indexOf(CLI_FRAME_CLOSE), 'parallel guidance forbids shell fusion inside the authority frame');
+assert(packingTreatmentRowFields({ sweet: true, env: parallelEnv }).packingInstructionSha256 !== packingTreatmentRowFields({ sweet: true, env: offEnv }).packingInstructionSha256, 'rows hash the exact treatment instruction');
 try {
-  buildInstructionFile({ sweet: false, mppText: M, env: batchEnv });
+  buildInstructionFile({ sweet: false, mppText: M, env: parallelEnv });
   assert(false, 'native rejects a non-OFF packing treatment');
 } catch {
   assert(true, 'native rejects a non-OFF packing treatment');
