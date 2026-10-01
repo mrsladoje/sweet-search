@@ -193,6 +193,34 @@ export function mergeCallSites(items) {
   });
 }
 
+/**
+ * `new Foo()` is both a construction (`instantiates`) and, to the bare-call
+ * scanner, a call of `Foo`: the same entity would be listed twice with the
+ * same lines and every site counted twice. A call line that the same entity's
+ * `instantiates` row already lists is dropped; a call row left with no line
+ * goes. Other call lines of that entity stay.
+ */
+export function foldConstructorCalls(items) {
+  const built = new Map();
+  for (const item of items) {
+    if (item.relationship !== 'instantiates') continue;
+    const lines = built.get(item.id) || new Set();
+    for (const line of siteLines(item)) lines.add(line);
+    built.set(item.id, lines);
+  }
+  if (built.size === 0) return items;
+  const out = [];
+  for (const item of items) {
+    const lines = item.relationship === 'calls' ? built.get(item.id) : null;
+    if (!lines) { out.push(item); continue; }
+    const rest = siteLines(item).filter((line) => !lines.has(line));
+    if (rest.length === 0) continue;
+    if (rest.length === siteLines(item).length) { out.push(item); continue; }
+    out.push({ ...item, contextLines: rest, contextLine: rest[0] });
+  }
+  return out;
+}
+
 /** Call sites across items: each item counts its site lines (at least one). */
 function siteCount(items) {
   return (items || []).reduce((n, item) => n + Math.max(1, siteLines(item).length), 0);
@@ -213,9 +241,19 @@ export function siteNoun(items) {
     : 'sites';
 }
 
+// Site lines printed per row; the rest are counted (`…+N`). One function can
+// call or construct one target on 100+ lines (jj `env.render_ok`: 121).
+const MAX_PRINTED_SITE_LINES = 16;
+
+/** `4,5,6`, or the first MAX_PRINTED_SITE_LINES lines and `…+N`. */
+export function printedSiteLines(lines) {
+  if (lines.length <= MAX_PRINTED_SITE_LINES) return lines.join(',');
+  return `${lines.slice(0, MAX_PRINTED_SITE_LINES).join(',')},…+${lines.length - MAX_PRINTED_SITE_LINES}`;
+}
+
 function itemSummary(entity) {
   const loc = entity.filePath ? `${entity.filePath}:${entity.startLine || '?'}` : '(external)';
-  const lines = siteLines(entity).join(',');
+  const lines = printedSiteLines(siteLines(entity));
   // Trace-only edges are not calls: say what they are (`(overrides)`,
   // `(instantiates)@12`). Call/uses/extends rows list every site line.
   if (isTraceOnlyRelationship(entity.relationship)) {
@@ -459,7 +497,7 @@ export class StructuralContextBuilder {
     // not as the same-file text scan. Indexed items carry every site line
     // (call_lines / call_sites); one item per calling entity and relationship.
     const bareCallers = this.repo.getBareCallers?.(target, { limit: 80 }) || [];
-    const indexedCallers = mergeCallSites([...storedCallers, ...bareCallers]);
+    const indexedCallers = foldConstructorCalls(mergeCallSites([...storedCallers, ...bareCallers]));
     const storedIds = new Set(indexedCallers.map(x => x.id));
     // Same-file callsite scan: recovers callers the extractor stored no edge
     // for (bare local calls, out-of-line C++ methods). Deduped against indexed
