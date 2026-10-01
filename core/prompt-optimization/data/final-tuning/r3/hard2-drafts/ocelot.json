@@ -1,0 +1,334 @@
+{
+  "repo": "ocelot",
+  "sha": "fcebf2b96c1811500037e010ee3b09e25ac39b19",
+  "probes": [
+    {
+      "id": "r3x-ocelot-01",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "A composite endpoint is configured with the name of a host-supplied component that combines its sub-call replies, but the host never registered a component with that class name. Follow the name from the settings to the point where the problem is detected: which step picks the host-supplied path instead of the default JSON merge, where is the table of registered combiners built and what is it keyed by, what status does the caller finally see, and why? Then contrast what the default merge does when one of the sub-calls itself fails.",
+      "expectedFiles": [
+        "src/Configuration/Creator/AggregatesCreator.cs",
+        "src/Multiplexer/MultiplexingMiddleware.cs",
+        "src/Multiplexer/InMemoryResponseAggregatorFactory.cs",
+        "src/Multiplexer/UserDefinedResponseAggregator.cs",
+        "src/Multiplexer/ServiceLocatorDefinedAggregatorProvider.cs",
+        "src/Multiplexer/SimpleJsonResponseAggregator.cs",
+        "src/Responder/ErrorsToHttpStatusCodeMapper.cs"
+      ],
+      "expectedSymbols": [
+        "AggregatesCreator.SetUpAggregateRoute",
+        "MultiplexingMiddleware.MapAsync",
+        "InMemoryResponseAggregatorFactory.Get",
+        "UserDefinedResponseAggregator.Aggregate",
+        "ServiceLocatorDefinedAggregatorProvider.Get",
+        "CouldNotFindAggregatorError",
+        "SimpleJsonResponseAggregator.MapAggregateError",
+        "ErrorsToHttpStatusCodeMapper.Map"
+      ],
+      "expectedFacts": [
+        "CRITICAL: AggregatesCreator copies the settings name onto the route, and InMemoryResponseAggregatorFactory.Get returns the user-defined aggregator whenever that name is non-empty; otherwise it returns the default SimpleJsonResponseAggregator.",
+        "ServiceLocatorDefinedAggregatorProvider builds its table once in the constructor from all registered IDefinedAggregator services, keyed by each concrete class simple name (GetType().Name); lookup by the route name uses the default case-sensitive dictionary comparison.",
+        "MultiplexingMiddleware.MapAsync asks the factory for the aggregator only after all sub-calls have already run, so a missing name is detected after the backend calls were made.",
+        "UserDefinedResponseAggregator.Aggregate puts the provider error (CouldNotFindAggregatorError) on the original context errors instead of producing a response.",
+        "CRITICAL: ErrorsToHttpStatusCodeMapper has no branch for that error code, so ResponderMiddleware sets 404 through the final default return; the 404 stored inside the error object is never consulted.",
+        "In the default merge, SimpleJsonResponseAggregator checks every sub-call context for errors; on the first failing one MapAggregateError copies that context errors and downstream response onto the original context and stops building the merged JSON. The user-defined path does not inspect sub-call errors; it hands all contexts to the host component."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "set": "dev",
+      "author": "r3x-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION (src/ at commit fcebf2b9): AggregatesCreator.cs:43 `Aggregator = aggregateRoute.Aggregator`; MultiplexingMiddleware.cs:246-263 MapAsync, line 261 `_factory.Get(route)` after ProcessRoutesAsync (lines 92-99) ran all sub-calls; InMemoryResponseAggregatorFactory.cs:16-17 `!string.IsNullOrEmpty(route.Aggregator) ? _userDefined : _simple`; UserDefinedResponseAggregator.cs:18-30 (error branch line 29 UpsertErrors); ServiceLocatorDefinedAggregatorProvider.cs:13 `.ToDictionary(x => x.GetType().Name)`, :18 TryGetValue, :23 CouldNotFindAggregatorError; CouldNotFindAggregatorError.cs:8 code OcelotErrorCode.CouldNotFindAggregatorError with declared 404; ErrorsToHttpStatusCodeMapper.cs lines 10-69 have no branch for it, default `return StatusCodes.Status404NotFound` at line 71; SimpleJsonResponseAggregator.cs:28-30, 44-46 (error check) and 83-87 MapAggregateError. Registration: OcelotBuilder.cs:116-117 (TryAddSingleton factory and provider), 206-218 AddSingleton/TransientDefinedAggregator. No start-up validation of the aggregator name (rg 'Aggregator' in Configuration/Validator finds nothing). DECOYS: DefinedAggregator registration lifetimes (transient is still resolved once by the provider ctor); CouldNotFindAggregatorError declares 404 which only coincides with the default.\nROUTE: (1) grep -rn Aggregat src; read AggregatesCreator + Multiplexer dir [G: IResponseAggregatorFactory, IDefinedAggregatorProvider revealed by MultiplexingMiddleware ctor/MapAsync]. (2) read InMemoryResponseAggregatorFactory, UserDefinedResponseAggregator, ServiceLocatorDefinedAggregatorProvider [G: error class name only in provider body]. (3) read CouldNotFindAggregatorError + OcelotErrorCode [G: enum member name]. (4) read ErrorsToHttpStatusCodeMapper + ResponderMiddleware [G: needs the code name from step 3 to see it is absent] . (5) read SimpleJsonResponseAggregator failure branch + MapAggregateError. (6) read OcelotBuilder registrations. Cheapest honest route 5-6 dependent calls.\nMIN CALLS: 6 (below the 7 target: the domain word 'aggregate' makes the first grep hit most gold files; hardness comes from three sub-chains and the default-404 trap).\nFIRST CALL: grep -rn 'Aggregat' / 'multiplex' / 'composite' / 'combine' / 'GetType().Name' / 'ToDictionary' - reaches several gold files (cannot avoid the feature word)."
+    },
+    {
+      "id": "r3x-ocelot-02",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "A route's settings name a balancing strategy. Trace what the caller finally receives in three situations: (a) no registered strategy has that name, including a name that differs from a registered one only in letter case; (b) the host registered two custom strategies whose classes share the same simple name, and the route asks for that name; (c) the host-supplied function that builds a custom strategy throws when it is invoked. For each, say which component detects the problem and which error is produced, and why the final status can differ from the number stored inside the error object.",
+      "expectedFiles": [
+        "src/LoadBalancer/LoadBalancingMiddleware.cs",
+        "src/LoadBalancer/LoadBalancerHouse.cs",
+        "src/LoadBalancer/LoadBalancerFactory.cs",
+        "src/LoadBalancer/Creators/DelegateInvokingLoadBalancerCreator.cs",
+        "src/Responder/ErrorsToHttpStatusCodeMapper.cs",
+        "src/Responder/Middleware/ResponderMiddleware.cs"
+      ],
+      "expectedSymbols": [
+        "LoadBalancingMiddleware.Invoke",
+        "LoadBalancerHouse.Get",
+        "LoadBalancerFactory.Get",
+        "DelegateInvokingLoadBalancerCreator.Create",
+        "DelegateInvokingLoadBalancerCreator.Type",
+        "ErrorsToHttpStatusCodeMapper.Map",
+        "ResponderMiddleware.SetErrorResponse"
+      ],
+      "expectedFacts": [
+        "CRITICAL: (a) LoadBalancerFactory.Get looks up the creator with SingleOrDefault comparing the creator Type to the requested type using ordinary case-sensitive ==; with no match it returns CouldNotFindLoadBalancerCreatorError, which the mapper turns into 500 even though the error object stores 404 (a differently-cased name counts as no match).",
+        "CRITICAL: (b) A custom creator Type is typeof(T).Name, so two with the same simple name make SingleOrDefault throw InvalidOperationException; the factory does not catch it, LoadBalancerHouse.Get catches any exception and returns UnableToFindLoadBalancerError, which has no branch in the mapper, so the caller gets the default 404.",
+        "(c) DelegateInvokingLoadBalancerCreator.Create catches the exception thrown by the host function and returns InvokingLoadBalancerCreatorError (code ErrorInvokingLoadBalancerCreator), which the mapper turns into 500.",
+        "LoadBalancingMiddleware.Invoke stores the returned errors with UpsertErrors and returns without calling the next middleware, so no backend call is made and the outer ResponderMiddleware maps the errors to a status.",
+        "ErrorsToHttpStatusCodeMapper.Map chooses the status by error Code and ignores Error.HttpStatusCode except for the quota-exceeded error; ResponderMiddleware only sets the status code for these errors (no body)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "set": "dev",
+      "author": "r3x-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: LoadBalancerFactory.cs:31-37 (`SingleOrDefault(c => c.Type == requestedType)`, CouldNotFindLoadBalancerCreatorError); LoadBalancerHouse.cs:26-40 try/catch(Exception) -> UnableToFindLoadBalancerError, GetResponse :43-54; DelegateInvokingLoadBalancerCreator.cs:20-30 try/catch -> InvokingLoadBalancerCreatorError, :32 `Type => typeof(T).Name`; error classes: CouldNotFindLoadBalancerCreatorError.cs declares Status404NotFound, UnableToFindLoadBalancerError.cs declares 404, InvokingLoadBalancerCreatorError.cs declares 500 (all under src/LoadBalancer/Errors); ErrorsToHttpStatusCodeMapper.cs:54-58 puts UnableToCompleteRequestError, CouldNotFindLoadBalancerCreator and ErrorInvokingLoadBalancerCreator into the 500 branch, default 404 at line 71, only quota uses Error.HttpStatusCode (line 27); LoadBalancingMiddleware.cs:28-34 UpsertErrors + return; ResponderMiddleware.cs:54-58 SetErrorResponse only SetErrorResponseOnContext(context, statusCode); HttpContextResponder.cs SetErrorResponseOnContext(HttpContext,int) only sets status. OcelotBuilder.cs:220-265 AddCustomLoadBalancer registers DelegateInvokingLoadBalancerCreator<T>. No start-up validation of the balancer type (rg LoadBalancer in Configuration/Validator: none). DECOYS: error objects' own declared status numbers (404/404/500) disagree with the mapper for the first case; LoadBalancerHouse compares cached balancer Type with OrdinalIgnoreCase (line 31) unlike the creator lookup; ServiceDiscoveryProviderFactory errors (a different layer) occur earlier in LoadBalancerFactory.Get.\nROUTE: (1) grep LoadBalancer dir, read LoadBalancingMiddleware [G: ILoadBalancerHouse]. (2) read LoadBalancerHouse + LoadBalancerFactory [G: Errors namespace class names]. (3) read Creators/DelegateInvokingLoadBalancerCreator + OcelotBuilder AddCustomLoadBalancer [G: typeof(T).Name Type]. (4) read the three Errors/*.cs files [G: OcelotErrorCode member names differ from class names, e.g. CouldNotFindLoadBalancerCreator]. (5) read ErrorsToHttpStatusCodeMapper [G: needs codes from step 4]. (6) read ResponderMiddleware/HttpContextResponder. Realistic: 5-6 dependent calls.\nMIN CALLS: 6 (below the 7 target).\nFIRST CALL: grep -rn 'load balancer' / 'strategy' / 'letter case' / 'simple name' / 'host-supplied function' - reaches at most the LoadBalancer directory (several gold files because of the feature name; the final-status part is not reachable by those words)."
+    },
+    {
+      "id": "r3x-ocelot-03",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "An operator submits a complete replacement settings document to the gateway's runtime administration interface, and the document fails validation. Follow it: which handler receives it, which service applies it, in what order that service touches the stored settings files versus the live in-memory configuration, where validation runs, which exception carries the failure, and what text shape the operator gets back. Afterwards, which of the two (files on disk, live configuration) holds the invalid document, how often is the change signal raised, and how does the very next ordinary call learn about a later valid replacement?",
+      "expectedFiles": [
+        "src/Administration/FileConfigurationController.cs",
+        "src/Configuration/Repository/FileAndInternalConfigurationSetter.cs",
+        "src/Configuration/Repository/DiskFileConfigurationRepository.cs",
+        "src/Configuration/Creator/FileInternalConfigurationCreator.cs",
+        "src/Configuration/Repository/ConfigurationRepositoryException.cs",
+        "src/Configuration/Repository/InMemoryInternalConfigurationRepository.cs",
+        "src/Middleware/ConfigurationMiddleware.cs"
+      ],
+      "expectedSymbols": [
+        "FileConfigurationController.Post",
+        "FileAndInternalConfigurationSetter.SetAsync",
+        "DiskFileConfigurationRepository.SetAsync",
+        "FileInternalConfigurationCreator.Create",
+        "FileConfigurationFluentValidator.IsValid",
+        "ConfigurationRepositoryException",
+        "ExceptionExtensions.ToShortString",
+        "InMemoryInternalConfigurationRepository.AddOrReplace",
+        "ConfigurationMiddleware.Invoke"
+      ],
+      "expectedFacts": [
+        "FileConfigurationController.Post calls IFileConfigurationSetter.SetAsync and, on any exception, returns BadRequest with e.ToShortString(), the format \"TypeName: all inner messages\".",
+        "CRITICAL: FileAndInternalConfigurationSetter.SetAsync first persists through IFileConfigurationRepository.SetAsync and only afterwards builds the internal configuration; if creation reports errors it throws ConfigurationRepositoryException and never calls AddOrReplace.",
+        "CRITICAL: DiskFileConfigurationRepository.SetAsync deletes and rewrites the environment-specific file and then the primary ocelot.json, then activates the change-token source, all before validation; so the invalid document stays on disk and the signal is raised once, while the live in-memory configuration stays unchanged.",
+        "Validation runs inside FileInternalConfigurationCreator.Create via IConfigurationValidator.IsValid (FileConfigurationFluentValidator), whose failures become FileValidationFailedError items; ConfigurationRepositoryException builds its message by joining the errors as \"Code: Message\" lines.",
+        "On success InMemoryInternalConfigurationRepository.AddOrReplace replaces the stored configuration under a lock and activates the change-token source again, so a successful upload raises the signal twice; OcelotConfigurationChangeToken.HasChanged stays true for one second.",
+        "Each ordinary call reads the current configuration: ConfigurationMiddleware, the first middleware in the Ocelot pipeline, calls IInternalConfigurationRepository.Get and stores it on HttpContext.Items."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "set": "dev",
+      "author": "r3x-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: FileConfigurationController.cs:11-13 ([Authorize], Route configuration), :44-55 Post -> _setter.SetAsync, catch -> BadRequest(e.ToShortString()); ExceptionExtensions.cs:35-37 `$\"{ex.GetType().Name}: {GetMessages(ex)}\"`; FileAndInternalConfigurationSetter.cs:31-40 (line 33 `_repo.SetAsync` first, line 35 `_configCreator.Create`, 37 throw, 39 AddOrReplace); Features.cs:53-56 registers the setter, DiskFileConfigurationRepository and InMemoryInternalConfigurationRepository; DiskFileConfigurationRepository.cs:99-121 (delete+write env file 105-108, delete+write primary 110-113, Activate line 120); ocelot.json / ocelot.{0}.json names from ConfigurationBuilderExtensions.cs:19,29; FileInternalConfigurationCreator.cs:30-37 IsValid then errors; FileConfigurationFluentValidator.cs:80-93 IsValid -> FileValidationFailedError; ConfigurationRepositoryException.cs:11-15 `errors.ToErrorString()`; Error.cs:26 ToString `$\"{Code}: {Message}\"`; InMemoryInternalConfigurationRepository.cs:29-38 (Activate line 36); OcelotConfigurationChangeToken.cs:7,38 (PollingIntervalSeconds 1, HasChanged); ConfigurationMiddleware.cs:22-24; OcelotPipelineExtensions.cs:30 ConfigurationMiddleware first. Also: OcelotBuilder.cs:53-55 adds the assembly of FileConfigurationController as an application part (how the controller is discovered); OcelotMiddlewareExtensions.cs:108-116 also calls SetAsync at start-up when an administration path is registered. DECOYS: FileConfigurationPoller / OcelotMiddlewareExtensions.CreateConfiguration file-change handler (a different path, covered by an existing held-out question); OutputCacheController (other controller); OcelotConfigurationMonitor (no consumer in src).\nROUTE: (1) ls src/Administration, read FileConfigurationController [G: IFileConfigurationSetter]. (2) find implementers: grep ': IFileConfigurationSetter' / Features.cs; read FileAndInternalConfigurationSetter [G: IFileConfigurationRepository, IInternalConfigurationCreator, ConfigurationRepositoryException]. (3) read DiskFileConfigurationRepository + InMemoryInternalConfigurationRepository [G: IOcelotConfigurationChangeTokenSource]. (4) read FileInternalConfigurationCreator + FileConfigurationFluentValidator.IsValid [G: IConfigurationValidator impl]. (5) read ConfigurationRepositoryException + ExceptionExtensions + Error [G: ToErrorString / ToShortString]. (6) read ChangeToken classes. (7) read ConfigurationMiddleware + pipeline. Batching reads in a call gives 5-7.\nMIN CALLS: 6 (borderline; 7 if reads are not batched).\nFIRST CALL: grep 'administration' / 'settings document' / 'replacement' / 'validation' - reaches only src/Administration (1 gold file) plus validators (not gold)."
+    },
+    {
+      "id": "r3x-ocelot-04",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "An operator turns on the per-route switch that asks the gateway to trace its backend calls. Follow it end to end. (1) Where is it decided that the switch has any effect, and what happens if the host application never supplied a tracing component? (2) Where is the tracing wrapper added to the outgoing handler chain, and where is it built? (3) Through which callback does the tracing component hand an identifier back, and where does that identifier get stored for the current call? (4) The operator then adds a custom header whose value is the placeholder for that identifier, once to the request sent to the backend and once to the reply sent to the caller. Which of the two can carry the identifier, why, and what happens to a header of the same name that the client already sent in the failing case?",
+      "expectedFiles": [
+        "src/Configuration/Creator/HttpHandlerOptionsCreator.cs",
+        "src/Requester/DelegatingHandlerFactory.cs",
+        "src/Logging/TracingHandlerFactory.cs",
+        "src/Logging/OcelotHttpTracingHandler.cs",
+        "src/Infrastructure/RequestData/HttpDataRepository.cs",
+        "src/Infrastructure/Placeholders.cs",
+        "src/Headers/Middleware/HttpHeadersTransformationMiddleware.cs",
+        "src/Headers/AddHeadersToRequest.cs",
+        "src/Headers/AddHeadersToResponse.cs"
+      ],
+      "expectedSymbols": [
+        "HttpHandlerOptionsCreator.Merge",
+        "DelegatingHandlerFactory.Get",
+        "TracingHandlerFactory.Get",
+        "OcelotHttpTracingHandler.SendAsync",
+        "OcelotHttpTracingHandler.AddTraceId",
+        "HttpDataRepository.Add",
+        "Placeholders.GetTraceId",
+        "HttpHeadersTransformationMiddleware.Invoke",
+        "AddHeadersToRequest.SetHeadersOnDownstreamRequest",
+        "AddHeadersToResponse.Add"
+      ],
+      "expectedFacts": [
+        "CRITICAL: HttpHandlerOptionsCreator reads an optional IOcelotTracer from the service provider, and the effective UseTracing is true only when a tracer is registered and the route/global flag is true (Merge: `_tracer != null && options.UseTracing.Value`; other branches via HttpHandlerOptions(from, useTracing)); with no tracer the flag silently has no effect and no error is raised.",
+        "DelegatingHandlerFactory.Get appends the handler from ITracingHandlerFactory.Get when route.HttpHandlerOptions.UseTracing is true, after user handlers and before the QoS handler; TracingHandlerFactory.Get builds OcelotHttpTracingHandler(tracer, repo).",
+        "OcelotHttpTracingHandler.SendAsync calls IOcelotTracer.SendAsync passing its AddTraceId method as the callback together with base.SendAsync; AddTraceId stores the id through IRequestScopedDataRepository.Add under the TraceId key, and HttpDataRepository.Add puts it in HttpContext.Items.",
+        "CRITICAL: Placeholders resolves the trace-id placeholder lazily with GetTraceId, reading that stored value; when no value exists it yields CouldNotFindPlaceholderError.",
+        "HttpHeadersTransformationMiddleware applies the request-side added headers before calling the rest of the pipeline (before the tracing handler runs, so no id exists) and applies the reply-side added headers after it returns, only when there are no pipeline errors; so only the reply-side header can carry the identifier.",
+        "AddHeadersToRequest removes any existing header with the same name before resolving the placeholder, and when the lookup fails it logs a warning and skips adding it, so a header the client sent with that name is lost."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "set": "dev",
+      "author": "r3x-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: HttpHandlerOptionsCreator.cs:9-11 (optional tracer from services), :16-17, :41-54, :73-75 (Merge `_tracer != null && options.UseTracing.Value`); HttpHandlerOptions.cs:29-33 `UseTracing = useTracing && (from.UseTracing ?? false)`; DelegatingHandlerFactory.cs:53-57 (tracing), 59-63 (QoS after); TracingHandlerFactory.cs:16,21; OcelotHttpTracingHandler.cs:7 `TraceId = nameof(TraceId)`, :22-23 SendAsync -> `_tracer.SendAsync(request, AddTraceId, base.SendAsync, ...)`, :25-26 `_repo.Add(TraceId, id)`; IOcelotTracer.cs:9-12 signature (Action<string> addTraceIdToRepo); HttpDataRepository.cs:16-26 (Items.Add); Placeholders.cs:30 registration and :108-113 GetTraceId reading `_repo.Get<string>(OcelotHttpTracingHandler.TraceId)`, :52 CouldNotFindPlaceholderError; HttpHeadersTransformationMiddleware.cs:40 (AddHeadersToUpstream before `_next` at :42) and :46-57 (after, only if no errors); AddHeadersToRequest.cs:50-77 (remove at 56-59, placeholder at 61-69 with `continue`); AddHeadersToResponse.cs:19-34. OcelotPipelineExtensions.cs:62 header middleware precedes DownstreamRequestInitialiser (:65) and HttpRequesterMiddleware (:114) where the tracing handler runs. DECOYS: OcelotDiagnosticListener (also uses IOcelotTracer but only for middleware events); the other placeholders registered in Placeholders; ClaimsToHeaders path in AddHeadersToRequest (different overload); existing held-out question covers Placeholders token sources and handler ordering, this one covers the tracing-switch and timing.\nROUTE: (1) grep -rn 'Tracing|Tracer' src [G: HttpHandlerOptionsCreator + Logging files shown by grep hits; bodies unknown]. (2) read HttpHandlerOptionsCreator, HttpHandlerOptions, DelegatingHandlerFactory [G: ITracingHandlerFactory]. (3) read TracingHandlerFactory + OcelotHttpTracingHandler + IOcelotTracer [G: IRequestScopedDataRepository, TraceId key]. (4) read HttpDataRepository and grep the TraceId key use [G: Placeholders.GetTraceId reached only by the key constant]. (5) read Placeholders [G: AddHeaders* consumers of IPlaceholders]. (6) grep IPlaceholders users: AddHeadersToRequest/AddHeadersToResponse, read both [G]. (7) read HttpHeadersTransformationMiddleware + OcelotPipelineExtensions for timing.\nMIN CALLS: 7.\nFIRST CALL: grep 'tracing|tracer', 'trace', 'handler chain', 'placeholder', 'header' - reaches Logging/*, HttpHandlerOptionsCreator, Placeholders, Headers (the grep for 'tracing' alone hits 4+ gold files); the first-call criterion is only partly met, the hardness is the timing/removal logic spread over 9 files in 5 directories."
+    },
+    {
+      "id": "r3x-ocelot-05",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "In which places does the gateway connect a piece of text from the operator's settings to a class registered by the host application by comparing that text with the class's simple name, rather than by a registered key or interface? Name each place and its layer, and say whether each comparison ignores letter case. Do not count places where the gateway only picks one of its own built-in classes by a name it wrote itself.",
+      "expectedFiles": [
+        "src/Requester/DelegatingHandlerFactory.cs",
+        "src/Multiplexer/ServiceLocatorDefinedAggregatorProvider.cs",
+        "src/ServiceDiscovery/ServiceDiscoveryProviderFactory.cs",
+        "src/LoadBalancer/LoadBalancerFactory.cs",
+        "src/LoadBalancer/Creators/DelegateInvokingLoadBalancerCreator.cs"
+      ],
+      "expectedSymbols": [
+        "DelegatingHandlerFactory.GlobalIsInHandlersConfig",
+        "DelegatingHandlerFactory.SortByConfigOrder",
+        "ServiceLocatorDefinedAggregatorProvider.ServiceLocatorDefinedAggregatorProvider",
+        "ServiceDiscoveryProviderFactory.GetServiceDiscoveryProvider",
+        "LoadBalancerFactory.Get",
+        "DelegateInvokingLoadBalancerCreator.Type"
+      ],
+      "expectedFacts": [
+        "CRITICAL: DelegatingHandlerFactory matches the route list of handler names against GetType().Name of registered handlers (GlobalIsInHandlersConfig and SortByConfigOrder, using List.Contains / IndexOf), so it is case-sensitive and the list order also sets the handler order.",
+        "ServiceLocatorDefinedAggregatorProvider builds a dictionary of registered IDefinedAggregator services keyed by GetType().Name and looks up the route aggregator text with the default comparer, so it is case-sensitive.",
+        "ServiceDiscoveryProviderFactory.GetServiceDiscoveryProvider compares the global provider type text with the simple class name of the provider returned by the registered ServiceDiscoveryFinderDelegate using OrdinalIgnoreCase (case-insensitive); the built-in Service Fabric provider is matched earlier by its own constant, not by a class name.",
+        "CRITICAL: LoadBalancerFactory.Get selects the creator whose Type equals the route balancer type with ordinary == (case-sensitive); for host-registered balancers DelegateInvokingLoadBalancerCreator.Type is typeof(T).Name, the simple class name of the registered balancer.",
+        "DownstreamRouteProviderFactory also builds a dictionary by GetType().Name, but it selects entries only with nameof constants chosen by its own logic, not from settings text, so it is not one of the places."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "set": "dev",
+      "author": "r3x-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: DelegatingHandlerFactory.cs:35-45 + 68-81 (Contains/IndexOf on `x.GetType().Name`, lines 71,75,81); ServiceLocatorDefinedAggregatorProvider.cs:13,18; ServiceDiscoveryProviderFactory.cs:48 (ServiceFabric literal, OrdinalIgnoreCase) and :54-61 (`provider.GetType().Name.Equals(config.Type, StringComparison.OrdinalIgnoreCase)`; the delegate comes from DI at :20); LoadBalancerFactory.cs:31-32 (`c.Type == requestedType`); DelegateInvokingLoadBalancerCreator.cs:32 `typeof(T).Name`; built-in creators use nameof(...) Type (RoundRobinCreator.cs:21, LeastConnectionCreator.cs:21, NoLoadBalancerCreator.cs:16, CookieStickySessionsCreator.cs:21). DECOYS: DownstreamRouteProviderFactory.cs:15,26,29 (class-name dictionary, nameof selection); LoadBalancerHouse.cs:31 (OrdinalIgnoreCase compare of the cached balancer Type, not the registration lookup); LoadBalancerOptions.cs:21 and RouteKeyCreator.cs:66 (nameof(CookieStickySessions) vs settings text: built-in name written by the gateway, excluded by the question); FileConfigurationFluentValidator.cs:69,76 (ServiceFabric constant); AuthenticationMiddleware uses scheme names (not class names).\nROUTE: (1) grep -rn 'GetType().Name' src (finds DelegatingHandlerFactory, aggregator provider, SD factory, DownstreamRouteProviderFactory + noise). (2) read each hit body to decide which compares settings text [G: which use settings text is only visible in bodies]. (3) grep 'typeof(T).Name' / '.Type ==' / 'nameof(' Type properties to discover the LoadBalancer binding [G: this site does not contain GetType().Name]. (4) read LoadBalancerFactory + DelegateInvokingLoadBalancerCreator + creators. (5) check case-sensitivity of each comparer (Dictionary default, List.Contains, OrdinalIgnoreCase). (6) rule out decoys (DownstreamRouteProviderFactory, LoadBalancerOptions).\nMIN CALLS: 6.\nFIRST CALL: grep 'GetType().Name', 'simple name', 'Type ==', 'registered' - reaches 4 of 5 gold files plus a decoy (the load balancer site needs a different pattern), so only partly meets the first-call rule."
+    },
+    {
+      "id": "r3x-ocelot-06",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "When a new configuration replaces the running one, which of the gateway's own in-memory tables, used for choosing a route or backend, remembering balancer progress or sending the call, keep their old entries? Leave out the response cache and the rate counters. For each table say where it lives and what identifies an entry, and name the cleanup operation that exists for one of them but is never invoked by production code.",
+      "expectedFiles": [
+        "src/Requester/MessageInvokerPool.cs",
+        "src/Requester/IMessageInvokerPool.cs",
+        "src/LoadBalancer/LoadBalancerHouse.cs",
+        "src/LoadBalancer/Balancers/RoundRobin.cs",
+        "src/LoadBalancer/Balancers/CookieStickySessions.cs",
+        "src/DownstreamRouteFinder/Finder/DiscoveryDownstreamRouteFinder.cs",
+        "src/Configuration/Repository/InMemoryInternalConfigurationRepository.cs"
+      ],
+      "expectedSymbols": [
+        "MessageInvokerPool._handlersPool",
+        "MessageInvokerPool.Clear",
+        "LoadBalancerHouse._loadBalancers",
+        "RoundRobin.LastIndices",
+        "CookieStickySessions.Stored",
+        "DiscoveryDownstreamRouteFinder._cache",
+        "InMemoryInternalConfigurationRepository.AddOrReplace"
+      ],
+      "expectedFacts": [
+        "CRITICAL: MessageInvokerPool._handlersPool is keyed by MessageInvokerCacheKey wrapping the DownstreamRoute object reference (reference equality), so every rebuilt configuration creates new route objects while old entries stay; Clear (also on IMessageInvokerPool) has no production caller.",
+        "LoadBalancerHouse._loadBalancers is keyed by route.LoadBalancerKey and reuses an entry when the key and balancer type match, so entries survive a configuration swap.",
+        "RoundRobin.LastIndices is a static dictionary keyed by the service name (route ServiceName, else LoadBalancerKey), so it is process-wide and untouched by a swap.",
+        "CookieStickySessions.Stored is a static dictionary keyed \"LoadBalancerKey:cookie value\"; entries leave only through the expiry check scheduled on its bus, never on configuration swap.",
+        "DiscoveryDownstreamRouteFinder._cache memoises the route holder by load balancer key from the first call onward and is never invalidated, so it can keep serving options from the earlier configuration.",
+        "CRITICAL: A swap is only InMemoryInternalConfigurationRepository.AddOrReplace replacing one field and activating the change-token source; nothing in src subscribes to that signal, so nothing clears these tables."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "set": "dev",
+      "author": "r3x-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: MessageInvokerPool.cs:10 (ConcurrentDictionary<MessageInvokerCacheKey, Lazy<HttpMessageInvoker>>), :26-35 Get, :37 Clear, :120-135 MessageInvokerCacheKey wrapping the route (EqualityComparer<DownstreamRoute>.Default; DownstreamRoute.cs has no Equals override); IMessageInvokerPool.cs Clear docs; rg for pool Clear callers in src/samples/testing finds none; LoadBalancerHouse.cs:11,30-33,52; RoundRobin.cs:25 static LastIndices, :79,94 use _serviceName; RoundRobinCreator.cs:13-17 passes ServiceName or LoadBalancerKey; CookieStickySessions.cs:43 static Stored, :56-69 CheckExpiry, :99-105 Update; CookieStickySessionsCreator.cs:15-18 (RoundRobin keyed by LoadBalancerKey, new InMemoryBus); DiscoveryDownstreamRouteFinder.cs:18,26,40-45,99; DownstreamRouteProviderFactory.cs:15 shows the finder is one DI singleton (OcelotBuilder.cs:96-98); InMemoryInternalConfigurationRepository.cs:29-38; rg 'OnChange|ChangeToken' in src shows only OcelotConfigurationMonitor.OnChange (no caller) and the Activate callers. DECOYS (excluded by wording): response cache DefaultMemoryCache<CachedResponse> and MemoryCacheRateLimitStorage (expire / other keys); UpstreamTemplatePatternCreator regex cache (TTL one minute, config-creation time); LeastConnection._leases / RoundRobin._leasing (per-balancer instance state, retained only because LoadBalancerHouse retains the balancer); CircuitBreaker window.\nROUTE: (1) grep -rn 'static readonly Dictionary|ConcurrentDictionary|new Dictionary' src (finds several tables + noise). (2) read each candidate to see its key [G: key expressions only in bodies: MessageInvokerCacheKey, LoadBalancerKey, _serviceName]. (3) find what a swap does: read InMemoryInternalConfigurationRepository.AddOrReplace, FileConfigurationPoller/OcelotMiddlewareExtensions [G]. (4) grep for consumers of the change token / OnChange (none) [G: token name from step 3]. (5) grep callers of Clear (MessageInvokerPool.Clear: none) [G: interface name IMessageInvokerPool]. (6) confirm DiscoveryDownstreamRouteFinder singleton via OcelotBuilder. \nMIN CALLS: 6.\nFIRST CALL: grep 'static' / 'Dictionary' / 'cache' / 'pool' / 'house' - reaches several gold files because the tables are dictionaries; the swap and no-caller facts need later calls."
+    },
+    {
+      "id": "r3x-ocelot-07",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "condition",
+      "difficulty": "hard",
+      "query": "A route does not state which HTTP protocol version or version policy the backend call should use, while the global section does. Which values does the backend call end up with in each of three cases: an ordinary fixed-address route, a route entry meant for discovery-based services, and a call matched to no route entry at all but routed purely by discovery? Include what happens when the stated text is unusable, which of these texts the start-up validation inspects, and where the final values are applied to the outgoing request.",
+      "expectedFiles": [
+        "src/Configuration/Creator/StaticRoutesCreator.cs",
+        "src/Configuration/Creator/DynamicRoutesCreator.cs",
+        "src/Configuration/Creator/ConfigurationCreator.cs",
+        "src/DownstreamRouteFinder/Finder/DiscoveryDownstreamRouteFinder.cs",
+        "src/Configuration/Creator/HttpVersionCreator.cs",
+        "src/Configuration/Creator/HttpVersionPolicyCreator.cs",
+        "src/Configuration/Validator/RouteFluentValidator.cs",
+        "src/Request/Mapper/RequestMapper.cs"
+      ],
+      "expectedSymbols": [
+        "StaticRoutesCreator.SetUpDownstreamRoute",
+        "DynamicRoutesCreator.SetUpDynamicRoute",
+        "ConfigurationCreator.Create",
+        "DiscoveryDownstreamRouteFinder.Get",
+        "HttpVersionCreator.Create",
+        "HttpVersionPolicyCreator.Create",
+        "RouteFluentValidator",
+        "RequestMapper.Map"
+      ],
+      "expectedFacts": [
+        "CRITICAL: For an ordinary route StaticRoutesCreator passes only the route own version and policy text to the creators, with no fallback to the global section; unset values give version 1.1 (HttpVersionCreator falls back when Version.TryParse fails) and policy RequestVersionOrLower.",
+        "DynamicRoutesCreator uses the route text IfEmpty the global text for both the version and the policy before calling the creators.",
+        "CRITICAL: For a call with no dynamic route entry, DiscoveryDownstreamRouteFinder.Get builds the route from the internal configuration global values created by ConfigurationCreator.Create; when a matching dynamic entry exists, its already-resolved values replace them.",
+        "HttpVersionCreator silently returns 1.1 on parse failure; HttpVersionPolicyCreator maps the three known policy names and returns RequestVersionOrLower for anything else.",
+        "Only the ordinary route text is validated at start-up (RouteFluentValidator: version pattern with one digit and optional one-digit fraction, policy one of the three names); global and dynamic-entry texts are not validated, and a bare major number matches the pattern yet Version.TryParse needs major.minor, so it also ends as 1.1.",
+        "RequestMapper.Map copies the DownstreamRoute version and policy onto the HttpRequestMessage Version and VersionPolicy."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "set": "dev",
+      "author": "r3x-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: StaticRoutesCreator.cs:112 `_versionCreator.Create(fileRoute.DownstreamHttpVersion)` and :114 policy (no global fallback; the only other uses of the global strings are ConfigurationCreator.cs:56-57 and DynamicRoutesCreator.cs:73-74); DynamicRoutesCreator.cs:73-74 `.IfEmpty(globalConfiguration...)`; ConfigurationCreator.cs:56-57,67-68; DiscoveryDownstreamRouteFinder.cs:57-58 (global via `configuration.`) and :70-77 (dynamicRoute overrides); HttpVersionCreator.cs:7-9 (TryParse else 1.1); HttpVersionPolicyCreator.cs:13-19 (default arm OrLower); VersionPolicies.cs constants; RouteFluentValidator.cs:88-96 (regex `^[0-9]([.,][0-9]{1,1})?$` and policy alternation); FileGlobalConfigurationFluentValidator.cs validates only QoS and authentication; RequestMapper.cs:20-21. DECOYS: FileRouteBase/FileGlobalConfiguration docs imply global inheritance; DownstreamRoute.DownstreamHttpVersion getter; DownstreamRequestCreator (unrelated framework check); existing r3h-ocelot-20 covers scheme not version.\nROUTE: (1) grep -rn 'HttpVersion' src (shows creators, finder, mapper, validator in hit lines). (2) read StaticRoutesCreator [G: sees no fallback only by reading; hit line looks identical to dynamic]. (3) read DynamicRoutesCreator + ConfigurationCreator [G: IfEmpty/global creation]. (4) read DiscoveryDownstreamRouteFinder [G: which `configuration.*` supplies version]. (5) read HttpVersionCreator/PolicyCreator/VersionPolicies [G]. (6) read RouteFluentValidator + FileGlobalConfigurationFluentValidator to see what is validated. (7) read RequestMapper. A batching agent can do 5-6.\nMIN CALLS: 6.\nFIRST CALL: grep 'protocol version', 'HttpVersion', 'version policy', 'global' - reaches 6-7 gold files by one grep (the hardness is the three different precedence rules, not the search)."
+    },
+    {
+      "id": "r3x-ocelot-08",
+      "repo": "ocelot",
+      "language": "C#",
+      "stratum": "condition",
+      "difficulty": "hard",
+      "query": "Routes can carry free-form key/value text entries that custom handlers read back later, and the global section can carry such entries too. Which entry wins when both define the same key, which section decides how the text is split into a list, parsed as a number or read as yes/no (and can one route change that), what does a reader get for a missing key or an unrecognised yes/no word, and for a call matched to no route entry but routed purely by discovery, which entries are visible?",
+      "expectedFiles": [
+        "src/Configuration/Creator/DefaultMetadataCreator.cs",
+        "src/Configuration/File/FileMetadataOptions.cs",
+        "src/Metadata/DownstreamRouteExtensions.cs",
+        "src/Configuration/Creator/ConfigurationCreator.cs",
+        "src/DownstreamRouteFinder/Finder/DiscoveryDownstreamRouteFinder.cs"
+      ],
+      "expectedSymbols": [
+        "DefaultMetadataCreator.Create",
+        "FileMetadataOptions.FileMetadataOptions",
+        "DownstreamRouteExtensions.GetMetadata",
+        "DownstreamRouteExtensions.ConvertTo",
+        "ConfigurationCreator.Create",
+        "DiscoveryDownstreamRouteFinder.Get"
+      ],
+      "expectedFacts": [
+        "CRITICAL: DefaultMetadataCreator.Create copies the global entries into a new dictionary and then overwrites them with the route entries, so the route value wins for the same key.",
+        "CRITICAL: Separators, trim characters, split option, number style and culture come only from the global file options (defaults: comma separator, space trim char, no split option, Any number style, current culture); a route cannot override them.",
+        "DownstreamRouteExtensions.GetMetadata returns the caller default when there are no entries, the key is missing or its value is null; strings come back as is, lists are split by the separators, trimmed and stripped of empty items, numbers are parsed with the configured style and culture, other types are JSON-deserialized.",
+        "For bool, only the words true, yes, on, ok, enable, enabled and 1 (trimmed, case-insensitive) give true and everything else gives false; for a nullable bool true words give true, false words (false, no, off, disable, disabled, 0) give false, and any other word gives null.",
+        "For a call with no matching route entry, DiscoveryDownstreamRouteFinder.Get uses configuration.MetadataOptions that ConfigurationCreator.Create built from the global entries only (route entries null); when a dynamic route entry matches, it uses that entry merged options."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 25,
+      "tier": "r3-hard2",
+      "set": "dev",
+      "author": "r3x-ocelot-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: DefaultMetadataCreator.cs:13-28 (merge: `new Dictionary(global)` then `merged[key] = value`; options only from `globalConfiguration.MetadataOptions` lines 21-28); FileMetadataOptions.cs:7-14 defaults; FileGlobalConfiguration.cs:17,36-37; StaticRoutesCreator.cs:118, DynamicRoutesCreator.cs:77, ConfigurationCreator.cs:58 (`Create(null, globalConfiguration)`); DiscoveryDownstreamRouteFinder.cs:64 (global) and :82 (dynamicRoute.MetadataOptions); DownstreamRouteExtensions.cs:66-72 GetMetadata, :92-124 ConvertTo (bool 99-102, bool? 104-109, string[] 111-119, numeric 121-123, JSON 123), :13-37 truthy/falsy sets; MetadataOptions.cs:6-47 (route options object holds Metadata dictionary and global parse options). DECOYS: private GetMetadataNode (DownstreamRouteExtensions.cs:75-79) is an unfinished stub returning null; MetadataOptions constructors; rate-limit Metadata properties on FileRateLimiting (unrelated); the docs/metadata.rst and samples.\nROUTE: (1) grep -rn 'Metadata' src (finds creator, extension, config classes; hit lines show only names). (2) read DefaultMetadataCreator + FileMetadataOptions [G: builder method names reveal which options source]. (3) read DownstreamRouteExtensions [G: ConvertTo branches]. (4) read StaticRoutesCreator/DynamicRoutesCreator/ConfigurationCreator call sites [G: Create(null, global)]. (5) read DiscoveryDownstreamRouteFinder [G: which MetadataOptions in each branch]. (6) read FileGlobalConfiguration defaults. Realistically 4-5 calls.\nMIN CALLS: 5 (below target; weakest candidate for hardness).\nFIRST CALL: grep 'key/value', 'free-form', 'entries', 'custom handlers' reaches almost nothing (word 'metadata' is avoided), then 'Metadata' reaches most gold files once the agent guesses the term."
+    }
+  ]
+}
