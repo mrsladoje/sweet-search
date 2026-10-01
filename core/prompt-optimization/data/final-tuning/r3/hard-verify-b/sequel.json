@@ -1,0 +1,641 @@
+{
+ "r3hb-sequel-04": {
+  "id": "r3hb-sequel-04",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "6/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Sequel::Plugins::OptimisticLocking::InstanceMethods#_update_columns",
+    "Sequel::Plugins::OptimisticLockingBase::InstanceMethods#before_update",
+    "Sequel::Plugins::OptimisticLockingBase::InstanceMethods#lock_column_instance_filter",
+    "Sequel::Plugins::InstanceFilters::InstanceMethods#_update_dataset",
+    "Sequel::Plugins::InstanceFilters::InstanceMethods#apply_instance_filters",
+    "Sequel::Plugins::InstanceFilters::InstanceMethods#instance_filter",
+    "Sequel::Plugins::InstanceFilters::InstanceMethods#after_update",
+    "Sequel::Plugins::OptimisticLockingBase::InstanceMethods#_refresh",
+    "Sequel::Plugins::OptimisticLocking::Error",
+    "Sequel::NoExistingObject"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "Sequel's optimistic locking implementation and its reliance on the instance_filters plugin are clearly defined without ambiguity."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "7/7",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Sequel::Plugins::OptimisticLocking",
+    "OptimisticLocking.apply",
+    "OptimisticLocking.configure",
+    "OptimisticLocking::InstanceMethods#_update_columns",
+    "OptimisticLocking::Error",
+    "Sequel::Plugins::OptimisticLockingBase",
+    "OptimisticLockingBase.apply",
+    "OptimisticLockingBase::InstanceMethods#before_update",
+    "OptimisticLockingBase::InstanceMethods#before_destroy",
+    "OptimisticLockingBase::InstanceMethods#lock_column_instance_filter",
+    "OptimisticLockingBase::InstanceMethods#lock_column_instance_filter_value",
+    "OptimisticLockingBase::InstanceMethods#_refresh",
+    "Sequel::Plugins::InstanceFilters",
+    "InstanceFilters.configure",
+    "InstanceFilters::InstanceMethods#_update_dataset",
+    "InstanceFilters::InstanceMethods#_delete_dataset",
+    "InstanceFilters::InstanceMethods#apply_instance_filters",
+    "InstanceFilters::InstanceMethods#after_update",
+    "InstanceFilters::InstanceMethods#after_destroy",
+    "InstanceFilters::InstanceMethods#clear_instance_filters",
+    "InstanceFilters::Error",
+    "Sequel::NoExistingObject",
+    "Sequel::Model::ClassMethods#require_modification",
+    "Sequel::Model#_update"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The plugin chain and instance_filters/require_modification behavior are explicit, so no reasonable alternative answer is supported by the shown code."
+  }
+ },
+ "r3hb-sequel-05": {
+  "id": "r3hb-sequel-05",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "6/8",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Sequel::TimedQueueConnectionPool#hold",
+    "Sequel::TimedQueueConnectionPool#try_make_new",
+    "Sequel::ThreadedConnectionPool#hold",
+    "Sequel::ThreadedConnectionPool#assign_connection",
+    "Sequel::ConnectionValidator#acquire",
+    "Sequel::ConnectionExpiration#acquire"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The connection pool behavior for broken, expired, unresponsive, and dead-thread connections is fully defined in the connection pool classes and pool extensions."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "8/8",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Sequel::TimedQueueConnectionPool#hold",
+    "Sequel::TimedQueueConnectionPool#try_make_new",
+    "Sequel::TimedQueueConnectionPool#fill_queue",
+    "Sequel::ThreadedConnectionPool#hold",
+    "Sequel::ThreadedConnectionPool#assign_connection",
+    "Sequel::ConnectionValidator#acquire",
+    "Sequel::ConnectionExpiration#acquire",
+    "Sequel::TransactionConnectionValidator#begin_new_transaction",
+    "Sequel::TransactionConnectionValidator#transaction",
+    "Sequel::TransactionConnectionValidator::DisconnectRetry"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The provided files cover the default threaded/timed-queue pools and the three relevant extensions, and the question's scope does not require sharded-pool variants."
+  }
+ },
+ "r3hb-sequel-01": {
+  "id": "r3hb-sequel-01",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "7/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Sequel::TimedQueueConnectionPool#acquire",
+    "Sequel::TimedQueueConnectionPool#try_make_new",
+    "Sequel::TimedQueueConnectionPool#can_make_new?",
+    "Sequel::TimedQueueConnectionPool#preallocated_make_new",
+    "Sequel::ConnectionPool#make_new",
+    "Sequel::Database#new_connection",
+    "Sequel::Postgres::Database#connect"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "On Ruby 3.2+, Sequel defaults to TimedQueueConnectionPool, and the path through acquire, preallocated_make_new, make_new, new_connection, and Postgres::Database#connect is completely clear and unambiguous."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "7/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Sequel::TimedQueueConnectionPool#acquire",
+    "Sequel::TimedQueueConnectionPool#try_make_new",
+    "Sequel::TimedQueueConnectionPool#can_make_new?",
+    "Sequel::TimedQueueConnectionPool#preallocated_make_new",
+    "Sequel::ConnectionPool#make_new",
+    "Sequel::Database#new_connection",
+    "Sequel::Postgres::Database#connect",
+    "Sequel::Postgres::DatabaseMethods#connection_configuration_sqls",
+    "Sequel::DatabaseConnectionError"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The default pool on Ruby 3.2+ is TimedQueueConnectionPool and the PostgreSQL adapter path is fixed; no alternative code path is indicated."
+  }
+ },
+ "r3hb-sequel-02": {
+  "id": "r3hb-sequel-02",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "6/8",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Sequel::Dataset#import",
+    "Sequel::Dataset#multi_insert",
+    "Sequel::Dataset#multi_insert_sql"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The implementations of _import (both generic and PostgreSQL-specific) and related private helper methods are truncated and not present in the provided file excerpts."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "8/8",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Sequel::Dataset#import",
+    "Sequel::Dataset#multi_insert",
+    "Sequel::Dataset#_import",
+    "Sequel::Dataset#_import_transaction",
+    "Sequel::Dataset#default_import_slice",
+    "Sequel::Dataset#multi_insert_sql",
+    "Sequel::Postgres::DatasetMethods#_import",
+    "Sequel::Postgres::DatasetMethods#insert_pk",
+    "Sequel::Postgres::DatasetMethods#multi_insert_sql_strategy",
+    "Sequel::Postgres::DatasetMethods#returning_fetch_rows"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The PostgreSQL adapter's _import RETURNING branch sends one multi-row INSERT per slice with no transaction, while the generic _import sends one INSERT per row inside _import_transaction when returning primary keys."
+  }
+ },
+ "r3hb-sequel-03": {
+  "id": "r3hb-sequel-03",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "5/11",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Sequel::Dataset#all",
+    "Sequel::Dataset#_all",
+    "Sequel::Model::Associations::AssociationReflection#eager_load_results"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "Sequel's separate-query eager loading flow is uniquely implemented through the Dataset#all/post_load hook and the associations eager-loading subsystem."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "11/11",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Dataset#all",
+    "Dataset#_all",
+    "Dataset#post_load",
+    "Model::Associations::DatasetMethods#post_load",
+    "Model::Associations::DatasetMethods#eager_load",
+    "Model::Associations::DatasetMethods#prepare_eager_load",
+    "Model::Associations::DatasetMethods#perform_eager_loads",
+    "AssociationReflection#eager_load_results",
+    "AssociationReflection#initialize_association_cache",
+    "AssociationReflection#placeholder_eager_loader",
+    "AssociationReflection#eager_loading_dataset",
+    "def_one_to_many",
+    ":eager_loader proc"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The separate-query eager loading path is specifically implemented by the association DatasetMethods#post_load/eager_load and AssociationReflection#eager_load_results code, so a careful engineer would not reasonably answer elsewhere."
+  }
+ },
+ "r3hb-sequel-06": {
+  "id": "r3hb-sequel-06",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "4/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Sequel::Plugins::UpdatePrimaryKey::InstanceMethods#change_column_value",
+    "Sequel::Plugins::UpdatePrimaryKey::InstanceMethods#clear_associations_using_primary_key",
+    "Sequel::Plugins::Touch::InstanceMethods#touch_associations"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "The library's mechanisms for silently invalidating or deleting cached association entries are specifically implemented in these methods."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "5/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "_refresh_set_values",
+    "change_column_value",
+    "autoreloading_associations",
+    "clear_associations_using_primary_key",
+    "touch_associations"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The provided core and plugin methods are the only automatic association-cache deletions in the listed files; no other reasonable location is indicated."
+  }
+ },
+ "r3hb-sequel-09": {
+  "id": "r3hb-sequel-09",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/4",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Sequel::Plugins::PgAutoConstraintValidations",
+    "Sequel::Plugins::PgAutoConstraintValidations::InstanceMethods#check_pg_constraint_error",
+    "Sequel::Postgres::Database#error_info"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The pg_auto_constraint_validations plugin uniquely matches the description of handling database constraint errors after execution using PostgreSQL driver error information."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "4/4",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Sequel::Plugins::PgAutoConstraintValidations",
+    "check_pg_constraint_error",
+    "_insert_raw",
+    "_insert_select_raw",
+    "_update_without_checking",
+    "Sequel::Postgres::Database#error_info",
+    "Sequel::UniqueConstraintViolation",
+    "database_error_regexps",
+    "database_exception_sqlstate",
+    "setup_pg_auto_constraint_validations",
+    "db.indexes"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The described behavior is uniquely implemented by the pg_auto_constraint_validations plugin, with driver details from the PostgreSQL adapter's error_info and exception classification from the PostgreSQL adapter's error regexps/SQLSTATE mapping."
+  }
+ },
+ "r3hb-sequel-10": {
+  "id": "r3hb-sequel-10",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "4/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Sequel::Schema::CreateTableGenerator#primary_key",
+    "Sequel::Database#column_definition_sql",
+    "Sequel::Database#column_definition_order",
+    "Sequel::Postgres::DatabaseMethods"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "PostgreSQL DDL generation logic for auto-incrementing primary keys is centralized across the schema generator, schema methods, and postgres shared adapter based on server_version."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "6/7",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Sequel::Schema::CreateTableGenerator#primary_key",
+    "Sequel::Database#serial_primary_key_options",
+    "Sequel::Postgres::DatabaseMethods#serial_primary_key_options",
+    "Sequel::Postgres::DatabaseMethods#type_literal_generic_integer",
+    "Sequel::Postgres::DatabaseMethods#column_definition_default_sql",
+    "Sequel::Database#column_definition_sql",
+    "Sequel::Database::COLUMN_DEFINITION_ORDER"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "Not ambiguous; the usual primary_key path uses PostgreSQL serial_primary_key_options, type_literal_generic_integer, and column_definition_default_sql, yielding id integer GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY on v12 and id serial PRIMARY KEY on older servers."
+  }
+ },
+ "r3hb-sequel-14": {
+  "id": "r3hb-sequel-14",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3hb-sequel-11": {
+  "id": "r3hb-sequel-11",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "8/8",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Sequel::SQLite::Dataset#fetch_rows",
+    "Sequel::SQLite::Dataset#base_type_name",
+    "Sequel::SQLite::Database#adapter_initialize",
+    "Sequel::SQLite::Database#to_application_timestamp",
+    "Sequel::Database#to_application_timestamp",
+    "Sequel::Database#timezone",
+    "Sequel::SequelMethods#convert_timestamp",
+    "Sequel::SequelMethods#convert_input_timestamp",
+    "Sequel::SequelMethods#convert_output_timestamp"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The type conversion flow from SQLite row values to application timestamps is specifically implemented across SQLite dataset/database methods and Sequel timezone methods."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "8/8",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Sequel::SQLite::Dataset#fetch_rows",
+    "Sequel::SQLite::Dataset#base_type_name",
+    "Sequel::SQLite::Database#adapter_initialize",
+    "Sequel::SQLite::Database#to_application_timestamp",
+    "Sequel::Database#to_application_timestamp",
+    "Sequel::Database#timezone",
+    "Sequel::SequelMethods#convert_timestamp",
+    "Sequel::SequelMethods#convert_input_timestamp",
+    "Sequel::SequelMethods#convert_output_timestamp",
+    "Sequel.application_timezone",
+    "Sequel.database_timezone"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The relevant path is explicit: SQLite fetch_rows selects the declared-type proc, SQLite#to_application_timestamp normalizes numeric values to strings with offsets, and the generic timezone conversion applies the application timezone."
+  }
+ },
+ "r3hb-sequel-12": {
+  "id": "r3hb-sequel-12",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Sequel::Database#transaction"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "Database#transaction explicitly defines how nested transactions and savepoints behave when already inside a transaction."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "6/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Sequel::Model#save",
+    "Sequel::Model#checked_save_failure",
+    "Sequel::Model#checked_transaction",
+    "Sequel::Model#_save",
+    "Sequel::Model#cancel_action",
+    "Sequel::Model#raise_hook_failure",
+    "Sequel::Model#raise_on_failure?",
+    "Sequel::Model.raise_on_save_failure",
+    "Sequel::Database#transaction",
+    "Sequel::Database#already_in_transaction?",
+    "Sequel::Database#_transaction",
+    "Sequel::Database#add_transaction",
+    "Sequel::Database#begin_transaction",
+    "Sequel::Database#rollback_transaction",
+    "Sequel::Database#commit_or_rollback_transaction",
+    "Sequel::Database#transaction_finished?",
+    "Sequel::Database#remove_transaction"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The default behavior is determined by Model#save wrapping _save in checked_transaction inside checked_save_failure, and Database#transaction yielding without a savepoint when already in a transaction; savepoint options change this by causing a savepoint rollback."
+  }
+ },
+ "r3hb-sequel-13": {
+  "id": "r3hb-sequel-13",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "6/7",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Sequel::Database#initialize",
+    "Sequel::SQLite::Database#connection_pool_default_options",
+    "Sequel::SQLite::Database#connect",
+    "Sequel::SQLite::Database.uri_to_options",
+    "Sequel::TimedQueueConnectionPool#initialize"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The options merging behavior, option parsing, type conversion, and SQLite memory connection handling are explicitly defined and consistent across the codebase."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "7/7",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Sequel::Database.connect",
+    "Sequel::Database.options_from_uri",
+    "Sequel::Database#initialize",
+    "Sequel::SQLite::Database.uri_to_options",
+    "Sequel::SQLite::Database#connection_pool_default_options",
+    "Sequel::SQLite::Database#connect",
+    "Sequel::TimedQueueConnectionPool#initialize"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The code clearly shows the user-supplied max_connections=5 overrides SQLite's blank-database default of 1 in Database#initialize, and TimedQueueConnectionPool converts it with Integer."
+  }
+ },
+ "r3hb-sequel-07": {
+  "id": "r3hb-sequel-07",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "4/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Sequel::Dataset#import",
+    "Sequel::Plugins::SingleStatementDatasetDestroy::DatasetMethods#destroy"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The operations on Sequel dataset/query objects that initiate transactions and their skipping conditions are specific and determinable across Sequel's dataset actions, plugins, and adapters."
+  },
+  "glm": {
+   "ok": false,
+   "why": "unparsable"
+  }
+ },
+ "r3hb-sequel-08": {
+  "id": "r3hb-sequel-08",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "Sequel::Model::ClassMethods#[]",
+    "Sequel::Model::ClassMethods#primary_key_lookup",
+    "Sequel::Model::ClassMethods#reset_fast_pk_lookup_sql"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The code in lib/sequel/model/base.rb unambiguously defines how Model.[] invokes primary_key_lookup, constructs fast PK lookup SQL, and falls back to dataset.first."
+  },
+  "glm": {
+   "ok": false,
+   "why": "unparsable"
+  }
+ }
+}

@@ -1,0 +1,697 @@
+{
+ "r3hb-okhttp-05": {
+  "id": "r3hb-okhttp-05",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "2/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "okhttp3.internal.connection.ConnectPlan.connectTls",
+    "okhttp3.internal.connection.RealConnection.isEligible"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The places in connection-setup code validating the remote server identity for the requested host are specifically ConnectPlan.connectTls for new connections and RealConnection.isEligible for coalesced connections."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "6/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "ConnectPlan.connectTls",
+    "ConnectPlan.nextConnectionSpec",
+    "RealConnection.isEligible",
+    "RealConnection.supportsUrl",
+    "RealConnection.certificateSupportHost",
+    "CertificatePinner.check",
+    "OkHostnameVerifier.verify"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The identity checks are explicitly in ConnectPlan.connectTls, ConnectPlan.nextConnectionSpec, RealConnection.isEligible, CertificatePinner.check, and OkHostnameVerifier.verify, so a careful engineer should not reasonably answer elsewhere."
+  }
+ },
+ "r3hb-okhttp-04": {
+  "id": "r3hb-okhttp-04",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "6/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "okhttp3.OkHttpClient.fastFallback",
+    "okhttp3.internal.connection.RealCall.enterNetworkInterceptorExchange",
+    "okhttp3.internal.connection.RouteSelector.nextRoutes",
+    "okhttp3.internal.connection.reorderForHappyEyeballs",
+    "okhttp3.internal.connection.FastFallbackExchangeFinder.find",
+    "okhttp3.internal.connection.FastFallbackExchangeFinder.cancelInFlightConnects"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The fast fallback / Happy Eyeballs address ordering and connection racing logic is uniquely implemented across RouteSelector, InetAddressOrder, and FastFallbackExchangeFinder."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "6/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "OkHttpClient.fastFallback",
+    "RealCall.enterNetworkInterceptorExchange",
+    "RouteSelector.nextRoutes",
+    "reorderForHappyEyeballs",
+    "FastFallbackExchangeFinder.find",
+    "FastFallbackExchangeFinder.launchTcpConnect",
+    "FastFallbackExchangeFinder.awaitTcpConnect",
+    "FastFallbackExchangeFinder.cancelInFlightConnects",
+    "ConnectPlan.connectTcp",
+    "ConnectPlan.connectTlsEtc"
+   ],
+   "claims": [
+    "unsupported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The fastFallback switch, Happy Eyeballs ordering, 250 ms staggered TCP races, and cancellation/deferral of losers are directly implemented in the listed files; missing RealRoutePlanner/handleSuccess details do not change the core answer."
+  }
+ },
+ "r3hb-okhttp-03": {
+  "id": "r3hb-okhttp-03",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "4/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "okhttp3.internal.http2.Http2Connection.isHealthy",
+    "okhttp3.internal.connection.RealConnection.isHealthy",
+    "okhttp3.internal.connection.RealConnectionPool.callAcquirePooledConnection",
+    "okhttp3.internal.connection.RealRoutePlanner.planReuseCallConnection"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "The degraded ping mechanism and connection health evaluation logic for HTTP/2 multiplexed connections are specifically implemented in Http2Connection, RealConnection, RealConnectionPool, and RealRoutePlanner."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "7/7",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Http2Stream.StreamTimeout.timedOut",
+    "Http2Connection.sendDegradedPingLater",
+    "Http2Connection.isHealthy",
+    "Http2Connection.ReaderRunnable.ping",
+    "DEGRADED_PING",
+    "DEGRADED_PONG_TIMEOUT_NS",
+    "RealConnection.isHealthy",
+    "RealConnectionPool.callAcquirePooledConnection",
+    "RealRoutePlanner.planReuseCallConnection"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The degraded-ping probe and health verdict are uniquely implemented in the HTTP/2 connection and checked by the connection pool/route planner, so no reasonable alternative answer exists."
+  }
+ },
+ "r3hb-okhttp-06": {
+  "id": "r3hb-okhttp-06",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "7/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "okhttp3.internal.ws.RealWebSocket.connect",
+    "okhttp3.internal.connection.RealCall.getResponseWithInterceptorChain",
+    "okhttp3.Dispatcher.promoteAndExecute",
+    "okhttp3.internal.http.CallServerInterceptor.intercept",
+    "okhttp3.internal.connection.Exchange.upgradeToSocket",
+    "okhttp3.internal.connection.RealConnection.useAsSocket"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The code paths differentiating WebSocket calls from ordinary HTTP calls are explicitly defined across RealWebSocket, Dispatcher, RealCall, CallServerInterceptor, Exchange, and RealConnection."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "7/7",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "RealWebSocket.connect",
+    "RealWebSocket.init",
+    "RealCall.forWebSocket",
+    "RealCall.getResponseWithInterceptorChain",
+    "RealCall.upgradeToSocket",
+    "Dispatcher.promoteAndExecute",
+    "CallServerInterceptor.intercept",
+    "Exchange.upgradeToSocket",
+    "RealConnection.useAsSocket"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The web-socket-specific differences are localized to the listed symbols in these files, so a careful engineer would not reasonably give a different answer from the provided code."
+  }
+ },
+ "r3hb-okhttp-01": {
+  "id": "r3hb-okhttp-01",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "6/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "okhttp3.internal.connection.RouteSelector.dnsLookup",
+    "okhttp3.internal.connection.RouteSelector.nextRoutes",
+    "okhttp3.internal.connection.ConnectPlan.connectTls",
+    "okhttp3.internal.connection.ConnectPlan.connectTlsEtc",
+    "okhttp3.internal.platform.android.Android17SocketAdapter.configureTlsExtensions",
+    "okhttp3.internal.platform.Android10Platform.echRetryPlan",
+    "okhttp3.internal.ech.EchRetryPlan.Companion.getOrNull",
+    "okhttp3.internal.connection.RetryTlsHandshakeKt.attemptAnotherConnection"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "unsupported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The ECH resolution, TLS extension configuration, and retry plan extraction are uniquely implemented in these route selection, connect plan, and Android platform components."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "7/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "RouteSelector.dnsLookup",
+    "RouteSelector.nextRoutes",
+    "Route.echConfigList",
+    "Dns.Record.ServiceMetadata",
+    "ConnectPlan.connectTls",
+    "ConnectPlan.connectTlsEtc",
+    "ConnectPlan.nextConnectionSpec",
+    "Platform.configureTlsExtensions",
+    "Android17SocketAdapter.configureTlsExtensions",
+    "SSLSockets.setEchConfigList",
+    "Android10Platform.echRetryPlan",
+    "EchConfigMismatchException",
+    "EchRetryPlan.getOrNull",
+    "EchRetryPlan.INVALID_PUBLIC_NAME",
+    "EchUntrustedException",
+    "attemptAnotherConnection",
+    "attemptAnotherConnectionSpec"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "unsupported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The ECH retry path is specific to RouteSelector, ConnectPlan, Android17SocketAdapter, Android10Platform, EchRetryPlan, and RetryTlsHandshake; no alternative path is indicated in the provided files."
+  }
+ },
+ "r3hb-okhttp-02": {
+  "id": "r3hb-okhttp-02",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "5/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "okhttp3.dnsoverhttps.internal.DnsOverHttpsQuery.Factory.newQuery",
+    "okhttp3.Request.cacheUrlOverride",
+    "okhttp3.Request.Builder.cacheUrlOverride",
+    "okhttp3.internal.cache.CacheInterceptor.intercept",
+    "okhttp3.internal.cache.requestForCache",
+    "okhttp3.Cache.put",
+    "okhttp3.Cache.get"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The mechanism of caching POST DNS queries via cacheUrlOverride and rewriting to GET in CacheInterceptor is specific and uniquely implemented across these files."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "6/6",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "DnsOverHttpsQuery.Factory.newQuery",
+    "DnsMessage.toRequestBody",
+    "Request.cacheUrlOverride",
+    "Request.Builder.cacheUrlOverride",
+    "Request.newBuilder",
+    "CacheInterceptor.intercept",
+    "Request.requestForCache",
+    "Cache.get",
+    "Cache.put",
+    "Cache.key"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The POST DNS request is made cacheable by DnsOverHttpsQuery.Factory.newQuery setting cacheUrlOverride to dnsUrl?hostname=...&type=..., then CacheInterceptor.requestForCache rewrites it to GET at that override for both lookup and store, and Cache.put stores only GET under the md5 URL key; the DnsCache claim is not shown in these files."
+  }
+ },
+ "r3hb-okhttp-09": {
+  "id": "r3hb-okhttp-09",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "6/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "okhttp3.internal.platform.PlatformRegistry.findPlatform",
+    "okhttp3.internal.platform.ConscryptPlatform.Companion.isSupported",
+    "okhttp3.internal.platform.Jdk9Platform.Companion.isAvailable",
+    "okhttp3.internal.platform.Jdk8WithJettyBootPlatform.Companion.buildIfSupported",
+    "okhttp3.internal.platform.Platform",
+    "okhttp3.internal.platform.Platform.configureTlsExtensions",
+    "okhttp3.internal.platform.Platform.getSelectedProtocol",
+    "okhttp3.internal.connection.ConnectPlan.connectTls"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The JVM environment and security provider conditions unambiguously trigger the fallback chain in PlatformRegistry.findPlatform down to the base Platform class."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "6/7",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "PlatformRegistry.findPlatform",
+    "ConscryptPlatform.isSupported",
+    "ConscryptPlatform.buildIfSupported",
+    "Jdk9Platform.isAvailable",
+    "Jdk9Platform.buildIfSupported",
+    "Jdk8WithJettyBootPlatform.buildIfSupported",
+    "Platform.configureTlsExtensions",
+    "Platform.getSelectedProtocol",
+    "ConnectPlan.connectTls"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The platform-selection chain and fallback behavior are unambiguous given the described environment."
+  }
+ },
+ "r3hb-okhttp-10": {
+  "id": "r3hb-okhttp-10",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "5/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "okhttp3.internal.http2.Http2Connection.okHttpSettings",
+    "okhttp3.internal.http2.Http2Connection.start",
+    "okhttp3.internal.http2.Http2Connection.updateConnectionFlowControl",
+    "okhttp3.internal.http2.Http2Stream.FramingSource.read",
+    "okhttp3.internal.http2.Http2Stream.FramingSource.receive"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "HTTP/2 flow control window initialization and window update handling for both connection and stream levels are implemented specifically in Http2Connection and Http2Stream."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "6/6",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "Http2Connection.okHttpSettings",
+    "Http2Connection.start",
+    "Http2Connection.updateConnectionFlowControl",
+    "Http2Connection.writeWindowUpdateLater",
+    "Http2Connection.ReaderRunnable.data",
+    "Http2Stream.FramingSource.read",
+    "Http2Stream.FramingSource.receive",
+    "Http2Stream.FramingSource.close",
+    "Settings.INITIAL_WINDOW_SIZE",
+    "Settings.DEFAULT_INITIAL_WINDOW_SIZE",
+    "WindowCounter",
+    "FlowControlListener"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The receive-window policy is centralized in Http2Connection.okHttpSettings/start/updateConnectionFlowControl and Http2Stream.FramingSource.read/receive/close, with Settings constants defining defaults."
+  }
+ },
+ "r3hb-okhttp-14": {
+  "id": "r3hb-okhttp-14",
+  "negative": true,
+  "keep": "audit"
+ },
+ "r3hb-okhttp-11": {
+  "id": "r3hb-okhttp-11",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "5/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "okhttp3.OkHttpClient.pingIntervalMillis",
+    "okhttp3.OkHttpClient.newWebSocket",
+    "okhttp3.internal.connection.RealConnection.start",
+    "okhttp3.internal.connection.RealConnection.startHttp2",
+    "okhttp3.internal.http2.Http2Connection",
+    "okhttp3.internal.ws.RealWebSocket.connect",
+    "okhttp3.internal.ws.RealWebSocket.initReaderAndWriter"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "Periodic ping probes configured by pingIntervalMillis are only implemented for HTTP/2 connections in Http2Connection and WebSocket connections in RealWebSocket."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "6/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "OkHttpClient.pingIntervalMillis",
+    "OkHttpClient.newWebSocket",
+    "RealRoutePlanner.pingIntervalMillis",
+    "RealRoutePlanner.planConnectToRoute",
+    "ConnectPlan.pingIntervalMillis",
+    "ConnectPlan.connectTlsEtc",
+    "RealConnection.pingIntervalMillis",
+    "RealConnection.start",
+    "RealConnection.startHttp2",
+    "Http2Connection.Builder.pingIntervalMillis",
+    "Http2Connection.init",
+    "Http2Connection.intervalPingsSent",
+    "Http2Connection.intervalPongsReceived",
+    "Http2Connection.failConnection",
+    "Http2Connection.writePing",
+    "RealWebSocket.pingIntervalMillis",
+    "RealWebSocket.initReaderAndWriter",
+    "RealWebSocket.writePingFrame",
+    "RealWebSocket.onReadPong",
+    "RealWebSocket.awaitingPong",
+    "RealWebSocket.connect",
+    "ONLY_HTTP1"
+   ],
+   "claims": [
+    "unsupported",
+    "unsupported",
+    "supported",
+    "unsupported",
+    "supported"
+   ],
+   "why": "The question is not ambiguous: OkHttpClient.pingIntervalMillis feeds both HTTP/2 interval pings and WebSocket pings, with separate code paths."
+  }
+ },
+ "r3hb-okhttp-08": {
+  "id": "r3hb-okhttp-08",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "okhttp3.internal.connection.ConnectPlan.createTunnel",
+    "okhttp3.internal.connection.ConnectPlan.connectTunnel",
+    "okhttp3.internal.connection.ConnectPlan.Companion.MAX_TUNNEL_ATTEMPTS",
+    "okhttp3.internal.connection.RealRoutePlanner.createTunnelRequest"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "The CONNECT tunnel loop, reconnect logic, and tunnel attempt limits are uniquely implemented in ConnectPlan and RealRoutePlanner."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "3/3",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "ConnectPlan.createTunnel",
+    "ConnectPlan.connectTunnel",
+    "ConnectPlan.MAX_TUNNEL_ATTEMPTS",
+    "RealRoutePlanner.createTunnelRequest",
+    "proxyAuthenticator.authenticate"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported"
+   ],
+   "why": "Not ambiguous: the CONNECT tunnel auth loop is ConnectPlan.createTunnel/connectTunnel with MAX_TUNNEL_ATTEMPTS=21; the not-involved hook is RetryAndFollowUpInterceptor.followUpRequest."
+  }
+ },
+ "r3hb-okhttp-07": {
+  "id": "r3hb-okhttp-07",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "7/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "okhttp3.internal.http.RetryAndFollowUpInterceptor.recover",
+    "okhttp3.internal.http.RetryAndFollowUpInterceptor.requestIsOneShot",
+    "okhttp3.internal.http.RetryAndFollowUpInterceptor.isRecoverable",
+    "okhttp3.internal.connection.RealCall.retryAfterFailure",
+    "okhttp3.internal.connection.RealRoutePlanner.hasNext",
+    "okhttp3.internal.connection.RealRoutePlanner.retryRoute",
+    "okhttp3.internal.connection.ConnectPlan.nextConnectionSpec",
+    "okhttp3.internal.connection.attemptAnotherConnection",
+    "okhttp3.internal.connection.attemptAnotherConnectionSpec"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The retry and failure recovery checks after a low-level network failure are definitively defined across RetryAndFollowUpInterceptor, RealCall/RealRoutePlanner, ConnectPlan, and RetryTlsHandshake."
+  },
+  "glm": {
+   "ok": false,
+   "symHit": "7/7",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "RetryAndFollowUpInterceptor.recover",
+    "RetryAndFollowUpInterceptor.requestIsOneShot",
+    "RetryAndFollowUpInterceptor.isRecoverable",
+    "RealCall.retryAfterFailure",
+    "RealRoutePlanner.hasNext",
+    "RealRoutePlanner.retryRoute",
+    "ConnectPlan.nextConnectionSpec",
+    "attemptAnotherConnection",
+    "attemptAnotherConnectionSpec"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "unsupported",
+    "unsupported",
+    "unsupported"
+   ],
+   "why": "The give-up checks for ordinary low-level failures are localized in RetryAndFollowUpInterceptor.recover, RealCall.retryAfterFailure, RealRoutePlanner.hasNext/retryRoute, and the TLS fallback helpers; no other code path changes these decisions."
+  }
+ },
+ "r3hb-okhttp-12": {
+  "id": "r3hb-okhttp-12",
+  "keep": false,
+  "gemini": {
+   "ok": false,
+   "symHit": "4/5",
+   "factsOk": false,
+   "ambiguous": false,
+   "symbols": [
+    "okhttp3.internal.http.RealInterceptorChain.withConnectionPool",
+    "okhttp3.internal.connection.RealCall.enterNetworkInterceptorExchange",
+    "okhttp3.internal.connection.RealCall.connectionPool",
+    "okhttp3.internal.connection.RealCall.releaseConnectionNoEvents",
+    "okhttp3.internal.connection.RealRoutePlanner.planReusePooledConnection",
+    "okhttp3.internal.connection.RealConnectionPool.connectionBecameIdle"
+   ],
+   "claims": [
+    "supported",
+    "unsupported",
+    "supported",
+    "supported"
+   ],
+   "why": "The override chain connection pool is explicitly wired into RealRoutePlanner for routing, while RealCall stores and notifies only the client-level RealConnectionPool."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "5/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "RealInterceptorChain.withConnectionPool",
+    "RealCall.enterNetworkInterceptorExchange",
+    "RealCall.connectionPool",
+    "RealCall.releaseConnectionNoEvents",
+    "RealRoutePlanner.planReusePooledConnection",
+    "RealRoutePlanner.connectionPool",
+    "ConnectPlan.handleSuccess",
+    "ConnectPlan.connectionPool",
+    "RealConnectionPool.callAcquirePooledConnection",
+    "RealConnectionPool.put",
+    "RealConnectionPool.connectionBecameIdle"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The override pool is used by RealRoutePlanner/ConnectPlan for acquisition and insertion; RealCall's own connectionPool field (client pool) is used in releaseConnectionNoEvents, so idle notification goes to the client pool. Consequence: client pool may close the socket or schedule its cleanup, while the override pool is not notified and relies on its own cleanup task."
+  }
+ },
+ "r3hb-okhttp-13": {
+  "id": "r3hb-okhttp-13",
+  "keep": true,
+  "gemini": {
+   "ok": true,
+   "symHit": "5/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "okhttp3.brotli.BrotliInterceptor",
+    "okhttp3.CompressionInterceptor",
+    "okhttp3.CompressionInterceptor.intercept",
+    "okhttp3.CompressionInterceptor.decompress",
+    "okhttp3.internal.http.BridgeInterceptor.intercept",
+    "okhttp3.internal.connection.RealCall.getResponseWithInterceptorChain"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The interceptor execution order, header checks, transparent compression behaviors, and response handling are unambiguously defined across RealCall, BridgeInterceptor, and CompressionInterceptor."
+  },
+  "glm": {
+   "ok": true,
+   "symHit": "5/5",
+   "factsOk": true,
+   "ambiguous": false,
+   "symbols": [
+    "BrotliInterceptor",
+    "CompressionInterceptor.intercept",
+    "CompressionInterceptor.decompress",
+    "CompressionInterceptor.lookupDecompressor",
+    "CompressionInterceptor.acceptEncoding",
+    "BridgeInterceptor.intercept",
+    "RealCall.getResponseWithInterceptorChain",
+    "Gzip"
+   ],
+   "claims": [
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported",
+    "supported"
+   ],
+   "why": "The interceptor order and header/decompression logic are explicit in RealCall, CompressionInterceptor, and BridgeInterceptor, so the described behavior follows directly."
+  }
+ }
+}
