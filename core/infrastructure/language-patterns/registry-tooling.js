@@ -63,7 +63,8 @@ export const TOOLING_LANGUAGES = {
     },
     graph: {
       entities: {
-        function: /^(?:local\s+)?function\s+([\w.]+)/,
+        // `function M.helper(` and the method form `function List:clone(`.
+        function: /^(?:local\s+)?function\s+([\w.]+(?::\w+)?)/,
         assignedFunc: /^(?:local\s+)?(\w+)\s*=\s*function/,
       },
       relationships: {
