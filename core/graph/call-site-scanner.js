@@ -171,27 +171,61 @@ function bareKeywordsFor(language) {
   return set;
 }
 
-/**
- * Blank the contents of single-line string literals (quotes kept) so call
- * shapes inside log messages and docs (`"usage: run(cmd)"`) are not read as
- * calls. Approximate: an unterminated quote blanks to the end of the line.
- */
-function blankStrings(code, plan) {
-  if (code.indexOf('"') === -1 && !(plan.countSingleQuote && code.indexOf("'") !== -1) && !(plan.countBacktick && code.indexOf('`') !== -1)) return code;
-  let out = '';
-  let quote = 0;
-  for (let i = 0; i < code.length; i++) {
-    const ch = code.charCodeAt(i);
-    if (quote) {
-      if (ch === 92 /* \ */) { out += '  '; i++; continue; }
-      if (ch === quote) { quote = 0; out += code[i]; continue; }
-      out += ' ';
-      continue;
-    }
-    if (ch === 34 || (ch === 39 && plan.countSingleQuote) || (ch === 96 && plan.countBacktick)) quote = ch;
-    out += code[i];
+// ── String literals ────────────────────────────────────────────────────────
+// Text inside a string is not code: `"usage: obj.run(cmd)"`, `println!("a.b({})")`
+// and SQL/HTML templates must not yield call edges. Interpolated parts ARE
+// code (`${a.b()}`, Swift `\(a.b())`, Ruby `#{a.b()}`, f-strings, C# `$"{…}"`,
+// PHP `"{$o->m()}"`, shell `"$(cmd)"`) and stay visible.
+//
+// Interpolation opener per language and quote. `prefix` is the identifier
+// text glued before the quote (`f`, `rf`, `$`, `@$`, `s`).
+function interpolationFor(language, quote, prefix) {
+  switch (language) {
+    case 'javascript': case 'typescript': case 'tsx':
+      return quote === '`' ? '${' : null;
+    case 'kotlin': case 'groovy': case 'dart': case 'scala':
+      return quote === "'" && language !== 'dart' ? null : '${';
+    case 'swift':
+      return '\\(';
+    case 'ruby': case 'crystal': case 'elixir':
+      return quote === '"' ? '#{' : null;
+    case 'python':
+      return /[fF]/.test(prefix) ? '{' : null;
+    case 'csharp':
+      return prefix.includes('$') ? '{' : null;
+    case 'php':
+      return quote === '"' ? '{$' : null;
+    case 'shell':
+      return quote === '"' ? '$(' : null;
+    default:
+      return null;
   }
-  return out;
+}
+// Strings that may span lines: template literals / Go raw strings (backtick)
+// and triple-quoted blocks (Kotlin, Swift, Scala, Groovy, Dart, Java text
+// blocks, C# raw strings). Python/Elixir `"""` are handled as block comments.
+const TRIPLE_QUOTE_LANGUAGES = new Set(['kotlin', 'swift', 'scala', 'groovy', 'dart', 'java', 'csharp']);
+// Prefixes that turn backslash escapes off (C# verbatim `@"…"`, Rust/Python raw).
+const RAW_PREFIX = /(?:^|[^\w])(?:@|@\$|\$@|r#*|[rR][bB]?|[bB][rR])$/;
+
+/** Index just past the bracket that closes the one at `open` (depth-counted), or `code.length`. */
+function matchClose(code, open) {
+  let depth = 0;
+  for (let i = open; i < code.length; i++) {
+    const c = code.charCodeAt(i);
+    if (c === 40 || c === 123 || c === 91) depth++;
+    else if (c === 41 || c === 125 || c === 93) {
+      depth--;
+      if (depth === 0) return i + 1;
+    }
+  }
+  return code.length;
+}
+
+function lineHasQuote(code, plan) {
+  return code.indexOf('"') !== -1
+    || (code.indexOf("'") !== -1)
+    || (plan.countBacktick && code.indexOf('`') !== -1);
 }
 
 function escapeRegex(s) {
@@ -249,6 +283,7 @@ function buildPlan(language, langInfo) {
     blockPairs,
     countSingleQuote: SINGLE_QUOTE_STRING_LANGUAGES.has(language),
     countBacktick: BACKTICK_STRING_LANGUAGES.has(language),
+    tripleQuote: TRIPLE_QUOTE_LANGUAGES.has(language),
     bangCalls: language === 'ruby',
     isDefinition: DEFINITION_GUARDS[language] || null,
     // Ruby `=begin`/`=end` must start the line.
@@ -324,14 +359,114 @@ export class CallSiteScanner {
 
   reset() {
     this.blockEnd = null; // active block-comment terminator, or null
-    // Previous code line (comment-stripped, trimmed). Continuation receivers
-    // are derived from it lazily — only when the current line needs one.
+    // Previous code line (comment-stripped, string-blanked, trimmed).
+    // Continuation receivers are derived from it lazily — only when the
+    // current line needs one.
     this.prevCode = null;
+    // String literal still open at the end of the previous line (template
+    // literal, raw string, triple-quoted block): { close, interp, escapes }.
+    this.openString = null;
   }
 
   /** A line the caller skips (e.g. minified, over the length cap) breaks any chain. */
   skipLine() {
     this.prevCode = null;
+    this.openString = null;
+  }
+
+  /**
+   * Walk the open string `open` from `i`: copy interpolated code, blank the
+   * rest. Returns `{ out, i }` with `i` just past the closing quote, or
+   * `i === code.length` (and `open` still open) when the line ends first.
+   */
+  _walkString(code, i, open) {
+    let out = '';
+    const n = code.length;
+    while (i < n) {
+      if (code.startsWith(open.close, i)) {
+        out += open.close;
+        return { out, i: i + open.close.length, closed: true };
+      }
+      if (open.interp && code.startsWith(open.interp, i)) {
+        const end = matchClose(code, i + open.interp.length - 1);
+        out += code.slice(i, end);
+        i = end;
+        continue;
+      }
+      if (open.escapes && code.charCodeAt(i) === 92 /* \ */) {
+        out += i + 1 < n ? '  ' : ' ';
+        i += 2;
+        continue;
+      }
+      out += ' ';
+      i++;
+    }
+    return { out, i: n, closed: false };
+  }
+
+  /** Index where a string still open from the previous line closes on `line`, or -1. */
+  _openStringEnd(line) {
+    const r = this._walkString(line, 0, this.openString);
+    return r.closed ? r.i : -1;
+  }
+
+  /**
+   * Blank string-literal contents on one comment-free line (quotes and
+   * interpolated code kept). Tracks strings that stay open across lines.
+   * Approximate: an unterminated single-line quote blanks to the line end.
+   */
+  _blank(code) {
+    const plan = this.plan;
+    if (!this.openString && !lineHasQuote(code, plan)) return code;
+    let out = '';
+    let i = 0;
+    const n = code.length;
+    if (this.openString) {
+      const r = this._walkString(code, 0, this.openString);
+      out += r.out;
+      i = r.i;
+      if (!r.closed) return out;
+      this.openString = null;
+    }
+    while (i < n) {
+      const ch = code.charCodeAt(i);
+      if (ch === 39 /* ' */ && !plan.countSingleQuote) {
+        // Char literal (`'"'`, `'\''`) in languages where `'` is not a
+        // string quote: skip it so its `"` does not open a string. A Rust
+        // lifetime (`'a`) has no closing quote and falls through.
+        if (code.charCodeAt(i + 1) !== 92 && code.charCodeAt(i + 2) === 39) { out += "' '"; i += 3; continue; }
+        if (code.charCodeAt(i + 1) === 92 && code.charCodeAt(i + 3) === 39) { out += "'  '"; i += 4; continue; }
+        out += "'";
+        i++;
+        continue;
+      }
+      let quote = null;
+      if (plan.tripleQuote && (code.startsWith('"""', i) || (plan.language === 'dart' && code.startsWith("'''", i)))) {
+        quote = code.slice(i, i + 3);
+      } else if (ch === 34 || (ch === 39 && plan.countSingleQuote) || (ch === 96 && plan.countBacktick)) {
+        quote = code[i];
+      }
+      if (!quote) { out += code[i]; i++; continue; }
+      let p = i;
+      while (p > 0 && /[\w$@#]/.test(code[p - 1])) p--;
+      const prefix = code.slice(p, i);
+      const open = {
+        close: quote,
+        interp: interpolationFor(plan.language, quote[0], prefix),
+        // Go raw strings and C#/Rust/Python raw prefixes have no escapes.
+        escapes: !(plan.language === 'go' && quote === '`') && !RAW_PREFIX.test(prefix),
+      };
+      out += quote;
+      const r = this._walkString(code, i + quote.length, open);
+      out += r.out;
+      i = r.i;
+      if (!r.closed) {
+        // Only backtick templates/raw strings and triple quotes span lines.
+        if (quote === '`' || quote.length === 3) this.openString = open;
+        break;
+      }
+    }
+    return out;
   }
 
   /** Receiver at the end of the previous code line: `name` or `name()`. */
@@ -355,6 +490,17 @@ export class CallSiteScanner {
    * Returns the code part ('' for a comment-only line).
    */
   codeOf(line) {
+    // A string left open by the previous line (template literal, triple-quoted
+    // block) runs until its closing quote: comment tokens inside it are text.
+    if (this.openString && !this.blockEnd) {
+      const end = this._openStringEnd(line);
+      if (end === -1) return line;
+      return line.slice(0, end) + this._codeOfRest(line.slice(end));
+    }
+    return this._codeOfRest(line);
+  }
+
+  _codeOfRest(line) {
     const plan = this.plan;
     let s = line;
     if (this.blockEnd) {
@@ -406,10 +552,9 @@ export class CallSiteScanner {
    * `fn f(`, class-method shorthand `f(a) {`), preprocessor lines, names the
    * line itself defines (`isDefinedHere(name)`), and text inside strings.
    */
-  _scanBare(trimmed, emitBare, isDefinedHere) {
+  _scanBare(code, emitBare, isDefinedHere, continuation) {
     const plan = this.plan;
-    if (plan.preprocessor && trimmed.charCodeAt(0) === 35 /* # */) return;
-    const code = blankStrings(trimmed, plan);
+    if (plan.preprocessor && code.charCodeAt(0) === 35 /* # */) return;
     const re = plan.bare;
     re.lastIndex = 0;
     let m;
@@ -418,6 +563,9 @@ export class CallSiteScanner {
       const name = m[1];
       const atStart = first && m.index === 0;
       first = false;
+      // `Do(req)` under a line ending in `client.` is the qualified call
+      // `client.Do`, already emitted as such — not a bare call.
+      if (atStart && continuation) continue;
       if (plan.bareKeywords.has(name)) continue;
       if (isDefinedHere && isDefinedHere(name)) continue;
       const before = code.slice(0, m.index).trimEnd();
@@ -449,9 +597,8 @@ export class CallSiteScanner {
    * definition forms `name() {` and `function name {` are skipped, and so are
    * assignments (`name=value`).
    */
-  _scanCommands(trimmed, emitBare, isDefinedHere) {
-    if (/^(?:function\s+)?[A-Za-z_][\w-]*\s*\(\s*\)/.test(trimmed) || /^function\s/.test(trimmed)) return;
-    const code = blankStrings(trimmed, this.plan);
+  _scanCommands(code, emitBare, isDefinedHere) {
+    if (/^(?:function\s+)?[A-Za-z_][\w-]*\s*\(\s*\)/.test(code) || /^function\s/.test(code)) return;
     for (const segment of code.split(SHELL_SEGMENT_SPLIT)) {
       const seg = segment.trim();
       if (!seg) continue;
@@ -470,12 +617,15 @@ export class CallSiteScanner {
    */
   scanLine(line, emit, emitBare = null, isDefinedHere = null) {
     const plan = this.plan;
-    const code = this.codeOf(line);
-    const trimmed = code.trim();
-    if (!trimmed) return;
+    const raw = this.codeOf(line).trim();
+    if (!raw) return;
+    // Every call shape is read from string-blanked code: call text inside a
+    // log message, SQL or doc string is not a call; interpolations stay.
+    const trimmed = this._blank(raw);
+    const contRecv = this._prevTrailingSep();
     if (emitBare) {
       if (plan.commandCalls) this._scanCommands(trimmed, emitBare, isDefinedHere);
-      else if (trimmed.indexOf('(') !== -1) this._scanBare(trimmed, emitBare, isDefinedHere);
+      else if (trimmed.indexOf('(') !== -1) this._scanBare(trimmed, emitBare, isDefinedHere, !!contRecv && !startsWithSeparator(trimmed));
     }
     if (plan.pipeCalls && trimmed.indexOf('|>') !== -1) {
       ELIXIR_PIPE.lastIndex = 0;
@@ -513,7 +663,7 @@ export class CallSiteScanner {
         const tail = lm ? this._prevTail() : null;
         if (tail) emit(`${tail}.${lm[1]}`);
       } else {
-        const recv = this._prevTrailingSep();
+        const recv = contRecv;
         if (recv && !this.skip.has(recv)) {
           const bm = plan.bareCallAtStart.exec(trimmed);
           if (bm) emit(`${recv}.${bm[1]}`);
