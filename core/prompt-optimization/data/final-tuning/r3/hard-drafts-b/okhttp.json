@@ -1,0 +1,509 @@
+{
+  "repo": "okhttp",
+  "sha": "e9eae50d36e938603811a41f9e2ab04182bcb515",
+  "probes": [
+    {
+      "id": "r3hb-okhttp-01",
+      "repo": "okhttp",
+      "language": "Kotlin",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "A site publishes, in its name-server data, key material that lets clients hide the destination site name inside the TLS greeting. The server later rotates that key and refuses the client's greeting. Starting from the name-server answer, trace how the key material reaches the TLS handshake, which platform code supplies corrected material after the refusal, and which checks can stop the second attempt. Name the file and component for each step.",
+      "expectedFiles": [
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/RouteSelector.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/ConnectPlan.kt",
+        "okhttp/src/androidMain/kotlin/okhttp3/internal/platform/android/Android17SocketAdapter.kt",
+        "okhttp/src/androidMain/kotlin/okhttp3/internal/platform/Android10Platform.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/ech/EchRetryPlan.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/RetryTlsHandshake.kt"
+      ],
+      "expectedSymbols": [
+        "RouteSelector.dnsLookup",
+        "ConnectPlan.connectTls",
+        "Android17SocketAdapter.configureTlsExtensions",
+        "ConnectPlan.nextConnectionSpec",
+        "Android10Platform.echRetryPlan",
+        "EchRetryPlan.getOrNull",
+        "attemptAnotherConnection"
+      ],
+      "expectedFacts": [
+        "RouteSelector.dnsLookup copies the key material from the name-server service-metadata record into Route.echConfigList only for DIRECT (no proxy) routes; RouteSelector.nextRoutes then keeps only the routes that carry key material when any do, so there is no non-ECH fallback route.",
+        "ConnectPlan.connectTls passes route.echConfigList into Platform.configureTlsExtensions; only Android17SocketAdapter (Android SDK 37+) applies it with SSLSockets.setEchConfigList (an unparsable list is skipped), while the plain JVM platform ignores it.",
+        "CRITICAL: After an SSLException, ConnectPlan.nextConnectionSpec first asks Platform.echRetryPlan(exception); it gives up at once if this plan is already an ECH retry (only one ECH retry), and the production implementation Android10Platform.echRetryPlan returns a plan only on SDK 37+ for EchConfigMismatchException, built from the exception's public hostname and retry config list; the base Platform returns null.",
+        "EchRetryPlan.getOrNull returns null (no retry) when the public name cannot be canonicalised, is an IP address, or matches the invalid patterns (leading or trailing dot, numeric label).",
+        "CRITICAL: Before retrying, nextConnectionSpec verifies the retry plan's public name against the session certificate with route.address.hostnameVerifier and throws EchUntrustedException on failure; on success it returns a copy of the plan with a new Route carrying the retry config list (null means retry without ECH) and echRetryPlan set.",
+        "attemptAnotherConnection returns false only for EchUntrustedException, so FastFallbackExchangeFinder and SequentialExchangeFinder stop trying other plans and addresses; a successful retry plan is pushed with deferredPlans.addFirst and tried before other deferred plans."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard-b",
+      "author": "r3hb-okhttp-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: RouteSelector.kt:184-193 (echRoutes filter, routesToTry), :253-258 (echConfigList only Proxy.Type.DIRECT); ConnectPlan.kt:354-361 (configureTlsExtensions with route.echConfigList), :214-217 (catch SSLException -> nextConnectionSpec), :501-541 (nextConnectionSpec: echRetryPlan!=null return null :507; Platform.get().echRetryPlan :509; hostnameVerifier.verify(publicName) :514-521 EchUntrustedException; copy(route=Route(...echConfigList=nextEchRetryPlan.configList)) :522-531); Android17SocketAdapter.kt:55-95 (setEchConfigList, InvalidEchDataException -> null); Android10Platform.kt:54-61 (adapter list), :93-102 (SDK_INT<37 / EchConfigMismatchException); Platform.kt:144 (default null); EchRetryPlan.kt:46-57 (getOrNull); RetryTlsHandshake.kt:31 (attemptAnotherConnection = e !is EchUntrustedException); FastFallbackExchangeFinder.kt:96,100-103; SequentialExchangeFinder.kt:46,57. CHEAPEST ROUTE (est. 8 steps): 1 grep 'hide site name / TLS greeting / key material' in comments -> ech/ dir or Dns.kt ServiceMetadata; 2 find who reads echConfigList -> RouteSelector; 3 follow Route.echConfigList to ConnectPlan.connectTls -> Platform.configureTlsExtensions (Platform.kt, then per-platform overrides: Jdk9Platform ignores, Android17SocketAdapter applies); 4 find where the retry begins: grep echRetryPlan -> ConnectPlan.nextConnectionSpec; 5 open Platform.echRetryPlan overrides -> Android10Platform (SDK 37 guard); 6 open EchRetryPlan.getOrNull; 7 grep EchUntrustedException -> RetryTlsHandshake.attemptAnotherConnection; 8 open both finders. First 3 greps of the question's own words (name-server, key material, TLS greeting) do not name a gold symbol directly; hop 0 lands only in doc comments. DECOYS: EchRejectedException (ech/EchRejectedException.kt) is never thrown in production code: only the test platform okhttp-testing-support/.../FakeNetworkPlatform.kt:94-105 maps it; legacy AndroidPlatform.kt has no echRetryPlan override and no Android17 adapter; Jdk9Platform/ConscryptPlatform/BouncyCastle/OpenJSSE configureTlsExtensions take echConfigList but ignore it; Dns.Record.ServiceMetadata. Gating: Android SDK 37 file-level gate; the default JVM path is a decoy. Closed-book risk: very low (2026 feature). est. turns: 8."
+    },
+    {
+      "id": "r3hb-okhttp-02",
+      "repo": "okhttp",
+      "language": "Kotlin",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "A name-resolution client that talks to a remote HTTPS resolver is set to send each lookup in the request body instead of in the address. The application's response cache still stores and reuses those answers. Explain how a body-carrying request can be stored at all, what the stored key is made of, and where on the call path the substitution happens.",
+      "expectedFiles": [
+        "okhttp-dnsoverhttps/src/main/kotlin/okhttp3/dnsoverhttps/internal/-DnsOverHttpsQuery.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/cache/CacheInterceptor.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/Cache.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/Request.kt"
+      ],
+      "expectedSymbols": [
+        "DnsOverHttpsQuery.Factory.newQuery",
+        "Request.Builder.cacheUrlOverride",
+        "requestForCache",
+        "CacheInterceptor.intercept",
+        "Cache.put",
+        "Cache.key"
+      ],
+      "expectedFacts": [
+        "In DnsOverHttpsQuery.Factory.newQuery, when the post option is on, the request is built with url(dnsUrl), a POST body holding the encoded DNS message, and cacheUrlOverride set to dnsUrl plus query parameters hostname=<question name> and type=<question type>.",
+        "Request.cacheUrlOverride (set through Request.Builder.cacheUrlOverride and copied by newBuilder) carries the alternative key URL; by default such POST (and QUERY) requests are not cached.",
+        "CRITICAL: CacheInterceptor's private requestForCache returns, when an override is set and the method is GET/QUERY (HttpMethod.isCacheable) or POST, a copy rewritten to GET with url = the override and the override cleared; it is used both for the lookup (cache?.get(...requestForCache())) and for the store (cacheNetworkRequest passed to cache.put).",
+        "CRITICAL: Cache.put only stores requests whose method is GET (invalidating methods like POST remove the entry and return null, other methods return null) and Cache.key is the md5 hex of the URL string, so only the rewritten GET is stored, under the override URL (hostname and type parameters).",
+        "On the DNS side the resolver's in-memory DnsCache wraps the query factory (RealDnsCache.wrap in DnsOverHttps), so repeated questions are answered from memory first and the HTTP response cache is consulted only for a miss."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard-b",
+      "author": "r3hb-okhttp-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: -DnsOverHttpsQuery.kt:85-118 (Factory.newQuery, post branch :100-112 cacheUrlOverride addQueryParameter hostname/type, post(dnsMessage.toRequestBody())); Request.kt:49-50, :202, :216, :313-330 (doc), :400-402; CacheInterceptor.kt:48 (cache?.get(chain.request().requestForCache())), :141-145 (cacheNetworkRequest, cache.put), :154-156 (invalidatesCache branch uses original networkRequest), :296-310 (requestForCache); HttpMethod.kt isCacheable = GET||QUERY; Cache.kt:219-251 (put: invalidatesCache -> remove :222; requestMethod != GET -> null :231), :747-752 (key = md5 hex of url); DnsOverHttps.kt:53-61 (cache.-delegate.wrap(DnsOverHttpsQuery.Factory)), RealDnsCache.kt:89-93 (wrap). CHEAPEST ROUTE (est. 6 steps): 1 grep 'POST' in okhttp-dnsoverhttps -> DnsOverHttps.Builder.post and the Factory; 2 open -DnsOverHttpsQuery.kt and see cacheUrlOverride; 3 grep cacheUrlOverride -> Request.kt + CacheInterceptor.requestForCache; 4 read CacheInterceptor to see both lookup and store paths; 5 open Cache.put to see why the rewrite is needed (GET-only, invalidating POST) and Cache.key; 6 optionally RealDnsCache.wrap for the memory layer. The question words (resolver, POST body, response cache) give hop 1 only; the override mechanism name appears only after step 2. DECOYS: Cache.put's own POST handling (looks like it forbids POST caching), HttpMethod.invalidatesCache branch at CacheInterceptor:154 which uses the unrewritten request (removes by the real URL, not the override key), the GET-mode DoH path (dns= query parameter, no override), DnsCache/RealDnsCache (memory cache, different layer), Request.kt docs example. Closed-book risk: low. est. turns: 6."
+    },
+    {
+      "id": "r3hb-okhttp-03",
+      "repo": "okhttp",
+      "language": "Kotlin",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "On a connection that carries many requests at once, one response goes silent until its read time limit expires. The client must avoid sending new calls down a dead connection without throwing away a healthy one. Trace how the client probes the connection, how long it waits for the answer, and where the verdict is read when a new call looks for a connection to use.",
+      "expectedFiles": [
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/http2/Http2Stream.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/http2/Http2Connection.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/RealConnection.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/RealConnectionPool.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/RealRoutePlanner.kt"
+      ],
+      "expectedSymbols": [
+        "Http2Stream.StreamTimeout.timedOut",
+        "Http2Connection.sendDegradedPingLater",
+        "Http2Connection.ReaderRunnable.ping",
+        "Http2Connection.isHealthy",
+        "RealConnection.isHealthy",
+        "RealConnectionPool.callAcquirePooledConnection",
+        "RealRoutePlanner.planReuseCallConnection"
+      ],
+      "expectedFacts": [
+        "Http2Stream.StreamTimeout.timedOut (the Okio watchdog callback for a stream read or write timeout) cancels the stream with closeLater(ErrorCode.CANCEL) and calls connection.sendDegradedPingLater().",
+        "Http2Connection.sendDegradedPingLater does nothing if a degraded ping is already outstanding; otherwise it increments degradedPingsSent, sets degradedPongDeadlineNs to now plus DEGRADED_PONG_TIMEOUT_NS (1 second) and queues a ping frame tagged DEGRADED_PING on the writer queue.",
+        "The reader's ping handler (Http2Connection.ReaderRunnable.ping) increments degradedPongsReceived when an acknowledged ping carries the DEGRADED_PING payload.",
+        "CRITICAL: Http2Connection.isHealthy returns false when the connection is shut down or when degradedPongsReceived < degradedPingsSent and the current time is at or past the deadline; otherwise true.",
+        "CRITICAL: RealConnection.isHealthy delegates to Http2Connection.isHealthy for multiplexed connections (after socket closed/shutdown checks); RealConnectionPool.callAcquirePooledConnection uses it to mark an unhealthy pooled connection noNewExchanges, release it from the call and close it if idle, and RealRoutePlanner.planReuseCallConnection uses it for the call's own connection."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard-b",
+      "author": "r3hb-okhttp-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: Http2Stream.kt:724-729 (StreamTimeout.timedOut -> closeLater(CANCEL); connection.sendDegradedPingLater()); Http2Connection.kt:556-565 (sendDegradedPingLater; deadline :560; writePing(false, DEGRADED_PING, 0) :563), :1042-1044 (DEGRADED_PING=2, DEGRADED_PONG_TIMEOUT_NS = 1_000_000_000), :805-833 (ping ack: :817 DEGRADED_PING -> degradedPongsReceived++), :530-538 (isHealthy); RealConnection.kt:302-323 (isHealthy: socket checks then http2Connection.isHealthy(nowNs) :317); RealConnectionPool.kt:113-131 (unhealthy -> noNewExchanges, releaseConnectionNoEvents, close); RealRoutePlanner.kt:99-118 (candidate.isHealthy -> release). CHEAPEST ROUTE (est. 6 steps): 1 grep 'healthy' -> RealConnection.isHealthy (also RealConnectionPool/RealRoutePlanner); 2 follow the multiplexed branch to Http2Connection.isHealthy; 3 grep degradedPongsReceived/degradedPingsSent -> sendDegradedPingLater (doc comment explains the design); 4 grep sendDegradedPingLater -> Http2Stream.StreamTimeout; 5 reader ping handler to see where pong is counted; 6 read RealConnectionPool and RealRoutePlanner to see where the verdict is consumed. The question's words (silent response, read limit, probe) do not contain the symbol names; hop 1 needs reading the health path. DECOYS: pingIntervalMillis interval pings (INTERVAL_PING) and writePingAndAwaitPong (AWAIT_PING) in the same class do something different (periodic liveness vs on-demand wait); RealConnection.trackFailure (flags noNewExchanges on failures, not this probe); HTTP/1.1 branch of isHealthy (extensive idle socket check after 10 s IDLE_CONNECTION_HEALTHY_NS). Closed-book risk: low. est. turns: 6."
+    },
+    {
+      "id": "r3hb-okhttp-04",
+      "repo": "okhttp",
+      "language": "Kotlin",
+      "stratum": "chain",
+      "difficulty": "hard",
+      "query": "A host has both IPv4 and IPv6 addresses and the first address tried hangs silently. Without waiting for the full connect time limit, the client ends up connected through another address. Trace what switches this behaviour on, how the addresses are ordered, how new attempts are staggered, and what becomes of the attempts that lost the race.",
+      "expectedFiles": [
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/OkHttpClient.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/RealCall.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/RouteSelector.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/InetAddressOrder.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/FastFallbackExchangeFinder.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/ConnectPlan.kt"
+      ],
+      "expectedSymbols": [
+        "OkHttpClient.Builder.fastFallback",
+        "RealCall.enterNetworkInterceptorExchange",
+        "RouteSelector.nextRoutes",
+        "reorderForHappyEyeballs",
+        "FastFallbackExchangeFinder.find",
+        "FastFallbackExchangeFinder.cancelInFlightConnects",
+        "ConnectPlan.retry"
+      ],
+      "expectedFacts": [
+        "The client option fastFallback (default true) is read in RealCall.enterNetworkInterceptorExchange, which picks FastFallbackExchangeFinder when it is on and SequentialExchangeFinder otherwise, and also passes it to RealRoutePlanner and on to RouteSelector.",
+        "RouteSelector.nextRoutes applies reorderForHappyEyeballs only when fastFallback is on (after the ECH-only filter); with it off the DNS order is kept.",
+        "reorderForHappyEyeballs (InetAddressOrder.kt) partitions routes into Inet6Address vs others and, when both groups are non-empty, interleaves them (IPv6 first, alternating); with fewer than 2 routes or only one family the list is unchanged.",
+        "CRITICAL: FastFallbackExchangeFinder.find starts a new background TCP connect attempt every 250 ms (connectDelayNanos) while none has succeeded, waiting on a results queue; the first successful attempt wins.",
+        "CRITICAL: When a winner connects, cancelInFlightConnects cancels every losing in-flight plan and appends each loser's plan.retry() (a fresh ConnectPlan for the same route) to routePlanner.deferredPlans with addLast, so those routes can be tried again later; deferred plans are consulted before new routes in RealRoutePlanner.plan.",
+        "Only the winning plan continues with connectTlsEtc (TLS and tunnel work) and handleSuccess, which puts the connection in the pool."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard-b",
+      "author": "r3hb-okhttp-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: OkHttpClient.kt:597 (fastFallback=true), :767-770; RealCall.kt:277-294 (RealRoutePlanner(fastFallback=client.fastFallback), when(client.fastFallback) Fast vs Sequential); RouteSelector.kt:187-194 (reorderForHappyEyeballs only if fastFallback); InetAddressOrder.kt:29-44; FastFallbackExchangeFinder.kt:38 (250 ms), :54-110 (find loop), :72-85 (cancelInFlightConnects then connectTlsEtc for winner), :175-181 (cancelInFlightConnects: plan.cancel(), plan.retry() -> deferredPlans.addLast); ConnectPlan.kt:598-617 (retry copies plan); RealRoutePlanner.kt:74 (deferredPlans.removeFirst before planConnect); ConnectPlan.kt:560-579 (handleSuccess -> pool.put). CHEAPEST ROUTE (est. 7 steps): 1 grep 'IPv6'/'Inet6Address' -> InetAddressOrder.kt (hop 1; doc says Happy Eyeballs); 2 grep reorderForHappyEyeballs -> RouteSelector, see fastFallback condition; 3 grep fastFallback -> OkHttpClient.Builder and RealCall; 4 open FastFallbackExchangeFinder (250 ms, launchTcpConnect); 5 read cancelInFlightConnects -> plan.retry(); 6 open ConnectPlan.retry / RoutePlanner.Plan docs; 7 RealRoutePlanner.plan to see deferredPlans order. Step 1 already finds one gold file, but the loser fate and switch location need the other six. DECOYS: SequentialExchangeFinder (the non-default path, no stagger), RealRoutePlanner.planConnect (route selection, not racing), RouteDatabase postponement, OkHttpClient.connectTimeout (the time limit the question says is not waited). Closed-book risk: moderate (Happy Eyeballs is generic). est. turns: 7."
+    },
+    {
+      "id": "r3hb-okhttp-05",
+      "repo": "okhttp",
+      "language": "Kotlin",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "Apart from the operating system's validation of the certificate chain, which places in the connection-setup code decide whether the remote server's identity is acceptable for the site the caller asked for? Name each place and say what happens when it says no.",
+      "expectedFiles": [
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/ConnectPlan.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/RealConnection.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/CertificatePinner.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/tls/OkHostnameVerifier.kt"
+      ],
+      "expectedSymbols": [
+        "ConnectPlan.connectTls",
+        "CertificatePinner.check",
+        "RealConnection.isEligible",
+        "RealConnection.supportsUrl",
+        "ConnectPlan.nextConnectionSpec",
+        "OkHostnameVerifier.verify"
+      ],
+      "expectedFacts": [
+        "ConnectPlan.connectTls, after startHandshake, requires address.hostnameVerifier.verify(url host, session) to pass; otherwise it throws SSLPeerUnverifiedException with the certificate pin, DN and subject alternative names (or 'no certificates').",
+        "ConnectPlan.connectTls then calls certificatePinner.check(host) on the lazily cleaned peer chain from Handshake; it does nothing when no pins match the host, and a mismatch throws SSLPeerUnverifiedException.",
+        "CRITICAL: RealConnection.isEligible, for reuse by a different host (coalescing), requires an HTTP/2 connection, a shared direct IP route, address.hostnameVerifier to be the default OkHostnameVerifier object, the connection's certificate to cover the new host (supportsUrl/certificateSupportHost, unless noCoalescedConnections), and certificatePinner.check to pass for the new host; failure simply makes the connection not eligible (no exception).",
+        "CRITICAL: ConnectPlan.nextConnectionSpec, on an ECH rejection, verifies the retry plan's public name against the session with the hostname verifier and throws EchUntrustedException if it fails.",
+        "OkHostnameVerifier.verify matches an IP-literal host only against IP subject alternative names and a DNS name only against DNS subject alternative names (wildcard only as the entire left-most label); it never falls back to the common name."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard-b",
+      "author": "r3hb-okhttp-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: ConnectPlan.kt:369-387 (hostnameVerifier.verify, SSLPeerUnverifiedException), :389-407 (certificatePinner.check(host){handshake.peerCertificates...}), :501-521 (ECH public name verify, EchUntrustedException); RealConnection.kt:183-229 (isEligible: http2Connection == null :210, routeMatchesAny :213, `address.hostnameVerifier !== OkHostnameVerifier` :216, supportsUrl, certificatePinner.check :221), :243-267 (supportsUrl / certificateSupportHost); CertificatePinner.kt:150-200 (check: findMatchingPins empty -> return; SSLPeerUnverifiedException); OkHostnameVerifier.kt:44-75 (verifyIpAddress/verifyHostname use getSubjectAltNames only), :107-170 (wildcard rules). CHEAPEST ROUTE (est. 7 steps): 1 grep 'SSLPeerUnverifiedException' -> ConnectPlan, RealConnection, CertificatePinner, RetryTlsHandshake, RetryAndFollowUp, BasicCertificateChainCleaner (noisy: 6 files); 2 read ConnectPlan.connectTls; 3 read RealConnection.isEligible; 4 grep hostnameVerifier -> finds ConnectPlan.nextConnectionSpec ECH check (members do not share a token: connectTls vs isEligible vs ECH public name); 5 open CertificatePinner.check; 6 open OkHostnameVerifier; 7 filter out non-members. DECOYS (not members): BasicCertificateChainCleaner.clean throws SSLPeerUnverifiedException for chains that do not reach a trusted CA but is only invoked lazily when peerCertificates is read (pin check with matching pins), i.e. chain trust not identity; ConscryptPlatform.DisabledHostnameVerifier (disables Conscrypt's own check on purpose); RetryAndFollowUpInterceptor.isRecoverable and attemptAnotherConnectionSpec (react to these errors, do not decide); RealInterceptorChain.withHostnameVerifier/withCertificatePinner (configuration); okhttp-tls HandshakeCertificates. Closed-book risk: moderate for hostname+pin, low for coalescing/ECH members. est. turns: 7."
+    },
+    {
+      "id": "r3hb-okhttp-06",
+      "repo": "okhttp",
+      "language": "Kotlin",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "Opening a web socket goes through the same call machinery as an ordinary asynchronous request, yet several parts of that machinery treat it differently. List every such place and say what differs in each.",
+      "expectedFiles": [
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/ws/RealWebSocket.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/RealCall.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/Dispatcher.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/http/CallServerInterceptor.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/Exchange.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/RealConnection.kt"
+      ],
+      "expectedSymbols": [
+        "RealWebSocket.connect",
+        "RealCall.getResponseWithInterceptorChain",
+        "Dispatcher.promoteAndExecute",
+        "CallServerInterceptor.intercept",
+        "Exchange.upgradeToSocket",
+        "RealCall.upgradeToSocket",
+        "RealConnection.useAsSocket"
+      ],
+      "expectedFacts": [
+        "RealWebSocket.connect derives a client that has only HTTP/1.1 as protocol (ONLY_HTTP1) and a no-op event listener, requires a GET request, rejects a user-supplied extensions header, and adds the upgrade headers and a permessage-deflate offer.",
+        "RealCall is created with forWebSocket = true, and getResponseWithInterceptorChain leaves out the client's network interceptors for such calls (application interceptors still run).",
+        "Dispatcher.promoteAndExecute does not make a web socket call share the per-host running-call counter of other calls to the same host, so the per-host cap does not apply to it (it still counts toward the overall request limit).",
+        "CRITICAL: CallServerInterceptor, for an HTTP/1 101 response to an upgrade request, replaces the body with UnreadableResponseBody and attaches the raw socket from exchange.upgradeToSocket(); a 101 on an HTTP/2 connection throws ProtocolException.",
+        "CRITICAL: Exchange.upgradeToSocket calls RealCall.upgradeToSocket (timeoutEarlyExit: the whole-call timeout stops applying) and RealConnection.useAsSocket (read timeout cleared to 0 and connection marked noNewExchanges so it is never pooled for reuse)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard-b",
+      "author": "r3hb-okhttp-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: RealWebSocket.kt:131-135 (GET required), :147-160 (extension header rejection, EventListener.NONE, protocols(ONLY_HTTP1), upgrade headers incl. permessage-deflate), :678 (ONLY_HTTP1); RealCall.kt:70 (forWebSocket), :216-224 (`if (!forWebSocket) interceptors += client.networkInterceptors`), :484-499 (upgradeToSocket -> timeoutEarlyExit); Dispatcher.kt:198-203 (`if (!enqueuedCall.call.forWebSocket)` reuseCallsPerHostFrom), :227-228 (runningAsyncCalls.size >= maxRequests still applies; callsPerHost >= maxRequestsPerHost uses the call's own counter); CallServerInterceptor.kt:129-152 (isUpgradeCode, HTTP/2 ProtocolException :130-133, UnreadableResponseBody, upgradeToSocket); Exchange.kt:154-175; RealConnection.kt:287-290 (soTimeout=0, noNewExchanges()). CHEAPEST ROUTE (est. 7 steps): 1 grep 'WebSocket' in okhttp/internal -> RealWebSocket.connect (member 1); 2 grep forWebSocket -> RealCall (network interceptors) and Dispatcher (per-host); 3 grep 'upgrade' -> CallServerInterceptor (member 4); 4 follow upgradeToSocket -> Exchange -> RealCall.upgradeToSocket/timeoutEarlyExit and RealConnection.useAsSocket; 5 verify none in RetryAndFollowUp/BridgeInterceptor/CacheInterceptor (they have no web-socket branch; RetryAndFollowUp only calls timeoutEarlyExit for duplex bodies); 6-7 read each to state precisely. Members use different tokens (ONLY_HTTP1, forWebSocket, isUpgradeCode, useAsSocket). NEAR-MEMBERS/DECOYS: RetryAndFollowUpInterceptor.kt:96-98 timeoutEarlyExit for duplex exchanges (HTTP/2 duplex, not web socket); okhttp-sse (EventSource uses ordinary calls); mockwebserver web-socket upgrade code (server side); RealWebSocket.checkUpgradeSuccess (validates response, not a divergence in call machinery). Closed-book risk: low. est. turns: 7."
+    },
+    {
+      "id": "r3hb-okhttp-07",
+      "repo": "okhttp",
+      "language": "Kotlin",
+      "stratum": "completeness",
+      "difficulty": "hard",
+      "query": "After a low-level network failure on an ordinary call, the client sometimes tries again (re-sends, uses another address, or uses a weaker TLS setup) and sometimes gives up. List every check that makes it give up, name where each lives, and say what exactly triggers it.",
+      "expectedFiles": [
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/http/RetryAndFollowUpInterceptor.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/RealCall.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/RealRoutePlanner.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/ConnectPlan.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/RetryTlsHandshake.kt"
+      ],
+      "expectedSymbols": [
+        "RetryAndFollowUpInterceptor.recover",
+        "RetryAndFollowUpInterceptor.isRecoverable",
+        "RealCall.retryAfterFailure",
+        "RealRoutePlanner.hasNext",
+        "ConnectPlan.nextConnectionSpec",
+        "attemptAnotherConnectionSpec",
+        "attemptAnotherConnection"
+      ],
+      "expectedFacts": [
+        "RetryAndFollowUpInterceptor.recover gives up when the application disabled retries (chain.retryOnConnectionFailure is false, from the client setting or a per-call override).",
+        "recover gives up when the request send has started (the failure is not a ConnectionShutdownException) and the request body is one-shot or the failure is a FileNotFoundException.",
+        "RetryAndFollowUpInterceptor.isRecoverable returns false for ProtocolException, for InterruptedIOException unless it is a SocketTimeoutException before the request send started, for an SSLHandshakeException caused by a CertificateException, and for SSLPeerUnverifiedException; everything else is recoverable.",
+        "CRITICAL: RealCall.retryAfterFailure requires exchange.hasFailure and RealRoutePlanner.hasNext(failed connection) to be true; hasNext is true only with deferred plans, a pending next route, a retry route recovered from the failed connection (routeFailureCount == 0, noNewExchanges set, and same host reusable), or routes left in the current selection or selector; otherwise no retry.",
+        "ConnectPlan.nextConnectionSpec offers no further TLS configuration when this plan is already an ECH retry, when retryOnConnectionFailure is false, or when attemptAnotherConnectionSpec(e) is false (ProtocolException, any InterruptedIOException including connect timeouts, SSLHandshakeException caused by CertificateException, SSLPeerUnverifiedException, and any non-SSL exception); only other SSLExceptions move to the next compatible ConnectionSpec.",
+        "attemptAnotherConnection returns false only for EchUntrustedException, which makes both exchange finders abort instead of trying further plans or IP addresses."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard-b",
+      "author": "r3hb-okhttp-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: RetryAndFollowUpInterceptor.kt:133-155 (recover: retryOnConnectionFailure :142; requestSendStarted :139, requestIsOneShot :145; isRecoverable :148; call.retryAfterFailure :151), :157-164 (requestIsOneShot: isOneShot || FileNotFoundException), :166-198 (isRecoverable); RealCall.kt:514-516 (retryAfterFailure: exchange?.hasFailure == true && routePlanner.hasNext(exchange?.connection)); RealRoutePlanner.kt:299-347 (hasNext, retryRoute: routeFailureCount != 0 -> null; !noNewExchanges -> null; canReuseConnectionFor); Exchange.kt:202-205 (trackFailure sets hasFailure); ConnectPlan.kt:501-541 (nextConnectionSpec), RetryTlsHandshake.kt:31-54; FastFallbackExchangeFinder.kt:96; SequentialExchangeFinder.kt:57. CHEAPEST ROUTE (est. 8 steps): 1 grep 'recover' -> RetryAndFollowUpInterceptor (members 1-3); 2 follow call.retryAfterFailure -> RealCall; 3 follow routePlanner.hasNext -> RealRoutePlanner.hasNext/retryRoute; 4 grep 'retry' in connection/ -> ConnectPlan.nextConnectionSpec and RetryTlsHandshake (a second, near-duplicate rule set); 5 grep attemptAnotherConnection -> both finders; 6 grep ConnectionShutdownException/trackFailure to understand hasFailure; 7-8 verify and write. Names differ by layer (recover/isRecoverable, retryAfterFailure/hasNext, attemptAnotherConnectionSpec, attemptAnotherConnection). NEAR-MEMBERS/DECOYS: followUpRequest's 408/503/421 branches (HTTP-level retry decisions, not low-level failure), RealConnection.trackFailure (marks connection state), ConnectPlan.connectTunnel MAX_TUNNEL_ATTEMPTS (tunnel auth limit), MAX_FOLLOW_UPS. Closed-book risk: moderate (retry rules are partly documented), but the ECH and route-level members are not. est. turns: 8."
+    },
+    {
+      "id": "r3hb-okhttp-08",
+      "repo": "okhttp",
+      "language": "Kotlin",
+      "stratum": "decoy",
+      "difficulty": "hard",
+      "query": "Behind a forward proxy that demands a login, an HTTPS request first needs the proxy to open a pipe to the origin, in plain text, before any encryption starts. If the proxy answers that initial request with a demand for credentials, which code loops to answer it, what limits the number of rounds, and what happens if the proxy hangs up after the demand? Several credential hooks exist in the code base; say which one is not involved at this stage.",
+      "expectedFiles": [
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/ConnectPlan.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/RealRoutePlanner.kt"
+      ],
+      "expectedSymbols": [
+        "ConnectPlan.createTunnel",
+        "ConnectPlan.connectTunnel",
+        "RealRoutePlanner.createTunnelRequest"
+      ],
+      "expectedFacts": [
+        "ConnectPlan.createTunnel is the loop: it writes the tunnel request on the raw socket with Http1ExchangeCodec, reads the response, returns null on 200, and on 407 takes the next request from route.address.proxyAuthenticator.authenticate(route, response), throwing IOException (Failed to authenticate with proxy) if that returns null.",
+        "CRITICAL: If the 407 response says Connection: close, createTunnel returns the next request and ConnectPlan.connectTunnel closes the raw socket and returns a ConnectResult whose nextPlan is a copy with attempt + 1 and the new tunnel request (a fresh TCP connection); otherwise the loop answers the challenge on the same socket.",
+        "CRITICAL: The limit is MAX_TUNNEL_ATTEMPTS = 21 counted across reconnects (nextAttempt < 21); beyond it connectTunnel fails with ProtocolException 'Too many tunnel connections attempted: 21'.",
+        "The first tunnel request is built in RealRoutePlanner.createTunnelRequest with minimal headers, and the proxy authenticator may pre-authenticate it by receiving a fake 407 response (Preemptive Authenticate, challenge OkHttp-Preemptive); returning null keeps the request as is.",
+        "Not involved at this stage: RetryAndFollowUpInterceptor.followUpRequest's HTTP_PROXY_AUTH branch, which answers a 407 that arrives as a normal response (via chain.proxyAuthenticator) after the exchange; JavaNetAuthenticator is only an Authenticator implementation."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard-b",
+      "author": "r3hb-okhttp-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: ConnectPlan.kt:167-185 (connectTlsEtc calls connectTunnel before TLS), :311-344 (connectTunnel: closeQuietly rawSocket :318; nextAttempt :320; < MAX_TUNNEL_ATTEMPTS copy(attempt, tunnelRequest) :322-332; else ProtocolException :335-342), :433-476 (createTunnel loop: 200 -> null; 407 -> proxyAuthenticator.authenticate :463; 'Failed to authenticate with proxy' :464; Connection: close -> return nextRequest :466-468), :625 (MAX_TUNNEL_ATTEMPTS = 21); RealRoutePlanner.kt:233-236, :269-297 (createTunnelRequest; fake 407 'Preemptive Authenticate' / 'OkHttp-Preemptive'); Route.kt:84-87 (requiresTunnel); RetryAndFollowUpInterceptor.kt:216-222 (HTTP_PROXY_AUTH). CHEAPEST ROUTE (est. 6 steps): 1 grep 'proxyAuthenticator' -> OkHttpClient, Address, RealRoutePlanner, ConnectPlan, RetryAndFollowUp, RealInterceptorChain, JavaNetAuthenticator (all plausible); 2 open RetryAndFollowUp's 407 branch (decoy: it handles non-tunnel); 3 notice it needs `route.proxy.type == HTTP` and exchange, which is not the tunnel setup; 4 grep 'tunnel' -> ConnectPlan, RealRoutePlanner, Route; 5 read createTunnel and connectTunnel; 6 read createTunnelRequest for the pre-emptive piece. The deciding detail (before any encryption, during pipe setup) is behavioural. DECOYS: RetryAndFollowUpInterceptor.followUpRequest 407 branch (reachable by first grep, fails because it handles ordinary responses, and also throws ProtocolException if the proxy is not an HTTP proxy), JavaNetAuthenticator.kt (implementation), Authenticator.kt docs (mention proxy auth), Interceptor.Chain.withProxyAuthenticator. Closed-book risk: low-moderate. est. turns: 6."
+    },
+    {
+      "id": "r3hb-okhttp-09",
+      "repo": "okhttp",
+      "language": "Kotlin",
+      "stratum": "decoy",
+      "difficulty": "hard",
+      "query": "A server-side JVM (not Android, not a native image) runs a Java 8 build from before the release that added built-in application-protocol negotiation. The first-registered security provider is an old Conscrypt release older than the minimum the code accepts, and no alpn-boot jar is present. Which platform-adaptation class does the client end up using, what does it do when a connection configures TLS extensions, and which HTTP protocol do calls end up using? Several platform-selection routines exist; say which one applies.",
+      "expectedFiles": [
+        "okhttp/src/jvmMain/kotlin/okhttp3/internal/platform/PlatformRegistry.kt",
+        "okhttp/src/jvmMain/kotlin/okhttp3/internal/platform/ConscryptPlatform.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/platform/Jdk9Platform.kt",
+        "okhttp/src/jvmMain/kotlin/okhttp3/internal/platform/Jdk8WithJettyBootPlatform.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/platform/Platform.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/ConnectPlan.kt"
+      ],
+      "expectedSymbols": [
+        "PlatformRegistry.findPlatform",
+        "ConscryptPlatform.isSupported",
+        "ConscryptPlatform.atLeastVersion",
+        "Jdk9Platform.isAvailable",
+        "Jdk8WithJettyBootPlatform.buildIfSupported",
+        "Platform",
+        "ConnectPlan.connectTls"
+      ],
+      "expectedFacts": [
+        "Selection happens in the jvmMain PlatformRegistry.findPlatform (not the androidMain registry and not the GraalSvm substitution): it checks whether the first security provider is named Conscrypt, then BC, then OpenJSSE, and each is used only if its buildIfSupported is non-null, otherwise it falls through.",
+        "ConscryptPlatform.isSupported requires the Conscrypt classes and atLeastVersion(2, 1, 0), so an older Conscrypt is not used.",
+        "Jdk9Platform.isAvailable is true only if java.specification.version parses as an int >= 9, or, when it does not parse (1.8), if SSLSocket has the getApplicationProtocol method (added in 8u251/252); here it is false.",
+        "Jdk8WithJettyBootPlatform.buildIfSupported returns null on Java 9+ or when the org.eclipse.jetty.alpn.ALPN classes are not on the boot class path.",
+        "CRITICAL: findPlatform returns the base Platform() (the open class) as the last fallback; its configureTlsExtensions is an empty no-op and getSelectedProtocol returns null, so ConnectPlan.connectTls sets protocol to HTTP_1_1 (no h2 negotiation)."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard-b",
+      "author": "r3hb-okhttp-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: jvmMain/.../PlatformRegistry.kt:26-37 (providers[0].name == Conscrypt/OpenJSSE/BC), :39-80 (findPlatform order; `return Platform()` :78); ConscryptPlatform.kt:107-122 (isSupported: Conscrypt.isAvailable() && atLeastVersion(2,1,0)); Jdk9Platform.kt:92-112 (isAvailable: majorVersion >= 9 else reflect getApplicationProtocol), buildIfSupported; Jdk8WithJettyBootPlatform.kt:136-162 (buildIfSupported: null when version >= 9; Class.forName org.eclipse.jetty.alpn.ALPN, catches ClassNotFoundException -> null); Platform.kt:81 (open class Platform), :135-142 (configureTlsExtensions default no-op), :150 (getSelectedProtocol = null); ConnectPlan.kt:410-418 (maybeProtocol null -> Protocol.HTTP_1_1). CHEAPEST ROUTE (est. 7 steps): 1 grep 'findPlatform' -> four hits (Platform.Companion private delegate, jvmMain PlatformRegistry, androidMain PlatformRegistry, GraalSvm.kt substitution) and the agent must pick the JVM one; 2 read jvmMain PlatformRegistry order; 3 read ConscryptPlatform.isSupported/atLeastVersion; 4 read Jdk9Platform.isAvailable (1.8 string -> reflection); 5 read Jdk8WithJettyBootPlatform.buildIfSupported; 6 read Platform base defaults; 7 follow ConnectPlan.connectTls for the protocol fallback. DECOYS: androidMain/.../PlatformRegistry.kt:24 (Android10Platform ?: AndroidPlatform ?: Jdk9/Platform), jvmMain graal/GraalSvm.kt:47 (TargetPlatform.findPlatform = Jdk9Platform only), Platform.Companion.findPlatform (private delegate), BouncyCastlePlatform and OpenJSSEPlatform. Gating: platform/JVM-version variants; the default Jdk9Platform is the decoy answer. Closed-book risk: low. est. turns: 7."
+    },
+    {
+      "id": "r3hb-okhttp-10",
+      "repo": "okhttp",
+      "language": "Kotlin",
+      "stratum": "cross-layer",
+      "difficulty": "hard",
+      "query": "Users downloading large bodies over one shared, multiplexed connection to a distant server see throughput capped by how much data the server may send before it must wait for permission. Where does the client decide the size of that allowance, and when does it hand permission back, for the whole connection and for each individual response?",
+      "expectedFiles": [
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/http2/Http2Connection.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/http2/Http2Stream.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/http2/Settings.kt"
+      ],
+      "expectedSymbols": [
+        "Http2Connection.okHttpSettings",
+        "Http2Connection.start",
+        "Http2Connection.updateConnectionFlowControl",
+        "Http2Stream.FramingSource.read",
+        "Http2Stream.FramingSource.receive",
+        "Http2Connection.writeWindowUpdateLater"
+      ],
+      "expectedFacts": [
+        "Http2Connection.okHttpSettings sets INITIAL_WINDOW_SIZE to OKHTTP_CLIENT_WINDOW_SIZE (16 MiB) when the connection is a client; the protocol default is 65535 (Settings.DEFAULT_INITIAL_WINDOW_SIZE).",
+        "CRITICAL: Http2Connection.start writes the settings frame and then, because the setting does not enlarge the connection-level window, writes a connection-level window update (stream 0) of initialWindowSize minus 65535.",
+        "CRITICAL: Per-response credit is returned in Http2Stream.FramingSource.read only after the application reads bytes from the stream buffer, and only once unacknowledged bytes reach half of the initial window (8 MiB); it is sent through connection.writeWindowUpdateLater(id, ...) and skipped if the stream is in error.",
+        "Connection-level credit is handled in Http2Connection.updateConnectionFlowControl, which is called when data arrives for a stream (FramingSource.receive), when bytes are discarded on close, and for data on unknown streams; it sends a window update for stream 0 when unacknowledged bytes reach half of the initial window.",
+        "Both levels count bytes with WindowCounter (total vs acknowledged) and report changes to a FlowControlListener."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard-b",
+      "author": "r3hb-okhttp-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: Http2Connection.kt:111-119 (okHttpSettings; `if (builder.client) set(INITIAL_WINDOW_SIZE, OKHTTP_CLIENT_WINDOW_SIZE)`), :1033 (16*1024*1024), :499-510 (start: writer.settings, windowUpdate(0, windowSize - DEFAULT_INITIAL_WINDOW_SIZE)), :189-198 (updateConnectionFlowControl: >= initialWindowSize/2 -> writeWindowUpdateLater(0,...)), :359-366 (writeWindowUpdateLater), :650-660 (data on unknown stream -> updateConnectionFlowControl); Http2Stream.kt:405-416 (read: unacknowledged >= initialWindowSize/2 -> writeWindowUpdateLater(id,...), only if no error), :452-456, :517 (FramingSource.receive -> updateConnectionFlowControl), :531-536 (close discards -> updateConnectionFlowControl); Settings.kt:110; flowcontrol/WindowCounter.kt. CHEAPEST ROUTE (est. 6 steps): 1 grep 'window' in http2 -> Settings.kt, Http2Connection, Http2Stream (user words 'allowance / permission' do not match code names, so agent must map to flow-control window); 2 read Http2Connection settings block (16 MiB); 3 read start() preface logic; 4 read Http2Stream.FramingSource.read; 5 read updateConnectionFlowControl and callers; 6 check WindowCounter/FlowControlListener. DECOYS: Http2Writer/Http2Reader windowUpdate frame parsing; ReaderRunnable.windowUpdate (handles the peer's credit to us, the opposite direction); Http2Stream.writeBytesMaximum/write window (send-side); mockwebserver's Http2 server use of the same class with client=false (no 16 MiB). Closed-book risk: moderate (HTTP/2 flow control is generic) but the 16 MiB and half-window specifics are repo-specific. est. turns: 6."
+    },
+    {
+      "id": "r3hb-okhttp-11",
+      "repo": "okhttp",
+      "language": "Kotlin",
+      "stratum": "cross-layer",
+      "difficulty": "hard",
+      "query": "A developer configures a periodic liveness probe on the client to detect dead peers. Which kinds of connections actually send probes, how does the setting travel to the code that sends them, and what does the client do when an answer has not arrived by the time the next probe is due?",
+      "expectedFiles": [
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/OkHttpClient.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/RealConnection.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/http2/Http2Connection.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/ws/RealWebSocket.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/RealRoutePlanner.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/ConnectPlan.kt"
+      ],
+      "expectedSymbols": [
+        "OkHttpClient.pingIntervalMillis",
+        "RealRoutePlanner",
+        "ConnectPlan",
+        "RealConnection.startHttp2",
+        "Http2Connection.failConnection",
+        "RealWebSocket.initReaderAndWriter",
+        "RealWebSocket.writePingFrame"
+      ],
+      "expectedFacts": [
+        "The setting (OkHttpClient.pingIntervalMillis) reaches connections through RealCall.enterNetworkInterceptorExchange -> RealRoutePlanner -> ConnectPlan -> RealConnection, whose startHttp2 passes it to Http2Connection.Builder.pingIntervalMillis; it is used only for HTTP/2 (and h2 prior knowledge) connections, never for HTTP/1.1 connections.",
+        "CRITICAL: Http2Connection's init block schedules a periodic task on the writer queue; at each tick, if intervalPongsReceived < intervalPingsSent it calls failConnection(null), which closes the connection with PROTOCOL_ERROR (shutdown, cancels all open streams, cancels the socket); otherwise it increments the sent count and writes an INTERVAL_PING.",
+        "Web sockets use a separate mechanism: OkHttpClient.newWebSocket passes pingIntervalMillis to RealWebSocket, whose initReaderAndWriter schedules writePingFrame on its task queue.",
+        "CRITICAL: In RealWebSocket.writePingFrame, if the previous ping is still unanswered (awaitingPong) the web socket fails with SocketTimeoutException ('sent ping but didn't receive pong within ...ms'), delivering listener.onFailure and cancelling the socket; onReadPong resets awaitingPong.",
+        "Web socket handshakes force HTTP/1.1 (ONLY_HTTP1), so the HTTP/2 ping task never runs for web sockets."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard-b",
+      "author": "r3hb-okhttp-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: OkHttpClient.kt:255-256 (pingIntervalMillis), :370 (newWebSocket passes pingIntervalMillis.toLong()); RealCall.kt:282 (RealRoutePlanner(pingIntervalMillis = client.pingIntervalMillis)); RealRoutePlanner.kt:47, :246; ConnectPlan.kt:69, :238 (RealConnection(pingIntervalMillis)); RealConnection.kt:78, :163-176 (startHttp2: Http2Connection.Builder.pingIntervalMillis); Http2Connection.kt:147-168 (init: schedule ping, failDueToMissingPong -> failConnection(null)), :488-490 (failConnection -> close(PROTOCOL_ERROR, PROTOCOL_ERROR)), :438-486 (close cancels streams, socket), :1041 (INTERVAL_PING); RealWebSocket.kt:288-293 (schedule), :587-615 (writePingFrame, failWebSocket SocketTimeoutException), :156-157 (ONLY_HTTP1), :411-414 (onReadPong awaitingPong=false). CHEAPEST ROUTE (est. 7 steps): 1 grep 'ping' -> OkHttpClient.pingInterval, Http2Connection, RealWebSocket, RealConnection (guessing 'ping' from 'liveness probe' is the cross-layer step); 2 trace OkHttpClient.pingIntervalMillis consumers: RealCall.kt, RealRoutePlanner, ConnectPlan, RealConnection (4 files); 3 read RealConnection.startHttp2 to see it only applies to h2; 4 read Http2Connection init task; 5 read RealWebSocket.initReaderAndWriter/writePingFrame; 6 confirm ONLY_HTTP1; 7 confirm no HTTP/1.1 consumer. DECOYS: Http2Connection.writePingAndAwaitPong (AWAIT_PING, on-demand), sendDegradedPingLater (DEGRADED_PING), RealWebSocket.pong/onReadPing (reply to peer pings), okhttp-sse readTimeout, OkHttpClient.callTimeout/readTimeout. Closed-book risk: moderate (documented option) but plumbing and failure outcomes are repo-specific. est. turns: 7."
+    },
+    {
+      "id": "r3hb-okhttp-12",
+      "repo": "okhttp",
+      "language": "Kotlin",
+      "stratum": "condition",
+      "difficulty": "hard",
+      "query": "An application interceptor swaps in a different pool of reusable connections for just one call. Which pool supplies and receives the connection that call uses, and which pool is told when the call ends and its connection becomes idle? Do these differ, and what is the consequence?",
+      "expectedFiles": [
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/http/RealInterceptorChain.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/RealCall.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/RealRoutePlanner.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/ConnectPlan.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/RealConnectionPool.kt"
+      ],
+      "expectedSymbols": [
+        "RealInterceptorChain.withConnectionPool",
+        "RealCall.enterNetworkInterceptorExchange",
+        "RealCall.releaseConnectionNoEvents",
+        "ConnectPlan.handleSuccess",
+        "RealConnectionPool.connectionBecameIdle"
+      ],
+      "expectedFacts": [
+        "RealInterceptorChain.withConnectionPool returns a chain copy with the override and is allowed only before an exchange exists (check(exchange == null)), so a network interceptor gets an IllegalStateException.",
+        "RealCall.enterNetworkInterceptorExchange builds the RealRoutePlanner with chain.connectionPool.delegate, so pooled-connection lookups (callAcquirePooledConnection) use the override pool, and ConnectPlan.handleSuccess puts a newly made connection into that same pool (connectionPool.put) which schedules its cleanup.",
+        "CRITICAL: RealCall keeps a private connectionPool field initialised once from client.connectionPool.delegate, and releaseConnectionNoEvents calls that field's connectionBecameIdle(connection) when the call's last use ends; so the idle notification goes to the client's own pool, not the override pool.",
+        "CRITICAL: Consequence: the client pool's connectionBecameIdle will, if the connection has noNewExchanges or the client pool's maxIdleConnections is 0, mark it noNewExchanges, try to remove it (a no-op there) and return true so RealCall closes the socket even though it lives in the override pool; otherwise it only schedules the client pool's cleanup and returns false. The override pool is never told and relies on its own cleanup task."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard-b",
+      "author": "r3hb-okhttp-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: RealInterceptorChain.kt:301-306 (withConnectionPool: check(exchange == null), copy(connectionPool)); RealCall.kt:74 (`private val connectionPool: RealConnectionPool = client.connectionPool.delegate`), :272-288 (RealRoutePlanner(connectionPool = chain.connectionPool.delegate)), :444-461 (releaseConnectionNoEvents: idleAtNs, `connectionPool.connectionBecameIdle(connection)` :457; callDone :408-440 closes returned socket); RealRoutePlanner.kt:189-196 (callAcquirePooledConnection on its pool); ConnectPlan.kt:560-579 (handleSuccess -> connectionPool.put :572; the plan's pool comes from RealRoutePlanner param :241); RealConnectionPool.kt:134-143 (put -> scheduleCloser), :146-160 (connectionBecameIdle: noNewExchanges || maxIdleConnections == 0 -> noNewExchanges=true, connections.remove, return true; else scheduleCloser, false). grep `connectionPool\\.` in internal/connection confirms only RealCall:457 uses the client's pool field. CHEAPEST ROUTE (est. 7 steps): 1 grep 'ConnectionPool' override words -> Interceptor.Chain.withConnectionPool docs and RealInterceptorChain; 2 follow chain.connectionPool.delegate -> RealCall.enterNetworkInterceptorExchange; 3 RealRoutePlanner pool use; 4 ConnectPlan.handleSuccess put; 5 grep 'connectionBecameIdle' -> RealCall.releaseConnectionNoEvents; 6 notice the RealCall field at :74 is from the client, not the chain; 7 read connectionBecameIdle to derive the consequence. The deciding detail (field captured at construction) is easy to miss; a naive answer says 'the override pool'. DECOYS: Interceptor.Chain.connectionPool/withConnectionPool KDoc, OkHttpClient.connectionPool, ConnectionPool.evictAll, RealConnection.connectionPool property (the connection's own pool, passed from the plan, is the override pool). Closed-book risk: very low. est. turns: 7."
+    },
+    {
+      "id": "r3hb-okhttp-13",
+      "repo": "okhttp",
+      "language": "Kotlin",
+      "stratum": "condition",
+      "difficulty": "hard",
+      "query": "Compare two clients: a plain one, and one with the optional Brotli support added as an ordinary application-level interceptor. A caller asks for a byte range of a large file from a server that compresses whenever it is allowed to. For each client, say what compression the request advertises, who decompresses the answer, and what the caller receives if the server replies with a compression scheme the add-on does not know.",
+      "expectedFiles": [
+        "okhttp-brotli/src/main/kotlin/okhttp3/brotli/BrotliInterceptor.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/CompressionInterceptor.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/http/BridgeInterceptor.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/Gzip.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/RealCall.kt"
+      ],
+      "expectedSymbols": [
+        "BrotliInterceptor",
+        "CompressionInterceptor.intercept",
+        "CompressionInterceptor.decompress",
+        "BridgeInterceptor.intercept",
+        "RealCall.getResponseWithInterceptorChain"
+      ],
+      "expectedFacts": [
+        "BrotliInterceptor is CompressionInterceptor(Brotli, Gzip), registered as an application interceptor, so it runs before BridgeInterceptor in RealCall's chain.",
+        "CompressionInterceptor.intercept adds Accept-Encoding 'br, gzip' whenever its algorithm list is non-empty and the request has no Accept-Encoding of its own; it does not look at a Range header.",
+        "BridgeInterceptor advertises gzip (and later gunzips) only when the request has neither an Accept-Encoding nor a Range header; the plain client therefore advertises no compression for a range request and delivers the body untouched.",
+        "CRITICAL: With the add-on, the header is already present when the request reaches BridgeInterceptor, so Bridge does no gzip handling and the add-on's decompress step handles both br and gzip.",
+        "CRITICAL: CompressionInterceptor.decompress acts only if response.promisesBody() and Content-Encoding matches (case-insensitively) a configured algorithm; it then strips Content-Encoding and Content-Length and returns a streaming body of unknown length; an unrecognised encoding (for example deflate) is returned unmodified with Content-Encoding intact, so the caller gets compressed bytes.",
+        "If the caller sets its own Accept-Encoding, the add-on passes the request through and Bridge also leaves it alone, so the caller receives the raw compressed response."
+      ],
+      "expectedNoMatch": false,
+      "max_turns": 15,
+      "tier": "r3-hard-b",
+      "author": "r3hb-okhttp-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION: BrotliInterceptor.kt:27 (`object BrotliInterceptor : CompressionInterceptor(Brotli, Gzip)`); CompressionInterceptor.kt:34-36, :41-61 (intercept: `algorithms.isNotEmpty() && chain.request().header(\"Accept-Encoding\") == null`; no Range check), :63-83 (decompress: promisesBody, Content-Encoding lookup, lookupDecompressor, removeHeader Content-Encoding/Content-Length, asResponseBody(contentType, -1)); BridgeInterceptor.kt:65-71 (Accept-Encoding && Range both null -> transparentGzip), :92-109 (gunzip only if transparentGzip); RealCall.kt:210-221 (client.interceptors before RetryAndFollowUp/Bridge); HttpHeaders.kt:223-247 (promisesBody); Gzip.kt (object Gzip : DecompressionAlgorithm, 'gzip'). CHEAPEST ROUTE (est. 6 steps): 1 grep 'brotli' -> okhttp-brotli module (BrotliInterceptor.kt, Brotli.kt; tiny); 2 follow superclass to CompressionInterceptor; 3 grep 'Accept-Encoding' -> BridgeInterceptor (second implementation, with the Range clause); 4 read RealCall chain order to confirm app interceptors run before Bridge; 5 read both for the ordering and unknown-encoding cases; 6 check promisesBody. Without step 3 the Range asymmetry is missed. DECOYS: Gzip.kt (algorithm only), Brotli.kt/Zstd.kt (algorithm objects), GzipRequestBody.kt (request-side compression, different direction), docs/ pages on interceptors. Closed-book risk: low. est. turns: 6."
+    },
+    {
+      "id": "r3hb-okhttp-14",
+      "repo": "okhttp",
+      "language": "Kotlin",
+      "stratum": "negative-decoy",
+      "difficulty": "hard",
+      "query": "When the name-server data for a site includes service-binding advice, meaning a different port to use, a list of supported application protocols, and hint addresses, does the client's connection planning act on that advice? If so, where; if not, say what exists and why it has no effect.",
+      "expectedFiles": [
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/RouteSelector.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/dns/-StateMachineDnsCall.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/dns/-DnsMessageReader.kt",
+        "okhttp/src/commonJvmAndroid/kotlin/okhttp3/Dns.kt"
+      ],
+      "expectedSymbols": [
+        "RouteSelector.dnsLookup",
+        "StateMachineDnsCall",
+        "DnsMessageReader",
+        "Dns.Record.ServiceMetadata"
+      ],
+      "expectedFacts": [
+        "What exists: DnsMessageReader parses the HTTPS record parameters (alpn, no-default-alpn, port, ipv4/ipv6 hints, ech) and StateMachineDnsCall builds Dns.Record.ServiceMetadata(alpnIds, port, ipAddressHints, echConfigList), whose KDoc describes how clients should use them.",
+        "CRITICAL: RouteSelector.dnsLookup consumes only ServiceMetadata.echConfigList (looked up by hostname and applied only on DIRECT routes); alpnIds, port and ipAddressHints are never read by connection planning (they appear only in the record class, its equals/hashCode/toString and the DNS message reader/writer).",
+        "CRITICAL: Routes use the origin's own port (socketPort) and addresses come only from IpAddress (A/AAAA) records; the protocols offered in TLS come from the client's protocol list through Address.protocols, not from the record's alpn ids.",
+        "No upgrade of plain-text URLs happens: RouteSelector only switches the DNS query port for an http URL on the default port (dnsPort = -1) and the connection stays on the original scheme and port, although the KDoc describes simulating a 307 redirect."
+      ],
+      "expectedNoMatch": true,
+      "max_turns": 15,
+      "tier": "r3-hard-b",
+      "author": "r3hb-okhttp-drafter",
+      "date": "2026-10-01",
+      "notes": "VERIFICATION (negative): greps run: `grep -rn \"alpnIds\\|ipAddressHints\\|ServiceMetadata\" --include=*.kt .` excluding tests: hits only Dns.kt (definition), -DnsMessage.kt/-DnsMessageReader.kt/-DnsMessageWriter.kt (wire format), -StateMachineDnsCall.kt:196-211 (builder), RouteSelector.kt:241-258 (uses only hostname and echConfigList), okhttp-testing-support FakeDns, DnsOverHttps/AndroidDns (includeServiceMetadata flag only); `grep -rn \"\\.port\" -r okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection` shows no ServiceMetadata.port use; RouteSelector.kt:215-226 (dnsPort = -1 for http on 80, comment about 'promote HTTP to HTTPS' but only changes the query), :230-258 (Route built with InetSocketAddress(record.address, socketPort)); ConnectPlan.kt:354-361 (configureTlsExtensions protocols = address.protocols); Address.kt protocols from client.protocols (RealInterceptorChain.address :349+). Also grep for 'isHttps' in RouteSelector: none after the DNS call. CHEAPEST ROUTE (est. 7 steps): 1 grep 'port|alpn' in Dns.kt -> ServiceMetadata class with doc suggesting use; 2 grep ServiceMetadata -> StateMachineDnsCall, RouteSelector, DnsMessageReader; 3 read RouteSelector.dnsLookup; 4 grep alpnIds/ipAddressHints/.port to prove no consumer (3 greps); 5 follow Address.protocols to the TLS layer to see where ALPN really comes from; 6 check the http->https comment in RouteSelector and that no scheme change occurs; 7 conclude. The positive-looking decoy is a complete parse-and-model pipeline plus KDoc. DECOYS: Dns.Record.ServiceMetadata KDoc (describes intended use), -DnsMessageReader HTTPS parsing, DnsOverHttps.includeServiceMetadata and AndroidDns.includeServiceMetadata (toggle the HTTPS query), CHANGELOG. The only used field (echConfigList) is called out in facts. Closed-book risk: low. est. turns: 7."
+    }
+  ]
+}
