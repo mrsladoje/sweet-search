@@ -115,16 +115,29 @@ function schemaVersionOf(db) {
  * an older graph; `PRAGMA schema_version` changes exactly then.
  */
 export function hasFilesTable(db) {
+  return hasGraphTable(db, 'files');
+}
+
+/**
+ * Whether `db` has table `name`, with the same memo rule as hasFilesTable: a
+ * "yes" is final, a "no" holds only while `PRAGMA schema_version` is
+ * unchanged (an upgraded maintainer may add the table to an older graph
+ * while a reader stays connected). Used for the additive graph tables
+ * (`files`, and the trace-only call-line table).
+ */
+export function hasGraphTable(db, name) {
   if (!db) return false;
-  const memo = tableMemo.get(db);
+  let byName = tableMemo.get(db);
+  if (!byName) { byName = new Map(); tableMemo.set(db, byName); }
+  const memo = byName.get(name);
   if (memo === true) return true;
   const version = schemaVersionOf(db);
   if (memo && memo.version === version && version != null) return false;
   let ok = false;
   try {
-    ok = !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='files'").get();
+    ok = !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name);
   } catch { ok = false; }
-  tableMemo.set(db, ok ? true : { version });
+  byName.set(name, ok ? true : { version });
   return ok;
 }
 

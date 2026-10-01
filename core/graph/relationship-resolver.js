@@ -16,7 +16,7 @@
 
 import path from 'path';
 import { detectProjectBoundary } from '../infrastructure/project-detector.js';
-import { UNRESOLVED_IMPORT_PREFIX, buildFileImportMap } from './import-resolver.js';
+import { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX, buildFileImportMap } from './import-resolver.js';
 import { deriveOverrideEdges } from './override-edges.js';
 import { fileNodeId } from './file-nodes.js';
 
@@ -940,6 +940,28 @@ export function resolveRelationshipTargets(db) {
 }
 
 /**
+ * `pkg.Func()` in Go, where `pkg` is an import of the calling file:
+ * `packagePath` is `gopkg:<dir>/` for a repo package (`gopkg:` for a module
+ * root at the repo root) or `unresolved:<path>` for one outside the repo.
+ * Only a top-level function of that directory qualifies — a method needs a
+ * value receiver, and a subdirectory is another package. A non-repo package
+ * or no candidate means no edge.
+ */
+function resolveGoPackageCall(candidates, packagePath, sourceEntity, callIndex) {
+  if (!packagePath.startsWith(GO_PACKAGE_PREFIX)) return null;
+  const dir = packagePath.slice(GO_PACKAGE_PREFIX.length);
+  const ownerOf = callIndex?.ownerOf || NO_INDEX.ownerOf;
+  const inPackage = candidates.filter((c) => {
+    const file = String(c.file_path || '');
+    return file.slice(0, file.lastIndexOf('/') + 1) === dir
+      && c.type !== 'method' && !c.parent_class && !ownerOf(c);
+  });
+  // Several are build-tag variants of one function (`f_linux.go`, `f_windows.go`).
+  const picked = pickClosestCandidate(inPackage, sourceEntity);
+  return picked ? picked.id : null;
+}
+
+/**
  * Resolve a single relationship target
  */
 function resolveTarget(
@@ -985,6 +1007,12 @@ function resolveTarget(
       const receiver = parts.length > 0 ? parts[parts.length - 1] : '';
 
       const allCandidates = byMethodName.get(methodName) || [];
+      // Go package-qualified call (graph-extractor marks `pkg.Func()` with the
+      // import's package): a package outside the repo has no local target,
+      // and an in-repo package reaches only its own top-level functions.
+      if (fullImportPath && (fullImportPath.startsWith(GO_PACKAGE_PREFIX) || fullImportPath.startsWith(UNRESOLVED_IMPORT_PREFIX))) {
+        return resolveGoPackageCall(allCandidates, fullImportPath, sourceEntity, callIndex);
+      }
       const narrowed = narrowCallCandidates(allCandidates, receiver, sourceEntity, callIndex || undefined);
       // Link only when what is left is one type's methods (an overload set);
       // several unrelated owners with no evidence is a guess — no edge.

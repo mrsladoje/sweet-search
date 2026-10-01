@@ -35,6 +35,9 @@ import {
  * (package, stdlib, unresolvable alias). Name-based resolution skips these.
  */
 export const UNRESOLVED_IMPORT_PREFIX = 'unresolved:';
+// Go package-qualified calls (`x.Parse()`): full_import_path = `gopkg:<repo dir>/`
+// (`gopkg:` for a module root at the repo root). See resolveGoPackageCall.
+export const GO_PACKAGE_PREFIX = 'gopkg:';
 
 /** `SWEET_SEARCH_IMPORT_EDGES=0` turns file-level import resolution off. */
 export function importEdgesEnabled() {
@@ -875,6 +878,26 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     mods.sort((a, b) => b.path.length - a.path.length);
     goModMemo.set(dir, mods);
     return mods;
+  }
+
+  /**
+   * The repo directory of a Go import as seen from `fromFile`: '' for a
+   * module's root package at the repo root, 'x' for `<module>/x`; null when
+   * the path is under no repo module (standard library, third party);
+   * undefined when it is under a repo module but no such directory exists,
+   * or when no go.mod / go.work covers the file (GOPATH layout: repo and
+   * external paths cannot be told apart).
+   */
+  function goPackageDir(fromFile, spec) {
+    const mods = goModules(dirOf(fromFile));
+    if (mods.length === 0) return undefined;
+    for (const mod of mods) {
+      if (spec !== mod.path && !spec.startsWith(mod.path + '/')) continue;
+      const rel = join(mod.dir, spec.slice(mod.path.length).replace(/^\//, ''));
+      if (rel === '' || rel === '.') return '';
+      return rel && hasDir(rel) ? rel : undefined;
+    }
+    return null;
   }
 
   function resolveGo(fromFile, spec) {
@@ -2007,7 +2030,7 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     }
   }
 
-  return { resolve, implicitImports, isLocalNamespace, hasFile, root };
+  return { resolve, implicitImports, isLocalNamespace, hasFile, goPackageDir, root };
 }
 
 /**

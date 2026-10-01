@@ -11,13 +11,37 @@ import { fetchPageRank, fetchFrontierBackwardEdges, fetchFrontierForwardEdges } 
 import { CodeGraphReaderVisibility } from './code-graph-visibility.js';
 import { TRACE_ONLY_TYPES_SQL } from '../graph/relationship-types.js';
 import { BareCallResolver } from '../graph/bare-call-resolution.js';
-import { asTopLevelCaller, fileNodeSourceSql, hasFilesTable } from '../graph/file-nodes.js';
+import { asTopLevelCaller, fileNodeSourceSql, hasFilesTable, hasGraphTable } from '../graph/file-nodes.js';
+import { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX } from '../graph/import-resolver.js';
 import { callTargetAliases, clampLimit, isLikelyCodeEntity, isTestPath, lowerCamel, placeholders, qualifiedTargetName, rowToEntity } from './structural-context-utils.js';
 
 function sortLines(item) {
   item.contextLines.sort((a, b) => a - b);
   item.contextLine = item.contextLines[0] ?? item.contextLine;
   return item;
+}
+
+/**
+ * A call that build-time resolution bound to a Go package (graph-extractor
+ * marks `pkg.Func()` with `gopkg:<dir>/` or `unresolved:<path>`) and left
+ * without a target: a non-repo package, or no top-level function of that
+ * name in the package. Readers never re-match it by name — `glog.Errorf` is
+ * no call of an in-repo `ToGlog.Errorf`.
+ */
+function packageCallUnbound(row) {
+  if (row.target_id || row.rel_type !== 'calls') return false;
+  const fip = row.full_import_path || '';
+  return fip.startsWith(GO_PACKAGE_PREFIX) || fip.startsWith(UNRESOLVED_IMPORT_PREFIX);
+}
+
+/**
+ * A call build-time resolution bound through its Go package (`x.Parse` →
+ * x/keys.go Parse): the package decided it, so the query-time receiver gate
+ * (the qualifier `x` names no file stem or owner) does not apply.
+ */
+function packageCallBound(row) {
+  return row.rel_type === 'calls' && !!(row.target_id || row.id)
+    && String(row.full_import_path || '').startsWith(GO_PACKAGE_PREFIX);
 }
 
 export class StructuralContextRepository {
@@ -82,11 +106,7 @@ export class StructuralContextRepository {
     const out = new Map();
     const ids = [...new Set((sourceIds || []).filter(Boolean))];
     if (ids.length === 0) return out;
-    if (this._callLinesDb !== db) {
-      this._callLinesDb = db;
-      this._hasCallLines = !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='call_lines'").get();
-    }
-    if (!this._hasCallLines) return out;
+    if (!hasGraphTable(db, 'call_lines')) return out;
     const vis = this._relationshipSql(db, 'cl');
     for (let i = 0; i < ids.length; i += 500) {
       const part = ids.slice(i, i + 500);
@@ -299,7 +319,7 @@ export class StructuralContextRepository {
       SELECT DISTINCT
         e.id, e.name, e.type, e.file_path, e.start_line, e.end_line,
         e.signature, e.summary, e.parent_class, e.package,
-        r.target_id, r.context_line, r.target_name, r.weight, r.type as rel_type,
+        r.target_id, r.context_line, r.target_name, r.weight, r.type as rel_type, r.full_import_path,
         (SELECT t.file_path FROM entities t WHERE t.id = r.target_id LIMIT 1) AS resolved_file,
         (SELECT t.parent_class FROM entities t WHERE t.id = r.target_id LIMIT 1) AS resolved_parent
       FROM relationships r
@@ -321,7 +341,7 @@ export class StructuralContextRepository {
       ORDER BY r.weight DESC, e.file_path, r.context_line
       LIMIT ?
     `, [...types, ...this._entityParams(db), ...this._relationshipParams(db), target.id, target.id, ...patterns, limit], limit);
-    const edges = rows.map(row => ({
+    const edges = rows.filter(row => !packageCallUnbound(row)).map(row => ({
       ...this._entityFromRow(row),
       relationship: row.rel_type,
       contextLine: row.context_line || null,
@@ -499,7 +519,7 @@ export class StructuralContextRepository {
       SELECT
         e.id, e.name, e.type, e.file_path, e.start_line, e.end_line,
         e.signature, e.summary, e.parent_class, e.package,
-        r.context_line, r.target_name, r.weight, r.type as rel_type
+        r.context_line, r.target_name, r.weight, r.type as rel_type, r.full_import_path
       FROM relationships r
       LEFT JOIN entities e ON e.id = r.target_id AND ${entitySql}
       WHERE r.source_id = ?
@@ -510,7 +530,7 @@ export class StructuralContextRepository {
     `).all(...this._entityParams(db), target.id, ...this._relationshipParams(db), limit);
     const linesByPair = this._qualifiedCallLines(db, [target.id]);
     return rows.map((row, idx) => {
-      let resolved = row.id ? this._entityFromRow(row) : (this._resolveUnresolvedTarget(row.target_name) || {
+      let resolved = row.id ? this._entityFromRow(row) : ((!packageCallUnbound(row) && this._resolveUnresolvedTarget(row.target_name)) || {
         id: `external:${idx}:${row.target_name || 'unknown'}`,
         name: row.target_name || 'external',
         type: 'external',
@@ -520,7 +540,7 @@ export class StructuralContextRepository {
         signature: row.target_name || '',
         summary: '',
       });
-      if (row.id && !shouldTrustQualifiedResolution(row.target_name, resolved)) resolved = { id: `external:${idx}:${row.target_name || 'unknown'}`, name: row.target_name || 'external', type: 'external', filePath: null, startLine: null, endLine: null, signature: row.target_name || '', summary: '' };
+      if (row.id && !packageCallBound(row) && !shouldTrustQualifiedResolution(row.target_name, resolved)) resolved = { id: `external:${idx}:${row.target_name || 'unknown'}`, name: row.target_name || 'external', type: 'external', filePath: null, startLine: null, endLine: null, signature: row.target_name || '', summary: '' };
       if (resolved.id === target.id) {
         resolved = this._resolveQualifiedAlternative(row.target_name, target.id) || resolved;
       }
@@ -558,7 +578,7 @@ export class StructuralContextRepository {
       SELECT DISTINCT
         e.id, e.name, e.type, e.file_path, e.start_line, e.end_line,
         e.signature, e.summary, e.parent_class, e.package,
-        r.target_id, r.target_name, r.context_line, r.weight, r.type as rel_type,
+        r.target_id, r.target_name, r.context_line, r.weight, r.type as rel_type, r.full_import_path,
         (SELECT t.file_path FROM entities t WHERE t.id = r.target_id LIMIT 1) AS resolved_file,
         (SELECT t.parent_class FROM entities t WHERE t.id = r.target_id LIMIT 1) AS resolved_parent
       FROM relationships r
@@ -578,7 +598,7 @@ export class StructuralContextRepository {
     // to ANOTHER same-named definition (GRDB: `database.statementDidFail` in
     // Statement.swift is Database's method, not the broker's).
     const idSet = new Set(ids);
-    return rows.map(row => ({
+    return rows.filter(row => !packageCallUnbound(row)).map(row => ({
       ...this._entityFromRow(row),
       relationship: row.rel_type,
       targetId: row.target_id || null,
@@ -603,7 +623,7 @@ export class StructuralContextRepository {
 
     const rows = db.prepare(`
       SELECT
-        r.source_id, r.target_id, r.target_name, r.context_line, r.weight, r.type as rel_type,
+        r.source_id, r.target_id, r.target_name, r.context_line, r.weight, r.type as rel_type, r.full_import_path,
         e.id, e.name, e.type, e.file_path, e.start_line, e.end_line,
         e.signature, e.summary, e.parent_class, e.package
       FROM relationships r
@@ -616,7 +636,7 @@ export class StructuralContextRepository {
     `).all(...this._entityParams(db), ...ids, ...types, ...this._relationshipParams(db), limit);
 
     return rows.map((row, idx) => {
-      let resolved = row.id ? this._entityFromRow(row) : (this._resolveUnresolvedTarget(row.target_name) || {
+      let resolved = row.id ? this._entityFromRow(row) : ((!packageCallUnbound(row) && this._resolveUnresolvedTarget(row.target_name)) || {
         id: `external:${row.source_id}:${idx}:${row.target_name || 'unknown'}`,
         name: row.target_name || 'external',
         type: 'external',
@@ -626,7 +646,7 @@ export class StructuralContextRepository {
         signature: row.target_name || '',
         summary: '',
       });
-      if (row.id && !shouldTrustQualifiedResolution(row.target_name, resolved)) resolved = { id: `external:${row.source_id}:${idx}:${row.target_name || 'unknown'}`, name: row.target_name || 'external', type: 'external', filePath: null, startLine: null, endLine: null, signature: row.target_name || '', summary: '' };
+      if (row.id && !packageCallBound(row) && !shouldTrustQualifiedResolution(row.target_name, resolved)) resolved = { id: `external:${row.source_id}:${idx}:${row.target_name || 'unknown'}`, name: row.target_name || 'external', type: 'external', filePath: null, startLine: null, endLine: null, signature: row.target_name || '', summary: '' };
       if (resolved.id === row.source_id) {
         resolved = this._resolveQualifiedAlternative(row.target_name, row.source_id) || resolved;
       }
