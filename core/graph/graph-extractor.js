@@ -346,6 +346,8 @@ export const GENERIC_RELATIONSHIP_MAPPING = Object.freeze({
   implements: 'implements',
   protocol: 'implements',
   implFor: 'implements',
+  behaviour: 'implements',
+  interfaceWith: 'implements',
   // TS: type-only imports/re-exports are still module-level
   // dependencies, so they map to the same `imports` edge.
   typeImport: 'imports',
@@ -354,19 +356,12 @@ export const GENERIC_RELATIONSHIP_MAPPING = Object.freeze({
   // edge — emit it as a `uses` relationship (consistent with how
   // decorators and method-of references are handled).
   genericConstraint: 'uses',
-  // FOLLOW-UP (documented, NOT implemented): per-line type references
-  // in function/method/property signatures (e.g. `function foo(x: User):
-  // Result` → `uses` edges to User and Result; `field: Token` → `uses`
-  // edge to Token). Intentionally not added at the regex layer — the
-  // false-positive surface (matching identifiers in comments, strings,
-  // and unrelated positions) is too high. Two prerequisites before
-  // shipping:
-  //   1. AST-level type-reference extractor (walk `type_annotation` /
-  //      `parameter` / `return_type` nodes via tree-sitter, not regex)
-  //   2. Graph-density benchmark showing retrieval benefit without
-  //      precision loss (the new `uses` edges should improve graph
-  //      expansion recall without adding noise that hurts MRR).
-  // See May-2026 design discussion in chat history for details.
+  // Signature type references (`function foo(x: User): Result`) are NOT
+  // `uses` edges: they are emitted as the trace-only `typeRef` type
+  // (type-usage-scanner.js; definition lines only, resolved only when
+  // exactly one type matches), which no ranking consumer reads. Promoting
+  // them to `uses` still needs an AST-level extractor and held-out MRR
+  // evidence that graph expansion gains recall without precision loss.
   decorator: 'uses',
   embed: 'uses',
   extend: 'uses',
