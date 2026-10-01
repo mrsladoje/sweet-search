@@ -235,6 +235,25 @@ describe('file nodes review: resolution parity, edge cases, old graphs', () => {
     search.close();
   });
 
+  it('ss-trace prints the top-level caller line in the default and the compact (A4) format', async () => {
+    write('pkg/mod.py', ['def util():', '    return 1']);
+    write('pkg/run.py', ['from pkg import mod', 'mod.util()']);
+    write('pkg/job.py', ['from pkg.mod import util', '', 'util()']);
+    enqueue('pkg/mod.py', 'pkg/run.py', 'pkg/job.py');
+    await tick();
+    const { traceSymbol, formatStructuralContext } = await import('../../core/search/search-trace.js');
+    const { formatTraceCompact } = await import('../../core/search/agent-output-fixes.js');
+    const result = traceSymbol('util', { graphDbPath: incDbPath, projectRoot, filePath: 'pkg/mod.py', mode: 'callers' });
+    const full = formatStructuralContext(result);
+    const compact = formatTraceCompact(result, { mode: 'callers' });
+    for (const out of [full, compact]) {
+      expect(out).toContain('(top-level) [file] pkg/run.py:2 call@2');
+      expect(out).toContain('(top-level) [file] pkg/job.py:3 call@3');
+    }
+    expect(compact).toContain('## callers (2)');
+    expect(compact).toMatch(/fan-in=2 /);
+  });
+
   it('hasFilesTable re-checks a "no" after a schema change on the same connection', () => {
     const db = new Database(':memory:');
     expect(hasFilesTable(db)).toBe(false);
