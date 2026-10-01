@@ -534,9 +534,11 @@ const onSignal = () => { for (const f of cleanup.splice(0)) f(); process.exit(13
 process.on('SIGINT', onSignal); process.on('SIGTERM', onSignal);
 try {
   const INTERLEAVE = argv.includes('--interleave');
+  // Claude Code installs product files INTO the shared clones for the sweet arm: no mixed phase.
   if (INTERLEAVE && CELL.harness === 'cc') throw new Error('--interleave is not wired for Claude Code');
   // phases: one per arm (default), or ONE mixed phase with sweet/sweetB alternating per probe.
-  const phases = INTERLEAVE ? [['sweet', 'sweetB']] : ARMS.map(a => [a]);
+  // --interleave: sweet vs sweetB when --armB-env is given, else the --arms list (e.g. native,sweet).
+  const phases = INTERLEAVE ? [Object.keys(ARMB_ENV).length ? ['sweet', 'sweetB'] : ARMS] : ARMS.map(a => [a]);
   for (const arms of phases) {
     const label = arms.join('+');
     const tasks = [];

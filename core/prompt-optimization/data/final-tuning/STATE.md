@@ -43,10 +43,12 @@ Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 | sentinel | `SS_VARIANT_SENTINEL=1` | proof the bench runs the worktree | — | — | — | — | infra only |
 | bench fix | `SS_BENCH_STABLE_RULES_PATH=1` | opencode prefix cache broken by random rules path (waste #2) | DeepSeek vs r282 native: +7.9% (CI crosses 0), was +54.6% | — | n/a | n/a | **adopted for all new runs (measurement fix, not a product change)** |
 | V1 | `SS_VARIANT_CC_RULES_IN_PROMPT=1` | CC rules re-written each rollout (waste #1) | **PASS** Opus: cost −15.8% (CI < 0), acc +0.2 | **PASS** Opus: −11.6% (CI < 0), accOR −0.1 | Opus train+val PASS; Sonnet A-B-A −9.6..−12.7% (CI < 0) | queued after r3 index | **champion candidate (Claude Code)** |
-| V2 | `SS_VARIANT_PRUNE3=1` | drop ss-find/semantic/trace (owner hyp. 2) | borderline: Codex −13.2% (CI touches 0), DS −9.9..−17% (CI < 0); acc within noise | | | | |
+| V2 | `SS_VARIANT_PRUNE3=1` | drop ss-find/semantic/trace (owner hyp. 2) | DS seq −9.9..−17% (CI < 0); **Codex interleaved: cost −5% (ns), accOR −1.9 pt (sig harm)** | — | — | — | **REJECTED** | | | | |
 | V3 | `SS_VARIANT_SEARCH_DEDUPE=1` | repeated ss-search entries/lines (waste #5) | $0 replay: ss-search −9.1% chars → ≈ −1% cost (below MDE); not screened live | | | | |
 
 ## Decisions log
+
+- 03:05 **V2 (PRUNE3) REJECTED.** Codex interleaved train (78 pairs): accOR −1.9 pt [−3.8, −0.1] (significant harm), cost −5.0% [−17.4%, +6.9%] (ns), calls +1%, ss-search tokens −14%. The earlier DeepSeek saving (sequential) does not transfer; cross-cell rule fails. Switch kept, default off. Answer to owner hypothesis 2: on Codex the three tools carry accuracy; removing them saves little.
 
 - 02:25 **V1 confirmed on Sonnet (A-B-A, train 78):** vs base A cost −12.7% [−17.7%, −8.1%], vs base B −9.6% [−13.1%, −6.2%]; drift A→B −3.4% (ns); cache write −22..−27%; accuracy +0.9 / 0.0 pt; calls equal. Sonnet validation skipped (subscription; Opus train+val already passed, Sonnet is a confirmation cell). Accuracy re-score (accOR) for the 3 runs in progress.
 - 02:25 OpenRouter DeepSeek judge fails on ~9% of rows (31/354 missing `deepseek-api`); rescore.mjs re-tries incomplete panels; decisions use complete panels only.
