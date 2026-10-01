@@ -565,3 +565,27 @@ describe('deepseek-harness', () => {
     expect(resolveGutterForm({ DSH_SHELL: '1' }, { ancestry: () => null })).toMatchObject({ form: 'colon', harness: 'deepseek-harness', source: 'env-marker' });
   });
 });
+
+describe('gutter form inside the resident daemon (one decision per ss-* call)', () => {
+  it("resolves from each call's own environment and never leaks between calls", async () => {
+    const { runInVirtualProcess } = await import('../../core/agent-tools/virtual-process.js');
+    const forms = await Promise.all(['colon', 'none', 'tab'].map((f) => runInVirtualProcess(
+      { env: { SS_READ_GUTTER: f }, cwd: '/' },
+      async () => {
+        await new Promise((r) => setTimeout(r, 5));
+        process.stdout.write(`${resolveGutterForm().form}/${resolveGutterForm().form}/${process.env.SS_READ_GUTTER}`);
+      },
+    )));
+    expect(forms.map((r) => r.stdout.toString())).toEqual(['colon/colon/colon', 'none/none/none', 'tab/tab/tab']);
+  });
+
+  it('a call with no override exports its decision into its own env only', async () => {
+    const { runInVirtualProcess } = await import('../../core/agent-tools/virtual-process.js');
+    const before = process.env.SS_READ_GUTTER;
+    const r = await runInVirtualProcess({ env: { CLAUDECODE: '1' }, cwd: '/' }, async () => {
+      process.stdout.write(`${resolveGutterForm().form} ${process.env.SS_READ_GUTTER}`);
+    });
+    expect(r.stdout.toString()).toBe('tab tab');
+    expect(process.env.SS_READ_GUTTER).toBe(before);
+  });
+});

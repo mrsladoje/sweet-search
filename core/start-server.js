@@ -13,5 +13,16 @@ const projectRoot = process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd();
 const { applyPersistedLiModel } = await import('./infrastructure/init-config.js');
 applyPersistedLiModel(projectRoot);
 
+// Same identity as `sweet-search --serve` (core/cli.js): the native ss-* client spawns
+// the daemon through this file, so the name in ps and the bench spawn ledger must not
+// depend on which entry point started it.
+try { process.title = 'sweet-search-daemon'; } catch { /* best-effort */ }
+if (process.env.SWEET_SEARCH_SPAWN_LEDGER_DIR) {
+  try {
+    const { recordSpawn } = await import('./infrastructure/spawn-ledger.js');
+    recordSpawn({ pid: process.pid, role: 'daemon-self' });
+  } catch { /* best-effort */ }
+}
+
 const { startServer } = await import('./search/search-server.js');
 await startServer();

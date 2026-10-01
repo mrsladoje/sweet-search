@@ -904,6 +904,29 @@ export async function startServer() {
       }
       res.writeHead(response.status, { 'Content-Type': response.contentType });
       res.end(response.body);
+    } else if (req.method === 'POST' && reqUrl === '/agent-tool') {
+      // One ss-* call from the native client, run warm in this process
+      // (core/agent-tools/daemon-route.js). Real query traffic: resets the idle clock.
+      lastActivityMs = Date.now();
+      // A call may legitimately outlast the socket idle timeout (a cold ss-find on a
+      // large repository); the client carries its own backstop.
+      req.socket.setTimeout(0);
+      const { buildAgentToolDaemonResponse, AGENT_TOOL_BODY_MAX_BYTES } = await import('../agent-tools/daemon-route.js');
+      let response;
+      try {
+        const payload = req.socket.remoteAddress ? null : await readBoundedJsonBody(req, AGENT_TOOL_BODY_MAX_BYTES);
+        response = await buildAgentToolDaemonResponse(payload, {
+          isUnixSocket: !req.socket.remoteAddress,
+          searcher,
+          isReady: () => serverReady,
+          waitForServerReady,
+        });
+      } catch (err) {
+        response = readSemanticError(err.status || 400, err.message || 'Invalid request body');
+      }
+      lastActivityMs = Date.now();
+      res.writeHead(response.status, { 'Content-Type': response.contentType });
+      res.end(response.body);
     } else if (req.method === 'GET' && reqUrl.startsWith('/search?')) {
       // Real query traffic — reset the idle-TTL clock (NOT /health or /stop).
       lastActivityMs = Date.now();

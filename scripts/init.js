@@ -60,6 +60,8 @@ import { removePromptReminderHook } from './install-prompt-reminders.js';
 import { installToolEnforcement, removeToolEnforcement } from './install-tool-enforcement.js';
 import { isNativeInferenceAvailable } from '../core/infrastructure/native-inference.js';
 import { registerRepo } from './repo-registry.js';
+import { linkNativeAgentTools } from './link-native-tools.js';
+import { AGENT_TOOLS } from '../core/agent-tools/tools.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(__dirname, '..');
@@ -706,6 +708,32 @@ export function verifyRuntimeAssets(packageRoot) {
 // Native status check
 // ---------------------------------------------------------------------------
 
+/**
+ * The ss-* commands the agent rules tell every harness to run through its shell. Swaps
+ * the bin stubs for the native binary (again: postinstall may not have run), then checks
+ * the agent's shell can find them. A local install puts them in node_modules/.bin, which
+ * is not on an agent's PATH — say so with the fix rather than ship rules that fail.
+ *
+ * @returns {{status: string, detail: string, onPath: boolean}}
+ */
+export function setUpAgentTools({ env = process.env, link = linkNativeAgentTools } = {}) {
+  let linkReport;
+  try { linkReport = link(); }
+  catch (err) { linkReport = { status: 'failed', detail: String(err?.message || err) }; }
+  const names = Object.keys(AGENT_TOOLS);
+  const dirs = String(env.PATH || '').split(':').filter(Boolean);
+  const missing = names.filter((name) => !dirs.some((d) => {
+    try { return statSync(join(d, name)).isFile(); } catch { return false; }
+  }));
+  const onPath = missing.length === 0;
+  const kind = linkReport.status === 'linked' ? 'native' : 'node';
+  const detail = onPath
+    ? `on PATH (${kind}${linkReport.status === 'linked' ? '' : `: ${linkReport.detail}`})`
+    : `NOT on PATH (${missing.join(', ')}) — agents cannot run them. Install globally `
+      + '(npm install -g sweet-search) or add node_modules/.bin to the agent\'s PATH.';
+  return { status: onPath ? kind : 'missing', detail, onPath };
+}
+
 export function checkNativeStatus() {
   const platformInfo = getPlatformInfo();
   return {
@@ -850,7 +878,7 @@ function printReport(report) {
     capability, cascadeReport, dedupReport, prewarmHookReport, skillReport,
     liChoices, agentInstructionsReport, claudeRulesReport, claudeSystemPromptReport,
     promptReminderReport, toolEnforcementReport, mcpServerReport,
-    codexHarnessReport, opencodeHarnessReport,
+    codexHarnessReport, opencodeHarnessReport, agentToolsReport,
   } = report;
 
   console.log('');
@@ -985,6 +1013,9 @@ function printReport(report) {
   }
   if (mcpServerReport && mcpServerReport.status) {
     console.log(`  MCP server (.mcp.json): ${mcpServerReport.status}${mcpServerReport.detail ? ` — ${mcpServerReport.detail}` : ''}`);
+  }
+  if (agentToolsReport) {
+    console.log(`  ss-* tools:           ${agentToolsReport.detail}`);
   }
 
   console.log(`  Runtime downloads:    ${runtimeDownloads}`);
@@ -1797,6 +1828,8 @@ export async function runInit(args) {
 
   // 6. Check native status
   const nativeStatus = checkNativeStatus();
+  const agentToolsReport = setUpAgentTools();
+  process.stderr.write(`[init] ss-* tools: ${agentToolsReport.detail}\n`);
   const maxsimTier = getMaxsimTier();
   const routerType = getRouterType();
   if (parsed.verbose) {
@@ -2493,6 +2526,7 @@ export async function runInit(args) {
     mcpServerReport,
     codexHarnessReport,
     opencodeHarnessReport,
+    agentToolsReport,
   });
 }
 

@@ -5,6 +5,7 @@
 //
 // Compile: cargo build --release
 
+mod agent_tools;
 mod cwd_paths;
 mod http_transport;
 
@@ -62,6 +63,13 @@ fn resolve_project_root() -> PathBuf {
         Ok(v) if !v.is_empty() => canonicalize_path(Path::new(&v)),
         _ => canonicalize_path(&env::current_dir().unwrap_or_else(|_| PathBuf::from("."))),
     };
+    project_root_from(base)
+}
+
+/// Nearest ancestor of `base` (inclusive) holding a `.sweet-search/` state dir, else
+/// `base`. The ss-* client starts from the repository it picked instead of the cwd.
+fn project_root_from(base: PathBuf) -> PathBuf {
+    let base = canonicalize_path(&base);
     let mut dir = base.clone();
     loop {
         if dir.join(".sweet-search").exists() {
@@ -77,9 +85,9 @@ fn resolve_project_root() -> PathBuf {
 
 /// Per-project socket path (or the explicit $SWEET_SEARCH_SOCKET_PATH override).
 /// No legacy `/tmp/search.sock` fallback — that was the C3 cross-project leak.
-fn socket_path() -> String {
+fn socket_path_for(project_root: &Path) -> String {
     let ovr = env::var("SWEET_SEARCH_SOCKET_PATH").ok();
-    derive_socket(ovr.as_deref(), &resolve_project_root().to_string_lossy())
+    derive_socket(ovr.as_deref(), &project_root.to_string_lossy())
 }
 
 // ANSI color codes (matching ss-fast.c)
@@ -1366,7 +1374,11 @@ fn find_socket_path_with(
 }
 
 fn find_socket() -> Option<String> {
-    let primary = socket_path();
+    find_socket_for(&resolve_project_root())
+}
+
+fn find_socket_for(project_root: &Path) -> Option<String> {
+    let primary = socket_path_for(project_root);
     find_socket_path_with(&primary, &|p| p.exists(), &|p| {
         UnixStream::connect(p).is_ok()
     })
@@ -1432,8 +1444,18 @@ fn parse_http_status(headers: &[u8]) -> Option<u16> {
 /// Auto-start the Node server and wait for the socket to appear.
 /// Matches ss.sh lines 19-25: spawn in background, poll 100ms intervals, max 5s.
 fn auto_start_server() -> Option<String> {
+    auto_start_server_for(&resolve_project_root(), false)
+}
+
+/// `quiet`: print nothing on failure. The ss-* client then runs the tool in-process, and
+/// a diagnostic on stderr would reach the agent next to a good answer.
+fn auto_start_server_for(project_root: &Path, quiet: bool) -> Option<String> {
     // Find the core/start-server.js relative to the binary or cwd
-    let server_script = find_server_script();
+    let server_script = if quiet {
+        find_package_file(&Path::new("core").join("start-server.js"))
+    } else {
+        find_server_script()
+    };
     let script = match &server_script {
         // find_server_script() prints a detailed "tried these locations"
         // diagnostic on failure, so we just bail here.
@@ -1445,29 +1467,37 @@ fn auto_start_server() -> Option<String> {
     // through) and pin SWEET_SEARCH_PROJECT_ROOT to our canonical root so the JS
     // server derives the SAME per-project socket we'll connect to, and the
     // maintainer targets the right project (C3 + canonical /tmp vs /private/tmp).
-    let project_root = resolve_project_root();
     let spawn_result = Command::new("node")
         .arg(script)
         .arg("--serve")
-        .env("SWEET_SEARCH_PROJECT_ROOT", &project_root)
+        .env("SWEET_SEARCH_PROJECT_ROOT", project_root)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn();
     if let Err(e) = spawn_result {
-        let a = ansi(incidental_color());
-        eprintln!("{}Error:{} Failed to start server: {e}", a.fa, a.r);
+        if !quiet {
+            let a = ansi(incidental_color());
+            eprintln!("{}Error:{} Failed to start server: {e}", a.fa, a.r);
+        }
         return None;
     }
 
-    // Poll for socket (100ms intervals, max 50 attempts = 5s)
-    for _ in 0..50 {
+    // Poll for socket (100ms intervals): 5s for the human CLI; 60s for an ss-* call,
+    // the wait the JS tools always allowed a cold daemon. Giving up early is worse than
+    // waiting: the in-process fallback then starts a second daemon that races this one
+    // for the socket.
+    let attempts = if quiet { 600 } else { 50 };
+    for _ in 0..attempts {
         thread::sleep(Duration::from_millis(100));
-        if let Some(path) = find_socket() {
+        if let Some(path) = find_socket_for(project_root) {
             return Some(path);
         }
     }
 
+    if quiet {
+        return None;
+    }
     let a = ansi(incidental_color());
     eprintln!(
         "{}Error:{} Server did not start within 5 seconds",
@@ -1502,6 +1532,17 @@ fn resolve_server_script(
     exists: &dyn Fn(&Path) -> bool,
 ) -> (Option<PathBuf>, Vec<PathBuf>) {
     let rel = Path::new("core").join("start-server.js");
+    resolve_package_file(&rel, cwd, exe, server_entry_override, exists)
+}
+
+/// `resolve_server_script` for any file of the package (`rel` from the package root).
+fn resolve_package_file(
+    rel: &Path,
+    cwd: &Path,
+    exe: Option<&Path>,
+    server_entry_override: Option<&str>,
+    exists: &dyn Fn(&Path) -> bool,
+) -> (Option<PathBuf>, Vec<PathBuf>) {
     let mut tried: Vec<PathBuf> = Vec::new();
 
     // 0. Explicit override.
@@ -1516,7 +1557,7 @@ fn resolve_server_script(
     }
 
     // 1. cwd-relative (dev repo run from its root).
-    let cwd_script = cwd.join(&rel);
+    let cwd_script = cwd.join(rel);
     if exists(&cwd_script) {
         return (Some(cwd_script), tried);
     }
@@ -1527,7 +1568,7 @@ fn resolve_server_script(
         let candidate = ancestor
             .join("node_modules")
             .join("sweet-search")
-            .join(&rel);
+            .join(rel);
         if exists(&candidate) {
             return (Some(candidate), tried);
         }
@@ -1539,7 +1580,7 @@ fn resolve_server_script(
         if let Some(dir) = exe.parent() {
             for ancestor in dir.ancestors() {
                 // 3a. repo-relative (dev: crates/sweet-search-cli/target/release).
-                let candidate = ancestor.join(&rel);
+                let candidate = ancestor.join(rel);
                 if exists(&candidate) {
                     return (Some(candidate), tried);
                 }
@@ -1553,7 +1594,7 @@ fn resolve_server_script(
                     .map(|n| n == "node_modules")
                     .unwrap_or(false)
                 {
-                    let sibling = ancestor.join("sweet-search").join(&rel);
+                    let sibling = ancestor.join("sweet-search").join(rel);
                     if exists(&sibling) {
                         return (Some(sibling), tried);
                     }
@@ -1566,9 +1607,32 @@ fn resolve_server_script(
     (None, tried)
 }
 
+/// The binary's real path. npm links an ss-* command to it through a symlink, and the
+/// package files are found relative to where the binary really lives.
+fn real_exe() -> Option<PathBuf> {
+    env::current_exe()
+        .ok()
+        .map(|p| fs::canonicalize(&p).unwrap_or(p))
+}
+
+/// A file of the installed package (`rel` from its root), located like the server entry
+/// but without the override and without a diagnostic.
+fn find_package_file(rel: &Path) -> Option<String> {
+    let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let exe = real_exe();
+    let exists = |p: &Path| p.exists();
+    let (found, _) = resolve_package_file(rel, &cwd, exe.as_deref(), None, &exists);
+    found.map(|p| {
+        p.canonicalize()
+            .unwrap_or(p)
+            .to_string_lossy()
+            .into_owned()
+    })
+}
+
 fn find_server_script() -> Option<String> {
     let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let exe = env::current_exe().ok();
+    let exe = real_exe();
     let override_env = env::var("SWEET_SEARCH_SERVER_ENTRY").ok();
     let exists = |p: &Path| p.exists();
 
@@ -1610,6 +1674,15 @@ fn main() {
         .unwrap_or_else(|| "sweet-search".into());
 
     let cli_args: Vec<String> = args.into_iter().skip(1).collect();
+
+    // Called as ss-search / ss-grep / …: the multi-call agent tools (agent_tools.rs).
+    if let Some(sub) = agent_tools::subcommand_for(&prog) {
+        agent_tools::run(sub, &cli_args);
+    }
+    if cli_args.first().map(|s| s.as_str()) == Some("--agent-tools-protocol") {
+        println!("{}", agent_tools::PROTOCOL_MARKER);
+        return;
+    }
 
     // Color for messages emitted before the full policy is known (parse errors).
     let ea = ansi(incidental_color());

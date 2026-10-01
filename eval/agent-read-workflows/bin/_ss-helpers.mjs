@@ -1,6 +1,5 @@
 #!/usr/bin/env node
-// Bench-local agent wrappers for Sweet Search. Each subcommand is a thin,
-// agent-friendly skin over the JS API:
+// The ss-* agent tools. Each subcommand is a thin, agent-friendly skin over the JS API:
 //   grep      → SweetSearch.bareGrep        (indexed lexical grep, gram-prefiltered)
 //   find      → SweetSearch.patternSearch   (ColGrep — regex candidates, MaxSim re-rank)
 //   read      → search-read.readFile        (filesystem-grounded read with optional line range)
@@ -8,11 +7,18 @@
 //
 // Output is compact, deterministic, agent-readable (one match per line for
 // discovery; fenced code for reads). No colour codes. No JSON unless asked.
+//
+// ONE CALL = ONE VIRTUAL PROCESS. `runAgentTool` is written as if it owned the process:
+// it reads process.env and process.cwd(), writes to process.stdout/stderr and ends with
+// process.exit(code). It always runs inside core/agent-tools/virtual-process.js, which
+// scopes all of those to the call. The resident daemon runs it warm for the native ss-*
+// client (POST /agent-tool); core/agent-tools/cli.js runs it in a fresh process as the
+// fallback. Both are the same code, so both print the same bytes.
 
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, statSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   parseBoolFlag, parseValueFlag, parsePositiveIntFlag,
   parseRepeatedValueFlag, extraPositionals,
@@ -71,13 +77,11 @@ import {
 // Diagnostic-log isolation (agent-facing tools). The Sweet Search engine emits
 // model/index load banners via console.log → stdout ("LateInteraction: Loaded…",
 // "BinaryHNSW: Loaded…", "Warming up embedding…", "✓ Vocabulary loaded…"). When the
-// engine runs IN-PROCESS in this wrapper, that stdout IS the agent's tool result, so a
-// cold start crowds out the actual hits and the agent falls back to native tools
-// (diagnosed root cause of the sweet≈native tie). The wrappers emit REAL results only
-// via process.stdout.write, so redirect every console.log to stderr; the ss-* shell
-// wrapper's `2>` suppresses it on success → the agent sees clean results, warm or cold.
-// (Production search/grep/find already avoid this: the daemon is spawned stdio:'ignore'.)
-console.log = (...args) => process.stderr.write(args.map(a => (typeof a === 'string' ? a : String(a))).join(' ') + '\n');
+// engine runs IN-PROCESS, that stdout IS the agent's tool result, so a cold start crowds
+// out the actual hits and the agent falls back to native tools (diagnosed root cause of
+// the sweet≈native tie). The tools emit REAL results only via process.stdout.write, and
+// the virtual process (core/agent-tools/virtual-process.js) sends every console.log of a
+// call to that call's stderr, which the agent sees only on a non-zero exit.
 
 // 8-char SHA1 prefix is enough for grouping identical queries across
 // benchmark runs without bloating artifacts.
@@ -102,65 +106,16 @@ function gutter(text, startLine) {
 }
 
 
-// Resident-daemon cap for bench fan-outs. Daemon sockets are keyed per project
-// root, so a multi-repo replay never reuses one: search-read-replay --execute-current
-// checks out a different golden repo per task, so every task takes the `action='spawned'`
-// branch and leaves behind a ~1.2GB daemon plus a ~2.7GB maintainer. The cap used to
-// ship OFF (SWEET_SEARCH_MAX_DAEMONS=0) with only a 20-minute idle-TTL, which at the
-// observed ~1 daemon / 4.5s reaches ~265 resident daemons on a 200-task replay — it
-// OOM-killed a 224GB box twice. The cap now ships ON at a RAM-tier default (2 on
-// <=12 GiB, 3 on <=24 GiB, 6 above), so a bench box would settle at 6 rather than 265;
-// this pin keeps the replay at the tighter, measured 3 regardless of host RAM. An
-// explicit caller env still wins over both.
-//
-// LATENCY: this must never cost a cold start. The cap evicts by LRU only when the count
-// is exceeded, and a replay walks repos strictly in sequence — the evicted daemon serves
-// a task that is already finished and is never queried again. The idle-TTL is left at the
-// production default ON PURPOSE: shortening it can reap a daemon that a slow task is still
-// between calls on, which would force a ~2.5s cold start instead of the ~80ms warm path.
-// Bound the count, never the lifetime.
-//
-// The cap gates registry participation at daemon STARTUP (search-server.js `capEnabled`),
-// so a daemon spawned with the cap explicitly OFF ('' or '0') never registers and is
-// invisible to LRU eviction. Kill stray daemons before a run rather than mixing opted-out
-// ones with capped ones.
-process.env.SWEET_SEARCH_MAX_DAEMONS ??= '3';
-
-// SCORE DETERMINISM — this pin exists for accuracy, not for speed, and it must
-// not be removed without replacing it.
-//
-// `bestIntraOpThreads` (core/infrastructure/onnx-session-utils.js) divides the
-// intra-op thread count by the number of resident daemons, so a daemon started
-// with 1 peer and a daemon started with 3 peers build DIFFERENT ORT thread
-// pools. ORT partitions its GEMM and reduction kernels by thread count and
-// floating-point addition is not associative, so the two are not guaranteed to
-// produce bit-identical logits — and a replay walks a new repository every
-// ~4.5 s, so the live peer count varies across a single 200-task run depending
-// on eviction timing. Two runs of the same benchmark on the same commit could
-// therefore encode two different thread configurations and disagree at ties: a
-// silent, machine-state-dependent MRR wobble in the harness whose whole job is
-// to detect MRR changes.
-//
-// `SWEET_SEARCH_INTRA_OP_THREADS` wins outright and bypasses the share (see the
-// early return in bestIntraOpThreads), so every replay daemon builds the same
-// session regardless of how many peers happen to be resident. 8 is inside the
-// unshared band on every bench box we use, so it does not slow the run down to
-// the shared value either.
-process.env.SWEET_SEARCH_INTRA_OP_THREADS ??= '8';
-
-// The maintainers, not the daemons, are the bigger half of the footprint (~2.7GB each
-// and ratcheting, vs ~1.2GB for a daemon). maintainerIdleTtlMs() auto-tunes off the
-// memory tier. It used to return 0 = NEVER self-exit on a roomy host; it now returns
-// 30 minutes on every tier, which is still far too slack for a bench fan-out that walks
-// a new repo every ~4.5s. An explicit env value always wins over the tier default, so
-// pin the much tighter 2 minutes here.
-//
-// LATENCY: free. The maintainer has NO query route (index-maintainer.mjs) — it only does
-// background reconcile — so idling it out can never slow a search, and it respawns
-// on demand. Idle is counted as consecutive ticks that found nothing to do, so the repo
-// being actively searched keeps its maintainer; only finished repos are reclaimed.
-process.env.SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS ??= '120000';
-
+/**
+ * Run one ss-* subcommand. See the header: this must run inside a virtual process.
+ *
+ * @param {string} subcommand  grep | find | read | semantic | trace | agent-search
+ * @param {string[]} rest      the arguments after the subcommand
+ * @param {object} [host]      set by the resident daemon:
+ *   host.getSearcher()          its warm SweetSearch (no second cold engine in the daemon)
+ *   host.assertProjectRoot(r)   throws when this call belongs to another repository's daemon
+ */
+export async function runAgentTool(subcommand, rest, host = {}) {
 // The agent's cwd is the target repo. SWEET_SEARCH_PROJECT_ROOT must point
 // at the repo so DB_PATHS resolves to the repo's own .sweet-search/.
 //
@@ -198,6 +153,8 @@ if (!existsSync(path.join(PROJECT_ROOT, '.sweet-search', 'codebase.db'))) {
 // requirement. One line, once per process, and only inside a linked worktree, so it costs
 // the benchmark nothing and costs a real worktree user one line.
 if (WORKTREE_SPLIT && ROOT_NOTICE) process.stdout.write(`${ROOT_NOTICE}\n`);
+// Before anything is recorded or searched: a daemon answers for its own repository only.
+host.assertProjectRoot?.(PROJECT_ROOT);
 process.env.SWEET_SEARCH_PROJECT_ROOT = PROJECT_ROOT;
 
 const AGENT_SESSION_ID = resolveAgentSessionId();
@@ -273,9 +230,6 @@ async function recordForAlreadyShown(spans, decisions, printedChars) {
     });
   } catch { /* the receipt is best effort */ }
 }
-
-const subcommand = process.argv[2];
-const rest = process.argv.slice(3);
 
 // Pure arg-parsing helpers (parseFlag/parseShortFlag/parseBoolFlag/
 // buildGrepPattern/stripInertFlags/normalizeArgs/extractPositional) live in
@@ -453,6 +407,7 @@ function missingScopes(scopePaths) {
 }
 
 async function getSweetSearch() {
+  if (host.getSearcher) return host.getSearcher();
   // In-process cold-start loads the LI/HNSW indexes and the embedding model,
   // which print load banners ("BinaryHNSW: Loaded …", "LateInteraction: …",
   // "Loading local model: …") via raw console.log — i.e. onto THIS process's
@@ -473,6 +428,8 @@ async function getSweetSearch() {
 }
 
 async function ensureWarmServerReady({ timeoutMs = 60000, intervalMs = 500 } = {}) {
+  // Inside the daemon: it is the warm server, and it only takes a call once ready.
+  if (host.getSearcher) return true;
   const { isServerRunning, autoSpawnServer } = await import(path.join(REPO_ROOT, 'core/search/search-server.js'));
   if (await isServerRunning()) return true;
 
@@ -1528,20 +1485,81 @@ async function cmdTrace(rawArgs) {
   process.exit(response.target ? 0 : 1);
 }
 
-(async () => {
-  try {
-    if (subcommand === 'grep') await cmdGrep(rest);
-    else if (subcommand === 'find') await cmdFind(rest);
-    else if (subcommand === 'read') await cmdRead(rest);
-    else if (subcommand === 'semantic') await cmdSemantic(rest);
-    else if (subcommand === 'trace') await cmdTrace(rest);
-    else if (subcommand === 'agent-search') await cmdAgentSearch(rest);
-    else { process.stderr.write(`unknown subcommand: ${subcommand}\n`); process.exit(2); }
-  } catch (err) {
-    process.stderr.write(`[ss-*] crash: ${err.stack || err.message || err}\n`);
-    process.exit(1);
-  }
-})();
+if (subcommand === 'grep') await cmdGrep(rest);
+else if (subcommand === 'find') await cmdFind(rest);
+else if (subcommand === 'read') await cmdRead(rest);
+else if (subcommand === 'semantic') await cmdSemantic(rest);
+else if (subcommand === 'trace') await cmdTrace(rest);
+else if (subcommand === 'agent-search') await cmdAgentSearch(rest);
+else { process.stderr.write(`unknown subcommand: ${subcommand}\n`); process.exit(2); }
+} // runAgentTool
 
 // Mark unused for lint:
 void readFileSync;
+
+// Run directly (`node _ss-helpers.mjs <subcommand> …`): the bench's direct callers and
+// tests. Prints stdout AND stderr whatever the exit code — a script reads the route and
+// trace meta lines from stderr. The agent-facing entry is core/agent-tools/cli.js.
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+  // Resident-daemon cap for bench fan-outs. Daemon sockets are keyed per project
+  // root, so a multi-repo replay never reuses one: search-read-replay --execute-current
+  // checks out a different golden repo per task, so every task takes the `action='spawned'`
+  // branch and leaves behind a ~1.2GB daemon plus a ~2.7GB maintainer. The cap used to
+  // ship OFF (SWEET_SEARCH_MAX_DAEMONS=0) with only a 20-minute idle-TTL, which at the
+  // observed ~1 daemon / 4.5s reaches ~265 resident daemons on a 200-task replay — it
+  // OOM-killed a 224GB box twice. The cap now ships ON at a RAM-tier default (2 on
+  // <=12 GiB, 3 on <=24 GiB, 6 above), so a bench box would settle at 6 rather than 265;
+  // this pin keeps the replay at the tighter, measured 3 regardless of host RAM. An
+  // explicit caller env still wins over both.
+  //
+  // LATENCY: this must never cost a cold start. The cap evicts by LRU only when the count
+  // is exceeded, and a replay walks repos strictly in sequence — the evicted daemon serves
+  // a task that is already finished and is never queried again. The idle-TTL is left at the
+  // production default ON PURPOSE: shortening it can reap a daemon that a slow task is still
+  // between calls on, which would force a ~2.5s cold start instead of the ~80ms warm path.
+  // Bound the count, never the lifetime.
+  //
+  // The cap gates registry participation at daemon STARTUP (search-server.js `capEnabled`),
+  // so a daemon spawned with the cap explicitly OFF ('' or '0') never registers and is
+  // invisible to LRU eviction. Kill stray daemons before a run rather than mixing opted-out
+  // ones with capped ones.
+  process.env.SWEET_SEARCH_MAX_DAEMONS ??= '3';
+
+  // SCORE DETERMINISM — this pin exists for accuracy, not for speed, and it must
+  // not be removed without replacing it.
+  //
+  // `bestIntraOpThreads` (core/infrastructure/onnx-session-utils.js) divides the
+  // intra-op thread count by the number of resident daemons, so a daemon started
+  // with 1 peer and a daemon started with 3 peers build DIFFERENT ORT thread
+  // pools. ORT partitions its GEMM and reduction kernels by thread count and
+  // floating-point addition is not associative, so the two are not guaranteed to
+  // produce bit-identical logits — and a replay walks a new repository every
+  // ~4.5 s, so the live peer count varies across a single 200-task run depending
+  // on eviction timing. Two runs of the same benchmark on the same commit could
+  // therefore encode two different thread configurations and disagree at ties: a
+  // silent, machine-state-dependent MRR wobble in the harness whose whole job is
+  // to detect MRR changes.
+  //
+  // `SWEET_SEARCH_INTRA_OP_THREADS` wins outright and bypasses the share (see the
+  // early return in bestIntraOpThreads), so every replay daemon builds the same
+  // session regardless of how many peers happen to be resident. 8 is inside the
+  // unshared band on every bench box we use, so it does not slow the run down to
+  // the shared value either.
+  process.env.SWEET_SEARCH_INTRA_OP_THREADS ??= '8';
+
+  // The maintainers, not the daemons, are the bigger half of the footprint (~2.7GB each
+  // and ratcheting, vs ~1.2GB for a daemon). maintainerIdleTtlMs() auto-tunes off the
+  // memory tier. It used to return 0 = NEVER self-exit on a roomy host; it now returns
+  // 30 minutes on every tier, which is still far too slack for a bench fan-out that walks
+  // a new repo every ~4.5s. An explicit env value always wins over the tier default, so
+  // pin the much tighter 2 minutes here.
+  //
+  // LATENCY: free. The maintainer has NO query route (index-maintainer.mjs) — it only does
+  // background reconcile — so idling it out can never slow a search, and it respawns
+  // on demand. Idle is counted as consecutive ticks that found nothing to do, so the repo
+  // being actively searched keeps its maintainer; only finished repos are reclaimed.
+  process.env.SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS ??= '120000';
+
+  const { runAgentToolInProcess } = await import('../../../core/agent-tools/cli.js');
+  await runAgentToolInProcess(process.argv[2], process.argv.slice(3), { stderr: 'always', runTool: runAgentTool });
+}

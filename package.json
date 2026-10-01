@@ -35,10 +35,18 @@
   ],
   "bin": {
     "sweet-search": "core/cli.js",
-    "sweet-search-mcp": "mcp/server.js"
+    "sweet-search-mcp": "mcp/server.js",
+    "ss-search": "bin/ss-search",
+    "ss-grep": "bin/ss-grep",
+    "ss-find": "bin/ss-find",
+    "ss-read": "bin/ss-read",
+    "ss-semantic": "bin/ss-semantic",
+    "ss-trace": "bin/ss-trace"
   },
   "files": [
+    "bin/",
     "core/*.js",
+    "core/agent-tools/",
     "core/infrastructure/",
     "core/incremental-indexing/",
     "core/embedding/",
@@ -55,6 +63,7 @@
     "mcp/",
     "scripts/benchmark-harness.js",
     "scripts/postinstall-banner.js",
+    "scripts/link-native-tools.js",
     "scripts/init.js",
     "scripts/uninstall.js",
     "scripts/repo-registry.js",
@@ -91,7 +100,7 @@
   ],
   "scripts": {
     "init": "node scripts/init.js",
-    "postinstall": "node scripts/postinstall-banner.js",
+    "postinstall": "node scripts/link-native-tools.js && node scripts/postinstall-banner.js",
     "bake:banner": "node scripts/bake-banner.mjs",
     "licenses:third-party": "node scripts/licenses/generate-third-party-licenses.mjs",
     "build:assets": "node scripts/generate-asset-manifest.js",
