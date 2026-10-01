@@ -105,6 +105,11 @@ def kfmt(x):
     return f'{x:,.0f}'
 
 
+def pm(a, b):
+    """Share of a dollar amount (no small-n dagger: the denominator is money, not a count)."""
+    return f'{100.0 * a / b:.1f}%' if b else '-'
+
+
 def md_table(h, rows):
     out = ['| ' + ' | '.join(h) + ' |', '|' + '|'.join(['---'] * len(h)) + '|']
     for r in rows:
@@ -188,7 +193,7 @@ def gold_files_named(p, answer):
 def classify_tag(tag):
     if tag.startswith('ho-') or 'heldout' in tag:
         return None
-    if tag.startswith('r3h-') or tag.startswith('fx-'):
+    if tag.startswith('r3h') or tag.startswith('fx-'):   # r3h-pilot-*, r3hdev-*, fx-*
         return 'hard'
     if 'r3dev' in tag:
         return 'easy'
@@ -679,6 +684,60 @@ SEARCH_BUCKET_GROUPS = OrderedDict([
 ])
 
 
+GREP_LINE = re.compile(r'^(?:\.?/?[\w@.+-]+(?:/[\w@.+-]+)*\.\w{1,10}(?:[:-]\d+[:-]|:\d*$|$)|\d+[:-]|--$)')
+
+
+def _read_len(c):
+    a = c['args'] or ''
+    if c['tool'] == 'sed':
+        m = re.search(r"(\d+)\s*,\s*(\d+)\s*p", a)
+        return int(m.group(2)) - int(m.group(1)) + 1 if m else None
+    if c['tool'] == 'head':
+        m = re.search(r'-n\s*(\d+)|-(\d+)\b', a)
+        return int(m.group(1) or m.group(2)) if m else 10
+    if c['tool'] == 'awk':
+        m = re.search(r'NR\s*>=?\s*(\d+)\s*&&\s*NR\s*<=?\s*(\d+)', a)
+        return int(m.group(2)) - int(m.group(1)) + 1 if m else None
+    return None
+
+
+def split_native_unit(cs, out):
+    """Chained native commands share one output. Split it by line shape: a search segment takes the
+    following grep-shaped lines (path:line:, path-line-, bare paths, --), a read segment takes its sed/head
+    range (or the lines up to the next grep-shaped line). -> list of texts aligned to cs, or None."""
+    lines = (out or '').split('\n')
+    if lines and lines[-1] == '':
+        lines = lines[:-1]
+    i, parts = 0, []
+    for k, c in enumerate(cs):
+        last = k == len(cs) - 1
+        start = i
+        if last:
+            i = len(lines)
+        elif c['bucket'] == 'native-search':
+            while i < len(lines) and GREP_LINE.match(lines[i]):
+                i += 1
+        elif c['bucket'] == 'native-read':
+            n = _read_len(c)
+            nxt_search = cs[k + 1]['bucket'] == 'native-search'
+            if n is not None:
+                j = i
+                while j < len(lines) and j - i < n and not (nxt_search and j > i and GREP_LINE.match(lines[j]) and re.match(r'^\S+\.\w+:\d+', lines[j])):
+                    j += 1
+                i = j
+            elif nxt_search:
+                while i < len(lines) and not re.match(r'^\S+\.\w+:\d+', lines[i]):
+                    i += 1
+            else:
+                return None
+        elif c['tool'] == 'pwd':
+            i = min(i + 1, len(lines))
+        else:
+            return None
+        parts.append('\n'.join(lines[start:i]) + ('\n' if i > start else ''))
+    return parts
+
+
 def analyze_rollout(run, row, probe, sess, cap):
     h = run['harness']
     threads = sess['threads']
@@ -708,7 +767,19 @@ def analyze_rollout(run, row, probe, sess, cap):
             shared_units[(c['thread'], c['unitId'])].append(c)
     for c in calls_all:
         c['bucket'] = bucket_of(c)
-        if c.get('output') is not None:
+    for key, cs in shared_units.items():
+        if any(x['cls'] == 'ss' for x in calls_all if (x['thread'], x['unitId']) == key):
+            continue
+        parts = split_native_unit(cs, cs[0].get('_unitOut') or '')
+        for c, ptxt in zip(cs, parts or []):
+            c['_splitText'] = ptxt
+        if not parts:
+            for c in cs:
+                c['splitApprox'] = True
+    for c in calls_all:
+        if c.get('_splitText') is not None:
+            text = c['_splitText']
+        elif c.get('output') is not None:
             text = c['output']
         elif c.get('_restText') and c.get('_unitOut') is not None:
             text = c['_unitOut']
@@ -718,7 +789,9 @@ def analyze_rollout(run, row, probe, sess, cap):
             text = ''
         c['_text'] = text
         c['_nonzeroExit'] = (c['thread'], c['unitId']) in nz
-        if c.get('sharedOutput'):
+        if c.get('_splitText') is not None:
+            c['chars'] = len(text)
+        elif c.get('sharedOutput'):
             k = len(shared_units[(c['thread'], c['unitId'])]) or 1
             ss_in_unit = sum(len(x.get('output') or '') for x in calls_all if x['thread'] == c['thread'] and x['unitId'] == c['unitId'] and x['cls'] == 'ss')
             c['chars'] = max(len(text) - ss_in_unit, 0) / k
@@ -794,6 +867,14 @@ def analyze_rollout(run, row, probe, sess, cap):
     usd = {'fresh': tokc['fresh'] * price['in'] / 1e6, 'cacheWrite': tokc['cacheWrite'] * price['in'] * cw_mult / 1e6,
            'cacheRead': tokc['cacheRead'] * price['cache'] / 1e6, 'out': tokc['out'] * price['out'] / 1e6}
     main_reqs = threads[0]['requests']
+    req_cost = []
+    for rq in main_reqs:
+        u = rq.get('usage') or {}
+        req_cost.append(((u.get('fresh') or 0) * price['in'] + (u.get('cacheWrite') or 0) * price['in'] * cw_mult
+                         + (u.get('cacheRead') or 0) * price['cache'] + (u.get('out') or 0) * price['out']) / 1e6)
+    req_cw = [((rq.get('usage') or {}).get('cacheWrite') or 0) + ((rq.get('usage') or {}).get('fresh') or 0) for rq in main_reqs]
+    for i, c in enumerate(main_calls):
+        c['idx'] = i + 1
     u0 = main_reqs[0].get('usage') if main_reqs else None
     prefix0 = (u0['fresh'] + u0['cacheRead'] + u0['cacheWrite']) if u0 else None
     cw0 = u0['cacheWrite'] if u0 else None
@@ -810,7 +891,7 @@ def analyze_rollout(run, row, probe, sess, cap):
         'prefix0': prefix0, 'cw0': cw0, 'fresh0': fresh0, 'inTotal': in_total, 'toolAmp': tool_amp,
         'units': len({(c['thread'], c['unitId']) for c in main_calls}),
         'retrievalCalls': len(retrieval), 'session': sess['file'], 'joinScore': sess.get('joinScore'),
-        'threadsN': len(threads),
+        'threadsN': len(threads), 'reqCost': req_cost, 'reqUncached': req_cw,
         'tsStart': str(main_reqs[0].get('ts')) if main_reqs and main_reqs[0].get('ts') is not None else '',
     }
 
@@ -1275,6 +1356,479 @@ def write_dossiers(G):
 
 
 # ----------------------------------------------------------------------------------------------
+# "Why native is cheap": native strategy, gold per char, fixed overhead, paired divergence
+# ----------------------------------------------------------------------------------------------
+def gmatch(f, p):
+    f = normp(f)
+    return {g for g in p['_goldFiles'] if f == g or f.endswith('/' + g) or g.endswith('/' + f)}
+
+
+def grep_flags(c):
+    """Flag labels of a native search call."""
+    args = c['args'] or ''
+    tool = c['tool'] or ''
+    fl = set()
+    if c.get('boundary') == 'native':
+        try:
+            inp = json.loads(args)
+        except Exception:
+            inp = {}
+        if tool.lower() == 'glob':
+            return {'glob-tool'}
+        if inp.get('-n'):
+            fl.add('n')
+        if any(inp.get(k) for k in ('-A', '-B', '-C', 'context')):
+            fl.add('ctx')
+        if inp.get('output_mode', 'files_with_matches') == 'files_with_matches':
+            fl.add('l')
+        if inp.get('glob') or inp.get('type') or inp.get('include'):
+            fl.add('include')
+        if inp.get('-i'):
+            fl.add('i')
+        fl.add('r')
+        return fl
+    if tool in ('find', 'fd', 'ls', 'tree', 'locate', 'git-ls-files'):
+        return {'list:' + tool}
+    words = fx._words(args)
+    if tool == 'rg':
+        fl.add('r')
+    LONG = {'files-with-matches': 'l', 'files': 'files', 'include': 'include', 'glob': 'include', 'type': 'include', 'context': 'ctx',
+            'after-context': 'ctx', 'before-context': 'ctx', 'line-number': 'n', 'ignore-case': 'i', 'count': 'count', 'word-regexp': 'w',
+            'recursive': 'r', 'max-count': 'm'}
+    for w in words[1:]:
+        if w.startswith('--'):
+            k = LONG.get(w[2:].split('=')[0])
+            if k:
+                fl.add(k)
+        elif w.startswith('-') and len(w) > 1 and not w[1].isdigit():
+            for ch in w[1:]:
+                k = {'n': 'n', 'l': 'l', 'r': 'r', 'R': 'r', 'A': 'ctx', 'B': 'ctx', 'C': 'ctx', 'i': 'i', 'w': 'w', 'c': 'count',
+                     'g': 'include', 't': 'include', 'm': 'm'}.get(ch)
+                if k:
+                    fl.add(k)
+                if ch in 'ABCgtme':
+                    break   # the rest of the word is the option's value
+    for t in c.get('pipeTail') or []:
+        fl.add('pipe:' + t)
+    return fl
+
+
+def read_lines(c):
+    """(lines shown, whole-file?) of a read call, or (None, None)."""
+    b = c['bucket']
+    if b == 'native-read':
+        sp = c.get('_span')
+        whole = c['tool'] in ('cat', 'bat', 'nl') and not c.get('piped') or (c.get('boundary') == 'native' and not re.search(r'"(offset|limit|startLine|endLine)"', c['args'] or ''))
+        if sp:
+            return sp[2] - sp[1] + 1, whole
+        return None, whole
+    if b == 'ss-read':
+        n = sum(bb - a + 1 for f, a, bb in c.get('_spans') or [] if a and bb and bb >= a)
+        ws = [w for w in fx._words(c['args'] or '')[1:] if not w.startswith('-')]
+        whole = not any(re.fullmatch(r'\d+', w) for w in ws[1:])
+        return (n or None), whole
+    return None, None
+
+
+HDR_BLOCK = re.compile(r'^(?:## #\d+ |### |# continues at )(\S+?):(\d+)(?:-(\d+))?')
+
+
+def gold_chars(c, text, p):
+    """Characters of the output that belong to a gold file."""
+    if not p['_goldFiles'] or not text:
+        return 0
+    b = c['bucket']
+    rxs = list(p['_goldFileRx'].values())
+    if b in ('ss-read', 'native-read'):
+        t = read_target(c)
+        if t and gmatch(t, p):
+            return len(text)
+        return sum(len(ln) + 1 for ln in text.split('\n') if any(rx.search(ln) for rx in rxs))
+    if b in ('ss-search', 'ss-find', 'ss-semantic'):
+        tot, cur_gold = 0, False
+        for ln in text.split('\n'):
+            m = HDR_BLOCK.match(ln)
+            if m:
+                cur_gold = bool(gmatch(m.group(1), p))
+            elif ln.startswith('# ') or (ln.startswith('## ') and not ln.startswith('## #')):
+                cur_gold = False
+            if cur_gold or any(rx.search(ln) for rx in rxs):
+                tot += len(ln) + 1
+        return min(tot, len(text))
+    return sum(len(ln) + 1 for ln in text.split('\n') if any(rx.search(ln) for rx in rxs))
+
+
+def first_gold(r):
+    seen = 0.0
+    out = {'idx': None, 'chars': None, 'idxShown': None, 'turn': None}
+    for c in r['mainCalls']:
+        seen += c['chars']
+        if c['goldFiles'] and out['idx'] is None:
+            out.update(idx=c['idx'], chars=seen, turn=c['turnIndex'])
+        if c['goldShown'] and out['idxShown'] is None:
+            out['idxShown'] = c['idx']
+    return out
+
+
+def pctile(xs, q):
+    xs = sorted(x for x in xs if x is not None)
+    if not xs:
+        return None
+    return xs[min(len(xs) - 1, int(q * len(xs)))]
+
+
+def sec_native_strategy(G):
+    rows_chain, rows_flags, rows_read, rows_first = [], [], [], []
+    for g, rs in G.items():
+        n = len(rs)
+        units = defaultdict(list)
+        for r in rs:
+            for c in r['mainCalls']:
+                units[(r['probe']['id'], c['unitId'])].append(c)
+        segs = [len(v) for v in units.values()]
+        mixed = sum(1 for v in units.values() if {'native-search', 'native-read'} <= {c['bucket'] for c in v} or (any(c['cls'] == 'ss' for c in v) and len({c['bucket'] for c in v}) > 1))
+        approx = sum(1 for r in rs for c in r['mainCalls'] if c.get('splitApprox'))
+        allc = [c for r in rs for c in r['mainCalls']]
+        rows_chain.append([gname(g), n, len(segs), f2(mean(segs)), pc(sum(1 for x in segs if x >= 2), len(segs)), pc(sum(1 for x in segs if x >= 4), len(segs)),
+                           max(segs) if segs else '-', pc(mixed, len(segs)), f2(mean([r['nReqMain'] for r in rs])),
+                           pc(approx, len(allc))])
+        if g[3] == 'native':
+            ns = [c for c in allc if c['bucket'] == 'native-search']
+            F = Counter()
+            for c in ns:
+                F.update(grep_flags(c))
+            lst = sum(v for k, v in F.items() if k.startswith('list:'))
+            gr = len(ns) - lst
+            pipes = Counter({k[5:]: v for k, v in F.items() if k.startswith('pipe:')})
+            piped_n = sum(1 for c in ns if c.get('piped') and not any(k.startswith('list:') for k in grep_flags(c)))
+            rows_flags.append([gname(g), len(ns), f2(len(ns) / n), pc(F['n'], gr), pc(F['l'] + F['files'], gr), pc(F['ctx'], gr), pc(F['r'], gr), pc(F['include'], gr),
+                               pc(F['i'], gr), pc(piped_n, gr), ', '.join(f'{k}={v}' for k, v in pipes.most_common(4)) or '-',
+                               pc(lst, len(ns)), kfmt(mean([c['chars'] for c in ns]))])
+        reads = [c for c in allc if c['bucket'] in ('native-read', 'ss-read')]
+        if reads:
+            L = [read_lines(c) for c in reads]
+            lines = [x for x, _ in L if x]
+            whole = sum(1 for _, w in L if w)
+            rows_read.append([gname(g), len(reads), f2(len(reads) / n), kfmt(pctile(lines, .5)), kfmt(pctile(lines, .75)), kfmt(mean(lines)), pc(whole, len(reads)),
+                              kfmt(mean([c['chars'] for c in reads])), pc(len(lines), len(reads))])
+        fg = [first_gold(r) for r in rs if r['probe']['_goldFiles']]
+        hit = [x for x in fg if x['idx']]
+        rows_first.append([gname(g), len(fg), pc(len(hit), len(fg)), f2(mean([x['idx'] for x in hit]), 1), kfmt(pctile([x['idx'] for x in hit], .5)),
+                           kfmt(pctile([x['chars'] for x in hit], .5)), f2(mean([x['turn'] for x in hit]), 1),
+                           f2(mean([x['idxShown'] for x in fg if x['idxShown']]), 1)])
+    return (md_table(['group', 'n', 'model tool calls', 'commands per tool call', 'tool calls with ≥ 2 commands', 'with ≥ 4', 'max', 'tool calls mixing search + read', 'requests/q', 'native calls whose share of a chained output is only estimated'], rows_chain),
+            md_table(['native group', 'search calls', 'per q', '-n', '-l / files only', '-A/-B/-C context', 'recursive (-r, rg)', 'include/glob/type filter', '-i', 'piped into a filter', 'pipe targets', 'find/ls listing', 'chars/call'], rows_flags),
+            md_table(['group', 'read calls', 'per q', 'median lines/read', 'p75 lines', 'mean lines', 'whole-file reads', 'chars/read', 'reads with a measured window'], rows_read),
+            md_table(['group', 'q with gold files', 'reached a gold file', 'mean call index of first gold', 'median call index', 'median tool-output chars consumed up to it', 'mean request of first gold', 'mean call index of first gold SHOWN with code'], rows_first))
+
+
+def sec_gold_eff(G):
+    rows = []
+    for g, rs in G.items():
+        per = defaultdict(lambda: [0, 0.0, 0.0, 0, 0])   # calls, chars, gold chars, new gold files, calls with gold
+        for r in rs:
+            if not r['probe']['_goldFiles']:
+                continue
+            seen = set()
+            for c in r['mainCalls']:
+                if c['bucket'] == 'other':
+                    continue
+                gc = gold_chars(c, c['_text'], r['probe'])
+                raw = len(c['_text']) or 1
+                x = per[c['bucket']]
+                x[0] += 1
+                x[1] += c['chars']
+                x[2] += c['chars'] * min(gc / raw, 1.0)
+                new = c['goldFiles'] - seen
+                x[3] += len(new)
+                x[4] += 1 if c['goldFiles'] else 0
+                seen |= c['goldFiles']
+        for b in BUCKETS:
+            if b not in per:
+                continue
+            k, ch, gch, newg, wg = per[b]
+            rows.append([gname(g), b, k, kfmt(ch / k), pc(gch, ch), kfmt(ch / 4 / newg) if newg else '∞', f2(newg / k), pc(wg, k)])
+    return md_table(['group', 'tool', 'calls', 'chars/call', 'gold-bearing share of chars', 'tokens per NEW gold file surfaced', 'new gold files per call', 'calls with any gold file'], rows)
+
+
+def overhead(r):
+    run = r['run']
+    price = CELLS[run['cell']][1]
+    wp = price['in'] * (1.25 if run['harness'] == 'cc' else 1.0)
+    cp = price['cache']
+    unc0 = (r['cw0'] or 0) + (r['fresh0'] or 0)
+    fixed = (unc0 * wp + (r['prefix0'] or 0) * max(r['nReqMain'] - 1, 0) * cp) / 1e6
+    tool = sum(c['tok'] * wp + c['amp'] * cp for c in r['calls']) / 1e6
+    return fixed, tool, (r['row'].get('costRealizedUsd') or 0) - fixed - tool
+
+
+def sec_fixed(G):
+    rows = []
+    for g, rs in G.items():
+        O = [overhead(r) for r in rs]
+        cost = mean([r['row'].get('costRealizedUsd') for r in rs]) or 0
+        fx_, tl, rest = mean([o[0] for o in O]), mean([o[1] for o in O]), mean([o[2] for o in O])
+        ncalls = sum(len(r['calls']) for r in rs) or 1
+        per_call = sum(o[1] for o in O) / ncalls
+        rows.append([gname(g), len(rs), kfmt(mean([r['prefix0'] for r in rs])), kfmt(mean([(r['cw0'] or 0) + (r['fresh0'] or 0) for r in rs])),
+                     f"{fd(fx_)} ({pm(fx_, cost)})", f"{fd(tl)} ({pm(tl, cost)})", f"{fd(rest)} ({pm(rest, cost)})", fd(per_call, 5),
+                     f2(fx_ / per_call, 1) if per_call else '-'])
+    return md_table(['group', 'n', 'request-0 prefix tok (system + tools + rules + question)', 'request-0 uncached tok', 'fixed prefix $/q (est.)', 'tool-output $/q (est.)',
+                     'rest $/q (model text, reasoning, output tok)', 'tool-output $ per call (est.)', 'fixed prefix = how many calls of output'], rows)
+
+
+def run_order(G, ga, gb):
+    ta = min((r['tsStart'] for r in G[ga] if r['tsStart']), default='')
+    tb = min((r['tsStart'] for r in G[gb] if r['tsStart']), default='')
+    if not ta or not tb:
+        return 'unknown order'
+    return 'native started after sweet' if ta > tb else 'native started before sweet'
+
+
+def native_pairs(G):
+    """Each sweet group -> the native group of the same difficulty + cell with the largest question overlap
+    (ties: the longer common tag prefix)."""
+    out = []
+    for gb, rb in G.items():
+        if gb[3] == 'native':
+            continue
+        ids_b = {r['probe']['id'] for r in rb}
+        best = None
+        for ga, ra in G.items():
+            if ga[3] != 'native' or ga[0] != gb[0] or ga[1] != gb[1]:
+                continue
+            ov = len(ids_b & {r['probe']['id'] for r in ra})
+            pre = len(os.path.commonprefix([ga[2], gb[2]]))
+            key = (ov, ga[2] == gb[2], pre)
+            if ov and (best is None or key > best[0]):
+                best = (key, ga)
+        if best:
+            out.append((best[1], gb))
+    return out
+
+
+def cum(xs):
+    out, s = [], 0.0
+    for x in xs:
+        s += x
+        out.append(s)
+    return out
+
+
+PATTERNS = OrderedDict([
+    ('prefix', 'request 0 already costs more: the larger system prompt / rules prefix is written to the cache'),
+    ('search-dump', 'ranked ss-search / ss-find prints code blocks where native prints a grep listing'),
+    ('search-vs-read', 'ranked ss-search / ss-find output is larger than native\'s read at the same step'),
+    ('wide-read', 'ss-read shows a wider window than native\'s sed / head range'),
+    ('graph-dump', 'ss-trace / ss-semantic output is larger than native\'s call at the same step'),
+    ('grep-bigger', 'ss-grep output is larger than native\'s grep at the same step'),
+    ('extra-turns', 'sweet keeps working after native has already answered'),
+    ('cache-miss', 'similar output, but the sweet request writes or re-reads more uncached context'),
+    ('accumulated', 'no single step: small per-step differences add up'),
+])
+
+
+def divergence(A, B):
+    """First request where sweet's cumulative cost gap reaches 25% of its final gap; classify the step."""
+    Cn, Cs = cum(A['reqCost']), cum(B['reqCost'])
+    if not Cn or not Cs:
+        return None
+    Gap = Cs[-1] - Cn[-1]
+    if Gap <= 0:
+        return None
+    K = max(len(Cn), len(Cs))
+    k = next(i for i in range(K) if Cs[min(i, len(Cs) - 1)] - Cn[min(i, len(Cn) - 1)] >= 0.25 * Gap)
+    dt = lambda c: c.get('deliveredTurn') or c['turnIndex']
+    sc = [c for c in B['mainCalls'] if dt(c) == k]
+    nc = [c for c in A['mainCalls'] if dt(c) == k]
+    S, N = sum(c['chars'] for c in sc), sum(c['chars'] for c in nc)
+    if k == 0:
+        pat = 'prefix'
+    elif k >= len(Cn):
+        pat = 'extra-turns'
+    elif S > max(2 * N, N + 1500):
+        top = max(sc, key=lambda c: c['chars'])['bucket']
+        nat_search = any(c['bucket'] == 'native-search' for c in nc)
+        if top in ('ss-search', 'ss-find'):
+            pat = 'search-dump' if nat_search or not nc else 'search-vs-read'
+        elif top == 'ss-read':
+            pat = 'wide-read'
+        elif top in ('ss-trace', 'ss-semantic'):
+            pat = 'graph-dump'
+        elif top == 'ss-grep':
+            pat = 'grep-bigger'
+        else:
+            pat = 'accumulated'
+    else:
+        un = B['reqUncached'][k] - (A['reqUncached'][k] if k < len(A['reqUncached']) else 0)
+        pat = 'cache-miss' if un > 2000 else 'accumulated'
+    short = lambda cs: '; '.join(f"{c['tool']} `{(c['args'] or '')[:60]}` {kfmt(c['chars'])} ch" for c in sorted(cs, key=lambda c: -c['chars'])[:2]) or '(none)'
+    return {'request': k, 'pattern': pat, 'gap': Gap, 'sweetCalls': short(sc), 'nativeCalls': short(nc), 'sweetChars': S, 'nativeChars': N,
+            'req0Delta': (Cs[0] - Cn[0])}
+
+
+def sec_paired_native(G, pairs):
+    out, data = [], {}
+    for ga, gb in pairs:
+        A = {r['probe']['id']: r for r in G[ga]}
+        B = {r['probe']['id']: r for r in G[gb]}
+        ids = sorted(set(A) & set(B))
+        if not ids:
+            continue
+        same_run = ga[2] == gb[2]
+        def m(f, rs):
+            return mean([f(x) for x in rs])
+        AA, BB = [A[i] for i in ids], [B[i] for i in ids]
+        fa = [first_gold(x) for x in AA if x['probe']['_goldFiles']]
+        fb = [first_gold(x) for x in BB if x['probe']['_goldFiles']]
+        rows = [
+            ['score', f2(m(lambda x: x['row'].get('score'), AA), 3), f2(m(lambda x: x['row'].get('score'), BB), 3)],
+            ['cost $ (runner)', fd(m(lambda x: x['row'].get('costRealizedUsd'), AA)), fd(m(lambda x: x['row'].get('costRealizedUsd'), BB))],
+            ['model tool calls', f2(m(lambda x: x['units'], AA)), f2(m(lambda x: x['units'], BB))],
+            ['commands (segments)', f2(m(lambda x: len(x['mainCalls']), AA)), f2(m(lambda x: len(x['mainCalls']), BB))],
+            ['requests', f2(m(lambda x: x['nReqMain'], AA)), f2(m(lambda x: x['nReqMain'], BB))],
+            ['tool-output chars', kfmt(m(lambda x: sum(c['chars'] for c in x['calls']), AA)), kfmt(m(lambda x: sum(c['chars'] for c in x['calls']), BB))],
+            ['cache-write + fresh input tok', kfmt(m(lambda x: x['tok']['cacheWrite'] + x['tok']['fresh'], AA)), kfmt(m(lambda x: x['tok']['cacheWrite'] + x['tok']['fresh'], BB))],
+            ['cache-read tok', kfmt(m(lambda x: x['tok']['cacheRead'], AA)), kfmt(m(lambda x: x['tok']['cacheRead'], BB))],
+            ['request-0 uncached tok', kfmt(m(lambda x: (x['cw0'] or 0) + (x['fresh0'] or 0), AA)), kfmt(m(lambda x: (x['cw0'] or 0) + (x['fresh0'] or 0), BB))],
+            ['first-gold call index (mean)', f2(mean([x['idx'] for x in fa]), 1), f2(mean([x['idx'] for x in fb]), 1)],
+            ['chars consumed up to first gold (median)', kfmt(pctile([x['chars'] for x in fa if x['chars']], .5)), kfmt(pctile([x['chars'] for x in fb if x['chars']], .5))],
+        ]
+        title = f"#### {gname(ga)} vs {gname(gb)} — paired n={len(ids)}{'†' if len(ids) < SMALL else ''}"
+        order = run_order(G, ga, gb)
+        cav = (f'Both arms come from one run, arms in sequence ({order}), not interleaved. Provider drift can bias the cost difference; token and call patterns are not affected.' if same_run else
+               f'Separate runs ({order}), not interleaved. Provider drift can bias the cost difference '
+               '(Codex showed −24.5% cost between two identical runs 25 min apart). Token-level and call-level patterns are not affected.')
+        D = []
+        for i in ids:
+            dv = divergence(A[i], B[i])
+            D.append((i, (B[i]['row'].get('costRealizedUsd') or 0) - (A[i]['row'].get('costRealizedUsd') or 0), dv))
+        D.sort(key=lambda x: -x[1])
+        top = D[:10]
+        trows = []
+        for i, dc, dv in top:
+            a, b = A[i], B[i]
+            trows.append([i, a['probe']['stratum'], f"{fd(a['row'].get('costRealizedUsd'), 3)} → {fd(b['row'].get('costRealizedUsd'), 3)}", f"{dc:+.3f}",
+                          f"{f2(a['row'].get('score'))} → {f2(b['row'].get('score'))}", f"{a['nReqMain']} → {b['nReqMain']}",
+                          f"{kfmt(sum(c['chars'] for c in a['calls']))} → {kfmt(sum(c['chars'] for c in b['calls']))}",
+                          dv['request'] if dv else '-', dv['pattern'] if dv else '(no excess)', dv['sweetCalls'] if dv else '', dv['nativeCalls'] if dv else ''])
+        pos = [x for x in D if x[2]]
+        pc_all = Counter(x[2]['pattern'] for x in pos)
+        pc_top = Counter(x[2]['pattern'] for x in top if x[2])
+        prow = [[k, PATTERNS[k], pc_top.get(k, 0), pc_all.get(k, 0), fd(mean([x[1] for x in pos if x[2]['pattern'] == k]), 4)] for k in PATTERNS if pc_all.get(k)]
+        out.append('\n\n'.join([title, cav, md_table(['metric (paired means)', gname(ga), gname(gb)], rows),
+                                f'Top 10 questions by sweet cost excess. Divergence = first request where sweet\'s cumulative cost gap reaches 25% of its final gap; the calls shown are the outputs that entered that request.',
+                                md_table(['question', 'stratum', '$ native → sweet', 'Δ$', 'score', 'requests', 'tool chars', 'divergence request', 'pattern', 'sweet output at divergence', 'native output at divergence'], trows),
+                                f'Pattern counts (top 10, and all {len(pos)} questions where sweet cost more):',
+                                md_table(['pattern', 'meaning', 'top 10', 'all with excess', 'mean excess $'], prow)]))
+        data[(ga, gb)] = {'ids': ids, 'D': D, 'A': A, 'B': B, 'patternsAll': pc_all, 'patternsTop': pc_top, 'nPos': len(pos), 'sameRun': same_run, 'order': order}
+    return '\n\n'.join(out) if out else '_No native/sweet pair yet._', data
+
+
+def why_native(G, pairs, pdata):
+    """Five computed patterns per HARD pair (falls back to easy pairs when no hard pair exists)."""
+    hard = [p for p in pairs if p[0][0] == 'hard' and p in pdata]
+    easy = [p for p in pairs if p[0][0] == 'easy' and p in pdata]
+    use = hard + easy
+    blocks = []
+    for ga, gb in use:
+        if (ga, gb) == (easy[0] if easy else None):
+            blocks.append('##### Easy r3 dev pairs (contrast; the only Codex native data until `r3hdev-cx-nat` lands)')
+        d = pdata[(ga, gb)]
+        ids = d['ids']
+        A, B = [d['A'][i] for i in ids], [d['B'][i] for i in ids]
+        n = len(ids)
+        dag = '†' if n < SMALL else ''
+        dcost = mean([(b['row'].get('costRealizedUsd') or 0) - (a['row'].get('costRealizedUsd') or 0) for a, b in zip(A, B)])
+        OA, OB = [overhead(x) for x in A], [overhead(x) for x in B]
+        dfix = mean([o[0] for o in OB]) - mean([o[0] for o in OA])
+        dtool = mean([o[1] for o in OB]) - mean([o[1] for o in OA])
+        p0a, p0b = mean([x['prefix0'] for x in A]), mean([x['prefix0'] for x in B])
+        u0a, u0b = mean([(x['cw0'] or 0) + (x['fresh0'] or 0) for x in A]), mean([(x['cw0'] or 0) + (x['fresh0'] or 0) for x in B])
+        ca = [c for x in A for c in x['mainCalls']]
+        cb = [c for x in B for c in x['mainCalls']]
+        def cpc(cs, bks):
+            v = [c['chars'] for c in cs if c['bucket'] in bks]
+            return mean(v), len(v)
+        ns_ch, ns_n = cpc(ca, {'native-search'})
+        nr_ch, nr_n = cpc(ca, {'native-read'})
+        ss_ch, ss_n = cpc(cb, {'ss-search', 'ss-find'})
+        sg_ch, sg_n = cpc(cb, {'ss-grep'})
+        sr_ch, sr_n = cpc(cb, {'ss-read'})
+        def gshare(xs, bks):
+            ch = gc = 0.0
+            for x in xs:
+                for c in x['mainCalls']:
+                    if c['bucket'] in bks and x['probe']['_goldFiles']:
+                        raw = len(c['_text']) or 1
+                        ch += c['chars']
+                        gc += c['chars'] * min(gold_chars(c, c['_text'], x['probe']) / raw, 1.0)
+            return pc(gc, ch)
+        ua = defaultdict(int)
+        for x in A:
+            for c in x['mainCalls']:
+                ua[(x['probe']['id'], c['unitId'])] += 1
+        ub = defaultdict(int)
+        for x in B:
+            for c in x['mainCalls']:
+                ub[(x['probe']['id'], c['unitId'])] += 1
+        la = [read_lines(c)[0] for c in ca if c['bucket'] == 'native-read']
+        lb = [read_lines(c)[0] for c in cb if c['bucket'] == 'ss-read']
+        fa = [first_gold(x) for x in A if x['probe']['_goldFiles']]
+        fb = [first_gold(x) for x in B if x['probe']['_goldFiles']]
+        top = d['patternsTop'].most_common(2)
+        lines = [f"#### {gname(ga)} vs {gname(gb)} (paired n={n}{dag}; sweet − native = {dcost:+.4f} $/q)"]
+        lines.append(f"_{'One run, arms in sequence' if d['sameRun'] else 'Separate runs'} ({d['order']}), not interleaved: the dollar figures carry provider-drift risk; the token and call figures do not._")
+        lines.append(f"1. **Fixed prefix.** The sweet request-0 prompt is {p0b - p0a:+,.0f} tokens larger ({kfmt(p0a)} → {kfmt(p0b)}). "
+                     f"Request 0 sends {kfmt(u0a)} → {kfmt(u0b)} tokens that are not read from cache. Estimated fixed-prefix cost difference: {dfix:+.4f} $/q "
+                     + (f"({pm(dfix, dcost)} of the gap)." if dcost > 0.002 else "(the cost gap is too small to split)."))
+        lines.append(f"2. **Output per search call.** Native search prints {kfmt(ns_ch)} chars per call (n={ns_n}); ss-search/ss-find print {kfmt(ss_ch)} (n={ss_n}{'†' if ss_n < SMALL else ''}), "
+                     f"ss-grep {kfmt(sg_ch)} (n={sg_n}). Gold-bearing share: native search {gshare(A, {'native-search'})}, ss-grep {gshare(B, {'ss-grep'})}, "
+                     f"ss-search/find {gshare(B, {'ss-search', 'ss-find'})}. Estimated tool-output cost difference: {dtool:+.4f} $/q.")
+        lines.append(f"3. **Chaining.** Native runs {f2(mean(list(ua.values())))} commands per tool call (sweet {f2(mean(list(ub.values())))}), "
+                     f"so it uses {f2(mean([x['nReqMain'] for x in A]))} requests per question against sweet's {f2(mean([x['nReqMain'] for x in B]))}. "
+                     f"Every extra request re-reads the whole prefix.")
+        lines.append(f"4. **Read windows.** Native reads show a median of {kfmt(pctile(la, .5))} lines ({kfmt(nr_ch)} chars per read, n={nr_n}); "
+                     f"ss-read shows a median of {kfmt(pctile(lb, .5))} lines ({kfmt(sr_ch)} chars per read, n={sr_n}). Gold-bearing share: native read {gshare(A, {'native-read'})}, ss-read {gshare(B, {'ss-read'})}.")
+        lines.append(f"5. **Where the trajectories split.** In the top 10 questions by sweet cost excess, the most common divergence is "
+                     + (', '.join(f"'{k}' ({v}/10: {PATTERNS[k]})" for k, v in top) if top else 'none') +
+                     f". First gold file: native at call {f2(mean([x['idx'] for x in fa if x['idx']]), 1)} after {kfmt(pctile([x['chars'] for x in fa if x['chars']], .5))} chars (median); "
+                     f"sweet at call {f2(mean([x['idx'] for x in fb if x['idx']]), 1)} after {kfmt(pctile([x['chars'] for x in fb if x['chars']], .5))} chars.")
+        blocks.append('\n'.join(lines))
+    if not blocks:
+        return '_No native/sweet pair yet._'
+    return '\n\n'.join(blocks)
+
+
+def write_paired_dossiers(pdata):
+    d = os.path.join(OUT_DOSS, 'paired')
+    os.makedirs(d, exist_ok=True)
+    written = []
+    def traj(r):
+        p = r['probe']
+        return {'tag': r['run']['tag'], 'arm': r['row']['arm'], 'armLabel': r['label'], 'score': r['row'].get('score'), 'costUsd': r['row'].get('costRealizedUsd'),
+                'requests': r['nReqMain'], 'requestCostUsd': [round(x, 5) for x in r['reqCost']], 'requestUncachedTok': r['reqUncached'],
+                'toolOutputChars': round(sum(c['chars'] for c in r['calls'])), 'firstGold': first_gold(r),
+                'goldFilesNamedInAnswer': sorted(r['ansFiles']), 'answer': r['answer'],
+                'calls': [{'idx': c.get('idx'), 'issuedTurn': c['turnIndex'], 'deliveredTurn': c.get('deliveredTurn'), 'turnsRemaining': c.get('turnsRemaining'),
+                           'tool': c['tool'], 'bucket': c['bucket'], 'args': (c['args'] or '')[:400], 'chars': round(c['chars']), 'kind': c['kind'],
+                           'goldFiles': sorted(c['goldFiles']), 'goldShown': sorted(c['goldShown']), 'goldChars': gold_chars(c, c['_text'], p),
+                           'readLines': read_lines(c)[0], 'outputHead': smart_clip(c['_text'], p, 1500)} for c in r['mainCalls']]}
+    for (ga, gb), x in pdata.items():
+        f = os.path.join(d, f"{ga[1]}.{ga[2]}__{gb[2]}.{gb[3]}.jsonl")
+        with open(f, 'w') as fh:
+            for i, dc, dv in x['D']:
+                a, b = x['A'][i], x['B'][i]
+                p = a['probe']
+                fh.write(json.dumps({'id': i, 'stratum': p['stratum'], 'repoGroup': p['_group'], 'question': p['query'],
+                                     'gold': {'files': p['_goldFiles'], 'symbols': p['_goldSyms'], 'facts': p.get('expectedFacts')},
+                                     'costExcessUsd': round(dc, 5), 'divergence': dv, 'sameRun': x['sameRun'],
+                                     'native': traj(a), 'sweet': traj(b)}, ensure_ascii=False, default=list) + '\n')
+        written.append((f, len(x['D'])))
+    return written
+
+
+# ----------------------------------------------------------------------------------------------
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--no-dossiers', action='store_true')
@@ -1283,7 +1837,7 @@ def main():
     R, status, probes = load_all(a.only)
     G = groups_of(R)
     hard_dev = sum(1 for p in probes.values() if p['_difficulty'] == 'hard' and p.get('set') == 'dev')
-    pairs_native = paired(G, lambda ga, gb: ga[3] == 'native', lambda gb: gb[3] != 'native', R)
+    pairs_native = native_pairs(G)
     def base_of(g):
         return arm_label(g[2], g[3], g[1]).replace('+FixA', '').replace('sweet', 'sweet shipped (2.8.2)' if not g[1].startswith('cc') else 'sweet', 1) if not g[1].startswith('cc') else arm_label(g[2], g[3], g[1]).replace('+FixA', '')
     pairs_fix = paired(G, lambda ga, gb: arm_label(ga[2], ga[3], ga[1]) == base_of(gb) and '+FixA' not in arm_label(ga[2], ga[3], ga[1]),
@@ -1337,6 +1891,8 @@ def main():
     md.append('Start order = timestamp of the first model request (runs used concurrency 3, so neighbours can overlap). The hard DEV set has '
               + f"{len({p['repo'] for p in probes.values() if p['_difficulty'] == 'hard' and p.get('set') == 'dev'})} repos for {hard_dev} questions.\n")
     md.append(sec_firstrepo(G) + '\n')
+    md.append('**Caveat:** the pilot asks 2 questions per repo, so half its rollouts pay the cold-prefix write. This effect must be re-checked on the 97-question run '
+              '(about 9 questions per repo) before any cost difference is attributed to V1b.\n')
     md.append('### Sweet vs native on the same questions (paired; bootstrap 95% CI of the mean difference, B=5000, seed 42)\n')
     md.append(p1 + '\n')
     md.append('### Where the extra cost comes from (paired means, B − A)\n')
@@ -1345,9 +1901,44 @@ def main():
     md.append(sec_strata(G) + '\n')
     md.append('## 7. Easy (r3 dev) vs hard, same cell and arm\n')
     md.append(sec_contrast(G) + '\n')
+    n_chain, n_flags, n_read, n_first = sec_native_strategy(G)
+    t_paired, pdata = sec_paired_native(G, pairs_native)
+    md.append('## Why native is cheap\n')
+    md.append('Native runs now queued on the 97-question hard DEV set (`r3hdev-op-nat`, `r3hdev-cx-nat`, `r3hdev-oc-nat`, final-tuning results folder) are paired automatically '
+              'when they exist: each sweet group pairs with the native group of the same cell that shares the most questions. Until then the hard pair is the 20-question Opus pilot. '
+              'Those native runs start AFTER the matching sweet run (not interleaved), so provider drift can bias every cost difference between them '
+              '(Codex showed −24.5% cost between two identical runs 25 minutes apart). Token-level and call-level patterns are not affected.\n')
+    md.append('### The five strongest patterns (computed; re-generated on every run)\n')
+    md.append(why_native(G, pairs_native, pdata) + '\n')
+    md.append('### N1. Native strategy\n')
+    md.append('**Commands per model tool call** (a chained shell call `grep …; sed …` counts its commands; sweet groups shown for contrast). '
+              'When one tool call chains several native commands, their shared output is split by line shape (grep lines vs read ranges); the last column counts the calls where that split failed and the output was divided equally.\n')
+    md.append(n_chain + '\n')
+    md.append('**Grep flags** (native search calls; shares of grep/rg calls, find/ls listings counted apart):\n')
+    md.append(n_flags + '\n')
+    md.append('**Read windows** (native reads: sed -n / head / Read ranges / gutter line numbers; ss-read: printed spans):\n')
+    md.append(n_read + '\n')
+    md.append('**Speed to the first gold file** (call index counts every command; chars are tool-output chars consumed up to and including that call):\n')
+    md.append(n_first + '\n')
+    md.append('### N2. Native vs sweet on the same question, and where they diverge\n')
+    md.append(t_paired + '\n')
+    md.append('### N3. Output efficiency: gold per character, per tool\n')
+    md.append('Gold-bearing chars: a read of a gold file counts whole; a search/find/semantic entry counts when its header names a gold file; '
+              'grep/trace lines count when they name a gold path. Tokens per NEW gold file = tool-output tokens of that tool ÷ gold files it surfaced first in the rollout.\n')
+    md.append(sec_gold_eff(G) + '\n')
+    md.append('### N4. Fixed overhead vs per-call output cost\n')
+    md.append('Estimate with the cell price: fixed prefix = request-0 uncached tokens × write price + prefix × (requests − 1) × cache-read price; '
+              'tool output = Σ output tokens × write price + amplified tokens × cache-read price (write price: Opus 1.25 × input; GPT input price). '
+              'On the GPT cells some re-reads miss the cache, so their estimates are lower bounds; the rest column absorbs the difference.\n')
+    md.append(sec_fixed(G) + '\n')
     md.append('## 8. Bundle A (SS_FIX_A=1) vs shipped output, same questions\n')
     md.append(f1 + '\n\n' + f2_ + '\n')
     if not a.no_dossiers:
+        wp = write_paired_dossiers(pdata)
+        md.append('## Paired dossiers\n')
+        md.append('`forensics/hard-dossiers/paired/<cell>.<nativeTag>__<sweetTag>.<arm>.jsonl`: one record per question with the native and the sweet trajectory side by side '
+                  '(per-request cost, every call with arguments, chars, gold hits, read window and a 1,500-char output head), the cost excess and the divergence step.\n')
+        md.append(md_table(['file', 'questions'], [[os.path.relpath(f, HERE), n] for f, n in wp]) + '\n')
         w = write_dossiers(G)
         md.append('## Dossiers\n')
         md.append('One JSONL per cell-tag-arm in `forensics/hard-dossiers/`: one `rollout` record (question, gold, score, cost, answer) and one `call` record per tool call '
