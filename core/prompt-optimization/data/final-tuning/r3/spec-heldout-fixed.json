@@ -1,0 +1,89 @@
+{
+ "label": "r3 HELD-OUT (103) \u2014 final evaluation after the ss-find fix (Opus/Codex sweet arms re-run), aggregates only",
+ "comparisons": [
+  {
+   "name": "Opus 2.8.2 vs native",
+   "cell": "cc-opus55-medium",
+   "a": {
+    "tag": "ho-op-nat",
+    "arm": "native"
+   },
+   "b": {
+    "tag": "ho-op-sw2",
+    "arm": "sweet"
+   }
+  },
+  {
+   "name": "Opus V1b vs native",
+   "cell": "cc-opus55-medium",
+   "a": {
+    "tag": "ho-op-nat",
+    "arm": "native"
+   },
+   "b": {
+    "tag": "ho-op-v1b2",
+    "arm": "sweet"
+   }
+  },
+  {
+   "name": "Opus V1b vs 2.8.2",
+   "cell": "cc-opus55-medium",
+   "a": {
+    "tag": "ho-op-sw2",
+    "arm": "sweet"
+   },
+   "b": {
+    "tag": "ho-op-v1b2",
+    "arm": "sweet"
+   }
+  },
+  {
+   "name": "Codex 2.8.2 vs native",
+   "cell": "codex-sol61-high",
+   "a": {
+    "tag": "ho-cx-ns2",
+    "arm": "native"
+   },
+   "b": {
+    "tag": "ho-cx-ns2",
+    "arm": "sweet"
+   }
+  },
+  {
+   "name": "Sonnet 2.8.2 vs native",
+   "cell": "cc-sonnet55-high",
+   "a": {
+    "tag": "ho-sn-nat",
+    "arm": "native"
+   },
+   "b": {
+    "tag": "ho-sn-sw",
+    "arm": "sweet"
+   }
+  },
+  {
+   "name": "Sonnet V1b vs native",
+   "cell": "cc-sonnet55-high",
+   "a": {
+    "tag": "ho-sn-nat",
+    "arm": "native"
+   },
+   "b": {
+    "tag": "ho-sn-v1b",
+    "arm": "sweet"
+   }
+  },
+  {
+   "name": "Sonnet V1b vs 2.8.2",
+   "cell": "cc-sonnet55-high",
+   "a": {
+    "tag": "ho-sn-sw",
+    "arm": "sweet"
+   },
+   "b": {
+    "tag": "ho-sn-v1b",
+    "arm": "sweet"
+   }
+  }
+ ]
+}
