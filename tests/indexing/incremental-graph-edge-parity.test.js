@@ -205,39 +205,52 @@ describe('incremental graph edge resolution matches a full build', () => {
       'const store = new Store();',
       'helper(1);',
       'helper(2);',
+      ...top,
       'export function run() {',
       ...body,
       '}',
     ]);
-    // run() calls helper twice and store.load twice.
+    let top = ['store.load("t1");', 'store.load("t2");'];
+    // run() calls helper twice and store.load twice; top-level code calls
+    // helper twice and store.load twice (source: the file node).
     app(['  helper(3);', '  store.load("a");', '  helper(4);', '  store.load("b");']);
     enqueue('src/util.ts', 'src/app.ts');
     await tick();
     let files = ['src/util.ts', 'src/app.ts'];
     let inc = incrementalSites();
     const runSites = (rows) => rows.filter((r) => r.includes('#function:run@'));
+    const topLevel = (rows) => rows.filter((r) => / file /.test(r));
     expect(runSites(inc)).toEqual([
-      'bare src/app.ts#function:run@5 helper@6',
-      'bare src/app.ts#function:run@5 helper@8',
-      'line src/app.ts#function:run@5 store.load@7',
-      'line src/app.ts#function:run@5 store.load@9',
+      'bare src/app.ts#function:run@7 helper@10',
+      'bare src/app.ts#function:run@7 helper@8',
+      'line src/app.ts#function:run@7 store.load@11',
+      'line src/app.ts#function:run@7 store.load@9',
     ]);
-    // Top-level calls keep one row per site too.
-    expect(inc.filter((r) => r.includes(' helper@3') || r.includes(' helper@4')).length).toBe(2);
+    expect(topLevel(inc)).toEqual([
+      'bare file helper@3',
+      'bare file helper@4',
+      'line file store.load@5',
+      'line file store.load@6',
+    ]);
     expect(inc).toEqual(await fullBuildSites(files));
     expect(incrementalEdges()).toEqual(await fullBuildEdges(files));
 
-    // Remove one of two helper calls and add a third store.load.
+    // Remove one of two helper calls in run() and one top-level store.load;
+    // add a third store.load in run().
+    top = ['store.load("t1");'];
     app(['  helper(3);', '  store.load("a");', '  store.load("b");', '  store.load("c");']);
     enqueue('src/app.ts');
     await tick();
     inc = incrementalSites();
     expect(runSites(inc)).toEqual([
-      'bare src/app.ts#function:run@5 helper@6',
-      'line src/app.ts#function:run@5 store.load@7',
-      'line src/app.ts#function:run@5 store.load@8',
-      'line src/app.ts#function:run@5 store.load@9',
+      'bare src/app.ts#function:run@6 helper@7',
+      'line src/app.ts#function:run@6 store.load@10',
+      'line src/app.ts#function:run@6 store.load@8',
+      'line src/app.ts#function:run@6 store.load@9',
     ]);
+    // One top-level store.load left: a single site needs no call_lines row
+    // (its line is the relationship row's).
+    expect(topLevel(inc)).toEqual(['bare file helper@3', 'bare file helper@4']);
     expect(inc).toEqual(await fullBuildSites(files));
     expect(incrementalEdges()).toEqual(await fullBuildEdges(files));
 
