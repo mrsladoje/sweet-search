@@ -27,7 +27,7 @@ const base = s => String(s).split('/').pop().toLowerCase();
 const sym = s => String(s).toLowerCase().split(/::|\.|#/).pop();
 const probes = fs.readdirSync(dir).filter(f => f.endsWith('.json') && f !== 'closed-book.json').flatMap(f => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')).probes || []);
 let i = 0;
-await Promise.all(Array.from({ length: 6 }, async () => {
+await Promise.all(Array.from({ length: Number(process.env.CB_CONC || 16) }, async () => {
   while (i < probes.length) {
     const p = probes[i++]; if (done[p.id] || p.expectedNoMatch) continue;
     const prompt = `Without looking at any code, answer from memory. Repository: "${p.repo}" (${p.language}).\nQuestion: ${p.query}\nReply JSON only: {"files": ["path/to/file", ...], "symbols": ["Name", ...]}`;
