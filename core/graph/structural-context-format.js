@@ -54,7 +54,14 @@ export function formatStructuralContext(result, options = {}) {
   if (mode) lines.push(`\nmode=${mode} — showing only this section; run ss-trace ${t.name} with no mode word for the full trace.`);
   for (const [title, section] of [['callers', result.sections.callers], ['callees', result.sections.callees]]) {
     if (!show(title)) continue;
-    lines.push(`\n## ${title} (${section.total})`);
+    // fan-in / fan-out count distinct callers / callees; the section lists one
+    // row per call site. Say so when the two differ, so the header and the
+    // heading read as one set.
+    const noun = title === 'callers' ? 'caller' : 'callee';
+    const count = section.distinct != null && section.distinct !== section.total
+      ? `${section.total} call sites, ${section.distinct} distinct ${noun}${section.distinct === 1 ? '' : 's'}`
+      : `${section.total}`;
+    lines.push(`\n## ${title} (${count})`);
     for (const item of section.items) {
       lines.push(`\n### ${item.name} [${item.type}] importance=${item.importance}`);
       lines.push(item.summary);

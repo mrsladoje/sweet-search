@@ -637,6 +637,40 @@ export class StructuralContextRepository {
     }
   }
 
+  /**
+   * Definition that a `self.name(` / `this.name(` call in `target` reaches: an
+   * indexed callable named `name` in the target's own file. The target's own
+   * owning type wins when it has one. Several owners left is a guess, so the
+   * answer is then null (same exactly-one rule as _resolveUnresolvedTarget).
+   */
+  findSameFileMember(name, target) {
+    const db = this._open();
+    const raw = String(name || '').trim();
+    if (!db || !raw || !target?.filePath) return null;
+    try {
+      const rows = db.prepare(`
+        SELECT id, name, type, file_path, start_line, end_line, signature,
+               summary, parent_class, package
+        FROM entities
+        WHERE ${this._entitySql(db)}
+          AND file_path = ?
+          AND name = ?
+          AND start_line IS NOT NULL
+        ORDER BY start_line ASC
+        LIMIT 16
+      `).all(...this._entityParams(db), target.filePath, raw)
+        .map(row => this._entityFromRow(row))
+        .filter(e => e && e.id !== target.id && isLikelyCodeEntity(e));
+      const sameOwner = target.parentClass ? rows.filter(e => e.parentClass === target.parentClass) : [];
+      const pool = sameOwner.length ? sameOwner : rows;
+      if (!pool.length) return null;
+      const ownerKey = e => e.parentClass || '';
+      return pool.every(e => ownerKey(e) === ownerKey(pool[0])) ? pool[0] : null;
+    } catch {
+      return null;
+    }
+  }
+
   getEntityCount() {
     const db = this._open();
     if (!db) return 0;

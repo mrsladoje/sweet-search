@@ -9,7 +9,7 @@ import { DB_PATHS } from '../infrastructure/config/index.js';
 import { StructuralContextRepository } from '../infrastructure/structural-context-repository.js';
 import { isLikelyCodeEntity } from '../infrastructure/structural-context-utils.js';
 import { buildAnswerCues } from './structural-answer-cues.js';
-import { callsiteHints } from './structural-callsite-hints.js';
+import { callsiteHintSites, isSelfReceiver } from './structural-callsite-hints.js';
 import { extractHeaderContext } from './structural-header-context.js';
 import { scoreEntity, scoreImpactPath, tokenize, safeMax } from './structural-importance.js';
 import { personalizedPageRank } from './structural-forward-push.js';
@@ -55,6 +55,26 @@ function selectBudget(explicitBudget, candidates) {
     return { tier: 'xl', tokenBudget: BUDGETS.xl, reason: 'high_entropy_impact' };
   }
   return { tier: 'full', tokenBudget: BUDGETS.full, reason: 'balanced' };
+}
+
+/**
+ * Fan-in and fan-out of the traced symbol, counted over the SAME caller and
+ * callee sets the report prints. One source feeds the header, the section
+ * budget split and the body, so they cannot disagree. A stored-edge count
+ * misses callers found by the same-file scan, bare-call resolution and name
+ * matches on unresolved edges. Callers count once per calling entity (one
+ * caller with two call sites is one caller). A callee counts once per
+ * definition, or once per name for an external callee.
+ */
+export function traceFanCounts(callers, callees) {
+  const callerKeys = new Set();
+  for (const c of callers || []) if (c?.id) callerKeys.add(c.id);
+  const calleeKeys = new Set();
+  for (const c of callees || []) {
+    if (!c?.id) continue;
+    calleeKeys.add(c.type === 'external' ? `external:${c.targetName || c.name}` : c.id);
+  }
+  return { fanIn: callerKeys.size, fanOut: calleeKeys.size };
 }
 
 function sectionShares(targetFan, hint = '', target = null) {
@@ -249,21 +269,59 @@ function buildImpactPaths(repo, target, opts) {
     frontier = next;
     if (frontier.size === 0) break;
   }
-  addHintImpactPaths(paths, seenPathIds, repo, target, opts.hints || [], limit, opts.resolvedCallees || []);
+  addHintImpactPaths(paths, seenPathIds, repo, target, opts.hintSites || [], limit, opts.resolvedCallees || []);
   return paths;
 }
 
-function addHintImpactPaths(paths, seen, repo, target, hints, limit, resolvedCallees = []) {
-  const calleeByName = new Map();
-  for (const c of resolvedCallees) if (c?.id && c.name && !calleeByName.has(c.name)) calleeByName.set(c.name, c);
-  for (const name of hints) {
+/**
+ * Definition a qualified call hint (`a.b(`, `a::b(`, `a->b(`) reaches, or null.
+ * It binds ONLY to the callee the call resolved to, or to a same-file
+ * definition when the receiver is self/this. It never falls back to a global
+ * name match: `posting.Oracle()` must not land on an unrelated `Oracle` in
+ * another package. Same no-guess rule as the call resolver.
+ */
+function bindQualifiedHint(site, repo, target, calleesByName) {
+  const resolved = (calleesByName.get(site.name) || []).find(c => {
+    if (!c?.id || String(c.id).startsWith('external:')) return false;
+    // The call's own receiver (`x` in `x.Parse(`) must be one the hint wrote.
+    const parts = String(c.targetName || '').replace(/::|->/g, '.').split('.').filter(Boolean);
+    return parts.length < 2 || site.qualifiers.includes(parts[parts.length - 2]);
+  });
+  if (resolved) return resolved;
+  if (!site.qualifiers.some(isSelfReceiver)) return null;
+  const local = repo.findSameFileMember
+    ? repo.findSameFileMember(site.name, target)
+    : repo.findSameFileDefinition?.(site.name, target.filePath);
+  return local?.id ? local : null;
+}
+
+function groupCalleesByName(resolvedCallees) {
+  const byName = new Map();
+  for (const c of resolvedCallees) {
+    if (!c?.id || !c.name) continue;
+    if (!byName.has(c.name)) byName.set(c.name, []);
+    byName.get(c.name).push(c);
+  }
+  return byName;
+}
+
+function addHintImpactPaths(paths, seen, repo, target, hintSites, limit, resolvedCallees = []) {
+  const calleesByName = groupCalleesByName(resolvedCallees);
+  for (const site of hintSites) {
     if (paths.length >= limit) break;
-    // A name called in the target's body binds to the definition that call
-    // resolved to (GRDB: the broker's own `databaseDidRollback(notify…)`, not
-    // the protocol requirement or DatabaseRegionObservation's), then to the
+    // An unqualified name called in the target's body binds to the definition
+    // that call resolved to (GRDB: the broker's own `databaseDidRollback(notify…)`,
+    // not the protocol requirement or DatabaseRegionObservation's), then to the
     // definition in the target's own file, then to the global top candidate.
-    const local = calleeByName.get(name) || repo.findSameFileDefinition?.(name, target.filePath);
-    const hint = local?.id ? local : repo.findEntityCandidates?.(name, { limit: 1 })?.[0];
+    // A qualified name never takes the global candidate (bindQualifiedHint);
+    // when it binds to nothing it is left out.
+    let hint;
+    if (site.qualified) {
+      hint = bindQualifiedHint(site, repo, target, calleesByName);
+    } else {
+      const local = calleesByName.get(site.name)?.[0] || repo.findSameFileDefinition?.(site.name, target.filePath);
+      hint = local?.id ? local : repo.findEntityCandidates?.(site.name, { limit: 1 })?.[0];
+    }
     if (!hint || hint.id === target.id || !isLikelyCodeEntity(hint)) continue;
     const id = `hint:${target.id}>${hint.id}`;
     if (!seen.has(id)) {
@@ -315,7 +373,8 @@ export class StructuralContextBuilder {
     const readFileRange = this.repo.readFileRange?.bind(this.repo) || (() => null);
     const targetSource = readFileRange(target.filePath, target.startLine, target.endLine);
     const targetHeaderContext = extractHeaderContext(readFileRange, target.filePath);
-    const targetCallsiteHints = callsiteHints(targetSource, new Set([target.name]));
+    const targetHintSites = callsiteHintSites(targetSource, new Set([target.name]));
+    const targetCallsiteHints = targetHintSites.map(h => h.name);
     const storedCallers = [...this.repo.getCallers(target, { limit: 160 }), ...(this.repo.getAliasCallers?.(target, { limit: 80 }) || [])];
     // Same-file callsite scan: recovers callers the extractor stored no edge
     // for (bare local calls, out-of-line C++ methods). Deduped against stored
@@ -343,11 +402,22 @@ export class StructuralContextBuilder {
       calleeIds.add(x.id);
       calleesRaw.push({ ...x, depth: 1 });
     }
-    if (!calleesRaw.length) calleesRaw = targetCallsiteHints.map(name => this.repo.findEntityCandidates?.(name, { limit: 1 })?.[0]).filter(isLikelyCodeEntity).map(x => ({ ...x, relationship: 'handoff', depth: 1 }));
+    if (!calleesRaw.length) {
+      // No stored callees: fall back to names called in the body. A qualified
+      // name binds only through bindQualifiedHint (self/this in the same
+      // file); an unqualified name keeps the global top candidate.
+      const noResolvedCallees = new Map();
+      calleesRaw = targetHintSites
+        .map(site => (site.qualified
+          ? bindQualifiedHint(site, this.repo, target, noResolvedCallees)
+          : this.repo.findEntityCandidates?.(site.name, { limit: 1 })?.[0]))
+        .filter(isLikelyCodeEntity)
+        .map(x => ({ ...x, relationship: 'handoff', depth: 1 }));
+    }
     const impactRaw = buildImpactPaths(this.repo, target, {
       maxDepth: options.maxDepth ?? DEFAULT_MAX_DEPTH,
       limit: 120,
-      hints: targetCallsiteHints,
+      hintSites: targetHintSites,
       // Resolved callees (stored + scope-resolved bare calls) bind a hint
       // name to the definition the call actually reaches.
       resolvedCallees: calleesRaw.filter(x => x.relationship !== 'handoff'),
@@ -393,7 +463,7 @@ export class StructuralContextBuilder {
     callers.sort((a, b) => b.importance - a.importance);
     callees.sort((a, b) => b.importance - a.importance);
     const budget = selectBudget(options.tokenBudget, { callers, callees, impactPaths });
-    const targetFan = fan.get(target.id) || { fanIn: callers.length, fanOut: callees.length };
+    const targetFan = traceFanCounts(callersRaw, calleesRaw);
     const shares = sectionShares(targetFan, options.queryHint, target);
     const targetInfo = renderCode(target, {
       readFileRange,
@@ -443,10 +513,10 @@ export class StructuralContextBuilder {
       },
       sections: {
         callers: {
-          total: callers.length, shown: callersPack.items.length, items: callersPack.items,
+          total: callers.length, distinct: targetFan.fanIn, shown: callersPack.items.length, items: callersPack.items,
           provenance: callerProvenance,
         },
-        callees: { total: callees.length, shown: calleesPack.items.length, items: calleesPack.items },
+        callees: { total: callees.length, distinct: targetFan.fanOut, shown: calleesPack.items.length, items: calleesPack.items },
         impact: { total: impactPaths.length, shown: impactPack.paths.length, paths: impactPack.paths },
       },
     };
