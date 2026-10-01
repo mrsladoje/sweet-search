@@ -293,6 +293,10 @@ def parse_grep(text):
             add('header_meta', n)
         elif line.startswith('# (+N more'):
             add('truncation_note', n)
+        elif line.startswith('# +') and 'more file' in line:
+            add('hidden_files_note', n)
+        elif line.startswith('regex note:'):
+            add('regex_note', n)
         elif line.startswith('# same file (siblings of '):
             add('sibling_line', n)
         elif line.startswith('# indexed family:'):

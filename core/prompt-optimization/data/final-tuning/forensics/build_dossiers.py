@@ -191,7 +191,7 @@ def flatten_thread(harness, th):
                 c = {'turnIndex': ti, 'unitId': uid, 'unitSeg': k, 'unitSegCount': n_seg, 'compound': n_seg > 1,
                      'args': s['text'], 'tool': s['tool'], 'piped': s['piped'], 'pipeTail': s['pipeTail'], 'redirected': s['redirected'],
                      'isError': bool(u.get('isError')), 'unitCommand': full_cmd if n_seg > 1 else None, 'viaCli': s.get('viaCli', False),
-                     'neverCollected': bool(u.get('neverCollected'))}
+                     'neverCollected': bool(u.get('neverCollected')), 'persisted': bool(u.get('persisted')), 'persistedPath': u.get('persistedPath')}
                 if s['kind'] == 'ss-sub':
                     c['cls'] = 'ss'
                     c['output'] = ''
@@ -385,6 +385,7 @@ def main():
             nat_by_cls = Counter()
             main_turns = None
             n_units_all = 0
+            n_cmds_all = 0
             n_units_ss = 0
             gutter_seen = Counter()
             for th in threads:
@@ -405,6 +406,14 @@ def main():
                                     'outputKind': output_kind(c['tool'], out, c['boundary'], c.get('neverCollected'), c.get('redirected')),
                                     'outputKnown': c['boundary'] in KNOWN_BOUNDARIES and not c.get('neverCollected'), 'pipeTail': c.get('pipeTail'),
                                     'unitCommand': c.get('unitCommand'), 'before': c['before'], 'after': c['after'], 'amplification': c['amplification']})
+                        if c.get('persisted'):
+                            # Claude Code replaced a long result by a 2 KB preview in the model context. `output` is what the model saw.
+                            rec['persisted'] = True
+                            rec['persistedPath'] = c.get('persistedPath')
+                            try:
+                                rec['persistedFullChars'] = len(open(c['persistedPath'], encoding='utf-8', errors='replace').read()) if c.get('persistedPath') and os.path.exists(c['persistedPath']) else None
+                            except Exception:
+                                rec['persistedFullChars'] = None
                         ss_idx += 1
                         ss_by_tool[c['tool']] += 1
                     else:
@@ -415,6 +424,7 @@ def main():
                     fd_d.write(json.dumps(rec, ensure_ascii=False) + '\n')
                     n_calls_all += 1
                 n_units_all += len(units)
+                n_cmds_all += sum((len(u.get('commands') or []) if (harness == 'codex' and not u.get('noCmd') and 'native' not in u) else 1) for r_ in th['requests'] for u in r_['units'] if not (harness == 'codex' and u.get('noCmd')))
                 n_units_ss += sum(1 for u in units if u['ssSegments'])
                 for u in units:
                     fd_u.write(json.dumps({**{k: base[k] for k in ('run', 'group', 'harness', 'model', 'variant', 'task', 'rep', 'solved')}, 'thread': th['thread'],
@@ -422,7 +432,7 @@ def main():
                 if th['thread'] == 'main':
                     main_turns = len(th['requests'])
             traj = {**base, 'id': rid, 'turns': main_turns, 'turnsMeta': turns_meta, 'turnsMatchMeta': (main_turns == turns_meta) if turns_meta is not None else None,
-                    'calls': n_calls_all, 'units': n_units_all, 'unitsWithSs': n_units_ss, 'rowCalls': row.get('calls'), 'rowSs': row.get('ss'), 'rowNativeGrep': row.get('nativeGrep'), 'cost': row.get('costRealizedUsd'), 'exitReason': row.get('exitReason'),
+                    'calls': n_calls_all, 'units': n_units_all, 'cmdsCount': n_cmds_all, 'unitsWithSs': n_units_ss, 'rowCalls': row.get('calls'), 'rowSs': row.get('ss'), 'rowNativeGrep': row.get('nativeGrep'), 'cost': row.get('costRealizedUsd'), 'exitReason': row.get('exitReason'),
                     'ssCalls': dict(ss_by_tool), 'ssCallsTotal': sum(ss_by_tool.values()), 'nativeCalls': dict(nat_by_cls),
                     'threads': [t['thread'] for t in threads], 'rawSession': spath, 'agentState': state_dir, 'notes': note,
                     'resolveStatus': row.get('resolveStatus'), 'degenReran': row.get('degenReran'), 'wallMs': row.get('wallMs')}

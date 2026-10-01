@@ -584,11 +584,18 @@ def _claude_file(path, default_thread):
                 name = b.get('name')
                 inp = b.get('input') or {}
                 persisted = bool(out) and out.lstrip().startswith('<persisted-output>')
+                ppath = None
+                if persisted:
+                    mm = re.search(r'Full output saved to: (\S+)', out)
+                    if mm:
+                        ppath = mm.group(1)
+                        cand = [ppath, os.path.join(os.path.splitext(path)[0], 'tool-results', os.path.basename(ppath))]
+                        ppath = next((c_ for c_ in cand if os.path.exists(c_)), ppath)
                 if name == 'Bash':
-                    rq['units'].append({'id': b['id'], 'harnessTool': 'Bash', 'commands': [inp.get('command', '')], 'output': out, 'isError': err, 'perCmdOutputs': None, 'persisted': persisted})
+                    rq['units'].append({'id': b['id'], 'harnessTool': 'Bash', 'commands': [inp.get('command', '')], 'output': out, 'isError': err, 'perCmdOutputs': None, 'persisted': persisted, 'persistedPath': ppath})
                 else:
                     kind, tool, argt = native_unit('claude', name, inp)
-                    rq['units'].append({'id': b['id'], 'harnessTool': name, 'native': (kind, tool, argt), 'output': out, 'isError': err, 'persisted': persisted})
+                    rq['units'].append({'id': b['id'], 'harnessTool': name, 'native': (kind, tool, argt), 'output': out, 'isError': err, 'persisted': persisted, 'persistedPath': ppath})
     return {'thread': default_thread, 'requests': list(reqs.values())}
 
 
@@ -927,6 +934,21 @@ def discover_runs():
             skipped.append((name, 'HO2 marker'))
             continue
         runs.append({'run': name, 'dir': d, 'group': 'hsmoke', 'rows': json.loads(txt)})
+    # extra run folders for later batches: FX_EXTRA_RUNS=/abs/path/results/fr-*,/abs/other (comma separated globs)
+    for pat in [p for p in os.environ.get('FX_EXTRA_RUNS', '').split(',') if p.strip()]:
+        for d in sorted(glob.glob(pat.strip())):
+            rj = os.path.join(d, 'rows.json')
+            if not (os.path.isdir(d) and os.path.exists(rj)):
+                continue
+            name = os.path.basename(d)
+            if not os.path.isdir(os.path.join(d, 'agent-state')):
+                skipped.append((name, 'no agent-state'))
+                continue
+            txt = open(rj, encoding='utf-8').read()
+            if _is_ho2(name, txt):
+                skipped.append((name, 'HO2 marker'))
+                continue
+            runs.append({'run': name, 'dir': d, 'group': 'extra', 'rows': json.loads(txt)})
     return runs, skipped
 
 

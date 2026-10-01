@@ -50,6 +50,9 @@ Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 
 ## Decisions log
 
+- 09:35 **Forensics Stage A done** (`forensics/STATS.md`): 1,141 task rollouts, 10,442 ss-* calls (claudecode-opus 492 rollouts, claudecode-luna 78, codex-luna 210, opencode-luna 361). ss-search: 78% of entries are one-line summaries, 99.9% of which only restate their header; DEDUPE would drop 11.5% of ss-search chars on tasks; 10.4% of ss-* code chars were already shown earlier in the same rollout (ss-find 31.5%); ss-read = largest amplified token share (Opus 20%, luna 43–48%); first ss-search success 34.3% [30.5, 38.3]; ss-find empty 12.4%, ss-trace 11.6%. Opus sweet arm also makes many native cat/grep calls. **Stage B: 9 Sonnet readers launched** (ss-search ×3 harnesses, ss-find, ss-trace+semantic, ss-read, ss-grep, native fallbacks, first-call success) → `forensics/swarm/`.
+- 09:30 Forensic task batch armed (`scripts/forensic-chain.sh`): starts when the Sonnet held-out queue ends → pull/stage/sweep/plan → claudecode → codex → opencode legs.
+
 - 09:05 **Held-out r3 (103), interim (live judges; 90–96 complete panels per comparison)** — `r3/RESULTS-HELDOUT-opus-codex.md`: Opus 2.8.2 vs native cost +19.9% (q<0.001), acc 0.0; **Opus V1b vs 2.8.2 cost −14.1% (q<0.001) but accuracy −1.9 pt [−3.2, −0.3] (q 0.027)**; V1b vs native cost +3.0% (ns), acc −1.6 (ns); Codex 2.8.2 vs native cost −15.2% (q<0.001), acc −1.8 (ns). Re-scoring all held-out rows on the same route (complete panels) before the final read. Held-out is NOT inspected per question.
 
 - 08:15 Grader consistency (pre-registered): 49 dev rows re-judged on the same route: 12 scores moved (mean |Δ| 0.015), **0 verdict flips** across 0.5. Read 5 scored dev answers by hand: 0.7 scores = one gold file missing (fair partial credit), 1.0 = complete chain. Grader trusted. r3 dev read-out (BH over 12 tests): `r3/RESULTS-DEV.md`.

@@ -64,14 +64,21 @@ def wilson(k, n, z=1.96):
 
 
 def hk_of(rec):
+    """harness key = harness + short model name (claudecode-opus, codex-luna, ...)."""
     h = rec['harness']
-    m = rec.get('model') or ''
-    if h == 'claudecode':
-        return 'claudecode-opus' if 'opus' in m else 'claudecode-luna'
-    return h + '-luna' if 'luna' in m else h
+    m = (rec.get('model') or '').lower()
+    for key in ('opus', 'sonnet', 'luna', 'sol', 'flash', 'deepseek', 'haiku'):
+        if key in m:
+            return f'{h}-{key}'
+    return h + '-' + (re.sub(r'[^a-z0-9]+', '', m.split('/')[-1]) or 'unknown')
 
 
-HK_ORDER = ['claudecode-opus', 'claudecode-luna', 'codex-luna', 'opencode-luna']
+HK_ORDER = ['claudecode-opus', 'claudecode-luna', 'codex-luna', 'opencode-luna', 'claudecode-sonnet', 'codex-sol', 'opencode-sol']
+
+
+def order_hks(T):
+    present = sorted({t['hk'] for t in T}, key=lambda k: (HK_ORDER.index(k) if k in HK_ORDER else 99, k))
+    return present
 
 
 def md_table(headers, rows):
@@ -154,7 +161,7 @@ def section_a(D, U, T, hks):
 # section B / D: composition of ss-search / ss-find
 # ----------------------------------------------------------------------------------------------
 SEARCH_BUCKET_ORDER = [
-    ('header_meta', 'header line `# ss-search: ...`'), ('header_confidence', 'header line `# confidence=...`'), ('header_other', 'header other'),
+    ('header_meta', 'header line (`# ss-search: ...` or `# ss-find: ...`)'), ('header_confidence', 'header line `# confidence=...`'), ('header_other', 'header other'),
     ('rank_overhead', 'rank header: `## #N ` and newline'), ('rank_path_range', 'rank header: path:range'), ('rank_symbol', 'rank header: [kind: symbol]'),
     ('rank_presentation', 'rank header: (presentation kind=...)'), ('rank_score', 'rank header: score=...'),
     ('imports', '`### imports` blocks (heading + fences + lines)'), ('code_text', 'code inside fences: code chars'), ('code_gutter', 'code inside fences: line-gutter chars'),
@@ -311,7 +318,7 @@ def stability(D, first_all):
     """Key numbers by source group, to show that pooling the groups does not hide a difference."""
     rows = []
     for gname, gs in (('tg + hc (2026-09-29 .. 10-01)', ('tg', 'hc')), ('hsmoke (2026-09-25/26)', ('hsmoke',))):
-        for hk in HK_ORDER:
+        for hk in sorted({d['hk'] for d in D}, key=lambda k: (HK_ORDER.index(k) if k in HK_ORDER else 99, k)):
             sub = [d for d in D if d['group'] in gs and d['hk'] == hk]
             if not any(d['tool'] == 'ss-search' for d in sub):
                 continue
@@ -673,7 +680,7 @@ def dataset_tables(D, T):
     # harness x tool counts
     ss = [d for d in D if d['class'] == 'ss']
     tools = ('ss-search', 'ss-find', 'ss-grep', 'ss-read', 'ss-trace', 'ss-semantic', 'ss-batch')
-    hks = [h for h in HK_ORDER if any(t['hk'] == h for t in T)]
+    hks = order_hks(T)
     rows = []
     for hk in hks:
         ts = [t for t in T if t['hk'] == hk]
@@ -690,7 +697,7 @@ def dataset_tables(D, T):
     out.append('Share of rollouts that call the tool at least once:\n\n' + md_table(['harness (model)', 'rollouts'] + list(tools) + ['no ss-* call at all'], rows))
     # group split
     rows = []
-    for g in ('tg', 'hc', 'hsmoke'):
+    for g in sorted({t['group'] for t in T}, key=lambda x: ['tg', 'hc', 'hsmoke'].index(x) if x in ('tg', 'hc', 'hsmoke') else 9):
         for hk in hks:
             ts = [t for t in T if t['hk'] == hk and t['group'] == g]
             if not ts:
@@ -709,7 +716,7 @@ def dataset_tables(D, T):
         vc[k][1] += 1 if t['solved'] is True else 0
         vc[k][2] += 1 if t['solved'] is not None else 0
         vc[k][3].update(t['ssCalls'])
-    for k in sorted(vc, key=lambda k: (HK_ORDER.index(k[0]), k[1], k[2])):
+    for k in sorted(vc, key=lambda k: (HK_ORDER.index(k[0]) if k[0] in HK_ORDER else 99, k[1], k[2])):
         n, s, g, c = vc[k]
         rows.append([k[0], k[1], f'`{k[2]}`', n, f'{s}/{g}', sum(c.values()), c['ss-search'], c['ss-find'], c['ss-grep'], c['ss-read'], c['ss-trace'], c['ss-semantic']])
     out.append(md_table(['harness (model)', 'group', 'variant (hc/hsmoke: harnessTrim [+rules placement]; tg: base / V1 / V1b)', 'rollouts', 'solved', 'ss-* calls', 'search', 'find', 'grep', 'read', 'trace', 'semantic'], rows))
@@ -719,7 +726,7 @@ def dataset_tables(D, T):
 # ----------------------------------------------------------------------------------------------
 def main():
     D, U, T = load()
-    hks = [h for h in HK_ORDER if any(t['hk'] == h for t in T)]
+    hks = order_hks(T)
     first = first_call_study(D)
     os.makedirs(DATA, exist_ok=True)
     json.dump(first, open(os.path.join(DATA, 'first-call-success.json'), 'w'), indent=0)
@@ -749,10 +756,11 @@ def main():
     w(f'- The data set holds {len(T)} rollouts and {nss:,} ss-* calls. Every call has its full output, the agent text around it, and the number of later model requests that re-read it.')
     hl = headline(D, U)
     ssamp = sum(hl['amp'].values())
-    w(f'- Non-code text is {nocode_pct:.1f}% of all ss-search output characters (headers, rank lines, summaries, related, same-file and trailer lines). Code lines are {code_pct:.1f}%. See section B.')
+    per_hk = ', '.join(f"{hk} {pctn(res_s[hk][1] - sum(res_s[hk][2].get(k, 0) for k in ['code_text', 'code_gutter', 'code_fence_markers', 'imports', 'continuation_code']), res_s[hk][1]):.1f}% (n={res_s[hk][0]})" for hk in hks if res_s[hk][1])
+    w(f'- Non-code text is {nocode_pct:.1f}% of all ss-search output characters, pooled (headers, rank lines, summaries, related, same-file and trailer lines). Code lines are {code_pct:.1f}%. Per harness key: {per_hk}. Opus calls ss-search rarely, with the default or -k 5 (3.4 entries per output, 0.8 of them summaries). The other keys mostly ask for -k 8 or -k 10. Section B3 shows the effect of -k. See section B.')
     w(f"- {pct(hl['summary_entries'], hl['entries'])} of ss-search entries are summaries without code. Their summary line only restates the rank header, in {pct(hl['restate_chars'], hl['ss_search_chars'])} of all ss-search characters. See section C1.")
     w(f"- {pct(hl['dup_entries'], hl['entries'])} of ss-search entries repeat an earlier entry of the same output. The existing DEDUPE variant would remove {pct(hl['dedupe_drop'], hl['ss_search_chars'])} of the characters.")
-    w(f"- ss-read puts {pct(hl['amp']['ss-read'], hl['allamp'])} of all amplified tool-output tokens into the context, ss-search {pct(hl['amp']['ss-search'], hl['allamp'])}, ss-grep {pct(hl['amp']['ss-grep'], hl['allamp'])}, ss-find {pct(hl['amp']['ss-find'], hl['allamp'])}. See section A.")
+    w(f"- Pooled over all harness keys, ss-read puts {pct(hl['amp']['ss-read'], hl['allamp'])} of all amplified tool-output tokens into the context, ss-search {pct(hl['amp']['ss-search'], hl['allamp'])}, ss-grep {pct(hl['amp']['ss-grep'], hl['allamp'])}, ss-find {pct(hl['amp']['ss-find'], hl['allamp'])}. See section A.")
     w(f'- The first ss-search call led to a read, edit or cite of one of its result paths, with no other search first, in {n_succ} of {n_first} rollouts ({100 * n_succ / max(n_first, 1):.1f}%, 95% interval {lo:.1f} to {hi:.1f}). See section E.')
     w('- Section A shows which tool puts the most amplified tokens into the context. Sections C and D show how much of ss-search and ss-find output repeats information.\n')
     w('Definitions used everywhere:\n')
@@ -838,20 +846,20 @@ def main():
     w('### ss-read (gutter is printed only for reads of 15 lines or more; codex prints none)\n')
     w(comp_simple(D, 'ss-read', P.parse_read, hks, [('header_meta', 'header `# ss-read file (lines a-b of N)`'), ('code_fence_markers', 'fence marker lines'), ('code_gutter', 'line-gutter chars'), ('code_text', 'code chars'), ('read_notes', 'unread above/below notes'), ('blank', 'blank'), ('other', 'other')]) + '\n')
     w('### ss-grep\n')
-    w(comp_simple(D, 'ss-grep', P.parse_grep, hks, [('header_meta', 'header `# ss-grep:`'), ('truncation_note', 'truncation note'), ('match_path', 'match lines: path'), ('match_lineno_sep', 'match lines: `:line: ` separator'), ('match_text', 'match lines: matched text'), ('sibling_line', '`# same file (siblings of ...)`'), ('family_manifest', '`# indexed family:`'), ('no_matches', '`(no matches)`'), ('hidden_or_scope_note', 'hidden / scope notes'), ('blank', 'blank'), ('other', 'other')]) + '\n')
+    w(comp_simple(D, 'ss-grep', P.parse_grep, hks, [('header_meta', 'header `# ss-grep:`'), ('truncation_note', 'truncation note'), ('hidden_files_note', '`# +N more file(s)` note'), ('regex_note', '`regex note:` line'), ('match_path', 'match lines: path'), ('match_lineno_sep', 'match lines: `:line: ` separator'), ('match_text', 'match lines: matched text'), ('sibling_line', '`# same file (siblings of ...)`'), ('family_manifest', '`# indexed family:`'), ('no_matches', '`(no matches)`'), ('hidden_or_scope_note', 'hidden / scope notes'), ('blank', 'blank'), ('other', 'other')]) + '\n')
 
     # validation: automatic checks + hand notes
     w('## Validation\n')
     chk = Counter()
     for t in T:
         chk[(t['harness'], 'turns == turns-file meta', t['turnsMatchMeta'])] += 1
-        chk[(t['harness'], 'units == rows.calls', t['units'] == t['rowCalls'])] += 1
+        chk[(t['harness'], 'units == rows.calls', (t['cmdsCount'] if t['harness'] == 'codex' else t['units']) == t['rowCalls'])] += 1
     rows = []
     for h in ('claudecode', 'codex', 'opencode'):
         a, b = chk[(h, 'turns == turns-file meta', True)], chk[(h, 'turns == turns-file meta', False)]
         c, d_ = chk[(h, 'units == rows.calls', True)], chk[(h, 'units == rows.calls', False)]
         rows.append([h, f'{a}/{a + b}', f'{c}/{c + d_}'])
-    w(md_table(['harness', 'my request count == turns file `turns`', 'my tool-call count == rows.json `calls`'], rows) + '\n')
+    w(md_table(['harness', 'my request count == turns file `turns`', 'my tool-call count == rows.json `calls` (codex: count of exec_command commands)'], rows) + '\n')
     bc = Counter()
     for d in ss:
         bc[(d['hk'], d['boundary'])] += 1
@@ -861,6 +869,22 @@ def main():
         rows.append([hk, n] + [f"{bc[(hk, b)]} ({pct(bc[(hk, b)], n)})" for b in ('exact', 'trimmed', 'heuristic', 'ambiguous', 'single-nomarker', 'piped-filtered', 'ambiguous-error', 'piped-unknown', 'unmatched')])
     w('Output split quality of ss-* calls (`exact` = the markers of all ss tools of the command matched in order; `trimmed` = tail of the last ss tool cut at its known end because other commands followed; `ambiguous` = markers did not align one to one; `unmatched` / `piped-unknown` = the output of the call cannot be found and is excluded from size statistics):\n')
     w(md_table(['harness', 'ss calls', 'exact', 'trimmed', 'heuristic', 'ambiguous', 'single, no marker (error text)', 'piped-filtered', 'ambiguous-error', 'piped-unknown', 'unmatched'], rows) + '\n')
+    try:
+        import validate as V
+        res1, bad1 = V.v1_alignment(D)
+        n1 = sum(sum(r.values()) for r in res1.values())
+        ok1 = sum(v for r in res1.values() for (b, okk), v in r.items() if okk)
+        by_b = Counter()
+        for r in res1.values():
+            for (b, okk), v in r.items():
+                by_b[(b, okk)] += v
+        agree, diffs = V.v2_independent_count(D)
+        w('Automatic checks against the raw sources (`validate.py`, rerun on every build):\n')
+        w(f"- V1, header/args alignment: the header an ss-* tool prints names the file, pattern or query of the command it was assigned to. {ok1} of {n1} calls pass ({pct(ok1, n1)}). By split quality: " + ', '.join(f'{b} {by_b[(b, True)]}/{by_b[(b, True)] + by_b[(b, False)]}' for b in ('exact', 'trimmed', 'heuristic', 'ambiguous', 'piped-filtered') if by_b[(b, True)] + by_b[(b, False)]) + '. The failures of `exact` are command arguments the check cannot read (a shell variable `$F`, a flag before the pattern). The failures of `piped-filtered` are expected: a pipe removed the header.')
+        w(f"- V2, independent call count: a plain regex over the raw command text counts the ss-* tokens that start a command. It equals the parser count for every ss tool in {sum(v for (h, s), v in agree.items() if s)} of {sum(agree.values())} rollouts.")
+        w(f"- V3, `turnsRemaining` lies in [0, turnsTotal - 1] for every record: {V.v3_amp(D)} violations.\n")
+    except Exception as e:  # keep the report building even if the raw sources moved
+        w(f'(automatic checks V1 to V3 could not run: {e})\n')
     if os.path.exists(VALIDATION_MD):
         w(open(VALIDATION_MD).read() + '\n')
     else:
