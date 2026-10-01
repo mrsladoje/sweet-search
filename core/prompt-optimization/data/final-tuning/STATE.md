@@ -42,13 +42,15 @@ Cash limit: $40 (effective limit lower: DeepSeek $2.18 balance).
 |---|---|---|---|---|---|---|---|
 | sentinel | `SS_VARIANT_SENTINEL=1` | proof the bench runs the worktree | — | — | — | — | infra only |
 | bench fix | `SS_BENCH_STABLE_RULES_PATH=1` | opencode prefix cache broken by random rules path (waste #2) | DeepSeek vs r282 native: +7.9% (CI crosses 0), was +54.6% | — | n/a | n/a | **adopted for all new runs (measurement fix, not a product change)** |
-| V1b | `SS_VARIANT_CC_RULES_IN_PROMPT=2` | V1 + 60-token pointer rules file (restores the tool-choice reminder) | **PASS** Opus −12.6% (CI < 0), acc +0.6; r3 dev −13.2% | **PASS** −8.3% (CI < 0), accOR +0.8; calls +12.6% (borderline) | (train = Opus) | queued (guard-v2) | candidate |
+| V1b | `SS_VARIANT_CC_RULES_IN_PROMPT=2` | V1 + 60-token pointer rules file (restores the tool-choice reminder) | **PASS** Opus −12.6% (CI < 0), acc +0.6; r3 dev −13.2% | **PASS** −8.3% (CI < 0), accOR +0.8; calls +12.6% (borderline) | (train = Opus) | **PASS** solves 9/20 vs 8/20, ss share 0.54 vs 0.53, cost −2..−7% | **CHAMPION (Claude Code)** |
 | V1 | `SS_VARIANT_CC_RULES_IN_PROMPT=1` | CC rules re-written each rollout (waste #1) | **PASS** Opus: cost −15.8% (CI < 0), acc +0.2 | **PASS** Opus: −11.6% (CI < 0), accOR −0.1 | Opus train+val PASS; Sonnet A-B-A −9.6..−12.7% (CI < 0) | **FAIL**: solves 8/20 = 8/20, cost −6%, but ss-* share 0.53 → 0.32 | **replaced by V1b** |
 | V2 | `SS_VARIANT_PRUNE3=1` | drop ss-find/semantic/trace (owner hyp. 2) | DS seq −9.9..−17% (CI < 0); **Codex interleaved: cost −5% (ns), accOR −1.9 pt (sig harm)** | — | — | — | **REJECTED** | | | | |
 | V4 | `SS_VARIANT_RULES_FILE=…/rules-v4-complete.md` | Codex r3 partial answers (stop after one place) | Codex r3 dev-train interleaved: acc −4.0 pt (ns), cost −0.4% | — | — | — | **REJECTED** |
 | V3 | `SS_VARIANT_SEARCH_DEDUPE=1` | repeated ss-search entries/lines (waste #5) | $0 replay: ss-search −9.1% chars → ≈ −1% cost (below MDE); not screened live | | | | |
 
 ## Decisions log
+
+- 08:05 **Task guard V1b PASSES** (`tg-20261001-0657-v2`, Opus, 10 tasks × 2, interleaved): solves base 8/20, **V1b 9/20** (svgr +1, all else equal); ideal $ −2.0% [−9.7, +6.4], real $ −7.0%; calls −5.6%, turns −2.4%; **ss-* share 0.53 → 0.54 (V1's native-fallback drop is gone)**; request-1 cache write 10,498 → 9,134. Flags at noise level: zlint V1b edited 2 files in one rep (still solved), jupytext patch-count differs (unsolved both arms), degenerate re-runs 1 → 2. → **V1b = Claude Code champion**; held-out arm queued.
 
 - 06:55 **V1b passes validation** (Opus r282 validation 52, aggregates): cost −8.3% [−12.6%, −4.3%], cache write −15%, accOR +0.8 pt [−0.6, +2.6], calls +12.6% [+0.02, +0.46 per q] (borderline rise; train −4.6%, r3 dev +0.6% → pooled over 190 questions ≈ +0.03 calls/q). Pass with this disclosed.
 - 06:55 **V4 REJECTED** (Codex r3 dev-train, interleaved 36): accuracy −4.0 pt [−9.9, +1.4], cost −0.4%, calls +1.5% — the wording does not make the agent explore further. Killed its r282 cost check. The Codex r3 accuracy deficit stays an open item (cause: answers stop after one place; a prompt line does not fix it).
