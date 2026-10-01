@@ -443,6 +443,109 @@ export function createCommentLineTracker(comment) {
   };
 }
 
+// Relationship types whose patterns read a type declaration header.
+const INHERITANCE_RELATIONSHIP_TYPES = new Set(['extends', 'implements']);
+// Entity types that own an inheritance list. A one-line declaration
+// (`enum Color implements Paint { RED }`, Kotlin `companion object F : C { fun make() }`)
+// also starts a member on the same line; the list belongs to the type.
+const TYPE_DECLARATION_ENTITY_TYPES = new Set([
+  'class', 'interface', 'struct', 'record', 'trait', 'object', 'protocol', 'actor',
+  'enum', 'extension', 'impl', 'module', 'mixin', 'type',
+]);
+// A line that starts a type declaration, after annotations and modifiers.
+const TYPE_DECL_START = /^(?:(?:@[\w.]+(?:\([^)]*\))?|\[[^\]]*\]|template\s*<[^>]*>|export|default|public|private|protected|internal|open|abstract|sealed|final|static|data|inner|annotation|value|expect|actual|partial|readonly|unsafe|new|file|fileprivate|indirect|implicit|case|declare|companion|pub(?:\([^)]*\))?)\s+)*(?:class|interface|struct|record|trait|object|protocol|extension|actor|enum)\b/;
+const TYPE_DECL_KEYWORD = /\b(?:class|interface|struct|record|trait|object|protocol|extension|actor|enum)\b/;
+// A header line that is not finished yet, or a next line that continues it.
+const HEADER_OPEN_END = /(?:[,(:&]|\b(?:extends|implements|with|where))$/;
+const HEADER_CONTINUATION = /^(?::|extends\b|implements\b|with\b|where\b|permits\b|constructor\b|,|\)|\]|&|<:)/;
+const MAX_HEADER_LINES = 12;
+
+function bracketDepth(text) {
+  let depth = 0;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '(' || ch === '[') depth++;
+    else if ((ch === ')' || ch === ']') && depth > 0) depth--;
+  }
+  return depth;
+}
+
+/**
+ * Type declarations whose header continues on later lines: Kotlin
+ * constructor parameters before `) : Base`, Python base lists one per line,
+ * Java/TS `extends` / `implements` on their own lines, C#/C++/Swift `:` lists.
+ * The inheritance patterns match one line, so they saw only the first header
+ * line and lost every base after it.
+ *
+ * Returns the joined header text per declaration line, and the line indexes
+ * the headers consumed (inheritance patterns skip those; their content is in
+ * the join). One pass, regex-tested only on lines that contain a declaration
+ * keyword.
+ *
+ * @param {string[]} lines
+ * @param {{ lineComment?: string|null, colonBlocks?: boolean }} opts
+ *   colonBlocks: the header ends at a `:` (Python), not at a `{`.
+ * @returns {{ joins: Map<number, string>, consumed: Set<number> }}
+ */
+export function buildTypeHeaderJoins(lines, { lineComment = null, colonBlocks = false } = {}) {
+  const joins = new Map();
+  const consumed = new Set();
+  const strip = (s) => {
+    const t = s.trim();
+    if (!lineComment) return t;
+    const at = t.indexOf(` ${lineComment}`);
+    return at >= 0 ? t.slice(0, at).trimEnd() : (t.startsWith(lineComment) ? '' : t);
+  };
+  const closed = (text) => (colonBlocks
+    ? bracketDepth(text) === 0 && /:\s*$/.test(text)
+    : text.includes('{') || text.endsWith(';'));
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    if (!TYPE_DECL_KEYWORD.test(raw)) continue;
+    let text = strip(raw);
+    if (!TYPE_DECL_START.test(text) || closed(text)) continue;
+    let j = i;
+    while (j + 1 < lines.length && j - i < MAX_HEADER_LINES) {
+      const next = strip(lines[j + 1]);
+      const depth = bracketDepth(text);
+      if (!next) {
+        if (depth > 0) { j++; continue; }
+        break;
+      }
+      // A new declaration never belongs to this header.
+      if (TYPE_DECL_START.test(next) && depth === 0) break;
+      const continues = depth > 0
+        || (!colonBlocks && (HEADER_OPEN_END.test(text) || HEADER_CONTINUATION.test(next)));
+      if (!continues) break;
+      text += ` ${next}`;
+      j++;
+      if (closed(text)) break;
+    }
+    if (j === i) continue;
+    const brace = colonBlocks ? -1 : text.indexOf('{');
+    joins.set(i, brace >= 0 ? text.slice(0, brace + 1) : text);
+    for (let k = i + 1; k <= j; k++) consumed.add(k);
+    i = j;
+  }
+  return { joins, consumed };
+}
+
+/** True when `index` sits inside a `"…"` or `` `…` `` string literal of `text`. */
+function insideStringLiteral(text, index) {
+  let quote = null;
+  for (let i = 0; i < index; i++) {
+    const ch = text[i];
+    if (ch === '\\') { i++; continue; }
+    if (quote) {
+      if (ch === quote) quote = null;
+    } else if (ch === '"' || ch === '`') {
+      quote = ch;
+    }
+  }
+  return quote !== null;
+}
+
 // Types whose regex capture groups commonly contain comma-separated lists.
 // Module-scope constant to avoid per-call Set allocation.
 const MULTI_TARGET_TYPES = new Set([
@@ -1295,6 +1398,7 @@ export class GraphExtractor {
     const trackCommentLine = createCommentLineTracker(langInfo.comment);
     // Decorator/derive edges waiting for the definition below them.
     let pendingAttributes = [];
+    const headers = this._typeHeaderJoins(relationshipPatterns, lines, langInfo);
 
     // Choose findEndLine strategy based on language type
     const findEndLineFn = (startIdx) => {
@@ -1422,9 +1526,16 @@ export class GraphExtractor {
         if (relType === 'methodCall') continue;
         const mappedType = GENERIC_RELATIONSHIP_MAPPING[relType] || 'uses';
         if (lineIsComment && mappedType !== 'imports') continue;
-        if (prefilter && !prefilter(trimmed)) continue;
+        const isInheritance = INHERITANCE_RELATIONSHIP_TYPES.has(mappedType);
+        let subject = trimmed;
+        if (isInheritance && headers) {
+          if (headers.consumed.has(i)) continue;
+          subject = headers.joins.get(i) ?? trimmed;
+        }
+        if (prefilter && !prefilter(subject)) continue;
 
-        const match = trimmed.match(pattern);
+        const match = subject.match(pattern);
+        if (match && isInheritance && match.index > 0 && insideStringLiteral(subject, match.index)) continue;
         if (relType === 'dep' && language === 'json') {
           if (match && match[1] && jsonDependencySections.has(match[1]) && depthAfter > depthBefore) {
             activeJsonDependencyDepth = depthAfter;
@@ -1440,9 +1551,12 @@ export class GraphExtractor {
           }
           const weight = GRAPH_CONFIG.relationshipWeights[mappedType] || 1.0;
           const isAttribute = ATTRIBUTE_RELATIONSHIP_TYPES.has(relType);
+          const lastEntity = entities[entities.length - 1];
+          const declaredType = isInheritance && lastEntity?.start_line === lineNum
+            && TYPE_DECLARATION_ENTITY_TYPES.has(lastEntity.type) ? lastEntity.id : null;
           for (const target of targets) {
             const rel = {
-              source_id: sourceEntityId || fileEntityId,
+              source_id: declaredType || sourceEntityId || fileEntityId,
               target_id: null,
               target_name: target,
               type: mappedType,
@@ -1754,6 +1868,18 @@ export class GraphExtractor {
     return type;
   }
 
+  /** Joined multi-line type headers (buildTypeHeaderJoins), or null when no inheritance pattern exists. */
+  _typeHeaderJoins(relationshipPatterns, lines, langInfo) {
+    const hasInheritance = relationshipPatterns.some(({ type }) =>
+      INHERITANCE_RELATIONSHIP_TYPES.has(GENERIC_RELATIONSHIP_MAPPING[type]));
+    if (!hasInheritance) return null;
+    const lineComment = langInfo.comment?.line || null;
+    return buildTypeHeaderJoins(lines, {
+      lineComment,
+      colonBlocks: langInfo.id === 'python',
+    });
+  }
+
   _resolveRelationshipTargets(relType, match, language) {
     const isJsTs = language === 'javascript' || language === 'typescript' || language === 'tsx';
 
@@ -1884,9 +2010,20 @@ export class GraphExtractor {
     const trackCommentLine = createCommentLineTracker(langInfo.comment);
     // Definition starting on a line (signature types → `typeRef`).
     const definitionAt = new Map();
+    // The widest type declaration starting on a line owns that line's
+    // inheritance list (not a member declared on the same line).
+    const typeDeclarationAt = new Map();
+    const typeSpanAt = new Map();
     for (const e of sortedEntities) {
       if (!definitionAt.has(e.start_line)) definitionAt.set(e.start_line, e);
+      if (!TYPE_DECLARATION_ENTITY_TYPES.has(e.type)) continue;
+      const span = (e.end_line ?? e.start_line) - e.start_line;
+      if (!typeDeclarationAt.has(e.start_line) || span > typeSpanAt.get(e.start_line)) {
+        typeDeclarationAt.set(e.start_line, e.id);
+        typeSpanAt.set(e.start_line, span);
+      }
     }
+    const headers = this._typeHeaderJoins(relationshipPatterns, lines, langInfo);
     const seenTypeUsage = new Set();
     const skipObjects = this._skipObjectSet(langInfo);
 
@@ -1919,9 +2056,16 @@ export class GraphExtractor {
         if (relType === 'methodCall') continue;
         const mappedType = GENERIC_RELATIONSHIP_MAPPING[relType] || 'uses';
         if (lineIsComment && mappedType !== 'imports') continue;
-        if (prefilter && !prefilter(trimmed)) continue;
+        const isInheritance = INHERITANCE_RELATIONSHIP_TYPES.has(mappedType);
+        let subject = trimmed;
+        if (isInheritance && headers) {
+          if (headers.consumed.has(i)) continue;
+          subject = headers.joins.get(i) ?? trimmed;
+        }
+        if (prefilter && !prefilter(subject)) continue;
 
-        const match = trimmed.match(pattern);
+        const match = subject.match(pattern);
+        if (match && isInheritance && match.index > 0 && insideStringLiteral(subject, match.index)) continue;
         if (match) {
           if (relType === 'embed' && !EMBED_SCOPE_TYPES.has(findScopeType(lineNum))) continue;
           const { targets, filtered } = this._resolveRelationshipTargets(relType, match, language);
@@ -1931,6 +2075,7 @@ export class GraphExtractor {
           }
           const weight = GRAPH_CONFIG.relationshipWeights[mappedType] || 1.0;
           const sourceId = (ATTRIBUTE_RELATIONSHIP_TYPES.has(relType) && findAnnotatedEntity(lineNum))
+            || (isInheritance && typeDeclarationAt.get(lineNum))
             || sourceEntityId || fileEntityId;
           for (const target of targets) {
             relationships.push({
