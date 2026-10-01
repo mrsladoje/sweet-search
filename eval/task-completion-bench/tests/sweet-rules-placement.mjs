@@ -140,11 +140,11 @@ console.log('opencode:');
   const onFile = buildInstructionFile({ sweet: true, mppText, env: OFF_ENV, rulesPlacement: 'system' });
   assert(onFile === legacy(false), 'on: sweet AGENTS.md = frame only = native bytes');
   assert(sweetRulesBlock({ mppText, env: OFF_ENV }) === mppText, 'the rules block = the rules text (no packing treatment)');
-  const batchEnv = { SS_PACKING_TREATMENT: 'ss-batch' };
-  const withPacking = buildInstructionFile({ sweet: true, mppText, env: batchEnv });
-  assert(withPacking === `${FRAME_OPEN}\n\n${sweetRulesBlock({ mppText, env: batchEnv })}\n\n${FRAME_CLOSE}`,
+  const parallelEnv = { SS_PACKING_TREATMENT: 'parallel-bash' };
+  const withPacking = buildInstructionFile({ sweet: true, mppText, env: parallelEnv });
+  assert(withPacking === `${FRAME_OPEN}\n\n${sweetRulesBlock({ mppText, env: parallelEnv })}\n\n${FRAME_CLOSE}`,
     'with a packing treatment the block that moves is exactly the sweet block of the file');
-  assert(buildInstructionFile({ sweet: true, mppText, env: batchEnv, rulesPlacement: 'system' }) === legacy(false),
+  assert(buildInstructionFile({ sweet: true, mppText, env: parallelEnv, rulesPlacement: 'system' }) === legacy(false),
     'on + packing treatment: the file is still the frame only');
 
   const stateDir = mkdtempSync(join(tmpdir(), 'rules-placement-oc-'));
@@ -275,8 +275,8 @@ console.log('config placement:');
 
   // opencode
   assert(buildInstructionFile({ sweet: true, mppText, env: OFF_ENV, rulesPlacement: 'config' }) === legacy(false), 'opencode: sweet AGENTS.md = frame only = native bytes');
-  const batchEnv = { SS_PACKING_TREATMENT: 'ss-batch' };
-  assert(buildInstructionFile({ sweet: true, mppText, env: batchEnv, rulesPlacement: 'config' }) === legacy(false), 'opencode + packing: file is still the frame only');
+  const parallelEnv = { SS_PACKING_TREATMENT: 'parallel-bash' };
+  assert(buildInstructionFile({ sweet: true, mppText, env: parallelEnv, rulesPlacement: 'config' }) === legacy(false), 'opencode + packing: file is still the frame only');
   // Run dir: only AGENTS.md is written, and it equals the native arm's AGENTS.md.
   const repos = mkdtempSync(join(tmpdir(), 'rules-placement-rundir-'));
   const [rs, rn] = [join(repos, 's'), join(repos, 'n')];
@@ -292,13 +292,13 @@ console.log('config placement:');
   const off = opencodeHarnessTrim('0', { apiModel: luna, stateDir });
   assert(opencodeRulesInConfig(off, { rules: null, stateDir }) === off, 'opencode: no rules = trim object untouched');
   for (const mode of ['0', 'conflict3+todo3eff3k', 'conflict']) {
-    for (const env of [OFF_ENV, batchEnv]) {
+    for (const env of [OFF_ENV, parallelEnv]) {
       const block = sweetRulesBlock({ mppText, env });
       const t = opencodeHarnessTrim(mode, { apiModel: luna, stateDir });
       const tOn = opencodeRulesInConfig(t, { rules: block, stateDir });
       const a = buildMainOpencodeConfig({ env: {}, trim: t }), b = buildMainOpencodeConfig({ env: {}, trim: tOn });
       const rulesPath = join(stateDir, OPENCODE_RULES_FILE);
-      const tag = `opencode trim ${mode}${env === batchEnv ? ' + packing' : ''}`;
+      const tag = `opencode trim ${mode}${env === parallelEnv ? ' + packing' : ''}`;
       assert(JSON.stringify(b.instructions) === JSON.stringify([rulesPath]) && !('instructions' in a), `${tag}: config.instructions = [<state dir>/${OPENCODE_RULES_FILE}] (absolute)`);
       assert(JSON.stringify({ ...b, instructions: undefined }) === JSON.stringify(a), `${tag}: every other config key unchanged (agent prompts, plugin, tools)`);
       assert(tOn.files[OPENCODE_RULES_FILE] === block && buildInstructionFile({ sweet: true, mppText, env }).includes(`\n\n${block}\n\n`),

@@ -8,7 +8,7 @@ import { analyzeRollout, readTurnLog } from './probe-count.mjs';
 
 const REAL_TURN_SOURCES = new Set(['stream', 'rollout-jsonl']);
 const VALID_EXITS = new Set(['model_stopped', 'budget_exhausted']);
-const PACKING_TREATMENTS = new Set(['off', 'ss-batch', 'parallel-bash']);
+const PACKING_TREATMENTS = new Set(['off', 'parallel-bash']);
 export const TURNFIX_ARMS = new Set(['native', 'sweet']);
 
 function safeTaskSegment(task) {

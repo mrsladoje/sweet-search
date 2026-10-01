@@ -5,9 +5,16 @@ use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::time::Duration;
 
-const IO_TIMEOUT: Duration = Duration::from_secs(120);
+// Hardened JSON-over-HTTP/1.0 POST to the per-project daemon socket. The agent
+// tools send the caller's environment, so the socket must be a real Unix socket
+// owned by this user before a single byte is written.
+//
+// The timeout is a backstop for a hung daemon, not a budget: a harness kills a
+// shell command long before ten minutes.
+const IO_TIMEOUT: Duration = Duration::from_secs(600);
 const MAX_RESPONSE_HEADER_BYTES: usize = 64 * 1024;
-const MAX_RESPONSE_BODY_BYTES: usize = 2 * 1024 * 1024;
+// A whole-file ss-read of a large file is JSON-escaped into the reply.
+const MAX_RESPONSE_BODY_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Debug, PartialEq, Eq)]
 struct ResponseHead {
@@ -23,13 +30,13 @@ fn validate_socket_metadata(metadata: &Metadata, effective_uid: u32) -> io::Resu
     if !metadata.file_type().is_socket() {
         return Err(io::Error::new(
             io::ErrorKind::InvalidInput,
-            "batch socket path is not an actual Unix socket",
+            "daemon socket path is not an actual Unix socket",
         ));
     }
     if metadata.uid() != effective_uid {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
-            "batch socket is not owned by the effective user",
+            "daemon socket is not owned by the effective user",
         ));
     }
     Ok(())
@@ -77,7 +84,7 @@ fn parse_content_length(value: &str) -> io::Result<usize> {
         .parse::<usize>()
         .map_err(|_| invalid_data("invalid Content-Length"))?;
     if length > MAX_RESPONSE_BODY_BYTES {
-        return Err(invalid_data("HTTP response body exceeds 2 MiB limit"));
+        return Err(invalid_data("HTTP response body exceeds 64 MiB limit"));
     }
     Ok(length)
 }
@@ -179,7 +186,7 @@ fn read_content_length_body<R: Read>(
 
 fn read_close_delimited_body<R: Read>(input: &mut R, initial: Vec<u8>) -> io::Result<Vec<u8>> {
     if initial.len() > MAX_RESPONSE_BODY_BYTES {
-        return Err(invalid_data("HTTP response body exceeds 2 MiB limit"));
+        return Err(invalid_data("HTTP response body exceeds 64 MiB limit"));
     }
     let mut body = initial;
     let mut buffer = [0u8; super::BUFFER_SIZE];
@@ -189,19 +196,19 @@ fn read_close_delimited_body<R: Read>(input: &mut R, initial: Vec<u8>) -> io::Re
             return Ok(body);
         }
         if body.len().saturating_add(read) > MAX_RESPONSE_BODY_BYTES {
-            return Err(invalid_data("HTTP response body exceeds 2 MiB limit"));
+            return Err(invalid_data("HTTP response body exceeds 64 MiB limit"));
         }
         body.extend_from_slice(&buffer[..read]);
     }
 }
 
-pub(super) fn post_json(socket_path: &str, body: &[u8]) -> io::Result<(u16, Vec<u8>)> {
+pub(super) fn post_json(socket_path: &str, path: &str, body: &[u8]) -> io::Result<(u16, Vec<u8>)> {
     validate_socket_path(socket_path)?;
     let mut stream = UnixStream::connect(socket_path)?;
     stream.set_read_timeout(Some(IO_TIMEOUT))?;
     stream.set_write_timeout(Some(IO_TIMEOUT))?;
     let headers = format!(
-        "POST /batch HTTP/1.0\r\n\
+        "POST {path} HTTP/1.0\r\n\
          Host: l\r\n\
          Content-Type: application/json\r\n\
          Content-Length: {}\r\n\
@@ -234,7 +241,7 @@ mod tests {
             .as_nanos();
         let count = PATH_COUNTER.fetch_add(1, Ordering::Relaxed);
         PathBuf::from("/tmp").join(format!(
-            "ss-batch-{label}-{}-{nonce}-{count}",
+            "ss-http-{label}-{}-{nonce}-{count}",
             std::process::id()
         ))
     }
@@ -374,13 +381,13 @@ mod tests {
             b"HTTP/1.0 207 Multi-Status\r\nContent-Length: 9\r\n\r\n\0raw\nbody".to_vec();
         let (path, server) = serve_once(response);
         let request_body = br#"{"version":1}"#;
-        let (status, body) = post_json(path.to_str().unwrap(), request_body).unwrap();
+        let (status, body) = post_json(path.to_str().unwrap(), "/agent-tool", request_body).unwrap();
         let request = server.join().unwrap();
         fs::remove_file(&path).unwrap();
 
         let header_end = super::super::find_header_end(&request).unwrap();
         let headers = std::str::from_utf8(&request[..header_end]).unwrap();
-        assert!(headers.starts_with("POST /batch HTTP/1.0\r\n"));
+        assert!(headers.starts_with("POST /agent-tool HTTP/1.0\r\n"));
         assert!(headers.contains("\r\nContent-Type: application/json\r\n"));
         assert!(headers.contains(&format!("\r\nContent-Length: {}\r\n", request_body.len())));
         assert_eq!(&request[header_end + 4..], request_body);
@@ -392,7 +399,7 @@ mod tests {
         let response =
             b"HTTP/1.0 422 Unprocessable Entity\r\nContent-Length: 7\r\n\r\nproblem".to_vec();
         let (path, server) = serve_once(response);
-        let result = post_json(path.to_str().unwrap(), b"{}").unwrap();
+        let result = post_json(path.to_str().unwrap(), "/agent-tool", b"{}").unwrap();
         server.join().unwrap();
         fs::remove_file(&path).unwrap();
         assert_eq!(result, (422, b"problem".to_vec()));

@@ -157,7 +157,7 @@ try {
   assert.match(singleArm.cohort.sha256, /^[a-f0-9]{64}$/);
   const wrongCell = validateTurnfixArm({
     resultPath: treatment, arm: 'sweet', expected: 4, tasksPath: cohortPath,
-    expectedCell: { packingTreatment: 'ss-batch' },
+    expectedCell: { packingTreatment: 'parallel-bash' },
   });
   assert.equal(wrongCell.valid, false);
   assert.ok(wrongCell.admissionFailures.some(failure => failure.includes('packingTreatment differs')));

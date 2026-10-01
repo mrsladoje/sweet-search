@@ -36,15 +36,9 @@ import { sweetRulesOutOfFile } from './sweet-rules-placement.mjs';
 const DOCKER_HOST = process.env.DOCKER_HOST || 'unix:///var/run/docker.sock';
 const L1_CONDENSE = process.env.SS_NO_CMD_CONDENSE !== '1';
 const L2_RT_AUTHORITY = process.env.SS_NO_RT_AUTHORITY !== '1';
-export const PACKING_TREATMENTS = Object.freeze(['off', 'ss-batch', 'parallel-bash']);
+export const PACKING_TREATMENTS = Object.freeze(['off', 'parallel-bash']);
 const PACKING_INSTRUCTIONS = Object.freeze({
   off: '',
-  'ss-batch': [
-    '=== Frozen read-only packing treatment: ss-batch-v2 ===',
-    `When 2 or 3 ss-* probes are independent and every argument is already known, issue exactly one Bash command of this form: ss-batch '{"version":1,"operations":[{"id":"...","tool":"...","args":{...}}],"maxChars":16000}'.`,
-    'Allowed operation tools are search, grep, find, read, semantic, and trace.',
-    'Before adding ANY probe to a batch, apply this test: is every argument value already visible in the issue text or an earlier result? If an argument would come from another probe in the same batch — a path, symbol, or line range you have not yet seen — that probe is DEPENDENT: leave it out and run it alone in a later message after its prerequisite result arrives. Batching a dependent probe with a guessed argument is a hard error, never a time saving.',
-  ].join('\n'),
   'parallel-bash': [
     '=== Frozen read-only packing treatment: parallel-bash-v2 ===',
     'When 2 or 3 read-only probes are independent and every argument is already known, issue them as separate Bash tool calls in the same assistant message so they can run concurrently.',
@@ -57,7 +51,7 @@ export { rolloutStateDir };
 export function resolvePackingTreatment(env = process.env) {
   const treatment = String(env.SS_PACKING_TREATMENT || 'off').trim();
   if (!PACKING_TREATMENTS.includes(treatment)) {
-    throw new Error('SS_PACKING_TREATMENT must be off, ss-batch, or parallel-bash');
+    throw new Error('SS_PACKING_TREATMENT must be off or parallel-bash');
   }
   return treatment;
 }
