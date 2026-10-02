@@ -28,7 +28,8 @@ import {
 } from '../../core/search/search-read.js';
 import { _resetGutterFormForTests } from '../../core/search/gutter-form.js';
 
-// These tests are about the TAB form (claude-code's, and the default). The live
+// These tests are about the TAB form (the exact-anchor form: pi and devin; claude-code's
+// until 2026-10-02, still forced by SS_READ_GUTTER=tab). The live
 // form is per harness (gutter-form.js), and vitest may itself be running under
 // codex or opencode, so pin it explicitly rather than inherit the detector.
 process.env.SS_READ_GUTTER = 'tab';

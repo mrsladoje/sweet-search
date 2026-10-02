@@ -2,7 +2,8 @@
 //
 // WHY THE FORM DEPENDS ON THE HARNESS (decided 2026-09-02, supersedes the
 // 2026-08-28 "N<TAB> everywhere" decision; family layer + four inferred
-// harnesses + colon fallback added 2026-09-22)
+// harnesses + colon fallback added 2026-09-22; claude-code `N<TAB>` -> none
+// 2026-10-02)
 // ----------------------------------------------------------------------
 // The delimiter is not a solve lever: at 66 rollouts per cell every form lands
 // within 3 rollouts of every other on every harness (FRESH-POOL-RESULTS.md §1).
@@ -25,13 +26,25 @@
 // The measured harnesses (form validated on the task bench, never change these
 // without a new measurement):
 //
-//   claude-code  `N<TAB>`  Claude Code's Edit is an exact-string anchor and its
-//                          prompt tells the model to strip "line number + tab",
-//                          so tab matches the format the Edit workflow expects.
-//                          A carried tab fails LOUDLY there (Edit rejects it).
-//                          The gutter itself is the validated cost lever on this
-//                          harness; the six-task anchor edge for tab did not
-//                          replicate at 66 rollouts, so tab rests on format match.
+//   claude-code  (none)    Changed from `N<TAB>` on 2026-10-02. Claude Code's Edit
+//                          is an exact-string anchor (exact family), but the
+//                          gutter does not pay there:
+//                          - 2026-08-28 study (22-task fresh pool, 66 rollouts
+//                            per cell, HARNESS-GUTTER-COST-ANALYSIS-2026-08-28.md):
+//                            NONE was -6.3% cost against TAB on both delegation
+//                            subsets, and TAB broke Edit on tab-indented files
+//                            (the model strips the digits and keeps the gutter
+//                            tab: 8 of 61 edits in tab-indented repos failed).
+//                          - 2026-10-02 micro-smoke (Opus 5.5, 3 tasks ABBA, 12
+//                            rollouts, obs-loop): 0 edit failures, 0 mis-anchored
+//                            edits in either arm; the agent anchors edits on
+//                            content and takes line numbers from ss-grep's
+//                            `file:line:` hits, so it needs no gutter. NONE used
+//                            16 ss-read calls vs 24 and cost about 8% less (n=6
+//                            per arm: noise level, not a measured saving).
+//                          The format-match argument for tab (the Edit prompt
+//                          names "line number + tab") is moot without a gutter.
+//                          SS_READ_GUTTER=tab still forces the old form.
 //   opencode     `N:`      Opencode's edit seeks context with four whitespace-
 //                          tolerant passes, so no delimiter can leak into an
 //                          anchor — but under `N<TAB>` it silently wrote one
@@ -91,8 +104,10 @@
 //                          exact family. Its own read_file anchors lines as
 //                          `LINE_NUMBER→` and its edit prompt says "match only
 //                          what comes after the →", so the arrow IS the prefix
-//                          the model is trained to strip — format match, the same
-//                          reason claude-code gets tab. The alternative toolsets
+//                          the model is trained to strip — format match, the
+//                          argument that gave claude-code tab until 2026-10-02
+//                          (claude-code now gets none, by measurement; grok-build
+//                          is not measured). The alternative toolsets
 //                          stay safe under the arrow: hashline edits anchor on
 //                          LINE:HASH, not text, and the codex/opencode ports are
 //                          tolerant matchers that cannot read an arrow as
@@ -183,11 +198,13 @@ export const MATCHER_FAMILY_FORM = Object.freeze({
   clipped: 'none',
 });
 
-// Harness → { family, form? }. `form` overrides the family form only where the
-// harness's own read tool has a native prefix that its edit prompt names (the
-// format-match argument), and only within the family's safety envelope.
+// Harness → { family, form? }. `form` overrides the family form where the harness's own
+// read tool has a native prefix that its edit prompt names (the format-match argument),
+// or where a measurement chose a cheaper form (claude-code: none), and only within the
+// family's safety envelope ('none' carries no delimiter, so it is safe in every family).
 export const HARNESS_PROFILE = Object.freeze({
-  'claude-code': Object.freeze({ family: 'exact' }),
+  // Exact family, but no gutter: see the claude-code entry in the decision block above.
+  'claude-code': Object.freeze({ family: 'exact', form: 'none' }),
   opencode: Object.freeze({ family: 'tolerant' }),
   codex: Object.freeze({ family: 'clipped' }),
   cursor: Object.freeze({ family: 'tolerant' }),

@@ -777,9 +777,10 @@ function _formatAgent(result, opts = {}) {
   const remainder = renderUnreadBelow(result, opts);
   // Optional line-number gutter (SS_READ_LINENUMS=0 disables). Native Claude Code Read
   // numbers every line; ss-read did not, so sweet edited with less line grounding than
-  // its comparison arm. The delimiter is the resolved per-harness form (`N<TAB>` on
-  // claude-code) — see numberCodeLines for why the claude-code delimiter is a tab and
-  // not the `N| ` it replaced, nor cat -n's padded field. Skipped for spans
+  // its comparison arm. The delimiter is the resolved per-harness form (none on
+  // claude-code and codex, `N<TAB>` on pi and devin) — see numberCodeLines for why the
+  // exact-anchor delimiter is a tab and not the `N| ` it replaced, nor cat -n's padded
+  // field, and gutter-form.js for why claude-code gets none. Skipped for spans
   // < 15 lines (short reads don't need it and the prefix is pure token cost).
   // Prior art: pi-hashline +14pp Sonnet.
   const body = shouldNumberLines(result, opts)
@@ -800,7 +801,7 @@ export function lineGutterEnabled(opts = {}) {
   if (opts.lineNumbers === true) return true;
   if (opts.format === 'benchmark' || opts.format === 'raw' || opts.format === 'json') return false;
   if (process.env.SS_READ_LINENUMS === '0') return false;
-  // Per-harness form 'none' (codex by default) — see gutter-form.js.
+  // Per-harness form 'none' (codex and claude-code by default) — see gutter-form.js.
   return resolveGutterForm().form !== 'none';
 }
 
@@ -830,17 +831,22 @@ export function lineGutterEnabled(opts = {}) {
 // joshuakgoldberg__bingo-274 renders TAB-indented TypeScript as `5<TAB><TAB>…`
 // and its 4 exact-match edits all succeeded, with leading content tabs
 // reproduced verbatim — the model strips the gutter tab and keeps the rest.
+// SUPERSEDED for claude-code: the 2026-08-28 study (66 rollouts per cell) found the
+// carry after all — the model strips the digits and keeps the gutter tab, and 8 of 61
+// claude-code edits in tab-indented repos failed. Claude Code gets no gutter since
+// 2026-10-02 (gutter-form.js).
 //
 // This is NOT `cat -n`. cat -n pads the number into a fixed-width field
 // (`%6d`), which is what was tried and rejected for miscalibrating edit
 // wrapping (Claude Code #36654). The number here stays unpadded, so the prefix
 // width still varies with digit count exactly as `N| ` did.
-// PER-HARNESS FORM (2026-09-02, extended 2026-09-22). The tab above is the
-// exact-anchor form: claude-code, pi and devin. Opencode, cursor and
+// PER-HARNESS FORM (2026-09-02, extended 2026-09-22, claude-code -> none 2026-10-02).
+// The tab above is the exact-anchor form: pi and devin. Opencode, cursor and
 // deepseek-harness get `N:` (tolerant matchers, where a carried tab is absorbed
 // silently and written into tab-indented files), grok-build gets `N→` (the
-// prefix its own read tool prints), and codex gets no gutter (its ~2,500-token
-// output cap makes it pure cost). An undetected harness gets `N:`, the one form
+// prefix its own read tool prints), codex gets no gutter (its ~2,500-token
+// output cap makes it pure cost), and claude-code gets no gutter (measured: no edit
+// failures without it, cheaper). An undetected harness gets `N:`, the one form
 // that cannot corrupt a file. See gutter-form.js for the evidence per harness.
 // The harness is detected from the measured harnesses' env markers, then
 // process ancestry, then the inferred harnesses' env markers;

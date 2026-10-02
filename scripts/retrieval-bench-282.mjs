@@ -376,7 +376,7 @@ async function runClaude(probe, sweet, arm) {
     CLAUDE_CODE_OAUTH_TOKEN: loadClaudeToken(),
     IS_SANDBOX: '1', DISABLE_AUTOUPDATER: '1', CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
     ENABLE_CLAUDEAI_MCP_SERVERS: 'false',
-    SS_READ_GUTTER: process.env.SS_READ_GUTTER ?? 'tab',
+    SS_READ_GUTTER: process.env.SS_READ_GUTTER ?? 'none', // claude-code form (gutter-form.js); tab until 2026-10-02
   };
   for (const k of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL']) delete env[k];
   // Both arms: the 5-minute cache TTL an API-key user gets (a subscription writes at 1 hour).
