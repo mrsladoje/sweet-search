@@ -3,11 +3,13 @@ import path from 'path';
 import {
   extractSparseGramRequiredGrams,
   getSparseGramAllFiles as _getSparseGramAllFiles,
+  nativeGrepFull as _nativeGrepFull,
+  nativeGrepLines as _nativeGrepLines,
   resolveSparseSymbolMask as _resolveSparseSymbolMask,
 } from '../infrastructure/native-sparse-gram.js';
 import { resolveLatestSparseGramDeltaRecords } from '../infrastructure/sparse-gram-delta-reader.js';
 import { DB_PATHS, PROJECT_ROOT } from '../infrastructure/config/index.js';
-import { isRipgrepCodePath, resolveSearchSymbolFilter } from './search-pattern-chunks.js';
+import { resolveSearchSymbolFilter } from './search-pattern-chunks.js';
 
 const RECONCILE_MANIFEST_FILENAME = 'reconcile-manifest.json';
 
@@ -224,7 +226,6 @@ export function liveOverlayFiles(overlay, symbolMask = 0, literals = null, spars
   if (!overlay) return [];
   const out = [];
   for (const record of overlay.live) {
-    if (!isRipgrepCodePath(record.filePath)) continue;
     if (symbolMask && record.symbolMask && (record.symbolMask & symbolMask) === 0) continue;
     if (!recordMatchesClause(record, literals, sparseGramIndex)) continue;
     out.push(record.filePath);
@@ -237,7 +238,7 @@ export function applySparseDeltaOverlay(files, overlay, symbolMask = 0, projectR
   const merged = new Set();
   for (const file of Array.isArray(files) ? files : []) {
     const normalized = normalizeDeltaPath(file, projectRoot);
-    if (normalized && !overlay.hidden.has(normalized) && isRipgrepCodePath(normalized)) {
+    if (normalized && !overlay.hidden.has(normalized)) {
       merged.add(normalized);
     }
   }
@@ -245,6 +246,57 @@ export function applySparseDeltaOverlay(files, overlay, symbolMask = 0, projectR
     merged.add(file);
   }
   return [...merged];
+}
+
+// The native unified search keeps a gram candidate only when the text after the path's LAST
+// '.' (ASCII-lower-cased) is in its `codeExtensions` list (has_code_extension,
+// sparse_gram.rs); a path with no '.' never passes. The index already holds exactly the grep
+// corpus, so the list is every key of the index's own paths, and the paths that cannot pass
+// are returned for the caller to grep alongside the narrowed candidates.
+const _pathFilterByIndex = new WeakMap();
+
+export function sparseGramPathFilter(sparseGramIndex) {
+  if (!sparseGramIndex || typeof sparseGramIndex !== 'object') return { extensions: [], unfilterable: [] };
+  const cached = _pathFilterByIndex.get(sparseGramIndex);
+  if (cached) return cached;
+  const keys = new Set();
+  const unfilterable = [];
+  for (const file of _getSparseGramAllFiles(sparseGramIndex) || []) {
+    const dot = file.lastIndexOf('.');
+    if (dot < 0 || dot + 1 >= file.length) unfilterable.push(file);
+    else keys.add(file.slice(dot + 1).replace(/[A-Z]+/g, (s) => s.toLowerCase()));
+  }
+  const filter = { extensions: [...keys], unfilterable };
+  _pathFilterByIndex.set(sparseGramIndex, filter);
+  return filter;
+}
+
+/**
+ * True when the gram index proves no file can match: every OR-clause is eligible and has 0
+ * candidate files. The native unified search reads 0 candidates as "cannot narrow" and greps
+ * every file, so the caller must not hand it such a query.
+ */
+export function gramsProveNoMatch(sparseGramIndex, clauses, { maxCandidates = 0, symbolMask = 0 } = {}) {
+  if (!Array.isArray(clauses) || clauses.length === 0) return false;
+  if (typeof sparseGramIndex?.queryLiterals !== 'function') return false;
+  try {
+    return clauses.every((clause) => {
+      if (!Array.isArray(clause) || clause.length === 0) return false;
+      const result = sparseGramIndex.queryLiterals(clause, maxCandidates, symbolMask);
+      return result?.eligible === true && Array.isArray(result.files) && result.files.length === 0;
+    });
+  } catch {
+    return false;
+  }
+}
+
+/** Native grep of `files` (the `unfilterable` paths above); [] when there are none or native is unavailable. */
+export function grepUnfilterablePaths(files, regex, searchDir, { caseInsensitive = false, lightweightParse = false } = {}) {
+  if (!Array.isArray(files) || files.length === 0) return [];
+  const result = lightweightParse
+    ? _nativeGrepLines(regex, searchDir, files, caseInsensitive)
+    : _nativeGrepFull(regex, searchDir, files, caseInsensitive);
+  return result?.matches || [];
 }
 
 export function getSparseGramAllFilesWithOverlay(searcher, sparseGramIndex, options = {}) {

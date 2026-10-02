@@ -659,8 +659,11 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
       const globNote = globExcludedNote(result.stats, globs);
       // Then a scope the index cannot answer for: an agent that scoped to a bundle needs to
       // know that before it decides the pattern is absent.
+      // The grep index covers more than the vector index the note reads (grep-corpus.js), so
+      // a scope the grep index holds is a searched scope, whatever the note would say.
       let note = null;
-      if (!globNote) for (const p of inPaths) { note = await notIndexedNote(p); if (note) break; }
+      const grepCovered = result.stats?.scopeInGrepIndex === true;
+      if (!globNote && !grepCovered) for (const p of inPaths) { note = await notIndexedNote(p); if (note) break; }
       process.stdout.write(`${globNote || (note ? note.text : (repaired ? REPAIRED_NO_MATCH : '(no matches)'))}\n`);
       zeroExplained = !!(globNote || note);
     }

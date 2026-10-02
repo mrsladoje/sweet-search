@@ -18,8 +18,8 @@ import {
   nativeGrepFilesWithMatchesFixed, nativeGrepLines, nativeGrepFull,
   queryAndGrepLines, queryAndGrepFull,
   searchLines, searchFull, resolveSparseSymbolMask,
+  sparseGramPathFilter, grepUnfilterablePaths, gramsProveNoMatch,
 } from './search-pattern-prefilter.js';
-import { CODE_FILE_EXTENSIONS } from '../infrastructure/constants.js';
 import { resolveSearchSymbolFilter } from './search-pattern-chunks.js';
 import { _getRgCapabilities, runRipgrepFilesWithMatches, runRipgrepJson, normalizeSearchPath } from './search-pattern-ripgrep.js';
 
@@ -39,9 +39,6 @@ function normalizeNativeMatches(matches, searchDir) {
   return out;
 }
 
-// Cached once at module load — passed to Rust for code extension filtering.
-const _codeExtensionsArray = Array.from(CODE_FILE_EXTENSIONS);
-
 // =============================================================================
 // Core pipeline — regex candidate generation
 // =============================================================================
@@ -60,23 +57,24 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
   const lightweightParse = options.lightweightParse ?? false;
 
   // --- Unified search: single NAPI call handles gram narrowing + all-files fallback ---
-  // Eligible when: not fixed-string, no globs, gram index loaded.
-  // Rust internally: tries gram narrowing → if eligible, greps candidates; if not, greps all files.
-  // Eliminates the JS planner, separate getSparseGramAllFiles call, and multiple NAPI crossings.
+  // Eligible when: not fixed-string, no globs, gram index loaded, grams do not prove absence.
+  // Rust: gram narrowing → greps candidates if eligible, else all files. One NAPI crossing.
   const useGramIndex = options.useGramIndex ?? options.gramIndex ?? true;
   const hasSparseDeltaOverlay = sparseDeltaOverlayHasChanges(searcher, options);
   const canUseUnifiedSearch = !fixedString && globs.length === 0 && !hasSparseDeltaOverlay;
   if (canUseUnifiedSearch) {
     const sparseGramIndex = ensureSparseGramIndex(searcher, options);
-    if (sparseGramIndex) {
-      const symbolMask = resolveSparseSymbolMask(symbolTypeFilter);
+    const symbolMask = resolveSparseSymbolMask(symbolTypeFilter);
+    const noMatch = gramsProveNoMatch(sparseGramIndex, literalPlan.clauses, { maxCandidates: options.maxGramCandidates ?? 0, symbolMask: symbolMask || 0 });
+    if (sparseGramIndex && !noMatch) {
+      const pathFilter = sparseGramPathFilter(sparseGramIndex);
       const gramStart = performance.now();
       const unifiedResult = lightweightParse
         ? searchLines(sparseGramIndex, literalPlan.clauses, regex, searchDir, {
             maxGramCandidates: options.maxGramCandidates ?? 0,
             symbolMask: symbolMask || 0,
             caseInsensitive,
-            codeExtensions: _codeExtensionsArray,
+            codeExtensions: pathFilter.extensions,
             maxCandidateFiles: options.maxGramCandidateFiles ?? 100000,
             maxCandidateRatio: options.maxGramCandidateRatio ?? 1.0,
           })
@@ -84,20 +82,23 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
             maxGramCandidates: options.maxGramCandidates ?? 0,
             symbolMask: symbolMask || 0,
             caseInsensitive,
-            codeExtensions: _codeExtensionsArray,
+            codeExtensions: pathFilter.extensions,
             maxCandidateFiles: options.maxGramCandidateFiles ?? 100000,
             maxCandidateRatio: options.maxGramCandidateRatio ?? 1.0,
           });
 
       if (unifiedResult) {
-        const gramLookupTime = performance.now() - gramStart;
-        const materializeStart = performance.now();
-        const indexedMatches = normalizeNativeMatches(unifiedResult.matches, searchDir);
-        const matchingFiles = [...new Set(indexedMatches.map((m) => m.file))];
-        const materializeTime = performance.now() - materializeStart;
         const candidateFiles = unifiedResult.candidateFiles;
         const totalFiles = unifiedResult.totalFiles;
         const gramNarrowed = candidateFiles < totalFiles;
+        // Narrowing dropped the index paths the extension list cannot express; grep-all did not.
+        const residual = gramNarrowed && !symbolMask ? pathFilter.unfilterable : [];
+        const residualMatches = grepUnfilterablePaths(residual, regex, searchDir, { caseInsensitive, lightweightParse });
+        const gramLookupTime = performance.now() - gramStart;
+        const materializeStart = performance.now();
+        const indexedMatches = normalizeNativeMatches([...unifiedResult.matches, ...residualMatches], searchDir);
+        const matchingFiles = [...new Set(indexedMatches.map((m) => m.file))];
+        const materializeTime = performance.now() - materializeStart;
         const rustGramMs = (unifiedResult.gramElapsedUs || 0) / 1000;
         const rustRegexBuildMs = (unifiedResult.regexBuildElapsedUs || 0) / 1000;
         const rustGrepMs = (unifiedResult.grepElapsedUs || 0) / 1000;
@@ -114,7 +115,7 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
             literalFilterTime_ms: 0,
             gramLookupTime_ms: Math.round(gramLookupTime),
             filesConsidered: totalFiles,
-            filesScanned: unifiedResult.scannedFiles,
+            filesScanned: unifiedResult.scannedFiles + residual.length,
             filesSkipped: 0,
             dirtyOverlayFiles: 0,
             candidateFilesBeforeFilter: candidateFiles,

@@ -18,6 +18,9 @@
 // The median (M1) is the workhorse: real hand-written source has a median line length
 // of roughly 20-60 bytes and essentially never exceeds 200, so false positives are rare.
 
+import fs from 'node:fs/promises';
+import path from 'node:path';
+
 // JS/CSS comment strip (best-effort; harmless on other languages — median still holds).
 const COMMENT_PATTERN = /\/\*[\s\S]*?\*\/\r?\n?|\/\/.{0,200}?(?:\r?\n|$)/g;
 const SOURCE_MAP = /^\/[*/][#@] source(?:Mapping)?URL|sourceURL=/;
@@ -89,6 +92,35 @@ export function looksMinified(headText, { ext = '', tailText = '', totalBytes } 
   if (lens.filter((l) => l > 4096).length >= 2) return { rule: 'long-lines' };
 
   return false;
+}
+
+/**
+ * `looksMinified` on a file: reads the first 32 KiB and the last 4 KiB.
+ * @param {string} absPath
+ * @param {string} rel  project-relative path (its extension selects the rules)
+ * @returns {Promise<false | {rule: string}>}  false for a file under 1 KiB or one that cannot be read
+ */
+export async function fileLooksMinified(absPath, rel) {
+  try {
+    const st = await fs.stat(absPath);
+    if (st.size < 1024) return false;   // a sub-1KB file is never a problematic bundle
+    const fh = await fs.open(absPath, 'r');
+    try {
+      const headBuf = Buffer.alloc(Math.min(32768, st.size));
+      await fh.read(headBuf, 0, headBuf.length, 0);
+      let tail = '';
+      if (st.size > headBuf.length) {
+        const tLen = Math.min(4096, st.size);
+        const tBuf = Buffer.alloc(tLen);
+        await fh.read(tBuf, 0, tLen, st.size - tLen);
+        tail = tBuf.toString('utf8');
+      }
+      return looksMinified(headBuf.toString('utf8'),
+        { ext: path.extname(rel).toLowerCase(), tailText: tail, totalBytes: st.size });
+    } finally { await fh.close(); }
+  } catch {
+    return false;
+  }
 }
 
 export const _internal = { median, COMMENT_PATTERN, SOURCE_MAP, BUNDLER_BANNER, MINIFIABLE_EXT, DATA_DOC_EXT };

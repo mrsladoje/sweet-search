@@ -3,7 +3,6 @@ import { existsSync } from 'fs';
 import path from 'path';
 
 import { DB_PATHS, PROJECT_ROOT } from '../infrastructure/config/index.js';
-import { CODE_FILE_EXTENSIONS } from '../infrastructure/constants.js';
 import {
   buildSparseGramIndexArtifact,
   hasNativeSparseGramSupport,
@@ -12,6 +11,7 @@ import {
 import { contentHash } from '../incremental-indexing/infrastructure/hashing.mjs';
 import { FALLBACK_WEIGHTS_ID } from '../incremental-indexing/infrastructure/sparse-gram-delta.mjs';
 import { atomicSwapDatabase, log } from './indexer-utils.js';
+import { discoverGrepCorpus } from './grep-corpus.js';
 
 async function unlinkIfExists(filePath) {
   try {
@@ -91,30 +91,29 @@ export async function buildSparseGramArtifact(allFiles, dryRun) {
     return { skipped: true, reason: 'no_files' };
   }
 
-  const codeFiles = allFiles.filter((filePath) => {
-    const ext = path.extname(filePath).slice(1).toLowerCase();
-    return CODE_FILE_EXTENSIONS.has(ext);
-  });
-
-  if (codeFiles.length === 0) {
-    log('Skipping sparse gram artifact: no code-search files discovered', 'yellow');
-    return { skipped: true, reason: 'no_code_files' };
-  }
-
   if (!hasNativeSparseGramSupport()) {
     log('Skipping sparse gram artifact: native addon unavailable', 'yellow');
     return { skipped: true, reason: 'native_unavailable' };
+  }
+
+  const corpus = await discoverGrepCorpus(allFiles, { projectRoot: PROJECT_ROOT });
+  const grepFiles = corpus.files;
+  if (corpus.added > 0) {
+    log(`  Grep corpus: +${corpus.added} file(s) outside embedding admission (${corpus.source})`, 'dim');
+  }
+  if (corpus.truncated > 0) {
+    log(`  Grep corpus: ${corpus.truncated} file(s) dropped at the repo-size cap`, 'yellow');
   }
 
   const stagedPath = DB_PATHS.sparseGramIndex + '.tmp';
   await fs.mkdir(path.dirname(stagedPath), { recursive: true });
 
   try {
-    const fileSymbolMasks = await collectFileSymbolMasks(codeFiles);
+    const fileSymbolMasks = await collectFileSymbolMasks(grepFiles);
     log('Building sparse gram artifact...', 'yellow');
     const result = buildSparseGramIndexArtifact({
       projectRoot: PROJECT_ROOT,
-      files: codeFiles,
+      files: grepFiles,
       fileSymbolMasks,
       outputPath: stagedPath,
     });

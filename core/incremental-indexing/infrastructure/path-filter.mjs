@@ -97,7 +97,7 @@ export function loadIgnoreFile(filePath) {
   return out;
 }
 
-function patternToRegex(pattern) {
+export function patternToRegex(pattern) {
   // Convert the subset of gitignore-style globbing used by the shared
   // sweet-search config. In particular, leading `**/` must match root-level
   // files too (`**/package-lock.json` matches `package-lock.json`).
