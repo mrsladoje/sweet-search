@@ -4,11 +4,24 @@
  * one is a silent zero (`ss-grep express -i -w` -> `(?i)\b(?:express)\b` used to yield
  * ":express"; `\broute` yielded "broute"). When unsure the extractor returns nothing.
  */
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+
 import {
   extractLiteralClauses,
   extractRequiredLiteralsHeuristic as lits,
+  hasCaseInsensitiveRegexFlag,
+  prefilterLiteralClauses,
 } from '../../core/search/search-pattern-prefilter.js';
+import {
+  buildSparseGramIndexArtifact, hasNativeSparseGramSupport, isNativeGrepAvailable, loadSparseGramIndex, nativeGrepLines,
+} from '../../core/infrastructure/native-sparse-gram.js';
+import { generateRegexMatches } from '../../core/search/search-pattern-planner.js';
+
+const RG_OK = spawnSync('rg', ['--version'], { encoding: 'utf8' }).status === 0;
 
 describe('extractRequiredLiteralsHeuristic: inline flags, groups, escapes', () => {
   it('ss-grep -i / -w / -i -w patterns give the word itself', () => {
@@ -25,6 +38,21 @@ describe('extractRequiredLiteralsHeuristic: inline flags, groups, escapes', () =
     expect(lits('\\d+')).toEqual([]);
     expect(lits('\\wabc\\Wdef\\Bghi\\Ajkl\\z')).toEqual(['abc', 'def', 'ghi', 'jkl']);
     expect(lits('class\\s+Auth\\w+Service')).toEqual(['class', 'Auth', 'Service']);
+  });
+
+  it('\\< \\> and \\b{start} / \\b{end} / \\b{start-half} / \\b{end-half} are assertions, not text', () => {
+    expect(lits('(?i)\\<foobar\\>')).toEqual(['foobar']);
+    expect(lits('\\<ab')).toEqual([]);
+    expect(lits('x\\>yzw')).toEqual(['yzw']);
+    expect(lits('\\b{start}cde')).toEqual(['cde']);
+    expect(lits('ab\\b{end}cde')).toEqual(['cde']);
+    expect(lits('\\b{start-half}xyz\\b{end-half}')).toEqual(['xyz']);
+  });
+
+  it('\\p \\P \\x \\u \\U stand for one char of a class: they break a literal', () => {
+    expect(lits('\\p{L}abc\\pLdef\\P{Greek}ghi')).toEqual(['abc', 'def', 'ghi']);
+    expect(lits('\\x20abc\\x{41}def')).toEqual(['abc', 'def']);
+    expect(lits('\\u0041abc\\u{1F600}def\\U0001F600ghi')).toEqual(['abc', 'def', 'ghi']);
   });
 
   it('escaped punctuation is the literal char', () => {
@@ -72,25 +100,224 @@ describe('extractRequiredLiteralsHeuristic: inline flags, groups, escapes', () =
   });
 
   it('gives up on what it does not fully understand', () => {
-    for (const p of ['(?x)foo bar', '\\x41bcd', '\\p{L}abc', '\\Qabc\\E', '(abc)\\1def', 'abc{,3}', 'x{ 2 }yz',
+    for (const p of ['(?x)foo bar', '\\xZZbcd', '\\b{bad}abc', '\\B{2}abc', '\\Qabc\\E', '(abc)\\1def', 'abc{,3}', 'x{ 2 }yz',
       '{2}abc', '*abc', 'abc)', '(abc', '[abc', 'abc\\', 'a**bcd', '(?#c)abc']) {
       expect(lits(p), p).toEqual([]);
     }
   });
 });
 
-describe('extractLiteralClauses: case-insensitive literals', () => {
-  it('cuts at k and s, which (?i) also matches as U+212A and U+017F', () => {
-    expect(extractLiteralClauses('(?i)\\b(?:express)\\b').clauses).toEqual([['expre']]);
-    expect(extractLiteralClauses('(?i)\\b(?:require)\\b').clauses).toEqual([['require']]);
-    expect(extractLiteralClauses('(?i)kind').clauses).toEqual([['ind']]);
-    expect(extractLiteralClauses('(?i)sss').clauses).toEqual([]);
-    // a case-sensitive literal is not cut
-    expect(extractLiteralClauses('\\b(?:express)\\b').clauses).toEqual([['express']]);
+describe('extractLiteralClauses with fixedString: the raw text is the only literal', () => {
+  it('never parses the text as a regex', () => {
+    expect(extractLiteralClauses('foo\\.bar', { fixedString: true })).toEqual({ clauses: [['foo\\.bar']], source: 'fixed-string' });
+    expect(extractLiteralClauses('a\\<bc', { fixedString: true }).clauses).toEqual([['a\\<bc']]);
+    expect(extractLiteralClauses('(get|set)Config', { fixedString: true }).clauses).toEqual([['(get|set)Config']]);
+    expect(prefilterLiteralClauses([['foo\\.bar']])).toEqual({ rg: [['foo\\.bar']], ascii: [['foo\\.bar']], gram: [['foo', '.bar']] });
+  });
+
+  it('gives no literal for short text or text with a line break (several patterns to rg -F)', () => {
+    expect(extractLiteralClauses('ab', { fixedString: true }).clauses).toEqual([]);
+    expect(extractLiteralClauses('abc\ndef', { fixedString: true }).clauses).toEqual([]);
+  });
+});
+
+// Real engine: `search -F -e 'foo\.bar'` (fixedString) used to prefilter on "foo.bar" and
+// return 0 files where `rg -F` finds one.
+describe.runIf(RG_OK)('fixed-string search through the planner (real engine)', () => {
+  it('finds the raw text with a glob (ripgrep route) and with a gram index', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'prefilter-fixed-'));
+    try {
+      writeFileSync(path.join(dir, 'a.js'), 'const p = "foo\\.bar";\n');
+      writeFileSync(path.join(dir, 'b.js'), 'const p = foo.bar;\n');
+      writeFileSync(path.join(dir, 'c.js'), 'const p = "a\\<bc";\n');
+      const viaRg = (text) => generateRegexMatches({ projectRoot: dir }, text, dir,
+        { fixedString: true, globs: ['*.js'], useGramIndex: false });
+      expect((await viaRg('foo\\.bar')).matchingFiles).toEqual(['a.js']);
+      expect((await viaRg('a\\<bc')).matchingFiles).toEqual(['c.js']);
+      if (hasNativeSparseGramSupport()) {
+        const indexPath = path.join(dir, 'sparse.idx');
+        buildSparseGramIndexArtifact({ projectRoot: dir, files: ['a.js', 'b.js', 'c.js'], outputPath: indexPath });
+        const searcher = { projectRoot: dir, sparseGramIndex: loadSparseGramIndex(indexPath), sparseGramIndexPath: indexPath };
+        const viaGram = await generateRegexMatches(searcher, 'foo\\.bar', dir, { fixedString: true });
+        expect(viaGram.matchingFiles).toEqual(['a.js']);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('case comes only from the explicit option, never from "(?i" in the text', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'prefilter-fixed-case-'));
+    try {
+      writeFileSync(path.join(dir, 'lower.js'), 'const s = "(?i)needle";\n');
+      writeFileSync(path.join(dir, 'upper.js'), 'const s = "(?i)NEEDLE";\n');
+      writeFileSync(path.join(dir, 'other.js'), 'const s = "needle";\n');
+      const run = (opts) => generateRegexMatches({ projectRoot: dir }, '(?i)needle', dir,
+        { fixedString: true, globs: ['*.js'], useGramIndex: false, ...opts });
+      // "(?i)needle" is text: matched case-sensitively, as `rg -F` does
+      const plain = await run({});
+      expect(plain.matchingFiles).toEqual(['lower.js']);
+      expect(plain.indexedMatches.map((m) => m.file)).toEqual(['lower.js']);
+      // the explicit option folds case in the prefilter and in the final grep
+      const folded = await run({ caseInsensitive: true });
+      expect([...folded.matchingFiles].sort()).toEqual(['lower.js', 'upper.js']);
+      if (hasNativeSparseGramSupport()) {
+        const indexPath = path.join(dir, 'sparse.idx');
+        buildSparseGramIndexArtifact({ projectRoot: dir, files: ['lower.js', 'upper.js', 'other.js'], outputPath: indexPath });
+        const searcher = { projectRoot: dir, sparseGramIndex: loadSparseGramIndex(indexPath), sparseGramIndexPath: indexPath };
+        expect((await generateRegexMatches(searcher, '(?i)needle', dir, { fixedString: true })).matchingFiles)
+          .toEqual(['lower.js']);
+        expect([...(await generateRegexMatches(searcher, '(?i)needle', dir, { fixedString: true, caseInsensitive: true }))
+          .matchingFiles].sort()).toEqual(['lower.js', 'upper.js']);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('prefilterLiteralClauses: what each prefilter may use', () => {
+  const plan = (p) => prefilterLiteralClauses(extractLiteralClauses(p).clauses,
+    { caseInsensitive: hasCaseInsensitiveRegexFlag(p) });
+
+  it('ripgrep keeps the full literal: rg -F -i folds Kelvin and long s itself', () => {
+    expect(plan('(?i)\\b(?:express)\\b').rg).toEqual([['express']]);
+    expect(plan('(?i)useState\\(').rg).toEqual([['useState(']]);
+  });
+
+  it('the ASCII-folding consumers cut case-insensitive literals at k and s', () => {
+    expect(plan('(?i)\\b(?:express)\\b')).toMatchObject({ ascii: [['expre']], gram: [['expre']] });
+    expect(plan('(?i)\\b(?:require)\\b')).toMatchObject({ ascii: [['require']], gram: [['require']] });
+    expect(plan('(?i)kind').gram).toEqual([['ind']]);
+    expect(plan('(?i)sss')).toMatchObject({ ascii: [], gram: [] });
+    // case-sensitive: no cut
+    expect(plan('\\b(?:express)\\b')).toMatchObject({ ascii: [['express']], gram: [['express']] });
+  });
+
+  it('the ASCII-folding consumers also cut case-insensitive literals at non-ASCII chars', () => {
+    // (?i)σ matches Σ and ς; (?i)ß matches ẞ: the native fixed-string grep folds ASCII only
+    expect(plan('(?i)bc\u03C3')).toMatchObject({ rg: [['bc\u03C3']], ascii: [], gram: [] });
+    expect(plan('(?i)\u00DFa<')).toMatchObject({ ascii: [], gram: [] });
+    expect(plan('(?i)abc\u03C3def')).toMatchObject({ ascii: [['abc', 'def']], gram: [['abc', 'def']] });
+    // case-sensitive: exact bytes, no cut
+    expect(plan('abc\u03C3def').ascii).toEqual([['abc\u03C3def']]);
+  });
+
+  it('the gram index gets span pieces: a non-span byte no longer makes the clause ineligible', () => {
+    expect(plan('useState\\(').gram).toEqual([['useState']]);
+    expect(plan('(?i)useState\\(')).toMatchObject({ ascii: [['tate(']], gram: [['tate']] });
+    expect(plan('foo\\(bar\\)').gram).toEqual([['foo', 'bar']]);
   });
 
   it('an OR-clause left empty means no prefilter, never a narrower one', () => {
-    expect(extractLiteralClauses('(?i)\\b(?:class|kss)\\b').clauses).toEqual([]);
-    expect(extractLiteralClauses('(?i)\\b(?:class|router)\\b').clauses).toEqual([['cla'], ['router']]);
+    expect(plan('(?i)\\b(?:class|kss)\\b')).toMatchObject({ ascii: [], gram: [] });
+    expect(plan('(?i)\\b(?:class|router)\\b').gram).toEqual([['cla'], ['router']]);
+    expect(plan('(?i)\\b(?:class|router)\\b').rg).toEqual([['class'], ['router']]);
+  });
+});
+
+// Property test: random patterns over a small alphabet (with \<, \>, \b{..}, \p, \x, classes,
+// groups, flags, quantifiers) against the real regex engine's matches on random lines: the
+// native grep (Rust regex 1.12, in process, every pattern) and ripgrep (the first RG_PATTERNS
+// patterns, when installed). Every line either matches must contain every literal of at least
+// one clause, for each consumer, under that consumer's case folding. Deterministic seed.
+const RG_PATTERNS = 60;
+describe.runIf(isNativeGrepAvailable())('property: prefilter literals never drop a line the engine matches', () => {
+  it('holds for every random pattern (seeded)', () => {
+    let seed = 20261002;
+    const rnd = () => {
+      seed = (seed + 0x6D2B79F5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+    const pick = (a) => a[Math.floor(rnd() * a.length)];
+    const CH = ['a', 'b', 'c', 'a', 'b', 'c', 'k', 's', 'A', 'B', 'K', 'S', '-', '_', '<', '>', '\u03C3', '\u00DF', '\u00E9'];
+    const ESC = ['\\<', '\\>', '\\b{start}', '\\b{end}', '\\b{start-half}', '\\b{end-half}', '\\b', '\\B',
+      '\\.', '\\-', '\\{', '\\}', '\\(', '\\p{L}', '\\pL', '\\x20', '\\x{61}', '\\u0062', '\\w', '\\s', '\\d'];
+    const atom = (d) => {
+      const r = rnd();
+      if (r < 0.55) return pick(CH);
+      if (r < 0.75) return pick(ESC);
+      if (r < 0.82) return pick(['.', '[ab]', '[^a]', '[]a]', '[[:alpha:]]', '^', '$']);
+      if (d > 2) return pick(CH);
+      const inner = rnd() < 0.3 ? `${seq(d + 1)}|${seq(d + 1)}` : seq(d + 1);
+      return `${pick(['(', '(?:', '(?i:', '(?-i:'])}${inner})`;
+    };
+    const quant = () => (rnd() < 0.75 ? '' : pick(['?', '*', '+', '{0,2}', '{2}', '{1,}', '+?']));
+    function seq(d) {
+      let out = '';
+      const n = 2 + Math.floor(rnd() * 8);
+      for (let i = 0; i < n; i++) {
+        const a = atom(d);
+        out += a;
+        if (!/^(\\[bB<>]|\^|\$)/.test(a)) out += quant();
+      }
+      return out;
+    }
+    const pattern = () => {
+      let p = seq(0);
+      if (rnd() < 0.1) p += `|${seq(0)}`;
+      if (rnd() < 0.5) p = `(?i)${p}`;
+      if (rnd() < 0.2) p = `\\b(?:${p})\\b`;
+      return p;
+    };
+    // U+212A Kelvin, U+017F long s, σ Σ ς, ß ẞ, é É: case variants the ASCII folders cannot see
+    const LINE_CH = ['a', 'b', 'c', 'k', 's', 'A', 'B', 'K', 'S', '\u212A', '\u017F', '-', '<', '>', ' ', '_', '{', '}', '(', 'x',
+      '\u03C3', '\u03A3', '\u03C2', '\u00DF', '\u1E9E', '\u00E9', '\u00C9'];
+    const lines = [];
+    for (let i = 0; i < 600; i++) {
+      let line = '';
+      const n = 2 + Math.floor(rnd() * 12);
+      for (let j = 0; j < n; j++) line += pick(LINE_CH);
+      lines.push(line);
+    }
+    const dir = mkdtempSync(path.join(tmpdir(), 'prefilter-prop-'));
+    const file = path.join(dir, 'lines.txt');
+    writeFileSync(file, `${lines.join('\n')}\n`);
+
+    const unicodeFold = (x) => x.toLowerCase().replace(/ſ/g, 's');   // what rg -i matches
+    const asciiFold = (x) => x.replace(/[A-Z]/g, (c) => c.toLowerCase()); // native grep, gram index
+    const covered = (clauses, line, fold) => clauses.length === 0
+      || clauses.some((clause) => clause.every((lit) => fold(line).includes(fold(lit))));
+    const counts = { patterns: 0, valid: 0, rgChecked: 0, withRg: 0, withAscii: 0, withGram: 0, unsound: [] };
+    try {
+      for (let t = 0; t < 1200; t++) {
+        const p = pattern();
+        counts.patterns++;
+        const native = nativeGrepLines(p, dir, ['lines.txt'], false);
+        if (!native) continue;                                             // invalid pattern
+        counts.valid++;
+        const hitLines = new Set(native.matches.map((m) => m.line));
+        if (RG_OK && counts.rgChecked < RG_PATTERNS) {
+          const r = spawnSync('rg', ['-n', '--no-filename', '--no-config', '-e', p, file], { encoding: 'utf8' });
+          if (r.status === 0 || r.status === 1) {
+            counts.rgChecked++;
+            for (const hit of r.stdout.split('\n').filter(Boolean)) hitLines.add(Number(hit.slice(0, hit.indexOf(':'))));
+          }
+        }
+        const ci = hasCaseInsensitiveRegexFlag(p);
+        const sets = prefilterLiteralClauses(extractLiteralClauses(p).clauses, { caseInsensitive: ci });
+        if (sets.rg.length) counts.withRg++;
+        if (sets.ascii.length) counts.withAscii++;
+        if (sets.gram.length) counts.withGram++;
+        const same = (x) => x;
+        for (const n of hitLines) {
+          const line = lines[n - 1];
+          const bad = [
+            ['rg', sets.rg, ci ? unicodeFold : same],
+            ['ascii', sets.ascii, ci ? asciiFold : same],
+            ['gram', sets.gram, asciiFold],
+          ].find(([, clauses, fold]) => !covered(clauses, line, fold));
+          if (bad) { counts.unsound.push({ p, line, consumer: bad[0], clauses: bad[1] }); break; }
+        }
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+    console.log(`prefilter property: ${JSON.stringify({ ...counts, unsound: counts.unsound.length })}`);
+    expect(counts.unsound).toEqual([]);
+    expect(counts.valid).toBeGreaterThan(1000);
+    expect(counts.withGram).toBeGreaterThan(50);
   });
 });

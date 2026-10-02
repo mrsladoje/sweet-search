@@ -11,7 +11,7 @@
  */
 
 import {
-  extractLiteralClauses, runLiteralPrefilterClauses, querySparseGramCandidates,
+  extractLiteralClauses, prefilterLiteralClauses, runLiteralPrefilterClauses, querySparseGramCandidates,
   ensureSparseGramIndex,
   sparseDeltaOverlayHasChanges, getSparseGramAllFilesWithOverlay,
   hasCaseInsensitiveRegexFlag, nativeGrepFilesWithMatches,
@@ -49,9 +49,15 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
   const globs = options.globs ?? [];
 
   const useLiteralFilter = options.useLiteralFilter ?? options.literalFilter ?? true;
-  const caseInsensitive = hasCaseInsensitiveRegexFlag(regex);
+  // A regex carries its own case flags (`(?i)`). Fixed-string text is not a regex: "(?i" in it is
+  // plain text, so its case comes only from the explicit option.
+  const caseInsensitive = fixedString ? options.caseInsensitive === true : hasCaseInsensitiveRegexFlag(regex);
+  // The final ripgrep calls: a regex keeps its inline flags; fixed-string text needs `-i`.
+  const rgCaseInsensitive = fixedString && caseInsensitive;
   const literalExtractStart = performance.now();
   const literalPlan = useLiteralFilter ? extractLiteralClauses(regex, options) : { clauses: [], source: 'none' };
+  // The literals each prefilter can use soundly (ripgrep, native fixed-string grep, gram index).
+  const prefilterClauses = prefilterLiteralClauses(literalPlan.clauses, { caseInsensitive });
   const literalExtractionTime = performance.now() - literalExtractStart;
   const symbolTypeFilter = resolveSearchSymbolFilter(options);
   const lightweightParse = options.lightweightParse ?? false;
@@ -65,12 +71,12 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
   if (canUseUnifiedSearch) {
     const sparseGramIndex = ensureSparseGramIndex(searcher, options);
     const symbolMask = resolveSparseSymbolMask(symbolTypeFilter);
-    const noMatch = gramsProveNoMatch(sparseGramIndex, literalPlan.clauses, { maxCandidates: options.maxGramCandidates ?? 0, symbolMask: symbolMask || 0 });
+    const noMatch = gramsProveNoMatch(sparseGramIndex, prefilterClauses.gram, { maxCandidates: options.maxGramCandidates ?? 0, symbolMask: symbolMask || 0 });
     if (sparseGramIndex && !noMatch) {
       const pathFilter = sparseGramPathFilter(sparseGramIndex);
       const gramStart = performance.now();
       const unifiedResult = lightweightParse
-        ? searchLines(sparseGramIndex, literalPlan.clauses, regex, searchDir, {
+        ? searchLines(sparseGramIndex, prefilterClauses.gram, regex, searchDir, {
             maxGramCandidates: options.maxGramCandidates ?? 0,
             symbolMask: symbolMask || 0,
             caseInsensitive,
@@ -78,7 +84,7 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
             maxCandidateFiles: options.maxGramCandidateFiles ?? 100000,
             maxCandidateRatio: options.maxGramCandidateRatio ?? 1.0,
           })
-        : searchFull(sparseGramIndex, literalPlan.clauses, regex, searchDir, {
+        : searchFull(sparseGramIndex, prefilterClauses.gram, regex, searchDir, {
             maxGramCandidates: options.maxGramCandidates ?? 0,
             symbolMask: symbolMask || 0,
             caseInsensitive,
@@ -165,9 +171,9 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
   let gramLookupTime = 0;
   let gramLookupResult = null;
 
-  if (literalPlan.clauses.length > 0) {
+  if (prefilterClauses.gram.length > 0) {
     const gramStart = performance.now();
-    gramLookupResult = querySparseGramCandidates(searcher, literalPlan.clauses, options);
+    gramLookupResult = querySparseGramCandidates(searcher, prefilterClauses.gram, options);
     gramLookupTime = performance.now() - gramStart;
     if (Array.isArray(gramLookupResult?.files)) {
       searchFiles = gramLookupResult.files;
@@ -273,7 +279,7 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
 
     if (prefilterFiles && prefilterFiles.length > 0) {
       const combined = new Set();
-      for (const clause of literalPlan.clauses) {
+      for (const clause of prefilterClauses.ascii) {
         if (!Array.isArray(clause) || clause.length === 0) { combined.clear(); break; }
         const result = nativeGrepFilesWithMatchesFixed(clause, searchDir, prefilterFiles, caseInsensitive);
         if (result) {
@@ -285,7 +291,7 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
       }
       filteredFiles = combined.size > 0 ? [...combined] : null;
     } else {
-      filteredFiles = await runLiteralPrefilterClauses(literalPlan.clauses, searchDir, searchFiles, {
+      filteredFiles = await runLiteralPrefilterClauses(prefilterClauses.rg, searchDir, searchFiles, {
         caseInsensitive,
         globs,
       }, { getRgCapabilities: _getRgCapabilities, runRipgrepFilesWithMatches });
@@ -368,6 +374,7 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
       indexedMatches = await runRipgrepJson(regex, searchDir, {
         files: filteredFiles,
         fixedString,
+        caseInsensitive: rgCaseInsensitive,
         globs,
         lightweightParse,
       });
@@ -382,6 +389,7 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
       : await runRipgrepFilesWithMatches(regex, searchDir, {
         files: filteredFiles,
         fixedString,
+        caseInsensitive: rgCaseInsensitive,
         globs,
       });
     if (matchingFiles.length > 0) {
@@ -399,6 +407,7 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
         indexedMatches = await runRipgrepJson(regex, searchDir, {
           files: matchingFiles,
           fixedString,
+          caseInsensitive: rgCaseInsensitive,
           globs,
           lightweightParse,
         });
@@ -417,6 +426,7 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
       indexedMatches = await runRipgrepJson(regex, searchDir, {
         files: filteredFiles,
         fixedString,
+        caseInsensitive: rgCaseInsensitive,
         globs,
         lightweightParse,
       });
@@ -426,6 +436,7 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
     indexedMatches = await runRipgrepJson(regex, searchDir, {
       files: filteredFiles,
       fixedString,
+      caseInsensitive: rgCaseInsensitive,
       globs,
       lightweightParse,
     });
