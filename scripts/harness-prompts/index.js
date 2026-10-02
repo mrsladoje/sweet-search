@@ -23,7 +23,10 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { CODEX_FILE_NAME_LINE, OPENCODE_GLOB_BULLET, insertLineBefore, rulesV2Enabled } from './rules-v2.js';
+import {
+  CODEX_FILE_NAME_LINE, OPENCODE_BASH_AVOID_V1, OPENCODE_BASH_AVOID_V2, OPENCODE_BASH_FILE_SEARCH_V1,
+  OPENCODE_BASH_FILE_SEARCH_V2, OPENCODE_GLOB_BULLET, insertLineBefore, rulesV2Enabled,
+} from './rules-v2.js';
 
 // Rules v2 (rules-v2.js, default on; SS_FIX_RULES_V2=0 = the old texts byte for byte): each
 // harness prompt gets back only the file-name half of the stock search line the trim removed.
@@ -126,11 +129,14 @@ export function opencodePrompt(env = process.env) {
 
 // Tool-description edits (opencode-trim-plugin.mjs applies them through `tool.definition`).
 // Only text that contradicts the ss-* rules or names the disabled grep tool / Task delegation.
-export const OPENCODE_TOOL_EDITS = Object.freeze({
+// OPENCODE_TOOL_EDITS_V1: the pre-rules-v2 edits (SS_FIX_RULES_V2=0), byte-identical to the
+// benchmarked conflict3 set. OPENCODE_TOOL_EDITS (the default, rules v2) also drops `find` from the
+// bash avoid-list and "(NOT find or ls)" from its File search line (rules-v2.js).
+export const OPENCODE_TOOL_EDITS_V1 = Object.freeze({
   bash: [
     ['IMPORTANT: This tool is for terminal operations like git, npm, docker, etc. DO NOT use it for file operations (reading, writing, editing, searching, finding files) - use the specialized tools for this instead.\n\n', ''],
     [' or Grep to search the full content', ''],
-    ['  - Avoid using Bash with the `find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands,', '  - Avoid using Bash with the `find`, `sed`, `awk`, or `echo` commands,'],
+    ['  - Avoid using Bash with the `find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands,', OPENCODE_BASH_AVOID_V1],
     ['    - Content search: Use Grep (NOT grep or rg)\n    - Read files: Use Read (NOT cat/head/tail)\n', ''],
   ],
   read: [
@@ -140,3 +146,17 @@ export const OPENCODE_TOOL_EDITS = Object.freeze({
   task: [['use the Grep tool instead, to find the match more quickly', 'search for it directly instead, to find the match more quickly']],
   glob: [['- When you are doing an open-ended search that may require multiple rounds of globbing and grepping, use the Task tool instead\n', '']],
 });
+export const OPENCODE_TOOL_EDITS = Object.freeze({
+  ...OPENCODE_TOOL_EDITS_V1,
+  bash: [
+    OPENCODE_TOOL_EDITS_V1.bash[0],
+    OPENCODE_TOOL_EDITS_V1.bash[1],
+    [OPENCODE_TOOL_EDITS_V1.bash[2][0], OPENCODE_BASH_AVOID_V2],
+    [`${OPENCODE_BASH_FILE_SEARCH_V1}${OPENCODE_TOOL_EDITS_V1.bash[3][0]}`, OPENCODE_BASH_FILE_SEARCH_V2],
+  ],
+});
+
+/** The tool-description edits for `env` (SS_FIX_RULES_V2=0 -> OPENCODE_TOOL_EDITS_V1). */
+export function opencodeToolEdits(env = process.env) {
+  return rulesV2Enabled(env) ? OPENCODE_TOOL_EDITS : OPENCODE_TOOL_EDITS_V1;
+}
