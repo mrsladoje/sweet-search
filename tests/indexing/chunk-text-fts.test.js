@@ -17,6 +17,8 @@ import {
   CHUNK_TEXT_FTS_MAX_CHARS,
   buildChunkTextQueries,
   chunkTextFtsDocument,
+  chunkTextFtsWriter,
+  isAliasVectorMetadata,
   splitCamelIdentifier,
 } from '../../core/indexing/chunk-text-fts.js';
 
@@ -273,6 +275,74 @@ describe('chunk-text FTS stays a function of the vectors table', () => {
     const repo = new CodebaseRepository(codebasePath());
     try {
       expect(repo.searchChunkText(buildChunkTextQueries('duplicate body text here').phrase, 5)).toEqual([]);
+    } finally {
+      repo.close();
+    }
+  });
+});
+
+describe('chunk-text FTS alias rows and the two-stage query', () => {
+  let dir;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'ss-chunk-fts-alias-')); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  const chunk = (id, text, extra = {}) => ({
+    id, file: `src/${id}.js`, text, content: text,
+    metadata: { relative_path: `src/${id}.js`, language: 'javascript', chunk_type: 'function', symbol: id, line_start: 1, line_end: 3, ...extra },
+  });
+
+  it('reads the alias flag from a JSON string or an object', () => {
+    expect(isAliasVectorMetadata(JSON.stringify({ isExemplar: false }))).toBe(true);
+    expect(isAliasVectorMetadata({ isExemplar: 0 })).toBe(true);
+    expect(isAliasVectorMetadata({ isExemplar: true })).toBe(false);
+    expect(isAliasVectorMetadata({ isExemplar: null })).toBe(false);
+    expect(isAliasVectorMetadata('{bad json')).toBe(false);
+    expect(isAliasVectorMetadata(undefined)).toBe(false);
+  });
+
+  it('writes no FTS row for a dedup alias, through the shared insert path', () => {
+    const db = new Database(':memory:');
+    try {
+      createVectorSchema(db);
+      insertVectorItems(db, buildInsertItems([
+        chunk('ex', 'throw new Error("duplicate body text here")', { isExemplar: true }),
+        chunk('al', 'throw new Error("duplicate body text here")', { isExemplar: false, exemplarId: 'ex' }),
+        chunk('plain', 'log.info("no dedup metadata at all")'),
+      ], [[1, 0, 0, 0], [1, 0, 0, 0], [0, 1, 0, 0]], MODEL_INFO));
+      expect(db.prepare('SELECT count(*) AS n FROM vectors').get().n).toBe(3);
+      expect(ftsDocCount(db)).toBe(2);
+      const hits = db.prepare('SELECT v.id FROM chunk_text_fts JOIN vectors v ON v.rowid = chunk_text_fts.rowid WHERE chunk_text_fts MATCH ? ORDER BY v.id')
+        .all(buildChunkTextQueries('duplicate body text here').phrase).map((r) => r.id);
+      expect(hits).toEqual(['ex']);
+      assertFtsIntegrity(db);
+    } finally {
+      db.close();
+    }
+  });
+
+  it('two-stage search returns the single-stage answer, also when filtered rows fill the first stage', () => {
+    const path = join(dir, 'codebase.db');
+    const db = new Database(path);
+    createVectorSchema(db);
+    // An index written before aliases were skipped: alias rows carry FTS rows
+    // and outrank the exemplars. Write them through the writer without metadata.
+    const insert = db.prepare('INSERT INTO vectors (id, file_path, embedding, text, metadata) VALUES (?, ?, ?, ?, ?)');
+    const write = chunkTextFtsWriter(db);
+    const put = (id, text, meta) => write(insert.run(id, `src/${id}.js`, Buffer.alloc(4), text, JSON.stringify(meta)).lastInsertRowid, text);
+    for (let i = 0; i < 40; i++) put(`alias${i}`, 'retry retry retry pending commit', { isExemplar: false });
+    for (let i = 0; i < 6; i++) put(`ex${i}`, `pending commit in exemplar ${i} with more words around it`, { isExemplar: true });
+    db.close();
+    const repo = new CodebaseRepository(path);
+    try {
+      const m = buildChunkTextQueries('retry pending commit').or;
+      const single = repo._open().prepare(`SELECT v.id AS id FROM chunk_text_fts JOIN vectors v ON v.rowid = chunk_text_fts.rowid
+        WHERE chunk_text_fts MATCH ? AND coalesce(json_extract(v.metadata, '$.isExemplar'), 1) != 0
+        ORDER BY bm25(chunk_text_fts, 1.0, 0.5) LIMIT ?`);
+      // window 8 holds only alias rows -> fewer than limit pass -> single-stage fallback.
+      expect(repo.searchChunkText(m, 3, { window: 8 }).map((r) => r.id)).toEqual(single.all(m, 3).map((r) => r.id));
+      expect(repo.searchChunkText(m, 3, { window: 8 }).every((r) => r.id.startsWith('ex'))).toBe(true);
+      // A window that reaches the exemplars answers in the first stage.
+      expect(repo.searchChunkText(m, 3, { window: 100 }).map((r) => r.id)).toEqual(single.all(m, 3).map((r) => r.id));
     } finally {
       repo.close();
     }

@@ -308,7 +308,7 @@ function insertReusedRowVersion(db, filePath, chunk, ann, prevRow, epoch) {
   const placeholders = columns.map(() => '?').join(', ');
   const info = db.prepare(`INSERT INTO vectors (${quoted}) VALUES (${placeholders})`)
     .run(...columns.map((c) => next[c]));
-  chunkTextFtsWriter(db)?.(info.lastInsertRowid, next.text);
+  chunkTextFtsWriter(db)?.(info.lastInsertRowid, next.text, next.metadata);
   return next.id;
 }
 

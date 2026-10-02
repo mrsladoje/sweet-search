@@ -448,7 +448,7 @@ function prepareVectorInsert(db) {
     stmt,
     run(item) {
       const info = stmt.run(...columns.map((column) => vectorInsertValue(item, column)));
-      if (ftsWrite) ftsWrite(info.lastInsertRowid, item.text);
+      if (ftsWrite) ftsWrite(info.lastInsertRowid, item.text, item.metadata);
       return info;
     },
   };
