@@ -2622,6 +2622,16 @@ export class GraphExtractor {
       const opens = (line.match(/{/g) || []).length;
       const closes = (line.match(/}/g) || []).length;
 
+      // A declaration that ends with `;` before any block opens is one
+      // statement: a field (`private readonly Builder _builder = new();`),
+      // an expression-bodied member (`void F(X x) => _b.Set(x);`), a
+      // prototype. Counting on to the next block's `}` gave the C# field
+      // `_builder` the span of the two methods after it, so they lost their
+      // owning class.
+      if (!started && opens === 0 && closes === 0 && line.replace(/\/\/.*$/, '').trimEnd().endsWith(';')) {
+        return i + 1;
+      }
+
       if (opens > 0) started = true;
       braceDepth += opens - closes;
 
