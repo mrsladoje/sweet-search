@@ -33,6 +33,7 @@
 
 import { assignStructuralIds } from '../domain/chunk-identity.mjs';
 import { chunkInputHashes } from '../domain/encoder-input.mjs';
+import { chunkTextFtsWriter } from '../../indexing/chunk-text-fts.js';
 
 /**
  * Annotate each chunk with its structural ID + per-consumer hashes in
@@ -305,8 +306,9 @@ function insertReusedRowVersion(db, filePath, chunk, ann, prevRow, epoch) {
 
   const quoted = columns.map((c) => `"${c}"`).join(', ');
   const placeholders = columns.map(() => '?').join(', ');
-  db.prepare(`INSERT INTO vectors (${quoted}) VALUES (${placeholders})`)
+  const info = db.prepare(`INSERT INTO vectors (${quoted}) VALUES (${placeholders})`)
     .run(...columns.map((c) => next[c]));
+  chunkTextFtsWriter(db)?.(info.lastInsertRowid, next.text);
   return next.id;
 }
 

@@ -21,6 +21,8 @@
  * insertion latency creep.
  */
 
+import { ensureChunkTextFts } from '../../indexing/chunk-text-fts.js';
+
 /**
  * Add a column only if it is missing, in a transaction-safe way.
  * Helper kept private to this module.
@@ -111,6 +113,9 @@ export function migrateVectorsSchema(db) {
     'idx_vectors_logical',
     'CREATE INDEX IF NOT EXISTS idx_vectors_logical ON vectors(logical_chunk_id) WHERE logical_chunk_id != \'\'',
   );
+  // Chunk-text BM25 index (core/indexing/chunk-text-fts.js): created with a
+  // new index; its triggers are ensured on every write session.
+  ensureChunkTextFts(db);
   return { added };
 }
 
