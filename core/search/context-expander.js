@@ -23,6 +23,7 @@ import { rankingRelationshipTypes } from '../graph/relationship-types.js';
 import { computeSufficiencyVerdict } from './query-sufficiency.js';
 import { applyAgentPackCompletion, buildPackSiblingLine, shownSourceEndLine } from './agent-pack-completion.js';
 import { capToFinalK } from './final-k.js';
+import { isSummaryOnly, shownCodeSpan } from './agent-output-fixes.js';
 import { statSync } from 'fs';
 import path from 'path';
 import { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX } from '../graph/import-resolver.js';
@@ -2038,6 +2039,70 @@ export function buildSameFileMap(top, adjacent) {
   return { rendered, tokens: estimateTokens(rendered), neighbors };
 }
 
+/**
+ * Replace summary entries that an earlier entry already covers with reserve
+ * candidates (see the call site in packageForAgent). Kept entries keep their
+ * order; replacements go at the end, in reserve order, as summary entries;
+ * ranks are renumbered 1..n. A covered entry is kept when the reserve has no
+ * usable candidate left (A2 then drops it from the printed text).
+ *
+ * @param {Array} agentResults packaged entries (rank order)
+ * @param {Array} reserve ranked candidates after the final cut
+ * @returns {{ results: Array, replaced: number }}
+ */
+export function refillCoveredSummaries(agentResults, reserve) {
+  const seen = [];
+  const coveredBy = (file, s, e) => seen.some(x => x.file === file
+    && ((x.start === s && x.end === e) || (x.shown && s >= x.shown.start && e <= x.shown.end)));
+  const note = (r) => seen.push({ file: r.file, start: r.startLine, end: r.endLine, shown: shownCodeSpan(r) });
+
+  const kept = [];
+  const covered = [];
+  for (const r of agentResults) {
+    if (isSummaryOnly(r) && coveredBy(r.file, r.startLine, r.endLine)) { covered.push(r); continue; }
+    kept.push(r);
+    note(r);
+  }
+  if (covered.length === 0) return { results: agentResults, replaced: 0 };
+
+  const replacements = [];
+  for (const cand of reserve) {
+    if (replacements.length >= covered.length) break;
+    const meta = cand?.metadata || {};
+    const file = meta.file || cand?.file;
+    const s = meta.startLine || cand?.startLine;
+    const e = meta.endLine || cand?.endLine;
+    if (!file || !Number.isFinite(s) || !Number.isFinite(e) || coveredBy(file, s, e)) continue;
+    const name = meta.name || cand.name || null;
+    const type = meta.type || cand.type || null;
+    const entry = {
+      rank: 0,
+      file,
+      startLine: s,
+      endLine: e,
+      symbol: name,
+      symbolType: type,
+      score: cand.score || cand.lateInteractionScore || 0,
+      expanded: false,
+      presentation: 'summary',
+      stale: false,
+      indexedAt: null,
+      summary: `${file}:${s} — ${name || 'code block'}${type ? ' (' + type + ')' : ''}`,
+      code: null,
+      codeTokens: 0,
+    };
+    replacements.push(entry);
+    note(entry);
+  }
+  if (replacements.length === 0) return { results: agentResults, replaced: 0 };
+  // Covered entries without a replacement stay (at their rank order) for A2.
+  const unreplaced = new Set(covered.slice(replacements.length));
+  const results = agentResults.filter(r => !covered.includes(r) || unreplaced.has(r))
+    .concat(replacements)
+    .map((r, idx) => ({ ...r, rank: idx + 1 }));
+  return { results, replaced: replacements.length };
+}
+
 export function packageForAgent(rankedResultsIn, searchStats, opts) {
   // Final-k contract: budget-tier signals (numResults, dominance, top-1 size)
   // are computed on the final <= k list, never on an inflated candidate list.
@@ -2442,6 +2507,23 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
     }
 
     agentResults.push(agentResult);
+  }
+
+  // Covered-summary refill (agent format, needs opts.reserve). A summary entry
+  // whose span an earlier entry already shows in full (or repeats exactly)
+  // tells the agent nothing new; Bundle A's A2 drops it from the printed
+  // text, but the slot stays lost. When post-retrieval hands over the next
+  // candidates after the final cut, swap each such entry for the next reserve
+  // candidate that is not itself covered. Same rule as A2 (shownCodeSpan), so
+  // A2 stays a no-op on what this step already replaced and keeps catching
+  // the rest. Disabled by 'no-covered-refill'.
+  if (_isAgentFormat === true && Array.isArray(opts.reserve) && opts.reserve.length > 0
+      && !ablations.has('no-covered-refill')) {
+    const refilled = refillCoveredSummaries(agentResults, opts.reserve);
+    if (refilled.replaced > 0) {
+      agentResults.length = 0;
+      agentResults.push(...refilled.results);
+    }
   }
 
   const packagingMs = Math.round(performance.now() - start);

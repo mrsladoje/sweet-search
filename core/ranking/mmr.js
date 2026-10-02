@@ -375,10 +375,156 @@ export function getLambdaForIntent(routerMode, routerConfidence) {
   }
 }
 
+// =============================================================================
+// Final-list MMR (content-aware, runs after expansion + rescoring)
+// =============================================================================
+
+/**
+ * Similarity weights for the final-list pass. Content overlap decides:
+ *   span    — line overlap in the same file, as a share of the SHORTER span
+ *             (1.0 = one span contains the other)
+ *   symbol  — same symbol name (case-sensitive) in a different file or a
+ *             non-overlapping span (overloads, interface + implementation)
+ *   file    — same file, no overlap (a sibling symbol)
+ *   dir     — same directory, different file
+ * The pair similarity is the MAX of the matching features, so a full overlap
+ * is ~1 no matter what else matches, and "same file" alone stays small.
+ *
+ * Default: span overlap only. Measured on DEV (retrieval-probes dev n=40,
+ * r3 dev n=140, seed 42, lambda 0.8, gate on): span-only gained 1 question at
+ * k=5 and 2 at k=10 with no loss. Adding symbol 0.5 + file 0.2 gained more
+ * (3 and 4) but lost one: it pushed a subclass override of the same method
+ * (tortoise to_python_value) out of the list; overrides are often all
+ * relevant, so a shared name is not evidence of a near-duplicate.
+ */
+export const SPAN_MMR_WEIGHTS = Object.freeze({ span: 1.0, symbol: 0.0, file: 0.0, dir: 0.0 });
+
+/** Wider preset kept for A/B runs (SWEET_SEARCH_FINAL_MMR_WEIGHTS=content). */
+export const CONTENT_MMR_WEIGHTS = Object.freeze({ span: 1.0, symbol: 0.5, file: 0.2, dir: 0.0 });
+
+function mmrFile(r) {
+  return r?.metadata?.file || r?.file || r?.file_path || '';
+}
+
+function mmrSpan(r) {
+  const start = Number(r?.metadata?.startLine || r?.startLine);
+  const end = Number(r?.metadata?.endLine || r?.endLine);
+  return Number.isFinite(start) && Number.isFinite(end) && end >= start ? [start, end] : null;
+}
+
+function mmrSymbol(r) {
+  return r?.metadata?.name || r?.name || r?.symbol || '';
+}
+
+function mmrDir(file) {
+  const i = file.lastIndexOf('/');
+  return i > 0 ? file.slice(0, i) : '';
+}
+
+/**
+ * Content-aware similarity of two results, in [0, 1].
+ * @param {object} a
+ * @param {object} b
+ * @param {{span:number, symbol:number, file:number, dir:number}} [weights]
+ */
+export function computeSpanSimilarity(a, b, weights = SPAN_MMR_WEIGHTS) {
+  const fa = mmrFile(a);
+  const fb = mmrFile(b);
+  let sim = 0;
+  if (fa && fa === fb) {
+    const sa = mmrSpan(a);
+    const sb = mmrSpan(b);
+    if (sa && sb) {
+      const overlap = Math.min(sa[1], sb[1]) - Math.max(sa[0], sb[0]) + 1;
+      if (overlap > 0) {
+        const shorter = Math.min(sa[1] - sa[0], sb[1] - sb[0]) + 1;
+        sim = Math.max(sim, weights.span * Math.min(1, overlap / shorter));
+      }
+    }
+    sim = Math.max(sim, weights.file);
+  } else if (fa && fb && weights.dir > 0) {
+    const da = mmrDir(fa);
+    if (da && da === mmrDir(fb)) sim = Math.max(sim, weights.dir);
+  }
+  const na = mmrSymbol(a);
+  if (na && na === mmrSymbol(b)) sim = Math.max(sim, weights.symbol);
+  return Math.min(1, sim);
+}
+
+/**
+ * Gate for the final-list pass: fire only when the window that the final cut
+ * keeps holds a redundant pair (similarity >= minSim). Lists without
+ * redundancy keep their exact order.
+ */
+export function hasRedundantPair(results, { window, weights = SPAN_MMR_WEIGHTS, minSim = 0.5 } = {}) {
+  if (!Array.isArray(results)) return false;
+  const n = Math.min(results.length, window ?? results.length);
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      if (computeSpanSimilarity(results[i], results[j], weights) >= minSim) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * MMR reorder of a final candidate list. Unlike applyMMR it never drops a
+ * candidate (no minRelevance filter, no k cut): it returns the same members in
+ * MMR order for the first `k` picks and the rest in their original order, so
+ * the caller's final-k cut decides what is shown. Top-1 never moves (the first
+ * pick has no similarity penalty).
+ *
+ * @param {Array} results ranked list (best first)
+ * @param {object} opts
+ * @param {number} opts.k        number of MMR picks (the final k)
+ * @param {number} [opts.lambda] relevance weight in [0, 1]
+ * @param {object} [opts.weights] computeSpanSimilarity weights
+ * @param {boolean} [opts.gate]  only reorder when hasRedundantPair() fires
+ * @returns {{ results: Array, stats: { applied: boolean, reordered: number } }}
+ */
+export function applyFinalListMMR(results, opts = {}) {
+  const { k, lambda = 0.8, weights = SPAN_MMR_WEIGHTS, gate = true } = opts;
+  const none = { results, stats: { applied: false, reordered: 0 } };
+  if (!Array.isArray(results) || results.length < 3 || !(k >= 2)) return none;
+  if (gate && !hasRedundantPair(results, { window: Math.min(results.length, k), weights })) return none;
+
+  const scores = results.map(r => (Number.isFinite(r?.score) ? r.score : 0));
+  const max = Math.max(...scores);
+  const min = Math.min(...scores);
+  const range = max - min || 1;
+  const rel = scores.map(s => (s - min) / range);
+
+  const picked = [];
+  const remaining = results.map((_, i) => i);
+  const maxSim = new Array(results.length).fill(0);
+  const picks = Math.min(k, results.length);
+  while (picked.length < picks) {
+    let best = -1;
+    let bestScore = -Infinity;
+    for (const idx of remaining) {
+      const m = lambda * rel[idx] - (1 - lambda) * maxSim[idx];
+      if (m > bestScore) { bestScore = m; best = idx; }
+    }
+    picked.push(best);
+    remaining.splice(remaining.indexOf(best), 1);
+    for (const idx of remaining) {
+      const s = computeSpanSimilarity(results[idx], results[best], weights);
+      if (s > maxSim[idx]) maxSim[idx] = s;
+    }
+  }
+  let reordered = 0;
+  for (let i = 0; i < picked.length; i++) if (picked[i] !== i) reordered++;
+  if (reordered === 0) return { results, stats: { applied: true, reordered: 0 } };
+  const out = picked.map(i => results[i]).concat(remaining.map(i => results[i]));
+  return { results: out, stats: { applied: true, reordered } };
+}
+
 export default {
   applyMMR,
   shouldApplyMMR,
   computeSimilarity,
+  computeSpanSimilarity,
+  applyFinalListMMR,
   getLambdaForIntent,
   MMR_CONFIG,
 };

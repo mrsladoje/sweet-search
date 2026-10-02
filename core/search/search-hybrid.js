@@ -10,6 +10,9 @@
 
 import { routeQuery } from '../query/query-router.js';
 import { applyMMR, shouldApplyMMR, getLambdaForIntent } from '../ranking/mmr.js';
+import { takeDistinctSpans } from './span-dedupe.js';
+
+const AGENT_FORMATS_FOR_SEED = new Set(['agent', 'agent_preview', 'agent_full', 'agent_full_xl']);
 import { applyFileKindRanking, applyResultDemotions, classifyFileKindIntent, detectFileKind } from '../ranking/file-kind-ranking.js';
 import { injectAnchorCandidates } from './search-anchor.js';
 import { runRRFFallback } from './search-rrf.js';
@@ -230,7 +233,23 @@ export async function hybridSearchV2(query, options = {}) {
     }
   }
 
-  const results = diversified.slice(0, k).map(r => ({
+  // Seed pool by distinct span: the index splits a long symbol into
+  // sub-chunks that all carry the symbol's span, so several seed slots can
+  // hold the same span (r3h-dgraph-23: 3 of 6 seeds were movePredicate). The
+  // cut counts distinct spans, so the pool holds k of them; copies met on the
+  // way stay in for the cascade (each sub-chunk has its own MaxSim tokens) and
+  // the final dedupe keeps the best-scored copy (span-dedupe.js). Agent
+  // formats only (CLAUDE.md format-gating; GCSN-style traffic keeps its seed
+  // pool). SWEET_SEARCH_SEED_SPAN_COLLAPSE=0 turns it off, =1 forces it for
+  // every format.
+  const seedCollapseEnv = process.env.SWEET_SEARCH_SEED_SPAN_COLLAPSE;
+  const seedCollapse = seedCollapseEnv === '1'
+    || (seedCollapseEnv !== '0' && AGENT_FORMATS_FOR_SEED.has(options.format));
+  const seeds = seedCollapse && !hasAblation(options.ablations, 'no-span-dedupe')
+    ? takeDistinctSpans(diversified, k)
+    : diversified.slice(0, k);
+
+  const results = seeds.map(r => ({
     ...r,
     searchPath: 'hybrid',
     hybridScore: r.score,
