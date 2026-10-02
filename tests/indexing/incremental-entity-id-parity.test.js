@@ -56,11 +56,13 @@ describe('entity ids: unique per definition, identical in full and maintained gr
     const db = new Database(dbPath, { readonly: true });
     try {
       const live = maintained ? ' AND epoch_retired IS NULL' : '';
-      const rows = db.prepare(`SELECT id, ${maintained ? 'logical_entity_id' : 'id AS logical_entity_id'}, file_path, type, name, start_line, end_line, parent_class FROM entities WHERE type != 'file'${live}`).all();
+      const rows = db.prepare(`SELECT id, ${maintained ? 'logical_entity_id' : 'id AS logical_entity_id'}, file_path, type, name, start_line, end_line, parent_class, parent_id, hierarchy_level FROM entities WHERE type != 'file'${live}`).all();
       const describe = (e) => `${e.file_path}#${e.parent_class ? `${e.parent_class}.` : ''}${e.name}@${e.start_line}`;
       const byId = new Map(rows.map((e) => [e.id, describe(e)]));
+      // `parent_id` is a stored row id (physical in a maintained graph): it
+      // must name a LIVE row of the parent, described the same way.
       const entities = rows
-        .map((e) => `${e.logical_entity_id} ${e.file_path} ${e.type} ${e.name} ${e.start_line}-${e.end_line} ${e.parent_class || '-'}`)
+        .map((e) => `${e.logical_entity_id} ${e.file_path} ${e.type} ${e.name} ${e.start_line}-${e.end_line} ${e.parent_class || '-'} ^${e.parent_id ? byId.get(e.parent_id) || 'dead' : '-'} L${e.hierarchy_level}`)
         .sort();
       const calls = db.prepare(`SELECT source_id, target_id, target_name, context_line FROM relationships WHERE type = 'calls'${live}`).all()
         .map((r) => `${byId.get(r.source_id) || 'file'} ${r.target_name}:${r.context_line} -> ${r.target_id ? byId.get(r.target_id) || 'missing' : 'null'}`)
@@ -173,7 +175,7 @@ describe('entity ids: unique per definition, identical in full and maintained gr
       '  run(): number { return 2; }',
       '}',
     ]);
-    const betaRunId = (snap) => snap.entities.find((l) => / method run .* Beta$/.test(l)).split(' ')[0];
+    const betaRunId = (snap) => snap.entities.find((l) => / method run \S+ Beta /.test(l)).split(' ')[0];
     const betaBefore = betaRunId(full);
     full = await expectParity(files);
     expect(betaRunId(full)).toBe(betaBefore);
@@ -245,5 +247,75 @@ describe('entity ids: unique per definition, identical in full and maintained gr
       'src/shapes.ts method run 5 Beta',
     ]);
     expect(shapes(full.entities).filter((l) => l.startsWith('Makefile variable MODE'))).toHaveLength(3);
+  });
+
+  it('nested classes, overloads, parent rows, owner rename and ordinal shifts stay in parity', async () => {
+    const files = ['src/Demo.cs', 'Makefile'];
+    const demo = (innerDoc, otherName, withInner = true) => [
+      'namespace Demo;',
+      '',
+      '/// <summary>Outer.</summary>',
+      'public class Outer',
+      '{',
+      innerDoc,
+      ...(withInner ? [
+        '    public class Inner',
+        '    {',
+        '        private readonly Builder _builder = new();',
+        '        private const string Url = "http://localhost:5000";',
+        '        public void Given(int a) => _builder.Set(a);',
+        '        public void Given(string s) => _builder.Set(s);',
+        '    }',
+      ] : []),
+      '',
+      `    public class ${otherName}`,
+      '    {',
+      '        private readonly Builder _builder = new();',
+      '        public void Given(int a) => _builder.Set(a);',
+      '    }',
+      '',
+      '    public void Run() { new Inner().Given(1); }',
+      '}',
+    ];
+    const ofName = (snap, name) => snap.entities.filter((l) => l.split(' ')[3] === name);
+    write('src/Demo.cs', demo('', 'Other'));
+    write('Makefile', ['MODE = fast', 'all:', '\techo $(MODE)']);
+
+    // 1. Every member exists once, under its own class, with a live parent row.
+    let full = await expectParity(files);
+    const builders = ofName(full, '_builder');
+    expect(builders).toHaveLength(2);
+    expect(builders.map((l) => l.split(' ').slice(5, 7).join(' ')).sort()).toEqual([
+      'Inner ^src/Demo.cs#Outer.Inner@7',
+      'Other ^src/Demo.cs#Outer.Other@15',
+    ]);
+    expect(ofName(full, 'Given')).toHaveLength(3); // two Inner overloads + Other's
+    expect(ofName(full, 'Url')[0]).toMatch(/ 10-10 Inner /); // a `//` inside a string does not hide the `;`
+    expect(full.entities.join('\n')).not.toMatch(/\^dead/);
+
+    // 2. A doc comment on Inner (no line moves): Inner's row is re-written,
+    //    so its kept members must point at the new row, as a fresh build does.
+    write('src/Demo.cs', demo('    /// <summary>Inner.</summary>', 'Other'));
+    const innerMemberIds = (snap) => snap.entities.filter((l) => / Inner \^/.test(l)).map((l) => l.split(' ')[0]).sort();
+    const before = innerMemberIds(full);
+    full = await expectParity(files);
+    expect(innerMemberIds(full)).toEqual(before); // same ids: only the parent row changed
+    expect(full.entities.join('\n')).not.toMatch(/\^dead/);
+
+    // 3. Rename the owner class: its members are new definitions (owner in the id).
+    write('src/Demo.cs', demo('    /// <summary>Inner.</summary>', 'Second'));
+    full = await expectParity(files);
+    expect(ofName(full, '_builder').map((l) => l.split(' ')[5]).sort()).toEqual(['Inner', 'Second']);
+
+    // 4. An identical definition inserted ABOVE an existing one renumbers it (#n).
+    write('Makefile', ['MODE = fast', 'MODE = fast', 'all:', '\techo $(MODE)']);
+    full = await expectParity(files);
+    expect(ofName(full, 'MODE')).toHaveLength(2);
+
+    // 5. Delete the nested class with its members.
+    write('src/Demo.cs', demo('', 'Second', false));
+    full = await expectParity(files);
+    expect(ofName(full, '_builder')).toHaveLength(1);
+    expect(full.entities.join('\n')).not.toMatch(/\^dead/);
   });
 });

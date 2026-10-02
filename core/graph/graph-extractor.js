@@ -3127,6 +3127,51 @@ export function rebuildGraphFts(db) {
   }
 }
 
+// HCGS hierarchy: which entity types own members (`parent_id`), and which
+// members get one. Shared by the full build (insertGraph) and the maintainer
+// (production-reconciler), so both store the same parent for every member.
+const HIERARCHY_PARENT_TYPES = new Set(['class', 'interface', 'enum', 'service']);
+const HIERARCHY_MEMBER_TYPES = new Set(['method', 'field', 'rpc']);
+
+/** HCGS level of an entity type: 1 for members, 0 for everything else. */
+export function entityHierarchyLevel(type) {
+  return HIERARCHY_MEMBER_TYPES.has(type) ? 1 : 0;
+}
+
+/**
+ * Parent entity id of every member that has one: the `parent_class`
+ * container of the same file whose line range holds the member (the
+ * innermost one, when nested classes share a name), else the last container
+ * of that name in the file. Ids in, ids out — the caller maps them to stored
+ * rows.
+ *
+ * @param {Array<{id, file_path, type, name, parent_class?, start_line?, end_line?}>} entities
+ * @returns {Map<string, string>} member id → parent id
+ */
+export function entityParentIds(entities) {
+  const containers = new Map(); // `${file}:${name}` → [entity…] in input order
+  for (const e of entities) {
+    if (!HIERARCHY_PARENT_TYPES.has(e.type)) continue;
+    const key = `${e.file_path}:${e.name}`;
+    if (!containers.has(key)) containers.set(key, []);
+    containers.get(key).push(e);
+  }
+  const out = new Map();
+  for (const e of entities) {
+    if (!HIERARCHY_MEMBER_TYPES.has(e.type) || !e.parent_class) continue;
+    const candidates = containers.get(`${e.file_path}:${e.parent_class}`);
+    if (!candidates?.length) continue;
+    let best = null;
+    for (const c of candidates) {
+      if (c.id === e.id || c.start_line == null || c.end_line == null || e.start_line == null) continue;
+      if (c.start_line > e.start_line || c.end_line < e.start_line) continue;
+      if (!best || (c.end_line - c.start_line) < (best.end_line - best.start_line)) best = c;
+    }
+    out.set(e.id, (best || candidates[candidates.length - 1]).id);
+  }
+  return out;
+}
+
 export function insertGraph(db, entities, relationships, hasFts5 = false, { syncFts = true, callSites = null, files = null } = {}) {
   // Insert entities with HCGS hierarchy support
   // Includes signature_hash for collision-proof backup/restore
@@ -3136,13 +3181,23 @@ export function insertGraph(db, entities, relationships, hasFts5 = false, { sync
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  // Build parent lookup for hierarchy
-  const parentLookup = new Map();
+  // Ids are unique per file by construction (GraphExtractor.entityId and its
+  // guard) and carry the path, so a repeated id here means one file was
+  // extracted twice — INSERT OR REPLACE would hide that. Loud under tests.
+  const seenIds = new Set();
+  let repeatedIds = 0;
   for (const e of entities) {
-    if (['class', 'interface', 'enum', 'service'].includes(e.type)) {
-      parentLookup.set(`${e.file_path}:${e.name}`, e.id);
-    }
+    if (seenIds.has(e.id)) repeatedIds++;
+    else seenIds.add(e.id);
   }
+  if (repeatedIds > 0) {
+    const message = `insertGraph: ${repeatedIds} repeated entity id(s) — a file was extracted twice?`;
+    if (process.env.VITEST || process.env.SWEET_SEARCH_STRICT_ENTITY_IDS === '1') throw new Error(message);
+    console.warn(message);
+  }
+
+  // HCGS hierarchy: the same parent rule the maintainer applies.
+  const parentIds = entityParentIds(entities);
 
   console.log(`  Inserting ${entities.length} entities...`);
 
@@ -3156,21 +3211,8 @@ export function insertGraph(db, entities, relationships, hasFts5 = false, { sync
         .toLowerCase()
         .slice(0, 1000);
 
-      // Determine hierarchy level and parent
-      let hierarchyLevel = 0;
-      let parentId = null;
-
-      if (['method', 'field', 'rpc'].includes(e.type)) {
-        hierarchyLevel = 1;
-        // Find parent class/interface/service
-        if (e.parent_class) {
-          parentId = parentLookup.get(`${e.file_path}:${e.parent_class}`);
-        }
-      } else if (['class', 'interface', 'enum', 'service', 'message'].includes(e.type)) {
-        hierarchyLevel = 0;
-      } else if (['function', 'component'].includes(e.type)) {
-        hierarchyLevel = 0; // Top-level in JS/TS files
-      }
+      const hierarchyLevel = entityHierarchyLevel(e.type);
+      const parentId = parentIds.get(e.id) ?? null;
 
       // Fix 7: Generate normalized identifier alias for cross-style search
       const nameAlias = normalizeIdentifier(e.name);
