@@ -163,10 +163,8 @@ describe('applyExactEdits', () => {
 describe('golden pins of the shipped texts (sha256)', () => {
   const sha = t => createHash('sha256').update(t).digest('hex');
   const V1 = { SS_FIX_RULES_V2: '0' };
-  it('Codex base instructions (v2 default; v1 = pre-v2 bytes)', () => {
-    expect(sha(codexInstructions())).toBe('3f0b8f10dff51dcc2b59b6a12838591078dc0ca90d77364eef5ce9da9dcdbf5b');
-    expect(sha(codexInstructions({}))).toBe(sha(codexInstructions()));
-    expect(sha(codexInstructions(V1))).toBe('7e282d1b96ac8cd02e0572386a436915078b25c8f1b2e03a45e3f2a84f5e6e50');
+  it('Codex base instructions (not touched by the rules switch)', () => {
+    expect(sha(codexInstructions())).toBe('7e282d1b96ac8cd02e0572386a436915078b25c8f1b2e03a45e3f2a84f5e6e50');
   });
   it('opencode build/general prompt (v2 default; v1 = pre-v2 bytes)', () => {
     expect(sha(opencodePrompt())).toBe('39bcc13bae718d53b8a21ccfcf965747f3367a6de71edd16aabfa513438fe2ce');
@@ -177,7 +175,7 @@ describe('golden pins of the shipped texts (sha256)', () => {
     expect(sha(JSON.stringify(OPENCODE_TOOL_EDITS_V1))).toBe('bb647d23c66f3112f4322bd454ecd1f5c7186136b04a3c7c1a51ca64f93144c9');
   });
   it('CLI policy body (v2 default; v1 = pre-v2 bytes)', () => {
-    expect(sha(getPolicyBody('cli'))).toBe('fedd6f730cc9aea5bea949297acb01221177d4a3dc0667fae394153863063bb2');
+    expect(sha(getPolicyBody('cli'))).toBe('01ea3cc63516fe77246f34e81c57081131658d873362806d76f79b9654e3531a');
     expect(sha(getPolicyBody('cli', {}))).toBe(sha(getPolicyBody('cli')));
     expect(sha(getPolicyBody('cli', V1))).toBe('77230e7ae4272b8bf8507b5642d497ed2559f8f5c91e63f3a7e5584f26305e72');
   });
@@ -191,13 +189,13 @@ describe('golden pins of the shipped texts (sha256)', () => {
   // claudeLeanAgentFile({ rulesInPrompt: true }) and its CLAUDE_RULES_POINTER).
   it("Claude Code V1b main agent file (memoryDir '/m/', no override)", () => {
     expect(sha(claudeLeanAgentFile({ appendOverride: false, memoryDir: '/m/', rules: getPolicyBody('cli') })))
-      .toBe('751434aa780a5a17e9afc3ed510449e27fa209221c6f25e89a5187fcf5acf567');
+      .toBe('30c48b2c4d380ce6a829885769eb9a71d1f6a7c3a0d52c2409a67609d5aacbde');
     expect(sha(claudeLeanAgentFile({ appendOverride: false, memoryDir: '/m/', rules: getPolicyBody('cli', V1), rulesV2: false })))
       .toBe('5d238cab2d26025019bcad16cb09ef2f4cfe88468f464d280e366904bca1ae61');
   });
   it("Claude Code V1b main agent file as shipped (memoryDir '/m/', with the override)", () => {
     expect(sha(claudeLeanAgentFile({ memoryDir: '/m/', rules: getPolicyBody('cli') })))
-      .toBe('079daa98ac007807aa867f5edca4a420990a1dde4ac5d133a7a9a217db738522');
+      .toBe('1c32a955c1995bbce4776eec1ef5eeb70c11c6f2197cd1f943617d6672385eea');
     expect(sha(claudeLeanAgentFile({ memoryDir: '/m/', rules: getPolicyBody('cli', V1), rulesV2: false })))
       .toBe('f09e7ef96b13ab23e72a265a50eeb2601352ee5432e6d30b9ede3fe35a9e96d7');
   });

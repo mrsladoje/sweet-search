@@ -9,7 +9,7 @@
 import { CODEX_BATCH_VARIANTS, applyCodexBatch } from './trim/batch-variants.mjs';
 import { stockInstructions } from './trim/build-codex-instructions.mjs';
 // The conflict edit is what `sweet-search init --codex` ships (single source, scripts/harness-prompts/).
-import { CODEX_INSTRUCTIONS_SOURCE, codexFileNameEdit, rulesV2Enabled } from '../../../scripts/harness-prompts/index.js';
+import { CODEX_INSTRUCTIONS_SOURCE } from '../../../scripts/harness-prompts/index.js';
 import {
   resolveSweetRulesPlacement, sweetRulesRowFields, appendSweetRules, sweetRulesOutOfFile, tomlBasicString,
 } from './sweet-rules-placement.mjs';
@@ -304,9 +304,7 @@ export function codexHarnessTrim({ sweet, mode, model = 'openai/gpt-5.5', env = 
     const rawBatch = String(env.CODEX_TRIM_BATCH ?? '').trim();
     const batch = rawBatch || (defaulted ? CODEX_TRIM_BATCH_DEFAULT : '');
     if (batch && !CODEX_BATCH_VARIANTS[batch]) throw new Error(`CODEX_TRIM_BATCH=${batch}: expected ${Object.keys(CODEX_BATCH_VARIANTS).join(', ')}`);
-    // rulesV2 (SS_FIX_RULES_V2, default on): the shipped `rg --files` line (codexFileNameEdit).
-    // The mode label is unchanged; rows carry the switch separately.
-    return { mode: `instructions-conflict${batch ? `+batch-${batch}` : ''}`, source: CODEX_INSTRUCTIONS_SOURCE, config: [], ...(batch ? { batch } : {}), rulesV2: rulesV2Enabled(env), origin };
+    return { mode: `instructions-conflict${batch ? `+batch-${batch}` : ''}`, source: CODEX_INSTRUCTIONS_SOURCE, config: [], ...(batch ? { batch } : {}), origin };
   }
   if (m === 'v3') {
     const v3 = CODEX_HARNESS_TRIM_V3_SOURCES[String(model).replace(/^openai\//, '')];
@@ -350,7 +348,6 @@ export function codexHarnessTrimArgs(trim, stateDir, { rules = null, model = 'op
   if (trim?.mode) {
     text = readFileSync(trim.source, 'utf8').replace(/^<!--[\s\S]*?-->\n/, '');
     if (trim.batch) text = applyCodexBatch(text, trim.batch);
-    if (trim.rulesV2) text = codexFileNameEdit(text, {});
   } else {
     text = stockInstructions(String(model).replace(/^openai\//, ''));
   }
