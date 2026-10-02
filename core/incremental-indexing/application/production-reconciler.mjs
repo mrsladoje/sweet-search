@@ -1038,17 +1038,18 @@ class ProductionReconcileAdapter {
         // the full build's rules — otherwise maintained files keep
         // target-less edges that readers can only match by name.
         // Every name whose set of definitions changed in this write: names of
-        // retired rows and of newly inserted rows. A removed `Alpha.run`
-        // leaves one `run` (a full build now binds `x.run()` to it); a second
-        // `run` makes a bound call ambiguous again. Unchanged kept rows do not
-        // change any candidate set.
-        const retiredSet = new Set(retiredIds);
+        // definitions that disappeared or appeared (by logical id). A removed
+        // `Alpha.run` leaves one `run` (a full build now binds `x.run()` to
+        // it); a second `run` makes a bound call ambiguous again. A definition
+        // that only moved or changed keeps its logical id and changes no
+        // candidate set; edges into its old row are re-resolved through
+        // `retiredIds`.
         const changedNames = new Set();
-        for (const r of oldRows) if (retiredSet.has(r.id) && r.name && r.type !== 'file') changedNames.add(r.name);
+        for (const r of oldRows) {
+          if (r.name && r.type !== 'file' && !nextLogical.has(r.logical_entity_id || r.id)) changedNames.add(r.name);
+        }
         for (const e of entities) {
-          if (e.type === 'file' || !e.name) continue;
-          const old = oldByLogical.get(e.id);
-          if (!old || liveIdFor.get(e.id) !== old.id) changedNames.add(e.name);
+          if (e.type !== 'file' && e.name && !oldByLogical.has(e.id)) changedNames.add(e.name);
         }
         const newNames = [...changedNames];
         // The file's own edges (imports, top-level calls) have the file node
