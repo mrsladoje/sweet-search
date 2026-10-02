@@ -132,8 +132,21 @@ case $MODE in
     say "preflight rc=$rc"; exit $rc ;;
   sweep)
     base_guards; build_specs; ensure_images
-    r=$(busy_reason); [ -z "$r" ] || die "not quiet: $r"
-    mkdir -p "$SWEEP_DIR"; printf '%s\n' "${TASKS[@]}" > "$TMPDIR/gs-sweep.ids"
+    # Gold grading is docker only (no model, no ss-* daemon, no reap), so only another pilot or sweep blocks it.
+    # GS_SWEEP_WAIT=1 also waits for a quiet machine: no retrieval-bench-282 at all and 1-min load < GS_MAX_LOAD (default 16).
+    # Reason (2026-10-02): under load ~228 bingo-271's P2P test `prepareOptions … uses an option value from produce` hit
+    # vitest's 5 s timeout and the gold grade came back env-broken; it passed on 2026-09-29 on a quiet machine.
+    pgrep -f "harness/run-pilo[t].mjs" >/dev/null && die "another run-pilot is running"
+    pgrep -f "env-ledger-swee[p]" >/dev/null && die "an env-ledger sweep is running"
+    if [ "${GS_SWEEP_WAIT:-0}" = 1 ]; then
+      while pgrep -f "retrieval-bench-28[2].mjs" >/dev/null || [ "$(sysctl -n vm.loadavg | awk '{print int($2)}')" -ge "${GS_MAX_LOAD:-16}" ]; do sleep 30; done
+      say "$(date '+%F %T') quiet (load $(sysctl -n vm.loadavg))"
+    fi
+    mkdir -p "$SWEEP_DIR"; printf '%s\n' ${GS_SWEEP_IDS:-${TASKS[@]}} | tr ',' '\n' > "$TMPDIR/gs-sweep.ids"
+    # env-ledger-sweep skips any id that already has a verdict here, so drop those first to force a re-grade.
+    if [ "$DRY" != 1 ] && [ -f "$SWEEP_DIR/ledger.jsonl" ]; then
+      grep -v -F -f <(sed 's/.*/"instance_id":"&"/' "$TMPDIR/gs-sweep.ids") "$SWEEP_DIR/ledger.jsonl" > "$SWEEP_DIR/ledger.tmp"; mv "$SWEEP_DIR/ledger.tmp" "$SWEEP_DIR/ledger.jsonl"
+    fi
     say "$(date '+%F %T') sweep -> $SWEEP_DIR (gold grading only, no model)"
     if [ "$DRY" = 1 ]; then echo "DRY: node harness/env-ledger-sweep.mjs --tasks $SPECS --ids $TMPDIR/gs-sweep.ids --out $SWEEP_DIR --batch 1 --max-workers 1"; exit 0; fi
     node harness/env-ledger-sweep.mjs --tasks "$SPECS" --ids "$TMPDIR/gs-sweep.ids" --out "$SWEEP_DIR" --batch 1 --max-workers 1 2>&1 | tee -a "$LOG"
