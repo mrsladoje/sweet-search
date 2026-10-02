@@ -245,43 +245,6 @@ export class CodeGraphRepository {
     return this.findEntityWithNameInRange(filePath, startLine, endLine, targetName) !== null;
   }
 
-  /**
-   * Entities that start inside a chunk range, in file order (same order as
-   * findFirstEntityInRange). Search-time labelling uses it to look past a
-   * namespace or class that starts or encloses the chunk.
-   *
-   * @param {string} filePath
-   * @param {number} startLine
-   * @param {number} endLine
-   * @param {number} [limit=64]
-   * @returns {Array<{ id: string, name: string, type: string, startLine: number, endLine: number, parentClass: string|null }>}
-   */
-  findEntitiesInRange(filePath, startLine, endLine, limit = 64) {
-    const db = this._open();
-    if (!db) return [];
-    try {
-      return prepareCached(db, `
-        SELECT id, name, type, start_line, end_line, parent_class
-        FROM entities
-        WHERE file_path = ?
-          AND start_line >= ?
-          AND start_line <= ?
-          AND ${this._entityVisibilitySql(db)}
-        ORDER BY start_line ASC, (end_line - start_line) ASC
-        LIMIT ?
-      `).all(filePath, startLine, endLine, ...this._entityVisibilityParams(db), limit).map(row => ({
-        id: row.id,
-        name: row.name,
-        type: row.type,
-        startLine: row.start_line,
-        endLine: row.end_line,
-        parentClass: row.parent_class || null,
-      }));
-    } catch {
-      return [];
-    }
-  }
-
   findFirstEntityInRange(filePath, startLine, endLine) {
     const db = this._open();
     if (!db) return null;
