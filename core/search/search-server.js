@@ -1640,7 +1640,7 @@ export async function queryServer(query, options = {}) {
  * @param {{ path: string, query: string, projectRoot: string, maxChars?: number }} request
  * @returns {Promise<object>}
  */
-export async function queryReadSemanticServer({ path: file, query, projectRoot, maxChars } = {}) {
+export async function queryReadSemanticServer({ path: file, query, projectRoot, maxChars, topK } = {}) {
   if (!file || !query || !projectRoot) {
     throw new TypeError('path, query, and projectRoot are required');
   }
@@ -1652,6 +1652,7 @@ export async function queryReadSemanticServer({ path: file, query, projectRoot, 
     format: 'json',
   });
   if (maxChars > 0) params.set('maxChars', String(maxChars));
+  if (topK > 0) params.set('topK', String(topK));
 
   return new Promise((resolve, reject) => {
     const req = http.request({
