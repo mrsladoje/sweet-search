@@ -52,6 +52,42 @@ function normalizeRel(rel) {
 }
 
 /**
+ * True when `rel` is a symlink or sits under a symlinked directory below
+ * `projectRoot` (rule 5). Only components BELOW the root are checked, so a
+ * project root that is itself reached through a symlink is fine. A missing
+ * path is not a symlink (deletion is handled by the existence checks).
+ *
+ * Cost: one lstat per path component, stopping at the first symlink. Pass a
+ * `memo` Map to share directory results across a batch (callers create one per
+ * batch, so a symlink created later is never hidden by a stale entry).
+ */
+export function isSymlinkedRelUnder(projectRoot, rel, memo = null) {
+  const r = normalizeRel(rel);
+  if (!r || path.isAbsolute(r)) return false;
+  const parts = r.split('/');
+  let prefix = '';
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i];
+    if (!part || part === '.') continue;
+    if (part === '..') return false; // not below the root; other gates reject it
+    prefix = prefix ? `${prefix}/${part}` : part;
+    const cached = memo ? memo.get(prefix) : undefined;
+    if (cached === true) return true;
+    if (cached === false) continue;
+    let isLink = false;
+    try {
+      isLink = lstatSync(path.join(projectRoot, prefix)).isSymbolicLink();
+    } catch {
+      if (memo) memo.set(prefix, false);
+      return false; // missing component ⇒ nothing deeper exists
+    }
+    if (memo) memo.set(prefix, isLink);
+    if (isLink) return true;
+  }
+  return false;
+}
+
+/**
  * Build an admission policy bound to a project root.
  *
  * @param {object} [opts]
@@ -200,40 +236,9 @@ export function createAdmissionPolicy({ projectRoot = process.cwd(), config, all
     }
   }
 
-  /**
-   * True when `rel` is a symlink or sits under a symlinked directory below the
-   * project root (rule 5). Only components BELOW the root are checked, so a
-   * project root that is itself reached through a symlink is fine. A missing
-   * path is not a symlink (deletion is handled by the existence checks).
-   *
-   * Cost: one lstat per path component. Pass a `memo` Map to share directory
-   * results across a batch (callers create one per batch, so a symlink created
-   * later is never hidden by a stale entry).
-   */
+  /** Rule 5 bound to this root; see `isSymlinkedRelUnder`. */
   function isSymlinkedRel(rel, memo = null) {
-    const r = normalizeRel(rel);
-    if (!r || path.isAbsolute(r)) return false;
-    const parts = r.split('/');
-    let prefix = '';
-    for (let i = 0; i < parts.length; i++) {
-      const part = parts[i];
-      if (!part || part === '.') continue;
-      if (part === '..') return false; // not below the root; other gates reject it
-      prefix = prefix ? `${prefix}/${part}` : part;
-      const cached = memo ? memo.get(prefix) : undefined;
-      if (cached === true) return true;
-      if (cached === false) continue;
-      let isLink = false;
-      try {
-        isLink = lstatSync(path.join(projectRoot, prefix)).isSymbolicLink();
-      } catch {
-        if (memo) memo.set(prefix, false);
-        return false; // missing component ⇒ nothing deeper exists
-      }
-      if (memo) memo.set(prefix, isLink);
-      if (isLink) return true;
-    }
-    return false;
+    return isSymlinkedRelUnder(projectRoot, rel, memo);
   }
 
   /**

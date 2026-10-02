@@ -147,7 +147,8 @@ describe('ss-grep -g (native path, counts after the filter)', () => {
   it('an unexplained zero still carries the regex-dialect note', async () => {
     searcher.sparseGramIndex.searchFull.mockImplementation(() => ({ matches: [], candidateFiles: 0, totalFiles: 4, scannedFiles: 0 }));
     try {
-      const { out } = await ss('grep', ['Head\\(', '--in', 'lib/tests']);
+      // a real GNU BRE operator (an unpaired `\\(` is a literal paren and gets no note)
+      const { out } = await ss('grep', ['Head\\|Nope', '--in', 'lib/tests']);
       expect(out).toMatch(/^\(no matches\)$/m);
       expect(out).toContain('regex note');
     } finally {
