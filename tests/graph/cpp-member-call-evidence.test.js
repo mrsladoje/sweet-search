@@ -178,6 +178,20 @@ describe('narrowCallCandidates — one candidate', () => {
     expect(narrowCallCandidates([typeFn], 'columnInfo', caller, index).map(c => c.id)).toEqual(['t']);
   });
 
+  it('a bare `ptr` or `p` names nothing: the pointer stem is not stripped to empty', () => {
+    const caller = method('c', 'run', 'lib/src/Handler.cc', 1, 9, { type: 'function' });
+    expect(narrowCallCandidates([typeFn], 'ptr', caller, index)).toEqual([]);
+    expect(narrowCallCandidates([typeFn], 'ptr_', caller, index)).toEqual([]);
+    expect(narrowCallCandidates([typeFn], 'p', caller, index)).toEqual([]);
+  });
+
+  it('every C/C++ source extension takes the rule, including a header caller', () => {
+    for (const file of ['a.c', 'a.h', 'a.cc', 'a.cpp', 'a.cxx', 'a.hpp', 'a.hxx', 'a.hh', 'a.inl', 'a.ipp', 'a.tpp', 'A.CPP']) {
+      const caller = method('c', 'run', `lib/${file}`, 1, 9, { type: 'function' });
+      expect(narrowCallCandidates([typeFn], 'val', caller, index), file).toEqual([]);
+    }
+  });
+
   it('other languages keep the one-candidate rule (unchanged)', () => {
     const caller = method('j', 'run', 'src/Handler.java', 1, 9);
     expect(narrowCallCandidates([typeFn], 'val', caller, index).map(c => c.id)).toEqual(['t']);
