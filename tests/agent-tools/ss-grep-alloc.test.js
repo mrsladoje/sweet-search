@@ -44,6 +44,19 @@ const COUNTS = {
 const HEADER = '# ss-grep: 88 total match(es) for /func .*Export/ across 21 files\n'
   + '# (+N more in this file)=truncated — see the rest: ss-grep "<regex>" --in <file>\n';
 
+// The weighted -k 8 body with SS_FIX_GREP_FULLLINE=0: each hit prints only the matched text.
+const WEIGHTED_K8 = HEADER
+  + 'worker/export.go:3: func Export3\n'
+  + 'worker/export.go:6: func Export6 (+20 more in this file)\n'
+  + 'worker/export_test.go:3: func Export3 (+7 more in this file)\n'
+  + 'backup/run.go:3: func Export3 (+1 more in this file)\n'
+  + 'buildvars/buildvars.go:3: func Export3 (+1 more in this file)\n'
+  + 'graphql/admin/export.go:3: func Export3 (+1 more in this file)\n'
+  + 'protos/pb/pb.pb.go:3: func Export3 (+22 more in this file)\n'
+  + 'buildvars/buildvars_test.go:3: func Export3 (+3 more in this file)\n'
+  + '# +14 more file(s) with 25 match(es) — e.g. systest/export/export_test.go, dgraphapi/cluster.go, '
+  + 'dgraphtest/load.go; narrow the regex, raise -k, or drill in with --in <file>\n';
+
 let base;
 let root;
 let searcher;
@@ -114,17 +127,7 @@ async function ssDaemon(tool, args, extra = {}) {
 describe('ss-grep line allocation (default: sqrt(hits) x prior, Sainte-Laguë)', () => {
   it('keeps the best files, not the first k in the alphabet; files print by weight', async () => {
     const out = await ss('grep', ['func .*Export', '-k', '8']);
-    expect(out).toBe(HEADER
-      + 'worker/export.go:3: func Export3\n'
-      + 'worker/export.go:6: func Export6 (+20 more in this file)\n'
-      + 'worker/export_test.go:3: func Export3 (+7 more in this file)\n'
-      + 'backup/run.go:3: func Export3 (+1 more in this file)\n'
-      + 'buildvars/buildvars.go:3: func Export3 (+1 more in this file)\n'
-      + 'graphql/admin/export.go:3: func Export3 (+1 more in this file)\n'
-      + 'protos/pb/pb.pb.go:3: func Export3 (+22 more in this file)\n'
-      + 'buildvars/buildvars_test.go:3: func Export3 (+3 more in this file)\n'
-      + '# +14 more file(s) with 25 match(es) — e.g. systest/export/export_test.go, dgraphapi/cluster.go, '
-      + 'dgraphtest/load.go; narrow the regex, raise -k, or drill in with --in <file>\n');
+    expect(out).toBe(WEIGHTED_K8.replace(/: func Export(\d+)/g, ': func Export$1(ctx context.Context) error {'));
     // the engine was asked for the weighted selection of k files
     expect(grepCalls[0]).toMatchObject({ grepFileOrder: 'weight', maxFiles: 8, perFileCap: 8 });
   });
@@ -140,7 +143,8 @@ describe('ss-grep line allocation (default: sqrt(hits) x prior, Sainte-Laguë)',
   it('--in scoped calls keep their flat output (no weighting asked of the engine)', async () => {
     const out = await ss('grep', ['func .*Export', '-k', '2', '--in', 'worker/export.go']);
     expect(out).toBe('# ss-grep: 22 total match(es) for /func .*Export/ (scope: --in worker/export.go)\n'
-      + 'worker/export.go:3: func Export3\nworker/export.go:6: func Export6 (+20 more — raise -k)\n');
+      + 'worker/export.go:3: func Export3(ctx context.Context) error {\n'
+      + 'worker/export.go:6: func Export6(ctx context.Context) error { (+20 more — raise -k)\n');
     expect(grepCalls[0].grepFileOrder).toBeUndefined();
   });
 });
@@ -169,11 +173,31 @@ describe('SS_FIX_GREP_ALLOC=0 restores the previous output byte for byte', () =>
     + 'graphql/e2e/schema/schema_test.go; narrow the regex, raise -k, or drill in with --in <file>\n';
 
   it('the switch, SS_FIX_A=0 and the product opt-out all give origin/main\'s bytes', async () => {
-    for (const env of [{ SS_FIX_GREP_ALLOC: '0' }, { SS_FIX_A: '0' }, { SWEET_SEARCH_COMPACT_OUTPUT: '0' }]) {
+    // SS_FIX_GREP_FULLLINE=0 too: origin/main printed the matched text.
+    const both = { SS_FIX_GREP_ALLOC: '0', SS_FIX_GREP_FULLLINE: '0' };
+    for (const env of [both, { SS_FIX_A: '0' }, { SWEET_SEARCH_COMPACT_OUTPUT: '0' }]) {
       expect(await ss('grep', ['func .*Export', '-k', '8'], env)).toBe(LEGACY_K8);
       expect(grepCalls[0].grepFileOrder).toBeUndefined();
       expect(await ss('grep', ['func .*Export', '-k', '6', '-C', '1'], env)).toBe(LEGACY_K6_C1);
     }
+  });
+});
+
+describe('SS_FIX_GREP_FULLLINE=0 restores the matched-text output byte for byte', () => {
+  it('body, --in and the allocation rule: only the hit text differs', async () => {
+    const off = { SS_FIX_GREP_FULLLINE: '0' };
+    expect(await ss('grep', ['func .*Export', '-k', '8'], off)).toBe(WEIGHTED_K8);
+    expect(await ss('grep', ['func .*Export', '-k', '2', '--in', 'worker/export.go'], off))
+      .toBe('# ss-grep: 22 total match(es) for /func .*Export/ (scope: --in worker/export.go)\n'
+        + 'worker/export.go:3: func Export3\nworker/export.go:6: func Export6 (+20 more — raise -k)\n');
+    // SS_FIX_GREP_ALLOC=0 alone keeps the full lines on the path-order rule
+    const legacyAlloc = await ss('grep', ['func .*Export', '-k', '8'], { SS_FIX_GREP_ALLOC: '0' });
+    expect(legacyAlloc).toContain('\nbackup/run.go:3: func Export3(ctx context.Context) error { (+1 more in this file)\n');
+    expect(await ss('grep', ['func .*Export', '-k', '8'], { SS_FIX_GREP_ALLOC: '0', ...off }))
+      .toBe(legacyAlloc.replace(/: func Export(\d+)\(ctx context\.Context\) error \{/g, ': func Export$1'));
+    // -C context already printed full lines from the file: unchanged by the switch
+    expect(await ss('grep', ['func .*Export', '-k', '6', '-C', '1'], off))
+      .toBe(await ss('grep', ['func .*Export', '-k', '6', '-C', '1']));
   });
 });
 
@@ -186,7 +210,7 @@ describe('the warm daemon (/agent-tool) prints exactly what the in-process tool 
     ['grep', ['func .*Export', '-k', '3', '--in', 'worker']],
     ['find', ['export functions', '--regex', 'func .*Export', '-k', '6']],
   ];
-  for (const env of [{}, { SS_FIX_GREP_ALLOC: '0' }, { SS_FIX_GREP_ORDER: '1' }]) {
+  for (const env of [{}, { SS_FIX_GREP_ALLOC: '0' }, { SS_FIX_GREP_ORDER: '1' }, { SS_FIX_GREP_FULLLINE: '0' }]) {
     it(`same bytes on both paths (${JSON.stringify(env)})`, async () => {
       for (const [tool, args] of CALLS) {
         const inProcess = await ss(tool, args, env);

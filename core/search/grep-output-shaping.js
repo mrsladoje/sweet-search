@@ -24,7 +24,7 @@
  */
 
 import { realpathSync } from 'node:fs';
-import { isTestLikePath } from './agent-output-fixes.js';
+import { grepHitText, isTestLikePath } from './agent-output-fixes.js';
 
 /** Split a path into whole segments, dropping "" and "." (so "./a//b" → [a,b]). */
 function pathSegments(value) {
@@ -507,7 +507,7 @@ function renderGrepBodyWeighted(kept, fileSummary, k, opts) {
     if (a === 0) { unallocated.push(order[f]); continue; }
     for (let j = 0; j < a; j++) {
       const m = ms ? ms[j] : kept[base + j];
-      const text = (m.matchText || '').replace(/\s+/g, ' ').trim().slice(0, 140);
+      const text = grepHitText(m, { fullLine: opts?.fullLine === true });
       let more = 0;
       if (j === a - 1 && total > a) {
         more = total - a;
@@ -556,15 +556,16 @@ export function allocateGrepBudget(counts, budget) {
  * on the last shown line of every truncated file — elision is never silent
  * and costs no extra lines.
  *
- * @param {Array<{file: string, line: number, matchText?: string}>} kept -
+ * @param {Array<{file: string, line: number, matchText?: string, content?: string}>} kept -
  *   diversified matches in engine order (grouped by file)
  * @param {{files: Array<{file, total, kept}>, hiddenFileCount, hiddenMatchCount,
  *          hiddenSample: Array<{file, total}>}} fileSummary
  * @param {number} k - body line budget
- * @param {{dropRepeatedText?: boolean, alloc?: 'weight'}} [opts] - SS_FIX_GREP_ORDER: when
- *   every shown hit carries the same matched text (and more than one hit shows), print
- *   `file:line` only. `alloc: 'weight'` (SS_FIX_GREP_ALLOC, default ON in ss-grep): files in
- *   descending weight, lines shared by Sainte-Laguë (allocateGrepLinesSainteLague), the
+ * @param {{dropRepeatedText?: boolean, alloc?: 'weight', fullLine?: boolean}} [opts] -
+ *   SS_FIX_GREP_ORDER: when every shown hit prints the same text (and more than one hit
+ *   shows), print `file:line` only. `fullLine` (SS_FIX_GREP_FULLLINE, default ON in ss-grep):
+ *   each hit prints its full source line (grepHitText), not the matched substring.
+ *   `alloc: 'weight'` (SS_FIX_GREP_ALLOC, default ON in ss-grep): files in descending weight, lines shared by Sainte-Laguë (allocateGrepLinesSainteLague), the
  *   hidden-files examples are the highest-weight hidden files.
  *   Absent = the original format, byte for byte.
  * @returns {{lines: string[], rows: Array<{file, line, text, more}>, shownMatches: number,
@@ -594,7 +595,7 @@ export function renderGrepBody(kept, fileSummary, k, opts = undefined) {
     const total = totals.get(file) ?? ms.length;
     for (let j = 0; j < alloc[i]; j++) {
       const m = ms[j];
-      const text = (m.matchText || '').replace(/\s+/g, ' ').trim().slice(0, 140);
+      const text = grepHitText(m, { fullLine: opts?.fullLine === true });
       let more = 0;
       if (j === alloc[i] - 1 && total > alloc[i]) {
         more = total - alloc[i];
