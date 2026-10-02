@@ -1,0 +1,519 @@
+{
+  "seed": 7,
+  "generatedBy": "gen-exact.mjs",
+  "repos": [
+    "fastify",
+    "flask",
+    "gin",
+    "ripgrep",
+    "r3-dgraph"
+  ],
+  "items": [
+    {
+      "id": "exact-fastify-1",
+      "repo": "fastify",
+      "type": "log",
+      "query": "stream payload does not end properly",
+      "goldFile": "lib/reply.js",
+      "goldLines": [
+        804
+      ]
+    },
+    {
+      "id": "exact-fastify-2",
+      "repo": "fastify",
+      "type": "log",
+      "query": "Promise errored, but reply.sent = true was set",
+      "goldFile": "lib/wrap-thenable.js",
+      "goldLines": [
+        64
+      ]
+    },
+    {
+      "id": "exact-fastify-3",
+      "repo": "fastify",
+      "type": "log",
+      "query": "unhandled rejection on reply.then",
+      "goldFile": "lib/reply.js",
+      "goldLines": [
+        479
+      ]
+    },
+    {
+      "id": "exact-fastify-4",
+      "repo": "fastify",
+      "type": "const",
+      "query": "fast-json-stringify/lib/serializer",
+      "goldFile": "lib/error-serializer.js",
+      "goldLines": [
+        6
+      ]
+    },
+    {
+      "id": "exact-fastify-5",
+      "repo": "fastify",
+      "type": "config",
+      "query": "keep-alive",
+      "goldFile": "lib/route.js",
+      "goldLines": [
+        500
+      ]
+    },
+    {
+      "id": "exact-fastify-6",
+      "repo": "fastify",
+      "type": "config",
+      "query": "content-encoding",
+      "goldFile": "lib/reply.js",
+      "goldLines": [
+        295
+      ]
+    },
+    {
+      "id": "exact-fastify-7",
+      "repo": "fastify",
+      "type": "log",
+      "query": "response will send, but you shouldn t use res.writeHead in stream mode",
+      "goldFile": "lib/reply.js",
+      "goldLines": [
+        720,
+        818
+      ]
+    },
+    {
+      "id": "exact-fastify-8",
+      "repo": "fastify",
+      "type": "log",
+      "query": "request aborted - refusing to accept new requests as server is closing",
+      "goldFile": "lib/route.js",
+      "goldLines": [
+        491
+      ]
+    },
+    {
+      "id": "exact-fastify-9",
+      "repo": "fastify",
+      "type": "log",
+      "query": "Reply was already sent, did you forget to \"return reply\" in the \" \" ( ) route?",
+      "goldFile": "lib/reply.js",
+      "goldLines": [
+        569
+      ]
+    },
+    {
+      "id": "exact-fastify-10",
+      "repo": "fastify",
+      "type": "log",
+      "query": "INACCESSIBLE (should be removed):",
+      "goldFile": "scripts/validate-ecosystem-links.js",
+      "goldLines": [
+        132
+      ]
+    },
+    {
+      "id": "exact-flask-1",
+      "repo": "flask",
+      "type": "error",
+      "query": "'name' may not contain a dot '.' character.",
+      "goldFile": "src/flask/sansio/blueprints.py",
+      "goldLines": [
+        199
+      ]
+    },
+    {
+      "id": "exact-flask-2",
+      "repo": "flask",
+      "type": "error",
+      "query": "'endpoint' may not contain a dot '.' character.",
+      "goldFile": "src/flask/sansio/blueprints.py",
+      "goldLines": [
+        428
+      ]
+    },
+    {
+      "id": "exact-flask-3",
+      "repo": "flask",
+      "type": "error",
+      "query": "Use the 'route' decorator to use the 'methods' argument.",
+      "goldFile": "src/flask/sansio/scaffold.py",
+      "goldLines": [
+        291
+      ]
+    },
+    {
+      "id": "exact-flask-4",
+      "repo": "flask",
+      "type": "error",
+      "query": "Cannot nest client invocations",
+      "goldFile": "src/flask/testing.py",
+      "goldLines": [
+        251
+      ]
+    },
+    {
+      "id": "exact-flask-5",
+      "repo": "flask",
+      "type": "const",
+      "query": "error code. Use a subclass of HTTPException with",
+      "goldFile": "src/flask/sansio/scaffold.py",
+      "goldLines": [
+        675
+      ]
+    },
+    {
+      "id": "exact-flask-6",
+      "repo": "flask",
+      "type": "config",
+      "query": "dict.get",
+      "goldFile": "src/flask/ctx.py",
+      "goldLines": [
+        70
+      ]
+    },
+    {
+      "id": "exact-flask-7",
+      "repo": "flask",
+      "type": "config",
+      "query": "hashlib.sha1",
+      "goldFile": "src/flask/sessions.py",
+      "goldLines": [
+        277,
+        281
+      ]
+    },
+    {
+      "id": "exact-flask-8",
+      "repo": "flask",
+      "type": "error",
+      "query": "Object of type is not JSON serializable",
+      "goldFile": "src/flask/json/provider.py",
+      "goldLines": [
+        121
+      ]
+    },
+    {
+      "id": "exact-flask-9",
+      "repo": "flask",
+      "type": "error",
+      "query": "Required when using \"--cert\".",
+      "goldFile": "src/flask/cli.py",
+      "goldLines": [
+        862
+      ]
+    },
+    {
+      "id": "exact-flask-10",
+      "repo": "flask",
+      "type": "error",
+      "query": "When specifying '_scheme', '_external' must be True.",
+      "goldFile": "src/flask/app.py",
+      "goldLines": [
+        1200
+      ]
+    },
+    {
+      "id": "exact-gin-1",
+      "repo": "gin",
+      "type": "error",
+      "query": "The length of the string can't be 0",
+      "goldFile": "utils.go",
+      "goldLines": [
+        126
+      ]
+    },
+    {
+      "id": "exact-gin-2",
+      "repo": "gin",
+      "type": "error",
+      "query": "can not convert to map slices of strings",
+      "goldFile": "binding/form_mapping.go",
+      "goldLines": [
+        26
+      ]
+    },
+    {
+      "id": "exact-gin-3",
+      "repo": "gin",
+      "type": "error",
+      "query": "cannot read nil body",
+      "goldFile": "context.go",
+      "goldLines": [
+        1096
+      ]
+    },
+    {
+      "id": "exact-gin-4",
+      "repo": "gin",
+      "type": "error",
+      "query": "negotiation config is invalid",
+      "goldFile": "utils.go",
+      "goldLines": [
+        107
+      ]
+    },
+    {
+      "id": "exact-gin-5",
+      "repo": "gin",
+      "type": "const",
+      "query": "application/json; charset=utf-8",
+      "goldFile": "render/json.go",
+      "goldLines": [
+        51
+      ]
+    },
+    {
+      "id": "exact-gin-6",
+      "repo": "gin",
+      "type": "config",
+      "query": "time_location",
+      "goldFile": "binding/form_mapping.go",
+      "goldLines": [
+        473
+      ]
+    },
+    {
+      "id": "exact-gin-7",
+      "repo": "gin",
+      "type": "error",
+      "query": "URL parameters can not be used when serving a static folder",
+      "goldFile": "routergroup.go",
+      "goldLines": [
+        205
+      ]
+    },
+    {
+      "id": "exact-gin-8",
+      "repo": "gin",
+      "type": "error",
+      "query": "is not valid value for",
+      "goldFile": "binding/form_mapping.go",
+      "goldLines": [
+        302
+      ]
+    },
+    {
+      "id": "exact-gin-9",
+      "repo": "gin",
+      "type": "error",
+      "query": "is not supported in the collection_format. (multi, csv, ssv, tsv, pipes)",
+      "goldFile": "binding/form_mapping.go",
+      "goldLines": [
+        230
+      ]
+    },
+    {
+      "id": "exact-gin-10",
+      "repo": "gin",
+      "type": "error",
+      "query": "handlers are already registered for path '",
+      "goldFile": "tree.go",
+      "goldLines": [
+        243
+      ]
+    },
+    {
+      "id": "exact-ripgrep-1",
+      "repo": "ripgrep",
+      "type": "log",
+      "query": ": searching using generic reader",
+      "goldFile": "crates/searcher/src/searcher/mod.rs",
+      "goldLines": [
+        711
+      ]
+    },
+    {
+      "id": "exact-ripgrep-2",
+      "repo": "ripgrep",
+      "type": "log",
+      "query": "failed to open memory map:",
+      "goldFile": "crates/searcher/src/searcher/mmap.rs",
+      "goldLines": [
+        86,
+        91
+      ]
+    },
+    {
+      "id": "exact-ripgrep-3",
+      "repo": "ripgrep",
+      "type": "log",
+      "query": "heuristic chose to search ./",
+      "goldFile": "crates/core/flags/hiargs.rs",
+      "goldLines": [
+        1127
+      ]
+    },
+    {
+      "id": "exact-ripgrep-4",
+      "repo": "ripgrep",
+      "type": "const",
+      "query": "(?s)clew|cigar ash.+have it|exhibited",
+      "goldFile": "crates/printer/src/standard.rs",
+      "goldLines": [
+        2651
+      ]
+    },
+    {
+      "id": "exact-ripgrep-5",
+      "repo": "ripgrep",
+      "type": "config",
+      "query": "no-ignore-file-case-insensitive",
+      "goldFile": "crates/core/flags/defs.rs",
+      "goldLines": [
+        3282,
+        3315,
+        3321
+      ]
+    },
+    {
+      "id": "exact-ripgrep-6",
+      "repo": "ripgrep",
+      "type": "config",
+      "query": "terraform.rc",
+      "goldFile": "crates/ignore/src/default_types.rs",
+      "goldLines": [
+        297
+      ]
+    },
+    {
+      "id": "exact-ripgrep-7",
+      "repo": "ripgrep",
+      "type": "log",
+      "query": "cargo:rustc-link-arg-bin=rg=/MANIFESTINPUT:",
+      "goldFile": "build.rs",
+      "goldLines": [
+        28
+      ]
+    },
+    {
+      "id": "exact-ripgrep-8",
+      "repo": "ripgrep",
+      "type": "log",
+      "query": "found byte-order mark (BOM) for encoding",
+      "goldFile": "crates/searcher/src/searcher/mod.rs",
+      "goldLines": [
+        1041
+      ]
+    },
+    {
+      "id": "exact-ripgrep-9",
+      "repo": "ripgrep",
+      "type": "log",
+      "query": "cargo:rustc-link-arg-bin=rg=/WX",
+      "goldFile": "build.rs",
+      "goldLines": [
+        31
+      ]
+    },
+    {
+      "id": "exact-ripgrep-10",
+      "repo": "ripgrep",
+      "type": "log",
+      "query": "read CWD from environment:",
+      "goldFile": "crates/core/flags/hiargs.rs",
+      "goldLines": [
+        954
+      ]
+    },
+    {
+      "id": "exact-r3-dgraph-1",
+      "repo": "r3-dgraph",
+      "type": "error",
+      "query": "Variables must be a JSON-formatted string",
+      "goldFile": "dgraph/cmd/mcp/mcp_server.go",
+      "goldLines": [
+        275
+      ]
+    },
+    {
+      "id": "exact-r3-dgraph-2",
+      "repo": "r3-dgraph",
+      "type": "error",
+      "query": "Namespace not found in JWT.",
+      "goldFile": "edgraph/server.go",
+      "goldLines": [
+        1297
+      ]
+    },
+    {
+      "id": "exact-r3-dgraph-3",
+      "repo": "r3-dgraph",
+      "type": "error",
+      "query": "@lang directive can only be specified for string type.",
+      "goldFile": "schema/parse.go",
+      "goldLines": [
+        72
+      ]
+    },
+    {
+      "id": "exact-r3-dgraph-4",
+      "repo": "r3-dgraph",
+      "type": "error",
+      "query": "found multiple values for dgraph.drop.op:",
+      "goldFile": "worker/backup.go",
+      "goldLines": [
+        865
+      ]
+    },
+    {
+      "id": "exact-r3-dgraph-5",
+      "repo": "r3-dgraph",
+      "type": "log",
+      "query": "[ERROR] error while init, returning:",
+      "goldFile": "dgraphtest/local_cluster.go",
+      "goldLines": [
+        552
+      ]
+    },
+    {
+      "id": "exact-r3-dgraph-6",
+      "repo": "r3-dgraph",
+      "type": "log",
+      "query": "I [id: group:0] have been removed. Goodbye!",
+      "goldFile": "dgraph/cmd/zero/raft.go",
+      "goldLines": [
+        498
+      ]
+    },
+    {
+      "id": "exact-r3-dgraph-7",
+      "repo": "r3-dgraph",
+      "type": "log",
+      "query": "Sending delete namespace request:",
+      "goldFile": "worker/multi_tenancy.go",
+      "goldLines": [
+        74
+      ]
+    },
+    {
+      "id": "exact-r3-dgraph-8",
+      "repo": "r3-dgraph",
+      "type": "const",
+      "query": "adding worker with same regNo will return error",
+      "goldFile": "graphql/e2e/common/mutation.go",
+      "goldLines": [
+        5554
+      ]
+    },
+    {
+      "id": "exact-r3-dgraph-9",
+      "repo": "r3-dgraph",
+      "type": "config",
+      "query": "zero_env_file",
+      "goldFile": "compose/compose.go",
+      "goldLines": [
+        642
+      ]
+    },
+    {
+      "id": "exact-r3-dgraph-10",
+      "repo": "r3-dgraph",
+      "type": "config",
+      "query": "badger_size_bytes_lsm",
+      "goldFile": "x/metrics.go",
+      "goldLines": [
+        564,
+        565
+      ]
+    }
+  ]
+}

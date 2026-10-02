@@ -798,6 +798,9 @@ export class SweetSearch {
         if (hybridResult.fusionStats?.queryRewrite) {
           stats.queryRewrite = hybridResult.fusionStats.queryRewrite;
         }
+        if (hybridResult.fusionStats?.bodyLexical) {
+          stats.bodyLexical = hybridResult.fusionStats.bodyLexical;
+        }
         break;
       }
     }

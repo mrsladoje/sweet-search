@@ -1,0 +1,212 @@
+{
+  "seed": 42,
+  "generatedBy": "gen-exact.mjs",
+  "repos": [
+    "bbolt"
+  ],
+  "items": [
+    {
+      "id": "exact-bbolt-1",
+      "repo": "bbolt",
+      "type": "error",
+      "query": "the number of iterations must be divisible by the batch size",
+      "goldFile": "cmd/bbolt/command/errors.go",
+      "goldLines": [
+        11
+      ]
+    },
+    {
+      "id": "exact-bbolt-2",
+      "repo": "bbolt",
+      "type": "error",
+      "query": "growing db size failed, pgid: , pagesize: , error:",
+      "goldFile": "tx.go",
+      "goldLines": [
+        236
+      ]
+    },
+    {
+      "id": "exact-bbolt-3",
+      "repo": "bbolt",
+      "type": "error",
+      "query": "put: zero-length old key",
+      "goldFile": "node.go",
+      "goldLines": [
+        121
+      ]
+    },
+    {
+      "id": "exact-bbolt-4",
+      "repo": "bbolt",
+      "type": "error",
+      "query": "detected duplicated free page ID: in f.backwardMap:",
+      "goldFile": "internal/freelist/hashmap.go",
+      "goldLines": [
+        291
+      ]
+    },
+    {
+      "id": "exact-bbolt-5",
+      "repo": "bbolt",
+      "type": "error",
+      "query": "failed to create output file :",
+      "goldFile": "internal/common/utils.go",
+      "goldLines": [
+        46
+      ]
+    },
+    {
+      "id": "exact-bbolt-6",
+      "repo": "bbolt",
+      "type": "error",
+      "query": "page : invalid type: (stack: )",
+      "goldFile": "tx_check.go",
+      "goldLines": [
+        173
+      ]
+    },
+    {
+      "id": "exact-bbolt-7",
+      "repo": "bbolt",
+      "type": "error",
+      "query": "leafPageElement: expected page type of 'leaf', but got ' '",
+      "goldFile": "cmd/bbolt/command/command_page_item.go",
+      "goldLines": [
+        106
+      ]
+    },
+    {
+      "id": "exact-bbolt-8",
+      "repo": "bbolt",
+      "type": "error",
+      "query": "the source and target are the same bucket",
+      "goldFile": "errors/errors.go",
+      "goldLines": [
+        82
+      ]
+    },
+    {
+      "id": "exact-bbolt-9",
+      "repo": "bbolt",
+      "type": "log",
+      "query": "Opening db file ( ) with mode and with options:",
+      "goldFile": "db.go",
+      "goldLines": [
+        213
+      ]
+    },
+    {
+      "id": "exact-bbolt-10",
+      "repo": "bbolt",
+      "type": "log",
+      "query": "Opening bbolt db ( ) successfully",
+      "goldFile": "db.go",
+      "goldLines": [
+        218
+      ]
+    },
+    {
+      "id": "exact-bbolt-11",
+      "repo": "bbolt",
+      "type": "log",
+      "query": "The underlying file has changed, so reuse the already opened file ( ):",
+      "goldFile": "tx.go",
+      "goldLines": [
+        417
+      ]
+    },
+    {
+      "id": "exact-bbolt-12",
+      "repo": "bbolt",
+      "type": "log",
+      "query": "Syncing bbolt db ( ) successfully",
+      "goldFile": "db.go",
+      "goldLines": [
+        1102
+      ]
+    },
+    {
+      "id": "exact-bbolt-13",
+      "repo": "bbolt",
+      "type": "log",
+      "query": "Creating bucket if not exist",
+      "goldFile": "bucket.go",
+      "goldLines": [
+        207,
+        210,
+        212
+      ]
+    },
+    {
+      "id": "exact-bbolt-14",
+      "repo": "bbolt",
+      "type": "log",
+      "query": "Starting a new transaction [writable: ] successfully",
+      "goldFile": "db.go",
+      "goldLines": [
+        774
+      ]
+    },
+    {
+      "id": "exact-bbolt-15",
+      "repo": "bbolt",
+      "type": "const",
+      "query": "prints a hexadecimal dump of one or more pages of bbolt database.",
+      "goldFile": "cmd/bbolt/command/command_dump.go",
+      "goldLines": [
+        17
+      ]
+    },
+    {
+      "id": "exact-bbolt-16",
+      "repo": "bbolt",
+      "type": "const",
+      "query": "The page ( ) was cleared",
+      "goldFile": "cmd/bbolt/command/command_surgery.go",
+      "goldLines": [
+        207
+      ]
+    },
+    {
+      "id": "exact-bbolt-17",
+      "repo": "bbolt",
+      "type": "config",
+      "query": "from-index",
+      "goldFile": "cmd/bbolt/command/command_surgery.go",
+      "goldLines": [
+        221,
+        224
+      ]
+    },
+    {
+      "id": "exact-bbolt-18",
+      "repo": "bbolt",
+      "type": "config",
+      "query": "db.backup",
+      "goldFile": "internal/btesting/btesting.go",
+      "goldLines": [
+        147
+      ]
+    },
+    {
+      "id": "exact-bbolt-19",
+      "repo": "bbolt",
+      "type": "config",
+      "query": "tx-max-size",
+      "goldFile": "cmd/bbolt/command/command_compact.go",
+      "goldLines": [
+        43
+      ]
+    },
+    {
+      "id": "exact-bbolt-20",
+      "repo": "bbolt",
+      "type": "config",
+      "query": "format-value",
+      "goldFile": "cmd/bbolt/command/command_page.go",
+      "goldLines": [
+        44
+      ]
+    }
+  ]
+}

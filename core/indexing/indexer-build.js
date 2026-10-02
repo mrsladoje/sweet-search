@@ -18,6 +18,7 @@ import { configureJournalMode, checkpointWal, atomicSwapDatabase, log, logProgre
 import { assignStructuralIds } from '../incremental-indexing/domain/chunk-identity.mjs';
 import { chunkInputHashes } from '../incremental-indexing/domain/encoder-input.mjs';
 import { migrateVectorsSchema } from '../incremental-indexing/infrastructure/schema-migrations.mjs';
+import { chunkTextFtsWriter } from './chunk-text-fts.js';
 
 // =============================================================================
 // CHUNK ENRICHMENT — scope chains + imports from code-graph.db
@@ -438,9 +439,18 @@ function prepareVectorInsert(db) {
   const columns = vectorInsertColumns(db);
   const quoted = columns.map((column) => `"${column}"`).join(', ');
   const placeholders = columns.map(() => '?').join(', ');
+  const stmt = db.prepare(`INSERT OR REPLACE INTO vectors (${quoted}) VALUES (${placeholders})`);
+  // The chunk-text FTS row is written with its vector row, in the same
+  // transaction (core/indexing/chunk-text-fts.js).
+  const ftsWrite = chunkTextFtsWriter(db);
   return {
     columns,
-    stmt: db.prepare(`INSERT OR REPLACE INTO vectors (${quoted}) VALUES (${placeholders})`),
+    stmt,
+    run(item) {
+      const info = stmt.run(...columns.map((column) => vectorInsertValue(item, column)));
+      if (ftsWrite) ftsWrite(info.lastInsertRowid, item.text, item.metadata);
+      return info;
+    },
   };
 }
 
@@ -457,12 +467,10 @@ export function insertAliasVectors(db, aliases, modelInfo, options = {}) {
     'SELECT embedding, metadata FROM vectors WHERE id = ?'
   );
 
-  const { stmt, columns } = prepareVectorInsert(db);
+  const insert = prepareVectorInsert(db);
 
   const insertBatch = db.transaction((items) => {
-    for (const item of items) {
-      stmt.run(...columns.map((column) => vectorInsertValue(item, column)));
-    }
+    for (const item of items) insert.run(item);
   });
 
   // Orphan guard: purge pre-existing alias rows whose exemplarId no longer
@@ -558,12 +566,10 @@ export function insertAliasVectors(db, aliases, modelInfo, options = {}) {
 export function insertVectorItems(db, items) {
   const BATCH_INSERT_SIZE = 2000;
 
-  const { stmt, columns } = prepareVectorInsert(db);
+  const insert = prepareVectorInsert(db);
 
   const insertBatch = db.transaction((items) => {
-    for (const item of items) {
-      stmt.run(...columns.map((column) => vectorInsertValue(item, column)));
-    }
+    for (const item of items) insert.run(item);
   });
 
   for (let i = 0; i < items.length; i += BATCH_INSERT_SIZE) {
@@ -580,12 +586,10 @@ export async function pipelinedEmbedAndInsert(db, allChunks, texts, batchSize, m
   let embeddingCount = 0;
   const allAnnotations = annotateChunksForVectorInsert(allChunks);
 
-  const { stmt, columns } = prepareVectorInsert(db);
+  const insert = prepareVectorInsert(db);
 
   const insertBatch = db.transaction((items) => {
-    for (const item of items) {
-      stmt.run(...columns.map((column) => vectorInsertValue(item, column)));
-    }
+    for (const item of items) insert.run(item);
   });
 
   function flushWriteBuffer() {

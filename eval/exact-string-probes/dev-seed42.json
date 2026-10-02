@@ -1,0 +1,521 @@
+{
+  "seed": 42,
+  "generatedBy": "gen-exact.mjs",
+  "repos": [
+    "fastify",
+    "flask",
+    "gin",
+    "ripgrep",
+    "r3-dgraph"
+  ],
+  "items": [
+    {
+      "id": "exact-fastify-1",
+      "repo": "fastify",
+      "type": "error",
+      "query": "Not found handler already set for Fastify instance with prefix: ' '",
+      "goldFile": "lib/four-oh-four.js",
+      "goldLines": [
+        94
+      ]
+    },
+    {
+      "id": "exact-fastify-2",
+      "repo": "fastify",
+      "type": "log",
+      "query": "Error on Stream found for HEAD route",
+      "goldFile": "lib/head-route.js",
+      "goldLines": [
+        13,
+        23
+      ]
+    },
+    {
+      "id": "exact-fastify-3",
+      "repo": "fastify",
+      "type": "log",
+      "query": "Trying to send a NotFound error inside a 404 handler. Sending basic 404 response.",
+      "goldFile": "lib/reply.js",
+      "goldLines": [
+        987
+      ]
+    },
+    {
+      "id": "exact-fastify-4",
+      "repo": "fastify",
+      "type": "log",
+      "query": "response terminated with an error with headers already sent",
+      "goldFile": "lib/reply.js",
+      "goldLines": [
+        691
+      ]
+    },
+    {
+      "id": "exact-fastify-5",
+      "repo": "fastify",
+      "type": "const",
+      "query": "The content type cannot be an empty string",
+      "goldFile": "lib/errors.js",
+      "goldLines": [
+        89
+      ]
+    },
+    {
+      "id": "exact-fastify-6",
+      "repo": "fastify",
+      "type": "config",
+      "query": "comma-dangle",
+      "goldFile": "eslint.config.js",
+      "goldLines": [
+        16
+      ]
+    },
+    {
+      "id": "exact-fastify-7",
+      "repo": "fastify",
+      "type": "config",
+      "query": "fastify.request.signal",
+      "goldFile": "lib/symbols.js",
+      "goldLines": [
+        36
+      ]
+    },
+    {
+      "id": "exact-fastify-8",
+      "repo": "fastify",
+      "type": "log",
+      "query": "Cannot specify both logger.stream and logger.file options",
+      "goldFile": "lib/errors.js",
+      "goldLines": [
+        215
+      ]
+    },
+    {
+      "id": "exact-fastify-9",
+      "repo": "fastify",
+      "type": "log",
+      "query": "Found unique GitHub links to check:",
+      "goldFile": "scripts/validate-ecosystem-links.js",
+      "goldLines": [
+        111
+      ]
+    },
+    {
+      "id": "exact-fastify-10",
+      "repo": "fastify",
+      "type": "log",
+      "query": "The serializer for the given status code failed",
+      "goldFile": "lib/error-handler.js",
+      "goldLines": [
+        127
+      ]
+    },
+    {
+      "id": "exact-flask-1",
+      "repo": "flask",
+      "type": "error",
+      "query": "\"--cert\" must also be specified.",
+      "goldFile": "src/flask/cli.py",
+      "goldLines": [
+        856
+      ]
+    },
+    {
+      "id": "exact-flask-2",
+      "repo": "flask",
+      "type": "error",
+      "query": "app.json.response() takes either args or kwargs, not both",
+      "goldFile": "src/flask/json/provider.py",
+      "goldLines": [
+        79
+      ]
+    },
+    {
+      "id": "exact-flask-3",
+      "repo": "flask",
+      "type": "error",
+      "query": "Session backend did not open a session.",
+      "goldFile": "src/flask/testing.py",
+      "goldLines": [
+        168
+      ]
+    },
+    {
+      "id": "exact-flask-4",
+      "repo": "flask",
+      "type": "error",
+      "query": "Cannot register a blueprint on itself",
+      "goldFile": "src/flask/sansio/blueprints.py",
+      "goldLines": [
+        270
+      ]
+    },
+    {
+      "id": "exact-flask-5",
+      "repo": "flask",
+      "type": "log",
+      "query": "ext://flask.logging.wsgi_errors_stream",
+      "goldFile": "src/flask/logging.py",
+      "goldLines": [
+        23
+      ]
+    },
+    {
+      "id": "exact-flask-6",
+      "repo": "flask",
+      "type": "log",
+      "query": "[%(asctime)s] %(levelname)s in %(module)s: %(message)s",
+      "goldFile": "src/flask/logging.py",
+      "goldLines": [
+        51,
+        54
+      ]
+    },
+    {
+      "id": "exact-flask-7",
+      "repo": "flask",
+      "type": "log",
+      "query": "~flask.logging.wsgi_errors_stream",
+      "goldFile": "src/flask/logging.py",
+      "goldLines": [
+        50,
+        69
+      ]
+    },
+    {
+      "id": "exact-flask-8",
+      "repo": "flask",
+      "type": "const",
+      "query": "~flask.Flask.make_response",
+      "goldFile": "src/flask/wrappers.py",
+      "goldLines": [
+        226
+      ]
+    },
+    {
+      "id": "exact-flask-9",
+      "repo": "flask",
+      "type": "config",
+      "query": "current_app.json.response",
+      "goldFile": "src/flask/json/__init__.py",
+      "goldLines": [
+        158,
+        170
+      ]
+    },
+    {
+      "id": "exact-flask-10",
+      "repo": "flask",
+      "type": "config",
+      "query": "sys.prefix",
+      "goldFile": "src/flask/sansio/scaffold.py",
+      "goldLines": [
+        760,
+        768
+      ]
+    },
+    {
+      "id": "exact-gin-1",
+      "repo": "gin",
+      "type": "error",
+      "query": "unsupported len of array for []*multipart.FileHeader",
+      "goldFile": "binding/multipart_form_mapping.go",
+      "goldLines": [
+        23
+      ]
+    },
+    {
+      "id": "exact-gin-2",
+      "repo": "gin",
+      "type": "error",
+      "query": "server at did not become ready after attempts",
+      "goldFile": "test_helpers.go",
+      "goldLines": [
+        56
+      ]
+    },
+    {
+      "id": "exact-gin-3",
+      "repo": "gin",
+      "type": "error",
+      "query": "no / before catch-all in path '",
+      "goldFile": "tree.go",
+      "goldLines": [
+        363
+      ]
+    },
+    {
+      "id": "exact-gin-4",
+      "repo": "gin",
+      "type": "error",
+      "query": "unsupported field type for multipart.FileHeader",
+      "goldFile": "binding/multipart_form_mapping.go",
+      "goldLines": [
+        20
+      ]
+    },
+    {
+      "id": "exact-gin-5",
+      "repo": "gin",
+      "type": "const",
+      "query": "User can not be empty",
+      "goldFile": "auth.go",
+      "goldLines": [
+        81
+      ]
+    },
+    {
+      "id": "exact-gin-6",
+      "repo": "gin",
+      "type": "config",
+      "query": "time_utc",
+      "goldFile": "binding/form_mapping.go",
+      "goldLines": [
+        469
+      ]
+    },
+    {
+      "id": "exact-gin-7",
+      "repo": "gin",
+      "type": "config",
+      "query": "time_format",
+      "goldFile": "binding/form_mapping.go",
+      "goldLines": [
+        435
+      ]
+    },
+    {
+      "id": "exact-gin-8",
+      "repo": "gin",
+      "type": "error",
+      "query": "Cannot redirect with status code",
+      "goldFile": "render/redirect.go",
+      "goldLines": [
+        22
+      ]
+    },
+    {
+      "id": "exact-gin-9",
+      "repo": "gin",
+      "type": "error",
+      "query": "catch-all routes are only allowed at the end of the path in path '",
+      "goldFile": "tree.go",
+      "goldLines": [
+        345
+      ]
+    },
+    {
+      "id": "exact-gin-10",
+      "repo": "gin",
+      "type": "error",
+      "query": "invalid escape string in path '",
+      "goldFile": "tree.go",
+      "goldLines": [
+        262
+      ]
+    },
+    {
+      "id": "exact-ripgrep-1",
+      "repo": "ripgrep",
+      "type": "error",
+      "query": "failed to create temp dir after tries",
+      "goldFile": "crates/ignore/src/lib.rs",
+      "goldLines": [
+        536
+      ]
+    },
+    {
+      "id": "exact-ripgrep-2",
+      "repo": "ripgrep",
+      "type": "error",
+      "query": "pattern given is not valid UTF-8",
+      "goldFile": "crates/core/flags/hiargs.rs",
+      "goldLines": [
+        1003
+      ]
+    },
+    {
+      "id": "exact-ripgrep-3",
+      "repo": "ripgrep",
+      "type": "error",
+      "query": "failed to initialize logger:",
+      "goldFile": "crates/core/flags/parse.rs",
+      "goldLines": [
+        66
+      ]
+    },
+    {
+      "id": "exact-ripgrep-4",
+      "repo": "ripgrep",
+      "type": "error",
+      "query": "value is not valid UTF-8",
+      "goldFile": "crates/core/flags/defs.rs",
+      "goldLines": [
+        7582,
+        7589
+      ]
+    },
+    {
+      "id": "exact-ripgrep-5",
+      "repo": "ripgrep",
+      "type": "log",
+      "query": "cargo:rustc-env=RIPGREP_BUILD_GIT_HASH=",
+      "goldFile": "build.rs",
+      "goldLines": [
+        52
+      ]
+    },
+    {
+      "id": "exact-ripgrep-6",
+      "repo": "ripgrep",
+      "type": "log",
+      "query": ": searching via memory map",
+      "goldFile": "crates/searcher/src/searcher/mod.rs",
+      "goldLines": [
+        690
+      ]
+    },
+    {
+      "id": "exact-ripgrep-7",
+      "repo": "ripgrep",
+      "type": "log",
+      "query": "generic reader: searching via roll buffer strategy",
+      "goldFile": "crates/searcher/src/searcher/mod.rs",
+      "goldLines": [
+        762
+      ]
+    },
+    {
+      "id": "exact-ripgrep-8",
+      "repo": "ripgrep",
+      "type": "const",
+      "query": "--files-without-match can only be enabled",
+      "goldFile": "crates/core/flags/defs.rs",
+      "goldLines": [
+        2256
+      ]
+    },
+    {
+      "id": "exact-ripgrep-9",
+      "repo": "ripgrep",
+      "type": "config",
+      "query": "test.foo",
+      "goldFile": "crates/globset/src/glob.rs",
+      "goldLines": [
+        1475
+      ]
+    },
+    {
+      "id": "exact-ripgrep-10",
+      "repo": "ripgrep",
+      "type": "config",
+      "query": "no-block-buffered",
+      "goldFile": "crates/core/flags/defs.rs",
+      "goldLines": [
+        528,
+        569
+      ]
+    },
+    {
+      "id": "exact-r3-dgraph-1",
+      "repo": "r3-dgraph",
+      "type": "error",
+      "query": "cannot delete removed type after streaming snapshot",
+      "goldFile": "worker/snapshot.go",
+      "goldLines": [
+        168
+      ]
+    },
+    {
+      "id": "exact-r3-dgraph-2",
+      "repo": "r3-dgraph",
+      "type": "error",
+      "query": "Only one schema block allowed",
+      "goldFile": "dql/parser.go",
+      "goldLines": [
+        664
+      ]
+    },
+    {
+      "id": "exact-r3-dgraph-3",
+      "repo": "r3-dgraph",
+      "type": "error",
+      "query": "Wrong type encountered for func",
+      "goldFile": "query/aggregator.go",
+      "goldLines": [
+        331
+      ]
+    },
+    {
+      "id": "exact-r3-dgraph-4",
+      "repo": "r3-dgraph",
+      "type": "error",
+      "query": "failed to reduce incremental restore map",
+      "goldFile": "worker/online_restore.go",
+      "goldLines": [
+        366,
+        393
+      ]
+    },
+    {
+      "id": "exact-r3-dgraph-5",
+      "repo": "r3-dgraph",
+      "type": "log",
+      "query": "Error while opening output file:",
+      "goldFile": "dgraph/cmd/decrypt/decrypt.go",
+      "goldLines": [
+        77
+      ]
+    },
+    {
+      "id": "exact-r3-dgraph-6",
+      "repo": "r3-dgraph",
+      "type": "log",
+      "query": "Checking. low= . high= . mid=",
+      "goldFile": "dgraph/cmd/debug/run.go",
+      "goldLines": [
+        243
+      ]
+    },
+    {
+      "id": "exact-r3-dgraph-7",
+      "repo": "r3-dgraph",
+      "type": "log",
+      "query": "Opening stream for group from directory",
+      "goldFile": "dgraph/cmd/dgraphimport/import_client.go",
+      "goldLines": [
+        167
+      ]
+    },
+    {
+      "id": "exact-r3-dgraph-8",
+      "repo": "r3-dgraph",
+      "type": "const",
+      "query": "The TTL for the access JWT.",
+      "goldFile": "x/acl_enc_keys.go",
+      "goldLines": [
+        165
+      ]
+    },
+    {
+      "id": "exact-r3-dgraph-9",
+      "repo": "r3-dgraph",
+      "type": "config",
+      "query": "friends_count",
+      "goldFile": "graphql/e2e/custom_logic/cmd/main.go",
+      "goldLines": [
+        379
+      ]
+    },
+    {
+      "id": "exact-r3-dgraph-10",
+      "repo": "r3-dgraph",
+      "type": "config",
+      "query": "mutation_cost",
+      "goldFile": "edgraph/server.go",
+      "goldLines": [
+        679
+      ]
+    }
+  ]
+}
