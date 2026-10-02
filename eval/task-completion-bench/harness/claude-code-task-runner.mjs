@@ -583,9 +583,10 @@ export async function runClaudeCodeTask(task, {
   routingEnv.DISABLE_AUTOUPDATER = '1';
   // Claude effort levels. Anything else (the pilot's 'standard' default) sends no flag.
   const effort = provider === 'anthropic' && CLAUDE_EFFORTS.has(reasoning) ? reasoning : null;
-  // ss-* gutter form pinned per harness (core/search/gutter-form.js): claude-code → `N<TAB>`.
+  // ss-* gutter form pinned per harness (core/search/gutter-form.js): claude-code → none
+  // (was `N<TAB>` until 2026-10-02; SS_READ_GUTTER=tab reproduces that arm).
   // Pinned so the timed run never pays a process-tree walk; operator env (A/B arm) wins.
-  routingEnv.SS_READ_GUTTER = process.env.SS_READ_GUTTER ?? 'tab';
+  routingEnv.SS_READ_GUTTER = process.env.SS_READ_GUTTER ?? 'none';
   // Harness trim, SWEET ARM ONLY. Default (CC_HARNESS_TRIM unset) = the product (product +
   // read6fs, what `sweet-search init` installs); CC_HARNESS_TRIM=0 = stock, adding nothing to env
   // or argv. The trim removes harness text that contradicts the ss-* rules; native has no ss-*

@@ -8,7 +8,7 @@
  *   exact    → N<TAB>  a carried delimiter is rejected loudly, so the cheapest form
  *   tolerant → N:      a carried tab is absorbed and written; a colon cannot be indentation
  *   clipped  → none    tolerant AND output-clipped (codex): the gutter is pure cost
- * Measured: claude-code tab, opencode colon, codex none. Inferred from source:
+ * Measured: claude-code none (tab until 2026-10-02), opencode colon, codex none. Inferred from source:
  * cursor colon, pi tab, devin tab, grok-build arrow (its read tool's own prefix),
  * deepseek-harness colon (plugin-selected matcher). Unknown → colon.
  * These tests lock the mapping, the detection order (explicit env → measured
@@ -47,27 +47,33 @@ const table = (rows) => (pid) => rows[pid] || null;
 describe('harness → form mapping', () => {
   it('is exactly the decided table', () => {
     expect(HARNESS_DEFAULT_FORM).toEqual({
-      'claude-code': 'tab', opencode: 'colon', codex: 'none', cursor: 'colon',
+      'claude-code': 'none', opencode: 'colon', codex: 'none', cursor: 'colon',
       pi: 'tab', devin: 'tab', 'grok-build': 'arrow', 'deepseek-harness': 'colon',
     });
     expect(GUTTER_FORMS).toEqual({ tab: '\t', pipe: '| ', colon: ':', arrow: '→', none: '' });
   });
 
-  it('is derived from the matcher family, with only format-match overrides', () => {
+  it('is derived from the matcher family, with only format-match and measured overrides', () => {
     expect(MATCHER_FAMILY_FORM).toEqual({ exact: 'tab', tolerant: 'colon', clipped: 'none' });
     for (const [harness, profile] of Object.entries(HARNESS_PROFILE)) {
       expect(profile.family in MATCHER_FAMILY_FORM, `${harness} family`).toBe(true);
       const form = HARNESS_DEFAULT_FORM[harness];
       expect(form in GUTTER_FORMS, `${harness} form`).toBe(true);
       // Safety envelope per family: a tolerant matcher never gets tab (silent tab carry),
-      // a clipped harness never pays for a gutter, an exact matcher always keeps numbers.
+      // a clipped harness never pays for a gutter, an exact matcher keeps numbers unless a
+      // measurement chose none explicitly (claude-code; none carries no delimiter, so it is
+      // safe in every family).
       if (profile.family === 'tolerant') expect(form, harness).not.toBe('tab');
       if (profile.family === 'clipped') expect(form, harness).toBe('none');
-      if (profile.family === 'exact') expect(form, harness).not.toBe('none');
+      if (profile.family === 'exact' && profile.form !== 'none') expect(form, harness).not.toBe('none');
       if (!profile.form) expect(form, harness).toBe(MATCHER_FAMILY_FORM[profile.family]);
     }
-    // The one override: grok-build renders the prefix its own read tool prints.
+    // The two overrides: grok-build renders the prefix its own read tool prints;
+    // claude-code gets none by measurement (2026-08-28 study, 2026-10-02 smoke).
     expect(HARNESS_PROFILE['grok-build']).toEqual({ family: 'exact', form: 'arrow' });
+    expect(HARNESS_PROFILE['claude-code']).toEqual({ family: 'exact', form: 'none' });
+    expect(Object.entries(HARNESS_PROFILE).filter(([, p]) => p.form).map(([h]) => h).sort())
+      .toEqual(['claude-code', 'grok-build']);
   });
 
   it('assumes an unknown harness is tolerant, so the fallback is colon and never tab', () => {
@@ -80,8 +86,15 @@ describe('harness → form mapping', () => {
 // The three bench-measured harnesses are the optimised ones. Their form AND their
 // detection chain must stay byte-identical across every extension of the table.
 describe('the measured harnesses are locked', () => {
+  it('claude-code: exact family, no gutter (2026-10-02); SS_READ_GUTTER=tab still forces tab', () => {
+    expect(HARNESS_PROFILE['claude-code']).toEqual({ family: 'exact', form: 'none' });
+    const noWalk = () => { throw new Error('must not walk'); };
+    expect(resolveGutterForm({ CLAUDECODE: '1', SS_READ_GUTTER: 'tab' }, { ancestry: noWalk }))
+      .toEqual({ form: 'tab', delimiter: '\t', harness: null, source: 'env-override' });
+  });
+
   it('keep their forms', () => {
-    expect(HARNESS_DEFAULT_FORM['claude-code']).toBe('tab');
+    expect(HARNESS_DEFAULT_FORM['claude-code']).toBe('none');
     expect(HARNESS_DEFAULT_FORM.codex).toBe('none');
     expect(HARNESS_DEFAULT_FORM.opencode).toBe('colon');
   });
@@ -89,7 +102,7 @@ describe('the measured harnesses are locked', () => {
   it('resolve from their own markers before anything else, even with inferred markers present', () => {
     const leaked = { PI_CODING_AGENT: 'true', GROK_AGENT: '1', DSH_SHELL: '1' };
     const noWalk = () => { throw new Error('must not walk'); };
-    expect(resolveGutterForm({ ...leaked, CLAUDECODE: '1' }, { ancestry: noWalk })).toMatchObject({ form: 'tab', harness: 'claude-code', source: 'env-marker' });
+    expect(resolveGutterForm({ ...leaked, CLAUDECODE: '1' }, { ancestry: noWalk })).toMatchObject({ form: 'none', harness: 'claude-code', source: 'env-marker' });
     expect(resolveGutterForm({ ...leaked, CODEX_SANDBOX_NETWORK_DISABLED: '1' }, { ancestry: noWalk })).toMatchObject({ form: 'none', harness: 'codex', source: 'env-marker' });
     expect(resolveGutterForm({ ...leaked, OPENCODE: '1' }, { ancestry: noWalk })).toMatchObject({ form: 'colon', harness: 'opencode', source: 'env-marker' });
   });
@@ -98,7 +111,7 @@ describe('the measured harnesses are locked', () => {
     const leaked = { PI_CODING_AGENT: 'true', GROK_AGENT: '1', DSH_SESSION_ID: 's1' };
     expect(resolveGutterForm(leaked, { ancestry: () => 'codex' })).toMatchObject({ form: 'none', harness: 'codex', source: 'ancestry' });
     expect(resolveGutterForm(leaked, { ancestry: () => 'opencode' })).toMatchObject({ form: 'colon', harness: 'opencode', source: 'ancestry' });
-    expect(resolveGutterForm(leaked, { ancestry: () => 'claude-code' })).toMatchObject({ form: 'tab', harness: 'claude-code', source: 'ancestry' });
+    expect(resolveGutterForm(leaked, { ancestry: () => 'claude-code' })).toMatchObject({ form: 'none', harness: 'claude-code', source: 'ancestry' });
   });
 
   it('classify their binaries exactly as before', () => {
@@ -298,7 +311,7 @@ describe('resolveGutterForm (pure, injected env)', () => {
 
   it('env markers are consulted before the ancestry walk (free path first)', () => {
     const r = resolveGutterForm({ CLAUDECODE: '1' }, { ancestry: () => { throw new Error('must not walk'); } });
-    expect(r).toMatchObject({ form: 'tab', harness: 'claude-code', source: 'env-marker' });
+    expect(r).toMatchObject({ form: 'none', harness: 'claude-code', source: 'env-marker' });
   });
 
   it('falls back to ancestry, then to the inferred markers, then to colon', () => {
@@ -315,7 +328,7 @@ describe('resolveGutterForm (pure, injected env)', () => {
 
   it('SS_READ_GUTTER=auto means detect, not the fallback', () => {
     expect(resolveGutterForm({ SS_READ_GUTTER: 'auto' }, { ancestry: () => 'opencode' }).form).toBe('colon');
-    expect(resolveGutterForm({ SS_READ_GUTTER: 'auto' }, { ancestry: () => 'claude-code' }).form).toBe('tab');
+    expect(resolveGutterForm({ SS_READ_GUTTER: 'auto' }, { ancestry: () => 'claude-code' }).form).toBe('none');
   });
 
   it('maps every harness to its decided form', () => {
@@ -560,7 +573,7 @@ describe('deepseek-harness', () => {
   });
 
   it('a claude-code or codex sub-agent driven by dsh keeps its own form', () => {
-    expect(resolveGutterForm({ DSH_SHELL: '1', CLAUDECODE: '1' }, { ancestry: () => { throw new Error('must not walk'); } })).toMatchObject({ form: 'tab', harness: 'claude-code' });
+    expect(resolveGutterForm({ DSH_SHELL: '1', CLAUDECODE: '1' }, { ancestry: () => { throw new Error('must not walk'); } })).toMatchObject({ form: 'none', harness: 'claude-code' });
     expect(resolveGutterForm({ DSH_SHELL: '1' }, { ancestry: () => 'codex' })).toMatchObject({ form: 'none', harness: 'codex' });
     expect(resolveGutterForm({ DSH_SHELL: '1' }, { ancestry: () => null })).toMatchObject({ form: 'colon', harness: 'deepseek-harness', source: 'env-marker' });
   });
@@ -585,7 +598,7 @@ describe('gutter form inside the resident daemon (one decision per ss-* call)', 
     const r = await runInVirtualProcess({ env: { CLAUDECODE: '1' }, cwd: '/' }, async () => {
       process.stdout.write(`${resolveGutterForm().form} ${process.env.SS_READ_GUTTER}`);
     });
-    expect(r.stdout.toString()).toBe('tab tab');
+    expect(r.stdout.toString()).toBe('none none');
     expect(process.env.SS_READ_GUTTER).toBe(before);
   });
 });
