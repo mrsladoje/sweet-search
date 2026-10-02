@@ -815,7 +815,7 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 **🔢 Line numbers that fit the agent**
 
-- opencode and Cursor get `12:`; Claude Code and Codex get none. Each matches that agent's edit tool.
+- Claude Code gets `12<TAB>`, opencode and Cursor get `12:`, Codex gets none. Each matches that agent's edit tool.
 - Each format was benchmarked per agent to cut failed edits.
 
 </td><td width="50%" valign="top">
