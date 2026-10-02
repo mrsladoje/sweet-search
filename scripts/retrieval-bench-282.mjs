@@ -137,6 +137,10 @@ const RULES = fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/p7-
 // differed by −24.5% in cost (significant). Not wired for Claude Code (per-repo installed files).
 const ARMB_ENV = Object.fromEntries(String(flag('--armB-env', '')).split(',').map(x => x.trim()).filter(Boolean).map(x => [x.slice(0, x.indexOf('=')), x.slice(x.indexOf('=') + 1)]));
 const envOf = (arm) => (arm === 'sweetB' ? { ...process.env, ...ARMB_ENV } : process.env);
+// Claude Code reads every switch from process.env (installClaudeLeanHarness / writeClaudeRules write
+// per-repo files); an --armB-env overlay would never reach it and would mislabel rows and exposure.
+// Run the two Claude Code arms one after the other with their own env instead.
+if (CELL.harness === 'cc' && Object.keys(ARMB_ENV).length) { console.error('--armB-env is not wired for Claude Code: run the arms sequentially, each with its own env'); process.exit(2); }
 const prune3 = (arm) => envOf(arm).SS_VARIANT_PRUNE3 === '1';
 // SS_VARIANT_OC_CACHE_KEY (opencode; per arm like every SS_VARIANT_*): unset = opencode's own session-id
 // keys; `repo` = bench key (per-model promptCacheKey + scripts/opencode-cache-key-plugin.mjs); `product`

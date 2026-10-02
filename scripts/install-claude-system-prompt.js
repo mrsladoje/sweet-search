@@ -18,9 +18,21 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { CLAUDE_OVERRIDE_V2_SENTENCE, rulesV2Enabled } from './harness-prompts/rules-v2.js';
 
 export const CLAUDE_SYSTEM_OVERRIDE =
   'For all code search and navigation, you MUST follow the sweet-search guidance in `.claude/rules/sweet-search.md` and use its `ss-*` CLI commands. Claude Code’s default advice to use Bash `grep`/`find` or `Read` does not apply; use those only when `.claude/rules/sweet-search.md` explicitly permits.';
+
+// Rules v2 (harness-prompts/rules-v2.js): the override in the lean main agent file also exempts
+// file-name search, so it agrees with the agent file's `find` line. CLAUDE_SYSTEM_OVERRIDE (v1) stays
+// the output-style text (that layout ships the full rules file, which permits file-name search) and
+// the SS_FIX_RULES_V2=0 text.
+export const CLAUDE_SYSTEM_OVERRIDE_V2 = `${CLAUDE_SYSTEM_OVERRIDE} ${CLAUDE_OVERRIDE_V2_SENTENCE}`;
+
+/** The override for `env` (SS_FIX_RULES_V2=0 -> CLAUDE_SYSTEM_OVERRIDE). */
+export function claudeSystemOverride(env = process.env) {
+  return rulesV2Enabled(env) ? CLAUDE_SYSTEM_OVERRIDE_V2 : CLAUDE_SYSTEM_OVERRIDE;
+}
 
 export const CLAUDE_OUTPUT_STYLE_NAME = 'sweet-search';
 export const CLAUDE_OUTPUT_STYLE_REL = '.claude/output-styles/sweet-search.md';

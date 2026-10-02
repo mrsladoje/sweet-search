@@ -48,7 +48,7 @@ import {
 import { dirname, join } from 'node:path';
 import { applyEdits, modify, parse as parseJsonc, printParseErrorCode } from 'jsonc-parser';
 import {
-  OPENCODE_CACHE_KEY_PLUGIN_SOURCE, OPENCODE_TOOL_EDITS, OPENCODE_TRIM_PLUGIN_SOURCE, opencodePrompt,
+  OPENCODE_CACHE_KEY_PLUGIN_SOURCE, OPENCODE_TRIM_PLUGIN_SOURCE, opencodePrompt, opencodeToolEdits,
 } from './harness-prompts/index.js';
 
 export const OPENCODE_DIR_REL = '.opencode';
@@ -83,8 +83,8 @@ export function opencodeRulesFile(rules) {
 }
 
 /** The plugin entry this module adds to `plugin`. */
-export function opencodePluginEntry() {
-  return [OPENCODE_PLUGIN_SPEC, { edits: OPENCODE_TOOL_EDITS }];
+export function opencodePluginEntry(env = process.env) {
+  return [OPENCODE_PLUGIN_SPEC, { edits: opencodeToolEdits(env) }];
 }
 
 const pluginSpecOf = e => (Array.isArray(e) ? e[0] : e);
