@@ -49,6 +49,7 @@ import {
   resolveAgentSessionId,
   shownSpanTrailerEnabled,
 } from '../../../core/search/agent-span-ledger.js';
+import { formatAlsoLine, formatSpanSymbols } from '../../../core/search/semantic-also.js';
 import { sendAgentSpanOperation } from '../../../core/search/agent-span-client.js';
 import {
   GREP_COUNTS_THRESHOLD,
@@ -1415,9 +1416,13 @@ async function cmdSemantic(rawArgs) {
   process.stdout.write(`# ss-semantic ${r.file} | "${query}" | spans=${r.spans?.length ?? 0} | ~tokens=${r.approxTokensReturned}${r.fellBack ? ' [FALLBACK]' : ''}\n`);
   for (const span of r.spans || []) {
     const fence = r.language ? '```' + r.language : '```';
-    const sym = span.symbols?.length ? ` [${span.symbols.join(', ')}]` : '';
+    const sym = formatSpanSymbols(span);
     process.stdout.write(`### ${r.file}:${span.startLine}-${span.endLine}${sym}\n${fence}\n${gutter(span.text, span.startLine)}\n\`\`\`\n`);
   }
+  // The next-best ranked places the budget left out. Pointers only: they are not shown spans,
+  // so they stay out of the ledger above and out of the shown-full trailer below.
+  const alsoLine = formatAlsoLine(r.alsoCandidates);
+  if (alsoLine) process.stdout.write(`${alsoLine}\n`);
   const shownTrailer = SHOWN_SPAN_TRAILER ? renderShownFullTrailer(shownSpans) : '';
   if (shownTrailer) process.stdout.write(`${shownTrailer}\n`);
   process.exit(0);

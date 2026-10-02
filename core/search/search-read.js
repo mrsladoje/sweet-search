@@ -168,6 +168,11 @@ function _getGraphRepo(projectRoot) {
   return _graphRepos.get(dbPath) || null;
 }
 
+/** The project's code-graph repository (null when it cannot be opened); shared with read-semantic. */
+export function getGraphRepoForProject(projectRoot) {
+  return _getGraphRepo(projectRoot);
+}
+
 function _resolvePath(p, projectRoot) {
   if (!p) throw new Error('path is required');
   if (path.isAbsolute(p)) return p;
