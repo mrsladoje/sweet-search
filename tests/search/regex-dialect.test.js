@@ -72,6 +72,18 @@ describe('agent regex-dialect translation', () => {
     expect(detectBreDialectHint(String.raw`item\{many\}`)).toBeNull();
     expect(detectBreDialectHint(String.raw`(item)\1`)).toBeNull();
   });
+
+  it('an unpaired escaped paren is a literal paren, never a BRE group (no note, no retry)', () => {
+    // r3-grdb: `statementDidFail\(` is a correct Rust pattern; its zero hits were real.
+    expect(detectBreDialectHint(String.raw`statementDidFail\(`)).toBeNull();
+    expect(translateBreToRustRegex(String.raw`statementDidFail\(`)).toBeNull();
+    expect(detectBreDialectHint(String.raw`call\)`)).toBeNull();
+    expect(detectBreDialectHint(String.raw`a\(b\)\)`)).toBeNull();
+    // other operators still count; the unpaired paren stays escaped in the translation
+    expect(translateBreToRustRegex(String.raw`f\(x\|y`)).toEqual({ pattern: String.raw`f\(x|y`, operators: ['\\|'] });
+    // a paired group is still a BRE group
+    expect(translateBreToRustRegex(String.raw`a\(b\|c\)`)).toEqual({ pattern: 'a(b|c)', operators: ['\\(', '\\|', '\\)'] });
+  });
 });
 
 describe('agent regex-dialect retry orchestration', () => {

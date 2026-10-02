@@ -17,7 +17,7 @@ import path from 'node:path';
 import { PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { generateRegexMatches } from './search-pattern-planner.js';
 import { buildBareGrepResults, filterMatchesBySymbolType, resolveSearchSymbolFilter, mapMatchesToChunks, readFileRange } from './search-pattern-chunks.js';
-import { applyGrepFileDiversity, matchesGrepFileFilter } from './grep-output-shaping.js';
+import { applyGrepFileDiversity, grepFileFilterPredicate } from './grep-output-shaping.js';
 import { compilePathGlobs, filterMatchesByPathGlobs } from './grep-path-globs.js';
 import { isRipgrepAvailable, runRipgrepJson } from './search-pattern-ripgrep.js';
 import { ensureSparseGramIndex } from './search-pattern-prefilter.js';
@@ -157,7 +157,8 @@ function shapeBareGrepMatches(candidateResult, symbolType, searcher, fileFilter,
     // Use the same effective root as candidate generation/result construction.
     // Looking only at searcher.projectRoot loses options.projectRoot for direct
     // bareGrep callers and makes absolute-scope validation rootless.
-    matches = matches.filter(match => matchesGrepFileFilter(match.file, fileFilter, projectRoot));
+    const inScope = grepFileFilterPredicate(fileFilter, projectRoot);
+    matches = matches.filter(match => inScope(match.file));
   }
   if (pathGlobs) {
     // After --in (AND), before the sort, the per-file diversity and the k cap: an excluded
@@ -176,7 +177,8 @@ function shapeBareGrepMatches(candidateResult, symbolType, searcher, fileFilter,
  */
 function scopeCandidateResult(result, fileFilter, projectRoot, pathGlobs = null) {
   if ((!fileFilter && !pathGlobs) || !result) return result;
-  const inScope = match => !fileFilter || matchesGrepFileFilter(match.file, fileFilter, projectRoot);
+  const inFilter = fileFilter ? grepFileFilterPredicate(fileFilter, projectRoot) : null;
+  const inScope = match => !inFilter || inFilter(match.file);
   if (!pathGlobs) {
     return {
       ...result,

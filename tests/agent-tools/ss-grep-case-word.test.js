@@ -31,6 +31,7 @@ const FILES = {
   'docs/notes.js': ['// Express is used here.'],
   // U+212A KELVIN SIGN: `(?i)kind` matches it; the ASCII-folded gram index cannot see it.
   'lib/unit.js': ["const unit = 'Kind';"],
+  'lib/hooks.js': ['const [a, setA] = useState(0);', '// USESTATE(x) in a comment', 'useStateful(1);'],
 };
 
 let base;
@@ -92,6 +93,15 @@ const CASES = [
   [['route', '-i', '-w'], 1],
   [['Route', '-w'], 1],
   [['kind', '-i'], 1],
+  // \< \> and \b{start} / \b{end} are word assertions (Rust regex 1.10+), not the text "<", "{start}"
+  [['\\<express\\>', '-i'], 7],
+  [['\\<express\\>', '-i', '-g', 'lib/*.js'], 4],
+  [['\\<express\\>', '-i', '--in', 'lib'], 4],
+  [['\\b{start}express\\b{end}', '-i'], 7],
+  [['\\b{start}express\\b{end}', '-g', 'lib/*.js'], 3],
+  // an escaped `(` inside the literal
+  [['useState\\(', '-i'], 2],
+  [['useState\\(', '-g', 'lib/*.js'], 1],
 ];
 
 for (const pathName of ['gram', 'ripgrep']) {
