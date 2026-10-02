@@ -31,6 +31,47 @@ function findSessionFile(claudeHome, sessionId) {
   return file;
 }
 
+/** Metrics of the MAIN session transcript (transcriptMetricsFromFile), or null when absent. */
+export function mainTranscriptMetrics(claudeHome, sessionId) {
+  const file = findSessionFile(claudeHome, sessionId);
+  return file ? transcriptMetricsFromFile(file) : null;
+}
+
+/**
+ * A reasoning block whose text the transcript does not keep: `redacted_thinking`, or a
+ * `thinking` block that carries only a signature (Opus 5.5 via Claude Code writes
+ * `{type:'thinking', thinking:'', signature}`). Its tokens are billed as output but no
+ * visible character stands for them.
+ */
+export function isHiddenReasoningBlock(block) {
+  return block?.type === 'redacted_thinking' || (block?.type === 'thinking' && !block.thinking);
+}
+
+/**
+ * Hidden-reasoning totals for a whole rollout, for the accounting limb of degeneration.mjs.
+ * Main session: the request ids and their visible chars come from the stream (the same source
+ * as the main retainedOutputChars), their output tokens from the transcript's per-request usage
+ * (the stream's can be zeroed by a provider skin). Delegated contexts: both from their own
+ * transcript. `complete` is false when any hidden request has no output-token record: the limb
+ * must then abstain instead of guessing.
+ */
+export function hiddenReasoningForRollout({ streamHiddenIds = [], streamHiddenChars = 0, mainTranscript = null, sideSets = [] }) {
+  const byId = mainTranscript?.outputTokensById || {};
+  let requests = 0, outputTokens = 0, retainedChars = streamHiddenChars, complete = true;
+  for (const id of streamHiddenIds) {
+    requests++;
+    const out = byId[id];
+    if (Number.isFinite(out) && out > 0) outputTokens += out; else complete = false;
+  }
+  for (const set of sideSets) {
+    const h = set.hiddenReasoning;
+    if (!h) continue;
+    requests += h.requests; outputTokens += h.outputTokens; retainedChars += h.retainedChars;
+    if (h.unpricedRequests) complete = false;
+  }
+  return { requests, outputTokens, retainedChars, complete };
+}
+
 export function turnsFromTranscriptFile(file) {
   return transcriptMetricsFromFile(file).turns;
 }
@@ -67,9 +108,11 @@ export function transcriptMetricsFromFile(file) {
   const payloads = [];
   let retainedOutputChars = 0, billedOutputTokens = 0;
   let assistantMessages = 0, usageMessages = 0, repeatedToolUseBlocks = 0;
+  const outputTokensById = {};
+  const hiddenReasoning = { requests: 0, outputTokens: 0, retainedChars: 0, unpricedRequests: 0 };
   let text; try { text = readFileSync(file, 'utf8'); } catch {
     return { turns, payloads, retainedOutputChars, billedOutputTokens,
-      assistantMessages, usageMessages, repeatedToolUseBlocks,
+      assistantMessages, usageMessages, repeatedToolUseBlocks, outputTokensById, hiddenReasoning,
       instrumentationComplete: false };
   }
   // Pass 1 — group every record by message id, in first-seen order.
@@ -112,29 +155,37 @@ export function transcriptMetricsFromFile(file) {
   for (const id of order) {
     const group = byId.get(id);
     assistantMessages++;
+    let chars = 0;
     for (const block of group.blocks) {
       if (block.type === 'tool_use') {
         for (const value of Object.values(block.input || {})) {
           if (typeof value === 'string') {
             payloads.push(value);
-            retainedOutputChars += value.length;
+            chars += value.length;
           }
         }
         for (const edit of (block.input?.edits || [])) {
           for (const value of Object.values(edit || {})) {
             if (typeof value === 'string') {
               payloads.push(value);
-              retainedOutputChars += value.length;
+              chars += value.length;
             }
           }
         }
       } else if (block.type === 'text' && typeof block.text === 'string') {
-        retainedOutputChars += block.text.length;
+        chars += block.text.length;
       } else if (block.type === 'thinking' && typeof block.thinking === 'string') {
-        retainedOutputChars += block.thinking.length;
+        chars += block.thinking.length;
       }
     }
+    retainedOutputChars += chars;
     const usage = group.usage;
+    if (group.blocks.some(isHiddenReasoningBlock)) {
+      hiddenReasoning.requests++;
+      hiddenReasoning.retainedChars += chars;
+      if (usage?.out) hiddenReasoning.outputTokens += usage.out; else hiddenReasoning.unpricedRequests++;
+    }
+    if (usage) outputTokensById[id] = usage.out;
     if (!usage || (!usage.in && !usage.out)) continue;
     usageMessages++;
     billedOutputTokens += usage.out;
@@ -142,7 +193,7 @@ export function transcriptMetricsFromFile(file) {
   }
   return {
     turns, payloads, retainedOutputChars, billedOutputTokens,
-    assistantMessages, usageMessages, repeatedToolUseBlocks,
+    assistantMessages, usageMessages, repeatedToolUseBlocks, outputTokensById, hiddenReasoning,
     instrumentationComplete: assistantMessages > 0 && usageMessages === assistantMessages,
   };
 }
