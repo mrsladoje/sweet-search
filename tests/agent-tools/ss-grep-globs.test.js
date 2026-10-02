@@ -188,3 +188,19 @@ describe('ss-find -g', () => {
     expect(out).toContain('lib/src/Head.h');
   });
 });
+
+// Rules v2 (scripts/harness-prompts/rules-v2.js RULES_V2_GREP_FLAGS_LINE) tells the agent these
+// flags exist: every one of them must be accepted, together, in one call.
+describe('ss-grep: the flags the rules line lists', () => {
+  for (const ctx of [['-A', '1'], ['-B', '1'], ['-C', '1']]) {
+    it(`-i -w --in -g '<glob>' -g '!<glob>' ${ctx.join(' ')} in one call`, async () => {
+      const { code, out, err } = await ss('grep', ['head', '-i', '-w', '--in', 'lib', '-g', '*.h', '-g', '!lib/tests/**', ...ctx]);
+      expect(err).not.toMatch(/Usage:/);
+      expect(code).toBe(0);
+      expect(grepCalls[0].pathGlobs).toEqual(['*.h', '!lib/tests/**']);
+      expect(out).toContain('/(?i)\\b(?:head)\\b/');   // -i and -w reached the regex
+      expect(out).toContain('lib/src/Head.h:1');
+      expect(out).not.toContain('a_test.go');
+    });
+  }
+});

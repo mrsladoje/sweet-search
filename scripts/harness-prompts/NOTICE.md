@@ -27,9 +27,11 @@ benchmarked prompt and the shipped prompt are the same bytes.
 - **Source:** the unmodified gpt-family system prompt that opencode **1.18.4**
   (https://github.com/anomalyco/opencode) sends, from a $0 capture.
 - **License:** MIT (text below).
-- **Shipped form:** `index.js` (`opencodePrompt`) deletes the bullet "When searching for text or
-  files, prefer using Glob and Grep tools (they are powered by `rg`)" and the words " - especially
-  file reads", and adds our own lines after the parallel-calls bullet. `init --opencode` writes the
+- **Shipped form:** `index.js` (`opencodePrompt`) replaces the bullet "When searching for text or
+  files, prefer using Glob and Grep tools (they are powered by `rg`)" with its Glob half ("When
+  searching for files by name, prefer using the Glob tool (it is powered by `rg`)"; rules v2,
+  `rules-v2.js`), deletes the words " - especially file reads", and adds our own lines after the
+  parallel-calls bullet. `init --opencode` writes the
   result to `.opencode/sweet-search-prompt.txt`.
 
 ## Claude Code (`scripts/install-claude-lean-harness.js`)
@@ -37,7 +39,8 @@ benchmarked prompt and the shipped prompt are the same bytes.
 - **Source:** the system prompt of Claude Code (Anthropic PBC), extracted from the Claude Code
   binary and edited. The main-agent, general-purpose and Plan prompts that `init` writes to
   `.claude/agents/` follow the stock prompt section by section, without its search steer. Some
-  sentences are close to the stock wording.
+  sentences are close to the stock wording. Since rules v2 (`rules-v2.js`) the main agent carries
+  one line for the `find` half of the stock bypass-mode steer.
 - **License:** Claude Code is proprietary. It is **not** under Apache-2.0 or any open-source license.
 - **Mechanism:** documented Claude Code settings (`agent`, `permissions.deny`, output styles) and
   three undocumented environment switches (`CLAUDE_CODE_THRIFTY_SONIC`,

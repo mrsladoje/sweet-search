@@ -44,6 +44,7 @@ import {
 } from '../../scripts/install-claude-lean-harness.js';
 import { CLAUDE_SYSTEM_OVERRIDE } from '../../scripts/install-claude-system-prompt.js';
 import { getPolicyBody } from '../../scripts/inject-agent-instructions.js';
+import { CLAUDE_FIND_LINE } from '../../scripts/harness-prompts/rules-v2.js';
 
 let root;
 beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'sweet-search-lean-test-')); });
@@ -117,7 +118,9 @@ describe('installClaudeLeanHarness', () => {
     expect(main).toContain(`name: ${CLAUDE_LEAN_AGENT_NAME}`);
     // The shipped text = the v2.1 prompt with the read6fs edits (one edit is in the context section).
     const promptEdits = CLAUDE_LEAN_PROMPT_EDITS.filter(e => e !== CLAUDE_LEAN_EDIT_GIT);
-    expect(main).toContain(applyExactEdits(CLAUDE_LEAN_HARNESS_PROMPT_BATCH, promptEdits));
+    // Rules v2 (default): the stock `find` half goes in before the last line of the base prompt.
+    const pronouns = CLAUDE_LEAN_HARNESS_PROMPT.split('\n').at(-1);
+    expect(main).toContain(applyExactEdits(CLAUDE_LEAN_HARNESS_PROMPT_BATCH, [...promptEdits, [pronouns, `${CLAUDE_FIND_LINE}\n${pronouns}`]]));
     expect(main).toContain(CLAUDE_LEAN_EDIT_GIT[1]);
     for (const [from] of CLAUDE_LEAN_PROMPT_EDITS) expect(main).not.toContain(from);
     expect(main).toContain(CLAUDE_SYSTEM_OVERRIDE);
@@ -146,7 +149,9 @@ describe('installClaudeLeanHarness', () => {
   it('the benchmark form omits the override (the runner appends it itself)', () => {
     expect(claudeLeanAgentFile({ appendOverride: false })).not.toContain(CLAUDE_SYSTEM_OVERRIDE);
     // The runner's form: the v2.1 text, on which it applies its own CC_TRIM_BATCH variant.
-    expect(claudeLeanAgentFile({ appendOverride: false, promptEdits: false })).toContain(CLAUDE_LEAN_HARNESS_PROMPT_BATCH);
+    // (rulesV2: false = SS_FIX_RULES_V2=0; the default adds CLAUDE_FIND_LINE inside it.)
+    expect(claudeLeanAgentFile({ appendOverride: false, promptEdits: false, rulesV2: false })).toContain(CLAUDE_LEAN_HARNESS_PROMPT_BATCH);
+    expect(claudeLeanAgentFile({ appendOverride: false, promptEdits: false })).toContain(CLAUDE_FIND_LINE);
   });
 
   it('is idempotent', () => {

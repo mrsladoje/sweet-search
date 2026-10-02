@@ -15,10 +15,11 @@
  *     node eval/task-completion-bench/harness/run-pilot.mjs
  */
 import { execSync, execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, appendFileSync, readdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, appendFileSync, readdirSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runTask } from './api-task-runner.mjs';
+import { policyTextForEnv, rulesV2Enabled } from '../../../scripts/harness-prompts/rules-v2.js';
 import { runCodexTask } from './codex-task-runner.mjs';
 import { runClaudeCodeTask } from './claude-code-task-runner.mjs';
 import { runCursorTask } from './cursor-task-runner.mjs';
@@ -572,7 +573,18 @@ if (SR_MODE) {
 }
 // Strip the YAML frontmatter (run_id/score_*/vault_* metadata) before feeding
 // M++ to the agent — the eval scores must not leak into the system prompt.
-const mppText = readFileSync(MPP, 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '');
+// SS_FIX_RULES_V2=0 (rules v2 baseline, scripts/harness-prompts/rules-v2.js) turns the SHIPPED
+// rules file back into the pre-v2 text (also when MPP names the ship file explicitly). Any other
+// MPP=<file> is used as written, and is refused together with SS_FIX_RULES_V2=0: the harness
+// prompts would be pre-v2 while the rules are not, a mixed arm.
+const SHIP_MPP = path.join(ROOT, 'core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md');
+const mppIsShipFile = (() => { try { return realpathSync(MPP) === realpathSync(SHIP_MPP); } catch { return false; } })();
+if (!mppIsShipFile && !rulesV2Enabled(process.env)) {
+  console.error(`SS_FIX_RULES_V2=0 needs the shipped rules file; MPP=${MPP} is a custom rules text (mixed arm). Unset one of them.`);
+  process.exit(2);
+}
+const mppRaw = readFileSync(MPP, 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '');
+const mppText = mppIsShipFile ? policyTextForEnv(mppRaw, process.env) : mppRaw;
 const rows = [];
 const predsByArm = { native: [], sweet: [] };   // rep0 only — back-compat preds-*.jsonl
 const predsByRepArm = {};                        // { rep: { native:[], sweet:[] } } — grade EVERY rep for power
