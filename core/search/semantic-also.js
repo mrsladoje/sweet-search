@@ -13,7 +13,7 @@
  * pointers, NOT shown spans — callers must not record them in the span ledger.
  */
 
-export const ALSO_MAX = 3;
+export const ALSO_MAX = 5;
 export const HEADER_SYMBOL_CAP = 4;
 
 // Entity kinds worth naming. Fields, variables, consts and schema leaves are not places an
@@ -132,7 +132,8 @@ export function buildAlsoCandidates(pool, printedSpans, { file, graph = null, ma
       : { startLine: c.startLine, endLine: c.endLine, name: labelOrNull(c.symbol), kind: labelOrNull(c.type), score: c.score };
     // One entry per place: a chunk lying inside an entry already chosen is the same place
     // (two body chunks of one function, a signature-only chunk of it).
-    if (out.some(o => entry.startLine >= o.startLine && entry.endLine <= o.endLine)) continue;
+    // Without a graph the stored chunk name stands in for the entity: chunks of one function share it.
+    if (out.some(o => (entry.startLine >= o.startLine && entry.endLine <= o.endLine) || (!ent && entry.name && entry.name === o.name))) continue;
     out.push(entry);
   }
   return out;
