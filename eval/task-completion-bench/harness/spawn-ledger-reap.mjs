@@ -16,7 +16,7 @@
 // namespace (a jail's namespace-local pid means nothing out here; the jail's pid namespace
 // ends those processes itself).
 import { spawnSync } from 'node:child_process';
-import { readdirSync, rmSync } from 'node:fs';
+import { readdirSync, realpathSync, rmSync } from 'node:fs';
 import path from 'node:path';
 import {
   SPAWN_LEDGER_ENV, currentPidNamespace, readSpawnLedger, spawnLedgerFile,
@@ -94,4 +94,74 @@ export async function reapLedgerDir(dir, opts = {}) {
   const killed = await reapSpawnLedger(allLedgerFiles(dir), opts);
   try { rmSync(dir, { recursive: true, force: true }); } catch { /* */ }
   return killed;
+}
+
+// ─── second net: match by open files (macOS has no /proc/<pid>/environ) ────────────────────
+// A daemon or maintainer holds its project's .sweet-search/* files open, and its process title
+// hides the root. `lsof -Fn` prints one `n<path>` line per open file.
+
+/** Canonical form of a root (realpath when it exists), without a trailing separator. */
+function canonicalDir(d) {
+  const r = path.resolve(String(d));
+  try { return realpathSync(r); } catch { return r; }
+}
+
+/**
+ * The first root in `roots` that holds an open file named in `lsofFieldOutput` (`lsof -Fn`),
+ * or null. A path matches a root only at a path-component boundary, so `/x/r1` never owns
+ * `/x/r10/...`. Pure: no process is touched.
+ */
+export function rootOwningOpenFiles(lsofFieldOutput, roots) {
+  const canon = [].concat(roots).filter(Boolean).map(canonicalDir);
+  for (const line of String(lsofFieldOutput || '').split('\n')) {
+    if (!line.startsWith('n/')) continue;
+    const p = line.slice(1);
+    for (const r of canon) if (p === r || p.startsWith(`${r}${path.sep}`)) return r;
+  }
+  return null;
+}
+
+/**
+ * SIGKILL every sweet-search daemon/maintainer that holds an open file under one of `roots`.
+ * Processes of every other root are left alone. Returns [{pid, comm, root}] of what it killed.
+ */
+export function reapByOpenFiles(roots, { kill = process.kill.bind(process), list = listOurDaemons, openFiles = lsofOpenFiles } = {}) {
+  const killed = [];
+  for (const { pid, comm } of list()) {
+    const root = rootOwningOpenFiles(openFiles(pid), roots);
+    if (!root) continue;
+    try { kill(pid, 'SIGKILL'); killed.push({ pid, comm, root }); } catch { /* gone */ }
+  }
+  return killed;
+}
+
+/** Live sweet-search-daemon / sweet-search-maintainer processes as [{pid, comm}]. */
+export function listOurDaemons() {
+  const out = [];
+  for (const comm of ['sweet-search-daemon', 'sweet-search-maintainer']) {
+    const r = spawnSync('pgrep', ['-x', comm], { encoding: 'utf8' });
+    for (const p of (r.stdout || '').split(/\s+/)) if (/^\d+$/.test(p)) out.push({ pid: +p, comm });
+  }
+  return out;
+}
+
+function lsofOpenFiles(pid) {
+  return spawnSync('lsof', ['-p', String(pid), '-Fn'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).stdout || '';
+}
+
+/**
+ * Full teardown for a set of project roots: the spawn ledger first (catches a daemon that has
+ * not opened its index yet, and a process whose root dir is already deleted), then the
+ * open-file net (catches a process started without the ledger env). Returns everything killed.
+ */
+export async function reapRoots({ ledgerDir, roots }, opts = {}) {
+  const fromLedger = ledgerDir ? await reapSpawnLedger(allLedgerFiles(ledgerDir), opts) : [];
+  const fromFiles = reapByOpenFiles(roots, opts);
+  return [...fromLedger, ...fromFiles];
+}
+
+/** Synchronous variant of reapRoots for process-exit handlers. */
+export function reapRootsSync({ ledgerDir, roots }, opts = {}) {
+  const fromLedger = ledgerDir ? reapSpawnLedgerSync(allLedgerFiles(ledgerDir), opts) : [];
+  return [...fromLedger, ...reapByOpenFiles(roots, opts)];
 }

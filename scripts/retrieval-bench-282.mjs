@@ -72,6 +72,7 @@ const { writeClaudeRules, removeClaudeRules, resolveClaudeRulesLayout } = await 
 const { installClaudeLeanHarness, removeClaudeLeanHarness } = await imp('scripts/install-claude-lean-harness.js');
 const { WARMUP_ID, WARMUP_QUESTION, warmupEnabled, createWarmupGate, excludeWarmups, applyClaudeCacheTtl, firstRequestCacheFields, cacheFairness, cacheIsDeterministic, fairnessBanner } = await import(path.join(H, 'cache-warmup.mjs'));
 const { turnsFromRollout, LEDGER_BASIS } = await import(path.join(H, 'ideal-cost.mjs'));
+const { SPAWN_LEDGER_ENV, reapRoots, reapRootsSync } = await import(path.join(H, 'spawn-ledger-reap.mjs'));
 if (ISOLATION_ON) throw new Error('SS_ISOLATION must be 0 on the Mac');
 
 // ─── cells (agreed 2026-09-30) ─────────────────────────────────────────────────────────────────
@@ -239,6 +240,21 @@ function cloneDrift(dst) {
 // the per-repo part (cwd, memory path), so the first question in each repo stays cold on that part
 // in BOTH arms. For the Claude Code sweet arm the product files are installed here too (see main).
 const WARM_CWD = path.join(CLONE_ROOT, WARMUP_ID);
+// Teardown of this run's ss-* daemons and index maintainers (2026-10-03). They are spawned
+// detached (ppid 1), so they outlived every run: 59 were alive after 8 runs on 2026-10-02 and
+// kept the load average at 40-75. Two exact matchers, both limited to this run:
+//   - the spawn ledger: core records every daemon/maintainer pid started with
+//     SWEET_SEARCH_SPAWN_LEDGER_DIR in the env, which only this invocation's children carry;
+//   - open files: a process holding a file under CLONE_ROOT (this cell + tag only) — catches a
+//     daemon left by an earlier invocation of the same tag.
+// The owner's own daemons have neither the env var nor a file under CLONE_ROOT.
+const SPAWN_LEDGER_DIR = path.join(STATE, 'spawn-ledger', String(process.pid));
+process.env[SPAWN_LEDGER_ENV] = SPAWN_LEDGER_DIR;
+async function reapCloneDaemons(label) {
+  const killed = await reapRoots({ ledgerDir: SPAWN_LEDGER_DIR, roots: [CLONE_ROOT] });
+  if (killed.length) console.error(`  [reap] ${label}: stopped ${killed.length} ss-* process(es): ${killed.map(k => `${k.comm}(${k.pid})`).join(', ')}`);
+}
+process.on('exit', () => { try { reapRootsSync({ ledgerDir: SPAWN_LEDGER_DIR, roots: [CLONE_ROOT] }); fs.rmSync(SPAWN_LEDGER_DIR, { recursive: true, force: true }); } catch { /* */ } });
 function recreateWarmupClone(orig) {
   fs.rmSync(WARM_CWD, { recursive: true, force: true });
   fs.mkdirSync(CLONE_ROOT, { recursive: true });
@@ -748,6 +764,7 @@ for (const orig of new Set(PROBES.map(p => p._orig))) ensureClone(orig);
 if (WARMUP_ON && PROBES.length) recreateWarmupClone(PROBES[0]._orig);
 console.error(`cache warm-up: ${WARMUP_ON ? `ON, one unscored request per arm before its first scored rollout, from ${WARM_CWD}` : 'OFF (SS_CACHE_WARMUP=0)'} | claude cache TTL: ${CELL.harness === 'cc' ? '5m forced (FORCE_PROMPT_CACHING_5M=1)' : 'n/a'}`);
 const cleanup = [];
+// process.exit runs the 'exit' handler above, which stops this run's daemons and maintainers.
 const onSignal = () => { for (const f of cleanup.splice(0)) f(); process.exit(130); };
 process.on('SIGINT', onSignal); process.on('SIGTERM', onSignal);
 try {
@@ -784,11 +801,13 @@ try {
     };
     await Promise.all(Array.from({ length: Math.min(CONC, tasks.length) }, worker));
     if (installed.length) { uninstallClaudeProduct(installed); cleanup.pop(); }
+    await reapCloneDaemons(label);
     for (const c of cwds) { const d = cloneDrift(c); if (d.length) console.error(`  [DRIFT] ${path.basename(c)}: ${d.length} file(s) written after cloning: ${d.slice(0, 5).join(', ')}`); }
     if (fatal) throw fatal;
   }
 } finally {
   for (const f of cleanup.splice(0)) f();
+  await reapCloneDaemons('end of run');   // before the warm-up clone goes: its daemon holds files there
   fs.rmSync(WARM_CWD, { recursive: true, force: true });   // the warm-up clone is never a result
 }
 // Run summary + fairness assertion: did both arms' first scored requests see the same cache state?
