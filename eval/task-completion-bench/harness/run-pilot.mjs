@@ -42,7 +42,7 @@ import { materialiseDeps } from './dep-materialise.mjs';
 import { admissionReport, loadBlocklist, vacuityBlocklist } from './task-admission.mjs';
 import { degenerationVerdict } from './degeneration-policy.mjs';
 import { WARMUP_ID, WARMUP_QUESTION, warmupEnabled, createWarmupGate, excludeWarmups, cacheFairness, cacheIsDeterministic, fairnessBanner } from './cache-warmup.mjs';
-import { SPAWN_LEDGER_ENV, spawnLedgerFile, reapSpawnLedger, reapSpawnLedgerSync, reapLedgerDir, allLedgerFiles } from './spawn-ledger-reap.mjs';
+import { SPAWN_LEDGER_ENV, spawnLedgerFile, reapSpawnLedger, reapSpawnLedgerSync, reapLedgerDir, allLedgerFiles, reapByOpenFiles } from './spawn-ledger-reap.mjs';
 // HARNESS routes the agent loop through a REAL production coding agent (uncapped — runs
 // to completion) instead of the bare-API ReAct loop. All share grading/metrics + the
 // identical completion frame; native=vanilla agent, sweet=agent + M++ + ss-* on PATH.
@@ -385,12 +385,7 @@ function warmupRun(rundir) {
 // files open. Still exact per run dir, so concurrency-safe. Without this, every Mac
 // rollout leaked its ~3-4GB server + maintainer.
 function reapRunDirDarwin(rundir) {
-  const pids = sh('pgrep -x sweet-search-daemon; pgrep -x sweet-search-maintainer; true').split(/\s+/).filter(p => /^\d+$/.test(p));
-  for (const pid of pids) {
-    let open = '';
-    try { open = sh(`lsof -p ${pid} -Fn 2>/dev/null || true`); } catch { /* process gone */ }
-    if (open.split('\n').some(l => l.startsWith(`n${rundir}/`))) { try { process.kill(+pid, 'SIGKILL'); } catch { /* */ } }
-  }
+  reapByOpenFiles([rundir]);
 }
 
 // Primary teardown on every platform: SIGKILL what the spawn ledger lists for THIS rundir
