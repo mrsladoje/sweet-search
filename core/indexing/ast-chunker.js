@@ -25,6 +25,8 @@ const MAX_CHUNK_SIZE = 2000;
 const MIN_CONTENT_LENGTH = 30;
 const MAX_PEEK_LINES = 3;
 const DEFAULT_MAX_REGEX_LINE_LENGTH = 4000;
+// `key: |`, `key: >-`, `- run: |2` — the line opens a YAML block scalar.
+const YAML_BLOCK_SCALAR_RE = /:\s+[|>][-+1-9]*\s*(?:#.*)?$/;
 
 // =============================================================================
 // Embedding-text cap — RESEARCH / ABLATION INFRASTRUCTURE
@@ -488,10 +490,14 @@ export class ASTChunker {
   parseIndentBasedFile(filePath, content, language, patterns, multiLine) {
     const chunks = [];
     const lines = content.split('\n');
+    const isYaml = language === 'yaml';
 
     let currentChunk = null;
     let chunkStart = 0;
     let chunkIndent = 0;
+    // YAML: indent of the line that opened a `|` / `>` block scalar. Lines deeper than it are
+    // string content, never keys, so they are not boundaries.
+    let blockScalarIndent = -1;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
@@ -499,6 +505,12 @@ export class ASTChunker {
       if (!trimmed || trimmed.startsWith('#')) continue; // skip blank/comment lines
 
       const indent = line.length - trimmed.length;
+
+      if (blockScalarIndent >= 0) {
+        if (indent > blockScalarIndent) continue;
+        blockScalarIndent = -1;
+      }
+      const opensBlockScalar = isYaml && YAML_BLOCK_SCALAR_RE.test(trimmed);
 
       // If we're inside a chunk and hit a line at the same or lesser indent, close
       if (currentChunk && indent <= chunkIndent && i > chunkStart) {
@@ -510,14 +522,23 @@ export class ASTChunker {
         chunkStart = i;
       }
 
-      const { name: matched, type: matchType, joinedLines } = this._matchBoundary(line, patterns, language, lines, i, multiLine);
+      // A block-scalar key nested in the open chunk is a value of that chunk's key (the
+      // `description: >-` of an `inputs.<name>` entry), not a section of its own.
+      const nestedLeaf = opensBlockScalar && currentChunk && indent > chunkIndent;
+      const { name: matched, type: matchType, joinedLines } = nestedLeaf
+        ? { name: null, type: null, joinedLines: 0 }
+        : this._matchBoundary(line, patterns, language, lines, i, multiLine);
+      if (opensBlockScalar) blockScalarIndent = indent;
 
       if (matched) {
-        // Close prior chunk if any non-empty content
-        if (currentChunk && chunkStart < i) {
+        // Close the prior chunk. YAML also keeps the lines outside any chunk (top-level
+        // scalars such as `name:` / `description:`, lines after a dedent) as a chunk of their
+        // own; every other indent language still drops them.
+        if (chunkStart < i && (currentChunk || isYaml)) {
           const chunkContent = lines.slice(chunkStart, i).join('\n');
           if (chunkContent.trim().length > MIN_CONTENT_LENGTH) {
-            chunks.push(this.buildChunk(chunkContent, filePath, language, currentChunk.type, currentChunk.name, chunkStart, i - 1));
+            chunks.push(this.buildChunk(chunkContent, filePath, language,
+              currentChunk ? currentChunk.type : 'code', currentChunk ? currentChunk.name : 'unknown', chunkStart, i - 1));
           }
         }
         currentChunk = { type: matchType, name: matched };

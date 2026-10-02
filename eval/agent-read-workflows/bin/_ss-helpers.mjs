@@ -650,6 +650,7 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
         process.stdout.write(dropText ? `${r.file}:${r.line}${r.suffix}\n` : `${r.file}:${r.line}: ${r.text}${r.suffix}\n`);
       }
     }
+    let zeroExplained = false;
     if (result.results.length === 0) {
       // A scope that does not exist on disk is the loudest case (exitScopeNotFound).
       const missing = missingScopes(inPaths);
@@ -661,8 +662,11 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
       let note = null;
       if (!globNote) for (const p of inPaths) { note = await notIndexedNote(p); if (note) break; }
       process.stdout.write(`${globNote || (note ? note.text : (repaired ? REPAIRED_NO_MATCH : '(no matches)'))}\n`);
+      zeroExplained = !!(globNote || note);
     }
-    writeRegexDialectHintAfterRepair(result.stats, repaired);
+    // A zero the globs or the index explain is not a syntax problem; a dialect note would
+    // send the agent to rewrite a pattern that was fine.
+    if (!zeroExplained) writeRegexDialectHintAfterRepair(result.stats, repaired);
     process.exit(0);
   }
 

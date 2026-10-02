@@ -138,6 +138,23 @@ describe('ss-grep -g (native path, counts after the filter)', () => {
     expect(out).toContain("(no matches outside the globs: -g '!tests/' removed all 5 match(es) in 1 file(s);");
   });
 
+  it('a zero the globs explain carries no regex-dialect note (the escaped paren was fine)', async () => {
+    const { out } = await ss('grep', ['Head\\(', '--in', 'lib/tests', '--exclude-dir', 'tests']);
+    expect(out).toContain("(no matches outside the globs: -g '!tests/' removed all 5 match(es) in 1 file(s);");
+    expect(out).not.toContain('regex note');
+  });
+
+  it('an unexplained zero still carries the regex-dialect note', async () => {
+    searcher.sparseGramIndex.searchFull.mockImplementation(() => ({ matches: [], candidateFiles: 0, totalFiles: 4, scannedFiles: 0 }));
+    try {
+      const { out } = await ss('grep', ['Head\\(', '--in', 'lib/tests']);
+      expect(out).toMatch(/^\(no matches\)$/m);
+      expect(out).toContain('regex note');
+    } finally {
+      searcher.sparseGramIndex.searchFull.mockImplementation(() => ({ matches: MATCHES, candidateFiles: 4, totalFiles: 4, scannedFiles: 4 }));
+    }
+  });
+
   it('a zero with nothing excluded is still the plain answer', async () => {
     searcher.sparseGramIndex.searchFull.mockImplementationOnce(() => ({ matches: [], candidateFiles: 0, totalFiles: 4, scannedFiles: 0 }));
     searcher.sparseGramIndex.searchFull.mockImplementationOnce(() => ({ matches: [], candidateFiles: 0, totalFiles: 4, scannedFiles: 0 }));
