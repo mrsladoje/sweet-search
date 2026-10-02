@@ -193,6 +193,50 @@ describe('YAML chunker', () => {
     expect(chunks.length).toBe(1);
     expect(chunks[0].metadata.symbol).toBe('adequate');
   });
+
+  // configure-aws-credentials action.yml: an input whose description is a `>-` block lost its
+  // name line and its `required:` line, and the chunk was labelled `description`.
+  const ACTION_YML = [
+    "name: 'Configure AWS Credentials Action For GitHub Actions'",
+    "description: 'Configure AWS credential and region environment variables'",
+    'inputs:',
+    '  aws-access-key-id:',
+    "    description: 'AWS Access Key ID'",
+    '    required: true',
+    '  mask-aws-account-id:',
+    '    description: >-',
+    '      Whether to set the AWS account ID for these credentials as a secret value.',
+    '      Note:',
+    '      Defaults to true',
+    '    required: false',
+    '  role-to-assume:',
+    '    description: >-',
+    '      Use the provided credentials to assume a Role',
+    '    required: false',
+  ].join('\n');
+
+  it('keeps a nested block-scalar key inside the key that owns it', async () => {
+    const chunks = await chunker.parseFile('/test/action.yml', ACTION_YML);
+    const mask = chunks.find(c => c.metadata.symbol === 'mask-aws-account-id');
+    expect(mask.metadata.line_start).toBe(7);
+    expect(mask.metadata.line_end).toBe(12);
+    expect(mask.text).toContain('required: false');
+    const role = chunks.find(c => c.metadata.symbol === 'role-to-assume');
+    expect(role.text).toContain('required: false');
+    expect(chunks.some(c => c.metadata.symbol === 'description')).toBe(false);
+  });
+
+  it('does not split a block scalar at a key-like line inside it', async () => {
+    const chunks = await chunker.parseFile('/test/action.yml', ACTION_YML);
+    expect(chunks.some(c => c.metadata.symbol === 'Note')).toBe(false);
+  });
+
+  it('keeps top-level scalar keys before the first section', async () => {
+    const chunks = await chunker.parseFile('/test/action.yml', ACTION_YML);
+    expect(chunks[0].metadata.line_start).toBe(1);
+    expect(chunks[0].metadata.line_end).toBe(2);
+    expect(chunks[0].text).toContain('Configure AWS credential and region');
+  });
 });
 
 describe('YAML entity extraction', () => {
