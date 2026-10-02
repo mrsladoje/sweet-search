@@ -9,8 +9,10 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 
 const [reposDir, outPath] = process.argv.slice(2);
-const REPOS = ['fastify', 'flask', 'gin', 'ripgrep', 'r3-dgraph'];
-const PER_REPO = { error: 4, log: 3, const: 1, config: 2 };
+// REPOS=a,b and PER_REPO='{"error":8,...}' override the defaults (the fresh
+// bbolt set: REPOS=bbolt PER_REPO='{"error":8,"log":6,"const":2,"config":4}').
+const REPOS = process.env.REPOS ? process.env.REPOS.split(',') : ['fastify', 'flask', 'gin', 'ripgrep', 'r3-dgraph'];
+const PER_REPO = process.env.PER_REPO ? JSON.parse(process.env.PER_REPO) : { error: 4, log: 3, const: 1, config: 2 };
 const SEED = Number(process.env.SEED || 42);
 // EXCLUDE=<set.json>: skip literals already used by another set (fresh validation set).
 const EXCLUDED = new Set(process.env.EXCLUDE
