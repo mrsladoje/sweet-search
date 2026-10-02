@@ -1,8 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
+import http from 'node:http';
+import { buildAgentToolDaemonResponse } from '../../core/agent-tools/daemon-route.js';
 
 const mockState = vi.hoisted(() => ({ rows: [] }));
 
@@ -32,7 +34,7 @@ const {
   spanEntityNames,
 } = await import('../../core/search/semantic-also.js');
 const { readSemantic, __resetReadSemanticCachesForTests } = await import('../../core/search/search-read-semantic.js');
-const { __resetReadCachesForTests } = await import('../../core/search/search-read.js');
+const { getGraphRepoForProject, __resetReadCachesForTests } = await import('../../core/search/search-read.js');
 const { buildReadSemanticDaemonResponse } = await import('../../core/search/search-server.js');
 const { collectSemanticShownSpans } = await import('../../core/search/agent-span-ledger.js');
 
@@ -250,6 +252,32 @@ afterEach(() => {
 });
 
 describe('readSemantic alsoCandidates', () => {
+  it('reads graph entities once for both printed names and alternative candidates', async () => {
+    setupFile();
+    writeGraph([
+      ent('fa', 'function', 1, 5),
+      ent('fb', 'function', 7, 11),
+      ent('fc', 'function', 13, 16),
+      ent('fd', 'function', 18, 20),
+    ]);
+    const graph = getGraphRepoForProject(TMP);
+    const open = vi.spyOn(graph, '_open');
+    const enclosing = vi.spyOn(graph, 'findEnclosingEntity');
+    const inRange = vi.spyOn(graph, 'findEntitiesInRange');
+    try {
+      const r = await readSemantic(REQ());
+      expect(r.spans[0].entityNames).toEqual(['fa']);
+      expect(r.alsoCandidates.map(c => c.name)).toEqual(['fb', 'fc', 'fd']);
+      expect(open).toHaveBeenCalledTimes(1);
+      expect(enclosing).not.toHaveBeenCalled();
+      expect(inRange).not.toHaveBeenCalled();
+    } finally {
+      open.mockRestore();
+      enclosing.mockRestore();
+      inRange.mockRestore();
+    }
+  });
+
   it('prints the best span and names the next-best entities, one per function, in score order', async () => {
     setupFile();
     writeGraph([
@@ -321,6 +349,85 @@ describe('readSemantic alsoCandidates', () => {
 });
 
 describe('warm-server path and in-process path agree', () => {
+  it('uses one graph lookup through the real agent-tool handler and its socket and fallback paths', async () => {
+    TMP = realpathSync(TMP);
+    mkdirSync(path.join(TMP, 'src'), { recursive: true });
+    const lines = [];
+    const entities = ['alpha', 'beta', 'gamma', 'delta'].map((name, i) => {
+      const start = i * 40 + 1;
+      lines.push(`function f${i}() {`, '  token token token', '  return 1;', '}', ...Array(36).fill(''));
+      addChunk(`f${i}`, start, start + 3, `f${i}`, 'function');
+      return ent(name, 'function', start, start + 3);
+    });
+    writeFileSync(path.join(TMP, 'src/a.js'), lines.join('\n'));
+    writeGraph(entities);
+    const db = new Database(path.join(TMP, '.sweet-search/codebase.db'));
+    db.exec("CREATE TABLE vectors (file_path TEXT, epoch_retired INTEGER); INSERT INTO vectors VALUES ('src/a.js', NULL)");
+    db.close();
+    const graph = getGraphRepoForProject(TMP);
+    const open = vi.spyOn(graph, '_open');
+    const enclosing = vi.spyOn(graph, 'findEnclosingEntity');
+    const inRange = vi.spyOn(graph, 'findEntitiesInRange');
+    const requests = [];
+    const responses = [];
+    const socketPath = path.join(TMP, 'tool.sock');
+    const searcher = { projectRoot: TMP };
+    const server = http.createServer(async (req, res) => {
+      requests.push(req.url);
+      try {
+        const response = await buildReadSemanticDaemonResponse(req.url, {
+          isUnixSocket: true, serverReady: true, searcher,
+        });
+        responses.push(response);
+        res.writeHead(response.status, { 'Content-Type': response.contentType });
+        res.end(response.body);
+      } catch (err) {
+        res.writeHead(500);
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
+    try {
+      await new Promise((resolve, reject) => {
+        server.once('error', reject);
+        server.listen(socketPath, resolve);
+      });
+      const call = () => buildAgentToolDaemonResponse({
+        v: 1, tool: 'semantic', args: ['src/a.js', 'token', '--max-tokens', '20'],
+        cwd: TMP, pid: process.pid,
+        env: {
+          SWEET_SEARCH_PROJECT_ROOT: TMP, SWEET_SEARCH_SOCKET_PATH: socketPath,
+          SWEET_SEARCH_EXACT_REREAD_OMISSION: '0', SWEET_SEARCH_SHOWN_SPAN_TRAILER: '0',
+        },
+      }, { isUnixSocket: true, isReady: () => true, searcher });
+      const warmResponse = await call();
+      expect(warmResponse.status).toBe(200);
+      const warm = JSON.parse(warmResponse.body);
+      expect(warm.code).toBe(0);
+      expect(warm.stderr).toBe('');
+      expect(warm.stdout).toContain('[alpha, f0]');
+      expect(warm.stdout).toContain('# also: 41-44 beta · 81-84 gamma · 121-124 delta');
+      expect(requests).toHaveLength(1);
+      expect(requests[0]).toMatch(/^\/read-semantic\?/);
+      expect(responses[0].status).toBe(200);
+      expect(JSON.parse(responses[0].body).ok).toBe(true);
+      expect(open).toHaveBeenCalledTimes(1);
+      expect(enclosing).not.toHaveBeenCalled();
+      expect(inRange).not.toHaveBeenCalled();
+      await new Promise(resolve => server.close(resolve));
+      open.mockClear();
+      const fallback = JSON.parse((await call()).body);
+      expect(fallback).toEqual(warm);
+      expect(open).toHaveBeenCalledTimes(1);
+      expect(enclosing).not.toHaveBeenCalled();
+      expect(inRange).not.toHaveBeenCalled();
+    } finally {
+      if (server.listening) await new Promise(resolve => server.close(resolve));
+      open.mockRestore();
+      enclosing.mockRestore();
+      inRange.mockRestore();
+    }
+  });
+
   it('serves the same structured fields as readSemantic and renders identical text', async () => {
     setupFile();
     writeGraph([
