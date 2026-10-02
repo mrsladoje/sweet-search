@@ -19,6 +19,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, appendFileS
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { runTask } from './api-task-runner.mjs';
+import { policyTextForEnv } from '../../../scripts/harness-prompts/rules-v2.js';
 import { runCodexTask } from './codex-task-runner.mjs';
 import { runClaudeCodeTask } from './claude-code-task-runner.mjs';
 import { runCursorTask } from './cursor-task-runner.mjs';
@@ -572,7 +573,11 @@ if (SR_MODE) {
 }
 // Strip the YAML frontmatter (run_id/score_*/vault_* metadata) before feeding
 // M++ to the agent — the eval scores must not leak into the system prompt.
-const mppText = readFileSync(MPP, 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '');
+// SS_FIX_RULES_V2=0 (rules v2 baseline, scripts/harness-prompts/rules-v2.js) turns the SHIPPED
+// rules file back into the pre-v2 text; an explicit MPP=<file> is used as written.
+const mppText = process.env.MPP
+  ? readFileSync(MPP, 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '')
+  : policyTextForEnv(readFileSync(MPP, 'utf8').replace(/^---\n[\s\S]*?\n---\n/, ''), process.env);
 const rows = [];
 const predsByArm = { native: [], sweet: [] };   // rep0 only — back-compat preds-*.jsonl
 const predsByRepArm = {};                        // { rep: { native:[], sweet:[] } } — grade EVERY rep for power

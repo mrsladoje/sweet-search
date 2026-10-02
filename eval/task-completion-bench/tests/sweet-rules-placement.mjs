@@ -15,6 +15,7 @@
 import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { codexFileNameEdit } from '../../../scripts/harness-prompts/index.js';
 import { execFileSync } from 'node:child_process';
 import {
   resolveSweetRulesPlacement, sweetRulesRowFields, appendSweetRules, tomlBasicString, SWEET_RULES_PLACEMENT_DEFAULTS,
@@ -116,7 +117,7 @@ console.log('codex:');
   const argsOn = codexHarnessTrimArgs(conflict, state, { rules: mppText, model: 'openai/gpt-5.6-luna' });
   const trimTextOn = readFileSync(file, 'utf8');
   assert(JSON.stringify(argsOff) === JSON.stringify(argsOn), 'on + trim conflict: argv unchanged (same file path, same keys)');
-  assert(trimText === readFileSync(CODEX_HARNESS_TRIM_CONFLICT_SOURCES['gpt-5.6-luna'], 'utf8').replace(/^<!--[\s\S]*?-->\n/, ''),
+  assert(trimText === codexFileNameEdit(readFileSync(CODEX_HARNESS_TRIM_CONFLICT_SOURCES['gpt-5.6-luna'], 'utf8').replace(/^<!--[\s\S]*?-->\n/, ''), {}),
     'off + trim conflict: the instructions file is the trim text alone');
   assert(trimTextOn.startsWith(trimText) && trimTextOn.slice(trimText.length).trim() === RULES,
     'on + trim conflict: the file = the trim text + the rules');
@@ -329,7 +330,7 @@ for (const [file, needles] of Object.entries({
     // V1b default: rules in the lean main agent only with the lean harness + the file placement.
     "resolveClaudeRulesLayout(process.env, { strict: true })",
     "Boolean(sweet && ccRulesLayout !== 'file' && harnessTrim.installLean && rulesPlacement === 'file')",
-    'rules: rulesInPrompt ? mppText : false', "rulesInPrompt ? CLAUDE_RULES_POINTER : mppText.trimEnd()"],
+    'rules: rulesInPrompt ? mppText : false', "rulesInPrompt ? claudeRulesPointer(process.env) : mppText.trimEnd()"],
 })) {
   const src = readFileSync(new URL(`../harness/${file}`, import.meta.url), 'utf8');
   for (const n of needles) assert(src.includes(n), `${file}: ${n}`);

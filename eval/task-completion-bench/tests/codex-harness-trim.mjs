@@ -20,6 +20,7 @@ import { buildInstructions, headerFor, sourceFor } from '../harness/trim/build-c
 import { mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { codexFileNameEdit } from '../../../scripts/harness-prompts/index.js';
 
 let ok = true;
 const assert = (c, name, extra = '') => { console.log((c ? '  ✓ ' : '  ✗ ') + name + (c ? '' : '  ' + extra)); if (!c) ok = false; };
@@ -154,7 +155,8 @@ console.log('\nmode conflict (original luna prompt minus the category-A line and
   const body = text.slice(header.length);
   assert(text.startsWith(header) && header.includes('Apache-2.0') && body === buildInstructions('gpt-5.6-luna-conflict', sourceFor('gpt-5.6-luna-conflict')),
     'conflict: the committed file equals the reviewed deletion build of the 0.146.1 capture (licence header kept)');
-  assert(readFileSync(join(SC, CODEX_HARNESS_TRIM_STATE_FILE), 'utf8') === body, 'conflict: the model gets the edit with the header stripped');
+  // Rules v2 (default): the shipped `rg --files` line (codexFileNameEdit) goes on top of the deletion build.
+  assert(readFileSync(join(SC, CODEX_HARNESS_TRIM_STATE_FILE), 'utf8') === codexFileNameEdit(body, {}), 'conflict: the model gets the edit with the header stripped');
   // Exactly two whole lines removed from the capture, nothing else changed: the body is the
   // original with those lines dropped, in order.
   const orig = sourceFor('gpt-5.6-luna-conflict').replace(/\n+$/, '').split('\n');   // the build normalises the final line break
@@ -179,7 +181,7 @@ console.log('\nmode conflict (original luna prompt minus the category-A line and
   const SB = mkdtempSync(join(tmpdir(), 'codex-trim-conflict-batch-test-'));
   const ab = codexHarnessTrimArgs(cb, SB);
   const sentB = readFileSync(join(SB, CODEX_HARNESS_TRIM_STATE_FILE), 'utf8');
-  assert(cb.mode === 'instructions-conflict+batch-yt2' && ab.length === 2 && sentB === applyCodexBatch(body, 'yt2'),
+  assert(cb.mode === 'instructions-conflict+batch-yt2' && ab.length === 2 && sentB === codexFileNameEdit(applyCodexBatch(body, 'yt2'), {}),
     'conflict + CODEX_TRIM_BATCH=yt2: the batch line swap is applied to the conflict text, still no -c keys');
   assert(codexHarnessTrim({ sweet: false, mode: 'conflict', model: 'openai/gpt-5.6-luna' }).mode === null
       && codexHarnessTrim({ sweet: true, mode: '0', model: 'openai/gpt-5.6-luna' }).mode === null,
