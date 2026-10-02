@@ -239,6 +239,52 @@ export class CodebaseRepository {
   }
 
   /**
+   * BM25 over chunk text (`chunk_text_fts`, core/indexing/chunk-text-fts.js).
+   * Returns visible, non-alias chunks best first: `score` is -bm25 (higher is
+   * better). Returns [] when the table is absent (an index built before it,
+   * or with the index turned off) or the expression does not parse.
+   *
+   * @param {string} matchExpr FTS5 MATCH expression
+   * @param {number} limit
+   * @param {{ weights?: number[], withText?: boolean }} [options] bm25 column
+   *   weights (body, subtokens); withText adds the stored chunk text
+   * @returns {Array<{ id: string, file_path: string, metadata: string, score: number, text?: string }>}
+   */
+  searchChunkText(matchExpr, limit, options = {}) {
+    if (!matchExpr) return [];
+    try {
+      const db = this._open();
+      if (this._hasChunkTextFts === undefined) {
+        this._hasChunkTextFts = !!db.prepare(
+          "SELECT 1 FROM sqlite_master WHERE type='table' AND name='chunk_text_fts'",
+        ).get();
+      }
+      if (!this._hasChunkTextFts) return [];
+      const [wBody, wSub] = options.weights || [1.0, 0.5];
+      const visibility = this._visibility(db);
+      const visibilityClause = visibility.sql
+        ? ` AND ${visibility.sql.replace(/epoch_(written|retired)/g, 'v.epoch_$1')}`
+        : '';
+      // Dedup aliases are not in the HNSW either; they come back through
+      // expandAliases next to their exemplar.
+      const rows = db.prepare(`
+        SELECT v.id AS id, v.file_path AS file_path, v.metadata AS metadata,
+               ${options.withText ? 'v.text AS text,' : ''}
+               -bm25(chunk_text_fts, ?, ?) AS score
+          FROM chunk_text_fts
+          JOIN vectors v ON v.rowid = chunk_text_fts.rowid
+         WHERE chunk_text_fts MATCH ?${visibilityClause}
+           AND coalesce(json_extract(v.metadata, '$.isExemplar'), 1) != 0
+         ORDER BY bm25(chunk_text_fts, ?, ?)
+         LIMIT ?
+      `).all(wBody, wSub, matchExpr, ...visibility.params, wBody, wSub, limit);
+      return rows;
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * Find alias sibling rows for a set of cluster IDs (dedup re-expansion).
    * Given the set of exemplar clusterIds present in ranked results, returns
    * every row in those clusters EXCEPT the provided excludeIds (typically the
@@ -277,5 +323,6 @@ export class CodebaseRepository {
       this._db = null;
     }
     this._hasEpochVisibility = null;
+    this._hasChunkTextFts = undefined;
   }
 }

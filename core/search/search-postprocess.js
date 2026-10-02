@@ -21,6 +21,7 @@ import { expandAliases } from './dedup/sibling-expander.js';
 import { capToFinalK } from './final-k.js';
 import { dedupeIdenticalSpans } from './span-dedupe.js';
 import { applyFinalListMMR, SPAN_MMR_WEIGHTS, CONTENT_MMR_WEIGHTS } from '../ranking/mmr.js';
+import { refrontPins } from './body-lexical.js';
 
 /**
  * Min-max normalize an array of scores to [0, 1].
@@ -768,6 +769,10 @@ export async function applyPostRetrieval(results, query, options, searchContext)
       this.log('LateInteraction: Skipped (model mismatch — re-index to fix)');
     }
   }
+
+  // Body-text exact-phrase pins (agent formats; core/search/body-lexical.js)
+  // keep their slot through the rerank. Demotions below still apply.
+  results = refrontPins(results);
 
   // =========================================================================
   // Quality-Aware Chunk Weighting (opt-in)
