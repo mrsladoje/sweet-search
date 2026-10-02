@@ -14,6 +14,7 @@ import { takeDistinctSpans } from './span-dedupe.js';
 import { applyFileKindRanking, applyResultDemotions, classifyFileKindIntent, detectFileKind } from '../ranking/file-kind-ranking.js';
 import { injectAnchorCandidates } from './search-anchor.js';
 import { runRRFFallback } from './search-rrf.js';
+import { bodyLexicalSettings, composeSeeds, fuseBodyRRF, retrieveBodyLexical } from './body-lexical.js';
 
 const AGENT_FORMATS_FOR_SEED = new Set(['agent', 'agent_preview', 'agent_full', 'agent_full_xl']);
 
@@ -124,6 +125,14 @@ export async function hybridSearchV2(query, options = {}) {
     }),
   ]);
 
+  // Body-text lexical channel (agent formats only; core/search/body-lexical.js).
+  const bodySettings = bodyLexicalSettings(options);
+  const __t_body = __ptStart();
+  const body = bodySettings
+    ? retrieveBodyLexical(this.codebaseRepo, query, bodySettings)
+    : { pins: [], hits: [], stats: null };
+  __ptEnd('hybrid:bodyLexical', __t_body);
+
   const lexicalResults = lexicalSearchResult.results.map(r => ({
     ...r,
     searchPath: 'lexical',
@@ -139,12 +148,15 @@ export async function hybridSearchV2(query, options = {}) {
       ? envFloat('SWEET_SEARCH_COLLAPSED_SEMANTIC_ALPHA', undefined)
       : undefined
   );
-  const { results: fused, method, fallbackReason } = this.robustCCFusion(
+  const { results: ccFused, method, fallbackReason } = this.robustCCFusion(
     lexicalResults,
     semanticResults,
     routeType,
     fusionAlpha == null ? undefined : { alpha: fusionAlpha }
   );
+  const fused = bodySettings?.rrf
+    ? fuseBodyRRF(ccFused, body.hits, bodySettings.rrfWeight)
+    : ccFused;
 
   // Step 2.5: Identifier-Anchored Retrieval (IAR).
   // Couples dense fusion with an exact-name symbol lookup so abstract
@@ -250,9 +262,21 @@ export async function hybridSearchV2(query, options = {}) {
   // dedupe alone already removes every duplicate slot at k=5.
   const seedCollapse = process.env.SWEET_SEARCH_SEED_SPAN_COLLAPSE === '1'
     && AGENT_FORMATS_FOR_SEED.has(options.format);
-  const seeds = seedCollapse && !hasAblation(options.ablations, 'no-span-dedupe')
+  const bodyPins = body.pins;
+  const bodyPool = bodySettings?.pool ? body.hits.slice(0, bodySettings.poolN) : [];
+  const withBody = (list) => (bodyPins.length > 0 || bodyPool.length > 0
+    ? composeSeeds(list, k, bodyPins, bodyPool)
+    : list.slice(0, k));
+  // Pins apply on the span-collapse arm too: an A/B with collapse on must not
+  // silently drop them.
+  const collapsed = seedCollapse && !hasAblation(options.ablations, 'no-span-dedupe')
     ? takeDistinctSpans(diversified, k)
-    : diversified.slice(0, k);
+    : null;
+  const seeds = collapsed
+    ? (bodyPins.length > 0 || bodyPool.length > 0
+      ? composeSeeds(collapsed, collapsed.length, bodyPins, bodyPool)
+      : collapsed)
+    : withBody(diversified);
 
   const results = seeds.map(r => ({
     ...r,
@@ -333,7 +357,7 @@ export async function hybridSearchV2(query, options = {}) {
         _isTestChunkCache: options._isTestChunkCache,
         _fileKindCache: options._fileKindCache,
       });
-      finalResults = remerged.slice(0, k).map(r => ({
+      finalResults = withBody(remerged).map(r => ({
         ...r,
         searchPath: r.searchPath || 'hybrid',
         hybridScore: r.score,
@@ -360,6 +384,7 @@ export async function hybridSearchV2(query, options = {}) {
       resultDemotionsApplied: demoted !== rankedByFileKind,
       anchorInjection: anchorStats,
       keywordFallback: fallbackStats,
+      bodyLexical: body.stats,
     },
   };
 }
