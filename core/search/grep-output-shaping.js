@@ -23,7 +23,8 @@
  *     than k; ~100% either way when every file fits.
  */
 
-import { realpathSync } from 'node:fs';
+import { existsSync, realpathSync } from 'node:fs';
+import path from 'node:path';
 import { grepHitText, isTestLikePath } from './agent-output-fixes.js';
 
 /** Split a path into whole segments, dropping "" and "." (so "./a//b" → [a,b]). */
@@ -66,6 +67,14 @@ function isAbsolutePath(value) {
  * … --in tests/testthat` printed "(no matches)" — indistinguishable from a
  * regex that genuinely misses — instead of scoping to the directory.
  *
+ * ROOT-ANCHORED FIRST. A relative scope that exists at the repository root
+ * (`GRDB/Core/TransactionObserver.swift`, `src`) means that path, as `grep -r … <path>`
+ * does: it matches the path itself and what lies under it, never a nested copy of
+ * the same segments (r3-grdb: `Tests/CustomSQLite/GRDB -> ../..` made 33 copies of
+ * that file match, 1,716 hits for a one-file drill-in). Only a scope that does not
+ * exist at the root falls back to the segment-run match above. Without a projectRoot
+ * the segment-run match is the only rule.
+ *
  * SAFETY: this is a pure post-filter over repo-relative paths the engine has
  * already produced. It can only ever REMOVE results, never widen a read, so no
  * scope can reach outside the repository root. A scope carrying a `..` segment
@@ -77,19 +86,29 @@ function isAbsolutePath(value) {
  * @returns {boolean}
  */
 export function matchesGrepFileFilter(file, filter, projectRoot = null) {
-  if (!file || !filter) return false;
-  const target = pathSegments(file);
-  if (target.length === 0) return false;
+  return grepFileFilterPredicate(filter, projectRoot)(file);
+}
+
+/**
+ * matchesGrepFileFilter as a predicate over many files: each scope is resolved once (the
+ * root-existence check of a relative scope is one stat per scope, not one per match).
+ *
+ * @param {string|string[]} filter - user-supplied --in value(s); any one matching wins
+ * @param {string|null} projectRoot - absolute repository root
+ * @returns {(file: string) => boolean}
+ */
+export function grepFileFilterPredicate(filter, projectRoot = null) {
+  if (!filter) return () => false;
   const root = projectRoot ? pathSegments(projectRoot) : null;
   const scopes = Array.isArray(filter) ? filter : [filter];
   const runAt = (hay, needle, start) => {
     for (let i = 0; i < needle.length; i++) if (hay[start + i] !== needle[i]) return false;
     return true;
   };
-  return scopes.some((raw) => {
-    if (!raw) return false;
+  const tests = scopes.map((raw) => {
+    if (!raw) return null;
     let scope = pathSegments(raw);
-    if (scope.includes('..')) return false;
+    if (scope.includes('..')) return null;
     // WHOLE-REPO scope. `.` and `./` carry no segments, and the old rule rejected an empty
     // segment list outright — so `--in .` matched NOTHING and printed "(no matches)", the
     // one answer that reads as "your pattern is absent". It fired on 5 calls in the fresh
@@ -97,7 +116,7 @@ export function matchesGrepFileFilter(file, filter, projectRoot = null) {
     // accept every repo-relative path — exactly what an unscoped grep already does. An
     // ABSOLUTE scope with no segments is "/", the filesystem root, which is a different
     // claim; it falls through to the absolute branch below and is rejected there.
-    if (scope.length === 0 && !isAbsolutePath(raw)) return true;
+    if (scope.length === 0 && !isAbsolutePath(raw)) return () => true;
 
     // ABSOLUTE scope. It is meaningful only relative to the repository root
     // that produced the repo-relative target. Suffix inference is unsafe:
@@ -105,26 +124,41 @@ export function matchesGrepFileFilter(file, filter, projectRoot = null) {
     // Once the root is stripped, keep the remainder root-anchored as well — an
     // exact `/repo/src` scope must not match `nested/src/a.js`.
     if (isAbsolutePath(raw)) {
-      if (!root || !isAbsolutePath(projectRoot)) return false;
+      if (!root || !isAbsolutePath(projectRoot)) return null;
       // The same directory can have two spellings (macOS /tmp → /private/tmp). The
       // implicit cwd scope of ss-grep is a real path; the engine root may be either.
       const realRoot = canonicalRootSegments(projectRoot);
       const anchor = (scope.length >= root.length && runAt(scope, root, 0)) ? root
         : (realRoot && scope.length >= realRoot.length && runAt(scope, realRoot, 0)) ? realRoot
           : null;
-      if (!anchor) return false;
+      if (!anchor) return null;
       // (a bare "/" has fewer segments than any real root, so it is rejected above)
       scope = scope.slice(anchor.length);
-      if (scope.length === 0) return true;
-      return scope.length <= target.length && runAt(target, scope, 0);
+      if (scope.length === 0) return () => true;
+      return (target) => scope.length <= target.length && runAt(target, scope, 0);
     }
 
-    if (scope.length > target.length) return false;
-    for (let start = 0; start + scope.length <= target.length; start++) {
-      if (runAt(target, scope, start)) return true;
+    // ROOT-ANCHORED: the scope names a path at the repository root.
+    let atRoot = false;
+    if (projectRoot && isAbsolutePath(projectRoot)) {
+      try { atRoot = existsSync(path.join(projectRoot, ...scope)); } catch { atRoot = false; }
     }
-    return false;
-  });
+    if (atRoot) return (target) => scope.length <= target.length && runAt(target, scope, 0);
+
+    return (target) => {
+      if (scope.length > target.length) return false;
+      for (let start = 0; start + scope.length <= target.length; start++) {
+        if (runAt(target, scope, start)) return true;
+      }
+      return false;
+    };
+  }).filter(Boolean);
+  return (file) => {
+    if (!file) return false;
+    const target = pathSegments(file);
+    if (target.length === 0) return false;
+    return tests.some((test) => test(target));
+  };
 }
 
 /**

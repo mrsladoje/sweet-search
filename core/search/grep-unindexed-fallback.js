@@ -10,7 +10,7 @@
  */
 
 import { nativeGrepFull } from '../infrastructure/native-sparse-gram.js';
-import { matchesGrepFileFilter } from './grep-output-shaping.js';
+import { grepFileFilterPredicate } from './grep-output-shaping.js';
 import { runRipgrepJson, normalizeSearchPath } from './search-pattern-ripgrep.js';
 import {
   ensureSparseGramIndex, getSparseGramAllFilesWithOverlay, hasCaseInsensitiveRegexFlag,
@@ -48,7 +48,8 @@ async function grepFiles(regex, searchDir, files, fixedString) {
 export async function applyUnindexedFallback({ searcher, regex, searchDir, options, matches, shapeResult }) {
   if (matches.length > 0 || options.unindexedFallback === false) return { matches, stats: null };
   const scope = options.fileFilter;
-  const inScope = (rel) => !scope || matchesGrepFileFilter(rel, scope, searchDir);
+  const inFilter = scope ? grepFileFilterPredicate(scope, searchDir) : null;
+  const inScope = (rel) => !inFilter || inFilter(rel);
   const { listChangedGrepFiles } = await import('../indexing/grep-corpus.js');
   const files = listChangedGrepFiles(searchDir).filter(inScope);
   const stats = { unindexedFallbackFiles: files.length, unindexedFallbackMatches: 0 };
