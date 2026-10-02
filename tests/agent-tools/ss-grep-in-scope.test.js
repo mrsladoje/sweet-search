@@ -115,6 +115,15 @@ describe('ss-grep --in on a repository that contains a copy of itself (real engi
     expect((await total(searchers.gram, ['sqlite3_commit_hook', '--in', 'Core/TransactionObserver.swift'])).n).toBe(6);
   });
 
+  it('a correct zero (`statementDidFail\\(`, unpaired escaped paren) prints no regex note', async () => {
+    for (const searcher of Object.values(searchers)) {
+      const zero = await total(searcher, ['statementDidFail\\(', '--in', 'GRDB/Core/Database.swift']);
+      expect(zero.n).toBe(0);
+      expect(zero.out).toContain('(no matches)');
+      expect(zero.out).not.toContain('regex note');
+    }
+  }, 60_000); // a zero also runs the unindexed-file fallback; slow on a loaded machine
+
   it('ripgrep path: the same scopes give the root file', async (ctx) => {
     if (!searchers.ripgrep) ctx.skip();
     expect((await total(searchers.ripgrep, ['sqlite3_commit_hook', '--in', OBSERVER])).n).toBe(3);
