@@ -387,7 +387,7 @@ export async function hybridSearch(query, options = {}) {
 
   // Run both paths in parallel
   const [lexicalSearchResult, semanticSearchResult] = await Promise.all([
-    this.lexicalSearch(query, { k: Math.ceil(k * 1.5), expand }),
+    this.lexicalSearch(query, { k: Math.ceil(k * 1.5), expand, format: options.format }),
     this.semanticSearch(query, { k: Math.ceil(k * 1.5), rerank: false, useLateInteraction }),
   ]);
   const lexicalResults = lexicalSearchResult.results;

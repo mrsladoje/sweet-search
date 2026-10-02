@@ -242,7 +242,7 @@ export function defaultMaintenanceHandlers(stateDir) {
       const dbPath = payload.dbPath || payload.databasePath || path.join(stateDir, payload.dbFile || 'code-graph.db');
       const tableNames = payload.tableName || payload.table
         ? [payload.tableName || payload.table]
-        : ['entities_fts', 'entities_trigram'];
+        : ['entities_fts', 'entities_code_fts', 'entities_trigram'];
       // E.5: derive the merge page count from the budget remaining in the drain
       // window. Off (default) → the original aggressive 500-page merge. On →
       // scale pages down (floor 16) as the budget runs out so a near-exhausted
