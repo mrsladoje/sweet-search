@@ -536,6 +536,21 @@ describe('ss-grep fixes (A5, B7)', () => {
   // SS_FIX_GREP_FULLLINE: matchText and content differ here, unlike the fixtures above.
   const full = (file, line, content, matchText, column) => ({ file, line, content, matchText, column });
 
+  it('grepHitText: a match ending in whitespace or \\r stays inside the window (review d2ec22bd)', () => {
+    const pad = 'x'.repeat(150);
+    const out = grepHitText({ matchText: 'target_fn(a):\r', column: 151, content: `${pad}target_fn(a):` }, { fullLine: true });
+    expect(out).toContain('target_fn(a):');
+    expect(out.length).toBe(140);
+  });
+
+  it('grepHitText: no false left ellipsis at column 1; never splits a surrogate pair', () => {
+    expect(grepHitText({ matchText: 'A'.repeat(200), column: 1, content: 'A'.repeat(300) }, { fullLine: true }).startsWith('…')).toBe(false);
+    const e = '\u{1F600}'.repeat(100);
+    const out = grepHitText({ matchText: 'MATCH', column: e.length + 1, content: `${e}MATCH${e}` }, { fullLine: true });
+    expect(out).toContain('MATCH');
+    expect(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/.test(out)).toBe(false);
+  });
+
   it('grepHitText: the full line, whitespace collapsed; off = the matched text, as before', () => {
     const m = full('a.c', 240, '\t\tsqlite3_commit_hook(db,   commitHook,\tctx);   ', 'sqlite3_commit_hook', 3);
     expect(grepHitText(m, { fullLine: true })).toBe('sqlite3_commit_hook(db, commitHook, ctx);');

@@ -899,22 +899,34 @@ export function grepHitText(m, { fullLine = false } = {}) {
   }
   const max = GREP_HIT_TEXT_MAX;
   if (line.length <= max) return line;
+  const head = () => `${sliceWhole(line, 0, max - 1)}…`;
 
   // The match in the raw line: at its column when the text is there, else its first occurrence.
-  const mt = String(m?.matchText || '');
+  // Producers trim the end of `content` but not of the match (`foo\s*`, a CRLF `\r`), so trim it too.
+  const mt = String(m?.matchText || '').replace(/\s+$/, '');
   const col = Number.isInteger(m?.column) ? m.column - 1 : -1;
   const rawStart = mt && col >= 0 && raw.startsWith(mt, col) ? col : (mt ? raw.indexOf(mt) : -1);
-  if (rawStart < 0) return `${line.slice(0, max - 1)}…`;
+  if (rawStart < 0) return head();
   const start = Math.min(at[rawStart], line.length);
   const end = Math.max(start, Math.min(at[rawStart + mt.length - 1] + 1, line.length));
 
-  if (end <= max - 1) return `${line.slice(0, max - 1)}…`;
+  if (end <= max - 1) return head();
   const tailRoom = max - 1;
-  if (line.length - tailRoom <= start) return `…${line.slice(line.length - tailRoom)}`;
+  if (line.length - tailRoom <= start) return `…${sliceWhole(line, line.length - tailRoom, line.length)}`;
   const room = max - 2;
   const from = Math.min(start, Math.max(start - GREP_HIT_LEAD, end - room));
-  return `…${line.slice(from, from + room)}…`;
+  if (from === 0) return head();
+  return `…${sliceWhole(line, from, from + room)}…`;
 }
+
+/** line.slice(from, to) that never cuts a surrogate pair in half (it would print as U+FFFD). */
+function sliceWhole(line, from, to) {
+  if (isLowSurrogate(line.charCodeAt(from))) from++;
+  if (to < line.length && isLowSurrogate(line.charCodeAt(to))) to--;
+  return line.slice(from, to);
+}
+
+const isLowSurrogate = (c) => c >= 0xdc00 && c <= 0xdfff;
 
 /**
  * True when more than one hit is shown and every hit prints the same text (the matched text, or
