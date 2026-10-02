@@ -58,6 +58,7 @@ import {
   decideAlreadyShown,
   formatTraceCompact,
   isRegexParseError,
+  grepHitText,
   isTestLikePath,
   matchTextIsRepeated,
   orderSourceBeforeTests,
@@ -164,7 +165,8 @@ const SHOWN_SPAN_TRAILER = shownSpanTrailerEnabled();
 const SPAN_POLICY_ENABLED = EXACT_REREAD_OMISSION || SHOWN_SPAN_TRAILER;
 
 // Output-fix switches (see core/search/agent-output-fixes.js). Bundle A (A1, A2, A7, A4, A5) is the
-// product default, and so is SS_FIX_GREP_ALLOC (ss-grep line allocation); SWEET_SEARCH_COMPACT_OUTPUT=0
+// product default, and so are SS_FIX_GREP_ALLOC (ss-grep line allocation) and SS_FIX_GREP_FULLLINE (ss-grep
+// full hit lines); SWEET_SEARCH_COMPACT_OUTPUT=0
 // or SS_FIX_A=0 restores the previous output byte for byte. Every other SS_FIX_* switch is default
 // off (bench only).
 const FIX = readFixFlags();
@@ -633,11 +635,12 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
     for (const note of notes) process.stdout.write(`${note}\n`);
     // SS_FIX_GREP_ORDER (B7): source hits before test hits; no repeated matched-text column.
     const rows = FIX.grepOrder ? orderSourceBeforeTests(result.results) : result.results;
-    const dropText = FIX.grepOrder && matchTextIsRepeated(rows);
+    const hitText = { fullLine: FIX.grepFullLine };
+    const dropText = FIX.grepOrder && matchTextIsRepeated(rows, hitText);
     const shown = rows.map((r, i) => ({
       file: r.file,
       line: r.line,
-      text: (r.matchText || '').replace(/\s+/g, ' ').trim().slice(0, 140),
+      text: grepHitText(r, hitText),
       suffix: (i === rows.length - 1 && total > rows.length)
         ? ` (+${total - rows.length} more — raise -k)` : '',
     }));
@@ -734,9 +737,13 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
   // Source files come first, but a quota of test files stays among the first k files.
   const listMode = FIX.grepOrder && total >= GREP_COUNTS_THRESHOLD && !withContext;
   const keptMatches = FIX.grepOrder && !FIX.grepAlloc ? orderSourceBeforeTests(result.results, { k }) : result.results;
-  const bodyOpts = FIX.grepAlloc
-    ? (FIX.grepOrder ? { alloc: 'weight', dropRepeatedText: true } : { alloc: 'weight' })
-    : (FIX.grepOrder ? { dropRepeatedText: true } : undefined);
+  // SS_FIX_GREP_FULLLINE (default ON; 0 = the matched substring, byte for byte): each hit prints
+  // its full source line, as `grep -n` does.
+  const bodyOpts = {
+    ...(FIX.grepAlloc ? { alloc: 'weight' } : {}),
+    ...(FIX.grepOrder ? { dropRepeatedText: true } : {}),
+    ...(FIX.grepFullLine ? { fullLine: true } : {}),
+  };
   const body = renderGrepBody(keptMatches, fileSummary, k, bodyOpts);
   const completed = listMode
     ? { lines: [], familyManifest: result.familyManifest?.rendered ? result.familyManifest : null }

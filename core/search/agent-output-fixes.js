@@ -39,6 +39,12 @@
  *                              source-before-tests body order is not applied (the prior already
  *                              ranks tests below source); B7's line lists and the dropped repeated
  *                              text column stay.
+ *   SS_FIX_GREP_FULLLINE=1|0   DEFAULT ON since 2026-10-02 (default: SS_FIX_A, like
+ *                              SS_FIX_GREP_ALLOC): each ss-grep hit prints its full source line, as
+ *                              `grep -n` does (whitespace collapsed, at most 140 chars; a longer line
+ *                              shows a window that contains the match, `…` at a cut side), not only
+ *                              the matched substring (grepHitText). 0 restores the matched-substring
+ *                              output byte for byte; never pool runs across the two.
  *
  * ss-read output is NOT changed by any switch (owner decision 2026-10-01).
  */
@@ -97,6 +103,7 @@ export function readFixFlags(env = process.env) {
     onePerFile: isOn(env?.SS_FIX_ONE_PER_FILE),
     grepOrder: isOn(env?.SS_FIX_GREP_ORDER),
     grepAlloc: subSwitch(env?.SS_FIX_GREP_ALLOC, compact),
+    grepFullLine: subSwitch(env?.SS_FIX_GREP_FULLLINE, compact),
   };
 }
 
@@ -854,15 +861,69 @@ export function orderSourceBeforeTests(matches, { k = null } = {}) {
   return [...src.slice(0, srcFirst), ...tst.slice(0, q), ...src.slice(srcFirst), ...tst.slice(q)].flat();
 }
 
-function normText(m) {
-  return String(m?.matchText || '').replace(/\s+/g, ' ').trim().slice(0, 140);
+export const GREP_HIT_TEXT_MAX = 140;
+// Chars of the line kept before the match when a long line is cut on the left.
+const GREP_HIT_LEAD = 40;
+
+/**
+ * The text ss-grep prints after `file:line: ` for one hit.
+ *
+ * `fullLine` (SS_FIX_GREP_FULLLINE, default ON): the hit's full source line (`content`), as
+ * `grep -n` prints it, whitespace collapsed. A line longer than GREP_HIT_TEXT_MAX chars shows a
+ * window of at most that many chars that contains the match, with `…` at each cut side; a match
+ * near the start keeps the head of the line. A hit with no line text falls back to the matched text.
+ * Off: the matched substring, whitespace collapsed, at most 140 chars (the previous output).
+ *
+ * @param {{matchText?: string, content?: string, column?: number}} m
+ * @param {{fullLine?: boolean}} [opts]
+ */
+export function grepHitText(m, { fullLine = false } = {}) {
+  const matched = String(m?.matchText || '').replace(/\s+/g, ' ').trim().slice(0, GREP_HIT_TEXT_MAX);
+  const raw = fullLine && typeof m?.content === 'string' ? m.content : '';
+  if (!raw.trim()) return matched;
+
+  // Collapse whitespace like .replace(/\s+/g, ' ').trim(), keeping where each raw char lands.
+  let line = '';
+  const at = new Array(raw.length);
+  let gap = false;
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+    if (/\s/.test(ch)) {
+      if (line) gap = true;
+      at[i] = line.length + (gap ? 1 : 0);
+      continue;
+    }
+    if (gap) { line += ' '; gap = false; }
+    at[i] = line.length;
+    line += ch;
+  }
+  const max = GREP_HIT_TEXT_MAX;
+  if (line.length <= max) return line;
+
+  // The match in the raw line: at its column when the text is there, else its first occurrence.
+  const mt = String(m?.matchText || '');
+  const col = Number.isInteger(m?.column) ? m.column - 1 : -1;
+  const rawStart = mt && col >= 0 && raw.startsWith(mt, col) ? col : (mt ? raw.indexOf(mt) : -1);
+  if (rawStart < 0) return `${line.slice(0, max - 1)}…`;
+  const start = Math.min(at[rawStart], line.length);
+  const end = Math.max(start, Math.min(at[rawStart + mt.length - 1] + 1, line.length));
+
+  if (end <= max - 1) return `${line.slice(0, max - 1)}…`;
+  const tailRoom = max - 1;
+  if (line.length - tailRoom <= start) return `…${line.slice(line.length - tailRoom)}`;
+  const room = max - 2;
+  const from = Math.min(start, Math.max(start - GREP_HIT_LEAD, end - room));
+  return `…${line.slice(from, from + room)}…`;
 }
 
-/** True when more than one hit is shown and every hit carries the same matched text. */
-export function matchTextIsRepeated(matches) {
+/**
+ * True when more than one hit is shown and every hit prints the same text (the matched text, or
+ * the full line with `fullLine`).
+ */
+export function matchTextIsRepeated(matches, { fullLine = false } = {}) {
   if (!Array.isArray(matches) || matches.length < 2) return false;
-  const first = normText(matches[0]);
-  return matches.every((m) => normText(m) === first);
+  const first = grepHitText(matches[0], { fullLine });
+  return matches.every((m) => grepHitText(m, { fullLine }) === first);
 }
 
 export const GREP_COUNTS_THRESHOLD = 50;

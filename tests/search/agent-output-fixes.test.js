@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import {
   GREP_COUNTS_THRESHOLD,
   formatTraceCompact,
+  grepHitText,
   isRegexParseError,
   isSummaryOnly,
   isTestLikePath,
@@ -40,11 +41,12 @@ const OFF = { SS_FIX_A: '0' };
 const ALL_OFF = {
   compact: false, traceCompact: false, grepRetry: false, alreadyShown: false,
   dropSufficiency: false, summaryCap: null, onePerFile: false, grepOrder: false, grepAlloc: false,
+  grepFullLine: false,
 };
 
 describe('readFixFlags: product default (Bundle A on)', () => {
   it('turns on A1/A2/A7 (compact), A4 and A5 with an empty environment', () => {
-    expect(readFixFlags({})).toEqual({ ...ALL_OFF, compact: true, traceCompact: true, grepRetry: true, grepAlloc: true });
+    expect(readFixFlags({})).toEqual({ ...ALL_OFF, compact: true, traceCompact: true, grepRetry: true, grepAlloc: true, grepFullLine: true });
     expect(readFixFlags({})).toEqual(readFixFlags({ SS_FIX_A: '1' }));
     expect(resultRenderFixActive(readFixFlags({}))).toBe(true);
     expect(resultRenderFixActive(readFixFlags({}), { find: true })).toBe(true);
@@ -82,6 +84,7 @@ describe('readFixFlags', () => {
     expect(readFixFlags(OFF)).toEqual({
       compact: false, traceCompact: false, grepRetry: false, alreadyShown: false,
       dropSufficiency: false, summaryCap: null, onePerFile: false, grepOrder: false, grepAlloc: false,
+      grepFullLine: false,
     });
     expect(resultRenderFixActive(readFixFlags(OFF))).toBe(false);
     expect(resultRenderFixActive(readFixFlags(OFF), { find: true })).toBe(false);
@@ -111,6 +114,15 @@ describe('readFixFlags', () => {
     expect(readFixFlags({ ...OFF, SS_FIX_GREP_ALLOC: '1' })).toMatchObject({ compact: false, grepAlloc: true });
     // it never turns another switch on or off
     expect(readFixFlags({ SS_FIX_GREP_ALLOC: '0' })).toEqual({ ...readFixFlags({}), grepAlloc: false });
+  });
+
+  it('SS_FIX_GREP_FULLLINE: on by default, follows SS_FIX_A / the product opt-out, its own 0 or 1 wins', () => {
+    expect(readFixFlags({}).grepFullLine).toBe(true);
+    for (const v of ['0', 'false', 'off', 'no']) expect(readFixFlags({ SS_FIX_GREP_FULLLINE: v }).grepFullLine).toBe(false);
+    expect(readFixFlags(OFF).grepFullLine).toBe(false);
+    expect(readFixFlags({ SWEET_SEARCH_COMPACT_OUTPUT: '0' }).grepFullLine).toBe(false);
+    expect(readFixFlags({ ...OFF, SS_FIX_GREP_FULLLINE: '1' })).toMatchObject({ compact: false, grepFullLine: true });
+    expect(readFixFlags({ SS_FIX_GREP_FULLLINE: '0' })).toEqual({ ...readFixFlags({}), grepFullLine: false });
   });
 
   it('A3 and the sufficiency drop are separate switches that accept every on-value', () => {
@@ -519,6 +531,73 @@ describe('ss-grep fixes (A5, B7)', () => {
     const varied = [hit('a.go', 1, 'x'), hit('b.go', 9, 'y')];
     expect(renderGrepBody(varied, summary, 10, { dropRepeatedText: true }).lines)
       .toEqual(renderGrepBody(varied, summary, 10).lines);
+  });
+
+  // SS_FIX_GREP_FULLLINE: matchText and content differ here, unlike the fixtures above.
+  const full = (file, line, content, matchText, column) => ({ file, line, content, matchText, column });
+
+  it('grepHitText: the full line, whitespace collapsed; off = the matched text, as before', () => {
+    const m = full('a.c', 240, '\t\tsqlite3_commit_hook(db,   commitHook,\tctx);   ', 'sqlite3_commit_hook', 3);
+    expect(grepHitText(m, { fullLine: true })).toBe('sqlite3_commit_hook(db, commitHook, ctx);');
+    expect(grepHitText(m)).toBe('sqlite3_commit_hook');
+    expect(grepHitText(m, { fullLine: false })).toBe('sqlite3_commit_hook');
+    // no line text: the matched text
+    expect(grepHitText({ matchText: ' x  y ' }, { fullLine: true })).toBe('x y');
+    expect(grepHitText({ matchText: 'x', content: '   ' }, { fullLine: true })).toBe('x');
+  });
+
+  it('grepHitText: a long line shows a 140-char window that contains the match', () => {
+    const head = 'a'.repeat(200);
+    const m = full('a.js', 1, `    const x = ${head} + NEEDLE_HERE + ${'b'.repeat(200)};`, 'NEEDLE_HERE');
+    const out = grepHitText(m, { fullLine: true });
+    expect(out.length).toBe(140);
+    expect(out).toContain('NEEDLE_HERE');
+    expect(out.startsWith('…')).toBe(true);
+    expect(out.endsWith('…')).toBe(true);
+    // 40 chars of the line before the match
+    expect(out.indexOf('NEEDLE_HERE')).toBe(41);
+    // a match near the start keeps the head of the line
+    const early = full('a.js', 1, `NEEDLE ${'c'.repeat(300)}`, 'NEEDLE', 1);
+    expect(grepHitText(early, { fullLine: true })).toBe(`NEEDLE ${'c'.repeat(132)}…`);
+    // a match at the end: the tail of the line, cut on the left only
+    const late = full('a.js', 1, `${'d'.repeat(300)} NEEDLE;`, 'NEEDLE');
+    const tail = grepHitText(late, { fullLine: true });
+    expect(tail).toBe(`…${'d'.repeat(131)} NEEDLE;`);
+    expect(tail.length).toBe(140);
+    // the column picks the hit when the text occurs twice
+    const twice = full('a.js', 1, `x ${'e'.repeat(150)} x ${'f'.repeat(300)}`, 'x', 154);
+    expect(grepHitText(twice, { fullLine: true })).toBe(`…${'e'.repeat(39)} x ${'f'.repeat(96)}…`);
+    // indentation collapse does not move the window off the match
+    const tabs = full('a.py', 1, `\t\t\t${'g'.repeat(180)}\t\tTARGET\t${'h'.repeat(50)}`, 'TARGET');
+    expect(grepHitText(tabs, { fullLine: true })).toContain('TARGET');
+    expect(grepHitText(tabs, { fullLine: true }).length).toBeLessThanOrEqual(140);
+  });
+
+  it('renderGrepBody fullLine prints the line; the repeated-text drop compares the shown lines', () => {
+    const summary = { files: [{ file: 'a.go', total: 2, kept: 2 }, { file: 'b.go', total: 1, kept: 1 }], hiddenFileCount: 0, hiddenMatchCount: 0, hiddenSample: [] };
+    const kept = [
+      full('a.go', 3, '\tif err := Export(ctx); err != nil {', 'Export'),
+      full('a.go', 9, '// Export writes the dump', 'Export'),
+      full('b.go', 1, 'func Export(ctx context.Context) error {', 'Export'),
+    ];
+    for (const alloc of [undefined, 'weight']) {
+      const opts = alloc ? { alloc, fullLine: true } : { fullLine: true };
+      expect(renderGrepBody(kept, summary, 10, opts).lines.sort()).toEqual([
+        'a.go:3: if err := Export(ctx); err != nil {', 'a.go:9: // Export writes the dump', 'b.go:1: func Export(ctx context.Context) error {',
+      ]);
+      // same matched text, different lines: the text stays
+      expect(renderGrepBody(kept, summary, 10, { ...opts, dropRepeatedText: true }).lines)
+        .toEqual(renderGrepBody(kept, summary, 10, opts).lines);
+      expect(matchTextIsRepeated(kept)).toBe(true);
+      expect(matchTextIsRepeated(kept, { fullLine: true })).toBe(false);
+      // every shown full line identical: the text drops
+      const same = kept.map((m) => ({ ...m, content: '  return Export(ctx)' }));
+      expect(matchTextIsRepeated(same, { fullLine: true })).toBe(true);
+      expect(renderGrepBody(same, summary, 10, { ...opts, dropRepeatedText: true }).lines.sort())
+        .toEqual(['a.go:3', 'a.go:9', 'b.go:1']);
+    }
+    // without fullLine: the matched text, byte for byte the previous output
+    expect(renderGrepBody(kept, summary, 10).lines).toEqual(['a.go:3: Export', 'a.go:9: Export', 'b.go:1: Export']);
   });
 
   it('flood mode lists up to 3 hit lines per file, source first, tests kept when they fit', () => {

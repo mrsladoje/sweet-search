@@ -92,7 +92,7 @@ describe('ss-grep -g (native path, counts after the filter)', () => {
     const { code, out } = await ss('grep', ['Head', '-g', '!lib/tests/**']);
     expect(code).toBe(0);
     expect(out).toBe("# ss-grep: 3 total match(es) for /Head/ across 3 files (-g '!lib/tests/**')\n"
-      + 'lib/src/Head.h:1: Head\nlib/src/HttpClient.java:1: Head\nsrc/main.c:1: Head\n');
+      + 'lib/src/Head.h:1: struct Head;\nlib/src/HttpClient.java:1: Head client;\nsrc/main.c:1: Head main;\n');
     // the engine got the glob, served it natively (ripgrep is mocked to throw)
     expect(grepCalls[0].pathGlobs).toEqual(['!lib/tests/**']);
     expect(searcher.sparseGramIndex.searchFull).toHaveBeenCalled();
