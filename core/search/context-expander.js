@@ -2103,6 +2103,20 @@ export function refillCoveredSummaries(agentResults, reserve) {
   return { results, replaced: replacements.length };
 }
 
+/**
+ * Ablations as a Set. Callers pass a Set (the in-process API) or an array
+ * (eval/run_benchmark.js `--ablations=a,b`, JSON callers); the packager and
+ * expandToSymbol call `.has()`, which an array does not have, so an array
+ * used to throw "ablations.has is not a function" in agent formats.
+ * @param {Set<string>|string[]|null|undefined} ablations
+ * @returns {Set<string>}
+ */
+export function toAblationSet(ablations) {
+  if (ablations instanceof Set) return ablations;
+  if (Array.isArray(ablations)) return new Set(ablations);
+  return new Set();
+}
+
 export function packageForAgent(rankedResultsIn, searchStats, opts) {
   // Final-k contract: budget-tier signals (numResults, dominance, top-1 size)
   // are computed on the final <= k list, never on an inflated candidate list.
@@ -2117,7 +2131,7 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
     projectRoot,
     _isAgentFormat = false,
   } = opts;
-  const ablations = opts.ablations || new Set();
+  const ablations = toAblationSet(opts.ablations);
 
   // Auto-tier selection: pick preview / full / xl based on score-distribution
   // signals when format='agent'. Explicit format=='agent_preview|full|full_xl'

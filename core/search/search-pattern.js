@@ -26,6 +26,10 @@ import { retryBreDialectAfterZero } from './regex-dialect.js';
 import { buildIndexedGrepFamilyManifest, buildSingletonSiblingLine } from './agent-pack-completion.js';
 import { applyFileKindRanking, applyResultDemotions } from '../ranking/file-kind-ranking.js';
 
+// Candidates after the final cut handed to the agent packager for refill
+// (same size as search-postprocess.js FINAL_RESERVE_SIZE).
+const PATTERN_RESERVE_SIZE = 10;
+
 // =============================================================================
 // Ripgrep runner (thin wrapper for external callers)
 // =============================================================================
@@ -698,6 +702,11 @@ export async function patternSearch(query, routing, options = {}) {
       format,
       tokenBudget,
       k,
+      // The next ranked candidates after the k cut: the packager swaps a
+      // summary entry that an earlier entry already shows for one of them
+      // (covered-summary refill, same rule as Bundle A's A2), so ss-find keeps
+      // k visible entries like ss-search. Nothing above the cut moves.
+      reserve: rankedResults.slice(k, k + PATTERN_RESERVE_SIZE),
       codeGraphRepo: this.codeGraphRepo || null,
       locationMap,
       projectRoot: searchDir,

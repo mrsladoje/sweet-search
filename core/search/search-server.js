@@ -616,9 +616,11 @@ function agentTextGutter(code, startLine) {
  */
 function renderCompactAgentSearchResponse(response) {
   const results = response?.results || [];
-  let out = renderCompactHeader('sweet-search', results.length, response?.query ?? '');
+  const plan = selectEntries(results, { dedupe: 'a2' });
+  // Header count = printed entries (A2 may drop covered summary entries).
+  let out = renderCompactHeader('sweet-search', plan.entries.length, response?.query ?? '');
   out += renderCompactSufficiency(response || {}, renderSufficiencyFragment(response || {}));
-  out += renderFixedBlocks(results, selectEntries(results, { dedupe: 'a2' }), {
+  out += renderFixedBlocks(results, plan, {
     compact: true,
     gutter: agentTextGutter,
   });

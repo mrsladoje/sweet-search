@@ -607,22 +607,36 @@ describe('seed span collapse (agent formats)', () => {
   };
   const tabletCopies = ids => ids.filter(id => id.startsWith('zero/tablet.go')).length;
 
-  it('agent format: the seed pool holds k distinct spans; copies stay in for the cascade', async () => {
-    expect(await run({ format: 'agent' })).toEqual([
+  const withCollapse = async (fn) => {
+    const prev = process.env.SWEET_SEARCH_SEED_SPAN_COLLAPSE;
+    process.env.SWEET_SEARCH_SEED_SPAN_COLLAPSE = '1';
+    try { return await fn(); } finally {
+      if (prev == null) delete process.env.SWEET_SEARCH_SEED_SPAN_COLLAPSE; else process.env.SWEET_SEARCH_SEED_SPAN_COLLAPSE = prev;
+    }
+  };
+
+  it('is off by default (DEV: more top-1 churn, one r3 question lost at k=5)', async () => {
+    const prev = process.env.SWEET_SEARCH_SEED_SPAN_COLLAPSE;
+    delete process.env.SWEET_SEARCH_SEED_SPAN_COLLAPSE;
+    try {
+      expect(await run({ format: 'agent' })).toEqual([
+        'zero/tablet.go:196-240:6', 'zero/tablet.go:140-157:3', 'zero/tablet.go:240-251:7',
+      ]);
+    } finally { if (prev != null) process.env.SWEET_SEARCH_SEED_SPAN_COLLAPSE = prev; }
+  });
+
+  it('SWEET_SEARCH_SEED_SPAN_COLLAPSE=1, agent format: the seed pool holds k distinct spans; copies stay in for the cascade', async () => {
+    expect(await withCollapse(() => run({ format: 'agent' }))).toEqual([
       'zero/tablet.go:196-240:6', 'zero/tablet.go:140-157:3', 'zero/tablet.go:240-251:7',
       'worker/move.go:189', 'worker/move.go:257',
     ]);
   });
 
-  it('plain format keeps the copies (GCSN-style traffic unchanged)', async () => {
-    expect(tabletCopies(await run({}))).toBe(3);
+  it('plain format keeps the copies even with the switch on (GCSN-style traffic unchanged)', async () => {
+    expect(tabletCopies(await withCollapse(() => run({})))).toBe(3);
   });
 
-  it('SWEET_SEARCH_SEED_SPAN_COLLAPSE=0 and the no-span-dedupe ablation turn it off', async () => {
-    process.env.SWEET_SEARCH_SEED_SPAN_COLLAPSE = '0';
-    try {
-      expect(tabletCopies(await run({ format: 'agent' }))).toBe(3);
-    } finally { delete process.env.SWEET_SEARCH_SEED_SPAN_COLLAPSE; }
-    expect(tabletCopies(await run({ format: 'agent', ablations: ['no-span-dedupe'] }))).toBe(3);
+  it('the no-span-dedupe ablation turns it off', async () => {
+    expect(tabletCopies(await withCollapse(() => run({ format: 'agent', ablations: ['no-span-dedupe'] })))).toBe(3);
   });
 });

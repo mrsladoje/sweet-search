@@ -121,6 +121,16 @@ describe('applyFinalListMMR', () => {
     expect(results.map(r => r.metadata.name).slice(0, 2)).toEqual(['top', 'b']);
   });
 
+  it('keeps the input top-1 even when a later entry has a higher raw score', () => {
+    const unsorted = [
+      other('a.js', 1, 100, 0.6, 'promoted'),
+      other('a.js', 10, 50, 0.55, 'inner'),
+      other('b.js', 1, 30, 0.9, 'higher-raw'),
+    ];
+    const { results } = applyFinalListMMR(unsorted, { k: 3, lambda: 0.8 });
+    expect(results[0].metadata.name).toBe('promoted');
+  });
+
   it('never drops a candidate', () => {
     const input = list();
     const { results } = applyFinalListMMR(input, { k: 2, lambda: 0.5 });
@@ -150,8 +160,8 @@ describe('shapeFinalList', () => {
     other('worker/predicate_move.go', 189, 255, 0.46, 'MovePredicate'),
   ];
 
-  it('dedupes identical spans for every format and records stats', () => {
-    for (const format of [undefined, 'json', 'agent']) {
+  it('dedupes identical spans for every agent format and records stats', () => {
+    for (const format of ['agent', 'agent_preview', 'agent_full', 'agent_full_xl']) {
       const stats = {};
       const out = shapeFinalList(dupList(), { k: 5, format, stats, finalMMR: { enabled: false } });
       expect(out).toHaveLength(2);
@@ -159,8 +169,23 @@ describe('shapeFinalList', () => {
     }
   });
 
+  it('leaves non-agent formats untouched: each copy carries its own chunk text there', () => {
+    // Two fragments of one class, both widened to the class span by range
+    // adoption: same display span, different text. Benchmark/JSON output
+    // prints the text, so both must stay.
+    const a = { ...sub('140-157:3', 0.47), content: 'func (s *Server) a() {}' };
+    const b = { ...sub('240-251:7', 0.46), content: 'func (s *Server) b() {}' };
+    for (const format of [undefined, 'json', 'benchmark']) {
+      const stats = {};
+      const list = [a, b];
+      const out = shapeFinalList(list, { k: 5, format, stats, finalMMR: { enabled: true, lambda: 0.8, weights: SPAN_MMR_WEIGHTS, gate: true } });
+      expect(out).toBe(list);
+      expect(stats).toEqual({});
+    }
+  });
+
   it('honours the no-span-dedupe ablation', () => {
-    const out = shapeFinalList(dupList(), { k: 5, ablations: new Set(['no-span-dedupe']), finalMMR: { enabled: false } });
+    const out = shapeFinalList(dupList(), { k: 5, format: 'agent', ablations: new Set(['no-span-dedupe']), finalMMR: { enabled: false } });
     expect(out).toHaveLength(3);
   });
 
@@ -319,5 +344,28 @@ describe('takeDistinctSpans', () => {
     expect(takeDistinctSpans(list, 3).map(r => r.score)).toEqual([0.9, 0.8, 0.7, 0.6, 0.5]);
     expect(takeDistinctSpans(list, 3, { maxCopies: 1 }).map(r => r.score)).toEqual([0.9, 0.8, 0.7, 0.5]);
     expect(takeDistinctSpans([other('a.go', 1, 2, 1), other('b.go', 1, 2, 1)], 5)).toHaveLength(2);
+  });
+});
+
+describe('packager ablations (Set or array)', () => {
+  it('toAblationSet accepts a Set, an array, or nothing', async () => {
+    const { toAblationSet } = await import('../../core/search/context-expander.js');
+    const set = new Set(['a']);
+    expect(toAblationSet(set)).toBe(set);
+    expect([...toAblationSet(['a', 'b'])]).toEqual(['a', 'b']);
+    expect(toAblationSet(undefined).size).toBe(0);
+    expect(toAblationSet(null).size).toBe(0);
+  });
+
+  it('packageForAgent takes an array of ablations (run_benchmark --ablations) without throwing', async () => {
+    const { packageForAgent } = await import('../../core/search/context-expander.js');
+    const results = [{ file: 'a.js', score: 1, metadata: { file: 'a.js', startLine: 1, endLine: 3, name: 'a', type: 'function' } }];
+    const out = packageForAgent(results, {}, {
+      query: 'q', k: 5, projectRoot: '/nonexistent', _isAgentFormat: true,
+      ablations: ['no-auto-budget', 'no-covered-refill'],
+      reserve: [{ file: 'b.js', score: 0.5, metadata: { file: 'b.js', startLine: 1, endLine: 2, name: 'b' } }],
+    });
+    expect(Array.isArray(out.results)).toBe(true);
+    expect(out.results.map(r => r.file)).toEqual(['a.js']);
   });
 });

@@ -10,9 +10,12 @@
  * -k 6: three of six slots were movePredicate).
  *
  * dedupeIdenticalSpans() keeps one result per (file, start, end) display span.
- * It runs above the final-k cut (search-postprocess.js), so freed slots refill
- * from the next candidates. It is not a ranking signal: it removes copies of a
- * span that is already in the list, so it can only move later results up.
+ * It runs above the final-k cut (search-postprocess.js shapeFinalList), so
+ * freed slots refill from the next candidates. It is not a ranking signal: it
+ * removes copies of a span that is already in the list, so it can only move
+ * later results up. Agent formats only: the agent packager renders a result
+ * from its display span, so copies print the same lines; other formats print
+ * each chunk's own text, which differs between copies.
  *
  * Containment (a span strictly inside an earlier span) is NOT dropped here:
  * whether the outer span shows the inner lines depends on the packager's tier

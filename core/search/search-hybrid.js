@@ -11,11 +11,11 @@
 import { routeQuery } from '../query/query-router.js';
 import { applyMMR, shouldApplyMMR, getLambdaForIntent } from '../ranking/mmr.js';
 import { takeDistinctSpans } from './span-dedupe.js';
-
-const AGENT_FORMATS_FOR_SEED = new Set(['agent', 'agent_preview', 'agent_full', 'agent_full_xl']);
 import { applyFileKindRanking, applyResultDemotions, classifyFileKindIntent, detectFileKind } from '../ranking/file-kind-ranking.js';
 import { injectAnchorCandidates } from './search-anchor.js';
 import { runRRFFallback } from './search-rrf.js';
+
+const AGENT_FORMATS_FOR_SEED = new Set(['agent', 'agent_preview', 'agent_full', 'agent_full_xl']);
 
 const QUERY_SCAFFOLD_RE = /^(?:where|when|how)\s+(?:does|do|did|is|are|was|were|can|could|should)?\s*/i;
 const IMPLEMENTATION_VERB_RE = /^(?:abort|bind|build|call|compute|create|decode|decide|detect|encode|handle|load|parse|parsed|redirect|register|run|search|skip|transform|validate|write)s?\b/i;
@@ -239,12 +239,17 @@ export async function hybridSearchV2(query, options = {}) {
   // cut counts distinct spans, so the pool holds k of them; copies met on the
   // way stay in for the cascade (each sub-chunk has its own MaxSim tokens) and
   // the final dedupe keeps the best-scored copy (span-dedupe.js). Agent
-  // formats only (CLAUDE.md format-gating; GCSN-style traffic keeps its seed
-  // pool). SWEET_SEARCH_SEED_SPAN_COLLAPSE=0 turns it off, =1 forces it for
-  // every format.
-  const seedCollapseEnv = process.env.SWEET_SEARCH_SEED_SPAN_COLLAPSE;
-  const seedCollapse = seedCollapseEnv === '1'
-    || (seedCollapseEnv !== '0' && AGENT_FORMATS_FOR_SEED.has(options.format));
+  // formats only (CLAUDE.md format-gating; the final dedupe runs only there).
+  //
+  // DEFAULT OFF; SWEET_SEARCH_SEED_SPAN_COLLAPSE=1 turns it on (A/B only).
+  // Re-measured on the rebased tree (cfd18b77, DEV only, seed-42 splits,
+  // final dedupe + MMR + refill on in both arms): it changed top-1 on 3 of
+  // 280 r3 lists (none gold-better) and lost one r3 question at k=5, the
+  // ss-search default (recall@5 0.2516 -> 0.2498), for one gained at k=10
+  // (0.3361 -> 0.3372). Probes dev top-1 31 = 31 either way. The final span
+  // dedupe alone already removes every duplicate slot at k=5.
+  const seedCollapse = process.env.SWEET_SEARCH_SEED_SPAN_COLLAPSE === '1'
+    && AGENT_FORMATS_FOR_SEED.has(options.format);
   const seeds = seedCollapse && !hasAblation(options.ablations, 'no-span-dedupe')
     ? takeDistinctSpans(diversified, k)
     : diversified.slice(0, k);
