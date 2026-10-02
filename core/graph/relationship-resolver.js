@@ -492,7 +492,8 @@ function isImported(imported, filePath) {
  * - `.`-qualified call to a top-level function in a module language: the
  *   receiver must name the function's module (file stem or directory).
  * - A receiver that names a candidate's owner (`broker.notify` →
- *   DatabaseObservationBroker.notify) or file wins over the rest.
+ *   DatabaseObservationBroker.notify) or file wins over the rest. A C/C++
+ *   caller needs that evidence even with one candidate left.
  * - `self.foo()` / bare `foo()` prefer the caller's own owner.
  * - Otherwise a definition in a file the caller's file imports wins.
  * The caller ranks what is left with pickClosestCandidate (same file, then
@@ -776,6 +777,7 @@ export function resolveRowsScoped(db, rows, { liveOnly = true } = {}) {
   // signature under the same id, so they never outlive one run.
   declaredTypeMemo.clear();
   if (subtypeTokensMemo.size > 50_000) subtypeTokensMemo.clear();
+  if (supertypeTokensMemo.size > 50_000) supertypeTokensMemo.clear();
   const entityLive = liveOnly && hasColumn(db, 'entities', 'epoch_retired') ? ' AND epoch_retired IS NULL' : '';
   const relLive = liveOnly && hasColumn(db, 'relationships', 'epoch_retired') ? ' AND r.epoch_retired IS NULL' : '';
 
