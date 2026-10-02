@@ -184,6 +184,45 @@ describe('entity adoption — namespace/module wrappers (agent format)', () => {
   });
 });
 
+describe('entity adoption — no graph rows, or no graph', () => {
+  const chunk = () => ({
+    file: 'lib/HttpViewData.h',
+    startLine: 4,
+    endLine: 11,
+    score: 0.5,
+    metadata: { file: 'lib/HttpViewData.h', startLine: 4, endLine: 11, type: 'namespace', name: 'drogon' },
+  });
+
+  it('an index with no entities table leaves the chunk as it was (old index, agent format)', () => {
+    const root = mkdtempSync(join(tmpdir(), 'ss-ns-adopt-old-'));
+    roots.push(root);
+    const dbPath = join(root, 'code-graph.db');
+    const db = new Database(dbPath);
+    db.exec('CREATE TABLE unrelated (id TEXT)');
+    db.close();
+    const repo = new CodeGraphRepository(dbPath);
+    repos.push(repo);
+    const [out] = applyResultDemotions([chunk()], { query: 'how is the value read', codeGraphRepo: repo, format: 'agent' });
+    expect(`${out.metadata.type}:${out.metadata.name} ${out.metadata.startLine}-${out.metadata.endLine}`)
+      .toBe('namespace:drogon 4-11');
+  });
+
+  it('a missing graph database leaves the chunk as it was (agent format)', () => {
+    const repo = new CodeGraphRepository(join(tmpdir(), 'ss-ns-adopt-missing', 'code-graph.db'));
+    repos.push(repo);
+    const [out] = applyResultDemotions([chunk()], { query: 'how is the value read', codeGraphRepo: repo, format: 'agent' });
+    expect(`${out.metadata.type}:${out.metadata.name} ${out.metadata.startLine}-${out.metadata.endLine}`)
+      .toBe('namespace:drogon 4-11');
+  });
+
+  it('format undefined (GCSN calls search() with no format) keeps the earlier adoption', async () => {
+    const repo = await graphRepo();
+    const [out] = applyResultDemotions([chunk()], { query: 'how is the value read', codeGraphRepo: repo });
+    expect(`${out.metadata.type}:${out.metadata.name} ${out.metadata.startLine}-${out.metadata.endLine}`)
+      .toBe('namespace:drogon 4-19');
+  });
+});
+
 describe('entity adoption — methods inside a class (agent format)', () => {
   it('C#: a named method chunk keeps its own label and range (not `[class: Store]` over the class span)', async () => {
     expect(await adopt('src/Store.cs', 5, 11, 'method', 'Get14'))
