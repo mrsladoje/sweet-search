@@ -145,6 +145,35 @@ describe.runIf(RG_OK)('fixed-string search through the planner (real engine)', (
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('case comes only from the explicit option, never from "(?i" in the text', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'prefilter-fixed-case-'));
+    try {
+      writeFileSync(path.join(dir, 'lower.js'), 'const s = "(?i)needle";\n');
+      writeFileSync(path.join(dir, 'upper.js'), 'const s = "(?i)NEEDLE";\n');
+      writeFileSync(path.join(dir, 'other.js'), 'const s = "needle";\n');
+      const run = (opts) => generateRegexMatches({ projectRoot: dir }, '(?i)needle', dir,
+        { fixedString: true, globs: ['*.js'], useGramIndex: false, ...opts });
+      // "(?i)needle" is text: matched case-sensitively, as `rg -F` does
+      const plain = await run({});
+      expect(plain.matchingFiles).toEqual(['lower.js']);
+      expect(plain.indexedMatches.map((m) => m.file)).toEqual(['lower.js']);
+      // the explicit option folds case in the prefilter and in the final grep
+      const folded = await run({ caseInsensitive: true });
+      expect([...folded.matchingFiles].sort()).toEqual(['lower.js', 'upper.js']);
+      if (hasNativeSparseGramSupport()) {
+        const indexPath = path.join(dir, 'sparse.idx');
+        buildSparseGramIndexArtifact({ projectRoot: dir, files: ['lower.js', 'upper.js', 'other.js'], outputPath: indexPath });
+        const searcher = { projectRoot: dir, sparseGramIndex: loadSparseGramIndex(indexPath), sparseGramIndexPath: indexPath };
+        expect((await generateRegexMatches(searcher, '(?i)needle', dir, { fixedString: true })).matchingFiles)
+          .toEqual(['lower.js']);
+        expect([...(await generateRegexMatches(searcher, '(?i)needle', dir, { fixedString: true, caseInsensitive: true }))
+          .matchingFiles].sort()).toEqual(['lower.js', 'upper.js']);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('prefilterLiteralClauses: what each prefilter may use', () => {
