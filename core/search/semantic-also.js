@@ -46,6 +46,46 @@ function shownEndLine(span) {
 }
 
 /**
+ * Batch the output-only graph lookups once per semantic request. Never cache across
+ * requests: the next call must see graph edits and a newly published manifest.
+ *
+ * @param {object|null} graph - CodeGraphRepository
+ * @param {string} file
+ * @param {Array<object>} spans - budgeted spans, including truncation metadata
+ * @param {Array<object>} pool - ranked candidate chunks
+ * @returns {object|null} request-local findEntitiesInRange / findEnclosingEntity adapter
+ */
+export function createSemanticEntityLookup(graph, file, spans = [], pool = []) {
+  if (!graph || !file) return null;
+  const ranges = new Map();
+  const key = (start, end) => `${start}:${end}`;
+  const add = (startLine, endLine, includeInside) => {
+    if (!Number.isInteger(startLine) || !Number.isInteger(endLine)) return;
+    const k = key(startLine, endLine);
+    const previous = ranges.get(k);
+    ranges.set(k, { startLine, endLine, includeInside: includeInside || previous?.includeInside || false });
+  };
+  for (const span of spans) add(span.startLine, shownEndLine(span), true);
+  for (const c of pool) {
+    if (spans.some(s => overlaps(c?.startLine, c?.endLine, s.startLine, s.endLine))) continue;
+    add(c?.startLine, c?.endLine, false);
+  }
+  if (!ranges.size) return null;
+  let rows;
+  try { rows = graph.findEntitiesForRanges(file, [...ranges.values()]); } catch { return null; }
+  if (rows.length !== ranges.size) return null;
+  const results = new Map([...ranges.keys()].map((k, i) => [k, rows[i]]));
+  return {
+    findEntitiesInRange(filePath, startLine, endLine) {
+      return filePath === file ? [...(results.get(key(startLine, endLine))?.inRange || [])] : [];
+    },
+    findEnclosingEntity(filePath, startLine, endLine) {
+      return filePath === file ? results.get(key(startLine, endLine))?.enclosing || null : null;
+    },
+  };
+}
+
+/**
  * Names of the entities a printed span holds, in file order: the entity the span sits
  * inside, plus every entity that starts inside it. Nested closures of a function are
  * skipped, and so is an entity of which the span shows only a stub (a signature line

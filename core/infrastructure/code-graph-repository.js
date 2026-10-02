@@ -326,6 +326,65 @@ export class CodeGraphRepository {
   }
 
   /**
+   * Batch one file's range lookups in one statement and one manifest refresh.
+   * Materialize visible entities once, retaining their database scan order for
+   * SQL ties. Keep the original range ordering, caps, and unnamed enclosing rows.
+   * JSON supplies the ranges without growing the prepared-statement cache or
+   * hitting SQLite's bound-parameter limit. Only printed spans need inside rows.
+   *
+   * @param {string} filePath
+   * @param {Array<{startLine:number,endLine:number,includeInside:boolean}>} ranges
+   * @returns {Array<{enclosing:object|null,inRange:object[]}>} in input order
+   */
+  findEntitiesForRanges(filePath, ranges) {
+    if (!filePath || !Array.isArray(ranges) || !ranges.length) return [];
+    try {
+      const db = this._open();
+      if (!db) return [];
+      const visibility = this._entityVisibilitySql(db);
+      const params = this._entityVisibilityParams(db);
+      const entityJson = `json_object(
+        'id', id, 'name', name, 'type', type,
+        'startLine', start_line, 'endLine', end_line, 'parentClass', parent_class
+      )`;
+      const rows = prepareCached(db, `
+        WITH ranges AS MATERIALIZED (
+          SELECT key,
+            json_extract(value, '$[0]') AS range_start,
+            json_extract(value, '$[1]') AS range_end,
+            json_extract(value, '$[2]') AS include_inside
+          FROM json_each(?)
+        ), visible_entities AS MATERIALIZED (
+          SELECT id, name, type, start_line, end_line, parent_class FROM entities
+          WHERE file_path = ? AND ${visibility}
+        )
+        SELECT
+          (SELECT ${entityJson} FROM visible_entities
+            WHERE start_line <= ranges.range_start AND end_line >= ranges.range_end
+            ORDER BY (end_line - start_line) ASC LIMIT 1) AS enclosing,
+          CASE WHEN ranges.include_inside THEN
+            (SELECT json_group_array(${entityJson}) FROM (
+              SELECT id, name, type, start_line, end_line, parent_class FROM visible_entities
+              WHERE start_line >= ranges.range_start AND start_line <= ranges.range_end
+              ORDER BY start_line ASC LIMIT 64
+            ))
+          ELSE '[]' END AS in_range
+        FROM ranges ORDER BY key ASC
+      `).all(
+        JSON.stringify(ranges.map(r => [r.startLine, r.endLine, r.includeInside ? 1 : 0])),
+        filePath, ...params,
+      );
+      const normalize = e => ({ ...e, parentClass: e.parentClass || null });
+      return rows.map(row => ({
+        enclosing: row.enclosing ? normalize(JSON.parse(row.enclosing)) : null,
+        inRange: JSON.parse(row.in_range).map(normalize),
+      }));
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * Every visible named entity in one file, in start_line order. Powers the
    * singleton-grep sibling line: a whole-file symbol table (fields included)
    * is what "which same-file declarations share this hit's identifier
