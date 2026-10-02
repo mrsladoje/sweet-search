@@ -391,7 +391,10 @@ export const CORE_LANGUAGES = {
         interface: /^\s*(?:public|internal)?\s*interface\s+(\w+)(?:\s*:\s*([\w,\s<>]+))?/,
         enum: /^\s*(?:public|internal)?\s*enum\s+(\w+)/,
         struct: /^\s*(?:public|internal)?\s*(?:readonly\s+)?struct\s+(\w+)/,
-        method: /^\s*(?:public|private|protected|internal)\s+(?:static\s+)?(?:async\s+)?(?:override\s+)?(?:virtual\s+)?(?:[\w<>\[\]?]+)\s+(\w+)\s*\(([^)]*)\)/,
+        // The parameter list may continue on the next lines
+        // (`protected int GivenOcelotIsRunning(` … `)`): the definition still
+        // starts here.
+        method: /^\s*(?:public|private|protected|internal)\s+(?:static\s+)?(?:async\s+)?(?:override\s+)?(?:virtual\s+)?(?:[\w<>\[\]?]+)\s+(\w+)\s*\(([^)]*)(?:\)|$)/,
         property: /^\s*(?:public|private|protected|internal)\s+(?:static\s+)?(?:[\w<>\[\]?]+)\s+(\w+)\s*\{/,
         field: /^\s*(?:public|private|protected|internal)\s+(?:static\s+)?(?:readonly\s+)?(?:[\w<>\[\]?]+)\s+(\w+)\s*[;=]/,
       },

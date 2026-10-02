@@ -124,4 +124,158 @@ describe('entity ids: one entity per definition', () => {
     expect(ex.findEndLine(lines, 1)).toBe(4);
     expect(ex.findEndLine(['int f(int a,', '      int b) {', '}'], 0)).toBe(3);
   });
+
+  it('findEndLine: `//` inside a string is not a comment; a `;` only in a comment ends nothing', () => {
+    const ex = new GraphExtractor();
+    const body = ['void F() {', '  g();', '}'];
+    // A URL field: the old `//.*$` cut left `"http:` and the field ran on to F's `}`.
+    expect(ex.findEndLine(['private const string Url = "http://localhost:5000";', ...body], 0)).toBe(1);
+    expect(ex.findEndLine(["const u = 'https://x.org/a';", ...body], 0)).toBe(1);
+    expect(ex.findEndLine(['private string P = @"C:\\dir\\";', ...body], 0)).toBe(1);
+    expect(ex.findEndLine(['int x = 1; // trailing note', ...body], 0)).toBe(1);
+    expect(ex.findEndLine(['int x = 1; /* note */', ...body], 0)).toBe(1);
+    expect(ex.findEndLine(['private readonly Dictionary<string, List<int>> _m = new();', ...body], 0)).toBe(1);
+    // Multi-line expression-bodied member: ends on the line with the `;`.
+    expect(ex.findEndLine(['public int F(int a)', '    => a + 1;', ...body], 0)).toBe(2);
+    // A `;` that only appears in a comment does not end the declaration.
+    expect(ex.findEndLine(['void G() // calls g();', '{', '  g();', '}'], 0)).toBe(4);
+    expect(ex.findEndLine(['void G() /* g(); */', '{', '  g();', '}'], 0)).toBe(4);
+  });
+
+  it('C# (regex path): a method whose parameters continue on the next lines is a definition', () => {
+    const ex = new GraphExtractor();
+    const lines = [
+      'public class AcceptanceSteps',
+      '{',
+      '    public int GivenOcelotIsRunning() => GivenOcelotIsRunning(null, null);',
+      '    protected int GivenOcelotIsRunning(',
+      '        Action<IServiceCollection>? configureServices,',
+      '        Action<HttpClient>? configureClient)',
+      '    {',
+      '        return Run(configureServices, configureClient);',
+      '    }',
+      '    private static void SetBaseUrl(FileConfiguration configuration, string baseUrl)',
+      '    {',
+      '    }',
+      '}',
+    ];
+    const langInfo = resolveLanguage('AcceptanceSteps.cs', lines.join('\n'));
+    const { entities } = ex.extractGeneric(lines.join('\n'), lines, 'AcceptanceSteps.cs', langInfo);
+    expect(uniqueIds(entities)).toBe(true);
+    expect(entities.filter((e) => e.type === 'method').map((e) => `${e.parent_class}.${e.name}@${e.start_line}-${e.end_line}`)).toEqual([
+      'AcceptanceSteps.GivenOcelotIsRunning@3-3',
+      'AcceptanceSteps.GivenOcelotIsRunning@4-9',
+      'AcceptanceSteps.SetBaseUrl@10-12',
+    ]);
+  });
+});
+
+describe('entity ids: collision guard', () => {
+  const content = ['export class A {', '  run() { return 1; }', '}', 'export class B {', '  run() { return 2; }', '}'].join('\n');
+
+  // An extractor whose id rule is broken on purpose: every entity of a type gets one id.
+  const brokenExtractor = () => {
+    const ex = new GraphExtractor();
+    ex.entityId = (filePath, type) => ({ id: `fixed-${type}`, duplicate: false });
+    return ex;
+  };
+
+  it('throws under tests when two entities of one file share an id', async () => {
+    await expect(brokenExtractor().extractFromFile('src/x.ts', content)).rejects.toThrow(/duplicate entity id/);
+  });
+
+  it('outside tests, keeps every entity under a derived id and moves its edges and call sites', async () => {
+    const saved = process.env.VITEST;
+    const warn = console.warn;
+    console.warn = () => {};
+    delete process.env.VITEST;
+    let result;
+    try {
+      result = await brokenExtractor().extractFromFile('src/x.ts', content);
+    } finally {
+      process.env.VITEST = saved;
+      console.warn = warn;
+    }
+    const ids = result.entities.map((e) => e.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    const runs = result.entities.filter((e) => e.name === 'run');
+    expect(runs).toHaveLength(2);
+    // Every edge or call site from inside the second `run` moved to its new id.
+    for (const r of [...result.relationships, ...(result.callSites || [])]) {
+      if (r.context_line === 5) expect(r.source_id).not.toBe('fixed-method');
+    }
+    // Deterministic: the same input gives the same derived ids.
+    delete process.env.VITEST;
+    console.warn = () => {};
+    let again;
+    try {
+      again = await brokenExtractor().extractFromFile('src/x.ts', content);
+    } finally {
+      process.env.VITEST = saved;
+      console.warn = warn;
+    }
+    expect(again.entities.map((e) => e.id)).toEqual(ids);
+  });
+
+  it('property: generated files with repeated names, nesting and overloads always get unique ids', async () => {
+    let seed = 20261002;
+    const rnd = (n) => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed % n; };
+    const names = ['run', 'Given', 'build', '_builder', 'Value', 'helper'];
+    const makers = {
+      'gen.cs': () => {
+        const out = ['namespace N;', 'public class Root', '{'];
+        for (let c = 0; c < 4; c++) {
+          out.push(`    public class C${rnd(3)}`, '    {');
+          for (let m = 0; m < 5; m++) {
+            const n = names[rnd(names.length)];
+            out.push(rnd(2)
+              ? `        private readonly Builder ${n} = new();`
+              : `        public void ${n}(int a${rnd(2) ? ', string s' : ''}) => Do(a);`);
+          }
+          out.push('    }');
+        }
+        out.push('}');
+        return out;
+      },
+      'gen.ts': () => {
+        const out = [];
+        for (let c = 0; c < 4; c++) {
+          out.push(`export class K${rnd(3)} {`);
+          for (let m = 0; m < 5; m++) out.push(`  ${names[rnd(names.length)]}(a${rnd(2) ? ', b' : ''}) { return a; }`);
+          out.push('}');
+        }
+        for (let f = 0; f < 4; f++) out.push(`export function ${names[rnd(names.length)]}() { return ${rnd(3)}; }`);
+        return out;
+      },
+      'Gen.java': () => {
+        const out = ['package p;', 'public class Gen {'];
+        for (let m = 0; m < 8; m++) out.push(`  public int ${names[rnd(names.length)]}(int a) { return a; }`);
+        out.push('}');
+        return out;
+      },
+      'gen.py': () => {
+        const out = [];
+        for (let c = 0; c < 3; c++) {
+          out.push(`class P${rnd(2)}:`);
+          for (let m = 0; m < 4; m++) out.push(`    def ${names[rnd(names.length)]}(self):`, `        return ${rnd(3)}`);
+        }
+        return out;
+      },
+      'gen.go': () => {
+        const out = ['package g', ''];
+        for (let m = 0; m < 6; m++) out.push(`func (r *R${rnd(2)}) ${names[rnd(names.length)]}() int { return ${rnd(3)} }`);
+        return out;
+      },
+      Makefile: () => Array.from({ length: 10 }, () => `${['MODE', 'CC', 'OUT'][rnd(3)]} = ${['fast', 'gcc'][rnd(2)]}`),
+      'gen.yml': () => Array.from({ length: 6 }, (_, i) => [`- name: t${rnd(3)}`, `  run: ${['make', 'make test'][rnd(2)]}`][i % 2]),
+    };
+    for (let round = 0; round < 40; round++) {
+      for (const [file, make] of Object.entries(makers)) {
+        const ex = new GraphExtractor();
+        // Under VITEST the guard throws on any duplicate, so a pass here means unique ids.
+        const { entities } = await ex.extractFromFile(file, make().join('\n'));
+        expect(uniqueIds(entities)).toBe(true);
+      }
+    }
+  });
 });

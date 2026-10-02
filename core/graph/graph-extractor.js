@@ -86,6 +86,36 @@ const REGEX_CONTAINER_TYPES = new Set([
 // key line is the same key (see GraphExtractor.entityId).
 const DATA_KEY_LANGUAGES = new Set(['json', 'yaml', 'toml', 'xml']);
 
+/**
+ * The code part of one line: `//` and `/* … *\/` comments removed, but only
+ * outside string literals — `string Url = "http://x";` keeps its `;` (a plain
+ * `//.*$` cut left `string Url = "http:` and the field ran on to the next
+ * block's `}`). Trailing whitespace is trimmed.
+ */
+export function codeBeforeComment(line) {
+  let out = '';
+  let quote = null;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (quote) {
+      out += c;
+      if (c === '\\') { out += line[i + 1] ?? ''; i++; continue; }
+      if (c === quote) quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'" || c === '`') { quote = c; out += c; continue; }
+    if (c === '/' && line[i + 1] === '/') break;
+    if (c === '/' && line[i + 1] === '*') {
+      const close = line.indexOf('*/', i + 2);
+      if (close < 0) break;
+      i = close + 1;
+      continue;
+    }
+    out += c;
+  }
+  return out.trimEnd();
+}
+
 export function clampSentinelEndLines(entities, fileLineCount, language) {
   if (!Array.isArray(entities) || entities.length < 2) return entities;
   if (fileLineCount == null || fileLineCount <= 0) return entities;
@@ -822,6 +852,7 @@ export class GraphExtractor {
     } finally {
       this._idStates.delete(filePath);
     }
+    this._ensureUniqueEntityIds(filePath, result);
     if (this.importResolver && result.relationships) {
       this._appendResolvedImports(filePath, content, result.relationships);
     }
@@ -834,6 +865,44 @@ export class GraphExtractor {
       name: path.basename(filePath),
     };
     return result;
+  }
+
+  /**
+   * Collision guard. A full build stores entities with INSERT OR REPLACE and
+   * the maintainer keys rows by id, so two entities of one file with one id
+   * would silently lose one (the bug entityId() fixed). entityId() makes ids
+   * unique by construction; this keeps it true if an extractor path ever
+   * breaks it. Under tests (VITEST, or SWEET_SEARCH_STRICT_ENTITY_IDS=1) it
+   * throws. Otherwise every later duplicate gets a derived id
+   * (`<id>:#dup<k>`, k in source order — deterministic, and the same in a full
+   * build and a maintainer tick), and the edges and call sites whose line
+   * lies in its range move with it. Runs once per file on the extractor's
+   * output, so both writers see the same ids.
+   */
+  _ensureUniqueEntityIds(filePath, result) {
+    const entities = result?.entities;
+    if (!entities || entities.length < 2) return;
+    const count = new Map();
+    let dups = null;
+    for (const e of entities) {
+      const k = count.get(e.id);
+      count.set(e.id, (k ?? -1) + 1);
+      if (k !== undefined) (dups ??= []).push({ e, k: k + 1 });
+    }
+    if (!dups) return;
+    const sample = dups.slice(0, 3).map(({ e }) => `${e.type} ${e.name}@${e.start_line}`).join(', ');
+    const message = `GraphExtractor: ${dups.length} duplicate entity id(s) in ${filePath} (${sample})`;
+    if (process.env.VITEST || process.env.SWEET_SEARCH_STRICT_ENTITY_IDS === '1') throw new Error(message);
+    console.warn(`${message} — kept with derived ids`);
+    for (const { e, k } of dups) {
+      const oldId = e.id;
+      const newId = createHash('sha256').update(`${oldId}:#dup${k}`).digest('hex').slice(0, 16);
+      e.id = newId;
+      const end = e.end_line ?? e.start_line;
+      const inRange = (line) => line != null && e.start_line != null && line >= e.start_line && line <= end;
+      for (const r of result.relationships || []) if (r.source_id === oldId && inRange(r.context_line)) r.source_id = newId;
+      for (const c of result.callSites || []) if (c.source_id === oldId && inRange(c.context_line)) c.source_id = newId;
+    }
   }
 
   /**
@@ -2628,7 +2697,7 @@ export class GraphExtractor {
       // prototype. Counting on to the next block's `}` gave the C# field
       // `_builder` the span of the two methods after it, so they lost their
       // owning class.
-      if (!started && opens === 0 && closes === 0 && line.replace(/\/\/.*$/, '').trimEnd().endsWith(';')) {
+      if (!started && opens === 0 && closes === 0 && codeBeforeComment(line).endsWith(';')) {
         return i + 1;
       }
 
