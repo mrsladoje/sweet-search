@@ -106,13 +106,14 @@ describe('ss-grep --in on a repository that contains a copy of itself (real engi
 
   it('gram path: a root path scope returns the root file only', async (ctx) => {
     if (!searchers.gram) ctx.skip();
-    expect((await total(searchers.gram, ['sqlite3_commit_hook'])).n).toBe(8);
+    // The index lists the loop copies; grep drops every hit reached through the symlink.
+    expect((await total(searchers.gram, ['sqlite3_commit_hook'])).n).toBe(4);
     const one = await total(searchers.gram, ['sqlite3_commit_hook', '--in', OBSERVER]);
     expect(one.n).toBe(3);
     expect(one.out).not.toContain('Tests/');
     expect((await total(searchers.gram, ['sqlite3_commit_hook', '--in', 'GRDB/Core'])).n).toBe(4);
-    // not at the root: the segment match, copies included, as before
-    expect((await total(searchers.gram, ['sqlite3_commit_hook', '--in', 'Core/TransactionObserver.swift'])).n).toBe(6);
+    // not at the root: the segment match, which no longer sees the loop copies
+    expect((await total(searchers.gram, ['sqlite3_commit_hook', '--in', 'Core/TransactionObserver.swift'])).n).toBe(3);
   });
 
   it('a correct zero (`statementDidFail\\(`, unpaired escaped paren) prints no regex note', async () => {
