@@ -8,10 +8,12 @@
  * What ships (the benchmark arm it reproduces):
  *   Codex    CODEX_HARNESS_TRIM=conflict + CODEX_TRIM_BATCH=yt3batch2
  *            codex 0.146.1's own base instructions minus the `rg` search steer, with the two
- *            tool-grouping lines replaced by ours (codexInstructions()).
+ *            tool-grouping lines replaced by ours (codexInstructions()); rules v2 (rules-v2.js)
+ *            puts back the `rg --files` half of the steer.
  *   opencode OC_HARNESS_TRIM=conflict3+todo3eff3k
  *            opencode 1.18.4's gpt-family prompt minus the Glob/Grep bullet and " - especially
- *            file reads", plus our todowrite and efficiency lines (opencodePrompt()); the grep
+ *            file reads", plus our todowrite and efficiency lines (opencodePrompt()); rules v2
+ *            puts back the Glob half of that bullet; the grep
  *            tool and the explore subagent off; tool-description edits (OPENCODE_TOOL_EDITS)
  *            applied by opencode-trim-plugin.mjs.
  *
@@ -21,6 +23,11 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CODEX_FILE_NAME_LINE, OPENCODE_GLOB_BULLET, insertLineBefore, rulesV2Enabled } from './rules-v2.js';
+
+// Rules v2 (rules-v2.js, default on; SS_FIX_RULES_V2=0 = the old texts byte for byte): each
+// harness prompt gets back only the file-name half of the stock search line the trim removed.
+export { CODEX_FILE_NAME_LINE, OPENCODE_GLOB_BULLET, rulesV2Enabled };
 
 export const HARNESS_PROMPTS_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -63,10 +70,19 @@ export function stripLicenseHeader(text) {
   return text.replace(/^<!--[\s\S]*?-->\n/, '');
 }
 
+/**
+ * Rules v2: the `rg --files` half of the stock line "When you search for text or files, you reach
+ * first for `rg` or `rg --files`…", in that line's place (just before the parallel-calls line).
+ * Off (SS_FIX_RULES_V2=0) = `text` unchanged. The bench runner applies it to the same text.
+ */
+export function codexFileNameEdit(text, env = process.env) {
+  return insertLineBefore(text, CODEX_PARALLEL_LINE, CODEX_FILE_NAME_LINE, { env, label: 'codex instructions' });
+}
+
 /** The Codex base instructions `init --codex` ships (model_instructions_file). */
-export function codexInstructions() {
+export function codexInstructions(env = process.env) {
   const text = stripLicenseHeader(readFileSync(CODEX_INSTRUCTIONS_SOURCE, 'utf8'));
-  return applyExactEdits(text, [[CODEX_BATCH_BASE, CODEX_SHIPPED_BATCH_LINES]], 'codex instructions');
+  return codexFileNameEdit(applyExactEdits(text, [[CODEX_BATCH_BASE, CODEX_SHIPPED_BATCH_LINES]], 'codex instructions'), env);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -89,11 +105,19 @@ export const OPENCODE_TODO3_LINE = '- Send todowrite as a parallel call in the s
 // General bounded-efficiency line, request-neutral (answers and plans are their own outcomes).
 export const EFFICIENCY_LINE_3 = '- Work efficiently: start from what the request and any error output point to, and open more only when the evidence requires it. Do what the request asks, whether an answer, a plan or a change, and nothing unrelated. For requests that need code changes, make the change that fully solves the request, including the edits it needs elsewhere, check it with the checks the project has, again after each fix, and stop when it is done. For a question, answer from the evidence you gathered.';
 
+/**
+ * What replaces the stock Glob/Grep bullet: nothing (v1, SS_FIX_RULES_V2=0), or its Glob half
+ * (rules v2, the default). The bench runner uses the same function.
+ */
+export function opencodeConflictBulletReplacement(env = process.env) {
+  return rulesV2Enabled(env) ? OPENCODE_GLOB_BULLET : '';
+}
+
 /** The opencode build/general agent prompt `init --opencode` ships. */
-export function opencodePrompt() {
+export function opencodePrompt(env = process.env) {
   const original = readFileSync(OPENCODE_GPT_ORIGINAL, 'utf8');
   const prompt = applyExactEdits(original, [
-    [OPENCODE_CONFLICT_PROMPT_BULLET, ''],
+    [OPENCODE_CONFLICT_PROMPT_BULLET, opencodeConflictBulletReplacement(env)],
     [OPENCODE_BATCH_BULLET, `${OPENCODE_BATCH_BULLET}\n${OPENCODE_TODO3_LINE}\n${EFFICIENCY_LINE_3}`],
   ], 'opencode prompt');
   if (!prompt.includes(OPENCODE_FILE_READS_EDIT[0])) throw new Error('opencode prompt: "especially file reads" not found');
