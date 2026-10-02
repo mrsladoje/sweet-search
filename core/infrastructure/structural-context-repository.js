@@ -15,6 +15,10 @@ import { asTopLevelCaller, fileNodeSourceSql, hasFilesTable, hasGraphColumn, has
 import { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX } from '../graph/import-resolver.js';
 import { callTargetAliases, clampLimit, isLikelyCodeEntity, isTestPath, lowerCamel, placeholders, qualifiedTargetName, rowToEntity } from './structural-context-utils.js';
 
+// Entity types that own members: a call inside one belongs to its own
+// member of that name (getSameFileCallers).
+const OWNER_TYPES = new Set(['class', 'interface', 'struct', 'enum', 'trait', 'impl', 'object', 'protocol', 'extension', 'record', 'module', 'service']);
+
 function sortLines(item) {
   item.contextLines.sort((a, b) => a - b);
   item.contextLine = item.contextLines[0] ?? item.contextLine;
@@ -215,7 +219,15 @@ export class StructuralContextRepository {
     if (!db || !raw) return [];
 
     const limit = clampLimit(opts.limit, 12, 50);
-    const suffix = raw.includes('.') ? raw.split('.').filter(Boolean).pop() : raw;
+    // `Owner.name` / `Owner::name`: the member named `name` of `Owner` comes
+    // first — the way to reach one of several same-named members (a method
+    // repeated in nested classes) that the trace lists as alternatives.
+    const parts = raw.split(/::|\./).filter(Boolean);
+    const suffix = parts.length > 1 ? parts[parts.length - 1] : raw;
+    const qualifier = parts.length > 1 ? parts[parts.length - 2] : null;
+    const ownedFirst = (list) => (qualifier
+      ? [...list.filter(c => c?.parentClass === qualifier), ...list.filter(c => c?.parentClass !== qualifier)]
+      : list);
     const names = [...new Set([raw, suffix].filter(Boolean))];
     const filePath = typeof opts.filePath === 'string' && opts.filePath.trim()
       ? opts.filePath.trim()
@@ -238,6 +250,7 @@ export class StructuralContextRepository {
         AND (${nameWhere})
         ${fileWhere}
       ORDER BY
+        CASE WHEN parent_class IS ? THEN 0 ELSE 1 END,
         CASE
           WHEN name = ? THEN 0
           WHEN lower(name) = lower(?) THEN 1
@@ -253,11 +266,11 @@ export class StructuralContextRepository {
         CASE WHEN end_line - start_line = 0 THEN 1 ELSE 0 END,
         (end_line - start_line) ASC
       LIMIT ?
-    `).all(...entityParams, ...params, raw, raw, limit);
+    `).all(...entityParams, ...params, qualifier ?? '\u0000', raw, raw, limit);
     if (exactRows.length) {
       const members = this._findAssignedMemberDefinitions(raw);
       const candidates = [...members, ...exactRows.map(row => this._entityFromRow(row))].filter(Boolean);
-      return rankStructuralCandidates(candidates, { queryHint: opts.queryHint, readFileRange: this.readFileRange.bind(this) });
+      return ownedFirst(rankStructuralCandidates(candidates, { queryHint: opts.queryHint, readFileRange: this.readFileRange.bind(this) }));
     }
 
     if (raw.length < 3) return [];
@@ -391,6 +404,11 @@ export class StructuralContextRepository {
       WHERE ${entitySql} AND file_path = ? AND start_line IS NOT NULL AND end_line IS NOT NULL
       ORDER BY start_line
     `).all(...this._entityParams(db), target.filePath);
+    // Same-named definitions with different owners in this file (a member
+    // repeated in several nested classes): a call made inside class X binds
+    // to X's own definition, so it is not a caller of the others.
+    const siblings = fileEntities.filter(r => r.name === target.name);
+    const ownerOf = (host) => host.parent_class || (OWNER_TYPES.has(host.type) ? host.name : null);
     const out = [];
     const seen = new Set();
     for (const ln of hits) {
@@ -398,6 +416,11 @@ export class StructuralContextRepository {
         .filter(r => r.start_line <= ln && r.end_line >= ln)
         .sort((a, b) => (a.end_line - a.start_line) - (b.end_line - b.start_line))[0];
       if (!host || host.id === target.id || host.name === target.name) continue;
+      if (siblings.length > 1) {
+        const owner = ownerOf(host);
+        const own = owner ? siblings.find(s => s.parent_class === owner) : null;
+        if (own && own.id !== target.id) continue;
+      }
       const key = `${host.id}:${ln}`;
       if (seen.has(key)) continue;
       seen.add(key);
