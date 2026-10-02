@@ -22,6 +22,7 @@ import {
 } from './search-pattern-prefilter.js';
 import { resolveSearchSymbolFilter } from './search-pattern-chunks.js';
 import { _getRgCapabilities, runRipgrepFilesWithMatches, runRipgrepJson, normalizeSearchPath } from './search-pattern-ripgrep.js';
+import { isSymlinkedRelUnder } from '../indexing/admission-policy.js';
 
 /**
  * Normalize match file paths from native grep (which returns absolute paths)
@@ -39,11 +40,53 @@ function normalizeNativeMatches(matches, searchDir) {
   return out;
 }
 
+/**
+ * Drop matches whose path goes through a symlink below `searchDir`. The indexer never admits
+ * such a path (admission rule 5), so a hit there is a second name for a file already searched
+ * at its real path, or for content outside the repository. Only a gram index that is older than
+ * the tree holds such paths: one built before the no-follow rule (GRDB's
+ * `Tests/CustomSQLite/GRDB -> ../..` loop put 32 copies of every file in it), or a directory
+ * turned into a symlink that the maintainer has not retired yet. The memo makes the cost one
+ * lstat per distinct directory prefix, and the walk stops at the first symlink.
+ */
+function dropSymlinkAliasMatches(result, searchDir) {
+  if (!result) return result;
+  const memo = new Map();
+  const verdict = new Map();
+  const isAlias = (file) => {
+    let v = verdict.get(file);
+    if (v === undefined) {
+      v = isSymlinkedRelUnder(searchDir, file, memo);
+      verdict.set(file, v);
+    }
+    return v;
+  };
+  const indexed = result.indexedMatches || [];
+  const overlay = result.overlayMatches || [];
+  const keptIndexed = indexed.filter((m) => !isAlias(m.file));
+  const keptOverlay = overlay.filter((m) => !isAlias(m.file));
+  const dropped = indexed.length - keptIndexed.length + overlay.length - keptOverlay.length;
+  if (dropped === 0) return result;
+  return {
+    ...result,
+    indexedMatches: keptIndexed,
+    overlayMatches: keptOverlay,
+    matchingFiles: Array.isArray(result.matchingFiles)
+      ? result.matchingFiles.filter((file) => !isAlias(file))
+      : result.matchingFiles,
+    stats: { ...(result.stats || {}), symlinkAliasMatchesDropped: dropped },
+  };
+}
+
 // =============================================================================
 // Core pipeline — regex candidate generation
 // =============================================================================
 
 export async function generateRegexMatches(searcher, regex, searchDir, options = {}) {
+  return dropSymlinkAliasMatches(await collectRegexMatches(searcher, regex, searchDir, options), searchDir);
+}
+
+async function collectRegexMatches(searcher, regex, searchDir, options = {}) {
   const start = performance.now();
   const fixedString = options.fixedString ?? false;
   const globs = options.globs ?? [];

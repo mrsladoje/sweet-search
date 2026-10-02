@@ -53,7 +53,14 @@ import { lineGutterEnabled, numberCodeLines, resolveGutterForm } from './search-
 // and leaks queries between them; the per-project Unix socket is the default
 // transport). Exported for back-compat references.
 export const SEARCH_SERVER_PORT = 9876;
+// Time a client gets to send a whole request (requestTimeout; headers get 5 s more). There is
+// no server-side cap on the ANSWER: a socket idle timeout used to destroy any query that ran
+// past 30 s, and the caller saw a bare "socket hang up" (r3-grdb, a first query on a loaded
+// machine). The clients carry the backstop instead (QUERY_CLIENT_TIMEOUT_MS, and the native
+// client's 600 s IO timeout).
 export const SEARCH_SERVER_TIMEOUT_MS = 30_000;
+// A backstop for a hung daemon, not a budget; matches the native client's IO timeout.
+export const QUERY_CLIENT_TIMEOUT_MS = 600_000;
 export const SEARCH_SERVER_MAX_URL_LENGTH = 16_384;
 export const SEARCH_SERVER_MAX_QUERY_LENGTH = 2_000;
 export const SEARCH_SERVER_MAX_READ_PATH_LENGTH = 8_192;
@@ -923,9 +930,6 @@ export async function startServer() {
       // One ss-* call from the native client, run warm in this process
       // (core/agent-tools/daemon-route.js). Real query traffic: resets the idle clock.
       lastActivityMs = Date.now();
-      // A call may legitimately outlast the socket idle timeout (a cold ss-find on a
-      // large repository); the client carries its own backstop.
-      req.socket.setTimeout(0);
       const { buildAgentToolDaemonResponse, AGENT_TOOL_BODY_MAX_BYTES } = await import('../agent-tools/daemon-route.js');
       let response;
       try {
@@ -1352,9 +1356,7 @@ export async function startServer() {
   // unconditionally on 9876 and a second project's server died on EADDRINUSE).
   if (httpPort != null) {
     tcpServer = http.createServer(serveRequest);
-    tcpServer.setTimeout(SEARCH_SERVER_TIMEOUT_MS);
-    if ('requestTimeout' in tcpServer) tcpServer.requestTimeout = SEARCH_SERVER_TIMEOUT_MS;
-    if ('headersTimeout' in tcpServer) tcpServer.headersTimeout = SEARCH_SERVER_TIMEOUT_MS + 5_000;
+    configureServerTimeouts(tcpServer);
     tcpServer.on('error', (err) => {
       console.error(`[Server] TCP bind on ${httpPort} failed (continuing on Unix socket): ${err?.code || err?.message || err}`);
       try { tcpServer.close(); } catch { /* ignore */ }
@@ -1366,9 +1368,7 @@ export async function startServer() {
 
   // Unix socket server (per-project) - primary transport, 30-50% faster than TCP
   unixServer = http.createServer(serveRequest);
-  unixServer.setTimeout(SEARCH_SERVER_TIMEOUT_MS);
-  if ('requestTimeout' in unixServer) unixServer.requestTimeout = SEARCH_SERVER_TIMEOUT_MS;
-  if ('headersTimeout' in unixServer) unixServer.headersTimeout = SEARCH_SERVER_TIMEOUT_MS + 5_000;
+  configureServerTimeouts(unixServer);
   try { await fs.unlink(socketPath); } catch (err) {
     if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
   } // Remove stale socket
@@ -1505,6 +1505,31 @@ export async function startServer() {
 // Server query and management
 // =============================================================================
 
+/** A slow client is cut off; a slow answer is not (see SEARCH_SERVER_TIMEOUT_MS). */
+export function configureServerTimeouts(server) {
+  server.setTimeout(0);
+  server.requestTimeout = SEARCH_SERVER_TIMEOUT_MS;
+  server.headersTimeout = SEARCH_SERVER_TIMEOUT_MS + 5_000;
+  return server;
+}
+
+/**
+ * Bound a daemon query on the client side and name its failures. Without this, a daemon that
+ * closed the socket surfaced as a bare `socket hang up` stack trace in the agent's output.
+ */
+function guardQueryRequest(req, reject, route) {
+  req.setTimeout(QUERY_CLIENT_TIMEOUT_MS, () => {
+    req.destroy(new Error(`Sweet Search daemon did not answer ${route} within ${QUERY_CLIENT_TIMEOUT_MS / 1000} s`));
+  });
+  req.on('error', (err) => {
+    if (err?.code === 'ECONNRESET' || /socket hang up/.test(err?.message || '')) {
+      reject(new Error(`Sweet Search daemon closed the connection before answering ${route} (it stopped or restarted)`));
+      return;
+    }
+    reject(err);
+  });
+}
+
 export async function queryServer(query, options = {}) {
   const http = await import('http');
   const {
@@ -1603,7 +1628,7 @@ export async function queryServer(query, options = {}) {
         }
       });
     });
-    req.on('error', reject);
+    guardQueryRequest(req, reject, '/search');
     req.end();
   });
 }
@@ -1641,7 +1666,7 @@ export async function queryReadSemanticServer({ path: file, query, projectRoot, 
         catch { reject(new Error('Invalid server response')); }
       });
     });
-    req.on('error', reject);
+    guardQueryRequest(req, reject, '/read-semantic');
     req.end();
   });
 }
