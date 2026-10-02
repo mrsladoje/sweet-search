@@ -8,8 +8,7 @@
  * What ships (the benchmark arm it reproduces):
  *   Codex    CODEX_HARNESS_TRIM=conflict + CODEX_TRIM_BATCH=yt3batch2
  *            codex 0.146.1's own base instructions minus the `rg` search steer, with the two
- *            tool-grouping lines replaced by ours (codexInstructions()); rules v2 (rules-v2.js)
- *            puts back the `rg --files` half of the steer.
+ *            tool-grouping lines replaced by ours (codexInstructions()).
  *   opencode OC_HARNESS_TRIM=conflict3+todo3eff3k
  *            opencode 1.18.4's gpt-family prompt minus the Glob/Grep bullet and " - especially
  *            file reads", plus our todowrite and efficiency lines (opencodePrompt()); rules v2
@@ -24,13 +23,14 @@ import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  CODEX_FILE_NAME_LINE, OPENCODE_BASH_AVOID_V1, OPENCODE_BASH_AVOID_V2, OPENCODE_BASH_FILE_SEARCH_V1,
-  OPENCODE_BASH_FILE_SEARCH_V2, OPENCODE_GLOB_BULLET, insertLineBefore, rulesV2Enabled,
+  OPENCODE_BASH_AVOID_V1, OPENCODE_BASH_AVOID_V2, OPENCODE_BASH_FILE_SEARCH_V1,
+  OPENCODE_BASH_FILE_SEARCH_V2, OPENCODE_GLOB_BULLET, rulesV2Enabled,
 } from './rules-v2.js';
 
-// Rules v2 (rules-v2.js, default on; SS_FIX_RULES_V2=0 = the old texts byte for byte): each
-// harness prompt gets back only the file-name half of the stock search line the trim removed.
-export { CODEX_FILE_NAME_LINE, OPENCODE_GLOB_BULLET, rulesV2Enabled };
+// Rules v2 (rules-v2.js, default on; SS_FIX_RULES_V2=0 = the old texts byte for byte): the opencode
+// and Claude Code prompts get back only the file-name half of the stock search line the trim
+// removed. The Codex prompt is unchanged in both.
+export { OPENCODE_GLOB_BULLET, rulesV2Enabled };
 
 export const HARNESS_PROMPTS_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -73,19 +73,10 @@ export function stripLicenseHeader(text) {
   return text.replace(/^<!--[\s\S]*?-->\n/, '');
 }
 
-/**
- * Rules v2: the `rg --files` half of the stock line "When you search for text or files, you reach
- * first for `rg` or `rg --files`…", in that line's place (just before the parallel-calls line).
- * Off (SS_FIX_RULES_V2=0) = `text` unchanged. The bench runner applies it to the same text.
- */
-export function codexFileNameEdit(text, env = process.env) {
-  return insertLineBefore(text, CODEX_PARALLEL_LINE, CODEX_FILE_NAME_LINE, { env, label: 'codex instructions' });
-}
-
 /** The Codex base instructions `init --codex` ships (model_instructions_file). */
-export function codexInstructions(env = process.env) {
+export function codexInstructions() {
   const text = stripLicenseHeader(readFileSync(CODEX_INSTRUCTIONS_SOURCE, 'utf8'));
-  return codexFileNameEdit(applyExactEdits(text, [[CODEX_BATCH_BASE, CODEX_SHIPPED_BATCH_LINES]], 'codex instructions'), env);
+  return applyExactEdits(text, [[CODEX_BATCH_BASE, CODEX_SHIPPED_BATCH_LINES]], 'codex instructions');
 }
 
 // ---------------------------------------------------------------------------------------------

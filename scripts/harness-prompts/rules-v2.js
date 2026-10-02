@@ -1,20 +1,26 @@
 /**
- * Rules v2 (2026-10-02; OBSERVATIONS.md "The rules should list ss-grep's flags in one short line"
- * and "Allow file-name search (find, ls, rg --files)"). Product default ON.
+ * Rules v2 switch, SS_FIX_RULES_V2 (2026-10-02; OBSERVATIONS.md "The rules should list ss-grep's
+ * flags in one short line" and "Allow file-name search (find, ls, rg --files)"). Product default ON.
+ * The default text is the third draft ("v3", after the 2026-10-02 micro-smoke,
+ * core/prompt-optimization/data/obs-loop/TRACES-rules.md); the identifiers keep the V2 name.
  *
- * What v2 changes, in every shipped sweet-search text:
- *   rules (p7-final/sweet-search-system-prompt.md, which holds the v2 text):
- *     - one line that lists the ss-grep flags;
- *     - one line that allows file-name search (`rg --files`, `find -name`, `ls`);
+ * What the default changes, in every shipped sweet-search text:
+ *   rules (p7-final/sweet-search-system-prompt.md, which holds the default text):
+ *     - one ss-grep flag line that leads with `-g '!<glob>'` and says to start broad (the v2 line
+ *       made agents scope their FIRST grep, which likely cost recall);
+ *     - one line that allows file-name search (`rg --files`, `find -name`, `ls`) and says to read
+ *       a found file with ss-read, not `cat`;
  *     - `find`/`ls` leave the raw-tool ban and the absence rule (`grep`/`cat` stay banned);
  *     - "`ss-grep` is file:line only" becomes the full-line statement.
- *   Claude Code rules pointer (write-claude-rules.js): `find` leaves the raw-tool sentence.
- *   harness prompts: only the file-name half of each trimmed stock line comes back
- *     Codex `rg --files`, opencode Glob, Claude Code `find`; never the text-search or read half.
+ *   Claude Code: the rules pointer file drops `find` from its raw-tool sentence; the main agent
+ *     gets the `find` half of the trimmed stock steer and an override that exempts file-name search.
+ *   opencode: the Glob half of the trimmed stock bullet comes back; the bash tool text stops
+ *     discouraging `find`/`ls`.
+ *   Codex: nothing (the v2 `rg --files -g` harness line made Sol hunt for AGENTS.md; removed).
  *
  * SS_FIX_RULES_V2=0 restores the old texts byte for byte (the A/B baseline arm). Any other value,
- * or unset, is v2. Every builder takes the env it should read, so an interleaved bench arm with
- * an env overlay gets its own texts.
+ * or unset, is the default. Every builder takes the env it should read, so an interleaved bench
+ * arm with an env overlay gets its own texts.
  */
 
 export const RULES_V2_ENV = 'SS_FIX_RULES_V2';
@@ -37,9 +43,9 @@ function replaceOnce(text, from, to, label) {
 // ---------------------------------------------------------------------------------------------
 
 export const RULES_V2_GREP_FLAGS_LINE =
-  "- `ss-grep` flags when needed: `-i` (ignore case) `-w` (whole word) `--in <path>` `-g '<glob>'` / `-g '!<glob>'` (include / exclude) `-A/-B/-C N`";
+  "- `ss-grep` flags when needed: `-g '!<glob>'` excludes paths (tests, vendored, generated), `-g '<glob>'` / `--in <path>` scopes, `-i`, `-w`, `-A/-B/-C N`. Start broad; scope only after a broad grep shows where.";
 export const RULES_V2_FILE_NAMES_LINE =
-  "- To find files by name or list a directory, use `rg --files -g '<glob>'`, `find <dir> -name '<glob>'` or `ls <dir>` (one directory; never `ls -R` or an unfiltered `find .`/`rg --files`); the `ss-*` tools search file contents.";
+  "- To find files by name or list a directory, use `rg --files -g '<glob>'`, `find <dir> -name '<glob>'` or `ls <dir>` (one directory; never `ls -R` or an unfiltered `find .`/`rg --files`); read what you find with `ss-read`, not `cat`. The `ss-*` tools search file contents.";
 
 export const RULES_V2_POLICY_EDITS = Object.freeze([
   Object.freeze([
@@ -86,10 +92,6 @@ export const CLAUDE_POINTER_V2_SENTENCE = 'Use raw `grep`/`cat` or the native re
 // Harness prompts: the file-name half of each trimmed stock line.
 // ---------------------------------------------------------------------------------------------
 
-// Codex 0.146.1 stock: "When you search for text or files, you reach first for `rg` or
-// `rg --files`; …". v2 puts back the files half, in the stock line's place (before the
-// parallel-calls line).
-export const CODEX_FILE_NAME_LINE = "- When you search for files by name, you reach first for `rg --files -g '<glob>'`.";
 // opencode 1.18.4 stock: "When searching for text or files, prefer using Glob and Grep tools
 // (they are powered by `rg`)". v2 replaces the removed bullet with its Glob half.
 export const OPENCODE_GLOB_BULLET = '- When searching for files by name, prefer using the Glob tool (it is powered by `rg`)\n';
