@@ -38,7 +38,7 @@
  * reconcile transaction at the same epoch, so they fall under the same
  * frontier and are GC'd alongside it.
  *
- * FTS5 consistency: `entities_fts` and `entities_trigram` are external-content
+ * FTS5 consistency: `entities_fts`, `entities_code_fts` and `entities_trigram` are external-content
  * FTS5 tables (`content='entities'`, `content_rowid='rowid'`). Deleting an
  * entity content row does NOT update the index, so we must issue the FTS5
  * `'delete'` command (rowid + the originally-indexed column values, read from
@@ -213,6 +213,7 @@ export function pruneRetiredEntities(db, frontier, opts = {}) {
   }
   const { batchSize, maxRows } = normalizeBatchOpts(opts);
   const hasFts = tableExists(db, 'entities_fts');
+  const hasCodeFts = tableExists(db, 'entities_code_fts');
   const hasTrigram = tableExists(db, 'entities_trigram');
 
   const selectStmt = db.prepare(`
@@ -225,6 +226,10 @@ export function pruneRetiredEntities(db, frontier, opts = {}) {
     `INSERT INTO entities_fts(entities_fts, rowid, name, name_alias, signature, doc_comment)
      VALUES('delete', ?, ?, ?, ?, ?)`,
   ) : null;
+  const codeDel = hasCodeFts ? db.prepare(
+    `INSERT INTO entities_code_fts(entities_code_fts, rowid, name, name_alias, signature)
+     VALUES('delete', ?, ?, ?, ?)`,
+  ) : null;
   const triDel = hasTrigram ? db.prepare(
     `INSERT INTO entities_trigram(entities_trigram, rowid, name, signature)
      VALUES('delete', ?, ?, ?)`,
@@ -236,6 +241,7 @@ export function pruneRetiredEntities(db, frontier, opts = {}) {
     let ftsRemoved = 0;
     for (const r of rows) {
       if (ftsDel) { try { ftsDel.run(r.rid, r.name, r.name_alias, r.signature, r.doc_comment); ftsRemoved += 1; } catch { /* index drift — tolerate */ } }
+      if (codeDel) { try { codeDel.run(r.rid, r.name, r.name_alias, r.signature); } catch { /* tolerate */ } }
       if (triDel) { try { triDel.run(r.rid, r.name, r.signature); } catch { /* tolerate */ } }
       delStmt.run(r.rid);
     }

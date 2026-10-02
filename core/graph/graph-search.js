@@ -31,6 +31,13 @@ import { asTopLevelCaller, fileNodeSourceSql, hasFilesTable } from './file-nodes
 // FTS5 matches name/name_alias/signature only, LIKE fallback ignores the doc
 // part of search_text, and rows carry no docComment (the non-agent
 // query-text reranker reads it).
+//
+// A column filter on `entities_fts` is not enough for that: FTS5 bm25()
+// normalises by the token count of the WHOLE row, so a documented entity's
+// name match scores ~45% lower than an undocumented one's even when the doc
+// column cannot match. Non-agent formats and name-restricted queries
+// therefore read `entities_code_fts` (name, name_alias, signature; no doc),
+// which ranks exactly as `entities_fts` did before docs were filled.
 const DOC_COMMENT_FORMATS = new Set(['agent', 'agent_preview', 'agent_full', 'agent_full_xl']);
 const NON_DOC_FTS_COLUMNS = '{name name_alias signature}';
 
@@ -72,6 +79,7 @@ export class GraphSearch {
       : dbPath;
     this.db = null;
     this.hasFts5 = false;
+    this.hasCodeFts = false;
     this.hasTrigram = false;
     this._hasEntityEpochVisibility = false;
     this._hasRelationshipEpochVisibility = false;
@@ -130,8 +138,12 @@ export class GraphSearch {
 
         const trigramCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='entities_trigram'").get();
         this.hasTrigram = !!trigramCheck;
+
+        const codeFtsCheck = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='entities_code_fts'").get();
+        this.hasCodeFts = !!codeFtsCheck;
       } catch {
         this.hasFts5 = false;
+        this.hasCodeFts = false;
         this.hasTrigram = false;
       }
 
@@ -186,6 +198,31 @@ export class GraphSearch {
         }
       }
 
+      // Doc-free twin of entities_fts (see DOC_COMMENT_FORMATS). Without it
+      // (an index built before the table existed) _ftsRows falls back to a
+      // column filter on entities_fts.
+      this._stmtCodeFts = null;
+      if (this.hasFts5 && this.hasCodeFts) {
+        try {
+          const entityVis = this._entityVisibilitySql('e');
+          this._stmtCodeFts = db.prepare(`
+            SELECT
+              e.id, e.file_path, e.type, e.name, e.signature,
+              e.doc_comment, e.start_line, e.end_line, e.package, e.parent_class,
+              bm25(entities_code_fts, 10.0, 4.0, 5.0) AS score
+            FROM entities_code_fts
+            JOIN entities e ON entities_code_fts.rowid = e.rowid
+            WHERE entities_code_fts MATCH ?
+              AND ${entityVis}
+            ORDER BY score
+            LIMIT ?
+          `);
+        } catch {
+          this.hasCodeFts = false;
+          this._stmtCodeFts = null;
+        }
+      }
+
       if (this.hasTrigram) {
         try {
           const entityVis = this._entityVisibilitySql('e');
@@ -237,8 +274,10 @@ export class GraphSearch {
       this.db = db;
     } catch (err) {
       this.hasFts5 = false;
+      this.hasCodeFts = false;
       this.hasTrigram = false;
       this._stmtFts5 = null;
+      this._stmtCodeFts = null;
       this._stmtTrigram = null;
       this._stmtEntityById = null;
       this._stmtOutRels = null;
@@ -388,11 +427,20 @@ export class GraphSearch {
   }
 
   /**
-   * FTS5 MATCH expression for `format`: all columns for agent formats, the
-   * non-doc columns otherwise (see DOC_COMMENT_FORMATS).
+   * FTS5 rows for a MATCH expression. Agent formats read entities_fts (name,
+   * name_alias, signature, doc_comment); other formats, and name-restricted
+   * queries (`nameOnly`, whose expression is `name : …`) in every format,
+   * read the doc-free entities_code_fts so a doc never changes their BM25
+   * length normalisation (see DOC_COMMENT_FORMATS).
    */
-  _ftsScope(expr, format) {
-    return usesDocComments(format) ? expr : `${NON_DOC_FTS_COLUMNS} : (${expr})`;
+  _ftsRows(expr, format, limit, { nameOnly = false } = {}) {
+    const params = this._entityVisibilityParams();
+    if (usesDocComments(format) && !nameOnly) {
+      return this._stmtFts5.all(expr, ...params, limit);
+    }
+    if (this._stmtCodeFts) return this._stmtCodeFts.all(expr, ...params, limit);
+    const scoped = nameOnly ? expr : `${NON_DOC_FTS_COLUMNS} : (${expr})`;
+    return this._stmtFts5.all(scoped, ...params, limit);
   }
 
   /**
@@ -634,6 +682,7 @@ export class GraphSearch {
    */
   close() {
     this._stmtFts5 = null;
+    this._stmtCodeFts = null;
     this._stmtTrigram = null;
     this._stmtEntityById = null;
     this._stmtOutRels = null;
@@ -675,10 +724,8 @@ export class GraphSearch {
       if (useNameRestriction) {
         restrictedAttempted = true;
         try {
-          rows = this._stmtFts5.all(
-            `name : ${this.sanitizeFtsQuery(query)}`,
-            ...this._entityVisibilityParams(),
-            limit,
+          rows = this._ftsRows(
+            `name : ${this.sanitizeFtsQuery(query)}`, format, limit, { nameOnly: true },
           );
         } catch (err) {
           this.log(`[bm25Search] Name-restricted FTS5 query failed: ${err.message}`);
@@ -690,11 +737,7 @@ export class GraphSearch {
       if (rows.length === 0) {
         restrictedFallback = restrictedAttempted;
         try {
-          rows = this._stmtFts5.all(
-            this._ftsScope(this.sanitizeFtsQuery(query), format),
-            ...this._entityVisibilityParams(),
-            limit,
-          );
+          rows = this._ftsRows(this.sanitizeFtsQuery(query), format, limit);
         } catch (err) {
           this.log(`[bm25Search] FTS5 query failed: ${err.message}`);
           rows = [];
@@ -729,11 +772,7 @@ export class GraphSearch {
       try {
         const expandedForm = this.expandIdentifierQuery(query);
         if (expandedForm && expandedForm !== this.sanitizeFtsQuery(query)) {
-          const expandedRows = this._stmtFts5.all(
-            this._ftsScope(expandedForm, format),
-            ...this._entityVisibilityParams(),
-            limit,
-          );
+          const expandedRows = this._ftsRows(expandedForm, format, limit);
           this._mergeRows(results, expandedRows, 'fts5_expanded', 0.85, format);
         }
       } catch (err) {
@@ -746,11 +785,7 @@ export class GraphSearch {
       try {
         const abbrQuery = this.expandAbbreviations(query);
         if (abbrQuery) {
-          const abbrRows = this._stmtFts5.all(
-            this._ftsScope(abbrQuery, format),
-            ...this._entityVisibilityParams(),
-            limit,
-          );
+          const abbrRows = this._ftsRows(abbrQuery, format, limit);
           this._mergeRows(results, abbrRows, 'fts5_abbr', 0.8, format);
         }
       } catch (err) {
@@ -787,6 +822,8 @@ export class GraphSearch {
    *
    * @param {string} query - Search query
    * @param {number} [limit=50] - Maximum results to return
+   * @param {object} [options]
+   * @param {string} [options.format] - Output format; agent formats also match doc comments
    * @returns {Promise<{results: Array, latency: number}>}
    */
   async bm25SearchRaw(query, limit = 50, options = {}) {
@@ -803,10 +840,8 @@ export class GraphSearch {
 
       if (useNameRestriction) {
         try {
-          rows = this._stmtFts5.all(
-            `name : ${this.sanitizeFtsQuery(query)}`,
-            ...this._entityVisibilityParams(),
-            limit,
+          rows = this._ftsRows(
+            `name : ${this.sanitizeFtsQuery(query)}`, format, limit, { nameOnly: true },
           );
         } catch (err) {
           this.log(`[bm25SearchRaw] Name-restricted FTS5 query failed: ${err.message}`);
@@ -816,11 +851,7 @@ export class GraphSearch {
 
       if (rows.length === 0) {
         try {
-          rows = this._stmtFts5.all(
-            this._ftsScope(this.sanitizeFtsQuery(query), format),
-            ...this._entityVisibilityParams(),
-            limit,
-          );
+          rows = this._ftsRows(this.sanitizeFtsQuery(query), format, limit);
         } catch (err) {
           this.log(`[bm25SearchRaw] FTS5 query failed: ${err.message}`);
           rows = [];

@@ -77,6 +77,8 @@ describe('doc comments from the AST', () => {
     expect(d['class:A']).toBe('Class doc.');
     expect(d['function:n']).toBe('comment for n');
     expect(d['function:p']).toBe('Prop doc.');
+    // The decorated_definition entity spans `p` too; the docstring is p's.
+    expect(d['decorator:<anonymous:decorator>']).toBeNull();
   });
 
   it('rust: /// docs above attributes; //! inner docs are not item docs', async () => {

@@ -15,7 +15,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { GRAPH_CONFIG, DB_PATHS } from '../infrastructure/config/index.js';
 import { getLanguageByPath, resolveLanguage } from '../infrastructure/language-patterns.js';
-import { getTreeSitterProvider } from '../infrastructure/tree-sitter-provider.js';
+import { getTreeSitterProvider, STATE_CAPTURE_LANGUAGES, STATE_ENTITY_TYPES } from '../infrastructure/tree-sitter-provider.js';
 import { CallSiteScanner, EXTRA_CALL_SCAN_LANGUAGES } from './call-site-scanner.js';
 import { goImportName, scanImports, SCANNED_IMPORT_LANGUAGES, importLanguageFor } from './import-scanner.js';
 import { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX } from './import-resolver.js';
@@ -243,16 +243,26 @@ function backfillNameAliases(db) {
 
 function ensureLexicalFtsSchema(db) {
   const existingFtsSql = getTableSql(db, 'entities_fts');
+  const existingCodeFtsSql = getTableSql(db, 'entities_code_fts');
   const existingTrigramSql = getTableSql(db, 'entities_trigram');
   const needsRebuild = !existingFtsSql
     || !existingTrigramSql
     || !hasExpectedEntitiesFtsSchema(existingFtsSql)
-    || !hasExpectedTrigramSchema(existingTrigramSql);
+    || !hasExpectedTrigramSchema(existingTrigramSql)
+    || (existingCodeFtsSql && !hasExpectedEntitiesFtsSchema(existingCodeFtsSql));
 
   if (needsRebuild) {
     db.exec(`DROP TABLE IF EXISTS entities_fts`);
+    db.exec(`DROP TABLE IF EXISTS entities_code_fts`);
     db.exec(`DROP TABLE IF EXISTS entities_trigram`);
   }
+  // Tables (re)created below start empty. On a graph that already holds
+  // entities (an incremental tick opening an index built before
+  // entities_code_fts existed) they are refilled from the content table at
+  // once, so lexical search never runs on an empty index.
+  const created = needsRebuild
+    ? ['entities_fts', 'entities_code_fts', 'entities_trigram']
+    : (existingCodeFtsSql ? [] : ['entities_code_fts']);
 
   db.exec(`
     CREATE VIRTUAL TABLE IF NOT EXISTS entities_fts USING fts5(
@@ -260,6 +270,22 @@ function ensureLexicalFtsSchema(db) {
       name_alias,
       signature,
       doc_comment,
+      content='entities',
+      content_rowid='rowid',
+      tokenize='porter unicode61',
+      prefix='2 3 4'
+    )
+  `);
+
+  // entities_fts without the doc column: what non-agent formats and
+  // name-restricted queries rank on. FTS5 bm25() normalises by the whole
+  // row's token count, so a filled doc_comment would otherwise lower every
+  // documented entity's name/signature score (GraphSearch DOC_COMMENT_FORMATS).
+  db.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS entities_code_fts USING fts5(
+      name,
+      name_alias,
+      signature,
       content='entities',
       content_rowid='rowid',
       tokenize='porter unicode61',
@@ -277,7 +303,15 @@ function ensureLexicalFtsSchema(db) {
     )
   `);
 
-  return { rebuilt: needsRebuild };
+  if (created.length > 0 && db.prepare('SELECT 1 FROM entities LIMIT 1').get()) {
+    for (const table of created) {
+      // A content table without a column this FTS reads (a graph older than
+      // the entities migrations) cannot rebuild; the next full build will.
+      try { db.exec(`INSERT INTO ${table}(${table}) VALUES('rebuild')`); } catch { /* left empty */ }
+    }
+  }
+
+  return { rebuilt: needsRebuild || created.length > 0 };
 }
 
 // =============================================================================
@@ -1060,7 +1094,13 @@ export class GraphExtractor {
           // is lost and its methods parse as local functions. Those files keep
           // the regex extractor (ocelot: 42 of 757 files).
           const csharpParseError = langInfo.id === 'csharp' && symbols?.hasParseError;
-          if (symbols && symbols.length > 0 && !csharpParseError) {
+          // Go/Rust files that do not parse and yield only state entities
+          // (var/const/static) keep the regex extractor, as they did before
+          // those entities existed: the grammar lost their definitions.
+          const stateOnlyParseError = symbols?.hasParseError
+            && STATE_CAPTURE_LANGUAGES.has(langInfo.id)
+            && symbols.every((s) => STATE_ENTITY_TYPES.has(s.type));
+          if (symbols && symbols.length > 0 && !csharpParseError && !stateOnlyParseError) {
             // Convert tree-sitter symbols to graph entities format and align
             // labels with regex semantics (component/object arrow distinctions).
             const entities = this._normalizeTreeSitterEntities(filePath, symbols, langInfo.id, lines);
@@ -3120,11 +3160,13 @@ export function insertCallSites(db, callSites, { epoch = 0, idFor = null } = {})
 export function rebuildGraphFts(db) {
   try {
     db.exec(`INSERT INTO entities_fts(entities_fts) VALUES('rebuild')`);
+    db.exec(`INSERT INTO entities_code_fts(entities_code_fts) VALUES('rebuild')`);
     db.exec(`INSERT INTO entities_trigram(entities_trigram) VALUES('rebuild')`);
     console.log('  FTS5 indexes rebuilt (porter + trigram)');
 
     // Best-effort post-build compaction for faster reads.
     db.exec(`INSERT INTO entities_fts(entities_fts) VALUES('optimize')`);
+    db.exec(`INSERT INTO entities_code_fts(entities_code_fts) VALUES('optimize')`);
     db.exec(`INSERT INTO entities_trigram(entities_trigram) VALUES('optimize')`);
     console.log('  FTS5 indexes optimized (segments merged)');
   } catch (err) {

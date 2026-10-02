@@ -11,6 +11,7 @@ import { join } from 'path';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { GraphSearch, createGraphSchema, normalizeIdentifier, SCHEMA_VERSION } from '../../core/graph/index.js';
+import { insertGraph, rebuildGraphFts } from '../../core/graph/graph-extractor.js';
 
 // =============================================================================
 // SHARED TEST DATABASE
@@ -961,5 +962,68 @@ describe('Doc comments take part in BM25 for agent formats only', () => {
   it('name and signature matches are unaffected by the gate', async () => {
     const plain = await graphSearch.bm25SearchRaw('user service', 10);
     expect(plain.results.some(r => r.name === 'UserService')).toBe(true);
+  });
+});
+
+// =============================================================================
+// A DOC NEVER LOWERS A NAME MATCH OUTSIDE AGENT FORMATS (production schema)
+// =============================================================================
+
+describe('Doc comments leave non-agent and name-restricted BM25 unchanged', () => {
+  let testDir, graphSearch;
+  const LONG_DOC = 'Reads the layered configuration from disk, merges environment overrides, '
+    + 'validates every section against the schema and returns the frozen result to the caller.';
+
+  beforeAll(async () => {
+    testDir = mkdtempSync(join(tmpdir(), 'lexical-doclen-'));
+    const dbPath = join(testDir, 'graph.db');
+    const db = new Database(dbPath);
+    const log = console.log;
+    console.log = () => {};
+    try {
+      const fts = createGraphSchema(db);
+      const entity = (id, file, doc) => ({
+        id, file_path: file, type: 'function', name: 'parseConfig',
+        signature: 'func parseConfig() error', doc_comment: doc, start_line: 1, end_line: 3,
+      });
+      insertGraph(db, [entity('a', 'a/config.go', LONG_DOC), entity('b', 'b/config.go', null)], [], fts, { syncFts: false });
+      rebuildGraphFts(db);
+    } finally {
+      console.log = log;
+      db.close();
+    }
+    graphSearch = new GraphSearch(dbPath);
+    await graphSearch.init();
+  });
+
+  afterAll(() => {
+    graphSearch?.close();
+    rmSync(testDir, { recursive: true, force: true });
+  });
+
+  const scores = (results) => Object.fromEntries(results.map(r => [r.file, r.score]));
+
+  // FTS5 bm25() normalises by the whole row's token count: on entities_fts
+  // the documented twin scores ~45% lower for the same name match.
+  it('scores a documented and an undocumented same-name entity alike without an agent format', async () => {
+    const { results } = await graphSearch.bm25SearchRaw('parse config', 10);
+    const s = scores(results);
+    expect(s['a/config.go']).toBeGreaterThan(0);
+    expect(s['a/config.go']).toBeCloseTo(s['b/config.go'], 10);
+  });
+
+  it('scores them alike on the name-restricted path in every format', async () => {
+    for (const format of [undefined, 'agent']) {
+      const { results } = await graphSearch.bm25SearchRaw('parseConfig', 10, { format });
+      const s = scores(results);
+      expect(s['a/config.go']).toBeCloseTo(s['b/config.go'], 10);
+    }
+  });
+
+  it('still lets agent formats match the doc text', async () => {
+    const agent = await graphSearch.bm25SearchRaw('environment overrides', 10, { format: 'agent' });
+    expect(agent.results.map(r => r.file)).toEqual(['a/config.go']);
+    const plain = await graphSearch.bm25SearchRaw('environment overrides', 10);
+    expect(plain.results.map(r => r.file)).not.toContain('a/config.go');
   });
 });

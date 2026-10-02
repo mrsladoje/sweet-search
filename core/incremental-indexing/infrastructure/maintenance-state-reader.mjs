@@ -27,7 +27,7 @@ function readJson(filePath) {
 }
 
 /**
- * FTS5: max segment count across the two graph FTS tables. Returns 0 when
+ * FTS5: max segment count across the graph FTS tables. Returns 0 when
  * the graph DB is absent or the tables are unmigrated.
  */
 export function readFts5State(stateDir) {
@@ -37,6 +37,7 @@ export function readFts5State(stateDir) {
   try {
     const segmentCount = Math.max(
       fts5SegmentCount(db, 'entities_fts'),
+      fts5SegmentCount(db, 'entities_code_fts'),
       fts5SegmentCount(db, 'entities_trigram'),
     );
     return { segmentCount };

@@ -47,6 +47,7 @@ export function insertEntity(db, e, id, epoch, hasFts, parentId = null) {
   const rowid = db.prepare('SELECT rowid FROM entities WHERE id = ?').get(id)?.rowid;
   if (!rowid) return;
   try { db.prepare('INSERT INTO entities_fts(rowid, name, name_alias, signature, doc_comment) VALUES (?, ?, ?, ?, ?)').run(rowid, e.name, nameAlias || null, e.signature || null, e.doc_comment || null); } catch {}
+  try { db.prepare('INSERT INTO entities_code_fts(rowid, name, name_alias, signature) VALUES (?, ?, ?, ?)').run(rowid, e.name, nameAlias || null, e.signature || null); } catch {}
   try { db.prepare('INSERT INTO entities_trigram(rowid, name, signature) VALUES (?, ?, ?)').run(rowid, e.name, e.signature || null); } catch {}
 }
 

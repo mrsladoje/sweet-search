@@ -817,6 +817,11 @@ const CAPTURE_TO_ENTITY_TYPE = {
 // `var ( … )` group keeps its own extent.
 const GO_DECLARATION_SPECS = { var_spec: 'var', const_spec: 'const' };
 
+// Languages whose package/module-level state (Go var/const, Rust
+// const/static) became tree-sitter entities in 2026-10, and those types.
+export const STATE_CAPTURE_LANGUAGES = new Set(['go', 'rust']);
+export const STATE_ENTITY_TYPES = new Set(['variable', 'const', 'static']);
+
 // Containment for graph entities (`parent_class`): the nearest enclosing
 // type-like declaration of a captured definition. Without it every method
 // in the graph was parentless, so same-named methods of different types
@@ -1064,6 +1069,14 @@ export class TreeSitterProvider {
           && GO_DECLARATION_SPECS[node.parent?.type];
         // `var _ io.Writer = (*T)(nil)` is a compile-time assertion, not a name.
         if (isGoSpecName && node.text === '_') continue;
+        // Go var/const and Rust const/static are state entities. When the
+        // grammar fails inside one, error recovery can fold the next
+        // declarations into its extent: urfave/cli `var NewStringMap =
+        // NewMapBase[string, …]` swallowed the method below it. Such a state
+        // entity is dropped; the file then keeps what it extracted before
+        // state entities existed (see STATE_ONLY_FALLBACK_LANGUAGES).
+        if (extentNode.hasError && STATE_CAPTURE_LANGUAGES.has(languageId)
+          && STATE_ENTITY_TYPES.has(entityType)) continue;
         const key = isGoSpecName
           ? `${extentNode.startIndex}:${entityType}:${node.text}`
           : `${extentNode.startIndex}:${entityType}`;
@@ -1118,7 +1131,12 @@ export class TreeSitterProvider {
         }
 
         const parentClass = this._containerName(extentNode, languageId);
-        const docComment = extractTreeSitterDocComment(extentNode, content, languageId);
+        // A Python `decorated_definition` entity spans the decorated def; the
+        // docstring documents that def's own entity, not the decorator
+        // (flask: 96 of 415 docs were such duplicates).
+        const docComment = entityType === 'decorator'
+          ? null
+          : extractTreeSitterDocComment(extentNode, content, languageId);
         symbols.push({
           name: symbolName,
           type: entityType,

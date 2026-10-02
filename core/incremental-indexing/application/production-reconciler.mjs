@@ -1097,7 +1097,7 @@ class ProductionReconcileAdapter {
           ? fts5MergeBudgetPages({ elapsedMs: ctx ? Date.now() - ctx.tickStartMs : 0 })
           : 16;
         if (pages != null) {
-          for (const table of ['entities_fts', 'entities_trigram']) try { fts5Merge(db, table, pages); } catch {}
+          for (const table of ['entities_fts', 'entities_code_fts', 'entities_trigram']) try { fts5Merge(db, table, pages); } catch {}
         }
       }
       this.touched.set(rel, { ...(this.touched.get(rel) || {}), graphEntities: entities.length, graphEdgeResolution: edgeResolution, graphOverrides: overrideStats });
