@@ -5,8 +5,8 @@
  * only sees entity names, signatures and doc comments. Text inside a body —
  * string literals, error messages, log lines, config keys, comments — was
  * reachable only through embeddings. This index holds BM25 over the same
- * chunks the semantic channel ranks (one FTS row per `vectors` row, same
- * rowid), so a body hit and a semantic hit share an id.
+ * chunks the semantic channel ranks (one FTS row per non-alias `vectors`
+ * row, same rowid), so a body hit and a semantic hit share an id.
  *
  * Columns (BM25 weights in CHUNK_TEXT_FTS_WEIGHTS):
  *   body       the chunk text (first CHUNK_TEXT_FTS_MAX_CHARS characters, the
@@ -23,8 +23,8 @@
  * prepareVectorInsert and the reconciler's row-version insert); SQL triggers
  * remove a row when its vector row is deleted (GC, delete-by-file), replaced
  * (INSERT OR REPLACE) or has its text changed. The table is created only with
- * an empty `vectors` table, so it holds a row for every vector row or does
- * not exist (search then skips the channel): a full build and an incremental
+ * an empty `vectors` table, so it holds a row for every non-alias vector row
+ * or does not exist (search then skips the channel): a full build and an incremental
  * update give the same rows.
  */
 
@@ -36,6 +36,9 @@ export const CHUNK_TEXT_FTS_WEIGHTS = Object.freeze({ body: 1.0, subtokens: 0.5 
 const TRIGGERS = Object.freeze({
   // INSERT OR REPLACE deletes the old row without firing delete triggers
   // (recursive_triggers is off), so the old FTS row is removed up front.
+  // This runs before conflict resolution: an INSERT OR IGNORE of an existing
+  // id would drop that row's FTS entry and keep the row. No writer uses
+  // INSERT OR IGNORE on vectors; one that does must rewrite the FTS row.
   beforeInsert: `CREATE TRIGGER IF NOT EXISTS chunk_text_fts_vectors_bi BEFORE INSERT ON vectors BEGIN
       DELETE FROM ${CHUNK_TEXT_FTS_TABLE} WHERE rowid IN (SELECT rowid FROM vectors WHERE id = new.id);
     END`,
@@ -100,19 +103,38 @@ export function hasChunkTextFts(db) {
 }
 
 /**
- * A writer `(rowid, text) => void` for the current connection, or null when
- * the table is absent (index disabled, or an index built without it).
- * Callers write the FTS row in the same transaction as the vector row.
+ * True when a vectors row's metadata marks a dedup alias (isExemplar false).
+ * Search never returns an alias (its exemplar comes back and expandAliases
+ * re-attaches it), so the FTS index holds no row for it. Same rule as the
+ * query-side filter in CodebaseRepository.searchChunkText.
+ * @param {string|object|null|undefined} metadata JSON string or object
+ */
+export function isAliasVectorMetadata(metadata) {
+  let meta = metadata;
+  if (typeof meta === 'string') {
+    try { meta = JSON.parse(meta); } catch { return false; }
+  }
+  return !!meta && (meta.isExemplar === false || meta.isExemplar === 0);
+}
+
+/**
+ * A writer `(rowid, text, metadata) => void` for the current connection, or
+ * null when the table is absent (index disabled, or an index built without
+ * it). Callers write the FTS row in the same transaction as the vector row.
+ * Alias rows get no FTS row (isAliasVectorMetadata): on a repo with many
+ * duplicate chunks (r3-grdb: 295k of 341k rows) they were most of the index
+ * and most of the query time, and the query filtered them out anyway.
  */
 export function chunkTextFtsWriter(db) {
   if (!hasChunkTextFts(db)) return null;
   const del = db.prepare(`DELETE FROM ${CHUNK_TEXT_FTS_TABLE} WHERE rowid = ?`);
   const stmt = db.prepare(`INSERT INTO ${CHUNK_TEXT_FTS_TABLE}(rowid, body, subtokens) VALUES (?, ?, ?)`);
-  return (rowid, text) => {
-    const doc = chunkTextFtsDocument(text);
+  return (rowid, text, metadata) => {
     // A second write for the same rowid replaces the first (an FTS5 rowid
     // is not a unique key, so a duplicate insert would index the row twice).
     del.run(rowid);
+    if (isAliasVectorMetadata(metadata)) return;
+    const doc = chunkTextFtsDocument(text);
     stmt.run(rowid, doc.body, doc.subtokens);
   };
 }

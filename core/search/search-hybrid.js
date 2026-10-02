@@ -267,8 +267,15 @@ export async function hybridSearchV2(query, options = {}) {
   const withBody = (list) => (bodyPins.length > 0 || bodyPool.length > 0
     ? composeSeeds(list, k, bodyPins, bodyPool)
     : list.slice(0, k));
-  const seeds = seedCollapse && !hasAblation(options.ablations, 'no-span-dedupe')
+  // Pins apply on the span-collapse arm too: an A/B with collapse on must not
+  // silently drop them.
+  const collapsed = seedCollapse && !hasAblation(options.ablations, 'no-span-dedupe')
     ? takeDistinctSpans(diversified, k)
+    : null;
+  const seeds = collapsed
+    ? (bodyPins.length > 0 || bodyPool.length > 0
+      ? composeSeeds(collapsed, collapsed.length, bodyPins, bodyPool)
+      : collapsed)
     : withBody(diversified);
 
   const results = seeds.map(r => ({

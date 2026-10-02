@@ -246,8 +246,9 @@ export class CodebaseRepository {
    *
    * @param {string} matchExpr FTS5 MATCH expression
    * @param {number} limit
-   * @param {{ weights?: number[], withText?: boolean }} [options] bm25 column
-   *   weights (body, subtokens); withText adds the stored chunk text
+   * @param {{ weights?: number[], withText?: boolean, window?: number }} [options]
+   *   bm25 column weights (body, subtokens); withText adds the stored chunk
+   *   text; window is the first-stage size (at least 4 x limit, default 200)
    * @returns {Array<{ id: string, file_path: string, metadata: string, score: number, text?: string }>}
    */
   searchChunkText(matchExpr, limit, options = {}) {
@@ -266,19 +267,42 @@ export class CodebaseRepository {
         ? ` AND ${visibility.sql.replace(/epoch_(written|retired)/g, 'v.epoch_$1')}`
         : '';
       // Dedup aliases are not in the HNSW either; they come back through
-      // expandAliases next to their exemplar.
-      const rows = db.prepare(`
-        SELECT v.id AS id, v.file_path AS file_path, v.metadata AS metadata,
-               ${options.withText ? 'v.text AS text,' : ''}
+      // expandAliases next to their exemplar. The writer stores no FTS row
+      // for an alias (chunkTextFtsWriter); the filter stays for indexes
+      // written before that.
+      const filter = `${visibilityClause}
+           AND coalesce(json_extract(v.metadata, '$.isExemplar'), 1) != 0`;
+      const columns = `v.id AS id, v.file_path AS file_path, v.metadata AS metadata,
+               ${options.withText ? 'v.text AS text,' : ''}`;
+      // Two stages: rank inside FTS5 first (no vectors join, no metadata
+      // parse for each of the possibly tens of thousands of OR matches),
+      // then join and filter the best `window` rows. When at least `limit`
+      // of them pass the filter they are exactly the best `limit` passing
+      // rows (any passing row outside the window scores no higher); when
+      // fewer pass, the single-stage query below gives the same answer.
+      const window = Math.max(limit * 4, Number.isInteger(options.window) ? options.window : 200);
+      const staged = db.prepare(`
+        SELECT ${columns} f.score AS score
+          FROM (SELECT rowid, -bm25(chunk_text_fts, ?, ?) AS score
+                  FROM chunk_text_fts
+                 WHERE chunk_text_fts MATCH ?
+                 ORDER BY bm25(chunk_text_fts, ?, ?)
+                 LIMIT ?) f
+          JOIN vectors v ON v.rowid = f.rowid
+         WHERE 1 = 1${filter}
+         ORDER BY f.score DESC
+         LIMIT ?
+      `).all(wBody, wSub, matchExpr, wBody, wSub, window, ...visibility.params, limit);
+      if (staged.length >= limit) return staged;
+      return db.prepare(`
+        SELECT ${columns}
                -bm25(chunk_text_fts, ?, ?) AS score
           FROM chunk_text_fts
           JOIN vectors v ON v.rowid = chunk_text_fts.rowid
-         WHERE chunk_text_fts MATCH ?${visibilityClause}
-           AND coalesce(json_extract(v.metadata, '$.isExemplar'), 1) != 0
+         WHERE chunk_text_fts MATCH ?${filter}
          ORDER BY bm25(chunk_text_fts, ?, ?)
          LIMIT ?
       `).all(wBody, wSub, matchExpr, ...visibility.params, wBody, wSub, limit);
-      return rows;
     } catch {
       return [];
     }
