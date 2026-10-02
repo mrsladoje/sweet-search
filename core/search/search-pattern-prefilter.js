@@ -60,70 +60,179 @@ export function hasCaseInsensitiveRegexFlag(regex) {
 // Literal extraction from regex patterns
 // =============================================================================
 
+/**
+ * Substrings that EVERY match of `regex` must contain, for the literal prefilter (ripgrep -F)
+ * and the sparse gram index. Used when the native extractor returns nothing (it returns
+ * nothing for any `(?i)` pattern, which is what every `ss-grep -i` sends).
+ *
+ * A prefilter literal must be sound: a wrong one turns real hits into a confident zero
+ * (`ss-grep express -i -w` -> `(?i)\b(?:express)\b` used to yield ":express", and `\broute`
+ * yielded "broute"). So this parses the pattern instead of scanning characters, and returns
+ * [] — no prefilter, a full scan — for anything it does not fully understand.
+ *
+ * Understood: literal chars, escaped punctuation (`\.` is "."), zero-width and class escapes
+ * (`\b \B \d \w \s \A \z \< \>`, `\b{start}` and the other `\b{…}` forms, negations, and
+ * `\p{..} \x.. \u{..}`: they break a literal, never join one), `.`, `^`, `$`,
+ * character classes (with `[:alpha:]` and nested classes), groups `( )`, `(?: )`, named groups,
+ * inline flags `(?i)` / `(?i: )`, lookarounds (skipped: they consume nothing), quantifiers
+ * `? * + {n} {n,} {n,m}` with lazy/possessive suffixes. An optional atom contributes nothing; a
+ * group with an alternation contributes nothing. Whitespace breaks a literal.
+ * Gives up ([]) on: `|` at the top level (the caller expands alternations first), the `x` flag,
+ * escapes of unknown meaning or with a malformed argument (`\Q \k \1 \xZZ \b{x} ...`), a `{`
+ * that may be a counted repetition in some dialect (`{,3}`, `{ 2 }`), a quantifier with no atom,
+ * and unbalanced groups or classes. Any other `{` is a literal char.
+ */
 export function extractRequiredLiteralsHeuristic(regex) {
   if (!regex || typeof regex !== 'string') return [];
+  const s = regex;
+  let i = 0;
+  const BREAK = null;
+  class Unsure extends Error {}
+  const unsure = () => { throw new Unsure(); };
 
-  let inClass = false;
-  let escape = false;
-  let current = '';
-  const literals = [];
-
-  const pushCurrent = () => {
-    if (current.length >= 3) literals.push(current);
-    current = '';
+  // Zero-width or class escapes: a known meaning, never a literal char.
+  // A `{` that is, or in some dialect may be, a counted repetition. Any other `{` is a literal
+  // char (JS, PCRE) or a syntax error (Rust, ripgrep), and a literal is sound for both.
+  const MAYBE_COUNTED = /^\{\s*[\d,]/;
+  // Escapes that take an argument; each stands for one char of a class or for an assertion,
+  // never a literal here. `\b{start}` and friends: word-boundary assertions (Rust regex 1.10+).
+  const ESCAPE_ARGUMENT = {
+    b: /^\{(?:start|end|start-half|end-half)\}/,
+    p: /^(?:\{[^}]*\}|[A-Za-z])/,
+    P: /^(?:\{[^}]*\}|[A-Za-z])/,
+    x: /^(?:\{[0-9A-Fa-f]+\}|[0-9A-Fa-f]{2})/,
+    u: /^(?:\{[0-9A-Fa-f]+\}|[0-9A-Fa-f]{4})/,
+    U: /^(?:\{[0-9A-Fa-f]+\}|[0-9A-Fa-f]{8})/,
   };
+  const CLASS_ESCAPES = new Set(['b', 'B', 'd', 'D', 'w', 'W', 's', 'S', 'A', 'z', 'Z', 'n', 'r', 't', 'f', 'v']);
 
-  for (const char of regex) {
-    if (escape) {
-      if (/[\w/-]/.test(char)) {
-        current += char;
-      } else {
-        pushCurrent();
-      }
-      escape = false;
-      continue;
+  /** Parse a quantifier at i: { min, max } (max Infinity), or null when none follows. */
+  function quantifier() {
+    const c = s[i];
+    let q = null;
+    if (c === '?') q = { min: 0, max: 1 };
+    else if (c === '*') q = { min: 0, max: Infinity };
+    else if (c === '+') q = { min: 1, max: Infinity };
+    if (q) i++;
+    else if (c === '{') {
+      const m = /^\{(\d+)(,(\d*))?\}/.exec(s.slice(i));
+      if (m) {
+        const min = Number(m[1]);
+        q = { min, max: m[2] ? (m[3] ? Number(m[3]) : Infinity) : min };
+        i += m[0].length;
+      } else if (MAYBE_COUNTED.test(s.slice(i))) unsure();   // `{,3}`, `{ 2 }`: dialect-dependent
+      // else a literal `{` (or a syntax error, which matches nothing): the next atom
     }
-
-    if (char === '\\') {
-      pushCurrent();
-      escape = true;
-      continue;
-    }
-
-    if (inClass) {
-      if (char === ']') inClass = false;
-      pushCurrent();
-      continue;
-    }
-
-    if (char === '[') {
-      inClass = true;
-      pushCurrent();
-      continue;
-    }
-
-    if (char === '|') {
-      // Alternation means neither side is universally required.
-      // Return empty to avoid false negatives — a prefilter using
-      // literals from one branch would exclude files matching the other.
-      return [];
-    }
-
-    if (/[.*+?^${}()]/.test(char)) {
-      pushCurrent();
-      continue;
-    }
-
-    if (/\s/.test(char)) {
-      pushCurrent();
-      continue;
-    }
-
-    current += char;
+    if (q && (s[i] === '?' || s[i] === '+')) i++;   // lazy / possessive
+    if (q && /[?*+]/.test(s[i] || '')) unsure();   // stacked quantifiers (`a{2}{3}` fails as an atom)
+    return q;
   }
 
-  pushCurrent();
+  /** Skip a character class starting at i (`[`); returns nothing. */
+  function skipClass() {
+    let depth = 0;
+    let first = true;
+    while (i < s.length) {
+      const c = s[i];
+      if (c === '\\') { i += 2; first = false; continue; }
+      if (c === '[') {
+        if (depth > 0 && s[i + 1] === ':') {     // POSIX [:alpha:]
+          const close = s.indexOf(':]', i + 2);
+          if (close < 0) unsure();
+          i = close + 2; first = false; continue;
+        }
+        depth++; i++;
+        if (s[i] === '^') i++;
+        first = true;
+        continue;
+      }
+      if (c === ']' && !first) { depth--; i++; if (depth === 0) return; continue; }
+      first = false; i++;
+    }
+    unsure();                                   // unterminated class
+  }
 
+  /**
+   * Parse a sequence up to `)` or end. Returns { items, alternated }: items are single
+   * required chars or BREAK, in order. With a `|` at this level, alternated is true and the
+   * items mean nothing.
+   */
+  function sequence(depth) {
+    const items = [];
+    let alternated = false;
+    while (i < s.length) {
+      const c = s[i];
+      if (c === ')') { if (depth === 0) unsure(); break; }
+      if (c === '|') { alternated = true; i++; items.push(BREAK); continue; }
+      let atom;                                 // array of items the atom contributes once
+      if (c === '\\') {
+        const e = s[i + 1];
+        if (e === undefined) unsure();
+        i += 2;
+        if (e === '<' || e === '>') {
+          atom = [BREAK];                        // word start / word end (Rust regex 1.10+)
+        } else if (/[A-Za-z0-9]/.test(e)) {
+          const arg = ESCAPE_ARGUMENT[e]?.exec(s.slice(i));
+          if (arg) i += arg[0].length;           // \p{L}, \x20, \u{..}: one char of a class
+          else if (e === 'b' && s[i] === '{') unsure();   // \b{…} that is not a known form
+          else if (!CLASS_ESCAPES.has(e) || (e === 'B' && s[i] === '{')) unsure();
+          atom = [BREAK];
+        } else atom = [e];
+      } else if (c === '[') {
+        skipClass();
+        atom = [BREAK];
+      } else if (c === '(') {
+        i++;
+        let skip = false;                        // lookaround: consumes nothing
+        if (s[i] === '?') {
+          const m = /^\?([a-zA-Z-]*)([:)])/.exec(s.slice(i));
+          if (m) {                               // (?flags) or (?flags: or (?:
+            if (m[1].replace(/-.*$/, '').includes('x')) unsure();
+            i += m[0].length;
+            if (m[2] === ')') { items.push(BREAK); continue; }
+          } else if (/^\?(=|!|<=|<!)/.test(s.slice(i))) {
+            skip = true;
+            i += s[i + 1] === '<' ? 3 : 2;
+          } else if (/^\?P?<[A-Za-z_]\w*>/.test(s.slice(i))) {
+            i = s.indexOf('>', i) + 1;           // named group: an ordinary group
+          } else unsure();
+        }
+        const inner = sequence(depth + 1);
+        if (s[i] !== ')') unsure();
+        i++;
+        atom = skip || inner.alternated ? [BREAK] : [BREAK, ...inner.items, BREAK];
+      } else if (c === '*' || c === '+' || c === '?' || (c === '{' && MAYBE_COUNTED.test(s.slice(i)))) {
+        unsure();                                // a quantifier with no atom
+      } else {
+        i++;
+        atom = (c === '.' || c === '^' || c === '$' || /\s/.test(c)) ? [BREAK] : [c];
+      }
+      const q = quantifier();
+      if (!q || (q.min === 1 && q.max === 1)) items.push(...atom);
+      else if (q.min === 0) items.push(BREAK);
+      else items.push(BREAK, ...atom, BREAK);    // required, but repeats: no joining across it
+    }
+    return { items, alternated };
+  }
+
+  let parsed;
+  try {
+    parsed = sequence(0);
+    if (i !== s.length) return [];
+  } catch (err) {
+    if (err instanceof Unsure) return [];
+    throw err;
+  }
+  if (parsed.alternated) return [];
+
+  const literals = [];
+  let current = '';
+  for (const item of [...parsed.items, BREAK]) {
+    if (item === BREAK) {
+      if (current.length >= 3) literals.push(current);
+      current = '';
+    } else current += item;
+  }
   return [...new Set(literals)];
 }
 
@@ -344,9 +453,48 @@ function extractClausesDirect(regex, options) {
   return { clauses: [], source: 'none' };
 }
 
+/**
+ * The literal clauses each prefilter can use soundly. `extractLiteralClauses` gives literals that
+ * every match contains, and ripgrep (`rg -F`, with `-i` folding case by Unicode rules) takes them
+ * as they are. The other two consumers need less:
+ *
+ *   ascii  the native fixed-string grep (nativeGrepFilesWithMatchesFixed) folds ASCII case only,
+ *          but `(?i)` folds by Unicode rules: U+212A matches k, U+017F matches s, and every
+ *          non-ASCII letter has case variants it cannot fold (`σ`/`Σ`/`ς`, `ß`/`ẞ`).
+ *          Case-insensitive literals are cut at k, s and every non-ASCII char.
+ *   gram   the sparse gram index also folds ASCII only (the same cuts), and indexes only runs of
+ *          [a-z0-9_./:-]: a literal holding any other byte would make its clause ineligible.
+ *          Literals are split at such bytes; the pieces stay AND literals of their clause.
+ *
+ * A clause left with no literal means no sound prefilter for that consumer (an OR-clause cannot
+ * be dropped), so its list is then empty.
+ */
+export function prefilterLiteralClauses(clauses, { caseInsensitive = false } = {}) {
+  const ascii = caseInsensitive ? splitClauses(clauses, /[ks]|[^\x00-\x7F]/iu) : clauses;
+  return { rg: clauses, ascii, gram: splitClauses(ascii, /[^A-Za-z0-9_./:-]/) };
+}
+
+function splitClauses(clauses, at) {
+  const out = [];
+  for (const clause of clauses) {
+    const parts = clause.flatMap((literal) => literal.split(at)).filter((part) => part.length >= 3);
+    if (parts.length === 0) return [];
+    out.push(parts);
+  }
+  return normalizeLiteralClauses(out);
+}
+
 export function extractLiteralClauses(regex, options = {}) {
   if (!regex || typeof regex !== 'string') {
     return { clauses: [], source: 'none' };
+  }
+  // A fixed-string search (`search -F -e`, the server's fixedString param) hands over raw
+  // text, not a regex: the text itself is the only literal (`foo\.bar` is "foo\.bar", never
+  // "foo.bar"). A line break would make it several patterns for `rg -F`: no prefilter then.
+  if (options.fixedString) {
+    if (/[\r\n]/.test(regex)) return { clauses: [], source: 'none' };
+    const clauses = normalizeLiteralClauses([[regex]]);
+    return { clauses, source: clauses.length > 0 ? 'fixed-string' : 'none' };
   }
 
   // An alternating pattern is only prefilterable when EVERY alternative it can match

@@ -10,13 +10,13 @@
  */
 
 import { nativeGrepFull } from '../infrastructure/native-sparse-gram.js';
-import { matchesGrepFileFilter } from './grep-output-shaping.js';
+import { grepFileFilterPredicate } from './grep-output-shaping.js';
 import { runRipgrepJson, normalizeSearchPath } from './search-pattern-ripgrep.js';
 import {
   ensureSparseGramIndex, getSparseGramAllFilesWithOverlay, hasCaseInsensitiveRegexFlag,
 } from './search-pattern-prefilter.js';
 
-async function grepFiles(regex, searchDir, files, fixedString) {
+async function grepFiles(regex, searchDir, files, fixedString, caseInsensitive = false) {
   if (!fixedString) {
     const native = nativeGrepFull(regex, searchDir, files, hasCaseInsensitiveRegexFlag(regex));
     if (native) {
@@ -29,7 +29,8 @@ async function grepFiles(regex, searchDir, files, fixedString) {
     }
   }
   try {
-    return await runRipgrepJson(regex, searchDir, { files, fixedString });
+    // A regex carries its own case flags; fixed-string text takes only the explicit option.
+    return await runRipgrepJson(regex, searchDir, { files, fixedString, caseInsensitive: fixedString && caseInsensitive });
   } catch {
     return [];
   }
@@ -48,12 +49,13 @@ async function grepFiles(regex, searchDir, files, fixedString) {
 export async function applyUnindexedFallback({ searcher, regex, searchDir, options, matches, shapeResult }) {
   if (matches.length > 0 || options.unindexedFallback === false) return { matches, stats: null };
   const scope = options.fileFilter;
-  const inScope = (rel) => !scope || matchesGrepFileFilter(rel, scope, searchDir);
+  const inFilter = scope ? grepFileFilterPredicate(scope, searchDir) : null;
+  const inScope = (rel) => !inFilter || inFilter(rel);
   const { listChangedGrepFiles } = await import('../indexing/grep-corpus.js');
   const files = listChangedGrepFiles(searchDir).filter(inScope);
   const stats = { unindexedFallbackFiles: files.length, unindexedFallbackMatches: 0 };
   if (files.length > 0) {
-    const found = await grepFiles(regex, searchDir, files, options.fixedString === true);
+    const found = await grepFiles(regex, searchDir, files, options.fixedString === true, options.caseInsensitive === true);
     if (found.length > 0) {
       const shaped = shapeResult({ indexedMatches: found, overlayMatches: [] });
       stats.unindexedFallbackMatches = shaped.length;

@@ -32,8 +32,36 @@ function isEscapedDoublePipe(pattern, slashStart, escapedIndex) {
   return previous || next;
 }
 
+/**
+ * True when the single-escaped parens `\(` `\)` (outside classes) pair up. Only then can they be
+ * BRE group operators: an unpaired one (`statementDidFail\(`) is invalid as a BRE group and
+ * as its Rust translation, so it can only mean the literal paren, which is what Rust reads.
+ */
+function escapedParensBalanced(pattern) {
+  let depth = 0;
+  let inClass = false;
+  for (let i = 0; i < pattern.length; i++) {
+    const ch = pattern[i];
+    if (inClass) {
+      if (ch === '\\') i++;
+      else if (ch === ']') inClass = false;
+      continue;
+    }
+    if (ch === '[') { inClass = true; continue; }
+    if (ch !== '\\') continue;
+    let slashCount = 1;
+    while (pattern[i + slashCount] === '\\') slashCount++;
+    const escaped = pattern[i + slashCount];
+    if (slashCount === 1 && escaped === '(') depth++;
+    else if (slashCount === 1 && escaped === ')' && --depth < 0) return false;
+    i += slashCount;
+  }
+  return depth === 0;
+}
+
 function inspectBreDialect(pattern, { fixedString = false } = {}) {
   if (fixedString || typeof pattern !== 'string' || pattern.length < 2) return null;
+  const groupsArePossible = escapedParensBalanced(pattern);
 
   const operators = new Set();
   let retryable = false;
@@ -119,7 +147,8 @@ function inspectBreDialect(pattern, { fixedString = false } = {}) {
 
     let operator = null;
     if (escaped === '|' && !isEscapedDoublePipe(pattern, slashStart, escapedIndex)) operator = '|';
-    else if (escaped === '(' || escaped === ')' || escaped === '+' || escaped === '?') operator = escaped;
+    else if ((escaped === '(' || escaped === ')') && groupsArePossible) operator = escaped;
+    else if (escaped === '+' || escaped === '?') operator = escaped;
 
     if (operator) {
       operators.add(operator);
