@@ -304,6 +304,16 @@ function rejectUnknownOptions(args, usage) {
   if (bad) failUsage(`unrecognised option "${bad}"`, usage);
 }
 
+// Agents pass `-k N` to every ss-* tool by habit (it sizes ss-grep, ss-find and ss-search).
+// A tool without a result count takes it and ignores it, instead of failing the call on a
+// usage error (2 Codex calls on ss-semantic, TRACES-rules3). Consumes `-k N`, `-kN`,
+// `--top N`; returns the count (unused by the caller) or null.
+function takeCountFlag(args, usage) {
+  const at = args.findIndex((a) => /^-k\d+$/.test(a));
+  if (at !== -1) args.splice(at, 1, '-k', args[at].slice(2));
+  return readPositiveIntFlag(args, ['-k', '--top'], null, usage);
+}
+
 // Every path argument resolves the way the shell would: relative to the agent's cwd
 // first, then (unchanged) relative to the repository root. The result is the
 // root-relative spelling, so all output stays root-relative (core/search/cwd-paths.js).
@@ -966,6 +976,11 @@ const READ_USAGE =
 async function cmdRead(rawArgs) {
   const args = [...rawArgs];
   const force = parseBoolFlag(args, ['--force']);
+  // `-k N` has no meaning for a read (lines are positional): accepted, ignored.
+  takeCountFlag(args, READ_USAGE);
+  // --in <file> names the file, as it does for ss-grep / ss-trace: `ss-read --in <file> 10 20`.
+  const inFile = readValueFlag(args, ['--in', '--file'], null, READ_USAGE);
+  if (inFile != null) args.unshift(inFile);
   const file = cwdPath(args[0]);
   if (!file) {
     process.stderr.write(READ_USAGE + '\n');
@@ -1379,7 +1394,7 @@ async function cmdAgentSearch(rawArgs) {
   process.exit(0);
 }
 
-const SEMANTIC_USAGE = 'Usage: ss-semantic <file> "<question>" [--max-tokens N]';
+const SEMANTIC_USAGE = 'Usage: ss-semantic <file> "<question>" [-k N] [--max-tokens N]';
 async function cmdSemantic(rawArgs) {
   const args = normalizeArgs(rawArgs);
   // Default 600 (was 800) per the 2026-06 budget sweep — scaled with the 3k
@@ -1387,9 +1402,16 @@ async function cmdSemantic(rawArgs) {
   // --max-tokens flag from the agent always wins.
   const maxTokens = readPositiveIntFlag(args, '--max-tokens',
     Number(process.env.SS_SMOKE_SEMANTIC_MAXTOKENS || '') || 600, SEMANTIC_USAGE);
+  // -k N: the number of top-ranked chunks the spans are built from (readSemantic topK, the
+  // product CLI's `read-semantic -k`); the --max-tokens budget still caps the output.
+  const topK = takeCountFlag(args, SEMANTIC_USAGE);
+  // --in <file> names the file, as it does for ss-grep / ss-trace: `ss-semantic "<question>"
+  // --in <file>`. The positional form stays `<file> "<question>"`.
+  const inFile = readValueFlag(args, ['--in', '--file'], null, SEMANTIC_USAGE);
   rejectUnknownOptions(args, SEMANTIC_USAGE);
-  let file = cwdPath(args[0]);
-  const query = args[1];
+  if (inFile && args.length > 1) failUsage('give the file once: <file> "<question>" or "<question>" --in <file>', SEMANTIC_USAGE);
+  let file = cwdPath(inFile ?? args[0]);
+  const query = inFile ? args[0] : args[1];
   if (!file || !query) {
     process.stderr.write(SEMANTIC_USAGE + '\n');
     process.exit(2);
@@ -1422,14 +1444,14 @@ async function cmdSemantic(rawArgs) {
     if (!await ensureWarmServerReady({ timeoutMs: 5000 })) throw new Error('warm server is not ready');
     const { queryReadSemanticServer } = await import(path.join(REPO_ROOT, 'core/search/search-server.js'));
     r = await queryReadSemanticServer({
-      path: file, query, projectRoot: FILE_ROOT, maxChars: maxTokens * 4,
+      path: file, query, projectRoot: FILE_ROOT, maxChars: maxTokens * 4, ...(topK ? { topK } : {}),
     });
     if (r?.error) throw new Error(r.error);
   } catch {
     const { readSemantic } = await import(path.join(REPO_ROOT, 'core/search/search-read-semantic.js'));
     r = await readSemantic({
       path: file, query, projectRoot: FILE_ROOT,
-      maxChars: maxTokens * 4, verbose: false,
+      maxChars: maxTokens * 4, verbose: false, ...(topK ? { topK } : {}),
     });
   }
   if (!r.ok) {
@@ -1474,6 +1496,8 @@ async function cmdTrace(rawArgs) {
     args.splice(args.indexOf('--json'), 1);
   }
   const { traceSymbol, formatStructuralContext, TRACE_MODES } = await import(path.join(REPO_ROOT, 'core/search/search-trace.js'));
+  // `-k N` has no meaning for a trace (its size knobs are --depth / --budget): accepted, ignored.
+  takeCountFlag(args, TRACE_USAGE);
 
   // THE MODE WORD. The guide has taught `ss-trace <symbol> [callers|callees|impact]` since
   // p7, but this function read only the FIRST positional, so `ss-trace foo callers` ran as

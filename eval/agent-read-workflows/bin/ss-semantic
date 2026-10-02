@@ -2,7 +2,7 @@
 # ss-semantic: query-specific spans inside ONE file using read-semantic.
 # Default --max-tokens cap of 800 keeps spans focused.
 #
-# Usage:  ss-semantic <file> "<question>" [--max-tokens N]
+# Usage:  ss-semantic <file> "<question>" [-k N] [--max-tokens N]   (or "<question>" --in <file>)
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 . "$DIR/_ss-env.sh"
 # The product command, exactly as an installed user runs it: the native client hands the

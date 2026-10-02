@@ -478,3 +478,100 @@ describe('also candidates are pointers, not shown spans', () => {
     expect(body.match(/recordForAlreadyShown\(shownSpans/)).not.toBeNull();
   });
 });
+
+// Agents pass `-k N` (and `--in <file>`) to every ss-* tool by habit; ss-semantic rejected `-k`
+// with its usage text (2 Codex calls, TRACES-rules3). ss-semantic maps -k to its topK (the
+// ranked chunks its spans come from); ss-read and ss-trace take -k and ignore it; ss-semantic
+// and ss-read take `--in <file>` as the file.
+describe('ss-* flag habits: -k and --in', () => {
+  function setupFourFunctions() {
+    TMP = realpathSync(TMP);
+    mkdirSync(path.join(TMP, 'src'), { recursive: true });
+    const lines = [];
+    const entities = ['alpha', 'beta', 'gamma', 'delta'].map((name, i) => {
+      const start = i * 40 + 1;
+      lines.push(`function f${i}() {`, '  token token token', '  return 1;', '}', ...Array(36).fill(''));
+      addChunk(`f${i}`, start, start + 3, `f${i}`, 'function');
+      return ent(name, 'function', start, start + 3);
+    });
+    writeFileSync(path.join(TMP, 'src/a.js'), lines.join('\n'));
+    writeGraph(entities);
+    const db = new Database(path.join(TMP, '.sweet-search/codebase.db'));
+    db.exec("CREATE TABLE vectors (file_path TEXT, epoch_retired INTEGER); INSERT INTO vectors VALUES ('src/a.js', NULL)");
+    db.close();
+  }
+
+  const run = async (tool, args, socketPath = path.join(TMP, 'none.sock')) => {
+    const response = await buildAgentToolDaemonResponse({
+      v: 1, tool, args, cwd: TMP, pid: process.pid,
+      env: {
+        SWEET_SEARCH_PROJECT_ROOT: TMP, SWEET_SEARCH_SOCKET_PATH: socketPath,
+        SWEET_SEARCH_EXACT_REREAD_OMISSION: '0', SWEET_SEARCH_SHOWN_SPAN_TRAILER: '0',
+      },
+    }, { isUnixSocket: true, isReady: () => true, searcher: { projectRoot: TMP } });
+    expect(response.status).toBe(200);
+    return JSON.parse(response.body);
+  };
+  const spans = (out) => Number(/spans=(\d+)/.exec(out.stdout)?.[1]);
+
+  it('ss-semantic: -k N sets the ranked-chunk count, -kN and --top too; no usage error', async () => {
+    setupFourFunctions();
+    const all = await run('semantic', ['src/a.js', 'token', '--max-tokens', '400']);
+    expect(all.code).toBe(0);
+    expect(spans(all)).toBe(4);
+    for (const k of [['-k', '1'], ['-k1'], ['--top', '1']]) {
+      const one = await run('semantic', ['src/a.js', 'token', ...k, '--max-tokens', '400']);
+      expect(one.code, k.join(' ')).toBe(0);
+      expect(one.stderr).not.toContain('Usage');
+      expect(spans(one), k.join(' ')).toBe(1);
+    }
+    const bad = await run('semantic', ['src/a.js', 'token', '-k', 'x']);
+    expect(bad.code).toBe(2);
+    expect(bad.stderr).toContain('-k must be an integer');
+  });
+
+  it('ss-semantic: -k reaches the warm daemon as topK', async () => {
+    setupFourFunctions();
+    const socketPath = path.join(TMP, 'tool.sock');
+    const requests = [];
+    const server = http.createServer(async (req, res) => {
+      requests.push(req.url);
+      const response = await buildReadSemanticDaemonResponse(req.url, {
+        isUnixSocket: true, serverReady: true, searcher: { projectRoot: TMP },
+      });
+      res.writeHead(response.status, { 'Content-Type': response.contentType });
+      res.end(response.body);
+    });
+    await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socketPath, resolve); });
+    try {
+      const warm = await run('semantic', ['src/a.js', 'token', '-k', '2', '--max-tokens', '400'], socketPath);
+      expect(warm.code).toBe(0);
+      expect(new URLSearchParams(requests[0].split('?')[1]).get('topK')).toBe('2');
+      expect(spans(warm)).toBe(2);
+    } finally {
+      await new Promise(resolve => server.close(resolve));
+    }
+  });
+
+  it('ss-semantic: "<question>" --in <file> is the positional form', async () => {
+    setupFourFunctions();
+    const positional = await run('semantic', ['src/a.js', 'token', '--max-tokens', '400']);
+    const scoped = await run('semantic', ['token', '--in', 'src/a.js', '--max-tokens', '400']);
+    expect(scoped).toEqual(positional);
+    const twice = await run('semantic', ['src/a.js', 'token', '--in', 'src/a.js']);
+    expect(twice.code).toBe(2);
+  });
+
+  it('ss-read and ss-trace accept -k (ignored); ss-read takes --in <file>', async () => {
+    setupFourFunctions();
+    const read = await run('read', ['src/a.js', '1', '3']);
+    expect(read.code).toBe(0);
+    expect(await run('read', ['src/a.js', '1', '3', '-k', '5'])).toEqual(read);
+    expect(await run('read', ['-k5', 'src/a.js', '1', '3'])).toEqual(read);
+    expect(await run('read', ['--in', 'src/a.js', '1', '3'])).toEqual(read);
+    const trace = await run('trace', ['f0']);
+    const traceK = await run('trace', ['f0', '-k', '5']);
+    expect(traceK).toEqual(trace);
+    expect(traceK.stderr).not.toContain('unrecognised');
+  });
+});
