@@ -26,6 +26,7 @@ import {
   selectClaudeMainCosts, aggregateTurn,
   isHiddenReasoningBlock, hiddenReasoningForRollout, mainTranscriptMetrics,
 } from './claude-code-accounting.mjs';
+import { classifyShellCommand, TOOL_KIND_VERSION } from './shell-command-kind.mjs';
 export {
   turnsFromTranscript, turnsFromTranscriptFile, transcriptMetricsFromFile,
   aggregateUsageFromTurns, recoveredTurnsMatchAggregate, recoveredTurnsCoverAggregate,
@@ -407,17 +408,9 @@ export function excludeAncestorClaudeMd(settingsPath, rundir) {
   return patterns;
 }
 
-// Classify a shell command run via Claude Code's Bash tool into a bucket. Claude Code
-// passes the raw command (no `bash -lc` wrapper like codex), so match directly.
-function classifyShell(cmd) {
-  const c = String(cmd || '').trim();
-  if (/^run_tests\b/.test(c)) return 'test';
-  if (/^(ss[-_](search|grep|find|read|semantic|trace)|sweet-search)\b/.test(c)) return 'ss';
-  if (/\bapply_patch\b/.test(c)) return 'edit';
-  if (/^(rg|grep|ag|ack|git grep)\b/.test(c) || /\| *(grep|rg)\b/.test(c)) return 'nativeGrep';
-  if (/^(cat|head|tail|nl|bat|less)\b/.test(c) || /^sed\s+(-n|')/.test(c)) return 'nativeRead';
-  return 'bash';
-}
+// Shell commands run via Claude Code's Bash tool: the shared classifier (shell-command-kind.mjs),
+// so `cd <dir>; ss-grep …` counts as ss-*, as in every other runner.
+const classifyShell = (cmd) => classifyShellCommand(cmd).kind;
 
 // Map a Claude Code tool_use block → {kind, command}. Built-in tools are typed, so the
 // tool NAME drives the bucket; Bash unwraps to the shell command.
@@ -911,6 +904,7 @@ export async function runClaudeCodeTask(task, {
   const calls = toolCalls.length;
   return {
     ...controller,
+    toolKindVersion: TOOL_KIND_VERSION, // shell-command-kind.mjs: never pool ss/toolCounts across versions
     calls, ss: toolCounts.ss, nativeGrep: toolCounts.nativeGrep, toolCounts,
     patchHunks, patchFiles, finalPatch,
     ...escapeAudit,

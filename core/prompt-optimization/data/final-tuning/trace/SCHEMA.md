@@ -6,7 +6,9 @@ One normaliser per harness writes one file per cell:
 
 Sources are read-only:
 - rows: `/Users/admin/Projects/sweet-search-private/core/prompt-optimization/data/results/r282-<cell>/runs.jsonl`
-- captures: same folder, `captures/<arm>.<id>.json` (answer, rawResponse, calls[] with command + textChars)
+- captures: same folder, `captures/<arm>.<id>.json` (answer, rawResponse, calls[] with command + textChars;
+  rows and captures with `captureVersion: 2` (2026-10-03) also keep `calls[].text`, and count an ss-* tool
+  inside a compound shell command (`cd …; ss-grep …`) as `ss` — never pool across versions)
 - sessions: `~/.ss-eval/r282/<cell>/` (live; do not write) — archive copy:
   `/Users/admin/Projects/sweet-search-private/core/prompt-optimization/data/results/r282-sessions-20260930.tgz`
 
