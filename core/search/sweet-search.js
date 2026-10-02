@@ -888,6 +888,7 @@ export class SweetSearch {
         format: options.format,
         tokenBudget: options.tokenBudget,
         k,
+        reserve: postRetrievalResult.reserve,
         codeGraphRepo: this.codeGraphRepo || null,
         locationMap: null,
         projectRoot: this.projectRoot,
@@ -901,7 +902,9 @@ export class SweetSearch {
       return agentResponse;
     }
 
-    return postRetrievalResult;
+    // The reserve is packager-only input; plain callers get { results, stats }.
+    const { reserve: _reserve, ...plainResult } = postRetrievalResult;
+    return plainResult;
     } finally {
       endPinnedRead(readPin);
     }

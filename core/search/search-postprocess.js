@@ -19,6 +19,8 @@ import { applyFileKindRanking, applyResultDemotions, classifyFileKindIntent } fr
 import { recordQueryTelemetry } from '../embedding/embedding-cache.js';
 import { expandAliases } from './dedup/sibling-expander.js';
 import { capToFinalK } from './final-k.js';
+import { dedupeIdenticalSpans } from './span-dedupe.js';
+import { applyFinalListMMR, SPAN_MMR_WEIGHTS, CONTENT_MMR_WEIGHTS } from '../ranking/mmr.js';
 
 /**
  * Min-max normalize an array of scores to [0, 1].
@@ -384,6 +386,70 @@ function promoteFileDiversity(results, opts = {}) {
   return unique.concat(duplicates, results.slice(window));
 }
 
+// Candidates after the final cut handed to the agent packager for refill.
+const FINAL_RESERVE_SIZE = 10;
+
+const AGENT_FORMATS = new Set(['agent', 'agent_preview', 'agent_full', 'agent_full_xl']);
+
+export const FINAL_MMR_WEIGHT_PRESETS = Object.freeze({
+  'span-only': SPAN_MMR_WEIGHTS,
+  content: CONTENT_MMR_WEIGHTS,
+  'content-file': Object.freeze({ span: 1.0, symbol: 0.5, file: 0.4, dir: 0.1 }),
+});
+
+/**
+ * Final-list MMR settings. Env knobs exist for A/B runs only.
+ * Defaults (lambda 0.8, span-only weights, gate on) come from the DEV grid:
+ * lambda {0.7,0.8,0.9,0.95} x weights {span-only, content, content-file} x
+ * gate on/off on retrieval-probes dev (n=40) and r3 dev (n=140), seed 42.
+ * No setting changed probe top-1 or MRR (top-1 never moves by construction);
+ * span-only at 0.7-0.8 was the only family with r3 gains and no r3 loss.
+ * @returns {{ enabled: boolean, lambda: number, weights: object, gate: boolean }}
+ */
+export function finalMMRSettings(env = process.env) {
+  const flag = env.SWEET_SEARCH_FINAL_MMR;
+  const preset = FINAL_MMR_WEIGHT_PRESETS[env.SWEET_SEARCH_FINAL_MMR_WEIGHTS] || FINAL_MMR_WEIGHT_PRESETS['span-only'];
+  const lambdaRaw = Number.parseFloat(env.SWEET_SEARCH_FINAL_MMR_LAMBDA ?? '');
+  return {
+    enabled: flag !== '0' && flag !== 'false',
+    lambda: Number.isFinite(lambdaRaw) && lambdaRaw >= 0 && lambdaRaw <= 1 ? lambdaRaw : 0.8,
+    weights: preset,
+    gate: env.SWEET_SEARCH_FINAL_MMR_GATE !== '0',
+  };
+}
+
+/**
+ * Shape the final candidate list just above the final-k cut:
+ *   1. span dedupe — one result per identical display span (all formats;
+ *      it removes copies, it does not score anything). Ablation
+ *      'no-span-dedupe'.
+ *   2. final-list MMR — near-duplicate demotion by line overlap (agent
+ *      formats only; on by default, SWEET_SEARCH_FINAL_MMR=0 turns it off).
+ *      Ablation 'no-final-mmr'.
+ * @param {Array} results
+ * @param {{k:number, format?:string, ablations?:Set|Array, stats?:object, finalMMR?:object}} opts
+ */
+export function shapeFinalList(results, opts = {}) {
+  const { k, format, ablations, stats } = opts;
+  let out = results;
+  if (!hasAblation(ablations, 'no-span-dedupe')) {
+    const { results: deduped, dropped } = dedupeIdenticalSpans(out);
+    if (dropped > 0) {
+      out = deduped;
+      if (stats) stats.spanDedupe = { dropped };
+    }
+  }
+  const mmr = opts.finalMMR || finalMMRSettings();
+  if (mmr.enabled && AGENT_FORMATS.has(format) && !hasAblation(ablations, 'no-final-mmr')) {
+    const { results: reordered, stats: mmrStats } = applyFinalListMMR(out, {
+      k, lambda: mmr.lambda, weights: mmr.weights, gate: mmr.gate,
+    });
+    out = reordered;
+    if (stats && mmrStats.applied) stats.finalMMR = { lambda: mmr.lambda, reordered: mmrStats.reordered };
+  }
+  return out;
+}
+
 // =============================================================================
 // Post-retrieval processing
 // =============================================================================
@@ -739,6 +805,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   // =========================================================================
   // Apply intent policy — chunkTypeBoosts, maxResults, rerankerWeight
   // =========================================================================
+  let finalK = k;
   const __t_intentPolicy = __ptStart();
   if (intentPolicy && Array.isArray(results) && results.length > 0) {
     // (a) chunkTypeBoosts: Multiply result scores by per-chunk-type boost factors
@@ -766,10 +833,10 @@ export async function applyPostRetrieval(results, query, options, searchContext)
       results.sort((a, b) => (b.score || 0) - (a.score || 0));
     }
 
-    // (c) maxResults: Cap output size per intent policy
+    // (c) maxResults: the intent policy lowers the final cap (applied by the
+    // final-k cut below, after span dedupe, so freed slots still refill).
     if (intentPolicy.maxResults) {
-      const effectiveK = Math.min(k, intentPolicy.maxResults);
-      results = results.slice(0, effectiveK);
+      finalK = Math.min(k, intentPolicy.maxResults);
     }
   }
   __ptEnd('post:intentPolicy', __t_intentPolicy);
@@ -899,15 +966,29 @@ export async function applyPostRetrieval(results, query, options, searchContext)
     }
   }
 
+  // Span dedupe + final-list MMR, on the full candidate list (seeds + graph
+  // neighbours, after cascade rescoring and demotions), so slots they free
+  // refill from the next candidates before the final cut below.
+  if (Array.isArray(results) && results.length > 1) {
+    const __t_shape = __ptStart();
+    results = shapeFinalList(results, { k: finalK, format: options.format, ablations: options.ablations, stats });
+    __ptEnd('post:shapeFinalList', __t_shape);
+  }
+
   // Final-k cut. Graph expansion (above) appends neighbours after the seed
   // stage already cut to k, so the list can be longer than the caller asked
   // for. Every stage that can add or reorder results has run by now; cut to k
   // so the user-visible list and the budget-tier signals use <= k results.
   // Keep this the LAST list-shaping step: any dedupe/MMR of near-duplicate
   // neighbours belongs above this line so freed slots refill up to k.
+  // The next candidates after the cut go to the agent packager as a reserve
+  // (covered-summary refill, context-expander.js); never part of `results`.
+  let reserve = [];
   if (Array.isArray(results)) {
     const beforeFinalCut = results.length;
-    results = capToFinalK(results, k);
+    const cut = capToFinalK(results, finalK);
+    if (cut !== results) reserve = results.slice(cut.length, cut.length + FINAL_RESERVE_SIZE);
+    results = cut;
     if (results.length < beforeFinalCut) {
       stats.finalKCut = { k: results.length, before: beforeFinalCut };
     }
@@ -958,7 +1039,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
     telemetryMode === 'hybrid' ? semHit : undefined,
   ).catch(() => {}); // best-effort, never block search
 
-  return { results, stats };
+  return { results, stats, reserve };
 }
 
 /**

@@ -584,3 +584,45 @@ describe('latency tracking', () => {
     expect(stats.lexicalLatencyMs).toBe(7);
   });
 });
+
+describe('seed span collapse (agent formats)', () => {
+  const span = (file, s, e, name) => ({ file, startLine: s, endLine: e, name });
+  const fused = () => ({
+    results: [
+      { id: 'zero/tablet.go:196-240:6', file: 'zero/tablet.go', score: 1.0, metadata: span('zero/tablet.go', 140, 251, 'movePredicate') },
+      { id: 'zero/tablet.go:140-157:3', file: 'zero/tablet.go', score: 0.99, metadata: span('zero/tablet.go', 140, 251, 'movePredicate') },
+      { id: 'zero/tablet.go:240-251:7', file: 'zero/tablet.go', score: 0.98, metadata: span('zero/tablet.go', 140, 251, 'movePredicate') },
+      { id: 'worker/move.go:189', file: 'worker/move.go', score: 0.97, metadata: span('worker/move.go', 189, 255, 'MovePredicate') },
+      { id: 'worker/move.go:257', file: 'worker/move.go', score: 0.96, metadata: span('worker/move.go', 257, 365, 'movePredicateHelper') },
+    ],
+    method: 'cc_robust',
+    fallbackReason: null,
+  });
+  const run = async (opts) => {
+    const searcher = await makeSearcher({ robustCCFusion: vi.fn(fused), applyPostFusionBoosts: vi.fn(r => r) });
+    const out = await searcher.hybridSearchV2('movePredicate tablet zero worker', {
+      k: 3, useMMR: false, allowKeywordFallback: false, allowQueryRewrite: false, ...opts,
+    });
+    return out.results.map(r => r.id);
+  };
+  const tabletCopies = ids => ids.filter(id => id.startsWith('zero/tablet.go')).length;
+
+  it('agent format: the seed pool holds k distinct spans; copies stay in for the cascade', async () => {
+    expect(await run({ format: 'agent' })).toEqual([
+      'zero/tablet.go:196-240:6', 'zero/tablet.go:140-157:3', 'zero/tablet.go:240-251:7',
+      'worker/move.go:189', 'worker/move.go:257',
+    ]);
+  });
+
+  it('plain format keeps the copies (GCSN-style traffic unchanged)', async () => {
+    expect(tabletCopies(await run({}))).toBe(3);
+  });
+
+  it('SWEET_SEARCH_SEED_SPAN_COLLAPSE=0 and the no-span-dedupe ablation turn it off', async () => {
+    process.env.SWEET_SEARCH_SEED_SPAN_COLLAPSE = '0';
+    try {
+      expect(tabletCopies(await run({ format: 'agent' }))).toBe(3);
+    } finally { delete process.env.SWEET_SEARCH_SEED_SPAN_COLLAPSE; }
+    expect(tabletCopies(await run({ format: 'agent', ablations: ['no-span-dedupe'] }))).toBe(3);
+  });
+});

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { classifyIntent, getIntentPolicy, INTENTS } from '../../core/query/index.js';
+import { isBehaviourQuestion } from '../../core/query/intent-router.js';
 
 // ---------------------------------------------------------------------------
 // Helper: apply intent policy to results (mirrors logic in sweet-search.js)
@@ -242,6 +243,67 @@ describe('classifyIntent', () => {
     it('matches CSRF in uppercase', () => {
       const r = classifyIntent('check for CSRF');
       expect(r.intent).toBe(INTENTS.SECURITY);
+    });
+  });
+
+  describe('whole-word matching (no substring hits)', () => {
+    it('a behaviour description with "moved" is not a refactor request (r3h-dgraph-23)', () => {
+      const r = classifyIntent('mark pending transaction aborted when predicate is being moved or dropped');
+      expect(r.intent).toBe(INTENTS.GENERAL);
+      expect(r.confidence).toBe(0);
+    });
+
+    it('does not match keywords inside other words', () => {
+      // prefix ⊃ fix, author ⊃ auth, removed ⊃ move, classify ⊃ class, rapid ⊃ api
+      for (const q of ['strip the prefix from the author name', 'removed entries', 'classify rapid queries']) {
+        expect(classifyIntent(q).intent).toBe(INTENTS.GENERAL);
+      }
+    });
+
+    it('"type" no longer fires inside "TypeError"', () => {
+      const r = classifyIntent('TypeError undefined is not a function');
+      expect(r.scores[INTENTS.BUG_FIX]).toBeGreaterThan(r.scores[INTENTS.API_LOOKUP]);
+      expect(r.intent).toBe(INTENTS.BUG_FIX);
+    });
+
+    it('symptom words count in any inflection, action verbs only in base or -s form', () => {
+      expect(classifyIntent('debugging the crashing worker').intent).toBe(INTENTS.BUG_FIX);
+      expect(classifyIntent('sanitizing user input').intent).toBe(INTENTS.SECURITY);
+      expect(classifyIntent('tests failed with errors').intent).toBe(INTENTS.BUG_FIX);
+      expect(classifyIntent('extracted fields are merged').intent).toBe(INTENTS.GENERAL);
+      expect(classifyIntent('move the handler into its own file').intent).toBe(INTENTS.REFACTOR);
+    });
+  });
+
+  describe('behaviour questions', () => {
+    it('isBehaviourQuestion separates "how does X" from "how do I X"', () => {
+      expect(isBehaviourQuestion('how does gin merge route groups')).toBe(true);
+      expect(isBehaviourQuestion('Where is the predicate moved?')).toBe(true);
+      expect(isBehaviourQuestion('the predicate is moved where?')).toBe(true);
+      expect(isBehaviourQuestion('how do I rename the config loader')).toBe(false);
+      expect(isBehaviourQuestion('how to move a handler into a new file')).toBe(false);
+      expect(isBehaviourQuestion('can we split this module')).toBe(false);
+      expect(isBehaviourQuestion('refactor the auth module')).toBe(false);
+    });
+
+    it('refactor verbs inside a behaviour question do not make it a refactor request', () => {
+      expect(classifyIntent('how does gin merge route groups').intent).toBe(INTENTS.GENERAL);
+      expect(classifyIntent('how do I rename the config loader').intent).toBe(INTENTS.REFACTOR);
+    });
+
+    it('lookup and bug words keep their meaning inside a question', () => {
+      expect(classifyIntent('which function splits the path').intent).toBe(INTENTS.API_LOOKUP);
+      expect(classifyIntent('why does the login crash').intent).toBe(INTENTS.BUG_FIX);
+    });
+  });
+
+  describe('evidence-based confidence', () => {
+    it('one keyword late in a long sentence is weaker than one at the start', () => {
+      const late = classifyIntent('the login module code has an error');
+      const early = classifyIntent('error in the login module code');
+      expect(early.confidence).toBe(1);
+      expect(late.confidence).toBeLessThan(0.7);
+      expect(late.intent).toBe(INTENTS.BUG_FIX);
     });
   });
 
