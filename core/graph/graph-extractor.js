@@ -82,6 +82,10 @@ const REGEX_CONTAINER_TYPES = new Set([
   'protocol', 'extension', 'mixin', 'record',
 ]);
 
+// Data formats whose entities are keys, not definitions: an exact repeat of a
+// key line is the same key (see GraphExtractor.entityId).
+const DATA_KEY_LANGUAGES = new Set(['json', 'yaml', 'toml', 'xml']);
+
 export function clampSentinelEndLines(entities, fileLineCount, language) {
   if (!Array.isArray(entities) || entities.length < 2) return entities;
   if (fileLineCount == null || fileLineCount <= 0) return entities;
@@ -792,6 +796,8 @@ export class GraphExtractor {
     // (relationship-types.js); ranking consumers skip them.
     this.typeUsageEdges = options?.typeUsageEdges ?? process.env.SWEET_SEARCH_TYPE_USAGE_EDGES !== '0';
     this._skipObjectSets = new Map();
+    // Per-file id counters for entityId(); one entry per file being extracted.
+    this._idStates = new Map();
   }
 
   _skipObjectSet(langInfo) {
@@ -809,7 +815,13 @@ export class GraphExtractor {
    * generic registry-based extractor for all other languages.
    */
   async extractFromFile(filePath, content) {
-    const result = await this._extractFromFileInner(filePath, content);
+    this._idStates.set(filePath, new Map());
+    let result;
+    try {
+      result = await this._extractFromFileInner(filePath, content);
+    } finally {
+      this._idStates.delete(filePath);
+    }
     if (this.importResolver && result.relationships) {
       this._appendResolvedImports(filePath, content, result.relationships);
     }
@@ -978,7 +990,7 @@ export class GraphExtractor {
           if (symbols && symbols.length > 0 && !csharpParseError) {
             // Convert tree-sitter symbols to graph entities format and align
             // labels with regex semantics (component/object arrow distinctions).
-            const entities = this._normalizeTreeSitterEntities(filePath, symbols, langInfo.id);
+            const entities = this._normalizeTreeSitterEntities(filePath, symbols, langInfo.id, lines);
             // Still extract relationships with regex (tree-sitter only gives definitions)
             const callSites = [];
             const relationships = this._extractRelationships(content, lines, filePath, langInfo, entities, callSites);
@@ -1013,6 +1025,7 @@ export class GraphExtractor {
    * Extract from Java file
    */
   extractJava(content, lines, filePath) {
+    this._idStates.set(filePath, new Map()); // fresh id counters (entityId)
     const entities = [];
     const relationships = [];
 
@@ -1170,7 +1183,7 @@ export class GraphExtractor {
         const extendsClass = classMatch[2];
         const implementsStr = classMatch[3];
 
-        const id = this.makeId(filePath, 'class', className);
+        const { id } = this.entityId(filePath, 'class', className, { line });
         const entity = {
           id,
           file_path: filePath,
@@ -1190,7 +1203,7 @@ export class GraphExtractor {
         if (extendsClass) {
           relationships.push({
             source_id: id,
-            target_id: this.makeId(filePath, 'class', extendsClass),
+            target_id: null, // resolved by name (the base may live in another file)
             target_name: extendsClass,
             type: 'extends',
             weight: GRAPH_CONFIG.relationshipWeights.extends,
@@ -1203,7 +1216,7 @@ export class GraphExtractor {
           for (const iface of interfaces) {
             relationships.push({
               source_id: id,
-              target_id: this.makeId(filePath, 'interface', iface),
+              target_id: null,
               target_name: iface,
               type: 'implements',
               weight: GRAPH_CONFIG.relationshipWeights.implements,
@@ -1216,7 +1229,7 @@ export class GraphExtractor {
       const ifaceMatch = line.match(/(?:public)?\s*interface\s+(\w+)(?:\s+extends\s+([\w,\s]+))?/);
       if (ifaceMatch) {
         const ifaceName = ifaceMatch[1];
-        const id = this.makeId(filePath, 'interface', ifaceName);
+        const { id } = this.entityId(filePath, 'interface', ifaceName, { line });
 
         entities.push({
           id,
@@ -1237,7 +1250,7 @@ export class GraphExtractor {
           for (const ext of extended) {
             relationships.push({
               source_id: id,
-              target_id: this.makeId(filePath, 'interface', ext),
+              target_id: null,
               target_name: ext,
               type: 'extends',
               weight: GRAPH_CONFIG.relationshipWeights.extends,
@@ -1261,10 +1274,7 @@ export class GraphExtractor {
         const signatureHash = this.makeSignatureHash(fullSignature);
 
         // Use signature hash for disambiguation of overloaded methods
-        const id = this.makeId(filePath, 'method', `${currentClass?.name || 'Unknown'}.${methodName}`, {
-          signature: fullSignature,
-          startLine: lineNum,
-        });
+        const { id } = this.entityId(filePath, 'method', methodName, { owner: currentClass?.name, line });
 
         entities.push({
           id,
@@ -1293,7 +1303,7 @@ export class GraphExtractor {
       }
 
       // Method calls (within method bodies; comment-aware)
-      const javaSource = currentClass ? this.makeId(filePath, 'class', currentClass.name) : null;
+      const javaSource = currentClass ? currentClass.id : null;
       javaCallScanner.scanLine(
         line,
         (targetName) => this._pushCallEdge(relationships, seenCalls, javaSource, targetName, lineNum),
@@ -1305,7 +1315,7 @@ export class GraphExtractor {
       const throwMatch = line.match(/throw\s+new\s+(\w+)/);
       if (throwMatch && currentClass) {
         relationships.push({
-          source_id: this.makeId(filePath, 'class', currentClass.name),
+          source_id: currentClass.id,
           target_id: null,
           target_name: throwMatch[1],
           type: 'throws',
@@ -1321,6 +1331,7 @@ export class GraphExtractor {
    * Extract from JavaScript/TypeScript file
    */
   extractJavaScript(content, lines, filePath) {
+    this._idStates.set(filePath, new Map()); // fresh id counters (entityId)
     const entities = [];
     const relationships = [];
     const fileEntityId = this.makeId(filePath, 'file', path.basename(filePath));
@@ -1338,7 +1349,7 @@ export class GraphExtractor {
       const classMatch = line.match(/(?:export\s+(?:default\s+)?)?class\s+(\w+)(?:\s+extends\s+(\w+))?/);
       if (classMatch) {
         const className = classMatch[1];
-        const id = this.makeId(filePath, 'class', className);
+        const { id } = this.entityId(filePath, 'class', className, { line });
         entities.push({
           id,
           file_path: filePath,
@@ -1363,7 +1374,7 @@ export class GraphExtractor {
         if (funcMatch) {
           const sig = line.trim().slice(0, 100);
           entities.push({
-            id: this.makeId(filePath, 'function', funcMatch[1], { signature: sig, startLine: lineNum }),
+            id: this.entityId(filePath, 'function', funcMatch[1], { line }).id,
             file_path: filePath,
             type: 'function',
             name: funcMatch[1],
@@ -1378,7 +1389,7 @@ export class GraphExtractor {
           if (componentMatch) {
             const sig = line.trim().slice(0, 100);
             entities.push({
-              id: this.makeId(filePath, 'component', componentMatch[1], { startLine: lineNum }),
+              id: this.entityId(filePath, 'component', componentMatch[1], { line }).id,
               file_path: filePath,
               type: 'component',
               name: componentMatch[1],
@@ -1393,7 +1404,7 @@ export class GraphExtractor {
             if (arrowMatch) {
               const sig = line.trim().slice(0, 100);
               entities.push({
-                id: this.makeId(filePath, 'arrowFunction', arrowMatch[1], { signature: sig, startLine: lineNum }),
+                id: this.entityId(filePath, 'arrowFunction', arrowMatch[1], { line }).id,
                 file_path: filePath,
                 type: 'arrowFunction',
                 name: arrowMatch[1],
@@ -1407,7 +1418,7 @@ export class GraphExtractor {
               const objArrowMatch = line.match(/(\w+)\s*:\s*(?:async\s*)?\([^)]*\)\s*=>/);
               if (objArrowMatch) {
                 entities.push({
-                  id: this.makeId(filePath, 'arrowFunction', objArrowMatch[1], { startLine: lineNum }),
+                  id: this.entityId(filePath, 'arrowFunction', objArrowMatch[1], { line }).id,
                   file_path: filePath,
                   type: 'arrowFunction',
                   name: objArrowMatch[1],
@@ -1420,7 +1431,7 @@ export class GraphExtractor {
                 const objMethodMatch = line.match(/^\s+(\w+)\s*\([^)]*\)\s*\{/);
                 if (objMethodMatch && !JS_RESERVED_WORDS.has(objMethodMatch[1])) {
                   entities.push({
-                    id: this.makeId(filePath, 'method', objMethodMatch[1], { startLine: lineNum }),
+                    id: this.entityId(filePath, 'method', objMethodMatch[1], { line }).id,
                     file_path: filePath,
                     type: 'method',
                     name: objMethodMatch[1],
@@ -1474,18 +1485,24 @@ export class GraphExtractor {
    * Extract from Proto file
    */
   extractProto(content, lines, filePath) {
+    this._idStates.set(filePath, new Map()); // fresh id counters (entityId)
     const entities = [];
     const relationships = [];
+
+    // The service whose block holds the current line: rpc names are only
+    // unique per service (two services may both declare `Query`).
+    let currentService = null;
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const lineNum = i + 1;
+      if (currentService && lineNum > currentService.end_line) currentService = null;
 
       // Message declarations
       const msgMatch = line.match(/message\s+(\w+)\s*\{/);
       if (msgMatch) {
         entities.push({
-          id: this.makeId(filePath, 'message', msgMatch[1]),
+          id: this.entityId(filePath, 'message', msgMatch[1], { line }).id,
           file_path: filePath,
           type: 'message',
           name: msgMatch[1],
@@ -1499,8 +1516,8 @@ export class GraphExtractor {
       // Service declarations
       const svcMatch = line.match(/service\s+(\w+)\s*\{/);
       if (svcMatch) {
-        entities.push({
-          id: this.makeId(filePath, 'service', svcMatch[1]),
+        currentService = {
+          id: this.entityId(filePath, 'service', svcMatch[1], { line }).id,
           file_path: filePath,
           type: 'service',
           name: svcMatch[1],
@@ -1508,7 +1525,8 @@ export class GraphExtractor {
           doc_comment: this.extractDocComment(lines, i),
           start_line: lineNum,
           end_line: this.findEndLine(lines, i),
-        });
+        };
+        entities.push(currentService);
       }
 
       // RPC declarations
@@ -1518,7 +1536,8 @@ export class GraphExtractor {
         const inputType = rpcMatch[2];
         const outputType = rpcMatch[3];
 
-        const id = this.makeId(filePath, 'rpc', rpcName);
+        const owner = currentService?.name || null;
+        const { id } = this.entityId(filePath, 'rpc', rpcName, { owner, line });
         entities.push({
           id,
           file_path: filePath,
@@ -1528,6 +1547,7 @@ export class GraphExtractor {
           doc_comment: this.extractDocComment(lines, i),
           start_line: lineNum,
           end_line: lineNum,
+          ...(owner ? { parent_class: owner } : {}),
         });
 
         // RPC uses input and output messages
@@ -1556,6 +1576,7 @@ export class GraphExtractor {
    * Works for all languages that have graph patterns in language-patterns.js.
    */
   extractGeneric(content, lines, filePath, langInfo) {
+    this._idStates.set(filePath, new Map()); // fresh id counters (entityId)
     const entities = [];
     const relationships = [];
     const { graph, id: language } = langInfo;
@@ -1659,7 +1680,6 @@ export class GraphExtractor {
           }
           const sig = trimmed.slice(0, 120);
           const sigHash = this.makeSignatureHash(sig);
-          const entityId = this.makeId(filePath, type, name, { signature: sig, startLine: lineNum });
           const endLine = findEndLineFn(i);
           // Containment: the innermost enclosing entity owns this one only
           // when it is a type-like container (a definition inside a function
@@ -1669,6 +1689,16 @@ export class GraphExtractor {
           const enclosing = activeEntityScopes[activeEntityScopes.length - 1];
           const parentClass = !langInfo.endKeyword && enclosing
             && REGEX_CONTAINER_TYPES.has(enclosing.type) ? enclosing.name : null;
+          const { id: entityId, duplicate } = this.entityId(filePath, type, name, {
+            owner: parentClass,
+            line: trimmed,
+            data: DATA_KEY_LANGUAGES.has(language),
+          });
+          if (duplicate) {
+            // An exact repeat of a data key: the first occurrence is the entity.
+            activeEntityScopes.push({ id: entityId, start_line: lineNum, end_line: endLine, type, name });
+            break;
+          }
 
           entities.push({
             id: entityId,
@@ -2017,7 +2047,8 @@ export class GraphExtractor {
     return clampSentinelEndLines(entities, fileLineCount);
   }
 
-  _normalizeTreeSitterEntities(filePath, symbols, language) {
+  _normalizeTreeSitterEntities(filePath, symbols, language, lines = null) {
+    this._idStates.set(filePath, new Map()); // fresh id counters (entityId)
     const dedupedBySymbolAndLine = new Map();
 
     for (const sym of symbols) {
@@ -2035,7 +2066,6 @@ export class GraphExtractor {
 
       if (!existing || rank > existing.rank) {
         dedupedBySymbolAndLine.set(key, {
-          id: this._makeEntityId(filePath, sym.name, normalizedType, startLine),
           file_path: filePath,
           type: normalizedType,
           name: sym.name,
@@ -2049,13 +2079,31 @@ export class GraphExtractor {
     }
 
     const sorted = Array.from(dedupedBySymbolAndLine.values())
-      .sort((a, b) => a.start_line - b.start_line);
+      .sort((a, b) => a.start_line - b.start_line
+        || (a.end_line - b.end_line)
+        || (a.type < b.type ? -1 : a.type > b.type ? 1 : 0)
+        || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    // Ids in source order (entityId numbers identical definitions in that
+    // order), from the full definition line — the tree-sitter `signature`
+    // is cut at 120 chars.
+    const data = DATA_KEY_LANGUAGES.has(language);
+    const kept = [];
+    for (const entity of sorted) {
+      const line = lines?.[entity.start_line - 1] ?? entity.signature ?? '';
+      const { id, duplicate } = this.entityId(filePath, entity.type, entity.name, {
+        owner: entity.parent_class || null,
+        line,
+        data,
+      });
+      if (duplicate) continue;
+      kept.push({ id, ...entity });
+    }
     // Tree-sitter path: NO sentinel clamp. Tree-sitter parsers return
     // accurate end_lines via grammar-driven extraction; the regex-path
     // `findEndLineKeyword` fall-through is the only known source of the
     // bogus-EOF pattern, and only Lua currently goes through that path
     // (Lua has no tree-sitter grammar registered).
-    return sorted.map(({ rank, ...entity }) => entity);
+    return kept.map(({ rank, ...entity }) => entity);
   }
 
   _normalizeTreeSitterSymbolType(type, name) {
@@ -2145,16 +2193,6 @@ export class GraphExtractor {
         return /^[A-Za-z_$][\w$]*$/.test(name) ? name : null;
       })
       .filter(Boolean);
-  }
-
-  /**
-   * Generate a deterministic entity ID for tree-sitter symbols.
-   * Uses the same hash pattern as makeId() for consistency.
-   */
-  _makeEntityId(filePath, name, type, startLine) {
-    const relativePath = this.projectRoot ? path.relative(this.projectRoot, filePath) : filePath;
-    const key = `${relativePath}:${type}:${name}:${startLine}`;
-    return createHash('sha256').update(key).digest('hex').slice(0, 16);
   }
 
   /**
@@ -2456,6 +2494,52 @@ export class GraphExtractor {
       byLanguage,
       byPattern: { ...this.debugCounters.byPattern },
     };
+  }
+
+  /**
+   * Id of one definition in one file — unique within the file by construction.
+   *
+   *   sha256(relPath:type:owner.name:hash(definition line)[:#n])[0:16]
+   *
+   * - `owner` (parent_class) separates same-named members of different types
+   *   (C# `_builder` fields in nested test classes).
+   * - The WHOLE definition line, whitespace-collapsed, separates overloads;
+   *   a 120-char prefix did not (ocelot `GivenOcelotIsRunning(...)` overloads
+   *   that differ after column 120).
+   * - `#n` numbers the remaining identical definitions in source order
+   *   (Makefile `VAR = x` in two `ifeq` branches, a CSS variable repeated in
+   *   two selectors). Every definition stays its own entity.
+   * - No line NUMBER: an edit above a definition does not change its id.
+   *
+   * Data files (`data: true`: JSON/YAML/TOML/XML keys) are the exception: an
+   * exact repeat of a key line (`gqlquery: |` in every YAML test case,
+   * `<ItemGroup>`, `[[bin]]`) is the same key, not a new definition — it
+   * returns the first occurrence's id with `duplicate: true` and is not
+   * stored again. Repeats with a different line (`name: a` / `name: b`) stay
+   * separate entities.
+   *
+   * Per-file counters live in `this._idStates` (set by extractFromFile), so
+   * the full build and the maintainer, which extract the same file content,
+   * mint the same ids.
+   *
+   * @returns {{ id: string, duplicate: boolean }}
+   */
+  entityId(filePath, type, name, { owner = null, line = '', data = false } = {}) {
+    const relativePath = this.projectRoot ? path.relative(this.projectRoot, filePath) : filePath;
+    const definition = String(line ?? '').replace(/\s+/g, ' ').trim();
+    const lineHash = createHash('sha256').update(definition).digest('hex').slice(0, 8);
+    const key = `${relativePath}:${type}:${owner ? `${owner}.` : ''}${name}:${lineHash}`;
+    let state = this._idStates.get(filePath);
+    if (!state) {
+      state = new Map();
+      this._idStates.set(filePath, state);
+    }
+    const seen = state.get(key);
+    if (seen !== undefined && data) return { id: seen.id, duplicate: true };
+    const n = seen === undefined ? 0 : seen.n + 1;
+    const id = createHash('sha256').update(n === 0 ? key : `${key}:#${n}`).digest('hex').slice(0, 16);
+    state.set(key, { id: seen?.id ?? id, n });
+    return { id, duplicate: false };
   }
 
   /**
