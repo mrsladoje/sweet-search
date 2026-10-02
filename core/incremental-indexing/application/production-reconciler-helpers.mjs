@@ -1,5 +1,5 @@
 import { existsSync } from 'node:fs';
-import { normalizeIdentifier } from '../../graph/graph-extractor.js';
+import { entityHierarchyLevel, normalizeIdentifier } from '../../graph/graph-extractor.js';
 import { FloatVectorStore, getFloatStorePath } from '../../vector-store/float-vector-store.js';
 import {
   loadBitmap,
@@ -13,7 +13,11 @@ function entitySearchText(e) {
   return [e.name, e.signature, e.doc_comment].filter(Boolean).join(' ').toLowerCase().slice(0, 1000);
 }
 
-export function insertEntity(db, e, id, epoch, hasFts) {
+/**
+ * Insert one maintained entity row. `parentId` is the stored (physical) id
+ * of its HCGS parent row (entityParentIds), as a full build stores it.
+ */
+export function insertEntity(db, e, id, epoch, hasFts, parentId = null) {
   const nameAlias = normalizeIdentifier(e.name);
   const stmt = db.prepare(`
     INSERT INTO entities
@@ -34,8 +38,8 @@ export function insertEntity(db, e, id, epoch, hasFts) {
     e.parent_class || null,
     entitySearchText(e),
     nameAlias || null,
-    null,
-    ['method', 'field', 'rpc'].includes(e.type) ? 1 : 0,
+    parentId || null,
+    entityHierarchyLevel(e.type),
     e.id,
     epoch,
   );

@@ -27,7 +27,7 @@ import {
   saveCutoffCache,
 } from '../domain/cutoff-cache.mjs';
 import { FloatVectorStore, getFloatStorePath } from '../../vector-store/float-vector-store.js';
-import { createGraphSchema, GraphExtractor, insertCallSites } from '../../graph/graph-extractor.js';
+import { createGraphSchema, entityParentIds, GraphExtractor, insertCallSites } from '../../graph/graph-extractor.js';
 import { createImportResolver, importEdgesEnabled } from '../../graph/import-resolver.js';
 import { syncFileNode } from '../../graph/file-nodes.js';
 import { createVectorSchema, ensureVectorSchema, buildInsertItems, insertVectorItems } from '../../indexing/indexer-build.js';
@@ -949,7 +949,7 @@ class ProductionReconcileAdapter {
       ownConn = true;
     }
     try {
-      const oldRows = prepareCached(db, 'SELECT rowid, id, name, logical_entity_id, signature_hash, type, signature, doc_comment, start_line, end_line, package, parent_class FROM entities WHERE file_path = ? AND epoch_retired IS NULL').all(rel);
+      const oldRows = prepareCached(db, 'SELECT rowid, id, name, logical_entity_id, signature_hash, type, signature, doc_comment, start_line, end_line, package, parent_class, parent_id FROM entities WHERE file_path = ? AND epoch_retired IS NULL').all(rel);
       const oldByLogical = new Map(oldRows.map((r) => [r.logical_entity_id || r.id, r]));
       const oldIds = oldRows.map((r) => r.id);
       const importResolver = this._importResolverFor(ctx, db);
@@ -1011,14 +1011,31 @@ class ProductionReconcileAdapter {
             tombstone += 1;
           }
         }
+        // Keep a live row only when every stored column is unchanged,
+        // including its HCGS parent. Entity ids carry no line number
+        // (GraphExtractor.entityId), so a definition moved by an edit above
+        // it keeps its id; its row must still be re-written, or the
+        // maintained graph keeps stale lines that a fresh build does not
+        // have. A member's `parent_id` is its parent's stored row, so a
+        // re-written parent re-writes its kept members too.
+        const parentOf = entityParentIds(entities);
+        const oldLogicalOfRow = new Map(oldRows.map((r) => [r.id, r.logical_entity_id || r.id]));
+        const rewrite = new Set();
         for (const e of entities) {
           const old = oldByLogical.get(e.id);
-          // Keep the live row only when every stored column is unchanged.
-          // Entity ids carry no line number (GraphExtractor.entityId), so a
-          // definition moved by an edit above it keeps its id; its row must
-          // still be re-written, or the maintained graph keeps stale lines
-          // that a fresh build does not have.
-          if (old && sameEntityRow(old, e)) {
+          const oldParent = old?.parent_id ? (oldLogicalOfRow.get(old.parent_id) ?? old.parent_id) : null;
+          if (!old || !sameEntityRow(old, e) || oldParent !== (parentOf.get(e.id) ?? null)) rewrite.add(e.id);
+        }
+        for (let grew = true; grew;) {
+          grew = false;
+          for (const e of entities) {
+            const parent = parentOf.get(e.id);
+            if (parent && !rewrite.has(e.id) && rewrite.has(parent)) { rewrite.add(e.id); grew = true; }
+          }
+        }
+        for (const e of entities) {
+          const old = oldByLogical.get(e.id);
+          if (!rewrite.has(e.id)) {
             liveIdFor.set(e.id, old.id);
             continue;
           }
@@ -1027,9 +1044,12 @@ class ProductionReconcileAdapter {
             retiredIds.push(old.id);
             tombstone += 1;
           }
-          const physical = uniquePhysicalId(db, 'entities', `${e.id}@e${epoch}`);
-          liveIdFor.set(e.id, physical);
-          insertEntity(db, e, physical, epoch, hasFts);
+          liveIdFor.set(e.id, uniquePhysicalId(db, 'entities', `${e.id}@e${epoch}`));
+        }
+        for (const e of entities) {
+          if (!rewrite.has(e.id)) continue;
+          const parent = parentOf.get(e.id);
+          insertEntity(db, e, liveIdFor.get(e.id), epoch, hasFts, parent ? (liveIdFor.get(parent) ?? null) : null);
           upsert += 1;
         }
         insertRelationships(db, relationships, liveIdFor, epoch);
