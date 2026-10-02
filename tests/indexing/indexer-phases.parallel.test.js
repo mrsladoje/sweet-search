@@ -43,6 +43,7 @@ vi.mock('../../core/infrastructure/config/index.js', () => ({
   // buildVectorsAndArtifactsPhase is a no-op for these unit tests.
   DEDUP_CONFIG: { enabled: false, ngramSize: 5, numPerm: 128, numBands: 16, jaccardThreshold: 0.9, simhashHammingMax: 3, seed: 42, liReuseEnabled: false, liJaccardThreshold: 0.95 },
   LOGGING: { verbose: false, timing: false, debug: false },
+  SECRET_FILE_PATTERNS: [],
   setQuietMode: () => {}, isQuietMode: () => false,
 }));
 

@@ -163,7 +163,7 @@ describe('querySparseGramCandidates', () => {
     });
   });
 
-  it('returns candidate files from the native sparse gram index', () => {
+  it('returns every candidate file the native sparse gram index holds, docs included', () => {
     const result = {
       eligible: true,
       files: ['src/auth.js', 'docs/guide.md', 'src/session.js'],
@@ -184,8 +184,8 @@ describe('querySparseGramCandidates', () => {
       ...result,
       denseGramsTouched: 0,
       reason: 'ok',
-      candidateFiles: 2,
-      files: ['src/auth.js', 'src/session.js'],
+      candidateFiles: 3,
+      files: ['src/auth.js', 'docs/guide.md', 'src/session.js'],
       sparseGramsTouched: 0,
     });
     expect(searcher.sparseGramIndex.queryLiterals).toHaveBeenCalledWith(['AuthService'], 0, 0);

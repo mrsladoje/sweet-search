@@ -41,9 +41,12 @@ export {
   getSparseGramAllFilesWithOverlay,
   loadSparseDeltaOverlay,
   sparseDeltaOverlayHasChanges,
+  sparseGramPathFilter,
+  grepUnfilterablePaths,
+  gramsProveNoMatch,
 } from './search-pattern-sparse-overlay.js';
 import { DB_PATHS } from '../infrastructure/config/index.js';
-import { isRipgrepCodePath, resolveSearchSymbolFilter } from './search-pattern-chunks.js';
+import { resolveSearchSymbolFilter } from './search-pattern-chunks.js';
 
 // =============================================================================
 // Case-insensitive flag detection
@@ -551,9 +554,7 @@ export function querySparseGramCandidates(searcher, literalClauses, options = {}
       gramsUsed += result.gramsUsed || 0;
       denseGramsTouched += result.denseGramsTouched || 0;
       sparseGramsTouched += result.sparseGramsTouched || 0;
-      const baseClauseFiles = Array.isArray(result.files)
-        ? result.files.filter(isRipgrepCodePath)
-        : [];
+      const baseClauseFiles = Array.isArray(result.files) ? result.files : [];
       const clauseFiles = applySparseDeltaOverlay(
         baseClauseFiles,
         overlay,

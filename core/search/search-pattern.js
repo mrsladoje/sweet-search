@@ -23,6 +23,7 @@ import { isRipgrepAvailable, runRipgrepJson } from './search-pattern-ripgrep.js'
 import { ensureSparseGramIndex } from './search-pattern-prefilter.js';
 import { packageForAgent } from './context-expander.js';
 import { retryBreDialectAfterZero } from './regex-dialect.js';
+import { applyUnindexedFallback } from './grep-unindexed-fallback.js';
 import { buildIndexedGrepFamilyManifest, buildSingletonSiblingLine } from './agent-pack-completion.js';
 import { applyFileKindRanking, applyResultDemotions } from '../ranking/file-kind-ranking.js';
 
@@ -240,7 +241,10 @@ export async function bareGrep(query, routing, options = {}) {
   candidateResult = dialectRetry.candidateResult;
   // Symbol and --in filtering happen before retry adoption and before sort/cap,
   // so hint counts always describe the matches this call can actually return.
-  let matches = dialectRetry.matches;
+  const fallback = await applyUnindexedFallback({
+    searcher: this, regex, searchDir: filterRoot, options, matches: dialectRetry.matches, shapeResult,
+  });
+  let matches = fallback.matches;
   const globExcluded = globCounts?.get(matches) || null;
   matches.sort((a, b) =>
     a.file.localeCompare(b.file) ||
@@ -330,6 +334,7 @@ export async function bareGrep(query, routing, options = {}) {
         pathGlobExcludedMatches: globExcluded.excludedMatches,
         pathGlobExcludedFiles: globExcluded.excludedFiles,
       }),
+      ...(fallback.stats || {}),
       symbolType,
       total_ms: Math.round(performance.now() - start),
       stageTiming: candidateResult.stats.stageTiming || null,

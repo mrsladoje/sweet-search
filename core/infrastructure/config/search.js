@@ -48,6 +48,75 @@ export const ROUTING_CONFIG = {
 // FILE PATTERNS
 // =============================================================================
 
+// Secrets and environment files. Excluded from every index, including the grep-only
+// corpus (grep-corpus.js), because the sparse-gram index stores substrings of content.
+export const SECRET_FILE_PATTERNS = [
+  // ── Secrets & environment files (all stacks) ────────────────────────
+  '**/.env',
+  '**/.env.*',
+
+  // ── .NET secrets & env-specific config ────────────────────────────────
+  '**/appsettings.Development.json',
+  '**/appsettings.Local.json',
+  '**/appsettings.Staging.json',
+  '**/appsettings.Production.json',
+  '**/secrets.json',
+  '**/*.user',
+
+  // ── Python (Django, FastAPI, Flask) secrets ───────────────────────────
+  '**/local_settings.py',
+  '**/settings/local.py',
+  '**/settings/dev.py',
+  '**/secrets.py',
+  '**/config/local.py',
+
+  // ── Java/Kotlin (Spring) env-specific config ─────────────────────────
+  '**/application-dev.properties',
+  '**/application-local.properties',
+  '**/application-test.properties',
+  '**/application-*-local.yml',
+  '**/application-*-local.yaml',
+
+  // ── Node/JS/TS secrets ────────────────────────────────────────────────
+  '**/config/secrets.js',
+  '**/config/secrets.ts',
+  '**/config/local.js',
+  '**/config/local.ts',
+  '**/config.local.js',
+  '**/config.local.ts',
+  '**/.firebaserc',
+
+  // ── Ruby (Rails) ──────────────────────────────────────────────────────
+  '**/config/credentials.yml.enc',
+
+  // ── PHP (Laravel) ─────────────────────────────────────────────────────
+  '**/config/local.php',
+
+  // ── Go / Rust / generic local config ──────────────────────────────────
+  '**/config.local.*',
+  '**/config/local.*',
+
+  // ── Mobile: iOS ───────────────────────────────────────────────────────
+  '**/Secrets.plist',
+  '**/GoogleService-Info.plist',
+  '**/*-Credentials.plist',
+  '**/Config/Secrets.swift',
+
+  // ── Mobile: Android ───────────────────────────────────────────────────
+  '**/local.properties',
+  '**/google-services.json',
+  '**/keystore.properties',
+  '**/secrets.properties',
+
+  // ── Embedded (Arduino, ESP-IDF, PlatformIO) ──────────────────────────
+  '**/credentials.h',
+  '**/secrets.h',
+  '**/config_private.h',
+  '**/sdkconfig.local',
+  '**/platformio.ini.local',
+  '**/*_credentials.*',
+];
+
 export const FILE_PATTERNS = {
   include: [
     // Source code (all major languages)
@@ -298,70 +367,7 @@ export const FILE_PATTERNS = {
     '**/*.swp',
     '**/*.swo',
 
-    // ── Secrets & environment files (all stacks) ────────────────────────
-    '**/.env',
-    '**/.env.*',
-
-    // ── .NET secrets & env-specific config ────────────────────────────────
-    '**/appsettings.Development.json',
-    '**/appsettings.Local.json',
-    '**/appsettings.Staging.json',
-    '**/appsettings.Production.json',
-    '**/secrets.json',
-    '**/*.user',
-
-    // ── Python (Django, FastAPI, Flask) secrets ───────────────────────────
-    '**/local_settings.py',
-    '**/settings/local.py',
-    '**/settings/dev.py',
-    '**/secrets.py',
-    '**/config/local.py',
-
-    // ── Java/Kotlin (Spring) env-specific config ─────────────────────────
-    '**/application-dev.properties',
-    '**/application-local.properties',
-    '**/application-test.properties',
-    '**/application-*-local.yml',
-    '**/application-*-local.yaml',
-
-    // ── Node/JS/TS secrets ────────────────────────────────────────────────
-    '**/config/secrets.js',
-    '**/config/secrets.ts',
-    '**/config/local.js',
-    '**/config/local.ts',
-    '**/config.local.js',
-    '**/config.local.ts',
-    '**/.firebaserc',
-
-    // ── Ruby (Rails) ──────────────────────────────────────────────────────
-    '**/config/credentials.yml.enc',
-
-    // ── PHP (Laravel) ─────────────────────────────────────────────────────
-    '**/config/local.php',
-
-    // ── Go / Rust / generic local config ──────────────────────────────────
-    '**/config.local.*',
-    '**/config/local.*',
-
-    // ── Mobile: iOS ───────────────────────────────────────────────────────
-    '**/Secrets.plist',
-    '**/GoogleService-Info.plist',
-    '**/*-Credentials.plist',
-    '**/Config/Secrets.swift',
-
-    // ── Mobile: Android ───────────────────────────────────────────────────
-    '**/local.properties',
-    '**/google-services.json',
-    '**/keystore.properties',
-    '**/secrets.properties',
-
-    // ── Embedded (Arduino, ESP-IDF, PlatformIO) ──────────────────────────
-    '**/credentials.h',
-    '**/secrets.h',
-    '**/config_private.h',
-    '**/sdkconfig.local',
-    '**/platformio.ini.local',
-    '**/*_credentials.*',
+    ...SECRET_FILE_PATTERNS,
 
     // ── Sweet Search data ─────────────────────────────────────────────────
     '**/.sweet-search/**',
