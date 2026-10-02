@@ -73,6 +73,7 @@ const { installClaudeLeanHarness, removeClaudeLeanHarness } = await imp('scripts
 const { WARMUP_ID, WARMUP_QUESTION, warmupEnabled, createWarmupGate, excludeWarmups, applyClaudeCacheTtl, firstRequestCacheFields, cacheFairness, cacheIsDeterministic, fairnessBanner } = await import(path.join(H, 'cache-warmup.mjs'));
 const { turnsFromRollout, LEDGER_BASIS } = await import(path.join(H, 'ideal-cost.mjs'));
 const { SPAWN_LEDGER_ENV, reapRoots, reapRootsSync } = await import(path.join(H, 'spawn-ledger-reap.mjs'));
+const { TOOL_KIND_VERSION } = await import(path.join(H, 'shell-command-kind.mjs'));
 if (ISOLATION_ON) throw new Error('SS_ISOLATION must be 0 on the Mac');
 
 // ─── cells (agreed 2026-09-30) ─────────────────────────────────────────────────────────────────
@@ -287,6 +288,12 @@ const baseEnv = (sweet, cwd, arm = sweet ? 'sweet' : 'native') => ({
 const warmup = (cwd) => { try { execFileSync(path.join(SS_BIN, 'ss-search'), ['warmup', '-k', '1'], { cwd, env: baseEnv(true, cwd), stdio: 'ignore', timeout: 180000 }); } catch { /* best-effort */ } };
 
 // One normalized call shape for every harness: { kind, command, text, isError }.
+// CAPTURE_VERSION 2 (2026-10-03): `kind` comes from shell-command-kind.mjs, so an ss-* tool inside a
+// compound shell command (`cd <dir>; ss-grep …`) is `ss` (it was `bash` in Claude Code and opencode,
+// and its output reached neither rawResponse nor the capture), and captures keep every call's full
+// text. ssCalls, ssDeliveredTokens, ssDeliveredChars, rawLen and the USD content metric change with
+// it: never pool rows with captureVersion 2 and rows without it.
+const CAPTURE_VERSION = TOOL_KIND_VERSION;
 const SS_RE = /(^|\/)(ss[-_](search|grep|find|read|semantic|trace|batch))\b/;
 function responseFor(calls, sweet) {
   // Same rule as the June matrix (budget-sweep-smoke buildArmResponse): sweet = ss-* output + reads;
@@ -621,7 +628,7 @@ const GATE = createWarmupGate({ logFile: WARMUPS, meta: { cell: CELL_NAME, harne
 // ─── one rollout ───────────────────────────────────────────────────────────────────────────────
 async function runOne(probe, arm) {
   const sweet = arm === 'sweet' || arm === 'sweetB';
-  const base = { cell: CELL_NAME, arm, id: probe.id, set: probe._set, lang: probe.language, stratum: probe.stratum, harness: CELL.harness, model: CELL.model, effort: CELL.effort ?? CELL.variant ?? 'default', harnessVersion: HARNESS_VERSION, ...(arm !== 'native' ? { ssOutput: ssOutputMode(arm), rulesV2: rulesV2Enabled(envOf(arm)) ? 1 : 0 } : {}), ...(STABLE_RULES_PATH ? { stableRulesPath: true } : {}), ...(CELL.harness === 'opencode' && ocCacheMode(arm) === 'product' ? { ocCachePlugin: { sha: OC_PRODUCT_PLUGIN.sha, mainCommit: OC_PRODUCT_PLUGIN.commit, dirty: OC_PRODUCT_PLUGIN.dirty } } : {}), ...(Object.keys(envOf(arm)).some(k => k.startsWith('SS_VARIANT_')) ? { variants: Object.fromEntries(Object.entries(envOf(arm)).filter(([k]) => k.startsWith('SS_VARIANT_'))) } : {}) };
+  const base = { captureVersion: CAPTURE_VERSION, cell: CELL_NAME, arm, id: probe.id, set: probe._set, lang: probe.language, stratum: probe.stratum, harness: CELL.harness, model: CELL.model, effort: CELL.effort ?? CELL.variant ?? 'default', harnessVersion: HARNESS_VERSION, ...(arm !== 'native' ? { ssOutput: ssOutputMode(arm), rulesV2: rulesV2Enabled(envOf(arm)) ? 1 : 0 } : {}), ...(STABLE_RULES_PATH ? { stableRulesPath: true } : {}), ...(CELL.harness === 'opencode' && ocCacheMode(arm) === 'product' ? { ocCachePlugin: { sha: OC_PRODUCT_PLUGIN.sha, mainCommit: OC_PRODUCT_PLUGIN.commit, dirty: OC_PRODUCT_PLUGIN.dirty } } : {}), ...(Object.keys(envOf(arm)).some(k => k.startsWith('SS_VARIANT_')) ? { variants: Object.fromEntries(Object.entries(envOf(arm)).filter(([k]) => k.startsWith('SS_VARIANT_'))) } : {}) };
   let run;
   try {
     // The arm's warm-up must have FINISHED before any scored rollout of that arm starts.
@@ -636,7 +643,7 @@ async function runOne(probe, arm) {
   const delivered = ssDelivered(run.calls);
   const kinds = run.calls.reduce((m, c) => (m[c.kind] = (m[c.kind] || 0) + 1, m), {});
   fs.mkdirSync(CAP_DIR, { recursive: true });
-  fs.writeFileSync(path.join(CAP_DIR, `${arm}.${probe.id}.json`), JSON.stringify({ ...base, answer: run.answer, rawResponse, calls: run.calls.map(c => ({ kind: c.kind, command: c.command, isError: c.isError, textChars: (c.text || '').length })) }));
+  fs.writeFileSync(path.join(CAP_DIR, `${arm}.${probe.id}.json`), JSON.stringify({ ...base, answer: run.answer, rawResponse, calls: run.calls.map(c => ({ kind: c.kind, command: c.command, isError: c.isError, textChars: (c.text || '').length, text: c.text || '' })) }));
   const [judged, usd] = await Promise.all([
     judgePanelScore({ probe, answer: run.answer, panel: JUDGE_PANEL }).catch(() => null),
     // SS_BENCH_NO_USD=1 (final-tuning, cash): skip the secondary USD/content judge panel; accuracy is unchanged.
@@ -677,6 +684,8 @@ function report() {
   console.log(`rows ${rows.length}  ok ${ok.length}  errors ${rows.length - ok.length}  timeouts ${rows.filter(r => r.timedOut).length}`);
   const bases = [...new Set(ok.map(r => r.ledgerBasis || 'unlabelled (pre-2026-10-01: every cache write at 1.25x)'))];
   console.log(`ledger basis: ${bases.length > 1 ? `MIXED (${bases.join(' + ')}) - NOT COMPARABLE` : (bases[0] || 'n/a')}`);
+  const capVers = [...new Set(ok.map(r => r.captureVersion ?? 1))];
+  console.log(`capture version: ${capVers.length > 1 ? `MIXED (${capVers.join(' + ')}) - ssCalls / content NOT COMPARABLE` : capVers[0] ?? 'n/a'}`);
   console.log(fairnessBanner(cacheFairness(ok, { wave: CONC, deterministic: CACHE_DETERMINISTIC })));
   for (const scope of ['ALL', ...SETS.map(s => s[0])]) {
     const rs = ok.filter(r => scope === 'ALL' || r.set === scope);

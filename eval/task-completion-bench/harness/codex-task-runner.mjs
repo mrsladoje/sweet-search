@@ -6,6 +6,7 @@
 // shell (the box) lacks the repo's deps — tests must run in the task's Docker image
 // (exactly like the bare harness's run_tests tool). Returns the same row shape as
 // api-task-runner.runTask so grading/metrics are identical.
+import { classifyShellCommand, unwrapShellCommand, splitShellCommands, TOOL_KIND_VERSION } from './shell-command-kind.mjs';
 import { CODEX_BATCH_VARIANTS, applyCodexBatch } from './trim/batch-variants.mjs';
 import { stockInstructions } from './trim/build-codex-instructions.mjs';
 // The conflict edit is what `sweet-search init --codex` ships (single source, scripts/harness-prompts/).
@@ -659,66 +660,9 @@ export function verifyRunnerDirectoryIntegrity({ binDir, expectedFiles = [], sta
 // its parts (test > edit > ss > nativeGrep > nativeRead > bash) — toolCounts stays one count
 // per call, as in every other harness runner — and each part is counted separately in the
 // row's `subCommandCounts`.
-export function unwrapShellCommand(cmd) {
-  let c = String(cmd || '').trim();
-  const m = c.match(/^(?:\S*\/)?(?:ba|z|da|k|fi)?sh\s+-[a-z]*c\s+([\s\S]*)$/);
-  if (m) {
-    let inner = m[1].trim();
-    const q = inner[0];
-    if ((q === "'" || q === '"') && inner[inner.length - 1] === q) {
-      inner = inner.slice(1, -1);
-      if (q === "'") inner = inner.replace(/'\\''/g, "'");      // '\'' is a quote inside '...'
-    }
-    c = inner.trim();
-  }
-  return c;
-}
-
-/** Split a shell command on unquoted `;`, `&&`, `||` and newlines. A single `|` stays inside. */
-export function splitShellCommands(cmd) {
-  const s = String(cmd || '');
-  const parts = [];
-  let cur = '', quote = '';
-  for (let i = 0; i < s.length; i++) {
-    const ch = s[i];
-    if (quote) {
-      if (ch === '\\' && quote === '"' && i + 1 < s.length) { cur += ch + s[++i]; continue; }
-      if (ch === quote) quote = '';
-      cur += ch; continue;
-    }
-    if (ch === '\\' && i + 1 < s.length) { cur += ch + s[++i]; continue; }
-    if (ch === "'" || ch === '"') { quote = ch; cur += ch; continue; }
-    const two = s.slice(i, i + 2);
-    if (ch === ';' || ch === '\n' || two === '&&' || two === '||') {
-      if (cur.trim()) parts.push(cur.trim());
-      cur = '';
-      if (two === '&&' || two === '||') i++;
-      continue;
-    }
-    cur += ch;
-  }
-  if (cur.trim()) parts.push(cur.trim());
-  return parts;
-}
-
-function classifyOne(c) {
-  if (/^(?:\S*\/)?run_tests\b/.test(c)) return 'test';
-  if (/^(?:\S*\/)?(ss[-_](search|grep|find|read|semantic|trace)|sweet-search)\b/.test(c)) return 'ss';
-  if (/\bapply_patch\b/.test(c)) return 'edit';
-  if (/^(rg|grep|ag|ack|git grep)\b/.test(c) || /\| *(grep|rg)\b/.test(c)) return 'nativeGrep';
-  if (/^(cat|head|tail|nl|bat|less)\b/.test(c) || /^sed\s+(-n|')/.test(c)) return 'nativeRead';
-  return 'bash';
-}
-
-const KIND_PRIORITY = ['test', 'edit', 'ss', 'nativeGrep', 'nativeRead', 'bash'];
-
-/** @returns {{ kind: string, parts: string[] }} the call's bucket and one bucket per sub-command. */
-export function classifyCodexCommand(cmd) {
-  const parts = splitShellCommands(unwrapShellCommand(cmd)).map(classifyOne);
-  if (!parts.length) parts.push('bash');
-  const kind = KIND_PRIORITY.find(k => parts.includes(k)) || 'bash';
-  return { kind, parts };
-}
+// The splitter and buckets live in shell-command-kind.mjs, shared with every other runner.
+export { unwrapShellCommand, splitShellCommands };
+export function classifyCodexCommand(cmd) { return classifyShellCommand(cmd); }
 
 function classify(cmd) { return classifyCodexCommand(cmd).kind; }
 
@@ -1301,6 +1245,7 @@ ${ho}`;
 
   return {
     ...shimInfo.controller,
+    toolKindVersion: TOOL_KIND_VERSION, // shell-command-kind.mjs: never pool ss/toolCounts across versions
     calls, ss: toolCounts.ss, nativeGrep: toolCounts.nativeGrep, toolCounts, subCommandCounts, codexPollCalls,
     patchHunks, patchFiles, finalPatch, ranTests: toolCounts.test > 0,
     ...escapeAudit,

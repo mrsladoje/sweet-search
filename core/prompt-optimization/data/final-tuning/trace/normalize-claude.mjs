@@ -28,6 +28,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { classifyShellCommand } from '../../../../../eval/task-completion-bench/harness/shell-command-kind.mjs';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO = path.resolve(HERE, '../../../../..');                     // worktree root
@@ -98,9 +99,11 @@ function classifyBash(cmd) {
 }
 
 /** The runner's own classifyToolUse/classifyShell (claude-code-task-runner.mjs, not exported) — copied
- *  verbatim so each call carries the bucket that decided whether its output reached rawResponse. */
-function runnerKind(name, input) {
-  const shell = (cmd) => {
+ *  verbatim so each call carries the bucket that decided whether its output reached rawResponse.
+ *  Rows with captureVersion >= 2 were bucketed by shell-command-kind.mjs (an ss-* tool after
+ *  `cd …;` is ss); older rows by the prefix-only rule below. */
+function runnerKind(name, input, captureVersion = 1) {
+  const shell = captureVersion >= 2 ? (cmd) => classifyShellCommand(cmd).kind : (cmd) => {
     const c = String(cmd || '').trim();
     if (/^run_tests\b/.test(c)) return 'test';
     if (/^(ss[-_](search|grep|find|read|semantic|trace)|sweet-search)\b/.test(c)) return 'ss';
@@ -206,7 +209,7 @@ function buildRequests({ thread, parsed, meta, price, sweet }) {
       else if (b.type === 'tool_use') {
         const input = b.input || {};
         const argTextFull = b.name === 'Bash' ? String(input.command ?? '') : JSON.stringify(input);
-        const rk = runnerKind(b.name, input);
+        const rk = runnerKind(b.name, input, meta.captureVersion);
         const r = parsed.results.get(b.id);
         const resultText = r ? r.text : '';
         const cls = b.name === 'Bash' ? classifyBash(argTextFull) : null;
@@ -293,7 +296,7 @@ for (const row of rows) {
   const relFromRepo = path.relative(REPO, orig).replace(/[\\/]/g, '__');
   if (P.cwd === path.join(cloneRoot, relFromRepo)) checks.cwdOk++; else { checks.cwdBad++; errors.push(`${row.arm}|${row.id}: cwd ${P.cwd} != ${path.join(cloneRoot, relFromRepo)}`); }
 
-  const meta = { cell, arm: row.arm, id: row.id, set: row.set, lang: row.lang, stratum: row.stratum, sessionId: P.sessionId };
+  const meta = { cell, arm: row.arm, id: row.id, set: row.set, lang: row.lang, stratum: row.stratum, sessionId: P.sessionId, captureVersion: row.captureVersion ?? 1 };
   const sweet = row.arm === 'sweet';
   const reqs = buildRequests({ thread: 'main', parsed: P, meta, price: PRICE, sweet });
   let allReqs = [...reqs];
@@ -325,7 +328,7 @@ for (const row of rows) {
     const blocks = [];
     for (const id of P.order) for (const b of P.byId.get(id).blocks) {
       if (b.type !== 'tool_use') continue;
-      const { kind, command } = runnerKind(b.name, b.input || {});
+      const { kind, command } = runnerKind(b.name, b.input || {}, meta.captureVersion);
       const r = P.results.get(b.id); const text = r ? r.text : '';
       if (!inRaw(kind, sweet, text)) continue;
       blocks.push(sweet ? (kind === 'ss' ? text : `${command}\n${text}`) : `$ ${command}\n${text}`);

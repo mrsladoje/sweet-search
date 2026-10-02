@@ -9,6 +9,7 @@
 // NOTE: opencode's `--format json` event schema is not officially documented (reverse-
 // engineered). parseOpencodeStream is defensive and is validated/adjusted from a real
 // smoke's raw NDJSON before any counted run.
+import { classifyShellCommand, TOOL_KIND_VERSION } from './shell-command-kind.mjs';
 import { opencodeBatchPrompt, opencodeBatchToolEdits, OPENCODE_GPT_ORIGINAL, OPENCODE_VARIANT_NAMES } from './trim/batch-variants.mjs';
 // What `sweet-search init --opencode` ships (single source): conflict3's prompt and tool edits and
 // the trim plugin. The benchmark arm OC_HARNESS_TRIM=conflict3+todo3eff3k is built from them.
@@ -623,15 +624,7 @@ export function buildMainOpencodeConfig({ env = process.env, trim = null } = {})
   };
 }
 
-function classifyShell(cmd) {
-  const c = String(cmd || '').trim();
-  if (/^run_tests\b/.test(c)) return 'test';
-  if (/^(ss[-_](search|grep|find|read|semantic|trace|batch)|sweet-search)\b/.test(c)) return 'ss';
-  if (/\bapply_patch\b/.test(c)) return 'edit';
-  if (/^(rg|grep|ag|ack|git grep)\b/.test(c) || /\| *(grep|rg)\b/.test(c)) return 'nativeGrep';
-  if (/^(cat|head|tail|nl|bat|less)\b/.test(c) || /^sed\s+(-n|')/.test(c)) return 'nativeRead';
-  return 'bash';
-}
+const classifyShell = (cmd) => classifyShellCommand(cmd).kind;   // shell-command-kind.mjs
 
 // opencode built-in tool name → bucket. `bash` unwraps to the shell command.
 function classifyTool(tool, input) {
@@ -904,6 +897,7 @@ export async function runOpencodeTask(task, {
     ...(harnessTrim.mode ? { harnessTrimToolEdits } : {}),
     ...sweetRulesRowFields(rulesPlacement, { sweet }),
     secretLeakDetected: false,
+    toolKindVersion: TOOL_KIND_VERSION, // shell-command-kind.mjs: never pool ss/toolCounts across versions
     calls, ss: toolCounts.ss, nativeGrep: toolCounts.nativeGrep, toolCounts,
     patchHunks, patchFiles, finalPatch,
     ...escapeAudit,

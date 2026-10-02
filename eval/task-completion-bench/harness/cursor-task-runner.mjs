@@ -32,6 +32,7 @@ import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isZeroCallStartFailure } from './codex-task-runner.mjs';
+import { classifyShellCommand, TOOL_KIND_VERSION } from './shell-command-kind.mjs';
 import {
   setupRunner, buildAgentEnv, warmupSweet, issuePrompt, computeNetArgs, writeInstructionFile,
   buildTrajectory, gitDiffPatch, verifyIntegrity, teardownRunner, auditEscape, rolloutStateDir,
@@ -47,15 +48,7 @@ const retainedPath = file => path.relative(BENCH_DIR, file);
 export const PINNED_CURSOR_VERSION = '2026.09.15-d2fe57e';
 
 /** Same shell taxonomy the other runners use; cursor routes its search through the shell. */
-export function classifyShell(cmd) {
-  const c = String(cmd || '').trim();
-  if (/^run_tests\b/.test(c)) return 'test';
-  if (/^(ss[-_](search|grep|find|read|semantic|trace|batch)|sweet-search)\b/.test(c)) return 'ss';
-  if (/\bapply_patch\b/.test(c)) return 'edit';
-  if (/^(rg|grep|ag|ack|git grep)\b/.test(c) || /\| *(grep|rg)\b/.test(c)) return 'nativeGrep';
-  if (/^(cat|head|tail|nl|bat|less)\b/.test(c) || /^sed\s+(-n|')/.test(c)) return 'nativeRead';
-  return 'bash';
-}
+export function classifyShell(cmd) { return classifyShellCommand(cmd).kind; }
 
 // cursor tool_call key → bucket. Keys are `<name>ToolCall`; `shell` unwraps to the command.
 export function classifyCursorTool(key, args) {
@@ -318,6 +311,7 @@ export async function runCursorTask(task, {
     // Cursor reports ONE aggregate usage object, so this is the whole billing record for
     // the rollout — not a per-turn reconstruction. Kept raw for post-hoc repricing.
     cursorUsageRaw: usage,
+    toolKindVersion: TOOL_KIND_VERSION, // shell-command-kind.mjs: never pool ss/toolCounts across versions
     calls, ss: toolCounts.ss, nativeGrep: toolCounts.nativeGrep, toolCounts,
     patchHunks, patchFiles, finalPatch,
     ...escapeAudit,
