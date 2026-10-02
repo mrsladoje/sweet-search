@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { GraphExtractor, createGraphSchema, insertGraph } from '../../core/graph/graph-extractor.js';
 import { resolveRelationshipTargets } from '../../core/graph/relationship-resolver.js';
 import { StructuralContextRepository } from '../../core/infrastructure/structural-context-repository.js';
+import { StructuralContextBuilder, formatStructuralContext, traceAlternatives } from '../../core/graph/structural-context.js';
 
 const FILE = 'tests/BuilderTests.cs';
 const SOURCE = [
@@ -96,6 +97,28 @@ describe('ss-trace: same-named members of different classes in one file', () => 
       expect([...new Set(callerLines(second))]).toEqual(['C@23']);
     } finally {
       repo.close();
+    }
+  });
+
+  it('the trace names each alternative with its owner; a matching qualifier is not a guess', () => {
+    const repo = new StructuralContextRepository(dbPath, { projectRoot });
+    try {
+      const plain = repo.findEntityCandidates('Given', { filePath: FILE });
+      const alts = traceAlternatives('Given', plain[0], plain).filter((a) => a.name === 'Given');
+      expect(alts.map((a) => `${a.owner}.${a.name}`)).toEqual(['Second.Given']);
+      const qualified = repo.findEntityCandidates('Second.Given', { filePath: FILE });
+      expect(traceAlternatives('Second.Given', qualified[0], qualified)).toEqual([]);
+      expect(traceAlternatives('Second::Given', qualified[0], qualified)).toEqual([]);
+    } finally {
+      repo.close();
+    }
+    const builder = new StructuralContextBuilder({ projectRoot, graphDbPath: dbPath });
+    try {
+      const text = formatStructuralContext(builder.build('Given', { filePath: FILE }));
+      expect(text).toMatch(/alternatives: Second\.Given tests\/BuilderTests\.cs:20/);
+      expect(formatStructuralContext(builder.build('Second.Given', { filePath: FILE }))).not.toMatch(/ambiguous/);
+    } finally {
+      builder.close?.();
     }
   });
 });

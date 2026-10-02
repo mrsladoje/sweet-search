@@ -31,7 +31,7 @@ export function formatStructuralContext(result, options = {}) {
     lines.push(`no stored call edges for this symbol — map its sites with one broad ss-grep of the symbol stem instead.`);
   }
   if (result.disambiguation.length) {
-    lines.push(`ambiguous: using first match; alternatives: ${result.disambiguation.slice(0, 5).map(a => `${a.name} ${a.file}:${a.startLine}`).join(', ')}`);
+    lines.push(`ambiguous: using first match; alternatives: ${result.disambiguation.slice(0, 5).map(a => `${a.owner ? `${a.owner}.` : ''}${a.name} ${a.file}:${a.startLine}`).join(', ')}`);
   }
   if (result.answerCues?.targetTerms?.length) {
     if (result.answerCues.keySymbols?.length) lines.push(`answer checklist: key symbols=${result.answerCues.keySymbols.join(', ')}`);

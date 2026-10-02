@@ -565,7 +565,7 @@ export function formatTraceCompact(result, { mode = null, notes = [] } = {}) {
   }
   for (const n of notes) lines.push(n);
   if (result.disambiguation?.length) {
-    lines.push(`ambiguous: using first match; alternatives: ${result.disambiguation.slice(0, 5).map((a) => `${a.name} ${a.file}:${a.startLine}`).join(', ')}`);
+    lines.push(`ambiguous: using first match; alternatives: ${result.disambiguation.slice(0, 5).map((a) => `${a.owner ? `${a.owner}.` : ''}${a.name} ${a.file}:${a.startLine}`).join(', ')}`);
   }
 
   const listed = new Set(); // `file:line` of every caller / callee row printed below
