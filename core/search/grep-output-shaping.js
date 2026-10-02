@@ -619,7 +619,8 @@ function finishGrepBody(rows, unallocated, fileSummary, shownMatches, truncatedF
 
   // Files that matched but got no body line at all (more matching files than
   // budget, or clipped by the engine's maxFiles fetch bound): one honest tail
-  // line naming the first few so the agent can jump straight to them.
+  // line naming the first few (path order under the legacy rule, highest weight under
+  // alloc: 'weight') so the agent can jump straight to them.
   const hiddenFiles = unallocated.length + fileSummary.hiddenFileCount;
   const hiddenMatches = unallocated.reduce((a, f) => a + f.total, 0) + fileSummary.hiddenMatchCount;
   let hiddenLine = null;
