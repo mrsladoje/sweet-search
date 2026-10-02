@@ -224,6 +224,10 @@ describe('warm-daemon JSON clients', () => {
     expect(readGrepShapingParams(requests[1].searchParams))
       .toEqual({ perFileCap: 20, maxFiles: 20, grepFileOrder: undefined });
     expect(() => readGrepShapingParams(new URLSearchParams('maxFiles=1001'))).toThrow(/maxFiles must be <= 1000/);
+    // Any other fileOrder value is ignored (legacy selection), never an error.
+    for (const v of ['', 'Weight', 'path', 'weight ', 'weight,weight']) {
+      expect(readGrepShapingParams(new URLSearchParams({ fileOrder: v })).grepFileOrder).toBeUndefined();
+    }
   });
 
   it('a single scope still travels as one plain value (wire format unchanged)', async () => {
