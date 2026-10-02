@@ -35,8 +35,10 @@ function transcript(run, task) {
     if (!fs.statSync(dir).isDirectory()) continue;
     for (const f of fs.readdirSync(dir)) if (f.endsWith('.jsonl')) files.push(path.join(dir, f));   // top level only: subagents/ is a subdir
   }
+  // A degenerate first attempt is re-run by the harness in a new run dir (new project folder); the row scores the
+  // LAST session only, so read only the newest transcript (rows flagged `degenReran` print RERUN).
   files.sort((x, y) => fs.statSync(x).mtimeMs - fs.statSync(y).mtimeMs);
-  return files.flatMap(f => fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean));
+  return files.slice(-1).flatMap(f => fs.readFileSync(f, 'utf8').split('\n').filter(Boolean).map(l => { try { return JSON.parse(l); } catch { return null; } }).filter(Boolean));
 }
 function goldenText(task, filePath) {
   const s = specs.get(task); if (!s || !filePath) return null;
@@ -97,7 +99,7 @@ const pad = (s, n) => String(s ?? '-').padStart(n);
 console.log(`gutter smoke ${path.basename(manifest)}: ${out.length} rollouts (A = SS_READ_GUTTER=tab, B = none)\n`);
 console.log(`${'task'.padEnd(36)} arm rep  ${'run'.padEnd(22)} solved  ideal$ ` + K.map(k => pad(k, 7)).join(''));
 for (const { leg, row, m } of out.sort((x, y) => x.row.taskId.localeCompare(y.row.taskId) || x.leg.arm.localeCompare(y.leg.arm) || x.leg.rep - y.leg.rep)) {
-  const flag = !row.calls ? '  ZERO-CALL (infra)' : row.exitReason !== 'model_stopped' ? `  exit=${row.exitReason}` : '';
+  const flag = (!row.calls ? '  ZERO-CALL (infra)' : row.exitReason !== 'model_stopped' ? `  exit=${row.exitReason}` : '') + (row.degenReran ? '  RERUN (first attempt degenerate)' : '');
   console.log(`${row.taskId.padEnd(36)} ${leg.arm}   ${leg.rep}    ${leg.run.padEnd(22)} ${pad(row.resolved ? 'yes' : 'no', 6)} ${pad((row.idealCostUsd ?? NaN).toFixed(3), 7)} ` + K.map(k => pad(m[k], 7)).join('') + flag);
 }
 console.log('\nper arm (sums; ideal$ and req are means):');

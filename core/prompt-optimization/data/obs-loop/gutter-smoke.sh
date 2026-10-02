@@ -103,8 +103,9 @@ wait_clear() {
   [ $first = 1 ] || say "$(date '+%F %T') clear"
   if pgrep -x sweet-search-daemon >/dev/null || pgrep -x sweet-search-maintainer >/dev/null; then
     say "  note: other ss-* daemon/maintainer processes are alive (not ours; not touched):"
-    for n in sweet-search-daemon sweet-search-maintainer; do for p in $(pgrep -x $n); do
-      say "    $n pid=$p cwd=$(lsof -a -p "$p" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')"; done; done
+    local nm p   # never `n`: drive()'s leg counter is `n`, and bash scoping is dynamic (clobbered it on 2026-10-02)
+    for nm in sweet-search-daemon sweet-search-maintainer; do for p in $(pgrep -x $nm); do
+      say "    $nm pid=$p cwd=$(lsof -a -p "$p" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')"; done; done
   fi
 }
 
@@ -187,7 +188,7 @@ drive() {
   say "$(date '+%F %T') ALL LEGS DONE"
   node "$HERE/analyze-gutter.mjs" "$MANIFEST" 2>&1 | tee -a "$LOG"
 }
-if [ "$DRY" = 1 ]; then drive; exit 0; fi
+if [ "$DRY" = 1 ] || [ "${GS_FOREGROUND:-0}" = 1 ]; then drive; exit $?; fi   # GS_FOREGROUND=1: run under a supervisor (a detached driver died after L1 on 2026-10-02)
 ( drive ) >/dev/null 2>&1 &
 disown
 echo "launched (detached) stamp=$STAMP  log: $LOG  manifest: $MANIFEST"
