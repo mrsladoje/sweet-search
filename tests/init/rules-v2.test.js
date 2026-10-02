@@ -24,7 +24,7 @@ import {
   HARNESS_PROMPTS_DIR, OPENCODE_TOOL_EDITS, OPENCODE_TOOL_EDITS_V1, codexInstructions, opencodePrompt, opencodeToolEdits,
 } from '../../scripts/harness-prompts/index.js';
 import {
-  CLAUDE_FIND_LINE, CLAUDE_OVERRIDE_V2_SENTENCE, CODEX_FILE_NAME_LINE, OPENCODE_GLOB_BULLET,
+  CLAUDE_FIND_LINE, CLAUDE_OVERRIDE_V2_SENTENCE, OPENCODE_GLOB_BULLET,
   RULES_V2_FILE_NAMES_LINE, RULES_V2_GREP_FLAGS_LINE, rulesV2Enabled,
 } from '../../scripts/harness-prompts/rules-v2.js';
 import { opencodePluginEntry } from '../../scripts/install-opencode-harness.js';
@@ -56,7 +56,7 @@ describe('switch', () => {
 
 describe('policy (all harnesses)', () => {
   it('golden: v2 body and the pre-v2 body', () => {
-    expect(sha(getPolicyBody('cli', {}))).toBe('fedd6f730cc9aea5bea949297acb01221177d4a3dc0667fae394153863063bb2');
+    expect(sha(getPolicyBody('cli', {}))).toBe('01ea3cc63516fe77246f34e81c57081131658d873362806d76f79b9654e3531a');
     expect(sha(getPolicyBody('cli', V1))).toBe('77230e7ae4272b8bf8507b5642d497ed2559f8f5c91e63f3a7e5584f26305e72');
   });
 
@@ -71,7 +71,10 @@ describe('policy (all harnesses)', () => {
     expect(v2).toContain('`ss-grep` prints each hit as `file:line: <full line>`');
     expect(v2).not.toMatch(/`find`\/`ls`|`grep`\/`find`/);
     expect(v2).toContain('Reach for raw `grep`/`cat` or the native reader');
-    expect(v2).toContain('the `ss-*` tools search file contents.');
+    expect(v2).toContain('read what you find with `ss-read`, not `cat`. The `ss-*` tools search file contents.');
+    // breadth first: the flag line leads with the exclude glob and says to start broad
+    expect(RULES_V2_GREP_FLAGS_LINE).toMatch(/^- `ss-grep` flags when needed: `-g '!<glob>'` excludes paths/);
+    expect(RULES_V2_GREP_FLAGS_LINE).toContain('Start broad; scope only after a broad grep shows where.');
     expect(v2).toContain('`ls <dir>` (one directory; never `ls -R` or an unfiltered `find .`/`rg --files`)');
     expect(v1).toContain('`ss-grep` is file:line only');
   });
@@ -88,11 +91,11 @@ describe('policy (all harnesses)', () => {
 });
 
 describe('Codex', () => {
-  it("v2 adds only the `rg --files -g '<glob>'` line, at the stock line's place", () => {
-    expect(CODEX_FILE_NAME_LINE).toBe("- When you search for files by name, you reach first for `rg --files -g '<glob>'`.");
-    expect(lineDiff(codexInstructions(V1), codexInstructions({}))).toEqual({ removed: [], added: [CODEX_FILE_NAME_LINE] });
-    expect(codexInstructions({})).toContain(`${CODEX_FILE_NAME_LINE}\n- When possible, prefer parallelization`);
-    expect(codexInstructions({})).not.toContain('When you search for text');
+  // The v2 draft's `rg --files -g` harness line made Sol hunt for AGENTS.md (micro-smoke 2026-10-02);
+  // the default keeps the pre-v2 Codex prompt, so only the rules change for Codex.
+  it('the harness prompt is the pre-v2 text, whatever the switch', () => {
+    expect(sha(codexInstructions())).toBe('7e282d1b96ac8cd02e0572386a436915078b25c8f1b2e03a45e3f2a84f5e6e50');
+    expect(codexInstructions()).not.toContain('rg --files');
   });
 });
 
@@ -187,7 +190,7 @@ describe('benchmarks', () => {
       mkdirSync(sub, { recursive: true });
       const trim = codexHarnessTrim({ sweet: true, model: 'openai/gpt-6.1-sol', env });
       codexHarnessTrimArgs(trim, sub, { model: 'openai/gpt-6.1-sol' });
-      expect(readFileSync(join(sub, CODEX_HARNESS_TRIM_STATE_FILE), 'utf8')).toBe(codexInstructions(env));
+      expect(readFileSync(join(sub, CODEX_HARNESS_TRIM_STATE_FILE), 'utf8')).toBe(codexInstructions());
       const oc = opencodeArmHarnessTrim({ sweet: true, env, apiModel: 'openai/gpt-6.1-sol', stateDir: sub });
       expect(oc.config.agentBuild.prompt).toBe(opencodePrompt(env));
       expect(oc.config.agents.general.prompt).toBe(opencodePrompt(env));

@@ -15,7 +15,6 @@
 import { mkdtempSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { codexFileNameEdit } from '../../../scripts/harness-prompts/index.js';
 import { execFileSync } from 'node:child_process';
 import {
   resolveSweetRulesPlacement, sweetRulesRowFields, appendSweetRules, tomlBasicString, SWEET_RULES_PLACEMENT_DEFAULTS,
@@ -118,7 +117,7 @@ console.log('codex:');
   const argsOn = codexHarnessTrimArgs(conflict, state, { rules: mppText, model: 'openai/gpt-5.6-luna' });
   const trimTextOn = readFileSync(file, 'utf8');
   assert(JSON.stringify(argsOff) === JSON.stringify(argsOn), 'on + trim conflict: argv unchanged (same file path, same keys)');
-  assert(trimText === codexFileNameEdit(readFileSync(CODEX_HARNESS_TRIM_CONFLICT_SOURCES['gpt-5.6-luna'], 'utf8').replace(/^<!--[\s\S]*?-->\n/, ''), {}),
+  assert(trimText === readFileSync(CODEX_HARNESS_TRIM_CONFLICT_SOURCES['gpt-5.6-luna'], 'utf8').replace(/^<!--[\s\S]*?-->\n/, ''),
     'off + trim conflict: the instructions file is the trim text alone');
   assert(trimTextOn.startsWith(trimText) && trimTextOn.slice(trimText.length).trim() === RULES,
     'on + trim conflict: the file = the trim text + the rules');
