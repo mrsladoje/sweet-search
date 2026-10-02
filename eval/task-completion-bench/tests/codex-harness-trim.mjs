@@ -228,7 +228,7 @@ console.log('\nproduct default (switches unset) = init --codex bytes, any model:
     else assert(devValue === shippedRules, `${model}: developer_instructions bytes = the value init --codex writes to config.toml`);
     assert(codexInstructionFile({ sweet: true, mppText, rulesPlacement: placement }) === codexInstructionFile({ sweet: false, mppText }),
       `${model}: AGENTS.md = frame only = native bytes (init --codex writes no AGENTS.md)`);
-    assert(JSON.stringify(sweetRulesRowFields(placement, { sweet: true, env })) === '{"sweetRulesPlacement":"config","sweetRulesPlacementSource":"default"}'
+    assert(JSON.stringify(sweetRulesRowFields(placement, { sweet: true, env })) === '{"sweetRulesPlacement":"config","sweetRulesPlacementSource":"default","rulesV2":1}'
       && t.origin === 'default', `${model}: row stamps placement config + source default, harnessTrimSource default`);
     rmSync(SD, { recursive: true, force: true });
   }

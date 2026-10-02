@@ -9,21 +9,18 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
   CLAUDE_LEAN_AGENT_REL, claudeLeanAgentFile, installClaudeLeanHarness,
 } from '../../scripts/install-claude-lean-harness.js';
-import { CLAUDE_SYSTEM_OVERRIDE } from '../../scripts/install-claude-system-prompt.js';
+import { CLAUDE_SYSTEM_OVERRIDE_V2 } from '../../scripts/install-claude-system-prompt.js';
 import { getPolicyBody } from '../../scripts/inject-agent-instructions.js';
-import { CLAUDE_RULES_POINTER, CLAUDE_RULES_POINTER_V1, claudeRulesPointer, writeClaudeRules } from '../../scripts/write-claude-rules.js';
+import { CLAUDE_RULES_POINTER, CLAUDE_RULES_POINTER_V1, claudeRulesPointer } from '../../scripts/write-claude-rules.js';
 import {
-  CLAUDE_FIND_LINE, CODEX_FILE_NAME_LINE, OPENCODE_GLOB_BULLET, RULES_V2_FILE_NAMES_LINE, RULES_V2_GREP_FLAGS_LINE, rulesV2Enabled,
-} from '../../scripts/harness-prompts/rules-v2.js';
-import {
-  CODEX_INSTRUCTIONS_SOURCE, HARNESS_PROMPTS_DIR, OPENCODE_GPT_ORIGINAL, OPENCODE_TOOL_EDITS,
+  CODEX_INSTRUCTIONS_SOURCE, HARNESS_PROMPTS_DIR, OPENCODE_GPT_ORIGINAL, OPENCODE_TOOL_EDITS, OPENCODE_TOOL_EDITS_V1,
   OPENCODE_TRIM_PLUGIN_SOURCE, applyExactEdits, codexInstructions, opencodePrompt,
 } from '../../scripts/harness-prompts/index.js';
 import { applyClaudeBatch } from '../../eval/task-completion-bench/harness/trim/batch-variants.mjs';
@@ -31,7 +28,7 @@ import {
   codexHarnessTrim, codexHarnessTrimArgs, CODEX_HARNESS_TRIM_STATE_FILE,
 } from '../../eval/task-completion-bench/harness/codex-task-runner.mjs';
 import {
-  opencodeArmHarnessTrim, opencodeHarnessTrim, OPENCODE_TRIM_PLUGIN,
+  opencodeHarnessTrim, OPENCODE_TRIM_PLUGIN,
 } from '../../eval/task-completion-bench/harness/opencode-task-runner.mjs';
 
 let dir;
@@ -39,7 +36,7 @@ beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'ss-harness-prompts-')); });
 afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
 
 const withoutOverride = text => {
-  const tail = `\n\n${CLAUDE_SYSTEM_OVERRIDE}\n`;
+  const tail = `\n\n${CLAUDE_SYSTEM_OVERRIDE_V2}\n`;   // rules v2 default (rules-v2.test.js covers =0)
   expect(text.endsWith(tail)).toBe(true);
   return `${text.slice(0, -tail.length)}\n`;
 };
@@ -167,7 +164,7 @@ describe('golden pins of the shipped texts (sha256)', () => {
   const sha = t => createHash('sha256').update(t).digest('hex');
   const V1 = { SS_FIX_RULES_V2: '0' };
   it('Codex base instructions (v2 default; v1 = pre-v2 bytes)', () => {
-    expect(sha(codexInstructions())).toBe('30a336aa800b8f4e5aeb1eb5fe108a05a83a2034fe809ab8b4d31c4b923d9608');
+    expect(sha(codexInstructions())).toBe('3f0b8f10dff51dcc2b59b6a12838591078dc0ca90d77364eef5ce9da9dcdbf5b');
     expect(sha(codexInstructions({}))).toBe(sha(codexInstructions()));
     expect(sha(codexInstructions(V1))).toBe('7e282d1b96ac8cd02e0572386a436915078b25c8f1b2e03a45e3f2a84f5e6e50');
   });
@@ -175,11 +172,13 @@ describe('golden pins of the shipped texts (sha256)', () => {
     expect(sha(opencodePrompt())).toBe('39bcc13bae718d53b8a21ccfcf965747f3367a6de71edd16aabfa513438fe2ce');
     expect(sha(opencodePrompt(V1))).toBe('94c23a556525d4e35ae42f2448439559dd61fee37557a4da93f0ff18e0fbe34e');
   });
-  it('opencode tool-description edits (JSON)', () => {
-    expect(sha(JSON.stringify(OPENCODE_TOOL_EDITS))).toBe('bb647d23c66f3112f4322bd454ecd1f5c7186136b04a3c7c1a51ca64f93144c9');
+  it('opencode tool-description edits (JSON) (v2 default; v1 = pre-v2 bytes)', () => {
+    expect(sha(JSON.stringify(OPENCODE_TOOL_EDITS))).toBe('4800b77becd4af6b0b2c51a75cb83b935d5c407a14c6754d2695f7882a281011');
+    expect(sha(JSON.stringify(OPENCODE_TOOL_EDITS_V1))).toBe('bb647d23c66f3112f4322bd454ecd1f5c7186136b04a3c7c1a51ca64f93144c9');
   });
   it('CLI policy body (v2 default; v1 = pre-v2 bytes)', () => {
-    expect(sha(getPolicyBody('cli'))).toBe(sha(getPolicyBody('cli', {})));
+    expect(sha(getPolicyBody('cli'))).toBe('fedd6f730cc9aea5bea949297acb01221177d4a3dc0667fae394153863063bb2');
+    expect(sha(getPolicyBody('cli', {}))).toBe(sha(getPolicyBody('cli')));
     expect(sha(getPolicyBody('cli', V1))).toBe('77230e7ae4272b8bf8507b5642d497ed2559f8f5c91e63f3a7e5584f26305e72');
   });
   it("Claude Code main agent file (memoryDir '/m/', no override)", () => {
@@ -192,13 +191,13 @@ describe('golden pins of the shipped texts (sha256)', () => {
   // claudeLeanAgentFile({ rulesInPrompt: true }) and its CLAUDE_RULES_POINTER).
   it("Claude Code V1b main agent file (memoryDir '/m/', no override)", () => {
     expect(sha(claudeLeanAgentFile({ appendOverride: false, memoryDir: '/m/', rules: getPolicyBody('cli') })))
-      .toBe('dc7ce482f64293890d96aa42f593d2a8fec5dbb8c4c8110f5c94891de3ebefb8');
+      .toBe('751434aa780a5a17e9afc3ed510449e27fa209221c6f25e89a5187fcf5acf567');
     expect(sha(claudeLeanAgentFile({ appendOverride: false, memoryDir: '/m/', rules: getPolicyBody('cli', V1), rulesV2: false })))
       .toBe('5d238cab2d26025019bcad16cb09ef2f4cfe88468f464d280e366904bca1ae61');
   });
   it("Claude Code V1b main agent file as shipped (memoryDir '/m/', with the override)", () => {
     expect(sha(claudeLeanAgentFile({ memoryDir: '/m/', rules: getPolicyBody('cli') })))
-      .toBe('fb990d6a94296f917676a64bc480323e0b491726fe40aaef509f03f6cc3fa47f');
+      .toBe('079daa98ac007807aa867f5edca4a420990a1dde4ac5d133a7a9a217db738522');
     expect(sha(claudeLeanAgentFile({ memoryDir: '/m/', rules: getPolicyBody('cli', V1), rulesV2: false })))
       .toBe('f09e7ef96b13ab23e72a265a50eeb2601352ee5432e6d30b9ede3fe35a9e96d7');
   });
@@ -207,97 +206,5 @@ describe('golden pins of the shipped texts (sha256)', () => {
     expect(claudeRulesPointer({})).toBe(CLAUDE_RULES_POINTER);
     expect(sha(claudeRulesPointer(V1))).toBe('2523ba9ac086973443f4122c5a459124487c8be1d42fc7578c8aea413fe11d4c');
     expect(CLAUDE_RULES_POINTER_V1).toBe(claudeRulesPointer(V1));
-  });
-});
-
-// Rules v2 (scripts/harness-prompts/rules-v2.js): the switch reaches every builder the product and
-// the bench use, and each v2 text differs from v1 only by the intended lines.
-describe('rules v2 switch (SS_FIX_RULES_V2)', () => {
-  const V1 = { SS_FIX_RULES_V2: '0' };
-  const lineDiff = (a, b) => {
-    const A = a.split('\n'), B = b.split('\n');
-    return { removed: A.filter(l => !B.includes(l)), added: B.filter(l => !A.includes(l)) };
-  };
-
-  it('rulesV2Enabled: only "0" turns it off', () => {
-    expect(rulesV2Enabled({})).toBe(true);
-    expect(rulesV2Enabled({ SS_FIX_RULES_V2: '1' })).toBe(true);
-    expect(rulesV2Enabled({ SS_FIX_RULES_V2: ' 0 ' })).toBe(false);
-  });
-
-  it('policy: v2 = v1 with the flag line, the file-name line, find/ls unbanned and the full-line statement', () => {
-    const v1 = getPolicyBody('cli', V1), v2 = getPolicyBody('cli', {});
-    const d = lineDiff(v1, v2);
-    expect(d.added).toContain(RULES_V2_GREP_FLAGS_LINE);
-    expect(d.added).toContain(RULES_V2_FILE_NAMES_LINE);
-    expect(d.removed).toHaveLength(3);
-    expect(d.added).toHaveLength(5);
-    expect(v2).not.toContain('file:line only');
-    expect(v2).toContain('`ss-grep` prints each hit as `file:line: <full line>`');
-    expect(v2).not.toMatch(/`find`\/`ls`|`grep`\/`find`/);
-    expect(v2).toContain('Reach for raw `grep`/`cat` or the native reader');
-    expect(v1).toContain('`ss-grep` is file:line only');
-    expect(getPolicyBody('mcp', V1)).toBe(getPolicyBody('mcp', {}));
-  });
-
-  it('every flag on the rules line is an ss-grep flag today (GREP_USAGE)', () => {
-    const helpers = readFileSync(join(HARNESS_PROMPTS_DIR, '../../eval/agent-read-workflows/bin/_ss-helpers.mjs'), 'utf8');
-    const usage = helpers.slice(helpers.indexOf('const GREP_USAGE'), helpers.indexOf('async function cmdGrep'));
-    for (const f of ['-i', '-w', '--in <path>', '-g', "-g '!", '-A N', '-B N', '-C N']) expect(usage).toContain(f);
-  });
-
-  it('Codex: v2 adds only the `rg --files` line, at the stock line\'s place', () => {
-    const d = lineDiff(codexInstructions(V1), codexInstructions());
-    expect(d).toEqual({ removed: [], added: [CODEX_FILE_NAME_LINE] });
-    expect(codexInstructions()).toContain(`${CODEX_FILE_NAME_LINE}\n- When possible, prefer parallelization`);
-    expect(codexInstructions()).not.toContain('When you search for text');
-  });
-
-  it('opencode: v2 adds only the Glob half of the removed bullet', () => {
-    const d = lineDiff(opencodePrompt(V1), opencodePrompt());
-    expect(d).toEqual({ removed: [], added: [OPENCODE_GLOB_BULLET.trimEnd()] });
-    expect(opencodePrompt()).not.toContain('Glob and Grep');
-  });
-
-  it('Claude Code: v2 adds only the `find` line (plus the rules); the pointer drops only `find`', () => {
-    const v1 = claudeLeanAgentFile({ memoryDir: '/m/', rulesV2: false });
-    const v2 = claudeLeanAgentFile({ memoryDir: '/m/' });
-    expect(lineDiff(v1, v2)).toEqual({ removed: [], added: [CLAUDE_FIND_LINE] });
-    expect(claudeRulesPointer(V1).replace('`grep`/`find`/`cat`', '`grep`/`cat`')).toBe(claudeRulesPointer({}));
-  });
-
-  it('installClaudeLeanHarness and writeClaudeRules follow `env`', () => {
-    const inst = (name, env) => {
-      const d = join(dir, name);
-      installClaudeLeanHarness({ projectRoot: d, configDir: join(dir, 'cfg'), env });
-      writeClaudeRules({ projectRoot: d, layout: 'pointer', env });
-      return { agent: readFileSync(join(d, CLAUDE_LEAN_AGENT_REL), 'utf8'), rules: readFileSync(join(d, '.claude/rules/sweet-search.md'), 'utf8') };
-    };
-    const on = inst('on', {}), off = inst('off', V1);
-    const norm = t => t.replace(/`[^`]*\/projects\/[^/`]+\/memory\/`/, '`<memory>/`');
-    expect(off.agent.split(getPolicyBody('cli', V1))).toHaveLength(2);
-    expect(on.agent.split(getPolicyBody('cli', {}))).toHaveLength(2);
-    // off = exactly the pre-v2 file (the v1 pin's text), modulo the per-project memory path.
-    expect(norm(off.agent)).toBe(norm(claudeLeanAgentFile({ memoryDir: '/m/projects/x/memory/', rules: getPolicyBody('cli', V1), rulesV2: false })));
-    expect(norm(on.agent)).toBe(norm(claudeLeanAgentFile({ memoryDir: '/m/projects/x/memory/', rules: getPolicyBody('cli', {}) })));
-    expect(on.agent).toContain(CLAUDE_FIND_LINE);
-    expect(on.agent).toContain(RULES_V2_GREP_FLAGS_LINE);
-    expect(off.agent).not.toContain(CLAUDE_FIND_LINE);
-    expect(off.agent).not.toContain(RULES_V2_GREP_FLAGS_LINE);
-    expect(on.rules.trimEnd().endsWith(CLAUDE_RULES_POINTER)).toBe(true);
-    expect(off.rules.trimEnd().endsWith(CLAUDE_RULES_POINTER_V1)).toBe(true);
-  });
-
-  it('bench builders: Codex and opencode arms follow their own env, byte-equal to the shipped texts', () => {
-    for (const env of [{}, V1]) {
-      const sub = join(dir, env.SS_FIX_RULES_V2 ? 'v1' : 'v2');
-      mkdirSync(sub, { recursive: true });
-      const trim = codexHarnessTrim({ sweet: true, model: 'openai/gpt-6.1-sol', env });
-      codexHarnessTrimArgs(trim, sub, { model: 'openai/gpt-6.1-sol' });
-      expect(readFileSync(join(sub, CODEX_HARNESS_TRIM_STATE_FILE), 'utf8')).toBe(codexInstructions(env));
-      const oc = opencodeArmHarnessTrim({ sweet: true, env, apiModel: 'openai/gpt-6.1-sol', stateDir: sub });
-      expect(oc.config.agentBuild.prompt).toBe(opencodePrompt(env));
-      expect(oc.config.agents.general.prompt).toBe(opencodePrompt(env));
-    }
   });
 });
