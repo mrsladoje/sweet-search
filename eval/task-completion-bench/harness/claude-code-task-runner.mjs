@@ -24,6 +24,7 @@ import { resolveSweetRulesPlacement, sweetRulesRowFields, appendSweetRules } fro
 import {
   turnsFromTranscript, sidechainTurnSets, addSidechainCostsChecked,
   selectClaudeMainCosts, aggregateTurn,
+  isHiddenReasoningBlock, hiddenReasoningForRollout, mainTranscriptMetrics,
 } from './claude-code-accounting.mjs';
 export {
   turnsFromTranscript, turnsFromTranscriptFile, transcriptMetricsFromFile,
@@ -459,11 +460,16 @@ export function parseClaudeStream(stdout) {
   // ratio can be computed without a second pass over the session files.
   const payloads = [];
   let retainedOutputChars = 0, billedOutputTokens = 0;
+  // Requests with a hidden reasoning block (isHiddenReasoningBlock), and the visible chars of
+  // those requests: the accounting limb leaves them out on both sides of its ratio.
+  const hiddenReasoningIds = new Set();
+  const charsById = new Map();
   let billedOutputSource = 'assistant-stream';
   let answer = '', resultUsage = null, numTurns = 0, sessionId = null;
   if (!stdout) {
     return { toolCalls, answer, resultUsage, numTurns, turns, sessionId, errors,
-      payloads, retainedOutputChars, billedOutputTokens, billedOutputSource };
+      payloads, retainedOutputChars, billedOutputTokens, billedOutputSource,
+      hiddenReasoningIds: [], hiddenReasoningChars: 0 };
   }
   for (const line of stdout.split('\n')) {
     const tl = line.trim();
@@ -482,7 +488,9 @@ export function parseClaudeStream(stdout) {
           cacheWrite: cCreate, out: mu.output_tokens || 0, ...cacheCreationSplit(mu) });
         billedOutputTokens += mu.output_tokens || 0;
       }
+      const charsBefore = retainedOutputChars;
       for (const blk of (ev.message.content || [])) {
+        if (ev.message.id && isHiddenReasoningBlock(blk)) hiddenReasoningIds.add(ev.message.id);
         if (blk.type === 'tool_use') {
           const { kind, command } = classifyToolUse(blk.name, blk.input);
           toolCalls.push({ id: blk.id, kind, command, resultText: '', isError: false });
@@ -504,6 +512,7 @@ export function parseClaudeStream(stdout) {
           retainedOutputChars += blk.thinking.length;
         }
       }
+      if (ev.message.id) charsById.set(ev.message.id, (charsById.get(ev.message.id) || 0) + retainedOutputChars - charsBefore);
     } else if (ev.type === 'user' && ev.message) {
       for (const blk of (ev.message.content || [])) {
         if (blk.type === 'tool_result') {
@@ -539,6 +548,8 @@ export function parseClaudeStream(stdout) {
   return {
     toolCalls, answer, resultUsage, numTurns, turns, sessionId, errors,
     payloads, retainedOutputChars, billedOutputTokens, billedOutputSource, accountFatal,
+    hiddenReasoningIds: [...hiddenReasoningIds],
+    hiddenReasoningChars: [...hiddenReasoningIds].reduce((sum, id) => sum + (charsById.get(id) || 0), 0),
   };
 }
 
@@ -854,6 +865,13 @@ export async function runClaudeCodeTask(task, {
       + sideSets.reduce((sum, s) => sum + s.retainedOutputChars, 0),
     billedOutputTokens: parsed.billedOutputTokens
       + sideSets.reduce((sum, s) => sum + s.billedOutputTokens, 0),
+    // Opus 5.5 thinking reaches the stream and transcript as signature-only blocks: billed, never
+    // visible. The 2026-10-02 gutter smoke flagged every bingo-271 rollout on that alone
+    // (degeneration.mjs, accounting limb). The limb now compares visible requests only.
+    hiddenReasoning: hiddenReasoningForRollout({
+      streamHiddenIds: parsed.hiddenReasoningIds, streamHiddenChars: parsed.hiddenReasoningChars,
+      mainTranscript: mainTranscriptMetrics(claudeHome, sessionId), sideSets,
+    }),
   };
   const degeneration = {
     ...classifyRollout(rolloutSignals),
