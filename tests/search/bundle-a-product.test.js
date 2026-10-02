@@ -166,16 +166,18 @@ describe('daemon agent text (native `sweet-search` from an agent)', () => {
     const gutter = (code, start) => ((lineGutterEnabled() && String(code).split('\n').length >= 15) ? numberCodeLines(code, start || 1) : code);
     // What the ss-search wrapper prints under SS_FIX_A=1 (header + sufficiency + blocks), with the
     // daemon's own gutter rule. The route trailer is bench instrumentation (stderr) and not part of it.
-    const wrapperShape = renderCompactHeader('ss-search', resp.results.length, resp.query)
+    const plan = selectEntries(resp.results, { dedupe: 'a2', k: 5 });
+    const wrapperShape = renderCompactHeader('ss-search', plan.entries.length, resp.query)
       + renderCompactSufficiency(resp, renderSufficiency(resp))
-      + renderFixedBlocks(resp.results, selectEntries(resp.results, { dedupe: 'a2', k: 5 }), { compact: true, gutter });
+      + renderFixedBlocks(resp.results, plan, { compact: true, gutter });
     const text = renderAgentSearchResponse(resp, { compact: true });
     expect(text).toBe(wrapperShape.replace(/^# ss-search:/, '# sweet-search:'));
   });
 
   it('drops the A1 metadata and keeps one header plus the compact sufficient=YES line', () => {
     const text = renderAgentSearchResponse(fixtureResponse(), { compact: true });
-    expect(text.startsWith('# sweet-search: 5 results for "where are tokens validated"\n# sufficient=YES\n')).toBe(true);
+    // 5 results in, 2 covered summaries dropped by A2: the header counts the 3 printed entries.
+    expect(text.startsWith('# sweet-search: 3 results for "where are tokens validated"\n# sufficient=YES\n')).toBe(true);
     for (const gone of ['score=', 'routed=', 'budget=', 'subMode=', '# confidence', 'kind=sandwich', '(full', '(summary']) {
       expect(text).not.toContain(gone);
     }

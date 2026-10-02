@@ -465,7 +465,10 @@ export async function semanticSearch3Stage(query, options = {}) {
   }
 
   // CASCADE MODE: Return broad candidate set, let postprocess handle scoring.
-  if (options.format !== 'agent' && !options.ablations?.has?.('no-full-vector-stage-rescore')) {
+  const skipFullVectorRescore = options.ablations instanceof Set
+    ? options.ablations.has('no-full-vector-stage-rescore')
+    : Array.isArray(options.ablations) && options.ablations.includes('no-full-vector-stage-rescore');
+  if (options.format !== 'agent' && !skipFullVectorRescore) {
     const fullVectorStage = applyFullVectorStageRescore(
       scoredCandidates,
       embedResult.float,

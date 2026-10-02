@@ -419,18 +419,26 @@ export function finalMMRSettings(env = process.env) {
 }
 
 /**
- * Shape the final candidate list just above the final-k cut:
- *   1. span dedupe — one result per identical display span (all formats;
- *      it removes copies, it does not score anything). Ablation
- *      'no-span-dedupe'.
- *   2. final-list MMR — near-duplicate demotion by line overlap (agent
- *      formats only; on by default, SWEET_SEARCH_FINAL_MMR=0 turns it off).
- *      Ablation 'no-final-mmr'.
+ * Shape the final candidate list just above the final-k cut. Agent formats
+ * only (CLAUDE.md format-gating); every other format returns `results` as is.
+ *   1. span dedupe — one result per identical display span. Ablation
+ *      'no-span-dedupe'. Agent formats only because only the agent packager
+ *      renders a result from its display span (it reads those file lines).
+ *      Every other format returns each result's own chunk text, and two
+ *      sub-chunks that range adoption widened to one enclosing span
+ *      (file-kind-ranking.js adoptRange: two fragments of one class, two
+ *      halves of one long function) carry DIFFERENT text under the same
+ *      span, so dropping one there loses content. GCSN dev showed no gain
+ *      from it either (MRR@10 86.94% with and without).
+ *   2. final-list MMR — near-duplicate demotion by line overlap (on by
+ *      default, SWEET_SEARCH_FINAL_MMR=0 turns it off). Ablation
+ *      'no-final-mmr'.
  * @param {Array} results
  * @param {{k:number, format?:string, ablations?:Set|Array, stats?:object, finalMMR?:object}} opts
  */
 export function shapeFinalList(results, opts = {}) {
   const { k, format, ablations, stats } = opts;
+  if (!AGENT_FORMATS.has(format)) return results;
   let out = results;
   if (!hasAblation(ablations, 'no-span-dedupe')) {
     const { results: deduped, dropped } = dedupeIdenticalSpans(out);
@@ -440,7 +448,7 @@ export function shapeFinalList(results, opts = {}) {
     }
   }
   const mmr = opts.finalMMR || finalMMRSettings();
-  if (mmr.enabled && AGENT_FORMATS.has(format) && !hasAblation(ablations, 'no-final-mmr')) {
+  if (mmr.enabled && !hasAblation(ablations, 'no-final-mmr')) {
     const { results: reordered, stats: mmrStats } = applyFinalListMMR(out, {
       k, lambda: mmr.lambda, weights: mmr.weights, gate: mmr.gate,
     });

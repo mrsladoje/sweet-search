@@ -501,9 +501,16 @@ export function applyFinalListMMR(results, opts = {}) {
   while (picked.length < picks) {
     let best = -1;
     let bestScore = -Infinity;
-    for (const idx of remaining) {
-      const m = lambda * rel[idx] - (1 - lambda) * maxSim[idx];
-      if (m > bestScore) { bestScore = m; best = idx; }
+    if (picked.length === 0) {
+      // Top-1 is the caller's top-1, by construction: a list whose order is
+      // not score order (a positional promotion upstream) must not have its
+      // first entry replaced by the highest raw score.
+      best = 0;
+    } else {
+      for (const idx of remaining) {
+        const m = lambda * rel[idx] - (1 - lambda) * maxSim[idx];
+        if (m > bestScore) { bestScore = m; best = idx; }
+      }
     }
     picked.push(best);
     remaining.splice(remaining.indexOf(best), 1);

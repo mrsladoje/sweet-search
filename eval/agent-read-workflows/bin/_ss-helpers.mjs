@@ -858,7 +858,7 @@ async function cmdFind(rawArgs) {
   // Header (visible to agent). SS_FIX_A (A1): one short header (results, query, regex) and
   // the compact `# sufficient=YES` line; no budget/used/subMode, no confidence line.
   if (FIX.compact) {
-    process.stdout.write(renderCompactHeader('ss-find', response.results?.length || 0, query, { regex: effectiveRegex || '*' }));
+    process.stdout.write(renderCompactHeader('ss-find', plan ? plan.entries.length : (response.results?.length || 0), query, { regex: effectiveRegex || '*' }));
     process.stdout.write(compactSufficiencyLine(response));
   } else {
     process.stdout.write(`# ss-find: ColGrep ${response.results?.length || 0} for "${query}" /${effectiveRegex || '*'}/` +
@@ -1235,7 +1235,9 @@ async function cmdAgentSearch(rawArgs) {
   // stderr (below).
   const conf = routeConfidence != null ? ` conf=${routeConfidence.toFixed(2)}` : '';
   if (FIX.compact) {
-    process.stdout.write(renderCompactHeader('ss-search', response.results.length, query));
+    // The count is what the agent sees: A2 can drop covered summary entries after the
+    // packager ran out of refill candidates, and the header must not promise more.
+    process.stdout.write(renderCompactHeader('ss-search', plan ? plan.entries.length : response.results.length, query));
   } else {
     process.stdout.write(`# ss-search: routed=${routedMode}${conf} budget=${response.tokenBudget} used=${response.tokensUsed}` +
       ` results=${response.results.length} subMode=${response.subMode}\n`);

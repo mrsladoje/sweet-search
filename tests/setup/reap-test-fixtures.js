@@ -22,10 +22,19 @@
  * still using and manufacture exactly the flakiness it is meant to remove.
  *
  * WHAT IT WILL AND WILL NOT KILL. Only processes whose command line names a
- * file that actually exists in tests/fixtures/. The list is READ FROM THE
- * DIRECTORY rather than hardcoded — a hardcoded list silently rots in both
- * directions, and this one already had: it named two fixtures that no longer
- * existed while missing `fake-daemon.mjs`, which does.
+ * file that actually exists in THIS checkout's tests/fixtures/, by absolute
+ * path. The list is READ FROM THE DIRECTORY rather than hardcoded — a
+ * hardcoded list silently rots in both directions, and this one already had:
+ * it named two fixtures that no longer existed while missing
+ * `fake-daemon.mjs`, which does.
+ *
+ * ABSOLUTE, NOT RELATIVE. The marker used to be the relative fragment
+ * `tests/fixtures/<name>`, which every checkout of this repository shares:
+ * a run in one worktree SIGKILLed the live fixtures of a run in another
+ * worktree (or the main checkout), at its start and again at its end, and
+ * failed that other run's tests. The tests spawn fixtures by absolute path
+ * (join(REPO_ROOT, 'tests', 'fixtures', ...)), so the absolute marker still
+ * reaps this checkout's orphans and never another checkout's live ones.
  *
  * It deliberately does NOT touch `--serve` daemons or real index maintainers,
  * even though a timed-out test can orphan one of those too. A developer's own
@@ -44,19 +53,37 @@ const FIXTURE_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixture
 /**
  * The reapable set, read from disk at call time.
  *
- * Returns path fragments (`tests/fixtures/<name>`) rather than bare filenames
- * on purpose: a bare name like `fake-daemon.mjs` could appear in an unrelated
- * process's arguments, while the directory-qualified fragment cannot plausibly
- * belong to anything but this repository's scaffolding.
+ * Returns absolute paths (`<this checkout>/tests/fixtures/<name>`), not bare
+ * filenames or the relative fragment: a bare name could appear in an
+ * unrelated process's arguments, and the relative fragment matches every
+ * other checkout's fixtures (see the header).
  */
-function fixtureMarkers() {
+export function fixtureMarkers(fixtureDir = FIXTURE_DIR) {
   try {
-    return readdirSync(FIXTURE_DIR)
+    return readdirSync(fixtureDir)
       .filter((name) => name.endsWith('.mjs') || name.endsWith('.js'))
-      .map((name) => `tests/fixtures/${name}`);
+      .map((name) => join(fixtureDir, name));
   } catch {
     return [];
   }
+}
+
+/**
+ * The pids to reap from a `ps -axo pid=,command=` listing. A marker must be
+ * a whole command-line argument (followed by a space or the line end), so
+ * `<root>/tests/fixtures/a.mjs` never matches `<root>/tests/fixtures/a.mjs.bak`.
+ */
+export function reapablePids(listing, markers, selfPid = process.pid) {
+  const pids = [];
+  for (const line of String(listing).split('\n')) {
+    if (!markers.some((m) => line.includes(`${m} `) || line.endsWith(m))) continue;
+    const pid = Number(line.trim().split(/\s+/)[0]);
+    // Never signal ourselves, and never signal a whole process group: a
+    // negative pid would reach the vitest runner itself.
+    if (!Number.isInteger(pid) || pid <= 0 || pid === selfPid) continue;
+    pids.push(pid);
+  }
+  return pids;
 }
 
 function reap(phase) {
@@ -72,12 +99,7 @@ function reap(phase) {
   }
 
   let killed = 0;
-  for (const line of listing.split('\n')) {
-    if (!markers.some((m) => line.includes(m))) continue;
-    const pid = Number(line.trim().split(/\s+/)[0]);
-    // Never signal ourselves, and never signal a whole process group: a
-    // negative pid would reach the vitest runner itself.
-    if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) continue;
+  for (const pid of reapablePids(listing, markers)) {
     try {
       process.kill(pid, 'SIGKILL');
       killed++;
