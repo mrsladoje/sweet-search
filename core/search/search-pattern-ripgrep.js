@@ -579,6 +579,7 @@ export async function runRipgrepJson(regex, searchDir, opts = {}) {
   const {
     files = null,
     fixedString = false,
+    caseInsensitive = false,
     globs = [],
     timeout = 10000,
     lightweightParse = false,
@@ -593,6 +594,7 @@ export async function runRipgrepJson(regex, searchDir, opts = {}) {
       searchDir,
       files: null,
       fixedString,
+      caseInsensitive,
       globs,
       outputMode: 'json',
       timeout,
@@ -607,6 +609,7 @@ export async function runRipgrepJson(regex, searchDir, opts = {}) {
       searchDir,
       files: batch,
       fixedString,
+      caseInsensitive,
       globs,
       outputMode: 'json',
       timeout,

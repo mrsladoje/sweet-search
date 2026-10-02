@@ -16,7 +16,7 @@ import {
   ensureSparseGramIndex, getSparseGramAllFilesWithOverlay, hasCaseInsensitiveRegexFlag,
 } from './search-pattern-prefilter.js';
 
-async function grepFiles(regex, searchDir, files, fixedString) {
+async function grepFiles(regex, searchDir, files, fixedString, caseInsensitive = false) {
   if (!fixedString) {
     const native = nativeGrepFull(regex, searchDir, files, hasCaseInsensitiveRegexFlag(regex));
     if (native) {
@@ -29,7 +29,8 @@ async function grepFiles(regex, searchDir, files, fixedString) {
     }
   }
   try {
-    return await runRipgrepJson(regex, searchDir, { files, fixedString });
+    // A regex carries its own case flags; fixed-string text takes only the explicit option.
+    return await runRipgrepJson(regex, searchDir, { files, fixedString, caseInsensitive: fixedString && caseInsensitive });
   } catch {
     return [];
   }
@@ -54,7 +55,7 @@ export async function applyUnindexedFallback({ searcher, regex, searchDir, optio
   const files = listChangedGrepFiles(searchDir).filter(inScope);
   const stats = { unindexedFallbackFiles: files.length, unindexedFallbackMatches: 0 };
   if (files.length > 0) {
-    const found = await grepFiles(regex, searchDir, files, options.fixedString === true);
+    const found = await grepFiles(regex, searchDir, files, options.fixedString === true, options.caseInsensitive === true);
     if (found.length > 0) {
       const shaped = shapeResult({ indexedMatches: found, overlayMatches: [] });
       stats.unindexedFallbackMatches = shaped.length;

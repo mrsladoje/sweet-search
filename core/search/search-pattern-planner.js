@@ -49,7 +49,11 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
   const globs = options.globs ?? [];
 
   const useLiteralFilter = options.useLiteralFilter ?? options.literalFilter ?? true;
-  const caseInsensitive = hasCaseInsensitiveRegexFlag(regex);
+  // A regex carries its own case flags (`(?i)`). Fixed-string text is not a regex: "(?i" in it is
+  // plain text, so its case comes only from the explicit option.
+  const caseInsensitive = fixedString ? options.caseInsensitive === true : hasCaseInsensitiveRegexFlag(regex);
+  // The final ripgrep calls: a regex keeps its inline flags; fixed-string text needs `-i`.
+  const rgCaseInsensitive = fixedString && caseInsensitive;
   const literalExtractStart = performance.now();
   const literalPlan = useLiteralFilter ? extractLiteralClauses(regex, options) : { clauses: [], source: 'none' };
   // The literals each prefilter can use soundly (ripgrep, native fixed-string grep, gram index).
@@ -370,6 +374,7 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
       indexedMatches = await runRipgrepJson(regex, searchDir, {
         files: filteredFiles,
         fixedString,
+        caseInsensitive: rgCaseInsensitive,
         globs,
         lightweightParse,
       });
@@ -384,6 +389,7 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
       : await runRipgrepFilesWithMatches(regex, searchDir, {
         files: filteredFiles,
         fixedString,
+        caseInsensitive: rgCaseInsensitive,
         globs,
       });
     if (matchingFiles.length > 0) {
@@ -401,6 +407,7 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
         indexedMatches = await runRipgrepJson(regex, searchDir, {
           files: matchingFiles,
           fixedString,
+          caseInsensitive: rgCaseInsensitive,
           globs,
           lightweightParse,
         });
@@ -419,6 +426,7 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
       indexedMatches = await runRipgrepJson(regex, searchDir, {
         files: filteredFiles,
         fixedString,
+        caseInsensitive: rgCaseInsensitive,
         globs,
         lightweightParse,
       });
@@ -428,6 +436,7 @@ export async function generateRegexMatches(searcher, regex, searchDir, options =
     indexedMatches = await runRipgrepJson(regex, searchDir, {
       files: filteredFiles,
       fixedString,
+      caseInsensitive: rgCaseInsensitive,
       globs,
       lightweightParse,
     });
