@@ -164,8 +164,9 @@ const SHOWN_SPAN_TRAILER = shownSpanTrailerEnabled();
 const SPAN_POLICY_ENABLED = EXACT_REREAD_OMISSION || SHOWN_SPAN_TRAILER;
 
 // Output-fix switches (see core/search/agent-output-fixes.js). Bundle A (A1, A2, A7, A4, A5) is the
-// product default; SWEET_SEARCH_COMPACT_OUTPUT=0 or SS_FIX_A=0 restores the previous output byte
-// for byte. Every other SS_FIX_* switch is default off (bench only).
+// product default, and so is SS_FIX_GREP_ALLOC (ss-grep line allocation); SWEET_SEARCH_COMPACT_OUTPUT=0
+// or SS_FIX_A=0 restores the previous output byte for byte. Every other SS_FIX_* switch is default
+// off (bench only).
 const FIX = readFixFlags();
 // A3 (SS_FIX_ALREADY_SHOWN only; not part of SS_FIX_A). AGENT_SESSION_ID above, the original
 // ledger and so ss-read are never changed by it: A3 keeps its receipts under its own ledger
@@ -674,7 +675,14 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
   //
   // SS_FIX_GREP_ORDER (B7) fetches up to 100 files instead of k, so that source files are
   // not cut away before the source-before-test ordering can see them.
+  //
+  // SS_FIX_GREP_ALLOC (default ON; 0 = the rule above, byte for byte): the engine keeps the
+  // fetchFiles files of highest weight = sqrt(hits) x file-type prior (1 source, 0.5 test, 0.25
+  // generated), not the first fetchFiles in path order; the k lines are shared by Sainte-Laguë
+  // and files print by weight (grep-output-shaping.js). With B7 also on, B7's source-before-tests
+  // body order is skipped (the prior already ranks tests below source); its line lists stay.
   const fetchFiles = FIX.grepOrder ? Math.max(k, 100) : k;
+  const allocOpts = FIX.grepAlloc ? { grepFileOrder: 'weight' } : {};
   // Run from a subdirectory with no --in, ss-grep searches that subdirectory, as
   // `grep -r` / `rg` do (jj-13: `cd cli/src/config && ss-grep "editor|pager"` returned
   // 942 repo-wide hits in 95 files). The scope travels as an engine fileFilter marked
@@ -689,6 +697,7 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
       return await queryWarmSearch(rx, {
         mode: 'grep', regex: rx, maxMatches: 0, contextLines: 0,
         perFileCap: Math.min(k, 100), maxFiles: fetchFiles,
+        ...allocOpts,
         expand: false, rerank: false, useLateInteraction: false,
         _isAgentFormat: !fixedString,
         _siblingLine: process.env.SS_SIBLING_LINE !== '0', // default ON; cost bounded (≤0.6% prompt tokens), see SMOKE-LOSS-FORENSICS §9
@@ -700,6 +709,7 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
       return await s.bareGrep(rx, null, {
         regex: rx, maxMatches: 0, contextLines: 0,
         perFileCap: Math.min(k, 100), maxFiles: fetchFiles,
+        ...allocOpts,
         _isAgentFormat: !fixedString,
         _siblingLine: process.env.SS_SIBLING_LINE !== '0', // default ON; cost bounded (≤0.6% prompt tokens), see SMOKE-LOSS-FORENSICS §9
         ...scopeOpts,
@@ -716,8 +726,11 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
   // B7: >= GREP_COUNTS_THRESHOLD hits print a short line list per file, not the hit-line flood.
   // Source files come first, but a quota of test files stays among the first k files.
   const listMode = FIX.grepOrder && total >= GREP_COUNTS_THRESHOLD && !withContext;
-  const keptMatches = FIX.grepOrder ? orderSourceBeforeTests(result.results, { k }) : result.results;
-  const body = renderGrepBody(keptMatches, fileSummary, k, FIX.grepOrder ? { dropRepeatedText: true } : undefined);
+  const keptMatches = FIX.grepOrder && !FIX.grepAlloc ? orderSourceBeforeTests(result.results, { k }) : result.results;
+  const bodyOpts = FIX.grepAlloc
+    ? (FIX.grepOrder ? { alloc: 'weight', dropRepeatedText: true } : { alloc: 'weight' })
+    : (FIX.grepOrder ? { dropRepeatedText: true } : undefined);
+  const body = renderGrepBody(keptMatches, fileSummary, k, bodyOpts);
   const completed = listMode
     ? { lines: [], familyManifest: result.familyManifest?.rendered ? result.familyManifest : null }
     : reallocateGrepTailForManifest(body.lines, result.familyManifest);

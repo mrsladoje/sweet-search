@@ -4,7 +4,8 @@
  * Bundle A (SS_FIX_A: A1, A2, A7, A5, A4) is DEFAULT ON since 2026-10-01: the ss-* tools that
  * `sweet-search` ships ARE these wrappers (package.json "files"). SWEET_SEARCH_COMPACT_OUTPUT=0
  * restores the previous output byte for byte; an explicit SS_FIX_A=0|1 wins over both (bench).
- * Every other switch here is DEFAULT OFF and is not part of the product. The functions in
+ * SS_FIX_GREP_ALLOC (ss-grep line allocation) follows the same default. Every other switch here
+ * is DEFAULT OFF and is not part of the product. The functions in
  * this file are pure (no I/O, no process state) or take their I/O as an argument
  * (`decideAlreadyShown` gets the socket sender), so they can be unit-tested; the
  * wrapper (eval/agent-read-workflows/bin/_ss-helpers.mjs) wires them to the printers.
@@ -28,6 +29,16 @@
  *   SS_FIX_ONE_PER_FILE=1      B2 (compress only): one ss-search entry per file
  *   SS_FIX_GREP_ORDER=1        B7: ss-grep source before tests (with a test quota), per-file line
  *                              lists at >= 50 hits, no repeated matched-text column
+ *   SS_FIX_GREP_ALLOC=1|0      DEFAULT ON since 2026-10-02 (default: SS_FIX_A, so the product
+ *                              opt-out and an SS_FIX_A=0 bench arm keep the previous output too):
+ *                              ss-grep keeps the files of
+ *                              highest sqrt(hits) x file-type prior (not the first k in path order),
+ *                              shares the k lines by Sainte-Laguë and prints files by weight
+ *                              (grep-output-shaping.js). 0 restores the previous output byte for
+ *                              byte; never pool runs across the two. With B7 on as well, B7's
+ *                              source-before-tests body order is not applied (the prior already
+ *                              ranks tests below source); B7's line lists and the dropped repeated
+ *                              text column stay.
  *
  * ss-read output is NOT changed by any switch (owner decision 2026-10-01).
  */
@@ -85,6 +96,7 @@ export function readFixFlags(env = process.env) {
     summaryCap: capNumber > 0 ? capNumber : null,
     onePerFile: isOn(env?.SS_FIX_ONE_PER_FILE),
     grepOrder: isOn(env?.SS_FIX_GREP_ORDER),
+    grepAlloc: subSwitch(env?.SS_FIX_GREP_ALLOC, compact),
   };
 }
 
@@ -148,11 +160,23 @@ const TEST_FILE_RES = [
   /(^|\/)conftest\.py$/i,
 ];
 
+// The rules above, folded once at load: every case-insensitive rule into one alternation
+// (`test` of A|B is A or B), the one case-sensitive rule kept apart. Same answers in one or
+// two regex passes instead of seven, no closure per call: ss-grep weighs every matching file.
+const TEST_PATH_CI_RE = new RegExp(
+  [TEST_DIR_RE, ...TEST_FILE_RES.filter((re) => re.flags.includes('i'))].map((re) => `(?:${re.source})`).join('|'),
+  'i',
+);
+const TEST_PATH_CS_RES = TEST_FILE_RES.filter((re) => !re.flags.includes('i'));
+
 /** Test, spec, fixture or mock file by path shape only. */
 export function isTestLikePath(file) {
-  const p = String(file || '').replace(/\\/g, '/');
+  let p = String(file || '');
   if (!p) return false;
-  return TEST_DIR_RE.test(p) || TEST_FILE_RES.some((re) => re.test(p));
+  if (p.includes('\\')) p = p.replace(/\\/g, '/');
+  if (TEST_PATH_CI_RE.test(p)) return true;
+  for (let i = 0; i < TEST_PATH_CS_RES.length; i++) if (TEST_PATH_CS_RES[i].test(p)) return true;
+  return false;
 }
 
 // --- ss-search / ss-find entry selection ---------------------------------------------

@@ -44,6 +44,7 @@ import {
   buildReadSemanticDaemonResponse,
   queryReadSemanticServer,
   queryServer,
+  readGrepShapingParams,
 } from '../../core/search/search-server.js';
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
@@ -206,6 +207,23 @@ describe('warm-daemon JSON clients', () => {
     const params = requests[0].searchParams;
     expect(params.getAll('pathGlob')).toEqual(['!lib/tests/**', '*.{h,cc}']);
     expect(params.getAll('glob')).toEqual([]);
+  });
+
+  // ss-grep's weighted file selection (SS_FIX_GREP_ALLOC): the client sends fileOrder=weight and
+  // the server's own parser hands grepFileOrder back; without it, nothing travels (legacy bytes).
+  it('round-trips the weighted grep selection through the server\'s own parser', async () => {
+    await queryServer('keys', {
+      mode: 'grep', regex: 'keys', perFileCap: 20, maxFiles: 20, grepFileOrder: 'weight', _isAgentFormat: true,
+    });
+    expect(requests[0].searchParams.get('fileOrder')).toBe('weight');
+    expect(readGrepShapingParams(requests[0].searchParams))
+      .toEqual({ perFileCap: 20, maxFiles: 20, grepFileOrder: 'weight' });
+
+    await queryServer('keys', { mode: 'grep', regex: 'keys', perFileCap: 20, maxFiles: 20, _isAgentFormat: true });
+    expect(requests[1].searchParams.has('fileOrder')).toBe(false);
+    expect(readGrepShapingParams(requests[1].searchParams))
+      .toEqual({ perFileCap: 20, maxFiles: 20, grepFileOrder: undefined });
+    expect(() => readGrepShapingParams(new URLSearchParams('maxFiles=1001'))).toThrow(/maxFiles must be <= 1000/);
   });
 
   it('a single scope still travels as one plain value (wire format unchanged)', async () => {
