@@ -51,9 +51,19 @@ function isCodeImportTarget(entity) {
  * @param {string} filePath - File path to analyze
  * @returns {string} Project identifier (kebab-cased directory name) or 'unknown'
  */
+// file path → project name, per resolution run (cleared with the other
+// run caches). An ambiguous import compares the source's project with every
+// candidate's: ocelot has 733 such rows × 209 candidates.
+const projectMemo = new Map();
+
 function detectProject(filePath) {
   if (!filePath) return 'unknown';
-  const { name } = detectProjectBoundary(filePath, process.cwd());
+  let name = projectMemo.get(filePath);
+  if (name === undefined) {
+    name = detectProjectBoundary(filePath, process.cwd()).name;
+    if (projectMemo.size > 50_000) projectMemo.clear();
+    projectMemo.set(filePath, name);
+  }
   return name;
 }
 
@@ -867,6 +877,7 @@ export function resolveRelationshipTargets(db) {
   pathFactsCache.clear();
   nameKeyCache.clear();
   declaredTypeMemo.clear();
+  projectMemo.clear();
 
   // Build entity lookup maps
   // Sorted, not rowid (= discovery) order: ties between equal candidates
