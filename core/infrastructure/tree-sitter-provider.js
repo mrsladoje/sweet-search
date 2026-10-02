@@ -858,11 +858,15 @@ const SWIFT_CONDITIONAL_DIRECTIVE_LINE = /^[ \t]*#(?:if|elseif|else|endif)\b[^\n
 // QObject`, `struct CV_EXPORTS Mat`. The grammar reads the macro as the class
 // name, so drogon's HttpRequest became a one-line class `DROGON_EXPORT` and
 // lost every method. Shape rule, not a macro list: an ALL-CAPS token followed
-// by another identifier (not `final`) can only be a macro in valid C++. With
-// `;` after the identifier, only `class` is a macro (`class DROGON_EXPORT
-// RateLimiter;` forward-declares); `struct HTTP_HEADER header;` (C and C++)
-// declares a variable of an ALL-CAPS type and is left as it is.
-const CPP_CLASS_KEY_MACRO = /\b(class|struct|union)([ \t]+)([A-Z][A-Z0-9_]+)(?=[ \t]+(?!final\b)[A-Za-z_]\w*[ \t]*([:{;<]|final\b|$))/gm;
+// by another identifier (not `final`) can only be a macro in valid C++.
+//
+// One ambiguous shape: `struct|union X y;` is either a forward declaration
+// with a macro (`struct ABC_EXPORT Fwd;`) or a variable of an ALL-CAPS type
+// (`struct HTTP_HEADER header;`). It is a macro when the file #defines X, or
+// when y is capitalised like a type name (types are CamelCase, variables
+// lower-case). `class X y;` is always a forward declaration.
+const CPP_CLASS_KEY_MACRO = /\b(class|struct|union)([ \t]+)([A-Z][A-Z0-9_]+)(?=[ \t]+(?!final\b)([A-Za-z_]\w*)[ \t]*([:{;<]|final\b|$))/gm;
+const CPP_DEFINED_MACRO = /^[ \t]*#[ \t]*define[ \t]+([A-Z][A-Z0-9_]+)\b/gm;
 
 // Blank the macro with spaces (same length, so offsets and line numbers are
 // unchanged). Applied in parse(), so the chunker, the incremental parser and
@@ -871,8 +875,15 @@ const CPP_CLASS_KEY_MACRO = /\b(class|struct|union)([ \t]+)([A-Z][A-Z0-9_]+)(?=[
 // phantom one-line chunk `class: DROGON_EXPORT`.
 function blankCppClassKeyMacros(content, languageId) {
   if (languageId !== 'cpp' && languageId !== 'c') return content;
-  return content.replace(CPP_CLASS_KEY_MACRO, (m, key, gap, macro, next) => (
-    next === ';' && key !== 'class' ? m : key + gap + ' '.repeat(macro.length)));
+  let defined = null;
+  const isDefined = (macro) => {
+    defined ??= new Set(Array.from(content.matchAll(CPP_DEFINED_MACRO), m => m[1]));
+    return defined.has(macro);
+  };
+  return content.replace(CPP_CLASS_KEY_MACRO, (m, key, gap, macro, ident, next) => {
+    const isVariable = next === ';' && key !== 'class' && !/^[A-Z]/.test(ident) && !isDefined(macro);
+    return isVariable ? m : key + gap + ' '.repeat(macro.length);
+  });
 }
 
 // Namespace / module wrappers that recursiveChunk makes transparent: the body
@@ -1689,8 +1700,22 @@ export class TreeSitterProvider {
         const carry = takeCarry();
         flushBuffer();
         if (nodeSize <= maxSize) {
-          // Node fits alone — start new buffer
-          buffer = [...takePending(), ...carry, ...leading, node];
+          // Node fits alone — start new buffer. The waiting tokens open it
+          // when the slice stays within the cap; else they are a chunk of
+          // their own (never dropped).
+          const opening = [...takePending(), ...carry];
+          const first = opening[0] || leading[0] || node;
+          if (opening.length > 0 && node.endIndex - first.startIndex > maxSize) {
+            const openingSpan = spanOf(opening[0], opening[opening.length - 1]);
+            if (!mergeIntoPrev(opening) && openingSpan.text) {
+              this._pushChunk(chunks, openingSpan, {
+                chunkId: this._nextChunkId(), ...parentFields(), type: 'code', name: null, signature: null,
+              });
+            }
+            buffer = [...leading, node];
+          } else {
+            buffer = [...opening, ...leading, node];
+          }
         } else {
           // Leaf node too big — emit as-is (never split mid-expression)
           const resolved = this._resolveBoundary(node);
@@ -1781,11 +1806,23 @@ export class TreeSitterProvider {
           }
           // Tokens on the header's last line (the body's `{` after a long
           // signature) end the header, so no line is split between chunks.
-          while (endNode && take < decl.nodes.length
-            && decl.nodes[take].startPosition.row === endNode.endPosition.row
-            && decl.nodes[take].endIndex - startNode.startIndex <= maxSize) {
-            endNode = decl.nodes[take];
-            take++;
+          // Whitespace tokens (tree-sitter-go's newline statement
+          // terminator ends on the next row) neither end nor extend a line.
+          const isBlankToken = n => !n.isNamed && content.substring(n.startIndex, n.endIndex).trim() === '';
+          const lastRealRow = () => {
+            for (let k = take - 1; k >= 0; k--) {
+              if (!isBlankToken(decl.nodes[k])) return decl.nodes[k].endPosition.row;
+            }
+            return endNode.endPosition.row;
+          };
+          while (endNode && take < decl.nodes.length) {
+            let next = take;
+            while (next < decl.nodes.length && isBlankToken(decl.nodes[next])) next++;
+            if (next >= decl.nodes.length
+              || decl.nodes[next].startPosition.row !== lastRealRow()
+              || decl.nodes[next].endIndex - startNode.startIndex > maxSize) break;
+            endNode = decl.nodes[next];
+            take = next + 1;
           }
           // A doc comment at the end of the header belongs to the member
           // after it (the first one the header did not take).
