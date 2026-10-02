@@ -858,8 +858,11 @@ const SWIFT_CONDITIONAL_DIRECTIVE_LINE = /^[ \t]*#(?:if|elseif|else|endif)\b[^\n
 // QObject`, `struct CV_EXPORTS Mat`. The grammar reads the macro as the class
 // name, so drogon's HttpRequest became a one-line class `DROGON_EXPORT` and
 // lost every method. Shape rule, not a macro list: an ALL-CAPS token followed
-// by another identifier (not `final`) can only be a macro in valid C++.
-const CPP_CLASS_KEY_MACRO = /\b(class|struct|union)([ \t]+)([A-Z][A-Z0-9_]+)(?=[ \t]+(?!final\b)[A-Za-z_]\w*[ \t]*(?:[:{;<]|final\b|$))/gm;
+// by another identifier (not `final`) can only be a macro in valid C++. With
+// `;` after the identifier, only `class` is a macro (`class DROGON_EXPORT
+// RateLimiter;` forward-declares); `struct HTTP_HEADER header;` (C and C++)
+// declares a variable of an ALL-CAPS type and is left as it is.
+const CPP_CLASS_KEY_MACRO = /\b(class|struct|union)([ \t]+)([A-Z][A-Z0-9_]+)(?=[ \t]+(?!final\b)[A-Za-z_]\w*[ \t]*([:{;<]|final\b|$))/gm;
 
 // Blank the macro with spaces (same length, so offsets and line numbers are
 // unchanged). Applied in parse(), so the chunker, the incremental parser and
@@ -868,7 +871,8 @@ const CPP_CLASS_KEY_MACRO = /\b(class|struct|union)([ \t]+)([A-Z][A-Z0-9_]+)(?=[
 // phantom one-line chunk `class: DROGON_EXPORT`.
 function blankCppClassKeyMacros(content, languageId) {
   if (languageId !== 'cpp' && languageId !== 'c') return content;
-  return content.replace(CPP_CLASS_KEY_MACRO, (_m, key, gap, macro) => key + gap + ' '.repeat(macro.length));
+  return content.replace(CPP_CLASS_KEY_MACRO, (m, key, gap, macro, next) => (
+    next === ';' && key !== 'class' ? m : key + gap + ' '.repeat(macro.length)));
 }
 
 // Namespace / module wrappers that recursiveChunk makes transparent: the body
@@ -1247,6 +1251,19 @@ export class TreeSitterProvider {
       languageId,
       parsedContent: blankCppClassKeyMacros(content, languageId),
     });
+    // Text is never dropped: what no chunk took (a file holding only
+    // `import Foundation`) is a chunk of its own.
+    if (chunks.leftover?.length) {
+      const nodes = chunks.leftover;
+      const span = this._sourceSpan(content, nodes[0].startIndex, nodes[nodes.length - 1].endIndex, nodes[0].startPosition.row);
+      if (span.text) {
+        this._pushChunk(chunks, span, {
+          chunkId: this._nextChunkId(), parentChunkId: null, parentSymbol: null, parentType: null,
+          parentPath: null, type: 'code', name: null, signature: null,
+        });
+      }
+    }
+    delete chunks.leftover;
 
     tree.delete(); // free WASM memory
 
@@ -1338,6 +1355,48 @@ export class TreeSitterProvider {
       const n = partOf.next++;
       return n === 1 ? partOf.name : `${partOf.name} (part ${n})`;
     };
+    // Parent fields of every chunk at this level. parentPath is the whole
+    // declaration path (`class:A/method:run`), so two same-named methods in
+    // different classes keep distinct chunk identities.
+    const parentFields = () => ({
+      parentChunkId: parentInfo?.chunkId || null,
+      parentSymbol: parentInfo?.name || null,
+      parentType: parentInfo?.type || null,
+      parentPath: parentInfo?.path || null,
+    });
+    const childPath = (type, name) => `${parentInfo?.path ? parentInfo.path + '/' : ''}${type}:${name}`;
+    // Declaration names of `nodes` (template / decorator wrappers resolved).
+    const declNames = nodes => nodes.filter(isBoundaryNode).map(n => this._declarationName(n)).filter(Boolean);
+    const addNames = (chunk, names) => {
+      const extra = names.filter(n => n !== chunk.name && !(chunk.additionalSymbols || []).includes(n));
+      if (extra.length > 0) chunk.additionalSymbols = [...(chunk.additionalSymbols || []), ...extra];
+    };
+    // Text is never dropped. A buffer too small to be a chunk (30 chars or
+    // fewer) with no declaration waits in `pending` and opens the next chunk
+    // of this level; at the end of the level it joins the previous chunk,
+    // or goes up to the parent level as `chunks.leftover`.
+    let pending = [];
+    const takePending = () => { const p = pending; pending = []; return p; };
+    // Merge nodes into the last chunk of this level as one source slice.
+    const mergeIntoPrev = (mergeNodes) => {
+      const prev = chunks[chunks.length - 1];
+      const prevSpan = prev ? CHUNK_SPANS.get(prev) : null;
+      if (!prevSpan || mergeNodes.length === 0) return false;
+      const last = mergeNodes[mergeNodes.length - 1];
+      if (prevSpan.startIndex >= last.endIndex) return false;
+      const merged = this._sourceSpan(content, prevSpan.startIndex, Math.max(prevSpan.endIndex, last.endIndex), prev.startLine);
+      if (merged.text.length > maxSize * TAIL_MERGE_HEADROOM) return false;
+      prev.text = merged.text;
+      prev.endLine = merged.endLine;
+      CHUNK_SPANS.set(prev, merged);
+      addNames(prev, declNames(mergeNodes));
+      return true;
+    };
+    // A sub-level's leftover: join this level's previous chunk, else wait.
+    const absorbLeftover = (sub) => {
+      if (!sub.leftover || sub.leftover.length === 0) return;
+      if (!mergeIntoPrev(sub.leftover)) pending = [...pending, ...sub.leftover];
+    };
 
     // SMALL_TAIL_THRESHOLD: chunks below this character count are
     // considered "orphan tails" — they tend to be `module.exports`,
@@ -1356,16 +1415,32 @@ export class TreeSitterProvider {
     const TAIL_MERGE_HEADROOM = 1.25;
 
     const flushBuffer = () => {
+      if (pending.length > 0 && buffer.length > 0) buffer = [...takePending(), ...buffer];
       if (buffer.length === 0) return;
       const span = spanOf(buffer[0], buffer[buffer.length - 1]);
       const text = span.text;
-      // A buffer of 30 chars or fewer is not a chunk of its own, but when
-      // it holds no declaration it may still join the previous chunk as an
-      // orphan tail (below): `return emptyList, nil` at the end of a long
-      // function body was dropped from the index before.
-      const isSmall = text.length <= 30;
-
-      if (text.length > 0 && (!isSmall || !buffer.some(isBoundaryNode))) {
+      if (text.length === 0) { buffer = []; return; }
+      // A buffer of 30 chars or fewer is not a chunk of its own. Tokens
+      // that end the previous chunk's last line (`};`) and small
+      // declarations (`function empty() {}`) join the previous chunk (the
+      // declaration's name goes to its additionalSymbols); a small
+      // declaration with no previous chunk is a chunk of its own. Anything
+      // else waits in `pending` for the next chunk.
+      if (text.length <= 30) {
+        const prev = chunks[chunks.length - 1];
+        const hasDecl = buffer.some(isBoundaryNode);
+        const onPrevLine = prev && span.startLine <= prev.endLine;
+        if ((hasDecl || onPrevLine) && mergeIntoPrev(buffer)) {
+          buffer = [];
+          return;
+        }
+        if (!hasDecl) {
+          pending = buffer;
+          buffer = [];
+          return;
+        }
+      }
+      {
         const boundariesInBuffer = buffer.filter(isBoundaryNode);
 
         // SIBLING_DOC_SPLIT (RS-008 motivation, May 2026): at top level, when
@@ -1448,6 +1523,9 @@ export class TreeSitterProvider {
           })
           || isClassLikeSiblingSet
         ) {
+          // A section of 30 chars or fewer joins the next section (the
+          // last one joins the previous section) instead of being dropped.
+          const sections = [];
           let sectionStart = 0;
           for (let i = 0; i < boundariesInBuffer.length; i++) {
             const b = boundariesInBuffer[i];
@@ -1455,22 +1533,30 @@ export class TreeSitterProvider {
             // Last section absorbs trailing non-boundary nodes after `b`.
             const isLast = i === boundariesInBuffer.length - 1;
             const sectionEnd = isLast ? buffer.length - 1 : bIdx;
-            const section = buffer.slice(sectionStart, sectionEnd + 1);
-            const sectionSpan = spanOf(section[0], section[section.length - 1]);
-            if (sectionSpan.text.length > 30) {
-              const resolved = this._resolveBoundary(b);
-              this._pushChunk(chunks, sectionSpan, {
-                chunkId: this._nextChunkId(),
-                parentChunkId: parentInfo?.chunkId || null,
-                parentSymbol: parentInfo?.name || null,
-                parentType: parentInfo?.type || null,
-                type: resolved.type,
-                name: this._extractNodeName(resolved.nameNode),
-                signature: this._extractSignature(b, content, boundaryTypes),
-                additionalSymbols: null,
-              });
+            const small = spanOf(buffer[sectionStart], buffer[sectionEnd]).text.length <= 30;
+            if (small && !isLast) continue;
+            if (small && isLast && sections.length > 0) {
+              sections[sections.length - 1].end = sectionEnd;
+              sections[sections.length - 1].extra.push(b);
+            } else {
+              sections.push({ start: sectionStart, end: sectionEnd, b, extra: [] });
             }
             sectionStart = bIdx + 1;
+          }
+          for (const sec of sections) {
+            const section = buffer.slice(sec.start, sec.end + 1);
+            const sectionSpan = spanOf(section[0], section[section.length - 1]);
+            const resolved = this._resolveBoundary(sec.b);
+            const secName = this._extractNodeName(resolved.nameNode);
+            const others = declNames(section.filter(n => n !== sec.b)).filter(n => n !== secName);
+            this._pushChunk(chunks, sectionSpan, {
+              chunkId: this._nextChunkId(),
+              ...parentFields(),
+              type: resolved.type,
+              name: secName,
+              signature: this._extractSignature(sec.b, content, boundaryTypes),
+              additionalSymbols: others.length > 0 ? others : null,
+            });
           }
           buffer = [];
           return;
@@ -1494,10 +1580,8 @@ export class TreeSitterProvider {
         // surface them via an `# Additional:` header line.
         let additionalSymbols = null;
         if (boundariesInBuffer.length > 1) {
-          const sibNames = boundariesInBuffer.slice(1)
-            .map(n => this._extractNodeName(n))
-            .filter(n => n && n !== name);
-          if (sibNames.length > 0) additionalSymbols = sibNames;
+          const sibNames = declNames(boundariesInBuffer.slice(1)).filter(n => n !== name);
+          if (sibNames.length > 0) additionalSymbols = [...new Set(sibNames)];
         }
 
         // Tail-orphan merge: when the buffer about to be flushed is
@@ -1537,19 +1621,19 @@ export class TreeSitterProvider {
           prev.text = mergedSpan.text;
           prev.endLine = mergedSpan.endLine;
           CHUNK_SPANS.set(prev, mergedSpan);
-        } else if (!isSmall) {
+        } else {
+          let partSignature = null;
           if (!firstBoundary && partOf) {
             name = takePartName();
             type = partOf.type;
+            partSignature = partOf.signature;
           }
           this._pushChunk(chunks, span, {
             chunkId: this._nextChunkId(),
-            parentChunkId: parentInfo?.chunkId || null,
-            parentSymbol: parentInfo?.name || null,
-            parentType: parentInfo?.type || null,
+            ...parentFields(),
             type,
             name,
-            signature,
+            signature: signature || partSignature,
             additionalSymbols,
           });
         }
@@ -1568,10 +1652,12 @@ export class TreeSitterProvider {
         const carry = takeCarry();
         flushBuffer();
         const nsParent = ns.name
-          ? { chunkId: this._nextChunkId(), name: ns.name, type: ns.type }
+          ? { chunkId: this._nextChunkId(), name: ns.name, type: ns.type, path: childPath(ns.type, ns.name) }
           : parentInfo;
-        chunks.push(...this.recursiveChunk(
-          [...carry, ...ns.nodes], content, maxSize, nsParent, boundaryTypes, { ...ctx, partOf }));
+        const sub = this.recursiveChunk(
+          [...takePending(), ...carry, ...ns.nodes], content, maxSize, nsParent, boundaryTypes, { ...ctx, partOf });
+        chunks.push(...sub);
+        absorbLeftover(sub);
         continue;
       }
 
@@ -1600,27 +1686,29 @@ export class TreeSitterProvider {
           leading = [];
         }
         if (leading.length > 0) buffer = buffer.slice(0, buffer.length - leading.length);
+        const carry = takeCarry();
         flushBuffer();
         if (nodeSize <= maxSize) {
           // Node fits alone — start new buffer
-          buffer = [...leading, node];
+          buffer = [...takePending(), ...carry, ...leading, node];
         } else {
           // Leaf node too big — emit as-is (never split mid-expression)
           const resolved = this._resolveBoundary(node);
           let name = this._extractNodeName(resolved.nameNode);
           let type = resolved.type;
+          let signature = this._extractSignature(node, content, boundaryTypes);
           if (!name && partOf) {
             name = takePartName();
             type = partOf.type;
+            signature = partOf.signature;
           }
-          this._pushChunk(chunks, spanOf(node, node), {
+          const first = [...takePending(), ...carry, ...leading][0] || node;
+          this._pushChunk(chunks, spanOf(first, node), {
             chunkId: this._nextChunkId(),
-            parentChunkId: parentInfo?.chunkId || null,
-            parentSymbol: parentInfo?.name || null,
-            parentType: parentInfo?.type || null,
+            ...parentFields(),
             type,
             name,
-            signature: this._extractSignature(node, content, boundaryTypes),
+            signature,
           });
         }
         continue;
@@ -1671,10 +1759,13 @@ export class TreeSitterProvider {
       // opening tokens before it (`class Big {`), go with the node.
       const docComment = this._takeLeadingComments(buffer, node, content, { isDeclaration: isBoundaryNode });
       if (docComment.length > 0) buffer = buffer.slice(0, buffer.length - docComment.length);
-      const carry = [...takeCarry(), ...docComment];
+      const carryTail = [...takeCarry(), ...docComment];
+      flushBuffer();
+      const carry = [...takePending(), ...carryTail];
+      let headerNames = [];
+      const signatureOfNode = isNamedBoundary ? this._extractSignature(node, content, boundaryTypes) : null;
       if (isNamedBoundary && !isRubyMethodHeader) {
         const leading = carry;
-        flushBuffer();
         const startNode = leading[0] || node;
         const HEADER_MAX_CHARS = Math.min(600, maxSize);
         let take = decl.prefixCount;
@@ -1707,16 +1798,27 @@ export class TreeSitterProvider {
             }
           }
         }
+        // A header of 30 chars or fewer (`class A:`) takes the next
+        // members too, up to the chunk cap, so the class still gets a
+        // class-typed chunk of its own.
+        while (endNode && take < decl.nodes.length
+          && spanOf(startNode, endNode).text.length <= 30
+          && !/comment$/.test(decl.nodes[take].type)
+          && decl.nodes[take].endIndex - startNode.startIndex <= maxSize) {
+          endNode = decl.nodes[take];
+          take++;
+        }
         const headerSpan = endNode ? spanOf(startNode, endNode) : null;
         if (headerSpan && headerSpan.text.length > 30) {
+          // Members the header holds whole stay findable by name.
+          headerNames = declNames(decl.nodes.slice(decl.prefixCount, take)).filter(n => n !== name);
           this._pushChunk(chunks, headerSpan, {
             chunkId: this._nextChunkId(),
-            parentChunkId: parentInfo?.chunkId || null,
-            parentSymbol: parentInfo?.name || null,
-            parentType: parentInfo?.type || null,
+            ...parentFields(),
             type,
             name,
-            signature: this._extractSignature(node, content, boundaryTypes),
+            signature: signatureOfNode,
+            additionalSymbols: headerNames.length > 0 ? [...new Set(headerNames)] : null,
           });
           headerEmitted = true;
           rest = decl.nodes.slice(take);
@@ -1726,7 +1828,6 @@ export class TreeSitterProvider {
           rest = [...leading, ...decl.nodes];
         }
       } else {
-        flushBuffer();
         rest = [...carry, ...rest];
       }
 
@@ -1749,14 +1850,14 @@ export class TreeSitterProvider {
         subParent = parentInfo;
       } else {
         const parentId = this._nextChunkId();
-        subParent = { chunkId: parentId, name: name || 'unknown', type };
+        subParent = { chunkId: parentId, name: name || 'unknown', type, path: childPath(type, name || 'unknown') };
       }
 
       // A body chunk with no declaration of its own carries the enclosing
       // declaration's name: `ToExportKvList (part 2)` (the header is part 1).
       // A top-level Ruby method stays anonymous, as for its header above.
       const subPartOf = isNamedBoundary && !isRubyMethodHeader
-        ? { name, type, next: headerEmitted ? 2 : 1 }
+        ? { name, type, signature: signatureOfNode, next: headerEmitted ? 2 : 1 }
         : partOf;
 
       const subChunks = this.recursiveChunk(
@@ -1767,10 +1868,16 @@ export class TreeSitterProvider {
         boundaryTypes,
         { ...ctx, partOf: subPartOf }
       );
+      // No header of its own (the opening line was too small and the first
+      // member too large): the chunk that starts with the declaration's
+      // opening line names it too.
+      if (isNamedBoundary && !headerEmitted && subChunks.length > 0) addNames(subChunks[0], [name]);
       chunks.push(...subChunks);
+      absorbLeftover(subChunks);
     }
 
     flushBuffer();
+    if (pending.length > 0 && !mergeIntoPrev(pending)) chunks.leftover = takePending();
     return chunks;
   }
 
@@ -1792,6 +1899,12 @@ export class TreeSitterProvider {
       startIndex: startIndex + lead,
       endIndex: startIndex + lead + text.length,
     };
+  }
+
+  /** Name of a declaration node; template / decorator wrappers resolved. */
+  _declarationName(node) {
+    const inner = node.type === 'decorated_definition' ? node.childForFieldName?.('definition') : null;
+    return this._extractNodeName(inner || this._resolveBoundary(node).nameNode) || null;
   }
 
   /** True when only whitespace lies between `node`'s children (and its edges). */
