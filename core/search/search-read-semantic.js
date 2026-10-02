@@ -34,7 +34,8 @@ import fs from 'node:fs';
 import { CodebaseRepository } from '../infrastructure/codebase-repository.js';
 import { DB_PATHS, LATE_INTERACTION_CONFIG, PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { applyPersistedLiModel } from '../infrastructure/init-config.js';
-import { lineGutterEnabled, numberCodeLines } from './search-read.js';
+import { lineGutterEnabled, numberCodeLines, getGraphRepoForProject } from './search-read.js';
+import { buildAlsoCandidates, mergeSpanNames, spanEntityNames } from './semantic-also.js';
 import { readFile as readFileExact } from './search-read.js';
 import { withPinnedRead } from './search-reader-pin.js';
 import { emitToolIdentityAuto } from './cli-decoration.js';
@@ -760,7 +761,7 @@ async function _readSemanticUnpinned(req) {
   const smallDemote = req.smallChunkDemote ?? DEFAULTS.smallChunkDemote;
   const smallChunkMaxLines = req.smallChunkMaxLines ?? DEFAULTS.smallChunkMaxLines;
 
-  const ranked = fusedTop
+  const rankedAll = fusedTop
     .map(([id, fusedScore]) => {
       const c = idToChunk.get(id);
       if (!c) return null;
@@ -801,11 +802,21 @@ async function _readSemanticUnpinned(req) {
       };
     })
     .filter(Boolean)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, topK);
+    .sort((a, b) => b.score - a.score);
+  const ranked = rankedAll.slice(0, topK);
 
   const merged = _expandAndMergeSpans(ranked, totalLines, contextLines);
   const { spans, charsUsed } = _enforceCharBudget(merged, fileText, lineOffsets, maxChars);
+
+  // Output-only pointers: what the printed spans hold, and the next-best ranked places that
+  // the budget left out. Neither changes ranking or which spans are printed, and the
+  // candidates are not shown spans (the caller must not ledger them).
+  const graph = getGraphRepoForProject(projectRoot) || null;
+  for (const span of spans) {
+    const entityNames = spanEntityNames(graph, filePathRel, span);
+    if (entityNames.length) span.entityNames = mergeSpanNames(entityNames, span.symbols);
+  }
+  const alsoCandidates = buildAlsoCandidates(rankedAll, spans, { file: filePathRel, graph });
 
   return {
     file: filePathRel,
@@ -816,6 +827,7 @@ async function _readSemanticUnpinned(req) {
     language,
     totalLines,
     spans,
+    alsoCandidates,
     charsReturned: charsUsed,
     approxTokensReturned: Math.ceil(charsUsed / APPROX_CHARS_PER_TOKEN),
     ...(staleness ? { staleness, warnings: [staleness.warning] } : {}),
