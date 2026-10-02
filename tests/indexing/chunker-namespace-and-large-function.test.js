@@ -377,3 +377,53 @@ describe('stable chunk ids', () => {
     expect(ids[0].chunkStructId).not.toBe(ids[1].chunkStructId);
   });
 });
+
+// =============================================================================
+// Review round 3: Go header size, export macro on forward declarations, cap.
+// =============================================================================
+
+describe('Go: newline tokens do not grow the header', () => {
+  it('a 2,300-char function with no blank lines keeps a header of ~600 chars', async () => {
+    const stmts = Array.from({ length: 90 }, (_, i) => `\tvalue${i} := compute(a, ${i})`).join('\n');
+    const src = `package x\n\nfunc big(a int) int {\n${stmts}\n\treturn a\n}\n`;
+    expect(src.length).toBeGreaterThan(2300);
+    const chunks = await chunk(src, 'go');
+    const header = chunks.find(c => c.name === 'big');
+    expect(header.text.length).toBeLessThanOrEqual(600);
+    expect(chunks.filter(c => c.name?.startsWith('big (part ')).length).toBeGreaterThanOrEqual(1);
+    expectSliceInvariants(src, chunks);
+    expectFullCoverage(src, chunks);
+  });
+});
+
+describe('C/C++ export macro on a forward declaration', () => {
+  for (const lang of ['cpp', 'c']) {
+    it(`${lang}: \`struct ABC_EXPORT Fwd;\` names Fwd; \`struct HTTP_HEADER header;\` stays a variable`, async () => {
+      const src = 'struct ABC_EXPORT Fwd;\nstruct HTTP_HEADER header;\nint parse_request_with_long_name(int x) { return x + header.size; }\n';
+      const symbols = await provider.extractSymbols(src, lang);
+      const names = symbols.map(s => s.name);
+      expect(names).not.toContain('ABC_EXPORT');
+      expect(names).not.toContain('header');
+    });
+
+    it(`${lang}: a lower-case forward declaration with a #defined export macro`, async () => {
+      const src = '#define MYLIB_API\nstruct MYLIB_API event_base;\nint run_loop_with_long_name(int x) { return x * 2 + 1; }\n';
+      const symbols = await provider.extractSymbols(src, lang);
+      expect(symbols.map(s => s.name)).not.toContain('MYLIB_API');
+    });
+  }
+});
+
+describe('carried tokens respect the chunk cap', () => {
+  it('opening tokens before a node that nearly fills the cap become their own chunk', async () => {
+    const body = Array.from({ length: 60 }, (_, i) => `    int v${i} = f(${i});`).join('\n');
+    let inner = `int fill(void) {\n${body}\n    return 0;\n}`;
+    // Pad the function to 1,995 chars with a comment inside its body.
+    inner = inner.replace('    return 0;', `    /*${'x'.repeat(1995 - inner.length - 9)}*/\n    return 0;`);
+    expect(inner.length).toBe(1995);
+    const src = `int g;\n${inner}\n`;
+    const chunks = await chunk(src, 'c');
+    for (const c of chunks) expect(c.text.length).toBeLessThanOrEqual(2000);
+    expectFullCoverage(src, chunks);
+  });
+});
