@@ -71,15 +71,16 @@ export function hasCaseInsensitiveRegexFlag(regex) {
  * [] — no prefilter, a full scan — for anything it does not fully understand.
  *
  * Understood: literal chars, escaped punctuation (`\.` is "."), zero-width and class escapes
- * (`\b \B \d \w \s \A \z` and negations: they break a literal, never join one), `.`, `^`, `$`,
+ * (`\b \B \d \w \s \A \z \< \>`, `\b{start}` and the other `\b{…}` forms, negations, and
+ * `\p{..} \x.. \u{..}`: they break a literal, never join one), `.`, `^`, `$`,
  * character classes (with `[:alpha:]` and nested classes), groups `( )`, `(?: )`, named groups,
  * inline flags `(?i)` / `(?i: )`, lookarounds (skipped: they consume nothing), quantifiers
  * `? * + {n} {n,} {n,m}` with lazy/possessive suffixes. An optional atom contributes nothing; a
  * group with an alternation contributes nothing. Whitespace breaks a literal.
  * Gives up ([]) on: `|` at the top level (the caller expands alternations first), the `x` flag,
- * escapes with arguments or unknown meaning (`\x \u \p \Q \k \1 ...`), a `{` that may be a
- * counted repetition in some dialect (`{,3}`, `{ 2 }`), a quantifier with no atom, and
- * unbalanced groups or classes. Any other `{` is a literal char.
+ * escapes of unknown meaning or with a malformed argument (`\Q \k \1 \xZZ \b{x} ...`), a `{`
+ * that may be a counted repetition in some dialect (`{,3}`, `{ 2 }`), a quantifier with no atom,
+ * and unbalanced groups or classes. Any other `{` is a literal char.
  */
 export function extractRequiredLiteralsHeuristic(regex) {
   if (!regex || typeof regex !== 'string') return [];
@@ -93,6 +94,16 @@ export function extractRequiredLiteralsHeuristic(regex) {
   // A `{` that is, or in some dialect may be, a counted repetition. Any other `{` is a literal
   // char (JS, PCRE) or a syntax error (Rust, ripgrep), and a literal is sound for both.
   const MAYBE_COUNTED = /^\{\s*[\d,]/;
+  // Escapes that take an argument; each stands for one char of a class or for an assertion,
+  // never a literal here. `\b{start}` and friends: word-boundary assertions (Rust regex 1.10+).
+  const ESCAPE_ARGUMENT = {
+    b: /^\{(?:start|end|start-half|end-half)\}/,
+    p: /^(?:\{[^}]*\}|[A-Za-z])/,
+    P: /^(?:\{[^}]*\}|[A-Za-z])/,
+    x: /^(?:\{[0-9A-Fa-f]+\}|[0-9A-Fa-f]{2})/,
+    u: /^(?:\{[0-9A-Fa-f]+\}|[0-9A-Fa-f]{4})/,
+    U: /^(?:\{[0-9A-Fa-f]+\}|[0-9A-Fa-f]{8})/,
+  };
   const CLASS_ESCAPES = new Set(['b', 'B', 'd', 'D', 'w', 'W', 's', 'S', 'A', 'z', 'Z', 'n', 'r', 't', 'f', 'v']);
 
   /** Parse a quantifier at i: { min, max } (max Infinity), or null when none follows. */
@@ -158,8 +169,13 @@ export function extractRequiredLiteralsHeuristic(regex) {
         const e = s[i + 1];
         if (e === undefined) unsure();
         i += 2;
-        if (/[A-Za-z0-9]/.test(e)) {
-          if (!CLASS_ESCAPES.has(e)) unsure();
+        if (e === '<' || e === '>') {
+          atom = [BREAK];                        // word start / word end (Rust regex 1.10+)
+        } else if (/[A-Za-z0-9]/.test(e)) {
+          const arg = ESCAPE_ARGUMENT[e]?.exec(s.slice(i));
+          if (arg) i += arg[0].length;           // \p{L}, \x20, \u{..}: one char of a class
+          else if (e === 'b' && s[i] === '{') unsure();   // \b{…} that is not a known form
+          else if (!CLASS_ESCAPES.has(e) || (e === 'B' && s[i] === '{')) unsure();
           atom = [BREAK];
         } else atom = [e];
       } else if (c === '[') {
@@ -438,15 +454,29 @@ function extractClausesDirect(regex, options) {
 }
 
 /**
- * Under `(?i)` the regex engines fold case with Unicode rules: `k` also matches U+212A (Kelvin
- * sign) and `s` matches U+017F (long s). The sparse gram index folds ASCII only, so a literal
- * holding `k` or `s` could miss such a line. Cut each literal there; a clause left with no
- * literal means no sound prefilter (an OR-clause cannot simply be dropped).
+ * The literal clauses each prefilter can use soundly. `extractLiteralClauses` gives literals that
+ * every match contains, and ripgrep (`rg -F`, with `-i` folding case by Unicode rules) takes them
+ * as they are. The other two consumers need less:
+ *
+ *   ascii  the native fixed-string grep (nativeGrepFilesWithMatchesFixed) folds ASCII case only,
+ *          but `(?i)` also matches U+212A for k and U+017F for s. Case-insensitive literals are
+ *          cut at k and s.
+ *   gram   the sparse gram index also folds ASCII only (the same cut), and indexes only runs of
+ *          [a-z0-9_./:-]: a literal holding any other byte would make its clause ineligible.
+ *          Literals are split at such bytes; the pieces stay AND literals of their clause.
+ *
+ * A clause left with no literal means no sound prefilter for that consumer (an OR-clause cannot
+ * be dropped), so its list is then empty.
  */
-function foldSafeClauses(clauses) {
+export function prefilterLiteralClauses(clauses, { caseInsensitive = false } = {}) {
+  const ascii = caseInsensitive ? splitClauses(clauses, /[ks]/i) : clauses;
+  return { rg: clauses, ascii, gram: splitClauses(ascii, /[^A-Za-z0-9_./:-]/) };
+}
+
+function splitClauses(clauses, at) {
   const out = [];
   for (const clause of clauses) {
-    const parts = clause.flatMap((literal) => literal.split(/[ks]/i)).filter((part) => part.trim().length >= 3);
+    const parts = clause.flatMap((literal) => literal.split(at)).filter((part) => part.length >= 3);
     if (parts.length === 0) return [];
     out.push(parts);
   }
@@ -457,13 +487,6 @@ export function extractLiteralClauses(regex, options = {}) {
   if (!regex || typeof regex !== 'string') {
     return { clauses: [], source: 'none' };
   }
-  const plan = extractLiteralClausesCased(regex, options);
-  if (plan.clauses.length === 0 || !hasCaseInsensitiveRegexFlag(regex)) return plan;
-  const clauses = foldSafeClauses(plan.clauses);
-  return clauses.length > 0 ? { clauses, source: plan.source } : { clauses: [], source: 'none' };
-}
-
-function extractLiteralClausesCased(regex, options) {
 
   // An alternating pattern is only prefilterable when EVERY alternative it can match
   // carries a literal. Extract per alternative and union; the union is sound because each
