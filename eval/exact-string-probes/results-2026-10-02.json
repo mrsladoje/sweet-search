@@ -16,5 +16,9 @@
     "ftsBuildSeconds": { "flask": 0.03, "fastify": 0.08, "ripgrep": 0.06, "r3-dgraph": 0.33, "r3-jj": 0.32, "r3-grdb(341k chunks)": 14.7 },
     "codebaseDbGrowthPct": "3.3 to 9.7",
     "flaskFullBuild": { "ftsOff": { "secs": 447, "codebaseDbBytes": 6631424 }, "ftsOn": { "secs": 300, "codebaseDbBytes": 7110656 }, "note": "wall time dominated by embeddings and machine load (20-27); FTS cost is below that noise" }
-  }
+  },
+  "freshRepoBbolt": { "repo": "etcd-io/bbolt @ 4dc08f71 (never used in development; temp clone, one full build alone, 814f1eec code)", "set": "fresh-bbolt-seed42.json", "seed": 42, "n": 20, "k": 5,
+    "off": { "line1": 6, "line5": 9, "file1": 7, "file5": 11 }, "pin": { "line1": 17, "line5": 19, "file1": 17, "file5": 19 }, "pinFired": 20, "lostOrWorse": 0,
+    "bias": "the generator keeps literals found in exactly one indexed file, so the pin's specificity rule always passes on these probes" },
+  "realAgentQueries": { "source": "150 unique ss-search queries from r282 DEV captures (seed 42 sample, 11 r3 repos, temp-copy indexes)", "pinFired": 0, "listsChanged": 0, "chunksHoldingAnyQueryInOrder": 0 }
 }
