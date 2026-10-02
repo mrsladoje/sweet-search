@@ -257,6 +257,20 @@ function resolveLatestSparseWeightsId(basePath) {
   return extractSparseGramDeltaRecord({ indexPath: basePath, content: '' })?.weightsId || null;
 }
 
+/** True when a live entity row stores exactly what a fresh extraction would. */
+function sameEntityRow(row, e) {
+  const v = (x) => (x === undefined || x === '' ? null : x);
+  return v(row.signature_hash) === v(e.signature_hash)
+    && v(row.type) === v(e.type)
+    && v(row.name) === v(e.name)
+    && v(row.signature) === v(e.signature)
+    && v(row.doc_comment) === v(e.doc_comment)
+    && v(row.start_line) === v(e.start_line || null)
+    && v(row.end_line) === v(e.end_line || null)
+    && v(row.package) === v(e.package)
+    && v(row.parent_class) === v(e.parent_class);
+}
+
 function graphEntityLogicalId(filePath, type, name) {
   return createHash('sha256').update(`${filePath}:${type}:${name}`).digest('hex').slice(0, 16);
 }
@@ -935,7 +949,7 @@ class ProductionReconcileAdapter {
       ownConn = true;
     }
     try {
-      const oldRows = prepareCached(db, 'SELECT rowid, id, name, logical_entity_id, signature_hash FROM entities WHERE file_path = ? AND epoch_retired IS NULL').all(rel);
+      const oldRows = prepareCached(db, 'SELECT rowid, id, name, logical_entity_id, signature_hash, type, signature, doc_comment, start_line, end_line, package, parent_class FROM entities WHERE file_path = ? AND epoch_retired IS NULL').all(rel);
       const oldByLogical = new Map(oldRows.map((r) => [r.logical_entity_id || r.id, r]));
       const oldIds = oldRows.map((r) => r.id);
       const importResolver = this._importResolverFor(ctx, db);
@@ -999,7 +1013,12 @@ class ProductionReconcileAdapter {
         }
         for (const e of entities) {
           const old = oldByLogical.get(e.id);
-          if (old && old.signature_hash === (e.signature_hash || null)) {
+          // Keep the live row only when every stored column is unchanged.
+          // Entity ids carry no line number (GraphExtractor.entityId), so a
+          // definition moved by an edit above it keeps its id; its row must
+          // still be re-written, or the maintained graph keeps stale lines
+          // that a fresh build does not have.
+          if (old && sameEntityRow(old, e)) {
             liveIdFor.set(e.id, old.id);
             continue;
           }
@@ -1018,8 +1037,20 @@ class ProductionReconcileAdapter {
         // Resolve this write's edges (and edges into its definitions) with
         // the full build's rules — otherwise maintained files keep
         // target-less edges that readers can only match by name.
-        const oldNames = new Set(oldRows.map((r) => r.name));
-        const newNames = [...new Set(entities.filter((e) => e.type !== 'file' && e.name && !oldNames.has(e.name)).map((e) => e.name))];
+        // Every name whose set of definitions changed in this write: names of
+        // retired rows and of newly inserted rows. A removed `Alpha.run`
+        // leaves one `run` (a full build now binds `x.run()` to it); a second
+        // `run` makes a bound call ambiguous again. Unchanged kept rows do not
+        // change any candidate set.
+        const retiredSet = new Set(retiredIds);
+        const changedNames = new Set();
+        for (const r of oldRows) if (retiredSet.has(r.id) && r.name && r.type !== 'file') changedNames.add(r.name);
+        for (const e of entities) {
+          if (e.type === 'file' || !e.name) continue;
+          const old = oldByLogical.get(e.id);
+          if (!old || liveIdFor.get(e.id) !== old.id) changedNames.add(e.name);
+        }
+        const newNames = [...changedNames];
         // The file's own edges (imports, top-level calls) have the file node
         // as their source, which is in no liveIdFor entry: list it too, or
         // they stay target-less while a full build resolves them.

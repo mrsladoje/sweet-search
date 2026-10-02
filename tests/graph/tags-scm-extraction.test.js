@@ -566,23 +566,41 @@ describe('GraphExtractor tree-sitter integration', () => {
   });
 });
 
-describe('GraphExtractor._makeEntityId', () => {
-  it('generates deterministic 16-char hex IDs', () => {
-    const extractor = new GraphExtractor({ projectRoot: '/project' });
-    const id1 = extractor._makeEntityId('/project/src/a.js', 'foo', 'function', 5);
-    const id2 = extractor._makeEntityId('/project/src/a.js', 'foo', 'function', 5);
-    const id3 = extractor._makeEntityId('/project/src/a.js', 'foo', 'function', 10);
-
-    expect(id1).toBe(id2); // deterministic
-    expect(id1).not.toBe(id3); // different line -> different ID
+describe('GraphExtractor.entityId', () => {
+  it('is deterministic, 16-char hex, and ignores the line number', () => {
+    const a = new GraphExtractor({ projectRoot: '/project' });
+    const b = new GraphExtractor({ projectRoot: '/project' });
+    const id1 = a.entityId('/project/src/a.js', 'function', 'foo', { line: 'function foo(x) {' }).id;
+    const id2 = b.entityId('/project/src/a.js', 'function', 'foo', { line: '  function   foo(x)   {' }).id;
+    expect(id1).toBe(id2); // whitespace-collapsed definition line
     expect(id1).toMatch(/^[0-9a-f]{16}$/);
   });
 
-  it('uses relative path from projectRoot', () => {
-    const extractor = new GraphExtractor({ projectRoot: '/project' });
-    const id = extractor._makeEntityId('/project/src/a.js', 'foo', 'function', 1);
-    // Should hash "src/a.js:function:foo:1" not "/project/src/a.js:..."
-    expect(id).toMatch(/^[0-9a-f]{16}$/);
+  it('separates owners, long overloads and identical definitions', () => {
+    const ex = new GraphExtractor({ projectRoot: '/project' });
+    const f = '/project/src/A.cs';
+    const pad = 'Action<WebHostBuilderContext, IConfigurationBuilder> configureDelegate, Action<IServiceCollection> services';
+    const ids = [
+      ex.entityId(f, 'field', '_builder', { owner: 'OcelotJ', line: 'private Builder _builder;' }).id,
+      ex.entityId(f, 'field', '_builder', { owner: 'OcelotJRoute', line: 'private Builder _builder;' }).id,
+      ex.entityId(f, 'method', 'Run', { line: `public int Run(${pad})` }).id,
+      ex.entityId(f, 'method', 'Run', { line: `public int Run(${pad}, Action<IApplicationBuilder> app)` }).id,
+      ex.entityId(f, 'variable', 'X', { line: 'X = 1' }).id,
+      ex.entityId(f, 'variable', 'X', { line: 'X = 1' }).id,
+    ];
+    expect(new Set(ids).size).toBe(6);
+  });
+
+  it('collapses an exact repeat of a data key to the first occurrence', () => {
+    const ex = new GraphExtractor({ projectRoot: '/project' });
+    const f = '/project/ci.yml';
+    const first = ex.entityId(f, 'topKey', 'run', { line: 'run: make', data: true });
+    const again = ex.entityId(f, 'topKey', 'run', { line: 'run: make', data: true });
+    const other = ex.entityId(f, 'topKey', 'run', { line: 'run: make test', data: true });
+    expect(first.duplicate).toBe(false);
+    expect(again).toEqual({ id: first.id, duplicate: true });
+    expect(other.duplicate).toBe(false);
+    expect(other.id).not.toBe(first.id);
   });
 });
 
