@@ -69,8 +69,9 @@ describe('extractRequiredLiteralsHeuristic', () => {
     ]);
   });
 
-  it('returns no literals for alternation patterns to avoid false negatives', () => {
-    expect(extractRequiredLiteralsHeuristic('(get|set)Config')).toEqual([]);
+  it('returns no literals from an alternation to avoid false negatives', () => {
+    // the group alternates; the literal after it is required by every match
+    expect(extractRequiredLiteralsHeuristic('(get|set)Config')).toEqual(['Config']);
     expect(extractRequiredLiteralsHeuristic('foo|bar')).toEqual([]);
   });
 
