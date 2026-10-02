@@ -23,6 +23,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, lstatSync, readlinkSync, symlinkSync, unlinkSync } from 'node:fs';
+import { policyTextForEnv } from './harness-prompts/rules-v2.js';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -116,11 +117,13 @@ export function getMcpPolicyBody() {
 
 /**
  * Resolve the policy body for a contact-surface variant.
- *   'cli' (default) → the frozen ss-* CLI champion (CANONICAL_POLICY_BODY)
- *   'mcp'           → the MCP-tool variant (init --mcp --no-cli)
+ *   'cli' (default) → the frozen ss-* CLI champion (CANONICAL_POLICY_BODY); with
+ *                     SS_FIX_RULES_V2=0 in `env`, the pre-v2 text byte for byte
+ *                     (harness-prompts/rules-v2.js)
+ *   'mcp'           → the MCP-tool variant (init --mcp --no-cli); not affected by the switch
  */
-export function getPolicyBody(variant = 'cli') {
-  return variant === 'mcp' ? getMcpPolicyBody() : CANONICAL_POLICY_BODY;
+export function getPolicyBody(variant = 'cli', env = process.env) {
+  return variant === 'mcp' ? getMcpPolicyBody() : policyTextForEnv(CANONICAL_POLICY_BODY, env);
 }
 
 const CURSOR_FRONTMATTER = `---

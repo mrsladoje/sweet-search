@@ -36,6 +36,7 @@
  *   CELL=cc-sonnet55-high  node scripts/retrieval-bench-282.mjs --smoke    # 1 probe × 2 arms
  *   CELL=cc-sonnet55-high  node scripts/retrieval-bench-282.mjs --report   # aggregates only
  *   options: --conc 3 (default)  --ids a,b  --arms native,sweet  --tag <name>
+ *   --print-exposure <dir> ($0): write the sweet arm's exact rules / harness texts to <dir> and exit
  *   --tag (final-tuning, 2026-10-01): a separate results dir, harness state dir AND clone root per
  *   tag. Separate clones = separate project roots = fresh ss-* daemons started with this run's env,
  *   so an SS_VARIANT_* switch reaches the daemon (ss-search output is formatted server-side).
@@ -51,6 +52,7 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { opencodeRulesDir, applyOpencodeRepoCacheKey, applyOpencodeProductCacheKey, stageProductCachePlugin, OC_CACHE_KEY_MODES } from './lib/oc-bench-config.mjs';
 import { readFixFlags } from '../core/search/agent-output-fixes.js';
+import { policyTextForEnv, rulesV2Enabled } from './harness-prompts/rules-v2.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const H = path.join(REPO, 'eval/task-completion-bench/harness');
@@ -64,7 +66,7 @@ const { ISOLATION_ON } = await import(path.join(H, 'agent-jail.mjs'));
 const { spawnWithTimeout, sweetRulesBlock, costsFromTurns, priceFor } = await import(path.join(H, 'agent-runner-shared.mjs'));
 const { parseClaudeStream, excludeAncestorClaudeMd } = await import(path.join(H, 'claude-code-task-runner.mjs'));
 const { turnsFromTranscript, sidechainTurnSets, addSidechainCostsChecked, selectClaudeMainCosts } = await import(path.join(H, 'claude-code-accounting.mjs'));
-const { parseCodexAgentStream, codexHarnessTrim, codexHarnessTrimArgs, codexRulesConfigArgs, buildPrivateHome, isZeroCallStartFailure, classifyCodexCommand } = await import(path.join(H, 'codex-task-runner.mjs'));
+const { parseCodexAgentStream, codexHarnessTrim, codexHarnessTrimArgs, codexRulesConfigArgs, buildPrivateHome, isZeroCallStartFailure, classifyCodexCommand, CODEX_HARNESS_TRIM_STATE_FILE } = await import(path.join(H, 'codex-task-runner.mjs'));
 const { opencodeArmHarnessTrim, opencodeRulesInConfig, buildMainOpencodeConfig, opencodeUnjailedEnv, runOpencodePreflight, parseOpencodeStream, opencodeRunMessage, OPENCODE_TRIM_REPORT, OPENCODE_RULES_FILE } = await import(path.join(H, 'opencode-task-runner.mjs'));
 const { writeClaudeRules, removeClaudeRules, resolveClaudeRulesLayout } = await imp('scripts/write-claude-rules.js');
 const { installClaudeLeanHarness, removeClaudeLeanHarness } = await imp('scripts/install-claude-lean-harness.js');
@@ -162,10 +164,13 @@ const PRUNE3 = prune3('sweet') || prune3('sweetB');
 const RULES_PRUNE3 = () => fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/final-tuning/variants/rules-prune3.md'), 'utf8');
 // SS_VARIANT_RULES_FILE=<path relative to the repo> (final-tuning): a full alternative rules text for that
 // arm (same tools; Codex / opencode). Default unset = the shipped rules.
+// SS_FIX_RULES_V2=0 (rules v2 baseline, scripts/harness-prompts/rules-v2.js; per arm, so it works in
+// --armB-env): the shipped rules AND the harness-prompt file-name lines revert to the pre-v2 text byte
+// for byte. Claude Code reads it from process.env (installClaudeLeanHarness / writeClaudeRules).
 const rulesFor = (arm) => {
   const f = envOf(arm).SS_VARIANT_RULES_FILE;
   if (f) return fs.readFileSync(path.resolve(REPO, f), 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '');
-  return prune3(arm) ? RULES_PRUNE3() : RULES;
+  return prune3(arm) ? RULES_PRUNE3() : policyTextForEnv(RULES, envOf(arm));
 };
 function prunedBin() {
   const d = path.join(EVAL, 'final-tuning-bin-prune3');
@@ -450,7 +455,7 @@ async function runCodex(probe, sweet, arm) {
   const cwd = probe._cwd;
   const { home, phome } = codexHome();
   const stateDir = fs.mkdtempSync(path.join(STATE, 'codex-state-'));
-  const trim = codexHarnessTrim({ sweet, model: `openai/${CELL.model}` });
+  const trim = codexHarnessTrim({ sweet, model: `openai/${CELL.model}`, env: envOf(arm) });
   const trimArgs = sweet ? [...codexHarnessTrimArgs(trim, stateDir, { model: `openai/${CELL.model}` }), ...codexRulesConfigArgs(rulesFor(arm))] : [];
   const env = { ...baseEnv(sweet, cwd, arm), CODEX_HOME: home, HOME: phome, SS_READ_GUTTER: process.env.SS_READ_GUTTER ?? 'none' };
   delete env.OPENAI_API_KEY;
@@ -511,7 +516,7 @@ async function runOpencode(probe, sweet, arm) {
   const stateDir = fs.mkdtempSync(path.join(STATE, 'oc-state-'));
   const ocData = path.join(STATE, `oc-data-${sweet ? 'sweet' : 'native'}`); fs.mkdirSync(ocData, { recursive: true });
   if (CELL.ocAuth) ocSeedAuth(ocData, CELL.ocAuth);
-  let trim = opencodeArmHarnessTrim({ sweet, apiModel: CELL.model.replace(/^openrouter\//, ''), stateDir });
+  let trim = opencodeArmHarnessTrim({ sweet, env: envOf(arm), apiModel: CELL.model.replace(/^openrouter\//, ''), stateDir });
   // SS_BENCH_STABLE_RULES_PATH=1 (final-tuning, 2026-10-01): the rules file lives at ONE path per run
   // instead of the per-rollout mkdtemp dir. opencode prints "Instructions from: <absolute path>" into
   // the system prompt, so the random dir broke the provider's prefix cache on every sweet rollout
@@ -596,7 +601,7 @@ const GATE = createWarmupGate({ logFile: WARMUPS, meta: { cell: CELL_NAME, harne
 // ─── one rollout ───────────────────────────────────────────────────────────────────────────────
 async function runOne(probe, arm) {
   const sweet = arm === 'sweet' || arm === 'sweetB';
-  const base = { cell: CELL_NAME, arm, id: probe.id, set: probe._set, lang: probe.language, stratum: probe.stratum, harness: CELL.harness, model: CELL.model, effort: CELL.effort ?? CELL.variant ?? 'default', harnessVersion: HARNESS_VERSION, ...(arm !== 'native' ? { ssOutput: ssOutputMode(arm) } : {}), ...(STABLE_RULES_PATH ? { stableRulesPath: true } : {}), ...(CELL.harness === 'opencode' && ocCacheMode(arm) === 'product' ? { ocCachePlugin: { sha: OC_PRODUCT_PLUGIN.sha, mainCommit: OC_PRODUCT_PLUGIN.commit, dirty: OC_PRODUCT_PLUGIN.dirty } } : {}), ...(Object.keys(envOf(arm)).some(k => k.startsWith('SS_VARIANT_')) ? { variants: Object.fromEntries(Object.entries(envOf(arm)).filter(([k]) => k.startsWith('SS_VARIANT_'))) } : {}) };
+  const base = { cell: CELL_NAME, arm, id: probe.id, set: probe._set, lang: probe.language, stratum: probe.stratum, harness: CELL.harness, model: CELL.model, effort: CELL.effort ?? CELL.variant ?? 'default', harnessVersion: HARNESS_VERSION, ...(arm !== 'native' ? { ssOutput: ssOutputMode(arm), rulesV2: rulesV2Enabled(envOf(arm)) ? 1 : 0 } : {}), ...(STABLE_RULES_PATH ? { stableRulesPath: true } : {}), ...(CELL.harness === 'opencode' && ocCacheMode(arm) === 'product' ? { ocCachePlugin: { sha: OC_PRODUCT_PLUGIN.sha, mainCommit: OC_PRODUCT_PLUGIN.commit, dirty: OC_PRODUCT_PLUGIN.dirty } } : {}), ...(Object.keys(envOf(arm)).some(k => k.startsWith('SS_VARIANT_')) ? { variants: Object.fromEntries(Object.entries(envOf(arm)).filter(([k]) => k.startsWith('SS_VARIANT_'))) } : {}) };
   let run;
   try {
     // The arm's warm-up must have FINISHED before any scored rollout of that arm starts.
@@ -670,6 +675,58 @@ function report() {
       console.log(`  ${name.padEnd(9)} native ${na.toFixed(4)}  sweet ${sa.toFixed(4)}  Δ ${(sa - na).toFixed(4)}${rel}  95% CI [${lo.toFixed(4)}, ${hi.toFixed(4)}]${lo > 0 || hi < 0 ? ' *' : ''}`);
     }
   }
+}
+
+// ─── exposure gate ($0) ───────────────────────────────────────────────────────────────────────
+// --print-exposure <dir>: write the exact sweet-arm texts this invocation would deliver (per sweet arm:
+// rules, harness prompt, tool edits) to <dir>/<arm>/, print their sha256 and sizes, and exit. No model
+// call, no clone, no daemon. Run it with the switch on and off and diff the two dirs.
+function exposureTexts(arm) {
+  const work = path.join(os.tmpdir(), 'r282-exposure', CELL_NAME, arm);
+  fs.rmSync(work, { recursive: true, force: true });
+  fs.mkdirSync(work, { recursive: true });
+  try {
+    if (CELL.harness === 'cc') {
+      // Same calls as installClaudeProduct (process.env, as for a real Claude Code run).
+      const proj = path.join(work, 'repo'), home = path.join(work, 'home');
+      fs.mkdirSync(proj); fs.mkdirSync(home);
+      const { layout } = resolveClaudeRulesLayout(process.env, { strict: true });
+      const lean = installClaudeLeanHarness({ projectRoot: proj, configDir: home, visibleConfigDir: home });
+      if (lean.active !== true) throw new Error(`exposure: lean harness not active: ${lean.status} ${lean.detail}`);
+      if (layout !== 'none') writeClaudeRules({ projectRoot: proj, layout: layout === 'pointer' ? 'pointer' : 'full' });
+      const out = {};
+      for (const f of CLAUDE_PRODUCT_FILES) { const fp = path.join(proj, f); if (fs.existsSync(fp)) out[f.replace(/\//g, '__')] = fs.readFileSync(fp, 'utf8'); }
+      return out;
+    }
+    if (CELL.harness === 'codex') {
+      const trim = codexHarnessTrim({ sweet: true, model: `openai/${CELL.model}`, env: envOf(arm) });
+      codexHarnessTrimArgs(trim, work, { model: `openai/${CELL.model}` });
+      return { 'model_instructions_file.md': fs.readFileSync(path.join(work, CODEX_HARNESS_TRIM_STATE_FILE), 'utf8'), 'developer_instructions.md': rulesFor(arm) };
+    }
+    const trim = opencodeArmHarnessTrim({ sweet: true, env: envOf(arm), apiModel: CELL.model.replace(/^openrouter\//, ''), stateDir: work });
+    return {
+      'agent.build.prompt.txt': trim.config?.agentBuild?.prompt ?? '',
+      'agent.general.prompt.txt': trim.config?.agents?.general?.prompt ?? '',
+      'tool-edits.json': `${JSON.stringify(trim.config?.plugin?.[0]?.[1]?.edits ?? null, null, 1)}\n`,
+      'instructions.md': sweetRulesBlock({ mppText: rulesFor(arm) }),
+    };
+  } finally {
+    fs.rmSync(work, { recursive: true, force: true });
+  }
+}
+const EXPOSURE_DIR = flag('--print-exposure', null);
+if (EXPOSURE_DIR) {
+  const sweetArms = Object.keys(ARMB_ENV).length ? ['sweet', 'sweetB'] : ['sweet'];
+  for (const arm of sweetArms) {
+    const dir = path.resolve(EXPOSURE_DIR, arm);
+    fs.mkdirSync(dir, { recursive: true });
+    console.log(`[${arm}] ${CELL_NAME} SS_FIX_RULES_V2=${envOf(arm).SS_FIX_RULES_V2 ?? '(unset)'} rulesV2=${rulesV2Enabled(envOf(arm)) ? 1 : 0}`);
+    for (const [name, text] of Object.entries(exposureTexts(arm))) {
+      fs.writeFileSync(path.join(dir, name), text);
+      console.log(`  ${name.padEnd(44)} ${String(text.length).padStart(6)} chars  sha256 ${crypto.createHash('sha256').update(text).digest('hex').slice(0, 16)}`);
+    }
+  }
+  process.exit(0);
 }
 
 // ─── main ──────────────────────────────────────────────────────────────────────────────────────

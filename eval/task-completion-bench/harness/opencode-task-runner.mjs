@@ -15,6 +15,7 @@ import { opencodeBatchPrompt, opencodeBatchToolEdits, OPENCODE_GPT_ORIGINAL, OPE
 import {
   OPENCODE_CONFLICT_PROMPT_BULLET as SHIPPED_CONFLICT_PROMPT_BULLET, OPENCODE_FILE_READS_EDIT,
   OPENCODE_TOOL_EDITS as SHIPPED_OPENCODE_TOOL_EDITS, OPENCODE_TRIM_PLUGIN_SOURCE,
+  opencodeConflictBulletReplacement, rulesV2Enabled,
 } from '../../../scripts/harness-prompts/index.js';
 import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -326,7 +327,7 @@ export const OPENCODE_CONFLICT_NOGLOB_TOOL_EDITS = Object.freeze({
   task: [OPENCODE_TRIM_TOOL_EDITS.task[0], OPENCODE_TRIM_V3_TOOL_EDITS.task[1]],
 });
 
-function opencodeHarnessTrimCombo(m, { apiModel, stateDir }) {
+function opencodeHarnessTrimCombo(m, { apiModel, stateDir, env = process.env }) {
   const [base, variant, ...rest] = m.split('+');
   const expected = `expected ${OPENCODE_CONFLICT_BASES.join(' | ')}[+<variant>] (untrimmed needs a variant); variants: ${OPENCODE_VARIANT_NAMES.join(', ')}`;
   if (rest.length || !OPENCODE_CONFLICT_BASES.includes(base) || (variant !== undefined && !OPENCODE_VARIANT_NAMES.includes(variant))
@@ -344,7 +345,9 @@ function opencodeHarnessTrimCombo(m, { apiModel, stateDir }) {
   const c4 = base === 'conflict4';
   const original = readFileSync(OPENCODE_GPT_ORIGINAL, 'utf8');
   if (original.split(OPENCODE_CONFLICT_PROMPT_BULLET).length !== 2) throw new Error(`OC_HARNESS_TRIM=${m}: Glob/Grep bullet not found once in the original prompt`);
-  const conflictPrompt = original.replace(OPENCODE_CONFLICT_PROMPT_BULLET, '');
+  // Rules v2 (shipped conflict3 family only): the bullet's Glob half stays; research bases unchanged.
+  const v2Glob = c3 && rulesV2Enabled(env);
+  const conflictPrompt = original.replace(OPENCODE_CONFLICT_PROMPT_BULLET, () => (v2Glob ? opencodeConflictBulletReplacement(env) : ''));
   let prompt = variant ? opencodeBatchPrompt(variant, conflictPrompt) : conflictPrompt;
   if (keepAll || c3) {
     if (!prompt.includes(OPENCODE_CONFLICT2_PROMPT_EDIT[0])) throw new Error(`OC_HARNESS_TRIM=${m}: "especially file reads" not found in the prompt`);
@@ -368,6 +371,7 @@ function opencodeHarnessTrimCombo(m, { apiModel, stateDir }) {
     files: { [OPENCODE_TRIM_PLUGIN]: readFileSync(OPENCODE_TRIM_PLUGIN_SOURCE, 'utf8') },
     plugins: [plugin],
     stateEntries: [OPENCODE_TRIM_PLUGIN, OPENCODE_TRIM_REPORT],
+    ...(c3 ? { rulesV2: v2Glob } : {}),
   };
 }
 
@@ -389,15 +393,17 @@ export function opencodePromptFamily(apiModel) {
 export const OC_HARNESS_TRIM_DEFAULT = 'conflict3+todo3eff3k';
 
 /** The trim for an OC_HARNESS_TRIM value; unset / empty = OC_HARNESS_TRIM_DEFAULT. `origin` = 'default' | 'env'. */
-export function opencodeHarnessTrim(mode = process.env.OC_HARNESS_TRIM, { apiModel, stateDir } = {}) {
+// `env` carries SS_FIX_RULES_V2 (rules v2, scripts/harness-prompts/rules-v2.js) for the shipped
+// conflict3 family: the Glob half of the removed Glob/Grep bullet comes back; =0 = the old prompt.
+export function opencodeHarnessTrim(mode = process.env.OC_HARNESS_TRIM, { apiModel, stateDir, env = process.env } = {}) {
   const raw = String(mode ?? '').trim();
   const origin = raw ? 'env' : 'default';
-  return { ...opencodeHarnessTrimMode(raw || OC_HARNESS_TRIM_DEFAULT, { apiModel, stateDir }), origin };
+  return { ...opencodeHarnessTrimMode(raw || OC_HARNESS_TRIM_DEFAULT, { apiModel, stateDir, env }), origin };
 }
 
-function opencodeHarnessTrimMode(m, { apiModel, stateDir }) {
+function opencodeHarnessTrimMode(m, { apiModel, stateDir, env = process.env }) {
   if (m === '0') return { mode: null, config: {}, files: {}, plugins: [], stateEntries: [] };
-  if (m.includes('+') || OPENCODE_CONFLICT_BASES.includes(m)) return opencodeHarnessTrimCombo(m, { apiModel, stateDir });
+  if (m.includes('+') || OPENCODE_CONFLICT_BASES.includes(m)) return opencodeHarnessTrimCombo(m, { apiModel, stateDir, env });
   // batch-<variant> (batching micro-smoke, trim/batch-variants.mjs): the UNTRIMMED gpt prompt
   // with only its tool-grouping bullet swapped, for the main agent and the general subagent. No
   // tool, description or subagent change: everything else equals trim off.
@@ -557,7 +563,7 @@ export function opencodeRulesInConfig(trim, { rules, stateDir }) {
 // SWEET ARM ONLY — native has no ss-* rules to contradict and keeps opencode's full prompt
 // and tools in every condition, whatever the switch says.
 export function opencodeArmHarnessTrim({ sweet, env = process.env, apiModel, stateDir } = {}) {
-  return opencodeHarnessTrim(sweet ? env.OC_HARNESS_TRIM : '0', { apiModel, stateDir });
+  return opencodeHarnessTrim(sweet ? env.OC_HARNESS_TRIM : '0', { apiModel, stateDir, env });
 }
 
 // UNJAILED (SS_ISOLATION=0, e.g. the owner's Mac): the jail's $HOME mask and the ocData bind

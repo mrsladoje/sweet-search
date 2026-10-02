@@ -9,7 +9,7 @@
 import { CODEX_BATCH_VARIANTS, applyCodexBatch } from './trim/batch-variants.mjs';
 import { stockInstructions } from './trim/build-codex-instructions.mjs';
 // The conflict edit is what `sweet-search init --codex` ships (single source, scripts/harness-prompts/).
-import { CODEX_INSTRUCTIONS_SOURCE } from '../../../scripts/harness-prompts/index.js';
+import { CODEX_INSTRUCTIONS_SOURCE, codexFileNameEdit, rulesV2Enabled } from '../../../scripts/harness-prompts/index.js';
 import {
   resolveSweetRulesPlacement, sweetRulesRowFields, appendSweetRules, sweetRulesOutOfFile, tomlBasicString,
 } from './sweet-rules-placement.mjs';
@@ -288,7 +288,8 @@ export const CODEX_TRIM_BATCH_DEFAULT = 'yt3batch2';
 // while harness/ (under <repo>/eval) is masked there.
 export const CODEX_HARNESS_TRIM_STATE_FILE = 'codex-instructions.md';
 
-export function codexHarnessTrim({ sweet, mode = process.env.CODEX_HARNESS_TRIM, model = 'openai/gpt-5.5' } = {}) {
+export function codexHarnessTrim({ sweet, mode, model = 'openai/gpt-5.5', env = process.env } = {}) {
+  if (mode === undefined) mode = env.CODEX_HARNESS_TRIM;
   // Native has no ss-* rules to contradict and keeps Codex's full request in every condition.
   if (!sweet) return { mode: null };
   const raw = String(mode ?? '').trim();
@@ -300,17 +301,19 @@ export function codexHarnessTrim({ sweet, mode = process.env.CODEX_HARNESS_TRIM,
   if (m !== '1' && m !== 'max-wait' && m !== 'v3' && m !== 'conflict') throw new Error(`CODEX_HARNESS_TRIM=${m}: expected 0, 1, max-wait, v3 or conflict`);
   if (m === 'conflict') {
     // The shipped instructions for any model (the product does not look at the model).
-    const rawBatch = String(process.env.CODEX_TRIM_BATCH ?? '').trim();
+    const rawBatch = String(env.CODEX_TRIM_BATCH ?? '').trim();
     const batch = rawBatch || (defaulted ? CODEX_TRIM_BATCH_DEFAULT : '');
     if (batch && !CODEX_BATCH_VARIANTS[batch]) throw new Error(`CODEX_TRIM_BATCH=${batch}: expected ${Object.keys(CODEX_BATCH_VARIANTS).join(', ')}`);
-    return { mode: `instructions-conflict${batch ? `+batch-${batch}` : ''}`, source: CODEX_INSTRUCTIONS_SOURCE, config: [], ...(batch ? { batch } : {}), origin };
+    // rulesV2 (SS_FIX_RULES_V2, default on): the shipped `rg --files` line (codexFileNameEdit).
+    // The mode label is unchanged; rows carry the switch separately.
+    return { mode: `instructions-conflict${batch ? `+batch-${batch}` : ''}`, source: CODEX_INSTRUCTIONS_SOURCE, config: [], ...(batch ? { batch } : {}), rulesV2: rulesV2Enabled(env), origin };
   }
   if (m === 'v3') {
     const v3 = CODEX_HARNESS_TRIM_V3_SOURCES[String(model).replace(/^openai\//, '')];
     if (!v3) throw new Error(`CODEX_HARNESS_TRIM=v3: no v3 edit for ${model} (have ${Object.keys(CODEX_HARNESS_TRIM_V3_SOURCES).join(', ')})`);
     // CODEX_TRIM_BATCH (batching micro-smoke, trim/batch-variants.mjs): swaps v3's two
     // tool-grouping lines for one variant; unset = v3 unchanged.
-    const batch = String(process.env.CODEX_TRIM_BATCH ?? '').trim();
+    const batch = String(env.CODEX_TRIM_BATCH ?? '').trim();
     if (batch && !CODEX_BATCH_VARIANTS[batch]) throw new Error(`CODEX_TRIM_BATCH=${batch}: expected ${Object.keys(CODEX_BATCH_VARIANTS).join(', ')}`);
     return { mode: `instructions-v3+tools-v3${batch ? `+batch-${batch}` : ''}`, source: v3, config: CODEX_HARNESS_TRIM_V3_CONFIG, ...(batch ? { batch } : {}), origin };
   }
@@ -347,6 +350,7 @@ export function codexHarnessTrimArgs(trim, stateDir, { rules = null, model = 'op
   if (trim?.mode) {
     text = readFileSync(trim.source, 'utf8').replace(/^<!--[\s\S]*?-->\n/, '');
     if (trim.batch) text = applyCodexBatch(text, trim.batch);
+    if (trim.rulesV2) text = codexFileNameEdit(text, {});
   } else {
     text = stockInstructions(String(model).replace(/^openai\//, ''));
   }

@@ -62,6 +62,7 @@ import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { CLAUDE_SYSTEM_OVERRIDE } from './install-claude-system-prompt.js';
 import { applyExactEdits } from './harness-prompts/index.js';
+import { CLAUDE_FIND_LINE, insertLineBefore, rulesV2Enabled } from './harness-prompts/rules-v2.js';
 import { getPolicyBody } from './inject-agent-instructions.js';
 import { CLAUDE_RULES_POINTER, resolveClaudeRulesLayout } from './write-claude-rules.js';
 
@@ -145,6 +146,9 @@ export const CLAUDE_LEAN_ENV = Object.freeze({
 // v2: what `sweet-search init` installs.
 // ---------------------------------------------------------------------------------------------
 
+// The last line of the stock-derived prompt; rules v2 puts CLAUDE_FIND_LINE before it.
+const CLAUDE_LEAN_PRONOUNS_LINE = "- When you refer to someone whose pronouns you do not know, use they/them. A name does not tell you someone's pronouns.";
+
 // Main-session base prompt. ADAPTED FROM Claude Code's stock base prompt (Anthropic PBC,
 // proprietary; see scripts/harness-prompts/NOTICE.md): its user-relevant guidance (safety, the
 // harness conventions, careful actions, request discipline, faithful reporting), edited. The one stock line left out is the steer to prefer
@@ -173,7 +177,7 @@ export const CLAUDE_LEAN_HARNESS_PROMPT = [
   '- Write code that matches the surrounding code: its naming, idiom and comment density.',
   '- When you have enough information to act, act. Do not re-derive settled facts or reopen decisions the user made. When you weigh a choice, recommend one option instead of surveying them all.',
   '- Report what really happened: show the output of a failing test, name any step you skipped, and call work finished only after you checked it. When it is done and checked, say so plainly.',
-  "- When you refer to someone whose pronouns you do not know, use they/them. A name does not tell you someone's pronouns.",
+  CLAUDE_LEAN_PRONOUNS_LINE,
 ].join('\n');
 
 // v2 batching line. General: it does not push edits made with shell scripts (the v1 example did,
@@ -380,14 +384,20 @@ export function claudeLeanContextSection({ memoryDir = null, memoryEnabled = tru
  * `rules` (a policy text, or null): when given, it goes into the prompt ahead of the memory /
  * session-context section (V1b). Byte-identical to the benchmarked SS_VARIANT_CC_RULES_IN_PROMPT=2
  * form when `rules` is `getPolicyBody('cli')`. The pure function's default stays null (no rules);
- * `installClaudeLeanHarness` decides what the product installs.
+ * `installClaudeLeanHarness` decides what the product installs. `rulesV2` (default true) adds
+ * CLAUDE_FIND_LINE; false = the pre-v2 bytes (SS_FIX_RULES_V2=0).
  */
 export function claudeLeanAgentFile({
   appendOverride = true, memoryDir = null, memoryEnabled = true, promptEdits = true, rules = null,
+  rulesV2 = true,
 } = {}) {
   const ctx = claudeLeanContextSection({ memoryDir, memoryEnabled });
   let body = [CLAUDE_LEAN_HARNESS_PROMPT_BATCH, ctx].join('\n\n');
   if (promptEdits) body = applyExactEdits(body, CLAUDE_LEAN_PROMPT_EDITS, 'claude lean prompt');
+  // Rules v2 (harness-prompts/rules-v2.js): the `find` half of the stock bypass-mode steer that
+  // CLAUDE_CODE_THRIFTY_SONIC=0 removes. Its anchor is never edited, so promptEdits and the
+  // bench's CC_TRIM_BATCH variants leave it in place.
+  if (rulesV2) body = insertLineBefore(body, CLAUDE_LEAN_PRONOUNS_LINE, CLAUDE_FIND_LINE, { env: {}, label: 'claude lean prompt' });
   if (rules) {
     // The context section is the last part of the body; its first line (`# Memory`, or
     // `# Session context` when auto memory is off) is never edited by CLAUDE_LEAN_PROMPT_EDITS.
@@ -464,7 +474,7 @@ function removeOwnedFile(projectRoot, rel) {
  * `visibleConfigDir`: see `claudeAutoMemoryDir`. `promptEdits`: see `claudeLeanAgentFile`.
  *
  * `rules`: what the main agent file carries ahead of its memory section.
- *   undefined (the product)  the shipped policy `getPolicyBody('cli')`, unless
+ *   undefined (the product)  the shipped policy `getPolicyBody('cli', env)`, unless
  *                            SS_VARIANT_CC_RULES_IN_PROMPT=0 in `env` (the 2.8.2 layout: none)
  *   a string                 that text (a benchmark runner's own rules text)
  *   false / null             none
@@ -536,7 +546,7 @@ export function installClaudeLeanHarness({
     ? local.value.agent : undefined;
   let rulesText = null;
   if (rules === undefined) {
-    if (resolveClaudeRulesLayout(env).layout !== 'file') rulesText = getPolicyBody('cli');
+    if (resolveClaudeRulesLayout(env).layout !== 'file') rulesText = getPolicyBody('cli', env);
   } else if (typeof rules === 'string') {
     rulesText = rules.trim() ? rules : null;
   } else if (rules !== false && rules !== null) {
@@ -548,6 +558,7 @@ export function installClaudeLeanHarness({
   const wantedFiles = {
     [CLAUDE_LEAN_AGENT_REL]: claudeLeanAgentFile({
       appendOverride, promptEdits, memoryDir: memory.dir, memoryEnabled: memory.enabled, rules: rulesText,
+      rulesV2: rulesV2Enabled(env),
     }),
     [CLAUDE_LEAN_SUBAGENT_REL]: claudeLeanSubagentFile(),
     [CLAUDE_LEAN_PLAN_REL]: claudeLeanPlanFile(),

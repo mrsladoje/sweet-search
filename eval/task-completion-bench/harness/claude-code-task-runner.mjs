@@ -44,9 +44,9 @@ import {
   CLAUDE_LEAN_BASE_PROMPT, CLAUDE_LEAN_BASE_PROMPT_BATCH, CLAUDE_LEAN_ENV,
   CLAUDE_LEAN_SUBAGENT_DESCRIPTION, CLAUDE_LEAN_SUBAGENT_PROMPT,
   CLAUDE_LEAN_AGENT_REL, CLAUDE_LEAN_SUBAGENT_REL, CLAUDE_LEAN_PLAN_REL, CLAUDE_LEAN_MANIFEST_REL,
-  installClaudeLeanHarness, CLAUDE_RULES_POINTER,
+  installClaudeLeanHarness,
 } from '../../../scripts/install-claude-lean-harness.js';
-import { resolveClaudeRulesLayout } from '../../../scripts/write-claude-rules.js';
+import { claudeRulesPointer, resolveClaudeRulesLayout } from '../../../scripts/write-claude-rules.js';
 
 // D-4: shared, arm-symmetric tool-usage note. Kept to the single malformed argument it
 // repairs — it names no file, tool strategy or retrieval policy, so neither arm gains
@@ -679,7 +679,7 @@ export async function runClaudeCodeTask(task, {
     if (!rulesInPrompt || ccRulesLayout === 'pointer') {   // 'none' (=1) writes no rules file
       const rulesDir = join(rundir, '.claude', 'rules');
       mkdirSync(rulesDir, { recursive: true });
-      appendFileSync(join(rulesDir, 'sweet-search.md'), `${rulesInPrompt ? CLAUDE_RULES_POINTER : mppText.trimEnd()}\n`);
+      appendFileSync(join(rulesDir, 'sweet-search.md'), `${rulesInPrompt ? claudeRulesPointer(process.env) : mppText.trimEnd()}\n`);
       injectedFiles.push('.claude/rules/sweet-search.md');
     }
   }
@@ -696,7 +696,8 @@ export async function runClaudeCodeTask(task, {
     // `rules` is explicit (never read from routingEnv): this rollout's mppText when rulesInPrompt,
     // else none (the 2.8.2 agent file; SWEET_RULES_PLACEMENT=system appends its own copy below).
     const lean = installClaudeLeanHarness({
-      projectRoot: rundir, appendOverride: false, promptEdits: false, env: routingEnv,
+      // SS_FIX_RULES_V2 (rules v2 `find` line) is read from the runner's env, like the rules text.
+      projectRoot: rundir, appendOverride: false, promptEdits: false, env: { ...routingEnv, SS_FIX_RULES_V2: process.env.SS_FIX_RULES_V2 },
       configDir: claudeHome, visibleConfigDir: unjailed ? claudeHome : join(HOMEDIR, '.claude'),
       rules: rulesInPrompt ? mppText : false,
     });
@@ -716,7 +717,7 @@ export async function runClaudeCodeTask(task, {
       if (agentText.split(mppText.trimEnd()).length !== 2) throw new Error('SS_VARIANT_CC_RULES_IN_PROMPT: the main agent file does not carry the rules exactly once');
       const rf = join(rundir, '.claude', 'rules', 'sweet-search.md');
       if (ccRulesLayout === 'none' && existsSync(rf)) throw new Error('SS_VARIANT_CC_RULES_IN_PROMPT=1: a rules file exists');
-      if (ccRulesLayout === 'pointer' && (!existsSync(rf) || readFileSync(rf, 'utf8').trimEnd() !== CLAUDE_RULES_POINTER)) throw new Error('SS_VARIANT_CC_RULES_IN_PROMPT=2: pointer file missing or different');
+      if (ccRulesLayout === 'pointer' && (!existsSync(rf) || readFileSync(rf, 'utf8').trimEnd() !== claudeRulesPointer(process.env))) throw new Error('SS_VARIANT_CC_RULES_IN_PROMPT=2: pointer file missing or different');
     }
     if (harnessTrim.skillDesc) {
       const settingsFile = join(rundir, '.claude', 'settings.json');
