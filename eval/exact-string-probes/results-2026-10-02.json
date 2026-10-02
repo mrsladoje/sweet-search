@@ -1,0 +1,20 @@
+{
+  "change": "484caf11 body-text BM25 index (chunk_text_fts) + exact-string pin for agent formats",
+  "discipline": "DEV only; seed 42 splits; arms share one temp-copy index and differ only in SWEET_SEARCH_BODY_LEXICAL (off vs pin)",
+  "probesDev": { "n": 40, "k": 5, "off": { "top1": 31, "mrr": 0.8063 }, "pin": { "top1": 31, "mrr": 0.8063 }, "listsChanged": 0,
+    "perRepo": { "fastify": "7/12 0.6667", "gin": "11/12 0.9167", "ripgrep": "9/11 0.8409", "flask": "4/5 0.8000" } },
+  "r3Dev": { "n": 140, "off": { "recall5": 0.2516, "recall10": 0.3361 }, "pin": { "recall5": 0.2516, "recall10": 0.3361 }, "listsChanged": 0 },
+  "exactStringSeed42": { "n": 50, "k": 5, "off": { "line1": 22, "line5": 27 }, "pin": { "line1": 42, "line5": 47 } },
+  "exactStringSeed7": { "n": 50, "k": 5, "off": { "line1": 19, "line5": 23 }, "pin": { "line1": 43, "line5": 48 } },
+  "dgraph23": {
+    "errorText": { "query": "pending transactions found please retry operation", "off": "not in top 10", "pin": "rank 1 (k=5 and k=10)" },
+    "question": { "query": "mark pending transaction aborted when predicate is being moved or dropped", "off": "draft.go rank 5 (k=5) / 6 (k=10), gold line not covered", "pin": "same" }
+  },
+  "gcsnDev": { "n": 3600, "seed": 42, "sameIndex": true, "off": { "mrr10": 86.94, "ndcg10": 88.80, "recall10": 94.39 }, "default": { "mrr10": 86.94, "ndcg10": 88.80, "recall10": 94.39 },
+    "resultFilesEqualIgnoringTiming": true, "load": "4-12 off run; spikes to 63 from other sessions during the default run" },
+  "indexCost": {
+    "ftsBuildSeconds": { "flask": 0.03, "fastify": 0.08, "ripgrep": 0.06, "r3-dgraph": 0.33, "r3-jj": 0.32, "r3-grdb(341k chunks)": 14.7 },
+    "codebaseDbGrowthPct": "3.3 to 9.7",
+    "flaskFullBuild": { "ftsOff": { "secs": 447, "codebaseDbBytes": 6631424 }, "ftsOn": { "secs": 300, "codebaseDbBytes": 7110656 }, "note": "wall time dominated by embeddings and machine load (20-27); FTS cost is below that noise" }
+  }
+}
