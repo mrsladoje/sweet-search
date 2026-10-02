@@ -11,6 +11,8 @@ Source artifact: [Sweet-search Cost Forensics](https://claude.ai/artifact/XWUTDq
 
 ## 2026-10-01 — ss-grep should return the full hit line, like `grep -n`
 
+**Status 2026-10-02: SHIPPED on branch obs-loop (d2ec22bd, e9562e93), default ON; opt-out `SS_FIX_GREP_FULLLINE=0`.** Micro-smoke A/B (11 r3-hard dev questions × 2 reps): Codex + Sol cost −8.0%, calls −8.6%, score +1.7 pts; Claude Code + Opus cost −3.4%, calls −5.7%, score +2.1 pts (all CIs cross 0). Traces: fewer and narrower reads; greps with 100+ hits about 2× larger. `core/prompt-optimization/data/obs-loop/TRACES-fl.md`.
+
 **Observation (owner):** We should consider advising in the rules for ss-grep to use the
 full-line output, so that we get the full lines for each hit. It might cost more in the first
 call, but it will cost less down the line.
@@ -47,6 +49,8 @@ separate bug.
 ---
 
 ## 2026-10-01 — Re-test ss-read with no line-number gutter, on Opus 5.5 and GPT-6.1 Sol
+
+**Status 2026-10-02: SHIPPED for Claude Code on obs-loop (d4191021): default gutter `none`** (Codex was already `none`; opencode unchanged). Task micro-smoke, Claude Code + Opus 5.5, 3 tasks × 2 reps per arm (ABBA): 0 edit failures, 0 read-before-edit errors, 0 mis-anchors in both arms; Opus anchors edits on content and takes line numbers from ss-grep. No solve signal (tasks never solved). README line not changed (owner decides).
 
 **Observation (owner):** Removing the gutter is a potential fix. Agents may have misbehaved
 without a gutter in July/August for two reasons: (1) the model then was weak (gpt-5.6-luna), and
@@ -90,6 +94,8 @@ to find line numbers, requests, and cost. Decide per harness.
 
 ## 2026-10-02 — The rules should list ss-grep's flags in one short line (A/B test first)
 
+**Status 2026-10-02: SHIPPED as rules v3 on obs-loop (88041ff9, ce9f90d0, 6ddefc24); opt-out `SS_FIX_RULES_V2=0`.** v2 (all flags listed) made Opus scope its first grep early: score −6.4% (significant). v3 leads with `-g '!<glob>'` and says "Start broad; scope only after a broad grep shows where": Opus score −2.3% (ns), cost −5.1%, ss tokens −16%; Codex score +3.6% (ns), cost −3.6%. Also fixed: `ss-grep -i -w` returned 0 hits (prefilter literal bug, cea202f2..22fc83e1). `TRACES-rules.md`, `TRACES-rules3.md`.
+
 **Observation (owner):** This deserves an A/B test before we ship it, so it goes here and is not
 fixed straight away. Add a short line to the sweet rule file that lists the flags the agent can
 use when needed (something like "flags you can use when needed: …"), so it costs few tokens.
@@ -126,6 +132,8 @@ the full-line ss-grep output (first entry) lands.
 ---
 
 ## 2026-10-02 — Allow file-name search (find, ls, rg --files); restore only that part of the trimmed harness text
+
+**Status 2026-10-02: SHIPPED with rules v3.** Rules allow `rg --files -g`, `find <dir> -name`, `ls <dir>` (read results with ss-read). Harness halves restored for Claude Code (`find`) and opencode (Glob); the Codex `rg --files` line was DROPPED after the A/B (it triggered `rg --files -g 'AGENTS.md'` in 17/22 rollouts).
 
 **Observation (owner):** Agree with option 1: the rules should allow native file-name search.
 Re-add to the harness system prompts the trimmed text that mentioned these tools (find, ls, file
@@ -173,6 +181,8 @@ unfiltered `ls -R` or `find .` (large output, and it lists `.sweet-search/`).
 
 ## 2026-10-02 — Chunker: C++/C#/Ruby namespace chunks and the export macro (needs reindex — wait)
 
+**Status 2026-10-02: IMPLEMENTED on branch obs-chunker (940fda49, 305056a1, e51a8a18), NOT merged:** bumps CHUNKING_VERSION 1→2, merge together with the end-of-tuning reindex. GCSN dev MRR@10 86.48% → 86.48% (seed 42, 3,600 q). 0 lost text, 0 overlaps, 0 id collisions on ~2,000 real files.
+
 **Observation (owner):** Fixes C and D change chunk output, so they wait for the end of tuning
 (reindex is frozen) and need a GCSN dev MRR check. The search-time label fix (A) and the C/C++
 receiver-evidence fix (B) are implemented now.
@@ -205,6 +215,8 @@ Both: GCSN dev MRR before/after, then reindex at the end of tuning.
 ---
 
 ## 2026-10-02 — Chunker: a large function splits into a junk signature chunk and overlapping, reformatted body chunks (needs reindex — wait)
+
+**Status 2026-10-02: IMPLEMENTED on branch obs-chunker with the entry above (same commits, same MRR check); waits for the reindex.**
 
 **Observation (owner):** Put the chunker issue seen in `r3h-dgraph-08` into observations. It
 changes chunk output, so it waits for the end of tuning (reindex is frozen) and needs a GCSN dev MRR
