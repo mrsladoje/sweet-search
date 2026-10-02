@@ -18,11 +18,9 @@ benchmarked prompt and the shipped prompt are the same bytes.
   contradicts the sweet-search rules, and line 83 (a verbatim duplicate of line 124). Nothing else.
 - **Build:** `node eval/task-completion-bench/harness/trim/build-codex-instructions.mjs` rebuilds
   the file from the capture; `--check` fails if the file differs.
-- **Shipped form:** `index.js` (`codexInstructions`) strips the `<!-- … -->` header, replaces
-  the two tool-grouping lines with our own text (`CODEX_SHIPPED_BATCH_LINES`) and, since rules v2
-  (`rules-v2.js`), puts back the file-name half of the deleted line 78 as our own line ("When you
-  search for files by name, you reach first for `rg --files`."). `init --codex` writes the result
-  to `.codex/sweet-search-instructions.md`.
+- **Shipped form:** `index.js` (`codexInstructions`) strips the `<!-- … -->` header and replaces
+  the two tool-grouping lines with our own text (`CODEX_SHIPPED_BATCH_LINES`). `init --codex`
+  writes the result to `.codex/sweet-search-instructions.md`.
 
 ## `opencode-1.18.4-prompt-gpt-original.txt`
 
