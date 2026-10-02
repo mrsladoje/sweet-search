@@ -414,6 +414,7 @@ export class ASTChunker {
           parentChunkId: chunk.parentChunkId,
           parentSymbol: chunk.parentSymbol,
           parentType: chunk.parentType,
+          parentPath: chunk.parentPath || null,
           signature: chunk.signature || null,
           additionalSymbols: chunk.additionalSymbols || null,
         }
@@ -1030,6 +1031,11 @@ export class ASTChunker {
       metadata.parent_symbol = hierarchyInfo.parentSymbol;
       metadata.parent_type = hierarchyInfo.parentType;
     }
+    // Full declaration path and declaration signature: the stable chunk
+    // identity (chunk-identity.mjs) reads both, so same-named methods in
+    // different classes and overloads get distinct ids.
+    if (hierarchyInfo?.parentPath) metadata.parent_path = hierarchyInfo.parentPath;
+    if (hierarchyInfo?.signature) metadata.signature = hierarchyInfo.signature;
     // Carry sibling-symbol context into metadata so enrichEmbeddingText()
     // can rebuild the multi-symbol header during post-chunk enrichment.
     if (hierarchyInfo?.additionalSymbols && hierarchyInfo.additionalSymbols.length > 0) {

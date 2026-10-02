@@ -257,3 +257,123 @@ describe('E: oversized declarations in other languages', () => {
     }
   });
 });
+
+// =============================================================================
+// Review round 2: no text is dropped; ids stay unique; macro rule edge cases.
+// =============================================================================
+
+/** Every non-whitespace character of the file is in some chunk. */
+function expectFullCoverage(content, chunks) {
+  const covered = new Uint8Array(content.length);
+  const lines = content.split('\n');
+  for (const c of chunks) {
+    const from = lines.slice(0, c.startLine).reduce((n, l) => n + l.length + 1, 0);
+    const at = content.indexOf(c.text, from);
+    expect(at).toBeGreaterThanOrEqual(0);
+    covered.fill(1, at, at + c.text.length);
+  }
+  const lost = [];
+  for (let i = 0; i < content.length; i++) if (!covered[i] && !/\s/.test(content[i])) lost.push(content[i]);
+  expect(lost.join('')).toBe('');
+}
+
+describe('no text is dropped', () => {
+  const big = (n, line) => Array.from({ length: n }, (_, i) => line(i)).join('\n');
+
+  it('python: `class A:` before an oversized __init__ keeps its line and its name', async () => {
+    const src = `class A:\n    def __init__(self, x):\n${big(80, i => `        self.value_${i} = compute(x, ${i})`)}\n`;
+    const chunks = await chunk(src, 'python');
+    expectFullCoverage(src, chunks);
+    const first = chunks[0];
+    expect(first.text.startsWith('class A:')).toBe(true);
+    expect([first.name, ...(first.additionalSymbols || [])]).toContain('A');
+  });
+
+  it('python: class line + docstring yields a class-typed chunk', async () => {
+    const doc = big(20, i => `    Docstring line ${i} explaining the application object.`);
+    const methods = big(30, i => `    def method_${i}(self):\n        return compute_value(self, ${i})`);
+    const src = `class Flask(App):\n    """\n${doc}\n    """\n\n${methods}\n`;
+    const chunks = await chunk(src, 'python');
+    expectFullCoverage(src, chunks);
+    const cls = chunks.find(c => c.name === 'Flask');
+    expect(cls.type).toBe('class');
+    expect(cls.text.startsWith('class Flask(App):')).toBe(true);
+  });
+
+  it('csharp: a small class after a nested namespace is kept and findable', async () => {
+    const src = 'namespace Outer\n{\n    namespace Inner\n    {\n        public class A { public int Run(int x) { return x * 2 + 1; } }\n    }\n    public class B { }\n}\n';
+    const chunks = await chunk(src, 'csharp');
+    expectFullCoverage(src, chunks);
+    expect(chunks.some(c => c.name === 'B' || (c.additionalSymbols || []).includes('B'))).toBe(true);
+  });
+
+  it('javascript: a small function after a large one is kept and findable', async () => {
+    const src = `function large(a) {\n${big(90, i => `  const value${i} = compute(a, ${i});`)}\n  return a;\n}\nfunction empty() {}\n`;
+    const chunks = await chunk(src, 'javascript');
+    expectFullCoverage(src, chunks);
+    expect(chunks.some(c => c.name === 'empty' || (c.additionalSymbols || []).includes('empty'))).toBe(true);
+  });
+
+  it('swift: a file of only `import Foundation` is one chunk', async () => {
+    const src = 'import Foundation\n';
+    expectFullCoverage(src, await chunk(src, 'swift'));
+  });
+
+  it('fixtures: drogon and dgraph lose no text', async () => {
+    expectFullCoverage(DROGON, await chunk(DROGON, 'cpp'));
+    expectFullCoverage(DGRAPH, await chunk(DGRAPH, 'go'));
+  });
+
+  it('a header that holds whole members lists their names', async () => {
+    const src = `class Small {\n  int a() { return 1; }\n  int b() { return 2; }\n${big(80, i => `  int m${i}(int x) { return compute(x, ${i}); }`)}\n}\n`;
+    const chunks = await chunk(src, 'java');
+    const header = chunks.find(c => c.name === 'Small');
+    expect(header.additionalSymbols).toEqual(expect.arrayContaining(['a', 'b']));
+  });
+});
+
+describe('C/C++ export-macro rule', () => {
+  for (const lang of ['cpp', 'c']) {
+    it(`${lang}: \`struct HTTP_HEADER header;\` is a variable, not a macro`, async () => {
+      const src = 'struct HTTP_HEADER header;\nint parse_request_with_long_name(int x) { return x + header.size; }\n';
+      const chunks = await chunk(src, lang);
+      expect(chunks.some(c => c.name === 'header')).toBe(false);
+      const symbols = await provider.extractSymbols(src, lang);
+      expect(symbols.some(s => s.name === 'header' && s.type === 'struct')).toBe(false);
+    });
+  }
+});
+
+describe('stable chunk ids', () => {
+  const body = Array.from({ length: 80 }, (_, i) => `        int value${i} = computeSomething(argument, ${i});`).join('\n');
+
+  it('two same-named oversized methods in different classes get distinct ids', async () => {
+    const { assignStructuralIds } = await import('../../core/incremental-indexing/domain/chunk-identity.mjs');
+    const method = `    public int run(int argument) {\n${body}\n        return value0;\n    }`;
+    const src = `class First {\n${method}\n}\n\nclass Second {\n${method}\n}\n`;
+    const chunker = new ASTChunker({ projectRoot: '/repo', useTreeSitter: true });
+    const chunks = await chunker.parseFile('/repo/Two.java', src);
+    expect(chunks.filter(c => /^run \(part \d+\)$/.test(c.metadata.symbol)).length).toBeGreaterThanOrEqual(4);
+    const ids = assignStructuralIds(chunks, 'Two.java');
+    expect(new Set(ids.map(x => x.chunkStructId)).size).toBe(chunks.length);
+    // Unique without the occurrence suffix: the path tells the classes apart.
+    expect(ids.filter(x => x.reason === 'symbol' && x.occurrenceIndex > 0)).toEqual([]);
+  });
+
+  it('overloads get distinct ids through the stored signature', async () => {
+    const { assignStructuralIds } = await import('../../core/incremental-indexing/domain/chunk-identity.mjs');
+    const src = `class Over {\n    public int run(int argument) {\n${body}\n        return 0;\n    }\n    public int run(long argument) {\n${body}\n        return 1;\n    }\n}\n`;
+    const chunker = new ASTChunker({ projectRoot: '/repo', useTreeSitter: true });
+    const chunks = await chunker.parseFile('/repo/Over.java', src);
+    const ids = assignStructuralIds(chunks, 'Over.java');
+    expect(new Set(ids.map(x => x.chunkStructId)).size).toBe(chunks.length);
+    expect(ids.filter(x => x.reason === 'symbol' && x.occurrenceIndex > 0)).toEqual([]);
+  });
+
+  it('identical declarations (both #if branches) still get distinct ids', async () => {
+    const { assignStructuralIds } = await import('../../core/incremental-indexing/domain/chunk-identity.mjs');
+    const mk = () => ({ text: 'int f() { return 1; }', metadata: { chunk_type: 'function', symbol: 'f', signature: 'int f()' } });
+    const ids = assignStructuralIds([mk(), mk()], 'a.c');
+    expect(ids[0].chunkStructId).not.toBe(ids[1].chunkStructId);
+  });
+});
