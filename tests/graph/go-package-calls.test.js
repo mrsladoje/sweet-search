@@ -206,6 +206,41 @@ describe('Go package-qualified calls', () => {
     expect(parse.sections.callers.items.map((i) => i.summary)).toEqual(['detectPending [function] worker/draft.go:13 call@14,18']);
   });
 
+  it('a package-level var initializer is the caller; the package rule still decides its target', async () => {
+    // gin `var engine = gin.Default()`: the var entity is the call source (not
+    // the file node), bound only to the imported package's top-level function.
+    // A var of the same name in another package (y.New) never takes the call,
+    // and a third-party initializer (glog.New) binds nothing.
+    const g = await buildGraph({
+      ...REPO,
+      'y/state.go': ['package y', '', '// New is a counter, not a constructor.', 'var New = 0'],
+      'worker/vars.go': [
+        'package worker',
+        '',
+        'import (',
+        '\t"github.com/golang/glog"',
+        '',
+        `\tapp "${MODULE}"`,
+        ')',
+        '',
+        '// engine serves every worker route.',
+        'var engine = app.New()',
+        '',
+        'var logger = glog.New()',
+      ],
+    });
+    expect(callTargets(g.dbPath, 'engine')).toEqual({ 'app.New': 'engine.go#New' });
+    expect(callTargets(g.dbPath, 'logger')).toEqual({ 'glog.New': null });
+    const callers = trace(g, 'New', { filePath: 'engine.go', mode: 'callers' });
+    expect(callers.sections.callers.items.map((i) => i.summary).sort()).toEqual([
+      'detectPending [function] worker/draft.go:13 call@20',
+      'engine [variable] worker/vars.go:10 call@10',
+    ]);
+    expect(formatStructuralContext(callers, { mode: 'callers' })).not.toContain('(top-level)');
+    const yNew = trace(g, 'New', { filePath: 'y/state.go', mode: 'callers' });
+    expect(yNew.sections.callers.items).toEqual([]);
+  });
+
   it('leaves a file to the receiver rules when it also uses the import name as a value', async () => {
     // dgraph graphql/resolve/auth_test.go: `schema := test.LoadSchemaFromString(…)`
     // shadows the imported schema package, so `schema.Meta()` is the method.

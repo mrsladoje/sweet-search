@@ -496,4 +496,54 @@ describe('incremental graph edge resolution matches a full build', () => {
     expect(overrides(inc)).toEqual([]);
     expect(inc).toEqual(await fullBuildEdges(['src/pet.ts']));
   });
+  it('sources a Go package-level var initializer call at the var, like a full build, through add, rename and delete', async () => {
+    // gin `var engine = gin.Default()`: the var is the caller; the package
+    // rule still binds only the imported package's top-level function, and a
+    // same-named var in another package (y.Default) never takes the call.
+    writeFileSync(join(projectRoot, 'go.mod'), 'module example.com/app\n\ngo 1.22\n');
+    for (const dir of ['gin', 'y', 'web']) mkdirSync(join(projectRoot, dir), { recursive: true });
+    write('gin/gin.go', ['package gin', '', 'type Engine struct{}', '', 'func Default() *Engine {', '\treturn &Engine{}', '}']);
+    write('y/state.go', ['package y', '', 'var Default = 0']);
+    const web = (name) => write('web/main.go', [
+      'package web',
+      '',
+      'import (',
+      '\t"github.com/golang/glog"',
+      '',
+      '\t"example.com/app/gin"',
+      ')',
+      '',
+      `var ${name} = gin.Default()`,
+      '',
+      'var logger = glog.New()',
+    ]);
+    web('engine');
+    const files = ['gin/gin.go', 'y/state.go', 'web/main.go'];
+    enqueue(...files);
+    await tick();
+    const webCalls = (edges) => edges.filter((e) => e.startsWith('calls web/main.go'));
+    let inc = incrementalEdges();
+    expect(webCalls(inc)).toEqual([
+      'calls web/main.go#variable:engine@9 -> gin/gin.go#function:Default@5 (gin.Default)',
+      'calls web/main.go#variable:logger@11 -> null (glog.New)',
+    ]);
+    expect(inc).toEqual(await fullBuildEdges(files));
+
+    // Rename the var: the edge follows the new definition.
+    web('router');
+    enqueue('web/main.go');
+    await tick();
+    inc = incrementalEdges();
+    expect(webCalls(inc)).toContain('calls web/main.go#variable:router@9 -> gin/gin.go#function:Default@5 (gin.Default)');
+    expect(inc.some((e) => e.includes('variable:engine'))).toBe(false);
+    expect(inc).toEqual(await fullBuildEdges(files));
+
+    // The package function goes away: y's var Default never takes over.
+    unlinkSync(join(projectRoot, 'gin/gin.go'));
+    enqueue('gin/gin.go');
+    await tick();
+    inc = incrementalEdges();
+    expect(webCalls(inc)).toContain('calls web/main.go#variable:router@9 -> null (gin.Default)');
+    expect(inc).toEqual(await fullBuildEdges(['y/state.go', 'web/main.go']));
+  });
 });

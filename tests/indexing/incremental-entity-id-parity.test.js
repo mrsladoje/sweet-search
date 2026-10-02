@@ -318,4 +318,107 @@ describe('entity ids: unique per definition, identical in full and maintained gr
     expect(ofName(full, '_builder')).toHaveLength(1);
     expect(full.entities.join('\n')).not.toMatch(/\^dead/);
   });
+  it('Go var/const and Rust const/static: build-tag twins, grouped blocks, owners, edits and deletes', async () => {
+    const files = ['go.mod', 'src/open_linux.go', 'src/open_darwin.go', 'src/consts.go', 'src/lib.rs'];
+    writeFileSync(join(projectRoot, 'go.mod'), 'module example.com/app\n\ngo 1.22\n');
+    // The same names in two build-tagged files stay separate (path in the id).
+    const tagged = (os) => [
+      `//go:build ${os}`,
+      '',
+      'package src',
+      '',
+      '// defaultPath is where the socket lives.',
+      `var defaultPath = "/run/${os}.sock"`,
+      '',
+      'var (',
+      '\tretries = 3',
+      '\ta, b    = 1, 2',
+      ')',
+      '',
+      'func Open() string {',
+      '\treturn defaultPath',
+      '}',
+    ];
+    write('src/open_linux.go', tagged('linux'));
+    write('src/open_darwin.go', tagged('darwin'));
+    // Two const blocks; `_` is no entity.
+    const consts = (extra) => write('src/consts.go', [
+      'package src',
+      '',
+      'const (',
+      '\tKindA = iota',
+      '\tKindB',
+      ')',
+      '',
+      'const (',
+      '\t_ = iota',
+      ...extra,
+      '\tLimit = 10',
+      ')',
+      '',
+      'var engine = Open()',
+    ]);
+    consts([]);
+    // Same const name under two impl owners; module const and static.
+    const lib = (extra) => write('src/lib.rs', [
+      '/// Upper bound on frames.',
+      'pub const MAX: usize = 8;',
+      'static GREETING: &str = "hi";',
+      '',
+      'pub struct A;',
+      'pub struct B;',
+      'impl A {',
+      '    pub const SIZE: usize = 1;',
+      ...extra,
+      '}',
+      'impl B {',
+      '    pub const SIZE: usize = 2;',
+      '}',
+    ]);
+    lib([]);
+
+    let full = await expectParity(files);
+    const s = shapes(full.entities);
+    expect(s).toEqual(expect.arrayContaining([
+      'src/open_linux.go variable defaultPath 6 -',
+      'src/open_darwin.go variable defaultPath 6 -',
+      'src/open_linux.go variable a 10 -',
+      'src/open_linux.go variable b 10 -',
+      'src/consts.go const KindB 5 -',
+      'src/consts.go const Limit 10 -',
+      'src/consts.go variable engine 13 -',
+      'src/lib.rs const MAX 2 -',
+      'src/lib.rs static GREETING 3 -',
+      'src/lib.rs const SIZE 8 A',
+      'src/lib.rs const SIZE 11 B',
+    ]));
+    expect(s.some((l) => / _ /.test(l))).toBe(false);
+    expect(new Set(full.entities.map((l) => l.split(' ')[0])).size).toBe(full.entities.length);
+    expect(full.entities.join('\n')).not.toMatch(/\^dead/);
+
+    // Edit: a const is inserted above Limit (lines shift), a Rust const is
+    // added under A; the darwin twin is untouched and keeps its ids.
+    const darwinIds = (snap) => snap.entities.filter((l) => l.includes(' src/open_darwin.go ')).map((l) => l.split(' ')[0]).sort();
+    const darwinBefore = darwinIds(full);
+    const limitId = full.entities.find((l) => / const Limit /.test(l)).split(' ')[0];
+    consts(['\tSpare = 5']);
+    lib(['    pub const SPARE: usize = 3;']);
+    full = await expectParity(files);
+    expect(darwinIds(full)).toEqual(darwinBefore);
+    expect(full.entities.find((l) => / const Limit /.test(l)).split(' ')[0]).toBe(limitId);
+    expect(shapes(full.entities)).toEqual(expect.arrayContaining([
+      'src/consts.go const Spare 10 -',
+      'src/consts.go const Limit 11 -',
+      'src/consts.go variable engine 14 -',
+      'src/lib.rs const SPARE 9 A',
+    ]));
+
+    // Delete one build-tag twin and the second const block's names.
+    rmSync(join(projectRoot, 'src/open_linux.go'));
+    consts([]);
+    enqueue('src/open_linux.go');
+    await tick();
+    full = await expectParity(files.filter((f) => f !== 'src/open_linux.go'));
+    expect(shapes(full.entities).filter((l) => / defaultPath /.test(l))).toEqual(['src/open_darwin.go variable defaultPath 6 -']);
+  });
 });
