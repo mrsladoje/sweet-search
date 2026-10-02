@@ -38,7 +38,7 @@ import { cacheCreationSplit } from './ideal-cost.mjs';
 import { applyClaudeCacheTtl, firstRequestCacheFields } from './cache-warmup.mjs';
 import { classifyRollout } from './degeneration.mjs';
 import {
-  CLAUDE_SYSTEM_OVERRIDE as SWEET_SEARCH_SYSTEM_OVERRIDE,
+  claudeSystemOverride,
 } from '../../../scripts/install-claude-system-prompt.js';
 import {
   CLAUDE_LEAN_BASE_PROMPT, CLAUDE_LEAN_BASE_PROMPT_BATCH, CLAUDE_LEAN_ENV,
@@ -86,10 +86,12 @@ const CLAUDE_EFFORTS = new Set(['low', 'medium', 'high', 'xhigh', 'max']);
 // from stdin, and the runner writes it there (spawnWithTimeout `stdinText`). The 2.1.281 binary
 // joins them as [promptArg, stdin].filter(Boolean).join("\n"), so stdin alone is the prompt
 // byte for byte.
-export function buildClaudeCliArgs({ rundir, sweet, claudeModelId, effort = null, settingsPath = null, systemRules = null }) {
+// `env`: SS_FIX_RULES_V2 picks the routing override (rules v2 exempts file-name search; =0 = the
+// pre-v2 text byte for byte).
+export function buildClaudeCliArgs({ rundir, sweet, claudeModelId, effort = null, settingsPath = null, systemRules = null, env = process.env }) {
   const rules = sweet ? systemRules : null;
   const baseAppend = sweet
-    ? `${READ_PAGES_TOOL_NOTE}\n\n${SWEET_SEARCH_SYSTEM_OVERRIDE}`
+    ? `${READ_PAGES_TOOL_NOTE}\n\n${claudeSystemOverride(env)}`
     : READ_PAGES_TOOL_NOTE;
   const appendedSystemPrompt = rules ? appendSweetRules(baseAppend, rules).trimEnd() : baseAppend;
   const subagentAppend = rules ? appendSweetRules(READ_PAGES_TOOL_NOTE, rules).trimEnd() : READ_PAGES_TOOL_NOTE;

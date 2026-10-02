@@ -39,7 +39,7 @@ function replaceOnce(text, from, to, label) {
 export const RULES_V2_GREP_FLAGS_LINE =
   "- `ss-grep` flags when needed: `-i` (ignore case) `-w` (whole word) `--in <path>` `-g '<glob>'` / `-g '!<glob>'` (include / exclude) `-A/-B/-C N`";
 export const RULES_V2_FILE_NAMES_LINE =
-  "- To find files by name or list a directory, use `rg --files -g '<glob>'`, `find <dir> -name '<glob>'` or `ls <dir>` (never an unfiltered `ls -R` or `find .`); the `ss-*` tools search contents, not names.";
+  "- To find files by name or list a directory, use `rg --files -g '<glob>'`, `find <dir> -name '<glob>'` or `ls <dir>` (one directory; never `ls -R` or an unfiltered `find .`/`rg --files`); the `ss-*` tools search file contents.";
 
 export const RULES_V2_POLICY_EDITS = Object.freeze([
   Object.freeze([
@@ -89,13 +89,26 @@ export const CLAUDE_POINTER_V2_SENTENCE = 'Use raw `grep`/`cat` or the native re
 // Codex 0.146.1 stock: "When you search for text or files, you reach first for `rg` or
 // `rg --files`; …". v2 puts back the files half, in the stock line's place (before the
 // parallel-calls line).
-export const CODEX_FILE_NAME_LINE = '- When you search for files by name, you reach first for `rg --files`.';
+export const CODEX_FILE_NAME_LINE = "- When you search for files by name, you reach first for `rg --files -g '<glob>'`.";
 // opencode 1.18.4 stock: "When searching for text or files, prefer using Glob and Grep tools
 // (they are powered by `rg`)". v2 replaces the removed bullet with its Glob half.
 export const OPENCODE_GLOB_BULLET = '- When searching for files by name, prefer using the Glob tool (it is powered by `rg`)\n';
 // Claude Code stock bypass-mode steer (off via CLAUDE_CODE_THRIFTY_SONIC=0): "read files with
 // cat, head, or sed -n, search with grep and find". v2 puts back the `find` half.
 export const CLAUDE_FIND_LINE = '- To find files by name, you can use `find` through the Bash tool.';
+// The Claude Code routing override (install-claude-system-prompt.js) says Bash `grep`/`find` advice
+// does not apply unless the rules permit it; under v2 it exempts file-name search explicitly, so it
+// cannot contradict CLAUDE_FIND_LINE (the V1b pointer file does not repeat the permission).
+export const CLAUDE_OVERRIDE_V2_SENTENCE = 'Finding files by name or listing a directory (`find <dir> -name`, `ls <dir>`, `rg --files -g`) is always allowed.';
+
+// opencode tool descriptions (OPENCODE_TOOL_EDITS in index.js). The v1 edits keep `find` in the bash
+// tool's avoid-list and its line "File search: Use Glob (NOT find or ls)", which contradict the v2
+// rules line; v2 drops `find` from the avoid-list and the "(NOT find or ls)" clause. Glob stays the
+// first choice for names (OPENCODE_GLOB_BULLET).
+export const OPENCODE_BASH_AVOID_V1 = '  - Avoid using Bash with the `find`, `sed`, `awk`, or `echo` commands,';
+export const OPENCODE_BASH_AVOID_V2 = '  - Avoid using Bash with the `sed`, `awk`, or `echo` commands,';
+export const OPENCODE_BASH_FILE_SEARCH_V1 = '    - File search: Use Glob (NOT find or ls)\n';
+export const OPENCODE_BASH_FILE_SEARCH_V2 = '    - File search: Use Glob\n';
 
 /** Insert `line` before `anchor` (which must occur exactly once) when v2 is on. */
 export function insertLineBefore(text, anchor, line, { env = process.env, label = 'rules v2' } = {}) {

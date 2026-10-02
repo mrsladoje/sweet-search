@@ -60,7 +60,7 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
-import { CLAUDE_SYSTEM_OVERRIDE } from './install-claude-system-prompt.js';
+import { CLAUDE_SYSTEM_OVERRIDE, CLAUDE_SYSTEM_OVERRIDE_V2 } from './install-claude-system-prompt.js';
 import { applyExactEdits } from './harness-prompts/index.js';
 import { CLAUDE_FIND_LINE, insertLineBefore, rulesV2Enabled } from './harness-prompts/rules-v2.js';
 import { getPolicyBody } from './inject-agent-instructions.js';
@@ -385,7 +385,8 @@ export function claudeLeanContextSection({ memoryDir = null, memoryEnabled = tru
  * session-context section (V1b). Byte-identical to the benchmarked SS_VARIANT_CC_RULES_IN_PROMPT=2
  * form when `rules` is `getPolicyBody('cli')`. The pure function's default stays null (no rules);
  * `installClaudeLeanHarness` decides what the product installs. `rulesV2` (default true) adds
- * CLAUDE_FIND_LINE; false = the pre-v2 bytes (SS_FIX_RULES_V2=0).
+ * CLAUDE_FIND_LINE and the v2 override (file-name search exempt); false = the pre-v2 bytes
+ * (SS_FIX_RULES_V2=0, or a non-CLI policy variant).
  */
 export function claudeLeanAgentFile({
   appendOverride = true, memoryDir = null, memoryEnabled = true, promptEdits = true, rules = null,
@@ -406,7 +407,7 @@ export function claudeLeanAgentFile({
     body = `${body.slice(0, at)}${String(rules).trimEnd()}\n\n${body.slice(at)}`;
   }
   const parts = [body];
-  if (appendOverride) parts.push(CLAUDE_SYSTEM_OVERRIDE);
+  if (appendOverride) parts.push(rulesV2 ? CLAUDE_SYSTEM_OVERRIDE_V2 : CLAUDE_SYSTEM_OVERRIDE);
   return `---\nname: ${CLAUDE_LEAN_AGENT_NAME}\ndescription: sweet-search lean harness (main session)\n---\n\n${parts.join('\n\n')}\n`;
 }
 
@@ -474,7 +475,7 @@ function removeOwnedFile(projectRoot, rel) {
  * `visibleConfigDir`: see `claudeAutoMemoryDir`. `promptEdits`: see `claudeLeanAgentFile`.
  *
  * `rules`: what the main agent file carries ahead of its memory section.
- *   undefined (the product)  the shipped policy `getPolicyBody('cli', env)`, unless
+ *   undefined (the product)  the shipped policy `getPolicyBody(variant, env)`, unless
  *                            SS_VARIANT_CC_RULES_IN_PROMPT=0 in `env` (the 2.8.2 layout: none)
  *   a string                 that text (a benchmark runner's own rules text)
  *   false / null             none
@@ -489,7 +490,7 @@ function removeOwnedFile(projectRoot, rel) {
  */
 export function installClaudeLeanHarness({
   projectRoot, appendOverride = true, promptEdits = true, configDir, visibleConfigDir, env = process.env,
-  rules,
+  rules, variant = 'cli',
 } = {}) {
   if (!projectRoot) return { status: 'error', detail: 'install-claude-lean-harness: projectRoot is required', active: null, rulesInPrompt: false };
   const settingsPath = join(projectRoot, SETTINGS_REL);
@@ -546,7 +547,7 @@ export function installClaudeLeanHarness({
     ? local.value.agent : undefined;
   let rulesText = null;
   if (rules === undefined) {
-    if (resolveClaudeRulesLayout(env).layout !== 'file') rulesText = getPolicyBody('cli', env);
+    if (resolveClaudeRulesLayout(env).layout !== 'file') rulesText = getPolicyBody(variant, env);
   } else if (typeof rules === 'string') {
     rulesText = rules.trim() ? rules : null;
   } else if (rules !== false && rules !== null) {
@@ -558,7 +559,8 @@ export function installClaudeLeanHarness({
   const wantedFiles = {
     [CLAUDE_LEAN_AGENT_REL]: claudeLeanAgentFile({
       appendOverride, promptEdits, memoryDir: memory.dir, memoryEnabled: memory.enabled, rules: rulesText,
-      rulesV2: rulesV2Enabled(env),
+      // v2 additions belong to the CLI policy only: the MCP policy still bans find/ls.
+      rulesV2: variant === 'cli' && rulesV2Enabled(env),
     }),
     [CLAUDE_LEAN_SUBAGENT_REL]: claudeLeanSubagentFile(),
     [CLAUDE_LEAN_PLAN_REL]: claudeLeanPlanFile(),
