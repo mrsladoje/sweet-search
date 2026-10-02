@@ -459,9 +459,10 @@ function extractClausesDirect(regex, options) {
  * as they are. The other two consumers need less:
  *
  *   ascii  the native fixed-string grep (nativeGrepFilesWithMatchesFixed) folds ASCII case only,
- *          but `(?i)` also matches U+212A for k and U+017F for s. Case-insensitive literals are
- *          cut at k and s.
- *   gram   the sparse gram index also folds ASCII only (the same cut), and indexes only runs of
+ *          but `(?i)` folds by Unicode rules: U+212A matches k, U+017F matches s, and every
+ *          non-ASCII letter has case variants it cannot fold (`σ`/`Σ`/`ς`, `ß`/`ẞ`).
+ *          Case-insensitive literals are cut at k, s and every non-ASCII char.
+ *   gram   the sparse gram index also folds ASCII only (the same cuts), and indexes only runs of
  *          [a-z0-9_./:-]: a literal holding any other byte would make its clause ineligible.
  *          Literals are split at such bytes; the pieces stay AND literals of their clause.
  *
@@ -469,7 +470,7 @@ function extractClausesDirect(regex, options) {
  * be dropped), so its list is then empty.
  */
 export function prefilterLiteralClauses(clauses, { caseInsensitive = false } = {}) {
-  const ascii = caseInsensitive ? splitClauses(clauses, /[ks]/i) : clauses;
+  const ascii = caseInsensitive ? splitClauses(clauses, /[ks]|[^\x00-\x7F]/iu) : clauses;
   return { rg: clauses, ascii, gram: splitClauses(ascii, /[^A-Za-z0-9_./:-]/) };
 }
 
@@ -486,6 +487,14 @@ function splitClauses(clauses, at) {
 export function extractLiteralClauses(regex, options = {}) {
   if (!regex || typeof regex !== 'string') {
     return { clauses: [], source: 'none' };
+  }
+  // A fixed-string search (`search -F -e`, the server's fixedString param) hands over raw
+  // text, not a regex: the text itself is the only literal (`foo\.bar` is "foo\.bar", never
+  // "foo.bar"). A line break would make it several patterns for `rg -F`: no prefilter then.
+  if (options.fixedString) {
+    if (/[\r\n]/.test(regex)) return { clauses: [], source: 'none' };
+    const clauses = normalizeLiteralClauses([[regex]]);
+    return { clauses, source: clauses.length > 0 ? 'fixed-string' : 'none' };
   }
 
   // An alternating pattern is only prefilterable when EVERY alternative it can match

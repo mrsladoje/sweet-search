@@ -9,13 +9,19 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+
 import {
   extractLiteralClauses,
   extractRequiredLiteralsHeuristic as lits,
   hasCaseInsensitiveRegexFlag,
   prefilterLiteralClauses,
 } from '../../core/search/search-pattern-prefilter.js';
-import { isNativeGrepAvailable, nativeGrepLines } from '../../core/infrastructure/native-sparse-gram.js';
+import {
+  buildSparseGramIndexArtifact, hasNativeSparseGramSupport, isNativeGrepAvailable, loadSparseGramIndex, nativeGrepLines,
+} from '../../core/infrastructure/native-sparse-gram.js';
+import { generateRegexMatches } from '../../core/search/search-pattern-planner.js';
+
+const RG_OK = spawnSync('rg', ['--version'], { encoding: 'utf8' }).status === 0;
 
 describe('extractRequiredLiteralsHeuristic: inline flags, groups, escapes', () => {
   it('ss-grep -i / -w / -i -w patterns give the word itself', () => {
@@ -101,6 +107,46 @@ describe('extractRequiredLiteralsHeuristic: inline flags, groups, escapes', () =
   });
 });
 
+describe('extractLiteralClauses with fixedString: the raw text is the only literal', () => {
+  it('never parses the text as a regex', () => {
+    expect(extractLiteralClauses('foo\\.bar', { fixedString: true })).toEqual({ clauses: [['foo\\.bar']], source: 'fixed-string' });
+    expect(extractLiteralClauses('a\\<bc', { fixedString: true }).clauses).toEqual([['a\\<bc']]);
+    expect(extractLiteralClauses('(get|set)Config', { fixedString: true }).clauses).toEqual([['(get|set)Config']]);
+    expect(prefilterLiteralClauses([['foo\\.bar']])).toEqual({ rg: [['foo\\.bar']], ascii: [['foo\\.bar']], gram: [['foo', '.bar']] });
+  });
+
+  it('gives no literal for short text or text with a line break (several patterns to rg -F)', () => {
+    expect(extractLiteralClauses('ab', { fixedString: true }).clauses).toEqual([]);
+    expect(extractLiteralClauses('abc\ndef', { fixedString: true }).clauses).toEqual([]);
+  });
+});
+
+// Real engine: `search -F -e 'foo\.bar'` (fixedString) used to prefilter on "foo.bar" and
+// return 0 files where `rg -F` finds one.
+describe.runIf(RG_OK)('fixed-string search through the planner (real engine)', () => {
+  it('finds the raw text with a glob (ripgrep route) and with a gram index', async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'prefilter-fixed-'));
+    try {
+      writeFileSync(path.join(dir, 'a.js'), 'const p = "foo\\.bar";\n');
+      writeFileSync(path.join(dir, 'b.js'), 'const p = foo.bar;\n');
+      writeFileSync(path.join(dir, 'c.js'), 'const p = "a\\<bc";\n');
+      const viaRg = (text) => generateRegexMatches({ projectRoot: dir }, text, dir,
+        { fixedString: true, globs: ['*.js'], useGramIndex: false });
+      expect((await viaRg('foo\\.bar')).matchingFiles).toEqual(['a.js']);
+      expect((await viaRg('a\\<bc')).matchingFiles).toEqual(['c.js']);
+      if (hasNativeSparseGramSupport()) {
+        const indexPath = path.join(dir, 'sparse.idx');
+        buildSparseGramIndexArtifact({ projectRoot: dir, files: ['a.js', 'b.js', 'c.js'], outputPath: indexPath });
+        const searcher = { projectRoot: dir, sparseGramIndex: loadSparseGramIndex(indexPath), sparseGramIndexPath: indexPath };
+        const viaGram = await generateRegexMatches(searcher, 'foo\\.bar', dir, { fixedString: true });
+        expect(viaGram.matchingFiles).toEqual(['a.js']);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('prefilterLiteralClauses: what each prefilter may use', () => {
   const plan = (p) => prefilterLiteralClauses(extractLiteralClauses(p).clauses,
     { caseInsensitive: hasCaseInsensitiveRegexFlag(p) });
@@ -117,6 +163,15 @@ describe('prefilterLiteralClauses: what each prefilter may use', () => {
     expect(plan('(?i)sss')).toMatchObject({ ascii: [], gram: [] });
     // case-sensitive: no cut
     expect(plan('\\b(?:express)\\b')).toMatchObject({ ascii: [['express']], gram: [['express']] });
+  });
+
+  it('the ASCII-folding consumers also cut case-insensitive literals at non-ASCII chars', () => {
+    // (?i)σ matches Σ and ς; (?i)ß matches ẞ: the native fixed-string grep folds ASCII only
+    expect(plan('(?i)bc\u03C3')).toMatchObject({ rg: [['bc\u03C3']], ascii: [], gram: [] });
+    expect(plan('(?i)\u00DFa<')).toMatchObject({ ascii: [], gram: [] });
+    expect(plan('(?i)abc\u03C3def')).toMatchObject({ ascii: [['abc', 'def']], gram: [['abc', 'def']] });
+    // case-sensitive: exact bytes, no cut
+    expect(plan('abc\u03C3def').ascii).toEqual([['abc\u03C3def']]);
   });
 
   it('the gram index gets span pieces: a non-span byte no longer makes the clause ineligible', () => {
@@ -137,7 +192,6 @@ describe('prefilterLiteralClauses: what each prefilter may use', () => {
 // native grep (Rust regex 1.12, in process, every pattern) and ripgrep (the first RG_PATTERNS
 // patterns, when installed). Every line either matches must contain every literal of at least
 // one clause, for each consumer, under that consumer's case folding. Deterministic seed.
-const RG_OK = spawnSync('rg', ['--version'], { encoding: 'utf8' }).status === 0;
 const RG_PATTERNS = 60;
 describe.runIf(isNativeGrepAvailable())('property: prefilter literals never drop a line the engine matches', () => {
   it('holds for every random pattern (seeded)', () => {
@@ -149,7 +203,7 @@ describe.runIf(isNativeGrepAvailable())('property: prefilter literals never drop
       return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
     };
     const pick = (a) => a[Math.floor(rnd() * a.length)];
-    const CH = ['a', 'b', 'c', 'a', 'b', 'c', 'k', 's', 'A', 'B', 'K', 'S', '-', '_', '<', '>'];
+    const CH = ['a', 'b', 'c', 'a', 'b', 'c', 'k', 's', 'A', 'B', 'K', 'S', '-', '_', '<', '>', '\u03C3', '\u00DF', '\u00E9'];
     const ESC = ['\\<', '\\>', '\\b{start}', '\\b{end}', '\\b{start-half}', '\\b{end-half}', '\\b', '\\B',
       '\\.', '\\-', '\\{', '\\}', '\\(', '\\p{L}', '\\pL', '\\x20', '\\x{61}', '\\u0062', '\\w', '\\s', '\\d'];
     const atom = (d) => {
@@ -179,7 +233,9 @@ describe.runIf(isNativeGrepAvailable())('property: prefilter literals never drop
       if (rnd() < 0.2) p = `\\b(?:${p})\\b`;
       return p;
     };
-    const LINE_CH = ['a', 'b', 'c', 'k', 's', 'A', 'B', 'K', 'S', 'K', 'ſ', '-', '<', '>', ' ', '_', '{', '}', '(', 'x'];
+    // U+212A Kelvin, U+017F long s, σ Σ ς, ß ẞ, é É: case variants the ASCII folders cannot see
+    const LINE_CH = ['a', 'b', 'c', 'k', 's', 'A', 'B', 'K', 'S', '\u212A', '\u017F', '-', '<', '>', ' ', '_', '{', '}', '(', 'x',
+      '\u03C3', '\u03A3', '\u03C2', '\u00DF', '\u1E9E', '\u00E9', '\u00C9'];
     const lines = [];
     for (let i = 0; i < 600; i++) {
       let line = '';
@@ -233,6 +289,6 @@ describe.runIf(isNativeGrepAvailable())('property: prefilter literals never drop
     console.log(`prefilter property: ${JSON.stringify({ ...counts, unsound: counts.unsound.length })}`);
     expect(counts.unsound).toEqual([]);
     expect(counts.valid).toBeGreaterThan(1000);
-    expect(counts.withGram).toBeGreaterThan(80);
+    expect(counts.withGram).toBeGreaterThan(50);
   });
 });
