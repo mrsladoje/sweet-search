@@ -56,18 +56,26 @@ describe('buildAlsoCandidates', () => {
     ent('beta', 'function', 50, 90),
     ent('Gamma.run', 'method', 100, 130),
     ent('delta', 'function', 140, 150),
+    ent('eps', 'function', 160, 170),
+    ent('zeta', 'function', 180, 190),
+    ent('eta', 'function', 200, 210),
   ]);
 
-  it('keeps score order, names the enclosing entity range, and caps at 3', () => {
-    const pool = [chunk('a', 100, 110, 0.9), chunk('b', 60, 70, 0.8), chunk('c', 15, 20, 0.7), chunk('d', 141, 145, 0.6)];
+  it('keeps score order, names the enclosing entity range, and caps at ALSO_MAX (5)', () => {
+    const pool = [
+      chunk('a', 100, 110, 0.9), chunk('b', 60, 70, 0.8), chunk('c', 15, 20, 0.7), chunk('d', 141, 145, 0.6),
+      chunk('e', 162, 165, 0.5), chunk('f', 182, 185, 0.4), chunk('g', 202, 205, 0.3),
+    ];
     const out = buildAlsoCandidates(pool, [], { file: 'f.js', graph });
-    expect(ALSO_MAX).toBe(3);
+    expect(ALSO_MAX).toBe(5);
     expect(out.map(o => [o.startLine, o.endLine, o.name])).toEqual([
       [100, 130, 'Gamma.run'],
       [50, 90, 'beta'],
       [10, 40, 'alpha'],
+      [140, 150, 'delta'],
+      [160, 170, 'eps'],
     ]);
-    expect(out.map(o => o.score)).toEqual([0.9, 0.8, 0.7]);
+    expect(out.map(o => o.score)).toEqual([0.9, 0.8, 0.7, 0.6, 0.5]);
     expect(out[1].kind).toBe('function');
   });
 
