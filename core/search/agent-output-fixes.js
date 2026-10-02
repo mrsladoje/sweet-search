@@ -156,7 +156,10 @@ const TEST_FILE_RES = [
   /(^|\/)test_[^/]+\.[a-z0-9]+$/i,            // Python test_foo.py
   /[-_.](test|spec)\.[cm]?[jt]sx?$/i,         // JS/TS foo.test.ts, foo.spec.js
   /_spec\.[a-z0-9]+$/i,                       // Ruby foo_spec.rb
-  /(^|\/)[^/]*Tests?\.(java|kt|kts|scala|cs|swift|m|mm|php)$/,   // FooTest.java, FooTests.swift
+  // FooTest.java, FooTests.swift: the basename ends so. Written without a leading
+  // `(^|\/)[^/]*` (always satisfiable, as the suffix holds no slash): same answers, and the
+  // engine does not retry `[^/]*` from every slash (~8x faster; ss-grep weighs every file).
+  /Tests?\.(java|kt|kts|scala|cs|swift|m|mm|php)$/,
   /(^|\/)conftest\.py$/i,
 ];
 
