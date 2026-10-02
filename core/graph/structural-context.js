@@ -44,6 +44,23 @@ function entropy(items) {
   return h / Math.log(items.length);
 }
 
+/**
+ * The other definitions a trace could have meant, each named with its owner
+ * (`OcelotJRoute.GivenJObject`), the form `Owner.name` that selects it. None
+ * when the symbol was already qualified by the target's owner and no other
+ * candidate has that owner: the choice was not a guess.
+ */
+export function traceAlternatives(symbol, target, candidates) {
+  const parts = String(symbol || '').split(/::|\./).filter(Boolean);
+  const qualifier = parts.length > 1 ? parts[parts.length - 2] : null;
+  const rest = candidates.slice(1);
+  if (qualifier && target?.parentClass === qualifier
+    && !rest.some(c => c.parentClass === qualifier && c.name === target.name)) return [];
+  return rest.map(c => ({
+    name: c.name, owner: c.parentClass || null, type: c.type, file: c.filePath, startLine: c.startLine,
+  }));
+}
+
 function selectBudget(explicitBudget, candidates) {
   if (explicitBudget) {
     const n = clamp(explicitBudget, 1000, 16000);
@@ -612,9 +629,7 @@ export class StructuralContextBuilder {
         callsiteHints: targetCallsiteHints,
       },
       answerCues: buildAnswerCues({ target: targetForCues, hint: options.queryHint, callers, callees, impactPaths, resolveTerm: name => this.repo.findSameFileDefinition?.(name, target.filePath) }),
-      disambiguation: candidates.slice(1).map(c => ({
-        name: c.name, type: c.type, file: c.filePath, startLine: c.startLine,
-      })),
+      disambiguation: traceAlternatives(cleanSymbol, target, candidates),
       budgetTier: budget.tier,
       budgetReason: budget.reason,
       tokenBudget: budget.tokenBudget,
