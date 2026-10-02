@@ -253,11 +253,14 @@ export async function bareGrep(query, routing, options = {}) {
   // Agent-only k-budget file diversity (option-gated; absent → byte-identical
   // output). Streaming per-file cap: matches beyond the cap are counted, not
   // stored, so memory is bounded by perFileCap*maxFiles, never total matches.
+  // `grepFileOrder: 'weight'` (ss-grep's SS_FIX_GREP_ALLOC, default ON): keep the maxFiles
+  // files of highest sqrt(hits) x file-type prior, not the first maxFiles in path order.
   let fileSummary = null;
   if (options.perFileCap > 0) {
     ({ kept: matches, fileSummary } = applyGrepFileDiversity(matches, {
       perFileCap: options.perFileCap,
       maxFiles: options.maxFiles,
+      ...(options.grepFileOrder === 'weight' ? { order: 'weight' } : {}),
     }));
   }
   if (maxMatches > 0) {

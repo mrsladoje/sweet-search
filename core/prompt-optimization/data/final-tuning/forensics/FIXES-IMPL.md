@@ -34,6 +34,7 @@ constant that only ss-search reads; under the fixed renderer, ss-find ignores it
 | `SS_FIX_SUMMARY_CAP=<n>` | B1 at most n summary-only entries; `-k` caps entries. `0` or unset = off | ss-search, ss-find | **REJECTED** (TRIED-LEVERS 1.10); kept off |
 | `SS_FIX_ONE_PER_FILE=1` | B2 one entry per file; the kept entry is the file's code entry; others become `also in this file: sym (l.a-b)`. **Compress only; does not reassign code budget** | ss-search | off by default |
 | `SS_FIX_GREP_ORDER=1` | B7 source before tests with a test-file quota; at >= 50 hits a line list per file; repeated matched-text column dropped | ss-grep | test |
+| `SS_FIX_GREP_ALLOC=1\|0` | **Default ON since 2026-10-02** (default: value of `SS_FIX_A`). Keep the k files of highest sqrt(hits) x prior (1 source, 0.5 test, 0.25 generated/vendored), not the first k in the alphabet; share the k lines by Sainte-Laguë; print files by weight. `0` = the previous output byte for byte; never pool runs across it. With B7 on, B7's source-before-tests body order is skipped (the prior covers it); its line lists stay | ss-grep (and ss-find's grep fallback) | shipped |
 | (not built) | B3 read cap, B6 fold ss-find into ss-search — **rejected**; B8 grep `-A/-B/-C` — not built (needs data) | — | — |
 | `SS_READ_GUTTER=none` (exists) | B4 gutter off — confirmed | ss-read, ss-search, ss-find, ss-semantic | — |
 

@@ -9,11 +9,22 @@
  *
  * These helpers are pure and option-gated: only the ss-grep agent wrapper
  * enables them. The human-facing grep product shape and all NL ranking paths
- * are untouched (no scoring — file order stays the engine's deterministic
- * sorted order; raw match count is deliberately never used as a sort key).
+ * are untouched.
+ *
+ * Two line-allocation rules live here:
+ *   legacy (SS_FIX_GREP_ALLOC=0): the first maxFiles files in path order, k lines
+ *     round robin over them in path order (applyGrepFileDiversity without `order`,
+ *     renderGrepBody without `alloc`). Byte for byte the pre-2026-10-02 output.
+ *   weight (default): every matching file is a candidate; the engine keeps the
+ *     maxFiles files of highest weight = sqrt(hits) x prior (prior 1 source, 0.5
+ *     test/spec/fixture, 0.25 generated/vendored/minified) and the k lines are shared
+ *     by Sainte-Laguë. Files print in descending weight. Replay of 1,037 recorded dev
+ *     grep calls: answer-file recall 71.1% -> 83.0% on the 124 calls with more files
+ *     than k; ~100% either way when every file fits.
  */
 
 import { realpathSync } from 'node:fs';
+import { isTestLikePath } from './agent-output-fixes.js';
 
 /** Split a path into whole segments, dropping "" and "." (so "./a//b" → [a,b]). */
 function pathSegments(value) {
@@ -126,8 +137,11 @@ export function matchesGrepFileFilter(file, filter, projectRoot = null) {
  * (file, line, column) before calling) — the walk uses a single per-file
  * cursor precisely so no map proportional to distinct-file count is built.
  *
+ * `order: 'weight'` keeps the maxFiles files of highest weight instead of the first
+ * maxFiles in path order (see selectGrepFilesByWeight). Absent = the legacy walk below.
+ *
  * @param {Array<{file: string}>} matches - sorted by (file, line)
- * @param {{perFileCap: number, maxFiles?: number, hiddenSampleSize?: number}} opts
+ * @param {{perFileCap: number, maxFiles?: number, hiddenSampleSize?: number, order?: 'weight'}} opts
  * @returns {{kept: Array, fileSummary: {
  *   files: Array<{file: string, total: number, kept: number}>,
  *   hiddenFileCount: number, hiddenMatchCount: number,
@@ -135,6 +149,7 @@ export function matchesGrepFileFilter(file, filter, projectRoot = null) {
  * }}}
  */
 export function applyGrepFileDiversity(matches, opts = {}) {
+  if (opts.order === 'weight') return selectGrepFilesByWeight(matches, opts);
   const perFileCap = Math.max(1, opts.perFileCap | 0);
   const maxFiles = opts.maxFiles > 0 ? (opts.maxFiles | 0) : Infinity;
   const hiddenSampleSize = opts.hiddenSampleSize ?? 3;
@@ -179,6 +194,332 @@ export function applyGrepFileDiversity(matches, opts = {}) {
   };
 }
 
+// --- weighted rule (SS_FIX_GREP_ALLOC, default ON) ----------------------------------------
+//
+// weight(file) = sqrt(hits) x prior. Every comparison below uses the SQUARE of the weight,
+// scaled to an integer: key = hits x scale with scale = 16 x prior^2 (16 source, 4 test,
+// 1 generated). Squaring keeps every order and every Sainte-Laguë quotient comparison
+// (w_i/(2a_i+1) vs w_j/(2a_j+1)  <=>  key_i (2a_j+1)^2 vs key_j (2a_i+1)^2), needs no sqrt
+// at all, and is exact: integer products stay far below 2^53, so a tie is a real tie.
+//
+// Ties: higher hits first, then engine path order (bareGrep's localeCompare sort; the start
+// offset of a file's group in the sorted match list encodes it).
+
+/** Generated, vendored or minified by path shape (the replay's rule); precompiled once. */
+const GENERATED_PATH_RE = /\.pb\.go$|_pb2\.py$|\.generated\.|(^|\/)(vendor|dist|build|node_modules)\/|\.min\.js$/i;
+
+/**
+ * One-regex pre-check: every test rule (isTestLikePath) and every generated rule above
+ * needs one of these substrings, so a path without any of them is plain source and skips
+ * the full checks. Measured on the recorded agent calls: ~150 ns per file, ~2 µs per call.
+ * (Not memoised: the engine hands every match a fresh path string, so a Map lookup must
+ * hash the path and costs about as much as this pass; a per-directory variant was slower.)
+ */
+const PRIOR_KEYWORD_RE = /test|spec|fixture|mock|e2e|pb2?[._]|generated|vendor|dist\/|build\/|node_modules|\.min\./i;
+
+const SCALE_SOURCE = 16;  // prior 1
+const SCALE_TEST = 4;     // prior 0.5
+const SCALE_GENERATED = 1; // prior 0.25
+
+function priorScale(file) {
+  if (!PRIOR_KEYWORD_RE.test(file)) return SCALE_SOURCE;
+  if (GENERATED_PATH_RE.test(file)) return SCALE_GENERATED;
+  return isTestLikePath(file) ? SCALE_TEST : SCALE_SOURCE;
+}
+
+/** The file-type prior of a match path: 1 source, 0.5 test/spec/fixture, 0.25 generated/vendored/minified. */
+export function grepFilePrior(file) {
+  const scale = priorScale(String(file || ''));
+  return scale === SCALE_SOURCE ? 1 : scale === SCALE_TEST ? 0.5 : 0.25;
+}
+
+/** a better than b: larger key, then more hits, then earlier in path order. */
+function betterFile(keyA, totA, ordA, keyB, totB, ordB) {
+  return keyA > keyB || (keyA === keyB && (totA > totB || (totA === totB && ordA < ordB)));
+}
+
+// The selection heap: one Float64Array, three slots per file (key, hits, start offset), the
+// WORST kept file at the root. Module-level functions over a typed array: no closure, no
+// context-variable access, no allocation per file.
+function fileHeapSiftDown(h, size, pos) {
+  const key = h[3 * pos]; const tot = h[3 * pos + 1]; const ord = h[3 * pos + 2];
+  for (;;) {
+    let c = 2 * pos + 1;
+    if (c >= size) break;
+    if (c + 1 < size && betterFile(h[3 * c], h[3 * c + 1], h[3 * c + 2], h[3 * c + 3], h[3 * c + 4], h[3 * c + 5])) c++;
+    if (!betterFile(key, tot, ord, h[3 * c], h[3 * c + 1], h[3 * c + 2])) break;
+    h[3 * pos] = h[3 * c]; h[3 * pos + 1] = h[3 * c + 1]; h[3 * pos + 2] = h[3 * c + 2];
+    pos = c;
+  }
+  h[3 * pos] = key; h[3 * pos + 1] = tot; h[3 * pos + 2] = ord;
+}
+
+function fileHeapPush(h, size, key, tot, ord) {
+  let pos = size;
+  while (pos > 0) {
+    const p = (pos - 1) >> 1;
+    if (!betterFile(h[3 * p], h[3 * p + 1], h[3 * p + 2], key, tot, ord)) break;
+    h[3 * pos] = h[3 * p]; h[3 * pos + 1] = h[3 * p + 1]; h[3 * pos + 2] = h[3 * p + 2];
+    pos = p;
+  }
+  h[3 * pos] = key; h[3 * pos + 1] = tot; h[3 * pos + 2] = ord;
+}
+
+/** Insert into the best-first hidden sample `s` (three slots per file, at most `max` files). */
+function sampleInsert(s, len, max, key, tot, ord) {
+  let pos = len < max ? len : max - 1;
+  if (pos < 0 || (len === max && !betterFile(key, tot, ord, s[3 * pos], s[3 * pos + 1], s[3 * pos + 2]))) return len;
+  while (pos > 0 && betterFile(key, tot, ord, s[3 * pos - 3], s[3 * pos - 2], s[3 * pos - 1])) {
+    s[3 * pos] = s[3 * pos - 3]; s[3 * pos + 1] = s[3 * pos - 2]; s[3 * pos + 2] = s[3 * pos - 1];
+    pos--;
+  }
+  s[3 * pos] = key; s[3 * pos + 1] = tot; s[3 * pos + 2] = ord;
+  return len < max ? len + 1 : len;
+}
+
+/**
+ * Streaming top-maxFiles file selection by weight over a (file,line)-sorted match list.
+ *
+ * A file's hit count is known when its group ends; the file then competes for one of
+ * maxFiles slots in a min-heap (worst kept file at the root). Nothing is copied while
+ * streaming: a file is (start offset, hits, key), its matches stay in the input. The prior
+ * is computed only when the file could still win a slot or a hidden-sample place: its key
+ * is at most hits x 16, so when that bound does not beat the worst entry, the file is
+ * counted and skipped. On a 10,000-file flood of 1-hit files almost no file pays for it.
+ *
+ * Memory: the heap holds at most maxFiles entries and `kept` at most perFileCap x maxFiles
+ * matches, as in the legacy walk. Everything else is counted for the hidden-files line.
+ *
+ * @returns same shape as applyGrepFileDiversity; files in descending weight, each with
+ *   its `prior`; kept grouped per file in that order (line order inside a file);
+ *   hiddenSample = the highest-weight hidden files; fileSummary.order = 'weight'.
+ */
+export function selectGrepFilesByWeight(matches, opts = {}) {
+  const perFileCap = Math.max(1, opts.perFileCap | 0);
+  const maxFiles = opts.maxFiles > 0 ? (opts.maxFiles | 0) : Infinity;
+  const sampleSize = Math.max(0, opts.hiddenSampleSize ?? 3);
+  const n = matches.length;
+
+  // A finite maxFiles (every ss-grep call) sizes the heap once; an unbounded one grows it.
+  let capacity = Math.max(1, Math.min(maxFiles, n, Number.isFinite(maxFiles) ? n : 256));
+  let heap = new Float64Array(3 * capacity);
+  let size = 0;
+  const sample = new Float64Array(3 * Math.max(1, sampleSize));
+  let sampleLen = 0;
+  let hiddenFileCount = 0;
+  let hiddenMatchCount = 0;
+
+  let i = 0;
+  while (i < n) {
+    const start = i;
+    const file = matches[i].file;
+    i++;
+    while (i < n && matches[i].file === file) i++;
+    const total = i - start;
+    if (size === maxFiles && total * SCALE_SOURCE <= heap[0]) {
+      // Cannot beat the worst kept file (equal bound: fewer-or-equal hits, later path).
+      hiddenFileCount++;
+      hiddenMatchCount += total;
+      if (sampleLen < sampleSize || total * SCALE_SOURCE > sample[3 * sampleSize - 3]) {
+        sampleLen = sampleInsert(sample, sampleLen, sampleSize, total * priorScale(file), total, start);
+      }
+      continue;
+    }
+    const key = total * priorScale(file);
+    if (size < maxFiles) {
+      if (size === capacity) {
+        const grown = new Float64Array(heap.length * 2);
+        grown.set(heap);
+        heap = grown;
+        capacity *= 2;
+      }
+      fileHeapPush(heap, size++, key, total, start);
+      continue;
+    }
+    hiddenFileCount++;
+    if (betterFile(key, total, start, heap[0], heap[1], heap[2])) {
+      const outKey = heap[0]; const outTot = heap[1]; const outOrd = heap[2];
+      heap[0] = key; heap[1] = total; heap[2] = start;
+      fileHeapSiftDown(heap, size, 0);
+      hiddenMatchCount += outTot;
+      sampleLen = sampleInsert(sample, sampleLen, sampleSize, outKey, outTot, outOrd);
+    } else {
+      hiddenMatchCount += total;
+      sampleLen = sampleInsert(sample, sampleLen, sampleSize, key, total, start);
+    }
+  }
+
+  // Drain the heap worst-first into the tail: files[] ends up best first.
+  const files = new Array(size);
+  const ords = new Int32Array(size);
+  while (size > 0) {
+    const last = size - 1;
+    const key = heap[0]; const tot = heap[1]; const ord = heap[2];
+    heap[0] = heap[3 * last]; heap[1] = heap[3 * last + 1]; heap[2] = heap[3 * last + 2];
+    size = last;
+    if (size > 0) fileHeapSiftDown(heap, size, 0);
+    ords[last] = ord;
+    files[last] = { file: matches[ord].file, total: tot, kept: Math.min(tot, perFileCap), prior: key === tot * SCALE_SOURCE ? 1 : key === tot * SCALE_TEST ? 0.5 : 0.25 };
+  }
+  const kept = [];
+  for (let f = 0; f < files.length; f++) {
+    const end = ords[f] + files[f].kept;
+    for (let j = ords[f]; j < end; j++) kept.push(matches[j]);
+  }
+  const hiddenSample = new Array(sampleLen);
+  for (let s = 0; s < sampleLen; s++) hiddenSample[s] = { file: matches[sample[3 * s + 2]].file, total: sample[3 * s + 1] };
+
+  return {
+    kept,
+    fileSummary: { files, hiddenFileCount, hiddenMatchCount, hiddenSample, order: 'weight' },
+  };
+}
+
+/**
+ * Sainte-Laguë line allocation: each next line goes to the file with the largest
+ * weight / (2 x linesGiven + 1), never beyond the file's stored matches (`caps`). No floor
+ * round: a heavy file can take a second line before a light file gets its first.
+ * Ties: more hits first, then the earlier file.
+ *
+ * PRECONDITION: files in weight order (key desc, hits desc, path asc), as
+ * selectGrepFilesByWeight returns them. A file that never got a line is then dominated by
+ * the first such file, so only files already holding a line plus that one frontier file
+ * compete: a max-heap of at most min(files, budget) + 1 entries, O(budget x log budget)
+ * however many files matched. Typed arrays, no allocation in the loop.
+ *
+ * @param {ArrayLike<number>} keys - hits x prior scale (16 x weight^2)
+ * @param {ArrayLike<number>} totals - hits per file (tie-break)
+ * @param {ArrayLike<number>} caps - stored matches per file (lines it can show)
+ * @param {number} budget - lines to give (k)
+ * @returns {Int32Array} lines per file, same order as the input
+ */
+export function allocateGrepLinesSainteLague(keys, totals, caps, budget) {
+  const n = keys.length;
+  const alloc = new Int32Array(n);
+  let remaining = Math.max(0, budget | 0);
+  if (n === 0 || remaining === 0) return alloc;
+  const heap = new Int32Array(Math.min(n, remaining) + 1);
+  let size = 0;
+  let next = 0;
+  // q_a > q_b <=> keys[a] (2 alloc[b] + 1)^2 > keys[b] (2 alloc[a] + 1)^2
+  const better = (a, b) => {
+    const da = 2 * alloc[a] + 1; const db = 2 * alloc[b] + 1;
+    const lhs = keys[a] * db * db; const rhs = keys[b] * da * da;
+    return lhs > rhs || (lhs === rhs && (totals[a] > totals[b] || (totals[a] === totals[b] && a < b)));
+  };
+  const siftUp = (pos) => {
+    const f = heap[pos];
+    while (pos > 0) {
+      const parent = (pos - 1) >> 1;
+      if (!better(f, heap[parent])) break;
+      heap[pos] = heap[parent];
+      pos = parent;
+    }
+    heap[pos] = f;
+  };
+  const siftDown = (pos) => {
+    const f = heap[pos];
+    for (;;) {
+      let child = 2 * pos + 1;
+      if (child >= size) break;
+      if (child + 1 < size && better(heap[child + 1], heap[child])) child++;
+      if (!better(heap[child], f)) break;
+      heap[pos] = heap[child];
+      pos = child;
+    }
+    heap[pos] = f;
+  };
+  const pushFrontier = () => {
+    while (next < n && !(caps[next] > 0)) next++;
+    if (next < n) { heap[size] = next++; siftUp(size++); }
+  };
+  pushFrontier();
+  while (remaining > 0 && size > 0) {
+    const f = heap[0];
+    const first = alloc[f] === 0;
+    alloc[f]++;
+    remaining--;
+    if (alloc[f] < caps[f]) siftDown(0);
+    else { heap[0] = heap[--size]; if (size > 0) siftDown(0); }
+    if (first) pushFrontier();
+  }
+  return alloc;
+}
+
+/** renderGrepBody under the weighted rule (opts.alloc === 'weight'). */
+function renderGrepBodyWeighted(kept, fileSummary, k, opts) {
+  const summaryFiles = fileSummary.files || [];
+  // Fast path: the engine already handed files in weight order, kept contiguous per file.
+  let order = null;
+  let groups = null;
+  if (fileSummary.order === 'weight') {
+    let off = 0;
+    let contiguous = true;
+    for (const f of summaryFiles) {
+      if (f.kept > 0 && kept[off]?.file !== f.file) { contiguous = false; break; }
+      off += f.kept;
+    }
+    if (contiguous && off === kept.length) order = summaryFiles;
+  }
+  if (!order) {
+    // Anything else (a pre-change engine, a caller's own match list): group, weigh, sort.
+    // At most maxFiles files, never the whole match list.
+    groups = new Map();
+    for (const m of kept) {
+      let g = groups.get(m.file);
+      if (!g) { g = []; groups.set(m.file, g); }
+      g.push(m);
+    }
+    const listed = new Set(summaryFiles.map(f => f.file));
+    const pool = summaryFiles.map((f, idx) => ({ ...f, kept: groups.get(f.file)?.length ?? 0, idx }));
+    for (const [file, ms] of groups) {
+      if (!listed.has(file)) pool.push({ file, total: ms.length, kept: ms.length, idx: pool.length });
+    }
+    for (const f of pool) f.prior = grepFilePrior(f.file);
+    const keyOf = f => f.total * f.prior * f.prior * SCALE_SOURCE;
+    pool.sort((a, b) => keyOf(b) - keyOf(a) || b.total - a.total || a.idx - b.idx);
+    order = pool;
+  }
+
+  const n = order.length;
+  const keys = new Float64Array(n);
+  const totals = new Float64Array(n);
+  const caps = new Int32Array(n);
+  for (let f = 0; f < n; f++) {
+    const p = order[f].prior ?? 1;
+    totals[f] = order[f].total;
+    keys[f] = order[f].total * p * p * SCALE_SOURCE;
+    caps[f] = order[f].kept;
+  }
+  const alloc = allocateGrepLinesSainteLague(keys, totals, caps, k);
+
+  const rows = [];
+  let shownMatches = 0;
+  let truncatedFileCount = 0;
+  let off = 0;
+  const unallocated = [];
+  for (let f = 0; f < n; f++) {
+    const { file, total } = order[f];
+    const ms = groups ? groups.get(file) : null;
+    const base = off;
+    off += caps[f];
+    const a = alloc[f];
+    if (a === 0) { unallocated.push(order[f]); continue; }
+    for (let j = 0; j < a; j++) {
+      const m = ms ? ms[j] : kept[base + j];
+      const text = (m.matchText || '').replace(/\s+/g, ' ').trim().slice(0, 140);
+      let more = 0;
+      if (j === a - 1 && total > a) {
+        more = total - a;
+        truncatedFileCount++;
+      }
+      rows.push({ file, line: m.line, text, more });
+      shownMatches++;
+    }
+  }
+  return finishGrepBody(rows, unallocated, fileSummary, shownMatches, truncatedFileCount, opts);
+}
+
 /**
  * Breadth-first budget allocation: round-robin one line per file per round,
  * in the given (deterministic) file order, until `budget` lines are allocated
@@ -220,14 +561,18 @@ export function allocateGrepBudget(counts, budget) {
  * @param {{files: Array<{file, total, kept}>, hiddenFileCount, hiddenMatchCount,
  *          hiddenSample: Array<{file, total}>}} fileSummary
  * @param {number} k - body line budget
- * @param {{dropRepeatedText?: boolean}} [opts] - SS_FIX_GREP_ORDER: when every shown hit
- *   carries the same matched text (and more than one hit shows), print `file:line` only.
+ * @param {{dropRepeatedText?: boolean, alloc?: 'weight'}} [opts] - SS_FIX_GREP_ORDER: when
+ *   every shown hit carries the same matched text (and more than one hit shows), print
+ *   `file:line` only. `alloc: 'weight'` (SS_FIX_GREP_ALLOC, default ON in ss-grep): files in
+ *   descending weight, lines shared by Sainte-Laguë (allocateGrepLinesSainteLague), the
+ *   hidden-files examples are the highest-weight hidden files.
  *   Absent = the original format, byte for byte.
  * @returns {{lines: string[], rows: Array<{file, line, text, more}>, shownMatches: number,
  *            matchedFileCount: number, truncatedFileCount: number, hiddenLine: string|null}}
  *   `rows[i]` is the hit printed as `lines[i]` (for grep context rendering).
  */
 export function renderGrepBody(kept, fileSummary, k, opts = undefined) {
+  if (opts?.alloc === 'weight') return renderGrepBodyWeighted(kept, fileSummary, k, opts);
   const groups = new Map();
   for (const m of kept) {
     if (!groups.has(m.file)) groups.set(m.file, []);
@@ -259,6 +604,11 @@ export function renderGrepBody(kept, fileSummary, k, opts = undefined) {
       shownMatches++;
     }
   });
+  return finishGrepBody(rows, unallocated, fileSummary, shownMatches, truncatedFileCount, opts);
+}
+
+/** Shared tail of both rules: printed lines, the hidden-files line, the counts. */
+function finishGrepBody(rows, unallocated, fileSummary, shownMatches, truncatedFileCount, opts) {
   const dropText = opts?.dropRepeatedText === true
     && rows.length > 1 && rows.every(row => row.text === rows[0].text);
   const lines = rows.map((row) => {

@@ -101,6 +101,19 @@ function parseBoundedSearchInteger(value, name, max) {
   return n;
 }
 
+/**
+ * The ss-grep shaping options of a /search call: perFileCap and maxFiles (bounded integers;
+ * throws on a bad value, answered 400) and fileOrder=weight, ss-grep's weighted file selection
+ * (SS_FIX_GREP_ALLOC, read client-side; absent = the legacy path-order selection).
+ */
+export function readGrepShapingParams(searchParams) {
+  return {
+    perFileCap: parseBoundedSearchInteger(searchParams.get('perFileCap'), 'perFileCap', 1000),
+    maxFiles: parseBoundedSearchInteger(searchParams.get('maxFiles'), 'maxFiles', 1000),
+    grepFileOrder: searchParams.get('fileOrder') === 'weight' ? 'weight' : undefined,
+  };
+}
+
 function reusableLateInteractionIndex(searcher) {
   const idx = searcher?.lateInteractionIndex || null;
   if (!idx) return null;
@@ -1027,10 +1040,9 @@ export async function startServer() {
         res.end(JSON.stringify({ error: `File filter too long (max ${SEARCH_SERVER_MAX_READ_PATH_LENGTH} chars)` }));
         return;
       }
-      let perFileCap; let maxFiles;
+      let perFileCap; let maxFiles; let grepFileOrder;
       try {
-        perFileCap = parseBoundedSearchInteger(url.searchParams.get('perFileCap'), 'perFileCap', 1000);
-        maxFiles = parseBoundedSearchInteger(url.searchParams.get('maxFiles'), 'maxFiles', 1000);
+        ({ perFileCap, maxFiles, grepFileOrder } = readGrepShapingParams(url.searchParams));
       } catch (err) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: err.message }));
@@ -1090,6 +1102,7 @@ export async function startServer() {
           fileFilter,
           perFileCap,
           maxFiles,
+          ...(grepFileOrder ? { grepFileOrder } : {}),
           fixedString,
           type: symbolType,
           globs,
@@ -1505,6 +1518,7 @@ export async function queryServer(query, options = {}) {
     fileFilter,
     perFileCap = 0,
     maxFiles = 0,
+    grepFileOrder,
     fixedString = false,
     type = '',
     globs = [],
@@ -1546,6 +1560,7 @@ export async function queryServer(query, options = {}) {
     }
     if (perFileCap > 0) params.set('perFileCap', perFileCap.toString());
     if (maxFiles > 0) params.set('maxFiles', maxFiles.toString());
+    if (grepFileOrder === 'weight') params.set('fileOrder', 'weight');
     if (fixedString) params.set('fixedString', 'true');
     if (type) params.set('type', type);
     if (!literalFilter) params.set('literalFilter', 'false');

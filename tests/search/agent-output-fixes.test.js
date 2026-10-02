@@ -39,12 +39,12 @@ import {
 const OFF = { SS_FIX_A: '0' };
 const ALL_OFF = {
   compact: false, traceCompact: false, grepRetry: false, alreadyShown: false,
-  dropSufficiency: false, summaryCap: null, onePerFile: false, grepOrder: false,
+  dropSufficiency: false, summaryCap: null, onePerFile: false, grepOrder: false, grepAlloc: false,
 };
 
 describe('readFixFlags: product default (Bundle A on)', () => {
   it('turns on A1/A2/A7 (compact), A4 and A5 with an empty environment', () => {
-    expect(readFixFlags({})).toEqual({ ...ALL_OFF, compact: true, traceCompact: true, grepRetry: true });
+    expect(readFixFlags({})).toEqual({ ...ALL_OFF, compact: true, traceCompact: true, grepRetry: true, grepAlloc: true });
     expect(readFixFlags({})).toEqual(readFixFlags({ SS_FIX_A: '1' }));
     expect(resultRenderFixActive(readFixFlags({}))).toBe(true);
     expect(resultRenderFixActive(readFixFlags({}), { find: true })).toBe(true);
@@ -81,7 +81,7 @@ describe('readFixFlags', () => {
   it('is all off with SS_FIX_A=0 (the bench baseline)', () => {
     expect(readFixFlags(OFF)).toEqual({
       compact: false, traceCompact: false, grepRetry: false, alreadyShown: false,
-      dropSufficiency: false, summaryCap: null, onePerFile: false, grepOrder: false,
+      dropSufficiency: false, summaryCap: null, onePerFile: false, grepOrder: false, grepAlloc: false,
     });
     expect(resultRenderFixActive(readFixFlags(OFF))).toBe(false);
     expect(resultRenderFixActive(readFixFlags(OFF), { find: true })).toBe(false);
@@ -100,6 +100,17 @@ describe('readFixFlags', () => {
     expect(readFixFlags({ SS_FIX_A: '1', SS_FIX_GREP_RETRY: 'off' })).toMatchObject({ compact: true, traceCompact: true, grepRetry: false });
     // An unknown value inherits the umbrella.
     expect(readFixFlags({ SS_FIX_A: '1', SS_FIX_GREP_RETRY: 'maybe' }).grepRetry).toBe(true);
+  });
+
+  it('SS_FIX_GREP_ALLOC: on by default, follows SS_FIX_A / the product opt-out, its own 0 or 1 wins', () => {
+    expect(readFixFlags({}).grepAlloc).toBe(true);
+    for (const v of ['0', 'false', 'off', 'no']) expect(readFixFlags({ SS_FIX_GREP_ALLOC: v }).grepAlloc).toBe(false);
+    expect(readFixFlags({ SS_FIX_GREP_ALLOC: 'maybe' }).grepAlloc).toBe(true);
+    expect(readFixFlags(OFF).grepAlloc).toBe(false);
+    expect(readFixFlags({ SWEET_SEARCH_COMPACT_OUTPUT: '0' }).grepAlloc).toBe(false);
+    expect(readFixFlags({ ...OFF, SS_FIX_GREP_ALLOC: '1' })).toMatchObject({ compact: false, grepAlloc: true });
+    // it never turns another switch on or off
+    expect(readFixFlags({ SS_FIX_GREP_ALLOC: '0' })).toEqual({ ...readFixFlags({}), grepAlloc: false });
   });
 
   it('A3 and the sufficiency drop are separate switches that accept every on-value', () => {
@@ -163,6 +174,31 @@ describe('isTestLikePath', () => {
     for (const p of ['tree.go', 'src/context.js', 'lib/contest.py', 'src/latest.ts', 'core/search/a.js']) {
       expect(isTestLikePath(p), p).toBe(false);
     }
+  });
+
+  it('the folded one-pass form answers exactly as the seven separate rules did', () => {
+    // The rules as they were written before the fold (2026-10-02), applied one by one.
+    const dir = /(^|\/)(__tests__|__mocks__|tests?|specs?|testdata|test_data|fixtures?|e2e|mocks?|testing|integration[-_]tests?)(\/|$)/i;
+    const files = [/_test\.[a-z0-9]+$/i, /(^|\/)test_[^/]+\.[a-z0-9]+$/i, /[-_.](test|spec)\.[cm]?[jt]sx?$/i, /_spec\.[a-z0-9]+$/i,
+      /(^|\/)[^/]*Tests?\.(java|kt|kts|scala|cs|swift|m|mm|php)$/, /(^|\/)conftest\.py$/i];
+    const seven = (f) => {
+      const p = String(f || '').replace(/\\/g, '/');
+      return !!p && (dir.test(p) || files.some((re) => re.test(p)));
+    };
+    const parts = ['src', 'tests', 'Test', 'spec', 'Specs', 'fixture', 'mocks', 'e2e', 'testing', 'lib', 'test_data',
+      'integration_tests', '__tests__', '__mocks__', 'TESTDATA', 'contest', 'latest'];
+    const names = ['a.go', 'a_test.go', 'A_TEST.GO', 'test_a.py', 'a.test.ts', 'a-spec.mjs', 'a.spec.cjs', 'a_spec.rb',
+      'FooTest.java', 'FooTests.swift', 'Footest.java', 'FOOTEST.JAVA', 'conftest.py', 'CONFTEST.PY', 'Testament.java',
+      'test', 'tests', 'spec', 'x.test', 'test_.py', 'mock'];
+    let seed = 13;
+    const r = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
+    for (let i = 0; i < 5000; i++) {
+      const segs = [];
+      for (let d = Math.floor(r() * 4); d > 0; d--) segs.push(parts[Math.floor(r() * parts.length)]);
+      const p = [...segs, names[Math.floor(r() * names.length)]].join(r() < 0.1 ? '\\' : '/');
+      expect(isTestLikePath(p), p).toBe(seven(p));
+    }
+    for (const p of ['', null, undefined]) expect(isTestLikePath(p)).toBe(false);
   });
 });
 
