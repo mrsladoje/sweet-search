@@ -1660,46 +1660,47 @@ export function truncateToTokenCap(code, tokenCap) {
     if (withSuffix && estimateTokens(withSuffix) <= tokenCap) {
       return { code: withSuffix, truncated: true, originalTokens };
     }
-
-    const bare = lines.slice(0, lineCount).join('\n');
-    if (bare && estimateTokens(bare) <= tokenCap) {
-      return { code: bare, truncated: true, originalTokens };
-    }
   }
 
+  // Not even one line and the cut marker fit: no code (a bare prefix would be a silent cut).
   return { code: '', truncated: true, originalTokens };
 }
 
+/** `lines[0..n)` plus a visible `// ... (N more lines)` marker when lines are left out. */
+function prefixWithCutMarker(lines, n) {
+  const kept = lines.slice(0, n).join('\n');
+  const remaining = lines.length - n;
+  return remaining > 0 ? `${kept}\n// ... (${remaining} more lines)` : kept;
+}
+
 /**
- * Create a compressed preview of a code block.
- * Shows signature + first few lines of body.
+ * Preview of a code block that fits `tokenCap`: the first lines (signature + the start of the
+ * body, at least 3 lines when the cap allows) and, when lines are left out, a
+ * `// ... (N more lines)` marker. The marker is part of the fit: a cut is never silent (the
+ * previous form clamped the text afterwards and could drop the marker, or skipped it when the
+ * kept text happened to contain `...`). Returns '' when not even one line and the marker fit.
+ *
+ * @param {string} code
+ * @param {number} tokenCap
+ * @returns {string}
  */
-function compressToPreview(code, tokenCap) {
-  if (!code) return '';
-
+export function compressToPreview(code, tokenCap) {
+  if (!code || !(tokenCap > 0)) return '';
   const lines = code.split('\n');
-  if (lines.length <= 5) return code;
-
-  // Keep first 5 lines + ellipsis
+  if (estimateTokens(code) <= tokenCap) return code;
   const maxChars = Math.floor(tokenCap * 3.5);
-  let preview = '';
-  let lineCount = 0;
-
+  let n = 0;
+  let chars = 0;
   for (const line of lines) {
-    if (preview.length + line.length + 1 > maxChars && lineCount > 2) break;
-    preview += (preview ? '\n' : '') + line;
-    lineCount++;
+    if (n >= 3 && chars + line.length + 1 > maxChars) break;
+    chars += line.length + 1;
+    n++;
   }
-
-  if (lineCount < lines.length) {
-    // Replace function/method bodies with { ... }
-    preview = preview.replace(/\{[^}]*$/s, '{ ... }');
-    if (!preview.includes('...')) {
-      preview += '\n// ... (' + (lines.length - lineCount) + ' more lines)';
-    }
+  for (; n >= 1; n--) {
+    const candidate = prefixWithCutMarker(lines, n);
+    if (estimateTokens(candidate) <= tokenCap) return candidate;
   }
-
-  return preview;
+  return '';
 }
 
 // =============================================================================
@@ -2389,6 +2390,7 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
     const resultTokenCap = Math.min(allocation.tokenCap, remainingBudget);
     let codeTokens;
     let boundaryTruncated = false;
+    let goldOnlyRange = null;
     if (resultTokenCap <= 0) {
       code = '';
       codeTokens = 0;
@@ -2406,6 +2408,10 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
         const trunc = truncateToTokenCap(goldOnly, resultTokenCap);
         code = trunc.code;
         codeTokens = estimateTokens(code);
+        // The code is the gold chunk now, not the sandwich: its header must name the gold
+        // lines (the sandwich span started at the enclosing symbol's signature).
+        goldOnlyRange = { startLine: goldStart, endLine: goldEnd };
+        boundaryTruncated = trunc.truncated;
       }
     } else if (allocation.presentation === 'full') {
       const truncResult = truncateToTokenCap(code, resultTokenCap);
@@ -2414,8 +2420,8 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
       boundaryTruncated = truncResult.truncated;
     } else {
       // Preview mode — compress to signature + snippet
+      // The marker is part of the fit (compressToPreview): no clamp after it.
       code = compressToPreview(code, resultTokenCap);
-      code = clampTextToTokenCap(code, resultTokenCap);
       codeTokens = estimateTokens(code);
     }
 
@@ -2441,18 +2447,23 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
 
     tokensUsed += codeTokens;
 
+    // A sandwich that overshot its cap printed the gold chunk only (above): that chunk is the
+    // entry's span and kind from here on.
+    const shownKind = goldOnlyRange ? 'chunk' : (expansion.kind || null);
+    const entryStart = goldOnlyRange ? goldOnlyRange.startLine : expansion.startLine;
+    const entryEnd = goldOnlyRange ? goldOnlyRange.endLine : expansion.endLine;
     const agentResult = {
       rank: i + 1,
       file: filePath,
-      startLine: expansion.startLine,
-      endLine: expansion.endLine,
+      startLine: entryStart,
+      endLine: entryEnd,
       symbol: expansion.symbol,
       symbolType: expansion.symbolType,
       score: result.score || result.lateInteractionScore || 0,
       expanded: expansion.expanded,
       expandedFrom: expansion.expandedFrom,
-      expansionKind: expansion.kind || null,
-      ...(expansion.kind === 'sandwich' && expansion.sandwich
+      expansionKind: shownKind,
+      ...(shownKind === 'sandwich' && expansion.sandwich
         ? {
             sandwich: {
               partKinds: expansion.sandwich.parts.map(p => p.kind),
@@ -2469,10 +2480,10 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
       codeTokens,
       ...(_isAgentFormat === true
         && allocation.presentation === 'full'
-        && expansion.kind !== 'sandwich'
+        && shownKind !== 'sandwich'
         ? {
-            shownStartLine: expansion.startLine,
-            shownEndLine: shownSourceEndLine(expansion.startLine, code, boundaryTruncated),
+            shownStartLine: entryStart,
+            shownEndLine: shownSourceEndLine(entryStart, code, boundaryTruncated),
             ...(boundaryTruncated ? { boundaryTruncated: true } : {}),
           }
         : {}),
