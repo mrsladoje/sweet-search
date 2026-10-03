@@ -162,6 +162,9 @@ describe('golden pins of the shipped texts (sha256)', () => {
   it('CLI policy body', () => {
     expect(sha(getPolicyBody('cli'))).toBe('afd9d0bd9082370bc8dc6e9f500b3ede5cc5935c24dbaaf42ad046463c222ec7');
   });
+  it('MCP policy body', () => {
+    expect(sha(getPolicyBody('mcp'))).toBe('d9201a845c871580aff659e14806d7e726cec2adc83f5252d2a228677ac6669a');
+  });
   it("Claude Code main agent file (memoryDir '/m/', no override)", () => {
     expect(sha(claudeLeanAgentFile({ appendOverride: false, memoryDir: '/m/' })))
       .toBe('11446e95a164c2fb04892e3db505d2ccec2c7489979392938c51482b9dba48fe');
