@@ -473,10 +473,10 @@ describe('removeClaudeLeanHarness', () => {
 });
 
 // V1b: the shipped policy rides in the main agent file, ahead of the memory section.
-// Every call passes `env` explicitly so the developer's shell cannot flip the switch.
+// Every call passes `env` explicitly so the developer's shell cannot change the rules text.
 describe('rules in the main agent (V1b)', () => {
   const POLICY = getPolicyBody('cli');
-  const ENV = { SS_VARIANT_CC_RULES_IN_PROMPT: '' };
+  const ENV = {};
   const install = (extra = {}) => installClaudeLeanHarness({ projectRoot: root, env: ENV, ...extra });
   const count = (text, needle) => text.split(needle).length - 1;
 
@@ -507,25 +507,6 @@ describe('rules in the main agent (V1b)', () => {
     expect(read(CLAUDE_LEAN_SUBAGENT_REL)).toBe(`---\nname: general-purpose\ndescription: ${CLAUDE_LEAN_SUBAGENT_DESCRIPTION}\n---\n\n${CLAUDE_LEAN_SUBAGENT_PROMPT}\n`);
   });
 
-  it("'2' and unset install the same bytes; '1' carries the policy too; '0' is the 2.8.2 agent file", () => {
-    const files = (env) => {
-      const d = join(root, `p${env.SS_VARIANT_CC_RULES_IN_PROMPT ?? 'unset'}`);
-      mkdirSync(d);
-      const r = installClaudeLeanHarness({ projectRoot: d, env, configDir: join(root, 'cfg') });
-      const text = readFileSync(join(d, CLAUDE_LEAN_AGENT_REL), 'utf8');
-      return { r, norm: text.split(d.replace(/[^a-zA-Z0-9]/g, '-')).join('<slug>') };
-    };
-    const unset = files({});
-    const two = files({ SS_VARIANT_CC_RULES_IN_PROMPT: '2' });
-    const one = files({ SS_VARIANT_CC_RULES_IN_PROMPT: '1' });
-    const zero = files({ SS_VARIANT_CC_RULES_IN_PROMPT: '0' });
-    expect(two.norm).toBe(unset.norm);
-    expect(one.norm).toBe(unset.norm);
-    expect([unset.r.rulesInPrompt, two.r.rulesInPrompt, one.r.rulesInPrompt, zero.r.rulesInPrompt]).toEqual([true, true, true, false]);
-    expect(zero.norm).not.toContain(POLICY);
-    expect(zero.norm).toBe(unset.norm.replace(`${POLICY}\n\n`, ''));
-  });
-
   it('an explicit `rules` wins over the env: a custom text, or none', () => {
     expect(install({ rules: 'CUSTOM RULES\n\n' }).rulesInPrompt).toBe(true);
     expect(read(CLAUDE_LEAN_AGENT_REL)).toContain('CUSTOM RULES\n\n# Memory');
@@ -536,7 +517,7 @@ describe('rules in the main agent (V1b)', () => {
   });
 
   it('moves the policy in and out of an owned agent file and keeps the manifest hash in step', () => {
-    install({ env: { SS_VARIANT_CC_RULES_IN_PROMPT: '0' } });
+    install({ rules: false });
     const old = read(CLAUDE_LEAN_AGENT_REL);
     expect(old).not.toContain(POLICY);
     const up = install();
@@ -544,7 +525,7 @@ describe('rules in the main agent (V1b)', () => {
     expect(up.detail).toContain(CLAUDE_LEAN_AGENT_REL);
     expect(manifest().files[CLAUDE_LEAN_AGENT_REL]).toBe(sha(read(CLAUDE_LEAN_AGENT_REL)));
     expect(install().status).toBe('unchanged');
-    install({ env: { SS_VARIANT_CC_RULES_IN_PROMPT: '0' } });
+    install({ rules: false });
     expect(read(CLAUDE_LEAN_AGENT_REL)).toBe(old);
     expect(manifest().files[CLAUDE_LEAN_AGENT_REL]).toBe(sha(old));
     install();

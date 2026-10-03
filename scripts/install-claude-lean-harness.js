@@ -46,7 +46,7 @@
  * injects rules files into the first user message, after the prompt-cache marker, so the ~1.4k
  * rule tokens were re-written to the cache in every session. Held-out: Opus cost -11.3%, Sonnet
  * -10.1% vs 2.8.2, accuracy equal; task guard 9/20 vs 8/20 solves, ss-* share unchanged. The
- * subagent files still carry no search advice. Opt-out: SS_VARIANT_CC_RULES_IN_PROMPT=0 (2.8.2).
+ * subagent files still carry no search advice.
  *
  * Ownership: `.claude/sweet-search-harness.json` records exactly what this module
  * added (files by content hash, deny entries, env keys, the `agent` selection), so
@@ -63,7 +63,7 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { CLAUDE_SYSTEM_OVERRIDE } from './install-claude-system-prompt.js';
 import { applyExactEdits } from './harness-prompts/index.js';
 import { getPolicyBody } from './inject-agent-instructions.js';
-import { CLAUDE_RULES_POINTER, resolveClaudeRulesLayout } from './write-claude-rules.js';
+import { CLAUDE_RULES_POINTER } from './write-claude-rules.js';
 
 // The pointer text lives with the rules-file writer; re-exported here because the benchmark
 // runners import it from this module.
@@ -380,8 +380,7 @@ export function claudeLeanContextSection({ memoryDir = null, memoryEnabled = tru
  * `claudeAutoMemoryDir` at install time. `promptEdits` applies CLAUDE_LEAN_PROMPT_EDITS (the
  * shipped read6fs text); the benchmark sets it false and applies its own CC_TRIM_BATCH variant.
  * `rules` (a policy text, or null): when given, it goes into the prompt ahead of the memory /
- * session-context section (V1b). Byte-identical to the benchmarked SS_VARIANT_CC_RULES_IN_PROMPT=2
- * form when `rules` is `getPolicyBody('cli')`. The pure function's default stays null (no rules);
+ * session-context section (V1b), as benchmarked when `rules` is `getPolicyBody('cli')`. The pure function's default stays null (no rules);
  * `installClaudeLeanHarness` decides what the product installs.
  */
 export function claudeLeanAgentFile({
@@ -466,8 +465,7 @@ function removeOwnedFile(projectRoot, rel) {
  * `visibleConfigDir`: see `claudeAutoMemoryDir`. `promptEdits`: see `claudeLeanAgentFile`.
  *
  * `rules`: what the main agent file carries ahead of its memory section.
- *   undefined (the product)  the shipped policy `getPolicyBody(variant, env)`, unless
- *                            SS_VARIANT_CC_RULES_IN_PROMPT=0 in `env` (the 2.8.2 layout: none)
+ *   undefined (the product)  the shipped policy `getPolicyBody(variant, env)`
  *   a string                 that text (a benchmark runner's own rules text)
  *   false / null             none
  * Never when settings.local.json selects another main agent: the agent file is then not the
@@ -538,7 +536,7 @@ export function installClaudeLeanHarness({
     ? local.value.agent : undefined;
   let rulesText = null;
   if (rules === undefined) {
-    if (resolveClaudeRulesLayout(env).layout !== 'file') rulesText = getPolicyBody(variant, env);
+    rulesText = getPolicyBody(variant, env);
   } else if (typeof rules === 'string') {
     rulesText = rules.trim() ? rules : null;
   } else if (rules !== false && rules !== null) {
