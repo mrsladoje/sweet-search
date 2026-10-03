@@ -854,6 +854,10 @@ const CONTAINER_NODE_TYPES = {
 const JS_FAMILY_LANGUAGES = new Set(['javascript', 'typescript', 'tsx']);
 
 // Swift compile-time conditional lines (`#if X`, `#elseif`, `#else`, `#endif`).
+// The grammar cannot parse them inside a type body: the whole body (with every
+// method in it) became one ERROR node, so GRDB's DatabaseObservationBroker
+// vanished from the graph and its methods lost their parent in the chunker.
+// GRDB: files with parse errors 61 -> 20 of 478, none worse.
 const SWIFT_CONDITIONAL_DIRECTIVE_LINE = /^[ \t]*#(?:if|elseif|else|endif)\b[^\n]*/gm;
 
 // C/C++ visibility macro between the class-key and the name:
@@ -887,6 +891,22 @@ function blankCppClassKeyMacros(content, languageId) {
     const isVariable = next === ';' && key !== 'class' && !/^[A-Z]/.test(ident) && !isDefined(macro);
     return isVariable ? m : key + gap + ' '.repeat(macro.length);
   });
+}
+
+// The text tree-sitter parses. Same length as the source, so offsets and line
+// numbers are unchanged; chunk text is still sliced from the original source.
+// parse() uses it, so the chunker, the incremental parser and the graph
+// (extractSymbols) see the same tree.
+// - Swift: each directive line becomes a line comment of the same length
+//   (`#if X` -> `//f X`). Both branches stay visible as declarations, and the
+//   comment is a tree node, so the directive text stays in a chunk (blank
+//   lines fall between nodes and no chunk would hold them).
+// - C/C++: the export macro after the class-key is blanked.
+function sourceForParse(content, languageId) {
+  if (languageId === 'swift' && content.includes('#')) {
+    return content.replace(SWIFT_CONDITIONAL_DIRECTIVE_LINE, (line) => line.replace(/#./, '//'));
+  }
+  return blankCppClassKeyMacros(content, languageId);
 }
 
 // Namespace / module wrappers that recursiveChunk makes transparent: the body
@@ -1026,7 +1046,7 @@ export class TreeSitterProvider {
     if (!language) return null;
 
     this._parser.setLanguage(language);
-    return this._parser.parse(blankCppClassKeyMacros(content, languageId));
+    return this._parser.parse(sourceForParse(content, languageId));
   }
 
   /**
@@ -1050,18 +1070,11 @@ export class TreeSitterProvider {
     let tree;
     let query;
     try {
-      // Swift: the grammar cannot parse `#if` / `#endif` lines inside a type
-      // body, and the whole body (with every method in it) became one ERROR
-      // node — GRDB's DatabaseObservationBroker vanished from the graph.
-      // Blank the directive lines (same length, so offsets and line numbers
-      // are unchanged); both branches stay visible as declarations.
-      // GRDB: files with parse errors 61 → 20 of 478, none worse.
-      if (languageId === 'swift' && content.includes('#')) {
-        content = content.replace(SWIFT_CONDITIONAL_DIRECTIVE_LINE, (line) => ' '.repeat(line.length));
-      }
-      // C/C++: blank a visibility macro after the class-key (same length),
-      // exactly as parse() does for the chunker.
-      content = blankCppClassKeyMacros(content, languageId);
+      // Same text as parse() (Swift #if lines, C/C++ export macros). Doc
+      // comments are read from the original source, so a Swift directive
+      // (a comment in the parsed text) is never a doc comment.
+      const source = content;
+      content = sourceForParse(content, languageId);
       this._parser.setLanguage(language);
       tree = this._parser.parse(content);
       if (!tree) return null;
@@ -1200,7 +1213,7 @@ export class TreeSitterProvider {
         // (flask: 96 of 415 docs were such duplicates).
         const docComment = entityType === 'decorator'
           ? null
-          : extractTreeSitterDocComment(extentNode, content, languageId);
+          : extractTreeSitterDocComment(extentNode, source, languageId);
         symbols.push({
           name: symbolName,
           type: entityType,
@@ -1263,7 +1276,7 @@ export class TreeSitterProvider {
     const children = this._getChildren(tree.rootNode);
     const chunks = this.recursiveChunk(children, content, maxChunkSize, null, boundaryTypes, {
       languageId,
-      parsedContent: blankCppClassKeyMacros(content, languageId),
+      parsedContent: sourceForParse(content, languageId),
     });
     // Text is never dropped: what no chunk took (a file holding only
     // `import Foundation`) is a chunk of its own.
