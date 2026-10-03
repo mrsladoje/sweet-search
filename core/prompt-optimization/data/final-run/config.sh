@@ -7,7 +7,8 @@ BEFORE_COMMIT="${BEFORE_COMMIT:-d013b492}"                                  # st
 MAIN_ROOT="${MAIN_ROOT:-/Users/admin/Projects/sweet-search-private}"         # owns node_modules, models/, eval/repos
 FR_STATE="${FR_STATE:-$HOME/.ss-eval/final-run}"                            # logs, step state, build stamps
 BEFORE_REPOS="${BEFORE_REPOS:-$HOME/.ss-eval/final-before-repos}"           # before-arm source repos (copies + before-built index)
-AFTER_REPOS="${AFTER_REPOS:-$FINAL_ROOT/eval/repos}"                        # after-arm source repos = eval/repos (PLAN §6.1 index)
+AFTER_REPOS="${AFTER_REPOS:-$FINAL_ROOT/eval/repos}"
+AFTER_COPY="${AFTER_COPY:-$HOME/.ss-eval/final-after-repos}"                    # private copies of AFTER_REPOS the run reads (another session uses eval/repos)                        # after-arm source repos = eval/repos (PLAN §6.1 index)
 QUESTIONS="${QUESTIONS:-$FR_HERE/questions.json}"
 FR_CELLS="${FR_CELLS:-codex-sol61-high oc-sol61-high cc-opus55-medium}"
 FR_TAG="${FR_TAG:-final}"                                                   # results: core/prompt-optimization/data/results/r282-<cell>-<tag>-r<rep>
