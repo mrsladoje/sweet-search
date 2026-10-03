@@ -475,7 +475,6 @@ describe('also candidates are pointers, not shown spans', () => {
     expect(body.indexOf('formatAlsoLine(')).toBeGreaterThan(body.indexOf('formatSpanSymbols('));
     expect(body.indexOf('formatAlsoLine(')).toBeLessThan(body.indexOf('renderShownFullTrailer('));
     expect(body.match(/recordAgentToolCall\([^)]*\)/)[0]).not.toContain('also');
-    expect(body.match(/recordForAlreadyShown\(shownSpans/)).not.toBeNull();
   });
 });
 

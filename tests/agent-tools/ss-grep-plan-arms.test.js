@@ -1,15 +1,10 @@
 /**
- * ss-grep plan arms, end to end through the real tool code (runAgentTool in a virtual process,
+ * ss-grep line classes, end to end through the real tool code (runAgentTool in a virtual process,
  * the in-process fallback and the warm-daemon /agent-tool path), on a real engine (bareGrep over
  * a mock native sparse-gram index) with a REAL code graph (CodeGraphRepository over SQLite) and
- * a real reconcile manifest:
- *
- *   SS_FIX_GREP_LINES=1               declarations first, lines outside every symbol last
- *                                     (this and the two below are DEFAULT ON since 2026-10-03)
- *   SS_FIX_GREP_ALLOC_RULE=guarantee|hh  one line per kept file first
- *   SS_FIX_GREP_WEIGHT=sat2           hits / (hits + 2) x prior
- *
- * All three are default off: without them the output is the shipped output.
+ * a real reconcile manifest: a file given fewer lines than it has stored matches shows its
+ * declaration lines first and lines outside every symbol last (grep-line-classes.js), on top of
+ * the sat2 weight and the one-line guarantee.
  */
 import Database from 'better-sqlite3';
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
@@ -166,35 +161,24 @@ async function ssDaemon(args, extra = {}) {
   return JSON.parse(r.body).stdout;
 }
 
-const LINES = { SS_FIX_GREP_LINES: '1' };
 const goLines = out => out.split('\n').filter(l => l.startsWith('worker/export.go'));
 const HEADER = '# ss-grep: 10 total match(es) for /[Ee]xport/ across 3 files\n'
   + '# (+N more in this file)=truncated — see the rest: ss-grep "<regex>" --in <file>\n';
-// k = 4: worker/export.go (6 hits, w 2.45) gets 2 lines, scripts/export.sh (3, w 1.73) 1, other.go 1
-const SHIPPED_K4 = HEADER
+// k = 4 without line classes (the prefix): worker/export.go (6 hits) gets 2 lines,
+// scripts/export.sh (3) 1, other.go 1
+const PREFIX_K4 = HEADER
   + 'worker/export.go:1: export\n'
   + 'worker/export.go:3: export (+4 more in this file)\n'
   + 'scripts/export.sh:2: export (+2 more in this file)\n'
   + 'other.go:2: export\n';
 
-describe('SS_FIX_GREP_LINES through the real tool', () => {
-  it('0 (the legacy value): the 2026-10-02 prefix; the engine is not asked for classes', async () => {
-    expect(await ss([REGEX, '-k', '4'], { SS_FIX_GREP_LINES: '0' })).toBe(SHIPPED_K4);
-    expect(grepCalls[0].grepLineClasses).toBeUndefined();
-  });
-
-  it('default ON since 2026-10-03: an empty environment equals SS_FIX_GREP_LINES=1', async () => {
-    const on = await ss([REGEX, '-k', '4'], LINES);
-    expect(await ss([REGEX, '-k', '4'])).toBe(on);
-    expect(grepCalls[0]).toMatchObject({ grepLineClasses: true, grepFileWeight: 'sat2' });
-  });
-
+describe('ss-grep line classes through the real tool', () => {
   it('a file with more entities than findEntitiesInFile\'s default 512 still gets classes', async () => {
     // 600 one-line entities on the blank line 4 sort before Export (5) and exportAll (9)
     const filler = Array.from({ length: 600 }, (_, i) => [`f${i}`, `zz${i}`, 'variable', 'worker/export.go', 4, 4]);
     setEntities([...filler, ...ENTITIES]);
     try {
-      expect(goLines(await ss([REGEX, '-k', '4'], LINES))).toEqual([
+      expect(goLines(await ss([REGEX, '-k', '4']))).toEqual([
         'worker/export.go:5: Export',
         'worker/export.go:6: export (+4 more in this file)',
       ]);
@@ -205,20 +189,20 @@ describe('SS_FIX_GREP_LINES through the real tool', () => {
     const filler = Array.from({ length: 2100 }, (_, i) => [`f${i}`, `zz${i}`, 'variable', 'worker/export.go', 4, 4]);
     setEntities([...filler, ...ENTITIES]);
     try {
-      expect(await ss([REGEX, '-k', '4'], LINES)).toBe(SHIPPED_K4);
+      expect(await ss([REGEX, '-k', '4'])).toBe(PREFIX_K4);
     } finally { setEntities(ENTITIES); }
   });
 
   it('on: the declaration and a line inside it replace the comment and the import', async () => {
     // k = 4: the engine stores the file's first min(k, 100) = 4 hits (lines 1, 3, 5, 6)
-    const out = await ss([REGEX, '-k', '4'], LINES);
+    const out = await ss([REGEX, '-k', '4']);
     expect(out).toBe(HEADER
       + 'worker/export.go:5: Export\n'
       + 'worker/export.go:6: export (+4 more in this file)\n'
       // no entities (shell): the prefix, in the same call
       + 'scripts/export.sh:2: export (+2 more in this file)\n'
       + 'other.go:2: export\n');
-    expect(grepCalls[0]).toMatchObject({ grepLineClasses: true, grepFileOrder: 'weight', _isAgentFormat: true });
+    expect(grepCalls[0]).toMatchObject({ perFileCap: 4, maxFiles: 4, _isAgentFormat: true });
   });
 
   it('with full-line text (both default ON): the same chosen lines, each printed whole', async () => {
@@ -249,7 +233,7 @@ describe('SS_FIX_GREP_LINES through the real tool', () => {
   it('more lines: usage inside a symbol before lines outside every symbol', async () => {
     // k = 6: export.go gets 3 of its 6 stored hits (sh 2, other 1); the usage at 6 beats the
     // comment at 1 and the import at 3
-    expect(goLines(await ss([REGEX, '-k', '6'], LINES))).toEqual([
+    expect(goLines(await ss([REGEX, '-k', '6']))).toEqual([
       'worker/export.go:5: Export',
       'worker/export.go:6: export',
       'worker/export.go:9: export (+3 more in this file)',
@@ -257,7 +241,7 @@ describe('SS_FIX_GREP_LINES through the real tool', () => {
   });
 
   it('-C context renders the same chosen hits', async () => {
-    const out = await ss([REGEX, '-k', '4', '-C', '1'], LINES);
+    const out = await ss([REGEX, '-k', '4', '-C', '1']);
     expect(out).toContain('worker/export.go-4-\nworker/export.go:5: func Export(ctx context.Context) error {\n'
       + 'worker/export.go:6: \treturn exportAll(ctx) (+4 more in this file)\nworker/export.go-7- }\n');
     expect(out).not.toMatch(/worker\/export\.go[:-][13][:-]/);
@@ -265,12 +249,12 @@ describe('SS_FIX_GREP_LINES through the real tool', () => {
 
   it('a source newer than the published index (detected staleness) keeps the prefix', async () => {
     utimesSync(path.join(root, 'worker/export.go'), NEWER, NEWER);
-    expect(await ss([REGEX, '-k', '4'], LINES)).toBe(SHIPPED_K4);
+    expect(await ss([REGEX, '-k', '4'])).toBe(PREFIX_K4);
   });
 
   it('entities hidden by the graph visibility rule (stale_since set) keep the prefix', async () => {
     setEntities(ENTITIES.map(e => [...e, 99]));
-    expect(await ss([REGEX, '-k', '4'], LINES)).toBe(SHIPPED_K4);
+    expect(await ss([REGEX, '-k', '4'])).toBe(PREFIX_K4);
   });
 
   it('UNDETECTED staleness (documented): a moved declaration\'s old span promotes the wrong lines', async () => {
@@ -279,7 +263,7 @@ describe('SS_FIX_GREP_LINES through the real tool', () => {
     // them out of the declaration class, but the real declaration at 5 is no longer shown
     // (with a correct index this call shows 5, 6, 9; the shipped prefix shows 1, 3, 5).
     setEntities([['e1', 'Export', 'function', 'worker/export.go', 1, 3], ENTITIES[1], ENTITIES[2]]);
-    expect(goLines(await ss([REGEX, '-k', '6'], LINES))).toEqual([
+    expect(goLines(await ss([REGEX, '-k', '6']))).toEqual([
       'worker/export.go:1: export',
       'worker/export.go:3: export',
       'worker/export.go:9: export (+3 more in this file)',
@@ -287,24 +271,15 @@ describe('SS_FIX_GREP_LINES through the real tool', () => {
   });
 
   it('--in drill-in keeps every hit in line order and asks the engine for nothing', async () => {
-    const out = await ss([REGEX, '-k', '3', '--in', 'worker/export.go'], LINES);
+    const out = await ss([REGEX, '-k', '3', '--in', 'worker/export.go']);
     expect(out).toContain('worker/export.go:1: export\nworker/export.go:3: export\nworker/export.go:5: Export');
-    expect(grepCalls[0].grepLineClasses).toBeUndefined();
-  });
-});
-
-describe('the arms need SS_FIX_GREP_ALLOC', () => {
-  it('they are ignored with SS_FIX_GREP_ALLOC=0 (the legacy output)', async () => {
-    const legacy = await ss([REGEX, '-k', '4'], { SS_FIX_GREP_ALLOC: '0' });
-    expect(await ss([REGEX, '-k', '4'], { SS_FIX_GREP_ALLOC: '0', ...LINES, SS_FIX_GREP_ALLOC_RULE: 'guarantee', SS_FIX_GREP_WEIGHT: 'sat2' }))
-      .toBe(legacy);
-    expect(grepCalls[0].grepFileOrder).toBeUndefined();
+    expect(grepCalls[0].perFileCap).toBeUndefined();
   });
 });
 
 describe('the warm daemon (/agent-tool) prints exactly what the in-process tool prints', () => {
   const CALLS = [[REGEX, '-k', '4'], [REGEX, '-k', '6'], [REGEX, '-k', '3', '-A', '1'], [REGEX, '-k', '2', '--in', 'worker']];
-  for (const env of [LINES, { SS_FIX_GREP_ALLOC_RULE: 'guarantee' }, { SS_FIX_GREP_ALLOC_RULE: 'hh', SS_FIX_GREP_WEIGHT: 'sat2', ...LINES }]) {
+  for (const env of [{}, { SS_FIX_GREP_FULLLINE: '1' }]) {
     it(`same bytes on both paths (${JSON.stringify(env)})`, async () => {
       for (const args of CALLS) {
         const inProcess = await ss(args, env);

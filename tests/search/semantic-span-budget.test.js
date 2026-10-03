@@ -1,7 +1,6 @@
 /**
- * SS_FIX_SEMANTIC_RANGES / SS_FIX_SEMANTIC_PICK budget rules (pure): whole-line cuts, the
- * partial-line case, the excerpt around the best chunk, the omitted-content lines, and the
- * ledger rule (exact whole-line ranges only).
+ * ss-semantic exact-range budget rules (pure): whole-line cuts, the partial-line case, the
+ * omitted-content lines, and the ledger rule (exact whole-line ranges only).
  */
 import { describe, expect, it } from 'vitest';
 
@@ -11,7 +10,6 @@ import {
   enforceExactCharBudget,
   exactFallbackSpan,
   omittedRangeLines,
-  pickExcerptRange,
   rangeChars,
 } from '../../core/search/semantic-span-budget.js';
 import { collectSemanticShownSpans } from '../../core/search/agent-span-ledger.js';
@@ -76,37 +74,6 @@ describe('enforceExactCharBudget', () => {
     const { spans: out } = enforceExactCharBudget(spans(), TEXT, OFFSETS, 1000);
     expect(out.map(s => [s.startLine, s.endLine, s.truncated])).toEqual([[2, 4, undefined], [8, 19, undefined]]);
     expect(out[0].text).toBe(TEXT.slice(OFFSETS[1], OFFSETS[4]));
-  });
-
-  it('pick: the excerpt starts at the best chunk, then widens by score while it fits', () => {
-    const merged = [{ startLine: 1, endLine: 20, score: 0.9 }];
-    const parts = [
-      { startLine: 1, endLine: 6, score: 0.2 },
-      { startLine: 7, endLine: 10, score: 0.9 },
-      { startLine: 11, endLine: 13, score: 0.5 },
-      { startLine: 14, endLine: 20, score: 0.4 },
-    ];
-    const head = enforceExactCharBudget(merged, TEXT, OFFSETS, 80).spans[0];
-    expect([head.startLine, head.endLine]).toEqual([1, 7]);
-    const picked = enforceExactCharBudget(merged, TEXT, OFFSETS, 80, { pick: true, parts }).spans[0];
-    // best chunk 7-10 (44 chars), + 11-13 (77 chars), 14-20 and 1-6 no longer fit
-    expect([picked.startLine, picked.endLine, picked.fullStartLine, picked.fullEndLine]).toEqual([7, 13, 1, 20]);
-  });
-
-  it('pick: budget left after the chunks goes to whole lines toward the head, then the end', () => {
-    const span = { startLine: 1, endLine: 20 };
-    // best chunk 9-10 (22 chars); 60 chars: 6-10 (55) toward the head, then 6-11 would be 66
-    expect(pickExcerptRange(span, [{ startLine: 9, endLine: 10, score: 1 }], TEXT, OFFSETS, 60)).toEqual({ from: 6, to: 10 });
-    // the head is reached first, the rest goes to the end
-    expect(pickExcerptRange(span, [{ startLine: 2, endLine: 3, score: 1 }], TEXT, OFFSETS, 60)).toEqual({ from: 1, to: 5 });
-  });
-
-  it('pick: a best chunk that alone exceeds the budget is cut from its own start', () => {
-    expect(pickExcerptRange({ startLine: 1, endLine: 20 }, [{ startLine: 5, endLine: 18, score: 1 }], TEXT, OFFSETS, 30))
-      .toEqual({ from: 5, to: 18 });
-    const out = enforceExactCharBudget([{ startLine: 1, endLine: 20, score: 1 }], TEXT, OFFSETS, 30,
-      { pick: true, parts: [{ startLine: 5, endLine: 18, score: 1 }] }).spans[0];
-    expect([out.startLine, out.endLine]).toEqual([5, 6]);
   });
 });
 

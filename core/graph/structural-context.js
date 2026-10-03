@@ -282,8 +282,8 @@ function itemSummary(entity) {
 }
 
 /**
- * SS_FIX_TRACE_MODE_BUDGET (default ON in ss-trace since 2026-10-03): with a mode word, only that section prints, so it
- * takes every share but the target's. Any other mode (or none) keeps the shares.
+ * ss-trace with a mode word (opts.modeSection): only that section prints, so it takes every
+ * share but the target's. Any other mode (or none) keeps the shares.
  */
 export function modeSectionShares(shares, mode) {
   if (mode !== 'callers' && mode !== 'callees' && mode !== 'impact') return shares;

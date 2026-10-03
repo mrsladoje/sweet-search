@@ -1,11 +1,10 @@
 /**
  * The offline measurement harnesses of docs/SUGGESTED_PLAN.md at 945a9664: their output parsers, and the
- * ss-trace mode-budget share rule (SS_FIX_TRACE_MODE_BUDGET, default off).
+ * ss-trace mode-budget share rule (modeSectionShares; ss-trace passes the mode word).
  */
 import { describe, expect, it } from 'vitest';
 
 import { parseEntries } from '../../eval/search-allocation-measure/measure.mjs';
-import { printedBlocks } from '../../eval/semantic-range-replay/replay.mjs';
 import { parseTrace } from '../../eval/trace-truncation-classify/classify.mjs';
 import { modeSectionShares, sectionShares } from '../../core/graph/structural-context.js';
 
@@ -29,22 +28,6 @@ describe('parseEntries (recorded ss-search / ss-find output)', () => {
   });
 });
 
-describe('printedBlocks (ss-semantic output)', () => {
-  it('headers, code lines, and the not-shown lines on each side', () => {
-    const out = [
-      '# ss-semantic a.go | "q" | spans=1 | ~tokens=600',
-      '# not shown: lines 1-8 — ss-read a.go 1 8',
-      '### a.go:9-11 [f]', '```go', 'x', 'y', 'z', '```',
-      '# not shown: lines 12-20 — ss-read a.go 12 20',
-    ].join('\n');
-    expect(printedBlocks(out)).toEqual([{
-      start: 9, end: 11, code: ['x', 'y', 'z'],
-      before: ['# not shown: lines 1-8 — ss-read a.go 1 8'],
-      after: ['# not shown: lines 12-20 — ss-read a.go 12 20'],
-    }]);
-  });
-});
-
 describe('parseTrace (cmdTrace grammar)', () => {
   it('symbol, mode word, and the value flags', () => {
     expect(parseTrace('ss-trace Foo callees --in src/a.ts --query "who" --depth 2')).toMatchObject({
@@ -55,7 +38,7 @@ describe('parseTrace (cmdTrace grammar)', () => {
   });
 });
 
-describe('modeSectionShares (SS_FIX_TRACE_MODE_BUDGET)', () => {
+describe('modeSectionShares', () => {
   const base = sectionShares({ fanIn: 3, fanOut: 3 }, '', { type: 'function' });
 
   it('a mode word gives its section every share but the target\'s', () => {

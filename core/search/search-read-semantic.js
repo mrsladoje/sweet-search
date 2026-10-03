@@ -622,9 +622,7 @@ function _fallbackSpanFromText(fileText, totalLines, maxChars) {
  * @param {string} [req.projectRoot]
  * @param {boolean} [req.verbose=false] - include timings + signal contributions
  * @param {boolean} [req.exactRanges=false] - a span cut by the budget holds whole lines and
- *   reports exactly the printed range (SS_FIX_SEMANTIC_RANGES; semantic-span-budget.js)
- * @param {boolean} [req.pickExcerpt=false] - an over-budget span is excerpted around its best
- *   chunk (SS_FIX_SEMANTIC_PICK); implies exactRanges
+ *   reports exactly the printed range (ss-semantic sets it; semantic-span-budget.js)
  * @param {Object} [req._lateInteractionIndex] - private daemon injection; same-project index only
  * @returns {Promise<Object>}
  */
@@ -647,9 +645,8 @@ async function _readSemanticUnpinned(req) {
   const maxChars = req.maxChars
     ?? (req.maxTokens != null ? req.maxTokens * APPROX_CHARS_PER_TOKEN : DEFAULTS.maxChars);
   const verbose = !!req.verbose;
-  // SS_FIX_SEMANTIC_RANGES / SS_FIX_SEMANTIC_PICK (semantic-span-budget.js); absent = unchanged.
-  const pickExcerpt = req.pickExcerpt === true;
-  const exactRanges = pickExcerpt || req.exactRanges === true;
+  // ss-semantic's exact ranges (semantic-span-budget.js); absent = unchanged.
+  const exactRanges = req.exactRanges === true;
 
   const tLoad0 = performance.now();
   const { chunks, language, totalLines, fileText } = await _loadFileChunks(filePathRel, projectRoot, reconcileManifest);
@@ -832,14 +829,7 @@ async function _readSemanticUnpinned(req) {
 
   const merged = _expandAndMergeSpans(ranked, totalLines, contextLines);
   const { spans, charsUsed } = exactRanges
-    ? enforceExactCharBudget(merged, fileText, lineOffsets, maxChars, {
-      pick: pickExcerpt,
-      parts: pickExcerpt ? ranked.map(s => ({
-        startLine: Math.max(1, s.startLine - contextLines),
-        endLine: Math.min(totalLines, s.endLine + contextLines),
-        score: s.score,
-      })) : undefined,
-    })
+    ? enforceExactCharBudget(merged, fileText, lineOffsets, maxChars)
     : _enforceCharBudget(merged, fileText, lineOffsets, maxChars);
 
   // Output-only pointers: what the printed spans hold, and the next-best ranked places that
