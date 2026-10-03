@@ -78,6 +78,9 @@ const EXTRA_BLOCK_COMMENTS = { python: [["'''", "'''"]], elixir: [['"""', '"""']
 // Trailing-closure call syntax (`a.b { … }` is a call). Elsewhere `x.Y {`
 // is a composite literal (Go) or a block, not a call.
 const TRAILING_CLOSURE_LANGUAGES = new Set(['swift', 'kotlin']);
+
+// Languages with the optional-call operator `fn?.(args)`.
+const OPTIONAL_CALL_LANGUAGES = new Set(['javascript', 'typescript', 'tsx']);
 // Control-flow lines: `if a.b {` / `for x in a.b {` read a property; the
 // brace opens the statement's block, not a closure.
 const TRAILING_CLOSURE_SKIP_LINE =
@@ -258,7 +261,13 @@ function buildPlan(language, langInfo) {
   const sep = sepAlternation(separators);
   // Ruby bang methods: `record.save!(` / `record.save!` both call `save!`.
   // `!` must touch the name and not start `!=` (`x.y != z` is a comparison).
-  const callOpen = language === 'ruby' ? String.raw`(?:\s*\(|!(?!=))` : String.raw`\s*\(`;
+  // JS/TS optional call: `cb?.(x)`, `a.b?.(x)` call `cb` / `a.b` (`?.(` has
+  // no other meaning in the grammar).
+  const callOpen = language === 'ruby' ? String.raw`(?:\s*\(|!(?!=))`
+    : OPTIONAL_CALL_LANGUAGES.has(language) ? String.raw`\s*(?:\?\.\s*)?\(`
+      : String.raw`\s*\(`;
+  // A call's opening parenthesis without Ruby's bang form.
+  const parenOpen = OPTIONAL_CALL_LANGUAGES.has(language) ? callOpen : String.raw`\s*\(`;
 
   const comment = langInfo?.comment || {};
   const lineTokens = [comment.line, ...(EXTRA_LINE_COMMENTS[language] || [])].filter(Boolean);
@@ -277,7 +286,7 @@ function buildPlan(language, langInfo) {
     qualified: new RegExp(String.raw`\b(\w+)(?:${sep})\s*(\w+)${GENERIC_ARGS}${callOpen}`, 'g'),
     // prev( … ) SEP method [generics] (   — lookahead keeps `method(` available
     // for the next match so `a(x).b(y).c(` yields both `a().b` and `b().c`.
-    chained: new RegExp(String.raw`\b(\w+)\s*\([^()]*\)\s*(?:${sep})\s*(?=(\w+)${GENERIC_ARGS}${callOpen})`, 'g'),
+    chained: new RegExp(String.raw`\b(\w+)${parenOpen}[^()]*\)\s*(?:${sep})\s*(?=(\w+)${GENERIC_ARGS}${callOpen})`, 'g'),
     // Continuation line: `.method(` / `?.method(` at line start.
     leading: new RegExp(String.raw`^(?:${sep})\s*(\w+)${GENERIC_ARGS}${callOpen}`),
     // Previous line ends with a receiver: `name`, `name(…)` or `name)` → tail.
@@ -301,7 +310,7 @@ function buildPlan(language, langInfo) {
     // Ruby `=begin`/`=end` must start the line.
     blockAtLineStartOnly: language === 'ruby',
     // Bare call: a name not preceded by a member/path/sigil character.
-    bare: new RegExp(String.raw`(?<![\w$.:>@#\\])([A-Za-z_]\w*)${GENERIC_ARGS}\s*\(`, 'g'),
+    bare: new RegExp(String.raw`(?<![\w$.:>@#\\])([A-Za-z_]\w*)${GENERIC_ARGS}${parenOpen}`, 'g'),
     bareKeywords: bareKeywordsFor(language),
     shorthandDefinitions: SHORTHAND_DEFINITION_LANGUAGES.has(language),
     preprocessor: PREPROCESSOR_LANGUAGES.has(language),
