@@ -398,6 +398,13 @@ export class CodeGraphRepository {
     const db = this._open();
     if (!db || !filePath) return [];
     const limit = Math.min(Math.max(1, opts.limit | 0 || 512), 2048);
+    // ss-grep asks this for every shown file of every call, and the same files recur. Answers
+    // are kept until the database (data_version: a write by any connection), the pinned epoch
+    // or the database file changes; each caller gets its own copies.
+    const cache = this._fileEntitiesCache(db);
+    const key = `${limit}\0${filePath}`;
+    const hit = cache?.get(key);
+    if (hit) return hit.map((entity) => ({ ...entity }));
     try {
       const rows = prepareCached(db, `
         SELECT id, name, type, start_line, end_line, parent_class
@@ -409,7 +416,7 @@ export class CodeGraphRepository {
         ORDER BY start_line ASC, end_line DESC
         LIMIT ?
       `).all(filePath, ...this._entityVisibilityParams(db), limit);
-      return rows.map(row => ({
+      const entities = rows.map(row => ({
         id: row.id,
         name: row.name,
         type: row.type,
@@ -417,9 +424,27 @@ export class CodeGraphRepository {
         endLine: row.end_line,
         parentClass: row.parent_class || null,
       }));
+      if (cache) {
+        if (cache.size >= 1024) cache.clear();
+        cache.set(key, entities.map((entity) => ({ ...entity })));
+      }
+      return entities;
     } catch {
       return [];
     }
+  }
+
+  /** findEntitiesInFile's answers for this connection, epoch and database state (or null). */
+  _fileEntitiesCache(db) {
+    let dataVersion;
+    try { dataVersion = db.pragma('data_version', { simple: true }); } catch { return null; }
+    const version = `${this._dbPath}\0${this._manifestEpoch}\0${dataVersion}`;
+    if (this._fileEntitiesDb !== db || this._fileEntitiesVersion !== version) {
+      this._fileEntitiesDb = db;
+      this._fileEntitiesVersion = version;
+      this._fileEntities = new Map();
+    }
+    return this._fileEntities;
   }
 
   /**

@@ -300,6 +300,36 @@ function findIndexedFamily(indexedSeeds, codeGraphRepo, keepFile = null) {
 }
 
 /**
+ * findEntitiesInRange(file, line, line) and findEnclosingEntity(file, line, line) for every hit,
+ * from one findEntitiesForRanges statement per file instead of two queries per hit. Keyed
+ * `line\0file`; null (the caller asks per hit) when the repository has no batch method or a
+ * batch fails.
+ */
+function entitiesAtHitLines(hits, codeGraphRepo) {
+  if (typeof codeGraphRepo?.findEntitiesForRanges !== 'function'
+      || typeof codeGraphRepo?.findEnclosingEntity !== 'function') return null;
+  const linesByFile = new Map();
+  for (const hit of hits) {
+    if (typeof hit?.file !== 'string' || !Number.isInteger(hit?.line)) return null;
+    if (!linesByFile.has(hit.file)) linesByFile.set(hit.file, new Set());
+    linesByFile.get(hit.file).add(hit.line);
+  }
+  const out = new Map();
+  for (const [file, lineSet] of linesByFile) {
+    const lines = [...lineSet];
+    let rows;
+    try {
+      rows = codeGraphRepo.findEntitiesForRanges(file, lines.map((line) => ({ startLine: line, endLine: line, includeInside: true })));
+    } catch {
+      return null;
+    }
+    if (!Array.isArray(rows) || rows.length !== lines.length) return null;
+    lines.forEach((line, i) => out.set(`${line}\0${file}`, rows[i]));
+  }
+  return out;
+}
+
+/**
  * Build grep family closure only from symbols indexed at exact match lines.
  * `keepFile`: see findIndexedFamily.
  */
@@ -309,13 +339,20 @@ export function buildIndexedGrepFamilyManifest(results, codeGraphRepo, { keepFil
       || typeof codeGraphRepo?.findFamilyCandidates !== 'function') return null;
   const seeds = [];
   const seen = new Set();
-  for (const result of results.slice(0, MAX_FAMILY_SEEDS)) {
+  const hits = results.slice(0, MAX_FAMILY_SEEDS);
+  const batched = entitiesAtHitLines(hits, codeGraphRepo);
+  for (const result of hits) {
     let entities = [];
-    try { entities = codeGraphRepo.findEntitiesInRange(result.file, result.line, result.line) || []; }
-    catch { entities = []; }
-    if (entities.length === 0 && typeof codeGraphRepo.findEnclosingEntity === 'function') {
-      try { entities = [codeGraphRepo.findEnclosingEntity(result.file, result.line, result.line)].filter(Boolean); }
+    const row = batched?.get(`${result.line}\0${result.file}`);
+    if (row) {
+      entities = row.inRange.length > 0 ? row.inRange : [row.enclosing].filter(Boolean);
+    } else {
+      try { entities = codeGraphRepo.findEntitiesInRange(result.file, result.line, result.line) || []; }
       catch { entities = []; }
+      if (entities.length === 0 && typeof codeGraphRepo.findEnclosingEntity === 'function') {
+        try { entities = [codeGraphRepo.findEnclosingEntity(result.file, result.line, result.line)].filter(Boolean); }
+        catch { entities = []; }
+      }
     }
     for (const entity of entities) {
       if (typeof entity?.name !== 'string' || !/\d/.test(entity.name) || seen.has(entity.name)) continue;
