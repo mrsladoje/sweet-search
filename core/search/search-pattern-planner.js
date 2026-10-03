@@ -134,6 +134,9 @@ function dropSymlinkAliasMatches(result, searchDir) {
   };
 }
 
+// An --in scope holding at most this many indexed files is grepped whole, without a gram lookup.
+const SCOPE_DIRECT_MAX_FILES = 512;
+
 // =============================================================================
 // Core pipeline — regex candidate generation
 // =============================================================================
@@ -284,7 +287,21 @@ async function collectRegexMatches(searcher, regex, searchDir, options = {}) {
   let gramLookupTime = 0;
   let gramLookupResult = null;
 
-  if (prefilterClauses.gram.length > 0) {
+  // A small --in scope (a file, a directory): its indexed files are the candidates. The gram
+  // lookup only narrows, and for common words it builds repo-wide candidate lists first
+  // (20-100 ms on 30-60k-file repos for a one-file scope).
+  let scopedFiles = null;
+  if (inScope && !fixedString && globs.length === 0) {
+    const all = getSparseGramAllFilesWithOverlay(searcher, scopeIndex, options);
+    if (Array.isArray(all)) {
+      const inScopeFiles = all.filter(inScope);
+      if (inScopeFiles.length > 0 && inScopeFiles.length <= SCOPE_DIRECT_MAX_FILES) scopedFiles = inScopeFiles;
+    }
+  }
+
+  if (scopedFiles) {
+    searchFiles = scopedFiles;
+  } else if (prefilterClauses.gram.length > 0) {
     const gramStart = performance.now();
     gramLookupResult = querySparseGramCandidates(searcher, prefilterClauses.gram, options);
     gramLookupTime = performance.now() - gramStart;
