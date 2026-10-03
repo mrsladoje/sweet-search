@@ -111,6 +111,23 @@ function readBytes(fd, start, end) {
   return off === buf.length ? buf : buf.subarray(0, off);
 }
 
+function signatureOf(st) {
+  return `${st.dev}:${st.ino}:${st.size}:${st.mtimeNs}:${st.ctimeNs}`;
+}
+
+function statSignature(segPath) {
+  try { return signatureOf(fs.statSync(segPath, { bigint: true })); } catch { return null; }
+}
+
+function fdSignatureAt(fd, consumed) {
+  try {
+    const st = fs.fstatSync(fd, { bigint: true });
+    return st.size === BigInt(consumed) ? signatureOf(st) : null;
+  } catch {
+    return null;
+  }
+}
+
 function openSegment(segPath) {
   try {
     return fs.openSync(segPath, 'r');
@@ -142,8 +159,12 @@ export function readSparseGramDeltaRecordsSince(baseArtifactPath, opts = {}, cur
   try {
     let prev = cursor?.segments || null;
     if (prev && (prev.length > segs.length || prev.some((s, i) => s.path !== segs[i].path))) prev = null;
+    // A segment whose stat is what it was after the last read has not been written since
+    // (appends move size and times; compaction makes a new file): no open, no read.
+    const unchanged = new Set();
     if (prev) {
       for (const s of prev) {
+        if (s.signature && s.signature === statSignature(s.path)) { unchanged.add(s.path); continue; }
         const fd = openSegment(s.path);
         if (fd === null) { prev = null; break; }
         fds.set(s.path, fd);
@@ -159,6 +180,10 @@ export function readSparseGramDeltaRecordsSince(baseArtifactPath, opts = {}, cur
     const next = [];
     for (let i = 0; i < segs.length; i++) {
       const seg = segs[i];
+      if (prev && i < prev.length && unchanged.has(seg.path)) {
+        next.push(prev[i]);
+        continue;
+      }
       let fd = fds.get(seg.path);
       if (fd === undefined) {
         fd = openSegment(seg.path);
@@ -172,7 +197,10 @@ export function readSparseGramDeltaRecordsSince(baseArtifactPath, opts = {}, cur
       // Stop at the last newline: a torn last line is read again next call.
       const consumed = from + buf.lastIndexOf(0x0a) + 1;
       const check = readBytes(fd, Math.max(0, consumed - SEGMENT_TAIL_CHECK_BYTES), consumed);
-      next.push({ path: seg.path, ino: st.ino, consumed, check });
+      // Only a segment read to its end (no torn last line) may be skipped next time, and only
+      // with a stat taken after the read that still shows exactly the bytes consumed.
+      const signature = fdSignatureAt(fd, consumed);
+      next.push({ path: seg.path, ino: st.ino, consumed, check, signature });
     }
     return { segments: next };
   } finally {
