@@ -1864,6 +1864,23 @@ export async function ensureDaemonForProjectRoot(expectedProjectRoot, {
   return { ok: false, reason: 'daemon-did-not-become-ready-with-expected-root', health };
 }
 
+/**
+ * True when a process accepts connections on this project's socket. The kernel accepts
+ * even while the daemon's event loop is busy loading indexes or answering a long query,
+ * so this tells "a daemon exists" apart from "no daemon" where a /health probe with a
+ * short timeout cannot.
+ */
+export async function isServerListening({ timeoutMs = 2000 } = {}) {
+  const net = await import('node:net');
+  return new Promise((resolve) => {
+    const sock = net.connect(projectSocketPath());
+    const done = (ok) => { sock.destroy(); resolve(ok); };
+    sock.setTimeout(timeoutMs, () => done(false));
+    sock.once('connect', () => done(true));
+    sock.once('error', () => done(false));
+  });
+}
+
 export async function isServerRunning() {
   try {
     const http = await import('http');
