@@ -36,7 +36,6 @@ import {
 import { renderRegexDialectHint } from './regex-dialect.js';
 import {
   readFixFlags,
-  renderCompactHeader,
   renderCompactSufficiency,
   renderFixedBlocks,
   renderSufficiencyFragment,
@@ -639,17 +638,15 @@ function agentTextGutter(code, startLine) {
 }
 
 /**
- * Bundle A (A1, A2, A7) for the native captured-output CLI: the same renderer the ss-* tools use
- * (core/search/agent-output-fixes.js). One `# sweet-search: N results for "<query>"` header, the
- * compact `# sufficient=YES` line only when the verdict is YES, no score / kind tag / budget
- * header, one-line summary entries, covered summary entries and repeated import lines dropped.
+ * Bundle A for the native captured-output CLI: the same renderer the ss-* tools use
+ * (core/search/agent-output-fixes.js). No query header, the compact `# sufficient=YES` line only
+ * when the verdict is YES, results grouped by file, covered summary entries and repeated import
+ * lines dropped.
  */
 function renderCompactAgentSearchResponse(response) {
   const results = response?.results || [];
   const plan = selectEntries(results, { dedupe: 'a2' });
-  // Header count = printed entries (A2 may drop covered summary entries).
-  let out = renderCompactHeader('sweet-search', plan.entries.length, response?.query ?? '');
-  out += renderCompactSufficiency(response || {}, renderSufficiencyFragment(response || {}));
+  let out = renderCompactSufficiency(response || {}, renderSufficiencyFragment(response || {}));
   out += renderFixedBlocks(results, plan, {
     compact: true,
     gutter: agentTextGutter,
