@@ -1357,6 +1357,27 @@ export async function startServer() {
     });
   };
 
+  // The ss-* tools run inside this process (/agent-tool) and ask /search through queryServer.
+  // They reach the same handler without a socket round trip: same code, same reply text.
+  inProcessSearch = {
+    socketPath,
+    request: (pathWithQuery) => new Promise((resolve, reject) => {
+      const chunks = [];
+      const req = { method: 'GET', url: pathWithQuery, headers: { host: 'l' }, socket: { remoteAddress: undefined } };
+      const res = {
+        headersSent: false,
+        statusCode: 200,
+        writeHead(status) { this.statusCode = status; this.headersSent = true; return this; },
+        setHeader() {},
+        write(chunk) { chunks.push(String(chunk)); return true; },
+        end(chunk) { if (chunk != null) chunks.push(String(chunk)); resolve(chunks.join('')); },
+        on() { return this; },
+        once() { return this; },
+      };
+      handleRequest(req, res).catch(reject);
+    }),
+  };
+
   // One wrapper for both servers. It returns `handleRequest`'s promise exactly
   // as `createServer` received it before, so request semantics are unchanged.
   const serveRequest = (req, res) => {
@@ -1551,6 +1572,9 @@ function guardQueryRequest(req, reject, route) {
   });
 }
 
+// Set by startServer: this process's own /search handler (see there).
+let inProcessSearch = null;
+
 export async function queryServer(query, options = {}) {
   const http = await import('http');
   const {
@@ -1637,6 +1661,18 @@ export async function queryServer(query, options = {}) {
         params.set('exactRereadOmission', 'true');
         params.set('agentSessionId', sessionId);
       }
+    }
+
+    // Inside the daemon, asking its own socket: call the handler directly.
+    if (inProcessSearch && inProcessSearch.socketPath === projectSocketPath()) {
+      inProcessSearch.request(`/search?${params.toString()}`).then((data) => {
+        try {
+          resolve(JSON.parse(data));
+        } catch (err) {
+          reject(new Error('Invalid server response'));
+        }
+      }, reject);
+      return;
     }
 
     // Per-project Unix socket (C3) — the canonical local transport.
