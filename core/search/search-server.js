@@ -1932,10 +1932,16 @@ export async function autoSpawnServer({ quiet = false } = {}) {
 
   // Spawn detached process — run sweet-search with --serve
   const { daemonNodeArgs } = await import('./daemon-heap.js');
+  // The daemon outlives this call: it must not carry the call's start stamp (CALL_STARTED_ENV),
+  // or every later call it serves would start with its budget spent.
+  const { CALL_STARTED_ENV } = await import('../agent-tools/tools.js');
+  const env = { ...process.env };
+  delete env[CALL_STARTED_ENV];
   const child = spawn(process.execPath, [...daemonNodeArgs(), sweetSearchPath, '--serve'], {
     detached: true,
     stdio: 'ignore',
     cwd: path.dirname(__filename),
+    env,
   });
 
   child.unref();
