@@ -1,18 +1,11 @@
 /**
- * Bundle A (A1, A2, A7, A4, A5) in the PRODUCT, default on.
- *
- * The shipped ss-* tools are eval/agent-read-workflows/bin/ss-* (package.json "files"), so the
- * product default and the bench switch go through the same wrapper code and the same renderer.
- * What is pinned here:
- *   1. Flags: the product default selects exactly what SS_FIX_A=1 selects; SWEET_SEARCH_COMPACT_OUTPUT=0 selects exactly what SS_FIX_A=0 selects (all
- *      off, the original code paths, which agent-output-fixes-wiring.test.js pins byte for byte
- *      against verbatim copies of the original loops).
- *   2. The daemon's agent text (`sweet-search "<q>"` from an agent, renderAgentSearchResponse):
- *      opt-out = a verbatim copy of the previous renderer; default = the ss-* compact renderer
- *      with the `sweet-search` tool name.
- *   3. (opt-in, SS_BUNDLE_A_FIXTURE=<indexed repo>) the real wrapper on a real index: default
- *      output == SS_FIX_A=1 output, and SWEET_SEARCH_COMPACT_OUTPUT=0 output == SS_FIX_A=0 output,
- *      for ss-search, ss-find, ss-grep (regex error and zero-hit case included) and ss-trace.
+ * Bundle A (A1, A2, A7, A4, A5) in the product: the shipped ss-* tools are
+ * eval/agent-read-workflows/bin/ss-* (package.json "files"), and the daemon's agent text uses the
+ * same renderer. What is pinned here:
+ *   1. The wrappers and the daemon share one sufficiency fragment.
+ *   2. The daemon's agent text (`sweet-search "<q>"` from an agent, renderAgentSearchResponse) is
+ *      the ss-* compact renderer with the `sweet-search` tool name.
+ *   3. (opt-in, SS_BUNDLE_A_FIXTURE=<indexed repo>) the real ss-grep regex repair on a real index.
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync } from 'node:fs';
@@ -22,7 +15,6 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 import {
-  readFixFlags,
   renderCompactHeader,
   renderCompactSufficiency,
   renderFixedBlocks,
@@ -31,52 +23,9 @@ import {
 } from '../../core/search/agent-output-fixes.js';
 import { renderSufficiency } from '../../eval/agent-read-workflows/bin/_ss-argparse.mjs';
 import { renderAgentSearchResponse } from '../../core/search/search-server.js';
-import { renderRegexDialectHint } from '../../core/search/regex-dialect.js';
 import { lineGutterEnabled, numberCodeLines } from '../../core/search/search-read.js';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
-
-// ---- verbatim copy of renderAgentSearchResponse before Bundle A (origin/main 52999acf) ---------
-function previousRenderAgentSearchResponse(response) {
-  const results = response?.results || [];
-  const routing = response?.stats?.routing || {};
-  const routedMode = routing.mode || response?.mode || 'auto';
-  let out = `# sweet-search: routed=${routedMode} budget=${response?.tokenBudget ?? '?'} used=${response?.tokensUsed ?? '?'} results=${results.length} subMode=${response?.subMode ?? 'agent'}\n`;
-  if (response?.confidence) {
-    out += `# confidence=${response.confidence}${response.confidenceReason ? ` (${response.confidenceReason})` : ''}`;
-    if (response.sufficiencyVerdict) out += ` sufficient=${response.sufficiencyVerdict}`;
-    out += '\n';
-  }
-  for (const result of results) {
-    const symbol = result.symbol ? ` [${result.symbolType || 'code'}: ${result.symbol}]` : '';
-    const kind = result.expansionKind ? ` kind=${result.expansionKind}` : '';
-    const stale = result.stale ? ' STALE' : '';
-    out += `\n## #${result.rank} ${result.file}:${result.startLine}-${result.endLine}${symbol} (${result.presentation}${kind}${stale}) score=${(result.score || 0).toFixed(3)}\n`;
-    if (result.headerContext) out += `### imports\n\`\`\`\n${result.headerContext}\n\`\`\`\n`;
-    if (result.code) {
-      const body = (lineGutterEnabled() && String(result.code).split('\n').length >= 15)
-        ? numberCodeLines(result.code, result.startLine || 1)
-        : result.code;
-      out += `\`\`\`\n${body}\n\`\`\`\n`;
-    } else if (result.summary) out += `${result.summary}\n`;
-    if (result.neighbors?.rendered) {
-      out += `### related (1-hop graph, ~${result.neighbors.tokens} tok)\n${result.neighbors.rendered}\n`;
-    }
-    if (result.sameFile?.rendered) out += `${result.sameFile.rendered}\n`;
-    if (result.siblingLine?.rendered) out += `${result.siblingLine.rendered}\n`;
-    if (result.continuation?.rendered) {
-      out += `${result.continuation.rendered}\n`;
-      if (result.continuation.kind === 'symbol' && result.continuation.code) {
-        out += `\`\`\`\n${result.continuation.code}\n\`\`\`\n`;
-      }
-    }
-    if (result.familyManifest?.rendered) out += `${result.familyManifest.rendered}\n`;
-  }
-  if (results.length === 0) out += '(no matches)\n';
-  const regexDialectNote = renderRegexDialectHint(response?.stats?.regexDialectHint);
-  if (regexDialectNote) out += `${regexDialectNote}\n`;
-  return out;
-}
 
 const longCode = Array.from({ length: 18 }, (_, i) => (i === 0 ? "import { a } from './a'" : `  line ${i}`)).join('\n');
 
@@ -111,14 +60,7 @@ function fixtureResponse(overrides = {}) {
 }
 
 // ---- 1. flags ---------------------------------------------------------------------------------
-describe('product default vs bench switch (flags)', () => {
-  it('default == SS_FIX_A=1 for every switch (ss-search, ss-find, ss-grep, ss-trace)', () => {
-    expect(readFixFlags({})).toEqual(readFixFlags({ SS_FIX_A: '1' }));
-  });
-  it('SWEET_SEARCH_COMPACT_OUTPUT=0 == SS_FIX_A=0 (every switch off: the previous code paths)', () => {
-    expect(readFixFlags({ SWEET_SEARCH_COMPACT_OUTPUT: '0' })).toEqual(readFixFlags({ SS_FIX_A: '0' }));
-    expect(Object.values(readFixFlags({ SWEET_SEARCH_COMPACT_OUTPUT: '0' })).every((v) => v === false || v === null)).toBe(true);
-  });
+describe('sufficiency fragment', () => {
   it('the wrappers and the daemon share one sufficiency fragment', () => {
     for (const r of [fixtureResponse(), { sufficient: true }, { sufficient: false }, { sufficiencyVerdict: 'unknown' }]) {
       expect(renderSufficiency(r)).toBe(renderSufficiencyFragment(r));
@@ -128,54 +70,21 @@ describe('product default vs bench switch (flags)', () => {
 
 // ---- 2. daemon agent text ---------------------------------------------------------------------
 describe('daemon agent text (native `sweet-search` from an agent)', () => {
-  it('opt-out reproduces the previous renderer byte for byte', () => {
-    for (const resp of [
-      fixtureResponse(),
-      fixtureResponse({ results: [] }),
-      fixtureResponse({ confidence: null }),
-      fixtureResponse({ stats: { regexDialectHint: { kind: 'lookaround' } } }),
-    ]) {
-      expect(renderAgentSearchResponse(resp, { compact: false })).toBe(previousRenderAgentSearchResponse(resp));
-    }
-  });
-
-  it('the daemon env reaches the renderer default, with the ss-* precedence (SS_FIX_A first)', () => {
-    const keys = ['SWEET_SEARCH_COMPACT_OUTPUT', 'SS_FIX_A'];
-    const prev = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
-    const setEnv = (vals) => { for (const k of keys) { if (vals[k] === undefined) delete process.env[k]; else process.env[k] = vals[k]; } };
-    const legacy = previousRenderAgentSearchResponse(fixtureResponse());
-    const compact = renderAgentSearchResponse(fixtureResponse(), { compact: true });
-    try {
-      setEnv({ SWEET_SEARCH_COMPACT_OUTPUT: '0' });
-      expect(renderAgentSearchResponse(fixtureResponse())).toBe(legacy);
-      setEnv({});
-      expect(renderAgentSearchResponse(fixtureResponse())).toBe(compact);
-      // A legacy bench arm (SS_FIX_A=0) gets the previous text from the daemon too, not only from
-      // the ss-* wrappers; an explicit SS_FIX_A=1 wins over the product opt-out.
-      setEnv({ SS_FIX_A: '0' });
-      expect(renderAgentSearchResponse(fixtureResponse())).toBe(legacy);
-      setEnv({ SS_FIX_A: '1', SWEET_SEARCH_COMPACT_OUTPUT: '0' });
-      expect(renderAgentSearchResponse(fixtureResponse())).toBe(compact);
-    } finally {
-      setEnv(prev);
-    }
-  });
-
-  it('default uses the ss-search compact renderer (header renamed, same body)', () => {
+  it('uses the ss-search compact renderer (header renamed, same body)', () => {
     const resp = fixtureResponse();
     const gutter = (code, start) => ((lineGutterEnabled() && String(code).split('\n').length >= 15) ? numberCodeLines(code, start || 1) : code);
-    // What the ss-search wrapper prints under SS_FIX_A=1 (header + sufficiency + blocks), with the
-    // daemon's own gutter rule. The route trailer is bench instrumentation (stderr) and not part of it.
-    const plan = selectEntries(resp.results, { dedupe: 'a2', k: 5 });
+    // What the ss-search wrapper prints (header + sufficiency + blocks), with the daemon's own
+    // gutter rule. The route trailer is bench instrumentation (stderr) and not part of it.
+    const plan = selectEntries(resp.results);
     const wrapperShape = renderCompactHeader('ss-search', plan.entries.length, resp.query)
       + renderCompactSufficiency(resp, renderSufficiency(resp))
-      + renderFixedBlocks(resp.results, plan, { compact: true, gutter });
-    const text = renderAgentSearchResponse(resp, { compact: true });
+      + renderFixedBlocks(resp.results, plan, { gutter });
+    const text = renderAgentSearchResponse(resp);
     expect(text).toBe(wrapperShape.replace(/^# ss-search:/, '# sweet-search:'));
   });
 
   it('drops the A1 metadata and keeps one header plus the compact sufficient=YES line', () => {
-    const text = renderAgentSearchResponse(fixtureResponse(), { compact: true });
+    const text = renderAgentSearchResponse(fixtureResponse());
     // 5 results in, 2 covered summaries dropped by A2: the header counts the 3 printed entries.
     expect(text.startsWith('# sweet-search: 3 results for "where are tokens validated"\n# sufficient=YES\n')).toBe(true);
     for (const gone of ['score=', 'routed=', 'budget=', 'subMode=', '# confidence', 'kind=sandwich', '(full', '(summary']) {
@@ -196,12 +105,12 @@ describe('daemon agent text (native `sweet-search` from an agent)', () => {
   it('keeps a summary whose lines the code block above elided (A2 covers only printed lines)', () => {
     const resp = fixtureResponse();
     resp.results[0] = { ...resp.results[0], sandwich: { ...resp.results[0].sandwich, elidedHead: 2 } };
-    expect(renderAgentSearchResponse(resp, { compact: true })).toContain('src/auth.js:4-6 inner (function)\n');
+    expect(renderAgentSearchResponse(resp)).toContain('src/auth.js:4-6 inner (function)\n');
   });
 
   it('prints no sufficient line unless the verdict is YES, and (no matches) on zero results', () => {
-    expect(renderAgentSearchResponse(fixtureResponse({ sufficiencyVerdict: 'no' }), { compact: true })).not.toContain('sufficient');
-    expect(renderAgentSearchResponse(fixtureResponse({ results: [] }), { compact: true }))
+    expect(renderAgentSearchResponse(fixtureResponse({ sufficiencyVerdict: 'no' }))).not.toContain('sufficient');
+    expect(renderAgentSearchResponse(fixtureResponse({ results: [] })))
       .toBe('# sweet-search: 0 results for "where are tokens validated"\n# sufficient=YES\n(no matches)\n');
   });
 });
@@ -210,7 +119,7 @@ describe('daemon agent text (native `sweet-search` from an agent)', () => {
 const FIXTURE = process.env.SS_BUNDLE_A_FIXTURE || '';
 const fixtureReady = !!FIXTURE && existsSync(path.join(FIXTURE, '.sweet-search', 'codebase.db'));
 
-describe.skipIf(!fixtureReady)('real ss-* wrappers on an indexed fixture (SS_BUNDLE_A_FIXTURE)', () => {
+describe.skipIf(!fixtureReady)('real ss-grep on an indexed fixture (SS_BUNDLE_A_FIXTURE)', () => {
   const BIN = path.join(REPO_ROOT, 'eval', 'agent-read-workflows', 'bin');
   const runtime = fixtureReady ? mkdtempSync(path.join(tmpdir(), 'ss-bundle-a-rt-')) : '';
   // The daemon socket and pidfile are keyed by the PROJECT ROOT, not by the runtime dir: with the
@@ -224,34 +133,13 @@ describe.skipIf(!fixtureReady)('real ss-* wrappers on an indexed fixture (SS_BUN
       SWEET_SEARCH_SOCKET_PATH: path.join(runtime, 'd.sock'),
       SWEET_SEARCH_PID_FILE: path.join(runtime, 'd.pid'),
     };
-    for (const k of Object.keys(env)) if (k.startsWith('SS_FIX_') || k === 'SWEET_SEARCH_COMPACT_OUTPUT') delete env[k];
+    for (const k of Object.keys(env)) if (k.startsWith('SS_FIX_') || k.startsWith('SS_VARIANT_')) delete env[k];
     return env;
   };
   const run = (tool, args, extra = {}) => {
     const r = spawnSync(path.join(BIN, tool), args, { cwd: FIXTURE, env: { ...baseEnv(), ...extra }, encoding: 'utf8', timeout: 180000 });
     return { rc: r.status, out: String(r.stdout).replace(/latency=\d+ms/g, 'latency=Nms').replace(/"latencyMs":\d+/g, '"latencyMs":N') };
   };
-  const CALLS = [
-    ['ss-search', ['how is the request routed']],
-    ['ss-find', ['error handling', '--regex', 'function.*rror']],
-    ['ss-grep', ['module.exports']],
-    ['ss-grep', ['send(']],             // regex error → A5 repair
-    ['ss-grep', ['ROUTER']],            // zero case-sensitive hits → A5 case-insensitive retry
-    ['ss-grep', ['ZZQQnothingQQZZ']],   // real zero hit
-    ['ss-grep', ['functio\\(n)']],      // repair whose literal is absent (A5 literal safety)
-    ['ss-trace', ['handle']],
-    ['ss-trace', ['render', 'callers']],
-  ];
-
-  it.each(CALLS)('%s %j: default == SS_FIX_A=1; opt-out == SS_FIX_A=0', (tool, args) => {
-    const product = run(tool, args);
-    const bench = run(tool, args, { SS_FIX_A: '1' });
-    expect(product).toEqual(bench);
-    const optOut = run(tool, args, { SWEET_SEARCH_COMPACT_OUTPUT: '0' });
-    const benchOff = run(tool, args, { SS_FIX_A: '0' });
-    expect(optOut).toEqual(benchOff);
-  }, 600000);
-
   it('a repaired pattern whose literal text is absent prints zero hits, never a GNU-retry flood', () => {
     // `functio\(n)` was repaired to `functio\(n\)`, which the engine's zero-hit GNU retry searched
     // as `functio(n)`: every `function`, under "searched it as literal text".

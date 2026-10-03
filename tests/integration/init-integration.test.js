@@ -25,8 +25,7 @@ function runInit(args, cwd) {
       encoding: 'utf8',
       timeout: 30000,
       cwd,
-      // Hermetic: the rules-layout switch must not leak in from the developer's shell.
-      env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: cwd, SS_VARIANT_CC_RULES_IN_PROMPT: '' },
+      env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: cwd },
     });
     return { stdout, stderr: '', exitCode: 0 };
   } catch (err) {

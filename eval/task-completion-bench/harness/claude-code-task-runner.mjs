@@ -48,7 +48,7 @@ import {
   CLAUDE_LEAN_AGENT_REL, CLAUDE_LEAN_SUBAGENT_REL, CLAUDE_LEAN_PLAN_REL, CLAUDE_LEAN_MANIFEST_REL,
   installClaudeLeanHarness,
 } from '../../../scripts/install-claude-lean-harness.js';
-import { CLAUDE_RULES_POINTER, resolveClaudeRulesLayout } from '../../../scripts/write-claude-rules.js';
+import { CLAUDE_RULES_POINTER } from '../../../scripts/write-claude-rules.js';
 
 // D-4: shared, arm-symmetric tool-usage note. Kept to the single malformed argument it
 // repairs — it names no file, tool strategy or retrieval policy, so neither arm gains
@@ -235,27 +235,6 @@ export const CLAUDE_TRIM_AGENTS_JSON = JSON.stringify({
 });
 
 
-// Bench-only plugin for CC_PRODUCT_HOOKPLUG (see claudeHarnessTrim). Generated per rollout.
-export function writeClaudeHookPlugin(dir, { deferRead = false } = {}) {
-  mkdirSync(join(dir, '.claude-plugin'), { recursive: true });
-  mkdirSync(join(dir, 'hooks'), { recursive: true });
-  writeFileSync(join(dir, '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'ss-hookplug', version: '0.0.1', description: 'sweet-search bench: drop the Bash shell-read bullet; optionally defer Read' }));
-  writeFileSync(join(dir, 'hooks', 'hooks.json'), JSON.stringify({ description: 'ss-hookplug', modules: ['./ss.mjs'] }));
-  writeFileSync(join(dir, 'hooks', 'ss.mjs'), [
-    `const DEFER = new Set(${JSON.stringify(deferRead ? ['Read'] : [])});`,
-    "const dropShellReadBullet = (d) => d.split('\\n').filter((l) => !(l.startsWith('- ') && l.includes('`cat`') && l.includes('`sed`'))).join('\\n');",
-    'export function register(on) {',
-    "  on('tool.describe', async ($, input, next) => {",
-    '    const r = await next(input);',
-    '    if (DEFER.has(input.tool)) return { ...r, isDeferred: true };',
-    "    if (input.tool === 'Bash') return { ...r, description: dropShellReadBullet(r.description) };",
-    '    return r;',
-    '  });',
-    '}',
-    '',
-  ].join('\n'));
-}
-
 // The product default (see the header): unset / empty CC_HARNESS_TRIM, and CC_TRIM_BATCH under 'product'.
 export const CC_HARNESS_TRIM_DEFAULT = 'product';
 export const CC_TRIM_BATCH_DEFAULT = 'read6fs';
@@ -281,23 +260,7 @@ export function claudeHarnessTrim(mode = process.env.CC_HARNESS_TRIM) {
     const rawBatch = String(process.env.CC_TRIM_BATCH ?? '').trim();
     const batch = rawBatch === 'none' ? '' : (rawBatch || CC_TRIM_BATCH_DEFAULT);
     if (batch && !CC_BATCH_VARIANTS[batch]) throw new Error(`CC_TRIM_BATCH=${batch}: expected none, ${Object.keys(CC_BATCH_VARIANTS).join(', ')}`);
-    // CC_PRODUCT_STEER=1 (bench only, audit mech-cc2): keep Claude Code's own bypass-mode steer
-    // (drop THRIFTY_SONIC=0 from the installed settings env) to measure its cost effect.
-    // CC_PRODUCT_TOKREM=1 (bench only, audit mech-cc3): keep stock's token-budget reminder
-    // (drop TOTAL_TOKENS_REMINDER=off from the installed settings env).
-    const steer = process.env.CC_PRODUCT_STEER === '1';
-    const tokrem = process.env.CC_PRODUCT_TOKREM === '1';
-    const dropEnv = [...(steer ? ['CLAUDE_CODE_THRIFTY_SONIC'] : []), ...(tokrem ? ['CLAUDE_CODE_TOTAL_TOKENS_REMINDER'] : [])];
-    // CC_PRODUCT_HOOKPLUG=bash | bash-read (bench only, audits conflict-audit + cc-prefix, 2026-09-29):
-    // a plugin hooks module (PREVIEW: CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1) that drops the Bash
-    // tool's "avoid cat/head/tail/sed" bullet (a sweet-search conflict that THRIFTY_SONIC=0 adds),
-    // and with bash-read also marks the Read tool deferred (still callable via ToolSearch).
-    const hookplug = String(process.env.CC_PRODUCT_HOOKPLUG ?? '').trim();
-    if (hookplug && !['bash', 'bash-read'].includes(hookplug)) throw new Error(`CC_PRODUCT_HOOKPLUG=${hookplug}: expected bash or bash-read`);
-    // CC_PRODUCT_SKILLDESC=<n> (bench only, audit cc-prefix): public setting skillListingMaxDescChars
-    // (default 1536) — every skill stays listed and callable; only long trigger text is cut.
-    const skillDesc = /^\d+$/.test(String(process.env.CC_PRODUCT_SKILLDESC ?? '')) ? Number(process.env.CC_PRODUCT_SKILLDESC) : null;
-    return { mode: `${batch ? `${m}+batch-${batch}` : m}${steer ? '+steer' : ''}${tokrem ? '+tokrem' : ''}${skillDesc ? `+skill${skillDesc}` : ''}${hookplug ? `+hook-${hookplug}` : ''}`, origin, args: [], env: hookplug ? { CLAUDE_CODE_ENABLE_FUNCTION_HOOKS: '1' } : {}, installLean: true, ...(batch ? { batch } : {}), ...(dropEnv.length ? { dropEnv } : {}), ...(skillDesc ? { skillDesc } : {}), ...(hookplug ? { hookplug } : {}) };
+    return { mode: batch ? `${m}+batch-${batch}` : m, origin, args: [], env: {}, installLean: true, ...(batch ? { batch } : {}) };
   }
   if (m === 'lean' || m === 'lean-batch') {
     // lean also drops the Agent tool (no delegation): opt-in only, reported separately.
@@ -659,34 +622,21 @@ export async function runClaudeCodeTask(task, {
   // 'config' is codex/opencode only: for Claude Code the rules file IS its config mechanism.
   if (rulesPlacement === 'config') throw new Error('SWEET_RULES_PLACEMENT=config: codex and opencode only (Claude Code: use file or system)');
   const systemRules = rulesPlacement === 'system' ? mppText.trimEnd() : null;
-  // SS_VARIANT_CC_RULES_IN_PROMPT (sweet arm; write-claude-rules.js resolveClaudeRulesLayout). Since
-  // V1b (the first release after sweet-search 2.8.2) the DEFAULT follows the product ("V1b"): with the lean harness
-  // (CC_HARNESS_TRIM=product, the default) and the file placement, the rules ride in the lean MAIN
-  // agent file (installClaudeLeanHarness `rules`) and .claude/rules/sweet-search.md carries only
-  // CLAUDE_RULES_POINTER. Unset = '2' (identical code path, byte for byte).
-  //   '0'  the 2.8.2 control: the full rules file only, the agent file without rules
-  //   '1'  V1 (rejected): rules in the agent file, no rules file
-  // Without the lean harness, or with SWEET_RULES_PLACEMENT=system, the default leaves the rules
-  // where that mode puts them (as the product does when its lean harness is not active); an
-  // explicit '1' / '2' is refused there. The general-purpose and Plan subagent files never carry
-  // the rules in this mode.
-  const rulesVariant = sweet ? String(process.env.SS_VARIANT_CC_RULES_IN_PROMPT ?? '').trim() : '';
-  const ccRulesLayout = sweet ? resolveClaudeRulesLayout(process.env, { strict: true }).layout : 'file';
-  const rulesInPrompt = Boolean(sweet && ccRulesLayout !== 'file' && harnessTrim.installLean && rulesPlacement === 'file');
-  if (sweet && rulesVariant && ccRulesLayout !== 'file' && !rulesInPrompt) {
-    if (!harnessTrim.installLean) throw new Error(`SS_VARIANT_CC_RULES_IN_PROMPT=${rulesVariant} needs the lean harness (CC_HARNESS_TRIM=product, the default): no agent file otherwise`);
-    throw new Error(`SS_VARIANT_CC_RULES_IN_PROMPT=${rulesVariant} replaces SWEET_RULES_PLACEMENT; unset it (got ${rulesPlacement})`);
-  }
+  // The product layout ("V1b", since the first release after sweet-search 2.8.2): with the lean
+  // harness (CC_HARNESS_TRIM=product, the default) and the file placement, the rules ride in the
+  // lean MAIN agent file (installClaudeLeanHarness `rules`) and .claude/rules/sweet-search.md
+  // carries only CLAUDE_RULES_POINTER. Without the lean harness, or with SWEET_RULES_PLACEMENT=system,
+  // the rules stay where that mode puts them (as the product does when its lean harness is not
+  // active). The general-purpose and Plan subagent files never carry the rules in this mode.
+  const rulesInPrompt = Boolean(sweet && harnessTrim.installLean && rulesPlacement === 'file');
   // Inject before runner setup so telemetry snapshots the harness-owned bytes.
   writeInstructionFile(rundir, 'CLAUDE.md', { sweet: false, mppText });
   const injectedFiles = ['CLAUDE.md'];
   if (sweet && !systemRules) {
-    if (!rulesInPrompt || ccRulesLayout === 'pointer') {   // 'none' (=1) writes no rules file
-      const rulesDir = join(rundir, '.claude', 'rules');
-      mkdirSync(rulesDir, { recursive: true });
-      appendFileSync(join(rulesDir, 'sweet-search.md'), `${rulesInPrompt ? CLAUDE_RULES_POINTER : mppText.trimEnd()}\n`);
-      injectedFiles.push('.claude/rules/sweet-search.md');
-    }
+    const rulesDir = join(rundir, '.claude', 'rules');
+    mkdirSync(rulesDir, { recursive: true });
+    appendFileSync(join(rulesDir, 'sweet-search.md'), `${rulesInPrompt ? CLAUDE_RULES_POINTER : mppText.trimEnd()}\n`);
+    injectedFiles.push('.claude/rules/sweet-search.md');
   }
   if (sweet && harnessTrim.installLean) {
     // The benchmark passes the override through its own --append-system-prompt (both modes),
@@ -699,14 +649,14 @@ export async function runClaudeCodeTask(task, {
     // product itself ships read6fs = the default CC_TRIM_BATCH; tests/claude-code-cost.mjs checks the
     // result is byte-identical to installClaudeLeanHarness with its own promptEdits).
     // `rules` is explicit (never read from routingEnv): this rollout's mppText when rulesInPrompt,
-    // else none (the 2.8.2 agent file; SWEET_RULES_PLACEMENT=system appends its own copy below).
+    // else none (SWEET_RULES_PLACEMENT=system appends its own copy below).
     const lean = installClaudeLeanHarness({
       projectRoot: rundir, appendOverride: false, promptEdits: false, env: routingEnv,
       configDir: claudeHome, visibleConfigDir: unjailed ? claudeHome : join(HOMEDIR, '.claude'),
       rules: rulesInPrompt ? mppText : false,
     });
     if (lean.active !== true) throw new Error(`CC_HARNESS_TRIM=product: lean harness not active (${lean.status}: ${lean.detail})`);
-    if (lean.rulesInPrompt !== rulesInPrompt) throw new Error(`SS_VARIANT_CC_RULES_IN_PROMPT: the lean install reports rulesInPrompt=${lean.rulesInPrompt}, expected ${rulesInPrompt}`);
+    if (lean.rulesInPrompt !== rulesInPrompt) throw new Error(`lean harness: the install reports rulesInPrompt=${lean.rulesInPrompt}, expected ${rulesInPrompt}`);
     injectedFiles.push(CLAUDE_LEAN_AGENT_REL, CLAUDE_LEAN_SUBAGENT_REL, CLAUDE_LEAN_PLAN_REL, '.claude/settings.json', CLAUDE_LEAN_MANIFEST_REL);
     // CC_TRIM_BATCH (batching micro-smoke, trim/batch-variants.mjs): swaps the max-batch line
     // of the installed main agent file for one variant; the subagent file is unchanged.
@@ -716,33 +666,11 @@ export async function runClaudeCodeTask(task, {
     }
     if (rulesInPrompt) {
       // Proof in the run itself: the main agent file carries the rules once; the rules file is the
-      // pointer (V1b, the default) or absent (V1).
+      // pointer.
       const agentText = readFileSync(join(rundir, CLAUDE_LEAN_AGENT_REL), 'utf8');
-      if (agentText.split(mppText.trimEnd()).length !== 2) throw new Error('SS_VARIANT_CC_RULES_IN_PROMPT: the main agent file does not carry the rules exactly once');
+      if (agentText.split(mppText.trimEnd()).length !== 2) throw new Error('V1b: the main agent file does not carry the rules exactly once');
       const rf = join(rundir, '.claude', 'rules', 'sweet-search.md');
-      if (ccRulesLayout === 'none' && existsSync(rf)) throw new Error('SS_VARIANT_CC_RULES_IN_PROMPT=1: a rules file exists');
-      if (ccRulesLayout === 'pointer' && (!existsSync(rf) || readFileSync(rf, 'utf8').trimEnd() !== CLAUDE_RULES_POINTER)) throw new Error('SS_VARIANT_CC_RULES_IN_PROMPT=2: pointer file missing or different');
-    }
-    if (harnessTrim.skillDesc) {
-      const settingsFile = join(rundir, '.claude', 'settings.json');
-      const settings = JSON.parse(readFileSync(settingsFile, 'utf8'));
-      settings.skillListingMaxDescChars = harnessTrim.skillDesc;
-      writeFileSync(settingsFile, `${JSON.stringify(settings, null, 2)}\n`);
-    }
-    if (harnessTrim.dropEnv) {
-      const settingsFile = join(rundir, '.claude', 'settings.json');
-      const settings = JSON.parse(readFileSync(settingsFile, 'utf8'));
-      for (const key of harnessTrim.dropEnv) {
-        if (settings.env?.[key] === undefined) throw new Error(`CC_PRODUCT_*: ${key} not found in the installed settings`);
-        delete settings.env[key];
-      }
-      writeFileSync(settingsFile, `${JSON.stringify(settings, null, 2)}\n`);
-    }
-    if (harnessTrim.hookplug) {
-      // Installed in the private Claude home (never the repo: an untracked file there would reach the graded diff).
-      const plugDir = join(claudeHome, 'ss-hookplug');
-      writeClaudeHookPlugin(plugDir, { deferRead: harnessTrim.hookplug === 'bash-read' });
-      harnessTrim.args.push('--plugin-dir', unjailed ? plugDir : join(HOMEDIR, '.claude', 'ss-hookplug'));
+      if (!existsSync(rf) || readFileSync(rf, 'utf8').trimEnd() !== CLAUDE_RULES_POINTER) throw new Error('V1b: pointer file missing or different');
     }
     if (systemRules) appendRulesToLeanAgentFiles(rundir, systemRules);
   }
@@ -917,9 +845,8 @@ export async function runClaudeCodeTask(task, {
     harnessTrim: harnessTrim.mode,
     ...(sweet ? { harnessTrimSource: harnessTrim.origin } : {}),
     ...sweetRulesRowFields(rulesPlacement, { sweet }),
-    // Stamped only when the rules ride in the agent file ('v1b-pointer' = the V1b default; true =
-    // V1). Absent = the rules file carries them (the 2.8.2 layout, SS_VARIANT_CC_RULES_IN_PROMPT=0).
-    ...(rulesInPrompt ? { ccRulesInPrompt: ccRulesLayout === 'pointer' ? 'v1b-pointer' : true } : {}),
+    // Stamped only when the rules ride in the agent file (V1b). Absent = the rules file carries them.
+    ...(rulesInPrompt ? { ccRulesInPrompt: 'v1b-pointer' } : {}),
     claudeConfigDir: unjailed ? 'private-config-dir' : 'jail-bind',
     // Marks a run that carried the F2 repair, so an analyzer can tell whether the `pages`
     // asymmetry disclosure describes this run's own data or a pre-repair baseline. Never

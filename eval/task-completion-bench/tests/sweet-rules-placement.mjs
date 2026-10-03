@@ -326,9 +326,8 @@ for (const [file, needles] of Object.entries({
   'claude-code-task-runner.mjs': ["if (rulesPlacement === 'config') throw", "resolveSweetRulesPlacement({ sweet, harness: 'claude-code' })",'if (sweet && !systemRules) {', 'appendRulesToLeanAgentFiles(rundir, systemRules)',
     'systemRules: harnessTrim.installLean ? null : systemRules', '...sweetRulesRowFields(rulesPlacement, { sweet })',
     '...(sweet ? { harnessTrimSource: harnessTrim.origin } : {})', "claudeHarnessTrim(sweet ? process.env.CC_HARNESS_TRIM : '0')",
-    // V1b default: rules in the lean main agent only with the lean harness + the file placement.
-    "resolveClaudeRulesLayout(process.env, { strict: true })",
-    "Boolean(sweet && ccRulesLayout !== 'file' && harnessTrim.installLean && rulesPlacement === 'file')",
+    // V1b: rules in the lean main agent only with the lean harness + the file placement.
+    "Boolean(sweet && harnessTrim.installLean && rulesPlacement === 'file')",
     'rules: rulesInPrompt ? mppText : false', "rulesInPrompt ? CLAUDE_RULES_POINTER : mppText.trimEnd()"],
 })) {
   const src = readFileSync(new URL(`../harness/${file}`, import.meta.url), 'utf8');

@@ -1,7 +1,7 @@
 /**
- * Which lines a file shows when ss-grep gives it fewer lines than it has stored matches
- * (SS_FIX_GREP_LINES, default ON since 2026-10-03; 0 = legacy). Without the switch a file shows its first `a` stored
- * matches in line order, and those are often imports, package lines and header comments.
+ * Which lines a file shows when ss-grep gives it fewer lines than it has stored matches. The
+ * first `a` stored matches in line order are often imports, package lines and header comments,
+ * so the classes below pick them instead.
  *
  * Classes, from the code-graph entities of the file:
  *   0  declaration: a symbol starts on the line or up to 3 lines earlier, and the symbol's
