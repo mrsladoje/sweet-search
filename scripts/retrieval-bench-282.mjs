@@ -571,7 +571,7 @@ async function runOpencode(probe, sweet, arm) {
   const env = {
     ...baseEnv(sweet, cwd, arm),
     ...opencodeUnjailedEnv({ root: path.join(STATE, `oc-home-${sweet ? 'sweet' : 'native'}`), ocData }),
-    OPENCODE_CONFIG: cfgPath, SS_READ_GUTTER: process.env.SS_READ_GUTTER ?? 'colon',
+    OPENCODE_CONFIG: cfgPath, SS_READ_GUTTER: process.env.SS_READ_GUTTER ?? 'none', // opencode form (gutter-form.js); colon until 2026-10-03
   };
   if (CELL.ocAuth === 'openai') delete env.OPENAI_API_KEY; // the subscription login must pay, never a key
   await runOpencodePreflight({ cwd, env, plugins: [...(trim.plugins || []), ...extraPlugins] });
