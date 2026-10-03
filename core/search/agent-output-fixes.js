@@ -925,21 +925,15 @@ export function grepHitText(m, { fullLine = false } = {}) {
   const raw = fullLine && typeof m?.content === 'string' ? m.content : '';
   if (!raw.trim()) return matched;
 
-  // Collapse whitespace like .replace(/\s+/g, ' ').trim(), keeping where each raw char lands.
-  let line = '';
-  const at = new Array(raw.length);
-  let gap = false;
-  for (let i = 0; i < raw.length; i++) {
-    const ch = raw[i];
-    if (/\s/.test(ch)) {
-      if (line) gap = true;
-      at[i] = line.length + (gap ? 1 : 0);
-      continue;
-    }
-    if (gap) { line += ' '; gap = false; }
-    at[i] = line.length;
-    line += ch;
-  }
+  // Whitespace collapsed; `at(i)` is where raw char i lands in `line`: the collapsed length of
+  // the raw text before it (through it, for a whitespace char), leading whitespace dropped.
+  // Only the match's two ends are ever asked, so a long line (a minified bundle, an inlined
+  // SVG) is not walked char by char.
+  const line = raw.replace(/\s+/g, ' ').trim();
+  const at = (i) => {
+    const prefix = raw.slice(0, /\s/.test(raw[i]) ? i + 1 : i).replace(/\s+/g, ' ');
+    return prefix.startsWith(' ') ? prefix.length - 1 : prefix.length;
+  };
   const max = GREP_HIT_TEXT_MAX;
   if (line.length <= max) return line;
   const head = () => `${sliceWhole(line, 0, max - 1)}…`;
@@ -950,8 +944,8 @@ export function grepHitText(m, { fullLine = false } = {}) {
   const col = Number.isInteger(m?.column) ? m.column - 1 : -1;
   const rawStart = mt && col >= 0 && raw.startsWith(mt, col) ? col : (mt ? raw.indexOf(mt) : -1);
   if (rawStart < 0) return head();
-  const start = Math.min(at[rawStart], line.length);
-  const end = Math.max(start, Math.min(at[rawStart + mt.length - 1] + 1, line.length));
+  const start = Math.min(at(rawStart), line.length);
+  const end = Math.max(start, Math.min(at(rawStart + mt.length - 1) + 1, line.length));
 
   if (end <= max - 1) return head();
   const tailRoom = max - 1;
