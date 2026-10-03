@@ -205,7 +205,9 @@ export const MATCHER_FAMILY_FORM = Object.freeze({
 export const HARNESS_PROFILE = Object.freeze({
   // Exact family, but no gutter: see the claude-code entry in the decision block above.
   'claude-code': Object.freeze({ family: 'exact', form: 'none' }),
-  opencode: Object.freeze({ family: 'tolerant' }),
+  // No gutter (2026-10-03 task micro-smoke, Sol, 12 rollouts: 0 edit/anchor failures either arm,
+  // cost equal; core/prompt-optimization/data/obs-loop/GUTTER-OC.md).
+  opencode: Object.freeze({ family: 'tolerant', form: 'none' }),
   codex: Object.freeze({ family: 'clipped' }),
   cursor: Object.freeze({ family: 'tolerant' }),
   pi: Object.freeze({ family: 'exact' }),
