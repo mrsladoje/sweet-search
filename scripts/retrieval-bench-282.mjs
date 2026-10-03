@@ -276,11 +276,16 @@ const CLONE_ROOT = path.join(EVAL, 'r282-repos', `${CELL_NAME}${SUFFIX}`);
 const CLONE_ROOT_BEFORE = `${CLONE_ROOT}__before`;
 const BEFORE_REPOS = path.resolve(flag('--before-repos', process.env.SS_BENCH_BEFORE_REPOS || path.join(EVAL, 'final-before-repos')));
 const cloneRootOf = (arm) => (arm === 'before' ? CLONE_ROOT_BEFORE : CLONE_ROOT);
-const sourceOf = (orig, arm) => (arm === 'before' ? path.join(BEFORE_REPOS, path.basename(orig)) : orig);
+// --after-repos <dir> (final run): the after (sweet) arm's source repos — private APFS copies of eval/repos
+// with its §6.1 index, so another session's ss-* use of the shared eval/repos cannot change the index
+// mid-run (2026-10-04: a main-checkout daemon wrote query stats into eval/repos/r3-dgraph). Unset = eval/repos.
+const AFTER_REPOS = flag('--after-repos', process.env.SS_BENCH_AFTER_REPOS || '') ? path.resolve(flag('--after-repos', process.env.SS_BENCH_AFTER_REPOS)) : null;
+const sourceOf = (orig, arm) => (arm === 'before' ? path.join(BEFORE_REPOS, path.basename(orig))
+  : (AFTER_REPOS && arm !== 'native' ? path.join(AFTER_REPOS, path.basename(orig)) : orig));
 const cloneOf = (orig, arm = 'sweet') => path.join(cloneRootOf(arm), path.relative(REPO, orig).replace(/[\\/]/g, '__'));
 // core/prompt-optimization/data/final-run/index-repos.sh stamps every index it builds:
 // <stamps>/<before|after>/<repo>.json = { commit, backend, indexDigest, ... } (indexDigest: sha256 of the
-// sorted .sweet-search file list with sizes — the same function as belo — the same function as below), without the
+// sorted .sweet-search file list with sizes — the same function as below), without the
 // runtime files a maintainer writes while it runs (log, lock, queue, SQLite -shm, pid, socket).
 const INDEX_RUNTIME_FILE = /(^|\/)(index-maintainer\.(log|lock)|rebuild-queue\.jsonl|[^\/]*-shm|[^\/]*\.pid|[^\/]*\.sock)$/;
 const INDEX_STAMPS = path.resolve(flag('--index-stamps', process.env.SS_BENCH_INDEX_STAMPS || path.join(EVAL, 'final-run', 'index-stamps')));

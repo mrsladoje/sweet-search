@@ -88,7 +88,7 @@ run_step() { # <cell> <rep> <arms> <mode>
     while busy_foreign "$cell"; do [ $((n % 10)) -eq 0 ] && log "$id waiting: $(busy_foreign_list "$cell" | head -2 | tr '\n' ';')"; n=$((n + 1)); sleep 60; done
     attempt=$((attempt + 1)); log "START $id (attempt $attempt)"
     ( cd "$FINAL_ROOT" && env $FR_COMMON_ENV CELL="$cell" node scripts/retrieval-bench-282.mjs --conc "$FR_CONC" \
-        --probes "$QUESTIONS" --arms "$arms" --before-root "$BEFORE_ROOT" --before-repos "$BEFORE_REPOS" \
+        --probes "$QUESTIONS" --arms "$arms" --before-root "$BEFORE_ROOT" --before-repos "$BEFORE_REPOS" --after-repos "$AFTER_COPY" \
         --index-stamps "$FR_STATE/index-stamps" --require-index-stamp --tag "$FR_TAG-r$rep" ${extra[@]+"${extra[@]}"} ) >> "$LOGS/$id.log" 2>&1
     rc=$?
     reap_step "$cell" "$rep"
