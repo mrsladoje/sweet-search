@@ -1447,8 +1447,6 @@ fn auto_start_server() -> Option<String> {
     auto_start_server_for(&resolve_project_root(), false)
 }
 
-/// `quiet`: print nothing on failure. The ss-* client then runs the tool in-process, and
-/// a diagnostic on stderr would reach the agent next to a good answer.
 /// JS heap ceiling of the daemon, in MiB: a quarter of physical memory, never below
 /// V8's own ~4 GiB default. A daemon at V8's default ceiling aborted mid-query on a large
 /// index and dropped every call in flight. Same formula as core/search/daemon-heap.js.
@@ -1470,6 +1468,8 @@ fn physical_memory_bytes() -> u64 {
     pages as u64 * page_size as u64
 }
 
+/// `quiet`: print nothing on failure. The ss-* client then runs the tool in-process, and
+/// a diagnostic on stderr would reach the agent next to a good answer.
 fn auto_start_server_for(project_root: &Path, quiet: bool) -> Option<String> {
     // Find the core/start-server.js relative to the binary or cwd
     let server_script = if quiet {

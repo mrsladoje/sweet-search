@@ -475,6 +475,7 @@ async function getSweetSearch() {
 // the 60 s wait ran out and 5 searches were refused. A daemon that is listening (busy
 // loading) is waited for, never replaced: a second spawn would only race it for the socket.
 const WARM_SERVER_WAIT_MS = 300_000;
+const SPAWN_RETRY_MS = 60_000;
 
 async function ensureWarmServerReady({ timeoutMs = WARM_SERVER_WAIT_MS, intervalMs = 500 } = {}) {
   // Inside the daemon: it is the warm server, and it only takes a call once ready.
@@ -482,15 +483,26 @@ async function ensureWarmServerReady({ timeoutMs = WARM_SERVER_WAIT_MS, interval
   const { getServerHealth, isServerListening, autoSpawnServer } = await import(path.join(REPO_ROOT, 'core/search/search-server.js'));
   const deadline = Date.now() + timeoutMs;
   let spawns = 0;
+  let lastSpawnAt = 0;
   for (;;) {
     const health = await getServerHealth({ timeoutMs: 1000 });
     if (health?.status === 'ready' || health?.warm === true) return true;
-    if (health?.status === 'failed') return false;
+    // A daemon whose init failed stays resident until its idle TTL; a fresh spawn replaces
+    // it (the new daemon's startup guard stops a failed one). Once, then give up.
+    if (health?.status === 'failed') {
+      if (spawns > 0 || Date.now() >= deadline) return false;
+      spawns++;
+      lastSpawnAt = Date.now();
+      await autoSpawnServer();
+      continue;
+    }
     if (Date.now() >= deadline) return false;
     // No daemon at all (never started, or it exited): start one. autoSpawnServer has a
-    // short built-in wait and may return while the detached server is still loading.
-    if (!health && spawns < 2 && !await isServerListening()) {
+    // short built-in wait and may return before the detached server binds its socket, so
+    // a second spawn waits SPAWN_RETRY_MS — sooner, it would race the first for the socket.
+    if (!health && spawns < 2 && Date.now() - lastSpawnAt >= SPAWN_RETRY_MS && !await isServerListening()) {
       spawns++;
+      lastSpawnAt = Date.now();
       await autoSpawnServer();
       continue;
     }
