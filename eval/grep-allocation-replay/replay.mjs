@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * ss-grep allocation replay (docs/SUGGESTED_PLAN.md, Step 0): every pre-registered arm
+ * ss-grep allocation replay (docs/SUGGESTED_PLAN.md at 945a9664, Step 0): every pre-registered arm
  * (prereg.json) on every collected call, with the production selection, stamping and renderer
  * (replay-core.mjs). Reports per segment (all / overflow = more matching files than k / fits):
  * answer-file inclusion, lines from answer files, answer-symbol hit, declaration hit, files

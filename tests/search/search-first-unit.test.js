@@ -1,5 +1,5 @@
 /**
- * SS_FIX_SEARCH_FIRST_UNIT (default off; docs/SUGGESTED_PLAN.md Step 5 item 2): ranks past 3 get a
+ * SS_FIX_SEARCH_FIRST_UNIT (default off; docs/SUGGESTED_PLAN.md at 945a9664 Step 5 item 2): ranks past 3 get a
  * small signature preview instead of a name-only line. 'calibrated' = ranks 4-5, 'all' = every
  * rank; rank 1 pays only for what would exceed the budget.
  */

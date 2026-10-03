@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * ss-semantic cut-span replay (docs/SUGGESTED_PLAN.md, Step 3a bar and Step 3b measurement).
+ * ss-semantic cut-span replay (docs/SUGGESTED_PLAN.md at 945a9664, Step 3a bar and Step 3b measurement).
  *
  * Takes the recorded ss-semantic calls on dev probes whose output reported exactly the 600-token
  * cap, and re-runs each one through the REAL ss-semantic tool code (runAgentTool, in-process

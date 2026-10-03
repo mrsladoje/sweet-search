@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * ss-search / ss-find first-unit replay (docs/SUGGESTED_PLAN.md, Step 5 item 2), offline, dev.
+ * ss-search / ss-find first-unit replay (docs/SUGGESTED_PLAN.md at 945a9664, Step 5 item 2), offline, dev.
  *
  * Re-runs every recorded ss-search / ss-find call on dev probes through the daemon's own search
  * path (SweetSearch.search with the options the server builds for an agent request; the warm

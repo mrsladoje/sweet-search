@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * ss-trace: label every shortened list and every non-full code item with its cause
- * (docs/SUGGESTED_PLAN.md, "Later — ss-trace: classify truncation before changing budgets").
+ * (docs/SUGGESTED_PLAN.md at 945a9664, "Later — ss-trace: classify truncation before changing budgets").
  *
  * Each recorded ss-trace call on dev probes is re-run through traceSymbol on a READ-ONLY COPY of
  * the repository's code graph (the copy's directory also takes the read pin), with the tool's own

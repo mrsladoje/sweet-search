@@ -1,5 +1,5 @@
 /**
- * The offline measurement harnesses of docs/SUGGESTED_PLAN.md: their output parsers, and the
+ * The offline measurement harnesses of docs/SUGGESTED_PLAN.md at 945a9664: their output parsers, and the
  * ss-trace mode-budget share rule (SS_FIX_TRACE_MODE_BUDGET, default off).
  */
 import { describe, expect, it } from 'vitest';

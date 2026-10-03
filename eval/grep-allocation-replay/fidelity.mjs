@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * ss-grep replay fidelity and latency (docs/SUGGESTED_PLAN.md, Step 0 item 5 and Step 1).
+ * ss-grep replay fidelity and latency (docs/SUGGESTED_PLAN.md at 945a9664, Step 0 item 5 and Step 1).
  *
  * Runs the REAL ss-grep tool code (runAgentTool on a warm in-process SweetSearch over the
  * repository's real index, the code path the daemon runs) under every pre-registered arm on a

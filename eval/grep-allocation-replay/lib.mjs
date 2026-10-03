@@ -1,5 +1,5 @@
 /**
- * Shared pieces of the ss-grep allocation replay (docs/SUGGESTED_PLAN.md, Step 0): recorded
+ * Shared pieces of the ss-grep allocation replay (docs/SUGGESTED_PLAN.md at 945a9664, Step 0): recorded
  * call parsing, probe loading with the dev / held-out discipline, the metrics, and the
  * probe-clustered paired bootstrap.
  */
