@@ -181,7 +181,7 @@ unfiltered `ls -R` or `find .` (large output, and it lists `.sweet-search/`).
 
 ## 2026-10-02 — Chunker: C++/C#/Ruby namespace chunks and the export macro (needs reindex — wait)
 
-**Status 2026-10-02: IMPLEMENTED on branch obs-chunker (940fda49, 305056a1, e51a8a18), NOT merged:** bumps CHUNKING_VERSION 1→2, merge together with the end-of-tuning reindex. GCSN dev MRR@10 86.48% → 86.48% (seed 42, 3,600 q). 0 lost text, 0 overlaps, 0 id collisions on ~2,000 real files.
+**Status 2026-10-03: IMPLEMENTED on branch chunker-final (rebased on plan-diet; 81ccfc90, daf2d5dc, 12954dc5 + ff51e716 C/C++ function names from the declarator, 60984281 JS/TS exported classes named, 56e7768e Swift #if handling in parse(), 5037926d review fix), NOT merged:** bumps CHUNKING_VERSION 1→2, merge together with the end-of-tuning reindex. 0 lost text, 0 overlaps, 0 id collisions on 2,894 files of 17 repos; graph entities unchanged except drogon `<anonymous:method>` → `as`. GCSN dev MRR@10 (seed 42, 3,600 q): base 86.48%, branch 86.29% (python 97.5 / js 80.7 / go 94.8 / ruby 76.1 / java 85.6 / php 83.0 vs 97.8 / 80.7 / 95.3 / 77.1 / 85.3 / 82.8). The 10-03 fixes change no GCSN chunk; Ruby −1.0 pt is over the 0.7 gate and dates from 305056a1 (Ruby 77.3 → 76.4 on 10-02, 19 of 1,000 Ruby corpus docs re-chunked) — check before the merge.
 
 **Observation (owner):** Fixes C and D change chunk output, so they wait for the end of tuning
 (reindex is frozen) and need a GCSN dev MRR check. The search-time label fix (A) and the C/C++
@@ -216,7 +216,7 @@ Both: GCSN dev MRR before/after, then reindex at the end of tuning.
 
 ## 2026-10-02 — Chunker: a large function splits into a junk signature chunk and overlapping, reformatted body chunks (needs reindex — wait)
 
-**Status 2026-10-02: IMPLEMENTED on branch obs-chunker with the entry above (same commits, same MRR check); waits for the reindex.**
+**Status 2026-10-03: IMPLEMENTED on branch chunker-final with the entry above (same commits, same MRR check, same Ruby caveat); waits for the reindex.**
 
 **Observation (owner):** Put the chunker issue seen in `r3h-dgraph-08` into observations. It
 changes chunk output, so it waits for the end of tuning (reindex is frozen) and needs a GCSN dev MRR
