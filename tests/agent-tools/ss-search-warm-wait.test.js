@@ -41,7 +41,7 @@ afterEach(async () => {
 });
 
 /** A daemon that loads for `loadMs`; while loading it answers /health late (or not at all). */
-async function fakeDaemon({ loadMs, silentWhileLoading }) {
+async function fakeDaemon({ loadMs, silentWhileLoading, failed = false }) {
   const socketPath = path.join(base, 'd.sock');
   const readyAt = Date.now() + loadMs;
   server = http.createServer((req, res) => {
@@ -49,7 +49,7 @@ async function fakeDaemon({ loadMs, silentWhileLoading }) {
     if (req.url.startsWith('/health')) {
       if (!ready && silentWhileLoading) return; // a busy event loop: the probe times out
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ status: ready ? 'ready' : 'starting', warm: ready }));
+      res.end(JSON.stringify(failed ? { status: 'failed', warm: false } : { status: ready ? 'ready' : 'starting', warm: ready }));
       return;
     }
     res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -79,5 +79,13 @@ describe('ss-search and a daemon that is still loading', () => {
     expect(result.stderr.toString()).not.toContain('warm server is not ready');
     expect(result.code).toBe(0);
     expect(spawned.count).toBe(0);
+  }, 20_000);
+
+  it('replaces a daemon whose init failed once, then refuses with a next step', async () => {
+    const socketPath = await fakeDaemon({ loadMs: 0, silentWhileLoading: false, failed: true });
+    const result = await ssSearch(socketPath);
+    expect(spawned.count).toBe(1);
+    expect(result.code).toBe(1);
+    expect(result.stderr.toString()).toContain('Run ss-search again, or use ss-grep meanwhile.');
   }, 20_000);
 });
