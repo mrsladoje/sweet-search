@@ -236,7 +236,7 @@ export function expandToSymbol(result, opts) {
     // Goal: preserve gold evidence + ground the agent in the enclosing symbol
     // without dumping the whole function (which causes context rot).
     if (!opts.ablations?.has('no-sandwich')) {
-      const sandwich = buildSandwichExpansion(entity, origStart, origEnd, tokenCap);
+      const sandwich = buildSandwichExpansion(entity, origStart, origEnd, tokenCap, filePath);
       if (sandwich) {
         return {
           startLine: entity.startLine,
@@ -371,11 +371,13 @@ export function expandToSymbol(result, opts) {
  * @param {number} origStart - gold chunk start line
  * @param {number} origEnd - gold chunk end line
  * @param {number} tokenCap - hard cap for the assembled sandwich
+ * @param {string} [filePath] - sizes the elision markers, which name the file
  * @returns {{ parts: Array, elidedHead:number, elidedTail:number, elisionMarkers:number }|null}
  */
-function buildSandwichExpansion(entity, origStart, origEnd, tokenCap) {
+function buildSandwichExpansion(entity, origStart, origEnd, tokenCap, filePath = '') {
   const SIG_MAX_LINES = 4;        // signature window
-  const ELISION_TOKENS = 20;      // approx cost of one `// ... (not shown: lines A-B — ss-read <file> A B) ...` line
+  // Cost of one `// ... (not shown: lines A-B — ss-read <file> A B) ...` line (names the path twice).
+  const ELISION_TOKENS = estimateTokens(elisionMarker(filePath, entity.endLine, entity.endLine));
   const TOKENS_PER_LINE = 10;     // pessimistic estimate, matches `entityTokens` heuristic above
 
   // Signature: from entity.startLine up to min(SIG_MAX_LINES, just before gold)
@@ -2116,6 +2118,26 @@ export function refillCoveredSummaries(agentResults, reserve) {
   return { results, replaced: replacements.length };
 }
 
+/** Tokens of one `# not shown:` line for `file` with line numbers as wide as `maxLine`. */
+function notShownTokens(file, maxLine) {
+  const n = Math.max(2, maxLine);
+  // `lines n-n — ss-read <file> n n`: the widest one-line omission of a body ending at or before n.
+  const { after } = omittedRangeLines(file, {
+    exactRange: true, startLine: 1, endLine: n - 1, fullStartLine: 1, fullEndLine: n,
+  });
+  return estimateTokens(after[0]);
+}
+
+/** Tokens of the `# not shown:` lines the renderer prints for a printed range inside a packed one. */
+function omittedLinesTokens(file, printed, fullStart, fullEnd) {
+  if (!Number.isInteger(printed?.start) || !Number.isInteger(printed?.end)
+      || !Number.isInteger(fullStart) || !Number.isInteger(fullEnd)) return 0;
+  const omitted = omittedRangeLines(file, {
+    exactRange: true, startLine: printed.start, endLine: printed.end, fullStartLine: fullStart, fullEndLine: fullEnd,
+  });
+  return [...omitted.before, ...omitted.after].reduce((sum, line) => sum + estimateTokens(line), 0);
+}
+
 /** Printed source range of each code-bearing agent result (packageForAgent → applyPrintedRanges). */
 const printedRanges = new WeakMap();
 const TRAILING_CUT_MARKER_RE = /^\s*\/\/ \.\.\. \(\d+ more lines\)\s*$/;
@@ -2132,8 +2154,10 @@ const TRAILING_CUT_MARKER_RE = /^\s*\/\/ \.\.\. \(\d+ more lines\)\s*$/;
  * (renderFixedBlocks, the same line ss-semantic prints). Lines left out between sandwich parts keep
  * their in-body marker, which names the same ss-read command.
  *
+ * The not-shown lines were counted when each body was packed (omittedLinesTokens).
+ *
  * @param {Array} results  agent results, mutated in place
- * @returns {number} token delta (the not-shown lines in, the removed markers out)
+ * @returns {number} token delta (the removed markers, <= 0)
  */
 function applyPrintedRanges(results) {
   let delta = 0;
@@ -2159,8 +2183,6 @@ function applyPrintedRanges(results) {
         && (fullStart < start || fullEnd > end)) {
       r.fullStartLine = fullStart;
       r.fullEndLine = fullEnd;
-      const omitted = omittedRangeLines(r.file, { exactRange: true, startLine: start, endLine: end, fullStartLine: fullStart, fullEndLine: fullEnd });
-      for (const line of [...omitted.before, ...omitted.after]) delta += estimateTokens(line);
     }
   }
   return delta;
@@ -2419,6 +2441,12 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
     const resultTokenCap = Math.min(allocation.tokenCap, remainingBudget);
     let codeTokens;
     let boundaryTruncated = false;
+    // Agent format: the renderer names each packed line a body leaves out with a
+    // `# not shown: lines A-B — ss-read <file> A B` line. A cut reserves that line inside the
+    // result's cap (worst-case line numbers), so the pack never runs over its budget.
+    const notShownLineCost = _isAgentFormat === true
+      ? notShownTokens(filePath, Math.max(expansion.endLine || 0, (meta.endLine || result.endLine || 0) + 20))
+      : 0;
     if (resultTokenCap <= 0) {
       code = '';
       codeTokens = 0;
@@ -2429,11 +2457,13 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
       // Instead, fall back to gold-only chunk + truncate (agent keeps the
       // evidence; loses signature, but not the match itself).
       codeTokens = estimateTokens(code);
-      if (codeTokens > resultTokenCap) {
+      const droppedSides = (codeStart > expansion.startLine ? 1 : 0)
+        + (sandwichEnd != null && sandwichEnd < expansion.endLine ? 1 : 0);
+      if (codeTokens + droppedSides * notShownLineCost > resultTokenCap) {
         const goldStart = meta.startLine || result.startLine;
         const goldEnd = meta.endLine || result.endLine;
         const goldOnly = readFileRange(fileCache, filePath, goldStart, goldEnd, projectRoot) || '';
-        const trunc = truncateToTokenCap(goldOnly, resultTokenCap);
+        const trunc = truncateToTokenCap(goldOnly, resultTokenCap - 2 * notShownLineCost);
         code = trunc.code;
         codeTokens = estimateTokens(code);
         // The body is now a plain cut chunk: no signature, no closing line.
@@ -2447,7 +2477,8 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
       // prefix plus a counted `// ... (N more lines)` marker that fits inside
       // the cap. compressToPreview's `{ ... }` rewrite and the line-popping
       // clamp after it could drop that marker and leave a silent cut.
-      const truncResult = truncateToTokenCap(code, resultTokenCap);
+      const cap = estimateTokens(code) > resultTokenCap ? resultTokenCap - notShownLineCost : resultTokenCap;
+      const truncResult = truncateToTokenCap(code, cap);
       code = truncResult.code;
       codeTokens = estimateTokens(code);
       boundaryTruncated = truncResult.truncated;
@@ -2477,8 +2508,6 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
       });
       continue;
     }
-
-    tokensUsed += codeTokens;
 
     const agentResult = {
       rank: i + 1,
@@ -2516,11 +2545,15 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
     };
     // The printed source range (first and last line the body shows). The
     // final agent pass below turns the header into this range.
+    let notShownCost = 0;
     if (_isAgentFormat === true) {
-      printedRanges.set(agentResult, expansionKind === 'sandwich'
+      const printed = expansionKind === 'sandwich'
         ? { start: codeStart, end: sandwichEnd }
-        : { start: agentResult.shownStartLine, end: agentResult.shownEndLine });
+        : { start: agentResult.shownStartLine, end: agentResult.shownEndLine };
+      printedRanges.set(agentResult, printed);
+      notShownCost = omittedLinesTokens(filePath, printed, expansion.startLine, expansion.endLine);
     }
+    tokensUsed += codeTokens + notShownCost;
 
     // Phase 4: Header context (top-1 only). Skipped by 'no-header' ablation.
     if (i === 0 && !ablations.has('no-header')) {
