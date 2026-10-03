@@ -15,7 +15,8 @@ export default defineConfig({
     // temp repos into the developer's real ~/.cache/sweet-search/repos.json.
     env: {
       SWEET_SEARCH_REPO_REGISTRY: join(tmpdir(), `sweet-search-test-repos-${process.pid}.json`),
-      // Same for the opencode cache-key switches (install-opencode-harness.js, opencode-cache-key-plugin.mjs).
+      // The opencode cache-key switches (install-opencode-harness.js, opencode-cache-key-plugin.mjs) must
+      // not leak in from the developer's shell either.
       SWEET_SEARCH_OC_CACHE_KEY: '',
       SWEET_SEARCH_OC_CACHE_SHARDS: '',
     },

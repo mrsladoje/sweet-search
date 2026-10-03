@@ -342,7 +342,7 @@ export function selectGrepFilesByWeight(matches, opts = {}) {
   const ords = new Int32Array(size);
   while (size > 0) {
     const last = size - 1;
-    const key = heap[0]; const tot = heap[1]; const ord = heap[2];
+    const tot = heap[1]; const ord = heap[2];
     heap[0] = heap[3 * last]; heap[1] = heap[3 * last + 1]; heap[2] = heap[3 * last + 2];
     size = last;
     if (size > 0) fileHeapSiftDown(heap, size, 0);
