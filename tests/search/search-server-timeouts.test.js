@@ -82,6 +82,7 @@ describe('daemon heap ceiling', () => {
     expect(daemonHeapMb(16 * gib)).toBe(4096);
     expect(daemonHeapMb(8 * gib)).toBe(4096);
     expect(daemonHeapMb(4 * gib)).toBe(3072);
+    expect(daemonHeapMb(0)).toBe(4096);
     expect(daemonNodeArgs(64 * gib)).toEqual(['--max-old-space-size=16384']);
   });
 

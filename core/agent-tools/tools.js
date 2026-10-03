@@ -26,6 +26,17 @@ export const SEARCHER_SUBCOMMANDS = Object.freeze(new Set(['agent-search', 'grep
 // running in its exec session.
 export const SEARCH_LOADING_WAIT_MS = 90_000;
 
+// Epoch ms at which the agent's ss-* command started, set by the native client and kept
+// through the daemon route and the in-process fallback, so the 90 s budget covers the
+// whole command, not each hop.
+export const CALL_STARTED_ENV = 'SWEET_SEARCH_CALL_STARTED_MS';
+
+/** When this call started (`env[CALL_STARTED_ENV]`, else now). */
+export function callStartedMs(env, now = Date.now()) {
+  const t = Number(env?.[CALL_STARTED_ENV]);
+  return Number.isFinite(t) && t > 0 && t <= now ? t : now;
+}
+
 /** The one line ss-search prints when the daemon is not ready in time (exit 1). */
 export function searchNotReadyLine(seconds, failed = false) {
   return failed

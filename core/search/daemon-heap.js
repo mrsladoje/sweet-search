@@ -27,6 +27,7 @@ export function memoryLimitBytes({ constrained = process.constrainedMemory?.() ?
 
 export function daemonHeapMb(limitBytes = memoryLimitBytes()) {
   const mb = limitBytes / (1024 * 1024);
+  if (!(mb > 0)) return DAEMON_HEAP_MIN_MB; // limit unknown
   return Math.floor(Math.min(Math.max(DAEMON_HEAP_MIN_MB, mb / 4), mb * 0.75));
 }
 

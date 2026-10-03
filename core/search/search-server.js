@@ -1916,7 +1916,8 @@ export async function isServerRunning() {
  * Auto-spawn warm server in background
  * Returns true if server started successfully
  */
-export async function autoSpawnServer() {
+export async function autoSpawnServer({ quiet = false } = {}) {
+  const note = quiet ? () => {} : (msg) => console.error(msg);
   const { spawn } = await import('child_process');
   const { fileURLToPath } = await import('url');
   const path = await import('path');
@@ -1927,7 +1928,7 @@ export async function autoSpawnServer() {
   const __filename = fileURLToPath(import.meta.url);
   const sweetSearchPath = path.join(path.dirname(__filename), '..', 'cli.js');
 
-  console.error('[AutoStart] Starting warm server in background...');
+  note('[AutoStart] Starting warm server in background...');
 
   // Spawn detached process — run sweet-search with --serve
   const { daemonNodeArgs } = await import('./daemon-heap.js');
@@ -1955,11 +1956,11 @@ export async function autoSpawnServer() {
     waited += checkInterval;
 
     if (await isServerRunning()) {
-      console.error(`[AutoStart] Server ready in ${waited}ms`);
+      note(`[AutoStart] Server ready in ${waited}ms`);
       return true;
     }
   }
 
-  console.error('[AutoStart] Server startup timeout, using cold start');
+  note('[AutoStart] Server startup timeout, using cold start');
   return false;
 }
