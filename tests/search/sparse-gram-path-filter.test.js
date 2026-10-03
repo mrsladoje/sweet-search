@@ -6,15 +6,21 @@ import { tmpdir } from 'node:os';
 import { gramsProveNoMatch, sparseGramPathFilter } from '../../core/search/search-pattern-sparse-overlay.js';
 import { generateRegexMatches } from '../../core/search/search-pattern-planner.js';
 import {
-  buildSparseGramIndexArtifact, hasNativeSparseGramSupport, loadSparseGramIndex,
+  buildSparseGramIndexArtifact, hasNativeSparseGramSupport, loadSparseGramIndex, nativeAcceptsNoExtensionToken,
 } from '../../core/infrastructure/native-sparse-gram.js';
 
 describe('sparseGramPathFilter', () => {
   it('takes the extension keys from the index paths, as the native filter reads them', () => {
     const index = { getAllFiles: () => ['src/a.go', 'docs/README.MD', '.github/CODEOWNERS', 'Makefile', 'bin/tool', 'odd.'] };
     const filter = sparseGramPathFilter(index);
-    expect(filter.extensions.sort()).toEqual(['github/codeowners', 'go', 'md']);
-    expect(filter.unfilterable).toEqual(['Makefile', 'bin/tool', 'odd.']);
+    if (nativeAcceptsNoExtensionToken()) {
+      // The addon narrows the extensionless paths itself ('' = no usable extension).
+      expect(filter.extensions.sort()).toEqual(['', 'github/codeowners', 'go', 'md']);
+      expect(filter.unfilterable).toEqual([]);
+    } else {
+      expect(filter.extensions.sort()).toEqual(['github/codeowners', 'go', 'md']);
+      expect(filter.unfilterable).toEqual(['Makefile', 'bin/tool', 'odd.']);
+    }
   });
 
   it('is computed once per loaded index', () => {

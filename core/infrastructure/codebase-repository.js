@@ -6,14 +6,14 @@
  */
 
 import Database from 'better-sqlite3';
-import fs from 'node:fs';
 import path from 'node:path';
 import { applyReadPragmas, assertInClauseSize } from './db-utils.js';
+import { readJsonFileCached } from './cached-json-file.js';
 
 function readAdjacentManifest(dbPath) {
   try {
     const manifestPath = path.join(path.dirname(dbPath), 'reconcile-manifest.json');
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    const manifest = readJsonFileCached(manifestPath);
     return Number.isInteger(manifest?.epoch) ? manifest : null;
   } catch {
     return null;

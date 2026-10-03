@@ -272,6 +272,13 @@ pub struct GramGrepFullResult {
 }
 
 /// Check if a file path has an extension in the allowed set.
+/// `""` in the extension list stands for "no usable extension" (no `.`, or a trailing one), so
+/// those paths can be gram-narrowed with the rest instead of grepped apart by the caller.
+#[napi]
+pub fn sparse_gram_accepts_no_extension_token() -> bool {
+    true
+}
+
 fn has_code_extension(path: &str, extensions: &HashSet<&str>) -> bool {
     match path.rfind('.') {
         Some(dot_pos) if dot_pos + 1 < path.len() => {
@@ -287,7 +294,7 @@ fn has_code_extension(path: &str, extensions: &HashSet<&str>) -> bool {
                 extensions.contains(lower.as_str())
             }
         }
-        _ => false,
+        _ => extensions.contains(""),
     }
 }
 

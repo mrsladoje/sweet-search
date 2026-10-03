@@ -246,6 +246,26 @@ impl FileContent {
 /// Bumped DFA size limits to match ripgrep's configuration — larger lazy DFA
 /// cache keeps states warm across files on each rayon thread.
 pub(crate) fn build_regex(pattern: &str, case_insensitive: bool) -> Result<regex::bytes::Regex> {
+    // One ss-grep call compiles its pattern several times (gram search, residual paths, the
+    // retries), and a `\w` pattern compiles the whole Unicode word class (~1 ms). A Regex is
+    // immutable and its clone shares the compiled program, so compiled ones are kept.
+    static COMPILED: OnceLock<std::sync::Mutex<std::collections::HashMap<(String, bool), regex::bytes::Regex>>> =
+        OnceLock::new();
+    let compiled = COMPILED.get_or_init(Default::default);
+    let key = (pattern.to_owned(), case_insensitive);
+    if let Some(re) = compiled.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
+        return Ok(re.clone());
+    }
+    let re = compile_regex(pattern, case_insensitive)?;
+    let mut map = compiled.lock().unwrap_or_else(|e| e.into_inner());
+    if map.len() >= 256 {
+        map.clear();
+    }
+    map.insert(key, re.clone());
+    Ok(re)
+}
+
+fn compile_regex(pattern: &str, case_insensitive: bool) -> Result<regex::bytes::Regex> {
     if pattern.len() > MAX_PATTERN_LENGTH {
         return Err(Error::from_reason(format!(
             "Regex pattern too long ({} bytes, max {MAX_PATTERN_LENGTH})",

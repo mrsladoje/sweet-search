@@ -3,6 +3,7 @@ import path from 'path';
 import {
   extractSparseGramRequiredGrams,
   getSparseGramAllFiles as _getSparseGramAllFiles,
+  nativeAcceptsNoExtensionToken as _nativeAcceptsNoExtensionToken,
   nativeGrepFull as _nativeGrepFull,
   nativeGrepLines as _nativeGrepLines,
   resolveSparseSymbolMask as _resolveSparseSymbolMask,
@@ -414,7 +415,10 @@ export function sparseGramPathFilter(sparseGramIndex) {
     if (dot < 0 || dot + 1 >= file.length) unfilterable.push(file);
     else keys.add(file.slice(dot + 1).replace(/[A-Z]+/g, (s) => s.toLowerCase()));
   }
-  const filter = { extensions: [...keys], unfilterable };
+  // An addon that knows the `''` token narrows the extensionless paths with the rest.
+  const filter = unfilterable.length > 0 && _nativeAcceptsNoExtensionToken()
+    ? { extensions: [...keys, ''], unfilterable: [] }
+    : { extensions: [...keys], unfilterable };
   _pathFilterByIndex.set(sparseGramIndex, filter);
   return filter;
 }
