@@ -280,12 +280,14 @@ const sourceOf = (orig, arm) => (arm === 'before' ? path.join(BEFORE_REPOS, path
 const cloneOf = (orig, arm = 'sweet') => path.join(cloneRootOf(arm), path.relative(REPO, orig).replace(/[\\/]/g, '__'));
 // core/prompt-optimization/data/final-run/index-repos.sh stamps every index it builds:
 // <stamps>/<before|after>/<repo>.json = { commit, backend, indexDigest, ... } (indexDigest: sha256 of the
-// sorted .sweet-search file list with sizes — the same function as below).
+// sorted .sweet-search file list with sizes — the same function as belo — the same function as below), without the
+// runtime files a maintainer writes while it runs (log, lock, queue, SQLite -shm, pid, socket).
+const INDEX_RUNTIME_FILE = /(^|\/)(index-maintainer\.(log|lock)|rebuild-queue\.jsonl|[^\/]*-shm|[^\/]*\.pid|[^\/]*\.sock)$/;
 const INDEX_STAMPS = path.resolve(flag('--index-stamps', process.env.SS_BENCH_INDEX_STAMPS || path.join(EVAL, 'final-run', 'index-stamps')));
 const indexStampOf = (orig, arm) => { try { return JSON.parse(fs.readFileSync(path.join(INDEX_STAMPS, arm === 'before' ? 'before' : 'after', `${path.basename(orig)}.json`), 'utf8')); } catch { return null; } };
 function indexDigest(src) {
   const root = path.join(src, '.sweet-search'), rows = [];
-  const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const f = path.join(d, e.name); if (e.isDirectory()) walk(f); else if (e.isFile()) rows.push(`${path.relative(root, f)}\t${fs.statSync(f).size}`); } };
+  const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const f = path.join(d, e.name); if (e.isDirectory()) walk(f); else if (e.isFile() && !INDEX_RUNTIME_FILE.test(path.relative(root, f))) rows.push(`${path.relative(root, f)}\t${fs.statSync(f).size}`); } };
   walk(root); rows.sort();
   return crypto.createHash('sha256').update(rows.join('\n')).digest('hex').slice(0, 16);
 }

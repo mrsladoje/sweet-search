@@ -36,8 +36,9 @@ log() { echo "$(date '+%F %T') [index $ARM] $*" | tee -a "$LOGS/queue.log"; }
 digest() { node -e '
   const fs = require("fs"), path = require("path"), crypto = require("crypto");
   const root = path.join(process.argv[1], ".sweet-search"), rows = [];
+  const RUNTIME = /(^|\/)(index-maintainer\.(log|lock)|rebuild-queue\.jsonl|[^\/]*-shm|[^\/]*\.pid|[^\/]*\.sock)$/; // same rule as retrieval-bench-282.mjs
   const walk = (d) => { for (const e of fs.readdirSync(d, { withFileTypes: true })) { const f = path.join(d, e.name);
-    if (e.isDirectory()) walk(f); else if (e.isFile()) rows.push(`${path.relative(root, f)}\t${fs.statSync(f).size}`); } };
+    if (e.isDirectory()) walk(f); else if (e.isFile() && !RUNTIME.test(path.relative(root, f))) rows.push(`${path.relative(root, f)}\t${fs.statSync(f).size}`); } };
   walk(root); rows.sort(); console.log(crypto.createHash("sha256").update(rows.join("\n")).digest("hex").slice(0, 16));' "$1"; }
 stamp_ok() { # <repo> <dst>
   node -e 'const s=require(process.argv[1]); process.exit(s.commit===process.argv[2] && s.indexDigest===process.argv[3] ? 0 : 1)' \
