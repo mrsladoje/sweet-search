@@ -62,7 +62,8 @@ wait_idle() {
   # is resident while the indexer loads GPU models (memory: no-model-coexist). Others are only reported.
   for pid in $(pgrep -f "sweet-search-daemon|sweet-search-maintainer"); do
     cwd=$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')
-    case "$cwd" in "$HOME/.ss-eval/"*) kill "$pid" 2>/dev/null && log "stopped leftover bench process $pid ($cwd)";;
+    # Only this run's own roots: other benches under ~/.ss-eval (another session's work) are left alone.
+    case "$cwd" in "$FR_STATE/"*|"$BEFORE_REPOS/"*|"$HOME/.ss-eval/r282-repos/"*) kill "$pid" 2>/dev/null && log "stopped leftover bench process $pid ($cwd)";;
       *) log "WARN resident sweet-search process $pid ($cwd) — not ours, left running";; esac
   done
   sleep 5
