@@ -1421,6 +1421,12 @@ export async function startServer() {
       serverReady = true;
       await fs.writeFile(pidFile, process.pid.toString(), { mode: 0o644 });
       console.log(`[Server] Indexes loaded in ${initTimeMs}ms`);
+      // Keeps the zero-hit grep fallback's changed-file listing current from file events
+      // (changed-files-tracker.js). SWEET_SEARCH_CHANGED_FILES_WATCH=0: list in full per call.
+      if (!['0', 'false', 'off', 'no'].includes(String(process.env.SWEET_SEARCH_CHANGED_FILES_WATCH || '').toLowerCase())) {
+        const { startChangedFilesTracking } = await import('../indexing/changed-files-tracker.js');
+        startChangedFilesTracking(searcher.projectRoot || process.cwd()).catch(() => {});
+      }
     } catch (err) {
       initError = err;
       initTimeMs = Date.now() - initStartedAt;

@@ -187,6 +187,11 @@ function loadAddon() {
   return _addon;
 }
 
+/** Whether the addon's unified search reads `''` in codeExtensions as "no extension". */
+export function nativeAcceptsNoExtensionToken() {
+  return typeof loadAddon()?.sparseGramAcceptsNoExtensionToken === 'function';
+}
+
 export function hasNativeSparseGramSupport() {
   return !!loadAddon();
 }

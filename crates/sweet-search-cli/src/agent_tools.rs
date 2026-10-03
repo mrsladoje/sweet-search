@@ -152,10 +152,9 @@ pub fn run(sub: &str, args: &[String]) -> ! {
         Some(r) => super::project_root_from(r),
         None => run_in_process(sub, args),
     };
-    let socket = match super::find_socket_for(&root).or_else(|| super::auto_start_server_for(&root, true)) {
-        Some(s) => s,
-        None => run_in_process(sub, args),
-    };
+    // The call goes straight to the socket: no connect-and-drop probe first (each connection
+    // costs the daemon an accept). A missing or refused socket starts the daemon, once.
+    let socket = super::socket_path_for(&root);
 
     let env_map: serde_json::Map<String, Value> = env::vars_os()
         .map(|(k, v)| {
@@ -180,9 +179,20 @@ pub fn run(sub: &str, args: &[String]) -> ! {
 
     // Any transport failure means the daemon did not answer this call (or died with it,
     // taking its per-session state along); run it here instead.
-    let (status, reply) = match super::http_transport::post_json(&socket, "/agent-tool", &body) {
-        Ok(r) => r,
-        Err(_) => run_in_process(sub, args),
+    let mut started = false;
+    let (status, reply) = loop {
+        match super::http_transport::post_json(&socket, "/agent-tool", &body) {
+            Ok(r) => break r,
+            Err(e) if !started
+                && matches!(e.kind(), io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused) =>
+            {
+                started = true;
+                if super::auto_start_server_for(&root, true).is_none() {
+                    run_in_process(sub, args);
+                }
+            }
+            Err(_) => run_in_process(sub, args),
+        }
     };
     if status != 200 {
         // 404 (a daemon from before this route), 409 (another repository), 503 (still

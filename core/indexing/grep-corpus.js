@@ -25,6 +25,7 @@ import { Minimatch } from 'minimatch';
 import { SECRET_FILE_PATTERNS } from '../infrastructure/config/index.js';
 import { createAdmissionPolicy } from './admission-policy.js';
 import { fileLooksMinified } from './minified-detector.js';
+import { changedFilesTracker } from './changed-files-tracker.js';
 import {
   DEFAULT_REPO_SIZE_CAP, loadIgnoreFile, patternToRegex,
 } from '../incremental-indexing/infrastructure/path-filter.mjs';
@@ -176,10 +177,19 @@ const changedCache = new Map();
  * @returns {string[]}
  */
 export function listChangedGrepFiles(projectRoot, { limit = 2000 } = {}) {
+  // In the daemon the listing is kept current from file events (changed-files-tracker.js),
+  // so a zero-hit grep no longer walks the whole tree for untracked files.
+  const tracker = changedFilesTracker(path.resolve(projectRoot));
+  let listed = null;
+  if (tracker) {
+    try { listed = tracker.list(); } catch { listed = null; }
+  }
   const now = Date.now();
-  const hit = changedCache.get(projectRoot);
-  if (hit && now - hit.at < CHANGED_TTL_MS) return hit.files;
-  const listed = listGitVisibleFiles(projectRoot, { changedOnly: true }) || [];
+  if (!listed) {
+    const hit = changedCache.get(projectRoot);
+    if (hit && now - hit.at < CHANGED_TTL_MS) return hit.files;
+    listed = listGitVisibleFiles(projectRoot, { changedOnly: true }) || [];
+  }
   const ignores = loadIgnoreRegexes(projectRoot);
   const files = [];
   for (const rel of listed.sort()) {
