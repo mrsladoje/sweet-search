@@ -234,6 +234,12 @@ const WARM_CWD = path.join(CLONE_ROOT, WARMUP_ID);
 // The owner's own daemons have neither the env var nor a file under CLONE_ROOT.
 const SPAWN_LEDGER_DIR = path.join(STATE, 'spawn-ledger', String(process.pid));
 process.env[SPAWN_LEDGER_ENV] = SPAWN_LEDGER_DIR;
+// One daemon registry per cell (2026-10-03). The registry (the resident-daemon cap, 3 in the
+// ss-* shims, and the maintainer RSS coordinator) lives in ~/.cache/sweet-search, which every
+// cell's private HOME links to. One cell's daemons then /stop another cell's: r282 diet1 Codex
+// r1 typedoc found its warmed daemon gone while other cells started theirs, cold-started it
+// under load, and 5 searches were refused.
+process.env.SWEET_SEARCH_RUNTIME_DIR ??= path.join(STATE, 'runtime');
 async function reapCloneDaemons(label) {
   const killed = await reapRoots({ ledgerDir: SPAWN_LEDGER_DIR, roots: [CLONE_ROOT] });
   if (killed.length) console.error(`  [reap] ${label}: stopped ${killed.length} ss-* process(es): ${killed.map(k => `${k.comm}(${k.pid})`).join(', ')}`);
