@@ -28,7 +28,7 @@ import {
   extractNoResultMarkers, classifyNoTestResult, renderNoTestResultNote, testPatternFromArgv,
 } from './rt-condense-lib.mjs';
 import {
-  RT_DEDUP_ON, parseRunTestsArgv, untrackedFingerprint, computeStateKey,
+  parseRunTestsArgv, untrackedFingerprint, computeStateKey,
   summarizeRunTestsResult, readDedupState, dedupDecision, appendDedupRecord,
   buildDedupSummary, buildChangedResultNote, parseExitCode,
 } from './rt-dedup.mjs';
@@ -300,7 +300,7 @@ export function runTestsWithLevers(cfg, { pattern = '', argv = null, reqId = nul
 
   // (d) L3 state key — computed BEFORE the suite runs, over the exact tree the suite
   // will see. A null key (unhashable untracked set) means "no dedup for this call".
-  const dedupActive = RT_DEDUP_ON && cfg.rtDedup !== false && !!cfg.dedupLog && !parsed.full;
+  const dedupActive = cfg.rtDedup !== false && !!cfg.dedupLog && !parsed.full;
   let untracked = null, key = null;
   if (dedupActive) {
     untracked = untrackedFingerprint(cfg.rundir);
@@ -370,7 +370,7 @@ function applyDedup(cfg, { key, untracked, parsed, diff, reqId, out, raw, rawExi
   if (!key) {
     // Still leave an audit trail when the lever was live but abstained, so a smoke can
     // tell "never fired because the agent never repeated" from "could not fingerprint".
-    if (RT_DEDUP_ON && cfg.rtDedup !== false && cfg.dedupLog) {
+    if (cfg.rtDedup !== false && cfg.dedupLog) {
       const state = readDedupState(cfg.dedupLog);
       appendDedupRecord(cfg.dedupLog, {
         call: state.calls + 1, key: null, decision: parsed.full ? 'ss-full' : 'no-key',
@@ -407,7 +407,7 @@ function applyDedup(cfg, { key, untracked, parsed, diff, reqId, out, raw, rawExi
 }
 
 function dedupActive(cfg) {
-  return RT_DEDUP_ON && cfg.rtDedup !== false && !!cfg.dedupLog;
+  return cfg.rtDedup !== false && !!cfg.dedupLog;
 }
 
 function sha256Hex(s) { return createHash('sha256').update(s).digest('hex'); }

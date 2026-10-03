@@ -62,20 +62,39 @@ Already gone before this pass: `SS_FIX_RULES_V2` (2e316865). Never read by code:
 | `CC_HARNESS_TRIM`, `CC_TRIM_BATCH`, `CODEX_TRIM_BATCH`, `OC_HARNESS_TRIM`, `SWEET_RULES_PLACEMENT`, `MPP` | product values | the task bench needs them to run its current product harness and cells |
 | `SWEET_SEARCH_OC_CACHE_KEY`, `SWEET_SEARCH_OC_CACHE_SHARDS` | plugin on | settings of the shipped opencode plugin, not arms |
 
-## Unclear — kept, recommendation for the owner
+## Second pass (coordinator decisions, 2026-10-03)
 
-| Switch | Default | Recommendation |
+Deleted with their code; the shipped path is the only path:
+
+| Switch | Default | Deleted with it |
 |---|---|---|
-| `SS_VARIANT_OC_CACHE_KEY` (unset / `repo` / `product`) | unset = no plugin in the bench | The product plugin ships. Delete `repo`; make the opencode sweet arm always use the product plugin and native none — after you confirm that fairness rule, because it changes every opencode bench run. |
-| `SS_SIBLING_LINE=0` | ON | Shipped default ON (sibling line); delete the opt-out. |
-| `SS_UNREAD_ABOVE=0` | ON | Same: delete the opt-out. |
-| `SS_READ_SPAN_EXPAND=1` | OFF | DEAD-LEVER B12 (inverted live): delete with the `spanExpand` code. |
-| `SS_READ_WINDOW=<n>` | OFF (parked) | Owner call: delete, or keep for one more read-window test. |
-| `SS_SMOKE_SEARCH_BUDGET`, `SS_SMOKE_FIND_BUDGET`, `SS_SMOKE_TRACE_BUDGET`, `SS_SMOKE_SEMANTIC_MAXTOKENS` | off | Budget-sweep hooks; delete unless a sweep is planned. |
-| `CC_PRODUCT_STEER`, `CC_PRODUCT_TOKREM`, `CC_PRODUCT_SKILLDESC`, `CC_PRODUCT_HOOKPLUG` | off | Claude Code trim research variants; delete if the harness hill-climb is closed (memory says CLOSED). |
-| `SS_NO_CMD_CONDENSE`, `SS_NO_ANTITHRASH`, `SS_RT_LONGYIELD=0`, `SS_RUNTESTS_DEDUP=0` | levers ON | Task-bench opt-outs of shipped levers; delete after an owner yes. |
-| `SWEET_SEARCH_SHOWN_SPAN_TRAILER`, `SWEET_SEARCH_EXACT_REREAD_OMISSION` | product features | Product settings, not arms; review separately. |
+| `SS_SIBLING_LINE=0` | ON | the `_siblingLine` option and the `siblingLine=false` request param (no caller sends false) |
+| `SS_UNREAD_ABOVE=0` | ON | `unreadAboveEnabled` |
+| `SS_READ_SPAN_EXPAND=1` | OFF (DEAD-LEVER B12, inverted live) | `resolveSpanExpansion`, `spanExpandEnabled`, the `spanExpand` read option, `spanExpanded` field, `tests/search/read-span-expansion.test.js` |
+| `SS_READ_WINDOW=<n>` | OFF (parked) | the ss-read default-window code, `eval/task-completion-bench/tests/l4-read-window.mjs` |
+| `SS_SMOKE_SEARCH_BUDGET`, `SS_SMOKE_FIND_BUDGET`, `SS_SMOKE_TRACE_BUDGET`, `SS_SMOKE_SEMANTIC_MAXTOKENS` | off | the four wrapper hooks, `scripts/budget-sweep-smoke.mjs` |
+| `CC_PRODUCT_STEER`, `CC_PRODUCT_TOKREM`, `CC_PRODUCT_SKILLDESC`, `CC_PRODUCT_HOOKPLUG` | off (research variants on top of `CC_HARNESS_TRIM=product`) | `dropEnv` / `skillDesc` / `hookplug`, `writeClaudeHookPlugin` |
+| `SS_NO_CMD_CONDENSE`, `SS_NO_RT_AUTHORITY` | levers L1 / L2 ON | the opt-out branches (both runners) |
+| `SS_RT_LONGYIELD=0` | ON | the legacy poll instruction in `FRAME_CLOSE` |
+| `SS_RUNTESTS_DEDUP=0` | ON | `RT_DEDUP_ON`; rows stamp `rtDedup: true` (`writeRunTestsShim({ rtDedup })` stays as a unit-test option) |
+| `SS_NO_ANTITHRASH` | text ON, but unused | the never-called `buildPrompt` and `ANTI_THRASH_TEXT` (anti-thrash guidance is off the table) |
 
-Historical scripts under `core/prompt-optimization/data/final-tuning/scripts/` (task-guard, forensic
-runs) still name deleted switches in `env -u` lists; they ran at their own commits and are not edited.
-`OBSERVATIONS.md` and the data notes keep their switch names as history.
+Kept by decision: `SS_VARIANT_OC_CACHE_KEY` unchanged (it sets bench fairness for the final comparison).
+
+Proof that the product path did not move (before = a27fa43b, after = this commit):
+- ss-* golden: 173 cases (146 + ss-read whole / range / large-file and 3 more ss-grep cases), stdout,
+  stderr and exit code identical; only the dropped `_siblingLine: true` request key differs.
+- Task-bench harness capture (no model calls): `claudeHarnessTrim()` / `('product')` / `('0')`, Codex and
+  opencode arm trims, `FRAME_OPEN` / `FRAME_CLOSE`, instruction files, the generated run_tests shim
+  files and wrappers for both arms — byte-identical JSON.
+- `retrieval-bench-282 --print-exposure` for cc-opus55-medium, codex-sol61-high, oc-sol61-high:
+  11 files identical.
+- Pin tests: `tests/init` (incl. harness-prompts, claude-lean-harness), `claude-code-cost.mjs`,
+  `sweet-rules-placement.mjs`, `frame-invariants.mjs`, the `rt-*` suites — all pass.
+
+## Still open (not decided)
+
+| Switch | Default | Note |
+|---|---|---|
+| `SWEET_SEARCH_SHOWN_SPAN_TRAILER`, `SWEET_SEARCH_EXACT_REREAD_OMISSION` | product features | product settings, not arms |
+| `SS_FRAME_CHECKPOINT`, `SS_FRAME_REFLECT` | off | task-bench frame research; not in this pass |

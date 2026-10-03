@@ -817,7 +817,7 @@ describe('singleton sibling line (squashql-295)', () => {
   it('bareGrep keeps it under the implicit cwd scope of ss-grep (_cwdScope), unlike --in', async () => {
     const searcher = { ...makeSearcher([m(JAVA, 212, 'throw new IllegalArgumentException("sub-query in a sub-query is not supported");')]), projectRoot: root };
     searcher.codeGraphRepo = squashqlRepo();
-    const opts = { regex: 'not supported', maxMatches: 0, perFileCap: 20, maxFiles: 20, _isAgentFormat: true, _siblingLine: true };
+    const opts = { regex: 'not supported', maxMatches: 0, perFileCap: 20, maxFiles: 20, _isAgentFormat: true };
     const inScope = await bareGrep.call(searcher, 'not supported', null, {
       ...opts, fileFilter: path.join(root, 'src'), _cwdScope: true,
     });
@@ -829,26 +829,20 @@ describe('singleton sibling line (squashql-295)', () => {
     expect(outOfScope.results).toHaveLength(0);
   });
 
-  it('bareGrep attaches it only for agent format without --in, and honours the opt-out', async () => {
+  it('bareGrep attaches it only for agent format without --in', async () => {
     const searcher = { ...makeSearcher([m(JAVA, 212, 'throw new IllegalArgumentException("sub-query in a sub-query is not supported");')]), projectRoot: root };
     searcher.codeGraphRepo = squashqlRepo();
     const agent = await bareGrep.call(searcher, 'not supported', null, {
-      regex: 'not supported', maxMatches: 0, perFileCap: 20, maxFiles: 20, _isAgentFormat: true, _siblingLine: true,
+      regex: 'not supported', maxMatches: 0, perFileCap: 20, maxFiles: 20, _isAgentFormat: true,
     });
     expect(agent.results).toHaveLength(1);
     expect(agent.siblingLine.rendered).toContain('35: private final Map<Measure, CompiledMeasure> subQueryMeasures;');
     const human = await bareGrep.call(searcher, 'not supported', null, { regex: 'not supported', maxMatches: 0 });
     expect(human.siblingLine).toBeUndefined();
     const scoped = await bareGrep.call(searcher, 'not supported', null, {
-      regex: 'not supported', maxMatches: 20, fileFilter: 'src', _isAgentFormat: true, _siblingLine: true,
+      regex: 'not supported', maxMatches: 20, fileFilter: 'src', _isAgentFormat: true,
     });
     expect(scoped.siblingLine).toBeUndefined();
-    // The switch is an OPTION, not an env read (the daemon's env is whatever spawned
-    // it); default on, `_siblingLine: false` opts out.
-    const off = await bareGrep.call(searcher, 'not supported', null, {
-      regex: 'not supported', maxMatches: 0, perFileCap: 20, maxFiles: 20, _isAgentFormat: true, _siblingLine: false,
-    });
-    expect(off.siblingLine).toBeUndefined();
   });
 });
 

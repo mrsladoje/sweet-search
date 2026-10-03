@@ -654,7 +654,6 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
         perFileCap: Math.min(k, 100), maxFiles: k,
         expand: false, rerank: false, useLateInteraction: false,
         _isAgentFormat: !fixedString,
-        _siblingLine: process.env.SS_SIBLING_LINE !== '0', // default ON; cost bounded (≤0.6% prompt tokens), see SMOKE-LOSS-FORENSICS §9
         ...scopeOpts,
         ...globOpts,
       });
@@ -664,7 +663,6 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
         regex: rx, maxMatches: 0, contextLines: 0,
         perFileCap: Math.min(k, 100), maxFiles: k,
         _isAgentFormat: !fixedString,
-        _siblingLine: process.env.SS_SIBLING_LINE !== '0', // default ON; cost bounded (≤0.6% prompt tokens), see SMOKE-LOSS-FORENSICS §9
         ...scopeOpts,
         ...globOpts,
       });
@@ -757,9 +755,6 @@ async function cmdFind(rawArgs) {
     process.stderr.write(FIND_USAGE + '\n');
     process.exit(2);
   }
-  // Budget-sweep experiment hook: lets the bench pin the response token budget
-  // per-process without changing the agent-visible tool surface.
-  const envFindBudget = Number(process.env.SS_SMOKE_FIND_BUDGET || '') || null;
   // Pattern flags apply to the regex candidate generator; the NL query is untouched.
   const effectiveRegex = buildGrepPattern(regex || '', { ignoreCase, wordBound, fixedString });
   let response;
@@ -767,10 +762,8 @@ async function cmdFind(rawArgs) {
     response = await queryWarmSearch(query, {
       mode: 'pattern', regex: effectiveRegex || `\\b\\w+\\b`, topK: k, format,
       _isAgentFormat: !fixedString,
-      _siblingLine: process.env.SS_SIBLING_LINE !== '0', // default ON; cost bounded (≤0.6% prompt tokens), see SMOKE-LOSS-FORENSICS §9
       ...(findFileFilter ? { fileFilter: findFileFilter } : {}),
       ...globOpts,
-      ...(envFindBudget ? { tokenBudget: envFindBudget } : {}),
     });
   } catch {
     const s = await getSweetSearch();
@@ -786,7 +779,6 @@ async function cmdFind(rawArgs) {
       _isAgentFormat: !fixedString,
       ...(findFileFilter ? { fileFilter: findFileFilter } : {}),
       ...globOpts,
-      ...(envFindBudget ? { tokenBudget: envFindBudget } : {}),
     });
   }
   // Plan the printed entries first (A2 dedupe), so the ledger learns only what this call prints.
@@ -886,26 +878,6 @@ async function cmdRead(rawArgs) {
       }
     }
   }
-  // L4a (2026-07-09) — default read window. An unbounded whole-file read (no range
-  // given) delivers the ENTIRE file, which then sits RESIDENT in the agent's context
-  // and is re-sent every subsequent turn. P1 measured this read-mass resident tax at
-  // ~$11/200 (whole-file/large reads are the tail: p90=180, max=900 lines). So when
-  // the agent gives NO range, cap the default to READ_WINDOW lines and let the
-  // existing "what remains" trailer advertise the exact continue command — the agent
-  // widens on demand instead of paying for the whole file up front. Only the no-range
-  // case is capped: an EXPLICIT range is the agent's deliberate choice and capping it
-  // would cause widen-thrash (the RETUNE hazard). GCSN-neutral by construction (reads
-  // are never ranked). Gated for the standing ON-vs-OFF A/B: SS_NO_READ_WINDOW=1 → OFF
-  // (legacy whole-file); SS_READ_WINDOW=<n> retunes the tier. Prod/human ss-read is a
-  // separate wrapper and is untouched (byte-identical).
-  // PARKED default-OFF (2026-07-09 smoke): the mechanism works (−39% delivered read
-  // tokens vs off) and is accuracy-safe (no resolved→unresolved flips), but the ~$11/200
-  // pool is too small to show a net idealCost win at n=2 and one read-thrash instance
-  // appeared at window=150. Opt-in via SS_READ_WINDOW=<n> pending a larger-n confirmation.
-  const READ_WINDOW = Number(process.env.SS_READ_WINDOW) || 0;
-  const cappedDefault = (start === null && end === null && READ_WINDOW > 0);
-  if (cappedDefault) { start = 1; end = READ_WINDOW; }
-
   // A file the INDEXER refused by content is refused here too, BEFORE any body is read.
   // `ss-read dist/index.js` used to hand back 13,396 tokens of minified JavaScript in one
   // call — resident for the rest of the rollout and re-sent every turn. The refusal names
@@ -924,11 +896,10 @@ async function cmdRead(rawArgs) {
   }
 
   const { readFile, renderUnreadBelow, renderUnreadAbove, numberCodeLines } = await import(path.join(REPO_ROOT, 'core/search/search-read.js'));
-  // Agent-facing ss-read: span gate on, same as the CLI and the daemon route.
   const r = await readFile({
     path: file, projectRoot: FILE_ROOT,
     startLine: start ?? undefined, endLine: end ?? undefined,
-    spanExpand: true, format: 'agent',
+    format: 'agent',
   });
   if (!r.ok) {
     process.stderr.write(`[ss-read] error: ${r.error}\n`);
@@ -957,10 +928,7 @@ async function cmdRead(rawArgs) {
   if (receiptResponse?.ok && Array.isArray(receiptResponse.decisions)) {
     applyReadOmissionDecisions(readBatch, receiptResponse.decisions);
   }
-  // If the window happened to cover the whole file (file ≤ READ_WINDOW, clamped by
-  // readFile), present it EXACTLY like an uncapped whole-file read — no synthetic
-  // range, no continue trailer — so small-file reads stay byte-identical to legacy.
-  const coveredWholeFile = (start === null && end === null) || (cappedDefault && r.range && r.range.endLine >= r.totalLines);
+  const coveredWholeFile = start === null && end === null;
   const range = (r.range && !coveredWholeFile) ? ` (lines ${r.range.startLine}-${r.range.endLine} of ${r.totalLines})` : ` (${r.totalLines} lines)`;
   const fence = r.language ? '```' + r.language : '```';
   // "What remains" trailer: on a range read that stops before EOF, one final
@@ -1038,13 +1006,9 @@ async function cmdAgentSearch(rawArgs) {
     process.exit(1);
   }
 
-  // Budget-sweep experiment hook: per-request explicit budget (overrides the
-  // auto-tier on the warm server; flows as the `budget` URL param).
-  const envSearchBudget = Number(process.env.SS_SMOKE_SEARCH_BUDGET || '') || null;
   const { queryServer } = await import(path.join(REPO_ROOT, 'core/search/search-server.js'));
   const response = await queryServer(query, {
     topK: k, mode, format, projectRoot: PROJECT_ROOT, trackAgentSpans: false,
-    ...(envSearchBudget ? { tokenBudget: envSearchBudget } : {}),
   });
   if (response?.error) {
     process.stderr.write(`[ss-search] server error: ${response.error}\n`);
@@ -1173,10 +1137,8 @@ const SEMANTIC_USAGE = 'Usage: ss-semantic <file> "<question>" [-k N] [--max-tok
 async function cmdSemantic(rawArgs) {
   const args = normalizeArgs(rawArgs);
   // Default 600 (was 800) per the 2026-06 budget sweep — scaled with the 3k
-  // preview tier. Env hook overrides the default for sweeps; an explicit
-  // --max-tokens flag from the agent always wins.
-  const maxTokens = readPositiveIntFlag(args, '--max-tokens',
-    Number(process.env.SS_SMOKE_SEMANTIC_MAXTOKENS || '') || 600, SEMANTIC_USAGE);
+  // preview tier; an explicit --max-tokens flag from the agent wins.
+  const maxTokens = readPositiveIntFlag(args, '--max-tokens', 600, SEMANTIC_USAGE);
   // -k N: the number of top-ranked chunks the spans are built from (readSemantic topK, the
   // product CLI's `read-semantic -k`); the --max-tokens budget still caps the output.
   const topK = takeCountFlag(args, SEMANTIC_USAGE);
@@ -1311,9 +1273,7 @@ async function cmdTrace(rawArgs) {
   // The one section the mode word prints takes the budget.
   if (mode) opts.modeSection = mode;
   if (depth != null) opts.maxDepth = depth;
-  // Budget-sweep experiment hook: env sets the default; explicit --budget wins.
   if (budget != null) opts.tokenBudget = budget;
-  else if (Number(process.env.SS_SMOKE_TRACE_BUDGET || '') > 0) opts.tokenBudget = Number(process.env.SS_SMOKE_TRACE_BUDGET);
 
   let response = traceSymbol(symbol, opts);
   const traceNotes = [];

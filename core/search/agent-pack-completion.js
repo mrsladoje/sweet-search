@@ -339,8 +339,7 @@ export function buildIndexedGrepFamilyManifest(results, codeGraphRepo, { keepFil
 // rollouts; sweet in 3/21. In the transcripts, three sites co-listed WITH
 // their code lines converted 4/4; a bare name list converted 0/2. So this
 // prints code lines, not names, and is additive (a singleton has no body
-// lines to reclaim). Gate: agent format, no --in, 1-3 hits in ONE file, and
-// the client-side SS_SIBLING_LINE=0 off-switch (option `_siblingLine`).
+// lines to reclaim). Gate: agent format, no --in, 1-3 hits in ONE file.
 // ---------------------------------------------------------------------------
 
 const MAX_SIBLING_SITES = 4;
@@ -379,9 +378,6 @@ function findAssignmentLine(lines, name, { declarationLine, excludeRanges = [] }
 export function buildSameFileSiblingLine(hits, codeGraphRepo, {
   regex = '', projectRoot, fileCache = new Map(), estimateTokens = defaultEstimateTokens,
 } = {}) {
-  // No env gate HERE: this runs inside the warm daemon, whose env is whatever
-  // the first client that spawned it happened to carry. SS_SIBLING_LINE=0 is
-  // read by the ss-grep wrapper and travels as the `_siblingLine` option.
   if (!Array.isArray(hits) || hits.length < 1 || hits.length > MAX_SIBLING_HITS) return null;
   if (typeof codeGraphRepo?.findEnclosingEntity !== 'function'
       || typeof codeGraphRepo?.findEntitiesInFile !== 'function') return null;

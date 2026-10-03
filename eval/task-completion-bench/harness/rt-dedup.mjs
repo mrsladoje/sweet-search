@@ -24,8 +24,8 @@
 //   5. First invocations and changed-key invocations are BYTE-IDENTICAL to the
 //      pre-lever behaviour.
 //   6. `--ss-full` bypasses condensation for one call (stripped from argv before the
-//      real runner sees it, and excluded from the key). `SS_RUNTESTS_DEDUP=0` disables
-//      the whole mechanism; every result row is stamped with which way it ran.
+//      real runner sees it, and excluded from the key). Every result row is stamped
+//      rtDedup: true (the SS_RUNTESTS_DEDUP=0 kill-switch was deleted 2026-10-03).
 //
 // State lives in an append-only JSONL log OUTSIDE the agent's tree
 // (results/<RUN_ID>/rt-dedup/<label>.jsonl, masked from the agent by the P0 jail), so
@@ -42,8 +42,6 @@ import { fileURLToPath } from 'node:url';
 import { extractFailureSignatures, firstErrorLines } from './rt-condense-lib.mjs';
 import { isWarmupLabel } from './cache-warmup.mjs';
 
-/** Kill-switch. SS_RUNTESTS_DEDUP=0 → the lever is inert (rows stamped rtDedup:false). */
-export const RT_DEDUP_ON = process.env.SS_RUNTESTS_DEDUP !== '0';
 /** The single stable marker every suppression carries — grep this to verify firings. */
 export const DEDUP_MARKER = '[run_tests-dedup]';
 /** Per-call escape hatch. */

@@ -571,8 +571,6 @@ function writeSquashqlFixture() {
 }
 
 describe('unread above (squashql-295 shape)', () => {
-  afterEach(() => { delete process.env.SS_UNREAD_ABOVE; });
-
   it('names the field declared above the window, via the entity table', async () => {
     writeSquashqlFixture();
     const r = await readFile({ path: JAVA_FILE, startLine: 170, endLine: 235, projectRoot: TMP });
@@ -590,7 +588,7 @@ describe('unread above (squashql-295 shape)', () => {
     expect(r.unreadBelow.startLine).toBe(236);
   });
 
-  it('renders only for the ss-read surface, before-the-fence form, and honours SS_UNREAD_ABOVE=0', async () => {
+  it('renders only for the ss-read surface, before-the-fence form', async () => {
     writeSquashqlFixture();
     const r = await readFile({ path: JAVA_FILE, startLine: 170, endLine: 235, projectRoot: TMP });
     expect(renderUnreadAbove(r, { command: 'ss-read' })).toBe(
@@ -600,11 +598,6 @@ describe('unread above (squashql-295 shape)', () => {
     // Human CLI output stays byte-identical: the agent formatter never prints it.
     const out = formatReadResults({ files: [r], totalMs: 1 }, 'agent');
     expect(out).not.toContain('# unread above');
-    process.env.SS_UNREAD_ABOVE = '0';
-    expect(renderUnreadAbove(r, { command: 'ss-read' })).toBe('');
-    // The field itself is still computed: the switch is a render-time, client-side gate.
-    const off = await readFile({ path: JAVA_FILE, startLine: 170, endLine: 235, projectRoot: TMP });
-    expect(off.unreadAbove.symbols[0].symbol).toBe('subQueryMeasures');
   });
 
   it('with no query evidence, the field the window READS still leads the list', async () => {
@@ -739,16 +732,10 @@ describe('pack sibling line (ss-search / ss-find top-1)', () => {
     }];
     const response = packageForAgent(results, { grepMatches: 2 }, {
       query: 'checkSubQuery', format: 'agent_full', tokenBudget: 4000, projectRoot: TMP,
-      codeGraphRepo: repo(), _isAgentFormat: true, _siblingLine: true,
+      codeGraphRepo: repo(), _isAgentFormat: true,
     });
     const top = response.results[0];
     expect(top.siblingLine.rendered).toContain('35: private final Map<Measure, CompiledMeasure> subQueryMeasures;');
     expect(response.tokensUsed).toBeGreaterThanOrEqual(top.siblingLine.tokens);
-    // Opt-out: with `_siblingLine: false` the pack is byte-identical to before.
-    const off = packageForAgent(results.map(r => ({ ...r })), { grepMatches: 2 }, {
-      query: 'checkSubQuery', format: 'agent_full', tokenBudget: 4000, projectRoot: TMP,
-      codeGraphRepo: repo(), _isAgentFormat: true, _siblingLine: false,
-    });
-    expect(off.results[0].siblingLine).toBeUndefined();
   });
 });

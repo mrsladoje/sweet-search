@@ -2,7 +2,7 @@
 /**
  * retrieval-bench-282 — the P7 code-retrieval matrix re-run on sweet-search 2.8.2 (2026-09-30).
  *
- * What changed from the June 3k matrix (scripts/budget-sweep-smoke.mjs + scripts/oc-batch.mjs):
+ * What changed from the June 3k matrix (scripts/budget-sweep-smoke.mjs, deleted 2026-10-03, + scripts/oc-batch.mjs):
  *   - SWEET ARM = THE SHIPPED PRODUCT HARNESS, not the bench-only M++ prompt. Per harness it gets
  *     exactly what `sweet-search init` 2.8.2 installs, through the same helpers the task bench uses:
  *       cc        .claude/rules/sweet-search.md (writeClaudeRules) + the lean harness

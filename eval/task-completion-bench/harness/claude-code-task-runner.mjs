@@ -235,27 +235,6 @@ export const CLAUDE_TRIM_AGENTS_JSON = JSON.stringify({
 });
 
 
-// Bench-only plugin for CC_PRODUCT_HOOKPLUG (see claudeHarnessTrim). Generated per rollout.
-export function writeClaudeHookPlugin(dir, { deferRead = false } = {}) {
-  mkdirSync(join(dir, '.claude-plugin'), { recursive: true });
-  mkdirSync(join(dir, 'hooks'), { recursive: true });
-  writeFileSync(join(dir, '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'ss-hookplug', version: '0.0.1', description: 'sweet-search bench: drop the Bash shell-read bullet; optionally defer Read' }));
-  writeFileSync(join(dir, 'hooks', 'hooks.json'), JSON.stringify({ description: 'ss-hookplug', modules: ['./ss.mjs'] }));
-  writeFileSync(join(dir, 'hooks', 'ss.mjs'), [
-    `const DEFER = new Set(${JSON.stringify(deferRead ? ['Read'] : [])});`,
-    "const dropShellReadBullet = (d) => d.split('\\n').filter((l) => !(l.startsWith('- ') && l.includes('`cat`') && l.includes('`sed`'))).join('\\n');",
-    'export function register(on) {',
-    "  on('tool.describe', async ($, input, next) => {",
-    '    const r = await next(input);',
-    '    if (DEFER.has(input.tool)) return { ...r, isDeferred: true };',
-    "    if (input.tool === 'Bash') return { ...r, description: dropShellReadBullet(r.description) };",
-    '    return r;',
-    '  });',
-    '}',
-    '',
-  ].join('\n'));
-}
-
 // The product default (see the header): unset / empty CC_HARNESS_TRIM, and CC_TRIM_BATCH under 'product'.
 export const CC_HARNESS_TRIM_DEFAULT = 'product';
 export const CC_TRIM_BATCH_DEFAULT = 'read6fs';
@@ -281,23 +260,7 @@ export function claudeHarnessTrim(mode = process.env.CC_HARNESS_TRIM) {
     const rawBatch = String(process.env.CC_TRIM_BATCH ?? '').trim();
     const batch = rawBatch === 'none' ? '' : (rawBatch || CC_TRIM_BATCH_DEFAULT);
     if (batch && !CC_BATCH_VARIANTS[batch]) throw new Error(`CC_TRIM_BATCH=${batch}: expected none, ${Object.keys(CC_BATCH_VARIANTS).join(', ')}`);
-    // CC_PRODUCT_STEER=1 (bench only, audit mech-cc2): keep Claude Code's own bypass-mode steer
-    // (drop THRIFTY_SONIC=0 from the installed settings env) to measure its cost effect.
-    // CC_PRODUCT_TOKREM=1 (bench only, audit mech-cc3): keep stock's token-budget reminder
-    // (drop TOTAL_TOKENS_REMINDER=off from the installed settings env).
-    const steer = process.env.CC_PRODUCT_STEER === '1';
-    const tokrem = process.env.CC_PRODUCT_TOKREM === '1';
-    const dropEnv = [...(steer ? ['CLAUDE_CODE_THRIFTY_SONIC'] : []), ...(tokrem ? ['CLAUDE_CODE_TOTAL_TOKENS_REMINDER'] : [])];
-    // CC_PRODUCT_HOOKPLUG=bash | bash-read (bench only, audits conflict-audit + cc-prefix, 2026-09-29):
-    // a plugin hooks module (PREVIEW: CLAUDE_CODE_ENABLE_FUNCTION_HOOKS=1) that drops the Bash
-    // tool's "avoid cat/head/tail/sed" bullet (a sweet-search conflict that THRIFTY_SONIC=0 adds),
-    // and with bash-read also marks the Read tool deferred (still callable via ToolSearch).
-    const hookplug = String(process.env.CC_PRODUCT_HOOKPLUG ?? '').trim();
-    if (hookplug && !['bash', 'bash-read'].includes(hookplug)) throw new Error(`CC_PRODUCT_HOOKPLUG=${hookplug}: expected bash or bash-read`);
-    // CC_PRODUCT_SKILLDESC=<n> (bench only, audit cc-prefix): public setting skillListingMaxDescChars
-    // (default 1536) — every skill stays listed and callable; only long trigger text is cut.
-    const skillDesc = /^\d+$/.test(String(process.env.CC_PRODUCT_SKILLDESC ?? '')) ? Number(process.env.CC_PRODUCT_SKILLDESC) : null;
-    return { mode: `${batch ? `${m}+batch-${batch}` : m}${steer ? '+steer' : ''}${tokrem ? '+tokrem' : ''}${skillDesc ? `+skill${skillDesc}` : ''}${hookplug ? `+hook-${hookplug}` : ''}`, origin, args: [], env: hookplug ? { CLAUDE_CODE_ENABLE_FUNCTION_HOOKS: '1' } : {}, installLean: true, ...(batch ? { batch } : {}), ...(dropEnv.length ? { dropEnv } : {}), ...(skillDesc ? { skillDesc } : {}), ...(hookplug ? { hookplug } : {}) };
+    return { mode: batch ? `${m}+batch-${batch}` : m, origin, args: [], env: {}, installLean: true, ...(batch ? { batch } : {}) };
   }
   if (m === 'lean' || m === 'lean-batch') {
     // lean also drops the Agent tool (no delegation): opt-in only, reported separately.
@@ -708,27 +671,6 @@ export async function runClaudeCodeTask(task, {
       if (agentText.split(mppText.trimEnd()).length !== 2) throw new Error('V1b: the main agent file does not carry the rules exactly once');
       const rf = join(rundir, '.claude', 'rules', 'sweet-search.md');
       if (!existsSync(rf) || readFileSync(rf, 'utf8').trimEnd() !== CLAUDE_RULES_POINTER) throw new Error('V1b: pointer file missing or different');
-    }
-    if (harnessTrim.skillDesc) {
-      const settingsFile = join(rundir, '.claude', 'settings.json');
-      const settings = JSON.parse(readFileSync(settingsFile, 'utf8'));
-      settings.skillListingMaxDescChars = harnessTrim.skillDesc;
-      writeFileSync(settingsFile, `${JSON.stringify(settings, null, 2)}\n`);
-    }
-    if (harnessTrim.dropEnv) {
-      const settingsFile = join(rundir, '.claude', 'settings.json');
-      const settings = JSON.parse(readFileSync(settingsFile, 'utf8'));
-      for (const key of harnessTrim.dropEnv) {
-        if (settings.env?.[key] === undefined) throw new Error(`CC_PRODUCT_*: ${key} not found in the installed settings`);
-        delete settings.env[key];
-      }
-      writeFileSync(settingsFile, `${JSON.stringify(settings, null, 2)}\n`);
-    }
-    if (harnessTrim.hookplug) {
-      // Installed in the private Claude home (never the repo: an untracked file there would reach the graded diff).
-      const plugDir = join(claudeHome, 'ss-hookplug');
-      writeClaudeHookPlugin(plugDir, { deferRead: harnessTrim.hookplug === 'bash-read' });
-      harnessTrim.args.push('--plugin-dir', unjailed ? plugDir : join(HOMEDIR, '.claude', 'ss-hookplug'));
     }
     if (systemRules) appendRulesToLeanAgentFiles(rundir, systemRules);
   }
