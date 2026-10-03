@@ -2176,15 +2176,15 @@ export class TreeSitterProvider {
    * declarator chain: pointer/reference/parenthesized wrappers →
    * function_declarator → identifier / field_identifier / destructor_name /
    * operator_name / qualified_identifier (drilled to its leaf, so
-   * `ns::Class::method` yields `method`). Used ONLY by extractSymbols (graph
-   * entities) — chunker naming goes through _extractNodeName and is
-   * deliberately untouched so NL retrieval inputs stay byte-identical.
+   * `ns::Class::method` yields `method`). Used by extractSymbols (graph
+   * entities) and by _extractNodeName (chunk names), so both agree.
    */
   _cFunctionDefinitionName(node) {
     if (!node || node.type !== 'function_definition') return null;
     let d = node.childForFieldName?.('declarator');
     for (let hops = 0; d && hops < 6; hops++) {
       if (d.type === 'function_declarator') { d = d.childForFieldName?.('declarator'); break; }
+      if (d.type === 'operator_cast' || d.type === 'qualified_identifier') break;
       const inner = d.childForFieldName?.('declarator')
         || d.namedChildren?.find?.(c => /declarator/.test(c.type));
       if (!inner) break;
@@ -2198,6 +2198,13 @@ export class TreeSitterProvider {
       if (/^(identifier|field_identifier|destructor_name|operator_name)$/.test(d.type)) {
         return d.text || null;
       }
+      // `fromString<std::string>(...)` (explicit specialization): the template name.
+      if (d.type === 'template_function') { d = d.childForFieldName?.('name'); continue; }
+      // Conversion operator `operator bool() const`: `operator bool`.
+      if (d.type === 'operator_cast') {
+        const type = d.childForFieldName?.('type');
+        return type ? `operator ${type.text}` : null;
+      }
       break;
     }
     return null;
@@ -2208,6 +2215,14 @@ export class TreeSitterProvider {
     // Try field name first (most reliable)
     const nameNode = node.childForFieldName('name');
     if (nameNode) return nameNode.text;
+
+    // C/C++ function definition: the name is inside the declarator chain. The
+    // fallback below would take the first type_identifier child, the return
+    // type (`template <typename T> T get()` was named `T`), or find nothing
+    // (`void f()`). Null when the chain has no name, never the return type.
+    if (node.type === 'function_definition' && node.childForFieldName('declarator')) {
+      return this._cFunctionDefinitionName(node);
+    }
 
     // Rust `impl<'a> Type<'a> { ... }` — the type field is a
     // `generic_type` wrapper, not a leaf `type_identifier`, so the
