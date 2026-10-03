@@ -618,7 +618,9 @@ export async function applyPostRetrieval(results, query, options, searchContext)
         // without this bridge expanded entries fall through hasTokens() and
         // are appended to the result tail without ever competing for top-K.
         const __t_attachIds = __ptStart();
-        const expandedAttached = attachChunkIdsToExpanded(results, this.codebaseRepo);
+        const expandedAttached = attachChunkIdsToExpanded(results, this.codebaseRepo, {
+          adoptBorrowedSpan: AGENT_FORMATS.has(options.format),
+        });
         __ptEnd('post:attachChunkIdsToExpanded', __t_attachIds);
 
         stats.graphExpansion = {
@@ -1101,11 +1103,21 @@ export function computeCacheHit(mode, {
  * Best-effort: missing/zero-overlap entries are left as-is and will fall
  * through to the unscored path.
  *
+ * `adoptBorrowedSpan` (agent formats only, like every structural ranking rule): a TINY entity
+ * (at most BORROWED_SPAN_MAX_ENTITY_LINES lines) strictly inside its chunk takes the chunk's
+ * span, name and type. Its MaxSim score is the whole chunk's score, so its own 1-2 lines are
+ * not what scored: okhttp's `Chain` interface (one chunk, 84-104) became three expanded results
+ * `request` 85, `proceed` 87-88, `connection` 94, each with the interface's score, and the
+ * body-less `fun request(): Request` won rank 1. With the chunk span the three are one span
+ * (span dedupe keeps one) and the agent sees the interface. Chunks longer than
+ * BORROWED_SPAN_MAX_CHUNK_LINES keep the entity span (a 300-line class is no better answer).
+ *
  * @param {Array} results
  * @param {import('../infrastructure/codebase-repository.js').CodebaseRepository} codebaseRepo
+ * @param {{ adoptBorrowedSpan?: boolean }} [opts]
  * @returns {number} count of expanded results that received a _liChunkId
  */
-export function attachChunkIdsToExpanded(results, codebaseRepo) {
+export function attachChunkIdsToExpanded(results, codebaseRepo, { adoptBorrowedSpan = false } = {}) {
   if (!Array.isArray(results) || results.length === 0 || !codebaseRepo) return 0;
   const fileChunkCache = new Map(); // file_path -> Array<{ id, file_path, text, metadata }>
   let attached = 0;
@@ -1131,6 +1143,7 @@ export function attachChunkIdsToExpanded(results, codebaseRepo) {
     let bestId = null;
     let bestOverlap = 0;
     let bestSize = Infinity;
+    let best = null;
     for (const c of chunks) {
       let cs, ce;
       let meta = c.metadata;
@@ -1151,15 +1164,44 @@ export function attachChunkIdsToExpanded(results, codebaseRepo) {
         bestOverlap = overlap;
         bestSize = size;
         bestId = c.id;
+        best = { start: cs, end: ce, name: meta?.name || null, type: meta?.type || null };
       }
     }
 
     if (bestId) {
       r._liChunkId = bestId;
       attached++;
+      const entityLines = el - sl + 1;
+      if (adoptBorrowedSpan && best
+          && entityLines <= BORROWED_SPAN_MAX_ENTITY_LINES
+          && best.end - best.start + 1 <= BORROWED_SPAN_MAX_CHUNK_LINES
+          && best.start <= sl && best.end >= el && (best.start < sl || best.end > el)) {
+        adoptChunkSpan(r, best);
+      }
     }
   }
   return attached;
+}
+
+/** An expanded entity of at most this many lines borrows its chunk's score (attachChunkIdsToExpanded). */
+export const BORROWED_SPAN_MAX_ENTITY_LINES = 3;
+/** ...and takes the chunk's span only when the chunk is at most this long. */
+export const BORROWED_SPAN_MAX_CHUNK_LINES = 120;
+
+/** The expanded result shows its chunk: span, and the chunk's name / type when it has them. */
+function adoptChunkSpan(r, chunk) {
+  const name = chunk.name || r.name || r.metadata?.name || null;
+  const type = chunk.name ? (chunk.type || r.type || null) : (r.type || r.metadata?.type || null);
+  r._borrowedSpanFrom = { startLine: r.startLine ?? r.start_line, endLine: r.endLine ?? r.end_line, name: r.name };
+  r.startLine = chunk.start;
+  r.endLine = chunk.end;
+  if ('start_line' in r) r.start_line = chunk.start;
+  if ('end_line' in r) r.end_line = chunk.end;
+  r.name = name;
+  r.type = type;
+  if (r.metadata && typeof r.metadata === 'object') {
+    r.metadata = { ...r.metadata, startLine: chunk.start, endLine: chunk.end, name, type };
+  }
 }
 
 /**
