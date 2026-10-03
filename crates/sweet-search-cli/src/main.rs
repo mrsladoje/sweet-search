@@ -1447,11 +1447,29 @@ fn auto_start_server() -> Option<String> {
     auto_start_server_for(&resolve_project_root(), false)
 }
 
-/// JS heap ceiling of the daemon, in MiB: a quarter of physical memory, never below
-/// V8's own ~4 GiB default. A daemon at V8's default ceiling aborted mid-query on a large
-/// index and dropped every call in flight. Same formula as core/search/daemon-heap.js.
-fn daemon_heap_mb(total_bytes: u64) -> u64 {
-    (total_bytes / 4 / (1024 * 1024)).max(4096)
+/// JS heap ceiling of the daemon, in MiB: a quarter of the memory limit, never below V8's
+/// own ~4 GiB default, never above 75% of the limit. A daemon at V8's default ceiling
+/// aborted mid-query on a large index and dropped every call in flight. Same formula as
+/// core/search/daemon-heap.js.
+fn daemon_heap_mb(limit_bytes: u64) -> u64 {
+    let mb = limit_bytes as f64 / (1024.0 * 1024.0);
+    (mb / 4.0).max(4096.0).min(mb * 0.75) as u64
+}
+
+/// The container's memory limit (cgroup v2, then v1) when it is below physical memory,
+/// else physical memory: a heap ceiling above a container limit ends in a silent OOM kill.
+fn memory_limit_bytes() -> u64 {
+    let total = physical_memory_bytes();
+    let constrained = [
+        "/sys/fs/cgroup/memory.max",
+        "/sys/fs/cgroup/memory/memory.limit_in_bytes",
+    ]
+    .iter()
+    .find_map(|p| fs::read_to_string(p).ok()?.trim().parse::<u64>().ok());
+    match constrained {
+        Some(c) if c > 0 && c < total => c,
+        _ => total,
+    }
 }
 
 fn physical_memory_bytes() -> u64 {
@@ -1491,7 +1509,7 @@ fn auto_start_server_for(project_root: &Path, quiet: bool) -> Option<String> {
     let spawn_result = Command::new("node")
         .arg(format!(
             "--max-old-space-size={}",
-            daemon_heap_mb(physical_memory_bytes())
+            daemon_heap_mb(memory_limit_bytes())
         ))
         .arg(script)
         .arg("--serve")
@@ -2006,13 +2024,15 @@ mod tests {
     }
 
     #[test]
-    fn daemon_heap_is_a_quarter_of_ram_and_never_below_v8_default() {
+    fn daemon_heap_is_a_quarter_of_the_limit_within_bounds() {
         let gib: u64 = 1024 * 1024 * 1024;
         assert_eq!(daemon_heap_mb(128 * gib), 32 * 1024);
         assert_eq!(daemon_heap_mb(16 * gib), 4096);
         assert_eq!(daemon_heap_mb(8 * gib), 4096);
-        assert_eq!(daemon_heap_mb(0), 4096);
+        assert_eq!(daemon_heap_mb(6 * gib), 4096);
+        assert_eq!(daemon_heap_mb(4 * gib), 3072);
         assert!(physical_memory_bytes() > 0);
+        assert!(memory_limit_bytes() <= physical_memory_bytes());
     }
 
     #[test]

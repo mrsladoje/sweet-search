@@ -20,6 +20,19 @@ export const AGENT_TOOL_SUBCOMMANDS = Object.freeze(new Set(Object.values(AGENT_
 // are loaded; ss-read and ss-trace open their own databases and run at once.
 export const SEARCHER_SUBCOMMANDS = Object.freeze(new Set(['agent-search', 'grep', 'find', 'semantic']));
 
+// How long ss-search waits for a daemon that is still loading its indexes. Under the
+// shortest harness command cap (Claude Code Bash and opencode bash: 120 s by default), so
+// the agent reads a retry line instead of a killed command. Codex keeps a long command
+// running in its exec session.
+export const SEARCH_LOADING_WAIT_MS = 90_000;
+
+/** The one line ss-search prints when the daemon is not ready in time (exit 1). */
+export function searchNotReadyLine(seconds, failed = false) {
+  return failed
+    ? `sweet-search: index server failed to start (${seconds}s); retry this command in a minute\n`
+    : `sweet-search: index server still loading (${seconds}s); retry this command in a minute\n`;
+}
+
 // Printed by `sweet-search --agent-tools-protocol` and embedded in the native binary.
 // A binary without it predates the native ss-* tools and must never be run as one: it
 // would read the tool's arguments as a search query.

@@ -49,6 +49,29 @@ describe('/agent-tool', () => {
     expect(waited).toBe(1);
   });
 
+  it('answers ss-search with one retry line when the indexes are still loading after 90 s', async () => {
+    const waits = [];
+    const r = await buildAgentToolDaemonResponse(call({ tool: 'agent-search' }), deps({
+      isReady: () => false,
+      waitForServerReady: async (ms) => { waits.push(ms); },
+      runTool: async () => { throw new Error('must not run'); },
+    }));
+    expect(waits).toEqual([90_000]);
+    expect(r.status).toBe(200);
+    expect(body(r).code).toBe(1);
+    expect(body(r).stderr).toMatch(/^sweet-search: index server still loading \(\d+s\); retry this command in a minute\n$/);
+  });
+
+  it('sends ss-search to the fallback (503) when the index load failed', async () => {
+    const r = await buildAgentToolDaemonResponse(call({ tool: 'agent-search' }), deps({
+      isReady: () => false,
+      isFailed: () => true,
+      waitForServerReady: async () => {},
+      runTool: async () => { throw new Error('must not run'); },
+    }));
+    expect(r.status).toBe(503);
+  });
+
   it('runs ss-read and ss-trace without waiting for the indexes', async () => {
     for (const tool of ['read', 'trace']) {
       const r = await buildAgentToolDaemonResponse(call({ tool }), deps({

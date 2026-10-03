@@ -69,7 +69,7 @@ describe('ss-search and a daemon that is still loading', () => {
     const socketPath = await fakeDaemon({ loadMs: 2500, silentWhileLoading: false });
     const result = await ssSearch(socketPath);
     expect(result.stderr.toString()).not.toContain('warm server is not ready');
-    expect(result.code).toBe(0);
+    expect(result.code, result.stderr.toString() + result.stdout.toString()).toBe(0);
     expect(spawned.count).toBe(0);
   }, 20_000);
 
@@ -77,7 +77,7 @@ describe('ss-search and a daemon that is still loading', () => {
     const socketPath = await fakeDaemon({ loadMs: 3500, silentWhileLoading: true });
     const result = await ssSearch(socketPath);
     expect(result.stderr.toString()).not.toContain('warm server is not ready');
-    expect(result.code).toBe(0);
+    expect(result.code, result.stderr.toString() + result.stdout.toString()).toBe(0);
     expect(spawned.count).toBe(0);
   }, 20_000);
 
@@ -86,6 +86,22 @@ describe('ss-search and a daemon that is still loading', () => {
     const result = await ssSearch(socketPath);
     expect(spawned.count).toBe(1);
     expect(result.code).toBe(1);
-    expect(result.stderr.toString()).toContain('Run ss-search again, or use ss-grep meanwhile.');
+    expect(result.stderr.toString()).toMatch(/^sweet-search: index server failed to start \(\d+s\); retry this command in a minute\n$/);
+  }, 20_000);
+
+  it('gives up at 90 s with one retry line and exit 1', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    try {
+      // A daemon that never finishes loading; the clock jumps 30 s per /health probe.
+      const socketPath = await fakeDaemon({ loadMs: 10 ** 9, silentWhileLoading: false });
+      server.on('request', () => vi.setSystemTime(Date.now() + 30_000));
+      const result = await ssSearch(socketPath);
+      expect(result.code).toBe(1);
+      expect(result.stdout.toString()).toBe('');
+      expect(result.stderr.toString()).toMatch(/^sweet-search: index server still loading \((9\d|1[0-2]\d)s\); retry this command in a minute\n$/);
+      expect(spawned.count).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   }, 20_000);
 });

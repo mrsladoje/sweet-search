@@ -948,6 +948,7 @@ export async function startServer() {
           isUnixSocket: !req.socket.remoteAddress,
           searcher,
           isReady: () => serverReady,
+          isFailed: () => initError != null,
           waitForServerReady,
         });
       } catch (err) {

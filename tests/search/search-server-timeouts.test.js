@@ -14,7 +14,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   configureServerTimeouts, queryServer, SEARCH_SERVER_TIMEOUT_MS,
 } from '../../core/search/search-server.js';
-import { daemonHeapMb, daemonNodeArgs } from '../../core/search/daemon-heap.js';
+import { daemonHeapMb, daemonNodeArgs, memoryLimitBytes } from '../../core/search/daemon-heap.js';
 import { runInVirtualProcess } from '../../core/agent-tools/virtual-process.js';
 
 describe('configureServerTimeouts', () => {
@@ -75,12 +75,21 @@ describe('queryServer against a daemon that drops the call', () => {
 });
 
 describe('daemon heap ceiling', () => {
+  const gib = 1024 ** 3;
   // r282 grdb: the daemon aborted at V8's ~4 GiB default heap under three concurrent searches.
-  it('is a quarter of physical memory, never below the V8 default', () => {
-    const gib = 1024 ** 3;
+  it('is a quarter of the limit, at least the V8 default, at most 75% of the limit', () => {
     expect(daemonHeapMb(128 * gib)).toBe(32 * 1024);
     expect(daemonHeapMb(16 * gib)).toBe(4096);
     expect(daemonHeapMb(8 * gib)).toBe(4096);
+    expect(daemonHeapMb(4 * gib)).toBe(3072);
     expect(daemonNodeArgs(64 * gib)).toEqual(['--max-old-space-size=16384']);
+  });
+
+  it('uses the container limit when one is below physical memory', () => {
+    expect(memoryLimitBytes({ constrained: 6 * gib, total: 128 * gib })).toBe(6 * gib);
+    expect(memoryLimitBytes({ constrained: 0, total: 128 * gib })).toBe(128 * gib);
+    // cgroup "max" reads as a huge number: no constraint.
+    expect(memoryLimitBytes({ constrained: 2 ** 63, total: 128 * gib })).toBe(128 * gib);
+    expect(daemonHeapMb(memoryLimitBytes({ constrained: 6 * gib, total: 128 * gib }))).toBe(4096);
   });
 });
