@@ -4,12 +4,7 @@
  * (package.json "files"); the wrapper (eval/agent-read-workflows/bin/_ss-helpers.mjs) wires them
  * to the printers. The functions are pure (no I/O, no process state), so they can be unit-tested.
  *
- * Switches still under test (read from the environment; on = 1/true/on/yes, off = 0/false/off/no):
- *   SS_FIX_GREP_FULLLINE=1|0   DEFAULT ON: each ss-grep hit prints its full source line, as
- *                              `grep -n` does (whitespace collapsed, at most 140 chars; a longer line
- *                              shows a window that contains the match, `…` at a cut side), not only
- *                              the matched substring (grepHitText). 0 = the matched substring. Decided
- *                              by PLAN 3.1 / 3.3; never pool runs across the two.
+ * Switch still under test (read from the environment):
  *   SS_VARIANT_GREP_BROAD=<min hits>:<chars>  bench only (A/B): see parseGrepBroad.
  *
  * Every other output choice is fixed. The decided switches (SS_FIX_A and its parts, the ss-grep
@@ -19,26 +14,10 @@
  * ss-read output is NOT changed here (owner decision 2026-10-01).
  */
 
-const TRUE_VALUES = new Set(['1', 'true', 'on', 'yes']);
-const FALSE_VALUES = new Set(['0', 'false', 'off', 'no']);
-
-function norm(value) {
-  return String(value ?? '').trim().toLowerCase();
-}
-
-/** An explicit on / off value wins; anything else is the default. */
-function envSwitch(value, fallback) {
-  const v = norm(value);
-  if (TRUE_VALUES.has(v)) return true;
-  if (FALSE_VALUES.has(v)) return false;
-  return fallback;
-}
-
 /** Parse the switches that are still under test. */
 export function readFixFlags(env = process.env) {
   const grepBroad = parseGrepBroad(env?.SS_VARIANT_GREP_BROAD);
   return {
-    grepFullLine: envSwitch(env?.SS_FIX_GREP_FULLLINE, true),
     ...(grepBroad ? { grepBroad } : {}),
   };
 }
@@ -578,20 +557,18 @@ const GREP_HIT_LEAD = 40;
 /**
  * The text ss-grep prints after `file:line: ` for one hit.
  *
- * `fullLine` (SS_FIX_GREP_FULLLINE, default ON): the hit's full source line (`content`), as
- * `grep -n` prints it, whitespace collapsed. A line longer than GREP_HIT_TEXT_MAX chars shows a
+ * The hit's full source line (`content`), as `grep -n` prints it, whitespace collapsed. A line longer than GREP_HIT_TEXT_MAX chars shows a
  * window of at most that many chars that contains the match, with `…` at each cut side; a match
  * near the start keeps the head of the line. A hit with no line text falls back to the matched text.
- * Off: the matched substring, whitespace collapsed, at most 140 chars (the previous output).
  *
  * `max` (SS_VARIANT_GREP_BROAD): the window size for a full line, default GREP_HIT_TEXT_MAX.
  *
  * @param {{matchText?: string, content?: string, column?: number}} m
- * @param {{fullLine?: boolean, max?: number}} [opts]
+ * @param {{max?: number}} [opts]
  */
-export function grepHitText(m, { fullLine = false, max = GREP_HIT_TEXT_MAX } = {}) {
+export function grepHitText(m, { max = GREP_HIT_TEXT_MAX } = {}) {
   const matched = String(m?.matchText || '').replace(/\s+/g, ' ').trim().slice(0, GREP_HIT_TEXT_MAX);
-  const raw = fullLine && typeof m?.content === 'string' ? m.content : '';
+  const raw = typeof m?.content === 'string' ? m.content : '';
   if (!raw.trim()) return matched;
 
   // Collapse whitespace like .replace(/\s+/g, ' ').trim(), keeping where each raw char lands.

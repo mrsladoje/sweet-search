@@ -107,27 +107,26 @@ async function ssDaemon(tool, args, extra = {}) {
   return JSON.parse(r.body).stdout;
 }
 
-// The shipped rule, -k 8 with SS_FIX_GREP_FULLLINE=0 (each hit prints only the matched text).
+// The shipped rule, -k 8 (each hit prints its full source line).
 // sat2 order: 22 hits 0.92; 2-hit sources 0.5; the 8-hit test file 0.4; then 1/3: the 4-hit test
 // files (more hits) before the 1-hit sources. The generated pb.pb.go (0.23) drops out of the 8.
 // The guarantee gives each kept file one line. The mock searcher has no code graph, so no line is
 // reordered by class.
 const K8 = HEADER
-  + 'worker/export.go:3: func Export3 (+21 more in this file)\n'
-  + 'backup/run.go:3: func Export3 (+1 more in this file)\n'
-  + 'buildvars/buildvars.go:3: func Export3 (+1 more in this file)\n'
-  + 'graphql/admin/export.go:3: func Export3 (+1 more in this file)\n'
-  + 'worker/export_test.go:3: func Export3 (+7 more in this file)\n'
-  + 'buildvars/buildvars_test.go:3: func Export3 (+3 more in this file)\n'
-  + 'systest/export/export_test.go:3: func Export3 (+3 more in this file)\n'
-  + 'dgraphapi/cluster.go:3: func Export3\n'
+  + 'worker/export.go:3: func Export3(ctx context.Context) error { (+21 more in this file)\n'
+  + 'backup/run.go:3: func Export3(ctx context.Context) error { (+1 more in this file)\n'
+  + 'buildvars/buildvars.go:3: func Export3(ctx context.Context) error { (+1 more in this file)\n'
+  + 'graphql/admin/export.go:3: func Export3(ctx context.Context) error { (+1 more in this file)\n'
+  + 'worker/export_test.go:3: func Export3(ctx context.Context) error { (+7 more in this file)\n'
+  + 'buildvars/buildvars_test.go:3: func Export3(ctx context.Context) error { (+3 more in this file)\n'
+  + 'systest/export/export_test.go:3: func Export3(ctx context.Context) error { (+3 more in this file)\n'
+  + 'dgraphapi/cluster.go:3: func Export3(ctx context.Context) error {\n'
   + '# +13 more file(s) with 43 match(es) — e.g. dgraphtest/load.go, dgraphtest/local_cluster.go, '
   + 'systest/bulk_live/common/bulk_live_cases.go; narrow the regex, raise -k, or drill in with --in <file>\n';
-const fullLines = (out) => out.replace(/: func Export(\d+)/g, ': func Export$1(ctx context.Context) error {');
 
 describe('ss-grep line allocation: sat2 weight, the one-line guarantee, line classes', () => {
   it('keeps the best files, not the first k in the alphabet; files print by weight', async () => {
-    expect(await ss('grep', ['func .*Export', '-k', '8'])).toBe(fullLines(K8));
+    expect(await ss('grep', ['func .*Export', '-k', '8'])).toBe(K8);
     expect(grepCalls[0]).toMatchObject({ maxFiles: 8, perFileCap: 8 });
   });
 
@@ -147,19 +146,6 @@ describe('ss-grep line allocation: sat2 weight, the one-line guarantee, line cla
   });
 });
 
-describe('SS_FIX_GREP_FULLLINE=0 prints the matched text', () => {
-  it('body, --in: only the hit text differs; -C context is unchanged', async () => {
-    const off = { SS_FIX_GREP_FULLLINE: '0' };
-    expect(await ss('grep', ['func .*Export', '-k', '8'], off)).toBe(K8);
-    expect(await ss('grep', ['func .*Export', '-k', '2', '--in', 'worker/export.go'], off))
-      .toBe('# ss-grep: 22 total match(es) for /func .*Export/ (scope: --in worker/export.go)\n'
-        + 'worker/export.go:3: func Export3\nworker/export.go:6: func Export6 (+20 more — raise -k)\n');
-    // -C context already printed full lines from the file: unchanged by the switch
-    expect(await ss('grep', ['func .*Export', '-k', '6', '-C', '1'], off))
-      .toBe(await ss('grep', ['func .*Export', '-k', '6', '-C', '1']));
-  });
-});
-
 describe('the warm daemon (/agent-tool) prints exactly what the in-process tool prints', () => {
   const CALLS = [
     ['grep', ['func .*Export', '-k', '8']],
@@ -169,7 +155,7 @@ describe('the warm daemon (/agent-tool) prints exactly what the in-process tool 
     ['grep', ['func .*Export', '-k', '3', '--in', 'worker']],
     ['find', ['export functions', '--regex', 'func .*Export', '-k', '6']],
   ];
-  for (const env of [{}, { SS_FIX_GREP_FULLLINE: '0' }, { SS_VARIANT_GREP_BROAD: '5:40' }]) {
+  for (const env of [{}]) {
     it(`same bytes on both paths (${JSON.stringify(env)})`, async () => {
       for (const [tool, args] of CALLS) {
         const inProcess = await ss(tool, args, env);

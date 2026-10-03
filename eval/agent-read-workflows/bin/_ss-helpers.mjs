@@ -156,8 +156,7 @@ const EXACT_REREAD_OMISSION = exactRereadOmissionEnabled();
 const SHOWN_SPAN_TRAILER = shownSpanTrailerEnabled();
 const SPAN_POLICY_ENABLED = EXACT_REREAD_OMISSION || SHOWN_SPAN_TRAILER;
 
-// Output switches still under test (core/search/agent-output-fixes.js): SS_FIX_GREP_FULLLINE
-// (default ON) and the bench-only SS_VARIANT_GREP_BROAD.
+// Output switch still under test (core/search/agent-output-fixes.js): the bench-only SS_VARIANT_GREP_BROAD.
 const FIX = readFixFlags();
 
 async function recordAgentToolCall({
@@ -585,7 +584,7 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
     for (const note of notes) process.stdout.write(`${note}\n`);
     const rows = result.results;
     const broadMax = grepBroadHitMax(FIX, total);
-    const hitText = { fullLine: FIX.grepFullLine, ...(broadMax ? { max: broadMax } : {}) };
+    const hitText = broadMax ? { max: broadMax } : {};
     const shown = rows.map((r, i) => ({
       file: r.file,
       line: r.line,
@@ -674,11 +673,9 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
   const total = result.stats?.totalMatches ?? result.results.length;
   const fileSummary = result.fileSummary
     || { files: [], hiddenFileCount: 0, hiddenMatchCount: 0, hiddenSample: [] };
-  // SS_FIX_GREP_FULLLINE (default ON; 0 = the matched substring): each hit prints its full
-  // source line, as `grep -n` does.
+  // Each hit prints its full source line, as `grep -n` does (grepHitText).
   const broadMax = grepBroadHitMax(FIX, total);
   const body = renderGrepBody(result.results, fileSummary, k, {
-    ...(FIX.grepFullLine ? { fullLine: true } : {}),
     ...(broadMax ? { hitMax: broadMax } : {}),
   });
   const completed = reallocateGrepTailForManifest(body.lines, result.familyManifest);

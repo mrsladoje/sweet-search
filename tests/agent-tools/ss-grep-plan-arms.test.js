@@ -139,8 +139,6 @@ function callEnv(extra = {}) {
     SWEET_SEARCH_RUNTIME_DIR: path.join(base, 'runtime'),
     SWEET_SEARCH_EXACT_REREAD_OMISSION: '0',
     SWEET_SEARCH_SHOWN_SPAN_TRAILER: '0',
-    // These tests check which lines a file shows, not how a line prints: keep the matched-text form.
-    SS_FIX_GREP_FULLLINE: '0',
     ...extra,
   };
 }
@@ -167,10 +165,10 @@ const HEADER = '# ss-grep: 10 total match(es) for /[Ee]xport/ across 3 files\n'
 // k = 4 without line classes (the prefix): worker/export.go (6 hits) gets 2 lines,
 // scripts/export.sh (3) 1, other.go 1
 const PREFIX_K4 = HEADER
-  + 'worker/export.go:1: export\n'
-  + 'worker/export.go:3: export (+4 more in this file)\n'
-  + 'scripts/export.sh:2: export (+2 more in this file)\n'
-  + 'other.go:2: export\n';
+  + 'worker/export.go:1: // Package worker: export helpers\n'
+  + 'worker/export.go:3: import "github.com/x/export" (+4 more in this file)\n'
+  + 'scripts/export.sh:2: export A=1 (+2 more in this file)\n'
+  + 'other.go:2: func other() { export() }\n';
 
 describe('ss-grep line classes through the real tool', () => {
   it('a file with more entities than findEntitiesInFile\'s default 512 still gets classes', async () => {
@@ -179,8 +177,8 @@ describe('ss-grep line classes through the real tool', () => {
     setEntities([...filler, ...ENTITIES]);
     try {
       expect(goLines(await ss([REGEX, '-k', '4']))).toEqual([
-        'worker/export.go:5: Export',
-        'worker/export.go:6: export (+4 more in this file)',
+        'worker/export.go:5: func Export(ctx context.Context) error {',
+        'worker/export.go:6: return exportAll(ctx) (+4 more in this file)',
       ]);
     } finally { setEntities(ENTITIES); }
   });
@@ -197,46 +195,21 @@ describe('ss-grep line classes through the real tool', () => {
     // k = 4: the engine stores the file's first min(k, 100) = 4 hits (lines 1, 3, 5, 6)
     const out = await ss([REGEX, '-k', '4']);
     expect(out).toBe(HEADER
-      + 'worker/export.go:5: Export\n'
-      + 'worker/export.go:6: export (+4 more in this file)\n'
-      // no entities (shell): the prefix, in the same call
-      + 'scripts/export.sh:2: export (+2 more in this file)\n'
-      + 'other.go:2: export\n');
-    expect(grepCalls[0]).toMatchObject({ perFileCap: 4, maxFiles: 4, _isAgentFormat: true });
-  });
-
-  it('with full-line text (both default ON): the same chosen lines, each printed whole', async () => {
-    const out = await ss([REGEX, '-k', '4'], { SS_FIX_GREP_FULLLINE: '1' });
-    expect(out).toBe(HEADER
       + 'worker/export.go:5: func Export(ctx context.Context) error {\n'
-      // full-line text drops the indent
       + 'worker/export.go:6: return exportAll(ctx) (+4 more in this file)\n'
+      // no entities (shell): the prefix, in the same call
       + 'scripts/export.sh:2: export A=1 (+2 more in this file)\n'
       + 'other.go:2: func other() { export() }\n');
-    // the daemon path renders the same bytes
-    expect(await ssDaemon([REGEX, '-k', '4'], { SS_FIX_GREP_FULLLINE: '1' })).toBe(out);
-  });
-
-  it('SS_VARIANT_GREP_BROAD (bench A/B): a grep with >= N total hits prints a narrower window', async () => {
-    const on = await ss([REGEX, '-k', '4'], { SS_FIX_GREP_FULLLINE: '1', SS_VARIANT_GREP_BROAD: '10:24' });
-    expect(on).toBe(HEADER
-      + 'worker/export.go:5: func Export(ctx context…\n'
-      + 'worker/export.go:6: return exportAll(ctx) (+4 more in this file)\n'
-      + 'scripts/export.sh:2: export A=1 (+2 more in this file)\n'
-      + 'other.go:2: func other() { export()…\n');
-    expect(await ssDaemon([REGEX, '-k', '4'], { SS_FIX_GREP_FULLLINE: '1', SS_VARIANT_GREP_BROAD: '10:24' })).toBe(on);
-    // 10 hits < 11: the default 140-char window
-    expect(await ss([REGEX, '-k', '4'], { SS_FIX_GREP_FULLLINE: '1', SS_VARIANT_GREP_BROAD: '11:24' }))
-      .toBe(await ss([REGEX, '-k', '4'], { SS_FIX_GREP_FULLLINE: '1' }));
+    expect(grepCalls[0]).toMatchObject({ perFileCap: 4, maxFiles: 4, _isAgentFormat: true });
   });
 
   it('more lines: usage inside a symbol before lines outside every symbol', async () => {
     // k = 6: export.go gets 3 of its 6 stored hits (sh 2, other 1); the usage at 6 beats the
     // comment at 1 and the import at 3
     expect(goLines(await ss([REGEX, '-k', '6']))).toEqual([
-      'worker/export.go:5: Export',
-      'worker/export.go:6: export',
-      'worker/export.go:9: export (+3 more in this file)',
+      'worker/export.go:5: func Export(ctx context.Context) error {',
+      'worker/export.go:6: return exportAll(ctx)',
+      'worker/export.go:9: func exportAll(ctx context.Context) error { (+3 more in this file)',
     ]);
   });
 
@@ -264,22 +237,22 @@ describe('ss-grep line classes through the real tool', () => {
     // (with a correct index this call shows 5, 6, 9; the shipped prefix shows 1, 3, 5).
     setEntities([['e1', 'Export', 'function', 'worker/export.go', 1, 3], ENTITIES[1], ENTITIES[2]]);
     expect(goLines(await ss([REGEX, '-k', '6']))).toEqual([
-      'worker/export.go:1: export',
-      'worker/export.go:3: export',
-      'worker/export.go:9: export (+3 more in this file)',
+      'worker/export.go:1: // Package worker: export helpers',
+      'worker/export.go:3: import "github.com/x/export"',
+      'worker/export.go:9: func exportAll(ctx context.Context) error { (+3 more in this file)',
     ]);
   });
 
   it('--in drill-in keeps every hit in line order and asks the engine for nothing', async () => {
     const out = await ss([REGEX, '-k', '3', '--in', 'worker/export.go']);
-    expect(out).toContain('worker/export.go:1: export\nworker/export.go:3: export\nworker/export.go:5: Export');
+    expect(out).toContain('worker/export.go:1: // Package worker: export helpers\nworker/export.go:3: import "github.com/x/export"\nworker/export.go:5: func Export(ctx context.Context) error {');
     expect(grepCalls[0].perFileCap).toBeUndefined();
   });
 });
 
 describe('the warm daemon (/agent-tool) prints exactly what the in-process tool prints', () => {
   const CALLS = [[REGEX, '-k', '4'], [REGEX, '-k', '6'], [REGEX, '-k', '3', '-A', '1'], [REGEX, '-k', '2', '--in', 'worker']];
-  for (const env of [{}, { SS_FIX_GREP_FULLLINE: '1' }]) {
+  for (const env of [{}]) {
     it(`same bytes on both paths (${JSON.stringify(env)})`, async () => {
       for (const args of CALLS) {
         const inProcess = await ss(args, env);

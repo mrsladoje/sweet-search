@@ -378,9 +378,7 @@ export function selectGrepFilesByWeight(matches, opts = {}) {
  * @param {{files: Array<{file, total, kept, prior?}>, hiddenFileCount, hiddenMatchCount,
  *          hiddenSample: Array<{file, total}>, order?: 'weight'}} fileSummary
  * @param {number} k - body line budget
- * @param {{fullLine?: boolean, hitMax?: number}} [opts] - `fullLine` (SS_FIX_GREP_FULLLINE,
- *   default ON in ss-grep): each hit prints its full source line (grepHitText), not the matched
- *   substring. `hitMax` (SS_VARIANT_GREP_BROAD): grepHitText's window size.
+ * @param {{hitMax?: number}} [opts] - `hitMax` (SS_VARIANT_GREP_BROAD): grepHitText's window size.
  * @returns {{lines: string[], rows: Array<{file, line, text, more}>, shownMatches: number,
  *            matchedFileCount: number, truncatedFileCount: number, hiddenLine: string|null}}
  *   `rows[i]` is the hit printed as `lines[i]` (for grep context rendering).
@@ -449,7 +447,7 @@ export function renderGrepBody(kept, fileSummary, k, opts = {}) {
     for (let j = 0; j < a; j++) {
       const at = picks ? picks[j] : j;
       const m = ms ? ms[at] : kept[base + at];
-      const text = grepHitText(m, { fullLine: opts?.fullLine === true, ...(opts?.hitMax ? { max: opts.hitMax } : {}) });
+      const text = grepHitText(m, { ...(opts?.hitMax ? { max: opts.hitMax } : {}) });
       let more = 0;
       if (j === a - 1 && total > a) {
         more = total - a;
