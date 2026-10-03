@@ -130,6 +130,7 @@ export function readFixFlags(env = process.env) {
     grepRetry: subSwitch(env?.SS_FIX_GREP_RETRY, compact),
     alreadyShown: isOn(env?.SS_FIX_ALREADY_SHOWN),
     dropSufficiency: isOn(env?.SS_FIX_DROP_SUFFICIENCY),
+    ...(parseGrepBroad(env?.SS_VARIANT_GREP_BROAD) ? { grepBroad: parseGrepBroad(env?.SS_VARIANT_GREP_BROAD) } : {}),
     summaryCap: capNumber > 0 ? capNumber : null,
     onePerFile: isOn(env?.SS_FIX_ONE_PER_FILE),
     grepOrder: isOn(env?.SS_FIX_GREP_ORDER),
@@ -905,6 +906,23 @@ export function orderSourceBeforeTests(matches, { k = null } = {}) {
 }
 
 export const GREP_HIT_TEXT_MAX = 140;
+
+/**
+ * SS_VARIANT_GREP_BROAD=<min total hits>:<chars> (bench only, 2026-10-03 A/B; deleted when decided):
+ * an ss-grep with at least that many total matches prints each hit's line in a window of at most
+ * <chars> chars (grepHitText `max`) instead of GREP_HIT_TEXT_MAX. Unset or malformed = off.
+ */
+function parseGrepBroad(raw) {
+  const m = /^\s*(\d+)\s*:\s*(\d+)\s*$/.exec(String(raw ?? ''));
+  if (!m) return null;
+  const minHits = Number(m[1]), chars = Number(m[2]);
+  return minHits > 0 && chars >= 20 ? { minHits, chars } : null;
+}
+
+/** The grepHitText `max` for a grep with `total` matches (undefined = the default). */
+export function grepBroadHitMax(flags, total) {
+  return flags?.grepBroad && total >= flags.grepBroad.minHits ? flags.grepBroad.chars : undefined;
+}
 // Chars of the line kept before the match when a long line is cut on the left.
 const GREP_HIT_LEAD = 40;
 
@@ -917,10 +935,12 @@ const GREP_HIT_LEAD = 40;
  * near the start keeps the head of the line. A hit with no line text falls back to the matched text.
  * Off: the matched substring, whitespace collapsed, at most 140 chars (the previous output).
  *
+ * `max` (SS_VARIANT_GREP_BROAD): the window size for a full line, default GREP_HIT_TEXT_MAX.
+ *
  * @param {{matchText?: string, content?: string, column?: number}} m
- * @param {{fullLine?: boolean}} [opts]
+ * @param {{fullLine?: boolean, max?: number}} [opts]
  */
-export function grepHitText(m, { fullLine = false } = {}) {
+export function grepHitText(m, { fullLine = false, max = GREP_HIT_TEXT_MAX } = {}) {
   const matched = String(m?.matchText || '').replace(/\s+/g, ' ').trim().slice(0, GREP_HIT_TEXT_MAX);
   const raw = fullLine && typeof m?.content === 'string' ? m.content : '';
   if (!raw.trim()) return matched;
@@ -940,7 +960,6 @@ export function grepHitText(m, { fullLine = false } = {}) {
     at[i] = line.length;
     line += ch;
   }
-  const max = GREP_HIT_TEXT_MAX;
   if (line.length <= max) return line;
   const head = () => `${sliceWhole(line, 0, max - 1)}…`;
 
@@ -957,7 +976,8 @@ export function grepHitText(m, { fullLine = false } = {}) {
   const tailRoom = max - 1;
   if (line.length - tailRoom <= start) return `…${sliceWhole(line, line.length - tailRoom, line.length)}`;
   const room = max - 2;
-  const from = Math.min(start, Math.max(start - GREP_HIT_LEAD, end - room));
+  const lead = Math.min(GREP_HIT_LEAD, Math.floor(max / 3));
+  const from = Math.min(start, Math.max(start - lead, end - room));
   if (from === 0) return head();
   return `…${sliceWhole(line, from, from + room)}…`;
 }
