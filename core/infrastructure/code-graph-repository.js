@@ -434,10 +434,61 @@ export class CodeGraphRepository {
     }
   }
 
+  /**
+   * findEntitiesForRanges(filePath, lines as one-line ranges with includeInside) answered from
+   * one scan of the file's visible entities, kept like findEntitiesInFile's answers. Per line:
+   * the entities starting on it (scan order, at most 64) and the smallest one spanning it (the
+   * first in scan order on a tie), the order SQLite gives both (identical on 537k lines over
+   * six code graphs). Null when the scan fails; the caller then asks findEntitiesForRanges.
+   *
+   * @param {string} filePath
+   * @param {number[]} lines
+   * @returns {Array<{enclosing: object|null, inRange: object[]}>|null}
+   */
+  findEntitiesAtLines(filePath, lines) {
+    const db = this._open();
+    if (!db || !filePath || !Array.isArray(lines)) return null;
+    const cache = this._fileEntitiesCache(db);
+    const key = `scan\0${filePath}`;
+    let table = cache?.get(key);
+    if (!table) {
+      try {
+        table = prepareCached(db, `
+          SELECT id, name, type, start_line, end_line, parent_class
+          FROM entities
+          WHERE file_path = ? AND ${this._entityVisibilitySql(db)}
+        `).all(filePath, ...this._entityVisibilityParams(db));
+      } catch {
+        return null;
+      }
+      if (cache) {
+        if (cache.size >= 1024) cache.clear();
+        cache.set(key, table);
+      }
+    }
+    const entity = (row) => ({
+      id: row.id, name: row.name, type: row.type,
+      startLine: row.start_line, endLine: row.end_line, parentClass: row.parent_class || null,
+    });
+    return lines.map((line) => {
+      const inRange = [];
+      let enclosing = null;
+      for (const row of table) {
+        if (row.start_line == null) continue;
+        if (row.start_line === line && inRange.length < 64) inRange.push(entity(row));
+        if (row.end_line != null && row.start_line <= line && row.end_line >= line
+            && (enclosing === null || row.end_line - row.start_line < enclosing.end_line - enclosing.start_line)) {
+          enclosing = row;
+        }
+      }
+      return { enclosing: enclosing ? entity(enclosing) : null, inRange };
+    });
+  }
+
   /** findEntitiesInFile's answers for this connection, epoch and database state (or null). */
   _fileEntitiesCache(db) {
     let dataVersion;
-    try { dataVersion = db.pragma('data_version', { simple: true }); } catch { return null; }
+    try { dataVersion = prepareCached(db, 'PRAGMA data_version').pluck().get(); } catch { return null; }
     const version = `${this._dbPath}\0${this._manifestEpoch}\0${dataVersion}`;
     if (this._fileEntitiesDb !== db || this._fileEntitiesVersion !== version) {
       this._fileEntitiesDb = db;

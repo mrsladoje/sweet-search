@@ -301,7 +301,8 @@ function findIndexedFamily(indexedSeeds, codeGraphRepo, keepFile = null) {
 
 /**
  * findEntitiesInRange(file, line, line) and findEnclosingEntity(file, line, line) for every hit,
- * from one findEntitiesForRanges statement per file instead of two queries per hit. Keyed
+ * from one scan per file (findEntitiesAtLines, else one findEntitiesForRanges statement)
+ * instead of two queries per hit. Keyed
  * `line\0file`; null (the caller asks per hit) when the repository has no batch method or a
  * batch fails.
  */
@@ -317,9 +318,10 @@ function entitiesAtHitLines(hits, codeGraphRepo) {
   const out = new Map();
   for (const [file, lineSet] of linesByFile) {
     const lines = [...lineSet];
-    let rows;
+    let rows = null;
     try {
-      rows = codeGraphRepo.findEntitiesForRanges(file, lines.map((line) => ({ startLine: line, endLine: line, includeInside: true })));
+      if (typeof codeGraphRepo.findEntitiesAtLines === 'function') rows = codeGraphRepo.findEntitiesAtLines(file, lines);
+      rows ??= codeGraphRepo.findEntitiesForRanges(file, lines.map((line) => ({ startLine: line, endLine: line, includeInside: true })));
     } catch {
       return null;
     }
