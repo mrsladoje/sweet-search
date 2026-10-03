@@ -146,7 +146,10 @@ export async function runInVirtualProcess({ env, cwd, pid = process.pid }, fn) {
     } catch (err) {
       if (err instanceof ExitSignal) code = err.exitCode;
       else {
-        call.stderr.push(Buffer.from(`[ss-*] crash: ${err?.stack || err?.message || err}\n`));
+        // A named operational failure (the daemon stopped mid-call) is one line; anything
+        // else is a bug and keeps its stack.
+        const text = err?.userFacing ? `[ss-*] error: ${err.message}` : `[ss-*] crash: ${err?.stack || err?.message || err}`;
+        call.stderr.push(Buffer.from(`${text}\n`));
         code = 1;
       }
     }
