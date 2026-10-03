@@ -15,7 +15,7 @@ import {
   ensureSparseGramIndex,
   sparseDeltaOverlayHasChanges, getSparseGramAllFilesWithOverlay,
   hasCaseInsensitiveRegexFlag, nativeGrepFilesWithMatches,
-  nativeGrepFilesWithMatchesFixed, nativeGrepLines, nativeGrepFull,
+  nativeGrepFilesWithMatchesFixed, nativeGrepLines, nativeGrepFull, nativeGrepWithFiles,
   queryAndGrepLines, queryAndGrepFull,
   searchLines, searchFull, resolveSparseSymbolMask,
   sparseGramPathFilter, grepUnfilterablePaths, gramsProveNoMatch,
@@ -33,11 +33,53 @@ import { isSymlinkedRelUnder } from '../indexing/admission-policy.js';
  */
 function normalizeNativeMatches(matches, searchDir) {
   const out = [];
+  // Matches come grouped by file: each distinct path is normalized once. The addon builds a
+  // fresh object per match, so one whose path is already normal is kept as it is.
+  const normalized = new Map();
   for (const m of matches || []) {
-    const file = normalizeSearchPath(searchDir, m.file);
-    if (file) out.push({ ...m, file });
+    let file = normalized.get(m.file);
+    if (file === undefined) {
+      file = normalizeSearchPath(searchDir, m.file);
+      normalized.set(m.file, file);
+    }
+    if (file) out.push(file === m.file ? m : { ...m, file });
   }
   return out;
+}
+
+/**
+ * The addon's isSymlinkedRelUnder answers (`aliasVerdicts`) of native results, for the paths
+ * that normalizeNativeMatches keeps as they are (a rewritten path is walked again in JS).
+ * Null when no result carries them.
+ */
+function normalizeNativeVerdicts(results, searchDir) {
+  let verdicts = null;
+  for (const r of results) {
+    if (!r?.aliasVerdicts) continue;
+    verdicts ??= new Map();
+    for (const [raw, alias] of r.aliasVerdicts) {
+      if (normalizeSearchPath(searchDir, raw) === raw) verdicts.set(raw, alias);
+    }
+  }
+  return verdicts;
+}
+
+/**
+ * Per-file match counts of native results, keyed like normalizeNativeMatches keys them: a
+ * capped result's `fileTotals`, else a count of its matches.
+ */
+function normalizeNativeTotals(results, searchDir) {
+  const totals = new Map();
+  const add = (raw, n) => {
+    const file = normalizeSearchPath(searchDir, raw);
+    if (file) totals.set(file, (totals.get(file) || 0) + n);
+  };
+  for (const r of results) {
+    if (!r) continue;
+    if (r.fileTotals) for (const [raw, n] of r.fileTotals) add(raw, n);
+    else for (const m of r.matches || []) add(m.file, 1);
+  }
+  return totals;
 }
 
 /**
@@ -52,7 +94,8 @@ function normalizeNativeMatches(matches, searchDir) {
 function dropSymlinkAliasMatches(result, searchDir) {
   if (!result) return result;
   const memo = new Map();
-  const verdict = new Map();
+  // The addon's answers for the files it read (normalizeNativeVerdicts); isAlias walks the rest.
+  const verdict = new Map(result.aliasVerdicts || []);
   const isAlias = (file) => {
     let v = verdict.get(file);
     if (v === undefined) {
@@ -65,12 +108,23 @@ function dropSymlinkAliasMatches(result, searchDir) {
   const overlay = result.overlayMatches || [];
   const keptIndexed = indexed.filter((m) => !isAlias(m.file));
   const keptOverlay = overlay.filter((m) => !isAlias(m.file));
-  const dropped = indexed.length - keptIndexed.length + overlay.length - keptOverlay.length;
+  let dropped = indexed.length - keptIndexed.length + overlay.length - keptOverlay.length;
   if (dropped === 0) return result;
+  // A capped result counts what it dropped from its totals, as the full list would have.
+  let fileTotals = result.fileTotals;
+  if (fileTotals) {
+    fileTotals = new Map();
+    dropped = 0;
+    for (const [file, n] of result.fileTotals) {
+      if (isAlias(file)) dropped += n;
+      else fileTotals.set(file, n);
+    }
+  }
   return {
     ...result,
     indexedMatches: keptIndexed,
     overlayMatches: keptOverlay,
+    ...(fileTotals ? { fileTotals } : {}),
     matchingFiles: Array.isArray(result.matchingFiles)
       ? result.matchingFiles.filter((file) => !isAlias(file))
       : result.matchingFiles,
@@ -104,6 +158,10 @@ async function collectRegexMatches(searcher, regex, searchDir, options = {}) {
   const literalExtractionTime = performance.now() - literalExtractStart;
   const symbolTypeFilter = resolveSearchSymbolFilter(options);
   const lightweightParse = options.lightweightParse ?? false;
+  // bareGrep's per-file cap (`_grepPerFileCap`): the native engine keeps only the first N
+  // matches of each file and counts every one into `fileTotals` (see bareGrep). Full matches
+  // only; a result without `fileTotals` holds all its matches.
+  const perFileCap = !lightweightParse && options._grepPerFileCap > 0 ? options._grepPerFileCap : 0;
 
   // --- Unified search: single NAPI call handles gram narrowing + all-files fallback ---
   // Eligible when: not fixed-string, no globs, gram index loaded, grams do not prove absence.
@@ -134,6 +192,7 @@ async function collectRegexMatches(searcher, regex, searchDir, options = {}) {
             codeExtensions: pathFilter.extensions,
             maxCandidateFiles: options.maxGramCandidateFiles ?? 100000,
             maxCandidateRatio: options.maxGramCandidateRatio ?? 1.0,
+            perFileCap,
           });
 
       if (unifiedResult) {
@@ -142,10 +201,12 @@ async function collectRegexMatches(searcher, regex, searchDir, options = {}) {
         const gramNarrowed = candidateFiles < totalFiles;
         // Narrowing dropped the index paths the extension list cannot express; grep-all did not.
         const residual = gramNarrowed && !symbolMask ? pathFilter.unfilterable : [];
-        const residualMatches = grepUnfilterablePaths(residual, regex, searchDir, { caseInsensitive, lightweightParse });
+        const residualResult = grepUnfilterablePaths(residual, regex, searchDir, { caseInsensitive, lightweightParse, perFileCap, withTotals: true });
         const gramLookupTime = performance.now() - gramStart;
         const materializeStart = performance.now();
-        const indexedMatches = normalizeNativeMatches([...unifiedResult.matches, ...residualMatches], searchDir);
+        const indexedMatches = normalizeNativeMatches([...unifiedResult.matches, ...residualResult.matches], searchDir);
+        const fileTotals = perFileCap > 0 ? normalizeNativeTotals([unifiedResult, residualResult], searchDir) : null;
+        const aliasVerdicts = normalizeNativeVerdicts([unifiedResult, residualResult], searchDir);
         const matchingFiles = [...new Set(indexedMatches.map((m) => m.file))];
         const materializeTime = performance.now() - materializeStart;
         const rustGramMs = (unifiedResult.gramElapsedUs || 0) / 1000;
@@ -157,6 +218,8 @@ async function collectRegexMatches(searcher, regex, searchDir, options = {}) {
           indexedMatches,
           overlayMatches: [],
           matchingFiles,
+          ...(fileTotals ? { fileTotals } : {}),
+          ...(aliasVerdicts ? { aliasVerdicts } : {}),
           stats: {
             nativeGrepUsed: true,
             candidateGenTime_ms: Math.round(performance.now() - start),
@@ -398,6 +461,8 @@ async function collectRegexMatches(searcher, regex, searchDir, options = {}) {
   const grepStart = performance.now();
   let matchingFiles = [];
   let indexedMatches = [];
+  let fileTotals = null;
+  let aliasVerdicts = null;
 
   const canUseNativeGrep = !fixedString && globs.length === 0 && hasNarrowedFiles;
 
@@ -406,9 +471,11 @@ async function collectRegexMatches(searcher, regex, searchDir, options = {}) {
     if (canUseNativeGrep) {
       const nativeResult = lightweightParse
         ? nativeGrepLines(regex, searchDir, filteredFiles, caseInsensitive)
-        : nativeGrepFull(regex, searchDir, filteredFiles, caseInsensitive);
+        : nativeGrepFull(regex, searchDir, filteredFiles, caseInsensitive, { perFileCap });
       if (nativeResult) {
         indexedMatches = normalizeNativeMatches(nativeResult.matches, searchDir);
+        if (perFileCap > 0) fileTotals = normalizeNativeTotals([nativeResult], searchDir);
+        aliasVerdicts = normalizeNativeVerdicts([nativeResult], searchDir);
         matchingFiles = [...new Set(indexedMatches.map((m) => m.file))];
         nativeGrepSucceeded = true;
       }
@@ -424,9 +491,13 @@ async function collectRegexMatches(searcher, regex, searchDir, options = {}) {
       matchingFiles = [...new Set(indexedMatches.map((match) => match.file))];
     }
   } else if (grepStrategy === 'two_pass') {
-    const nativeFilesResult = canUseNativeGrep
-      ? nativeGrepFilesWithMatches(regex, searchDir, filteredFiles, caseInsensitive)
+    // Both passes from one read of each file; null = the addon cannot, so run them apart.
+    const onePass = canUseNativeGrep
+      ? nativeGrepWithFiles(regex, searchDir, filteredFiles, caseInsensitive, { linesOnly: lightweightParse, perFileCap })
       : null;
+    const nativeFilesResult = onePass ?? (canUseNativeGrep
+      ? nativeGrepFilesWithMatches(regex, searchDir, filteredFiles, caseInsensitive)
+      : null);
     matchingFiles = nativeFilesResult
       ? nativeFilesResult.matchingFiles
       : await runRipgrepFilesWithMatches(regex, searchDir, {
@@ -435,14 +506,20 @@ async function collectRegexMatches(searcher, regex, searchDir, options = {}) {
         caseInsensitive: rgCaseInsensitive,
         globs,
       });
-    if (matchingFiles.length > 0) {
+    if (onePass) {
+      indexedMatches = normalizeNativeMatches(onePass.matches, searchDir);
+      if (perFileCap > 0) fileTotals = normalizeNativeTotals([onePass], searchDir);
+      aliasVerdicts = normalizeNativeVerdicts([onePass], searchDir);
+    } else if (matchingFiles.length > 0) {
       let nativePass2 = false;
       if (canUseNativeGrep) {
         const nativeResult = lightweightParse
           ? nativeGrepLines(regex, searchDir, matchingFiles, caseInsensitive)
-          : nativeGrepFull(regex, searchDir, matchingFiles, caseInsensitive);
+          : nativeGrepFull(regex, searchDir, matchingFiles, caseInsensitive, { perFileCap });
         if (nativeResult) {
           indexedMatches = normalizeNativeMatches(nativeResult.matches, searchDir);
+          if (perFileCap > 0) fileTotals = normalizeNativeTotals([nativeResult], searchDir);
+          aliasVerdicts = normalizeNativeVerdicts([nativeResult], searchDir);
           nativePass2 = true;
         }
       }
@@ -459,9 +536,11 @@ async function collectRegexMatches(searcher, regex, searchDir, options = {}) {
   } else if (canNativeGrepAll) {
     const nativeResult = lightweightParse
       ? nativeGrepLines(regex, searchDir, allIndexedFiles, caseInsensitive)
-      : nativeGrepFull(regex, searchDir, allIndexedFiles, caseInsensitive);
+      : nativeGrepFull(regex, searchDir, allIndexedFiles, caseInsensitive, { perFileCap });
     if (nativeResult) {
       indexedMatches = normalizeNativeMatches(nativeResult.matches, searchDir);
+      if (perFileCap > 0) fileTotals = normalizeNativeTotals([nativeResult], searchDir);
+      aliasVerdicts = normalizeNativeVerdicts([nativeResult], searchDir);
       matchingFiles = [...new Set(indexedMatches.map((m) => m.file))];
       grepStrategy = 'native_grep_all';
       plannerRoute = `native_grep_all:${allIndexedFiles.length}_files`;
@@ -497,6 +576,8 @@ async function collectRegexMatches(searcher, regex, searchDir, options = {}) {
     indexedMatches,
     overlayMatches: [],
     matchingFiles,
+    ...(fileTotals ? { fileTotals } : {}),
+    ...(aliasVerdicts ? { aliasVerdicts } : {}),
     stats: {
       nativeGrepUsed: canUseNativeGrep || grepStrategy === 'native_grep_all',
       candidateGenTime_ms: Math.round(performance.now() - start),

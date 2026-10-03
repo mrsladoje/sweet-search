@@ -145,7 +145,7 @@ export function compilePathGlobs(globs) {
  * @param {ReturnType<typeof compilePathGlobs>} compiled  null = no globs, matches unchanged
  * @returns {{ kept: Array, excludedMatches: number, excludedFiles: number }}
  */
-export function filterMatchesByPathGlobs(matches, compiled) {
+export function filterMatchesByPathGlobs(matches, compiled, totals = null) {
   if (!compiled) return { kept: matches, excludedMatches: 0, excludedFiles: 0 };
   const kept = [];
   const droppedFiles = new Set();
@@ -153,6 +153,11 @@ export function filterMatchesByPathGlobs(matches, compiled) {
   for (const m of matches || []) {
     if (compiled.matches(m.file)) kept.push(m);
     else { excludedMatches++; droppedFiles.add(m.file); }
+  }
+  // A capped list (bareGrep): each excluded file counts all its matches.
+  if (totals) {
+    excludedMatches = 0;
+    for (const file of droppedFiles) excludedMatches += totals.get(file) ?? 0;
   }
   return { kept, excludedMatches, excludedFiles: droppedFiles.size };
 }

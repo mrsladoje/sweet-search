@@ -7,8 +7,9 @@ import {
   nativeGrepLines as _nativeGrepLines,
   resolveSparseSymbolMask as _resolveSparseSymbolMask,
 } from '../infrastructure/native-sparse-gram.js';
-import { resolveLatestSparseGramDeltaRecords } from '../infrastructure/sparse-gram-delta-reader.js';
+import { readSparseGramDeltaRecordsSince } from '../infrastructure/sparse-gram-delta-reader.js';
 import { DB_PATHS, PROJECT_ROOT } from '../infrastructure/config/index.js';
+import { readJsonFileCached } from '../infrastructure/cached-json-file.js';
 import { resolveSearchSymbolFilter } from './search-pattern-chunks.js';
 
 const RECONCILE_MANIFEST_FILENAME = 'reconcile-manifest.json';
@@ -106,7 +107,7 @@ function readSparseManifestFromDir(dir) {
   try {
     const manifestPath = path.join(dir, RECONCILE_MANIFEST_FILENAME);
     if (!fs.existsSync(manifestPath)) return null;
-    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+    const manifest = readJsonFileCached(manifestPath);
     const epoch = manifest?.sparseGram?.epoch ?? manifest?.epoch;
     return {
       epoch: Number.isInteger(epoch) ? epoch : null,
@@ -159,23 +160,167 @@ function sparseDeltaSegments(searcher, options, manifestInfo) {
   return Array.isArray(manifestInfo?.deltas) ? manifestInfo.deltas : null;
 }
 
-function normalizeRecordGrams(grams) {
-  if (!Array.isArray(grams) || grams.length === 0) return null;
-  const out = new Set();
-  for (const entry of grams) {
-    const gram = Array.isArray(entry) ? entry[0] : entry;
-    if (typeof gram === 'string' && gram.length > 0) out.add(gram);
+// The delta records' grams, as an inverted index: gram → the ascending slots of the records that
+// hold it. A Set per record held 136 MB for a 48 MB delta (2,440 files, 4.3M grams, 269k
+// distinct). Here each distinct gram string is held once, and the slot lists share one
+// Uint32Array (`[length, ...slots]` per gram); slots added since the last pack wait in `extra`.
+class GramPostings {
+  constructor() {
+    this.buf = new Uint32Array(0);
+    this.at = new Map();
+    this.extra = new Map();
+    this.extraCount = 0;
   }
-  return out.size > 0 ? out : null;
+
+  add(gram, slot) {
+    let list = this.extra.get(gram);
+    if (!list) this.extra.set(gram, (list = []));
+    if (list[list.length - 1] !== slot) {
+      list.push(slot);
+      this.extraCount++;
+    }
+  }
+
+  /** The slots holding `gram` (ascending), or null when no record holds it. */
+  slots(gram) {
+    const at = this.at.get(gram);
+    const packed = at === undefined ? null : this.buf.subarray(at + 1, at + 1 + this.buf[at]);
+    const extra = this.extra.get(gram);
+    if (!extra) return packed;
+    return packed ? [...packed, ...extra] : extra;
+  }
+
+  /** Moves `extra` into the shared buffer once it is a quarter of it (always after a full read). */
+  maybePack() {
+    if (this.extraCount === 0 || this.extraCount * 4 < this.buf.length) return;
+    const buf = new Uint32Array(this.buf.length + this.extraCount + this.extra.size);
+    const at = new Map();
+    let pos = 0;
+    const put = (gram) => {
+      const list = this.slots(gram);
+      at.set(gram, pos);
+      buf[pos++] = list.length;
+      buf.set(list, pos);
+      pos += list.length;
+    };
+    for (const gram of this.at.keys()) put(gram);
+    for (const gram of this.extra.keys()) if (!this.at.has(gram)) put(gram);
+    this.buf = buf.length === pos ? buf : buf.slice(0, pos);
+    this.at = at;
+    this.extra = new Map();
+    this.extraCount = 0;
+  }
 }
 
-function recordMatchesClause(record, literals, sparseGramIndex) {
-  if (!Array.isArray(literals)) return true;
-  if (!record.grams) return true;
+function addRecordGrams(cache, grams) {
+  if (!Array.isArray(grams) || grams.length === 0) return -1;
+  let slot = -1;
+  for (const entry of grams) {
+    const gram = Array.isArray(entry) ? entry[0] : entry;
+    if (typeof gram !== 'string' || gram.length === 0) continue;
+    if (slot < 0) slot = cache.nextSlot++;
+    cache.postings.add(gram, slot);
+  }
+  return slot;
+}
+
+/**
+ * `slot => boolean`: does the record in `slot` hold every gram `literals` require? The
+ * required grams depend only on the index and the literals, so they are extracted once per
+ * call, and only when some record has grams to test.
+ */
+function clauseSlotMatcher(overlay, literals, sparseGramIndex) {
   const required = extractSparseGramRequiredGrams(sparseGramIndex, literals);
-  if (!required) return true;
-  if (!required.eligible || !Array.isArray(required.grams) || required.grams.length === 0) return false;
-  return required.grams.every((gram) => record.grams.has(gram));
+  if (!required) return () => true;
+  if (!required.eligible || !Array.isArray(required.grams) || required.grams.length === 0) return () => false;
+  const postings = required.grams.map((gram) => overlay.postings.slots(gram));
+  if (postings.some((p) => !p)) return () => false;
+  postings.sort((a, b) => a.length - b.length);
+  let matched = new Set(postings[0]);
+  for (let i = 1; i < postings.length && matched.size > 0; i++) {
+    const next = new Set();
+    for (const slot of postings[i]) if (matched.has(slot)) next.add(slot);
+    matched = next;
+  }
+  return (slot) => matched.has(slot);
+}
+
+// The daemon asks for the overlay several times per query (the planner's change check, the
+// gram lookup, the all-files list) and once more per retry, and a full read is ~1 s per 50 MB
+// of deltas. So the overlay is kept per index and updated from the bytes appended since
+// (readSparseGramDeltaRecordsSince); it is rebuilt only when a segment is replaced.
+const OVERLAY_CACHE_MAX = 4;
+const _overlayCache = new Map();
+
+export function _resetSparseDeltaOverlayCache() {
+  _overlayCache.clear();
+}
+
+function emptyOverlayCache() {
+  return {
+    cursor: null, entries: new Map(), postings: new GramPostings(),
+    nextSlot: 0, deadSlots: 0, deadSlotsAtReset: 0, overlay: null,
+  };
+}
+
+function refreshOverlayCache(cache, indexPath, readOpts, projectRoot, expectedWeightsId) {
+  let changed = false;
+  let reset = false;
+  const read = (cursor) => readSparseGramDeltaRecordsSince(indexPath, readOpts, cursor, {
+    onReset() {
+      Object.assign(cache, emptyOverlayCache());
+      changed = true;
+      reset = true;
+    },
+    onRecord(record) {
+      changed = true;
+      const old = cache.entries.get(record.fileId);
+      if (old?.slot >= 0) cache.deadSlots++;
+      // Map.set keeps a known fileId at its first position, as the full read's Map does.
+      cache.entries.set(record.fileId, deltaEntry(cache, record, projectRoot, expectedWeightsId));
+    },
+  });
+  cache.cursor = read(cache.cursor);
+  if (reset) cache.deadSlotsAtReset = cache.deadSlots;
+  // Postings of replaced records are never read again. A full read leaves those of the records
+  // a segment replaces itself; once appends have left more than there are live slots, read
+  // everything again to drop them.
+  const appendedDead = cache.deadSlots - cache.deadSlotsAtReset;
+  if (appendedDead > 1024 && appendedDead > cache.nextSlot - cache.deadSlots) {
+    reset = false;
+    cache.cursor = read(null);
+    cache.deadSlotsAtReset = cache.deadSlots;
+  }
+  cache.postings.maybePack();
+  if (changed || !cache.overlay) cache.overlay = buildOverlay(cache);
+}
+
+function deltaEntry(cache, record, projectRoot, expectedWeightsId) {
+  if (expectedWeightsId && record.weightsId !== expectedWeightsId) return null;
+  const filePath = normalizeDeltaPath(record.filePath, projectRoot);
+  if (!filePath) return null;
+  if (record.deleted) return { filePath, deleted: true, slot: -1 };
+  return {
+    filePath,
+    deleted: false,
+    symbolMask: Number.isInteger(record.symbolMask) ? record.symbolMask : 0,
+    slot: addRecordGrams(cache, record.grams),
+  };
+}
+
+function buildOverlay(cache) {
+  if (cache.entries.size === 0) return null;
+  const hidden = new Set();
+  const live = [];
+  for (const entry of cache.entries.values()) {
+    if (!entry) continue;
+    hidden.add(entry.filePath);
+    if (!entry.deleted) {
+      live.push({ filePath: entry.filePath, symbolMask: entry.symbolMask, slot: entry.slot });
+    }
+  }
+  if (hidden.size === 0 && live.length === 0) return null;
+  return { hidden, live, postings: cache.postings };
 }
 
 export function loadSparseDeltaOverlay(searcher, options = {}) {
@@ -190,31 +335,29 @@ export function loadSparseDeltaOverlay(searcher, options = {}) {
     manifestInfo?.stateDir || sparseManifestStateDirs(searcher, options, indexPath)[0],
   );
   if (!Array.isArray(segments) || segments.length === 0) return null;
-  const latest = resolveLatestSparseGramDeltaRecords(indexPath, {
-    ...(Number.isInteger(maxEpoch) ? { maxEpoch } : {}),
-    segments,
-  });
-  if (latest.size === 0) return null;
-
-  const hidden = new Set();
-  const live = [];
   const projectRoot = searcher?.projectRoot || options.projectRoot || PROJECT_ROOT;
   const expectedWeightsId = sparseWeightsId(searcher, options, manifestInfo);
-  for (const { record } of latest.values()) {
-    if (expectedWeightsId && record.weightsId !== expectedWeightsId) continue;
-    const filePath = normalizeDeltaPath(record.filePath, projectRoot);
-    if (!filePath) continue;
-    hidden.add(filePath);
-    if (!record.deleted) {
-      live.push({
-        filePath,
-        symbolMask: Number.isInteger(record.symbolMask) ? record.symbolMask : 0,
-        grams: normalizeRecordGrams(record.grams),
-      });
-    }
+  // A new epoch only lists more segments; the cursor sees that. Root and weights id decide
+  // what every cached entry is, so they key the cache.
+  const key = `${indexPath}\0${projectRoot}\0${expectedWeightsId ?? ''}`;
+  let cache = _overlayCache.get(key);
+  if (cache) {
+    _overlayCache.delete(key);
+  } else {
+    cache = emptyOverlayCache();
+    while (_overlayCache.size >= OVERLAY_CACHE_MAX) _overlayCache.delete(_overlayCache.keys().next().value);
   }
-  if (hidden.size === 0 && live.length === 0) return null;
-  return { hidden, live, maxEpoch };
+  _overlayCache.set(key, cache);
+  try {
+    refreshOverlayCache(cache, indexPath, {
+      ...(Number.isInteger(maxEpoch) ? { maxEpoch } : {}),
+      segments,
+    }, projectRoot, expectedWeightsId);
+  } catch (err) {
+    _overlayCache.delete(key);
+    throw err;
+  }
+  return cache.overlay ? { ...cache.overlay, maxEpoch } : null;
 }
 
 export function sparseDeltaOverlayHasChanges(searcher, options = {}) {
@@ -225,9 +368,14 @@ export function sparseDeltaOverlayHasChanges(searcher, options = {}) {
 export function liveOverlayFiles(overlay, symbolMask = 0, literals = null, sparseGramIndex = null) {
   if (!overlay) return [];
   const out = [];
+  let inClause = null;
   for (const record of overlay.live) {
     if (symbolMask && record.symbolMask && (record.symbolMask & symbolMask) === 0) continue;
-    if (!recordMatchesClause(record, literals, sparseGramIndex)) continue;
+    // A record with no grams passes every gram filter.
+    if (Array.isArray(literals) && record.slot >= 0) {
+      inClause ??= clauseSlotMatcher(overlay, literals, sparseGramIndex);
+      if (!inClause(record.slot)) continue;
+    }
     out.push(record.filePath);
   }
   return out;
@@ -290,19 +438,42 @@ export function gramsProveNoMatch(sparseGramIndex, clauses, { maxCandidates = 0,
   }
 }
 
-/** Native grep of `files` (the `unfilterable` paths above); [] when there are none or native is unavailable. */
-export function grepUnfilterablePaths(files, regex, searchDir, { caseInsensitive = false, lightweightParse = false } = {}) {
-  if (!Array.isArray(files) || files.length === 0) return [];
+/**
+ * Native grep of `files` (the `unfilterable` paths above); [] when there are none or native is
+ * unavailable. `withTotals`: the whole result `{ matches, fileTotals? }` instead, with
+ * `perFileCap` as in nativeGrepFull.
+ */
+export function grepUnfilterablePaths(files, regex, searchDir, { caseInsensitive = false, lightweightParse = false, perFileCap = 0, withTotals = false } = {}) {
+  if (!Array.isArray(files) || files.length === 0) return withTotals ? { matches: [] } : [];
   const result = lightweightParse
     ? _nativeGrepLines(regex, searchDir, files, caseInsensitive)
-    : _nativeGrepFull(regex, searchDir, files, caseInsensitive);
+    : _nativeGrepFull(regex, searchDir, files, caseInsensitive, { perFileCap });
+  if (withTotals) return result?.matches ? result : { matches: [] };
   return result?.matches || [];
 }
 
+// A loaded index never changes its file list, and an overlay keeps its `hidden` and `live`
+// until the deltas change, so the merged list is kept per index for the last overlay seen.
+const _allFilesByIndex = new WeakMap();
+
 export function getSparseGramAllFilesWithOverlay(searcher, sparseGramIndex, options = {}) {
+  const symbolMask = _resolveSparseSymbolMask(resolveSearchSymbolFilter(options)) || 0;
+  const projectRoot = searcher?.projectRoot || options.projectRoot || PROJECT_ROOT;
+  const indexKey = sparseGramIndex !== null && typeof sparseGramIndex === 'object' ? sparseGramIndex : null;
+  const cached = indexKey ? _allFilesByIndex.get(indexKey) : null;
+  if (cached) {
+    const overlay = loadSparseDeltaOverlay(searcher, options);
+    if (cached.hidden === overlay?.hidden && cached.live === overlay?.live
+        && cached.symbolMask === symbolMask && cached.projectRoot === projectRoot) {
+      return cached.files.slice();
+    }
+  }
   const baseFiles = _getSparseGramAllFiles(sparseGramIndex);
   if (!Array.isArray(baseFiles)) return baseFiles;
-  const symbolMask = _resolveSparseSymbolMask(resolveSearchSymbolFilter(options));
-  const projectRoot = searcher?.projectRoot || options.projectRoot || PROJECT_ROOT;
-  return applySparseDeltaOverlay(baseFiles, loadSparseDeltaOverlay(searcher, options), symbolMask || 0, projectRoot);
+  const overlay = loadSparseDeltaOverlay(searcher, options);
+  const files = applySparseDeltaOverlay(baseFiles, overlay, symbolMask, projectRoot);
+  if (indexKey) {
+    _allFilesByIndex.set(indexKey, { hidden: overlay?.hidden, live: overlay?.live, symbolMask, projectRoot, files });
+  }
+  return files.slice();
 }
