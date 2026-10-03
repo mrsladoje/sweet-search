@@ -470,21 +470,32 @@ async function getSweetSearch() {
   }
 }
 
-async function ensureWarmServerReady({ timeoutMs = 60000, intervalMs = 500 } = {}) {
+// ss-search has no cold fallback here, so it waits for a daemon that is still loading.
+// r282 Codex r1 typedoc: the daemon was cold-starting while another cell warmed 8 servers;
+// the 60 s wait ran out and 5 searches were refused. A daemon that is listening (busy
+// loading) is waited for, never replaced: a second spawn would only race it for the socket.
+const WARM_SERVER_WAIT_MS = 300_000;
+
+async function ensureWarmServerReady({ timeoutMs = WARM_SERVER_WAIT_MS, intervalMs = 500 } = {}) {
   // Inside the daemon: it is the warm server, and it only takes a call once ready.
   if (host.getSearcher) return true;
-  const { isServerRunning, autoSpawnServer } = await import(path.join(REPO_ROOT, 'core/search/search-server.js'));
-  if (await isServerRunning()) return true;
-
-  // autoSpawnServer has a short built-in timeout. It may return false while the
-  // detached server is still finishing model/index load, so poll afterwards.
-  await autoSpawnServer();
+  const { getServerHealth, isServerListening, autoSpawnServer } = await import(path.join(REPO_ROOT, 'core/search/search-server.js'));
   const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (await isServerRunning()) return true;
+  let spawns = 0;
+  for (;;) {
+    const health = await getServerHealth({ timeoutMs: 1000 });
+    if (health?.status === 'ready' || health?.warm === true) return true;
+    if (health?.status === 'failed') return false;
+    if (Date.now() >= deadline) return false;
+    // No daemon at all (never started, or it exited): start one. autoSpawnServer has a
+    // short built-in wait and may return while the detached server is still loading.
+    if (!health && spawns < 2 && !await isServerListening()) {
+      spawns++;
+      await autoSpawnServer();
+      continue;
+    }
     await new Promise(resolve => setTimeout(resolve, intervalMs));
   }
-  return false;
 }
 
 async function queryWarmSearch(query, options) {
@@ -1207,7 +1218,7 @@ async function cmdAgentSearch(rawArgs) {
 
   const serverUsed = await ensureWarmServerReady();
   if (!serverUsed) {
-    process.stderr.write('[ss-search] warm server is not ready; refusing cold direct search in benchmark wrapper\n');
+    process.stderr.write(`[ss-search] warm server is not ready after ${WARM_SERVER_WAIT_MS / 1000} s; refusing cold direct search in benchmark wrapper. Run ss-search again, or use ss-grep meanwhile.\n`);
     process.exit(1);
   }
 
