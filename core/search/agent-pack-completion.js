@@ -20,7 +20,7 @@ const MAX_FAMILY_STEMS = 3;
 const MAX_FAMILY_CANDIDATES = 64;
 const BODY_REFERENCE_GENERIC_TOKENS = new Set(['get', 'set', 'has', 'can', 'could', 'should', 'needed', 'result', 'value', 'data', 'info']);
 const IDENTIFIER_RE = /\b[A-Za-z_$][A-Za-z0-9_$]{2,79}\b/g;
-const TRUNCATION_MARKER_RE = /^\s*\/\/ \.\.\. \(\d+ (?:more lines|lines elided)\)(?: \.\.\.)?\s*$/;
+const TRUNCATION_MARKER_RE = /^\s*\/\/ \.\.\. \((?:\d+ more lines|not shown: lines \d+-\d+ — ss-read .+ \d+ \d+)\)(?: \.\.\.)?\s*$/;
 
 function defaultEstimateTokens(text) {
   return text ? Math.ceil(text.length / 3.5) : 0;

@@ -1603,7 +1603,9 @@ describe('symbol sandwich rendering (integration)', () => {
     expect(r.code).toMatch(/\}\s*$/);
 
     // Elision markers are present and indicate the right gap sizes
-    expect(r.code).toMatch(/\/\/ \.\.\. \(\d+ lines elided\)/);
+    // Each marker names the left-out lines and the ss-read command that prints them
+    expect(r.code).toContain('// ... (not shown: lines 5-499 — ss-read huge-fn.js 5 499) ...');
+    expect(r.code).toContain('// ... (not shown: lines 511-999 — ss-read huge-fn.js 511 999) ...');
     expect(r.sandwich.elisionMarkers).toBe(2);
     expect(r.sandwich.elidedHead).toBeGreaterThan(400); // ~496 lines between sig and gold
     expect(r.sandwich.elidedTail).toBeGreaterThan(400); // ~489 lines between gold and closing
