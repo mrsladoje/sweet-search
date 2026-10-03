@@ -17,7 +17,7 @@ import {
   OPENCODE_TRIM_MAX_DISABLED_TOOLS, OPENCODE_TRIM_MAX_TOOL_EDITS, OPENCODE_TRIM_V3_TOOL_EDITS,
   OPENCODE_TRIM_PLUGIN, OPENCODE_TRIM_REPORT, opencodeUnjailedEnv, runOpencodePreflight,
   OPENCODE_CONFLICT_TOOL_EDITS, OPENCODE_CONFLICT_NOGLOB_TOOL_EDITS, OPENCODE_CONFLICT_PROMPT_BULLET,
-  OPENCODE_CONFLICT2_TOOL_EDITS, OPENCODE_CONFLICT3_TOOL_EDITS, OPENCODE_CONFLICT3_TOOL_EDITS_V1, OC_HARNESS_TRIM_DEFAULT, opencodeRulesInConfig,
+  OPENCODE_CONFLICT2_TOOL_EDITS, OPENCODE_CONFLICT3_TOOL_EDITS, OC_HARNESS_TRIM_DEFAULT, opencodeRulesInConfig,
   OPENCODE_RULES_FILE,
 } from '../harness/opencode-task-runner.mjs';
 import { resolveSweetRulesPlacement, sweetRulesRowFields } from '../harness/sweet-rules-placement.mjs';
@@ -26,7 +26,7 @@ import {
   installOpencodeHarness, OPENCODE_CONFIG_REL, OPENCODE_RULES_REL, OPENCODE_PROMPT_REL,
 } from '../../../scripts/install-opencode-harness.js';
 import {
-  OPENCODE_TRIM_PLUGIN_SOURCE, OPENCODE_TOOL_EDITS as SHIPPED_TOOL_EDITS, OPENCODE_TOOL_EDITS_V1 as SHIPPED_TOOL_EDITS_V1, opencodePrompt as shippedOpencodePrompt,
+  OPENCODE_TRIM_PLUGIN_SOURCE, OPENCODE_TOOL_EDITS as SHIPPED_TOOL_EDITS, opencodePrompt as shippedOpencodePrompt,
 } from '../../../scripts/harness-prompts/index.js';
 import { OPENCODE_GPT_ORIGINAL, EFFICIENCY_LINE, opencodeBatchPrompt, opencodeBatchToolEdits } from '../harness/trim/batch-variants.mjs';
 import { spawnSync } from 'node:child_process';
@@ -461,11 +461,13 @@ console.log('\nshipped by `sweet-search init --opencode` = conflict3+todo3eff3k 
   assert(same(t.config.plugin[0][1].edits, SHIPPED_TOOL_EDITS) && same(t.config.tools, { grep: false })
       && same(t.config.agents.explore, { disable: true }),
     'the shipped tool edits, grep off and explore off are the bench arm');
-  // Rules v2 (default) edits the bash avoid-list further; the pre-v2 set (SS_FIX_RULES_V2=0) is conflict2's.
-  assert(OPENCODE_CONFLICT3_TOOL_EDITS === SHIPPED_TOOL_EDITS && OPENCODE_CONFLICT3_TOOL_EDITS_V1 === SHIPPED_TOOL_EDITS_V1
-      && same(SHIPPED_TOOL_EDITS_V1, { bash: OPENCODE_CONFLICT2_TOOL_EDITS.bash, read: OPENCODE_CONFLICT2_TOOL_EDITS.read,
-        task: OPENCODE_CONFLICT2_TOOL_EDITS.task, glob: OPENCODE_CONFLICT2_TOOL_EDITS.glob }),
-    "conflict3's tool edits = conflict2's bash/read/task/glob edits (defined once, in the product)");
+  // The shipped bash edits go one step past conflict2's (`find` leaves the avoid-list, "(NOT find or ls)" leaves the File search line).
+  assert(OPENCODE_CONFLICT3_TOOL_EDITS === SHIPPED_TOOL_EDITS
+      && same(SHIPPED_TOOL_EDITS.bash.slice(0, 2), OPENCODE_CONFLICT2_TOOL_EDITS.bash.slice(0, 2))
+      && same(SHIPPED_TOOL_EDITS.read, OPENCODE_CONFLICT2_TOOL_EDITS.read)
+      && same(SHIPPED_TOOL_EDITS.task, OPENCODE_CONFLICT2_TOOL_EDITS.task) && same(SHIPPED_TOOL_EDITS.glob, OPENCODE_CONFLICT2_TOOL_EDITS.glob),
+    "conflict3's tool edits = conflict2's read/task/glob and first two bash edits (defined once, in the product)");
+  assert(!SHIPPED_TOOL_EDITS.bash.some(([, to]) => /\bfind\b/.test(to)), 'the shipped bash edits name no `find`');
   assert(t.files[OPENCODE_TRIM_PLUGIN] === readFileSync(OPENCODE_TRIM_PLUGIN_SOURCE, 'utf8'),
     'the bench copies the shipped plugin file into the state dir');
 }
@@ -509,7 +511,7 @@ console.log('\nproduct default (switches unset) = init --opencode bytes, any mod
       `${model}: rules file bytes = .opencode/sweet-search.md (loaded through \`instructions\`)`);
     assert(buildInstructionFile({ sweet: true, mppText, env, rulesPlacement: placement }) === buildInstructionFile({ sweet: false, mppText, env }),
       `${model}: AGENTS.md = frame only = native bytes (init --opencode writes no AGENTS.md)`);
-    assert(same(sweetRulesRowFields(placement, { sweet: true, env }), { sweetRulesPlacement: 'config', sweetRulesPlacementSource: 'default', rulesV2: 1 }) && tOn.origin === 'default',
+    assert(same(sweetRulesRowFields(placement, { sweet: true, env }), { sweetRulesPlacement: 'config', sweetRulesPlacementSource: 'default' }) && tOn.origin === 'default',
       `${model}: row stamps placement config + source default, harnessTrimSource default`);
   }
   // The research variants keep their gpt-only refusal.

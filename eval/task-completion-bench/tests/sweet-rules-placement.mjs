@@ -33,8 +33,7 @@ import { OPENCODE_GPT_ORIGINAL } from '../harness/trim/batch-variants.mjs';
 import {
   buildClaudeCliArgs, READ_PAGES_TOOL_NOTE, appendRulesToLeanAgentFiles, CLAUDE_RULES_AGENT_FILES,
 } from '../harness/claude-code-task-runner.mjs';
-// Rules v2 (default): the appended override exempts file-name search (CLAUDE_SYSTEM_OVERRIDE_V2).
-import { CLAUDE_SYSTEM_OVERRIDE_V2 as CLAUDE_SYSTEM_OVERRIDE } from '../../../scripts/install-claude-system-prompt.js';
+import { CLAUDE_SYSTEM_OVERRIDE } from '../../../scripts/install-claude-system-prompt.js';
 import {
   installClaudeLeanHarness, CLAUDE_LEAN_AGENT_REL, CLAUDE_LEAN_SUBAGENT_REL, CLAUDE_LEAN_PLAN_REL,
 } from '../../../scripts/install-claude-lean-harness.js';
@@ -64,9 +63,9 @@ for (const [harness, want] of Object.entries(SWEET_RULES_PLACEMENT_DEFAULTS)) {
   assert(resolveSweetRulesPlacement({ sweet: false, env: {}, harness }) === 'file', `${harness}: native + unset = file (never moves)`);
 }
 assert(throws(() => resolveSweetRulesPlacement({ sweet: true, env: {}, harness: 'cursor' })), 'a harness with no default throws');
-assert(JSON.stringify(sweetRulesRowFields('config', { sweet: true, env: {} })) === '{"sweetRulesPlacement":"config","sweetRulesPlacementSource":"default","rulesV2":1}',
+assert(JSON.stringify(sweetRulesRowFields('config', { sweet: true, env: {} })) === '{"sweetRulesPlacement":"config","sweetRulesPlacementSource":"default"}',
   'row (sweet, default): the effective placement and source default are stamped');
-assert(JSON.stringify(sweetRulesRowFields('file', { sweet: true, env: { SWEET_RULES_PLACEMENT: 'file' } })) === '{"sweetRulesPlacement":"file","sweetRulesPlacementSource":"env","rulesV2":1}',
+assert(JSON.stringify(sweetRulesRowFields('file', { sweet: true, env: { SWEET_RULES_PLACEMENT: 'file' } })) === '{"sweetRulesPlacement":"file","sweetRulesPlacementSource":"env"}',
   'row (sweet, explicit file): stamped too, source env');
 assert(JSON.stringify(sweetRulesRowFields('file', { sweet: false, env: {} })) === '{}', 'row (native): nothing stamped');
 assert(resolveSweetRulesPlacement({ sweet: true, env: { SWEET_RULES_PLACEMENT: 'system' } }) === 'system', 'sweet + system = system');
@@ -330,7 +329,7 @@ for (const [file, needles] of Object.entries({
     // V1b default: rules in the lean main agent only with the lean harness + the file placement.
     "resolveClaudeRulesLayout(process.env, { strict: true })",
     "Boolean(sweet && ccRulesLayout !== 'file' && harnessTrim.installLean && rulesPlacement === 'file')",
-    'rules: rulesInPrompt ? mppText : false', "rulesInPrompt ? claudeRulesPointer(process.env) : mppText.trimEnd()"],
+    'rules: rulesInPrompt ? mppText : false', "rulesInPrompt ? CLAUDE_RULES_POINTER : mppText.trimEnd()"],
 })) {
   const src = readFileSync(new URL(`../harness/${file}`, import.meta.url), 'utf8');
   for (const n of needles) assert(src.includes(n), `${file}: ${n}`);

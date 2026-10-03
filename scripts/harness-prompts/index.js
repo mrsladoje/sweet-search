@@ -11,8 +11,7 @@
  *            tool-grouping lines replaced by ours (codexInstructions()).
  *   opencode OC_HARNESS_TRIM=conflict3+todo3eff3k
  *            opencode 1.18.4's gpt-family prompt minus the Glob/Grep bullet and " - especially
- *            file reads", plus our todowrite and efficiency lines (opencodePrompt()); rules v2
- *            puts back the Glob half of that bullet; the grep
+ *            file reads", plus our todowrite and efficiency lines (opencodePrompt()); the grep
  *            tool and the explore subagent off; tool-description edits (OPENCODE_TOOL_EDITS)
  *            applied by opencode-trim-plugin.mjs.
  *
@@ -22,16 +21,6 @@
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import {
-  OPENCODE_BASH_AVOID_V1, OPENCODE_BASH_AVOID_V2, OPENCODE_BASH_FILE_SEARCH_V1,
-  OPENCODE_BASH_FILE_SEARCH_V2, OPENCODE_GLOB_BULLET, rulesV2Enabled,
-} from './rules-v2.js';
-
-// Rules v2 (rules-v2.js, default on; SS_FIX_RULES_V2=0 = the old texts byte for byte): the opencode
-// and Claude Code prompts get back only the file-name half of the stock search line the trim
-// removed. The Codex prompt is unchanged in both.
-export { OPENCODE_GLOB_BULLET, rulesV2Enabled };
-
 export const HARNESS_PROMPTS_DIR = dirname(fileURLToPath(import.meta.url));
 
 /**
@@ -99,19 +88,11 @@ export const OPENCODE_TODO3_LINE = '- Send todowrite as a parallel call in the s
 // General bounded-efficiency line, request-neutral (answers and plans are their own outcomes).
 export const EFFICIENCY_LINE_3 = '- Work efficiently: start from what the request and any error output point to, and open more only when the evidence requires it. Do what the request asks, whether an answer, a plan or a change, and nothing unrelated. For requests that need code changes, make the change that fully solves the request, including the edits it needs elsewhere, check it with the checks the project has, again after each fix, and stop when it is done. For a question, answer from the evidence you gathered.';
 
-/**
- * What replaces the stock Glob/Grep bullet: nothing (v1, SS_FIX_RULES_V2=0), or its Glob half
- * (rules v2, the default). The bench runner uses the same function.
- */
-export function opencodeConflictBulletReplacement(env = process.env) {
-  return rulesV2Enabled(env) ? OPENCODE_GLOB_BULLET : '';
-}
-
 /** The opencode build/general agent prompt `init --opencode` ships. */
-export function opencodePrompt(env = process.env) {
+export function opencodePrompt() {
   const original = readFileSync(OPENCODE_GPT_ORIGINAL, 'utf8');
   const prompt = applyExactEdits(original, [
-    [OPENCODE_CONFLICT_PROMPT_BULLET, opencodeConflictBulletReplacement(env)],
+    [OPENCODE_CONFLICT_PROMPT_BULLET, ''],
     [OPENCODE_BATCH_BULLET, `${OPENCODE_BATCH_BULLET}\n${OPENCODE_TODO3_LINE}\n${EFFICIENCY_LINE_3}`],
   ], 'opencode prompt');
   if (!prompt.includes(OPENCODE_FILE_READS_EDIT[0])) throw new Error('opencode prompt: "especially file reads" not found');
@@ -120,15 +101,12 @@ export function opencodePrompt(env = process.env) {
 
 // Tool-description edits (opencode-trim-plugin.mjs applies them through `tool.definition`).
 // Only text that contradicts the ss-* rules or names the disabled grep tool / Task delegation.
-// OPENCODE_TOOL_EDITS_V1: the pre-rules-v2 edits (SS_FIX_RULES_V2=0), byte-identical to the
-// benchmarked conflict3 set. OPENCODE_TOOL_EDITS (the default, rules v2) also drops `find` from the
-// bash avoid-list and "(NOT find or ls)" from its File search line (rules-v2.js).
-export const OPENCODE_TOOL_EDITS_V1 = Object.freeze({
+export const OPENCODE_TOOL_EDITS = Object.freeze({
   bash: [
     ['IMPORTANT: This tool is for terminal operations like git, npm, docker, etc. DO NOT use it for file operations (reading, writing, editing, searching, finding files) - use the specialized tools for this instead.\n\n', ''],
     [' or Grep to search the full content', ''],
-    ['  - Avoid using Bash with the `find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands,', OPENCODE_BASH_AVOID_V1],
-    ['    - Content search: Use Grep (NOT grep or rg)\n    - Read files: Use Read (NOT cat/head/tail)\n', ''],
+    ['  - Avoid using Bash with the `find`, `grep`, `cat`, `head`, `tail`, `sed`, `awk`, or `echo` commands,', '  - Avoid using Bash with the `sed`, `awk`, or `echo` commands,'],
+    ['    - File search: Use Glob (NOT find or ls)\n    - Content search: Use Grep (NOT grep or rg)\n    - Read files: Use Read (NOT cat/head/tail)\n', '    - File search: Use Glob\n'],
   ],
   read: [
     ['- Use the grep tool to find specific content in large files or files with long lines.\n', ''],
@@ -137,17 +115,3 @@ export const OPENCODE_TOOL_EDITS_V1 = Object.freeze({
   task: [['use the Grep tool instead, to find the match more quickly', 'search for it directly instead, to find the match more quickly']],
   glob: [['- When you are doing an open-ended search that may require multiple rounds of globbing and grepping, use the Task tool instead\n', '']],
 });
-export const OPENCODE_TOOL_EDITS = Object.freeze({
-  ...OPENCODE_TOOL_EDITS_V1,
-  bash: [
-    OPENCODE_TOOL_EDITS_V1.bash[0],
-    OPENCODE_TOOL_EDITS_V1.bash[1],
-    [OPENCODE_TOOL_EDITS_V1.bash[2][0], OPENCODE_BASH_AVOID_V2],
-    [`${OPENCODE_BASH_FILE_SEARCH_V1}${OPENCODE_TOOL_EDITS_V1.bash[3][0]}`, OPENCODE_BASH_FILE_SEARCH_V2],
-  ],
-});
-
-/** The tool-description edits for `env` (SS_FIX_RULES_V2=0 -> OPENCODE_TOOL_EDITS_V1). */
-export function opencodeToolEdits(env = process.env) {
-  return rulesV2Enabled(env) ? OPENCODE_TOOL_EDITS : OPENCODE_TOOL_EDITS_V1;
-}

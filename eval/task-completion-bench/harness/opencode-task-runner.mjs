@@ -15,8 +15,7 @@ import { opencodeBatchPrompt, opencodeBatchToolEdits, OPENCODE_GPT_ORIGINAL, OPE
 // the trim plugin. The benchmark arm OC_HARNESS_TRIM=conflict3+todo3eff3k is built from them.
 import {
   OPENCODE_CONFLICT_PROMPT_BULLET as SHIPPED_CONFLICT_PROMPT_BULLET, OPENCODE_FILE_READS_EDIT,
-  OPENCODE_TOOL_EDITS as SHIPPED_OPENCODE_TOOL_EDITS, OPENCODE_TOOL_EDITS_V1 as SHIPPED_OPENCODE_TOOL_EDITS_V1, OPENCODE_TRIM_PLUGIN_SOURCE,
-  opencodeConflictBulletReplacement, rulesV2Enabled,
+  OPENCODE_TOOL_EDITS as SHIPPED_OPENCODE_TOOL_EDITS, OPENCODE_TRIM_PLUGIN_SOURCE,
 } from '../../../scripts/harness-prompts/index.js';
 import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -314,14 +313,12 @@ export const OPENCODE_CONFLICT2_PROMPT_EDIT = OPENCODE_FILE_READS_EDIT;
 // = conflict2's bash/read/task/glob edits (tests/opencode-harness-trim.mjs checks it); defined in the
 // product because `sweet-search init --opencode` ships them.
 export const OPENCODE_CONFLICT3_TOOL_EDITS = SHIPPED_OPENCODE_TOOL_EDITS;
-// conflict3 under SS_FIX_RULES_V2=0: the pre-v2 shipped edits (byte-identical to the benchmarked set).
-export const OPENCODE_CONFLICT3_TOOL_EDITS_V1 = SHIPPED_OPENCODE_TOOL_EDITS_V1;
 // OC_HARNESS_TRIM=conflict4 (audit beh-oc-p4): conflict3 + the glob description's "always better to
 // speculatively perform multiple searches as a batch" sentence removed (it pulls against the efficiency
 // line; its intent is restated there as "send the searches you would try in one turn").
 export const OPENCODE_CONFLICT4_TOOL_EDITS = Object.freeze({
-  ...OPENCODE_CONFLICT3_TOOL_EDITS_V1,
-  glob: [...OPENCODE_CONFLICT3_TOOL_EDITS_V1.glob,
+  ...OPENCODE_CONFLICT3_TOOL_EDITS,
+  glob: [...OPENCODE_CONFLICT3_TOOL_EDITS.glob,
     ['- You have the capability to call multiple tools in a single response. It is always better to speculatively perform multiple searches as a batch that are potentially useful.', '']],
 });
 export const OPENCODE_CONFLICT_NOGLOB_TOOL_EDITS = Object.freeze({
@@ -348,16 +345,13 @@ function opencodeHarnessTrimCombo(m, { apiModel, stateDir, env = process.env }) 
   const c4 = base === 'conflict4';
   const original = readFileSync(OPENCODE_GPT_ORIGINAL, 'utf8');
   if (original.split(OPENCODE_CONFLICT_PROMPT_BULLET).length !== 2) throw new Error(`OC_HARNESS_TRIM=${m}: Glob/Grep bullet not found once in the original prompt`);
-  // Rules v2 (the shipped base conflict3 only): the bullet's Glob half stays and the v2 bash tool
-  // edits apply; research bases (conflict4 included) are unchanged.
-  const v2Glob = base === 'conflict3' && rulesV2Enabled(env);
-  const conflictPrompt = original.replace(OPENCODE_CONFLICT_PROMPT_BULLET, () => (v2Glob ? opencodeConflictBulletReplacement(env) : ''));
+  const conflictPrompt = original.replace(OPENCODE_CONFLICT_PROMPT_BULLET, '');
   let prompt = variant ? opencodeBatchPrompt(variant, conflictPrompt) : conflictPrompt;
   if (keepAll || c3) {
     if (!prompt.includes(OPENCODE_CONFLICT2_PROMPT_EDIT[0])) throw new Error(`OC_HARNESS_TRIM=${m}: "especially file reads" not found in the prompt`);
     prompt = prompt.split(OPENCODE_CONFLICT2_PROMPT_EDIT[0]).join(OPENCODE_CONFLICT2_PROMPT_EDIT[1]);
   }
-  const baseEdits = c4 ? OPENCODE_CONFLICT4_TOOL_EDITS : c3 ? (v2Glob ? OPENCODE_CONFLICT3_TOOL_EDITS : OPENCODE_CONFLICT3_TOOL_EDITS_V1) : keepAll ? OPENCODE_CONFLICT2_TOOL_EDITS : noglob ? OPENCODE_CONFLICT_NOGLOB_TOOL_EDITS : OPENCODE_CONFLICT_TOOL_EDITS;
+  const baseEdits = c4 ? OPENCODE_CONFLICT4_TOOL_EDITS : c3 ? OPENCODE_CONFLICT3_TOOL_EDITS : keepAll ? OPENCODE_CONFLICT2_TOOL_EDITS : noglob ? OPENCODE_CONFLICT_NOGLOB_TOOL_EDITS : OPENCODE_CONFLICT_TOOL_EDITS;
   const lineEdits = (variant && opencodeBatchToolEdits(variant)) || {};
   const clash = Object.keys(lineEdits).filter(k => k in baseEdits);
   if (clash.length) throw new Error(`OC_HARNESS_TRIM=${m}: the variant and the base both edit ${clash.join(', ')}`);
@@ -375,7 +369,6 @@ function opencodeHarnessTrimCombo(m, { apiModel, stateDir, env = process.env }) 
     files: { [OPENCODE_TRIM_PLUGIN]: readFileSync(OPENCODE_TRIM_PLUGIN_SOURCE, 'utf8') },
     plugins: [plugin],
     stateEntries: [OPENCODE_TRIM_PLUGIN, OPENCODE_TRIM_REPORT],
-    ...(base === 'conflict3' ? { rulesV2: v2Glob } : {}),
   };
 }
 
@@ -397,8 +390,6 @@ export function opencodePromptFamily(apiModel) {
 export const OC_HARNESS_TRIM_DEFAULT = 'conflict3+todo3eff3k';
 
 /** The trim for an OC_HARNESS_TRIM value; unset / empty = OC_HARNESS_TRIM_DEFAULT. `origin` = 'default' | 'env'. */
-// `env` carries SS_FIX_RULES_V2 (rules v2, scripts/harness-prompts/rules-v2.js) for the shipped
-// conflict3 family: the Glob half of the removed Glob/Grep bullet comes back; =0 = the old prompt.
 export function opencodeHarnessTrim(mode = process.env.OC_HARNESS_TRIM, { apiModel, stateDir, env = process.env } = {}) {
   const raw = String(mode ?? '').trim();
   const origin = raw ? 'env' : 'default';
