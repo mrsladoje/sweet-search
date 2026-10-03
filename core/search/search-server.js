@@ -112,12 +112,17 @@ function parseBoundedSearchInteger(value, name, max) {
  * The ss-grep shaping options of a /search call: perFileCap and maxFiles (bounded integers;
  * throws on a bad value, answered 400) and fileOrder=weight, ss-grep's weighted file selection
  * (SS_FIX_GREP_ALLOC, read client-side; absent = the legacy path-order selection).
+ * Client-decided arms (ss-grep sends them by default since 2026-10-03; absent = legacy):
+ * fileWeight=sat2 (SS_FIX_GREP_WEIGHT) and lineClasses=1 (SS_FIX_GREP_LINES).
+ * Any other value of the three is ignored, never an error.
  */
 export function readGrepShapingParams(searchParams) {
   return {
     perFileCap: parseBoundedSearchInteger(searchParams.get('perFileCap'), 'perFileCap', 1000),
     maxFiles: parseBoundedSearchInteger(searchParams.get('maxFiles'), 'maxFiles', 1000),
     grepFileOrder: searchParams.get('fileOrder') === 'weight' ? 'weight' : undefined,
+    grepFileWeight: searchParams.get('fileWeight') === 'sat2' ? 'sat2' : undefined,
+    grepLineClasses: searchParams.get('lineClasses') === '1' ? true : undefined,
   };
 }
 
@@ -280,6 +285,9 @@ export async function buildReadSemanticDaemonResponse(reqUrl, {
     return readSemanticError(400, err.message);
   }
   const verbose = url.searchParams.get('verbose') === 'true';
+  // SS_FIX_SEMANTIC_RANGES / SS_FIX_SEMANTIC_PICK (read client-side); absent = unchanged.
+  const exactRanges = url.searchParams.get('exactRanges') === '1';
+  const pickExcerpt = url.searchParams.get('pick') === '1';
   const agentSpanCall = beginAgentSpanUrlCall(url, agentSpanLedger, { enabled: format === 'agent' });
 
   try {
@@ -300,6 +308,8 @@ export async function buildReadSemanticDaemonResponse(reqUrl, {
       maxChars,
       maxTokens,
       verbose,
+      ...(exactRanges ? { exactRanges } : {}),
+      ...(pickExcerpt ? { pickExcerpt } : {}),
       _lateInteractionIndex: reusableLateInteractionIndex(searcher),
     });
     if (agentSpanCall) {
@@ -1044,9 +1054,9 @@ export async function startServer() {
         res.end(JSON.stringify({ error: `File filter too long (max ${SEARCH_SERVER_MAX_READ_PATH_LENGTH} chars)` }));
         return;
       }
-      let perFileCap; let maxFiles; let grepFileOrder;
+      let perFileCap; let maxFiles; let grepFileOrder; let grepFileWeight; let grepLineClasses;
       try {
-        ({ perFileCap, maxFiles, grepFileOrder } = readGrepShapingParams(url.searchParams));
+        ({ perFileCap, maxFiles, grepFileOrder, grepFileWeight, grepLineClasses } = readGrepShapingParams(url.searchParams));
       } catch (err) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: err.message }));
@@ -1107,6 +1117,8 @@ export async function startServer() {
           perFileCap,
           maxFiles,
           ...(grepFileOrder ? { grepFileOrder } : {}),
+          ...(grepFileWeight ? { grepFileWeight } : {}),
+          ...(grepLineClasses ? { grepLineClasses } : {}),
           fixedString,
           type: symbolType,
           globs,
@@ -1123,6 +1135,9 @@ export async function startServer() {
           // The fileFilter is the client's shell cwd, not an explicit --in (cwd-paths.js).
           _cwdScope: url.searchParams.get('cwdScope') === 'true',
           ...(agentFormat && { format: agentFormat, tokenBudget }),
+          // SS_FIX_SEARCH_FIRST_UNIT (read client-side); any other value is ignored
+          ...(agentFormat && ['calibrated', 'all'].includes(url.searchParams.get('firstUnit'))
+            ? { firstUnit: url.searchParams.get('firstUnit') } : {}),
         });
 
         // Agent mode: return the packaged response directly as JSON.
@@ -1544,6 +1559,8 @@ export async function queryServer(query, options = {}) {
     perFileCap = 0,
     maxFiles = 0,
     grepFileOrder,
+    grepFileWeight,
+    grepLineClasses = false,
     fixedString = false,
     type = '',
     globs = [],
@@ -1558,6 +1575,7 @@ export async function queryServer(query, options = {}) {
     mid = false,
     format,
     tokenBudget,
+    firstUnit,
     projectRoot,
     trackAgentSpans = true,
     _isAgentFormat = false,
@@ -1586,6 +1604,8 @@ export async function queryServer(query, options = {}) {
     if (perFileCap > 0) params.set('perFileCap', perFileCap.toString());
     if (maxFiles > 0) params.set('maxFiles', maxFiles.toString());
     if (grepFileOrder === 'weight') params.set('fileOrder', 'weight');
+    if (grepFileWeight === 'sat2') params.set('fileWeight', 'sat2');
+    if (grepLineClasses === true) params.set('lineClasses', '1');
     if (fixedString) params.set('fixedString', 'true');
     if (type) params.set('type', type);
     if (!literalFilter) params.set('literalFilter', 'false');
@@ -1599,6 +1619,7 @@ export async function queryServer(query, options = {}) {
     if (mid) params.set('mid', 'true');
     if (format && format.startsWith('agent')) params.set('format', format);
     if (tokenBudget) params.set('budget', tokenBudget.toString());
+    if (firstUnit === 'calibrated' || firstUnit === 'all') params.set('firstUnit', firstUnit);
     if (projectRoot) params.set('projectRoot', projectRoot);
     if (_isAgentFormat) params.set('agent', 'true');
     if (_siblingLine === false) params.set('siblingLine', 'false');
@@ -1637,10 +1658,11 @@ export async function queryServer(query, options = {}) {
  * Query the warm daemon's read-semantic route as JSON. The caller may retain
  * its existing renderer while reusing the daemon's resident model/index.
  *
- * @param {{ path: string, query: string, projectRoot: string, maxChars?: number }} request
+ * @param {{ path: string, query: string, projectRoot: string, maxChars?: number,
+ *          exactRanges?: boolean, pickExcerpt?: boolean }} request
  * @returns {Promise<object>}
  */
-export async function queryReadSemanticServer({ path: file, query, projectRoot, maxChars, topK } = {}) {
+export async function queryReadSemanticServer({ path: file, query, projectRoot, maxChars, topK, exactRanges, pickExcerpt } = {}) {
   if (!file || !query || !projectRoot) {
     throw new TypeError('path, query, and projectRoot are required');
   }
@@ -1653,6 +1675,8 @@ export async function queryReadSemanticServer({ path: file, query, projectRoot, 
   });
   if (maxChars > 0) params.set('maxChars', String(maxChars));
   if (topK > 0) params.set('topK', String(topK));
+  if (exactRanges === true) params.set('exactRanges', '1');
+  if (pickExcerpt === true) params.set('pick', '1');
 
   return new Promise((resolve, reject) => {
     const req = http.request({

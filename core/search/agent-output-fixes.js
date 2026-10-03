@@ -4,8 +4,10 @@
  * Bundle A (SS_FIX_A: A1, A2, A7, A5, A4) is DEFAULT ON since 2026-10-01: the ss-* tools that
  * `sweet-search` ships ARE these wrappers (package.json "files"). SWEET_SEARCH_COMPACT_OUTPUT=0
  * restores the previous output byte for byte; an explicit SS_FIX_A=0|1 wins over both (bench).
- * SS_FIX_GREP_ALLOC (ss-grep line allocation) follows the same default. Every other switch here
- * is DEFAULT OFF and is not part of the product. The functions in
+ * SS_FIX_GREP_ALLOC (ss-grep line allocation), SS_FIX_GREP_FULLLINE and the five 2026-10-03
+ * switches (SS_FIX_GREP_LINES, SS_FIX_GREP_ALLOC_RULE, SS_FIX_GREP_WEIGHT, SS_FIX_SEMANTIC_RANGES,
+ * SS_FIX_TRACE_MODE_BUDGET) follow the same default. Every other switch here is DEFAULT OFF and
+ * is not part of the product. The functions in
  * this file are pure (no I/O, no process state) or take their I/O as an argument
  * (`decideAlreadyShown` gets the socket sender), so they can be unit-tested; the
  * wrapper (eval/agent-read-workflows/bin/_ss-helpers.mjs) wires them to the printers.
@@ -45,6 +47,32 @@
  *                              shows a window that contains the match, `…` at a cut side), not only
  *                              the matched substring (grepHitText). 0 restores the matched-substring
  *                              output byte for byte; never pool runs across the two.
+ *
+ * DEFAULT ON since 2026-10-03 (default: SS_FIX_A, like SS_FIX_GREP_ALLOC, so the product opt-out
+ * and an SS_FIX_A=0 bench arm keep the previous output too). Each legacy value below restores
+ * the 2026-10-02 output byte for byte; never pool runs across the two:
+ *   SS_FIX_GREP_LINES=1|0      ss-grep: a file given fewer lines than it has stored matches shows
+ *                              declaration lines first and lines outside every symbol last (code
+ *                              graph, freshness-gated, agent format only; grep-line-classes.js).
+ *                              Needs SS_FIX_GREP_ALLOC. Legacy: 0.
+ *   SS_FIX_GREP_ALLOC_RULE=guarantee|hh|sl  ss-grep: one line per kept file first, then
+ *                              Sainte-Laguë (guarantee, the default) or Huntington–Hill (hh, an
+ *                              opt-in control). Needs SS_FIX_GREP_ALLOC. Legacy: sl (or 0).
+ *   SS_FIX_GREP_WEIGHT=sat2|sqrt  ss-grep: weight hits / (hits + 2) x prior (sat2, the default)
+ *                              instead of sqrt(hits) x prior, in the engine's file selection and
+ *                              in the renderer. Needs SS_FIX_GREP_ALLOC. Legacy: sqrt (or 0).
+ *   SS_FIX_SEMANTIC_RANGES=1|0 ss-semantic: a span cut by the budget is cut at a line boundary, its
+ *                              header names exactly the printed lines, and the omitted lines are
+ *                              reported with an ss-read command (semantic-span-budget.js). Legacy: 0.
+ *   SS_FIX_TRACE_MODE_BUDGET=1|0  ss-trace: with a mode word (callers / callees / impact), that one
+ *                              printed section gets every budget share but the target's. Legacy: 0.
+ *
+ * DEFAULT OFF (bench only):
+ *   SS_FIX_SEMANTIC_PICK=1     ss-semantic: an over-budget span is excerpted around its
+ *                              highest-scoring chunk instead of its head. Implies SS_FIX_SEMANTIC_RANGES.
+ *   SS_FIX_SEARCH_FIRST_UNIT=calibrated|all  ss-search / ss-find: ranks past 3 get a small
+ *                              signature preview instead of a name-only line (calibrated: ranks
+ *                              4-5; all: every rank). allocateBudget in context-expander.js.
  *
  * ss-read output is NOT changed by any switch (owner decision 2026-10-01).
  */
@@ -93,6 +121,9 @@ export function readFixFlags(env = process.env) {
   const rawCap = String(env?.SS_FIX_SUMMARY_CAP ?? '').trim();
   const capNumber = /^\d+$/.test(rawCap) ? Number.parseInt(rawCap, 10) : 0;
   const compact = subSwitch(env?.SS_FIX_A, compactOutputDefault(env));
+  const allocRule = norm(env?.SS_FIX_GREP_ALLOC_RULE);
+  const weight = norm(env?.SS_FIX_GREP_WEIGHT);
+  const semanticPick = isOn(env?.SS_FIX_SEMANTIC_PICK);
   return {
     compact,
     traceCompact: subSwitch(env?.SS_FIX_TRACE_COMPACT, compact),
@@ -104,6 +135,18 @@ export function readFixFlags(env = process.env) {
     grepOrder: isOn(env?.SS_FIX_GREP_ORDER),
     grepAlloc: subSwitch(env?.SS_FIX_GREP_ALLOC, compact),
     grepFullLine: subSwitch(env?.SS_FIX_GREP_FULLLINE, compact),
+    grepLines: subSwitch(env?.SS_FIX_GREP_LINES, compact),
+    grepAllocRule: allocRule === 'guarantee' ? 'guarantee'
+      : (allocRule === 'hh' || allocRule === 'huntington-hill') ? 'hh'
+        : (allocRule === 'sl' || FALSE_VALUES.has(allocRule)) ? null
+          : (compact ? 'guarantee' : null),
+    grepWeight: weight === 'sat2' ? 'sat2'
+      : (weight === 'sqrt' || FALSE_VALUES.has(weight)) ? null
+        : (compact ? 'sat2' : null),
+    semanticRanges: semanticPick || subSwitch(env?.SS_FIX_SEMANTIC_RANGES, compact),
+    semanticPick,
+    searchFirstUnit: ['calibrated', 'all'].includes(norm(env?.SS_FIX_SEARCH_FIRST_UNIT)) ? norm(env.SS_FIX_SEARCH_FIRST_UNIT) : null,
+    traceModeBudget: subSwitch(env?.SS_FIX_TRACE_MODE_BUDGET, compact),
   };
 }
 

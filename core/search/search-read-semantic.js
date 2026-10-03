@@ -40,6 +40,8 @@ import { readFile as readFileExact } from './search-read.js';
 import { withPinnedRead } from './search-reader-pin.js';
 import { emitToolIdentityAuto } from './cli-decoration.js';
 import { resolveCwdPath } from './cwd-paths.js';
+import { indexFreshness } from './index-freshness.js';
+import { enforceExactCharBudget, exactFallbackSpan } from './semantic-span-budget.js';
 
 // Applies the user's persisted LI model exactly once per (projectRoot, env)
 // pair so encodeQuery/_getLateInteractionIndex below see the right variant.
@@ -159,24 +161,18 @@ function _lateInteractionIndexPath(projectRoot, manifest) {
 }
 
 function _sourceStaleness(projectRoot, filePathRel, manifest = _readReconcileManifest(projectRoot)) {
-  const publishedMs = Date.parse(manifest?.publishedAt || '');
-  if (!Number.isFinite(publishedMs)) return null;
-  try {
-    const abs = path.isAbsolute(filePathRel)
-      ? filePathRel
-      : path.resolve(projectRoot, filePathRel);
-    const stat = fs.statSync(abs);
-    if (stat.mtimeMs <= publishedMs) return null;
-    return {
-      stale: true,
-      indexEpoch: manifest.epoch,
-      indexPublishedAt: manifest.publishedAt,
-      sourceMtime: stat.mtime.toISOString(),
-      warning: 'source file is newer than the semantic index; spans were selected from stale index metadata and text was reread from disk',
-    };
-  } catch {
-    return null;
-  }
+  const abs = path.isAbsolute(filePathRel)
+    ? filePathRel
+    : path.resolve(projectRoot, filePathRel);
+  const freshness = indexFreshness(abs, manifest);
+  if (!freshness.known || !freshness.stale) return null;
+  return {
+    stale: true,
+    indexEpoch: manifest.epoch,
+    indexPublishedAt: manifest.publishedAt,
+    sourceMtime: freshness.mtime.toISOString(),
+    warning: 'source file is newer than the semantic index; spans were selected from stale index metadata and text was reread from disk',
+  };
 }
 
 const _repos = new Map();
@@ -625,6 +621,10 @@ function _fallbackSpanFromText(fileText, totalLines, maxChars) {
  * @param {number} [req.maxTokens] - Convenience: ~maxChars / 4
  * @param {string} [req.projectRoot]
  * @param {boolean} [req.verbose=false] - include timings + signal contributions
+ * @param {boolean} [req.exactRanges=false] - a span cut by the budget holds whole lines and
+ *   reports exactly the printed range (SS_FIX_SEMANTIC_RANGES; semantic-span-budget.js)
+ * @param {boolean} [req.pickExcerpt=false] - an over-budget span is excerpted around its best
+ *   chunk (SS_FIX_SEMANTIC_PICK); implies exactRanges
  * @param {Object} [req._lateInteractionIndex] - private daemon injection; same-project index only
  * @returns {Promise<Object>}
  */
@@ -647,6 +647,9 @@ async function _readSemanticUnpinned(req) {
   const maxChars = req.maxChars
     ?? (req.maxTokens != null ? req.maxTokens * APPROX_CHARS_PER_TOKEN : DEFAULTS.maxChars);
   const verbose = !!req.verbose;
+  // SS_FIX_SEMANTIC_RANGES / SS_FIX_SEMANTIC_PICK (semantic-span-budget.js); absent = unchanged.
+  const pickExcerpt = req.pickExcerpt === true;
+  const exactRanges = pickExcerpt || req.exactRanges === true;
 
   const tLoad0 = performance.now();
   const { chunks, language, totalLines, fileText } = await _loadFileChunks(filePathRel, projectRoot, reconcileManifest);
@@ -656,6 +659,24 @@ async function _readSemanticUnpinned(req) {
   // exact text. Document the fallback in the response.
   if (!chunks || chunks.length === 0) {
     const fallback = await readFileExact({ path: req.path, projectRoot });
+    if (exactRanges && fallback.ok) {
+      const span = exactFallbackSpan(fallback.text || '', fallback.totalLines, maxChars);
+      return {
+        file: filePathRel,
+        query: req.query,
+        ok: true,
+        indexed: false,
+        fellBack: true,
+        reason: 'file not indexed for semantic span selection — returning whole file via plain read',
+        language: fallback.language,
+        totalLines: fallback.totalLines,
+        spans: [span],
+        charsReturned: span.text.length,
+        approxTokensReturned: Math.ceil(span.text.length / APPROX_CHARS_PER_TOKEN),
+        ...(staleness ? { staleness, warnings: [staleness.warning] } : {}),
+        timings: { totalMs: +(performance.now() - t0).toFixed(2) },
+      };
+    }
     return {
       file: filePathRel,
       query: req.query,
@@ -719,6 +740,10 @@ async function _readSemanticUnpinned(req) {
   // If everything is empty, return the whole file as a graceful fallback
   // with a low confidence marker rather than nothing.
   if (fused.size === 0) {
+    const span = exactRanges
+      ? exactFallbackSpan(fileText, totalLines, maxChars)
+      : _fallbackSpanFromText(fileText, totalLines, maxChars);
+    const chars = exactRanges ? span.text.length : Math.min(fileText.length, maxChars);
     return {
       file: filePathRel,
       query: req.query,
@@ -728,9 +753,9 @@ async function _readSemanticUnpinned(req) {
       reason: 'no chunk matched query signals — returning whole file',
       language,
       totalLines,
-      spans: [_fallbackSpanFromText(fileText, totalLines, maxChars)],
-      charsReturned: Math.min(fileText.length, maxChars),
-      approxTokensReturned: Math.ceil(Math.min(fileText.length, maxChars) / APPROX_CHARS_PER_TOKEN),
+      spans: [span],
+      charsReturned: chars,
+      approxTokensReturned: Math.ceil(chars / APPROX_CHARS_PER_TOKEN),
       signals: verbose ? { liRan, lexicalHits: 0, symbolHits: 0, maxsimHits: 0 } : undefined,
       ...(staleness ? { staleness, warnings: [staleness.warning] } : {}),
       timings: verbose ? {
@@ -806,7 +831,16 @@ async function _readSemanticUnpinned(req) {
   const ranked = rankedAll.slice(0, topK);
 
   const merged = _expandAndMergeSpans(ranked, totalLines, contextLines);
-  const { spans, charsUsed } = _enforceCharBudget(merged, fileText, lineOffsets, maxChars);
+  const { spans, charsUsed } = exactRanges
+    ? enforceExactCharBudget(merged, fileText, lineOffsets, maxChars, {
+      pick: pickExcerpt,
+      parts: pickExcerpt ? ranked.map(s => ({
+        startLine: Math.max(1, s.startLine - contextLines),
+        endLine: Math.min(totalLines, s.endLine + contextLines),
+        score: s.score,
+      })) : undefined,
+    })
+    : _enforceCharBudget(merged, fileText, lineOffsets, maxChars);
 
   // Output-only pointers: what the printed spans hold, and the next-best ranked places that
   // the budget left out. Neither changes ranking or which spans are printed, and the

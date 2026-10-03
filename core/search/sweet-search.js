@@ -896,6 +896,7 @@ export class SweetSearch {
         locationMap: null,
         projectRoot: this.projectRoot,
         ablations: options.ablations,
+        ...(options.firstUnit ? { firstUnit: options.firstUnit } : {}),
         _isAgentFormat: true,
         _siblingLine: options._siblingLine,
       });

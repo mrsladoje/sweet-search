@@ -190,7 +190,10 @@ export function collectSemanticShownSpans(result, { projectRoot } = {}) {
   const file = normalizeSpanFile(result.file, projectRoot);
   if (!file) return [];
   return result.spans.flatMap((span) => {
-    if (span?.truncated === true
+    // A budget-cut span is recorded only when it is an exact whole-line range
+    // (SS_FIX_SEMANTIC_RANGES); a partially printed line never is.
+    if ((span?.truncated === true && span?.exactRange !== true)
+        || span?.partialLine
         || typeof span?.text !== 'string'
         || !Number.isInteger(span.startLine)
         || !Number.isInteger(span.endLine)

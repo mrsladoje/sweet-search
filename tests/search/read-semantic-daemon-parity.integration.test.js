@@ -230,6 +230,27 @@ describe('warm-daemon JSON clients', () => {
     }
   });
 
+  // Plan arms (SS_FIX_GREP_WEIGHT, SS_FIX_GREP_LINES): fileWeight=sat2 and lineClasses=1, only when asked.
+  it('round-trips the sat2 weight and the line-class request; absent = nothing on the wire', async () => {
+    await queryServer('keys', {
+      mode: 'grep', regex: 'keys', perFileCap: 8, maxFiles: 8, grepFileOrder: 'weight',
+      grepFileWeight: 'sat2', grepLineClasses: true, _isAgentFormat: true,
+    });
+    expect(requests[0].searchParams.get('fileWeight')).toBe('sat2');
+    expect(requests[0].searchParams.get('lineClasses')).toBe('1');
+    expect(readGrepShapingParams(requests[0].searchParams)).toMatchObject({
+      grepFileOrder: 'weight', grepFileWeight: 'sat2', grepLineClasses: true,
+    });
+    await queryServer('keys', { mode: 'grep', regex: 'keys', perFileCap: 8, maxFiles: 8, grepFileOrder: 'weight', _isAgentFormat: true });
+    expect(requests[1].searchParams.has('fileWeight')).toBe(false);
+    expect(requests[1].searchParams.has('lineClasses')).toBe(false);
+    for (const [k, v] of [['fileWeight', 'sat4'], ['fileWeight', 'SAT2'], ['lineClasses', 'true'], ['lineClasses', '0']]) {
+      const parsed = readGrepShapingParams(new URLSearchParams({ [k]: v }));
+      expect(parsed.grepFileWeight).toBeUndefined();
+      expect(parsed.grepLineClasses).toBeUndefined();
+    }
+  });
+
   it('a single scope still travels as one plain value (wire format unchanged)', async () => {
     await queryServer('keys', { mode: 'grep', regex: 'keys', fileFilter: 'src/a b.js' });
     expect(requests[0].searchParams.getAll('fileFilter')).toEqual(['src/a b.js']);

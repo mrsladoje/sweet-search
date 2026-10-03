@@ -256,3 +256,45 @@ has the same chunks):**
 - Store the enclosing function as the body chunk's name (for example `ToExportKvList (part 2)`), so
   ss-search and ss-semantic can label it.
 Then GCSN dev MRR before/after, and reindex at the end of tuning.
+
+---
+
+## 2026-10-03 — the shipped Sainte-Laguë sqrt allocator shows no inclusion gain on the engine's own match sets
+
+**Status 2026-10-03: OBSERVATION.** The allocator stays shipped (`SS_FIX_GREP_ALLOC`, default ON).
+Its successor arms (sat2 weight, one-line guarantee, line classes) are default ON since the commit
+that adds this entry.
+
+**Observation:** The engine-faithful replay does not reproduce the gain that justified the shipped
+allocator.
+
+**Evidence (exploratory, dev only; `eval/grep-allocation-replay`, which reproduces the tool output on
+106 of 106 sampled calls):**
+- 1,036 recorded dev grep calls. 154 calls have more matching files than `-k`.
+- On those 154 calls, answer-file inclusion is 82.1% for legacy alphabetical selection and 81.2% for
+  sqrt(hits) × prior with Sainte-Laguë. The difference is −0.9 points, CI [−10.1, +9.9]. The CI
+  crosses 0, so the replay shows no gain and no loss.
+- The weighted rule shows more answer lines per call (2.21 vs 1.95).
+- The plan's 71.1% → 83.0% came from an `rg` replay. `rg` match sets also count documentation files
+  that the grep index never returns, so that number does not describe the tool.
+
+**Consequence:** Do not cite 71.1% → 83.0% for the shipped allocator. Cite the engine replay.
+
+---
+
+## 2026-10-03 — the GRDB index holds self-repeating paths through a symlink loop
+
+**Status 2026-10-03: OBSERVATION.** Likely fixed by the no-follow symlink rule; the index predates it.
+
+**Observation:** The GRDB index holds paths such as
+`Tests/CustomSQLite/GRDB/Tests/CustomSQLite/GRDB/...`, so one file appears under many paths.
+
+**Facts checked:**
+- In `eval/repos/r3-grdb`, `Tests/CustomSQLite/GRDB` is a symlink to `../..` (the repo root).
+- Its `code-graph.db` has entities in 15,548 distinct file paths under
+  `Tests/CustomSQLite/GRDB/Tests/`.
+- Its index was published 2026-10-01T13:24Z. The no-follow rule (62815323, "indexing: never follow
+  symlinks", 2026-10-01 18:26Z) landed after it, before cfd18b77.
+
+**Possible product change:** None in code. At the end-of-tuning reindex, check that the GRDB index
+has no path under `Tests/CustomSQLite/GRDB/`. If one is there, the no-follow rule has a gap.
