@@ -16,7 +16,7 @@
  *     section-budget   it would fit the per-item cap, the section had no room left
  *   and, for every label, whether the agent sees it in the product's printed output:
  *     hidden-by-mode   the mode word (callers / callees / impact) does not print that section
- *     format-no-code   the compact trace (SS_FIX_TRACE_COMPACT, the default) prints items as one
+ *     format-no-code   the compact trace (the ss-trace output) prints items as one
  *                      summary line, so a code cut is invisible
  *
  * Usage: node eval/trace-truncation-classify/classify.mjs [--set dev] [--out FILE]
@@ -67,7 +67,7 @@ function graphCopy(repoDir) {
   return { graphDbPath: path.join(tmp, 'code-graph.db'), cleanup: () => rmSync(tmp, { recursive: true, force: true }) };
 }
 
-/** The tool's A4 target fallbacks (cmdTrace with SS_FIX_TRACE_COMPACT). */
+/** The tool's A4 target fallbacks (cmdTrace). */
 function traceLikeTool(call, base) {
   const opts = { ...base, ...(call.filePath ? { filePath: call.filePath } : {}), ...(call.queryHint ? { queryHint: call.queryHint } : {}),
     ...(call.maxDepth ? { maxDepth: call.maxDepth } : {}), ...(call.tokenBudget ? { tokenBudget: call.tokenBudget } : {}) };
@@ -182,7 +182,7 @@ async function main() {
     codeCuts: tally(labels.filter(l => l.kind === 'code'), l => `${l.cause} — hidden by ${l.hiddenBy}`),
     visibleListCuts: labels.filter(l => l.kind === 'list' && l.visible).map(l => ({ args: l.args, section: l.section, cause: l.cause, shown: l.shown, available: l.available, roomLeft: l.roomLeft })),
   };
-  // One factor varied: SS_FIX_TRACE_MODE_BUDGET (the mode word's section takes the budget).
+  // One factor varied: the mode word's section takes the budget (ss-trace passes modeSection).
   const modeCalls = found.filter(r => r.mode);
   const onLabels = modeCalls.flatMap(r => r.modeBudget.labels.map(l => ({ ...l, args: r.args })));
   const sumChars = (xs, f) => xs.reduce((n, r) => n + f(r), 0);

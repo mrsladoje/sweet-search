@@ -1,5 +1,5 @@
 /**
- * SS_FIX_GREP_LINES: which stored matches a file shows when it gets fewer lines than it has.
+ * ss-grep line classes: which stored matches a file shows when it gets fewer lines than it has.
  * Classes come from code-graph entities (declaration 0, inside a symbol 1, outside 2); the
  * renderer shows the lowest (class, line) matches in line order, and rows without a class keep
  * the shipped prefix byte for byte.
@@ -138,24 +138,24 @@ describe('renderGrepBody lineClasses', () => {
       ...(withClass ? { lineClass: r.cls } : {}) })),
     { file: 'b.go', line: 2, column: 1, matchText: 'export', content: 'export', ...(withClass ? { lineClass: 2 } : {}) },
   ];
-  const render = (withClass, opts, k = 4) => {
-    const { kept, fileSummary } = applyGrepFileDiversity(matches(withClass), { perFileCap: k, maxFiles: k, order: 'weight' });
-    return renderGrepBody(kept, fileSummary, k, { alloc: 'weight', ...opts });
+  const render = (withClass, k = 4) => {
+    const { kept, fileSummary } = applyGrepFileDiversity(matches(withClass), { perFileCap: k, maxFiles: k });
+    return renderGrepBody(kept, fileSummary, k);
   };
 
   it('declarations first, outside-span last, printed in line order; the marker stays on the last printed line', () => {
-    const body = render(true, { lineClasses: true });
-    // k = 4, perFileCap 4: a/export.go stores lines 1, 3, 5, 10 and gets 3 lines (sqrt(6) vs 1);
-    // the declaration at 10 displaces the header comment at 5
+    const body = render(true);
+    // k = 4, perFileCap 4: a/export.go stores lines 1, 3, 5, 10 and gets 3 lines (one each first,
+    // then both spare lines); the declaration at 10 displaces the header comment at 5
     expect(body.lines).toEqual([
       'a/export.go:1: package export',
       'a/export.go:3: import "export/x"',
       'a/export.go:10: func Export() { (+3 more in this file)',
       'b.go:2: export',
     ]);
-    expect(render(true, {}).lines[2]).toBe('a/export.go:5: // export helpers (+3 more in this file)');
+    expect(render(false).lines[2]).toBe('a/export.go:5: // export helpers (+3 more in this file)');
     // k = 6: every match stored, 5 lines; the last outside-span line (5) is the one left out
-    const wide = render(true, { lineClasses: true }, 6);
+    const wide = render(true, 6);
     expect(wide.lines.filter(l => l.startsWith('a/export.go'))).toEqual([
       'a/export.go:1: package export',
       'a/export.go:3: import "export/x"',
@@ -166,10 +166,10 @@ describe('renderGrepBody lineClasses', () => {
     expect(wide.truncatedFileCount).toBe(1);
   });
 
-  it('rows without a class, or the switch off, keep the shipped prefix byte for byte', () => {
+  it('rows without a class keep the prefix: the first stored matches in line order', () => {
     for (const k of [2, 4, 6, 10]) {
-      expect(render(false, { lineClasses: true }, k)).toEqual(render(false, {}, k));
-      expect(render(true, {}, k)).toEqual(render(false, {}, k));
+      const shown = render(false, k).rows.filter(r => r.file === 'a/export.go').map(r => r.line);
+      expect(shown).toEqual(FILE.map(r => r.line).slice(0, shown.length));
     }
   });
 });

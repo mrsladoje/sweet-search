@@ -11,8 +11,6 @@ import path from 'node:path';
 
 import {
   applyGrepFileDiversity,
-  allocateGrepBudget,
-  allocateGrepLinesSainteLague,
   selectGrepFilesByWeight,
   grepFilePrior,
   renderGrepBody,
@@ -20,6 +18,7 @@ import {
   matchesGrepFileFilter,
   renderGrepContext,
 } from '../../core/search/grep-output-shaping.js';
+import { grepWeightKey } from '../../core/search/grep-allocation-rules.js';
 import { bareGrep, SweetSearch } from '../../core/search/index.js';
 import { buildSingletonSiblingLine } from '../../core/search/agent-pack-completion.js';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
@@ -204,7 +203,7 @@ describe('applyGrepFileDiversity', () => {
     const matches = Array.from({ length: 5 }, (_, i) => m('a.js', i + 1));
     const { kept, fileSummary } = applyGrepFileDiversity(matches, { perFileCap: 5 });
     expect(kept.length).toBe(5);
-    expect(fileSummary.files[0]).toEqual({ file: 'a.js', total: 5, kept: 5 });
+    expect(fileSummary.files[0]).toEqual({ file: 'a.js', total: 5, kept: 5, prior: 1 });
   });
 
   it('counts files beyond maxFiles as hidden with a bounded sample', () => {
@@ -216,22 +215,6 @@ describe('applyGrepFileDiversity', () => {
     expect(fileSummary.hiddenMatchCount).toBe(8);
     expect(fileSummary.hiddenSample.length).toBe(3);       // bounded, name + total
     expect(fileSummary.hiddenSample[0]).toEqual({ file: 'f5.js', total: 2 });
-  });
-});
-
-describe('allocateGrepBudget', () => {
-  it('allocates breadth-first: no file starves while another goes deep', () => {
-    expect(allocateGrepBudget([50, 3, 2], 10)).toEqual([5, 3, 2]);
-  });
-  it('gives full depth when the budget covers everything', () => {
-    expect(allocateGrepBudget([4, 2], 50)).toEqual([4, 2]);
-  });
-  it('covers one line per file first when files outnumber the budget', () => {
-    expect(allocateGrepBudget([9, 9, 9, 9], 3)).toEqual([1, 1, 1, 0]);
-  });
-  it('handles zero budget and empty input', () => {
-    expect(allocateGrepBudget([3, 3], 0)).toEqual([0, 0]);
-    expect(allocateGrepBudget([], 10)).toEqual([]);
   });
 });
 
@@ -254,9 +237,9 @@ describe('renderGrepBody', () => {
     expect(body.truncatedFileCount).toBeGreaterThan(0);
   });
 
-  it('many-files case: output lines identical to the legacy flat-grouped shape', () => {
-    // 4 files, 9 matches, k=20 — no truncation anywhere, so the new shaping
-    // must reproduce the old output exactly (grouped by file, sorted order).
+  it('everything fits: every hit shows, grouped by file, densest file first', () => {
+    // 4 files, 9 matches, k=20 — no truncation anywhere: grouped by file, files by weight
+    // (a.js 3 hits, then the 2-hit files in path order).
     const matches = [
       m('a.js', 1), m('a.js', 2), m('a.js', 3),
       m('b.js', 1), m('b.js', 2),
@@ -326,8 +309,8 @@ describe('reallocateGrepTailForManifest', () => {
 });
 
 // =============================================================================
-// Weighted rule (SS_FIX_GREP_ALLOC, default ON in ss-grep): sqrt(hits) x prior,
-// streaming top-maxFiles selection, Sainte-Laguë line allocation
+// Weighted rule: hits / (hits + 2) x prior, streaming top-maxFiles selection,
+// one line per kept file, then Sainte-Laguë
 // =============================================================================
 
 /** Deterministic PRNG (mulberry32). */
@@ -342,26 +325,8 @@ function prng(seed) {
   };
 }
 
-/** 16 x weight^2: hits x 16 x prior^2 (exact integers). */
-const keyOf = (hits, file) => hits * 16 * grepFilePrior(file) ** 2;
-
-/** Brute force: every line scans every file (no frontier, no heap). */
-function referenceAllocation(keys, totals, caps, budget) {
-  const alloc = keys.map(() => 0);
-  for (let line = 0; line < budget; line++) {
-    let best = -1;
-    for (let i = 0; i < keys.length; i++) {
-      if (alloc[i] >= caps[i]) continue;
-      if (best < 0) { best = i; continue; }
-      const di = (2 * alloc[i] + 1) ** 2; const db = (2 * alloc[best] + 1) ** 2;
-      const lhs = keys[i] * db; const rhs = keys[best] * di;
-      if (lhs > rhs || (lhs === rhs && totals[i] > totals[best])) best = i;
-    }
-    if (best < 0) break;
-    alloc[best]++;
-  }
-  return alloc;
-}
+/** 16 x weight^2. */
+const keyOf = (hits, file) => grepWeightKey(hits, 16 * grepFilePrior(file) ** 2);
 
 /** Sorted match list from {file: hits}; lines 1..hits. */
 function matchList(counts) {
@@ -423,102 +388,29 @@ describe('grepFilePrior', () => {
   });
 });
 
-describe('allocateGrepLinesSainteLague', () => {
-  const run = (hitsList, caps, budget, files = hitsList.map((_, i) => `f${i}.go`)) =>
-    [...allocateGrepLinesSainteLague(hitsList.map((h, i) => keyOf(h, files[i])), hitsList, caps, budget)];
-
-  it('each line goes to the largest weight / (2 x lines + 1)', () => {
-    // weights 3 (9 hits) and 1 (1 hit): 3 -> line 1; tie 1 vs 1 -> more hits; then 0.6 < 1.
-    expect(run([9, 1], [9, 1], 1)).toEqual([1, 0]);
-    expect(run([9, 1], [9, 1], 2)).toEqual([2, 0]);
-    expect(run([9, 1], [9, 1], 3)).toEqual([2, 1]);
-    expect(run([9, 1], [9, 1], 4)).toEqual([3, 1]);
-  });
-
-  it('no floor round: a dense file takes its 2nd line before light files get a 1st', () => {
-    // weight 4 (16 hits) vs three weight-1 files: 4, then 4/3 = 1.33 > 1.
-    expect(run([16, 1, 1, 1], [16, 1, 1, 1], 3)).toEqual([2, 1, 0, 0]);
-  });
-
-  it('never more lines than a file has stored matches', () => {
-    expect(run([400, 1, 1], [2, 1, 1], 4)).toEqual([2, 1, 1]);
-    expect(run([400, 4], [3, 4], 10)).toEqual([3, 4]);
-  });
-
-  it('k larger than every stored match: everything shows', () => {
-    expect(run([5, 3, 1], [5, 3, 1], 100)).toEqual([5, 3, 1]);
-  });
-
-  it('a single file gets min(k, stored)', () => {
-    expect(run([50], [20], 8)).toEqual([8]);
-    expect(run([50], [20], 30)).toEqual([20]);
-  });
-
-  it('all 1-hit files: the first k files in order (path order), one line each', () => {
-    expect(run([1, 1, 1, 1, 1], [1, 1, 1, 1, 1], 3)).toEqual([1, 1, 1, 0, 0]);
-  });
-
-  it('exact ties: no float rounding; more hits first, then the earlier file', () => {
-    // test files: 72 hits (weight sqrt(72)/2; after one line sqrt(72)/2/3 = sqrt(8)/2) vs 8 hits
-    // (weight sqrt(8)/2). Equal exactly; floating-point sqrt makes the 8-hit file larger by one ulp.
-    const files = ['a_test.go', 'b_test.go'];
-    expect(run([72, 8], [72, 8], 2, files)).toEqual([2, 0]);
-    expect(run([72, 8], [72, 8], 3, files)).toEqual([2, 1]);
-    expect(run([4, 4], [4, 4], 1)).toEqual([1, 0]);
-  });
-
-  it('zero budget and no files', () => {
-    expect(run([3, 3], [3, 3], 0)).toEqual([0, 0]);
-    expect(run([], [], 10)).toEqual([]);
-  });
-
-  it('agrees with a brute-force scan on 3,000 random inputs', () => {
-    const r = prng(3);
-    for (let c = 0; c < 3000; c++) {
-      const n = 1 + Math.floor(r() * 40);
-      const files = []; const hits = [];
-      for (let i = 0; i < n; i++) {
-        const u = r();
-        files.push(u < 0.6 ? `src/f${i}.go` : u < 0.85 ? `src/f${i}_test.go` : `vendor/f${i}.go`);
-        hits.push(1 + Math.floor(r() * r() * 60));
-      }
-      // the function's precondition: weight order (key desc, hits desc, then input order)
-      const order = files.map((_, i) => i).sort((a, b) =>
-        keyOf(hits[b], files[b]) - keyOf(hits[a], files[a]) || hits[b] - hits[a] || a - b);
-      const keys = order.map(i => keyOf(hits[i], files[i]));
-      const totals = order.map(i => hits[i]);
-      const caps = totals.map(t => Math.min(t, 1 + Math.floor(r() * 30)));
-      const budget = Math.floor(r() * 50);
-      expect([...allocateGrepLinesSainteLague(keys, totals, caps, budget)])
-        .toEqual(referenceAllocation(keys, totals, caps, budget));
-    }
-  });
-});
-
-describe('selectGrepFilesByWeight (applyGrepFileDiversity order: weight)', () => {
-  it('keeps the dense late-alphabet file when more files match than maxFiles (the legacy walk drops it)', () => {
+describe('selectGrepFilesByWeight (applyGrepFileDiversity)', () => {
+  it('keeps the dense late-alphabet file when more files match than maxFiles', () => {
     const matches = matchList(DGRAPH_08);
-    const legacy = applyGrepFileDiversity(matches, { perFileCap: 5, maxFiles: 5 });
-    expect(legacy.fileSummary.files.map(f => f.file)).not.toContain('worker/export.go');
-    const { kept, fileSummary } = applyGrepFileDiversity(matches, { perFileCap: 5, maxFiles: 5, order: 'weight' });
+    const { kept, fileSummary } = applyGrepFileDiversity(matches, { perFileCap: 5, maxFiles: 5 });
     expect(fileSummary.order).toBe('weight');
     expect(fileSummary.files[0]).toEqual({ file: 'worker/export.go', total: 22, kept: 5, prior: 1 });
-    // 22 hits (w 4.69), 3 hits (w 1.73), then weight 1.41: the 8-hit test file (equal weight,
-    // more hits) before the 2-hit sources, which keep path order
+    // 22 hits (w 0.92), 3 hits (w 0.6), the 2-hit sources (w 0.5) in path order, then the 8-hit
+    // test file (w 0.4)
     expect(fileSummary.files.map(f => f.file)).toEqual([
-      'worker/export.go', 'backup/run.go', 'worker/export_test.go', 'buildvars/buildvars.go',
-      'graphql/admin/export.go',
+      'worker/export.go', 'backup/run.go', 'buildvars/buildvars.go', 'graphql/admin/export.go',
+      'worker/export_test.go',
     ]);
     // kept: grouped per file in that order, line order inside a file, at most perFileCap each
     expect(kept.slice(0, 5).map(x => `${x.file}:${x.line}`)).toEqual([1, 2, 3, 4, 5].map(l => `worker/export.go:${l}`));
-    expect(kept.length).toBe(5 + 3 + 5 + 2 + 2);
+    expect(kept.length).toBe(5 + 3 + 2 + 2 + 5);
     expect(fileSummary.hiddenFileCount).toBe(15);
-    expect(fileSummary.hiddenMatchCount).toBe(84 - (22 + 3 + 8 + 2 + 2));
-    // the highest-weight hidden files: pb.pb.go (23 x 0.25: w 1.20), then the two 4-hit test files (w 1.0)
+    expect(fileSummary.hiddenMatchCount).toBe(84 - (22 + 3 + 2 + 2 + 8));
+    // the highest-weight hidden files: the two 4-hit test files (w 0.33, more hits than the 1-hit
+    // sources of equal weight), then the first 1-hit source; pb.pb.go (23 x 0.25: w 0.23) is lower
     expect(fileSummary.hiddenSample).toEqual([
-      { file: 'protos/pb/pb.pb.go', total: 23 },
       { file: 'buildvars/buildvars_test.go', total: 4 },
       { file: 'systest/export/export_test.go', total: 4 },
+      { file: 'dgraphapi/cluster.go', total: 1 },
     ]);
   });
 
@@ -568,12 +460,12 @@ describe('selectGrepFilesByWeight (applyGrepFileDiversity order: weight)', () =>
   });
 });
 
-describe('renderGrepBody alloc: weight', () => {
+describe('renderGrepBody (weighted)', () => {
   const weighted = (counts, k, maxFiles = k) => {
     const { kept, fileSummary } = applyGrepFileDiversity(matchList(counts), {
-      perFileCap: Math.min(k, 100), maxFiles, order: 'weight',
+      perFileCap: Math.min(k, 100), maxFiles,
     });
-    return renderGrepBody(kept, fileSummary, k, { alloc: 'weight' });
+    return renderGrepBody(kept, fileSummary, k);
   };
 
   it('files in descending weight, lines in line order, truncation marked on the last shown line', () => {
@@ -590,13 +482,13 @@ describe('renderGrepBody alloc: weight', () => {
     expect(body.rows.map(r => r.more)).toEqual([0, 7, 3, 0]);
   });
 
-  it('hidden-files line: unshown kept files first, then the engine\'s highest-weight hidden files', () => {
+  it('hidden-files line: the engine\'s highest-weight hidden files', () => {
     const counts = { 'a.go': 1, 'b.go': 1, 'c_test.go': 1, 'vendor/v.go': 1, 'z.go': 16 };
     const body = weighted(counts, 3);
-    // z (w 4) takes 2 lines (4, then 4/3 > 1), a.go the third; b.go got none; c_test.go and
-    // vendor/v.go were never kept (maxFiles = k = 3)
-    expect(body.lines).toEqual(['z.go:1: hit 1', 'z.go:2: hit 2 (+14 more in this file)', 'a.go:1: hit 1']);
-    expect(body.hiddenLine).toBe('# +3 more file(s) with 3 match(es) — e.g. b.go, c_test.go, vendor/v.go; '
+    // z, a.go and b.go are kept (maxFiles = k = 3) and each gets one line; c_test.go and
+    // vendor/v.go were never kept
+    expect(body.lines).toEqual(['z.go:1: hit 1 (+15 more in this file)', 'a.go:1: hit 1', 'b.go:1: hit 1']);
+    expect(body.hiddenLine).toBe('# +2 more file(s) with 2 match(es) — e.g. c_test.go, vendor/v.go; '
       + 'narrow the regex, raise -k, or drill in with --in <file>');
     expect(body.matchedFileCount).toBe(5);
   });
@@ -607,14 +499,7 @@ describe('renderGrepBody alloc: weight', () => {
     expect(body.hiddenLine).toBeNull();
   });
 
-  it('dropRepeatedText (B7) still applies', () => {
-    const { kept, fileSummary } = selectGrepFilesByWeight(
-      [m('a.go', 1), m('a.go', 2), m('b.go', 4)], { perFileCap: 5, maxFiles: 5 });
-    const body = renderGrepBody(kept, fileSummary, 5, { alloc: 'weight', dropRepeatedText: true });
-    expect(body.lines).toEqual(['a.go:1', 'a.go:2', 'b.go:4']);
-  });
-
-  it('a legacy-shaped engine result (no order marker) renders the same as the weighted engine', () => {
+  it('a result with no order marker (a caller list) renders the same as the engine result', () => {
     const r = prng(9);
     for (let c = 0; c < 300; c++) {
       const counts = {};
@@ -623,27 +508,24 @@ describe('renderGrepBody alloc: weight', () => {
       }
       const k = 1 + Math.floor(r() * 30);
       const matches = matchList(counts);
-      // both engines keep every file (maxFiles >= files): only the order handling differs
-      const legacy = applyGrepFileDiversity(matches, { perFileCap: Math.min(k, 100), maxFiles: 1000 });
-      const engine = applyGrepFileDiversity(matches, { perFileCap: Math.min(k, 100), maxFiles: 1000, order: 'weight' });
-      expect(renderGrepBody(legacy.kept, legacy.fileSummary, k, { alloc: 'weight' }))
-        .toEqual(renderGrepBody(engine.kept, engine.fileSummary, k, { alloc: 'weight' }));
+      // every file kept (maxFiles >= files): only the order handling differs
+      const engine = applyGrepFileDiversity(matches, { perFileCap: Math.min(k, 100), maxFiles: 1000 });
+      const files = engine.fileSummary.files.map(({ file, total }) => ({ file, total }));
+      const kept = matches.filter((x, i) => matches.slice(0, i).filter(y => y.file === x.file).length < Math.min(k, 100));
+      expect(renderGrepBody(kept, { ...engine.fileSummary, files, order: undefined }, k))
+        .toEqual(renderGrepBody(engine.kept, engine.fileSummary, k));
     }
   });
 
-  it('dgraph-08: the answer file leads with 6 lines; the legacy rule gave it 1 line near the bottom', () => {
-    const matches = matchList(DGRAPH_08);
-    const legacy = applyGrepFileDiversity(matches, { perFileCap: 30, maxFiles: 30 });
-    const oldBody = renderGrepBody(legacy.kept, legacy.fileSummary, 30);
-    expect(oldBody.lines.filter(l => l.startsWith('worker/export.go:'))).toHaveLength(1);
+  it('dgraph-08: the answer file leads (the path-order rule gave it 1 line near the bottom)', () => {
     const body = weighted(DGRAPH_08, 30);
     const shown = (f) => body.lines.filter(l => l.startsWith(`${f}:`)).length;
     expect(body.lines[0]).toBe('worker/export.go:1: hit 1');
-    expect(shown('worker/export.go')).toBe(6);
+    expect(shown('worker/export.go')).toBe(4);
     expect(body.lines).toHaveLength(30);
     expect(new Set(body.rows.map(r => r.file)).size).toBe(20);   // every file still shows
     expect(shown('worker/export_test.go')).toBe(2);
-    expect(shown('buildvars/buildvars_test.go')).toBe(1);
+    expect(shown('buildvars/buildvars_test.go')).toBe(2);
     expect(body.hiddenLine).toBeNull();
   });
 });
@@ -686,7 +568,7 @@ describe('bareGrep — file-diversity options are additive and default-off', () 
     expect(res.stats.totalMatches).toBe(213);
     expect(new Set(res.results.map(r => r.file)).size).toBe(14);
     const flooded = res.fileSummary.files.find(f => f.file === 'inst/tutorials/grade_code-messages.Rmd');
-    expect(flooded).toEqual({ file: 'inst/tutorials/grade_code-messages.Rmd', total: 190, kept: 50 });
+    expect(flooded).toEqual({ file: 'inst/tutorials/grade_code-messages.Rmd', total: 190, kept: 50, prior: 1 });
   });
 
   it('fileFilter scopes matches to one file before the cap is applied', async () => {

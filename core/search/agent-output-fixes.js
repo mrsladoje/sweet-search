@@ -1,83 +1,23 @@
 /**
- * Agent-facing output fixes for the ss-* wrappers (final-tuning forensic fixes).
+ * Agent-facing output of the ss-* tools: the compact ss-search / ss-find blocks, the ss-trace
+ * rendering, the ss-grep regex repair and hit text. These ARE the shipped ss-* tools
+ * (package.json "files"); the wrapper (eval/agent-read-workflows/bin/_ss-helpers.mjs) wires them
+ * to the printers. The functions are pure (no I/O, no process state), so they can be unit-tested.
  *
- * Bundle A (SS_FIX_A: A1, A2, A7, A5, A4) is DEFAULT ON since 2026-10-01: the ss-* tools that
- * `sweet-search` ships ARE these wrappers (package.json "files"). SWEET_SEARCH_COMPACT_OUTPUT=0
- * restores the previous output byte for byte; an explicit SS_FIX_A=0|1 wins over both (bench).
- * SS_FIX_GREP_ALLOC (ss-grep line allocation), SS_FIX_GREP_FULLLINE and the five 2026-10-03
- * switches (SS_FIX_GREP_LINES, SS_FIX_GREP_ALLOC_RULE, SS_FIX_GREP_WEIGHT, SS_FIX_SEMANTIC_RANGES,
- * SS_FIX_TRACE_MODE_BUDGET) follow the same default. Every other switch here is DEFAULT OFF and
- * is not part of the product. The functions in
- * this file are pure (no I/O, no process state) or take their I/O as an argument
- * (`decideAlreadyShown` gets the socket sender), so they can be unit-tested; the
- * wrapper (eval/agent-read-workflows/bin/_ss-helpers.mjs) wires them to the printers.
- *
- * Switches (read from the environment; on = 1/true/on/yes, off = 0/false/off/no):
- *   SS_FIX_A=1|0               bundle A umbrella (no information loss; default: ON unless
- *                              SWEET_SEARCH_COMPACT_OUTPUT=0):
- *                                A1 one-line query header instead of the budget/route header,
- *                                   no score / kind tag / confidence line / trailers,
- *                                   compact `# sufficient=YES` line (only when YES)
- *                                A2 one-line summary entries; dedupe of covered summary entries
- *                                A7 an imports block that the entry's own code already shows is dropped
- *                                A4 and A5 below, unless their own switch says 0
- *   SS_FIX_TRACE_COMPACT=1|0   A4 compact ss-trace + definition resolution (default: SS_FIX_A)
- *   SS_FIX_GREP_RETRY=1|0      A5 ss-grep regex repair + case-insensitive retry (default: SS_FIX_A)
- *   SS_FIX_ALREADY_SHOWN=1     A3 "already shown" omission (NOT part of SS_FIX_A; own A/B; see the
- *                              subagent limitation in FIXES-IMPL.md)
- *   SS_FIX_DROP_SUFFICIENCY=1  drop the compact `# sufficient=YES` line (only with SS_FIX_A)
- *   SS_FIX_SUMMARY_CAP=n       B1 (REJECTED, kept off): at most n summary-only entries; -k caps
- *                              entries. 0 or unset = off.
- *   SS_FIX_ONE_PER_FILE=1      B2 (compress only): one ss-search entry per file
- *   SS_FIX_GREP_ORDER=1        B7: ss-grep source before tests (with a test quota), per-file line
- *                              lists at >= 50 hits, no repeated matched-text column
- *   SS_FIX_GREP_ALLOC=1|0      DEFAULT ON since 2026-10-02 (default: SS_FIX_A, so the product
- *                              opt-out and an SS_FIX_A=0 bench arm keep the previous output too):
- *                              ss-grep keeps the files of
- *                              highest sqrt(hits) x file-type prior (not the first k in path order),
- *                              shares the k lines by Sainte-Laguë and prints files by weight
- *                              (grep-output-shaping.js). 0 restores the previous output byte for
- *                              byte; never pool runs across the two. With B7 on as well, B7's
- *                              source-before-tests body order is not applied (the prior already
- *                              ranks tests below source); B7's line lists and the dropped repeated
- *                              text column stay.
- *   SS_FIX_GREP_FULLLINE=1|0   DEFAULT ON since 2026-10-02 (default: SS_FIX_A, like
- *                              SS_FIX_GREP_ALLOC): each ss-grep hit prints its full source line, as
+ * Switches still under test (read from the environment; on = 1/true/on/yes, off = 0/false/off/no):
+ *   SS_FIX_GREP_FULLLINE=1|0   DEFAULT ON: each ss-grep hit prints its full source line, as
  *                              `grep -n` does (whitespace collapsed, at most 140 chars; a longer line
  *                              shows a window that contains the match, `…` at a cut side), not only
- *                              the matched substring (grepHitText). 0 restores the matched-substring
- *                              output byte for byte; never pool runs across the two.
+ *                              the matched substring (grepHitText). 0 = the matched substring. Decided
+ *                              by PLAN 3.1 / 3.3; never pool runs across the two.
+ *   SS_VARIANT_GREP_BROAD=<min hits>:<chars>  bench only (A/B): see parseGrepBroad.
  *
- * DEFAULT ON since 2026-10-03 (default: SS_FIX_A, like SS_FIX_GREP_ALLOC, so the product opt-out
- * and an SS_FIX_A=0 bench arm keep the previous output too). Each legacy value below restores
- * the 2026-10-02 output byte for byte; never pool runs across the two:
- *   SS_FIX_GREP_LINES=1|0      ss-grep: a file given fewer lines than it has stored matches shows
- *                              declaration lines first and lines outside every symbol last (code
- *                              graph, freshness-gated, agent format only; grep-line-classes.js).
- *                              Needs SS_FIX_GREP_ALLOC. Legacy: 0.
- *   SS_FIX_GREP_ALLOC_RULE=guarantee|hh|sl  ss-grep: one line per kept file first, then
- *                              Sainte-Laguë (guarantee, the default) or Huntington–Hill (hh, an
- *                              opt-in control). Needs SS_FIX_GREP_ALLOC. Legacy: sl (or 0).
- *   SS_FIX_GREP_WEIGHT=sat2|sqrt  ss-grep: weight hits / (hits + 2) x prior (sat2, the default)
- *                              instead of sqrt(hits) x prior, in the engine's file selection and
- *                              in the renderer. Needs SS_FIX_GREP_ALLOC. Legacy: sqrt (or 0).
- *   SS_FIX_SEMANTIC_RANGES=1|0 ss-semantic: a span cut by the budget is cut at a line boundary, its
- *                              header names exactly the printed lines, and the omitted lines are
- *                              reported with an ss-read command (semantic-span-budget.js). Legacy: 0.
- *   SS_FIX_TRACE_MODE_BUDGET=1|0  ss-trace: with a mode word (callers / callees / impact), that one
- *                              printed section gets every budget share but the target's. Legacy: 0.
+ * Every other output choice is fixed. The decided switches (SS_FIX_A and its parts, the ss-grep
+ * allocation arms, the semantic ranges, the trace mode budget) were deleted on 2026-10-03 with
+ * their losing code paths; old bench rows are reproduced from their git commit.
  *
- * DEFAULT OFF (bench only):
- *   SS_FIX_SEMANTIC_PICK=1     ss-semantic: an over-budget span is excerpted around its
- *                              highest-scoring chunk instead of its head. Implies SS_FIX_SEMANTIC_RANGES.
- *   SS_FIX_SEARCH_FIRST_UNIT=calibrated|all  ss-search / ss-find: ranks past 3 get a small
- *                              signature preview instead of a name-only line (calibrated: ranks
- *                              4-5; all: every rank). allocateBudget in context-expander.js.
- *
- * ss-read output is NOT changed by any switch (owner decision 2026-10-01).
+ * ss-read output is NOT changed here (owner decision 2026-10-01).
  */
-
-import { collectAgentShownSpansIndexed, validAgentSessionId } from './agent-span-ledger.js';
 
 const TRUE_VALUES = new Set(['1', 'true', 'on', 'yes']);
 const FALSE_VALUES = new Set(['0', 'false', 'off', 'no']);
@@ -86,117 +26,21 @@ function norm(value) {
   return String(value ?? '').trim().toLowerCase();
 }
 
-function isOn(value) {
-  return TRUE_VALUES.has(norm(value));
-}
-
-/** A sub-switch: an explicit on / off value wins; anything else inherits the umbrella. */
-function subSwitch(value, inherited) {
+/** An explicit on / off value wins; anything else is the default. */
+function envSwitch(value, fallback) {
   const v = norm(value);
   if (TRUE_VALUES.has(v)) return true;
   if (FALSE_VALUES.has(v)) return false;
-  return inherited;
+  return fallback;
 }
 
-/**
- * The product switch. Bundle A (A1, A2, A7, A4, A5) is ON by default in the shipped ss-* tools;
- * A1, A2 and A7 also in the daemon's agent text; SWEET_SEARCH_COMPACT_OUTPUT=0 (or false/off/no) restores the
- * previous output byte for byte. Any other value, or no value, keeps the default.
- */
-export const COMPACT_OUTPUT_ENV = 'SWEET_SEARCH_COMPACT_OUTPUT';
-
-/** True unless SWEET_SEARCH_COMPACT_OUTPUT is an explicit off value. */
-export function compactOutputDefault(env = process.env) {
-  return !FALSE_VALUES.has(norm(env?.[COMPACT_OUTPUT_ENV]));
-}
-
-/**
- * Parse the switches. `summaryCap` is null (off) or an integer >= 1 (0 means off).
- *
- * Bundle A precedence: an explicit SS_FIX_A on/off value (bench reproducibility) wins; else
- * SWEET_SEARCH_COMPACT_OUTPUT (product opt-out); else ON (A1, A2, A7, A4, A5). A bench arm that must reproduce the
- * pre-Bundle-A output sets SS_FIX_A=0 (an unset SS_FIX_A now means the product default).
- */
+/** Parse the switches that are still under test. */
 export function readFixFlags(env = process.env) {
-  const rawCap = String(env?.SS_FIX_SUMMARY_CAP ?? '').trim();
-  const capNumber = /^\d+$/.test(rawCap) ? Number.parseInt(rawCap, 10) : 0;
-  const compact = subSwitch(env?.SS_FIX_A, compactOutputDefault(env));
-  const allocRule = norm(env?.SS_FIX_GREP_ALLOC_RULE);
-  const weight = norm(env?.SS_FIX_GREP_WEIGHT);
-  const semanticPick = isOn(env?.SS_FIX_SEMANTIC_PICK);
+  const grepBroad = parseGrepBroad(env?.SS_VARIANT_GREP_BROAD);
   return {
-    compact,
-    traceCompact: subSwitch(env?.SS_FIX_TRACE_COMPACT, compact),
-    grepRetry: subSwitch(env?.SS_FIX_GREP_RETRY, compact),
-    alreadyShown: isOn(env?.SS_FIX_ALREADY_SHOWN),
-    dropSufficiency: isOn(env?.SS_FIX_DROP_SUFFICIENCY),
-    ...(parseGrepBroad(env?.SS_VARIANT_GREP_BROAD) ? { grepBroad: parseGrepBroad(env?.SS_VARIANT_GREP_BROAD) } : {}),
-    summaryCap: capNumber > 0 ? capNumber : null,
-    onePerFile: isOn(env?.SS_FIX_ONE_PER_FILE),
-    grepOrder: isOn(env?.SS_FIX_GREP_ORDER),
-    grepAlloc: subSwitch(env?.SS_FIX_GREP_ALLOC, compact),
-    grepFullLine: subSwitch(env?.SS_FIX_GREP_FULLLINE, compact),
-    grepLines: subSwitch(env?.SS_FIX_GREP_LINES, compact),
-    grepAllocRule: allocRule === 'guarantee' ? 'guarantee'
-      : (allocRule === 'hh' || allocRule === 'huntington-hill') ? 'hh'
-        : (allocRule === 'sl' || FALSE_VALUES.has(allocRule)) ? null
-          : (compact ? 'guarantee' : null),
-    grepWeight: weight === 'sat2' ? 'sat2'
-      : (weight === 'sqrt' || FALSE_VALUES.has(weight)) ? null
-        : (compact ? 'sat2' : null),
-    semanticRanges: semanticPick || subSwitch(env?.SS_FIX_SEMANTIC_RANGES, compact),
-    semanticPick,
-    searchFirstUnit: ['calibrated', 'all'].includes(norm(env?.SS_FIX_SEARCH_FIRST_UNIT)) ? norm(env.SS_FIX_SEARCH_FIRST_UNIT) : null,
-    traceModeBudget: subSwitch(env?.SS_FIX_TRACE_MODE_BUDGET, compact),
+    grepFullLine: envSwitch(env?.SS_FIX_GREP_FULLLINE, true),
+    ...(grepBroad ? { grepBroad } : {}),
   };
-}
-
-/**
- * True when ss-search / ss-find must use the fixed renderer instead of the original one.
- * `alreadyShownActive` is the EFFECTIVE A3 state (switch on AND a thread key AND the
- * receipt ledger on), computed by the wrapper.
- */
-export function resultRenderFixActive(flags, { find = false, alreadyShownActive = false } = {}) {
-  return !!(flags.compact || flags.summaryCap != null || (!find && flags.onePerFile) || alreadyShownActive);
-}
-
-// --- thread key ----------------------------------------------------------------------
-
-/**
- * The key that identifies one agent session, for the A3 ledger.
- *
- * Why the original lookup fired on Codex only: it reads SWEET_SEARCH_SESSION_ID,
- * CODEX_THREAD_ID and CLAUDE_SESSION_ID. Codex sets CODEX_THREAD_ID itself. Claude Code
- * does NOT set CLAUDE_SESSION_ID (it exports CLAUDE_CODE_SESSION_ID; the product only
- * gets a key through an installed SessionStart hook). opencode sets OPENCODE_PID and
- * no session key. This function adds both real variables.
- *
- * LIMIT: a Claude Code subagent inherits its parent's CLAUDE_CODE_SESSION_ID, and opencode
- * subagents run in the same process (same OPENCODE_PID). The key cannot tell a subagent from
- * its parent; that is why A3 is its own default-off switch.
- */
-export function resolveThreadKey(env = process.env) {
-  const valid = (v) => typeof v === 'string' && v.length > 0 && v.length <= 256
-    && !/[\u0000-\u001f\u007f]/.test(v);
-  const direct = [env?.SWEET_SEARCH_SESSION_ID, env?.CODEX_THREAD_ID, env?.CLAUDE_CODE_SESSION_ID, env?.CLAUDE_SESSION_ID];
-  const found = direct.find(valid);
-  if (found) return found;
-  // opencode exports its own process id into every tool shell.
-  if (valid(env?.OPENCODE_PID) && /^\d+$/.test(env.OPENCODE_PID)) return `opencode-${env.OPENCODE_PID}`;
-  return null;
-}
-
-/**
- * A3 keeps its receipts in its OWN ledger namespace, so the original ledger (which drives the
- * Codex ss-read omission text and the query-aware ss-read trailers) sees exactly the same calls
- * with the switch on as with it off.
- */
-export const ALREADY_SHOWN_NAMESPACE = 'a3:';
-
-export function alreadyShownSessionId(threadKey) {
-  if (!threadKey) return null;
-  const id = `${ALREADY_SHOWN_NAMESPACE}${threadKey}`;
-  return validAgentSessionId(id) ? id : null;
 }
 
 // --- test-file detection --------------------------------------------------------------
@@ -270,87 +114,31 @@ export function shownCodeSpan(r) {
 }
 
 /**
- * Entry selection for ss-search / ss-find under the fix switches.
+ * Entry selection for ss-search / ss-find: dedupe of covered summary entries (A2). Rank order is
+ * kept; ranks are never renumbered.
  *
- * Order: dedupe, then B2 one-per-file, then the B1 caps. Rank order is kept; ranks are
- * never renumbered.
- *
- * dedupe:
- *   'v3' — the final-tuning SS_VARIANT_SEARCH_DEDUPE rule, unchanged (used only on the
- *          non-compact path so that variant prints what it always printed): a summary entry
- *          inside ANY earlier span, or repeating an earlier file + symbol, is dropped.
- *   'a2' — SS_FIX_A rule (review 2026-10-01): a summary-only entry is dropped only when an
- *          earlier entry has the IDENTICAL span, or an earlier entry's code SHOWS all of its
- *          lines (shownCodeSpan: a cut, sandwiched or preview body covers only what it prints).
- *          No same-symbol rule (overloads, `String()` on two receivers, generic names), and a
- *          large summary span (a class) never swallows its methods.
- *
- * onePerFile (B2, compress only): per file, the entry that has code is kept (the first by
- * rank); if no entry of the file has code, the first entry is kept. The others become
- * `also in this file:` pointers on the kept entry. The freed pack budget is NOT re-spent.
+ * A summary-only entry is dropped only when an earlier entry has the IDENTICAL span, or an
+ * earlier entry's code SHOWS all of its lines (shownCodeSpan: a cut, sandwiched or preview body
+ * covers only what it prints). No same-symbol rule (overloads, `String()` on two receivers,
+ * generic names), and a large summary span (a class) never swallows its methods.
  *
  * @param {Array} results   response.results
- * @param {{dedupe?:false|'v3'|'a2', onePerFile?:boolean, summaryCap?:number|null, k?:number|null}} o
- * @returns {{entries: Array<{r:object, index:number, also:Array}>, hidden:number, hiddenCode:boolean}}
+ * @returns {{entries: Array<{r:object, index:number}>, hiddenCode:boolean}}
  *   hiddenCode: true when an entry that carries code (or a continuation) is not printed.
  */
-export function selectEntries(results, o = {}) {
-  const input = (Array.isArray(results) ? results : []).map((r, index) => ({ r, index, also: [] }));
-  let list = input;
-
-  if (o.dedupe === 'v3') {
-    const seen = [];
-    list = list.filter(({ r }) => {
-      const covered = seen.some((x) => x.file === r.file
-        && ((r.startLine >= x.start && r.endLine <= x.end) || (r.symbol && x.symbol === r.symbol)));
-      seen.push({ file: r.file, start: r.startLine, end: r.endLine, symbol: r.symbol || null });
-      return !(covered && r.presentation === 'summary');
-    });
-  } else if (o.dedupe === 'a2') {
-    const seen = [];
-    list = list.filter(({ r }) => {
-      const covered = isSummaryOnly(r) && seen.some((x) => x.file === r.file
-        && ((x.start === r.startLine && x.end === r.endLine)
-          || (x.shown && r.startLine >= x.shown.start && r.endLine <= x.shown.end)));
-      if (!covered) seen.push({ file: r.file, start: r.startLine, end: r.endLine, shown: shownCodeSpan(r) });
-      return !covered;
-    });
-  }
-
-  if (o.onePerFile) {
-    const byFile = new Map();
-    for (const e of list) {
-      if (!byFile.has(e.r.file)) byFile.set(e.r.file, []);
-      byFile.get(e.r.file).push(e);
-    }
-    const keepers = new Set();
-    for (const group of byFile.values()) {
-      const keeper = group.find((e) => !!e.r.code) || group[0];
-      keepers.add(keeper);
-      for (const e of group) {
-        if (e !== keeper) keeper.also.push({ symbol: e.r.symbol || null, startLine: e.r.startLine, endLine: e.r.endLine });
-      }
-    }
-    list = list.filter((e) => keepers.has(e));
-  }
-
-  let hidden = 0;
-  if (o.summaryCap != null) {
-    const k = Number.isInteger(o.k) && o.k > 0 ? o.k : Infinity;
-    const kept = [];
-    let summaries = 0;
-    for (const e of list) {
-      const summary = isSummaryOnly(e.r);
-      if (kept.length >= k || (summary && summaries >= o.summaryCap)) { hidden++; continue; }
-      if (summary) summaries++;
-      kept.push(e);
-    }
-    list = kept;
-  }
-
+export function selectEntries(results) {
+  const input = (Array.isArray(results) ? results : []).map((r, index) => ({ r, index }));
+  const seen = [];
+  const list = input.filter(({ r }) => {
+    const covered = isSummaryOnly(r) && seen.some((x) => x.file === r.file
+      && ((x.start === r.startLine && x.end === r.endLine)
+        || (x.shown && r.startLine >= x.shown.start && r.endLine <= x.shown.end)));
+    if (!covered) seen.push({ file: r.file, start: r.startLine, end: r.endLine, shown: shownCodeSpan(r) });
+    return !covered;
+  });
   const printed = new Set(list.map((e) => e.index));
   const hiddenCode = input.some((e) => !printed.has(e.index) && (!!e.r.code || !!e.r.continuation?.code));
-  return { entries: list, hidden, hiddenCode };
+  return { entries: list, hiddenCode };
 }
 
 /** `path:start-end symbol (kind)` — the whole summary entry on one line (A2). */
@@ -360,19 +148,6 @@ export function renderSummaryLine(r) {
   const kind = r.symbolType ? ` (${r.symbolType})` : '';
   const stale = r.stale ? ' STALE' : '';
   return `${r.file}:${span}${sym}${kind}${stale}`;
-}
-
-/** `also in this file: symA (l.120-140), symB (l.300)` (B2). */
-export function renderAlsoInFile(also) {
-  if (!also || also.length === 0) return '';
-  const range = (a) => (a.endLine && a.endLine !== a.startLine ? `${a.startLine}-${a.endLine}` : `${a.startLine}`);
-  return `also in this file: ${also.map((a) => `${a.symbol || 'code'} (l.${range(a)})`).join(', ')}`;
-}
-
-/** A3 omission line. It says how to see the lines again. */
-export function renderAlreadyShownLine(file, startLine, endLine) {
-  const f = /\s/.test(String(file)) ? `"${file}"` : file;
-  return `(lines ${startLine}-${endLine} already shown above — re-read: ss-read ${f} ${startLine} ${endLine})`;
 }
 
 /**
@@ -399,11 +174,10 @@ export function renderCompactHeader(tool, count, query, { regex = null } = {}) {
 
 /**
  * A1 keeps a compact sufficiency token: `# sufficient=YES` only when the verdict is YES, and
- * (like the original line) only together with a confidence verdict. `sufficiencyText` is the
- * original ` sufficient=...` fragment. `drop` = SS_FIX_DROP_SUFFICIENCY.
+ * only together with a confidence verdict. `sufficiencyText` is the ` sufficient=...` fragment.
  */
-export function renderCompactSufficiency(response, sufficiencyText, { drop = false } = {}) {
-  if (drop || !response?.confidence) return '';
+export function renderCompactSufficiency(response, sufficiencyText) {
+  if (!response?.confidence) return '';
   return /^ sufficient=YES\b/.test(String(sufficiencyText ?? '')) ? '# sufficient=YES\n' : '';
 }
 
@@ -454,65 +228,44 @@ export function dedupeImports(headerContext, code) {
   return kept.join('\n');
 }
 
-// --- fixed renderer -----------------------------------------------------------------
+// --- result blocks -------------------------------------------------------------------
 
 /**
- * Fixed renderer for ss-search / ss-find result blocks. Used only when a switch is on
- * (resultRenderFixActive); otherwise the original loops run unchanged.
- *   compact (SS_FIX_A): A1 rank header without presentation/kind tag and score, A2 one-line
- *                       summary entries, A7 imports dedupe.
- *   not compact:        the original block format, byte for byte (only A3 lines and B1/B2
- *                       changes differ).
+ * The ss-search / ss-find result blocks (and the daemon's agent text): A1 rank header without
+ * presentation / kind tag and score, A2 one-line summary entries, A7 imports dedupe.
  *
  * @param {Array} results
- * @param {{entries:Array, hidden:number}} plan  selectEntries() output
+ * @param {{entries:Array}} plan  selectEntries() output
  * @param {object} o
- * @param {boolean} [o.compact]
- * @param {Set<string>} [o.omitted]           A3 keys `<resultIndex>:result|continuation`
- * @param {boolean} [o.dropRestatingSummary]  SS_VARIANT_SEARCH_DEDUPE on ss-search (non-compact)
  * @param {(code:string, startLine:number)=>string} [o.gutter]
  * @returns {string}
  */
-export function renderFixedBlocks(results, plan, {
-  compact = false,
-  omitted = new Set(),
-  dropRestatingSummary = false,
-  gutter = (code) => code,
-} = {}) {
+export function renderFixedBlocks(results, plan, { gutter = (code) => code } = {}) {
   const parts = [];
   const out = (text) => parts.push(text);
   let wroteAny = false;
   let inSummaryRun = false;
-  const lead = () => (compact ? (wroteAny ? '\n' : '') : '\n');
-  for (const { r, index, also } of plan.entries) {
+  const lead = () => (wroteAny ? '\n' : '');
+  for (const { r } of plan.entries) {
     const stale = r.stale ? ' STALE' : '';
-    if (compact && isSummaryOnly(r)) {
+    if (isSummaryOnly(r)) {
       out(`${inSummaryRun ? '' : lead()}${renderSummaryLine(r)}\n`);
       if (r.summary && !summaryRestatesHeader(r.summary)) out(`${r.summary}\n`);
-      const alsoLine = renderAlsoInFile(also);
-      if (alsoLine) out(`${alsoLine}\n`);
       inSummaryRun = true;
       wroteAny = true;
       continue;
     }
     inSummaryRun = false;
     const sym = r.symbol ? ` [${r.symbolType || 'code'}: ${r.symbol}]` : '';
-    if (compact) {
-      out(`${lead()}## #${r.rank} ${r.file}:${r.startLine}-${r.endLine}${sym}${stale}\n`);
-    } else {
-      const kind = r.expansionKind ? ` kind=${r.expansionKind}` : '';
-      out(`\n## #${r.rank} ${r.file}:${r.startLine}-${r.endLine}${sym} (${r.presentation}${kind}${stale}) score=${(r.score || 0).toFixed(3)}\n`);
-    }
+    out(`${lead()}## #${r.rank} ${r.file}:${r.startLine}-${r.endLine}${sym}${stale}\n`);
     wroteAny = true;
-    const codeOmitted = omitted.has(`${index}:result`);
     if (r.headerContext) {
-      const imports = compact && r.code && !codeOmitted ? dedupeImports(r.headerContext, r.code) : r.headerContext;
+      const imports = r.code ? dedupeImports(r.headerContext, r.code) : r.headerContext;
       if (imports) out(`### imports\n\`\`\`\n${imports}\n\`\`\`\n`);
     }
     if (r.code) {
-      if (codeOmitted) out(`${renderAlreadyShownLine(r.file, r.startLine, r.endLine)}\n`);
-      else out(`\`\`\`\n${gutter(r.code, r.startLine)}\n\`\`\`\n`);
-    } else if (r.summary && !(dropRestatingSummary && summaryRestatesHeader(r.summary))) {
+      out(`\`\`\`\n${gutter(r.code, r.startLine)}\n\`\`\`\n`);
+    } else if (r.summary) {
       out(`${r.summary}\n`);
     }
     if (r.neighbors && r.neighbors.rendered) {
@@ -523,94 +276,23 @@ export function renderFixedBlocks(results, plan, {
     if (r.continuation?.rendered) {
       out(`${r.continuation.rendered}\n`);
       if (r.continuation.kind === 'symbol' && r.continuation.code) {
-        if (omitted.has(`${index}:continuation`)) {
-          out(`${renderAlreadyShownLine(r.continuation.file || r.file, r.continuation.startLine, r.continuation.endLine)}\n`);
-        } else {
-          out(`\`\`\`\n${r.continuation.code}\n\`\`\`\n`);
-        }
+        out(`\`\`\`\n${r.continuation.code}\n\`\`\`\n`);
       }
     }
     if (r.familyManifest?.rendered) out(`${r.familyManifest.rendered}\n`);
-    const alsoLine = renderAlsoInFile(also);
-    if (alsoLine) out(`${alsoLine}\n`);
   }
-  if (!results || results.length === 0) {
-    out('(no matches)\n');
-  } else if (plan.hidden > 0) {
-    out(`${wroteAny && compact ? '\n' : ''}(+${plan.hidden} lower-ranked entries not shown)\n`);
-  }
+  if (!results || results.length === 0) out('(no matches)\n');
   return parts.join('');
 }
 
-// --- A3: what to record, what to omit -------------------------------------------------
-
-/** A3 omits a block only when the thread saw it within this many A3-ledger calls. */
-export const ALREADY_SHOWN_WINDOW_CALLS = 8;
-/** ss-read output longer than this may be cut by the harness; A3 does not record it. */
-export const ALREADY_SHOWN_MAX_RECORD_CHARS = 10000;
-
 /**
- * The spans of the blocks this call PRINTS (after dedupe / one-per-file / caps). A hidden
- * entry, or a continuation that has no rendered header, is never recorded.
- */
-export function printedSpanCandidates(results, plan, { projectRoot } = {}) {
-  const printed = new Set(plan.entries.map((e) => e.index));
-  return collectAgentShownSpansIndexed(results, {
-    projectRoot,
-    include: (resultIndex, part) => {
-      if (!printed.has(resultIndex)) return false;
-      const r = results[resultIndex];
-      if (part === 'result') return !!r?.code;
-      return !!(r?.continuation?.rendered && r.continuation.kind === 'symbol' && r.continuation.code);
-    },
-  });
-}
-
-/**
- * The results whose spans go into the ORIGINAL ledger (Codex ss-read omission). Unchanged
- * (the full result list) unless B1/B2 hide an entry that carries code: then only the printed
+ * The results whose spans go into the shown-span ledger (Codex ss-read omission): the full
+ * result list, unless A2 hid an entry that carries code (a continuation): then only the printed
  * entries, so ss-read never says "already shown" about lines the agent never saw.
  */
 export function resultsForOriginalLedger(results, plan) {
   if (!plan?.hiddenCode) return results;
   return plan.entries.map((e) => e.r);
-}
-
-/**
- * A3 protocol, on the A3 namespace only:
- *   1. `read` with the printed spans: the ledger decides per span and records the ones it
- *      does not omit (they print in full now).
- *   2. An omit decision older than `window` calls is overruled (the code prints), and those
- *      spans are recorded again with one `observe`.
- * Fail open: no session, no daemon or a bad reply → nothing is omitted.
- *
- * @param {{send:Function, sessionId:string|null, candidates:Array, window?:number}} o
- * @returns {Promise<Set<string>>} keys `<resultIndex>:<part>` to print as one omission line
- */
-export async function decideAlreadyShown({ send, sessionId, candidates, window = ALREADY_SHOWN_WINDOW_CALLS }) {
-  const omitted = new Set();
-  if (!sessionId || typeof send !== 'function') return omitted;
-  const resp = await send({ operation: 'read', spans: candidates.map((c) => c.span), sessionId });
-  if (!(resp?.ok && Array.isArray(resp.decisions))) return omitted;
-  const refresh = [];
-  candidates.forEach((c, i) => {
-    const d = resp.decisions[i];
-    if (!d?.omit) return;
-    if (Number.isInteger(d.callsAgo) && d.callsAgo >= 1 && d.callsAgo <= window) omitted.add(`${c.resultIndex}:${c.part}`);
-    else refresh.push(c.span);
-  });
-  if (refresh.length > 0) await send({ operation: 'observe', spans: refresh, sessionId });
-  return omitted;
-}
-
-/**
- * ss-read → A3 ledger: the spans ss-read actually printed. A span the original ledger omitted
- * (Codex) printed no code; output above the size limit may be cut by the harness.
- */
-export function readSpansForAlreadyShown(spans, decisions, printedChars) {
-  if (!Array.isArray(spans) || spans.length === 0) return [];
-  if (!(Number.isFinite(printedChars) && printedChars <= ALREADY_SHOWN_MAX_RECORD_CHARS)) return [];
-  return spans.filter((_, i) => !decisions?.[i]?.omit);
 }
 
 // --- ss-trace ---------------------------------------------------------------------------
@@ -870,40 +552,7 @@ export function repairRegexBranches(raw) {
   };
 }
 
-// --- ss-grep: B7 ordering and flood rendering --------------------------------------------
-
-/** Share of the first k files reserved for test files when there are more files than k. */
-export const GREP_TEST_FILE_SHARE = 0.3;
-
-function groupByFile(matches) {
-  const groups = new Map();
-  for (const m of matches) {
-    if (!groups.has(m.file)) groups.set(m.file, []);
-    groups.get(m.file).push(m);
-  }
-  return [...groups.values()];
-}
-
-/** How many of `k` file rows go to test files (0 when everything fits or one class is empty). */
-export function testFileQuota(srcCount, testCount, k) {
-  if (!(Number.isInteger(k) && k > 0) || testCount === 0 || srcCount === 0 || srcCount + testCount <= k) return 0;
-  return Math.min(testCount, Math.max(1, Math.round(k * GREP_TEST_FILE_SHARE)));
-}
-
-/**
- * Non-test files first, test-like files after, each class in input order. With `k` and more
- * files than k, a quota of test files moves into the first k files so test hits never vanish
- * entirely. Input stays grouped by file.
- */
-export function orderSourceBeforeTests(matches, { k = null } = {}) {
-  const groups = groupByFile(matches);
-  const src = groups.filter((g) => !isTestLikePath(g[0].file));
-  const tst = groups.filter((g) => isTestLikePath(g[0].file));
-  const q = testFileQuota(src.length, tst.length, k);
-  if (q === 0) return [...src, ...tst].flat();
-  const srcFirst = Math.max(0, k - q);
-  return [...src.slice(0, srcFirst), ...tst.slice(0, q), ...src.slice(srcFirst), ...tst.slice(q)].flat();
-}
+// --- ss-grep: hit text ----------------------------------------------------------------
 
 export const GREP_HIT_TEXT_MAX = 140;
 
@@ -990,51 +639,3 @@ function sliceWhole(line, from, to) {
 }
 
 const isLowSurrogate = (c) => c >= 0xdc00 && c <= 0xdfff;
-
-/**
- * True when more than one hit is shown and every hit prints the same text (the matched text, or
- * the full line with `fullLine`).
- */
-export function matchTextIsRepeated(matches, { fullLine = false } = {}) {
-  if (!Array.isArray(matches) || matches.length < 2) return false;
-  const first = grepHitText(matches[0], { fullLine });
-  return matches.every((m) => grepHitText(m, { fullLine }) === first);
-}
-
-export const GREP_COUNTS_THRESHOLD = 50;
-export const GREP_LINES_PER_FILE = 3;
-
-/**
- * Flood mode (B7, >= 50 hits): one row per file with its first hit lines, not the hit-line
- * flood. Non-test files first (most hits first), then a quota of test files; files beyond
- * k are summarised in one line per class.
- *
- * @param {Array<{file:string,total:number}>} files   fileSummary.files (engine order)
- * @param {Map<string,number[]>} linesByFile         file -> hit lines (ascending, as fetched)
- * @param {number} k                                  maximum number of file rows
- */
-export function renderGrepLineLists(files, linesByFile, k) {
-  const byCountDesc = (a, b) => b.total - a.total || (a.file < b.file ? -1 : a.file > b.file ? 1 : 0);
-  const src = files.filter((f) => !isTestLikePath(f.file)).sort(byCountDesc);
-  const tst = files.filter((f) => isTestLikePath(f.file)).sort(byCountDesc);
-  const plural = (n) => `${n} ${n === 1 ? 'match' : 'matches'}`;
-  const rows = Number.isInteger(k) && k > 0 ? k : 20;
-  const q = testFileQuota(src.length, tst.length, rows);
-  const srcN = q > 0 ? Math.min(src.length, rows - q) : Math.min(src.length, rows);
-  const tstN = Math.min(tst.length, rows - srcN);
-  const row = (f) => {
-    const lines = (linesByFile.get(f.file) || []).slice(0, GREP_LINES_PER_FILE);
-    if (lines.length === 0) return `${f.file} (${plural(f.total)})`;
-    const more = f.total - lines.length;
-    return `${f.file}: lines ${lines.join(', ')}${more > 0 ? ` (+${more} more)` : ''}`;
-  };
-  const tail = (list, label) => (list.length
-    ? [`# +${list.length} more ${label} file(s) with ${list.reduce((a, f) => a + f.total, 0)} match(es): ${list.slice(0, 3).map((f) => f.file).join(', ')}${list.length > 3 ? ', ...' : ''}`]
-    : []);
-  return [
-    ...src.slice(0, srcN).map(row),
-    ...tst.slice(0, tstN).map(row),
-    ...tail(src.slice(srcN), 'non-test'),
-    ...tail(tst.slice(tstN), 'test/spec/fixture'),
-  ];
-}

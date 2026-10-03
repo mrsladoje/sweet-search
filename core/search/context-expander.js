@@ -1499,28 +1499,9 @@ export function renderGraphNeighbors(opts) {
  * @param {number} [context.grepMatches] - Number of grep matches (colgrep)
  * @param {number} [context.candidatePoolSize] - Generic candidate pool (lexical/semantic/hybrid)
  * @param {Array<{score: number, file: string}>} [context.results] - Ranked results for score-gap gating
- * @param {'calibrated'|'all'} [context.firstUnit] - SS_FIX_SEARCH_FIRST_UNIT (default off): ranks
- *   past 3 get a FIRST_UNIT_TOKENS preview (signature + a few lines) instead of a summary line —
- *   'calibrated' ranks 4-5 only (dev: P(answer file) 29% / 21%, never shown with code), 'all' every
- *   rank. Rank 1's cap pays for the units only when the budget would otherwise be exceeded.
  * @returns {Array<{ presentation: 'full'|'preview'|'summary', tokenCap: number }>}
  */
 export function allocateBudget(totalBudget, numResults, subMode = 'agent_preview', context = {}) {
-  const allocations = allocateBudgetShipped(totalBudget, numResults, subMode, context);
-  if (context.firstUnit !== 'calibrated' && context.firstUnit !== 'all') return allocations;
-  const last = context.firstUnit === 'all' ? numResults : Math.min(numResults, FIRST_UNIT_CALIBRATED_RANKS);
-  for (let i = 3; i < last; i++) {
-    if (allocations[i].presentation === 'summary') allocations[i] = { presentation: 'preview', tokenCap: FIRST_UNIT_TOKENS, unit: true };
-  }
-  const over = allocations.reduce((n, a) => n + a.tokenCap, 0) - totalBudget;
-  if (over > 0 && allocations[0]) allocations[0] = { ...allocations[0], tokenCap: Math.max(0, allocations[0].tokenCap - over) };
-  return allocations;
-}
-
-const FIRST_UNIT_TOKENS = 60;
-const FIRST_UNIT_CALIBRATED_RANKS = 5;
-
-function allocateBudgetShipped(totalBudget, numResults, subMode, context) {
   const allocations = [];
   const isFullMode = subMode === 'agent_full' || subMode === 'agent_full_xl';
   const isXlMode = subMode === 'agent_full_xl';
@@ -2252,8 +2233,7 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
         ...(searchStats?.candidatePoolSize != null ? { candidatePoolSize: searchStats.candidatePoolSize } : {}),
         results: workingResults,
       };
-  const allocations = allocateBudget(tokenBudget, workingResults.length, subMode,
-    opts.firstUnit ? { ...budgetContext, firstUnit: opts.firstUnit } : budgetContext);
+  const allocations = allocateBudget(tokenBudget, workingResults.length, subMode, budgetContext);
 
   // Compute confidence from ranked results (Fix #4: regex selectivity included)
   const confidenceInfo = computeConfidence(workingResults, searchStats);
@@ -2324,14 +2304,6 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
       tokenCap: Math.min(allocation.tokenCap, remainingBudget),
       ablations,
     });
-
-    // A first unit (SS_FIX_SEARCH_FIRST_UNIT) whose enclosing symbol is code already printed
-    // above would print it twice: it stays a summary line.
-    if (allocation.unit && agentResults.some(p => p.code && p.file === filePath
-        && expansion.startLine <= p.endLine && expansion.endLine >= p.startLine)) {
-      agentResults.push(summaryEntry());
-      continue;
-    }
 
     // Phase 1: Load code via readFileRange.
     // For sandwich expansions, assemble from parts with explicit elision markers

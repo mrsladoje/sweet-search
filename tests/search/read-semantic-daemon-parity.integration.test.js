@@ -209,46 +209,11 @@ describe('warm-daemon JSON clients', () => {
     expect(params.getAll('glob')).toEqual([]);
   });
 
-  // ss-grep's weighted file selection (SS_FIX_GREP_ALLOC): the client sends fileOrder=weight and
-  // the server's own parser hands grepFileOrder back; without it, nothing travels (legacy bytes).
-  it('round-trips the weighted grep selection through the server\'s own parser', async () => {
-    await queryServer('keys', {
-      mode: 'grep', regex: 'keys', perFileCap: 20, maxFiles: 20, grepFileOrder: 'weight', _isAgentFormat: true,
-    });
-    expect(requests[0].searchParams.get('fileOrder')).toBe('weight');
-    expect(readGrepShapingParams(requests[0].searchParams))
-      .toEqual({ perFileCap: 20, maxFiles: 20, grepFileOrder: 'weight' });
-
+  // ss-grep's shaping options: perFileCap and maxFiles round-trip through the server's own parser.
+  it('round-trips the grep shaping options through the server\'s own parser', async () => {
     await queryServer('keys', { mode: 'grep', regex: 'keys', perFileCap: 20, maxFiles: 20, _isAgentFormat: true });
-    expect(requests[1].searchParams.has('fileOrder')).toBe(false);
-    expect(readGrepShapingParams(requests[1].searchParams))
-      .toEqual({ perFileCap: 20, maxFiles: 20, grepFileOrder: undefined });
+    expect(readGrepShapingParams(requests[0].searchParams)).toEqual({ perFileCap: 20, maxFiles: 20 });
     expect(() => readGrepShapingParams(new URLSearchParams('maxFiles=1001'))).toThrow(/maxFiles must be <= 1000/);
-    // Any other fileOrder value is ignored (legacy selection), never an error.
-    for (const v of ['', 'Weight', 'path', 'weight ', 'weight,weight']) {
-      expect(readGrepShapingParams(new URLSearchParams({ fileOrder: v })).grepFileOrder).toBeUndefined();
-    }
-  });
-
-  // Plan arms (SS_FIX_GREP_WEIGHT, SS_FIX_GREP_LINES): fileWeight=sat2 and lineClasses=1, only when asked.
-  it('round-trips the sat2 weight and the line-class request; absent = nothing on the wire', async () => {
-    await queryServer('keys', {
-      mode: 'grep', regex: 'keys', perFileCap: 8, maxFiles: 8, grepFileOrder: 'weight',
-      grepFileWeight: 'sat2', grepLineClasses: true, _isAgentFormat: true,
-    });
-    expect(requests[0].searchParams.get('fileWeight')).toBe('sat2');
-    expect(requests[0].searchParams.get('lineClasses')).toBe('1');
-    expect(readGrepShapingParams(requests[0].searchParams)).toMatchObject({
-      grepFileOrder: 'weight', grepFileWeight: 'sat2', grepLineClasses: true,
-    });
-    await queryServer('keys', { mode: 'grep', regex: 'keys', perFileCap: 8, maxFiles: 8, grepFileOrder: 'weight', _isAgentFormat: true });
-    expect(requests[1].searchParams.has('fileWeight')).toBe(false);
-    expect(requests[1].searchParams.has('lineClasses')).toBe(false);
-    for (const [k, v] of [['fileWeight', 'sat4'], ['fileWeight', 'SAT2'], ['lineClasses', 'true'], ['lineClasses', '0']]) {
-      const parsed = readGrepShapingParams(new URLSearchParams({ [k]: v }));
-      expect(parsed.grepFileWeight).toBeUndefined();
-      expect(parsed.grepLineClasses).toBeUndefined();
-    }
   });
 
   it('a single scope still travels as one plain value (wire format unchanged)', async () => {

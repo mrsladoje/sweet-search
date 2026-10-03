@@ -35,7 +35,6 @@ import {
 } from './daemon-registry.js';
 import { renderRegexDialectHint } from './regex-dialect.js';
 import {
-  readFixFlags,
   renderCompactHeader,
   renderCompactSufficiency,
   renderFixedBlocks,
@@ -110,19 +109,12 @@ function parseBoundedSearchInteger(value, name, max) {
 
 /**
  * The ss-grep shaping options of a /search call: perFileCap and maxFiles (bounded integers;
- * throws on a bad value, answered 400) and fileOrder=weight, ss-grep's weighted file selection
- * (SS_FIX_GREP_ALLOC, read client-side; absent = the legacy path-order selection).
- * Client-decided arms (ss-grep sends them by default since 2026-10-03; absent = legacy):
- * fileWeight=sat2 (SS_FIX_GREP_WEIGHT) and lineClasses=1 (SS_FIX_GREP_LINES).
- * Any other value of the three is ignored, never an error.
+ * throws on a bad value, answered 400).
  */
 export function readGrepShapingParams(searchParams) {
   return {
     perFileCap: parseBoundedSearchInteger(searchParams.get('perFileCap'), 'perFileCap', 1000),
     maxFiles: parseBoundedSearchInteger(searchParams.get('maxFiles'), 'maxFiles', 1000),
-    grepFileOrder: searchParams.get('fileOrder') === 'weight' ? 'weight' : undefined,
-    grepFileWeight: searchParams.get('fileWeight') === 'sat2' ? 'sat2' : undefined,
-    grepLineClasses: searchParams.get('lineClasses') === '1' ? true : undefined,
   };
 }
 
@@ -285,9 +277,8 @@ export async function buildReadSemanticDaemonResponse(reqUrl, {
     return readSemanticError(400, err.message);
   }
   const verbose = url.searchParams.get('verbose') === 'true';
-  // SS_FIX_SEMANTIC_RANGES / SS_FIX_SEMANTIC_PICK (read client-side); absent = unchanged.
+  // ss-semantic's exact ranges (the client sets exactRanges=1); absent = unchanged.
   const exactRanges = url.searchParams.get('exactRanges') === '1';
-  const pickExcerpt = url.searchParams.get('pick') === '1';
   const agentSpanCall = beginAgentSpanUrlCall(url, agentSpanLedger, { enabled: format === 'agent' });
 
   try {
@@ -309,7 +300,6 @@ export async function buildReadSemanticDaemonResponse(reqUrl, {
       maxTokens,
       verbose,
       ...(exactRanges ? { exactRanges } : {}),
-      ...(pickExcerpt ? { pickExcerpt } : {}),
       _lateInteractionIndex: reusableLateInteractionIndex(searcher),
     });
     if (agentSpanCall) {
@@ -639,75 +629,19 @@ function agentTextGutter(code, startLine) {
 }
 
 /**
- * Bundle A (A1, A2, A7) for the native captured-output CLI: the same renderer the ss-* tools use
- * (core/search/agent-output-fixes.js). One `# sweet-search: N results for "<query>"` header, the
- * compact `# sufficient=YES` line only when the verdict is YES, no score / kind tag / budget
- * header, one-line summary entries, covered summary entries and repeated import lines dropped.
+ * Render a packaged agent response for the native captured-output CLI, with the renderer the
+ * ss-* tools use (core/search/agent-output-fixes.js): one `# sweet-search: N results for
+ * "<query>"` header, the compact `# sufficient=YES` line only when the verdict is YES, no score /
+ * kind tag / budget header, one-line summary entries, covered summary entries and repeated import
+ * lines dropped.
  */
-function renderCompactAgentSearchResponse(response) {
+export function renderAgentSearchResponse(response) {
   const results = response?.results || [];
-  const plan = selectEntries(results, { dedupe: 'a2' });
+  const plan = selectEntries(results);
   // Header count = printed entries (A2 may drop covered summary entries).
   let out = renderCompactHeader('sweet-search', plan.entries.length, response?.query ?? '');
   out += renderCompactSufficiency(response || {}, renderSufficiencyFragment(response || {}));
-  out += renderFixedBlocks(results, plan, {
-    compact: true,
-    gutter: agentTextGutter,
-  });
-  const regexDialectNote = renderRegexDialectHint(response?.stats?.regexDialectHint);
-  if (regexDialectNote) out += `${regexDialectNote}\n`;
-  return out;
-}
-
-/**
- * Render a packaged agent response for the native captured-output CLI.
- *
- * Compact (Bundle A) by default, with the ss-* tools' precedence (readFixFlags): an explicit
- * SS_FIX_A=1|0 wins, else SWEET_SEARCH_COMPACT_OUTPUT=0 restores the previous text byte for byte.
- * Both are read from the DAEMON's environment (it inherits the env of the process that spawned
- * it; restart the daemon after a change), so every client of one daemon gets the same mode.
- */
-export function renderAgentSearchResponse(response, { compact = readFixFlags().compact } = {}) {
-  if (compact) return renderCompactAgentSearchResponse(response);
-  const results = response?.results || [];
-  const routing = response?.stats?.routing || {};
-  const routedMode = routing.mode || response?.mode || 'auto';
-  let out = `# sweet-search: routed=${routedMode} budget=${response?.tokenBudget ?? '?'} used=${response?.tokensUsed ?? '?'} results=${results.length} subMode=${response?.subMode ?? 'agent'}\n`;
-  if (response?.confidence) {
-    out += `# confidence=${response.confidence}${response.confidenceReason ? ` (${response.confidenceReason})` : ''}`;
-    if (response.sufficiencyVerdict) out += ` sufficient=${response.sufficiencyVerdict}`;
-    out += '\n';
-  }
-  for (const result of results) {
-    const symbol = result.symbol ? ` [${result.symbolType || 'code'}: ${result.symbol}]` : '';
-    const kind = result.expansionKind ? ` kind=${result.expansionKind}` : '';
-    const stale = result.stale ? ' STALE' : '';
-    out += `\n## #${result.rank} ${result.file}:${result.startLine}-${result.endLine}${symbol} (${result.presentation}${kind}${stale}) score=${(result.score || 0).toFixed(3)}\n`;
-    if (result.headerContext) out += `### imports\n\`\`\`\n${result.headerContext}\n\`\`\`\n`;
-    if (result.code) {
-      // Line-number gutter (default ON for agent output; benchmark path is JSON,
-      // never here). Numbers start at the result's own startLine so the agent can
-      // target exact edit spans directly from a search hit — same grounding
-      // ss-read now provides. Skipped for tiny spans.
-      const body = (lineGutterEnabled() && String(result.code).split('\n').length >= 15)
-        ? numberCodeLines(result.code, result.startLine || 1)
-        : result.code;
-      out += `\`\`\`\n${body}\n\`\`\`\n`;
-    } else if (result.summary) out += `${result.summary}\n`;
-    if (result.neighbors?.rendered) {
-      out += `### related (1-hop graph, ~${result.neighbors.tokens} tok)\n${result.neighbors.rendered}\n`;
-    }
-    if (result.sameFile?.rendered) out += `${result.sameFile.rendered}\n`;
-    if (result.siblingLine?.rendered) out += `${result.siblingLine.rendered}\n`;
-    if (result.continuation?.rendered) {
-      out += `${result.continuation.rendered}\n`;
-      if (result.continuation.kind === 'symbol' && result.continuation.code) {
-        out += `\`\`\`\n${result.continuation.code}\n\`\`\`\n`;
-      }
-    }
-    if (result.familyManifest?.rendered) out += `${result.familyManifest.rendered}\n`;
-  }
-  if (results.length === 0) out += '(no matches)\n';
+  out += renderFixedBlocks(results, plan, { gutter: agentTextGutter });
   const regexDialectNote = renderRegexDialectHint(response?.stats?.regexDialectHint);
   if (regexDialectNote) out += `${regexDialectNote}\n`;
   return out;
@@ -1054,9 +988,9 @@ export async function startServer() {
         res.end(JSON.stringify({ error: `File filter too long (max ${SEARCH_SERVER_MAX_READ_PATH_LENGTH} chars)` }));
         return;
       }
-      let perFileCap; let maxFiles; let grepFileOrder; let grepFileWeight; let grepLineClasses;
+      let perFileCap; let maxFiles;
       try {
-        ({ perFileCap, maxFiles, grepFileOrder, grepFileWeight, grepLineClasses } = readGrepShapingParams(url.searchParams));
+        ({ perFileCap, maxFiles } = readGrepShapingParams(url.searchParams));
       } catch (err) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: err.message }));
@@ -1116,9 +1050,6 @@ export async function startServer() {
           fileFilter,
           perFileCap,
           maxFiles,
-          ...(grepFileOrder ? { grepFileOrder } : {}),
-          ...(grepFileWeight ? { grepFileWeight } : {}),
-          ...(grepLineClasses ? { grepLineClasses } : {}),
           fixedString,
           type: symbolType,
           globs,
@@ -1135,9 +1066,6 @@ export async function startServer() {
           // The fileFilter is the client's shell cwd, not an explicit --in (cwd-paths.js).
           _cwdScope: url.searchParams.get('cwdScope') === 'true',
           ...(agentFormat && { format: agentFormat, tokenBudget }),
-          // SS_FIX_SEARCH_FIRST_UNIT (read client-side); any other value is ignored
-          ...(agentFormat && ['calibrated', 'all'].includes(url.searchParams.get('firstUnit'))
-            ? { firstUnit: url.searchParams.get('firstUnit') } : {}),
         });
 
         // Agent mode: return the packaged response directly as JSON.
@@ -1558,9 +1486,6 @@ export async function queryServer(query, options = {}) {
     fileFilter,
     perFileCap = 0,
     maxFiles = 0,
-    grepFileOrder,
-    grepFileWeight,
-    grepLineClasses = false,
     fixedString = false,
     type = '',
     globs = [],
@@ -1575,7 +1500,6 @@ export async function queryServer(query, options = {}) {
     mid = false,
     format,
     tokenBudget,
-    firstUnit,
     projectRoot,
     trackAgentSpans = true,
     _isAgentFormat = false,
@@ -1603,9 +1527,6 @@ export async function queryServer(query, options = {}) {
     }
     if (perFileCap > 0) params.set('perFileCap', perFileCap.toString());
     if (maxFiles > 0) params.set('maxFiles', maxFiles.toString());
-    if (grepFileOrder === 'weight') params.set('fileOrder', 'weight');
-    if (grepFileWeight === 'sat2') params.set('fileWeight', 'sat2');
-    if (grepLineClasses === true) params.set('lineClasses', '1');
     if (fixedString) params.set('fixedString', 'true');
     if (type) params.set('type', type);
     if (!literalFilter) params.set('literalFilter', 'false');
@@ -1619,7 +1540,6 @@ export async function queryServer(query, options = {}) {
     if (mid) params.set('mid', 'true');
     if (format && format.startsWith('agent')) params.set('format', format);
     if (tokenBudget) params.set('budget', tokenBudget.toString());
-    if (firstUnit === 'calibrated' || firstUnit === 'all') params.set('firstUnit', firstUnit);
     if (projectRoot) params.set('projectRoot', projectRoot);
     if (_isAgentFormat) params.set('agent', 'true');
     if (_siblingLine === false) params.set('siblingLine', 'false');
@@ -1659,10 +1579,10 @@ export async function queryServer(query, options = {}) {
  * its existing renderer while reusing the daemon's resident model/index.
  *
  * @param {{ path: string, query: string, projectRoot: string, maxChars?: number,
- *          exactRanges?: boolean, pickExcerpt?: boolean }} request
+ *          exactRanges?: boolean }} request
  * @returns {Promise<object>}
  */
-export async function queryReadSemanticServer({ path: file, query, projectRoot, maxChars, topK, exactRanges, pickExcerpt } = {}) {
+export async function queryReadSemanticServer({ path: file, query, projectRoot, maxChars, topK, exactRanges } = {}) {
   if (!file || !query || !projectRoot) {
     throw new TypeError('path, query, and projectRoot are required');
   }
@@ -1676,7 +1596,6 @@ export async function queryReadSemanticServer({ path: file, query, projectRoot, 
   if (maxChars > 0) params.set('maxChars', String(maxChars));
   if (topK > 0) params.set('topK', String(topK));
   if (exactRanges === true) params.set('exactRanges', '1');
-  if (pickExcerpt === true) params.set('pick', '1');
 
   return new Promise((resolve, reject) => {
     const req = http.request({

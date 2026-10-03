@@ -1,8 +1,7 @@
 /**
- * ss-semantic budget enforcement with exact displayed ranges (SS_FIX_SEMANTIC_RANGES) and,
- * optionally, an excerpt around the best chunk of an over-budget span (SS_FIX_SEMANTIC_PICK).
- * SS_FIX_SEMANTIC_RANGES is DEFAULT ON in ss-semantic since 2026-10-03 (0 = legacy); PICK stays off.
- * Without them search-read-semantic.js keeps its own budget code unchanged.
+ * ss-semantic budget enforcement with exact displayed ranges (readSemantic `exactRanges`, which
+ * ss-semantic always sets). Without it (the read-semantic CLI and MCP tool)
+ * search-read-semantic.js keeps its own budget code unchanged.
  *
  * The defect this fixes: when the top merged span exceeds the budget, the shipped code keeps
  * its first maxChars characters (possibly mid-line) and still reports the merged range, so the
@@ -66,57 +65,25 @@ export function cutToWholeLines(fileText, lineOffsets, from, to, maxChars) {
 }
 
 /**
- * SS_FIX_SEMANTIC_PICK: the excerpt of an over-budget merged span. Start at its highest-scoring
- * chunk, widen to the next chunks by score while the hull still fits, then spend what is left
- * on whole lines toward the span's head, then toward its end; one contiguous range.
- *
- * @param {{startLine: number, endLine: number}} span - merged span
- * @param {Array<{startLine: number, endLine: number, score: number}>} parts - its padded chunks
- * @returns {{from: number, to: number}}
- */
-export function pickExcerptRange(span, parts, fileText, lineOffsets, maxChars) {
-  const inside = parts
-    .filter(p => p.startLine >= span.startLine && p.endLine <= span.endLine)
-    .sort((a, b) => b.score - a.score || a.startLine - b.startLine);
-  if (inside.length === 0) return { from: span.startLine, to: span.endLine };
-  let from = inside[0].startLine;
-  let to = inside[0].endLine;
-  if (rangeChars(fileText, lineOffsets, from, to) > maxChars) return { from, to };
-  for (const p of inside.slice(1)) {
-    const a = Math.min(from, p.startLine);
-    const b = Math.max(to, p.endLine);
-    if (rangeChars(fileText, lineOffsets, a, b) <= maxChars) { from = a; to = b; }
-  }
-  while (from > span.startLine && rangeChars(fileText, lineOffsets, from - 1, to) <= maxChars) from--;
-  while (to < span.endLine && rangeChars(fileText, lineOffsets, from, to + 1) <= maxChars) to++;
-  return { from, to };
-}
-
-/**
  * Greedy by score as the shipped _enforceCharBudget: spans that fit whole are kept whole; the
- * top span, when it alone exceeds the budget, is cut to exact whole lines (from its head, or
- * from its best chunk under `pick`). Line order is restored at the end.
+ * top span, when it alone exceeds the budget, is cut to exact whole lines from its head. Line
+ * order is restored at the end.
  *
  * @param {Array<object>} spans - merged spans ({startLine, endLine, score, ...})
  * @param {string} fileText
  * @param {number[]} lineOffsets
  * @param {number} maxChars
- * @param {{pick?: boolean, parts?: Array<object>}} [opts] - parts = padded pre-merge chunks
  */
-export function enforceExactCharBudget(spans, fileText, lineOffsets, maxChars, opts = {}) {
+export function enforceExactCharBudget(spans, fileText, lineOffsets, maxChars) {
   const last = realLineCount(fileText, lineOffsets);
   const clamp = s => ({ ...s, startLine: Math.min(s.startLine, last), endLine: Math.min(s.endLine, last) });
   const ranked = spans.map(clamp).sort((a, b) => b.score - a.score);
-  const parts = (opts.parts || []).map(clamp);
   const kept = [];
   let used = 0;
   for (const span of ranked) {
     const cost = rangeChars(fileText, lineOffsets, span.startLine, span.endLine);
     if (kept.length === 0 && cost > maxChars) {
-      const { from, to } = opts.pick
-        ? pickExcerptRange(span, parts, fileText, lineOffsets, maxChars)
-        : { from: span.startLine, to: span.endLine };
-      const cut = cutToWholeLines(fileText, lineOffsets, from, to, maxChars);
+      const cut = cutToWholeLines(fileText, lineOffsets, span.startLine, span.endLine, maxChars);
       kept.push({
         ...span,
         ...cut,
