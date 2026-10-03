@@ -7,6 +7,28 @@ import { MD_DEFAULTS, buildDocChunk, recursiveSplit } from './chunk-builder.js';
 
 const RST_UNDERLINE_CHARS = new Set('=-`:\'.\"~^_*+#'.split(''));
 
+// A line that only labels the NEXT section: an RST internal hyperlink target (`.. _union:`)
+// or a Markdown HTML anchor (`<a name="x"></a>`, `<a id="x"></a>`). It belongs to the header
+// below it, not to the end of the section above it.
+const RST_TARGET_RE = /^\.\. _[^:]+:\s*$/;
+const MD_ANCHOR_RE = /^\s*<a\s+(?:name|id)\s*=\s*["'][^"']*["']\s*(?:\/>|>\s*<\/a>)\s*$/i;
+
+/**
+ * The first line of a section whose header is at `headerIdx`: the header, or the topmost of
+ * the label lines (and blank lines between them) right above it. Never above `floor`.
+ */
+function sectionStartWithLabels(lines, headerIdx, floor, isLabel) {
+  let start = headerIdx;
+  let k = headerIdx - 1;
+  while (k >= floor && lines[k].trim() === '') k--;
+  while (k >= floor && isLabel(lines[k])) {
+    start = k;
+    k--;
+    while (k >= floor && lines[k].trim() === '') k--;
+  }
+  return start;
+}
+
 export class MarkdownChunker {
   constructor(options = {}) {
     this.maxChunkSize = options.maxChunkSize || MD_DEFAULTS.maxChunkSize;
@@ -114,14 +136,16 @@ export class MarkdownChunker {
       const headerMatch = line.match(/^(#{1,6})\s+(.+)$/);
 
       if (headerMatch) {
+        // An anchor line right above the header opens this section, not the previous one.
+        const start = sectionStartWithLabels(lines, i, sectionStart + 1, (l) => MD_ANCHOR_RE.test(l));
         // Close previous section
-        if (currentSection !== null || i > 0) {
-          const sectionContent = lines.slice(sectionStart, i).join('\n');
+        if (currentSection !== null || start > 0) {
+          const sectionContent = lines.slice(sectionStart, start).join('\n');
           sections.push({
             ...currentSection || { level: 0, title: '', hierarchy: {} },
             content: sectionContent,
             lineStart: sectionStart,
-            lineEnd: i - 1,
+            lineEnd: start - 1,
           });
         }
 
@@ -141,7 +165,7 @@ export class MarkdownChunker {
         }
 
         currentSection = { level, title, hierarchy };
-        sectionStart = i;
+        sectionStart = start;
       }
     }
 
@@ -217,6 +241,14 @@ export class MarkdownChunker {
         // Skip the underline line
         i++;
       }
+    }
+
+    // A `.. _name:` target right above a header labels that header's section: it opens the
+    // section instead of closing the previous one (docs/query.rst `.. _union:` above `Union`).
+    let floor = 0;
+    for (const hp of headerPositions) {
+      hp.lineIdx = sectionStartWithLabels(lines, hp.lineIdx, floor, (l) => RST_TARGET_RE.test(l));
+      floor = hp.headerEndIdx + 1;
     }
 
     // Second pass: build sections from header positions
@@ -307,8 +339,15 @@ export class MarkdownChunker {
     };
     if (frontmatter) extraMeta.frontmatter = frontmatter;
 
-    const absLineStart = bodyLineOffset + lineStart;
-    const absLineEnd = bodyLineOffset + lineEnd;
+    // The chunk text is the trimmed section: its line range drops the leading and trailing
+    // blank lines too (a section's range used to end on the blank lines before the next header).
+    const sectionLines = content.split('\n');
+    let lead = 0;
+    while (lead < sectionLines.length && sectionLines[lead].trim() === '') lead++;
+    let tail = 0;
+    while (tail < sectionLines.length - lead && sectionLines[sectionLines.length - 1 - tail].trim() === '') tail++;
+    const absLineStart = bodyLineOffset + lineStart + lead;
+    const absLineEnd = bodyLineOffset + lineEnd - tail;
 
     // If section fits in one chunk, emit directly
     if (trimmed.length <= this.maxChunkSize) {
