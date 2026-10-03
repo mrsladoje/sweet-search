@@ -1719,7 +1719,12 @@ export class TreeSitterProvider {
         // not cut a comment off from its declaration.
         let leading = this._takeLeadingComments(buffer, node, content, { isDeclaration: isBoundaryNode });
         if (leading.length > 0 && (nodeSize > maxSize || node.endIndex - leading[0].startIndex > maxSize)) {
-          leading = [];
+          // The doc comment does not fit with the node: keep only the tokens
+          // on the node's own first line (`export`, modifiers), so that line
+          // is not split between two chunks.
+          const row = node.startPosition.row;
+          leading = nodeSize > maxSize ? [] : leading.filter(n => n.startPosition.row >= row);
+          if (leading.length > 0 && node.endIndex - leading[0].startIndex > maxSize) leading = [];
         }
         if (leading.length > 0) buffer = buffer.slice(0, buffer.length - leading.length);
         const carry = takeCarry();

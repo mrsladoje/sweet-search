@@ -135,6 +135,16 @@ describe('b. JS/TS exported classes', () => {
     expectAllTextKept(src, chunks);
   });
 
+  it('a doc comment that does not fit with the class: `export` still starts the class chunk', async () => {
+    const methods = Array.from({ length: 48 }, (_, i) => `  method${i}(a, b) { return a + b * ${i}; }`).join('\n');
+    const src = `import a from "b";\n\n/**\n * Qux handles the long and winding road of a doc comment that is long.\n * More text here to make the comment bigger than thirty characters.\n */\nexport class Qux {\n${methods}\n}\n`;
+    const chunks = await chunk(src, 'typescript');
+    const qux = chunks.find(c => c.name === 'Qux');
+    expect(qux.text.startsWith('export class Qux {')).toBe(true);
+    expect(chunks.every(c => !c.text.endsWith('export'))).toBe(true);
+    expectAllTextKept(src, chunks);
+  });
+
   it('javascript: export class is a class chunk', async () => {
     const src = 'export class Foo {\n  constructor() { this.a = 1; }\n}\n';
     const chunks = await chunk(src, 'javascript');
