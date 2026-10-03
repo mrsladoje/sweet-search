@@ -1534,15 +1534,21 @@ export function configureServerTimeouts(server) {
  */
 function guardQueryRequest(req, reject, route) {
   req.setTimeout(QUERY_CLIENT_TIMEOUT_MS, () => {
-    req.destroy(new Error(`Sweet Search daemon did not answer ${route} within ${QUERY_CLIENT_TIMEOUT_MS / 1000} s`));
+    req.destroy(daemonError(`Sweet Search daemon did not answer ${route} within ${QUERY_CLIENT_TIMEOUT_MS / 1000} s`));
   });
   req.on('error', (err) => {
+    if (err?.userFacing) { reject(err); return; }
     if (err?.code === 'ECONNRESET' || /socket hang up/.test(err?.message || '')) {
-      reject(new Error(`Sweet Search daemon closed the connection before answering ${route} (it stopped or restarted)`));
+      reject(daemonError(`Sweet Search daemon closed the connection before answering ${route} (it stopped or restarted); run the call again`));
       return;
     }
     reject(err);
   });
+}
+
+/** A failure the agent should read as one line: the tool host prints the message, not a stack. */
+function daemonError(message) {
+  return Object.assign(new Error(message), { userFacing: true });
 }
 
 export async function queryServer(query, options = {}) {
@@ -1906,7 +1912,8 @@ export async function autoSpawnServer() {
   console.error('[AutoStart] Starting warm server in background...');
 
   // Spawn detached process — run sweet-search with --serve
-  const child = spawn(process.execPath, [sweetSearchPath, '--serve'], {
+  const { daemonNodeArgs } = await import('./daemon-heap.js');
+  const child = spawn(process.execPath, [...daemonNodeArgs(), sweetSearchPath, '--serve'], {
     detached: true,
     stdio: 'ignore',
     cwd: path.dirname(__filename),

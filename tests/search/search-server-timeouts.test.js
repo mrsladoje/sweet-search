@@ -14,6 +14,8 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   configureServerTimeouts, queryServer, SEARCH_SERVER_TIMEOUT_MS,
 } from '../../core/search/search-server.js';
+import { daemonHeapMb, daemonNodeArgs } from '../../core/search/daemon-heap.js';
+import { runInVirtualProcess } from '../../core/agent-tools/virtual-process.js';
 
 describe('configureServerTimeouts', () => {
   it('bounds receiving the request, not computing the answer', () => {
@@ -51,6 +53,16 @@ describe('queryServer against a daemon that drops the call', () => {
       .rejects.toThrow('Sweet Search daemon closed the connection before answering /search');
   });
 
+  it('prints a dropped call as one error line, not a stack trace', async () => {
+    await listen((req) => req.socket.destroy());
+    const result = await runInVirtualProcess({ env: { ...process.env }, cwd: '/', pid: process.pid }, async () => {
+      await queryServer('hasMany', { projectRoot: '/x' });
+    });
+    const err = result.stderr.toString('utf8');
+    expect(result.code).toBe(1);
+    expect(err).toBe('[ss-*] error: Sweet Search daemon closed the connection before answering /search (it stopped or restarted); run the call again\n');
+  });
+
   it('still returns an answer that takes its time', async () => {
     await listen((req, res) => {
       setTimeout(() => {
@@ -59,5 +71,16 @@ describe('queryServer against a daemon that drops the call', () => {
       }, 200);
     });
     await expect(queryServer('hasMany', { projectRoot: '/x' })).resolves.toEqual({ results: [], serverProjectRoot: '/x' });
+  });
+});
+
+describe('daemon heap ceiling', () => {
+  // r282 grdb: the daemon aborted at V8's ~4 GiB default heap under three concurrent searches.
+  it('is a quarter of physical memory, never below the V8 default', () => {
+    const gib = 1024 ** 3;
+    expect(daemonHeapMb(128 * gib)).toBe(32 * 1024);
+    expect(daemonHeapMb(16 * gib)).toBe(4096);
+    expect(daemonHeapMb(8 * gib)).toBe(4096);
+    expect(daemonNodeArgs(64 * gib)).toEqual(['--max-old-space-size=16384']);
   });
 });

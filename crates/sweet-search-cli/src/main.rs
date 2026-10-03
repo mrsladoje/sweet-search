@@ -1449,6 +1449,27 @@ fn auto_start_server() -> Option<String> {
 
 /// `quiet`: print nothing on failure. The ss-* client then runs the tool in-process, and
 /// a diagnostic on stderr would reach the agent next to a good answer.
+/// JS heap ceiling of the daemon, in MiB: a quarter of physical memory, never below
+/// V8's own ~4 GiB default. A daemon at V8's default ceiling aborted mid-query on a large
+/// index and dropped every call in flight. Same formula as core/search/daemon-heap.js.
+fn daemon_heap_mb(total_bytes: u64) -> u64 {
+    (total_bytes / 4 / (1024 * 1024)).max(4096)
+}
+
+fn physical_memory_bytes() -> u64 {
+    // SAFETY: sysconf only reads system configuration.
+    let (pages, page_size) = unsafe {
+        (
+            libc::sysconf(libc::_SC_PHYS_PAGES),
+            libc::sysconf(libc::_SC_PAGESIZE),
+        )
+    };
+    if pages <= 0 || page_size <= 0 {
+        return 0;
+    }
+    pages as u64 * page_size as u64
+}
+
 fn auto_start_server_for(project_root: &Path, quiet: bool) -> Option<String> {
     // Find the core/start-server.js relative to the binary or cwd
     let server_script = if quiet {
@@ -1468,6 +1489,10 @@ fn auto_start_server_for(project_root: &Path, quiet: bool) -> Option<String> {
     // server derives the SAME per-project socket we'll connect to, and the
     // maintainer targets the right project (C3 + canonical /tmp vs /private/tmp).
     let spawn_result = Command::new("node")
+        .arg(format!(
+            "--max-old-space-size={}",
+            daemon_heap_mb(physical_memory_bytes())
+        ))
         .arg(script)
         .arg("--serve")
         .env("SWEET_SEARCH_PROJECT_ROOT", project_root)
@@ -1978,6 +2003,16 @@ mod tests {
     fn exists_set(paths: &[&str]) -> impl Fn(&Path) -> bool {
         let set: HashSet<PathBuf> = paths.iter().map(PathBuf::from).collect();
         move |p: &Path| set.contains(p)
+    }
+
+    #[test]
+    fn daemon_heap_is_a_quarter_of_ram_and_never_below_v8_default() {
+        let gib: u64 = 1024 * 1024 * 1024;
+        assert_eq!(daemon_heap_mb(128 * gib), 32 * 1024);
+        assert_eq!(daemon_heap_mb(16 * gib), 4096);
+        assert_eq!(daemon_heap_mb(8 * gib), 4096);
+        assert_eq!(daemon_heap_mb(0), 4096);
+        assert!(physical_memory_bytes() > 0);
     }
 
     #[test]
