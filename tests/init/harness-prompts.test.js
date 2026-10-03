@@ -67,9 +67,8 @@ describe('Claude Code: shipped main agent = bench product + read6fs', () => {
   });
 });
 
-// V1b: the shipped main agent carries the rules. It must be the benchmarked
-// SS_VARIANT_CC_RULES_IN_PROMPT=2 file, and the switch value '2' must equal the default.
-describe('Claude Code: V1b agent file = the benchmarked SS_VARIANT_CC_RULES_IN_PROMPT=2 arm', () => {
+// V1b: the shipped main agent carries the rules, as the bench runner installs them.
+describe('Claude Code: V1b agent file = the benchmarked V1b arm', () => {
   const POLICY = getPolicyBody('cli');
   const norm = t => t.replace(/projects\/[^/`]+\/memory\//, 'projects/<slug>/memory/');
   const install = (name, opts) => {
@@ -85,16 +84,6 @@ describe('Claude Code: V1b agent file = the benchmarked SS_VARIANT_CC_RULES_IN_P
     }), 'read6fs');
     expect(norm(withoutOverride(product))).toBe(norm(runner));
     expect(product.split(POLICY)).toHaveLength(2);
-  });
-
-  it("the switch value '2' installs the default bytes; '0' installs the 2.8.2 bytes", () => {
-    const unset = install('unset', { env: {} });
-    const two = install('two', { env: { SS_VARIANT_CC_RULES_IN_PROMPT: '2' } });
-    const zero = install('zero', { env: { SS_VARIANT_CC_RULES_IN_PROMPT: '0' } });
-    const plain = install('plain', { env: {}, rules: false });
-    expect(norm(two)).toBe(norm(unset));
-    expect(norm(zero)).toBe(norm(plain));
-    expect(zero).not.toContain(POLICY);
   });
 });
 

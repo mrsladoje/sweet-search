@@ -51,7 +51,6 @@ import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { opencodeRulesDir, applyOpencodeRepoCacheKey, applyOpencodeProductCacheKey, stageProductCachePlugin, OC_CACHE_KEY_MODES } from './lib/oc-bench-config.mjs';
-import { readFixFlags } from '../core/search/agent-output-fixes.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const H = path.join(REPO, 'eval/task-completion-bench/harness');
@@ -67,7 +66,7 @@ const { parseClaudeStream, excludeAncestorClaudeMd } = await import(path.join(H,
 const { turnsFromTranscript, sidechainTurnSets, addSidechainCostsChecked, selectClaudeMainCosts } = await import(path.join(H, 'claude-code-accounting.mjs'));
 const { parseCodexAgentStream, codexHarnessTrim, codexHarnessTrimArgs, codexRulesConfigArgs, buildPrivateHome, isZeroCallStartFailure, classifyCodexCommand, CODEX_HARNESS_TRIM_STATE_FILE } = await import(path.join(H, 'codex-task-runner.mjs'));
 const { opencodeArmHarnessTrim, opencodeRulesInConfig, buildMainOpencodeConfig, opencodeUnjailedEnv, runOpencodePreflight, parseOpencodeStream, opencodeRunMessage, OPENCODE_TRIM_REPORT, OPENCODE_RULES_FILE } = await import(path.join(H, 'opencode-task-runner.mjs'));
-const { writeClaudeRules, removeClaudeRules, resolveClaudeRulesLayout } = await imp('scripts/write-claude-rules.js');
+const { writeClaudeRules, removeClaudeRules } = await imp('scripts/write-claude-rules.js');
 const { installClaudeLeanHarness, removeClaudeLeanHarness } = await imp('scripts/install-claude-lean-harness.js');
 const { WARMUP_ID, WARMUP_QUESTION, warmupEnabled, createWarmupGate, excludeWarmups, applyClaudeCacheTtl, firstRequestCacheFields, cacheFairness, cacheIsDeterministic, fairnessBanner } = await import(path.join(H, 'cache-warmup.mjs'));
 const { turnsFromRollout, LEDGER_BASIS } = await import(path.join(H, 'ideal-cost.mjs'));
@@ -128,10 +127,6 @@ const CAP_DIR = path.join(OUT, 'captures');
 const STATE = path.join(EVAL, 'r282', `${CELL_NAME}${SUFFIX}`);
 const SS_BIN = path.join(REPO, 'eval/agent-read-workflows/bin');
 const RULES = fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/p7-final/sweet-search-system-prompt.md'), 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '');
-// final-tuning variant SS_VARIANT_PRUNE3=1 (default off = byte-identical): ss-find, ss-semantic and
-// ss-trace are removed — from the rules text (variants/rules-prune3.md) AND from PATH (a bin dir with
-// only ss-search / ss-grep / ss-read and their shared helpers), so the agent can neither read about
-// nor call them. Codex / opencode only (Claude Code reads the rules via writeClaudeRules).
 // --interleave --armB-env "K=V,K2=V2" (final-tuning 2026-10-01): a second sweet arm `sweetB` with an env
 // overlay, run INTERLEAVED with `sweet` (A, B, A, B … per probe) in one queue, so both conditions see
 // the same provider/time drift. Needed because two identical Codex baselines run 25 min apart
@@ -142,21 +137,13 @@ const envOf = (arm) => (arm === 'sweetB' ? { ...process.env, ...ARMB_ENV } : pro
 // per-repo files); an --armB-env overlay would never reach it and would mislabel rows and exposure.
 // Run the two Claude Code arms one after the other with their own env instead.
 if (CELL.harness === 'cc' && Object.keys(ARMB_ENV).length) { console.error('--armB-env is not wired for Claude Code: run the arms sequentially, each with its own env'); process.exit(2); }
-const prune3 = (arm) => envOf(arm).SS_VARIANT_PRUNE3 === '1';
 // SS_VARIANT_OC_CACHE_KEY (opencode; per arm like every SS_VARIANT_*): unset = opencode's own session-id
 // keys; `repo` = bench key (per-model promptCacheKey + scripts/opencode-cache-key-plugin.mjs); `product`
 // = the shipped plugin from the main checkout, listed exactly as `sweet-search init --opencode` lists it.
 const ocCacheMode = (arm) => envOf(arm).SS_VARIANT_OC_CACHE_KEY || '';
-// EFFECTIVE ss-* output mode of an arm, stamped on every sweet row. Since 2026-10-01 Bundle A is the
-// product default: an unset SS_FIX_A means 'compact', and SS_FIX_A=0 (or SWEET_SEARCH_COMPACT_OUTPUT=0)
-// means 'legacy'. Rows without this field predate the change and are 'legacy' unless their run set
-// SS_FIX_A=1. Never pool rows across different values. 'mixed' = a sub-switch differs from the umbrella.
-const ssOutputMode = (arm) => {
-  const f = readFixFlags(envOf(arm));
-  if (f.compact && f.traceCompact && f.grepRetry) return 'compact';
-  if (!f.compact && !f.traceCompact && !f.grepRetry) return 'legacy';
-  return `mixed(compact=${+f.compact},trace=${+f.traceCompact},grep=${+f.grepRetry})`;
-};
+// The switches still under test that change what an arm sees (SWITCHES.md): every SS_VARIANT_* and
+// SS_FIX_GREP_FULLLINE. Stamped on each row as `variants`, next to its gitCommit.
+const isArmSwitch = (k) => k.startsWith('SS_VARIANT_') || k.startsWith('SS_FIX_');
 for (const a of ['native', 'sweet', 'sweetB']) {
   const m = ocCacheMode(a);
   if (m && !OC_CACHE_KEY_MODES.includes(m)) { console.error(`SS_VARIANT_OC_CACHE_KEY must be one of ${OC_CACHE_KEY_MODES.join(', ')} (got "${m}")`); process.exit(2); }
@@ -165,8 +152,6 @@ const OC_PRODUCT = ['native', 'sweet', 'sweetB'].some(a => ocCacheMode(a) === 'p
 if (OC_PRODUCT && CELL.harness !== 'opencode') { console.error('SS_VARIANT_OC_CACHE_KEY=product is an opencode switch'); process.exit(2); }
 // The product plugin acts on the `openai` provider only; on any other provider the paid run would measure nothing.
 if (OC_PRODUCT && !CELL.model.startsWith('openai/')) { console.error(`SS_VARIANT_OC_CACHE_KEY=product: ${CELL.model} is not an openai/ model; the product plugin leaves it untouched`); process.exit(2); }
-const PRUNE3 = prune3('sweet') || prune3('sweetB');
-const RULES_PRUNE3 = () => fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/final-tuning/variants/rules-prune3.md'), 'utf8');
 // SS_VARIANT_RULES_FILE=<path relative to the repo> (final-tuning): a full alternative rules text for that
 // arm (same tools; Codex / opencode). Default unset = the shipped rules.
 // Claude Code reads SS_VARIANT_RULES_FILE from process.env too (getPolicyBody in
@@ -174,19 +159,8 @@ const RULES_PRUNE3 = () => fs.readFileSync(path.join(REPO, 'core/prompt-optimiza
 const rulesFor = (arm) => {
   const f = envOf(arm).SS_VARIANT_RULES_FILE;
   if (f) return fs.readFileSync(path.resolve(REPO, f), 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '');
-  return prune3(arm) ? RULES_PRUNE3() : RULES;
+  return RULES;
 };
-function prunedBin() {
-  const d = path.join(EVAL, 'final-tuning-bin-prune3');
-  fs.mkdirSync(d, { recursive: true });
-  for (const f of ['ss-search', 'ss-grep', 'ss-read', '_ss-env.sh', '_ss-helpers.mjs', '_ss-argparse.mjs']) {
-    const link = path.join(d, f), target = path.join(SS_BIN, f);
-    try { if (fs.readlinkSync(link) === target) continue; fs.rmSync(link); } catch {}
-    fs.symlinkSync(target, link);
-  }
-  return d;
-}
-
 // ─── probes: vault + held-out + OOD, merged ───────────────────────────────────────────────────
 const SETS = [
   ['vault', 'core/prompt-optimization/data/frozen/p7-vault-probes-v60.json'],
@@ -287,7 +261,7 @@ const sh = (cmd, args, opts = {}) => execFileSync(cmd, args, { encoding: 'utf8',
 const harnessVersion = () => { try { return sh(path.join(BIN[CELL.harness], { cc: 'claude', codex: 'codex', opencode: 'opencode' }[CELL.harness]), ['--version']).split('\n')[0]; } catch { return null; } };
 const baseEnv = (sweet, cwd, arm = sweet ? 'sweet' : 'native') => ({
   ...envOf(arm),
-  PATH: [BIN[CELL.harness], sweet ? (prune3(arm) ? prunedBin() : SS_BIN) : null, process.env.PATH].filter(Boolean).join(':'),
+  PATH: [BIN[CELL.harness], sweet ? SS_BIN : null, process.env.PATH].filter(Boolean).join(':'),
   SWEET_SEARCH_PROJECT_ROOT: cwd,
   SWEET_SEARCH_OFFLINE: '1',
 });
@@ -364,8 +338,7 @@ const claudeHome = (arm) => { const d = path.join(STATE, `claude-home-${arm}`); 
 // refuse to touch a repo that already has .claude/ product files, and remove them after the arm.
 // Since V1b (2026-10-01, the product default after 2.8.2) the rules ride in the lean agent file and the
 // rules file is the short pointer, exactly as init installs them (lean harness first, then the
-// rules file by its result). SS_VARIANT_CC_RULES_IN_PROMPT=0 reproduces the 2.8.2 layout (full
-// rules file, agent file without rules) for controls; =2 is the default; =1 (V1) writes no rules file.
+// rules file by its result).
 const CLAUDE_PRODUCT_FILES = ['.claude/rules/sweet-search.md', '.claude/agents/sweet-search.md', '.claude/agents/general-purpose.md', '.claude/agents/Plan.md', '.claude/sweet-search-harness.json'];
 function installClaudeProduct(cwds, home) {
   const installed = [];
@@ -376,12 +349,11 @@ function installClaudeProduct(cwds, home) {
     const settingsBefore = fs.existsSync(settings) ? fs.readFileSync(settings) : null;
     const claudeDirExisted = fs.existsSync(path.join(cwd, '.claude'));
     installed.push({ cwd, settings, settingsBefore, claudeDirExisted });
-    const { layout } = resolveClaudeRulesLayout(process.env, { strict: true });
-    const lean = installClaudeLeanHarness({ projectRoot: cwd, configDir: home, visibleConfigDir: home });   // reads the switch from process.env, as init does
+    const lean = installClaudeLeanHarness({ projectRoot: cwd, configDir: home, visibleConfigDir: home });   // reads SS_VARIANT_RULES_FILE from process.env, as init does
     if (lean.active !== true) throw new Error(`lean harness not active in ${cwd}: ${lean.status} ${lean.detail}`);
-    if (lean.rulesInPrompt !== (layout !== 'file')) throw new Error(`rules placement mismatch in ${cwd}: rulesInPrompt=${lean.rulesInPrompt}, layout=${layout}`);
-    const rules = layout === 'none' ? 'in-prompt' : writeClaudeRules({ projectRoot: cwd, layout: layout === 'pointer' ? 'pointer' : 'full' });
-    if (rules !== 'created' && rules !== 'in-prompt') throw new Error(`rules not created in ${cwd}: ${rules}`);
+    if (lean.rulesInPrompt !== true) throw new Error(`rules placement mismatch in ${cwd}: rulesInPrompt=${lean.rulesInPrompt}`);
+    const rules = writeClaudeRules({ projectRoot: cwd, layout: 'pointer' });
+    if (rules !== 'created') throw new Error(`rules not created in ${cwd}: ${rules}`);
   }
   return installed;
 }
@@ -634,7 +606,7 @@ const GATE = createWarmupGate({ logFile: WARMUPS, meta: { cell: CELL_NAME, harne
 // ─── one rollout ───────────────────────────────────────────────────────────────────────────────
 async function runOne(probe, arm) {
   const sweet = arm === 'sweet' || arm === 'sweetB';
-  const base = { captureVersion: CAPTURE_VERSION, cell: CELL_NAME, arm, id: probe.id, set: probe._set, lang: probe.language, stratum: probe.stratum, harness: CELL.harness, model: CELL.model, effort: CELL.effort ?? CELL.variant ?? 'default', harnessVersion: HARNESS_VERSION, gitCommit: GIT_COMMIT.commit, gitDirty: GIT_COMMIT.dirty, ...(arm !== 'native' ? { ssOutput: ssOutputMode(arm) } : {}), ...(STABLE_RULES_PATH ? { stableRulesPath: true } : {}), ...(CELL.harness === 'opencode' && ocCacheMode(arm) === 'product' ? { ocCachePlugin: { sha: OC_PRODUCT_PLUGIN.sha, mainCommit: OC_PRODUCT_PLUGIN.commit, dirty: OC_PRODUCT_PLUGIN.dirty } } : {}), ...(Object.keys(envOf(arm)).some(k => k.startsWith('SS_VARIANT_')) ? { variants: Object.fromEntries(Object.entries(envOf(arm)).filter(([k]) => k.startsWith('SS_VARIANT_'))) } : {}) };
+  const base = { captureVersion: CAPTURE_VERSION, cell: CELL_NAME, arm, id: probe.id, set: probe._set, lang: probe.language, stratum: probe.stratum, harness: CELL.harness, model: CELL.model, effort: CELL.effort ?? CELL.variant ?? 'default', harnessVersion: HARNESS_VERSION, gitCommit: GIT_COMMIT.commit, gitDirty: GIT_COMMIT.dirty, ...(STABLE_RULES_PATH ? { stableRulesPath: true } : {}), ...(CELL.harness === 'opencode' && ocCacheMode(arm) === 'product' ? { ocCachePlugin: { sha: OC_PRODUCT_PLUGIN.sha, mainCommit: OC_PRODUCT_PLUGIN.commit, dirty: OC_PRODUCT_PLUGIN.dirty } } : {}), ...(Object.keys(envOf(arm)).some(isArmSwitch) ? { variants: Object.fromEntries(Object.entries(envOf(arm)).filter(([k]) => isArmSwitch(k))) } : {}) };
   let run;
   try {
     // The arm's warm-up must have FINISHED before any scored rollout of that arm starts.
@@ -663,8 +635,8 @@ async function runOne(probe, arm) {
     calls: calls.length, toolKinds: kinds, ssCalls: kinds.ss || 0, ssUsed: (kinds.ss || 0) > 0,
     nativeSearchCalls: (kinds.nativeGrep || 0) + (kinds.nativeRead || 0),
     ssDeliveredTokens: delivered.reduce((s, d) => s + (d.used || 0), 0),
-    // Same unit in both arms: the SS_FIX_* switches remove the route trailer / budget header that
-    // ssDeliveredTokens reads, so compare switch-on vs switch-off runs on characters.
+    // Same unit across commits: the compact ss-* output (since 2026-10-01) has no route trailer /
+    // budget header for ssDeliveredTokens to read, so compare runs on characters.
     ssDeliveredChars: run.calls.reduce((s, c) => s + (c.kind === 'ss' && typeof c.text === 'string' ? c.text.length : 0), 0),
     answerChars: (answer || '').length, rawLen: rawResponse.length,
   };
@@ -725,10 +697,9 @@ function exposureTexts(arm) {
       // Same calls as installClaudeProduct (process.env, as for a real Claude Code run).
       const proj = path.join(work, 'repo'), home = path.join(work, 'home');
       fs.mkdirSync(proj); fs.mkdirSync(home);
-      const { layout } = resolveClaudeRulesLayout(process.env, { strict: true });
       const lean = installClaudeLeanHarness({ projectRoot: proj, configDir: home, visibleConfigDir: home });
       if (lean.active !== true) throw new Error(`exposure: lean harness not active: ${lean.status} ${lean.detail}`);
-      if (layout !== 'none') writeClaudeRules({ projectRoot: proj, layout: layout === 'pointer' ? 'pointer' : 'full' });
+      writeClaudeRules({ projectRoot: proj, layout: 'pointer' });
       const out = {};
       for (const f of CLAUDE_PRODUCT_FILES) { const fp = path.join(proj, f); if (fs.existsSync(fp)) out[f.replace(/\//g, '__')] = fs.readFileSync(fp, 'utf8'); }
       return out;
@@ -797,7 +768,6 @@ try {
     const cwds = [...new Set(tasks.map(t => t.p._cwd))];
     if (arms.some(a => a.startsWith('sweet'))) { console.error(`[${label}] warming ${cwds.length} ss-* servers…`); for (const c of cwds) warmup(c); }
     let installed = [];
-    if (CELL.harness === 'cc' && PRUNE3) throw new Error('SS_VARIANT_PRUNE3 is not wired for Claude Code');
     if (CELL.harness === 'cc' && arms.includes('sweet')) {
       // The warm-up dir carries the same product install, so the warm-up IS the sweet launch config.
       installed = installClaudeProduct(WARMUP_ON ? [...cwds, WARM_CWD] : cwds, claudeHome('sweet'));

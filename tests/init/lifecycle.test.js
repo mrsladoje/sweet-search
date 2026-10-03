@@ -76,7 +76,7 @@ function runCli(args, env = {}) {
     cwd: tmpRoot,
     encoding: 'utf8',
     timeout: 60000,
-    env: { ...process.env, SS_VARIANT_CC_RULES_IN_PROMPT: '', ...env },
+    env: { ...process.env, ...env },
   });
   return { code: result.status, stdout: result.stdout, stderr: result.stderr };
 }
@@ -360,53 +360,11 @@ describe('lifecycle: Claude CLI → MCP-only contact surface', () => {
 });
 
 // V1b: with the lean harness active, the policy rides in the main agent file and the
-// project rule is a pointer. Every other state keeps the full rule file (2.8.2 layout).
+// project rule is a pointer. Every other state keeps the full rule file.
 describe('lifecycle: V1b rules placement', () => {
   const sha = (t) => createHash('sha256').update(t).digest('hex');
   const CLAUDE_FILES = [CLAUDE_RULES_REL, CLAUDE_LEAN_AGENT_REL, CLAUDE_LEAN_SUBAGENT_REL, CLAUDE_LEAN_PLAN_REL, CLAUDE_LEAN_MANIFEST_REL, '.claude/settings.json'];
   const snapshot = () => Object.fromEntries(CLAUDE_FILES.map((rel) => [rel, exists(rel) ? readText(rel) : null]));
-  const OPT_OUT = { SS_VARIANT_CC_RULES_IN_PROMPT: '0' };
-
-  it('the opt-out installs the 2.8.2 layout: full rule file, agent file without the rules', () => {
-    const r = runCli(COMMON_INIT_ARGS, OPT_OUT);
-    expect(r.code, `init failed: ${r.stderr}`).toBe(0);
-    expect(readText(CLAUDE_RULES_REL)).toBe(FULL_RULE);
-    expect(readText(CLAUDE_LEAN_AGENT_REL)).not.toContain(CANONICAL_POLICY_BODY);
-    expect(r.stderr).not.toContain('[pointer;');
-  });
-
-  it('upgrades a 2.8.2 install in place, keeps the manifest consistent, and re-init is a no-op', () => {
-    expect(runCli(COMMON_INIT_ARGS, OPT_OUT).code).toBe(0);   // the 2.8.2 layout
-    const before = snapshot();
-    const up = runCli(COMMON_INIT_ARGS);
-    expect(up.code, `upgrade failed: ${up.stderr}`).toBe(0);
-    expect(up.stderr).toContain('[init] Claude rules: updated [pointer;');
-    const after = snapshot();
-    expect(after[CLAUDE_RULES_REL]).toBe(POINTER_RULE);
-    expectRulesInAgent();
-    // Only the rule file, the main agent and the manifest hash change.
-    expect(after[CLAUDE_LEAN_SUBAGENT_REL]).toBe(before[CLAUDE_LEAN_SUBAGENT_REL]);
-    expect(after[CLAUDE_LEAN_PLAN_REL]).toBe(before[CLAUDE_LEAN_PLAN_REL]);
-    expect(after['.claude/settings.json']).toBe(before['.claude/settings.json']);
-    expect(after[CLAUDE_LEAN_AGENT_REL].replace(`${CANONICAL_POLICY_BODY}\n\n`, '')).toBe(before[CLAUDE_LEAN_AGENT_REL]);
-    const m = readJson(CLAUDE_LEAN_MANIFEST_REL);
-    for (const rel of [CLAUDE_LEAN_AGENT_REL, CLAUDE_LEAN_SUBAGENT_REL, CLAUDE_LEAN_PLAN_REL]) {
-      expect(m.files[rel]).toBe(sha(readText(rel)));
-    }
-    // Idempotent: a third run changes no byte and reports the rule as unchanged.
-    const again = runCli(COMMON_INIT_ARGS);
-    expect(again.code).toBe(0);
-    expect(again.stderr).toContain('[init] Claude rules: unchanged [pointer;');
-    expect(snapshot()).toEqual(after);
-  });
-
-  it('the opt-out after an upgrade restores the exact 2.8.2 layout', () => {
-    expect(runCli(COMMON_INIT_ARGS, OPT_OUT).code).toBe(0);
-    const old = snapshot();
-    expect(runCli(COMMON_INIT_ARGS).code).toBe(0);
-    expect(runCli(COMMON_INIT_ARGS, OPT_OUT).code).toBe(0);
-    expect(snapshot()).toEqual(old);
-  });
 
   it('keeps a user-authored rule file untouched; the agent still carries the rules', () => {
     const mine = '# My sweet-search rules\nNo sentinel.\n';
@@ -443,16 +401,8 @@ describe('lifecycle: V1b rules placement', () => {
     expect(readText(CLAUDE_RULES_REL)).toBe(FULL_RULE);
   });
 
-  it('an unknown switch value warns and installs the default', () => {
-    const r = runCli(COMMON_INIT_ARGS, { SS_VARIANT_CC_RULES_IN_PROMPT: 'yes' });
-    expect(r.code, `init failed: ${r.stderr}`).toBe(0);
-    expect(r.stderr).toContain('SS_VARIANT_CC_RULES_IN_PROMPT=yes is not 0, 1 or 2');
-    expect(readText(CLAUDE_RULES_REL)).toBe(POINTER_RULE);
-    expectRulesInAgent();
-  });
-
-  it('uninstall after an upgrade leaves no Claude Code file behind', () => {
-    expect(runCli(COMMON_INIT_ARGS, OPT_OUT).code).toBe(0);
+  it('uninstall after a re-init leaves no Claude Code file behind', () => {
+    expect(runCli(COMMON_INIT_ARGS).code).toBe(0);
     expect(runCli(COMMON_INIT_ARGS).code).toBe(0);
     const u = runCli(['uninstall', '--force', '--keep-models']);
     expect(u.code, `uninstall failed: ${u.stderr}`).toBe(0);
