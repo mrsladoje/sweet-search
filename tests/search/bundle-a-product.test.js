@@ -8,8 +8,7 @@
  *      off, the original code paths, which agent-output-fixes-wiring.test.js pins byte for byte
  *      against verbatim copies of the original loops).
  *   2. The daemon's agent text (`sweet-search "<q>"` from an agent, renderAgentSearchResponse):
- *      opt-out = a verbatim copy of the previous renderer; default = the ss-* compact renderer
- *      with the `sweet-search` tool name.
+ *      opt-out = a verbatim copy of the previous renderer; default = the ss-* compact renderer.
  *   3. (opt-in, SS_BUNDLE_A_FIXTURE=<indexed repo>) the real wrapper on a real index: default
  *      output == SS_FIX_A=1 output, and SWEET_SEARCH_COMPACT_OUTPUT=0 output == SS_FIX_A=0 output,
  *      for ss-search, ss-find, ss-grep (regex error and zero-hit case included) and ss-trace.
@@ -23,7 +22,6 @@ import { describe, expect, it } from 'vitest';
 
 import {
   readFixFlags,
-  renderCompactHeader,
   renderCompactSufficiency,
   renderFixedBlocks,
   renderSufficiencyFragment,
@@ -161,31 +159,28 @@ describe('daemon agent text (native `sweet-search` from an agent)', () => {
     }
   });
 
-  it('default uses the ss-search compact renderer (header renamed, same body)', () => {
+  it('default uses the ss-search compact renderer (same text: no query header in either)', () => {
     const resp = fixtureResponse();
     const gutter = (code, start) => ((lineGutterEnabled() && String(code).split('\n').length >= 15) ? numberCodeLines(code, start || 1) : code);
-    // What the ss-search wrapper prints under SS_FIX_A=1 (header + sufficiency + blocks), with the
+    // What the ss-search wrapper prints under SS_FIX_A=1 (sufficiency + blocks), with the
     // daemon's own gutter rule. The route trailer is bench instrumentation (stderr) and not part of it.
     const plan = selectEntries(resp.results, { dedupe: 'a2', k: 5 });
-    const wrapperShape = renderCompactHeader('ss-search', plan.entries.length, resp.query)
-      + renderCompactSufficiency(resp, renderSufficiency(resp))
+    const wrapperShape = renderCompactSufficiency(resp, renderSufficiency(resp))
       + renderFixedBlocks(resp.results, plan, { compact: true, gutter });
-    const text = renderAgentSearchResponse(resp, { compact: true });
-    expect(text).toBe(wrapperShape.replace(/^# ss-search:/, '# sweet-search:'));
+    expect(renderAgentSearchResponse(resp, { compact: true })).toBe(wrapperShape);
   });
 
-  it('drops the A1 metadata and keeps one header plus the compact sufficient=YES line', () => {
+  it('no query header, no metadata, results grouped by file, the compact sufficient=YES line', () => {
     const text = renderAgentSearchResponse(fixtureResponse(), { compact: true });
-    // 5 results in, 2 covered summaries dropped by A2: the header counts the 3 printed entries.
-    expect(text.startsWith('# sweet-search: 3 results for "where are tokens validated"\n# sufficient=YES\n')).toBe(true);
-    for (const gone of ['score=', 'routed=', 'budget=', 'subMode=', '# confidence', 'kind=sandwich', '(full', '(summary']) {
+    expect(text.startsWith('# sufficient=YES\nsrc/auth.js\n## 1-18 validate\n')).toBe(true);
+    for (const gone of ['score=', 'routed=', 'budget=', 'subMode=', '# confidence', 'kind=sandwich', '(full', '(summary', 'results for', '## #']) {
       expect(text).not.toContain(gone);
     }
-    // A2: summary entries on one line; the covered and the identical-span summaries are gone.
-    expect(text).toContain('src/token.js:10-30 Token (class)\n');
+    // A2: summary rows under their file; the covered and the identical-span summaries are gone.
+    expect(text).toContain('\nsrc/token.js\n10-30 Token (class)\n');
     expect(text).not.toContain('inner');
     expect(text).not.toContain('Token holds the claims');
-    expect(text).toContain('src/claims.js:3 CLAIMS (const) STALE\nThe list of required claims.\n');
+    expect(text).toContain('\nsrc/claims.js\n3 CLAIMS STALE\nThe list of required claims.\n');
     // A7: the import line already in the code is cut from the imports block.
     expect(text).toContain("### imports\n```\n'use strict'\n```\n");
     // Everything else stays.
@@ -196,13 +191,12 @@ describe('daemon agent text (native `sweet-search` from an agent)', () => {
   it('keeps a summary whose lines the code block above elided (A2 covers only printed lines)', () => {
     const resp = fixtureResponse();
     resp.results[0] = { ...resp.results[0], sandwich: { ...resp.results[0].sandwich, elidedHead: 2 } };
-    expect(renderAgentSearchResponse(resp, { compact: true })).toContain('src/auth.js:4-6 inner (function)\n');
+    expect(renderAgentSearchResponse(resp, { compact: true })).toContain('\n4-6 inner\n');
   });
 
-  it('prints no sufficient line unless the verdict is YES, and (no matches) on zero results', () => {
+  it('prints no sufficient line unless the verdict is YES, and exactly (no results) on zero results', () => {
     expect(renderAgentSearchResponse(fixtureResponse({ sufficiencyVerdict: 'no' }), { compact: true })).not.toContain('sufficient');
-    expect(renderAgentSearchResponse(fixtureResponse({ results: [] }), { compact: true }))
-      .toBe('# sweet-search: 0 results for "where are tokens validated"\n# sufficient=YES\n(no matches)\n');
+    expect(renderAgentSearchResponse(fixtureResponse({ results: [] }), { compact: true })).toBe('(no results)\n');
   });
 });
 

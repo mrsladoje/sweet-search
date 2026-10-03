@@ -172,25 +172,42 @@ describe('fixed renderer, non-compact (A3 alone, B switches): the original bytes
 
 describe('fixed renderer, compact (SS_FIX_A)', () => {
   const a = readFixFlags({ SS_FIX_A: '1' });
-  it('A1 headers, A2 one-line summaries and dedupe, A7 imports dedupe', () => {
+  it('groups by file, no query header or rank numbers, A2 dedupe, A7 imports dedupe', () => {
     const results = fixture();
     const out = renderFixedBlocks(results, plan(results, a), { compact: true, gutter });
-    expect(out.startsWith('## #1 a.go:1-6 [function: Run]\n')).toBe(true);
+    expect(out).toBe([
+      'a.go',
+      '## 1-6 Run',
+      '```', gutter(results[0].code, 1), '```',
+      // No `rows` on this package: its one-row-per-line text prints as it is.
+      'x() b.go:3',
+      'same file: Stop (l.40)',
+      'siblings: RunAll',
+      // A continuation in another file keeps its path.
+      '## b.go:3-8', '```', lines(3, 6), '```',
+      'family: Run, RunAll',
+      // Rank 2 (a.go:2-4) is inside rank 1's printed code: dropped (A2).
+      'c.go',
+      '10-20 Other',
+      'c.go:10 handles other things',
+      'd.go',
+      '## 5-9 Prev', '```', gutter('prev\n...', 5), '```',
+      '',
+    ].join('\n'));
     expect(out).not.toContain('score=');
-    expect(out).not.toContain('(full');
-    // A7: the imports are the first lines of the code block: no imports block.
+    expect(out).not.toContain('## #');
     expect(out).not.toContain('### imports');
-    // A2: rank 2 is inside rank 1's code: dropped. Rank 3 keeps its extra text on line 2.
-    expect(out).not.toContain('a.go:2-4');
-    expect(out).toContain('\nc.go:10-20 Other (method)\nc.go:10 handles other things\n');
-    expect(out).toContain('## #4 d.go:5-9 [function: Prev]\n');
   });
 
   it('A3 line names the continuation file and the re-read command', () => {
     const results = fixture();
     const out = renderFixedBlocks(results, plan(results, a), { compact: true, omitted: new Set(['0:continuation']), gutter });
-    expect(out).toContain('# continues at b.go:3-8\n(lines 3-8 already shown above — re-read: ss-read b.go 3 8)\n');
+    expect(out).toContain('## b.go:3-8\n(lines 3-8 already shown above — re-read: ss-read b.go 3 8)\n');
     expect(renderAlreadyShownLine('dir with space/x.go', 1, 2)).toBe('(lines 1-2 already shown above — re-read: ss-read "dir with space/x.go" 1 2)');
+  });
+
+  it('prints exactly (no results) on zero results', () => {
+    expect(renderFixedBlocks([], plan([], a), { compact: true, gutter })).toBe('(no results)\n');
   });
 
   it('keeps the imports block when the code is omitted or does not show it', () => {

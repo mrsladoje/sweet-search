@@ -15,10 +15,11 @@
  * Switches (read from the environment; on = 1/true/on/yes, off = 0/false/off/no):
  *   SS_FIX_A=1|0               bundle A umbrella (no information loss; default: ON unless
  *                              SWEET_SEARCH_COMPACT_OUTPUT=0):
- *                                A1 one-line query header instead of the budget/route header,
- *                                   no score / kind tag / confidence line / trailers,
- *                                   compact `# sufficient=YES` line (only when YES)
- *                                A2 one-line summary entries; dedupe of covered summary entries
+ *                                A1 no query header (2026-10-04; it was one line), no
+ *                                   budget/route header, no score / kind tag / confidence line /
+ *                                   trailers, compact `# sufficient=YES` line (only when YES);
+ *                                   results grouped by file (renderGroupedBlocks)
+ *                                A2 one-line summary rows; dedupe of covered summary entries
  *                                A7 an imports block that the entry's own code already shows is dropped
  *                                A4 and A5 below, unless their own switch says 0
  *   SS_FIX_TRACE_COMPACT=1|0   A4 compact ss-trace + definition resolution (default: SS_FIX_A)
@@ -278,9 +279,10 @@ export function shownCodeSpan(r) {
  *   'v3' — the final-tuning SS_VARIANT_SEARCH_DEDUPE rule, unchanged (used only on the
  *          non-compact path so that variant prints what it always printed): a summary entry
  *          inside ANY earlier span, or repeating an earlier file + symbol, is dropped.
- *   'a2' — SS_FIX_A rule (review 2026-10-01): a summary-only entry is dropped only when an
- *          earlier entry has the IDENTICAL span, or an earlier entry's code SHOWS all of its
- *          lines (shownCodeSpan: a cut, sandwiched or preview body covers only what it prints).
+ *   'a2' — SS_FIX_A rule: a summary-only entry is dropped only when an earlier entry has the
+ *          IDENTICAL span, or printed code SHOWS all of its lines: any entry's code
+ *          (shownCodeSpan: a cut, sandwiched or preview body covers only what it prints) or any
+ *          entry's continuation code.
  *          No same-symbol rule (overloads, `String()` on two receivers, generic names), and a
  *          large summary span (a class) never swallows its methods.
  *
@@ -306,12 +308,16 @@ export function selectEntries(results, o = {}) {
       return !(covered && r.presentation === 'summary');
     });
   } else if (o.dedupe === 'a2') {
+    // Lines printed code shows, anywhere in the output: every entry's shown code and every
+    // continuation's code (the renderer groups a file's entries together, so code printed by a
+    // lower-ranked entry covers a summary row above it as well).
+    const printed = printedCodeSpans(list);
     const seen = [];
     list = list.filter(({ r }) => {
-      const covered = isSummaryOnly(r) && seen.some((x) => x.file === r.file
-        && ((x.start === r.startLine && x.end === r.endLine)
-          || (x.shown && r.startLine >= x.shown.start && r.endLine <= x.shown.end)));
-      if (!covered) seen.push({ file: r.file, start: r.startLine, end: r.endLine, shown: shownCodeSpan(r) });
+      const covered = isSummaryOnly(r) && (
+        seen.some((x) => x.file === r.file && x.start === r.startLine && x.end === r.endLine)
+        || insideAny(printed.get(r.file), r.startLine, r.endLine));
+      if (!covered) seen.push({ file: r.file, start: r.startLine, end: r.endLine });
       return !covered;
     });
   }
@@ -352,15 +358,6 @@ export function selectEntries(results, o = {}) {
   return { entries: list, hidden, hiddenCode };
 }
 
-/** `path:start-end symbol (kind)` — the whole summary entry on one line (A2). */
-export function renderSummaryLine(r) {
-  const span = r.endLine && r.endLine !== r.startLine ? `${r.startLine}-${r.endLine}` : `${r.startLine}`;
-  const sym = r.symbol ? ` ${r.symbol}` : '';
-  const kind = r.symbolType ? ` (${r.symbolType})` : '';
-  const stale = r.stale ? ' STALE' : '';
-  return `${r.file}:${span}${sym}${kind}${stale}`;
-}
-
 /** `also in this file: symA (l.120-140), symB (l.300)` (B2). */
 export function renderAlsoInFile(also) {
   if (!also || also.length === 0) return '';
@@ -387,22 +384,13 @@ export function renderSufficiencyFragment(response) {
 }
 
 /**
- * A1 one-line header: `# <tool>: N results for "<query>"` (ss-find adds ` /<regex>/`). It
- * replaces the routed / budget / used / subMode header.
- */
-export function renderCompactHeader(tool, count, query, { regex = null } = {}) {
-  const n = Number(count) || 0;
-  const rx = regex == null ? '' : ` /${regex}/`;
-  return `# ${tool}: ${n} result${n === 1 ? '' : 's'} for "${query ?? ''}"${rx}\n`;
-}
-
-/**
  * A1 keeps a compact sufficiency token: `# sufficient=YES` only when the verdict is YES, and
  * (like the original line) only together with a confidence verdict. `sufficiencyText` is the
  * original ` sufficient=...` fragment. `drop` = SS_FIX_DROP_SUFFICIENCY.
  */
 export function renderCompactSufficiency(response, sufficiencyText, { drop = false } = {}) {
-  if (drop || !response?.confidence) return '';
+  // Zero results print exactly `(no results)`.
+  if (drop || !response?.confidence || (Array.isArray(response.results) && response.results.length === 0)) return '';
   return /^ sufficient=YES\b/.test(String(sufficiencyText ?? '')) ? '# sufficient=YES\n' : '';
 }
 
@@ -453,13 +441,232 @@ export function dedupeImports(headerContext, code) {
   return kept.join('\n');
 }
 
+// --- compact renderer (ss-search / ss-find agent output) -----------------------------
+
+/** `start-end`, or `start` for one line. */
+function lineRange(start, end) {
+  return Number.isInteger(end) && end !== start ? `${start}-${end}` : `${start}`;
+}
+
+/** The source lines a continuation's code shows, or null (a trailer shows none). */
+function continuationSpan(r) {
+  const c = r?.continuation;
+  if (!c || c.kind !== 'symbol' || !c.code || !Number.isInteger(c.startLine) || !Number.isInteger(c.endLine)) return null;
+  return { file: c.file || r.file, start: c.startLine, end: c.endLine };
+}
+
+/**
+ * Every source span the printed code of `entries` shows, per file: the entry's own shown code
+ * (shownCodeSpan) and its continuation code. `omitted` keys (A3) count too: the thread saw them.
+ * @returns {Map<string, Array<{start:number,end:number}>>}
+ */
+export function printedCodeSpans(entries) {
+  const byFile = new Map();
+  const add = (file, span) => {
+    if (!file || !span) return;
+    if (!byFile.has(file)) byFile.set(file, []);
+    byFile.get(file).push({ start: span.start, end: span.end });
+  };
+  for (const e of entries || []) {
+    const r = e?.r ?? e;
+    add(r?.file, shownCodeSpan(r));
+    const c = continuationSpan(r);
+    if (c) add(c.file, c);
+  }
+  return byFile;
+}
+
+function insideAny(spans, start, end) {
+  return Array.isArray(spans) && spans.some((s) => start >= s.start && end <= s.end);
+}
+
+function overlapsAny(spans, start, end) {
+  return Array.isArray(spans) && spans.some((s) => start <= s.end && end >= s.start);
+}
+
+/** The names an entry's header shows: every top-level symbol of the span (r.symbols), else r.symbol. */
+function entryNames(r, cap = Infinity) {
+  const names = Array.isArray(r?.symbols) && r.symbols.length ? r.symbols : (r?.symbol ? [r.symbol] : []);
+  if (names.length <= cap) return names.join(', ');
+  return `${names.slice(0, cap).join(', ')} +${names.length - cap}`;
+}
+
+// Kinds a summary row keeps: the ones that tell a type from a callable of the same name.
+const SUMMARY_KIND_TAGS = new Set(['class', 'struct', 'interface', 'trait', 'impl', 'enum', 'protocol', 'record', 'object']);
+const SUMMARY_NAME_CAP = 3;
+
+/** One summary row inside its file group: `start-end name` (+ ` (class)` for a type, ` STALE`). */
+export function renderSummaryRow(r) {
+  const names = entryNames(r, SUMMARY_NAME_CAP);
+  const kind = SUMMARY_KIND_TAGS.has(String(r.symbolType || '').toLowerCase()) && !(r.symbols?.length > 1)
+    ? ` (${r.symbolType})` : '';
+  return `${lineRange(r.startLine, r.endLine)}${names ? ` ${names}` : ''}${kind}${r.stale ? ' STALE' : ''}`;
+}
+
+const RELATED_KIND_LABELS = {
+  caller: 'callers', user: 'users', calls: 'calls', imports: 'imports', uses: 'uses',
+  extends: 'extends', implements: 'implements', overrides: 'overrides', throws: 'throws', type: 'types',
+};
+
+/**
+ * Related rows (context-expander.js renderGraphNeighbors `rows`), one line per kind:
+ * `callers: RealCall.kt 210-260 getResponseWithInterceptorChain · 300-310 other`. The path is
+ * the shortest unique one and prints once per run of rows in the same file.
+ */
+export function renderRelatedRows(rows) {
+  if (!Array.isArray(rows) || rows.length === 0) return [];
+  const byKind = new Map();
+  for (const row of rows) {
+    if (!row?.name) continue;
+    const label = RELATED_KIND_LABELS[row.kind] || row.kind;
+    if (!byKind.has(label)) byKind.set(label, []);
+    byKind.get(label).push(row);
+  }
+  const lines = [];
+  for (const [label, list] of byKind) {
+    let prevFile = null;
+    const items = list.map((row) => {
+      if (row.file && Number.isInteger(row.startLine)) {
+        const lead = row.file === prevFile ? '' : `${row.shortPath || row.file} `;
+        prevFile = row.file;
+        return `${lead}${lineRange(row.startLine, row.endLine)} ${row.name}`;
+      }
+      prevFile = null;
+      if (row.file) return `${row.shortPath || row.file} ${row.name}`;
+      if (row.line) return `${row.name} (line ${row.line})`;
+      return row.name;
+    });
+    lines.push(`${label}: ${items.join(' · ')}`);
+  }
+  return lines;
+}
+
+/** The `# same file:` span map without the neighbours whose lines printed code shows. */
+function renderSameFileMap(sameFile, file, spans) {
+  if (!sameFile?.rendered) return null;
+  if (!Array.isArray(sameFile.neighbors)) return sameFile.rendered;
+  const kept = sameFile.neighbors.filter((n) => !overlapsAny(spans, n.startLine, n.endLine));
+  if (kept.length === 0) return null;
+  const shortType = (t) => (t === 'function' ? 'fn' : (t || 'sym'));
+  const parts = kept.map((n) => `${n.name} (${shortType(n.type)} ${n.startLine}-${n.endLine} ${n.position})`);
+  return `# same file: ${parts.join(' · ')} — sweep: ss-semantic ${file} "<query>"`;
+}
+
+/** The `# same file (siblings of X):` line without the sites inside printed code. */
+function renderSiblingLine(siblingLine, spans) {
+  if (!siblingLine?.rendered) return null;
+  if (!Array.isArray(siblingLine.sites)) return siblingLine.rendered;
+  const kept = siblingLine.sites.filter((s) => !insideAny(spans, s.line, s.line));
+  if (kept.length === 0) return null;
+  return `# same file (siblings of ${siblingLine.enclosing}): ${kept.map((s) => `${s.line}: ${s.text}`).join(' · ')}`;
+}
+
+/**
+ * Compact ss-search / ss-find blocks, grouped by file:
+ *
+ *   okhttp/src/.../RealInterceptorChain.kt        the path, once per file
+ *   ## 311-343 proceed                            a code entry: range + every top-level symbol
+ *   ```(code)```
+ *   callers: RealCall.kt 210-260 getResponse...   related rows, one line per kind
+ *   85-88 request, proceed · 94 connection        summary rows of the file, one line
+ *
+ * Files print in the order of their best-ranked entry; inside a file, entries keep rank order.
+ * A continuation whose code starts right after the entry's code merges into one block; another
+ * continuation prints as its own `## range name` block under the same path. No query header,
+ * no rank numbers, no kind tag except on a type's summary row.
+ */
+function renderGroupedBlocks(results, plan, { omitted = new Set(), gutter = (code) => code } = {}) {
+  const groups = new Map();
+  for (const e of plan.entries) {
+    const file = e.r.file;
+    if (!groups.has(file)) groups.set(file, []);
+    groups.get(file).push(e);
+  }
+  const spansByFile = printedCodeSpans(plan.entries);
+  const lines = [];
+  for (const [file, entries] of groups) {
+    lines.push(file);
+    const spans = spansByFile.get(file) || [];
+    // Summary rows of this file printed on one line; a code entry or a summary text ends the run.
+    let run = [];
+    const flush = () => { if (run.length) lines.push(run.join(' · ')); run = []; };
+    // Lines a trailer continuation can point at without repeating a summary row of this file.
+    const summaryStarts = new Set(entries.filter(({ r }) => isSummaryOnly(r)).map(({ r }) => r.startLine));
+    for (const { r, index, also } of entries) {
+      if (isSummaryOnly(r)) {
+        run.push(renderSummaryRow(r));
+        if (r.summary && !summaryRestatesHeader(r.summary)) { flush(); lines.push(r.summary); }
+        const alsoLine = renderAlsoInFile(also);
+        if (alsoLine) { flush(); lines.push(alsoLine); }
+        continue;
+      }
+      flush();
+      const stale = r.stale ? ' STALE' : '';
+      const codeOmitted = omitted.has(`${index}:result`);
+      const cont = r.continuation || null;
+      const contSpan = continuationSpan(r);
+      const contOmitted = omitted.has(`${index}:continuation`);
+      const shown = shownCodeSpan(r);
+      // One block when the continuation's code starts on the line after the entry's last line.
+      const merge = !!(r.code && !codeOmitted && contSpan && !contOmitted && contSpan.file === file
+        && shown && shown.end === r.endLine && contSpan.start === r.endLine + 1);
+      const nameList = Array.isArray(r.symbols) && r.symbols.length ? [...r.symbols] : (r.symbol ? [r.symbol] : []);
+      if (merge && cont.symbol && !nameList.includes(cont.symbol)) nameList.push(cont.symbol);
+      const headNames = nameList.join(', ');
+      lines.push(`## ${lineRange(r.startLine, merge ? contSpan.end : r.endLine)}${headNames ? ` ${headNames}` : ''}${stale}`);
+      if (r.headerContext) {
+        const imports = r.code && !codeOmitted ? dedupeImports(r.headerContext, r.code) : r.headerContext;
+        if (imports) lines.push('### imports', '```', imports, '```');
+      }
+      if (r.code) {
+        if (codeOmitted) lines.push(renderAlreadyShownLine(r.file, r.startLine, r.endLine));
+        else lines.push('```', gutter(merge ? `${r.code}\n${cont.code}` : r.code, r.startLine), '```');
+      } else if (r.summary && !summaryRestatesHeader(r.summary)) {
+        lines.push(r.summary);
+      }
+      if (r.neighbors) {
+        if (Array.isArray(r.neighbors.rows)) lines.push(...renderRelatedRows(r.neighbors.rows));
+        else if (r.neighbors.rendered) lines.push(r.neighbors.rendered);
+      }
+      const map = renderSameFileMap(r.sameFile, file, spans);
+      if (map) lines.push(map);
+      const siblings = renderSiblingLine(r.siblingLine, spans);
+      if (siblings) lines.push(siblings);
+      if (cont && !merge) {
+        // A continuation is in the entry's file; another file would need its path.
+        const contFile = cont.file || file;
+        const where = contFile === file ? '' : `${contFile}:`;
+        if (contSpan) {
+          lines.push(`## ${where}${lineRange(contSpan.start, contSpan.end)}${cont.symbol ? ` ${cont.symbol}` : ''}`);
+          if (contOmitted) lines.push(renderAlreadyShownLine(contSpan.file, contSpan.start, contSpan.end));
+          else lines.push('```', cont.code, '```');
+        } else if (cont.rendered && Number.isInteger(cont.startLine)
+            && !(contFile === file && summaryStarts.has(cont.startLine))) {
+          lines.push(`# continues at ${where}${cont.startLine}${cont.symbol ? ` ${cont.symbol}` : ''}`);
+        } else if (cont.rendered && !Number.isInteger(cont.startLine)) {
+          // No coordinates to merge or regroup by: the continuation's own text.
+          lines.push(cont.rendered);
+          if (cont.kind === 'symbol' && cont.code) lines.push('```', cont.code, '```');
+        }
+      }
+      if (r.familyManifest?.rendered) lines.push(r.familyManifest.rendered);
+      const alsoLine = renderAlsoInFile(also);
+      if (alsoLine) lines.push(alsoLine);
+    }
+    flush();
+  }
+  if (!results || results.length === 0) lines.push('(no results)');
+  else if (plan.hidden > 0) lines.push(`(+${plan.hidden} lower-ranked entries not shown)`);
+  return lines.length ? `${lines.join('\n')}\n` : '';
+}
+
 // --- fixed renderer -----------------------------------------------------------------
 
 /**
- * Fixed renderer for ss-search / ss-find result blocks. Used only when a switch is on
- * (resultRenderFixActive); otherwise the original loops run unchanged.
- *   compact (SS_FIX_A): A1 rank header without presentation/kind tag and score, A2 one-line
- *                       summary entries, A7 imports dedupe.
+ * Renderer for ss-search / ss-find result blocks when a fix switch is on
+ * (resultRenderFixActive).
+ *   compact (SS_FIX_A, the product): renderGroupedBlocks (grouped by file, no query header,
+ *                       no rank numbers, related rows one line per kind, merged continuations).
  *   not compact:        the original block format, byte for byte (only A3 lines and B1/B2
  *                       changes differ).
  *
@@ -478,36 +685,16 @@ export function renderFixedBlocks(results, plan, {
   dropRestatingSummary = false,
   gutter = (code) => code,
 } = {}) {
+  if (compact) return renderGroupedBlocks(results, plan, { omitted, gutter });
   const parts = [];
   const out = (text) => parts.push(text);
-  let wroteAny = false;
-  let inSummaryRun = false;
-  const lead = () => (compact ? (wroteAny ? '\n' : '') : '\n');
   for (const { r, index, also } of plan.entries) {
     const stale = r.stale ? ' STALE' : '';
-    if (compact && isSummaryOnly(r)) {
-      out(`${inSummaryRun ? '' : lead()}${renderSummaryLine(r)}\n`);
-      if (r.summary && !summaryRestatesHeader(r.summary)) out(`${r.summary}\n`);
-      const alsoLine = renderAlsoInFile(also);
-      if (alsoLine) out(`${alsoLine}\n`);
-      inSummaryRun = true;
-      wroteAny = true;
-      continue;
-    }
-    inSummaryRun = false;
     const sym = r.symbol ? ` [${r.symbolType || 'code'}: ${r.symbol}]` : '';
-    if (compact) {
-      out(`${lead()}## #${r.rank} ${r.file}:${r.startLine}-${r.endLine}${sym}${stale}\n`);
-    } else {
-      const kind = r.expansionKind ? ` kind=${r.expansionKind}` : '';
-      out(`\n## #${r.rank} ${r.file}:${r.startLine}-${r.endLine}${sym} (${r.presentation}${kind}${stale}) score=${(r.score || 0).toFixed(3)}\n`);
-    }
-    wroteAny = true;
+    const kind = r.expansionKind ? ` kind=${r.expansionKind}` : '';
+    out(`\n## #${r.rank} ${r.file}:${r.startLine}-${r.endLine}${sym} (${r.presentation}${kind}${stale}) score=${(r.score || 0).toFixed(3)}\n`);
     const codeOmitted = omitted.has(`${index}:result`);
-    if (r.headerContext) {
-      const imports = compact && r.code && !codeOmitted ? dedupeImports(r.headerContext, r.code) : r.headerContext;
-      if (imports) out(`### imports\n\`\`\`\n${imports}\n\`\`\`\n`);
-    }
+    if (r.headerContext) out(`### imports\n\`\`\`\n${r.headerContext}\n\`\`\`\n`);
     if (r.code) {
       if (codeOmitted) out(`${renderAlreadyShownLine(r.file, r.startLine, r.endLine)}\n`);
       else out(`\`\`\`\n${gutter(r.code, r.startLine)}\n\`\`\`\n`);
@@ -536,7 +723,7 @@ export function renderFixedBlocks(results, plan, {
   if (!results || results.length === 0) {
     out('(no matches)\n');
   } else if (plan.hidden > 0) {
-    out(`${wroteAny && compact ? '\n' : ''}(+${plan.hidden} lower-ranked entries not shown)\n`);
+    out(`(+${plan.hidden} lower-ranked entries not shown)\n`);
   }
   return parts.join('');
 }

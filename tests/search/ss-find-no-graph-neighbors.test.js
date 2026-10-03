@@ -1,6 +1,6 @@
 /**
- * ss-find (ColGrep / pattern mode) never carries the "### related (1-hop graph)"
- * block. ss-search (every non-pattern mode) keeps it, byte for byte.
+ * ss-find (ColGrep / pattern mode) never carries the related rows (the 1-hop graph tier).
+ * ss-search (every non-pattern mode) keeps them: one compact line per kind under rank 1.
  *
  * The decision lives in graphNeighborsEnabled() (context-expander.js). Pattern
  * mode must not even query the graph, and must not reserve budget for the tier.
@@ -18,6 +18,7 @@ import {
 import { renderAgentSearchResponse } from '../../core/search/search-server.js';
 
 const RELATED_HEADER = '### related (1-hop graph';
+const RELATED_ROW = 'calls: lib/validation.js 118-144 validateParam';
 
 describe('graphNeighborsEnabled', () => {
   it('is off only for pattern mode and the no-graph-neighbors ablation', () => {
@@ -105,34 +106,31 @@ describe('packageForAgent graph neighbours: ss-find vs ss-search', () => {
       expect(response.results[0].neighbors).toBeUndefined();
       expect(calls.outgoing).toBe(0);
       expect(calls.incoming).toBe(0);
-      expect(renderAgentSearchResponse(response)).not.toContain(RELATED_HEADER);
+      expect(renderAgentSearchResponse(response)).not.toContain('calls:');
     }
   });
 
-  it('ss-search (non-pattern modes) still has the related block', () => {
+  it('ss-search (non-pattern modes) still has the related rows', () => {
     for (const mode of ['hybrid', 'semantic', 'lexical']) {
       const { response, calls } = pack(mode);
       expect(response.results[0].neighbors?.count).toBeGreaterThanOrEqual(1);
       expect(calls.outgoing).toBeGreaterThan(0);
       const text = renderAgentSearchResponse(response);
-      expect(text).toContain(RELATED_HEADER);
-      expect(text).toContain('validateParam');
+      expect(text).toContain(RELATED_ROW);
+      expect(text).not.toContain(RELATED_HEADER);
     }
   });
 
-  it('ss-search keeps the exact pre-change text of the related block', () => {
+  it('ss-search prints the related rows as one compact line per kind, right under the code', () => {
     const { response } = pack('hybrid');
     const top = response.results[0];
     const text = renderAgentSearchResponse(response);
-    const block = `### related (1-hop graph, ~${top.neighbors.tokens} tok)\n${top.neighbors.rendered}\n`;
-    // The block sits directly under the code fence of rank 1, as before.
-    expect(text).toContain('```\n' + block);
+    expect(text).toContain('```\n' + RELATED_ROW + '\n');
+    expect(top.neighbors.rows).toEqual([expect.objectContaining({
+      kind: 'calls', name: 'validateParam', file: 'lib/validation.js', startLine: 118, endLine: 144,
+    })]);
+    // The one-row-per-line form stays on the package (SS_FIX_A=0 printers).
     expect(top.neighbors.rendered).toBe('- calls validateParam → lib/validation.js:118-144 [function]');
-    // Exact golden for the whole related section (header + one line).
-    expect(block).toBe(
-      `### related (1-hop graph, ~${top.neighbors.tokens} tok)\n` +
-      '- calls validateParam → lib/validation.js:118-144 [function]\n',
-    );
   });
 
   it('does not reserve neighbour tokens in pattern mode', () => {
