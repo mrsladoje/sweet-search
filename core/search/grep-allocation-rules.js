@@ -1,26 +1,17 @@
 /**
- * ss-grep allocation arms beside the shipped rule (sqrt(hits) x prior, Sainte-Laguë).
- * Each arm has its own switch (agent-output-fixes.js; sat2 and guarantee are DEFAULT ON since
- * 2026-10-03, hh stays opt-in). With the legacy values (sqrt, sl) the 2026-10-02
- * code path in grep-output-shaping.js runs unchanged.
+ * ss-grep's file weight and line allocation (grep-output-shaping.js uses both).
  *
- *   SS_FIX_GREP_WEIGHT=sat2         weight = hits / (hits + 2) x prior (the constant is fixed
- *                                   at 2; it is not tuned on confirmation probes)
- *   SS_FIX_GREP_ALLOC_RULE=guarantee  every kept file gets one line, in weight order, before
- *                                   any file gets a second; then Sainte-Laguë
- *   SS_FIX_GREP_ALLOC_RULE=hh       Huntington–Hill (control): the same first-line pass, then
- *                                   divisors sqrt(a (a + 1))
+ *   weight = hits / (hits + 2) x prior (the constant is fixed at 2; it is not tuned on
+ *            confirmation probes)
+ *   lines  = every kept file gets one line, in weight order, before any file gets a second;
+ *            then Sainte-Laguë
  *
- * Keys are 16 x weight^2, as in grep-output-shaping.js. Under the sqrt weight they are exact
- * integers (hits x scale), and so is every comparison here. Under sat2 a key is one correctly
- * rounded division of two exact integers, so equal weights give equal keys and file ORDER ties
- * are real ties. Allocation quotients under sat2 multiply those doubles, so two equal
- * quotients can differ by one rounding step; the tie-break (more hits, then the earlier file)
- * then does not apply to that pair.
+ * Keys are 16 x weight^2, as in grep-output-shaping.js. A key is one correctly rounded division
+ * of two exact integers, so equal weights give equal keys and file ORDER ties are real ties.
+ * Allocation quotients multiply those doubles, so two equal quotients can differ by one
+ * rounding step; the tie-break (more hits, then the earlier file) then does not apply to that
+ * pair.
  */
-
-export const GREP_WEIGHTS = Object.freeze(['sqrt', 'sat2']);
-export const GREP_ALLOC_RULES = Object.freeze(['sl', 'guarantee', 'hh']);
 
 /**
  * 16 x weight^2 of a file with `hits` matches and prior scale `scale` (16 x prior^2:
@@ -28,18 +19,15 @@ export const GREP_ALLOC_RULES = Object.freeze(['sl', 'guarantee', 'hh']);
  *
  * @param {number} hits
  * @param {number} scale
- * @param {'sqrt'|'sat2'|undefined} weight - absent = sqrt (shipped)
  */
-export function grepWeightKey(hits, scale, weight) {
-  if (weight === 'sat2') return (scale * hits * hits) / ((hits + 2) * (hits + 2));
-  return hits * scale;
+export function grepWeightKey(hits, scale) {
+  return (scale * hits * hits) / ((hits + 2) * (hits + 2));
 }
 
 /**
  * Line allocation with a first-line pass: each file with stored matches gets one line in
- * input order until the budget runs out, then the remaining lines go by the rule's divisor.
- * Under 'hh' the first-line pass is Huntington–Hill itself (its divisor is 0 at a = 0), so
- * both rules share it.
+ * input order until the budget runs out, then the remaining lines go by Sainte-Laguë
+ * (divisor 2a + 1).
  *
  * PRECONDITION: files in weight order (key desc, hits desc, path asc).
  *
@@ -47,10 +35,9 @@ export function grepWeightKey(hits, scale, weight) {
  * @param {ArrayLike<number>} totals - hits per file (tie-break)
  * @param {ArrayLike<number>} caps - stored matches per file
  * @param {number} budget - lines to give (k)
- * @param {'guarantee'|'hh'} rule
  * @returns {Int32Array} lines per file, same order as the input
  */
-export function allocateGrepLinesWithFirstLine(keys, totals, caps, budget, rule) {
+export function allocateGrepLinesWithFirstLine(keys, totals, caps, budget) {
   const n = keys.length;
   const alloc = new Int32Array(n);
   let remaining = Math.max(0, budget | 0);
@@ -64,10 +51,9 @@ export function allocateGrepLinesWithFirstLine(keys, totals, caps, budget, rule)
   }
   if (remaining === 0 || size === 0) return alloc;
 
-  // Squared divisors keep the sqrt-weight comparisons in integers:
+  // Squared divisors (keys are squared weights):
   // q_a > q_b <=> keys[a] d2(alloc[b]) > keys[b] d2(alloc[a]).
-  const hh = rule === 'hh';
-  const d2 = (a) => (hh ? a * (a + 1) : (2 * a + 1) * (2 * a + 1));
+  const d2 = (a) => (2 * a + 1) * (2 * a + 1);
   const better = (a, b) => {
     const lhs = keys[a] * d2(alloc[b]);
     const rhs = keys[b] * d2(alloc[a]);

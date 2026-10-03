@@ -6,9 +6,8 @@
  *   full     the file carries the whole shipped policy. Used whenever the
  *            sweet-search lean harness is NOT the active main agent
  *            (--no-lean-harness, --no-cli, a user-selected main agent, a
- *            user-authored agent file), and under the opt-out
- *            SS_VARIANT_CC_RULES_IN_PROMPT=0 (the 2.8.2 layout).
- *   pointer  the DEFAULT while the lean harness is active: the policy rides
+ *            user-authored agent file).
+ *   pointer  the layout while the lean harness is active: the policy rides
  *            in the main agent file (`.claude/agents/sweet-search.md`, i.e. the
  *            system prompt), and this file carries only CLAUDE_RULES_POINTER.
  *            Claude Code injects rules files into the FIRST USER MESSAGE,
@@ -17,8 +16,9 @@
  *            they are a cache read. The pointer keeps a short tool-choice
  *            reminder in the first user message (without it the share of
  *            ss-* calls fell from 0.53 to 0.32 on the task bench).
- * A third value, SS_VARIANT_CC_RULES_IN_PROMPT=1 (layout `none`: policy in
- * the agent file, no rules file), exists for benchmark reproduction only.
+ * The 2.8.2 layout (full file under the lean harness) and the `none` layout
+ * (no rules file) were bench arms of the SS_VARIANT_CC_RULES_IN_PROMPT switch,
+ * deleted on 2026-10-03; old rows are reproduced from their git commit.
  *
  * Claude Code auto-loads unscoped `.claude/rules/*.md` files at launch with
  * the same instruction priority as `.claude/CLAUDE.md`; no CLAUDE.md import is
@@ -48,29 +48,6 @@ export const CLAUDE_RULES_POINTER = [
   '# Sweet-search',
   'Use the `ss-*` tools (`ss-search`, `ss-grep`, `ss-read`, `ss-find`, `ss-semantic`, `ss-trace`) for all code search and navigation, as the sweet-search rules in your system prompt describe. Use raw `grep`/`cat` or the native reader only for a file edited seconds ago.',
 ].join('\n');
-
-// Where the policy goes while the lean harness is active. One switch for the
-// product (opt-out) and the benchmark runners (controls):
-//   unset, '' or '2'  'pointer'  policy in the agent file + pointer rules file (default)
-//   '0'               'file'     policy in the rules file only (the 2.8.2 layout)
-//   '1'               'none'     policy in the agent file, no rules file (bench only)
-export const CLAUDE_RULES_LAYOUT_ENV = 'SS_VARIANT_CC_RULES_IN_PROMPT';
-const LAYOUTS = new Map([['', 'pointer'], ['2', 'pointer'], ['1', 'none'], ['0', 'file']]);
-
-/**
- * Resolve CLAUDE_RULES_LAYOUT_ENV. An unknown value throws when `strict`
- * (benchmark runners); otherwise it falls back to the default and the result
- * carries `invalid` so `init` can warn.
- *
- * @returns {{layout: 'pointer'|'file'|'none', value: string, invalid?: true}}
- */
-export function resolveClaudeRulesLayout(env = process.env, { strict = false } = {}) {
-  const value = String(env?.[CLAUDE_RULES_LAYOUT_ENV] ?? '').trim();
-  const layout = LAYOUTS.get(value);
-  if (layout) return { layout, value };
-  if (strict) throw new Error(`${CLAUDE_RULES_LAYOUT_ENV}=${value}: expected 0, 1 or 2 (unset = 2)`);
-  return { layout: 'pointer', value, invalid: true };
-}
 
 // Block-level HTML comments are removed before Claude injects project rules,
 // so ownership metadata consumes no prompt tokens and does not alter M±.

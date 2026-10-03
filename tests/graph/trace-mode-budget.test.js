@@ -1,5 +1,5 @@
 /**
- * SS_FIX_TRACE_MODE_BUDGET (default ON in ss-trace since 2026-10-03): with a mode word only one section prints, so it takes
+ * ss-trace with a mode word: only one section prints, so it takes
  * every budget share but the target's. Dev replay (eval/trace-truncation-classify): the only
  * shortened lists an agent could see were callee lists cut at the row limit their share allowed
  * (6 of 8-12 rows) while ~86% of the budget sat unused.

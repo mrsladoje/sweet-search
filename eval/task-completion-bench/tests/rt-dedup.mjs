@@ -17,7 +17,7 @@ import { fileURLToPath } from 'node:url';
 process.env.RUN_ID = `test-rtdedup-${process.pid}`;
 
 const {
-  RT_DEDUP_ON, DEDUP_MARKER, FULL_FLAG,
+  DEDUP_MARKER, FULL_FLAG,
   parseRunTestsArgv, untrackedFingerprint, computeStateKey, summarizeRunTestsResult,
   replayDedupLog, dedupDecision, dedupLogPathFor, startDedupSession, readDedupState,
   markUndeliveredResponses,
@@ -354,9 +354,9 @@ console.log('== per-rollout state reset ==');
 }
 
 // ---------------------------------------------------------------------------
-console.log('== kill-switch: SS_RUNTESTS_DEDUP=0 ==');
+console.log('== cfg-level off (rtDedup: false) ==');
 {
-  // (a) cfg-level (what writeRunTestsShim emits when the env var is 0).
+  // cfg-level: a shim config with rtDedup: false (writeRunTestsShim's option).
   const dir = makeRepo();
   writeFileSync(path.join(dir, 'src.py'), 'def f():\n    return 7\n');
   const cfg = makeCfg(dir, { label: 'acme__widget-4-sweet', rtDedup: false });
@@ -368,15 +368,6 @@ console.log('== kill-switch: SS_RUNTESTS_DEDUP=0 ==');
   assert(cfg._runs === 3, 'tests still ran three times');
   rmSync(dir, { recursive: true, force: true });
 
-  // (b) env-level, in a child process (the flag is read at module load).
-  const probe = (env) => execFileSync(process.execPath, ['-e',
-    `const m = await import(${JSON.stringify(path.join(BENCH_DIR, 'harness/rt-dedup.mjs'))});
-     process.stdout.write(String(m.RT_DEDUP_ON));`],
-  { encoding: 'utf8', env: { ...process.env, ...env } }).trim();
-  assert(probe({ SS_RUNTESTS_DEDUP: '0' }) === 'false', 'SS_RUNTESTS_DEDUP=0 → RT_DEDUP_ON false');
-  assert(probe({ SS_RUNTESTS_DEDUP: '1' }) === 'true', 'SS_RUNTESTS_DEDUP=1 → RT_DEDUP_ON true');
-  assert(probe({ SS_RUNTESTS_DEDUP: '' }) === 'true', 'default (unset) → ON');
-  assert(RT_DEDUP_ON === true, 'this test process runs with the lever ON');
 }
 
 // ---------------------------------------------------------------------------

@@ -28,7 +28,6 @@ import { gradeFromReportItem, loadLedger, preflightEnvLedger, vaultTarName } fro
 import { createEvaluatorRuntime } from './evaluator-runtime.mjs';
 import { ISOLATION_ON, jailPreflight, guardStatus, DENY_LOG } from './agent-jail.mjs';
 import { warnOnGateViolations, reportNameLockCensus } from './task-gates.mjs';
-import { RT_DEDUP_ON } from './rt-dedup.mjs';
 import { attachRequireSameDiffFromEnv } from './rt-inflight.mjs';
 import { includeUntrackedFromEnv } from './rt-untracked-diff.mjs';
 import { ensureGuard } from './egress-guard.mjs';
@@ -432,9 +431,7 @@ const BENCH_SWITCH_ROW = {
 if (Object.keys(BENCH_SWITCH_ROW).length) console.log(`[bench-switches] ON: ${Object.keys(BENCH_SWITCH_ROW).join(', ')}`);
 // L3 run_tests output dedup (rt-dedup.mjs): harness-side, BOTH arms, tests always run.
 // Stamped on every row like `isolated`, so a run's rows always say which way it ran.
-console.log(RT_DEDUP_ON
-  ? `[rt-dedup] ON — a repeat run_tests with an identical diff+untracked+argv AND an identical result gets a compact summary (suite still runs); state/audit log → results/${runId}/rt-dedup/<task>-<arm>.jsonl`
-  : '[rt-dedup] OFF (SS_RUNTESTS_DEDUP=0) — every run_tests invocation returns the full transcript.');
+console.log(`[rt-dedup] ON — a repeat run_tests with an identical diff+untracked+argv AND an identical result gets a compact summary (suite still runs); state/audit log → results/${runId}/rt-dedup/<task>-<arm>.jsonl`);
 const all = await loadTasks();
 if (SR_MODE && !INSTANCES.length) INSTANCES = all.map(t => t.instance_id);
 // --- ADMISSION GATE: blocked tasks never reach a denominator silently ---
@@ -760,7 +757,7 @@ async function runOneTask(id) {
             if (rep === 0) predsByArm[arm].push(pred);
             (predsByRepArm[rep] = predsByRepArm[rep] || { native: [], sweet: [] })[arm].push(pred);
           }
-          rows.push({ runId, taskId: id, repo: t.repo, arm, rep, model: MODEL, provider: PROVIDER, harness: HARNESS, harnessVersion: HARNESS_VERSION, reasoning: REASONING, envConfigHash: preflightConfigHashes.get(id) || null, predOk: r.patchHunks > 0, ranTests, idxMs: golden.idxMs, idxSource: golden.source, shimReran: v.reran, shimExcluded: v.excluded, degenReran: d.reran, degenerateAfterRetry: d.degenerateAfterRetry, isolated: CLI_HARNESS && ISOLATION_ON, rtDedup: RT_DEDUP_ON, startedAtMs: attemptStartMs, ...BENCH_SWITCH_ROW, ...RT_PROGRESS_ROW, ...packingTreatmentRowFields({ sweet }), ...stripBig(r) });
+          rows.push({ runId, taskId: id, repo: t.repo, arm, rep, model: MODEL, provider: PROVIDER, harness: HARNESS, harnessVersion: HARNESS_VERSION, reasoning: REASONING, envConfigHash: preflightConfigHashes.get(id) || null, predOk: r.patchHunks > 0, ranTests, idxMs: golden.idxMs, idxSource: golden.source, shimReran: v.reran, shimExcluded: v.excluded, degenReran: d.reran, degenerateAfterRetry: d.degenerateAfterRetry, isolated: CLI_HARNESS && ISOLATION_ON, rtDedup: true, startedAtMs: attemptStartMs, ...BENCH_SWITCH_ROW, ...RT_PROGRESS_ROW, ...packingTreatmentRowFields({ sweet }), ...stripBig(r) });
           try { const td = path.join(BENCH, 'results', runId, 'trajectories'); mkdirSync(td, { recursive: true }); writeFileSync(path.join(td, `${id}-${arm}-r${rep}.json`), JSON.stringify({ taskId: id, arm, rep, exitReason: r.exitReason, toolCounts: r.toolCounts, ranTests, escapeExamples: r.escapeExamples, trajectory: r.trajectory }, null, 2)); } catch { /* */ }
           prog.done++; prog.byArm[arm]++; if (r.patchHunks > 0 && !v.excluded) prog.predOk[arm]++; prog.cost += attemptCost;
           if (v.excluded) prog.shimExcluded = (prog.shimExcluded || 0) + 1;

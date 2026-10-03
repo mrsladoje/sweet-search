@@ -30,7 +30,6 @@ import {
   CLAUDE_RULES_POINTER,
   CLAUDE_RULES_REL,
   removeClaudeRules,
-  resolveClaudeRulesLayout,
   writeClaudeRules,
   _internal as claudeRulesInternal,
 } from '../../scripts/write-claude-rules.js';
@@ -392,17 +391,6 @@ describe('writeClaudeRules / removeClaudeRules', () => {
     expect(exists(CLAUDE_RULES_REL)).toBe(false);
   });
 
-  it('resolveClaudeRulesLayout: unset or 2 = pointer, 0 = file (2.8.2), 1 = none', () => {
-    const r = v => resolveClaudeRulesLayout(v === undefined ? {} : { SS_VARIANT_CC_RULES_IN_PROMPT: v });
-    expect(r(undefined)).toEqual({ layout: 'pointer', value: '' });
-    expect(r('')).toEqual({ layout: 'pointer', value: '' });
-    expect(r(' 2 ')).toEqual({ layout: 'pointer', value: '2' });
-    expect(r('0')).toEqual({ layout: 'file', value: '0' });
-    expect(r('1')).toEqual({ layout: 'none', value: '1' });
-    expect(r('toString')).toEqual({ layout: 'pointer', value: 'toString', invalid: true });
-    expect(() => resolveClaudeRulesLayout({ SS_VARIANT_CC_RULES_IN_PROMPT: 'yes' }, { strict: true }))
-      .toThrow(/expected 0, 1 or 2/);
-  });
 });
 
 describe('installClaudeSystemPrompt / removeClaudeSystemPrompt', () => {
