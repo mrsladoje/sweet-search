@@ -565,7 +565,7 @@ function renderGrepBodyWeighted(kept, fileSummary, k, opts) {
     for (let j = 0; j < a; j++) {
       const at = picks ? picks[j] : j;
       const m = ms ? ms[at] : kept[base + at];
-      const text = grepHitText(m, { fullLine: opts?.fullLine === true });
+      const text = grepHitText(m, { fullLine: opts?.fullLine === true, ...(opts?.hitMax ? { max: opts.hitMax } : {}) });
       let more = 0;
       if (j === a - 1 && total > a) {
         more = total - a;
@@ -620,7 +620,8 @@ export function allocateGrepBudget(counts, budget) {
  *          hiddenSample: Array<{file, total}>}} fileSummary
  * @param {number} k - body line budget
  * @param {{dropRepeatedText?: boolean, alloc?: 'weight', fullLine?: boolean, weight?: 'sat2',
- *          rule?: 'guarantee'|'hh', lineClasses?: boolean}} [opts] - SS_FIX_GREP_ORDER: when
+ *          rule?: 'guarantee'|'hh', lineClasses?: boolean, hitMax?: number}} [opts] - `hitMax`
+ *   (SS_VARIANT_GREP_BROAD): grepHitText's window size. - SS_FIX_GREP_ORDER: when
  *   every shown hit prints the same text (and more than one hit shows), print `file:line`
  *   only. `fullLine` (SS_FIX_GREP_FULLLINE, default ON in ss-grep): each hit prints its full
  *   source line (grepHitText), not the matched substring. `alloc: 'weight'` (SS_FIX_GREP_ALLOC,
@@ -658,7 +659,7 @@ export function renderGrepBody(kept, fileSummary, k, opts = undefined) {
     const total = totals.get(file) ?? ms.length;
     for (let j = 0; j < alloc[i]; j++) {
       const m = ms[j];
-      const text = grepHitText(m, { fullLine: opts?.fullLine === true });
+      const text = grepHitText(m, { fullLine: opts?.fullLine === true, ...(opts?.hitMax ? { max: opts.hitMax } : {}) });
       let more = 0;
       if (j === alloc[i] - 1 && total > alloc[i]) {
         more = total - alloc[i];

@@ -75,6 +75,7 @@ import {
   resultRenderFixActive,
   resultsForOriginalLedger,
   selectEntries,
+  grepBroadHitMax,
 } from '../../../core/search/agent-output-fixes.js';
 
 // Diagnostic-log isolation (agent-facing tools). The Sweet Search engine emits
@@ -647,7 +648,8 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
     for (const note of notes) process.stdout.write(`${note}\n`);
     // SS_FIX_GREP_ORDER (B7): source hits before test hits; no repeated matched-text column.
     const rows = FIX.grepOrder ? orderSourceBeforeTests(result.results) : result.results;
-    const hitText = { fullLine: FIX.grepFullLine };
+    const broadMax = grepBroadHitMax(FIX, total);
+    const hitText = { fullLine: FIX.grepFullLine, ...(broadMax ? { max: broadMax } : {}) };
     const dropText = FIX.grepOrder && matchTextIsRepeated(rows, hitText);
     const shown = rows.map((r, i) => ({
       file: r.file,
@@ -767,10 +769,12 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
       ...(FIX.grepAllocRule ? { rule: FIX.grepAllocRule } : {}),
       ...(FIX.grepLines ? { lineClasses: true } : {}),
       ...(FIX.grepFullLine ? { fullLine: true } : {}),
+      ...(grepBroadHitMax(FIX, total) ? { hitMax: grepBroadHitMax(FIX, total) } : {}),
     }
     : {
       ...(FIX.grepOrder ? { dropRepeatedText: true } : {}),
       ...(FIX.grepFullLine ? { fullLine: true } : {}),
+      ...(grepBroadHitMax(FIX, total) ? { hitMax: grepBroadHitMax(FIX, total) } : {}),
     };
   const body = renderGrepBody(keptMatches, fileSummary, k, bodyOpts);
   const completed = listMode

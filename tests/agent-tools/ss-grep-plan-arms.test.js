@@ -233,6 +233,19 @@ describe('SS_FIX_GREP_LINES through the real tool', () => {
     expect(await ssDaemon([REGEX, '-k', '4'], { SS_FIX_GREP_FULLLINE: '1' })).toBe(out);
   });
 
+  it('SS_VARIANT_GREP_BROAD (bench A/B): a grep with >= N total hits prints a narrower window', async () => {
+    const on = await ss([REGEX, '-k', '4'], { SS_FIX_GREP_FULLLINE: '1', SS_VARIANT_GREP_BROAD: '10:24' });
+    expect(on).toBe(HEADER
+      + 'worker/export.go:5: func Export(ctx context…\n'
+      + 'worker/export.go:6: return exportAll(ctx) (+4 more in this file)\n'
+      + 'scripts/export.sh:2: export A=1 (+2 more in this file)\n'
+      + 'other.go:2: func other() { export()…\n');
+    expect(await ssDaemon([REGEX, '-k', '4'], { SS_FIX_GREP_FULLLINE: '1', SS_VARIANT_GREP_BROAD: '10:24' })).toBe(on);
+    // 10 hits < 11: the default 140-char window
+    expect(await ss([REGEX, '-k', '4'], { SS_FIX_GREP_FULLLINE: '1', SS_VARIANT_GREP_BROAD: '11:24' }))
+      .toBe(await ss([REGEX, '-k', '4'], { SS_FIX_GREP_FULLLINE: '1' }));
+  });
+
   it('more lines: usage inside a symbol before lines outside every symbol', async () => {
     // k = 6: export.go gets 3 of its 6 stored hits (sh 2, other 1); the usage at 6 beats the
     // comment at 1 and the import at 3
