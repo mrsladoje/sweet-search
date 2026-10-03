@@ -23,6 +23,7 @@ import { rankingRelationshipTypes } from '../graph/relationship-types.js';
 import { computeSufficiencyVerdict } from './query-sufficiency.js';
 import { applyAgentPackCompletion, buildPackSiblingLine, shownSourceEndLine } from './agent-pack-completion.js';
 import { capToFinalK } from './final-k.js';
+import { omittedRangeLines } from './semantic-span-budget.js';
 import { isSummaryOnly, shownCodeSpan } from './agent-output-fixes.js';
 import { statSync } from 'fs';
 import path from 'path';
@@ -359,7 +360,7 @@ export function expandToSymbol(result, opts) {
  *   - the gold/matched chunk verbatim (the actual evidence — never dropped)
  *   - the function/class signature (small, high-leverage anchor)
  *   - the closing brace line (cheap, helps the agent know the symbol bounds)
- * separated by explicit `// ... (N lines elided) ...` markers.
+ * separated by explicit `// ... (not shown: lines A-B — ss-read <file> A B) ...` markers.
  *
  * Sizing uses a conservative ~10-tokens-per-line estimate (matches the rest
  * of the file). If even bare gold doesn't fit, returns null so the caller
@@ -374,7 +375,7 @@ export function expandToSymbol(result, opts) {
  */
 function buildSandwichExpansion(entity, origStart, origEnd, tokenCap) {
   const SIG_MAX_LINES = 4;        // signature window
-  const ELISION_TOKENS = 10;      // approx cost of one `// ... (N lines elided) ...` line
+  const ELISION_TOKENS = 20;      // approx cost of one `// ... (not shown: lines A-B — ss-read <file> A B) ...` line
   const TOKENS_PER_LINE = 10;     // pessimistic estimate, matches `entityTokens` heuristic above
 
   // Signature: from entity.startLine up to min(SIG_MAX_LINES, just before gold)
@@ -459,25 +460,37 @@ function buildSandwichExpansion(entity, origStart, origEnd, tokenCap) {
 /**
  * Render a sandwich expansion into a single code string with elision markers.
  * Reads each part from the file cache and joins them with explicit
- * `// ... (N lines elided) ...` markers between non-contiguous parts.
+ * `// ... (not shown: lines A-B — ss-read <file> A B) ...` markers between
+ * non-contiguous parts, so every left-out line is named with the command that
+ * prints it.
  *
- * Returns '' if no part can be read (caller falls back to chunk path).
+ * Returns `{ code, startLine, endLine }`: the first and last source line the
+ * code prints (a part that cannot be read is not printed). `code` is '' when no
+ * part can be read (caller falls back to the chunk path).
  */
 function assembleSandwichCode(fileCache, filePath, sandwich, projectRoot) {
-  if (!sandwich || !sandwich.parts || sandwich.parts.length === 0) return '';
+  const none = { code: '', startLine: null, endLine: null };
+  if (!sandwich || !sandwich.parts || sandwich.parts.length === 0) return none;
   const out = [];
+  let firstStart = null;
   let prevEnd = null;
   for (const part of sandwich.parts) {
     const text = readFileRange(fileCache, filePath, part.startLine, part.endLine, projectRoot);
     if (!text) continue;
     if (prevEnd != null) {
       const gap = part.startLine - prevEnd - 1;
-      if (gap > 0) out.push(`// ... (${gap} lines elided) ...`);
+      if (gap > 0) out.push(elisionMarker(filePath, prevEnd + 1, part.startLine - 1));
     }
     out.push(text);
+    if (firstStart == null) firstStart = part.startLine;
     prevEnd = part.endLine;
   }
-  return out.join('\n');
+  return out.length ? { code: out.join('\n'), startLine: firstStart, endLine: prevEnd } : none;
+}
+
+/** The in-body marker for lines a packed body leaves out between two printed parts. */
+function elisionMarker(filePath, start, end) {
+  return `// ... (not shown: lines ${start}-${end} — ss-read ${filePath} ${start} ${end}) ...`;
 }
 
 /**
@@ -2103,6 +2116,56 @@ export function refillCoveredSummaries(agentResults, reserve) {
   return { results, replaced: replacements.length };
 }
 
+/** Printed source range of each code-bearing agent result (packageForAgent → applyPrintedRanges). */
+const printedRanges = new WeakMap();
+const TRAILING_CUT_MARKER_RE = /^\s*\/\/ \.\.\. \(\d+ more lines\)\s*$/;
+
+/**
+ * Final agent pass: the header range of a code-bearing result is the range its body prints.
+ *
+ * A body can print less than the range it was packed for: the token cap cuts its tail, a sandwich
+ * drops its signature or closing line, the gold-only fallback prints just the matched chunk. The
+ * header used to keep the packed range, so `draft.go:1756-1894` could print 1756-1809 with nothing
+ * saying where it stopped. Here `startLine` / `endLine` become the printed lines, the packed range
+ * moves to `fullStartLine` / `fullEndLine`, and the trailing `// ... (N more lines)` marker leaves
+ * the body: the renderer prints `# not shown: lines A-B — ss-read <file> A B` in its place
+ * (renderFixedBlocks, the same line ss-semantic prints). Lines left out between sandwich parts keep
+ * their in-body marker, which names the same ss-read command.
+ *
+ * @param {Array} results  agent results, mutated in place
+ * @returns {number} token delta (the not-shown lines in, the removed markers out)
+ */
+function applyPrintedRanges(results) {
+  let delta = 0;
+  for (const r of results) {
+    const printed = printedRanges.get(r);
+    if (!r?.code || !printed) continue;
+    const { start, end } = printed;
+    if (!Number.isInteger(start) || !Number.isInteger(end) || end < start) continue;
+    const fullStart = r.startLine;
+    const fullEnd = r.endLine;
+    if (r.boundaryTruncated) {
+      const lines = r.code.split('\n');
+      if (TRAILING_CUT_MARKER_RE.test(lines.at(-1))) {
+        r.code = lines.slice(0, -1).join('\n');
+        const tokens = estimateTokens(r.code);
+        delta += tokens - (r.codeTokens || 0);
+        r.codeTokens = tokens;
+      }
+    }
+    r.startLine = start;
+    r.endLine = end;
+    if (Number.isInteger(fullStart) && Number.isInteger(fullEnd)
+        && (fullStart < start || fullEnd > end)) {
+      r.fullStartLine = fullStart;
+      r.fullEndLine = fullEnd;
+      const omitted = omittedRangeLines(r.file, { exactRange: true, startLine: start, endLine: end, fullStartLine: fullStart, fullEndLine: fullEnd });
+      for (const line of [...omitted.before, ...omitted.after]) delta += estimateTokens(line);
+    }
+  }
+  return delta;
+}
+
 /**
  * Ablations as a Set. Callers pass a Set (the in-process API) or an array
  * (eval/run_benchmark.js `--ablations=a,b`, JSON callers); the packager and
@@ -2291,9 +2354,18 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
     // Phase 1: Load code via readFileRange.
     // For sandwich expansions, assemble from parts with explicit elision markers
     // so the gold chunk is preserved even when the enclosing entity is huge.
+    // `codeStart` / `sandwichEnd` track the source lines the body really
+    // starts at (and, for a sandwich, ends at): the agent header must name
+    // the printed lines, not the expansion's nominal range.
     let code;
+    let codeStart = expansion.startLine;
+    let sandwichEnd = null;
+    let expansionKind = expansion.kind || null;
     if (expansion.kind === 'sandwich' && expansion.sandwich) {
-      code = assembleSandwichCode(fileCache, filePath, expansion.sandwich, projectRoot);
+      const assembled = assembleSandwichCode(fileCache, filePath, expansion.sandwich, projectRoot);
+      code = assembled.code;
+      codeStart = assembled.startLine;
+      sandwichEnd = assembled.endLine;
     } else {
       code = readFileRange(
         fileCache,
@@ -2306,10 +2378,13 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
 
     if (!code) {
       // Fallback: try with ±20 lines padding (plan §13, step 3)
+      codeStart = Math.max(1, (meta.startLine || result.startLine) - 20);
+      sandwichEnd = null;
+      if (expansionKind === 'sandwich') expansionKind = 'chunk';
       code = readFileRange(
         fileCache,
         filePath,
-        Math.max(1, (meta.startLine || result.startLine) - 20),
+        codeStart,
         (meta.endLine || result.endLine) + 20,
         projectRoot
       );
@@ -2347,7 +2422,7 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
     if (resultTokenCap <= 0) {
       code = '';
       codeTokens = 0;
-    } else if (expansion.kind === 'sandwich') {
+    } else if (expansionKind === 'sandwich') {
       // Sandwich is pre-sized via 10-tokens/line estimate. If actual content
       // happens to overshoot (very long lines), do NOT call truncateToTokenCap
       // here — that truncates from the start and would drop the gold tail.
@@ -2361,8 +2436,17 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
         const trunc = truncateToTokenCap(goldOnly, resultTokenCap);
         code = trunc.code;
         codeTokens = estimateTokens(code);
+        // The body is now a plain cut chunk: no signature, no closing line.
+        codeStart = goldStart;
+        sandwichEnd = null;
+        expansionKind = 'chunk';
+        boundaryTruncated = trunc.truncated;
       }
-    } else if (allocation.presentation === 'full') {
+    } else if (allocation.presentation === 'full' || _isAgentFormat === true) {
+      // Agent previews are cut the same way as full bodies: a whole-line
+      // prefix plus a counted `// ... (N more lines)` marker that fits inside
+      // the cap. compressToPreview's `{ ... }` rewrite and the line-popping
+      // clamp after it could drop that marker and leave a silent cut.
       const truncResult = truncateToTokenCap(code, resultTokenCap);
       code = truncResult.code;
       codeTokens = estimateTokens(code);
@@ -2406,8 +2490,8 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
       score: result.score || result.lateInteractionScore || 0,
       expanded: expansion.expanded,
       expandedFrom: expansion.expandedFrom,
-      expansionKind: expansion.kind || null,
-      ...(expansion.kind === 'sandwich' && expansion.sandwich
+      expansionKind,
+      ...(expansionKind === 'sandwich' && expansion.sandwich
         ? {
             sandwich: {
               partKinds: expansion.sandwich.parts.map(p => p.kind),
@@ -2422,16 +2506,21 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
       indexedAt,
       code,
       codeTokens,
-      ...(_isAgentFormat === true
-        && allocation.presentation === 'full'
-        && expansion.kind !== 'sandwich'
+      ...(_isAgentFormat === true && expansionKind !== 'sandwich'
         ? {
-            shownStartLine: expansion.startLine,
-            shownEndLine: shownSourceEndLine(expansion.startLine, code, boundaryTruncated),
+            shownStartLine: codeStart,
+            shownEndLine: shownSourceEndLine(codeStart, code, boundaryTruncated),
             ...(boundaryTruncated ? { boundaryTruncated: true } : {}),
           }
         : {}),
     };
+    // The printed source range (first and last line the body shows). The
+    // final agent pass below turns the header into this range.
+    if (_isAgentFormat === true) {
+      printedRanges.set(agentResult, expansionKind === 'sandwich'
+        ? { start: codeStart, end: sandwichEnd }
+        : { start: agentResult.shownStartLine, end: agentResult.shownEndLine });
+    }
 
     // Phase 4: Header context (top-1 only). Skipped by 'no-header' ablation.
     if (i === 0 && !ablations.has('no-header')) {
@@ -2643,6 +2732,7 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
       isAgentFormat: _isAgentFormat,
     });
     tokensUsed = completion.tokensUsed;
+    tokensUsed += applyPrintedRanges(agentResults);
   }
 
   return {
