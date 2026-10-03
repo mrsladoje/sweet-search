@@ -380,16 +380,18 @@ export function nativeGrepLines(pattern, projectRoot, files, caseInsensitive) {
  *
  * `perFileCap > 0`: at most that many matches per file (the first ones), and `fileTotals`, a
  * Map of every file's full match count. Only the packed addon caps; without it there is no
- * `fileTotals`, and the matches are all there.
+ * `fileTotals`, and the matches are all there. `indexPaths`: `files` are the index's own paths
+ * and the caller drops symlink aliases afterwards; they are read as the unified search reads
+ * them, without a realpath check per directory (packed addon only).
  *
  * @returns {{ matches: Array<{file: string, line: number, column: number, matchText: string, content: string}>, fileTotals?: Map<string, number>, scannedFiles: number, elapsedUs: number }|null}
  */
-export function nativeGrepFull(pattern, projectRoot, files, caseInsensitive, { perFileCap = 0 } = {}) {
+export function nativeGrepFull(pattern, projectRoot, files, caseInsensitive, { perFileCap = 0, indexPaths = false } = {}) {
   const addon = loadAddon();
   if (!addon?.nativeGrepFull) return null;
   try {
     if (addon.nativeGrepFullPacked) {
-      return unpackFullResult(addon.nativeGrepFullPacked(pattern, projectRoot, files, caseInsensitive || false, perFileCap), perFileCap);
+      return unpackFullResult(addon.nativeGrepFullPacked(pattern, projectRoot, files, caseInsensitive || false, perFileCap, indexPaths), perFileCap);
     }
     return addon.nativeGrepFull(pattern, projectRoot, files, caseInsensitive || false);
   } catch (err) {
@@ -438,13 +440,13 @@ function unpackFullResult(result, perFileCap = 0) {
  * nativeGrepFull (full matches only). Null when the addon has no such function or the call
  * throws (callers then run the two calls).
  */
-export function nativeGrepWithFiles(pattern, projectRoot, files, caseInsensitive, { linesOnly = false, perFileCap = 0 } = {}) {
+export function nativeGrepWithFiles(pattern, projectRoot, files, caseInsensitive, { linesOnly = false, perFileCap = 0, indexPaths = false } = {}) {
   const addon = loadAddon();
   const fn = linesOnly ? addon?.nativeGrepLinesWithFiles : addon?.nativeGrepFullWithFiles;
   if (!fn) return null;
   try {
     if (!linesOnly && addon.nativeGrepFullWithFilesPacked) {
-      return unpackFullResult(addon.nativeGrepFullWithFilesPacked(pattern, projectRoot, files, caseInsensitive || false, perFileCap), perFileCap);
+      return unpackFullResult(addon.nativeGrepFullWithFilesPacked(pattern, projectRoot, files, caseInsensitive || false, perFileCap, indexPaths), perFileCap);
     }
     return fn(pattern, projectRoot, files, caseInsensitive || false);
   } catch (err) {

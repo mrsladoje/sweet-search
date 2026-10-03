@@ -451,7 +451,7 @@ export function grepUnfilterablePaths(files, regex, searchDir, { caseInsensitive
   if (!Array.isArray(files) || files.length === 0) return withTotals ? { matches: [] } : [];
   const result = lightweightParse
     ? _nativeGrepLines(regex, searchDir, files, caseInsensitive)
-    : _nativeGrepFull(regex, searchDir, files, caseInsensitive, { perFileCap });
+    : _nativeGrepFull(regex, searchDir, files, caseInsensitive, { perFileCap, indexPaths: true });
   if (withTotals) return result?.matches ? result : { matches: [] };
   return result?.matches || [];
 }

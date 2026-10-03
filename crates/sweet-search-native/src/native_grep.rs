@@ -363,13 +363,34 @@ where
     T: Send,
     F: Fn(&str, &[u8], &regex::bytes::Regex, Option<bool>) -> T + Sync,
 {
-    let root = GrepRoot::for_files(root, files);
-    let root = &root;
+    grep_matching_files_with_mode(re, root, files, false, per_file)
+}
+
+/// `index_paths`: the files are the index's own paths, read as the unified search reads them
+/// (root.join(file), no realpath check). The caller drops every symlink alias afterwards, and
+/// a path the check would refuse is always one (it leaves the root only through a symlink).
+fn grep_matching_files_with_mode<'f, T, F>(
+    re: &regex::bytes::Regex,
+    root: &std::path::Path,
+    files: &'f [String],
+    index_paths: bool,
+    per_file: F,
+) -> Vec<(&'f String, T)>
+where
+    T: Send,
+    F: Fn(&str, &[u8], &regex::bytes::Regex, Option<bool>) -> T + Sync,
+{
+    let grep_root = if index_paths { GrepRoot::new(root) } else { GrepRoot::for_files(root, files) };
+    let grep_root = &grep_root;
     grep_pool().install(|| {
         files
             .par_iter()
             .filter_map(|file| {
-                let (content, kind) = read_validated_file_kind(root, file);
+                let (content, kind) = if index_paths {
+                    read_file_content_kind(&root.join(file))
+                } else {
+                    read_validated_file_kind(grep_root, file)
+                };
                 let content = content?;
                 let bytes = content.as_bytes();
                 if !re.is_match(bytes) {
@@ -1025,11 +1046,14 @@ pub fn native_grep_full_packed(
     files: Vec<String>,
     case_insensitive: Option<bool>,
     per_file_cap: Option<u32>,
+    index_paths: Option<bool>,
 ) -> Result<NativeGrepFullPackedResult> {
     let start = std::time::Instant::now();
     let re = build_regex(&pattern, case_insensitive.unwrap_or(false))?;
     let root = PathBuf::from(&project_root);
-    let per_file = grep_matching_files_with(&re, &root, &files, |_, bytes, re, kind| pack_file_matches(bytes, re, per_file_cap.unwrap_or(0)).with_final_kind(kind));
+    let per_file = grep_matching_files_with_mode(&re, &root, &files, index_paths.unwrap_or(false), |_, bytes, re, kind| {
+        pack_file_matches(bytes, re, per_file_cap.unwrap_or(0)).with_final_kind(kind)
+    });
     let packed = merge_file_packs(&root, per_file.into_iter().map(|(f, p)| (f.as_str(), p)));
     Ok(NativeGrepFullPackedResult {
         packed,
@@ -1047,11 +1071,14 @@ pub fn native_grep_full_with_files_packed(
     files: Vec<String>,
     case_insensitive: Option<bool>,
     per_file_cap: Option<u32>,
+    index_paths: Option<bool>,
 ) -> Result<NativeGrepFullFilesPackedResult> {
     let start = std::time::Instant::now();
     let re = build_regex(&pattern, case_insensitive.unwrap_or(false))?;
     let root = PathBuf::from(&project_root);
-    let per_file = grep_matching_files_with(&re, &root, &files, |_, bytes, re, kind| pack_file_matches(bytes, re, per_file_cap.unwrap_or(0)).with_final_kind(kind));
+    let per_file = grep_matching_files_with_mode(&re, &root, &files, index_paths.unwrap_or(false), |_, bytes, re, kind| {
+        pack_file_matches(bytes, re, per_file_cap.unwrap_or(0)).with_final_kind(kind)
+    });
     let matching_files = per_file.iter().map(|(f, _)| (*f).clone()).collect();
     let packed = merge_file_packs(&root, per_file.into_iter().map(|(f, p)| (f.as_str(), p)));
     Ok(NativeGrepFullFilesPackedResult {
