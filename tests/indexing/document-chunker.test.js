@@ -742,3 +742,81 @@ describe('ASTChunker integration', () => {
     expect(chunks[0].metadata.language).toBe('javascript');
   });
 });
+
+// =============================================================================
+// Section boundaries: a label of the NEXT section opens it (2026-10-04)
+// =============================================================================
+
+describe('section labels belong to the section below them', () => {
+  it('RST: a `.. _name:` target above a header starts that section, not the end of the previous one', () => {
+    const rst = [
+      'Complex prefetch',                                                          // 1
+      '================',                                                          // 2
+      '',                                                                          // 3
+      'Sometimes it is required to fetch only certain related records here.',      // 4
+      '',                                                                          // 5
+      '.. autoclass:: tortoise.query_utils.Prefetch',                              // 6
+      '    :members:',                                                             // 7
+      '',                                                                          // 8
+      '.. _union:',                                                                // 9
+      '',                                                                          // 10
+      'Union',                                                                     // 11
+      '=====',                                                                     // 12
+      '',                                                                          // 13
+      'Tortoise ORM supports SQL UNION queries to combine results from querysets.', // 14
+    ].join('\n');
+    const chunks = mdChunker.parseFile('/test/docs/query.rst', rst);
+    expect(chunks.map((c) => [c.metadata.symbol, c.metadata.line_start, c.metadata.line_end])).toEqual([
+      ['Complex prefetch', 1, 7],
+      ['Union', 9, 14],
+    ]);
+    expect(chunks[0].text).not.toContain('_union');
+    expect(chunks[0].text.endsWith('    :members:')).toBe(true);
+    expect(chunks[1].text.startsWith('.. _union:')).toBe(true);
+  });
+
+  it('RST: a target with a URL (an external link) stays with the text above it', () => {
+    const rst = [
+      'Intro',
+      '=====',
+      '',
+      'See the project website for more details about everything here.',
+      '',
+      '.. _website: https://example.com',
+      '',
+      'Next',
+      '====',
+      '',
+      'Second section body with enough text to be a chunk of its own.',
+    ].join('\n');
+    const chunks = mdChunker.parseFile('/test/docs/links.rst', rst);
+    expect(chunks[0].text).toContain('.. _website: https://example.com');
+    expect(chunks[1].metadata.line_start).toBe(8);
+  });
+
+  it('Markdown: an HTML anchor line above a header starts that section', () => {
+    const md = [
+      '# A',                                                                // 1
+      '',                                                                   // 2
+      'some text that is long enough for a chunk here, yes yes yes.',       // 3
+      '',                                                                   // 4
+      '<a name="b"></a>',                                                   // 5
+      '',                                                                   // 6
+      '## B',                                                               // 7
+      '',                                                                   // 8
+      'more text that is long enough for the chunk minimum, surely.',      // 9
+    ].join('\n');
+    const chunks = mdChunker.parseFile('/test/docs/anchors.md', md);
+    expect(chunks.map((c) => [c.metadata.symbol, c.metadata.line_start, c.metadata.line_end])).toEqual([
+      ['A', 1, 3],
+      ['B', 5, 9],
+    ]);
+    expect(chunks[0].text).not.toContain('<a name');
+  });
+
+  it('a section line range drops its leading and trailing blank lines (it names the lines its text holds)', () => {
+    const md = ['# A', '', 'body text that is long enough to be its own chunk for sure.', '', '', '# B', '', 'second body text that is long enough to be a chunk too.'].join('\n');
+    const chunks = mdChunker.parseFile('/test/docs/blank.md', md);
+    expect(chunks.map((c) => [c.metadata.line_start, c.metadata.line_end])).toEqual([[1, 3], [6, 8]]);
+  });
+});
