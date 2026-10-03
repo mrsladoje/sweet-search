@@ -275,6 +275,14 @@ export const FRAME = [
 const promptFor = (probe) => `${FRAME}\n\nQuestion: ${probe.query}`;
 
 // ─── helpers ───────────────────────────────────────────────────────────────────────────────────
+// The code every row ran (2026-10-03: switches are deleted once decided, so a row is reproduced from its commit).
+const GIT_COMMIT = (() => {
+  try {
+    const head = execFileSync('git', ['-C', REPO, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    const dirty = execFileSync('git', ['-C', REPO, 'status', '--porcelain', '--untracked-files=no'], { encoding: 'utf8' }).trim() !== '';
+    return { commit: head, dirty };
+  } catch { return { commit: null, dirty: null }; }
+})();
 const sh = (cmd, args, opts = {}) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...opts }).trim();
 const harnessVersion = () => { try { return sh(path.join(BIN[CELL.harness], { cc: 'claude', codex: 'codex', opencode: 'opencode' }[CELL.harness]), ['--version']).split('\n')[0]; } catch { return null; } };
 const baseEnv = (sweet, cwd, arm = sweet ? 'sweet' : 'native') => ({
@@ -626,7 +634,7 @@ const GATE = createWarmupGate({ logFile: WARMUPS, meta: { cell: CELL_NAME, harne
 // ─── one rollout ───────────────────────────────────────────────────────────────────────────────
 async function runOne(probe, arm) {
   const sweet = arm === 'sweet' || arm === 'sweetB';
-  const base = { captureVersion: CAPTURE_VERSION, cell: CELL_NAME, arm, id: probe.id, set: probe._set, lang: probe.language, stratum: probe.stratum, harness: CELL.harness, model: CELL.model, effort: CELL.effort ?? CELL.variant ?? 'default', harnessVersion: HARNESS_VERSION, ...(arm !== 'native' ? { ssOutput: ssOutputMode(arm) } : {}), ...(STABLE_RULES_PATH ? { stableRulesPath: true } : {}), ...(CELL.harness === 'opencode' && ocCacheMode(arm) === 'product' ? { ocCachePlugin: { sha: OC_PRODUCT_PLUGIN.sha, mainCommit: OC_PRODUCT_PLUGIN.commit, dirty: OC_PRODUCT_PLUGIN.dirty } } : {}), ...(Object.keys(envOf(arm)).some(k => k.startsWith('SS_VARIANT_')) ? { variants: Object.fromEntries(Object.entries(envOf(arm)).filter(([k]) => k.startsWith('SS_VARIANT_'))) } : {}) };
+  const base = { captureVersion: CAPTURE_VERSION, cell: CELL_NAME, arm, id: probe.id, set: probe._set, lang: probe.language, stratum: probe.stratum, harness: CELL.harness, model: CELL.model, effort: CELL.effort ?? CELL.variant ?? 'default', harnessVersion: HARNESS_VERSION, gitCommit: GIT_COMMIT.commit, gitDirty: GIT_COMMIT.dirty, ...(arm !== 'native' ? { ssOutput: ssOutputMode(arm) } : {}), ...(STABLE_RULES_PATH ? { stableRulesPath: true } : {}), ...(CELL.harness === 'opencode' && ocCacheMode(arm) === 'product' ? { ocCachePlugin: { sha: OC_PRODUCT_PLUGIN.sha, mainCommit: OC_PRODUCT_PLUGIN.commit, dirty: OC_PRODUCT_PLUGIN.dirty } } : {}), ...(Object.keys(envOf(arm)).some(k => k.startsWith('SS_VARIANT_')) ? { variants: Object.fromEntries(Object.entries(envOf(arm)).filter(([k]) => k.startsWith('SS_VARIANT_'))) } : {}) };
   let run;
   try {
     // The arm's warm-up must have FINISHED before any scored rollout of that arm starts.
