@@ -91,6 +91,8 @@ function normalizeNativeTotals(results, searchDir) {
  * turned into a symlink that the maintainer has not retired yet. The memo makes the cost one
  * lstat per distinct directory prefix, and the walk stops at the first symlink.
  */
+// Every native grep in this file passes `indexPaths: true` (no realpath check per directory):
+// a path that check would refuse leaves the root through a symlink, and this drops it anyway.
 function dropSymlinkAliasMatches(result, searchDir) {
   if (!result) return result;
   const memo = new Map();
@@ -501,7 +503,7 @@ async function collectRegexMatches(searcher, regex, searchDir, options = {}) {
     if (canUseNativeGrep) {
       const nativeResult = lightweightParse
         ? nativeGrepLines(regex, searchDir, filteredFiles, caseInsensitive)
-        : nativeGrepFull(regex, searchDir, filteredFiles, caseInsensitive, { perFileCap });
+        : nativeGrepFull(regex, searchDir, filteredFiles, caseInsensitive, { perFileCap, indexPaths: true });
       if (nativeResult) {
         indexedMatches = normalizeNativeMatches(nativeResult.matches, searchDir);
         if (perFileCap > 0) fileTotals = normalizeNativeTotals([nativeResult], searchDir);
@@ -523,7 +525,7 @@ async function collectRegexMatches(searcher, regex, searchDir, options = {}) {
   } else if (grepStrategy === 'two_pass') {
     // Both passes from one read of each file; null = the addon cannot, so run them apart.
     const onePass = canUseNativeGrep
-      ? nativeGrepWithFiles(regex, searchDir, filteredFiles, caseInsensitive, { linesOnly: lightweightParse, perFileCap })
+      ? nativeGrepWithFiles(regex, searchDir, filteredFiles, caseInsensitive, { linesOnly: lightweightParse, perFileCap, indexPaths: true })
       : null;
     const nativeFilesResult = onePass ?? (canUseNativeGrep
       ? nativeGrepFilesWithMatches(regex, searchDir, filteredFiles, caseInsensitive)
@@ -545,7 +547,7 @@ async function collectRegexMatches(searcher, regex, searchDir, options = {}) {
       if (canUseNativeGrep) {
         const nativeResult = lightweightParse
           ? nativeGrepLines(regex, searchDir, matchingFiles, caseInsensitive)
-          : nativeGrepFull(regex, searchDir, matchingFiles, caseInsensitive, { perFileCap });
+          : nativeGrepFull(regex, searchDir, matchingFiles, caseInsensitive, { perFileCap, indexPaths: true });
         if (nativeResult) {
           indexedMatches = normalizeNativeMatches(nativeResult.matches, searchDir);
           if (perFileCap > 0) fileTotals = normalizeNativeTotals([nativeResult], searchDir);
@@ -566,7 +568,7 @@ async function collectRegexMatches(searcher, regex, searchDir, options = {}) {
   } else if (canNativeGrepAll) {
     const nativeResult = lightweightParse
       ? nativeGrepLines(regex, searchDir, allIndexedFiles, caseInsensitive)
-      : nativeGrepFull(regex, searchDir, allIndexedFiles, caseInsensitive, { perFileCap });
+      : nativeGrepFull(regex, searchDir, allIndexedFiles, caseInsensitive, { perFileCap, indexPaths: true });
     if (nativeResult) {
       indexedMatches = normalizeNativeMatches(nativeResult.matches, searchDir);
       if (perFileCap > 0) fileTotals = normalizeNativeTotals([nativeResult], searchDir);
