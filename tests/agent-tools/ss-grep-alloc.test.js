@@ -24,6 +24,7 @@ import { bareGrep } from '../../core/search/index.js';
 import { runInVirtualProcess } from '../../core/agent-tools/virtual-process.js';
 import { buildAgentToolDaemonResponse } from '../../core/agent-tools/daemon-route.js';
 import { runAgentTool } from '../../eval/agent-read-workflows/bin/_ss-helpers.mjs';
+import { GREP_BROAD_HIT_CHARS, GREP_BROAD_MIN_HITS, grepBroadHitMax } from '../../core/search/agent-output-fixes.js';
 
 // dgraph-08-shaped fixture: the answer worker/export.go (22 hits) sorts late in the alphabet;
 // plus a generated pb.pb.go (23 hits), test files and one vendored file. 88 hits in 21 files.
@@ -144,6 +145,64 @@ describe('ss-grep line allocation: sat2 weight, the one-line guarantee, line cla
       + 'worker/export.go:6: func Export6(ctx context.Context) error { (+20 more — raise -k)\n');
     expect(grepCalls[0].perFileCap).toBeUndefined();
   });
+});
+
+// A broad grep (>= GREP_BROAD_MIN_HITS total matches) prints each hit line in a window of at most
+// GREP_BROAD_HIT_CHARS chars; below the threshold the 140-char window applies.
+describe('broad greps print a narrower hit window', () => {
+  const longLine = (i) => `return handleExportRequest(ctx, request, response, ${i}) // a trailing comment that runs on past sixty chars`;
+  /** A searcher whose one file wide/a.go holds `n` hits of a long line. */
+  function wideSearcher(n) {
+    const matches = [];
+    for (let i = 1; i <= n; i++) matches.push({ file: 'wide/a.go', line: i, matchText: 'handleExportRequest', column: 8, content: longLine(i) });
+    const result = { matches, candidateFiles: 1, totalFiles: 1, scannedFiles: 1 };
+    return {
+      ...searcher,
+      sparseGramIndex: { searchFull: vi.fn(() => result), searchLines: vi.fn(() => result) },
+    };
+  }
+  const hitTexts = (out) => out.split('\n').filter(l => l.startsWith('wide/a.go:'))
+    .map(l => l.replace(/ \(\+\d+ more.*$/, '').replace(/^wide\/a\.go:\d+: /, ''));
+  const wideOut = async (n, daemon) => {
+    const s = wideSearcher(n);
+    if (!daemon) {
+      const r = await runInVirtualProcess({ env: callEnv(), cwd: root },
+        () => runAgentTool('grep', ['handleExportRequest', '-k', '3'], { getSearcher: () => s }));
+      return r.stdout.toString('utf8');
+    }
+    const r = await buildAgentToolDaemonResponse(
+      { v: 1, tool: 'grep', args: ['handleExportRequest', '-k', '3'], cwd: root, env: callEnv(), pid: 4242 },
+      { isUnixSocket: true, searcher: s, isReady: () => true },
+    );
+    expect(r.status).toBe(200);
+    return JSON.parse(r.body).stdout;
+  };
+
+  it('the constants: 50 hits, 60 chars', () => {
+    expect([GREP_BROAD_MIN_HITS, GREP_BROAD_HIT_CHARS]).toEqual([50, 60]);
+    expect(grepBroadHitMax(GREP_BROAD_MIN_HITS - 1)).toBeUndefined();
+    expect(grepBroadHitMax(GREP_BROAD_MIN_HITS)).toBe(GREP_BROAD_HIT_CHARS);
+    expect(grepBroadHitMax(1000)).toBe(GREP_BROAD_HIT_CHARS);
+  });
+
+  for (const daemon of [false, true]) {
+    const path_ = daemon ? 'daemon' : 'in-process';
+    it(`>= 50 total matches: a 60-char window (${path_})`, async () => {
+      const texts = hitTexts(await wideOut(GREP_BROAD_MIN_HITS, daemon));
+      expect(texts.length).toBeGreaterThan(0);
+      for (const t of texts) {
+        expect(t.length).toBe(GREP_BROAD_HIT_CHARS);
+        expect(t.endsWith('…')).toBe(true);
+        expect(t).toContain('handleExportRequest');
+      }
+    });
+
+    it(`< 50 total matches: the whole line, up to 140 chars (${path_})`, async () => {
+      const texts = hitTexts(await wideOut(GREP_BROAD_MIN_HITS - 1, daemon));
+      expect(texts.length).toBeGreaterThan(0);
+      for (const t of texts) expect(longLine(Number(/, (\d+)\)/.exec(t)[1]))).toBe(t);
+    });
+  }
 });
 
 describe('the warm daemon (/agent-tool) prints exactly what the in-process tool prints', () => {

@@ -378,7 +378,7 @@ export function selectGrepFilesByWeight(matches, opts = {}) {
  * @param {{files: Array<{file, total, kept, prior?}>, hiddenFileCount, hiddenMatchCount,
  *          hiddenSample: Array<{file, total}>, order?: 'weight'}} fileSummary
  * @param {number} k - body line budget
- * @param {{hitMax?: number}} [opts] - `hitMax` (SS_VARIANT_GREP_BROAD): grepHitText's window size.
+ * @param {{hitMax?: number}} [opts] - `hitMax` (grepBroadHitMax): grepHitText's window size.
  * @returns {{lines: string[], rows: Array<{file, line, text, more}>, shownMatches: number,
  *            matchedFileCount: number, truncatedFileCount: number, hiddenLine: string|null}}
  *   `rows[i]` is the hit printed as `lines[i]` (for grep context rendering).
