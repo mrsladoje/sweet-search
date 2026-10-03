@@ -494,11 +494,11 @@ describe('expandToSymbol', () => {
 
   it('should drop closing brace first when sandwich is tight', () => {
     // Gold: 50 lines (origStart=100..origEnd=149). Entity 1-1000.
-    // Token math (10 tokens/line, 10 per elision marker):
-    //   sig=40 (lines 1-4), gold=500, closing=10 (line 1000), 2 elisions=20
-    //   full sandwich = 570
-    // Cap=560: full overshoots by 10 → drop closing first.
-    //   sig + gold + 1 elision = 40 + 500 + 10 = 550 ≤ 560 → keep signature, drop closing ✓
+    // Token math (10 tokens/line, 21 per elision marker — it names src/tight.js twice):
+    //   sig=40 (lines 1-4), gold=500, closing=10 (line 1000), 2 elisions=42
+    //   full sandwich = 592
+    // Cap=570: full overshoots by 22 → drop closing first.
+    //   sig + gold + 1 elision = 40 + 500 + 21 = 561 ≤ 570 → keep signature, drop closing ✓
     const result = {
       file: 'src/tight.js',
       startLine: 100,
@@ -521,7 +521,7 @@ describe('expandToSymbol', () => {
       locationMap: null,
       fileCache: new Map(),
       projectRoot: '/tmp',
-      tokenCap: 560,
+      tokenCap: 570,
     });
 
     expect(expansion.kind).toBe('sandwich');
