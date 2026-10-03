@@ -298,3 +298,30 @@ allocator.
 
 **Possible product change:** None in code. At the end-of-tuning reindex, check that the GRDB index
 has no path under `Tests/CustomSQLite/GRDB/`. If one is there, the no-follow rule has a gap.
+
+---
+
+## 2026-10-03 — the index maintainer spins on this repository (one core, ignores SIGTERM)
+
+**Observation (Claude, during the ss-grep speed work):** on `sweet-search-private` (base sparse-gram
+index from 2026-05-12, a 48 MB delta) every freshly started `sweet-search-maintainer` used 70–90%
+of one core without pause (16 CPU-minutes in 20 minutes), wrote nothing to the delta, and did not
+exit on SIGTERM after its daemon was killed (SIGKILL was needed; it then ran orphaned).
+
+**Not investigated.** It costs one core on the machine where agents run and adds noise to any
+timing. Candidate causes: a reconcile loop that never converges on a stale base, or the backstop
+walk. Check after the planned reindex; if it persists on a fresh index, it is a bug.
+
+---
+
+## 2026-10-03 — `ss-grep -i` cannot narrow a literal containing k or s (needs reindex — wait)
+
+**Observation (Claude):** the end-to-end grep benchmark (`~/.ss-eval/grep-e2e-bench`, 1,464 queries)
+shows case-insensitive greps on large repos at ripgrep speed (go `TPK -i` 310 ms vs rg 321 ms,
+`Fnscns -i` the same). Under Unicode case folding `k` also matches U+212A (Kelvin) and `s` matches
+U+017F (long s). Those are not ASCII, so they break a gram span, and the planner must split the
+literal at every k/s; `TPK` and `Fnscns` keep no 3-char part, and every file is read.
+
+**Possible product change:** record per file whether it contains U+212A or U+017F (one bit in the
+sparse-gram index). A literal could then be narrowed as (ASCII grams) ∪ (files with the
+character), which is exact and almost always the ASCII set. Needs a reindex, so it waits.
