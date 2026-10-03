@@ -147,8 +147,12 @@ const isArmSwitch = (k) => k.startsWith('SS_VARIANT_') || k.startsWith('SS_FIX_'
 // A deleted switch (SWITCHES.md) would be ignored by the code but still stamped on the row as a
 // variant: refuse it, so no run looks like an A/B that it is not.
 const KEPT_SWITCHES = new Set(['SS_FIX_GREP_FULLLINE', 'SS_VARIANT_GREP_BROAD', 'SS_VARIANT_RULES_FILE', 'SS_VARIANT_OC_CACHE_KEY']);
+const DELETED_OTHER = new Set(['SWEET_SEARCH_COMPACT_OUTPUT', 'SS_SIBLING_LINE', 'SS_UNREAD_ABOVE', 'SS_READ_SPAN_EXPAND', 'SS_READ_WINDOW',
+  'SS_SMOKE_SEARCH_BUDGET', 'SS_SMOKE_FIND_BUDGET', 'SS_SMOKE_TRACE_BUDGET', 'SS_SMOKE_SEMANTIC_MAXTOKENS',
+  'CC_PRODUCT_STEER', 'CC_PRODUCT_TOKREM', 'CC_PRODUCT_SKILLDESC', 'CC_PRODUCT_HOOKPLUG',
+  'SS_NO_CMD_CONDENSE', 'SS_NO_RT_AUTHORITY', 'SS_RT_LONGYIELD', 'SS_RUNTESTS_DEDUP', 'SS_NO_ANTITHRASH']);
 for (const a of ['native', 'sweet', 'sweetB']) {
-  const dead = Object.keys(envOf(a)).filter(k => isArmSwitch(k) && !KEPT_SWITCHES.has(k));
+  const dead = Object.keys(envOf(a)).filter(k => (isArmSwitch(k) && !KEPT_SWITCHES.has(k)) || DELETED_OTHER.has(k));
   if (dead.length) { console.error(`[${a}] deleted switch(es) ${dead.join(', ')}: no code reads them (core/prompt-optimization/data/obs-loop/SWITCHES.md); reproduce old rows from their git commit`); process.exit(2); }
 }
 for (const a of ['native', 'sweet', 'sweetB']) {

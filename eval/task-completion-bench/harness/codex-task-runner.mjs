@@ -822,9 +822,6 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
 
   // Both arms get the standard completion frame; sweet additionally gets M++ (the
   // ss-* retrieval guidance), bracketed by FRAME_OPEN/FRAME_CLOSE so completion wins.
-  // Experimental anti-thrash appendix (A/B candidate for promotion into canonical M++).
-  // Targets the diagnosed sweet-arm waste: redundant re-reads of already-returned spans,
-  // search-variant reformulation, and under-use of ss-trace for downstream/caller lookup.
   // Instruction file = frame + M± (sweet) / frame only (native), written into
   // <rundir>/AGENTS.md (the plain project file codex reads), NOT the prompt. M± is BRACKETED
   // by the frame (FRAME_OPEN + M± + FRAME_CLOSE) so FRAME_CLOSE's task-completion authority
