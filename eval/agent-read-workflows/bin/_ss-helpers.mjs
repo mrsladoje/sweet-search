@@ -32,6 +32,7 @@ import {
   renderGrepContext,
 } from '../../../core/search/grep-output-shaping.js';
 import { cwdGrepScope, resolveCwdGlob, resolveCwdPath } from '../../../core/search/cwd-paths.js';
+import { SEARCH_LOADING_WAIT_MS, searchNotReadyLine } from '../../../core/agent-tools/tools.js';
 import { formatRouteMetadata } from '../../../core/search/search-format.js';
 import { createAdmissionPolicy } from '../../../core/indexing/admission-policy.js';
 import { createIndexCoverage, semanticTargetFor } from '../../../core/search/index-coverage.js';
@@ -474,29 +475,30 @@ async function getSweetSearch() {
 // r282 Codex r1 typedoc: the daemon was cold-starting while another cell warmed 8 servers;
 // the 60 s wait ran out and 5 searches were refused. A daemon that is listening (busy
 // loading) is waited for, never replaced: a second spawn would only race it for the socket.
-const WARM_SERVER_WAIT_MS = 300_000;
+// The wait is SEARCH_LOADING_WAIT_MS (90 s), under the harnesses' 120 s command cap.
 const SPAWN_RETRY_MS = 60_000;
 
-async function ensureWarmServerReady({ timeoutMs = WARM_SERVER_WAIT_MS, intervalMs = 500 } = {}) {
+/** 'ready', 'loading' (not ready by the deadline) or 'failed' (init failed, even after one replacement). */
+async function ensureWarmServerReady({ timeoutMs = SEARCH_LOADING_WAIT_MS, intervalMs = 500 } = {}) {
   // Inside the daemon: it is the warm server, and it only takes a call once ready.
-  if (host.getSearcher) return true;
+  if (host.getSearcher) return 'ready';
   const { getServerHealth, isServerListening, autoSpawnServer } = await import(path.join(REPO_ROOT, 'core/search/search-server.js'));
   const deadline = Date.now() + timeoutMs;
   let spawns = 0;
   let lastSpawnAt = 0;
   for (;;) {
     const health = await getServerHealth({ timeoutMs: 1000 });
-    if (health?.status === 'ready' || health?.warm === true) return true;
+    if (health?.status === 'ready' || health?.warm === true) return 'ready';
     // A daemon whose init failed stays resident until its idle TTL; a fresh spawn replaces
     // it (the new daemon's startup guard stops a failed one). Once, then give up.
     if (health?.status === 'failed') {
-      if (spawns > 0 || Date.now() >= deadline) return false;
+      if (spawns > 0 || Date.now() >= deadline) return 'failed';
       spawns++;
       lastSpawnAt = Date.now();
       await autoSpawnServer();
       continue;
     }
-    if (Date.now() >= deadline) return false;
+    if (Date.now() >= deadline) return 'loading';
     // No daemon at all (never started, or it exited): start one. autoSpawnServer has a
     // short built-in wait and may return before the detached server binds its socket, so
     // a second spawn waits SPAWN_RETRY_MS — sooner, it would race the first for the socket.
@@ -506,12 +508,12 @@ async function ensureWarmServerReady({ timeoutMs = WARM_SERVER_WAIT_MS, interval
       await autoSpawnServer();
       continue;
     }
-    await new Promise(resolve => setTimeout(resolve, intervalMs));
+    await new Promise(resolve => setTimeout(resolve, Math.min(intervalMs, Math.max(0, deadline - Date.now()))));
   }
 }
 
 async function queryWarmSearch(query, options) {
-  if (!await ensureWarmServerReady({ timeoutMs: 5000 })) {
+  if (await ensureWarmServerReady({ timeoutMs: 5000 }) !== 'ready') {
     throw new Error('warm server is not ready');
   }
   const { queryServer } = await import(path.join(REPO_ROOT, 'core/search/search-server.js'));
@@ -1228,9 +1230,10 @@ async function cmdAgentSearch(rawArgs) {
     process.exit(2);
   }
 
-  const serverUsed = await ensureWarmServerReady();
-  if (!serverUsed) {
-    process.stderr.write(`[ss-search] warm server is not ready after ${WARM_SERVER_WAIT_MS / 1000} s; refusing cold direct search in benchmark wrapper. Run ss-search again, or use ss-grep meanwhile.\n`);
+  const waitStart = Date.now();
+  const warm = await ensureWarmServerReady();
+  if (warm !== 'ready') {
+    process.stderr.write(searchNotReadyLine(Math.round((Date.now() - waitStart) / 1000), warm === 'failed'));
     process.exit(1);
   }
 
@@ -1408,7 +1411,7 @@ async function cmdAgentSearch(rawArgs) {
     routeConfidence,
     routeMethod,
     routerLatency_us,
-    serverUsed,
+    serverUsed: true,
     serverProjectRoot,
     requestedProjectRoot,
     repoMatches,
@@ -1497,7 +1500,7 @@ async function cmdSemantic(rawArgs) {
   };
   let r;
   try {
-    if (!await ensureWarmServerReady({ timeoutMs: 5000 })) throw new Error('warm server is not ready');
+    if (await ensureWarmServerReady({ timeoutMs: 5000 }) !== 'ready') throw new Error('warm server is not ready');
     const { queryReadSemanticServer } = await import(path.join(REPO_ROOT, 'core/search/search-server.js'));
     r = await queryReadSemanticServer({
       path: file, query, projectRoot: FILE_ROOT, maxChars: maxTokens * 4, ...(topK ? { topK } : {}), ...rangeOpts,
