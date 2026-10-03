@@ -490,10 +490,8 @@ export async function buildReadDaemonResponse(reqUrl, {
 
   try {
     const { readFiles, formatReadResults } = await import('./search-read.js');
-    // Agent-facing read route: span gate on. Measurement formats still veto it
-    // inside spanExpandEnabled().
     const out = await readFiles(files, {
-      projectRoot: serverRoot, includeMetadata, spanExpand: true, format,
+      projectRoot: serverRoot, includeMetadata, format,
     });
     let queryEvidence = null;
     if (exactRereadOmission && agentSpanLedger && validAgentSessionId(agentSessionId)) {
@@ -1061,8 +1059,6 @@ export async function startServer() {
           fusion,
           useLateInteraction,
           _isAgentFormat: isAgentFormat,
-          // SS_SIBLING_LINE=0 lives in the CLIENT's env; the daemon must be told.
-          _siblingLine: url.searchParams.get('siblingLine') !== 'false',
           // The fileFilter is the client's shell cwd, not an explicit --in (cwd-paths.js).
           _cwdScope: url.searchParams.get('cwdScope') === 'true',
           ...(agentFormat && { format: agentFormat, tokenBudget }),
@@ -1503,7 +1499,6 @@ export async function queryServer(query, options = {}) {
     projectRoot,
     trackAgentSpans = true,
     _isAgentFormat = false,
-    _siblingLine = true,
     _cwdScope = false,
   } = options;
 
@@ -1542,7 +1537,6 @@ export async function queryServer(query, options = {}) {
     if (tokenBudget) params.set('budget', tokenBudget.toString());
     if (projectRoot) params.set('projectRoot', projectRoot);
     if (_isAgentFormat) params.set('agent', 'true');
-    if (_siblingLine === false) params.set('siblingLine', 'false');
     if (_cwdScope) params.set('cwdScope', 'true');
     if (!trackAgentSpans) params.set('trackAgentSpans', 'false');
     if (trackAgentSpans && format?.startsWith('agent') && exactRereadOmissionEnabled()) {

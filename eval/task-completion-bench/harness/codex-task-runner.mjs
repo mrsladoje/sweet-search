@@ -38,7 +38,7 @@ import { ISOLATION_ON, startJail, stopJail, jailArgv, jailEnv, jailDenials, roll
 import { auditRollout, UNAUDITED } from './escape-audit.mjs';
 // L3 run_tests dedup: only the cheap path/session helpers are needed here — the shim
 // runtime (which pulls in the code-graph repository) is never imported by the harness.
-import { RT_DEDUP_ON, dedupLogPathFor, startDedupSession } from './rt-dedup.mjs';
+import { dedupLogPathFor, startDedupSession } from './rt-dedup.mjs';
 import {
   createProgressRunConfig, progressRowFields, resolveProgressFlags,
 } from './rt-progress-controller.mjs';
@@ -97,13 +97,13 @@ export function isZeroCallStartFailure({ exitCode, timedOut }, toolCalls, answer
 const PRICE = { in: IDEAL_PRICE.in, cacheHit: IDEAL_PRICE.cache, out: IDEAL_PRICE.out };
 const DOCKER_HOST = process.env.DOCKER_HOST || 'unix:///var/run/docker.sock';
 
-// Cost levers L1/L2 (2026-07-08). Both are HARNESS-side (apply to BOTH arms) and
-// flag-gated for historical comparability:
-//   L1 (SS_NO_CMD_CONDENSE=1 → off): a docker PATH-wrapper that condenses oversized
-//      `docker run/exec/logs/build` output the agent produces when it distrusts
-//      run_tests and re-runs the suite by hand (the gt-783 ~40 KB-log mechanism).
-//   L2 (SS_NO_RT_AUTHORITY=1 → off): run_tests gains an authority banner + a
-//      baseline-diff (pre-existing vs newly-introduced failures) + a targeted mode.
+// Cost levers L1/L2 (2026-07-08). Both are HARNESS-side (apply to BOTH arms):
+//   L1: a docker PATH-wrapper that condenses oversized `docker run/exec/logs/build`
+//      output the agent produces when it distrusts run_tests and re-runs the suite
+//      by hand (the gt-783 ~40 KB-log mechanism).
+//   L2: run_tests gains an authority banner + a baseline-diff (pre-existing vs
+//      newly-introduced failures) + a targeted mode.
+// Their opt-outs (SS_NO_CMD_CONDENSE, SS_NO_RT_AUTHORITY) were deleted 2026-10-03.
 // The pure logic lives in rt-condense-lib.mjs (unit-tested); the shim runtime in
 // rt-shim-runtime.mjs. Both are imported BY ABSOLUTE PATH into the generated shims.
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -112,8 +112,6 @@ const RT_LIB_PATH = path.join(__dirname, 'rt-condense-lib.mjs');
 const RT_DEDUP_PATH = path.join(__dirname, 'rt-dedup.mjs');
 const RT_PROGRESS_PATH = path.join(__dirname, 'rt-progress-controller.mjs');
 const RT_INFLIGHT_PATH = path.join(__dirname, 'rt-inflight.mjs');
-const L1_CONDENSE = process.env.SS_NO_CMD_CONDENSE !== '1';
-const L2_RT_AUTHORITY = process.env.SS_NO_RT_AUTHORITY !== '1';
 
 // Tool-agnostic preamble for BOTH arms: how to run tests in THIS environment.
 // Exported so the sibling harness adapters (claude-code / opencode) inject the
@@ -135,24 +133,13 @@ export const FRAME_CLOSE =
   '- After the initial reproduction, re-run `run_tests` only after a source edit. If the source diff is unchanged, the result cannot improve. Use `run_tests <pattern>` for targeted diagnosis when supported.\n' +
   // Auto-await run_tests: launch with a long yield so the complete result returns in ONE call
   // instead of a short-yield launch + repeated write_stdin polls (each re-sending resident
-  // context). Default ON (SS_RT_LONGYIELD=0 opts back to the legacy poll instruction). Validated
-  // solve-neutral: micro-smoke -62% poll turns, rotation -93%, 18-task screen 23.1%->10.8% poll
-  // rate, no clean solve regression either arm (2026-08-07). BENCH-SPECIFIC (names run_tests) →
-  // lives in the FRAME, byte-identical on both arms; never in M±.
-  (process.env.SS_RT_LONGYIELD === '0'
-    ? '- When `run_tests` is still running and no other work is pending, poll it with `write_stdin` using `yield_time_ms=120000`; do not use 30-second heartbeat polls.\n\n'
-    : '- `run_tests` runs the whole suite and blocks until it finishes. Launch it with `yield_time_ms=300000` so its complete PASS/FAIL result comes back in ONE call — do NOT launch it with a short yield and then poll. Only if it has still not returned after that full wait, poll ONCE with `write_stdin` using `yield_time_ms=300000`; never use short heartbeat polls.\n\n') +
+  // context). Validated solve-neutral: micro-smoke -62% poll turns, rotation -93%, 18-task
+  // screen 23.1%->10.8% poll rate, no clean solve regression either arm (2026-08-07).
+  // BENCH-SPECIFIC (names run_tests) → lives in the FRAME, byte-identical on both arms; never in M±.
+  '- `run_tests` runs the whole suite and blocks until it finishes. Launch it with `yield_time_ms=300000` so its complete PASS/FAIL result comes back in ONE call — do NOT launch it with a short yield and then poll. Only if it has still not returned after that full wait, poll ONCE with `write_stdin` using `yield_time_ms=300000`; never use short heartbeat polls.\n\n' +
   'THIS ENVIRONMENT IS OFFLINE:\n' +
   '- Every outbound request will be REFUSED — curl, wget, git fetch/clone/pull, and package installs (pip, npm, go get, cargo, gem, mix) alike. Mirrors, CDNs, proxies and archives are refused too. Do not attempt them and do not retry: everything needed to solve the issue is already in the working directory.\n' +
   '- Solve the issue from the repository source and the issue text. Do not go looking for the upstream fix — not over the network, and not in git history, refs, tags, stashes, or packed objects. A fix copied from a later commit does not count.';
-
-// Experimental anti-thrash appendix (sweet-arm only, gated by SS_NO_ANTITHRASH).
-// Exported so the sibling adapters append the identical text under the same gate.
-export const ANTI_THRASH_TEXT =
-  '\n\nUSE WHAT THE TOOLS ALREADY GAVE YOU (efficiency):\n' +
-  '- ss-search and ss-grep return the matching code AT file:line, inline in the result. Once a span has been shown to you, do NOT ss-read or re-grep that same span/symbol again — edit directly from the body you already have; only read a DIFFERENT file, or a range OUTSIDE what was shown.\n' +
-  '- One search per target. If the top hit answers your question (especially when the trailer says sufficient=YES), act on it — do not fire multiple keyword/regex variants for the same symbol.\n' +
-  '- To find where a symbol is CALLED or what it calls (to trace a value downstream before editing), use `ss-trace <symbol>` — do not re-search by hand.';
 
 // The AGENTS.md block codex gets: frame + M± (sweet) / frame only (native). M± is bracketed by
 // the frame so FRAME_CLOSE's completion authority overrides M±'s stop-early guidance. With
@@ -438,7 +425,7 @@ export function writeRunTestsShim(binDir, {
   image, workdir, testScript, rundir, testTimeoutSec = 300, netArgs = '',
   brokerMode = false, dockerBin = 'docker', rtAuthority = true,
   stateDir = binDir, _isAgentFormat = false, label = 'rollout',
-  rtDedup = RT_DEDUP_ON, rtProgressFlags = resolveProgressFlags(),
+  rtDedup = true, rtProgressFlags = resolveProgressFlags(),
   controllerDir = null, taskId = null, arm = null, injectedFiles = [],
   installSeds = [],
   includeUntracked = includeUntrackedFromEnv(), attachRequireSameDiff = attachRequireSameDiffFromEnv(),
@@ -785,18 +772,15 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
   appendFileSync(path.join(rundir, 'AGENTS.md'), `\n\n${codexInstructionFile({ sweet, mppText, rulesPlacement })}\n`);
   const shimInfo = writeRunTestsShim(binDir, {
     image, workdir, testScript, rundir, testTimeoutSec: t._testTimeoutSec || 300,
-    netArgs, brokerMode: true, dockerBin: realDocker, rtAuthority: L2_RT_AUTHORITY,
+    netArgs, brokerMode: true, dockerBin: realDocker, rtAuthority: true,
     stateDir: runnerStateDir, _isAgentFormat: sweet, label: jailLabel,
     taskId: task.id, arm, injectedFiles: ['AGENTS.md'],
     installSeds: installSedCmds(t), harness: 'codex',
   });
-  // L1: install the docker output-condenser wrapper (both arms). Flag-gated; a run
-  // with SS_NO_CMD_CONDENSE=1 leaves the agent's docker == real docker (legacy).
+  // L1: install the docker output-condenser wrapper (both arms).
   let wrapperFiles = [];
-  if (L1_CONDENSE) {
-    try { wrapperFiles = Object.values(installCommandWrappers(binDir, { realDocker })); }
-    catch (e) { console.error(`  [L1] wrapper install skipped: ${String(e.message).slice(0, 100)}`); }
-  }
+  try { wrapperFiles = Object.values(installCommandWrappers(binDir, { realDocker })); }
+  catch (e) { console.error(`  [L1] wrapper install skipped: ${String(e.message).slice(0, 100)}`); }
   const runnerFiles = [...(shimInfo.files || []), ...wrapperFiles];
   // Re-snapshot after every generated runner file exists. This includes the L1
   // docker wrapper, which was previously outside the tamper verdict.

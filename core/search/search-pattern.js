@@ -315,7 +315,6 @@ export async function bareGrep(query, routing, options = {}) {
   // code lines (the one enrichment a near-singleton grep can take; see
   // agent-pack-completion.js).
   const siblingLine = options._isAgentFormat === true && unscopedShape
-      && options._siblingLine !== false // SS_SIBLING_LINE=0 opts out (client-side, travels as this option)
       && results.length >= 1 && results.length <= 3
       && results.every((result) => result.file === results[0].file)
     ? buildSingletonSiblingLine(results, this?.codeGraphRepo, { regex, projectRoot: searchDir })
@@ -745,7 +744,6 @@ export async function patternSearch(query, routing, options = {}) {
       projectRoot: searchDir,
       ablations,
       _isAgentFormat: true,
-      _siblingLine: options._siblingLine,
     });
     agentResponse.stats = stats;
     return agentResponse;
