@@ -145,12 +145,11 @@ fn write_out(bytes: &[u8], stderr: bool) {
 pub fn run(sub: &str, args: &[String]) -> ! {
     // The ss-search loading budget (90 s) counts from here, through the daemon route and
     // the in-process fallback (core/agent-tools/tools.js CALL_STARTED_ENV).
-    if env::var_os(CALL_STARTED_ENV).is_none() {
-        let now_ms = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_millis());
-        env::set_var(CALL_STARTED_ENV, now_ms.to_string());
-    }
+    // Always this call's own time: an inherited value is a stale stamp from another call.
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis());
+    env::set_var(CALL_STARTED_ENV, now_ms.to_string());
     if env::var("SWEET_SEARCH_AGENT_TOOLS_VIA_DAEMON").map_or(false, |v| falsey(&v)) {
         run_in_process(sub, args);
     }
