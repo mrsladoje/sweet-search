@@ -58,7 +58,6 @@ import {
   isRegexParseError,
   grepHitText,
   isTestLikePath,
-  readFixFlags,
   renderCompactHeader,
   renderCompactSufficiency,
   renderFixedBlocks,
@@ -155,9 +154,6 @@ const AGENT_SESSION_ID = resolveAgentSessionId();
 const EXACT_REREAD_OMISSION = exactRereadOmissionEnabled();
 const SHOWN_SPAN_TRAILER = shownSpanTrailerEnabled();
 const SPAN_POLICY_ENABLED = EXACT_REREAD_OMISSION || SHOWN_SPAN_TRAILER;
-
-// Output switch still under test (core/search/agent-output-fixes.js): the bench-only SS_VARIANT_GREP_BROAD.
-const FIX = readFixFlags();
 
 async function recordAgentToolCall({
   operation = 'observe',
@@ -583,7 +579,7 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
     process.stdout.write(`# ss-grep: ${total} total match(es) for /${usedRegex}/ (scope: ${scopes}${globEcho(globs)})\n`);
     for (const note of notes) process.stdout.write(`${note}\n`);
     const rows = result.results;
-    const broadMax = grepBroadHitMax(FIX, total);
+    const broadMax = grepBroadHitMax(total);
     const hitText = broadMax ? { max: broadMax } : {};
     const shown = rows.map((r, i) => ({
       file: r.file,
@@ -674,7 +670,7 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
   const fileSummary = result.fileSummary
     || { files: [], hiddenFileCount: 0, hiddenMatchCount: 0, hiddenSample: [] };
   // Each hit prints its full source line, as `grep -n` does (grepHitText).
-  const broadMax = grepBroadHitMax(FIX, total);
+  const broadMax = grepBroadHitMax(total);
   const body = renderGrepBody(result.results, fileSummary, k, {
     ...(broadMax ? { hitMax: broadMax } : {}),
   });

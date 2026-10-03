@@ -1,6 +1,5 @@
 /**
- * ss-* output helpers (core/search/agent-output-fixes.js): the switches still under test
- * (SS_VARIANT_GREP_BROAD), entry selection (A2), summary lines, the compact
+ * ss-* output helpers (core/search/agent-output-fixes.js): entry selection (A2), summary lines, the compact
  * trace (A4), the regex repair (A5) and the grep hit text. The wiring is in
  * agent-output-fixes-wiring.test.js.
  */
@@ -8,40 +7,16 @@ import { describe, expect, it } from 'vitest';
 
 import {
   formatTraceCompact,
-  grepBroadHitMax,
   grepHitText,
   isRegexParseError,
   isSummaryOnly,
   isTestLikePath,
-  readFixFlags,
   renderSummaryLine,
   selectEntries,
   shownCodeSpan,
   summaryRestatesHeader,
 } from '../../core/search/agent-output-fixes.js';
 import { renderGrepBody } from '../../core/search/grep-output-shaping.js';
-
-describe('readFixFlags', () => {
-  it('SS_VARIANT_GREP_BROAD=<min hits>:<chars>; malformed = off', () => {
-    expect(readFixFlags({ SS_VARIANT_GREP_BROAD: '100:60' }).grepBroad).toEqual({ minHits: 100, chars: 60 });
-    for (const v of ['', '100', '0:60', '100:10', 'a:b']) expect(readFixFlags({ SS_VARIANT_GREP_BROAD: v }).grepBroad).toBeUndefined();
-    const flags = readFixFlags({ SS_VARIANT_GREP_BROAD: '100:60' });
-    expect(grepBroadHitMax(flags, 99)).toBeUndefined();
-    expect(grepBroadHitMax(flags, 100)).toBe(60);
-    expect(grepBroadHitMax(readFixFlags({}), 1000)).toBeUndefined();
-  });
-
-  it('the deleted switches have no effect', () => {
-    const deleted = {
-      SS_FIX_A: '0', SS_FIX_GREP_FULLLINE: '0', SWEET_SEARCH_COMPACT_OUTPUT: '0', SS_FIX_TRACE_COMPACT: '0', SS_FIX_GREP_RETRY: '0',
-      SS_FIX_GREP_ALLOC: '0', SS_FIX_GREP_LINES: '0', SS_FIX_GREP_WEIGHT: 'sqrt', SS_FIX_GREP_ALLOC_RULE: 'sl',
-      SS_FIX_SEMANTIC_RANGES: '0', SS_FIX_TRACE_MODE_BUDGET: '0', SS_FIX_ALREADY_SHOWN: '1',
-      SS_FIX_DROP_SUFFICIENCY: '1', SS_FIX_SUMMARY_CAP: '2', SS_FIX_ONE_PER_FILE: '1', SS_FIX_GREP_ORDER: '1',
-      SS_FIX_SEARCH_FIRST_UNIT: 'all', SS_FIX_SEMANTIC_PICK: '1',
-    };
-    expect(readFixFlags(deleted)).toEqual(readFixFlags({}));
-  });
-});
 
 describe('isTestLikePath', () => {
   it('recognises test, spec, fixture and mock files', () => {

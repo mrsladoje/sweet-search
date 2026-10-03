@@ -4,23 +4,13 @@
  * (package.json "files"); the wrapper (eval/agent-read-workflows/bin/_ss-helpers.mjs) wires them
  * to the printers. The functions are pure (no I/O, no process state), so they can be unit-tested.
  *
- * Switch still under test (read from the environment):
- *   SS_VARIANT_GREP_BROAD=<min hits>:<chars>  bench only (A/B): see parseGrepBroad.
- *
- * Every other output choice is fixed. The decided switches (SS_FIX_A and its parts, the ss-grep
- * allocation arms, the semantic ranges, the trace mode budget) were deleted on 2026-10-03 with
- * their losing code paths; old bench rows are reproduced from their git commit.
+ * Every output choice is fixed; no environment switch changes it. The decided switches (SS_FIX_A
+ * and its parts, SS_FIX_GREP_FULLLINE, SS_VARIANT_GREP_BROAD, the ss-grep allocation arms, the
+ * semantic ranges, the trace mode budget) were deleted on 2026-10-03 with their losing code
+ * paths; old bench rows are reproduced from their git commit.
  *
  * ss-read output is NOT changed here (owner decision 2026-10-01).
  */
-
-/** Parse the switches that are still under test. */
-export function readFixFlags(env = process.env) {
-  const grepBroad = parseGrepBroad(env?.SS_VARIANT_GREP_BROAD);
-  return {
-    ...(grepBroad ? { grepBroad } : {}),
-  };
-}
 
 // --- test-file detection --------------------------------------------------------------
 
@@ -536,20 +526,20 @@ export function repairRegexBranches(raw) {
 export const GREP_HIT_TEXT_MAX = 140;
 
 /**
- * SS_VARIANT_GREP_BROAD=<min total hits>:<chars> (bench only, 2026-10-03 A/B; deleted when decided):
- * an ss-grep with at least that many total matches prints each hit's line in a window of at most
- * <chars> chars (grepHitText `max`) instead of GREP_HIT_TEXT_MAX. Unset or malformed = off.
+ * A broad ss-grep (at least GREP_BROAD_MIN_HITS total matches) prints each hit line in a window of
+ * at most GREP_BROAD_HIT_CHARS chars instead of GREP_HIT_TEXT_MAX. Decided by the 2026-10-03 diet1
+ * A/B (core/prompt-optimization/data/obs-loop/TRACES-diet1.md): 18 broad greps saved ~256 chars
+ * each, with no re-grep, no extra read and no misread.
  */
-function parseGrepBroad(raw) {
-  const m = /^\s*(\d+)\s*:\s*(\d+)\s*$/.exec(String(raw ?? ''));
-  if (!m) return null;
-  const minHits = Number(m[1]), chars = Number(m[2]);
-  return minHits > 0 && chars >= 20 ? { minHits, chars } : null;
-}
+export const GREP_BROAD_MIN_HITS = 50;
+export const GREP_BROAD_HIT_CHARS = 60;
 
-/** The grepHitText `max` for a grep with `total` matches (undefined = the default). */
-export function grepBroadHitMax(flags, total) {
-  return flags?.grepBroad && total >= flags.grepBroad.minHits ? flags.grepBroad.chars : undefined;
+/**
+ * The grepHitText `max` for a grep with `total` matches (undefined = the default window).
+ * The thresholds are parameters so a unit test can use a small fixture.
+ */
+export function grepBroadHitMax(total, minHits = GREP_BROAD_MIN_HITS, chars = GREP_BROAD_HIT_CHARS) {
+  return total >= minHits ? chars : undefined;
 }
 // Chars of the line kept before the match when a long line is cut on the left.
 const GREP_HIT_LEAD = 40;
@@ -561,7 +551,7 @@ const GREP_HIT_LEAD = 40;
  * window of at most that many chars that contains the match, with `…` at each cut side; a match
  * near the start keeps the head of the line. A hit with no line text falls back to the matched text.
  *
- * `max` (SS_VARIANT_GREP_BROAD): the window size for a full line, default GREP_HIT_TEXT_MAX.
+ * `max` (grepBroadHitMax): the window size for a full line, default GREP_HIT_TEXT_MAX.
  *
  * @param {{matchText?: string, content?: string, column?: number}} m
  * @param {{max?: number}} [opts]
