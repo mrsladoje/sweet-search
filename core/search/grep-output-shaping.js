@@ -126,7 +126,7 @@ export function grepFileFilterPredicate(filter, projectRoot = null) {
     // accept every repo-relative path — exactly what an unscoped grep already does. An
     // ABSOLUTE scope with no segments is "/", the filesystem root, which is a different
     // claim; it falls through to the absolute branch below and is rejected there.
-    if (scope.length === 0 && !isAbsolutePath(raw)) return () => true;
+    if (scope.length === 0 && !isAbsolutePath(raw)) return withNeedle([], () => true);
 
     // ABSOLUTE scope. It is meaningful only relative to the repository root
     // that produced the repo-relative target. Suffix inference is unsafe:
@@ -144,8 +144,8 @@ export function grepFileFilterPredicate(filter, projectRoot = null) {
       if (!anchor) return null;
       // (a bare "/" has fewer segments than any real root, so it is rejected above)
       scope = scope.slice(anchor.length);
-      if (scope.length === 0) return () => true;
-      return (target) => scope.length <= target.length && runAt(target, scope, 0);
+      if (scope.length === 0) return withNeedle([], () => true);
+      return withNeedle(scope, (target) => scope.length <= target.length && runAt(target, scope, 0));
     }
 
     // ROOT-ANCHORED: the scope names a path at the repository root.
@@ -153,23 +153,36 @@ export function grepFileFilterPredicate(filter, projectRoot = null) {
     if (projectRoot && isAbsolutePath(projectRoot)) {
       try { atRoot = existsSync(path.join(projectRoot, ...scope)); } catch { atRoot = false; }
     }
-    if (atRoot) return (target) => scope.length <= target.length && runAt(target, scope, 0);
+    if (atRoot) return withNeedle(scope, (target) => scope.length <= target.length && runAt(target, scope, 0));
 
-    return (target) => {
+    return withNeedle(scope, (target) => {
       if (scope.length > target.length) return false;
       for (let start = 0; start + scope.length <= target.length; start++) {
         if (runAt(target, scope, start)) return true;
       }
       return false;
-    };
+    });
   }).filter(Boolean);
+  // Every test needs each scope segment to be a whole segment of the path, so the path text
+  // contains the scope's longest segment: a path without it is rejected before it is split
+  // (the planner runs this over tens of thousands of index paths).
   return (file) => {
     if (!file) return false;
+    const text = String(file);
+    if (!tests.some((test) => text.includes(test.needle))) return false;
     const target = pathSegments(file);
     if (target.length === 0) return false;
-    return tests.some((test) => test(target));
+    return tests.some((test) => text.includes(test.needle) && test.matches(target));
   };
 }
+
+/** A scope test plus the substring every path it accepts contains ('' when none is needed). */
+function withNeedle(scope, matches) {
+  const needle = scope.reduce((longest, seg) => (seg.length > longest.length ? seg : longest), '');
+  return { needle, matches };
+}
+
+
 
 /**
  * Streaming per-file diversification of a (file,line)-sorted match list.

@@ -21,6 +21,10 @@ function sparseGramIndexPath(searcher, options = {}) {
 
 function normalizeDeltaPath(filePath, projectRoot = PROJECT_ROOT) {
   if (!filePath || typeof filePath !== 'string') return null;
+  // The usual index path is already normal: relative, '/'-separated, no leading ./ or ../.
+  if (filePath[0] !== '/' && filePath[0] !== '.' && !filePath.includes('\\') && !path.isAbsolute(filePath)) {
+    return filePath;
+  }
   let normalized = filePath;
   if (path.isAbsolute(normalized)) {
     normalized = relativeInsideRoot(projectRoot, normalized);
