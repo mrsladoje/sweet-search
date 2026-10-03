@@ -1,10 +1,10 @@
 /**
- * eval/grep-allocation-replay: recorded-call parsing (Python shlex semantics), the per-call
- * metrics and the probe-clustered bootstrap (shared by the eval measurement harnesses).
+ * eval/grep-allocation-replay: recorded-call parsing (Python shlex semantics) and the
+ * probe-clustered bootstrap (shared by the eval measurement harnesses).
  */
 import { describe, expect, it } from 'vitest';
 
-import { callMetrics, pairedBootstrap, parseGrepCall, pyList, shellWords, symbolKey } from '../../eval/grep-allocation-replay/lib.mjs';
+import { pairedBootstrap, parseGrepCall, pyList, shellWords, symbolKey } from '../../eval/grep-allocation-replay/lib.mjs';
 
 describe('shellWords / parseGrepCall', () => {
   it('double quotes keep a backslash before anything but " and \\ (shlex posix)', () => {

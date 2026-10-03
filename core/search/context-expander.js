@@ -2257,23 +2257,6 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
     const budgetExhausted = remainingBudget <= 0;
     const diversityDemoted = diversityDemotions.has(i);
 
-    const summaryEntry = () => ({
-      rank: i + 1,
-      file: filePath,
-      startLine: meta.startLine || result.startLine,
-      endLine: meta.endLine || result.endLine,
-      symbol: meta.name || result.name || null,
-      symbolType: meta.type || result.type || null,
-      score: result.score || result.lateInteractionScore || 0,
-      expanded: false,
-      presentation: 'summary',
-      stale: false,
-      indexedAt: null,
-      summary: `${filePath}:${meta.startLine || result.startLine} — ${meta.name || 'code block'}${meta.type ? ' (' + meta.type + ')' : ''}`,
-      code: null,
-      codeTokens: 0,
-    });
-
     if (allocation.presentation === 'summary' || budgetExhausted || diversityDemoted) {
       // One-line summary only — no code
       agentResults.push({

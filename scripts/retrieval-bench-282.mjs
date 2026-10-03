@@ -144,6 +144,13 @@ const ocCacheMode = (arm) => envOf(arm).SS_VARIANT_OC_CACHE_KEY || '';
 // The switches still under test that change what an arm sees (SWITCHES.md): every SS_VARIANT_* and
 // SS_FIX_GREP_FULLLINE. Stamped on each row as `variants`, next to its gitCommit.
 const isArmSwitch = (k) => k.startsWith('SS_VARIANT_') || k.startsWith('SS_FIX_');
+// A deleted switch (SWITCHES.md) would be ignored by the code but still stamped on the row as a
+// variant: refuse it, so no run looks like an A/B that it is not.
+const KEPT_SWITCHES = new Set(['SS_FIX_GREP_FULLLINE', 'SS_VARIANT_GREP_BROAD', 'SS_VARIANT_RULES_FILE', 'SS_VARIANT_OC_CACHE_KEY']);
+for (const a of ['native', 'sweet', 'sweetB']) {
+  const dead = Object.keys(envOf(a)).filter(k => isArmSwitch(k) && !KEPT_SWITCHES.has(k));
+  if (dead.length) { console.error(`[${a}] deleted switch(es) ${dead.join(', ')}: no code reads them (core/prompt-optimization/data/obs-loop/SWITCHES.md); reproduce old rows from their git commit`); process.exit(2); }
+}
 for (const a of ['native', 'sweet', 'sweetB']) {
   const m = ocCacheMode(a);
   if (m && !OC_CACHE_KEY_MODES.includes(m)) { console.error(`SS_VARIANT_OC_CACHE_KEY must be one of ${OC_CACHE_KEY_MODES.join(', ')} (got "${m}")`); process.exit(2); }

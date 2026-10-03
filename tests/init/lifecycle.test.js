@@ -366,6 +366,23 @@ describe('lifecycle: V1b rules placement', () => {
   const CLAUDE_FILES = [CLAUDE_RULES_REL, CLAUDE_LEAN_AGENT_REL, CLAUDE_LEAN_SUBAGENT_REL, CLAUDE_LEAN_PLAN_REL, CLAUDE_LEAN_MANIFEST_REL, '.claude/settings.json'];
   const snapshot = () => Object.fromEntries(CLAUDE_FILES.map((rel) => [rel, exists(rel) ? readText(rel) : null]));
 
+  it('installs the pointer layout, keeps the manifest consistent, and re-init is a no-op', () => {
+    const first = runCli(COMMON_INIT_ARGS);
+    expect(first.code, `init failed: ${first.stderr}`).toBe(0);
+    expect(first.stderr).toContain('[init] Claude rules: created [pointer;');
+    const after = snapshot();
+    expect(after[CLAUDE_RULES_REL]).toBe(POINTER_RULE);
+    expectRulesInAgent();
+    const m = readJson(CLAUDE_LEAN_MANIFEST_REL);
+    for (const rel of [CLAUDE_LEAN_AGENT_REL, CLAUDE_LEAN_SUBAGENT_REL, CLAUDE_LEAN_PLAN_REL]) {
+      expect(m.files[rel]).toBe(sha(readText(rel)));
+    }
+    const again = runCli(COMMON_INIT_ARGS);
+    expect(again.code).toBe(0);
+    expect(again.stderr).toContain('[init] Claude rules: unchanged [pointer;');
+    expect(snapshot()).toEqual(after);
+  });
+
   it('keeps a user-authored rule file untouched; the agent still carries the rules', () => {
     const mine = '# My sweet-search rules\nNo sentinel.\n';
     mkdirSync(join(tmpRoot, '.claude', 'rules'), { recursive: true });
