@@ -20,10 +20,10 @@
 
 import { readFileRange } from './search-pattern-chunks.js';
 import { rankingRelationshipTypes } from '../graph/relationship-types.js';
-import { computeSufficiencyVerdict } from './query-sufficiency.js';
-import { applyAgentPackCompletion, buildPackSiblingLine, shownSourceEndLine } from './agent-pack-completion.js';
+import { computeSufficiencyVerdict, informativeSubtokens } from './query-sufficiency.js';
+import { annotateEntrySymbols, applyAgentPackCompletion, buildPackSiblingLine, shownSourceEndLine } from './agent-pack-completion.js';
 import { capToFinalK } from './final-k.js';
-import { isSummaryOnly, shownCodeSpan } from './agent-output-fixes.js';
+import { isSummaryOnly, isTestLikePath, shownCodeSpan } from './agent-output-fixes.js';
 import { statSync } from 'fs';
 import path from 'path';
 import { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX } from '../graph/import-resolver.js';
@@ -1304,38 +1304,46 @@ function extractTypeCandidates(code, ownName) {
 }
 
 /**
- * Render a one-hop graph-neighbour tier for the top-1 result. This addresses
- * the dominant loss pattern in the agent benchmark: ss-search returned a
- * tight, "complete" symbol, the agent stopped at one tool call, and the
- * judge then complained the answer didn't surface CALLERS, IMPORTED
- * SYMBOLS, or HELPER FUNCTIONS that the chunk plainly references.
+ * The 1-hop graph-neighbour tier for the top-1 result ("related" rows: callers, callees, types
+ * the body names). It answers the loss where the agent stopped at one tight symbol and missed
+ * a caller or a helper the chunk plainly references.
  *
- * The renderer:
- *   - asks the code graph for outgoing relationships (calls / imports / uses /
- *     extends / implements / overrides / throws) from top-1's entity,
- *   - asks for incoming callers / users (top-K by weight),
- *   - dedupes anything whose target file:line range overlaps a result that
- *     is already in the ranked pack (no point spending budget on a row the
- *     agent already sees),
- *   - groups by edge family and renders compact one-liners that include the
- *     target's `file:line` so the agent can cite the neighbour directly,
- *   - hard-caps the rendered text at `tokenCap`. The result is fully
- *     elidable — when the cap is 0, the function returns null.
+ *   - outgoing relationships (calls / imports / uses / extends / implements / overrides /
+ *     throws), incoming callers / users, and type names found in the body;
+ *   - rows whose target is already in the pack (skipKeys) are dropped;
+ *   - rows that come from AMBIGUOUS name-only resolution are dropped: the graph resolves a call
+ *     to `request()` by name, so a name with many definitions (Kotlin `Chain.request`, 18
+ *     definitions in okhttp) gets the callers of every `request` (8 unrelated test functions).
+ *     Incoming rows are dropped when the target's name has >= 10 definitions, or >= 3 and a
+ *     fan-in >= 20; a call / use into another file, and a body type name, when its name has
+ *     >= 3 definitions. A type name prefers a non-test definition (Ruby `module Sequel` is
+ *     reopened in hundreds of files; its only `class` rows were spec files);
+ *   - with `query`, rows are SELECTED by a relevance score (relatedRowScore): test-file rows
+ *     only when the query asks about tests, then the overlap of the row's name and path tokens
+ *     with the query tokens, plus a bonus when the row's entity is itself a search candidate
+ *     (`candidateKeys`). At most `maxRows` rows that clear the threshold; none when no row does;
+ *   - hard-caps the rendered text at `tokenCap`. Fully elidable: cap 0 → null.
+ *
+ * `rows` is the structured form the compact ss-search renderer prints (one line per kind, the
+ * path once per file, `shortPath` = the shortest path suffix that is unique in the repository);
+ * `rendered` is the one-row-per-line form of the same rows.
  *
  * @param {object} opts
  * @param {object} opts.codeGraphRepo - CodeGraphRepository instance
  * @param {object} opts.entity        - { id, filePath, startLine, endLine, name, type }
  * @param {Set<string>} opts.skipKeys - "file|startLine|endLine" of results already in the pack
  * @param {number} opts.tokenCap      - max tokens for the rendered tier
- * @param {string} [opts.body]        - top-1 code body, used to discover
- *   referenced TYPE names (struct/interface/class/...) that the
- *   relationships table doesn't capture as explicit edges
- * @returns {{ rendered: string, count: number, tokens: number,
+ * @param {string} [opts.body]        - top-1 code body, used to discover referenced TYPE names
+ * @param {string} [opts.query]       - the search query; turns on relevance selection
+ * @param {Array<{file:string,startLine:number,endLine:number}>} [opts.candidates] - search
+ *   candidates (pack + reserve), for the candidate bonus
+ * @param {number} [opts.maxRows=3]   - rows kept by relevance selection
+ * @returns {{ rendered: string, rows: Array, count: number, tokens: number,
  *             outgoingCount: number, incomingCount: number,
  *             typeRefCount: number }|null}
  */
 export function renderGraphNeighbors(opts) {
-  const { codeGraphRepo, entity, skipKeys, tokenCap = 0, body = '' } = opts;
+  const { codeGraphRepo, entity, skipKeys, tokenCap = 0, body = '', query = null, candidates = [], maxRows = RELATED_DEFAULT_ROWS } = opts;
   if (!codeGraphRepo || !entity || !entity.id || tokenCap <= 0) return null;
 
   // Trace-only types (relationship-types.js) stay out of search output:
@@ -1351,127 +1359,224 @@ export function renderGraphNeighbors(opts) {
   let typeRefs = [];
   try { outgoing = codeGraphRepo.getOutgoingRelationships(entity.id, { types: OUT_TYPES, limit: 16 }) || []; }
   catch { outgoing = []; }
-  try { incoming = codeGraphRepo.getIncomingRelationships(entity.id, { types: IN_TYPES, limit: 8 }) || []; }
+  try { incoming = codeGraphRepo.getIncomingRelationships(entity.id, { types: IN_TYPES, limit: RELATED_FANIN_PROBE }) || []; }
   catch { incoming = []; }
 
-  // Type-reference discovery: extract identifiers from the body and ask the
-  // graph for entities of struct/interface/class/enum/trait/type/typeAlias
-  // with that name. This recovers the case the relationships table misses —
-  // e.g. a Go method whose receiver field has type `methodTrees []methodTree`
-  // never gets a 'calls/imports/uses' edge to `methodTree`, yet the agent
-  // needs that type's defining file:line to give a correct answer
-  // (gin:http-dispatch was the canonical failure).
-  //
-  // Dedup uses range-based skipKeys (NOT excludeFile) — same-file types
-  // matter when top-1 is a method and the receiver struct lives next to
-  // it (e.g. Engine in gin.go vs handleHTTPRequest in gin.go).
+  // How many definitions a name has (null when the repository cannot say: no filtering).
+  const defCounts = new Map();
+  const countDefs = (names) => {
+    const want = [...new Set(names.filter((n) => typeof n === 'string' && n.length >= 2 && !defCounts.has(n.toLowerCase())))];
+    if (want.length && typeof codeGraphRepo.countEntitiesByAnyName === 'function') {
+      let map = null;
+      try { map = codeGraphRepo.countEntitiesByAnyName(want); } catch { map = null; }
+      for (const n of want) defCounts.set(n.toLowerCase(), map ? (map.get(n.toLowerCase()) || 0) : null);
+    }
+  };
+  const defs = (name) => defCounts.get(String(name || '').toLowerCase()) ?? null;
+
+  // Incoming rows of a name with many definitions come from name-only resolution.
+  const fanIn = incoming.length;
+  countDefs([entity.name]);
+  const ownDefs = defs(entity.name);
+  if (ownDefs != null && (ownDefs >= RELATED_GENERIC_DEFS || (ownDefs >= RELATED_AMBIGUOUS_DEFS && fanIn >= RELATED_AMBIGUOUS_FANIN))) {
+    incoming = [];
+  }
+  incoming = incoming.slice(0, 8);
+
+  // Type-reference discovery: identifiers of the body that name a struct / interface / class /
+  // enum / trait / type. Recovers what the relationships table misses (a Go method whose
+  // receiver field has type `methodTree` never gets an edge to it; gin:http-dispatch).
+  // Same-file types count (Engine next to handleHTTPRequest); range dedupe uses skipKeys.
   if (body && typeof codeGraphRepo.findEntitiesByNames === 'function') {
     try {
       const ids = extractTypeCandidates(body, entity.name);
       if (ids.length) {
-        typeRefs = codeGraphRepo.findEntitiesByNames(ids, {
-          types: TYPE_KINDS,
-          limit: 8,
-        }) || [];
+        const rows = codeGraphRepo.findEntitiesByNames(ids, { types: TYPE_KINDS, limit: 32, distinct: false }) || [];
+        countDefs(rows.map((t) => t.name));
+        const byName = new Map();
+        for (const t of rows) {
+          const n = defs(t.name);
+          if (n != null && n >= RELATED_AMBIGUOUS_DEFS) continue;
+          if (isTestLikePath(t.filePath)) continue;
+          const prev = byName.get(`${t.name}|${t.type}`);
+          if (!prev || (t.endLine - t.startLine) < (prev.endLine - prev.startLine)) byName.set(`${t.name}|${t.type}`, t);
+        }
+        typeRefs = [...byName.values()].slice(0, 8);
       }
     } catch { typeRefs = []; }
   }
 
   if (outgoing.length === 0 && incoming.length === 0 && typeRefs.length === 0) return null;
 
-  // Group by edge family for stable rendering. Each row is a one-liner.
-  // Format:
-  //   - imports paramsSchema → lib/symbols.js:14 [Symbol]
-  //   - calls validateParam → lib/validation.js:118-144 [function]
-  //   - caller handleRequest → lib/handle-request.js:88-104 [function]
-  //   - imports module './x' (unresolved)
   const ownKey = `${entity.filePath}|${entity.startLine}|${entity.endLine}`;
   const seen = new Set([ownKey, ...(skipKeys || [])]);
+  const rows = [];
+  const pushResolved = (kind, target) => {
+    const k = `${target.filePath}|${target.startLine}|${target.endLine}`;
+    if (seen.has(k)) return;
+    seen.add(k);
+    rows.push({ kind, name: target.name, file: target.filePath, startLine: target.startLine, endLine: target.endLine, entityType: target.type || null });
+  };
 
-  const formatLineRange = (a, b) => (a && b && b > a) ? `${a}-${b}` : `${a || '?'}`;
-
-  const lines = [];
-  // OUTGOING — group resolved targets first, then unresolved imports
+  // OUTGOING — resolved targets, then unresolved imports, in family order.
   const grouped = new Map();
   for (const r of outgoing) {
-    const fam = r.type;
-    if (!grouped.has(fam)) grouped.set(fam, []);
-    grouped.get(fam).push(r);
+    if (!grouped.has(r.type)) grouped.set(r.type, []);
+    grouped.get(r.type).push(r);
   }
-  // Render order: imports, calls, uses, extends, implements, overrides, throws
+  countDefs(outgoing.filter((r) => r.target?.filePath && r.target.filePath !== entity.filePath).map((r) => r.target.name));
   for (const fam of OUT_TYPES) {
-    const rows = grouped.get(fam) || [];
-    for (const r of rows) {
-      let rendered;
+    for (const r of grouped.get(fam) || []) {
       if (r.target && r.target.filePath) {
-        const k = `${r.target.filePath}|${r.target.startLine}|${r.target.endLine}`;
-        if (seen.has(k)) continue;          // already in the pack — skip
-        seen.add(k);
-        const range = formatLineRange(r.target.startLine, r.target.endLine);
-        rendered = `- ${fam} ${r.target.name} → ${r.target.filePath}:${range} [${r.target.type}]`;
+        // A call / use into another file of a name with many definitions: name-only resolution.
+        const n = r.target.filePath !== entity.filePath && (fam === 'calls' || fam === 'uses') ? defs(r.target.name) : null;
+        if (n != null && n >= RELATED_AMBIGUOUS_DEFS) continue;
+        pushResolved(fam, r.target);
       } else if (r.fullImportPath && (r.fullImportPath.startsWith(UNRESOLVED_IMPORT_PREFIX) || r.fullImportPath.startsWith(GO_PACKAGE_PREFIX))) {
-        // A module outside the repo (package, stdlib), or a Go package call
-        // with no function target (`types.TypeID(v)` is a conversion): the
-        // internal marker is not shown; rendered like an unannotated row.
-        rendered = r.contextLine
-          ? `- ${fam} ${r.targetName} (referenced at line ${r.contextLine})`
-          : `- ${fam} ${r.targetName}`;
+        // A module outside the repo (package, stdlib), or a Go package call with no function
+        // target (`types.TypeID(v)` is a conversion): the internal marker is not shown.
+        if (r.targetName) rows.push({ kind: fam, name: r.targetName, line: r.contextLine || null });
       } else if (r.fullImportPath && fam === 'imports' && isResolvedImportFile(r.fullImportPath)) {
         // Resolved to a repo file, but to no single entity in it.
-        rendered = `- ${fam} ${r.targetName} → ${r.fullImportPath}`;
+        rows.push({ kind: fam, name: r.targetName, file: r.fullImportPath });
       } else if (r.fullImportPath) {
-        rendered = `- ${fam} ${r.targetName} ← '${r.fullImportPath}' (unresolved)`;
-      } else if (r.targetName && r.contextLine) {
-        rendered = `- ${fam} ${r.targetName} (referenced at line ${r.contextLine})`;
+        rows.push({ kind: fam, name: r.targetName, importPath: r.fullImportPath, unresolved: true });
       } else if (r.targetName) {
-        rendered = `- ${fam} ${r.targetName}`;
-      } else {
-        continue;
+        rows.push({ kind: fam, name: r.targetName, line: r.contextLine || null });
       }
-      lines.push(rendered);
     }
   }
-  // INCOMING — flag as "caller" or "user"
+  // INCOMING — callers / users.
   for (const r of incoming) {
-    const s = r.source;
-    if (!s) continue;
-    const k = `${s.filePath}|${s.startLine}|${s.endLine}`;
-    if (seen.has(k)) continue;
-    seen.add(k);
-    const range = formatLineRange(s.startLine, s.endLine);
-    const kind = r.type === 'calls' ? 'caller' : (r.type === 'uses' ? 'user' : r.type);
-    lines.push(`- ${kind} ${s.name} ← ${s.filePath}:${range} [${s.type}]`);
+    if (r.source) pushResolved(r.type === 'calls' ? 'caller' : (r.type === 'uses' ? 'user' : r.type), r.source);
   }
+  // TYPE-REFERENCES found by name in the body.
+  for (const t of typeRefs) pushResolved('type', t);
 
-  // TYPE-REFERENCES — entities discovered by name from the body. Renders as
-  // "type" prefix to disambiguate from the relationship-driven rows above.
-  // Same dedup against skipKeys.
-  for (const t of typeRefs) {
-    const k = `${t.filePath}|${t.startLine}|${t.endLine}`;
-    if (seen.has(k)) continue;
-    seen.add(k);
-    const range = formatLineRange(t.startLine, t.endLine);
-    lines.push(`- type ${t.name} → ${t.filePath}:${range} [${t.type}]`);
-  }
+  let selected = rows;
+  if (typeof query === 'string') selected = selectRelatedRows(rows, query, candidates, maxRows);
+  if (selected.length === 0) return null;
 
-  if (lines.length === 0) return null;
+  // The shortest path suffix that names one file in the repository.
+  const index = typeof codeGraphRepo.fileBasenameIndex === 'function' ? safeCall(() => codeGraphRepo.fileBasenameIndex()) : null;
+  for (const row of selected) if (row.file) row.shortPath = shortestUniquePath(row.file, index);
 
-  // Hard-cap to tokenCap. Drop tail lines until it fits.
+  // Hard-cap to tokenCap. Drop tail rows until it fits.
+  const lines = selected.map(renderRelatedRowLine);
   let combined = lines.join('\n');
   while (estimateTokens(combined) > tokenCap && lines.length > 1) {
     lines.pop();
+    selected = selected.slice(0, lines.length);
     combined = lines.join('\n');
   }
   if (estimateTokens(combined) > tokenCap) return null;
 
   return {
     rendered: combined,
+    rows: selected,
     count: lines.length,
     tokens: estimateTokens(combined),
     outgoingCount: outgoing.length,
     incomingCount: incoming.length,
     typeRefCount: typeRefs.length,
   };
+}
+
+/** Related rows the pack keeps by default (agent / agent_preview); agent_full 4, agent_full_xl 5. */
+export const RELATED_DEFAULT_ROWS = 3;
+/**
+ * Name-only resolution: a call / use into another file, or a body type name, whose name has
+ * this many definitions is dropped; so are the incoming rows of a target whose name has this
+ * many definitions AND at least RELATED_AMBIGUOUS_FANIN incoming edges, or RELATED_GENERIC_DEFS
+ * definitions whatever its fan-in.
+ */
+const RELATED_AMBIGUOUS_DEFS = 3;
+const RELATED_AMBIGUOUS_FANIN = 20;
+const RELATED_GENERIC_DEFS = 10;
+/** Incoming edges read to measure the fan-in (the rows printed are still at most 8). */
+const RELATED_FANIN_PROBE = 24;
+
+function safeCall(fn) {
+  try { return fn(); } catch { return null; }
+}
+
+/** Old one-row-per-line text of a related row (SS_FIX_A=0 printers; token estimate). */
+function renderRelatedRowLine(row) {
+  const range = (a, b) => (a && b && b > a) ? `${a}-${b}` : `${a || '?'}`;
+  if (row.file && row.startLine) {
+    const incoming = row.kind === 'caller' || row.kind === 'user';
+    return `- ${row.kind} ${row.name} ${incoming ? '←' : '→'} ${row.file}:${range(row.startLine, row.endLine)} [${row.entityType}]`;
+  }
+  if (row.file) return `- ${row.kind} ${row.name} → ${row.file}`;
+  if (row.unresolved) return `- ${row.kind} ${row.name} ← '${row.importPath}' (unresolved)`;
+  if (row.line) return `- ${row.kind} ${row.name} (referenced at line ${row.line})`;
+  return `- ${row.kind} ${row.name}`;
+}
+
+/**
+ * The shortest suffix of `file` (whole path components) that no other repository file ends
+ * with. `index`: basename → every repository path with that basename (fileBasenameIndex);
+ * without it, the full path.
+ */
+export function shortestUniquePath(file, index) {
+  const parts = String(file || '').split('/');
+  const same = index instanceof Map ? index.get(parts[parts.length - 1]) : null;
+  if (!Array.isArray(same) || same.length === 0) return file;
+  for (let n = 1; n < parts.length; n++) {
+    const suffix = parts.slice(-n).join('/');
+    if (same.every((other) => other === file || !(other === suffix || other.endsWith(`/${suffix}`)))) return suffix;
+  }
+  return file;
+}
+
+// A query that asks about tests: then test-file related rows stay.
+const TEST_QUERY_RE = /\b(tests?|testing|unit[- ]?tests?|specs?|fixtures?|mocks?)\b/i;
+
+/** Two lowercase subtokens agree: equal, or one is a prefix (>= 4 chars) of the other (chain/chained). */
+function subtokensAgree(a, b) {
+  if (a === b) return true;
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+  return short.length >= 4 && long.startsWith(short);
+}
+
+function countAgreeing(tokens, queryTokens) {
+  let n = 0;
+  for (const t of tokens) {
+    for (const q of queryTokens) if (subtokensAgree(t, q)) { n++; break; }
+  }
+  return n;
+}
+
+/**
+ * Relevance of one related row to the query (cheap: a few token comparisons): +1 per name
+ * subtoken that agrees with a query subtoken, +0.5 per path subtoken (file name and its
+ * directory, at most 2), +1 when the row's entity is itself a search candidate.
+ */
+export function relatedRowScore(row, queryTokens, candidates = []) {
+  const nameHits = countAgreeing(informativeSubtokens(row.name), queryTokens);
+  let pathHits = 0;
+  if (row.file) {
+    const parts = String(row.file).split('/');
+    const base = parts[parts.length - 1].replace(/\.[^.]+$/, '');
+    const dir = parts.length > 1 ? parts[parts.length - 2] : '';
+    pathHits = Math.min(2, countAgreeing(informativeSubtokens(`${base} ${dir}`), queryTokens));
+  }
+  const candidate = row.file && row.startLine
+    && candidates.some((c) => c && c.file === row.file && c.startLine <= row.endLine && c.endLine >= row.startLine);
+  return nameHits + 0.5 * pathHits + (candidate ? 1 : 0);
+}
+
+/** Rows to show: no test-file rows unless the query asks about tests; score >= 1; best first; at most maxRows. */
+export function selectRelatedRows(rows, query, candidates = [], maxRows = RELATED_DEFAULT_ROWS) {
+  const queryTokens = [...informativeSubtokens(query)];
+  const testsAsked = TEST_QUERY_RE.test(String(query || ''));
+  return rows
+    .map((row, i) => ({ row, i, score: (!testsAsked && row.file && isTestLikePath(row.file)) ? -1 : relatedRowScore(row, queryTokens, candidates) }))
+    .filter((x) => x.score >= 1)
+    .sort((a, b) => b.score - a.score || a.i - b.i)
+    .slice(0, Math.max(0, maxRows))
+    .sort((a, b) => a.i - b.i)
+    .map((x) => x.row);
 }
 
 // =============================================================================
@@ -2568,6 +2673,16 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
           // name from the body — fills the gap left by relationship-only
           // edges (e.g. Go method receiver fields with custom types).
           body: code,
+          // Rows are selected by relevance to the query (selectRelatedRows); a row whose
+          // entity is also a search candidate (the ranked list or the reserve) scores higher.
+          query: query || '',
+          candidates: [...workingResults, ...(Array.isArray(opts.reserve) ? opts.reserve : [])].map(r => ({
+            file: r.metadata?.file || r.file,
+            startLine: r.metadata?.startLine || r.startLine,
+            endLine: r.metadata?.endLine || r.endLine,
+          })),
+          maxRows: subMode === 'agent_full_xl' ? RELATED_DEFAULT_ROWS + 2
+            : subMode === 'agent_full' ? RELATED_DEFAULT_ROWS + 1 : RELATED_DEFAULT_ROWS,
         });
         if (neighbours) {
           agentResult.neighbors = neighbours;
@@ -2699,6 +2814,8 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
       isAgentFormat: _isAgentFormat,
     });
     tokensUsed = completion.tokensUsed;
+    // Entry labels name every top-level symbol of the span (not only the chunk's first).
+    if (codeGraphRepo) annotateEntrySymbols(agentResults, codeGraphRepo);
   }
 
   return {

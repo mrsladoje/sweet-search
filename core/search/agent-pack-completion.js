@@ -576,13 +576,21 @@ function completeContinuation(boundary, fileCache, projectRoot, estimateTokens) 
   if (!boundary) return null;
   const { trigger, entity } = boundary;
   const header = `# continues at ${trigger.file}:${entity.startLine} ${entity.name}`;
-  const code = readFileRange(fileCache, trigger.file, entity.startLine, entity.endLine, projectRoot);
-  const expectedLines = entity.endLine - entity.startLine + 1;
+  // A gap of at most MAX_IMMEDIATE_GAP_LINES (blank lines, an annotation) after a trigger that
+  // shows its whole span is read too: the continuation then starts right after the trigger's
+  // code and the renderer prints both as one block (`## 85-88 request, proceed`).
+  const triggerWhole = Number.isInteger(trigger.shownEndLine) && trigger.shownEndLine === trigger.endLine
+    && !trigger.boundaryTruncated;
+  const gap = Number.isInteger(trigger.shownEndLine) ? entity.startLine - trigger.shownEndLine - 1 : -1;
+  const startLine = triggerWhole && gap > 0 && gap <= MAX_IMMEDIATE_GAP_LINES
+    ? trigger.shownEndLine + 1 : entity.startLine;
+  const code = readFileRange(fileCache, trigger.file, startLine, entity.endLine, projectRoot);
+  const expectedLines = entity.endLine - startLine + 1;
   if (code && normalizedLines(code).length === expectedLines) {
     return {
       kind: 'symbol',
       file: trigger.file,
-      startLine: entity.startLine,
+      startLine,
       endLine: entity.endLine,
       symbol: entity.name,
       symbolType: entity.type || null,
@@ -700,4 +708,56 @@ export function applyAgentPackCompletion({
     tokensUsed: nextTokens,
     changed: true,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Entry labels: every top-level symbol of the entry's span (query time).
+//
+// The chunker names a chunk after its first symbol; a cAST-merged chunk holds more
+// (sequel timed_queue.rb 174-234 was labelled `can_make_new?` and also holds try_make_new and
+// acquire, the answer). The entities table already knows every symbol declared in the span.
+// ---------------------------------------------------------------------------
+
+// Entity kinds that are no symbol a reader looks for (config keys, generated markers, imports).
+const LABEL_SKIP_KINDS = new Set(['chunk', 'message', 'topkey', 'target', 'import', 'imports']);
+
+/**
+ * The names of the symbols declared in a span that no other of them contains, in line order;
+ * `primary` (the chunk's own label) first when its entity starts above the span.
+ *
+ * @param {Array<{name:string,type:string,startLine:number,endLine:number}>} entities
+ *   findEntitiesInRange(file, start, end): entities that START inside the span
+ * @param {string|null} primary
+ * @returns {string[]}
+ */
+export function topLevelSymbolNames(entities, primary = null) {
+  const list = (Array.isArray(entities) ? entities : [])
+    .filter((e) => typeof e?.name === 'string' && e.name
+      && Number.isInteger(e.startLine) && Number.isInteger(e.endLine)
+      && !LABEL_SKIP_KINDS.has(String(e.type || '').toLowerCase()))
+    .sort((a, b) => a.startLine - b.startLine || b.endLine - a.endLine);
+  const top = [];
+  for (const e of list) {
+    if (top.some((o) => o.startLine <= e.startLine && o.endLine >= e.endLine)) continue;
+    top.push(e);
+  }
+  const names = [];
+  for (const e of top) if (!names.includes(e.name)) names.push(e.name);
+  if (primary && !names.includes(primary)) names.unshift(primary);
+  return names;
+}
+
+/**
+ * Stamp `symbols` (all top-level symbol names of the span) on every entry whose span declares
+ * more than one. One indexed lookup per entry; the entry's own `symbol` is unchanged.
+ */
+export function annotateEntrySymbols(results, codeGraphRepo) {
+  if (!Array.isArray(results) || typeof codeGraphRepo?.findEntitiesInRange !== 'function') return;
+  for (const r of results) {
+    if (!r?.file || !Number.isInteger(r.startLine) || !Number.isInteger(r.endLine)) continue;
+    let rows;
+    try { rows = codeGraphRepo.findEntitiesInRange(r.file, r.startLine, r.endLine); } catch { continue; }
+    const names = topLevelSymbolNames(rows, r.symbol || null);
+    if (names.length > 1) r.symbols = names;
+  }
 }
