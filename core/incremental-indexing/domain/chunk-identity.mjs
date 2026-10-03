@@ -234,12 +234,23 @@ export function assignStructuralIds(chunks, filePath) {
   if (!Array.isArray(chunks)) return [];
   const out = new Array(chunks.length);
   const populationCount = new Map();
+  const symbolIdCount = new Map();
 
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i];
     if (isSymbolAttached(chunk)) {
       const derived = deriveStructuralId(chunk, filePath, null);
-      out[i] = { ...derived, occurrenceIndex: null };
+      // Two chunks with the same path, symbol and signature (the same
+      // declaration in both branches of an `#if`) would share one id, and
+      // the reconciler would retire the wrong row: the second and later
+      // ones get an occurrence suffix.
+      const seen = symbolIdCount.get(derived.chunkStructId) || 0;
+      symbolIdCount.set(derived.chunkStructId, seen + 1);
+      if (seen > 0) {
+        out[i] = { ...derived, chunkStructId: `${derived.chunkStructId}_${seen}`, occurrenceIndex: seen };
+      } else {
+        out[i] = { ...derived, occurrenceIndex: null };
+      }
       continue;
     }
     // Anonymous chunk: compute population key, occurrence index, then derive.

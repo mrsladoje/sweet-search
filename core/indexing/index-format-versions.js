@@ -23,5 +23,5 @@
  *
  * Bumping either forces one full rebuild per existing index.
  */
-export const CHUNKING_VERSION = 1;
+export const CHUNKING_VERSION = 2;
 export const ENRICHMENT_VERSION = 1;
