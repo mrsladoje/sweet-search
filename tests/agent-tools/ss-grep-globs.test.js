@@ -189,7 +189,7 @@ describe('ss-find -g', () => {
   });
 });
 
-// Rules v2 (scripts/harness-prompts/rules-v2.js RULES_V2_GREP_FLAGS_LINE) tells the agent these
+// The shipped rules (p7-final/sweet-search-system-prompt.md, the `ss-grep` flags line) tell the agent these
 // flags exist: every one of them must be accepted, together, in one call.
 describe('ss-grep: the flags the rules line lists', () => {
   for (const ctx of [['-A', '1'], ['-B', '1'], ['-C', '1']]) {

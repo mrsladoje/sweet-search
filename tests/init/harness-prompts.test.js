@@ -9,18 +9,18 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import {
   CLAUDE_LEAN_AGENT_REL, claudeLeanAgentFile, installClaudeLeanHarness,
 } from '../../scripts/install-claude-lean-harness.js';
-import { CLAUDE_SYSTEM_OVERRIDE_V2 } from '../../scripts/install-claude-system-prompt.js';
+import { CLAUDE_SYSTEM_OVERRIDE } from '../../scripts/install-claude-system-prompt.js';
 import { getPolicyBody } from '../../scripts/inject-agent-instructions.js';
-import { CLAUDE_RULES_POINTER, CLAUDE_RULES_POINTER_V1, claudeRulesPointer } from '../../scripts/write-claude-rules.js';
+import { CLAUDE_RULES_POINTER } from '../../scripts/write-claude-rules.js';
 import {
-  CODEX_INSTRUCTIONS_SOURCE, HARNESS_PROMPTS_DIR, OPENCODE_GPT_ORIGINAL, OPENCODE_TOOL_EDITS, OPENCODE_TOOL_EDITS_V1,
+  CODEX_INSTRUCTIONS_SOURCE, HARNESS_PROMPTS_DIR, OPENCODE_GPT_ORIGINAL, OPENCODE_TOOL_EDITS,
   OPENCODE_TRIM_PLUGIN_SOURCE, applyExactEdits, codexInstructions, opencodePrompt,
 } from '../../scripts/harness-prompts/index.js';
 import { applyClaudeBatch } from '../../eval/task-completion-bench/harness/trim/batch-variants.mjs';
@@ -36,7 +36,7 @@ beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'ss-harness-prompts-')); });
 afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
 
 const withoutOverride = text => {
-  const tail = `\n\n${CLAUDE_SYSTEM_OVERRIDE_V2}\n`;   // rules v2 default (rules-v2.test.js covers =0)
+  const tail = `\n\n${CLAUDE_SYSTEM_OVERRIDE}\n`;
   expect(text.endsWith(tail)).toBe(true);
   return `${text.slice(0, -tail.length)}\n`;
 };
@@ -158,51 +158,50 @@ describe('applyExactEdits', () => {
 
 // Golden pins. The bench imports the same constants, so a parity test alone cannot catch an
 // accidental edit to them; these hashes can. Change a pin only together with a new benchmark run
-// of the changed text. The v1 pins (SS_FIX_RULES_V2=0) are the pre-rules-v2 shipped texts and
-// must never change: they prove the A/B baseline arm is the old text byte for byte.
+// of the changed text.
 describe('golden pins of the shipped texts (sha256)', () => {
   const sha = t => createHash('sha256').update(t).digest('hex');
-  const V1 = { SS_FIX_RULES_V2: '0' };
-  it('Codex base instructions (not touched by the rules switch)', () => {
+  it('Codex base instructions ', () => {
     expect(sha(codexInstructions())).toBe('7e282d1b96ac8cd02e0572386a436915078b25c8f1b2e03a45e3f2a84f5e6e50');
   });
-  it('opencode build/general prompt (v2 default; v1 = pre-v2 bytes)', () => {
-    expect(sha(opencodePrompt())).toBe('39bcc13bae718d53b8a21ccfcf965747f3367a6de71edd16aabfa513438fe2ce');
-    expect(sha(opencodePrompt(V1))).toBe('94c23a556525d4e35ae42f2448439559dd61fee37557a4da93f0ff18e0fbe34e');
+  it('opencode build/general prompt', () => {
+    expect(sha(opencodePrompt())).toBe('94c23a556525d4e35ae42f2448439559dd61fee37557a4da93f0ff18e0fbe34e');
   });
-  it('opencode tool-description edits (JSON) (v2 default; v1 = pre-v2 bytes)', () => {
+  it('opencode tool-description edits (JSON)', () => {
     expect(sha(JSON.stringify(OPENCODE_TOOL_EDITS))).toBe('4800b77becd4af6b0b2c51a75cb83b935d5c407a14c6754d2695f7882a281011');
-    expect(sha(JSON.stringify(OPENCODE_TOOL_EDITS_V1))).toBe('bb647d23c66f3112f4322bd454ecd1f5c7186136b04a3c7c1a51ca64f93144c9');
   });
-  it('CLI policy body (v2 default; v1 = pre-v2 bytes)', () => {
-    expect(sha(getPolicyBody('cli'))).toBe('01ea3cc63516fe77246f34e81c57081131658d873362806d76f79b9654e3531a');
-    expect(sha(getPolicyBody('cli', {}))).toBe(sha(getPolicyBody('cli')));
-    expect(sha(getPolicyBody('cli', V1))).toBe('77230e7ae4272b8bf8507b5642d497ed2559f8f5c91e63f3a7e5584f26305e72');
+  it('CLI policy body', () => {
+    expect(sha(getPolicyBody('cli'))).toBe('0a4f1e9d560c47dff6c780c3cdd5358fb470ed6163ac2a94ecd31dc9b09687e9');
   });
   it("Claude Code main agent file (memoryDir '/m/', no override)", () => {
     expect(sha(claudeLeanAgentFile({ appendOverride: false, memoryDir: '/m/' })))
-      .toBe('1098a6ada32026e87d4ebd9dd42aaa936f9f61202bafc35f97551bdd8208331d');
-    expect(sha(claudeLeanAgentFile({ appendOverride: false, memoryDir: '/m/', rulesV2: false })))
       .toBe('11446e95a164c2fb04892e3db505d2ccec2c7489979392938c51482b9dba48fe');
   });
-  // V1b pins (v1): computed from the benchmarked reference implementation (branch final-tuning,
+  // V1b pins: computed from the benchmarked reference implementation (branch final-tuning,
   // claudeLeanAgentFile({ rulesInPrompt: true }) and its CLAUDE_RULES_POINTER).
   it("Claude Code V1b main agent file (memoryDir '/m/', no override)", () => {
     expect(sha(claudeLeanAgentFile({ appendOverride: false, memoryDir: '/m/', rules: getPolicyBody('cli') })))
-      .toBe('30c48b2c4d380ce6a829885769eb9a71d1f6a7c3a0d52c2409a67609d5aacbde');
-    expect(sha(claudeLeanAgentFile({ appendOverride: false, memoryDir: '/m/', rules: getPolicyBody('cli', V1), rulesV2: false })))
-      .toBe('5d238cab2d26025019bcad16cb09ef2f4cfe88468f464d280e366904bca1ae61');
+      .toBe('3c0f9fbe3604033062dc24e34918f83607b1998d2c3e01b54da42cd8e9934264');
   });
   it("Claude Code V1b main agent file as shipped (memoryDir '/m/', with the override)", () => {
     expect(sha(claudeLeanAgentFile({ memoryDir: '/m/', rules: getPolicyBody('cli') })))
-      .toBe('1c32a955c1995bbce4776eec1ef5eeb70c11c6f2197cd1f943617d6672385eea');
-    expect(sha(claudeLeanAgentFile({ memoryDir: '/m/', rules: getPolicyBody('cli', V1), rulesV2: false })))
-      .toBe('f09e7ef96b13ab23e72a265a50eeb2601352ee5432e6d30b9ede3fe35a9e96d7');
+      .toBe('96c01b5d3c24e38abf3440fabab6e02c7f508a63576158d0a0e74911c720c86d');
   });
   it('Claude Code V1b pointer rule text', () => {
     expect(sha(CLAUDE_RULES_POINTER)).toBe('1dc6488c388109a496f3bb634a1f28647fc19bf64db6a9c3ccbc74b8f893f329');
-    expect(claudeRulesPointer({})).toBe(CLAUDE_RULES_POINTER);
-    expect(sha(claudeRulesPointer(V1))).toBe('2523ba9ac086973443f4122c5a459124487c8be1d42fc7578c8aea413fe11d4c');
-    expect(CLAUDE_RULES_POINTER_V1).toBe(claudeRulesPointer(V1));
+  });
+});
+
+describe('SS_VARIANT_RULES_FILE (bench-only rules A/B switch)', () => {
+  it('replaces the CLI policy body, strips front matter, reaches the Claude Code agent file; unset = canonical', () => {
+    const f = join(dir, 'variant.md');
+    writeFileSync(f, '---\nname: x\n---\n# VARIANT-RULES-MARKER\n- only ss-grep.\n');
+    const env = { SS_VARIANT_RULES_FILE: f };
+    expect(getPolicyBody('cli', env)).toBe('# VARIANT-RULES-MARKER\n- only ss-grep.');
+    expect(getPolicyBody('mcp', env)).toBe(getPolicyBody('mcp', {}));
+    expect(getPolicyBody('cli', {})).toBe(getPolicyBody('cli'));
+    const proj = join(dir, 'proj'); mkdirSync(proj);
+    expect(installClaudeLeanHarness({ projectRoot: proj, configDir: join(dir, 'home'), visibleConfigDir: join(dir, 'home'), env }).active).toBe(true);
+    expect(readFileSync(join(proj, '.claude/agents/sweet-search.md'), 'utf8')).toContain('# VARIANT-RULES-MARKER');
   });
 });

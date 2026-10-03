@@ -52,7 +52,6 @@ import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { opencodeRulesDir, applyOpencodeRepoCacheKey, applyOpencodeProductCacheKey, stageProductCachePlugin, OC_CACHE_KEY_MODES } from './lib/oc-bench-config.mjs';
 import { readFixFlags } from '../core/search/agent-output-fixes.js';
-import { policyTextForEnv, rulesV2Enabled } from './harness-prompts/rules-v2.js';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const H = path.join(REPO, 'eval/task-completion-bench/harness');
@@ -170,13 +169,12 @@ const PRUNE3 = prune3('sweet') || prune3('sweetB');
 const RULES_PRUNE3 = () => fs.readFileSync(path.join(REPO, 'core/prompt-optimization/data/final-tuning/variants/rules-prune3.md'), 'utf8');
 // SS_VARIANT_RULES_FILE=<path relative to the repo> (final-tuning): a full alternative rules text for that
 // arm (same tools; Codex / opencode). Default unset = the shipped rules.
-// SS_FIX_RULES_V2=0 (rules v2 baseline, scripts/harness-prompts/rules-v2.js; per arm, so it works in
-// --armB-env): the shipped rules AND the harness-prompt file-name lines revert to the pre-v2 text byte
-// for byte. Claude Code reads it from process.env (installClaudeLeanHarness / writeClaudeRules).
+// Claude Code reads SS_VARIANT_RULES_FILE from process.env too (getPolicyBody in
+// scripts/inject-agent-instructions.js, bench-only switch used by installClaudeLeanHarness / writeClaudeRules).
 const rulesFor = (arm) => {
   const f = envOf(arm).SS_VARIANT_RULES_FILE;
   if (f) return fs.readFileSync(path.resolve(REPO, f), 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '');
-  return prune3(arm) ? RULES_PRUNE3() : policyTextForEnv(RULES, envOf(arm));
+  return prune3(arm) ? RULES_PRUNE3() : RULES;
 };
 function prunedBin() {
   const d = path.join(EVAL, 'final-tuning-bin-prune3');
@@ -628,7 +626,7 @@ const GATE = createWarmupGate({ logFile: WARMUPS, meta: { cell: CELL_NAME, harne
 // ─── one rollout ───────────────────────────────────────────────────────────────────────────────
 async function runOne(probe, arm) {
   const sweet = arm === 'sweet' || arm === 'sweetB';
-  const base = { captureVersion: CAPTURE_VERSION, cell: CELL_NAME, arm, id: probe.id, set: probe._set, lang: probe.language, stratum: probe.stratum, harness: CELL.harness, model: CELL.model, effort: CELL.effort ?? CELL.variant ?? 'default', harnessVersion: HARNESS_VERSION, ...(arm !== 'native' ? { ssOutput: ssOutputMode(arm), rulesV2: rulesV2Enabled(envOf(arm)) ? 1 : 0 } : {}), ...(STABLE_RULES_PATH ? { stableRulesPath: true } : {}), ...(CELL.harness === 'opencode' && ocCacheMode(arm) === 'product' ? { ocCachePlugin: { sha: OC_PRODUCT_PLUGIN.sha, mainCommit: OC_PRODUCT_PLUGIN.commit, dirty: OC_PRODUCT_PLUGIN.dirty } } : {}), ...(Object.keys(envOf(arm)).some(k => k.startsWith('SS_VARIANT_')) ? { variants: Object.fromEntries(Object.entries(envOf(arm)).filter(([k]) => k.startsWith('SS_VARIANT_'))) } : {}) };
+  const base = { captureVersion: CAPTURE_VERSION, cell: CELL_NAME, arm, id: probe.id, set: probe._set, lang: probe.language, stratum: probe.stratum, harness: CELL.harness, model: CELL.model, effort: CELL.effort ?? CELL.variant ?? 'default', harnessVersion: HARNESS_VERSION, ...(arm !== 'native' ? { ssOutput: ssOutputMode(arm) } : {}), ...(STABLE_RULES_PATH ? { stableRulesPath: true } : {}), ...(CELL.harness === 'opencode' && ocCacheMode(arm) === 'product' ? { ocCachePlugin: { sha: OC_PRODUCT_PLUGIN.sha, mainCommit: OC_PRODUCT_PLUGIN.commit, dirty: OC_PRODUCT_PLUGIN.dirty } } : {}), ...(Object.keys(envOf(arm)).some(k => k.startsWith('SS_VARIANT_')) ? { variants: Object.fromEntries(Object.entries(envOf(arm)).filter(([k]) => k.startsWith('SS_VARIANT_'))) } : {}) };
   let run;
   try {
     // The arm's warm-up must have FINISHED before any scored rollout of that arm starts.
@@ -749,7 +747,7 @@ if (EXPOSURE_DIR) {
   for (const arm of sweetArms) {
     const dir = path.resolve(EXPOSURE_DIR, arm);
     fs.mkdirSync(dir, { recursive: true });
-    console.log(`[${arm}] ${CELL_NAME} SS_FIX_RULES_V2=${envOf(arm).SS_FIX_RULES_V2 ?? '(unset)'} rulesV2=${rulesV2Enabled(envOf(arm)) ? 1 : 0}`);
+    console.log(`[${arm}] ${CELL_NAME} SS_VARIANT_RULES_FILE=${envOf(arm).SS_VARIANT_RULES_FILE ?? '(unset)'}`);
     for (const [name, text] of Object.entries(exposureTexts(arm))) {
       fs.writeFileSync(path.join(dir, name), text);
       console.log(`  ${name.padEnd(44)} ${String(text.length).padStart(6)} chars  sha256 ${crypto.createHash('sha256').update(text).digest('hex').slice(0, 16)}`);

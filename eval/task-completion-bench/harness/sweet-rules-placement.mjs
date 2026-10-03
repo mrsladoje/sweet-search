@@ -31,7 +31,6 @@
 // Kept in its own module: codex-task-runner.mjs cannot import agent-runner-shared.mjs
 // (that module imports it), and all three runners need this.
 
-import { rulesV2Enabled } from '../../../scripts/harness-prompts/rules-v2.js';
 
 export const SWEET_RULES_PLACEMENTS = Object.freeze(['file', 'system', 'config']);
 // The product's placement per runner (what `sweet-search init` / `--codex` / `--opencode` ship).
@@ -67,9 +66,7 @@ export function sweetRulesPlacementSource(env = process.env) {
  */
 export function sweetRulesRowFields(placement, { sweet, env = process.env } = {}) {
   if (sweet === undefined) return placement === 'system' || placement === 'config' ? { sweetRulesPlacement: placement } : {};
-  // rulesV2 (SS_FIX_RULES_V2, scripts/harness-prompts/rules-v2.js): which rules / harness-prompt text
-  // the sweet arm got. Never pool rows across its values.
-  return sweet ? { sweetRulesPlacement: placement, sweetRulesPlacementSource: sweetRulesPlacementSource(env), rulesV2: rulesV2Enabled(env) ? 1 : 0 } : {};
+  return sweet ? { sweetRulesPlacement: placement, sweetRulesPlacementSource: sweetRulesPlacementSource(env) } : {};
 }
 
 /** True when the rules leave the instruction file (it then carries the frame only, native's bytes). */
