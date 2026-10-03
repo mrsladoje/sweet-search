@@ -263,7 +263,16 @@ export async function bareGrep(query, routing, options = {}) {
   // so the answer is the same. Not with a symbol filter: that one drops single matches.
   const grepPerFileCap = options.perFileCap > 0 && !symbolType && options._grepNoCap !== true
     ? options.perFileCap : 0;
-  const engineOptions = grepPerFileCap > 0 ? { ...options, _grepPerFileCap: grepPerFileCap } : options;
+  // The --in scope reaches the engine too, so only in-scope files are read (the same predicate
+  // shapeBareGrepMatches filters by; -g globs stay there, their exclusion counts are reported).
+  const scopePredicate = options.fileFilter && !symbolType ? grepFileFilterPredicate(options.fileFilter, filterRoot) : null;
+  const engineOptions = grepPerFileCap > 0 || scopePredicate
+    ? {
+      ...options,
+      ...(grepPerFileCap > 0 ? { _grepPerFileCap: grepPerFileCap } : {}),
+      ...(scopePredicate ? { _grepScope: (file) => scopePredicate(file) } : {}),
+    }
+    : options;
 
   // Disable chunk gram for bare grep — bare grep uses file:line matches, not chunk IDs.
   let candidateResult = await generateRegexMatches(this || {}, regex, searchDir, engineOptions);
