@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * ss-grep allocation replay, collector (docs/SUGGESTED_PLAN.md, Step 0).
+ * ss-grep allocation replay, collector (docs/SUGGESTED_PLAN.md at 945a9664, Step 0).
  *
  * For every unscoped ss-grep call recorded on a permitted probe set (dev or dev-confirm; a
  * held-out probe is refused), collect the matches with line numbers and the code-graph entity

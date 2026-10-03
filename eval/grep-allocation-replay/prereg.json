@@ -1,7 +1,7 @@
 {
   "version": 1,
   "registeredAt": "2026-10-02",
-  "plan": "docs/SUGGESTED_PLAN.md (Step 0 item 6)",
+  "plan": "docs/SUGGESTED_PLAN.md at 945a9664 (Step 0 item 6)",
   "status": "Registered before any dev-confirm call is replayed. Do not edit arms, constants or bars after dev-confirm calls exist; register a new version instead.",
   "constants": {
     "saturatingConstant": 2,

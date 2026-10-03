@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * ss-search / ss-find headroom, measured offline on recorded calls (docs/SUGGESTED_PLAN.md,
+ * ss-search / ss-find headroom, measured offline on recorded calls (docs/SUGGESTED_PLAN.md at 945a9664,
  * Step 5 item 1). No product change, no rerun: each recorded output is parsed as the agent saw it.
  *
  * Per call: the ranked entries (`## #N file:a-b [type: name] (tier ...)`), each with its
