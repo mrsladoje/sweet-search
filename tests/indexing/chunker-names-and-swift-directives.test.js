@@ -148,3 +148,61 @@ describe('b. JS/TS exported classes', () => {
     expectAllTextKept(src, chunks);
   });
 });
+
+describe('c. Swift #if lines: chunker and graph see the same tree', () => {
+  const method = (name) => `    /// Doc of ${name}.\n    func ${name}() {\n${Array.from({ length: 12 }, (_, i) => `        print("${name} line ${i} padding padding padding")`).join('\n')}\n    }`;
+  const SWIFT = [
+    'import Foundation',
+    '',
+    'class DatabaseObservationBroker {',
+    method('statementWillExecute'),
+    '',
+    '    #if SQLITE_ENABLE_PREUPDATE_HOOK',
+    method('databaseWillChange'),
+    '    #endif',
+    '',
+    method('databaseWillCommit'),
+    '',
+    method('databaseDidRollback'),
+    '}',
+    '',
+  ].join('\n');
+
+  it('methods after a #if line keep the class as parent', async () => {
+    const chunks = await chunk(SWIFT, 'swift');
+    for (const name of ['databaseWillChange', 'databaseWillCommit', 'databaseDidRollback']) {
+      const c = chunks.find(k => k.name === name || (k.additionalSymbols || []).includes(name));
+      expect(c, name).toBeTruthy();
+      if (c.name === name) expect(c.parentSymbol).toBe('DatabaseObservationBroker');
+    }
+  });
+
+  it('the directive lines stay in a chunk (no text lost)', async () => {
+    const chunks = await chunk(SWIFT, 'swift');
+    expectAllTextKept(SWIFT, chunks);
+    expect(chunks.some(c => c.text.includes('#if SQLITE_ENABLE_PREUPDATE_HOOK'))).toBe(true);
+    expect(chunks.some(c => c.text.includes('#endif'))).toBe(true);
+  });
+
+  it('graph: the class and its methods are entities; a directive is never a doc comment', async () => {
+    const symbols = await provider.extractSymbols(SWIFT, 'swift');
+    expect(symbols.find(s => s.name === 'DatabaseObservationBroker')).toBeTruthy();
+    const willChange = symbols.find(s => s.name === 'databaseWillChange');
+    expect(willChange).toMatchObject({ parentClass: 'DatabaseObservationBroker', docComment: 'Doc of databaseWillChange.' });
+    const commit = symbols.find(s => s.name === 'databaseWillCommit');
+    expect(commit.docComment).toBe('Doc of databaseWillCommit.');
+    // A comment above a #if line does not document the declaration below it.
+    const src = 'class A {\n    // Not a doc of f.\n    #if canImport(Combine)\n    func f() {}\n    #endif\n}\n';
+    const f = (await provider.extractSymbols(src, 'swift')).find(s => s.name === 'f');
+    expect(f.docComment).toBeUndefined();
+  });
+
+  it('chunk parents agree with graph parents', async () => {
+    const chunks = await chunk(SWIFT, 'swift');
+    const symbols = await provider.extractSymbols(SWIFT, 'swift');
+    for (const c of chunks.filter(k => k.type === 'function' || k.type === 'method')) {
+      const s = symbols.find(x => x.name === c.name);
+      expect(c.parentSymbol).toBe(s.parentClass);
+    }
+  });
+});
