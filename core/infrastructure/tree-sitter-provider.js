@@ -80,6 +80,8 @@ const BOUNDARY_TYPES = new Set([
   'function_item',
   // Classes
   'class_declaration', 'class_definition',
+  // TypeScript `abstract class Foo {}`
+  'abstract_class_declaration',
   // Interfaces/Types (TypeScript)
   'interface_declaration', 'type_alias_declaration', 'enum_declaration',
   // Structs/Traits (Rust/Go)
@@ -216,6 +218,10 @@ const LANG_EXTRA_BOUNDARY_TYPES = {
 // (their existing phantom chunks are tiny and don't affect retrieval).
 const LANG_BOUNDARY_TYPE_EXCLUDES = {
   csharp: new Set(['class']),
+  // PHP `namespace Foo { … }` is transparent (NAMESPACE_WRAPPER_TYPES); the
+  // body-less `namespace Foo;` is a statement, not a declaration — as a
+  // boundary it labelled the chunk holding the file's class `namespace: Foo`.
+  php: new Set(['namespace_definition']),
 };
 
 // AST node types that represent function/class bodies. Used by
@@ -251,6 +257,7 @@ const NODE_TYPE_MAP = {
   'function_expression': 'function',
   'class_declaration': 'class',
   'class_definition': 'class',
+  'abstract_class_declaration': 'class',
   'interface_declaration': 'interface',
   'type_alias_declaration': 'typeAlias',
   'enum_declaration': 'enum',
@@ -847,6 +854,10 @@ const CONTAINER_NODE_TYPES = {
 const JS_FAMILY_LANGUAGES = new Set(['javascript', 'typescript', 'tsx']);
 
 // Swift compile-time conditional lines (`#if X`, `#elseif`, `#else`, `#endif`).
+// The grammar cannot parse them inside a type body: the whole body (with every
+// method in it) became one ERROR node, so GRDB's DatabaseObservationBroker
+// vanished from the graph and its methods lost their parent in the chunker.
+// GRDB: files with parse errors 61 -> 20 of 478, none worse.
 const SWIFT_CONDITIONAL_DIRECTIVE_LINE = /^[ \t]*#(?:if|elseif|else|endif)\b[^\n]*/gm;
 
 // C/C++ visibility macro between the class-key and the name:
@@ -855,7 +866,81 @@ const SWIFT_CONDITIONAL_DIRECTIVE_LINE = /^[ \t]*#(?:if|elseif|else|endif)\b[^\n
 // name, so drogon's HttpRequest became a one-line class `DROGON_EXPORT` and
 // lost every method. Shape rule, not a macro list: an ALL-CAPS token followed
 // by another identifier (not `final`) can only be a macro in valid C++.
-const CPP_CLASS_KEY_MACRO = /\b(class|struct|union)([ \t]+)([A-Z][A-Z0-9_]+)(?=[ \t]+(?!final\b)[A-Za-z_]\w*[ \t]*(?:[:{;<]|final\b|$))/gm;
+//
+// One ambiguous shape: `struct|union X y;` is either a forward declaration
+// with a macro (`struct ABC_EXPORT Fwd;`) or a variable of an ALL-CAPS type
+// (`struct HTTP_HEADER header;`). It is a macro when the file #defines X, or
+// when y is capitalised like a type name (types are CamelCase, variables
+// lower-case). `class X y;` is always a forward declaration.
+const CPP_CLASS_KEY_MACRO = /\b(class|struct|union)([ \t]+)([A-Z][A-Z0-9_]+)(?=[ \t]+(?!final\b)([A-Za-z_]\w*)[ \t]*([:{;<]|final\b|$))/gm;
+const CPP_DEFINED_MACRO = /^[ \t]*#[ \t]*define[ \t]+([A-Z][A-Z0-9_]+)\b/gm;
+
+// Blank the macro with spaces (same length, so offsets and line numbers are
+// unchanged). Applied in parse(), so the chunker, the incremental parser and
+// the graph (extractSymbols) all see the same tree: before, the chunker kept
+// the macro and labelled drogon's class `function: HttpViewData`, plus a
+// phantom one-line chunk `class: DROGON_EXPORT`.
+function blankCppClassKeyMacros(content, languageId) {
+  if (languageId !== 'cpp' && languageId !== 'c') return content;
+  let defined = null;
+  const isDefined = (macro) => {
+    defined ??= new Set(Array.from(content.matchAll(CPP_DEFINED_MACRO), m => m[1]));
+    return defined.has(macro);
+  };
+  return content.replace(CPP_CLASS_KEY_MACRO, (m, key, gap, macro, ident, next) => {
+    const isVariable = next === ';' && key !== 'class' && !/^[A-Z]/.test(ident) && !isDefined(macro);
+    return isVariable ? m : key + gap + ' '.repeat(macro.length);
+  });
+}
+
+// The text tree-sitter parses. Same length as the source, so offsets and line
+// numbers are unchanged; chunk text is still sliced from the original source.
+// parse() uses it, so the chunker, the incremental parser and the graph
+// (extractSymbols) see the same tree.
+// - Swift: each directive line becomes a line comment of the same length
+//   (`#if X` -> `//f X`). Both branches stay visible as declarations, and the
+//   comment is a tree node, so the directive text stays in a chunk (blank
+//   lines fall between nodes and no chunk would hold them).
+// - C/C++: the export macro after the class-key is blanked.
+function sourceForParse(content, languageId) {
+  if (languageId === 'swift' && content.includes('#')) {
+    return content.replace(SWIFT_CONDITIONAL_DIRECTIVE_LINE, (line) => line.replace(/#./, '//'));
+  }
+  return blankCppClassKeyMacros(content, languageId);
+}
+
+// Namespace / module wrappers that recursiveChunk makes transparent: the body
+// is chunked with the namespace as parent info, at any size. PHP's braced
+// `namespace Foo { }` too; `namespace Foo;` (no body) and Rust `mod` (not a
+// boundary) are left as they are.
+const NAMESPACE_WRAPPER_TYPES = {
+  cpp: new Set(['namespace_definition']),
+  php: new Set(['namespace_definition']),
+  csharp: new Set(['namespace_declaration', 'file_scoped_namespace_declaration']),
+  ruby: new Set(['module']),
+  typescript: new Set(['internal_module', 'module']),
+  tsx: new Set(['internal_module', 'module']),
+};
+// TypeScript statements that hold a namespace: `export namespace X {}`,
+// bare `namespace X {}`, `declare module 'x' {}`.
+const NAMESPACE_STATEMENT_WRAPPERS = new Set(['export_statement', 'expression_statement', 'ambient_declaration']);
+const NAMESPACE_BODY_TYPES = new Set(['declaration_list', 'compound_statement', 'statement_block', 'body_statement']);
+
+// Declaration bodies, for _flattenDeclaration: BODY_TYPES plus Ruby's
+// body_statement. A `statements` / `statement_list` child inside a body
+// (Kotlin, Swift, older Go grammars) is spliced into its parent's children.
+const DECLARATION_BODY_TYPES = new Set([...BODY_TYPES, 'body_statement']);
+const BODY_FLATTEN_CONTAINERS = new Set(['statements', 'statement_list']);
+
+// Source span of every emitted chunk (start/end index of its trimmed text),
+// so an orphan tail can be merged as one source slice.
+const CHUNK_SPANS = new WeakMap();
+
+function countNewlines(text, from = 0, to = text.length) {
+  let n = 0;
+  for (let i = from; i < to; i++) if (text.charCodeAt(i) === 10) n++;
+  return n;
+}
 
 // A definition inside a function body (local helper, closure) or inside an
 // anonymous class body is not a member of the outer type: stop the walk.
@@ -961,7 +1046,7 @@ export class TreeSitterProvider {
     if (!language) return null;
 
     this._parser.setLanguage(language);
-    return this._parser.parse(content);
+    return this._parser.parse(sourceForParse(content, languageId));
   }
 
   /**
@@ -985,19 +1070,11 @@ export class TreeSitterProvider {
     let tree;
     let query;
     try {
-      // Swift: the grammar cannot parse `#if` / `#endif` lines inside a type
-      // body, and the whole body (with every method in it) became one ERROR
-      // node — GRDB's DatabaseObservationBroker vanished from the graph.
-      // Blank the directive lines (same length, so offsets and line numbers
-      // are unchanged); both branches stay visible as declarations.
-      // GRDB: files with parse errors 61 → 20 of 478, none worse.
-      if (languageId === 'swift' && content.includes('#')) {
-        content = content.replace(SWIFT_CONDITIONAL_DIRECTIVE_LINE, (line) => ' '.repeat(line.length));
-      }
-      // C/C++: blank a visibility macro after the class-key (same length).
-      if (languageId === 'cpp' || languageId === 'c') {
-        content = content.replace(CPP_CLASS_KEY_MACRO, (_m, key, gap, macro) => key + gap + ' '.repeat(macro.length));
-      }
+      // Same text as parse() (Swift #if lines, C/C++ export macros). Doc
+      // comments are read from the original source, so a Swift directive
+      // (a comment in the parsed text) is never a doc comment.
+      const source = content;
+      content = sourceForParse(content, languageId);
       this._parser.setLanguage(language);
       tree = this._parser.parse(content);
       if (!tree) return null;
@@ -1136,7 +1213,7 @@ export class TreeSitterProvider {
         // (flask: 96 of 415 docs were such duplicates).
         const docComment = entityType === 'decorator'
           ? null
-          : extractTreeSitterDocComment(extentNode, content, languageId);
+          : extractTreeSitterDocComment(extentNode, source, languageId);
         symbols.push({
           name: symbolName,
           type: entityType,
@@ -1197,7 +1274,23 @@ export class TreeSitterProvider {
     }
 
     const children = this._getChildren(tree.rootNode);
-    const chunks = this.recursiveChunk(children, content, maxChunkSize, null, boundaryTypes);
+    const chunks = this.recursiveChunk(children, content, maxChunkSize, null, boundaryTypes, {
+      languageId,
+      parsedContent: sourceForParse(content, languageId),
+    });
+    // Text is never dropped: what no chunk took (a file holding only
+    // `import Foundation`) is a chunk of its own.
+    if (chunks.leftover?.length) {
+      const nodes = chunks.leftover;
+      const span = this._sourceSpan(content, nodes[0].startIndex, nodes[nodes.length - 1].endIndex, nodes[0].startPosition.row);
+      if (span.text) {
+        this._pushChunk(chunks, span, {
+          chunkId: this._nextChunkId(), parentChunkId: null, parentSymbol: null, parentType: null,
+          parentPath: null, type: 'code', name: null, signature: null,
+        });
+      }
+    }
+    delete chunks.leftover;
 
     tree.delete(); // free WASM memory
 
@@ -1246,12 +1339,100 @@ export class TreeSitterProvider {
    *   BOUNDARY_TYPES ∪ LANG_EXTRA_BOUNDARY_TYPES[lang]). When omitted, falls
    *   back to BOUNDARY_TYPES — preserves the pre-2026-05-12 call signature
    *   for any internal caller that constructs this provider directly.
+   * @param {object} [ctx]
+   * @param {string} [ctx.languageId] - Enables the per-language namespace /
+   *   module transparency (NAMESPACE_WRAPPER_TYPES).
+   * @param {{name: string, type: string, next: number}} [ctx.partOf] - The
+   *   oversized named declaration whose body is being chunked. A body chunk
+   *   with no declaration of its own is named after it: `Foo (part 2)`.
+   * @param {string} [ctx.parsedContent] - The text tree-sitter parsed (C/C++
+   *   export macros blanked); defaults to `content`.
    * @returns {Array} List of chunk objects
    */
-  recursiveChunk(nodes, content, maxSize, parentInfo, boundaryTypes = BOUNDARY_TYPES) {
+  recursiveChunk(nodes, content, maxSize, parentInfo, boundaryTypes = BOUNDARY_TYPES, ctx = {}) {
     const chunks = [];
     let buffer = [];
-    let bufferSize = 0;
+    const languageId = ctx.languageId || null;
+    const partOf = ctx.partOf || null;
+    // JS/TS `export [default] class Foo {}` (also function, interface, enum,
+    // type alias): the export_statement is replaced by its parts, so the
+    // declaration is the boundary and names the chunk. The `export` keyword
+    // is an opening token that starts the declaration's chunk. Before, an
+    // exported class was a `code` chunk with no name, and an oversized one
+    // put its members under a parent named `unknown`.
+    if (JS_FAMILY_LANGUAGES.has(languageId)) {
+      nodes = nodes.flatMap(n => this._exportedDeclarationParts(n, languageId, boundaryTypes) || [n]);
+    }
+    // Every chunk's text is ONE source slice (first node start to last node
+    // end), trimmed; its lines are counted from that slice.
+    const spanOf = (first, last) => this._sourceSpan(
+      content, first.startIndex, last.endIndex, first.startPosition.row);
+    // Anonymous keyword leaves share type names with declarations in some
+    // grammars (tree-sitter-ruby's `module` / `class` keywords, the `class`
+    // keyword inside a JS/C#/C++ class): only named nodes are declarations.
+    const isBoundaryNode = n => n.isNamed && boundaryTypes.has(n.type);
+    // A pending buffer of opening tokens (`module Sequel`, `def foo(a)`,
+    // `export`) — 30 chars or fewer, no declaration — is too small to be a
+    // chunk. It is carried into the next oversized node or namespace
+    // instead of being dropped, so it starts that node's first chunk.
+    // Tokens that end the previous chunk's last line (`};`, `}  // namespace
+    // x`) are not carried: they join that chunk as an orphan tail.
+    const takeCarry = () => {
+      if (buffer.length === 0 || buffer.some(isBoundaryNode)) return [];
+      const prev = chunks[chunks.length - 1];
+      if (prev && buffer[0].startPosition.row <= prev.endLine) return [];
+      if (spanOf(buffer[0], buffer[buffer.length - 1]).text.length > 30) return [];
+      const carry = buffer;
+      buffer = [];
+      return carry;
+    };
+    const takePartName = () => {
+      if (!partOf) return null;
+      const n = partOf.next++;
+      return n === 1 ? partOf.name : `${partOf.name} (part ${n})`;
+    };
+    // Parent fields of every chunk at this level. parentPath is the whole
+    // declaration path (`class:A/method:run`), so two same-named methods in
+    // different classes keep distinct chunk identities.
+    const parentFields = () => ({
+      parentChunkId: parentInfo?.chunkId || null,
+      parentSymbol: parentInfo?.name || null,
+      parentType: parentInfo?.type || null,
+      parentPath: parentInfo?.path || null,
+    });
+    const childPath = (type, name) => `${parentInfo?.path ? parentInfo.path + '/' : ''}${type}:${name}`;
+    // Declaration names of `nodes` (template / decorator wrappers resolved).
+    const declNames = nodes => nodes.filter(isBoundaryNode).map(n => this._declarationName(n)).filter(Boolean);
+    const addNames = (chunk, names) => {
+      const extra = names.filter(n => n !== chunk.name && !(chunk.additionalSymbols || []).includes(n));
+      if (extra.length > 0) chunk.additionalSymbols = [...(chunk.additionalSymbols || []), ...extra];
+    };
+    // Text is never dropped. A buffer too small to be a chunk (30 chars or
+    // fewer) with no declaration waits in `pending` and opens the next chunk
+    // of this level; at the end of the level it joins the previous chunk,
+    // or goes up to the parent level as `chunks.leftover`.
+    let pending = [];
+    const takePending = () => { const p = pending; pending = []; return p; };
+    // Merge nodes into the last chunk of this level as one source slice.
+    const mergeIntoPrev = (mergeNodes) => {
+      const prev = chunks[chunks.length - 1];
+      const prevSpan = prev ? CHUNK_SPANS.get(prev) : null;
+      if (!prevSpan || mergeNodes.length === 0) return false;
+      const last = mergeNodes[mergeNodes.length - 1];
+      if (prevSpan.startIndex >= last.endIndex) return false;
+      const merged = this._sourceSpan(content, prevSpan.startIndex, Math.max(prevSpan.endIndex, last.endIndex), prev.startLine);
+      if (merged.text.length > maxSize * TAIL_MERGE_HEADROOM) return false;
+      prev.text = merged.text;
+      prev.endLine = merged.endLine;
+      CHUNK_SPANS.set(prev, merged);
+      addNames(prev, declNames(mergeNodes));
+      return true;
+    };
+    // A sub-level's leftover: join this level's previous chunk, else wait.
+    const absorbLeftover = (sub) => {
+      if (!sub.leftover || sub.leftover.length === 0) return;
+      if (!mergeIntoPrev(sub.leftover)) pending = [...pending, ...sub.leftover];
+    };
 
     // SMALL_TAIL_THRESHOLD: chunks below this character count are
     // considered "orphan tails" — they tend to be `module.exports`,
@@ -1270,13 +1451,33 @@ export class TreeSitterProvider {
     const TAIL_MERGE_HEADROOM = 1.25;
 
     const flushBuffer = () => {
+      if (pending.length > 0 && buffer.length > 0) buffer = [...takePending(), ...buffer];
       if (buffer.length === 0) return;
-      const text = buffer
-        .map(n => content.substring(n.startIndex, n.endIndex))
-        .join('\n');
-
-      if (text.trim().length > 30) {
-        const boundariesInBuffer = buffer.filter(n => boundaryTypes.has(n.type));
+      const span = spanOf(buffer[0], buffer[buffer.length - 1]);
+      const text = span.text;
+      if (text.length === 0) { buffer = []; return; }
+      // A buffer of 30 chars or fewer is not a chunk of its own. Tokens
+      // that end the previous chunk's last line (`};`) and small
+      // declarations (`function empty() {}`) join the previous chunk (the
+      // declaration's name goes to its additionalSymbols); a small
+      // declaration with no previous chunk is a chunk of its own. Anything
+      // else waits in `pending` for the next chunk.
+      if (text.length <= 30) {
+        const prev = chunks[chunks.length - 1];
+        const hasDecl = buffer.some(isBoundaryNode);
+        const onPrevLine = prev && span.startLine <= prev.endLine;
+        if ((hasDecl || onPrevLine) && mergeIntoPrev(buffer)) {
+          buffer = [];
+          return;
+        }
+        if (!hasDecl) {
+          pending = buffer;
+          buffer = [];
+          return;
+        }
+      }
+      {
+        const boundariesInBuffer = buffer.filter(isBoundaryNode);
 
         // SIBLING_DOC_SPLIT (RS-008 motivation, May 2026): at top level, when
         // 2+ boundary-typed siblings each carry an immediately-preceding outer
@@ -1358,6 +1559,9 @@ export class TreeSitterProvider {
           })
           || isClassLikeSiblingSet
         ) {
+          // A section of 30 chars or fewer joins the next section (the
+          // last one joins the previous section) instead of being dropped.
+          const sections = [];
           let sectionStart = 0;
           for (let i = 0; i < boundariesInBuffer.length; i++) {
             const b = boundariesInBuffer[i];
@@ -1365,30 +1569,32 @@ export class TreeSitterProvider {
             // Last section absorbs trailing non-boundary nodes after `b`.
             const isLast = i === boundariesInBuffer.length - 1;
             const sectionEnd = isLast ? buffer.length - 1 : bIdx;
-            const section = buffer.slice(sectionStart, sectionEnd + 1);
-            const sectionText = section
-              .map(n => content.substring(n.startIndex, n.endIndex))
-              .join('\n');
-            if (sectionText.trim().length > 30) {
-              const resolved = this._resolveBoundary(b);
-              chunks.push({
-                chunkId: this._nextChunkId(),
-                parentChunkId: parentInfo?.chunkId || null,
-                parentSymbol: parentInfo?.name || null,
-                parentType: parentInfo?.type || null,
-                text: sectionText.trim(),
-                startLine: section[0].startPosition.row,
-                endLine: section[section.length - 1].endPosition.row,
-                type: resolved.type,
-                name: this._extractNodeName(resolved.nameNode),
-                signature: this._extractSignature(b, content, boundaryTypes),
-                additionalSymbols: null,
-              });
+            const small = spanOf(buffer[sectionStart], buffer[sectionEnd]).text.length <= 30;
+            if (small && !isLast) continue;
+            if (small && isLast && sections.length > 0) {
+              sections[sections.length - 1].end = sectionEnd;
+              sections[sections.length - 1].extra.push(b);
+            } else {
+              sections.push({ start: sectionStart, end: sectionEnd, b, extra: [] });
             }
             sectionStart = bIdx + 1;
           }
+          for (const sec of sections) {
+            const section = buffer.slice(sec.start, sec.end + 1);
+            const sectionSpan = spanOf(section[0], section[section.length - 1]);
+            const resolved = this._resolveBoundary(sec.b);
+            const secName = this._extractNodeName(resolved.nameNode);
+            const others = declNames(section.filter(n => n !== sec.b)).filter(n => n !== secName);
+            this._pushChunk(chunks, sectionSpan, {
+              chunkId: this._nextChunkId(),
+              ...parentFields(),
+              type: resolved.type,
+              name: secName,
+              signature: this._extractSignature(sec.b, content, boundaryTypes),
+              additionalSymbols: others.length > 0 ? others : null,
+            });
+          }
           buffer = [];
-          bufferSize = 0;
           return;
         }
 
@@ -1410,10 +1616,8 @@ export class TreeSitterProvider {
         // surface them via an `# Additional:` header line.
         let additionalSymbols = null;
         if (boundariesInBuffer.length > 1) {
-          const sibNames = boundariesInBuffer.slice(1)
-            .map(n => this._extractNodeName(n))
-            .filter(n => n && n !== name);
-          if (sibNames.length > 0) additionalSymbols = sibNames;
+          const sibNames = declNames(boundariesInBuffer.slice(1)).filter(n => n !== name);
+          if (sibNames.length > 0) additionalSymbols = [...new Set(sibNames)];
         }
 
         // Tail-orphan merge: when the buffer about to be flushed is
@@ -1433,153 +1637,499 @@ export class TreeSitterProvider {
         // via the recursive call. Spatial proximity is the more
         // structural test — a 2-line trailing assignment immediately
         // after a class block belongs with that block.
+        //
+        // The merged text is one source slice from the previous chunk's
+        // start to the tail's end, so whatever sits between them (a closing
+        // brace, blank lines) is kept as in the file.
         const prev = chunks[chunks.length - 1];
+        const prevSpan = prev ? CHUNK_SPANS.get(prev) : null;
         const isOrphanTail = !firstBoundary
-          && text.trim().length < SMALL_TAIL_THRESHOLD;
-        const bufferStart = buffer[0].startPosition.row;
-        const linesGap = prev ? bufferStart - prev.endLine : Infinity;
+          && text.length < SMALL_TAIL_THRESHOLD;
+        const linesGap = prev ? span.startLine - prev.endLine : Infinity;
         const isSpatiallyClose = linesGap >= 0 && linesGap <= 5;
-        const mergedSize = prev ? (prev.text.length + 1 + text.trim().length) : Infinity;
-        const fitsHeadroom = mergedSize <= maxSize * TAIL_MERGE_HEADROOM;
+        const mergedSpan = prevSpan && prevSpan.startIndex < span.startIndex
+          ? this._sourceSpan(content, prevSpan.startIndex, span.endIndex, prev.startLine)
+          : null;
+        const fitsHeadroom = !!mergedSpan
+          && mergedSpan.text.length <= maxSize * TAIL_MERGE_HEADROOM;
 
         if (isOrphanTail && prev && isSpatiallyClose && fitsHeadroom) {
-          prev.text = prev.text + '\n' + text.trim();
-          prev.endLine = buffer[buffer.length - 1].endPosition.row;
+          prev.text = mergedSpan.text;
+          prev.endLine = mergedSpan.endLine;
+          CHUNK_SPANS.set(prev, mergedSpan);
         } else {
-          chunks.push({
+          let partSignature = null;
+          if (!firstBoundary && partOf) {
+            name = takePartName();
+            type = partOf.type;
+            partSignature = partOf.signature;
+          }
+          this._pushChunk(chunks, span, {
             chunkId: this._nextChunkId(),
-            parentChunkId: parentInfo?.chunkId || null,
-            parentSymbol: parentInfo?.name || null,
-            parentType: parentInfo?.type || null,
-            text: text.trim(),
-            startLine: buffer[0].startPosition.row,
-            endLine: buffer[buffer.length - 1].endPosition.row,
+            ...parentFields(),
             type,
-            name: name || (buffer.length === 1 ? null : null),
-            signature,
+            name,
+            signature: signature || partSignature,
             additionalSymbols,
           });
         }
       }
       buffer = [];
-      bufferSize = 0;
     };
 
     for (const node of nodes) {
-      const nodeSize = node.endIndex - node.startIndex;
+      // Namespace / module wrappers (C++ `namespace`, C# `namespace`, Ruby
+      // `module`, TypeScript `namespace`) are transparent at ANY size: their
+      // body is chunked with the namespace as parent info, as for class
+      // bodies. A namespace-labelled chunk would otherwise wrap (and hide)
+      // the class inside it — drogon `HttpViewData.h:29 — drogon (namespace)`.
+      const ns = languageId && node.isNamed ? this._namespaceBody(node, languageId) : null;
+      if (ns) {
+        const carry = takeCarry();
+        flushBuffer();
+        const nsParent = ns.name
+          ? { chunkId: this._nextChunkId(), name: ns.name, type: ns.type, path: childPath(ns.type, ns.name) }
+          : parentInfo;
+        const sub = this.recursiveChunk(
+          [...takePending(), ...carry, ...ns.nodes], content, maxSize, nsParent, boundaryTypes, { ...ctx, partOf });
+        chunks.push(...sub);
+        absorbLeftover(sub);
+        continue;
+      }
 
-      if (bufferSize + nodeSize <= maxSize) {
+      const nodeSize = node.endIndex - node.startIndex;
+      // The chunk text is the source slice from the buffer's first node to
+      // this node's end, so the size that counts includes the whitespace
+      // between siblings (indentation, blank lines).
+      const sliceSize = buffer.length > 0 ? node.endIndex - buffer[0].startIndex : nodeSize;
+
+      if (sliceSize <= maxSize) {
         // Fits in current buffer — accumulate
         buffer.push(node);
-        bufferSize += nodeSize;
-      } else {
-        // Doesn't fit — flush buffer first
+        continue;
+      }
+
+      // A node whose children do not cover its text (a Rust string literal:
+      // the content between the quotes is no child node) cannot be split
+      // by its children without losing that text: it is a leaf here.
+      const isLeaf = node.childCount === 0 || !this._childrenCoverText(node, ctx.parsedContent ?? content);
+      if (nodeSize <= maxSize || isLeaf) {
+        // Doesn't fit — flush buffer first. The doc comment directly above
+        // the node moves with it into the new buffer, so a full buffer does
+        // not cut a comment off from its declaration.
+        let leading = this._takeLeadingComments(buffer, node, content, { isDeclaration: isBoundaryNode });
+        if (leading.length > 0 && (nodeSize > maxSize || node.endIndex - leading[0].startIndex > maxSize)) {
+          // The doc comment does not fit with the node: keep only the tokens
+          // on the node's own first line (`export`, modifiers), so that line
+          // is not split between two chunks.
+          const row = node.startPosition.row;
+          leading = nodeSize > maxSize ? [] : leading.filter(n => n.startPosition.row >= row);
+          if (leading.length > 0 && node.endIndex - leading[0].startIndex > maxSize) leading = [];
+        }
+        if (leading.length > 0) buffer = buffer.slice(0, buffer.length - leading.length);
+        const carry = takeCarry();
         flushBuffer();
-
         if (nodeSize <= maxSize) {
-          // Node fits alone — start new buffer
-          buffer = [node];
-          bufferSize = nodeSize;
-        } else {
-          // Node is oversized even alone — recurse into children
-          if (node.childCount > 0) {
-            const resolved = this._resolveBoundary(node);
-            const name = this._extractNodeName(resolved.nameNode);
-            const type = resolved.type;
-
-            // Header chunk for oversized BOUNDARY nodes (large classes,
-            // structs, traits, etc.): emit a small "header" chunk before
-            // recursing into the body. Without this, queries that match
-            // the boundary's name itself (rather than any inner member)
-            // have NO chunk anchored on the boundary — only sub-chunks
-            // with parent_symbol context. Empirically (kotlin JobSupport,
-            // 1582-line `open class JobSupport`), this left class-targeted
-            // queries to lose to inner method chunks. The header chunk
-            // captures the declaration + leading doc-comment / opening
-            // body (up to ~600 chars) so the boundary name is searchable.
-            //
-            // Gating: only when the node is a BOUNDARY_TYPES AND has a name.
-            // Top-level Ruby method nodes are excluded because those
-            // unscoped `def` snippets are normalized to anonymous code chunks
-            // by ASTChunker. Parent-scoped Ruby methods still get header
-            // chunks when oversized.
-            // Header text is bounded to maxSize so we never exceed embed cap.
-            const isRubyMethodHeader = parentInfo == null
-              && (node.type === 'method' || node.type === 'singleton_method');
-            if (boundaryTypes.has(node.type) && name && !isRubyMethodHeader) {
-              const HEADER_MAX_CHARS = Math.min(600, maxSize);
-              const headerEndIdx = Math.min(node.endIndex, node.startIndex + HEADER_MAX_CHARS);
-              const headerText = content.substring(node.startIndex, headerEndIdx);
-              if (headerText.trim().length > 30) {
-                const lineCount = headerText.split('\n').length;
-                chunks.push({
-                  chunkId: this._nextChunkId(),
-                  parentChunkId: parentInfo?.chunkId || null,
-                  parentSymbol: parentInfo?.name || null,
-                  parentType: parentInfo?.type || null,
-                  text: headerText.trim(),
-                  startLine: node.startPosition.row,
-                  endLine: node.startPosition.row + Math.max(0, lineCount - 1),
-                  type,
-                  name,
-                  signature: this._extractSignature(node, content, boundaryTypes),
-                });
-              }
+          // Node fits alone — start new buffer. The waiting tokens open it
+          // when the slice stays within the cap; else they are a chunk of
+          // their own (never dropped).
+          const opening = [...takePending(), ...carry];
+          const first = opening[0] || leading[0] || node;
+          if (opening.length > 0 && node.endIndex - first.startIndex > maxSize) {
+            const openingSpan = spanOf(opening[0], opening[opening.length - 1]);
+            if (!mergeIntoPrev(opening) && openingSpan.text) {
+              this._pushChunk(chunks, openingSpan, {
+                chunkId: this._nextChunkId(), ...parentFields(), type: 'code', name: null, signature: null,
+              });
             }
-
-            // Transparent nodes (no name resolved) pass through the caller's
-            // parent context instead of creating an anonymous "unknown" level.
-            // Covers two cases:
-            //   1. Non-boundary containers (statement_block, body_statement,
-            //      block) — pre-existing behaviour.
-            //   2. Ruby `class << self` (singleton_class with value=self,
-            //      which has no extractable name). Without this carve-out
-            //      the chunk's sub-chunks get `parentSymbol='unknown'`,
-            //      losing the enclosing class context (e.g. Sinatra::Base);
-            //      with it they inherit `parentSymbol='Base'`. Narrowed to
-            //      singleton_class so other languages' nameless boundaries
-            //      (JS arrow_function, anonymous classes) keep their
-            //      pre-existing 'unknown' attribution unchanged.
-            let subParent;
-            const isNamelessRubySingleton = node.type === 'singleton_class';
-            if (!name && (!boundaryTypes.has(node.type) || isNamelessRubySingleton) && parentInfo) {
-              subParent = parentInfo;
-            } else {
-              const parentId = this._nextChunkId();
-              subParent = { chunkId: parentId, name: name || 'unknown', type };
-            }
-
-            const subChunks = this.recursiveChunk(
-              this._getChildren(node),
-              content,
-              maxSize,
-              subParent,
-              boundaryTypes
-            );
-            chunks.push(...subChunks);
+            buffer = [...leading, node];
           } else {
-            // Leaf node too big — emit as-is (never split mid-expression)
-            const nodeText = content.substring(node.startIndex, node.endIndex);
-            const resolved = this._resolveBoundary(node);
-            chunks.push({
-              chunkId: this._nextChunkId(),
-              parentChunkId: parentInfo?.chunkId || null,
-              parentSymbol: parentInfo?.name || null,
-              parentType: parentInfo?.type || null,
-              text: nodeText.trim(),
-              startLine: node.startPosition.row,
-              endLine: node.endPosition.row,
-              type: resolved.type,
-              name: this._extractNodeName(resolved.nameNode),
-              signature: this._extractSignature(node, content, boundaryTypes),
-            });
+            buffer = [...opening, ...leading, node];
+          }
+        } else {
+          // Leaf node too big — emit as-is (never split mid-expression)
+          const resolved = this._resolveBoundary(node);
+          let name = this._extractNodeName(resolved.nameNode);
+          let type = resolved.type;
+          let signature = this._extractSignature(node, content, boundaryTypes);
+          if (!name && partOf) {
+            name = takePartName();
+            type = partOf.type;
+            signature = partOf.signature;
+          }
+          const first = [...takePending(), ...carry, ...leading][0] || node;
+          this._pushChunk(chunks, spanOf(first, node), {
+            chunkId: this._nextChunkId(),
+            ...parentFields(),
+            type,
+            name,
+            signature,
+          });
+        }
+        continue;
+      }
+
+      // Node is oversized even alone — recurse into its children.
+      // A Python decorated_definition is named after the definition it wraps
+      // (its decorators then open that definition's header chunk).
+      const decorated = node.type === 'decorated_definition'
+        ? node.childForFieldName?.('definition') : null;
+      const resolved = decorated
+        ? { type: NODE_TYPE_MAP[decorated.type] || 'code', nameNode: decorated }
+        : this._resolveBoundary(node);
+      const name = this._extractNodeName(resolved.nameNode);
+      const type = resolved.type;
+
+      // Header chunk for oversized BOUNDARY nodes (large classes,
+      // structs, traits, functions, etc.): emit a "header" chunk before
+      // recursing into the body. Without this, queries that match
+      // the boundary's name itself (rather than any inner member)
+      // have NO chunk anchored on the boundary — only sub-chunks
+      // with parent_symbol context. Empirically (kotlin JobSupport,
+      // 1582-line `open class JobSupport`), this left class-targeted
+      // queries to lose to inner method chunks.
+      //
+      // The header holds the leading doc comment, the whole declaration
+      // up to the body (signature, decorators, template header), and the
+      // first body children that fit in HEADER_MAX_CHARS. The body
+      // recursion starts at the first child the header did not take, so
+      // no line is indexed twice and no one-token-per-line signature
+      // chunk (`func\nToExportKvList\n(pk …)`) is emitted.
+      //
+      // Gating: only when the node is a BOUNDARY_TYPES AND has a name.
+      // Top-level Ruby method nodes are excluded because those
+      // unscoped `def` snippets are normalized to anonymous code chunks
+      // by ASTChunker. Parent-scoped Ruby methods still get header
+      // chunks when oversized.
+      const isRubyMethodHeader = parentInfo == null
+        && (node.type === 'method' || node.type === 'singleton_method');
+      const isBoundary = isBoundaryNode(node);
+      const isNamedBoundary = isBoundary && !!name;
+      // A declaration recurses into [signature tokens, body children,
+      // closing tokens], so the signature joins the first body chunk.
+      const decl = isBoundary ? this._flattenDeclaration(node) : null;
+      let rest = decl ? decl.nodes : this._getChildren(node);
+      let headerEmitted = false;
+      // The doc comment directly above the node, plus any tiny buffer of
+      // opening tokens before it (`class Big {`), go with the node.
+      const docComment = this._takeLeadingComments(buffer, node, content, { isDeclaration: isBoundaryNode });
+      if (docComment.length > 0) buffer = buffer.slice(0, buffer.length - docComment.length);
+      const carryTail = [...takeCarry(), ...docComment];
+      flushBuffer();
+      const carry = [...takePending(), ...carryTail];
+      let headerNames = [];
+      const signatureOfNode = isNamedBoundary ? this._extractSignature(node, content, boundaryTypes) : null;
+      if (isNamedBoundary && !isRubyMethodHeader) {
+        const leading = carry;
+        const startNode = leading[0] || node;
+        const HEADER_MAX_CHARS = Math.min(600, maxSize);
+        let take = decl.prefixCount;
+        let endNode = take > 0 ? decl.nodes[take - 1] : null;
+        if (endNode && endNode.endIndex - startNode.startIndex > maxSize) {
+          take = 0;
+          endNode = null;
+        } else {
+          while (take < decl.nodes.length
+            && decl.nodes[take].endIndex - startNode.startIndex <= HEADER_MAX_CHARS) {
+            endNode = decl.nodes[take];
+            take++;
+          }
+          // Tokens on the header's last line (the body's `{` after a long
+          // signature) end the header, so no line is split between chunks.
+          // Whitespace tokens (tree-sitter-go's newline statement
+          // terminator ends on the next row) neither end nor extend a line.
+          const isBlankToken = n => !n.isNamed && content.substring(n.startIndex, n.endIndex).trim() === '';
+          const lastRealRow = () => {
+            for (let k = take - 1; k >= 0; k--) {
+              if (!isBlankToken(decl.nodes[k])) return decl.nodes[k].endPosition.row;
+            }
+            return endNode.endPosition.row;
+          };
+          while (endNode && take < decl.nodes.length) {
+            let next = take;
+            while (next < decl.nodes.length && isBlankToken(decl.nodes[next])) next++;
+            if (next >= decl.nodes.length
+              || decl.nodes[next].startPosition.row !== lastRealRow()
+              || decl.nodes[next].endIndex - startNode.startIndex > maxSize) break;
+            endNode = decl.nodes[next];
+            take = next + 1;
+          }
+          // A doc comment at the end of the header belongs to the member
+          // after it (the first one the header did not take).
+          if (take > decl.prefixCount && take < decl.nodes.length) {
+            const tail = this._takeLeadingComments(
+              decl.nodes.slice(decl.prefixCount, take), decl.nodes[take], content, { sameLine: false });
+            if (tail.length > 0) {
+              take -= tail.length;
+              endNode = take > 0 ? decl.nodes[take - 1] : null;
+            }
           }
         }
+        // A header of 30 chars or fewer (`class A:`) takes the next
+        // members too, up to the chunk cap, so the class still gets a
+        // class-typed chunk of its own.
+        while (endNode && take < decl.nodes.length
+          && spanOf(startNode, endNode).text.length <= 30
+          && !/comment$/.test(decl.nodes[take].type)
+          && decl.nodes[take].endIndex - startNode.startIndex <= maxSize) {
+          endNode = decl.nodes[take];
+          take++;
+        }
+        const headerSpan = endNode ? spanOf(startNode, endNode) : null;
+        if (headerSpan && headerSpan.text.length > 30) {
+          // Members the header holds whole stay findable by name.
+          headerNames = declNames(decl.nodes.slice(decl.prefixCount, take)).filter(n => n !== name);
+          this._pushChunk(chunks, headerSpan, {
+            chunkId: this._nextChunkId(),
+            ...parentFields(),
+            type,
+            name,
+            signature: signatureOfNode,
+            additionalSymbols: headerNames.length > 0 ? [...new Set(headerNames)] : null,
+          });
+          headerEmitted = true;
+          rest = decl.nodes.slice(take);
+        } else {
+          // No header: the doc comment and the declaration flow into the
+          // body chunks instead.
+          rest = [...leading, ...decl.nodes];
+        }
+      } else {
+        rest = [...carry, ...rest];
       }
+
+      // Transparent nodes (no name resolved) pass through the caller's
+      // parent context instead of creating an anonymous "unknown" level.
+      // Covers two cases:
+      //   1. Non-boundary containers (statement_block, body_statement,
+      //      block) — pre-existing behaviour.
+      //   2. Ruby `class << self` (singleton_class with value=self,
+      //      which has no extractable name). Without this carve-out
+      //      the chunk's sub-chunks get `parentSymbol='unknown'`,
+      //      losing the enclosing class context (e.g. Sinatra::Base);
+      //      with it they inherit `parentSymbol='Base'`. Narrowed to
+      //      singleton_class so other languages' nameless boundaries
+      //      (JS arrow_function, anonymous classes) keep their
+      //      pre-existing 'unknown' attribution unchanged.
+      let subParent;
+      const isNamelessRubySingleton = node.type === 'singleton_class';
+      if (!name && (!isBoundary || isNamelessRubySingleton) && parentInfo) {
+        subParent = parentInfo;
+      } else {
+        const parentId = this._nextChunkId();
+        subParent = { chunkId: parentId, name: name || 'unknown', type, path: childPath(type, name || 'unknown') };
+      }
+
+      // A body chunk with no declaration of its own carries the enclosing
+      // declaration's name: `ToExportKvList (part 2)` (the header is part 1).
+      // A top-level Ruby method stays anonymous, as for its header above.
+      const subPartOf = isNamedBoundary && !isRubyMethodHeader
+        ? { name, type, signature: signatureOfNode, next: headerEmitted ? 2 : 1 }
+        : partOf;
+
+      const subChunks = this.recursiveChunk(
+        rest,
+        content,
+        maxSize,
+        subParent,
+        boundaryTypes,
+        { ...ctx, partOf: subPartOf }
+      );
+      // No header of its own (the opening line was too small and the first
+      // member too large): the chunk that starts with the declaration's
+      // opening line names it too.
+      if (isNamedBoundary && !headerEmitted && subChunks.length > 0) addNames(subChunks[0], [name]);
+      chunks.push(...subChunks);
+      absorbLeftover(subChunks);
     }
 
     flushBuffer();
+    if (pending.length > 0 && !mergeIntoPrev(pending)) chunks.leftover = takePending();
     return chunks;
+  }
+
+  /**
+   * Trimmed source slice [startIndex, endIndex) with its own line numbers:
+   * startLine is the row of the first non-blank character, endLine the row
+   * of the last one, so `endLine - startLine + 1` equals the text's line
+   * count.
+   */
+  _sourceSpan(content, startIndex, endIndex, startRow) {
+    const raw = content.substring(startIndex, endIndex);
+    const text = raw.trim();
+    const lead = text ? raw.length - raw.trimStart().length : 0;
+    const startLine = startRow + countNewlines(raw, 0, lead);
+    return {
+      text,
+      startLine,
+      endLine: startLine + countNewlines(text),
+      startIndex: startIndex + lead,
+      endIndex: startIndex + lead + text.length,
+    };
+  }
+
+  /**
+   * The children of a JS/TS `export_statement` that holds a declaration of a
+   * boundary type, or null (no export, a namespace, `export const`,
+   * `export { a }`).
+   */
+  _exportedDeclarationParts(node, languageId, boundaryTypes) {
+    if (node.type !== 'export_statement') return null;
+    const decl = node.childForFieldName?.('declaration');
+    if (!decl || !boundaryTypes.has(decl.type)) return null;
+    if (this._namespaceBody(node, languageId)) return null;
+    return this._getChildren(node);
+  }
+
+  /** Name of a declaration node; template / decorator wrappers resolved. */
+  _declarationName(node) {
+    const inner = node.type === 'decorated_definition' ? node.childForFieldName?.('definition') : null;
+    return this._extractNodeName(inner || this._resolveBoundary(node).nameNode) || null;
+  }
+
+  /** True when only whitespace lies between `node`'s children (and its edges). */
+  _childrenCoverText(node, content) {
+    let pos = node.startIndex;
+    for (let i = 0; i <= node.childCount; i++) {
+      const next = i < node.childCount ? node.child(i).startIndex : node.endIndex;
+      if (next > pos && content.substring(pos, next).trim() !== '') return false;
+      if (i < node.childCount) pos = Math.max(pos, node.child(i).endIndex);
+    }
+    return true;
+  }
+
+  /** Push a chunk built from a source span; remember the span. */
+  _pushChunk(chunks, span, fields) {
+    const chunk = { ...fields, text: span.text, startLine: span.startLine, endLine: span.endLine };
+    CHUNK_SPANS.set(chunk, span);
+    chunks.push(chunk);
+    return chunk;
+  }
+
+  /**
+   * The tail of the sibling buffer that belongs to `node`: the tokens before
+   * it on its own first line (`export const x =`, modifiers), unless
+   * `sameLine` is false or the token is a declaration, then the doc comment
+   * directly above it — comment nodes (and whitespace tokens) with no blank
+   * line between them and the node. A trailing comment on a code line is
+   * not taken. Returns the tail of `buffer` to move with the node.
+   */
+  _takeLeadingComments(buffer, node, content, { sameLine = true, isDeclaration = () => false } = {}) {
+    let nextRow = node.startPosition.row;
+    let first = -1;
+    let i = buffer.length - 1;
+    if (sameLine) {
+      while (i >= 0 && buffer[i].startPosition.row === node.startPosition.row && !isDeclaration(buffer[i])) {
+        first = i;
+        i--;
+      }
+    }
+    for (; i >= 0; i--) {
+      const n = buffer[i];
+      if (!n.isNamed && content.substring(n.startIndex, n.endIndex).trim() === '') continue;
+      if (!/comment$/.test(n.type)) break;
+      const endRow = n.endPosition.column === 0 && n.endPosition.row > n.startPosition.row
+        ? n.endPosition.row - 1
+        : n.endPosition.row;
+      if (nextRow - endRow > 1) break;
+      const before = buffer[i - 1];
+      if (before && before.endPosition.row === n.startPosition.row
+        && content.substring(before.startIndex, before.endIndex).trim() !== '') break;
+      first = i;
+      nextRow = n.startPosition.row;
+    }
+    return first >= 0 ? buffer.slice(first) : [];
+  }
+
+  /**
+   * Children of an oversized declaration as one flat sequence: the tokens
+   * before the body (signature, decorators, template header), the body's
+   * children, then the closing tokens. `prefixCount` is the number of
+   * tokens before the body. Wrappers (Python decorated_definition, C++
+   * template_declaration, Go type_spec → struct_type) are walked through
+   * via the child that holds most of the node.
+   */
+  _flattenDeclaration(node) {
+    const before = [];
+    const after = [];
+    const size = n => n.endIndex - n.startIndex;
+    const same = (a, b) => a && b && a.startIndex === b.startIndex
+      && a.endIndex === b.endIndex && a.type === b.type;
+    let cur = node;
+    for (let depth = 0; depth < 6; depth++) {
+      const kids = this._getChildren(cur);
+      const bodyField = cur.childForFieldName?.('body');
+      let bi = bodyField && bodyField.childCount > 0 ? kids.findIndex(k => same(k, bodyField)) : -1;
+      if (bi < 0) bi = kids.findIndex(k => DECLARATION_BODY_TYPES.has(k.type) && k.childCount > 0);
+      const isBody = bi >= 0;
+      if (!isBody) {
+        let largest = -1;
+        for (let i = 0; i < kids.length; i++) {
+          if (largest < 0 || size(kids[i]) > size(kids[largest])) largest = i;
+        }
+        if (largest >= 0 && kids[largest].childCount > 0 && size(kids[largest]) * 2 > size(cur)) {
+          bi = largest;
+        }
+      }
+      if (bi < 0) break;
+      before.push(...kids.slice(0, bi));
+      after.unshift(...kids.slice(bi + 1));
+      cur = kids[bi];
+      if (isBody) {
+        const inner = [];
+        for (const k of this._getChildren(cur)) {
+          if (BODY_FLATTEN_CONTAINERS.has(k.type) && k.childCount > 0) inner.push(...this._getChildren(k));
+          else inner.push(k);
+        }
+        return { nodes: [...before, ...inner, ...after], prefixCount: before.length };
+      }
+    }
+    if (cur === node) return { nodes: this._getChildren(node), prefixCount: 0 };
+    return { nodes: [...before, ...this._getChildren(cur), ...after], prefixCount: before.length };
+  }
+
+  /**
+   * If `node` is a namespace / module wrapper for this language (see
+   * NAMESPACE_WRAPPER_TYPES), return its name, chunk type and the flat
+   * sequence [opening tokens, body children, closing tokens]; else null.
+   */
+  _namespaceBody(node, languageId) {
+    const types = NAMESPACE_WRAPPER_TYPES[languageId];
+    if (!types) return null;
+    const before = [];
+    const after = [];
+    let ns = node;
+    if (!types.has(node.type)) {
+      if (!NAMESPACE_STATEMENT_WRAPPERS.has(node.type)) return null;
+      const kids = this._getChildren(node);
+      const i = kids.findIndex(k => types.has(k.type));
+      if (i < 0) return null;
+      before.push(...kids.slice(0, i));
+      after.push(...kids.slice(i + 1));
+      ns = kids[i];
+    }
+    const kids = this._getChildren(ns);
+    const bi = kids.findIndex(k => NAMESPACE_BODY_TYPES.has(k.type));
+    let inner;
+    if (bi >= 0) {
+      before.push(...kids.slice(0, bi));
+      inner = this._getChildren(kids[bi]);
+      after.unshift(...kids.slice(bi + 1));
+    } else if (ns.type === 'file_scoped_namespace_declaration' || (ns.type === 'module' && languageId === 'ruby')) {
+      // C# `namespace App;` holds the declarations directly; an empty Ruby
+      // module has no body_statement.
+      inner = kids;
+    } else {
+      return null;
+    }
+    let name = ns.childForFieldName?.('name')?.text || null;
+    if (!name) name = this._extractNodeName(ns) || null;
+    if (name) name = name.replace(/^['"`]|['"`]$/g, '');
+    return {
+      name,
+      type: NODE_TYPE_MAP[ns.type] || 'namespace',
+      nodes: [...before, ...inner, ...after],
+    };
   }
 
   /**
@@ -1669,15 +2219,15 @@ export class TreeSitterProvider {
    * declarator chain: pointer/reference/parenthesized wrappers →
    * function_declarator → identifier / field_identifier / destructor_name /
    * operator_name / qualified_identifier (drilled to its leaf, so
-   * `ns::Class::method` yields `method`). Used ONLY by extractSymbols (graph
-   * entities) — chunker naming goes through _extractNodeName and is
-   * deliberately untouched so NL retrieval inputs stay byte-identical.
+   * `ns::Class::method` yields `method`). Used by extractSymbols (graph
+   * entities) and by _extractNodeName (chunk names), so both agree.
    */
   _cFunctionDefinitionName(node) {
     if (!node || node.type !== 'function_definition') return null;
     let d = node.childForFieldName?.('declarator');
     for (let hops = 0; d && hops < 6; hops++) {
       if (d.type === 'function_declarator') { d = d.childForFieldName?.('declarator'); break; }
+      if (d.type === 'operator_cast' || d.type === 'qualified_identifier') break;
       const inner = d.childForFieldName?.('declarator')
         || d.namedChildren?.find?.(c => /declarator/.test(c.type));
       if (!inner) break;
@@ -1691,6 +2241,13 @@ export class TreeSitterProvider {
       if (/^(identifier|field_identifier|destructor_name|operator_name)$/.test(d.type)) {
         return d.text || null;
       }
+      // `fromString<std::string>(...)` (explicit specialization): the template name.
+      if (d.type === 'template_function') { d = d.childForFieldName?.('name'); continue; }
+      // Conversion operator `operator bool() const`: `operator bool`.
+      if (d.type === 'operator_cast') {
+        const type = d.childForFieldName?.('type');
+        return type ? `operator ${type.text}` : null;
+      }
       break;
     }
     return null;
@@ -1701,6 +2258,14 @@ export class TreeSitterProvider {
     // Try field name first (most reliable)
     const nameNode = node.childForFieldName('name');
     if (nameNode) return nameNode.text;
+
+    // C/C++ function definition: the name is inside the declarator chain. The
+    // fallback below would take the first type_identifier child, the return
+    // type (`template <typename T> T get()` was named `T`), or find nothing
+    // (`void f()`). Null when the chain has no name, never the return type.
+    if (node.type === 'function_definition' && node.childForFieldName('declarator')) {
+      return this._cFunctionDefinitionName(node);
+    }
 
     // Rust `impl<'a> Type<'a> { ... }` — the type field is a
     // `generic_type` wrapper, not a leaf `type_identifier`, so the
