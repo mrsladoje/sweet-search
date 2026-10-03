@@ -168,7 +168,12 @@ async function collectRegexMatches(searcher, regex, searchDir, options = {}) {
   // Rust: gram narrowing → greps candidates if eligible, else all files. One NAPI crossing.
   const useGramIndex = options.useGramIndex ?? options.gramIndex ?? true;
   const hasSparseDeltaOverlay = sparseDeltaOverlayHasChanges(searcher, options);
-  const canUseUnifiedSearch = !fixedString && globs.length === 0 && !hasSparseDeltaOverlay;
+  // bareGrep's --in scope (`_grepScope`, the predicate it filters matches with afterwards). The
+  // unified search cannot take it, so a scoped search reads only in-scope candidates below.
+  const scopeIndex = typeof options._grepScope === 'function' ? ensureSparseGramIndex(searcher, options) : null;
+  const inScope = typeof scopeIndex?.queryLiterals === 'function' && typeof scopeIndex?.getAllFiles === 'function'
+    ? options._grepScope : null;
+  const canUseUnifiedSearch = !fixedString && globs.length === 0 && !hasSparseDeltaOverlay && !inScope;
   if (canUseUnifiedSearch) {
     const sparseGramIndex = ensureSparseGramIndex(searcher, options);
     const symbolMask = resolveSparseSymbolMask(symbolTypeFilter);
@@ -282,7 +287,7 @@ async function collectRegexMatches(searcher, regex, searchDir, options = {}) {
     gramLookupResult = querySparseGramCandidates(searcher, prefilterClauses.gram, options);
     gramLookupTime = performance.now() - gramStart;
     if (Array.isArray(gramLookupResult?.files)) {
-      searchFiles = gramLookupResult.files;
+      searchFiles = inScope ? gramLookupResult.files.filter(inScope) : gramLookupResult.files;
     }
   }
 
@@ -293,7 +298,8 @@ async function collectRegexMatches(searcher, regex, searchDir, options = {}) {
   const narrowedThreshold = options.narrowedJsonThreshold ?? 300;
   const directJsonThreshold = options.directJsonFileThreshold ?? 4096;
 
-  if (gramLookupResult?.eligible === true && Array.isArray(gramLookupResult.files) && gramLookupResult.files.length === 0) {
+  // No candidate (in scope): no file can match.
+  if (gramLookupResult?.eligible === true && Array.isArray(searchFiles) && searchFiles.length === 0) {
     return {
       indexedMatches: [],
       overlayMatches: [],
@@ -363,9 +369,28 @@ async function collectRegexMatches(searcher, regex, searchDir, options = {}) {
   const sparseForAllFiles = (!fixedString && globs.length === 0)
     ? ensureSparseGramIndex(searcher, options)
     : null;
-  const allIndexedFiles = sparseForAllFiles
+  // Only a search with no gram candidate reads every indexed file; with candidates the list is
+  // never used, and building it (and testing a --in scope on each path) cost ~30 ms on 30k files.
+  const haveCandidates = Array.isArray(searchFiles) && searchFiles.length > 0;
+  let allIndexedFiles = sparseForAllFiles && !haveCandidates
     ? getSparseGramAllFilesWithOverlay(searcher, sparseForAllFiles, options)
     : null;
+  if (inScope && Array.isArray(allIndexedFiles) && allIndexedFiles.length > 0) {
+    allIndexedFiles = allIndexedFiles.filter(inScope);
+    // The scope holds no indexed file: the full native grep would have found nothing in it.
+    if (allIndexedFiles.length === 0) {
+      return { indexedMatches: [], overlayMatches: [], matchingFiles: [], stats: {
+        nativeGrepUsed: true, candidateGenTime_ms: Math.round(performance.now() - start), grepTime_ms: 0,
+        literalFilterTime_ms: 0, gramLookupTime_ms: Math.round(gramLookupTime), filesConsidered: 0, filesScanned: 0,
+        filesSkipped: 0, dirtyOverlayFiles: 0, candidateFilesBeforeFilter: 0, candidateFilesAfterFilter: 0,
+        candidateReductionRatio: 0, literalExtractionHit: literalPlan.clauses.length > 0,
+        literalExtractionSource: literalPlan.source, gramLookupReason: 'scope_not_indexed', prefilterDiscarded: false,
+        prefilterDiscardedCount: 0, denseGramsTouched: 0, sparseGramsTouched: 0, gramFalsePositiveRatio: 0,
+        grepStrategy: 'none', plannerRoute: 'empty_scope', gramSelectivity, symbolTypeFilter, trackerLastIndex: null,
+        grepMatches: 0, stageTiming: null,
+      } };
+    }
+  }
   const canNativeGrepAll = Array.isArray(allIndexedFiles) && allIndexedFiles.length > 0;
 
   const skipLiteralPrefilter = gramTooBroad || gramSaysBroad || canNativeGrepAll;
@@ -448,6 +473,11 @@ async function collectRegexMatches(searcher, regex, searchDir, options = {}) {
     }
     grepStrategy = 'narrowed_json';
   } else if (filteredFiles.length <= directJsonThreshold) {
+    plannerRoute = `two_pass:${filteredFiles.length}_files`;
+    grepStrategy = 'two_pass';
+  } else if (!fixedString && globs.length === 0) {
+    // The threshold bounds a ripgrep file list; native grep reads only the candidates, however
+    // many (they hold every file that can match), not every indexed file.
     plannerRoute = `two_pass:${filteredFiles.length}_files`;
     grepStrategy = 'two_pass';
   } else {
