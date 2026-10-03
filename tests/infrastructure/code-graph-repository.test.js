@@ -438,3 +438,45 @@ describe('findFamilyCandidates (indexed symbol family)', () => {
     })).toEqual([]);
   });
 });
+
+describe('findEntitiesAtLines (one scan per file)', () => {
+  function createTieDb() {
+    const tmpDir = mkdtempSync(join(tmpdir(), 'code-graph-lines-'));
+    tmpDirs.push(tmpDir);
+    const dbPath = join(tmpDir, 'code-graph.db');
+    const db = new Database(dbPath);
+    db.exec(`
+      CREATE TABLE entities (
+        id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL,
+        file_path TEXT NOT NULL, start_line INTEGER, end_line INTEGER,
+        parent_class TEXT, stale_since INTEGER,
+        epoch_written INTEGER, epoch_retired INTEGER
+      );
+      CREATE INDEX idx_entities_file ON entities(file_path);
+    `);
+    const insert = db.prepare(`
+      INSERT INTO entities (id, name, type, file_path, start_line, end_line,
+        parent_class, stale_since, epoch_written, epoch_retired)
+      VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 1, NULL)
+    `);
+    // Ties on purpose: two entities start on line 10, two span 20-30 with the same size.
+    insert.run('m1', 'Outer2', 'class', 'src/a.ts', 1, 100, null);
+    insert.run('m2', 'alpha1', 'method', 'src/a.ts', 10, 15, 'Outer2');
+    insert.run('m3', 'alpha2', 'field', 'src/a.ts', 10, 10, 'Outer2');
+    insert.run('m4', 'beta', 'function', 'src/a.ts', 20, 30, null);
+    insert.run('m5', 'gamma', 'function', 'src/a.ts', 20, 30, null);
+    insert.run('m6', 'nolines', 'function', 'src/a.ts', null, null, null);
+    insert.run('o1', 'elsewhere', 'function', 'src/b.ts', 1, 100, null);
+    db.close();
+    return dbPath;
+  }
+
+  it('answers each line as findEntitiesForRanges does, ties included', () => {
+    const repo = openRepo(createTieDb());
+    const lines = [1, 5, 10, 12, 20, 25, 30, 31, 100, 101];
+    const ranges = lines.map((line) => ({ startLine: line, endLine: line, includeInside: true }));
+    expect(repo.findEntitiesAtLines('src/a.ts', lines)).toEqual(repo.findEntitiesForRanges('src/a.ts', ranges));
+    expect(repo.findEntitiesAtLines('src/a.ts', [10])[0].inRange.map((e) => e.name)).toEqual(['alpha1', 'alpha2']);
+    expect(repo.findEntitiesAtLines('src/a.ts', [25])[0].enclosing.name).toBe('beta');
+  });
+});
