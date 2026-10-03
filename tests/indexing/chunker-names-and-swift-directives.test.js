@@ -95,3 +95,56 @@ describe('a. C/C++ function chunk names', () => {
     expect(chunks.filter(c => c.type === 'function' && !c.name)).toEqual([]);
   });
 });
+
+describe('b. JS/TS exported classes', () => {
+  const pad = (n) => Array.from({ length: n }, (_, i) => `  field${i}: string = "padding text";`).join('\n');
+  const TS = [
+    `export class Foo {\n${pad(40)}\n  m() { return 1; }\n}`,
+    `export default class Bar {\n${pad(40)}\n  x() {}\n}`,
+    `export abstract class Baz {\n${pad(40)}\n  abstract y(): void;\n}`,
+    `abstract class Plain {\n${pad(40)}\n}`,
+  ].join('\n\n');
+
+  it('export class / export default class / export abstract class are class chunks', async () => {
+    const chunks = await chunk(TS, 'typescript');
+    const classes = chunks.filter(c => c.type === 'class').map(c => c.name);
+    expect(classes).toEqual(['Foo', 'Bar', 'Baz', 'Plain']);
+    expect(chunks.filter(c => c.type === 'code')).toEqual([]);
+    // The `export` keyword starts the class chunk.
+    expect(chunks.find(c => c.name === 'Foo').text.startsWith('export class Foo {')).toBe(true);
+    expect(chunks.find(c => c.name === 'Baz').text.startsWith('export abstract class Baz {')).toBe(true);
+    expectAllTextKept(TS, chunks);
+  });
+
+  it('small exported declarations merged into one chunk are all named', async () => {
+    const src = 'export class Foo {\n  a = 1;\n}\n\nexport default class Bar {\n  x() {}\n}\nexport abstract class Baz { y(): void {} }\nexport function f() {}\nexport interface I { a: number }\n';
+    const chunks = await chunk(src, 'typescript');
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]).toMatchObject({ type: 'class', name: 'Foo' });
+    expect(chunks[0].additionalSymbols).toEqual(['Bar', 'Baz', 'f', 'I']);
+  });
+
+  it('an oversized exported class: header named after the class, members under it (no `unknown` parent)', async () => {
+    const methods = Array.from({ length: 30 }, (_, i) => `  method${i}(a: number): number {\n    return a + ${i}; // padding padding padding\n  }`).join('\n\n');
+    const src = `/**\n * Doc.\n */\nexport class Big {\n${methods}\n}\n`;
+    const chunks = await chunk(src, 'typescript');
+    expect(chunks[0]).toMatchObject({ type: 'class', name: 'Big' });
+    expect(chunks[0].parentSymbol).toBeNull();
+    expect(chunks[0].text.startsWith('/**\n * Doc.\n */\nexport class Big {')).toBe(true);
+    for (const c of chunks.slice(1)) expect(c.parentSymbol).toBe('Big');
+    expectAllTextKept(src, chunks);
+  });
+
+  it('javascript: export class is a class chunk', async () => {
+    const src = 'export class Foo {\n  constructor() { this.a = 1; }\n}\n';
+    const chunks = await chunk(src, 'javascript');
+    expect(chunks[0]).toMatchObject({ type: 'class', name: 'Foo' });
+  });
+
+  it('export namespace and export const keep their behaviour', async () => {
+    const src = 'export namespace NS {\n  export class Inner { a = 1; }\n}\nexport const x = 1;\n';
+    const chunks = await chunk(src, 'typescript');
+    expect(chunks.find(c => c.name === 'Inner')).toMatchObject({ type: 'class', parentSymbol: 'NS' });
+    expectAllTextKept(src, chunks);
+  });
+});

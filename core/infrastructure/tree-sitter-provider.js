@@ -80,6 +80,8 @@ const BOUNDARY_TYPES = new Set([
   'function_item',
   // Classes
   'class_declaration', 'class_definition',
+  // TypeScript `abstract class Foo {}`
+  'abstract_class_declaration',
   // Interfaces/Types (TypeScript)
   'interface_declaration', 'type_alias_declaration', 'enum_declaration',
   // Structs/Traits (Rust/Go)
@@ -255,6 +257,7 @@ const NODE_TYPE_MAP = {
   'function_expression': 'function',
   'class_declaration': 'class',
   'class_definition': 'class',
+  'abstract_class_declaration': 'class',
   'interface_declaration': 'interface',
   'type_alias_declaration': 'typeAlias',
   'enum_declaration': 'enum',
@@ -1338,6 +1341,15 @@ export class TreeSitterProvider {
     let buffer = [];
     const languageId = ctx.languageId || null;
     const partOf = ctx.partOf || null;
+    // JS/TS `export [default] class Foo {}` (also function, interface, enum,
+    // type alias): the export_statement is replaced by its parts, so the
+    // declaration is the boundary and names the chunk. The `export` keyword
+    // is an opening token that starts the declaration's chunk. Before, an
+    // exported class was a `code` chunk with no name, and an oversized one
+    // put its members under a parent named `unknown`.
+    if (JS_FAMILY_LANGUAGES.has(languageId)) {
+      nodes = nodes.flatMap(n => this._exportedDeclarationParts(n, languageId, boundaryTypes) || [n]);
+    }
     // Every chunk's text is ONE source slice (first node start to last node
     // end), trimmed; its lines are counted from that slice.
     const spanOf = (first, last) => this._sourceSpan(
@@ -1936,6 +1948,19 @@ export class TreeSitterProvider {
       startIndex: startIndex + lead,
       endIndex: startIndex + lead + text.length,
     };
+  }
+
+  /**
+   * The children of a JS/TS `export_statement` that holds a declaration of a
+   * boundary type, or null (no export, a namespace, `export const`,
+   * `export { a }`).
+   */
+  _exportedDeclarationParts(node, languageId, boundaryTypes) {
+    if (node.type !== 'export_statement') return null;
+    const decl = node.childForFieldName?.('declaration');
+    if (!decl || !boundaryTypes.has(decl.type)) return null;
+    if (this._namespaceBody(node, languageId)) return null;
+    return this._getChildren(node);
   }
 
   /** Name of a declaration node; template / decorator wrappers resolved. */
