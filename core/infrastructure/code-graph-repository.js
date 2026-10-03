@@ -485,6 +485,40 @@ export class CodeGraphRepository {
     });
   }
 
+  /**
+   * basename → every visible file path with an entity that has that basename. Built once per
+   * database state (one scan of the file_path index), so a lookup is a Map get. Powers the
+   * shortest unique path of the agent's related rows (context-expander.js shortestUniquePath).
+   *
+   * @returns {Map<string, string[]>}
+   */
+  fileBasenameIndex() {
+    const db = this._open();
+    if (!db) return new Map();
+    const cache = this._fileEntitiesCache(db);
+    const hit = cache?.get('basenames\0');
+    if (hit) return hit;
+    const index = new Map();
+    try {
+      const rows = prepareCached(db, `
+        SELECT DISTINCT file_path FROM entities WHERE ${this._entityVisibilitySql(db)}
+      `).all(...this._entityVisibilityParams(db));
+      for (const { file_path: file } of rows) {
+        if (typeof file !== 'string' || !file) continue;
+        const base = file.slice(file.lastIndexOf('/') + 1);
+        const list = index.get(base);
+        if (list) list.push(file); else index.set(base, [file]);
+      }
+    } catch {
+      return new Map();
+    }
+    if (cache) {
+      if (cache.size >= 1024) cache.clear();
+      cache.set('basenames\0', index);
+    }
+    return index;
+  }
+
   /** findEntitiesInFile's answers for this connection, epoch and database state (or null). */
   _fileEntitiesCache(db) {
     let dataVersion;
@@ -735,6 +769,8 @@ export class CodeGraphRepository {
    * @param {number} [opts.limit=8] - cap total returned entities
    * @param {string} [opts.excludeFile] - skip entities defined in this file
    *   (caller's own file, since same-file ranks already cover that)
+   * @param {boolean} [opts.distinct=true] - one row per (name, type), the smallest body; false
+   *   returns every definition (smallest first) so the caller can choose among them
    * @returns {Array<{ id, name, type, filePath, startLine, endLine }>}
    */
   findEntitiesByNames(names, opts = {}) {
@@ -770,7 +806,7 @@ export class CodeGraphRepository {
       const out = [];
       for (const r of rows) {
         const k = `${r.name}|${r.type}`;
-        if (seen.has(k)) continue;
+        if (opts.distinct !== false && seen.has(k)) continue;
         seen.add(k);
         out.push({
           id: r.id, name: r.name, type: r.type,
