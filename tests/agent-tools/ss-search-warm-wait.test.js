@@ -16,7 +16,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 const spawned = vi.hoisted(() => ({ count: 0 }));
 vi.mock('../../core/search/search-server.js', async (importOriginal) => ({
   ...(await importOriginal()),
-  autoSpawnServer: async () => { spawned.count++; return false; },
+  autoSpawnServer: async (opts) => { spawned.count++; spawned.quiet = opts?.quiet; return false; },
 }));
 
 const { runInVirtualProcess } = await import('../../core/agent-tools/virtual-process.js');
@@ -85,6 +85,7 @@ describe('ss-search and a daemon that is still loading', () => {
     const socketPath = await fakeDaemon({ loadMs: 0, silentWhileLoading: false, failed: true });
     const result = await ssSearch(socketPath);
     expect(spawned.count).toBe(1);
+    expect(spawned.quiet).toBe(true);
     expect(result.code).toBe(1);
     expect(result.stderr.toString()).toMatch(/^sweet-search: index server failed to start \(\d+s\); retry this command in a minute\n$/);
   }, 20_000);
@@ -103,5 +104,15 @@ describe('ss-search and a daemon that is still loading', () => {
     } finally {
       vi.useRealTimers();
     }
+  }, 20_000);
+
+  it('counts the budget from the start of the agent command', async () => {
+    const socketPath = await fakeDaemon({ loadMs: 10 ** 9, silentWhileLoading: false });
+    const env = { ...process.env, SWEET_SEARCH_SOCKET_PATH: socketPath, SWEET_SEARCH_PROJECT_ROOT: root,
+      SWEET_SEARCH_CALL_STARTED_MS: String(Date.now() - 89_000) };
+    const result = await runInVirtualProcess({ env, cwd: root, pid: process.pid },
+      () => runAgentTool('agent-search', ['settings panel']));
+    expect(result.code).toBe(1);
+    expect(result.stderr.toString()).toMatch(/^sweet-search: index server still loading \(9\ds\); retry this command in a minute\n$/);
   }, 20_000);
 });

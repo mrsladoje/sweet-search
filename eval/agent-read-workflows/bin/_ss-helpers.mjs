@@ -32,7 +32,7 @@ import {
   renderGrepContext,
 } from '../../../core/search/grep-output-shaping.js';
 import { cwdGrepScope, resolveCwdGlob, resolveCwdPath } from '../../../core/search/cwd-paths.js';
-import { SEARCH_LOADING_WAIT_MS, searchNotReadyLine } from '../../../core/agent-tools/tools.js';
+import { SEARCH_LOADING_WAIT_MS, searchNotReadyLine, callStartedMs } from '../../../core/agent-tools/tools.js';
 import { formatRouteMetadata } from '../../../core/search/search-format.js';
 import { createAdmissionPolicy } from '../../../core/indexing/admission-policy.js';
 import { createIndexCoverage, semanticTargetFor } from '../../../core/search/index-coverage.js';
@@ -479,11 +479,11 @@ async function getSweetSearch() {
 const SPAWN_RETRY_MS = 60_000;
 
 /** 'ready', 'loading' (not ready by the deadline) or 'failed' (init failed, even after one replacement). */
-async function ensureWarmServerReady({ timeoutMs = SEARCH_LOADING_WAIT_MS, intervalMs = 500 } = {}) {
+async function ensureWarmServerReady({ timeoutMs = SEARCH_LOADING_WAIT_MS, startedMs = Date.now(), intervalMs = 500 } = {}) {
   // Inside the daemon: it is the warm server, and it only takes a call once ready.
   if (host.getSearcher) return 'ready';
   const { getServerHealth, isServerListening, autoSpawnServer } = await import(path.join(REPO_ROOT, 'core/search/search-server.js'));
-  const deadline = Date.now() + timeoutMs;
+  const deadline = startedMs + timeoutMs;
   let spawns = 0;
   let lastSpawnAt = 0;
   for (;;) {
@@ -495,7 +495,7 @@ async function ensureWarmServerReady({ timeoutMs = SEARCH_LOADING_WAIT_MS, inter
       if (spawns > 0 || Date.now() >= deadline) return 'failed';
       spawns++;
       lastSpawnAt = Date.now();
-      await autoSpawnServer();
+      await autoSpawnServer({ quiet: true });
       continue;
     }
     if (Date.now() >= deadline) return 'loading';
@@ -505,7 +505,7 @@ async function ensureWarmServerReady({ timeoutMs = SEARCH_LOADING_WAIT_MS, inter
     if (!health && spawns < 2 && Date.now() - lastSpawnAt >= SPAWN_RETRY_MS && !await isServerListening()) {
       spawns++;
       lastSpawnAt = Date.now();
-      await autoSpawnServer();
+      await autoSpawnServer({ quiet: true });
       continue;
     }
     await new Promise(resolve => setTimeout(resolve, Math.min(intervalMs, Math.max(0, deadline - Date.now()))));
@@ -1230,8 +1230,10 @@ async function cmdAgentSearch(rawArgs) {
     process.exit(2);
   }
 
-  const waitStart = Date.now();
-  const warm = await ensureWarmServerReady();
+  // The budget counts from the start of the agent's command (the native client may already
+  // have waited for the socket, and the daemon route for the indexes).
+  const waitStart = callStartedMs(process.env);
+  const warm = await ensureWarmServerReady({ startedMs: waitStart });
   if (warm !== 'ready') {
     process.stderr.write(searchNotReadyLine(Math.round((Date.now() - waitStart) / 1000), warm === 'failed'));
     process.exit(1);

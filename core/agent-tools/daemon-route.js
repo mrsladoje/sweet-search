@@ -17,7 +17,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { runInVirtualProcess } from './virtual-process.js';
-import { AGENT_TOOL_SUBCOMMANDS, SEARCHER_SUBCOMMANDS, SEARCH_LOADING_WAIT_MS, searchNotReadyLine } from './tools.js';
+import { AGENT_TOOL_SUBCOMMANDS, SEARCHER_SUBCOMMANDS, SEARCH_LOADING_WAIT_MS, searchNotReadyLine, callStartedMs } from './tools.js';
 
 export const AGENT_TOOL_BODY_MAX_BYTES = 1024 * 1024;
 const MAX_ARGS = 256;
@@ -79,8 +79,9 @@ export async function buildAgentToolDaemonResponse(payload, {
     // ss-search has no cold fallback worth having (the fallback would wait on this same
     // daemon), so it waits the ss-search budget and then answers with the retry line.
     const search = call.tool === 'agent-search';
-    const started = Date.now();
-    if (!isReady()) await waitForServerReady(search ? SEARCH_LOADING_WAIT_MS : READY_WAIT_MS);
+    const started = callStartedMs(call.env);
+    const budget = search ? Math.max(0, SEARCH_LOADING_WAIT_MS - (Date.now() - started)) : READY_WAIT_MS;
+    if (!isReady() && budget > 0) await waitForServerReady(budget);
     if (!isReady()) {
       if (search && !isFailed()) {
         return json(200, { v: 1, code: 1, stdout: '', stderr: searchNotReadyLine(Math.round((Date.now() - started) / 1000)) });

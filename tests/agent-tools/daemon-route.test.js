@@ -62,6 +62,20 @@ describe('/agent-tool', () => {
     expect(body(r).stderr).toMatch(/^sweet-search: index server still loading \(\d+s\); retry this command in a minute\n$/);
   });
 
+  it('counts the ss-search budget from the start of the agent command', async () => {
+    const waits = [];
+    const env = { SWEET_SEARCH_CALL_STARTED_MS: String(Date.now() - 50_000) };
+    const r = await buildAgentToolDaemonResponse(call({ tool: 'agent-search', env }), deps({
+      isReady: () => false,
+      waitForServerReady: async (ms) => { waits.push(ms); },
+      runTool: async () => { throw new Error('must not run'); },
+    }));
+    expect(waits).toHaveLength(1);
+    expect(waits[0]).toBeGreaterThan(38_000);
+    expect(waits[0]).toBeLessThanOrEqual(40_000);
+    expect(body(r).stderr).toMatch(/still loading \(50s\)/);
+  });
+
   it('sends ss-search to the fallback (503) when the index load failed', async () => {
     const r = await buildAgentToolDaemonResponse(call({ tool: 'agent-search' }), deps({
       isReady: () => false,
