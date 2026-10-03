@@ -18,14 +18,24 @@
  *   weight (default): every matching file is a candidate; the engine keeps the
  *     maxFiles files of highest weight = sqrt(hits) x prior (prior 1 source, 0.5
  *     test/spec/fixture, 0.25 generated/vendored/minified) and the k lines are shared
- *     by Sainte-Laguë. Files print in descending weight. Replay of 1,037 recorded dev
- *     grep calls: answer-file recall 71.1% -> 83.0% on the 124 calls with more files
- *     than k; ~100% either way when every file fits.
+ *     by Sainte-Laguë. Files print in descending weight. Replay of 1,036 recorded dev grep
+ *     calls on the engine's own match sets (exploratory; eval/grep-allocation-replay, which
+ *     reproduces the tool's output on 106 of 106 sampled calls): on the 154 calls with more
+ *     files than k, answer-file inclusion is 82.1% legacy vs 81.2% weighted, with more
+ *     answer lines (2.21 vs 1.95). The earlier 71.1% -> 83.0% came from an rg replay that
+ *     also counted documentation files the grep index never returns. 100% either way when
+ *     every file fits.
+ *
+ * Arms (grep-allocation-rules.js, grep-line-classes.js; sat2, guarantee and line classes are
+ * DEFAULT ON in ss-grep since 2026-10-03, the renderer default stays the legacy rule): SS_FIX_GREP_WEIGHT=sat2,
+ * SS_FIX_GREP_ALLOC_RULE=guarantee|hh, SS_FIX_GREP_LINES (which stored matches a file shows).
  */
 
 import { existsSync, realpathSync } from 'node:fs';
 import path from 'node:path';
 import { grepHitText, isTestLikePath } from './agent-output-fixes.js';
+import { allocateGrepLinesWithFirstLine, grepWeightKey } from './grep-allocation-rules.js';
+import { selectGrepLinesByClass } from './grep-line-classes.js';
 
 /** Split a path into whole segments, dropping "" and "." (so "./a//b" → [a,b]). */
 function pathSegments(value) {
@@ -175,7 +185,7 @@ export function grepFileFilterPredicate(filter, projectRoot = null) {
  * maxFiles in path order (see selectGrepFilesByWeight). Absent = the legacy walk below.
  *
  * @param {Array<{file: string}>} matches - sorted by (file, line)
- * @param {{perFileCap: number, maxFiles?: number, hiddenSampleSize?: number, order?: 'weight'}} opts
+ * @param {{perFileCap: number, maxFiles?: number, hiddenSampleSize?: number, order?: 'weight', weight?: 'sat2'}} opts
  * @returns {{kept: Array, fileSummary: {
  *   files: Array<{file: string, total: number, kept: number}>,
  *   hiddenFileCount: number, hiddenMatchCount: number,
@@ -324,11 +334,15 @@ function sampleInsert(s, len, max, key, tot, ord) {
  * Memory: the heap holds at most maxFiles entries and `kept` at most perFileCap x maxFiles
  * matches, as in the legacy walk. Everything else is counted for the hidden-files line.
  *
+ * `weight: 'sat2'` (SS_FIX_GREP_WEIGHT) ranks by hits / (hits + 2) x prior instead;
+ * fileSummary.weight then says so. Absent = sqrt(hits) x prior.
+ *
  * @returns same shape as applyGrepFileDiversity; files in descending weight, each with
  *   its `prior`; kept grouped per file in that order (line order inside a file);
  *   hiddenSample = the highest-weight hidden files; fileSummary.order = 'weight'.
  */
 export function selectGrepFilesByWeight(matches, opts = {}) {
+  const sat = opts.weight === 'sat2';
   const perFileCap = Math.max(1, opts.perFileCap | 0);
   const maxFiles = opts.maxFiles > 0 ? (opts.maxFiles | 0) : Infinity;
   const sampleSize = Math.max(0, opts.hiddenSampleSize ?? 3);
@@ -350,16 +364,18 @@ export function selectGrepFilesByWeight(matches, opts = {}) {
     i++;
     while (i < n && matches[i].file === file) i++;
     const total = i - start;
-    if (size === maxFiles && total * SCALE_SOURCE <= heap[0]) {
+    const bound = sat ? grepWeightKey(total, SCALE_SOURCE, 'sat2') : total * SCALE_SOURCE;
+    if (size === maxFiles && bound <= heap[0]) {
       // Cannot beat the worst kept file (equal bound: fewer-or-equal hits, later path).
       hiddenFileCount++;
       hiddenMatchCount += total;
-      if (sampleLen < sampleSize || total * SCALE_SOURCE > sample[3 * sampleSize - 3]) {
-        sampleLen = sampleInsert(sample, sampleLen, sampleSize, total * priorScale(file), total, start);
+      if (sampleLen < sampleSize || bound > sample[3 * sampleSize - 3]) {
+        const scale = priorScale(file);
+        sampleLen = sampleInsert(sample, sampleLen, sampleSize, sat ? grepWeightKey(total, scale, 'sat2') : total * scale, total, start);
       }
       continue;
     }
-    const key = total * priorScale(file);
+    const key = sat ? grepWeightKey(total, priorScale(file), 'sat2') : total * priorScale(file);
     if (size < maxFiles) {
       if (size === capacity) {
         const grown = new Float64Array(heap.length * 2);
@@ -393,7 +409,8 @@ export function selectGrepFilesByWeight(matches, opts = {}) {
     size = last;
     if (size > 0) fileHeapSiftDown(heap, size, 0);
     ords[last] = ord;
-    files[last] = { file: matches[ord].file, total: tot, kept: Math.min(tot, perFileCap), prior: key === tot * SCALE_SOURCE ? 1 : key === tot * SCALE_TEST ? 0.5 : 0.25 };
+    const scale = sat ? priorScale(matches[ord].file) : key / tot;
+    files[last] = { file: matches[ord].file, total: tot, kept: Math.min(tot, perFileCap), prior: scale === SCALE_SOURCE ? 1 : scale === SCALE_TEST ? 0.5 : 0.25 };
   }
   const kept = [];
   for (let f = 0; f < files.length; f++) {
@@ -405,7 +422,7 @@ export function selectGrepFilesByWeight(matches, opts = {}) {
 
   return {
     kept,
-    fileSummary: { files, hiddenFileCount, hiddenMatchCount, hiddenSample, order: 'weight' },
+    fileSummary: { files, hiddenFileCount, hiddenMatchCount, hiddenSample, order: 'weight', ...(sat ? { weight: 'sat2' } : {}) },
   };
 }
 
@@ -483,10 +500,11 @@ export function allocateGrepLinesSainteLague(keys, totals, caps, budget) {
 /** renderGrepBody under the weighted rule (opts.alloc === 'weight'). */
 function renderGrepBodyWeighted(kept, fileSummary, k, opts) {
   const summaryFiles = fileSummary.files || [];
-  // Fast path: the engine already handed files in weight order, kept contiguous per file.
+  const weight = opts.weight === 'sat2' ? 'sat2' : undefined;
+  // Fast path: the engine already handed files in this weight's order, kept contiguous per file.
   let order = null;
   let groups = null;
-  if (fileSummary.order === 'weight') {
+  if (fileSummary.order === 'weight' && fileSummary.weight === weight) {
     let off = 0;
     let contiguous = true;
     for (const f of summaryFiles) {
@@ -510,7 +528,7 @@ function renderGrepBodyWeighted(kept, fileSummary, k, opts) {
       if (!listed.has(file)) pool.push({ file, total: ms.length, kept: ms.length, idx: pool.length });
     }
     for (const f of pool) f.prior = grepFilePrior(f.file);
-    const keyOf = f => f.total * f.prior * f.prior * SCALE_SOURCE;
+    const keyOf = f => grepWeightKey(f.total, f.prior * f.prior * SCALE_SOURCE, weight);
     pool.sort((a, b) => keyOf(b) - keyOf(a) || b.total - a.total || a.idx - b.idx);
     order = pool;
   }
@@ -522,10 +540,12 @@ function renderGrepBodyWeighted(kept, fileSummary, k, opts) {
   for (let f = 0; f < n; f++) {
     const p = order[f].prior ?? 1;
     totals[f] = order[f].total;
-    keys[f] = order[f].total * p * p * SCALE_SOURCE;
+    keys[f] = grepWeightKey(order[f].total, p * p * SCALE_SOURCE, weight);
     caps[f] = order[f].kept;
   }
-  const alloc = allocateGrepLinesSainteLague(keys, totals, caps, k);
+  const alloc = opts.rule === 'guarantee' || opts.rule === 'hh'
+    ? allocateGrepLinesWithFirstLine(keys, totals, caps, k, opts.rule)
+    : allocateGrepLinesSainteLague(keys, totals, caps, k);
 
   const rows = [];
   let shownMatches = 0;
@@ -539,8 +559,12 @@ function renderGrepBodyWeighted(kept, fileSummary, k, opts) {
     off += caps[f];
     const a = alloc[f];
     if (a === 0) { unallocated.push(order[f]); continue; }
+    const picks = opts.lineClasses === true && a < caps[f]
+      ? selectGrepLinesByClass(ms || kept.slice(base, base + caps[f]), a)
+      : null;
     for (let j = 0; j < a; j++) {
-      const m = ms ? ms[j] : kept[base + j];
+      const at = picks ? picks[j] : j;
+      const m = ms ? ms[at] : kept[base + at];
       const text = grepHitText(m, { fullLine: opts?.fullLine === true });
       let more = 0;
       if (j === a - 1 && total > a) {
@@ -595,12 +619,17 @@ export function allocateGrepBudget(counts, budget) {
  * @param {{files: Array<{file, total, kept}>, hiddenFileCount, hiddenMatchCount,
  *          hiddenSample: Array<{file, total}>}} fileSummary
  * @param {number} k - body line budget
- * @param {{dropRepeatedText?: boolean, alloc?: 'weight', fullLine?: boolean}} [opts] -
- *   SS_FIX_GREP_ORDER: when every shown hit prints the same text (and more than one hit
- *   shows), print `file:line` only. `fullLine` (SS_FIX_GREP_FULLLINE, default ON in ss-grep):
- *   each hit prints its full source line (grepHitText), not the matched substring.
- *   `alloc: 'weight'` (SS_FIX_GREP_ALLOC, default ON in ss-grep): files in descending weight, lines shared by Sainte-Laguë (allocateGrepLinesSainteLague), the
- *   hidden-files examples are the highest-weight hidden files.
+ * @param {{dropRepeatedText?: boolean, alloc?: 'weight', fullLine?: boolean, weight?: 'sat2',
+ *          rule?: 'guarantee'|'hh', lineClasses?: boolean}} [opts] - SS_FIX_GREP_ORDER: when
+ *   every shown hit prints the same text (and more than one hit shows), print `file:line`
+ *   only. `fullLine` (SS_FIX_GREP_FULLLINE, default ON in ss-grep): each hit prints its full
+ *   source line (grepHitText), not the matched substring. `alloc: 'weight'` (SS_FIX_GREP_ALLOC,
+ *   default ON in ss-grep): files in descending weight, lines shared by Sainte-Laguë
+ *   (allocateGrepLinesSainteLague), the hidden-files examples are the highest-weight hidden
+ *   files. Under `alloc: 'weight'` only: `weight` (SS_FIX_GREP_WEIGHT), `rule`
+ *   (SS_FIX_GREP_ALLOC_RULE) and `lineClasses` (SS_FIX_GREP_LINES: a file with fewer lines than
+ *   stored matches shows its lowest `lineClass` matches, in line order; rows without a class
+ *   keep the prefix).
  *   Absent = the original format, byte for byte.
  * @returns {{lines: string[], rows: Array<{file, line, text, more}>, shownMatches: number,
  *            matchedFileCount: number, truncatedFileCount: number, hiddenLine: string|null}}

@@ -124,16 +124,22 @@ async function ssDaemon(tool, args, extra = {}) {
   return JSON.parse(r.body).stdout;
 }
 
-describe('ss-grep line allocation (default: sqrt(hits) x prior, Sainte-Laguë)', () => {
+// The 2026-10-02 shipped rule (sqrt(hits) x prior, Sainte-Laguë, prefix lines): the legacy values of
+// the three ss-grep switches that are default ON since 2026-10-03.
+const PREV = { SS_FIX_GREP_WEIGHT: 'sqrt', SS_FIX_GREP_ALLOC_RULE: 'sl', SS_FIX_GREP_LINES: '0' };
+
+describe('ss-grep line allocation (2026-10-02 rule: sqrt(hits) x prior, Sainte-Laguë)', () => {
   it('keeps the best files, not the first k in the alphabet; files print by weight', async () => {
-    const out = await ss('grep', ['func .*Export', '-k', '8']);
+    const out = await ss('grep', ['func .*Export', '-k', '8'], PREV);
     expect(out).toBe(WEIGHTED_K8.replace(/: func Export(\d+)/g, ': func Export$1(ctx context.Context) error {'));
     // the engine was asked for the weighted selection of k files
     expect(grepCalls[0]).toMatchObject({ grepFileOrder: 'weight', maxFiles: 8, perFileCap: 8 });
+    expect(grepCalls[0].grepFileWeight).toBeUndefined();
+    expect(grepCalls[0].grepLineClasses).toBeUndefined();
   });
 
   it('-C context renders the same hits in the same order', async () => {
-    const out = await ss('grep', ['func .*Export', '-k', '6', '-C', '1']);
+    const out = await ss('grep', ['func .*Export', '-k', '6', '-C', '1'], PREV);
     expect(out.startsWith(`${HEADER}worker/export.go-2-   x := 2\nworker/export.go:3: func Export3(ctx context.Context) error {\n`)).toBe(true);
     expect(out).toContain('worker/export.go:6: func Export6(ctx context.Context) error { (+20 more in this file)\n');
     expect(out.endsWith('# +16 more file(s) with 52 match(es) — e.g. protos/pb/pb.pb.go, buildvars/buildvars_test.go, '
@@ -146,6 +152,63 @@ describe('ss-grep line allocation (default: sqrt(hits) x prior, Sainte-Laguë)',
       + 'worker/export.go:3: func Export3(ctx context.Context) error {\n'
       + 'worker/export.go:6: func Export6(ctx context.Context) error { (+20 more — raise -k)\n');
     expect(grepCalls[0].grepFileOrder).toBeUndefined();
+  });
+});
+
+describe('Step 2 arms (guarantee and sat2 default ON since 2026-10-03): SS_FIX_GREP_ALLOC_RULE, SS_FIX_GREP_WEIGHT', () => {
+  const HIDDEN_13 = '# +13 more file(s) with 21 match(es) — e.g. dgraphapi/cluster.go, dgraphtest/load.go, '
+    + 'dgraphtest/local_cluster.go; narrow the regex, raise -k, or drill in with --in <file>\n';
+
+  it('guarantee and hh: each of the 8 kept files gets one line, so the 8th file shows too', async () => {
+    for (const rule of ['guarantee', 'hh']) {
+      const out = await ss('grep', ['func .*Export', '-k', '8'], { ...PREV, SS_FIX_GREP_ALLOC_RULE: rule, SS_FIX_GREP_FULLLINE: '0' });
+      expect(out).toBe(HEADER
+        + 'worker/export.go:3: func Export3 (+21 more in this file)\n'
+        + 'worker/export_test.go:3: func Export3 (+7 more in this file)\n'
+        + 'backup/run.go:3: func Export3 (+1 more in this file)\n'
+        + 'buildvars/buildvars.go:3: func Export3 (+1 more in this file)\n'
+        + 'graphql/admin/export.go:3: func Export3 (+1 more in this file)\n'
+        + 'protos/pb/pb.pb.go:3: func Export3 (+22 more in this file)\n'
+        + 'buildvars/buildvars_test.go:3: func Export3 (+3 more in this file)\n'
+        + 'systest/export/export_test.go:3: func Export3 (+3 more in this file)\n'
+        + HIDDEN_13);
+      // renderer-only: the engine request is the shipped one
+      expect(grepCalls[0]).toMatchObject({ grepFileOrder: 'weight', maxFiles: 8 });
+      expect(grepCalls[0].grepFileWeight).toBeUndefined();
+    }
+  });
+
+  it('sat2: the engine keeps and orders files by hits / (hits + 2) x prior', async () => {
+    const out = await ss('grep', ['func .*Export', '-k', '8'], { ...PREV, SS_FIX_GREP_WEIGHT: 'sat2' });
+    expect(grepCalls[0]).toMatchObject({ grepFileOrder: 'weight', grepFileWeight: 'sat2' });
+    // 22 hits 0.92; 2-hit sources 0.5; the 8-hit test file 0.4; then 1/3: the 4-hit test files
+    // (more hits) before the 1-hit sources. The generated pb.pb.go (0.23) drops out of the 8.
+    const body = out.split('\n').filter(l => /^[\w/.-]+:\d+/.test(l)).map(l => l.split(':')[0]);
+    expect(body).toEqual([
+      'worker/export.go', 'backup/run.go', 'buildvars/buildvars.go', 'graphql/admin/export.go',
+      'worker/export_test.go', 'buildvars/buildvars_test.go', 'systest/export/export_test.go', 'dgraphapi/cluster.go',
+    ]);
+    expect(out).toContain('# +13 more file(s) with 43 match(es) — e.g. dgraphtest/load.go, dgraphtest/local_cluster.go');
+  });
+});
+
+describe('the product default since 2026-10-03: sat2 weight, the one-line guarantee, line classes', () => {
+  it('asks the engine for sat2 and line classes, and gives each of the 8 kept files a line', async () => {
+    const out = await ss('grep', ['func .*Export', '-k', '8'], { SS_FIX_GREP_FULLLINE: '0' });
+    expect(grepCalls[0]).toMatchObject({ grepFileOrder: 'weight', grepFileWeight: 'sat2', grepLineClasses: true, maxFiles: 8 });
+    // sat2 order (see the sat2 test above); the guarantee gives each kept file one line.
+    // The mock searcher has no code graph, so no line is reordered by class.
+    expect(out).toBe(HEADER
+      + 'worker/export.go:3: func Export3 (+21 more in this file)\n'
+      + 'backup/run.go:3: func Export3 (+1 more in this file)\n'
+      + 'buildvars/buildvars.go:3: func Export3 (+1 more in this file)\n'
+      + 'graphql/admin/export.go:3: func Export3 (+1 more in this file)\n'
+      + 'worker/export_test.go:3: func Export3 (+7 more in this file)\n'
+      + 'buildvars/buildvars_test.go:3: func Export3 (+3 more in this file)\n'
+      + 'systest/export/export_test.go:3: func Export3 (+3 more in this file)\n'
+      + 'dgraphapi/cluster.go:3: func Export3\n'
+      + '# +13 more file(s) with 43 match(es) — e.g. dgraphtest/load.go, dgraphtest/local_cluster.go, '
+      + 'systest/bulk_live/common/bulk_live_cases.go; narrow the regex, raise -k, or drill in with --in <file>\n');
   });
 });
 
@@ -186,7 +249,7 @@ describe('SS_FIX_GREP_ALLOC=0 restores the previous output byte for byte', () =>
 describe('SS_FIX_GREP_FULLLINE=0 restores the matched-text output byte for byte', () => {
   it('body, --in and the allocation rule: only the hit text differs', async () => {
     const off = { SS_FIX_GREP_FULLLINE: '0' };
-    expect(await ss('grep', ['func .*Export', '-k', '8'], off)).toBe(WEIGHTED_K8);
+    expect(await ss('grep', ['func .*Export', '-k', '8'], { ...PREV, ...off })).toBe(WEIGHTED_K8);
     expect(await ss('grep', ['func .*Export', '-k', '2', '--in', 'worker/export.go'], off))
       .toBe('# ss-grep: 22 total match(es) for /func .*Export/ (scope: --in worker/export.go)\n'
         + 'worker/export.go:3: func Export3\nworker/export.go:6: func Export6 (+20 more — raise -k)\n');
@@ -210,7 +273,7 @@ describe('the warm daemon (/agent-tool) prints exactly what the in-process tool 
     ['grep', ['func .*Export', '-k', '3', '--in', 'worker']],
     ['find', ['export functions', '--regex', 'func .*Export', '-k', '6']],
   ];
-  for (const env of [{}, { SS_FIX_GREP_ALLOC: '0' }, { SS_FIX_GREP_ORDER: '1' }, { SS_FIX_GREP_FULLLINE: '0' }]) {
+  for (const env of [{}, PREV, { SS_FIX_GREP_ALLOC: '0' }, { SS_FIX_GREP_ORDER: '1' }, { SS_FIX_GREP_FULLLINE: '0' }]) {
     it(`same bytes on both paths (${JSON.stringify(env)})`, async () => {
       for (const [tool, args] of CALLS) {
         const inProcess = await ss(tool, args, env);

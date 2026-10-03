@@ -50,6 +50,7 @@ import {
   shownSpanTrailerEnabled,
 } from '../../../core/search/agent-span-ledger.js';
 import { formatAlsoLine, formatSpanSymbols } from '../../../core/search/semantic-also.js';
+import { omittedRangeLines } from '../../../core/search/semantic-span-budget.js';
 import { sendAgentSpanOperation } from '../../../core/search/agent-span-client.js';
 import {
   GREP_COUNTS_THRESHOLD,
@@ -166,7 +167,8 @@ const SPAN_POLICY_ENABLED = EXACT_REREAD_OMISSION || SHOWN_SPAN_TRAILER;
 
 // Output-fix switches (see core/search/agent-output-fixes.js). Bundle A (A1, A2, A7, A4, A5) is the
 // product default, and so are SS_FIX_GREP_ALLOC (ss-grep line allocation) and SS_FIX_GREP_FULLLINE (ss-grep
-// full hit lines); SWEET_SEARCH_COMPACT_OUTPUT=0
+// full hit lines), and since 2026-10-03 SS_FIX_GREP_LINES, SS_FIX_GREP_ALLOC_RULE=guarantee,
+// SS_FIX_GREP_WEIGHT=sat2, SS_FIX_SEMANTIC_RANGES and SS_FIX_TRACE_MODE_BUDGET; SWEET_SEARCH_COMPACT_OUTPUT=0
 // or SS_FIX_A=0 restores the previous output byte for byte. Every other SS_FIX_* switch is default
 // off (bench only).
 const FIX = readFixFlags();
@@ -701,8 +703,16 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
   // generated), not the first fetchFiles in path order; the k lines are shared by Sainte-Laguë
   // and files print by weight (grep-output-shaping.js). With B7 also on, B7's source-before-tests
   // body order is skipped (the prior already ranks tests below source); its line lists stay.
+  //
+  // Arms on top of SS_FIX_GREP_ALLOC, DEFAULT ON since 2026-10-03 (legacy: sqrt / sl / 0): SS_FIX_GREP_WEIGHT=sat2 (the engine keeps and
+  // orders files by hits / (hits + 2) x prior), SS_FIX_GREP_ALLOC_RULE=guarantee|hh (renderer
+  // only) and SS_FIX_GREP_LINES (the engine stamps line classes; the renderer picks by them).
   const fetchFiles = FIX.grepOrder ? Math.max(k, 100) : k;
-  const allocOpts = FIX.grepAlloc ? { grepFileOrder: 'weight' } : {};
+  const allocOpts = FIX.grepAlloc ? {
+    grepFileOrder: 'weight',
+    ...(FIX.grepWeight ? { grepFileWeight: FIX.grepWeight } : {}),
+    ...(FIX.grepLines ? { grepLineClasses: true } : {}),
+  } : {};
   // Run from a subdirectory with no --in, ss-grep searches that subdirectory, as
   // `grep -r` / `rg` do (jj-13: `cd cli/src/config && ss-grep "editor|pager"` returned
   // 942 repo-wide hits in 95 files). The scope travels as an engine fileFilter marked
@@ -749,11 +759,19 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
   const keptMatches = FIX.grepOrder && !FIX.grepAlloc ? orderSourceBeforeTests(result.results, { k }) : result.results;
   // SS_FIX_GREP_FULLLINE (default ON; 0 = the matched substring, byte for byte): each hit prints
   // its full source line, as `grep -n` does.
-  const bodyOpts = {
-    ...(FIX.grepAlloc ? { alloc: 'weight' } : {}),
-    ...(FIX.grepOrder ? { dropRepeatedText: true } : {}),
-    ...(FIX.grepFullLine ? { fullLine: true } : {}),
-  };
+  const bodyOpts = FIX.grepAlloc
+    ? {
+      alloc: 'weight',
+      ...(FIX.grepOrder ? { dropRepeatedText: true } : {}),
+      ...(FIX.grepWeight ? { weight: FIX.grepWeight } : {}),
+      ...(FIX.grepAllocRule ? { rule: FIX.grepAllocRule } : {}),
+      ...(FIX.grepLines ? { lineClasses: true } : {}),
+      ...(FIX.grepFullLine ? { fullLine: true } : {}),
+    }
+    : {
+      ...(FIX.grepOrder ? { dropRepeatedText: true } : {}),
+      ...(FIX.grepFullLine ? { fullLine: true } : {}),
+    };
   const body = renderGrepBody(keptMatches, fileSummary, k, bodyOpts);
   const completed = listMode
     ? { lines: [], familyManifest: result.familyManifest?.rendered ? result.familyManifest : null }
@@ -861,6 +879,7 @@ async function cmdFind(rawArgs) {
       ...(findFileFilter ? { fileFilter: findFileFilter } : {}),
       ...globOpts,
       ...(envFindBudget ? { tokenBudget: envFindBudget } : {}),
+      ...(FIX.searchFirstUnit ? { firstUnit: FIX.searchFirstUnit } : {}),
     });
   } catch {
     const s = await getSweetSearch();
@@ -877,6 +896,7 @@ async function cmdFind(rawArgs) {
       ...(findFileFilter ? { fileFilter: findFileFilter } : {}),
       ...globOpts,
       ...(envFindBudget ? { tokenBudget: envFindBudget } : {}),
+      ...(FIX.searchFirstUnit ? { firstUnit: FIX.searchFirstUnit } : {}),
     });
   }
   // Output-fix switches: plan the printed entries first (dedupe / caps), so both ledgers learn
@@ -1194,6 +1214,7 @@ async function cmdAgentSearch(rawArgs) {
   const response = await queryServer(query, {
     topK: k, mode, format, projectRoot: PROJECT_ROOT, trackAgentSpans: false,
     ...(envSearchBudget ? { tokenBudget: envSearchBudget } : {}),
+    ...(FIX.searchFirstUnit ? { firstUnit: FIX.searchFirstUnit } : {}),
   });
   if (response?.error) {
     process.stderr.write(`[ss-search] server error: ${response.error}\n`);
@@ -1439,19 +1460,27 @@ async function cmdSemantic(rawArgs) {
     }
   }
 
+  // SS_FIX_SEMANTIC_RANGES (default ON since 2026-10-03; 0 = legacy) / SS_FIX_SEMANTIC_PICK (default
+  // off; semantic-span-budget.js): a span
+  // cut by the budget prints exactly the lines its header names, and what it left out is named
+  // with an ss-read command.
+  const rangeOpts = {
+    ...(FIX.semanticRanges ? { exactRanges: true } : {}),
+    ...(FIX.semanticPick ? { pickExcerpt: true } : {}),
+  };
   let r;
   try {
     if (!await ensureWarmServerReady({ timeoutMs: 5000 })) throw new Error('warm server is not ready');
     const { queryReadSemanticServer } = await import(path.join(REPO_ROOT, 'core/search/search-server.js'));
     r = await queryReadSemanticServer({
-      path: file, query, projectRoot: FILE_ROOT, maxChars: maxTokens * 4, ...(topK ? { topK } : {}),
+      path: file, query, projectRoot: FILE_ROOT, maxChars: maxTokens * 4, ...(topK ? { topK } : {}), ...rangeOpts,
     });
     if (r?.error) throw new Error(r.error);
   } catch {
     const { readSemantic } = await import(path.join(REPO_ROOT, 'core/search/search-read-semantic.js'));
     r = await readSemantic({
       path: file, query, projectRoot: FILE_ROOT,
-      maxChars: maxTokens * 4, verbose: false, ...(topK ? { topK } : {}),
+      maxChars: maxTokens * 4, verbose: false, ...(topK ? { topK } : {}), ...rangeOpts,
     });
   }
   if (!r.ok) {
@@ -1468,7 +1497,10 @@ async function cmdSemantic(rawArgs) {
   for (const span of r.spans || []) {
     const fence = r.language ? '```' + r.language : '```';
     const sym = formatSpanSymbols(span);
+    const omitted = FIX.semanticRanges ? omittedRangeLines(r.file, span) : null;
+    for (const line of omitted?.before || []) process.stdout.write(`${line}\n`);
     process.stdout.write(`### ${r.file}:${span.startLine}-${span.endLine}${sym}\n${fence}\n${gutter(span.text, span.startLine)}\n\`\`\`\n`);
+    for (const line of omitted?.after || []) process.stdout.write(`${line}\n`);
   }
   // The next-best ranked places the budget left out. Pointers only: they are not shown spans,
   // so they stay out of the ledger above and out of the shown-full trailer below.
@@ -1531,6 +1563,8 @@ async function cmdTrace(rawArgs) {
   }
   if (file) opts.filePath = file;
   if (queryHint) opts.queryHint = queryHint;
+  // SS_FIX_TRACE_MODE_BUDGET (default ON since 2026-10-03; 0 = legacy): the one section the mode word prints takes the budget.
+  if (FIX.traceModeBudget && mode) opts.modeSection = mode;
   if (depth != null) opts.maxDepth = depth;
   // Budget-sweep experiment hook: env sets the default; explicit --budget wins.
   if (budget != null) opts.tokenBudget = budget;

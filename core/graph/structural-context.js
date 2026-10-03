@@ -102,7 +102,7 @@ export function traceFanCounts(callers, callees) {
   return { fanIn: callerKeys.size, fanOut: calleeKeys.size };
 }
 
-function sectionShares(targetFan, hint = '', target = null) {
+export function sectionShares(targetFan, hint = '', target = null) {
   const q = String(hint || '').toLowerCase(); if (/^(class|struct|trait|interface|enum|type|typeAlias)$/.test(target?.type || '')) return { target: 0.50, callers: 0.25, callees: 0.05, impact: 0.20 };
   if (/\b(callee|callees|downstream|helper|helpers|relies|next)\b/.test(q)) return { target: 0.16, callers: 0.08, callees: 0.54, impact: 0.22 };
   if (/\b(caller|callers|who calls|upstream|references)\b/.test(q)) return { target: 0.16, callers: 0.54, callees: 0.10, impact: 0.20 };
@@ -281,6 +281,30 @@ function itemSummary(entity) {
   return `${entity.name} [${entity.type}] ${loc}${call}`;
 }
 
+/**
+ * SS_FIX_TRACE_MODE_BUDGET (default ON in ss-trace since 2026-10-03): with a mode word, only that section prints, so it
+ * takes every share but the target's. Any other mode (or none) keeps the shares.
+ */
+export function modeSectionShares(shares, mode) {
+  if (mode !== 'callers' && mode !== 'callees' && mode !== 'impact') return shares;
+  return { target: shares.target, callers: 0, callees: 0, impact: 0, [mode]: 1 - shares.target };
+}
+
+/** Most caller / callee rows a section of `budget` tokens lists. */
+export function sectionItemLimit(budget) {
+  return Math.max(3, Math.min(40, Math.floor(budget / 90)));
+}
+
+/** Most impact paths a section of `budget` tokens lists. */
+export function impactPathLimit(budget) {
+  return Math.max(3, Math.min(24, Math.floor(budget / 80)));
+}
+
+/** Token cap of one caller / callee item's code, by budget tier. */
+export function itemCodeCap(tier) {
+  return tier === 'xl' ? 1400 : tier === 'full' ? 1100 : 800;
+}
+
 function packSection(items, budget, opts) {
   const sorted = [...items].sort((a, b) => b.importance - a.importance);
   const utilityOrder = [...sorted].sort((a, b) => {
@@ -290,7 +314,7 @@ function packSection(items, budget, opts) {
   });
   const codeWinners = new Set();
   let projected = 0;
-  const maxItems = Math.max(3, Math.min(40, Math.floor(budget / 90)));
+  const maxItems = sectionItemLimit(budget);
   for (const item of utilityOrder) {
     const est = Math.max(80, Math.min(opts.perItemCap, ((item.endLine || 0) - (item.startLine || 0) + 1) * 9));
     if (projected + est > budget) continue;
@@ -598,7 +622,7 @@ export class StructuralContextBuilder {
     callees.sort((a, b) => b.importance - a.importance);
     const budget = selectBudget(options.tokenBudget, { callers, callees, impactPaths });
     const targetFan = traceFanCounts(callersRaw, calleesRaw);
-    const shares = sectionShares(targetFan, options.queryHint, target);
+    const shares = modeSectionShares(sectionShares(targetFan, options.queryHint, target), options.modeSection);
     const targetInfo = renderCode(target, {
       readFileRange,
       tokenCap: Math.floor(budget.tokenBudget * shares.target),
@@ -606,7 +630,7 @@ export class StructuralContextBuilder {
     });
     const packOpts = {
       readFileRange,
-      perItemCap: budget.tier === 'xl' ? 1400 : budget.tier === 'full' ? 1100 : 800,
+      perItemCap: itemCodeCap(budget.tier),
     };
     const callersPack = packSection(callers, Math.floor(budget.tokenBudget * shares.callers), packOpts);
     const calleesPack = packSection(callees, Math.floor(budget.tokenBudget * shares.callees), packOpts);
@@ -660,7 +684,7 @@ export class StructuralContextBuilder {
   _packImpact(paths, budget) {
     const out = [];
     let used = 0;
-    const maxPaths = Math.max(3, Math.min(24, Math.floor(budget / 80)));
+    const maxPaths = impactPathLimit(budget);
     for (const p of paths) {
       if (out.length >= maxPaths) break;
       const row = {

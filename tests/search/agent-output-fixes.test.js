@@ -42,11 +42,16 @@ const ALL_OFF = {
   compact: false, traceCompact: false, grepRetry: false, alreadyShown: false,
   dropSufficiency: false, summaryCap: null, onePerFile: false, grepOrder: false, grepAlloc: false,
   grepFullLine: false,
+  grepLines: false, grepAllocRule: null, grepWeight: null, semanticRanges: false, semanticPick: false,
+  searchFirstUnit: null, traceModeBudget: false,
 };
 
 describe('readFixFlags: product default (Bundle A on)', () => {
   it('turns on A1/A2/A7 (compact), A4 and A5 with an empty environment', () => {
-    expect(readFixFlags({})).toEqual({ ...ALL_OFF, compact: true, traceCompact: true, grepRetry: true, grepAlloc: true, grepFullLine: true });
+    expect(readFixFlags({})).toEqual({
+      ...ALL_OFF, compact: true, traceCompact: true, grepRetry: true, grepAlloc: true, grepFullLine: true,
+      grepLines: true, grepAllocRule: 'guarantee', grepWeight: 'sat2', semanticRanges: true, traceModeBudget: true,
+    });
     expect(readFixFlags({})).toEqual(readFixFlags({ SS_FIX_A: '1' }));
     expect(resultRenderFixActive(readFixFlags({}))).toBe(true);
     expect(resultRenderFixActive(readFixFlags({}), { find: true })).toBe(true);
@@ -81,11 +86,7 @@ describe('readFixFlags: product default (Bundle A on)', () => {
 
 describe('readFixFlags', () => {
   it('is all off with SS_FIX_A=0 (the bench baseline)', () => {
-    expect(readFixFlags(OFF)).toEqual({
-      compact: false, traceCompact: false, grepRetry: false, alreadyShown: false,
-      dropSufficiency: false, summaryCap: null, onePerFile: false, grepOrder: false, grepAlloc: false,
-      grepFullLine: false,
-    });
+    expect(readFixFlags(OFF)).toEqual(ALL_OFF);
     expect(resultRenderFixActive(readFixFlags(OFF))).toBe(false);
     expect(resultRenderFixActive(readFixFlags(OFF), { find: true })).toBe(false);
   });
@@ -123,6 +124,55 @@ describe('readFixFlags', () => {
     expect(readFixFlags({ SWEET_SEARCH_COMPACT_OUTPUT: '0' }).grepFullLine).toBe(false);
     expect(readFixFlags({ ...OFF, SS_FIX_GREP_FULLLINE: '1' })).toMatchObject({ compact: false, grepFullLine: true });
     expect(readFixFlags({ SS_FIX_GREP_FULLLINE: '0' })).toEqual({ ...readFixFlags({}), grepFullLine: false });
+  });
+
+  it('the five 2026-10-03 arms are ON in the product default; PICK and FIRST_UNIT stay off', () => {
+    expect(readFixFlags({})).toMatchObject({
+      grepLines: true, grepAllocRule: 'guarantee', grepWeight: 'sat2', semanticRanges: true, traceModeBudget: true,
+      semanticPick: false, searchFirstUnit: null,
+    });
+  });
+
+  it('each default-ON arm has a legacy value, and SS_FIX_A=0 / the product opt-out turn them all off', () => {
+    expect(readFixFlags({ SS_FIX_GREP_LINES: '0' }).grepLines).toBe(false);
+    expect(readFixFlags({ SS_FIX_GREP_ALLOC_RULE: 'sl' }).grepAllocRule).toBeNull();
+    expect(readFixFlags({ SS_FIX_GREP_ALLOC_RULE: '0' }).grepAllocRule).toBeNull();
+    expect(readFixFlags({ SS_FIX_GREP_WEIGHT: 'sqrt' }).grepWeight).toBeNull();
+    expect(readFixFlags({ SS_FIX_GREP_WEIGHT: 'off' }).grepWeight).toBeNull();
+    expect(readFixFlags({ SS_FIX_SEMANTIC_RANGES: '0' }).semanticRanges).toBe(false);
+    expect(readFixFlags({ SS_FIX_TRACE_MODE_BUDGET: '0' }).traceModeBudget).toBe(false);
+    for (const env of [{ SS_FIX_A: '0' }, { SWEET_SEARCH_COMPACT_OUTPUT: '0' }]) {
+      expect(readFixFlags(env)).toMatchObject({
+        grepLines: false, grepAllocRule: null, grepWeight: null, semanticRanges: false, traceModeBudget: false,
+      });
+    }
+    // An explicit value wins over the umbrella, as for every sub-switch.
+    expect(readFixFlags({ SS_FIX_A: '0', SS_FIX_GREP_WEIGHT: 'sat2', SS_FIX_GREP_ALLOC_RULE: 'guarantee' }))
+      .toMatchObject({ grepWeight: 'sat2', grepAllocRule: 'guarantee' });
+  });
+
+  it('SS_FIX_GREP_ALLOC_RULE / SS_FIX_GREP_WEIGHT: named values; anything else keeps the default', () => {
+    expect(readFixFlags({ SS_FIX_GREP_ALLOC_RULE: 'guarantee' }).grepAllocRule).toBe('guarantee');
+    expect(readFixFlags({ SS_FIX_GREP_ALLOC_RULE: ' HH ' }).grepAllocRule).toBe('hh');
+    expect(readFixFlags({ SS_FIX_GREP_ALLOC_RULE: 'huntington-hill' }).grepAllocRule).toBe('hh');
+    for (const v of ['1', 'dhondt', '']) expect(readFixFlags({ SS_FIX_GREP_ALLOC_RULE: v }).grepAllocRule).toBe('guarantee');
+    for (const v of ['1', 'dhondt', '']) expect(readFixFlags({ SS_FIX_A: '0', SS_FIX_GREP_ALLOC_RULE: v }).grepAllocRule).toBeNull();
+    expect(readFixFlags({ SS_FIX_GREP_WEIGHT: 'sat2' }).grepWeight).toBe('sat2');
+    for (const v of ['sat4', '1', '']) expect(readFixFlags({ SS_FIX_GREP_WEIGHT: v }).grepWeight).toBe('sat2');
+    for (const v of ['sat4', '1', '']) expect(readFixFlags({ SS_FIX_A: '0', SS_FIX_GREP_WEIGHT: v }).grepWeight).toBeNull();
+    expect(readFixFlags({ SS_FIX_A: '0', SS_FIX_GREP_LINES: '1' }).grepLines).toBe(true);
+  });
+
+  it('SS_FIX_SEARCH_FIRST_UNIT: calibrated or all, else off', () => {
+    expect(readFixFlags({}).searchFirstUnit).toBeNull();
+    expect(readFixFlags({ SS_FIX_SEARCH_FIRST_UNIT: 'calibrated' }).searchFirstUnit).toBe('calibrated');
+    expect(readFixFlags({ SS_FIX_SEARCH_FIRST_UNIT: ' ALL ' }).searchFirstUnit).toBe('all');
+    for (const v of ['1', 'on', 'ranks']) expect(readFixFlags({ SS_FIX_SEARCH_FIRST_UNIT: v }).searchFirstUnit).toBeNull();
+  });
+
+  it('SS_FIX_SEMANTIC_PICK implies SS_FIX_SEMANTIC_RANGES; RANGES alone does not imply PICK', () => {
+    expect(readFixFlags({ SS_FIX_SEMANTIC_PICK: '1' })).toMatchObject({ semanticPick: true, semanticRanges: true });
+    expect(readFixFlags({ SS_FIX_SEMANTIC_RANGES: '1' })).toMatchObject({ semanticPick: false, semanticRanges: true });
   });
 
   it('A3 and the sufficiency drop are separate switches that accept every on-value', () => {

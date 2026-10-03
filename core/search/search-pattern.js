@@ -18,6 +18,8 @@ import { PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { generateRegexMatches } from './search-pattern-planner.js';
 import { buildBareGrepResults, filterMatchesBySymbolType, resolveSearchSymbolFilter, mapMatchesToChunks, readFileRange } from './search-pattern-chunks.js';
 import { applyGrepFileDiversity, grepFileFilterPredicate } from './grep-output-shaping.js';
+import { stampGrepLineClasses } from './grep-line-classes.js';
+import { indexFreshness } from './index-freshness.js';
 import { compilePathGlobs, filterMatchesByPathGlobs } from './grep-path-globs.js';
 import { isRipgrepAvailable, runRipgrepJson } from './search-pattern-ripgrep.js';
 import { ensureSparseGramIndex } from './search-pattern-prefilter.js';
@@ -26,6 +28,9 @@ import { retryBreDialectAfterZero } from './regex-dialect.js';
 import { applyUnindexedFallback } from './grep-unindexed-fallback.js';
 import { buildIndexedGrepFamilyManifest, buildSingletonSiblingLine } from './agent-pack-completion.js';
 import { applyFileKindRanking, applyResultDemotions } from '../ranking/file-kind-ranking.js';
+
+// findEntitiesInFile's own maximum (code-graph-repository.js).
+const GREP_LINE_CLASS_ENTITY_CAP = 2048;
 
 // Candidates after the final cut handed to the agent packager for refill
 // (same size as search-postprocess.js FINAL_RESERVE_SIZE).
@@ -261,12 +266,14 @@ export async function bareGrep(query, routing, options = {}) {
   // stored, so memory is bounded by perFileCap*maxFiles, never total matches.
   // `grepFileOrder: 'weight'` (ss-grep's SS_FIX_GREP_ALLOC, default ON): keep the maxFiles
   // files of highest sqrt(hits) x file-type prior, not the first maxFiles in path order.
+  // `grepFileWeight: 'sat2'` (SS_FIX_GREP_WEIGHT) ranks by hits / (hits + 2) x prior instead.
   let fileSummary = null;
   if (options.perFileCap > 0) {
     ({ kept: matches, fileSummary } = applyGrepFileDiversity(matches, {
       perFileCap: options.perFileCap,
       maxFiles: options.maxFiles,
       ...(options.grepFileOrder === 'weight' ? { order: 'weight' } : {}),
+      ...(options.grepFileOrder === 'weight' && options.grepFileWeight === 'sat2' ? { weight: 'sat2' } : {}),
     }));
   }
   if (maxMatches > 0) {
@@ -279,6 +286,25 @@ export async function bareGrep(query, routing, options = {}) {
     ...(options.contextBefore != null ? { contextBefore: options.contextBefore } : {}),
     ...(options.contextAfter != null ? { contextAfter: options.contextAfter } : {}),
   });
+  // SS_FIX_GREP_LINES (agent-only): stamp each stored match of a fresh, indexed file with its
+  // line class, so the renderer can show declarations first. At most maxFiles graph reads.
+  let lineClassStats = null;
+  if (options._isAgentFormat === true && options.grepLineClasses === true && fileSummary
+      && typeof this?.codeGraphRepo?.findEntitiesInFile === 'function') {
+    const manifest = this._readReconcileManifest?.() ?? null;
+    lineClassStats = stampGrepLineClasses(results, {
+      // A capped entity list would class every line past the cap's last span as "outside
+      // every symbol": a file that fills the cap keeps the prefix instead.
+      entitiesInFile: (file) => {
+        const entities = this.codeGraphRepo.findEntitiesInFile(file, { limit: GREP_LINE_CLASS_ENTITY_CAP }) || [];
+        return entities.length >= GREP_LINE_CLASS_ENTITY_CAP ? [] : entities;
+      },
+      isFresh: (file) => {
+        const f = indexFreshness(path.resolve(searchDir, file), manifest);
+        return f.known && !f.stale;
+      },
+    });
+  }
   // An explicit --in drill-in renders neither enrichment. The IMPLICIT scope of an
   // ss-grep run from a subdirectory (_cwdScope) is an ordinary grep with fewer hits,
   // so it keeps both, exactly as at the repository root. So does a grep with only -g
@@ -337,6 +363,7 @@ export async function bareGrep(query, routing, options = {}) {
         pathGlobExcludedFiles: globExcluded.excludedFiles,
       }),
       ...(fallback.stats || {}),
+      ...(lineClassStats ? { lineClassFiles: lineClassStats.files, lineClassStamped: lineClassStats.stamped } : {}),
       symbolType,
       total_ms: Math.round(performance.now() - start),
       stageTiming: candidateResult.stats.stageTiming || null,
@@ -721,6 +748,7 @@ export async function patternSearch(query, routing, options = {}) {
       locationMap,
       projectRoot: searchDir,
       ablations,
+      ...(options.firstUnit ? { firstUnit: options.firstUnit } : {}),
       _isAgentFormat: true,
       _siblingLine: options._siblingLine,
     });
