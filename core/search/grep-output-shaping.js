@@ -184,8 +184,11 @@ export function grepFileFilterPredicate(filter, projectRoot = null) {
  * `order: 'weight'` keeps the maxFiles files of highest weight instead of the first
  * maxFiles in path order (see selectGrepFilesByWeight). Absent = the legacy walk below.
  *
+ * `totals` (bareGrep's capped list): each file's full match count, when `matches` holds only
+ * the first ones of a file (at least perFileCap of them, or all). Counts then come from it.
+ *
  * @param {Array<{file: string}>} matches - sorted by (file, line)
- * @param {{perFileCap: number, maxFiles?: number, hiddenSampleSize?: number, order?: 'weight', weight?: 'sat2'}} opts
+ * @param {{perFileCap: number, maxFiles?: number, hiddenSampleSize?: number, order?: 'weight', weight?: 'sat2', totals?: Map<string, number>}} opts
  * @returns {{kept: Array, fileSummary: {
  *   files: Array<{file: string, total: number, kept: number}>,
  *   hiddenFileCount: number, hiddenMatchCount: number,
@@ -204,6 +207,7 @@ export function applyGrepFileDiversity(matches, opts = {}) {
   let hiddenFileCount = 0;
   let hiddenMatchCount = 0;
 
+  const totals = opts.totals || null;
   let current = null;
   for (const m of matches) {
     if (!current || current.file !== m.file) {
@@ -217,12 +221,16 @@ export function applyGrepFileDiversity(matches, opts = {}) {
           hiddenSample.push(current);
         }
       }
+      if (totals) {
+        current.total = totals.get(m.file) ?? 0;
+        if (current.kept < 0) hiddenMatchCount += current.total;
+      }
     }
-    current.total++;
+    if (!totals) current.total++;
     if (current.kept >= 0 && current.kept < perFileCap) {
       kept.push(m);
       current.kept++;
-    } else if (current.kept < 0) {
+    } else if (current.kept < 0 && !totals) {
       hiddenMatchCount++;
     }
   }
@@ -358,12 +366,13 @@ export function selectGrepFilesByWeight(matches, opts = {}) {
   let hiddenMatchCount = 0;
 
   let i = 0;
+  const totals = opts.totals || null;
   while (i < n) {
     const start = i;
     const file = matches[i].file;
     i++;
     while (i < n && matches[i].file === file) i++;
-    const total = i - start;
+    const total = totals ? (totals.get(file) ?? 0) : i - start;
     const bound = sat ? grepWeightKey(total, SCALE_SOURCE, 'sat2') : total * SCALE_SOURCE;
     if (size === maxFiles && bound <= heap[0]) {
       // Cannot beat the worst kept file (equal bound: fewer-or-equal hits, later path).

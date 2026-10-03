@@ -1793,6 +1793,7 @@ dependencies = [
  "candle-nn",
  "candle-transformers",
  "cc",
+ "libc",
  "memchr",
  "memmap2",
  "napi",

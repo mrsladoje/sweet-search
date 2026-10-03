@@ -1,9 +1,9 @@
-import { readFileSync } from 'fs';
 import { dirname, isAbsolute, join } from 'path';
+import { readJsonFileCached } from './cached-json-file.js';
 
 export function readAdjacentManifest(dbPath) {
   try {
-    const manifest = JSON.parse(readFileSync(join(dirname(dbPath), 'reconcile-manifest.json'), 'utf8'));
+    const manifest = readJsonFileCached(join(dirname(dbPath), 'reconcile-manifest.json'));
     return Number.isInteger(manifest?.epoch) ? manifest : null;
   } catch {
     return null;

@@ -10,7 +10,7 @@
  */
 
 import fs from 'fs/promises';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync } from 'fs';
 import path from 'path';
 import { DB_PATHS, PERFORMANCE_TARGETS, LOGGING, BINARY_HNSW_CONFIG, HCGS_CONFIG, LATE_INTERACTION_CONFIG, EMBEDDING_CONFIG, SEISMIC_CONFIG, CASCADE_CONFIG, loadProjectConfig, shouldUseLocalReranker } from '../infrastructure/config/index.js';
 import { getGlobalLocalReranker } from '../ranking/local-reranker.js';
@@ -27,6 +27,7 @@ import { FloatVectorStore, getFloatStorePath } from '../vector-store/float-vecto
 import { recordQueryTelemetry } from '../embedding/embedding-cache.js';
 import { CodebaseRepository } from '../infrastructure/codebase-repository.js';
 import { CodeGraphRepository } from '../infrastructure/code-graph-repository.js';
+import { readJsonFileCached } from '../infrastructure/cached-json-file.js';
 import { loadSparseGramIndex } from '../infrastructure/native-sparse-gram.js';
 import { expandResults } from '../graph/graph-expansion.js';
 import { applyMMR, shouldApplyMMR, getLambdaForIntent, MMR_CONFIG } from '../ranking/mmr.js';
@@ -391,7 +392,7 @@ export class SweetSearch {
   _readReconcileManifest() {
     try {
       const manifestPath = path.join(this._manifestStateDir, 'reconcile-manifest.json');
-      const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+      const manifest = readJsonFileCached(manifestPath);
       return Number.isInteger(manifest?.epoch) ? manifest : null;
     } catch {
       return null;
@@ -446,9 +447,14 @@ export class SweetSearch {
       this.graphSearch = new GraphSearch(this._manifestGraphDbPath);
       this.codeGraphRepo = new CodeGraphRepository(this._manifestGraphDbPath);
     }
-    if (paths.binaryHnswPath && (paths.binaryHnswPath !== this.binaryHnswPath || paths.binaryHnswStalePath !== this.binaryHnswIndex?.stalePath)) {
+    // Compared with the stale path the index would get, not the manifest's raw field: a manifest
+    // with no `binaryHnsw.stale` made the two differ on every search, so every query replaced
+    // the loaded index with an empty one and the next semantic search loaded it from disk again.
+    // A new epoch reloads it in _reloadManifestArtifacts.
+    const binaryHnswStalePath = paths.binaryHnswStalePath || `${paths.binaryHnswPath}.stale.bin`;
+    if (paths.binaryHnswPath && (paths.binaryHnswPath !== this.binaryHnswPath || binaryHnswStalePath !== this.binaryHnswIndex?.stalePath)) {
       this.binaryHnswPath = paths.binaryHnswPath;
-      this.binaryHnswIndex = new BinaryHNSWIndex({ indexPath: this.binaryHnswPath, stalePath: paths.binaryHnswStalePath || `${this.binaryHnswPath}.stale.bin` });
+      this.binaryHnswIndex = new BinaryHNSWIndex({ indexPath: this.binaryHnswPath, stalePath: binaryHnswStalePath });
     }
     if (paths.lateInteractionIndexPath && paths.lateInteractionIndexPath !== this.lateInteractionIndex?.indexPath) {
       this._lateInteractionOptions = { ...this._lateInteractionOptions, indexPath: paths.lateInteractionIndexPath };

@@ -296,6 +296,7 @@ export async function retryBreDialectAfterZero({
   originalResult,
   shapeResult = collectCandidateMatches,
   retry,
+  countMatches = (matches) => matches.length,
 }) {
   const originalMatches = shapeResult(originalResult);
   if (!agentFormat || originalMatches.length > 0) {
@@ -320,7 +321,7 @@ export async function retryBreDialectAfterZero({
         operators: translation.operators,
         retryAttempted: true,
         retryMatched,
-        retryMatches: retriedMatches.length,
+        retryMatches: countMatches(retriedMatches),
         translatedPattern: translation.pattern,
       },
     };

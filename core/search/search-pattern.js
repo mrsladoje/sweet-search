@@ -149,6 +149,20 @@ function isAgentFormat(options) {
   return options?._isAgentFormat === true || AGENT_FORMATS.has(options?.format);
 }
 
+// A capped match list (bareGrep's `_grepPerFileCap`) → each of its files' full match count.
+// Keyed by the list itself, as globCounts is: the dialect retry and the unindexed fallback
+// hand a list back unchanged or replace it with an uncapped one (absent here).
+const cappedListTotals = new WeakMap();
+
+/** How many matches `list` stands for: its length, or the sum of a capped list's totals. */
+function countListMatches(list) {
+  const totals = cappedListTotals.get(list);
+  if (!totals) return list.length;
+  let n = 0;
+  for (const total of totals.values()) n += total;
+  return n;
+}
+
 // `pathGlobs`: the agent's compiled `-g` globs (grep-path-globs.js). `globCounts` records what
 // they removed, keyed by the returned list itself (the dialect retry hands that list back
 // unchanged), so an all-excluded answer can say so.
@@ -157,6 +171,8 @@ function shapeBareGrepMatches(candidateResult, symbolType, searcher, fileFilter,
     ...(candidateResult?.indexedMatches || []),
     ...(candidateResult?.overlayMatches || []),
   ];
+  // Every filter below keeps or drops whole files, so a capped result's totals follow them.
+  const totals = candidateResult?.fileTotals ? new Map(candidateResult.fileTotals) : null;
   matches = filterMatchesBySymbolType(matches, symbolType, searcher);
   if (fileFilter) {
     // Use the same effective root as candidate generation/result construction.
@@ -164,14 +180,17 @@ function shapeBareGrepMatches(candidateResult, symbolType, searcher, fileFilter,
     // bareGrep callers and makes absolute-scope validation rootless.
     const inScope = grepFileFilterPredicate(fileFilter, projectRoot);
     matches = matches.filter(match => inScope(match.file));
+    if (totals) for (const file of [...totals.keys()]) if (!inScope(file)) totals.delete(file);
   }
   if (pathGlobs) {
     // After --in (AND), before the sort, the per-file diversity and the k cap: an excluded
     // file never takes a k slot and never reaches a count.
-    const filtered = filterMatchesByPathGlobs(matches, pathGlobs);
+    const filtered = filterMatchesByPathGlobs(matches, pathGlobs, totals);
     matches = filtered.kept;
+    if (totals) for (const file of [...totals.keys()]) if (!pathGlobs.matches(file)) totals.delete(file);
     globCounts?.set(matches, { excludedMatches: filtered.excludedMatches, excludedFiles: filtered.excludedFiles });
   }
+  if (totals) cappedListTotals.set(matches, totals);
   return matches;
 }
 
@@ -204,6 +223,16 @@ function scopeCandidateResult(result, fileFilter, projectRoot, pathGlobs = null)
   };
 }
 
+/** True when two different paths next to each other in a sorted match list compare equal. */
+function hasCollatingNeighbours(sortedMatches) {
+  for (let i = 1; i < sortedMatches.length; i++) {
+    const a = sortedMatches[i - 1].file;
+    const b = sortedMatches[i].file;
+    if (a !== b && a.localeCompare(b) === 0) return true;
+  }
+  return false;
+}
+
 // =============================================================================
 // Bare grep (wired onto SweetSearch.prototype)
 // =============================================================================
@@ -228,8 +257,16 @@ export async function bareGrep(query, routing, options = {}) {
   // unavailable. Throws a clear error only when neither engine can run.
   await ensureGrepEngineAvailable(this, options, 'Bare grep');
 
+  // With a per-file cap (every unscoped ss-grep), only the first perFileCap matches of a file
+  // can be kept, so the engine stores no more and counts the rest (`fileTotals`): a flood of
+  // 100k matches costs 100k counts, not 100k objects. Every count below comes from the totals,
+  // so the answer is the same. Not with a symbol filter: that one drops single matches.
+  const grepPerFileCap = options.perFileCap > 0 && !symbolType && options._grepNoCap !== true
+    ? options.perFileCap : 0;
+  const engineOptions = grepPerFileCap > 0 ? { ...options, _grepPerFileCap: grepPerFileCap } : options;
+
   // Disable chunk gram for bare grep — bare grep uses file:line matches, not chunk IDs.
-  let candidateResult = await generateRegexMatches(this || {}, regex, searchDir, options);
+  let candidateResult = await generateRegexMatches(this || {}, regex, searchDir, engineOptions);
   const pathGlobs = compilePathGlobs(options.pathGlobs);
   const globCounts = pathGlobs ? new Map() : null;
   const shapeResult = result => shapeBareGrepMatches(
@@ -242,8 +279,9 @@ export async function bareGrep(query, routing, options = {}) {
     originalResult: candidateResult,
     shapeResult,
     retry: translatedPattern => generateRegexMatches(
-      this || {}, translatedPattern, searchDir, options,
+      this || {}, translatedPattern, searchDir, engineOptions,
     ),
+    countMatches: countListMatches,
   });
   candidateResult = dialectRetry.candidateResult;
   // Symbol and --in filtering happen before retry adoption and before sort/cap,
@@ -253,13 +291,20 @@ export async function bareGrep(query, routing, options = {}) {
   });
   let matches = fallback.matches;
   const globExcluded = globCounts?.get(matches) || null;
+  const listTotals = cappedListTotals.get(matches) || null;
   matches.sort((a, b) =>
     a.file.localeCompare(b.file) ||
     a.line - b.line ||
     (a.column || 0) - (b.column || 0)
   );
+  // The capped list keeps each file's matches together only when no two paths compare equal
+  // (localeCompare can, for differently normalized Unicode names); the full list would
+  // interleave them by line. Then search again without the cap.
+  if (listTotals && hasCollatingNeighbours(matches)) {
+    return bareGrep.call(this, query, routing, { ...options, _grepNoCap: true });
+  }
 
-  const totalMatches = matches.length;
+  const totalMatches = countListMatches(matches);
   const regexDialectHint = dialectRetry.regexDialectHint;
   // Agent-only k-budget file diversity (option-gated; absent → byte-identical
   // output). Streaming per-file cap: matches beyond the cap are counted, not
@@ -272,6 +317,7 @@ export async function bareGrep(query, routing, options = {}) {
     ({ kept: matches, fileSummary } = applyGrepFileDiversity(matches, {
       perFileCap: options.perFileCap,
       maxFiles: options.maxFiles,
+      ...(listTotals ? { totals: listTotals } : {}),
       ...(options.grepFileOrder === 'weight' ? { order: 'weight' } : {}),
       ...(options.grepFileOrder === 'weight' && options.grepFileWeight === 'sat2' ? { weight: 'sat2' } : {}),
     }));

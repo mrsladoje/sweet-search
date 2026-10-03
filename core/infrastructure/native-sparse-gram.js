@@ -373,15 +373,77 @@ export function nativeGrepLines(pattern, projectRoot, files, caseInsensitive) {
  * bareGrep where callers need display-quality output.
  * Returns null if the native addon is unavailable (falls back to rg).
  *
- * @returns {{ matches: Array<{file: string, line: number, column: number, matchText: string, content: string}>, scannedFiles: number, elapsedUs: number }|null}
+ * `perFileCap > 0`: at most that many matches per file (the first ones), and `fileTotals`, a
+ * Map of every file's full match count. Only the packed addon caps; without it there is no
+ * `fileTotals`, and the matches are all there.
+ *
+ * @returns {{ matches: Array<{file: string, line: number, column: number, matchText: string, content: string}>, fileTotals?: Map<string, number>, scannedFiles: number, elapsedUs: number }|null}
  */
-export function nativeGrepFull(pattern, projectRoot, files, caseInsensitive) {
+export function nativeGrepFull(pattern, projectRoot, files, caseInsensitive, { perFileCap = 0 } = {}) {
   const addon = loadAddon();
   if (!addon?.nativeGrepFull) return null;
   try {
+    if (addon.nativeGrepFullPacked) {
+      return unpackFullResult(addon.nativeGrepFullPacked(pattern, projectRoot, files, caseInsensitive || false, perFileCap), perFileCap);
+    }
     return addon.nativeGrepFull(pattern, projectRoot, files, caseInsensitive || false);
   } catch (err) {
     if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] nativeGrepFull failed:', err.message);
+    return null;
+  }
+}
+
+/**
+ * The `matches` of a *Packed native result (PackedFullMatches, native_grep.rs): the same
+ * `{ file, line, column, matchText, content }` objects the unpacked call returns, in the same
+ * order. The addon fills one array per field and two strings for all the text, because a
+ * native object per match cost ~1 µs each (67 ms for 65k matches).
+ */
+function unpackFullResult(result, perFileCap = 0) {
+  if (!result) return result;
+  const { packed, ...rest } = result;
+  const { files, fileIndex, line, column, text, wide, inWide, ends, fileTotals, fileAlias } = packed;
+  if (perFileCap > 0) rest.fileTotals = new Map(files.map((file, i) => [file, fileTotals[i]]));
+  // isSymlinkedRelUnder(projectRoot, file) for every matched file (the addon's lstat walk).
+  if (fileAlias) rest.aliasVerdicts = new Map(files.map((file, i) => [file, fileAlias[i] === 1]));
+  const matches = new Array(line.length);
+  let pos = 0;
+  let widePos = 0;
+  for (let i = 0; i < line.length; i++) {
+    const matchEnd = ends[2 * i];
+    const contentEnd = ends[2 * i + 1];
+    const source = inWide[i] ? wide : text;
+    const start = inWide[i] ? widePos : pos;
+    matches[i] = {
+      file: files[fileIndex[i]],
+      line: line[i],
+      column: column[i],
+      matchText: source.slice(start, matchEnd),
+      content: source.slice(matchEnd, contentEnd),
+    };
+    if (inWide[i]) widePos = contentEnd; else pos = contentEnd;
+  }
+  rest.matches = matches;
+  return rest;
+}
+
+/**
+ * nativeGrepFilesWithMatches, then nativeGrepFull (or nativeGrepLines with `linesOnly`) on its
+ * files, from one read of each file: `{ matchingFiles, matches }`. `perFileCap` as in
+ * nativeGrepFull (full matches only). Null when the addon has no such function or the call
+ * throws (callers then run the two calls).
+ */
+export function nativeGrepWithFiles(pattern, projectRoot, files, caseInsensitive, { linesOnly = false, perFileCap = 0 } = {}) {
+  const addon = loadAddon();
+  const fn = linesOnly ? addon?.nativeGrepLinesWithFiles : addon?.nativeGrepFullWithFiles;
+  if (!fn) return null;
+  try {
+    if (!linesOnly && addon.nativeGrepFullWithFilesPacked) {
+      return unpackFullResult(addon.nativeGrepFullWithFilesPacked(pattern, projectRoot, files, caseInsensitive || false, perFileCap), perFileCap);
+    }
+    return fn(pattern, projectRoot, files, caseInsensitive || false);
+  } catch (err) {
+    if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] nativeGrepWithFiles failed:', err.message);
     return null;
   }
 }
@@ -482,7 +544,11 @@ export function searchLines(sparseGramIndex, clauses, regex, projectRoot, opts =
 export function searchFull(sparseGramIndex, clauses, regex, projectRoot, opts = {}) {
   if (!sparseGramIndex?.searchFull) return null;
   try {
-    return sparseGramIndex.searchFull(
+    const perFileCap = opts.perFileCap ?? 0;
+    const search = typeof sparseGramIndex.searchFullPacked === 'function'
+      ? (...args) => unpackFullResult(sparseGramIndex.searchFullPacked(...args, perFileCap), perFileCap)
+      : (...args) => sparseGramIndex.searchFull(...args);
+    return search(
       clauses, regex, projectRoot,
       opts.maxGramCandidates ?? 0,
       opts.symbolMask ?? 0,

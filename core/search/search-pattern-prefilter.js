@@ -17,6 +17,7 @@ import {
   nativeGrepFilesWithMatchesFixed as _nativeGrepFilesWithMatchesFixed,
   nativeGrepLines as _nativeGrepLines,
   nativeGrepFull as _nativeGrepFull,
+  nativeGrepWithFiles as _nativeGrepWithFiles,
   getSparseGramAllFiles as _getSparseGramAllFiles,
   queryAndGrepLines as _queryAndGrepLines,
   queryAndGrepFull as _queryAndGrepFull,
@@ -31,6 +32,7 @@ export const nativeGrepFilesWithMatches = _nativeGrepFilesWithMatches;
 export const nativeGrepFilesWithMatchesFixed = _nativeGrepFilesWithMatchesFixed;
 export const nativeGrepLines = _nativeGrepLines;
 export const nativeGrepFull = _nativeGrepFull;
+export const nativeGrepWithFiles = _nativeGrepWithFiles;
 export const getSparseGramAllFiles = _getSparseGramAllFiles;
 export const queryAndGrepLines = _queryAndGrepLines;
 export const queryAndGrepFull = _queryAndGrepFull;
