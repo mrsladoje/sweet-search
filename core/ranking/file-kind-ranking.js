@@ -2335,10 +2335,13 @@ export function applyResultDemotions(results, opts = {}) {
     const entityRange = entityToAdopt
       ? Math.max(0, (entityToAdopt.endLine || 0) - (entityToAdopt.startLine || 0) + 1) : 0;
     // Agent format: never widen a chunk to a namespace/module span, whichever
-    // path picked the entity.
+    // path picked the entity; nor a graph-expanded result that took its chunk's span because
+    // its score is the chunk's (search-postprocess.js attachChunkIdsToExpanded): the chunk is
+    // what scored, its enclosing class is not.
     const adoptRange = !!entityToAdopt && entityRange >= chunkRange
       && !(isAgentFormat && (
         (!shouldAdoptEntity && containedLabelOnly)
+        || result._borrowedSpanFrom
         || NAMESPACE_ENTITY_KINDS.has(normalizeType(entityToAdopt.type))));
     const adoptedFile = entityToAdopt
       ? (entityToAdopt.file || entityToAdopt.filePath || resolveFilePath(result))
