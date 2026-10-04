@@ -820,7 +820,7 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
 
   // No header. The harness shows the command (regex, globs) right above the output; every file
   // with hits prints its path (more than one path = siblings, E6), a file with hidden hits says
-  // `(+N more)` on its path line, and files that did not fit are the `# +N more files` line. So
+  // `(+N more)` after its last shown hit, and files that did not fit are the `# +N more files` line. So
   // the total and the file count the header used to print can be read off the listing.
   for (const note of notes) process.stdout.write(`${note}\n`);
   if (listMode) {
@@ -1553,7 +1553,7 @@ async function cmdSemantic(rawArgs) {
   // ranked places that were not printed, the unprinted rest of a cut span among them, with
   // every entity each holds. The span ledger is recorded server-side above; nothing
   // prints it (`shown-full:` had no reader but the ledger itself).
-  const named = nameContext();
+  const named = nameContext([], r.nameKinds);
   const out = [];
   if (r.fellBack) out.push(`# no ranked span (${r.indexed === false ? 'file not indexed' : 'no chunk matches the question'}); the file from line 1`);
   if (!r.spans?.length) out.push('(no results)');

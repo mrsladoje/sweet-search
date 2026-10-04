@@ -969,7 +969,7 @@ describe('renderGrepListing (ss-grep output, grouped by file)', () => {
   const files = { 'src/a.rs': FILE, 'src/b.rs': ['fn b() {', '    ConfigSource::Env', '}'] };
   const getLines = (f) => files[f] ?? null;
 
-  it('prints each path once, then `LINE:text` rows; a file with hidden hits says how many on its path line', () => {
+  it('prints each path once, then `LINE:text` rows; a file with hidden hits says how many on its own line after its last row', () => {
     const rows = [
       { file: 'posting/index.go', line: 497, text: 'func (txn *Txn) addMutationHelper(' },
       { file: 'posting/list_test.go', line: 75, text: 'func addMutationHelper(t *testing.T) {' },
@@ -977,7 +977,7 @@ describe('renderGrepListing (ss-grep output, grouped by file)', () => {
     ];
     expect(renderGrepListing(rows)).toEqual([
       'posting/index.go', '497:func (txn *Txn) addMutationHelper(',
-      'posting/list_test.go (+62 more)', '75:func addMutationHelper(t *testing.T) {', '177:addMutationHelper(t, l, edge, Set, txn)',
+      'posting/list_test.go', '75:func addMutationHelper(t *testing.T) {', '177:addMutationHelper(t, l, edge, Set, txn)', '(+62 more)',
     ]);
   });
 
@@ -989,7 +989,7 @@ describe('renderGrepListing (ss-grep output, grouped by file)', () => {
 
   it('path rule: a typed --in file prints no heading when alone, its file name next to other files', () => {
     const rows = [{ file: 'src/lib/a.go', line: 3, text: 'x' }, { file: 'src/lib/a.go', line: 9, text: 'y', more: 2 }];
-    expect(renderGrepListing(rows, { typed: ['src/lib/a.go'] })).toEqual(['(+2 more)', '3:x', '9:y']);
+    expect(renderGrepListing(rows, { typed: ['src/lib/a.go'] })).toEqual(['3:x', '9:y', '(+2 more)']);
     expect(renderGrepListing(rows.slice(0, 1), { typed: ['src/lib/a.go'] })).toEqual(['3:x']);
     const two = [{ file: 'src/lib/a.go', line: 3, text: 'x' }, { file: 'src/other/b.go', line: 1, text: 'x' }];
     expect(renderGrepListing(two, { typed: ['src/lib/a.go'] })).toEqual(['a.go', '3:x', 'src/other/b.go', '1:x']);
@@ -1024,7 +1024,7 @@ describe('renderGrepListing (ss-grep output, grouped by file)', () => {
       .toEqual(['src/b.rs', '2:    ConfigSource::Env', '3-}']);
     expect(renderGrepListing([{ file: 'src/a.rs', line: 3, text: 'x', more: 4 }], {
       after: 2, getLines, matchLines: new Map([['src/a.rs', new Set([3, 4])]]),
-    })).toEqual(['src/a.rs (+4 more)', '3:line 3', '4:line 4', '5-line 5']);
+    })).toEqual(['src/a.rs', '3:line 3', '4:line 4', '5-line 5', '(+4 more)']);
   });
 
   it('context: an unreadable file or a stale line prints the plain hit row, in order', () => {
@@ -1032,7 +1032,7 @@ describe('renderGrepListing (ss-grep output, grouped by file)', () => {
       { file: 'gone.rs', line: 4, text: 'hit', more: 1 },
       { file: 'src/b.rs', line: 99, text: 'stale' },
       { file: 'src/b.rs', line: 2, text: 'x' },
-    ], { before: 0, after: 1, getLines })).toEqual(['gone.rs (+1 more)', '4:hit', 'src/b.rs', '2:    ConfigSource::Env', '3-}', '--', '99:stale']);
+    ], { before: 0, after: 1, getLines })).toEqual(['gone.rs', '4:hit', '(+1 more)', 'src/b.rs', '2:    ConfigSource::Env', '3-}', '--', '99:stale']);
   });
 
   it('the hidden-files line and the hint', () => {

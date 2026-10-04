@@ -202,7 +202,10 @@ describe('formatSpanHeading and the Parent. prefix', () => {
   it('prints `## a-b names` and drops a prefix the output already named', () => {
     const named = nameContext();
     const span = { startLine: 11, endLine: 80, entityNames: ['Pool', 'Pool.initialize', 'Pool.all_connections', 'Pool.disconnect', 'Pool.x'] };
-    expect(formatSpanHeading(span, named)).toBe('## 11-80 Pool, initialize, all_connections, disconnect, +1');
+    expect(formatSpanHeading(span, named)).toBe('## 11-80 Pool, initialize, all_connections, disconnect +1 more');
+    // With the index kinds, one word per run of the same kind (kind-words.js).
+    const kinds = { Pool: 'class', 'Pool.initialize': 'method', 'Pool.all_connections': 'method', 'Pool.disconnect': 'method', 'Pool.x': 'method' };
+    expect(formatSpanHeading(span, nameContext([], kinds))).toBe('## 11-80 class Pool, methods initialize, all_connections, disconnect +1 more');
     expect(formatAlsoLine([{ startLine: 174, endLine: 234, names: ['Pool.try_make_new', 'Pool.acquire'] }], named))
       .toBe('# also: 174-234 try_make_new, acquire');
     expect(formatSpanHeading({ startLine: 1, endLine: 2, symbols: [] })).toBe('## 1-2');
@@ -235,7 +238,7 @@ describe('formatSpanHeading and the Parent. prefix', () => {
 
   it('caps an also place at ALSO_NAME_CAP names', () => {
     const names = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
-    expect(formatAlsoLine([{ startLine: 1, endLine: 9, names }])).toBe(`# also: 1-9 ${names.slice(0, ALSO_NAME_CAP).join(', ')}, +2`);
+    expect(formatAlsoLine([{ startLine: 1, endLine: 9, names }])).toBe(`# also: 1-9 ${names.slice(0, ALSO_NAME_CAP).join(', ')} +2 more`);
   });
 });
 
@@ -507,8 +510,8 @@ describe('warm-server path and in-process path agree', () => {
       const warm = JSON.parse(warmResponse.body);
       expect(warm.code).toBe(0);
       expect(warm.stderr).toBe('');
-      expect(warm.stdout).toContain('## 1-6 alpha, f0\n');
-      expect(warm.stdout).toContain('# also: 41-44 beta · 81-84 gamma · 121-124 delta');
+      expect(warm.stdout).toContain('## 1-6 functions alpha, f0\n');
+      expect(warm.stdout).toContain('# also: 41-44 function beta · 81-84 function gamma · 121-124 function delta');
       expect(requests).toHaveLength(1);
       expect(requests[0]).toMatch(/^\/read-semantic\?/);
       expect(responses[0].status).toBe(200);

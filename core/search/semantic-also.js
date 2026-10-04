@@ -13,6 +13,8 @@
  * pointers, NOT shown spans — callers must not record them in the span ledger.
  */
 
+import { kindNameList } from './kind-words.js';
+
 export const ALSO_MAX = 5;
 export const HEADER_SYMBOL_CAP = 4;
 /** Names per `# also:` place; the hidden code is where a name is worth its tokens. */
@@ -142,7 +144,30 @@ export function createSemanticEntityLookup(graph, file, spans = [], pool = []) {
     findEnclosingEntity(filePath, startLine, endLine) {
       return filePath === file ? results.get(key(startLine, endLine))?.enclosing || null : null;
     },
+    allEntities() {
+      return [...results.values()].flatMap((r) => [...(r?.inRange || []), ...(r?.enclosing ? [r.enclosing] : [])]);
+    },
   };
+}
+
+/**
+ * Name → index kind for the names this output can print: graph entities (qualified and bare
+ * name), then chunk labels for names no entity covers. The headings and the also line print
+ * the kind word in front of each name (kind-words.js).
+ * @returns {Record<string, string>}
+ */
+export function collectNameKinds(graph, pool = []) {
+  const kinds = {};
+  const put = (name, type) => { if (name && type && !(name in kinds)) kinds[name] = type; };
+  for (const e of (typeof graph?.allEntities === 'function' ? graph.allEntities() : [])) {
+    put(qualifiedName(e), e.type);
+    put(e.name, e.type);
+  }
+  for (const c of pool || []) {
+    const label = labelOrNull(baseSymbol(c?.symbol));
+    if (label) put(label, labelOrNull(c.type));
+  }
+  return kinds;
 }
 
 /**
@@ -299,8 +324,8 @@ export function buildAlsoCandidates(pool, printedSpans, { file, graph = null, ma
  * What one output has printed so far, for shortNames: `names` printed on their own, and the
  * `parents` of the qualified names printed.
  */
-export function nameContext(names = []) {
-  return { names: new Set(names), parents: new Set() };
+export function nameContext(names = [], kinds = {}) {
+  return { names: new Set(names), parents: new Set(), kinds: kinds || {} };
 }
 
 /**
@@ -317,7 +342,13 @@ export function nameContext(names = []) {
  * @param {{names: Set<string>, parents: Set<string>}} ctx - from nameContext() (updated)
  */
 function shortNames(names, ctx) {
+  return shortNamePairs(names, ctx).map((p) => p.name);
+}
+
+/** shortNames with each printed name's full name and index kind: `{name, full, type}`. */
+function shortNamePairs(names, ctx) {
   const out = [];
+  const shorts = [];
   let lastParent = null;
   for (const n of names) {
     const s = String(n);
@@ -330,9 +361,11 @@ function shortNames(names, ctx) {
       ctx.parents.add(parent);
     }
     lastParent = parent;
-    if (out.includes(short) || (short !== s && out.includes(s))) continue;
+    if (shorts.includes(short) || (short !== s && shorts.includes(s))) continue;
     if (short === s) ctx.names.add(s);
-    out.push(short);
+    shorts.push(short);
+    const kinds = ctx.kinds || {};
+    out.push({ name: short, full: s, type: kinds[s] ?? kinds[lastSegment(s)] ?? null });
   }
   return out;
 }
@@ -358,8 +391,8 @@ function headerNames(span) {
  * @param {object} [named] - nameContext() of this output (updated)
  */
 export function formatSpanHeading(span, named = nameContext(), cap = HEADER_SYMBOL_CAP) {
-  const names = shortNames(headerNames(span), named);
-  return `## ${span.startLine}-${span.endLine}${names.length ? ` ${capped(names, cap)}` : ''}`;
+  const list = kindNameList(shortNamePairs(headerNames(span), named), cap);
+  return `## ${span.startLine}-${span.endLine}${list ? ` ${list}` : ''}`;
 }
 
 /**
@@ -372,8 +405,8 @@ export function formatSpanHeading(span, named = nameContext(), cap = HEADER_SYMB
 export function formatAlsoLine(candidates, named = nameContext(), cap = ALSO_NAME_CAP) {
   if (!Array.isArray(candidates) || candidates.length === 0) return '';
   const parts = candidates.map((c) => {
-    const names = shortNames(Array.isArray(c.names) ? c.names : (c.name ? [c.name] : []), named);
-    return `${c.startLine}-${c.endLine}${names.length ? ` ${capped(names, cap)}` : ''}`;
+    const list = kindNameList(shortNamePairs(Array.isArray(c.names) ? c.names : (c.name ? [c.name] : []), named), cap);
+    return `${c.startLine}-${c.endLine}${list ? ` ${list}` : ''}`;
   });
   return `# also: ${parts.join(' · ')}`;
 }

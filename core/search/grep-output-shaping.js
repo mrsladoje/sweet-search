@@ -743,9 +743,10 @@ function finishGrepBody(rows, unallocated, fileSummary, shownMatches, truncatedF
  * `LINE:text` row per hit under it. Repeating the path on every hit cost 5-8 o200k tokens a
  * line and told the agent nothing new.
  *
- *   posting/list_test.go (+63 more)      a file with hits the budget did not show says how many
+ *   posting/list_test.go
  *   75:func addMutationHelper(t *testing.T, l *List, ...
  *   177:addMutationHelper(t, l, edge, Set, txn)
+ *   (+63 more)                           after its last shown hit: hits the budget did not show
  *
  * With -A/-B/-C (`before`/`after` > 0) it is grep's context shape under the same heading: a hit
  * is `LINE:text`, a context line `LINE-text`, overlapping or touching windows of one file merge,
@@ -759,7 +760,7 @@ function finishGrepBody(rows, unallocated, fileSummary, shownMatches, truncatedF
  * unreadable, in which case that file's hits print as plain hit rows).
  *
  * @param {Array<{file: string, line: number, text?: string, more?: number}>} rows - shown hits
- *   in display order; `more` = hits of that file not shown (printed on its path line)
+ *   in display order; `more` = hits of that file not shown (printed after its last hit)
  * @param {{before?: number, after?: number, getLines?: (file: string) => string[]|null,
  *          matchLines?: Map<string, Set<number>>, dropText?: boolean, typed?: string[]}} [opts] -
  *   `dropText`: print `LINE` only (every shown hit has the same text); `typed`: the --in files
@@ -781,11 +782,15 @@ export function renderGrepListing(rows, { before = 0, after = 0, getLines = null
   const files = [...groups.keys()];
   for (const [file, { rows: hits, more }] of groups) {
     const head = !typedSet.has(file) ? file : (files.length > 1 ? typedPathLabel(file, files) : '');
-    if (head || more > 0) out.push(more > 0 ? `${head ? `${head} ` : ''}(+${more} more)` : head);
+    if (head) out.push(head);
+    // The count of this file's hits not shown follows its last shown hit (owner review
+    // 2026-10-04: the hits first, then what is missing from them).
+    const moreLine = more > 0 ? `(+${more} more)` : null;
     const plain = (row) => (dropText ? `${row.line}` : `${row.line}:${row.text ?? ''}`);
     const lines = withContext && getLines ? getLines(file) : null;
     if (!lines) {
       for (const row of hits) out.push(plain(row));
+      if (moreLine) out.push(moreLine);
       continue;
     }
     const windows = [];
@@ -813,6 +818,7 @@ export function renderGrepListing(rows, { before = 0, after = 0, getLines = null
         out.push(`${n}${w.hits.has(n) || matched?.has(n) ? ':' : '-'}${text}`);
       }
     });
+    if (moreLine) out.push(moreLine);
   }
   return out;
 }
