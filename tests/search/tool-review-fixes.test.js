@@ -285,3 +285,42 @@ describe('round 3', () => {
     expect(startAtNamedDefinition(code, { symbol: 'resolve_referenced_commits', startLine: 2006, endLine: 2013 }, 9999, repo, 'r.rs', true).start).toBeNull();
   });
 });
+
+// --- Round 4 (2026-10-04) ------------------------------------------------------------------
+
+import { dropNameOnlyCallers } from '../../core/graph/structural-context.js';
+import { shouldTrustQualifiedResolution } from '../../core/infrastructure/structural-qualified-resolution.js';
+
+describe('round 4', () => {
+  it('a name-only caller whose receiver names the owner stays; the dropped ones are reported', () => {
+    const target = { id: 't', name: 'intercept', parentClass: 'Interceptor' };
+    const rows = [
+      { id: 'a', name: 'proceed', targetName: 'interceptor.intercept', targetId: null },
+      { id: 'b', name: 'other', targetName: 'logging.intercept', targetId: null },
+    ];
+    const dropped = [];
+    expect(dropNameOnlyCallers(rows, target, 40, dropped).map((r) => r.id)).toEqual(['a']);
+    expect(dropped.map((r) => r.id)).toEqual(['b']);
+  });
+
+  it('Rust `recv.name(` never reaches a free function (jj `path.clone()` -> testutils fn clone)', () => {
+    const free = { name: 'clone', type: 'function', filePath: 'lib/testutils/src/git.rs', parentClass: null, summary: 'clone the working copy path' };
+    expect(shouldTrustQualifiedResolution('working_copy_path.clone', free)).toBe(false);
+    expect(shouldTrustQualifiedResolution('git::clone', free)).toBe(true);
+    expect(shouldTrustQualifiedResolution('repo.clone', { ...free, parentClass: 'Repo' })).toBe(true);
+  });
+
+  it('Kotlin `fun interface` is an interface with its members', async () => {
+    const r = await new GraphExtractor().extractFromFile('/t/I.kt', 'fun interface Interceptor {\n  fun intercept(chain: Chain): Response\n}\n');
+    const e = (n) => r.entities.find((x) => x.name === n);
+    expect(e('Interceptor')?.type).toBe('interface');
+    expect(e('intercept')?.parent_class ?? e('intercept')?.parentClass).toBe('Interceptor');
+  });
+
+  it('Ruby calls with a block and no parentheses are call sites (sequel `hold do |c|`)', async () => {
+    const src = 'class P\n  def all\n    hold do |c|\n      @list.each{|x| x}\n    end\n  end\n  def hold\n  end\nend\n';
+    const r = await new GraphExtractor().extractFromFile('/t/p.rb', src);
+    expect(r.callSites.some((c) => c.callee_name === 'hold' && c.context_line === 3)).toBe(true);
+    expect(r.relationships.some((x) => x.type === 'calls' && x.target_name === 'list.each' && x.context_line === 4)).toBe(true);
+  });
+});

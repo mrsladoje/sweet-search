@@ -199,6 +199,28 @@ export class CodeGraphRepository {
    * @param {string} targetName
    * @returns {{ name: string, type: string, startLine: number, endLine: number }|null}
    */
+  /**
+   * An entity named `member` owned by `owner` (parent_class, case-insensitive) that starts in
+   * lines startLine..endLine of the file, or null. For `Owner.member` query mentions.
+   */
+  findOwnedEntityInRange(filePath, startLine, endLine, owner, member) {
+    if (!owner || !member) return null;
+    const db = this._open();
+    if (!db) return null;
+    try {
+      const row = prepareCached(db, `
+        SELECT name, type, start_line, end_line FROM entities
+        WHERE file_path = ? AND start_line >= ? AND start_line <= ?
+          AND lower(name) = lower(?) AND lower(parent_class) = lower(?)
+          AND ${this._entityVisibilitySql(db)}
+        LIMIT 1
+      `).get(filePath, startLine, endLine, member, owner, ...this._entityVisibilityParams(db));
+      return row ? { name: row.name, type: row.type, startLine: row.start_line, endLine: row.end_line } : null;
+    } catch {
+      return null;
+    }
+  }
+
   findEntityWithNameInRange(filePath, startLine, endLine, targetName) {
     if (!targetName) return null;
     const db = this._open();

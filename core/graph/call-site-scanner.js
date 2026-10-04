@@ -72,6 +72,12 @@ const BACKTICK_STRING_LANGUAGES = new Set(['javascript', 'typescript', 'tsx', 'g
 
 // Extra comment syntax the registry's single `comment.line` entry omits.
 const EXTRA_LINE_COMMENTS = { php: ['#'] };
+// Ruby statement that is a call with a block and no parentheses: `[lhs = ]name do`,
+// `[lhs = ][@]recv.name do`, `name { |x|`. Group 1: receiver (or empty), group 2: method.
+const RUBY_BLOCK_CALL = /^(?:[@\w]+\s*(?:\|\||&&)?=\s*)?(?:(@{0,2}[A-Za-z_]\w*)\s*(?:\.|&\.)\s*)?([a-z_]\w*[?!]?)(?:\s+do\b(?:\s*\|[^|]*\|)?\s*$|\s*\{\s*\|)/;
+// Words that open a block statement themselves, not a call (`loop do` is Kernel#loop: kept).
+const RUBY_BLOCK_KEYWORDS = new Set(['def', 'class', 'module', 'begin', 'end', 'then', 'else', 'ensure', 'lambda', 'proc']);
+
 // Docstrings/heredocs hold examples (`iex> Jason.encode(x)`), not calls.
 const EXTRA_BLOCK_COMMENTS = { python: [["'''", "'''"]], elixir: [['"""', '"""']] };
 
@@ -648,6 +654,21 @@ export class CallSiteScanner {
       while ((pm = ELIXIR_PIPE.exec(trimmed)) !== null) {
         if (pm[1]) emit(`${pm[1]}.${pm[2]}`);
         else if (emitBare && !plan.bareKeywords.has(pm[2])) emitBare(pm[2]);
+      }
+    }
+
+    // Ruby calls with a block need no parenthesis: `hold do |c|`, `x = sync do`, `@pool.hold do`,
+    // `list.each { |x|` (sequel ThreadedConnectionPool#all_connections calls `hold` so).
+    if (plan.bangCalls && (trimmed.indexOf(' do') !== -1 || trimmed.indexOf('{') !== -1)) {
+      const rb = RUBY_BLOCK_CALL.exec(trimmed);
+      if (rb) {
+        const [, recv, name] = rb;
+        if (recv) {
+          const r = recv.replace(/^@+/, '');
+          if (!this.skip.has(r)) emit(`${r}.${name}`);
+        } else if (emitBare && !plan.bareKeywords.has(name) && !RUBY_BLOCK_KEYWORDS.has(name) && !(isDefinedHere && isDefinedHere(name))) {
+          emitBare(name);
+        }
       }
     }
 
