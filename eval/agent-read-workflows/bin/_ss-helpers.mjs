@@ -1149,7 +1149,7 @@ async function cmdRead(rawArgs) {
     }
   }
 
-  const { readFile, renderUnreadBelow, renderUnreadAbove, renderEnclosingStart, fenceBody, numberCodeLines } = await import(path.join(REPO_ROOT, 'core/search/search-read.js'));
+  const { readFile, renderUnreadBelow, renderUnreadAbove, renderEnclosingStart, renderInterfaceImpls, fenceBody, numberCodeLines } = await import(path.join(REPO_ROOT, 'core/search/search-read.js'));
   // Agent-facing ss-read: span gate on, same as the CLI and the daemon route.
   const r = await readFile({
     path: file, projectRoot: FILE_ROOT,
@@ -1229,7 +1229,9 @@ async function cmdRead(rawArgs) {
     coveredWholeFile ? '' : renderEnclosingStart(r),
     coveredWholeFile ? '' : renderUnreadAbove(r, { command: 'ss-read', queryEvidence: receiptResponse?.queryEvidence }),
   ].filter(Boolean).join('; ');
-  const tail = [aboveLine, remainder].filter(Boolean).map((l) => `${l}\n`).join('');
+  // The interface-call line sits first after the code: the call it names is in view.
+  const implLine = renderInterfaceImpls(r);
+  const tail = [implLine, aboveLine, remainder].filter(Boolean).map((l) => `${l}\n`).join('');
   if (!r.text) {
     // An empty file (or a window of nothing) prints no empty fence.
     process.stdout.write(`${resolvedLine}${head}# empty file\n${tail}`);

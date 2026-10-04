@@ -350,12 +350,16 @@ export function dispatchCallersOf(repo, target, listed = [], limit = 80) {
   return out;
 }
 
+const INHERITANCE_RELATIONSHIPS = new Set(['extends', 'implements']);
+const INTERFACE_TARGET_TYPES = new Set(['interface', 'protocol', 'trait']);
+
 function itemSummary(entity) {
   const loc = entity.filePath ? `${entity.filePath}:${entity.startLine || '?'}` : '(external)';
   const lines = printedSiteLines(siteLines(entity));
   // Trace-only edges are not calls: say what they are (`(overrides)`,
   // `(instantiates)@12`). Call/uses/extends rows list every site line.
-  if (isTraceOnlyRelationship(entity.relationship)) {
+  // Inheritance is not a call either: `Impl [class] … (implements)@9`, not `call@9`.
+  if (isTraceOnlyRelationship(entity.relationship) || INHERITANCE_RELATIONSHIPS.has(entity.relationship)) {
     const at = lines ? `@${lines}` : '';
     return `${entity.name} [${entity.type}] ${loc} (${entity.relationship})${at}`;
   }
@@ -769,6 +773,11 @@ export class StructuralContextBuilder {
     const targetCallsiteHints = targetHintSites.map(h => h.name);
     const unresolvedNamed = [];
     const storedCallers = [...this.repo.getCallers(target, { limit: 160, unresolved: unresolvedNamed }), ...(this.repo.getAliasCallers?.(target, { limit: 80 }) || [])];
+    // Several extractors store a class implementing an interface as `extends`; for an
+    // interface / protocol / trait target that row is an implementation, so say so.
+    if (INTERFACE_TARGET_TYPES.has(target.type)) {
+      for (const row of storedCallers) if (row?.relationship === 'extends') row.relationship = 'implements';
+    }
     // A type's signature users (`typeRef`: functions that take or return it).
     // Many types have no other referrer (jj 468 of 755, drogon 142 of 183),
     // so their callers section would be empty without them; a popular type

@@ -17,6 +17,8 @@ function pathIsUnsafe(value) {
   return value.startsWith('/') || value === '..' || value.startsWith('../') || value.includes('/../');
 }
 
+const INTERFACE_ENTITY_TYPES = new Set(['interface', 'protocol', 'trait']);
+
 export class CodeGraphRepository {
   constructor(dbPath, options = {}) {
     this._baseDbPath = dbPath;
@@ -320,6 +322,88 @@ export class CodeGraphRepository {
    * @param {number} endLine
    * @returns {Array<{ id, name, type, startLine, endLine, parentClass }>}
    */
+  /**
+   * Calls made in [startLine, endLine] of `filePath` that dispatch through an interface /
+   * protocol / trait method, each with the methods that implement it (`overrides` edges
+   * into the interface method). A call counts when its resolved target IS the interface
+   * method (`_replacer.Replace` -> IDownstreamPathPlaceholderReplacer.Replace), or when the
+   * resolver picked one implementation of it — then every implementation is listed, since
+   * the field's runtime class is not known. The read trailer uses this to name the class
+   * behind an interface-typed call.
+   *
+   * @returns {{line: number, call: string, target: string, impls: {name: string, owner: string|null, filePath: string, startLine: number}[]}[]}
+   */
+  findInterfaceCallImplementations(filePath, startLine, endLine) {
+    const db = this._open();
+    if (!db) return [];
+    try {
+      const relSql = (alias) => this._relationshipVisibilitySql(db, alias);
+      const relParams = this._relationshipVisibilityParams(db);
+      const entParams = this._entityVisibilityParams(db);
+      const calls = prepareCached(db, `
+        SELECT r.context_line AS line, r.target_name AS call, t.id AS tid, t.name AS tname,
+               p.name AS pname, p.type AS ptype
+        FROM relationships r
+        JOIN entities s ON s.id = r.source_id
+        JOIN entities t ON t.id = r.target_id
+        LEFT JOIN entities p ON p.id = t.parent_id
+        WHERE s.file_path = ?
+          AND r.type = 'calls'
+          AND r.context_line >= ? AND r.context_line <= ?
+          AND ${relSql('r')}
+          AND ${this._entityVisibilitySql(db, 's')}
+          AND ${this._entityVisibilitySql(db, 't')}
+        ORDER BY r.context_line ASC
+        LIMIT 64
+      `).all(filePath, startLine, endLine, ...relParams, ...entParams, ...entParams);
+      if (calls.length === 0) return [];
+      const interfaceOf = prepareCached(db, `
+        SELECT im.id AS id, im.name AS name, ip.name AS pname
+        FROM relationships o
+        JOIN entities im ON im.id = o.target_id
+        JOIN entities ip ON ip.id = im.parent_id
+        WHERE o.type = 'overrides'
+          AND o.source_id = ?
+          AND ip.type IN ('interface', 'protocol', 'trait')
+          AND ${relSql('o')}
+          AND ${this._entityVisibilitySql(db, 'im')}
+        LIMIT 1
+      `);
+      const implsOf = prepareCached(db, `
+        SELECT i.name, i.parent_class, i.file_path, i.start_line
+        FROM relationships o
+        JOIN entities i ON i.id = o.source_id
+        WHERE o.type = 'overrides'
+          AND o.target_id = ?
+          AND ${relSql('o')}
+          AND ${this._entityVisibilitySql(db, 'i')}
+        ORDER BY i.file_path ASC, i.start_line ASC
+        LIMIT 8
+      `);
+      const out = [];
+      for (const c of calls) {
+        let iface = null;
+        if (INTERFACE_ENTITY_TYPES.has(c.ptype)) iface = { id: c.tid, name: c.tname, pname: c.pname };
+        else iface = interfaceOf.get(c.tid, ...relParams, ...entParams) || null;
+        if (!iface) continue;
+        out.push({
+          line: c.line,
+          call: c.call,
+          target: iface.pname ? `${iface.pname}.${iface.name}` : iface.name,
+          impls: implsOf.all(iface.id, ...relParams, ...entParams).map(i => ({
+            name: i.name,
+            owner: i.parent_class || null,
+            filePath: i.file_path,
+            startLine: i.start_line,
+          })),
+        });
+      }
+      return out;
+    } catch {
+      return [];
+    }
+  }
+
   findEntitiesInRange(filePath, startLine, endLine) {
     const db = this._open();
     if (!db) return [];

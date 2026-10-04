@@ -338,6 +338,17 @@ export class StructuralContextRepository {
       return ownedFirst(rankStructuralCandidates(candidates, { queryHint: opts.queryHint, readFileRange: this.readFileRange.bind(this) }));
     }
 
+    // `--in <file>` names a file that CALLS the symbol but does not define it
+    // (`ss-trace Replace --in DownstreamUrlCreatorMiddleware.cs`): resolve the name
+    // through that file's call edges before any substring match, which used to land
+    // on the field `_replacer` (`%Replace%`, case-insensitive) instead of the method.
+    if (filePath) {
+      const called = this._findCalledTargetsInFile(db, names, filePath, limit);
+      if (called.length) {
+        return ownedFirst(rankStructuralCandidates(called, { queryHint: opts.queryHint, readFileRange: this.readFileRange.bind(this) }));
+      }
+    }
+
     if (raw.length < 3) return [];
     const members = this._findAssignedMemberDefinitions(raw);
     const likeParams = [`%${raw}%`];
@@ -359,6 +370,33 @@ export class StructuralContextRepository {
       LIMIT ?
     `).all(...entityParams, ...likeParams, limit).map(row => this._entityFromRow(row));
     return rankStructuralCandidates([...members, ...likeRows].filter(Boolean), { queryHint: opts.queryHint, readFileRange: this.readFileRange.bind(this) });
+  }
+
+  /** Resolved targets named `names` of the calls / constructions made in `filePath`. */
+  _findCalledTargetsInFile(db, names, filePath, limit) {
+    try {
+      const nameWhere = names.map(() => 'lower(t.name) = lower(?)').join(' OR ');
+      const rows = db.prepare(`
+        SELECT t.id, t.name, t.type, t.file_path, t.start_line, t.end_line, t.signature,
+               t.summary, t.parent_class, t.package, MIN(r.context_line) AS first_line
+        FROM relationships r
+        JOIN entities s ON s.id = r.source_id
+        JOIN entities t ON t.id = r.target_id
+        WHERE r.type IN ('calls', 'instantiates')
+          AND (s.file_path = ? OR s.file_path LIKE ?)
+          AND (${nameWhere})
+          AND ${this._relationshipSql(db, 'r')}
+          AND ${this._entitySql(db, 's')}
+          AND ${this._entitySql(db, 't')}
+        GROUP BY t.id
+        ORDER BY first_line ASC
+        LIMIT ?
+      `).all(filePath, `%${filePath}%`, ...names,
+        ...this._relationshipParams(db), ...this._entityParams(db), ...this._entityParams(db), limit);
+      return rows.map(row => this._entityFromRow(row)).filter(Boolean);
+    } catch {
+      return [];
+    }
   }
 
   /**
