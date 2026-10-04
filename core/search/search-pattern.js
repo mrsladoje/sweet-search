@@ -347,7 +347,13 @@ export async function bareGrep(query, routing, options = {}) {
   if (options._isAgentFormat === true && options.grepLineClasses === true && fileSummary
       && typeof this?.codeGraphRepo?.findEntitiesInFile === 'function') {
     const manifest = this._readReconcileManifest?.() ?? null;
+    // A pattern that is one identifier (`safeParse`, `\bsafeParse\b`, `safeParse\(`): rows
+    // that define it are marked, and their files list first.
+    // `-w` sends `\b(?:safeParse)\b`.
+    const bare = String(regex).replace(/^\\b\(\?:(.*)\)\\b$/, '$1');
+    const definedName = /^(?:\\b)?([A-Za-z_$][\w$]*)(?:\\b|\\\(|\\s\*\\\()?$/.exec(bare)?.[1] || null;
     lineClassStats = stampGrepLineClasses(results, {
+      definedName,
       // A capped entity list would class every line past the cap's last span as "outside
       // every symbol": a file that fills the cap keeps the prefix instead.
       entitiesInFile: (file) => {

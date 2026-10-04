@@ -532,3 +532,71 @@ describe('overfit guards', () => {
     expect(nameWordsMatched(0, 0)).toBe(false);
   });
 });
+
+import { bindCalleeOverloads } from '../../core/graph/structural-context.js';
+
+describe('callee overloads by argument count', () => {
+  const file = 'Logger.cs';
+  const src = {
+    1: 'void Write(Level l, string t)\n{\n  Write(l, t, None);\n  Write(l);\n}',
+    10: 'void Write(Level l)',
+    20: 'void Write<T>(Level l, string t, T v)',
+    30: 'void Write(Level l, string t, params object[] v)',
+    40: 'void Write<T0, T1>(Level l, string t, T0 a, T1 b)',
+  };
+  const defs = [10, 20, 30, 40].map((n) => ({ id: `w${n}`, name: 'Write', type: 'method', parentClass: 'Logger', filePath: file, startLine: n, endLine: n }));
+  const repo = {
+    readFileRange: (f, s) => (s === 3 ? 'Write(l, t, None);' : s === 4 ? 'Write(l);' : src[s] || ''),
+    findEntityCandidates: () => [{ id: 't', name: 'Write', filePath: file, parentClass: 'Logger', startLine: 1, endLine: 5 }, ...defs],
+  };
+  const target = { id: 't', name: 'Write', filePath: file, parentClass: 'Logger', startLine: 1, endLine: 5 };
+  it('one fitting overload is bound; several are all named', () => {
+    const rows = [
+      { ...defs[1], relationship: 'calls', contextLines: [3] },
+      { ...defs[1], relationship: 'calls', contextLines: [4] },
+    ];
+    const [three, one] = bindCalleeOverloads(repo, target, rows);
+    expect([three.startLine, three.overloads]).toEqual([20, [30]]);
+    expect([one.startLine, one.overloads, one.contextLines]).toEqual([10, undefined, [4]]);
+  });
+});
+
+import { trustedCalleeEdge } from '../../core/infrastructure/structural-qualified-resolution.js';
+import { declaredTypeIn } from '../../core/graph/receiver-types.js';
+import { stampGrepLineClasses } from '../../core/search/grep-line-classes.js';
+import { renderGrepBody } from '../../core/search/grep-output-shaping.js';
+
+describe('round 8', () => {
+  it('callee side: `self.x(` bound to a method is trusted; `CONST.get(` to a class method is not', () => {
+    const m = (name) => ({ name, type: 'method', parentClass: 'Session', filePath: 'src/requests/sessions.py' });
+    expect(trustedCalleeEdge('self.merge_environment_settings', m('merge_environment_settings'))).toBe(true);
+    expect(trustedCalleeEdge('DEFAULT_PORTS.get', m('get'))).toBe(false);
+    expect(trustedCalleeEdge('self.helper', { name: 'helper', type: 'function', parentClass: null, filePath: 'a.py' })).toBe(false);
+  });
+
+  it('Python: `s = pkg.Cls()` types `s` when it is the only binding', () => {
+    const f = 'tests/t.py';
+    expect(declaredTypeIn('    def t(self):\n        s = requests.Session()\n        r = s.send(x)', 's', f)).toEqual({ type: 'Session', qualifier: 'requests' });
+    expect(declaredTypeIn('        s = requests.Session()\n        s = other()\n        s.send(x)', 's', f)).toBe(null);
+    expect(declaredTypeIn('        s = requests.session()\n        s.send(x)', 's', f)).toBe(null);
+    expect(declaredTypeIn('        s = MAX_SIZE(3)\n        s.send(x)', 's', f)).toBe(null);
+  });
+
+  it('ss-grep: the file that defines the searched identifier lists first', () => {
+    const results = [
+      { file: 't/a.test.ts', line: 1, content: 'x.safeParse(1)' },
+      { file: 't/a.test.ts', line: 2, content: 'x.safeParse(2)' },
+      { file: 't/a.test.ts', line: 3, content: 'x.safeParse(3)' },
+      { file: 'src/parse.ts', line: 80, content: 'export const safeParse = make();' },
+    ];
+    stampGrepLineClasses(results, {
+      definedName: 'safeParse',
+      isFresh: () => true,
+      entitiesInFile: (f) => (f === 'src/parse.ts' ? [{ name: 'safeParse', startLine: 80, endLine: 80 }] : [{ name: 'other', startLine: 1, endLine: 9 }]),
+    });
+    expect(results.map((r) => !!r.defines)).toEqual([false, false, false, true]);
+    const summary = { files: [{ file: 't/a.test.ts', total: 3, kept: 3 }, { file: 'src/parse.ts', total: 1, kept: 1 }], hiddenFileCount: 0, hiddenMatchCount: 0, hiddenSample: [] };
+    const body = renderGrepBody(results, summary, 20, { alloc: 'weight' });
+    expect(body.rows[0].file).toBe('src/parse.ts');
+  });
+});

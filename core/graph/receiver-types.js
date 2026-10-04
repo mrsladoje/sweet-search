@@ -86,6 +86,9 @@ const BIND = '\\b(?:val|var|let|const)\\s+(?:mut\\s+)?';
 const CTOR_KSS = new RegExp(`${BIND}(${ID})\\s*=\\s*((?:${ID}\\.)*[A-Z]\\w*)\\s*\\(`, 'g');
 const CTOR_TS = new RegExp(`${BIND}(${ID})\\s*=\\s*new\\s+((?:${ID}\\.)*[A-Z]\\w*)\\s*[(<]`, 'g');
 const CTOR_RS = new RegExp(`${BIND}(${ID})\\s*=\\s*([A-Z]\\w*)\\s*\\{`, 'g');
+// Python `s = requests.Session()`: a class (CapWords, one lowercase letter at least, so no
+// CONSTANT) called at the start of a line. Same index as PY_UNTYPED's match of `s =`.
+const CTOR_PY = new RegExp(`(?<![\\w.])(${ID})\\s*=\\s*((?:${ID}\\.)*[A-Z]\\w*[a-z]\\w*)\\s*\\(`, 'g');
 // Bindings without a written type. Each alternative captures a name list.
 const COLON_UNTYPED = new RegExp([
   // `val b = f()`, `let b = x`, `for (const b of xs)`.
@@ -164,11 +167,17 @@ function declaredTypeInCode(text, name, filePath) {
       if (m[4] && RUST_FILE.test(f)) return null;
       found.push(`${m[2]}${m[3]}`);
     }
-    const ctor = KOTLIN_SWIFT_SCALA.test(f) ? CTOR_KSS : (TS_FILE.test(f) ? CTOR_TS : (RUST_FILE.test(f) ? CTOR_RS : null));
+    const ctor = KOTLIN_SWIFT_SCALA.test(f) ? CTOR_KSS : (TS_FILE.test(f) ? CTOR_TS : (RUST_FILE.test(f) ? CTOR_RS : (PY_FILE.test(f) ? CTOR_PY : null)));
     const builtAt = new Set();
     if (ctor) {
       ctor.lastIndex = 0;
-      while ((m = ctor.exec(text)) !== null) if (m[1] === name) { found.push(m[2]); builtAt.add(m.index); }
+      while ((m = ctor.exec(text)) !== null) {
+        if (m[1] !== name) continue;
+        // Python: only a statement (`f(s=Session())` is a keyword argument, no binding).
+        if (ctor === CTOR_PY && !/^[ \t]*$/.test(text.slice(text.lastIndexOf('\n', m.index - 1) + 1, m.index))) continue;
+        found.push(m[2]);
+        builtAt.add(m.index);
+      }
     }
     for (const untyped of PY_FILE.test(f) ? [COLON_UNTYPED, PY_UNTYPED] : [COLON_UNTYPED]) {
       untyped.lastIndex = 0;

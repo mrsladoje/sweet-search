@@ -1022,7 +1022,7 @@ function traceRow(item, target = null) {
     .filter((n) => isFile || !(item.onlyNonCall && n === item.startLine));
   const lines = siteList(own);
   const span = !isFile && Number.isInteger(item.startLine) ? ` ${lineRange(item.startLine, item.endLine)}` : '';
-  return `${isFile ? item.name : kindName(item.name, item.type)}${span}${isCall ? '' : ` (${rels.join(', ')})`}${recursive}${lines ? ` @${lines}` : ''}${item.via ? ` via ${item.via}` : ''}`;
+  return `${isFile ? item.name : kindName(item.name, item.type)}${span}${isCall ? '' : ` (${rels.join(', ')})`}${recursive}${lines ? ` @${lines}` : ''}${item.via ? ` via ${item.via}` : ''}${item.overloads?.length ? ` (or overloads ${item.overloads.join(', ')})` : ''}`;
 }
 
 /**

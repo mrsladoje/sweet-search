@@ -24,6 +24,17 @@ export function shouldTrustQualifiedResolution(targetName, entity) {
 const SELF_QUALIFIERS = new Set(['this', 'self', 'super', 'cls', 'me', 'static']);
 
 /**
+ * Callee-side check of a stored call edge from `caller` to `resolved`. `self.x(` / `this.x(`
+ * names no type, so the receiver-name test cannot apply: the build bound it to a method
+ * (requests Session.request `self.merge_environment_settings(` was dropped).
+ */
+export function trustedCalleeEdge(targetName, resolved) {
+  const parts = String(targetName || '').replace(/::/g, '.').split('.').filter(Boolean);
+  if (parts.length === 2 && SELF_QUALIFIERS.has(parts[0]) && resolved?.parentClass) return true;
+  return shouldTrustQualifiedResolution(targetName, resolved);
+}
+
+/**
  * Caller-side twin of shouldTrustQualifiedResolution: decide whether a stored
  * call edge (matched to `target` by name pattern) plausibly refers to that
  * target. `edge` carries the CALLING entity's fields (filePath, parentClass)

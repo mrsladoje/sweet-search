@@ -6,7 +6,7 @@ import { applyReadPragmas } from './db-utils.js';
 import { findAliasCallers } from './structural-alias-resolver.js';
 import { rankStructuralCandidates } from './structural-candidate-ranker.js';
 import { findAssignedMemberDefinitions, findSameFileDefinition } from './structural-source-definitions.js';
-import { goPackagePrivateFrom, pythonPackageCallOnMethod, shouldTrustQualifiedResolution, trustedCallerEdge } from './structural-qualified-resolution.js';
+import { goPackagePrivateFrom, pythonPackageCallOnMethod, shouldTrustQualifiedResolution, trustedCallerEdge, trustedCalleeEdge } from './structural-qualified-resolution.js';
 import { fetchPageRank, fetchFrontierBackwardEdges, fetchFrontierForwardEdges } from './structural-graph-signals.js';
 import { CodeGraphReaderVisibility } from './code-graph-visibility.js';
 import { SITE_LINE_RELATIONSHIP_TYPES as SITE_LINE_TYPES, TRACE_ONLY_TYPES_SQL } from './relationship-types.js';
@@ -758,7 +758,7 @@ export class StructuralContextRepository {
         summary: '',
       });
       if (row.id && !packageCallBound(row) && !declaredReceiverBound(row.target_name, target, resolved)
-        && !shouldTrustQualifiedResolution(row.target_name, resolved)) resolved = { id: `external:${idx}:${row.target_name || 'unknown'}`, name: row.target_name || 'external', type: 'external', filePath: null, startLine: null, endLine: null, signature: row.target_name || '', summary: '' };
+        && !trustedCalleeEdge(row.target_name, resolved)) resolved = { id: `external:${idx}:${row.target_name || 'unknown'}`, name: row.target_name || 'external', type: 'external', filePath: null, startLine: null, endLine: null, signature: row.target_name || '', summary: '' };
       if (row.id && (this._qualifiedCallToNestedFunction(db, row.target_name, resolved) || this._pythonModuleCall(row.target_name, resolved, target.filePath))) resolved = { id: `external:${idx}:${row.target_name || 'unknown'}`, name: row.target_name || 'external', type: 'external', filePath: null, startLine: null, endLine: null, signature: row.target_name || '', summary: '' };
       if (resolved.id === target.id) {
         resolved = this._resolveQualifiedAlternative(row.target_name, target.id) || resolved;
@@ -867,7 +867,7 @@ export class StructuralContextRepository {
         summary: '',
       });
       if (row.id && !packageCallBound(row) && !declaredReceiverBound(row.target_name, { signature: row.source_signature }, resolved)
-        && !shouldTrustQualifiedResolution(row.target_name, resolved)) resolved = { id: `external:${row.source_id}:${idx}:${row.target_name || 'unknown'}`, name: row.target_name || 'external', type: 'external', filePath: null, startLine: null, endLine: null, signature: row.target_name || '', summary: '' };
+        && !trustedCalleeEdge(row.target_name, resolved)) resolved = { id: `external:${row.source_id}:${idx}:${row.target_name || 'unknown'}`, name: row.target_name || 'external', type: 'external', filePath: null, startLine: null, endLine: null, signature: row.target_name || '', summary: '' };
       if (row.id && this._qualifiedCallToNestedFunction(db, row.target_name, resolved)) resolved = { id: `external:${row.source_id}:${idx}:${row.target_name || 'unknown'}`, name: row.target_name || 'external', type: 'external', filePath: null, startLine: null, endLine: null, signature: row.target_name || '', summary: '' };
       if (resolved.id === row.source_id) {
         resolved = this._resolveQualifiedAlternative(row.target_name, row.source_id) || resolved;

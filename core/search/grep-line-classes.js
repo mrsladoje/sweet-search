@@ -114,6 +114,25 @@ export function classifyGrepLines(rows, entities, symbolsOut = null) {
 }
 
 /**
+ * `defines: true` on a row where a symbol named exactly `name` starts (on the line or up to
+ * DECL_WINDOW lines above, the name on the line): the grep pattern's own definition. The
+ * renderer lists such files first (zod `safeParse`: parse.ts:80 came after 15 test files).
+ */
+function stampDefinitionRows(results, start, end, name, { entitiesInFile, isFresh }) {
+  const file = results[start].file;
+  let rows = null;
+  for (let r = start; r < end; r++) if (nameOnLine(name, results[r].content ?? results[r].text ?? '')) (rows ??= []).push(r);
+  if (!rows || !isFresh(file)) return;
+  let entities;
+  try { entities = entitiesInFile(file) || []; } catch { entities = []; }
+  const starts = entities.filter((e) => entityShortName(e.name) === name).map((e) => e.startLine ?? e.start_line);
+  for (const r of rows) {
+    const line = results[r].line;
+    if (starts.some((s) => Number.isInteger(s) && s <= line && s >= line - DECL_WINDOW)) results[r].defines = true;
+  }
+}
+
+/**
  * Stamp `lineClass` and `lineSymbol` (innermost enclosing symbol of the file, or -1) on
  * bare-grep result rows of every fresh, indexed file with more than one row. Rows of other
  * files are left untouched (no `lineClass`), which the renderer reads as "keep the prefix".
@@ -122,7 +141,7 @@ export function classifyGrepLines(rows, entities, symbolsOut = null) {
  * @param {{entitiesInFile: (file: string) => Array, isFresh: (file: string) => boolean}} io
  * @returns {{files: number, stamped: number}} counts, for stats
  */
-export function stampGrepLineClasses(results, { entitiesInFile, isFresh }) {
+export function stampGrepLineClasses(results, { entitiesInFile, isFresh, definedName = null }) {
   let files = 0;
   let stamped = 0;
   let i = 0;
@@ -130,6 +149,7 @@ export function stampGrepLineClasses(results, { entitiesInFile, isFresh }) {
     const start = i;
     const file = results[i].file;
     while (i < results.length && results[i].file === file) i++;
+    if (definedName) stampDefinitionRows(results, start, i, definedName, { entitiesInFile, isFresh });
     if (i - start < 2) continue;
     files++;
     if (!isFresh(file)) continue;
