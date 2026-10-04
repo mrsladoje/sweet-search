@@ -457,3 +457,21 @@ describe('round 7', () => {
     expect(applyFileKindRanking(res, { intent: 'tests', ...live })[0].file).toBe('.github/workflows/ci.yml');
   });
 });
+
+describe('round 7: intent, doc blocks, recursion', () => {
+  it('agent format: a behaviour question naming a config noun still asks for code', () => {
+    expect(classifyFileKindIntent('how does uv sync remove packages that are not in the lockfile', { agentFormat: true })).toBe('implementation');
+    expect(classifyFileKindIntent('how do I configure the lockfile path', { agentFormat: true })).toBe('ancillary');
+    expect(classifyFileKindIntent('how does uv sync remove packages that are not in the lockfile')).toBe('ancillary');
+  });
+
+  it('a JSDoc block one blank line above a definition opens its chunk', async () => {
+    const p = new TreeSitterProvider();
+    await p.init();
+    const body = (n) => Array.from({ length: n }, (_, i) => `  var v${i} = compute(${i}, a, b);`).join('\n');
+    const src = `app.handle = function handle(a, b) {\n${body(20)}\n};\n\n/**\n * Use a middleware.\n */\n\napp.use = function use(fn) {\n${body(20)}\n};\n`;
+    const chunks = await p.parseFileToChunks(src, 'javascript', { maxChunkSize: 900 });
+    expect(chunks.find((c) => c.text.startsWith('app.handle'))?.text.includes('Use a middleware')).toBe(false);
+    expect(chunks.some((c) => c.text.startsWith('/**\n * Use a middleware.'))).toBe(true);
+  });
+});
