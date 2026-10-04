@@ -708,16 +708,41 @@ describe('resolveRelationshipTargets', () => {
     expect(rel.target_id).toBe('m1');
   });
 
-  it('should resolve overrides to method in parent class', () => {
-    insertEntity('parent-m', 'src/Base.java', 'method', 'toString');
-    insertEntity('child', 'src/Child.java', 'class', 'Child');
-    insertRel('child', 'toString', 'overrides');
+  // `overrides` edges are DERIVED from resolved inheritance after resolution
+  // (core/graph/override-edges.js replaces every `overrides` row): a method
+  // overrides the same-named method of a resolved base type. An extracted
+  // `@Override` row alone never survives — a name match against any method
+  // anywhere is not evidence of an override.
+  function insertSpanEntity(id, filePath, type, name, startLine, endLine, parentClass = null) {
+    db.prepare(`
+      INSERT INTO entities (id, file_path, type, name, start_line, end_line, parent_class)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(id, filePath, type, name, startLine, endLine, parentClass);
+  }
 
-    const result = resolveRelationshipTargets(db);
+  it('should derive overrides to the same-named method of the resolved parent class', () => {
+    insertSpanEntity('base', 'src/Base.java', 'class', 'Base', 1, 10);
+    insertSpanEntity('parent-m', 'src/Base.java', 'method', 'toString', 2, 4, 'Base');
+    insertSpanEntity('child', 'src/Child.java', 'class', 'Child', 1, 10);
+    insertSpanEntity('child-m', 'src/Child.java', 'method', 'toString', 2, 4, 'Child');
+    insertRel('child', 'Base', 'extends');
+    insertRel('child-m', 'toString', 'overrides'); // what the Java extractor emits for @Override
 
-    expect(result.resolved).toBe(1);
-    const rel = db.prepare('SELECT target_id FROM relationships WHERE source_id = ?').get('child');
-    expect(rel.target_id).toBe('parent-m');
+    resolveRelationshipTargets(db);
+
+    const rows = db.prepare(`SELECT source_id, target_id FROM relationships WHERE type = 'overrides'`).all();
+    expect(rows).toEqual([{ source_id: 'child-m', target_id: 'parent-m' }]);
+  });
+
+  it('should drop an @Override row whose class has no resolved base', () => {
+    insertSpanEntity('other-m', 'src/Other.java', 'method', 'toString', 2, 4, 'Other');
+    insertSpanEntity('child', 'src/Child.java', 'class', 'Child', 1, 10);
+    insertSpanEntity('child-m', 'src/Child.java', 'method', 'toString', 2, 4, 'Child');
+    insertRel('child-m', 'toString', 'overrides');
+
+    resolveRelationshipTargets(db);
+
+    expect(db.prepare(`SELECT COUNT(*) AS n FROM relationships WHERE type = 'overrides'`).get().n).toBe(0);
   });
 
   it('should resolve "uses" relationships by exact name', () => {
