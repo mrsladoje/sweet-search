@@ -117,6 +117,171 @@ export function codeBeforeComment(line) {
   return out.trimEnd();
 }
 
+/** 0-based indexes of the lines strictly inside Elixir heredocs (`\"\"\"` / `\'\'\'`). */
+export function elixirHeredocLines(lines) {
+  const inside = new Set();
+  let fence = null;
+  for (let i = 0; i < lines.length; i++) {
+    const raw = String(lines[i] || '');
+    if (fence) {
+      if (raw.includes(fence)) fence = null;
+      else inside.add(i);
+      continue;
+    }
+    const m = /("""|''')/.exec(raw);
+    if (m && !raw.slice(m.index + 3).includes(m[1])) fence = m[1];
+  }
+  return inside;
+}
+
+/** Elixir code of one line: string, charlist and comment text blanked. */
+function elixirCode(line) {
+  return String(line || '').replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, '""').replace(/#.*$/, '');
+}
+
+/**
+ * 1-based end line of the Elixir definition starting at `startIndex`.
+ * Every Elixir block is `do … end` or `fn … end`, so the span closes where
+ * the `do`/`fn` and `end` tokens balance; keyword forms (`, do: x`, also after
+ * a multi-line head or guard) close where their expression does. Heredoc
+ * (`\"\"\"`) lines are text. Line-start keyword matching mis-counted
+ * `if a,\n do: b` (no `end`) and `x = case y do` (an `end` with no opener).
+ */
+function elixirEndLine(lines, startIndex) {
+  const headEnd = elixirBodilessHeadEnd(lines, startIndex);
+  if (headEnd !== null) return headEnd;
+  let depth = 0;
+  let parens = 0;
+  let keyword = false;
+  let heredoc = null;
+  for (let i = startIndex; i < lines.length; i++) {
+    const raw = String(lines[i] || '');
+    if (heredoc) {
+      if (raw.includes(heredoc)) heredoc = null;
+      continue;
+    }
+    const fence = /("""|\'\'\')/.exec(raw);
+    let code = elixirCode(fence ? raw.slice(0, fence.index) : raw);
+    if (fence && !raw.slice(fence.index + 3).includes(fence[1])) heredoc = fence[1];
+    code = code.replace(/:(?:do|end|fn)\b/g, '');
+    for (const c of code) {
+      if (c === '(' || c === '[' || c === '{') parens++;
+      else if (c === ')' || c === ']' || c === '}') parens--;
+    }
+    const opens = (code.match(/\b(?:do\b(?!:)|fn\b)/g) || []).length;
+    const closes = (code.match(/\bend\b(?!:)/g) || []).length;
+    if (depth === 0 && opens === 0 && /\bdo:/.test(code)) keyword = true;
+    depth += opens - closes;
+    if (depth > 0) continue;
+    if (depth < 0) return i + 1;
+    if (opens > 0 || closes > 0) return i + 1;
+    if (keyword && parens <= 0 && !/(?:,|[-+*/=|&<>]|\bwhen|\bdo:|\belse:)\s*$/.test(code)) {
+      let j = i + 1;
+      while (j < lines.length && /^\s*(?:#.*)?$/.test(lines[j])) j++;
+      if (!/^\s*(?:\|>|else:|,)/.test(lines[j] || '')) return i + 1;
+    }
+  }
+  return lines.length;
+}
+
+/**
+ * Elixir `def f(a, b \\ 1)` with no `do` is a function head (default
+ * arguments / docs for the clauses below), not a block: plug's
+ * `def send_resp(conn)` spanned to the end of the file. Returns the 1-based
+ * last line of the head, or null when a `do` opens a body. The head may span
+ * lines (`def f(` … `)`), and a guard may follow on the next line
+ * (`when is_binary(key) do`), which makes it a clause.
+ */
+function elixirBodilessHeadEnd(lines, startIndex) {
+  if (!/^\s*(?:def|defp|defmacro|defmacrop)\s/.test(lines[startIndex] || '')) return null;
+  let depth = 0;
+  for (let i = startIndex; i < lines.length && i < startIndex + 30; i++) {
+    const code = String(lines[i] || '').replace(/"(?:[^"\\]|\\.)*"/g, '""').replace(/#.*$/, '');
+    if (/\bdo\b/.test(code)) return null;
+    for (const c of code) {
+      if (c === '(' || c === '[' || c === '{') depth++;
+      else if (c === ')' || c === ']' || c === '}') depth--;
+    }
+    if (depth > 0 || /(?:,|\bwhen|\\\\|[-+*/=|&<>])\s*$/.test(code)) continue;
+    let j = i + 1;
+    while (j < lines.length && /^\s*(?:#.*)?$/.test(lines[j])) j++;
+    if (/^\s*(?:when\b|do\b|do:|,|\|>|and\b|or\b)/.test(lines[j] || '')) return null;
+    return i + 1;
+  }
+  return null;
+}
+
+/**
+ * Arity of an Elixir clause head (`def f(a, %{b: c}), do: …` → 2; a default
+ * argument `b \\ 1` counts), or null when the head does not close on its line.
+ */
+function elixirClauseArity(signature) {
+  const m = /^\s*(def|defp|defmacro|defmacrop)\s+[\w?!]+\s*(\(?)/.exec(signature || '');
+  if (!m) return null;
+  if (!m[2]) return 0;
+  let depth = 0;
+  let commas = 0;
+  let any = false;
+  let quote = null;
+  for (let i = m[0].length - 1; i < signature.length; i++) {
+    const c = signature[i];
+    if (quote) {
+      if (c === '\\') i++;
+      else if (c === quote) quote = null;
+      continue;
+    }
+    if (c === '"' || c === "'") { quote = c; any = true; continue; }
+    if (c === '(' || c === '[' || c === '{') { if (depth > 0) any = true; depth++; continue; }
+    if (c === ')' || c === ']' || c === '}') {
+      depth--;
+      if (depth === 0) return any ? commas + 1 : 0;
+      continue;
+    }
+    if (depth === 1 && c === ',') commas++;
+    else if (!/\s/.test(c)) any = true;
+  }
+  return null;
+}
+
+/**
+ * Elixir: the clauses of one function (`def put_status(%{state: s}, _) when …`
+ * then `def put_status(conn, nil)`, …) are one function — same name, kind and
+ * arity, written next to each other (only blank, comment or `@` attribute
+ * lines between). The regex extractor saw one entity per clause, so ss-trace
+ * listed the later clauses as "other definitions". The first clause now spans
+ * them all; rows of the later clauses move to it. Different arities (`f/1`,
+ * `f/2`) stay separate functions.
+ */
+export function mergeElixirClauses(entities, relationships, callSites, lines) {
+  if (!Array.isArray(entities) || entities.length < 2) return entities;
+  const sorted = entities.slice().sort((a, b) => a.start_line - b.start_line);
+  const into = new Map();
+  let head = null;
+  let headKey = null;
+  for (const e of sorted) {
+    const kind = /^\s*(def|defp|defmacro|defmacrop)\s/.exec(e.signature || '')?.[1];
+    const arity = kind ? elixirClauseArity(e.signature) : null;
+    const key = kind && arity !== null ? `${kind}\0${e.name}\0${arity}\0${e.parent_class || ''}` : null;
+    if (key && head && key === headKey && e.start_line > head.end_line) {
+      let between = true;
+      for (let l = head.end_line + 1; l < e.start_line; l++) {
+        if (!/^\s*(?:#.*|@[\w]+\b.*)?$/.test(lines[l - 1] ?? '')) { between = false; break; }
+      }
+      if (between) {
+        head.end_line = Math.max(head.end_line, e.end_line);
+        into.set(e.id, head.id);
+        continue;
+      }
+    }
+    head = key ? e : null;
+    headKey = key;
+  }
+  if (into.size === 0) return entities;
+  for (const r of relationships) if (into.has(r.source_id)) r.source_id = into.get(r.source_id);
+  for (const c of callSites || []) if (into.has(c.source_id)) c.source_id = into.get(c.source_id);
+  return entities.filter((e) => !into.has(e.id));
+}
+
 export function clampSentinelEndLines(entities, fileLineCount, language) {
   if (!Array.isArray(entities) || entities.length < 2) return entities;
   if (fileLineCount == null || fileLineCount <= 0) return entities;
@@ -1787,15 +1952,22 @@ export class GraphExtractor {
         return this.findEndLineIndent(lines, startIdx);
       }
       if (langInfo.endKeyword) {
-        return this.findEndLineKeyword(lines, startIdx, langInfo.endKeyword, langInfo.blockKeywords);
+        return this.findEndLineKeyword(lines, startIdx, langInfo.endKeyword, langInfo.blockKeywords, langInfo.id);
       }
       return this.findEndLine(lines, startIdx);
     };
 
+    const docLines = langInfo.id === 'elixir' ? elixirHeredocLines(lines) : null;
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       const trimmed = line.trimStart();
       const lineNum = i + 1;
+      // Inside an Elixir heredoc (`@doc """` examples such as
+      // `def call(conn, _opts) do`): text, not definitions or calls.
+      if (docLines?.has(i)) {
+        callScanner?.skipLine();
+        continue;
+      }
       const lineIsComment = trackCommentLine(trimmed);
       while (
         activeEntityScopes.length > 0 &&
@@ -1990,8 +2162,9 @@ export class GraphExtractor {
     // regex-path languages (zig, scala, kotlin, etc.) are unaffected and
     // would need per-language validation before opt-in.
     clampSentinelEndLines(entities, lines.length, langInfo?.id);
+    const kept = langInfo?.id === 'elixir' ? mergeElixirClauses(entities, relationships, callSites, lines) : entities;
 
-    return { entities, relationships, callSites };
+    return { entities: kept, relationships, callSites };
   }
 
   getGenericPatternPlan(language, graph) {
@@ -2845,7 +3018,7 @@ export class GraphExtractor {
    * Find end line for end-keyword languages (Ruby, Elixir, Lua, Obj-C).
    * Counts matching keyword pairs to find the closing end/keyword.
    */
-  findEndLineKeyword(lines, startIndex, endKeyword, blockKeywords) {
+  findEndLineKeyword(lines, startIndex, endKeyword, blockKeywords, language = null) {
     const endRe = new RegExp(`^\\s*${escapeRegexLiteral(endKeyword)}\\b`);
     const blockStartRe = blockKeywords?.length
       ? new RegExp(`^\\s*(?:${blockKeywords.join('|')})\\b`)
@@ -2859,6 +3032,7 @@ export class GraphExtractor {
     if (opensNoBlock(first) && !/\bdo\s*(?:#.*)?$/.test(first)) return startIndex + 1;
     // `def f(x),` with `do: y` on the next line.
     if (/,\s*$/.test(first) && /^\s*do:/.test(lines[startIndex + 1] || '')) return startIndex + 2;
+    if (language === 'elixir') return elixirEndLine(lines, startIndex);
     let depth = 1; // start inside the opening block
 
     for (let i = startIndex + 1; i < lines.length; i++) {

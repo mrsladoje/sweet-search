@@ -668,3 +668,81 @@ describe('round 10 — other definitions', () => {
     expect(formatTraceCompact(r)).toContain('Number.from_str 1299, from_str 2709');
   });
 });
+
+describe('round 11 — Elixir clauses, heads and heredocs', () => {
+  const spans = async (src) => {
+    const r = await new GraphExtractor({}).extractFromFile('lib/a.ex', src.join('\n'));
+    return r.entities.filter((e) => e.type !== 'module').map((e) => `${e.name} ${e.start_line}-${e.end_line}`);
+  };
+
+  it('adjacent clauses of one name and arity are one function; another arity stays apart', async () => {
+    expect(await spans([
+      'defmodule A do',
+      '  @spec put_status(t, status) :: t',
+      '  def put_status(%{state: s}, _status) when s != :unset do',
+      '    raise "sent"',
+      '  end',
+      '',
+      '  def put_status(conn, nil), do: %{conn | status: nil}',
+      '  def put_status(conn, status), do: %{conn | status: status}',
+      '  defp empty?(""), do: true',
+      '  defp empty?([]), do: true',
+      '  def g(x), do: x',
+      '  def g(x, y), do: y',
+      'end',
+    ])).toEqual(['put_status 3-8', 'empty? 9-10', 'g 11-11', 'g 12-12']);
+  });
+
+  it('a bodiless head ends on its line and joins its clauses (defaults count toward arity)', async () => {
+    expect(await spans([
+      'defmodule A do',
+      '  def send_resp(conn)',
+      '  def send_resp(%{state: :unset}) do',
+      '    1',
+      '  end',
+      '  def f(a, b \\\\ 1)',
+      '',
+      '  def f(a, b) do',
+      '    a',
+      '  end',
+      '  def put(conn, key)',
+      '      when is_binary(key) do',
+      '    1',
+      '  end',
+      'end',
+    ])).toEqual(['send_resp 2-5', 'f 6-10', 'put 11-14']);
+  });
+
+  it('`if a,\\n do: b` opens no block; `x = case y do` closes its own end; guard then `do:` on later lines', async () => {
+    expect(await spans([
+      'defmodule A do',
+      '  defp k(<<h, t::binary>>, acc)',
+      '       when h in [1],',
+      '       do: skip(t, acc)',
+      '  def b(x) do',
+      '    y = case x do',
+      '      1 -> 2',
+      '    end',
+      '    if y,',
+      '      do: 1,',
+      '      else: 2',
+      '    Enum.map(x, fn z -> z end)',
+      '  end',
+      '  def c(x), do: x',
+      'end',
+    ])).toEqual(['k 2-4', 'b 5-13', 'c 14-14']);
+  });
+
+  it('a `def … do` inside a @doc heredoc is not a definition', async () => {
+    expect(await spans([
+      'defmodule A do',
+      '  @doc """',
+      '      def call(conn, _opts) do',
+      '        conn',
+      '      end',
+      '  """',
+      '  def call(conn, _opts), do: conn',
+      'end',
+    ])).toEqual(['call 7-7']);
+  });
+});
