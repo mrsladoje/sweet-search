@@ -119,7 +119,7 @@ describe('ss-trace lists every line of an instantiation', () => {
     expect(instantiators(result)).toEqual([[caller, lines]]);
     const at = `(instantiates)@${lines.join(',')}`;
     expect(formatStructuralContext(result)).toContain(at);
-    expect(formatTraceCompact(result, { mode: 'callers' })).toContain(at);
+    expect(formatTraceCompact(result, { mode: 'callers' })).toContain(`${lines.join(',')} ${caller} (instantiates)`);
   });
 
   it('header counts every site; fan-in counts the constructing function once', async () => {
@@ -130,7 +130,7 @@ describe('ss-trace lists every line of an instantiation', () => {
     expect(result.target.fanIn).toBe(1);
     // Instantiation rows are not calls: the heading says "sites" (both formats).
     expect(result.sections.callers.siteNoun).toBe('sites');
-    expect(formatTraceCompact(result, { mode: 'callers' })).toContain('## callers (3 sites, 1 distinct caller)\nrun [method] src/A.java:3 (instantiates)@4,5,6');
+    expect(formatTraceCompact(result, { mode: 'callers' })).toContain('src/A.java\n4,5,6 run (instantiates)');
     expect(formatStructuralContext(result)).toContain('## callers (3 sites, 1 distinct caller)');
     expect(formatTraceCompact(result, { mode: 'callers' })).not.toContain('call sites');
   });
@@ -182,7 +182,7 @@ describe('ss-trace lists a type\'s signature users (typeRef) by default', () => 
     const result = trace(graph, 'Foo', { filePath: 'src/foo.ts', mode: 'callers' });
     expect(rows(result, 'typeRef').sort()).toEqual(['give', 'take']);
     expect(result.sections.callers.siteNoun).toBe('sites');
-    expect(formatTraceCompact(result, { mode: 'callers' })).toMatch(/take \[function\] src\/a\.ts:2 \(typeRef\)@2/);
+    expect(formatTraceCompact(result, { mode: 'callers' })).toMatch(/src\/a\.ts\n(?:\d+ \w+ \(typeRef\)\n)*2 take \(typeRef\)/);
   });
 
   it('a function listed by a stronger relationship is not repeated as a typeRef row', async () => {
@@ -224,7 +224,7 @@ describe('ss-trace lists a type\'s signature users (typeRef) by default', () => 
     const result = trace(graph, 'Foo', { filePath: 'src/foo.ts', mode: 'callers' });
     const run = result.sections.callers.items.find((x) => x.name === 'run');
     expect(run.contextLines).toHaveLength(20);
-    expect(formatTraceCompact(result, { mode: 'callers' })).toContain('(instantiates)@3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,…+4');
+    expect(formatTraceCompact(result, { mode: 'callers' })).toContain('3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,…+4 run (instantiates)');
     expect(result.sections.callers.items.map((x) => [x.name, x.relationship, x.contextLines.length])).toEqual([['run', 'instantiates', 20]]);
     expect(result.sections.callers.total).toBe(20);
   });
@@ -322,7 +322,7 @@ describe('older graphs still trace type usages (first line only)', () => {
     const graph = await buildGraph(JAVA, { schema: 'no-call-lines' });
     const result = trace(graph, 'Foo', { filePath: FOO, mode: 'callers' });
     expect(instantiators(result)).toEqual([['run', [4]]]);
-    expect(formatTraceCompact(result, { mode: 'callers' })).toContain('(instantiates)@4');
+    expect(formatTraceCompact(result, { mode: 'callers' })).toContain('4 run (instantiates)');
   });
 
   it('a graph whose call_lines has no rel_type: call lines still list, instantiations show their first line', async () => {

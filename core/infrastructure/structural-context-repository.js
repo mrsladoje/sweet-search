@@ -19,6 +19,9 @@ import { callTargetAliases, clampLimit, isLikelyCodeEntity, isTestPath, lowerCam
 // member of that name (getSameFileCallers).
 const OWNER_TYPES = new Set(['class', 'interface', 'struct', 'enum', 'trait', 'impl', 'object', 'protocol', 'extension', 'record', 'module', 'service']);
 
+// Types whose body declares members without defining them (method specs, requirements).
+const DECLARING_OWNER_TYPES = new Set(['interface', 'protocol', 'trait']);
+
 function sortLines(item) {
   item.contextLines.sort((a, b) => a - b);
   item.contextLine = item.contextLines[0] ?? item.contextLine;
@@ -387,6 +390,7 @@ export class StructuralContextRepository {
     const escaped = String(target.name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const callRe = new RegExp(`(?<![.\\w$:])${escaped}\\s*\\(`);
     const defRe = new RegExp(`\\b(function|def|fn|func|sub|proc)\\s+${escaped}\\s*[(<]`);
+    const declLineRe = new RegExp(`^\\s*${escaped}\\s*\\(`);
     const lines = source.split('\n');
     const hits = [];
     for (let i = 0; i < lines.length && hits.length < limit * 2; i++) {
@@ -416,6 +420,10 @@ export class StructuralContextRepository {
         .filter(r => r.start_line <= ln && r.end_line >= ln)
         .sort((a, b) => (a.end_line - a.start_line) - (b.end_line - b.start_line))[0];
       if (!host || host.id === target.id || host.name === target.name) continue;
+      // `Name(ctx, in) (*Out, error)` on its own line inside an interface / protocol / trait
+      // body declares the method; it calls nothing (dgraph pb_grpc.pb.go: the WorkerClient and
+      // WorkerServer interfaces were listed as callers of UpdateExtSnapshotStreamingState).
+      if (DECLARING_OWNER_TYPES.has(host.type) && declLineRe.test(lines[ln - 1])) continue;
       if (siblings.length > 1) {
         const owner = ownerOf(host);
         const own = owner ? siblings.find(s => s.parent_class === owner) : null;
@@ -814,6 +822,72 @@ export class StructuralContextRepository {
       return pool.every(e => ownerKey(e) === ownerKey(pool[0])) ? pool[0] : null;
     } catch {
       return null;
+    }
+  }
+
+  /**
+   * The definition an UNQUALIFIED call `name(` reaches when nothing resolved it: the one
+   * free (ownerless) definition in the repository with exactly this name, else null.
+   * A bare call never reaches another type's method (dgraph `getUID(t)`, a local closure,
+   * was bound to `User.GetUid` by a case-insensitive match; okhttp `check(...)`, Kotlin's
+   * stdlib, to `CertificatePinner.check`), and a name with several free definitions is a
+   * guess (same exactly-one rule as _resolveUnresolvedTarget). No substring match: the
+   * annotation `@Throws(` is no call of `getHeadersThrows`.
+   */
+  findUniqueFreeDefinition(name) {
+    const db = this._open();
+    const raw = String(name || '').trim();
+    if (!db || !raw) return null;
+    try {
+      const rows = db.prepare(`
+        SELECT id, name, type, file_path, start_line, end_line, signature,
+               summary, parent_class, package
+        FROM entities
+        WHERE ${this._entitySql(db)}
+          AND name = ?
+        LIMIT 4
+      `).all(...this._entityParams(db), raw)
+        .map(row => this._entityFromRow(row))
+        .filter(e => e && isLikelyCodeEntity(e));
+      if (rows.length !== 1 || rows[0].parentClass) return null;
+      return rows[0];
+    } catch {
+      return null;
+    }
+  }
+
+  /** How many visible definitions carry exactly this name (null when unknown). */
+  countDefinitions(name) {
+    const db = this._open();
+    const raw = String(name || '').trim();
+    if (!db || !raw) return null;
+    try {
+      return db.prepare(`SELECT COUNT(*) AS n FROM entities WHERE ${this._entitySql(db)} AND name = ?`)
+        .get(...this._entityParams(db), raw)?.n ?? null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** The methods `target` overrides or implements (stored `overrides` edges), resolved. */
+  getOverriddenMethods(target) {
+    const db = this._open();
+    if (!db || !target?.id) return [];
+    try {
+      return db.prepare(`
+        SELECT e.id, e.name, e.type, e.file_path, e.start_line, e.end_line, e.signature,
+               e.summary, e.parent_class, e.package
+        FROM relationships r
+        JOIN entities e ON e.id = r.target_id
+        WHERE r.source_id = ? AND r.type = 'overrides'
+          AND ${this._entitySql(db, 'e')}
+          AND ${this._relationshipSql(db, 'r')}
+        LIMIT 8
+      `).all(target.id, ...this._entityParams(db), ...this._relationshipParams(db))
+        .map(row => this._entityFromRow(row))
+        .filter(e => e && e.id !== target.id);
+    } catch {
+      return [];
     }
   }
 

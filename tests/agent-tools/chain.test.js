@@ -40,6 +40,14 @@ describe('chained-call boundary line', () => {
     expect(chainBoundaryLine('find', ['a  b\nc'])).toBe('# ss-find a b c');
   });
 
+  it('ss-trace names the whole symbol and the mode word, never a flag value', () => {
+    expect(chainBoundaryLine('trace', ['_fetch_db_defaults_after_insert', 'callees', '--in', 'tortoise/x.py'])).toBe('# ss-trace _fetch_db_defaults_after_insert callees');
+    expect(chainBoundaryLine('trace', ['--in', 'a/RealInterceptorChain.kt', 'proceed', 'callers'])).toBe('# ss-trace proceed callers');
+    expect(chainBoundaryLine('trace', ['addMutationHelper', '--depth', '2'])).toBe('# ss-trace addMutationHelper');
+    expect(chainBoundaryLine('trace', ['x'.repeat(45)])).toBe('# ss-trace ' + 'x'.repeat(40) + '…');
+    expect(chainBoundaryLine('trace', [])).toBe('# ss-trace');
+  });
+
   it('ss-semantic names its file, positional or --in, not the question', () => {
     expect(chainBoundaryLine('semantic', ['lib/sequel/connection_pool/timed_queue.rb', 'what happens on timeout?'])).toBe('# ss-semantic timed_queue.rb');
     expect(chainBoundaryLine('semantic', ['what happens on a/b timeout?', '--in', 'lib/x/pool.rb'])).toBe('# ss-semantic pool.rb');

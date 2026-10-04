@@ -14,6 +14,7 @@ import { extractHeaderContext } from './structural-header-context.js';
 import { scoreEntity, scoreImpactPath, tokenize, safeMax } from './structural-importance.js';
 import { personalizedPageRank } from './structural-forward-push.js';
 import { isTraceOnlyRelationship } from './relationship-types.js';
+import { isTestLikePath } from '../search/agent-output-fixes.js';
 const BUDGETS = { preview: 4000, full: 8000, xl: 12000 };
 const DEFAULT_MAX_DEPTH = 3;
 // Targets whose signature users (`typeRef`) ss-trace lists as callers, at
@@ -53,7 +54,10 @@ function entropy(items) {
 export function traceAlternatives(symbol, target, candidates) {
   const parts = String(symbol || '').split(/::|\./).filter(Boolean);
   const qualifier = parts.length > 1 ? parts[parts.length - 2] : null;
-  const rest = candidates.slice(1);
+  // A class's own constructor (`DynamicCredentialsFileLoader.DynamicCredentialsFileLoader`)
+  // is not another definition of the class.
+  const rest = candidates.slice(1).filter(c => !(c.name === target?.name && c.parentClass === target?.name
+    && c.filePath === target?.filePath && TYPE_USER_TARGETS.has(target?.type)));
   if (qualifier && target?.parentClass === qualifier
     && !rest.some(c => c.parentClass === qualifier && c.name === target.name)) return [];
   return rest.map(c => ({
@@ -238,6 +242,19 @@ export function foldConstructorCalls(items) {
   return out;
 }
 
+/** `hidden` (in-repository rows not packed) and `external` (rows without a definition). */
+export function rowCounts(all, packed) {
+  const isExternal = (x) => x?.type === 'external' || !(x?.filePath ?? x?.file);
+  const shown = new Set((packed || []).map(x => `${x.id}\u0000${x.relationship || ''}`));
+  let hidden = 0;
+  let external = 0;
+  for (const x of all || []) {
+    if (isExternal(x)) external++;
+    else if (!shown.has(`${x.id}\u0000${x.relationship || ''}`)) hidden++;
+  }
+  return { hidden, external };
+}
+
 /** Call sites across items: each item counts its site lines (at least one). */
 function siteCount(items) {
   return (items || []).reduce((n, item) => n + Math.max(1, siteLines(item).length), 0);
@@ -268,6 +285,51 @@ export function printedSiteLines(lines) {
   return `${lines.slice(0, MAX_PRINTED_SITE_LINES).join(',')},…+${lines.length - MAX_PRINTED_SITE_LINES}`;
 }
 
+// Same thresholds as ss-search's related rows (context-expander.js RELATED_*): a name with
+// this many definitions (and incoming rows) is generic, and a call matched to it by name
+// alone is a guess.
+const GENERIC_NAME_DEFS = 10;
+const AMBIGUOUS_NAME_DEFS = 3;
+const AMBIGUOUS_NAME_FANIN = 20;
+
+/**
+ * Callers without name-only guesses for a generic name. A stored call that the graph did
+ * not resolve (`TIMESTAMP.write(`) is matched to the target by its name; for a name with
+ * >= 10 definitions, or >= 3 and >= 20 caller rows, that match is a guess (zipkin
+ * `V2SpanWriter.write`, 31 definitions: 20 Proto3 field writes listed as its callers).
+ * Rows the graph resolved to the target, bare calls, same-file scan rows (both bound to
+ * the target's id) and dispatch rows stay.
+ */
+export function isGenericTargetName(defs, callerRows) {
+  return defs != null && (defs >= GENERIC_NAME_DEFS || (defs >= AMBIGUOUS_NAME_DEFS && callerRows >= AMBIGUOUS_NAME_FANIN));
+}
+
+export function dropNameOnlyCallers(rows, target, defs) {
+  if (!isGenericTargetName(defs, rows.length)) return rows;
+  return rows.filter(x => x.via || x.bare || x.targetId === target.id || !x.targetName);
+}
+
+/**
+ * Callers that call a method `target` overrides or implements, resolved to that
+ * method (stored edge with its id), each with `via: 'Owner.name'`. Callers already
+ * listed for the target itself are left out. Empty without stored `overrides` edges.
+ */
+export function dispatchCallersOf(repo, target, listed = [], limit = 80) {
+  const bases = repo.getOverriddenMethods?.(target) || [];
+  if (!bases.length) return [];
+  const seen = new Set(listed.map(x => x?.id).filter(Boolean));
+  const out = [];
+  for (const base of bases) {
+    const via = base.parentClass ? `${base.parentClass}.${base.name}` : base.name;
+    for (const row of repo.getCallers(base, { types: ['calls'], limit }) || []) {
+      if (!row?.id || row.id === target.id || row.targetId !== base.id || seen.has(row.id)) continue;
+      out.push({ ...row, via });
+      if (out.length >= limit) return out;
+    }
+  }
+  return out;
+}
+
 function itemSummary(entity) {
   const loc = entity.filePath ? `${entity.filePath}:${entity.startLine || '?'}` : '(external)';
   const lines = printedSiteLines(siteLines(entity));
@@ -278,7 +340,8 @@ function itemSummary(entity) {
     return `${entity.name} [${entity.type}] ${loc} (${entity.relationship})${at}`;
   }
   const call = lines ? ` call@${lines}` : '';
-  return `${entity.name} [${entity.type}] ${loc}${call}`;
+  const via = entity.via ? ` via ${entity.via}` : '';
+  return `${entity.name} [${entity.type}] ${loc}${call}${via}`;
 }
 
 /**
@@ -344,6 +407,7 @@ function packSection(items, budget, opts) {
       contextLine: item.contextLine || null,
       contextLines: siteLines(item),
       relationship: item.relationship || null,
+      via: item.via || null,
       depth: item.depth || 1,
       importance: Number(item.importance.toFixed(4)),
       presentation: codeInfo.presentation,
@@ -371,6 +435,8 @@ function buildImpactPaths(repo, target, opts) {
     const next = new Map();
     for (const row of rows) {
       if (!row.id || row.id === target.id || upstreamVisited.has(row.id)) continue;
+      // A generic name: no caller matched by name alone (dropNameOnlyCallers).
+      if (opts.genericName && depth === 1 && row.targetName && row.targetId !== target.id) continue;
       const parent = frontier.get(row.targetId) || (depth === 1 ? frontier.get(target.id) : null);
       if (!parent) continue;
       const path = [row, ...parent.path];
@@ -397,6 +463,7 @@ function buildImpactPaths(repo, target, opts) {
       if (!row.id || row.id === target.id || downstreamVisited.has(row.id)) continue;
       const parent = frontier.get(row.sourceId);
       if (!parent) continue;
+      if (callIntoTestTree(parent.entity.filePath, row.filePath)) continue;
       const path = [...parent.path, row];
       const edgeTypes = [...parent.edgeTypes, row.relationship];
       const id = `down:${path.map(p => p.id).join('>')}`;
@@ -440,6 +507,45 @@ function bindQualifiedHint(site, repo, target, calleesByName) {
   return local?.id ? local : null;
 }
 
+/**
+ * The global definition an unqualified call `name(` names when the call itself
+ * resolved to nothing: the one ownerless definition of exactly that name
+ * (repository findUniqueFreeDefinition), never a fuzzy or case-insensitive match
+ * and never another type's method.
+ */
+function unqualifiedCallDefinition(repo, name) {
+  if (repo.findUniqueFreeDefinition) return repo.findUniqueFreeDefinition(name);
+  const top = repo.findEntityCandidates?.(name, { limit: 1 })?.[0];
+  return top && top.name === name && !top.parentClass ? top : null;
+}
+
+/**
+ * True when a call from `fromPath` resolved into a test / spec / fixture file while the
+ * caller is no test file. Production code never calls into the test tree (it is not
+ * compiled into the library), so such an edge is a name-based misresolution: GRDB
+ * `observer?.databaseWillCommit()` in TransactionObserver.swift was bound to the test
+ * class `Observer` in TransactionObserverTests.swift because the receiver is named
+ * `observer`. The call is then unresolved.
+ */
+export function callIntoTestTree(fromPath, toPath) {
+  return !!toPath && !!fromPath && isTestLikePath(toPath) && !isTestLikePath(fromPath);
+}
+
+/** An item rewritten as an unresolved (external) callee, keeping its call lines. */
+function asUnresolved(item, idx) {
+  const name = item.targetName || item.name || 'external';
+  return {
+    ...item, id: `external:test:${idx}:${name}`, name, type: 'external',
+    filePath: null, startLine: null, endLine: null, signature: name, summary: '',
+  };
+}
+
+/** Unqualified `name(` in the target: the same-file definition, else the one free definition. */
+function sameFileOrUniqueDefinition(repo, name, target) {
+  const local = repo.findSameFileDefinition?.(name, target.filePath);
+  return local?.id ? local : unqualifiedCallDefinition(repo, name);
+}
+
 function groupCalleesByName(resolvedCallees) {
   const byName = new Map();
   for (const c of resolvedCallees) {
@@ -459,15 +565,18 @@ function addHintImpactPaths(paths, seen, repo, target, hintSites, limit, resolve
     // not the protocol requirement or DatabaseRegionObservation's), then to the
     // definition in the target's own file, then to the global top candidate.
     // A qualified name never takes the global candidate (bindQualifiedHint);
-    // when it binds to nothing it is left out.
+    // when it binds to nothing it is left out. The global candidate is the one
+    // free definition of exactly that name (unqualifiedCallDefinition).
     let hint;
     if (site.qualified) {
       hint = bindQualifiedHint(site, repo, target, calleesByName);
     } else {
-      const local = calleesByName.get(site.name)?.[0] || repo.findSameFileDefinition?.(site.name, target.filePath);
-      hint = local?.id ? local : repo.findEntityCandidates?.(site.name, { limit: 1 })?.[0];
+      const local = calleesByName.get(site.name)?.find(c => !String(c.id).startsWith('external:'))
+        || repo.findSameFileDefinition?.(site.name, target.filePath);
+      hint = local?.id ? local : unqualifiedCallDefinition(repo, site.name);
     }
     if (!hint || hint.id === target.id || !isLikelyCodeEntity(hint)) continue;
+    if (callIntoTestTree(target.filePath, hint.filePath)) continue;
     const id = `hint:${target.id}>${hint.id}`;
     if (!seen.has(id)) {
       paths.push({ id, direction: 'downstream', path: [target, hint], edgeTypes: ['handoff'], depth: 1 });
@@ -476,6 +585,7 @@ function addHintImpactPaths(paths, seen, repo, target, hintSites, limit, resolve
     for (const row of repo.getForwardDependencies?.([hint.id], { limit: 12 }) || []) {
       if (paths.length >= limit) break;
       if (!row.id || row.id === target.id) continue;
+      if (callIntoTestTree(hint.filePath, row.filePath)) continue;
       const rid = `hint:${target.id}>${hint.id}>${row.id}`;
       if (seen.has(rid)) continue;
       paths.push({ id: rid, direction: 'downstream', path: [target, hint, row], edgeTypes: ['handoff', row.relationship], depth: 2 });
@@ -538,7 +648,12 @@ export class StructuralContextBuilder {
     // not as the same-file text scan. Indexed items carry every site line
     // (call_lines / call_sites); one item per calling entity and relationship.
     const bareCallers = this.repo.getBareCallers?.(target, { limit: 80 }) || [];
-    const indexedCallers = foldConstructorCalls(mergeCallSites([...storedCallers, ...bareCallers]));
+    // Calls through the method this one overrides or implements reach it by dispatch
+    // (okhttp `chain.proceed(request)` binds to the interface `Interceptor.Chain.proceed`;
+    // its implementation `RealInterceptorChain.proceed` otherwise had no production caller).
+    // Only calls the graph resolved to that method; each row says which method it called.
+    const dispatchCallers = dispatchCallersOf(this.repo, target, [...storedCallers, ...bareCallers]);
+    const indexedCallers = foldConstructorCalls(mergeCallSites([...storedCallers, ...bareCallers, ...dispatchCallers]));
     const storedIds = new Set(indexedCallers.map(x => x.id));
     // Same-file callsite scan: recovers callers the extractor stored no edge
     // for (bare local calls, out-of-line C++ methods). Deduped against indexed
@@ -551,26 +666,31 @@ export class StructuralContextBuilder {
       stored: indexedCallers.length,
       sameFileFallback: sameFileCallers.length,
     };
-    const callersRaw = [...indexedCallers, ...sameFileCallers].map(x => ({ ...x, depth: 1 }));
+    const targetDefs = this.repo.countDefinitions?.(target.name);
+    const allCallers = [...indexedCallers, ...sameFileCallers];
+    const genericName = isGenericTargetName(targetDefs, allCallers.length);
+    const callersRaw = dropNameOnlyCallers(allCallers, target, targetDefs).map(x => ({ ...x, depth: 1 }));
     let calleesRaw = mergeCallSites([
       ...this.repo.getCallees(target, { limit: 160 }),
       ...(this.repo.getBareCallees?.(target, { limit: 80 }) || []),
-    ]).map(x => ({ ...x, depth: 1 }));
+    ]).map((x, i) => (callIntoTestTree(target.filePath, x.filePath) ? asUnresolved(x, i) : x))
+      .map(x => ({ ...x, depth: 1 }));
     if (!calleesRaw.length) {
       // No stored callees: fall back to names called in the body. A qualified
       // name binds only through bindQualifiedHint (own-type receiver, same
-      // file); an unqualified name keeps the global top candidate.
+      // file); an unqualified name binds to its one free definition.
       const noResolvedCallees = new Map();
       calleesRaw = targetHintSites
         .map(site => (site.qualified
           ? bindQualifiedHint(site, this.repo, target, noResolvedCallees)
-          : this.repo.findEntityCandidates?.(site.name, { limit: 1 })?.[0]))
+          : sameFileOrUniqueDefinition(this.repo, site.name, target)))
         .filter(isLikelyCodeEntity)
         .map(x => ({ ...x, relationship: 'handoff', depth: 1 }));
     }
     const impactRaw = buildImpactPaths(this.repo, target, {
       maxDepth: options.maxDepth ?? DEFAULT_MAX_DEPTH,
       limit: 120,
+      genericName,
       hintSites: targetHintSites,
       // Resolved callees (stored + scope-resolved bare calls) bind a hint
       // name to the definition the call actually reaches.
@@ -634,7 +754,9 @@ export class StructuralContextBuilder {
     };
     const callersPack = packSection(callers, Math.floor(budget.tokenBudget * shares.callers), packOpts);
     const calleesPack = packSection(callees, Math.floor(budget.tokenBudget * shares.callees), packOpts);
-    const impactPack = this._packImpact(impactPaths, Math.floor(budget.tokenBudget * shares.impact));
+    const impactPack = this._packImpact(impactPaths, Math.floor(budget.tokenBudget * shares.impact), {
+      inRepoOnly: options.inRepoImpactOnly === true,
+    });
     const targetWithCode = { ...target, code: targetInfo.code };
     const targetForCues = { ...targetWithCode, code: targetSource || targetInfo.code };
     const tokensUsed = targetInfo.codeTokens + estimateTokens(targetHeaderContext) + callersPack.tokensUsed + calleesPack.tokensUsed + impactPack.tokensUsed;
@@ -671,35 +793,57 @@ export class StructuralContextBuilder {
         // `total` counts sites (an item lists every line it calls / constructs
         // on); `siteNoun` names them; `distinct` counts calling / called
         // entities (= fan-in / fan-out).
+        // `hidden`: in-repository rows the budget left out; `external`: rows outside the
+        // repository (or unresolved), packed or not.
         callers: {
           total: siteCount(callers), siteNoun: siteNoun(callers), distinct: targetFan.fanIn, shown: callersPack.items.length, items: callersPack.items,
+          ...rowCounts(callers, callersPack.items),
           provenance: callerProvenance,
         },
-        callees: { total: siteCount(callees), siteNoun: siteNoun(callees), distinct: targetFan.fanOut, shown: calleesPack.items.length, items: calleesPack.items },
-        impact: { total: impactPaths.length, shown: impactPack.paths.length, paths: impactPack.paths },
+        callees: {
+          total: siteCount(callees), siteNoun: siteNoun(callees), distinct: targetFan.fanOut, shown: calleesPack.items.length, items: calleesPack.items,
+          ...rowCounts(callees, calleesPack.items),
+        },
+        impact: { total: impactPaths.length, shown: impactPack.paths.length, hidden: impactPack.hidden, paths: impactPack.paths },
       },
     };
   }
 
-  _packImpact(paths, budget) {
+  /**
+   * @param {object} [opts]
+   * @param {boolean} [opts.inRepoOnly] - skip paths through a definition outside the
+   *   repository (the compact ss-trace never prints them, so they must not take a slot)
+   * @returns {{ paths: object[], tokensUsed: number, hidden: number }} `hidden` counts the
+   *   distinct (in-repository, with inRepoOnly) paths that did not fit
+   */
+  _packImpact(paths, budget, { inRepoOnly = false } = {}) {
     const out = [];
     let used = 0;
+    let hidden = 0;
+    let full = false;
     const maxPaths = impactPathLimit(budget);
+    // A stored call and a body hint can reach the same definition: one row per path text.
+    const printed = new Set();
     for (const p of paths) {
-      if (out.length >= maxPaths) break;
+      if (inRepoOnly && p.path.some(n => !n.filePath)) continue;
+      const text = formatPath(p);
+      if (printed.has(text)) continue;
+      printed.add(text);
+      if (full || out.length >= maxPaths) { hidden++; continue; }
       const row = {
-        path: formatPath(p),
+        path: text,
+        nodes: p.path.map(n => ({ name: n.name, file: n.filePath || null, line: n.startLine || null })),
         direction: p.direction || 'upstream',
         depth: p.depth,
         edgeTypes: p.edgeTypes,
         importance: Number(p.importance.toFixed(4)),
       };
       const cost = estimateTokens(`${row.path} ${row.edgeTypes.join(' ')}`);
-      if (used + cost > budget && out.length >= 3) break;
+      if (used + cost > budget && out.length >= 3) { full = true; hidden++; continue; }
       used += cost;
       out.push(row);
     }
-    return { paths: out, tokensUsed: used };
+    return { paths: out, tokensUsed: used, hidden };
   }
 
   _empty(symbol, reason, started) {
