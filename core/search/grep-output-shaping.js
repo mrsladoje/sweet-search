@@ -582,7 +582,7 @@ function renderGrepBodyWeighted(kept, fileSummary, k, opts) {
     const a = alloc[f];
     if (a === 0) { unallocated.push(order[f]); continue; }
     const picks = opts.lineClasses === true && a < caps[f]
-      ? selectGrepLinesByClass(ms || kept.slice(base, base + caps[f]), a)
+      ? selectGrepLinesByClass(ms || kept.slice(base, base + caps[f]), a, opts.lineSpread === true)
       : null;
     for (let j = 0; j < a; j++) {
       const at = picks ? picks[j] : j;
@@ -642,7 +642,7 @@ export function allocateGrepBudget(counts, budget) {
  *          hiddenSample: Array<{file, total}>}} fileSummary
  * @param {number} k - body line budget
  * @param {{dropRepeatedText?: boolean, alloc?: 'weight', fullLine?: boolean, weight?: 'sat2',
- *          rule?: 'guarantee'|'hh', lineClasses?: boolean}} [opts] - SS_FIX_GREP_ORDER: when
+ *          rule?: 'guarantee'|'hh', lineClasses?: boolean, lineSpread?: boolean}} [opts] - SS_FIX_GREP_ORDER: when
  *   every shown hit prints the same text (and more than one hit shows), print `file:line`
  *   only. `fullLine` (SS_FIX_GREP_FULLLINE, default ON in ss-grep): each hit prints its full
  *   source line (grepHitText), not the matched substring. `alloc: 'weight'` (SS_FIX_GREP_ALLOC,
@@ -651,7 +651,8 @@ export function allocateGrepBudget(counts, budget) {
  *   files. Under `alloc: 'weight'` only: `weight` (SS_FIX_GREP_WEIGHT), `rule`
  *   (SS_FIX_GREP_ALLOC_RULE) and `lineClasses` (SS_FIX_GREP_LINES: a file with fewer lines than
  *   stored matches shows its lowest `lineClass` matches, in line order; rows without a class
- *   keep the prefix).
+ *   keep the prefix) and `lineSpread` (SS_FIX_GREP_LINE_SPREAD: one line per `lineSymbol`
+ *   first; grep-line-classes.js).
  *   Absent = the original format, byte for byte.
  * @returns {{lines: string[], rows: Array<{file, line, text, more}>, shownMatches: number,
  *            matchedFileCount: number, truncatedFileCount: number, hiddenLine: string|null}}
