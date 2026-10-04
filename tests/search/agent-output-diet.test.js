@@ -145,8 +145,8 @@ describe('2d: related rows render one line per kind', () => {
       { kind: 'extendedBy', name: 'Timed', file: 'a/t.rb', startLine: 9, endLine: 293, entityType: 'class' },
       { kind: 'implementedBy', name: 'Real', file: 'a/r.kt', startLine: 1, endLine: 2, entityType: 'class' },
     ], new Set(), { name: 'Pool', type: 'interface' })).toEqual([
-      'interface Pool is extended by class Timed (a/t.rb 9-293)',
-      'interface Pool is implemented by class Real (a/r.kt 1-2)',
+      // A class "extending" an interface implements it (C#/Kotlin/Swift base lists).
+      'interface Pool is implemented by class Timed (a/t.rb 9-293) · class Real (a/r.kt 1-2)',
     ]);
   });
 

@@ -580,6 +580,9 @@ export class CallSiteScanner {
       if (atStart && continuation) continue;
       if (plan.bareKeywords.has(name)) continue;
       if (isDefinedHere && isDefinedHere(name)) continue;
+      // `std::function<void(int)>`: a name right after `<` is a function type in a
+      // template argument, not a call.
+      if (code.charCodeAt(m.index - 1) === 60 /* < */) continue;
       const before = code.slice(0, m.index).trimEnd();
       if (before) {
         const last = before.charCodeAt(before.length - 1);

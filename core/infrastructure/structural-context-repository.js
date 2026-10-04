@@ -11,6 +11,7 @@ import { fetchPageRank, fetchFrontierBackwardEdges, fetchFrontierForwardEdges } 
 import { CodeGraphReaderVisibility } from './code-graph-visibility.js';
 import { SITE_LINE_RELATIONSHIP_TYPES as SITE_LINE_TYPES, TRACE_ONLY_TYPES_SQL } from './relationship-types.js';
 import { asTopLevelCaller, fileNodeSourceSql, hasFilesTable, hasGraphColumn, hasGraphTable } from './file-nodes.js';
+import { isTestLikePath } from './test-paths.js';
 import { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX } from './import-path-prefixes.js';
 import { RECEIVER_TYPE_PREFIX, signatureParamTypes } from './receiver-type-annotation.js';
 import { callTargetAliases, clampLimit, isLikelyCodeEntity, isTestPath, lowerCamel, placeholders, qualifiedTargetName, rowToEntity } from './structural-context-utils.js';
@@ -68,6 +69,38 @@ function declaredReceiverBound(targetName, caller, resolved) {
   const parts = String(targetName || '').split('.');
   if (parts.length !== 2) return false;
   return signatureParamTypes(caller.signature).get(parts[0]) === resolved.parentClass;
+}
+
+// Same-named definitions read before the candidate order is cut to `limit`.
+const EXACT_CANDIDATE_POOL = 50;
+const candidateKindTier = (type) => {
+  const t = String(type || '');
+  if (['class', 'struct', 'trait', 'object', 'actor'].includes(t)) return 0;
+  if (['interface', 'enum', 'type', 'typeAlias'].includes(t)) return 1;
+  if (t === 'function' || t === 'method') return 2;
+  return 3;
+};
+
+/**
+ * Which of several same-named definitions a bare name means: the owner the name was
+ * qualified with, then the exact spelling, then a non-test file (isTestLikePath: ocelot's
+ * `unit/`, `testing/`), then the kind tier, then the one the code calls most (incoming
+ * edges: ocelot `ILoadBalancer.LeaseAsync` has 23, `NoLoadBalancer.LeaseAsync` 5), then
+ * the SQL order (smaller span). Stable on ties.
+ */
+export function preferCalledDefinitions(rows, qualifier, spelled) {
+  return rows.map((row, index) => ({ row, index })).sort((a, b) => {
+    const A = a.row; const B = b.row;
+    const key = (r) => [
+      qualifier && r.parent_class === qualifier ? 0 : 1,
+      r.name === spelled ? 0 : 1,
+      isTestLikePath(r.file_path) ? 1 : 0,
+      candidateKindTier(r.type),
+    ];
+    const ka = key(A); const kb = key(B);
+    for (let i = 0; i < ka.length; i++) if (ka[i] !== kb[i]) return ka[i] - kb[i];
+    return ((B.fan_in || 0) - (A.fan_in || 0)) || (a.index - b.index);
+  }).map(x => x.row);
 }
 
 export class StructuralContextRepository {
@@ -275,7 +308,8 @@ export class StructuralContextRepository {
 
     const exactRows = db.prepare(`
       SELECT id, name, type, file_path, start_line, end_line, signature,
-             summary, parent_class, package
+             summary, parent_class, package,
+             (SELECT COUNT(*) FROM relationships r WHERE r.target_id = entities.id) AS fan_in
       FROM entities
       WHERE ${entitySql}
         AND (${nameWhere})
@@ -297,10 +331,10 @@ export class StructuralContextRepository {
         CASE WHEN end_line - start_line = 0 THEN 1 ELSE 0 END,
         (end_line - start_line) ASC
       LIMIT ?
-    `).all(...entityParams, ...params, qualifier ?? '\u0000', raw, raw, limit);
+    `).all(...entityParams, ...params, qualifier ?? '\u0000', raw, raw, EXACT_CANDIDATE_POOL);
     if (exactRows.length) {
       const members = this._findAssignedMemberDefinitions(raw);
-      const candidates = [...members, ...exactRows.map(row => this._entityFromRow(row))].filter(Boolean);
+      const candidates = [...members, ...preferCalledDefinitions(exactRows, qualifier, raw).slice(0, limit).map(row => this._entityFromRow(row))].filter(Boolean);
       return ownedFirst(rankStructuralCandidates(candidates, { queryHint: opts.queryHint, readFileRange: this.readFileRange.bind(this) }));
     }
 
@@ -374,7 +408,8 @@ export class StructuralContextRepository {
       WHERE r.type IN (${placeholders(types)})
         AND ${entitySql}
         AND ${relationshipSql}
-        AND e.id <> ?
+        -- The target itself only through a resolved call to itself (recursion).
+        AND (e.id <> ? OR (r.target_id = e.id AND r.type = 'calls'))
         AND (
           r.target_id = ?
           OR (r.type NOT IN ${TRACE_ONLY_TYPES_SQL} AND (
@@ -388,7 +423,7 @@ export class StructuralContextRepository {
       ORDER BY r.weight DESC, e.file_path, r.context_line
       LIMIT ?
     `, [...types, ...this._entityParams(db), ...this._relationshipParams(db), target.id, target.id, ...patterns, limit], limit);
-    const edges = rows.filter(row => !packageCallUnbound(row)).map(row => ({
+    const named = rows.filter(row => !packageCallUnbound(row)).map(row => ({
       ...this._entityFromRow(row),
       relationship: row.rel_type,
       contextLine: row.context_line || null,
@@ -397,7 +432,16 @@ export class StructuralContextRepository {
       resolvedFile: row.resolved_file || null,
       resolvedParent: row.resolved_parent || null,
       weight: row.weight ?? 1,
-    })).filter(edge => trustedCallerEdge(edge, target));
+    }));
+    const edges = named.filter(edge => trustedCallerEdge(edge, target));
+    // `opts.unresolved`: calls of the same name the graph bound to no definition and the
+    // receiver check could not trust (`loadBalancer.Data.LeaseAsync(`). They are no caller
+    // the graph knows, but the agent must know they exist.
+    if (Array.isArray(opts.unresolved)) {
+      for (const edge of named) {
+        if (!edge.targetId && edge.relationship === 'calls' && !trustedCallerEdge(edge, target)) opts.unresolved.push(edge);
+      }
+    }
     const linesByPair = this._siteLines(db, edges.filter(e => SITE_LINE_TYPES.has(e.relationship)).map(e => e.id));
     return edges.map(edge => ({ ...edge, ...this._edgeLines(linesByPair, edge.id, edge) }));
   }

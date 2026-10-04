@@ -107,7 +107,8 @@ export async function buildAgentToolDaemonResponse(payload, {
   return json(200, {
     v: 1,
     code: result.code,
-    stdout: result.stdout.toString('utf8'),
+    // A byte order mark (U+FEFF) copied from a file's first line means nothing in the output.
+    stdout: result.stdout.toString('utf8').replaceAll('\uFEFF', ''),
     stderr: result.stderr.toString('utf8'),
   });
 }

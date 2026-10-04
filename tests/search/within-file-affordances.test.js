@@ -639,10 +639,13 @@ describe('unread above (squashql-295 shape)', () => {
     }
     const r = await readFile({ path: JAVA_FILE, startLine: 170, endLine: 235, projectRoot: TMP });
     expect(r.unreadAbove.moreCount).toBe(3);
-    const line = renderUnreadAbove(r, { command: 'ss-read', queryEvidence: { anchors: ['subQuery'], subtokens: ['sub', 'query'] } });
+    const line = renderUnreadAbove(r, { command: 'ss-read', queryEvidence: { anchors: ['QueryResolver'], subtokens: ['query', 'resolver'] } });
     expect(line.startsWith('above 1-169: field subQueryMeasures')).toBe(true);
     expect(line).toContain('QueryResolver');
     expect(line).not.toContain('helper');
+    // One shared word is no signal: `query` alone does not name QueryResolver (query, resolver).
+    const loose = renderUnreadAbove(r, { command: 'ss-read', queryEvidence: { anchors: ['subQuery'], subtokens: ['sub', 'query'] } });
+    expect(loose).not.toContain('QueryResolver');
   });
 
   it('read from line 1, whole file, and tiny above-span keep the short/no form', async () => {

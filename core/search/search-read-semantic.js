@@ -500,6 +500,10 @@ function _rrfFuse(signalMaps, weights, rrfK) {
 // Span post-processing — context expansion, merging, budget enforcement
 // ---------------------------------------------------------------------------
 
+// Lines of the same definition between two selected pieces that still print as one span.
+const SAME_DEFINITION_GAP_LINES = 40;
+const _baseSymbol = (sym) => (sym ? String(sym).replace(/ \(part \d+\)$/, '') : null);
+
 function _expandAndMergeSpans(selected, totalLines, contextLines) {
   if (selected.length === 0) return [];
   const padded = selected
@@ -513,7 +517,12 @@ function _expandAndMergeSpans(selected, totalLines, contextLines) {
   const merged = [];
   for (const span of padded) {
     const last = merged[merged.length - 1];
-    if (last && span.startLine <= last.endLine + 1) {
+    // Two pieces of one long definition (`f (part 5)`, `f (part 8)`) with a short gap print
+    // as one span: the gap is the same function's code, and two fragments with a hole read
+    // as two places (grdb asyncConcurrentRead 572-607 and 638-644).
+    const sameDefinition = last && span.startLine - last.endLine - 1 <= SAME_DEFINITION_GAP_LINES
+      && last.symbols.some((x) => _baseSymbol(x) && _baseSymbol(x) === _baseSymbol(span.symbol));
+    if (last && (span.startLine <= last.endLine + 1 || sameDefinition)) {
       // Overlap or touching — merge.
       last.endLine = Math.max(last.endLine, span.endLine);
       last.score = Math.max(last.score, span.score);
@@ -768,10 +777,22 @@ async function _readSemanticUnpinned(req) {
   }
 
   // Take top-K by fused score, then pull the actual chunk records.
-  const fusedTop = [...fused.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, Math.max(topK * 2, topK)); // overshoot a bit before LI re-rank
   const idToChunk = new Map(chunks.map(c => [c.id, c]));
+  // Overshoot a bit before the LI re-rank: the pool holds the top topK*2 DEFINITIONS, every
+  // piece of one counted once. Eight pieces of one long function (grdb asyncConcurrentRead
+  // parts 1-8) otherwise filled the pool and kept every other definition from the re-rank.
+  const poolDefinitions = Math.max(topK * 2, topK);
+  const seenDefinitions = new Set();
+  const fusedTop = [];
+  for (const entry of [...fused.entries()].sort((a, b) => b[1] - a[1])) {
+    const c = idToChunk.get(entry[0]);
+    const def = c ? `${_baseSymbol(c.symbol) || `@${c.startLine}`}` : entry[0];
+    if (!seenDefinitions.has(def)) {
+      if (seenDefinitions.size >= poolDefinitions) continue;
+      seenDefinitions.add(def);
+    }
+    fusedTop.push(entry);
+  }
 
   // Final re-rank: prefer late-interaction score when LI ran; otherwise the
   // RRF score is the authority. This mirrors the SOTA pattern (cheap candidate

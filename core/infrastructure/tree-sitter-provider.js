@@ -892,7 +892,55 @@ export function refineDeclarationKind(node, languageId, type) {
     const keyword = node.childForFieldName?.('declaration_kind')?.type;
     return SWIFT_DECLARATION_KINDS[keyword] || type;
   }
+  // C++ `R ns::f(...)`: the qualifier is a namespace when the same file opens it
+  // (`namespace drogon {`) or imports it (`using namespace drogon;`). Then f is a free
+  // function defined out of line, not a member of a class `ns`.
+  if (languageId === 'cpp' && node.type === 'function_definition' && type === 'method') {
+    const scope = cppDefinitionQualifier(node);
+    if (scope && cppFileNamespaces(node).has(scope)) return 'function';
+  }
   return type;
+}
+
+/** `Q` of a C++ definition `R Q::name(...)` (the innermost scope), or null. */
+function cppDefinitionQualifier(node) {
+  let decl = node.childForFieldName('declarator');
+  while (decl && decl.type !== 'function_declarator') decl = decl.childForFieldName('declarator') || decl.namedChild(0);
+  let q = decl?.childForFieldName('declarator');
+  if (q?.type !== 'qualified_identifier') return null;
+  let scope = null;
+  while (q?.type === 'qualified_identifier') {
+    scope = q.childForFieldName('scope');
+    q = q.childForFieldName('name');
+  }
+  if (!scope) return null;
+  return String(scope.text).split('::').pop().replace(/<.*$/, '') || null;
+}
+
+/** Namespace names a C++ file opens (`namespace a::b {`) or imports (`using namespace a;`). */
+function cppFileNamespaces(node) {
+  let root = node;
+  while (root.parent) root = root.parent;
+  const names = new Set();
+  const visit = (n, depth) => {
+    if (depth > 6) return;
+    for (let i = 0; i < n.namedChildCount; i++) {
+      const c = n.namedChild(i);
+      if (c.type === 'namespace_definition') {
+        const name = c.childForFieldName('name');
+        if (name) for (const part of String(name.text).split('::')) if (part) names.add(part);
+        const body = c.childForFieldName('body');
+        if (body) visit(body, depth + 1);
+      } else if (c.type === 'using_declaration' && /^using\s+namespace\b/.test(c.text)) {
+        const last = String(c.text).replace(/^using\s+namespace\s+/, '').replace(/;\s*$/, '').split('::').pop().trim();
+        if (last) names.add(last);
+      } else if (c.type === 'preproc_ifdef' || c.type === 'preproc_if' || c.type === 'linkage_specification' || c.type === 'declaration_list') {
+        visit(c, depth + 1);
+      }
+    }
+  };
+  visit(root, 0);
+  return names;
 }
 
 // Swift compile-time conditional lines (`#if X`, `#elseif`, `#else`, `#endif`).
@@ -1115,7 +1163,8 @@ export class TreeSitterProvider {
         // Kotlin / Swift reuse one node type for several declaration kinds
         // (`interface Chain` is a Kotlin class_declaration); read the kind
         // from the node's keyword leaf. No-op for every other language.
-        if (entityType === 'class' || entityType === 'object') {
+        // C++ `R ns::f(` is a free function when `ns` is a namespace of the file.
+        if (entityType === 'class' || entityType === 'object' || (languageId === 'cpp' && entityType === 'method')) {
           entityType = refineDeclarationKind(extentNode, languageId, entityType);
         }
 

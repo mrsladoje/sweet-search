@@ -523,7 +523,7 @@ describe('formatTraceCompact (A4)', () => {
       { name: 'run', type: 'function', file: 'r.go', startLine: 1, contextLines: [5], relationship: 'calls', via: 'Base.target' },
     ];
     const out = formatTraceCompact(r);
-    expect(out).toContain('i.go\nclass Impl 2 (extends) @2');
+    expect(out).toContain('i.go\nclass Impl 2 (extends)\n');
     expect(out).toContain('r.go\nfunction run 1 @5 via Base.target');
     expect(out).toContain('## callees\nd.go\nmethod d1 1');
     const withLines = traceResult();
