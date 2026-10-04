@@ -182,7 +182,7 @@ describe('ss-trace lists a type\'s signature users (typeRef) by default', () => 
     const result = trace(graph, 'Foo', { filePath: 'src/foo.ts', mode: 'callers' });
     expect(rows(result, 'typeRef').sort()).toEqual(['give', 'take']);
     expect(result.sections.callers.siteNoun).toBe('sites');
-    expect(formatTraceCompact(result, { mode: 'callers' })).toMatch(/src\/a\.ts\n(?:function \w+ \d+-\d+ \(typeRef\) @\d+\n)*function take 2-4 \(typeRef\) @2/);
+    expect(formatTraceCompact(result, { mode: 'callers' })).toMatch(/src\/a\.ts\n(?:function \w+ \d+-\d+ \(typeRef\)\n)*function take 2-4 \(typeRef\)(?:\n|$)/);
   });
 
   it('a function listed by a stronger relationship is not repeated as a typeRef row', async () => {

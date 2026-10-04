@@ -1,5 +1,6 @@
 import { readFileSync } from 'fs';
 import path from 'path';
+import { isTestLikePath } from '../infrastructure/test-paths.js';
 
 /**
  * Intent-aware file-kind ranking (conservative variant).
@@ -182,6 +183,10 @@ export function detectFileKind(filePath, opts) {
   else if (TYPES_RE.test(filePath)) kind = 'types';
   else if (ANCILLARY_RE.test(filePath)) kind = 'ancillary';
   else kind = 'implementation';
+  // Agent format only (format-gated, CLAUDE.md): the shared test-path rules also know
+  // `FooTests.cs` / `FooTest.java` and root `unit/`, `testing/`, `acceptance/` (ocelot's
+  // test class TestLeastConnection ranked above the LeastConnection it tests).
+  if (kind === 'implementation' && opts?.agentFormat && isTestLikePath(filePath)) kind = 'tests';
   if (cache) cache.set(filePath, kind);
   return kind;
 }

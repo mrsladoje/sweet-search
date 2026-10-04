@@ -197,6 +197,7 @@ export async function hybridSearchV2(query, options = {}) {
   const __t_fk = __ptStart();
   const rankedByFileKind = applyFileKindRanking(boosted, {
     intent: fileKindIntent,
+    agentFormat: options.format === 'agent',
     window: options.fileKindWindow ?? 100,
     docFactor: options.hybridDocFactor ?? 0.35,
     testFactor: options.hybridTestFactor ?? 0.35,

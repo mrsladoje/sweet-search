@@ -420,7 +420,14 @@ function packSection(items, budget, opts) {
   return { items: packed, tokensUsed: used };
 }
 
-function buildImpactPaths(repo, target, opts) {
+// What a trace reaches downstream is what it runs: the edges the callees section lists.
+// `uses` (C++: a namespace or class named in the body), `extends` and `implements` are no
+// step of execution. A namespace or module is never a node of a path.
+const DOWNSTREAM_IMPACT_EDGES = ['calls', 'instantiates'];
+const SCOPE_KINDS = new Set(['namespace', 'module', 'package']);
+const isScopeNode = (e) => SCOPE_KINDS.has(String(e?.type || '').toLowerCase());
+
+export function buildImpactPaths(repo, target, opts) {
   const maxDepth = clamp(opts.maxDepth ?? DEFAULT_MAX_DEPTH, 1, 4);
   const limit = clamp(opts.limit ?? 80, 10, 250);
   let frontier = new Map([[target.id, { entity: target, path: [target], edgeTypes: [] }]]);
@@ -435,7 +442,7 @@ function buildImpactPaths(repo, target, opts) {
     });
     const next = new Map();
     for (const row of rows) {
-      if (!row.id || row.id === target.id || upstreamVisited.has(row.id)) continue;
+      if (!row.id || row.id === target.id || upstreamVisited.has(row.id) || isScopeNode(row)) continue;
       // A generic name: no caller matched by name alone (dropNameOnlyCallers).
       if (opts.genericName && depth === 1 && row.targetName && row.targetId !== target.id) continue;
       const parent = frontier.get(row.targetId) || (depth === 1 ? frontier.get(target.id) : null);
@@ -458,10 +465,15 @@ function buildImpactPaths(repo, target, opts) {
   frontier = new Map([[target.id, { entity: target, path: [target], edgeTypes: [] }]]);
   const downstreamVisited = new Set([target.id]);
   for (let depth = 1; depth <= maxDepth && paths.length < limit; depth++) {
-    const rows = repo.getForwardDependencies?.([...frontier.keys()], { limit: limit * 3 }) || [];
+    const rows = repo.getForwardDependencies?.([...frontier.keys()], { limit: limit * 3, types: DOWNSTREAM_IMPACT_EDGES }) || [];
+    // Bare calls (`helper(x)`, resolved from call_sites) are callees too: the callees
+    // section lists them, so a step of the tree must reach them as well.
+    for (const [sourceId, { entity }] of frontier) {
+      for (const callee of repo.getBareCallees?.(entity, { limit: 24 }) || []) rows.push({ ...callee, sourceId });
+    }
     const next = new Map();
     for (const row of rows) {
-      if (!row.id || row.id === target.id || downstreamVisited.has(row.id)) continue;
+      if (!row.id || row.id === target.id || downstreamVisited.has(row.id) || isScopeNode(row)) continue;
       const parent = frontier.get(row.sourceId);
       if (!parent) continue;
       if (callIntoTestTree(parent.entity.filePath, row.filePath)) continue;
@@ -576,16 +588,16 @@ function addHintImpactPaths(paths, seen, repo, target, hintSites, limit, resolve
         || repo.findSameFileDefinition?.(site.name, target.filePath);
       hint = local?.id ? local : unqualifiedCallDefinition(repo, site.name);
     }
-    if (!hint || hint.id === target.id || !isLikelyCodeEntity(hint)) continue;
+    if (!hint || hint.id === target.id || !isLikelyCodeEntity(hint) || isScopeNode(hint)) continue;
     if (callIntoTestTree(target.filePath, hint.filePath)) continue;
     const id = `hint:${target.id}>${hint.id}`;
     if (!seen.has(id)) {
       paths.push({ id, direction: 'downstream', path: [target, hint], edgeTypes: ['handoff'], depth: 1 });
       seen.add(id);
     }
-    for (const row of repo.getForwardDependencies?.([hint.id], { limit: 12 }) || []) {
+    for (const row of repo.getForwardDependencies?.([hint.id], { limit: 12, types: DOWNSTREAM_IMPACT_EDGES }) || []) {
       if (paths.length >= limit) break;
-      if (!row.id || row.id === target.id) continue;
+      if (!row.id || row.id === target.id || isScopeNode(row)) continue;
       if (callIntoTestTree(hint.filePath, row.filePath)) continue;
       const rid = `hint:${target.id}>${hint.id}>${row.id}`;
       if (seen.has(rid)) continue;
@@ -632,7 +644,8 @@ export class StructuralContextBuilder {
     const targetHeaderContext = extractHeaderContext(readFileRange, target.filePath);
     const targetHintSites = callsiteHintSites(targetSource, new Set([target.name]));
     const targetCallsiteHints = targetHintSites.map(h => h.name);
-    const storedCallers = [...this.repo.getCallers(target, { limit: 160 }), ...(this.repo.getAliasCallers?.(target, { limit: 80 }) || [])];
+    const unresolvedNamed = [];
+    const storedCallers = [...this.repo.getCallers(target, { limit: 160, unresolved: unresolvedNamed }), ...(this.repo.getAliasCallers?.(target, { limit: 80 }) || [])];
     // A type's signature users (`typeRef`: functions that take or return it).
     // Many types have no other referrer (jj 468 of 755, drogon 142 of 183),
     // so their callers section would be empty without them; a popular type
@@ -672,6 +685,10 @@ export class StructuralContextBuilder {
     const allCallers = [...indexedCallers, ...sameFileCallers];
     const genericName = isGenericTargetName(targetDefs, allCallers.length);
     const callersRaw = dropNameOnlyCallers(allCallers, target, targetDefs).map(x => ({ ...x, depth: 1 }));
+    // Same-name calls the graph did not resolve, from code not already listed as a caller.
+    const callerIds = new Set(callersRaw.map(x => x.id));
+    const unresolvedCallers = mergeCallSites(unresolvedNamed.filter(x => !callerIds.has(x.id)))
+      .map(x => ({ name: x.name, type: x.type, file: x.filePath, startLine: x.startLine, endLine: x.endLine, contextLines: siteLines(x) }));
     let calleesRaw = mergeCallSites([
       ...this.repo.getCallees(target, { limit: 160 }),
       ...(this.repo.getBareCallees?.(target, { limit: 80 }) || []),
@@ -801,6 +818,7 @@ export class StructuralContextBuilder {
           total: siteCount(callers), siteNoun: siteNoun(callers), distinct: targetFan.fanIn, shown: callersPack.items.length, items: callersPack.items,
           ...rowCounts(callers, callersPack.items),
           provenance: callerProvenance,
+          unresolvedByName: unresolvedCallers,
         },
         callees: {
           total: siteCount(callees), siteNoun: siteNoun(callees), distinct: targetFan.fanOut, shown: calleesPack.items.length, items: calleesPack.items,

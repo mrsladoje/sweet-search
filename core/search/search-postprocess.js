@@ -879,6 +879,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
         ancillaryFactor: 0.15,
         tinyAncillaryFactor: 0.05,
       } : {}),
+      agentFormat: isAgentFormat,
       _fileKindCache,
     });
     __ptEnd('post:applyFileKindRanking', __t_fileKind);

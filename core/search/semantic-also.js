@@ -404,9 +404,19 @@ export function formatSpanHeading(span, named = nameContext(), cap = HEADER_SYMB
  */
 export function formatAlsoLine(candidates, named = nameContext(), cap = ALSO_NAME_CAP) {
   if (!Array.isArray(candidates) || candidates.length === 0) return '';
-  const parts = candidates.map((c) => {
-    const list = kindNameList(shortNamePairs(Array.isArray(c.names) ? c.names : (c.name ? [c.name] : []), named), cap);
-    return `${c.startLine}-${c.endLine}${list ? ` ${list}` : ''}`;
+  // Places that hold the same names (the unprinted parts of one long function) print as one
+  // entry with all their ranges: `502-571, 608-637 function asyncConcurrentRead`.
+  const groups = [];
+  for (const c of candidates) {
+    const names = Array.isArray(c.names) ? c.names : (c.name ? [c.name] : []);
+    const key = names.join('\u0000');
+    const prev = key && groups.find((g) => g.key === key);
+    if (prev) prev.ranges.push(`${c.startLine}-${c.endLine}`);
+    else groups.push({ key, names, ranges: [`${c.startLine}-${c.endLine}`] });
+  }
+  const parts = groups.map((g) => {
+    const list = kindNameList(shortNamePairs(g.names, named), cap);
+    return `${g.ranges.join(', ')}${list ? ` ${list}` : ''}`;
   });
   return `# also: ${parts.join(' · ')}`;
 }

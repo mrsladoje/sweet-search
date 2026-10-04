@@ -2,14 +2,18 @@ function escapeRegExp(text) {
   return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+// After a declared name: another identifier and `(` means the name was a return type
+// (C/C++ `static void handle(`, `const int size(`), not the name being declared.
+const NOT_A_RETURN_TYPE = '(?!\\s*[*&]*\\s*[A-Za-z_$][\\w$]*\\s*\\()';
+
 function definitionPattern(name) {
   const n = escapeRegExp(name);
   return new RegExp([
-    `^\\s*(?:export\\s+)?(?:const|let|var)\\s+${n}\\b`,
+    `^\\s*(?:export\\s+)?(?:const|let|var)\\s+${n}\\b${NOT_A_RETURN_TYPE}`,
     `^\\s*(?:export\\s+)?(?:async\\s+)?function\\s+${n}\\s*\\(`,
     `^\\s*(?:export\\s+)?(?:class|interface|enum|type)\\s+${n}\\b`,
-    `^\\s*(?:pub(?:\\([^)]*\\))?\\s+)?(?:const|static|fn|struct|enum|trait|type)\\s+${n}\\b`,
-    `^\\s*(?:const|var|type)\\s+${n}\\b`,
+    `^\\s*(?:pub(?:\\([^)]*\\))?\\s+)?(?:const|static|fn|struct|enum|trait|type)\\s+${n}\\b${NOT_A_RETURN_TYPE}`,
+    `^\\s*(?:const|var|type)\\s+${n}\\b${NOT_A_RETURN_TYPE}`,
     `^\\s*func\\s+(?:\\([^)]*\\)\\s+)?${n}\\s*\\(`,
     `^\\s*(?:def|class)\\s+${n}\\s*[(:]`,
   ].join('|'));

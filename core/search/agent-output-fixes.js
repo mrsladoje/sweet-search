@@ -569,7 +569,8 @@ export function renderSummaryRow(r, hideSpans = []) {
   const symbols = entrySymbols(r).filter((s) => !(Number.isInteger(s.startLine) && Number.isInteger(s.endLine)
     && insideAny(hideSpans, s.startLine, s.endLine)));
   const names = kindNameList(symbols, SUMMARY_NAME_CAP);
-  return `${lineRange(r.startLine, r.endLine)}${names ? ` ${names}` : ''}${r.stale ? ' STALE' : ''}`;
+  // A row that holds part of a definition says so: reading its lines alone gives part of it.
+  return `${lineRange(r.startLine, r.endLine)}${names ? ` ${names}` : ''}${partOfNote(r, r.endLine)}${r.stale ? ' STALE' : ''}`;
 }
 
 /**
@@ -606,14 +607,27 @@ const VERB_LEADS = new Set(['extends', 'implements', 'overrides', 'extendedBy', 
  * shortest unique suffix (`shortPath`). `printed`: full paths this output already printed; updated.
  * @param {{name?:string,type?:string}|null} subject the entity the rows hang off
  */
+/**
+ * C#, Kotlin and Swift write a base class and the interfaces a type implements in one list
+ * (`class A : Base, IFoo`), and the graph stores each as `extends`. A class or struct that
+ * `extends` an interface implements it; an interface `extendedBy` a class is implemented by it.
+ */
+function baseListKind(kind, subjectType, otherType) {
+  const isInterface = (t) => t === 'interface' || t === 'protocol';
+  if (kind === 'extends' && isInterface(otherType) && subjectType && !isInterface(subjectType)) return 'implements';
+  if (kind === 'extendedBy' && isInterface(subjectType) && otherType && !isInterface(otherType)) return 'implementedBy';
+  return kind;
+}
+
 export function renderRelatedRows(rows, printed = new Set(), subject = null) {
   if (!Array.isArray(rows) || rows.length === 0) return [];
   const S = subject?.name ? kindName(subject.name, subject.type) : 'this';
   const byKind = new Map();
   for (const row of rows) {
     if (!row?.name) continue;
-    if (!byKind.has(row.kind)) byKind.set(row.kind, []);
-    byKind.get(row.kind).push(row);
+    const kind = baseListKind(row.kind, subject?.type, row.entityType);
+    if (!byKind.has(kind)) byKind.set(kind, []);
+    byKind.get(kind).push(row);
   }
   const pathFor = (row) => {
     if (printed.has(row.file)) return row.shortPath || row.file;
@@ -670,7 +684,8 @@ function renderSiblingLine(siblingLine, spans, rowSpans = []) {
 
 /** `interface Chain (part, whole 84-297)` when the entry shows only part of its primary symbol. */
 function partOfNote(r, shownEnd) {
-  const primary = entrySymbols(r).find((s) => s.name === r.symbol);
+  const symbols = entrySymbols(r);
+  const primary = symbols.find((s) => s.name === r.symbol) || (symbols.length === 1 ? symbols[0] : null);
   if (!primary || !Number.isInteger(primary.startLine) || !Number.isInteger(primary.endLine)) return '';
   if (primary.startLine >= r.startLine && primary.endLine <= shownEnd) return '';
   return ` (part; whole ${lineRange(primary.startLine, primary.endLine)})`;
@@ -944,6 +959,9 @@ export function readSpansForAlreadyShown(spans, decisions, printedChars) {
 
 // --- ss-trace ---------------------------------------------------------------------------
 
+// Rows of same-name calls the graph did not resolve, at most.
+const UNRESOLVED_CALLER_ROWS = 5;
+
 function isExternalItem(item) {
   return item?.type === 'external' || !item?.file;
 }
@@ -960,20 +978,30 @@ function siteList(lines) {
  * (`function AddMutationWithIndex 590-650 @606`: it calls the target on 606;
  * `method findPosting 2305-2330 @536`: the target calls it on 536). A row that is no call
  * says what it is: `(extends)`, `(instantiates)`, `(typeRef)`, `(overrides)`; a call made
- * through a method the target overrides names it: `via Chain.proceed`.
+ * through a method the target overrides names it: `via Chain.proceed`; a call of the
+ * traced definition to itself says `(recursive)`.
  */
-function traceRow(item) {
-  const rel = item.relationship;
-  const isCall = !rel || rel === 'calls' || rel === 'handoff';
-  const lines = siteList(item.contextLines?.length ? item.contextLines : (item.contextLine ? [item.contextLine] : []));
+const isCallRel = (rel) => !rel || rel === 'calls' || rel === 'handoff';
+
+function traceRow(item, target = null) {
+  // A call from the traced definition to itself.
+  const recursive = target && item.file === target.filePath && item.startLine === target.startLine ? ' (recursive)' : '';
+  // Non-call relationships of the row (`overrides`, `extends`); a row can also call.
+  const rels = (item.rels || (isCallRel(item.relationship) ? [] : [item.relationship]))
+    .map((rel) => (target ? baseListKind(rel, item.type, target.type) : rel));
+  const isCall = rels.length === 0;
+  // A declaration's own line (`overrides` on the definition line) is no site to print.
+  const own = (item.contextLines?.length ? item.contextLines : (item.contextLine ? [item.contextLine] : []))
+    .filter((n) => !(item.onlyNonCall && n === item.startLine));
+  const lines = siteList(own);
   // A file's top-level code (`(top-level)`) spans the whole file: no kind, no span.
   const isFile = item.type === 'file';
   const span = !isFile && Number.isInteger(item.startLine) ? ` ${lineRange(item.startLine, item.endLine)}` : '';
-  return `${isFile ? item.name : kindName(item.name, item.type)}${span}${isCall ? '' : ` (${rel})`}${lines ? ` @${lines}` : ''}${item.via ? ` via ${item.via}` : ''}`;
+  return `${isFile ? item.name : kindName(item.name, item.type)}${span}${isCall ? '' : ` (${rels.join(', ')})`}${recursive}${lines ? ` @${lines}` : ''}${item.via ? ` via ${item.via}` : ''}`;
 }
 
 /** Rows grouped by file (path printed once), files in first-row order; test files last. */
-function groupedRows(items, label) {
+function groupedRows(items, label, target = null) {
   const ordered = [...items.filter((i) => !isTestLikePath(i.file)), ...items.filter((i) => isTestLikePath(i.file))];
   const byFile = new Map();
   for (const item of ordered) {
@@ -983,9 +1011,33 @@ function groupedRows(items, label) {
   const out = [];
   for (const [file, rows] of byFile) {
     out.push(label(file));
-    for (const row of rows) out.push(traceRow(row));
+    for (const row of mergeEntityRows(rows)) out.push(traceRow(row, target));
   }
   return out;
+}
+
+/**
+ * One row per entity: an entity that overrides the target and also calls it (CookieStickySessions
+ * `LeaseAsync`) prints once, `(overrides) @87`, with the call lines only.
+ */
+function mergeEntityRows(rows) {
+  const byEntity = new Map();
+  for (const row of rows) {
+    const key = `${row.name}\u0000${row.startLine}`;
+    const rel = isCallRel(row.relationship) ? null : row.relationship;
+    const prev = byEntity.get(key);
+    if (!prev) {
+      byEntity.set(key, { ...row, rels: rel ? [rel] : [], onlyNonCall: !!rel });
+      continue;
+    }
+    if (rel && !prev.rels.includes(rel)) prev.rels.push(rel);
+    if (!rel) {
+      prev.contextLines = row.contextLines?.length ? row.contextLines : (row.contextLine ? [row.contextLine] : []);
+      prev.via = prev.via || row.via;
+      prev.onlyNonCall = false;
+    }
+  }
+  return [...byEntity.values()];
 }
 
 /**
@@ -1093,7 +1145,7 @@ export function formatTraceCompact(result, { mode = null, inFile = null, notes =
     known.add(file);
     return file;
   };
-  lines.push(sameFile ? `# lines ${t.startLine}-${t.endLine}` : `# ${t.filePath}:${t.startLine}-${t.endLine}`);
+  lines.push(sameFile ? `# lines ${lineRange(t.startLine, t.endLine)}` : `# ${t.filePath}:${lineRange(t.startLine, t.endLine)}`);
   for (const n of notes) lines.push(n);
   const alt = alternativesLine(result, label);
   if (alt) lines.push(alt);
@@ -1112,12 +1164,19 @@ export function formatTraceCompact(result, { mode = null, inFile = null, notes =
       lines.push(`(no ${title} in the repository)`);
     } else {
       if (mode === null) lines.push(`## ${title}`);
-      lines.push(...groupedRows(internal, label));
+      lines.push(...groupedRows(internal, label, t));
     }
     for (const item of internal) listed.add(`${item.file}:${item.startLine || '?'}`);
     // Every row left out is counted. The section cap is fixed (40 rows), so the way to
     // every call site of a name is ss-grep.
     if (section.hidden > 0) lines.push(`+${section.hidden} more${title === 'callers' ? ' (ss-grep the name for every site)' : ''}`);
+    // Calls of the same name the graph bound to no definition: they may call this one.
+    const unresolved = title === 'callers' ? (section.unresolvedByName || []).filter((i) => i.file) : [];
+    if (unresolved.length) {
+      lines.push(`not resolved, same name (may call another ${t.name}):`);
+      lines.push(...groupedRows(unresolved.slice(0, UNRESOLVED_CALLER_ROWS), label));
+      if (unresolved.length > UNRESOLVED_CALLER_ROWS) lines.push(`+${unresolved.length - UNRESOLVED_CALLER_ROWS} more`);
+    }
     if (external > 0) lines.push(`+${external} unresolved ${title === 'callers' ? 'caller' : 'call'}${external === 1 ? '' : 's'}`);
   }
 
