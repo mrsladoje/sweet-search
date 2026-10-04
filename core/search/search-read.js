@@ -422,6 +422,27 @@ function _bodyEntityAcross(graph, filePathRel, line, step) {
   return { symbol: e.name, type: e.type, startLine: e.startLine, endLine: e.endLine };
 }
 
+/**
+ * The code graph's kind for each listed symbol it holds (same name, same first line). The
+ * chunker labels kinds on its own and calls a Swift / Kotlin / Python method a function; the
+ * graph knows its container (grdb `functions openConnection` read `methods`).
+ */
+function _graphKinds(projectRoot, filePathRel, symbols, lo, hi) {
+  if (!symbols.length) return symbols;
+  const graph = _getGraphRepo(projectRoot);
+  if (!graph || typeof graph.findEntityWithNameInRange !== 'function') return symbols;
+  return symbols.map((sym) => {
+    if (!sym?.symbol || !Number.isInteger(sym.startLine)) return sym;
+    // A chunk starts at the doc comment above its definition: look a few lines down.
+    let e = null;
+    try { e = graph.findEntityWithNameInRange(filePathRel, sym.startLine, Math.min(hi, sym.startLine + GRAPH_KIND_LOOKAHEAD), sym.symbol); } catch { e = null; }
+    return e?.type && e.type !== sym.type ? { ...sym, type: e.type } : sym;
+  });
+}
+
+// Lines below a chunk's first line within which its definition starts (doc comments, attributes).
+const GRAPH_KIND_LOOKAHEAD = 40;
+
 const TYPE_ENTITY_TYPES = new Set(['class', 'struct', 'enum', 'interface', 'trait', 'impl', 'extension', 'protocol', 'object', 'actor', 'record']);
 
 /** The smallest type entity that spans lines lo..hi, or null. */
@@ -645,6 +666,7 @@ async function _readFileUnpinned(req) {
           .map(s => ({ ...s, startLine: sliced.endLine + s.startLine }));
       }
     }
+    symbols = _graphKinds(projectRoot, relForIndex, symbols, sliced.endLine + 1, sliced.totalLines);
     unreadBelow = {
       startLine: sliced.endLine + 1,
       endLine: sliced.totalLines,
@@ -674,6 +696,7 @@ async function _readFileUnpinned(req) {
         symbols = _sniffRemainderDefinitions(above.text, isCFamily);
       }
     }
+    symbols = _graphKinds(projectRoot, relForIndex, symbols, 1, sliced.startLine - 1);
     unreadAbove = {
       startLine: 1,
       endLine: aboveLines,
