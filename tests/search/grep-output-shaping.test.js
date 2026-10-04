@@ -796,6 +796,26 @@ describe('bareGrep — file-diversity options are additive and default-off', () 
     expect((await run(['*.rs', '!ivec4.rs'])).familyManifest.rendered).toContain('IVec{2,3}');
   });
 
+  it('agent grep: hits in test files seed no family (test function names are not a family to complete)', async () => {
+    const matches = [
+      m('posting/list_test.go', 177, 'addMutationHelper(t, l, edge, Set, txn)'),
+      m('posting/list_test.go', 240, 'addMutationHelper(t, ol, edge, Set, txn)'),
+      m('posting/list_test.go', 320, 'addMutationHelper(t, ol1, edge, Set, txn)'),
+    ];
+    const enclosing = { 177: 'TestAddMutation_jchiu1', 240: 'TestAddMutation_jchiu2', 320: 'TestAddMutation_jchiu3' };
+    const searcher = makeSearcher(matches);
+    searcher.codeGraphRepo = {
+      findEntitiesInRange: vi.fn(() => []),
+      findEnclosingEntity: vi.fn((file, line) => ({ name: enclosing[line], type: 'function' })),
+      findFamilyCandidates: vi.fn(() => Object.values(enclosing).map(name => ({ name, type: 'function', filePath: 'posting/list_test.go' }))),
+    };
+    const res = await bareGrep.call(searcher, 'addMutationHelper', null, {
+      regex: 'addMutationHelper', maxMatches: 0, perFileCap: 30, maxFiles: 30, _isAgentFormat: true,
+    });
+    expect(res.familyManifest).toBeUndefined();
+    expect(searcher.codeGraphRepo.findFamilyCandidates).not.toHaveBeenCalled();
+  });
+
   it('does no symbol-table family work for non-agent grep', async () => {
     const searcher = makeSearcher([m('src/vec2.rs', 1, 'pub struct Vec2')]);
     searcher.codeGraphRepo = {
