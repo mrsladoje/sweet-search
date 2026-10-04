@@ -23,6 +23,7 @@ import {
 } from './agent-span-ledger.js';
 import { sendAgentSpanOperation } from './agent-span-client.js';
 import { selectUnreadSymbols, nameWordsMatched } from './unread-symbol-ranking.js';
+import { isTestPath } from '../graph/relationship-resolver.js';
 import { containsToken, informativeSubtokens } from './query-sufficiency.js';
 import { kindName, kindNameList } from './kind-words.js';
 
@@ -542,6 +543,65 @@ function _collectAboveSymbols(chunks, filePathRel, projectRoot, windowStart, win
     || (a.startLine ?? 0) - (b.startLine ?? 0));
 }
 
+const INTERFACE_IMPLS_MAX = 2;        // more implementing classes than this: name none
+const INTERFACE_CALL_LINES_MAX = 3;   // at most this many trailer lines per read
+
+// Test roots that isTestPath (file-name and tests/ spec/ mocks/ dirs) does not cover:
+// C# and Java suites live under unit/, acceptance/, integration/ (ocelot TestLoggerFactory).
+const TEST_ROOT_DIR_RE = /(?:^|\/)(?:unit|acceptance|integration|e2e|functional)(?:[-_]?tests?)?\//i;
+const isTestLikePath = (p) => isTestPath(p) || TEST_ROOT_DIR_RE.test(p || '');
+
+/**
+ * Pick the interface calls worth a trailer line from the graph rows of one read window.
+ * Nothing for a test file (its calls go to test doubles). Test implementations are dropped,
+ * same-method overloads count once, and a call whose implementation sits in the file being
+ * read is skipped (it is already in view). One row per interface method, at its first call.
+ */
+export function selectInterfaceCalls(rows, filePathRel) {
+  if (!Array.isArray(rows) || rows.length === 0 || isTestLikePath(filePathRel)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const row of rows) {
+    if (seen.has(row.target)) continue;
+    const byMethod = new Map();
+    for (const i of row.impls || []) {
+      if (isTestLikePath(i.filePath)) continue;
+      const key = `${i.owner || ''}.${i.name}`;
+      if (!byMethod.has(key)) byMethod.set(key, i);
+    }
+    const impls = [...byMethod.values()];
+    if (impls.length === 0 || impls.length > INTERFACE_IMPLS_MAX) continue;
+    if (impls.some(i => i.filePath === filePathRel)) continue;
+    seen.add(row.target);
+    out.push({ line: row.line, call: row.call, target: row.target, impls });
+    if (out.length >= INTERFACE_CALL_LINES_MAX) break;
+  }
+  return out;
+}
+
+function _collectInterfaceCalls(filePathRel, projectRoot, startLine, endLine) {
+  const graph = _getGraphRepo(projectRoot);
+  if (!graph || typeof graph.findInterfaceCallImplementations !== 'function') return [];
+  let rows = [];
+  try { rows = graph.findInterfaceCallImplementations(filePathRel, startLine, endLine) || []; }
+  catch { rows = []; }
+  return selectInterfaceCalls(rows, filePathRel);
+}
+
+/**
+ * The interface-call trailer: one line per call in the window that goes through an
+ * interface with one or two implementations, naming the implementing method and where
+ * it is. Returns '' when there is none.
+ */
+export function renderInterfaceImpls(result) {
+  const calls = result?.interfaceCalls;
+  if (!Array.isArray(calls) || calls.length === 0) return '';
+  return calls.map(c => {
+    const impls = c.impls.map(i => `${i.owner ? i.owner + '.' : ''}${i.name} (${i.filePath}:${i.startLine})`).join(', ');
+    return `line ${c.line} ${c.call} calls interface ${c.target}, implemented by ${impls}`;
+  }).join('\n');
+}
+
 /**
  * The above-symbols that carry a reason to print, in candidate order (referenced first, then
  * file order): the ones the window READS, and the ones the session's query evidence names.
@@ -725,6 +785,16 @@ async function _readFileUnpinned(req) {
     }
   }
 
+  // Interface-call trailer data (2026-10-04, r3-ocelot-03 micro-smoke): a call made
+  // through an interface-typed field (`_replacer.Replace`) names only the interface, and
+  // agents stopped there in every rollout that reached the line. The graph already links
+  // the interface method to the class that implements it (`overrides` edges), so the
+  // read names that class. Agent format only; ss-read renders it (renderInterfaceImpls).
+  let interfaceCalls = [];
+  if (req.format === 'agent') {
+    interfaceCalls = _collectInterfaceCalls(relForIndex, projectRoot, sliced.startLine, sliced.endLine);
+  }
+
   // If a line range was requested, narrow attached chunks to the overlap.
   if (wantsRange && chunks.length) {
     chunks = chunks.filter(c =>
@@ -752,6 +822,7 @@ async function _readFileUnpinned(req) {
     unreadAbove,
     enclosingStart,
     enclosingEnd,
+    interfaceCalls,
     timings: { totalMs: +(performance.now() - t0).toFixed(2) },
   };
 }
