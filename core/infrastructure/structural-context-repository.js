@@ -54,8 +54,10 @@ function packageCallBound(row) {
   if (row.rel_type !== 'calls' || !(row.target_id || row.id)) return false;
   const fip = String(row.full_import_path || '');
   // Also a call through a receiver of declared type (`l *List` → l.findPosting):
-  // the type decided it, not the receiver's name.
-  return fip.startsWith(GO_PACKAGE_PREFIX) || fip.startsWith(RECEIVER_TYPE_PREFIX);
+  // the type decided it, not the receiver's name. A PHP factory hint (`recvtype:?`)
+  // decides nothing when it binds: the receiver rules did.
+  return fip.startsWith(GO_PACKAGE_PREFIX)
+    || (fip.startsWith(RECEIVER_TYPE_PREFIX) && !fip.startsWith(`${RECEIVER_TYPE_PREFIX}?`));
 }
 
 /**

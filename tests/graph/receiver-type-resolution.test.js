@@ -494,3 +494,157 @@ describe('Ruby operator and setter methods are entities (sequel `def []=`)', () 
     }
   });
 });
+
+describe('PHP: typed parameters, catch variables, `new` and library factories (composer)', () => {
+  const REPO = {
+    'src/Autoload/ClassLoader.php': [
+      '<?php',
+      'namespace App\\Autoload;',
+      'class ClassLoader {',
+      '    public function unregister() {',
+      '    }',
+      '}',
+    ],
+    'src/Util/IniHelper.php': [
+      '<?php',
+      'namespace App\\Util;',
+      'class IniHelper {',
+      '    public function getMessage() {',
+      '    }',
+      '}',
+    ],
+    'src/IO/IOInterface.php': [
+      '<?php',
+      'namespace App\\IO;',
+      'interface IOInterface {',
+      '    public function write($message);',
+      '}',
+    ],
+    'src/Package/PackageInterface.php': [
+      '<?php',
+      'namespace App\\Package;',
+      'interface PackageInterface {',
+      '    public function getName();',
+      '}',
+    ],
+    'src/Package/Package.php': [
+      '<?php',
+      'namespace App\\Package;',
+      'class Package implements PackageInterface {',
+      '    public function getName() {',
+      '    }',
+      '    public function setExtra(array $extra) {',
+      '    }',
+      '}',
+    ],
+    'src/Installer/Manager.php': [
+      '<?php',
+      'namespace App\\Installer;',
+      'use Seld\\Signal\\SignalHandler;',
+      'use App\\IO\\IOInterface;',
+      'use App\\Package\\Package;',
+      'use App\\Package\\PackageInterface;',
+      'class Manager {',
+      '    public function execute(?IOInterface $io = null) {',
+      '        $signalHandler = SignalHandler::create([1, 2], function (string $signal) {',
+      '            exit(1);',
+      '        });',
+      '        try {',
+      '            $io->write("x");',
+      '        } catch (\\RuntimeException $e) {',
+      '            $e->getMessage();',
+      '        } finally {',
+      '            $signalHandler->unregister();',
+      '        }',
+      '    }',
+      '',
+      '    public function load(PackageInterface $package) {',
+      '        if ($package instanceof Package) {',
+      '            $package->setExtra([]);',
+      '        }',
+      '        $package->getName();',
+      '    }',
+      '}',
+    ],
+  };
+
+  it('a library object, a built-in exception and a typed interface parameter', async () => {
+    const g = await buildGraph(REPO);
+    const t = callTargets(g.dbPath, 'execute');
+    // SignalHandler::create(…) made it, and the repo defines no SignalHandler: not ClassLoader.
+    expect(t['signalHandler.unregister']).toBeNull();
+    // \RuntimeException is PHP's: its getMessage is no repo method.
+    expect(t['e.getMessage']).toBeNull();
+    expect(t['io.write']).toBe('src/IO/IOInterface.php#IOInterface.write');
+  });
+
+  it('a method only a subtype defines (narrowed by instanceof) binds to that subtype', async () => {
+    const g = await buildGraph(REPO);
+    const t = callTargets(g.dbPath, 'load');
+    expect(t['package.setExtra']).toBe('src/Package/Package.php#Package.setExtra');
+    expect(t['package.getName']).toBe('src/Package/PackageInterface.php#PackageInterface.getName');
+  });
+
+  it('the incremental resolver (resolveRowsScoped) agrees with the full build', async () => {
+    const g = await buildGraph(REPO);
+    const db = new Database(g.dbPath);
+    try {
+      const rows = db.prepare(`
+        SELECT r.source_id, r.target_name, r.type, r.context_line, r.full_import_path, r.target_id
+        FROM relationships r JOIN entities s ON s.id = r.source_id
+        WHERE s.name IN ('execute', 'load') AND r.type = 'calls' ORDER BY r.target_name
+      `).all();
+      expect(rows.length).toBeGreaterThan(3);
+      expect(resolveRowsScoped(db, rows, { liveOnly: false })).toEqual(rows.map((r) => r.target_id));
+    } finally {
+      db.close();
+    }
+  });
+
+  it('declaredTypeIn reads PHP declarations soundly', () => {
+    const t = (src, name) => declaredTypeIn(src, name, 'a.php');
+    expect(t('function f(?Foo $x = null, array $a = []) {\n $x->run();', 'x')).toMatchObject({ type: 'Foo', factory: false });
+    expect(t('$p = new \\Symfony\\Process($c);\n$p->run();', 'p')).toMatchObject({ type: 'Process', factory: false });
+    expect(t('$p = Process::fromShellCommandline(\n $c\n);\n$p->run();', 'p')).toMatchObject({ type: 'Process', factory: true });
+    // A chained static call returns another type; a rebinding, a loop variable, an untyped
+    // parameter or a union type gives none.
+    expect(t('$p = Process::create($c)->setTimeout(1);\n$p->run();', 'p')).toBeNull();
+    expect(t('$p = new Process($c);\n$p = get();\n$p->run();', 'p')).toBeNull();
+    expect(t('foreach ($xs as $p) {\n $p->run();', 'p')).toBeNull();
+    expect(t('function f($p) {\n $p->run();', 'p')).toBeNull();
+    expect(t('try {} catch (A|B $e) {\n $e->getMessage();', 'e')).toBeNull();
+    expect(parseReceiverType('recvtype:?Process')).toMatchObject({ type: 'Process', factory: true, external: false });
+  });
+});
+
+describe('one repo method of a generic API name (many distinct receivers)', () => {
+  const callers = [];
+  for (let i = 0; i < 22; i++) callers.push(`    d${i}.items()`);
+  const REPO = {
+    'pkg/apps.py': [
+      'class Apps:',
+      '    def items(self):',
+      '        return []',
+    ],
+    'pkg/use.py': [
+      'def walk(apps):',
+      ...callers,
+      '    apps.items()',
+    ],
+  };
+
+  it('`dict.items()` is no call of Apps.items; a receiver that names the owner still is', async () => {
+    const g = await buildGraph(REPO);
+    const db = new Database(g.dbPath, { readonly: true });
+    try {
+      const rows = db.prepare(`
+        SELECT r.target_name, t.parent_class FROM relationships r JOIN entities s ON s.id = r.source_id
+        LEFT JOIN entities t ON t.id = r.target_id WHERE s.name = 'walk' AND r.type = 'calls'
+      `).all();
+      const bound = rows.filter(r => r.parent_class).map(r => r.target_name);
+      expect(bound).toEqual(['apps.items']);
+    } finally {
+      db.close();
+    }
+  });
+});

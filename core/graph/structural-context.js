@@ -14,6 +14,7 @@ import { extractHeaderContext } from './structural-header-context.js';
 import { scoreEntity, scoreImpactPath, tokenize, safeMax } from './structural-importance.js';
 import { personalizedPageRank } from './structural-forward-push.js';
 import { BareCallResolver } from './bare-call-resolution.js';
+import { GENERIC_RECEIVER_SPREAD } from './relationship-resolver.js';
 import { isTraceOnlyRelationship } from '../infrastructure/relationship-types.js';
 import { isTestLikePath } from '../infrastructure/test-paths.js';
 const BUDGETS = { preview: 4000, full: 8000, xl: 12000 };
@@ -312,10 +313,27 @@ export function isGenericTargetName(defs, callerRows) {
 }
 
 export function dropNameOnlyCallers(rows, target, defs, dropped = null) {
-  if (!isGenericTargetName(defs, rows.length)) return rows;
-  const kept = rows.filter(x => x.via || x.bare || x.targetId === target.id || !x.targetName || receiverNamesOwner(x.targetName, target));
+  const nameOnly = (x) => !(x.via || x.bare || x.targetId === target.id || !x.targetName);
+  // One definition of a generic API name (relationship-resolver GENERIC_RECEIVER_SPREAD):
+  // build time left `dict.items()` unbound on purpose — no name match brings it back.
+  if (!isGenericTargetName(defs, rows.length) && nameOnlyReceiverSpread(rows, nameOnly) <= GENERIC_RECEIVER_SPREAD) return rows;
+  const kept = rows.filter(x => !nameOnly(x) || receiverNamesOwner(x.targetName, target));
   if (Array.isArray(dropped)) for (const x of rows) if (!kept.includes(x)) dropped.push(x);
   return kept;
+}
+
+// Distinct plain receivers (`list` in `list.push`) of the name-only rows, counted up to
+// one past the threshold.
+function nameOnlyReceiverSpread(rows, nameOnly) {
+  const seen = new Set();
+  for (const x of rows) {
+    if (!nameOnly(x)) continue;
+    const parts = String(x.targetName).replace(/::|->/g, '.').split('.');
+    if (parts.length !== 2 || !/^[a-z_]\w*$/.test(parts[0]) || isSelfReceiver(parts[0])) continue;
+    seen.add(parts[0]);
+    if (seen.size > GENERIC_RECEIVER_SPREAD) break;
+  }
+  return seen.size;
 }
 
 /**

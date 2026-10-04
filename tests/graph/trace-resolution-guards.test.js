@@ -178,6 +178,16 @@ describe('no name-only guesses for calls the graph did not resolve', () => {
     expect(dropNameOnlyCallers(rows, target, 3)).toHaveLength(5);
     expect(dropNameOnlyCallers(rows, target, null)).toHaveLength(5);
   });
+
+  it('one definition called on more than 20 distinct receivers: name-only rows are dropped', () => {
+    const target = { id: 't', name: 'items', parentClass: 'Apps' };
+    const rows = [{ id: 'r', targetId: 't', targetName: 'x.items' }, { id: 'apps', targetId: null, targetName: 'apps.items' }];
+    for (let i = 0; i < 21; i++) rows.push({ id: `d${i}`, targetId: null, targetName: `d${i}.items` });
+    // `apps` names the owner: evidence, kept.
+    expect(dropNameOnlyCallers(rows, target, 1).map((r) => r.id)).toEqual(['r', 'apps']);
+    // 20 distinct receivers or fewer: not generic, every row stays.
+    expect(dropNameOnlyCallers(rows.slice(0, 21), target, 1)).toHaveLength(21);
+  });
 });
 
 describe('same-file caller scan', () => {
