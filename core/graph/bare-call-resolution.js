@@ -6,7 +6,8 @@
  * time, by the language's scope rules — the names a bare call can reach:
  *
  *   owner    a method of the caller's own type (implicit `this`/`self`:
- *            Java, C#, Kotlin, Swift, Scala, C++, Ruby, Dart, Groovy)
+ *            Java, C#, Kotlin, Swift, Scala, C++, Ruby, Dart, Groovy), else of
+ *            the type around a nested type (Java, C#, Kotlin, Scala, C++)
  *   file     a top-level function in the caller's file
  *   imports  a top-level function in a file the caller's file imports
  *            (`importsFile` edges; C-family: also the header's .c/.cpp twin)
@@ -65,6 +66,8 @@ const SCOPES_BY_LANGUAGE = {
   solidity: [OWNER, FILE, IMPORTS],
 };
 const DEFAULT_SCOPES = [FILE];
+// Languages whose unqualified name lookup continues into the enclosing type of a nested type.
+const OUTER_LOOKUP_LANGUAGES = new Set(['java', 'csharp', 'kotlin', 'scala', 'cpp']);
 const C_FAMILY = new Set(['c', 'cpp', 'objc']);
 const FILE_PRIVATE_SIGNATURE = /^\s*(?:local|static)\b/;
 
@@ -153,6 +156,15 @@ export function resolveBareCall(caller, candidates, index) {
     if (scope === OWNER) {
       if (!callerOwner) continue;
       tier = pool.filter(c => ownerOf(c) === callerOwner);
+      // A nested type sees the members of the type around it (zipkin `Span.Builder.id()`
+      // calls `toLowerHex`, a static method of `Span`).
+      const outer = tier.length === 0 && OUTER_LOOKUP_LANGUAGES.has(language) ? index.outerOf?.(caller) : null;
+      if (outer && outer !== callerOwner) tier = pool.filter(c => ownerOf(c) === outer && c.file_path === caller.file_path);
+      // Several types share the owner's name (Ruby adapters each define a `class Dataset`
+      // subclass): the definition in the caller's own file is its own class body, the one
+      // the call reaches; the others are overrides elsewhere.
+      const own = tier.filter(c => c.file_path === caller.file_path);
+      if (own.length > 0 && own.length < tier.length) tier = own;
     } else if (scope === FILE) {
       tier = ownerless.filter(c => c.file_path === caller.file_path);
     } else if (scope === IMPORTS) {

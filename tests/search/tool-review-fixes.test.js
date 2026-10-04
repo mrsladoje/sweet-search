@@ -173,3 +173,84 @@ describe('daemon output', () => {
     expect(JSON.parse(r.body).stdout).toBe('using System;\n');
   });
 });
+
+// --- Round 2 (2026-10-04): 18 more calls on all eleven review repos ---------------------
+
+import { resolveBareCall } from '../../core/graph/bare-call-resolution.js';
+import { createCallResolutionIndex } from '../../core/graph/relationship-resolver.js';
+import { classifyFileKindIntent } from '../../core/ranking/file-kind-ranking.js';
+import { topLevelSymbols } from '../../core/search/agent-pack-completion.js';
+import { selectUnreadSymbols } from '../../core/search/unread-symbol-ranking.js';
+
+describe('bare calls by scope', () => {
+  const e = (id, name, type, file, start, end, parent = null) => ({ id, name, type, file_path: file, start_line: start, end_line: end, parent_class: parent });
+
+  it('a nested type sees the methods of the type around it (zipkin Span.Builder.id -> toLowerHex)', () => {
+    const span = e('S', 'Span', 'class', 'Span.java', 1, 700);
+    const builder = e('B', 'Builder', 'class', 'Span.java', 277, 640, 'Span');
+    const id = e('m1', 'id', 'method', 'Span.java', 447, 451, 'Builder');
+    const toLowerHex = e('m2', 'toLowerHex', 'method', 'Span.java', 657, 661, 'Span');
+    const index = createCallResolutionIndex([span, builder, id, toLowerHex]);
+    expect(resolveBareCall(id, [toLowerHex], index).map((c) => c.id)).toEqual(['m2']);
+  });
+
+  it('several types share the owner name: the caller file\'s definition wins (sequel Dataset)', () => {
+    const base = e('d1', 'Dataset', 'class', 'lib/sequel/dataset/sql.rb', 1, 2000);
+    const sub = e('d2', 'Dataset', 'class', 'lib/sequel/adapters/oracle.rb', 1, 500);
+    const caller = e('c', 'literal_append', 'method', 'lib/sequel/dataset/sql.rb', 40, 93, 'Dataset');
+    const own = e('o1', 'literal_other_append', 'method', 'lib/sequel/dataset/sql.rb', 1461, 1475, 'Dataset');
+    const other = e('o2', 'literal_other_append', 'method', 'lib/sequel/adapters/oracle.rb', 402, 410, 'Dataset');
+    const index = createCallResolutionIndex([base, sub, caller, own, other]);
+    expect(resolveBareCall(caller, [own, other], index).map((c) => c.id)).toEqual(['o1']);
+  });
+});
+
+describe('ss-search rows and ranking (round 2)', () => {
+  it('agent format: `how is X done` asks for code; other formats unchanged', () => {
+    expect(classifyFileKindIntent('how is a conflict written into the file with conflict markers', { agentFormat: true })).toBe('implementation');
+    expect(classifyFileKindIntent('how is a conflict written into the file with conflict markers')).toBe('unknown');
+  });
+
+  it('an unnamed wrapper does not hide the definition it wraps (tortoise @classmethod bulk_create)', () => {
+    expect(topLevelSymbols([
+      { name: '<anonymous:decorator>', type: 'decorator', startLine: 1448, endLine: 1497 },
+      { name: 'bulk_create', type: 'method', startLine: 1449, endLine: 1497 },
+    ]).map((s) => s.name)).toEqual(['bulk_create']);
+  });
+});
+
+describe('ss-read below list', () => {
+  it('one shared word does not make a name relevant (jj `file` vs test_resolve_file_executable)', () => {
+    const syms = ['diff_size', 'materialized_diff_stream', 'parse_conflict', 'parse_conflict_hunk', 'helper_a', 'test_resolve_file_executable']
+      .map((symbol) => ({ symbol }));
+    const out = selectUnreadSymbols(syms, { anchors: [], subtokens: ['conflict', 'written', 'file', 'markers'] }, 3).symbols.map((s) => s.symbol);
+    // parse_conflict: half its words; parse_conflict_hunk (1 of 3) and the test (1 of 4): no.
+    expect(out).toEqual(['parse_conflict', 'diff_size', 'materialized_diff_stream']);
+  });
+});
+
+describe('ss-semantic also line (round 2)', () => {
+  it('a definition\'s ranges print in line order', () => {
+    const c = (a, b) => ({ startLine: a, endLine: b, names: ['doUpdate'], name: 'doUpdate' });
+    expect(formatAlsoLine([c(537, 691), c(485, 492)], nameContext([], { doUpdate: 'method' })))
+      .toBe('# also: 485-492, 537-691 method doUpdate');
+  });
+});
+
+describe('C# namespace names', () => {
+  it('a dotted namespace is named as written', async () => {
+    const ex = new GraphExtractor();
+    for (const [src, name] of [['namespace Ocelot.DownstreamUrlCreator;\nclass A {}\n', 'Ocelot.DownstreamUrlCreator'],
+      ['namespace Ocelot.LoadBalancer.Balancers;\nclass B {}\n', 'Ocelot.LoadBalancer.Balancers']]) {
+      const r = await ex.extractFromFile('/t/a.cs', src);
+      expect(r.entities.find((x) => x.type === 'namespace')?.name).toBe(name);
+    }
+  });
+
+  it('a Python def in a class is a method; a top-level def is a function', async () => {
+    const r = await new GraphExtractor().extractFromFile('/t/m.py', 'class Model:\n    @classmethod\n    def bulk_create(cls):\n        pass\n\ndef top():\n    pass\n');
+    const kind = (n) => r.entities.find((x) => x.name === n)?.type;
+    expect(kind('bulk_create')).toBe('method');
+    expect(kind('top')).toBe('function');
+  });
+});

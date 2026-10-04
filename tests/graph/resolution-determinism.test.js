@@ -41,17 +41,20 @@ async function build(files, order) {
   }
   const rels = db.prepare('SELECT source_id, target_id, target_name, type, context_line FROM relationships')
     .all().map((r) => JSON.stringify(r)).sort();
-  const imports = db.prepare("SELECT target_name, target_id FROM relationships WHERE type = 'imports' AND target_name LIKE 'App.%'").all();
+  // The `using` line of Alpha.cs (line 1; each namespace line is line 2).
+  const imports = db.prepare("SELECT target_name, target_id FROM relationships WHERE type = 'imports' AND target_name = 'App.Core' AND context_line = 1").all();
   db.close();
   return { rels, imports };
 }
 
 // Three C# files that each open `namespace App.X`: the declaration lines are
 // stored as `imports` rows, and `App` names three namespace blocks.
+// `using App.Core;` in Alpha.cs: App.Core is declared in two other files and Alpha's own
+// namespace is App.A, so nothing tells which declaration the import means.
 const FILES = {
-  'src/A/Alpha.cs': ['namespace App.A', '{', '  public class Alpha {', '    public void Run() { var h = new Helper(); h.Go(); }', '  }', '}'],
-  'src/B/Beta.cs': ['namespace App.B', '{', '  public class Beta {', '    public void Go() {}', '  }', '}'],
-  'src/C/Helper.cs': ['namespace App.C', '{', '  public class Helper {', '    public void Go() {}', '  }', '}'],
+  'src/A/Alpha.cs': ['using App.Core;', 'namespace App.A', '{', '  public class Alpha {', '    public void Run() { var h = new Helper(); h.Go(); }', '  }', '}'],
+  'src/B/Beta.cs': ['// Beta', 'namespace App.Core', '{', '  public class Beta {', '    public void Go() {}', '  }', '}'],
+  'src/C/Helper.cs': ['// Helper', 'namespace App.Core', '{', '  public class Helper {', '    public void Go() {}', '  }', '}'],
 };
 
 describe('resolution does not depend on file order', () => {

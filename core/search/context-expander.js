@@ -1490,6 +1490,23 @@ export function renderGraphNeighbors(opts) {
 }
 
 /** The entity the related rows hang off, by id (the expansion's label can be a member of it). */
+const SCOPE_ENTITY_TYPES = new Set(['namespace', 'module', 'package']);
+
+/**
+ * The entity related rows describe. A namespace or module (C# `namespace Ocelot.X;` on the
+ * chunk's first line) has no calls or types of its own: the first other definition in the
+ * range stands for the entry instead (`types in class DownstreamPathPlaceholderReplacer`).
+ */
+function relatedSubjectEntity(codeGraphRepo, entity) {
+  const stored = entity.id && typeof codeGraphRepo?.getEntityById === 'function' ? safeCall(() => codeGraphRepo.getEntityById(entity.id)) : null;
+  if (!SCOPE_ENTITY_TYPES.has(String(stored?.type || entity.type || '').toLowerCase())) return entity;
+  if (typeof codeGraphRepo?.findEntitiesInRange !== 'function') return entity;
+  const rows = safeCall(() => codeGraphRepo.findEntitiesInRange(entity.filePath, entity.startLine, entity.endLine)) || [];
+  const inner = rows.find((r) => r.id !== entity.id && !SCOPE_ENTITY_TYPES.has(String(r.type || '').toLowerCase())
+    && r.name && !String(r.name).startsWith('<anonymous'));
+  return inner ? { ...entity, id: inner.id, name: inner.name, type: inner.type, startLine: inner.startLine, endLine: inner.endLine } : entity;
+}
+
 function subjectOf(codeGraphRepo, entity) {
   const row = typeof codeGraphRepo.getEntityById === 'function' ? safeCall(() => codeGraphRepo.getEntityById(entity.id)) : null;
   return { name: row?.name || entity.name || null, type: row?.type || (row ? null : entity.type) || null };
@@ -2695,14 +2712,14 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
         skipKeys.add(`${filePath}|${expansion.startLine}|${expansion.endLine}`);
         const neighbours = renderGraphNeighbors({
           codeGraphRepo,
-          entity: {
+          entity: relatedSubjectEntity(codeGraphRepo, {
             id: expansion.entityId,
             filePath,
             startLine: expansion.startLine,
             endLine: expansion.endLine,
             name: expansion.symbol,
             type: expansion.symbolType,
-          },
+          }),
           skipKeys,
           tokenCap,
           // Pass the loaded code so the neighbour tier can also surface

@@ -524,11 +524,12 @@ function _aboveSignalSymbols(candidates, queryEvidence) {
     for (const anchor of anchors) {
       if (containsToken(name, anchor, { caseSensitive: /[A-Z]/.test(anchor) }) || lower.includes(anchor.toLowerCase())) return true;
     }
-    // Words of the name: most of them must be in the queries. One shared word is no signal
-    // (`rule` from a query about the solver matched every `*Rule*` method of Solver.php).
+    // Words of the name: at least half of them must be in the queries. One shared word of a
+    // longer name is no signal (`rule` from a query about the solver matched every `*Rule*`
+    // method of Solver.php: getRuleSetSize, makeAssertionRuleDecisions).
     const terms = [...new Set(informativeSubtokens(name))];
     const hits = terms.filter((term) => subtokens.has(term)).length;
-    return terms.length > 0 && hits * 3 >= terms.length * 2;
+    return terms.length > 0 && hits * 2 >= terms.length;
   };
   return (candidates || []).filter((c) => c.referenced || named(c));
 }

@@ -745,7 +745,9 @@ export function topLevelSymbolNames(entities, primary = null) {
  */
 export function topLevelSymbols(entities, primary = null) {
   const list = (Array.isArray(entities) ? entities : [])
-    .filter((e) => typeof e?.name === 'string' && e.name
+    // An unnamed wrapper (Python `<anonymous:decorator>` around `@classmethod def bulk_create`)
+    // names nothing and must not hide the definition it wraps.
+    .filter((e) => typeof e?.name === 'string' && e.name && !e.name.startsWith('<anonymous') && e.name !== 'unknown'
       && Number.isInteger(e.startLine) && Number.isInteger(e.endLine)
       && !LABEL_SKIP_KINDS.has(String(e.type || '').toLowerCase()))
     .sort((a, b) => a.startLine - b.startLine || b.endLine - a.endLine);

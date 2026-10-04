@@ -864,11 +864,11 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   // demotable and implementation candidates. No-op otherwise. Disable with
   // SWEET_SEARCH_FILE_KIND_RANKING=0; tune SWEET_SEARCH_FILE_KIND_FACTOR.
   if (Array.isArray(results) && results.length > 0) {
-    const fileKindIntent = classifyFileKindIntent(query);
+    const isAgentFormat = options.format === 'agent';
+    const fileKindIntent = classifyFileKindIntent(query, { agentFormat: isAgentFormat });
     const beforeTop = results[0];
     const semanticLike = searchMode === 'hybrid' || searchMode === 'semantic'
       || stats.path === 'hybrid' || stats.path === 'semantic';
-    const isAgentFormat = options.format === 'agent';
     const __t_fileKind = __ptStart();
     const afterFK = applyFileKindRanking(results, {
       intent: fileKindIntent,

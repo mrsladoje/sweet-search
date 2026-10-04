@@ -411,12 +411,13 @@ export function formatAlsoLine(candidates, named = nameContext(), cap = ALSO_NAM
     const names = Array.isArray(c.names) ? c.names : (c.name ? [c.name] : []);
     const key = names.join('\u0000');
     const prev = key && groups.find((g) => g.key === key);
-    if (prev) prev.ranges.push(`${c.startLine}-${c.endLine}`);
-    else groups.push({ key, names, ranges: [`${c.startLine}-${c.endLine}`] });
+    if (prev) prev.ranges.push([c.startLine, c.endLine]);
+    else groups.push({ key, names, ranges: [[c.startLine, c.endLine]] });
   }
   const parts = groups.map((g) => {
     const list = kindNameList(shortNamePairs(g.names, named), cap);
-    return `${g.ranges.join(', ')}${list ? ` ${list}` : ''}`;
+    const ranges = g.ranges.sort((x, y) => x[0] - y[0]).map(([a, b]) => `${a}-${b}`);
+    return `${ranges.join(', ')}${list ? ` ${list}` : ''}`;
   });
   return `# also: ${parts.join(' · ')}`;
 }

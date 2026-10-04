@@ -104,8 +104,8 @@ describe('tree-sitter containment', () => {
 
   it('Python: methods and decorated methods belong to the class; nested def is local', async () => {
     const p = await parents('class A:\n    def m(self):\n        def inner(): pass\n    @property\n    def p(self): pass\ndef top(): pass', 'python');
-    expect(p['function:m']).toBe('A');
-    expect(p['function:p']).toBe('A');
+    expect(p['method:m']).toBe('A');
+    expect(p['method:p']).toBe('A');
     expect(p['function:inner']).toBeNull();
     expect(p['function:top']).toBeNull();
   });

@@ -355,6 +355,9 @@ export function modeSectionShares(shares, mode) {
 }
 
 /** Most caller / callee rows a section of `budget` tokens lists. */
+// Rows per section when the trace prints rows only (compact ss-trace).
+const ROWS_ONLY_ITEM_LIMIT = 40;
+
 export function sectionItemLimit(budget) {
   return Math.max(3, Math.min(40, Math.floor(budget / 90)));
 }
@@ -378,8 +381,10 @@ function packSection(items, budget, opts) {
   });
   const codeWinners = new Set();
   let projected = 0;
-  const maxItems = sectionItemLimit(budget);
-  for (const item of utilityOrder) {
+  // rowsOnly (the compact ss-trace): no code prints, so none is packed, and the cap is the
+  // fixed ROWS_ONLY_ITEM_LIMIT rows the output promises (every row left out is counted).
+  const maxItems = opts.rowsOnly ? ROWS_ONLY_ITEM_LIMIT : sectionItemLimit(budget);
+  for (const item of opts.rowsOnly ? [] : utilityOrder) {
     const est = Math.max(80, Math.min(opts.perItemCap, ((item.endLine || 0) - (item.startLine || 0) + 1) * 9));
     if (projected + est > budget) continue;
     codeWinners.add(item.id);
@@ -391,7 +396,7 @@ function packSection(items, budget, opts) {
   for (const item of sorted) {
     if (packed.length >= maxItems) break;
     const summaryTokens = estimateTokens(itemSummary(item));
-    if (used + summaryTokens > budget && packed.length >= 3) break;
+    if (!opts.rowsOnly && used + summaryTokens > budget && packed.length >= 3) break;
     const remaining = Math.max(0, budget - used - summaryTokens);
     let codeInfo = { code: null, codeTokens: 0, presentation: 'summary' };
     if (codeWinners.has(item.id) && remaining >= 80) {
@@ -770,6 +775,7 @@ export class StructuralContextBuilder {
     const packOpts = {
       readFileRange,
       perItemCap: itemCodeCap(budget.tier),
+      rowsOnly: options.rowsOnly === true,
     };
     const callersPack = packSection(callers, Math.floor(budget.tokenBudget * shares.callers), packOpts);
     const calleesPack = packSection(callees, Math.floor(budget.tokenBudget * shares.callees), packOpts);

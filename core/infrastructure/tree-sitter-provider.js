@@ -1211,6 +1211,11 @@ export class TreeSitterProvider {
           // (the language's implicit name). Not a container: its members
           // keep the outer class as parent, matching `Outer.member()` calls.
           scopedName = node.namedChildren.find(c => c.type === 'type_identifier')?.text || 'Companion';
+        } else if (!isLeafIdent && node.type === 'qualified_name') {
+          // C# `namespace Ocelot.DownstreamUrlCreator;`: the dotted name as written. The
+          // `name` field gave one segment, a different one by depth (`Ocelot` for two
+          // segments, `Balancers` for three).
+          scopedName = node.text.replace(/\s+/g, '');
         } else if (!isLeafIdent && node.type === 'impl_item') {
           const implType = node.childForFieldName('type');
           if (implType?.type === 'scoped_type_identifier' || implType?.type === 'generic_type') {
@@ -1236,6 +1241,10 @@ export class TreeSitterProvider {
         }
 
         const parentClass = this._containerName(extentNode, languageId);
+        // Python has one node for both: a `def` whose container is a class is a method
+        // (tortoise `Model.bulk_create` printed as `function bulk_create`). A def nested in a
+        // def has no container (CONTAINER_STOP_NODE_TYPES), so it stays a function.
+        if (languageId === 'python' && entityType === 'function' && parentClass) entityType = 'method';
         // A Python `decorated_definition` entity spans the decorated def; the
         // docstring documents that def's own entity, not the decorator
         // (flask: 96 of 415 docs were such duplicates).
