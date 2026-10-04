@@ -27,9 +27,13 @@ vi.mock('../../core/infrastructure/config/index.js', async importOriginal => {
 
 const {
   ALSO_MAX,
+  ALSO_NAME_CAP,
   buildAlsoCandidates,
   formatAlsoLine,
+  formatSpanHeading,
   formatSpanSymbols,
+  nameContext,
+  uncoveredCutRests,
   mergeSpanNames,
   spanEntityNames,
 } = await import('../../core/search/semantic-also.js');
@@ -81,10 +85,39 @@ describe('buildAlsoCandidates', () => {
     expect(out[1].kind).toBe('function');
   });
 
-  it('drops a candidate that overlaps a printed span', () => {
-    const pool = [chunk('a', 15, 20, 0.9), chunk('b', 60, 70, 0.8)];
+  it('never points at a printed line: a chunk cut by a printed span keeps its unprinted part', () => {
+    const pool = [chunk('a', 15, 20, 0.9), chunk('b', 60, 70, 0.8), chunk('c', 19, 24, 0.7)];
     const out = buildAlsoCandidates(pool, [{ startLine: 18, endLine: 25 }], { file: 'f.js', graph });
-    expect(out.map(o => o.name)).toEqual(['beta']);
+    // alpha (10-40) is printed at 18-25: its place is the part before, 10-17; chunk c is printed whole.
+    expect(out.map(o => [o.startLine, o.endLine, o.name])).toEqual([[10, 17, 'alpha'], [50, 90, 'beta']]);
+  });
+
+  it('names every entity a chunk holds (a cAST chunk is labelled after its first symbol)', () => {
+    const g = fakeGraph([
+      ent('Pool', 'class', 1, 300),
+      ent('can_make_new?', 'method', 181, 185, { parentClass: 'Pool' }),
+      ent('try_make_new', 'method', 192, 218, { parentClass: 'Pool' }),
+      ent('acquire', 'method', 227, 234, { parentClass: 'Pool' }),
+      ent('n', 'variable', 228, 228),
+    ]);
+    const out = buildAlsoCandidates([chunk('a', 174, 234, 0.9, 'can_make_new?', 'method')], [], { file: 'f.rb', graph: g });
+    expect(out).toEqual([{
+      startLine: 174, endLine: 234, names: ['Pool.can_make_new?', 'Pool.try_make_new', 'Pool.acquire'],
+      name: 'Pool.can_make_new?', kind: 'method', score: 0.9,
+    }]);
+    expect(formatAlsoLine(out, nameContext(['Pool']))).toBe('# also: 174-234 can_make_new?, try_make_new, acquire');
+  });
+
+  it('drops a place with no name, and one that holds only the stub of an entity', () => {
+    const g = fakeGraph([ent('Pool', 'class', 9, 300), ent('run', 'function', 20, 40)]);
+    const pool = [chunk('head', 1, 5, 0.9), chunk('decl', 7, 10, 0.8, 'Pool', 'class'), chunk('r', 20, 40, 0.7)];
+    expect(buildAlsoCandidates(pool, [], { file: 'f.rb', graph: g }).map(o => o.name)).toEqual(['run']);
+  });
+
+  it('joins a place that overlaps an earlier one (two overloads of one name)', () => {
+    const g = fakeGraph([ent('move', 'function', 777, 783), ent('move', 'function', 778, 844)]);
+    const out = buildAlsoCandidates([chunk('a', 777, 783, 0.9), chunk('b', 790, 844, 0.8)], [], { file: 'f.ts', graph: g });
+    expect(out.map(o => [o.startLine, o.endLine, o.names])).toEqual([[777, 844, ['move']]]);
   });
 
   it('gives one entry per enclosing entity (two body chunks of one function)', () => {
@@ -103,18 +136,17 @@ describe('buildAlsoCandidates', () => {
   it('falls back to the chunk range and stored name with no graph', () => {
     const pool = [chunk('a', 100, 110, 0.9, 'run', 'function'), chunk('b', 60, 70, 0.8, null, 'code'), chunk('c', 5, 9, 0.7, 'unknown', 'unknown')];
     const out = buildAlsoCandidates(pool, [], { file: 'f.js', graph: null });
+    // Nameless places are dropped: a bare range says nothing about what is there.
     expect(out).toEqual([
-      { startLine: 100, endLine: 110, name: 'run', kind: 'function', score: 0.9 },
-      { startLine: 60, endLine: 70, name: null, kind: null, score: 0.8 },
-      { startLine: 5, endLine: 9, name: null, kind: null, score: 0.7 },
+      { startLine: 100, endLine: 110, names: ['run'], name: 'run', kind: 'function', score: 0.9 },
     ]);
-    expect(formatAlsoLine(out)).toBe('# also: 100-110 run · 60-70 · 5-9');
+    expect(formatAlsoLine(out)).toBe('# also: 100-110 run');
   });
 
   it('never throws when the graph throws or returns junk', () => {
     const boom = { findEnclosingEntity() { throw new Error('no such table: entities'); } };
     expect(buildAlsoCandidates([chunk('a', 1, 5, 1, 'x', 'function')], [], { file: 'f.js', graph: boom })).toEqual([
-      { startLine: 1, endLine: 5, name: 'x', kind: 'function', score: 1 },
+      { startLine: 1, endLine: 5, names: ['x'], name: 'x', kind: 'function', score: 1 },
     ]);
     const junk = { findEnclosingEntity: () => ({ name: 'v', type: 'variable', startLine: 1, endLine: 99 }) };
     expect(buildAlsoCandidates([chunk('a', 1, 5, 1, 'x', 'function')], [], { file: 'f.js', graph: junk })[0].endLine).toBe(5);
@@ -123,7 +155,7 @@ describe('buildAlsoCandidates', () => {
   it('ignores a class-like container far larger than the chunk', () => {
     const g = fakeGraph([ent('Big', 'class', 1, 2000)]);
     const out = buildAlsoCandidates([chunk('a', 100, 120, 1, 'm', 'method')], [], { file: 'f.js', graph: g });
-    expect(out).toEqual([{ startLine: 100, endLine: 120, name: 'm', kind: 'method', score: 1 }]);
+    expect(out).toEqual([{ startLine: 100, endLine: 120, names: ['m'], name: 'm', kind: 'method', score: 1 }]);
   });
 });
 
@@ -149,6 +181,77 @@ describe('span header symbols', () => {
   it('merges chunk labels after entity names without repeats', () => {
     expect(mergeSpanNames(['a', 'b'], ['b', 'c'])).toEqual(['a', 'b', 'c']);
     expect(mergeSpanNames([], undefined)).toEqual([]);
+  });
+
+  it('a chunk label an entity name covers is not repeated; `(part N)` pieces are one name', () => {
+    // zipkin Collector: `Collector.accept` then `accept`; typedoc `onResolve (part 3)`.
+    expect(mergeSpanNames(['Collector', 'Collector.accept'], ['accept', 'onResolve (part 3)', 'onResolve (part 4)']))
+      .toEqual(['Collector', 'Collector.accept', 'onResolve']);
+    expect(mergeSpanNames(['TimedQueueConnectionPool'], ['Sequel::TimedQueueConnectionPool'])).toEqual(['TimedQueueConnectionPool']);
+  });
+
+  it('a span the budget cut names no chunk label: the labels describe lines it did not print', () => {
+    // sequel timed_queue.rb: 11-80 printed of the merged 11-293; hold..available are below 80.
+    const labels = ['initialize', 'hold', 'preallocated_make_new', 'can_make_new?', 'available'];
+    expect(mergeSpanNames(['Pool', 'Pool.initialize'], labels, { truncated: true })).toEqual(['Pool', 'Pool.initialize']);
+    expect(formatSpanSymbols({ symbols: labels, truncated: true })).toBe('');
+  });
+});
+
+describe('formatSpanHeading and the Parent. prefix', () => {
+  it('prints `## a-b names` and drops a prefix the output already named', () => {
+    const named = nameContext();
+    const span = { startLine: 11, endLine: 80, entityNames: ['Pool', 'Pool.initialize', 'Pool.all_connections', 'Pool.disconnect', 'Pool.x'] };
+    expect(formatSpanHeading(span, named)).toBe('## 11-80 Pool, initialize, all_connections, disconnect, +1');
+    expect(formatAlsoLine([{ startLine: 174, endLine: 234, names: ['Pool.try_make_new', 'Pool.acquire'] }], named))
+      .toBe('# also: 174-234 try_make_new, acquire');
+    expect(formatSpanHeading({ startLine: 1, endLine: 2, symbols: [] })).toBe('## 1-2');
+  });
+
+  it('keeps a prefix nothing named before; inside one list the parent is said once', () => {
+    expect(formatAlsoLine([{ startLine: 397, endLine: 451, names: ['Builder.traceId', 'Builder.parentId', 'Other.id'] }]))
+      .toBe('# also: 397-451 Builder.traceId, parentId, Other.id');
+  });
+
+  it('a parent printed once is dropped later, until a second parent makes bare names ambiguous', () => {
+    // GRDB: one class throughout.
+    const one = nameContext();
+    expect(formatSpanHeading({ startLine: 354, endLine: 362, entityNames: ['Obs.asyncStart'] }, one)).toBe('## 354-362 Obs.asyncStart');
+    expect(formatAlsoLine([{ startLine: 423, endLine: 525, names: ['Obs.asyncStartObservation'] }], one))
+      .toBe('# also: 423-525 asyncStartObservation');
+    // zipkin Span.java: Span's and Builder's traceId must stay apart.
+    const two = nameContext();
+    expect(formatSpanHeading({ startLine: 611, endLine: 676, entityNames: ['Span', 'Span.toString'] }, two)).toBe('## 611-676 Span, toString');
+    expect(formatAlsoLine([
+      { startLine: 397, endLine: 451, names: ['Builder.traceId', 'Builder.id'] },
+      { startLine: 56, endLine: 96, names: ['Span.traceId', 'Span.id'] },
+    ], two)).toBe('# also: 397-451 Builder.traceId, id · 56-96 Span.traceId, id');
+  });
+
+  it('a constructor named like its class is not listed beside it', () => {
+    expect(formatSpanHeading({ startLine: 68, endLine: 111, entityNames: ['Handler', 'Handler.Handler', 'Handler.SendAsync'] }))
+      .toBe('## 68-111 Handler, SendAsync');
+  });
+
+  it('caps an also place at ALSO_NAME_CAP names', () => {
+    const names = ['a', 'b', 'c', 'd', 'e', 'f', 'g'];
+    expect(formatAlsoLine([{ startLine: 1, endLine: 9, names }])).toBe(`# also: 1-9 ${names.slice(0, ALSO_NAME_CAP).join(', ')}, +2`);
+  });
+});
+
+describe('uncoveredCutRests', () => {
+  const cut = { startLine: 11, endLine: 80, fullStartLine: 11, fullEndLine: 293, truncated: true, exactRange: true };
+  it('is empty when the also places cover the rest of a cut span (padding gaps ignored)', () => {
+    const also = [{ startLine: 81, endLine: 121 }, { startLine: 123, endLine: 172 }, { startLine: 174, endLine: 293 }];
+    expect(uncoveredCutRests([cut], also)).toEqual([]);
+  });
+  it('names the rest no place covers', () => {
+    expect(uncoveredCutRests([cut], [{ startLine: 81, endLine: 121 }])).toEqual(['122-293']);
+    // A leftover of at most two lines beside a place is padding; a rest no place touches is not.
+    expect(uncoveredCutRests([cut], [{ startLine: 81, endLine: 291 }])).toEqual([]);
+    expect(uncoveredCutRests([{ ...cut, endLine: 291 }], [])).toEqual(['292-293']);
+    expect(uncoveredCutRests([{ ...cut, truncated: false }], [])).toEqual([]);
+    expect(uncoveredCutRests([cut], [])).toEqual(['81-293']);
   });
 
   it('names every entity a span holds and skips fields, nested closures and stub neighbours', () => {
@@ -404,7 +507,7 @@ describe('warm-server path and in-process path agree', () => {
       const warm = JSON.parse(warmResponse.body);
       expect(warm.code).toBe(0);
       expect(warm.stderr).toBe('');
-      expect(warm.stdout).toContain('[alpha, f0]');
+      expect(warm.stdout).toContain('## 1-6 alpha, f0\n');
       expect(warm.stdout).toContain('# also: 41-44 beta · 81-84 gamma · 121-124 delta');
       expect(requests).toHaveLength(1);
       expect(requests[0]).toMatch(/^\/read-semantic\?/);
@@ -470,10 +573,11 @@ describe('also candidates are pointers, not shown spans', () => {
   it('cmdSemantic prints the line after the spans and never feeds it to the ledger calls', () => {
     const src = readFileSync(path.join(import.meta.dirname, '../../eval/agent-read-workflows/bin/_ss-helpers.mjs'), 'utf8');
     const body = src.slice(src.indexOf('async function cmdSemantic'), src.indexOf('const TRACE_USAGE'));
-    expect(body).toContain('formatAlsoLine(r.alsoCandidates)');
-    expect(body).toContain('formatSpanSymbols(span)');
-    expect(body.indexOf('formatAlsoLine(')).toBeGreaterThan(body.indexOf('formatSpanSymbols('));
-    expect(body.indexOf('formatAlsoLine(')).toBeLessThan(body.indexOf('renderShownFullTrailer('));
+    expect(body).toContain('formatAlsoLine(r.alsoCandidates, named)');
+    expect(body).toContain('formatSpanHeading(span, named)');
+    expect(body.indexOf('formatAlsoLine(')).toBeGreaterThan(body.indexOf('formatSpanHeading('));
+    // The span ledger is recorded server-side; no `shown-full:` trailer is printed.
+    expect(body).not.toContain('renderShownFullTrailer(');
     expect(body.match(/recordAgentToolCall\([^)]*\)/)[0]).not.toContain('also');
     expect(body.match(/recordForAlreadyShown\(shownSpans/)).not.toBeNull();
   });
@@ -512,7 +616,7 @@ describe('ss-* flag habits: -k and --in', () => {
     expect(response.status).toBe(200);
     return JSON.parse(response.body);
   };
-  const spans = (out) => Number(/spans=(\d+)/.exec(out.stdout)?.[1]);
+  const spans = (out) => out.stdout.split('\n').filter(l => /^## \d+-\d+/.test(l)).length;
 
   it('ss-semantic: -k N sets the ranked-chunk count, -kN and --top too; no usage error', async () => {
     setupFourFunctions();

@@ -848,7 +848,7 @@ async function _readSemanticUnpinned(req) {
   const graph = createSemanticEntityLookup(getGraphRepoForProject(projectRoot), filePathRel, spans, rankedAll);
   for (const span of spans) {
     const entityNames = spanEntityNames(graph, filePathRel, span);
-    if (entityNames.length) span.entityNames = mergeSpanNames(entityNames, span.symbols);
+    if (entityNames.length) span.entityNames = mergeSpanNames(entityNames, span.symbols, { truncated: span.truncated === true });
   }
   const alsoCandidates = buildAlsoCandidates(rankedAll, spans, { file: filePathRel, graph });
 

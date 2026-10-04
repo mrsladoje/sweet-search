@@ -124,17 +124,16 @@ async function ssSemantic(args, extra = {}) {
   return r.stdout.toString('utf8');
 }
 
-/** [start, end] of each `### file:start-end` header and the code lines printed under it. */
+/** [start, end] of each `## start-end names` heading and the code lines printed under it. */
 function printed(out) {
   const blocks = [];
   const lines = out.split('\n');
   for (let i = 0; i < lines.length; i++) {
-    const h = lines[i].match(/^### [^:]+:(\d+)-(\d+)/);
+    const h = lines[i].match(/^## (\d+)-(\d+)/);
     if (!h) continue;
     let j = i + 2;
     const code = [];
     while (j < lines.length && lines[j] !== '```') code.push(lines[j++]);
-    while (code.length && code[code.length - 1] === '') code.pop();
     blocks.push({ start: +h[1], end: +h[2], code });
   }
   return blocks;
@@ -142,8 +141,7 @@ function printed(out) {
 
 describe('the ss-semantic printer', () => {
   const ARGS = [FILE, 'beta value', '--max-tokens', '50'];
-
-  it('SS_FIX_SEMANTIC_RANGES=0 (legacy): byte-identical to before (the header still over-claims; that is the defect)', async () => {
+  it('SS_FIX_SEMANTIC_RANGES=0 (legacy): the heading still over-claims (that is the defect)', async () => {
     const out = await ssSemantic(ARGS, { SS_FIX_SEMANTIC_RANGES: '0' });
     const [block] = printed(out);
     expect([block.start, block.end]).toEqual([1, 21]);
@@ -156,12 +154,27 @@ describe('the ss-semantic printer', () => {
     expect(await ssSemantic(ARGS, { SS_FIX_A: '0' })).toBe(await ssSemantic(ARGS, { SS_FIX_A: '0', SS_FIX_SEMANTIC_RANGES: '0' }));
   });
 
-  it('SS_FIX_SEMANTIC_RANGES: the header range equals the printed range; the rest is named', async () => {
+  it('SS_FIX_SEMANTIC_RANGES: the heading range equals the printed range; the rest is named', async () => {
     const out = await ssSemantic(ARGS, { SS_FIX_SEMANTIC_RANGES: '1' });
     const [block] = printed(out);
     expect(block.code).toHaveLength(block.end - block.start + 1);
-    expect(block.start).toBe(1);
-    expect(out).toContain(`\`\`\`\n# not shown: lines ${block.end + 1}-20 — ss-read ${FILE} ${block.end + 1} 20\n`);
+    expect([block.start, block.end]).toEqual([1, 9]);
+    // No echo header, no language tag, no blank line before the closing fence, no ledger trailer.
+    expect(out).toBe([
+      '## 1-9',
+      '```',
+      ...LINES.slice(0, 9),
+      '```',
+      // The rest of the cut span: alpha's last line and beta, in score order.
+      '# also: 11-20 beta · 10-10 alpha',
+      '',
+    ].join('\n'));
+  });
+
+  it('a later call of a chained command opens with the boundary line (the file name)', async () => {
+    const out = await ssSemantic(ARGS, { SWEET_SEARCH_CHAIN_LATER: '1' });
+    expect(out.startsWith('# ss-semantic big.js\n## 1-9\n```\n')).toBe(true);
+    expect((await ssSemantic(ARGS, { SWEET_SEARCH_CHAIN_LATER: '0' })).startsWith('## 1-9\n')).toBe(true);
   });
 
   it('SS_FIX_SEMANTIC_PICK: omitted content is named before and after the excerpt', async () => {
@@ -169,14 +182,15 @@ describe('the ss-semantic printer', () => {
     const [block] = printed(out);
     expect(block.code).toHaveLength(block.end - block.start + 1);
     expect(block.start).toBeGreaterThan(1);
-    expect(out).toContain(`# not shown: lines 1-${block.start - 1} — ss-read ${FILE} 1 ${block.start - 1}\n### ${FILE}:${block.start}-`);
-    if (block.end < 20) expect(out).toContain(`# not shown: lines ${block.end + 1}-20`);
+    expect(out).toContain(`# not shown above: 1-${block.start - 1}\n## ${block.start}-`);
+    expect(out).toContain(`# also: ${block.end + 1}-20 beta · 1-${block.start - 1} alpha\n`);
   });
 
   it('SS_FIX_SEMANTIC_RANGES on a minified file: a partial line, reported as such', async () => {
     const out = await ssSemantic(['src/min.js', 'x', '--max-tokens', '30'], { SS_FIX_SEMANTIC_RANGES: '1' });
     const [block] = printed(out);
     expect([block.start, block.end]).toEqual([1, 1]);
-    expect(out).toContain('(line 1 truncated: 120 of 800 characters)\n# not shown: lines 2-2 — ss-read src/min.js 2 2\n');
+    // No place names line 2, so the cut says so itself.
+    expect(out).toContain('(line 1 truncated: 120 of 800 characters)\n# not shown: 2-2\n');
   });
 });

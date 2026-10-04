@@ -38,7 +38,7 @@ import { createAdmissionPolicy } from '../../../core/indexing/admission-policy.j
 import { createIndexCoverage, semanticTargetFor } from '../../../core/search/index-coverage.js';
 import { resolveRoots } from '../../../core/search/worktree-roots.js';
 import { chainBoundary } from '../../../core/agent-tools/chain.js';
-import { numberCodeLines, lineGutterEnabled } from '../../../core/search/search-read.js';
+import { fenceBody, numberCodeLines, lineGutterEnabled } from '../../../core/search/search-read.js';
 import { renderRegexDialectHint } from '../../../core/search/regex-dialect.js';
 import {
   applyReadOmissionDecisions,
@@ -51,7 +51,7 @@ import {
   resolveAgentSessionId,
   shownSpanTrailerEnabled,
 } from '../../../core/search/agent-span-ledger.js';
-import { formatAlsoLine, formatSpanSymbols } from '../../../core/search/semantic-also.js';
+import { formatAlsoLine, formatSpanHeading, nameContext, uncoveredCutRests } from '../../../core/search/semantic-also.js';
 import { omittedRangeLines } from '../../../core/search/semantic-span-budget.js';
 import { sendAgentSpanOperation } from '../../../core/search/agent-span-client.js';
 import {
@@ -120,8 +120,8 @@ function gutter(text, startLine) {
  *   host.assertProjectRoot(r)   throws when this call belongs to another repository's daemon
  */
 // Tools whose output opens with the chained-call boundary (core/agent-tools/chain.js) when
-// they are a later call of one shell command. The others still print their own header.
-const CHAIN_BOUNDARY_TOOLS = new Set(['agent-search', 'find', 'grep', 'read']);
+// they are a later call of one shell command (ss-trace still prints its own header).
+const CHAIN_BOUNDARY_TOOLS = new Set(['agent-search', 'find', 'grep', 'read', 'semantic']);
 
 export async function runAgentTool(subcommand, rest, host = {}) {
 if (CHAIN_BOUNDARY_TOOLS.has(subcommand)) process.stdout.write(chainBoundary(subcommand, rest, process.env));
@@ -1504,21 +1504,32 @@ async function cmdSemantic(rawArgs) {
   // SS_FIX_ALREADY_SHOWN (A3): record the printed spans in the A3 namespace only (reply ignored).
   await recordForAlreadyShown(shownSpans, null,
     (r.spans || []).reduce((n, sp) => n + (typeof sp?.text === 'string' ? sp.text.length : 0), 0));
-  process.stdout.write(`# ss-semantic ${r.file} | "${query}" | spans=${r.spans?.length ?? 0} | ~tokens=${r.approxTokensReturned}${r.fellBack ? ' [FALLBACK]' : ''}\n`);
+  // WHAT THE OUTPUT SAYS BESIDES THE CODE (token diet 2026-10-04, same shape as ss-read and
+  // ss-search). No header: the harness shows the command (path and question), and a later
+  // call of a chained command opens with the boundary line (`# ss-semantic timed_queue.rb`).
+  // Per span one `## a-b names` heading — the printed lines and what they hold, a `Parent.`
+  // prefix printed once — and a plain fence. After the spans one `# also:` line names the
+  // ranked places that were not printed, the unprinted rest of a cut span among them, with
+  // every entity each holds. The span ledger is recorded server-side above; nothing
+  // prints it (`shown-full:` had no reader but the ledger itself).
+  const named = nameContext();
+  const out = [];
+  if (r.fellBack) out.push(`# no ranked span (${r.indexed === false ? 'file not indexed' : 'no chunk matches the question'}); the file from line 1`);
+  if (!r.spans?.length) out.push('(no results)');
   for (const span of r.spans || []) {
-    const fence = r.language ? '```' + r.language : '```';
-    const sym = formatSpanSymbols(span);
     const omitted = FIX.semanticRanges ? omittedRangeLines(r.file, span) : null;
-    for (const line of omitted?.before || []) process.stdout.write(`${line}\n`);
-    process.stdout.write(`### ${r.file}:${span.startLine}-${span.endLine}${sym}\n${fence}\n${gutter(span.text, span.startLine)}\n\`\`\`\n`);
-    for (const line of omitted?.after || []) process.stdout.write(`${line}\n`);
+    if (omitted?.before?.length) out.push(`# not shown above: ${span.fullStartLine}-${span.startLine - 1}`);
+    out.push(formatSpanHeading(span, named), '```', fenceBody(gutter(span.text, span.startLine)), '```');
+    for (const line of omitted?.after || []) if (line.startsWith('(line ')) out.push(line);
   }
   // The next-best ranked places the budget left out. Pointers only: they are not shown spans,
-  // so they stay out of the ledger above and out of the shown-full trailer below.
-  const alsoLine = formatAlsoLine(r.alsoCandidates);
-  if (alsoLine) process.stdout.write(`${alsoLine}\n`);
-  const shownTrailer = SHOWN_SPAN_TRAILER ? renderShownFullTrailer(shownSpans) : '';
-  if (shownTrailer) process.stdout.write(`${shownTrailer}\n`);
+  // so they stay out of the ledger above.
+  // A cut span's rest that no also place names still says it was cut.
+  const uncut = uncoveredCutRests(r.spans, r.alsoCandidates);
+  if (uncut.length) out.push(`# not shown: ${uncut.join(', ')}`);
+  const alsoLine = formatAlsoLine(r.alsoCandidates, named);
+  if (alsoLine) out.push(alsoLine);
+  process.stdout.write(`${out.join('\n')}\n`);
   process.exit(0);
 }
 

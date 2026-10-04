@@ -151,14 +151,26 @@ function namingArg(args) {
   return '';
 }
 
+/** The file a read-like call names: the value of --in / --file, else the naming argument. */
+function fileArg(args) {
+  for (let i = 0; i < args.length; i++) {
+    const a = String(args[i]);
+    if ((a === '--in' || a === '--file') && args[i + 1] != null) return String(args[i + 1]);
+    const m = /^--(?:in|file)=(.+)$/.exec(a);
+    if (m) return m[1];
+  }
+  return namingArg(args);
+}
+
 /** `# ss-search Elasticsea…` / `# ss-read timed_queue.rb` (no newline). */
 export function chainBoundaryLine(subcommand, args = []) {
   const tool = TOOL_NAME_BY_SUBCOMMAND[subcommand] || subcommand;
-  let arg = namingArg(args).replace(/\s+/g, ' ').trim();
+  // ss-read and ss-semantic name a file, and the calls of one chain mostly share a directory:
+  // the start of the path (`lib/sequel…` twice) cannot tell them apart, the file name can.
+  // ss-semantic's file is its first argument, or the value of --in / --file.
+  const isRead = subcommand === 'read' || subcommand === 'semantic';
+  let arg = (isRead ? fileArg(args) : namingArg(args)).replace(/\s+/g, ' ').trim();
   if (!arg) return `# ${tool}`;
-  // ss-read names a file, and the reads of one chain mostly share a directory: the start
-  // of the path (`lib/sequel…` twice) cannot tell them apart, the file name can.
-  const isRead = subcommand === 'read';
   if (isRead) arg = arg.replace(/\/+$/, '').split('/').pop() || arg;
   const max = isRead ? READ_NAME_CHARS : ARG_CHARS;
   const chars = [...arg];

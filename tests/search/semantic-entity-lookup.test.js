@@ -78,7 +78,7 @@ describe('request-local semantic entity lookup', () => {
     expect(selects()).toHaveLength(1);
     expect(spanEntityNames(lookup, FILE, printed[0])).toEqual(['alpha']);
     expect(buildAlsoCandidates(pool, printed, { file: FILE, graph: lookup }))
-      .toEqual([{ startLine: 30, endLine: 60, name: 'Owner.beta', kind: 'method', score: 1 }]);
+      .toEqual([{ startLine: 30, endLine: 60, names: ['Owner.beta'], name: 'Owner.beta', kind: 'method', score: 1 }]);
     expect(selects()).toHaveLength(1);
     const plan = repo._db.prepare(`EXPLAIN QUERY PLAN ${selects()[0]}`).all();
     expect(plan.filter(row => /\b(SEARCH|SCAN) entities\b/.test(row.detail))).toHaveLength(1);

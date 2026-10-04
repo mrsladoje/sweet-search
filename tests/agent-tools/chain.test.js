@@ -40,6 +40,12 @@ describe('chained-call boundary line', () => {
     expect(chainBoundaryLine('find', ['a  b\nc'])).toBe('# ss-find a b c');
   });
 
+  it('ss-semantic names its file, positional or --in, not the question', () => {
+    expect(chainBoundaryLine('semantic', ['lib/sequel/connection_pool/timed_queue.rb', 'what happens on timeout?'])).toBe('# ss-semantic timed_queue.rb');
+    expect(chainBoundaryLine('semantic', ['what happens on a/b timeout?', '--in', 'lib/x/pool.rb'])).toBe('# ss-semantic pool.rb');
+    expect(chainBoundaryLine('semantic', ['how does it wait', '--in=lib/x/pool.rb', '-k', '3'])).toBe('# ss-semantic pool.rb');
+  });
+
   it('skips flags and a flag\'s number before the first argument', () => {
     expect(chainBoundaryLine('agent-search', ['-k', '2', 'pool timeout'])).toBe('# ss-search pool timeo…');
     expect(chainBoundaryLine('grep', ['-i', 'addMutation'])).toBe('# ss-grep addMutatio…');
