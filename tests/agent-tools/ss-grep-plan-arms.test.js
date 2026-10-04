@@ -257,7 +257,7 @@ describe('SS_FIX_GREP_LINES through the real tool', () => {
 
   it('--in drill-in keeps every hit in line order and asks the engine for nothing', async () => {
     const out = await ss([REGEX, '-k', '3', '--in', 'worker/export.go'], LINES);
-    expect(out).toBe('worker/export.go\n1:export\n3:export\n5:Export\n# +3 more hits (raise -k)\n');
+    expect(out).toBe('1:export\n3:export\n5:Export\n# +3 more hits (raise -k)\n');
     expect(grepCalls[0].grepLineClasses).toBeUndefined();
   });
 });

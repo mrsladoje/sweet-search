@@ -18,6 +18,7 @@ import { fileURLToPath } from 'node:url';
 
 import {
   daemonGoneLongEnough,
+  daemonPidFromArgv,
   daemonPidFileFromArgv,
   daemonPidFileLive,
   SIGNAL_EXIT_DEADLINE_MS,
@@ -120,6 +121,26 @@ describe('maintainer stop', () => {
     expect(child.output()).toMatch(/No search daemon behind/);
   }, 60_000);
 
+  it('stops on its own once the process named by --daemon-pid is gone (MCP server)', async () => {
+    const owner = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' });
+    try {
+      child = startMaintainer([`--daemon-pid=${owner.pid}`], {
+        SWEET_SEARCH_MAINTAINER_DAEMON_GRACE_MS: '300',
+        SWEET_SEARCH_MAINTAINER_IDLE_CHECK_MS: '100',
+      });
+      await waitUntilSleeping(child);
+      await new Promise((r) => setTimeout(r, 800));
+      expect(child.exitCode).toBe(null);
+      const goneAt = Date.now();
+      owner.kill('SIGKILL');
+      const { code, at } = await child.exited;
+      expect(code).toBe(0);
+      expect(at - goneAt).toBeLessThan(5_000);
+    } finally {
+      try { owner.kill('SIGKILL'); } catch { /* gone */ }
+    }
+  }, 60_000);
+
   it('a paused index stops a running maintainer', async () => {
     child = startMaintainer([], { SWEET_SEARCH_RECONCILE_INTERVAL_MS: '200' });
     await waitUntilSleeping(child);
@@ -140,6 +161,9 @@ describe('daemon following — pure parts', () => {
     expect(daemonPidFileFromArgv(['node', 'x.mjs', '--daemon-pid-file=/tmp/a.pid'])).toBe('/tmp/a.pid');
     expect(daemonPidFileFromArgv(['node', 'x.mjs'])).toBe(null);
     expect(daemonPidFileFromArgv(['node', 'x.mjs', '--daemon-pid-file='])).toBe(null);
+    expect(daemonPidFromArgv(['node', 'x.mjs', '--daemon-pid=4242'])).toBe(4242);
+    expect(daemonPidFromArgv(['node', 'x.mjs', '--daemon-pid=abc'])).toBe(null);
+    expect(daemonPidFromArgv(['node', 'x.mjs', '--daemon-pid-file=/tmp/a.pid'])).toBe(null);
   });
 
   it('a pid file is live only when it names a running process', () => {
