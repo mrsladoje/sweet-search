@@ -212,8 +212,12 @@ export function extractQueryEvidence(query, regex) {
 /**
  * Assess query-match evidence in the top-1 packaged result.
  *
+ * The regex is NOT evidence here (2026-10-04): ss-find's candidates all match it, so a run
+ * from it always hits top-1, and a keyword run (`function`, `def`, `func`) hit any code. In the
+ * final-run replay 8 YES verdicts rested on a regex run alone. Anchors come from the query.
+ *
  * @param {string} query
- * @param {string} regex
+ * @param {string} regex  unused; kept so every caller passes the same arguments
  * @param {object} topResult  packaged agent result (symbol, file, code,
  *                            headerContext, summary)
  * @returns {{ strength: 'strong'|'partial'|'none', exactHit: boolean,
@@ -222,7 +226,7 @@ export function extractQueryEvidence(query, regex) {
  */
 export function assessQueryEvidence(query, regex, topResult) {
   const t = sufficiencyThresholds();
-  const { anchors, subtokens } = extractQueryEvidence(query, regex);
+  const { anchors, subtokens } = extractQueryEvidence(query, '');
 
   const haystackParts = [
     topResult?.symbol || '',

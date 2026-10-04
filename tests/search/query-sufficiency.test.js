@@ -128,6 +128,27 @@ describe('computeSufficiencyVerdict', () => {
     expect(v.verdict).toBe('yes');
   });
 
+  it('a regex run is no evidence: a keyword (`function`) or the regex ss-find matched by construction', () => {
+    const top = { symbol: 'reapplyChanges', file: 'src/GitDownloader.php', presentation: 'full',
+      code: 'protected function reapplyChanges(string $path): void { $this->io->writeError("stash pop"); }' };
+    const keyword = assessQueryEvidence('restore stashed local modifications', 'function reapplyChanges', top);
+    expect(keyword.exactHit).toBe(false);
+    expect(keyword.strength).not.toBe('strong');
+    const v = computeSufficiencyVerdict({
+      topResult: top, confidenceInfo: { confidence: 'high' },
+      query: 'restore stashed local modifications', regex: 'function reapplyChanges', structural: structuralOk,
+    });
+    expect(v.verdict).not.toBe('yes');
+  });
+
+  it('a query that names the identifier still counts, whatever the regex', () => {
+    const top = { symbol: 'reapplyChanges', file: 'src/GitDownloader.php', presentation: 'full',
+      code: 'protected function reapplyChanges(string $path): void {}' };
+    const e = assessQueryEvidence('reapplyChanges stash', 'function reapplyChanges', top);
+    expect(e.exactHit).toBe(true);
+    expect(e.matchedAnchor).toBe('reapplyChanges');
+  });
+
   it('ambiguous partial overlap → unknown', () => {
     const top = { symbol: 'parseConfig', file: 'config.go', presentation: 'full',
       code: 'func parseConfig(path string) (*Config, error) { return toml.Parse(path) }' };

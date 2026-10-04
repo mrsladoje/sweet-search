@@ -1518,29 +1518,6 @@ function subjectOf(codeGraphRepo, entity) {
   return { name: row?.name || entity.name || null, type: row?.type || (row ? null : entity.type) || null };
 }
 
-/**
- * Rank 2 and 3 code previews become summary rows (the same row a summary allocation prints).
- * Returns the code tokens freed.
- */
-export function demoteTailOnSufficient(agentResults) {
-  let freed = 0;
-  for (const r of agentResults.slice(1, 3)) {
-    if (!r?.code) continue;
-    freed += Number(r.codeTokens) || 0;
-    r.summary = `${r.file}:${r.startLine} — ${r.symbol || 'code block'}${r.symbolType ? ` (${r.symbolType})` : ''}`;
-    r.presentation = 'summary';
-    r.code = null;
-    r.codeTokens = 0;
-    r.expanded = false;
-    r.headerContext = null;
-    r.continuation = null;
-    delete r.shownStartLine;
-    delete r.shownEndLine;
-    delete r.sandwich;
-  }
-  return freed;
-}
-
 /** Related rows the pack keeps by default (agent / agent_preview); agent_full 4, agent_full_xl 5. */
 export const RELATED_DEFAULT_ROWS = 3;
 /**
@@ -1742,8 +1719,8 @@ function allocateBudgetShipped(totalBudget, numResults, subMode, context) {
 
       // Pointer tail (owner decision 2026-10-04, default ON, agent formats): when top-1's score
       // is at least POINTER_TAIL_RATIO x this rank's, rank 2/3 print as one row (path, range,
-      // kind, name) instead of a code preview. The agent can ss-read the span. The other trigger,
-      // a `sufficient=YES` verdict, is applied after packing (demoteTailOnSufficient).
+      // kind, name) instead of a code preview. The agent can ss-read the span. (A second
+      // trigger, `sufficient=YES`, was removed the same day: it hid gold ranks 2/3.)
       const pointerTail = context.agentFormat === true
         && top1Score > 0 && thisScore > 0 && top1Score >= POINTER_TAIL_RATIO * thisScore;
       if (pointerTail) {
@@ -2825,11 +2802,9 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
     unresolvedExternalCount = sufficiency.unresolvedExternalCount || 0;
   }
 
-  // Pointer tail, second trigger: the engine judges that top-1 answers the query (the
-  // `sufficient=YES` line the agent sees), so rank 2/3 print as one row, not code.
-  if (_isAgentFormat === true && sufficiencyVerdict === 'yes') {
-    tokensUsed -= demoteTailOnSufficient(agentResults);
-  }
+  // No pointer tail on `sufficient=YES` (removed 2026-10-04): in the final-run replay, 18 of 74
+  // YES packs held a gold result at rank 2/3 (14 in another file; 8 under a wrong top-1), and YES
+  // was right 58% of the time. The score-ratio trigger in allocateBudget stays.
 
   // Phase 7: same-file span map (top-1 only). Emitted ONLY when the verdict
   // is not a clear YES (composes with the query-conditioned verdict: the map
