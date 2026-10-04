@@ -61,6 +61,7 @@ import {
   decideAlreadyShown,
   formatTraceCompact,
   isRegexParseError,
+  grepBroadHitMax,
   grepHitText,
   isTestLikePath,
   matchTextIsRepeated,
@@ -724,7 +725,8 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
     for (const note of notes) process.stdout.write(`${note}\n`);
     // SS_FIX_GREP_ORDER (B7): source hits before test hits; no repeated matched-text column.
     const rows = FIX.grepOrder ? orderSourceBeforeTests(result.results) : result.results;
-    const hitText = { fullLine: FIX.grepFullLine };
+    const broadMax = grepBroadHitMax(total);
+    const hitText = { fullLine: FIX.grepFullLine, ...(broadMax ? { max: broadMax } : {}) };
     const dropText = FIX.grepOrder && matchTextIsRepeated(rows, hitText);
     const shown = rows.map((r) => ({ file: r.file, line: r.line, text: grepHitText(r, hitText) }));
     for (const line of renderGrepListing(shown, {
@@ -842,7 +844,9 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
       ...(FIX.grepOrder ? { dropRepeatedText: true } : {}),
       ...(FIX.grepFullLine ? { fullLine: true } : {}),
     };
-  const body = renderGrepBody(keptMatches, fileSummary, k, bodyOpts);
+  // A broad grep (>= GREP_BROAD_MIN_HITS total matches) prints each hit line in a narrower window.
+  const broadMax = grepBroadHitMax(total);
+  const body = renderGrepBody(keptMatches, fileSummary, k, broadMax ? { ...bodyOpts, hitMax: broadMax } : bodyOpts);
   const familyLine = result.familyManifest?.rendered || null;
   if (!repaired) {
     await recordAgentToolCall({
