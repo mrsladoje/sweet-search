@@ -406,3 +406,15 @@ describe('round 5', () => {
     expect(goPackagePrivateFrom('a.rs', t)).toBe(false);
   });
 });
+
+describe('chunk boundaries: oversized definitions', () => {
+  it('the doc comment of an oversized exported function opens its first chunk', async () => {
+    const p = new TreeSitterProvider();
+    await p.init();
+    const body = (n) => Array.from({ length: n }, (_, i) => `    const v${i} = compute(${i}, value, other);`).join('\n');
+    const src = `export function small(a: number) {\n${body(10)}\n}\n\n/**\n * Big does a lot.\n */\nexport function big(value: number, other: number) {\n${body(80)}\n}\n`;
+    const chunks = await p.parseFileToChunks(src, 'typescript', { maxChunkSize: 1200 });
+    expect(chunks.some((c) => c.text.startsWith('/**\n * Big does a lot.'))).toBe(true);
+    expect(chunks.find((c) => c.text.startsWith('export function small'))?.text.includes('Big does a lot')).toBe(false);
+  });
+});
