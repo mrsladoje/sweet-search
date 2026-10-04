@@ -305,9 +305,22 @@ export function isGenericTargetName(defs, callerRows) {
   return defs != null && (defs >= GENERIC_NAME_DEFS || (defs >= AMBIGUOUS_NAME_DEFS && callerRows >= AMBIGUOUS_NAME_FANIN));
 }
 
-export function dropNameOnlyCallers(rows, target, defs) {
+export function dropNameOnlyCallers(rows, target, defs, dropped = null) {
   if (!isGenericTargetName(defs, rows.length)) return rows;
-  return rows.filter(x => x.via || x.bare || x.targetId === target.id || !x.targetName);
+  const kept = rows.filter(x => x.via || x.bare || x.targetId === target.id || !x.targetName || receiverNamesOwner(x.targetName, target));
+  if (Array.isArray(dropped)) for (const x of rows) if (!kept.includes(x)) dropped.push(x);
+  return kept;
+}
+
+/**
+ * The receiver of a stored call names the target's owner (`interceptor.intercept(` for
+ * `Interceptor.intercept`, okhttp RealInterceptorChain.proceed): evidence, not a name guess.
+ */
+function receiverNamesOwner(targetName, target) {
+  const owner = String(target?.parentClass || '').split(/\.|::/).pop().toLowerCase();
+  if (!owner) return false;
+  const parts = String(targetName || '').replace(/::|->/g, '.').split('.').filter(Boolean);
+  return parts.length >= 2 && parts[parts.length - 2].replace(/^[_$@]+/, '').toLowerCase() === owner;
 }
 
 /**
@@ -689,7 +702,8 @@ export class StructuralContextBuilder {
     const targetDefs = this.repo.countDefinitions?.(target.name);
     const allCallers = [...indexedCallers, ...sameFileCallers];
     const genericName = isGenericTargetName(targetDefs, allCallers.length);
-    const callersRaw = dropNameOnlyCallers(allCallers, target, targetDefs).map(x => ({ ...x, depth: 1 }));
+    // Name-only guesses dropped for a generic name are listed as unresolved, not lost.
+    const callersRaw = dropNameOnlyCallers(allCallers, target, targetDefs, unresolvedNamed).map(x => ({ ...x, depth: 1 }));
     // Same-name calls the graph did not resolve, from code not already listed as a caller.
     const callerIds = new Set(callersRaw.map(x => x.id));
     const unresolvedCallers = mergeCallSites(unresolvedNamed.filter(x => !callerIds.has(x.id)))

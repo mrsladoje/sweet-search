@@ -1395,6 +1395,20 @@ function identifierMentionBoost(result, mentions, opts = {}) {
   const el = Number(result?.endLine ?? meta.endLine);
   if (!file || !Number.isFinite(sl) || !Number.isFinite(el)) return 1.0;
   const cache = opts._entityNameCache;
+  // `Owner.member` (okhttp `RealCall.execute`): a chunk holding `member` of `Owner` is the
+  // place the query names, above a chunk that only holds a same-named member of another
+  // owner (Dns.Call.execute) or the owner's other parts: the boost applies twice.
+  if (typeof opts.codeGraphRepo.findOwnedEntityInRange === 'function') {
+    for (const mention of mentions) {
+      const parts = mention.split('.');
+      if (parts.length < 2) continue;
+      const owner = parts[parts.length - 2];
+      const member = parts[parts.length - 1];
+      let owned = null;
+      try { owned = opts.codeGraphRepo.findOwnedEntityInRange(file, sl, el, owner, member); } catch { owned = null; }
+      if (owned) return boost * boost;
+    }
+  }
   for (const mention of mentions) {
     const mLower = mention.toLowerCase();
     if (skipTarget && mLower === skipTarget) continue;

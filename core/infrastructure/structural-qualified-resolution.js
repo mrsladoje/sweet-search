@@ -4,6 +4,10 @@ function qualifierTerms(qualifier) {
 }
 
 export function shouldTrustQualifiedResolution(targetName, entity) {
+  // Rust `recv.name(` is method-call syntax: it reaches a method of an impl or trait, never a
+  // free function (those are called by path, `a::f(`). jj `working_copy_path.clone()` was
+  // bound to the free `fn clone` in lib/testutils/src/git.rs.
+  if (rustMethodCallOnFreeFunction(targetName, entity)) return false;
   const normalized = String(targetName || '').replace(/::/g, '.');
   const parts = normalized.split('.').filter(Boolean);
   if (parts.length < 2 || !entity?.name) return true;
@@ -49,4 +53,11 @@ export function trustedCallerEdge(edge, target) {
     .map(s => String(s).toLowerCase());
   if (targetNames.includes(qualifier)) return true;
   return shouldTrustQualifiedResolution(tn, target);
+}
+
+function rustMethodCallOnFreeFunction(targetName, entity) {
+  const raw = String(targetName || '');
+  if (!/\.rs$/.test(String(entity?.filePath || '')) || entity?.parentClass) return false;
+  if (!/(?:^|[^:])\.[A-Za-z_]\w*$/.test(raw) || raw.includes('::')) return false;
+  return entity.type === 'function';
 }

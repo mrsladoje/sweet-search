@@ -952,6 +952,9 @@ const SWIFT_CONDITIONAL_DIRECTIVE_LINE = /^[ \t]*#(?:if|elseif|else|endif)\b[^\n
 // name, so drogon's HttpRequest became a one-line class `DROGON_EXPORT` and
 // lost every method. Shape rule, not a macro list: an ALL-CAPS token followed
 // by another identifier (not `final`) can only be a macro in valid C++.
+// Kotlin `fun interface Name` (after modifiers such as `public`), at a declaration start.
+const KOTLIN_FUN_INTERFACE = /(^|[\s;{}])fun[ \t]+interface\b/gm;
+
 const CPP_CLASS_KEY_MACRO = /\b(class|struct|union)([ \t]+)([A-Z][A-Z0-9_]+)(?=[ \t]+(?!final\b)[A-Za-z_]\w*[ \t]*(?:[:{;<]|final\b|$))/gm;
 
 // A definition inside a function body (local helper, closure) or inside an
@@ -1090,6 +1093,12 @@ export class TreeSitterProvider {
       // GRDB: files with parse errors 61 → 20 of 478, none worse.
       if (languageId === 'swift' && content.includes('#')) {
         content = content.replace(SWIFT_CONDITIONAL_DIRECTIVE_LINE, (line) => ' '.repeat(line.length));
+      }
+      // Kotlin: the grammar has no `fun interface` (a SAM interface) and parses it as a
+      // function named like the interface, so its members vanished (okhttp `Interceptor`:
+      // `intercept` had no owner, `Chain` no parent). Blank `fun` (same length).
+      if (languageId === 'kotlin' && content.includes('fun interface')) {
+        content = content.replace(KOTLIN_FUN_INTERFACE, (m, lead) => `${lead}${' '.repeat(m.length - lead.length - 9)}interface`);
       }
       // C/C++: blank a visibility macro after the class-key (same length).
       if (languageId === 'cpp' || languageId === 'c') {
