@@ -31,7 +31,9 @@ export const MMR_CONFIG = {
     semantic: 0.2,  // Embedding similarity (if available)
   },
 
-  // Minimum score to include in MMR selection
+  // Minimum score to include in MMR selection, as a fraction of the top score: RRF
+  // fallback scores (1/(60+rank) ≤ 0.0164) fell under an absolute 0.01 and MMR deleted
+  // all but ~6 candidates (sinatra / serilog questions lost their answers).
   minRelevance: 0.01,
 
   // Maximum candidates to consider (for performance)
@@ -208,8 +210,10 @@ export function applyMMR(results, options = {}) {
   }
 
   // Filter by minimum relevance and limit candidates
+  const top = results.reduce((m, r) => Math.max(m, r.score ?? 0), 0);
+  const floor = minRelevance * top;
   const candidates = results
-    .filter(r => r.score >= minRelevance)
+    .filter(r => r.score >= floor)
     .slice(0, maxCandidates);
 
   if (candidates.length === 0) {

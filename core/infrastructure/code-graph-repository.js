@@ -824,7 +824,7 @@ export class CodeGraphRepository {
       const baseSql = `
         SELECT r.target_id, r.target_name, r.type as rel_type, r.context_line,
                r.full_import_path,
-               e.id as e_id, e.name as e_name, e.type as e_type,
+               e.id as e_id, e.name as e_name, e.type as e_type, e.parent_class as e_parent,
                e.file_path as e_file, e.start_line as e_start, e.end_line as e_end
         FROM relationships r
         LEFT JOIN entities e ON e.id = r.target_id AND ${this._entityVisibilitySql(db, 'e')}
@@ -846,7 +846,7 @@ export class CodeGraphRepository {
         contextLine: r.context_line || null,
         fullImportPath: r.full_import_path || null,
         target: r.e_id ? {
-          id: r.e_id, name: r.e_name, type: r.e_type,
+          id: r.e_id, name: r.e_name, type: r.e_type, parentClass: r.e_parent || null,
           filePath: r.e_file, startLine: r.e_start, endLine: r.e_end,
         } : null,
       }));

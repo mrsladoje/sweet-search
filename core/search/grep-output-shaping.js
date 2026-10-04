@@ -554,6 +554,21 @@ function renderGrepBodyWeighted(kept, fileSummary, k, opts) {
     pool.sort((a, b) => keyOf(b) - keyOf(a) || b.total - a.total || a.idx - b.idx);
     order = pool;
   }
+  // Files with a row that defines the pattern's identifier (`defines`, grep-line-classes.js)
+  // list first and take the first line: the definition before its uses.
+  const defining = new Set();
+  for (const m of kept) if (m.defines) defining.add(m.file);
+  if (defining.size) {
+    if (!groups) {
+      groups = new Map();
+      for (const m of kept) {
+        let g = groups.get(m.file);
+        if (!g) { g = []; groups.set(m.file, g); }
+        g.push(m);
+      }
+    }
+    order = [...order.filter(f => defining.has(f.file)), ...order.filter(f => !defining.has(f.file))];
+  }
 
   const n = order.length;
   const keys = new Float64Array(n);
@@ -564,6 +579,11 @@ function renderGrepBodyWeighted(kept, fileSummary, k, opts) {
     totals[f] = order[f].total;
     keys[f] = grepWeightKey(order[f].total, p * p * SCALE_SOURCE, weight);
     caps[f] = order[f].kept;
+  }
+  if (defining.size) {
+    let top = 0;
+    for (let f = 0; f < n; f++) if (keys[f] > top) top = keys[f];
+    for (let f = 0; f < n; f++) if (defining.has(order[f].file)) keys[f] = top + 1;
   }
   const alloc = opts.rule === 'guarantee' || opts.rule === 'hh'
     ? allocateGrepLinesWithFirstLine(keys, totals, caps, k, opts.rule)

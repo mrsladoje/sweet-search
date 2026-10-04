@@ -438,6 +438,7 @@ function packSection(items, budget, opts) {
       contextLines: siteLines(item),
       relationship: item.relationship || null,
       via: item.via || null,
+      ...(item.overloads?.length ? { overloads: item.overloads } : {}),
       depth: item.depth || 1,
       importance: Number(item.importance.toFixed(4)),
       presentation: codeInfo.presentation,
@@ -674,7 +675,8 @@ function listParts(body) {
 
 // [min, max] arguments a definition's parameter list takes (defaults lower min; variadics: max ∞).
 function parameterRange(source, name) {
-  const at = String(source || '').search(new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\(`));
+  // `Write<T0, T1>(`: generic parameters between the name and the list.
+  const at = String(source || '').search(new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*(?:<[^()]*>)?\\s*\\(`));
   if (at < 0) return null;
   const body = parenBody(source, source.indexOf('(', at));
   if (body == null) return null;
@@ -689,31 +691,76 @@ function parameterRange(source, name) {
 // (`retry(3) { }`): the parenthesised count is not the argument count.
 const TRAILING_BLOCK_FILE = /\.(?:kt|kts|swift|rb|scala|groovy|gradle)$/i;
 
+// Same-name definitions in the entity's file under the same owner (its overload set, minus itself).
+function overloadSiblings(repo, entity) {
+  return (repo.findEntityCandidates?.(entity.name, { filePath: entity.filePath, limit: 12 }) || [])
+    .filter((e) => e.id !== entity.id && e.name === entity.name && e.filePath === entity.filePath
+      && (e.parentClass || null) === (entity.parentClass || null));
+}
+
+function overloadRange(repo, e) {
+  return parameterRange(repo.readFileRange(e.filePath, e.startLine, Math.min(e.endLine ?? e.startLine, e.startLine + 20)), e.name);
+}
+
+const fitsRange = (r, n) => n >= r[0] && n <= r[1];
+
+// Argument count of the first `name(` call on `line` of `file` (null: no call, or a spread).
+function argumentCountAt(repo, file, line, name) {
+  const text = repo.readFileRange(file, line, line + 4) || '';
+  const m = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\(`).exec(text);
+  if (!m) return null;
+  const body = parenBody(text, m.index + m[0].length - 1);
+  if (body == null || /\.\.\.|^\s*\*\w/.test(body)) return null; // spread: count unknown
+  return listParts(body).length;
+}
+
 function dropOtherOverloadCalls(repo, target, rows) {
   if (!target?.name || !target.filePath || typeof repo.readFileRange !== 'function') return rows;
   if (TRAILING_BLOCK_FILE.test(target.filePath)) return rows;
-  const siblings = (repo.findEntityCandidates?.(target.name, { filePath: target.filePath, limit: 12 }) || [])
-    .filter((e) => e.id !== target.id && e.name === target.name && e.filePath === target.filePath
-      && (e.parentClass || null) === (target.parentClass || null));
+  const siblings = overloadSiblings(repo, target);
   if (!siblings.length) return rows;
-  const rangeOf = (e) => parameterRange(repo.readFileRange(e.filePath, e.startLine, Math.min(e.endLine ?? e.startLine, e.startLine + 20)), e.name);
-  const own = rangeOf(target);
-  const others = siblings.map(rangeOf).filter(Boolean);
+  const own = overloadRange(repo, target);
+  const others = siblings.map((e) => overloadRange(repo, e)).filter(Boolean);
   if (!own || !others.length) return rows;
-  const fits = (r, n) => n >= r[0] && n <= r[1];
   return rows.filter((row) => {
     if (row.relationship && row.relationship !== 'calls') return true;
     const lines = siteLines(row);
     if (!lines.length || !row.filePath) return true;
     return lines.some((line) => {
-      const text = repo.readFileRange(row.filePath, line, line + 4) || '';
-      const m = new RegExp(`\\b${target.name}\\s*\\(`).exec(text);
-      if (!m) return true;
-      const body = parenBody(text, m.index + m[0].length - 1);
-      if (body == null || /\.\.\.|^\s*\*\w/.test(body)) return true; // spread: count unknown
-      const n = listParts(body).length;
-      return fits(own, n) || !others.some((r) => fits(r, n));
+      const n = argumentCountAt(repo, row.filePath, line, target.name);
+      return n == null || fitsRange(own, n) || !others.some((r) => fitsRange(r, n));
     });
+  });
+}
+
+/**
+ * A callee with overloads is bound by the argument count at its call site: the one overload
+ * that takes that many arguments, or, when several do, the row names the others too
+ * (serilog Logger.Write(level, template, values) fits four 3-argument Write overloads; the
+ * graph picked the first by position). Types are not known here, so no further choice.
+ */
+export function bindCalleeOverloads(repo, target, rows) {
+  if (!target?.filePath || typeof repo.readFileRange !== 'function') return rows;
+  if (TRAILING_BLOCK_FILE.test(target.filePath)) return rows;
+  return rows.map((row) => {
+    if ((row.relationship && row.relationship !== 'calls') || !row.name || !row.filePath) return row;
+    const lines = siteLines(row);
+    if (!lines.length) return row;
+    const siblings = overloadSiblings(repo, row);
+    if (!siblings.length) return row;
+    const n = argumentCountAt(repo, target.filePath, lines[0], row.name);
+    if (n == null) return row;
+    const fitting = [row, ...siblings].filter((e) => {
+      const r = overloadRange(repo, e);
+      return !r || fitsRange(r, n);
+    }).sort((a, b) => (a === row ? -1 : b === row ? 1 : (a.startLine ?? 0) - (b.startLine ?? 0)));
+    if (!fitting.length) return row;
+    const [chosen, ...rest] = fitting;
+    const bound = chosen === row ? row : {
+      ...chosen,
+      relationship: row.relationship, contextLine: row.contextLine, contextLines: row.contextLines, depth: row.depth,
+    };
+    return rest.length ? { ...bound, overloads: rest.map((e) => e.startLine).sort((a, b) => a - b) } : bound;
   });
 }
 
@@ -833,6 +880,7 @@ export class StructuralContextBuilder {
       ...(this.repo.getBareCallees?.(target, { limit: 80 }) || []),
     ]).map((x, i) => (callIntoTestTree(target.filePath, x.filePath) ? asUnresolved(x, i) : x))
       .map(x => ({ ...x, depth: 1 }));
+    calleesRaw = bindCalleeOverloads(this.repo, target, calleesRaw);
     if (!calleesRaw.length) {
       // No stored callees: fall back to names called in the body. A qualified
       // name binds only through bindQualifiedHint (own-type receiver, same

@@ -20,6 +20,7 @@
 
 import { readFileRange } from './search-pattern-chunks.js';
 import { rankingRelationshipTypes } from '../infrastructure/relationship-types.js';
+import { trustedCalleeEdge } from '../infrastructure/structural-qualified-resolution.js';
 import { computeSufficiencyVerdict, informativeSubtokens } from './query-sufficiency.js';
 import { annotateEntrySymbols, applyAgentPackCompletion, buildPackSiblingLine, shownSourceEndLine } from './agent-pack-completion.js';
 import { capToFinalK } from './final-k.js';
@@ -1360,6 +1361,10 @@ export function renderGraphNeighbors(opts) {
   let typeRefs = [];
   try { outgoing = codeGraphRepo.getOutgoingRelationships(entity.id, { types: OUT_TYPES, limit: 16 }) || []; }
   catch { outgoing = []; }
+  // A call written with a receiver binds only as ss-trace binds it (requests
+  // `DEFAULT_PORTS.get(` is a dict lookup, not Session.get).
+  outgoing = outgoing.filter((r) => r.type !== 'calls' || !r.target || !/[.:]/.test(String(r.targetName || ''))
+    || trustedCalleeEdge(r.targetName, r.target));
   try { incoming = codeGraphRepo.getIncomingRelationships(entity.id, { types: IN_TYPES, limit: RELATED_FANIN_PROBE }) || []; }
   catch { incoming = []; }
 
