@@ -210,6 +210,7 @@ function planFixedResults(results, { k, find }) {
   return selectEntries(results, {
     dedupe: FIX.compact ? 'a2' : (DEDUPE && !find ? 'v3' : false),
     onePerFile: !find && FIX.onePerFile,
+    foldDeclarationBlocks: FIX.compact,
     summaryCap: FIX.summaryCap,
     k,
   });
