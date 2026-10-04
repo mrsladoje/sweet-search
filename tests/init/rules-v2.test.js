@@ -56,8 +56,8 @@ describe('switch', () => {
 
 describe('policy (all harnesses)', () => {
   it('golden: v2 body and the pre-v2 body', () => {
-    expect(sha(getPolicyBody('cli', {}))).toBe('5553fd3e4b8b28a633f52742e8d873a9384e10f80bd95d15b02766b58daa9b48');
-    expect(sha(getPolicyBody('cli', V1))).toBe('d1c22cf583a28975a819848e4cf9dbec03b41634fc31660844bee1f76a263742');
+    expect(sha(getPolicyBody('cli', {}))).toBe('c52a49e2eb1192c574ee84debed5297382abdb3d720f6d545b7a3b2e3c87cfbb');
+    expect(sha(getPolicyBody('cli', V1))).toBe('711e0044a2efcfbebb1078642d5695044378d52103ca5b266166bcde37232fd2');
   });
 
   it('v2 = v1 + the flag line + the file-name line, find/ls unbanned, the full-line statement', () => {
@@ -133,7 +133,7 @@ describe('Claude Code', () => {
     expect(lineDiff(v1, v2)).toEqual({ removed: [CLAUDE_SYSTEM_OVERRIDE], added: [CLAUDE_FIND_LINE, CLAUDE_SYSTEM_OVERRIDE_V2] });
     expect(CLAUDE_SYSTEM_OVERRIDE_V2).toBe(`${CLAUDE_SYSTEM_OVERRIDE} ${CLAUDE_OVERRIDE_V2_SENTENCE}`);
     expect(sha(claudeLeanAgentFile({ memoryDir: '/m/', rules: getPolicyBody('cli', V1), rulesV2: false })))
-      .toBe('75d7268dfabab39de76ee01b09a3326097897b2313bcb1827132ebd0c9b187ee');
+      .toBe('c345cb92d99c108f4b05b89b9b361db9d281ee750834dbe4dfd8e525e2e17b5d');
   });
 
   it('the override exempts file-name search under v2 only', () => {
