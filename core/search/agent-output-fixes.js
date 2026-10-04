@@ -12,6 +12,8 @@
  * ss-read output is NOT changed here (owner decision 2026-10-01).
  */
 
+import { omittedRangeLines } from './semantic-span-budget.js';
+
 // --- test-file detection --------------------------------------------------------------
 
 const TEST_DIR_RE = /(^|\/)(__tests__|__mocks__|tests?|specs?|testdata|test_data|fixtures?|e2e|mocks?|testing|integration[-_]tests?)(\/|$)/i;
@@ -102,7 +104,16 @@ export function selectEntries(results) {
     const covered = isSummaryOnly(r) && seen.some((x) => x.file === r.file
       && ((x.start === r.startLine && x.end === r.endLine)
         || (x.shown && r.startLine >= x.shown.start && r.endLine <= x.shown.end)));
-    if (!covered) seen.push({ file: r.file, start: r.startLine, end: r.endLine, shown: shownCodeSpan(r) });
+    // An entry's own span is its packed range (`fullStartLine..fullEndLine` when the body prints
+    // less): a summary of that exact range repeats the entry, whose header already names the rest.
+    if (!covered) {
+      seen.push({
+        file: r.file,
+        start: r.fullStartLine ?? r.startLine,
+        end: r.fullEndLine ?? r.endLine,
+        shown: shownCodeSpan(r),
+      });
+    }
     return !covered;
   });
   const printed = new Set(list.map((e) => e.index));
@@ -233,7 +244,18 @@ export function renderFixedBlocks(results, plan, { gutter = (code) => code } = {
       if (imports) out(`### imports\n\`\`\`\n${imports}\n\`\`\`\n`);
     }
     if (r.code) {
+      // The header names the printed lines; what the packed range left out before or after them
+      // is named with the ss-read command that prints it (context-expander applyPrintedRanges).
+      const omitted = omittedRangeLines(r.file, {
+        exactRange: Number.isInteger(r.fullStartLine) && Number.isInteger(r.fullEndLine),
+        startLine: r.startLine,
+        endLine: r.endLine,
+        fullStartLine: r.fullStartLine,
+        fullEndLine: r.fullEndLine,
+      });
+      for (const line of omitted.before) out(`${line}\n`);
       out(`\`\`\`\n${gutter(r.code, r.startLine)}\n\`\`\`\n`);
+      for (const line of omitted.after) out(`${line}\n`);
     } else if (r.summary) {
       out(`${r.summary}\n`);
     }
