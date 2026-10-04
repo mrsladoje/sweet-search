@@ -312,6 +312,12 @@ exit on SIGTERM after its daemon was killed (SIGKILL was needed; it then ran orp
 timing. Candidate causes: a reconcile loop that never converges on a stale base, or the backstop
 walk. Check after the planned reindex; if it persists on a fresh index, it is a bug.
 
+**Resolved 2026-10-04 (5a561161, e9bf73e3).** `sample` showed the main thread in `fs.statSync`
+inside the dirty-scan walk: it descended the gitignored `eval/repos/` (3.9 million files) every
+tick, about 10 minutes of synchronous work, so SIGTERM never reached its handler. The walk now
+skips directories git ignores as a whole (0.7 s on this repository) and yields every 1,000 files;
+a stop signal ends the sleep at once and exits within 10 s; a maintainer stops with its daemon.
+
 ---
 
 ## 2026-10-03 — `ss-grep -i` cannot narrow a literal containing k or s (needs reindex — wait)
