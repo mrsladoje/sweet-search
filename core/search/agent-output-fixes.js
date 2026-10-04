@@ -1443,6 +1443,24 @@ export function orderSourceBeforeTests(matches, { k = null } = {}) {
 }
 
 export const GREP_HIT_TEXT_MAX = 140;
+
+/**
+ * A broad ss-grep (at least GREP_BROAD_MIN_HITS total matches) prints each hit line in a window of
+ * at most GREP_BROAD_HIT_CHARS chars instead of GREP_HIT_TEXT_MAX. Decided by the 2026-10-03 diet1
+ * A/B (core/prompt-optimization/data/obs-loop/TRACES-diet1.md): 18 broad greps saved ~256 chars
+ * each, with no re-grep, no extra read and no misread. On a flood the ranking picks which lines
+ * show; the line's head around the match is enough to tell them apart.
+ */
+export const GREP_BROAD_MIN_HITS = 50;
+export const GREP_BROAD_HIT_CHARS = 60;
+
+/**
+ * The grepHitText `max` for a grep with `total` matches (undefined = the default window).
+ * The thresholds are parameters so a unit test can use a small fixture.
+ */
+export function grepBroadHitMax(total, minHits = GREP_BROAD_MIN_HITS, chars = GREP_BROAD_HIT_CHARS) {
+  return total >= minHits ? chars : undefined;
+}
 // Chars of the line kept before the match when a long line is cut on the left.
 const GREP_HIT_LEAD = 40;
 
@@ -1455,10 +1473,12 @@ const GREP_HIT_LEAD = 40;
  * near the start keeps the head of the line. A hit with no line text falls back to the matched text.
  * Off: the matched substring, whitespace collapsed, at most 140 chars (the previous output).
  *
+ * `max` (grepBroadHitMax): the window size for a full line, default GREP_HIT_TEXT_MAX.
+ *
  * @param {{matchText?: string, content?: string, column?: number}} m
- * @param {{fullLine?: boolean}} [opts]
+ * @param {{fullLine?: boolean, max?: number}} [opts]
  */
-export function grepHitText(m, { fullLine = false } = {}) {
+export function grepHitText(m, { fullLine = false, max = GREP_HIT_TEXT_MAX } = {}) {
   const matched = String(m?.matchText || '').replace(/\s+/g, ' ').trim().slice(0, GREP_HIT_TEXT_MAX);
   const raw = fullLine && typeof m?.content === 'string' ? m.content : '';
   if (!raw.trim()) return matched;
@@ -1472,7 +1492,6 @@ export function grepHitText(m, { fullLine = false } = {}) {
     const prefix = raw.slice(0, /\s/.test(raw[i]) ? i + 1 : i).replace(/\s+/g, ' ');
     return prefix.startsWith(' ') ? prefix.length - 1 : prefix.length;
   };
-  const max = GREP_HIT_TEXT_MAX;
   if (line.length <= max) return line;
   const head = () => `${sliceWhole(line, 0, max - 1)}…`;
 
