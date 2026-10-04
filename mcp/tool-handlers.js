@@ -20,6 +20,9 @@ const SearchResultSchema = z.object({
   rank: z.number().int().optional(),
   startLine: z.number().int().nullable().optional(),
   endLine: z.number().int().nullable().optional(),
+  // The packed range when the code prints less (startLine..endLine = printed lines).
+  fullStartLine: z.number().int().optional(),
+  fullEndLine: z.number().int().optional(),
   symbol: z.string().nullable().optional(),
   symbolType: z.string().nullable().optional(),
   presentation: z.enum(['full', 'preview', 'summary']).optional(),
@@ -157,7 +160,13 @@ export async function handleSearch({ query, k, mode, structural, regex, format, 
         .map((r) => {
           const header = `${r.rank}. ${r.file}:${r.startLine}-${r.endLine} (score: ${r.score.toFixed(3)}, ${r.presentation})`;
           const symbolInfo = r.symbol ? `\n   ${r.symbolType || 'symbol'}: ${r.symbol}` : '';
-          const code = r.code ? `\n\`\`\`\n${r.code}\n\`\`\`` : '';
+          // The header names the printed lines; the packed lines before or after them are named
+          // with the MCP read call that prints them (same rule as the ss-* `# not shown:` line).
+          const notShown = (a, b) => `\n   Not shown: lines ${a}-${b} — read ${r.file} ${a}-${b}`;
+          const hasFull = r.code && Number.isInteger(r.fullStartLine) && Number.isInteger(r.fullEndLine);
+          const before = hasFull && r.fullStartLine < r.startLine ? notShown(r.fullStartLine, r.startLine - 1) : '';
+          const after = hasFull && r.fullEndLine > r.endLine ? notShown(r.endLine + 1, r.fullEndLine) : '';
+          const code = r.code ? `${before}\n\`\`\`\n${r.code}\n\`\`\`${after}` : '';
           // Same-file span map (top-1, windowed chunk, verdict != YES) —
           // MCP phrasing references the MCP drill-in tool name.
           const sameFile = (r.sameFile && r.sameFile.neighbors?.length)
@@ -198,6 +207,7 @@ export async function handleSearch({ query, k, mode, structural, regex, format, 
           rank: r.rank,
           startLine: r.startLine ?? null,
           endLine: r.endLine ?? null,
+          ...(Number.isInteger(r.fullStartLine) ? { fullStartLine: r.fullStartLine, fullEndLine: r.fullEndLine } : {}),
           symbol: r.symbol ?? null,
           symbolType: r.symbolType ?? null,
           presentation: r.presentation,

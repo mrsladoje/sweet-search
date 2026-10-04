@@ -32,6 +32,27 @@ describe('MCP agent shown-span trailer', () => {
     }
   });
 
+  it('names the packed lines a cut body leaves out, with the read call that prints them', async () => {
+    const result = await handleSearch({ query: 'q', k: 1, mode: 'auto', format: 'agent' }, {
+      PROJECT_ROOT: '/repo',
+      getSearcher: async () => ({
+        search: async () => ({
+          format: 'agent',
+          results: [{
+            rank: 1, file: 'worker/draft.go', startLine: 1756, endLine: 1757, fullStartLine: 1750, fullEndLine: 1894,
+            score: 1, presentation: 'preview', code: 'a\nb', codeTokens: 2,
+          }],
+          confidence: 'high', confidenceReason: 'test', tokensUsed: 2, tokenBudget: 100,
+          totalResults: 1, mode: 'auto', latencyMs: 1, subMode: 'agent', query: 'q',
+        }),
+      }),
+    });
+    const text = result.content[0].text;
+    expect(text).toContain('worker/draft.go:1756-1757');
+    expect(text).toContain('Not shown: lines 1750-1755 — read worker/draft.go 1750-1755\n```\na\nb\n```\n   Not shown: lines 1758-1894 — read worker/draft.go 1758-1894');
+    expect(result.structuredContent.results[0]).toMatchObject({ startLine: 1756, endLine: 1757, fullStartLine: 1750, fullEndLine: 1894 });
+  });
+
   it('explains a suspicious zero-result regex without changing it', async () => {
     const result = await handleSearch({
       query: 'integer vectors', k: 2, mode: 'pattern',
