@@ -16,6 +16,11 @@
  * loop variable, a Python rebinding), gets no type, and resolution keeps its
  * receiver-name rules. Languages without written types (JS, Ruby) are skipped;
  * Python counts only annotated names (`b: Buffer`).
+ *
+ * PHP: typed parameters and catch variables (`Foo $b`, `?Foo $b`), `$b = new Foo(…);`,
+ * and one origin hint: `$b = Foo::create(…);` is stored as `recvtype:?Foo` — the
+ * resolver reads it only when the repo defines no type `Foo` (an object a library's
+ * static factory made: Symfony `Process::fromShellCommandline`, `SignalHandler::create`).
  */
 
 import { RECEIVER_TYPE_PREFIX, parseReceiverType } from '../infrastructure/receiver-type-annotation.js';
@@ -29,6 +34,7 @@ const TS_FILE = /\.(?:ts|tsx|mts|cts)$/i;
 const PY_FILE = /\.(?:py|pyi)$/i;
 const RUST_FILE = /\.rs$/i;
 const KOTLIN_SWIFT_SCALA = /\.(?:kt|kts|swift|scala)$/i;
+const PHP_FILE = /\.php$/i;
 
 const SELF_NAMES = new Set(['this', 'self', 'super', 'cls', 'me', 'static', 'it']);
 const CALLABLE = new Set(['method', 'function', 'constructor', 'rpc']);
@@ -42,7 +48,7 @@ const TYPE_FIRST_NOT_TYPES = new Set(['return', 'new', 'throw', 'case', 'else', 
 /** True when the language of `filePath` writes declared types the scanner reads. */
 export function receiverTypesSupported(filePath) {
   const f = String(filePath || '');
-  return GO.test(f) || TYPE_FIRST.test(f) || COLON_TYPED_FILE.test(f);
+  return GO.test(f) || TYPE_FIRST.test(f) || COLON_TYPED_FILE.test(f) || PHP_FILE.test(f);
 }
 
 /**
@@ -120,6 +126,7 @@ function anyGroupNames(m, name) {
 function declaredTypeInCode(text, name, filePath) {
   if (!text || !name || SELF_NAMES.has(name) || !/^[A-Za-z_]\w*$/.test(name)) return null;
   const f = String(filePath || '');
+  if (PHP_FILE.test(f)) return phpDeclaredType(text, name);
   // Every pattern matches within one line that names the receiver: scan only those.
   text = text.split('\n').filter(l => l.includes(name) && hasWord(l, name)).join('\n');
   if (!text) return null;
@@ -196,6 +203,85 @@ function declaredTypeInCode(text, name, filePath) {
   return dot >= 0 ? { type: first.slice(dot + 1), qualifier: first.slice(0, dot) } : { type: first, qualifier: '' };
 }
 
+// PHP. `(Foo $b`, `, ?Foo &$b`, `(public readonly Foo $b` (promoted), `catch (Foo $b)`;
+// a union (`A|B $b`) never matches. `$b = new Foo(…);` and `$b = Foo::make(…);` count only
+// as whole statements (`$b = new Foo()->x();`, `Foo::a()->b()` are other types).
+const PHP_TYPED = /(?:^|[(,])\s*(?:(?:public|private|protected|readonly|final)\s+)*\??\s*\\?(?:\w+\\)*([A-Z]\w*)\s+&?(?:\.\.\.)?\$(\w+)\b/gm;
+const PHP_BUILT = /\$(\w+)\s*=\s*(new\s+)?\\?(?:\w+\\)*([A-Z]\w*)(?:::\w+)?\s*\(/g;
+// Bindings that give no type: any other assignment, foreach / destructuring targets,
+// `global` / `static` declarations (parameter lists are read separately).
+const PHP_UNTYPED = /\$(\w+)\s*(?:\?\?|[-+*\/.%|&^]|<<|>>)?=(?![=>])|\bas\s+&?\$(\w+)\b|=>\s*&?\$(\w+)\b|\b(?:global|static)\s+\$(\w+)\b|\blist\s*\(([^)]*)\)\s*=|\[([^\]]*)\]\s*=(?![=>])/g;
+const PHP_PARAMS_OPEN = /\b(?:function|fn)\b\s*&?\s*\w*\s*\(/g;
+
+function phpDeclaredType(text, name) {
+  const varRe = new RegExp(`\\$${name}\\b`);
+  if (!varRe.test(text)) return null;
+  const found = [];
+  let factory = false;
+  let m;
+  // Parameter lists (the function's own, closures'): a typed parameter gives its type,
+  // an untyped one (`$b`, `&$b`, `...$b`) gives none.
+  const paramSpans = [];
+  PHP_PARAMS_OPEN.lastIndex = 0;
+  while ((m = PHP_PARAMS_OPEN.exec(text)) !== null) {
+    const open = m.index + m[0].length - 1;
+    const close = closingParen(text, open);
+    if (close < 0) break;
+    paramSpans.push([open, close]);
+    const params = text.slice(open, close + 1);
+    if (!varRe.test(params)) continue;
+    let typed = false;
+    PHP_TYPED.lastIndex = 0;
+    let t;
+    while ((t = PHP_TYPED.exec(params)) !== null) if (t[2] === name) { found.push(t[1]); typed = true; }
+    if (!typed) return null;
+  }
+  // `catch (Foo $b)` / `catch (A|B $b)`.
+  const catchRe = new RegExp(`\\bcatch\\s*\\(([^)]*)\\$${name}\\s*\\)`, 'g');
+  while ((m = catchRe.exec(text)) !== null) {
+    const t = /^\s*\\?(?:\w+\\)*([A-Z]\w*)\s*$/.exec(m[1]);
+    if (!t) return null;
+    found.push(t[1]);
+  }
+  const builtAt = new Set();
+  PHP_BUILT.lastIndex = 0;
+  while ((m = PHP_BUILT.exec(text)) !== null) {
+    if (m[1] !== name) continue;
+    const isNew = !!m[2];
+    // `new Foo(` has no `::`; `Foo::make(` must have it.
+    if (isNew === m[0].includes('::')) continue;
+    const close = closingParen(text, m.index + m[0].length - 1);
+    if (close < 0 || !/^\s*;/.test(text.slice(close + 1, close + 40))) continue;
+    found.push(m[3]);
+    if (!isNew) factory = true;
+    builtAt.add(m.index);
+  }
+  PHP_UNTYPED.lastIndex = 0;
+  while ((m = PHP_UNTYPED.exec(text)) !== null) {
+    // A parameter's default (`?Foo $b = null`) is no rebinding.
+    if (builtAt.has(m.index) || paramSpans.some(([o, c]) => m.index > o && m.index < c)) continue;
+    for (let i = 1; i < m.length; i++) {
+      if (m[i] === undefined) continue;
+      if (i <= 4 ? m[i] === name : varRe.test(m[i])) return null;
+    }
+  }
+  if (found.length === 0) return null;
+  if (found.some(t => t !== found[0])) return null;
+  // A static call's result is only a hint; a declared or constructed type is the type.
+  return { type: found[0], qualifier: '', factory: factory && builtAt.size === found.length };
+}
+
+// The index of the `)` that closes the `(` at `open`, or -1.
+function closingParen(text, open) {
+  let depth = 0;
+  for (let i = open; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '(') depth++;
+    else if (ch === ')' && --depth === 0) return i;
+  }
+  return -1;
+}
+
 function hasWord(line, name) {
   let i = line.indexOf(name);
   while (i >= 0) {
@@ -234,6 +320,7 @@ export function annotateReceiverTypes(filePath, content, entities, relationships
   })();
   const memo = new Map();
   const bodies = new Map();
+  const phpAliases = PHP_FILE.test(filePath) ? phpUseAliases(content) : null;
   for (const rel of relationships) {
     if (rel.type !== 'calls' || rel.full_import_path || !rel.context_line) continue;
     const parts = String(rel.target_name || '').split('.');
@@ -257,6 +344,7 @@ export function annotateReceiverTypes(filePath, content, entities, relationships
         bodies.set(src.id, text);
       }
       const declared = declaredTypeInCode(text, recv, filePath);
+      if (declared && phpAliases?.has(declared.type)) declared.type = phpAliases.get(declared.type);
       annotation = declared ? receiverAnnotation(declared, { isGo, ownDir, goPackages }) : null;
       memo.set(key, annotation);
     }
@@ -264,7 +352,17 @@ export function annotateReceiverTypes(filePath, content, entities, relationships
   }
 }
 
-function receiverAnnotation({ type, qualifier }, { isGo, ownDir, goPackages }) {
+// `use Vendor\\Pkg\\Foo as Bar;` → Bar names Foo.
+function phpUseAliases(content) {
+  const aliases = new Map();
+  const re = /^\s*use\s+\\?(?:\w+\\)*(\w+)\s+as\s+(\w+)\s*;/gm;
+  let m;
+  while ((m = re.exec(String(content || ''))) !== null) aliases.set(m[2], m[1]);
+  return aliases;
+}
+
+function receiverAnnotation({ type, qualifier, factory = false }, { isGo, ownDir, goPackages }) {
+  if (factory) return `${RECEIVER_TYPE_PREFIX}?${type}`;
   if (!isGo) {
     // A nested type keeps its enclosing type (`Span.Builder`), not a package
     // (`zipkin2.Span` → `Span`): many types nest a `Builder`.

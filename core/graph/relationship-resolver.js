@@ -269,7 +269,7 @@ function pointerHeld(name) {
  * containerFiles(name): files that define a container type with exactly this
  *   name, or null when the repo defines no such type.
  */
-export function createCallResolutionIndex(entities, { fileImports = null, hierarchy = null } = {}) {
+export function createCallResolutionIndex(entities, { fileImports = null, hierarchy = null, receiverSpread = null } = {}) {
   const containersByFile = new Map();
   const filesByContainerName = new Map();
   for (const e of entities) {
@@ -316,6 +316,23 @@ export function createCallResolutionIndex(entities, { fileImports = null, hierar
       for (const e of entities) if (TYPE_ALIAS_TYPES.has(e.type)) aliasNames.add(e.name);
     }
     return aliasNames.has(name) ? 'alias' : null;
+  }
+
+  // Names the repo defines only as an interface / protocol (no class or struct of that name).
+  let interfaceOnly = null;
+  function isInterfaceType(name) {
+    if (!name) return false;
+    if (!interfaceOnly) {
+      const kinds = new Map();
+      for (const e of entities) {
+        if (!CONTAINER_TYPES.has(e.type)) continue;
+        const k = kinds.get(e.name) || { iface: false, other: false };
+        if (INTERFACE_TYPES.has(e.type)) k.iface = true; else k.other = true;
+        kinds.set(e.name, k);
+      }
+      interfaceOnly = new Set([...kinds].filter(([, k]) => k.iface && !k.other).map(([n]) => n));
+    }
+    return interfaceOnly.has(name);
   }
 
   // Interfaces by name → their package directories (Go call resolution).
@@ -442,6 +459,7 @@ export function createCallResolutionIndex(entities, { fileImports = null, hierar
     outerOf,
     isInterfaceIn,
     typeKindOf,
+    isInterfaceType,
     factsOf,
     methodOwners,
     supertypesOf,
@@ -449,6 +467,7 @@ export function createCallResolutionIndex(entities, { fileImports = null, hierar
     directSupertypesOf: (name) => (hierarchy && hierarchy.supers && hierarchy.supers.get(name)) || EMPTY_SET,
     containerFiles: (name) => filesByContainerName.get(name) || null,
     importsOf: (filePath) => (fileImports && fileImports.get(filePath)) || null,
+    receiverSpread: receiverSpread || NO_INDEX.receiverSpread,
   };
 }
 
@@ -493,6 +512,56 @@ export function buildTypeHierarchy(db, { liveOnly = false } = {}) {
   return { supers, subs };
 }
 
+// A method name called on more distinct receivers than this is a generic API name
+// (`push`, `items`, `clone`, `put`, Moq `Setup`): most of its `x.name(` calls reach a
+// standard-library or third-party type, not the one repo method of that name.
+// Same threshold as AMBIGUOUS_NAME_FANIN in structural-context.js. Measured on 165
+// hand-labelled single-candidate calls with no receiver evidence over the 11 bench
+// repos (2026-10-05, dev 60% / held-out 40%, seed 42): dropping above 20 removed
+// 28 wrong / 4 right (dev) and 12 wrong / 2 right (held-out).
+export const GENERIC_RECEIVER_SPREAD = 20;
+
+/**
+ * Distinct receivers per called method name, read table-wide the way
+ * buildTypeHierarchy is, so the full build and the incremental resolver see the
+ * same counts. Lazy: the scan runs on the first question, once per resolve pass.
+ * Counts only plain lowercase receivers (`list.push`), not types (`Foo.bar`),
+ * self-like receivers or chains; a name stops counting past the threshold.
+ */
+export function buildReceiverSpread(db, { liveOnly = false } = {}) {
+  let counts = null;
+  const load = () => {
+    counts = new Map();
+    let rows;
+    try {
+      const live = liveOnly && hasColumn(db, 'relationships', 'epoch_retired') ? ' AND epoch_retired IS NULL' : '';
+      rows = db.prepare(`SELECT DISTINCT target_name FROM relationships WHERE type = 'calls'${live}`).raw().iterate();
+    } catch {
+      return;
+    }
+    for (const [targetName] of rows) {
+      const s = String(targetName || '');
+      const dot = s.indexOf('.');
+      if (dot <= 0 || s.indexOf('.', dot + 1) >= 0) continue;
+      const recv = s.slice(0, dot);
+      if (!PLAIN_RECEIVER.test(recv) || SELF_RECEIVERS.has(recv)) continue;
+      const name = s.slice(dot + 1);
+      const seen = counts.get(name);
+      if (seen === undefined) counts.set(name, new Set([recv]));
+      else if (seen !== true) {
+        seen.add(recv);
+        if (seen.size > GENERIC_RECEIVER_SPREAD) counts.set(name, true);
+      }
+    }
+  };
+  return (name) => {
+    if (counts === null) load();
+    const seen = counts.get(name);
+    return seen === true ? GENERIC_RECEIVER_SPREAD + 1 : (seen ? seen.size : 0);
+  };
+}
+const PLAIN_RECEIVER = /^[a-z_]\w*$/;
+
 function defaultFactsOf(entity) {
   const filePath = entity.file_path || '';
   return {
@@ -504,10 +573,12 @@ function defaultFactsOf(entity) {
   };
 }
 
+const INTERFACE_TYPES = new Set(['interface', 'protocol']);
 const EMPTY_SET = new Set();
 const NO_INDEX = {
   ownerOf: () => null, outerOf: () => null, isInterfaceIn: () => false, typeKindOf: () => null, factsOf: defaultFactsOf, containerFiles: () => null, importsOf: () => null,
   methodOwners: () => EMPTY_SET, supertypesOf: () => EMPTY_SET, subtypesOf: () => EMPTY_SET, directSupertypesOf: () => EMPTY_SET,
+  receiverSpread: () => 0, isInterfaceType: () => false,
 };
 
 /**
@@ -562,6 +633,7 @@ export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, inde
   const receiver = chained ? '' : (cFamily ? pointerHeld(receiverRaw) : receiverRaw);
   const supertypesOf = idx.supertypesOf || NO_INDEX.supertypesOf;
   const subtypesOf = idx.subtypesOf || NO_INDEX.subtypesOf;
+  const receiverSpread = idx.receiverSpread || NO_INDEX.receiverSpread;
   const ownedBy = (list, owners) => list.filter((c) => { const o = ownerOf(c); return !!o && owners.has(o); });
   const withSupertypes = (name) => new Set([name, ...supertypesOf(name)]);
   const selfLike = (!receiverRaw) || SELF_RECEIVERS.has(receiver.toLowerCase());
@@ -696,6 +768,20 @@ export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, inde
       if (byFile.length > 0) pool = byFile;
       else if (cFamily) return [];
     }
+  } else if (pool.length === 1 && receiverSpread(pool[0].name.split('.').pop()) > GENERIC_RECEIVER_SPREAD) {
+    // One repo method of a generic API name (see GENERIC_RECEIVER_SPREAD): link only on
+    // receiver evidence — it names the owner, a subtype or the file, or the caller's
+    // file is that file or imports it. `dict.items()` is no call of `Apps.items`.
+    const c = pool[0];
+    const f = factsOf(c);
+    const recvTokens = nameTokens(receiver);
+    const evident = (f.owner && (receiverNamesOwner(r, recvTokens, f.ownerKey, f.ownerTokens)
+        || subtypeNamed(f.owner, r, recvTokens, subtypesOf)
+        || receiverMatches(r, f.ownerKey) || receiverAbbreviatesOwner(recvTokens, f.ownerTokens)))
+      || receiverMatches(r, f.stemKey)
+      || (sourceEntity && c.file_path === sourceEntity.file_path)
+      || isImported(callerImports, c.file_path);
+    if (!evident) return [];
   }
   return preferImported(pool, sourceEntity, importsOf);
 }
@@ -733,6 +819,13 @@ function extensionReceiverOf(c) {
  */
 function narrowByReceiverType(pool, receiverType, sourceEntity, idx) {
   if (receiverType.external) return [];
+  if (receiverType.factory) {
+    // A static call's result: of a repo type it may be any type (a factory), so the
+    // receiver rules decide; of a type the repo does not define, a library made it.
+    const known = (idx.containerFiles || NO_INDEX.containerFiles)(receiverType.type)
+      || (idx.typeKindOf || NO_INDEX.typeKindOf)(receiverType.type);
+    return known ? null : [];
+  }
   const ownerOf = idx.ownerOf || NO_INDEX.ownerOf;
   const importsOf = idx.importsOf || NO_INDEX.importsOf;
   const ownedBy = (list, owners) => list.filter((c) => { const o = ownerOf(c); return !!o && owners.has(o); });
@@ -755,15 +848,33 @@ function narrowByReceiverType(pool, receiverType, sourceEntity, idx) {
   const directSupers = idx.directSupertypesOf || NO_INDEX.directSupertypesOf;
   const lineage = new Set([type]);
   let level = [type];
+  const isInterfaceType = idx.isInterfaceType || NO_INDEX.isInterfaceType;
   for (let depth = 0; depth < 16 && level.length > 0; depth++) {
     const next = [];
     for (const t of level) for (const sup of directSupers(t)) if (!lineage.has(sup)) { lineage.add(sup); next.push(sup); }
     const inherited = ownedBy(pool, new Set(next));
-    if (inherited.length > 0) return preferImported(inherited, sourceEntity, importsOf);
+    if (inherited.length > 0) {
+      // A base class and an interface one level up both declare it: the class body runs.
+      const concrete = inherited.filter(c => !isInterfaceType(ownerOf(c)));
+      return preferImported(concrete.length > 0 ? concrete : inherited, sourceEntity, importsOf);
+    }
     level = next;
   }
   const extensions = pool.filter((c) => { const r = extensionReceiverOf(c); return r !== null && lineage.has(r); });
   if (extensions.length > 0) return preferImported(extensions, sourceEntity, importsOf);
+  if (!hasDir) {
+    // Narrowed in place (`$p instanceof Package`, a TS type guard, a Kotlin smart cast):
+    // the declared type does not define it, its subtypes do. The most general of them;
+    // singleOwnerSet leaves several unrelated ones unresolved.
+    const subs = (idx.subtypesOf || NO_INDEX.subtypesOf)(type);
+    if (subs.size > 0) {
+      const viaSub = ownedBy(pool, subs);
+      const owners = new Set(viaSub.map(c => ownerOf(c)));
+      const supertypesOf = idx.supertypesOf || NO_INDEX.supertypesOf;
+      const top = viaSub.filter(c => ![...supertypesOf(ownerOf(c))].some(sup => owners.has(sup)));
+      if (top.length > 0) return preferImported(top, sourceEntity, importsOf);
+    }
+  }
   if (hasDir) {
     const isInterfaceIn = idx.isInterfaceIn || NO_INDEX.isInterfaceIn;
     return isInterfaceIn(type, dir) ? null : [];
@@ -978,7 +1089,7 @@ export function resolveRowsScoped(db, rows, { liveOnly = true } = {}) {
       set.add(r.target_name);
     }
   }
-  const callIndex = createCallResolutionIndex(entities, { fileImports, hierarchy: buildTypeHierarchy(db, { liveOnly }) });
+  const callIndex = createCallResolutionIndex(entities, { fileImports, hierarchy: buildTypeHierarchy(db, { liveOnly }), receiverSpread: buildReceiverSpread(db, { liveOnly }) });
 
   return rows.map(r => resolveTarget(
     r.source_id, r.target_name, r.type, r.context_line, r.full_import_path,
@@ -1028,7 +1139,7 @@ export function resolveRelationshipTargets(db) {
   } catch {
     fileImports = null; // older graph without importsFile edges
   }
-  const callIndex = createCallResolutionIndex(entities, { fileImports, hierarchy: buildTypeHierarchy(db) });
+  const callIndex = createCallResolutionIndex(entities, { fileImports, hierarchy: buildTypeHierarchy(db), receiverSpread: buildReceiverSpread(db) });
 
   // Get all unresolved relationships (include full_import_path for package-aware matching)
   const unresolved = db.prepare(`

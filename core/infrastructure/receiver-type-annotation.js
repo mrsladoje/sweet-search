@@ -7,7 +7,9 @@
  * A call row whose receiver has a declared type carries it in
  * `relationships.full_import_path`: `recvtype:<Type>`, `recvtype:<Outer>.<Type>`
  * for a nested type, `recvtype:<Type>@<package dir>/` for Go, and
- * `recvtype:!<pkg.Type>` for a Go type from a package outside the repo.
+ * `recvtype:!<pkg.Type>` for a Go type from a package outside the repo, and
+ * `recvtype:?<Type>` for a PHP receiver a static call made (`Type::create(…)`):
+ * an origin hint, read only when the repo defines no `Type`.
  */
 
 export const RECEIVER_TYPE_PREFIX = 'recvtype:';
@@ -22,6 +24,7 @@ export function parseReceiverType(fullImportPath) {
   if (!s.startsWith(RECEIVER_TYPE_PREFIX)) return null;
   const body = s.slice(RECEIVER_TYPE_PREFIX.length);
   if (body.startsWith('!')) return { type: body.slice(1), outer: null, dir: null, external: true };
+  if (body.startsWith('?')) return { type: body.slice(1), outer: null, dir: null, external: false, factory: true };
   const at = body.indexOf('@');
   const name = at >= 0 ? body.slice(0, at) : body;
   const dot = name.lastIndexOf('.');
