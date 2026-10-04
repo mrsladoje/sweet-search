@@ -36,6 +36,7 @@ import { formatRouteMetadata } from '../../../core/search/search-format.js';
 import { createAdmissionPolicy } from '../../../core/indexing/admission-policy.js';
 import { createIndexCoverage, semanticTargetFor } from '../../../core/search/index-coverage.js';
 import { resolveRoots } from '../../../core/search/worktree-roots.js';
+import { chainBoundary } from '../../../core/agent-tools/chain.js';
 import { numberCodeLines, lineGutterEnabled } from '../../../core/search/search-read.js';
 import { renderRegexDialectHint } from '../../../core/search/regex-dialect.js';
 import {
@@ -117,7 +118,12 @@ function gutter(text, startLine) {
  *   host.getSearcher()          its warm SweetSearch (no second cold engine in the daemon)
  *   host.assertProjectRoot(r)   throws when this call belongs to another repository's daemon
  */
+// Tools whose output opens with the chained-call boundary (core/agent-tools/chain.js) when
+// they are a later call of one shell command. The others still print their own header.
+const CHAIN_BOUNDARY_TOOLS = new Set(['agent-search', 'find']);
+
 export async function runAgentTool(subcommand, rest, host = {}) {
+if (CHAIN_BOUNDARY_TOOLS.has(subcommand)) process.stdout.write(chainBoundary(subcommand, rest, process.env));
 // The agent's cwd is the target repo. SWEET_SEARCH_PROJECT_ROOT must point
 // at the repo so DB_PATHS resolves to the repo's own .sweet-search/.
 //

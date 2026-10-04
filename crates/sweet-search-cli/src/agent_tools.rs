@@ -105,8 +105,175 @@ fn falsey(v: &str) -> bool {
     )
 }
 
+// ---------------------------------------------------------------------------------------
+// Chained calls. One shell command that runs two or more ss-* tools prints, before each
+// later tool's output, one boundary line (the tool's own code prints it; this client only
+// decides the position). Same rule, same registry files as core/agent-tools/chain.js:
+// key = the shell process (pid + start time) — the parent when the parent is a shell,
+// else this process itself (a shell execs the last command of `-c`, so that tool IS the
+// shell; its parent is the long-lived harness and must never be the key). The first tool
+// of a shell creates /tmp/sweet-search-chain-<uid>/<key>; a later one finds it.
+// ---------------------------------------------------------------------------------------
+
+const CHAIN_LATER_ENV: &str = "SWEET_SEARCH_CHAIN_LATER";
+const CHAIN_PID_ENV: &str = "SWEET_SEARCH_CHAIN_PID";
+const CHAIN_TTL_SECS: u64 = 30 * 60;
+const SHELLS: [&str; 11] = [
+    "sh", "bash", "zsh", "dash", "ksh", "mksh", "ash", "fish", "tcsh", "csh", "busybox",
+];
+
+struct ProcInfo {
+    ppid: i32,
+    comm: String,
+    start: String,
+}
+
+fn is_shell_name(comm: &str) -> bool {
+    let base = comm.trim().rsplit('/').next().unwrap_or("");
+    SHELLS.contains(&base.trim_start_matches('-'))
+}
+
+#[cfg(target_os = "macos")]
+fn proc_info(pid: i32) -> Option<ProcInfo> {
+    if pid < 1 {
+        return None;
+    }
+    let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+    let size = std::mem::size_of::<libc::proc_bsdinfo>() as libc::c_int;
+    let n = unsafe {
+        libc::proc_pidinfo(
+            pid,
+            libc::PROC_PIDTBSDINFO,
+            0,
+            &mut info as *mut libc::proc_bsdinfo as *mut libc::c_void,
+            size,
+        )
+    };
+    if n != size {
+        return None;
+    }
+    let comm: Vec<u8> = info
+        .pbi_comm
+        .iter()
+        .take_while(|c| **c != 0)
+        .map(|c| *c as u8)
+        .collect();
+    Some(ProcInfo {
+        ppid: info.pbi_ppid as i32,
+        comm: String::from_utf8_lossy(&comm).into_owned(),
+        start: info.pbi_start_tvsec.to_string(),
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn proc_info(pid: i32) -> Option<ProcInfo> {
+    if pid < 1 {
+        return None;
+    }
+    let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let open = stat.find('(')?;
+    let close = stat.rfind(')')?;
+    let fields: Vec<&str> = stat.get(close + 2..)?.split(' ').collect();
+    Some(ProcInfo {
+        ppid: fields.get(1)?.parse().ok()?,
+        comm: stat[open + 1..close].to_string(),
+        start: fields.get(19)?.to_string(),
+    })
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
+fn proc_info(_pid: i32) -> Option<ProcInfo> {
+    None
+}
+
+fn chain_key(self_pid: i32, info: &dyn Fn(i32) -> Option<ProcInfo>) -> Option<String> {
+    let me = info(self_pid)?;
+    if me.ppid > 1 {
+        if let Some(parent) = info(me.ppid) {
+            if is_shell_name(&parent.comm) {
+                return Some(format!("{}-{}", me.ppid, parent.start));
+            }
+        }
+    }
+    Some(format!("{}-{}", self_pid, me.start))
+}
+
+fn chain_dir() -> PathBuf {
+    let uid = unsafe { libc::getuid() };
+    PathBuf::from(format!("/tmp/sweet-search-chain-{uid}"))
+}
+
+fn age_secs(path: &Path) -> Option<u64> {
+    let modified = fs::metadata(path).ok()?.modified().ok()?;
+    Some(
+        std::time::SystemTime::now()
+            .duration_since(modified)
+            .map(|d| d.as_secs())
+            .unwrap_or(0),
+    )
+}
+
+/// True when an earlier call of the same shell registered first.
+fn register_chain_call(dir: &Path, key: &str) -> bool {
+    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+    if fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(dir)
+        .is_err()
+    {
+        return false;
+    }
+    let file = dir.join(key);
+    match fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&file)
+    {
+        Ok(_) => {
+            if let Ok(entries) = fs::read_dir(dir) {
+                for e in entries.flatten() {
+                    if age_secs(&e.path()).map_or(false, |a| a > CHAIN_TTL_SECS) {
+                        let _ = fs::remove_file(e.path());
+                    }
+                }
+            }
+            false
+        }
+        Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
+            let fresh = age_secs(&file).map_or(false, |a| a <= CHAIN_TTL_SECS);
+            let _ = fs::File::options()
+                .write(true)
+                .open(&file)
+                .and_then(|f| f.set_modified(std::time::SystemTime::now()));
+            fresh
+        }
+        Err(_) => false,
+    }
+}
+
+/// "1" when this call is a later call of a chained command, else "0". An answer already
+/// in the environment (a launcher decided) stands.
+fn chain_position() -> &'static str {
+    match env::var(CHAIN_LATER_ENV).as_deref() {
+        Ok("1") => return "1",
+        Ok("0") => return "0",
+        _ => {}
+    }
+    let pid = env::var(CHAIN_PID_ENV)
+        .ok()
+        .and_then(|v| v.trim().parse::<i32>().ok())
+        .filter(|p| *p > 1)
+        .unwrap_or(process::id() as i32);
+    match chain_key(pid, &proc_info) {
+        Some(key) if register_chain_call(&chain_dir(), &key) => "1",
+        _ => "0",
+    }
+}
+
 /// Run the tool in a fresh node process (core/agent-tools/cli.js). Never returns.
-fn run_in_process(sub: &str, args: &[String]) -> ! {
+fn run_in_process(sub: &str, args: &[String], chain: &str) -> ! {
     let script = super::find_package_file(&Path::new("core").join("agent-tools").join("cli.js"));
     let script = match script {
         Some(s) => s,
@@ -122,7 +289,12 @@ fn run_in_process(sub: &str, args: &[String]) -> ! {
             process::exit(127);
         }
     };
-    let err = Command::new("node").arg(script).arg(sub).args(args).exec();
+    let err = Command::new("node")
+        .arg(script)
+        .arg(sub)
+        .args(args)
+        .env(CHAIN_LATER_ENV, chain)
+        .exec();
     eprintln!("[ss-*] failed to start node: {err}");
     process::exit(1);
 }
@@ -140,23 +312,26 @@ fn write_out(bytes: &[u8], stderr: bool) {
 
 /// One ss-* call. Never returns.
 pub fn run(sub: &str, args: &[String]) -> ! {
+    // Decided once, before either path runs the tool: the in-process runner gets it in its
+    // environment and must not register the call a second time.
+    let chain = chain_position();
     if env::var("SWEET_SEARCH_AGENT_TOOLS_VIA_DAEMON").map_or(false, |v| falsey(&v)) {
-        run_in_process(sub, args);
+        run_in_process(sub, args, chain);
     }
     let cwd = match env::current_dir() {
         Ok(c) => c,
-        Err(_) => run_in_process(sub, args),
+        Err(_) => run_in_process(sub, args, chain),
     };
     let explicit = env::var("SWEET_SEARCH_PROJECT_ROOT").ok();
     let root = match index_root(&cwd, explicit.as_deref()) {
         Some(r) => super::project_root_from(r),
-        None => run_in_process(sub, args),
+        None => run_in_process(sub, args, chain),
     };
     // The call goes straight to the socket: no connect-and-drop probe first (each connection
     // costs the daemon an accept). A missing or refused socket starts the daemon, once.
     let socket = super::socket_path_for(&root);
 
-    let env_map: serde_json::Map<String, Value> = env::vars_os()
+    let mut env_map: serde_json::Map<String, Value> = env::vars_os()
         .map(|(k, v)| {
             (
                 k.to_string_lossy().into_owned(),
@@ -164,6 +339,7 @@ pub fn run(sub: &str, args: &[String]) -> ! {
             )
         })
         .collect();
+    env_map.insert(CHAIN_LATER_ENV.into(), Value::String(chain.into()));
     let payload = json!({
         "v": 1,
         "tool": sub,
@@ -174,7 +350,7 @@ pub fn run(sub: &str, args: &[String]) -> ! {
     });
     let body = match serde_json::to_vec(&payload) {
         Ok(b) => b,
-        Err(_) => run_in_process(sub, args),
+        Err(_) => run_in_process(sub, args, chain),
     };
 
     // Any transport failure means the daemon did not answer this call (or died with it,
@@ -188,17 +364,17 @@ pub fn run(sub: &str, args: &[String]) -> ! {
             {
                 started = true;
                 if super::auto_start_server_for(&root, true).is_none() {
-                    run_in_process(sub, args);
+                    run_in_process(sub, args, chain);
                 }
             }
-            Err(_) => run_in_process(sub, args),
+            Err(_) => run_in_process(sub, args, chain),
         }
     };
     if status != 200 {
         // 404 (a daemon from before this route), 409 (another repository), 503 (still
         // loading), 4xx (a request it refused): the tool did not run.
         if status < 500 || status == 503 {
-            run_in_process(sub, args);
+            run_in_process(sub, args, chain);
         }
         // 500: the tool started and failed inside the daemon. Do not run it twice.
         write_out(&reply, true);
@@ -356,5 +532,53 @@ mod tests {
         for v in ["", "1", "true", "yes"] {
             assert!(!falsey(v));
         }
+    }
+
+    #[test]
+    fn shell_names_match_the_js_rule() {
+        for c in ["zsh", "/bin/zsh", "-bash", "bash", "sh", "/usr/bin/dash", "fish"] {
+            assert!(is_shell_name(c), "{c}");
+        }
+        for c in ["node", "claude", "codex", "opencode", "", "bashful", "ss-read"] {
+            assert!(!is_shell_name(c), "{c}");
+        }
+    }
+
+    fn fake(table: Vec<(i32, i32, &'static str, &'static str)>) -> impl Fn(i32) -> Option<ProcInfo> {
+        move |pid| {
+            table.iter().find(|r| r.0 == pid).map(|r| ProcInfo {
+                ppid: r.1,
+                comm: r.2.to_string(),
+                start: r.3.to_string(),
+            })
+        }
+    }
+
+    #[test]
+    fn chain_key_is_the_shell_parent_or_the_execd_shell_itself() {
+        // `ss-a; ss-b` under zsh -c: ss-a is a child of the shell (100), ss-b was exec'd
+        // by it (pid 100, parent = the harness 7). Both get the shell's key.
+        let info = fake(vec![
+            (7, 1, "claude", "50"),
+            (100, 7, "zsh", "60"),
+            (101, 100, "sweet-search", "61"),
+        ]);
+        assert_eq!(chain_key(101, &info).as_deref(), Some("100-60"));
+        let execd = fake(vec![(7, 1, "claude", "50"), (100, 7, "sweet-search", "60")]);
+        assert_eq!(chain_key(100, &execd).as_deref(), Some("100-60"));
+        // Two single-command calls of one harness never share a key.
+        let other = fake(vec![(7, 1, "claude", "50"), (200, 7, "sweet-search", "90")]);
+        assert_eq!(chain_key(200, &other).as_deref(), Some("200-90"));
+        assert_eq!(chain_key(999, &info), None);
+    }
+
+    #[test]
+    fn registry_marks_only_later_calls_of_one_shell() {
+        let dir = temp_dir("chain");
+        assert!(!register_chain_call(&dir, "100-60"));
+        assert!(register_chain_call(&dir, "100-60"));
+        assert!(register_chain_call(&dir, "100-60"));
+        assert!(!register_chain_call(&dir, "100-61"), "a reused pid has another start time");
+        fs::remove_dir_all(dir).unwrap();
     }
 }

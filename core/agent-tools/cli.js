@@ -12,6 +12,7 @@ import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { installVirtualProcess, runInVirtualProcess } from './virtual-process.js';
 import { subcommandFor } from './tools.js';
+import { resolveChainPosition } from './chain.js';
 
 function writeAll(write, stream, buf) {
   if (!buf.length) return Promise.resolve();
@@ -27,6 +28,8 @@ function writeAll(write, stream, buf) {
  */
 export async function runAgentToolInProcess(subcommand, args, { stderr = 'on-failure', runTool = null } = {}) {
   const { real } = installVirtualProcess();
+  // Before the tool runs: a later call of a chained command prints a boundary line.
+  resolveChainPosition(real.env);
   const result = await runInVirtualProcess(
     // The real environment object: the tool's writes to it (SWEET_SEARCH_PROJECT_ROOT)
     // reach anything it spawns, as they did when the tool owned the process.
