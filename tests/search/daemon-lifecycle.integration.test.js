@@ -274,6 +274,10 @@ describe('freshness invariant — maintainer survives daemon eviction', () => {
       SWEET_SEARCH_MAINTAINER_ENTRY: FAKE_MAINTAINER,
       SWEET_SEARCH_STATE_DIR: stateDir,
       FAKE_MAINTAINER_MARKER: maintainerMarker,
+      // No background QoS: `taskpolicy -b` lets macOS starve the spawned child
+      // for many seconds under a loaded full-suite run. These tests check
+      // supervision decisions; the demotion has its own tests (os-priority).
+      SWEET_SEARCH_MAINTAINER_BG_PRIORITY: '0',
       ...extraEnv,
     });
   }

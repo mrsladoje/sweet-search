@@ -66,6 +66,9 @@ const launch = () => launchMaintainer({
     SWEET_SEARCH_PROJECT_ROOT: root,
     SWEET_SEARCH_RECONCILE_V2: '1',
     SWEET_SEARCH_MAINTAINER_ENTRY: entry,
+    // No background QoS: `taskpolicy -b` lets macOS starve the child for longer
+    // than the wait on a loaded full-suite run. Demotion has its own tests.
+    SWEET_SEARCH_MAINTAINER_BG_PRIORITY: '0',
   },
 });
 
