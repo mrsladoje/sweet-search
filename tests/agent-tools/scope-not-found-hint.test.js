@@ -48,7 +48,13 @@ async function ssGrep(args) {
     SWEET_SEARCH_EXACT_REREAD_OMISSION: '0', SWEET_SEARCH_SHOWN_SPAN_TRAILER: '0',
     SWEET_SEARCH_CHAIN_LATER: '0',
   };
-  const r = await runInVirtualProcess({ env, cwd: root }, () => runAgentTool('grep', args));
+  // A searcher with no hits: a scope that does not exist matches nothing, and no warm server
+  // starts (a real one outlives the test).
+  const searcher = {
+    projectRoot: root, hasLateInteractionIndex: false,
+    async bareGrep() { return { results: [], stats: { totalMatches: 0 } }; },
+  };
+  const r = await runInVirtualProcess({ env, cwd: root }, () => runAgentTool('grep', args, { getSearcher: () => searcher }));
   return { code: r.code, out: r.stdout.toString('utf8'), err: r.stderr.toString('utf8') };
 }
 
