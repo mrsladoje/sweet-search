@@ -579,6 +579,11 @@ export function selectInterfaceCalls(rows, filePathRel) {
   return out;
 }
 
+/** Interface calls worth a trailer in lines [startLine, endLine] of an indexed file (ss-grep hits). */
+export function interfaceCallsInRange(projectRoot, filePathRel, startLine, endLine) {
+  return _collectInterfaceCalls(filePathRel, projectRoot, startLine, endLine);
+}
+
 function _collectInterfaceCalls(filePathRel, projectRoot, startLine, endLine) {
   const graph = _getGraphRepo(projectRoot);
   if (!graph || typeof graph.findInterfaceCallImplementations !== 'function') return [];
