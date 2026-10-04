@@ -450,8 +450,10 @@ describe('round 7', () => {
   it('agent format: a question about a test ranks test files above config, types and code', () => {
     const r = (file, score) => ({ file, score, startLine: 1, endLine: 20 });
     const res = [r('.github/workflows/ci.yml', 1.0), r('types/route.d.ts', 0.95), r('fastify.js', 0.9), r('test/404s.test.js', 0.8)];
-    const out = applyFileKindRanking(res, { intent: 'tests', agentFormat: true });
+    // The live hybrid path's factors (search-hybrid.js): config x0.15, docs x0.35, types x0.7.
+    const live = { docFactor: 0.35, testFactor: 0.35, typeFactor: 0.7, ancillaryFactor: 0.15 };
+    const out = applyFileKindRanking(res, { intent: 'tests', agentFormat: true, ...live });
     expect(out[0].file).toBe('test/404s.test.js');
-    expect(applyFileKindRanking(res, { intent: 'tests' })[0].file).toBe('.github/workflows/ci.yml');
+    expect(applyFileKindRanking(res, { intent: 'tests', ...live })[0].file).toBe('.github/workflows/ci.yml');
   });
 });
