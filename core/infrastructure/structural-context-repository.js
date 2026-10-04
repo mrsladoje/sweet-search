@@ -9,10 +9,9 @@ import { findAssignedMemberDefinitions, findSameFileDefinition } from './structu
 import { shouldTrustQualifiedResolution, trustedCallerEdge } from './structural-qualified-resolution.js';
 import { fetchPageRank, fetchFrontierBackwardEdges, fetchFrontierForwardEdges } from './structural-graph-signals.js';
 import { CodeGraphReaderVisibility } from './code-graph-visibility.js';
-import { SITE_LINE_RELATIONSHIP_TYPES as SITE_LINE_TYPES, TRACE_ONLY_TYPES_SQL } from '../graph/relationship-types.js';
-import { BareCallResolver } from '../graph/bare-call-resolution.js';
-import { asTopLevelCaller, fileNodeSourceSql, hasFilesTable, hasGraphColumn, hasGraphTable } from '../graph/file-nodes.js';
-import { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX } from '../graph/import-resolver.js';
+import { SITE_LINE_RELATIONSHIP_TYPES as SITE_LINE_TYPES, TRACE_ONLY_TYPES_SQL } from './relationship-types.js';
+import { asTopLevelCaller, fileNodeSourceSql, hasFilesTable, hasGraphColumn, hasGraphTable } from './file-nodes.js';
+import { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX } from './import-path-prefixes.js';
 import { callTargetAliases, clampLimit, isLikelyCodeEntity, isTestPath, lowerCamel, placeholders, qualifiedTargetName, rowToEntity } from './structural-context-utils.js';
 
 // Entity types that own members: a call inside one belongs to its own
@@ -52,7 +51,16 @@ function packageCallBound(row) {
 }
 
 export class StructuralContextRepository {
+  /**
+   * @param {string} dbPath
+   * @param {{projectRoot?: string, BareCallResolver?: Function}} [opts]
+   *   `BareCallResolver` (graph/bare-call-resolution.js) enables
+   *   `getBareCallers`. It is passed in, not imported: the resolver is graph
+   *   domain logic, and infrastructure must not depend on the graph domain.
+   *   Without it bare-call callers are empty.
+   */
   constructor(dbPath, opts = {}) {
+    this._BareCallResolver = typeof opts.BareCallResolver === 'function' ? opts.BareCallResolver : null;
     this._readerVisibility = new CodeGraphReaderVisibility(dbPath, opts);
     this.dbPath = this._readerVisibility.dbPath;
     this.projectRoot = opts.projectRoot || process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd();
@@ -301,7 +309,7 @@ export class StructuralContextRepository {
 
   /**
    * Run one caller query against symbols (`entities`) and, when the graph has
-   * file nodes, against top-level code (`files`, graph/file-nodes.js) with the
+   * file nodes, against top-level code (`files`, infrastructure/file-nodes.js) with the
    * same WHERE clause. Top-level rows render as `(top-level) [file]` with the
    * call line as their span. Merged in the queries' own order
    * (weight DESC, file_path, context_line) and cut to `limit`.
@@ -449,7 +457,8 @@ export class StructuralContextRepository {
     if (this._bare?.db === db) return this._bare.resolver;
     let resolver = null;
     try {
-      resolver = new BareCallResolver(db, {
+      if (!this._BareCallResolver) throw new Error('no BareCallResolver passed');
+      resolver = new this._BareCallResolver(db, {
         entitySql: (alias) => this._entitySql(db, alias),
         entityParams: this._entityParams(db),
         // call_sites carries the same epoch columns as relationships.

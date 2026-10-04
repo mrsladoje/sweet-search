@@ -20,8 +20,8 @@ import { detectIntent, getIntentBoost } from '../query/intent-detector.js';
 import { applyMMR, shouldApplyMMR } from '../ranking/mmr.js';
 import { SYMBOL_KIND_WEIGHTS, DEFINITION_TYPES } from '../infrastructure/constants.js';
 import { readAdjacentManifest, resolveManifestCodeGraphPath, sqlAliasPrefix } from '../infrastructure/code-graph-visibility.js';
-import { TRACE_ONLY_TYPES_SQL } from './relationship-types.js';
-import { asTopLevelCaller, fileNodeSourceSql, hasFilesTable } from './file-nodes.js';
+import { TRACE_ONLY_TYPES_SQL } from '../infrastructure/relationship-types.js';
+import { asTopLevelCaller, fileNodeSourceSql, hasFilesTable } from '../infrastructure/file-nodes.js';
 
 // Entity doc comments (filled from the AST since 2026-10) take part in BM25
 // only for agent formats. GCSN dev: an ungated doc column cost MRR@10 86.92%

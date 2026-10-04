@@ -1,4 +1,4 @@
-// Review of file nodes (core/graph/file-nodes.js): the edges whose source is
+// Review of file nodes (core/infrastructure/file-nodes.js): the edges whose source is
 // a file node (imports, top-level calls) must RESOLVE the same in a maintained
 // graph as in a full build; files with no symbols, only top-level code, or no
 // content keep parity; a crash after the graph write is repaired by the next
@@ -14,9 +14,10 @@ import { runProductionReconcileTick } from '../../core/incremental-indexing/appl
 import { GraphExtractor, createGraphSchema, insertGraph } from '../../core/graph/graph-extractor.js';
 import { resolveRelationshipTargets } from '../../core/graph/relationship-resolver.js';
 import { createImportResolver } from '../../core/graph/import-resolver.js';
-import { fileNodeId, hasFilesTable } from '../../core/graph/file-nodes.js';
+import { fileNodeId, hasFilesTable } from '../../core/infrastructure/index.js';
 import { pruneRetiredFileNodes } from '../../core/incremental-indexing/infrastructure/graph-gc.mjs';
 import { StructuralContextRepository } from '../../core/infrastructure/structural-context-repository.js';
+import { BareCallResolver } from '../../core/graph/index.js';
 import { GraphSearch } from '../../core/graph/graph-search.js';
 
 const MODEL_INFO = Object.freeze({ provider: 'test', model: 'fake-e2e', dimension: 8, hnswDimension: 8 });
@@ -95,7 +96,7 @@ describe('file nodes review: resolution parity, edge cases, old graphs', () => {
   }
 
   function callerLines(dbPath, file, name) {
-    const repo = new StructuralContextRepository(dbPath, { projectRoot });
+    const repo = new StructuralContextRepository(dbPath, { BareCallResolver, projectRoot });
     try {
       const target = repo.findEntityCandidates(name, { filePath: file, limit: 5 }).find((c) => c.name === name && c.filePath === file);
       expect(target).toBeTruthy();
@@ -209,7 +210,7 @@ describe('file nodes review: resolution parity, edge cases, old graphs', () => {
       db.exec('DROP TABLE files');
       db.close();
     }
-    const repo = new StructuralContextRepository(fullDbPath, { projectRoot });
+    const repo = new StructuralContextRepository(fullDbPath, { BareCallResolver, projectRoot });
     const target = repo.findEntityCandidates('boot', { filePath: 'src/lib.js', limit: 5 }).find((c) => c.name === 'boot');
     expect(target).toBeTruthy();
     const before = [...repo.getCallers(target), ...repo.getBareCallers(target)].map((c) => c.name);

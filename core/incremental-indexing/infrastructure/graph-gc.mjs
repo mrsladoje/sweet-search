@@ -159,7 +159,7 @@ export function pruneRetiredCallSites(db, frontier, opts = {}) {
 }
 
 /**
- * Delete retired `files` rows (file nodes, see graph/file-nodes.js) at or
+ * Delete retired `files` rows (file nodes, see infrastructure/file-nodes.js) at or
  * below `frontier`, same batching as call_sites. Graphs built before the
  * table existed are skipped.
  */

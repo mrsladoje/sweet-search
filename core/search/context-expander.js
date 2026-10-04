@@ -19,14 +19,14 @@
  */
 
 import { readFileRange } from './search-pattern-chunks.js';
-import { rankingRelationshipTypes } from '../graph/relationship-types.js';
+import { rankingRelationshipTypes } from '../infrastructure/relationship-types.js';
 import { computeSufficiencyVerdict, informativeSubtokens } from './query-sufficiency.js';
 import { annotateEntrySymbols, applyAgentPackCompletion, buildPackSiblingLine, shownSourceEndLine } from './agent-pack-completion.js';
 import { capToFinalK } from './final-k.js';
 import { isSummaryOnly, isTestLikePath, shownCodeSpan } from './agent-output-fixes.js';
 import { statSync } from 'fs';
 import path from 'path';
-import { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX } from '../graph/import-resolver.js';
+import { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX } from '../infrastructure/import-path-prefixes.js';
 
 // An `imports` row annotated with the repo file it loads (no entity target):
 // a repo-relative path, or a Go / Terraform / Swift package dir ending '/'.

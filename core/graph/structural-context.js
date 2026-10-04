@@ -13,8 +13,9 @@ import { callsiteHintSites, isSelfReceiver } from './structural-callsite-hints.j
 import { extractHeaderContext } from './structural-header-context.js';
 import { scoreEntity, scoreImpactPath, tokenize, safeMax } from './structural-importance.js';
 import { personalizedPageRank } from './structural-forward-push.js';
-import { isTraceOnlyRelationship } from './relationship-types.js';
-import { isTestLikePath } from '../search/agent-output-fixes.js';
+import { BareCallResolver } from './bare-call-resolution.js';
+import { isTraceOnlyRelationship } from '../infrastructure/relationship-types.js';
+import { isTestLikePath } from '../infrastructure/test-paths.js';
 const BUDGETS = { preview: 4000, full: 8000, xl: 12000 };
 const DEFAULT_MAX_DEPTH = 3;
 // Targets whose signature users (`typeRef`) ss-trace lists as callers, at
@@ -607,6 +608,7 @@ export class StructuralContextBuilder {
     this.repo = options.repository || new StructuralContextRepository(options.graphDbPath || DB_PATHS.codeGraph, {
       projectRoot: this.projectRoot,
       manifestEpoch: options.manifestEpoch,
+      BareCallResolver,
     });
   }
 

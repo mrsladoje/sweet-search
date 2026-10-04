@@ -10,6 +10,7 @@ import { join } from 'node:path';
 import { GraphExtractor, createGraphSchema, insertGraph } from '../../core/graph/graph-extractor.js';
 import { resolveRelationshipTargets } from '../../core/graph/relationship-resolver.js';
 import { StructuralContextRepository } from '../../core/infrastructure/structural-context-repository.js';
+import { BareCallResolver } from '../../core/graph/bare-call-resolution.js';
 import { StructuralContextBuilder, formatStructuralContext, traceAlternatives } from '../../core/graph/structural-context.js';
 
 const FILE = 'tests/BuilderTests.cs';
@@ -82,7 +83,7 @@ describe('ss-trace: same-named members of different classes in one file', () => 
   });
 
   it('Owner.name selects the owned definition; callers are those of its class only', () => {
-    const repo = new StructuralContextRepository(dbPath, { projectRoot });
+    const repo = new StructuralContextRepository(dbPath, { BareCallResolver, projectRoot });
     try {
       const pick = (symbol) => repo.findEntityCandidates(symbol, { filePath: FILE })[0].startLine;
       expect(pick('First.Given')).toBe(7);
@@ -101,7 +102,7 @@ describe('ss-trace: same-named members of different classes in one file', () => 
   });
 
   it('the trace names each alternative with its owner; a matching qualifier is not a guess', () => {
-    const repo = new StructuralContextRepository(dbPath, { projectRoot });
+    const repo = new StructuralContextRepository(dbPath, { BareCallResolver, projectRoot });
     try {
       const plain = repo.findEntityCandidates('Given', { filePath: FILE });
       const alts = traceAlternatives('Given', plain[0], plain).filter((a) => a.name === 'Given');

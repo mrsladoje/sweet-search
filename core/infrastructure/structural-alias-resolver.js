@@ -1,5 +1,5 @@
 import path from 'path';
-import { asTopLevelCaller, fileNodeId, fileNodeSourceSql, hasFilesTable } from '../graph/file-nodes.js';
+import { asTopLevelCaller, fileNodeId, fileNodeSourceSql, hasFilesTable } from './file-nodes.js';
 
 const ACTIVE = 'stale_since IS NULL';
 
@@ -141,7 +141,7 @@ export function findAliasCallers({
     LIMIT 1
   `);
   // An alias call in top-level code (a script body) is attributed to the
-  // file's node (graph/file-nodes.js) when the graph has one.
+  // file's node (infrastructure/file-nodes.js) when the graph has one.
   const fileNodeAt = hasFilesTable(db)
     ? db.prepare(`SELECT e.id, e.name, e.type, e.file_path, e.start_line, e.end_line, e.signature, e.summary, e.parent_class, e.package
         FROM ${fileNodeSourceSql()} e WHERE ${entitySql} AND e.file_path = ? LIMIT 1`)

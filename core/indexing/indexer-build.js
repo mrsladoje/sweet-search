@@ -12,7 +12,7 @@ import { GraphExtractor, createGraphSchema, insertGraph, rebuildGraphFts } from 
 import { resolveRelationshipTargets } from '../graph/relationship-resolver.js';
 import { createImportResolver, importEdgesEnabled } from '../graph/import-resolver.js';
 import { populatePageRankColumn } from '../graph/structural-pagerank.js';
-import { fileNodeId } from '../graph/file-nodes.js';
+import { fileNodeId } from '../infrastructure/file-nodes.js';
 import { getEmbeddings, getModelInfo } from '../embedding/embedding-service.js';
 import { configureJournalMode, checkpointWal, atomicSwapDatabase, log, logProgress } from './indexer-utils.js';
 import { assignStructuralIds } from '../incremental-indexing/domain/chunk-identity.mjs';

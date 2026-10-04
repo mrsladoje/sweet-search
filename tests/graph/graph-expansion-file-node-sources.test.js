@@ -1,5 +1,5 @@
 // Graph expansion follows reverse edges to the neighbours that call / import a
-// seed. Top-level code has a FILE node as its source (graph/file-nodes.js),
+// seed. Top-level code has a FILE node as its source (infrastructure/file-nodes.js),
 // which is no entity. Such a source must never take an expansion slot: the
 // caller cuts the neighbour list to `maxExpanded` before the entity lookup,
 // and the 2-hop pass would expand from it.

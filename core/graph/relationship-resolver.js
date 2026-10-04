@@ -18,7 +18,7 @@ import path from 'path';
 import { detectProjectBoundary } from '../infrastructure/project-detector.js';
 import { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX, buildFileImportMap } from './import-resolver.js';
 import { deriveOverrideEdges } from './override-edges.js';
-import { fileNodeId } from './file-nodes.js';
+import { fileNodeId } from '../infrastructure/file-nodes.js';
 import { compareEntitiesForResolution } from './entity-order.js';
 
 // Entities from config/data/markup files (YAML keys, pom.xml tags, Makefile

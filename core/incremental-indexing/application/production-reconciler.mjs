@@ -29,7 +29,7 @@ import {
 import { FloatVectorStore, getFloatStorePath } from '../../vector-store/float-vector-store.js';
 import { createGraphSchema, entityParentIds, GraphExtractor, insertCallSites } from '../../graph/graph-extractor.js';
 import { createImportResolver, importEdgesEnabled } from '../../graph/import-resolver.js';
-import { syncFileNode } from '../../graph/file-nodes.js';
+import { syncFileNode } from '../../infrastructure/file-nodes.js';
 import { createVectorSchema, ensureVectorSchema, buildInsertItems, insertVectorItems } from '../../indexing/indexer-build.js';
 import { ASTChunker, JAVA_FAMILY } from '../../indexing/ast-chunker.js';
 import { getEmbeddings, getModelInfo } from '../../embedding/embedding-service.js';

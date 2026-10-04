@@ -10,6 +10,7 @@ import { resolveRelationshipTargets, createCallResolutionIndex } from '../../cor
 import { createImportResolver } from '../../core/graph/import-resolver.js';
 import { resolveBareCall } from '../../core/graph/bare-call-resolution.js';
 import { StructuralContextRepository } from '../../core/infrastructure/structural-context-repository.js';
+import { BareCallResolver } from '../../core/graph/bare-call-resolution.js';
 
 function bareCalls(language, lines, defined = []) {
   const scanner = new CallSiteScanner({ ...LANGUAGES[language], id: language });
@@ -190,7 +191,7 @@ describe('ss-trace lists bare callers and callees (graph build + query)', () => 
   });
 
   function withRepo(fn) {
-    const repo = new StructuralContextRepository(dbPath, { projectRoot: root });
+    const repo = new StructuralContextRepository(dbPath, { BareCallResolver, projectRoot: root });
     try { return fn(repo); } finally { repo.close?.(); }
   }
 

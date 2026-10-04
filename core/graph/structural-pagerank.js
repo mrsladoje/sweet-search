@@ -12,7 +12,7 @@
  * Domain layer: the actual SQL writes happen behind a writable database handle
  * passed in by the index builder; no path or filesystem concerns leak in.
  */
-import { TRACE_ONLY_TYPES_SQL } from './relationship-types.js';
+import { TRACE_ONLY_TYPES_SQL } from '../infrastructure/relationship-types.js';
 
 const DEFAULT_DAMPING = 0.85;
 const DEFAULT_MAX_ITERATIONS = 50;

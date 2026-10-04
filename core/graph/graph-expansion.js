@@ -589,7 +589,7 @@ export function expandOneHop(db, seedIds, edgeTypes, options = {}) {
     reverseRels = [];
   }
   // A reverse edge's source can be a file node (top-level code: imports,
-  // module-level calls — graph/file-nodes.js), which is no entity. Drop it
+  // module-level calls — infrastructure/file-nodes.js), which is no entity. Drop it
   // here: the caller cuts the neighbour list to `maxExpanded` BEFORE the
   // entity lookup, so a file id would take a slot and then vanish, and the
   // 2-hop pass would expand from it. Row order is kept.
