@@ -1067,7 +1067,7 @@ async function cmdRead(rawArgs) {
         if (Number.isFinite(end) && end >= 1 && end < start) {
           const count = end;
           end = start + count - 1;
-          // The header line shows the range served (`# lines 84-93 of 293`); no separate note.
+          // The header line shows the range served (`lines 84-93 of 293`); no separate note.
           reinterpreted = true;
         } else if (!Number.isFinite(end) || end < start) {
           process.stderr.write(`[ss-read] invalid end line: "${args[2]}" (expected END line ≥ start ${start}; usage: ss-read <file> <start> <end>, e.g. ss-read src/a.js 40 90)\n`);
@@ -1188,16 +1188,19 @@ async function cmdRead(rawArgs) {
     command: 'ss-read',
     queryEvidence: receiptResponse?.queryEvidence,
   });
-  // Above the fence, one `# ` line: the served range when it moved, the function the window
-  // starts inside, and the state declared above that the window reads (squashql-295).
-  const aboveParts = [
-    rangeMoved ? `lines ${served.startLine}-${served.endLine} of ${r.totalLines}` : '',
+  // Above the fence only the served range, when it moved: the agent counts line numbers from
+  // it. Everything else follows the code (owner review 2026-10-04: the code the agent asked
+  // for comes first), no `#`: the function the window starts inside and the state declared
+  // above that the window reads (squashql-295) on one line, then the below line.
+  const head = rangeMoved ? `lines ${served.startLine}-${served.endLine} of ${r.totalLines}\n` : '';
+  const aboveLine = [
     coveredWholeFile ? '' : renderEnclosingStart(r),
     coveredWholeFile ? '' : renderUnreadAbove(r, { command: 'ss-read', queryEvidence: receiptResponse?.queryEvidence }),
-  ].map((x) => x.replace(/^# /, '')).filter(Boolean);
+  ].filter(Boolean).join('; ');
+  const tail = [aboveLine, remainder].filter(Boolean).map((l) => `${l}\n`).join('');
   if (!r.text) {
     // An empty file (or a window of nothing) prints no empty fence.
-    process.stdout.write(`${resolvedLine}${aboveParts.length ? `# ${aboveParts.join('; ')}\n` : ''}# empty file\n`);
+    process.stdout.write(`${resolvedLine}${head}# empty file\n${tail}`);
     process.exit(0);
   }
   // Line-number gutter: the per-harness form (gutter-form.js: `N:` on opencode, none on
@@ -1210,7 +1213,7 @@ async function cmdRead(rawArgs) {
   }
   // A plain fence: the language tag (```ruby, 1-2 tokens) repeats the extension of the
   // path in the command just above.
-  process.stdout.write(`${resolvedLine}${aboveParts.length ? `# ${aboveParts.join('; ')}\n` : ''}\`\`\`\n${fenceBody(bodyText)}\n\`\`\`\n${remainder ? remainder + '\n' : ''}`);
+  process.stdout.write(`${resolvedLine}${head}\`\`\`\n${fenceBody(bodyText)}\n\`\`\`\n${tail}`);
   process.exit(0);
 }
 

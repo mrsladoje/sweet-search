@@ -24,6 +24,7 @@ import {
 import { sendAgentSpanOperation } from './agent-span-client.js';
 import { selectUnreadSymbols } from './unread-symbol-ranking.js';
 import { containsToken, informativeSubtokens } from './query-sufficiency.js';
+import { kindName, kindNameList } from './kind-words.js';
 
 const CACHE_MAX_ENTRIES = 64;
 const CACHE_LARGE_FILE_BYTES = 4 * 1024 * 1024; // 4MB — switch to range-read mode
@@ -509,25 +510,30 @@ function _collectAboveSymbols(chunks, filePathRel, projectRoot, windowStart, win
 }
 
 /**
- * Does the above-list carry a reason to print? Either the window READS one of
- * the symbols, or the session's query evidence names one. Without a signal the
- * trailer is pure re-send cost: the 2026-09-03 replay over 180 rollouts put an
- * unconditional above-line at 78% of all added tokens, firing on 80% of reads.
+ * The above-symbols that carry a reason to print, in candidate order (referenced first, then
+ * file order): the ones the window READS, and the ones the session's query evidence names.
+ * The above line lists only these (owner review 2026-10-04): the rest of the file's head is
+ * no pointer the reader needs.
  */
-function _aboveHasSignal(candidates, queryEvidence) {
-  if (candidates.some((c) => c.referenced)) return true;
+function _aboveSignalSymbols(candidates, queryEvidence) {
   const anchors = Array.isArray(queryEvidence?.anchors) ? queryEvidence.anchors.filter((a) => typeof a === 'string' && a.length >= 3) : [];
   const subtokens = new Set(Array.isArray(queryEvidence?.subtokens) ? queryEvidence.subtokens.filter((t) => typeof t === 'string' && t.length >= 3) : []);
-  if (anchors.length === 0 && subtokens.size === 0) return false;
-  for (const c of candidates) {
+  const named = (c) => {
     const name = String(c.symbol || '');
     const lower = name.toLowerCase();
     for (const anchor of anchors) {
       if (containsToken(name, anchor, { caseSensitive: /[A-Z]/.test(anchor) }) || lower.includes(anchor.toLowerCase())) return true;
     }
     for (const term of informativeSubtokens(name)) if (subtokens.has(term)) return true;
-  }
-  return false;
+    return false;
+  };
+  return (candidates || []).filter((c) => c.referenced || named(c));
+}
+
+/** `{symbol, type}` rows → the kind-word list (`class Pool, methods a, b`) + ` +N more`. */
+function _kindList(symbols, moreCount) {
+  const text = kindNameList(symbols.map((s) => ({ name: s.symbol, type: s.type })));
+  return text && moreCount > 0 ? `${text} +${moreCount} more` : text;
 }
 
 // ---------------------------------------------------------------------------
@@ -789,9 +795,11 @@ export function renderUnreadBelow(result, { command = 'read', queryEvidence = nu
     // No continue command: the agent writes `ss-read <file> <a> <b>` itself, and the
     // command used to repeat the whole path and suggest reading the entire rest.
     const start = result.enclosingStart;
+    // After the code block, no `#` (owner review 2026-10-04); every name with its kind word.
     const ends = inside && !(start && start.symbol === inside.symbol && start.startLine === inside.startLine)
-      ? `${inside.symbol} ends at ${inside.endLine}; ` : '';
-    return `# ${ends}below ${u.startLine}-${u.endLine}${names ? ': ' + names + more : ''}`;
+      ? `${kindName(inside.symbol, inside.type)} ends at ${inside.endLine}; ` : '';
+    const list = _kindList(symbols, moreCount);
+    return `${ends}below ${u.startLine}-${u.endLine}${list ? ': ' + list : ''}`;
   }
   return `# unread below (${u.startLine}-${u.endLine})${names ? ': ' + names + more : ''} — continue: read ${result.file} ${u.startLine}-${u.endLine}`;
 }
@@ -806,8 +814,8 @@ export function renderEnclosingStart(result) {
   const s = result?.enclosingStart;
   if (!s) return '';
   const e = result.enclosingEnd;
-  if (e && e.symbol === s.symbol && e.startLine === s.startLine) return `# inside ${s.symbol} ${s.startLine}-${s.endLine}`;
-  return `# ${s.symbol} starts at ${s.startLine}`;
+  if (e && e.symbol === s.symbol && e.startLine === s.startLine) return `inside ${kindName(s.symbol, s.type)} ${s.startLine}-${s.endLine}`;
+  return `${kindName(s.symbol, s.type)} starts at ${s.startLine}`;
 }
 
 /**
@@ -820,19 +828,15 @@ export function renderUnreadAbove(result, { command = 'read', queryEvidence = nu
   const u = result?.unreadAbove;
   if (!u || command !== 'ss-read' || !unreadAboveEnabled()) return '';
   const candidates = _unreadSymbolCandidates.get(u) || u.symbols || [];
-  // Signal gate (render-time, so the structured field stays complete): print
-  // only when the window reads one of these symbols or the query names one.
-  if (!_aboveHasSignal(candidates, queryEvidence)) return '';
-  let symbols = u.symbols || [];
-  let moreCount = u.moreCount || 0;
-  if (queryEvidence) {
-    const selected = selectUnreadSymbols(candidates, queryEvidence, UNREAD_SYMBOLS_MAX);
-    symbols = selected.symbols;
-    moreCount = selected.moreCount;
-  }
-  const names = symbols.map(s => s.symbol).join(', ');
-  const more = moreCount > 0 ? ` +${moreCount} more` : '';
-  return `# above ${u.startLine}-${u.endLine}${names ? ': ' + names + more : ''}`;
+  // Signal gate (render-time, so the structured field stays complete): print only the
+  // symbols the window reads or the query names; nothing when there are none.
+  const signal = _aboveSignalSymbols(candidates, queryEvidence);
+  if (signal.length === 0) return '';
+  let symbols = signal.slice(0, UNREAD_SYMBOLS_MAX);
+  let moreCount = signal.length - symbols.length;
+  if (queryEvidence) ({ symbols, moreCount } = selectUnreadSymbols(signal, queryEvidence, UNREAD_SYMBOLS_MAX));
+  const list = _kindList(symbols, moreCount);
+  return `above ${u.startLine}-${u.endLine}: ${list}`;
 }
 
 function _formatAgent(result, opts = {}) {

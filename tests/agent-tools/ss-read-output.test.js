@@ -1,11 +1,12 @@
 /**
  * What `ss-read` prints besides the code (token diet 2026-10-04), through the real wrapper.
  *
- * - No header echoing the path and range; a line `# lines a-b of N` only when the lines
+ * - No header echoing the path and range; a line `lines a-b of N` only when the lines
  *   served are not the lines typed (end-of-file clamp, start+count form).
  * - A plain fence (no language tag) and no empty line before the closing fence.
- * - The function the window cuts through: `# inside X a-b`, `# X starts at a`, `X ends at b`.
- * - `# below a-b: names` without a continue command; `(part N)` pieces are one name.
+ * - The function the window cuts through: `inside method X a-b`, `method X starts at a`, `method X ends at b`.
+ * - Owner review 2026-10-04: only the moved range prints above the fence; the rest follows the code, no `#`.
+ * - `below a-b: kind names` without a continue command; `(part N)` pieces are one name.
  * - A start past the end of the file is an error that states the length (it printed the
  *   whole file). A later call of a chained command opens with `# ss-read <file name>`.
  */
@@ -98,30 +99,29 @@ describe('ss-read output shape', () => {
     expect(code).toBe(0);
     expect(err).toBe('');
     // Window ends at `def size`'s end: nothing runs on; the rest below is named.
-    expect(out).toBe(`\`\`\`\n${src(32, 34)}\n\`\`\`\n# below 35-60: big\n`);
+    expect(out).toBe(`\`\`\`\n${src(32, 34)}\n\`\`\`\nbelow 35-60: method big\n`);
   });
 
-  it('a window inside one function says so once, above the fence', async () => {
+  it('a window inside one function says so once, after the fence', async () => {
     const { out } = await ssRead([FILE, '12', '14']);
-    expect(out.split('\n')[0]).toBe('# inside hold 10-30');
-    expect(out.trimEnd().split('\n').pop()).toBe('# below 15-60: size, big');
+    expect(out.split('\n')[0]).toBe('```');
+    expect(out.trimEnd().split('\n').slice(-2)).toEqual(['inside method hold 10-30', 'below 15-60: methods size, big']);
   });
 
   it('names the function the window starts in and the one it ends in', async () => {
     const { out } = await ssRead([FILE, '20', '40']);
-    expect(out.split('\n')[0]).toBe('# hold starts at 10');
+    expect(out.trimEnd().split('\n').slice(-2)).toEqual(['method hold starts at 10', 'method big ends at 58; below 41-60']);
     // `big` is cut: its end is named, and it is not listed again below (nor its part 2).
-    expect(out.trimEnd().split('\n').pop()).toBe('# big ends at 58; below 41-60');
   });
 
   it('a one-line read inside a function names where the function ends', async () => {
     const { out } = await ssRead([FILE, '10']);
-    expect(out).toBe(`\`\`\`\n${src(10, 10)}\n\`\`\`\n# hold ends at 30; below 11-60: size, big\n`);
+    expect(out).toBe(`\`\`\`\n${src(10, 10)}\n\`\`\`\nmethod hold ends at 30; below 11-60: methods size, big\n`);
   });
 
   it('(part N) pieces of one definition are one name', async () => {
     const { out } = await ssRead([FILE, '1', '5']);
-    expect(out.trimEnd().split('\n').pop()).toBe('# below 6-60: hold, size, big');
+    expect(out.trimEnd().split('\n').pop()).toBe('below 6-60: methods hold, size, big');
   });
 
   it('a whole-file read is the file in a fence and nothing else', async () => {
@@ -131,11 +131,12 @@ describe('ss-read output shape', () => {
 
   it('prints the range only when the lines served are not the lines typed', async () => {
     const clamped = await ssRead([FILE, '55', '90']);
-    expect(clamped.out.split('\n')[0]).toBe('# lines 55-60 of 60; big starts at 36');
+    expect(clamped.out.split('\n')[0]).toBe('lines 55-60 of 60');
+    expect(clamped.out.trimEnd().split('\n').pop()).toBe('method big starts at 36');
     // start+count (`5 3` = lines 5-7): the header shows it, no stderr note.
     const count = await ssRead([FILE, '5', '3']);
     expect(count.err).toBe('');
-    expect(count.out.split('\n')[0]).toBe('# lines 5-7 of 60');
+    expect(count.out.split('\n')[0]).toBe('lines 5-7 of 60');
     expect(count.out).toContain(`\`\`\`\n${src(5, 7)}\n\`\`\``);
   });
 
