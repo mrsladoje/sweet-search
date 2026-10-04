@@ -1,3 +1,6 @@
+import { templateFunctionType } from './call-site-scanner.js';
+
+
 const SKIP = new Set([
   'if', 'for', 'while', 'switch', 'catch', 'function', 'func', 'return', 'defer', 'go', 'select',
   'len', 'cap', 'make', 'new', 'append', 'copy', 'delete', 'panic', 'recover',
@@ -76,9 +79,7 @@ export function callsiteHintSites(code, known = new Set()) {
   const text = stripNonCode(code);
   const free = /(?<![.\w$])([A-Za-z_$][\w$]*)\s*(?:\.(?:bind|call|apply))?\s*\(/g;
   for (const m of text.matchAll(free)) {
-    // `std::function<void(int)>`: a name right after `<` is a function type in a
-    // template argument, not a call.
-    if (text[m.index - 1] === '<') continue;
+    if (templateFunctionType(text, m.index)) continue;
     note(m[1], receiverBefore(text, m.index), false);
   }
   const member = /(?:\.|::)\s*([A-Za-z_$][\w$]*)\s*\(/g;

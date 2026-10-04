@@ -587,9 +587,7 @@ export class CallSiteScanner {
       if (atStart && continuation) continue;
       if (plan.bareKeywords.has(name)) continue;
       if (isDefinedHere && isDefinedHere(name)) continue;
-      // `std::function<void(int)>`: a name right after `<` is a function type in a
-      // template argument, not a call.
-      if (code.charCodeAt(m.index - 1) === 60 /* < */) continue;
+      if (templateFunctionType(code, m.index)) continue;
       const before = code.slice(0, m.index).trimEnd();
       if (before) {
         const last = before.charCodeAt(before.length - 1);
@@ -739,4 +737,18 @@ export function scanCallSites(langInfo, lines) {
     scanner.scanLine(lines[i], (targetName) => out.push({ line: lineNum, targetName }));
   }
   return out;
+}
+
+// `std::function<void(int)>`: a name right after `<` whose `( … )` is followed by `>`
+// is a function type in a template argument. `if (a<f(b))` is a comparison and a call.
+export function templateFunctionType(text, nameIndex) {
+  if (text.charCodeAt(nameIndex - 1) !== 60 /* < */) return false;
+  let i = text.indexOf('(', nameIndex);
+  if (i < 0) return false;
+  for (let depth = 0; i < text.length; i++) {
+    const c = text[i];
+    if (c === '(') depth++;
+    else if (c === ')' && --depth === 0) break;
+  }
+  return /^\s*>/.test(text.slice(i + 1, i + 40));
 }

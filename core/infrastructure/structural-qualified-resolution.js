@@ -8,7 +8,6 @@ export function shouldTrustQualifiedResolution(targetName, entity) {
   // free function (those are called by path, `a::f(`). jj `working_copy_path.clone()` was
   // bound to the free `fn clone` in lib/testutils/src/git.rs.
   if (rustMethodCallOnFreeFunction(targetName, entity)) return false;
-  if (pythonPackageCallOnMethod(targetName, entity)) return false;
   const normalized = String(targetName || '').replace(/::/g, '.');
   const parts = normalized.split('.').filter(Boolean);
   if (parts.length < 2 || !entity?.name) return true;
@@ -33,12 +32,10 @@ const SELF_QUALIFIERS = new Set(['this', 'self', 'super', 'cls', 'me', 'static']
 export function trustedCallerEdge(edge, target) {
   const tn = String(edge?.targetName || '').trim();
   if (!tn || !target?.name) return true;
-  // Structural impossibilities hold even when the index resolved the edge to the target.
-  if (pythonPackageCallOnMethod(tn, target)) return false;
   if (edge.targetId && edge.targetId === target.id) return true;
-  // Go: an unexported method (or a method of an unexported type) is private to its package
-  // directory; a call from another package cannot reach it (dgraph zero's `s.Node.proposeAndWait`
-  // listed as a caller of worker's node.proposeAndWait).
+  // Go: an unexported method is private to its package directory; a call from another package
+  // cannot reach it (dgraph zero's `s.Node.proposeAndWait` listed as a caller of worker's
+  // node.proposeAndWait).
   if (goPackagePrivateFrom(edge.filePath, target)) return false;
   // Resolution already bound this call to ANOTHER definition (a different
   // file or owning type): `database.statementDidFail` → Database's method is
@@ -69,22 +66,25 @@ function rustMethodCallOnFreeFunction(targetName, entity) {
   return entity.type === 'function';
 }
 
-/** True when `target` is a Go identifier private to its package and `fromFile` is in another one. */
+/** True when `target` is a Go method or function unexported from its package and `fromFile` is in another one. */
 export function goPackagePrivateFrom(fromFile, target) {
   const file = String(target?.filePath || '');
   if (!/\.go$/.test(file) || !fromFile || !/\.go$/.test(String(fromFile))) return false;
   const dir = (f) => String(f).slice(0, String(f).lastIndexOf('/') + 1);
   if (dir(fromFile) === dir(file)) return false;
-  const lower = (n) => /^[a-z_]/.test(String(n || ''));
-  return lower(target.name) || lower(String(target.parentClass || '').replace(/^\*/, ''));
+  // The method's own name decides: an exported method of an unexported type is reachable from
+  // other packages through an interface or an exported constructor's return value.
+  return /^[a-z_]/.test(String(target.name || ''));
 }
 
 /**
  * Python `pkg.name(` where `pkg` is a package directory of the definition's path (not its file,
  * not its owner): a package exposes module-level functions, never a method of a class (flask
- * tests' `flask.make_response()` bound to `Flask.make_response` in src/flask/app.py).
+ * tests' `flask.make_response()` bound to `Flask.make_response` in src/flask/app.py). Only a
+ * candidate: the caller must also import `pkg` as a module (the repository checks) — `db` may
+ * be a variable holding a Database from app/db/database.py.
  */
-function pythonPackageCallOnMethod(targetName, entity) {
+export function pythonPackageCallOnMethod(targetName, entity) {
   const file = String(entity?.filePath || '');
   if (!/\.py$/.test(file) || !entity?.parentClass) return false;
   const parts = String(targetName || '').split('.').filter(Boolean);

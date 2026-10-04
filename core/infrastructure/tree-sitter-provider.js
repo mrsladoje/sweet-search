@@ -904,7 +904,8 @@ export function refineDeclarationKind(node, languageId, type) {
   // function defined out of line, not a member of a class `ns`.
   if (languageId === 'cpp' && node.type === 'function_definition' && type === 'method') {
     const scope = cppDefinitionQualifier(node);
-    if (scope && cppFileNamespaces(node).has(scope)) return 'function';
+    // `Q::f` is a namespace function only when no class `Q` is declared in the file too.
+    if (scope && cppFileNamespaces(node).has(scope) && !cppFileNamespaces(node, true).has(scope)) return 'function';
   }
   return type;
 }
@@ -924,8 +925,11 @@ function cppDefinitionQualifier(node) {
   return String(scope.text).split('::').pop().replace(/<.*$/, '') || null;
 }
 
-/** Namespace names a C++ file opens (`namespace a::b {`) or imports (`using namespace a;`). */
-function cppFileNamespaces(node) {
+/**
+ * Namespace names a C++ file opens (`namespace a::b {`) or imports (`using namespace a;`),
+ * or with `types`, the class / struct names it declares.
+ */
+function cppFileNamespaces(node, types = false) {
   let root = node;
   while (root.parent) root = root.parent;
   const names = new Set();
@@ -933,12 +937,17 @@ function cppFileNamespaces(node) {
     if (depth > 6) return;
     for (let i = 0; i < n.namedChildCount; i++) {
       const c = n.namedChild(i);
-      if (c.type === 'namespace_definition') {
+      if (types && (c.type === 'class_specifier' || c.type === 'struct_specifier')) {
         const name = c.childForFieldName('name');
-        if (name) for (const part of String(name.text).split('::')) if (part) names.add(part);
+        if (name) names.add(String(name.text).replace(/<.*$/, ''));
+      } else if (types && (c.type === 'template_declaration' || c.type === 'declaration' || c.type === 'type_definition')) {
+        visit(c, depth + 1);
+      } else if (c.type === 'namespace_definition') {
+        const name = c.childForFieldName('name');
+        if (name && !types) for (const part of String(name.text).split('::')) if (part) names.add(part);
         const body = c.childForFieldName('body');
         if (body) visit(body, depth + 1);
-      } else if (c.type === 'using_declaration' && /^using\s+namespace\b/.test(c.text)) {
+      } else if (!types && c.type === 'using_declaration' && /^using\s+namespace\b/.test(c.text)) {
         const last = String(c.text).replace(/^using\s+namespace\s+/, '').replace(/;\s*$/, '').split('::').pop().trim();
         if (last) names.add(last);
       } else if (c.type === 'preproc_ifdef' || c.type === 'preproc_if' || c.type === 'linkage_specification' || c.type === 'declaration_list') {
@@ -961,6 +970,14 @@ const SWIFT_CONDITIONAL_DIRECTIVE_LINE = /^[ \t]*#(?:if|elseif|else|endif)\b[^\n
 // by another identifier (not `final`) can only be a macro in valid C++.
 // A node that belongs to the definition right below it: a comment or a Rust attribute.
 const isDefinitionLead = (n) => /comment$/.test(n?.type || '') || n?.type === 'attribute_item';
+// A file header comment: it documents the file, not the definition below it.
+const FILE_HEADER_TAG = /@(?:license|file|fileoverview|module|copyright)\b|\bSPDX-License-Identifier\b/i;
+
+const FUNCTION_BODY_NODES = new Set(['function_declaration', 'function_expression', 'arrow_function', 'method_definition', 'generator_function_declaration', 'generator_function']);
+function hasFunctionAncestor(node) {
+  for (let p = node.parent; p; p = p.parent) if (FUNCTION_BODY_NODES.has(p.type)) return true;
+  return false;
+}
 
 // Owner of a member-assigned function: `res` for `res.x = f`, `Reply` for
 // `Reply.prototype.x = f`; null for `module.exports.x` / `exports.x` (module functions).
@@ -1268,7 +1285,17 @@ export class TreeSitterProvider {
           // keep the outer class as parent, matching `Outer.member()` calls.
           scopedName = node.namedChildren.find(c => c.type === 'type_identifier')?.text || 'Companion';
         } else if (!isLeafIdent && node.type === 'assignment_expression') {
-          scopedName = node.childForFieldName('left')?.childForFieldName('property')?.text || null;
+          // Inside a function body it is a callback (`xhr.onload = function`), not a definition.
+          if (hasFunctionAncestor(node)) continue;
+          const left = node.childForFieldName('left');
+          const prop = left?.childForFieldName('property')?.text || null;
+          // `module.exports = function createApp`: the function's own name, or no entity.
+          if (prop === 'exports' && left?.childForFieldName('object')?.text === 'module') {
+            scopedName = node.childForFieldName('right')?.childForFieldName('name')?.text || null;
+            if (!scopedName) continue;
+          } else {
+            scopedName = prop;
+          }
         } else if (!isLeafIdent && node.type === 'qualified_name') {
           // C# `namespace Ocelot.DownstreamUrlCreator;`: the dotted name as written. The
           // `name` field gave one segment, a different one by depth (`Ocelot` for two
@@ -1670,8 +1697,11 @@ export class TreeSitterProvider {
           const last = buffer[buffer.length - 1];
           // Directly above, or (a `/**` / `///` doc block) one blank line above: express puts
           // a blank line between each JSDoc block and its `app.use = function`.
-          const docStyle = /^\s*(?:\/\*\*|\/\/\/)/.test(content.substring(last.startIndex, last.startIndex + 4));
+          // A `/***` or `////` banner is not a doc block.
+          const docStyle = /^\s*(?:\/\*\*(?!\*)|\/\/\/(?!\/))/.test(content.substring(last.startIndex, last.startIndex + 5));
           if (!isDefinitionLead(last) || last.endPosition.row < below.startPosition.row - (docStyle ? 2 : 1)) break;
+          // A file header (first line, or a license / module comment) documents the file.
+          if (last.startPosition.row === 0 || FILE_HEADER_TAG.test(content.substring(last.startIndex, last.endIndex))) break;
           carry.unshift(last);
           carrySize += last.endIndex - last.startIndex;
           below = last;

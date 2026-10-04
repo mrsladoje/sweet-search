@@ -47,7 +47,7 @@ function relevance(symbol, evidence) {
   // Words of the name: at least half of them must be in the queries. One shared word of a
   // long name is no signal (`file` from "written into the file" matched jj's
   // test_resolve_file_executable); `parse_conflict` for "conflict" is.
-  const wordsMatched = symbolTerms.size > 0 && subtokenMatches * 2 >= symbolTerms.size;
+  const wordsMatched = nameWordsMatched(subtokenMatches, symbolTerms.size);
   return {
     matched: exactAnchor > 0 || containedAnchor > 0 || wordsMatched,
     exactAnchor,
@@ -91,4 +91,13 @@ export function selectUnreadSymbols(symbols, queryEvidence, maxSymbols = 5) {
     symbols: ranked.slice(0, limit).map((entry) => entry.symbol),
     moreCount: candidates.length - limit,
   };
+}
+
+/**
+ * A name matches a query by its words when at least half of its informative words are in
+ * the query: `parse_conflict` for "conflict" does, `test_resolve_file_executable` for
+ * "file" does not. One rule for every name length.
+ */
+export function nameWordsMatched(hits, wordCount) {
+  return wordCount > 0 && hits * 2 >= wordCount;
 }

@@ -69,9 +69,10 @@ describe('ss-trace target: which of several same-named definitions (ocelot Lease
     expect(preferCalledDefinitions(rows, 'NoLoadBalancer', 'LeaseAsync')[0].parent_class).toBe('NoLoadBalancer');
   });
 
-  it('root unit/ and acceptance/ are test trees; a nested unit/ is not', () => {
-    expect(isTestLikePath('unit/LoadBalancer/X.cs')).toBe(true);
-    expect(isTestLikePath('acceptance/LoadBalancer/T.cs')).toBe(true);
+  it('unit-tests/ and acceptance-tests/ are test trees; a bare unit/ is not', () => {
+    expect(isTestLikePath('test/Ocelot.UnitTests/LoadBalancer/X.cs')).toBe(true);
+    expect(isTestLikePath('acceptance-tests/LoadBalancer/T.cs')).toBe(true);
+    expect(isTestLikePath('unit/convert.rs')).toBe(false);
     expect(isTestLikePath('src/units/unit/convert.rs')).toBe(false);
   });
 });
@@ -289,7 +290,8 @@ describe('round 3', () => {
 // --- Round 4 (2026-10-04) ------------------------------------------------------------------
 
 import { dropNameOnlyCallers } from '../../core/graph/structural-context.js';
-import { shouldTrustQualifiedResolution, trustedCallerEdge } from '../../core/infrastructure/structural-qualified-resolution.js';
+import { shouldTrustQualifiedResolution, trustedCallerEdge, pythonPackageCallOnMethod } from '../../core/infrastructure/structural-qualified-resolution.js';
+import { StructuralContextRepository } from '../../core/infrastructure/structural-context-repository.js';
 
 describe('round 4', () => {
   it('a name-only caller whose receiver names the owner stays; the dropped ones are reported', () => {
@@ -422,11 +424,20 @@ describe('chunk boundaries: oversized definitions', () => {
 // --- Round 6 (2026-10-04, new repos) -------------------------------------------------------------
 
 describe('round 6', () => {
-  it('Python: a call through a package name never reaches a method of a class', () => {
+  it('Python: a call through an imported package name never reaches a method of a class', () => {
     const method = { name: 'make_response', type: 'method', parentClass: 'Flask', filePath: 'src/flask/app.py' };
-    expect(shouldTrustQualifiedResolution('flask.make_response', method)).toBe(false);
-    expect(trustedCallerEdge({ targetName: 'flask.make_response', targetId: 'm', filePath: 'tests/test_basic.py' }, { ...method, id: 'm' })).toBe(false);
-    expect(shouldTrustQualifiedResolution('helpers.make_response', { name: 'make_response', type: 'function', parentClass: null, filePath: 'src/flask/helpers.py' })).toBe(true);
+    expect(pythonPackageCallOnMethod('flask.make_response', method)).toBe(true);
+    expect(pythonPackageCallOnMethod('self.make_response', method)).toBe(false);
+    expect(pythonPackageCallOnMethod('helpers.make_response', { ...method, type: 'function', parentClass: null, filePath: 'src/flask/helpers.py' })).toBe(false);
+    // Only when the caller imports the package: a local variable named `flask` is no package.
+    const heads = {
+      'tests/a.py': 'import flask\n',
+      'tests/b.py': 'from x import (\n  y,\n  flask,\n)\n',
+      'tests/c.py': 'flask = make_app()\n',
+    };
+    const repo = { readFileRange: (f) => heads[f] };
+    const call = (f) => StructuralContextRepository.prototype._pythonModuleCall.call(repo, 'flask.make_response', method, f);
+    expect([call('tests/a.py'), call('tests/b.py'), call('tests/c.py')]).toEqual([true, true, false]);
   });
 });
 
@@ -473,5 +484,51 @@ describe('round 7: intent, doc blocks, recursion', () => {
     const chunks = await p.parseFileToChunks(src, 'javascript', { maxChunkSize: 900 });
     expect(chunks.find((c) => c.text.startsWith('app.handle'))?.text.includes('Use a middleware')).toBe(false);
     expect(chunks.some((c) => c.text.startsWith('/**\n * Use a middleware.'))).toBe(true);
+  });
+});
+
+import { templateFunctionType } from '../../core/graph/call-site-scanner.js';
+import { nameWordsMatched } from '../../core/search/unread-symbol-ranking.js';
+
+describe('overfit guards', () => {
+  it('JS: `module.exports = function name` keeps its own name; a callback inside a function is no entity', async () => {
+    const p = new TreeSitterProvider();
+    await p.init();
+    const s = await p.extractSymbols('module.exports = function createApp() {\n  return 1;\n};\nfunction load() {\n  xhr.onload = function () { done(); };\n}\nmodule.exports = () => 2;\n', 'javascript');
+    expect(s.map((x) => [x.type, x.name])).toEqual([['function', 'createApp'], ['function', 'load']]);
+  });
+
+  it('C++: `Q::f` stays a method when the file declares class Q inside namespace Q', async () => {
+    const p = new TreeSitterProvider();
+    await p.init();
+    const ns = await p.extractSymbols('namespace util {\nint helper(int x);\n}\nint util::helper(int x) { return x; }\n', 'cpp');
+    expect(ns.find((x) => x.name === 'helper')?.type).toBe('function');
+    const cls = await p.extractSymbols('namespace net {\nclass net { public: void run(); };\n}\nvoid net::run() {}\n', 'cpp');
+    expect(cls.find((x) => x.name === 'run')?.type).toBe('method');
+  });
+
+  it('a name after `<` is a template function type only when its `( … )` closes with `>`', () => {
+    expect(templateFunctionType('std::function<void(int)> cb', 14)).toBe(true);
+    expect(templateFunctionType('Callback<int(int, int)>', 9)).toBe(true);
+    expect(templateFunctionType('if (a<f(b)) x', 6)).toBe(false);
+  });
+
+  it('chunker: a license header at the top of the file is not carried onto the first definition', async () => {
+    const p = new TreeSitterProvider();
+    await p.init();
+    const body = (n) => Array.from({ length: 30 }, (_, i) => `  const v${i} = ${n} + ${i};`).join('\n');
+    const src = `/**\n * @license MIT\n */\n\nfunction a() {\n${body(1)}\n}\n\n/** Docs of b. */\nfunction b() {\n${body(2)}\n}\n`;
+    const chunks = await p.parseFileToChunks(src, 'javascript', { maxChunkSize: 900 });
+    const b = chunks.find((c) => /function b/.test(c.text));
+    const a = chunks.find((c) => /function a/.test(c.text));
+    expect(b.text.startsWith('/** Docs of b. */')).toBe(true);
+    expect(a.text.includes('@license') ? a.startLine : 0).toBe(0);
+  });
+
+  it('name words: at least half of the informative words, for every name length', () => {
+    expect(nameWordsMatched(1, 1)).toBe(true);
+    expect(nameWordsMatched(1, 2)).toBe(true);
+    expect(nameWordsMatched(1, 4)).toBe(false);
+    expect(nameWordsMatched(0, 0)).toBe(false);
   });
 });

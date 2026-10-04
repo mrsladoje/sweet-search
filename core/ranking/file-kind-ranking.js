@@ -174,7 +174,9 @@ export function detectFileKind(filePath, opts) {
   // demotion site burns cycles redundantly when only ~10-20 unique files
   // live in a result set. Cache keyed by file path; verdict reused.
   const cache = opts && opts._fileKindCache;
-  if (cache && cache.has(filePath)) return cache.get(filePath);
+  // The agent format classifies more paths as tests: one cache entry per format.
+  const cacheKey = opts?.agentFormat ? `agent\u0000${filePath}` : filePath;
+  if (cache && cache.has(cacheKey)) return cache.get(cacheKey);
   let kind;
   if (DOCS_RE.test(filePath))  kind = 'docs';
   else if (EXAMPLES_RE.test(filePath)) kind = 'examples';
@@ -187,7 +189,7 @@ export function detectFileKind(filePath, opts) {
   // `FooTests.cs` / `FooTest.java` and root `unit/`, `testing/`, `acceptance/` (ocelot's
   // test class TestLeastConnection ranked above the LeastConnection it tests).
   if (kind === 'implementation' && opts?.agentFormat && isTestLikePath(filePath)) kind = 'tests';
-  if (cache) cache.set(filePath, kind);
+  if (cache) cache.set(cacheKey, kind);
   return kind;
 }
 
@@ -205,11 +207,13 @@ export function classifyFileKindIntent(query, { agentFormat = false } = {}) {
   // Type-seeking trumps test-seeking when both fire (existing convention).
   if (TYPES_INTENT_RE.test(q)) return 'types';
   if (DOCS_INTENT_RE.test(q))  return 'docs';
-  if (TESTS_INTENT_RE.test(q)) return 'tests';
+  // Agent format: `tests` (which re-ranks there) only when the question asks for tests; a
+  // word like spec / mock / fixture in a question about a test or mock library is not one.
+  if (TESTS_INTENT_RE.test(q) && (!agentFormat || TESTS_ASK_RE.test(q))) return 'tests';
   // Agent format: a behaviour question ("how does uv sync remove packages that are not in
   // the lockfile") asks for code even when it names a config-ish noun; a question about
   // configuring something still asks for config.
-  if (agentFormat && ANCILLARY_INTENT_RE.test(q) && BEHAVIOUR_QUESTION_RE.test(q) && !CONFIGURE_RE.test(q)) return 'implementation';
+  if (agentFormat && ANCILLARY_INTENT_RE.test(q) && BEHAVIOUR_QUESTION_RE.test(q) && !CONFIGURE_RE.test(q) && !CI_CONFIG_RE.test(q)) return 'implementation';
   if (ANCILLARY_INTENT_RE.test(q)) return 'ancillary';
   if (IMPL_INTENT_RE.test(q))  return 'implementation';
   if (agentFormat && AGENT_IMPL_INTENT_RE.test(q)) return 'implementation';
@@ -219,9 +223,12 @@ export function classifyFileKindIntent(query, { agentFormat = false } = {}) {
 // Agent format only (format-gated, CLAUDE.md): `how is/are X done` asks how code does
 // something, as `how does/do` does (jj "how is a conflict written into the file with
 // conflict markers" ranked three TOML config files above lib/src/conflicts.rs).
+const TESTS_ASK_RE = /\b(?:which|what|any) (?:unit |integration |e2e )?tests?\b|\btests? (?:for|of|covering|that cover|which cover)\b|\b(?:is|are) (?:\w+ ){0,4}tested\b|\btested\b|\btest (?:file|case|suite)s?\b/;
+// CI / workflow configuration is what such a question asks about, not code.
+const CI_CONFIG_RE = /\b(?:ci|workflows?|github actions?|labeler|pipelines?)\b/;
 const BEHAVIOUR_QUESTION_RE = /\bhow (?:does|do|is|are|can|should)\b|\bwhat happens\b|\bwhy does\b/;
 const CONFIGURE_RE = /\b(?:configur\w*|config|settings?|set up|setup|enable|disable)\b/;
-const AGENT_IMPL_INTENT_RE = /\bhow (?:is|are|was|were|can|should)\b|\bwritten\b/;
+const AGENT_IMPL_INTENT_RE = /\bhow (?:is|are|was|were|can|should)\b/;
 
 function resolveFilePath(r) {
   return r?.file

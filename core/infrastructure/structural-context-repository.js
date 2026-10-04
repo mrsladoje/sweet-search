@@ -6,7 +6,7 @@ import { applyReadPragmas } from './db-utils.js';
 import { findAliasCallers } from './structural-alias-resolver.js';
 import { rankStructuralCandidates } from './structural-candidate-ranker.js';
 import { findAssignedMemberDefinitions, findSameFileDefinition } from './structural-source-definitions.js';
-import { goPackagePrivateFrom, shouldTrustQualifiedResolution, trustedCallerEdge } from './structural-qualified-resolution.js';
+import { goPackagePrivateFrom, pythonPackageCallOnMethod, shouldTrustQualifiedResolution, trustedCallerEdge } from './structural-qualified-resolution.js';
 import { fetchPageRank, fetchFrontierBackwardEdges, fetchFrontierForwardEdges } from './structural-graph-signals.js';
 import { CodeGraphReaderVisibility } from './code-graph-visibility.js';
 import { SITE_LINE_RELATIONSHIP_TYPES as SITE_LINE_TYPES, TRACE_ONLY_TYPES_SQL } from './relationship-types.js';
@@ -435,13 +435,24 @@ export class StructuralContextRepository {
     }));
     // A self row is recursion only through the same object: no receiver, this/self, or the
     // owner's name (express `app.use` calls `router.use(`, which the index bound to app.use).
+    // A self row is dropped only when its receiver names another known type (`router` ->
+    // `Router`): then the index bound a call on that type to this definition. Recursion
+    // through a field or a receiver variable (`self.left.insert`, Go `s.serve()`) stays.
+    const typeNamed = (q) => {
+      try {
+        return !!db.prepare(`SELECT 1 FROM entities WHERE lower(name) = ? AND type IN ('class','struct','interface','trait','protocol','object','record','enum') LIMIT 1`).get(q);
+      } catch { return false; }
+    };
     const selfReceiver = (tn) => {
       const parts = String(tn || '').replace(/::|->/g, '.').split('.').filter(Boolean);
       if (parts.length < 2) return true;
       const q = parts[parts.length - 2].replace(/^[$@]+/, '').toLowerCase();
-      return ['this', 'self', 'cls', 'static', 'super'].includes(q) || q === String(target.parentClass || '').toLowerCase();
+      if (q === String(target.parentClass || '').toLowerCase()) return true;
+      return !typeNamed(q);
     };
     for (let i = named.length - 1; i >= 0; i--) if (named[i].id === target.id && !selfReceiver(named[i].targetName)) named.splice(i, 1);
+    // Python: `pkg.method(` through a module the caller imports never reaches a class method.
+    for (let i = named.length - 1; i >= 0; i--) if (this._pythonModuleCall(named[i].targetName, target, named[i].filePath)) named.splice(i, 1);
     const targetNested = this._qualifiedCallToNestedFunction(db, 'x.y', target);
     const edges = named.filter(edge => trustedCallerEdge(edge, target)
       && !(targetNested && /[.:]/.test(String(edge.targetName || ''))));
@@ -628,6 +639,21 @@ export class StructuralContextRepository {
     return findAliasCallers({ db, target, readFileRange: this.readFileRange.bind(this), limit: clampLimit(opts.limit, 40, 200), entityVisibilitySql: this._entitySql(db), entityVisibilityParams: this._entityParams(db), mapEntity: row => this._entityFromRow(row) });
   }
 
+  /** `pkg.name(` in `callerFile` where `pkg` is a module the caller imports and `entity` a class method. */
+  _pythonModuleCall(targetName, entity, callerFile) {
+    if (!callerFile || !pythonPackageCallOnMethod(targetName, entity)) return false;
+    const parts = String(targetName).split('.').filter(Boolean);
+    const q = parts[parts.length - 2];
+    this._pyImportMemo ||= new Map();
+    const key = `${callerFile}\u0000${q}`;
+    if (this._pyImportMemo.has(key)) return this._pyImportMemo.get(key);
+    const head = this.readFileRange(callerFile, 1, 400) || '';
+    const re = new RegExp(`^\\s*(?:import\\s+(?:[\\w.]+\\.)?${q}\\b|from\\s+[\\w.]+\\s+import\\s+(?:\\([^)]*?|[^\\n]*?)\\b${q}\\b)`, 'm');
+    const hit = re.test(head);
+    this._pyImportMemo.set(key, hit);
+    return hit;
+  }
+
   /**
    * A call written with a receiver (`reply.send(`) bound to a function nested inside another
    * function: a nested function is local to its enclosing body and never reachable through a
@@ -640,12 +666,23 @@ export class StructuralContextRepository {
     if (this._nestedMemo.has(entity.id)) return this._nestedMemo.get(entity.id);
     let nested = false;
     try {
-      nested = !!db.prepare(`
-        SELECT 1 FROM entities e
+      const host = db.prepare(`
+        SELECT e.start_line, e.end_line FROM entities e
         WHERE e.file_path = ? AND e.id <> ? AND e.type IN ('function', 'method', 'arrowFunction', 'objectArrow')
           AND e.start_line < ? AND e.end_line >= ? AND ${this._entitySql(db, 'e')}
-        LIMIT 1
+        ORDER BY (e.end_line - e.start_line) ASC LIMIT 1
       `).get(entity.filePath, entity.id, entity.startLine, entity.endLine ?? entity.startLine, ...this._entityParams(db));
+      // Local only when the name never leaves the enclosing body as a property: not returned,
+      // not put in an object (`{ addHook, ready }` / `ready: ready`), not assigned (`x.f = f`).
+      // fastify's factory returns its nested functions as the instance's methods. Passing it
+      // as a callback argument does not make it reachable as `recv.name(`.
+      if (host) {
+        const body = this.readFileRange(entity.filePath, host.start_line, host.end_line) || '';
+        const n = String(entity.name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // (`^\s*name,$`: a shorthand property on its own line, as in fastify's instance object.)
+        const escapes = new RegExp(`(?:return\\s+${n}\\b|^\\s*${n}\\s*,?\\s*$|[{,]\\s*${n}\\s*[,}]|:\\s*${n}\\s*[,}\\n]|=\\s*${n}\\s*[;,\\n)])`, 'm');
+        nested = !escapes.test(body);
+      }
     } catch { nested = false; }
     this._nestedMemo.set(entity.id, nested);
     return nested;
@@ -684,7 +721,7 @@ export class StructuralContextRepository {
       });
       if (row.id && !packageCallBound(row) && !declaredReceiverBound(row.target_name, target, resolved)
         && !shouldTrustQualifiedResolution(row.target_name, resolved)) resolved = { id: `external:${idx}:${row.target_name || 'unknown'}`, name: row.target_name || 'external', type: 'external', filePath: null, startLine: null, endLine: null, signature: row.target_name || '', summary: '' };
-      if (row.id && this._qualifiedCallToNestedFunction(db, row.target_name, resolved)) resolved = { id: `external:${idx}:${row.target_name || 'unknown'}`, name: row.target_name || 'external', type: 'external', filePath: null, startLine: null, endLine: null, signature: row.target_name || '', summary: '' };
+      if (row.id && (this._qualifiedCallToNestedFunction(db, row.target_name, resolved) || this._pythonModuleCall(row.target_name, resolved, target.filePath))) resolved = { id: `external:${idx}:${row.target_name || 'unknown'}`, name: row.target_name || 'external', type: 'external', filePath: null, startLine: null, endLine: null, signature: row.target_name || '', summary: '' };
       if (resolved.id === target.id) {
         resolved = this._resolveQualifiedAlternative(row.target_name, target.id) || resolved;
       }
