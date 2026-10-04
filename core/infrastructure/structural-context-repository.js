@@ -6,7 +6,7 @@ import { applyReadPragmas } from './db-utils.js';
 import { findAliasCallers } from './structural-alias-resolver.js';
 import { rankStructuralCandidates } from './structural-candidate-ranker.js';
 import { findAssignedMemberDefinitions, findSameFileDefinition } from './structural-source-definitions.js';
-import { shouldTrustQualifiedResolution, trustedCallerEdge } from './structural-qualified-resolution.js';
+import { goPackagePrivateFrom, shouldTrustQualifiedResolution, trustedCallerEdge } from './structural-qualified-resolution.js';
 import { fetchPageRank, fetchFrontierBackwardEdges, fetchFrontierForwardEdges } from './structural-graph-signals.js';
 import { CodeGraphReaderVisibility } from './code-graph-visibility.js';
 import { SITE_LINE_RELATIONSHIP_TYPES as SITE_LINE_TYPES, TRACE_ONLY_TYPES_SQL } from './relationship-types.js';
@@ -439,7 +439,8 @@ export class StructuralContextRepository {
     // the graph knows, but the agent must know they exist.
     if (Array.isArray(opts.unresolved)) {
       for (const edge of named) {
-        if (!edge.targetId && edge.relationship === 'calls' && !trustedCallerEdge(edge, target)) opts.unresolved.push(edge);
+        if (!edge.targetId && edge.relationship === 'calls' && !trustedCallerEdge(edge, target)
+          && !goPackagePrivateFrom(edge.filePath, target)) opts.unresolved.push(edge);
       }
     }
     const linesByPair = this._siteLines(db, edges.filter(e => SITE_LINE_TYPES.has(e.relationship)).map(e => e.id));
