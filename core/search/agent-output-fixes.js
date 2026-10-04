@@ -369,9 +369,23 @@ export function renderFixedBlocks(results, plan, { gutter = (code) => code } = {
           fullEndLine: r.fullEndLine,
         })
         : { before: [], after: [] };
+      // A continuation of this file inside the packed tail prints its own lines: the tail's
+      // `# not shown:` lines leave them out (before the continuation / after it).
+      const fullEnd = Number.isInteger(r.fullEndLine) ? r.fullEndLine : r.endLine;
+      const contInTail = !!(r.code && contSpan && contSpan.file === file
+        && contSpan.start > r.endLine && contSpan.start <= fullEnd);
+      const tailLines = (a, b) => (b >= a ? omittedRangeLines(r.file, {
+        exactRange: true, startLine: a, endLine: a - 1, fullStartLine: a, fullEndLine: b,
+      }).after : []);
+      let afterBody = notShown.after;
+      let afterCont = [];
+      if (contInTail) {
+        afterBody = tailLines(r.endLine + 1, contSpan.start - 1);
+        afterCont = tailLines(contSpan.end + 1, fullEnd);
+      }
       // One block when the continuation's code starts on the line after the entry's last line
-      // and no packed line of the entry is left out after its body.
-      const merge = !!(r.code && contSpan && contSpan.file === file && notShown.after.length === 0
+      // (any packed line left out after the continuation follows the merged block).
+      const merge = !!(r.code && contSpan && contSpan.file === file && afterBody.length === 0
         && shown && shown.end === r.endLine && contSpan.start === r.endLine + 1);
       const nameList = Array.isArray(r.symbols) && r.symbols.length ? [...r.symbols] : (r.symbol ? [r.symbol] : []);
       if (merge && cont.symbol && !nameList.includes(cont.symbol)) nameList.push(cont.symbol);
@@ -384,7 +398,8 @@ export function renderFixedBlocks(results, plan, { gutter = (code) => code } = {
       if (r.code) {
         lines.push(...notShown.before);
         lines.push('```', gutter(merge ? `${r.code}\n${cont.code}` : r.code, r.startLine), '```');
-        lines.push(...notShown.after);
+        lines.push(...afterBody);
+        if (merge) lines.push(...afterCont);
       } else if (r.summary && !summaryRestatesHeader(r.summary)) {
         lines.push(r.summary);
       }
@@ -403,6 +418,7 @@ export function renderFixedBlocks(results, plan, { gutter = (code) => code } = {
         if (contSpan) {
           lines.push(`## ${where}${lineRange(contSpan.start, contSpan.end)}${cont.symbol ? ` ${cont.symbol}` : ''}`);
           lines.push('```', cont.code, '```');
+          lines.push(...afterCont);
         } else if (cont.rendered && Number.isInteger(cont.startLine)
             && !(contFile === file && summaryStarts.has(cont.startLine))) {
           lines.push(`# continues at ${where}${cont.startLine}${cont.symbol ? ` ${cont.symbol}` : ''}`);

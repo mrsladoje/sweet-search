@@ -84,14 +84,32 @@ describe('result blocks (A1, A2, A7): grouped by file', () => {
       shownStartLine: 1756, shownEndLine: 1758, code: 'a\nb\nc',
       continuation: { kind: 'symbol', file: 'w/draft.go', startLine: 1759, endLine: 1760, code: 'd\ne', symbol: 'next' },
     }];
+    // The continuation starts on the line after the body: one block; the packed lines after it
+    // are the only ones not shown (the continuation's lines are printed, never named as hidden).
+    expect(renderFixedBlocks(results, selectEntries(results), { gutter })).toBe([
+      'w/draft.go',
+      '## 1756-1760 calculateSnapshot, next',
+      '# not shown: lines 1750-1755 — ss-read w/draft.go 1750 1755',
+      '```', gutter('a\nb\nc\nd\ne', 1756), '```',
+      '# not shown: lines 1761-1894 — ss-read w/draft.go 1761 1894',
+      '',
+    ].join('\n'));
+  });
+
+  it('a continuation further inside the packed tail splits the not-shown lines around it', () => {
+    const results = [{
+      rank: 1, file: 'w/draft.go', startLine: 1756, endLine: 1758, fullStartLine: 1756, fullEndLine: 1894,
+      symbol: 'calculateSnapshot', symbolType: 'method', presentation: 'full', expansionKind: 'full',
+      shownStartLine: 1756, shownEndLine: 1758, code: 'a\nb\nc',
+      continuation: { kind: 'symbol', file: 'w/draft.go', startLine: 1800, endLine: 1801, code: 'd\ne', symbol: 'next' },
+    }];
     expect(renderFixedBlocks(results, selectEntries(results), { gutter })).toBe([
       'w/draft.go',
       '## 1756-1758 calculateSnapshot',
-      '# not shown: lines 1750-1755 — ss-read w/draft.go 1750 1755',
       '```', gutter('a\nb\nc', 1756), '```',
-      '# not shown: lines 1759-1894 — ss-read w/draft.go 1759 1894',
-      // Lines of the packed range are left out after the body: the continuation does not merge.
-      '## 1759-1760 next', '```', 'd\ne', '```',
+      '# not shown: lines 1759-1799 — ss-read w/draft.go 1759 1799',
+      '## 1800-1801 next', '```', 'd\ne', '```',
+      '# not shown: lines 1802-1894 — ss-read w/draft.go 1802 1894',
       '',
     ].join('\n'));
   });
