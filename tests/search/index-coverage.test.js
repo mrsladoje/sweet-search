@@ -204,3 +204,34 @@ describe('filesEndingWith — a short path the agent copied from an output', () 
     }
   });
 });
+
+describe('dirsNamed — a --in directory guessed under the wrong parent', () => {
+  it('names every indexed directory with that last component, exact case, live rows only', async () => {
+    const dir = makeProject([
+      'ee/audit/log.go',
+      'ee/audit/sub/x.go',
+      'pkg/audit/a.go',
+      'pkg/Audit/b.go',
+      'pkg/auditing/c.go',
+      'lib/audit',
+      '!old/audit/gone.go',
+      'lib/a_b/y.rb',
+      'lib/axb/z.rb',
+    ]);
+    try {
+      const cov = await createIndexCoverage({ projectRoot: dir });
+      expect(cov.dirsNamed('audit')).toEqual(['ee/audit', 'pkg/audit']);
+      expect(cov.dirsNamed('audit/')).toEqual(['ee/audit', 'pkg/audit']);
+      expect(cov.dirsNamed('sub')).toEqual(['ee/audit/sub']);
+      // A file of that name is not a directory; a path with a parent is not a name.
+      expect(cov.dirsNamed('log.go')).toEqual([]);
+      expect(cov.dirsNamed('ee/audit')).toEqual([]);
+      // LIKE wildcards in the name are literal.
+      expect(cov.dirsNamed('a_b')).toEqual(['lib/a_b']);
+      expect(cov.dirsNamed('..')).toEqual([]);
+      cov.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

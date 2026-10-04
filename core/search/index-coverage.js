@@ -254,9 +254,33 @@ export async function createIndexCoverage({ projectRoot, dbPath, admissionPolicy
     } catch { return []; }
   }
 
+  /**
+   * Indexed directories whose LAST component is `name` (`audit` → `ee/audit`, `pkg/audit`),
+   * sorted. [] when the index cannot answer. The miss path of a `--in` directory that does
+   * not exist: the agent guessed the parent wrong but the name right.
+   */
+  function dirsNamed(name) {
+    const n = normalizeRel(name).replace(/^\/+|\/+$/g, '');
+    if (!n || n === '.' || n === '..' || n.includes('/')) return [];
+    if (!open() || !usable) return [];
+    try {
+      const esc = n.replace(/[\\%_]/g, (c) => `\\${c}`);
+      const rows = handle.prepare(
+        "SELECT DISTINCT file_path AS f FROM vectors WHERE (file_path LIKE ? ESCAPE '\\' OR file_path LIKE ? ESCAPE '\\') AND epoch_retired IS NULL",
+      ).all(`${esc}/%`, `%/${esc}/%`);
+      const dirs = new Set();
+      for (const { f } of rows) {
+        const parts = f.split('/');
+        // LIKE ignores ASCII case: keep exact component matches only; never the file itself.
+        for (let i = 0; i < parts.length - 1; i++) if (parts[i] === n) dirs.add(parts.slice(0, i + 1).join('/'));
+      }
+      return [...dirs].sort();
+    } catch { return []; }
+  }
+
   function close() { try { handle?.close(); } catch { /* already gone */ } handle = null; }
 
-  return { isIndexed, dirHasIndexedFiles, exclusionReason, notIndexedNote, filesEndingWith, close };
+  return { isIndexed, dirHasIndexedFiles, exclusionReason, notIndexedNote, filesEndingWith, dirsNamed, close };
 }
 
 // --- helpers ---------------------------------------------------------------------------
