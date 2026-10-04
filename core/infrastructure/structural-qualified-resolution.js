@@ -8,6 +8,7 @@ export function shouldTrustQualifiedResolution(targetName, entity) {
   // free function (those are called by path, `a::f(`). jj `working_copy_path.clone()` was
   // bound to the free `fn clone` in lib/testutils/src/git.rs.
   if (rustMethodCallOnFreeFunction(targetName, entity)) return false;
+  if (pythonPackageCallOnMethod(targetName, entity)) return false;
   const normalized = String(targetName || '').replace(/::/g, '.');
   const parts = normalized.split('.').filter(Boolean);
   if (parts.length < 2 || !entity?.name) return true;
@@ -32,6 +33,8 @@ const SELF_QUALIFIERS = new Set(['this', 'self', 'super', 'cls', 'me', 'static']
 export function trustedCallerEdge(edge, target) {
   const tn = String(edge?.targetName || '').trim();
   if (!tn || !target?.name) return true;
+  // Structural impossibilities hold even when the index resolved the edge to the target.
+  if (pythonPackageCallOnMethod(tn, target)) return false;
   if (edge.targetId && edge.targetId === target.id) return true;
   // Go: an unexported method (or a method of an unexported type) is private to its package
   // directory; a call from another package cannot reach it (dgraph zero's `s.Node.proposeAndWait`
@@ -74,4 +77,22 @@ export function goPackagePrivateFrom(fromFile, target) {
   if (dir(fromFile) === dir(file)) return false;
   const lower = (n) => /^[a-z_]/.test(String(n || ''));
   return lower(target.name) || lower(String(target.parentClass || '').replace(/^\*/, ''));
+}
+
+/**
+ * Python `pkg.name(` where `pkg` is a package directory of the definition's path (not its file,
+ * not its owner): a package exposes module-level functions, never a method of a class (flask
+ * tests' `flask.make_response()` bound to `Flask.make_response` in src/flask/app.py).
+ */
+function pythonPackageCallOnMethod(targetName, entity) {
+  const file = String(entity?.filePath || '');
+  if (!/\.py$/.test(file) || !entity?.parentClass) return false;
+  const parts = String(targetName || '').split('.').filter(Boolean);
+  if (parts.length < 2) return false;
+  // Case-sensitive, as Python is: package `flask` is not class `Flask`.
+  const q = parts[parts.length - 2];
+  if (['self', 'cls', 'super'].includes(q) || String(entity.parentClass) === q) return false;
+  const segs = file.split('/');
+  const stem = segs.pop().replace(/\.py$/, '');
+  return q !== stem && segs.includes(q);
 }
