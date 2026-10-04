@@ -121,7 +121,7 @@ function gutter(text, startLine) {
  */
 // Tools whose output opens with the chained-call boundary (core/agent-tools/chain.js) when
 // they are a later call of one shell command. The others still print their own header.
-const CHAIN_BOUNDARY_TOOLS = new Set(['agent-search', 'find', 'grep']);
+const CHAIN_BOUNDARY_TOOLS = new Set(['agent-search', 'find', 'grep', 'read']);
 
 export async function runAgentTool(subcommand, rest, host = {}) {
 if (CHAIN_BOUNDARY_TOOLS.has(subcommand)) process.stdout.write(chainBoundary(subcommand, rest, process.env));
@@ -1010,6 +1010,8 @@ async function cmdRead(rawArgs) {
   // no open-ended start-to-EOF (which a previous version did and which
   // caused accidental over-reading on large files).
   let start = null, end = null;
+  // True when the numbers typed are not the range served as typed (start+count form).
+  let reinterpreted = false;
   if (args[1] != null) {
     // Accept a single-token range (10-20 / 10:20 / 10,20) before the plain
     // numeric path, so "lines 10-20" muscle memory works without a wasted call.
@@ -1032,7 +1034,8 @@ async function cmdRead(rawArgs) {
         if (Number.isFinite(end) && end >= 1 && end < start) {
           const count = end;
           end = start + count - 1;
-          process.stderr.write(`[ss-read] note: interpreted "${args[1]} ${args[2]}" as start+count → lines ${start}-${end} (usage: ss-read <file> <start> <end>)\n`);
+          // The header line shows the range served (`# lines 84-93 of 293`); no separate note.
+          reinterpreted = true;
         } else if (!Number.isFinite(end) || end < start) {
           process.stderr.write(`[ss-read] invalid end line: "${args[2]}" (expected END line ≥ start ${start}; usage: ss-read <file> <start> <end>, e.g. ss-read src/a.js 40 90)\n`);
           process.exit(2);
@@ -1059,6 +1062,8 @@ async function cmdRead(rawArgs) {
   // pool is too small to show a net idealCost win at n=2 and one read-thrash instance
   // appeared at window=150. Opt-in via SS_READ_WINDOW=<n> pending a larger-n confirmation.
   const READ_WINDOW = Number(process.env.SS_READ_WINDOW) || 0;
+  const askedStart = start;
+  const askedEnd = end;
   const cappedDefault = (start === null && end === null && READ_WINDOW > 0);
   if (cappedDefault) { start = 1; end = READ_WINDOW; }
 
@@ -1079,7 +1084,7 @@ async function cmdRead(rawArgs) {
     }
   }
 
-  const { readFile, renderUnreadBelow, renderUnreadAbove, numberCodeLines } = await import(path.join(REPO_ROOT, 'core/search/search-read.js'));
+  const { readFile, renderUnreadBelow, renderUnreadAbove, renderEnclosingStart, fenceBody, numberCodeLines } = await import(path.join(REPO_ROOT, 'core/search/search-read.js'));
   // Agent-facing ss-read: span gate on, same as the CLI and the daemon route.
   const r = await readFile({
     path: file, projectRoot: FILE_ROOT,
@@ -1087,19 +1092,27 @@ async function cmdRead(rawArgs) {
     spanExpand: true, format: 'agent',
   });
   if (!r.ok) {
-    process.stderr.write(`[ss-read] error: ${r.error}\n`);
     // A wrong or invented path is the common cause (e.g. src/b2/build/x for
     // src/build/x). Point back at the index instead of a bare ENOENT: an
     // excluded path says so, otherwise suggest locating it by name/behaviour.
     if (/ENOENT|not a regular file|no such file/i.test(String(r.error))) {
       const note = await notIndexedNote(file);
       if (note) {
-        process.stderr.write(`[ss-read] ${note.text}\n`);
+        process.stderr.write(`[ss-read] error: ${r.error}\n[ss-read] ${note.text}\n`);
       } else {
         const base = path.basename(String(file));
-        process.stderr.write(`[ss-read] path not found — locate it first: ss-grep "${base}"  (exact name) or ss-search "<what it does>" (behaviour), then ss-read the path it returns.\n`);
+        const what = /ENOENT|no such file/i.test(String(r.error)) ? 'no such file' : String(r.error);
+        process.stderr.write(`[ss-read] ${what}; find it: ss-grep "${base}" or ss-search "<what it does>"\n`);
       }
+    } else {
+      process.stderr.write(`[ss-read] error: ${r.error}\n`);
     }
+    process.exit(1);
+  }
+  // A start past the last line selects nothing: say how long the file is (it used to
+  // print the whole file under "lines 400-293 of 293").
+  if (r.range && r.range.startLine > r.totalLines) {
+    process.stderr.write(`[ss-read] ${r.file} has ${r.totalLines} lines; line ${r.range.startLine} is past the end\n`);
     process.exit(1);
   }
   const readBatch = { files: [r], totalMs: r.timings?.totalMs ?? 0 };
@@ -1121,43 +1134,50 @@ async function cmdRead(rawArgs) {
     readBatch.files.reduce((n, f) => n + (typeof f.text === 'string' ? f.text.length : 0), 0));
   // If the window happened to cover the whole file (file ≤ READ_WINDOW, clamped by
   // readFile), present it EXACTLY like an uncapped whole-file read — no synthetic
-  // range, no continue trailer — so small-file reads stay byte-identical to legacy.
+  // range, no continue trailer.
   const coveredWholeFile = (start === null && end === null) || (cappedDefault && r.range && r.range.endLine >= r.totalLines);
-  const range = (r.range && !coveredWholeFile) ? ` (lines ${r.range.startLine}-${r.range.endLine} of ${r.totalLines})` : ` (${r.totalLines} lines)`;
-  const fence = r.language ? '```' + r.language : '```';
-  // "What remains" trailer: on a range read that stops before EOF, one final
-  // line names the symbols in the unread remainder + the exact continue
-  // command (last line for recency — the actionable form of truncation).
+  const omitted = renderReadOmission(r, { surface: 'ss-read' });
+  if (omitted) {
+    process.stdout.write(`${omitted}\n`);
+    process.exit(0);
+  }
+  // WHAT THE OUTPUT SAYS BESIDES THE CODE (token diet 2026-10-04). No header echoes the
+  // path and range: the harness shows the command, and a later call of a chained command
+  // opens with the boundary line (`# ss-read timed_queue.rb`). The range is printed only
+  // when the lines served are NOT the lines typed — clamped at the end of the file, the
+  // start+count form, the default window — because without a gutter (Claude Code, Codex:
+  // gutter-form.js) the agent counts line numbers from the start it typed.
+  const served = r.range && !coveredWholeFile ? r.range : null;
+  const rangeMoved = served && (reinterpreted || askedStart == null
+    || served.startLine !== askedStart || served.endLine !== (askedEnd ?? askedStart));
+  // "What remains" trailer on a range read that stops before EOF (last line, for recency).
   const remainder = coveredWholeFile ? '' : renderUnreadBelow(r, {
     command: 'ss-read',
     queryEvidence: receiptResponse?.queryEvidence,
   });
-  // Mirror for the span ABOVE the window, printed BEFORE the fence: the
-  // below-trailer keeps the last line (recency), this one sits with the header
-  // (squashql-295: the field the fix needed was declared above a 170-235 read).
-  const aboveLine = coveredWholeFile ? '' : renderUnreadAbove(r, {
-    command: 'ss-read',
-    queryEvidence: receiptResponse?.queryEvidence,
-  });
-  const omitted = renderReadOmission(r, { surface: 'ss-read' });
-  // Optional line-number gutter (SS_READ_LINENUMS=0 disables), skipped under 15
-  // lines. Native Claude Code Read numbers every line; this closes that
-  // grounding asymmetry for the sweet arm so exact-span edits are easier.
-  //
-  // Rendering goes through the SHARED numberCodeLines. It used to be an inlined
-  // copy of the same arithmetic, which meant the CLI and the daemon/library
-  // renderers could drift apart silently — and a delimiter that differs between
-  // the two paths is exactly the class of defect that corrupts edit anchors.
-  //
-  // The gate is the SHARED lineGutterEnabled(), which also carries the
-  // per-harness form (codex renders no gutter at all — gutter-form.js).
+  // Above the fence, one `# ` line: the served range when it moved, the function the window
+  // starts inside, and the state declared above that the window reads (squashql-295).
+  const aboveParts = [
+    rangeMoved ? `lines ${served.startLine}-${served.endLine} of ${r.totalLines}` : '',
+    coveredWholeFile ? '' : renderEnclosingStart(r),
+    coveredWholeFile ? '' : renderUnreadAbove(r, { command: 'ss-read', queryEvidence: receiptResponse?.queryEvidence }),
+  ].map((x) => x.replace(/^# /, '')).filter(Boolean);
+  if (!r.text) {
+    // An empty file (or a window of nothing) prints no empty fence.
+    process.stdout.write(`${aboveParts.length ? `# ${aboveParts.join('; ')}\n` : ''}# empty file\n`);
+    process.exit(0);
+  }
+  // Line-number gutter: the per-harness form (gutter-form.js: `N:` on opencode, none on
+  // Claude Code and Codex), skipped under 15 lines. Rendering goes through the SHARED
+  // numberCodeLines so the CLI and the daemon/library renderers cannot drift apart.
   let bodyText = r.text;
-  if (lineGutterEnabled() && r.text && r.text.split('\n').length >= 15) {
+  if (lineGutterEnabled() && fenceBody(r.text).split('\n').length >= 15) {
     const startAt = (r.range && !coveredWholeFile) ? r.range.startLine : 1;
     bodyText = numberCodeLines(r.text, startAt);
   }
-  if (omitted) process.stdout.write(`# ss-read ${r.file}${range}\n${omitted}\n`);
-  else process.stdout.write(`# ss-read ${r.file}${range}\n${aboveLine ? aboveLine + '\n' : ''}${fence}\n${bodyText}\n\`\`\`${remainder ? '\n' + remainder : ''}\n`);
+  // A plain fence: the language tag (```ruby, 1-2 tokens) repeats the extension of the
+  // path in the command just above.
+  process.stdout.write(`${aboveParts.length ? `# ${aboveParts.join('; ')}\n` : ''}\`\`\`\n${fenceBody(bodyText)}\n\`\`\`\n${remainder ? remainder + '\n' : ''}`);
   process.exit(0);
 }
 

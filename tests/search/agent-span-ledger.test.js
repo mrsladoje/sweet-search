@@ -281,7 +281,15 @@ describe('read omission rendering', () => {
       previous: span(),
     }]);
     expect(results.files[0].text).toBe('');
+    // ss-read: one line; the file it names is the one just typed, so only the lines print.
     expect(renderReadOmission(results.files[0], { surface: 'ss-read' })).toBe(
+      '# unchanged, shown 7 calls ago (lines 10-12); only if that copy is gone, add --force',
+    );
+    expect(renderReadOmission({ ...results.files[0], file: './src/a.js' }, { surface: 'ss-read' }))
+      .toBe('# unchanged, shown 7 calls ago (lines 10-12); only if that copy is gone, add --force');
+    expect(renderReadOmission({ ...results.files[0], file: 'src/other.js' }, { surface: 'ss-read' }))
+      .toBe('# unchanged, shown 7 calls ago (src/a.js:10-12); only if that copy is gone, add --force');
+    expect(renderReadOmission(results.files[0], { surface: 'cli' })).toBe(
       '[unchanged reread omitted; these exact source lines were already shown 7 sweet-search calls ago within src/a.js:10-12. Continue from that copy. ONLY if the prior copy is unavailable, repeat this same path/range with --force; this one-use override applies only to this omission.]',
     );
     expect(renderReadOmission(results.files[0], { surface: 'mcp' })).toContain(

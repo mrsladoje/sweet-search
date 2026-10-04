@@ -233,6 +233,12 @@ export function renderReadOmission(result, { surface = 'cli' } = {}) {
   const shownAt = `${omitted.file}:${omitted.startLine}-${omitted.endLine}`;
   const age = omitted.callsAgo;
   const plural = age === 1 ? '' : 's';
+  if (surface === 'ss-read') {
+    // One line, no file echo when it is the file the agent just named (74 -> ~20 tokens).
+    const same = String(result.file || '').replace(/^\.\//, '') === omitted.file;
+    const where = same ? `lines ${omitted.startLine}-${omitted.endLine}` : shownAt;
+    return `# unchanged, shown ${age} call${plural} ago (${where}); only if that copy is gone, add --force`;
+  }
   let override;
   if (surface === 'mcp') {
     override = 'force=true';

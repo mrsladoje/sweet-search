@@ -31,9 +31,11 @@ function fake(rows) {
 }
 
 describe('chained-call boundary line', () => {
-  it('names the tool and the first ten characters of the first argument', () => {
+  it('names the tool and the first ten characters of the first argument (ss-read: the file name)', () => {
     expect(chainBoundaryLine('agent-search', ['Elasticsearch daily index', '-k', '5'])).toBe('# ss-search Elasticsea…');
-    expect(chainBoundaryLine('read', ['worker/import.go', '10', '40'])).toBe('# ss-read worker/imp…');
+    expect(chainBoundaryLine('read', ['worker/import.go', '10', '40'])).toBe('# ss-read import.go');
+    expect(chainBoundaryLine('read', ['--in', 'a/b/OpensearchSpecificTemplates.java', '1', '9'])).toBe('# ss-read OpensearchSpecificTemplates.java');
+    expect(chainBoundaryLine('read', ['x/' + 'a'.repeat(45) + '.rs'])).toBe('# ss-read ' + 'a'.repeat(40) + '…');
     expect(chainBoundaryLine('agent-search', ['disconnect'])).toBe('# ss-search disconnect');
     expect(chainBoundaryLine('find', ['a  b\nc'])).toBe('# ss-find a b c');
   });

@@ -273,6 +273,10 @@ function _normalizeLineRange(lineOffsets, startLine, endLine) {
   const total = lineOffsets.length;
   if (total === 0) return { startLine: 1, endLine: 0, totalLines: 0, startByte: 0, endByte: 0 };
   const s = Math.max(1, startLine | 0);
+  // A start past the last line selects nothing. It used to fall through with
+  // startByte undefined, and the slice then returned the WHOLE file under a
+  // header like "lines 400-293 of 293".
+  if (s > total) return { startLine: s, endLine: s - 1, totalLines: total, startByte: null, endByte: null, pastEnd: true };
   const eRaw = (endLine == null) ? total : (endLine | 0);
   const e = Math.min(total, Math.max(s, eRaw));
   const startByte = lineOffsets[s - 1];
@@ -282,6 +286,7 @@ function _normalizeLineRange(lineOffsets, startLine, endLine) {
 function _sliceLines(text, lineOffsets, startLine, endLine) {
   const range = _normalizeLineRange(lineOffsets, startLine, endLine);
   if (range.totalLines === 0) return { text: '', startLine: 1, endLine: 0, totalLines: 0 };
+  if (range.pastEnd) return { text: '', startLine: range.startLine, endLine: range.endLine, totalLines: range.totalLines };
   const endByte = (range.endLine < range.totalLines)
     ? lineOffsets[range.endLine]
     : Buffer.byteLength(text, 'utf8');
@@ -294,6 +299,7 @@ function _sliceLines(text, lineOffsets, startLine, endLine) {
 async function _sliceLinesFromDisk(absPath, lineOffsets, fileSize, startLine, endLine) {
   const range = _normalizeLineRange(lineOffsets, startLine, endLine);
   if (range.totalLines === 0) return { text: '', startLine: 1, endLine: 0, totalLines: 0 };
+  if (range.pastEnd) return { text: '', startLine: range.startLine, endLine: range.endLine, totalLines: range.totalLines };
   const endByte = (range.endLine < range.totalLines) ? lineOffsets[range.endLine] : fileSize;
   const len = Math.max(0, endByte - range.startByte);
   const handle = await fs.open(absPath, 'r');
@@ -389,6 +395,32 @@ const KEYWORD_DEF_RE = /^\s*(?:export\s+|default\s+|pub(?:\([^)]*\))?\s+|static\
 const C_DEF_RE = /^(?:[A-Za-z_][\w:<>,*&~\s]*?[\s*&]+)?((?:[A-Za-z_~][\w]*::)*(?:~?[A-Za-z_][\w]*|operator\s*[^\s(]{1,3}))\s*\(/;
 const C_CONTROL_RE = /^\s*(?:if|for|while|switch|return|else|do|catch|case|sizeof|new|delete|throw|goto|using|typedef)\b/;
 
+// The chunker names the pieces of a long definition `name (part 2)`, `name (part 3)`. A
+// trailer lists DEFINITIONS, so the pieces are one name: `addTypeDocOptions (part 14),
+// addTypeDocOptions (part 15), …` filled all five slots with one function.
+function _baseSymbol(symbol) {
+  return symbol ? String(symbol).replace(/ \(part \d+\)$/, '') : symbol;
+}
+
+// Entity kinds with a body the reader can be in the middle of. A class or module that
+// runs on past the window says nothing the below line does not.
+const BODY_ENTITY_TYPES = new Set(['function', 'method', 'arrowFunction', 'objectArrow', 'constructor', 'macro']);
+
+/**
+ * The smallest function-like entity that spans `line` and also `line + step` (step -1:
+ * it started above the window; +1: it runs on below it). Null when there is none.
+ */
+function _bodyEntityAcross(graph, filePathRel, line, step) {
+  if (!graph || typeof graph.findEnclosingEntity !== 'function') return null;
+  const lo = Math.min(line, line + step);
+  const hi = Math.max(line, line + step);
+  let e = null;
+  try { e = graph.findEnclosingEntity(filePathRel, lo, hi); } catch { e = null; }
+  if (!e || !e.name || !BODY_ENTITY_TYPES.has(e.type)) return null;
+  if (!Number.isInteger(e.startLine) || !Number.isInteger(e.endLine)) return null;
+  return { symbol: e.name, type: e.type, startLine: e.startLine, endLine: e.endLine };
+}
+
 function _sniffRemainderDefinitions(text, isCFamily) {
   const names = [];
   const seen = new Set();
@@ -432,7 +464,8 @@ export function unreadAboveEnabled() {
  */
 function _collectAboveSymbols(chunks, filePathRel, projectRoot, windowStart, windowText = '') {
   const byName = new Map();
-  const push = (symbol, type, startLine) => {
+  const push = (rawSymbol, type, startLine) => {
+    const symbol = _baseSymbol(rawSymbol);
     if (!symbol || byName.has(symbol)) return;
     byName.set(symbol, { symbol, type: type ?? null, startLine, referenced: false });
   };
@@ -575,9 +608,10 @@ async function _readFileUnpinned(req) {
     if (remainderLines >= UNREAD_SYMBOLS_MIN_LINES) {
       for (const c of chunks) {
         if (c.startLine == null || c.startLine <= sliced.endLine) continue;
-        if (!c.symbol || seen.has(c.symbol)) continue;
-        seen.add(c.symbol);
-        symbols.push({ symbol: c.symbol, type: c.type ?? null, startLine: c.startLine });
+        const symbol = _baseSymbol(c.symbol);
+        if (!symbol || seen.has(symbol)) continue;
+        seen.add(symbol);
+        symbols.push({ symbol, type: c.type ?? null, startLine: c.startLine });
       }
       // Index had no named chunks in the remainder (common for C/C++ where the
       // chunker stores name:null) — sniff definition lines from the in-memory
@@ -607,7 +641,7 @@ async function _readFileUnpinned(req) {
   // (fields are entities, not chunks), then the sniff fallback. Rendered only
   // by the ss-read surface; readFile callers merely receive the field.
   let unreadAbove = null;
-  if (wantsRange && sliced.totalLines > 0 && sliced.startLine > 1) {
+  if (wantsRange && sliced.totalLines > 0 && sliced.startLine > 1 && sliced.startLine <= sliced.totalLines) {
     const aboveLines = sliced.startLine - 1;
     let symbols = [];
     if (aboveLines >= UNREAD_SYMBOLS_MIN_LINES) {
@@ -625,6 +659,19 @@ async function _readFileUnpinned(req) {
       moreCount: Math.max(0, symbols.length - UNREAD_SYMBOLS_MAX),
     };
     _unreadSymbolCandidates.set(unreadAbove, symbols);
+  }
+
+  // The definition the window cuts through (2026-10-04). The below/above lists name only
+  // definitions that START outside the window, so `ss-read f 84 86` inside `hold` (84-105)
+  // never said that hold runs on to 105 — the one hint the reader needs to finish what it
+  // is reading. enclosingStart: a function that began above the window; enclosingEnd: one
+  // that continues below it (the same entity when the window sits inside one body).
+  let enclosingStart = null;
+  let enclosingEnd = null;
+  if (wantsRange && sliced.totalLines > 0 && sliced.startLine <= sliced.endLine) {
+    const graph = _getGraphRepo(projectRoot);
+    if (sliced.startLine > 1) enclosingStart = _bodyEntityAcross(graph, relForIndex, sliced.startLine, -1);
+    if (sliced.endLine < sliced.totalLines) enclosingEnd = _bodyEntityAcross(graph, relForIndex, sliced.endLine, +1);
   }
 
   // If a line range was requested, narrow attached chunks to the overlap.
@@ -652,6 +699,8 @@ async function _readFileUnpinned(req) {
     chunks,
     unreadBelow,
     unreadAbove,
+    enclosingStart,
+    enclosingEnd,
     timings: { totalMs: +(performance.now() - t0).toFixed(2) },
   };
 }
@@ -703,10 +752,11 @@ export async function readFiles(files, opts = {}) {
 
 /**
  * Render the "what remains" trailer for a range read that stopped before
- * EOF. Names the symbols in the unread remainder plus the exact continue
- * command — the actionable form (a bare truncation marker is ignored;
- * see the 2026-07 within-file design note). Returns '' when the read
- * covered the whole file / reached EOF.
+ * EOF. Names the symbols in the unread remainder — the actionable form (a
+ * bare truncation marker is ignored; see the 2026-07 within-file design
+ * note). The `read` CLI adds the continue command; ss-read prints
+ * `# [X ends at N; ]below a-b: names` and no command. Returns '' when the
+ * read covered the whole file / reached EOF.
  *
  * @param {Object} result - readFile() result
  * @param {{ command?: 'read'|'ss-read', queryEvidence?: {anchors?: string[], subtokens?: string[]} }} [opts]
@@ -716,20 +766,48 @@ export async function readFiles(files, opts = {}) {
 export function renderUnreadBelow(result, { command = 'read', queryEvidence = null } = {}) {
   const u = result?.unreadBelow;
   if (!u) return '';
-  let symbols = u.symbols || [];
+  // ss-read: the definition the window ends inside is named with its end line, and so is
+  // not listed again among the definitions below.
+  const inside = command === 'ss-read' ? result.enclosingEnd : null;
+  const keep = (s) => !inside || s.symbol !== inside.symbol;
+  let symbols = (u.symbols || []).filter(keep);
   let moreCount = u.moreCount || 0;
-  if (queryEvidence) {
-    const candidates = _unreadSymbolCandidates.get(u) || u.symbols || [];
-    const selected = selectUnreadSymbols(candidates, queryEvidence, UNREAD_SYMBOLS_MAX);
-    symbols = selected.symbols;
-    moreCount = selected.moreCount;
+  if (queryEvidence || inside) {
+    const candidates = (_unreadSymbolCandidates.get(u) || u.symbols || []).filter(keep);
+    if (queryEvidence) {
+      const selected = selectUnreadSymbols(candidates, queryEvidence, UNREAD_SYMBOLS_MAX);
+      symbols = selected.symbols;
+      moreCount = selected.moreCount;
+    } else {
+      symbols = candidates.slice(0, UNREAD_SYMBOLS_MAX);
+      moreCount = Math.max(0, candidates.length - UNREAD_SYMBOLS_MAX);
+    }
   }
   const names = symbols.map(s => s.symbol).join(', ');
   const more = moreCount > 0 ? ` +${moreCount} more` : '';
-  const cont = command === 'ss-read'
-    ? `ss-read ${result.file} ${u.startLine} ${u.endLine}`
-    : `read ${result.file} ${u.startLine}-${u.endLine}`;
-  return `# unread below (${u.startLine}-${u.endLine})${names ? ': ' + names + more : ''} — continue: ${cont}`;
+  if (command === 'ss-read') {
+    // No continue command: the agent writes `ss-read <file> <a> <b>` itself, and the
+    // command used to repeat the whole path and suggest reading the entire rest.
+    const start = result.enclosingStart;
+    const ends = inside && !(start && start.symbol === inside.symbol && start.startLine === inside.startLine)
+      ? `${inside.symbol} ends at ${inside.endLine}; ` : '';
+    return `# ${ends}below ${u.startLine}-${u.endLine}${names ? ': ' + names + more : ''}`;
+  }
+  return `# unread below (${u.startLine}-${u.endLine})${names ? ': ' + names + more : ''} — continue: read ${result.file} ${u.startLine}-${u.endLine}`;
+}
+
+/**
+ * ss-read only: the function the window starts inside. `# inside hold 84-112` when the
+ * window lies within one body (then the below line does not repeat it), else
+ * `# hold starts at 84`. Returns '' when the window starts at a body's first line or
+ * outside any.
+ */
+export function renderEnclosingStart(result) {
+  const s = result?.enclosingStart;
+  if (!s) return '';
+  const e = result.enclosingEnd;
+  if (e && e.symbol === s.symbol && e.startLine === s.startLine) return `# inside ${s.symbol} ${s.startLine}-${s.endLine}`;
+  return `# ${s.symbol} starts at ${s.startLine}`;
 }
 
 /**
@@ -754,7 +832,7 @@ export function renderUnreadAbove(result, { command = 'read', queryEvidence = nu
   }
   const names = symbols.map(s => s.symbol).join(', ');
   const more = moreCount > 0 ? ` +${moreCount} more` : '';
-  return `# unread above (${u.startLine}-${u.endLine})${names ? ': ' + names + more : ''} — continue: ss-read ${result.file} ${u.startLine} ${u.endLine}`;
+  return `# above ${u.startLine}-${u.endLine}${names ? ': ' + names + more : ''}`;
 }
 
 function _formatAgent(result, opts = {}) {
@@ -786,7 +864,17 @@ function _formatAgent(result, opts = {}) {
   const body = shouldNumberLines(result, opts)
     ? numberLines(result.text, result.range ? result.range.startLine : 1)
     : result.text;
-  return `### ${result.file}${range}${symbolHint}\n${fence}\n${body}\n\`\`\`${remainder ? '\n' + remainder : ''}\n`;
+  return `### ${result.file}${range}${symbolHint}\n${fence}\n${fenceBody(body)}\n\`\`\`${remainder ? '\n' + remainder : ''}\n`;
+}
+
+/**
+ * Code for a fenced block: the source's own final newline dropped, because the closing
+ * fence supplies the line break. Keeping it printed an empty line after the last source
+ * line, which reads as one more (blank) line of the file.
+ */
+export function fenceBody(text) {
+  const t = String(text ?? '');
+  return t.endsWith('\r\n') ? t.slice(0, -2) : t.endsWith('\n') ? t.slice(0, -1) : t;
 }
 
 // Line-number gutter is ON by default for AGENT-consumption output (measured
@@ -884,7 +972,8 @@ export function stripCodeLineNumbers(text, delimiter = gutterDelimiter()) {
 
 function shouldNumberLines(result, opts) {
   if (!lineGutterEnabled(opts) || !result.text) return false;
-  return result.text.split('\n').length >= 15;
+  // Count source lines: a final newline is not a 15th line.
+  return fenceBody(result.text).split('\n').length >= 15;
 }
 
 function numberLines(text, startLine) {
