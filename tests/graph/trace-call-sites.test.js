@@ -113,7 +113,7 @@ describe('ss-trace shows every call site of a caller', () => {
     expect(text).toContain('## callers (2 call sites, 1 distinct caller)');
     // The compact product default (Bundle A, A4) prints the same row: path once, call lines first.
     const compact = formatTraceCompact(result, { mode: 'callers' });
-    expect(compact).toContain('worker/draft.go\n8,12 applyMutations');
+    expect(compact).toContain('draft.go\nmethod applyMutations 7-16 @8,12');
   });
 
   it('qualified calls: relationships keep one row per pair, call_lines keep every line', async () => {
@@ -157,7 +157,7 @@ describe('ss-trace shows every call site of a caller', () => {
     expect(callers.sections.callers.items.map((x) => [x.name, x.contextLines])).toEqual([['run', [3, 4, 5]]]);
     expect(callers.sections.callers.total).toBe(3);
     expect(callers.sections.callers.distinct).toBe(1);
-    expect(formatTraceCompact(callers, { mode: 'callers' })).toContain('src/run.ts\n3,4,5 run');
+    expect(formatTraceCompact(callers, { mode: 'callers' })).toContain('src/run.ts\nfunction run 2-6 @3,4,5');
   });
 
   it('a single-site qualified pair needs no call_lines row: its line comes from relationships', async () => {

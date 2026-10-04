@@ -834,7 +834,7 @@ export class StructuralContextBuilder {
       if (full || out.length >= maxPaths) { hidden++; continue; }
       const row = {
         path: text,
-        nodes: p.path.map(n => ({ name: n.name, file: n.filePath || null, line: n.startLine || null })),
+        nodes: p.path.map(n => ({ name: n.name, type: n.type || null, file: n.filePath || null, line: n.startLine || null })),
         direction: p.direction || 'upstream',
         depth: p.depth,
         edgeTypes: p.edgeTypes,

@@ -479,7 +479,7 @@ describe('formatTraceCompact (A4)', () => {
     const out = formatTraceCompact(traceResult());
     expect(out.split('\n')[0]).toBe('# a.go:5-20');
     expect(out).not.toContain('fan-in');
-    expect(out).toContain('b.go\n7 c1');
+    expect(out).toContain('b.go\nmethod c1 7');
     expect(out).not.toContain('[method]');
     expect(out).not.toContain('BODY');
     expect(out).not.toContain('answer cues');
@@ -500,12 +500,12 @@ describe('formatTraceCompact (A4)', () => {
     r.sections.impact.paths = [{ direction: 'upstream', path: 'z (pkg/a.go:40) -> c2 (pkg/x/c.go:9) -> target (pkg/a.go:5)' }];
     const out = formatTraceCompact(r, { inFile: 'pkg/a.go', mode: null });
     expect(out.split('\n')[0]).toBe('# lines 5-20');
-    expect(out).toContain('\na.go\n30 c1\npkg/x/c.go\n');
+    expect(out).toContain('\na.go\nmethod c1 30\npkg/x/c.go\n');
     expect(out).toContain('z a.go:40');
     expect(out).not.toContain('pkg/a.go');
   });
 
-  it('groups rows by file (path once), non-test files first; a caller row starts with its call lines', () => {
+  it('groups rows by file (path once), non-test files first; every row reads kind, name, definition lines, then @ the call lines', () => {
     const r = traceResult();
     r.sections.callers.items = [
       { name: 't1', type: 'function', file: 'x_test.go', startLine: 3, contextLines: [4] },
@@ -513,27 +513,27 @@ describe('formatTraceCompact (A4)', () => {
       { name: 'c3', type: 'method', file: 'b.go', startLine: 20, contextLines: [21] },
     ];
     const out = formatTraceCompact(r, { mode: 'callers' });
-    expect(out).toBe('# a.go:5-20\nb.go\n8,12 c1\n21 c3\nx_test.go\n4 t1');
+    expect(out).toBe('# a.go:5-20\nb.go\nmethod c1 7 @8,12\nmethod c3 20 @21\nx_test.go\nfunction t1 3 @4');
   });
 
-  it('a callee row starts with its definition line; non-call rows name their relationship; dispatch rows name the method', () => {
+  it('a callee row has the same shape as a caller row; non-call rows name their relationship; dispatch rows name the method', () => {
     const r = traceResult();
     r.sections.callers.items = [
       { name: 'Impl', type: 'class', file: 'i.go', startLine: 2, contextLines: [2], relationship: 'extends' },
       { name: 'run', type: 'function', file: 'r.go', startLine: 1, contextLines: [5], relationship: 'calls', via: 'Base.target' },
     ];
     const out = formatTraceCompact(r);
-    expect(out).toContain('i.go\n2 Impl (extends)');
-    expect(out).toContain('r.go\n5 run via Base.target');
-    expect(out).toContain('## callees\nd.go\n1 d1');
+    expect(out).toContain('i.go\nclass Impl 2 (extends) @2');
+    expect(out).toContain('r.go\nfunction run 1 @5 via Base.target');
+    expect(out).toContain('## callees\nd.go\nmethod d1 1');
     const withLines = traceResult();
     withLines.sections.callees.items[0].contextLines = [9, 14];
-    expect(formatTraceCompact(withLines, { mode: 'callees' })).toContain('d.go\n1 d1 @9,14');
+    expect(formatTraceCompact(withLines, { mode: 'callees' })).toContain('d.go\nmethod d1 1 @9,14');
   });
 
   it('counts every row it leaves out: unresolved callees and rows over the cap', () => {
     const out = formatTraceCompact(traceResult(), { mode: 'callees' });
-    expect(out).toContain('d.go\n1 d1');
+    expect(out).toContain('d.go\nmethod d1 1');
     expect(out).not.toContain('ext1');
     expect(out).toContain('+2 unresolved calls');
     const r = traceResult();
@@ -548,7 +548,7 @@ describe('formatTraceCompact (A4)', () => {
     const out = formatTraceCompact(traceResult(), { mode: 'callers' });
     expect(out).not.toContain('## ');
     expect(out).not.toContain('d1');
-    expect(out).toContain('c.go\n9 c2');
+    expect(out).toContain('c.go\nmethod c2 9');
   });
 
   it('says so when a section has no row in the repository', () => {
@@ -568,6 +568,27 @@ describe('formatTraceCompact (A4)', () => {
     const out = formatTraceCompact(traceResult());
     expect(out).toContain('## upstream\nc1\n  z z.go:1');
     expect(out).not.toContain('## downstream');
+  });
+
+  it('tree nodes: kind words; a node printed above (row or tree) prints its name only; a printed file prints short', () => {
+    const r = traceResult();
+    r.sections.callees.items = [
+      { name: 'State', type: 'function', file: 'pkg/s.go', startLine: 67, endLine: 69, contextLines: [9] },
+      { name: 'fp', type: 'function', file: 'pkg/l.go', startLine: 30, endLine: 40, contextLines: [8] },
+    ];
+    const n = (name, type, file, line) => ({ name, type, file, line });
+    const T = n('target', 'method', 'a.go', 5);
+    r.sections.impact.paths = [
+      { direction: 'downstream', nodes: [T, n('fp', 'function', 'pkg/l.go', 30), n('State', 'function', 'pkg/s.go', 67)] },
+      { direction: 'downstream', nodes: [T, n('fp', 'function', 'pkg/l.go', 30), n('walk', 'method', 'pkg/l.go', 90)] },
+      { direction: 'downstream', nodes: [T, n('fp', 'function', 'pkg/l.go', 30), n('Fatalf', 'function', 'x/e.go', 4)] },
+      { direction: 'upstream', nodes: [n('main', 'function', 'cmd/m.go', 3), n('Fatalf', 'function', 'x/e.go', 4), T] },
+    ];
+    const out = formatTraceCompact(r, { mode: 'impact' });
+    expect(out).toBe('# a.go:5-20\n## upstream\nfunction Fatalf x/e.go:4\n  function main cmd/m.go:3\n## downstream\nfunction fp pkg/l.go:30\n  function State pkg/s.go:67\n  method walk l.go:90\n  Fatalf');
+    const both = formatTraceCompact(r);
+    expect(both).toContain('## callees\npkg/s.go\nfunction State 67-69 @9\npkg/l.go\nfunction fp 30-40 @8');
+    expect(both).toContain('## downstream\nfp\n  State\n  method walk l.go:90\n  Fatalf');
   });
 
   it('counts impact paths that did not fit', () => {

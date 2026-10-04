@@ -107,7 +107,7 @@ describe('callers through the method a target implements (dispatch)', () => {
     const row = result.sections.callers.items.find((i) => i.name === 'intercept');
     expect(row).toMatchObject({ file: 'src/Retry.kt', via: 'Chain.proceed' });
     expect(formatTraceCompact(result, { mode: 'callers', inFile: 'src/RealChain.kt' }))
-      .toContain('src/Retry.kt\n4 intercept via Chain.proceed');
+      .toContain('src/Retry.kt\nfunction intercept 3-5 @4 via Chain.proceed');
   });
 
   it('dispatchCallersOf: only calls resolved to the base method, none already listed', () => {
