@@ -43,6 +43,24 @@ describe('multi-line type headers', () => {
     ])).toEqual(['RealCall:1:Call', 'RealCall:1:Cloneable', 'Exchange:7:Closeable']);
   });
 
+  it('Kotlin: a constructor longer than 12 lines still reaches its supertypes (okhttp RealInterceptorChain)', async () => {
+    const params = Array.from({ length: 23 }, (_, i) => `  internal val p${i}: Int,`);
+    expect(await edges('/test/RealInterceptorChain.kt', [
+      'class RealInterceptorChain(',
+      ...params,
+      ') : Interceptor.Chain {',
+      '  override fun proceed(request: Request): Response = TODO()',
+      '}',
+    ])).toEqual(['RealInterceptorChain:1:Interceptor.Chain']);
+  });
+
+  it('a header with closed brackets still stops at 12 lines', () => {
+    const lines = ['class A :', ...Array.from({ length: 20 }, (_, i) => `  B${i},`), '  Z {', '}'];
+    const { joins } = buildTypeHeaderJoins(lines);
+    expect(joins.get(0)).toContain('B10');
+    expect(joins.get(0)).not.toContain('Z');
+  });
+
   it('Java: extends and implements on their own lines', async () => {
     expect(await edges('/test/Cache.java', [
       'public final class Cache<K, V>',

@@ -528,6 +528,11 @@ const TYPE_DECL_KEYWORD = /\b(?:class|interface|struct|record|trait|object|proto
 const HEADER_OPEN_END = /(?:[,(:&]|\b(?:extends|implements|with|where))$/;
 const HEADER_CONTINUATION = /^(?::|extends\b|implements\b|with\b|where\b|permits\b|constructor\b|,|\)|\]|&|<:)/;
 const MAX_HEADER_LINES = 12;
+// A header still inside its brackets (a Kotlin / Scala / C# primary constructor) continues
+// up to this many lines: okhttp's RealInterceptorChain lists 23 constructor parameters
+// before `) : Interceptor.Chain {`, and the 12-line cap lost the supertype (no implements
+// edge, so no overrides edge, so ss-trace knew no caller of RealInterceptorChain.proceed).
+const MAX_BRACKETED_HEADER_LINES = 80;
 
 function bracketDepth(text) {
   let depth = 0;
@@ -575,9 +580,10 @@ export function buildTypeHeaderJoins(lines, { lineComment = null, colonBlocks = 
     let text = strip(raw);
     if (!TYPE_DECL_START.test(text) || closed(text)) continue;
     let j = i;
-    while (j + 1 < lines.length && j - i < MAX_HEADER_LINES) {
+    while (j + 1 < lines.length && j - i < MAX_BRACKETED_HEADER_LINES) {
       const next = strip(lines[j + 1]);
       const depth = bracketDepth(text);
+      if (depth === 0 && j - i >= MAX_HEADER_LINES) break;
       if (!next) {
         if (depth > 0) { j++; continue; }
         break;
