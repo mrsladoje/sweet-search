@@ -61,6 +61,8 @@ const INTENT_BOOSTS = {
     class: 2.0,
     interface: 2.0,
     struct: 2.0,
+    object: 2.0,
+    actor: 2.0,
     enum: 1.8,
     function: 1.5,
     method: 1.3,
@@ -80,6 +82,8 @@ const INTENT_BOOSTS = {
   },
   structural: {
     class: 1.5,
+    object: 1.5,
+    actor: 1.5,
     interface: 1.5,
     _default: 1.0,
   },

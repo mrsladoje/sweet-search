@@ -77,7 +77,7 @@ const EXISTING_BOOST = 0.05;               // additive boost when the chunk is a
 // style queries.
 const CLASS_LIKE_ENTITY_TYPES = new Set([
   'class', 'module', 'interface', 'trait',
-  'struct', 'record', 'enum', 'namespace',
+  'struct', 'record', 'enum', 'namespace', 'object', 'actor',
 ]);
 
 /**

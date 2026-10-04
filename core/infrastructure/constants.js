@@ -10,6 +10,11 @@ export const SYMBOL_KIND_WEIGHTS = {
   interface: 0.95,
   struct: 0.95,
   enum: 0.9,
+  // Kotlin `object`, Swift `actor` / `extension`: stored as 'class' until
+  // their kinds were read from the node; same weight as before.
+  object: 1.0,
+  actor: 1.0,
+  extension: 1.0,
   function: 0.85,
   method: 0.80,
   constructor: 0.75,
@@ -24,7 +29,8 @@ export const SYMBOL_KIND_WEIGHTS = {
 };
 
 export const DEFINITION_TYPES = new Set([
-  'class', 'interface', 'struct', 'enum', 'function', 'method', 'constructor'
+  'class', 'interface', 'struct', 'enum', 'function', 'method', 'constructor',
+  'object', 'actor', 'extension',
 ]);
 
 /**

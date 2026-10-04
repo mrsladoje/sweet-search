@@ -45,6 +45,7 @@ const DISPLAY_ENTITY_TYPES = new Set([
   'class', 'function', 'method', 'interface', 'enum', 'struct',
   'trait', 'typeAlias', 'namespace', 'component', 'arrowFunction',
   'const', 'type', 'module', 'service', 'message', 'rpc',
+  'object', 'actor', 'extension',
 ]);
 
 // ---------------------------------------------------------------------------

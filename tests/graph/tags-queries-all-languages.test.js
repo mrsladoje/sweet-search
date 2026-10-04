@@ -225,7 +225,7 @@ object Singleton { fun getInstance(): Singleton = this }
 fun topLevel(): String = "hello"
 `, 'kotlin', {
       UserService: 'class', findUser: 'function',
-      Singleton: 'class', getInstance: 'function', topLevel: 'function',
+      Singleton: 'object', getInstance: 'function', topLevel: 'function',
     });
   });
 
@@ -243,8 +243,8 @@ sealed class Result {
     const symbols = await extractOrFail(`
 interface UserRepo { fun findById(id: Long): User? }
 `, 'kotlin');
-    // Kotlin interfaces use class_declaration, so type will be 'class'
-    expect(symbols.find(s => s.name === 'UserRepo')).toBeTruthy();
+    // Kotlin interfaces use class_declaration; the kind comes from the keyword leaf
+    expect(symbols.find(s => s.name === 'UserRepo')?.type).toBe('interface');
   });
 });
 
@@ -266,7 +266,7 @@ func globalHelper() -> String { return "hello" }
     await assertEntities(`
 struct Point { var x: Int; var y: Int }
 enum Color { case red; case green; case blue }
-`, 'swift', { Point: null, Color: null });
+`, 'swift', { Point: 'struct', Color: 'enum' });
   });
 
   it('extracts init_declaration as named method', async () => {

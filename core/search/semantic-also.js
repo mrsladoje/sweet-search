@@ -23,7 +23,7 @@ export const ALSO_NAME_CAP = 5;
 const NAMEABLE_KINDS = new Set([
   'function', 'method', 'arrowfunction', 'constructor',
   'class', 'struct', 'interface', 'enum', 'trait', 'impl', 'module', 'namespace',
-  'typealias', 'type', 'object', 'rpc', 'service',
+  'typealias', 'type', 'object', 'rpc', 'service', 'actor', 'extension',
 ]);
 const CALLABLE_KINDS = new Set(['function', 'method', 'arrowfunction', 'constructor']);
 

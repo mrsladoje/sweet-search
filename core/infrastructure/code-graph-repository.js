@@ -780,7 +780,7 @@ export class CodeGraphRepository {
     if (!uniq.length) return [];
     const types = (opts.types && opts.types.length)
       ? opts.types
-      : ['struct', 'class', 'interface', 'enum', 'trait', 'type', 'typeAlias'];
+      : ['struct', 'class', 'interface', 'enum', 'trait', 'type', 'typeAlias', 'object', 'actor'];
     const limit = Math.max(1, Math.min(32, opts.limit ?? 8));
     const excludeFile = typeof opts.excludeFile === 'string' ? opts.excludeFile : null;
     try {
@@ -836,7 +836,7 @@ export class CodeGraphRepository {
     if (!uniq.length) return [];
     const types = (opts.types && opts.types.length)
       ? opts.types
-      : ['struct', 'class', 'interface', 'enum', 'trait', 'type', 'typeAlias'];
+      : ['struct', 'class', 'interface', 'enum', 'trait', 'type', 'typeAlias', 'object', 'actor'];
     const limit = Math.max(1, Math.min(32, opts.limit ?? 8));
     try {
       const sql = `
