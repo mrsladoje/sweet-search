@@ -18,6 +18,8 @@ import {
   OPENCODE_TOOL_EDITS as SHIPPED_OPENCODE_TOOL_EDITS, OPENCODE_TRIM_PLUGIN_SOURCE,
 } from '../../../scripts/harness-prompts/index.js';
 import { createHash, randomBytes } from 'node:crypto';
+import { createRequire } from 'node:module';
+import { addSidechainCostsChecked } from './claude-code-accounting.mjs';
 import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -641,7 +643,7 @@ export function parseOpencodeStream(stdout) {
     const tl = line.trim();
     if (!tl || tl[0] !== '{') continue;
     let ev; try { ev = JSON.parse(tl); } catch { continue; }
-    sessionID = sessionID || ev.sessionID || ev.sessionId || ev.session_id || null;
+    sessionID = sessionID || ev.sessionID || ev.sessionId || ev.session_id || ev.part?.sessionID || null;
     const p = ev.part || ev.properties?.part || ev;
     const type = ev.type || p.type;
     if (type === 'tool_use' || type === 'tool' || (p && p.tool && (p.state || p.callID || p.callId))) {
@@ -660,14 +662,7 @@ export function parseOpencodeStream(stdout) {
           || ev.messageID || ev.messageId || ev.message_id || prior?.messageId || null,
       });
     } else if (type === 'step_finish' || type === 'step-finish') {
-      const tk = p.tokens || {};
-      const cache = tk.cache || {};
-      const cRead = cache.read || 0, cWrite = cache.write || 0;
-      // cache.write is opencode's prompt-cache-creation count. It is folded into `in` (so the
-      // context size stays right) AND published separately, so the realized column can charge
-      // it at the provider's 1.25x creation rate — the same basis claude-code has always used
-      // (G17). Dropping the separate field puts opencode back on the old, cheaper basis.
-      turns.push({ in: (tk.input || 0) + cRead + cWrite, cached: cRead, cacheWrite: cWrite, out: (tk.output || 0) + (tk.reasoning || 0) });
+      turns.push(opencodeStepFinishTurn(p));
     } else if (type === 'text') {
       if (typeof p.text === 'string' && p.text.trim()) answer = p.text;
     } else if (type === 'error') {
@@ -675,6 +670,144 @@ export function parseOpencodeStream(stdout) {
     }
   }
   return { toolCalls: callOrder.map(id => calls.get(id)), answer, turns, errors, sessionID };
+}
+
+// One model request = one step-finish part, from the stream or from the session DB (same basis).
+// cache.write is opencode's prompt-cache-creation count. It is folded into `in` (so the
+// context size stays right) AND published separately, so the realized column can charge
+// it at the provider's 1.25x creation rate — the same basis claude-code has always used
+// (G17). Dropping the separate field puts opencode back on the old, cheaper basis.
+export function opencodeStepFinishTurn(p) {
+  const tk = p?.tokens || {};
+  const cache = tk.cache || {};
+  const cRead = cache.read || 0, cWrite = cache.write || 0;
+  return { in: (tk.input || 0) + cRead + cWrite, cached: cRead, cacheWrite: cWrite, out: (tk.output || 0) + (tk.reasoning || 0) };
+}
+
+// ─── subagent (child-session) spend ────────────────────────────────────────────────────────────
+// `opencode run --format json` streams ONLY the main session. A `task` tool call (explore /
+// general subagent) runs in a CHILD session (session.parent_id = the caller's session id) whose
+// requests and tool calls never reach the stream, so a ledger built from the stream is main-only.
+// Found 2026-10-04 (final-run TRACES-oc.md): native delegated to explore in 3 of 30 questions,
+// $0.27 off the row ledger; one child alone (composer-07) was $0.148, 2.3x the main session.
+// The bench cost definition is sidechain-INCLUSIVE (task-bench preregistration), so the child
+// sessions are read back from opencode's session DB (<ocData>/opencode.db) and priced with the
+// SAME per-turn function as the main session, each child as its own context.
+//
+// Pure part: rows of the session DB in, one set per descendant session out (depth-first,
+// creation order). Set shape = claude-code-accounting's sidechain sets, so
+// addSidechainCostsChecked prices both harnesses one way.
+//   db = { sessions: [{ id, parent_id, agent, title, time_created }],
+//          messages: [{ session_id, role }], parts: [{ session_id, data }] }  (parts in time order)
+export function opencodeChildSessionSets(db, mainSessionID) {
+  if (!mainSessionID) return [];
+  const kids = new Map();
+  for (const s of db.sessions || []) {
+    if (!s.parent_id) continue;
+    if (!kids.has(s.parent_id)) kids.set(s.parent_id, []);
+    kids.get(s.parent_id).push(s);
+  }
+  for (const list of kids.values()) list.sort((a, b) => (a.time_created ?? 0) - (b.time_created ?? 0) || (a.id < b.id ? -1 : 1));
+  const order = [];
+  const seen = new Set([mainSessionID]);
+  const visit = (id, depth) => {
+    for (const s of kids.get(id) || []) {
+      if (seen.has(s.id)) continue;
+      seen.add(s.id); order.push({ s, depth }); visit(s.id, depth + 1);
+    }
+  };
+  visit(mainSessionID, 1);
+  return order.map(({ s, depth }) => {
+    const turns = [], toolKinds = {};
+    let toolCalls = 0;
+    for (const row of db.parts || []) {
+      if (row.session_id !== s.id) continue;
+      const p = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+      if (p?.type === 'step-finish' || p?.type === 'step_finish') turns.push(opencodeStepFinishTurn(p));
+      else if (p?.type === 'tool') {
+        toolCalls++;
+        const { kind } = classifyTool(p.tool, p.state?.input || p.input);
+        toolKinds[kind] = (toolKinds[kind] || 0) + 1;
+      }
+    }
+    const assistantMessages = (db.messages || []).filter(m => m.session_id === s.id && m.role === 'assistant').length;
+    return {
+      name: s.id, parentId: s.parent_id, agent: s.agent ?? null, title: s.title ?? null, depth,
+      turns, toolCalls, toolKinds, assistantMessages, usageMessages: turns.length,
+      // Every assistant message is one request and ends in exactly one step-finish. A message
+      // without one (aborted / killed mid-request) has unknown usage: fail closed.
+      instrumentationComplete: assistantMessages === turns.length,
+    };
+  });
+}
+
+// DB part: read the rows opencodeChildSessionSets needs. Throws when the DB cannot be read; the
+// caller must then publish the row as cost-incomplete, never as main-only.
+export function readOpencodeChildSessions(dbPath, mainSessionID) {
+  if (!mainSessionID) return [];
+  const require = createRequire(import.meta.url);
+  const Database = require('better-sqlite3');
+  const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+  try {
+    db.pragma('busy_timeout = 5000');
+    const sessions = db.prepare('select id, parent_id, agent, title, time_created from session where parent_id is not null').all();
+    const ids = opencodeChildSessionSets({ sessions }, mainSessionID).map(x => x.name);
+    if (!ids.length) return [];
+    const ph = ids.map(() => '?').join(',');
+    const messages = db.prepare(`select session_id, json_extract(data, '$.role') as role from message where session_id in (${ph})`).all(...ids);
+    const parts = db.prepare(`select session_id, data from part where session_id in (${ph}) order by time_created, id`).all(...ids);
+    return opencodeChildSessionSets({ sessions, messages, parts }, mainSessionID);
+  } finally { db.close(); }
+}
+
+// Row cost fields of one opencode rollout: main session + every child session, under the one
+// cost definition (costsFromTurns per context, summed by addSidechainCostsChecked). childSets =
+// null means the session DB could not be read: the inclusive columns are then null and
+// costRealizedLowerBoundUsd carries the main-only figure (the claude-code fail-closed rule).
+// Main-only numbers stay on the row (…MainOnly…) for comparison with pre-2026-10-04 rows.
+export function opencodeRowCosts({ mainTurns, childSets, price }) {
+  const main = costsFromTurns(mainTurns, price);
+  const sum = (ts, k) => ts.reduce((a, t) => a + (Number(t[k]) || 0), 0);
+  const usageMainOnly = { turns: mainTurns.length, in: sum(mainTurns, 'in'), out: sum(mainTurns, 'out') };
+  if (childSets == null) {
+    return {
+      costs: { ...main, costRealizedUsd: null, costNaiveUsd: null, costRealizedFlat125Usd: null },
+      fields: {
+        usage: null, usageMainOnly,
+        costRealizedUsd: null, costNaiveUsd: null,
+        costRealizedMainOnlyUsd: main.costRealizedUsd, costNaiveMainOnlyUsd: main.costNaiveUsd,
+        costRealizedLowerBoundUsd: main.costRealizedUsd, costSidechainUsd: null,
+        subagentSessionsRead: false, subagentContexts: null, subagentTurns: null, subagentCalls: null,
+        costAccountingComplete: false,
+      },
+    };
+  }
+  // A child that never sent a request costs nothing and is no evidence of missing usage.
+  const sets = childSets.filter(s => s.assistantMessages > 0 || s.usageMessages > 0);
+  const costs = addSidechainCostsChecked(main, sets, price);
+  const childTurns = sets.flatMap(s => s.turns);
+  const childNaive = sets.reduce((a, s) => a + (s.turns.length ? costsFromTurns(s.turns, price).costNaiveUsd : 0), 0);
+  const subagentToolKinds = {};
+  for (const s of childSets) for (const [k, n] of Object.entries(s.toolKinds || {})) subagentToolKinds[k] = (subagentToolKinds[k] || 0) + n;
+  return {
+    costs,
+    fields: {
+      usage: { turns: mainTurns.length + childTurns.length, in: usageMainOnly.in + sum(childTurns, 'in'), out: usageMainOnly.out + sum(childTurns, 'out') },
+      usageMainOnly,
+      costRealizedUsd: costs.costRealizedUsd ?? null, costNaiveUsd: costs.costNaiveUsd ?? null,
+      costRealizedMainOnlyUsd: main.costRealizedUsd, costNaiveMainOnlyUsd: main.costNaiveUsd,
+      costRealizedLowerBoundUsd: costs.costRealizedLowerBoundUsd ?? null,
+      costSidechainUsd: costs.costSidechainUsd ?? null,
+      costNaiveSidechainUsd: +childNaive.toFixed(6),
+      subagentSessionsRead: true,
+      subagentContexts: childSets.length,
+      subagentAgents: childSets.map(s => s.agent),
+      subagentTurns: childTurns.length,
+      subagentCalls: childSets.reduce((a, s) => a + s.toolCalls, 0),
+      subagentToolKinds,
+      costAccountingComplete: costs.sidechainAccountingComplete !== false,
+    },
+  };
 }
 
 /**

@@ -72,7 +72,7 @@ const { parseClaudeStream, excludeAncestorClaudeMd } = await import(path.join(H,
 const { turnsFromTranscript, sidechainTurnSets, addSidechainCostsChecked, selectClaudeMainCosts } = await import(path.join(H, 'claude-code-accounting.mjs'));
 // Product-side harness functions (trim, rules, installers) come per arm from loadProduct() below.
 const { parseCodexAgentStream, buildPrivateHome, isZeroCallStartFailure, classifyCodexCommand } = await import(path.join(H, 'codex-task-runner.mjs'));
-const { opencodeUnjailedEnv, parseOpencodeStream, opencodeRunMessage } = await import(path.join(H, 'opencode-task-runner.mjs'));
+const { opencodeUnjailedEnv, parseOpencodeStream, opencodeRunMessage, readOpencodeChildSessions, opencodeRowCosts } = await import(path.join(H, 'opencode-task-runner.mjs'));
 const { WARMUP_ID, WARMUP_QUESTION, warmupEnabled, createWarmupGate, excludeWarmups, applyClaudeCacheTtl, firstRequestCacheFields, cacheFairness, cacheIsDeterministic, fairnessBanner } = await import(path.join(H, 'cache-warmup.mjs'));
 const { turnsFromRollout, LEDGER_BASIS } = await import(path.join(H, 'ideal-cost.mjs'));
 const { SPAWN_LEDGER_ENV, reapRoots, reapRootsSync } = await import(path.join(H, 'spawn-ledger-reap.mjs'));
@@ -576,6 +576,38 @@ function codexSyncAuthBack(home) {
 // event (the rollout file is named rollout-<time>-<thread id>.jsonl). Concurrent rollouts share a
 // cwd, so the thread id is the only unambiguous key. [] when it cannot be found: the fairness
 // check then reads the arm as unmeasured instead of guessing.
+function codexRolloutFile(home, stdout) {
+  const id = /"thread_id"\s*:\s*"([^"]+)"/.exec(stdout || '')?.[1];
+  if (!id) return null;
+  const walk = (d) => {
+    for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+      const f = path.join(d, e.name);
+      if (e.isDirectory()) { const hit = walk(f); if (hit) return hit; }
+      else if (e.name.endsWith(`-${id}.jsonl`)) return f;
+    }
+    return null;
+  };
+  return walk(path.join(home, 'sessions'));
+}
+// Codex offers collaboration tools (spawn_agent, followup_task, ...). A spawned agent is a separate
+// thread whose usage is NOT in this rollout's turn.completed usage, and this bench does not price it.
+// Count the calls in the main rollout so a row that delegated is published cost-incomplete (fail
+// closed) instead of main-only. null = rollout not found. The 2026-10 final run made 0 such calls.
+const CODEX_COLLAB_TOOLS = new Set(['spawn_agent', 'followup_task', 'send_message', 'wait_agent', 'interrupt_agent', 'list_agents']);
+function codexSubagentCalls(home, stdout) {
+  try {
+    const file = codexRolloutFile(home, stdout);
+    if (!file) return null;
+    let n = 0;
+    for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+      if (!line.includes('function_call')) continue;
+      let ev; try { ev = JSON.parse(line); } catch { continue; }
+      const pl = ev.payload || {};
+      if ((pl.type === 'function_call' || pl.type === 'custom_tool_call') && CODEX_COLLAB_TOOLS.has(String(pl.name || '').split('.').pop())) n++;
+    }
+    return n;
+  } catch { return null; }
+}
 function codexRolloutTurns(home, stdout) {
   try {
     const id = /"thread_id"\s*:\s*"([^"]+)"/.exec(stdout || '')?.[1];
@@ -614,8 +646,10 @@ async function runCodex(probe, sweet, arm) {
   const u = p.usage || {};
   const inTok = u.input_tokens || 0, cached = u.cached_input_tokens || 0, out = u.output_tokens || 0;
   const firstReq = firstRequestCacheFields(codexRolloutTurns(home, r.stdout));
+  const spawns = codexSubagentCalls(home, r.stdout);
+  const costsComplete = spawns == null ? null : spawns === 0; // null = rollout not found (unknown)
   return {
-    ...firstReq,
+    ...firstReq, subagentSpawnCalls: spawns, costAccountingComplete: costsComplete,
     calls: p.toolCalls.map(c => ({ kind: classifyCodexCommand(c.input?.command || '').kind, command: c.input?.command || '', text: c.result?.content || '', isError: c.result?.isError })),
     answer: p.answer, wallMs: Date.now() - t0, exitCode: r.exitCode, timedOut: r.timedOut, startRetried, usage: u,
     harnessTrim: trim.mode || null,
@@ -623,8 +657,10 @@ async function runCodex(probe, sweet, arm) {
     // Same figure on every basis (no write is charged), so the flat column equals it.
     ledgerBasis: LEDGER_BASIS,
     costRealizedFlat125Usd: ((inTok - cached) * PRICE.in + cached * PRICE.cache + out * PRICE.out) / 1e6,
-    costRealizedUsd: ((inTok - cached) * PRICE.in + cached * PRICE.cache + out * PRICE.out) / 1e6,
-    costNaiveUsd: (inTok * PRICE.in + out * PRICE.out) / 1e6,
+    // A delegating row is cost-incomplete: inclusive columns null, main-only figure as the lower bound.
+    costRealizedUsd: spawns > 0 ? null : ((inTok - cached) * PRICE.in + cached * PRICE.cache + out * PRICE.out) / 1e6,
+    costNaiveUsd: spawns > 0 ? null : (inTok * PRICE.in + out * PRICE.out) / 1e6,
+    costRealizedLowerBoundUsd: ((inTok - cached) * PRICE.in + cached * PRICE.cache + out * PRICE.out) / 1e6,
     costSource: 'turn.completed', errors: p.errors.slice(0, 3), stderrPreview: String(r.stderr || '').replace(/^Reading additional input from stdin\.\.\.\s*/, '').slice(0, 300),
   };
 }
@@ -712,14 +748,19 @@ async function runOpencode(probe, sweet, arm) {
   const trimReport = path.join(stateDir, P.OPENCODE_TRIM_REPORT);
   const trimApplied = trim.mode ? fs.existsSync(trimReport) : null;
   fs.rmSync(stateDir, { recursive: true, force: true });
-  const costs = costsFromTurns(p.turns, PRICE);
+  // Sidechain-inclusive cost (2026-10-04): the stream holds only the main session; every `task`
+  // subagent ran in a child session that only the session DB records. Unreadable DB → the row is
+  // cost-incomplete (inclusive columns null), never silently main-only.
+  let childSets = null;
+  try { childSets = p.sessionID ? readOpencodeChildSessions(path.join(ocData, 'opencode.db'), p.sessionID) : (p.turns.length ? null : []); } catch { childSets = null; }
+  const { costs, fields: costFields } = opencodeRowCosts({ mainTurns: p.turns, childSets, price: PRICE });
   return {
     calls: p.toolCalls.map(c => ({ kind: c.kind, command: c.command, text: c.resultText, isError: c.isError })),
     answer: p.answer, wallMs: Date.now() - t0, exitCode: r.exitCode, timedOut: r.timedOut, startRetried,
-    usage: { turns: p.turns.length, in: p.turns.reduce((a, t) => a + t.in, 0), out: p.turns.reduce((a, t) => a + t.out, 0) },
+    sessionID: p.sessionID,
     ...cacheLedgerFields(costs), ...firstRequestCacheFields(p.turns),
     harnessTrim: trim.mode || null, harnessTrimApplied: trimApplied,
-    costRealizedUsd: costs.costRealizedUsd, costNaiveUsd: costs.costNaiveUsd ?? null, costSource: 'step_finish',
+    ...costFields, costSource: 'step_finish+child_sessions',
     errors: p.errors.slice(0, 3), stderrPreview: String(r.stderr || '').slice(0, 300),
   };
 }
@@ -778,7 +819,10 @@ async function runOne(probe0, arm) {
     ...base, score: judged?.score ?? null,
     judgesOk: judged ? judged.judges.filter(j => !j.isError).map(j => j.lineage) : [],
     ...usd, ...rest,
-    calls: calls.length, toolKinds: kinds, ssCalls: kinds.ss || 0, ssUsed: (kinds.ss || 0) > 0,
+    // calls = every tool call the rollout paid for: main session + subagent sessions. Only opencode
+    // publishes subagentCalls (child sessions); Codex and Claude Code count what their stream carries.
+    calls: calls.length + (Number(rest.subagentCalls) || 0), callsMainOnly: calls.length,
+    toolKinds: kinds, ssCalls: kinds.ss || 0, ssUsed: (kinds.ss || 0) > 0,
     nativeSearchCalls: (kinds.nativeGrep || 0) + (kinds.nativeRead || 0),
     ssDeliveredTokens: delivered.reduce((s, d) => s + (d.used || 0), 0),
     // Same unit across commits: the compact ss-* output (since 2026-10-01) has no route trailer /
