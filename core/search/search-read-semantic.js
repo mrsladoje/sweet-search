@@ -509,6 +509,8 @@ function _expandAndMergeSpans(selected, totalLines, contextLines, gapMergeFits =
   const padded = selected
     .map(s => ({
       ...s,
+      coreStart: s.startLine,
+      coreEnd: s.endLine,
       startLine: Math.max(1, s.startLine - contextLines),
       endLine: Math.min(totalLines, s.endLine + contextLines),
     }))
@@ -531,6 +533,8 @@ function _expandAndMergeSpans(selected, totalLines, contextLines, gapMergeFits =
     if (last && (touching || sameDefinition)) {
       // Overlap or touching — merge.
       last.endLine = Math.max(last.endLine, span.endLine);
+      last.coreStart = Math.min(last.coreStart, span.coreStart);
+      last.coreEnd = Math.max(last.coreEnd, span.coreEnd);
       last.score = Math.max(last.score, span.score);
       last.symbols = Array.from(new Set([
         ...(last.symbols || []),
@@ -545,6 +549,8 @@ function _expandAndMergeSpans(selected, totalLines, contextLines, gapMergeFits =
       merged.push({
         startLine: span.startLine,
         endLine: span.endLine,
+        coreStart: span.coreStart,
+        coreEnd: span.coreEnd,
         score: span.score,
         symbols: span.symbol ? [span.symbol] : [],
         types: span.type ? [span.type] : [],
@@ -553,6 +559,25 @@ function _expandAndMergeSpans(selected, totalLines, contextLines, gapMergeFits =
     }
   }
   return merged;
+}
+
+// A context line above a span that only closes the previous definition, or is blank.
+const PAD_ABOVE_NOISE = /^\s*(?:[}\])]+[;,)]*)?\s*$|^\s*end\s*$/;
+// A context line below a span that is blank or starts the next definition's comment.
+const PAD_BELOW_NOISE = /^\s*$|^\s*(?:\/\/|\/\*|\*|#(?!\[)|--)/;
+
+/**
+ * Context padding (contextLines above and below a span's chunks) that is no context: the
+ * previous definition's closing `}` above (zipkin, drogon spans opened with a stray `}`), the
+ * next definition's doc comment below. Lines of the chunks themselves are never trimmed.
+ */
+function _trimContextPadding(spans, fileText, lineOffsets) {
+  const lineAt = (n) => fileText.slice(lineOffsets[n - 1] ?? 0, (lineOffsets[n] ?? fileText.length + 1) - 1);
+  for (const sp of spans) {
+    while (Number.isInteger(sp.coreStart) && sp.startLine < sp.coreStart && PAD_ABOVE_NOISE.test(lineAt(sp.startLine))) sp.startLine++;
+    while (Number.isInteger(sp.coreEnd) && sp.endLine > sp.coreEnd && PAD_BELOW_NOISE.test(lineAt(sp.endLine))) sp.endLine--;
+  }
+  return spans;
 }
 
 function _sliceSpanFromDisk(fileText, lineOffsets, startLine, endLine) {
@@ -861,7 +886,10 @@ async function _readSemanticUnpinned(req) {
   // over-budget span is cut from its head, and the cut dropped the best piece (composer
   // doUpdate 493-693: the top-scoring 668-691, the `setLockData` call, fell off the end).
   const spanChars = (a, b) => (lineOffsets[Math.min(b, lineOffsets.length - 1)] ?? fileText.length) - (lineOffsets[a - 1] ?? 0);
-  const merged = _expandAndMergeSpans(ranked, totalLines, contextLines, (a, b) => spanChars(a, b) <= maxChars);
+  const merged = _trimContextPadding(
+    _expandAndMergeSpans(ranked, totalLines, contextLines, (a, b) => spanChars(a, b) <= maxChars),
+    fileText, lineOffsets,
+  );
   const { spans, charsUsed } = exactRanges
     ? enforceExactCharBudget(merged, fileText, lineOffsets, maxChars, {
       pick: pickExcerpt,

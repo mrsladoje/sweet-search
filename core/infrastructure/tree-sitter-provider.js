@@ -952,8 +952,30 @@ const SWIFT_CONDITIONAL_DIRECTIVE_LINE = /^[ \t]*#(?:if|elseif|else|endif)\b[^\n
 // name, so drogon's HttpRequest became a one-line class `DROGON_EXPORT` and
 // lost every method. Shape rule, not a macro list: an ALL-CAPS token followed
 // by another identifier (not `final`) can only be a macro in valid C++.
+// A node that belongs to the definition right below it: a comment or a Rust attribute.
+const isDefinitionLead = (n) => /comment$/.test(n?.type || '') || n?.type === 'attribute_item';
+
 // Languages whose grammar uses one node for functions and methods (see the kind refinement).
-const METHOD_BY_CONTAINER_LANGUAGES = new Set(['python', 'swift', 'kotlin']);
+const METHOD_BY_CONTAINER_LANGUAGES = new Set(['python', 'swift', 'kotlin', 'rust']);
+
+const KOTLIN_CTOR_ON_NEXT_LINE = /\bclass[ \t]+\w+(?:<[^>\n]*>)?((?:[ \t]*\n(?:[ \t]*@\w+(?:\([^)\n]*\))?)?)+[ \t]*(?:(?:private|internal|protected|public)[ \t]+)?constructor\b)/g;
+
+function joinKotlinCtorHeaders(content) {
+  let out = '';
+  let from = 0;
+  KOTLIN_CTOR_ON_NEXT_LINE.lastIndex = 0;
+  for (let m = KOTLIN_CTOR_ON_NEXT_LINE.exec(content); m; m = KOTLIN_CTOR_ON_NEXT_LINE.exec(content)) {
+    const gapStart = m.index + m[0].length - m[1].length;
+    const brace = content.indexOf('{', m.index + m[0].length);
+    if (brace === -1 || brace - m.index > 4000) continue;
+    const gap = content.slice(gapStart, m.index + m[0].length);
+    const newlines = (gap.match(/\n/g) || []).length;
+    out += content.slice(from, gapStart) + gap.replace(/\n/g, ' ') + content.slice(m.index + m[0].length, brace + 1) + '\n'.repeat(newlines);
+    from = brace + 1;
+    KOTLIN_CTOR_ON_NEXT_LINE.lastIndex = brace + 1;
+  }
+  return from === 0 ? content : out + content.slice(from);
+}
 
 // Kotlin `fun interface Name` (after modifiers such as `public`), at a declaration start.
 const KOTLIN_FUN_INTERFACE = /(^|[\s;{}])fun[ \t]+interface\b/gm;
@@ -1103,6 +1125,12 @@ export class TreeSitterProvider {
       if (languageId === 'kotlin' && content.includes('fun interface')) {
         content = content.replace(KOTLIN_FUN_INTERFACE, (m, lead) => `${lead}${' '.repeat(m.length - lead.length - 9)}interface`);
       }
+      // Kotlin: a primary constructor on the lines after the class name (`class X\n
+      // @JvmOverloads\n constructor(`) does not parse; the class became one line and its
+      // members had no owner (okhttp HttpLoggingInterceptor.intercept). Join the header onto the
+      // class line and give the removed newlines back right after the body's `{`, so every line
+      // from the body on keeps its number.
+      if (languageId === 'kotlin' && content.includes('constructor')) content = joinKotlinCtorHeaders(content);
       // C/C++: blank a visibility macro after the class-key (same length).
       if (languageId === 'cpp' || languageId === 'c') {
         content = content.replace(CPP_CLASS_KEY_MACRO, (_m, key, gap, macro) => key + gap + ' '.repeat(macro.length));
@@ -1608,10 +1636,34 @@ export class TreeSitterProvider {
         buffer.push(node);
         bufferSize += nodeSize;
       } else {
-        // Doesn't fit — flush buffer first
+        // Doesn't fit — flush buffer first. The comments / attributes right above `node`
+        // (no blank line between) document it: they move to node's buffer instead of
+        // ending the previous chunk (dgraph `// readListPart reads ...` closed the chunk
+        // before readListPart; typedoc's parseCommentString doc ended parseComment's).
+        const carry = [];
+        let carrySize = 0;
+        let below = node;
+        while (buffer.length > 0) {
+          const last = buffer[buffer.length - 1];
+          if (!isDefinitionLead(last) || last.endPosition.row < below.startPosition.row - 1) break;
+          carry.unshift(last);
+          carrySize += last.endIndex - last.startIndex;
+          below = last;
+          buffer.pop();
+        }
+        if (carry.length && (carrySize + nodeSize > maxSize || buffer.length === 0)) {
+          // Does not fit with node, or there is nothing above to keep apart: as before.
+          buffer.push(...carry);
+          carry.length = 0;
+          carrySize = 0;
+        }
+        bufferSize -= carrySize;
         flushBuffer();
 
-        if (nodeSize <= maxSize) {
+        if (carry.length) {
+          buffer = [...carry, node];
+          bufferSize = carrySize + nodeSize;
+        } else if (nodeSize <= maxSize) {
           // Node fits alone — start new buffer
           buffer = [node];
           bufferSize = nodeSize;

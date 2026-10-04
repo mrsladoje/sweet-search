@@ -293,6 +293,33 @@ export function assessQueryEvidence(query, regex, topResult) {
  * @returns {{ verdict: 'yes'|'no'|'unknown', reason: string,
  *             evidence: object|null }}
  */
+/**
+ * True when every occurrence of `name(` in `code` is a declaration: the first `{` or `;` after
+ * its closing parenthesis is a `;`. False when the name is never written as `name(`.
+ */
+export function declarationOnly(code, name) {
+  const text = String(code || '');
+  const re = new RegExp(`(?<![\\w$])${String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\(`, 'g');
+  let seen = 0;
+  for (let m = re.exec(text); m; m = re.exec(text)) {
+    seen++;
+    // A call (`x = name(`, `f(name(`, `return name(`, `a.name(`) is no declaration.
+    const lineBefore = text.slice(text.lastIndexOf('\n', m.index) + 1, m.index);
+    if (/(?:[=(,!&|?:+\-*/<>]|\breturn|\bawait|\.|->|::)\s*$/.test(lineBefore) && !/^\s*$/.test(lineBefore)) return false;
+    let depth = 0;
+    let i = m.index + m[0].length - 1;
+    for (; i < text.length; i++) {
+      const ch = text[i];
+      if (ch === '(') depth++;
+      else if (ch === ')') { depth--; if (depth === 0) break; }
+    }
+    const rest = text.slice(i + 1);
+    const brace = rest.search(/[{;]/);
+    if (brace === -1 || rest[brace] === '{' || /^\s*(?:=>|->|=)/.test(rest)) return false;
+  }
+  return seen > 0;
+}
+
 export function computeSufficiencyVerdict({ topResult, confidenceInfo, query, regex, structural, lowerResults = [] }) {
   if (!topResult) {
     return { verdict: 'no', reason: 'no_results', evidence: null };
@@ -316,6 +343,13 @@ export function computeSufficiencyVerdict({ topResult, confidenceInfo, query, re
   if (!topResult.code) {
     // Summary-only top-1: the agent holds no code to answer from.
     return { verdict: 'unknown', reason: 'top_summary_only', evidence };
+  }
+
+  // The anchor the evidence rests on is only declared in top-1 (a C/C++ header prototype, an
+  // interface or abstract signature): the body that answers is elsewhere (drogon: RangeParser.h
+  // `parseRangeHeader(...);` claimed sufficient over the definition in RangeParser.cc).
+  if (evidence.exactHit && evidence.matchedAnchor && declarationOnly(topResult.code, evidence.matchedAnchor)) {
+    return { verdict: 'unknown', reason: 'declaration_only', evidence };
   }
 
   if (evidence.strength === 'strong') {

@@ -26,6 +26,11 @@ const TYPE_USER_TARGETS = new Set([
 ]);
 const TYPE_REF_CALLER_LIMIT = 40;
 const TYPE_REF_IMPORTANCE = 0.5;
+// Implementations / subtypes listed among callers (`overrides`, `implements`, `extends`) rank
+// below calls in the 40-row section: okhttp Interceptor.intercept has ~25 implementations and
+// they pushed real calls (KotlinSourceModernTest:614) out of the cap.
+const SUBTYPE_RELATIONS = new Set(['overrides', 'implements', 'extends']);
+const SUBTYPE_IMPORTANCE = 0.6;
 function estimateTokens(text) {
   return text ? Math.ceil(String(text).length / 3.5) : 0;
 }
@@ -458,6 +463,14 @@ export function buildImpactPaths(repo, target, opts) {
       includeNamePattern: depth === 1,
       limit: limit * 3,
     });
+    // Calls through the method a frontier node overrides or implements reach it by dispatch
+    // (jj: cli code calls the trait method LockedWorkingCopy::snapshot, which
+    // LockedLocalWorkingCopy::snapshot implements) — same rule as the callers section.
+    for (const [frontierId, { entity }] of frontier) {
+      for (const row of dispatchCallersOf(repo, entity, [], 24)) {
+        rows.push({ ...row, targetId: frontierId, targetName: null, relationship: 'calls' });
+      }
+    }
     const next = new Map();
     for (const row of rows) {
       if (!row.id || row.id === target.id || upstreamVisited.has(row.id) || isScopeNode(row)) continue;
@@ -625,6 +638,91 @@ function addHintImpactPaths(paths, seen, repo, target, hintSites, limit, resolve
   }
 }
 
+// The text of a parenthesised list starting at `open` (index of `(`), or null when unbalanced.
+function parenBody(text, open) {
+  let depth = 0;
+  for (let i = open; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '(' || ch === '[' || ch === '{' || ch === '<' && /\w/.test(text[i - 1] || '')) depth++;
+    else if (ch === ')' || ch === ']' || ch === '}' || (ch === '>' && depth > 1 && text[i - 1] !== '-')) {
+      depth--;
+      if (depth === 0) return text.slice(open + 1, i);
+    }
+  }
+  return null;
+}
+
+// Top-level comma-separated parts of a parameter / argument list.
+function listParts(body) {
+  const parts = [];
+  let depth = 0;
+  let cur = '';
+  for (const ch of body) {
+    if ('([{<'.includes(ch)) depth++;
+    else if (')]}>'.includes(ch)) depth = Math.max(0, depth - 1);
+    if (ch === ',' && depth === 0) { parts.push(cur); cur = ''; } else cur += ch;
+  }
+  if (cur.trim()) parts.push(cur);
+  return parts.map((p) => p.trim()).filter(Boolean);
+}
+
+// [min, max] arguments a definition's parameter list takes (defaults lower min; variadics: max ∞).
+function parameterRange(source, name) {
+  const at = String(source || '').search(new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\(`));
+  if (at < 0) return null;
+  const body = parenBody(source, source.indexOf('(', at));
+  if (body == null) return null;
+  const params = listParts(body).filter((p) => p !== 'void');
+  const variadic = params.some((p) => /\.\.\.|^\*|\bparams\b|vararg/.test(p));
+  const min = params.filter((p) => !/=/.test(p) && !/\.\.\.|^\*|\bparams\b|vararg/.test(p)).length;
+  return [min, variadic ? Infinity : params.length];
+}
+
+/** Callers whose call lines all pass an argument count of another overload are dropped. */
+function dropOtherOverloadCalls(repo, target, rows) {
+  if (!target?.name || !target.filePath || typeof repo.readFileRange !== 'function') return rows;
+  const siblings = (repo.findEntityCandidates?.(target.name, { filePath: target.filePath, limit: 12 }) || [])
+    .filter((e) => e.id !== target.id && e.name === target.name && e.filePath === target.filePath
+      && (e.parentClass || null) === (target.parentClass || null));
+  if (!siblings.length) return rows;
+  const rangeOf = (e) => parameterRange(repo.readFileRange(e.filePath, e.startLine, Math.min(e.endLine ?? e.startLine, e.startLine + 20)), e.name);
+  const own = rangeOf(target);
+  const others = siblings.map(rangeOf).filter(Boolean);
+  if (!own || !others.length) return rows;
+  const fits = (r, n) => n >= r[0] && n <= r[1];
+  return rows.filter((row) => {
+    if (row.relationship && row.relationship !== 'calls') return true;
+    const lines = siteLines(row);
+    if (!lines.length || !row.filePath) return true;
+    return lines.some((line) => {
+      const text = repo.readFileRange(row.filePath, line, line + 4) || '';
+      const m = new RegExp(`\\b${target.name}\\s*\\(`).exec(text);
+      if (!m) return true;
+      const body = parenBody(text, m.index + m[0].length - 1);
+      if (body == null) return true;
+      const n = listParts(body).length;
+      return fits(own, n) || !others.some((r) => fits(r, n));
+    });
+  });
+}
+
+/**
+ * Impact paths in importance order within each direction, the two directions taking turns:
+ * the pack's path slots go to both trees (jj `snapshot`: 25 downstream paths outranked every
+ * upstream path past the first hop, and the callers through the trait never printed).
+ */
+function interleaveDirections(paths) {
+  const by = (dir) => paths.filter(p => (p.direction || 'upstream') === dir).sort((a, b) => b.importance - a.importance);
+  const up = by('upstream');
+  const down = by('downstream');
+  const out = [];
+  for (let i = 0; i < Math.max(up.length, down.length); i++) {
+    if (i < up.length) out.push(up[i]);
+    if (i < down.length) out.push(down[i]);
+  }
+  return out;
+}
+
 function formatPath(path) {
   return path.path.map(p => {
     const loc = p.filePath ? `${p.filePath}:${p.startLine || '?'}` : 'external';
@@ -704,6 +802,12 @@ export class StructuralContextBuilder {
     const genericName = isGenericTargetName(targetDefs, allCallers.length);
     // Name-only guesses dropped for a generic name are listed as unresolved, not lost.
     const callersRaw = dropNameOnlyCallers(allCallers, target, targetDefs, unresolvedNamed).map(x => ({ ...x, depth: 1 }));
+    // A call whose argument count fits another overload of the target, not the target itself,
+    // calls that overload (drogon newOptionsResponse calls newHttpResponse(a, b), the 2-argument
+    // overload, not the 0-argument target).
+    const callersByArity = [...dropOtherOverloadCalls(this.repo, target, callersRaw)];
+    callersRaw.length = 0;
+    callersRaw.push(...callersByArity);
     // Same-name calls the graph did not resolve, from code not already listed as a caller.
     const callerIds = new Set(callersRaw.map(x => x.id));
     const unresolvedCallers = mergeCallSites(unresolvedNamed.filter(x => !callerIds.has(x.id)))
@@ -768,13 +872,14 @@ export class StructuralContextBuilder {
     // Signature users rank below callers, constructors and subtypes.
     const callers = callersRaw.map(x => ({
       ...x,
-      importance: scoreEntity(x, callerCtx) * (x.relationship === 'typeRef' ? TYPE_REF_IMPORTANCE : 1),
+      importance: scoreEntity(x, callerCtx) * (x.relationship === 'typeRef' ? TYPE_REF_IMPORTANCE
+        : SUBTYPE_RELATIONS.has(x.relationship) ? SUBTYPE_IMPORTANCE : 1),
     }));
     const callees = calleesRaw.map(x => ({ ...x, importance: scoreEntity(x, calleeCtx) }));
-    const impactPaths = impactRaw.map(p => ({
+    const impactPaths = interleaveDirections(impactRaw.map(p => ({
       ...p,
       importance: scoreImpactPath(p, p.direction === 'downstream' ? calleeCtx : callerCtx),
-    })).sort((a, b) => b.importance - a.importance);
+    })));
 
     callers.sort((a, b) => b.importance - a.importance);
     callees.sort((a, b) => b.importance - a.importance);

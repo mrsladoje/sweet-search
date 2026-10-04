@@ -79,8 +79,8 @@ describe('readSemantic exactRanges / pickExcerpt', () => {
   it('shipped (no option): the merged range is claimed although only its head was kept', async () => {
     const r = await read();
     expect(r.spans).toHaveLength(1);
-    // 21: the reader counts the empty string after the final newline as a line
-    expect([r.spans[0].startLine, r.spans[0].endLine, r.spans[0].truncated]).toEqual([1, 21, true]);
+    // 20: the empty line after the final newline is context padding, trimmed
+    expect([r.spans[0].startLine, r.spans[0].endLine, r.spans[0].truncated]).toEqual([1, 20, true]);
     expect(r.spans[0].text.length).toBe(200);
   });
 
@@ -144,7 +144,7 @@ describe('the ss-semantic printer', () => {
   it('SS_FIX_SEMANTIC_RANGES=0 (legacy): the heading still over-claims (that is the defect)', async () => {
     const out = await ssSemantic(ARGS, { SS_FIX_SEMANTIC_RANGES: '0' });
     const [block] = printed(out);
-    expect([block.start, block.end]).toEqual([1, 21]);
+    expect([block.start, block.end]).toEqual([1, 20]);
     expect(block.code.length).toBeLessThan(20);
     expect(out).not.toContain('# not shown');
   });

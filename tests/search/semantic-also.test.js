@@ -510,7 +510,7 @@ describe('warm-server path and in-process path agree', () => {
       const warm = JSON.parse(warmResponse.body);
       expect(warm.code).toBe(0);
       expect(warm.stderr).toBe('');
-      expect(warm.stdout).toContain('## 1-6 functions alpha, f0\n');
+      expect(warm.stdout).toContain('## 1-4 functions alpha, f0\n');
       expect(warm.stdout).toContain('# also: 41-44 function beta · 81-84 function gamma · 121-124 function delta');
       expect(requests).toHaveLength(1);
       expect(requests[0]).toMatch(/^\/read-semantic\?/);
