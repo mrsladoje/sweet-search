@@ -952,6 +952,9 @@ const SWIFT_CONDITIONAL_DIRECTIVE_LINE = /^[ \t]*#(?:if|elseif|else|endif)\b[^\n
 // name, so drogon's HttpRequest became a one-line class `DROGON_EXPORT` and
 // lost every method. Shape rule, not a macro list: an ALL-CAPS token followed
 // by another identifier (not `final`) can only be a macro in valid C++.
+// Languages whose grammar uses one node for functions and methods (see the kind refinement).
+const METHOD_BY_CONTAINER_LANGUAGES = new Set(['python', 'swift', 'kotlin']);
+
 // Kotlin `fun interface Name` (after modifiers such as `public`), at a declaration start.
 const KOTLIN_FUN_INTERFACE = /(^|[\s;{}])fun[ \t]+interface\b/gm;
 
@@ -1250,10 +1253,11 @@ export class TreeSitterProvider {
         }
 
         const parentClass = this._containerName(extentNode, languageId);
-        // Python has one node for both: a `def` whose container is a class is a method
-        // (tortoise `Model.bulk_create` printed as `function bulk_create`). A def nested in a
-        // def has no container (CONTAINER_STOP_NODE_TYPES), so it stays a function.
-        if (languageId === 'python' && entityType === 'function' && parentClass) entityType = 'method';
+        // Python, Swift and Kotlin have one node for both: a `def` / `func` / `fun` whose
+        // container is a type is a method (tortoise `Model.bulk_create`, grdb
+        // `Database.openConnection`, okhttp `intercept` printed as `function`). A function nested
+        // in a function has no container (CONTAINER_STOP_NODE_TYPES), so it stays a function.
+        if (METHOD_BY_CONTAINER_LANGUAGES.has(languageId) && entityType === 'function' && parentClass) entityType = 'method';
         // A Python `decorated_definition` entity spans the decorated def; the
         // docstring documents that def's own entity, not the decorator
         // (flask: 96 of 415 docs were such duplicates).

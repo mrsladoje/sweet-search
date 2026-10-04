@@ -224,8 +224,8 @@ class UserService(private val repo: UserRepo) {
 object Singleton { fun getInstance(): Singleton = this }
 fun topLevel(): String = "hello"
 `, 'kotlin', {
-      UserService: 'class', findUser: 'function',
-      Singleton: 'object', getInstance: 'function', topLevel: 'function',
+      UserService: 'class', findUser: 'method',
+      Singleton: 'object', getInstance: 'method', topLevel: 'function',
     });
   });
 
@@ -257,7 +257,7 @@ class UserManager {
 protocol Repository { func findAll() -> [Any] }
 func globalHelper() -> String { return "hello" }
 `, 'swift', {
-      UserManager: 'class', fetchUsers: 'function',
+      UserManager: 'class', fetchUsers: 'method',
       Repository: 'interface', findAll: 'method', globalHelper: 'function',
     });
   });
@@ -478,7 +478,7 @@ public class UserService extends BaseService implements Serializable {
     {
       lang: 'kotlin', file: 'UserRepo.kt',
       code: 'class UserRepo {\n    fun findById(id: Long): User? = null\n}',
-      entities: [['class', 'UserRepo'], ['function', 'findById']],
+      entities: [['class', 'UserRepo'], ['method', 'findById']],
     },
     {
       lang: 'swift', file: 'Manager.swift',
