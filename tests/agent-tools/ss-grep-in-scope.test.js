@@ -14,6 +14,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { bareGrep } from '../../core/search/index.js';
 import { runInVirtualProcess } from '../../core/agent-tools/virtual-process.js';
+import { grepHitCount } from './grep-listing-helpers.js';
 import { runAgentTool } from '../../eval/agent-read-workflows/bin/_ss-helpers.mjs';
 import { grepFileFilterPredicate, matchesGrepFileFilter } from '../../core/search/grep-output-shaping.js';
 import {
@@ -99,9 +100,7 @@ describe('ss-grep --in on a repository that contains a copy of itself (real engi
     const r = await runInVirtualProcess({ env, cwd: root },
       () => runAgentTool('grep', args, { getSearcher: () => searcher }));
     const out = r.stdout.toString('utf8');
-    const m = /^# ss-grep: (\d+) total match/.exec(out);
-    expect(m, out).not.toBeNull();
-    return { n: Number(m[1]), out };
+    return { n: grepHitCount(out), out };
   }
 
   it('gram path: a root path scope returns the root file only', async (ctx) => {

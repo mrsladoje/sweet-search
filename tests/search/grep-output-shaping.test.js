@@ -16,9 +16,10 @@ import {
   selectGrepFilesByWeight,
   grepFilePrior,
   renderGrepBody,
-  reallocateGrepTailForManifest,
   matchesGrepFileFilter,
-  renderGrepContext,
+  renderGrepListing,
+  renderGrepHiddenFiles,
+  GREP_HIDDEN_HINT,
 } from '../../core/search/grep-output-shaping.js';
 import { bareGrep, SweetSearch } from '../../core/search/index.js';
 import { buildSingletonSiblingLine } from '../../core/search/agent-pack-completion.js';
@@ -293,35 +294,6 @@ describe('renderGrepBody', () => {
     expect(body.hiddenLine).toMatch(/^# \+2 more file\(s\) with 4 match\(es\)/);
     expect(body.hiddenLine).toContain('f5.js');
     expect(body.hiddenLine).toContain('--in <file>');
-  });
-});
-
-describe('reallocateGrepTailForManifest', () => {
-  it('pays for an indexed family manifest by removing complete tail lines', () => {
-    const lines = [
-      'src/i32/ivec2.rs:22: pub struct IVec2',
-      'src/i32/ivec3.rs:22: pub struct IVec3',
-      'src/u32/uvec2.rs:22: pub struct UVec2',
-    ];
-    const manifest = { rendered: '# indexed family: IVec{2,3,4} · UVec{2,3,4} · I64Vec{2,3,4} · U64Vec{2,3,4}' };
-    const beforeTokens = lines.reduce((sum, line) => sum + Math.ceil(`${line}\n`.length / 3.5), 0);
-    const out = reallocateGrepTailForManifest(lines, manifest);
-    const afterTokens = out.lines.reduce((sum, line) => sum + Math.ceil(`${line}\n`.length / 3.5), 0)
-      + Math.ceil(`${out.familyManifest.rendered}\n`.length / 3.5);
-
-    expect(out.removedLineCount).toBeGreaterThan(0);
-    expect(out.lines).toEqual(lines.slice(0, -out.removedLineCount));
-    expect(afterTokens).toBeLessThanOrEqual(beforeTokens);
-  });
-
-  it('abstains when all grep lines cannot fund the manifest', () => {
-    const lines = ['a:1: x'];
-    const manifest = { rendered: `# indexed family: ${'VeryLongFamily'.repeat(20)}` };
-    expect(reallocateGrepTailForManifest(lines, manifest)).toEqual({
-      lines,
-      familyManifest: null,
-      removedLineCount: 0,
-    });
   });
 });
 
@@ -990,59 +962,73 @@ describe('singleton sibling line (squashql-295)', () => {
   });
 });
 
-describe('renderGrepContext (ss-grep -A/-B/-C)', () => {
+describe('renderGrepListing (ss-grep output, grouped by file)', () => {
   const FILE = Array.from({ length: 30 }, (_, i) => `line ${i + 1}`);
   FILE[9] = '    pub enum ConfigSource {';   // line 10, indented
   FILE[11] = '';                              // line 12, blank
   const files = { 'src/a.rs': FILE, 'src/b.rs': ['fn b() {', '    ConfigSource::Env', '}'] };
   const getLines = (f) => files[f] ?? null;
 
-  it('renders grep -n shape: hit `file:N: text`, context `file-N- text`, full indented lines', () => {
-    const out = renderGrepContext([{ file: 'src/a.rs', line: 10, text: 'ConfigSource' }], { before: 1, after: 2, getLines });
-    expect(out).toEqual([
-      'src/a.rs-9- line 9',
-      'src/a.rs:10:     pub enum ConfigSource {',
-      'src/a.rs-11- line 11',
-      'src/a.rs-12-',
+  it('prints each path once, then `LINE:text` rows; a file with hidden hits says how many on its path line', () => {
+    const rows = [
+      { file: 'posting/index.go', line: 497, text: 'func (txn *Txn) addMutationHelper(' },
+      { file: 'posting/list_test.go', line: 75, text: 'func addMutationHelper(t *testing.T) {' },
+      { file: 'posting/list_test.go', line: 177, text: 'addMutationHelper(t, l, edge, Set, txn)', more: 62 },
+    ];
+    expect(renderGrepListing(rows)).toEqual([
+      'posting/index.go', '497:func (txn *Txn) addMutationHelper(',
+      'posting/list_test.go (+62 more)', '75:func addMutationHelper(t *testing.T) {', '177:addMutationHelper(t, l, edge, Set, txn)',
     ]);
   });
 
-  it('merges overlapping and touching windows, separates groups and files with --', () => {
+  it('rows of one file group under one path even when they arrive apart; dropText prints the line only', () => {
+    const rows = [{ file: 'a.go', line: 3, text: 'x' }, { file: 'b.go', line: 1, text: 'x' }, { file: 'a.go', line: 9, text: 'x' }];
+    expect(renderGrepListing(rows)).toEqual(['a.go', '3:x', '9:x', 'b.go', '1:x']);
+    expect(renderGrepListing(rows, { dropText: true })).toEqual(['a.go', '3', '9', 'b.go', '1']);
+  });
+
+  it('context: hit `N:text`, context `N-text`, full indented lines, under the path', () => {
+    const out = renderGrepListing([{ file: 'src/a.rs', line: 10, text: 'ConfigSource' }], { before: 1, after: 2, getLines });
+    expect(out).toEqual(['src/a.rs', '9-line 9', '10:    pub enum ConfigSource {', '11-line 11', '12-']);
+  });
+
+  it('context: merges overlapping and touching windows; -- separates windows of one file, the path separates files', () => {
     const rows = [
       { file: 'src/a.rs', line: 3, text: 'x' },
       { file: 'src/a.rs', line: 5, text: 'x' },     // overlaps 3's window
       { file: 'src/a.rs', line: 8, text: 'x' },     // touches (6..7 | 7..9)
-      { file: 'src/a.rs', line: 20, text: 'x' },    // separate group
+      { file: 'src/a.rs', line: 20, text: 'x' },    // separate window
       { file: 'src/b.rs', line: 2, text: 'x' },     // next file
     ];
-    const out = renderGrepContext(rows, { before: 1, after: 1, getLines });
-    expect(out).toEqual([
-      'src/a.rs-2- line 2', 'src/a.rs:3: line 3', 'src/a.rs-4- line 4', 'src/a.rs:5: line 5',
-      'src/a.rs-6- line 6', 'src/a.rs-7- line 7', 'src/a.rs:8: line 8', 'src/a.rs-9- line 9',
+    expect(renderGrepListing(rows, { before: 1, after: 1, getLines })).toEqual([
+      'src/a.rs', '2-line 2', '3:line 3', '4-line 4', '5:line 5', '6-line 6', '7-line 7', '8:line 8', '9-line 9',
       '--',
-      'src/a.rs-19- line 19', 'src/a.rs:20: line 20', 'src/a.rs-21- line 21',
-      '--',
-      'src/b.rs-1- fn b() {', 'src/b.rs:2:     ConfigSource::Env', 'src/b.rs-3- }',
+      '19-line 19', '20:line 20', '21-line 21',
+      'src/b.rs', '1-fn b() {', '2:    ConfigSource::Env', '3-}',
     ]);
   });
 
-  it('-A only (the jj-13 enum case) clamps at end of file', () => {
-    const out = renderGrepContext([{ file: 'src/b.rs', line: 2, text: 'x' }], { before: 0, after: 22, getLines });
-    expect(out).toEqual(['src/b.rs:2:     ConfigSource::Env', 'src/b.rs-3- }']);
+  it('context: -A only clamps at end of file; a matching context line prints with `:`', () => {
+    expect(renderGrepListing([{ file: 'src/b.rs', line: 2, text: 'x' }], { after: 22, getLines }))
+      .toEqual(['src/b.rs', '2:    ConfigSource::Env', '3-}']);
+    expect(renderGrepListing([{ file: 'src/a.rs', line: 3, text: 'x', more: 4 }], {
+      after: 2, getLines, matchLines: new Map([['src/a.rs', new Set([3, 4])]]),
+    })).toEqual(['src/a.rs (+4 more)', '3:line 3', '4:line 4', '5-line 5']);
   });
 
-  it('keeps a truncation marker on its hit and marks other matching lines with `:`', () => {
-    const out = renderGrepContext([{ file: 'src/a.rs', line: 3, text: 'x', suffix: ' (+4 more in this file)' }], {
-      before: 0, after: 2, getLines, matchLines: new Map([['src/a.rs', new Set([3, 4])]]),
-    });
-    expect(out).toEqual(['src/a.rs:3: line 3 (+4 more in this file)', 'src/a.rs:4: line 4', 'src/a.rs-5- line 5']);
-  });
-
-  it('an unreadable file or a stale line prints the plain hit line, in order', () => {
-    const out = renderGrepContext([
-      { file: 'gone.rs', line: 4, text: 'hit', suffix: ' (+1 more — raise -k)' },
+  it('context: an unreadable file or a stale line prints the plain hit row, in order', () => {
+    expect(renderGrepListing([
+      { file: 'gone.rs', line: 4, text: 'hit', more: 1 },
       { file: 'src/b.rs', line: 99, text: 'stale' },
-    ], { before: 2, after: 2, getLines });
-    expect(out).toEqual(['gone.rs:4: hit (+1 more — raise -k)', '--', 'src/b.rs:99: stale']);
+      { file: 'src/b.rs', line: 2, text: 'x' },
+    ], { before: 0, after: 1, getLines })).toEqual(['gone.rs (+1 more)', '4:hit', 'src/b.rs', '2:    ConfigSource::Env', '3-}', '--', '99:stale']);
+  });
+
+  it('the hidden-files line and the hint', () => {
+    expect(renderGrepHiddenFiles(null)).toBeNull();
+    expect(renderGrepHiddenFiles({ files: 1, matches: 1, sample: ['a_test.go'] })).toBe('# +1 more file with 1 hit: a_test.go');
+    expect(renderGrepHiddenFiles({ files: 6, matches: 10, sample: ['a.go', 'b.go', 'c.go'] }))
+      .toBe('# +6 more files with 10 hits: a.go, b.go, c.go');
+    expect(GREP_HIDDEN_HINT).toBe('# hidden hits: raise -k or use --in <file>');
   });
 });

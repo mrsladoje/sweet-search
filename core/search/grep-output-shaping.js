@@ -693,7 +693,13 @@ export function renderGrepBody(kept, fileSummary, k, opts = undefined) {
   return finishGrepBody(rows, unallocated, fileSummary, shownMatches, truncatedFileCount, opts);
 }
 
-/** Shared tail of both rules: printed lines, the hidden-files line, the counts. */
+/**
+ * Shared tail of both rules: the rows, the hidden files, the counts. ss-grep prints `rows` and
+ * `hidden` through renderGrepListing / renderGrepHiddenFiles. `lines` and `hiddenLine` are the
+ * pre-2026-10-04 flat form (`file:line: text (+N more in this file)`), kept only because
+ * eval/grep-allocation-replay and scripts/benchmark-grep-allocation.js compare them with
+ * recorded tool output in that form.
+ */
 function finishGrepBody(rows, unallocated, fileSummary, shownMatches, truncatedFileCount, opts) {
   const dropText = opts?.dropRepeatedText === true
     && rows.length > 1 && rows.every(row => row.text === rows[0].text);
@@ -725,72 +731,62 @@ function finishGrepBody(rows, unallocated, fileSummary, shownMatches, truncatedF
     matchedFileCount: fileSummary.files.length + fileSummary.hiddenFileCount,
     truncatedFileCount,
     hiddenLine,
+    hidden: hiddenFiles > 0
+      ? { files: hiddenFiles, matches: hiddenMatches,
+        sample: [...unallocated.map(f => f.file), ...fileSummary.hiddenSample.map(f => f.file)].slice(0, 3) }
+      : null,
   };
 }
 
 /**
- * Replace the lowest-ranked complete grep lines with an indexed family
- * manifest, but only when those lines fully fund the manifest's estimated
- * tokens. The input is never mutated and an underfunded manifest is omitted.
- */
-export function reallocateGrepTailForManifest(lines, manifest, estimateTokens = (text) => (
-  text ? Math.ceil(text.length / 3.5) : 0
-)) {
-  if (!Array.isArray(lines) || !manifest?.rendered || lines.length === 0) {
-    return { lines, familyManifest: null, removedLineCount: 0 };
-  }
-  const required = estimateTokens(`${manifest.rendered}\n`);
-  let reclaimed = 0;
-  let keep = lines.length;
-  while (keep > 0 && reclaimed < required) {
-    keep--;
-    reclaimed += estimateTokens(`${lines[keep]}\n`);
-  }
-  if (reclaimed < required) {
-    return { lines, familyManifest: null, removedLineCount: 0 };
-  }
-  return {
-    lines: lines.slice(0, keep),
-    familyManifest: { ...manifest, tokens: required },
-    removedLineCount: lines.length - keep,
-  };
-}
-
-/**
- * `grep -n -A/-B/-C` rendering of the hits ss-grep already chose to show.
+ * The ss-grep listing, grouped by file as `rg --heading` prints it: the path once, then one
+ * `LINE:text` row per hit under it. Repeating the path on every hit cost 5-8 o200k tokens a
+ * line and told the agent nothing new.
  *
- * Agents read grep's own shape without instruction, so this is that shape: a hit
- * is `file:LINE: text`, a context line is `file-LINE- text`, overlapping or
- * touching windows of one file merge into one group, and groups are separated by
- * `--`. Every printed line is the FULL source line (indentation kept), not the
- * matched substring the context-free body prints. A line that matches the regex
- * but was not itself a shown hit still prints with `:`, as grep would.
+ *   posting/list_test.go (+63 more)      a file with hits the budget did not show says how many
+ *   75:func addMutationHelper(t *testing.T, l *List, ...
+ *   177:addMutationHelper(t, l, edge, Set, txn)
  *
- * Pure: file contents come from `getLines(file)` (1-based line i is element i-1;
- * null when unreadable, in which case that file's hits print as plain hit lines).
+ * With -A/-B/-C (`before`/`after` > 0) it is grep's context shape under the same heading: a hit
+ * is `LINE:text`, a context line `LINE-text`, overlapping or touching windows of one file merge,
+ * and windows of one file are separated by `--` (the next path line separates files). Context
+ * rows print the FULL source line, indentation kept: it shows the structure around the hit, and
+ * an edit copied from several lines needs it. A context line that matches the regex but was not
+ * itself a shown hit still prints with `:`, as grep would. Without context, each hit prints the
+ * text the body chose (grepHitText: whitespace collapsed, so no indentation).
  *
- * @param {Array<{file: string, line: number, text?: string, suffix?: string}>} rows -
- *   shown hits in display order; `suffix` (a truncation marker) is kept on its hit
- * @param {{before?: number, after?: number,
- *          getLines: (file: string) => string[]|null,
- *          matchLines?: Map<string, Set<number>>}} opts
+ * Pure: file contents come from `getLines(file)` (1-based line i is element i-1; null when
+ * unreadable, in which case that file's hits print as plain hit rows).
+ *
+ * @param {Array<{file: string, line: number, text?: string, more?: number}>} rows - shown hits
+ *   in display order; `more` = hits of that file not shown (printed on its path line)
+ * @param {{before?: number, after?: number, getLines?: (file: string) => string[]|null,
+ *          matchLines?: Map<string, Set<number>>, dropText?: boolean}} [opts] - `dropText`:
+ *   print `LINE` only (every shown hit has the same text)
  * @returns {string[]} output lines
  */
-export function renderGrepContext(rows, { before = 0, after = 0, getLines, matchLines } = {}) {
-  const groups = [];
+export function renderGrepListing(rows, { before = 0, after = 0, getLines = null, matchLines = null, dropText = false } = {}) {
+  const groups = new Map();
   for (const row of rows || []) {
-    const last = groups[groups.length - 1];
-    if (last && last.file === row.file) last.rows.push(row);
-    else groups.push({ file: row.file, rows: [row] });
+    let g = groups.get(row.file);
+    if (!g) { g = { rows: [], more: 0 }; groups.set(row.file, g); }
+    g.rows.push(row);
+    g.more += row.more > 0 ? row.more : 0;
   }
-  const blocks = [];
-  for (const { file, rows: hits } of groups) {
-    const lines = getLines ? getLines(file) : null;
-    const plain = (row) => `${row.file}:${row.line}: ${row.text ?? ''}${row.suffix || ''}`;
+  const withContext = before > 0 || after > 0;
+  const out = [];
+  for (const [file, { rows: hits, more }] of groups) {
+    out.push(more > 0 ? `${file} (+${more} more)` : file);
+    const plain = (row) => (dropText ? `${row.line}` : `${row.line}:${row.text ?? ''}`);
+    const lines = withContext && getLines ? getLines(file) : null;
+    if (!lines) {
+      for (const row of hits) out.push(plain(row));
+      continue;
+    }
     const windows = [];
     for (const row of [...hits].sort((a, b) => a.line - b.line)) {
-      if (!lines || row.line < 1 || row.line > lines.length) {
-        windows.push({ plain: plain(row) });           // stale or unreadable: the hit alone
+      if (row.line < 1 || row.line > lines.length) {
+        windows.push({ plain: plain(row) });           // stale: the hit alone
         continue;
       }
       const start = Math.max(1, row.line - before);
@@ -798,29 +794,36 @@ export function renderGrepContext(rows, { before = 0, after = 0, getLines, match
       const cur = windows[windows.length - 1];
       if (cur && !cur.plain && start <= cur.end + 1) {
         cur.end = Math.max(cur.end, end);
-        cur.hits.set(row.line, row);
+        cur.hits.add(row.line);
       } else {
-        windows.push({ start, end, hits: new Map([[row.line, row]]) });
+        windows.push({ start, end, hits: new Set([row.line]) });
       }
     }
     const matched = matchLines?.get(file);
-    for (const w of windows) {
-      if (w.plain) { blocks.push([w.plain]); continue; }
-      const out = [];
+    windows.forEach((w, i) => {
+      if (i > 0) out.push('--');
+      if (w.plain) { out.push(w.plain); return; }
       for (let n = w.start; n <= w.end; n++) {
         const text = String(lines[n - 1] ?? '').replace(/\r$/, '');
-        const hit = w.hits.get(n);
-        if (hit) out.push(`${file}:${n}: ${text}${hit.suffix || ''}`);
-        else if (matched?.has(n)) out.push(`${file}:${n}: ${text}`);
-        else out.push(text ? `${file}-${n}- ${text}` : `${file}-${n}-`);
+        out.push(`${n}${w.hits.has(n) || matched?.has(n) ? ':' : '-'}${text}`);
       }
-      blocks.push(out);
-    }
+    });
   }
-  const result = [];
-  blocks.forEach((block, i) => {
-    if (i > 0) result.push('--');
-    result.push(...block);
-  });
-  return result;
+  return out;
 }
+
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+/**
+ * `# +6 more files with 10 hits: a.go, b.go, c.go` — the matching files the listing does not
+ * show (more files than -k, or past the engine's file bound), with up to three of them by name.
+ * Null when every matching file shows.
+ */
+export function renderGrepHiddenFiles(hidden) {
+  if (!hidden || !(hidden.files > 0)) return null;
+  const sample = Array.isArray(hidden.sample) && hidden.sample.length ? `: ${hidden.sample.join(', ')}` : '';
+  return `# +${plural(hidden.files, 'more file', 'more files')} with ${plural(hidden.matches, 'hit', 'hits')}${sample}`;
+}
+
+/** The one line that says how to see hidden hits; printed once, only when something is hidden. */
+export const GREP_HIDDEN_HINT = '# hidden hits: raise -k or use --in <file>';

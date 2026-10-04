@@ -3,9 +3,10 @@
  * (runAgentTool in a virtual process, as the daemon and the in-process fallback run it) on a real
  * engine (bareGrep over a mock native sparse-gram index). ripgrep is mocked to throw.
  *
- * The legacy expectations below are origin/main's own output for the same fixture and arguments
+ * The legacy expectations below are origin/main's own selection for the same fixture and arguments
  * (captured 2026-10-02 by running origin/main's tool code on this fixture), so SS_FIX_GREP_ALLOC=0
- * is pinned to the previous bytes, not to a re-derivation of them.
+ * is pinned to the previous files, lines and counts, not to a re-derivation of them. Since
+ * 2026-10-04 every arm prints the grouped listing (path once, `LINE:text` under it, no header).
  */
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -27,6 +28,7 @@ vi.mock('../../core/search/search-pattern-ripgrep.js', async (importOriginal) =>
 import { bareGrep } from '../../core/search/index.js';
 import { runInVirtualProcess } from '../../core/agent-tools/virtual-process.js';
 import { buildAgentToolDaemonResponse } from '../../core/agent-tools/daemon-route.js';
+import { grepHitCount } from './grep-listing-helpers.js';
 import { runAgentTool } from '../../eval/agent-read-workflows/bin/_ss-helpers.mjs';
 
 // dgraph-08-shaped fixture: the answer worker/export.go (22 hits) sorts late in the alphabet;
@@ -41,21 +43,22 @@ const COUNTS = {
   'worker/export.go': 22, 'worker/export_test.go': 8, 'x/metrics.go': 1,
 };
 
-const HEADER = '# ss-grep: 88 total match(es) for /func .*Export/ across 21 files\n'
-  + '# (+N more in this file)=truncated — see the rest: ss-grep "<regex>" --in <file>\n';
+const HINT = '# hidden hits: raise -k or use --in <file>\n';
 
 // The weighted -k 8 body with SS_FIX_GREP_FULLLINE=0: each hit prints only the matched text.
-const WEIGHTED_K8 = HEADER
-  + 'worker/export.go:3: func Export3\n'
-  + 'worker/export.go:6: func Export6 (+20 more in this file)\n'
-  + 'worker/export_test.go:3: func Export3 (+7 more in this file)\n'
-  + 'backup/run.go:3: func Export3 (+1 more in this file)\n'
-  + 'buildvars/buildvars.go:3: func Export3 (+1 more in this file)\n'
-  + 'graphql/admin/export.go:3: func Export3 (+1 more in this file)\n'
-  + 'protos/pb/pb.pb.go:3: func Export3 (+22 more in this file)\n'
-  + 'buildvars/buildvars_test.go:3: func Export3 (+3 more in this file)\n'
-  + '# +14 more file(s) with 25 match(es) — e.g. systest/export/export_test.go, dgraphapi/cluster.go, '
-  + 'dgraphtest/load.go; narrow the regex, raise -k, or drill in with --in <file>\n';
+const WEIGHTED_K8 = ''
+  + 'worker/export.go (+20 more)\n3:func Export3\n6:func Export6\n'
+  + 'worker/export_test.go (+7 more)\n3:func Export3\n'
+  + 'backup/run.go (+1 more)\n3:func Export3\n'
+  + 'buildvars/buildvars.go (+1 more)\n3:func Export3\n'
+  + 'graphql/admin/export.go (+1 more)\n3:func Export3\n'
+  + 'protos/pb/pb.pb.go (+22 more)\n3:func Export3\n'
+  + 'buildvars/buildvars_test.go (+3 more)\n3:func Export3\n'
+  + '# +14 more files with 25 hits: systest/export/export_test.go, dgraphapi/cluster.go, dgraphtest/load.go\n'
+  + HINT;
+
+/** The path lines of a listing, in print order. */
+const pathLines = (out) => out.split('\n').filter(l => l && !/^(\d|#|--)/.test(l));
 
 let base;
 let root;
@@ -131,7 +134,7 @@ const PREV = { SS_FIX_GREP_WEIGHT: 'sqrt', SS_FIX_GREP_ALLOC_RULE: 'sl', SS_FIX_
 describe('ss-grep line allocation (2026-10-02 rule: sqrt(hits) x prior, Sainte-Laguë)', () => {
   it('keeps the best files, not the first k in the alphabet; files print by weight', async () => {
     const out = await ss('grep', ['func .*Export', '-k', '8'], PREV);
-    expect(out).toBe(WEIGHTED_K8.replace(/: func Export(\d+)/g, ': func Export$1(ctx context.Context) error {'));
+    expect(out).toBe(WEIGHTED_K8.replace(/:func Export(\d+)/g, ':func Export$1(ctx context.Context) error {'));
     // the engine was asked for the weighted selection of k files
     expect(grepCalls[0]).toMatchObject({ grepFileOrder: 'weight', maxFiles: 8, perFileCap: 8 });
     expect(grepCalls[0].grepFileWeight).toBeUndefined();
@@ -140,37 +143,40 @@ describe('ss-grep line allocation (2026-10-02 rule: sqrt(hits) x prior, Sainte-L
 
   it('-C context renders the same hits in the same order', async () => {
     const out = await ss('grep', ['func .*Export', '-k', '6', '-C', '1'], PREV);
-    expect(out.startsWith(`${HEADER}worker/export.go-2-   x := 2\nworker/export.go:3: func Export3(ctx context.Context) error {\n`)).toBe(true);
-    expect(out).toContain('worker/export.go:6: func Export6(ctx context.Context) error { (+20 more in this file)\n');
-    expect(out.endsWith('# +16 more file(s) with 52 match(es) — e.g. protos/pb/pb.pb.go, buildvars/buildvars_test.go, '
-      + 'systest/export/export_test.go; narrow the regex, raise -k, or drill in with --in <file>\n')).toBe(true);
+    // one window per file (2-7 merges the hits at 3 and 6); no `--` between files, the path separates them
+    expect(out.startsWith('worker/export.go (+20 more)\n2-  x := 2\n3:func Export3(ctx context.Context) error {\n'
+      + '4-  x := 4\n5-  x := 5\n6:func Export6(ctx context.Context) error {\n7-  x := 7\nworker/export_test.go (+7 more)\n')).toBe(true);
+    expect(out).not.toMatch(/^--$/m);
+    expect(out.endsWith('# +16 more files with 52 hits: protos/pb/pb.pb.go, buildvars/buildvars_test.go, '
+      + `systest/export/export_test.go\n${HINT}`)).toBe(true);
   });
 
   it('--in scoped calls keep their flat output (no weighting asked of the engine)', async () => {
     const out = await ss('grep', ['func .*Export', '-k', '2', '--in', 'worker/export.go']);
-    expect(out).toBe('# ss-grep: 22 total match(es) for /func .*Export/ (scope: --in worker/export.go)\n'
-      + 'worker/export.go:3: func Export3(ctx context.Context) error {\n'
-      + 'worker/export.go:6: func Export6(ctx context.Context) error { (+20 more — raise -k)\n');
+    expect(out).toBe('worker/export.go\n'
+      + '3:func Export3(ctx context.Context) error {\n'
+      + '6:func Export6(ctx context.Context) error {\n'
+      + '# +20 more hits (raise -k)\n');
     expect(grepCalls[0].grepFileOrder).toBeUndefined();
   });
 });
 
 describe('Step 2 arms (guarantee and sat2 default ON since 2026-10-03): SS_FIX_GREP_ALLOC_RULE, SS_FIX_GREP_WEIGHT', () => {
-  const HIDDEN_13 = '# +13 more file(s) with 21 match(es) — e.g. dgraphapi/cluster.go, dgraphtest/load.go, '
-    + 'dgraphtest/local_cluster.go; narrow the regex, raise -k, or drill in with --in <file>\n';
+  const HIDDEN_13 = '# +13 more files with 21 hits: dgraphapi/cluster.go, dgraphtest/load.go, '
+    + `dgraphtest/local_cluster.go\n${HINT}`;
 
   it('guarantee and hh: each of the 8 kept files gets one line, so the 8th file shows too', async () => {
     for (const rule of ['guarantee', 'hh']) {
       const out = await ss('grep', ['func .*Export', '-k', '8'], { ...PREV, SS_FIX_GREP_ALLOC_RULE: rule, SS_FIX_GREP_FULLLINE: '0' });
-      expect(out).toBe(HEADER
-        + 'worker/export.go:3: func Export3 (+21 more in this file)\n'
-        + 'worker/export_test.go:3: func Export3 (+7 more in this file)\n'
-        + 'backup/run.go:3: func Export3 (+1 more in this file)\n'
-        + 'buildvars/buildvars.go:3: func Export3 (+1 more in this file)\n'
-        + 'graphql/admin/export.go:3: func Export3 (+1 more in this file)\n'
-        + 'protos/pb/pb.pb.go:3: func Export3 (+22 more in this file)\n'
-        + 'buildvars/buildvars_test.go:3: func Export3 (+3 more in this file)\n'
-        + 'systest/export/export_test.go:3: func Export3 (+3 more in this file)\n'
+      expect(out).toBe(''
+        + 'worker/export.go (+21 more)\n3:func Export3\n'
+        + 'worker/export_test.go (+7 more)\n3:func Export3\n'
+        + 'backup/run.go (+1 more)\n3:func Export3\n'
+        + 'buildvars/buildvars.go (+1 more)\n3:func Export3\n'
+        + 'graphql/admin/export.go (+1 more)\n3:func Export3\n'
+        + 'protos/pb/pb.pb.go (+22 more)\n3:func Export3\n'
+        + 'buildvars/buildvars_test.go (+3 more)\n3:func Export3\n'
+        + 'systest/export/export_test.go (+3 more)\n3:func Export3\n'
         + HIDDEN_13);
       // renderer-only: the engine request is the shipped one
       expect(grepCalls[0]).toMatchObject({ grepFileOrder: 'weight', maxFiles: 8 });
@@ -183,12 +189,11 @@ describe('Step 2 arms (guarantee and sat2 default ON since 2026-10-03): SS_FIX_G
     expect(grepCalls[0]).toMatchObject({ grepFileOrder: 'weight', grepFileWeight: 'sat2' });
     // 22 hits 0.92; 2-hit sources 0.5; the 8-hit test file 0.4; then 1/3: the 4-hit test files
     // (more hits) before the 1-hit sources. The generated pb.pb.go (0.23) drops out of the 8.
-    const body = out.split('\n').filter(l => /^[\w/.-]+:\d+/.test(l)).map(l => l.split(':')[0]);
-    expect(body).toEqual([
+    expect(pathLines(out).map(l => l.split(' ')[0])).toEqual([
       'worker/export.go', 'backup/run.go', 'buildvars/buildvars.go', 'graphql/admin/export.go',
       'worker/export_test.go', 'buildvars/buildvars_test.go', 'systest/export/export_test.go', 'dgraphapi/cluster.go',
     ]);
-    expect(out).toContain('# +13 more file(s) with 43 match(es) — e.g. dgraphtest/load.go, dgraphtest/local_cluster.go');
+    expect(out).toContain('# +13 more files with 43 hits: dgraphtest/load.go, dgraphtest/local_cluster.go');
   });
 });
 
@@ -198,44 +203,41 @@ describe('the product default since 2026-10-03: sat2 weight, the one-line guaran
     expect(grepCalls[0]).toMatchObject({ grepFileOrder: 'weight', grepFileWeight: 'sat2', grepLineClasses: true, maxFiles: 8 });
     // sat2 order (see the sat2 test above); the guarantee gives each kept file one line.
     // The mock searcher has no code graph, so no line is reordered by class.
-    expect(out).toBe(HEADER
-      + 'worker/export.go:3: func Export3 (+21 more in this file)\n'
-      + 'backup/run.go:3: func Export3 (+1 more in this file)\n'
-      + 'buildvars/buildvars.go:3: func Export3 (+1 more in this file)\n'
-      + 'graphql/admin/export.go:3: func Export3 (+1 more in this file)\n'
-      + 'worker/export_test.go:3: func Export3 (+7 more in this file)\n'
-      + 'buildvars/buildvars_test.go:3: func Export3 (+3 more in this file)\n'
-      + 'systest/export/export_test.go:3: func Export3 (+3 more in this file)\n'
-      + 'dgraphapi/cluster.go:3: func Export3\n'
-      + '# +13 more file(s) with 43 match(es) — e.g. dgraphtest/load.go, dgraphtest/local_cluster.go, '
-      + 'systest/bulk_live/common/bulk_live_cases.go; narrow the regex, raise -k, or drill in with --in <file>\n');
+    expect(out).toBe(''
+      + 'worker/export.go (+21 more)\n3:func Export3\n'
+      + 'backup/run.go (+1 more)\n3:func Export3\n'
+      + 'buildvars/buildvars.go (+1 more)\n3:func Export3\n'
+      + 'graphql/admin/export.go (+1 more)\n3:func Export3\n'
+      + 'worker/export_test.go (+7 more)\n3:func Export3\n'
+      + 'buildvars/buildvars_test.go (+3 more)\n3:func Export3\n'
+      + 'systest/export/export_test.go (+3 more)\n3:func Export3\n'
+      + 'dgraphapi/cluster.go\n3:func Export3\n'
+      + '# +13 more files with 43 hits: dgraphtest/load.go, dgraphtest/local_cluster.go, '
+      + `systest/bulk_live/common/bulk_live_cases.go\n${HINT}`);
   });
 });
 
-describe('SS_FIX_GREP_ALLOC=0 restores the previous output byte for byte', () => {
-  // origin/main output for these exact calls (see the file header).
-  const LEGACY_K8 = HEADER
-    + 'backup/run.go:3: func Export3 (+1 more in this file)\n'
-    + 'buildvars/buildvars_test.go:3: func Export3 (+3 more in this file)\n'
-    + 'buildvars/buildvars.go:3: func Export3 (+1 more in this file)\n'
-    + 'dgraph/cmd/live/load-uids/load_test.go:3: func Export3 (+1 more in this file)\n'
-    + 'dgraphapi/cluster.go:3: func Export3\n'
-    + 'dgraphtest/load.go:3: func Export3\n'
-    + 'dgraphtest/local_cluster.go:3: func Export3\n'
-    + 'graphql/admin/export.go:3: func Export3 (+1 more in this file)\n'
-    + '# +13 more file(s) with 73 match(es) — e.g. graphql/e2e/schema/schema_test.go, protos/pb/pb_grpc.pb.go, '
-    + 'protos/pb/pb.pb.go; narrow the regex, raise -k, or drill in with --in <file>\n';
-  const LEGACY_K6_C1 = HEADER
-    + 'backup/run.go-2-   x := 2\nbackup/run.go:3: func Export3(ctx context.Context) error { (+1 more in this file)\nbackup/run.go-4-   x := 4\n--\n'
-    + 'buildvars/buildvars_test.go-2-   x := 2\nbuildvars/buildvars_test.go:3: func Export3(ctx context.Context) error { (+3 more in this file)\nbuildvars/buildvars_test.go-4-   x := 4\n--\n'
-    + 'buildvars/buildvars.go-2-   x := 2\nbuildvars/buildvars.go:3: func Export3(ctx context.Context) error { (+1 more in this file)\nbuildvars/buildvars.go-4-   x := 4\n--\n'
-    + 'dgraph/cmd/live/load-uids/load_test.go-2-   x := 2\ndgraph/cmd/live/load-uids/load_test.go:3: func Export3(ctx context.Context) error { (+1 more in this file)\ndgraph/cmd/live/load-uids/load_test.go-4-   x := 4\n--\n'
-    + 'dgraphapi/cluster.go-2-   x := 2\ndgraphapi/cluster.go:3: func Export3(ctx context.Context) error {\n--\n'
-    + 'dgraphtest/load.go-2-   x := 2\ndgraphtest/load.go:3: func Export3(ctx context.Context) error {\n'
-    + '# +15 more file(s) with 76 match(es) — e.g. dgraphtest/local_cluster.go, graphql/admin/export.go, '
-    + 'graphql/e2e/schema/schema_test.go; narrow the regex, raise -k, or drill in with --in <file>\n';
+describe('SS_FIX_GREP_ALLOC=0 restores the previous selection (files, lines, counts)', () => {
+  // origin/main's selection for these exact calls (see the file header), in the grouped listing.
+  const LEGACY_K8 = ''
+    + 'backup/run.go (+1 more)\n3:func Export3\n'
+    + 'buildvars/buildvars_test.go (+3 more)\n3:func Export3\n'
+    + 'buildvars/buildvars.go (+1 more)\n3:func Export3\n'
+    + 'dgraph/cmd/live/load-uids/load_test.go (+1 more)\n3:func Export3\n'
+    + 'dgraphapi/cluster.go\n3:func Export3\n'
+    + 'dgraphtest/load.go\n3:func Export3\n'
+    + 'dgraphtest/local_cluster.go\n3:func Export3\n'
+    + 'graphql/admin/export.go (+1 more)\n3:func Export3\n'
+    + '# +13 more files with 73 hits: graphql/e2e/schema/schema_test.go, protos/pb/pb_grpc.pb.go, protos/pb/pb.pb.go\n'
+    + HINT;
+  const win = (file, more, last = 4) => `${file}${more ? ` (+${more} more)` : ''}\n2-  x := 2\n3:func Export3(ctx context.Context) error {\n`
+    + (last >= 4 ? '4-  x := 4\n' : '');
+  const LEGACY_K6_C1 = win('backup/run.go', 1) + win('buildvars/buildvars_test.go', 3) + win('buildvars/buildvars.go', 1)
+    + win('dgraph/cmd/live/load-uids/load_test.go', 1) + win('dgraphapi/cluster.go', 0, 3) + win('dgraphtest/load.go', 0, 3)
+    + '# +15 more files with 76 hits: dgraphtest/local_cluster.go, graphql/admin/export.go, graphql/e2e/schema/schema_test.go\n'
+    + HINT;
 
-  it('the switch, SS_FIX_A=0 and the product opt-out all give origin/main\'s bytes', async () => {
+  it('the switch, SS_FIX_A=0 and the product opt-out all give origin/main\'s selection', async () => {
     // SS_FIX_GREP_FULLLINE=0 too: origin/main printed the matched text.
     const both = { SS_FIX_GREP_ALLOC: '0', SS_FIX_GREP_FULLLINE: '0' };
     for (const env of [both, { SS_FIX_A: '0' }, { SWEET_SEARCH_COMPACT_OUTPUT: '0' }]) {
@@ -251,13 +253,12 @@ describe('SS_FIX_GREP_FULLLINE=0 restores the matched-text output byte for byte'
     const off = { SS_FIX_GREP_FULLLINE: '0' };
     expect(await ss('grep', ['func .*Export', '-k', '8'], { ...PREV, ...off })).toBe(WEIGHTED_K8);
     expect(await ss('grep', ['func .*Export', '-k', '2', '--in', 'worker/export.go'], off))
-      .toBe('# ss-grep: 22 total match(es) for /func .*Export/ (scope: --in worker/export.go)\n'
-        + 'worker/export.go:3: func Export3\nworker/export.go:6: func Export6 (+20 more — raise -k)\n');
+      .toBe('worker/export.go\n3:func Export3\n6:func Export6\n# +20 more hits (raise -k)\n');
     // SS_FIX_GREP_ALLOC=0 alone keeps the full lines on the path-order rule
     const legacyAlloc = await ss('grep', ['func .*Export', '-k', '8'], { SS_FIX_GREP_ALLOC: '0' });
-    expect(legacyAlloc).toContain('\nbackup/run.go:3: func Export3(ctx context.Context) error { (+1 more in this file)\n');
+    expect(legacyAlloc).toContain('backup/run.go (+1 more)\n3:func Export3(ctx context.Context) error {\n');
     expect(await ss('grep', ['func .*Export', '-k', '8'], { SS_FIX_GREP_ALLOC: '0', ...off }))
-      .toBe(legacyAlloc.replace(/: func Export(\d+)\(ctx context\.Context\) error \{/g, ': func Export$1'));
+      .toBe(legacyAlloc.replace(/:func Export(\d+)\(ctx context\.Context\) error \{/g, ':func Export$1'));
     // -C context already printed full lines from the file: unchanged by the switch
     expect(await ss('grep', ['func .*Export', '-k', '6', '-C', '1'], off))
       .toBe(await ss('grep', ['func .*Export', '-k', '6', '-C', '1']));
@@ -289,10 +290,17 @@ describe('B7 (SS_FIX_GREP_ORDER=1) on top of the weighted rule', () => {
     // 31 hits (< 50): the per-hit body, not B7's line lists
     const args = ['func .*Export', '-k', '8', '-g', '!protos/**', '-g', '!worker/**'];
     const withB7 = await ss('grep', args, { SS_FIX_GREP_ORDER: '1' });
-    expect(withB7).toMatch(/^# ss-grep: 31 total match\(es\)/);
     // B7 still drops the repeated matched text (every shown hit reads `func Export3`) ...
-    const hits = (out) => out.split('\n').filter(l => /^[\w/.-]+:\d+/.test(l)).map(l => l.match(/^([\w/.-]+:\d+)/)[1]);
-    expect(withB7).toContain('\nbackup/run.go:3 (+1 more in this file)\n');
+    const hits = (out) => {
+      const seq = [];
+      let file = null;
+      for (const l of out.split('\n')) {
+        if (/^\d+/.test(l)) seq.push(`${file}:${l.match(/^\d+/)[0]}`);
+        else if (l && !l.startsWith('#')) file = l.split(' ')[0];
+      }
+      return seq;
+    };
+    expect(withB7.startsWith('backup/run.go (+1 more)\n3\n')).toBe(true);
     // ... but the hits and their order are the weighted rule's, untouched by source-before-tests
     expect(hits(withB7)).toEqual(hits(await ss('grep', args)));
     // weight 1.41 (2-hit sources) first; the 4-hit test files (1.0) tie the 1-hit sources and
@@ -301,7 +309,7 @@ describe('B7 (SS_FIX_GREP_ORDER=1) on top of the weighted rule', () => {
       'backup/run.go:3', 'buildvars/buildvars.go:3', 'graphql/admin/export.go:3',
       'buildvars/buildvars_test.go:3', 'systest/export/export_test.go:3',
     ]);
-    expect(withB7).not.toContain('vendor/x/y/export.go:');
+    expect(withB7).not.toContain('vendor/x/y/export.go');
   });
 
   it('list mode (>= 50 hits) still prints B7\'s per-file line lists', async () => {
@@ -309,5 +317,67 @@ describe('B7 (SS_FIX_GREP_ORDER=1) on top of the weighted rule', () => {
     expect(out).toContain('# 88 hits: first hit lines per file');
     expect(out).toContain('worker/export.go: lines 3, 6, 9 (+19 more)\n');
     expect(grepCalls[0]).toMatchObject({ grepFileOrder: 'weight', maxFiles: 100 });
+  });
+});
+
+describe('the listing (2026-10-04): no header, every hidden hit counted, chained-call boundary', () => {
+  it('no header and no regex echo: the harness shows the command', async () => {
+    for (const args of [['func .*Export', '-k', '8'], ['func .*Export', '-k', '2', '--in', 'worker'], ['func .*Export', '-k', '3', '-A', '1']]) {
+      const out = await ss('grep', args);
+      expect(out).not.toContain('# ss-grep');
+      expect(out).not.toContain('func .*Export');
+      expect(out).not.toContain('total match');
+    }
+  });
+
+  it('shown rows + (+N more) + hidden files add up to every hit, for any -k, with or without context', async () => {
+    for (const k of ['1', '3', '8', '20', '30', '100']) {
+      expect(grepHitCount(await ss('grep', ['func .*Export', '-k', k])), `-k ${k}`).toBe(88);
+      expect(grepHitCount(await ss('grep', ['func .*Export', '-k', k, '-C', '1'])), `-k ${k} -C 1`).toBe(88);
+      expect(grepHitCount(await ss('grep', ['func .*Export', '-k', k, '--in', 'worker'])), `-k ${k} --in worker`).toBe(31);
+    }
+  });
+
+  it('an indexed family line is added after the listing; it never replaces a hit row (the dgraph silent cut)', async () => {
+    const plain = await ss('grep', ['func .*Export', '-k', '8']);
+    const orig = searcher.bareGrep;
+    searcher.bareGrep = async function (...a) {
+      const r = await orig.apply(this, a);
+      return { ...r, familyManifest: { rendered: '# indexed family: Export{3,6,9}' } };
+    };
+    try {
+      const out = await ss('grep', ['func .*Export', '-k', '8']);
+      expect(out).toBe(plain.replace(/^# \+\d+ more files/m, '# indexed family: Export{3,6,9}\n$&'));
+      expect(grepHitCount(out)).toBe(88);
+    } finally { searcher.bareGrep = orig; }
+  });
+
+  it('the sibling line is `# siblings:` and leaves out sites that print as a hit or context row', async () => {
+    const orig = searcher.bareGrep;
+    searcher.bareGrep = async function (...a) {
+      const r = await orig.apply(this, a);
+      return { ...r, siblingLine: { rendered: '# same file (siblings of Export3): 3: x · 5: y · 9: z',
+        sites: [{ line: 3, text: 'x' }, { line: 5, text: 'y' }, { line: 9, text: 'z' }] } };
+    };
+    try {
+      const args = ['func .*Export', '-k', '100', '-g', 'backup/**'];
+      expect((await ss('grep', args)).endsWith('\n# siblings: 5: y · 9: z\n')).toBe(true);
+      expect((await ss('grep', [...args, '-C', '1'])).endsWith('\n# siblings: 9: z\n')).toBe(true);
+    } finally { searcher.bareGrep = orig; }
+  });
+
+  it('the hint prints once, and only when something is hidden', async () => {
+    const cut = await ss('grep', ['func .*Export', '-k', '8']);
+    expect(cut.match(/# hidden hits: raise -k or use --in <file>/g)).toHaveLength(1);
+    const all = await ss('grep', ['func .*Export', '-k', '100', '-g', 'backup/**']);
+    expect(all).toBe('backup/run.go\n3:func Export3(ctx context.Context) error {\n6:func Export6(ctx context.Context) error {\n');
+  });
+
+  it('a later call of a chained command starts with the boundary line; the first call prints none', async () => {
+    const later = await ss('grep', ['func .*Export', '-k', '100', '-g', 'backup/**'], { SWEET_SEARCH_CHAIN_LATER: '1' });
+    expect(later).toBe('# ss-grep func .*Exp…\nbackup/run.go\n3:func Export3(ctx context.Context) error {\n'
+      + '6:func Export6(ctx context.Context) error {\n');
+    const first = await ss('grep', ['func .*Export', '-k', '100', '-g', 'backup/**'], { SWEET_SEARCH_CHAIN_LATER: '0' });
+    expect(first.startsWith('backup/run.go\n')).toBe(true);
   });
 });

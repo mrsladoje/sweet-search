@@ -26,6 +26,7 @@ vi.mock('../../core/search/search-pattern-ripgrep.js', async (importOriginal) =>
 
 import { bareGrep } from '../../core/search/index.js';
 import { runInVirtualProcess } from '../../core/agent-tools/virtual-process.js';
+import { grepFiles, grepHitCount } from './grep-listing-helpers.js';
 import { runAgentTool } from '../../eval/agent-read-workflows/bin/_ss-helpers.mjs';
 
 const MATCHES = [
@@ -91,8 +92,7 @@ describe('ss-grep -g (native path, counts after the filter)', () => {
   it('a `!` glob is consumed as the glob, never the pattern; excluded files vanish from body and counts', async () => {
     const { code, out } = await ss('grep', ['Head', '-g', '!lib/tests/**']);
     expect(code).toBe(0);
-    expect(out).toBe("# ss-grep: 3 total match(es) for /Head/ across 3 files (-g '!lib/tests/**')\n"
-      + 'lib/src/Head.h:1: struct Head;\nlib/src/HttpClient.java:1: Head client;\nsrc/main.c:1: Head main;\n');
+    expect(out).toBe('lib/src/Head.h\n1:struct Head;\nlib/src/HttpClient.java\n1:Head client;\nsrc/main.c\n1:Head main;\n');
     // the engine got the glob, served it natively (ripgrep is mocked to throw)
     expect(grepCalls[0].pathGlobs).toEqual(['!lib/tests/**']);
     expect(searcher.sparseGramIndex.searchFull).toHaveBeenCalled();
@@ -100,32 +100,36 @@ describe('ss-grep -g (native path, counts after the filter)', () => {
 
   it('--exclude-dir, --exclude, --include and the = form map onto rg globs', async () => {
     let { out } = await ss('grep', ['Head', '--exclude-dir', 'tests']);
-    expect(out).toMatch(/^# ss-grep: 3 total match\(es\) for \/Head\/ across 3 files \(-g '!tests\/'\)/);
+    expect(grepHitCount(out)).toBe(3);
+    expect(grepCalls[0].pathGlobs).toEqual(['!tests/']);
     ({ out } = await ss('grep', ['Head', '--exclude=*.java', '--exclude-dir=tests']));
-    expect(out).toMatch(/^# ss-grep: 2 total match\(es\)/);
+    expect(grepHitCount(out)).toBe(2);
     expect(out).not.toContain('HttpClient');
     ({ out } = await ss('grep', ['Head', '--include', '*.h']));
-    expect(out).toMatch(/^# ss-grep: 1 total match\(es\) for \/Head\/ \(-g '\*\.h'\)/);
-    expect(out).toContain('lib/src/Head.h');
+    expect(grepHitCount(out)).toBe(1);
+    expect(grepCalls[0].pathGlobs).toEqual(['*.h']);
+    expect(grepFiles(out)).toEqual(['lib/src/Head.h']);
   });
 
   it('include + exclude, and -g ANDed with --in', async () => {
     let { out } = await ss('grep', ['Head', '-g', 'lib/**', '-g', '!*.java']);
-    expect(out).toMatch(/^# ss-grep: 6 total match\(es\)/);
+    expect(grepHitCount(out)).toBe(6);
     expect(out).not.toContain('src/main.c');
     ({ out } = await ss('grep', ['Head', '--in', 'lib', '-g', '!lib/tests/**']));
-    expect(out).toMatch(/^# ss-grep: 2 total match\(es\) for \/Head\/ \(scope: --in lib -g '!lib\/tests\/\*\*'\)\n/);
-    expect(out.trim().split('\n')).toHaveLength(3);
+    expect(grepHitCount(out)).toBe(2);
+    expect(grepCalls[0].pathGlobs).toEqual(['!lib/tests/**']);
+    expect(out.trim().split('\n')).toHaveLength(4);   // two files, one hit each
   });
 
   it('-k: an excluded file never takes a k slot; the total counts only what the globs allow', async () => {
     const { out } = await ss('grep', ['Head', '-k', '2', '-g', '!*_test.go']);
-    expect(out).toMatch(/^# ss-grep: 3 total match\(es\) for \/Head\/ across 3 files/);
+    expect(grepHitCount(out)).toBe(3);
+    expect(out).toContain('# +1 more file with 1 hit');
     expect(out).not.toContain('a_test.go');
     const { out: scoped } = await ss('grep', ['Head', '-k', '1', '--in', 'lib', '-g', '!tests']);
-    expect(scoped).toMatch(/^# ss-grep: 2 total match\(es\)/);
-    expect(scoped).toContain('lib/src/Head.h:1');
-    expect(scoped).toContain('(+1 more — raise -k)');
+    expect(grepHitCount(scoped)).toBe(2);
+    expect(scoped).toContain('lib/src/Head.h\n1:');
+    expect(scoped).toContain('# +1 more hit (raise -k)');
   });
 
   it('globs that remove every match say so (no bare "(no matches)", no case-insensitive retry)', async () => {
@@ -165,7 +169,8 @@ describe('ss-grep -g (native path, counts after the filter)', () => {
 
   it('from a subdirectory an anchored glob is anchored at the cwd, as rg does', async () => {
     const { out } = await ss('grep', ['Head', '-g', '!tests/**'], { cwd: path.join(root, 'lib') });
-    expect(out).toMatch(/^# ss-grep: 2 total match\(es\) for \/Head\/ across 2 files \(-g '!\/lib\/tests\/\*\*'\)\n/);
+    expect(grepHitCount(out)).toBe(2);
+    expect(grepFiles(out)).toHaveLength(2);
     expect(out).not.toContain('a_test.go');
     expect(out).not.toContain('src/main.c');   // the implicit cwd scope still applies
     expect(grepCalls[0].pathGlobs).toEqual(['!/lib/tests/**']);
@@ -184,8 +189,8 @@ describe('ss-find -g', () => {
 
   it('accepts the grep aliases too', async () => {
     const { out } = await ss('find', ['head type', '--regex', 'Head', '--exclude-dir=tests', '--include=*.h']);
-    expect(out).toMatch(/^# ss-grep: 1 total match\(es\)/);
-    expect(out).toContain('lib/src/Head.h');
+    expect(grepHitCount(out)).toBe(1);
+    expect(grepFiles(out)).toEqual(['lib/src/Head.h']);
   });
 });
 
@@ -198,8 +203,8 @@ describe('ss-grep: the flags the rules line lists', () => {
       expect(err).not.toMatch(/Usage:/);
       expect(code).toBe(0);
       expect(grepCalls[0].pathGlobs).toEqual(['*.h', '!lib/tests/**']);
-      expect(out).toContain('/(?i)\\b(?:head)\\b/');   // -i and -w reached the regex
-      expect(out).toContain('lib/src/Head.h:1');
+      expect(grepCalls[0].regex).toBe('(?i)\\b(?:head)\\b');   // -i and -w reached the regex
+      expect(out).toContain('lib/src/Head.h\n1');
       expect(out).not.toContain('a_test.go');
     });
   }
