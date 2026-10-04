@@ -622,6 +622,18 @@ function _enforceCharBudget(spans, fileText, lineOffsets, maxChars) {
   return { spans: kept, charsUsed: used };
 }
 
+/**
+ * The character budget for one file. A file of at most wholeFileMaxChars characters is never
+ * cut: the budget grows to its size, so every ranked span prints whole (the spans still decide
+ * what prints, never more than the file). A cut there left out the lines the question asked
+ * about and cost a second read of the same file (ocelot RequestMapper.cs, 3,562 characters
+ * against a 2,400 budget: lines 67-91, `MapHeaders`, were cut and then read with ss-read).
+ */
+export function spanBudget(fileText, maxChars, wholeFileMaxChars) {
+  const size = typeof fileText === 'string' ? fileText.length : 0;
+  return wholeFileMaxChars > maxChars && size > maxChars && size <= wholeFileMaxChars ? size : maxChars;
+}
+
 function _fallbackSpanFromRead(fallback, maxChars) {
   const text = fallback.text || '';
   const capped = text.length > maxChars ? text.slice(0, maxChars) : text;
@@ -670,6 +682,8 @@ function _fallbackSpanFromText(fileText, totalLines, maxChars) {
  *   reports exactly the printed range (SS_FIX_SEMANTIC_RANGES; semantic-span-budget.js)
  * @param {boolean} [req.pickExcerpt=false] - an over-budget span is excerpted around its best
  *   chunk (SS_FIX_SEMANTIC_PICK); implies exactRanges
+ * @param {number} [req.wholeFileMaxChars] - a file of at most this many characters is never
+ *   cut: the budget grows to the file's size (spanBudget)
  * @param {Object} [req._lateInteractionIndex] - private daemon injection; same-project index only
  * @returns {Promise<Object>}
  */
@@ -699,13 +713,15 @@ async function _readSemanticUnpinned(req) {
   const tLoad0 = performance.now();
   const { chunks, language, totalLines, fileText } = await _loadFileChunks(filePathRel, projectRoot, reconcileManifest);
   const tLoad1 = performance.now();
+  const wholeFileMaxChars = req.wholeFileMaxChars;
 
   // No chunks at all → fall back to plain read so the caller still gets
   // exact text. Document the fallback in the response.
   if (!chunks || chunks.length === 0) {
     const fallback = await readFileExact({ path: req.path, projectRoot });
+    const fallbackBudget = spanBudget(fallback.text || '', maxChars, wholeFileMaxChars);
     if (exactRanges && fallback.ok) {
-      const span = exactFallbackSpan(fallback.text || '', fallback.totalLines, maxChars);
+      const span = exactFallbackSpan(fallback.text || '', fallback.totalLines, fallbackBudget);
       return {
         file: filePathRel,
         query: req.query,
@@ -731,13 +747,15 @@ async function _readSemanticUnpinned(req) {
       reason: 'file not indexed for semantic span selection — returning whole file via plain read',
       language: fallback.language,
       totalLines: fallback.totalLines,
-      spans: fallback.ok ? [_fallbackSpanFromRead(fallback, maxChars)] : [],
-      charsReturned: fallback.ok ? Math.min((fallback.text || '').length, maxChars) : 0,
-      approxTokensReturned: fallback.ok ? Math.ceil(Math.min((fallback.text || '').length, maxChars) / APPROX_CHARS_PER_TOKEN) : 0,
+      spans: fallback.ok ? [_fallbackSpanFromRead(fallback, fallbackBudget)] : [],
+      charsReturned: fallback.ok ? Math.min((fallback.text || '').length, fallbackBudget) : 0,
+      approxTokensReturned: fallback.ok ? Math.ceil(Math.min((fallback.text || '').length, fallbackBudget) / APPROX_CHARS_PER_TOKEN) : 0,
       ...(staleness ? { staleness, warnings: [staleness.warning] } : {}),
       timings: { totalMs: +(performance.now() - t0).toFixed(2) },
     };
   }
+
+  const budget = spanBudget(fileText, maxChars, wholeFileMaxChars);
 
   // Build line-offset table over the disk text once for span re-reads.
   const lineOffsets = (() => {
@@ -786,9 +804,9 @@ async function _readSemanticUnpinned(req) {
   // with a low confidence marker rather than nothing.
   if (fused.size === 0) {
     const span = exactRanges
-      ? exactFallbackSpan(fileText, totalLines, maxChars)
-      : _fallbackSpanFromText(fileText, totalLines, maxChars);
-    const chars = exactRanges ? span.text.length : Math.min(fileText.length, maxChars);
+      ? exactFallbackSpan(fileText, totalLines, budget)
+      : _fallbackSpanFromText(fileText, totalLines, budget);
+    const chars = exactRanges ? span.text.length : Math.min(fileText.length, budget);
     return {
       file: filePathRel,
       query: req.query,
@@ -915,11 +933,11 @@ async function _readSemanticUnpinned(req) {
   // doUpdate 493-693: the top-scoring 668-691, the `setLockData` call, fell off the end).
   const spanChars = (a, b) => (lineOffsets[Math.min(b, lineOffsets.length - 1)] ?? fileText.length) - (lineOffsets[a - 1] ?? 0);
   const merged = _trimContextPadding(
-    _expandAndMergeSpans(ranked, totalLines, contextLines, (a, b) => spanChars(a, b) <= maxChars),
+    _expandAndMergeSpans(ranked, totalLines, contextLines, (a, b) => spanChars(a, b) <= budget),
     fileText, lineOffsets,
   );
   const { spans, charsUsed } = exactRanges
-    ? enforceExactCharBudget(merged, fileText, lineOffsets, maxChars, {
+    ? enforceExactCharBudget(merged, fileText, lineOffsets, budget, {
       pick: pickExcerpt,
       parts: pickExcerpt ? ranked.map(s => ({
         startLine: Math.max(1, s.startLine - contextLines),
@@ -927,7 +945,7 @@ async function _readSemanticUnpinned(req) {
         score: s.score,
       })) : undefined,
     })
-    : _enforceCharBudget(merged, fileText, lineOffsets, maxChars);
+    : _enforceCharBudget(merged, fileText, lineOffsets, budget);
 
   // Output-only pointers: what the printed spans hold, and the next-best ranked places that
   // the budget left out. Neither changes ranking or which spans are printed, and the
