@@ -1527,14 +1527,22 @@ async function cmdAgentSearch(rawArgs) {
   process.exit(0);
 }
 
+const SEMANTIC_WHOLE_FILE_FACTOR = 2;
 const SEMANTIC_USAGE = 'Usage: ss-semantic <file> "<question>" [-k N] [--max-tokens N]';
 async function cmdSemantic(rawArgs) {
   const args = normalizeArgs(rawArgs);
   // Default 600 (was 800) per the 2026-06 budget sweep — scaled with the 3k
   // preview tier. Env hook overrides the default for sweeps; an explicit
   // --max-tokens flag from the agent always wins.
+  const explicitBudget = args.some((a) => a === '--max-tokens' || String(a).startsWith('--max-tokens='));
   const maxTokens = readPositiveIntFlag(args, '--max-tokens',
     Number(process.env.SS_SMOKE_SEMANTIC_MAXTOKENS || '') || 600, SEMANTIC_USAGE);
+  // A file of up to twice the default budget is never cut (spanBudget in
+  // search-read-semantic.js). A cut there is read again ~85% of the time (6 of 7 calls,
+  // 1.0-1.5x the budget, r282 captures), and that second request re-sends the whole context:
+  // 1,000-1,500 token-equivalents at cached prices, more than the up to 600 extra tokens
+  // printed here. An explicit --max-tokens from the agent stays a hard cap.
+  const wholeFileMaxChars = explicitBudget ? undefined : maxTokens * 4 * SEMANTIC_WHOLE_FILE_FACTOR;
   // -k N: the number of top-ranked chunks the spans are built from (readSemantic topK, the
   // product CLI's `read-semantic -k`); the --max-tokens budget still caps the output.
   const topK = takeCountFlag(args, SEMANTIC_USAGE);
@@ -1590,14 +1598,15 @@ async function cmdSemantic(rawArgs) {
     if (!await ensureWarmServerReady({ timeoutMs: 5000 })) throw new Error('warm server is not ready');
     const { queryReadSemanticServer } = await import(path.join(REPO_ROOT, 'core/search/search-server.js'));
     r = await queryReadSemanticServer({
-      path: file, query, projectRoot: FILE_ROOT, maxChars: maxTokens * 4, ...(topK ? { topK } : {}), ...rangeOpts,
+      path: file, query, projectRoot: FILE_ROOT, maxChars: maxTokens * 4, wholeFileMaxChars,
+      ...(topK ? { topK } : {}), ...rangeOpts,
     });
     if (r?.error) throw new Error(r.error);
   } catch {
     const { readSemantic } = await import(path.join(REPO_ROOT, 'core/search/search-read-semantic.js'));
     r = await readSemantic({
       path: file, query, projectRoot: FILE_ROOT,
-      maxChars: maxTokens * 4, verbose: false, ...(topK ? { topK } : {}), ...rangeOpts,
+      maxChars: maxTokens * 4, wholeFileMaxChars, verbose: false, ...(topK ? { topK } : {}), ...rangeOpts,
     });
   }
   if (!r.ok) {

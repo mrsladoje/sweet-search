@@ -273,13 +273,14 @@ export async function buildReadSemanticDaemonResponse(reqUrl, {
     });
   }
 
-  let topK; let threshold; let contextLines; let maxChars; let maxTokens;
+  let topK; let threshold; let contextLines; let maxChars; let maxTokens; let wholeFileMaxChars;
   try {
     topK = parseInteger(url.searchParams.get('k') ?? url.searchParams.get('topK'), 'topK');
     threshold = parseFiniteNumber(url.searchParams.get('threshold'), 'threshold');
     contextLines = parseInteger(url.searchParams.get('contextLines') ?? url.searchParams.get('context'), 'contextLines');
     maxChars = parseInteger(url.searchParams.get('maxChars'), 'maxChars');
     maxTokens = parseInteger(url.searchParams.get('maxTokens'), 'maxTokens');
+    wholeFileMaxChars = parseInteger(url.searchParams.get('wholeFileMaxChars'), 'wholeFileMaxChars');
   } catch (err) {
     return readSemanticError(400, err.message);
   }
@@ -307,6 +308,7 @@ export async function buildReadSemanticDaemonResponse(reqUrl, {
       maxChars,
       maxTokens,
       verbose,
+      ...(wholeFileMaxChars ? { wholeFileMaxChars } : {}),
       ...(exactRanges ? { exactRanges } : {}),
       ...(pickExcerpt ? { pickExcerpt } : {}),
       _lateInteractionIndex: reusableLateInteractionIndex(searcher),
@@ -1698,10 +1700,10 @@ export async function queryServer(query, options = {}) {
  * its existing renderer while reusing the daemon's resident model/index.
  *
  * @param {{ path: string, query: string, projectRoot: string, maxChars?: number,
- *          exactRanges?: boolean, pickExcerpt?: boolean }} request
+ *          wholeFileMaxChars?: number, exactRanges?: boolean, pickExcerpt?: boolean }} request
  * @returns {Promise<object>}
  */
-export async function queryReadSemanticServer({ path: file, query, projectRoot, maxChars, topK, exactRanges, pickExcerpt } = {}) {
+export async function queryReadSemanticServer({ path: file, query, projectRoot, maxChars, wholeFileMaxChars, topK, exactRanges, pickExcerpt } = {}) {
   if (!file || !query || !projectRoot) {
     throw new TypeError('path, query, and projectRoot are required');
   }
@@ -1713,6 +1715,7 @@ export async function queryReadSemanticServer({ path: file, query, projectRoot, 
     format: 'json',
   });
   if (maxChars > 0) params.set('maxChars', String(maxChars));
+  if (wholeFileMaxChars > 0) params.set('wholeFileMaxChars', String(wholeFileMaxChars));
   if (topK > 0) params.set('topK', String(topK));
   if (exactRanges === true) params.set('exactRanges', '1');
   if (pickExcerpt === true) params.set('pick', '1');
