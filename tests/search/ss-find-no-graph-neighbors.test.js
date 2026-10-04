@@ -18,7 +18,7 @@ import {
 import { renderAgentSearchResponse } from '../../core/search/search-server.js';
 
 const RELATED_HEADER = '### related (1-hop graph';
-const RELATED_ROW = 'calls: lib/validation.js 118-144 validateParam';
+const RELATED_ROW = 'function validate calls: function validateParam (lib/validation.js 118-144)';
 
 describe('graphNeighborsEnabled', () => {
   it('is off only for pattern mode and the no-graph-neighbors ablation', () => {
@@ -121,11 +121,12 @@ describe('packageForAgent graph neighbours: ss-find vs ss-search', () => {
     }
   });
 
-  it('ss-search prints the related rows as one compact line per kind, right under the code', () => {
+  it('ss-search prints the related rows as one compact line per kind, under the code, naming the subject', () => {
     const { response } = pack('hybrid');
     const top = response.results[0];
     const text = renderAgentSearchResponse(response);
-    expect(text).toContain('```\n' + RELATED_ROW + '\n');
+    // After the code and entry 1's imports.
+    expect(text).toContain("```\nimports of validation.js: const { kSchemaParams: paramsSchema } = require('./symbols')\n" + RELATED_ROW + '\n');
     expect(top.neighbors.rows).toEqual([expect.objectContaining({
       kind: 'calls', name: 'validateParam', file: 'lib/validation.js', startLine: 118, endLine: 144,
     })]);

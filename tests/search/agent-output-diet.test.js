@@ -8,8 +8,10 @@
  *   c. sibling-line sites inside printed code are dropped;
  *   d. an entry header names every top-level symbol of its span;
  *   e. related rows from ambiguous name-only resolution are dropped.
- * Group 2 (format): grouped by file, no query header, no rank numbers, merged continuations,
- *   related rows one line per kind, selected by relevance to the query.
+ * Group 2 (format): no query header, merged continuations, related rows one line per kind,
+ *   selected by relevance to the query.
+ * 2026-10-04 owner shape: numbered entries in rank order, `N. <path|also short> <range> <kind name>`,
+ *   a kind word on every name, `continues:` for code after a cut, imports of entry 1 only.
  */
 import { describe, expect, it } from 'vitest';
 
@@ -30,7 +32,7 @@ describe('1b / 2c: continuations and the summary rows they cover', () => {
     symbol: 'request', symbolType: 'function', presentation: 'full', expansionKind: 'full',
     code: '    fun request(): Request',
     continuation: {
-      kind: 'symbol', file: 'okhttp/Interceptor.kt', startLine: 86, endLine: 88, symbol: 'proceed',
+      kind: 'symbol', file: 'okhttp/Interceptor.kt', startLine: 86, endLine: 88, symbol: 'proceed', symbolType: 'function',
       code: '\n    @Throws(IOException::class)\n    fun proceed(request: Request): Response',
       rendered: '# continues at okhttp/Interceptor.kt:87 proceed',
     },
@@ -57,15 +59,14 @@ describe('1b / 2c: continuations and the summary rows they cover', () => {
   it('a continuation that starts on the next line merges into one block with both names', () => {
     const out = render([entry, summary(94, 94, 'connection')]);
     expect(out).toBe([
-      'okhttp/Interceptor.kt',
-      '## 85-88 request, proceed',
+      '1. okhttp/Interceptor.kt 85-88 functions request, proceed',
       '```',
       '    fun request(): Request',
       '',
       '    @Throws(IOException::class)',
       '    fun proceed(request: Request): Response',
       '```',
-      '94 connection',
+      '2. also Interceptor.kt 94 function connection',
       '',
     ].join('\n'));
     expect(out).not.toContain('continues at');
@@ -74,19 +75,19 @@ describe('1b / 2c: continuations and the summary rows they cover', () => {
   it('a continuation after a gap prints as its own block under the same path', () => {
     const gapped = { ...entry, continuation: { ...entry.continuation, startLine: 245, endLine: 247, symbol: 'wait', code: 'def wait\nend\nx' } };
     const out = render([gapped]);
-    expect(out).toContain('## 85 request\n```\n    fun request(): Request\n```\n## 245-247 wait\n```\ndef wait\nend\nx\n```\n');
+    expect(out).toContain('1. okhttp/Interceptor.kt 85 function request\n```\n    fun request(): Request\n```\ncontinues: 245-247 function wait\n```\ndef wait\nend\nx\n```\n');
     expect(out.match(/okhttp\/Interceptor\.kt/g)).toHaveLength(1);
   });
 
   it('a cut entry never merges with its continuation (the cut lines would vanish)', () => {
     const cut = { ...entry, endLine: 86, shownEndLine: 85, code: '    fun request(): Request\n// ... (1 more lines)' };
-    expect(render([cut])).toContain('## 85-86 request\n');
+    expect(render([cut])).toContain('1. okhttp/Interceptor.kt 85-86 function request\n');
   });
 
   it('a trailer continuation drops its path and is skipped when a summary row of the file starts there', () => {
     const trailer = { ...entry, continuation: { kind: 'trailer', file: 'okhttp/Interceptor.kt', startLine: 632, endLine: 769, symbol: 'convert', rendered: '# continues at okhttp/Interceptor.kt:632 convert' } };
-    expect(render([trailer])).toContain('# continues at 632 convert\n');
-    expect(render([trailer, summary(632, 769, 'convert')])).not.toContain('continues at');
+    expect(render([trailer])).toContain('continues (not shown): 632 convert\n');
+    expect(render([trailer, summary(632, 769, 'convert')])).not.toContain('continues');
   });
 
 });
@@ -99,12 +100,14 @@ describe('1c: sibling-line sites inside printed code are dropped', () => {
   };
   it('keeps only the sites outside every printed span', () => {
     const r = { ...base, siblingLine: { enclosing: 'can_make_new?', rendered: 'x', sites: [{ line: 135, text: 'def preallocated_make_new' }, { line: 192, text: 'def try_make_new' }] } };
-    expect(render([r])).toContain('\n# siblings: 135: def preallocated_make_new\n');
+    expect(render([r])).toContain('\nnot shown, same file: 135: def preallocated_make_new\n');
+    const named = { ...r, siblingLine: { ...r.siblingLine, sites: [{ line: 135, kind: 'method', name: 'preallocated_make_new', text: 'def preallocated_make_new' }] } };
+    expect(render([named])).toContain('\nnot shown, same file: method preallocated_make_new (135)\n');
     expect(render([r])).not.toContain('192:');
   });
   it('drops the line when no site is left', () => {
     const r = { ...base, siblingLine: { enclosing: 'can_make_new?', rendered: 'x', sites: [{ line: 192, text: 'def try_make_new' }] } };
-    expect(render([r])).not.toContain('siblings');
+    expect(render([r])).not.toContain('not shown');
   });
   it('drops `# same file:` neighbours whose lines printed code shows', () => {
     const r = {
@@ -125,15 +128,25 @@ describe('1c: sibling-line sites inside printed code are dropped', () => {
 describe('2d: related rows render one line per kind', () => {
   it('renders one line per kind, the path once per run of rows in one file', () => {
     expect(renderRelatedRows([
-      { kind: 'caller', name: 'getResponseWithInterceptorChain', file: 'a/RealCall.kt', shortPath: 'RealCall.kt', startLine: 210, endLine: 260 },
-      { kind: 'caller', name: 'execute', file: 'a/RealCall.kt', shortPath: 'RealCall.kt', startLine: 300, endLine: 300 },
-      { kind: 'caller', name: 'intercept', file: 'a/Retry.kt', shortPath: 'Retry.kt', startLine: 72, endLine: 140 },
-      { kind: 'extends', name: 'ConnectionPool', file: 'lib/connection_pool.rb', shortPath: 'connection_pool.rb', startLine: 27, endLine: 175 },
+      { kind: 'caller', name: 'getResponseWithInterceptorChain', file: 'a/RealCall.kt', shortPath: 'RealCall.kt', startLine: 210, endLine: 260, entityType: 'function' },
+      { kind: 'caller', name: 'execute', file: 'a/RealCall.kt', shortPath: 'RealCall.kt', startLine: 300, endLine: 300, entityType: 'function' },
+      { kind: 'caller', name: 'intercept', file: 'a/Retry.kt', shortPath: 'Retry.kt', startLine: 72, endLine: 140, entityType: 'function' },
+      { kind: 'extends', name: 'ConnectionPool', file: 'lib/connection_pool.rb', shortPath: 'connection_pool.rb', startLine: 27, endLine: 175, entityType: 'class' },
       { kind: 'imports', name: 'subprocess', line: 12 },
-    ])).toEqual([
-      'callers: a/RealCall.kt 210-260 getResponseWithInterceptorChain · 300 execute · a/Retry.kt 72-140 intercept',
-      'extends: lib/connection_pool.rb 27-175 ConnectionPool',
-      'imports: subprocess (line 12)',
+    ], new Set(), { name: 'TimedQueueConnectionPool', type: 'class' })).toEqual([
+      'callers of class TimedQueueConnectionPool: function getResponseWithInterceptorChain (a/RealCall.kt 210-260) · function execute (300) · function intercept (a/Retry.kt 72-140)',
+      'class TimedQueueConnectionPool extends class ConnectionPool (lib/connection_pool.rb 27-175)',
+      'class TimedQueueConnectionPool imports: subprocess (line 12)',
+    ]);
+  });
+
+  it('incoming extends / implements read the other way round', () => {
+    expect(renderRelatedRows([
+      { kind: 'extendedBy', name: 'Timed', file: 'a/t.rb', startLine: 9, endLine: 293, entityType: 'class' },
+      { kind: 'implementedBy', name: 'Real', file: 'a/r.kt', startLine: 1, endLine: 2, entityType: 'class' },
+    ], new Set(), { name: 'Pool', type: 'interface' })).toEqual([
+      'interface Pool is extended by class Timed (a/t.rb 9-293)',
+      'interface Pool is implemented by class Real (a/r.kt 1-2)',
     ]);
   });
 
@@ -146,27 +159,27 @@ describe('2d: related rows render one line per kind', () => {
       { kind: 'type', name: 'Chain', file: 'a/c/Chain.kt', shortPath: 'Chain.kt' },
     ];
     expect(renderRelatedRows(rows, printed)).toEqual([
-      'callers: RealCall.kt 300 execute · a/b/Retry.kt 72-140 intercept',
-      'calls: Retry.kt 150-160 retry',
-      'types: a/c/Chain.kt Chain',
+      'callers of this: execute (RealCall.kt 300) · intercept (a/b/Retry.kt 72-140)',
+      'this calls: retry (Retry.kt 150-160)',
+      'types in this: Chain (a/c/Chain.kt)',
     ]);
     expect([...printed]).toEqual(['a/RealCall.kt', 'a/b/Retry.kt', 'a/c/Chain.kt']);
     // A second entry of the same output names them again: short now.
-    expect(renderRelatedRows([rows[3]], printed)).toEqual(['types: Chain.kt Chain']);
+    expect(renderRelatedRows([rows[3]], printed)).toEqual(['types in this: Chain (Chain.kt)']);
   });
 
   it('path rule, typed files: a file the agent typed (--in) prints short, or not at all when alone', () => {
     const one = (file, extra = {}) => ({ rank: 1, file, startLine: 1, endLine: 2, symbol: 'a', presentation: 'full', code: 'x', ...extra });
     const typed = ['lib/sequel/model/base.rb'];
     const alone = renderFixedBlocks([one(typed[0])], plan([one(typed[0])]), { compact: true, typed });
-    expect(alone.startsWith('## 1-2 a\n')).toBe(true);
+    expect(alone.startsWith('1. 1-2 a\n')).toBe(true);
     const rows = [one(typed[0], { neighbors: { rows: [
       { kind: 'caller', name: 'b', file: typed[0], shortPath: 'base.rb', startLine: 9, endLine: 9 },
     ] } }), { ...one('lib/sequel/dataset.rb'), rank: 2 }];
     const two = renderFixedBlocks(rows, plan(rows), { compact: true, typed });
-    expect(two).toContain('base.rb\n## 1-2 a\n');
-    expect(two).toContain('callers: base.rb 9 b\n');
-    expect(two).toContain('lib/sequel/dataset.rb\n');
+    expect(two).toContain('1. base.rb 1-2 a\n');
+    expect(two).toContain('callers of this: b (base.rb 9)\n');
+    expect(two).toContain('2. lib/sequel/dataset.rb 1-2 a\n');
     expect(two).not.toContain('lib/sequel/model/base.rb');
   });
 
@@ -182,9 +195,11 @@ describe('2d: related rows render one line per kind', () => {
           { kind: 'caller', name: 'hold', file: 'lib/sequel/connection_pool.rb', shortPath: 'connection_pool.rb', startLine: 40, endLine: 50 },
         ] } },
     ]);
-    expect(out).toContain('calls: IndexNameFormatter.java 179-181 formatTypeAndTimestamp\n');
-    expect(out).toContain('extends: lib/sequel/connection_pool.rb 27-175 ConnectionPool\n');
-    expect(out).toContain('callers: connection_pool.rb 40-50 hold\n');
+    expect(out).toContain('this calls: formatTypeAndTimestamp (IndexNameFormatter.java 179-181)\n');
+    expect(out).toContain('this extends ConnectionPool (lib/sequel/connection_pool.rb 27-175)\n');
+    // Named in full by a related row above: the entry prints the short name.
+    expect(out).toContain('2. connection_pool.rb 27-30 ConnectionPool\n');
+    expect(out).toContain('callers of this: hold (connection_pool.rb 40-50)\n');
   });
 });
 
@@ -192,13 +207,29 @@ describe('2d: related rows render one line per kind', () => {
 describe('1d: the entry header names every top-level symbol', () => {
   it('prints `symbols` (packager: annotateEntrySymbols) in the header', () => {
     const out = render([{ rank: 1, file: 'a.rb', startLine: 174, endLine: 234, symbol: 'can_make_new?', symbols: ['can_make_new?', 'try_make_new', 'acquire'], presentation: 'full', code: 'x' }]);
-    expect(out).toContain('## 174-234 can_make_new?, try_make_new, acquire\n');
+    expect(out).toContain('1. a.rb 174-234 can_make_new?, try_make_new, acquire\n');
+    const info = [
+      { name: 'can_make_new?', type: 'method', startLine: 181, endLine: 185 },
+      { name: 'try_make_new', type: 'method', startLine: 192, endLine: 218 },
+      { name: 'acquire', type: 'method', startLine: 227, endLine: 234 },
+    ];
+    expect(render([{ rank: 1, file: 'a.rb', startLine: 174, endLine: 234, symbol: 'can_make_new?', symbolInfo: info, presentation: 'full', code: 'x' }]))
+      .toContain('1. a.rb 174-234 methods can_make_new?, try_make_new, acquire\n');
+    const mixed = [{ name: 'size', type: 'field', startLine: 1, endLine: 1 }, { name: 'grow', type: 'method', startLine: 2, endLine: 9 }];
+    expect(render([{ rank: 1, file: 'a.rb', startLine: 1, endLine: 9, symbol: 'size', symbolInfo: mixed, presentation: 'full', code: 'x' }]))
+      .toContain('1. a.rb 1-9 field size, method grow\n');
+  });
+
+  it('marks an entry that shows only part of its symbol', () => {
+    const info = [{ name: 'Chain', type: 'interface', startLine: 84, endLine: 297 }];
+    expect(render([{ rank: 1, file: 'I.kt', startLine: 84, endLine: 104, symbol: 'Chain', symbolInfo: info, presentation: 'full', code: 'x' }]))
+      .toContain('1. I.kt 84-104 interface Chain (part; whole 84-297)\n');
   });
 });
 
 // ---------------------------------------------------------------------------------------------
-describe('2b: grouped by file', () => {
-  it('files in order of their best-ranked entry; entries keep rank order; one path line per file', () => {
+describe('2b: numbered in rank order', () => {
+  it('every entry has its number in rank order; a file printed before reads `also <short>`', () => {
     const r = (rank, file, startLine, endLine, symbol, extra = {}) => ({
       rank, file, startLine, endLine, symbol, symbolType: 'function', presentation: 'summary', code: null,
       summary: `${file}:${startLine} — ${symbol} (function)`, ...extra,
@@ -211,9 +242,11 @@ describe('2b: grouped by file', () => {
       r(5, 'c.kt', 1, 40, 'Chain', { symbolType: 'interface' }),
     ];
     expect(render(results)).toBe([
-      'a.kt', '## 300 proceed', '```', 'x', '```', '10-20 copy',
-      'b.kt', '85-88 request · 94 connection',
-      'c.kt', '1-40 Chain (interface)',
+      '1. a.kt 300 function proceed', '```', 'x', '```',
+      '2. b.kt 85-88 function request',
+      '3. also a.kt 10-20 function copy',
+      '4. also b.kt 94 function connection',
+      '5. c.kt 1-40 interface Chain',
       '',
     ].join('\n'));
   });
@@ -238,9 +271,9 @@ describe('sibling sites that a row of the same file prints appear once', () => {
 
   it('a site inside a member row of the file prints only as the row (the zipkin duplicate)', () => {
     const out = render([top, row(223, 234, 'dailyIndexFormat_overridingDateSeparator')]);
-    expect(out).toContain('\n# siblings: 210: @Test void dailyIndexFormat_overridingPrefix() {\n');
+    expect(out).toContain('\nnot shown, same file: 210: @Test void dailyIndexFormat_overridingPrefix() {\n');
     expect(out).not.toContain('223: @Test');
-    expect(out).toContain('\n223-234 dailyIndexFormat_overridingDateSeparator\n');
+    expect(out).toContain('\n2. also StorageConfigurationTest.java 223-234 method dailyIndexFormat_overridingDateSeparator\n');
   });
 
   it('a type row does not hide its members from the sibling line', () => {
@@ -250,7 +283,7 @@ describe('sibling sites that a row of the same file prints appear once', () => {
   });
 
   it('the line names neither the file nor the entry above it', () => {
-    expect(render([top])).toMatch(/\n# siblings: 210: [^\n]+ · 223: [^\n]+\n/);
+    expect(render([top])).toMatch(/\nnot shown, same file: 210: [^\n]+ · 223: [^\n]+\n/);
     expect(render([top])).not.toContain('same file (');
   });
 });
@@ -274,7 +307,7 @@ describe('a declaration block of a type already shown prints as one row', () => 
   it('folds the later block into `range names` when code of the same type printed above', () => {
     const p = fold([head, block]);
     const out = renderFixedBlocks([head, block], p, { compact: true });
-    expect(out).toContain('\n183-247 withAuthenticator, withCookieJar, withCache +3\n');
+    expect(out).toContain('\n2. also Interceptor.kt 183-247 function withAuthenticator, withCookieJar, withCache +3 more\n');
     expect(out).not.toContain('d183');
     expect(out).not.toContain('import a.B');
     expect(p.hiddenCode).toBe(true);
@@ -315,7 +348,7 @@ describe('an unexpanded preview counts the lines it shows as printed code', () =
       siblingLine: { enclosing: 'convertFunctionOrMethod', rendered: 'x', sites: [{ line: 882, text: 'function convertArrowAsMethod(' }, { line: 1196, text: 'function convertVariableAsFunction(' }] },
     };
     const out = render([top, preview('a\nb\nc\nd')]);
-    expect(out).toContain('# siblings: 882: function convertArrowAsMethod(\n');
+    expect(out).toContain('not shown, same file: 882: function convertArrowAsMethod(\n');
     expect(out).not.toContain('1196: function');
   });
 });

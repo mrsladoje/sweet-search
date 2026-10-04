@@ -1353,7 +1353,7 @@ export function renderGraphNeighbors(opts) {
   const IN_TYPES = ['calls', 'uses', 'extends', 'implements'];
   // typeAlias is what Go's graph extractor stores for struct/interface/type
   // declarations; the others cover JS/TS/Java/Rust/Python conventions.
-  const TYPE_KINDS = ['struct', 'class', 'interface', 'enum', 'trait', 'type', 'typeAlias'];
+  const TYPE_KINDS = ['struct', 'class', 'interface', 'enum', 'trait', 'type', 'typeAlias', 'object', 'actor', 'extension'];
 
   let outgoing = [];
   let incoming = [];
@@ -1451,7 +1451,9 @@ export function renderGraphNeighbors(opts) {
   }
   // INCOMING — callers / users.
   for (const r of incoming) {
-    if (r.source) pushResolved(r.type === 'calls' ? 'caller' : (r.type === 'uses' ? 'user' : r.type), r.source);
+    // Incoming extends / implements read the other way round: `X extends <entity>`.
+    const inKind = { calls: 'caller', uses: 'user', extends: 'extendedBy', implements: 'implementedBy' }[r.type] || r.type;
+    if (r.source) pushResolved(inKind, r.source);
   }
   // TYPE-REFERENCES found by name in the body.
   for (const t of typeRefs) pushResolved('type', t);
@@ -1477,12 +1479,20 @@ export function renderGraphNeighbors(opts) {
   return {
     rendered: combined,
     rows: selected,
+    // The entity the rows are related to (the agent output names it: `class X extends ...`).
+    subject: subjectOf(codeGraphRepo, entity),
     count: lines.length,
     tokens: estimateTokens(combined),
     outgoingCount: outgoing.length,
     incomingCount: incoming.length,
     typeRefCount: typeRefs.length,
   };
+}
+
+/** The entity the related rows hang off, by id (the expansion's label can be a member of it). */
+function subjectOf(codeGraphRepo, entity) {
+  const row = typeof codeGraphRepo.getEntityById === 'function' ? safeCall(() => codeGraphRepo.getEntityById(entity.id)) : null;
+  return { name: row?.name || entity.name || null, type: row?.type || (row ? null : entity.type) || null };
 }
 
 /** Related rows the pack keeps by default (agent / agent_preview); agent_full 4, agent_full_xl 5. */

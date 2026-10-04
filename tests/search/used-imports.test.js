@@ -59,9 +59,9 @@ describe('usedImports', () => {
       symbolType: 'function', presentation: 'full', code: 'fun key() = 1', headerContext: 'import okhttp3.internal.cache.DiskLruCache',
     };
     const out = renderFixedBlocks([r], selectEntries([r], { dedupe: 'a2' }), { compact: true });
-    expect(out).not.toContain('### imports');
+    expect(out).not.toContain('imports of');
     const used = { ...r, code: 'fun key() = DiskLruCache.KEY' };
     expect(renderFixedBlocks([used], selectEntries([used], { dedupe: 'a2' }), { compact: true }))
-      .toContain('### imports\n```\nimport okhttp3.internal.cache.DiskLruCache\n```\n');
+      .toContain('\nimports of Cache.kt: import okhttp3.internal.cache.DiskLruCache\n');
   });
 });

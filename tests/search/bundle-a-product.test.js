@@ -170,19 +170,19 @@ describe('daemon agent text (native `sweet-search` from an agent)', () => {
     expect(renderAgentSearchResponse(resp, { compact: true })).toBe(wrapperShape);
   });
 
-  it('no query header, no metadata, results grouped by file, the compact sufficient=YES line', () => {
+  it('no query header, no metadata, numbered entries, the compact sufficient=YES line', () => {
     const text = renderAgentSearchResponse(fixtureResponse(), { compact: true });
-    expect(text.startsWith('# sufficient=YES\nsrc/auth.js\n## 1-18 validate\n')).toBe(true);
+    expect(text.startsWith('# sufficient=YES\n1. src/auth.js 1-18 function validate\n')).toBe(true);
     for (const gone of ['score=', 'routed=', 'budget=', 'subMode=', '# confidence', 'kind=sandwich', '(full', '(summary', 'results for', '## #']) {
       expect(text).not.toContain(gone);
     }
-    // A2: summary rows under their file; the covered and the identical-span summaries are gone.
-    expect(text).toContain('\nsrc/token.js\n10-30 Token (class)\n');
+    // A2: numbered summary rows; the covered and the identical-span summaries are gone.
+    expect(text).toContain('\n2. src/token.js 10-30 class Token\n');
     expect(text).not.toContain('inner');
     expect(text).not.toContain('Token holds the claims');
-    expect(text).toContain('\nsrc/claims.js\n3 CLAIMS STALE\nThe list of required claims.\n');
-    // A7: the import line already in the code is cut from the imports block.
-    expect(text).toContain("### imports\n```\n'use strict'\n```\n");
+    expect(text).toContain('\n3. src/claims.js 3 constant CLAIMS STALE\nThe list of required claims.\n');
+    // A7: the import line already in the code is cut; the rest prints after entry 1's code.
+    expect(text).toContain("\nimports of auth.js: 'use strict'\n");
     // Everything else stays.
     expect(text).toContain('# same file: helper');
     expect(text).toContain('# continues: src/auth.js:20-24 helper\n```\nfunction helper() {}\n```\n');
@@ -191,7 +191,7 @@ describe('daemon agent text (native `sweet-search` from an agent)', () => {
   it('keeps a summary whose lines the code block above elided (A2 covers only printed lines)', () => {
     const resp = fixtureResponse();
     resp.results[0] = { ...resp.results[0], sandwich: { ...resp.results[0].sandwich, elidedHead: 2 } };
-    expect(renderAgentSearchResponse(resp, { compact: true })).toContain('\n4-6 inner\n');
+    expect(renderAgentSearchResponse(resp, { compact: true })).toContain(' 4-6 function inner\n');
   });
 
   it('prints no sufficient line unless the verdict is YES, and exactly (no results) on zero results', () => {

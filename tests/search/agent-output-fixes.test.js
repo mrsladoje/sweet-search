@@ -385,13 +385,19 @@ describe('selectEntries (A2, B1, B2)', () => {
 });
 
 describe('summary rendering (A2)', () => {
-  it('prints the row under its file: range and names, a kind tag only for a type', () => {
+  it('prints the row: range, then every name with its kind word', () => {
     expect(renderSummaryRow(entry({ file: 'tree.go', startLine: 135, endLine: 249, symbol: 'addRoute', symbolType: 'method' })))
-      .toBe('135-249 addRoute');
-    expect(renderSummaryRow(entry({ symbol: 'Engine', symbolType: 'struct', startLine: 10, endLine: 40 }))).toBe('10-40 Engine (struct)');
+      .toBe('135-249 method addRoute');
+    expect(renderSummaryRow(entry({ symbol: 'Engine', symbolType: 'struct', startLine: 10, endLine: 40 }))).toBe('10-40 struct Engine');
+    expect(renderSummaryRow(entry({ symbol: 'Opts', symbolType: 'typeAlias', startLine: 1, endLine: 2 }))).toBe('1-2 type Opts');
     expect(renderSummaryRow(entry({ symbol: null, symbolType: null, startLine: 7, endLine: 7 }))).toBe('7');
     expect(renderSummaryRow(entry({ symbol: 'a', symbols: ['a', 'b', 'c', 'd', 'e'], startLine: 1, endLine: 9, stale: true })))
-      .toBe('1-9 a, b, c +2 STALE');
+      .toBe('1-9 function a, b, c +2 more STALE');
+    const info = ['available', 'wait_until_available', 'owned_connection', 'preconnect'].map((name, i) => ({ name, type: 'method', startLine: 240 + i * 5, endLine: 242 + i * 5 }));
+    expect(renderSummaryRow(entry({ symbol: 'available', symbolInfo: info, startLine: 236, endLine: 293 }))).toBe('236-293 methods available, wait_until_available, owned_connection +1 more');
+    // A name whose code printed code shows is not repeated (sequel wait_until_available).
+    expect(renderSummaryRow(entry({ symbol: 'available', symbolInfo: info, startLine: 236, endLine: 293 }), [{ start: 245, end: 247 }]))
+      .toBe('236-293 methods available, owned_connection, preconnect');
   });
 
   it('knows which summary text only restates the header', () => {
