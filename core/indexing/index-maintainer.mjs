@@ -1428,6 +1428,7 @@ export async function handOffAfterRssRecycle({
   cwd,
   env = process.env,
   daemonPidFile = null,
+  daemonPid = null,
   launch = null,
   emit = log,
   confirmDelayMs = SUCCESSOR_CONFIRM_MS,
@@ -1452,6 +1453,7 @@ export async function handOffAfterRssRecycle({
         cwd,
         env: childEnv,
         ...(daemonPidFile ? { daemonPidFile } : {}),
+        ...(daemonPid ? { daemonPid } : {}),
         log: (msg) => emit('INFO', `RSS-recycle handoff: ${msg}`),
       });
       if (result?.spawned !== true) break;
@@ -1544,6 +1546,24 @@ export function daemonPidFileFromArgv(argv = process.argv) {
   return value || null;
 }
 
+/** `--daemon-pid=<n>` from the maintainer's argv, or null. */
+export function daemonPidFromArgv(argv = process.argv) {
+  const prefix = '--daemon-pid=';
+  const arg = argv.find((a) => typeof a === 'string' && a.startsWith(prefix));
+  const pid = arg ? Number.parseInt(arg.slice(prefix.length), 10) : NaN;
+  return Number.isInteger(pid) && pid > 0 ? pid : null;
+}
+
+/** True when a process with this pid exists (EPERM = alive, owned by another user). */
+function pidRunning(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err?.code === 'EPERM';
+  }
+}
+
 /** True when the pid file names a running process. Missing/garbage file → false. */
 export function daemonPidFileLive(pidFile) {
   let pid;
@@ -1553,12 +1573,7 @@ export function daemonPidFileLive(pidFile) {
     return false;
   }
   if (!Number.isFinite(pid) || pid <= 0) return false;
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (err) {
-    return err?.code === 'EPERM';
-  }
+  return pidRunning(pid);
 }
 
 /**
@@ -1784,13 +1799,15 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
   // this repository for DAEMON_ABSENT_GRACE_MS nothing queries the index, and the
   // next daemon to start launches a fresh maintainer whose first tick catches up.
   const daemonPidFile = daemonPidFileFromArgv();
+  const daemonPid = daemonPidFromArgv();
+  const daemonLabel = daemonPidFile || `pid ${daemonPid}`;
   const daemonFollow = { absentSinceMs: null };
-  const daemonCheck = daemonPidFile
+  const daemonCheck = (daemonPidFile || daemonPid)
     ? setInterval(() => {
         if (shutdownRequested) return;
-        const live = daemonPidFileLive(daemonPidFile);
+        const live = daemonPidFile ? daemonPidFileLive(daemonPidFile) : pidRunning(daemonPid);
         if (daemonGoneLongEnough(daemonFollow, { live, nowMs: Date.now(), graceMs: daemonAbsentGraceMs() })) {
-          log('INFO', `No search daemon behind ${daemonPidFile} for ${daemonAbsentGraceMs()}ms; stopping with it.`);
+          log('INFO', `No search daemon behind ${daemonLabel} for ${daemonAbsentGraceMs()}ms; stopping with it.`);
           // Nothing left to serve, so no successor either.
           stopRequested = true;
           shutdownRequested = true;
@@ -2002,6 +2019,7 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
         cwd: ctx.projectRoot,
         env: successorEnv(ctx, process.env),
         daemonPidFile,
+        daemonPid,
         shouldAbort: () => stopRequested,
         emit: (level, msg) => log(level, `[watchdog] ${msg}`),
       }).then(done, done);
@@ -2074,6 +2092,7 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
         cwd: ctx.projectRoot,
         env: successorEnv(ctx, process.env),
         daemonPidFile,
+        daemonPid,
         // Re-read live, not captured: a signal can land during the spawn and
         // the confirmation wait, long after the predicate above was evaluated.
         shouldAbort: () => stopRequested,

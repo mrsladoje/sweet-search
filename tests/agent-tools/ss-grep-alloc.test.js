@@ -153,7 +153,8 @@ describe('ss-grep line allocation (2026-10-02 rule: sqrt(hits) x prior, Sainte-L
 
   it('--in scoped calls keep their flat output (no weighting asked of the engine)', async () => {
     const out = await ss('grep', ['func .*Export', '-k', '2', '--in', 'worker/export.go']);
-    expect(out).toBe('worker/export.go\n'
+    // PATH RULE: the one --in file is typed in the command; no heading repeats it.
+    expect(out).toBe(''
       + '3:func Export3(ctx context.Context) error {\n'
       + '6:func Export6(ctx context.Context) error {\n'
       + '# +20 more hits (raise -k)\n');
@@ -253,7 +254,7 @@ describe('SS_FIX_GREP_FULLLINE=0 restores the matched-text output byte for byte'
     const off = { SS_FIX_GREP_FULLLINE: '0' };
     expect(await ss('grep', ['func .*Export', '-k', '8'], { ...PREV, ...off })).toBe(WEIGHTED_K8);
     expect(await ss('grep', ['func .*Export', '-k', '2', '--in', 'worker/export.go'], off))
-      .toBe('worker/export.go\n3:func Export3\n6:func Export6\n# +20 more hits (raise -k)\n');
+      .toBe('3:func Export3\n6:func Export6\n# +20 more hits (raise -k)\n');
     // SS_FIX_GREP_ALLOC=0 alone keeps the full lines on the path-order rule
     const legacyAlloc = await ss('grep', ['func .*Export', '-k', '8'], { SS_FIX_GREP_ALLOC: '0' });
     expect(legacyAlloc).toContain('backup/run.go (+1 more)\n3:func Export3(ctx context.Context) error {\n');

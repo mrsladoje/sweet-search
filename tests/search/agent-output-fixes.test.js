@@ -500,6 +500,19 @@ describe('formatTraceCompact (A4)', () => {
     expect(formatTraceCompact(traceResult(), { inFile: 'other.go' }).split('\n')[0]).toBe('# a.go:5-20');
   });
 
+  it('path rule: the --in file typed in full prints as its file name in rows and impact paths', () => {
+    const r = traceResult({
+      target: { name: 'target', type: 'method', filePath: 'pkg/a.go', startLine: 5, endLine: 20, fanIn: 2, fanOut: 3 },
+    });
+    r.sections.callers.items = [{ name: 'c1', type: 'method', file: 'pkg/a.go', startLine: 30 }, { name: 'c2', type: 'method', file: 'pkg/x/c.go', startLine: 9 }];
+    r.sections.impact.paths = [{ direction: 'upstream', path: 'z (pkg/a.go:40) -> c2 (pkg/x/c.go:9) -> target (pkg/a.go:5)' }];
+    const out = formatTraceCompact(r, { inFile: 'pkg/a.go', mode: null });
+    expect(out.split('\n')[0]).toBe('# lines 5-20');
+    expect(out).toContain('\na.go\n30 c1\npkg/x/c.go\n');
+    expect(out).toContain('z a.go:40');
+    expect(out).not.toContain('pkg/a.go');
+  });
+
   it('groups rows by file (path once), non-test files first; a caller row starts with its call lines', () => {
     const r = traceResult();
     r.sections.callers.items = [

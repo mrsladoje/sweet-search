@@ -33,7 +33,7 @@
 
 import { existsSync, realpathSync } from 'node:fs';
 import path from 'node:path';
-import { grepHitText, isTestLikePath } from './agent-output-fixes.js';
+import { grepHitText, isTestLikePath, typedPathLabel } from './agent-output-fixes.js';
 import { allocateGrepLinesWithFirstLine, grepWeightKey } from './grep-allocation-rules.js';
 import { selectGrepLinesByClass } from './grep-line-classes.js';
 
@@ -761,11 +761,11 @@ function finishGrepBody(rows, unallocated, fileSummary, shownMatches, truncatedF
  * @param {Array<{file: string, line: number, text?: string, more?: number}>} rows - shown hits
  *   in display order; `more` = hits of that file not shown (printed on its path line)
  * @param {{before?: number, after?: number, getLines?: (file: string) => string[]|null,
- *          matchLines?: Map<string, Set<number>>, dropText?: boolean}} [opts] - `dropText`:
- *   print `LINE` only (every shown hit has the same text)
+ *          matchLines?: Map<string, Set<number>>, dropText?: boolean, typed?: string[]}} [opts] -
+ *   `dropText`: print `LINE` only (every shown hit has the same text); `typed`: the --in files
  * @returns {string[]} output lines
  */
-export function renderGrepListing(rows, { before = 0, after = 0, getLines = null, matchLines = null, dropText = false } = {}) {
+export function renderGrepListing(rows, { before = 0, after = 0, getLines = null, matchLines = null, dropText = false, typed = [] } = {}) {
   const groups = new Map();
   for (const row of rows || []) {
     let g = groups.get(row.file);
@@ -775,8 +775,13 @@ export function renderGrepListing(rows, { before = 0, after = 0, getLines = null
   }
   const withContext = before > 0 || after > 0;
   const out = [];
+  // PATH RULE: a file the agent typed (--in) is known; its heading is its short label, or
+  // nothing when it is the only file of the listing.
+  const typedSet = new Set(typed);
+  const files = [...groups.keys()];
   for (const [file, { rows: hits, more }] of groups) {
-    out.push(more > 0 ? `${file} (+${more} more)` : file);
+    const head = !typedSet.has(file) ? file : (files.length > 1 ? typedPathLabel(file, files) : '');
+    if (head || more > 0) out.push(more > 0 ? `${head ? `${head} ` : ''}(+${more} more)` : head);
     const plain = (row) => (dropText ? `${row.line}` : `${row.line}:${row.text ?? ''}`);
     const lines = withContext && getLines ? getLines(file) : null;
     if (!lines) {

@@ -155,6 +155,21 @@ describe('2d: related rows render one line per kind', () => {
     expect(renderRelatedRows([rows[3]], printed)).toEqual(['types: Chain.kt Chain']);
   });
 
+  it('path rule, typed files: a file the agent typed (--in) prints short, or not at all when alone', () => {
+    const one = (file, extra = {}) => ({ rank: 1, file, startLine: 1, endLine: 2, symbol: 'a', presentation: 'full', code: 'x', ...extra });
+    const typed = ['lib/sequel/model/base.rb'];
+    const alone = renderFixedBlocks([one(typed[0])], plan([one(typed[0])]), { compact: true, typed });
+    expect(alone.startsWith('## 1-2 a\n')).toBe(true);
+    const rows = [one(typed[0], { neighbors: { rows: [
+      { kind: 'caller', name: 'b', file: typed[0], shortPath: 'base.rb', startLine: 9, endLine: 9 },
+    ] } }), { ...one('lib/sequel/dataset.rb'), rank: 2 }];
+    const two = renderFixedBlocks(rows, plan(rows), { compact: true, typed });
+    expect(two).toContain('base.rb\n## 1-2 a\n');
+    expect(two).toContain('callers: base.rb 9 b\n');
+    expect(two).toContain('lib/sequel/dataset.rb\n');
+    expect(two).not.toContain('lib/sequel/model/base.rb');
+  });
+
   it('path rule in a whole ss-search output: a related row names an unprinted file in full', () => {
     const out = render([
       { rank: 1, file: 'zipkin/es/IndexNameFormatter.java', startLine: 100, endLine: 120, symbol: 'formatType',

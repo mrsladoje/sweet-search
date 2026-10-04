@@ -143,7 +143,7 @@ describe('ss-read output shape', () => {
     const { code, out, err } = await ssRead([FILE, '400', '500']);
     expect(code).toBe(1);
     expect(out).toBe('');
-    expect(err).toBe(`[ss-read] ${FILE} has 60 lines; line 400 is past the end\n`);
+    expect(err).toBe(`[ss-read] the file has 60 lines; line 400 is past the end\n`);
   });
 
   it('a later call of a chained command opens with the file name', async () => {

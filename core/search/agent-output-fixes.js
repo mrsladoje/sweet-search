@@ -621,6 +621,20 @@ export function renderSummaryRow(r) {
   return `${lineRange(r.startLine, r.endLine)}${names ? ` ${names}` : ''}${kind}${r.stale ? ' STALE' : ''}`;
 }
 
+/**
+ * PATH RULE, typed files: a path the agent typed in the command is known to it, so a mention
+ * of that file prints its shortest suffix that no other path of the same output (`others`)
+ * ends with, which is its file name as a rule. Files the agent has not seen print in full.
+ */
+export function typedPathLabel(file, others = []) {
+  const parts = String(file || '').split('/');
+  for (let n = 1; n < parts.length; n++) {
+    const suffix = parts.slice(-n).join('/');
+    if (others.every((o) => o === file || !(o === suffix || String(o).endsWith(`/${suffix}`)))) return suffix;
+  }
+  return file;
+}
+
 const RELATED_KIND_LABELS = {
   caller: 'callers', user: 'users', calls: 'calls', imports: 'imports', uses: 'uses',
   extends: 'extends', implements: 'implements', overrides: 'overrides', throws: 'throws', type: 'types',
@@ -706,7 +720,7 @@ function renderSiblingLine(siblingLine, spans, rowSpans = []) {
  * continuation prints as its own `## range name` block under the same path. No query header,
  * no rank numbers, no kind tag except on a type's summary row.
  */
-function renderGroupedBlocks(results, plan, { omitted = new Set(), gutter = (code) => code } = {}) {
+function renderGroupedBlocks(results, plan, { omitted = new Set(), gutter = (code) => code, typed = [] } = {}) {
   const groups = new Map();
   for (const e of plan.entries) {
     const file = e.r.file;
@@ -715,10 +729,14 @@ function renderGroupedBlocks(results, plan, { omitted = new Set(), gutter = (cod
   }
   const spansByFile = printedCodeSpans(plan.entries);
   const lines = [];
-  // Full paths this output printed so far (renderRelatedRows: full first, short later).
-  const printed = new Set();
+  // Full paths the agent knows: typed in the command (--in), or printed so far in this output
+  // (renderRelatedRows: full first, short later). A typed file's heading is its short label,
+  // or nothing when it is the only file of the output.
+  const printed = new Set(typed);
+  const groupFiles = [...groups.keys()];
   for (const [file, entries] of groups) {
-    lines.push(file);
+    if (!printed.has(file)) lines.push(file);
+    else if (groupFiles.length > 1) lines.push(typedPathLabel(file, groupFiles));
     printed.add(file);
     const spans = spansByFile.get(file) || [];
     // The ranges this file's member rows print (code entries count by the code they show:
@@ -818,6 +836,7 @@ function renderGroupedBlocks(results, plan, { omitted = new Set(), gutter = (cod
  * @param {Set<string>} [o.omitted]           A3 keys `<resultIndex>:result|continuation`
  * @param {boolean} [o.dropRestatingSummary]  SS_VARIANT_SEARCH_DEDUPE on ss-search (non-compact)
  * @param {(code:string, startLine:number)=>string} [o.gutter]
+ * @param {string[]} [o.typed]                files the agent typed in the command (--in)
  * @returns {string}
  */
 export function renderFixedBlocks(results, plan, {
@@ -825,8 +844,9 @@ export function renderFixedBlocks(results, plan, {
   omitted = new Set(),
   dropRestatingSummary = false,
   gutter = (code) => code,
+  typed = [],
 } = {}) {
-  if (compact) return renderGroupedBlocks(results, plan, { omitted, gutter });
+  if (compact) return renderGroupedBlocks(results, plan, { omitted, gutter, typed });
   const parts = [];
   const out = (text) => parts.push(text);
   for (const { r, index, also } of plan.entries) {
@@ -975,7 +995,7 @@ function traceRow(item, section) {
 }
 
 /** Rows grouped by file (path printed once), files in first-row order; test files last. */
-function groupedRows(items, section) {
+function groupedRows(items, section, label = (file) => file) {
   const ordered = [...items.filter((i) => !isTestLikePath(i.file)), ...items.filter((i) => isTestLikePath(i.file))];
   const byFile = new Map();
   for (const item of ordered) {
@@ -984,7 +1004,7 @@ function groupedRows(items, section) {
   }
   const out = [];
   for (const [file, rows] of byFile) {
-    out.push(file);
+    out.push(label(file));
     for (const row of rows) out.push(traceRow(row, section));
   }
   return out;
@@ -1008,7 +1028,7 @@ function pathNodes(p) {
   });
 }
 
-function impactTrees(paths, { listedKeys, skipOneHopListed }) {
+function impactTrees(paths, { listedKeys, skipOneHopListed, label = (file) => file }) {
   const trees = { upstream: [], downstream: [] };
   for (const dir of ['upstream', 'downstream']) {
     const root = new Map();
@@ -1029,7 +1049,7 @@ function impactTrees(paths, { listedKeys, skipOneHopListed }) {
     const walk = (level, depth) => {
       for (const { node, children } of level.values()) {
         const listed = depth === 0 && listedKeys.has(`${node.file}:${node.line}`);
-        trees[dir].push(`${'  '.repeat(depth)}${node.name}${listed ? '' : ` ${node.file}:${node.line ?? '?'}`}`);
+        trees[dir].push(`${'  '.repeat(depth)}${node.name}${listed ? '' : ` ${label(node.file)}:${node.line ?? '?'}`}`);
         walk(children, depth + 1);
       }
     };
@@ -1042,7 +1062,7 @@ function impactTrees(paths, { listedKeys, skipOneHopListed }) {
  * Other definitions the symbol names: `Owner.name` (when it has an owner) and where.
  * A definition in the traced file prints its line only.
  */
-function alternativesLine(result) {
+function alternativesLine(result, label = (file) => file) {
   const t = result.target;
   const alts = (result.disambiguation || []).slice(0, 5);
   if (!alts.length) return null;
@@ -1052,7 +1072,7 @@ function alternativesLine(result) {
   const pick = [anyOtherFile ? '--in <file>' : null, anyOwner ? 'Owner.name' : null].filter(Boolean).join(' or ');
   const list = alts.map((a) => {
     const name = a.owner ? `${a.owner}.${a.name} ` : '';
-    return a.file === t.filePath ? `${name}${a.startLine}` : `${name}${a.file}:${a.startLine}`;
+    return a.file === t.filePath ? `${name}${a.startLine}` : `${name}${label(a.file)}:${a.startLine}`;
   }).join(', ');
   return `# other definitions${pick ? ` (pick with ${pick})` : ''}: ${list}${more > 0 ? `, +${more} more` : ''}`;
 }
@@ -1080,9 +1100,13 @@ export function formatTraceCompact(result, { mode = null, inFile = null, notes =
   const provenance = result.sections.callers.provenance || { stored: 0, sameFileFallback: 0 };
   // Only a file typed in full: after a short --in the header must print the full path.
   const sameFile = inFile && inFile === t.filePath;
+  // The --in file (typed in full) prints as its short label wherever it appears (PATH RULE).
+  const files = [t.filePath, ...result.sections.callers.items, ...result.sections.callees.items].map((x) => x?.file ?? x).filter(Boolean);
+  for (const a of result.disambiguation || []) if (a.file) files.push(a.file);
+  const label = (file) => (inFile && file === inFile ? typedPathLabel(file, files) : file);
   lines.push(sameFile ? `# lines ${t.startLine}-${t.endLine}` : `# ${t.filePath}:${t.startLine}-${t.endLine}`);
   for (const n of notes) lines.push(n);
-  const alt = alternativesLine(result);
+  const alt = alternativesLine(result, label);
   if (alt) lines.push(alt);
   if (show('callers') && provenance.sameFileFallback > 0 && provenance.stored === 0) {
     lines.push('# no indexed callers; these come from a text scan of this file');
@@ -1099,7 +1123,7 @@ export function formatTraceCompact(result, { mode = null, inFile = null, notes =
       lines.push(`(no ${title} in the repository)`);
     } else {
       if (mode === null) lines.push(`## ${title}`);
-      lines.push(...groupedRows(internal, title));
+      lines.push(...groupedRows(internal, title, label));
     }
     for (const item of internal) listed.add(`${item.file}:${item.startLine || '?'}`);
     // Every row left out is counted. The section cap is fixed (40 rows), so the way to
@@ -1110,7 +1134,7 @@ export function formatTraceCompact(result, { mode = null, inFile = null, notes =
 
   if (show('impact')) {
     // Without a mode word, a one-hop path to a printed caller / callee row adds nothing.
-    const trees = impactTrees(result.sections.impact.paths, { listedKeys: listed, skipOneHopListed: mode !== 'impact' });
+    const trees = impactTrees(result.sections.impact.paths, { listedKeys: listed, skipOneHopListed: mode !== 'impact', label });
     const hidden = result.sections.impact.hidden || 0;
     for (const dir of ['upstream', 'downstream']) {
       if (!trees[dir].length) continue;

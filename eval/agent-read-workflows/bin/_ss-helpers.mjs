@@ -355,6 +355,13 @@ async function resolveShortFile(typed, file, tool) {
   return { file, resolved: false };
 }
 
+// The --in scopes that are files: paths the agent typed, which the output need not repeat.
+function typedFiles(inPaths) {
+  return (inPaths || []).filter((p) => {
+    try { return !!p && statSync(path.resolve(FILE_ROOT, p)).isFile(); } catch { return false; }
+  });
+}
+
 // --in values and absorbed positional scopes, cwd-first, de-duplicated (in place).
 function resolveScopePaths(inPaths) {
   const resolved = [...new Set(inPaths.map(cwdPath))];
@@ -692,7 +699,7 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
     const dropText = FIX.grepOrder && matchTextIsRepeated(rows, hitText);
     const shown = rows.map((r) => ({ file: r.file, line: r.line, text: grepHitText(r, hitText) }));
     for (const line of renderGrepListing(shown, {
-      ...context, dropText,
+      ...context, dropText, typed: typedFiles(inPaths),
       ...(withContext ? { getLines: grepContextLineReader(), matchLines: grepMatchLines(result.results) } : {}),
     })) process.stdout.write(`${line}\n`);
     const cut = total - rows.length;
@@ -835,7 +842,7 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
     process.exit(0);
   }
   const listing = renderGrepListing(body.rows, {
-    ...context,
+    ...context, typed: typedFiles(inPaths),
     dropText: bodyOpts.dropRepeatedText === true && body.rows.length > 1 && body.rows.every(r => r.text === body.rows[0].text),
     ...(withContext ? { getLines: grepContextLineReader(), matchLines: grepMatchLines(result.results) } : {}),
   });
@@ -958,7 +965,7 @@ async function cmdFind(rawArgs) {
     process.stdout.write(`${findGlobNote}\n`);
   } else if (renderFix) {
     process.stdout.write(renderFixedBlocks(response.results || [], plan, {
-      compact: FIX.compact, omitted: alreadyShown, dropRestatingSummary: false, gutter,
+      compact: FIX.compact, omitted: alreadyShown, dropRestatingSummary: false, gutter, typed: typedFiles(inPaths),
     }));
   } else {
   // Per-result blocks — identical shape to ss-search's agent packaging.
@@ -1140,7 +1147,7 @@ async function cmdRead(rawArgs) {
   // A start past the last line selects nothing: say how long the file is (it used to
   // print the whole file under "lines 400-293 of 293").
   if (r.range && r.range.startLine > r.totalLines) {
-    process.stderr.write(`[ss-read] ${r.file} has ${r.totalLines} lines; line ${r.range.startLine} is past the end\n`);
+    process.stderr.write(`[ss-read] the file has ${r.totalLines} lines; line ${r.range.startLine} is past the end\n`);
     process.exit(1);
   }
   const readBatch = { files: [r], totalMs: r.timings?.totalMs ?? 0 };
@@ -1499,7 +1506,7 @@ async function cmdSemantic(rawArgs) {
     }
     if (target.redirected) {
       // STDOUT: the wrapper discards stderr on a zero exit, and a redirect is never silent.
-      process.stdout.write(`(ss-semantic: ${file} is a symlink; answering from its real path ${target.file})\n`);
+      process.stdout.write(`(ss-semantic: a symlink; answering from its real path ${target.file})\n`);
       file = target.file;
     }
   }
@@ -1645,7 +1652,7 @@ async function cmdTrace(rawArgs) {
       const wide = traceSymbol(symbol, { ...opts, filePath: undefined });
       if (wide.target) {
         response = wide;
-        traceNotes.push(`# not defined in ${file}; traced the definition above`);
+        traceNotes.push(`# not defined in ${inResolved ? file : 'the --in file'}; traced the definition above`);
       }
     }
     if (response.target && !(file && isTestLikePath(file)) && isTestLikePath(response.target.filePath)) {

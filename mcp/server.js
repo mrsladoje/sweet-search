@@ -467,7 +467,8 @@ async function main() {
   // path is the durable guarantee). stdout is the MCP protocol channel, so the
   // launcher's stdout-clean contract is load-bearing; never let it break MCP.
   try {
-    const result = launchMaintainer({ cwd: PROJECT_ROOT });
+    // The maintainer follows this process: it stops once the MCP server is gone.
+    const result = launchMaintainer({ cwd: PROJECT_ROOT, daemonPid: process.pid });
     if (result.spawned) console.error(`[sweet-search-mcp] incremental maintainer started (pid ${result.pid})`);
   } catch (err) {
     console.error(`[sweet-search-mcp] maintainer launch (non-fatal): ${err?.message || err}`);

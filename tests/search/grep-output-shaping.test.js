@@ -987,6 +987,17 @@ describe('renderGrepListing (ss-grep output, grouped by file)', () => {
     expect(renderGrepListing(rows, { dropText: true })).toEqual(['a.go', '3', '9', 'b.go', '1']);
   });
 
+  it('path rule: a typed --in file prints no heading when alone, its file name next to other files', () => {
+    const rows = [{ file: 'src/lib/a.go', line: 3, text: 'x' }, { file: 'src/lib/a.go', line: 9, text: 'y', more: 2 }];
+    expect(renderGrepListing(rows, { typed: ['src/lib/a.go'] })).toEqual(['(+2 more)', '3:x', '9:y']);
+    expect(renderGrepListing(rows.slice(0, 1), { typed: ['src/lib/a.go'] })).toEqual(['3:x']);
+    const two = [{ file: 'src/lib/a.go', line: 3, text: 'x' }, { file: 'src/other/b.go', line: 1, text: 'x' }];
+    expect(renderGrepListing(two, { typed: ['src/lib/a.go'] })).toEqual(['a.go', '3:x', 'src/other/b.go', '1:x']);
+    // Two files with one name: the typed one prints the suffix that tells them apart.
+    const same = [{ file: 'src/lib/a.go', line: 3, text: 'x' }, { file: 'src/old/a.go', line: 1, text: 'x' }];
+    expect(renderGrepListing(same, { typed: ['src/lib/a.go'] })).toEqual(['lib/a.go', '3:x', 'src/old/a.go', '1:x']);
+  });
+
   it('context: hit `N:text`, context `N-text`, full indented lines, under the path', () => {
     const out = renderGrepListing([{ file: 'src/a.rs', line: 10, text: 'ConfigSource' }], { before: 1, after: 2, getLines });
     expect(out).toEqual(['src/a.rs', '9-line 9', '10:    pub enum ConfigSource {', '11-line 11', '12-']);

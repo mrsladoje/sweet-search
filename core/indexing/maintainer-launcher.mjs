@@ -208,10 +208,11 @@ export function maintainerAlive(stateDir, nowMs = Date.now()) {
  * Start the maintainer if it should run and isn't already running.
  *
  * `daemonPidFile` names the pid file of the search daemon this maintainer
- * serves. The maintainer stops on its own once no live daemon has owned that
- * file for a while (see `followDaemon` in index-maintainer.mjs), so a
- * maintainer never outlives the daemon that needed it. Without it the
- * maintainer runs until its idle TTL, as a standalone run does.
+ * serves; `daemonPid` names the serving process directly (the MCP server,
+ * which searches in-process and has no pid file). The maintainer stops on its
+ * own once that daemon has been gone for a while (index-maintainer.mjs,
+ * DAEMON_ABSENT_GRACE_MS), so a maintainer never outlives the process that
+ * needed it. Without either it runs until its idle TTL, as a standalone run does.
  *
  * @param {{
  *   env?: NodeJS.ProcessEnv,
@@ -219,6 +220,7 @@ export function maintainerAlive(stateDir, nowMs = Date.now()) {
  *   verbose?: boolean,
  *   maintainerEntry?: string,
  *   daemonPidFile?: string,
+ *   daemonPid?: number,
  *   log?: (msg: string) => void,
  * }} [options]
  * @returns {{spawned: boolean, reason: 'opted-out'|'entry-missing'|'no-state-dir'|'paused'|'already-running'|'spawned'|'error', pid?: number, stateDir?: string, error?: string}}
@@ -262,6 +264,7 @@ export function launchMaintainer(options = {}) {
 
   const args = [maintainerEntry];
   if (options.daemonPidFile) args.push(`--daemon-pid-file=${options.daemonPidFile}`);
+  if (Number.isInteger(options.daemonPid) && options.daemonPid > 0) args.push(`--daemon-pid=${options.daemonPid}`);
 
   // Give the child a real destination for its warnings and its dying words.
   // stdin stays ignored; stdout and stderr both land in the rotating log.
