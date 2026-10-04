@@ -220,6 +220,33 @@ export function logError(message) {
 // ATOMIC DATABASE SWAP (Windows/WSL EBUSY Handling)
 // =============================================================================
 
+// SQLite keeps a WAL-mode database in three files; the -wal and -shm names
+// derive from the database path. They travel with their database: an old
+// `x.db-wal` left next to a new `x.db` is replayed into it on open, writing
+// old pages over the new file ("database disk image is malformed" after
+// `index --full` over an existing index).
+const SQLITE_SIDECARS = ['-wal', '-shm', '-journal'];
+
+async function moveSidecars(fromPath, toPath) {
+  for (const ext of SQLITE_SIDECARS) {
+    try {
+      await fs.rename(fromPath + ext, toPath + ext);
+    } catch (err) {
+      if (err.code !== 'ENOENT') throw err;
+    }
+  }
+}
+
+async function unlinkSidecars(dbPath) {
+  for (const ext of SQLITE_SIDECARS) {
+    try {
+      await fs.unlink(dbPath + ext);
+    } catch (err) {
+      if (err.code !== 'ENOENT') logError(`WARN: Failed to remove ${dbPath + ext}: ${err.message}`);
+    }
+  }
+}
+
 export async function atomicSwapDatabase(tmpPath, finalPath) {
   const bakPath = finalPath + '.bak';
   const MAX_RETRIES = 5;
@@ -232,14 +259,17 @@ export async function atomicSwapDatabase(tmpPath, finalPath) {
       } catch (err) {
         // No stale backup
       }
+      await unlinkSidecars(bakPath);
 
       let hadOriginal = false;
       if (existsSync(finalPath)) {
         await fs.rename(finalPath, bakPath);
         hadOriginal = true;
       }
+      await moveSidecars(finalPath, bakPath);
 
       await fs.rename(tmpPath, finalPath);
+      await moveSidecars(tmpPath, finalPath);
 
       if (hadOriginal) {
         try {
@@ -250,6 +280,7 @@ export async function atomicSwapDatabase(tmpPath, finalPath) {
           }
         }
       }
+      await unlinkSidecars(bakPath);
 
       return true;
     } catch (err) {
@@ -262,6 +293,7 @@ export async function atomicSwapDatabase(tmpPath, finalPath) {
       if (existsSync(bakPath) && !existsSync(finalPath)) {
         try {
           await fs.rename(bakPath, finalPath);
+          await moveSidecars(bakPath, finalPath);
           log(`⚠ Swap failed, restored from backup: ${err.message}`, 'yellow');
         } catch (restoreErr) {
           logError(`CRITICAL: Swap failed AND restore failed: ${restoreErr.message}`);
