@@ -44,11 +44,15 @@ function relevance(symbol, evidence) {
     if (symbolTerms.has(term)) subtokenMatches++;
   }
 
+  // Words of the name: at least half of them must be in the queries. One shared word of a
+  // long name is no signal (`file` from "written into the file" matched jj's
+  // test_resolve_file_executable); `parse_conflict` for "conflict" is.
+  const wordsMatched = symbolTerms.size > 0 && subtokenMatches * 2 >= symbolTerms.size;
   return {
-    matched: exactAnchor > 0 || containedAnchor > 0 || subtokenMatches > 0,
+    matched: exactAnchor > 0 || containedAnchor > 0 || wordsMatched,
     exactAnchor,
     containedAnchor,
-    subtokenMatches,
+    subtokenMatches: wordsMatched ? subtokenMatches : 0,
   };
 }
 

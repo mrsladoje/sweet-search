@@ -199,7 +199,7 @@ export function detectFileKind(filePath, opts) {
  *
  * @returns {'docs'|'tests'|'types'|'ancillary'|'implementation'|'unknown'}
  */
-export function classifyFileKindIntent(query) {
+export function classifyFileKindIntent(query, { agentFormat = false } = {}) {
   const q = (query || '').toLowerCase();
   if (!q) return 'unknown';
   // Type-seeking trumps test-seeking when both fire (existing convention).
@@ -208,8 +208,14 @@ export function classifyFileKindIntent(query) {
   if (TESTS_INTENT_RE.test(q)) return 'tests';
   if (ANCILLARY_INTENT_RE.test(q)) return 'ancillary';
   if (IMPL_INTENT_RE.test(q))  return 'implementation';
+  if (agentFormat && AGENT_IMPL_INTENT_RE.test(q)) return 'implementation';
   return 'unknown';
 }
+
+// Agent format only (format-gated, CLAUDE.md): `how is/are X done` asks how code does
+// something, as `how does/do` does (jj "how is a conflict written into the file with
+// conflict markers" ranked three TOML config files above lib/src/conflicts.rs).
+const AGENT_IMPL_INTENT_RE = /\bhow (?:is|are|was|were|can|should)\b|\bwritten\b/;
 
 function resolveFilePath(r) {
   return r?.file

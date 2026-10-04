@@ -75,8 +75,8 @@ describe('doc comments from the AST', () => {
     expect(d['function:first']).toBeNull(); // file-top license header
     expect(d['function:helper']).toBe('Return x. More text.');
     expect(d['class:A']).toBe('Class doc.');
-    expect(d['function:n']).toBe('comment for n');
-    expect(d['function:p']).toBe('Prop doc.');
+    expect(d['method:n']).toBe('comment for n');
+    expect(d['method:p']).toBe('Prop doc.');
     // The decorated_definition entity spans `p` too; the docstring is p's.
     expect(d['decorator:<anonymous:decorator>']).toBeNull();
   });

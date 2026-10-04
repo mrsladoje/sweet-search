@@ -643,8 +643,8 @@ describe('unread above (squashql-295 shape)', () => {
     expect(line.startsWith('above 1-169: field subQueryMeasures')).toBe(true);
     expect(line).toContain('QueryResolver');
     expect(line).not.toContain('helper');
-    // One shared word is no signal: `query` alone does not name QueryResolver (query, resolver).
-    const loose = renderUnreadAbove(r, { command: 'ss-read', queryEvidence: { anchors: ['subQuery'], subtokens: ['sub', 'query'] } });
+    // A query that shares none of its words (query, resolver) does not name QueryResolver.
+    const loose = renderUnreadAbove(r, { command: 'ss-read', queryEvidence: { anchors: [], subtokens: ['sub'] } });
     expect(loose).not.toContain('QueryResolver');
   });
 

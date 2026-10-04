@@ -1639,6 +1639,8 @@ async function cmdTrace(rawArgs) {
   if (FIX.traceModeBudget && mode) opts.modeSection = mode;
   // The compact rendering prints no path through a definition outside the repository.
   if (FIX.traceCompact) opts.inRepoImpactOnly = true;
+  // ... and no code: rows only, at most 40 per section.
+  if (FIX.traceCompact) opts.rowsOnly = true;
   if (depth != null) opts.maxDepth = depth;
   // Budget-sweep experiment hook: env sets the default; explicit --budget wins.
   if (budget != null) opts.tokenBudget = budget;
