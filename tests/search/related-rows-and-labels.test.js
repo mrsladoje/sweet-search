@@ -87,12 +87,34 @@ describe('1d: an entry names every top-level symbol of its span', () => {
     expect(results[0].symbols).toEqual(['can_make_new?', 'try_make_new', 'acquire']);
     expect(results[1].symbols).toBeUndefined();
   });
+
+  it('annotateEntrySymbols stamps `symbolInfo`: each symbol with its kind and span', () => {
+    const results = [{ file: 'a.rb', startLine: 174, endLine: 234, symbol: 'can_make_new?', symbolType: 'method' }];
+    annotateEntrySymbols(results, { findEntitiesInRange: (f, s, e) => entities.filter((x) => x.startLine >= s && x.startLine <= e) });
+    expect(results[0].symbolInfo.map((x) => [x.name, x.type])).toEqual([['can_make_new?', 'method'], ['try_make_new', 'method'], ['acquire', 'method']]);
+    expect(Number.isInteger(results[0].symbolInfo[1].startLine)).toBe(true);
+  });
 });
 
 // ---------------------------------------------------------------------------------------------
 describe('1e / 2d: related rows', () => {
   const caller = (name, filePath, startLine) => ({ type: 'calls', source: { id: name, name, type: 'function', filePath, startLine, endLine: startLine + 10 } });
   const entity = { id: 'e', filePath: 'okhttp/Interceptor.kt', startLine: 85, endLine: 85, name: 'request', type: 'function' };
+
+  it('names the subject by entity id, and an incoming extends reads `is extended by`', () => {
+    const cls = { id: 'c', filePath: 'lib/pool.rb', startLine: 27, endLine: 175, name: 'ConnectionPool', type: 'class' };
+    const sub = { id: 's', name: 'TimedQueueConnectionPool', type: 'class', filePath: 'lib/timed_queue.rb', startLine: 9, endLine: 293 };
+    const repo = {
+      getOutgoingRelationships: () => [],
+      getIncomingRelationships: () => [{ type: 'extends', source: sub }],
+      countEntitiesByAnyName: (names) => new Map(names.map((n) => [n.toLowerCase(), 1])),
+      getEntityById: (id) => (id === 'c' ? cls : null),
+    };
+    // The expansion's label can be a member (can_make_new?); the rows hang off the entity id.
+    const out = renderGraphNeighbors({ codeGraphRepo: repo, entity: { ...cls, name: 'can_make_new?', type: 'method' }, skipKeys: new Set(), tokenCap: 600, query: 'pool' });
+    expect(out.subject).toEqual({ name: 'ConnectionPool', type: 'class' });
+    expect(out.rows).toEqual([expect.objectContaining({ kind: 'extendedBy', name: 'TimedQueueConnectionPool' })]);
+  });
 
   it('drops incoming rows of a name with many definitions and a large fan-in (name-only resolution)', () => {
     const incoming = Array.from({ length: 24 }, (_, i) => caller(`interceptorCall${i}`, `src/Interceptor${i}.kt`, 10));

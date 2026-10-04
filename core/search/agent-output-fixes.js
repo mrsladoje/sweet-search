@@ -549,23 +549,73 @@ function overlapsAny(spans, start, end) {
   return Array.isArray(spans) && spans.some((s) => start <= s.end && end >= s.start);
 }
 
-/** The names an entry's header shows: every top-level symbol of the span (r.symbols), else r.symbol. */
-function entryNames(r, cap = Infinity) {
-  const names = Array.isArray(r?.symbols) && r.symbols.length ? r.symbols : (r?.symbol ? [r.symbol] : []);
-  if (names.length <= cap) return names.join(', ');
-  return `${names.slice(0, cap).join(', ')} +${names.length - cap}`;
+// --- kind words ------------------------------------------------------------------------
+
+// Index entity type → the word the agent reads in front of a name. A type with no entry here
+// prints as stored when it is one plain word; anything else prints no kind.
+const KIND_WORDS = {
+  function: 'function', arrow: 'function', method: 'method', class: 'class', interface: 'interface',
+  struct: 'struct', enum: 'enum', trait: 'trait', impl: 'impl', module: 'module', namespace: 'namespace',
+  typealias: 'type', type: 'type', typedef: 'type', record: 'record', object: 'object', protocol: 'protocol',
+  extension: 'extension', actor: 'actor', variable: 'variable', const: 'constant', constant: 'constant',
+  field: 'field', property: 'property', macro: 'macro', topkey: 'key', keyval: 'key', section: 'section',
+};
+
+/** The kind word of an index entity type, or '' when there is none to print. */
+export function kindWord(type) {
+  const t = String(type || '').toLowerCase();
+  if (!t) return '';
+  if (KIND_WORDS[t]) return KIND_WORDS[t];
+  return /^[a-z]+$/.test(t) && t !== 'symbol' && t !== 'code' ? t : '';
 }
 
-// Kinds a summary row keeps: the ones that tell a type from a callable of the same name.
-const SUMMARY_KIND_TAGS = new Set(['class', 'struct', 'interface', 'trait', 'impl', 'enum', 'protocol', 'record', 'object']);
+function pluralKind(word) {
+  if (/(s|x|ch|sh)$/.test(word)) return `${word}es`;
+  if (/[^aeiou]y$/.test(word)) return `${word.slice(0, -1)}ies`;
+  return `${word}s`;
+}
+
+/** `kind name`, or the name alone when the kind is unknown. */
+export function kindName(name, type) {
+  const k = kindWord(type);
+  return k ? `${k} ${name}` : String(name);
+}
+
+/**
+ * A list of `{name, type}` with kind words: `methods a, b, c` when every name has the same
+ * kind, else `method a, field b`. With `cap`, the names past it print as `+N more [kinds]`.
+ */
+export function kindNameList(items, cap = Infinity) {
+  const list = items.filter((i) => i?.name && !String(i.name).startsWith('<anonymous'));
+  if (list.length === 0) return '';
+  const words = list.map((i) => kindWord(i.type));
+  const same = words.every((w) => w && w === words[0]);
+  const shown = list.slice(0, cap);
+  const rest = list.length - shown.length;
+  let text;
+  if (same) text = `${shown.length > 1 || rest > 0 ? pluralKind(words[0]) : words[0]} ${shown.map((i) => i.name).join(', ')}`;
+  else text = shown.map((i) => kindName(i.name, i.type)).join(', ');
+  if (rest > 0) text += ` +${rest} more`;
+  return text;
+}
+
+/** The entry's symbols as `{name, type, startLine, endLine}` (symbolInfo, else symbols / symbol). */
+function entrySymbols(r) {
+  if (Array.isArray(r?.symbolInfo) && r.symbolInfo.length) return r.symbolInfo;
+  const names = Array.isArray(r?.symbols) && r.symbols.length ? r.symbols : (r?.symbol ? [r.symbol] : []);
+  return names.map((name) => ({ name, type: name === r.symbol ? r.symbolType : null, startLine: null, endLine: null }));
+}
+
+// Kinds that name a type (a summary row of a type covers its members' lines on purpose).
+const TYPE_KIND_TAGS = new Set(['class', 'struct', 'interface', 'trait', 'impl', 'enum', 'protocol', 'record', 'object', 'extension', 'actor']);
 const SUMMARY_NAME_CAP = 3;
 
-/** One summary row inside its file group: `start-end name` (+ ` (class)` for a type, ` STALE`). */
-export function renderSummaryRow(r) {
-  const names = entryNames(r, SUMMARY_NAME_CAP);
-  const kind = SUMMARY_KIND_TAGS.has(String(r.symbolType || '').toLowerCase()) && !(r.symbols?.length > 1)
-    ? ` (${r.symbolType})` : '';
-  return `${lineRange(r.startLine, r.endLine)}${names ? ` ${names}` : ''}${kind}${r.stale ? ' STALE' : ''}`;
+/** One summary row: `start-end kind name, ...` (+ ` STALE`). `hideSpans`: printed code of the file. */
+export function renderSummaryRow(r, hideSpans = []) {
+  const symbols = entrySymbols(r).filter((s) => !(Number.isInteger(s.startLine) && Number.isInteger(s.endLine)
+    && insideAny(hideSpans, s.startLine, s.endLine)));
+  const names = kindNameList(symbols, SUMMARY_NAME_CAP);
+  return `${lineRange(r.startLine, r.endLine)}${names ? ` ${names}` : ''}${r.stale ? ' STALE' : ''}`;
 }
 
 /**
@@ -582,28 +632,34 @@ export function typedPathLabel(file, others = []) {
   return file;
 }
 
-const RELATED_KIND_LABELS = {
-  caller: 'callers', user: 'users', calls: 'calls', imports: 'imports', uses: 'uses',
-  extends: 'extends', implements: 'implements', overrides: 'overrides', throws: 'throws', type: 'types',
+// How a related row reads, given the subject S (`class TimedQueueConnectionPool`): the lead of
+// its line. Outgoing edges start with S; incoming edges say S is their object.
+const RELATED_LEADS = {
+  caller: (S) => `callers of ${S}`, user: (S) => `users of ${S}`,
+  calls: (S) => `${S} calls`, uses: (S) => `${S} uses`, imports: (S) => `${S} imports`,
+  extends: (S) => `${S} extends`, implements: (S) => `${S} implements`, overrides: (S) => `${S} overrides`,
+  throws: (S) => `${S} throws`, type: (S) => `types in ${S}`,
+  extendedBy: (S) => `${S} is extended by`, implementedBy: (S) => `${S} is implemented by`,
 };
 
+const VERB_LEADS = new Set(['extends', 'implements', 'overrides', 'extendedBy', 'implementedBy']);
+
 /**
- * Related rows (context-expander.js renderGraphNeighbors `rows`), one line per kind:
- * `callers: okhttp/.../RealCall.kt 210-260 getResponseWithInterceptorChain · 300-310 other`.
- * The path prints once per run of rows in the same file. PATH RULE (one tool output): a file's
- * path prints in full, repository-root relative, the first time the output names it; a later
- * mention may use the shortest unique suffix (`shortPath`). A suffix the agent has never seen
- * in full is no path it can act on: `ss-read RealInterceptorChain.kt` found no file.
- * `printed`: full paths this output already printed (file headings, earlier rows); updated.
+ * Related rows (context-expander.js renderGraphNeighbors `rows`), one line per kind, each naming
+ * the subject: `class TimedQueueConnectionPool extends class ConnectionPool (lib/sequel/connection_pool.rb 27-175)`.
+ * A row's path prints once per run of rows in the same file. PATH RULE (one tool output): a
+ * file's path prints in full the first time the output names it; a later mention may use the
+ * shortest unique suffix (`shortPath`). `printed`: full paths this output already printed; updated.
+ * @param {{name?:string,type?:string}|null} subject the entity the rows hang off
  */
-export function renderRelatedRows(rows, printed = new Set()) {
+export function renderRelatedRows(rows, printed = new Set(), subject = null) {
   if (!Array.isArray(rows) || rows.length === 0) return [];
+  const S = subject?.name ? kindName(subject.name, subject.type) : 'this';
   const byKind = new Map();
   for (const row of rows) {
     if (!row?.name) continue;
-    const label = RELATED_KIND_LABELS[row.kind] || row.kind;
-    if (!byKind.has(label)) byKind.set(label, []);
-    byKind.get(label).push(row);
+    if (!byKind.has(row.kind)) byKind.set(row.kind, []);
+    byKind.get(row.kind).push(row);
   }
   const pathFor = (row) => {
     if (printed.has(row.file)) return row.shortPath || row.file;
@@ -611,20 +667,23 @@ export function renderRelatedRows(rows, printed = new Set()) {
     return row.file;
   };
   const lines = [];
-  for (const [label, list] of byKind) {
+  for (const [kind, list] of byKind) {
     let prevFile = null;
     const items = list.map((row) => {
+      const what = kindName(row.name, row.entityType);
       if (row.file && Number.isInteger(row.startLine)) {
-        const lead = row.file === prevFile ? '' : `${pathFor(row)} `;
+        const where = row.file === prevFile ? '' : `${pathFor(row)} `;
         prevFile = row.file;
-        return `${lead}${lineRange(row.startLine, row.endLine)} ${row.name}`;
+        return `${what} (${where}${lineRange(row.startLine, row.endLine)})`;
       }
       prevFile = null;
-      if (row.file) return `${pathFor(row)} ${row.name}`;
-      if (row.line) return `${row.name} (line ${row.line})`;
-      return row.name;
+      if (row.file) return `${what} (${pathFor(row)})`;
+      if (row.line) return `${what} (line ${row.line})`;
+      return what;
     });
-    lines.push(`${label}: ${items.join(' · ')}`);
+    const lead = RELATED_LEADS[kind] ? RELATED_LEADS[kind](S) : `${kind} of ${S}`;
+    // A verb lead reads as a sentence (`class X extends class Y (...)`); a list lead takes a colon.
+    lines.push(`${lead}${VERB_LEADS.has(kind) ? ' ' : ': '}${items.join(' · ')}`);
   }
   return lines;
 }
@@ -641,125 +700,146 @@ function renderSameFileMap(sameFile, file, spans) {
 }
 
 /**
- * `# siblings: 210: <line> · 223: <line>` — the same-file family of the entry above, without
- * the sites inside printed code or inside another entry of this file (code or row): those
- * already print. The file and the entry are the lines above, so the line names neither.
+ * `not shown, same file: method preallocated_make_new (135) · 210: @size = [0]` — the same-file
+ * family of the entry above, without the sites inside printed code or inside another entry of
+ * this file (code or row): those already print. A declaration site prints its kind and name;
+ * an assignment site prints its source line.
  */
 function renderSiblingLine(siblingLine, spans, rowSpans = []) {
   if (!siblingLine?.rendered) return null;
   if (!Array.isArray(siblingLine.sites)) return siblingLine.rendered;
   const kept = siblingLine.sites.filter((s) => !insideAny(spans, s.line, s.line) && !insideAny(rowSpans, s.line, s.line));
   if (kept.length === 0) return null;
-  return `# siblings: ${kept.map((s) => `${s.line}: ${s.text}`).join(' · ')}`;
+  const site = (s) => (s.name ? `${kindName(s.name, s.kind)} (${s.line})` : `${s.line}: ${s.text}`);
+  return `not shown, same file: ${kept.map(site).join(' · ')}`;
+}
+
+/** `interface Chain (part, whole 84-297)` when the entry shows only part of its primary symbol. */
+function partOfNote(r, shownEnd) {
+  const primary = entrySymbols(r).find((s) => s.name === r.symbol);
+  if (!primary || !Number.isInteger(primary.startLine) || !Number.isInteger(primary.endLine)) return '';
+  if (primary.startLine >= r.startLine && primary.endLine <= shownEnd) return '';
+  return ` (part; whole ${lineRange(primary.startLine, primary.endLine)})`;
 }
 
 /**
- * Compact ss-search / ss-find blocks, grouped by file:
+ * Compact ss-search / ss-find output: numbered entries in rank order.
  *
- *   okhttp/src/.../RealInterceptorChain.kt        the path, once per file
- *   ## 311-343 proceed                            a code entry: range + every top-level symbol
+ *   1. okhttp/src/.../Interceptor.kt 84-104 interface Chain (part; whole 84-297)
  *   ```(code)```
- *   callers: RealCall.kt 210-260 getResponse...   related rows, one line per kind
- *   85-88 request, proceed · 94 connection        summary rows of the file, one line
+ *   continues: 245-247 method wait_until_available   code right after a cut, not a hit
+ *   imports of Interceptor.kt: import java.io.IOException   (entry 1 only)
+ *   class X extends class Y (path 27-175)              related rows, one line per kind
+ *   not shown, same file: method preallocated_make_new (135)
+ *   2. also Interceptor.kt 109-112 function withConnectTimeout
+ *   3. samples/.../LoggingInterceptors.java 25-58 class LoggingInterceptors
  *
- * Files print in the order of their best-ranked entry; inside a file, entries keep rank order.
- * A continuation whose code starts right after the entry's code merges into one block; another
- * continuation prints as its own `## range name` block under the same path. No query header,
- * no rank numbers, no kind tag except on a type's summary row.
+ * PATH RULE: a file's path prints in full the first time the output names it; a later entry of
+ * the same file says `also <short name>`. A file the agent typed (--in) prints its short name,
+ * and nothing when it is the only file. Every name carries its kind word.
  */
 function renderGroupedBlocks(results, plan, { omitted = new Set(), gutter = (code) => code, typed = [] } = {}) {
-  const groups = new Map();
-  for (const e of plan.entries) {
-    const file = e.r.file;
-    if (!groups.has(file)) groups.set(file, []);
-    groups.get(file).push(e);
-  }
   const spansByFile = printedCodeSpans(plan.entries);
   const lines = [];
-  // Full paths the agent knows: typed in the command (--in), or printed so far in this output
-  // (renderRelatedRows: full first, short later). A typed file's heading is its short label,
-  // or nothing when it is the only file of the output.
   const printed = new Set(typed);
-  const groupFiles = [...groups.keys()];
-  for (const [file, entries] of groups) {
-    if (!printed.has(file)) lines.push(file);
-    else if (groupFiles.length > 1) lines.push(typedPathLabel(file, groupFiles));
+  const outputFiles = [...new Set(plan.entries.map((e) => e.r.file))];
+  // The path lead of an entry line. First mention: the full path (a typed file: its short name,
+  // nothing when it is the only file). Later mentions: `also <short name>`.
+  const named = new Set();
+  const label = (file) => {
+    const short = typedPathLabel(file, outputFiles);
+    if (named.has(file)) return `also ${short} `;
+    named.add(file);
+    if (printed.has(file)) return outputFiles.length > 1 ? `${short} ` : '';
     printed.add(file);
+    return `${file} `;
+  };
+  // Rows of a file: the members a row of this file names (a type's row covers its members on purpose).
+  const rowSpansByFile = new Map();
+  for (const { r } of plan.entries) {
+    if (!isSummaryOnly(r) || TYPE_KIND_TAGS.has(String(r.symbolType || '').toLowerCase())) continue;
+    if (!rowSpansByFile.has(r.file)) rowSpansByFile.set(r.file, []);
+    rowSpansByFile.get(r.file).push({ start: r.startLine, end: r.endLine });
+  }
+  let n = 0;
+  for (const { r, index, also } of plan.entries) {
+    const file = r.file;
     const spans = spansByFile.get(file) || [];
-    // The ranges this file's member rows print (code entries count by the code they show:
-    // `spans`). A type's row (`22-217 Schema (class)`) names the type, not its members.
-    const rowSpans = entries
-      .filter(({ r }) => isSummaryOnly(r) && !SUMMARY_KIND_TAGS.has(String(r.symbolType || '').toLowerCase()))
-      .map(({ r }) => ({ start: r.startLine, end: r.endLine }));
-    // Summary rows of this file printed on one line; a code entry or a summary text ends the run.
-    let run = [];
-    const flush = () => { if (run.length) lines.push(run.join(' · ')); run = []; };
-    // Lines a trailer continuation can point at without repeating a summary row of this file.
-    const summaryStarts = new Set(entries.filter(({ r }) => isSummaryOnly(r)).map(({ r }) => r.startLine));
-    for (const { r, index, also } of entries) {
-      if (isSummaryOnly(r)) {
-        run.push(renderSummaryRow(r));
-        if (r.summary && !summaryRestatesHeader(r.summary)) { flush(); lines.push(r.summary); }
-        const alsoLine = renderAlsoInFile(also);
-        if (alsoLine) { flush(); lines.push(alsoLine); }
-        continue;
-      }
-      flush();
-      const stale = r.stale ? ' STALE' : '';
-      const codeOmitted = omitted.has(`${index}:result`);
-      const cont = r.continuation || null;
-      const contSpan = continuationSpan(r);
-      const contOmitted = omitted.has(`${index}:continuation`);
-      const shown = shownCodeSpan(r);
-      // One block when the continuation's code starts on the line after the entry's last line.
-      const merge = !!(r.code && !codeOmitted && contSpan && !contOmitted && contSpan.file === file
-        && shown && shown.end === r.endLine && contSpan.start === r.endLine + 1);
-      const nameList = Array.isArray(r.symbols) && r.symbols.length ? [...r.symbols] : (r.symbol ? [r.symbol] : []);
-      if (merge && cont.symbol && !nameList.includes(cont.symbol)) nameList.push(cont.symbol);
-      const headNames = nameList.join(', ');
-      lines.push(`## ${lineRange(r.startLine, merge ? contSpan.end : r.endLine)}${headNames ? ` ${headNames}` : ''}${stale}`);
-      if (r.headerContext) {
-        const imports = r.code && !codeOmitted ? usedImports(dedupeImports(r.headerContext, r.code), r.code) : r.headerContext;
-        if (imports) lines.push('### imports', '```', imports, '```');
-      }
-      if (r.code) {
-        if (codeOmitted) lines.push(renderAlreadyShownLine(r.file, r.startLine, r.endLine));
-        else lines.push('```', gutter(merge ? `${r.code}\n${cont.code}` : r.code, r.startLine), '```');
-      } else if (r.summary && !summaryRestatesHeader(r.summary)) {
-        lines.push(r.summary);
-      }
-      if (r.neighbors) {
-        if (Array.isArray(r.neighbors.rows)) lines.push(...renderRelatedRows(r.neighbors.rows, printed));
-        else if (r.neighbors.rendered) lines.push(r.neighbors.rendered);
-      }
-      const map = renderSameFileMap(r.sameFile, file, spans);
-      if (map) lines.push(map);
-      const siblings = renderSiblingLine(r.siblingLine, spans, rowSpans);
-      if (siblings) lines.push(siblings);
-      if (cont && !merge) {
-        // A continuation is in the entry's file; another file would need its path.
-        const contFile = cont.file || file;
-        const where = contFile === file ? '' : `${contFile}:`;
-        if (contSpan) {
-          lines.push(`## ${where}${lineRange(contSpan.start, contSpan.end)}${cont.symbol ? ` ${cont.symbol}` : ''}`);
-          printed.add(contFile);
-          if (contOmitted) lines.push(renderAlreadyShownLine(contSpan.file, contSpan.start, contSpan.end));
-          else lines.push('```', cont.code, '```');
-        } else if (cont.rendered && Number.isInteger(cont.startLine)
-            && !(contFile === file && summaryStarts.has(cont.startLine))) {
-          lines.push(`# continues at ${where}${cont.startLine}${cont.symbol ? ` ${cont.symbol}` : ''}`);
-          printed.add(contFile);
-        } else if (cont.rendered && !Number.isInteger(cont.startLine)) {
-          // No coordinates to merge or regroup by: the continuation's own text.
-          lines.push(cont.rendered);
-          if (cont.kind === 'symbol' && cont.code) lines.push('```', cont.code, '```');
-        }
-      }
-      if (r.familyManifest?.rendered) lines.push(r.familyManifest.rendered);
+    if (isSummaryOnly(r)) {
+      // Every name of the row is in printed code above or below: nothing new to point at.
+      const syms = entrySymbols(r);
+      if (syms.length > 0 && syms.every((x) => Number.isInteger(x.startLine) && Number.isInteger(x.endLine)
+        && insideAny(spans, x.startLine, x.endLine))) continue;
+      const row = renderSummaryRow(r, spans);
+      n++;
+      lines.push(`${n}. ${label(file)}${row}`);
+      if (r.summary && !summaryRestatesHeader(r.summary)) lines.push(r.summary);
       const alsoLine = renderAlsoInFile(also);
       if (alsoLine) lines.push(alsoLine);
+      continue;
     }
-    flush();
+    n++;
+    const stale = r.stale ? ' STALE' : '';
+    const codeOmitted = omitted.has(`${index}:result`);
+    const cont = r.continuation || null;
+    const contSpan = continuationSpan(r);
+    const contOmitted = omitted.has(`${index}:continuation`);
+    const shown = shownCodeSpan(r);
+    // One block when the continuation's code starts on the line after the entry's last line.
+    const merge = !!(r.code && !codeOmitted && contSpan && !contOmitted && contSpan.file === file
+      && shown && shown.end === r.endLine && contSpan.start === r.endLine + 1);
+    const symbols = [...entrySymbols(r)];
+    if (merge && cont.symbol && !symbols.some((s) => s.name === cont.symbol)) {
+      symbols.push({ name: cont.symbol, type: cont.symbolType || null });
+    }
+    const end = merge ? contSpan.end : r.endLine;
+    const names = kindNameList(symbols);
+    lines.push(`${n}. ${label(file)}${lineRange(r.startLine, end)}${names ? ` ${names}` : ''}${partOfNote(r, end)}${stale}`);
+    if (r.code) {
+      if (codeOmitted) lines.push(renderAlreadyShownLine(r.file, r.startLine, r.endLine));
+      else lines.push('```', gutter(merge ? `${r.code}\n${cont.code}` : r.code, r.startLine), '```');
+    } else if (r.summary && !summaryRestatesHeader(r.summary)) {
+      lines.push(r.summary);
+    }
+    if (cont && !merge) {
+      // The code right after the entry's cut: part of this entry, not a ranked hit.
+      const contFile = cont.file || file;
+      const where = contFile === file ? '' : `${label(contFile)}`;
+      const what = cont.symbol ? ` ${kindName(cont.symbol, cont.symbolType)}` : '';
+      if (contSpan) {
+        lines.push(`continues: ${where}${lineRange(contSpan.start, contSpan.end)}${what}`);
+        if (contOmitted) lines.push(renderAlreadyShownLine(contSpan.file, contSpan.start, contSpan.end));
+        else lines.push('```', cont.code, '```');
+      } else if (cont.rendered && Number.isInteger(cont.startLine)
+          && !(contFile === file && plan.entries.some(({ r: o }) => isSummaryOnly(o) && o.file === file && o.startLine === cont.startLine))) {
+        lines.push(`continues (not shown): ${where}${cont.startLine}${what}`);
+      } else if (cont.rendered && !Number.isInteger(cont.startLine)) {
+        // No coordinates to merge or regroup by: the continuation's own text.
+        lines.push(cont.rendered);
+        if (cont.kind === 'symbol' && cont.code) lines.push('```', cont.code, '```');
+      }
+    }
+    // Imports: the winner's only (entry 1), the lines its code uses.
+    if (n === 1 && r.headerContext) {
+      const imports = r.code && !codeOmitted ? usedImports(dedupeImports(r.headerContext, r.code), r.code) : r.headerContext;
+      if (imports) {
+        const short = typedPathLabel(file, [...outputFiles, file]).split('/').pop();
+        const list = imports.split('\n').filter((l) => l.trim());
+        if (list.length === 1) lines.push(`imports of ${short}: ${list[0].trim()}`);
+        else lines.push(`imports of ${short}:`, ...list);
+      }
+    }
+    if (r.neighbors) {
+      if (Array.isArray(r.neighbors.rows)) lines.push(...renderRelatedRows(r.neighbors.rows, printed, r.neighbors.subject));
+      else if (r.neighbors.rendered) lines.push(r.neighbors.rendered);
+    }
+    const map = renderSameFileMap(r.sameFile, file, spans);
+    if (map) lines.push(map);
+    const siblings = renderSiblingLine(r.siblingLine, spans, rowSpansByFile.get(file) || []);
+    if (siblings) lines.push(siblings);
+    if (r.familyManifest?.rendered) lines.push(r.familyManifest.rendered);
+    const alsoLine = renderAlsoInFile(also);
+    if (alsoLine) lines.push(alsoLine);
   }
   if (!results || results.length === 0) lines.push('(no results)');
   else if (plan.hidden > 0) lines.push(`(+${plan.hidden} lower-ranked entries not shown)`);

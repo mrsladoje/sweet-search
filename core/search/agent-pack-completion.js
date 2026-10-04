@@ -493,15 +493,15 @@ export function buildSameFileSiblingLine(hits, codeGraphRepo, {
 
   const sites = [];
   const seenLines = new Set();
-  const pushSite = (line, kind) => {
+  const pushSite = (line, kind, entityName = null) => {
     if (!Number.isInteger(line) || seenLines.has(line) || sites.length >= MAX_SIBLING_SITES) return;
     const text = lines[line - 1];
     if (typeof text !== 'string' || !text.trim()) return;
     seenLines.add(line);
-    sites.push({ line, kind, text: compactSourceLine(text) });
+    sites.push({ line, kind, name: kind === 'assignment' ? null : entityName, text: compactSourceLine(text) });
   };
   for (const { entity, isState } of scored.slice(0, MAX_SIBLING_ENTITIES)) {
-    pushSite(entity.startLine, entity.type || 'symbol');
+    pushSite(entity.startLine, entity.type || 'symbol', entity.name);
     if (isState && lines.length) {
       const inside = enclosings.map((own) => [own.startLine, own.endLine]);
       pushSite(findAssignmentLine(lines, entity.name, { declarationLine: entity.startLine, excludeRanges: inside }), 'assignment');
@@ -739,6 +739,15 @@ const LABEL_SKIP_KINDS = new Set(['chunk', 'message', 'topkey', 'target', 'impor
  * @returns {string[]}
  */
 export function topLevelSymbolNames(entities, primary = null) {
+  return topLevelSymbols(entities, primary).map((e) => e.name);
+}
+
+/**
+ * topLevelSymbolNames with each symbol's kind and span: `{ name, type, startLine, endLine }`
+ * (`primary` that starts above the span has `type: null` and no lines). The renderer prints
+ * the kind word in front of each name and drops names whose lines printed code shows.
+ */
+export function topLevelSymbols(entities, primary = null) {
   const list = (Array.isArray(entities) ? entities : [])
     .filter((e) => typeof e?.name === 'string' && e.name
       && Number.isInteger(e.startLine) && Number.isInteger(e.endLine)
@@ -749,15 +758,19 @@ export function topLevelSymbolNames(entities, primary = null) {
     if (top.some((o) => o.startLine <= e.startLine && o.endLine >= e.endLine)) continue;
     top.push(e);
   }
-  const names = [];
-  for (const e of top) if (!names.includes(e.name)) names.push(e.name);
-  if (primary && !names.includes(primary)) names.unshift(primary);
-  return names;
+  const out = [];
+  for (const e of top) {
+    if (out.some((o) => o.name === e.name)) continue;
+    out.push({ name: e.name, type: e.type || null, startLine: e.startLine, endLine: e.endLine });
+  }
+  if (primary && !out.some((o) => o.name === primary)) out.unshift({ name: primary, type: null, startLine: null, endLine: null });
+  return out;
 }
 
 /**
  * Stamp `symbols` (all top-level symbol names of the span) on every entry whose span declares
- * more than one. One indexed lookup per entry; the entry's own `symbol` is unchanged.
+ * more than one, and `symbolInfo` (the same symbols with kind and span) on every entry. One
+ * indexed lookup per entry; the entry's own `symbol` is unchanged.
  */
 export function annotateEntrySymbols(results, codeGraphRepo) {
   if (!Array.isArray(results) || typeof codeGraphRepo?.findEntitiesInRange !== 'function') return;
@@ -765,8 +778,10 @@ export function annotateEntrySymbols(results, codeGraphRepo) {
     if (!r?.file || !Number.isInteger(r.startLine) || !Number.isInteger(r.endLine)) continue;
     let rows;
     try { rows = codeGraphRepo.findEntitiesInRange(r.file, r.startLine, r.endLine); } catch { continue; }
-    const names = topLevelSymbolNames(rows, r.symbol || null);
-    if (names.length > 1) r.symbols = names;
+    const info = topLevelSymbols(rows, r.symbol || null);
+    for (const s of info) if (s.name === r.symbol && !s.type) s.type = r.symbolType || null;
+    if (info.length) r.symbolInfo = info;
+    if (info.length > 1) r.symbols = info.map((s) => s.name);
     const block = r.code ? declarationBlockOf(r, rows, codeGraphRepo) : null;
     if (block) r.declarationBlockOf = block;
   }
@@ -785,7 +800,7 @@ export function annotateEntrySymbols(results, codeGraphRepo) {
 
 /** Longest member, in lines, that still counts as a bare declaration (a wrapped signature). */
 export const DECLARATION_MAX_LINES = 4;
-const TYPE_KINDS = new Set(['class', 'interface', 'trait', 'struct', 'enum', 'impl', 'protocol', 'object', 'record', 'module', 'namespace']);
+const TYPE_KINDS = new Set(['class', 'interface', 'trait', 'struct', 'enum', 'impl', 'protocol', 'object', 'record', 'module', 'namespace', 'actor', 'extension']);
 
 /**
  * `{ name, startLine, endLine }` of the type around `r` when every member declared in r's span

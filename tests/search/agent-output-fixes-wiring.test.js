@@ -172,26 +172,23 @@ describe('fixed renderer, non-compact (A3 alone, B switches): the original bytes
 
 describe('fixed renderer, compact (SS_FIX_A)', () => {
   const a = readFixFlags({ SS_FIX_A: '1' });
-  it('groups by file, no query header or rank numbers, A2 dedupe, A7 imports dedupe', () => {
+  it('numbered entries, no query header, A2 dedupe, A7 imports dedupe', () => {
     const results = fixture();
     const out = renderFixedBlocks(results, plan(results, a), { compact: true, gutter });
     expect(out).toBe([
-      'a.go',
-      '## 1-6 Run',
+      '1. a.go 1-6 function Run',
       '```', gutter(results[0].code, 1), '```',
+      // A continuation in another file names its file (first mention: in full).
+      'continues: b.go 3-8', '```', lines(3, 6), '```',
       // No `rows` on this package: its one-row-per-line text prints as it is.
       'x() b.go:3',
       'same file: Stop (l.40)',
       'siblings: RunAll',
-      // A continuation in another file keeps its path.
-      '## b.go:3-8', '```', lines(3, 6), '```',
       'family: Run, RunAll',
       // Rank 2 (a.go:2-4) is inside rank 1's printed code: dropped (A2).
-      'c.go',
-      '10-20 Other',
+      '2. c.go 10-20 method Other',
       'c.go:10 handles other things',
-      'd.go',
-      '## 5-9 Prev', '```', gutter('prev\n...', 5), '```',
+      '3. d.go 5-9 function Prev', '```', gutter('prev\n...', 5), '```',
       '',
     ].join('\n'));
     expect(out).not.toContain('score=');
@@ -202,7 +199,7 @@ describe('fixed renderer, compact (SS_FIX_A)', () => {
   it('A3 line names the continuation file and the re-read command', () => {
     const results = fixture();
     const out = renderFixedBlocks(results, plan(results, a), { compact: true, omitted: new Set(['0:continuation']), gutter });
-    expect(out).toContain('## b.go:3-8\n(lines 3-8 already shown above — re-read: ss-read b.go 3 8)\n');
+    expect(out).toContain('continues: b.go 3-8\n(lines 3-8 already shown above — re-read: ss-read b.go 3 8)\n');
     expect(renderAlreadyShownLine('dir with space/x.go', 1, 2)).toBe('(lines 1-2 already shown above — re-read: ss-read "dir with space/x.go" 1 2)');
   });
 
@@ -213,7 +210,7 @@ describe('fixed renderer, compact (SS_FIX_A)', () => {
   it('keeps the imports block when the code is omitted or does not show it', () => {
     const results = fixture();
     const omitted = renderFixedBlocks(results, plan(results, a), { compact: true, omitted: new Set(['0:result']), gutter });
-    expect(omitted).toContain('### imports\n```\npackage a\nimport "fmt"\n```\n');
+    expect(omitted).toContain('imports of a.go:\npackage a\nimport "fmt"\n');
   });
 });
 
