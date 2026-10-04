@@ -13,6 +13,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolveNativeBinary } from '../infrastructure/native-resolver.js';
 import { AGENT_TOOLS, AGENT_TOOLS_PROTOCOL_MARKER } from './tools.js';
+import { CHAIN_PID_ENV } from './chain.js';
 
 function envFalsey(name) {
   const v = String(process.env[name] || '').trim().toLowerCase();
@@ -32,7 +33,10 @@ export async function launchAgentTool(toolName) {
     const nativeBin = resolveNativeBinary();
     if (nativeBin && hasAgentTools(nativeBin)) {
       // argv0 selects the tool: the binary dispatches on the name it was called by.
-      const result = spawnSync(nativeBin, args, { stdio: 'inherit', argv0: toolName });
+      // This process sits between the shell and the binary: it stands for the call when
+      // the binary decides whether the call is part of a chained command (chain.js).
+      const env = { ...process.env, [CHAIN_PID_ENV]: process.env[CHAIN_PID_ENV] || String(process.pid) };
+      const result = spawnSync(nativeBin, args, { stdio: 'inherit', argv0: toolName, env });
       if (!result.error) process.exit(result.status ?? 1);
     }
   }
