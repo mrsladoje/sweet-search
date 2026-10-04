@@ -355,6 +355,11 @@ describe('session-daemon-prewarm — maintainer auto-launch', () => {
       FAKE_DAEMON_MARKER: maintainerMarker,
       // Force default-on regardless of the runner's ambient env.
       SWEET_SEARCH_RECONCILE_V2: '',
+      // No background QoS for the spawned child: `taskpolicy -b` lets macOS
+      // starve it for tens of seconds on a loaded machine (a full parallel
+      // suite), so it never wrote its marker. These tests check WHETHER the
+      // maintainer is launched; the demotion has its own tests (os-priority).
+      SWEET_SEARCH_MAINTAINER_BG_PRIORITY: '0',
       ...overrides,
     });
   }
@@ -449,6 +454,7 @@ describe('session-daemon-prewarm — maintainer auto-launch', () => {
       SWEET_SEARCH_STATE_DIR: stateDir,
       SWEET_SEARCH_PROJECT_ROOT: sandbox,
       SWEET_SEARCH_RECONCILE_V2: '',
+      SWEET_SEARCH_MAINTAINER_BG_PRIORITY: '0',
     });
     expect(r.code).toBe(0);
 
