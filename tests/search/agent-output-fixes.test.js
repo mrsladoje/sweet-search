@@ -391,6 +391,8 @@ describe('summary rendering (A2)', () => {
     expect(renderSummaryRow(entry({ symbol: 'Engine', symbolType: 'struct', startLine: 10, endLine: 40 }))).toBe('10-40 struct Engine');
     expect(renderSummaryRow(entry({ symbol: 'Opts', symbolType: 'typeAlias', startLine: 1, endLine: 2 }))).toBe('1-2 type Opts');
     expect(renderSummaryRow(entry({ symbol: null, symbolType: null, startLine: 7, endLine: 7 }))).toBe('7');
+    // The chunker's placeholder name for an unnamed chunk prints no name.
+    expect(renderSummaryRow(entry({ symbol: 'unknown', symbolType: 'code', startLine: 1, endLine: 70 }))).toBe('1-70');
     expect(renderSummaryRow(entry({ symbol: 'a', symbols: ['a', 'b', 'c', 'd', 'e'], startLine: 1, endLine: 9, stale: true })))
       .toBe('1-9 function a, b, c +2 more STALE');
     const info = ['available', 'wait_until_available', 'owned_connection', 'preconnect'].map((name, i) => ({ name, type: 'method', startLine: 240 + i * 5, endLine: 242 + i * 5 }));

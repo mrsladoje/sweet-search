@@ -1495,6 +1495,29 @@ function subjectOf(codeGraphRepo, entity) {
   return { name: row?.name || entity.name || null, type: row?.type || (row ? null : entity.type) || null };
 }
 
+/**
+ * Rank 2 and 3 code previews become summary rows (the same row a summary allocation prints).
+ * Returns the code tokens freed.
+ */
+export function demoteTailOnSufficient(agentResults) {
+  let freed = 0;
+  for (const r of agentResults.slice(1, 3)) {
+    if (!r?.code) continue;
+    freed += Number(r.codeTokens) || 0;
+    r.summary = `${r.file}:${r.startLine} — ${r.symbol || 'code block'}${r.symbolType ? ` (${r.symbolType})` : ''}`;
+    r.presentation = 'summary';
+    r.code = null;
+    r.codeTokens = 0;
+    r.expanded = false;
+    r.headerContext = null;
+    r.continuation = null;
+    delete r.shownStartLine;
+    delete r.shownEndLine;
+    delete r.sandwich;
+  }
+  return freed;
+}
+
 /** Related rows the pack keeps by default (agent / agent_preview); agent_full 4, agent_full_xl 5. */
 export const RELATED_DEFAULT_ROWS = 3;
 /**
@@ -1636,6 +1659,8 @@ export function allocateBudget(totalBudget, numResults, subMode = 'agent_preview
 }
 
 const FIRST_UNIT_TOKENS = 60;
+/** Rank 2/3 lose their code preview when top-1's score is at least this multiple of theirs. */
+export const POINTER_TAIL_RATIO = 2.5;
 const FIRST_UNIT_CALIBRATED_RANKS = 5;
 
 function allocateBudgetShipped(totalBudget, numResults, subMode, context) {
@@ -1692,14 +1717,12 @@ function allocateBudgetShipped(totalBudget, numResults, subMode, context) {
       const thisScore = results[i]?.score || 0;
       const isCompetitive = top1Score > 0 && thisScore >= top1Score / 2;
 
-      // Budget-pointer (SWEET_SEARCH_POINTER_TAIL=1): when top-1 MASSIVELY
-      // dominates (>=3x this rank), drop rank 2/3 CODE bodies to pointer lines
-      // (file:line — symbol, ~15 tok) instead of preview bodies (~400-600 tok).
-      // Conservative gate: fires only on extreme dominance, so load-bearing
-      // rank-2 hits (registry: rank2 ~= rank1) keep their body. The agent can
-      // still ss-read the exact span — recovery is one cheap read, not a search.
-      const pointerTail = process.env.SWEET_SEARCH_POINTER_TAIL === '1'
-        && top1Score > 0 && thisScore > 0 && top1Score >= 3 * thisScore;
+      // Pointer tail (owner decision 2026-10-04, default ON, agent formats): when top-1's score
+      // is at least POINTER_TAIL_RATIO x this rank's, rank 2/3 print as one row (path, range,
+      // kind, name) instead of a code preview. The agent can ss-read the span. The other trigger,
+      // a `sufficient=YES` verdict, is applied after packing (demoteTailOnSufficient).
+      const pointerTail = context.agentFormat === true
+        && top1Score > 0 && thisScore > 0 && top1Score >= POINTER_TAIL_RATIO * thisScore;
       if (pointerTail) {
         allocations.push({ presentation: 'summary', tokenCap: 0 });
       } else if (isFullMode && isCompetitive) {
@@ -2370,6 +2393,7 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
         ...(searchStats?.grepMatches != null ? { grepMatches: searchStats.grepMatches } : {}),
         ...(searchStats?.candidatePoolSize != null ? { candidatePoolSize: searchStats.candidatePoolSize } : {}),
         results: workingResults,
+        agentFormat: _isAgentFormat === true,
       };
   const allocations = allocateBudget(tokenBudget, workingResults.length, subMode,
     opts.firstUnit ? { ...budgetContext, firstUnit: opts.firstUnit } : budgetContext);
@@ -2749,6 +2773,12 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
     sufficiencyReason = sufficiency.sufficiencyReason;
     sufficiencyReasons = sufficiency.reasons;
     unresolvedExternalCount = sufficiency.unresolvedExternalCount || 0;
+  }
+
+  // Pointer tail, second trigger: the engine judges that top-1 answers the query (the
+  // `sufficient=YES` line the agent sees), so rank 2/3 print as one row, not code.
+  if (_isAgentFormat === true && sufficiencyVerdict === 'yes') {
+    tokensUsed -= demoteTailOnSufficient(agentResults);
   }
 
   // Phase 7: same-file span map (top-1 only). Emitted ONLY when the verdict
