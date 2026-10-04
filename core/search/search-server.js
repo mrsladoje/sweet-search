@@ -1344,7 +1344,7 @@ export async function startServer() {
     // ahead of the next request's handler.
     setImmediate(() => {
       try {
-        const result = runSupervisionTick({ state: supervisionState, cwd: process.cwd() });
+        const result = runSupervisionTick({ state: supervisionState, cwd: process.cwd(), daemonPidFile: pidFile });
         // Mark the activity handled only once the answer is one that will not
         // change by trying again.
         if (SETTLED_REASONS.has(result?.reason)) lastSupervisedActivityMs = activityAtCall;
@@ -1465,7 +1465,7 @@ export async function startServer() {
   // ONE rate limit. Called directly, the two paths could each spawn inside the
   // few hundred milliseconds it takes a fresh maintainer to take the lock.
   try {
-    runSupervisionTick({ state: supervisionState, cwd: process.cwd() });
+    runSupervisionTick({ state: supervisionState, cwd: process.cwd(), daemonPidFile: pidFile });
   } catch (err) {
     if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] maintainer launch: ${err?.message || err}\n`);
   }

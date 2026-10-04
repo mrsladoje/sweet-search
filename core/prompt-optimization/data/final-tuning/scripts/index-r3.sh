@@ -21,6 +21,8 @@ REPOS=(${R3_REPOS:-jj dgraph tortoise-orm typedoc zipkin ocelot})
     ( cd "$D" && SWEET_SEARCH_PROJECT_ROOT="$D" node "$MAIN/core/indexing/index-codebase-v21.js" --full --verbose --concurrency=1 --sqlite-fast > "$L/index-r3-$r.log" 2>&1 )
     rc=$?
     echo "$(date '+%F %T') END $r exit=$rc $(grep -m1 -o 'INDEXING COMPLETE.*' "$L/index-r3-$r.log")" >> "$L/index-r3.log"
+    # Frozen benchmark index: no maintainer may ever change it (launchers start none for a paused index).
+    node "$MAIN/core/cli.js" reconcile pause --project-root "$D" --reason "frozen benchmark index" >> "$L/index-r3.log" 2>&1
     pkill -f "sweet-search-maintainer.*r3-$r" 2>/dev/null
   done
   echo "$(date '+%F %T') ALL DONE" >> "$L/index-r3.log"

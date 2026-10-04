@@ -226,6 +226,12 @@ function ensureClone(orig) {
     fs.mkdirSync(CLONE_ROOT, { recursive: true });
     execFileSync('cp', ['-c', '-p', '-R', orig, dst]);
     fs.writeFileSync(`${dst}.cloned-at`, new Date().toISOString());
+    // A frozen benchmark index gets no index maintainer (the launcher starts none for a paused
+    // index). The origin in eval/repos carries the pause already; this covers one that does not.
+    const pauseFile = path.join(dst, '.sweet-search', 'reconcile-pause.json');
+    if (fs.existsSync(path.dirname(pauseFile)) && !fs.existsSync(pauseFile)) {
+      fs.writeFileSync(pauseFile, JSON.stringify({ paused: true, pausedAt: new Date().toISOString(), reason: 'frozen benchmark index' }, null, 2));
+    }
   }
   return dst;
 }

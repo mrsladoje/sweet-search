@@ -363,7 +363,9 @@ try {
   // The hook is a best-effort convenience layer; the durable guarantee lives in
   // the warm search-server startup, which calls this same launcher. Pass our
   // verbose-gated logger so output keeps the prewarm prefix + stays stderr-only.
-  launchMaintainer({ log });
+  // The maintainer follows the search daemon this hook just started (its pid
+  // file), so it stops when that daemon is gone instead of running on alone.
+  launchMaintainer({ log, daemonPidFile: PID_FILE });
 } catch (err) {
   log(`maintainer prewarm non-fatal: ${err?.message || err}`);
 }

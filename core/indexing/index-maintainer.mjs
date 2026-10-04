@@ -1112,6 +1112,18 @@ export async function drainMaintenanceInline(ctx) {
   }
 }
 
+// Resolves the inter-tick sleep in progress, if any. A stop request (signal,
+// daemon gone) calls it so the maintainer exits now instead of after the rest
+// of a sleep slice of up to LOCK_REFRESH_INTERVAL.
+let wakeSleep = null;
+
+/** End the current inter-tick sleep at once (no-op when not sleeping). */
+export function wakeMaintainerSleep() {
+  const wake = wakeSleep;
+  wakeSleep = null;
+  if (wake) wake();
+}
+
 async function sleepWithProgress(totalMs, lockFile, opts = {}) {
   const deadline = Date.now() + totalMs;
   // G6 watcher early-wake: when the watcher feeds the queue mid-sleep it sets a
@@ -1126,7 +1138,15 @@ async function sleepWithProgress(totalMs, lockFile, opts = {}) {
     if (wokenByWatcher && wokenByWatcher()) return;
     const remaining = deadline - Date.now();
     if (remaining <= 0) return;
-    await new Promise((resolveSleep) => setTimeout(resolveSleep, Math.min(LOCK_REFRESH_INTERVAL, remaining)));
+    await new Promise((resolveSleep) => {
+      const done = () => {
+        clearTimeout(timer);
+        if (wakeSleep === done) wakeSleep = null;
+        resolveSleep();
+      };
+      const timer = setTimeout(done, Math.min(LOCK_REFRESH_INTERVAL, remaining));
+      wakeSleep = done;
+    });
     if (!shutdownRequested) createLifecycleProgress(lockFile)();
   }
 }
@@ -1407,6 +1427,7 @@ function confirmSuccessor(child, ms) {
 export async function handOffAfterRssRecycle({
   cwd,
   env = process.env,
+  daemonPidFile = null,
   launch = null,
   emit = log,
   confirmDelayMs = SUCCESSOR_CONFIRM_MS,
@@ -1430,6 +1451,7 @@ export async function handOffAfterRssRecycle({
       result = launcher({
         cwd,
         env: childEnv,
+        ...(daemonPidFile ? { daemonPidFile } : {}),
         log: (msg) => emit('INFO', `RSS-recycle handoff: ${msg}`),
       });
       if (result?.spawned !== true) break;
@@ -1481,6 +1503,76 @@ export async function handOffAfterRssRecycle({
     emit('WARN', `Maintainer has recycled for RSS ${generation} times in a row. The ceiling is probably below this repo's working set; raise SWEET_SEARCH_MAINTAINER_RSS_MAX_MB.`);
   }
   return outcome;
+}
+
+/**
+ * How long after a stop signal the maintainer may take to finish its current
+ * step and tear down before it exits regardless. A tick checks for a stop at
+ * every progress checkpoint, but native work between two checkpoints (an ORT
+ * batch, a SQLite publish) is not interruptible. A process that has been told
+ * to stop must stop: before this deadline existed a maintainer could keep
+ * running for minutes after SIGTERM, and operators fell back to SIGKILL.
+ * Exiting here is safe: artifacts are published by rename and SQLite rolls an
+ * unfinished transaction back; the `exit` handler releases the lock.
+ */
+export const SIGNAL_EXIT_DEADLINE_MS = 10_000;
+
+/**
+ * How long the maintainer keeps running with no live search daemon behind the
+ * pid file it was started for. Covers a daemon that is still loading its
+ * indexes (it writes the pid file only once loaded) and a daemon restart.
+ */
+export const DAEMON_ABSENT_GRACE_MS = 120_000;
+
+/** Grace before a maintainer stops with its daemon (timing override for tests). */
+function daemonAbsentGraceMs(env = process.env) {
+  const raw = Number.parseInt(env.SWEET_SEARCH_MAINTAINER_DAEMON_GRACE_MS ?? '', 10);
+  return Number.isFinite(raw) && raw >= 0 ? raw : DAEMON_ABSENT_GRACE_MS;
+}
+
+/** How often the daemon is looked for; same cadence knob as the idle check. */
+function daemonCheckIntervalMs(env = process.env) {
+  const raw = Number.parseInt(env.SWEET_SEARCH_MAINTAINER_IDLE_CHECK_MS ?? '', 10);
+  return Number.isFinite(raw) && raw > 0 ? Math.min(raw, LOCK_REFRESH_INTERVAL) : LOCK_REFRESH_INTERVAL;
+}
+
+/** `--daemon-pid-file=<path>` from the maintainer's argv, or null. */
+export function daemonPidFileFromArgv(argv = process.argv) {
+  const prefix = '--daemon-pid-file=';
+  const arg = argv.find((a) => typeof a === 'string' && a.startsWith(prefix));
+  const value = arg ? arg.slice(prefix.length) : '';
+  return value || null;
+}
+
+/** True when the pid file names a running process. Missing/garbage file → false. */
+export function daemonPidFileLive(pidFile) {
+  let pid;
+  try {
+    pid = Number.parseInt(readFileSync(pidFile, 'utf-8').trim(), 10);
+  } catch {
+    return false;
+  }
+  if (!Number.isFinite(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (err) {
+    return err?.code === 'EPERM';
+  }
+}
+
+/**
+ * Decide whether a maintainer started for a search daemon should stop because
+ * that daemon is gone. Pure: `state` carries the time the daemon was first seen
+ * missing. Returns true once it has been missing for `graceMs` without a break.
+ */
+export function daemonGoneLongEnough(state, { live, nowMs, graceMs = DAEMON_ABSENT_GRACE_MS }) {
+  if (live) {
+    state.absentSinceMs = null;
+    return false;
+  }
+  if (state.absentSinceMs == null) state.absentSinceMs = nowMs;
+  return nowMs - state.absentSinceMs >= graceMs;
 }
 
 async function runReconcileV2Main({ runOnce, merkleOnce }) {
@@ -1663,10 +1755,50 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
   const refresh = setInterval(() => {
     if (stillOwnsLock(lock.lockFile)) writeStateLock(lock.lockFile);
   }, LOCK_REFRESH_INTERVAL);
-  const shutdown = () => { stopRequested = true; shutdownRequested = true; };
-  process.on('SIGTERM', shutdown);
-  process.on('SIGINT', shutdown);
+  // A stop signal ends the sleep at once, aborts the tick at its next progress
+  // checkpoint, and — if teardown still has not finished after
+  // SIGNAL_EXIT_DEADLINE_MS — exits anyway. A second signal exits at once.
+  let signalsSeen = 0;
+  const shutdown = (signal) => {
+    stopRequested = true;
+    shutdownRequested = true;
+    signalsSeen += 1;
+    if (signalsSeen > 1) {
+      log('WARN', `${signal} received again; exiting now.`);
+      process.exit(0);
+    }
+    log('INFO', `${signal} received; stopping.`);
+    wakeMaintainerSleep();
+    const deadline = setTimeout(() => {
+      log('WARN', `Stop did not finish within ${SIGNAL_EXIT_DEADLINE_MS}ms of ${signal}; exiting now.`);
+      process.exit(0);
+    }, SIGNAL_EXIT_DEADLINE_MS);
+    deadline.unref?.();
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
   process.on('exit', () => releaseStateLock(lock.lockFile));
+
+  // A maintainer started for a search daemon lives as long as that daemon. The
+  // daemon starts (and supervises) the maintainer, so once no daemon has served
+  // this repository for DAEMON_ABSENT_GRACE_MS nothing queries the index, and the
+  // next daemon to start launches a fresh maintainer whose first tick catches up.
+  const daemonPidFile = daemonPidFileFromArgv();
+  const daemonFollow = { absentSinceMs: null };
+  const daemonCheck = daemonPidFile
+    ? setInterval(() => {
+        if (shutdownRequested) return;
+        const live = daemonPidFileLive(daemonPidFile);
+        if (daemonGoneLongEnough(daemonFollow, { live, nowMs: Date.now(), graceMs: daemonAbsentGraceMs() })) {
+          log('INFO', `No search daemon behind ${daemonPidFile} for ${daemonAbsentGraceMs()}ms; stopping with it.`);
+          // Nothing left to serve, so no successor either.
+          stopRequested = true;
+          shutdownRequested = true;
+          wakeMaintainerSleep();
+        }
+      }, daemonCheckIntervalMs())
+    : null;
+  daemonCheck?.unref?.();
 
   try {
     while (!shutdownRequested) {
@@ -1710,7 +1842,14 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
       watcherState.pendingEvents = false;
       const pause = isReconcilePaused(ctx.stateDir);
       if (pause.paused) {
-        log('INFO', `Automatic reconcile v2 work paused${pause.pausedAt ? ` since ${pause.pausedAt}` : ''}`);
+        // A paused index has nothing for this process to do, and the paused
+        // branch never counted toward the idle TTL, so the maintainer used to
+        // sit here for good. Stop instead: no launcher starts one while the
+        // pause holds, and `reconcile resume` + the next query start a fresh one.
+        log('INFO', `Automatic reconcile v2 work paused${pause.pausedAt ? ` since ${pause.pausedAt}` : ''}${pause.reason ? ` (${pause.reason})` : ''}; stopping.`);
+        stopRequested = true;
+        shutdownRequested = true;
+        break;
       } else {
         try {
           const onProgress = createLifecycleProgress(lock.lockFile);
@@ -1821,6 +1960,7 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
   } finally {
     clearInterval(refresh);
     if (idleTimer) clearInterval(idleTimer);
+    if (daemonCheck) clearInterval(daemonCheck);
 
     // D.5 teardown watchdog — armed BEFORE the awaits below, not after them.
     // `watcher.close()`, the registry `unregister()` and `unloadLocalModel()`
@@ -1861,6 +2001,7 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
       handOffAfterRssRecycle({
         cwd: ctx.projectRoot,
         env: successorEnv(ctx, process.env),
+        daemonPidFile,
         shouldAbort: () => stopRequested,
         emit: (level, msg) => log(level, `[watchdog] ${msg}`),
       }).then(done, done);
@@ -1932,6 +2073,7 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
       await handOffAfterRssRecycle({
         cwd: ctx.projectRoot,
         env: successorEnv(ctx, process.env),
+        daemonPidFile,
         // Re-read live, not captured: a signal can land during the spawn and
         // the confirmation wait, long after the predicate above was evaluated.
         shouldAbort: () => stopRequested,
@@ -1943,6 +2085,11 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
       // published, the lock is released, the successor is confirmed.
       process.exit(0);
     }
+    // Every other exit reason is a stop. Exit explicitly: waiting for the event
+    // loop to drain leaves the process alive for as long as any native handle
+    // (an ORT thread pool, a SQLite connection, a watcher) keeps the loop busy,
+    // which looked to operators like a maintainer that ignored SIGTERM.
+    process.exit(0);
   }
 }
 
