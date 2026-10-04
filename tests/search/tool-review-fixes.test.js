@@ -441,3 +441,17 @@ describe('JavaScript member-assigned functions', () => {
     expect(e('helper')?.type).toBe('function');
   });
 });
+
+// --- Round 7 (2026-10-04) --------------------------------------------------------------------
+
+import { applyFileKindRanking } from '../../core/ranking/file-kind-ranking.js';
+
+describe('round 7', () => {
+  it('agent format: a question about a test ranks test files above config, types and code', () => {
+    const r = (file, score) => ({ file, score, startLine: 1, endLine: 20 });
+    const res = [r('.github/workflows/ci.yml', 1.0), r('types/route.d.ts', 0.95), r('fastify.js', 0.9), r('test/404s.test.js', 0.8)];
+    const out = applyFileKindRanking(res, { intent: 'tests', agentFormat: true });
+    expect(out[0].file).toBe('test/404s.test.js');
+    expect(applyFileKindRanking(res, { intent: 'tests' })[0].file).toBe('.github/workflows/ci.yml');
+  });
+});
