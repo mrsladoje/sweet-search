@@ -1651,16 +1651,22 @@ export class TreeSitterProvider {
           below = last;
           buffer.pop();
         }
-        if (carry.length && (carrySize + nodeSize > maxSize || buffer.length === 0)) {
+        // An oversized named definition gets a header chunk below: its comments open that
+        // header (typedoc parseCommentString's doc ended parseComment's chunk).
+        const oversizedHeader = nodeSize > maxSize && node.childCount > 0;
+        if (carry.length && ((carrySize + nodeSize > maxSize && !oversizedHeader) || buffer.length === 0)) {
           // Does not fit with node, or there is nothing above to keep apart: as before.
           buffer.push(...carry);
           carry.length = 0;
           carrySize = 0;
         }
+        const headerLead = oversizedHeader && carry.length ? carry[0] : null;
+        let leadUsed = false;
         bufferSize -= carrySize;
         flushBuffer();
+        const chunksBefore = chunks.length;
 
-        if (carry.length) {
+        if (carry.length && !headerLead) {
           buffer = [...carry, node];
           bufferSize = carrySize + nodeSize;
         } else if (nodeSize <= maxSize) {
@@ -1696,8 +1702,12 @@ export class TreeSitterProvider {
             if (boundaryTypes.has(node.type) && name && !isRubyMethodHeader) {
               const HEADER_MAX_CHARS = Math.min(600, maxSize);
               const headerEndIdx = Math.min(node.endIndex, node.startIndex + HEADER_MAX_CHARS);
-              const headerText = content.substring(node.startIndex, headerEndIdx);
+              // The comments right above the definition (carried from the buffer) open it.
+              const headerStartIdx = headerLead ? headerLead.startIndex : node.startIndex;
+              leadUsed = !!headerLead;
+              const headerText = content.substring(headerStartIdx, headerEndIdx);
               if (headerText.trim().length > 30) {
+                const headerStartRow = headerLead ? headerLead.startPosition.row : node.startPosition.row;
                 const lineCount = headerText.split('\n').length;
                 chunks.push({
                   chunkId: this._nextChunkId(),
@@ -1705,8 +1715,8 @@ export class TreeSitterProvider {
                   parentSymbol: parentInfo?.name || null,
                   parentType: parentInfo?.type || null,
                   text: headerText.trim(),
-                  startLine: node.startPosition.row,
-                  endLine: node.startPosition.row + Math.max(0, lineCount - 1),
+                  startLine: headerStartRow,
+                  endLine: headerStartRow + Math.max(0, lineCount - 1),
                   type,
                   name,
                   signature: this._extractSignature(node, content, boundaryTypes),
@@ -1744,6 +1754,14 @@ export class TreeSitterProvider {
               boundaryTypes
             );
             chunks.push(...subChunks);
+            // No header at this level (an `export` wrapper): the comments open the first chunk
+            // the recursion made when it starts on the node's first line.
+            const first = chunks[chunksBefore];
+            if (headerLead && !leadUsed && first && first.startLine === node.startPosition.row) {
+              first.text = `${content.substring(headerLead.startIndex, node.startIndex).trim()}\n${first.text}`;
+              first.startLine = headerLead.startPosition.row;
+              leadUsed = true;
+            }
           } else {
             // Leaf node too big — emit as-is (never split mid-expression)
             const nodeText = content.substring(node.startIndex, node.endIndex);
