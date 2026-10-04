@@ -11,6 +11,7 @@
 import path from 'node:path';
 import { readFileRange } from './search-pattern-chunks.js';
 import { containsToken, extractQueryEvidence, informativeSubtokens } from './query-sufficiency.js';
+import { isTestLikePath } from './agent-output-fixes.js';
 
 const MAX_BOUNDARY_GAP_LINES = 12;
 const MAX_IMMEDIATE_GAP_LINES = 3;
@@ -334,6 +335,13 @@ function entitiesAtHitLines(hits, codeGraphRepo) {
 /**
  * Build grep family closure only from symbols indexed at exact match lines.
  * `keepFile`: see findIndexedFamily.
+ *
+ * Hits in test files seed nothing. A family exists to show a generated or width family of
+ * SOURCE declarations (IVec2/3/4, I64Vec2/3/4) that a regex can miss. In test files the seeds
+ * are the test functions around the hits (`TestAddMutation_jchiu{1,2,3}`,
+ * `Should_fix_issue_{190,205,417}`, `indexTemplatesUrl_{1,2,6}x`): all 15 manifests in 1,200
+ * recorded ss-grep calls (final-tuning hard dossiers) were such test names, and no later call
+ * used any of them.
  */
 export function buildIndexedGrepFamilyManifest(results, codeGraphRepo, { keepFile = null } = {}) {
   if (!Array.isArray(results) || results.length < 2
@@ -341,7 +349,7 @@ export function buildIndexedGrepFamilyManifest(results, codeGraphRepo, { keepFil
       || typeof codeGraphRepo?.findFamilyCandidates !== 'function') return null;
   const seeds = [];
   const seen = new Set();
-  const hits = results.slice(0, MAX_FAMILY_SEEDS);
+  const hits = results.filter((result) => !isTestLikePath(result?.file)).slice(0, MAX_FAMILY_SEEDS);
   const batched = entitiesAtHitLines(hits, codeGraphRepo);
   for (const result of hits) {
     let entities = [];
