@@ -112,6 +112,12 @@ const DEFINITION_GUARDS = {
   },
 };
 
+// Text before a C-family declarator `*name(` / `&name(`: type words only, from line start.
+const DECLARATOR_PREFIX = /^\s*[A-Za-z_][\w:<>,\s]*?[\w>]\s*[*&]+$/;
+
+// A parenthesised argument list with at most one level of nested parentheses.
+const ONE_NESTED_ARGS = String.raw`\((?:[^()]|\([^()]*\))*\)`;
+
 // Optional generic arguments between a method name and `(`: `<T>`,
 // `<Map<K, V>>` (one nesting level), Rust turbofish `::<Vec<_>>`.
 const GENERIC_ARGS = String.raw`(?:\s*(?:::)?\s*<[^()<>;]*(?:<[^()<>;]*>[^()<>;]*)*>)?`;
@@ -284,11 +290,12 @@ function buildPlan(language, langInfo) {
     qualified: new RegExp(String.raw`\b(\w+)(?:${sep})\s*(\w+)${GENERIC_ARGS}${callOpen}`, 'g'),
     // prev( … ) SEP method [generics] (   — lookahead keeps `method(` available
     // for the next match so `a(x).b(y).c(` yields both `a().b` and `b().c`.
-    chained: new RegExp(String.raw`\b(\w+)\s*\([^()]*\)\s*(?:${sep})\s*(?=(\w+)${GENERIC_ARGS}${callOpen})`, 'g'),
+    // Arguments may hold one level of calls: `addMiddleware(logRequests()).addHandler(`.
+    chained: new RegExp(String.raw`\b(\w+)\s*${ONE_NESTED_ARGS}\s*(?:${sep})\s*(?=(\w+)${GENERIC_ARGS}${callOpen})`, 'g'),
     // Continuation line: `.method(` / `?.method(` at line start.
     leading: new RegExp(String.raw`^(?:${sep})\s*(\w+)${GENERIC_ARGS}${callOpen}`),
     // Previous line ends with a receiver: `name`, `name(…)` or `name)` → tail.
-    tail: /\b(\w+)\s*(\([^()]*\))?\s*[?!]*\s*$/,
+    tail: new RegExp(String.raw`\b(\w+)\s*(${ONE_NESTED_ARGS})?\s*[?!]*\s*$`),
     // Previous line ends with a separator (Go/Ruby/Python trailing-dot style).
     trailingSep: hasDot ? /\b(\w+)\s*\.\s*$/ : null,
     bareCallAtStart: new RegExp(String.raw`^(\w+)${GENERIC_ARGS}${callOpen}`),
@@ -595,8 +602,11 @@ export class CallSiteScanner {
         // `if (x) name(` and `(int)name(` are calls.
         if (last === 41 /* ) */ && /^func\s*\(/.test(before)) continue;
         if (last === 42 /* * */ || last === 38 /* & */) {
-          // `Foo *make(` / `int &ref(`: a declarator after a type name.
-          if (/[\w>]\s*[*&]+$/.test(before)) continue;
+          // `Foo *make(` / `int &ref(`: a declarator after a type name. Only type words
+          // may stand before it: `if (n > 0 && feed(` and `x = a * f(` are calls (hiredis
+          // redisBufferRead's `&& redisReaderFeed(` was dropped).
+          if (DECLARATOR_PREFIX.test(before) && !/&&$/.test(before)
+            && !CALL_PREFIX_WORDS.has(/^\s*([A-Za-z_]\w*)/.exec(before)?.[1] || '')) continue;
         }
         const word = /([A-Za-z_]\w*)$/.exec(before);
         if (word && !CALL_PREFIX_WORDS.has(word[1])) continue;

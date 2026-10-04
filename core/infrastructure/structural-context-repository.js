@@ -73,6 +73,30 @@ function declaredReceiverBound(targetName, caller, resolved) {
   return signatureParamTypes(caller.signature).get(parts[0]) === resolved.parentClass;
 }
 
+/**
+ * Lines inside a triple-quoted string (Elixir `@doc """`, Python docstrings) or a block
+ * comment, delimiter lines included: plug's `iex> put_status(conn, :not_found)` doc
+ * examples were listed as callers.
+ */
+function nonCodeLines(lines) {
+  const out = new Array(lines.length).fill(false);
+  let open = null; // '"""', "'''" or '*/'
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (open) {
+      out[i] = true;
+      if (line.includes(open)) open = null;
+      continue;
+    }
+    for (const q of ['"""', "'''"]) {
+      const n = line.split(q).length - 1;
+      if (n > 0) { out[i] = true; if (n % 2 === 1) open = q; break; }
+    }
+    if (!open && /^\s*\/\*/.test(line) && !line.includes('*/')) { out[i] = true; open = '*/'; }
+  }
+  return out;
+}
+
 // Same-named definitions read before the candidate order is cut to `limit`.
 const EXACT_CANDIDATE_POOL = 50;
 const candidateKindTier = (type) => {
@@ -526,13 +550,17 @@ export class StructuralContextRepository {
     const callRe = new RegExp(`(?<![.\\w$:])${escaped}\\s*\\(`);
     const defRe = new RegExp(`\\b(function|def|fn|func|sub|proc)\\s+${escaped}\\s*[(<]`);
     const declLineRe = new RegExp(`^\\s*${escaped}\\s*\\(`);
+    // `@spec name(...)` / `@callback name(...)`: an attribute that declares the name's type.
+    const attrDeclRe = new RegExp(`^\\s*@\\w+\\s+${escaped}\\s*\\(`);
     const lines = source.split('\n');
+    const noCode = nonCodeLines(lines);
     const hits = [];
     for (let i = 0; i < lines.length && hits.length < limit * 2; i++) {
       const ln = i + 1;
       if (ln >= target.startLine && ln <= (target.endLine || target.startLine)) continue;
+      if (noCode[i]) continue;
       const text = lines[i].replace(/(^|\s)(\/\/|#).*$/, '');
-      if (callRe.test(text) && !defRe.test(text)) hits.push(ln);
+      if (callRe.test(text) && !defRe.test(text) && !attrDeclRe.test(text)) hits.push(ln);
     }
     if (!hits.length) return [];
     const entitySql = this._entitySql(db);

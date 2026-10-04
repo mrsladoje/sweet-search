@@ -2807,12 +2807,21 @@ export class GraphExtractor {
     const blockStartRe = blockKeywords?.length
       ? new RegExp(`^\\s*(?:${blockKeywords.join('|')})\\b`)
       : null;
+    // A keyword form opens no block: Elixir `def f(x), do: y` / `if a, do: b`, or a
+    // one-line `def f; end`. plug's `def put_status(conn, nil), do: ...` clauses spanned
+    // to the end of the file.
+    const opensNoBlock = (line) => /,\s*do:/.test(line) || /^\s*do:/.test(line)
+      || new RegExp(`\\b${escapeRegexLiteral(endKeyword)}\\s*$`).test(line.replace(/#.*$/, ''));
+    const first = lines[startIndex] || '';
+    if (opensNoBlock(first) && !/\bdo\s*(?:#.*)?$/.test(first)) return startIndex + 1;
+    // `def f(x),` with `do: y` on the next line.
+    if (/,\s*$/.test(first) && /^\s*do:/.test(lines[startIndex + 1] || '')) return startIndex + 2;
     let depth = 1; // start inside the opening block
 
     for (let i = startIndex + 1; i < lines.length; i++) {
       const line = lines[i];
       // Check for nested block openers (boundary patterns or block keywords)
-      if (blockStartRe && blockStartRe.test(line)) {
+      if (blockStartRe && blockStartRe.test(line) && !opensNoBlock(line)) {
         depth++;
       }
       if (endRe.test(line)) {

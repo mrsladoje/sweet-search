@@ -1136,7 +1136,9 @@ function alternativesLine(result, label = (file) => file) {
   const anyOtherFile = alts.some((a) => a.file !== t.filePath);
   const pick = [anyOtherFile ? '--in <file>' : null, anyOwner ? 'Owner.name' : null].filter(Boolean).join(' or ');
   const list = alts.map((a) => {
-    const name = a.owner ? `${a.owner}.${a.name} ` : '';
+    // With owners in the list, an ownerless definition names itself too: serde_json's free
+    // `from_str 2709` read as a second line of `Number.from_str 1299, 2709`.
+    const name = a.owner ? `${a.owner}.${a.name} ` : (anyOwner && a.file === t.filePath ? `${a.name || t.name} ` : '');
     return a.file === t.filePath ? `${name}${a.startLine}` : `${name}${label(a.file)}:${a.startLine}`;
   }).join(', ');
   return `# other definitions${pick ? ` (pick with ${pick})` : ''}: ${list}${more > 0 ? `, +${more} more` : ''}`;
