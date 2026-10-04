@@ -261,6 +261,66 @@ export function createAdmissionPolicy({ projectRoot = process.cwd(), config, all
     }
   }
 
+  // Directories git ignores as a whole, computed lazily and memoised (one
+  // `git ls-files --directory` per policy; the maintainer builds one policy per
+  // tick). WHY: a walk that descends an ignored directory stats every file in it
+  // and only then asks git about each one. On this repository `eval/repos/`
+  // holds 3.9 million files, so every incremental tick spent ten minutes in a
+  // synchronous stat loop — one core busy, and a SIGTERM never handled because
+  // the event loop never turned. git lists an ignored directory once, without
+  // descending it, in a quarter of a second.
+  //
+  // An agentic path (`.claude/`, `.cursor/`, ...) is never pruned: its files
+  // stay admissible when the agentic directory itself is ignored. The exemption
+  // does not reach through an ORDINARY ignored directory, though: a `.claude/`
+  // inside `eval/repos/x/` is part of an ignored tree, not the user's own AI
+  // workflow files, and `gitignoredSet` below treats it as ignored, so full
+  // discovery and the incremental walk agree.
+  let ignoredDirsCache = null;
+  function ignoredDirectories() {
+    if (ignoredDirsCache) return ignoredDirsCache;
+    ignoredDirsCache = new Set();
+    if (!respectGitignore || !hasGit) return ignoredDirsCache;
+    try {
+      const out = execFileSync('git', ['ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory'], {
+        cwd: projectRoot, maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      const collapsed = out.toString('utf8').split('\0')
+        .filter((entry) => entry.endsWith('/') && !isGitignoreAllowlistedAgenticPath(entry));
+      if (collapsed.length === 0) return ignoredDirsCache;
+      // git also collapses a directory whose files all happen to be ignored
+      // (`logs/` when `logs/*.log` matches everything in it). Keep only the
+      // directories a pattern ignores AS A DIRECTORY: inside those git cannot
+      // re-include anything, so nothing in them can ever be admitted.
+      const checked = execFileSync('git', ['check-ignore', '-z', '--stdin'], {
+        cwd: projectRoot, input: collapsed.join('\0') + '\0', maxBuffer: 64 * 1024 * 1024,
+        stdio: ['pipe', 'pipe', 'ignore'],
+      });
+      for (const entry of checked.toString('utf8').split('\0')) {
+        if (entry.endsWith('/')) ignoredDirsCache.add(normalizeRel(entry.slice(0, -1)));
+      }
+    } catch { /* git unavailable (or nothing matched: exit 1) ⇒ nothing pruned; the per-file check still runs */ }
+    return ignoredDirsCache;
+  }
+
+  /** True when `rel` (a directory) is ignored as a whole by git and may be skipped by a walk. */
+  function isIgnoredDirectory(rel) {
+    return ignoredDirectories().has(normalizeRel(rel));
+  }
+
+  /** True when an ancestor directory of `rel` is ignored as a whole (see `ignoredDirectories`). */
+  function underIgnoredDirectory(rel) {
+    const dirs = ignoredDirectories();
+    if (dirs.size === 0) return false;
+    const parts = normalizeRel(rel).split('/');
+    let prefix = '';
+    for (let i = 0; i < parts.length - 1; i++) {
+      prefix = prefix ? `${prefix}/${parts[i]}` : parts[i];
+      if (dirs.has(prefix)) return true;
+    }
+    return false;
+  }
+
   /**
    * Batched gitignore: returns the subset of `rels` that git would ignore
    * (posix-normalised). Empty when gitignore is disabled, the worktree is not a
@@ -270,15 +330,19 @@ export function createAdmissionPolicy({ projectRoot = process.cwd(), config, all
   async function gitignoredSet(rels, { silent = true } = {}) {
     if (!respectGitignore || !hasGit) return new Set();
     const candidates = [];
+    const out = new Set();
     for (const rel of rels) {
       const r = normalizeRel(rel);
-      if (!r || isGitignoreAllowlistedAgenticPath(r)) continue;
+      if (!r) continue;
+      // Inside a directory git ignores as a whole: ignored, agentic or not
+      // (see `ignoredDirectories`), and no need to ask git file by file.
+      if (underIgnoredDirectory(r)) { out.add(r); continue; }
+      if (isGitignoreAllowlistedAgenticPath(r)) continue;
       candidates.push(r);
     }
-    if (candidates.length === 0) return new Set();
+    if (candidates.length === 0) return out;
     const ignored = await getGitIgnoredPathSet(candidates, { projectRoot, silent });
-    if (!ignored) return new Set();
-    const out = new Set();
+    if (!ignored) return out;
     for (const p of ignored) out.add(toPosixPath(p));
     return out;
   }
@@ -313,6 +377,9 @@ export function createAdmissionPolicy({ projectRoot = process.cwd(), config, all
     isOversizedAbs,
     isSymlinkedRel,
     realRelInsideRoot,
+    ignoredDirectories,
+    isIgnoredDirectory,
+    underIgnoredDirectory,
     gitignoredSet,
     applyGitignore,
   };
