@@ -324,3 +324,29 @@ describe('round 4', () => {
     expect(r.relationships.some((x) => x.type === 'calls' && x.target_name === 'list.each' && x.context_line === 4)).toBe(true);
   });
 });
+
+// --- After the RunPod reindex (2026-10-04) --------------------------------------------------
+
+import { applyResultDemotions } from '../../core/ranking/file-kind-ranking.js';
+
+describe('agent ranking: qualified lookup and spelled names', () => {
+  const mk = (file, s, e, sym, score) => ({ file, startLine: s, endLine: e, symbol: sym, name: sym, score, metadata: { file, startLine: s, endLine: e, name: sym } });
+  const repo = {
+    findOwnedEntityInRange: (file, s, e, owner, member) => (file === 'RealCall.kt' && owner === 'RealCall' && member === 'execute' ? { name: 'execute' } : null),
+    findEntityWithNameInRange: () => null,
+  };
+
+  it('a query that is exactly `Owner.member` puts the chunk holding that member first', () => {
+    const out = applyResultDemotions([mk('ExecuteDns.kt', 26, 81, 'execute', 1.0), mk('RealCall.kt', 182, 248, 'execute', 0.6)],
+      { query: 'RealCall.execute', format: 'agent', codeGraphRepo: repo });
+    expect(out[0].file).toBe('RealCall.kt');
+  });
+
+  it('a result whose name the query spells gets a mild boost; other formats do not', () => {
+    const res = () => [mk('a.ts', 1, 9, 'convertFunctionOrMethod', 1.0), mk('a.ts', 20, 29, 'convertSymbol', 0.9)];
+    const agent = applyResultDemotions(res(), { query: 'convert a TypeScript symbol into a reflection', format: 'agent' });
+    expect(agent[0].symbol).toBe('convertSymbol');
+    const plain = applyResultDemotions(res(), { query: 'convert a TypeScript symbol into a reflection', format: 'json' });
+    expect(plain[0].symbol).toBe('convertFunctionOrMethod');
+  });
+});

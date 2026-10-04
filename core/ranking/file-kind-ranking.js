@@ -1332,6 +1332,32 @@ function extractIdentifierMentions(query) {
  *
  * Format-gated via the caller (only fires when isAgentFormat=true).
  */
+// Light stem for comparing name words with query words: `symbols`/`symbol`, `parsed`/`parse`.
+const spellStem = (w) => w.toLowerCase().replace(/(?:ing|ed|es|s|e)$/, '');
+
+/** Stemmed non-stopword words of the query, or null when there are fewer than two. */
+function querySpellingWords(query) {
+  const words = (String(query).match(/[A-Za-z]+/g) || [])
+    .filter((w) => w.length >= 3 && !STOPWORDS.has(w.toLowerCase())).map(spellStem);
+  return words.length >= 2 ? new Set(words) : null;
+}
+
+/**
+ * Mild boost (×1.15, the identifier-mention strength) when the query spells the result's
+ * name: every word of a multi-word name is a query word (`convertSymbol` for "convert a
+ * TypeScript symbol into a reflection"; typedoc ranked six other `convert*` functions above it).
+ */
+function nameSpelledByQuery(result, words) {
+  const name = resolveResultName(result) || result?.symbol || '';
+  const parts = splitIdentifierName(name).filter((w) => w.length >= 3);
+  if (parts.length < 2) return 1;
+  return parts.every((w) => words.has(spellStem(w))) ? NAME_SPELLED_BOOST : 1;
+}
+const NAME_SPELLED_BOOST = 1.15;
+
+// Multiplier for the chunk holding `Owner.member` when the query is exactly that name.
+const QUALIFIED_LOOKUP_PIN = 10;
+
 function identifierMentionBoost(result, mentions, opts = {}) {
   if (!mentions || mentions.size === 0) return 1.0;
   const raw = process.env.SWEET_SEARCH_IDENTIFIER_MENTION_BOOST;
@@ -1406,6 +1432,9 @@ function identifierMentionBoost(result, mentions, opts = {}) {
       const member = parts[parts.length - 1];
       let owned = null;
       try { owned = opts.codeGraphRepo.findOwnedEntityInRange(file, sl, el, owner, member); } catch { owned = null; }
+      // The whole query is this one qualified name: a definition lookup with one answer, so
+      // the chunk that holds it goes first whatever its embedding score.
+      if (owned && String(opts.query || '').trim() === mention) return QUALIFIED_LOOKUP_PIN;
       if (owned) return boost * boost;
     }
   }
@@ -1496,6 +1525,27 @@ function pathTokenBoost(result, pathTokens, opts = {}) {
     if (re.test(path)) return boost;
   }
   return 1.0;
+}
+
+/**
+ * True when the query names `target` as `Owner.target` and this chunk holds no `target`
+ * owned by `Owner` (it may hold another owner's `target`).
+ */
+function qualifiedMemberMismatch(result, target, mentions, opts = {}) {
+  if (!mentions || !target || typeof opts.codeGraphRepo?.findOwnedEntityInRange !== 'function') return false;
+  const t = String(target).toLowerCase();
+  const owners = [...mentions].map((m) => m.split('.')).filter((p) => p.length >= 2 && p[p.length - 1].toLowerCase() === t)
+    .map((p) => p[p.length - 2]);
+  if (!owners.length) return false;
+  const file = resolveFilePath(result);
+  const meta = result?.metadata ?? {};
+  const sl = Number(result?.startLine ?? meta.startLine);
+  const el = Number(result?.endLine ?? meta.endLine);
+  if (!file || !Number.isFinite(sl) || !Number.isFinite(el)) return false;
+  for (const owner of owners) {
+    try { if (opts.codeGraphRepo.findOwnedEntityInRange(file, sl, el, owner, target)) return false; } catch { return false; }
+  }
+  return true;
 }
 
 function symbolExactMatchBoost(result, target, opts = {}) {
@@ -2055,6 +2105,10 @@ export function applyResultDemotions(results, opts = {}) {
   const identifierMentions = isAgentFormat && !hasAblation(ablations, 'no-identifier-mention-boost')
     ? extractIdentifierMentions(opts.query || '')
     : null;
+  // Query words (stemmed) for the name-spelled boost; agent format only.
+  const spelledWords = isAgentFormat && !hasAblation(ablations, 'no-name-spelled-boost')
+    ? querySpellingWords(opts.query || '')
+    : null;
 
   // F9 (2026-05-12): pre-compute query word tokens once for additional_symbols
   // re-anchoring (see findAdditionalSymbolRelabel docstring). Format-gated;
@@ -2211,7 +2265,10 @@ export function applyResultDemotions(results, opts = {}) {
 
     if (symbolExactTarget) {
       if (__profOn) __ruleT0 = performance.now();
-      const symbolMult = symbolExactMatchBoost(result, symbolExactTarget, opts);
+      // `Owner.member` in the query: the member's name alone does not boost a same-named
+      // member of another owner (okhttp `RealCall.execute` vs the `Dns.Call.execute` extension).
+      const symbolMult = qualifiedMemberMismatch(result, symbolExactTarget, identifierMentions, opts)
+        ? 1 : symbolExactMatchBoost(result, symbolExactTarget, opts);
       if (__profOn) __ruleTime[8] += performance.now() - __ruleT0;
       if (symbolMult !== 1) {
         mult *= symbolMult;
@@ -2229,6 +2286,14 @@ export function applyResultDemotions(results, opts = {}) {
       if (mentionMult !== 1) {
         mult *= mentionMult;
         (details ||= []).push(`identifier-mention:${mentionMult.toFixed(2)}`);
+      }
+    }
+
+    if (spelledWords) {
+      const spelledMult = nameSpelledByQuery(result, spelledWords);
+      if (spelledMult !== 1) {
+        mult *= spelledMult;
+        (details ||= []).push(`name-spelled:${spelledMult.toFixed(2)}`);
       }
     }
 
