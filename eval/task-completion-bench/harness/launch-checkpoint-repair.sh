@@ -24,7 +24,7 @@ export HARNESS=codex PROVIDER=openrouter MODEL=openai/gpt-5.5 REASONING=medium
 # conflict3+todo3eff3k with rules in an instructions file). This launcher measured the stock harness
 # with the rules in AGENTS.md / .claude/rules, so it pins that form explicitly.
 export CC_HARNESS_TRIM=0 CODEX_HARNESS_TRIM=0 CODEX_TRIM_BATCH= OC_HARNESS_TRIM=0 SWEET_RULES_PLACEMENT=file
-export CONCURRENCY=4 CODEX_TIMEOUT_MS=5400000 SS_NO_ANTITHRASH=1 REPS=1
+export CONCURRENCY=4 CODEX_TIMEOUT_MS=5400000 REPS=1
 export DOCKER_HOST=unix:///var/run/docker.sock
 export TASKS_FILE=$BENCH/select/.cache/tasks_full_multilingual.json
 export MPP=/root/Mppppp-fixsurface.md

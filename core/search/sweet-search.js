@@ -902,9 +902,7 @@ export class SweetSearch {
         locationMap: null,
         projectRoot: this.projectRoot,
         ablations: options.ablations,
-        ...(options.firstUnit ? { firstUnit: options.firstUnit } : {}),
         _isAgentFormat: true,
-        _siblingLine: options._siblingLine,
       });
       __ptEnd('packageForAgent', __t_pkg);
       // Preserve the underlying retrieval stats so callers can inspect both layers

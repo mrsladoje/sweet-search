@@ -315,20 +315,16 @@ export async function bareGrep(query, routing, options = {}) {
 
   const totalMatches = countListMatches(matches);
   const regexDialectHint = dialectRetry.regexDialectHint;
-  // Agent-only k-budget file diversity (option-gated; absent → byte-identical
-  // output). Streaming per-file cap: matches beyond the cap are counted, not
-  // stored, so memory is bounded by perFileCap*maxFiles, never total matches.
-  // `grepFileOrder: 'weight'` (ss-grep's SS_FIX_GREP_ALLOC, default ON): keep the maxFiles
-  // files of highest sqrt(hits) x file-type prior, not the first maxFiles in path order.
-  // `grepFileWeight: 'sat2'` (SS_FIX_GREP_WEIGHT) ranks by hits / (hits + 2) x prior instead.
+  // ss-grep's k-budget file diversity (option-gated: only ss-grep sets perFileCap). Keeps the
+  // maxFiles files of highest hits / (hits + 2) x file-type prior. Streaming per-file cap:
+  // matches beyond the cap are counted, not stored, so memory is bounded by
+  // perFileCap*maxFiles, never total matches.
   let fileSummary = null;
   if (options.perFileCap > 0) {
     ({ kept: matches, fileSummary } = applyGrepFileDiversity(matches, {
       perFileCap: options.perFileCap,
       maxFiles: options.maxFiles,
       ...(listTotals ? { totals: listTotals } : {}),
-      ...(options.grepFileOrder === 'weight' ? { order: 'weight' } : {}),
-      ...(options.grepFileOrder === 'weight' && options.grepFileWeight === 'sat2' ? { weight: 'sat2' } : {}),
     }));
   }
   if (maxMatches > 0) {
@@ -341,10 +337,10 @@ export async function bareGrep(query, routing, options = {}) {
     ...(options.contextBefore != null ? { contextBefore: options.contextBefore } : {}),
     ...(options.contextAfter != null ? { contextAfter: options.contextAfter } : {}),
   });
-  // SS_FIX_GREP_LINES (agent-only): stamp each stored match of a fresh, indexed file with its
+  // ss-grep (agent format only): stamp each stored match of a fresh, indexed file with its
   // line class, so the renderer can show declarations first. At most maxFiles graph reads.
   let lineClassStats = null;
-  if (options._isAgentFormat === true && options.grepLineClasses === true && fileSummary
+  if (options._isAgentFormat === true && fileSummary
       && typeof this?.codeGraphRepo?.findEntitiesInFile === 'function') {
     const manifest = this._readReconcileManifest?.() ?? null;
     lineClassStats = stampGrepLineClasses(results, {
@@ -374,7 +370,6 @@ export async function bareGrep(query, routing, options = {}) {
   // code lines (the one enrichment a near-singleton grep can take; see
   // agent-pack-completion.js).
   const siblingLine = options._isAgentFormat === true && unscopedShape
-      && options._siblingLine !== false // SS_SIBLING_LINE=0 opts out (client-side, travels as this option)
       && results.length >= 1 && results.length <= 3
       && results.every((result) => result.file === results[0].file)
     ? buildSingletonSiblingLine(results, this?.codeGraphRepo, { regex, projectRoot: searchDir })
@@ -803,9 +798,7 @@ export async function patternSearch(query, routing, options = {}) {
       locationMap,
       projectRoot: searchDir,
       ablations,
-      ...(options.firstUnit ? { firstUnit: options.firstUnit } : {}),
       _isAgentFormat: true,
-      _siblingLine: options._siblingLine,
     });
     agentResponse.stats = stats;
     return agentResponse;

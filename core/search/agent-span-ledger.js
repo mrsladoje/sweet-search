@@ -135,28 +135,6 @@ export function collectAgentShownSpans(results, { projectRoot } = {}) {
     .slice(0, MAX_SPANS_PER_CALL);
 }
 
-/**
- * Same spans as collectAgentShownSpans, but each carries the index of the result it came
- * from and which part (the result body or its continuation block) it covers. Used by the
- * SS_FIX_ALREADY_SHOWN omission, which must know which printed block a decision is for.
- * `include(resultIndex, part)` keeps only the blocks the caller prints (applied before the
- * per-call span cap). collectAgentShownSpans itself is unchanged.
- *
- * @returns {Array<{span: object, resultIndex: number, part: 'result'|'continuation'}>}
- */
-export function collectAgentShownSpansIndexed(results, { projectRoot, include = null } = {}) {
-  if (!Array.isArray(results)) return [];
-  const out = [];
-  const wanted = (resultIndex, part) => typeof include !== 'function' || include(resultIndex, part);
-  results.forEach((result, resultIndex) => {
-    const body = wanted(resultIndex, 'result') ? completeAgentResultSpan(result, projectRoot) : null;
-    if (body) out.push({ span: body, resultIndex, part: 'result' });
-    const cont = wanted(resultIndex, 'continuation') ? completeAgentContinuationSpan(result, projectRoot) : null;
-    if (cont) out.push({ span: cont, resultIndex, part: 'continuation' });
-  });
-  return out.slice(0, MAX_SPANS_PER_CALL);
-}
-
 export function collectReadShownSpans(results, { projectRoot } = {}) {
   const files = Array.isArray(results?.files) ? results.files : [];
   return files.flatMap((result, resultIndex) => {
@@ -191,7 +169,7 @@ export function collectSemanticShownSpans(result, { projectRoot } = {}) {
   if (!file) return [];
   return result.spans.flatMap((span) => {
     // A budget-cut span is recorded only when it is an exact whole-line range
-    // (SS_FIX_SEMANTIC_RANGES); a partially printed line never is.
+    // (ss-semantic's exactRanges); a partially printed line never is.
     if ((span?.truncated === true && span?.exactRange !== true)
         || span?.partialLine
         || typeof span?.text !== 'string'

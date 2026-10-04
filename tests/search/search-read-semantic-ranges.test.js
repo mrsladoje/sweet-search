@@ -1,6 +1,5 @@
 /**
- * SS_FIX_SEMANTIC_RANGES / SS_FIX_SEMANTIC_PICK through readSemantic and the real ss-semantic
- * printer (runAgentTool in a virtual process, in-process fallback). Chunks come from a mocked
+ * ss-semantic exact ranges through readSemantic and the real ss-semantic printer (runAgentTool in a virtual process, in-process fallback). Chunks come from a mocked
  * CodebaseRepository, as in search-read-semantic-indexed.test.js; text always comes from disk.
  *
  * The defect: when the merged span exceeds the budget, the shipped printer shows its first
@@ -75,7 +74,7 @@ afterAll(() => {
 
 const read = (extra = {}) => readSemantic({ path: FILE, query: 'beta value', projectRoot: root, maxChars: 200, ...extra });
 
-describe('readSemantic exactRanges / pickExcerpt', () => {
+describe('readSemantic exactRanges', () => {
   it('shipped (no option): the merged range is claimed although only its head was kept', async () => {
     const r = await read();
     expect(r.spans).toHaveLength(1);
@@ -94,13 +93,6 @@ describe('readSemantic exactRanges / pickExcerpt', () => {
     expect(r.charsReturned).toBe(span.text.length);
     // the chosen chunks do not change, only the cut
     expect(span.chunkIds).toEqual((await read()).spans[0].chunkIds);
-  });
-
-  it('pickExcerpt: the excerpt starts at the best chunk (beta, padded by 2 context lines)', async () => {
-    const r = await read({ pickExcerpt: true, verbose: true });
-    const best = r.signals.preMergeRanked[0];
-    expect(best.symbol).toBe('beta');
-    expect(r.spans[0]).toMatchObject({ startLine: best.startLine - 2, fullStartLine: 1, fullEndLine: 20, exactRange: true });
   });
 
   it('a minified line longer than the budget is a partial line', async () => {
@@ -143,38 +135,16 @@ function printed(out) {
 describe('the ss-semantic printer', () => {
   const ARGS = [FILE, 'beta value', '--max-tokens', '50'];
 
-  it('SS_FIX_SEMANTIC_RANGES=0 (legacy): byte-identical to before (the header still over-claims; that is the defect)', async () => {
-    const out = await ssSemantic(ARGS, { SS_FIX_SEMANTIC_RANGES: '0' });
-    const [block] = printed(out);
-    expect([block.start, block.end]).toEqual([1, 21]);
-    expect(block.code.length).toBeLessThan(20);
-    expect(out).not.toContain('# not shown');
-  });
-
-  it('default ON since 2026-10-03: an empty environment equals SS_FIX_SEMANTIC_RANGES=1', async () => {
-    expect(await ssSemantic(ARGS)).toBe(await ssSemantic(ARGS, { SS_FIX_SEMANTIC_RANGES: '1' }));
-    expect(await ssSemantic(ARGS, { SS_FIX_A: '0' })).toBe(await ssSemantic(ARGS, { SS_FIX_A: '0', SS_FIX_SEMANTIC_RANGES: '0' }));
-  });
-
-  it('SS_FIX_SEMANTIC_RANGES: the header range equals the printed range; the rest is named', async () => {
-    const out = await ssSemantic(ARGS, { SS_FIX_SEMANTIC_RANGES: '1' });
+  it('the header range equals the printed range; the rest is named', async () => {
+    const out = await ssSemantic(ARGS);
     const [block] = printed(out);
     expect(block.code).toHaveLength(block.end - block.start + 1);
     expect(block.start).toBe(1);
     expect(out).toContain(`\`\`\`\n# not shown: lines ${block.end + 1}-20 — ss-read ${FILE} ${block.end + 1} 20\n`);
   });
 
-  it('SS_FIX_SEMANTIC_PICK: omitted content is named before and after the excerpt', async () => {
-    const out = await ssSemantic(ARGS, { SS_FIX_SEMANTIC_PICK: '1' });
-    const [block] = printed(out);
-    expect(block.code).toHaveLength(block.end - block.start + 1);
-    expect(block.start).toBeGreaterThan(1);
-    expect(out).toContain(`# not shown: lines 1-${block.start - 1} — ss-read ${FILE} 1 ${block.start - 1}\n### ${FILE}:${block.start}-`);
-    if (block.end < 20) expect(out).toContain(`# not shown: lines ${block.end + 1}-20`);
-  });
-
-  it('SS_FIX_SEMANTIC_RANGES on a minified file: a partial line, reported as such', async () => {
-    const out = await ssSemantic(['src/min.js', 'x', '--max-tokens', '30'], { SS_FIX_SEMANTIC_RANGES: '1' });
+  it('a minified file: a partial line, reported as such', async () => {
+    const out = await ssSemantic(['src/min.js', 'x', '--max-tokens', '30']);
     const [block] = printed(out);
     expect([block.start, block.end]).toEqual([1, 1]);
     expect(out).toContain('(line 1 truncated: 120 of 800 characters)\n# not shown: lines 2-2 — ss-read src/min.js 2 2\n');

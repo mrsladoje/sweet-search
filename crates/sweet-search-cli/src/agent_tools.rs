@@ -42,6 +42,9 @@ const TOOLS: [(&str, &str); 6] = [
 
 const INDEX_DB: &str = "codebase.db";
 
+/// Mirrors core/agent-tools/tools.js CALL_STARTED_ENV.
+pub const CALL_STARTED_ENV: &str = "SWEET_SEARCH_CALL_STARTED_MS";
+
 /// The subcommand for a program name (`/usr/local/bin/ss-grep` → `grep`), or None when
 /// this binary was not called as an ss-* tool.
 pub fn subcommand_for(prog: &str) -> Option<&'static str> {
@@ -140,6 +143,13 @@ fn write_out(bytes: &[u8], stderr: bool) {
 
 /// One ss-* call. Never returns.
 pub fn run(sub: &str, args: &[String]) -> ! {
+    // The ss-search loading budget (90 s) counts from here, through the daemon route and
+    // the in-process fallback (core/agent-tools/tools.js CALL_STARTED_ENV).
+    // Always this call's own time: an inherited value is a stale stamp from another call.
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_millis());
+    env::set_var(CALL_STARTED_ENV, now_ms.to_string());
     if env::var("SWEET_SEARCH_AGENT_TOOLS_VIA_DAEMON").map_or(false, |v| falsey(&v)) {
         run_in_process(sub, args);
     }

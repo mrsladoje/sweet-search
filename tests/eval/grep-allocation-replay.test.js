@@ -1,11 +1,10 @@
 /**
- * eval/grep-allocation-replay: recorded-call parsing (Python shlex semantics), the per-call
- * metrics, the probe-clustered bootstrap, and the replay rendering through production code.
+ * eval/grep-allocation-replay: recorded-call parsing (Python shlex semantics) and the
+ * probe-clustered bootstrap (shared by the eval measurement harnesses).
  */
 import { describe, expect, it } from 'vitest';
 
-import { callMetrics, pairedBootstrap, parseGrepCall, pyList, shellWords, symbolKey } from '../../eval/grep-allocation-replay/lib.mjs';
-import { callTargets, matchList, renderArm } from '../../eval/grep-allocation-replay/replay-core.mjs';
+import { pairedBootstrap, parseGrepCall, pyList, shellWords, symbolKey } from '../../eval/grep-allocation-replay/lib.mjs';
 
 describe('shellWords / parseGrepCall', () => {
   it('double quotes keep a backslash before anything but " and \\ (shlex posix)', () => {
@@ -40,35 +39,5 @@ describe('pairedBootstrap', () => {
   it('null values are left out of both arms', () => {
     const r = pairedBootstrap([{ probe: 'p', value: null }, { probe: 'p', value: 1 }], [{ probe: 'p', value: 0 }, { probe: 'p', value: 0 }]);
     expect(r.n).toBe(1);
-  });
-});
-
-describe('replay rendering and metrics', () => {
-  const byFile = {
-    'a/export.go': { total: 6, lines: [[1, 'package export'], [3, 'import "export"'], [10, 'func Export() {'], [14, 'export()'], [30, 'func ExportAll() {'], [40, '// export']] },
-    'b.go': { total: 1, lines: [[2, 'export']] },
-  };
-  const call = { k: 3, flags: { i: false, w: false, F: false }, goldFiles: ['a/export.go'], goldSymbols: ['pkg.Export'] };
-  const index = { spans: { 'a/export.go': [[10, 20, 'Export'], [30, 35, 'ExportAll']] }, stale: new Set() };
-
-  it('targets: answer-symbol spans with a match inside, and their declaration lines', () => {
-    expect(callTargets(call, byFile, index.spans)).toEqual([{ file: 'a/export.go', start: 10, end: 20, name: 'Export', declLines: [10] }]);
-  });
-
-  it('Step 1 lines raise the answer-symbol hit on the same allocation', () => {
-    const ctx = { gold: new Set(call.goldFiles), matchedFiles: Object.keys(byFile), targets: callTargets(call, byFile, index.spans), k: 3 };
-    const shipped = callMetrics(renderArm(call, matchList(byFile), { alloc: true, weight: 'sqrt', rule: 'sl' }, index).rows, ctx);
-    const lines = callMetrics(renderArm(call, matchList(byFile), { alloc: true, weight: 'sqrt', rule: 'sl', lines: true }, index).rows, ctx);
-    expect(shipped).toMatchObject({ inclusion: 1, answerLines: 2, symHit: 0, declHit: 0 });
-    expect(lines).toMatchObject({ inclusion: 1, answerLines: 2, symHit: 1, declHit: 1 });
-    // -F is not agent format in the engine: no classes, the prefix
-    const fixed = renderArm({ ...call, flags: { ...call.flags, F: true } }, matchList(byFile), { alloc: true, lines: true }, index);
-    expect(fixed.rows.map(r => r.line)).toEqual([1, 3, 2]);
-  });
-
-  it('count-only placeholders keep a file\'s total without storing its lines', () => {
-    const m = matchList({ 'x.go': { total: 3, lines: [[5, 'x']] } });
-    expect(m).toHaveLength(3);
-    expect(m.slice(1).every(r => r.line >= 1e9)).toBe(true);
   });
 });
