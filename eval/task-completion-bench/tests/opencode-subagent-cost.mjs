@@ -10,7 +10,7 @@
 // sidechain-inclusive definition Claude Code rows already use. Main-only numbers stay on the row.
 //
 // Standalone: `node eval/task-completion-bench/tests/opencode-subagent-cost.mjs` — exit 1 on fail.
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -143,6 +143,25 @@ check('aborted child request: inclusive null, lower bound = main + measured', in
 const unread = opencodeRowCosts({ mainTurns, childSets: null, price: PRICE }).fields;
 check('unreadable DB: inclusive null, lower bound = main', unread.costRealizedUsd === null && unread.costNaiveUsd === null
   && unread.costAccountingComplete === false && near(unread.costRealizedLowerBoundUsd, realized(mainTurns)) && unread.subagentSessionsRead === false);
+
+const unreadCosts = opencodeRowCosts({ mainTurns, childSets: null, price: PRICE }).costs;
+check('unreadable DB: every inclusive task-bench column null', ['costRealizedUsd', 'idealCostUsd', 'breakPricedCostUsd', 'costNaiveUsd', 'costContentUsd', 'costRealizedFlat125Usd']
+  .every(k => unreadCosts[k] === null), JSON.stringify(unreadCosts));
+check('unreadable DB: main-only task-bench columns kept', near(unreadCosts.costRealizedMainOnlyUsd, realized(mainTurns))
+  && near(unreadCosts.idealCostMainOnlyUsd, costsFromTurns(mainTurns, PRICE).idealCostUsd) && near(unreadCosts.costRealizedLowerBoundUsd, realized(mainTurns)));
+// task-bench spread (`...costs`): inclusive ideal / breakPriced, main-only beside them
+const mainC = costsFromTurns(mainTurns, PRICE);
+check('task bench: ideal and breakPriced inclusive, main-only kept', costs.idealCostUsd > mainC.idealCostUsd && near(costs.idealCostMainOnlyUsd, mainC.idealCostUsd)
+  && costs.breakPricedCostUsd > mainC.breakPricedCostUsd && near(costs.breakPricedCostMainOnlyUsd, mainC.breakPricedCostUsd), JSON.stringify(costs));
+
+// 7. both opencode adapters price through opencodeRowCosts (no adapter may go back to stream-only costs)
+const runnerSrc = readFileSync(new URL('../harness/opencode-task-runner.mjs', import.meta.url), 'utf8');
+const taskFn = runnerSrc.slice(runnerSrc.indexOf('export async function runOpencodeTask'));
+check('task bench: runOpencodeTask reads child sessions and prices with opencodeRowCosts',
+  taskFn.includes("readOpencodeChildSessions(path.join(ocData, 'opencode.db'), parsed.sessionID)") && taskFn.includes('opencodeRowCosts({ mainTurns: turns, childSets, price })')
+  && !/const costs = costsFromTurns\(turns, price\)/.test(taskFn));
+const benchSrc = readFileSync(new URL('../../../scripts/retrieval-bench-282.mjs', import.meta.url), 'utf8');
+check('retrieval bench: runOpencode prices with opencodeRowCosts', benchSrc.includes('opencodeRowCosts({ mainTurns: p.turns, childSets, price: PRICE })'));
 
 console.log(ok ? 'ALL PASS' : 'SOME FAILED');
 process.exit(ok ? 0 : 1);

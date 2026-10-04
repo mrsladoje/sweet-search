@@ -770,8 +770,11 @@ export function opencodeRowCosts({ mainTurns, childSets, price }) {
   const sum = (ts, k) => ts.reduce((a, t) => a + (Number(t[k]) || 0), 0);
   const usageMainOnly = { turns: mainTurns.length, in: sum(mainTurns, 'in'), out: sum(mainTurns, 'out') };
   if (childSets == null) {
+    // Every inclusive column null (the same set addSidechainCostsChecked nulls for an incomplete
+    // sidechain), main-only columns and the lower bound kept.
+    const unread = addSidechainCostsChecked(main, [{ name: 'session-db-unread', turns: [], instrumentationComplete: false }], price);
     return {
-      costs: { ...main, costRealizedUsd: null, costNaiveUsd: null, costRealizedFlat125Usd: null },
+      costs: { ...unread, sidechainCount: null, incompleteSidechains: ['session-db-unread'] },
       fields: {
         usage: null, usageMainOnly,
         costRealizedUsd: null, costNaiveUsd: null,
@@ -981,7 +984,17 @@ export async function runOpencodeTask(task, {
   // two different things. toolCounts.edit is now strictly "edit-tool calls seen"; every
   // patch-derived metric reads patchFiles/patchHunks here or preds-*.jsonl downstream.
 
-  const costs = costsFromTurns(turns, price);
+  // Sidechain-inclusive cost (2026-10-04): the stream holds only the main session; a `task`
+  // subagent runs in a child session that only the session DB (ocData/opencode.db) records.
+  // Unreadable DB → inclusive cost columns null (fail closed), main-only kept.
+  let childSets = null;
+  try {
+    childSets = parsed.sessionID ? readOpencodeChildSessions(path.join(ocData, 'opencode.db'), parsed.sessionID)
+      : (turns.length ? null : []);
+  } catch (error) {
+    console.log(`  [OC-SUBAGENT-COST ${task.id || ''}] session DB unreadable (${error.message}) — cost columns null`);
+  }
+  const { costs, fields: subagentFields } = opencodeRowCosts({ mainTurns: turns, childSets, price });
   // P7: keep the per-turn array (PLAN.md §3 B1). opencode's step_finish events are the
   // exact per-turn split; without this the next forensics pass is algebraic again.
   const turnsFile = persistTurns(label, turns, {
@@ -1002,7 +1015,8 @@ export async function runOpencodeTask(task, {
   teardownRunner(runnerStateDir, { jail, broker });
   if (secretLeakDetected) throw new Error('secret-leak tripwire fired; retained text was redacted');
 
-  const calls = toolCalls.length;
+  const callsMainOnly = toolCalls.length;
+  const calls = callsMainOnly + (Number(subagentFields.subagentCalls) || 0);
   return {
     ...controller,
     rtProgressTurnMapComplete: progressTurnMap.complete,
@@ -1022,16 +1036,24 @@ export async function runOpencodeTask(task, {
     ...sweetRulesRowFields(rulesPlacement, { sweet }),
     secretLeakDetected: false,
     toolKindVersion: TOOL_KIND_VERSION, // shell-command-kind.mjs: never pool ss/toolCounts across versions
-    calls, ss: toolCounts.ss, nativeGrep: toolCounts.nativeGrep, toolCounts,
+    // calls = main + subagent tool calls; ss / nativeGrep / toolCounts stay main-session counts.
+    calls, callsMainOnly, ss: toolCounts.ss, nativeGrep: toolCounts.nativeGrep, toolCounts,
     patchHunks, patchFiles, finalPatch,
     ...escapeAudit,
     shimTampered: shimTamperedFiles.length > 0, shimTamperedFiles,
-    stepsToFirstEdit: stepsToFirstEdit ?? calls, nudges: 0, ...rtTelemetry,
+    stepsToFirstEdit: stepsToFirstEdit ?? callsMainOnly, nudges: 0, ...rtTelemetry,
     hardTurnCap: resolveHardTurnCap(),
     budgetExhausted: resolveHardTurnCap() !== null && turns.length >= resolveHardTurnCap(),
     exitReason: exitReasonFrom(r),
-    usage: turns.length ? { turns: turns.length } : {},
+    usage: turns.length ? { turns: subagentFields.usage?.turns ?? null } : {},
+    usageMainOnly: { turns: turns.length },
     ...costs, turnsFile, ...firstRequestCacheFields(turns),
+    sessionID: parsed.sessionID ?? null,
+    costNaiveMainOnlyUsd: subagentFields.costNaiveMainOnlyUsd,
+    subagentSessionsRead: subagentFields.subagentSessionsRead, subagentContexts: subagentFields.subagentContexts,
+    subagentAgents: subagentFields.subagentAgents ?? null, subagentTurns: subagentFields.subagentTurns,
+    subagentCalls: subagentFields.subagentCalls, subagentToolKinds: subagentFields.subagentToolKinds ?? null,
+    costAccountingComplete: subagentFields.costAccountingComplete,
     wallMs, trajectory, finalAssistantText: answer,
     agentErrors: errors.slice(0, 5), startRetried,
     stderrPreview: String(r.stderr || '').slice(0, 300),
