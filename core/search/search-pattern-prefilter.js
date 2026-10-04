@@ -46,6 +46,7 @@ export {
   sparseGramPathFilter,
   grepUnfilterablePaths,
   gramsProveNoMatch,
+  getSparseGramFilesUnder,
 } from './search-pattern-sparse-overlay.js';
 import { DB_PATHS } from '../infrastructure/config/index.js';
 import { resolveSearchSymbolFilter } from './search-pattern-chunks.js';

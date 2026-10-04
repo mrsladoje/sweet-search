@@ -10,10 +10,12 @@
  *   4. Return indexed + overlay matches with detailed stats
  */
 
+import { existsSync } from 'node:fs';
+import path from 'node:path';
 import {
   extractLiteralClauses, prefilterLiteralClauses, runLiteralPrefilterClauses, querySparseGramCandidates,
   ensureSparseGramIndex,
-  sparseDeltaOverlayHasChanges, getSparseGramAllFilesWithOverlay,
+  sparseDeltaOverlayHasChanges, getSparseGramAllFilesWithOverlay, getSparseGramFilesUnder,
   hasCaseInsensitiveRegexFlag, nativeGrepFilesWithMatches,
   nativeGrepFilesWithMatchesFixed, nativeGrepLines, nativeGrepFull, nativeGrepWithFiles,
   queryAndGrepLines, queryAndGrepFull,
@@ -136,6 +138,27 @@ function dropSymlinkAliasMatches(result, searchDir) {
 
 // An --in scope holding at most this many indexed files is grepped whole, without a gram lookup.
 const SCOPE_DIRECT_MAX_FILES = 512;
+
+/**
+ * The --in scopes as root-relative paths when every one is a relative path that exists at the
+ * root (grepFileFilterPredicate then matches exactly that path and what lies under it); null
+ * otherwise. A scope with a `..` segment matches nothing and is left out.
+ */
+function rootAnchoredScopes(fileFilter, root) {
+  const scopes = (Array.isArray(fileFilter) ? fileFilter : [fileFilter]).filter(Boolean);
+  if (scopes.length === 0 || !root || !path.isAbsolute(root)) return null;
+  const out = [];
+  for (const raw of scopes) {
+    const normalized = String(raw).replace(/\\/g, '/');
+    if (normalized.startsWith('/') || /^[A-Za-z]:\//.test(normalized)) return null;
+    const segs = normalized.split('/').filter((seg) => seg !== '' && seg !== '.');
+    if (segs.includes('..')) continue;
+    if (segs.length === 0) return null;
+    if (!existsSync(path.join(root, ...segs))) return null;
+    out.push(segs.join('/'));
+  }
+  return out;
+}
 
 // =============================================================================
 // Core pipeline — regex candidate generation
@@ -292,9 +315,14 @@ async function collectRegexMatches(searcher, regex, searchDir, options = {}) {
   // (20-100 ms on 30-60k-file repos for a one-file scope).
   let scopedFiles = null;
   if (inScope && !fixedString && globs.length === 0) {
-    const all = getSparseGramAllFilesWithOverlay(searcher, scopeIndex, options);
-    if (Array.isArray(all)) {
-      const inScopeFiles = all.filter(inScope);
+    // Scopes that exist at the root are root-anchored (grepFileFilterPredicate): their files
+    // are a prefix range of the sorted list. Others are tested against every path.
+    const anchored = rootAnchoredScopes(options.fileFilter, searchDir);
+    const pool = anchored
+      ? getSparseGramFilesUnder(searcher, scopeIndex, options, anchored)
+      : getSparseGramAllFilesWithOverlay(searcher, scopeIndex, options);
+    if (Array.isArray(pool)) {
+      const inScopeFiles = pool.filter(inScope);
       if (inScopeFiles.length > 0 && inScopeFiles.length <= SCOPE_DIRECT_MAX_FILES) scopedFiles = inScopeFiles;
     }
   }
