@@ -56,7 +56,7 @@ describe('switch', () => {
 
 describe('policy (all harnesses)', () => {
   it('golden: v2 body and the pre-v2 body', () => {
-    expect(sha(getPolicyBody('cli', {}))).toBe('01ea3cc63516fe77246f34e81c57081131658d873362806d76f79b9654e3531a');
+    expect(sha(getPolicyBody('cli', {}))).toBe('1a336e4d8b29fa40aacb8e99280a99fc7c5847f7cc79dba4392be9b8306e1258');
     expect(sha(getPolicyBody('cli', V1))).toBe('77230e7ae4272b8bf8507b5642d497ed2559f8f5c91e63f3a7e5584f26305e72');
   });
 
@@ -68,7 +68,7 @@ describe('policy (all harnesses)', () => {
     expect(d.removed).toHaveLength(3);
     expect(d.added).toHaveLength(5);
     expect(v2).not.toContain('file:line only');
-    expect(v2).toContain('`ss-grep` prints each hit as `file:line: <full line>`');
+    expect(v2).toContain('`ss-grep` prints the path of each file once, then its hits as `line:<full line>`');
     expect(v2).not.toMatch(/`find`\/`ls`|`grep`\/`find`/);
     expect(v2).toContain('Reach for raw `grep`/`cat` or the native reader');
     expect(v2).toContain('read what you find with `ss-read`, not `cat`. The `ss-*` tools search file contents.');

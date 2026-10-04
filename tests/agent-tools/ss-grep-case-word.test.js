@@ -12,6 +12,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { bareGrep } from '../../core/search/index.js';
 import { runInVirtualProcess } from '../../core/agent-tools/virtual-process.js';
+import { grepHitCount } from './grep-listing-helpers.js';
 import { runAgentTool } from '../../eval/agent-read-workflows/bin/_ss-helpers.mjs';
 import {
   buildSparseGramIndexArtifact, hasNativeSparseGramSupport,
@@ -74,9 +75,10 @@ async function total(searcher, args) {
   const r = await runInVirtualProcess({ env, cwd: root },
     () => runAgentTool('grep', args, { getSearcher: () => searcher }));
   const out = r.stdout.toString('utf8');
-  const m = /^# ss-grep: (\d+) total match/.exec(out);
-  expect(m, out).not.toBeNull();
-  return Number(m[1]);
+  if (out === '(no matches)\n') return 0;
+  const n = grepHitCount(out);
+  expect(n, out).toBeGreaterThan(0);
+  return n;
 }
 
 // Hit lines per call, counted by hand from FILES (one hit per line).

@@ -54,7 +54,7 @@ export const RULES_V2_POLICY_EDITS = Object.freeze([
   ]),
   Object.freeze([
     '`ss-grep` is file:line only;',
-    '`ss-grep` prints each hit as `file:line: <full line>`;',
+    '`ss-grep` prints the path of each file once, then its hits as `line:<full line>`;',
   ]),
   Object.freeze([
     '- `ss-grep "<regex>" [-k N]` — exact literals\n',

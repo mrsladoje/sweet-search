@@ -27,9 +27,10 @@ import {
   parseContextFlags, parseGlobFlags,
 } from './_ss-argparse.mjs';
 import {
-  reallocateGrepTailForManifest,
+  GREP_HIDDEN_HINT,
   renderGrepBody,
-  renderGrepContext,
+  renderGrepHiddenFiles,
+  renderGrepListing,
 } from '../../../core/search/grep-output-shaping.js';
 import { cwdGrepScope, resolveCwdGlob, resolveCwdPath } from '../../../core/search/cwd-paths.js';
 import { formatRouteMetadata } from '../../../core/search/search-format.js';
@@ -120,7 +121,7 @@ function gutter(text, startLine) {
  */
 // Tools whose output opens with the chained-call boundary (core/agent-tools/chain.js) when
 // they are a later call of one shell command. The others still print their own header.
-const CHAIN_BOUNDARY_TOOLS = new Set(['agent-search', 'find']);
+const CHAIN_BOUNDARY_TOOLS = new Set(['agent-search', 'find', 'grep']);
 
 export async function runAgentTool(subcommand, rest, host = {}) {
 if (CHAIN_BOUNDARY_TOOLS.has(subcommand)) process.stdout.write(chainBoundary(subcommand, rest, process.env));
@@ -399,6 +400,18 @@ function grepMatchLines(results) {
   return byFile;
 }
 
+// `# siblings: 363: async def _fetch… · 599: async def _prefetch_m2m_relation(` — the same-file
+// family of a 1-3 hit grep (agent-pack-completion.js buildSameFileSiblingLine), without the
+// sites that already print as a hit or inside a -A/-B/-C window. The file is the path above.
+function grepSiblingLine(siblingLine, rows, { before = 0, after = 0 } = {}) {
+  if (!siblingLine?.rendered) return null;
+  if (!Array.isArray(siblingLine.sites)) return siblingLine.rendered;
+  const shown = (line) => rows.some((r) => line >= r.line - before && line <= r.line + after);
+  const kept = siblingLine.sites.filter((site) => !shown(site.line));
+  if (kept.length === 0) return null;
+  return `# siblings: ${kept.map((site) => `${site.line}: ${site.text}`).join(' · ')}`;
+}
+
 // When a scope resolves to a real path on disk but the index does not hold it, a 0-result
 // answer means "not searchable", not "searched and absent". Say which, so the agent stops
 // grepping a bundle like dist/index.js and looks at real source.
@@ -587,7 +600,7 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
       repaired = true;
       notes.push(repair.wholeLiteral
         ? `(invalid regex "${rawPattern}" — searched it as literal text instead)`
-        : `(invalid regex "${rawPattern}" — escaped only the part(s) that did not parse; the header shows the pattern searched)`);
+        : `(invalid regex "${rawPattern}" — escaped only the part(s) that did not parse; searched /${usedRegex}/)`);
     }
     const hits = result.stats?.totalMatches ?? result.results.length;
     // A zero that the -g globs explain (they removed real matches) is not retried
@@ -646,31 +659,20 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
         regex: fixedString ? undefined : regex,
       });
     }
-    // Every applied scope is echoed. The header used to print one value however
-    // many were supplied, which made the loss look like intended behaviour.
-    const scopes = inPaths.map(p => `--in ${p}`).join(' ');
-    process.stdout.write(`# ss-grep: ${total} total match(es) for /${usedRegex}/ (scope: ${scopes}${globEcho(globs)})\n`);
+    // No header: the harness shows the command (regex, scopes, globs) right above the output,
+    // and a cut by -k is the `# +N more hits` line below.
     for (const note of notes) process.stdout.write(`${note}\n`);
     // SS_FIX_GREP_ORDER (B7): source hits before test hits; no repeated matched-text column.
     const rows = FIX.grepOrder ? orderSourceBeforeTests(result.results) : result.results;
     const hitText = { fullLine: FIX.grepFullLine };
     const dropText = FIX.grepOrder && matchTextIsRepeated(rows, hitText);
-    const shown = rows.map((r, i) => ({
-      file: r.file,
-      line: r.line,
-      text: grepHitText(r, hitText),
-      suffix: (i === rows.length - 1 && total > rows.length)
-        ? ` (+${total - rows.length} more — raise -k)` : '',
-    }));
-    if (withContext) {
-      for (const line of renderGrepContext(shown, {
-        ...context, getLines: grepContextLineReader(), matchLines: grepMatchLines(result.results),
-      })) process.stdout.write(`${line}\n`);
-    } else {
-      for (const r of shown) {
-        process.stdout.write(dropText ? `${r.file}:${r.line}${r.suffix}\n` : `${r.file}:${r.line}: ${r.text}${r.suffix}\n`);
-      }
-    }
+    const shown = rows.map((r) => ({ file: r.file, line: r.line, text: grepHitText(r, hitText) }));
+    for (const line of renderGrepListing(shown, {
+      ...context, dropText,
+      ...(withContext ? { getLines: grepContextLineReader(), matchLines: grepMatchLines(result.results) } : {}),
+    })) process.stdout.write(`${line}\n`);
+    const cut = total - rows.length;
+    if (cut > 0) process.stdout.write(`# +${cut} more ${cut === 1 ? 'hit' : 'hits'} (raise -k)\n`);
     let zeroExplained = false;
     if (result.results.length === 0) {
       // A scope that does not exist on disk is the loudest case (exitScopeNotFound).
@@ -779,9 +781,7 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
       ...(FIX.grepFullLine ? { fullLine: true } : {}),
     };
   const body = renderGrepBody(keptMatches, fileSummary, k, bodyOpts);
-  const completed = listMode
-    ? { lines: [], familyManifest: result.familyManifest?.rendered ? result.familyManifest : null }
-    : reallocateGrepTailForManifest(body.lines, result.familyManifest);
+  const familyLine = result.familyManifest?.rendered || null;
   if (!repaired) {
     await recordAgentToolCall({
       query: fixedString ? undefined : regex,
@@ -789,13 +789,10 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
     });
   }
 
-  // Sibling-surface signal (E6, 2026-07-08 trace audit): when a symbol/stem
-  // matches in more than one file, say so unconditionally in the header —
-  // the file count is the objective "visible siblings" trigger for
-  // fix-surface mapping, and it must not depend on truncation having occurred.
-  const across = body.matchedFileCount > 1 ? ` across ${body.matchedFileCount} files` : '';
-  // Applied globs are echoed, as --in scopes are (in the form they were applied).
-  process.stdout.write(`# ss-grep: ${total} total match(es) for /${usedRegex}/${across}${globs.length ? ` (${globEcho(globs).trim()})` : ''}\n`);
+  // No header. The harness shows the command (regex, globs) right above the output; every file
+  // with hits prints its path (more than one path = siblings, E6), a file with hidden hits says
+  // `(+N more)` on its path line, and files that did not fit are the `# +N more files` line. So
+  // the total and the file count the header used to print can be read off the listing.
   for (const note of notes) process.stdout.write(`${note}\n`);
   if (listMode) {
     const linesByFile = new Map();
@@ -808,31 +805,25 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
     if (fileSummary.hiddenFileCount > 0) {
       process.stdout.write(`# +${fileSummary.hiddenFileCount} more file(s) with ${fileSummary.hiddenMatchCount} match(es) not listed; narrow the regex\n`);
     }
-    if (completed.familyManifest) process.stdout.write(`${completed.familyManifest.rendered}\n`);
+    if (familyLine) process.stdout.write(`${familyLine}\n`);
     if (result.siblingLine?.rendered) process.stdout.write(`${result.siblingLine.rendered}\n`);
     writeRegexDialectHintAfterRepair(result.stats, repaired);
     process.exit(0);
   }
-  if (body.truncatedFileCount > 0 || body.hiddenLine) {
-    process.stdout.write(`# (+N more in this file)=truncated — ` +
-      `see the rest: ss-grep "<regex>" --in <file>\n`);
-  }
-  if (withContext) {
-    // The same hits the plain body keeps (completed.lines[i] prints body.rows[i]).
-    const shown = body.rows.slice(0, completed.lines.length).map((r) => ({
-      file: r.file, line: r.line, text: r.text,
-      suffix: r.more ? ` (+${r.more} more in this file)` : '',
-    }));
-    for (const line of renderGrepContext(shown, {
-      ...context, getLines: grepContextLineReader(), matchLines: grepMatchLines(result.results),
-    })) process.stdout.write(line + '\n');
-  } else {
-    for (const line of completed.lines) process.stdout.write(line + '\n');
-  }
-  if (completed.familyManifest) process.stdout.write(`${completed.familyManifest.rendered}\n`);
-  // Singleton hit: the same-file identifier family, with code lines (L1a).
-  if (result.siblingLine?.rendered) process.stdout.write(`${result.siblingLine.rendered}\n`);
-  if (body.hiddenLine) process.stdout.write(body.hiddenLine + '\n');
+  const listing = renderGrepListing(body.rows, {
+    ...context,
+    dropText: bodyOpts.dropRepeatedText === true && body.rows.length > 1 && body.rows.every(r => r.text === body.rows[0].text),
+    ...(withContext ? { getLines: grepContextLineReader(), matchLines: grepMatchLines(result.results) } : {}),
+  });
+  for (const line of listing) process.stdout.write(line + '\n');
+  if (familyLine) process.stdout.write(`${familyLine}\n`);
+  // Singleton hit: the same-file identifier family, with code lines (L1a). The file is the path
+  // above; sites that already print as a hit or context row are left out.
+  const siblings = grepSiblingLine(result.siblingLine, body.rows, context);
+  if (siblings) process.stdout.write(`${siblings}\n`);
+  const hiddenFiles = renderGrepHiddenFiles(body.hidden);
+  if (hiddenFiles) process.stdout.write(`${hiddenFiles}\n`);
+  if (body.truncatedFileCount > 0 || hiddenFiles) process.stdout.write(`${GREP_HIDDEN_HINT}\n`);
   if (body.shownMatches === 0) {
     process.stdout.write(`${globExcludedNote(result.stats, globs) || (repaired ? REPAIRED_NO_MATCH : '(no matches)')}\n`);
   }

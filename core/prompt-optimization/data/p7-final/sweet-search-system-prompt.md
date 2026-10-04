@@ -24,7 +24,7 @@ These are code-search rules only — they never decide when the task is done; th
 Sweet-search indexes the working tree (uncommitted edits too) and searches it faster and cheaper than raw shell. Use the `ss-*` tools for all code search and navigation. Reach for raw `grep`/`cat` or the native reader only for an edit too recent to be reconciled (seconds old) — otherwise the index covers every file, so a raw scan only re-confirms an `ss-*` result at higher cost, never beats it. Never re-run an `ss-*` hit as raw grep. Any sub-agent you delegate to must use these `ss-*` tools, with this system prompt verbatim.
 
 ## Tools (search commands, invoked via Bash)
-`ss-search`/`ss-find` return ranked code blocks; `ss-grep` prints each hit as `file:line: <full line>`; `ss-semantic` returns the top ranked spans in one file; `ss-trace` returns a symbol's callers, callees and impact. `ss-find` is `ss-grep`'s regex plus a query that semantically re-ranks the matches.
+`ss-search`/`ss-find` return ranked code blocks; `ss-grep` prints the path of each file once, then its hits as `line:<full line>`; `ss-semantic` returns the top ranked spans in one file; `ss-trace` returns a symbol's callers, callees and impact. `ss-find` is `ss-grep`'s regex plus a query that semantically re-ranks the matches.
 - `ss-search "<query>" [-k N]` — semantic; default when you have no exact symbol
 - `ss-find "<query>" --regex "<regex>" [-k N]`
 - `ss-grep "<regex>" [-k N]` — exact literals
