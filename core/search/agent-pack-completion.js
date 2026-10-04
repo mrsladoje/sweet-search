@@ -759,5 +759,44 @@ export function annotateEntrySymbols(results, codeGraphRepo) {
     try { rows = codeGraphRepo.findEntitiesInRange(r.file, r.startLine, r.endLine); } catch { continue; }
     const names = topLevelSymbolNames(rows, r.symbol || null);
     if (names.length > 1) r.symbols = names;
+    const block = r.code ? declarationBlockOf(r, rows, codeGraphRepo) : null;
+    if (block) r.declarationBlockOf = block;
   }
+}
+
+// ---------------------------------------------------------------------------
+// Declaration blocks: a code entry that only lists member declarations of a type.
+//
+// okhttp `Interceptor.Chain` (an interface) came back as three entries: its head (84-104) and
+// a 65-line block of `with*` signatures and their doc comments (183-247), ~560 tokens of
+// signatures in a second slot. The renderer (agent-output-fixes.js selectEntries
+// foldDeclarationBlocks) prints such a block as one row when a better-ranked code entry of
+// the same type already shows code. A block with any member body longer than a signature
+// is never marked: two methods of one class are two answers (sequel TimedQueue hold/acquire).
+// ---------------------------------------------------------------------------
+
+/** Longest member, in lines, that still counts as a bare declaration (a wrapped signature). */
+export const DECLARATION_MAX_LINES = 4;
+const TYPE_KINDS = new Set(['class', 'interface', 'trait', 'struct', 'enum', 'impl', 'protocol', 'object', 'record', 'module', 'namespace']);
+
+/**
+ * `{ name, startLine, endLine }` of the type around `r` when every member declared in r's span
+ * is a bare declaration (at most DECLARATION_MAX_LINES lines, no nested type), else null.
+ * @param {object} r      a code entry (file, startLine, endLine)
+ * @param {Array} rows    findEntitiesInRange(r.file, r.startLine, r.endLine)
+ */
+export function declarationBlockOf(r, rows, codeGraphRepo) {
+  if (typeof codeGraphRepo?.findEnclosingEntity !== 'function') return null;
+  const members = (Array.isArray(rows) ? rows : []).filter((e) => Number.isInteger(e?.startLine)
+    && Number.isInteger(e?.endLine) && !LABEL_SKIP_KINDS.has(String(e.type || '').toLowerCase()));
+  if (members.length === 0) return null;
+  const bare = members.every((e) => !TYPE_KINDS.has(String(e.type || '').toLowerCase())
+    && e.endLine - e.startLine + 1 <= DECLARATION_MAX_LINES && e.endLine <= r.endLine);
+  if (!bare) return null;
+  let enc = null;
+  try { enc = codeGraphRepo.findEnclosingEntity(r.file, r.startLine, r.endLine); } catch { enc = null; }
+  if (!enc?.name || !Number.isInteger(enc.startLine) || !Number.isInteger(enc.endLine)) return null;
+  if (!TYPE_KINDS.has(String(enc.type || '').toLowerCase())) return null;
+  if (enc.startLine >= r.startLine && enc.endLine <= r.endLine) return null;
+  return { name: enc.name, startLine: enc.startLine, endLine: enc.endLine };
 }

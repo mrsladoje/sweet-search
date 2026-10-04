@@ -99,12 +99,12 @@ describe('1c: sibling-line sites inside printed code are dropped', () => {
   };
   it('keeps only the sites outside every printed span', () => {
     const r = { ...base, siblingLine: { enclosing: 'can_make_new?', rendered: 'x', sites: [{ line: 135, text: 'def preallocated_make_new' }, { line: 192, text: 'def try_make_new' }] } };
-    expect(render([r])).toContain('\n# same file (siblings of can_make_new?): 135: def preallocated_make_new\n');
+    expect(render([r])).toContain('\n# siblings: 135: def preallocated_make_new\n');
     expect(render([r])).not.toContain('192:');
   });
   it('drops the line when no site is left', () => {
     const r = { ...base, siblingLine: { enclosing: 'can_make_new?', rendered: 'x', sites: [{ line: 192, text: 'def try_make_new' }] } };
-    expect(render([r])).not.toContain('siblings of');
+    expect(render([r])).not.toContain('siblings');
   });
   it('drops `# same file:` neighbours whose lines printed code shows', () => {
     const r = {
@@ -166,5 +166,106 @@ describe('2b: grouped by file', () => {
       'c.kt', '1-40 Chain (interface)',
       '',
     ].join('\n'));
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+describe('sibling sites that a row of the same file prints appear once', () => {
+  const file = 'zipkin/StorageConfigurationTest.java';
+  const top = {
+    rank: 1, file, startLine: 236, endLine: 260, shownStartLine: 236, shownEndLine: 260,
+    symbol: 'dailyIndexFormat_overridingDateSeparator_empty', symbolType: 'method', presentation: 'full',
+    code: Array.from({ length: 25 }, (_, i) => `l${236 + i}`).join('\n'),
+    siblingLine: {
+      enclosing: 'dailyIndexFormat_overridingDateSeparator_empty', rendered: 'x',
+      sites: [{ line: 210, text: '@Test void dailyIndexFormat_overridingPrefix() {' }, { line: 223, text: '@Test void dailyIndexFormat_overridingDateSeparator() {' }],
+    },
+  };
+  const row = (startLine, endLine, symbol, symbolType = 'method') => ({
+    rank: 2, file, startLine, endLine, symbol, symbolType, presentation: 'summary', code: null,
+    summary: `${file}:${startLine} — ${symbol} (${symbolType})`,
+  });
+
+  it('a site inside a member row of the file prints only as the row (the zipkin duplicate)', () => {
+    const out = render([top, row(223, 234, 'dailyIndexFormat_overridingDateSeparator')]);
+    expect(out).toContain('\n# siblings: 210: @Test void dailyIndexFormat_overridingPrefix() {\n');
+    expect(out).not.toContain('223: @Test');
+    expect(out).toContain('\n223-234 dailyIndexFormat_overridingDateSeparator\n');
+  });
+
+  it('a type row does not hide its members from the sibling line', () => {
+    const out = render([top, row(1, 400, 'StorageConfigurationTest', 'class')]);
+    expect(out).toContain('210: @Test');
+    expect(out).toContain('223: @Test');
+  });
+
+  it('the line names neither the file nor the entry above it', () => {
+    expect(render([top])).toMatch(/\n# siblings: 210: [^\n]+ · 223: [^\n]+\n/);
+    expect(render([top])).not.toContain('same file (');
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+describe('a declaration block of a type already shown prints as one row', () => {
+  const file = 'okhttp/Interceptor.kt';
+  const head = {
+    rank: 1, file, startLine: 84, endLine: 104, shownStartLine: 84, shownEndLine: 104, symbol: 'Chain', symbolType: 'class',
+    presentation: 'full', code: Array.from({ length: 21 }, (_, i) => `l${84 + i}`).join('\n'),
+  };
+  const block = {
+    rank: 2, file, startLine: 183, endLine: 247, shownStartLine: 183, shownEndLine: 247, symbol: 'withAuthenticator',
+    symbolType: 'function', presentation: 'preview', code: Array.from({ length: 65 }, (_, i) => `d${183 + i}`).join('\n'),
+    symbols: ['withAuthenticator', 'withCookieJar', 'withCache', 'withProxy', 'withProxySelector', 'withProxyAuthenticator'],
+    headerContext: 'import a.B',
+    declarationBlockOf: { name: 'Chain', startLine: 84, endLine: 297 },
+  };
+  const fold = (results) => selectEntries(results, { dedupe: 'a2', k: 10, foldDeclarationBlocks: true });
+
+  it('folds the later block into `range names` when code of the same type printed above', () => {
+    const p = fold([head, block]);
+    const out = renderFixedBlocks([head, block], p, { compact: true });
+    expect(out).toContain('\n183-247 withAuthenticator, withCookieJar, withCache +3\n');
+    expect(out).not.toContain('d183');
+    expect(out).not.toContain('import a.B');
+    expect(p.hiddenCode).toBe(true);
+  });
+
+  it('keeps the block as code when it is the best entry of its type, or the type is another one', () => {
+    expect(fold([block, head]).entries[0].r.code).toBeTruthy();
+    const other = { ...block, declarationBlockOf: { name: 'Other', startLine: 300, endLine: 400 } };
+    expect(fold([head, other]).entries[1].r.code).toBeTruthy();
+    const unmarked = { ...block, declarationBlockOf: undefined };
+    expect(fold([head, unmarked]).entries[1].r.code).toBeTruthy();
+  });
+
+  it('changes nothing without the option (non-agent renderers, legacy arm)', () => {
+    const p = selectEntries([head, block], { dedupe: 'a2', k: 10 });
+    expect(p.entries[1].r).toBe(block);
+    expect(p.hiddenCode).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+describe('an unexpanded preview counts the lines it shows as printed code', () => {
+  const file = 'src/lib/converter/symbols.ts';
+  const preview = (code, extra = {}) => ({
+    rank: 2, file, startLine: 1196, endLine: 1199, symbol: 'convertVariableAsFunction', symbolType: 'function',
+    presentation: 'preview', expanded: false, code, ...extra,
+  });
+  it('a whole preview covers its span; a cut one covers the lines above the marker', () => {
+    expect(printedCodeSpans([{ r: preview('a\nb\nc\nd') }]).get(file)).toEqual([{ start: 1196, end: 1199 }]);
+    expect(printedCodeSpans([{ r: preview('a\nb\n// ... (2 more lines)') }]).get(file)).toEqual([{ start: 1196, end: 1197 }]);
+    expect(printedCodeSpans([{ r: preview('a\nb') }]).get(file)).toBeUndefined(); // unknown cut: not counted
+    expect(printedCodeSpans([{ r: preview('a\nb\nc\nd', { expanded: true }) }]).get(file)).toBeUndefined();
+  });
+  it('a sibling site that a later preview prints in full is not repeated (typedoc)', () => {
+    const top = {
+      rank: 1, file, startLine: 551, endLine: 552, shownStartLine: 551, shownEndLine: 552, symbol: 'convertFunctionOrMethod',
+      symbolType: 'function', presentation: 'full', code: 'x\ny',
+      siblingLine: { enclosing: 'convertFunctionOrMethod', rendered: 'x', sites: [{ line: 882, text: 'function convertArrowAsMethod(' }, { line: 1196, text: 'function convertVariableAsFunction(' }] },
+    };
+    const out = render([top, preview('a\nb\nc\nd')]);
+    expect(out).toContain('# siblings: 882: function convertArrowAsMethod(\n');
+    expect(out).not.toContain('1196: function');
   });
 });

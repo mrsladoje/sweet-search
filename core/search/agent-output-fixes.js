@@ -252,7 +252,8 @@ export function summaryRestatesHeader(summary) {
  * `startLine..endLine` can be wider than what the agent sees: a packed body cut at the token cap
  * (`// ... (N more lines)`), a sandwich (middle elided), a preview (signature + snippet). The
  * packer stamps `shownStartLine` / `shownEndLine` on full, non-sandwich agent bodies; without
- * them, only a full body whose line count equals the span counts as shown.
+ * them, a full body whose line count equals the span counts as shown, and an unexpanded preview
+ * shows the lines above its cut marker (all of them when it has none and fits the span).
  */
 export function shownCodeSpan(r) {
   if (!r?.code) return null;
@@ -264,10 +265,20 @@ export function shownCodeSpan(r) {
   if (Number.isInteger(r.shownStartLine) && Number.isInteger(r.shownEndLine)) {
     return r.shownEndLine >= r.shownStartLine ? { start: r.shownStartLine, end: r.shownEndLine } : null;
   }
-  if (r.presentation !== 'full' || !Number.isInteger(r.startLine) || !Number.isInteger(r.endLine)) return null;
-  const lines = String(r.code).replace(/\r?\n$/, '').split('\n').length;
-  return lines === r.endLine - r.startLine + 1 ? { start: r.startLine, end: r.endLine } : null;
+  if (!Number.isInteger(r.startLine) || !Number.isInteger(r.endLine)) return null;
+  const lines = String(r.code).replace(/\r?\n$/, '').split('\n');
+  if (r.presentation === 'preview' && !r.expanded) {
+    // An unexpanded preview is a prefix of the chunk (compressToPreview): all of it, or its
+    // first lines plus the `// ... (N more lines)` cut marker.
+    const cut = PREVIEW_CUT_RE.test(lines[lines.length - 1]);
+    if (cut) return lines.length >= 2 ? { start: r.startLine, end: r.startLine + lines.length - 2 } : null;
+    return lines.length === r.endLine - r.startLine + 1 ? { start: r.startLine, end: r.endLine } : null;
+  }
+  if (r.presentation !== 'full') return null;
+  return lines.length === r.endLine - r.startLine + 1 ? { start: r.startLine, end: r.endLine } : null;
 }
+
+const PREVIEW_CUT_RE = /^\s*\/\/ \.\.\. \(\d+ more lines?\)\s*$/;
 
 /**
  * Entry selection for ss-search / ss-find under the fix switches.
@@ -339,6 +350,27 @@ export function selectEntries(results, o = {}) {
     list = list.filter((e) => keepers.has(e));
   }
 
+  let folded = false;
+  if (o.foldDeclarationBlocks) {
+    // A code entry that only lists member declarations of a type (declarationBlockOf, set by
+    // the agent-format packer) prints as one row when a better-ranked code entry already shows
+    // code of the same type: the agent has the type; the row keeps the range and the names.
+    const codeSpans = [];
+    list = list.map((e) => {
+      const { r } = e;
+      const block = r?.declarationBlockOf;
+      if (r?.code && block && codeSpans.some((c) => c.file === r.file
+          && c.start >= block.startLine && c.end <= block.endLine)) {
+        folded = true;
+        const row = { ...r, presentation: 'summary', code: null, headerContext: null, continuation: null,
+          neighbors: null, sameFile: null, siblingLine: null, familyManifest: null, summary: null };
+        return { ...e, r: row };
+      }
+      if (r?.code) codeSpans.push({ file: r.file, start: r.startLine, end: r.endLine });
+      return e;
+    });
+  }
+
   let hidden = 0;
   if (o.summaryCap != null) {
     const k = Number.isInteger(o.k) && o.k > 0 ? o.k : Infinity;
@@ -354,7 +386,8 @@ export function selectEntries(results, o = {}) {
   }
 
   const printed = new Set(list.map((e) => e.index));
-  const hiddenCode = input.some((e) => !printed.has(e.index) && (!!e.r.code || !!e.r.continuation?.code));
+  const hiddenCode = folded
+    || input.some((e) => !printed.has(e.index) && (!!e.r.code || !!e.r.continuation?.code));
   return { entries: list, hidden, hiddenCode };
 }
 
@@ -552,13 +585,17 @@ function renderSameFileMap(sameFile, file, spans) {
   return `# same file: ${parts.join(' · ')} — sweep: ss-semantic ${file} "<query>"`;
 }
 
-/** The `# same file (siblings of X):` line without the sites inside printed code. */
-function renderSiblingLine(siblingLine, spans) {
+/**
+ * `# siblings: 210: <line> · 223: <line>` — the same-file family of the entry above, without
+ * the sites inside printed code or inside another entry of this file (code or row): those
+ * already print. The file and the entry are the lines above, so the line names neither.
+ */
+function renderSiblingLine(siblingLine, spans, rowSpans = []) {
   if (!siblingLine?.rendered) return null;
   if (!Array.isArray(siblingLine.sites)) return siblingLine.rendered;
-  const kept = siblingLine.sites.filter((s) => !insideAny(spans, s.line, s.line));
+  const kept = siblingLine.sites.filter((s) => !insideAny(spans, s.line, s.line) && !insideAny(rowSpans, s.line, s.line));
   if (kept.length === 0) return null;
-  return `# same file (siblings of ${siblingLine.enclosing}): ${kept.map((s) => `${s.line}: ${s.text}`).join(' · ')}`;
+  return `# siblings: ${kept.map((s) => `${s.line}: ${s.text}`).join(' · ')}`;
 }
 
 /**
@@ -587,6 +624,11 @@ function renderGroupedBlocks(results, plan, { omitted = new Set(), gutter = (cod
   for (const [file, entries] of groups) {
     lines.push(file);
     const spans = spansByFile.get(file) || [];
+    // The ranges this file's member rows print (code entries count by the code they show:
+    // `spans`). A type's row (`22-217 Schema (class)`) names the type, not its members.
+    const rowSpans = entries
+      .filter(({ r }) => isSummaryOnly(r) && !SUMMARY_KIND_TAGS.has(String(r.symbolType || '').toLowerCase()))
+      .map(({ r }) => ({ start: r.startLine, end: r.endLine }));
     // Summary rows of this file printed on one line; a code entry or a summary text ends the run.
     let run = [];
     const flush = () => { if (run.length) lines.push(run.join(' · ')); run = []; };
@@ -630,7 +672,7 @@ function renderGroupedBlocks(results, plan, { omitted = new Set(), gutter = (cod
       }
       const map = renderSameFileMap(r.sameFile, file, spans);
       if (map) lines.push(map);
-      const siblings = renderSiblingLine(r.siblingLine, spans);
+      const siblings = renderSiblingLine(r.siblingLine, spans, rowSpans);
       if (siblings) lines.push(siblings);
       if (cont && !merge) {
         // A continuation is in the entry's file; another file would need its path.
@@ -740,12 +782,13 @@ export const ALREADY_SHOWN_MAX_RECORD_CHARS = 10000;
  * entry, or a continuation that has no rendered header, is never recorded.
  */
 export function printedSpanCandidates(results, plan, { projectRoot } = {}) {
-  const printed = new Set(plan.entries.map((e) => e.index));
+  // The plan's entry, not the raw result: a folded declaration block prints no code.
+  const printed = new Map(plan.entries.map((e) => [e.index, e.r]));
   return collectAgentShownSpansIndexed(results, {
     projectRoot,
     include: (resultIndex, part) => {
       if (!printed.has(resultIndex)) return false;
-      const r = results[resultIndex];
+      const r = printed.get(resultIndex);
       if (part === 'result') return !!r?.code;
       return !!(r?.continuation?.rendered && r.continuation.kind === 'symbol' && r.continuation.code);
     },

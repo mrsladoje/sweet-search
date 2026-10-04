@@ -645,7 +645,7 @@ function agentTextGutter(code, startLine) {
  */
 function renderCompactAgentSearchResponse(response) {
   const results = response?.results || [];
-  const plan = selectEntries(results, { dedupe: 'a2' });
+  const plan = selectEntries(results, { dedupe: 'a2', foldDeclarationBlocks: true });
   let out = renderCompactSufficiency(response || {}, renderSufficiencyFragment(response || {}));
   out += renderFixedBlocks(results, plan, {
     compact: true,
