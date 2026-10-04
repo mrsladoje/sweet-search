@@ -548,6 +548,12 @@ const TAGS_QUERIES = {
     ; Capitalised method names (\`def S(*a)\`) parse as constants.
     (method name: (constant) @method.definition)
     (singleton_method name: (constant) @method.definition)
+    ; Operator and setter methods (\`def []=(k, v)\`, \`def <=>(o)\`, \`def name=(v)\`):
+    ; the whole definition is captured, named by its \`name\` field text.
+    (method name: (operator)) @method.definition
+    (singleton_method name: (operator)) @method.definition
+    (method name: (setter)) @method.definition
+    (singleton_method name: (setter)) @method.definition
     (alias name: (identifier) @method.definition)
   `,
   php: `
