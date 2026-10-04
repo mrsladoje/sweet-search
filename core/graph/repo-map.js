@@ -17,7 +17,7 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import { DB_PATHS } from '../infrastructure/config/index.js';
 import { applyReadPragmas } from '../infrastructure/db-utils.js';
-import { TRACE_ONLY_TYPES_SQL } from './relationship-types.js';
+import { TRACE_ONLY_TYPES_SQL } from '../infrastructure/relationship-types.js';
 import {
   createCodeGraphVisibility,
   entityVisibilityParams,

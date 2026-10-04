@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import { ASTChunker } from '../../core/indexing/ast-chunker.js';
 import { GraphExtractor } from '../../core/graph/index.js';
-import { isTraceOnlyRelationship } from '../../core/graph/relationship-types.js';
+import { isTraceOnlyRelationship } from '../../core/infrastructure/index.js';
 
 // Counts below cover the ranking relationship kinds; trace-only rows
 // (typeRef / instantiates, relationship-types.js) are additive.

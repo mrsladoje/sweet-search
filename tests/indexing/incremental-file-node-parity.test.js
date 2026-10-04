@@ -1,4 +1,4 @@
-// File nodes (core/graph/file-nodes.js): a fresh full build and an
+// File nodes (core/infrastructure/file-nodes.js): a fresh full build and an
 // incrementally maintained graph of the same files hold the SAME file nodes
 // (`files` table, same ids) and the same file-sourced edges and bare call
 // sites — through add, edit, rename and delete. File nodes never appear in
@@ -13,8 +13,9 @@ import { runProductionReconcileTick } from '../../core/incremental-indexing/appl
 import { GraphExtractor, createGraphSchema, insertGraph } from '../../core/graph/graph-extractor.js';
 import { resolveRelationshipTargets } from '../../core/graph/relationship-resolver.js';
 import { createImportResolver } from '../../core/graph/import-resolver.js';
-import { fileNodeId } from '../../core/graph/file-nodes.js';
+import { fileNodeId } from '../../core/infrastructure/index.js';
 import { StructuralContextRepository } from '../../core/infrastructure/structural-context-repository.js';
+import { BareCallResolver } from '../../core/graph/index.js';
 
 const MODEL_INFO = Object.freeze({ provider: 'test', model: 'fake-e2e', dimension: 8, hnswDimension: 8 });
 const silentLogger = { info() {}, warn() {}, error() {} };
@@ -109,7 +110,7 @@ describe('file nodes: full build and maintained graph agree', () => {
 
   /** Callers of `name` (defined in `file`) as ss-trace lists them. */
   function tracedCallers(dbPath, file, name) {
-    const repo = new StructuralContextRepository(dbPath, { projectRoot });
+    const repo = new StructuralContextRepository(dbPath, { BareCallResolver, projectRoot });
     try {
       const target = repo.findEntityCandidates(name, { filePath: file, limit: 5 })
         .find((c) => c.name === name && c.filePath === file);

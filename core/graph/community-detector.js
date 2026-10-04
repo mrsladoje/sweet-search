@@ -15,7 +15,7 @@ import { createHash } from 'crypto';
 import { DB_PATHS } from '../infrastructure/config/index.js';
 import { applyReadPragmas } from '../infrastructure/db-utils.js';
 import { leidenCommunities, findConnectedComponents } from './leiden-algorithm.js';
-import { TRACE_ONLY_TYPES_SQL } from './relationship-types.js';
+import { TRACE_ONLY_TYPES_SQL } from '../infrastructure/relationship-types.js';
 
 // Re-export for existing consumers
 export { leidenCommunities } from './leiden-algorithm.js';

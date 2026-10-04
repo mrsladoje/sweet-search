@@ -25,7 +25,7 @@
 import path from 'path';
 import { EXTENSION_MAP } from '../infrastructure/language-patterns/maps.js';
 import { createCallResolutionIndex, isTestPath } from './relationship-resolver.js';
-import { asTopLevelCaller, fileNodeId, fileNodeSourceSql, hasFilesTable } from './file-nodes.js';
+import { asTopLevelCaller, fileNodeId, fileNodeSourceSql, hasFilesTable } from '../infrastructure/file-nodes.js';
 import { compareEntitiesForResolution } from './entity-order.js';
 
 const OWNER = 'owner';
@@ -287,7 +287,7 @@ export class BareCallResolver {
     `).all(target.name, ...this.siteParams, ...this.entityParams, target.id, limit * 4);
     const sites = sitesFrom('entities');
     // Bare calls in top-level code have the file node as their source
-    // (graph/file-nodes.js). The site's span is its call line, and it is
+    // (infrastructure/file-nodes.js). The site's span is its call line, and it is
     // keyed by id: a `files` rowid is no entity rowid.
     if (hasFilesTable(this.db)) {
       for (const row of sitesFrom(fileNodeSourceSql())) sites.push({ ...asTopLevelCaller(row), _rowid: undefined });

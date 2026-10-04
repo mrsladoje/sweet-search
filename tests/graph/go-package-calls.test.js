@@ -20,6 +20,7 @@ import { createImportResolver } from '../../core/graph/import-resolver.js';
 import { goImportName, scanImports } from '../../core/graph/import-scanner.js';
 import { StructuralContextBuilder, formatStructuralContext } from '../../core/graph/structural-context.js';
 import { StructuralContextRepository } from '../../core/infrastructure/structural-context-repository.js';
+import { BareCallResolver } from '../../core/graph/bare-call-resolution.js';
 import { formatTraceCompact } from '../../core/search/agent-output-fixes.js';
 
 const roots = [];
@@ -312,7 +313,7 @@ describe('call-line reader on an older graph', () => {
     const lines = writer.prepare('SELECT source_id, target_name, context_line, epoch_written FROM call_lines').all();
     expect(lines.map((r) => r.context_line).sort((a, b) => a - b)).toEqual([9, 10]);
     writer.exec('DROP TABLE call_lines');
-    const repo = new StructuralContextRepository(g.dbPath, { projectRoot: g.root });
+    const repo = new StructuralContextRepository(g.dbPath, { BareCallResolver, projectRoot: g.root });
     const run = writer.prepare("SELECT id FROM entities WHERE name = 'Run'").get();
     const target = { id: run.id, name: 'Run' };
     try {

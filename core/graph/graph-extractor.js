@@ -20,7 +20,7 @@ import { CallSiteScanner, EXTRA_CALL_SCAN_LANGUAGES } from './call-site-scanner.
 import { goImportName, scanImports, SCANNED_IMPORT_LANGUAGES, importLanguageFor } from './import-scanner.js';
 import { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX } from './import-resolver.js';
 import { scanInstantiations, scanSignatureTypes, swiftExtensionTarget } from './type-usage-scanner.js';
-import { ensureFilesSchema, hasGraphColumn, insertFileNodes } from './file-nodes.js';
+import { ensureFilesSchema, hasGraphColumn, insertFileNodes } from '../infrastructure/file-nodes.js';
 
 // Languages whose legacy `imports` rows are all module specifiers that the
 // statement scanner sees (so an unmatched row is a regex false positive).

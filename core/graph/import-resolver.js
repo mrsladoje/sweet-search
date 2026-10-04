@@ -30,14 +30,10 @@ import {
   elixirReferences, lineOfIndex,
 } from './import-symbol-index.js';
 
-/**
- * `full_import_path` value for an import whose module is not a repo file
- * (package, stdlib, unresolvable alias). Name-based resolution skips these.
- */
-export const UNRESOLVED_IMPORT_PREFIX = 'unresolved:';
-// Go package-qualified calls (`x.Parse()`): full_import_path = `gopkg:<repo dir>/`
-// (`gopkg:` for a module root at the repo root). See resolveGoPackageCall.
-export const GO_PACKAGE_PREFIX = 'gopkg:';
+import { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX } from '../infrastructure/import-path-prefixes.js';
+
+// Defined in infrastructure (the structural repository reads them too).
+export { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX };
 
 /** `SWEET_SEARCH_IMPORT_EDGES=0` turns file-level import resolution off. */
 export function importEdgesEnabled() {

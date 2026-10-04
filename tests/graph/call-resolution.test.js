@@ -10,6 +10,7 @@ import {
   createCallResolutionIndex,
 } from '../../core/graph/relationship-resolver.js';
 import { StructuralContextRepository } from '../../core/infrastructure/structural-context-repository.js';
+import { BareCallResolver } from '../../core/graph/bare-call-resolution.js';
 import { trustedCallerEdge } from '../../core/infrastructure/structural-qualified-resolution.js';
 
 function ent(id, name, file, start, end, extra = {}) {
@@ -204,7 +205,7 @@ describe('ss-trace callers end to end (graph-only build)', () => {
   });
 
   function callersOf(file) {
-    const repo = new StructuralContextRepository(dbPath, { projectRoot: root });
+    const repo = new StructuralContextRepository(dbPath, { BareCallResolver, projectRoot: root });
     try {
       const target = repo.findEntityCandidates('statementDidFail', { filePath: file, limit: 3 })[0];
       expect(target.filePath).toBe(file);

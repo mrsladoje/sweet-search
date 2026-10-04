@@ -1,5 +1,5 @@
 /**
- * Trace-only relationship types (core/graph/relationship-types.js) must not
+ * Trace-only relationship types (core/infrastructure/relationship-types.js) must not
  * change search ranking: structural PageRank, graph expansion, community
  * detection and the context-expander neighbour list all skip them, while
  * ss-trace still reads them.
@@ -16,7 +16,7 @@ import { expandOneHop, getExpansionStats, GRAPH_EXPANSION_TRACE_ONLY_TYPES_SQL }
 import { computeGraphHash } from '../../core/graph/community-detector.js';
 import {
   SITE_LINE_RELATIONSHIP_TYPES, TRACE_ONLY_RELATIONSHIP_TYPES, TRACE_ONLY_TYPES_SQL, rankingRelationshipTypes, isTraceOnlyRelationship,
-} from '../../core/graph/relationship-types.js';
+} from '../../core/infrastructure/index.js';
 
 const tmpFiles = [];
 afterEach(() => {

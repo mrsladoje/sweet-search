@@ -130,3 +130,11 @@ export {
   isWasmAvailable, isMaxSimWasmAvailable, isNativeMaxSimAvailable,
   getMaxSimTier, initWasm,
 } from './simd-distance.js';
+
+// Code-graph schema vocabulary shared by graph, search, indexing and the
+// structural repository (moved down from core/graph so infrastructure never
+// imports the graph domain).
+export * from './relationship-types.js';
+export * from './file-nodes.js';
+export * from './import-path-prefixes.js';
+export { isTestLikePath } from './test-paths.js';
