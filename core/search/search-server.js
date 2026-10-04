@@ -35,7 +35,6 @@ import {
 } from './daemon-registry.js';
 import { renderRegexDialectHint } from './regex-dialect.js';
 import {
-  readFixFlags,
   renderCompactSufficiency,
   renderFixedBlocks,
   renderSufficiencyFragment,
@@ -109,19 +108,12 @@ function parseBoundedSearchInteger(value, name, max) {
 
 /**
  * The ss-grep shaping options of a /search call: perFileCap and maxFiles (bounded integers;
- * throws on a bad value, answered 400) and fileOrder=weight, ss-grep's weighted file selection
- * (SS_FIX_GREP_ALLOC, read client-side; absent = the legacy path-order selection).
- * Client-decided arms (ss-grep sends them by default since 2026-10-03; absent = legacy):
- * fileWeight=sat2 (SS_FIX_GREP_WEIGHT) and lineClasses=1 (SS_FIX_GREP_LINES).
- * Any other value of the three is ignored, never an error.
+ * throws on a bad value, answered 400).
  */
 export function readGrepShapingParams(searchParams) {
   return {
     perFileCap: parseBoundedSearchInteger(searchParams.get('perFileCap'), 'perFileCap', 1000),
     maxFiles: parseBoundedSearchInteger(searchParams.get('maxFiles'), 'maxFiles', 1000),
-    grepFileOrder: searchParams.get('fileOrder') === 'weight' ? 'weight' : undefined,
-    grepFileWeight: searchParams.get('fileWeight') === 'sat2' ? 'sat2' : undefined,
-    grepLineClasses: searchParams.get('lineClasses') === '1' ? true : undefined,
   };
 }
 
@@ -284,9 +276,8 @@ export async function buildReadSemanticDaemonResponse(reqUrl, {
     return readSemanticError(400, err.message);
   }
   const verbose = url.searchParams.get('verbose') === 'true';
-  // SS_FIX_SEMANTIC_RANGES / SS_FIX_SEMANTIC_PICK (read client-side); absent = unchanged.
+  // ss-semantic's exact ranges (the client sets exactRanges=1); absent = unchanged.
   const exactRanges = url.searchParams.get('exactRanges') === '1';
-  const pickExcerpt = url.searchParams.get('pick') === '1';
   const agentSpanCall = beginAgentSpanUrlCall(url, agentSpanLedger, { enabled: format === 'agent' });
 
   try {
@@ -308,7 +299,6 @@ export async function buildReadSemanticDaemonResponse(reqUrl, {
       maxTokens,
       verbose,
       ...(exactRanges ? { exactRanges } : {}),
-      ...(pickExcerpt ? { pickExcerpt } : {}),
       _lateInteractionIndex: reusableLateInteractionIndex(searcher),
     });
     if (agentSpanCall) {
@@ -499,10 +489,8 @@ export async function buildReadDaemonResponse(reqUrl, {
 
   try {
     const { readFiles, formatReadResults } = await import('./search-read.js');
-    // Agent-facing read route: span gate on. Measurement formats still veto it
-    // inside spanExpandEnabled().
     const out = await readFiles(files, {
-      projectRoot: serverRoot, includeMetadata, spanExpand: true, format,
+      projectRoot: serverRoot, includeMetadata, format,
     });
     let queryEvidence = null;
     if (exactRereadOmission && agentSpanLedger && validAgentSessionId(agentSessionId)) {
@@ -638,73 +626,16 @@ function agentTextGutter(code, startLine) {
 }
 
 /**
- * Bundle A for the native captured-output CLI: the same renderer the ss-* tools use
+ * The native captured-output CLI's agent text: the renderer the ss-* tools use
  * (core/search/agent-output-fixes.js). No query header, the compact `# sufficient=YES` line only
  * when the verdict is YES, results grouped by file, covered summary entries and repeated import
  * lines dropped.
  */
-function renderCompactAgentSearchResponse(response) {
+export function renderAgentSearchResponse(response) {
   const results = response?.results || [];
-  const plan = selectEntries(results, { dedupe: 'a2' });
+  const plan = selectEntries(results);
   let out = renderCompactSufficiency(response || {}, renderSufficiencyFragment(response || {}));
-  out += renderFixedBlocks(results, plan, {
-    compact: true,
-    gutter: agentTextGutter,
-  });
-  const regexDialectNote = renderRegexDialectHint(response?.stats?.regexDialectHint);
-  if (regexDialectNote) out += `${regexDialectNote}\n`;
-  return out;
-}
-
-/**
- * Render a packaged agent response for the native captured-output CLI.
- *
- * Compact (Bundle A) by default, with the ss-* tools' precedence (readFixFlags): an explicit
- * SS_FIX_A=1|0 wins, else SWEET_SEARCH_COMPACT_OUTPUT=0 restores the previous text byte for byte.
- * Both are read from the DAEMON's environment (it inherits the env of the process that spawned
- * it; restart the daemon after a change), so every client of one daemon gets the same mode.
- */
-export function renderAgentSearchResponse(response, { compact = readFixFlags().compact } = {}) {
-  if (compact) return renderCompactAgentSearchResponse(response);
-  const results = response?.results || [];
-  const routing = response?.stats?.routing || {};
-  const routedMode = routing.mode || response?.mode || 'auto';
-  let out = `# sweet-search: routed=${routedMode} budget=${response?.tokenBudget ?? '?'} used=${response?.tokensUsed ?? '?'} results=${results.length} subMode=${response?.subMode ?? 'agent'}\n`;
-  if (response?.confidence) {
-    out += `# confidence=${response.confidence}${response.confidenceReason ? ` (${response.confidenceReason})` : ''}`;
-    if (response.sufficiencyVerdict) out += ` sufficient=${response.sufficiencyVerdict}`;
-    out += '\n';
-  }
-  for (const result of results) {
-    const symbol = result.symbol ? ` [${result.symbolType || 'code'}: ${result.symbol}]` : '';
-    const kind = result.expansionKind ? ` kind=${result.expansionKind}` : '';
-    const stale = result.stale ? ' STALE' : '';
-    out += `\n## #${result.rank} ${result.file}:${result.startLine}-${result.endLine}${symbol} (${result.presentation}${kind}${stale}) score=${(result.score || 0).toFixed(3)}\n`;
-    if (result.headerContext) out += `### imports\n\`\`\`\n${result.headerContext}\n\`\`\`\n`;
-    if (result.code) {
-      // Line-number gutter (default ON for agent output; benchmark path is JSON,
-      // never here). Numbers start at the result's own startLine so the agent can
-      // target exact edit spans directly from a search hit — same grounding
-      // ss-read now provides. Skipped for tiny spans.
-      const body = (lineGutterEnabled() && String(result.code).split('\n').length >= 15)
-        ? numberCodeLines(result.code, result.startLine || 1)
-        : result.code;
-      out += `\`\`\`\n${body}\n\`\`\`\n`;
-    } else if (result.summary) out += `${result.summary}\n`;
-    if (result.neighbors?.rendered) {
-      out += `### related (1-hop graph, ~${result.neighbors.tokens} tok)\n${result.neighbors.rendered}\n`;
-    }
-    if (result.sameFile?.rendered) out += `${result.sameFile.rendered}\n`;
-    if (result.siblingLine?.rendered) out += `${result.siblingLine.rendered}\n`;
-    if (result.continuation?.rendered) {
-      out += `${result.continuation.rendered}\n`;
-      if (result.continuation.kind === 'symbol' && result.continuation.code) {
-        out += `\`\`\`\n${result.continuation.code}\n\`\`\`\n`;
-      }
-    }
-    if (result.familyManifest?.rendered) out += `${result.familyManifest.rendered}\n`;
-  }
-  if (results.length === 0) out += '(no matches)\n';
+  out += renderFixedBlocks(results, plan, { gutter: agentTextGutter });
   const regexDialectNote = renderRegexDialectHint(response?.stats?.regexDialectHint);
   if (regexDialectNote) out += `${regexDialectNote}\n`;
   return out;
@@ -945,6 +876,7 @@ export async function startServer() {
           isUnixSocket: !req.socket.remoteAddress,
           searcher,
           isReady: () => serverReady,
+          isFailed: () => initError != null,
           waitForServerReady,
         });
       } catch (err) {
@@ -1051,9 +983,9 @@ export async function startServer() {
         res.end(JSON.stringify({ error: `File filter too long (max ${SEARCH_SERVER_MAX_READ_PATH_LENGTH} chars)` }));
         return;
       }
-      let perFileCap; let maxFiles; let grepFileOrder; let grepFileWeight; let grepLineClasses;
+      let perFileCap; let maxFiles;
       try {
-        ({ perFileCap, maxFiles, grepFileOrder, grepFileWeight, grepLineClasses } = readGrepShapingParams(url.searchParams));
+        ({ perFileCap, maxFiles } = readGrepShapingParams(url.searchParams));
       } catch (err) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: err.message }));
@@ -1113,9 +1045,6 @@ export async function startServer() {
           fileFilter,
           perFileCap,
           maxFiles,
-          ...(grepFileOrder ? { grepFileOrder } : {}),
-          ...(grepFileWeight ? { grepFileWeight } : {}),
-          ...(grepLineClasses ? { grepLineClasses } : {}),
           fixedString,
           type: symbolType,
           globs,
@@ -1127,14 +1056,9 @@ export async function startServer() {
           fusion,
           useLateInteraction,
           _isAgentFormat: isAgentFormat,
-          // SS_SIBLING_LINE=0 lives in the CLIENT's env; the daemon must be told.
-          _siblingLine: url.searchParams.get('siblingLine') !== 'false',
           // The fileFilter is the client's shell cwd, not an explicit --in (cwd-paths.js).
           _cwdScope: url.searchParams.get('cwdScope') === 'true',
           ...(agentFormat && { format: agentFormat, tokenBudget }),
-          // SS_FIX_SEARCH_FIRST_UNIT (read client-side); any other value is ignored
-          ...(agentFormat && ['calibrated', 'all'].includes(url.searchParams.get('firstUnit'))
-            ? { firstUnit: url.searchParams.get('firstUnit') } : {}),
         });
 
         // Agent mode: return the packaged response directly as JSON.
@@ -1558,11 +1482,12 @@ export function configureServerTimeouts(server) {
  */
 function guardQueryRequest(req, reject, route) {
   req.setTimeout(QUERY_CLIENT_TIMEOUT_MS, () => {
-    req.destroy(new Error(`Sweet Search daemon did not answer ${route} within ${QUERY_CLIENT_TIMEOUT_MS / 1000} s`));
+    req.destroy(daemonError(`Sweet Search daemon did not answer ${route} within ${QUERY_CLIENT_TIMEOUT_MS / 1000} s`));
   });
   req.on('error', (err) => {
+    if (err?.userFacing) { reject(err); return; }
     if (err?.code === 'ECONNRESET' || /socket hang up/.test(err?.message || '')) {
-      reject(new Error(`Sweet Search daemon closed the connection before answering ${route} (it stopped or restarted)`));
+      reject(daemonError(`Sweet Search daemon closed the connection before answering ${route} (it stopped or restarted); run the call again`));
       return;
     }
     reject(err);
@@ -1571,6 +1496,11 @@ function guardQueryRequest(req, reject, route) {
 
 // Set by startServer: this process's own /search handler (see there).
 let inProcessSearch = null;
+
+/** A failure the agent should read as one line: the tool host prints the message, not a stack. */
+function daemonError(message) {
+  return Object.assign(new Error(message), { userFacing: true });
+}
 
 export async function queryServer(query, options = {}) {
   const http = await import('http');
@@ -1585,9 +1515,6 @@ export async function queryServer(query, options = {}) {
     fileFilter,
     perFileCap = 0,
     maxFiles = 0,
-    grepFileOrder,
-    grepFileWeight,
-    grepLineClasses = false,
     fixedString = false,
     type = '',
     globs = [],
@@ -1602,11 +1529,9 @@ export async function queryServer(query, options = {}) {
     mid = false,
     format,
     tokenBudget,
-    firstUnit,
     projectRoot,
     trackAgentSpans = true,
     _isAgentFormat = false,
-    _siblingLine = true,
     _cwdScope = false,
   } = options;
 
@@ -1630,9 +1555,6 @@ export async function queryServer(query, options = {}) {
     }
     if (perFileCap > 0) params.set('perFileCap', perFileCap.toString());
     if (maxFiles > 0) params.set('maxFiles', maxFiles.toString());
-    if (grepFileOrder === 'weight') params.set('fileOrder', 'weight');
-    if (grepFileWeight === 'sat2') params.set('fileWeight', 'sat2');
-    if (grepLineClasses === true) params.set('lineClasses', '1');
     if (fixedString) params.set('fixedString', 'true');
     if (type) params.set('type', type);
     if (!literalFilter) params.set('literalFilter', 'false');
@@ -1646,10 +1568,8 @@ export async function queryServer(query, options = {}) {
     if (mid) params.set('mid', 'true');
     if (format && format.startsWith('agent')) params.set('format', format);
     if (tokenBudget) params.set('budget', tokenBudget.toString());
-    if (firstUnit === 'calibrated' || firstUnit === 'all') params.set('firstUnit', firstUnit);
     if (projectRoot) params.set('projectRoot', projectRoot);
     if (_isAgentFormat) params.set('agent', 'true');
-    if (_siblingLine === false) params.set('siblingLine', 'false');
     if (_cwdScope) params.set('cwdScope', 'true');
     if (!trackAgentSpans) params.set('trackAgentSpans', 'false');
     if (trackAgentSpans && format?.startsWith('agent') && exactRereadOmissionEnabled()) {
@@ -1698,10 +1618,10 @@ export async function queryServer(query, options = {}) {
  * its existing renderer while reusing the daemon's resident model/index.
  *
  * @param {{ path: string, query: string, projectRoot: string, maxChars?: number,
- *          exactRanges?: boolean, pickExcerpt?: boolean }} request
+ *          exactRanges?: boolean }} request
  * @returns {Promise<object>}
  */
-export async function queryReadSemanticServer({ path: file, query, projectRoot, maxChars, topK, exactRanges, pickExcerpt } = {}) {
+export async function queryReadSemanticServer({ path: file, query, projectRoot, maxChars, topK, exactRanges } = {}) {
   if (!file || !query || !projectRoot) {
     throw new TypeError('path, query, and projectRoot are required');
   }
@@ -1715,7 +1635,6 @@ export async function queryReadSemanticServer({ path: file, query, projectRoot, 
   if (maxChars > 0) params.set('maxChars', String(maxChars));
   if (topK > 0) params.set('topK', String(topK));
   if (exactRanges === true) params.set('exactRanges', '1');
-  if (pickExcerpt === true) params.set('pick', '1');
 
   return new Promise((resolve, reject) => {
     const req = http.request({
@@ -1897,6 +1816,23 @@ export async function ensureDaemonForProjectRoot(expectedProjectRoot, {
   return { ok: false, reason: 'daemon-did-not-become-ready-with-expected-root', health };
 }
 
+/**
+ * True when a process accepts connections on this project's socket. The kernel accepts
+ * even while the daemon's event loop is busy loading indexes or answering a long query,
+ * so this tells "a daemon exists" apart from "no daemon" where a /health probe with a
+ * short timeout cannot.
+ */
+export async function isServerListening({ timeoutMs = 2000 } = {}) {
+  const net = await import('node:net');
+  return new Promise((resolve) => {
+    const sock = net.connect(projectSocketPath());
+    const done = (ok) => { sock.destroy(); resolve(ok); };
+    sock.setTimeout(timeoutMs, () => done(false));
+    sock.once('connect', () => done(true));
+    sock.once('error', () => done(false));
+  });
+}
+
 export async function isServerRunning() {
   try {
     const http = await import('http');
@@ -1931,7 +1867,8 @@ export async function isServerRunning() {
  * Auto-spawn warm server in background
  * Returns true if server started successfully
  */
-export async function autoSpawnServer() {
+export async function autoSpawnServer({ quiet = false } = {}) {
+  const note = quiet ? () => {} : (msg) => console.error(msg);
   const { spawn } = await import('child_process');
   const { fileURLToPath } = await import('url');
   const path = await import('path');
@@ -1942,13 +1879,20 @@ export async function autoSpawnServer() {
   const __filename = fileURLToPath(import.meta.url);
   const sweetSearchPath = path.join(path.dirname(__filename), '..', 'cli.js');
 
-  console.error('[AutoStart] Starting warm server in background...');
+  note('[AutoStart] Starting warm server in background...');
 
   // Spawn detached process — run sweet-search with --serve
-  const child = spawn(process.execPath, [sweetSearchPath, '--serve'], {
+  const { daemonNodeArgs } = await import('./daemon-heap.js');
+  // The daemon outlives this call: it must not carry the call's start stamp (CALL_STARTED_ENV),
+  // or every later call it serves would start with its budget spent.
+  const { CALL_STARTED_ENV } = await import('../agent-tools/tools.js');
+  const env = { ...process.env };
+  delete env[CALL_STARTED_ENV];
+  const child = spawn(process.execPath, [...daemonNodeArgs(), sweetSearchPath, '--serve'], {
     detached: true,
     stdio: 'ignore',
     cwd: path.dirname(__filename),
+    env,
   });
 
   child.unref();
@@ -1969,11 +1913,11 @@ export async function autoSpawnServer() {
     waited += checkInterval;
 
     if (await isServerRunning()) {
-      console.error(`[AutoStart] Server ready in ${waited}ms`);
+      note(`[AutoStart] Server ready in ${waited}ms`);
       return true;
     }
   }
 
-  console.error('[AutoStart] Server startup timeout, using cold start');
+  note('[AutoStart] Server startup timeout, using cold start');
   return false;
 }

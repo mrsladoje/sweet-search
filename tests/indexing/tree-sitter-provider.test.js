@@ -25,6 +25,7 @@ function mockNode(type, startIdx, endIdx, startRow, endRow, opts = {}) {
   const children = opts.children || [];
   return {
     type,
+    isNamed: opts.isNamed ?? true,
     startIndex: startIdx,
     endIndex: endIdx,
     startPosition: { row: startRow },
@@ -332,9 +333,13 @@ describe('TreeSitterProvider.recursiveChunk (cAST)', () => {
       { name: 'inner' }
     );
 
+    // Real tree-sitter children cover the node's text: the opening and
+    // closing tokens are children too.
+    const openNode = mockNode('{', 0, 'class Big {'.length, 0, 0, { isNamed: false });
+    const closeNode = mockNode('}', bigContent.length - 1, bigContent.length, 2, 2, { isNamed: false });
     const classNode = mockNode(
       'class_declaration', 0, bigContent.length, 0, 2,
-      { name: 'Big', children: [methodNode] }
+      { name: 'Big', children: [openNode, methodNode, closeNode] }
     );
 
     const chunks = provider.recursiveChunk([classNode], bigContent, 50, null);

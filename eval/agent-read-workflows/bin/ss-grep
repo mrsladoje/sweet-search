@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ss-grep: indexed bare grep (gram-prefiltered) over the cwd's Sweet Search index.
-# Compact agent-friendly output: file:line: full hit line (SS_FIX_GREP_FULLLINE=0: matched text)
+# Compact agent-friendly output: file:line: full hit line
 #
 # Usage:  ss-grep <regex> [-i|--ignore-case] [-k N]
 DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"

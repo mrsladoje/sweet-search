@@ -485,7 +485,9 @@ describe('packageForAgent boundary integration', () => {
     });
     const top = completed.results[0];
     expect(top.boundaryTruncated).toBe(true);
-    expect(top.shownEndLine).toBeLessThan(top.endLine);
+    // The header names the printed lines; the packed range moves to fullStartLine/fullEndLine.
+    expect(top.endLine).toBe(top.shownEndLine);
+    expect(top.shownEndLine).toBeLessThan(top.fullEndLine);
     expect(adjacencyEnds).toContain(top.shownEndLine);
     expect(top.continuation).toMatchObject({
       kind: 'symbol', symbol: 'isLeadingInfixArg', startLine: 11, endLine: 13,
