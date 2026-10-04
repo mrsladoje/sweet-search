@@ -834,6 +834,7 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
       ...(FIX.grepWeight ? { weight: FIX.grepWeight } : {}),
       ...(FIX.grepAllocRule ? { rule: FIX.grepAllocRule } : {}),
       ...(FIX.grepLines ? { lineClasses: true } : {}),
+      ...(FIX.grepLines && FIX.grepLineSpread ? { lineSpread: true } : {}),
       ...(FIX.grepFullLine ? { fullLine: true } : {}),
     }
     : {

@@ -56,6 +56,9 @@
  *                              declaration lines first and lines outside every symbol last (code
  *                              graph, freshness-gated, agent format only; grep-line-classes.js).
  *                              Needs SS_FIX_GREP_ALLOC. Legacy: 0.
+ *   SS_FIX_GREP_LINE_SPREAD=1|0  ss-grep (DEFAULT ON since 2026-10-04): under SS_FIX_GREP_LINES,
+ *                              one line per enclosing symbol before a second line of any symbol.
+ *                              Legacy: 0.
  *   SS_FIX_GREP_ALLOC_RULE=guarantee|hh|sl  ss-grep: one line per kept file first, then
  *                              Sainte-Laguë (guarantee, the default) or Huntington–Hill (hh, an
  *                              opt-in control). Needs SS_FIX_GREP_ALLOC. Legacy: sl (or 0).
@@ -139,6 +142,7 @@ export function readFixFlags(env = process.env) {
     grepAlloc: subSwitch(env?.SS_FIX_GREP_ALLOC, compact),
     grepFullLine: subSwitch(env?.SS_FIX_GREP_FULLLINE, compact),
     grepLines: subSwitch(env?.SS_FIX_GREP_LINES, compact),
+    grepLineSpread: subSwitch(env?.SS_FIX_GREP_LINE_SPREAD, compact),
     grepAllocRule: allocRule === 'guarantee' ? 'guarantee'
       : (allocRule === 'hh' || allocRule === 'huntington-hill') ? 'hh'
         : (allocRule === 'sl' || FALSE_VALUES.has(allocRule)) ? null
