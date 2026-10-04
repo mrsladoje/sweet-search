@@ -98,8 +98,9 @@ describe('ss-read output shape', () => {
     const { code, out, err } = await ssRead([FILE, '32', '34']);
     expect(code).toBe(0);
     expect(err).toBe('');
-    // Window ends at `def size`'s end: nothing runs on; the rest below is named.
-    expect(out).toBe(`\`\`\`\n${src(32, 34)}\n\`\`\`\nbelow 35-60: method big\n`);
+    // Window ends at `def size`'s end: no function runs on, so the type around it is named;
+    // the rest below is named.
+    expect(out).toBe(`\`\`\`\n${src(32, 34)}\n\`\`\`\ninside class Pool 1-60\nbelow 35-60: method big\n`);
   });
 
   it('a window inside one function says so once, after the fence', async () => {

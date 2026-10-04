@@ -504,7 +504,7 @@ function _rrfFuse(signalMaps, weights, rrfK) {
 const SAME_DEFINITION_GAP_LINES = 40;
 const _baseSymbol = (sym) => (sym ? String(sym).replace(/ \(part \d+\)$/, '') : null);
 
-function _expandAndMergeSpans(selected, totalLines, contextLines) {
+function _expandAndMergeSpans(selected, totalLines, contextLines, gapMergeFits = () => true) {
   if (selected.length === 0) return [];
   const padded = selected
     .map(s => ({
@@ -521,8 +521,14 @@ function _expandAndMergeSpans(selected, totalLines, contextLines) {
     // as one span: the gap is the same function's code, and two fragments with a hole read
     // as two places (grdb asyncConcurrentRead 572-607 and 638-644).
     const sameDefinition = last && span.startLine - last.endLine - 1 <= SAME_DEFINITION_GAP_LINES
-      && last.symbols.some((x) => _baseSymbol(x) && _baseSymbol(x) === _baseSymbol(span.symbol));
-    if (last && (span.startLine <= last.endLine + 1 || sameDefinition)) {
+      && last.symbols.some((x) => _baseSymbol(x) && _baseSymbol(x) === _baseSymbol(span.symbol))
+      && gapMergeFits(last.startLine, Math.max(last.endLine, span.endLine));
+    // Overlapping or touching spans merge too only while the result fits the budget; two
+    // spans that do not fit together stay apart, so the budget keeps the better one whole
+    // (ocelot RoundRobin 7-63 + 64-128 merged to 7-128 and the cut lost 64-128, the answer).
+    const touching = last && span.startLine <= last.endLine + 1
+      && (span.startLine <= last.endLine || gapMergeFits(last.startLine, Math.max(last.endLine, span.endLine)));
+    if (last && (touching || sameDefinition)) {
       // Overlap or touching — merge.
       last.endLine = Math.max(last.endLine, span.endLine);
       last.score = Math.max(last.score, span.score);
@@ -851,7 +857,11 @@ async function _readSemanticUnpinned(req) {
     .sort((a, b) => b.score - a.score);
   const ranked = rankedAll.slice(0, topK);
 
-  const merged = _expandAndMergeSpans(ranked, totalLines, contextLines);
+  // A gap of one definition is filled only while the merged span fits the budget: an
+  // over-budget span is cut from its head, and the cut dropped the best piece (composer
+  // doUpdate 493-693: the top-scoring 668-691, the `setLockData` call, fell off the end).
+  const spanChars = (a, b) => (lineOffsets[Math.min(b, lineOffsets.length - 1)] ?? fileText.length) - (lineOffsets[a - 1] ?? 0);
+  const merged = _expandAndMergeSpans(ranked, totalLines, contextLines, (a, b) => spanChars(a, b) <= maxChars);
   const { spans, charsUsed } = exactRanges
     ? enforceExactCharBudget(merged, fileText, lineOffsets, maxChars, {
       pick: pickExcerpt,

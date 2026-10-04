@@ -254,3 +254,34 @@ describe('C# namespace names', () => {
     expect(kind('top')).toBe('function');
   });
 });
+
+// --- Round 3 (2026-10-04) ------------------------------------------------------------------
+
+import { startAtNamedDefinition } from '../../core/search/context-expander.js';
+
+describe('round 3', () => {
+  it('a top-level caller row keeps its call line (okhttp ConnectionListenerTest)', () => {
+    const r = {
+      symbol: 'ConnectionPool',
+      target: { name: 'ConnectionPool', type: 'class', filePath: 'a/ConnectionPool.kt', startLine: 37, endLine: 98 },
+      disambiguation: [],
+      sections: {
+        callers: { total: 1, items: [{ name: '(top-level)', type: 'file', file: 't/ConnectionListenerTest.kt', startLine: 72, endLine: 72, contextLines: [72], relationship: 'instantiates' }] },
+        callees: { total: 0, items: [] },
+        impact: { paths: [] },
+      },
+    };
+    expect(formatTraceCompact(r, { mode: 'callers' })).toContain('t/ConnectionListenerTest.kt\n(top-level) (instantiates) @72');
+  });
+
+  it('a cut entry starts at the definition it is named after, with its doc comments (jj resolve_referenced_commits)', () => {
+    const code = ['    };', '    Ok(expression)', '}', '', '/// Collects commits.', 'fn resolve_referenced_commits() {', '    body();', '}'].join('\n');
+    const repo = { findEntitiesInRange: () => [{ name: 'resolve_referenced_commits', startLine: 2011, endLine: 2013 }] };
+    const out = startAtNamedDefinition(code, { symbol: 'resolve_referenced_commits', startLine: 2006, endLine: 2013 }, 5, repo, 'r.rs', true);
+    expect(out.start).toBe(2010);
+    expect(out.code.split('\n')[0]).toBe('/// Collects commits.');
+    // Other formats and code that fits are unchanged.
+    expect(startAtNamedDefinition(code, { symbol: 'resolve_referenced_commits', startLine: 2006, endLine: 2013 }, 5, repo, 'r.rs', false).start).toBeNull();
+    expect(startAtNamedDefinition(code, { symbol: 'resolve_referenced_commits', startLine: 2006, endLine: 2013 }, 9999, repo, 'r.rs', true).start).toBeNull();
+  });
+});
