@@ -955,28 +955,25 @@ function siteList(lines) {
 }
 
 /**
- * One caller / callee row under its file's path line. Line first, like ss-grep:
- * a caller row starts with the line(s) the call is on (`52,56 intercept`), a callee row
- * with the line its definition starts on and `@` the target's lines that call it
- * (`835 fingerprintEdge @513,536`). A row that is no call says what it is: `(extends)`,
- * `(instantiates)`, `(typeRef)`, `(overrides)`; a call made through a method the target
- * overrides names it: `via Chain.proceed`. No kind tag (`[function]`).
+ * One caller / callee row under its file's path line, the same shape in both sections:
+ * kind, name, the definition's lines, then `@` the lines of the call
+ * (`function AddMutationWithIndex 590-650 @606`: it calls the target on 606;
+ * `method findPosting 2305-2330 @536`: the target calls it on 536). A row that is no call
+ * says what it is: `(extends)`, `(instantiates)`, `(typeRef)`, `(overrides)`; a call made
+ * through a method the target overrides names it: `via Chain.proceed`.
  */
-function traceRow(item, section) {
+function traceRow(item) {
   const rel = item.relationship;
   const isCall = !rel || rel === 'calls' || rel === 'handoff';
   const lines = siteList(item.contextLines?.length ? item.contextLines : (item.contextLine ? [item.contextLine] : []));
-  if (section === 'callers') {
-    const label = isCall ? '' : ` (${rel})`;
-    const via = item.via ? ` via ${item.via}` : '';
-    return `${lines || String(item.startLine ?? '?')} ${item.name}${label}${via}`;
-  }
-  // A callee: where it is defined, then `@` the target's lines that call it.
-  return `${item.startLine ?? '?'} ${item.name}${isCall ? '' : ` (${rel})`}${lines ? ` @${lines}` : ''}`;
+  // A file's top-level code (`(top-level)`) spans the whole file: no kind, no span.
+  const isFile = item.type === 'file';
+  const span = !isFile && Number.isInteger(item.startLine) ? ` ${lineRange(item.startLine, item.endLine)}` : '';
+  return `${isFile ? item.name : kindName(item.name, item.type)}${span}${isCall ? '' : ` (${rel})`}${lines ? ` @${lines}` : ''}${item.via ? ` via ${item.via}` : ''}`;
 }
 
 /** Rows grouped by file (path printed once), files in first-row order; test files last. */
-function groupedRows(items, section, label = (file) => file) {
+function groupedRows(items, label) {
   const ordered = [...items.filter((i) => !isTestLikePath(i.file)), ...items.filter((i) => isTestLikePath(i.file))];
   const byFile = new Map();
   for (const item of ordered) {
@@ -986,7 +983,7 @@ function groupedRows(items, section, label = (file) => file) {
   const out = [];
   for (const [file, rows] of byFile) {
     out.push(label(file));
-    for (const row of rows) out.push(traceRow(row, section));
+    for (const row of rows) out.push(traceRow(row));
   }
   return out;
 }
@@ -994,8 +991,9 @@ function groupedRows(items, section, label = (file) => file) {
 /**
  * Impact paths as two trees: `## upstream` (who reaches the target: a caller, then the
  * callers of that caller, indented) and `## downstream` (what it reaches). The target
- * itself, which every path started or ended with, is not repeated; each node prints once
- * per branch as `name path:line`, or as `name` alone when that row already printed above.
+ * itself, which every path started or ended with, is not repeated. A node prints as
+ * `kind name path:line` the first time, and as `name` alone when it already printed above
+ * (a caller / callee row, or an earlier tree row).
  */
 /** A path's nodes: `nodes` when the trace carries them, else parsed from `a (f:1) -> b (external)`. */
 function pathNodes(p) {
@@ -1010,6 +1008,7 @@ function pathNodes(p) {
 }
 
 function impactTrees(paths, { listedKeys, skipOneHopListed, label = (file) => file }) {
+  const printed = new Set(listedKeys);
   const trees = { upstream: [], downstream: [] };
   for (const dir of ['upstream', 'downstream']) {
     const root = new Map();
@@ -1029,8 +1028,10 @@ function impactTrees(paths, { listedKeys, skipOneHopListed, label = (file) => fi
     }
     const walk = (level, depth) => {
       for (const { node, children } of level.values()) {
-        const listed = depth === 0 && listedKeys.has(`${node.file}:${node.line}`);
-        trees[dir].push(`${'  '.repeat(depth)}${node.name}${listed ? '' : ` ${label(node.file)}:${node.line ?? '?'}`}`);
+        const key = `${node.file}:${node.line}`;
+        const row = printed.has(key) ? node.name : `${kindName(node.name, node.type)} ${label(node.file)}:${node.line ?? '?'}`;
+        printed.add(key);
+        trees[dir].push(`${'  '.repeat(depth)}${row}`);
         walk(children, depth + 1);
       }
     };
@@ -1081,10 +1082,17 @@ export function formatTraceCompact(result, { mode = null, inFile = null, notes =
   const provenance = result.sections.callers.provenance || { stored: 0, sameFileFallback: 0 };
   // Only a file typed in full: after a short --in the header must print the full path.
   const sameFile = inFile && inFile === t.filePath;
-  // The --in file (typed in full) prints as its short label wherever it appears (PATH RULE).
+  // PATH RULE: a file the agent typed (--in) or that this output already printed in full
+  // prints as its shortest unique suffix (its file name as a rule) after that.
   const files = [t.filePath, ...result.sections.callers.items, ...result.sections.callees.items].map((x) => x?.file ?? x).filter(Boolean);
   for (const a of result.disambiguation || []) if (a.file) files.push(a.file);
-  const label = (file) => (inFile && file === inFile ? typedPathLabel(file, files) : file);
+  for (const p of result.sections.impact?.paths || []) for (const n of pathNodes(p)) if (n.file) files.push(n.file);
+  const known = new Set([t.filePath, inFile].filter(Boolean));
+  const label = (file) => {
+    if (known.has(file)) return typedPathLabel(file, files);
+    known.add(file);
+    return file;
+  };
   lines.push(sameFile ? `# lines ${t.startLine}-${t.endLine}` : `# ${t.filePath}:${t.startLine}-${t.endLine}`);
   for (const n of notes) lines.push(n);
   const alt = alternativesLine(result, label);
@@ -1104,7 +1112,7 @@ export function formatTraceCompact(result, { mode = null, inFile = null, notes =
       lines.push(`(no ${title} in the repository)`);
     } else {
       if (mode === null) lines.push(`## ${title}`);
-      lines.push(...groupedRows(internal, title, label));
+      lines.push(...groupedRows(internal, label));
     }
     for (const item of internal) listed.add(`${item.file}:${item.startLine || '?'}`);
     // Every row left out is counted. The section cap is fixed (40 rows), so the way to

@@ -249,8 +249,8 @@ describe('file nodes review: resolution parity, edge cases, old graphs', () => {
     const compact = formatTraceCompact(result, { mode: 'callers' });
     expect(full).toContain('(top-level) [file] pkg/run.py:2 call@2');
     expect(full).toContain('(top-level) [file] pkg/job.py:3 call@3');
-    expect(compact).toContain('pkg/run.py\n2 (top-level)');
-    expect(compact).toContain('pkg/job.py\n3 (top-level)');
+    expect(compact).toContain('pkg/run.py\n(top-level) @2');
+    expect(compact).toContain('pkg/job.py\n(top-level) @3');
   });
 
   it('hasFilesTable re-checks a "no" after a schema change on the same connection', () => {
