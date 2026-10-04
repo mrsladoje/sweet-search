@@ -429,3 +429,15 @@ describe('round 6', () => {
     expect(shouldTrustQualifiedResolution('helpers.make_response', { name: 'make_response', type: 'function', parentClass: null, filePath: 'src/flask/helpers.py' })).toBe(true);
   });
 });
+
+describe('JavaScript member-assigned functions', () => {
+  it('`res.redirect = function` and `Cls.prototype.m = function` are methods of their object', async () => {
+    const p = new TreeSitterProvider();
+    await p.init();
+    const s = await p.extractSymbols('res.redirect = function redirect(url) {\n  return url;\n};\nReply.prototype.send = function (x) {\n  return x;\n};\nmodule.exports.helper = (a) => a;\n', 'javascript');
+    const e = (n) => s.find((x) => x.name === n);
+    expect([e('redirect')?.type, e('redirect')?.parentClass, e('redirect')?.startLine, e('redirect')?.endLine]).toEqual(['method', 'res', 0, 2]);
+    expect([e('send')?.type, e('send')?.parentClass]).toEqual(['method', 'Reply']);
+    expect(e('helper')?.type).toBe('function');
+  });
+});
