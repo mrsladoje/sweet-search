@@ -98,7 +98,7 @@ describe('ss-trace with trace-only edges', () => {
     expect(result.target.filePath).toBe('Sources/Observer.swift');
     const callers = result.sections.callers.items.map(i => `${i.file}:${i.relationship}`);
     expect(callers).toContain('Sources/Region.swift:overrides');
-    expect(formatStructuralContext(result, { mode: 'callers' })).toMatch(/databaseDidRollback \[function\] Sources\/Region\.swift:6 \(overrides\)/);
+    expect(formatStructuralContext(result, { mode: 'callers' })).toMatch(/databaseDidRollback \[method\] Sources\/Region\.swift:6 \(overrides\)/);
   });
 
   it('callers of a type list the code that constructs it; an ambiguous constructor call matches neither type', () => {

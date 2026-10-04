@@ -1019,9 +1019,15 @@ function traceRow(item, target = null) {
   return `${isFile ? item.name : kindName(item.name, item.type)}${span}${isCall ? '' : ` (${rels.join(', ')})`}${recursive}${lines ? ` @${lines}` : ''}${item.via ? ` via ${item.via}` : ''}`;
 }
 
-/** Rows grouped by file (path printed once), files in first-row order; test files last. */
+/**
+ * Rows grouped by file (path printed once), files in first-row order: calls before rows that
+ * only override / extend / reference the target, test files last. (okhttp: the one production
+ * caller of `Interceptor.intercept`, RealInterceptorChain.proceed, came after 12 implementations.)
+ */
 function groupedRows(items, label, target = null) {
-  const ordered = [...items.filter((i) => !isTestLikePath(i.file)), ...items.filter((i) => isTestLikePath(i.file))];
+  const rank = (i) => (isTestLikePath(i.file) ? 2 : 0) + (isCallRel(i.relationship) ? 0 : 1);
+  const ordered = items.map((item, index) => ({ item, index }))
+    .sort((a, b) => rank(a.item) - rank(b.item) || a.index - b.index).map((x) => x.item);
   const byFile = new Map();
   for (const item of ordered) {
     if (!byFile.has(item.file)) byFile.set(item.file, []);

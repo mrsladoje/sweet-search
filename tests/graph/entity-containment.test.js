@@ -42,8 +42,8 @@ describe('tree-sitter containment', () => {
       'protocol P { func pm() }',
       'func top() { func inner() {} }',
     ].join('\n'), 'swift');
-    expect(p['function:s']).toBe('S');
-    expect(p['function:g']).toBe('Bar');
+    expect(p['method:s']).toBe('S');
+    expect(p['method:g']).toBe('Bar');
     expect(p['method:pm']).toBe('P');
     expect(p['function:top']).toBeNull();
     expect(p['function:inner']).toBeNull();
@@ -151,8 +151,8 @@ describe('tree-sitter containment', () => {
       '  fun run() { class Effects(val x: Int) }',
       '}',
     ].join('\n'), 'kotlin');
-    expect(p['function:o']).toBe('O');
-    expect(p['function:run']).toBe('C');
+    expect(p['method:o']).toBe('O');
+    expect(p['method:run']).toBe('C');
     expect(p['function:matches']).toBeNull();
   });
 

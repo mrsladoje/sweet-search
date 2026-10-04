@@ -125,7 +125,8 @@ const GENERIC_ARGS = String.raw`(?:\s*(?:::)?\s*<[^()<>;]*(?:<[^()<>;]*>[^()<>;]
 // only to a repo definition the caller can see, so a library name with no
 // such definition never gets an edge, and a repo function that shadows it
 // does.
-const KW_C_FAMILY = ['if', 'else', 'for', 'while', 'do', 'switch', 'case', 'return', 'sizeof', 'catch', 'try', 'throw', 'new', 'delete', 'goto'];
+// `void(0);` / `void(int)` in a function type: a keyword, never a call.
+const KW_C_FAMILY = ['if', 'else', 'for', 'while', 'do', 'switch', 'case', 'return', 'sizeof', 'catch', 'try', 'throw', 'new', 'delete', 'goto', 'void'];
 const BARE_KEYWORDS_BY_LANGUAGE = {
   c: [...KW_C_FAMILY, 'alignof', '_Alignof', 'offsetof', 'defined', '__attribute__', '__declspec', 'asm', '__asm__', '_Generic', 'typeof', '__typeof__', 'static_assert', '_Static_assert'],
   cpp: [...KW_C_FAMILY, 'alignof', 'offsetof', 'defined', '__attribute__', 'decltype', 'static_assert', 'noexcept', 'typeid', 'co_await', 'co_return', 'co_yield', 'requires', 'operator', 'template', 'static_cast', 'dynamic_cast', 'reinterpret_cast', 'const_cast', 'asm', 'catch'],

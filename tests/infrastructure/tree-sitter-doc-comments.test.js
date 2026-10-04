@@ -140,9 +140,9 @@ describe('doc comments from the AST', () => {
     expect((await docs('csharp', 'class W {\n  /// <summary>Runs it.</summary>\n  [Obsolete]\n  public void Run() {}\n}\n')))
       .toMatchObject({ 'method:Run': 'Runs it.' });
     expect((await docs('kotlin', '/** A box. */\nclass Box {\n  /** Opens. */\n  fun open() {}\n}\n')))
-      .toMatchObject({ 'class:Box': 'A box.', 'function:open': 'Opens.' });
+      .toMatchObject({ 'class:Box': 'A box.', 'method:open': 'Opens.' });
     expect((await docs('swift', '/// A thing.\nclass Thing {\n  /// Does it.\n  func doIt() {}\n}\n')))
-      .toMatchObject({ 'class:Thing': 'A thing.', 'function:doIt': 'Does it.' });
+      .toMatchObject({ 'class:Thing': 'A thing.', 'method:doIt': 'Does it.' });
     expect((await docs('php', '<?php\n/**\n * Handles.\n */\nclass H {\n  /** Dispatch. */\n  public function d() {}\n}\n')))
       .toMatchObject({ 'class:H': 'Handles.', 'method:d': 'Dispatch.' });
     expect((await docs('c', '/* Adds. */\nint add(int a, int b) { return a + b; }\n')))
