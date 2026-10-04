@@ -17,6 +17,7 @@
 import path from 'path';
 import { detectProjectBoundary } from '../infrastructure/project-detector.js';
 import { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX, buildFileImportMap } from './import-resolver.js';
+import { parseReceiverType, RECEIVER_TYPE_PREFIX, signatureParamTypes } from '../infrastructure/receiver-type-annotation.js';
 import { deriveOverrideEdges } from './override-edges.js';
 import { fileNodeId } from '../infrastructure/file-nodes.js';
 import { compareEntitiesForResolution } from './entity-order.js';
@@ -94,6 +95,7 @@ const CONTAINER_TYPES = new Set([
   'class', 'struct', 'interface', 'trait', 'impl', 'enum', 'extension',
   'protocol', 'object', 'namespace', 'module', 'record', 'actor', 'union',
 ]);
+const TYPE_ALIAS_TYPES = new Set(['typeAlias', 'type', 'typealias']);
 // Go method receiver: `func (c *Context) Next()` → Context.
 const GO_RECEIVER = /^func\s*\(\s*(?:\w+\s+)?\*?\s*(\w+)/;
 // Receivers that mean "the enclosing object/type".
@@ -152,31 +154,14 @@ function receiverAbbreviatesOwner(recvTokens, ownerTokens) {
   return true;
 }
 
-// The receiver's declared type in the caller's own signature: a parameter or
-// a Go method receiver. `func (c *Context) Next()` / `func h(c *gin.Context)`,
-// `fun f(client: OkHttpClient)`, `func f(_ db: Database)`, `void m(Context c)`.
-// Parsed once per caller into name → type.
-// `x: Foo[]` / Go `x []Foo` are collections, not a Foo.
-const PARAM_COLON_TYPE = /(?:^|[(,\s])(\w+)\s*:\s*(?:inout\s+|&\s*(?:mut\s+)?|\*\s*)?(?:[a-z_]\w*\.)*([A-Z]\w*)(?![\w[])/g;
-const PARAM_GO_TYPE = /(?:^|[(,]\s*)([a-z_]\w*)\s+\*?(?:[a-z_]\w*\.)?([A-Z]\w*)\b/g;
-const PARAM_TYPE_NAME = /(?:^|[(,]\s*)(?:final\s+|const\s+)?(?:[a-z_]\w*[.:]+)*([A-Z]\w*)(?:<[^<>()]*>)?\s*[*&]*\s+&?([a-z_]\w*)\s*(?=[,)=])/g;
+// The receiver's declared type in the caller's own signature (a parameter or
+// a Go method receiver), parsed once per caller into name → type.
 const declaredTypeMemo = new Map();
 function declaredTypesOf(sourceEntity) {
-  const id = sourceEntity.id;
-  let types = declaredTypeMemo.get(id);
+  let types = declaredTypeMemo.get(sourceEntity.id);
   if (types) return types;
-  types = new Map();
-  const sig = sourceEntity.signature;
-  if (sig && sig.length < 2000) {
-    let m;
-    PARAM_COLON_TYPE.lastIndex = 0;
-    while ((m = PARAM_COLON_TYPE.exec(sig)) !== null) if (!types.has(m[1])) types.set(m[1], m[2]);
-    PARAM_GO_TYPE.lastIndex = 0;
-    while ((m = PARAM_GO_TYPE.exec(sig)) !== null) if (!types.has(m[1])) types.set(m[1], m[2]);
-    PARAM_TYPE_NAME.lastIndex = 0;
-    while ((m = PARAM_TYPE_NAME.exec(sig)) !== null) if (!types.has(m[2])) types.set(m[2], m[1]);
-  }
-  declaredTypeMemo.set(id, types);
+  types = signatureParamTypes(sourceEntity.signature);
+  declaredTypeMemo.set(sourceEntity.id, types);
   return types;
 }
 
@@ -299,6 +284,56 @@ export function createCallResolutionIndex(entities, { fileImports = null, hierar
   }
   for (const list of containersByFile.values()) list.sort((a, b) => a.start_line - b.start_line);
 
+  // The type that encloses a method's owning type (`Span` for a method of
+  // `Span.Builder`), or null.
+  const outerMemo = new Map();
+  function outerOf(entity) {
+    if (!entity) return null;
+    const hit = outerMemo.get(entity.id);
+    if (hit !== undefined) return hit;
+    let outer = null;
+    const list = entity.start_line != null ? containersByFile.get(entity.file_path) : null;
+    if (list) {
+      const end = entity.end_line ?? entity.start_line;
+      let best = null;
+      for (const c of list) {
+        if (c.start_line > entity.start_line) break;
+        if (c.id !== entity.id && c.end_line >= end) best = c;
+      }
+      if (best) outer = ownerOf(best);
+    }
+    outerMemo.set(entity.id, outer);
+    return outer;
+  }
+
+  // 'container' (class/struct/…), 'alias' (a type alias only) or null (the
+  // repo defines no type of that name).
+  let aliasNames = null;
+  function typeKindOf(name) {
+    if (filesByContainerName.has(name)) return 'container';
+    if (!aliasNames) {
+      aliasNames = new Set();
+      for (const e of entities) if (TYPE_ALIAS_TYPES.has(e.type)) aliasNames.add(e.name);
+    }
+    return aliasNames.has(name) ? 'alias' : null;
+  }
+
+  // Interfaces by name → their package directories (Go call resolution).
+  let interfaceDirs = null;
+  function isInterfaceIn(name, dir) {
+    if (!interfaceDirs) {
+      interfaceDirs = new Map();
+      for (const e of entities) {
+        if (e.type !== 'interface') continue;
+        const fp = String(e.file_path || '');
+        let dirs = interfaceDirs.get(e.name);
+        if (!dirs) { dirs = new Set(); interfaceDirs.set(e.name, dirs); }
+        dirs.add(fp.slice(0, fp.lastIndexOf('/') + 1));
+      }
+    }
+    return !!interfaceDirs.get(name)?.has(dir);
+  }
+
   const memo = new Map();
   function ownerOf(entity) {
     if (!entity) return null;
@@ -404,10 +439,14 @@ export function createCallResolutionIndex(entities, { fileImports = null, hierar
 
   return {
     ownerOf,
+    outerOf,
+    isInterfaceIn,
+    typeKindOf,
     factsOf,
     methodOwners,
     supertypesOf,
     subtypesOf,
+    directSupertypesOf: (name) => (hierarchy && hierarchy.supers && hierarchy.supers.get(name)) || EMPTY_SET,
     containerFiles: (name) => filesByContainerName.get(name) || null,
     importsOf: (filePath) => (fileImports && fileImports.get(filePath)) || null,
   };
@@ -467,8 +506,8 @@ function defaultFactsOf(entity) {
 
 const EMPTY_SET = new Set();
 const NO_INDEX = {
-  ownerOf: () => null, factsOf: defaultFactsOf, containerFiles: () => null, importsOf: () => null,
-  methodOwners: () => EMPTY_SET, supertypesOf: () => EMPTY_SET, subtypesOf: () => EMPTY_SET,
+  ownerOf: () => null, outerOf: () => null, isInterfaceIn: () => false, typeKindOf: () => null, factsOf: defaultFactsOf, containerFiles: () => null, importsOf: () => null,
+  methodOwners: () => EMPTY_SET, supertypesOf: () => EMPTY_SET, subtypesOf: () => EMPTY_SET, directSupertypesOf: () => EMPTY_SET,
 };
 
 /**
@@ -511,7 +550,7 @@ function isImported(imported, filePath) {
  * The caller ranks what is left with pickClosestCandidate (same file, then
  * non-test code, then nearest directory).
  */
-export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, index = NO_INDEX) {
+export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, index = NO_INDEX, receiverType = null) {
   if (candidates.length === 0) return candidates;
   const idx = index || NO_INDEX;
   const ownerOf = idx.ownerOf || NO_INDEX.ownerOf;
@@ -587,7 +626,18 @@ export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, inde
   // The caller declares the receiver's type (parameter or Go receiver) and
   // the repo defines that type: only its own methods qualify. None means the
   // method lives in a base type or outside the repo — no edge.
-  const declared = declaredReceiverType(receiverRaw, sourceEntity);
+  //
+  // The extractor's annotation (receiver-types.js: the whole parameter list
+  // and the local declarations before the call) decides first. A type from a
+  // package outside the repo has no method here; a Go type also names its
+  // package directory, so `List` of another package never qualifies.
+  if (receiverType) {
+    const typed = narrowByReceiverType(pool, receiverType, sourceEntity, idx);
+    if (typed !== null) return typed;
+  }
+  // A type the rules above could not decide (an alias, a Go interface) also
+  // skips the signature's declared type: the receiver rules below decide.
+  const declared = receiverType ? null : declaredReceiverType(receiverRaw, sourceEntity);
   if (declared) {
     const own = ownedBy(pool, new Set([declared]));
     return own.length > 0 ? own : ownedBy(pool, supertypesOf(declared));
@@ -648,6 +698,81 @@ export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, inde
     }
   }
   return preferImported(pool, sourceEntity, importsOf);
+}
+
+// Extension functions declare the type they extend: Kotlin `fun Buffer.f(`,
+// `fun <T> List<T>.f(`; C# `static R F(this IConfigurationBuilder b, …)`.
+const KOTLIN_EXTENSION_RECEIVER = /\bfun\s+(?:<[^>]*>\s*)?((?:[A-Za-z_]\w*\.)*[A-Za-z_]\w*)(?:<[^>]*>)?\??\.([A-Za-z_]\w*)\s*[(<]/;
+const CSHARP_EXTENSION_RECEIVER = /\(\s*this\s+((?:[A-Za-z_]\w*\.)*[A-Za-z_]\w*)(?:<[^>]*>)?\??\s+\w+/;
+
+/** The type an extension function extends (last name segment), or null. */
+function extensionReceiverOf(c) {
+  const fp = String(c.file_path || '');
+  const sig = String(c.signature || '');
+  let m = null;
+  if (/\.(?:kt|kts)$/i.test(fp)) {
+    m = KOTLIN_EXTENSION_RECEIVER.exec(sig);
+    if (m && m[2] !== String(c.name || '').split('.').pop()) m = null;
+  } else if (/\.cs$/i.test(fp)) {
+    m = CSHARP_EXTENSION_RECEIVER.exec(sig);
+  }
+  if (!m) return null;
+  return m[1].slice(m[1].lastIndexOf('.') + 1);
+}
+
+/**
+ * Candidates for a call whose receiver has a declared type (receiver-types.js):
+ * that type's own methods (a nested type within its enclosing type, a Go type
+ * within its package), else the nearest supertype that defines the method,
+ * else an extension function of the type or a supertype. [] = no edge (the
+ * method lives outside the repo, or the type has no such method). null = the
+ * type says nothing — a Go interface (implementations satisfy it implicitly,
+ * so no edge leads to them), or a name the repo defines only as an alias — and
+ * the receiver rules decide as for an untyped receiver. (Rust, Swift and
+ * Kotlin aliases are no entities: such a call stays unresolved.)
+ */
+function narrowByReceiverType(pool, receiverType, sourceEntity, idx) {
+  if (receiverType.external) return [];
+  const ownerOf = idx.ownerOf || NO_INDEX.ownerOf;
+  const importsOf = idx.importsOf || NO_INDEX.importsOf;
+  const ownedBy = (list, owners) => list.filter((c) => { const o = ownerOf(c); return !!o && owners.has(o); });
+  const { type, outer, dir } = receiverType;
+  const hasDir = dir !== null && dir !== undefined;
+  const inDir = (c) => { const fp = String(c.file_path || ''); return fp.slice(0, fp.lastIndexOf('/') + 1) === dir; };
+  let own = ownedBy(pool, new Set([type]));
+  if (hasDir) own = own.filter(inDir);
+  if (outer && own.length > 1) {
+    // `Span.Builder b`: the Builder nested in Span (or declared in Span's file).
+    const outerOf = idx.outerOf || NO_INDEX.outerOf;
+    const nested = own.filter(c => outerOf(c) === outer || fileStem(c.file_path || '') === outer);
+    if (nested.length > 0) own = nested;
+  }
+  // Two types of one name (mockwebserver3 and okhttp3.mockwebserver
+  // MockWebServer): the one the caller's file imports.
+  if (own.length > 0) return preferImported(own, sourceEntity, importsOf);
+  // Inherited: the nearest supertype that defines it (ThrottledCall →
+  // Call.Base.execute, not also the abstract Call.execute above it).
+  const directSupers = idx.directSupertypesOf || NO_INDEX.directSupertypesOf;
+  const lineage = new Set([type]);
+  let level = [type];
+  for (let depth = 0; depth < 16 && level.length > 0; depth++) {
+    const next = [];
+    for (const t of level) for (const sup of directSupers(t)) if (!lineage.has(sup)) { lineage.add(sup); next.push(sup); }
+    const inherited = ownedBy(pool, new Set(next));
+    if (inherited.length > 0) return preferImported(inherited, sourceEntity, importsOf);
+    level = next;
+  }
+  const extensions = pool.filter((c) => { const r = extensionReceiverOf(c); return r !== null && lineage.has(r); });
+  if (extensions.length > 0) return preferImported(extensions, sourceEntity, importsOf);
+  if (hasDir) {
+    const isInterfaceIn = idx.isInterfaceIn || NO_INDEX.isInterfaceIn;
+    return isInterfaceIn(type, dir) ? null : [];
+  }
+  // A name the repo defines only as an alias: its target type is unknown.
+  // A name the repo does not define is outside the repo (`String`,
+  // `std::path::Path`, `Hasher`) — as for a signature-declared type below.
+  const typeKindOf = idx.typeKindOf || NO_INDEX.typeKindOf;
+  return typeKindOf(type) === 'alias' ? null : [];
 }
 
 // Types that reopen across files: Swift extensions, C# partial classes,
@@ -798,8 +923,13 @@ export function resolveRowsScoped(db, rows, { liveOnly = true } = {}) {
   const importFiles = new Set();
   for (const r of rows) {
     for (const k of targetNameKeys(r.target_name)) keys.add(k);
+    // The declared receiver type (and its enclosing type): ownership, nesting
+    // and the Go interface check need those entities.
+    const recv = parseReceiverType(r.full_import_path);
+    if (recv) { keys.add(recv.type); if (recv.outer) keys.add(recv.outer); }
     if (r.source_id) sourceIds.add(r.source_id);
-    if (r.full_import_path && !String(r.full_import_path).startsWith(UNRESOLVED_IMPORT_PREFIX)) importFiles.add(r.full_import_path);
+    if (r.full_import_path && !String(r.full_import_path).startsWith(UNRESOLVED_IMPORT_PREFIX)
+      && !String(r.full_import_path).startsWith(RECEIVER_TYPE_PREFIX)) importFiles.add(r.full_import_path);
   }
 
   const byRowid = new Map();
@@ -1072,7 +1202,7 @@ function resolveTarget(
       if (fullImportPath && (fullImportPath.startsWith(GO_PACKAGE_PREFIX) || fullImportPath.startsWith(UNRESOLVED_IMPORT_PREFIX))) {
         return resolveGoPackageCall(allCandidates, fullImportPath, sourceEntity, callIndex);
       }
-      const narrowed = narrowCallCandidates(allCandidates, receiver, sourceEntity, callIndex || undefined);
+      const narrowed = narrowCallCandidates(allCandidates, receiver, sourceEntity, callIndex || undefined, parseReceiverType(fullImportPath));
       // Link only when what is left is one type's methods (an overload set);
       // several unrelated owners with no evidence is a guess — no edge.
       const candidates = singleOwnerSet(narrowed, sourceEntity, callIndex || NO_INDEX);

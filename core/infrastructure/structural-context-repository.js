@@ -12,6 +12,7 @@ import { CodeGraphReaderVisibility } from './code-graph-visibility.js';
 import { SITE_LINE_RELATIONSHIP_TYPES as SITE_LINE_TYPES, TRACE_ONLY_TYPES_SQL } from './relationship-types.js';
 import { asTopLevelCaller, fileNodeSourceSql, hasFilesTable, hasGraphColumn, hasGraphTable } from './file-nodes.js';
 import { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX } from './import-path-prefixes.js';
+import { RECEIVER_TYPE_PREFIX, signatureParamTypes } from './receiver-type-annotation.js';
 import { callTargetAliases, clampLimit, isLikelyCodeEntity, isTestPath, lowerCamel, placeholders, qualifiedTargetName, rowToEntity } from './structural-context-utils.js';
 
 // Entity types that own members: a call inside one belongs to its own
@@ -37,7 +38,10 @@ function sortLines(item) {
 function packageCallUnbound(row) {
   if (row.target_id || row.rel_type !== 'calls') return false;
   const fip = row.full_import_path || '';
-  return fip.startsWith(GO_PACKAGE_PREFIX) || fip.startsWith(UNRESOLVED_IMPORT_PREFIX);
+  // A typed receiver (receiver-types.js) whose type has no such method: the
+  // call is outside the repo or through an unknown base — no name match.
+  return fip.startsWith(GO_PACKAGE_PREFIX) || fip.startsWith(UNRESOLVED_IMPORT_PREFIX)
+    || fip.startsWith(RECEIVER_TYPE_PREFIX);
 }
 
 /**
@@ -46,8 +50,24 @@ function packageCallUnbound(row) {
  * (the qualifier `x` names no file stem or owner) does not apply.
  */
 function packageCallBound(row) {
-  return row.rel_type === 'calls' && !!(row.target_id || row.id)
-    && String(row.full_import_path || '').startsWith(GO_PACKAGE_PREFIX);
+  if (row.rel_type !== 'calls' || !(row.target_id || row.id)) return false;
+  const fip = String(row.full_import_path || '');
+  // Also a call through a receiver of declared type (`l *List` → l.findPosting):
+  // the type decided it, not the receiver's name.
+  return fip.startsWith(GO_PACKAGE_PREFIX) || fip.startsWith(RECEIVER_TYPE_PREFIX);
+}
+
+/**
+ * A graph built before calls carried their receiver type: the caller's own
+ * signature declares the qualifier's type (`func (txn *Txn) f(ctx, l *List)`)
+ * and the stored target is a method of that type. Short qualifiers (`l`, `b`)
+ * name nothing, so the receiver-name gate below would drop a sound edge.
+ */
+function declaredReceiverBound(targetName, caller, resolved) {
+  if (!caller?.signature || !resolved?.parentClass) return false;
+  const parts = String(targetName || '').split('.');
+  if (parts.length !== 2) return false;
+  return signatureParamTypes(caller.signature).get(parts[0]) === resolved.parentClass;
 }
 
 export class StructuralContextRepository {
@@ -583,7 +603,8 @@ export class StructuralContextRepository {
         signature: row.target_name || '',
         summary: '',
       });
-      if (row.id && !packageCallBound(row) && !shouldTrustQualifiedResolution(row.target_name, resolved)) resolved = { id: `external:${idx}:${row.target_name || 'unknown'}`, name: row.target_name || 'external', type: 'external', filePath: null, startLine: null, endLine: null, signature: row.target_name || '', summary: '' };
+      if (row.id && !packageCallBound(row) && !declaredReceiverBound(row.target_name, target, resolved)
+        && !shouldTrustQualifiedResolution(row.target_name, resolved)) resolved = { id: `external:${idx}:${row.target_name || 'unknown'}`, name: row.target_name || 'external', type: 'external', filePath: null, startLine: null, endLine: null, signature: row.target_name || '', summary: '' };
       if (resolved.id === target.id) {
         resolved = this._resolveQualifiedAlternative(row.target_name, target.id) || resolved;
       }
@@ -668,7 +689,8 @@ export class StructuralContextRepository {
       SELECT
         r.source_id, r.target_id, r.target_name, r.context_line, r.weight, r.type as rel_type, r.full_import_path,
         e.id, e.name, e.type, e.file_path, e.start_line, e.end_line,
-        e.signature, e.summary, e.parent_class, e.package
+        e.signature, e.summary, e.parent_class, e.package,
+        (SELECT s.signature FROM entities s WHERE s.id = r.source_id LIMIT 1) AS source_signature
       FROM relationships r
       LEFT JOIN entities e ON e.id = r.target_id AND ${entitySql}
       WHERE r.source_id IN (${placeholders(ids)})
@@ -689,7 +711,8 @@ export class StructuralContextRepository {
         signature: row.target_name || '',
         summary: '',
       });
-      if (row.id && !packageCallBound(row) && !shouldTrustQualifiedResolution(row.target_name, resolved)) resolved = { id: `external:${row.source_id}:${idx}:${row.target_name || 'unknown'}`, name: row.target_name || 'external', type: 'external', filePath: null, startLine: null, endLine: null, signature: row.target_name || '', summary: '' };
+      if (row.id && !packageCallBound(row) && !declaredReceiverBound(row.target_name, { signature: row.source_signature }, resolved)
+        && !shouldTrustQualifiedResolution(row.target_name, resolved)) resolved = { id: `external:${row.source_id}:${idx}:${row.target_name || 'unknown'}`, name: row.target_name || 'external', type: 'external', filePath: null, startLine: null, endLine: null, signature: row.target_name || '', summary: '' };
       if (resolved.id === row.source_id) {
         resolved = this._resolveQualifiedAlternative(row.target_name, row.source_id) || resolved;
       }

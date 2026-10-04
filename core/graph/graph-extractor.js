@@ -19,6 +19,7 @@ import { getTreeSitterProvider, STATE_CAPTURE_LANGUAGES, STATE_ENTITY_TYPES } fr
 import { CallSiteScanner, EXTRA_CALL_SCAN_LANGUAGES } from './call-site-scanner.js';
 import { goImportName, scanImports, SCANNED_IMPORT_LANGUAGES, importLanguageFor } from './import-scanner.js';
 import { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX } from './import-resolver.js';
+import { annotateReceiverTypes } from './receiver-types.js';
 import { scanInstantiations, scanSignatureTypes, swiftExtensionTarget } from './type-usage-scanner.js';
 import { ensureFilesSchema, hasGraphColumn, insertFileNodes } from '../infrastructure/file-nodes.js';
 
@@ -897,8 +898,15 @@ export class GraphExtractor {
       this._idStates.delete(filePath);
     }
     this._ensureUniqueEntityIds(filePath, result);
+    let goPackages = null;
     if (this.importResolver && result.relationships) {
-      this._appendResolvedImports(filePath, content, result.relationships);
+      goPackages = this._appendResolvedImports(filePath, content, result.relationships);
+    }
+    // `b.write(x)` where the caller declares `WriteBuffer b`: the call row
+    // carries the declared type (receiver-types.js) so resolution binds only
+    // to that type's method, never to another type's `write` by name.
+    if (result.relationships) {
+      annotateReceiverTypes(filePath, content, result.entities, result.relationships, { goPackages });
     }
     // Every extracted file has a graph node (file-nodes.js): the source of
     // its top-level edges. Same id as those edges' source_id, and the same
@@ -1075,6 +1083,7 @@ export class GraphExtractor {
         if (!skip) rel.full_import_path = pkg;
       }
     }
+    return goPackages;
   }
 
   async _extractFromFileInner(filePath, content) {

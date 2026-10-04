@@ -27,6 +27,7 @@ import { isSummaryOnly, isTestLikePath, shownCodeSpan } from './agent-output-fix
 import { statSync } from 'fs';
 import path from 'path';
 import { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX } from '../infrastructure/import-path-prefixes.js';
+import { RECEIVER_TYPE_PREFIX } from '../infrastructure/receiver-type-annotation.js';
 
 // An `imports` row annotated with the repo file it loads (no entity target):
 // a repo-relative path, or a Go / Terraform / Swift package dir ending '/'.
@@ -1432,9 +1433,11 @@ export function renderGraphNeighbors(opts) {
         const n = r.target.filePath !== entity.filePath && (fam === 'calls' || fam === 'uses') ? defs(r.target.name) : null;
         if (n != null && n >= RELATED_AMBIGUOUS_DEFS) continue;
         pushResolved(fam, r.target);
-      } else if (r.fullImportPath && (r.fullImportPath.startsWith(UNRESOLVED_IMPORT_PREFIX) || r.fullImportPath.startsWith(GO_PACKAGE_PREFIX))) {
-        // A module outside the repo (package, stdlib), or a Go package call with no function
-        // target (`types.TypeID(v)` is a conversion): the internal marker is not shown.
+      } else if (r.fullImportPath && (r.fullImportPath.startsWith(UNRESOLVED_IMPORT_PREFIX) || r.fullImportPath.startsWith(GO_PACKAGE_PREFIX)
+        || r.fullImportPath.startsWith(RECEIVER_TYPE_PREFIX))) {
+        // A module outside the repo (package, stdlib), a Go package call with no function
+        // target (`types.TypeID(v)` is a conversion), or a call on a receiver whose declared
+        // type has no such method in the repo: the internal marker is not shown.
         if (r.targetName) rows.push({ kind: fam, name: r.targetName, line: r.contextLine || null });
       } else if (r.fullImportPath && fam === 'imports' && isResolvedImportFile(r.fullImportPath)) {
         // Resolved to a repo file, but to no single entity in it.
