@@ -25,7 +25,7 @@
 
 import path from 'path';
 import { EXTENSION_MAP } from '../infrastructure/language-patterns/maps.js';
-import { createCallResolutionIndex, isTestPath } from './relationship-resolver.js';
+import { buildReceiverSpread, buildTypeHierarchy, createCallResolutionIndex, isTestPath } from './relationship-resolver.js';
 import { asTopLevelCaller, fileNodeId, fileNodeSourceSql, hasFilesTable } from '../infrastructure/file-nodes.js';
 import { compareEntitiesForResolution } from './entity-order.js';
 
@@ -160,6 +160,10 @@ export function resolveBareCall(caller, candidates, index) {
       // calls `toLowerHex`, a static method of `Span`).
       const outer = tier.length === 0 && OUTER_LOOKUP_LANGUAGES.has(language) ? index.outerOf?.(caller) : null;
       if (outer && outer !== callerOwner) tier = pool.filter(c => ownerOf(c) === outer && c.file_path === caller.file_path);
+      // An inherited member: the nearest supertype that defines the name (alamofire
+      // UploadRequest -> DataRequest -> Request.retryOrFinish). Nearest level first; a
+      // level with methods of two different types stays unresolved (asDecision).
+      if (tier.length === 0 && index.directSupertypesOf) tier = inheritedTier(pool, callerOwner, ownerOf, index.directSupertypesOf);
       // Several types share the owner's name (Ruby adapters each define a `class Dataset`
       // subclass): the definition in the caller's own file is its own class body, the one
       // the call reaches; the others are overrides elsewhere.
@@ -181,6 +185,21 @@ export function resolveBareCall(caller, candidates, index) {
     }
     if (tier.length === 0) continue;
     return asDecision(tier, ownerOf, preferNonTest) || [];
+  }
+  return [];
+}
+
+const MAX_SUPERTYPE_DEPTH = 6;
+
+function inheritedTier(pool, owner, ownerOf, directSupertypesOf) {
+  const seen = new Set([owner]);
+  let level = [...(directSupertypesOf(owner) || [])];
+  for (let depth = 0; depth < MAX_SUPERTYPE_DEPTH && level.length; depth++) {
+    const names = new Set(level.filter(n => !seen.has(n)));
+    for (const n of names) seen.add(n);
+    const hit = pool.filter(c => names.has(ownerOf(c)));
+    if (hit.length) return hit;
+    level = [...names].flatMap(n => [...(directSupertypesOf(n) || [])]);
   }
   return [];
 }
@@ -284,7 +303,9 @@ export class BareCallResolver {
         set.add(r.target_name);
       }
     }
-    return { ...createCallResolutionIndex(all, { fileImports }), enclosingFunctionOf };
+    const hierarchy = buildTypeHierarchy(this.db, { liveOnly: true });
+    const receiverSpread = buildReceiverSpread(this.db, { liveOnly: true });
+    return { ...createCallResolutionIndex(all, { fileImports, hierarchy, receiverSpread }), enclosingFunctionOf };
   }
 
   /** Entities whose bare calls resolve to `target`: [{ caller row, contextLine }]. */
