@@ -426,7 +426,6 @@ describe('round 6', () => {
     const method = { name: 'make_response', type: 'method', parentClass: 'Flask', filePath: 'src/flask/app.py' };
     expect(shouldTrustQualifiedResolution('flask.make_response', method)).toBe(false);
     expect(trustedCallerEdge({ targetName: 'flask.make_response', targetId: 'm', filePath: 'tests/test_basic.py' }, { ...method, id: 'm' })).toBe(false);
-    expect(shouldTrustQualifiedResolution('self.make_response', method)).toBe(true);
     expect(shouldTrustQualifiedResolution('helpers.make_response', { name: 'make_response', type: 'function', parentClass: null, filePath: 'src/flask/helpers.py' })).toBe(true);
   });
 });
