@@ -400,6 +400,13 @@ const TAGS_QUERIES = {
     (pair
       key: (property_identifier) @arrow.definition
       value: (arrow_function))
+    ; A function assigned to a member: \`res.redirect = function redirect(url) {}\`,
+    ; \`Reply.prototype.send = function () {}\`, \`module.exports.f = () => {}\` (express
+    ; defines its whole API so; none of it was an entity). Captured at the assignment so the
+    ; entity spans the body; named after the property, owned by the object.
+    (assignment_expression
+      left: (member_expression property: (property_identifier))
+      right: [(function_expression) (arrow_function)]) @method.definition
   `,
   typescript: `
     (function_declaration name: (identifier) @function.definition)
@@ -955,6 +962,15 @@ const SWIFT_CONDITIONAL_DIRECTIVE_LINE = /^[ \t]*#(?:if|elseif|else|endif)\b[^\n
 // A node that belongs to the definition right below it: a comment or a Rust attribute.
 const isDefinitionLead = (n) => /comment$/.test(n?.type || '') || n?.type === 'attribute_item';
 
+// Owner of a member-assigned function: `res` for `res.x = f`, `Reply` for
+// `Reply.prototype.x = f`; null for `module.exports.x` / `exports.x` (module functions).
+function memberAssignmentOwner(node) {
+  let obj = node.childForFieldName('left')?.childForFieldName('object');
+  if (obj?.type === 'member_expression' && obj.childForFieldName('property')?.text === 'prototype') obj = obj.childForFieldName('object');
+  const text = obj?.type === 'identifier' ? obj.text : (obj?.type === 'member_expression' ? obj.childForFieldName('property')?.text : null);
+  return text && text !== 'exports' && text !== 'module' ? text : null;
+}
+
 // Languages whose grammar uses one node for functions and methods (see the kind refinement).
 const METHOD_BY_CONTAINER_LANGUAGES = new Set(['python', 'swift', 'kotlin', 'rust']);
 
@@ -1251,6 +1267,8 @@ export class TreeSitterProvider {
           // (the language's implicit name). Not a container: its members
           // keep the outer class as parent, matching `Outer.member()` calls.
           scopedName = node.namedChildren.find(c => c.type === 'type_identifier')?.text || 'Companion';
+        } else if (!isLeafIdent && node.type === 'assignment_expression') {
+          scopedName = node.childForFieldName('left')?.childForFieldName('property')?.text || null;
         } else if (!isLeafIdent && node.type === 'qualified_name') {
           // C# `namespace Ocelot.DownstreamUrlCreator;`: the dotted name as written. The
           // `name` field gave one segment, a different one by depth (`Ocelot` for two
@@ -1280,7 +1298,12 @@ export class TreeSitterProvider {
           continue;
         }
 
-        const parentClass = this._containerName(extentNode, languageId);
+        let parentClass = this._containerName(extentNode, languageId);
+        // `obj.name = function` / `Cls.prototype.name = function`: owned by the object.
+        if (!parentClass && node.type === 'assignment_expression') {
+          parentClass = memberAssignmentOwner(node);
+          if (!parentClass) entityType = 'function'; // `module.exports.f = ...`: a module function
+        }
         // Python, Swift and Kotlin have one node for both: a `def` / `func` / `fun` whose
         // container is a type is a method (tortoise `Model.bulk_create`, grdb
         // `Database.openConnection`, okhttp `intercept` printed as `function`). A function nested
