@@ -166,7 +166,7 @@ describe('the ss-semantic printer', () => {
       ...LINES.slice(0, 9),
       '```',
       // The rest of the cut span: alpha's last line and beta, in score order.
-      '# also: 11-20 beta · 10-10 alpha',
+      '# also: 11-20 function beta · 10-10 function alpha',
       '',
     ].join('\n'));
   });
@@ -183,7 +183,7 @@ describe('the ss-semantic printer', () => {
     expect(block.code).toHaveLength(block.end - block.start + 1);
     expect(block.start).toBeGreaterThan(1);
     expect(out).toContain(`# not shown above: 1-${block.start - 1}\n## ${block.start}-`);
-    expect(out).toContain(`# also: ${block.end + 1}-20 beta · 1-${block.start - 1} alpha\n`);
+    expect(out).toContain(`# also: ${block.end + 1}-20 function beta · 1-${block.start - 1} function alpha\n`);
   });
 
   it('SS_FIX_SEMANTIC_RANGES on a minified file: a partial line, reported as such', async () => {

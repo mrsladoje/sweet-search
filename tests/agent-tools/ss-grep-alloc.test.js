@@ -47,18 +47,18 @@ const HINT = '# hidden hits: raise -k or use --in <file>\n';
 
 // The weighted -k 8 body with SS_FIX_GREP_FULLLINE=0: each hit prints only the matched text.
 const WEIGHTED_K8 = ''
-  + 'worker/export.go (+20 more)\n3:func Export3\n6:func Export6\n'
-  + 'worker/export_test.go (+7 more)\n3:func Export3\n'
-  + 'backup/run.go (+1 more)\n3:func Export3\n'
-  + 'buildvars/buildvars.go (+1 more)\n3:func Export3\n'
-  + 'graphql/admin/export.go (+1 more)\n3:func Export3\n'
-  + 'protos/pb/pb.pb.go (+22 more)\n3:func Export3\n'
-  + 'buildvars/buildvars_test.go (+3 more)\n3:func Export3\n'
+  + 'worker/export.go\n3:func Export3\n6:func Export6\n(+20 more)\n'
+  + 'worker/export_test.go\n3:func Export3\n(+7 more)\n'
+  + 'backup/run.go\n3:func Export3\n(+1 more)\n'
+  + 'buildvars/buildvars.go\n3:func Export3\n(+1 more)\n'
+  + 'graphql/admin/export.go\n3:func Export3\n(+1 more)\n'
+  + 'protos/pb/pb.pb.go\n3:func Export3\n(+22 more)\n'
+  + 'buildvars/buildvars_test.go\n3:func Export3\n(+3 more)\n'
   + '# +14 more files with 25 hits: systest/export/export_test.go, dgraphapi/cluster.go, dgraphtest/load.go\n'
   + HINT;
 
 /** The path lines of a listing, in print order. */
-const pathLines = (out) => out.split('\n').filter(l => l && !/^(\d|#|--)/.test(l));
+const pathLines = (out) => out.split('\n').filter(l => l && !/^(\d|#|--|\(\+)/.test(l));
 
 let base;
 let root;
@@ -144,8 +144,8 @@ describe('ss-grep line allocation (2026-10-02 rule: sqrt(hits) x prior, Sainte-L
   it('-C context renders the same hits in the same order', async () => {
     const out = await ss('grep', ['func .*Export', '-k', '6', '-C', '1'], PREV);
     // one window per file (2-7 merges the hits at 3 and 6); no `--` between files, the path separates them
-    expect(out.startsWith('worker/export.go (+20 more)\n2-  x := 2\n3:func Export3(ctx context.Context) error {\n'
-      + '4-  x := 4\n5-  x := 5\n6:func Export6(ctx context.Context) error {\n7-  x := 7\nworker/export_test.go (+7 more)\n')).toBe(true);
+    expect(out.startsWith('worker/export.go\n2-  x := 2\n3:func Export3(ctx context.Context) error {\n'
+      + '4-  x := 4\n5-  x := 5\n6:func Export6(ctx context.Context) error {\n7-  x := 7\n(+20 more)\nworker/export_test.go\n')).toBe(true);
     expect(out).not.toMatch(/^--$/m);
     expect(out.endsWith('# +16 more files with 52 hits: protos/pb/pb.pb.go, buildvars/buildvars_test.go, '
       + `systest/export/export_test.go\n${HINT}`)).toBe(true);
@@ -170,14 +170,14 @@ describe('Step 2 arms (guarantee and sat2 default ON since 2026-10-03): SS_FIX_G
     for (const rule of ['guarantee', 'hh']) {
       const out = await ss('grep', ['func .*Export', '-k', '8'], { ...PREV, SS_FIX_GREP_ALLOC_RULE: rule, SS_FIX_GREP_FULLLINE: '0' });
       expect(out).toBe(''
-        + 'worker/export.go (+21 more)\n3:func Export3\n'
-        + 'worker/export_test.go (+7 more)\n3:func Export3\n'
-        + 'backup/run.go (+1 more)\n3:func Export3\n'
-        + 'buildvars/buildvars.go (+1 more)\n3:func Export3\n'
-        + 'graphql/admin/export.go (+1 more)\n3:func Export3\n'
-        + 'protos/pb/pb.pb.go (+22 more)\n3:func Export3\n'
-        + 'buildvars/buildvars_test.go (+3 more)\n3:func Export3\n'
-        + 'systest/export/export_test.go (+3 more)\n3:func Export3\n'
+        + 'worker/export.go\n3:func Export3\n(+21 more)\n'
+        + 'worker/export_test.go\n3:func Export3\n(+7 more)\n'
+        + 'backup/run.go\n3:func Export3\n(+1 more)\n'
+        + 'buildvars/buildvars.go\n3:func Export3\n(+1 more)\n'
+        + 'graphql/admin/export.go\n3:func Export3\n(+1 more)\n'
+        + 'protos/pb/pb.pb.go\n3:func Export3\n(+22 more)\n'
+        + 'buildvars/buildvars_test.go\n3:func Export3\n(+3 more)\n'
+        + 'systest/export/export_test.go\n3:func Export3\n(+3 more)\n'
         + HIDDEN_13);
       // renderer-only: the engine request is the shipped one
       expect(grepCalls[0]).toMatchObject({ grepFileOrder: 'weight', maxFiles: 8 });
@@ -205,13 +205,13 @@ describe('the product default since 2026-10-03: sat2 weight, the one-line guaran
     // sat2 order (see the sat2 test above); the guarantee gives each kept file one line.
     // The mock searcher has no code graph, so no line is reordered by class.
     expect(out).toBe(''
-      + 'worker/export.go (+21 more)\n3:func Export3\n'
-      + 'backup/run.go (+1 more)\n3:func Export3\n'
-      + 'buildvars/buildvars.go (+1 more)\n3:func Export3\n'
-      + 'graphql/admin/export.go (+1 more)\n3:func Export3\n'
-      + 'worker/export_test.go (+7 more)\n3:func Export3\n'
-      + 'buildvars/buildvars_test.go (+3 more)\n3:func Export3\n'
-      + 'systest/export/export_test.go (+3 more)\n3:func Export3\n'
+      + 'worker/export.go\n3:func Export3\n(+21 more)\n'
+      + 'backup/run.go\n3:func Export3\n(+1 more)\n'
+      + 'buildvars/buildvars.go\n3:func Export3\n(+1 more)\n'
+      + 'graphql/admin/export.go\n3:func Export3\n(+1 more)\n'
+      + 'worker/export_test.go\n3:func Export3\n(+7 more)\n'
+      + 'buildvars/buildvars_test.go\n3:func Export3\n(+3 more)\n'
+      + 'systest/export/export_test.go\n3:func Export3\n(+3 more)\n'
       + 'dgraphapi/cluster.go\n3:func Export3\n'
       + '# +13 more files with 43 hits: dgraphtest/load.go, dgraphtest/local_cluster.go, '
       + `systest/bulk_live/common/bulk_live_cases.go\n${HINT}`);
@@ -221,18 +221,18 @@ describe('the product default since 2026-10-03: sat2 weight, the one-line guaran
 describe('SS_FIX_GREP_ALLOC=0 restores the previous selection (files, lines, counts)', () => {
   // origin/main's selection for these exact calls (see the file header), in the grouped listing.
   const LEGACY_K8 = ''
-    + 'backup/run.go (+1 more)\n3:func Export3\n'
-    + 'buildvars/buildvars_test.go (+3 more)\n3:func Export3\n'
-    + 'buildvars/buildvars.go (+1 more)\n3:func Export3\n'
-    + 'dgraph/cmd/live/load-uids/load_test.go (+1 more)\n3:func Export3\n'
+    + 'backup/run.go\n3:func Export3\n(+1 more)\n'
+    + 'buildvars/buildvars_test.go\n3:func Export3\n(+3 more)\n'
+    + 'buildvars/buildvars.go\n3:func Export3\n(+1 more)\n'
+    + 'dgraph/cmd/live/load-uids/load_test.go\n3:func Export3\n(+1 more)\n'
     + 'dgraphapi/cluster.go\n3:func Export3\n'
     + 'dgraphtest/load.go\n3:func Export3\n'
     + 'dgraphtest/local_cluster.go\n3:func Export3\n'
-    + 'graphql/admin/export.go (+1 more)\n3:func Export3\n'
+    + 'graphql/admin/export.go\n3:func Export3\n(+1 more)\n'
     + '# +13 more files with 73 hits: graphql/e2e/schema/schema_test.go, protos/pb/pb_grpc.pb.go, protos/pb/pb.pb.go\n'
     + HINT;
-  const win = (file, more, last = 4) => `${file}${more ? ` (+${more} more)` : ''}\n2-  x := 2\n3:func Export3(ctx context.Context) error {\n`
-    + (last >= 4 ? '4-  x := 4\n' : '');
+  const win = (file, more, last = 4) => `${file}\n2-  x := 2\n3:func Export3(ctx context.Context) error {\n`
+    + (last >= 4 ? '4-  x := 4\n' : '') + (more ? `(+${more} more)\n` : '');
   const LEGACY_K6_C1 = win('backup/run.go', 1) + win('buildvars/buildvars_test.go', 3) + win('buildvars/buildvars.go', 1)
     + win('dgraph/cmd/live/load-uids/load_test.go', 1) + win('dgraphapi/cluster.go', 0, 3) + win('dgraphtest/load.go', 0, 3)
     + '# +15 more files with 76 hits: dgraphtest/local_cluster.go, graphql/admin/export.go, graphql/e2e/schema/schema_test.go\n'
@@ -257,7 +257,7 @@ describe('SS_FIX_GREP_FULLLINE=0 restores the matched-text output byte for byte'
       .toBe('3:func Export3\n6:func Export6\n# +20 more hits (raise -k)\n');
     // SS_FIX_GREP_ALLOC=0 alone keeps the full lines on the path-order rule
     const legacyAlloc = await ss('grep', ['func .*Export', '-k', '8'], { SS_FIX_GREP_ALLOC: '0' });
-    expect(legacyAlloc).toContain('backup/run.go (+1 more)\n3:func Export3(ctx context.Context) error {\n');
+    expect(legacyAlloc).toContain('backup/run.go\n3:func Export3(ctx context.Context) error {\n(+1 more)\n');
     expect(await ss('grep', ['func .*Export', '-k', '8'], { SS_FIX_GREP_ALLOC: '0', ...off }))
       .toBe(legacyAlloc.replace(/:func Export(\d+)\(ctx context\.Context\) error \{/g, ':func Export$1'));
     // -C context already printed full lines from the file: unchanged by the switch
@@ -297,11 +297,11 @@ describe('B7 (SS_FIX_GREP_ORDER=1) on top of the weighted rule', () => {
       let file = null;
       for (const l of out.split('\n')) {
         if (/^\d+/.test(l)) seq.push(`${file}:${l.match(/^\d+/)[0]}`);
-        else if (l && !l.startsWith('#')) file = l.split(' ')[0];
+        else if (l && !l.startsWith('#') && !l.startsWith('(+')) file = l.split(' ')[0];
       }
       return seq;
     };
-    expect(withB7.startsWith('backup/run.go (+1 more)\n3\n')).toBe(true);
+    expect(withB7.startsWith('backup/run.go\n3\n(+1 more)\n')).toBe(true);
     // ... but the hits and their order are the weighted rule's, untouched by source-before-tests
     expect(hits(withB7)).toEqual(hits(await ss('grep', args)));
     // weight 1.41 (2-hit sources) first; the 4-hit test files (1.0) tie the 1-hit sources and

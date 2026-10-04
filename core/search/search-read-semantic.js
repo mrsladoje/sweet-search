@@ -35,7 +35,7 @@ import { CodebaseRepository } from '../infrastructure/codebase-repository.js';
 import { DB_PATHS, LATE_INTERACTION_CONFIG, PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { applyPersistedLiModel } from '../infrastructure/init-config.js';
 import { lineGutterEnabled, numberCodeLines, getGraphRepoForProject } from './search-read.js';
-import { buildAlsoCandidates, createSemanticEntityLookup, mergeSpanNames, spanEntityNames } from './semantic-also.js';
+import { buildAlsoCandidates, collectNameKinds, createSemanticEntityLookup, mergeSpanNames, spanEntityNames } from './semantic-also.js';
 import { readFile as readFileExact } from './search-read.js';
 import { withPinnedRead } from './search-reader-pin.js';
 import { emitToolIdentityAuto } from './cli-decoration.js';
@@ -851,6 +851,7 @@ async function _readSemanticUnpinned(req) {
     if (entityNames.length) span.entityNames = mergeSpanNames(entityNames, span.symbols, { truncated: span.truncated === true });
   }
   const alsoCandidates = buildAlsoCandidates(rankedAll, spans, { file: filePathRel, graph });
+  const nameKinds = collectNameKinds(graph, rankedAll);
 
   return {
     file: filePathRel,
@@ -862,6 +863,7 @@ async function _readSemanticUnpinned(req) {
     totalLines,
     spans,
     alsoCandidates,
+    nameKinds,
     charsReturned: charsUsed,
     approxTokensReturned: Math.ceil(charsUsed / APPROX_CHARS_PER_TOKEN),
     ...(staleness ? { staleness, warnings: [staleness.warning] } : {}),
