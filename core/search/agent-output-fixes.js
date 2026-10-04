@@ -474,6 +474,91 @@ export function dedupeImports(headerContext, code) {
   return kept.join('\n');
 }
 
+// --- imports the entry's code uses ---------------------------------------------------
+
+/**
+ * The names an import statement binds in the file, or null when they cannot be told (a
+ * wildcard, a C# namespace `using`, `#include`, `require 'x'`): such a line is kept.
+ *   Kotlin/Java/Scala/PHP/Rust path   `import a.b.C` · `use A\B\C;` · `use a::b::c;` → C / c
+ *   alias                             `import a.B as C` · `use a::b as c;` · `import x as y` → C / c / y
+ *   braces (JS/TS, Rust, destructure) `import D, { a, b as c } from 'm'` · `use a::{B, C as D};` → D, a, c
+ *   Python from-import                `from m import a, b as c` → a, c
+ *   JS default / namespace / require  `import X from 'm'` · `import * as ns from 'm'` · `const x = require('m')`
+ *   Go                                `"github.com/x/dgraph/v25/posting"` → posting · `pb "x/protos"` → pb
+ */
+export function importBoundNames(stmt) {
+  const line = String(stmt || '').trim().replace(/;\s*$/, '').replace(/\s*\/\/.*$/, '');
+  // JS/TS: `import * as ns from 'm'`, `import X from 'm'`, `const x = require('m')`.
+  const ns = /^import\s+(?:type\s+)?\*\s+as\s+([\w$]+)\s+from\b/.exec(line)
+    || /^import\s+(?:type\s+)?([\w$]+)\s+from\b/.exec(line)
+    || /^(?:const|let|var)\s+([\w$]+)\s*=\s*require\s*\(/.exec(line);
+  if (ns) return [ns[1]];
+  // Rust `use x::Trait as _;` brings methods into scope under no name: cannot be told.
+  if (/\bas\s+_$/.test(line)) return null;
+  if (!line || /\*/.test(line) || /^#\s*include\b/.test(line) || /^using\b/.test(line) || /^require\b/.test(line)) return null;
+  const ID = /^[A-Za-z_$][\w$]*$/;
+  const aliasOf = (part) => {
+    const m = /^(?:type\s+)?([\w$]+)(?:\s+as\s+([\w$]+)|\s*:\s*([\w$]+))?$/.exec(part.trim());
+    if (!m) return null;
+    return m[2] || m[3] || m[1];
+  };
+  const names = [];
+  const braces = /\{([^}]*)\}/.exec(line);
+  if (braces) {
+    for (const part of braces[1].split(',')) {
+      const n = part.trim() === 'self' ? null : aliasOf(part);
+      if (n) names.push(n);
+    }
+    // `import Default, { … } from 'm'`
+    const def = /^import\s+(?:type\s+)?([\w$]+)\s*,/.exec(line);
+    if (def) names.push(def[1]);
+    // Rust `use a::b::{self, …}` binds b.
+    if (/\bself\b/.test(braces[1])) {
+      const seg = /([\w$]+)\s*::\s*\{/.exec(line);
+      if (seg) names.push(seg[1]);
+    }
+    return names.length ? names : null;
+  }
+  const py = /^from\s+\S+\s+import\s+\(?([^)]*)\)?$/.exec(line);
+  if (py) {
+    for (const part of py[1].split(',')) { const n = aliasOf(part); if (n) names.push(n); }
+    return names.length ? names : null;
+  }
+  const go = /^(?:import\s+)?(?:([\w.]+)\s+)?"([^"]+)"$/.exec(line);
+  if (go) {
+    if (go[1] === '_' || go[1] === '.') return null;
+    if (go[1]) return [go[1]];
+    const segs = go[2].split('/').filter(Boolean);
+    let last = segs.pop() || '';
+    if (/^v\d+$/.test(last) && segs.length) last = segs.pop();
+    return ID.test(last.replace(/-/g, '_')) ? [last.replace(/-/g, '_')] : null;
+  }
+  const alias = /\sas\s+([\w$]+)$/.exec(line);
+  if (alias) return [alias[1]];
+  const path = /^(?:pub\s+)?(?:import|use)\s+(?:static\s+)?(?:function\s+|const\s+)?([\w$.\\:]+)$/.exec(line);
+  if (path) {
+    const last = path[1].split(/\.|\\|::/).filter(Boolean).pop();
+    return last && ID.test(last) ? [last] : null;
+  }
+  return null;
+}
+
+/**
+ * The import lines whose bound names the code uses (whole word). A line whose names cannot be
+ * told stays. The packer's own filter matches any code identifier as a SUBSTRING of the line
+ * (`Cache` keeps `import okhttp3.internal.cache.DiskLruCache`; Kotlin's `internal` keeps every
+ * `okhttp3.internal.*` import), which kept imports the shown code never touches.
+ */
+export function usedImports(headerContext, code) {
+  if (typeof headerContext !== 'string' || !headerContext || typeof code !== 'string' || !code) return headerContext;
+  const words = new Set(code.match(/[A-Za-z_$][\w$]*/g) || []);
+  return headerContext.split('\n').filter((line) => {
+    if (!line.trim()) return false;
+    const names = importBoundNames(line);
+    return !names || names.some((n) => words.has(n));
+  }).join('\n');
+}
+
 // --- compact renderer (ss-search / ss-find agent output) -----------------------------
 
 /** `start-end`, or `start` for one line. */
@@ -657,7 +742,7 @@ function renderGroupedBlocks(results, plan, { omitted = new Set(), gutter = (cod
       const headNames = nameList.join(', ');
       lines.push(`## ${lineRange(r.startLine, merge ? contSpan.end : r.endLine)}${headNames ? ` ${headNames}` : ''}${stale}`);
       if (r.headerContext) {
-        const imports = r.code && !codeOmitted ? dedupeImports(r.headerContext, r.code) : r.headerContext;
+        const imports = r.code && !codeOmitted ? usedImports(dedupeImports(r.headerContext, r.code), r.code) : r.headerContext;
         if (imports) lines.push('### imports', '```', imports, '```');
       }
       if (r.code) {
