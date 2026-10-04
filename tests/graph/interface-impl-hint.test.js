@@ -12,7 +12,7 @@ import { resolveRelationshipTargets } from '../../core/graph/relationship-resolv
 import { CodeGraphRepository } from '../../core/infrastructure/code-graph-repository.js';
 import { StructuralContextRepository } from '../../core/infrastructure/structural-context-repository.js';
 import { StructuralContextBuilder, formatStructuralContext } from '../../core/graph/structural-context.js';
-import { readFile, renderInterfaceImpls } from '../../core/search/search-read.js';
+import { readFile, renderInterfaceImpls, selectInterfaceCalls } from '../../core/search/search-read.js';
 
 const FILES = {
   'src/IReplacer.cs': [
@@ -128,5 +128,14 @@ describe('interface calls: ss-read names the implementation, ss-trace resolves a
     } finally {
       builder.close();
     }
+  });
+
+  it('selection: nothing for a test file, overloads once, more than two implementations named none', () => {
+    const impl = (owner, file, line) => ({ name: 'Log', owner, filePath: file, startLine: line });
+    const row = (target, impls) => ({ line: 5, call: 'x.Log', target, impls });
+    expect(selectInterfaceCalls([row('ILog.Log', [impl('Logger', 'src/Logger.cs', 3)])], 'unit/LoggerTests.cs')).toEqual([]);
+    expect(selectInterfaceCalls([row('ILog.Log', [impl('Logger', 'src/Logger.cs', 3), impl('Logger', 'src/Logger.cs', 4), impl('Fake', 'acceptance/Logging/FakeLog.cs', 1)])], 'src/App.cs'))
+      .toEqual([{ line: 5, call: 'x.Log', target: 'ILog.Log', impls: [impl('Logger', 'src/Logger.cs', 3)] }]);
+    expect(selectInterfaceCalls([row('ILog.Log', [impl('A', 'src/A.cs', 1), impl('B', 'src/B.cs', 1), impl('C', 'src/C.cs', 1)])], 'src/App.cs')).toEqual([]);
   });
 });

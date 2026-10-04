@@ -38,7 +38,7 @@ import { createAdmissionPolicy } from '../../../core/indexing/admission-policy.j
 import { createIndexCoverage, semanticTargetFor } from '../../../core/search/index-coverage.js';
 import { resolveRoots } from '../../../core/search/worktree-roots.js';
 import { chainBoundary } from '../../../core/agent-tools/chain.js';
-import { fenceBody, numberCodeLines, lineGutterEnabled } from '../../../core/search/search-read.js';
+import { fenceBody, numberCodeLines, lineGutterEnabled, interfaceCallsInRange, renderInterfaceImpls } from '../../../core/search/search-read.js';
 import { renderRegexDialectHint } from '../../../core/search/regex-dialect.js';
 import {
   applyReadOmissionDecisions,
@@ -731,6 +731,7 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
       ...context, dropText, typed: typedFiles(inPaths),
       ...(withContext ? { getLines: grepContextLineReader(), matchLines: grepMatchLines(result.results) } : {}),
     })) process.stdout.write(`${line}\n`);
+    writeGrepInterfaceHint(total, shown);
     const cut = total - rows.length;
     if (cut > 0) process.stdout.write(`# +${cut} more ${cut === 1 ? 'hit' : 'hits'} (raise -k)\n`);
     let zeroExplained = false;
@@ -882,6 +883,7 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
   // above; sites that already print as a hit or context row are left out.
   const siblings = grepSiblingLine(result.siblingLine, body.rows, context);
   if (siblings) process.stdout.write(`${siblings}\n`);
+  writeGrepInterfaceHint(total, body.rows);
   const hiddenFiles = renderGrepHiddenFiles(body.hidden);
   if (hiddenFiles) process.stdout.write(`${hiddenFiles}\n`);
   if (body.truncatedFileCount > 0 || hiddenFiles) process.stdout.write(`${GREP_HIDDEN_HINT}\n`);
@@ -890,6 +892,31 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
   }
   writeRegexDialectHintAfterRepair(result.stats, repaired);
   process.exit(0);
+}
+
+// Interface-call trailer on focused greps: hit count ceiling, lines after a hit it looks at,
+// and the most trailer lines one grep prints.
+const GREP_IMPL_HINT_MAX_MATCHES = 8;
+const GREP_IMPL_HINT_LINES_AFTER = 3;
+const GREP_IMPL_HINT_MAX_LINES = 3;
+
+// Interface-call trailer on a focused grep (at most GREP_IMPL_HINT_MAX_MATCHES hits): a hit
+// whose line or next lines call through an interface names the implementing class, as
+// ss-read does (r3-ocelot-03: the hop landed on `TemplatePlaceholderNameAndValues()` at
+// line 37 and the interface call `_replacer.Replace` sat on line 38).
+function writeGrepInterfaceHint(total, rows) {
+  if (!(total > 0 && total <= GREP_IMPL_HINT_MAX_MATCHES)) return;
+  const calls = [];
+  const seen = new Set();
+  for (const r of rows) {
+    for (const c of interfaceCallsInRange(PROJECT_ROOT, r.file, r.line, r.line + GREP_IMPL_HINT_LINES_AFTER)) {
+      if (seen.has(c.target)) continue;
+      seen.add(c.target);
+      calls.push(c);
+    }
+  }
+  const hint = renderInterfaceImpls({ interfaceCalls: calls.slice(0, GREP_IMPL_HINT_MAX_LINES) });
+  if (hint) process.stdout.write(`${hint}\n`);
 }
 
 async function cmdFind(rawArgs) {
