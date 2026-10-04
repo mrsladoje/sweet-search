@@ -66,7 +66,9 @@ beforeEach(() => {
     id, file_path: file, text: 'DB TEXT',
     metadata: JSON.stringify({ language: 'javascript', symbol, chunk_type: 'function', line_start: s, line_end: e }),
   });
-  mockState.rows = [chunk('alpha', 'alpha', 1, 10), chunk('beta', 'beta', 11, 20), chunk('min', 'x', 1, 1, 'src/min.js')];
+  // alpha's chunk runs one line into beta's: the chunks overlap, so they merge into one span
+  // over the budget (chunks that only touch merge only while they fit).
+  mockState.rows = [chunk('alpha', 'alpha', 1, 11), chunk('beta', 'beta', 11, 20), chunk('min', 'x', 1, 1, 'src/min.js')];
 });
 
 afterAll(() => {
@@ -166,7 +168,7 @@ describe('the ss-semantic printer', () => {
       ...LINES.slice(0, 9),
       '```',
       // The rest of the cut span: alpha's last line and beta, in score order.
-      '# also: 11-20 function beta · 10-10 function alpha',
+      '# also: 10-20 functions beta, alpha',
       '',
     ].join('\n'));
   });

@@ -33,6 +33,10 @@ export function trustedCallerEdge(edge, target) {
   const tn = String(edge?.targetName || '').trim();
   if (!tn || !target?.name) return true;
   if (edge.targetId && edge.targetId === target.id) return true;
+  // Go: an unexported method (or a method of an unexported type) is private to its package
+  // directory; a call from another package cannot reach it (dgraph zero's `s.Node.proposeAndWait`
+  // listed as a caller of worker's node.proposeAndWait).
+  if (goPackagePrivateFrom(edge.filePath, target)) return false;
   // Resolution already bound this call to ANOTHER definition (a different
   // file or owning type): `database.statementDidFail` → Database's method is
   // not a caller of DatabaseObservationBroker.statementDidFail. Same file and
@@ -60,4 +64,14 @@ function rustMethodCallOnFreeFunction(targetName, entity) {
   if (!/\.rs$/.test(String(entity?.filePath || '')) || entity?.parentClass) return false;
   if (!/(?:^|[^:])\.[A-Za-z_]\w*$/.test(raw) || raw.includes('::')) return false;
   return entity.type === 'function';
+}
+
+/** True when `target` is a Go identifier private to its package and `fromFile` is in another one. */
+export function goPackagePrivateFrom(fromFile, target) {
+  const file = String(target?.filePath || '');
+  if (!/\.go$/.test(file) || !fromFile || !/\.go$/.test(String(fromFile))) return false;
+  const dir = (f) => String(f).slice(0, String(f).lastIndexOf('/') + 1);
+  if (dir(fromFile) === dir(file)) return false;
+  const lower = (n) => /^[a-z_]/.test(String(n || ''));
+  return lower(target.name) || lower(String(target.parentClass || '').replace(/^\*/, ''));
 }

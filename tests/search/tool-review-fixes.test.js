@@ -392,3 +392,17 @@ describe('sufficiency and wording', () => {
     expect(summaryRestatesHeader('a/b.ts:3 — handles the retry loop')).toBe(false);
   });
 });
+
+// --- Round 5 (2026-10-04) --------------------------------------------------------------------
+
+import { goPackagePrivateFrom } from '../../core/infrastructure/structural-qualified-resolution.js';
+
+describe('round 5', () => {
+  it('Go: an unexported method or a method of an unexported type is private to its package', () => {
+    const t = { name: 'proposeAndWait', parentClass: 'node', filePath: 'worker/proposal.go' };
+    expect(goPackagePrivateFrom('dgraph/cmd/zero/zero.go', t)).toBe(true);
+    expect(goPackagePrivateFrom('worker/mutation.go', t)).toBe(false);
+    expect(goPackagePrivateFrom('x/y.go', { name: 'Exported', parentClass: 'Server', filePath: 'worker/s.go' })).toBe(false);
+    expect(goPackagePrivateFrom('a.rs', t)).toBe(false);
+  });
+});

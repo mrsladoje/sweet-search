@@ -528,8 +528,13 @@ function _expandAndMergeSpans(selected, totalLines, contextLines, gapMergeFits =
     // Overlapping or touching spans merge too only while the result fits the budget; two
     // spans that do not fit together stay apart, so the budget keeps the better one whole
     // (ocelot RoundRobin 7-63 + 64-128 merged to 7-128 and the cut lost 64-128, the answer).
+    // Chunks that themselves overlap must merge; spans that only touch or overlap through
+    // their context padding merge only while the result fits the budget (sequel timed_queue:
+    // five adjacent chunks merged into 9-292 through padding, the cut kept 9-79 and lost the
+    // `preconnect` chunk the question names).
+    const coresOverlap = last && span.coreStart <= last.coreEnd;
     const touching = last && span.startLine <= last.endLine + 1
-      && (span.startLine <= last.endLine || gapMergeFits(last.startLine, Math.max(last.endLine, span.endLine)));
+      && (coresOverlap || gapMergeFits(last.startLine, Math.max(last.endLine, span.endLine)));
     if (last && (touching || sameDefinition)) {
       // Overlap or touching — merge.
       last.endLine = Math.max(last.endLine, span.endLine);
@@ -809,6 +814,14 @@ async function _readSemanticUnpinned(req) {
 
   // Take top-K by fused score, then pull the actual chunk records.
   const idToChunk = new Map(chunks.map(c => [c.id, c]));
+  // A chunk whose definition the question names as a word (sequel "what does preconnect do
+  // when concurrent is true?" -> `preconnect`) is the place it asks about: such chunks rank
+  // first, in score order among themselves. The file is fixed, so the name is unambiguous.
+  const queryWords = new Set((String(req.query).match(/[A-Za-z_][A-Za-z0-9_]*[?!]?/g) || []).map(w => w.toLowerCase()));
+  const namedByQuery = (r) => {
+    const sym = String(_baseSymbol(r.symbol) || '').split(/\.|::|#/).pop().toLowerCase();
+    return sym.length >= 3 && queryWords.has(sym) ? 1 : 0;
+  };
   // Overshoot a bit before the LI re-rank: the pool holds the top topK*2 DEFINITIONS, every
   // piece of one counted once. Eight pieces of one long function (grdb asyncConcurrentRead
   // parts 1-8) otherwise filled the pool and kept every other definition from the re-rank.
@@ -824,6 +837,9 @@ async function _readSemanticUnpinned(req) {
     }
     fusedTop.push(entry);
   }
+  // A chunk the question names joins the pool even when its fused score left it out.
+  const pooled = new Set(fusedTop.map(([id]) => id));
+  for (const c of chunks) if (!pooled.has(c.id) && namedByQuery(c)) fusedTop.push([c.id, fused.get(c.id) || 0]);
 
   // Final re-rank: prefer late-interaction score when LI ran; otherwise the
   // RRF score is the authority. This mirrors the SOTA pattern (cheap candidate
@@ -879,7 +895,7 @@ async function _readSemanticUnpinned(req) {
       };
     })
     .filter(Boolean)
-    .sort((a, b) => b.score - a.score);
+    .sort((a, b) => (namedByQuery(b) - namedByQuery(a)) || (b.score - a.score));
   const ranked = rankedAll.slice(0, topK);
 
   // A gap of one definition is filled only while the merged span fits the budget: an
