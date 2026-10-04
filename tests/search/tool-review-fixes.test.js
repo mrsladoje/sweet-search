@@ -616,3 +616,55 @@ describe('round 9', () => {
     expect(resolveBareCall({ ...caller, parent_class: 'Unrelated' }, [target, other], index)).toEqual([]);
   });
 });
+
+import { CallSiteScanner } from '../../core/graph/call-site-scanner.js';
+
+describe('round 10', () => {
+  it('Elixir / Ruby: a one-line `do:` clause or `def f; end` spans its own line', () => {
+    const g = Object.create(GraphExtractor.prototype);
+    const kw = ['defmodule', 'defmacro', 'defp', 'def', 'fn', 'if', 'unless', 'case', 'cond', 'with', 'try', 'receive'];
+    const L = ['  def a(x) when x > 1 do', '    raise E', '  end', '', '  def a(%C{} = c, nil), do: c', '  def b(x) do', '    if x, do: 1, else: 2', '    case x do', '      1 -> :a', '    end', '  end', 'end'];
+    expect([0, 4, 5].map((i) => g.findEndLineKeyword(L, i, 'end', kw))).toEqual([3, 5, 11]);
+    expect(g.findEndLineKeyword(['  def a; end', 'end'], 0, 'end', ['def'])).toBe(1);
+  });
+
+  it('call scanner: `&& f(` and `a * f(` are calls; `T *f(` is a declarator; chains with nested args', () => {
+    const scan = (lang, l) => {
+      const s = new CallSiteScanner({ id: lang, comment: { line: '//', block: ['/*', '*/'] } });
+      const bare = []; const qual = [];
+      s.scanLine(l, (n) => qual.push(n), (n) => bare.push(n));
+      return { bare, qual };
+    };
+    expect(scan('c', '  if (n > 0 && redisReaderFeed(r, b, n) != OK) {').bare).toEqual(['redisReaderFeed']);
+    expect(scan('c', '  x = a * compute(b);').bare).toEqual(['compute']);
+    expect(scan('c', 'static redisContext *redisContextInit(void) {').bare).toEqual([]);
+    expect(scan('dart', '  var h = const Pipeline().addMiddleware(createMiddleware()).addHandler(').qual).toContain('addMiddleware().addHandler');
+  });
+
+  it('Elixir: a bare call reaches a function of an imported module', () => {
+    const caller = { id: 'c', name: 'test', file_path: 'test/conn_test.exs', start_line: 60, end_line: 70, parent_class: 'Plug.ConnTest' };
+    const target = { id: 't', name: 'merge_assigns', type: 'function', file_path: 'lib/plug/conn.ex', start_line: 335, end_line: 337, parent_class: 'Plug.Conn' };
+    const index = {
+      ownerOf: (e) => e.parent_class || null,
+      importsOf: () => null,
+      moduleImportsOf: (f) => (f === 'test/conn_test.exs' ? new Set(['Plug.Conn']) : null),
+    };
+    expect(resolveBareCall(caller, [target], index).map((c) => c.id)).toEqual(['t']);
+    expect(resolveBareCall({ ...caller, file_path: 'test/other_test.exs' }, [target], index)).toEqual([]);
+  });
+});
+
+describe('round 10 — other definitions', () => {
+  it('an ownerless definition in the traced file names itself when owners are listed', () => {
+    const r = {
+      symbol: 'from_str',
+      target: { name: 'from_str', type: 'method', filePath: 'src/de.rs', startLine: 96, endLine: 98 },
+      disambiguation: [
+        { name: 'from_str', owner: 'Number', file: 'src/de.rs', startLine: 1299 },
+        { name: 'from_str', owner: null, file: 'src/de.rs', startLine: 2709 },
+      ],
+      sections: { callers: { total: 0, items: [] }, callees: { total: 0, items: [] }, impact: { paths: [] } },
+    };
+    expect(formatTraceCompact(r)).toContain('Number.from_str 1299, from_str 2709');
+  });
+});

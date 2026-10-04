@@ -34,6 +34,8 @@ const FILE = 'file';
 const IMPORTS = 'imports';
 const PACKAGE = 'package';
 const GLOBAL = 'global';
+// Elixir `import Plug.Conn`: the functions of that module, called bare.
+const MODULE_IMPORTS = 'moduleImports';
 
 const SCOPES_BY_LANGUAGE = {
   python: [FILE, IMPORTS],
@@ -57,7 +59,10 @@ const SCOPES_BY_LANGUAGE = {
   cpp: [OWNER, FILE, IMPORTS, GLOBAL],
   objc: [FILE, IMPORTS, GLOBAL],
   lua: [FILE, IMPORTS, GLOBAL],
-  elixir: [FILE, IMPORTS],
+  // Elixir functions live in modules: a bare call reaches the caller's own module
+  // (OWNER), then the modules its file imports (plug conn_test.exs `import Plug.Conn`
+  // calls merge_assigns bare).
+  elixir: [OWNER, FILE, MODULE_IMPORTS, IMPORTS],
   shell: [FILE, IMPORTS],
   perl: [FILE, IMPORTS],
   r: [FILE, GLOBAL],
@@ -175,6 +180,10 @@ export function resolveBareCall(caller, candidates, index) {
       const imported = importsOf(caller.file_path);
       if (!imported) continue;
       tier = ownerless.filter(c => isVisibleViaImport(imported, c.file_path, language));
+    } else if (scope === MODULE_IMPORTS) {
+      const modules = index.moduleImportsOf?.(caller.file_path);
+      if (!modules || modules.size === 0) continue;
+      tier = pool.filter(c => modules.has(ownerOf(c)));
     } else if (scope === PACKAGE) {
       const dir = dirOf(caller.file_path);
       tier = ownerless.filter(c => dirOf(c.file_path) === dir);
@@ -305,7 +314,26 @@ export class BareCallResolver {
     }
     const hierarchy = buildTypeHierarchy(this.db, { liveOnly: true });
     const receiverSpread = buildReceiverSpread(this.db, { liveOnly: true });
-    return { ...createCallResolutionIndex(all, { fileImports, hierarchy, receiverSpread }), enclosingFunctionOf };
+    // Elixir: modules each file imports (`imports` edges of its module entities).
+    const moduleImports = new Map();
+    const exFiles = [...files].filter(f => /\.exs?$/i.test(f));
+    for (const part of chunks(exFiles)) {
+      const rows = this.db.prepare(`
+        SELECT e.file_path AS file, r.target_name AS module FROM relationships r
+        JOIN entities e ON e.id = r.source_id
+        WHERE r.type = 'imports' AND e.file_path IN (${part.map(() => '?').join(',')}) AND ${this.relSql('r')}
+      `).all(...part, ...this.relParams);
+      for (const r of rows) {
+        let set = moduleImports.get(r.file);
+        if (!set) { set = new Set(); moduleImports.set(r.file, set); }
+        set.add(r.module);
+      }
+    }
+    return {
+      ...createCallResolutionIndex(all, { fileImports, hierarchy, receiverSpread }),
+      enclosingFunctionOf,
+      moduleImportsOf: (file) => moduleImports.get(file) || null,
+    };
   }
 
   /** Entities whose bare calls resolve to `target`: [{ caller row, contextLine }]. */

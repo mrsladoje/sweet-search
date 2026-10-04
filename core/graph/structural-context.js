@@ -705,9 +705,11 @@ function parameterRange(source, name) {
 }
 
 /** Callers whose call lines all pass an argument count of another overload are dropped. */
-// Languages where a trailing block / lambda is an argument written outside the parentheses
-// (`retry(3) { }`): the parenthesised count is not the argument count.
-const TRAILING_BLOCK_FILE = /\.(?:kt|kts|swift|rb|scala|groovy|gradle)$/i;
+// Languages where an argument can sit outside the parentheses: a trailing block / lambda
+// (`retry(3) { }`), or Elixir's pipe (`conn |> put_status(404)` passes conn first; `=` in
+// its parameters is a pattern match, not a default). The parenthesised count is not the
+// argument count.
+const TRAILING_BLOCK_FILE = /\.(?:kt|kts|swift|rb|scala|groovy|gradle|ex|exs)$/i;
 
 // Same-name definitions in the entity's file under the same owner (its overload set, minus itself).
 function overloadSiblings(repo, entity) {
