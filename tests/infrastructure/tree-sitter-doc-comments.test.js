@@ -98,7 +98,7 @@ describe('doc comments from the AST', () => {
     ].join('\n'));
     expect(d['function:top']).toBeNull();
     expect(d['struct:S']).toBe('A struct. Second line.');
-    expect(d['function:new']).toBe('Block doc');
+    expect(d['method:new']).toBe('Block doc');
   });
 
   it('typescript / javascript: JSDoc above export, decorator, arrow and object pair', async () => {

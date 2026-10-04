@@ -350,3 +350,45 @@ describe('agent ranking: qualified lookup and spelled names', () => {
     expect(plain[0].symbol).toBe('convertFunctionOrMethod');
   });
 });
+
+// --- Chunk boundaries, sufficiency, trace gaps, wording (2026-10-04, after the 90-call recheck) ---
+
+import { declarationOnly } from '../../core/search/query-sufficiency.js';
+import { summaryRestatesHeader } from '../../core/search/agent-output-fixes.js';
+import { TreeSitterProvider } from '../../core/infrastructure/tree-sitter-provider.js';
+
+describe('chunk boundaries and Kotlin headers', () => {
+  it('a comment right above a definition opens that definition\'s chunk, not the previous one', async () => {
+    const p = new TreeSitterProvider();
+    await p.init();
+    const body = (n) => Array.from({ length: n }, (_, i) => `\tx${i} := ${i}`).join('\n');
+    const src = `package p\n\nfunc first() {\n${body(40)}\n}\n\n// second does the second thing.\nfunc second() {\n${body(40)}\n}\n`;
+    const chunks = await p.parseFileToChunks(src, 'go', { maxChunkSize: 700 });
+    const second = chunks.find((c) => c.name === 'second');
+    const first = chunks.find((c) => c.name === 'first');
+    expect(second.text.startsWith('// second does the second thing.')).toBe(true);
+    expect(first.text.includes('second does')).toBe(false);
+  });
+
+  it('a Kotlin class whose primary constructor is on the next lines keeps its members (line numbers kept)', async () => {
+    const p = new TreeSitterProvider();
+    await p.init();
+    const s = await p.extractSymbols('class H\n  @JvmOverloads\n  constructor(\n    private val l: Int = 1,\n  ) : I {\n  override fun intercept(c: C): R { return x }\n}\n', 'kotlin');
+    const e = (n) => s.find((x) => x.name === n);
+    expect(e('intercept')?.parentClass).toBe('H');
+    expect(e('intercept')?.startLine).toBe(5);
+  });
+});
+
+describe('sufficiency and wording', () => {
+  it('declarationOnly: a prototype is a declaration; a definition or a call is not', () => {
+    expect(declarationOnly('R parseRangeHeader(const std::string &s,\n  size_t n);', 'parseRangeHeader')).toBe(true);
+    expect(declarationOnly('R parseRangeHeader(int a) {\n  return 1;\n}', 'parseRangeHeader')).toBe(false);
+    expect(declarationOnly('  y = parseRangeHeader(a);', 'parseRangeHeader')).toBe(false);
+  });
+
+  it('a `file:line — code block` summary restates the header and does not print', () => {
+    expect(summaryRestatesHeader('src/lib/models/Reflection.ts:356 — code block')).toBe(true);
+    expect(summaryRestatesHeader('a/b.ts:3 — handles the retry loop')).toBe(false);
+  });
+});

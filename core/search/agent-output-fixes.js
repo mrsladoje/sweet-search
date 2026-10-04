@@ -192,7 +192,9 @@ export function isSummaryOnly(r) {
   return !!r && !r.code && (r.presentation === 'summary' || !!r.summary);
 }
 
-const RESTATING_SUMMARY_RE = /^\S+:\d+ — .+ \([^)]*\)$/;
+// `file:line — symbol (kind)`, and the forms without a kind (`file:line — code block`, a chunk
+// with no symbol: typedoc printed `src/lib/models/Reflection.ts:356 — code block` under a row).
+const RESTATING_SUMMARY_RE = /^\S+:\d+ — (?:.+ \([^)]*\)|code block|[^\s()]+)$/;
 
 /** True when the summary text only restates the entry header (`file:line — symbol (kind)`). */
 export function summaryRestatesHeader(summary) {

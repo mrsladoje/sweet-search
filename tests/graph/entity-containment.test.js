@@ -93,12 +93,12 @@ describe('tree-sitter containment', () => {
     ].join('\n'), 'rust');
     const p = Object.fromEntries(symbols.map(s => [`${s.type}:${s.name}`, s.parentClass ?? null]));
     expect(symbols.filter(s => s.type === 'impl').map(s => s.name)).toEqual(['Foo', 'Bar', 'Err', 'Gen']);
-    expect(p['function:a']).toBe('Foo');
-    expect(p['function:b']).toBe('Bar');
-    expect(p['function:fmt']).toBe('Err');
-    expect(p['function:h']).toBe('Gen');
+    expect(p['method:a']).toBe('Foo');
+    expect(p['method:b']).toBe('Bar');
+    expect(p['method:fmt']).toBe('Err');
+    expect(p['method:h']).toBe('Gen');
     expect(p['method:t']).toBe('Tr'); // trait method without a body is now captured
-    expect(p['function:u']).toBe('Tr');
+    expect(p['method:u']).toBe('Tr');
     expect(p['function:inner']).toBeNull();
   });
 
