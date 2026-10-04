@@ -480,10 +480,41 @@ async function notIndexedNote(scopePath) {
 // (`src/b2/build/x` for `src/build/x`). Say so and name the repair. Informative, not a
 // crash: the pattern may still be fine. A distinct exit code (3) lets a wrapper or a
 // script tell "scope wrong" from "searched and found nothing" (0). ss-grep and ss-find.
-function exitScopeNotFound(missing) {
+//
+// The usual wrong guess has the right NAME under the wrong parent (`GRDB/Core/Pool.swift`
+// for `GRDB/Utils/Pool.swift`). The index knows every file and directory with that name, so
+// name them: the agent re-scopes in the next call instead of spending one on a locate step.
+// Suggest only, never search a guessed path on the agent's behalf.
+const SCOPE_CANDIDATES_SHOWN = 3;
+async function scopeCandidates(missingPath) {
+  const name = String(missingPath).replace(/\\/g, '/').replace(/\/+$/, '').split('/').pop();
+  if (!name || name === '.' || name === '..') return [];
+  const cov = await getCoverage();
+  let found = [];
+  try { found = cov?.filesEndingWith?.(name) || []; } catch { found = []; }
+  if (!found.length) {
+    try { found = cov?.dirsNamed?.(name) || []; } catch { found = []; }
+  }
+  return found.filter((f) => f !== missingPath);
+}
+
+async function exitScopeNotFound(missing) {
+  const hints = [];
+  for (const p of missing) {
+    const found = await scopeCandidates(p);
+    if (!found.length) continue;
+    const shown = found.slice(0, SCOPE_CANDIDATES_SHOWN);
+    const more = found.length - shown.length;
+    hints.push(found.length === 1
+      ? `Did you mean --in ${found[0]}?`
+      : `Indexed paths named like ${p}: ${shown.join(', ')}${more > 0 ? ` (+${more} more)` : ''}.`);
+  }
+  const repair = hints.length === missing.length
+    ? hints.join(' ')
+    : [...hints, 'Locate the real path first: ss-grep "<name>" with no --in, then re-scope.'].join(' ');
   process.stdout.write(`(scope not found: ${missing.join(', ')} — nothing was searched under `
     + `${missing.length > 1 ? 'those paths' : 'that path'}. This is NOT an absence of matches. `
-    + `Locate the real path first: ss-grep "<name>" with no --in, then re-scope.)\n`);
+    + `${repair})\n`);
   process.exit(3);
 }
 
@@ -706,7 +737,7 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
     if (result.results.length === 0) {
       // A scope that does not exist on disk is the loudest case (exitScopeNotFound).
       const missing = missingScopes(inPaths);
-      if (missing.length) exitScopeNotFound(missing);
+      if (missing.length) await exitScopeNotFound(missing);
       // Then globs that removed every match in the scope.
       const globNote = globExcludedNote(result.stats, globs);
       // Then a scope the index cannot answer for: an agent that scoped to a bundle needs to
@@ -954,7 +985,7 @@ async function cmdFind(rawArgs) {
   // --in naming a path that does not exist: what ss-grep says, with the same exit code.
   if (!response.results?.length && inPaths.length) {
     const missing = missingScopes(inPaths);
-    if (missing.length) exitScopeNotFound(missing);
+    if (missing.length) await exitScopeNotFound(missing);
   }
 
   // -g globs that removed every candidate: say so, not a bare "(no matches)".
