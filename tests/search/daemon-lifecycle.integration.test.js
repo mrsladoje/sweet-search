@@ -411,8 +411,12 @@ describe('freshness invariant — maintainer survives daemon eviction', () => {
     // one: supervision is driven by responses, so a developer who issues a
     // single query and walks away is not the case worth pinning, and a lone
     // query can also land inside the spawn-claim window left by startup.
+    // Bounded by time, not by a query count: under load (a full parallel
+    // suite) node start-up of the replacement can take several seconds, and a
+    // fixed 12 queries x 500 ms ran out first. Stops as soon as it appears.
     let markers = 1;
-    for (let i = 0; i < 12 && markers < 2; i++) {
+    const queryUntil = Date.now() + 25_000;
+    while (markers < 2 && Date.now() < queryUntil) {
       const r = await httpGet('/search?q=anything', { timeoutMs: 3000 });
       expect(r).toBeTruthy(); // 200 or 503 both count: the route ran
       await sleep(500);
@@ -425,7 +429,7 @@ describe('freshness invariant — maintainer survives daemon eviction', () => {
     maintainerPids.add(secondPid);
     expect(secondPid).not.toBe(firstPid);
     expect(pidAlive(secondPid)).toBe(true);
-  }, 40000);
+  }, 60000);
 
   it('does not resurrect a maintainer for a repo nobody is querying', async () => {
     // The mirror image of the test above, and the reason supervision is keyed on

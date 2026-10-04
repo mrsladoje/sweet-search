@@ -24,6 +24,11 @@ const REPO_ROOT = join(__dirname, '..', '..');
 const HOOK = join(REPO_ROOT, 'core', 'search', 'session-daemon-prewarm.mjs');
 const FAKE_DAEMON = join(REPO_ROOT, 'tests', 'fixtures', 'fake-daemon.mjs');
 const FAST_EXIT_TIMEOUT_MS = Number(process.env.SWEET_SEARCH_TEST_PREWARM_FAST_EXIT_MS || 2000);
+// How long to wait for a spawned child to show up. Polls return as soon as the
+// child has written its marker, so a generous bound costs nothing when the
+// machine is idle; under load (a full parallel suite, a benchmark on the same
+// host) node start-up alone can take several seconds, and a 2 s bound failed.
+const SPAWN_WAIT_MS = 20_000;
 
 let sandbox;
 let markerPath;
@@ -50,7 +55,7 @@ function env(overrides = {}) {
 }
 
 /** Wait until a specific file has N non-empty lines, up to timeoutMs. */
-async function waitForLines(file, n, timeoutMs = 2000) {
+async function waitForLines(file, n, timeoutMs = SPAWN_WAIT_MS) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (existsSync(file)) {
@@ -79,8 +84,24 @@ function runHook(envOverrides = {}, { args = [], input = null } = {}) {
   });
 }
 
+/**
+ * Wall-clock budget for "the hook exits fast". The hook must never wait for
+ * the daemon it spawns; that is what the bound guards. An absolute 2 s bound
+ * measured node start-up as much as the hook, and failed whenever the host was
+ * busy. So measure the same hook in a no-op configuration (nothing to spawn)
+ * right before, under the same load, and allow FAST_EXIT_TIMEOUT_MS on top: a
+ * hook that waited for its daemon would still exceed it.
+ */
+async function fastExitBudgetMs() {
+  const noop = await runHook({
+    SWEET_SEARCH_SERVER_ENTRY: join(sandbox, 'no-such-server.mjs'),
+    SWEET_SEARCH_MAINTAINER_ENTRY: join(sandbox, 'no-such-maintainer.mjs'),
+  });
+  return noop.wallMs + FAST_EXIT_TIMEOUT_MS;
+}
+
 /** Wait until the marker file has N lines, up to timeoutMs. Returns the lines. */
-async function waitForMarkerLines(n, timeoutMs = 2000) {
+async function waitForMarkerLines(n, timeoutMs = SPAWN_WAIT_MS) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (existsSync(markerPath)) {
@@ -186,10 +207,11 @@ describe('session-daemon-prewarm', () => {
   });
 
   it('spawns the daemon when no PID file exists', async () => {
+    const budget = await fastExitBudgetMs();
     const r = await runHook();
 
     expect(r.code).toBe(0);
-    expect(r.wallMs).toBeLessThan(FAST_EXIT_TIMEOUT_MS);
+    expect(r.wallMs).toBeLessThan(budget);
 
     const lines = await waitForMarkerLines(1);
     expect(lines).toHaveLength(1);
@@ -197,9 +219,10 @@ describe('session-daemon-prewarm', () => {
   });
 
   it('exits fast even when spawning a daemon', async () => {
+    const budget = await fastExitBudgetMs();
     const r = await runHook();
     expect(r.code).toBe(0);
-    expect(r.wallMs).toBeLessThan(FAST_EXIT_TIMEOUT_MS);
+    expect(r.wallMs).toBeLessThan(budget);
   });
 
   it('skips spawn when PID file points at a live process AND socket is responsive', async () => {
@@ -353,9 +376,10 @@ describe('session-daemon-prewarm — maintainer auto-launch', () => {
   });
 
   it('spawns the maintainer by default when the state dir exists', async () => {
+    const budget = await fastExitBudgetMs();
     const r = await runMaintainerHook();
     expect(r.code).toBe(0);
-    expect(r.wallMs).toBeLessThan(FAST_EXIT_TIMEOUT_MS);
+    expect(r.wallMs).toBeLessThan(budget);
 
     const lines = await waitForLines(maintainerMarker, 1);
     expect(lines).toHaveLength(1);
