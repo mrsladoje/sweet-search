@@ -273,7 +273,7 @@ Plan § 20.2 catalogues every command; the ones you'll reach for most:
 sweet-search reconcile status         # epoch, dirty count, last 5 ticks
 sweet-search reconcile tick           # force one tick synchronously
 sweet-search reconcile inspect <path> # why this file is dirty
-sweet-search reconcile pause          # pause the timer without killing
+sweet-search reconcile pause [--reason <text>]  # stop reconcile work; no new maintainer starts (frozen benchmark indexes)
 sweet-search reconcile resume
 sweet-search reconcile reset          # drop dirty set, full sweep next tick
 sweet-search rebuild status           # maintenance queue + dead-letter

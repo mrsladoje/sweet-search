@@ -207,14 +207,21 @@ export function maintainerAlive(stateDir, nowMs = Date.now()) {
 /**
  * Start the maintainer if it should run and isn't already running.
  *
+ * `daemonPidFile` names the pid file of the search daemon this maintainer
+ * serves. The maintainer stops on its own once no live daemon has owned that
+ * file for a while (see `followDaemon` in index-maintainer.mjs), so a
+ * maintainer never outlives the daemon that needed it. Without it the
+ * maintainer runs until its idle TTL, as a standalone run does.
+ *
  * @param {{
  *   env?: NodeJS.ProcessEnv,
  *   cwd?: string,
  *   verbose?: boolean,
  *   maintainerEntry?: string,
+ *   daemonPidFile?: string,
  *   log?: (msg: string) => void,
  * }} [options]
- * @returns {{spawned: boolean, reason: 'opted-out'|'entry-missing'|'no-state-dir'|'already-running'|'spawned'|'error', pid?: number, stateDir?: string, error?: string}}
+ * @returns {{spawned: boolean, reason: 'opted-out'|'entry-missing'|'no-state-dir'|'paused'|'already-running'|'spawned'|'error', pid?: number, stateDir?: string, error?: string}}
  */
 export function launchMaintainer(options = {}) {
   const env = options.env || process.env;
@@ -241,16 +248,26 @@ export function launchMaintainer(options = {}) {
     log(`no index state dir (${stateDir}); skipping (run sweet-search index first)`);
     return { spawned: false, reason: 'no-state-dir', stateDir };
   }
+  // A paused index (`sweet-search reconcile pause`, and every frozen benchmark
+  // index) gets no maintainer at all. One started anyway would find its work
+  // switched off and sit idle until its TTL — a resident process for nothing.
+  if (reconcilePaused(stateDir)) {
+    log('reconcile paused for this index; not starting a maintainer');
+    return { spawned: false, reason: 'paused', stateDir };
+  }
   if (maintainerAlive(stateDir)) {
     log('maintainer already running for this state dir');
     return { spawned: false, reason: 'already-running', stateDir };
   }
 
+  const args = [maintainerEntry];
+  if (options.daemonPidFile) args.push(`--daemon-pid-file=${options.daemonPidFile}`);
+
   // Give the child a real destination for its warnings and its dying words.
   // stdin stays ignored; stdout and stderr both land in the rotating log.
   const logFd = openMaintainerLog(stateDir);
   try {
-    const child = spawn(process.execPath, [maintainerEntry], {
+    const child = spawn(process.execPath, args, {
       detached: true,
       stdio: logFd == null ? 'ignore' : ['ignore', logFd, logFd],
       cwd,
@@ -307,8 +324,12 @@ export function launchMaintainer(options = {}) {
  * as four lines rather than imported: importing it would pull the whole
  * maintainer module — tree-sitter grammars and all — into the search daemon,
  * which is the one process whose startup time users feel.
+ *
+ * Frozen benchmark indexes carry a pause file written when they are built
+ * (`sweet-search reconcile pause --reason ...`): a background maintainer must
+ * never change an index whose numbers are being compared.
  */
-function reconcilePaused(stateDir) {
+export function reconcilePaused(stateDir) {
   const pauseFile = join(stateDir, 'reconcile-pause.json');
   if (!existsSync(pauseFile)) return false;
   try {
@@ -461,6 +482,7 @@ function backoffIntervalMs(baseMs, consecutiveFailures) {
  *   env?: NodeJS.ProcessEnv,
  *   cwd?: string,
  *   launch?: typeof launchMaintainer,
+ *   daemonPidFile?: string,
  *   now?: number,
  *   minIntervalMs?: number,
  *   log?: (msg: string) => void,
@@ -473,6 +495,7 @@ export function runSupervisionTick(options = {}) {
     env = process.env,
     cwd = process.cwd(),
     launch = launchMaintainer,
+    daemonPidFile,
     now = Date.now(),
     minIntervalMs = supervisionIntervalMs(env),
     log = () => {},
@@ -541,7 +564,7 @@ export function runSupervisionTick(options = {}) {
 
   let result;
   try {
-    result = launch({ env, cwd });
+    result = launch({ env, cwd, daemonPidFile });
   } catch (err) {
     // Supervision runs off a response callback and a timer; it must never be
     // able to take the daemon down.

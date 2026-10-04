@@ -56,6 +56,10 @@ function parseOptions(args) {
       opts.stateDir = args[++i];
     } else if (arg.startsWith('--state-dir=')) {
       opts.stateDir = arg.slice('--state-dir='.length);
+    } else if (arg === '--reason') {
+      opts.reason = args[++i];
+    } else if (arg.startsWith('--reason=')) {
+      opts.reason = arg.slice('--reason='.length);
     } else if (arg === '--add') {
       opts.add = args[++i];
     } else if (arg.startsWith('--add=')) {
@@ -347,13 +351,14 @@ function resetDirtySet(ctx) {
   return { stateDir: ctx.stateDir, removedQueueFiles: removed };
 }
 
-function pauseReconcile(ctx) {
+function pauseReconcile(ctx, reason = null) {
   fs.mkdirSync(ctx.stateDir, { recursive: true });
   const filePath = path.join(ctx.stateDir, PAUSE_FILE);
   const payload = {
     paused: true,
     pausedAt: new Date().toISOString(),
     pid: process.pid,
+    ...(reason ? { reason: String(reason) } : {}),
   };
   const tmp = `${filePath}.tmp.${process.pid}`;
   fs.writeFileSync(tmp, JSON.stringify(payload, null, 2));
@@ -437,7 +442,7 @@ function print(payload, json) {
     if (payload.lock?.present) {
       console.log(`maintainer lock: pid ${payload.lock.pid} (${payload.lock.alive ? 'alive' : 'stale'})`);
     }
-    if (payload.pause?.paused) console.log(`reconcile paused since ${payload.pause.pausedAt || 'unknown'}`);
+    if (payload.pause?.paused) console.log(`reconcile paused since ${payload.pause.pausedAt || 'unknown'}${payload.pause.reason ? ` (${payload.pause.reason})` : ''}`);
     if (payload.rebuild.deadLetters > 0) console.log(`dead letters: ${payload.rebuild.deadLetters}`);
     if (payload.metrics.lastError) console.log(`last error: ${payload.metrics.lastError}`);
     if (payload.metrics.lastTicks.length > 0) console.log(`last ticks: ${payload.metrics.lastTicks.length}`);
@@ -501,7 +506,7 @@ export async function handleIncrementalCli(command, args) {
       return print({ kind: 'reset', ...resetDirtySet(ctx) }, opts.json);
     }
     if (sub === 'pause') {
-      return print({ kind: 'pause', ...pauseReconcile(ctx) }, opts.json);
+      return print({ kind: 'pause', ...pauseReconcile(ctx, opts.reason) }, opts.json);
     }
     if (sub === 'resume') {
       return print({ kind: 'resume', ...resumeReconcile(ctx) }, opts.json);

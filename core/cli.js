@@ -125,6 +125,7 @@ Usage:
   sweet-search reconcile status         Show incremental epoch and dirty status
   sweet-search reconcile inspect <path> Explain why a file is dirty or clean
   sweet-search reconcile pause|resume   Pause or resume automatic reconcile work
+                                        (paused: no maintainer starts; pause --reason <text>)
   sweet-search rebuild status           Show incremental maintenance queue
   sweet-search rebuild force <tier>     Queue maintenance for a tier
   sweet-search init [options]           Set up runtime assets and models
