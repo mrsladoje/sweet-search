@@ -314,7 +314,7 @@ describe('A3 ledger wiring', () => {
     const before = await run(off);
     const after = await run(a3);
     expect(after).toEqual(before);
-    expect(before.printed).toContain('already shown 1 sweet-search call ago');
+    expect(before.printed).toContain('# unchanged, shown 1 call ago');
   });
 
   it('M1: the find call that A3 omits still refreshes the ORIGINAL ledger as before', async () => {

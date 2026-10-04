@@ -50,6 +50,18 @@ const ReadFileResultSchema = z.object({
     })),
     moreCount: z.number().int(),
   }).nullable().optional(),
+  enclosingStart: z.object({
+    symbol: z.string(),
+    type: z.string().nullable().optional(),
+    startLine: z.number().int(),
+    endLine: z.number().int(),
+  }).nullable().optional(),
+  enclosingEnd: z.object({
+    symbol: z.string(),
+    type: z.string().nullable().optional(),
+    startLine: z.number().int(),
+    endLine: z.number().int(),
+  }).nullable().optional(),
   omitted: z.object({
     file: z.string(),
     startLine: z.number().int(),

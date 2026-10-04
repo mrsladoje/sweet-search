@@ -492,11 +492,11 @@ describe('renderUnreadBelow + formatReadResults', () => {
     );
   });
 
-  it('ss-read command form uses positional start/end', async () => {
+  it('ss-read form names the range below, no continue command', async () => {
     writeBotanFixture();
     const r = await readFile({ path: BOTAN_FILE, startLine: 170, endLine: 205, projectRoot: TMP });
     expect(renderUnreadBelow(r, { command: 'ss-read' })).toBe(
-      `# unread below (206-272): dns_suffix_match, matches_suffix — continue: ss-read ${BOTAN_FILE} 206 272`,
+      '# below 206-272: dns_suffix_match, matches_suffix',
     );
   });
 
@@ -594,7 +594,7 @@ describe('unread above (squashql-295 shape)', () => {
     writeSquashqlFixture();
     const r = await readFile({ path: JAVA_FILE, startLine: 170, endLine: 235, projectRoot: TMP });
     expect(renderUnreadAbove(r, { command: 'ss-read' })).toBe(
-      `# unread above (1-169): subQueryMeasures, QueryResolver — continue: ss-read ${JAVA_FILE} 1 169`,
+      '# above 1-169: subQueryMeasures, QueryResolver',
     );
     expect(renderUnreadAbove(r)).toBe('');
     // Human CLI output stays byte-identical: the agent formatter never prints it.
@@ -622,7 +622,7 @@ describe('unread above (squashql-295 shape)', () => {
     const r = await readFile({ path: JAVA_FILE, startLine: 170, endLine: 235, projectRoot: TMP });
     expect(r.unreadAbove.symbols[0].symbol).toBe('subQueryMeasures');
     expect(r.unreadAbove.symbols[1].symbol).toBe('aaaEarlyField');
-    expect(renderUnreadAbove(r, { command: 'ss-read' }).startsWith('# unread above (1-169): subQueryMeasures, aaaEarlyField,')).toBe(true);
+    expect(renderUnreadAbove(r, { command: 'ss-read' }).startsWith('# above 1-169: subQueryMeasures, aaaEarlyField,')).toBe(true);
   });
 
   it('ranks the above list by query evidence (the grep phrase) when it overflows', async () => {
@@ -638,7 +638,7 @@ describe('unread above (squashql-295 shape)', () => {
     const r = await readFile({ path: JAVA_FILE, startLine: 170, endLine: 235, projectRoot: TMP });
     expect(r.unreadAbove.moreCount).toBe(3);
     const line = renderUnreadAbove(r, { command: 'ss-read', queryEvidence: { anchors: ['subQuery'], subtokens: ['sub', 'query'] } });
-    expect(line.startsWith('# unread above (1-169): subQueryMeasures,')).toBe(true);
+    expect(line.startsWith('# above 1-169: subQueryMeasures,')).toBe(true);
     expect(line).toContain('+3 more');
   });
 
@@ -675,7 +675,7 @@ describe('unread above (squashql-295 shape)', () => {
     writeFileSync(abs, lines.join('\n'));
     __resetReadCachesForTests();
     r = await readFile({ path: JAVA_FILE, startLine: 240, endLine: 300, projectRoot: TMP });
-    expect(renderUnreadAbove(r, { command: 'ss-read' }).startsWith('# unread above (1-239): resolveField')).toBe(true);
+    expect(renderUnreadAbove(r, { command: 'ss-read' }).startsWith('# above 1-239: resolveField')).toBe(true);
   });
 
   it('prints nothing when the window reads none of the above symbols and the query names none', async () => {

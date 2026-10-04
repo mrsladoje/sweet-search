@@ -41,6 +41,7 @@ export const CHAIN_TTL_MS = 30 * 60 * 1000;
 
 const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'mksh', 'ash', 'fish', 'tcsh', 'csh', 'busybox']);
 const ARG_CHARS = 10;
+const READ_NAME_CHARS = 40;
 
 export function isShellName(comm) {
   const base = String(comm || '').trim().split('/').pop().replace(/^-/, '');
@@ -150,13 +151,18 @@ function namingArg(args) {
   return '';
 }
 
-/** `# ss-search Elasticsea…` / `# ss-read worker/imp…` (no newline). */
+/** `# ss-search Elasticsea…` / `# ss-read timed_queue.rb` (no newline). */
 export function chainBoundaryLine(subcommand, args = []) {
   const tool = TOOL_NAME_BY_SUBCOMMAND[subcommand] || subcommand;
-  const arg = namingArg(args).replace(/\s+/g, ' ').trim();
+  let arg = namingArg(args).replace(/\s+/g, ' ').trim();
   if (!arg) return `# ${tool}`;
+  // ss-read names a file, and the reads of one chain mostly share a directory: the start
+  // of the path (`lib/sequel…` twice) cannot tell them apart, the file name can.
+  const isRead = subcommand === 'read';
+  if (isRead) arg = arg.replace(/\/+$/, '').split('/').pop() || arg;
+  const max = isRead ? READ_NAME_CHARS : ARG_CHARS;
   const chars = [...arg];
-  const cut = chars.length > ARG_CHARS ? `${chars.slice(0, ARG_CHARS).join('')}…` : arg;
+  const cut = chars.length > max ? `${chars.slice(0, max).join('')}…` : arg;
   // No quotes: they cost two tokens and the command above already shows the argument.
   return `# ${tool} ${cut}`;
 }
