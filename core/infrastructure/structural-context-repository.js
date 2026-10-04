@@ -433,6 +433,15 @@ export class StructuralContextRepository {
       resolvedParent: row.resolved_parent || null,
       weight: row.weight ?? 1,
     }));
+    // A self row is recursion only through the same object: no receiver, this/self, or the
+    // owner's name (express `app.use` calls `router.use(`, which the index bound to app.use).
+    const selfReceiver = (tn) => {
+      const parts = String(tn || '').replace(/::|->/g, '.').split('.').filter(Boolean);
+      if (parts.length < 2) return true;
+      const q = parts[parts.length - 2].replace(/^[$@]+/, '').toLowerCase();
+      return ['this', 'self', 'cls', 'static', 'super'].includes(q) || q === String(target.parentClass || '').toLowerCase();
+    };
+    for (let i = named.length - 1; i >= 0; i--) if (named[i].id === target.id && !selfReceiver(named[i].targetName)) named.splice(i, 1);
     const targetNested = this._qualifiedCallToNestedFunction(db, 'x.y', target);
     const edges = named.filter(edge => trustedCallerEdge(edge, target)
       && !(targetNested && /[.:]/.test(String(edge.targetName || ''))));

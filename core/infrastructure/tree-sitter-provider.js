@@ -1668,7 +1668,10 @@ export class TreeSitterProvider {
         let below = node;
         while (buffer.length > 0) {
           const last = buffer[buffer.length - 1];
-          if (!isDefinitionLead(last) || last.endPosition.row < below.startPosition.row - 1) break;
+          // Directly above, or (a `/**` / `///` doc block) one blank line above: express puts
+          // a blank line between each JSDoc block and its `app.use = function`.
+          const docStyle = /^\s*(?:\/\*\*|\/\/\/)/.test(content.substring(last.startIndex, last.startIndex + 4));
+          if (!isDefinitionLead(last) || last.endPosition.row < below.startPosition.row - (docStyle ? 2 : 1)) break;
           carry.unshift(last);
           carrySize += last.endIndex - last.startIndex;
           below = last;

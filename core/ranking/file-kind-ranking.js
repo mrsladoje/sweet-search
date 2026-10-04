@@ -206,6 +206,10 @@ export function classifyFileKindIntent(query, { agentFormat = false } = {}) {
   if (TYPES_INTENT_RE.test(q)) return 'types';
   if (DOCS_INTENT_RE.test(q))  return 'docs';
   if (TESTS_INTENT_RE.test(q)) return 'tests';
+  // Agent format: a behaviour question ("how does uv sync remove packages that are not in
+  // the lockfile") asks for code even when it names a config-ish noun; a question about
+  // configuring something still asks for config.
+  if (agentFormat && ANCILLARY_INTENT_RE.test(q) && BEHAVIOUR_QUESTION_RE.test(q) && !CONFIGURE_RE.test(q)) return 'implementation';
   if (ANCILLARY_INTENT_RE.test(q)) return 'ancillary';
   if (IMPL_INTENT_RE.test(q))  return 'implementation';
   if (agentFormat && AGENT_IMPL_INTENT_RE.test(q)) return 'implementation';
@@ -215,6 +219,8 @@ export function classifyFileKindIntent(query, { agentFormat = false } = {}) {
 // Agent format only (format-gated, CLAUDE.md): `how is/are X done` asks how code does
 // something, as `how does/do` does (jj "how is a conflict written into the file with
 // conflict markers" ranked three TOML config files above lib/src/conflicts.rs).
+const BEHAVIOUR_QUESTION_RE = /\bhow (?:does|do|is|are|can|should)\b|\bwhat happens\b|\bwhy does\b/;
+const CONFIGURE_RE = /\b(?:configur\w*|config|settings?|set up|setup|enable|disable)\b/;
 const AGENT_IMPL_INTENT_RE = /\bhow (?:is|are|was|were|can|should)\b|\bwritten\b/;
 
 function resolveFilePath(r) {
