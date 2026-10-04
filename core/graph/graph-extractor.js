@@ -18,7 +18,7 @@ import { getLanguageByPath, resolveLanguage } from '../infrastructure/language-p
 import { getTreeSitterProvider, STATE_CAPTURE_LANGUAGES, STATE_ENTITY_TYPES } from '../infrastructure/tree-sitter-provider.js';
 import { CallSiteScanner, EXTRA_CALL_SCAN_LANGUAGES } from './call-site-scanner.js';
 import { goImportName, scanImports, SCANNED_IMPORT_LANGUAGES, importLanguageFor } from './import-scanner.js';
-import { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX } from './import-resolver.js';
+import { GO_PACKAGE_PREFIX, RUST_PATH_PREFIX, UNRESOLVED_IMPORT_PREFIX } from './import-resolver.js';
 import { annotateReceiverTypes } from './receiver-types.js';
 import { scanInstantiations, scanSignatureTypes, swiftExtensionTarget } from './type-usage-scanner.js';
 import { ensureFilesSchema, hasGraphColumn, insertFileNodes } from '../infrastructure/file-nodes.js';
@@ -757,6 +757,46 @@ function definedOnLine(entities, lineNum, name) {
   return false;
 }
 
+
+/**
+ * Rust `a::b::f()` where the path names a repo module (`serde_json::from_str`,
+ * `crate::de::f`, `self::f`, or a `use`d module): a call of a free function of
+ * that module or crate, never a method of a type that shares the name. The
+ * call row carries `rustpath:<module file>|<crate source dir>/` so resolution
+ * binds only there. Rust names modules in snake_case and types in CamelCase
+ * (compiler lints), so a CamelCase qualifier (`Value::from_str`) is a type and
+ * is left alone; so is a path that names no repo module (std, other crates).
+ */
+function annotateRustPathCalls(filePath, content, relationships, scanned, resolver) {
+  const useByLast = new Map();
+  for (const imp of scanned) {
+    if (imp.kind !== 'use' || !imp.spec || imp.spec.endsWith('*')) continue;
+    const last = imp.spec.split('::').pop();
+    if (last && !useByLast.has(last)) useByLast.set(last, imp.spec);
+  }
+  let lines = null;
+  const scopes = new Map();
+  for (const rel of relationships) {
+    if (rel.type !== 'calls' || rel.full_import_path || !rel.context_line) continue;
+    const m = /^([a-z_][a-z0-9_]*)\.([A-Za-z_]\w*)$/.exec(String(rel.target_name || ''));
+    if (!m) continue;
+    if (!lines) lines = content.split('\n');
+    const line = lines[rel.context_line - 1] || '';
+    const pathRe = new RegExp(String.raw`(?<![\w:])((?:\w+\s*::\s*)*${m[1]})\s*::\s*${m[2]}\b`);
+    const pm = pathRe.exec(line);
+    if (!pm) continue;
+    const segs = pm[1].split('::').map((x) => x.trim());
+    // A path whose head is a `use`d module (`use serde_json::de; de::f()`).
+    const alias = useByLast.get(segs[0]);
+    const spec = [...(alias && !['crate', 'self', 'super'].includes(segs[0]) ? alias.split('::') : [segs[0]]), ...segs.slice(1), m[2]].join('::');
+    let scope = scopes.get(spec);
+    if (scope === undefined) {
+      scope = resolver.rustPathScope(filePath, spec);
+      scopes.set(spec, scope);
+    }
+    if (scope) rel.full_import_path = `${RUST_PATH_PREFIX}${scope.file}|${scope.crate ? `${scope.crate}/` : ''}`;
+  }
+}
 /**
  * Whether a Go file also uses an import name `name` as something other than
  * the package: a local variable (`schema := …`, `a, schema := …`, `var
@@ -1087,6 +1127,9 @@ export class GraphExtractor {
         }
         if (!skip) rel.full_import_path = pkg;
       }
+    }
+    if (importLanguage === 'rust' && this.importResolver.rustPathScope) {
+      annotateRustPathCalls(filePath, content, relationships, scanned, this.importResolver);
     }
     return goPackages;
   }
