@@ -16,7 +16,7 @@
 
 import path from 'path';
 import { detectProjectBoundary } from '../infrastructure/project-detector.js';
-import { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX, buildFileImportMap } from './import-resolver.js';
+import { GO_PACKAGE_PREFIX, RUST_PATH_PREFIX, UNRESOLVED_IMPORT_PREFIX, buildFileImportMap } from './import-resolver.js';
 import { parseReceiverType, RECEIVER_TYPE_PREFIX, signatureParamTypes } from '../infrastructure/receiver-type-annotation.js';
 import { deriveOverrideEdges } from './override-edges.js';
 import { fileNodeId } from '../infrastructure/file-nodes.js';
@@ -1262,6 +1262,26 @@ function resolveGoPackageCall(candidates, packagePath, sourceEntity, callIndex) 
 }
 
 /**
+ * Rust `a::b::f()` into a repo module (graph-extractor marks it
+ * `rustpath:<module file>|<crate source dir>/`): a free function (or other
+ * owner-less item) named `f` in that module file, else the one in its crate
+ * (`pub use de::from_str` in lib.rs). Never a method of a type with the same
+ * name; several candidates in the crate and none in the module means no edge.
+ */
+function resolveRustPathCall(candidates, pathScope, callIndex) {
+  const body = pathScope.slice(RUST_PATH_PREFIX.length);
+  const bar = body.lastIndexOf('|');
+  const file = body.slice(0, bar);
+  const crate = body.slice(bar + 1);
+  const ownerOf = callIndex?.ownerOf || NO_INDEX.ownerOf;
+  const free = candidates.filter((c) => c.type !== 'method' && !c.parent_class && !ownerOf(c));
+  const inFile = free.filter((c) => c.file_path === file);
+  if (inFile.length > 0) return inFile[0].id;
+  const inCrate = free.filter((c) => String(c.file_path || '').startsWith(crate));
+  return inCrate.length === 1 ? inCrate[0].id : null;
+}
+
+/**
  * Resolve a single relationship target
  */
 function resolveTarget(
@@ -1312,6 +1332,9 @@ function resolveTarget(
       // and an in-repo package reaches only its own top-level functions.
       if (fullImportPath && (fullImportPath.startsWith(GO_PACKAGE_PREFIX) || fullImportPath.startsWith(UNRESOLVED_IMPORT_PREFIX))) {
         return resolveGoPackageCall(allCandidates, fullImportPath, sourceEntity, callIndex);
+      }
+      if (fullImportPath && fullImportPath.startsWith(RUST_PATH_PREFIX)) {
+        return resolveRustPathCall(allCandidates, fullImportPath, callIndex);
       }
       const narrowed = narrowCallCandidates(allCandidates, receiver, sourceEntity, callIndex || undefined, parseReceiverType(fullImportPath));
       // Link only when what is left is one type's methods (an overload set);

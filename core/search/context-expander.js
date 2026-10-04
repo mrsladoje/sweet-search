@@ -27,7 +27,7 @@ import { capToFinalK } from './final-k.js';
 import { isSummaryOnly, isTestLikePath, shownCodeSpan } from './agent-output-fixes.js';
 import { statSync } from 'fs';
 import path from 'path';
-import { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX } from '../infrastructure/import-path-prefixes.js';
+import { GO_PACKAGE_PREFIX, RUST_PATH_PREFIX, UNRESOLVED_IMPORT_PREFIX } from '../infrastructure/import-path-prefixes.js';
 import { RECEIVER_TYPE_PREFIX } from '../infrastructure/receiver-type-annotation.js';
 
 // An `imports` row annotated with the repo file it loads (no entity target):
@@ -1445,6 +1445,7 @@ export function renderGraphNeighbors(opts) {
         if (n != null && n >= RELATED_AMBIGUOUS_DEFS) continue;
         pushResolved(fam, r.target);
       } else if (r.fullImportPath && (r.fullImportPath.startsWith(UNRESOLVED_IMPORT_PREFIX) || r.fullImportPath.startsWith(GO_PACKAGE_PREFIX)
+        || r.fullImportPath.startsWith(RUST_PATH_PREFIX)
         || r.fullImportPath.startsWith(RECEIVER_TYPE_PREFIX))) {
         // A module outside the repo (package, stdlib), a Go package call with no function
         // target (`types.TypeID(v)` is a conversion), or a call on a receiver whose declared

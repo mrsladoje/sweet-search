@@ -12,7 +12,7 @@ import { CodeGraphReaderVisibility } from './code-graph-visibility.js';
 import { SITE_LINE_RELATIONSHIP_TYPES as SITE_LINE_TYPES, TRACE_ONLY_TYPES_SQL } from './relationship-types.js';
 import { asTopLevelCaller, fileNodeSourceSql, hasFilesTable, hasGraphColumn, hasGraphTable } from './file-nodes.js';
 import { isTestLikePath } from './test-paths.js';
-import { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX } from './import-path-prefixes.js';
+import { GO_PACKAGE_PREFIX, RUST_PATH_PREFIX, UNRESOLVED_IMPORT_PREFIX } from './import-path-prefixes.js';
 import { RECEIVER_TYPE_PREFIX, signatureParamTypes } from './receiver-type-annotation.js';
 import { callTargetAliases, clampLimit, isLikelyCodeEntity, isTestPath, lowerCamel, placeholders, qualifiedTargetName, rowToEntity } from './structural-context-utils.js';
 
@@ -41,7 +41,7 @@ function packageCallUnbound(row) {
   const fip = row.full_import_path || '';
   // A typed receiver (receiver-types.js) whose type has no such method: the
   // call is outside the repo or through an unknown base — no name match.
-  return fip.startsWith(GO_PACKAGE_PREFIX) || fip.startsWith(UNRESOLVED_IMPORT_PREFIX)
+  return fip.startsWith(GO_PACKAGE_PREFIX) || fip.startsWith(RUST_PATH_PREFIX) || fip.startsWith(UNRESOLVED_IMPORT_PREFIX)
     || fip.startsWith(RECEIVER_TYPE_PREFIX);
 }
 
@@ -56,7 +56,7 @@ function packageCallBound(row) {
   // Also a call through a receiver of declared type (`l *List` → l.findPosting):
   // the type decided it, not the receiver's name. A PHP factory hint (`recvtype:?`)
   // decides nothing when it binds: the receiver rules did.
-  return fip.startsWith(GO_PACKAGE_PREFIX)
+  return fip.startsWith(GO_PACKAGE_PREFIX) || fip.startsWith(RUST_PATH_PREFIX)
     || (fip.startsWith(RECEIVER_TYPE_PREFIX) && !fip.startsWith(`${RECEIVER_TYPE_PREFIX}?`));
 }
 

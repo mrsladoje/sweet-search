@@ -30,10 +30,10 @@ import {
   elixirReferences, lineOfIndex,
 } from './import-symbol-index.js';
 
-import { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX } from '../infrastructure/import-path-prefixes.js';
+import { GO_PACKAGE_PREFIX, RUST_PATH_PREFIX, UNRESOLVED_IMPORT_PREFIX } from '../infrastructure/import-path-prefixes.js';
 
 // Defined in infrastructure (the structural repository reads them too).
-export { GO_PACKAGE_PREFIX, UNRESOLVED_IMPORT_PREFIX };
+export { GO_PACKAGE_PREFIX, RUST_PATH_PREFIX, UNRESOLVED_IMPORT_PREFIX };
 
 /** `SWEET_SEARCH_IMPORT_EDGES=0` turns file-level import resolution off. */
 export function importEdgesEnabled() {
@@ -868,6 +868,21 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     }
     // Edition-2018 implicit `self` for sibling modules declared with `mod`.
     return rustModuleFile(rustChildDir(fromFile), segs);
+  }
+
+  /**
+   * Scope of a Rust path call `a::b::f()` (`spec` = `a::b::f`) into a repo
+   * module: the module's file and the source directory of its crate (where a
+   * `pub use` re-export may define `f`). Null when the path names no repo
+   * module (std, an external crate, a type).
+   */
+  function rustPathScope(fromFile, spec) {
+    const from = norm(String(fromFile));
+    if (from == null) return null;
+    const file = resolve(from, { spec, kind: 'use' }, 'rust');
+    if (!file) return null;
+    const crate = rustCrateSrc(file);
+    return { file, crate: crate == null ? '' : crate };
   }
 
   // -------------------------------------------------------------------------
@@ -2061,7 +2076,7 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     }
   }
 
-  return { resolve, implicitImports, isLocalNamespace, hasFile, goPackageDir, root };
+  return { resolve, implicitImports, isLocalNamespace, hasFile, goPackageDir, rustPathScope, root };
 }
 
 /**
