@@ -2551,6 +2551,9 @@ const DEFAULT_WINDOW = 30;
  *                  whose head is sorted by adjusted score and whose tail is
  *                  the unchanged input tail. Stable on ties.
  */
+// With a tests intent, implementation still answers part of the question: a milder demotion.
+const TESTS_INTENT_IMPL_FACTOR = 0.6;
+
 export function applyFileKindRanking(results, opts = {}) {
   if (envOff()) return results;
   if (!Array.isArray(results) || results.length === 0) return results;
@@ -2559,8 +2562,11 @@ export function applyFileKindRanking(results, opts = {}) {
     ? opts.intent
     : classifyFileKindIntent(opts.query || '');
 
-  // Conservative gate: only confident 'implementation' intent fires.
-  if (intent !== 'implementation') return results;
+  // Conservative gate: only confident 'implementation' intent fires — and, in the agent
+  // format, 'tests' intent (fastify "which test covers returning a 404 for an unknown route"
+  // ranked a .d.ts, ci.yml and labeler.yml above test/404s.test.js).
+  const testsIntent = intent === 'tests' && opts.agentFormat === true;
+  if (intent !== 'implementation' && !testsIntent) return results;
 
   const window = opts.window != null
     ? opts.window
@@ -2587,7 +2593,7 @@ export function applyFileKindRanking(results, opts = {}) {
   }
 
   // Structural skip: nothing to demote, or nothing to promote.
-  if (demotableCount === 0 || implCount === 0) return results;
+  if (testsIntent ? !kinds.slice(0, windowSize).includes('tests') : (demotableCount === 0 || implCount === 0)) return results;
 
   const factor = envFactor('SWEET_SEARCH_FILE_KIND_FACTOR', DEFAULT_FACTOR);
   const docFactor  = opts.docFactor  != null ? opts.docFactor  : factor;
@@ -2607,7 +2613,8 @@ export function applyFileKindRanking(results, opts = {}) {
     let mult = 1;
     if (kind === 'docs')  mult = docFactor;
     else if (kind === 'examples') mult = exampleFactor;
-    else if (kind === 'tests') mult = testFactor;
+    else if (kind === 'tests') mult = testsIntent ? 1 : testFactor;
+    else if (kind === 'implementation' && testsIntent) mult = TESTS_INTENT_IMPL_FACTOR;
     else if (kind === 'types') mult = typeFactor;
     else if (kind === 'ancillary') {
       const lineCount = inferLineCount(r);
