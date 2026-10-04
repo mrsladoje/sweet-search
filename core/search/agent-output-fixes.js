@@ -163,30 +163,6 @@ export function resultRenderFixActive(flags, { find = false, alreadyShownActive 
 // --- thread key ----------------------------------------------------------------------
 
 /**
- * The key that identifies one agent session, for the A3 ledger.
- *
- * Why the original lookup fired on Codex only: it reads SWEET_SEARCH_SESSION_ID,
- * CODEX_THREAD_ID and CLAUDE_SESSION_ID. Codex sets CODEX_THREAD_ID itself. Claude Code
- * does NOT set CLAUDE_SESSION_ID (it exports CLAUDE_CODE_SESSION_ID; the product only
- * gets a key through an installed SessionStart hook). opencode sets OPENCODE_PID and
- * no session key. This function adds both real variables.
- *
- * LIMIT: a Claude Code subagent inherits its parent's CLAUDE_CODE_SESSION_ID, and opencode
- * subagents run in the same process (same OPENCODE_PID). The key cannot tell a subagent from
- * its parent; that is why A3 is its own default-off switch.
- */
-export function resolveThreadKey(env = process.env) {
-  const valid = (v) => typeof v === 'string' && v.length > 0 && v.length <= 256
-    && !/[\u0000-\u001f\u007f]/.test(v);
-  const direct = [env?.SWEET_SEARCH_SESSION_ID, env?.CODEX_THREAD_ID, env?.CLAUDE_CODE_SESSION_ID, env?.CLAUDE_SESSION_ID];
-  const found = direct.find(valid);
-  if (found) return found;
-  // opencode exports its own process id into every tool shell.
-  if (valid(env?.OPENCODE_PID) && /^\d+$/.test(env.OPENCODE_PID)) return `opencode-${env.OPENCODE_PID}`;
-  return null;
-}
-
-/**
  * A3 keeps its receipts in its OWN ledger namespace, so the original ledger (which drives the
  * Codex ss-read omission text and the query-aware ss-read trailers) sees exactly the same calls
  * with the switch on as with it off.

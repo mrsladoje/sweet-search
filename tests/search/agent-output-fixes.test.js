@@ -24,7 +24,6 @@ import {
   renderAlsoInFile,
   renderGrepLineLists,
   renderSummaryRow,
-  resolveThreadKey,
   resultRenderFixActive,
   selectEntries,
   shownCodeSpan,
@@ -206,21 +205,6 @@ describe('readFixFlags', () => {
     expect(resultRenderFixActive(readFixFlags({ ...OFF, SS_FIX_ALREADY_SHOWN: '1' }))).toBe(false);
     expect(resultRenderFixActive(readFixFlags(OFF), { alreadyShownActive: true })).toBe(true);
     expect(resultRenderFixActive(readFixFlags(OFF), { find: true, alreadyShownActive: true })).toBe(true);
-  });
-});
-
-describe('resolveThreadKey', () => {
-  it('finds the session key of each harness', () => {
-    expect(resolveThreadKey({ CODEX_THREAD_ID: 'thr-1' })).toBe('thr-1');
-    expect(resolveThreadKey({ CLAUDE_CODE_SESSION_ID: 'cc-1' })).toBe('cc-1');
-    expect(resolveThreadKey({ OPENCODE_PID: '4242' })).toBe('opencode-4242');
-    expect(resolveThreadKey({ SWEET_SEARCH_SESSION_ID: 'explicit', CODEX_THREAD_ID: 'thr-1' })).toBe('explicit');
-  });
-
-  it('returns null without a usable key', () => {
-    expect(resolveThreadKey({})).toBeNull();
-    expect(resolveThreadKey({ CLAUDE_CODE_SESSION_ID: '' })).toBeNull();
-    expect(resolveThreadKey({ OPENCODE_PID: 'not-a-pid' })).toBeNull();
   });
 });
 

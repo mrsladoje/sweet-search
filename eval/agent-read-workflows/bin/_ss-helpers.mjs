@@ -72,7 +72,6 @@ import {
   renderFixedBlocks,
   renderGrepLineLists,
   repairRegexBranches,
-  resolveThreadKey,
   resultRenderFixActive,
   resultsForOriginalLedger,
   selectEntries,
@@ -178,12 +177,11 @@ const SPAN_POLICY_ENABLED = EXACT_REREAD_OMISSION || SHOWN_SPAN_TRAILER;
 // or SS_FIX_A=0 restores the previous output byte for byte. Every other SS_FIX_* switch is default
 // off (bench only).
 const FIX = readFixFlags();
-// A3 (SS_FIX_ALREADY_SHOWN only; not part of SS_FIX_A). AGENT_SESSION_ID above, the original
-// ledger and so ss-read are never changed by it: A3 keeps its receipts under its own ledger
-// namespace (`a3:<thread key>`), with the wider thread key that also knows the Claude Code and
-// opencode variables. Needs the receipt ledger on. LIMIT: the key cannot tell a subagent from
-// its parent (FIXES-IMPL.md), which is why this switch stays default off.
-const A3_SESSION_ID = FIX.alreadyShown && EXACT_REREAD_OMISSION ? alreadyShownSessionId(resolveThreadKey()) : null;
+// A3 (SS_FIX_ALREADY_SHOWN only; not part of SS_FIX_A; default off). The original ledger and so
+// ss-read are never changed by it: A3 keeps its receipts under its own ledger namespace
+// (`a3:<session key>`), same session key as ss-read (resolveAgentSessionId). Needs the receipt
+// ledger on. LIMIT: in Claude Code the key cannot tell a subagent from its parent.
+const A3_SESSION_ID = FIX.alreadyShown && EXACT_REREAD_OMISSION ? alreadyShownSessionId(AGENT_SESSION_ID) : null;
 const ALREADY_SHOWN_ON = !!A3_SESSION_ID;
 // final-tuning variant SS_VARIANT_SEARCH_DEDUPE (ss-search only since fff75887).
 const DEDUPE = process.env.SS_VARIANT_SEARCH_DEDUPE === '1';

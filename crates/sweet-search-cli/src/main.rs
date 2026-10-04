@@ -522,11 +522,13 @@ fn env_flag_enabled_by_default(name: &str) -> bool {
     flag_enabled_by_default(value.as_deref())
 }
 
+/// Same order as core/search/agent-span-ledger.js resolveAgentSessionId (without its
+/// harness-process fallback). Claude Code exports CLAUDE_CODE_SESSION_ID, not CLAUDE_SESSION_ID.
 fn agent_session_id() -> Option<String> {
     [
         "SWEET_SEARCH_SESSION_ID",
         "CODEX_THREAD_ID",
-        "CLAUDE_SESSION_ID",
+        "CLAUDE_CODE_SESSION_ID",
     ]
     .iter()
     .filter_map(|name| env::var(name).ok())

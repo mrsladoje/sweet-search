@@ -88,6 +88,28 @@ export function chainKey(selfPid, procInfo = readProcInfo) {
   return `${selfPid}-${self.start}`;
 }
 
+/**
+ * The key of the AGENT SESSION a call belongs to when the harness exports no session id:
+ * the harness process (pid + start time), i.e. the process that started the shell of this
+ * call and lives across tool calls. Shell = as chainKey: the parent when it is a shell, else
+ * this process (exec). Harness = the shell's parent. `harnessPid` (opencode's OPENCODE_PID)
+ * skips the walk. null when the walk ends at pid 1 (an orphaned or daemonised shell: every
+ * such call would share one key) or a process cannot be read: no key = no shared state.
+ */
+export function harnessKey(selfPid, { procInfo = readProcInfo, harnessPid = null } = {}) {
+  let pid = Number.isInteger(harnessPid) && harnessPid > 0 ? harnessPid : null;
+  if (pid == null) {
+    const self = procInfo(selfPid);
+    if (!self || !(self.ppid > 1)) return null;
+    const parent = procInfo(self.ppid);
+    if (!parent) return null;
+    pid = isShellName(parent.comm) ? parent.ppid : self.ppid;
+    if (!(pid > 1)) return null;
+  }
+  const harness = procInfo(pid);
+  return harness ? `proc-${pid}-${harness.start}` : null;
+}
+
 function sweep(dir, now, ttlMs) {
   let names = [];
   try { names = fs.readdirSync(dir); } catch { return; }

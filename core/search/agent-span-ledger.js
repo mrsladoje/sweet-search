@@ -9,6 +9,8 @@
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { extractQueryEvidence } from './query-sufficiency.js';
+import { CHAIN_PID_ENV, harnessKey, readProcInfo } from '../agent-tools/chain.js';
+import { currentCall } from '../agent-tools/virtual-process.js';
 
 export const SHOWN_SPAN_TRAILER_ENV = 'SWEET_SEARCH_SHOWN_SPAN_TRAILER';
 export const EXACT_REREAD_OMISSION_ENV = 'SWEET_SEARCH_EXACT_REREAD_OMISSION';
@@ -51,14 +53,45 @@ export function validAgentSessionId(value) {
     && !/[\u0000-\u001f\u007f]/.test(value);
 }
 
-export function resolveAgentSessionId(explicit, env = process.env) {
+/**
+ * The key of the agent session a call belongs to: the receipts of one key are what
+ * "already shown" means, so two agent sessions must never share one.
+ *
+ *   SWEET_SEARCH_SESSION_ID  set by our hooks/plugins (Claude Code SessionStart hook,
+ *                            opencode `shell.env` plugin: one per opencode session) or a user
+ *   CODEX_THREAD_ID          Codex, one per thread
+ *   CLAUDE_CODE_SESSION_ID   Claude Code, one per session (a new one after /clear). Verified
+ *                            2.1.288: the Bash tool env is CLAUDECODE, CLAUDE_CODE_SESSION_ID,
+ *                            CLAUDE_CODE_CHILD_SESSION, CLAUDE_PID, AI_AGENT, CLAUDE_EFFORT;
+ *                            no CLAUDE_SESSION_ID (which this list read before: omission was
+ *                            off in Claude Code). LIMIT: a subagent gets its parent's id.
+ *   fallback                 the harness process, pid + start time (chain.js harnessKey);
+ *                            opencode exports its pid as OPENCODE_PID. One opencode or Claude
+ *                            Code process = one key; null when no process can be read.
+ *
+ * `opts.procInfo` / `opts.pid` are for tests; the call's pid is the launcher's
+ * (SWEET_SEARCH_CHAIN_PID), else the virtual process's caller, else this process.
+ */
+export function resolveAgentSessionId(explicit, env = process.env, { procInfo = readProcInfo, pid = null } = {}) {
   const candidates = [
     explicit,
     env?.SWEET_SEARCH_SESSION_ID,
     env?.CODEX_THREAD_ID,
-    env?.CLAUDE_SESSION_ID,
+    env?.CLAUDE_CODE_SESSION_ID,
   ];
-  return candidates.find(validAgentSessionId) || null;
+  const found = candidates.find(validAgentSessionId);
+  if (found) return found;
+  const stand = Number(env?.[CHAIN_PID_ENV]);
+  const selfPid = Number.isInteger(stand) && stand > 1 ? stand
+    : (Number.isInteger(pid) && pid > 0 ? pid : (currentCall()?.pid ?? process.pid));
+  const oc = String(env?.OPENCODE_PID ?? '');
+  const harnessPid = /^\d+$/.test(oc) ? Number(oc) : null;
+  try {
+    const key = harnessKey(selfPid, { procInfo, harnessPid });
+    return validAgentSessionId(key) ? key : null;
+  } catch {
+    return null;
+  }
 }
 
 function sourceLines(text) {
