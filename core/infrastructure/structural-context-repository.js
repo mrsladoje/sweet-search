@@ -433,7 +433,9 @@ export class StructuralContextRepository {
       resolvedParent: row.resolved_parent || null,
       weight: row.weight ?? 1,
     }));
-    const edges = named.filter(edge => trustedCallerEdge(edge, target));
+    const targetNested = this._qualifiedCallToNestedFunction(db, 'x.y', target);
+    const edges = named.filter(edge => trustedCallerEdge(edge, target)
+      && !(targetNested && /[.:]/.test(String(edge.targetName || ''))));
     // `opts.unresolved`: calls of the same name the graph bound to no definition and the
     // receiver check could not trust (`loadBalancer.Data.LeaseAsync(`). They are no caller
     // the graph knows, but the agent must know they exist.
@@ -617,6 +619,29 @@ export class StructuralContextRepository {
     return findAliasCallers({ db, target, readFileRange: this.readFileRange.bind(this), limit: clampLimit(opts.limit, 40, 200), entityVisibilitySql: this._entitySql(db), entityVisibilityParams: this._entityParams(db), mapEntity: row => this._entityFromRow(row) });
   }
 
+  /**
+   * A call written with a receiver (`reply.send(`) bound to a function nested inside another
+   * function: a nested function is local to its enclosing body and never reachable through a
+   * receiver (fastify `reply.send` was bound to `function send ()` inside sendTrailer).
+   */
+  _qualifiedCallToNestedFunction(db, targetName, entity) {
+    if (!/[.:]/.test(String(targetName || '')) || !entity?.id || !entity.filePath || !Number.isInteger(entity.startLine)) return false;
+    if (entity.parentClass || !['function', 'arrowFunction', 'objectArrow'].includes(entity.type)) return false;
+    this._nestedMemo ||= new Map();
+    if (this._nestedMemo.has(entity.id)) return this._nestedMemo.get(entity.id);
+    let nested = false;
+    try {
+      nested = !!db.prepare(`
+        SELECT 1 FROM entities e
+        WHERE e.file_path = ? AND e.id <> ? AND e.type IN ('function', 'method', 'arrowFunction', 'objectArrow')
+          AND e.start_line < ? AND e.end_line >= ? AND ${this._entitySql(db, 'e')}
+        LIMIT 1
+      `).get(entity.filePath, entity.id, entity.startLine, entity.endLine ?? entity.startLine, ...this._entityParams(db));
+    } catch { nested = false; }
+    this._nestedMemo.set(entity.id, nested);
+    return nested;
+  }
+
   getCallees(target, opts = {}) {
     const db = this._open();
     if (!db || !target?.id) return [];
@@ -650,6 +675,7 @@ export class StructuralContextRepository {
       });
       if (row.id && !packageCallBound(row) && !declaredReceiverBound(row.target_name, target, resolved)
         && !shouldTrustQualifiedResolution(row.target_name, resolved)) resolved = { id: `external:${idx}:${row.target_name || 'unknown'}`, name: row.target_name || 'external', type: 'external', filePath: null, startLine: null, endLine: null, signature: row.target_name || '', summary: '' };
+      if (row.id && this._qualifiedCallToNestedFunction(db, row.target_name, resolved)) resolved = { id: `external:${idx}:${row.target_name || 'unknown'}`, name: row.target_name || 'external', type: 'external', filePath: null, startLine: null, endLine: null, signature: row.target_name || '', summary: '' };
       if (resolved.id === target.id) {
         resolved = this._resolveQualifiedAlternative(row.target_name, target.id) || resolved;
       }
@@ -758,6 +784,7 @@ export class StructuralContextRepository {
       });
       if (row.id && !packageCallBound(row) && !declaredReceiverBound(row.target_name, { signature: row.source_signature }, resolved)
         && !shouldTrustQualifiedResolution(row.target_name, resolved)) resolved = { id: `external:${row.source_id}:${idx}:${row.target_name || 'unknown'}`, name: row.target_name || 'external', type: 'external', filePath: null, startLine: null, endLine: null, signature: row.target_name || '', summary: '' };
+      if (row.id && this._qualifiedCallToNestedFunction(db, row.target_name, resolved)) resolved = { id: `external:${row.source_id}:${idx}:${row.target_name || 'unknown'}`, name: row.target_name || 'external', type: 'external', filePath: null, startLine: null, endLine: null, signature: row.target_name || '', summary: '' };
       if (resolved.id === row.source_id) {
         resolved = this._resolveQualifiedAlternative(row.target_name, row.source_id) || resolved;
       }

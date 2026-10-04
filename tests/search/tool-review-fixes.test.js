@@ -289,7 +289,7 @@ describe('round 3', () => {
 // --- Round 4 (2026-10-04) ------------------------------------------------------------------
 
 import { dropNameOnlyCallers } from '../../core/graph/structural-context.js';
-import { shouldTrustQualifiedResolution } from '../../core/infrastructure/structural-qualified-resolution.js';
+import { shouldTrustQualifiedResolution, trustedCallerEdge } from '../../core/infrastructure/structural-qualified-resolution.js';
 
 describe('round 4', () => {
   it('a name-only caller whose receiver names the owner stays; the dropped ones are reported', () => {
@@ -416,5 +416,17 @@ describe('chunk boundaries: oversized definitions', () => {
     const chunks = await p.parseFileToChunks(src, 'typescript', { maxChunkSize: 1200 });
     expect(chunks.some((c) => c.text.startsWith('/**\n * Big does a lot.'))).toBe(true);
     expect(chunks.find((c) => c.text.startsWith('export function small'))?.text.includes('Big does a lot')).toBe(false);
+  });
+});
+
+// --- Round 6 (2026-10-04, new repos) -------------------------------------------------------------
+
+describe('round 6', () => {
+  it('Python: a call through a package name never reaches a method of a class', () => {
+    const method = { name: 'make_response', type: 'method', parentClass: 'Flask', filePath: 'src/flask/app.py' };
+    expect(shouldTrustQualifiedResolution('flask.make_response', method)).toBe(false);
+    expect(trustedCallerEdge({ targetName: 'flask.make_response', targetId: 'm', filePath: 'tests/test_basic.py' }, { ...method, id: 'm' })).toBe(false);
+    expect(shouldTrustQualifiedResolution('self.make_response', method)).toBe(true);
+    expect(shouldTrustQualifiedResolution('helpers.make_response', { name: 'make_response', type: 'function', parentClass: null, filePath: 'src/flask/helpers.py' })).toBe(true);
   });
 });
