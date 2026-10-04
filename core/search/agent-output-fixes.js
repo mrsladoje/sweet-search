@@ -656,15 +656,15 @@ export function renderRelatedRows(rows, printed = new Set(), subject = null) {
   return lines;
 }
 
-/** The `# same file:` span map without the neighbours whose lines printed code shows. */
-function renderSameFileMap(sameFile, file, spans) {
-  if (!sameFile?.rendered) return null;
-  if (!Array.isArray(sameFile.neighbors)) return sameFile.rendered;
-  const kept = sameFile.neighbors.filter((n) => !overlapsAny(spans, n.startLine, n.endLine));
-  if (kept.length === 0) return null;
-  const shortType = (t) => (t === 'function' ? 'fn' : (t || 'sym'));
-  const parts = kept.map((n) => `${n.name} (${shortType(n.type)} ${n.startLine}-${n.endLine} ${n.position})`);
-  return `# same file: ${parts.join(' · ')} — sweep: ss-semantic ${file} "<query>"`;
+/**
+ * The same-file neighbours of the entry (context-expander's span map) as sibling sites
+ * `{name, kind, line}`, without those whose lines printed code shows. They print in the one
+ * `not shown, same file:` line (before: a second `# same file: … — sweep: …` line).
+ */
+function sameFileMapSites(sameFile, spans) {
+  if (!Array.isArray(sameFile?.neighbors)) return [];
+  return sameFile.neighbors.filter((n) => n?.name && !overlapsAny(spans, n.startLine, n.endLine))
+    .map((n) => ({ name: n.name, kind: n.type || null, line: n.startLine }));
 }
 
 /**
@@ -673,10 +673,13 @@ function renderSameFileMap(sameFile, file, spans) {
  * this file (code or row): those already print. A declaration site prints its kind and name;
  * an assignment site prints its source line.
  */
-function renderSiblingLine(siblingLine, spans, rowSpans = []) {
-  if (!siblingLine?.rendered) return null;
-  if (!Array.isArray(siblingLine.sites)) return siblingLine.rendered;
-  const kept = siblingLine.sites.filter((s) => !insideAny(spans, s.line, s.line) && !insideAny(rowSpans, s.line, s.line));
+function renderSiblingLine(siblingLine, spans, rowSpans = [], extra = []) {
+  if (siblingLine?.rendered && !Array.isArray(siblingLine.sites)) return siblingLine.rendered;
+  const sites = [...(siblingLine?.rendered ? siblingLine.sites : []), ...extra];
+  const lines = new Set();
+  const kept = sites.filter((s) => !insideAny(spans, s.line, s.line) && !insideAny(rowSpans, s.line, s.line))
+    .filter((s) => (lines.has(s.line) ? false : (lines.add(s.line), true)))
+    .sort((a, b) => a.line - b.line);
   if (kept.length === 0) return null;
   const site = (s) => (s.name ? `${kindName(s.name, s.kind)} (${s.line})` : `${s.line}: ${s.text}`);
   return `not shown, same file: ${kept.map(site).join(' · ')}`;
@@ -731,9 +734,20 @@ function renderGroupedBlocks(results, plan, { omitted = new Set(), gutter = (cod
     rowSpansByFile.get(r.file).push({ start: r.startLine, end: r.endLine });
   }
   let n = 0;
+  // Spans of entries printed with code so far: a later entry inside one is no new place.
+  const codeEntrySpans = [];
   for (const { r, index, also } of plan.entries) {
     const file = r.file;
     const spans = spansByFile.get(file) || [];
+    // An entry that lies inside an earlier entry with code (jj: `fn resolve` 3246-3406 inside
+    // `impl VisibilityResolutionContext` 3244-3511) prints as a row: its own code was a
+    // slice of the same region (one line, then `... (118 more lines)`).
+    if (!isSummaryOnly(r) && r.code && codeEntrySpans.some((o) => o.file === file && o.start <= r.startLine && o.end >= r.endLine)) {
+      n++;
+      lines.push(`${n}. ${label(file)}${renderSummaryRow(r)}`);
+      continue;
+    }
+    if (!isSummaryOnly(r) && r.code) codeEntrySpans.push({ file, start: r.startLine, end: r.endLine });
     if (isSummaryOnly(r)) {
       // Every name of the row is in printed code above or below: nothing new to point at.
       const syms = entrySymbols(r);
@@ -802,9 +816,13 @@ function renderGroupedBlocks(results, plan, { omitted = new Set(), gutter = (cod
       if (Array.isArray(r.neighbors.rows)) lines.push(...renderRelatedRows(r.neighbors.rows, printed, r.neighbors.subject));
       else if (r.neighbors.rendered) lines.push(r.neighbors.rendered);
     }
-    const map = renderSameFileMap(r.sameFile, file, spans);
-    if (map) lines.push(map);
-    const siblings = renderSiblingLine(r.siblingLine, spans, rowSpansByFile.get(file) || []);
+    // A definition a related row above already names (`types in …: type SortStrategy (sort.ts 28)`)
+    // is not repeated among the siblings.
+    const relatedHere = (Array.isArray(r.neighbors?.rows) ? r.neighbors.rows : [])
+      .filter((x) => x.file === file && Number.isInteger(x.startLine)).map((x) => ({ start: x.startLine, end: x.startLine }));
+    // A map with no neighbour data (only its text) still prints as it is.
+    if (r.sameFile?.rendered && !Array.isArray(r.sameFile.neighbors)) lines.push(r.sameFile.rendered);
+    const siblings = renderSiblingLine(r.siblingLine, spans, [...(rowSpansByFile.get(file) || []), ...relatedHere], sameFileMapSites(r.sameFile, spans));
     if (siblings) lines.push(siblings);
     if (r.familyManifest?.rendered) lines.push(r.familyManifest.rendered);
     const alsoLine = renderAlsoInFile(also);
@@ -984,18 +1002,19 @@ function siteList(lines) {
 const isCallRel = (rel) => !rel || rel === 'calls' || rel === 'handoff';
 
 function traceRow(item, target = null) {
+  // A file's top-level code (`(top-level)`) spans the whole file: no kind, no span.
+  const isFile = item.type === 'file';
   // A call from the traced definition to itself.
   const recursive = target && item.file === target.filePath && item.startLine === target.startLine ? ' (recursive)' : '';
   // Non-call relationships of the row (`overrides`, `extends`); a row can also call.
   const rels = (item.rels || (isCallRel(item.relationship) ? [] : [item.relationship]))
     .map((rel) => (target ? baseListKind(rel, item.type, target.type) : rel));
   const isCall = rels.length === 0;
-  // A declaration's own line (`overrides` on the definition line) is no site to print.
+  // A declaration's own line (`overrides` on the definition line) is no site to print. A
+  // file's top-level row has no definition line: its span is the site itself.
   const own = (item.contextLines?.length ? item.contextLines : (item.contextLine ? [item.contextLine] : []))
-    .filter((n) => !(item.onlyNonCall && n === item.startLine));
+    .filter((n) => isFile || !(item.onlyNonCall && n === item.startLine));
   const lines = siteList(own);
-  // A file's top-level code (`(top-level)`) spans the whole file: no kind, no span.
-  const isFile = item.type === 'file';
   const span = !isFile && Number.isInteger(item.startLine) ? ` ${lineRange(item.startLine, item.endLine)}` : '';
   return `${isFile ? item.name : kindName(item.name, item.type)}${span}${isCall ? '' : ` (${rels.join(', ')})`}${recursive}${lines ? ` @${lines}` : ''}${item.via ? ` via ${item.via}` : ''}`;
 }

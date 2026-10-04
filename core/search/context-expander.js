@@ -1412,9 +1412,15 @@ export function renderGraphNeighbors(opts) {
   const ownKey = `${entity.filePath}|${entity.startLine}|${entity.endLine}`;
   const seen = new Set([ownKey, ...(skipKeys || [])]);
   const rows = [];
+  // The entity itself is never related to itself (composer `types in class VersionParser:
+  // class VersionParser`: the expansion's range 21-38 is not the class's range 21-94).
+  const self = typeof codeGraphRepo.getEntityById === 'function' ? safeCall(() => codeGraphRepo.getEntityById(entity.id)) : null;
+  const isSelf = (t) => (t.id && t.id === entity.id)
+    || (self && t.name === self.name && t.filePath === (self.filePath || self.file_path || entity.filePath)
+      && t.startLine === (self.startLine ?? self.start_line));
   const pushResolved = (kind, target) => {
     const k = `${target.filePath}|${target.startLine}|${target.endLine}`;
-    if (seen.has(k)) return;
+    if (seen.has(k) || isSelf(target)) return;
     seen.add(k);
     rows.push({ kind, name: target.name, file: target.filePath, startLine: target.startLine, endLine: target.endLine, entityType: target.type || null });
   };
@@ -1822,6 +1828,30 @@ export function truncateToTokenCap(code, tokenCap) {
 
   // Not even one line and the cut marker fit: no code (a bare prefix would be a silent cut).
   return { code: '', truncated: true, originalTokens };
+}
+
+// Lines right above a definition that belong to it: doc comments, attributes, decorators.
+const DEFINITION_LEAD_LINE = /^\s*(?:\/\/|\/\*|\*|#\[|#!\[|@|--)/;
+
+/**
+ * Code of an entry that will be cut, started at the definition it is named after: a chunk
+ * that opens with the end of the previous function (jj `};  Ok(expression)  }` above
+ * `fn resolve_referenced_commits`) printed that tail and was cut before the named function.
+ * Agent format only. Returns the code and its new first line (null when unchanged).
+ */
+export function startAtNamedDefinition(code, expansion, tokenCap, codeGraphRepo, filePath, agentFormat) {
+  const unchanged = { code, start: null };
+  if (!agentFormat || !code || !expansion?.symbol || !Number.isInteger(expansion.startLine)) return unchanged;
+  if (estimateTokens(code) <= tokenCap || typeof codeGraphRepo?.findEntitiesInRange !== 'function') return unchanged;
+  const rows = safeCall(() => codeGraphRepo.findEntitiesInRange(filePath, expansion.startLine + 1, expansion.endLine ?? expansion.startLine)) || [];
+  const def = rows.find((e) => e.name === expansion.symbol && e.startLine > expansion.startLine);
+  if (!def) return unchanged;
+  const lines = code.split('\n');
+  let lead = def.startLine - expansion.startLine;
+  if (lead <= 0 || lead >= lines.length) return unchanged;
+  while (lead > 0 && DEFINITION_LEAD_LINE.test(lines[lead - 1])) lead--;
+  if (lead <= 0) return unchanged;
+  return { code: lines.slice(lead).join('\n'), start: expansion.startLine + lead };
 }
 
 /** `lines[0..n)` plus a visible `// ... (N more lines)` marker when lines are left out. */
@@ -2550,6 +2580,7 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
     let codeTokens;
     let boundaryTruncated = false;
     let goldOnlyRange = null;
+    let leadTrimmedStart = null;
     if (resultTokenCap <= 0) {
       code = '';
       codeTokens = 0;
@@ -2573,6 +2604,7 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
         boundaryTruncated = trunc.truncated;
       }
     } else if (allocation.presentation === 'full') {
+      ({ code, start: leadTrimmedStart } = startAtNamedDefinition(code, expansion, resultTokenCap, codeGraphRepo, filePath, _isAgentFormat === true));
       const truncResult = truncateToTokenCap(code, resultTokenCap);
       code = truncResult.code;
       codeTokens = estimateTokens(code);
@@ -2580,6 +2612,7 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
     } else {
       // Preview mode — compress to signature + snippet
       // The marker is part of the fit (compressToPreview): no clamp after it.
+      ({ code, start: leadTrimmedStart } = startAtNamedDefinition(code, expansion, resultTokenCap, codeGraphRepo, filePath, _isAgentFormat === true));
       code = compressToPreview(code, resultTokenCap);
       codeTokens = estimateTokens(code);
     }
@@ -2609,7 +2642,7 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
     // A sandwich that overshot its cap printed the gold chunk only (above): that chunk is the
     // entry's span and kind from here on.
     const shownKind = goldOnlyRange ? 'chunk' : (expansion.kind || null);
-    const entryStart = goldOnlyRange ? goldOnlyRange.startLine : expansion.startLine;
+    const entryStart = goldOnlyRange ? goldOnlyRange.startLine : (leadTrimmedStart ?? expansion.startLine);
     const entryEnd = goldOnlyRange ? goldOnlyRange.endLine : expansion.endLine;
     const agentResult = {
       rank: i + 1,

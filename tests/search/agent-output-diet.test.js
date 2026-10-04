@@ -109,7 +109,7 @@ describe('1c: sibling-line sites inside printed code are dropped', () => {
     const r = { ...base, siblingLine: { enclosing: 'can_make_new?', rendered: 'x', sites: [{ line: 192, text: 'def try_make_new' }] } };
     expect(render([r])).not.toContain('not shown');
   });
-  it('drops `# same file:` neighbours whose lines printed code shows', () => {
+  it('same-file neighbours print in the one sibling line, without those printed code shows', () => {
     const r = {
       ...base,
       continuation: { kind: 'symbol', file: base.file, startLine: 245, endLine: 247, symbol: 'wait', code: 'a\nb\nc' },
@@ -119,8 +119,9 @@ describe('1c: sibling-line sites inside printed code are dropped', () => {
       ] },
     };
     const out = render([r]);
-    expect(out).toContain('# same file: hold (method 71-121 above) — sweep: ss-semantic lib/timed_queue.rb "<query>"\n');
-    expect(out).not.toContain('wait (method');
+    expect(out).toContain('not shown, same file: method hold (71)');
+    expect(out).not.toContain('# same file:');
+    expect(out).not.toContain('method wait (245)');
   });
 });
 

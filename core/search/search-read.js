@@ -422,6 +422,18 @@ function _bodyEntityAcross(graph, filePathRel, line, step) {
   return { symbol: e.name, type: e.type, startLine: e.startLine, endLine: e.endLine };
 }
 
+const TYPE_ENTITY_TYPES = new Set(['class', 'struct', 'enum', 'interface', 'trait', 'impl', 'extension', 'protocol', 'object', 'actor', 'record']);
+
+/** The smallest type entity that spans lines lo..hi, or null. */
+function _typeEntityAround(graph, filePathRel, lo, hi) {
+  if (!graph || typeof graph.findEnclosingEntity !== 'function') return null;
+  let e = null;
+  try { e = graph.findEnclosingEntity(filePathRel, lo, hi); } catch { e = null; }
+  if (!e || !e.name || !TYPE_ENTITY_TYPES.has(e.type)) return null;
+  if (!Number.isInteger(e.startLine) || !Number.isInteger(e.endLine)) return null;
+  return { symbol: e.name, type: e.type, startLine: e.startLine, endLine: e.endLine };
+}
+
 function _sniffRemainderDefinitions(text, isCFamily) {
   const names = [];
   const seen = new Set();
@@ -682,6 +694,12 @@ async function _readFileUnpinned(req) {
     const graph = _getGraphRepo(projectRoot);
     if (sliced.startLine > 1) enclosingStart = _bodyEntityAcross(graph, relForIndex, sliced.startLine, -1);
     if (sliced.endLine < sliced.totalLines) enclosingEnd = _bodyEntityAcross(graph, relForIndex, sliced.endLine, +1);
+    // No function around the window: the type it lies in (grdb `ss-read Database.swift 299`,
+    // a field of `class Database` 146-1954; nothing else says whose member it is).
+    if (!enclosingStart && !enclosingEnd && sliced.startLine > 1 && sliced.endLine < sliced.totalLines) {
+      const type = _typeEntityAround(graph, relForIndex, sliced.startLine - 1, sliced.endLine + 1);
+      if (type) enclosingStart = enclosingEnd = type;
+    }
   }
 
   // If a line range was requested, narrow attached chunks to the overlap.
