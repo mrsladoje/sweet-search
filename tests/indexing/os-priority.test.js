@@ -21,6 +21,29 @@ vi.mock('node:child_process', () => ({
   spawn: (...args) => spawnMock(...args),
 }));
 
+// The optional native addon (@sweet-search/bg-priority) IS installed wherever
+// its prebuilt binary resolves (a normal `npm install` on darwin-arm64), so the
+// "addon absent" contract cannot rely on the host. Make the require fail for
+// that one package; everything else resolves normally.
+vi.mock('node:module', async (importOriginal) => {
+  const actual = await importOriginal();
+  return {
+    ...actual,
+    createRequire: (url) => {
+      const real = actual.createRequire(url);
+      const req = (id) => {
+        if (id === '@sweet-search/bg-priority') {
+          const err = new Error(`Cannot find module '${id}'`);
+          err.code = 'MODULE_NOT_FOUND';
+          throw err;
+        }
+        return real(id);
+      };
+      return Object.assign(req, real);
+    },
+  };
+});
+
 const { applyBackgroundPriority, loadNativePriorityAddon, setNativeBackgroundMode } =
   await import('../../core/indexing/os-priority.mjs');
 
@@ -127,9 +150,9 @@ describe('applyBackgroundPriority — never throws', () => {
 
 describe('loadNativePriorityAddon', () => {
   it('returns null when the optional native addon is not installed', () => {
-    // @sweet-search/bg-priority is an optionalDependency that is not built in
-    // the test sandbox, so the require fails and the loader returns null
-    // (never throws). The spawn-based fallback then covers all platforms.
+    // @sweet-search/bg-priority is an optionalDependency; when its require
+    // fails (mocked above) the loader returns null and never throws. The
+    // spawn-based fallback then covers all platforms.
     expect(loadNativePriorityAddon()).toBeNull();
   });
 
@@ -154,7 +177,7 @@ describe('setNativeBackgroundMode — gated self-demotion', () => {
   });
 
   it('returns false when gated on but the addon is absent (falls back)', () => {
-    // Flag on, but @sweet-search/bg-priority is not installed in the sandbox →
+    // Flag on, but @sweet-search/bg-priority does not load (mocked above) →
     // loadNativePriorityAddon() is null → no native demotion, caller falls back.
     process.env.SWEET_SEARCH_MAINTAINER_NATIVE_PRIORITY = '1';
     expect(setNativeBackgroundMode(true)).toBe(false);
