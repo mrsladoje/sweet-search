@@ -139,12 +139,22 @@ export async function scanDirtyAndEnqueue({ projectRoot, stateDir, admissionPoli
       if (!rel) continue;
       if (ent.isDirectory()) {
         if (policy.isExcluded(rel) || (extraDeny && extraDeny(rel))) continue; // prune subtree
+        // A directory git ignores as a whole holds no admissible file; never
+        // stat its contents (see admission-policy `ignoredDirectories`).
+        if (typeof policy.isIgnoredDirectory === 'function' && policy.isIgnoredDirectory(rel)) continue;
         stack.push(abs);
         continue;
       }
       if (!ent.isFile()) continue;
       walked += 1;
-      if (walked % 1000 === 0) progress('dirty-scan:walk');
+      if (walked % 1000 === 0) {
+        // Let the event loop turn. The walk is synchronous file system work;
+        // without a yield a large tree blocks the process for minutes, and a
+        // SIGTERM is not even delivered to its handler until the walk ends.
+        // The progress callback then sees the shutdown request and aborts.
+        await new Promise((resolve) => setImmediate(resolve));
+        progress('dirty-scan:walk');
+      }
       const prev = merkle[rel];
       const shapeOk = policy.admitsShape(rel) && !(extraDeny && extraDeny(rel));
       if (!shapeOk) {

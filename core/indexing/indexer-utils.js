@@ -386,8 +386,14 @@ export async function discoverFiles(options = {}) {
   // symlinked directory, and with onlyFiles a symlink to a file is not reported
   // either (its dirent is a link, not a file). So a symlink loop or a second
   // path to the same folder can no longer multiply the index.
+  // Directories git ignores as a whole are pruned here too, so the walk never
+  // enumerates them (this repository's gitignored eval/repos/ alone holds
+  // millions of files) and full discovery admits exactly what the incremental
+  // walk admits (admission-policy `ignoredDirectories`).
+  const escapePath = fg.escapePath || ((p) => p);
+  const ignoredDirGlobs = [...policy.ignoredDirectories()].map((dir) => `${escapePath(dir)}/**`);
   const discovered = await glob(policy.includeGlobs, {
-    ignore: policy.excludeGlobs,
+    ignore: [...policy.excludeGlobs, ...ignoredDirGlobs],
     cwd: projectRoot,
     absolute: false,
     onlyFiles: true,
