@@ -22,7 +22,7 @@ import {
   resolveAgentSessionId,
 } from './agent-span-ledger.js';
 import { sendAgentSpanOperation } from './agent-span-client.js';
-import { selectUnreadSymbols } from './unread-symbol-ranking.js';
+import { selectUnreadSymbols, nameWordsMatched } from './unread-symbol-ranking.js';
 import { containsToken, informativeSubtokens } from './query-sufficiency.js';
 import { kindName, kindNameList } from './kind-words.js';
 
@@ -430,18 +430,18 @@ function _bodyEntityAcross(graph, filePathRel, line, step) {
 function _graphKinds(projectRoot, filePathRel, symbols, lo, hi) {
   if (!symbols.length) return symbols;
   const graph = _getGraphRepo(projectRoot);
-  if (!graph || typeof graph.findEntityWithNameInRange !== 'function') return symbols;
+  if (!graph || typeof graph.findEntityWithNameInRange !== 'function') return symbols.map(({ endLine: _end, ...row }) => row);
   return symbols.map((sym) => {
     if (!sym?.symbol || !Number.isInteger(sym.startLine)) return sym;
-    // A chunk starts at the doc comment above its definition: look a few lines down.
+    // A chunk starts at the doc comment above its definition: the definition starts
+    // somewhere in the chunk's own lines.
+    const end = Number.isInteger(sym.endLine) && sym.endLine >= sym.startLine ? sym.endLine : sym.startLine;
     let e = null;
-    try { e = graph.findEntityWithNameInRange(filePathRel, sym.startLine, Math.min(hi, sym.startLine + GRAPH_KIND_LOOKAHEAD), sym.symbol); } catch { e = null; }
-    return e?.type && e.type !== sym.type ? { ...sym, type: e.type } : sym;
+    try { e = graph.findEntityWithNameInRange(filePathRel, sym.startLine, Math.min(hi, end), sym.symbol); } catch { e = null; }
+    const { endLine: _end, ...row } = sym;
+    return e?.type && e.type !== sym.type ? { ...row, type: e.type } : row;
   });
 }
-
-// Lines below a chunk's first line within which its definition starts (doc comments, attributes).
-const GRAPH_KIND_LOOKAHEAD = 40;
 
 const TYPE_ENTITY_TYPES = new Set(['class', 'struct', 'enum', 'interface', 'trait', 'impl', 'extension', 'protocol', 'object', 'actor', 'record']);
 
@@ -498,14 +498,14 @@ export function unreadAboveEnabled() {
  */
 function _collectAboveSymbols(chunks, filePathRel, projectRoot, windowStart, windowText = '') {
   const byName = new Map();
-  const push = (rawSymbol, type, startLine) => {
+  const push = (rawSymbol, type, startLine, endLine) => {
     const symbol = _baseSymbol(rawSymbol);
     if (!symbol || byName.has(symbol)) return;
-    byName.set(symbol, { symbol, type: type ?? null, startLine, referenced: false });
+    byName.set(symbol, { symbol, type: type ?? null, startLine, endLine, referenced: false });
   };
   for (const c of chunks) {
     if (c.startLine == null || c.endLine == null || c.endLine >= windowStart) continue;
-    push(c.symbol, c.type, c.startLine);
+    push(c.symbol, c.type, c.startLine, c.endLine);
   }
   const graph = _getGraphRepo(projectRoot);
   if (graph && typeof graph.findEntitiesInRange === 'function') {
@@ -514,7 +514,7 @@ function _collectAboveSymbols(chunks, filePathRel, projectRoot, windowStart, win
     catch { entities = []; }
     for (const e of entities) {
       if (!Number.isInteger(e?.endLine) || e.endLine >= windowStart) continue;
-      push(e.name, e.type, e.startLine);
+      push(e.name, e.type, e.startLine, e.endLine);
     }
   }
   // Symbols the shown window READS come first: a field referenced by the
@@ -562,7 +562,7 @@ function _aboveSignalSymbols(candidates, queryEvidence) {
     // method of Solver.php: getRuleSetSize, makeAssertionRuleDecisions).
     const terms = [...new Set(informativeSubtokens(name))];
     const hits = terms.filter((term) => subtokens.has(term)).length;
-    return terms.length > 0 && hits * 2 >= terms.length;
+    return nameWordsMatched(hits, terms.length);
   };
   return (candidates || []).filter((c) => c.referenced || named(c));
 }
@@ -654,7 +654,7 @@ async function _readFileUnpinned(req) {
         const symbol = _baseSymbol(c.symbol);
         if (!symbol || seen.has(symbol)) continue;
         seen.add(symbol);
-        symbols.push({ symbol, type: c.type ?? null, startLine: c.startLine });
+        symbols.push({ symbol, type: c.type ?? null, startLine: c.startLine, endLine: c.endLine });
       }
       // Index had no named chunks in the remainder (common for C/C++ where the
       // chunker stores name:null) — sniff definition lines from the in-memory

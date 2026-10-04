@@ -26,11 +26,12 @@ const TYPE_USER_TARGETS = new Set([
 ]);
 const TYPE_REF_CALLER_LIMIT = 40;
 const TYPE_REF_IMPORTANCE = 0.5;
-// Implementations / subtypes listed among callers (`overrides`, `implements`, `extends`) rank
-// below calls in the 40-row section: okhttp Interceptor.intercept has ~25 implementations and
-// they pushed real calls (KotlinSourceModernTest:614) out of the cap.
+// Rows rank by tier, then importance: calls, then implementations / subtypes (`overrides`,
+// `implements`, `extends`), then signature users. okhttp Interceptor.intercept has ~25
+// implementations and they pushed real calls (KotlinSourceModernTest:614) out of the cap.
 const SUBTYPE_RELATIONS = new Set(['overrides', 'implements', 'extends']);
-const SUBTYPE_IMPORTANCE = 0.6;
+const relationTier = (x) => (x.relationship === 'typeRef' ? 2 : SUBTYPE_RELATIONS.has(x.relationship) ? 1 : 0);
+const byTierThenImportance = (a, b) => (relationTier(a) - relationTier(b)) || (b.importance - a.importance);
 function estimateTokens(text) {
   return text ? Math.ceil(String(text).length / 3.5) : 0;
 }
@@ -391,8 +392,9 @@ export function itemCodeCap(tier) {
 }
 
 function packSection(items, budget, opts) {
-  const sorted = [...items].sort((a, b) => b.importance - a.importance);
+  const sorted = [...items].sort(byTierThenImportance);
   const utilityOrder = [...sorted].sort((a, b) => {
+    if (relationTier(a) !== relationTier(b)) return relationTier(a) - relationTier(b);
     const ac = Math.max(60, Math.min(1200, ((a.endLine || 0) - (a.startLine || 0) + 1) * 9));
     const bc = Math.max(60, Math.min(1200, ((b.endLine || 0) - (b.startLine || 0) + 1) * 9));
     return (b.importance / bc) - (a.importance / ac);
@@ -679,8 +681,13 @@ function parameterRange(source, name) {
 }
 
 /** Callers whose call lines all pass an argument count of another overload are dropped. */
+// Languages where a trailing block / lambda is an argument written outside the parentheses
+// (`retry(3) { }`): the parenthesised count is not the argument count.
+const TRAILING_BLOCK_FILE = /\.(?:kt|kts|swift|rb|scala|groovy|gradle)$/i;
+
 function dropOtherOverloadCalls(repo, target, rows) {
   if (!target?.name || !target.filePath || typeof repo.readFileRange !== 'function') return rows;
+  if (TRAILING_BLOCK_FILE.test(target.filePath)) return rows;
   const siblings = (repo.findEntityCandidates?.(target.name, { filePath: target.filePath, limit: 12 }) || [])
     .filter((e) => e.id !== target.id && e.name === target.name && e.filePath === target.filePath
       && (e.parentClass || null) === (target.parentClass || null));
@@ -699,7 +706,7 @@ function dropOtherOverloadCalls(repo, target, rows) {
       const m = new RegExp(`\\b${target.name}\\s*\\(`).exec(text);
       if (!m) return true;
       const body = parenBody(text, m.index + m[0].length - 1);
-      if (body == null) return true;
+      if (body == null || /\.\.\.|^\s*\*\w/.test(body)) return true; // spread: count unknown
       const n = listParts(body).length;
       return fits(own, n) || !others.some((r) => fits(r, n));
     });
@@ -872,8 +879,7 @@ export class StructuralContextBuilder {
     // Signature users rank below callers, constructors and subtypes.
     const callers = callersRaw.map(x => ({
       ...x,
-      importance: scoreEntity(x, callerCtx) * (x.relationship === 'typeRef' ? TYPE_REF_IMPORTANCE
-        : SUBTYPE_RELATIONS.has(x.relationship) ? SUBTYPE_IMPORTANCE : 1),
+      importance: scoreEntity(x, callerCtx) * (x.relationship === 'typeRef' ? TYPE_REF_IMPORTANCE : 1),
     }));
     const callees = calleesRaw.map(x => ({ ...x, importance: scoreEntity(x, calleeCtx) }));
     const impactPaths = interleaveDirections(impactRaw.map(p => ({
@@ -881,7 +887,7 @@ export class StructuralContextBuilder {
       importance: scoreImpactPath(p, p.direction === 'downstream' ? calleeCtx : callerCtx),
     })));
 
-    callers.sort((a, b) => b.importance - a.importance);
+    callers.sort(byTierThenImportance);
     callees.sort((a, b) => b.importance - a.importance);
     const budget = selectBudget(options.tokenBudget, { callers, callees, impactPaths });
     const targetFan = traceFanCounts(callersRaw, calleesRaw);

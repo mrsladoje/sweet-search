@@ -814,14 +814,26 @@ async function _readSemanticUnpinned(req) {
 
   // Take top-K by fused score, then pull the actual chunk records.
   const idToChunk = new Map(chunks.map(c => [c.id, c]));
-  // A chunk whose definition the question names as a word (sequel "what does preconnect do
-  // when concurrent is true?" -> `preconnect`) is the place it asks about: such chunks rank
-  // first, in score order among themselves. The file is fixed, so the name is unambiguous.
-  const queryWords = new Set((String(req.query).match(/[A-Za-z_][A-Za-z0-9_]*[?!]?/g) || []).map(w => w.toLowerCase()));
+  // A chunk whose definition the question names is the place it asks about. A mention
+  // shaped like code (`preConnect`, `pre_connect`, `preconnect(`, a backticked name, or a
+  // symbol that is itself camelCase / snake_case) pins the chunk first. A plain word
+  // ("what does close do") can also be English, so it gets a bounded boost only.
+  const rawQuery = String(req.query);
+  const queryWords = new Set((rawQuery.match(/[A-Za-z_][A-Za-z0-9_]*[?!]?/g) || []).map(w => w.toLowerCase()));
+  const codeMentions = new Set();
+  for (const m of rawQuery.matchAll(/`([^`]+)`|(?:\.|::)?([A-Za-z_][A-Za-z0-9_]*)(\s*\()?/g)) {
+    if (m[1]) { for (const w of m[1].match(/[A-Za-z_][A-Za-z0-9_]*/g) || []) codeMentions.add(w.toLowerCase()); continue; }
+    const w = m[2];
+    if (m[3] || /^[.:]/.test(m[0]) || /[_0-9]|[a-z][A-Z]/.test(w)) codeMentions.add(w.toLowerCase());
+  }
   const namedByQuery = (r) => {
-    const sym = String(_baseSymbol(r.symbol) || '').split(/\.|::|#/).pop().toLowerCase();
-    return sym.length >= 3 && queryWords.has(sym) ? 1 : 0;
+    const raw = String(_baseSymbol(r.symbol) || '').split(/\.|::|#/).pop();
+    const sym = raw.toLowerCase();
+    if (sym.length < 3 || !queryWords.has(sym)) return 0;
+    return codeMentions.has(sym) || /_|[a-z][A-Z]/.test(raw) ? 2 : 1;
   };
+  const NAMED_WORD_BOOST = 1.15;
+  const namedScore = (r) => (namedByQuery(r) === 1 ? r.score * NAMED_WORD_BOOST : r.score);
   // Overshoot a bit before the LI re-rank: the pool holds the top topK*2 DEFINITIONS, every
   // piece of one counted once. Eight pieces of one long function (grdb asyncConcurrentRead
   // parts 1-8) otherwise filled the pool and kept every other definition from the re-rank.
@@ -895,7 +907,7 @@ async function _readSemanticUnpinned(req) {
       };
     })
     .filter(Boolean)
-    .sort((a, b) => (namedByQuery(b) - namedByQuery(a)) || (b.score - a.score));
+    .sort((a, b) => ((namedByQuery(b) === 2) - (namedByQuery(a) === 2)) || (namedScore(b) - namedScore(a)));
   const ranked = rankedAll.slice(0, topK);
 
   // A gap of one definition is filled only while the merged span fits the budget: an

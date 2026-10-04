@@ -193,11 +193,12 @@ export async function hybridSearchV2(query, options = {}) {
   // Step 3.5: Apply source-vs-doc/test/config preference before the top-k cut.
   // The post-retrieval pass has the same guard, but hybrid used to slice first,
   // so docs/tests/tiny YAML could occupy top-1 and hide implementation chunks.
-  const fileKindIntent = classifyFileKindIntent(query, { agentFormat: options.format === 'agent' });
+  const agentFormat = ['agent', 'agent_full', 'agent_full_xl', 'agent_preview'].includes(options.format);
+  const fileKindIntent = classifyFileKindIntent(query, { agentFormat });
   const __t_fk = __ptStart();
   const rankedByFileKind = applyFileKindRanking(boosted, {
     intent: fileKindIntent,
-    agentFormat: options.format === 'agent',
+    agentFormat,
     window: options.fileKindWindow ?? 100,
     docFactor: options.hybridDocFactor ?? 0.35,
     testFactor: options.hybridTestFactor ?? 0.35,

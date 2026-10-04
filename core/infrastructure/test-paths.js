@@ -6,9 +6,9 @@
  * so it lives below both.
  */
 
-// `unit/` and `acceptance/` count only at the repository root (ocelot's test projects); deeper,
-// a `unit` directory can be production code (a units-of-measure module).
-const TEST_DIR_RE = /(^|\/)(__tests__|__mocks__|tests?|specs?|testdata|test_data|fixtures?|e2e|mocks?|testing|(?:integration|unit|acceptance)[-_]tests?)(\/|$)|^(?:unit|acceptance)\//i;
+// A bare `unit/` or `acceptance/` directory is no test marker (gonum ships a production `unit/`
+// package); their test files are named so (`FooTests.cs`) and match below.
+const TEST_DIR_RE = /(^|\/)(__tests__|__mocks__|tests?|specs?|testdata|test_data|fixtures?|e2e|mocks?|testing|(?:integration|unit|acceptance)[-_]tests?)(\/|$)/i;
 const TEST_FILE_RES = [
   /_test\.[a-z0-9]+$/i,                       // Go, Python style foo_test.py
   /(^|\/)test_[^/]+\.[a-z0-9]+$/i,            // Python test_foo.py
