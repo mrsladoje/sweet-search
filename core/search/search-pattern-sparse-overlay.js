@@ -465,6 +465,37 @@ export function grepUnfilterablePaths(files, regex, searchDir, { caseInsensitive
 const _allFilesByIndex = new WeakMap();
 
 export function getSparseGramAllFilesWithOverlay(searcher, sparseGramIndex, options = {}) {
+  const entry = allFilesEntry(searcher, sparseGramIndex, options);
+  return Array.isArray(entry?.files) ? entry.files.slice() : entry?.files;
+}
+
+/**
+ * The files getSparseGramAllFilesWithOverlay lists that equal `rel` or lie under `rel/`, for
+ * each of `rels` (root-relative, normalized), from a sorted copy kept with the list: a
+ * one-file or one-directory --in scope without scanning 60k paths. Sorted, not in list order
+ * (bareGrep sorts the matches). Null when there is no list.
+ */
+export function getSparseGramFilesUnder(searcher, sparseGramIndex, options, rels) {
+  const entry = allFilesEntry(searcher, sparseGramIndex, options);
+  if (!Array.isArray(entry?.files)) return null;
+  entry.sorted ??= [...entry.files].sort();
+  entry.set ??= new Set(entry.files);
+  const out = new Set();
+  for (const rel of rels) {
+    if (entry.set.has(rel)) out.add(rel);
+    const prefix = `${rel}/`;
+    let lo = 0;
+    let hi = entry.sorted.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (entry.sorted[mid] < prefix) lo = mid + 1; else hi = mid;
+    }
+    for (let i = lo; i < entry.sorted.length && entry.sorted[i].startsWith(prefix); i++) out.add(entry.sorted[i]);
+  }
+  return [...out];
+}
+
+function allFilesEntry(searcher, sparseGramIndex, options = {}) {
   const symbolMask = _resolveSparseSymbolMask(resolveSearchSymbolFilter(options)) || 0;
   const projectRoot = searcher?.projectRoot || options.projectRoot || PROJECT_ROOT;
   const indexKey = sparseGramIndex !== null && typeof sparseGramIndex === 'object' ? sparseGramIndex : null;
@@ -473,15 +504,14 @@ export function getSparseGramAllFilesWithOverlay(searcher, sparseGramIndex, opti
     const overlay = loadSparseDeltaOverlay(searcher, options);
     if (cached.hidden === overlay?.hidden && cached.live === overlay?.live
         && cached.symbolMask === symbolMask && cached.projectRoot === projectRoot) {
-      return cached.files.slice();
+      return cached;
     }
   }
   const baseFiles = _getSparseGramAllFiles(sparseGramIndex);
-  if (!Array.isArray(baseFiles)) return baseFiles;
+  if (!Array.isArray(baseFiles)) return { files: baseFiles };
   const overlay = loadSparseDeltaOverlay(searcher, options);
   const files = applySparseDeltaOverlay(baseFiles, overlay, symbolMask, projectRoot);
-  if (indexKey) {
-    _allFilesByIndex.set(indexKey, { hidden: overlay?.hidden, live: overlay?.live, symbolMask, projectRoot, files });
-  }
-  return files.slice();
+  const entry = { hidden: overlay?.hidden, live: overlay?.live, symbolMask, projectRoot, files };
+  if (indexKey) _allFilesByIndex.set(indexKey, entry);
+  return entry;
 }
