@@ -280,8 +280,8 @@ const NODE_TYPE_MAP = {
   'singleton_method': 'method',
   // PHP
   'trait_declaration': 'trait',
-  // Kotlin
-  'object_declaration': 'class',
+  // Kotlin (only grammar with this node type)
+  'object_declaration': 'object',
   // Swift
   'protocol_declaration': 'interface',
   'protocol_function_declaration': 'method',
@@ -786,7 +786,7 @@ const CAPTURE_TO_ENTITY_TYPE = {
   // New: Java, Ruby, PHP, Kotlin
   'record.definition': 'record',
   'module.definition': 'module',
-  'object.definition': 'class',
+  'object.definition': 'object', // Kotlin object / companion object
   // JS/TS exported const declarations (May 2026):
   // @component fires only when value is a call_expression (memo/forwardRef/createSlice etc.);
   // @variable fires for any export const, including string/object/typed literals.
@@ -851,6 +851,49 @@ const CONTAINER_NODE_TYPES = {
 };
 
 const JS_FAMILY_LANGUAGES = new Set(['javascript', 'typescript', 'tsx']);
+
+// Swift `class_declaration` covers five kinds; its `declaration_kind` field is
+// the keyword leaf that says which.
+const SWIFT_DECLARATION_KINDS = {
+  class: 'class', struct: 'struct', enum: 'enum', extension: 'extension', actor: 'actor',
+};
+
+/**
+ * The declaration kind of a type node whose grammar uses one node type for
+ * several kinds, read from the node's own keyword leaf (never from text):
+ *   - Kotlin `class_declaration` is class / `interface` / `enum class`
+ *     (keyword leaves `interface`, `enum`); `object_declaration` and
+ *     `companion_object` are objects.
+ *   - Swift `class_declaration` is class / struct / enum / extension / actor
+ *     (the `declaration_kind` field).
+ * Every other language and node returns `type` unchanged, so their chunk and
+ * entity kinds stay byte-identical.
+ *
+ * @param {object} node - tree-sitter declaration node
+ * @param {string} languageId
+ * @param {string} type - kind from NODE_TYPE_MAP / CAPTURE_TO_ENTITY_TYPE
+ * @returns {string}
+ */
+export function refineDeclarationKind(node, languageId, type) {
+  if (!node) return type;
+  if (languageId === 'kotlin') {
+    if (node.type === 'object_declaration' || node.type === 'companion_object') return 'object';
+    if (node.type !== 'class_declaration') return type;
+    for (let i = 0; i < node.childCount; i++) {
+      const c = node.child(i);
+      if (c.isNamed) continue;
+      if (c.type === 'interface') return 'interface';
+      if (c.type === 'enum') return 'enum';
+      if (c.type === 'class') return 'class';
+    }
+    return type;
+  }
+  if (languageId === 'swift' && node.type === 'class_declaration') {
+    const keyword = node.childForFieldName?.('declaration_kind')?.type;
+    return SWIFT_DECLARATION_KINDS[keyword] || type;
+  }
+  return type;
+}
 
 // Swift compile-time conditional lines (`#if X`, `#elseif`, `#else`, `#endif`).
 const SWIFT_CONDITIONAL_DIRECTIVE_LINE = /^[ \t]*#(?:if|elseif|else|endif)\b[^\n]*/gm;
@@ -1069,6 +1112,13 @@ export class TreeSitterProvider {
           }
         }
 
+        // Kotlin / Swift reuse one node type for several declaration kinds
+        // (`interface Chain` is a Kotlin class_declaration); read the kind
+        // from the node's keyword leaf. No-op for every other language.
+        if (entityType === 'class' || entityType === 'object') {
+          entityType = refineDeclarationKind(extentNode, languageId, entityType);
+        }
+
         // Deduplicate: multiple captures can match the same declaration.
         // A Go spec can declare several names (`var a, b int`): one entity each.
         const isGoSpecName = languageId === 'go' && isLeafIdent
@@ -1203,7 +1253,15 @@ export class TreeSitterProvider {
     }
 
     const children = this._getChildren(tree.rootNode);
-    const chunks = this.recursiveChunk(children, content, maxChunkSize, null, boundaryTypes);
+    // Read by _resolveBoundary (refineDeclarationKind); recursiveChunk is
+    // synchronous, so no other parse can interleave.
+    this._chunkLanguageId = languageId;
+    let chunks;
+    try {
+      chunks = this.recursiveChunk(children, content, maxChunkSize, null, boundaryTypes);
+    } finally {
+      this._chunkLanguageId = null;
+    }
 
     tree.delete(); // free WASM memory
 
@@ -1844,7 +1902,8 @@ export class TreeSitterProvider {
         }
       }
     }
-    return { type: NODE_TYPE_MAP[node.type] || 'code', nameNode: node };
+    const type = refineDeclarationKind(node, this._chunkLanguageId, NODE_TYPE_MAP[node.type] || 'code');
+    return { type, nameNode: node };
   }
 
   /** Create a tree-sitter query (mockable seam for tests) */

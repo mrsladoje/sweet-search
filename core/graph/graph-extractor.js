@@ -666,6 +666,11 @@ const TYPE_LIST_ENTRY = /^\\?[A-Za-z_$][\w$]*(?:(?:\.|::|\\)[A-Za-z_$][\w$]*)*$/
 export const TREE_SITTER_ENTITY_PRIORITY = Object.freeze({
   component: 40,
   class: 35,
+  // Kotlin `object`, Swift `actor` / `extension`: 'class' before their kinds
+  // were read from the node; same rank.
+  object: 35,
+  actor: 35,
+  extension: 35,
   function: 30,
   method: 25,
   arrowFunction: 20,
@@ -3192,7 +3197,9 @@ export function rebuildGraphFts(db) {
 // HCGS hierarchy: which entity types own members (`parent_id`), and which
 // members get one. Shared by the full build (insertGraph) and the maintainer
 // (production-reconciler), so both store the same parent for every member.
-const HIERARCHY_PARENT_TYPES = new Set(['class', 'interface', 'enum', 'service']);
+// Kotlin `object` and Swift `actor` / `extension` were stored as 'class'
+// before their kinds were read from the node; they own members the same way.
+const HIERARCHY_PARENT_TYPES = new Set(['class', 'interface', 'enum', 'service', 'object', 'actor', 'extension']);
 const HIERARCHY_MEMBER_TYPES = new Set(['method', 'field', 'rpc']);
 
 /** HCGS level of an entity type: 1 for members, 0 for everything else. */

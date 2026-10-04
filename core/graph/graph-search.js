@@ -2007,12 +2007,14 @@ export class GraphSearch {
             LOWER(e.name) LIKE ? || '%'
           )
           -- Only match top-level definition types, not methods
-          AND e.type IN ('class', 'interface', 'struct', 'enum', 'function', 'type', 'component')
+          AND e.type IN ('class', 'interface', 'struct', 'enum', 'function', 'type', 'component', 'object', 'actor')
           AND ${this._entityVisibilitySql('e')}
           ORDER BY
             match_priority,
             CASE e.type
               WHEN 'class' THEN 0
+              WHEN 'object' THEN 0
+              WHEN 'actor' THEN 0
               WHEN 'interface' THEN 1
               WHEN 'function' THEN 2
               WHEN 'component' THEN 3
@@ -2129,7 +2131,7 @@ export class GraphSearch {
         CASE WHEN name = ? THEN 0 ELSE 1 END,
         CASE WHEN file_path LIKE '%/test/%' OR file_path LIKE 'test/%' OR file_path LIKE 'tests/%' THEN 1 ELSE 0 END,
         CASE type
-          WHEN 'class' THEN 0 WHEN 'struct' THEN 0 WHEN 'trait' THEN 0
+          WHEN 'class' THEN 0 WHEN 'struct' THEN 0 WHEN 'trait' THEN 0 WHEN 'object' THEN 0 WHEN 'actor' THEN 0
           WHEN 'interface' THEN 1 WHEN 'enum' THEN 1 WHEN 'type' THEN 1 WHEN 'typeAlias' THEN 1
           WHEN 'function' THEN 2 WHEN 'method' THEN 2
           ELSE 3

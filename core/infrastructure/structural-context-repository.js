@@ -289,7 +289,7 @@ export class StructuralContextRepository {
         END,
         CASE WHEN file_path LIKE '%/test/%' OR file_path LIKE 'test/%' OR file_path LIKE 'tests/%' THEN 1 ELSE 0 END,
         CASE type
-          WHEN 'class' THEN 0 WHEN 'struct' THEN 0 WHEN 'trait' THEN 0
+          WHEN 'class' THEN 0 WHEN 'struct' THEN 0 WHEN 'trait' THEN 0 WHEN 'object' THEN 0 WHEN 'actor' THEN 0
           WHEN 'interface' THEN 1 WHEN 'enum' THEN 1 WHEN 'type' THEN 1 WHEN 'typeAlias' THEN 1
           WHEN 'function' THEN 2 WHEN 'method' THEN 2
           ELSE 3

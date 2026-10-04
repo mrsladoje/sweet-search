@@ -366,7 +366,8 @@ export function mineCodeGraph(dbPath) {
 
     // Public API boost (exported, capitalized Go, etc.)
     const isPublic = ent.type === 'class' || ent.type === 'interface' ||
-      ent.type === 'enum' || ent.type === 'module' || ent.type === 'service';
+      ent.type === 'enum' || ent.type === 'module' || ent.type === 'service' ||
+      ent.type === 'object' || ent.type === 'actor';
     if (isPublic) score = Math.min(score * 1.2, 1.0);
 
     // Leaf penalty

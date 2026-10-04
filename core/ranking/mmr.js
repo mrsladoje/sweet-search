@@ -54,7 +54,7 @@ export const MMR_CONFIG = {
  */
 // Static type groupings used by computeSimilarity — hoisted out of the
 // O(candidates × selected) MMR inner loop.
-const SIMILARITY_DEF_TYPES = new Set(['class', 'interface', 'struct', 'enum', 'trait']);
+const SIMILARITY_DEF_TYPES = new Set(['class', 'interface', 'struct', 'enum', 'trait', 'object', 'actor', 'extension']);
 const SIMILARITY_METHOD_TYPES = new Set(['method', 'function', 'constructor']);
 
 export function computeSimilarity(a, b, weights = MMR_CONFIG.weights) {
@@ -335,7 +335,7 @@ export function shouldApplyMMR(results) {
   if (maxFileCount >= 8) return true;
 
   // If any non-definition type has >50% of top 20 results
-  const defTypes = new Set(['class', 'interface', 'struct', 'enum']);
+  const defTypes = new Set(['class', 'interface', 'struct', 'enum', 'object', 'actor', 'extension']);
   for (const [type, count] of typeCounts) {
     if (count >= 10 && !defTypes.has(type)) {
       return true;
