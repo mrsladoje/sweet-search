@@ -132,6 +132,23 @@ describe('opencode: shipped prompt and tool edits = bench conflict3+todo3eff3k',
     expect(t.files[OPENCODE_TRIM_PLUGIN]).toBe(readFileSync(OPENCODE_TRIM_PLUGIN_SOURCE, 'utf8'));
   });
 
+  it('the plugin gives every bash call of one opencode session its own ss-* session key', async () => {
+    const { default: plugin } = await import(OPENCODE_TRIM_PLUGIN_SOURCE);
+    const hooks = await plugin({}, {});
+    const envOf = async (input) => { const out = { env: {} }; await hooks['shell.env'](input, out); return out.env; };
+    const saved = process.env.SWEET_SEARCH_SESSION_ID;
+    delete process.env.SWEET_SEARCH_SESSION_ID;
+    try {
+      expect(await envOf({ cwd: '/r', sessionID: 'ses_1', callID: 'c' })).toEqual({ SWEET_SEARCH_SESSION_ID: 'opencode-ses_1' });
+      expect(await envOf({ cwd: '/r', sessionID: 'ses_2', callID: 'c' })).toEqual({ SWEET_SEARCH_SESSION_ID: 'opencode-ses_2' });
+      expect(await envOf({ cwd: '/r' })).toEqual({});   // a PTY has no session
+      process.env.SWEET_SEARCH_SESSION_ID = 'user';
+      expect(await envOf({ cwd: '/r', sessionID: 'ses_1' })).toEqual({});
+    } finally {
+      if (saved === undefined) delete process.env.SWEET_SEARCH_SESSION_ID; else process.env.SWEET_SEARCH_SESSION_ID = saved;
+    }
+  });
+
   it('the prompt drops only the Glob/Grep steer and "especially file reads", and adds our lines', () => {
     const original = readFileSync(OPENCODE_GPT_ORIGINAL, 'utf8');
     const prompt = opencodePrompt();

@@ -298,7 +298,50 @@ describe('read omission rendering', () => {
   });
 
   it('fails closed on untrusted session ids', () => {
-    expect(resolveAgentSessionId('bad\nsession', {})).toBeNull();
-    expect(resolveAgentSessionId(null, { CODEX_THREAD_ID: 'thread-123' })).toBe('thread-123');
+    const noProc = { procInfo: () => null };
+    expect(resolveAgentSessionId('bad\nsession', {}, noProc)).toBeNull();
+    expect(resolveAgentSessionId(null, { CODEX_THREAD_ID: 'thread-123' }, noProc)).toBe('thread-123');
+  });
+
+  // Process table: 900 = harness (claude / opencode), 800 its shell, 700 the tool (child of
+  // the shell), 600 a tool the shell exec'd (parent = harness), 1 = launchd.
+  const table = {
+    900: { ppid: 1, comm: 'claude', start: '111' },
+    800: { ppid: 900, comm: '/bin/zsh', start: '222' },
+    700: { ppid: 800, comm: 'ss-read', start: '333' },
+    600: { ppid: 900, comm: 'ss-read', start: '444' },
+    500: { ppid: 1, comm: 'bash', start: '555' },
+    400: { ppid: 500, comm: 'ss-read', start: '666' },
+  };
+  const procInfo = (pid) => table[pid] || null;
+
+  it('reads the session id of each harness, in order', () => {
+    const o = { procInfo, pid: 700 };
+    expect(resolveAgentSessionId(null, { SWEET_SEARCH_SESSION_ID: 's', CODEX_THREAD_ID: 't', CLAUDE_CODE_SESSION_ID: 'c' }, o)).toBe('s');
+    expect(resolveAgentSessionId(null, { CODEX_THREAD_ID: 't', CLAUDE_CODE_SESSION_ID: 'c' }, o)).toBe('t');
+    // Claude Code exports CLAUDE_CODE_SESSION_ID; CLAUDE_SESSION_ID is set by nothing.
+    expect(resolveAgentSessionId(null, { CLAUDE_CODE_SESSION_ID: 'c' }, o)).toBe('c');
+    expect(resolveAgentSessionId(null, { CLAUDE_SESSION_ID: 'old' }, o)).toBe('proc-900-111');
+  });
+
+  it('falls back to the harness process: the parent of the shell, pid + start time', () => {
+    expect(resolveAgentSessionId(null, {}, { procInfo, pid: 700 })).toBe('proc-900-111');
+    // The shell exec'd the tool: the tool is the shell, its parent is the harness.
+    expect(resolveAgentSessionId(null, {}, { procInfo, pid: 600 })).toBe('proc-900-111');
+    // A launcher pid (bin/ss-* stub) stands for the call.
+    expect(resolveAgentSessionId(null, { SWEET_SEARCH_CHAIN_PID: '700' }, { procInfo, pid: 12345 })).toBe('proc-900-111');
+    // opencode names its own pid.
+    expect(resolveAgentSessionId(null, { OPENCODE_PID: '900' }, { procInfo, pid: 400 })).toBe('proc-900-111');
+  });
+
+  it('no key when the walk ends at pid 1 or a process cannot be read', () => {
+    expect(resolveAgentSessionId(null, {}, { procInfo, pid: 400 })).toBeNull();
+    expect(resolveAgentSessionId(null, {}, { procInfo, pid: 4242 })).toBeNull();
+    expect(resolveAgentSessionId(null, { OPENCODE_PID: 'x' }, { procInfo: () => null, pid: 700 })).toBeNull();
+  });
+
+  it('two harness processes, or one pid reused later, never share a key', () => {
+    const t2 = { ...table, 900: { ...table[900], start: '999' } };
+    expect(resolveAgentSessionId(null, {}, { procInfo: (p) => t2[p] || null, pid: 700 })).toBe('proc-900-999');
   });
 });

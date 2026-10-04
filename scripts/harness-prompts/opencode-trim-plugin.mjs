@@ -1,8 +1,15 @@
 // opencode plugin for the harness trim (OC_HARNESS_TRIM, opencode-task-runner.mjs).
-// Edits the DESCRIPTION of built-in tools through the `tool.definition` hook and nothing
-// else: parameters and `execute` stay opencode's own, so a trimmed bash call runs exactly
-// like an untrimmed one. Self-contained (no imports beyond node:fs) because the runner
-// copies it into the rollout's state dir, where no node_modules exist.
+// Edits the DESCRIPTION of built-in tools through the `tool.definition` hook: parameters and
+// `execute` stay opencode's own, so a trimmed bash call runs exactly like an untrimmed one.
+// Self-contained (no imports beyond node:fs) because the runner copies it into the rollout's
+// state dir, where no node_modules exist.
+//
+// `shell.env`: every bash call of one opencode SESSION gets SWEET_SEARCH_SESSION_ID =
+// opencode-<sessionID>, the key of the ss-* "already shown" receipts
+// (core/search/agent-span-ledger.js resolveAgentSessionId). opencode exports no session id to
+// its shells, and one opencode process can run several sessions (TUI, server, subagents),
+// so the process fallback (OPENCODE_PID) alone would let two sessions share receipts.
+// A SWEET_SEARCH_SESSION_ID set by the user wins.
 //
 // options.edits  { <toolID>: [[find, replace], ...] }  — applied in order, every occurrence.
 // options.report path of a JSON file rewritten on every hook call:
@@ -15,6 +22,11 @@ export default async (_input, options = {}) => {
   const edits = options.edits || {};
   const report = {};
   return {
+    'shell.env': async (input, output) => {
+      const id = input?.sessionID;
+      if (typeof id !== 'string' || !id || !output?.env || process.env.SWEET_SEARCH_SESSION_ID) return;
+      output.env.SWEET_SEARCH_SESSION_ID = `opencode-${id}`;
+    },
     'tool.definition': async ({ toolID }, output) => {
       const list = edits[toolID];
       if (!list || typeof output.description !== 'string') return;
