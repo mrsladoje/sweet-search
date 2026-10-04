@@ -331,6 +331,30 @@ function cwdPath(p) {
   return resolveCwdPath(p, { cwd: process.cwd(), root: FILE_ROOT });
 }
 
+// A short path the agent copied from an output (`RealInterceptorChain.kt`, `http/RealCall.kt`)
+// that names no file on disk: when it is the end (whole path components) of exactly ONE
+// indexed file, that file is meant. Returns { file, resolved }: `resolved` = the caller prints
+// the full path, so the agent learns it. Two or more files: exit 1 listing them (stderr; the
+// wrapper shows stderr on a non-zero exit). None: unchanged (the caller's own miss handling).
+const SHORT_PATH_CANDIDATES_SHOWN = 8;
+async function resolveShortFile(typed, file, tool) {
+  if (!file || typeof typed !== 'string' || path.isAbsolute(typed)) return { file, resolved: false };
+  try { if (existsSync(path.resolve(FILE_ROOT, file))) return { file, resolved: false }; }
+  catch { return { file, resolved: false }; }
+  const cov = await getCoverage();
+  let matches = [];
+  try { matches = cov?.filesEndingWith?.(typed) || []; } catch { matches = []; }
+  if (matches.length === 1) return { file: matches[0], resolved: true };
+  if (matches.length > 1) {
+    const shown = matches.slice(0, SHORT_PATH_CANDIDATES_SHOWN);
+    const more = matches.length - shown.length;
+    process.stderr.write(`[${tool}] ${typed} matches ${matches.length} files; give one in full:\n`
+      + `${shown.join('\n')}${more > 0 ? `\n+${more} more` : ''}\n`);
+    process.exit(1);
+  }
+  return { file, resolved: false };
+}
+
 // --in values and absorbed positional scopes, cwd-first, de-duplicated (in place).
 function resolveScopePaths(inPaths) {
   const resolved = [...new Set(inPaths.map(cwdPath))];
@@ -997,7 +1021,7 @@ async function cmdRead(rawArgs) {
   // --in <file> names the file, as it does for ss-grep / ss-trace: `ss-read --in <file> 10 20`.
   const inFile = readValueFlag(args, ['--in', '--file'], null, READ_USAGE);
   if (inFile != null) args.unshift(inFile);
-  const file = cwdPath(args[0]);
+  let file = cwdPath(args[0]);
   if (!file) {
     process.stderr.write(READ_USAGE + '\n');
     process.exit(2);
@@ -1006,6 +1030,10 @@ async function cmdRead(rawArgs) {
     process.stderr.write(`[ss-read] "${file}" looks like a flag, but ss-read takes a file path first.\n${READ_USAGE}\n`);
     process.exit(2);
   }
+  // A short path naming one indexed file reads that file; its full path prints first.
+  const short = await resolveShortFile(args[0], file, 'ss-read');
+  file = short.file;
+  const resolvedLine = short.resolved ? `# ${file}\n` : '';
   // If start is provided and end is omitted, read EXACTLY that one line —
   // no open-ended start-to-EOF (which a previous version did and which
   // caused accidental over-reading on large files).
@@ -1138,7 +1166,7 @@ async function cmdRead(rawArgs) {
   const coveredWholeFile = (start === null && end === null) || (cappedDefault && r.range && r.range.endLine >= r.totalLines);
   const omitted = renderReadOmission(r, { surface: 'ss-read' });
   if (omitted) {
-    process.stdout.write(`${omitted}\n`);
+    process.stdout.write(`${resolvedLine}${omitted}\n`);
     process.exit(0);
   }
   // WHAT THE OUTPUT SAYS BESIDES THE CODE (token diet 2026-10-04). No header echoes the
@@ -1164,7 +1192,7 @@ async function cmdRead(rawArgs) {
   ].map((x) => x.replace(/^# /, '')).filter(Boolean);
   if (!r.text) {
     // An empty file (or a window of nothing) prints no empty fence.
-    process.stdout.write(`${aboveParts.length ? `# ${aboveParts.join('; ')}\n` : ''}# empty file\n`);
+    process.stdout.write(`${resolvedLine}${aboveParts.length ? `# ${aboveParts.join('; ')}\n` : ''}# empty file\n`);
     process.exit(0);
   }
   // Line-number gutter: the per-harness form (gutter-form.js: `N:` on opencode, none on
@@ -1177,7 +1205,7 @@ async function cmdRead(rawArgs) {
   }
   // A plain fence: the language tag (```ruby, 1-2 tokens) repeats the extension of the
   // path in the command just above.
-  process.stdout.write(`${aboveParts.length ? `# ${aboveParts.join('; ')}\n` : ''}\`\`\`\n${fenceBody(bodyText)}\n\`\`\`\n${remainder ? remainder + '\n' : ''}`);
+  process.stdout.write(`${resolvedLine}${aboveParts.length ? `# ${aboveParts.join('; ')}\n` : ''}\`\`\`\n${fenceBody(bodyText)}\n\`\`\`\n${remainder ? remainder + '\n' : ''}`);
   process.exit(0);
 }
 
@@ -1448,6 +1476,11 @@ async function cmdSemantic(rawArgs) {
     process.stderr.write(SEMANTIC_USAGE + '\n');
     process.exit(2);
   }
+  {
+    // A short path naming one indexed file: answer from it and print its full path first.
+    const short = await resolveShortFile(inFile ?? args[0], file, 'ss-semantic');
+    if (short.resolved) { file = short.file; process.stdout.write(`# ${file}\n`); }
+  }
   // Same refusal as ss-read, and for a sharper reason: on an excluded file `readSemantic`
   // has no chunks to rank, so it falls back to a WHOLE-FILE span. Five of the seven
   // [FALLBACK] calls on the fresh pool were `dist/index.js` lines 1-35000 — the tool
@@ -1574,7 +1607,16 @@ async function cmdTrace(rawArgs) {
   }
 
   const opts = { projectRoot: PROJECT_ROOT };
-  const file = cwdPath(readValueFlag(args, ['--in', '--file'], null, TRACE_USAGE));
+  const inTyped = readValueFlag(args, ['--in', '--file'], null, TRACE_USAGE);
+  let file = cwdPath(inTyped);
+  // --in with a short path naming one indexed file: trace in that file; the header then
+  // prints its full path (formatTraceCompact prints `# lines a-b` only for a file typed in full).
+  let inResolved = false;
+  if (file) {
+    const short = await resolveShortFile(inTyped, file, 'ss-trace');
+    file = short.file;
+    inResolved = short.resolved;
+  }
   const queryHint = readValueFlag(args, ['--query', '--hint'], '', TRACE_USAGE, { allowOptionValue: true });
   const depth = readPositiveIntFlag(args, '--depth', null, TRACE_USAGE);
   const budget = readPositiveIntFlag(args, '--budget', null, TRACE_USAGE);
@@ -1623,7 +1665,7 @@ async function cmdTrace(rawArgs) {
     query: json ? undefined : `${symbol} ${queryHint}`.trim(),
   });
   if (json) process.stdout.write(JSON.stringify({ ...response, mode }, null, 2) + '\n');
-  else if (FIX.traceCompact) process.stdout.write(formatTraceCompact(response, { mode, inFile: file, notes: traceNotes }) + '\n');
+  else if (FIX.traceCompact) process.stdout.write(formatTraceCompact(response, { mode, inFile: inResolved ? null : file, notes: traceNotes }) + '\n');
   else process.stdout.write(formatStructuralContext(response, { mode }) + '\n');
 
   const meta = {

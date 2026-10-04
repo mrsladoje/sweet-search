@@ -175,3 +175,32 @@ describe('index coverage', () => {
     rmSync(dir, { recursive: true, force: true });
   });
 });
+
+describe('filesEndingWith — a short path the agent copied from an output', () => {
+  it('matches whole path components only, exact case, live rows only', async () => {
+    const dir = makeProject([
+      'okhttp/internal/http/RealInterceptorChain.kt',
+      'okhttp/internal/connection/RealCall.kt',
+      'mock/RealCall.kt',
+      'okhttp/internal/http/NotRealCall.kt',
+      '!old/Gone.kt',
+      'lib/a_b%c.rb',
+      'lib/axb%c.rb',
+    ]);
+    try {
+      const cov = await createIndexCoverage({ projectRoot: dir });
+      expect(cov.filesEndingWith('RealInterceptorChain.kt')).toEqual(['okhttp/internal/http/RealInterceptorChain.kt']);
+      expect(cov.filesEndingWith('http/RealInterceptorChain.kt')).toEqual(['okhttp/internal/http/RealInterceptorChain.kt']);
+      expect(cov.filesEndingWith('RealCall.kt')).toEqual(['mock/RealCall.kt', 'okhttp/internal/connection/RealCall.kt']);
+      expect(cov.filesEndingWith('connection/RealCall.kt')).toEqual(['okhttp/internal/connection/RealCall.kt']);
+      expect(cov.filesEndingWith('realcall.kt')).toEqual([]);
+      expect(cov.filesEndingWith('Gone.kt')).toEqual([]);
+      // LIKE wildcards in the name are literal.
+      expect(cov.filesEndingWith('a_b%c.rb')).toEqual(['lib/a_b%c.rb']);
+      expect(cov.filesEndingWith('../x.kt')).toEqual([]);
+      cov.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});

@@ -628,10 +628,14 @@ const RELATED_KIND_LABELS = {
 
 /**
  * Related rows (context-expander.js renderGraphNeighbors `rows`), one line per kind:
- * `callers: RealCall.kt 210-260 getResponseWithInterceptorChain · 300-310 other`. The path is
- * the shortest unique one and prints once per run of rows in the same file.
+ * `callers: okhttp/.../RealCall.kt 210-260 getResponseWithInterceptorChain · 300-310 other`.
+ * The path prints once per run of rows in the same file. PATH RULE (one tool output): a file's
+ * path prints in full, repository-root relative, the first time the output names it; a later
+ * mention may use the shortest unique suffix (`shortPath`). A suffix the agent has never seen
+ * in full is no path it can act on: `ss-read RealInterceptorChain.kt` found no file.
+ * `printed`: full paths this output already printed (file headings, earlier rows); updated.
  */
-export function renderRelatedRows(rows) {
+export function renderRelatedRows(rows, printed = new Set()) {
   if (!Array.isArray(rows) || rows.length === 0) return [];
   const byKind = new Map();
   for (const row of rows) {
@@ -640,17 +644,22 @@ export function renderRelatedRows(rows) {
     if (!byKind.has(label)) byKind.set(label, []);
     byKind.get(label).push(row);
   }
+  const pathFor = (row) => {
+    if (printed.has(row.file)) return row.shortPath || row.file;
+    printed.add(row.file);
+    return row.file;
+  };
   const lines = [];
   for (const [label, list] of byKind) {
     let prevFile = null;
     const items = list.map((row) => {
       if (row.file && Number.isInteger(row.startLine)) {
-        const lead = row.file === prevFile ? '' : `${row.shortPath || row.file} `;
+        const lead = row.file === prevFile ? '' : `${pathFor(row)} `;
         prevFile = row.file;
         return `${lead}${lineRange(row.startLine, row.endLine)} ${row.name}`;
       }
       prevFile = null;
-      if (row.file) return `${row.shortPath || row.file} ${row.name}`;
+      if (row.file) return `${pathFor(row)} ${row.name}`;
       if (row.line) return `${row.name} (line ${row.line})`;
       return row.name;
     });
@@ -706,8 +715,11 @@ function renderGroupedBlocks(results, plan, { omitted = new Set(), gutter = (cod
   }
   const spansByFile = printedCodeSpans(plan.entries);
   const lines = [];
+  // Full paths this output printed so far (renderRelatedRows: full first, short later).
+  const printed = new Set();
   for (const [file, entries] of groups) {
     lines.push(file);
+    printed.add(file);
     const spans = spansByFile.get(file) || [];
     // The ranges this file's member rows print (code entries count by the code they show:
     // `spans`). A type's row (`22-217 Schema (class)`) names the type, not its members.
@@ -752,7 +764,7 @@ function renderGroupedBlocks(results, plan, { omitted = new Set(), gutter = (cod
         lines.push(r.summary);
       }
       if (r.neighbors) {
-        if (Array.isArray(r.neighbors.rows)) lines.push(...renderRelatedRows(r.neighbors.rows));
+        if (Array.isArray(r.neighbors.rows)) lines.push(...renderRelatedRows(r.neighbors.rows, printed));
         else if (r.neighbors.rendered) lines.push(r.neighbors.rendered);
       }
       const map = renderSameFileMap(r.sameFile, file, spans);
@@ -765,11 +777,13 @@ function renderGroupedBlocks(results, plan, { omitted = new Set(), gutter = (cod
         const where = contFile === file ? '' : `${contFile}:`;
         if (contSpan) {
           lines.push(`## ${where}${lineRange(contSpan.start, contSpan.end)}${cont.symbol ? ` ${cont.symbol}` : ''}`);
+          printed.add(contFile);
           if (contOmitted) lines.push(renderAlreadyShownLine(contSpan.file, contSpan.start, contSpan.end));
           else lines.push('```', cont.code, '```');
         } else if (cont.rendered && Number.isInteger(cont.startLine)
             && !(contFile === file && summaryStarts.has(cont.startLine))) {
           lines.push(`# continues at ${where}${cont.startLine}${cont.symbol ? ` ${cont.symbol}` : ''}`);
+          printed.add(contFile);
         } else if (cont.rendered && !Number.isInteger(cont.startLine)) {
           // No coordinates to merge or regroup by: the continuation's own text.
           lines.push(cont.rendered);
@@ -1064,7 +1078,8 @@ export function formatTraceCompact(result, { mode = null, inFile = null, notes =
   const show = (section) => mode === null || mode === section;
   const lines = [];
   const provenance = result.sections.callers.provenance || { stored: 0, sameFileFallback: 0 };
-  const sameFile = inFile && (inFile === t.filePath || String(t.filePath).endsWith(`/${inFile}`));
+  // Only a file typed in full: after a short --in the header must print the full path.
+  const sameFile = inFile && inFile === t.filePath;
   lines.push(sameFile ? `# lines ${t.startLine}-${t.endLine}` : `# ${t.filePath}:${t.startLine}-${t.endLine}`);
   for (const n of notes) lines.push(n);
   const alt = alternativesLine(result);

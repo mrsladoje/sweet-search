@@ -131,10 +131,45 @@ describe('2d: related rows render one line per kind', () => {
       { kind: 'extends', name: 'ConnectionPool', file: 'lib/connection_pool.rb', shortPath: 'connection_pool.rb', startLine: 27, endLine: 175 },
       { kind: 'imports', name: 'subprocess', line: 12 },
     ])).toEqual([
-      'callers: RealCall.kt 210-260 getResponseWithInterceptorChain · 300 execute · Retry.kt 72-140 intercept',
-      'extends: connection_pool.rb 27-175 ConnectionPool',
+      'callers: a/RealCall.kt 210-260 getResponseWithInterceptorChain · 300 execute · a/Retry.kt 72-140 intercept',
+      'extends: lib/connection_pool.rb 27-175 ConnectionPool',
       'imports: subprocess (line 12)',
     ]);
+  });
+
+  it('path rule: full path the first time the output names a file, the short form after', () => {
+    const printed = new Set(['a/RealCall.kt']);
+    const rows = [
+      { kind: 'caller', name: 'execute', file: 'a/RealCall.kt', shortPath: 'RealCall.kt', startLine: 300, endLine: 300 },
+      { kind: 'caller', name: 'intercept', file: 'a/b/Retry.kt', shortPath: 'Retry.kt', startLine: 72, endLine: 140 },
+      { kind: 'calls', name: 'retry', file: 'a/b/Retry.kt', shortPath: 'Retry.kt', startLine: 150, endLine: 160 },
+      { kind: 'type', name: 'Chain', file: 'a/c/Chain.kt', shortPath: 'Chain.kt' },
+    ];
+    expect(renderRelatedRows(rows, printed)).toEqual([
+      'callers: RealCall.kt 300 execute · a/b/Retry.kt 72-140 intercept',
+      'calls: Retry.kt 150-160 retry',
+      'types: a/c/Chain.kt Chain',
+    ]);
+    expect([...printed]).toEqual(['a/RealCall.kt', 'a/b/Retry.kt', 'a/c/Chain.kt']);
+    // A second entry of the same output names them again: short now.
+    expect(renderRelatedRows([rows[3]], printed)).toEqual(['types: Chain.kt Chain']);
+  });
+
+  it('path rule in a whole ss-search output: a related row names an unprinted file in full', () => {
+    const out = render([
+      { rank: 1, file: 'zipkin/es/IndexNameFormatter.java', startLine: 100, endLine: 120, symbol: 'formatType',
+        presentation: 'full', code: 'x', neighbors: { rows: [
+          { kind: 'calls', name: 'formatTypeAndTimestamp', file: 'zipkin/es/IndexNameFormatter.java', shortPath: 'IndexNameFormatter.java', startLine: 179, endLine: 181 },
+          { kind: 'extends', name: 'ConnectionPool', file: 'lib/sequel/connection_pool.rb', shortPath: 'connection_pool.rb', startLine: 27, endLine: 175 },
+        ] } },
+      { rank: 2, file: 'lib/sequel/connection_pool.rb', startLine: 27, endLine: 30, symbol: 'ConnectionPool',
+        presentation: 'full', code: 'y', neighbors: { rows: [
+          { kind: 'caller', name: 'hold', file: 'lib/sequel/connection_pool.rb', shortPath: 'connection_pool.rb', startLine: 40, endLine: 50 },
+        ] } },
+    ]);
+    expect(out).toContain('calls: IndexNameFormatter.java 179-181 formatTypeAndTimestamp\n');
+    expect(out).toContain('extends: lib/sequel/connection_pool.rb 27-175 ConnectionPool\n');
+    expect(out).toContain('callers: connection_pool.rb 40-50 hold\n');
   });
 });
 

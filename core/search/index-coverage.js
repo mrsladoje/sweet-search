@@ -235,9 +235,28 @@ export async function createIndexCoverage({ projectRoot, dbPath, admissionPolicy
     } catch { return null; }
   }
 
+  /**
+   * Indexed files whose path ends with `suffix` on whole path components (`RealCall.kt`,
+   * `connection/RealCall.kt`), sorted. [] when the index cannot answer. The miss path of
+   * ss-read / ss-semantic / ss-trace --in: a short path the agent copied from an output.
+   */
+  function filesEndingWith(suffix) {
+    const s = normalizeRel(suffix).replace(/^\/+|\/+$/g, '');
+    if (!s || s === '.' || s.split('/').includes('..')) return [];
+    if (!open() || !usable) return [];
+    try {
+      const like = `%/${s.replace(/[\\%_]/g, (c) => `\\${c}`)}`;
+      const rows = handle.prepare(
+        "SELECT DISTINCT file_path AS f FROM vectors WHERE (file_path = ? OR file_path LIKE ? ESCAPE '\\') AND epoch_retired IS NULL",
+      ).all(s, like);
+      // LIKE ignores ASCII case: keep the exact suffix only.
+      return rows.map((r) => r.f).filter((f) => f === s || f.endsWith(`/${s}`)).sort();
+    } catch { return []; }
+  }
+
   function close() { try { handle?.close(); } catch { /* already gone */ } handle = null; }
 
-  return { isIndexed, dirHasIndexedFiles, exclusionReason, notIndexedNote, close };
+  return { isIndexed, dirHasIndexedFiles, exclusionReason, notIndexedNote, filesEndingWith, close };
 }
 
 // --- helpers ---------------------------------------------------------------------------
