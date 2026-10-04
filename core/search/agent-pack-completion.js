@@ -133,7 +133,7 @@ function overlapsShown(candidate, results) {
   });
 }
 
-function boundaryScore(entity, queryEvidence, parentClass, gap, allowImmediate = false) {
+function boundaryScore(entity, queryEvidence, parentClass, gap) {
   const name = String(entity?.name || '');
   if (!name) return 0;
   let exact = 0;
@@ -145,13 +145,9 @@ function boundaryScore(entity, queryEvidence, parentClass, gap, allowImmediate =
   const nameTokens = informativeSubtokens(name);
   let matched = 0;
   for (const token of queryEvidence.subtokens) if (nameTokens.has(token)) matched++;
-  if (exact === 0 && matched === 0) {
-    // The top-ranked result already establishes query relevance. Do not let a
-    // budget cutoff land immediately before its next complete sibling merely
-    // because the model phrased the behavior rather than the sibling's name.
-    return allowImmediate && gap <= MAX_IMMEDIATE_GAP_LINES
-      ? MAX_IMMEDIATE_GAP_LINES - gap + 1 : 0;
-  }
+  // A sibling chosen only for its position (the next definition after the cut) is no evidence
+  // (owner review 2026-10-04): the entry header already says the symbol goes on.
+  if (exact === 0 && matched === 0) return 0;
   const sameParent = parentClass && entity.parentClass === parentClass ? 5 : 0;
   return exact + matched * 10 + sameParent + (MAX_BOUNDARY_GAP_LINES - gap) / 100;
 }
@@ -204,7 +200,7 @@ function findBoundaryContinuation(results, query, regex, codeGraphRepo) {
       const candidate = { ...entity, file: result.file };
       if (overlapsShown(candidate, results)) return [];
       const namedScore = gap <= MAX_BOUNDARY_GAP_LINES
-        ? boundaryScore(entity, evidence, parentClass, gap, result.rank === 1) : 0;
+        ? boundaryScore(entity, evidence, parentClass, gap) : 0;
       const referencedScore = result.rank === 1 ? bodySiblingScore(entity, result.code) : 0;
       const score = Math.max(namedScore, referencedScore);
       return score > 0 ? [{ trigger: result, entity, score, gap }] : [];

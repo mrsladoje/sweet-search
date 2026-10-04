@@ -475,15 +475,22 @@ describe('packageForAgent boundary integration', () => {
       }),
     });
     const baseline = packageForAgent(ranked, { grepMatches: 2 }, {
-      query: 'insert outdent before right brace significant indentation blank line', regex: '', format: 'agent_full', tokenBudget: 300,
+      query: 'insert outdent before right brace leading infix arg significant indentation', regex: '', format: 'agent_full', tokenBudget: 300,
       projectRoot, codeGraphRepo: repo, _isAgentFormat: false,
     });
     adjacencyEnds.length = 0;
     const completed = packageForAgent(ranked, { grepMatches: 2 }, {
-      query: 'insert outdent before right brace significant indentation blank line', regex: '', format: 'agent_full', tokenBudget: 300,
+      query: 'insert outdent before right brace leading infix arg significant indentation', regex: '', format: 'agent_full', tokenBudget: 300,
       projectRoot, codeGraphRepo: repo, _isAgentFormat: true,
     });
     const top = completed.results[0];
+    // Position alone is no evidence (owner review 2026-10-04): a query that names no word of
+    // the next sibling, whose code does not refer to it, gets no continuation.
+    const unnamed = packageForAgent(ranked, { grepMatches: 2 }, {
+      query: 'insert outdent before right brace significant indentation blank line', regex: '', format: 'agent_full', tokenBudget: 300,
+      projectRoot, codeGraphRepo: repo, _isAgentFormat: true,
+    });
+    expect(unnamed.results[0].continuation).toBeFalsy();
     expect(top.boundaryTruncated).toBe(true);
     expect(top.shownEndLine).toBeLessThan(top.endLine);
     expect(adjacencyEnds).toContain(top.shownEndLine);

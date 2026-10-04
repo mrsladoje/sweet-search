@@ -586,7 +586,8 @@ export function kindName(name, type) {
  * kind, else `method a, field b`. With `cap`, the names past it print as `+N more [kinds]`.
  */
 export function kindNameList(items, cap = Infinity) {
-  const list = items.filter((i) => i?.name && !String(i.name).startsWith('<anonymous'));
+  // `unknown` is the chunker's placeholder for a chunk with no name (ast-chunker.js): no name.
+  const list = items.filter((i) => i?.name && i.name !== 'unknown' && !String(i.name).startsWith('<anonymous'));
   if (list.length === 0) return '';
   const words = list.map((i) => kindWord(i.type));
   const same = words.every((w) => w && w === words[0]);
