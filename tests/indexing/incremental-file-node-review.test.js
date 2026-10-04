@@ -246,12 +246,10 @@ describe('file nodes review: resolution parity, edge cases, old graphs', () => {
     const result = traceSymbol('util', { graphDbPath: incDbPath, projectRoot, filePath: 'pkg/mod.py', mode: 'callers' });
     const full = formatStructuralContext(result);
     const compact = formatTraceCompact(result, { mode: 'callers' });
-    for (const out of [full, compact]) {
-      expect(out).toContain('(top-level) [file] pkg/run.py:2 call@2');
-      expect(out).toContain('(top-level) [file] pkg/job.py:3 call@3');
-    }
-    expect(compact).toContain('## callers (2)');
-    expect(compact).toMatch(/fan-in=2 /);
+    expect(full).toContain('(top-level) [file] pkg/run.py:2 call@2');
+    expect(full).toContain('(top-level) [file] pkg/job.py:3 call@3');
+    expect(compact).toContain('pkg/run.py\n2 (top-level)');
+    expect(compact).toContain('pkg/job.py\n3 (top-level)');
   });
 
   it('hasFilesTable re-checks a "no" after a schema change on the same connection', () => {

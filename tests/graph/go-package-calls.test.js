@@ -186,8 +186,8 @@ describe('Go package-qualified calls', () => {
     const g = await buildGraph(REPO);
     const callees = trace(g, 'detectPending', { mode: 'callees' });
     const compact = formatTraceCompact(callees, { mode: 'callees' });
-    expect(compact).toContain('Parse [function] x/keys.go:3 call@14,18');
-    expect(compact).toContain('New [function] engine.go:3 call@20');
+    expect(compact).toContain('x/keys.go\n3 Parse @14,18');
+    expect(compact).toContain('engine.go\n3 New @20');
     expect(compact).not.toContain('x/log.go');
     expect(formatStructuralContext(callees, { mode: 'callees' })).not.toContain('Errorf [method]');
 

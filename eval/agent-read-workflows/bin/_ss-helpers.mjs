@@ -120,8 +120,8 @@ function gutter(text, startLine) {
  *   host.assertProjectRoot(r)   throws when this call belongs to another repository's daemon
  */
 // Tools whose output opens with the chained-call boundary (core/agent-tools/chain.js) when
-// they are a later call of one shell command (ss-trace still prints its own header).
-const CHAIN_BOUNDARY_TOOLS = new Set(['agent-search', 'find', 'grep', 'read', 'semantic']);
+// they are a later call of one shell command.
+const CHAIN_BOUNDARY_TOOLS = new Set(['agent-search', 'find', 'grep', 'read', 'semantic', 'trace']);
 
 export async function runAgentTool(subcommand, rest, host = {}) {
 if (CHAIN_BOUNDARY_TOOLS.has(subcommand)) process.stdout.write(chainBoundary(subcommand, rest, process.env));
@@ -1587,6 +1587,8 @@ async function cmdTrace(rawArgs) {
   if (queryHint) opts.queryHint = queryHint;
   // SS_FIX_TRACE_MODE_BUDGET (default ON since 2026-10-03; 0 = legacy): the one section the mode word prints takes the budget.
   if (FIX.traceModeBudget && mode) opts.modeSection = mode;
+  // The compact rendering prints no path through a definition outside the repository.
+  if (FIX.traceCompact) opts.inRepoImpactOnly = true;
   if (depth != null) opts.maxDepth = depth;
   // Budget-sweep experiment hook: env sets the default; explicit --budget wins.
   if (budget != null) opts.tokenBudget = budget;
@@ -1601,7 +1603,7 @@ async function cmdTrace(rawArgs) {
       const wide = traceSymbol(symbol, { ...opts, filePath: undefined });
       if (wide.target) {
         response = wide;
-        traceNotes.push(`note: no definition of ${symbol} in ${file}; showing the repo-wide definition ${wide.target.filePath}:${wide.target.startLine}.`);
+        traceNotes.push(`# not defined in ${file}; traced the definition above`);
       }
     }
     if (response.target && !(file && isTestLikePath(file)) && isTestLikePath(response.target.filePath)) {
@@ -1609,10 +1611,10 @@ async function cmdTrace(rawArgs) {
       if (alt) {
         const better = traceSymbol(symbol, { ...opts, filePath: alt.file });
         if (better.target && !isTestLikePath(better.target.filePath)) {
-          // The re-run trace has no alternatives of its own: keep naming the test definition.
+          // The re-run trace has no alternatives of its own: keep naming the test definition
+          // (the other-definitions line lists it; the header names the one traced).
           better.disambiguation = alternativesAfterSwitch(response, better.target.filePath, better.target.startLine);
           response = better;
-          traceNotes.push('note: the first match was a test definition; showing the non-test definition.');
         }
       }
     }
@@ -1621,7 +1623,7 @@ async function cmdTrace(rawArgs) {
     query: json ? undefined : `${symbol} ${queryHint}`.trim(),
   });
   if (json) process.stdout.write(JSON.stringify({ ...response, mode }, null, 2) + '\n');
-  else if (FIX.traceCompact) process.stdout.write(formatTraceCompact(response, { mode, notes: traceNotes }) + '\n');
+  else if (FIX.traceCompact) process.stdout.write(formatTraceCompact(response, { mode, inFile: file, notes: traceNotes }) + '\n');
   else process.stdout.write(formatStructuralContext(response, { mode }) + '\n');
 
   const meta = {

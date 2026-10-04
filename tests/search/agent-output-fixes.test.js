@@ -483,58 +483,107 @@ function traceResult(over = {}) {
 }
 
 describe('formatTraceCompact (A4)', () => {
-  it('prints rows only: no bodies, cue lines, budget or latency', () => {
+  it('prints rows only: no bodies, cue lines, budget, latency or fan counts', () => {
     const out = formatTraceCompact(traceResult());
-    expect(out).toContain('# trace target [method] a.go:5-20');
-    expect(out).toContain('fan-in=2 fan-out=3');
-    expect(out).toContain('c1 [method] b.go:7 call@7');
+    expect(out.split('\n')[0]).toBe('# a.go:5-20');
+    expect(out).not.toContain('fan-in');
+    expect(out).toContain('b.go\n7 c1');
+    expect(out).not.toContain('[method]');
     expect(out).not.toContain('BODY');
     expect(out).not.toContain('answer cues');
     expect(out).not.toContain('latency');
     expect(out).not.toContain('importance=');
   });
 
-  it('counts every row in the heading, as the full trace does, and names distinct callers when they differ', () => {
-    const out = formatTraceCompact(traceResult());
-    expect(out).toContain('## callers (2)');
-    expect(out).toContain('## callees (3)');
-    const withDistinct = traceResult();
-    withDistinct.sections.callers.distinct = 1;
-    withDistinct.sections.callees.distinct = 3;
-    const text = formatTraceCompact(withDistinct);
-    expect(text).toContain('## callers (2 call sites, 1 distinct caller)');
-    expect(text).toContain('## callees (3)');
+  it('header: the traced definition, `# lines a-b` when --in named its file', () => {
+    expect(formatTraceCompact(traceResult(), { inFile: 'a.go' }).split('\n')[0]).toBe('# lines 5-20');
+    expect(formatTraceCompact(traceResult(), { inFile: 'other.go' }).split('\n')[0]).toBe('# a.go:5-20');
   });
 
-  it('filters external callees and says how many', () => {
+  it('groups rows by file (path once), non-test files first; a caller row starts with its call lines', () => {
+    const r = traceResult();
+    r.sections.callers.items = [
+      { name: 't1', type: 'function', file: 'x_test.go', startLine: 3, contextLines: [4] },
+      { name: 'c1', type: 'method', file: 'b.go', startLine: 7, contextLines: [8, 12] },
+      { name: 'c3', type: 'method', file: 'b.go', startLine: 20, contextLines: [21] },
+    ];
+    const out = formatTraceCompact(r, { mode: 'callers' });
+    expect(out).toBe('# a.go:5-20\nb.go\n8,12 c1\n21 c3\nx_test.go\n4 t1');
+  });
+
+  it('a callee row starts with its definition line; non-call rows name their relationship; dispatch rows name the method', () => {
+    const r = traceResult();
+    r.sections.callers.items = [
+      { name: 'Impl', type: 'class', file: 'i.go', startLine: 2, contextLines: [2], relationship: 'extends' },
+      { name: 'run', type: 'function', file: 'r.go', startLine: 1, contextLines: [5], relationship: 'calls', via: 'Base.target' },
+    ];
+    const out = formatTraceCompact(r);
+    expect(out).toContain('i.go\n2 Impl (extends)');
+    expect(out).toContain('r.go\n5 run via Base.target');
+    expect(out).toContain('## callees\nd.go\n1 d1');
+    const withLines = traceResult();
+    withLines.sections.callees.items[0].contextLines = [9, 14];
+    expect(formatTraceCompact(withLines, { mode: 'callees' })).toContain('d.go\n1 d1 @9,14');
+  });
+
+  it('counts every row it leaves out: unresolved callees and rows over the cap', () => {
     const out = formatTraceCompact(traceResult(), { mode: 'callees' });
-    expect(out).toContain('d1 [method] d.go:1');
-    expect(out).not.toContain('ext1 [external]');
-    expect(out).toContain('(+2 external/unresolved callees not listed)');
+    expect(out).toContain('d.go\n1 d1');
+    expect(out).not.toContain('ext1');
+    expect(out).toContain('+2 unresolved calls');
+    const r = traceResult();
+    r.sections.callers.hidden = 4;
+    r.sections.callees.external = 1;
+    const text = formatTraceCompact(r);
+    expect(text).toContain('+4 more (ss-grep the name for every site)');
+    expect(text).toContain('+1 unresolved call\n');
   });
 
-  it('prints only the requested section', () => {
+  it('prints only the requested section, without a heading', () => {
     const out = formatTraceCompact(traceResult(), { mode: 'callers' });
-    expect(out).toContain('## callers (2)');
-    expect(out).not.toContain('## callees');
-    expect(out).not.toContain('## impact');
+    expect(out).not.toContain('## ');
+    expect(out).not.toContain('d1');
+    expect(out).toContain('c.go\n9 c2');
   });
 
-  it('keeps every impact path when impact is asked for, minus external ones', () => {
+  it('says so when a section has no row in the repository', () => {
+    const r = traceResult();
+    r.sections.callees.items = r.sections.callees.items.filter((i) => i.file === null);
+    expect(formatTraceCompact(r, { mode: 'callees' })).toBe('# a.go:5-20\n(no callees in the repository)\n+2 unresolved calls');
+  });
+
+  it('impact asked for: an upstream and a downstream tree, the target never repeated, no external path', () => {
     const out = formatTraceCompact(traceResult(), { mode: 'impact' });
-    expect(out).toContain('## impact paths (3');
-    expect(out).not.toContain('(external)');
+    expect(out).toBe('# a.go:5-20\n## upstream\nc1 b.go:7\n  z z.go:1\n## downstream\nd1 d.go:1');
+    expect(out).not.toContain('external');
+    expect(out).not.toContain('target');
   });
 
-  it('drops one-hop paths that a caller / callee row already carries (no mode word)', () => {
+  it('no mode word: a one-hop path to a printed row is dropped; a printed node keeps only its name', () => {
     const out = formatTraceCompact(traceResult());
-    expect(out).toContain('z (z.go:1) -> c1 (b.go:7) -> target (a.go:5)');
-    expect(out).not.toMatch(/\d\. upstream c1 \(b\.go:7\) -> target/);
-    expect(out).not.toMatch(/\d\. downstream target \(a\.go:5\) -> d1/);
+    expect(out).toContain('## upstream\nc1\n  z z.go:1');
+    expect(out).not.toContain('## downstream');
+  });
+
+  it('counts impact paths that did not fit', () => {
+    const r = traceResult();
+    r.sections.impact.hidden = 3;
+    expect(formatTraceCompact(r, { mode: 'impact' })).toContain('+3 more paths');
+  });
+
+  it('other definitions: Owner.name and where, a line only in the traced file, and how to pick one', () => {
+    const r = traceResult({ disambiguation: [
+      { name: 'target', owner: 'Other', file: 'a.go', startLine: 40 },
+      { name: 'target', owner: null, file: 'a_test.go', startLine: 3 },
+    ] });
+    expect(formatTraceCompact(r)).toContain('# other definitions (pick with --in <file> or Owner.name): Other.target 40, a_test.go:3');
+    const same = traceResult({ disambiguation: [{ name: 'target', owner: 'Other', file: 'a.go', startLine: 40 }] });
+    expect(formatTraceCompact(same)).toContain('# other definitions (pick with Owner.name): Other.target 40');
   });
 
   it('adds notes and keeps the not-found sentence', () => {
-    expect(formatTraceCompact(traceResult(), { notes: ['note: fallback'] })).toContain('note: fallback');
+    expect(formatTraceCompact(traceResult(), { notes: ['# not defined in x.go; traced the definition above'] }))
+      .toContain('# a.go:5-20\n# not defined in x.go; traced the definition above');
     expect(formatTraceCompact({ symbol: 'nope', target: null })).toBe('No indexed symbol found for "nope".');
   });
 });

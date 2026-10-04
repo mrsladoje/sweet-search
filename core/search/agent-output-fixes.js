@@ -929,76 +929,181 @@ export function readSpansForAlreadyShown(spans, decisions, printedChars) {
 
 // --- ss-trace ---------------------------------------------------------------------------
 
-const EXTERNAL_PATH_RE = /\(external\)/;
-
 function isExternalItem(item) {
   return item?.type === 'external' || !item?.file;
 }
 
+/** `5,6,7`, or the first 16 lines and `…+N` (same cap as the full trace). */
+function siteList(lines) {
+  const list = (lines || []).filter((n) => Number.isInteger(n));
+  return list.length <= 16 ? list.join(',') : `${list.slice(0, 16).join(',')},…+${list.length - 16}`;
+}
+
 /**
- * Compact ss-trace rendering (A4). One row per caller / callee, no bodies, no answer-cue
- * lines, no budget / latency line. Only the requested section prints when `mode` is set.
- * External (not in the repository) callees are filtered; one line says how many.
+ * One caller / callee row under its file's path line. Line first, like ss-grep:
+ * a caller row starts with the line(s) the call is on (`52,56 intercept`), a callee row
+ * with the line its definition starts on and `@` the target's lines that call it
+ * (`835 fingerprintEdge @513,536`). A row that is no call says what it is: `(extends)`,
+ * `(instantiates)`, `(typeRef)`, `(overrides)`; a call made through a method the target
+ * overrides names it: `via Chain.proceed`. No kind tag (`[function]`).
  */
-export function formatTraceCompact(result, { mode = null, notes = [] } = {}) {
+function traceRow(item, section) {
+  const rel = item.relationship;
+  const isCall = !rel || rel === 'calls' || rel === 'handoff';
+  const lines = siteList(item.contextLines?.length ? item.contextLines : (item.contextLine ? [item.contextLine] : []));
+  if (section === 'callers') {
+    const label = isCall ? '' : ` (${rel})`;
+    const via = item.via ? ` via ${item.via}` : '';
+    return `${lines || String(item.startLine ?? '?')} ${item.name}${label}${via}`;
+  }
+  // A callee: where it is defined, then `@` the target's lines that call it.
+  return `${item.startLine ?? '?'} ${item.name}${isCall ? '' : ` (${rel})`}${lines ? ` @${lines}` : ''}`;
+}
+
+/** Rows grouped by file (path printed once), files in first-row order; test files last. */
+function groupedRows(items, section) {
+  const ordered = [...items.filter((i) => !isTestLikePath(i.file)), ...items.filter((i) => isTestLikePath(i.file))];
+  const byFile = new Map();
+  for (const item of ordered) {
+    if (!byFile.has(item.file)) byFile.set(item.file, []);
+    byFile.get(item.file).push(item);
+  }
+  const out = [];
+  for (const [file, rows] of byFile) {
+    out.push(file);
+    for (const row of rows) out.push(traceRow(row, section));
+  }
+  return out;
+}
+
+/**
+ * Impact paths as two trees: `## upstream` (who reaches the target: a caller, then the
+ * callers of that caller, indented) and `## downstream` (what it reaches). The target
+ * itself, which every path started or ended with, is not repeated; each node prints once
+ * per branch as `name path:line`, or as `name` alone when that row already printed above.
+ */
+/** A path's nodes: `nodes` when the trace carries them, else parsed from `a (f:1) -> b (external)`. */
+function pathNodes(p) {
+  if (Array.isArray(p.nodes)) return p.nodes;
+  return String(p.path || '').split(' -> ').map((seg) => {
+    const m = /^(.*) \(([^()]*)\)$/.exec(seg);
+    if (!m) return { name: seg, file: null, line: null };
+    if (m[2] === 'external') return { name: m[1], file: null, line: null };
+    const at = m[2].lastIndexOf(':');
+    return { name: m[1], file: m[2].slice(0, at), line: Number(m[2].slice(at + 1)) || null };
+  });
+}
+
+function impactTrees(paths, { listedKeys, skipOneHopListed }) {
+  const trees = { upstream: [], downstream: [] };
+  for (const dir of ['upstream', 'downstream']) {
+    const root = new Map();
+    for (const p of paths) {
+      const nodes = pathNodes(p);
+      if ((p.direction || 'upstream') !== dir || nodes.length < 2) continue;
+      // Nodes away from the target, nearest first.
+      const chain = dir === 'downstream' ? nodes.slice(1) : nodes.slice(0, -1).reverse();
+      if (chain.some((n) => !n.file)) continue;
+      if (skipOneHopListed && chain.length === 1 && listedKeys.has(`${chain[0].file}:${chain[0].line}`)) continue;
+      let level = root;
+      for (const n of chain) {
+        const key = `${n.name}\u0000${n.file}:${n.line}`;
+        if (!level.has(key)) level.set(key, { node: n, children: new Map() });
+        level = level.get(key).children;
+      }
+    }
+    const walk = (level, depth) => {
+      for (const { node, children } of level.values()) {
+        const listed = depth === 0 && listedKeys.has(`${node.file}:${node.line}`);
+        trees[dir].push(`${'  '.repeat(depth)}${node.name}${listed ? '' : ` ${node.file}:${node.line ?? '?'}`}`);
+        walk(children, depth + 1);
+      }
+    };
+    walk(root, 0);
+  }
+  return trees;
+}
+
+/**
+ * Other definitions the symbol names: `Owner.name` (when it has an owner) and where.
+ * A definition in the traced file prints its line only.
+ */
+function alternativesLine(result) {
+  const t = result.target;
+  const alts = (result.disambiguation || []).slice(0, 5);
+  if (!alts.length) return null;
+  const more = (result.disambiguation || []).length - alts.length;
+  const anyOwner = alts.some((a) => a.owner);
+  const anyOtherFile = alts.some((a) => a.file !== t.filePath);
+  const pick = [anyOtherFile ? '--in <file>' : null, anyOwner ? 'Owner.name' : null].filter(Boolean).join(' or ');
+  const list = alts.map((a) => {
+    const name = a.owner ? `${a.owner}.${a.name} ` : '';
+    return a.file === t.filePath ? `${name}${a.startLine}` : `${name}${a.file}:${a.startLine}`;
+  }).join(', ');
+  return `# other definitions${pick ? ` (pick with ${pick})` : ''}: ${list}${more > 0 ? `, +${more} more` : ''}`;
+}
+
+/**
+ * Compact ss-trace rendering (A4). One row per caller / callee, grouped by file, no
+ * bodies, no answer-cue lines, no budget / latency line, no fan counts (the rows are the
+ * count; every row left out is counted). Only the requested section prints when `mode`
+ * is set, and then without its heading.
+ *
+ * Header: `# path:a-b` of the traced definition — which of several definitions was traced,
+ * and its span; `# lines a-b` when --in already named that file.
+ *
+ * @param {object} result  traceSymbol's response
+ * @param {object} [opts]
+ * @param {string|null} [opts.mode]    callers | callees | impact | null
+ * @param {string|null} [opts.inFile]  the --in file of the call
+ * @param {string[]} [opts.notes]      lines printed under the header
+ */
+export function formatTraceCompact(result, { mode = null, inFile = null, notes = [] } = {}) {
   if (!result.target) return `No indexed symbol found for "${result.symbol}".`;
   const t = result.target;
   const show = (section) => mode === null || mode === section;
   const lines = [];
   const provenance = result.sections.callers.provenance || { stored: 0, sameFileFallback: 0 };
-  lines.push(`# trace ${t.name} [${t.type}] ${t.filePath}:${t.startLine}-${t.endLine}`);
-  lines.push(`fan-in=${t.fanIn} fan-out=${t.fanOut}`);
-  if (provenance.sameFileFallback > 0 && provenance.stored === 0) {
-    lines.push('note: callers below come from a same-file source scan (no stored cross-file edges).');
-  } else if (provenance.sameFileFallback > 0) {
-    lines.push(`note: caller sources are mixed — ${provenance.stored} from stored call edges, ${provenance.sameFileFallback} from a same-file source scan.`);
-  } else if (t.fanIn === 0 && t.fanOut === 0 && !result.sections.callers.total && !result.sections.callees.total) {
-    lines.push('no stored call edges for this symbol — map its sites with one broad ss-grep of the symbol stem instead.');
-  }
+  const sameFile = inFile && (inFile === t.filePath || String(t.filePath).endsWith(`/${inFile}`));
+  lines.push(sameFile ? `# lines ${t.startLine}-${t.endLine}` : `# ${t.filePath}:${t.startLine}-${t.endLine}`);
   for (const n of notes) lines.push(n);
-  if (result.disambiguation?.length) {
-    lines.push(`ambiguous: using first match; alternatives: ${result.disambiguation.slice(0, 5).map((a) => `${a.owner ? `${a.owner}.` : ''}${a.name} ${a.file}:${a.startLine}`).join(', ')}`);
+  const alt = alternativesLine(result);
+  if (alt) lines.push(alt);
+  if (show('callers') && provenance.sameFileFallback > 0 && provenance.stored === 0) {
+    lines.push('# no indexed callers; these come from a text scan of this file');
+  } else if (t.fanIn === 0 && t.fanOut === 0 && !result.sections.callers.total && !result.sections.callees.total) {
+    lines.push('# no call edges stored; map its sites with one ss-grep of the name');
   }
 
-  const listed = new Set(); // `file:line` of every caller / callee row printed below
+  const listed = new Set(); // `file:line` of every caller / callee definition printed below
   for (const [title, section] of [['callers', result.sections.callers], ['callees', result.sections.callees]]) {
     if (!show(title)) continue;
     const internal = section.items.filter((i) => !isExternalItem(i));
-    const external = section.items.length - internal.length;
-    // Same count as the full trace (structural-context-format.js): every row, and the distinct
-    // callers / callees when they differ, so the heading and fan-in / fan-out read as one set.
-    // External rows are counted here and named in the `(+N external ...)` line below.
-    const total = section.total || 0;
-    const noun = title === 'callers' ? 'caller' : 'callee';
-    const count = section.distinct != null && section.distinct !== total
-      ? `${total} ${section.siteNoun || 'call sites'}, ${section.distinct} distinct ${noun}${section.distinct === 1 ? '' : 's'}`
-      : `${total}`;
-    lines.push(`\n## ${title} (${count})`);
-    for (const item of internal) {
-      lines.push(item.summary);
-      listed.add(`${item.file}:${item.startLine || '?'}`);
+    const external = section.external ?? (section.items.length - internal.length);
+    if (!internal.length) {
+      lines.push(`(no ${title} in the repository)`);
+    } else {
+      if (mode === null) lines.push(`## ${title}`);
+      lines.push(...groupedRows(internal, title));
     }
-    if (!internal.length) lines.push('(none)');
-    if (external > 0) lines.push(`(+${external} external/unresolved ${title} not listed)`);
+    for (const item of internal) listed.add(`${item.file}:${item.startLine || '?'}`);
+    // Every row left out is counted. The section cap is fixed (40 rows), so the way to
+    // every call site of a name is ss-grep.
+    if (section.hidden > 0) lines.push(`+${section.hidden} more${title === 'callers' ? ' (ss-grep the name for every site)' : ''}`);
+    if (external > 0) lines.push(`+${external} unresolved ${title === 'callers' ? 'caller' : 'call'}${external === 1 ? '' : 's'}`);
   }
 
   if (show('impact')) {
-    // Without a mode word, a one-hop path whose other end is already a printed caller /
-    // callee row adds nothing and is dropped. With `impact` asked for, every path prints.
-    // Paths that end in an external (not in the repository) symbol are always filtered.
-    const oneHopRepeats = (p) => {
-      const segs = String(p.path).split(' -> ');
-      if (segs.length !== 2) return false;
-      const other = p.direction === 'upstream' ? segs[0] : segs[1];
-      const loc = other.match(/\(([^()]*)\)$/);
-      return !!loc && listed.has(loc[1]);
-    };
-    const paths = result.sections.impact.paths
-      .filter((p) => !EXTERNAL_PATH_RE.test(String(p.path)))
-      .filter((p) => mode === 'impact' || !oneHopRepeats(p));
-    lines.push(`\n## impact paths (${paths.length}, depth <= ${result.maxDepth})`);
-    if (!paths.length) lines.push('(none)');
-    paths.forEach((p, i) => lines.push(`${i + 1}. ${p.direction} ${p.path}`));
+    // Without a mode word, a one-hop path to a printed caller / callee row adds nothing.
+    const trees = impactTrees(result.sections.impact.paths, { listedKeys: listed, skipOneHopListed: mode !== 'impact' });
+    const hidden = result.sections.impact.hidden || 0;
+    for (const dir of ['upstream', 'downstream']) {
+      if (!trees[dir].length) continue;
+      lines.push(`## ${dir}`);
+      lines.push(...trees[dir]);
+    }
+    if (hidden > 0) lines.push(`+${hidden} more paths`);
+    if (mode === 'impact' && !trees.upstream.length && !trees.downstream.length) lines.push('(no impact paths)');
   }
   return lines.join('\n');
 }

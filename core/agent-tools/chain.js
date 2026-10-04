@@ -162,9 +162,37 @@ function fileArg(args) {
   return namingArg(args);
 }
 
-/** `# ss-search Elasticsea…` / `# ss-read timed_queue.rb` (no newline). */
+// ss-trace flags that take a value (the value is no positional).
+const TRACE_VALUE_FLAGS = new Set(['--in', '--file', '--query', '--hint', '--depth', '--budget', '-k']);
+const TRACE_MODE_WORDS = new Set(['callers', 'callees', 'impact']);
+
+/**
+ * ss-trace: the symbol and the mode word (`proceed callers`). Traces of one chain often
+ * share the symbol and differ in the mode word, and a symbol is a name, not a sentence,
+ * so it is not cut at 10 characters.
+ */
+function traceBoundaryArg(args) {
+  const positionals = [];
+  for (let i = 0; i < args.length; i++) {
+    const a = String(args[i]);
+    if (TRACE_VALUE_FLAGS.has(a)) { i++; continue; }
+    if (a.startsWith('-') && a.length > 1) continue;
+    positionals.push(a);
+  }
+  const [symbol = '', ...rest] = positionals;
+  const mode = rest.find((w) => TRACE_MODE_WORDS.has(w.toLowerCase()));
+  const chars = [...symbol];
+  const name = chars.length > READ_NAME_CHARS ? `${chars.slice(0, READ_NAME_CHARS).join('')}…` : symbol;
+  return [name, mode].filter(Boolean).join(' ');
+}
+
+/** `# ss-search Elasticsea…` / `# ss-read timed_queue.rb` / `# ss-trace proceed callers` (no newline). */
 export function chainBoundaryLine(subcommand, args = []) {
   const tool = TOOL_NAME_BY_SUBCOMMAND[subcommand] || subcommand;
+  if (subcommand === 'trace') {
+    const arg = traceBoundaryArg(args);
+    return arg ? `# ${tool} ${arg}` : `# ${tool}`;
+  }
   // ss-read and ss-semantic name a file, and the calls of one chain mostly share a directory:
   // the start of the path (`lib/sequel…` twice) cannot tell them apart, the file name can.
   // ss-semantic's file is its first argument, or the value of --in / --file.
