@@ -600,3 +600,19 @@ describe('round 8', () => {
     expect(body.rows[0].file).toBe('src/parse.ts');
   });
 });
+
+describe('round 9', () => {
+  it('a bare call reaches an inherited method of the nearest supertype', () => {
+    const caller = { id: 'c', name: 'didFailToCreateUploadable', file_path: 'Source/UploadRequest.swift', start_line: 102, end_line: 108, parent_class: 'UploadRequest' };
+    const target = { id: 't', name: 'retryOrFinish', type: 'method', file_path: 'Source/Request.swift', start_line: 543, end_line: 558, parent_class: 'Request' };
+    const other = { id: 'o', name: 'retryOrFinish', type: 'method', file_path: 'Source/Other.swift', start_line: 1, end_line: 5, parent_class: 'Other' };
+    const supers = new Map([['UploadRequest', new Set(['DataRequest'])], ['DataRequest', new Set(['Request'])]]);
+    const index = {
+      ownerOf: (e) => e.parent_class || null,
+      importsOf: () => null,
+      directSupertypesOf: (n) => supers.get(n) || new Set(),
+    };
+    expect(resolveBareCall(caller, [target, other], index).map((c) => c.id)).toEqual(['t']);
+    expect(resolveBareCall({ ...caller, parent_class: 'Unrelated' }, [target, other], index)).toEqual([]);
+  });
+});
