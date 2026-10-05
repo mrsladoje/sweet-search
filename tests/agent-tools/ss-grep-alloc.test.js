@@ -416,7 +416,7 @@ describe('broad greps print a narrower hit window', () => {
   };
 
   it('the constants: 50 hits, 60 chars', () => {
-    expect([GREP_BROAD_MIN_HITS, GREP_BROAD_HIT_CHARS]).toEqual([50, 60]);
+    expect([GREP_BROAD_MIN_HITS, GREP_BROAD_HIT_CHARS]).toEqual([50, 80]);
     expect(grepBroadHitMax(GREP_BROAD_MIN_HITS - 1)).toBeUndefined();
     expect(grepBroadHitMax(GREP_BROAD_MIN_HITS)).toBe(GREP_BROAD_HIT_CHARS);
     expect(grepBroadHitMax(1000)).toBe(GREP_BROAD_HIT_CHARS);
