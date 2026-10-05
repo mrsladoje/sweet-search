@@ -165,7 +165,9 @@ describe('call-site scanner — false positives', () => {
   });
 
   it('respects skipCallObjects for direct and chained receivers', () => {
-    expect(names('a.py', 'super().__init__()')).toEqual([]);
+    expect(names('a.py', 'print(x).strip()')).toEqual([]);
+    // Python `super().m(` is the parent's m (resolved to a supertype only).
+    expect(names('a.py', 'super().__init__()')).toEqual(['super.__init__']);
     expect(names('a.ts', 'console.log(x)')).toEqual([]);
   });
 });

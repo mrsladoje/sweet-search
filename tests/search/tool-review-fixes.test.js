@@ -847,3 +847,23 @@ describe('round 12 — named function expressions are definitions', () => {
     ]));
   });
 });
+
+describe('round 12 — super calls', () => {
+  it('Python `super().m(` is stored as super.m', () => {
+    const out = [];
+    new CallSiteScanner({ id: 'python' }).scanLine('        return super().lookup_default(name, call)', (n) => out.push(n));
+    expect(out).toEqual(['super.lookup_default']);
+  });
+
+  it('super.m binds only to a supertype of the caller\'s type; an external parent gives no edge', async () => {
+    const { narrowCallCandidates } = await import('../../core/graph/relationship-resolver.js');
+    const ctxM = { id: 'a', name: 'lookup_default', parent_class: 'Context', file_path: 'core.py' };
+    const pager = { id: 'b', name: 'write', parent_class: '_PagerWriter', file_path: 'termui.py' };
+    const idx = {
+      ownerOf: (e) => e.parent_class || null,
+      supertypesOf: (t) => (t === 'CustomContext' ? new Set(['Context']) : new Set()),
+    };
+    expect(narrowCallCandidates([ctxM], 'super', { id: 's', parent_class: 'CustomContext', file_path: 't.py' }, idx)).toEqual([ctxM]);
+    expect(narrowCallCandidates([pager], 'super', { id: 's2', parent_class: 'RecordingStream', file_path: 't.py' }, idx)).toEqual([]);
+  });
+});

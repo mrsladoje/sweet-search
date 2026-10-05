@@ -766,7 +766,10 @@ export class CallSiteScanner {
           // `return (x).y(` / `if (a).b(`: a keyword before the group is no call.
           if (plan.bareKeywords.has(m[1])) { if (m[0] === '') c.lastIndex++; continue; }
           chainedNames.add(`${m[1]}().${m[2]}`);
-          if (!this.skip.has(m[1])) emit(`${m[1]}().${m[2]}`);
+          // Python `super().m(`: the parent class's m, stored as the other
+          // languages' `super.m` (click CustomContext.lookup_default).
+          if (m[1] === 'super' && plan.language === 'python') emit(`super.${m[2]}`);
+          else if (!this.skip.has(m[1])) emit(`${m[1]}().${m[2]}`);
           if (m[0] === '') c.lastIndex++;
         }
         for (const name of deepChainCalls(trimmed, plan.afterParen, plan.bareKeywords)) {
