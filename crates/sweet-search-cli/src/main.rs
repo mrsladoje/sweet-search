@@ -1449,6 +1449,63 @@ fn auto_start_server() -> Option<String> {
     auto_start_server_for(&resolve_project_root(), false)
 }
 
+/// JS heap ceiling of the daemon, in MiB: a quarter of the memory limit, never below V8's
+/// own ~4 GiB default, never above 75% of the limit. A daemon at V8's default ceiling
+/// aborted mid-query on a large index and dropped every call in flight. Same formula as
+/// core/search/daemon-heap.js.
+fn daemon_heap_mb(limit_bytes: u64) -> u64 {
+    let mb = limit_bytes as f64 / (1024.0 * 1024.0);
+    if mb <= 0.0 {
+        return 4096; // limit unknown
+    }
+    (mb / 4.0).max(4096.0).min(mb * 0.75) as u64
+}
+
+/// The container's memory limit (cgroup v2, then v1) when it is below physical memory,
+/// else physical memory: a heap ceiling above a container limit ends in a silent OOM kill.
+fn memory_limit_bytes() -> u64 {
+    let total = physical_memory_bytes();
+    let constrained = cgroup_memory_limit();
+    match constrained {
+        Some(c) if c > 0 && c < total => c,
+        _ => total,
+    }
+}
+
+/// This process's cgroup memory limit: cgroup v2 `memory.max` of its own (possibly nested)
+/// cgroup from /proc/self/cgroup, else the v1 limit. None when unlimited or not Linux.
+fn cgroup_memory_limit() -> Option<u64> {
+    let read = |p: String| fs::read_to_string(p).ok()?.trim().parse::<u64>().ok();
+    if let Ok(groups) = fs::read_to_string("/proc/self/cgroup") {
+        for line in groups.lines() {
+            if let Some(rel) = line.strip_prefix("0::") {
+                if let Some(v) = read(format!(
+                    "/sys/fs/cgroup{}/memory.max",
+                    rel.trim_end_matches('/')
+                )) {
+                    return Some(v);
+                }
+            }
+        }
+    }
+    read("/sys/fs/cgroup/memory.max".into())
+        .or_else(|| read("/sys/fs/cgroup/memory/memory.limit_in_bytes".into()))
+}
+
+fn physical_memory_bytes() -> u64 {
+    // SAFETY: sysconf only reads system configuration.
+    let (pages, page_size) = unsafe {
+        (
+            libc::sysconf(libc::_SC_PHYS_PAGES),
+            libc::sysconf(libc::_SC_PAGESIZE),
+        )
+    };
+    if pages <= 0 || page_size <= 0 {
+        return 0;
+    }
+    pages as u64 * page_size as u64
+}
+
 /// `quiet`: print nothing on failure. The ss-* client then runs the tool in-process, and
 /// a diagnostic on stderr would reach the agent next to a good answer.
 fn auto_start_server_for(project_root: &Path, quiet: bool) -> Option<String> {
@@ -1470,9 +1527,15 @@ fn auto_start_server_for(project_root: &Path, quiet: bool) -> Option<String> {
     // server derives the SAME per-project socket we'll connect to, and the
     // maintainer targets the right project (C3 + canonical /tmp vs /private/tmp).
     let spawn_result = Command::new("node")
+        .arg(format!(
+            "--max-old-space-size={}",
+            daemon_heap_mb(memory_limit_bytes())
+        ))
         .arg(script)
         .arg("--serve")
         .env("SWEET_SEARCH_PROJECT_ROOT", project_root)
+        // The daemon outlives this call; it must not carry the call's start time.
+        .env_remove(agent_tools::CALL_STARTED_ENV)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -1485,11 +1548,10 @@ fn auto_start_server_for(project_root: &Path, quiet: bool) -> Option<String> {
         return None;
     }
 
-    // Poll for socket (100ms intervals): 5s for the human CLI; 60s for an ss-* call,
-    // the wait the JS tools always allowed a cold daemon. Giving up early is worse than
-    // waiting: the in-process fallback then starts a second daemon that races this one
-    // for the socket.
-    let attempts = if quiet { 600 } else { 50 };
+    // Poll for socket (100ms intervals): 5s for the human CLI; 30s for an ss-* call. The
+    // daemon binds its socket before it loads the indexes, so 30 s is ample; ss-search's
+    // 90 s loading budget (tools.js) also has to cover the daemon route's wait after this.
+    let attempts = if quiet { 300 } else { 50 };
     for _ in 0..attempts {
         thread::sleep(Duration::from_millis(100));
         if let Some(path) = find_socket_for(project_root) {
@@ -1980,6 +2042,19 @@ mod tests {
     fn exists_set(paths: &[&str]) -> impl Fn(&Path) -> bool {
         let set: HashSet<PathBuf> = paths.iter().map(PathBuf::from).collect();
         move |p: &Path| set.contains(p)
+    }
+
+    #[test]
+    fn daemon_heap_is_a_quarter_of_the_limit_within_bounds() {
+        let gib: u64 = 1024 * 1024 * 1024;
+        assert_eq!(daemon_heap_mb(128 * gib), 32 * 1024);
+        assert_eq!(daemon_heap_mb(16 * gib), 4096);
+        assert_eq!(daemon_heap_mb(8 * gib), 4096);
+        assert_eq!(daemon_heap_mb(6 * gib), 4096);
+        assert_eq!(daemon_heap_mb(4 * gib), 3072);
+        assert_eq!(daemon_heap_mb(0), 4096);
+        assert!(physical_memory_bytes() > 0);
+        assert!(memory_limit_bytes() <= physical_memory_bytes());
     }
 
     #[test]

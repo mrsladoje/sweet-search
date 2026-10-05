@@ -65,6 +65,7 @@ const LICENSE_HEADER = /\b(?:copyright|spdx-license-identifier|licensed under|li
 // `//go:generate`, `//nolint:errcheck`, `//lint:ignore` — a directive is `//`
 // directly followed by `word:` (no space), per the Go spec; never prose.
 const DIRECTIVE_LINE = /^\s*\/\/[a-z][a-z0-9_-]*:/;
+const SWIFT_CONDITIONAL_DIRECTIVE = /^\s*#(?:if|elseif|else|endif)\b/;
 const INNER_DOC = /^\s*(?:\/\/!|\/\*!)/;
 const SHEBANG = /^#!/;
 const XML_DOC_TAG = /<\/?[A-Za-z][^<>]*>/g;
@@ -161,6 +162,9 @@ export function leadingCommentNodes(anchor, content, languageId) {
   const run = [];
   while (prev && isComment(prev)) {
     if (prev.endPosition.row < boundaryRow - 1) break; // blank line between
+    // A Swift `#if` / `#endif` line is parsed as a comment (sourceForParse in
+    // tree-sitter-provider.js); it ends the run like a blank line.
+    if (languageId === 'swift' && SWIFT_CONDITIONAL_DIRECTIVE.test(content.substring(prev.startIndex, prev.endIndex))) break;
     if (!startsOwnLine(prev, content)) break; // trailing comment of earlier code
     run.unshift(prev);
     boundaryRow = prev.startPosition.row;

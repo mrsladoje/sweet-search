@@ -238,3 +238,40 @@ describe('graph GC prunes retired call_lines with call_sites', () => {
     }
   });
 });
+
+describe('ss-trace reads optional-chained call sites', () => {
+  it('optional-chained calls reach the callers section (GRDB statementDidFail shape)', async () => {
+    const graph = await buildGraph({
+      'Core/Broker.swift': [
+        'class DatabaseObservationBroker {',
+        '    func statementDidFail(_ statement: Statement) throws {',
+        '    }',
+        '}',
+      ],
+      'Core/Database.swift': [
+        'class Database {',
+        '    var observationBroker: DatabaseObservationBroker?',
+        '    func fail(_ statement: Statement) throws {',
+        '        try observationBroker?.statementDidFail(statement)',
+        '    }',
+        '}',
+      ],
+      'web/hooks.ts': [
+        'export function notify(cb?: () => void) {',
+        '  cb?.();',
+        '}',
+        'export function onChange(value: string) {',
+        '  return value;',
+        '}',
+        'export function emit(v: string) {',
+        '  onChange?.(v);',
+        '}',
+      ],
+    });
+    const swift = trace(graph, 'statementDidFail', { filePath: 'Core/Broker.swift' });
+    const caller = swift.sections.callers.items.find((x) => x.name === 'fail');
+    expect(caller?.contextLines).toEqual([4]);
+    const ts = trace(graph, 'onChange', { filePath: 'web/hooks.ts' });
+    expect(ts.sections.callers.items.find((x) => x.name === 'emit')?.contextLines).toEqual([8]);
+  });
+});

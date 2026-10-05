@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { scanCallSites } from '../../core/graph/call-site-scanner.js';
+import { scanCallSites, CallSiteScanner } from '../../core/graph/call-site-scanner.js';
 import { getLanguageByPath } from '../../core/infrastructure/language-patterns.js';
 
 function calls(file, src) {
@@ -22,6 +22,29 @@ describe('call-site scanner — call shapes', () => {
     expect(names('a.dart', 'widget!.build(context);')).toEqual(['widget.build']);
     expect(names('a.rb', 'x&.call(1)')).toEqual(['x.call']);
     expect(names('a.php', '$user?->save();')).toEqual(['user.save']);
+  });
+
+  it('captures chained optional access and JS/TS optional calls', () => {
+    expect(names('a.swift', 'try a?.b?.c(x)')).toEqual(['b.c']);
+    expect(names('a.swift', 'a!.b!.c()')).toEqual(['b.c']);
+    expect(names('a.swift', 'self.observationBroker?.statementDidFail(s)')).toEqual(['observationBroker.statementDidFail']);
+    expect(names('a.kt', 'a?.b?.c()')).toEqual(['b.c']);
+    expect(names('a.ts', 'a?.b?.c()')).toEqual(['b.c']);
+    // `?.(` calls the expression before it.
+    expect(names('a.ts', 'a.b?.()')).toEqual(['a.b']);
+    expect(names('a.js', 'opts?.onDone?.(err)')).toEqual(['opts.onDone']);
+    expect(names('a.tsx', 'x?.y?.(1).z?.(2)')).toEqual(['x.y', 'y().z']);
+    expect(calls('a.ts', 'promise\n  .then?.(cb)')).toEqual(['2:promise.then']);
+    // Ternaries are not calls.
+    expect(names('a.ts', 'const v = c ? (b) : d')).toEqual([]);
+  });
+
+  it('reads a JS/TS optional call of a bare name as a bare call', () => {
+    const scanner = new CallSiteScanner(getLanguageByPath('a.ts'));
+    const bare = [];
+    scanner.scanLine('onChange?.(value)', () => {}, (n) => bare.push(n));
+    scanner.scanLine('const v = c ? (b) : d', () => {}, (n) => bare.push(n));
+    expect(bare).toEqual(['onChange']);
   });
 
   it('captures generic and turbofish calls', () => {

@@ -361,7 +361,7 @@ export function expandToSymbol(result, opts) {
  *   - the gold/matched chunk verbatim (the actual evidence — never dropped)
  *   - the function/class signature (small, high-leverage anchor)
  *   - the closing brace line (cheap, helps the agent know the symbol bounds)
- * separated by explicit `// ... (N lines elided) ...` markers.
+ * separated by explicit `// ... (not shown: lines A-B — ss-read <file> A B) ...` markers.
  *
  * Sizing uses a conservative ~10-tokens-per-line estimate (matches the rest
  * of the file). If even bare gold doesn't fit, returns null so the caller
@@ -376,7 +376,7 @@ export function expandToSymbol(result, opts) {
  */
 function buildSandwichExpansion(entity, origStart, origEnd, tokenCap) {
   const SIG_MAX_LINES = 4;        // signature window
-  const ELISION_TOKENS = 10;      // approx cost of one `// ... (N lines elided) ...` line
+  const ELISION_TOKENS = 20;      // approx cost of one `// ... (not shown: lines A-B — ss-read <file> A B) ...` line
   const TOKENS_PER_LINE = 10;     // pessimistic estimate, matches `entityTokens` heuristic above
 
   // Signature: from entity.startLine up to min(SIG_MAX_LINES, just before gold)
@@ -461,7 +461,9 @@ function buildSandwichExpansion(entity, origStart, origEnd, tokenCap) {
 /**
  * Render a sandwich expansion into a single code string with elision markers.
  * Reads each part from the file cache and joins them with explicit
- * `// ... (N lines elided) ...` markers between non-contiguous parts.
+ * `// ... (not shown: lines A-B — ss-read <file> A B) ...` markers between
+ * non-contiguous parts, so every left-out line is named with the command that
+ * prints it.
  *
  * Returns '' if no part can be read (caller falls back to chunk path).
  */
@@ -474,12 +476,17 @@ function assembleSandwichCode(fileCache, filePath, sandwich, projectRoot) {
     if (!text) continue;
     if (prevEnd != null) {
       const gap = part.startLine - prevEnd - 1;
-      if (gap > 0) out.push(`// ... (${gap} lines elided) ...`);
+      if (gap > 0) out.push(elisionMarker(filePath, prevEnd + 1, part.startLine - 1));
     }
     out.push(text);
     prevEnd = part.endLine;
   }
   return out.join('\n');
+}
+
+/** The in-body marker for lines a packed body leaves out between two printed parts. */
+function elisionMarker(filePath, start, end) {
+  return `// ... (not shown: lines ${start}-${end} — ss-read ${filePath} ${start} ${end}) ...`;
 }
 
 /**
@@ -2522,15 +2529,14 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
       );
     }
 
+    // The ±20-line fallback below prints other lines than the expansion: its header names them.
+    let paddedRange = null;
     if (!code) {
       // Fallback: try with ±20 lines padding (plan §13, step 3)
-      code = readFileRange(
-        fileCache,
-        filePath,
-        Math.max(1, (meta.startLine || result.startLine) - 20),
-        (meta.endLine || result.endLine) + 20,
-        projectRoot
-      );
+      const padStart = Math.max(1, (meta.startLine || result.startLine) - 20);
+      const padEnd = (meta.endLine || result.endLine) + 20;
+      code = readFileRange(fileCache, filePath, padStart, padEnd, projectRoot);
+      if (code) paddedRange = { startLine: padStart, endLine: padStart + code.split('\n').length - 1 };
     }
 
     // Fix #2: Staleness detection (uses shared cache for db mtime)
@@ -2624,9 +2630,10 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
 
     // A sandwich that overshot its cap printed the gold chunk only (above): that chunk is the
     // entry's span and kind from here on.
-    const shownKind = goldOnlyRange ? 'chunk' : (expansion.kind || null);
-    const entryStart = goldOnlyRange ? goldOnlyRange.startLine : (leadTrimmedStart ?? expansion.startLine);
-    const entryEnd = goldOnlyRange ? goldOnlyRange.endLine : expansion.endLine;
+    const printedRange = goldOnlyRange || paddedRange;
+    const shownKind = printedRange ? 'chunk' : (expansion.kind || null);
+    const entryStart = printedRange ? printedRange.startLine : (leadTrimmedStart ?? expansion.startLine);
+    const entryEnd = printedRange ? printedRange.endLine : expansion.endLine;
     const agentResult = {
       rank: i + 1,
       file: filePath,

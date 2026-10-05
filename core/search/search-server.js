@@ -947,6 +947,7 @@ export async function startServer() {
           isUnixSocket: !req.socket.remoteAddress,
           searcher,
           isReady: () => serverReady,
+          isFailed: () => initError != null,
           waitForServerReady,
         });
       } catch (err) {
@@ -1560,11 +1561,12 @@ export function configureServerTimeouts(server) {
  */
 function guardQueryRequest(req, reject, route) {
   req.setTimeout(QUERY_CLIENT_TIMEOUT_MS, () => {
-    req.destroy(new Error(`Sweet Search daemon did not answer ${route} within ${QUERY_CLIENT_TIMEOUT_MS / 1000} s`));
+    req.destroy(daemonError(`Sweet Search daemon did not answer ${route} within ${QUERY_CLIENT_TIMEOUT_MS / 1000} s`));
   });
   req.on('error', (err) => {
+    if (err?.userFacing) { reject(err); return; }
     if (err?.code === 'ECONNRESET' || /socket hang up/.test(err?.message || '')) {
-      reject(new Error(`Sweet Search daemon closed the connection before answering ${route} (it stopped or restarted)`));
+      reject(daemonError(`Sweet Search daemon closed the connection before answering ${route} (it stopped or restarted); run the call again`));
       return;
     }
     reject(err);
@@ -1573,6 +1575,10 @@ function guardQueryRequest(req, reject, route) {
 
 // Set by startServer: this process's own /search handler (see there).
 let inProcessSearch = null;
+/** A failure the agent should read as one line: the tool host prints the message, not a stack. */
+function daemonError(message) {
+  return Object.assign(new Error(message), { userFacing: true });
+}
 
 export async function queryServer(query, options = {}) {
   const http = await import('http');
@@ -1900,6 +1906,23 @@ export async function ensureDaemonForProjectRoot(expectedProjectRoot, {
   return { ok: false, reason: 'daemon-did-not-become-ready-with-expected-root', health };
 }
 
+/**
+ * True when a process accepts connections on this project's socket. The kernel accepts
+ * even while the daemon's event loop is busy loading indexes or answering a long query,
+ * so this tells "a daemon exists" apart from "no daemon" where a /health probe with a
+ * short timeout cannot.
+ */
+export async function isServerListening({ timeoutMs = 2000 } = {}) {
+  const net = await import('node:net');
+  return new Promise((resolve) => {
+    const sock = net.connect(projectSocketPath());
+    const done = (ok) => { sock.destroy(); resolve(ok); };
+    sock.setTimeout(timeoutMs, () => done(false));
+    sock.once('connect', () => done(true));
+    sock.once('error', () => done(false));
+  });
+}
+
 export async function isServerRunning() {
   try {
     const http = await import('http');
@@ -1934,7 +1957,8 @@ export async function isServerRunning() {
  * Auto-spawn warm server in background
  * Returns true if server started successfully
  */
-export async function autoSpawnServer() {
+export async function autoSpawnServer({ quiet = false } = {}) {
+  const note = quiet ? () => {} : (msg) => console.error(msg);
   const { spawn } = await import('child_process');
   const { fileURLToPath } = await import('url');
   const path = await import('path');
@@ -1945,13 +1969,20 @@ export async function autoSpawnServer() {
   const __filename = fileURLToPath(import.meta.url);
   const sweetSearchPath = path.join(path.dirname(__filename), '..', 'cli.js');
 
-  console.error('[AutoStart] Starting warm server in background...');
+  note('[AutoStart] Starting warm server in background...');
 
   // Spawn detached process — run sweet-search with --serve
-  const child = spawn(process.execPath, [sweetSearchPath, '--serve'], {
+  const { daemonNodeArgs } = await import('./daemon-heap.js');
+  // The daemon outlives this call: it must not carry the call's start stamp (CALL_STARTED_ENV),
+  // or every later call it serves would start with its budget spent.
+  const { CALL_STARTED_ENV } = await import('../agent-tools/tools.js');
+  const env = { ...process.env };
+  delete env[CALL_STARTED_ENV];
+  const child = spawn(process.execPath, [...daemonNodeArgs(), sweetSearchPath, '--serve'], {
     detached: true,
     stdio: 'ignore',
     cwd: path.dirname(__filename),
+    env,
   });
 
   child.unref();
@@ -1972,11 +2003,11 @@ export async function autoSpawnServer() {
     waited += checkInterval;
 
     if (await isServerRunning()) {
-      console.error(`[AutoStart] Server ready in ${waited}ms`);
+      note(`[AutoStart] Server ready in ${waited}ms`);
       return true;
     }
   }
 
-  console.error('[AutoStart] Server startup timeout, using cold start');
+  note('[AutoStart] Server startup timeout, using cold start');
   return false;
 }

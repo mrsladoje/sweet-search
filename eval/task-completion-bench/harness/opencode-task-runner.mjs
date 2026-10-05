@@ -15,10 +15,11 @@ import { opencodeBatchPrompt, opencodeBatchToolEdits, OPENCODE_GPT_ORIGINAL, OPE
 // the trim plugin. The benchmark arm OC_HARNESS_TRIM=conflict3+todo3eff3k is built from them.
 import {
   OPENCODE_CONFLICT_PROMPT_BULLET as SHIPPED_CONFLICT_PROMPT_BULLET, OPENCODE_FILE_READS_EDIT,
-  OPENCODE_TOOL_EDITS as SHIPPED_OPENCODE_TOOL_EDITS, OPENCODE_TOOL_EDITS_V1 as SHIPPED_OPENCODE_TOOL_EDITS_V1, OPENCODE_TRIM_PLUGIN_SOURCE,
-  opencodeConflictBulletReplacement, rulesV2Enabled,
+  OPENCODE_TOOL_EDITS as SHIPPED_OPENCODE_TOOL_EDITS, OPENCODE_TRIM_PLUGIN_SOURCE,
 } from '../../../scripts/harness-prompts/index.js';
 import { createHash, randomBytes } from 'node:crypto';
+import { createRequire } from 'node:module';
+import { addSidechainCostsChecked } from './claude-code-accounting.mjs';
 import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -314,14 +315,12 @@ export const OPENCODE_CONFLICT2_PROMPT_EDIT = OPENCODE_FILE_READS_EDIT;
 // = conflict2's bash/read/task/glob edits (tests/opencode-harness-trim.mjs checks it); defined in the
 // product because `sweet-search init --opencode` ships them.
 export const OPENCODE_CONFLICT3_TOOL_EDITS = SHIPPED_OPENCODE_TOOL_EDITS;
-// conflict3 under SS_FIX_RULES_V2=0: the pre-v2 shipped edits (byte-identical to the benchmarked set).
-export const OPENCODE_CONFLICT3_TOOL_EDITS_V1 = SHIPPED_OPENCODE_TOOL_EDITS_V1;
 // OC_HARNESS_TRIM=conflict4 (audit beh-oc-p4): conflict3 + the glob description's "always better to
 // speculatively perform multiple searches as a batch" sentence removed (it pulls against the efficiency
 // line; its intent is restated there as "send the searches you would try in one turn").
 export const OPENCODE_CONFLICT4_TOOL_EDITS = Object.freeze({
-  ...OPENCODE_CONFLICT3_TOOL_EDITS_V1,
-  glob: [...OPENCODE_CONFLICT3_TOOL_EDITS_V1.glob,
+  ...OPENCODE_CONFLICT3_TOOL_EDITS,
+  glob: [...OPENCODE_CONFLICT3_TOOL_EDITS.glob,
     ['- You have the capability to call multiple tools in a single response. It is always better to speculatively perform multiple searches as a batch that are potentially useful.', '']],
 });
 export const OPENCODE_CONFLICT_NOGLOB_TOOL_EDITS = Object.freeze({
@@ -348,16 +347,13 @@ function opencodeHarnessTrimCombo(m, { apiModel, stateDir, env = process.env }) 
   const c4 = base === 'conflict4';
   const original = readFileSync(OPENCODE_GPT_ORIGINAL, 'utf8');
   if (original.split(OPENCODE_CONFLICT_PROMPT_BULLET).length !== 2) throw new Error(`OC_HARNESS_TRIM=${m}: Glob/Grep bullet not found once in the original prompt`);
-  // Rules v2 (the shipped base conflict3 only): the bullet's Glob half stays and the v2 bash tool
-  // edits apply; research bases (conflict4 included) are unchanged.
-  const v2Glob = base === 'conflict3' && rulesV2Enabled(env);
-  const conflictPrompt = original.replace(OPENCODE_CONFLICT_PROMPT_BULLET, () => (v2Glob ? opencodeConflictBulletReplacement(env) : ''));
+  const conflictPrompt = original.replace(OPENCODE_CONFLICT_PROMPT_BULLET, '');
   let prompt = variant ? opencodeBatchPrompt(variant, conflictPrompt) : conflictPrompt;
   if (keepAll || c3) {
     if (!prompt.includes(OPENCODE_CONFLICT2_PROMPT_EDIT[0])) throw new Error(`OC_HARNESS_TRIM=${m}: "especially file reads" not found in the prompt`);
     prompt = prompt.split(OPENCODE_CONFLICT2_PROMPT_EDIT[0]).join(OPENCODE_CONFLICT2_PROMPT_EDIT[1]);
   }
-  const baseEdits = c4 ? OPENCODE_CONFLICT4_TOOL_EDITS : c3 ? (v2Glob ? OPENCODE_CONFLICT3_TOOL_EDITS : OPENCODE_CONFLICT3_TOOL_EDITS_V1) : keepAll ? OPENCODE_CONFLICT2_TOOL_EDITS : noglob ? OPENCODE_CONFLICT_NOGLOB_TOOL_EDITS : OPENCODE_CONFLICT_TOOL_EDITS;
+  const baseEdits = c4 ? OPENCODE_CONFLICT4_TOOL_EDITS : c3 ? OPENCODE_CONFLICT3_TOOL_EDITS : keepAll ? OPENCODE_CONFLICT2_TOOL_EDITS : noglob ? OPENCODE_CONFLICT_NOGLOB_TOOL_EDITS : OPENCODE_CONFLICT_TOOL_EDITS;
   const lineEdits = (variant && opencodeBatchToolEdits(variant)) || {};
   const clash = Object.keys(lineEdits).filter(k => k in baseEdits);
   if (clash.length) throw new Error(`OC_HARNESS_TRIM=${m}: the variant and the base both edit ${clash.join(', ')}`);
@@ -375,7 +371,6 @@ function opencodeHarnessTrimCombo(m, { apiModel, stateDir, env = process.env }) 
     files: { [OPENCODE_TRIM_PLUGIN]: readFileSync(OPENCODE_TRIM_PLUGIN_SOURCE, 'utf8') },
     plugins: [plugin],
     stateEntries: [OPENCODE_TRIM_PLUGIN, OPENCODE_TRIM_REPORT],
-    ...(base === 'conflict3' ? { rulesV2: v2Glob } : {}),
   };
 }
 
@@ -397,8 +392,6 @@ export function opencodePromptFamily(apiModel) {
 export const OC_HARNESS_TRIM_DEFAULT = 'conflict3+todo3eff3k';
 
 /** The trim for an OC_HARNESS_TRIM value; unset / empty = OC_HARNESS_TRIM_DEFAULT. `origin` = 'default' | 'env'. */
-// `env` carries SS_FIX_RULES_V2 (rules v2, scripts/harness-prompts/rules-v2.js) for the shipped
-// conflict3 family: the Glob half of the removed Glob/Grep bullet comes back; =0 = the old prompt.
 export function opencodeHarnessTrim(mode = process.env.OC_HARNESS_TRIM, { apiModel, stateDir, env = process.env } = {}) {
   const raw = String(mode ?? '').trim();
   const origin = raw ? 'env' : 'default';
@@ -650,7 +643,7 @@ export function parseOpencodeStream(stdout) {
     const tl = line.trim();
     if (!tl || tl[0] !== '{') continue;
     let ev; try { ev = JSON.parse(tl); } catch { continue; }
-    sessionID = sessionID || ev.sessionID || ev.sessionId || ev.session_id || null;
+    sessionID = sessionID || ev.sessionID || ev.sessionId || ev.session_id || ev.part?.sessionID || null;
     const p = ev.part || ev.properties?.part || ev;
     const type = ev.type || p.type;
     if (type === 'tool_use' || type === 'tool' || (p && p.tool && (p.state || p.callID || p.callId))) {
@@ -669,14 +662,7 @@ export function parseOpencodeStream(stdout) {
           || ev.messageID || ev.messageId || ev.message_id || prior?.messageId || null,
       });
     } else if (type === 'step_finish' || type === 'step-finish') {
-      const tk = p.tokens || {};
-      const cache = tk.cache || {};
-      const cRead = cache.read || 0, cWrite = cache.write || 0;
-      // cache.write is opencode's prompt-cache-creation count. It is folded into `in` (so the
-      // context size stays right) AND published separately, so the realized column can charge
-      // it at the provider's 1.25x creation rate — the same basis claude-code has always used
-      // (G17). Dropping the separate field puts opencode back on the old, cheaper basis.
-      turns.push({ in: (tk.input || 0) + cRead + cWrite, cached: cRead, cacheWrite: cWrite, out: (tk.output || 0) + (tk.reasoning || 0) });
+      turns.push(opencodeStepFinishTurn(p));
     } else if (type === 'text') {
       if (typeof p.text === 'string' && p.text.trim()) answer = p.text;
     } else if (type === 'error') {
@@ -684,6 +670,147 @@ export function parseOpencodeStream(stdout) {
     }
   }
   return { toolCalls: callOrder.map(id => calls.get(id)), answer, turns, errors, sessionID };
+}
+
+// One model request = one step-finish part, from the stream or from the session DB (same basis).
+// cache.write is opencode's prompt-cache-creation count. It is folded into `in` (so the
+// context size stays right) AND published separately, so the realized column can charge
+// it at the provider's 1.25x creation rate — the same basis claude-code has always used
+// (G17). Dropping the separate field puts opencode back on the old, cheaper basis.
+export function opencodeStepFinishTurn(p) {
+  const tk = p?.tokens || {};
+  const cache = tk.cache || {};
+  const cRead = cache.read || 0, cWrite = cache.write || 0;
+  return { in: (tk.input || 0) + cRead + cWrite, cached: cRead, cacheWrite: cWrite, out: (tk.output || 0) + (tk.reasoning || 0) };
+}
+
+// ─── subagent (child-session) spend ────────────────────────────────────────────────────────────
+// `opencode run --format json` streams ONLY the main session. A `task` tool call (explore /
+// general subagent) runs in a CHILD session (session.parent_id = the caller's session id) whose
+// requests and tool calls never reach the stream, so a ledger built from the stream is main-only.
+// Found 2026-10-04 (final-run TRACES-oc.md): native delegated to explore in 3 of 30 questions,
+// $0.27 off the row ledger; one child alone (composer-07) was $0.148, 2.3x the main session.
+// The bench cost definition is sidechain-INCLUSIVE (task-bench preregistration), so the child
+// sessions are read back from opencode's session DB (<ocData>/opencode.db) and priced with the
+// SAME per-turn function as the main session, each child as its own context.
+//
+// Pure part: rows of the session DB in, one set per descendant session out (depth-first,
+// creation order). Set shape = claude-code-accounting's sidechain sets, so
+// addSidechainCostsChecked prices both harnesses one way.
+//   db = { sessions: [{ id, parent_id, agent, title, time_created }],
+//          messages: [{ session_id, role }], parts: [{ session_id, data }] }  (parts in time order)
+export function opencodeChildSessionSets(db, mainSessionID) {
+  if (!mainSessionID) return [];
+  const kids = new Map();
+  for (const s of db.sessions || []) {
+    if (!s.parent_id) continue;
+    if (!kids.has(s.parent_id)) kids.set(s.parent_id, []);
+    kids.get(s.parent_id).push(s);
+  }
+  for (const list of kids.values()) list.sort((a, b) => (a.time_created ?? 0) - (b.time_created ?? 0) || (a.id < b.id ? -1 : 1));
+  const order = [];
+  const seen = new Set([mainSessionID]);
+  const visit = (id, depth) => {
+    for (const s of kids.get(id) || []) {
+      if (seen.has(s.id)) continue;
+      seen.add(s.id); order.push({ s, depth }); visit(s.id, depth + 1);
+    }
+  };
+  visit(mainSessionID, 1);
+  return order.map(({ s, depth }) => {
+    const turns = [], toolKinds = {};
+    let toolCalls = 0;
+    for (const row of db.parts || []) {
+      if (row.session_id !== s.id) continue;
+      const p = typeof row.data === 'string' ? JSON.parse(row.data) : row.data;
+      if (p?.type === 'step-finish' || p?.type === 'step_finish') turns.push(opencodeStepFinishTurn(p));
+      else if (p?.type === 'tool') {
+        toolCalls++;
+        const { kind } = classifyTool(p.tool, p.state?.input || p.input);
+        toolKinds[kind] = (toolKinds[kind] || 0) + 1;
+      }
+    }
+    const assistantMessages = (db.messages || []).filter(m => m.session_id === s.id && m.role === 'assistant').length;
+    return {
+      name: s.id, parentId: s.parent_id, agent: s.agent ?? null, title: s.title ?? null, depth,
+      turns, toolCalls, toolKinds, assistantMessages, usageMessages: turns.length,
+      // Every assistant message is one request and ends in exactly one step-finish. A message
+      // without one (aborted / killed mid-request) has unknown usage: fail closed.
+      instrumentationComplete: assistantMessages === turns.length,
+    };
+  });
+}
+
+// DB part: read the rows opencodeChildSessionSets needs. Throws when the DB cannot be read; the
+// caller must then publish the row as cost-incomplete, never as main-only.
+export function readOpencodeChildSessions(dbPath, mainSessionID) {
+  if (!mainSessionID) return [];
+  const require = createRequire(import.meta.url);
+  const Database = require('better-sqlite3');
+  const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+  try {
+    db.pragma('busy_timeout = 5000');
+    const sessions = db.prepare('select id, parent_id, agent, title, time_created from session where parent_id is not null').all();
+    const ids = opencodeChildSessionSets({ sessions }, mainSessionID).map(x => x.name);
+    if (!ids.length) return [];
+    const ph = ids.map(() => '?').join(',');
+    const messages = db.prepare(`select session_id, json_extract(data, '$.role') as role from message where session_id in (${ph})`).all(...ids);
+    const parts = db.prepare(`select session_id, data from part where session_id in (${ph}) order by time_created, id`).all(...ids);
+    return opencodeChildSessionSets({ sessions, messages, parts }, mainSessionID);
+  } finally { db.close(); }
+}
+
+// Row cost fields of one opencode rollout: main session + every child session, under the one
+// cost definition (costsFromTurns per context, summed by addSidechainCostsChecked). childSets =
+// null means the session DB could not be read: the inclusive columns are then null and
+// costRealizedLowerBoundUsd carries the main-only figure (the claude-code fail-closed rule).
+// Main-only numbers stay on the row (…MainOnly…) for comparison with pre-2026-10-04 rows.
+export function opencodeRowCosts({ mainTurns, childSets, price }) {
+  const main = costsFromTurns(mainTurns, price);
+  const sum = (ts, k) => ts.reduce((a, t) => a + (Number(t[k]) || 0), 0);
+  const usageMainOnly = { turns: mainTurns.length, in: sum(mainTurns, 'in'), out: sum(mainTurns, 'out') };
+  if (childSets == null) {
+    // Every inclusive column null (the same set addSidechainCostsChecked nulls for an incomplete
+    // sidechain), main-only columns and the lower bound kept.
+    const unread = addSidechainCostsChecked(main, [{ name: 'session-db-unread', turns: [], instrumentationComplete: false }], price);
+    return {
+      costs: { ...unread, sidechainCount: null, incompleteSidechains: ['session-db-unread'] },
+      fields: {
+        usage: null, usageMainOnly,
+        costRealizedUsd: null, costNaiveUsd: null,
+        costRealizedMainOnlyUsd: main.costRealizedUsd, costNaiveMainOnlyUsd: main.costNaiveUsd,
+        costRealizedLowerBoundUsd: main.costRealizedUsd, costSidechainUsd: null,
+        subagentSessionsRead: false, subagentContexts: null, subagentTurns: null, subagentCalls: null,
+        costAccountingComplete: false,
+      },
+    };
+  }
+  // A child that never sent a request costs nothing and is no evidence of missing usage.
+  const sets = childSets.filter(s => s.assistantMessages > 0 || s.usageMessages > 0);
+  const costs = addSidechainCostsChecked(main, sets, price);
+  const childTurns = sets.flatMap(s => s.turns);
+  const childNaive = sets.reduce((a, s) => a + (s.turns.length ? costsFromTurns(s.turns, price).costNaiveUsd : 0), 0);
+  const subagentToolKinds = {};
+  for (const s of childSets) for (const [k, n] of Object.entries(s.toolKinds || {})) subagentToolKinds[k] = (subagentToolKinds[k] || 0) + n;
+  return {
+    costs,
+    fields: {
+      usage: { turns: mainTurns.length + childTurns.length, in: usageMainOnly.in + sum(childTurns, 'in'), out: usageMainOnly.out + sum(childTurns, 'out') },
+      usageMainOnly,
+      costRealizedUsd: costs.costRealizedUsd ?? null, costNaiveUsd: costs.costNaiveUsd ?? null,
+      costRealizedMainOnlyUsd: main.costRealizedUsd, costNaiveMainOnlyUsd: main.costNaiveUsd,
+      costRealizedLowerBoundUsd: costs.costRealizedLowerBoundUsd ?? null,
+      costSidechainUsd: costs.costSidechainUsd ?? null,
+      costNaiveSidechainUsd: +childNaive.toFixed(6),
+      subagentSessionsRead: true,
+      subagentContexts: childSets.length,
+      subagentAgents: childSets.map(s => s.agent),
+      subagentTurns: childTurns.length,
+      subagentCalls: childSets.reduce((a, s) => a + s.toolCalls, 0),
+      subagentToolKinds,
+      costAccountingComplete: costs.sidechainAccountingComplete !== false,
+    },
+  };
 }
 
 /**
@@ -793,7 +920,7 @@ export async function runOpencodeTask(task, {
       OPENCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS: String(agentBashTimeoutMs),
       // ss-* gutter form pinned per harness (core/search/gutter-form.js): opencode → `N:`.
       // Pinned so the timed run never pays a process-tree walk; operator env (A/B arm) wins.
-      SS_READ_GUTTER: process.env.SS_READ_GUTTER ?? 'colon',
+      SS_READ_GUTTER: process.env.SS_READ_GUTTER ?? 'none',
     },
   });
   let preflight;
@@ -857,7 +984,17 @@ export async function runOpencodeTask(task, {
   // two different things. toolCounts.edit is now strictly "edit-tool calls seen"; every
   // patch-derived metric reads patchFiles/patchHunks here or preds-*.jsonl downstream.
 
-  const costs = costsFromTurns(turns, price);
+  // Sidechain-inclusive cost (2026-10-04): the stream holds only the main session; a `task`
+  // subagent runs in a child session that only the session DB (ocData/opencode.db) records.
+  // Unreadable DB → inclusive cost columns null (fail closed), main-only kept.
+  let childSets = null;
+  try {
+    childSets = parsed.sessionID ? readOpencodeChildSessions(path.join(ocData, 'opencode.db'), parsed.sessionID)
+      : (turns.length ? null : []);
+  } catch (error) {
+    console.log(`  [OC-SUBAGENT-COST ${task.id || ''}] session DB unreadable (${error.message}) — cost columns null`);
+  }
+  const { costs, fields: subagentFields } = opencodeRowCosts({ mainTurns: turns, childSets, price });
   // P7: keep the per-turn array (PLAN.md §3 B1). opencode's step_finish events are the
   // exact per-turn split; without this the next forensics pass is algebraic again.
   const turnsFile = persistTurns(label, turns, {
@@ -878,7 +1015,8 @@ export async function runOpencodeTask(task, {
   teardownRunner(runnerStateDir, { jail, broker });
   if (secretLeakDetected) throw new Error('secret-leak tripwire fired; retained text was redacted');
 
-  const calls = toolCalls.length;
+  const callsMainOnly = toolCalls.length;
+  const calls = callsMainOnly + (Number(subagentFields.subagentCalls) || 0);
   return {
     ...controller,
     rtProgressTurnMapComplete: progressTurnMap.complete,
@@ -898,16 +1036,24 @@ export async function runOpencodeTask(task, {
     ...sweetRulesRowFields(rulesPlacement, { sweet }),
     secretLeakDetected: false,
     toolKindVersion: TOOL_KIND_VERSION, // shell-command-kind.mjs: never pool ss/toolCounts across versions
-    calls, ss: toolCounts.ss, nativeGrep: toolCounts.nativeGrep, toolCounts,
+    // calls = main + subagent tool calls; ss / nativeGrep / toolCounts stay main-session counts.
+    calls, callsMainOnly, ss: toolCounts.ss, nativeGrep: toolCounts.nativeGrep, toolCounts,
     patchHunks, patchFiles, finalPatch,
     ...escapeAudit,
     shimTampered: shimTamperedFiles.length > 0, shimTamperedFiles,
-    stepsToFirstEdit: stepsToFirstEdit ?? calls, nudges: 0, ...rtTelemetry,
+    stepsToFirstEdit: stepsToFirstEdit ?? callsMainOnly, nudges: 0, ...rtTelemetry,
     hardTurnCap: resolveHardTurnCap(),
     budgetExhausted: resolveHardTurnCap() !== null && turns.length >= resolveHardTurnCap(),
     exitReason: exitReasonFrom(r),
-    usage: turns.length ? { turns: turns.length } : {},
+    usage: turns.length ? { turns: subagentFields.usage?.turns ?? null } : {},
+    usageMainOnly: { turns: turns.length },
     ...costs, turnsFile, ...firstRequestCacheFields(turns),
+    sessionID: parsed.sessionID ?? null,
+    costNaiveMainOnlyUsd: subagentFields.costNaiveMainOnlyUsd,
+    subagentSessionsRead: subagentFields.subagentSessionsRead, subagentContexts: subagentFields.subagentContexts,
+    subagentAgents: subagentFields.subagentAgents ?? null, subagentTurns: subagentFields.subagentTurns,
+    subagentCalls: subagentFields.subagentCalls, subagentToolKinds: subagentFields.subagentToolKinds ?? null,
+    costAccountingComplete: subagentFields.costAccountingComplete,
     wallMs, trajectory, finalAssistantText: answer,
     agentErrors: errors.slice(0, 5), startRetried,
     stderrPreview: String(r.stderr || '').slice(0, 300),
