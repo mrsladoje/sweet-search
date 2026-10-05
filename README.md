@@ -1098,21 +1098,21 @@ You never run a command.
 
 | ⏱️ **Always current** | 🎯 **Re-embeds only what changed** | ⚛️ **Never half-updated** |
 |:--|:--|:--|
-| Edits are searchable within ~20–60 s, tuned to your machine | One edited function means one chunk to the encoder, not the whole file | All five index tiers switch to the new version in one atomic step |
+| Edits are searchable within ~20–60 s, tuned to your machine | One edited function means one chunk to the encoder, not the whole file | Every index switches to the new version in one atomic step |
 
 <details>
 <summary><b>Under the hood: how the daemon stays fast, safe, and light</b></summary>
 
 <br/>
 
-**By the numbers:** 5 index tiers · 1 atomic manifest · ≤50 files and ≤2 s of CPU per update · 4 independent memory limits
+**By the numbers:** 6 indexes · 1 atomic manifest · ≤50 files and ≤2 s of CPU per update · 4 independent memory limits
 
 #### 🎯 Re-embed as little as possible
 - **Stable chunk IDs.** Each chunk's ID comes from its symbol and signature. An edit re-embeds only the function you touched, even when every line below it shifts.
 - **No-op saves are nearly free.** An xxHash3 content hash spots saves with no real change and skips the models.
 
 #### ⚛️ Safe by construction
-- **One atomic switch.** Each update stages its writes, then publishes all five tiers through one fsync-renamed manifest. A query pins one manifest, so it never sees a half-updated index.
+- **One atomic switch.** Each update stages its writes, then publishes every index through one fsync-renamed manifest. A query pins one manifest, so it never sees a half-updated index.
 - **Baseline gate.** The daemon never builds the first index. It checks the full indexer's fingerprint first, and waits (`waiting_for_initial_index`) until one exists.
 - **One admission policy.** The full indexer and the daemon share one module that decides what gets indexed: include globs → deny list → `.sweet-search-ignore` → 1 MB cap → `git check-ignore`. The two paths cannot drift.
 - **Worktree-safe.** A worktree stamp and a single-writer lock stop two daemons from mixing index histories.
