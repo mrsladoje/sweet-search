@@ -387,3 +387,16 @@ output shapes; 5 dev tasks are no evidence for a ranking change.
   windows cut one; only 9 were followed by a read of the rest. Too small to matter or to measure.
 - Several ranges in one `ss-read`: agents already chain same-file reads in one command (43 cases);
   it would save a header line per range, not a request.
+
+## 2026-10-05 — pre-held-out task micro check (5 dev tasks, 3 harnesses, REPS=1, main 65c4f20d)
+
+Tasks: confirm28 seed-42 draw (svgr-10, id3tageditor-54, ant-design-mobile-6812,
+tslint-to-eslint-config-707, eslint-plugin-promise-365); goldens rebuilt on the pod (CUDA).
+Resolution identical in all 15 sweet/native pairs. Billed cost sweet vs native: opencode −30%,
+Codex +14%, Claude Code +23%. No ss-* tool failure in any trajectory.
+
+**Observation (Claude):**
+- Claude Code + Opus 5.5 on `chicio__id3tageditor-54` (Swift): sweet 22 calls (12 ss-*) and
+  $0.49 vs native 6 calls and $0.24; neither arm resolved it. It is almost all of the Claude Code
+  cost gap; on the other 4 tasks sweet cost less in 3. One task, one rep — below the noise floor;
+  read the trace after the held-out run (dev task, per-task reading allowed).
