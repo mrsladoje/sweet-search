@@ -801,14 +801,7 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 > Give `ss-read` a file and a line range. It reads from disk, so the code is always current, and it names what the agent has not read yet.
 
 <table>
-<tr><td width="50%" valign="top">
-
-**🔢 Line numbers that fit the agent**
-
-- Claude Code, Codex and opencode get plain code, Cursor gets `12:`. Each matches that agent's edit tool.
-- Each format was chosen to cut failed edits, and tested on Claude Code, Codex and opencode.
-
-</td><td width="50%" valign="top">
+<tr><td valign="top">
 
 **🧭 Above, below, already read**
 
