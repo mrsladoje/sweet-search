@@ -762,31 +762,22 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 **🏗️ 1. The codegraph**
 
-- Built at index time and updated as you edit. Tree-sitter reads your code and records every function, class and method, and the links between them (imports, extends, ...)
+- Every function, class and method, and the links between them (imports, extends, calls, ...).
 - Each symbol gets an importance score (PageRank). Code that many places depend on scores higher.
 
 </td>
 <td width="50%" valign="top">
 
-**🔎 2. Filling the gaps**
+**🧭 2. Best results first**
 
-- When you ask, it finds calls the graph missed: renamed imports and calls in the same file.
-- It drops wrong links, like `this.fetch()` linked to an unrelated `fetch`.
+- Personalized PageRank walks out from your symbol: backward for callers, forward for callees. Code close to your symbol ranks high. A logger that everything calls ranks low.
 
 </td>
 </tr>
 <tr>
-<td width="50%" valign="top">
+<td colspan="2" valign="top">
 
-**🧭 3. Best results first**
-
-- Personalized PageRank walks out from your symbol: backward for callers, forward for callees. Code close to your symbol ranks high. A logger that everything calls ranks low.
-- Fewer hops, direct calls, exported names and many callers rank higher. Test files rank lower.
-
-</td>
-<td width="50%" valign="top">
-
-**📋 4. One row per link**
+**📋 3. One row per link**
 
 - Each caller and callee is one line: its kind, name and `file:line`, grouped by file.
 - Impact paths print as a tree.
