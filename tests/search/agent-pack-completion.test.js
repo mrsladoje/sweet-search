@@ -531,11 +531,24 @@ describe('referenced sibling: code use only, and labelled as a reference (2026-1
   });
 });
 describe('codeWithoutCommentsAndStrings', () => {
-  it('blanks comments and strings but keeps JS private calls, Rust attributes and lifetimes', async () => {
+  it('blanks comments and strings by language, keeps interpolated code and preprocessor lines', async () => {
     const { codeWithoutCommentsAndStrings: blank } = await import('../../core/search/agent-pack-completion.js');
-    expect(blank('this.#writeWithoutTransaction() # py note')).toContain('this.#writeWithoutTransaction()');
-    expect(blank('#[derive(Debug)]\nstruct A')).toContain('#[derive(Debug)]');
-    expect(blank("fn f<'a>(x: &'a str) -> &'a str { foo(x) } // writeX", 'src/a.rs')).toBe("fn f<'a>(x: &'a str) -> &'a str { foo(x) }  ");
-    expect(blank("x = 'writeA' + \"writeB\" + writeC()  # writeD", 'a.py')).toBe('x =   +   + writeC()   ');
+    const keeps = (code, file, name) => expect(blank(code, file), `${file}: ${code}`).toContain(name);
+    const drops = (code, file, name) => expect(blank(code, file), `${file}: ${code}`).not.toContain(name);
+    keeps('this.#writeWithoutTransaction() // c', 'a.js', 'this.#writeWithoutTransaction()');
+    keeps('#[derive(Debug)]\nstruct A', 'a.rs', '#[derive(Debug)]');
+    keeps("fn f<'a>(x: &'a str) -> &'a str { foo(x) } // writeX", 'src/a.rs', 'foo(x)');
+    drops("fn f<'a>(x: &'a str) -> &'a str { foo(x) } // writeX", 'src/a.rs', 'writeX');
+    keeps('const label = `result ${writeWithoutTransaction()}`;', 'a.js', 'writeWithoutTransaction()');
+    keeps('const h = html`<div>${render(x)}</div>`', 'a.ts', 'render(x)');
+    keeps('label = f"{write_without_transaction()}"', 'a.py', 'write_without_transaction()');
+    keeps('puts "#{helperCall(1)} done"', 'a.rb', 'helperCall(1)');
+    keeps('let s = "\\(compute())"', 'a.swift', 'compute()');
+    keeps('s = $"x {render(y)}"', 'a.cs', 'render(y)');
+    keeps('#define WRITE_RESULT() writeWithoutTransaction()', 'a.c', 'writeWithoutTransaction');
+    drops('x = 1# writeWithoutTransaction is obsolete', 'a.py', 'writeWithoutTransaction');
+    drops("x = 'writeA' + \"writeB\"", 'a.py', 'writeA');
+    drops('-- writeQ is old\nselect 1', 'a.sql', 'writeQ');
+    drops('GRDBPrecondition(!db.x, """\n use DatabasePool.writeWithoutTransaction\n """)', 'a.swift', 'writeWithoutTransaction');
   });
 });
