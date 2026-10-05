@@ -57,7 +57,7 @@ earlier tier is not available.
 | Tier | Engine | Formats | Notes |
 |---|---|---|---|
 | 1 | Native Rust addon (rayon + explicit SIMD) | int4 per-token, int8 per-token, int8 per-doc | One batch call per format group, all CPU cores |
-| 2 | WASM SIMD (`core/infrastructure/maxsim.wasm`, 8.2 KB) | f32, int8 per-doc, int8 per-token, int4 per-token | One call per candidate; query staged once per pass |
+| 2 | WASM SIMD (`core/infrastructure/maxsim.wasm`, 8.2 KB) | int8 per-token and int4 per-token (fused dequant); f32 after JS dequant | One call per candidate; query staged once per pass. The int8 per-doc kernel `maxsim_dequant` exists, but the dispatch does not call it: per-doc int8 goes through JS dequant + `maxsim_f32` |
 | 3 | JS | all | int4: implicit 16-entry LUT scorer; others: dequant to a pooled f32 buffer, then WASM f32 or JS |
 
 `getMaxSimTier()` in `core/infrastructure/simd-distance.js` reports the active tier
@@ -167,7 +167,7 @@ rankings on a 12-case fixture (odd dimension, tile boundaries 63/64/65/257, clam
 zero-scale tokens, empty documents). The reassociated SIMD sum makes the scores
 ranking-equivalent, not bit-identical.
 
-**Release fix in the same change:** the shipped `maxsim.wasm` was a May build without the
+**Release fix in the same change:** the shipped `maxsim.wasm` was an older build without the
 per-token and int4 exports. The WASM fast paths for those formats were dead on every
 install without the native addon. The file was rebuilt.
 
@@ -227,7 +227,7 @@ Do not promote a change that is only faster in a microbenchmark with no real sea
 4. **Dot products do not auto-vectorize** without reassociation; explicit SIMD was needed.
    The cost is ~1e-7 score drift, which cannot change rankings in practice.
 5. **Check shipped binaries.** A stale `maxsim.wasm` silently disabled two fast paths for
-   two months. Rebuild with `npm run build:wasm` after any kernel change.
+   months. Rebuild with `npm run build:wasm` after any kernel change.
 6. **Block-Max needs non-uniform norms.** It does nothing for L2-normalized outputs.
 
 ## Build
