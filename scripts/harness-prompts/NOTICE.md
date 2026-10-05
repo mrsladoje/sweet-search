@@ -2,11 +2,26 @@
 
 `sweet-search init` replaces the system prompt of Claude Code, Codex (`--codex`) and opencode
 (`--opencode`) with the version measured in the sweet-search task-completion benchmark. Two files in
-this directory are **modified copies of third-party text**; the rest is our own code and text.
+this directory are **copies of third-party text** (one unmodified, two modified); the rest is our own code and text.
 `index.js` builds the shipped prompts from them, and the benchmark imports `index.js`, so the
 benchmarked prompt and the shipped prompt are the same bytes.
 
-## `codex-0.146.1-instructions-conflict-gpt-5.6-luna.md`
+## `codex-0.159.2-stock-gpt-6.1-sol.md` (the shipped Codex prompt since 2026-10-05)
+
+- **Source:** the base instructions that `codex-cli` **0.159.2** sends for model gpt-6.1-sol
+  (`model_messages.instructions_template` in `$CODEX_HOME/models_cache.json`, equal to the text in a
+  captured session; 21,769 chars, sha256 `e1bdd4f8f0df4b20f4a0ffc8a861ce819df45325d8cecdfb92e80379cf8d142e`). **Unmodified.**
+- **License:** Apache License 2.0 (`LICENSE-Apache-2.0.txt`), as below.
+- **Shipped form:** `index.js` (`codexInstructions`) keeps the stock text byte-for-byte as the prefix,
+  so OpenAI's prompt cache that every stock Codex session warms still matches, and appends our own
+  section (`CODEX_SWEET_APPENDIX`: an override of the `rg` steer, our long-command cell form and read
+  batching). `init --codex` takes the stock text for the user's model from the user's own Codex cache
+  when it can (so it follows Codex updates); this captured copy is the fallback for gpt-6.1-sol, and the
+  legacy file below is the fallback for a model with no stock text.
+- **Release check:** `node scripts/harness-prompts/check-codex-stock.mjs` with an up-to-date Codex;
+  exit 1 = re-capture this copy and re-pin its sha in `tests/init/harness-prompts.test.js`.
+
+## `codex-0.146.1-instructions-conflict-gpt-5.6-luna.md` (fallback since 2026-10-05)
 
 - **Source:** the base instructions that `codex-cli` **0.146.1** (https://github.com/openai/codex)
   sends for model gpt-5.6-luna, captured at $0 through a local proxy (17,730 chars, sha256

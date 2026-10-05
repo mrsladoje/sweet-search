@@ -14,12 +14,24 @@ import {
   ensureCodexHooksFeatureFlag, installCodexHarness, parseCodexProjectTrust, readCodexProjectTrust,
   removeCodexHarness, removeCodexHooksFlagText, tomlRulesString,
 } from '../../scripts/install-codex-harness.js';
-import { codexInstructions } from '../../scripts/harness-prompts/index.js';
+import {
+  CODEX_SWEET_APPENDIX, codexCapturedStock, codexInstructions, codexLegacyInstructions, resolveCodexModel,
+} from '../../scripts/harness-prompts/index.js';
 import { CANONICAL_POLICY_BODY, getMcpPolicyBody } from '../../scripts/inject-agent-instructions.js';
 
 let root;
-beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'ss-codex-harness-')); });
-afterEach(() => { rmSync(root, { recursive: true, force: true }); });
+let codexHome;
+let savedCodexHome;
+// Hermetic: never read the developer's ~/.codex (its model and model cache pick the prompt).
+beforeEach(() => {
+  root = mkdtempSync(join(tmpdir(), 'ss-codex-harness-'));
+  codexHome = mkdtempSync(join(tmpdir(), 'ss-codex-home-'));
+  savedCodexHome = process.env.CODEX_HOME; process.env.CODEX_HOME = codexHome;
+});
+afterEach(() => {
+  rmSync(root, { recursive: true, force: true }); rmSync(codexHome, { recursive: true, force: true });
+  if (savedCodexHome === undefined) delete process.env.CODEX_HOME; else process.env.CODEX_HOME = savedCodexHome;
+});
 
 const read = rel => readFileSync(join(root, rel), 'utf8');
 const write = (rel, text) => { mkdirSync(join(root, rel, '..'), { recursive: true }); writeFileSync(join(root, rel), text); };
@@ -292,5 +304,54 @@ describe('TOML helpers', () => {
     const text = 'a = 1\n\n[features]\nhooks = true\n\n[x]\ny = 2\n';
     expect(removeCodexHooksFlagText(text, { dropEmptyTable: true })).toBe('a = 1\n\n[x]\ny = 2\n');
     expect(removeCodexHooksFlagText('[features]\nhooks = false\n')).toBeNull();
+  });
+});
+
+describe('the shipped Codex prompt: stock prefix + our section (2026-10-05)', () => {
+  const STOCK = `You are Codex, a stock prompt for a test model. ${'x'.repeat(2000)}\n`;
+  const cache = (models) => writeFileSync(join(codexHome, 'models_cache.json'), JSON.stringify({ models }));
+
+  it('no Codex cache and no config: the default model and its captured stock text', () => {
+    const r = installCodexHarness({ projectRoot: root, rules: RULES });
+    expect(read(CODEX_INSTRUCTIONS_REL)).toBe(codexInstructions());
+    expect(read(CODEX_INSTRUCTIONS_REL).startsWith(codexCapturedStock('gpt-6.1-sol'))).toBe(true);
+    expect(read(CODEX_INSTRUCTIONS_REL).endsWith(CODEX_SWEET_APPENDIX)).toBe(true);
+    expect(r.promptSource).toBe('stock prefix (gpt-6.1-sol, captured copy)');
+  });
+
+  it("the user's model and its stock text from the Codex model cache, byte-identical as the prefix", () => {
+    writeFileSync(join(codexHome, 'config.toml'), 'model = "gpt-test"\n[features]\nhooks = true\n');
+    cache([{ slug: 'gpt-test', priority: 2, model_messages: { instructions_template: STOCK } }]);
+    const r = installCodexHarness({ projectRoot: root, rules: RULES });
+    expect(read(CODEX_INSTRUCTIONS_REL)).toBe(`${STOCK}${CODEX_SWEET_APPENDIX}`);
+    expect(r.promptSource).toBe('stock prefix (gpt-test, from the Codex model cache)');
+  });
+
+  it('the project config model wins over the user config; the cache top model is the last resort', () => {
+    writeFileSync(join(codexHome, 'config.toml'), 'model = "gpt-user"\n');
+    write('.codex/config.toml', 'model = "gpt-project"\n');
+    expect(resolveCodexModel({ projectRoot: root, codexHome })).toBe('gpt-project');
+    rmSync(join(root, '.codex'), { recursive: true, force: true });
+    expect(resolveCodexModel({ projectRoot: root, codexHome })).toBe('gpt-user');
+    rmSync(join(codexHome, 'config.toml'));
+    cache([{ slug: 'hidden', priority: 0, visibility: 'hide' }, { slug: 'gpt-b', priority: 3 }, { slug: 'gpt-a', priority: 1 }]);
+    expect(resolveCodexModel({ projectRoot: root, codexHome })).toBe('gpt-a');
+  });
+
+  it('a model with no stock text anywhere gets the legacy prompt', () => {
+    writeFileSync(join(codexHome, 'config.toml'), 'model = "gpt-unknown"\n');
+    const r = installCodexHarness({ projectRoot: root, rules: RULES });
+    expect(read(CODEX_INSTRUCTIONS_REL)).toBe(codexLegacyInstructions());
+    expect(r.promptSource).toBe('fallback (no stock text for gpt-unknown)');
+  });
+
+  it('a later init follows a changed stock text (Codex update)', () => {
+    writeFileSync(join(codexHome, 'config.toml'), 'model = "gpt-test"\n');
+    cache([{ slug: 'gpt-test', model_messages: { instructions_template: STOCK } }]);
+    installCodexHarness({ projectRoot: root, rules: RULES });
+    const v2 = STOCK.replace('a test model', 'a newer test model');
+    cache([{ slug: 'gpt-test', model_messages: { instructions_template: v2 } }]);
+    expect(installCodexHarness({ projectRoot: root, rules: RULES }).status).toBe('installed');
+    expect(read(CODEX_INSTRUCTIONS_REL)).toBe(`${v2}${CODEX_SWEET_APPENDIX}`);
   });
 });

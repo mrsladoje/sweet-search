@@ -36,7 +36,9 @@ import {
 } from 'node:fs';
 import { homedir } from 'node:os';
 import { basename, dirname, join, resolve } from 'node:path';
-import { codexInstructions } from './harness-prompts/index.js';
+import {
+  codexInstructions, codexCapturedStock, readCodexStock, resolveCodexModel,
+} from './harness-prompts/index.js';
 
 export const CODEX_DIR_REL = '.codex';
 export const CODEX_CONFIG_REL = '.codex/config.toml';
@@ -384,7 +386,10 @@ export function removeCodexHooksFlagText(text, { dropEmptyTable = false } = {}) 
  * @returns {{status: string, detail: string, hooksFlag: {status: string}|null, warning?: string}}
  *   status in { installed, unchanged, error }
  */
-export function installCodexHarness({ projectRoot, rules = null, prompt = true, hooksFlag = true } = {}) {
+export function installCodexHarness({
+  projectRoot, rules = null, prompt = true, hooksFlag = true,
+  codexHome = process.env.CODEX_HOME || join(homedir(), '.codex'),
+} = {}) {
   if (!projectRoot) return { status: 'error', detail: 'install-codex-harness: projectRoot is required', hooksFlag: null };
   const manifestPath = join(projectRoot, CODEX_MANIFEST_REL);
   const configPath = join(projectRoot, CODEX_CONFIG_REL);
@@ -405,6 +410,7 @@ export function installCodexHarness({ projectRoot, rules = null, prompt = true, 
   const changes = [];
   const warnings = [];
   let hooksReport = null;
+  let promptSource = null;
 
   try {
     // 1. The instructions file.
@@ -414,7 +420,13 @@ export function installCodexHarness({ projectRoot, rules = null, prompt = true, 
       if (state === 'user') {
         warnings.push(`${CODEX_INSTRUCTIONS_REL} is user-authored and was kept; Codex keeps its own base instructions.`);
       } else {
-        const content = codexInstructions();
+        // The model's stock text from the user's own Codex cache (follows Codex updates), else our
+        // captured copy, else the legacy text (harness-prompts/index.js codexInstructions).
+        const model = resolveCodexModel({ projectRoot, codexHome });
+        const stock = readCodexStock({ codexHome, model });
+        const content = codexInstructions({ model, stock });
+        promptSource = stock ? `stock prefix (${model}, from the Codex model cache)`
+          : codexCapturedStock(model) ? `stock prefix (${model}, captured copy)` : `fallback (no stock text for ${model})`;
         const path = join(projectRoot, CODEX_INSTRUCTIONS_REL);
         if (!(state === 'ours' && readFileSync(path, 'utf8') === content)) {
           writeAtomic(path, content);
@@ -495,6 +507,7 @@ export function installCodexHarness({ projectRoot, rules = null, prompt = true, 
     status: changes.length ? 'installed' : 'unchanged',
     detail: changes.length ? changes.join('; ') : 'Codex harness already installed',
     hooksFlag: hooksReport,
+    promptSource,
   };
   if (warnings.length) result.warning = warnings.join(' ');
   return result;

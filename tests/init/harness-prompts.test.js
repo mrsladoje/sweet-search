@@ -21,7 +21,7 @@ import { getPolicyBody } from '../../scripts/inject-agent-instructions.js';
 import { CLAUDE_RULES_POINTER } from '../../scripts/write-claude-rules.js';
 import {
   CODEX_INSTRUCTIONS_SOURCE, HARNESS_PROMPTS_DIR, OPENCODE_GPT_ORIGINAL, OPENCODE_TOOL_EDITS,
-  OPENCODE_TRIM_PLUGIN_SOURCE, applyExactEdits, codexInstructions, opencodePrompt,
+  OPENCODE_TRIM_PLUGIN_SOURCE, applyExactEdits, codexInstructions, codexLegacyInstructions, codexCapturedStock, opencodePrompt,
 } from '../../scripts/harness-prompts/index.js';
 import { applyClaudeBatch } from '../../eval/task-completion-bench/harness/trim/batch-variants.mjs';
 import {
@@ -87,7 +87,25 @@ describe('Claude Code: V1b agent file = the benchmarked V1b arm', () => {
   });
 });
 
-describe('Codex: shipped instructions = bench conflict + yt3batch2', () => {
+describe('Codex: shipped stock-prefix instructions = bench stockprefix (the default arm)', () => {
+  it('codexInstructions() is byte-identical to the file the bench writes for gpt-6.1-sol by default', () => {
+    const trim = codexHarnessTrim({ sweet: true, model: 'openai/gpt-6.1-sol', env: {} });
+    expect(trim.mode).toBe('instructions-stockprefix');
+    codexHarnessTrimArgs(trim, dir, { model: 'openai/gpt-6.1-sol' });
+    expect(codexInstructions()).toBe(readFileSync(join(dir, CODEX_HARNESS_TRIM_STATE_FILE), 'utf8'));
+  });
+
+  it('the stock text is an unchanged prefix; our section overrides the rg steer after it', () => {
+    const stock = codexCapturedStock('gpt-6.1-sol');
+    const text = codexInstructions();
+    expect(text.startsWith(stock)).toBe(true);
+    expect(stock).toContain('reach first for `rg`');
+    expect(text.slice(stock.length)).toContain('does not apply to code search');
+    expect(text.slice(stock.length)).toContain('// @exec: {"yield_time_ms": 600000}');
+  });
+});
+
+describe('Codex: legacy instructions = bench conflict + yt3batch2', () => {
   let saved;
   beforeEach(() => { saved = process.env.CODEX_TRIM_BATCH; process.env.CODEX_TRIM_BATCH = 'yt3batch2'; });
   afterEach(() => { if (saved === undefined) delete process.env.CODEX_TRIM_BATCH; else process.env.CODEX_TRIM_BATCH = saved; });
@@ -98,11 +116,11 @@ describe('Codex: shipped instructions = bench conflict + yt3batch2', () => {
     expect(trim.source).toBe(CODEX_INSTRUCTIONS_SOURCE);
     const args = codexHarnessTrimArgs(trim, dir, { model: 'openai/gpt-5.6-luna' });
     expect(args.slice(0, 2)).toEqual(['-c', `model_instructions_file=${JSON.stringify(join(dir, CODEX_HARNESS_TRIM_STATE_FILE))}`]);
-    expect(codexInstructions()).toBe(readFileSync(join(dir, CODEX_HARNESS_TRIM_STATE_FILE), 'utf8'));
+    expect(codexLegacyInstructions()).toBe(readFileSync(join(dir, CODEX_HARNESS_TRIM_STATE_FILE), 'utf8'));
   });
 
   it('the licence header is stripped and the stock search steer is gone', () => {
-    const text = codexInstructions();
+    const text = codexLegacyInstructions();
     expect(text.startsWith('<!--')).toBe(false);
     expect(text.startsWith('You are Codex')).toBe(true);
     expect(text).not.toContain('reach first for `rg`');
@@ -167,8 +185,11 @@ describe('applyExactEdits', () => {
 // of the changed text.
 describe('golden pins of the shipped texts (sha256)', () => {
   const sha = t => createHash('sha256').update(t).digest('hex');
-  it('Codex base instructions ', () => {
-    expect(sha(codexInstructions())).toBe('7e282d1b96ac8cd02e0572386a436915078b25c8f1b2e03a45e3f2a84f5e6e50');
+  it('Codex base instructions (stock prefix, gpt-6.1-sol captured copy)', () => {
+    expect(sha(codexInstructions())).toBe('a2e0455a445959bba139c997ffd0d1b349d160e7fd46560cf5cc38646d5da386');
+  });
+  it('Codex legacy base instructions (fallback)', () => {
+    expect(sha(codexLegacyInstructions())).toBe('7e282d1b96ac8cd02e0572386a436915078b25c8f1b2e03a45e3f2a84f5e6e50');
   });
   it('opencode build/general prompt', () => {
     expect(sha(opencodePrompt())).toBe('94c23a556525d4e35ae42f2448439559dd61fee37557a4da93f0ff18e0fbe34e');
