@@ -394,7 +394,10 @@ export const CORE_LANGUAGES = {
         // The parameter list may continue on the next lines
         // (`protected int GivenOcelotIsRunning(` … `)`): the definition still
         // starts here.
-        method: /^\s*(?:public|private|protected|internal)\s+(?:static\s+)?(?:async\s+)?(?:override\s+)?(?:virtual\s+)?(?:[\w<>\[\]?]+)\s+(\w+)\s*\(([^)]*)(?:\)|$)/,
+        // Return type may be a tuple `(PipelineComponent Component, List<T> Tokens)` or a
+        // generic with spaces `Dictionary<string, int>` (polly CreateBuilder was missing,
+        // so its calls belonged to the class).
+        method: /^\s*(?:public|private|protected|internal)\s+(?:(?:protected|internal|static|async|override|virtual|sealed|abstract|new|unsafe|extern|partial|readonly)\s+)*(?:\([^()]*\)|[\w.]+(?:<[^()]*>)?(?:\[[,\s]*\])*\??)\s+(\w+)(?:<[^()]*>)?\s*\(([^)]*)(?:\)|$)/,
         property: /^\s*(?:public|private|protected|internal)\s+(?:static\s+)?(?:[\w<>\[\]?]+)\s+(\w+)\s*\{/,
         field: /^\s*(?:public|private|protected|internal)\s+(?:static\s+)?(?:readonly\s+)?(?:[\w<>\[\]?]+)\s+(\w+)\s*[;=]/,
       },

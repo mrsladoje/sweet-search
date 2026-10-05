@@ -70,6 +70,8 @@ const IDENT_TYPES = new Set([
   'value_name', 'type_constructor', 'module_name',
   // ReScript — value/module binding names (type_identifier already covered)
   'value_identifier', 'module_identifier',
+  // JS/TS `#private` class members
+  'private_property_identifier',
 ]);
 
 // AST node types that represent meaningful chunk boundaries
@@ -401,6 +403,7 @@ const TAGS_QUERIES = {
     (generator_function_declaration name: (identifier) @function.definition)
     (class_declaration name: (identifier) @class.definition)
     (method_definition name: (property_identifier) @method.definition)
+    (method_definition name: (private_property_identifier) @method.definition)
     (variable_declarator
       name: (identifier) @arrow.definition
       value: (arrow_function))
@@ -459,6 +462,7 @@ const TAGS_QUERIES = {
     (class_declaration name: (type_identifier) @class.definition)
     (abstract_class_declaration name: (type_identifier) @class.definition)
     (method_definition name: (property_identifier) @method.definition)
+    (method_definition name: (private_property_identifier) @method.definition)
     (interface_declaration name: (type_identifier) @interface.definition)
     (type_alias_declaration name: (type_identifier) @type.definition)
     (enum_declaration name: (identifier) @enum.definition)
@@ -510,6 +514,7 @@ const TAGS_QUERIES = {
     (class_declaration name: (type_identifier) @class.definition)
     (abstract_class_declaration name: (type_identifier) @class.definition)
     (method_definition name: (property_identifier) @method.definition)
+    (method_definition name: (private_property_identifier) @method.definition)
     (interface_declaration name: (type_identifier) @interface.definition)
     (type_alias_declaration name: (type_identifier) @type.definition)
     (enum_declaration name: (identifier) @enum.definition)

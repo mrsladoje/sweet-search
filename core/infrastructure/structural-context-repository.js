@@ -103,7 +103,9 @@ const candidateKindTier = (type) => {
   const t = String(type || '');
   if (['class', 'struct', 'trait', 'object', 'actor'].includes(t)) return 0;
   if (['interface', 'enum', 'type', 'typeAlias'].includes(t)) return 1;
-  if (t === 'function' || t === 'method') return 2;
+  // A function bound to a name (`export const getPath = (req) => {…}`) is a
+  // function: hono's central url.ts getPath ranked below an adapter's method.
+  if (['function', 'method', 'arrowFunction', 'objectArrow', 'objectMethod', 'assignedFunc', 'shortFunction'].includes(t)) return 2;
   return 3;
 };
 
@@ -550,6 +552,9 @@ export class StructuralContextRepository {
     const callRe = new RegExp(`(?<![.\\w$:])${escaped}\\s*\\(`);
     const defRe = new RegExp(`\\b(function|def|fn|func|sub|proc)\\s+${escaped}\\s*[(<]`);
     const declLineRe = new RegExp(`^\\s*${escaped}\\s*\\(`);
+    // A member declared in a type body: `protected abstract getPath(event: E): string`
+    // (hono EventProcessor was listed as a caller of its subclasses' getPath).
+    const memberDeclRe = new RegExp(`^\\s*(?:(?:public|private|protected|internal|abstract|static|override|virtual|readonly|async|final|open|declare|sealed|extern|unsafe|new)\\s+)+${escaped}\\s*[(<]`);
     // `@spec name(...)` / `@callback name(...)`: an attribute that declares the name's type.
     const attrDeclRe = new RegExp(`^\\s*@\\w+\\s+${escaped}\\s*\\(`);
     const lines = source.split('\n');
@@ -587,6 +592,7 @@ export class StructuralContextRepository {
       // body declares the method; it calls nothing (dgraph pb_grpc.pb.go: the WorkerClient and
       // WorkerServer interfaces were listed as callers of UpdateExtSnapshotStreamingState).
       if (DECLARING_OWNER_TYPES.has(host.type) && declLineRe.test(lines[ln - 1])) continue;
+      if (OWNER_TYPES.has(host.type) && memberDeclRe.test(lines[ln - 1])) continue;
       if (siblings.length > 1) {
         const owner = ownerOf(host);
         const own = owner ? siblings.find(s => s.parent_class === owner) : null;

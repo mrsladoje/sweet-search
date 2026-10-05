@@ -867,3 +867,24 @@ describe('round 12 — super calls', () => {
     expect(narrowCallCandidates([pager], 'super', { id: 's2', parent_class: 'RecordingStream', file_path: 't.py' }, idx)).toEqual([]);
   });
 });
+
+describe('round 13 — private members, abstract declarations, C# tuple returns', () => {
+  it('TS `#dispatch(` is a method of its class', async () => {
+    const syms = await new TreeSitterProvider().extractSymbols([
+      'class Hono {',
+      '  #dispatch(request: Request) {',
+      '    return compose(this.routes)(request)',
+      '  }',
+      '}',
+    ].join('\n'), 'typescript');
+    expect(syms.map((s) => `${s.type} ${s.name} ${s.parentClass || ''}`.trim())).toContain('method #dispatch Hono');
+  });
+
+  it('C# regex fallback: a method returning a tuple or a spaced generic is a method', async () => {
+    const { LANGUAGES } = await import('../../core/infrastructure/language-patterns/registry.js');
+    const re = LANGUAGES.csharp.graph.entities.method;
+    expect('    private (PipelineComponent Component, List<CancellationToken> Tokens) CreateBuilder()'.match(re)?.[1]).toBe('CreateBuilder');
+    expect('    public static Dictionary<string, int> Map(int a)'.match(re)?.[1]).toBe('Map');
+    expect('        return Foo(x);'.match(re)).toBeNull();
+  });
+});
