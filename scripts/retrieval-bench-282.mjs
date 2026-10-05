@@ -531,6 +531,8 @@ async function runClaude(probe, sweet, arm) {
     SS_READ_GUTTER: gutterFor(arm), // the arm's product form for claude-code (gutter-form.js): none since 2026-10-02, tab before
   };
   for (const k of ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_BASE_URL']) delete env[k];
+  // Diagnostics only: route Claude Code through a local logging proxy to dump the exact request bodies.
+  if (process.env.SS_BENCH_CC_CAPTURE_BASE_URL) env.ANTHROPIC_BASE_URL = process.env.SS_BENCH_CC_CAPTURE_BASE_URL;
   // Both arms: the 5-minute cache TTL an API-key user gets (a subscription writes at 1 hour).
   applyClaudeCacheTtl(env);
   const args = ['-p', '--model', CELL.model, '--effort', CELL.effort, '--permission-mode', 'bypassPermissions',
