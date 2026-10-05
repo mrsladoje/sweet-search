@@ -130,7 +130,7 @@ describe('packageForAgent graph neighbours: ss-find vs ss-search', () => {
     expect(top.neighbors.rows).toEqual([expect.objectContaining({
       kind: 'calls', name: 'validateParam', file: 'lib/validation.js', startLine: 118, endLine: 144,
     })]);
-    // The one-row-per-line form stays on the package (`neighbors.rendered`: JSON / MCP consumers).
+    // The one-row-per-line form stays on the package (SS_FIX_A=0 printers).
     expect(top.neighbors.rendered).toBe('- calls validateParam → lib/validation.js:118-144 [function]');
   });
 

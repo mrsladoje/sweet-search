@@ -224,18 +224,6 @@ describe('SS_FIX_GREP_LINES through the real tool', () => {
     expect(grepCalls[0]).toMatchObject({ grepLineClasses: true, grepFileOrder: 'weight', _isAgentFormat: true });
   });
 
-  it('with full-line text (both default ON): the same chosen lines, each printed whole', async () => {
-    const out = await ss([REGEX, '-k', '4'], { SS_FIX_GREP_FULLLINE: '1' });
-    expect(out).toBe(HEADER
-      + 'worker/export.go:5: func Export(ctx context.Context) error {\n'
-      // full-line text drops the indent
-      + 'worker/export.go:6: return exportAll(ctx) (+4 more in this file)\n'
-      + 'scripts/export.sh:2: export A=1 (+2 more in this file)\n'
-      + 'other.go:2: func other() { export() }\n');
-    // the daemon path renders the same bytes
-    expect(await ssDaemon([REGEX, '-k', '4'], { SS_FIX_GREP_FULLLINE: '1' })).toBe(out);
-  });
-
   it('more lines: usage inside a symbol before lines outside every symbol', async () => {
     // k = 6: export.go gets 3 of its 6 stored hits (sh 2, other 1); the usage at 6 beats the
     // comment at 1 and the import at 3

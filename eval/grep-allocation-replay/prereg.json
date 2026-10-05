@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "registeredAt": "2026-10-02",
+  "plan": "docs/SUGGESTED_PLAN.md at 945a9664 (Step 0 item 6)",
+  "status": "Registered before any dev-confirm call is replayed. Do not edit arms, constants or bars after dev-confirm calls exist; register a new version instead.",
+  "constants": {
+    "saturatingConstant": 2,
+    "saturatingConstantNote": "fixed; hits / (hits + 4) is recorded as a sensitivity (82.3% overflow inclusion, exploratory) and is not an arm",
+    "priors": { "source": 1, "test": 0.5, "generated": 0.25 },
+    "declarationWindowLines": 3,
+    "perFileCap": "min(k, 100)",
+    "maxFiles": "k",
+    "bootstrap": { "reps": 2000, "seed": 7, "cluster": "probe" }
+  },
+  "arms": [
+    { "name": "legacy", "alloc": false, "note": "SS_FIX_GREP_ALLOC=0: first k files in path order, round robin" },
+    { "name": "shipped", "alloc": true, "weight": "sqrt", "rule": "sl", "lines": false },
+    { "name": "lines", "alloc": true, "weight": "sqrt", "rule": "sl", "lines": true, "env": { "SS_FIX_GREP_LINES": "1" } },
+    { "name": "lines+guarantee", "alloc": true, "weight": "sqrt", "rule": "guarantee", "lines": true,
+      "env": { "SS_FIX_GREP_LINES": "1", "SS_FIX_GREP_ALLOC_RULE": "guarantee" } },
+    { "name": "lines+hh", "alloc": true, "weight": "sqrt", "rule": "hh", "lines": true, "control": true,
+      "env": { "SS_FIX_GREP_LINES": "1", "SS_FIX_GREP_ALLOC_RULE": "hh" } },
+    { "name": "lines+sat2", "alloc": true, "weight": "sat2", "rule": "sl", "lines": true,
+      "env": { "SS_FIX_GREP_LINES": "1", "SS_FIX_GREP_WEIGHT": "sat2" } },
+    { "name": "lines+sat2+guarantee", "alloc": true, "weight": "sat2", "rule": "guarantee", "lines": true,
+      "env": { "SS_FIX_GREP_LINES": "1", "SS_FIX_GREP_WEIGHT": "sat2", "SS_FIX_GREP_ALLOC_RULE": "guarantee" } },
+    { "name": "lines+sat2+hh", "alloc": true, "weight": "sat2", "rule": "hh", "lines": true, "control": true,
+      "env": { "SS_FIX_GREP_LINES": "1", "SS_FIX_GREP_WEIGHT": "sat2", "SS_FIX_GREP_ALLOC_RULE": "hh" } }
+  ],
+  "bars": {
+    "step1": {
+      "candidate": "lines",
+      "baseline": "shipped",
+      "symHitMinDiff": 0.02,
+      "perQuestionType": "no question type with a bootstrap upper bound below 0 on symHit",
+      "inclusionDiff": 0,
+      "then": "Section 5 promotion evaluation"
+    },
+    "step2": {
+      "baseline": "lines",
+      "report": ["inclusion", "answerLines", "symHit", "declHit", "filesShown", "zeroLineFile"],
+      "decision": "no offline bar: the inclusion-vs-depth trade is decided by the Section 5 paired evaluation",
+      "controlRule": "keep hh only if it beats guarantee somewhere it matters"
+    }
+  },
+  "questionTypeField": "questionType, else stratum"
+}

@@ -37,7 +37,7 @@ async function ssSearch(s, query, k) {
   return s.search(query, {
     k, mode: 'auto', expand: true, rerank: true, fusion: 'cc',
     useLateInteraction: LATE_INTERACTION_CONFIG.enabled,
-    _isAgentFormat: true, format: 'agent',
+    _isAgentFormat: true, _siblingLine: true, format: 'agent',
   });
 }
 

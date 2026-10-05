@@ -6,9 +6,7 @@
  * trailing lines, the marker first. The preview also skipped the marker whenever the kept text
  * contained `...` (a spread, a Python Ellipsis), and turned an open block into `{ ... }` with no
  * line count. Token-cap truncation could return a bare prefix; a sandwich that overshot its cap
- * printed the gold chunk under the sandwich's (wider) range. In agent formats the header then names
- * the printed lines and fullStartLine / fullEndLine the packed span (context-expander
- * applyPrintedRanges; the renderer prints `# not shown: lines A-B — ss-read <file> A B`).
+ * printed the gold chunk under the sandwich's (wider) range.
  */
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -95,14 +93,7 @@ describe('1a: a cut entry body is never silent', () => {
     });
     const coded = response.results.filter((r) => r.code);
     expect(coded.map((r) => r.presentation)).toContain('preview');
-    // Agent format: the header names the printed lines; the rest of the packed span is named by
-    // fullStartLine / fullEndLine (the renderer's `# not shown:` lines), with no in-body marker.
-    for (const r of coded) {
-      expect(MARKER_RE.test(r.code.split('\n').at(-1))).toBe(false);
-      expect(r.code.split('\n').length).toBe(r.endLine - r.startLine + 1);
-      expect([r.fullStartLine ?? r.startLine, r.fullEndLine ?? r.endLine]).toEqual([2, 46]);
-    }
-    expect(coded.some((r) => r.fullEndLine === 46 && r.endLine < 46)).toBe(true);
+    for (const r of coded) expect(accounted(r.code)).toBe(r.endLine - r.startLine + 1);
   });
 
   it('a sandwich that overshoots its cap prints the gold chunk under the gold range, cut visibly', () => {
@@ -112,14 +103,10 @@ describe('1a: a cut entry body is never silent', () => {
     const top = packageForAgent(ranked, { path: 'hybrid' }, {
       query: 'big', format: 'agent', tokenBudget: 3000, codeGraphRepo: repo, projectRoot, _isAgentFormat: true,
     }).results[0];
-    // The sandwich span was 1-400 (signature + gold + closing brace); the code is the gold chunk,
-    // so the packed range is the gold range 200-239. The header names the printed lines and
-    // fullEndLine the rest of the gold range (the renderer's `# not shown:` line).
-    const printed = top.code.split('\n').length;
-    expect([top.startLine, top.endLine, top.expansionKind]).toEqual([200, 200 + printed - 1, 'chunk']);
-    expect([top.fullStartLine ?? top.startLine, top.fullEndLine]).toEqual([200, 239]);
+    // The sandwich span was 1-400 (signature + gold + closing brace); the code is the gold chunk.
+    expect([top.startLine, top.endLine, top.expansionKind]).toEqual([200, 239, 'chunk']);
     expect(top.code.split('\n')[0]).toContain('const v198 ');
-    expect(MARKER_RE.test(top.code.split('\n').at(-1))).toBe(false);
-    expect(top.shownEndLine).toBe(top.endLine);
+    expect(accounted(top.code)).toBe(40);
+    expect(top.shownEndLine).toBe(200 + top.code.split('\n').length - 2);
   });
 });

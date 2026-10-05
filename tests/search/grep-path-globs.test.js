@@ -64,11 +64,24 @@ describe('compilePathGlobs — ripgrep -g semantics', () => {
     expect(pick('!/tests')).not.toContain('tests/t.py');
   });
 
-  it('an include must match the FILE (rg): a directory include admits nothing below it', () => {
-    expect(pick('lib')).toEqual([]);
-    expect(pick('lib/*')).toEqual([]);
-    expect(pick('lib/')).toEqual([]);
+  it('deviation 0: an include that may name a directory takes the files below a matching directory', () => {
+    expect(pick('lib')).toEqual(pick('lib/**'));
+    expect(pick('lib/')).toEqual(pick('lib/**'));
+    expect(pick('lib/*')).toEqual(pick('lib/**'));
     expect(pick('lib/**')).toHaveLength(5);
+    // `lib/sequel/model*`: the file lib/sequel/model.rb and every file below lib/sequel/model/
+    expect(FILES.filter(f => compilePathGlobs(['lib/s*']).matches(f))).toEqual(['lib/src/HttpClient.java', 'lib/src/x.h', 'lib/src/y.c']);
+    // A file pattern (a `.` in its last segment) keeps rg's file-only rule.
+    expect(pick('lib/*.h')).toEqual([]);
+  });
+
+  it('deviation 0 reports the directories it took', () => {
+    const g = compilePathGlobs(['lib/s*']);
+    FILES.forEach(f => g.matches(f));
+    expect([...g.dirsMatched]).toEqual(['lib/src']);
+    const h = compilePathGlobs(['*.h']);
+    FILES.forEach(f => h.matches(f));
+    expect(h.dirsMatched.size).toBe(0);
   });
 
   it('include + exclude: exclusion wins, whatever the order', () => {
@@ -138,13 +151,26 @@ describe.skipIf(!rgAvailable)('compilePathGlobs == ripgrep 15 on a temp tree', (
 
   // Every case where rg's order rule and ours agree (no re-include after an exclude).
   const CASES = [
-    ['!lib/tests/**'], ['!tests'], ['!tests/'], ['tests'], ['tests/**'], ['*.h'], ['!*_test.go'],
-    ['lib/src/*'], ['lib/*'], ['/top.h'], ['!lib/src/HttpClient*'], ['*.h', '!src/**'],
+    ['!lib/tests/**'], ['!tests'], ['!tests/'], ['tests/**'], ['*.h'], ['!*_test.go'],
+    ['lib/src/*'], ['/top.h'], ['!lib/src/HttpClient*'], ['*.h', '!src/**'],
     ['src/m.h', '!src/**'], ['**/tests/*.py'], ['src/**/*.py'], ['*.{h,c}'], ['!vendor*'], ['!lib'],
-    ['lib/**', '!*.h'], ['lib'], ['lib/'], ['!/tests'], ['!lib/tests'], ['*/m.h'], ['!.hidden'],
+    ['lib/**', '!*.h'], ['!/tests'], ['!lib/tests'], ['*/m.h'], ['!.hidden'],
     ['!*.H'], ['x.h'], ['!**/tests/**'], ['lib/**/*.go'], ['[lt]*/*.py'], ['!src/'],
   ];
   it.each(CASES.map(c => [c.join(' '), c]))('%s', (_label, globs) => {
     expect(pick(...globs)).toEqual(rgFiles(globs));
+  });
+
+  // Deviation 0: the glob also takes the files below a directory it matches, i.e. rg with the
+  // glob plus its subtree form.
+  const DIRECTORY_CASES = [
+    [['tests'], ['tests', '**/tests/**']],
+    [['lib'], ['lib', '**/lib/**']],
+    [['lib/'], ['**/lib/**']],
+    [['lib/*'], ['lib/*', 'lib/*/**']],
+    [['src/*'], ['src/*', 'src/*/**']],
+  ];
+  it.each(DIRECTORY_CASES.map(([g, rg]) => [g.join(' '), g, rg]))('directory include %s', (_label, globs, rgGlobs) => {
+    expect(pick(...globs)).toEqual(rgFiles(rgGlobs));
   });
 });
