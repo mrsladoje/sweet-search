@@ -423,6 +423,21 @@ function _bodyEntityAcross(graph, filePathRel, line, step) {
   return { symbol: e.name, type: e.type, startLine: e.startLine, endLine: e.endLine };
 }
 
+// Lines between a window's end and the next definition that still count as "right after"
+// (a blank line, an annotation).
+const NEXT_DEFINITION_GAP = 3;
+
+/** The function / method / type whose first line is within NEXT_DEFINITION_GAP lines after `endLine`. */
+function _definitionRightAfter(projectRoot, filePathRel, endLine) {
+  const graph = _getGraphRepo(projectRoot);
+  if (!graph || typeof graph.findEntitiesInRange !== 'function') return null;
+  let rows = [];
+  try { rows = graph.findEntitiesInRange(filePathRel, endLine + 1, endLine + NEXT_DEFINITION_GAP) || []; } catch { rows = []; }
+  const e = rows.find(r => r?.name && (BODY_ENTITY_TYPES.has(r.type) || TYPE_ENTITY_TYPES.has(r.type))
+    && Number.isInteger(r.startLine) && Number.isInteger(r.endLine));
+  return e ? { symbol: e.name, type: e.type, startLine: e.startLine } : null;
+}
+
 /**
  * The code graph's kind for each listed symbol it holds (same name, same first line). The
  * chunker labels kinds on its own and calls a Swift / Kotlin / Python method a function; the
@@ -732,11 +747,19 @@ async function _readFileUnpinned(req) {
       }
     }
     symbols = _graphKinds(projectRoot, relForIndex, symbols, sliced.endLine + 1, sliced.totalLines);
+    // The definition that starts right after the window is where the reader goes next, and is
+    // named first. The chunk list misses it when the window ends inside its doc comment: the
+    // chunk starts at the comment, inside the window (r3hb-okhttp-12: `ss-read RealCall.kt 360
+    // 407` ended on callDone's KDoc; the list named five other methods, the agent read again).
+    const next = remainderLines >= UNREAD_SYMBOLS_MIN_LINES
+      ? _definitionRightAfter(projectRoot, relForIndex, sliced.endLine) : null;
+    if (next) symbols = [next, ...symbols.filter(s => s.symbol !== next.symbol)];
     unreadBelow = {
       startLine: sliced.endLine + 1,
       endLine: sliced.totalLines,
       symbols: symbols.slice(0, UNREAD_SYMBOLS_MAX),
       moreCount: Math.max(0, symbols.length - UNREAD_SYMBOLS_MAX),
+      ...(next ? { next } : {}),
     };
     _unreadSymbolCandidates.set(unreadBelow, symbols);
   }
@@ -909,6 +932,13 @@ export function renderUnreadBelow(result, { command = 'read', queryEvidence = nu
       symbols = candidates.slice(0, UNREAD_SYMBOLS_MAX);
       moreCount = Math.max(0, candidates.length - UNREAD_SYMBOLS_MAX);
     }
+  }
+  // The definition right after the window stays first whatever the query ranks above it.
+  const next = u.next && keep(u.next) ? u.next : null;
+  if (next && symbols[0]?.symbol !== next.symbol) {
+    // It is one of the candidates: brought forward from the hidden ones, it swaps places with
+    // the last shown name, and the hidden count stays the same.
+    symbols = [next, ...symbols.filter(s => s.symbol !== next.symbol)].slice(0, UNREAD_SYMBOLS_MAX);
   }
   const names = symbols.map(s => s.symbol).join(', ');
   const more = moreCount > 0 ? ` +${moreCount} more` : '';
