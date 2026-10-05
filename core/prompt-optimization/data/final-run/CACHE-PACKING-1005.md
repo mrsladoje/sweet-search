@@ -56,3 +56,15 @@ Other arms: the same 5 questions from the cxstock run earlier the same day (not 
 
 Packing (traces): 2.62 commands per step, 52% multi-command steps (native 2.66 / 59%; product 1.8–2.0).
 The cache fix is proven (deterministic). The cost and packing gains are a 5-question signal, not proof.
+
+### Paired confirmation (5 new questions, stock prefix and product interleaved, tag cxprefix2)
+
+| arm | first-request cache read | $/q | no-cache $/q | input tok/q | cached share | uncached tok/q | commands/q | score |
+|---|---|---|---|---|---|---|---|---|
+| stock prefix | 12,288 in 5/5 | 0.0486 | 0.2647 | 128,500 | 88.5% | 14,785 | 5.4 | 0.944 |
+| product | 0 / 8,064 / 11,776 / 8,064 / 8,064 | 0.0627 | 0.2247 | 109,135 | 78.1% | 23,912 | 4.8 | 0.730 |
+
+Both samples (10 questions): stock prefix first-request hit 10/10, product 1/10; cost −22% (paired) and
+−18% (first sample). The saving is the cache: stock prefix sends MORE input (+18%) but 38% fewer uncached
+tokens. The packing gain of the first sample did not repeat (1.85 vs 1.50 commands/step; 6.4 vs 5.8
+requests/q), so packing is not the mechanism. Scores on 5 questions are noise.
