@@ -1045,12 +1045,12 @@ describe('renderGrepListing (ss-grep output, grouped by file)', () => {
 });
 
 describe('generated prior: lockfiles, API dumps, blob hit lines; copies collapse (2026-10-05 Codex replays)', () => {
-  it('lockfiles and Kotlin API dumps take the generated prior; look-alike source does not', () => {
+  it('lockfiles take the generated prior; look-alike source does not', () => {
     for (const f of ['web/docs/package-lock.json', 'Cargo.lock', 'go.sum', 'yarn.lock', 'pnpm-lock.yaml',
-      'ios/Podfile.lock', 'Package.resolved', 'okhttp/api/jvm/okhttp.api', 'api/okhttp.api']) {
+      'ios/Podfile.lock', 'Package.resolved']) {
       expect(grepFilePrior(f), f).toBe(0.25);
     }
-    for (const f of ['src/lock.rs', 'src/clock.go', 'lib/locker/mutex.go', 'api/routes.go', 'src/x.api.ts', 'Package.swift']) {
+    for (const f of ['src/lock.rs', 'src/clock.go', 'lib/locker/mutex.go', 'api/routes.go', 'src/x.api.ts', 'Package.swift', 'api/payments.api']) {
       expect(grepFilePrior(f), f).toBe(1);
     }
   });
@@ -1071,7 +1071,16 @@ describe('generated prior: lockfiles, API dumps, blob hit lines; copies collapse
       { maxFiles: 1, perFileCap: 1, order: 'weight' }).fileSummary.files[0].prior;
     expect(one('const thisIsAVeryLongIdentifierNameForTestingPurposesOnly123 = 1;')).toBe(1);
     expect(one('"resolved": "https://registry.npmjs.org/lightningcss/-/lightningcss-1.33.0.tgz",')).toBe(1);
-    expect(one('checksum = "5c6cb57a04249c6480766f7f7cef5467412af1490f8d1e243141daddada3264f"')).toBe(0.25);
+    // one hash line is a test vector, not a data file
+    expect(one('checksum = "5c6cb57a04249c6480766f7f7cef5467412af1490f8d1e243141daddada3264f"')).toBe(1);
+  });
+
+  it('a blob file needs 3+ hits that are all blobs; one ordinary hit keeps the source prior', () => {
+    const vec = (line) => ({ file: 'src/aes.ts', line, matchText: 'x', content: '  "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",' });
+    const prior = (ms) => selectGrepFilesByWeight(ms, { maxFiles: 1, perFileCap: 8, order: 'weight' }).fileSummary.files[0].prior;
+    expect(prior([vec(1), vec(2), vec(3)])).toBe(0.25);
+    expect(prior([vec(1), vec(2), vec(3), { file: 'src/aes.ts', line: 9, matchText: 'x', content: 'export function encrypt(x) {' }])).toBe(1);
+    expect(prior([vec(1), vec(2)])).toBe(1);
   });
 
   it('a copy (same file name, same text, line numbers aside) prints one line with its own hit lines', () => {
@@ -1085,10 +1094,17 @@ describe('generated prior: lockfiles, API dumps, blob hit lines; copies collapse
     ];
     expect(renderGrepListing(rows)).toEqual([
       'docs/git.md', '52:Garbage collection: Yes.', '54:no garbage collection',
-      'web/docs/git.md (same text as docs/git.md, hits at 54, 56)',
+      'web/docs/git.md (same matching lines as docs/git.md, at 54, 56)',
       // another file name is no copy
       'web/other.md', '52:Garbage collection: Yes.', '54:no garbage collection',
     ]);
+    // a file with hidden hits never collapses: they may differ
+    expect(renderGrepListing([
+      { file: 'a/index.ts', line: 10, text: 'export const enabled = true;' },
+      { file: 'a/index.ts', line: 12, text: 'x', more: 1 },
+      { file: 'b/index.ts', line: 30, text: 'export const enabled = true;' },
+      { file: 'b/index.ts', line: 32, text: 'x', more: 1 },
+    ])).not.toContain('same matching lines');
     // line numbers only (dropText): equal numbers are no evidence of a copy
     expect(renderGrepListing(rows.slice(0, 4), { dropText: true })).toEqual(['docs/git.md', '52', '54', 'web/docs/git.md', '54', '56']);
   });

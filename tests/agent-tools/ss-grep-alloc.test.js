@@ -169,6 +169,12 @@ describe('ss-grep line allocation (2026-10-02 rule: sqrt(hits) x prior, Sainte-L
     expect(pathLines(out)[0]).toBe('systest/export/export_test.go');
     expect(out).not.toMatch(/^(backup|worker|protos)\//m);
   });
+
+  it('a broad --in directory grep keeps the hit listing (no line-number-only list mode)', async () => {
+    const out = await ss('grep', ['func .*Export', '-k', '5', '--in', '.'], { SS_FIX_GREP_ORDER: '1' });
+    expect(out).not.toMatch(/first hit lines per file/);
+    expect(pathLines(out)[0]).toBe('worker/export.go');
+  });
 });
 
 describe('Step 2 arms (guarantee and sat2 default ON since 2026-10-03): SS_FIX_GREP_ALLOC_RULE, SS_FIX_GREP_WEIGHT', () => {

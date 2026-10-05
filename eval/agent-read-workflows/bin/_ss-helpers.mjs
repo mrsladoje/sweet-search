@@ -878,7 +878,8 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
     || { files: [], hiddenFileCount: 0, hiddenMatchCount: 0, hiddenSample: [] };
   // B7: >= GREP_COUNTS_THRESHOLD hits print a short line list per file, not the hit-line flood.
   // Source files come first, but a quota of test files stays among the first k files.
-  const listMode = FIX.grepOrder && total >= GREP_COUNTS_THRESHOLD && !withContext;
+  // A typed directory scope keeps the hit text: the agent has already narrowed (Codex review).
+  const listMode = FIX.grepOrder && total >= GREP_COUNTS_THRESHOLD && !withContext && !dirScoped;
   const keptMatches = FIX.grepOrder && !FIX.grepAlloc ? orderSourceBeforeTests(result.results, { k }) : result.results;
   // SS_FIX_GREP_FULLLINE (default ON; 0 = the matched substring, byte for byte): each hit prints
   // its full source line, as `grep -n` does.

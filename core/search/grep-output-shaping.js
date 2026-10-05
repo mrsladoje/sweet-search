@@ -273,16 +273,13 @@ export function applyGrepFileDiversity(matches, opts = {}) {
 /**
  * Generated, vendored or minified by path shape (the replay's rule); precompiled once. Also the
  * lockfiles of the package managers (written by the tool, never by hand: r3-jj-35 `ss-grep
- * "gc|…"` printed web/docs/package-lock.json sha512 lines as its FIRST file) and Kotlin
- * binary-compatibility API dumps (`api/<module>.api`, written by apiDump: r3hb-okhttp-12
- * printed two identical dumps before the source).
+ * "gc|…"` printed web/docs/package-lock.json sha512 lines as its FIRST file).
  */
 const GENERATED_PATH_RE = new RegExp([
   String.raw`\.pb\.go$|_pb2\.py$|\.generated\.|(^|\/)(vendor|dist|build|node_modules)\/|\.min\.js$`,
   String.raw`(^|\/)(package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.ya?ml|bun\.lockb?|Cargo\.lock`
     + String.raw`|go\.sum|poetry\.lock|Pipfile\.lock|uv\.lock|pdm\.lock|composer\.lock|Gemfile\.lock|Podfile\.lock`
     + String.raw`|Package\.resolved|mix\.lock|pubspec\.lock|flake\.lock|gradle\.lockfile|packages\.lock\.json|deno\.lock)$`,
-  String.raw`(^|\/)api\/([^/]+\/)?[^/]+\.api$`,
 ].join('|'), 'i');
 
 /**
@@ -292,7 +289,7 @@ const GENERATED_PATH_RE = new RegExp([
  * (Not memoised: the engine hands every match a fresh path string, so a Map lookup must
  * hash the path and costs about as much as this pass; a per-directory variant was slower.)
  */
-const PRIOR_KEYWORD_RE = /test|spec|fixture|mock|e2e|pb2?[._]|generated|vendor|dist\/|build\/|node_modules|\.min\.|lock|shrinkwrap|go\.sum|\.resolved$|\.api$/i;
+const PRIOR_KEYWORD_RE = /test|spec|fixture|mock|e2e|pb2?[._]|generated|vendor|dist\/|build\/|node_modules|\.min\.|lock|shrinkwrap|go\.sum|\.resolved$/i;
 
 const SCALE_SOURCE = 16;  // prior 1
 const SCALE_TEST = 4;     // prior 0.5
@@ -324,23 +321,25 @@ function isBlobLine(text) {
   return digits * 10 >= longest.length && /[A-Za-z]/.test(longest) && !wordy;
 }
 
-/** Hits looked at per file by the blob check: enough to see a pattern, bounded per file. */
-const BLOB_SAMPLE_HITS = 4;
+/** The fewest hits that make a file a blob file: one hash line in source is a test vector. */
+const BLOB_MIN_HITS = 3;
 
 /**
  * The scale of one file's group matches[start..end): its path prior, or the generated prior
- * when every sampled hit line is a blob (a lockfile or data dump under any name).
+ * when the file has BLOB_MIN_HITS hits or more and every one is a blob line (a lockfile or
+ * data dump under any name). One ordinary hit keeps the path prior.
  */
 function groupScale(file, matches, start, end) {
   const scale = priorScale(file);
   if (scale === SCALE_GENERATED) return scale;
-  const stop = Math.min(end, start + BLOB_SAMPLE_HITS);
-  for (let j = start; j < stop; j++) {
+  let n = 0;
+  for (let j = start; j < end; j++) {
     const m = matches[j];
     if (m?.file !== file) break;
     if (!isBlobLine(m?.content ?? m?.matchText)) return scale;
+    n++;
   }
-  return stop > start ? SCALE_GENERATED : scale;
+  return n >= BLOB_MIN_HITS ? SCALE_GENERATED : scale;
 }
 
 /** The file-type prior of a match path: 1 source, 0.5 test/spec/fixture, 0.25 generated/vendored/minified. */
@@ -854,10 +853,11 @@ export function renderGrepListing(rows, { before = 0, after = 0, getLines = null
   // nothing when it is the only file of the listing.
   const typedSet = new Set(typed);
   const files = [...groups.keys()];
-  // A copy of an earlier file — the same file name and the same printed text, line numbers aside
-  // (per-platform dumps: r3hb-okhttp-12 printed api/android/okhttp.api and api/jvm/okhttp.api, 9
-  // identical lines each; mirrored docs: jj docs/ and web/docs/src/content/docs/, shifted by 2
-  // lines) — prints its path, the twin's name and its own hit lines, not the text again.
+  // A file with the same name as an earlier one whose matching lines (and context) read the same,
+  // line numbers aside, with every hit shown in both (per-platform dumps: r3hb-okhttp-12 printed
+  // api/android/okhttp.api and api/jvm/okhttp.api, 9 identical lines each; mirrored docs: jj
+  // docs/ and web/docs/src/content/docs/, shifted by 2 lines) prints its path, the earlier
+  // file's name and its own hit lines. It says only that the matching lines are the same.
   const bodies = new Map();
   for (const [file, { rows: hits, more }] of groups) {
     const head = !typedSet.has(file) ? file : (files.length > 1 ? typedPathLabel(file, files) : '');
@@ -866,14 +866,14 @@ export function renderGrepListing(rows, { before = 0, after = 0, getLines = null
     // The text without line numbers: a mirror is often shifted (front matter).
     const key = `${file.slice(file.lastIndexOf('/') + 1)}\n${body.map((l) => l.replace(/^\d+[:-]/, '')).join('\n')}`;
     // dropText prints line numbers only: equal numbers in two files are no twin.
-    const twin = head && !dropText && body.length > 1 ? bodies.get(key) : undefined;
+    // Only files that show every hit: hidden hits may differ.
+    const twin = head && !dropText && more === 0 && body.length > 1 ? bodies.get(key) : undefined;
     if (twin) {
       const at = [...hits].map((h) => h.line).sort((a, b) => a - b).join(', ');
-      out.push(`${head} (same text as ${twin}, hits at ${at})`);
-      if (more > 0) out.push(`(+${more} more)`);
+      out.push(`${head} (same matching lines as ${twin}, at ${at})`);
       continue;
     }
-    if (head && !bodies.has(key)) bodies.set(key, head);
+    if (head && more === 0 && !bodies.has(key)) bodies.set(key, head);
     if (head) out.push(head);
     out.push(...body);
   }
