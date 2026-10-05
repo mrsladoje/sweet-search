@@ -238,22 +238,39 @@ export function parseJudgeScore(text) {
  *
  * @returns {Promise<{ score: number, judges: object[] }>}
  */
-export async function judgePanelScore({ probe, answer, panel = JUDGE_PANEL, runJudgeFn = runJudge, judgeBucket }) {
+// A panelist that still fails after runJudge's own retries is asked again after these pauses,
+// so a row is not scored by a smaller panel (dev1005 Codex: 3 of 60 rows were the mean of 2
+// judges after one provider failed, while their pair had the median of 3).
+const PANEL_RETRY_DELAYS_MS = [15000, 45000];
+
+export async function judgePanelScore({ probe, answer, panel = JUDGE_PANEL, runJudgeFn = runJudge, judgeBucket, panelRetryDelaysMs }) {
   const userPrompt = buildJudgeUserPrompt({ probe, answer });
+  // Injected judges (tests) retry without waiting.
+  const delays = panelRetryDelaysMs ?? (runJudgeFn === runJudge ? PANEL_RETRY_DELAYS_MS : [0, 0]);
   const results = await Promise.all(
     panel.map(async ({ lineage, model }) => {
-      if (judgeBucket && typeof judgeBucket.acquire === 'function') {
-        await judgeBucket.acquire({ target: `${lineage}:${model}` });
+      let r;
+      let panelRetries = 0;
+      for (let attempt = 0; attempt <= delays.length; attempt++) {
+        if (attempt > 0) {
+          panelRetries++;
+          if (delays[attempt - 1] > 0) await new Promise((resolve) => setTimeout(resolve, delays[attempt - 1]));
+        }
+        if (judgeBucket && typeof judgeBucket.acquire === 'function') {
+          await judgeBucket.acquire({ target: `${lineage}:${model}` });
+        }
+        r = await runJudgeFn({ lineage, model, systemPrompt: JUDGE_SYSTEM_PROMPT, userPrompt });
+        if (!r.isError && parseJudgeScore(r.text) !== null) break;
       }
-      const r = await runJudgeFn({ lineage, model, systemPrompt: JUDGE_SYSTEM_PROMPT, userPrompt });
       const usage = normalizeJudgeUsage(r.raw?.usage);
+      const score = r.isError ? null : parseJudgeScore(r.text);
       return {
         lineage,
         model,
-        score: r.isError ? null : parseJudgeScore(r.text),
+        score,
         isError: !!r.isError,
         error: r.isError ? (r.error || 'judge-error') : undefined,
-        retryCount: typeof r.retryCount === 'number' ? r.retryCount : null,
+        retryCount: typeof r.retryCount === 'number' ? r.retryCount + panelRetries : (panelRetries || null),
         usage,
       };
     }),

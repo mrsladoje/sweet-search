@@ -92,6 +92,38 @@ function judgeAll({ score = 0.8, isError = false, usage = undefined, retryCount 
   });
 }
 
+// ─── a failed panelist is asked again before the row is scored ────────────────
+
+describe('judgePanelScore — panel retry (2026-10-05: rows scored by 2 of 3 judges)', () => {
+  it('a panelist that fails once is asked again; the row keeps the full panel', async () => {
+    const calls = new Map();
+    const runJudgeFn = async ({ lineage, model }) => {
+      const n = (calls.get(lineage) || 0) + 1;
+      calls.set(lineage, n);
+      const fail = lineage === JUDGE_PANEL[0].lineage && n === 1;
+      return { text: fail ? '' : JSON.stringify({ score: 0.5 }), isError: fail, error: fail ? 'http-500' : undefined, retryCount: 2, lineage, model, raw: {} };
+    };
+    const { score, judges } = await judgePanelScore({ probe: makeProbe(), answer: 'a', runJudgeFn });
+    expect(score).toBe(0.5);
+    expect(judges.every((j) => !j.isError)).toBe(true);
+    expect(calls.get(JUDGE_PANEL[0].lineage)).toBe(2);
+    expect(judges[0].retry_count).toBe(3);
+    expect(calls.get(JUDGE_PANEL[1].lineage)).toBe(1);
+  });
+
+  it('an unparsable verdict is asked again too; a panelist that keeps failing stays an error', async () => {
+    let unparsable = 0;
+    const runJudgeFn = async ({ lineage, model }) => {
+      if (lineage === JUDGE_PANEL[1].lineage) return { text: '', isError: true, error: 'down', lineage, model, raw: {} };
+      if (lineage === JUDGE_PANEL[0].lineage && unparsable++ === 0) return { text: 'no verdict', isError: false, lineage, model, raw: {} };
+      return { text: JSON.stringify({ score: 1 }), isError: false, lineage, model, raw: {} };
+    };
+    const { judges } = await judgePanelScore({ probe: makeProbe(), answer: 'a', runJudgeFn });
+    expect(judges.filter((j) => j.isError).map((j) => j.lineage)).toEqual([JUDGE_PANEL[1].lineage]);
+    expect(unparsable).toBe(2);
+  });
+});
+
 // ─── B6 — all-judges-fail must NOT coerce to 0 ────────────────────────────────
 
 describe('judgePanelScore — B6 all-judges-fail (§3.7.1 selection integrity)', () => {
@@ -117,15 +149,14 @@ describe('judgePanelScore — B6 all-judges-fail (§3.7.1 selection integrity)',
   });
 
   it('with >=1 valid verdict returns { score, judges } (median of valid)', async () => {
-    // 2 valid (0.4, 0.8) + 1 errored → median of the 2 valid = 0.6, NOT 0.
-    let i = 0;
+    // 2 valid (0.4, 0.8) + 1 errored (on every attempt) → median of the 2 valid = 0.6, NOT 0.
     const runJudgeFn = async ({ lineage, model }) => {
       const verdicts = [
         { text: JSON.stringify({ score: 0.4 }), isError: false, retryCount: 0, raw: { usage: { input_tokens: 10, output_tokens: 5 } } },
         { text: JSON.stringify({ score: 0.8 }), isError: false, retryCount: 1, raw: { usage: { prompt_tokens: 20, completion_tokens: 6 } } },
         { text: '', isError: true, error: 'boom', retryCount: 5, raw: {} },
       ];
-      return { lineage, model, ...verdicts[i++] };
+      return { lineage, model, ...verdicts[JUDGE_PANEL.findIndex((p) => p.lineage === lineage)] };
     };
     const out = await judgePanelScore({ probe: makeProbe(), answer: 'a', runJudgeFn });
     expect(out.score).toBeCloseTo(0.6, 10);
