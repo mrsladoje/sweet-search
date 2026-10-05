@@ -41,3 +41,18 @@ The stock prompt fixes the first-request cache miss, but the model then runs abo
 The Promise.allSettled line moves some batching from `;` to Promise.all but does not raise commands per
 step. Cost $0.0541 vs $0.0545 (n=10). Not shipped. The gap to native is commands per step (2.0 vs 2.7),
 not the batching method.
+
+## Codex: stock prefix (CODEX_HARNESS_TRIM=stockprefix, 0c4cfbf0), 5 questions
+
+Sol stock instructions verbatim + appended sweet section (rg override, yt3 cell form, read batch).
+Other arms: the same 5 questions from the cxstock run earlier the same day (not interleaved).
+
+| arm | first-request cache read | $/q | no-cache $/q | commands/q | score |
+|---|---|---|---|---|---|
+| stock prefix | 12,288 in 5/5 | 0.0450 | 0.2200 | 4.2 | 0.880 |
+| product | 7,168–15,232 (4/5 below 12,288) | 0.0551 | 0.2835 | 5.8 | 0.880 |
+| stock prompt | ≥12,288 in 5/5 | 0.0631 | 0.2887 | 11.0 | 0.884 |
+| native | 12,288 in 4/5 | 0.0512 | 0.2109 | 4.6 | 0.880 |
+
+Packing (traces): 2.62 commands per step, 52% multi-command steps (native 2.66 / 59%; product 1.8–2.0).
+The cache fix is proven (deterministic). The cost and packing gains are a 5-question signal, not proof.
