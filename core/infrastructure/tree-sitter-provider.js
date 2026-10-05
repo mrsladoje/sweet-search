@@ -191,6 +191,11 @@ const LANG_EXTRA_BOUNDARY_TYPES = {
   // ReScript (tree-sitter-rescript). `type_declaration` is already global; the
   // let/module declarations wrap a *_binding handled by the same drill.
   rescript: new Set(['let_declaration', 'module_declaration']),
+  // Rust type declarations other than struct / trait / impl (global). Without them a file's
+  // enums joined the license + imports chunk with no name (jj lib/src/bisect.rs 1-60 held
+  // `enum BisectionError` and `enum Evaluation`; ss-find labelled an `enum Evaluation` regex hit
+  // as BisectionError and printed the license first). The graph already extracts them.
+  rust: new Set(['enum_item', 'union_item', 'type_item']),
 };
 
 // Per-language EXCLUSIONS from BOUNDARY_TYPES. Removes node-type names that
@@ -264,6 +269,9 @@ const NODE_TYPE_MAP = {
   'struct_item': 'struct',
   'impl_item': 'impl',
   'trait_item': 'trait',
+  'enum_item': 'enum',
+  'union_item': 'struct',
+  'type_item': 'typeAlias',
   'type_declaration': 'struct',
   'macro_definition': 'macro',
   'module': 'module',
