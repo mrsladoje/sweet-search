@@ -43,7 +43,7 @@ const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN);
 const fin = (v) => typeof v === 'number' && Number.isFinite(v);
 
 function loadCell(cell) {
-  const dirs = fs.existsSync(RESULTS) ? fs.readdirSync(RESULTS).filter(d => d.startsWith(`r282-${cell}-${TAG}-r`)) : [];
+  const dirs = fs.existsSync(RESULTS) ? fs.readdirSync(RESULTS).filter(d => d.startsWith(`r282-${cell}-${TAG}-r`) && /-r\d+$/.test(d.slice(`r282-${cell}-${TAG}`.length))) : [];
   const rows = [], summaries = [];
   for (const d of dirs.sort()) {
     const rep = Number(/-r(\d+)$/.exec(d)?.[1]);
