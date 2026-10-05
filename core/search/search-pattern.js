@@ -16,7 +16,7 @@
 import path from 'node:path';
 import { PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { generateRegexMatches } from './search-pattern-planner.js';
-import { buildBareGrepResults, filterMatchesBySymbolType, resolveSearchSymbolFilter, mapMatchesToChunks, readFileRange } from './search-pattern-chunks.js';
+import { buildBareGrepResults, filterMatchesBySymbolType, focusResultsOnRegexHits, resolveSearchSymbolFilter, mapMatchesToChunks, readFileRange } from './search-pattern-chunks.js';
 import { applyGrepFileDiversity, grepFileFilterPredicate } from './grep-output-shaping.js';
 import { stampGrepLineClasses } from './grep-line-classes.js';
 import { indexFreshness } from './index-freshness.js';
@@ -797,7 +797,9 @@ export async function patternSearch(query, routing, options = {}) {
   // Ranking is frozen — agent mode only transforms presentation.
   if (format === 'agent' || format === 'agent_preview' || format === 'agent_full' || format === 'agent_full_xl') {
     const searchDir = this.projectRoot || PROJECT_ROOT;
-    const agentResponse = packageForAgent(results, stats, {
+    // The entry's label and code start at the definition that holds its first regex hit.
+    const focused = focusResultsOnRegexHits(results, grepMatches, this.codeGraphRepo || null);
+    const agentResponse = packageForAgent(focused, stats, {
       query,
       regex,
       mode: 'pattern',

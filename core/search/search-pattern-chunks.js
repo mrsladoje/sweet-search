@@ -157,6 +157,56 @@ export function findChunkForLine(intervals, lineNumber) {
 }
 
 /**
+ * ss-find (agent formats only): an entry whose chunk holds several top-level definitions
+ * narrows to the definition that holds the chunk's first regex hit, so its label and code
+ * start there. jj lib/src/bisect.rs 1-60 holds the license, the imports, `enum BisectionError`
+ * and `enum Evaluation`; `--regex "enum Evaluation"` printed it as `[enum: BisectionError]`
+ * from the license on. Display only: the ranking is done, nothing is added or removed.
+ *
+ * @param {Array} results  ranked pattern results ({file, startLine, endLine, name, type, metadata})
+ * @param {Array<{file: string, line: number}>} matches  the regex hits
+ * @param {{findEntitiesInRange?: Function}|null} codeGraphRepo
+ * @returns {Array} results, an entry replaced by its narrowed copy where one applies
+ */
+export function focusResultsOnRegexHits(results, matches, codeGraphRepo) {
+  if (!codeGraphRepo || typeof codeGraphRepo.findEntitiesInRange !== 'function') return results;
+  const hitsByFile = new Map();
+  for (const m of matches || []) {
+    if (!m?.file || !Number.isInteger(m.line)) continue;
+    if (!hitsByFile.has(m.file)) hitsByFile.set(m.file, []);
+    hitsByFile.get(m.file).push(m.line);
+  }
+  return results.map((r) => {
+    const start = r?.startLine;
+    const end = r?.endLine;
+    const lines = hitsByFile.get(r?.file);
+    if (!lines || !Number.isInteger(start) || !Number.isInteger(end)) return r;
+    const first = Math.min(...lines.filter((l) => l >= start && l <= end));
+    if (!Number.isFinite(first)) return r;
+    let entities;
+    try { entities = codeGraphRepo.findEntitiesInRange(r.file, start, end) || []; } catch { return r; }
+    // Top-level definitions of the chunk: those no other listed definition contains.
+    const top = entities.filter((e) => Number.isInteger(e.startLine) && Number.isInteger(e.endLine)
+      && !entities.some((o) => o !== e && o.startLine <= e.startLine && o.endLine >= e.endLine
+        && (o.startLine < e.startLine || o.endLine > e.endLine)));
+    if (top.length < 2) return r;
+    const target = top.find((e) => e.startLine <= first && e.endLine >= first);
+    if (!target || target === top[0]) return r;
+    const s = Math.max(start, target.startLine);
+    const e = Math.min(end, target.endLine);
+    return {
+      ...r,
+      startLine: s,
+      endLine: e,
+      name: target.name,
+      type: target.type || r.type,
+      metadata: { ...(r.metadata || {}), startLine: s, endLine: e, name: target.name, type: target.type || r.metadata?.type },
+      focusedFrom: { startLine: start, endLine: end },
+    };
+  });
+}
+
+/**
  * Map ripgrep matches to indexed chunk IDs.
  * Returns match counts per chunk (grep density) alongside the ID set.
  *
