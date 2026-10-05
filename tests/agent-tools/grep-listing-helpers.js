@@ -14,7 +14,7 @@ export function grepHitCount(out) {
     const files = /^# \+\d+ more files? with (\d+) hits?/.exec(line);
     if (files) n += Number(files[1]);
     // A copy of an earlier file prints one line with its hit count (renderGrepListing).
-    const twin = /\(same text as \S+, hits at ([\d, ]+)\)$/.exec(line);
+    const twin = /\(same matching lines as \S+, at ([\d, ]+)\)$/.exec(line);
     if (twin) n += twin[1].split(',').length;
   }
   return n;
@@ -24,5 +24,5 @@ export function grepHitCount(out) {
 export function grepFiles(out) {
   return String(out).split('\n')
     .filter((l) => l && !/^(\d|#|--|\()/.test(l))
-    .map((l) => l.replace(/ \(same text as \S+, hits at [\d, ]+\)$/, ''));
+    .map((l) => l.replace(/ \(same matching lines as \S+, at [\d, ]+\)$/, ''));
 }
