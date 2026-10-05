@@ -426,23 +426,12 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 <details>
 <summary><b>Per-benchmark notes & methodology</b></summary>
   
-#### 🌐 GenCodeSearchNet → `86.5` held-out · 🔧 our tuning benchmark
-- We tuned ranking on a dev split (600 queries per language, stratified, seed=42). The table shows only the other 2,400 held-out queries, inspected aggregate-only. Dev scores 87.0; both splits together score 86.8.
-- The paper's baselines (≤ 0.42 fine-tuned, 0.79–0.94 zero-shot Ada-2) rank against 99 distractors. Ours ranks against all 6,000 documents, so the numbers aren't directly comparable.
-
-#### 🐍 CoSQA → `65.4` · 🥇 zero-shot SOTA
-- 500 real web queries against the fixed 6,267-code database.
-- Beats every published zero-shot model: CodeSage-Large `47.5` · OpenAI text-embedding-3-large `55.4` · OASIS `55.8`. Between *fine-tuned* CodeBERT and GraphCodeBERT (`64.7` / `67.5`).
-- CoSQA has known label noise, so read the absolute height with a pinch of salt.
-
-#### 🗺️ M2CRB → `54.4` · 🏆 SOTA
-- 🇪🇸 Spanish · 🇵🇹 Portuguese · 🇩🇪 German · 🇫🇷 French queries → Python / Java / JavaScript.
-- The paper's best is a fine-tuned CodeBERT at **52.7 auMRRc**. That metric averages over easier, smaller pools, so `auMRRc ≥ full-pool MRR` for any model. Our 54.4 is full-pool MRR@10 over all 5,795 functions, zero-shot.
-
-#### 🛡️ AdvTest → `51.6`
-- Beats the classic fine-tuned baselines (CodeBERT `27` · GraphCodeBERT `35` · UniXcoder `41`).
-- Our pipeline adds about 3 points over our bare encoder (`48.5`), even on obfuscated code.
-- The often-cited `59.5` for bare CodeRankEmbed is MRR@1000 on less strictly prepared data. Ours is MRR@10 on a leak-free corpus.
+| Benchmark | Score | Notes |
+|---|---|---|
+| 🌐 **GenCodeSearchNet** | `86.5` held-out<br>🔧 our tuning benchmark | • We tuned ranking on a dev split (600 queries per language, stratified, seed=42). The table shows only the other 2,400 held-out queries, inspected aggregate-only. Dev scores 87.0; both splits together score 86.8.<br>• The paper's baselines (≤ 0.42 fine-tuned, 0.79–0.94 zero-shot Ada-2) rank against 99 distractors. Ours ranks against all 6,000 documents, so the numbers aren't directly comparable. |
+| 🐍 **CoSQA** | `65.4`<br>🥇 zero-shot SOTA | • 500 real web queries against the fixed 6,267-code database.<br>• Beats every published zero-shot model: CodeSage-Large `47.5` · OpenAI text-embedding-3-large `55.4` · OASIS `55.8`. Between *fine-tuned* CodeBERT and GraphCodeBERT (`64.7` / `67.5`).<br>• CoSQA has known label noise, so read the absolute height with a pinch of salt. |
+| 🗺️ **M2CRB** | `54.4`<br>🏆 SOTA | • 🇪🇸 Spanish · 🇵🇹 Portuguese · 🇩🇪 German · 🇫🇷 French queries → Python / Java / JavaScript.<br>• The paper's best is a fine-tuned CodeBERT at **52.7 auMRRc**. That metric averages over easier, smaller pools, so `auMRRc ≥ full-pool MRR` for any model. Our 54.4 is full-pool MRR@10 over all 5,795 functions, zero-shot. |
+| 🛡️ **AdvTest** | `51.6` | • Beats the classic fine-tuned baselines (CodeBERT `27` · GraphCodeBERT `35` · UniXcoder `41`).<br>• Our pipeline adds about 3 points over our bare encoder (`48.5`), even on obfuscated code.<br>• The often-cited `59.5` for bare CodeRankEmbed is MRR@1000 on less strictly prepared data. Ours is MRR@10 on a leak-free corpus. |
 
 #### 📐 Methodology
 - **Reproduction:** the result file for each headline number is in [`eval/results/`](eval/results/). Rerun one with `node eval/run_benchmark.js --dataset=<name> --profile=full` (add `--split=heldout` for GenCodeSearchNet). The canonical full-pool loaders are in `eval/download_data.py`.
