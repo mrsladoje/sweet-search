@@ -361,3 +361,29 @@ Go `//` comments.
 **Possible product change:** none yet. The gap is vocabulary ("write-ahead log" vs "Raft logs").
 Check on held-out data whether doc-comment chunks of long functions are under-ranked as a class
 before any change.
+
+---
+
+## 2026-10-05 — Codex replay pairs: search output that does not return well (not fixed)
+
+**Source:** the 5 Codex pairs of the dev run replay page (dev run 2026-10-05, main c4cbf49f,
+[Dev Run Case Replays](https://claude.ai/artifact/3GwAv7x9BFBiPWZREYyLGd)). Six engine bugs from the
+same traces are fixed (ss-grep directory scope, lockfile / blob prior and copies, ss-trace type
+callees, Go body type links, ss-read next definition, referenced sibling). These are ranking and
+output shapes; 5 dev tasks are no evidence for a ranking change.
+
+**Observation (Claude):**
+- Rank 1 of a plain-language `ss-search` was weak in 3 of 5 tasks: tortoise `ModelDescription`
+  (its name matches "model description"; the answer `_get_comments` came only from a second
+  search), okhttp the public `ConnectionPool` wrapper (72 lines, mostly constructors), jj two test
+  files (ranks 1 and 2) for a question that is not about tests.
+- A comment-heavy rank 1 costs tokens: GRDB `asyncConcurrentRead` printed 134 lines, about 60% a
+  SQLite isolation essay (about 1,500 tokens).
+- `imports of <file>` printed 8 standard-library imports for dgraph `assign.go` (context, fmt,
+  math/rand…), which say nothing about the repository.
+
+**Not changed, measured instead ($0 replay over all sweet captures of dev1005 r1 + r2, 3 harnesses):**
+- Extending an `ss-read` window to the end of a method it cuts within 25 lines: 132 of 620
+  windows cut one; only 9 were followed by a read of the rest. Too small to matter or to measure.
+- Several ranges in one `ss-read`: agents already chain same-file reads in one command (43 cases);
+  it would save a header line per range, not a request.
