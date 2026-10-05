@@ -500,6 +500,19 @@ export class StructuralContextRepository {
     }
   }
 
+  /** True when `line` of `filePath` lies strictly inside an indexed function or method body. */
+  _insideCallable(filePath, line) {
+    const db = this._open();
+    if (!db) return false;
+    try {
+      return !!db.prepare(`SELECT 1 FROM entities e WHERE ${this._entitySql(db, 'e')} AND e.file_path = ?
+        AND e.type IN ('function','method','constructor','arrowFunction','assignedFunc','objectMethod','objectArrow','shortFunction')
+        AND e.start_line < ? AND e.end_line >= ? LIMIT 1`).get(...this._entityParams(db), filePath, line, line);
+    } catch {
+      return false;
+    }
+  }
+
   /** Other definitions with the target's name (rivals for an unbound qualified call). */
   _namesakes(db, target) {
     try {
@@ -1074,7 +1087,11 @@ export class StructuralContextRepository {
   findSameFileDefinition(name, filePath) {
     const indexed = this._findIndexedSameFileDefinition(name, filePath);
     if (indexed) return indexed;
-    return findSameFileDefinition({ name, filePath, readFileRange: this.readFileRange.bind(this) });
+    const found = findSameFileDefinition({ name, filePath, readFileRange: this.readFileRange.bind(this) });
+    // A value declared inside an indexed function body is that function's local
+    // (ky `const retry = …` in #calculateRetryDelay was a "constant retry" callee of #retry).
+    if (found && !/^(?:function|method|class|struct|interface|trait|enum|type)/.test(String(found.type || '')) && this._insideCallable(filePath, found.startLine)) return null;
+    return found;
   }
 
   _findIndexedSameFileDefinition(name, filePath) {
