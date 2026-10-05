@@ -10,7 +10,7 @@ import { classifyShellCommand, unwrapShellCommand, splitShellCommands, TOOL_KIND
 import { CODEX_BATCH_VARIANTS, applyCodexBatch } from './trim/batch-variants.mjs';
 import { stockInstructions } from './trim/build-codex-instructions.mjs';
 // The conflict edit is what `sweet-search init --codex` ships (single source, scripts/harness-prompts/).
-import { CODEX_INSTRUCTIONS_SOURCE } from '../../../scripts/harness-prompts/index.js';
+import { CODEX_INSTRUCTIONS_SOURCE, CODEX_STOCK_CAPTURED, codexInstructions } from '../../../scripts/harness-prompts/index.js';
 import {
   resolveSweetRulesPlacement, sweetRulesRowFields, appendSweetRules, sweetRulesOutOfFile, tomlBasicString,
 } from './sweet-rules-placement.mjs';
@@ -198,7 +198,9 @@ export function buildPrivateHome(privateHome, { realHome, codexHome }) {
 }
 
 // --- HARNESS TRIM (CODEX_HARNESS_TRIM) — handoffs/improve/harness-prompt-trim ---
-// DEFAULT (since 2026-09-30, SWEET ARM ONLY) = the product: CODEX_HARNESS_TRIM unset or empty means
+// DEFAULT (since 2026-10-05, SWEET ARM ONLY) = the product: unset means 'stockprefix' for a model with a
+// captured stock text (scripts/harness-prompts CODEX_STOCK_CAPTURED; codexInstructions()), else as below.
+// Before 2026-10-05 (and still for any other model): CODEX_HARNESS_TRIM unset or empty means
 // 'conflict' + CODEX_TRIM_BATCH=yt3batch2 (an unset or empty CODEX_TRIM_BATCH takes 'yt3batch2' only
 // then), and SWEET_RULES_PLACEMENT defaults to 'config' (-c developer_instructions) — together
 // exactly what `sweet-search init --codex` 2.8.2 writes (model_instructions_file + developer_instructions).
@@ -276,25 +278,24 @@ export const CODEX_TRIM_BATCH_DEFAULT = 'yt3batch2';
 // while harness/ (under <repo>/eval) is masked there.
 export const CODEX_HARNESS_TRIM_STATE_FILE = 'codex-instructions.md';
 
-export const CODEX_STOCKPREFIX_SOURCES = Object.freeze({
-  'gpt-6.1-sol': path.join(path.dirname(fileURLToPath(import.meta.url)), 'trim', 'codex-0.159.2-instructions-stockprefix-gpt-6.1-sol.md'),
-});
 export function codexHarnessTrim({ sweet, mode, model = 'openai/gpt-5.5', env = process.env } = {}) {
   if (mode === undefined) mode = env.CODEX_HARNESS_TRIM;
   // Native has no ss-* rules to contradict and keeps Codex's full request in every condition.
   if (!sweet) return { mode: null };
   const raw = String(mode ?? '').trim();
   const defaulted = !raw;
-  const m = raw || CODEX_HARNESS_TRIM_DEFAULT;
+  // The product default (2026-10-05): the stock prefix for a model with a captured stock text, else conflict.
+  const bare = String(model).replace(/^openai\//, '');
+  const m = raw || (CODEX_STOCK_CAPTURED[bare] ? 'stockprefix' : CODEX_HARNESS_TRIM_DEFAULT);
   // origin = where the mode came from ('default' | 'env'), stamped on the row as harnessTrimSource.
   const origin = defaulted ? 'default' : 'env';
   if (m === '0') return { mode: null, origin };
   // stockprefix (research, 2026-10-05): the model's unmodified stock instructions as a byte-identical prefix
   // (stock prompt-cache hit) + an appended sweet-search section (rg override, yt3 cell form, read batch).
   if (m === 'stockprefix') {
-    const source = CODEX_STOCKPREFIX_SOURCES[String(model).replace(/^openai\//, '')];
-    if (!source) throw new Error(`CODEX_HARNESS_TRIM=stockprefix: no captured stock text for ${model} (have ${Object.keys(CODEX_STOCKPREFIX_SOURCES).join(', ')})`);
-    return { mode: 'instructions-stockprefix', source, config: [], origin };
+    if (!CODEX_STOCK_CAPTURED[bare]) throw new Error(`CODEX_HARNESS_TRIM=stockprefix: no captured stock text for ${model} (have ${Object.keys(CODEX_STOCK_CAPTURED).join(', ')})`);
+    // Exactly what `sweet-search init --codex` ships for this model (scripts/harness-prompts, single source).
+    return { mode: 'instructions-stockprefix', text: codexInstructions({ model: bare }), config: [], origin };
   }
   if (m !== '1' && m !== 'max-wait' && m !== 'v3' && m !== 'conflict') throw new Error(`CODEX_HARNESS_TRIM=${m}: expected 0, 1, max-wait, v3, conflict or stockprefix`);
   if (m === 'conflict') {
@@ -343,7 +344,9 @@ export function codexHarnessTrimArgs(trim, stateDir, { rules = null, model = 'op
   if (!trim?.mode && !rules) return [];
   const file = path.join(stateDir, CODEX_HARNESS_TRIM_STATE_FILE);
   let text;
-  if (trim?.mode) {
+  if (trim?.mode && trim.text != null) {
+    text = trim.text;
+  } else if (trim?.mode) {
     text = readFileSync(trim.source, 'utf8').replace(/^<!--[\s\S]*?-->\n/, '');
     if (trim.batch) text = applyCodexBatch(text, trim.batch);
   } else {

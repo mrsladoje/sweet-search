@@ -2204,7 +2204,8 @@ export async function runInit(args) {
     const projectFlag = codexHarnessReport.hooksFlag ?? { status: codexHarnessReport.status };
     process.stderr.write(
       `[init] Codex harness: ${codexHarnessReport.status}`
-      + (codexHarnessReport.detail ? ` — ${codexHarnessReport.detail}` : '') + '\n'
+      + (codexHarnessReport.detail ? ` — ${codexHarnessReport.detail}` : '')
+      + (codexHarnessReport.promptSource ? ` [prompt: ${codexHarnessReport.promptSource}]` : '') + '\n'
       + (codexHarnessReport.warning ? `[init] Note: ${codexHarnessReport.warning}\n` : ''),
     );
     let globalFlag = null;

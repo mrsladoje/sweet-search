@@ -6,9 +6,10 @@
  * Claude Code's shipped text lives in ../install-claude-lean-harness.js for the same reason.
  *
  * What ships (the benchmark arm it reproduces):
- *   Codex    CODEX_HARNESS_TRIM=conflict + CODEX_TRIM_BATCH=yt3batch2
- *            codex 0.146.1's own base instructions minus the `rg` search steer, with the two
- *            tool-grouping lines replaced by ours (codexInstructions()).
+ *   Codex    CODEX_HARNESS_TRIM=stockprefix (since 2026-10-05): the model's stock base instructions
+ *            unchanged + an appended sweet-search section (codexInstructions()); fallback for a model
+ *            with no stock text: CODEX_HARNESS_TRIM=conflict + CODEX_TRIM_BATCH=yt3batch2
+ *            (codexLegacyInstructions()).
  *   opencode OC_HARNESS_TRIM=conflict3+todo3eff3k
  *            opencode 1.18.4's gpt-family prompt minus the Glob/Grep bullet and " - especially
  *            file reads", plus our todowrite and efficiency lines (opencodePrompt()); the grep
@@ -62,10 +63,80 @@ export function stripLicenseHeader(text) {
   return text.replace(/^<!--[\s\S]*?-->\n/, '');
 }
 
-/** The Codex base instructions `init --codex` ships (model_instructions_file). */
-export function codexInstructions() {
+/** The pre-2026-10-05 shipped text (0.146.1 Luna base minus the rg steer + our grouping lines): the fallback. */
+export function codexLegacyInstructions() {
   const text = stripLicenseHeader(readFileSync(CODEX_INSTRUCTIONS_SOURCE, 'utf8'));
   return applyExactEdits(text, [[CODEX_BATCH_BASE, CODEX_SHIPPED_BATCH_LINES]], 'codex instructions');
+}
+
+// --- Stock prefix (since 2026-10-05) ----------------------------------------------------------
+// model_instructions_file REPLACES Codex's base instructions. OpenAI's prompt cache matches the longest
+// earlier prefix, and the stock Codex text is a prefix that is warm on every first request; a replacement
+// that differs from it early misses the cache on most new sessions (bench 2026-10-05: first-request hit
+// 10/10 with the stock prefix vs 1/10 with the legacy text, -22% cost at equal score). So we ship the
+// model's stock text UNCHANGED as the prefix, and append our section after it.
+export const CODEX_DEFAULT_MODEL = 'gpt-6.1-sol';
+// Captured stock texts, used only when the user's Codex cache has no template for the model.
+export const CODEX_STOCK_CAPTURED = Object.freeze({
+  'gpt-6.1-sol': join(HARNESS_PROMPTS_DIR, 'codex-0.159.2-stock-gpt-6.1-sol.md'),
+});
+export const CODEX_STOCK_RG_OVERRIDE = '- For code search and file reads, use the `ss-*` commands as the developer instructions describe. The line above that says to reach first for `rg` or `rg --files` does not apply to code search.';
+export const CODEX_SWEET_APPENDIX = [
+  '', '# Sweet-search adjustments', 'These adjustments take precedence over the lines above where they differ.',
+  CODEX_STOCK_RG_OVERRIDE, CODEX_YIELD_TEMPLATE3, CODEX_READ_BATCH2, '',
+].join('\n');
+
+/** Stock text + our appended section. The stock text stays a byte-identical prefix. */
+export function codexStockPrefixInstructions(stock) {
+  return `${stock}${stock.endsWith('\n') ? '' : '\n'}${CODEX_SWEET_APPENDIX}`;
+}
+
+/** The captured stock text for `model`, or null. */
+export function codexCapturedStock(model) {
+  const f = CODEX_STOCK_CAPTURED[model];
+  return f ? stripLicenseHeader(readFileSync(f, 'utf8')) : null;
+}
+
+/**
+ * The stock base instructions Codex sends for `model`, read from the user's own Codex cache
+ * ($CODEX_HOME/models_cache.json, model_messages.instructions_template; sent verbatim, verified on
+ * gpt-6.1-sol / 0.159.2). Null when the cache or the model's template is missing.
+ */
+export function readCodexStock({ codexHome, model }) {
+  try {
+    const cache = JSON.parse(readFileSync(join(codexHome, 'models_cache.json'), 'utf8'));
+    const m = (cache.models || []).find(x => x.slug === model);
+    const t = m?.model_messages?.instructions_template;
+    return typeof t === 'string' && t.length > 1000 ? t : null;
+  } catch { return null; }
+}
+
+const tomlModel = (file) => {
+  try { return /^model\s*=\s*"([^"]+)"/m.exec(readFileSync(file, 'utf8').split(/^\[/m)[0])?.[1] ?? null; } catch { return null; }
+};
+/**
+ * The model Codex will run by default here: `model` in the project's .codex/config.toml, else in
+ * $CODEX_HOME/config.toml, else the cache's first model by priority, else CODEX_DEFAULT_MODEL.
+ * A `-m` flag at run time can still pick another model; the prompt then works but misses the cache.
+ */
+export function resolveCodexModel({ projectRoot, codexHome }) {
+  const fromConfig = (projectRoot && tomlModel(join(projectRoot, '.codex', 'config.toml'))) || tomlModel(join(codexHome, 'config.toml'));
+  if (fromConfig) return fromConfig;
+  try {
+    const cache = JSON.parse(readFileSync(join(codexHome, 'models_cache.json'), 'utf8'));
+    const top = [...(cache.models || [])].filter(m => m.visibility !== 'hide').sort((a, b) => (a.priority ?? 99) - (b.priority ?? 99))[0];
+    if (top?.slug) return top.slug;
+  } catch { /* no cache */ }
+  return CODEX_DEFAULT_MODEL;
+}
+
+/**
+ * The Codex base instructions `init --codex` ships (model_instructions_file): the model's stock text
+ * (`stock`, else the captured copy for `model`) + CODEX_SWEET_APPENDIX; the legacy text when neither exists.
+ */
+export function codexInstructions({ model = CODEX_DEFAULT_MODEL, stock = null } = {}) {
+  const s = stock ?? codexCapturedStock(model);
+  return s ? codexStockPrefixInstructions(s) : codexLegacyInstructions();
 }
 
 // ---------------------------------------------------------------------------------------------
