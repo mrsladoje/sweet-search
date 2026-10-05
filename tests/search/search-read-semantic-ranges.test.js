@@ -120,6 +120,8 @@ async function ssSemantic(args, extra = {}) {
     SWEET_SEARCH_RUNTIME_DIR: path.join(base, 'runtime'),
     SWEET_SEARCH_EXACT_REREAD_OMISSION: '0',
     SWEET_SEARCH_SHOWN_SPAN_TRAILER: '0',
+    // Pin the gutter: without it the form follows the caller's harness (none in Claude Code, "N:" elsewhere).
+    SS_READ_GUTTER: 'none',
     ...extra,
   };
   const r = await runInVirtualProcess({ env, cwd: root }, () => runAgentTool('semantic', args, { getSearcher: () => ({}) }));

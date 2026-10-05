@@ -385,6 +385,13 @@ jobs:
           # failed twice here). model-fetcher sends this only to huggingface.co.
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
 
+      # Pattern search shells out to ripgrep; the runners do not ship it.
+      - name: Install ripgrep
+        run: |
+          if command -v rg >/dev/null; then rg --version | head -1
+          elif [ "$RUNNER_OS" = "macOS" ]; then brew install ripgrep
+          else sudo apt-get update -q && sudo apt-get install -y -q ripgrep; fi
+
       - name: Run unit tests
         run: npm test -- --run
 
