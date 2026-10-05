@@ -619,7 +619,7 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 <img src="assets/tools/ss-grep-io.svg" alt="ss-grep takes the regex session.*expired and returns every file:line hit, with the match highlighted" width="100%" />
 
 ### ⚡ 2× faster than ripgrep, end to end
-> Median over 1,600 queries modelled on 20k real agent greps, on 13 repos of 130 to 63k files
+> Median over 1,600 queries on 13 repos of 130 to 63k files. Query shape distribution is modelled on 20k real agent greps.
 
 <table><tr><td>
 
@@ -629,8 +629,8 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 - 🎯 **Literal filter.** The fixed text is pulled out of the regex, and SIMD intersects the file lists. Only 0.1–5% of files see the real regex.
 - 🦀 **All in-process.** Rust regex runs on all cores inside the warm daemon. No subprocess, no pipes, no JSON parsing.
 
-</td></tr></table>
-<table><tr><td>
+</td></tr>
+<tr><td>
 
 **What makes it rank better**
 
@@ -646,7 +646,7 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 <br/>
 
-- Each file's path prints once, with no header or legend. That is a third fewer tokens than the standard grep shape, with no hit or count lost.
+- Each file's path prints once, with no header or legend. That cut our output by a third, with no hit or count lost.
 - Method, per-repo results and the optimization log: [`docs/GREP_INDEXING_STRATEGY.md`](docs/GREP_INDEXING_STRATEGY.md).
 - A regex with no fixed text (for example `\w+\d`) cannot use the index, so it scans every indexed file.
 
