@@ -132,8 +132,6 @@ sweet-search "where do we validate JWT tokens?"
 
 That's it. From then on, the index updates itself as you work.
 
-*Claude Code:* keep the `sweet-search` output style selected. Claude Code needs it to use sweet-search reliably. `init` turns it on for you; start a new session or run `/clear` afterwards.
-
 To uninstall 😢:
 
 ```bash
