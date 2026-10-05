@@ -550,5 +550,14 @@ describe('codeWithoutCommentsAndStrings', () => {
     drops("x = 'writeA' + \"writeB\"", 'a.py', 'writeA');
     drops('-- writeQ is old\nselect 1', 'a.sql', 'writeQ');
     drops('GRDBPrecondition(!db.x, """\n use DatabasePool.writeWithoutTransaction\n """)', 'a.swift', 'writeWithoutTransaction');
+    // only real interpolation is code (second Codex review)
+    drops('const s = "${dangerousCall()}";', 'a.js', 'dangerousCall');
+    drops("puts '#{not_interpolated()}'", 'a.rb', 'not_interpolated');
+    drops('s = f"{{not_a_field()}}"', 'a.py', 'not_a_field');
+    keeps('val m = "id=${user.id()}"', 'a.kt', 'user.id()');
+    // bounded: a pathological line costs little
+    const t0 = Date.now();
+    blank('const r = /' + '\\"'.repeat(20000) + '/;', 'a.js');
+    expect(Date.now() - t0).toBeLessThan(250);
   });
 });

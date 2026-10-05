@@ -153,16 +153,31 @@ function boundaryScore(entity, queryEvidence, parentClass, gap) {
 }
 
 // Comments and string literals, by language (from the file extension). A name that only
-// appears in them is mentioned, not used — but code inside string interpolation (`${f()}`,
-// Python f-string `{f()}`, Ruby / Elixir `#{f()}`, Swift `\(f())`) is code and stays, and so do
-// C preprocessor lines (`#define X() f()`).
+// appears in them is mentioned, not used — but code inside string interpolation is code and
+// stays, in the languages and quote kinds that interpolate (JS/TS template `${}`, Kotlin /
+// Groovy / Dart / Scala "${}", Ruby / Elixir / Crystal "#{}", Swift "\()", Python f"{}" and
+// C# $"{}" with `{{` escapes), and so do C preprocessor lines (`#define X() f()`).
 // - `#` comments only in languages that have them, anywhere outside a string (`x = 1# note`);
 //   never an attribute (`#[derive]`, `#![...]`, PHP `#[Attr]`).
 // - `--` comments in Lua / SQL / Haskell.
 // - Single-quoted literals except in Rust and OCaml, where `'a` is a lifetime / type variable.
+// Only the first BLANK_MAX_CHARS are scanned (the sibling scan reads at most 256 identifiers),
+// which also bounds the lazy triple-quote alternatives on a pathological line.
+const BLANK_MAX_CHARS = 6000;
 const HASH_COMMENT_EXT_RE = /\.(?:py|pyi|pyw|rb|rake|gemspec|sh|bash|zsh|fish|r|ex|exs|pl|pm|nim|cr|jl|coffee|yml|yaml|toml|php|tcl|cmake|ps1|mk)$|(?:^|\/)(?:Makefile|Rakefile|Gemfile|Dockerfile)$/i;
 const DASH_COMMENT_EXT_RE = /\.(?:lua|sql|hs|lhs|elm|ada|adb|ads|vhd|vhdl)$/i;
 const TICK_IS_NO_QUOTE_RE = /\.(?:rs|mli?)$/i;
+// Interpolation per language: [extension test, opening quote characters that interpolate, field regex].
+const DOLLAR_BRACE_RE = /\$\{((?:[^{}]|\{[^{}]*\})*)\}/g;
+const HASH_BRACE_RE = /#\{((?:[^{}]|\{[^{}]*\})*)\}/g;
+const SWIFT_PAREN_RE = /\\\(((?:[^()]|\([^()]*\))*)\)/g;
+const BRACE_FIELD_RE = /(?<!\{)\{(?!\{)((?:[^{}]|\{[^{}]*\})*)\}/g;
+const INTERPOLATION_RULES = [
+  [/\.(?:[cm]?[jt]sx?|vue|svelte)$/i, '`', DOLLAR_BRACE_RE],
+  [/\.(?:kts?|groovy|gradle|dart|scala|sc)$/i, '"', DOLLAR_BRACE_RE],
+  [/\.(?:rb|rake|ex|exs|cr|coffee)$/i, '"`', HASH_BRACE_RE],
+  [/\.swift$/i, '"', SWIFT_PAREN_RE],
+];
 const BLANKERS = new Map();
 
 function blankerFor(file) {
@@ -181,7 +196,7 @@ function blankerFor(file) {
     ];
     const parts = [
       String.raw`\/\*[\s\S]*?\*\/`,
-      // Strings, with an optional prefix (Python f / r / b, C# $ / @).
+      // Strings, with an optional prefix (Python f / r / b, C# $ / @) not glued to a name.
       String.raw`(?<p>(?<![\w$])[A-Za-z$@]{1,2}|)(?:` + strings.join('|') + ')',
       String.raw`\/\/[^\n]*`,
       ...(hash ? [String.raw`#(?![[!])[^\n]*`] : []),
@@ -192,19 +207,27 @@ function blankerFor(file) {
   return BLANKERS.get(key);
 }
 
-const INTERPOLATION_RE = /\$\{((?:[^{}]|\{[^{}]*\})*)\}|#\{((?:[^{}]|\{[^{}]*\})*)\}|\\\(((?:[^()]|\([^()]*\))*)\)/g;
-const PY_FSTRING_FIELD_RE = /\{([^{}]*)\}/g;
+/** The interpolated code of one string literal (`match` with its `prefix`), for language `file`. */
+function interpolatedCode(match, prefix, file) {
+  const quote = match[prefix.length];
+  const kept = [];
+  for (const [ext, quotes, re] of INTERPOLATION_RULES) {
+    if (ext.test(file) && quotes.includes(quote)) for (const m of match.matchAll(re)) kept.push(m[1]);
+  }
+  // Python f"…" / C# $"…" fields; `{{` / `}}` are literal braces.
+  const py = /\.pyi?$/i.test(file) && /f/i.test(prefix);
+  const cs = /\.cs$/i.test(file) && prefix.includes('$');
+  if (py || cs) for (const m of match.replace(/\{\{|\}\}/g, '  ').matchAll(BRACE_FIELD_RE)) kept.push(m[1]);
+  return kept;
+}
 
 /** The code with its comments and string literals blanked (`file` picks the language rules). */
 export function codeWithoutCommentsAndStrings(code, file = '') {
-  return String(code || '').replace(blankerFor(file), (match, ...args) => {
+  const f = String(file || '');
+  return String(code || '').slice(0, BLANK_MAX_CHARS).replace(blankerFor(f), (match, ...args) => {
     const prefix = args[args.length - 1]?.p;
     if (prefix === undefined) return ' ';           // a comment
-    const kept = [];
-    for (const m of match.matchAll(INTERPOLATION_RE)) kept.push(m[1] ?? m[2] ?? m[3] ?? '');
-    // Python f"{x}" and C# $"{x}" fields.
-    if (/[f$]/i.test(prefix)) for (const m of match.matchAll(PY_FSTRING_FIELD_RE)) kept.push(m[1]);
-    return ` ${prefix} ${kept.join(' ')} `;
+    return ` ${prefix} ${interpolatedCode(match, prefix, f).join(' ')} `;
   });
 }
 
