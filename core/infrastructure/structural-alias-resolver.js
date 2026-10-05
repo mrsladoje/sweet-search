@@ -119,9 +119,22 @@ function importingFiles(db, targetFile, entitySql, entityParams) {
  * serde_json's lib.rs docs (`//!     let v = serde_json::from_str(data)?;`)
  * were listed as callers of from_str.
  */
-function inLineComment(text, index) {
+function inLineComment(text, index, filePath = '') {
   const prefix = text.slice(text.lastIndexOf('\n', index - 1) + 1, index);
-  return /\/\/|^\s*(?:\/\*|\*)/.test(prefix);
+  if (/^\s*(?:\/\*|\*)/.test(prefix)) return true;
+  // `//` outside string literals only: `fetch("https://x", f(y))` is code.
+  // Rust `'` opens a lifetime more often than a char, so only `"` quotes there.
+  const quotes = /\.rs$/.test(filePath) ? '"' : '"\'`';
+  let quote = null;
+  for (let i = 0; i < prefix.length; i++) {
+    const c = prefix[i];
+    if (quote) {
+      if (c === '\\') i++;
+      else if (c === quote) quote = null;
+    } else if (quotes.includes(c)) quote = c;
+    else if (c === '/' && prefix[i + 1] === '/') return true;
+  }
+  return false;
 }
 
 export function findAliasCallers({
@@ -177,7 +190,7 @@ export function findAliasCallers({
     for (const pattern of patterns) {
       const re = pattern.re;
       for (const match of text.matchAll(re)) {
-        if (inLineComment(text, match.index || 0)) continue;
+        if (inLineComment(text, match.index || 0, filePath)) continue;
         const line = lineOfIndex(text, match.index || 0);
         let entity = entityAtLine.get(...entityParams, filePath, line, line);
         if (!entity && fileNodeAt) {

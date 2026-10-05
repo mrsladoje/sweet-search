@@ -888,3 +888,54 @@ describe('round 13 — private members, abstract declarations, C# tuple returns'
     expect('        return Foo(x);'.match(re)).toBeNull();
   });
 });
+
+describe('overnight audit — fresh-repo regressions (scala-xml, ecto)', () => {
+  const extract = async (file, src) => new GraphExtractor({}).extractFromFile(file, src.join('\n'));
+  const spans = (r) => r.entities.map((e) => `${e.type} ${e.name} ${e.start_line}-${e.end_line}`);
+
+  it('Scala: a header continued on later lines (`extends` / `with` / a lone `{`) keeps its body', async () => {
+    const r = await extract('xml/MetaData.scala', [
+      'abstract class MetaData',
+      '  extends AbstractIterable[MetaData]',
+      '  with Equality',
+      '{',
+      '  def isNull: Boolean = this.eq(Null)',
+      '}',
+      'class Parser(val input: Source)',
+      '  extends Handler',
+      '  with Markup',
+      'sealed abstract class Decl',
+      'class Loader(x: Int)',
+      '    extends Base(x) {',
+      '  def load() = read()',
+      '}',
+    ]);
+    expect(spans(r)).toEqual(expect.arrayContaining([
+      'class MetaData 1-6', 'class Parser 7-9', 'class Decl 10-10', 'class Loader 11-14',
+    ]));
+  });
+
+  it('Scala: `package object` and annotations with type arguments or nested parentheses are definitions', async () => {
+    const r = await extract('xml/package.scala', [
+      'package object xml {',
+      '  val Name = "x"',
+      '}',
+      '@throws[IOException] def readAll(): String = in.read()',
+      '@deprecated("use g (not f)", "2.0") def f(): Int = 1',
+    ]);
+    expect(r.entities.map((e) => `${e.type} ${e.name}`)).toEqual(expect.arrayContaining(['object xml', 'def readAll', 'def f']));
+  });
+
+  it('Elixir: a `fn:` keyword key opens no block', async () => {
+    const r = await extract('lib/a.ex', [
+      'defmodule A do',
+      '  def opts(x) do',
+      '    [fn: x, other: 1]',
+      '  end',
+      '',
+      '  def next(y), do: y',
+      'end',
+    ]);
+    expect(spans(r)).toEqual(expect.arrayContaining(['function opts 2-4']));
+  });
+});
