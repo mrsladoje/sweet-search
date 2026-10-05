@@ -113,6 +113,17 @@ function importingFiles(db, targetFile, entitySql, entityParams) {
   return [...out].sort().map(file_path => ({ file_path }));
 }
 
+/**
+ * The match sits in a comment: after `//` on its line (Rust `///` / `//!`
+ * doc examples, JS line comments) or on a block-comment line (`/*`, ` * `).
+ * serde_json's lib.rs docs (`//!     let v = serde_json::from_str(data)?;`)
+ * were listed as callers of from_str.
+ */
+function inLineComment(text, index) {
+  const prefix = text.slice(text.lastIndexOf('\n', index - 1) + 1, index);
+  return /\/\/|^\s*(?:\/\*|\*)/.test(prefix);
+}
+
 export function findAliasCallers({
   db,
   target,
@@ -166,6 +177,7 @@ export function findAliasCallers({
     for (const pattern of patterns) {
       const re = pattern.re;
       for (const match of text.matchAll(re)) {
+        if (inLineComment(text, match.index || 0)) continue;
         const line = lineOfIndex(text, match.index || 0);
         let entity = entityAtLine.get(...entityParams, filePath, line, line);
         if (!entity && fileNodeAt) {

@@ -64,6 +64,19 @@ describe('findAliasCallers reads only files that import the target', () => {
     expect(reads).toEqual(['app/main.js']);
   });
 
+  it('a call in a comment (doc example, line or block comment) is no caller', () => {
+    // Same span as main (lines 2-4) in the indexed app/main.js.
+    const text = [
+      "import { add as plus } from '../lib/math';",
+      'export function main() { // plus(9, 9) in a line comment',
+      '   * plus(7, 7) on a block-comment line',
+      '  return plus(1, 2); }',
+    ].join('\n');
+    const target = { id: 't', name: 'add', filePath: 'lib/math.js' };
+    const callers = findAliasCallers({ db, target, readFileRange: () => text });
+    expect(callers.map(c => `${c.filePath}:${c.contextLine}`)).toEqual(['app/main.js:4']);
+  });
+
   it('a target in a language without alias forms reads nothing', () => {
     const reads = [];
     expect(findAliasCallers({ db, target: { id: 'p', name: 'add', filePath: 'py/tool.py' }, readFileRange: reader(reads) })).toEqual([]);
