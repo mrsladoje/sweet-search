@@ -800,23 +800,14 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 ### 📖 Read the code, see what you skipped
 > Give `ss-read` a file and a line range. It reads from disk, so the code is always current, and it names what the agent has not read yet.
 
-<table width="100%">
-<tr><td width="100%" valign="top">
-
-**🧭 Above, below, already read**
-
-- ***Below:*** the functions after the range, with their line range.
-- ***Above:*** fields and constants the code uses but the agent has not seen.
-- ***Already read:*** unchanged lines come back as a one-line reminder.
-
-</td></tr>
-</table>
-
 <details>
 <summary><b>More</b></summary>
 
 <br/>
 
+- ***Below:*** the functions after the range, with their line range.
+- ***Above:*** fields and constants the code uses but the agent has not seen.
+- ***Already read:*** unchanged lines come back as a one-line reminder.
 - `10-20`, `10:20` and `40 5` (5 lines from line 40) also work as ranges.
 - Minified and generated files are refused.
 - Set the line-number format with `SS_READ_GUTTER=tab|colon|none`.
