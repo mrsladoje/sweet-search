@@ -139,6 +139,44 @@ describe('ss-trace callees of a type = its methods\' calls out of the type', () 
     expect(calleeNames(r)).toContain('leaseIds');
   });
 
+  it('a resolved call in a field initialiser does not stop the gathering (Codex review)', async () => {
+    const g = await buildGraph({
+      'c.kt': [
+        'fun initHelper(): Int = 1',
+        'fun methodHelper(): Int = 2',
+        'class C {',
+        '  val x = initHelper()',
+        '  fun run(): Int {',
+        '    return methodHelper()',
+        '  }',
+        '}',
+      ],
+    });
+    const r = trace(g, 'C', { modeSection: 'callees' });
+    expect(calleeNames(r)).toContain('methodHelper');
+  });
+
+  it('Go: a receiver method in another directory counts only when no other type has the name', async () => {
+    const files = {
+      'zero/zero.go': ['package zero', '', 'type Server struct {', '\tn int', '}'],
+      'zero/ext/more.go': [
+        'package ext',
+        '',
+        'func (s *Server) Extra() int {',
+        '\treturn helperFar()',
+        '}',
+        '',
+        'func helperFar() int {',
+        '\treturn 1',
+        '}',
+      ],
+    };
+    const unique = await buildGraph(files);
+    expect(calleeNames(trace(unique, 'Server', { modeSection: 'callees', filePath: 'zero/zero.go' }))).toContain('helperFar');
+    const twin = await buildGraph({ ...files, 'alpha/server.go': ['package alpha', '', 'type Server struct {', '\tm int', '}'] });
+    expect(calleeNames(trace(twin, 'Server', { modeSection: 'callees', filePath: 'zero/zero.go' }))).not.toContain('helperFar');
+  });
+
   it('a function target is unchanged (no member gathering)', async () => {
     const g = await buildGraph({
       'a.go': ['package a', '', 'func Outer() int {', '\treturn inner()', '}', '', 'func inner() int {', '\treturn 1', '}'],

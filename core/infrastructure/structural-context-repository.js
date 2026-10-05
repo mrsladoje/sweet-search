@@ -22,6 +22,8 @@ const MEMBER_CALLABLE_TYPES = new Set([
   'objectArrow', 'objectMethod', 'procedure', 'subroutine', 'def', 'func', 'proc', 'private',
   'shortFunction', 'assignedFunc', 'getter', 'setter',
 ]);
+// Entity types that can own methods (getMemberCallables' namesake count).
+const OWNER_TYPE_TYPES = new Set(['class', 'struct', 'interface', 'enum', 'trait', 'protocol', 'record', 'object', 'actor', 'type', 'module']);
 const likeEscape = (text) => String(text).replace(/[!%_]/g, (c) => `!${c}`);
 const lastSegment = (name) => String(name || '').split(/::|\.|#/).pop();
 
@@ -884,31 +886,46 @@ export class StructuralContextRepository {
 
   /**
    * The callables of a type: definitions inside its body (methods, constructors, nested
-   * functions), plus methods declared with the type as their owner in the same directory
-   * (Go receiver methods, Rust `impl` blocks, Swift / Kotlin extensions), in line order.
+   * functions), plus methods declared with the type as their owner outside the body (Go
+   * receiver methods, Rust `impl` blocks, Swift / Kotlin extensions, C# partial and Ruby
+   * reopened classes). An owner written qualified (`Outer.Inner`, `mod::Inner`) counts. Outside
+   * the body the owner name must be unambiguous: when other types share the name, only the
+   * type's own directory counts. In line order, the type's own file first.
    * ss-trace lists a class's callees through them: a class body calls nothing itself.
    */
   getMemberCallables(target, opts = {}) {
     const db = this._open();
     if (!db || !target?.id || !target.filePath || !target.name
       || !Number.isInteger(target.startLine) || !Number.isInteger(target.endLine)) return [];
-    const limit = clampLimit(opts.limit, 60, 200);
+    const limit = clampLimit(opts.limit, 60, 5000);
     const types = [...MEMBER_CALLABLE_TYPES];
+    const ownerTypes = [...OWNER_TYPE_TYPES];
     const dir = path.posix.dirname(target.filePath);
     const dirPrefix = dir === '.' ? '' : `${dir}/`;
     try {
+      const namesakes = db.prepare(`
+        SELECT COUNT(*) AS n FROM entities e
+        WHERE e.name = ? AND e.type IN (${placeholders(ownerTypes)}) AND ${this._entitySql(db, 'e')}
+      `).get(target.name, ...ownerTypes, ...this._entityParams(db))?.n ?? 0;
+      const anywhere = namesakes <= 1;
+      const owner = `(e.parent_class = ? OR e.parent_class LIKE ? ESCAPE '!' OR e.parent_class LIKE ? ESCAPE '!')`;
+      const ownerParams = [target.name, `%.${likeEscape(target.name)}`, `%::${likeEscape(target.name)}`];
+      const where = anywhere
+        ? owner
+        : `(${owner} AND e.file_path LIKE ? ESCAPE '!' AND e.file_path NOT LIKE ? ESCAPE '!')`;
+      const whereParams = anywhere
+        ? ownerParams
+        : [...ownerParams, `${likeEscape(dirPrefix)}%`, `${likeEscape(dirPrefix)}%/%`];
       const rows = db.prepare(`
         SELECT e.id, e.name, e.type, e.file_path, e.start_line, e.end_line,
                e.signature, e.summary, e.parent_class, e.package
         FROM entities e
         WHERE e.id <> ? AND e.type IN (${placeholders(types)}) AND ${this._entitySql(db, 'e')}
-          AND ((e.file_path = ? AND e.start_line >= ? AND e.end_line <= ?)
-            OR (e.parent_class = ? AND e.file_path LIKE ? ESCAPE '!' AND e.file_path NOT LIKE ? ESCAPE '!'))
+          AND ((e.file_path = ? AND e.start_line >= ? AND e.end_line <= ?) OR ${where})
         ORDER BY e.file_path = ? DESC, e.file_path, e.start_line
         LIMIT ?
       `).all(target.id, ...types, ...this._entityParams(db),
-        target.filePath, target.startLine, target.endLine,
-        target.name, `${likeEscape(dirPrefix)}%`, `${likeEscape(dirPrefix)}%/%`,
+        target.filePath, target.startLine, target.endLine, ...whereParams,
         target.filePath, limit);
       // Methods of a nested type belong to that type (Kotlin `inner class AsyncCall` in RealCall).
       return rows.map((row) => this._entityFromRow(row))
