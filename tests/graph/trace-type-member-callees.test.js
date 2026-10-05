@@ -86,6 +86,7 @@ describe('ss-trace callees of a type = its methods\' calls out of the type', () 
       ],
       'call/Call.kt': [
         'class Call(val pool: Pool) {',
+        '  private val timeout = Timeouts.makeTimeout()', // the class's own (unresolved) call row
         '  fun callDone(): Boolean {',
         '    release()',
         '    return pool.connectionBecameIdle(1)',
@@ -105,7 +106,7 @@ describe('ss-trace callees of a type = its methods\' calls out of the type', () 
     expect(r.target.name).toBe('Call');
     const names = calleeNames(r);
     expect(names).toEqual(['connectionBecameIdle']);  // not `release` (own method), not `evictAll` (nested type's call)
-    expect(r.sections.callees.items.find((x) => x.name === 'connectionBecameIdle').contextLines).toEqual([4, 7]);
+    expect(r.sections.callees.items.find((x) => x.name === 'connectionBecameIdle').contextLines).toEqual([5, 8]);
     expect(r.sections.callees.viaMembers).toBeGreaterThanOrEqual(2);
     const out = formatTraceCompact(r, { mode: 'callees' });
     expect(out).toMatch(/# calls out of Call's \d+ methods/);
