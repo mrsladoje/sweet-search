@@ -417,7 +417,7 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 
 <div align="center">
 
-<img src="assets/paper-bench-stats.svg" alt="Academic retrieval benchmarks, full-corpus MRR@10, zero-shot. GenCodeSearchNet 86.1 on 2,400 held-out queries, tuned on the dev split so no SOTA claim. CoSQA 65.5, zero-shot SOTA. M2CRB 54.0, SOTA. AdvTest 51.4, not SOTA." width="100%" />
+<img src="assets/paper-bench-stats.svg" alt="Academic retrieval benchmarks, full-corpus MRR@10, zero-shot. GenCodeSearchNet 86.5 on 2,400 held-out queries, tuned on the dev split so no SOTA claim. CoSQA 65.4, zero-shot SOTA. M2CRB 54.4, SOTA. AdvTest 51.6, not SOTA." width="100%" />
 
 <sub>MRR@10 · SOTA = best published result we can find, rechecked September 2026 · GCSN held-out only: we tuned ranking on its dev split</sub>
 
@@ -426,29 +426,30 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 <details>
 <summary><b>Per-benchmark notes & methodology</b></summary>
   
-#### 🌐 GenCodeSearchNet → `86.1` held-out · 🔧 our tuning benchmark
-- We tuned ranking on a dev split (600 queries per language, stratified, seed=42). The table shows only the other 2,400 held-out queries, inspected aggregate-only. Dev scores 86.9; both splits together score 86.6.
+#### 🌐 GenCodeSearchNet → `86.5` held-out · 🔧 our tuning benchmark
+- We tuned ranking on a dev split (600 queries per language, stratified, seed=42). The table shows only the other 2,400 held-out queries, inspected aggregate-only. Dev scores 87.0; both splits together score 86.8.
 - The paper's baselines (≤ 0.42 fine-tuned, 0.79–0.94 zero-shot Ada-2) rank against 99 distractors. Ours ranks against all 6,000 documents, so the numbers aren't directly comparable.
 
-#### 🐍 CoSQA → `65.5` · 🥇 zero-shot SOTA
+#### 🐍 CoSQA → `65.4` · 🥇 zero-shot SOTA
 - 500 real web queries against the fixed 6,267-code database.
-- Beats every published zero-shot model: CodeSage-Large `47.5` · OpenAI text-embedding-3-large `55.4` · OASIS `55.8`. Close to *fine-tuned* CodeBERT / GraphCodeBERT (`64.7` / `67.5`).
+- Beats every published zero-shot model: CodeSage-Large `47.5` · OpenAI text-embedding-3-large `55.4` · OASIS `55.8`. Between *fine-tuned* CodeBERT and GraphCodeBERT (`64.7` / `67.5`).
 - CoSQA has known label noise, so read the absolute height with a pinch of salt.
 
-#### 🗺️ M2CRB → `54.0` · 🏆 SOTA
+#### 🗺️ M2CRB → `54.4` · 🏆 SOTA
 - 🇪🇸 Spanish · 🇵🇹 Portuguese · 🇩🇪 German · 🇫🇷 French queries → Python / Java / JavaScript.
-- The paper's best is a fine-tuned CodeBERT at **52.7 auMRRc**. That metric averages over easier, smaller pools, so `auMRRc ≥ full-pool MRR` for any model. Our 54.0 is full-pool MRR@10 over all 5,795 functions, zero-shot.
+- The paper's best is a fine-tuned CodeBERT at **52.7 auMRRc**. That metric averages over easier, smaller pools, so `auMRRc ≥ full-pool MRR` for any model. Our 54.4 is full-pool MRR@10 over all 5,795 functions, zero-shot.
 
-#### 🛡️ AdvTest → `51.4`
-- Still beats the classic fine-tuned baselines (CodeBERT `27` · GraphCodeBERT `35` · UniXcoder `41`), and our stack lifts our own encoder ~3pp even here.
-- We could not reproduce the often-cited `59.5` for bare CodeRankEmbed. The reference FP32 model scores **54.7** on our leak-free corpus and our shipped INT8 build **51.4**. The gap is stricter preprocessing plus INT8 quantization, not the retrieval pipeline.
+#### 🛡️ AdvTest → `51.6`
+- Beats the classic fine-tuned baselines (CodeBERT `27` · GraphCodeBERT `35` · UniXcoder `41`).
+- Our pipeline adds about 3 points over our bare encoder (`48.5`), even on obfuscated code.
+- The often-cited `59.5` for bare CodeRankEmbed is MRR@1000 on less strictly prepared data. Ours is MRR@10 on a leak-free corpus.
 
 #### 📐 Methodology
-- **Reproduction:** result artifacts live in [`eval/results/`](eval/results/); rerun via `eval/run_all.js`. The canonical full-pool loaders are in `eval/download_data.py`.
+- **Reproduction:** the result file for each headline number is in [`eval/results/`](eval/results/). Rerun one with `node eval/run_benchmark.js --dataset=<name> --profile=full` (add `--split=heldout` for GenCodeSearchNet). The canonical full-pool loaders are in `eval/download_data.py`.
 - **Docstring stripping.** For docstring-derived benchmarks (AdvTest, M2CRB) we strip the docstring from the indexed code. Otherwise the query matches itself verbatim: a no-strip AdvTest run scores a meaningless 0.98.
 - **Dev/held-out split.** Ranking work iterates on a fixed, stratified dev split (seed=42); the rest is held-out and inspected aggregate-only at milestones. We did not tune ranking on CoSQA, M2CRB or AdvTest.
-- **What we don't claim yet.** CoIR (NDCG@10 over per-subtask corpora up to ~1M docs), CoSQA+ (multi-positive, MAP-primary) and CLARC (per-group pools) use protocols our single-pool MRR@10 harness doesn't match, so we omit them. Faithful per-subtask CoIR runs are queued.
-- **Honesty corner:** CrossCodeEval (cross-file *completion-context* retrieval, a different task than NL search) sits at 0.12. We don't optimize for it and report it anyway.
+- **What we don't claim yet.** CoIR (NDCG@10 over per-subtask corpora up to ~1M docs), CoSQA+ (multi-positive, MAP-primary) and CLARC (per-group pools) use protocols our single-pool MRR@10 harness doesn't match, so we omit them.
+- **Honesty corner:** CrossCodeEval (cross-file *completion-context* retrieval, a different task than NL search) sits at 0.18. We don't optimize for it and report it anyway.
 
 </details>
 

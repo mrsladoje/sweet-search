@@ -1,0 +1,321 @@
+{
+  "timestamp": "2026-10-05T16:24:51.144Z",
+  "dataset": "cosqa",
+  "queryCount": 500,
+  "corpusSize": 6267,
+  "searchMode": "auto",
+  "totalTimeMs": 27215,
+  "errors": 0,
+  "config": {
+    "profile": "full",
+    "k": 20,
+    "useLateInteraction": true,
+    "buildLateInteraction": true,
+    "lateInteractionModel": null,
+    "graphExpand": "none",
+    "stage3Candidates": 30,
+    "stage3CandidatesProductionDefault": 30,
+    "cascadeEnabled": false,
+    "embedTextVariant": "current",
+    "vocabAutoExpand": false,
+    "vocab": {
+      "useVocabulary": false,
+      "autoExpand": false,
+      "maxTerms": 10000,
+      "path": "/root/sweet-search-private/eval/corpus/cosqa/.sweet-search/query-vocabulary.json",
+      "termCount": 0,
+      "metadata": {
+        "schemaVersion": 3,
+        "provider": null,
+        "model": null,
+        "dimension": null,
+        "created": null,
+        "lastUpdated": null
+      }
+    },
+    "concurrency": 1,
+    "maxQueries": 500,
+    "skipIndex": true,
+    "ablations": null,
+    "split": "all"
+  },
+  "aggregate": {
+    "mrr_at_10": 0.6543,
+    "ndcg_at_10": 0.7076,
+    "map_at_10": 0.6543,
+    "recall_at_5": 0.83,
+    "recall_at_10": 0.87,
+    "recall_at_20": 0.886,
+    "recall_at_50": 0.886,
+    "recall_at_100": 0.886,
+    "gold_missing_top10_rate": 0.13,
+    "gold_missing_top100_rate": 0.114,
+    "success_at_1": 0.526,
+    "success_at_5": 0.83,
+    "latency_p50_ms": 41.6077,
+    "latency_p95_ms": 50.7754,
+    "latency_mean_ms": 42.6644
+  },
+  "perLanguage": {
+    "python": {
+      "count": 500,
+      "mrr_at_10": 0.6543,
+      "ndcg_at_10": 0.7076,
+      "map_at_10": 0.6543,
+      "recall_at_5": 0.83,
+      "recall_at_10": 0.87,
+      "recall_at_20": 0.886,
+      "recall_at_50": 0.886,
+      "recall_at_100": 0.886,
+      "gold_missing_top10_rate": 0.13,
+      "gold_missing_top100_rate": 0.114,
+      "success_at_1": 0.526,
+      "success_at_5": 0.83,
+      "latency_p50_ms": 41.6077,
+      "latency_p95_ms": 50.7754,
+      "latency_mean_ms": 42.6644
+    }
+  },
+  "failedQueries": [
+    {
+      "queryId": "CQ00002",
+      "query": "declaring empty numpy array in python",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00003",
+      "query": "test for iterable is string in python",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00005",
+      "query": "how to save header of fits file to export python",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00007",
+      "query": "python numpy array as float",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00008",
+      "query": "input string that replaces occurences python",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00013",
+      "query": "python raise without parentheses",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00014",
+      "query": "how to seperate list with commas python",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00015",
+      "query": "python asynchronous function call return",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00016",
+      "query": "how to make a seconds to time in python",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00017",
+      "query": "python cast true or false as numbers",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00018",
+      "query": "add milliseconds to datetime python",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00021",
+      "query": "how to get domain part of a url in python",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "queryId": "CQ00022",
+      "query": "python flatten a nested dictionaary",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00024",
+      "query": "python save graph into file",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00026",
+      "query": "add suffixes on concat python",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00027",
+      "query": "how to check python object iterable",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00029",
+      "query": "how to indent self python",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00030",
+      "query": "tracking centroid of an object python",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CQ00035",
+      "query": "how to tell what type of data object is in python",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "queryId": "CQ00036",
+      "query": "python jsonschema validate schema file",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        1,
+        0,
+        0
+      ]
+    }
+  ]
+}
