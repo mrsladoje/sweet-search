@@ -285,3 +285,26 @@ describe('call scanning for languages without a registry methodCall pattern', ()
     expect(scan('julia', ['area(r) = pi * r^2', 'total = area(2) + perimeter(3)']).b).toEqual(['area', 'perimeter']);
   });
 });
+
+describe('round 16 — Swift module scope, Ruby mixin calls', () => {
+  const ent = (id, name, file, extra = {}) => ({ id, name, file_path: file, type: 'function', start_line: 1, end_line: 5, parent_class: null, signature: '', ...extra });
+
+  it('Swift: a free function in another file of the same top-level directory is visible; another module is not', () => {
+    const caller = ent('c', 'makeStatement', 'GRDB/QueryInterface/SQLQueryGenerator.swift', { type: 'method', parent_class: 'SQLQueryGenerator' });
+    const free = ent('f', 'prefetchedRegion', 'GRDB/QueryInterface/Request/QueryInterfaceRequest.swift');
+    const other = ent('o', 'prefetchedRegion', 'Tests/GRDBTests/Helpers.swift');
+    const idx = createCallResolutionIndex([caller, free, other], {});
+    expect(resolveBareCall(caller, [free, other], idx).map(c => c.id)).toEqual(['f']);
+    const testCaller = ent('t', 'testX', 'Tests/GRDBTests/FooTests.swift');
+    expect(resolveBareCall(testCaller, [free, other], createCallResolutionIndex([testCaller, free, other], {})).map(c => c.id)).toEqual(['o']);
+  });
+
+  it('Ruby: a bare call no scope binds reports the methods of that name as possible targets', () => {
+    const caller = ent('c', '_returning_values', 'lib/sequel/adapters/shared/sqlite.rb', { type: 'method', parent_class: 'DatasetMethods' });
+    const a = ent('a', 'split_symbol', 'lib/sequel/dataset/sql.rb', { type: 'method', parent_class: 'Dataset' });
+    const b = ent('b', 'split_symbol', 'lib/sequel/core.rb', { type: 'method', parent_class: 'SequelMethods' });
+    const info = {};
+    expect(resolveBareCall(caller, [a, b], createCallResolutionIndex([caller, a, b], {}), info)).toEqual([]);
+    expect(info.ambiguous.map(c => c.id).sort()).toEqual(['a', 'b']);
+  });
+});

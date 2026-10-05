@@ -861,7 +861,7 @@ export class StructuralContextBuilder {
     // come from indexed call sites (scope-resolved), so they count as stored,
     // not as the same-file text scan. Indexed items carry every site line
     // (call_lines / call_sites); one item per calling entity and relationship.
-    const bareCallers = this.repo.getBareCallers?.(target, { limit: 80 }) || [];
+    const bareCallers = this.repo.getBareCallers?.(target, { limit: 80, ambiguous: unresolvedNamed }) || [];
     // Calls through the method this one overrides or implements reach it by dispatch
     // (okhttp `chain.proceed(request)` binds to the interface `Interceptor.Chain.proceed`;
     // its implementation `RealInterceptorChain.proceed` otherwise had no production caller).

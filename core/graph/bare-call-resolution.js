@@ -36,6 +36,9 @@ const PACKAGE = 'package';
 const GLOBAL = 'global';
 // Elixir `import Plug.Conn`: the functions of that module, called bare.
 const MODULE_IMPORTS = 'moduleImports';
+// Swift: a free function is visible in every file of its module (target). The
+// top-level directory stands in for the module (GRDB/…, Sources/X/…, Tests/…).
+const MODULE_ROOT = 'moduleRoot';
 
 const SCOPES_BY_LANGUAGE = {
   python: [FILE, IMPORTS],
@@ -50,7 +53,7 @@ const SCOPES_BY_LANGUAGE = {
   scala: [OWNER, FILE, IMPORTS],
   // No global tier where overloads resolve by argument type and share names
   // with the standard library (Swift `min(a, b)` is not a repo `min`).
-  swift: [OWNER, FILE],
+  swift: [OWNER, FILE, MODULE_ROOT],
   dart: [OWNER, FILE, IMPORTS],
   groovy: [OWNER, FILE],
   ruby: [OWNER, FILE, IMPORTS],
@@ -91,6 +94,14 @@ function dirOf(filePath) {
   const p = String(filePath || '');
   const slash = p.lastIndexOf('/');
   return slash >= 0 ? p.slice(0, slash) : '';
+}
+
+/** `Sources/X/a/b.swift` → `Sources/X/`, `GRDB/a/b.swift` → `GRDB/`, `b.swift` → ``. */
+function moduleRootOf(filePath) {
+  const parts = String(filePath || '').split('/');
+  if (parts.length < 2) return '';
+  const depth = /^(?:Sources|Tests)$/.test(parts[0]) && parts.length > 2 ? 2 : 1;
+  return `${parts.slice(0, depth).join('/')}/`;
 }
 
 function stemOf(filePath) {
@@ -135,7 +146,7 @@ function asDecision(tier, ownerOf, preferNonTest) {
  * @param {{ ownerOf: Function, importsOf: Function }} index
  * @returns {object[]} the chosen overload set (empty = unresolved)
  */
-export function resolveBareCall(caller, candidates, index) {
+export function resolveBareCall(caller, candidates, index, info = null) {
   if (!caller || !candidates || candidates.length === 0) return [];
   const { ownerOf, importsOf } = index;
   const language = languageOfPath(caller.file_path);
@@ -184,6 +195,9 @@ export function resolveBareCall(caller, candidates, index) {
       const modules = index.moduleImportsOf?.(caller.file_path);
       if (!modules || modules.size === 0) continue;
       tier = pool.filter(c => modules.has(ownerOf(c)));
+    } else if (scope === MODULE_ROOT) {
+      const root = moduleRootOf(caller.file_path);
+      tier = ownerless.filter(c => moduleRootOf(c.file_path) === root);
     } else if (scope === PACKAGE) {
       const dir = dirOf(caller.file_path);
       tier = ownerless.filter(c => dirOf(c.file_path) === dir);
@@ -193,7 +207,17 @@ export function resolveBareCall(caller, candidates, index) {
       tier = ownerless.filter(c => sameFamily(languageOfPath(c.file_path)) && !FILE_PRIVATE_SIGNATURE.test(c.signature || ''));
     }
     if (tier.length === 0) continue;
-    return asDecision(tier, ownerOf, preferNonTest) || [];
+    const decision = asDecision(tier, ownerOf, preferNonTest) || [];
+    // Several owners fit at the nearest scope: no edge, but `info` keeps who could be meant.
+    if (decision.length === 0 && info) info.ambiguous = tier;
+    return decision;
+  }
+  // Ruby: a method's bare call also reaches methods mixed into its class, and a module's
+  // bare call reaches the class that includes it (sequel's DatasetMethods calls
+  // `split_symbol(c)` of Dataset). No scope can tell which: every method of the name could be meant.
+  if (info && language === 'ruby' && callerOwner) {
+    const owned = pool.filter(c => ownerOf(c));
+    if (owned.length > 0) info.ambiguous = owned;
   }
   return [];
 }
@@ -337,7 +361,7 @@ export class BareCallResolver {
   }
 
   /** Entities whose bare calls resolve to `target`: [{ caller row, contextLine }]. */
-  callersOf(target, { limit = 120 } = {}) {
+  callersOf(target, { limit = 120, ambiguous = null } = {}) {
     if (!this.available || !target?.id || !target?.name || !BARE_CALLABLE_TYPES.has(target.type)) return [];
     const sitesFrom = (source) => this.db.prepare(`
       SELECT ${ENTITY_COLS}, e.summary, e.package, cs.context_line AS context_line
@@ -363,10 +387,16 @@ export class BareCallResolver {
     for (const site of sites) {
       let hit = hitsTarget.get(site.id);
       if (hit === undefined) {
-        hit = resolveBareCall(site, candidates, index).some(c => c.id === target.id);
+        const info = {};
+        hit = resolveBareCall(site, candidates, index, info).some(c => c.id === target.id);
+        // A call that could reach the target or another definition of its name (a Ruby
+        // mixin module's `split_symbol(c)`): the caller hears of it as unresolved.
+        if (!hit && info.ambiguous?.some(c => c.id === target.id)) hit = 'ambiguous';
         hitsTarget.set(site.id, hit);
       }
-      if (hit) out.push(site);
+      if (hit === 'ambiguous') {
+        if (ambiguous && ambiguous.length < limit) ambiguous.push(site);
+      } else if (hit) out.push(site);
       if (out.length >= limit) break;
     }
     return out;
