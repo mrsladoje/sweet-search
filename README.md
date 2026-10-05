@@ -123,7 +123,7 @@ npm install -g sweet-search
 
 cd your-repo
 sweet-search init      # one-time: wires up Claude Code
-                       # Codex: --codex · Opencode: --opencode
+                       # Codex: --codex · opencode: --opencode
                        # several: --claude --codex --opencode
 
 sweet-search index     # builds the index — GPU-accelerated where available
