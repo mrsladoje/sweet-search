@@ -795,7 +795,7 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 <a id="tool-ss-read"></a>
 ### <img src="assets/tools/ss-read.svg" width="40" align="center" alt="" /> 6. `ss-read`: read files from disk
 
-<img src="assets/tools/ss-read-io.svg" alt="ss-read takes src/db/pool.js lines 120 to 150. It returns those lines with line numbers, names maxIdle declared above them, and names release and drain below them with the command to read them." width="100%" />
+<img src="assets/tools/ss-read-io.svg" alt="ss-read takes src/db/pool.js lines 120 to 150. It returns those lines with line numbers, names maxIdle declared above them, and names release and drain below them with their line range." width="100%" />
 
 ### 📖 Read the code, see what you skipped
 > Give `ss-read` a file and a line range. It reads from disk, so the code is always current, and it names what the agent has not read yet.
@@ -805,14 +805,14 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 **🔢 Line numbers that fit the agent**
 
-- Claude Code gets `12<TAB>`, opencode and Cursor get `12:`, Codex gets none. Each matches that agent's edit tool.
-- Each format was benchmarked per agent to cut failed edits.
+- Claude Code, Codex and opencode get plain code, Cursor gets `12:`. Each matches that agent's edit tool.
+- Each format was chosen to cut failed edits, and tested on Claude Code, Codex and opencode.
 
 </td><td width="50%" valign="top">
 
 **🧭 Above, below, already read**
 
-- ***Below:*** the functions after the range, and the command to read them.
+- ***Below:*** the functions after the range, with their line range.
 - ***Above:*** fields and constants the code uses but the agent has not seen.
 - ***Already read:*** unchanged lines come back as a one-line reminder.
 
