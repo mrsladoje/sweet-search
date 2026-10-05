@@ -1452,9 +1452,16 @@ export const GREP_HIT_TEXT_MAX = 140;
  * A/B (core/prompt-optimization/data/obs-loop/TRACES-diet1.md): 18 broad greps saved ~256 chars
  * each, with no re-grep, no extra read and no misread. On a flood the ranking picks which lines
  * show; the line's head around the match is enough to tell them apart.
+ *
+ * 80, not 60 (2026-10-05): a 60-char window cut the condition that decides a line's meaning
+ * (sequel `@fast_pk_lookup_sql = … = nil unles…`; the agent spent an ss-read on it, r282 opencode
+ * sequel-08). Over 321,338 code lines of the 11 r3 repos (150 files each, seed 42), a window
+ * cuts 17.5% of lines at 60, 5.2% at 80, 1.5% at 100; the mean printed line is 33.6, 35.8 and
+ * 36.4 chars (36.7 at the 140 default). 80 keeps ~70% of the 60-char saving and cuts 3.4x fewer
+ * lines; one avoided read pays for ~100 hit lines of the difference.
  */
 export const GREP_BROAD_MIN_HITS = 50;
-export const GREP_BROAD_HIT_CHARS = 60;
+export const GREP_BROAD_HIT_CHARS = 80;
 
 /**
  * The grepHitText `max` for a grep with `total` matches (undefined = the default window).
