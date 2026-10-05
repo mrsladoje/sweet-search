@@ -15,10 +15,10 @@ import { runAgentTool } from '../../eval/agent-read-workflows/bin/_ss-helpers.mj
 
 const FILE = 'src/Call.kt';
 const JFILE = 'src/Svc.java';
-// `void a` 1-10, `@First @Second @Third @Fourth` 12-15, `void target` 16-30, filler to 60.
+// `void a` 1-10, `@First @Route(\n path) @Fourth` 12-15 (a multi-line annotation), `void target` 16-30, filler to 60.
 const JLINES = Array.from({ length: 60 }, (_, i) => `    int y${i + 1} = ${i + 1};`);
 JLINES[0] = '  void a() {'; JLINES[9] = '  }';
-JLINES[11] = '  @First'; JLINES[12] = '  @Second'; JLINES[13] = '  @Third(x = 1)'; JLINES[14] = '  @Fourth';
+JLINES[11] = '  @First'; JLINES[12] = '  @Route('; JLINES[13] = '      path = "/x")'; JLINES[14] = '  @Fourth';
 JLINES[15] = '  void target() {'; JLINES[29] = '  }';
 const TOTAL = 80;
 // `fun a` 5-20, KDoc 22-25 + `fun callDone` 26-40, `fun z1`..`fun z6` 42-77 (6 lines each).
