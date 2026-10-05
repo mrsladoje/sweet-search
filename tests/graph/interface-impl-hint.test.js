@@ -130,12 +130,30 @@ describe('interface calls: ss-read names the implementation, ss-trace resolves a
     }
   });
 
-  it('selection: nothing for a test file, overloads once, more than two implementations named none', () => {
+  it('selection: nothing for a test file, overloads once, more than two implementations named as a set', () => {
     const impl = (owner, file, line) => ({ name: 'Log', owner, filePath: file, startLine: line });
     const row = (target, impls) => ({ line: 5, call: 'x.Log', target, impls });
     expect(selectInterfaceCalls([row('ILog.Log', [impl('Logger', 'src/Logger.cs', 3)])], 'unit/LoggerTests.cs')).toEqual([]);
     expect(selectInterfaceCalls([row('ILog.Log', [impl('Logger', 'src/Logger.cs', 3), impl('Logger', 'src/Logger.cs', 4), impl('Fake', 'acceptance/Logging/FakeLog.cs', 1)])], 'src/App.cs'))
       .toEqual([{ line: 5, call: 'x.Log', target: 'ILog.Log', impls: [impl('Logger', 'src/Logger.cs', 3)] }]);
-    expect(selectInterfaceCalls([row('ILog.Log', [impl('A', 'src/A.cs', 1), impl('B', 'src/B.cs', 1), impl('C', 'src/C.cs', 1)])], 'src/App.cs')).toEqual([]);
+    const three = selectInterfaceCalls([row('ILog.Log', [impl('A', 'src/A.cs', 1), impl('B', 'src/B.cs', 1), impl('C', 'src/C.cs', 1)])], 'src/App.cs');
+    expect(three).toEqual([{ line: 5, call: 'x.Log', target: 'ILog.Log', many: true, impls: [impl('A', 'src/A.cs', 1), impl('B', 'src/B.cs', 1), impl('C', 'src/C.cs', 1)] }]);
+    expect(renderInterfaceImpls({ interfaceCalls: three })).toBe('line 5 x.Log calls interface ILog.Log, implemented by 3 classes: A, B, C');
+    const two = selectInterfaceCalls([
+      row('ILog.Log', [impl('A', 'src/A.cs', 1), impl('B', 'src/B.cs', 1), impl('C', 'src/C.cs', 1)]),
+      { ...row('ILog.Flush', [impl('A', 'src/A.cs', 9), impl('B', 'src/B.cs', 9), impl('C', 'src/C.cs', 9)]), line: 6, call: 'x.Flush' },
+    ], 'src/App.cs');
+    expect(renderInterfaceImpls({ interfaceCalls: two })).toBe('lines 5, 6 x.Log, x.Flush call interface ILog, implemented by 3 classes: A, B, C');
+    // Six or more implementations is an extension point (callbacks, visitors): no line.
+    const six = 'ABCDEF'.split('').map((o) => impl(o, `src/${o}.cs`, 1));
+    expect(selectInterfaceCalls([row('ILog.Log', six)], 'src/App.cs')).toEqual([]);
+  });
+
+  it('selection: a call whose implementations are all accessors gets no line', () => {
+    const getter = (owner) => ({ name: 'getType', owner, filePath: `src/${owner}.php`, startLine: 3, code: 'public function getType(): string\n{\n    return $this->type;\n}' });
+    const worker = { name: 'getType', owner: 'Lazy', filePath: 'src/Lazy.php', startLine: 3, code: 'public function getType(): string\n{\n    return $this->load()->getType();\n}' };
+    const row = (impls) => ({ line: 7, call: 'p.getType', target: 'PackageInterface.getType', impls });
+    expect(selectInterfaceCalls([row([getter('Package'), getter('Alias')])], 'src/App.php')).toEqual([]);
+    expect(selectInterfaceCalls([row([getter('Package'), worker])], 'src/App.php')).toHaveLength(1);
   });
 });

@@ -370,7 +370,7 @@ export class CodeGraphRepository {
         LIMIT 1
       `);
       const implsOf = prepareCached(db, `
-        SELECT i.name, i.parent_class, i.file_path, i.start_line
+        SELECT i.name, i.parent_class, i.file_path, i.start_line, i.end_line
         FROM relationships o
         JOIN entities i ON i.id = o.source_id
         WHERE o.type = 'overrides'
@@ -378,7 +378,7 @@ export class CodeGraphRepository {
           AND ${relSql('o')}
           AND ${this._entityVisibilitySql(db, 'i')}
         ORDER BY i.file_path ASC, i.start_line ASC
-        LIMIT 8
+        LIMIT 64
       `);
       const out = [];
       for (const c of calls) {
@@ -395,6 +395,7 @@ export class CodeGraphRepository {
             owner: i.parent_class || null,
             filePath: i.file_path,
             startLine: i.start_line,
+            endLine: i.end_line ?? null,
           })),
         });
       }

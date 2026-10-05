@@ -4,7 +4,7 @@
  * `text` always comes from node:fs, never from the (truncated) DB column.
  */
 
-import { promises as fs, realpathSync, statSync } from 'node:fs';
+import { promises as fs, readFileSync, realpathSync, statSync } from 'node:fs';
 import { GUTTER_FORMS, resolveGutterForm, gutterDelimiter } from './gutter-form.js';
 import path from 'node:path';
 import { CodebaseRepository } from '../infrastructure/codebase-repository.js';
@@ -574,8 +574,11 @@ function _collectAboveSymbols(chunks, filePathRel, projectRoot, windowStart, win
     || (a.startLine ?? 0) - (b.startLine ?? 0));
 }
 
-const INTERFACE_IMPLS_MAX = 2;        // more implementing classes than this: name none
+const INTERFACE_IMPLS_MAX = 2;        // up to this many: name each with its file:line
+const INTERFACE_CLASSES_MAX = 5;     // up to this many: name the classes only; more is an
+                                     // extension point (callbacks, visitors): no line
 const INTERFACE_CALL_LINES_MAX = 3;   // at most this many trailer lines per read
+const ACCESSOR_BODY_MAX_CHARS = 60;
 
 // Test roots that isTestPath (file-name and tests/ spec/ mocks/ dirs) does not cover:
 // C# and Java suites live under unit/, acceptance/, integration/ (ocelot TestLoggerFactory).
@@ -583,10 +586,48 @@ const TEST_ROOT_DIR_RE = /(?:^|\/)(?:unit|acceptance|integration|e2e|functional)
 const isTestLikePath = (p) => isTestPath(p) || TEST_ROOT_DIR_RE.test(p || '');
 
 /**
+ * An implementation whose body only hands back or stores state (`return $this->type;`,
+ * `get() = field`, an empty body) or forwards to the same-named method of another object
+ * (`return $this->aliasOf->getType();`): its location tells the reader nothing the call does
+ * not. Shape: after the header, no call but to its own name, and at most
+ * ACCESSOR_BODY_MAX_CHARS non-space chars. Unknown code is never an accessor.
+ */
+export function isAccessorBody(code, name = '') {
+  const text = String(code || '');
+  if (!text) return false;
+  // The body: after the header's `{`, or after an expression-body `=>` / `=` / `:`.
+  const brace = text.indexOf('{');
+  const arrow = text.search(/=>|\)\s*(?::\s*[\w?.\\<>\[\]|]+\s*)?=(?!=)/);
+  const start = brace >= 0 && (arrow < 0 || brace < arrow) ? brace + 1 : (arrow >= 0 ? arrow + 2 : -1);
+  if (start < 0) {
+    // Python: the body follows the header line's `:`.
+    const nl = text.indexOf('\n');
+    if (nl < 0) return false;
+    return accessorShaped(text.slice(nl + 1), name);
+  }
+  return accessorShaped(text.slice(start), name);
+}
+
+function accessorShaped(body, name) {
+  const stripped = body
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1')
+    .replace(/^\s*#.*$/gm, ' ')
+    .replace(/\s+/g, '');
+  if (stripped.replace(/[{}]/g, '').length > ACCESSOR_BODY_MAX_CHARS) return false;
+  for (const m of stripped.replace(/^\(|\breturn\(/g, '').matchAll(/([A-Za-z_$][\w$]*)!?\(/g)) {
+    if (m[1] !== name) return false;
+  }
+  return true;
+}
+
+/**
  * Pick the interface calls worth a trailer line from the graph rows of one read window.
  * Nothing for a test file (its calls go to test doubles). Test implementations are dropped,
- * same-method overloads count once, and a call whose implementation sits in the file being
- * read is skipped (it is already in view). One row per interface method, at its first call.
+ * same-method overloads count once, and a call is skipped when an implementation sits in
+ * the file being read (it is already in view) or when every implementation is an accessor.
+ * More than INTERFACE_IMPLS_MAX and at most INTERFACE_CLASSES_MAX implementations: the row
+ * is kept as the set of classes (`many`). One row per interface method, at its first call.
  */
 export function selectInterfaceCalls(rows, filePathRel) {
   if (!Array.isArray(rows) || rows.length === 0 || isTestLikePath(filePathRel)) return [];
@@ -601,10 +642,19 @@ export function selectInterfaceCalls(rows, filePathRel) {
       if (!byMethod.has(key)) byMethod.set(key, i);
     }
     const impls = [...byMethod.values()];
-    if (impls.length === 0 || impls.length > INTERFACE_IMPLS_MAX) continue;
-    if (impls.some(i => i.filePath === filePathRel)) continue;
+    if (impls.length === 0) continue;
+    if (impls.length > INTERFACE_CLASSES_MAX) continue;
+    if (impls.every(i => isAccessorBody(i.code, i.name))) continue;
+    const many = impls.length > INTERFACE_IMPLS_MAX;
+    if (!many && impls.some(i => i.filePath === filePathRel)) continue;
     seen.add(row.target);
-    out.push({ line: row.line, call: row.call, target: row.target, impls });
+    out.push({
+      line: row.line,
+      call: row.call,
+      target: row.target,
+      impls: impls.map(({ code, ...rest }) => rest),
+      ...(many ? { many: true } : {}),
+    });
     if (out.length >= INTERFACE_CALL_LINES_MAX) break;
   }
   return out;
@@ -615,27 +665,68 @@ export function interfaceCallsInRange(projectRoot, filePathRel, startLine, endLi
   return _collectInterfaceCalls(filePathRel, projectRoot, startLine, endLine);
 }
 
+const ACCESSOR_MAX_LINES = 12;         // a longer implementation is never an accessor
+
 function _collectInterfaceCalls(filePathRel, projectRoot, startLine, endLine) {
   const graph = _getGraphRepo(projectRoot);
   if (!graph || typeof graph.findInterfaceCallImplementations !== 'function') return [];
   let rows = [];
   try { rows = graph.findInterfaceCallImplementations(filePathRel, startLine, endLine) || []; }
   catch { rows = []; }
+  _attachShortImplementationCode(rows, projectRoot);
   return selectInterfaceCalls(rows, filePathRel);
+}
+
+// The graph stores no bodies: read the short implementations' lines (accessor check).
+function _attachShortImplementationCode(rows, projectRoot) {
+  const files = new Map();
+  for (const row of rows) {
+    for (const impl of row.impls || []) {
+      if (impl.code != null || !impl.filePath || !(impl.startLine > 0) || !(impl.endLine >= impl.startLine)) continue;
+      if (impl.endLine - impl.startLine > ACCESSOR_MAX_LINES) continue;
+      let lines = files.get(impl.filePath);
+      if (lines === undefined) {
+        try { lines = readFileSync(path.join(projectRoot, impl.filePath), 'utf8').split('\n'); }
+        catch { lines = null; }
+        files.set(impl.filePath, lines);
+      }
+      if (lines) impl.code = lines.slice(impl.startLine - 1, impl.endLine).join('\n');
+    }
+  }
 }
 
 /**
  * The interface-call trailer: one line per call in the window that goes through an
- * interface with one or two implementations, naming the implementing method and where
- * it is. Returns '' when there is none.
+ * interface. One or two implementations: each implementing method and where it is. More:
+ * the implementing classes (the set a polymorphic call can reach). Returns '' when none.
  */
 export function renderInterfaceImpls(result) {
   const calls = result?.interfaceCalls;
   if (!Array.isArray(calls) || calls.length === 0) return '';
+  // Calls to several methods of one interface with the same implementing classes share a line.
+  const groups = new Map();
+  for (const c of calls) {
+    if (!c.many) continue;
+    const owner = c.target.includes('.') ? c.target.slice(0, c.target.lastIndexOf('.')) : c.target;
+    const names = c.impls.map(i => i.owner || `${i.name} (${i.filePath}:${i.startLine})`);
+    const key = `${owner}\u0000${names.join(',')}`;
+    if (!groups.has(key)) groups.set(key, { owner, names, calls: [] });
+    groups.get(key).calls.push(c);
+  }
+  const printed = new Set();
   return calls.map(c => {
+    if (c.many) {
+      const group = [...groups.values()].find(g => g.calls.includes(c));
+      if (printed.has(group)) return null;
+      printed.add(group);
+      if (group.calls.length === 1) {
+        return `line ${c.line} ${c.call} calls interface ${c.target}, implemented by ${group.names.length} classes: ${group.names.join(', ')}`;
+      }
+      return `lines ${group.calls.map(g => g.line).join(', ')} ${group.calls.map(g => g.call).join(', ')} call interface ${group.owner}, implemented by ${group.names.length} classes: ${group.names.join(', ')}`;
+    }
     const impls = c.impls.map(i => `${i.owner ? i.owner + '.' : ''}${i.name} (${i.filePath}:${i.startLine})`).join(', ');
     return `line ${c.line} ${c.call} calls interface ${c.target}, implemented by ${impls}`;
-  }).join('\n');
+  }).filter(Boolean).join('\n');
 }
 
 /**
