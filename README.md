@@ -419,7 +419,7 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 
 <img src="assets/paper-bench-stats.svg" alt="Academic retrieval benchmarks, full-corpus MRR@10, zero-shot. GenCodeSearchNet 86.5 on 2,400 held-out queries, tuned on the dev split so no SOTA claim. CoSQA 65.4, zero-shot SOTA. M2CRB 54.4, SOTA. AdvTest 51.6, not SOTA." width="100%" />
 
-<sub>MRR@10 · SOTA = best published result we can find, rechecked September 2026 · GCSN held-out only: we tuned ranking on its dev split</sub>
+<sub>MRR@10 · SOTA = best published result we can find, rechecked October 2026 · GCSN held-out only: we tuned ranking on its dev split</sub>
 
 </div>
 
