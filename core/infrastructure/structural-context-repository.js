@@ -651,7 +651,9 @@ export class StructuralContextRepository {
     const declLineRe = new RegExp(`^\\s*${escaped}\\s*\\(`);
     // A member declared in a type body: `protected abstract getPath(event: E): string`
     // (hono EventProcessor was listed as a caller of its subclasses' getPath).
-    const memberDeclRe = new RegExp(`^\\s*(?:(?:public|private|protected|internal|abstract|static|override|virtual|readonly|async|final|open|declare|sealed|extern|unsafe)\\s+)+${escaped}\\s*[(<]`);
+    // Also with a return type (Java/C# `protected abstract String getPath(E e);`) and
+    // accessors (`get getPath()`, `set path(v)`).
+    const memberDeclRe = new RegExp(`^\\s*(?:(?:(?:public|private|protected|internal|abstract|static|override|virtual|readonly|async|final|open|declare|sealed|extern|unsafe|synchronized|native|default)\\s+)+(?:[\\w.$]+(?:<[^()]*>)?(?:\\[\\])*\\??\\s+)?|(?:get|set)\\s+)${escaped}\\s*[(<]`);
     // `@spec name(...)` / `@callback name(...)`: an attribute that declares the name's type.
     const attrDeclRe = new RegExp(`^\\s*@\\w+\\s+${escaped}\\s*\\(`);
     const lines = source.split('\n');
