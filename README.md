@@ -760,7 +760,7 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 <tr>
 <td width="50%" valign="top">
 
-**🏗️ 1. The codegraph**
+**🏗️ The codegraph**
 
 - Every function, class and method, and the links between them (imports, extends, calls, ...).
 - Each symbol gets an importance score (PageRank). Code that many places depend on scores higher.
@@ -768,20 +768,9 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 </td>
 <td width="50%" valign="top">
 
-**🧭 2. Best results first**
+**🧭 Best results first**
 
 - Personalized PageRank walks out from your symbol: backward for callers, forward for callees. Code close to your symbol ranks high. A logger that everything calls ranks low.
-
-</td>
-</tr>
-<tr>
-<td colspan="2" valign="top">
-
-**📋 3. One row per link**
-
-- Each caller and callee is one line: its kind, name and `file:line`, grouped by file.
-- Impact paths print as a tree.
-- The agent then reads only the code it needs.
 
 </td>
 </tr>
