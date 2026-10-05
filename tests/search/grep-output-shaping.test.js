@@ -1043,3 +1043,53 @@ describe('renderGrepListing (ss-grep output, grouped by file)', () => {
     expect(GREP_HIDDEN_HINT).toBe('# hidden hits: raise -k or use --in <file>');
   });
 });
+
+describe('generated prior: lockfiles, API dumps, blob hit lines; copies collapse (2026-10-05 Codex replays)', () => {
+  it('lockfiles and Kotlin API dumps take the generated prior; look-alike source does not', () => {
+    for (const f of ['web/docs/package-lock.json', 'Cargo.lock', 'go.sum', 'yarn.lock', 'pnpm-lock.yaml',
+      'ios/Podfile.lock', 'Package.resolved', 'okhttp/api/jvm/okhttp.api', 'api/okhttp.api']) {
+      expect(grepFilePrior(f), f).toBe(0.25);
+    }
+    for (const f of ['src/lock.rs', 'src/clock.go', 'lib/locker/mutex.go', 'api/routes.go', 'src/x.api.ts', 'Package.swift']) {
+      expect(grepFilePrior(f), f).toBe(1);
+    }
+  });
+
+  it('a file whose hit lines are all hash / base64 blobs ranks as generated, whatever its name', () => {
+    const blob = (file, line) => ({ file, line, matchText: 'gc',
+      content: '"integrity": "sha512-3z0NHDxD6n5I9gc05U1eW1AyRm+Gznzq3naMrthPNqE6oYykcogW0l/jfpQ==",' });
+    const code = (file, line) => ({ file, line, matchText: 'gc', content: 'pub fn gc(&self, keep_newer: SystemTime) -> Result<()> {' });
+    const matches = [blob('a/deps.json', 1), blob('a/deps.json', 2), blob('a/deps.json', 3), blob('a/deps.json', 4),
+      code('b/store.rs', 10), code('b/store.rs', 20)];
+    const { fileSummary } = selectGrepFilesByWeight(matches, { maxFiles: 2, perFileCap: 4, order: 'weight' });
+    expect(fileSummary.files.map((f) => f.file)).toEqual(['b/store.rs', 'a/deps.json']);
+    expect(fileSummary.files[1].prior).toBe(0.25);
+  });
+
+  it('long identifiers and URLs are no blob', () => {
+    const one = (content) => selectGrepFilesByWeight([{ file: 'a.js', line: 1, matchText: 'x', content }],
+      { maxFiles: 1, perFileCap: 1, order: 'weight' }).fileSummary.files[0].prior;
+    expect(one('const thisIsAVeryLongIdentifierNameForTestingPurposesOnly123 = 1;')).toBe(1);
+    expect(one('"resolved": "https://registry.npmjs.org/lightningcss/-/lightningcss-1.33.0.tgz",')).toBe(1);
+    expect(one('checksum = "5c6cb57a04249c6480766f7f7cef5467412af1490f8d1e243141daddada3264f"')).toBe(0.25);
+  });
+
+  it('a copy (same file name, same printed lines) prints one line with its hit count', () => {
+    const rows = [
+      { file: 'docs/git.md', line: 52, text: 'Garbage collection: Yes.' },
+      { file: 'docs/git.md', line: 54, text: 'no garbage collection' },
+      { file: 'web/docs/git.md', line: 52, text: 'Garbage collection: Yes.' },
+      { file: 'web/docs/git.md', line: 54, text: 'no garbage collection' },
+      { file: 'web/other.md', line: 52, text: 'Garbage collection: Yes.' },
+      { file: 'web/other.md', line: 54, text: 'no garbage collection' },
+    ];
+    expect(renderGrepListing(rows)).toEqual([
+      'docs/git.md', '52:Garbage collection: Yes.', '54:no garbage collection',
+      'web/docs/git.md (same lines as docs/git.md; 2 hits)',
+      // another file name is no copy
+      'web/other.md', '52:Garbage collection: Yes.', '54:no garbage collection',
+    ]);
+    // line numbers only (dropText): equal numbers are no evidence of a copy
+    expect(renderGrepListing(rows.slice(0, 4), { dropText: true })).toEqual(['docs/git.md', '52', '54', 'web/docs/git.md', '52', '54']);
+  });
+});
