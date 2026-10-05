@@ -11,7 +11,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { CANONICAL_POLICY_BODY, getMcpPolicyBody } from '../../scripts/inject-agent-instructions.js';
-import { CLAUDE_RULES_POINTER, _internal as claudeRulesInternal } from '../../scripts/write-claude-rules.js';
+import { CLAUDE_RULES_POINTER, claudeRulesMemoryLine, _internal as claudeRulesInternal } from '../../scripts/write-claude-rules.js';
 import { CLAUDE_OUTPUT_STYLE_REL } from '../../scripts/install-claude-system-prompt.js';
 import { CLAUDE_LEAN_AGENT_REL } from '../../scripts/install-claude-lean-harness.js';
 
@@ -120,6 +120,15 @@ describe('sweet-search init (integration)', () => {
   const FAST = ['--profile', 'core', '--skip-dedup', '--skip-coreml-cascade'];
   const rulesPath = () => join(tempDir, '.claude', 'rules', 'sweet-search.md');
   const reminderHookPath = () => join(tempDir, '.claude', 'hooks', 'sweet-search-remind-tools.mjs');
+  // The pointer rule file: sentinel, pointer, then the lean harness's auto-memory directory line.
+  const expectPointerRules = () => {
+    const [head, memory, rest] = readFileSync(rulesPath(), 'utf8').split(/(?<=\n)(?=Your file-based memory)/);
+    expect(head).toBe(`${claudeRulesInternal.SENTINEL}\n${CLAUDE_RULES_POINTER}\n`);
+    expect(rest).toBeUndefined();
+    const dir = /`(.+)`/.exec(memory)?.[1];
+    expect(dir).toMatch(/[/\\]\.claude[/\\]projects[/\\].+[/\\]memory[/\\]?$/);
+    expect(memory).toBe(`${claudeRulesMemoryLine(dir)}\n`);
+  };
 
   it('--no-cli without --mcp errors with a non-zero exit', () => {
     const { exitCode, stderr, stdout } = runInit([...FAST, '--no-cli'], tempDir);
@@ -137,9 +146,7 @@ describe('sweet-search init (integration)', () => {
     // CLI surface intact: the exact ss-* rules in the lean main agent, the pointer rule file,
     // the system override; CLAUDE.md untouched.
     expect(existsSync(join(tempDir, 'CLAUDE.md'))).toBe(false);
-    expect(readFileSync(rulesPath(), 'utf8')).toBe(
-      `${claudeRulesInternal.SENTINEL}\n${CLAUDE_RULES_POINTER}\n`,
-    );
+    expectPointerRules();
     expect(readFileSync(join(tempDir, CLAUDE_LEAN_AGENT_REL), 'utf8').split(CANONICAL_POLICY_BODY)).toHaveLength(2);
     // The CLI override ships in the lean-harness main agent (not the output style).
     expect(existsSync(join(tempDir, CLAUDE_LEAN_AGENT_REL))).toBe(true);
@@ -152,9 +159,7 @@ describe('sweet-search init (integration)', () => {
     // 1. Plain CLI init installs exact M± in the lean main agent and the pointer in the rule.
     const first = runInit(FAST, tempDir);
     expect(first.exitCode).toBe(0);
-    expect(readFileSync(rulesPath(), 'utf8')).toBe(
-      `${claudeRulesInternal.SENTINEL}\n${CLAUDE_RULES_POINTER}\n`,
-    );
+    expectPointerRules();
     expect(readFileSync(join(tempDir, CLAUDE_LEAN_AGENT_REL), 'utf8').split(CANONICAL_POLICY_BODY)).toHaveLength(2);
     // The CLI override ships in the lean-harness main agent (not the output style).
     expect(existsSync(join(tempDir, CLAUDE_LEAN_AGENT_REL))).toBe(true);
