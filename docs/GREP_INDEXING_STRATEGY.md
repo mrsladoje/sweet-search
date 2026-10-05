@@ -7,6 +7,16 @@ and the architecture behind it.
 
 ## Performance
 
+**End to end (2026-10-04, the number the README cites):** 1,600 queries modelled on 19,762 real
+agent greps, 13 repos (130 to 63,000 files), each call timed from process start until all output
+is read. Median 2.0x faster than ripgrep (held-out 2.06x): `ss-grep` 3.6 ms, ripgrep 7.3 ms.
+Scoped (`--in`) and context (`-C`) greps are about 1.1x. Process start and the daemon round trip
+cap the gain on small repos.
+
+**In-process engine (2026-04-07, below):** this older benchmark timed the engine inside the
+process (about 1 ms) against a spawned `rg --json` parsed in JavaScript. It does not include the
+process start an agent pays for `ss-grep`, so its 10.2x is not an end-to-end speedup.
+
 353 realistic queries across 5 repos (2026-04-07):
 
 | Repo         | Files | p50 Speedup vs rg | p50 Latency |
