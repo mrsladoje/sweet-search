@@ -78,6 +78,10 @@ const LUA_CLAMP_ALLOWED_LANGUAGES = new Set(['lua']);
 // Regex-registry entity types that own their members (`parent_class` of the
 // definitions inside their line range). Swift `extension Foo` is named after
 // the extended type, so its members belong to Foo.
+// Regex entity kinds that declare a value, and kinds whose body is code: a
+// value declared in such a body is local to it.
+const REGEX_LOCAL_STATE_TYPES = new Set(['const', 'constant', 'variable', 'let', 'static', 'global']);
+const REGEX_FUNCTION_SCOPE_TYPES = new Set(['function', 'method', 'def', 'func', 'proc', 'procedure', 'private', 'shortFunction', 'arrowFunction', 'assignedFunc', 'constructor', 'macro', 'trigger']);
 const REGEX_CONTAINER_TYPES = new Set([
   'class', 'interface', 'enum', 'struct', 'trait', 'impl', 'module', 'object',
   'protocol', 'extension', 'mixin', 'record',
@@ -209,6 +213,109 @@ function elixirBodilessHeadEnd(lines, startIndex) {
     return i + 1;
   }
   return null;
+}
+
+/**
+ * End line of a Scala definition. Brace counting alone ran an abstract
+ * `def f(x: Int): Int`, an expression body `def readLine() = buffered.readLine()`
+ * and a `case class P(a: Int)` on to the next `}` (os-lib SubProcess: eleven
+ * one-line defs spanned 295-313, so calls inside `bytes` were attributed to
+ * `readLine`). After the header (parameter lists balanced):
+ *  - a body that opens a block on the header (`= synchronized {`, `{`) is
+ *    brace-counted as before;
+ *  - `= expr` or a Scala 3 `:` / `=` that ends the line continues over the
+ *    following lines indented deeper than the definition;
+ *  - no `=` and no block: the header is the whole definition.
+ */
+function scalaEndLine(lines, startIndex, braceEnd) {
+  const indentOf = (l) => l.length - l.trimStart().length;
+  const code = (l) => codeBeforeComment(String(l || '')).replace(/"(?:[^"\\]|\\.)*"/g, '""');
+  let depth = 0;
+  let header = '';
+  let headerEnd = startIndex;
+  for (let i = startIndex; i < lines.length && i < startIndex + 30; i++) {
+    const c = code(lines[i]);
+    header += ` ${c}`;
+    headerEnd = i;
+    for (const ch of c) {
+      if (ch === '(' || ch === '[') depth++;
+      else if (ch === ')' || ch === ']') depth--;
+    }
+    if (depth <= 0) break;
+  }
+  // Top-level `=` (not ==, =>, <=, >=, !=) outside parentheses / brackets.
+  let eq = -1;
+  depth = 0;
+  for (let k = 0; k < header.length; k++) {
+    const ch = header[k];
+    if (ch === '(' || ch === '[') depth++;
+    else if (ch === ')' || ch === ']') depth--;
+    else if (ch === '{' && depth === 0 && eq < 0) return braceEnd(startIndex);
+    else if (ch === '=' && depth === 0 && !/[=<>!:]/.test(header[k - 1] || '') && !/[=>]/.test(header[k + 1] || '')) { eq = k; break; }
+  }
+  const rest = eq >= 0 ? header.slice(eq + 1).trim() : '';
+  if (eq >= 0 && /\{/.test(rest)) return braceEnd(startIndex);
+  const opensIndented = eq >= 0 || /:\s*$/.test(header);
+  if (!opensIndented) return headerEnd + 1;
+  const base = indentOf(lines[startIndex]);
+  let end = headerEnd;
+  for (let i = headerEnd + 1; i < lines.length; i++) {
+    if (!lines[i].trim()) continue;
+    if (indentOf(lines[i]) <= base) break;
+    end = i;
+  }
+  return end + 1;
+}
+
+/**
+ * 1-based end line of the Lua definition starting at `startIndex`: where its
+ * block tokens balance. `function`, `if`, `do` (also of `for`/`while`) and
+ * `repeat` open; `end` and `until` close. Line-start keyword counting missed
+ * openers in mid-line (`table.sort(xs, function(a, b) … end)`), so busted's
+ * `local function sort` ended two lines early and `execute` at the first
+ * inner `end)` (18-39 of 18-71). Strings, `--` comments and `[[ ]]` long
+ * brackets are blanked.
+ */
+function luaEndLine(lines, startIndex) {
+  let depth = 0;
+  let longClose = null;
+  for (let i = startIndex; i < lines.length; i++) {
+    let raw = String(lines[i] || '');
+    if (longClose) {
+      const k = raw.indexOf(longClose);
+      if (k < 0) continue;
+      raw = raw.slice(k + longClose.length);
+      longClose = null;
+    }
+    let code = '';
+    for (let k = 0; k < raw.length; k++) {
+      const long = /^(?:--)?\[(=*)\[/.exec(raw.slice(k));
+      if (long) {
+        const close = `]${long[1]}]`;
+        const end = raw.indexOf(close, k + long[0].length);
+        if (end < 0) { longClose = close; break; }
+        k = end + close.length - 1;
+        continue;
+      }
+      if (raw.startsWith('--', k)) break;
+      const c = raw[k];
+      if (c === '"' || c === "'") {
+        let j = k + 1;
+        while (j < raw.length && raw[j] !== c) j += raw[j] === '\\' ? 2 : 1;
+        k = j;
+        code += ' ';
+        continue;
+      }
+      code += c;
+    }
+    const opens = (code.match(/\b(?:function|if|do|repeat)\b/g) || []).length;
+    const closes = (code.match(/\b(?:end|until)\b/g) || []).length;
+    depth += opens - closes;
+    if (i > startIndex || opens > 0) {
+      if (depth <= 0 && (opens > 0 || closes > 0)) return i + 1;
+    }
+  }
+  return lines.length;
 }
 
 /**
@@ -1334,7 +1441,7 @@ export class GraphExtractor {
             const entities = this._normalizeTreeSitterEntities(filePath, symbols, langInfo.id, lines);
             // Still extract relationships with regex (tree-sitter only gives definitions)
             const callSites = [];
-            const relationships = this._extractRelationships(content, lines, filePath, langInfo, entities, callSites);
+            const relationships = this._extractRelationships(content, lines, filePath, langInfo, entities, callSites, symbols.calls || null);
             return { entities, relationships, callSites };
           }
         }
@@ -1954,6 +2061,7 @@ export class GraphExtractor {
       if (langInfo.endKeyword) {
         return this.findEndLineKeyword(lines, startIdx, langInfo.endKeyword, langInfo.blockKeywords, langInfo.id);
       }
+      if (langInfo.id === 'scala') return scalaEndLine(lines, startIdx, (k) => this.findEndLine(lines, k));
       return this.findEndLine(lines, startIdx);
     };
 
@@ -2035,6 +2143,11 @@ export class GraphExtractor {
           // Off for `end`-keyword languages: their keyword-counted end lines
           // are too loose (sequel: 756 of 3,543 Ruby parents wrong).
           const enclosing = activeEntityScopes[activeEntityScopes.length - 1];
+          // A constant / variable declared inside a function body is a local
+          // value, not a definition (http.zig `const serialized = try
+          // serializeCookie(…)` in setCookie was listed as its caller).
+          if (enclosing && REGEX_LOCAL_STATE_TYPES.has(type) && REGEX_FUNCTION_SCOPE_TYPES.has(enclosing.type)
+            && lineNum > enclosing.start_line) break;
           const parentClass = !langInfo.endKeyword && enclosing
             && REGEX_CONTAINER_TYPES.has(enclosing.type) ? enclosing.name : null;
           const { id: entityId, duplicate } = this.entityId(filePath, type, name, {
@@ -2550,7 +2663,7 @@ export class GraphExtractor {
    * Used by tree-sitter path where entities come from AST but relationships
    * still need regex (tree-sitter tags.scm only gives definitions).
    */
-  _extractRelationships(content, lines, filePath, langInfo, entities, callSites = null) {
+  _extractRelationships(content, lines, filePath, langInfo, entities, callSites = null, astCalls = null) {
     const relationships = [];
     if (!langInfo.graph) return relationships;
 
@@ -2612,6 +2725,11 @@ export class GraphExtractor {
     const seenTypeUsage = this._typeUsageSet(callSites); // one trace row per (source, type, target); every line in callSites
     const skipObjects = this._skipObjectSet(langInfo);
     const bareSink = callSites ? this._bareCallSink(callSites) : null;
+    const astCallsAt = astCalls ? new Map() : null;
+    for (const c of astCalls || []) {
+      if (!astCallsAt.has(c.line)) astCallsAt.set(c.line, []);
+      astCallsAt.get(c.line).push(c.name);
+    }
     // Names defined on each line: `def helper(` must not read as a call.
     const definedOnLine = new Map();
     if (bareSink) {
@@ -2648,6 +2766,14 @@ export class GraphExtractor {
           bareSink ? (name) => bareSink(sourceEntityId || fileEntityId, name, lineNum) : null,
           bareSink ? (name) => definedOnLine.get(lineNum)?.has(name) === true : null,
         );
+      }
+
+      // Calls read from the tree (tree-sitter-provider AST_CALL_QUERIES):
+      // `M.f` is a qualified call, a plain name a bare call.
+      for (const call of astCallsAt?.get(lineNum) || []) {
+        const src = sourceEntityId || fileEntityId;
+        if (call.includes('.')) this._pushCallEdge(relationships, seenCalls, src, call, lineNum);
+        else if (bareSink && definedOnLine.get(lineNum)?.has(call) !== true) bareSink(src, call, lineNum);
       }
 
       this._appendDestructuredRequireRelationships(trimmed, sourceEntityId || fileEntityId, relationships);
@@ -3033,6 +3159,7 @@ export class GraphExtractor {
     // `def f(x),` with `do: y` on the next line.
     if (/,\s*$/.test(first) && /^\s*do:/.test(lines[startIndex + 1] || '')) return startIndex + 2;
     if (language === 'elixir') return elixirEndLine(lines, startIndex);
+    if (language === 'lua') return luaEndLine(lines, startIndex);
     let depth = 1; // start inside the opening block
 
     for (let i = startIndex + 1; i < lines.length; i++) {

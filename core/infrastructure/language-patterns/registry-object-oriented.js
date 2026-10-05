@@ -191,11 +191,15 @@ export const OBJECT_ORIENTED_LANGUAGES = {
       def: /def\s+(\w+)/,
     },
     graph: {
+      // Anchored at the line start after annotations and modifiers: unanchored,
+      // `"this class will be made final"` in an annotation argument was a class
+      // named `will`. A def may have no parameter list (`def bytes: Array[Byte] =`)
+      // and a symbolic name (`def /(chunk: PathChunk)`).
       entities: {
-        class: /(?:case\s+)?class\s+(\w+)(?:\s*\([^)]*\))?(?:\s+extends\s+(\w+))?/,
-        object: /object\s+(\w+)/,
-        trait: /trait\s+(\w+)/,
-        def: /def\s+(\w+)\s*(?:\[([^\]]*)\])?\s*\(([^)]*)\)/,
+        class: /^(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:private|protected)(?:\[[\w.]+\])?\s+|(?:final|sealed|abstract|implicit|case|open|inline|transparent)\s+)*class\s+(\w+)(?:\s*\([^)]*\))?(?:\s+extends\s+(\w+))?/,
+        object: /^(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:private|protected)(?:\[[\w.]+\])?\s+|(?:final|implicit|case|transparent)\s+)*object\s+(\w+)/,
+        trait: /^(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:private|protected)(?:\[[\w.]+\])?\s+|(?:sealed|transparent)\s+)*trait\s+(\w+)/,
+        def: /^(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:private|protected)(?:\[[\w.]+\])?\s+|(?:final|override|implicit|inline|transparent|abstract|lazy)\s+)*def\s+([A-Za-z_$][\w$]*|[!#%&*+\-/:<=>?@\\^|~]+)\s*(?:\[([^\]]*)\])?\s*(?:\(([^)]*)\))?/,
       },
       relationships: {
         import: /^import\s+([\w._{}]+)/,
