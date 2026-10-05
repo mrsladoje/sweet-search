@@ -337,6 +337,34 @@ describe('writeClaudeRules / removeClaudeRules', () => {
     );
   });
 
+  it('gitignores the pointer file in a git project because it names a local memory path', () => {
+    mkdirSync(join(tmpRoot, '.git'));
+    writeFileSync(join(tmpRoot, '.gitignore'), 'node_modules/');
+    const memoryDir = '/Users/someone/.claude/projects/x/memory/';
+    expect(writeClaudeRules({ projectRoot: tmpRoot, layout: 'pointer', memoryDir })).toBe('created');
+    expect(read('.gitignore')).toContain('\n/.claude/rules/sweet-search.md\n');
+    writeClaudeRules({ projectRoot: tmpRoot, layout: 'pointer', memoryDir });
+    expect(read('.gitignore').match(/\/\.claude\/rules\/sweet-search\.md/g)).toHaveLength(1);
+    // The full layout carries no machine path, so it is committable again.
+    expect(writeClaudeRules({ projectRoot: tmpRoot })).toBe('updated');
+    expect(read('.gitignore')).toBe('node_modules/\n');
+    writeClaudeRules({ projectRoot: tmpRoot, layout: 'pointer', memoryDir });
+    expect(removeClaudeRules({ projectRoot: tmpRoot })).toBe('removed');
+    expect(read('.gitignore')).toBe('node_modules/\n');
+  });
+
+  it('creates and later deletes a .gitignore it alone needed; never outside git', () => {
+    const memoryDir = '/home/someone/.claude/projects/x/memory/';
+    writeClaudeRules({ projectRoot: tmpRoot, layout: 'pointer', memoryDir });
+    expect(exists('.gitignore')).toBe(false);
+    removeClaudeRules({ projectRoot: tmpRoot });
+    mkdirSync(join(tmpRoot, '.git'));
+    writeClaudeRules({ projectRoot: tmpRoot, layout: 'pointer', memoryDir });
+    expect(read('.gitignore')).toMatch(/^# sweet-search: .*\n\/\.claude\/rules\/sweet-search\.md\n$/);
+    removeClaudeRules({ projectRoot: tmpRoot });
+    expect(exists('.gitignore')).toBe(false);
+  });
+
   it('removeClaudeRules deletes only sentinel-tagged files', () => {
     writeClaudeRules({ projectRoot: tmpRoot });
     expect(removeClaudeRules({ projectRoot: tmpRoot, dryRun: true })).toBe('dry-run');
