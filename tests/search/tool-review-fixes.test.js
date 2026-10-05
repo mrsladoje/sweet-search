@@ -952,3 +952,30 @@ describe('round 16 — an unbound qualified call fits several same-named definit
     expect(trustedCallerEdge({ ...edge, targetName: 'repositorySet.findPackages' }, target, [target, rival])).toBe(true);
   });
 });
+
+import { declaredTypeIn as declaredTypeInR15 } from '../../core/graph/receiver-types.js';
+import { aliasTargetIn } from '../../core/graph/relationship-resolver.js';
+
+describe('round 14/15 — C++ receiver types, aliases, fields, values named like functions', () => {
+  it('C++ parameters and locals declare their receiver type; `auto` and products declare none', () => {
+    const t = (src, n) => declaredTypeInR15(src, n, 'lib/src/HttpServer.cc');
+    expect(t('void HttpServer::onRequests(\n    const TcpConnectionPtr &conn,\n    int n)\n{\n  conn->send(x);', 'conn')?.type).toBe('TcpConnectionPtr');
+    expect(t('void f(const std::shared_ptr<HttpRequestParser> &p) {', 'p')?.type).toBe('HttpRequestParser');
+    expect(t('  trantor::EventLoop loop;\n  loop.run();', 'loop')).toEqual({ type: 'EventLoop', qualifier: 'trantor' });
+    expect(t('  x = A * b;\n  b.go();', 'b')).toBeNull();
+    expect(t('  auto conn = get(); conn->send();', 'conn')).toBeNull();
+  });
+
+  it('an alias resolves to the type it names (smart pointers forward to the pointee)', () => {
+    expect(aliasTargetIn('using TcpConnectionPtr = std::shared_ptr<TcpConnection>;', 'TcpConnectionPtr')).toBe('TcpConnection');
+    expect(aliasTargetIn('typedef std::shared_ptr<Foo> FooPtr;', 'FooPtr')).toBe('Foo');
+    expect(aliasTargetIn('using A = trantor::TcpConnectionPtr;', 'A')).toBe('TcpConnectionPtr');
+    expect(aliasTargetIn('type Result<T> = std::result::Result<T, Error>;', 'Result')).toBeNull();
+    expect(aliasTargetIn('export type Opts = { a: string }', 'Opts')).toBeNull();
+  });
+
+  it('a field of the caller\'s own type declares the receiver (`self.cmd.get_arguments()`)', () => {
+    expect(declaredTypeInR15("pub(crate) struct Parser<'cmd> {\n    cmd: &'cmd mut Command,\n}", 'cmd', 'src/parser.rs')?.type).toBe('Command');
+    expect(declaredTypeInR15('class Svc {\n  private final Database db;\n}', 'db', 'src/Svc.java')?.type).toBe('Database');
+  });
+});

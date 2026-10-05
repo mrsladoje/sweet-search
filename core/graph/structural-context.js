@@ -14,6 +14,7 @@ import { extractHeaderContext } from './structural-header-context.js';
 import { scoreEntity, scoreImpactPath, tokenize, safeMax } from './structural-importance.js';
 import { personalizedPageRank } from './structural-forward-push.js';
 import { BareCallResolver } from './bare-call-resolution.js';
+import { declaredTypeIn } from './receiver-types.js';
 import { GENERIC_RECEIVER_SPREAD } from './relationship-resolver.js';
 import { isTraceOnlyRelationship } from '../infrastructure/relationship-types.js';
 import { isTestLikePath } from '../infrastructure/test-paths.js';
@@ -815,6 +816,7 @@ export class StructuralContextBuilder {
       projectRoot: this.projectRoot,
       manifestEpoch: options.manifestEpoch,
       BareCallResolver,
+      declaredTypeIn,
     });
   }
 

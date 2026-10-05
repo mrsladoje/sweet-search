@@ -35,6 +35,7 @@ const PY_FILE = /\.(?:py|pyi)$/i;
 const RUST_FILE = /\.rs$/i;
 const KOTLIN_SWIFT_SCALA = /\.(?:kt|kts|swift|scala)$/i;
 const PHP_FILE = /\.php$/i;
+const CPP_FILE = /\.(?:cc|cpp|cxx|c\+\+|hpp|hh|hxx|h|ipp|inl|tpp)$/i;
 
 const SELF_NAMES = new Set(['this', 'self', 'super', 'cls', 'me', 'static', 'it']);
 const CALLABLE = new Set(['method', 'function', 'constructor', 'rpc']);
@@ -48,7 +49,7 @@ const TYPE_FIRST_NOT_TYPES = new Set(['return', 'new', 'throw', 'case', 'else', 
 /** True when the language of `filePath` writes declared types the scanner reads. */
 export function receiverTypesSupported(filePath) {
   const f = String(filePath || '');
-  return GO.test(f) || TYPE_FIRST.test(f) || COLON_TYPED_FILE.test(f) || PHP_FILE.test(f);
+  return GO.test(f) || TYPE_FIRST.test(f) || COLON_TYPED_FILE.test(f) || PHP_FILE.test(f) || CPP_FILE.test(f);
 }
 
 /**
@@ -115,6 +116,15 @@ const COLON_UNTYPED = new RegExp([
 // Python rebinding: `b = x`, `a, b = t`, `with x as b`, `except E as b`, `lambda b:`.
 const PY_UNTYPED = new RegExp(`(?<![\\w.])(${ID}(?:\\s*,\\s*${ID})*)\\s*=(?!=)|\\bas\\s+(${ID})|\\blambda\\b([^:\\n]*)`, 'g');
 
+// C++: `const TcpConnectionPtr &conn`, `Foo *p`, `ns::Foo x(`, `for (const Foo &x : xs)`,
+// `std::shared_ptr<Foo> p` (the pointee's methods) — at a declaration position (line
+// start, `(`, `,`, `;`, `{`), so `a = B * c` is no declaration of `c`.
+const CPP_DECL_HEAD = `(?:^|[(,;{])\\s*(?:(?:const|static|constexpr|volatile|mutable|typename|struct|class|register|thread_local)\\s+)*`;
+const CPP_TYPED = new RegExp(`${CPP_DECL_HEAD}((?:${ID}::)*)([A-Z]\\w*)${GENERICS}?(?:\\s*const)?(?:\\s*[&*]+\\s*|\\s+)(?:const\\s+)?(${ID})\\s*(?=[,)=;:{(\\[]|$)`, 'gm');
+const CPP_SMART = new RegExp(`${CPP_DECL_HEAD}(?:(?:::)?std::)?(?:shared_ptr|unique_ptr|weak_ptr)\\s*<\\s*(?:const\\s+)?((?:${ID}::)*)([A-Z]\\w*)\\s*>(?:\\s*const)?(?:\\s*[&*]+\\s*|\\s+)(${ID})\\s*(?=[,)=;:{(\\[]|$)`, 'gm');
+// `auto x =`, `auto &x : xs`, `auto [a, b] =`, lambda `(auto x)`.
+const CPP_UNTYPED = new RegExp(`\\bauto\\s*[&*]*\\s*(${ID})\\b|\\bauto\\s*[&*]*\\s*\\[([^\\]]*)\\]`, 'g');
+
 function namesIn(list) {
   return String(list || '').split(/[^\w$]+/).filter(Boolean);
 }
@@ -162,6 +172,21 @@ function declaredTypeInCode(text, name, filePath) {
     TF_UNTYPED.lastIndex = 0;
     while ((m = TF_UNTYPED.exec(text)) !== null) {
       if (anyGroupNames(m, name) && !builtAt.has(m.index)) return null;
+    }
+  } else if (CPP_FILE.test(f)) {
+    for (const re of [CPP_TYPED, CPP_SMART]) {
+      re.lastIndex = 0;
+      while ((m = re.exec(text)) !== null) {
+        if (m[3] !== name) continue;
+        // `return Foo x` never parses; `Foo x` after these words is no declaration.
+        const prevWord = /(\w+)\s*$/.exec(text.slice(Math.max(0, m.index - 12), m.index + 1))?.[1];
+        if (prevWord && TYPE_FIRST_NOT_TYPES.has(prevWord)) continue;
+        found.push(`${m[1].replace(/::/g, '.')}${m[2]}`);
+      }
+    }
+    CPP_UNTYPED.lastIndex = 0;
+    while ((m = CPP_UNTYPED.exec(text)) !== null) {
+      if (anyGroupNames(m, name)) return null;
     }
   } else if (COLON_TYPED_FILE.test(f)) {
     COLON_TYPED.lastIndex = 0;
@@ -321,6 +346,9 @@ export function annotateReceiverTypes(filePath, content, entities, relationships
   const memo = new Map();
   const bodies = new Map();
   const phpAliases = PHP_FILE.test(filePath) ? phpUseAliases(content) : null;
+  // C++: a template parameter (`template <typename Handler>` … `Handler &&handler`) names
+  // any type; it gets no annotation, so the receiver-name rules still apply.
+  const templateParams = CPP_FILE.test(filePath) ? cppTemplateParams(content) : null;
   for (const rel of relationships) {
     if (rel.type !== 'calls' || rel.full_import_path || !rel.context_line) continue;
     const parts = String(rel.target_name || '').split('.');
@@ -343,13 +371,30 @@ export function annotateReceiverTypes(filePath, content, entities, relationships
         text = stripComments(lines.slice(start - 1, end).join('\n'), filePath);
         bodies.set(src.id, text);
       }
-      const declared = declaredTypeInCode(text, recv, filePath);
+      let declared = declaredTypeInCode(text, recv, filePath);
       if (declared && phpAliases?.has(declared.type)) declared.type = phpAliases.get(declared.type);
+      if (declared && templateParams?.has(declared.type)) declared = null;
       annotation = declared ? receiverAnnotation(declared, { isGo, ownDir, goPackages }) : null;
       memo.set(key, annotation);
     }
     if (annotation) rel.full_import_path = annotation;
   }
+}
+
+/** Names declared as template parameters anywhere in a C++ file. */
+function cppTemplateParams(content) {
+  const names = new Set();
+  const re = /\btemplate\s*<([^;{]*?)>\s*(?:class|struct|using|[A-Za-z_]|$)/gm;
+  let m;
+  while ((m = re.exec(String(content || ''))) !== null) {
+    const pr = /\b(?:typename|class)\s*(?:\.\.\.\s*)?([A-Za-z_]\w*)/g;
+    let p;
+    while ((p = pr.exec(m[1])) !== null) names.add(p[1]);
+    // Constrained parameters: `template <std::integral T>`, `template <Formattable T>`.
+    const cr = /(?:^|,)\s*(?:[\w:]+)\s+([A-Z]\w*)\s*(?==|,|$)/g;
+    while ((p = cr.exec(m[1])) !== null) names.add(p[1]);
+  }
+  return names;
 }
 
 // `use Vendor\\Pkg\\Foo as Bar;` → Bar names Foo.
