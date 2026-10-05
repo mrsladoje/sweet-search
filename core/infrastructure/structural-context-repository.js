@@ -6,7 +6,7 @@ import { applyReadPragmas } from './db-utils.js';
 import { findAliasCallers } from './structural-alias-resolver.js';
 import { rankStructuralCandidates } from './structural-candidate-ranker.js';
 import { findAssignedMemberDefinitions, findSameFileDefinition } from './structural-source-definitions.js';
-import { goPackagePrivateFrom, pythonPackageCallOnMethod, shouldTrustQualifiedResolution, trustedCallerEdge, trustedCalleeEdge } from './structural-qualified-resolution.js';
+import { goPackagePrivateFrom, privateFrom, pythonPackageCallOnMethod, shouldTrustQualifiedResolution, trustedCallerEdge, trustedCalleeEdge } from './structural-qualified-resolution.js';
 import { fetchPageRank, fetchFrontierBackwardEdges, fetchFrontierForwardEdges } from './structural-graph-signals.js';
 import { CodeGraphReaderVisibility } from './code-graph-visibility.js';
 import { SITE_LINE_RELATIONSHIP_TYPES as SITE_LINE_TYPES, TRACE_ONLY_TYPES_SQL } from './relationship-types.js';
@@ -127,6 +127,35 @@ const candidateKindTier = (type) => {
  * edges: ocelot `ILoadBalancer.LeaseAsync` has 23, `NoLoadBalancer.LeaseAsync` 5), then
  * the SQL order (smaller span). Stable on ties.
  */
+function declaredPrivateRow(r) {
+  const sig = String(r.signature || '');
+  const at = r.name ? sig.indexOf(r.name) : -1;
+  return /(?:^|\s)(?:fileprivate|private)\b/.test(at >= 0 ? sig.slice(0, at) : sig.split('(')[0]);
+}
+
+// The signature without the name and its parameter list: `static App &instance()` →
+// `static App &`, `fn new(cfg: Foo) -> Self` → `fn  -> Self`. A parameter of the owner's
+// type (`Bar create(Foo seed)`) says nothing about what the call returns.
+export function returnTypeText(signature, name) {
+  const sig = String(signature || '');
+  const at = sig.search(new RegExp(`(?:\\w+::)*\\b${name.replace(/[$]/g, '\\$')}\\b`));
+  if (at < 0) return sig;
+  const open = sig.indexOf('(', at);
+  if (open < 0) return sig.slice(0, at);
+  let depth = 0;
+  let close = sig.length;
+  for (let i = open; i < sig.length; i++) {
+    if (sig[i] === '(') depth++;
+    else if (sig[i] === ')' && --depth === 0) { close = i; break; }
+  }
+  // `Option<Self>` / `Result<Self, E>` is another type; a pointer (`Box<Self>`) is not.
+  return `${sig.slice(0, at)} ${sig.slice(close + 1)}`
+    .replace(/\b(\w+)\s*<[^<>]*>/g, (all, outer) => (/^(?:Box|Rc|Arc|shared_ptr|unique_ptr)$/.test(outer) ? all : outer));
+}
+
+const CALLABLE_ENTITY_TYPE = /^(?:function|method|constructor|arrowFunction|assignedFunc|shortFunction|objectMethod|objectArrow|def|func|proc|procedure|rpc|macro)$/;
+const ACCESSOR_FILE = /\.(?:[cm]?[jt]sx?|cs|kt|kts|swift|scala|dart|as|vala)$/i;
+
 export function preferCalledDefinitions(rows, qualifier, spelled) {
   return rows.map((row, index) => ({ row, index })).sort((a, b) => {
     const A = a.row; const B = b.row;
@@ -134,6 +163,9 @@ export function preferCalledDefinitions(rows, qualifier, spelled) {
       qualifier && r.parent_class === qualifier ? 0 : 1,
       r.name === spelled ? 0 : 1,
       isTestLikePath(r.file_path) ? 1 : 0,
+      // The public entry point before a private overload or forwarder (os-lib's
+      // `private[os] def call` forwarder came before the public `def call`).
+      declaredPrivateRow(r) ? 1 : 0,
       candidateKindTier(r.type),
     ];
     const ka = key(A); const kb = key(B);
@@ -333,7 +365,8 @@ export class StructuralContextRepository {
     const ownedFirst = (list) => (qualifier
       ? [...list.filter(c => c?.parentClass === qualifier), ...list.filter(c => c?.parentClass !== qualifier)]
       : list);
-    const names = [...new Set([raw, suffix].filter(Boolean))];
+    // A JS/TS private method is stored as `#dispatch`; `Hono.dispatch` names it too.
+    const names = [...new Set([raw, suffix, qualifier && /^[A-Za-z_$][\w$]*$/.test(suffix) ? `#${suffix}` : ''].filter(Boolean))];
     const filePath = typeof opts.filePath === 'string' && opts.filePath.trim()
       ? opts.filePath.trim()
       : null;
@@ -510,7 +543,7 @@ export class StructuralContextRepository {
       const ownType = new RegExp(`\\b(?:${owner}|Self|this)\\b`);
       return db.prepare(`SELECT e.signature FROM entities e WHERE ${this._entitySql(db, 'e')} AND e.name = ? AND e.parent_class = ? LIMIT 4`)
         .all(...this._entityParams(db), m[1], resolved.parentClass)
-        .some(r => ownType.test(String(r.signature || '').replace(new RegExp(`(?:\\w+::)*\\b${m[1]}\\b[\\s\\S]*?\\(`), '(')));
+        .some(r => ownType.test(returnTypeText(r.signature, m[1])));
     } catch {
       return false;
     }
@@ -532,9 +565,14 @@ export class StructuralContextRepository {
   /** Other definitions with the target's name (rivals for an unbound qualified call). */
   _namesakes(db, target) {
     try {
-      return db.prepare(`SELECT e.id, e.file_path, e.parent_class, e.package, e.signature, e.summary, e.name
+      // Only the same kind of thing rivals the target: a field `parse = false` is no rival of
+      // the function `parse`.
+      const callable = (type) => CALLABLE_ENTITY_TYPE.test(String(type || ''));
+      const wantCallable = callable(target.type);
+      return db.prepare(`SELECT e.id, e.file_path, e.parent_class, e.package, e.signature, e.summary, e.name, e.type
         FROM entities e WHERE ${this._entitySql(db, 'e')} AND e.name = ? LIMIT 200`)
         .all(...this._entityParams(db), target.name)
+        .filter(r => r.id === target.id || callable(r.type) === wantCallable)
         .map(r => ({ id: r.id, name: r.name, filePath: r.file_path, parentClass: r.parent_class, package: r.package, signature: r.signature, summary: r.summary }));
     } catch {
       return null;
@@ -595,7 +633,16 @@ export class StructuralContextRepository {
       }
       return false;
     };
-    const named = rows.filter(row => !packageCallUnbound(row)
+    // SQLite LIKE ignores case: `Net::HTTP::Get.new` matched `get.%` for the method `get`.
+    // Names are case-sensitive except in PHP.
+    const lc = lowerCamel(target.name);
+    const spelled = (row) => {
+      const tn = String(row.target_name || '');
+      return row.target_id === target.id || /\.php$/i.test(String(row.file_path || ''))
+        || tn === target.name || tn.startsWith(`${target.name}.`) || tn.startsWith(`${lc}.`)
+        || tn.endsWith(`.${target.name}`) || tn.endsWith(`::${target.name}`);
+    };
+    const named = rows.filter(row => !packageCallUnbound(row) && spelled(row)
       && !(callableTarget && row.target_id !== target.id && memberOfName(row.target_name))).map(row => ({
       ...this._entityFromRow(row),
       relationship: row.rel_type,
@@ -636,7 +683,7 @@ export class StructuralContextRepository {
     if (Array.isArray(opts.unresolved)) {
       for (const edge of named) {
         if (!edge.targetId && edge.relationship === 'calls' && !trustedCallerEdge(edge, target, namesakes)
-          && !goPackagePrivateFrom(edge.filePath, target)) opts.unresolved.push(edge);
+          && !goPackagePrivateFrom(edge.filePath, target) && !privateFrom(edge, target)) opts.unresolved.push(edge);
       }
     }
     const linesByPair = this._siteLines(db, edges.filter(e => SITE_LINE_TYPES.has(e.relationship)).map(e => e.id));
@@ -663,8 +710,9 @@ export class StructuralContextRepository {
     // A member declared in a type body: `protected abstract getPath(event: E): string`
     // (hono EventProcessor was listed as a caller of its subclasses' getPath).
     // Also with a return type (Java/C# `protected abstract String getPath(E e);`) and
-    // accessors (`get getPath()`, `set path(v)`).
-    const memberDeclRe = new RegExp(`^\\s*(?:(?:(?:public|private|protected|internal|abstract|static|override|virtual|readonly|async|final|open|declare|sealed|extern|unsafe|synchronized|native|default)\\s+)+(?:[\\w.$]+(?:<[^()]*>)?(?:\\[\\])*\\??\\s+)?|(?:get|set)\\s+)${escaped}\\s*[(<]`);
+    // accessors (`get getPath()`, `set path(v)`) in the languages that have them (a Ruby
+    // `get getPath()` is a Sinatra route calling getPath).
+    const memberDeclRe = new RegExp(`^\\s*(?:(?:(?:public|private|protected|internal|abstract|static|override|virtual|readonly|async|final|open|declare|sealed|extern|unsafe|synchronized|native|default)\\s+)+(?:[\\w.$]+(?:<[^()]*>)?(?:\\[\\])*\\??\\s+)?${ACCESSOR_FILE.test(target.filePath) ? '|(?:get|set)\\s+' : ''})${escaped}\\s*[(<]`);
     // `@spec name(...)` / `@callback name(...)`: an attribute that declares the name's type.
     const attrDeclRe = new RegExp(`^\\s*@\\w+\\s+${escaped}\\s*\\(`);
     const lines = source.split('\n');

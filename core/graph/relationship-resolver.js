@@ -91,6 +91,9 @@ function isSameProject(path1, path2) {
 
 // Entity types that own methods. Extractors rarely fill `parent_class`
 // (tree-sitter entities never do), so the owner is derived from spans.
+// Containers whose methods run on an instance (not a module or namespace).
+const INSTANCE_OWNER_KINDS = new Set(['class', 'struct', 'interface', 'trait', 'impl', 'enum', 'protocol', 'record', 'actor', 'union', 'extension']);
+
 const CONTAINER_TYPES = new Set([
   'class', 'struct', 'interface', 'trait', 'impl', 'enum', 'extension',
   'protocol', 'object', 'namespace', 'module', 'record', 'actor', 'union',
@@ -173,9 +176,54 @@ function declaredReceiverType(receiver, sourceEntity) {
 // Return type of a one-line signature: Swift/Rust `-> T`, Kotlin/TS/Scala
 // `): T`, Go `func (r *R) name(…) *T`, Java/C#/Dart/C++ `T name(`.
 const RETURN_ARROW = /->\s*&?\s*(?:mut\s+)?(\w+)(?!\s*[<[.?])/;
+// `-> crate::Client`, `-> Box<Client>`, `-> Option<Self>`: the last path segment; a
+// pointer wrapper forwards to its argument, any other generic is its own type.
+const RETURN_ARROW_PATH = /->\s*&?\s*(?:'\w+\s+)?(?:mut\s+)?(?:dyn\s+|impl\s+)?((?:\w+::)*\w+)\s*(?:<\s*(?:'\w+\s*,\s*)?((?:\w+::)*\w+))?/;
 const RETURN_COLON = /\)\s*:\s*(\w+)(?!\s*[<[.?])/;
 const RETURN_GO = /^func\s*\([^)]*\)\s*(\w+)\s*\([^)]*\)\s*\*?(\w+)\b/;
 const RETURN_PREFIX = /(?:^|[\s(])(\w+)(?:<[^<>()]*>)?\s*[*&]?\s+(\w+)\s*[(<]/;
+
+// The declared return type name of a one-line signature, or null (`Self` stays `Self`).
+function returnTypeName(signature, name) {
+  const sig = String(signature || '');
+  if (!sig) return null;
+  // Kotlin `fun header(…) = apply { … }`: the receiver itself.
+  if (/\)\s*=\s*(?:apply|also|this)\b/.test(sig)) return 'Self';
+  let m = RETURN_ARROW_PATH.exec(sig);
+  if (m) {
+    const outer = m[1].split('::').pop();
+    return m[2] && POINTER_WRAPPERS.test(outer) ? m[2].split('::').pop() : outer;
+  }
+  m = RETURN_GO.exec(sig);
+  if (m) return m[1] === name ? m[2] : null;
+  m = RETURN_COLON.exec(sig);
+  if (m) return m[1];
+  return prefixReturnType(sig, name);
+}
+
+// Wrappers whose methods forward to the wrapped type (`std::shared_ptr<Value>` → Value).
+const POINTER_WRAPPERS = /^(?:shared_ptr|unique_ptr|weak_ptr|Rc|Arc|Box|Ptr|SharedPtr|UniquePtr|RefPtr|QSharedPointer|QPointer)$/;
+const PREFIX_NOISE = /\b(?:const|static|virtual|inline|constexpr|explicit|extern|friend|typename|volatile|mutable|public|private|protected|internal|final|override|abstract|synchronized|unsafe|[A-Z][A-Z0-9_]{2,})\b|[*&]/g;
+
+// Java/C#/Dart/C/C++ `T name(`: the type before the (possibly `Owner::`-qualified) name.
+// A signature whose first line holds no `(` is the return type alone (`std::shared_ptr<Value>`
+// above `value() const`).
+function prefixReturnType(sig, name) {
+  const esc = String(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const at = sig.search(new RegExp(`(?:\\b\\w+::)*\\b${esc}\\s*[(<]`));
+  const head = at >= 0 ? sig.slice(0, at) : (sig.includes('(') ? null : sig);
+  if (head == null) return null;
+  const h = head.replace(/@[\w.]+(?:\([^)]*\))?/g, ' ').replace(PREFIX_NOISE, ' ').trim();
+  // `fun f(…) =`, `def f(`, `func f(`: a declaration keyword, no return type.
+  if (!h || /(?:^|\s)(?:fun|func|def|fn|function|sub|proc|let|var|val|async|suspend|operator|infix|override|open|private|internal)$/.test(h)) return null;
+  const g = /([\w:]+)\s*<\s*([\w:]+)[^<>]*>\s*$/.exec(h);
+  if (g) {
+    const outer = g[1].split('::').pop();
+    return POINTER_WRAPPERS.test(outer) ? g[2].split('::').pop() : outer;
+  }
+  const t = /([A-Za-z_][\w:]*)\s*$/.exec(h);
+  return t ? t[1].split('::').pop() : null;
+}
 
 function returnsOwnType(signature, owner, name) {
   const sig = String(signature || '');
@@ -308,6 +356,25 @@ export function createCallResolutionIndex(entities, { fileImports = null, hierar
     return outer;
   }
 
+  // The kind of the innermost container around a definition ('struct', 'module', …), or null.
+  const ownerKindMemo = new Map();
+  function ownerKindOf(entity) {
+    if (!entity) return null;
+    const hit = ownerKindMemo.get(entity.id);
+    if (hit !== undefined) return hit;
+    let kind = null;
+    const list = entity.start_line != null ? containersByFile.get(entity.file_path) : null;
+    if (list) {
+      const end = entity.end_line ?? entity.start_line;
+      for (const c of list) {
+        if (c.start_line > entity.start_line) break;
+        if (c.id !== entity.id && c.end_line >= end) kind = c.type;
+      }
+    }
+    ownerKindMemo.set(entity.id, kind);
+    return kind;
+  }
+
   // 'container' (class/struct/…), 'alias' (a type alias only) or null (the
   // repo defines no type of that name).
   let aliasNames = null;
@@ -420,6 +487,28 @@ export function createCallResolutionIndex(entities, { fileImports = null, hierar
     return f;
   }
 
+  // Types the callables named `name` declare they return (`fn client() -> Client`,
+  // `-> Self` as the owner): what `name().next()` is called on.
+  const returnsMemo = new Map();
+  function returnTypesOf(name) {
+    let set = returnsMemo.get(name);
+    if (set) return set;
+    methodOwners(name); // builds callablesByName
+    set = new Set();
+    for (const e of callablesByName.get(name) || []) {
+      const t = returnTypeName(e.signature, name);
+      // One producer of that name with no readable return type leaves the result unknown.
+      if (!t) { set = EMPTY_SET; break; }
+      if (t === 'Self' || t === 'this') { const o = ownerOf(e); if (o) set.add(o); continue; }
+      set.add(t);
+      // `IConfigPtr` (an alias of `std::shared_ptr<IConfig>`) reaches IConfig.
+      const target = aliasTargetOf(t);
+      if (target) set.add(target);
+    }
+    returnsMemo.set(name, set);
+    return set;
+  }
+
   // Owners of the callables with a given name (`prev()` in a chained call).
   let callablesByName = null;
   const ownersMemo = new Map();
@@ -479,10 +568,13 @@ export function createCallResolutionIndex(entities, { fileImports = null, hierar
     outerOf,
     isInterfaceIn,
     typeKindOf,
+    ownerKindOf,
     aliasTargetOf,
     isInterfaceType,
     factsOf,
     methodOwners,
+    returnTypesOf,
+    hasCallable: (name) => { methodOwners(name); return (callablesByName.get(name) || []).length > 0; },
     supertypesOf,
     subtypesOf,
     directSupertypesOf: (name) => (hierarchy && hierarchy.supers && hierarchy.supers.get(name)) || EMPTY_SET,
@@ -597,8 +689,8 @@ function defaultFactsOf(entity) {
 const INTERFACE_TYPES = new Set(['interface', 'protocol']);
 const EMPTY_SET = new Set();
 const NO_INDEX = {
-  ownerOf: () => null, outerOf: () => null, isInterfaceIn: () => false, typeKindOf: () => null, factsOf: defaultFactsOf, containerFiles: () => null, importsOf: () => null,
-  methodOwners: () => EMPTY_SET, supertypesOf: () => EMPTY_SET, subtypesOf: () => EMPTY_SET, directSupertypesOf: () => EMPTY_SET,
+  ownerOf: () => null, outerOf: () => null, isInterfaceIn: () => false, typeKindOf: () => null, ownerKindOf: () => null, factsOf: defaultFactsOf, containerFiles: () => null, importsOf: () => null,
+  methodOwners: () => EMPTY_SET, returnTypesOf: () => EMPTY_SET, hasCallable: () => true, supertypesOf: () => EMPTY_SET, subtypesOf: () => EMPTY_SET, directSupertypesOf: () => EMPTY_SET,
   receiverSpread: () => 0, isInterfaceType: () => false,
 };
 
@@ -663,9 +755,9 @@ export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, inde
   // caller's own type, never a same-named method elsewhere. A parent outside
   // the repo (Python `io.StringIO`) has no definition here: no edge (click's
   // RecordingStream.write → super().write was bound to _PagerWriter.write).
-  // Go has no `super`: there it is a variable name.
+  // Go has no `super`: there it is a variable name. Rust `super::f()` is a module path.
   const srcFile = sourceEntity?.file_path || '';
-  if ((receiver === 'super' && !/\.go$/.test(srcFile)) || (receiver === 'base' && /\.cs$/.test(srcFile))
+  if ((receiver === 'super' && !/\.(?:go|rs)$/.test(srcFile)) || (receiver === 'base' && /\.cs$/.test(srcFile))
     || (receiver === 'parent' && /\.php$/.test(srcFile))) {
     const srcOwner = sourceEntity ? ownerOf(sourceEntity) : null;
     if (!srcOwner) return [];
@@ -685,7 +777,21 @@ export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, inde
     return [];
   }
 
-  let pool = candidates;
+  // A call reaches only code of a compatible language: typeahead.jquery.js in docs/ has
+  // no call of Swift's MultipartFormData.append.
+  let pool = srcFile ? candidates.filter(c => languagesCompatible(srcFile, c.file_path)) : candidates;
+  if (pool.length === 0) return pool;
+  // A private member (Swift `fileprivate`/`private`; `private` in Kotlin, Java, C#, TS,
+  // PHP, Scala) is reachable only from its own file. A C# partial type spans files, so
+  // the caller's own type counts too. Alamofire's Session.swift `initialRequest.validate()`
+  // was bound to Validation.swift's `fileprivate func validate`.
+  if (srcFile && pool.some(declaredPrivate)) {
+    const srcOwner = sourceEntity ? ownerOf(sourceEntity) : null;
+    // A PHP trait's private method belongs to every class that `use`s the trait.
+    const traitMember = (c) => /\.php$/i.test(c.file_path || '') && (idx.ownerKindOf || NO_INDEX.ownerKindOf)(c) === 'trait';
+    pool = pool.filter(c => c.file_path === srcFile || !declaredPrivate(c) || traitMember(c) || (!!srcOwner && ownerOf(c) === srcOwner));
+    if (pool.length === 0) return pool;
+  }
   if (sourceEntity && !selfLike && pool.length > 1) {
     // Recursion through another instance (`child.visit()` inside `visit`)
     // stays possible when the caller is the only definition.
@@ -725,6 +831,26 @@ export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, inde
     if (prevOwners.size === 1) {
       const viaPrev = ownedBy(pool, prevOwners);
       if (viaPrev.length > 0) return viaPrev;
+    }
+  }
+  if (chained && pool.length === 1 && ownerOf(pool[0])) {
+    // One repo method after a call result (`iter().map(f).collect()`): the name alone is
+    // no evidence (uv's 121 `….collect()` went to PubGrubReportFormatter::collect).
+    // - The call before is no repo callable (`iter()`, `$(…).prepend()`): its result is
+    //   an outside type; no edge.
+    // - It declares what it returns: that type (or a base / subtype of it, or the type an
+    //   extension method extends) must hold the method.
+    // - It declares nothing (Python, Ruby, Kotlin `= run { … }`): unknown; the edge stays.
+    const prev = receiverRaw.slice(0, -2);
+    const c = pool[0];
+    const owner = extensionReceiverOf(c) || ownerOf(c);
+    const prevOwners = (idx.methodOwners || NO_INDEX.methodOwners)(prev);
+    const prevReturns = (idx.returnTypesOf || NO_INDEX.returnTypesOf)(prev);
+    const prevKnown = (idx.hasCallable || NO_INDEX.hasCallable)(prev);
+    const fits = (t) => t === owner || supertypesOf(t).has(owner) || supertypesOf(owner).has(t);
+    if (prev !== owner && prev !== ownerOf(c) && !prevOwners.has(ownerOf(c))) {
+      // prevReturns is empty when a producer of that name declares no type (unknown).
+      if (prevReturns.size > 0 ? ![...prevReturns].some(fits) : !prevKnown) return [];
     }
   }
   if (!receiver) return needsEvidence ? [] : preferImported(pool, sourceEntity, importsOf);
@@ -794,10 +920,21 @@ export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, inde
     const names = /^[A-Z]/.test(leaf)
       ? (f) => r === f.ownerKey || endsIn(f.stemKey) || endsIn(normalizeName(String(f.owner || '').split(/[.:]+/).pop()))
       : (f) => receiverMatches(r, f.ownerKey) || receiverMatches(r, f.stemKey);
-    const named = pool.filter(c => names(factsOf(c)));
-    const evident = named.length > 0 ? named : pool.filter(c => isImported(callerImports, c.file_path));
+    // A definition stored under its table's name (Lua `function busted.execute()`) names
+    // its receiver itself: it outranks a namesake in an imported file (`block.execute`).
+    const tableOf = (c) => { const n = String(c.name || ''); const d = n.lastIndexOf('.'); return d > 0 ? normalizeName(n.slice(0, d).split(/[.:]/).pop()) : ''; };
+    const byTable = pool.filter(c => tableOf(c) === leafKey);
+    const named = byTable.length > 0 ? byTable : pool.filter(c => names(factsOf(c)));
+    // An import names a file, not a variable's type: `stream.writer(…)` in httpz.zig (a
+    // std.net.Stream) is no call of Response.writer because httpz.zig imports response.zig.
+    // A module's function (Elixir, Lua tables, Zig file-level fns) keeps import evidence.
+    const ownerKindOf = idx.ownerKindOf || NO_INDEX.ownerKindOf;
+    const instanceReceiver = /^[a-z_]/.test(leaf);
+    const evident = named.length > 0 ? named : pool.filter(c => isImported(callerImports, c.file_path)
+      && !(instanceReceiver && INSTANCE_OWNER_KINDS.has(ownerKindOf(c))));
     return preferImported(evident, sourceEntity, importsOf);
   }
+  let receiverEvidence = false;
   if (pool.length > 1 || cFamily) {
     // Receiver evidence, most specific first: it names the owner in full
     // (`db` → Database), then a subtype of the owner in full (`body` → the
@@ -823,12 +960,18 @@ export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, inde
       : (viaSubtype.length > 0 ? viaSubtype : (suffix.length > 0 ? suffix : viaSupertype));
     if (byOwner.length > 0) {
       pool = byOwner;
+      receiverEvidence = true;
     } else {
       const byFile = pool.filter(c => receiverMatches(r, factsOf(c).stemKey));
-      if (byFile.length > 0) pool = byFile;
+      if (byFile.length > 0) { pool = byFile; receiverEvidence = true; }
       else if (cFamily) return [];
     }
-  } else if (pool.length === 1 && receiverSpread(pool[0].name.split('.').pop()) > GENERIC_RECEIVER_SPREAD) {
+  }
+  // Overloads of one owner count as one method: `streams.append(…)` (a Swift array) with
+  // only MultipartFormData's `append` overloads left is still no call of them.
+  const oneMethod = pool.length === 1 || (!receiverEvidence && pool.length > 1
+    && pool.every(c => ownerOf(c) && ownerOf(c) === ownerOf(pool[0])));
+  if (!receiverEvidence && oneMethod && receiverSpread(pool[0].name.split('.').pop()) > GENERIC_RECEIVER_SPREAD) {
     // One repo method of a generic API name (see GENERIC_RECEIVER_SPREAD): link only on
     // receiver evidence — it names the owner, a subtype or the file, or the caller's
     // file is that file or imports it. `dict.items()` is no call of `Apps.items`.
@@ -880,6 +1023,53 @@ function extensionReceiverOf(c) {
 const SMART_POINTER = String.raw`(?:(?:::)?\w+::)*(?:shared_ptr|unique_ptr|weak_ptr|intrusive_ptr|Rc|Arc|Box|RefPtr|sp)\s*<\s*(?:const\s+)?`;
 
 /** Type named by an alias declaration's right side (see aliasTargetOf), or null. */
+// Language groups that call each other (interop, shared headers). An extension in no
+// group is compatible with everything (the filter only removes known mismatches).
+const LANGUAGE_GROUPS = [
+  ['js', 'jsx', 'mjs', 'cjs', 'ts', 'tsx', 'mts', 'cts', 'vue', 'svelte', 'astro'],
+  ['c', 'h', 'cc', 'cpp', 'cxx', 'c++', 'hpp', 'hh', 'hxx', 'h++', 'ipp', 'inl', 'tpp', 'cu', 'cuh', 'm', 'mm'],
+  ['swift', 'm', 'mm', 'h'],
+  ['java', 'kt', 'kts', 'scala', 'sc', 'groovy', 'gradle', 'clj', 'cljs', 'cljc'],
+  ['cs', 'fs', 'vb'],
+  ['py', 'pyi', 'pyx'],
+  ['rb', 'rake', 'erb'],
+  ['go'], ['rs'], ['php'], ['ex', 'exs', 'erl', 'hrl'], ['lua'], ['zig'], ['dart'],
+  ['ml', 'mli'], ['hs'], ['jl'], ['r'], ['pl', 'pm'], ['sol'], ['nim'],
+];
+const GROUPS_BY_EXT = new Map();
+for (const [i, group] of LANGUAGE_GROUPS.entries()) {
+  for (const ext of group) GROUPS_BY_EXT.set(ext, [...(GROUPS_BY_EXT.get(ext) || []), i]);
+}
+function extOf(filePath) {
+  const f = String(filePath || '');
+  const dot = f.lastIndexOf('.');
+  return dot > f.lastIndexOf('/') ? f.slice(dot + 1).toLowerCase() : '';
+}
+function languagesCompatible(a, b) {
+  const ga = GROUPS_BY_EXT.get(extOf(a));
+  const gb = GROUPS_BY_EXT.get(extOf(b));
+  return !ga || !gb || ga.some(g => gb.includes(g));
+}
+
+const PRIVATE_DECL_FILE = /\.(?:swift|kt|kts|java|cs|ts|tsx|mts|cts|php|scala)$/i;
+const privateMemo = new WeakMap();
+// `private` / `fileprivate` before the name in the signature; not Swift `private(set)`
+// (a private setter) or Scala `private[pkg]` (package-wide).
+function declaredPrivate(c) {
+  if (!c || typeof c !== 'object') return false;
+  let v = privateMemo.get(c);
+  if (v === undefined) {
+    v = false;
+    if (PRIVATE_DECL_FILE.test(c.file_path || '')) {
+      const sig = String(c.signature || '');
+      const at = c.name ? sig.indexOf(c.name) : -1;
+      v = /(?:^|\s)(?:fileprivate|private)(?![\w([])/.test(at >= 0 ? sig.slice(0, at) : sig.split('(')[0]);
+    }
+    privateMemo.set(c, v);
+  }
+  return v;
+}
+
 export function aliasTargetIn(signature, name) {
   const sig = String(signature || '').replace(/\s+/g, ' ');
   const smart = new RegExp(String.raw`(?:=|typedef)\s*(?:typename\s+)?${SMART_POINTER}(?:(?:::)?\w+(?:::|\.))*([A-Za-z_]\w*)\s*>`).exec(sig);

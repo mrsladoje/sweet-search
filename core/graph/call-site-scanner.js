@@ -344,21 +344,23 @@ function buildPlan(language, langInfo) {
   for (const pair of EXTRA_BLOCK_COMMENTS[language] || []) blockPairs.push(pair);
 
   const hasDot = separators.includes('.');
+  // JS/TS `#private` members: `this.#fetch(`, `.#g(` on a continuation line, `make().#g(`.
+  const priv = OPTIONAL_CALL_LANGUAGES.has(language) ? '#?' : '';
   return {
     language,
     // obj SEP method [generics] (   — no space before SEP: `case .success(`,
     // `return .failure(` are Swift implicit-member expressions, not calls on
     // `case` / `return`.
     // JS/TS `this.#fetch(`: a `#private` member keeps its `#` (the entity's name).
-    qualified: new RegExp(String.raw`\b(\w+)(?:${sep})\s*(${OPTIONAL_CALL_LANGUAGES.has(language) ? '#?' : ''}\w+)${GENERIC_ARGS}${callOpen}`, 'g'),
+    qualified: new RegExp(String.raw`\b(\w+)(?:${sep})\s*(${priv}\w+)${GENERIC_ARGS}${callOpen}`, 'g'),
     // prev( … ) SEP method [generics] (   — lookahead keeps `method(` available
     // for the next match so `a(x).b(y).c(` yields both `a().b` and `b().c`.
     // Arguments may hold one level of calls: `addMiddleware(logRequests()).addHandler(`.
-    chained: new RegExp(String.raw`\b(\w+)${parenPrefix}${ONE_NESTED_ARGS}\s*(?:${sep})\s*(?=(\w+)${GENERIC_ARGS}${callOpen})`, 'g'),
+    chained: new RegExp(String.raw`\b(\w+)${parenPrefix}${ONE_NESTED_ARGS}\s*(?:${sep})\s*(?=(${priv}\w+)${GENERIC_ARGS}${callOpen})`, 'g'),
     // `)` SEP method (   — any receiver ending in `)`; deepChainCalls finds its `(`.
-    afterParen: new RegExp(String.raw`\)\s*[?!]*\s*(?:${sep})\s*(?=(\w+)${GENERIC_ARGS}${callOpen})`, 'g'),
+    afterParen: new RegExp(String.raw`\)\s*[?!]*\s*(?:${sep})\s*(?=(${priv}\w+)${GENERIC_ARGS}${callOpen})`, 'g'),
     // Continuation line: `.method(` / `?.method(` at line start.
-    leading: new RegExp(String.raw`^(?:${sep})\s*(\w+)${GENERIC_ARGS}${callOpen}`),
+    leading: new RegExp(String.raw`^(?:${sep})\s*(${priv}\w+)${GENERIC_ARGS}${callOpen}`),
     // Previous line ends with a receiver: `name`, `name(…)` or `name)` → tail.
     tail: new RegExp(String.raw`\b(\w+)\s*(${ONE_NESTED_ARGS})?\s*[?!]*\s*$`),
     // Previous line ends with a separator (Go/Ruby/Python trailing-dot style).
@@ -387,6 +389,8 @@ function buildPlan(language, langInfo) {
     pipeCalls: language === 'elixir',
     juliaShortDefinitions: language === 'julia',
     commandCalls: language === 'shell',
+    // Ruby calls a method without parentheses: `route_missing`, `halt 404`.
+    parenlessCalls: language === 'ruby',
   };
 }
 
@@ -470,6 +474,11 @@ export class CallSiteScanner {
     // String literal still open at the end of the previous line (template
     // literal, raw string, triple-quoted block): { close, interp, escapes }.
     this.openString = null;
+    // Calls whose argument list is still open (`addMiddleware(` with arguments on the
+    // next lines), and the last call closed: `)` alone on a line ends that call, and a
+    // `.next(` line after it chains on it.
+    this.openCalls = [];
+    this.lastClosedCall = null;
   }
 
   /** A line the caller skips (e.g. minified, over the length cap) breaks any chain. */
@@ -477,6 +486,51 @@ export class CallSiteScanner {
     this.lineNo++;
     this.prevCode = null;
     this.openString = null;
+    this.openCalls = [];
+    this.lastClosedCall = null;
+  }
+
+  /**
+   * Ruby locals of the current method: parameters, block parameters and assigned names. A
+   * lone `result` line is the local's value, not a call; reset at each `def`.
+   */
+  _rubyLocals(code) {
+    if (!this.locals || /^def\s/.test(code)) this.locals = new Set();
+    // Parameter names only: `def f(x = helper, *rest, key: 1, &blk)` declares x, rest, key, blk.
+    const def = /^def\s+(?:self\.)?[\w?!=]+\s*\(?([^)]*)\)?/.exec(code);
+    if (def) for (const part of def[1].split(',')) {
+      const m = /^\s*[*&]{0,2}([a-z_]\w*)/.exec(part);
+      if (m) this.locals.add(m[1]);
+    }
+    for (const m of code.matchAll(/\|([^|]*)\|/g)) for (const n of m[1].matchAll(/([a-z_]\w*)/g)) this.locals.add(n[1]);
+    for (const m of code.matchAll(/(?<![\w.:@$])([a-z_]\w*)\s*(?:,\s*[a-z_]\w*\s*)*(?:\|\||&&|[-+*\/])?=(?![=~>])/g)) this.locals.add(m[1]);
+  }
+
+  /** Ruby statement calls without parentheses: a lone name, or a name and its first argument. */
+  _scanParenless(code, emitBare, isDefinedHere) {
+    const m = RUBY_PARENLESS_CALL.exec(code);
+    if (!m) return;
+    const name = m[1];
+    if (RUBY_NON_CALL_WORDS.has(name) || this.plan.bareKeywords.has(name) || this.locals?.has(name)) return;
+    if (isDefinedHere && isDefinedHere(name)) return;
+    emitBare(name);
+  }
+
+  /** Track open argument lists over one string-blanked line. */
+  _trackParens(code) {
+    if (code.indexOf('(') === -1 && code.indexOf(')') === -1) return;
+    for (let i = 0; i < code.length; i++) {
+      const ch = code.charCodeAt(i);
+      if (ch === 40 /* ( */) {
+        let j = i;
+        while (j > 0 && (code.charCodeAt(j - 1) === 32 || code.charCodeAt(j - 1) === 9)) j--;
+        let b = j;
+        while (b > 0 && /[\w$]/.test(code[b - 1])) b--;
+        if (this.openCalls.length < 64) this.openCalls.push(b < j ? code.slice(b, j) : null);
+      } else if (ch === 41 /* ) */ && this.openCalls.length > 0) {
+        this.lastClosedCall = this.openCalls.pop();
+      }
+    }
   }
 
   /**
@@ -522,7 +576,8 @@ export class CallSiteScanner {
    */
   _blank(code) {
     const plan = this.plan;
-    if (!this.openString && !lineHasQuote(code, plan)) return code;
+    const zigLines = plan.language === 'zig' && code.indexOf('\\\\') !== -1;
+    if (!this.openString && !zigLines && !lineHasQuote(code, plan)) return code;
     let out = '';
     let i = 0;
     const n = code.length;
@@ -545,6 +600,8 @@ export class CallSiteScanner {
         i++;
         continue;
       }
+      // Zig multiline string line: `\\` opens a string that runs to the line end.
+      if (zigLines && ch === 92 && code.charCodeAt(i + 1) === 92) { out += '\\\\'; break; }
       let quote = null;
       if (plan.tripleQuote && (code.startsWith('"""', i) || (plan.language === 'dart' && code.startsWith("'''", i)))) {
         quote = code.slice(i, i + 3);
@@ -578,7 +635,12 @@ export class CallSiteScanner {
   _prevTail() {
     if (!this.prevCode) return null;
     const tm = this.plan.tail.exec(this.prevCode);
-    if (!tm) return null;
+    if (!tm) {
+      // `)` alone (or `),` / `})`) closes a call whose arguments ran over several lines.
+      if (this.lastClosedCall && /^[)\]}\s]*\)[)\]}\s]*$/.test(this.prevCode)
+        && !this.plan.bareKeywords.has(this.lastClosedCall)) return `${this.lastClosedCall}()`;
+      return null;
+    }
     return tm[2] !== undefined ? `${tm[1]}()` : tm[1];
   }
 
@@ -742,7 +804,9 @@ export class CallSiteScanner {
         else bare(name);
       };
     }
+    if (plan.parenlessCalls) this._rubyLocals(trimmed);
     if (emitBare) {
+      if (plan.parenlessCalls && !contRecv) this._scanParenless(trimmed, emitBare, isDefinedHere);
       if (plan.commandCalls) this._scanCommands(trimmed, emitBare, isDefinedHere);
       else if (trimmed.indexOf('(') !== -1) this._scanBare(trimmed, emitBare, isDefinedHere, !!contRecv && !startsWithSeparator(trimmed));
     }
@@ -853,9 +917,20 @@ export class CallSiteScanner {
       }
     }
 
+    this._trackParens(trimmed);
     this.prevCode = trimmed;
   }
 }
+
+// A whole statement `name` or `name arg…` (not `name = …`, `name if …`, `name.x`, `name(`).
+// A trailing modifier (`save! if valid?`) still makes the name a call; a symbol argument
+// (`foo :bar`) is an argument, `a ? b : c` and `x :: y` are not.
+const RUBY_PARENLESS_CALL = /^([a-z_]\w*[?!]?)(?:$|\s+(?:if|unless|while|until|rescue)\b|\s+(?![=+\-*\/%<>&|^~?.]|:[^a-z_A-Z"]|(?:and|or|do|then|in)\b)(?=[\w'"@:\[]))/;
+const RUBY_NON_CALL_WORDS = new Set(['end', 'else', 'begin', 'ensure', 'then', 'do', 'self', 'nil', 'true', 'false',
+  'next', 'break', 'redo', 'retry', 'return', 'yield', 'super', 'def', 'class', 'module', 'private', 'protected',
+  'public', 'module_function', 'raise', 'require', 'require_relative', 'include', 'extend', 'prepend', 'attr_reader',
+  'attr_writer', 'attr_accessor', 'puts', 'p', 'pp', 'print', 'loop', 'lambda', 'proc', 'alias', 'undef', 'catch',
+  'throw', 'fail', '__method__']);
 
 /** Scan a whole file; returns `[{ line, targetName }]` (1-based lines). */
 export function scanCallSites(langInfo, lines) {

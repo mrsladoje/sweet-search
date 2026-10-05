@@ -889,7 +889,7 @@ describe('round 12 — super calls', () => {
       supertypesOf: (t) => new Set(t === 'Leaf' ? ['Mid', 'Base'] : t === 'Mid' ? ['Base'] : []),
     };
     expect(narrowCallCandidates([base, mid], 'super', { id: 's', parent_class: 'Leaf', file_path: 'a.py' }, idx)).toEqual([mid]);
-    expect(narrowCallCandidates([base], 'super', { id: 's', parent_class: 'Leaf', file_path: 'a.go' }, idx)).not.toEqual([]);
+    expect(narrowCallCandidates([{ ...base, file_path: 'b.go' }], 'super', { id: 's', parent_class: 'Leaf', file_path: 'a.go' }, idx)).not.toEqual([]);
   });
 });
 
@@ -1090,5 +1090,194 @@ describe('round 17 — Scala `def` is a callable', () => {
     const other = ent('o', 'nextch', { file_path: 'xml/parsing/MarkupParserCommon.scala', parent_class: 'MarkupParserCommon', start_line: 187, end_line: 187 });
     const idx = createCallResolutionIndex([caller, target, other], {});
     expect(resolveBareCall(caller, [target, other], idx).map((c) => c.id)).toEqual(['t']);
+  });
+});
+
+describe('rounds 18-21 — visibility, table names, instance receivers, Zig line strings', () => {
+  it('Swift `let x: T` at a line end declares T (the next line is no type suffix)', async () => {
+    const { declaredTypeIn } = await import('../../core/graph/receiver-types.js');
+    expect(declaredTypeIn('let initialRequest: URLRequest\n\n        do {\n  try initialRequest.validate()', 'initialRequest', 'Session.swift'))
+      .toEqual({ type: 'URLRequest', qualifier: '' });
+  });
+
+  it('a private / fileprivate method is no call target from another file (C# partial: same type)', async () => {
+    const { narrowCallCandidates } = await import('../../core/graph/relationship-resolver.js');
+    const priv = { id: 'p', name: 'validate', parent_class: 'Request', file_path: 'Source/Validation.swift', signature: 'fileprivate func validate<S>(statusCode s: S)' };
+    const pub = { id: 'u', name: 'validate', parent_class: 'URLRequest', file_path: 'Source/URLRequest+Alamofire.swift', signature: 'public func validate() throws' };
+    const idx = { ownerOf: (e) => e.parent_class || null };
+    const from = (file, owner) => ({ id: 's', parent_class: owner, file_path: file });
+    expect(narrowCallCandidates([priv, pub], 'initialRequest', from('Source/Session.swift', 'Session'), idx)).not.toContain(priv);
+    expect(narrowCallCandidates([priv], 'self', from('Source/Validation.swift', 'DataRequest'), idx)).toEqual([priv]);
+    const part = { id: 'c', name: 'Run', parent_class: 'Job', file_path: 'Job.Core.cs', signature: 'private void Run()' };
+    expect(narrowCallCandidates([part], 'this', from('Job.Extra.cs', 'Job'), idx)).toEqual([part]);
+    // Swift `private(set)` is a private setter, not a private member.
+    const setter = { ...priv, id: 'v', signature: 'private(set) var validate: Bool' };
+    expect(narrowCallCandidates([setter], 'request', from('Source/Session.swift', 'Session'), idx)).toEqual([setter]);
+  });
+
+  it('ss-trace: a private target has no callers in other files; the public overload is picked first', async () => {
+    const { privateFrom } = await import('../../core/infrastructure/structural-qualified-resolution.js');
+    const target = { name: 'validate', filePath: 'Source/Validation.swift', parentClass: 'Request', signature: 'fileprivate func validate<S>(contentType a: S)' };
+    expect(privateFrom({ filePath: 'Tests/SessionTests.swift', parentClass: 'SessionTests' }, target)).toBe(true);
+    expect(privateFrom({ filePath: 'Source/Validation.swift', parentClass: 'DataRequest' }, target)).toBe(false);
+    const rows = [
+      { name: 'call', type: 'def', file_path: 'os/src/ProcessOps.scala', parent_class: 'proc', signature: 'private[os] def call(' },
+      { name: 'call', type: 'def', file_path: 'os/src/ProcessOps.scala', parent_class: 'proc', signature: 'def call(' },
+    ];
+    expect(preferCalledDefinitions(rows, 'proc', 'call')[0].signature).toBe('def call(');
+  });
+
+  it('Lua: a definition stored under the receiver table (`busted.execute`) beats an imported namesake', async () => {
+    const { narrowCallCandidates } = await import('../../core/graph/relationship-resolver.js');
+    const blockExec = { id: 'b', name: 'block.execute', file_path: 'busted/block.lua' };
+    const bustedExec = { id: 'c', name: 'busted.execute', file_path: 'busted/core.lua' };
+    const idx = { ownerOf: () => null, importsOf: () => new Set(['busted/block.lua']) };
+    expect(narrowCallCandidates([blockExec, bustedExec], 'busted', { id: 's', file_path: 'busted/execute.lua' }, idx)).toEqual([bustedExec]);
+  });
+
+  it('Zig: an import is no evidence for a struct method called on a variable', async () => {
+    const { narrowCallCandidates } = await import('../../core/graph/relationship-resolver.js');
+    const writer = { id: 'w', name: 'writer', file_path: 'src/response.zig', start_line: 178, end_line: 180 };
+    const close = { id: 'c', name: 'close', file_path: 'src/posix.zig', start_line: 10, end_line: 12 };
+    const idx = {
+      ownerOf: (e) => (e.id === 'w' ? 'Response' : null),
+      ownerKindOf: (e) => (e.id === 'w' ? 'struct' : null),
+      importsOf: () => new Set(['src/response.zig', 'src/posix.zig']),
+    };
+    const caller = { id: 's', file_path: 'src/httpz.zig' };
+    expect(narrowCallCandidates([writer], 'stream', caller, idx)).toEqual([]);
+    expect(narrowCallCandidates([close], 'p', caller, idx)).toEqual([close]);
+  });
+
+  it('Zig `\\\\` multiline string lines hold no calls', async () => {
+    const src = 'fn f(res: *R) !void {\n    res.body =\n        \\\\ call `res.writer()` here\n    ;\n    return res.write("\\\\x");\n}\n';
+    const r = await new GraphExtractor({}).extractFromFile('a.zig', src);
+    expect(r.relationships.filter(x => x.type === 'calls').map(x => x.target_name)).toEqual(['res.write']);
+  });
+});
+
+describe('rounds 18-21 — scanner: parenthesis-free Ruby calls, chains after multi-line arguments', () => {
+  it('Ruby: a lone method name or `name arg` is a call; a local or parameter of that name is not', async () => {
+    const src = ['class A', '  def route!(base = settings, pass_block = nil)', '    routes = base.routes',
+      '    routes.each do |pattern, block|', '      process_route(pattern)', '    end', '    route_missing', '    halt 404',
+      '    pass_block', '    routes', '    x = 1 if foo', '    puts x', '  end', 'end'].join('\n');
+    const r = await new GraphExtractor({}).extractFromFile('a.rb', src);
+    expect(r.callSites.filter(c => c.callee_name).map(c => c.callee_name)).toEqual(['process_route', 'route_missing', 'halt']);
+  });
+
+  it('a `.next(` line after `)` that closes a multi-line argument list chains on that call', async () => {
+    const src = 'void main() {\n  final h = const Pipeline()\n      .addMiddleware(\n        a,\n      )\n      .addHandler(c);\n  if (\n    x\n  )\n    .y();\n}\n';
+    for (const f of ['a.dart', 'a.java']) {
+      const r = await new GraphExtractor({}).extractFromFile(f, src);
+      expect(r.relationships.filter(x => x.type === 'calls').map(x => x.target_name)).toEqual(['Pipeline().addMiddleware', 'addMiddleware().addHandler']);
+    }
+  });
+});
+
+describe('held-out audit of rounds 14-17 (Codex review) — fixes', () => {
+  it('Scala: `extends` at the class indent continues the header', async () => {
+    const r = await new GraphExtractor({}).extractFromFile('a.scala', 'class A\nextends B {\n  def f() = g()\n}\nobject C\n');
+    expect(r.entities.find(e => e.name === 'A')).toMatchObject({ start_line: 1, end_line: 4 });
+  });
+
+  it('Gradle `def x = 3` is a value; `def f(…)` a method', async () => {
+    const r = await new GraphExtractor({}).extractFromFile('build.gradle', 'def retry = 3\ndef build(x) {\n  x\n}\n');
+    expect(r.entities.map(e => `${e.type}:${e.name}`)).toEqual(['variable:retry', 'def:build']);
+  });
+
+  it('a local of a function that ends on the last line (no final newline) is no definition', async () => {
+    const r = await new GraphExtractor({}).extractFromFile('a.zig', 'fn run() void {\n  const local = 1;\n}');
+    expect(r.entities.map(e => e.name)).toEqual(['run']);
+  });
+
+  it('receiver types ignore string text; same-type chains read only the return type', async () => {
+    const { declaredTypeIn } = await import('../../core/graph/receiver-types.js');
+    const { returnTypeText } = await import('../../core/infrastructure/structural-context-repository.js');
+    expect(declaredTypeIn('void f() {\n  puts("{ Foo client;");\n  client.send();\n}', 'client', 'a.cc')).toBeNull();
+    expect(returnTypeText('Bar create(Foo seed)', 'create')).not.toMatch(/Foo/);
+    expect(returnTypeText('static App &instance()', 'instance')).toMatch(/App/);
+    expect(returnTypeText('pub fn new(cfg: Foo) -> Self', 'new')).toMatch(/Self/);
+  });
+
+  it('alias callers: a string holding `bar(` is no call; a template `${bar(1)}` is', async () => {
+    const { commentRanges } = await import('../../core/infrastructure/structural-alias-resolver.js');
+    const t = 'import { foo as bar } from "./x";\nfunction f() {\n  return "bar(" + `x ${bar(1)} y`;\n}\n';
+    const r = commentRanges(t, 'a.ts', { strings: true });
+    const hidden = (i) => r.some(([a, b]) => i >= a && i < b);
+    const hits = [...t.matchAll(/bar\s*\(/g)].map(m => hidden(m.index));
+    expect(hits).toEqual([true, false]);
+  });
+
+  it('JS `#private` calls on a continuation line and after a call result', async () => {
+    const src = 'class A {\n  f() {\n    return this\n      .#g()\n  }\n  h() { return this.make().#g() }\n  make() { return this }\n  #g() {}\n}\n';
+    const r = await new GraphExtractor({}).extractFromFile('a.js', src);
+    expect(r.relationships.filter(x => x.type === 'calls').map(x => x.target_name)).toEqual(expect.arrayContaining(['this.#g', 'make().#g']));
+  });
+});
+
+describe('rounds 18-21 — a chained call links only when the call before makes the owner', () => {
+  it('`iter().collect()` is no call of the one repo `collect`; `Router::new().route()` and `client().send()` link', async () => {
+    const { createCallResolutionIndex, narrowCallCandidates } = await import('../../core/graph/relationship-resolver.js');
+    const ents = [
+      { id: 'r', name: 'Report', type: 'struct', file_path: 'src/report.rs', start_line: 1, end_line: 20 },
+      { id: 'c', name: 'collect', type: 'method', file_path: 'src/report.rs', start_line: 5, end_line: 8, parent_class: 'Report', signature: 'fn collect(&self) -> Vec<String>' },
+      { id: 'R', name: 'Router', type: 'struct', file_path: 'src/router.rs', start_line: 1, end_line: 30 },
+      { id: 'n', name: 'new', type: 'method', file_path: 'src/router.rs', start_line: 2, end_line: 4, parent_class: 'Router', signature: 'pub fn new() -> Self' },
+      { id: 'o', name: 'route', type: 'method', file_path: 'src/router.rs', start_line: 5, end_line: 9, parent_class: 'Router', signature: 'pub fn route(self, p: &str) -> Self' },
+      { id: 'C', name: 'Client', type: 'struct', file_path: 'src/client.rs', start_line: 1, end_line: 30 },
+      { id: 's', name: 'send', type: 'method', file_path: 'src/client.rs', start_line: 5, end_line: 9, parent_class: 'Client', signature: 'pub fn send(&self)' },
+      { id: 'f', name: 'client', type: 'function', file_path: 'src/lib.rs', start_line: 1, end_line: 3, signature: 'pub fn client() -> Client' },
+    ];
+    const idx = createCallResolutionIndex(ents);
+    const caller = { id: 'x', name: 'main', type: 'function', file_path: 'src/main.rs', start_line: 1, end_line: 9 };
+    expect(narrowCallCandidates([ents[1]], 'iter()', caller, idx)).toEqual([]);
+    expect(narrowCallCandidates([ents[4]], 'new()', caller, idx)).toEqual([ents[4]]);
+    expect(narrowCallCandidates([ents[6]], 'client()', caller, idx)).toEqual([ents[6]]);
+  });
+});
+
+describe('rounds 18-21 — language compatibility and one-owner overloads', () => {
+  it('a JS call never links to a Swift method; Kotlin reaches Java', async () => {
+    const { narrowCallCandidates } = await import('../../core/graph/relationship-resolver.js');
+    const idx = { ownerOf: (e) => e.parent_class || null };
+    const swift = { id: 's', name: 'append', parent_class: 'MultipartFormData', file_path: 'Source/MultipartFormData.swift' };
+    const java = { id: 'j', name: 'build', parent_class: 'Builder', file_path: 'src/Builder.java' };
+    expect(narrowCallCandidates([swift], 'MultipartFormData', { id: 'c', file_path: 'docs/js/typeahead.js' }, idx)).toEqual([]);
+    expect(narrowCallCandidates([java], 'builder', { id: 'k', file_path: 'src/Main.kt' }, idx)).toEqual([java]);
+  });
+});
+
+describe('Codex review of the round 18-21 fixes', () => {
+  it('Ruby: default values are no locals; a modifier or a symbol argument keeps the call', async () => {
+    const src = ['class A', '  def f(x = helper)', '    helper', '    save! if valid?', '    foo :bar', '    a ? b : c', '  end', 'end'].join('\n');
+    const r = await new GraphExtractor({}).extractFromFile('a.rb', src);
+    expect(r.callSites.filter(c => c.callee_name).map(c => c.callee_name)).toEqual(['helper', 'save!', 'foo']);
+  });
+
+  it('Elixir reaches Erlang; Python triple strings declare no types; `Option<Self>` is no own type', async () => {
+    const { narrowCallCandidates } = await import('../../core/graph/relationship-resolver.js');
+    const { declaredTypeIn } = await import('../../core/graph/receiver-types.js');
+    const { returnTypeText } = await import('../../core/infrastructure/structural-context-repository.js');
+    const erl = { id: 'e', name: 'hash', file_path: 'src/crypto.erl' };
+    expect(narrowCallCandidates([erl], 'crypto', { id: 'c', file_path: 'lib/a.ex' }, { ownerOf: () => null })).toEqual([erl]);
+    expect(declaredTypeIn("s = '''\nclient: Fake\n'''\nclient.send()", 'client', 'a.py')).toBeNull();
+    expect(returnTypeText('fn new() -> Option<Self>', 'new')).not.toMatch(/Self/);
+    expect(returnTypeText('fn new() -> Box<Self>', 'new')).toMatch(/Self/);
+  });
+
+  it('Rust `-> crate::Client` makes `client().send()` a Client call', async () => {
+    const { createCallResolutionIndex, narrowCallCandidates } = await import('../../core/graph/relationship-resolver.js');
+    const ents = [
+      { id: 'C', name: 'Client', type: 'struct', file_path: 'src/client.rs', start_line: 1, end_line: 30 },
+      { id: 's', name: 'send', type: 'method', file_path: 'src/client.rs', start_line: 5, end_line: 9, parent_class: 'Client', signature: 'pub fn send(&self)' },
+      { id: 'f', name: 'client', type: 'function', file_path: 'src/lib.rs', start_line: 1, end_line: 3, signature: 'pub fn client() -> crate::Client {' },
+    ];
+    const idx = createCallResolutionIndex(ents);
+    expect(narrowCallCandidates([ents[1]], 'client()', { id: 'x', file_path: 'src/main.rs', start_line: 1, end_line: 2 }, idx)).toEqual([ents[1]]);
+  });
+
+  it('Gradle `def x` with no value is a variable', async () => {
+    const r = await new GraphExtractor({}).extractFromFile('build.gradle', 'def retry\nretry = 3\n');
+    expect(r.entities.map(e => `${e.type}:${e.name}`)).toEqual(['variable:retry']);
   });
 });

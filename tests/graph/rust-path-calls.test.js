@@ -120,6 +120,17 @@ describe('Rust path calls bind to a free function of the named module', () => {
     g.close();
   });
 
+  it('`crate::f()` reaches the crate root and `super::f()` the parent module (held-out audit)', async () => {
+    const g = await buildGraph({
+      ...CRATE,
+      'src/lib.rs': [...CRATE['src/lib.rs'], 'pub fn load() -> u32 { 0 }', 'pub fn run() -> u32 {', '    crate::load()', '}'],
+      'src/value.rs': [...CRATE['src/value.rs'], 'pub mod inner {', '    pub fn go() -> u32 { super::top() }', '}', 'pub fn top() -> u32 { 1 }'],
+    });
+    expect(g.out('run')['crate.load']).toBe('src/lib.rs:4');
+    expect(g.out('go')['super.top']).toBe('src/value.rs:8');
+    g.close();
+  });
+
   it('a CamelCase path is a type: `Value::from_str` stays the method', async () => {
     const g = await buildGraph({
       ...CRATE,

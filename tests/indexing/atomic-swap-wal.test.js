@@ -97,6 +97,17 @@ describe('atomicSwapDatabase failures leave the old database in place', () => {
     expect(fs.readFileSync(`${finalPath}-wal`, 'utf8')).toBe('old-wal');
   }, 10000);
 
+  it('a backup whose WAL cannot be restored stays a whole backup (no split database)', async () => {
+    const { finalPath, tmpPath } = setup();
+    fs.renameSync(finalPath, `${finalPath}.bak`);
+    fs.renameSync(`${finalPath}-wal`, `${finalPath}.bak-wal`);
+    failOn((from) => from === `${finalPath}.bak-wal`, 'EACCES');
+    await expect(atomicSwapDatabase(tmpPath, finalPath)).rejects.toThrow('EACCES');
+    expect(fs.readFileSync(`${finalPath}.bak`, 'utf8')).toBe('old');
+    expect(fs.readFileSync(`${finalPath}.bak-wal`, 'utf8')).toBe('old-wal');
+    expect(fs.existsSync(finalPath)).toBe(false);
+  });
+
   it('a backup left with no database beside it is restored, then replaced', async () => {
     const { finalPath, tmpPath } = setup();
     fs.renameSync(finalPath, `${finalPath}.bak`);

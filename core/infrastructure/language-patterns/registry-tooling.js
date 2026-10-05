@@ -666,7 +666,9 @@ export const TOOLING_LANGUAGES = {
     graph: {
       entities: {
         task: /^\s*task\s+([A-Za-z_]\w*)/,
-        def: /^\s*def\s+([A-Za-z_]\w*)/,
+        // `def name(…)` is a method; `def retry = 3` is a value (`def` is a callable kind).
+        def: /^\s*def\s+([A-Za-z_]\w*)\s*\(/,
+        variable: /^\s*def\s+([A-Za-z_]\w*)\s*(?:=|$)/,
       },
       relationships: { import: /^\s*import\s+([\w.]+)/ },
       skipCallObjects: [],

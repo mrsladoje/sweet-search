@@ -194,6 +194,7 @@ describe('narrowCallCandidates — one candidate', () => {
 
   it('other languages keep the one-candidate rule (unchanged)', () => {
     const caller = method('j', 'run', 'src/Handler.java', 1, 9);
-    expect(narrowCallCandidates([typeFn], 'val', caller, index).map(c => c.id)).toEqual(['t']);
+    const javaFn = { ...typeFn, file_path: 'drogon_ctl/CreateModel.java' };
+    expect(narrowCallCandidates([javaFn], 'val', caller, index).map(c => c.id)).toEqual(['t']);
   });
 });

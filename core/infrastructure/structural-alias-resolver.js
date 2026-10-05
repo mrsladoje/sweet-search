@@ -57,10 +57,22 @@ function extractAliases(text, target) {
   return [...aliases];
 }
 
-function lineOfIndex(text, index) {
-  let line = 1;
-  for (let i = 0; i < index; i++) if (text.charCodeAt(i) === 10) line++;
-  return line;
+// Line numbers by binary search over line starts (counting from the file start for
+// every match was quadratic on a file with one alias call per line).
+function lineStartsOf(text) {
+  const starts = [0];
+  for (let i = text.indexOf('\n'); i !== -1; i = text.indexOf('\n', i + 1)) starts.push(i + 1);
+  return starts;
+}
+
+function lineAt(starts, index) {
+  let lo = 0;
+  let hi = starts.length - 1;
+  while (lo < hi) {
+    const mid = (lo + hi + 1) >> 1;
+    if (starts[mid] <= index) lo = mid; else hi = mid - 1;
+  }
+  return lo + 1;
 }
 
 const ALIAS_TARGET_FILE = /\.(?:[cm]?[jt]sx?|rs)$/i;
@@ -120,8 +132,10 @@ function importingFiles(db, targetFile, entitySql, entityParams) {
  * so only `"` quotes there. serde_json's lib.rs docs
  * (`//!     let v = serde_json::from_str(data)?;`) were listed as callers.
  */
-export function commentRanges(text, filePath = '') {
+export function commentRanges(text, filePath = '', { strings = false } = {}) {
   const ranges = [];
+  // `strings`: string and template text count as no code too (`return "bar("` is no call).
+  const text0 = (a, b) => { if (strings && b > a) ranges.push([a, b]); };
   const rust = /\.rs$/.test(filePath);
   const n = text.length;
   let i = 0;
@@ -145,12 +159,16 @@ export function commentRanges(text, filePath = '') {
       continue;
     }
     if (c === '"' || (!rust && c === "'")) {
+      const start = i;
       i++;
-      while (i < n && text[i] !== c && text[i] !== '\n') i += text[i] === '\\' ? 2 : 1;
+      // A Rust string may span lines; a JS/TS quote ends at the line end.
+      while (i < n && text[i] !== c && (rust || text[i] !== '\n')) i += text[i] === '\\' ? 2 : 1;
       i++;
+      text0(start, Math.min(i, n));
       continue;
     }
     if (!rust && c === '`') {
+      const start = i;
       i++;
       while (i < n && text[i] !== '`') {
         if (text[i] === '\\') { i += 2; continue; }
@@ -158,6 +176,7 @@ export function commentRanges(text, filePath = '') {
         i++;
       }
       if (text[i] === '`') i++;
+      text0(start, Math.min(i, n));
       continue;
     }
     if (c === '{') braces++;
@@ -167,12 +186,14 @@ export function commentRanges(text, filePath = '') {
       if (templateDepth.length && braces === templateDepth[templateDepth.length - 1]) {
         templateDepth.pop();
         i++;
+        const start = i;
         while (i < n && text[i] !== '`') {
           if (text[i] === '\\') { i += 2; continue; }
           if (text[i] === '$' && text[i + 1] === '{') { templateDepth.push(braces); braces++; i += 2; break; }
           i++;
         }
         if (text[i] === '`') i++;
+        text0(start, Math.min(i, n));
         continue;
       }
     }
@@ -244,12 +265,13 @@ export function findAliasCallers({
       });
     }
     if (!patterns.length) continue;
-    const comments = commentRanges(text, filePath);
+    const comments = commentRanges(text, filePath, { strings: true });
+    const lineStarts = lineStartsOf(text);
     for (const pattern of patterns) {
       const re = pattern.re;
       for (const match of text.matchAll(re)) {
         if (inRanges(comments, match.index || 0)) continue;
-        const line = lineOfIndex(text, match.index || 0);
+        const line = lineAt(lineStarts, match.index || 0);
         let entity = entityAtLine.get(...entityParams, filePath, line, line);
         if (!entity && fileNodeAt) {
           const node = fileNodeAt.get(...entityParams, filePath);

@@ -259,7 +259,8 @@ export const CORE_LANGUAGES = {
         methodCall: /(\w+)\s*\.\s*(\w+)\s*\(/,
       },
       // `self.method()` / `Self::new()` are real intra-impl calls; keep them.
-      skipCallObjects: ["super", "crate", "std", "println", "eprintln", "format", "vec", "String"],
+      // `crate::f()` / `super::f()` are module paths, resolved by rustPathScope (graph-extractor.js).
+      skipCallObjects: ["std", "println", "eprintln", "format", "vec", "String"],
     },
   },
   // ─── C ─────────────────────────────────────────────────────────────────────
