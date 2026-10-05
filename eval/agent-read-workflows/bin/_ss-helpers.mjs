@@ -30,6 +30,7 @@ import {
   GREP_HIDDEN_HINT,
   renderGrepBody,
   renderGrepHiddenFiles,
+  renderOutsideScopeLine,
   renderGrepListing,
 } from '../../../core/search/grep-output-shaping.js';
 import { cwdGrepScope, resolveCwdGlob, resolveCwdPath } from '../../../core/search/cwd-paths.js';
@@ -773,6 +774,13 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
     writeGrepInterfaceHint(total, shown);
     const cut = total - rows.length;
     if (cut > 0) process.stdout.write(`# +${cut} more ${cut === 1 ? 'hit' : 'hits'} (raise -k)\n`);
+    // Hits the scope hid: source files outside --in that match the same regex (an override or
+    // plugin redefining the scoped symbol). One unscoped count; fail silent.
+    // File scopes only: a directory scope (`--in tortoise`) is a deliberate boundary, and
+    // what lies outside it is mostly examples and tests.
+    const outsideLine = fromFind || typedFiles(inPaths).length !== inPaths.length ? null
+      : await outsideScopeLine(usedRegex, total, inPaths, globOpts);
+    if (outsideLine) process.stdout.write(`${outsideLine}\n`);
     let zeroExplained = false;
     if (result.results.length === 0) {
       // A scope that does not exist on disk is the loudest case (exitScopeNotFound).
@@ -935,6 +943,29 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
   }
   writeRegexDialectHintAfterRepair(result.stats, repaired);
   process.exit(0);
+}
+
+// The `# also N hits outside --in` line of a scoped ss-grep (renderOutsideScopeLine): the same
+// regex and globs, unscoped, files by weight, one hit kept per file. Null on any error.
+const OUTSIDE_SCOPE_MAX_FILES = 20;
+async function outsideScopeLine(rx, scopedTotal, scopes, globOpts) {
+  if (process.env.SS_GREP_OUTSIDE_SCOPE === '0') return null;
+  try {
+    const result = await queryWarmSearch(rx, {
+      mode: 'grep', regex: rx, maxMatches: 0, contextLines: 0,
+      perFileCap: 1, maxFiles: OUTSIDE_SCOPE_MAX_FILES, grepFileOrder: 'weight',
+      expand: false, rerank: false, useLateInteraction: false, _isAgentFormat: true,
+      ...globOpts,
+    });
+    const all = result.stats?.totalMatches ?? result.results.length;
+    const summary = result.fileSummary || {};
+    return renderOutsideScopeLine({
+      files: summary.files || [], hiddenFiles: summary.hiddenFileCount || 0,
+      outsideTotal: all - scopedTotal, scopedTotal, scopes,
+    });
+  } catch {
+    return null;
+  }
 }
 
 // Interface-call trailer on focused greps: hit count ceiling, lines after a hit it looks at,
@@ -1121,6 +1152,7 @@ const READ_USAGE =
   '       ss-read <file> <start>    # ONE line\n' +
   '       ss-read <file> <start> <end>\n' +
   '       ss-read <file> 10-20      # range (also 10:20, 10,20)\n' +
+  '       ss-read <file> <symbol>   # one definition, doc comment included (also Owner.name)\n' +
   'Option: --force shows content again after an unchanged-content omission.';
 async function cmdRead(rawArgs) {
   const args = [...rawArgs];
@@ -1149,7 +1181,15 @@ async function cmdRead(rawArgs) {
   let start = null, end = null;
   // True when the numbers typed are not the range served as typed (start+count form).
   let reinterpreted = false;
-  if (args[1] != null) {
+  // `ss-read <file> <symbol>`: a second argument that is no number and no range names a
+  // definition in the file (resolved below, once the file is known to be readable).
+  let symbolSpec = null;
+  if (args[1] != null && args[2] == null && !parseLineRange(args[1]) && !/^\d+$/.test(String(args[1]))
+    && /^[A-Za-z_$][\w$]*(?:(?:\.|::|#)[A-Za-z_$][\w$!?=]*)*[!?=]?(?:\(\))?$/.test(String(args[1]))
+    && !existsSync(path.resolve(FILE_ROOT, cwdPath(args[1]) || ''))) {
+    symbolSpec = String(args[1]);
+  }
+  if (args[1] != null && !symbolSpec) {
     // Accept a single-token range (10-20 / 10:20 / 10,20) before the plain
     // numeric path, so "lines 10-20" muscle memory works without a wasted call.
     const range = parseLineRange(args[1]);
@@ -1221,7 +1261,25 @@ async function cmdRead(rawArgs) {
     }
   }
 
-  const { readFile, renderUnreadBelow, renderUnreadAbove, renderEnclosingStart, renderInterfaceImpls, fenceBody, numberCodeLines } = await import(path.join(REPO_ROOT, 'core/search/search-read.js'));
+  const { readFile, renderUnreadBelow, renderUnreadAbove, renderEnclosingStart, renderInterfaceImpls, fenceBody, numberCodeLines, resolveSymbolRead, definitionNamesInFile } = await import(path.join(REPO_ROOT, 'core/search/search-read.js'));
+  // ss-read <file> <symbol>: the definition's lines, from its doc comment to its end.
+  let symbolNote = '';
+  if (symbolSpec) {
+    const sym = await resolveSymbolRead(FILE_ROOT, file, symbolSpec);
+    if (!sym) {
+      const names = definitionNamesInFile(FILE_ROOT, file);
+      process.stderr.write(`[ss-read] no definition named "${symbolSpec}" in ${file}`
+        + (names.length ? `; it defines: ${names.join(', ')}` : '') + '\n');
+      process.exit(1);
+    }
+    start = sym.startLine;
+    end = sym.endLine;
+    reinterpreted = true; // the range is not typed: print it
+    if (sym.others.length) {
+      const list = sym.others.slice(0, 3).map(o => `${o.startLine}-${o.endLine}`).join(', ');
+      symbolNote = `also named ${sym.span.name}: ${list}${sym.others.length > 3 ? ` (+${sym.others.length - 3})` : ''}`;
+    }
+  }
   // Agent-facing ss-read: span gate on, same as the CLI and the daemon route.
   const r = await readFile({
     path: file, projectRoot: FILE_ROOT,
@@ -1303,7 +1361,7 @@ async function cmdRead(rawArgs) {
   ].filter(Boolean).join('; ');
   // The interface-call line sits first after the code: the call it names is in view.
   const implLine = renderInterfaceImpls(r);
-  const tail = [implLine, aboveLine, remainder].filter(Boolean).map((l) => `${l}\n`).join('');
+  const tail = [implLine, symbolNote, aboveLine, remainder].filter(Boolean).map((l) => `${l}\n`).join('');
   if (!r.text) {
     // An empty file (or a window of nothing) prints no empty fence.
     process.stdout.write(`${resolvedLine}${head}# empty file\n${tail}`);

@@ -339,3 +339,25 @@ literal at every k/s; `TPK` and `Fnscns` keep no 3-char part, and every file is 
 **Possible product change:** record per file whether it contains U+212A or U+017F (one bit in the
 sparse-gram index). A literal could then be narrowed as (ASCII grams) ∪ (files with the
 character), which is exact and almost always the ASCII set. Needs a reindex, so it waits.
+
+---
+
+## 2026-10-05 — a doc comment that states the answer ranks below its own file's other methods
+
+**Observation (Claude, opencode replay `r3-dgraph-29`):** for "Why can't the write-ahead log
+simply be truncated up to the most recent committed entry, and what decides the safe cut point?"
+`ss-search` did not list `calculateSnapshot` (worker/draft.go) in its top 40, although the
+28-line doc comment above it says "we MUST keep all pending transactions in the Raft logs" and
+describes the cut point. The agent found it only by guessing the identifier in `ss-grep`.
+
+**Facts checked:** the chunker stores the doc comment and signature as one chunk (1728-1756)
+and the body as `(part 2)`, as designed for long functions. In plain hybrid ranking the
+definition sits near rank 24 (score 0.59; semantic alone 0.25), behind `checkpointAndClose`,
+`applyCommitted` and `Run` of the same file and the `raftwal/*` files, which match the words
+"write-ahead log" and "truncate". A different phrasing ("why keep pending transactions in raft
+log snapshot index") ranks it 3rd. No code bug found: the doc-comment demotion does not fire on
+Go `//` comments.
+
+**Possible product change:** none yet. The gap is vocabulary ("write-ahead log" vs "Raft logs").
+Check on held-out data whether doc-comment chunks of long functions are under-ranked as a class
+before any change.

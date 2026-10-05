@@ -109,6 +109,19 @@ describe('ss-read output shape', () => {
     expect(out.trimEnd().split('\n').slice(-2)).toEqual(['inside method hold 10-30', 'below 15-60: methods size, big']);
   });
 
+  it('ss-read <file> <symbol> serves one definition, its parts joined', async () => {
+    const hold = await ssRead([FILE, 'hold']);
+    expect(hold.err).toBe('');
+    expect(hold.out.split('\n')[0]).toBe('lines 10-30 of 60');
+    expect(hold.out).toContain(`\`\`\`\n${src(10, 30)}\n\`\`\``);
+    const big = await ssRead([FILE, 'big']);
+    expect(big.out.split('\n')[0]).toBe('lines 36-58 of 60');
+    const missing = await ssRead([FILE, 'nope']);
+    expect(missing.code).toBe(1);
+    expect(missing.err).toContain('no definition named "nope" in lib/pool.rb');
+  });
+
+
   it('names the function the window starts in and the one it ends in', async () => {
     const { out } = await ssRead([FILE, '20', '40']);
     expect(out.trimEnd().split('\n').slice(-2)).toEqual(['method hold starts at 10', 'method big ends at 58; below 41-60']);

@@ -1257,3 +1257,100 @@ export function __resetReadCachesForTests() {
 }
 
 export const __testing = { projectRelative: _projectRelative, codebasePathForProject: _codebasePathForProject };
+
+// ── ss-read <file> <symbol> ────────────────────────────────────────────────────────────
+// The definitions named `spec` in one file, from the code graph: `name`, or `Owner.name`
+// (also `Owner::name`, `Owner#name`) to pick a member of one type. Exact-case matches win
+// over case-insensitive ones; file order. Each: { name, type, startLine, endLine, parentClass }.
+export function findSymbolSpans(projectRoot, filePath, spec) {
+  const root = projectRoot || process.cwd();
+  const filePathRel = _projectRelative(_resolvePath(filePath, root), root);
+  const raw = String(spec || '').trim().replace(/\(\)$/, '');
+  if (!raw) return [];
+  const parts = raw.split(/::|#|\./).filter(Boolean);
+  const name = parts[parts.length - 1];
+  const owner = parts.length > 1 ? parts[parts.length - 2] : null;
+  const graph = _getGraphRepo(projectRoot);
+  let entities = [];
+  if (graph && typeof graph.findEntitiesInFile === 'function') {
+    try { entities = graph.findEntitiesInFile(filePathRel, { limit: 2048 }); } catch { entities = []; }
+  }
+  // No code graph (or it holds nothing for this file): the index's named chunks, the
+  // `(part N)` pieces of one definition joined into one span.
+  if (!entities.length) entities = _chunkDefinitions(filePathRel, root);
+  const ownerOk = (e) => !owner || String(e.parentClass || '').toLowerCase() === owner.toLowerCase()
+    || String(e.parentClass || '').toLowerCase().endsWith(`.${owner.toLowerCase()}`);
+  const exact = entities.filter(e => e.name === name && ownerOk(e));
+  const hits = exact.length ? exact : entities.filter(e => String(e.name).toLowerCase() === name.toLowerCase() && ownerOk(e));
+  const seen = new Set();
+  return hits.filter((e) => {
+    const key = `${e.startLine}:${e.endLine}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).map(e => ({ name: e.name, type: e.type, startLine: e.startLine, endLine: e.endLine, parentClass: e.parentClass || null }));
+}
+
+function _chunkDefinitions(filePathRel, projectRoot) {
+  const byName = new Map();
+  for (const c of _attachIndexMetadata(filePathRel, projectRoot).chunks) {
+    const name = _baseSymbol(c.symbol);
+    if (!name || !Number.isInteger(c.startLine) || !Number.isInteger(c.endLine)) continue;
+    const prev = byName.get(name);
+    if (prev && c.startLine <= prev.endLine + 1) prev.endLine = Math.max(prev.endLine, c.endLine);
+    else if (!prev) byName.set(name, { name, type: c.type || null, startLine: c.startLine, endLine: c.endLine, parentClass: null });
+  }
+  return [...byName.values()];
+}
+
+// A line that belongs to the comment or attribute block right above a definition.
+const LEADING_DOC_LINE_RE = /^\s*(?:\/\/|\/\*|\*|#(?!include|define|if|endif|import|pragma)|--|;;|@\w|\[\w|"""|''')/;
+
+/**
+ * The first line of the doc comment / attribute block that ends right above line `start`
+ * (1-based) in `lines`, at most `max` lines up. A blank line ends the block.
+ */
+export function leadingDocStart(lines, start, max = 40) {
+  let s = start;
+  while (s > 1 && start - (s - 1) <= max) {
+    const line = lines[s - 2];
+    if (line == null || !line.trim() || !LEADING_DOC_LINE_RE.test(line)) break;
+    s--;
+  }
+  return s;
+}
+
+
+// The most lines `ss-read <file> <symbol>` serves; a longer definition is cut there and the
+// "below" trailer names what follows.
+export const SYMBOL_READ_MAX_LINES = 300;
+
+/**
+ * The range `ss-read <file> <symbol>` serves: the first definition named `spec`, from the
+ * doc comment / attributes right above it to its last line (at most maxLines). Null when the
+ * file has no such definition. `others` = the other definitions of that name in the file.
+ */
+export async function resolveSymbolRead(projectRoot, filePath, spec, { maxLines = SYMBOL_READ_MAX_LINES } = {}) {
+  const spans = findSymbolSpans(projectRoot, filePath, spec);
+  if (!spans.length) return null;
+  const span = spans[0];
+  let start = span.startLine;
+  try {
+    const disk = await _readFromDisk(_resolvePath(filePath, projectRoot || process.cwd()));
+    start = leadingDocStart(String(disk.text ?? disk.content ?? '').split(/\r?\n/), span.startLine);
+  } catch { /* the definition line itself */ }
+  const end = Math.min(span.endLine, start + maxLines - 1);
+  return { span, startLine: start, endLine: end, cut: end < span.endLine, others: spans.slice(1) };
+}
+
+/** Names of the definitions in a file, for the "no definition named X" error (at most max). */
+export function definitionNamesInFile(projectRoot, filePath, max = 12) {
+  const root = projectRoot || process.cwd();
+  const graph = _getGraphRepo(root);
+  if (!graph || typeof graph.findEntitiesInFile !== 'function') return [];
+  let entities = [];
+  try { entities = graph.findEntitiesInFile(_projectRelative(_resolvePath(filePath, root), root), { limit: 2048 }); } catch { entities = []; }
+  const names = [];
+  for (const e of entities) if (e.name && !names.includes(e.name)) names.push(e.name);
+  return names.slice(0, max);
+}

@@ -860,3 +860,40 @@ export function renderGrepHiddenFiles(hidden) {
 
 /** The one line that says how to see hidden hits; printed once, only when something is hidden. */
 export const GREP_HIDDEN_HINT = '# hidden hits: raise -k or use --in <file>';
+
+// Prose and examples, not the code under question: release notes, changelogs, docs, example
+// and sample programs. Listed after code, never a reason to print.
+const DOC_PATH_RE = /\.(?:md|mdx|markdown|txt|rst|adoc|rdoc)$|(?:^|\/)(?:docs?|examples?|samples?|demos?|CHANGELOG|CHANGES|NEWS|HISTORY)(?:\/|\.|$)/i;
+
+/** Whether `file` lies inside one of the --in scopes (a file path or a directory). */
+export function fileInScopes(file, scopes) {
+  const f = String(file || '');
+  for (const raw of scopes || []) {
+    const s = String(raw || '').replace(/\/+$/, '');
+    if (!s || s === '.') return true;
+    if (f === s || f.startsWith(`${s}/`)) return true;
+  }
+  return false;
+}
+
+/**
+ * The hits a scoped ss-grep (`--in`) did not show: one line naming the matching files outside
+ * the scope (r3hb-sequel-08: `ss-grep fast_pk_lookup --in model/base.rb` hid the plugin that
+ * resets the optimisation, lib/sequel/plugins/sql_comments.rb). `files` = an unscoped
+ * search's fileSummary.files (weight order, each { file, total, prior }); `outsideTotal` =
+ * unscoped total - scoped total (docs count like tests); `hiddenFiles` = matching files the unscoped search did not keep. Prints only when a source file (prior 1) matches outside,
+ * or when the scope itself had no hit; test and generated hits alone outside a scope that
+ * answered stay silent. At most `max` paths, source first. Null = print nothing.
+ */
+export function renderOutsideScopeLine({ files, hiddenFiles = 0, outsideTotal, scopedTotal, scopes, max = 3 }) {
+  if (!(outsideTotal > 0)) return null;
+  const outside = (files || []).filter(f => !fileInScopes(f.file, scopes));
+  if (!outside.length) return null;
+  const source = outside.filter(f => (f.prior ?? grepFilePrior(f.file)) === 1 && !DOC_PATH_RE.test(f.file));
+  if (!source.length && scopedTotal > 0) return null;
+  const named = [...source, ...outside.filter(f => !source.includes(f))].slice(0, max).map(f => f.file);
+  const rest = outside.length - named.length + Math.max(0, hiddenFiles | 0);
+  const moreFiles = rest > 0 ? ` (+${rest} more files)` : '';
+  const what = plural(outsideTotal, 'hit', 'hits');
+  return `# also ${what} outside --in: ${named.join(', ')}${moreFiles}`;
+}

@@ -576,7 +576,10 @@ export function renderSummaryRow(r, hideSpans = []) {
     && insideAny(hideSpans, s.startLine, s.endLine)));
   const names = kindNameList(symbols, SUMMARY_NAME_CAP);
   // A row that holds part of a definition says so: reading its lines alone gives part of it.
-  return `${lineRange(r.startLine, r.endLine)}${names ? ` ${names}` : ''}${partOfNote(r, r.endLine)}${r.stale ? ' STALE' : ''}`;
+  // A large type's row names the members the query names (context-expander containerRowMembers).
+  const members = Array.isArray(r.memberHits) && r.memberHits.length
+    ? `; query names ${r.memberHits.map(m => `${kindName(m.name, m.type)} (${m.startLine})`).join(' · ')}` : '';
+  return `${lineRange(r.startLine, r.endLine)}${names ? ` ${names}` : ''}${partOfNote(r, r.endLine)}${members}${r.stale ? ' STALE' : ''}`;
 }
 
 /**
