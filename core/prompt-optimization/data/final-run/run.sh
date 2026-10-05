@@ -133,7 +133,9 @@ run_step() { # <cell> <rep> <arms> <mode>
 # (not ours), and for a Claude Code step any Claude Code bench session not started by this driver.
 busy_foreign_list() {
   pgrep -fl "index-codebase|run_benchmark|run-pilot" | grep -v pgrep
-  pgrep -fl "retrieval-bench-282.mjs" | grep -v -- "--tag $FR_TAG-r" | grep -v pgrep
+  # FR_ALLOW_PARALLEL_BENCH=1: another session's retrieval bench may run alongside (other subscription);
+  # index builds, GCSN, task runs and (for a Claude Code step) other Claude Code sessions still block.
+  [ "${FR_ALLOW_PARALLEL_BENCH:-0}" = 1 ] || pgrep -fl "retrieval-bench-282.mjs" | grep -v -- "--tag $FR_TAG-r" | grep -v pgrep
   # A Claude Code step starts only when no Claude Code bench session runs: this lane is sequential, so
   # at that moment every pinned-claude process belongs to someone else.
   [[ "$1" == cc-* ]] && pgrep -fl "bin-claude-2.1.281/claude" | grep -v pgrep
