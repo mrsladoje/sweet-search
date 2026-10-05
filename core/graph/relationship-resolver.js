@@ -638,6 +638,18 @@ export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, inde
   const withSupertypes = (name) => new Set([name, ...supertypesOf(name)]);
   const selfLike = (!receiverRaw) || SELF_RECEIVERS.has(receiver.toLowerCase());
 
+  // `super.m()` (C# `base.M()`, PHP `parent::m()`): m of a supertype of the
+  // caller's own type, never a same-named method elsewhere. A parent outside
+  // the repo (Python `io.StringIO`) has no definition here: no edge (click's
+  // RecordingStream.write → super().write was bound to _PagerWriter.write).
+  if (receiver === 'super' || (receiver === 'base' && /\.cs$/.test(sourceEntity?.file_path || ''))
+    || (receiver === 'parent' && /\.php$/.test(sourceEntity?.file_path || ''))) {
+    const srcOwner = sourceEntity ? ownerOf(sourceEntity) : null;
+    if (!srcOwner) return [];
+    const supers = supertypesOf(srcOwner);
+    return supers && supers.size > 0 ? ownedBy(candidates, supers) : [];
+  }
+
   let pool = candidates;
   if (sourceEntity && !selfLike && pool.length > 1) {
     // Recursion through another instance (`child.visit()` inside `visit`)
