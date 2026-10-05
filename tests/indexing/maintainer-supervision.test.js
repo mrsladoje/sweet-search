@@ -27,6 +27,7 @@ import {
   runSupervisionTick,
   MAINTAINER_SPAWN_CLAIM_FILENAME,
   MAINTAINER_LOCK_FILENAME,
+  SPAWN_CLAIM_TTL_MS,
 } from '../../core/indexing/maintainer-launcher.mjs';
 
 const REPO_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -484,7 +485,26 @@ describe('maintainer supervision — cross-process spawn budget', () => {
     const launched = existsSync(launchLog)
       ? readFileSync(launchLog, 'utf-8').split('\n').filter(Boolean)
       : [];
-    expect(launched.length).toBeLessThanOrEqual(1);
     expect(verdicts.filter((v) => v.acted).length).toBe(launched.length);
+
+    // The budget's promise: no two launches inside one claim lifetime. When the
+    // racers really arrive together (the usual case) that means at most one
+    // launch. On a starved 2-core runner a racer can start its tick after the
+    // first claim expired and legitimately take it (claimed-stale) — correct
+    // behaviour, not a race. A legitimate steal needs the two claim times at
+    // least one TTL apart, and each claim time lies inside its racer's tick
+    // window; so for every pair of launches, one tick must END at least a TTL
+    // after the other STARTED. A pair that fails this is a real violation.
+    const launchers = verdicts.filter((v) => v.acted);
+    for (let j = 1; j < launchers.length; j += 1) {
+      for (let i = 0; i < j; i += 1) {
+        const [a, b] = [launchers[i], launchers[j]];
+        expect(Math.max(b.tickEndMs - a.tickStartMs, a.tickEndMs - b.tickStartMs)).toBeGreaterThanOrEqual(SPAWN_CLAIM_TTL_MS);
+      }
+    }
+    const spread = Math.max(...verdicts.map((v) => v.tickStartMs)) - Math.min(...verdicts.map((v) => v.tickStartMs));
+    if (verdicts.every((v) => v.barrierMet) && spread < SPAWN_CLAIM_TTL_MS) {
+      expect(launched.length).toBeLessThanOrEqual(1);
+    }
   }, 90_000);
 });

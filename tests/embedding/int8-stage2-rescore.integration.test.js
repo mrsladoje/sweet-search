@@ -123,15 +123,18 @@ describe('Int8 Stage-2 Rescoring', () => {
       const index = new BinaryHNSWIndex({ indexPath: TEST_INDEX_PATH });
       await index.load(TEST_INDEX_PATH);
 
-      // Measure lookup latency
+      // Measure lookup latency: warm up, then take the fastest of 5 batches, so
+      // one scheduler pause on a loaded CI runner cannot fail an O(1) check.
       const iterations = 1000;
-      const start = performance.now();
-
-      for (let i = 0; i < iterations; i++) {
-        index.getInt8Vector('test-1');
+      for (let i = 0; i < iterations; i++) index.getInt8Vector('test-1');
+      let elapsed = Infinity;
+      for (let batch = 0; batch < 5; batch++) {
+        const start = performance.now();
+        for (let i = 0; i < iterations; i++) {
+          index.getInt8Vector('test-1');
+        }
+        elapsed = Math.min(elapsed, performance.now() - start);
       }
-
-      const elapsed = performance.now() - start;
       const avgLatencyUs = (elapsed / iterations) * 1000;
 
       // O(1) Map lookup should be < 1μs on average

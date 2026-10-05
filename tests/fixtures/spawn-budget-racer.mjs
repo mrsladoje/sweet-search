@@ -45,12 +45,17 @@ function barrier() {
     try {
       n = readFileSync(barrierFile, 'utf-8').split('\n').filter(Boolean).length;
     } catch { /* not yet */ }
-    if (n >= racerCount || Date.now() > deadline) return;
+    if (n >= racerCount) return true;
+    if (Date.now() > deadline) return false;
     sleepSync(2);
   }
 }
 
-barrier();
+const barrierMet = barrier();
+// The tick's wall-clock window. On a loaded runner a racer can reach the claim
+// after the first claim has expired and legitimately take it; the parent uses
+// these to tell that apart from a real race.
+const tickStartMs = Date.now();
 
 const result = runSupervisionTick({
   state: createSupervisionState(),
@@ -69,7 +74,7 @@ const result = runSupervisionTick({
   },
 });
 
-process.stdout.write(`${JSON.stringify({ pid: process.pid, ...result })}\n`);
+process.stdout.write(`${JSON.stringify({ pid: process.pid, barrierMet, tickStartMs, tickEndMs: Date.now(), ...result })}\n`);
 // Touch the state dir reference so an unused-variable linter cannot drop it.
 void join;
 void existsSync;
