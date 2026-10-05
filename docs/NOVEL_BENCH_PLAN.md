@@ -37,7 +37,7 @@ validation / appendix — no kitchen-sink system paper.
 ## What our own data actually says (DEV — motivates hypotheses, NEVER publishable)
 
 Full-200 rebaseline 2026-07-13, corrected per
-`analysis/failure-forensics-review-2026-07-14.md` §2.2:
+`docs/forensics/failure-forensics-review-2026-07-14.md` §2.2:
 - Resolution: native 65/166 vs sweet **58/166** (rust-minidump reclassified —
   parser artifact, not agent failure); discordants 9 vs 2, exact McNemar
   **p≈.065** — borderline, native-favored, underpowered at 12 discordants.
