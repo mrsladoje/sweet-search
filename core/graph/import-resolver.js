@@ -881,6 +881,17 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     if (from == null) return null;
     const file = resolve(from, { spec, kind: 'use' }, 'rust');
     if (!file) return null;
+    // `pub use auth::login::login as auth_login;` in that module: the call
+    // reaches the item under its original name in the module it came from.
+    const name = spec.split('::').pop();
+    const renamed = new RegExp(String.raw`^\s*(?:pub(?:\([\w:\s]+\))?\s+)?use\s+((?:[\w]+::)+)(\w+)\s+as\s+${name}\s*;`, 'm').exec(readText(file) || '');
+    if (renamed) {
+      const origin = resolve(file, { spec: `${renamed[1]}${renamed[2]}`, kind: 'use' }, 'rust');
+      if (origin) {
+        const crate = rustCrateSrc(origin);
+        return { file: origin, crate: crate == null ? '' : crate, name: renamed[2] };
+      }
+    }
     const crate = rustCrateSrc(file);
     return { file, crate: crate == null ? '' : crate };
   }

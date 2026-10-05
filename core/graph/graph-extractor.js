@@ -959,7 +959,7 @@ function annotateRustPathCalls(filePath, content, relationships, scanned, resolv
       scope = resolver.rustPathScope(filePath, spec);
       scopes.set(spec, scope);
     }
-    if (scope) rel.full_import_path = `${RUST_PATH_PREFIX}${scope.file}|${scope.crate ? `${scope.crate}/` : ''}`;
+    if (scope) rel.full_import_path = `${RUST_PATH_PREFIX}${scope.file}|${scope.crate ? `${scope.crate}/` : ''}${scope.name ? `|${scope.name}` : ''}`;
   }
 }
 /**
