@@ -753,7 +753,7 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 <img src="assets/tools/ss-trace-io.svg" alt="ss-trace takes the symbol processOrder. One call returns its callers checkout, retryOrder and handleWebhook, its callees chargeCard, reserveStock and sendReceipt, and what breaks if it changes." width="100%" />
 
 ### 🕸️ Know what breaks before you edit
-> Give `ss-trace` a symbol. It returns who calls it, what it calls, and what breaks if it changes, with the code. The graph updates as you edit, so the answer matches your current code.
+> Give `ss-trace` a symbol. It returns who calls it, what it calls, and what breaks if it changes. The graph updates as you edit, so the answer matches your current code.
 
 <table>
 <tr><td colspan="2"><b>How it builds the answer</b></td></tr>
@@ -786,11 +786,11 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 </td>
 <td width="50%" valign="top">
 
-**📦 4. Only what fits**
+**📋 4. One row per link**
 
-- The answer gets 4k, 8k or 12k tokens. A few clear results get the small budget. Many close results get the big one.
-- If your symbol has many callers, the callers get more of the space. Same for callees.
-- Each result shows its full code if it fits. If not, its first lines and the lines around the call.
+- Each caller and callee is one line: its kind, name and `file:line`, grouped by file.
+- Impact paths print as a tree.
+- The agent then reads only the code it needs.
 
 </td>
 </tr>
@@ -804,7 +804,7 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 - Add `callers`, `callees` or `impact` after the symbol to get only that part.
 - Two symbols with the same name? Pick one with `--in <file>`.
 - Impact paths go 3 hops deep by default. Change it with `--depth` (1 to 4).
-- Set your own token budget with `--budget`.
+- `sweet-search trace` and the MCP tool also return the code, in a 4k, 8k or 12k token budget.
 - On very dynamic code (calls by string name, metaprogramming), the graph can miss calls.
 - Also available as `sweet-search trace` and as the `trace` MCP tool.
 
