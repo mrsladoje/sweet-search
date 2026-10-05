@@ -122,10 +122,11 @@ Every coding agent today reaches for grep + Read by reflex. *sweet-search* chall
 npm install -g sweet-search
 
 cd your-repo
-sweet-search init     # one-time: downloads local models, wires up Claude Code
-                      #   Codex: init --codex · opencode: init --opencode
-                      #   several: init --claude --codex --opencode
-sweet-search index    # builds the index — GPU-accelerated where available
+sweet-search init      # one-time: wires up Claude Code
+                       # Codex: --codex · Opencode: --opencode
+                       # several: --claude --codex --opencode
+
+sweet-search index     # builds the index — GPU-accelerated where available
 
 sweet-search "where do we validate JWT tokens?"
 ```
