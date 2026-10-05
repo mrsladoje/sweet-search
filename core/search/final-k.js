@@ -25,6 +25,19 @@
 export const DEFAULT_SEED_POOL_MIN = 0;
 
 /**
+ * Agent formats (ss-search): the seed pool is max(k, 15), and the final list keeps the result the
+ * k-seed pool would have put first (pinNarrowTop1, search-postprocess.js). With k=5 the late-
+ * interaction reranker saw only the 5 seeds (plus graph neighbours), so a gold chunk at fused rank
+ * 10 never reached it: sequel `Model.[]` / primary_key_lookup (base.rb, fused rank 10) ranks first
+ * once the reranker sees it. Measured on r3 DEV (n=137 positives: r3 devSplit train+validation and
+ * r3-hard ids.dev, seed-42 splits; ss-search's call, k=5): recall@5 0.311 -> 0.328, MRR@5 0.421 ->
+ * 0.439, hit@5 0.591 -> 0.635, top-1 0.321 = 0.321 (+15 / -8 questions on recall). A wider pool
+ * WITHOUT the top-1 pin lost 3 top-1s (0.321 -> 0.299), as the retrieval-probes test of max(k, 10)
+ * did. Non-agent formats (GCSN, the library API) keep DEFAULT_SEED_POOL_MIN.
+ */
+export const AGENT_SEED_POOL_MIN = 15;
+
+/**
  * @param {unknown} k
  * @returns {number|null} positive integer k, or null when k is not a usable cap
  */
@@ -51,10 +64,29 @@ export function capToFinalK(results, k) {
  * @param {unknown} k final result count requested by the caller
  * @returns {number}
  */
-export function seedPoolSize(k) {
+export function seedPoolSize(k, { agentFormat = false } = {}) {
   const cap = normalizeFinalK(k) ?? 10;
+  const fallback = agentFormat ? AGENT_SEED_POOL_MIN : DEFAULT_SEED_POOL_MIN;
   const raw = process.env.SWEET_SEARCH_SEED_POOL_MIN;
-  const parsed = raw == null || raw === '' ? DEFAULT_SEED_POOL_MIN : Number.parseInt(raw, 10);
-  const min = Number.isFinite(parsed) && parsed >= 0 ? parsed : DEFAULT_SEED_POOL_MIN;
+  const parsed = raw == null || raw === '' ? fallback : Number.parseInt(raw, 10);
+  const min = Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
   return Math.max(cap, min);
+}
+
+/**
+ * The first result of `results` that was one of the first `k` seeds moves to the front: the
+ * wider seed pool may fill ranks 2..k, but rank 1 stays what the k-seed pool ranked first
+ * (AGENT_SEED_POOL_MIN). Seeds carry `seedRank` (sweet-search.js). Returns the same array when
+ * nothing moves.
+ * @param {Array} results
+ * @param {number} k
+ */
+export function pinNarrowTop1(results, k) {
+  const cap = normalizeFinalK(k);
+  if (cap == null || !Array.isArray(results) || results.length < 2) return results;
+  // Only when the pool was wider than k: with k seeds the order is already the k-seed order.
+  if (!results.some(r => Number.isInteger(r?.seedRank) && r.seedRank >= cap)) return results;
+  const i = results.findIndex(r => Number.isInteger(r?.seedRank) && r.seedRank < cap);
+  if (i <= 0) return results;
+  return [results[i], ...results.slice(0, i), ...results.slice(i + 1)];
 }
