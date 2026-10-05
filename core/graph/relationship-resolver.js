@@ -781,8 +781,11 @@ export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, inde
   }
   if (kept) pool = kept;
   if (needsEvidence) {
-    const evident = pool.filter(c => receiverMatches(r, factsOf(c).ownerKey) || receiverMatches(r, factsOf(c).stemKey)
-      || isImported(callerImports, c.file_path));
+    // The receiver naming the owner or file (`Planner.query` → planner.ex) outranks an
+    // import: ecto's queryable.ex imports planner.ex, assoc.ex and preloader.ex, all
+    // with a `query`, and three owners left meant no edge.
+    const named = pool.filter(c => receiverMatches(r, factsOf(c).ownerKey) || receiverMatches(r, factsOf(c).stemKey));
+    const evident = named.length > 0 ? named : pool.filter(c => isImported(callerImports, c.file_path));
     return preferImported(evident, sourceEntity, importsOf);
   }
   if (pool.length > 1 || cFamily) {
