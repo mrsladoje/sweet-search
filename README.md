@@ -619,7 +619,7 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 <img src="assets/tools/ss-grep-io.svg" alt="ss-grep takes the regex session.*expired and returns every file:line hit, with the match highlighted" width="100%" />
 
 ### ⚡ 2× faster than ripgrep, end to end
-> Median over 1,600 queries modelled on 19,762 real agent greps, on 13 repos of 130 to 63,000 files. Each call is timed from process start until all output is read: 3.6 ms for `ss-grep`, 7.3 ms for ripgrep. Same hits and counts as ripgrep, in our order.
+> Median over 1,600 queries modelled on 20k real agent greps, on 13 repos of 130 to 63k files
 
 <table><tr><td>
 
@@ -630,17 +630,16 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 - 🦀 **All in-process.** Rust regex runs on all cores inside the warm daemon. No subprocess, no pipes, no JSON parsing.
 
 </td></tr></table>
-
-<img src="assets/tools/ss-grep-ngrams.svg" alt="For the regex session.*expired, trigrams give 10 common pieces. Sparse n-grams give 2 rare pieces, so far fewer files are left to check." width="100%" />
-
 <table><tr><td>
 
 **What makes it rank better**
 
 - 🗳️ **Best files and lines first.** Files are ranked by hit count and type: source before tests, generated files last. Output lines are shared out like parliament seats ([Sainte-Laguë](https://en.wikipedia.org/wiki/Webster/Sainte-Lagu%C3%AB_method)), one per file first, and the lines that declare a function or class come first.
-- 🔁 **Proven on real agent runs.** We replayed 1,036 real agent grep calls with known answers. When the hits overflow, the line that declares the answer now shows up in 64% of calls, up from 34%.
+- 🔁 **Proven on real agent runs.** We replayed 1000+ real agent grep calls with known answers. When the hits overflow, the line that declares the answer now shows up in 64% of calls, up from 34%.
 
 </td></tr></table>
+
+<img src="assets/tools/ss-grep-ngrams.svg" alt="For the regex session.*expired, trigrams give 10 common pieces. Sparse n-grams give 2 rare pieces, so far fewer files are left to check." width="100%" />
 
 <details>
 <summary><b>More</b></summary>
