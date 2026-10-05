@@ -109,7 +109,7 @@ runs on all indexed files.
    loaded, runs the query planner (`core/search/search-pattern-planner.js`), and calls its own
    search handler directly, without a second socket round trip.
 3. **Native addon:** gram lookup, intersection and grep run in one NAPI call where possible.
-   Matches come back as typed arrays plus one string, not one object per match.
+   Matches come back as typed arrays plus two strings, not one object per match.
 
 ### Query routes
 
@@ -122,9 +122,9 @@ runs on all indexed files.
 `unified_*` are planner labels for one NAPI call, the unified search (`search_full_packed`, or
 `search_lines` for line-only callers). A scope holding at most 512 indexed files is grepped
 whole, without a gram lookup. When the grams prove that no file can match, the planner skips the
-grep. ripgrep runs only as a fallback, when the native
-addon cannot serve a call (or for library callers that pass fixed-string or glob options to the
-planner; `ss-grep` turns `-F` into an escaped regex and applies `-g` globs after the engine).
+grep. ripgrep runs only as a fallback, when the native addon cannot serve a call (or for library
+callers that pass fixed-string or glob options to the planner; `ss-grep` turns `-F` into an
+escaped regex and applies `-g` globs after the engine).
 
 ### What the index covers
 
@@ -191,9 +191,11 @@ The `regex-syntax` Rust crate (by the author of ripgrep) gives a complete HIR (h
 any regex. The walk in `regex_literals.rs` maps it to an OR of AND clauses of required substrings:
 
 - **Concatenation** -> AND (all literals required)
-- **Alternation** -> OR (any literal sufficient); a branch with no literal gives no clause at all
-- **Character classes** (`\s`, `\w`, `[a-z]`) -> break (no extractable literal)
-- **Repetition** (`*`, `+`, `?`) -> break (variable length)
+- **Alternation** -> OR (any literal sufficient); if one branch has no literal, the whole
+  alternation gives no clause
+- **Character classes** (`\s`, `\w`, `[a-z]`) -> no literal; a concatenation keeps the literals
+  around them
+- **Repetition** (`*`, `+`, `?`, `{n}`) -> no literal (the child is not used)
 - **Groups** -> transparent (recurse into the child)
 - **Anchors, look-around** -> skip (no effect on literals)
 
@@ -287,15 +289,16 @@ not all fit in `-k` lines:
    as one line that names the original and its own hit lines.
 
 We replayed 1,036 real agent grep calls with known answers through the engine, with steps 1-4 as
-shipped on 2026-10-03. On the 154 calls whose hits overflowed, the answer file was shown in 88% of calls (alphabetical order: 82%), and
-the line that declares the answer in 64% (alphabetical order: 34%).
+shipped on 2026-10-03. On the 154 calls whose hits overflowed, the answer file was shown in 88%
+of calls (alphabetical order: 82%), and the line that declares the answer in 64% (alphabetical
+order: 34%).
 
 **Help for the next step.** A regex that does not parse is repaired once (only the broken
 alternatives are escaped), and a zero-hit search is retried once case-insensitively; both are
 announced in one line. A grep with 8 or fewer hits names the implementing class when a hit line,
-or one of the 3 lines below it, calls through an interface. A grep with 1-3 hits in one file names, in
-one `# siblings:` line, the declarations in that file that share name parts with the enclosing
-symbols, plus the fields their bodies use.
+or one of the 3 lines below it, calls through an interface. A grep with 1-3 hits, all in one file,
+gets one `# siblings:` line: the declarations in that file that share name parts with the
+enclosing symbols, plus the fields their bodies use.
 
 **Tokens.** Path once per file, no header and no legend cut the output by a third (5,978 ->
 3,995 tokens on 20 real agent calls), with no hit, line number or count lost.
