@@ -1081,6 +1081,9 @@ describe('generated prior: lockfiles, API dumps, blob hit lines; copies collapse
     expect(prior([vec(1), vec(2), vec(3)])).toBe(0.25);
     expect(prior([vec(1), vec(2), vec(3), { file: 'src/aes.ts', line: 9, matchText: 'x', content: 'export function encrypt(x) {' }])).toBe(1);
     expect(prior([vec(1), vec(2)])).toBe(1);
+    // hits the engine did not hand over (per-file cap) may be ordinary code
+    const capped = selectGrepFilesByWeight([vec(1), vec(2), vec(3)], { maxFiles: 1, perFileCap: 8, order: 'weight', totals: new Map([['src/aes.ts', 9]]) });
+    expect(capped.fileSummary.files[0].prior).toBe(1);
   });
 
   it('a copy (same file name, same text, line numbers aside) prints one line with its own hit lines', () => {
@@ -1104,6 +1107,11 @@ describe('generated prior: lockfiles, API dumps, blob hit lines; copies collapse
       { file: 'a/index.ts', line: 12, text: 'x', more: 1 },
       { file: 'b/index.ts', line: 30, text: 'export const enabled = true;' },
       { file: 'b/index.ts', line: 32, text: 'x', more: 1 },
+    ])).not.toContain('same matching lines');
+    // a line cut short is no evidence
+    expect(renderGrepListing([
+      { file: 'a/x.ts', line: 1, text: 'const a = 1 … tail' }, { file: 'a/x.ts', line: 2, text: 'b' },
+      { file: 'b/x.ts', line: 1, text: 'const a = 1 … tail' }, { file: 'b/x.ts', line: 2, text: 'b' },
     ])).not.toContain('same matching lines');
     // line numbers only (dropText): equal numbers are no evidence of a copy
     expect(renderGrepListing(rows.slice(0, 4), { dropText: true })).toEqual(['docs/git.md', '52', '54', 'web/docs/git.md', '54', '56']);
