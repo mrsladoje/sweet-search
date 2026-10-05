@@ -318,6 +318,24 @@ export function createCallResolutionIndex(entities, { fileImports = null, hierar
     return aliasNames.has(name) ? 'alias' : null;
   }
 
+  // The type an alias names, read from its declaration: `using P = std::shared_ptr<T>;`
+  // (a smart pointer forwards to T's methods), `typedef T *P;`, `type P = pkg.T`,
+  // `typealias P = T`. Null when the right side names no single type, or the
+  // repo's aliases of that name disagree.
+  let aliasTargets = null;
+  function aliasTargetOf(name) {
+    if (!aliasTargets) {
+      aliasTargets = new Map();
+      for (const e of entities) {
+        if (!TYPE_ALIAS_TYPES.has(e.type)) continue;
+        const t = aliasTargetIn(e.signature || '', e.name);
+        const prev = aliasTargets.get(e.name);
+        aliasTargets.set(e.name, prev === undefined ? t : (prev === t ? prev : null));
+      }
+    }
+    return aliasTargets.get(name) ?? null;
+  }
+
   // Names the repo defines only as an interface / protocol (no class or struct of that name).
   let interfaceOnly = null;
   function isInterfaceType(name) {
@@ -459,6 +477,7 @@ export function createCallResolutionIndex(entities, { fileImports = null, hierar
     outerOf,
     isInterfaceIn,
     typeKindOf,
+    aliasTargetOf,
     isInterfaceType,
     factsOf,
     methodOwners,
@@ -829,8 +848,29 @@ function extensionReceiverOf(c) {
  * the receiver rules decide as for an untyped receiver. (Rust, Swift and
  * Kotlin aliases are no entities: such a call stays unresolved.)
  */
-function narrowByReceiverType(pool, receiverType, sourceEntity, idx) {
+const SMART_POINTER = String.raw`(?:(?:::)?\w+::)*(?:shared_ptr|unique_ptr|weak_ptr|intrusive_ptr|Rc|Arc|Box|RefPtr|sp)\s*<\s*(?:const\s+)?`;
+
+/** Type named by an alias declaration's right side (see aliasTargetOf), or null. */
+export function aliasTargetIn(signature, name) {
+  const sig = String(signature || '').replace(/\s+/g, ' ');
+  const smart = new RegExp(String.raw`(?:=|typedef)\s*(?:typename\s+)?${SMART_POINTER}(?:(?:::)?\w+(?:::|\.))*([A-Za-z_]\w*)\s*>`).exec(sig);
+  let t = smart?.[1] || null;
+  if (!t) {
+    // `using P = ns::T;`, `type P = pkg.T`, `typealias P = T`, `typedef ns::T *P;`
+    const plain = /=\s*(?:typename\s+)?(?:const\s+)?(?:(?:::)?\w+(?:::|\.))*([A-Za-z_]\w*)\s*[*&]?\s*;?\s*$/.exec(sig)
+      || new RegExp(String.raw`^\s*typedef\s+(?:const\s+)?(?:(?:::)?\w+::)*([A-Za-z_]\w*)\s*[*&]?\s*${name}\s*;`).exec(sig);
+    t = plain?.[1] || null;
+  }
+  return t && t !== name ? t : null;
+}
+
+function narrowByReceiverType(pool, receiverType, sourceEntity, idx, depth = 0) {
   if (receiverType.external) return [];
+  // An alias names another type: resolve through it (`TcpConnectionPtr` is
+  // `std::shared_ptr<TcpConnection>`, a library type: no repo method).
+  const aliasTarget = depth < 4 && !receiverType.factory && (idx.typeKindOf || NO_INDEX.typeKindOf)(receiverType.type) === 'alias'
+    ? (idx.aliasTargetOf || (() => null))(receiverType.type) : null;
+  if (aliasTarget) return narrowByReceiverType(pool, { ...receiverType, type: aliasTarget, outer: null }, sourceEntity, idx, depth + 1);
   if (receiverType.factory) {
     // A static call's result: of a repo type it may be any type (a factory), so the
     // receiver rules decide; of a type the repo does not define, a library made it.

@@ -142,6 +142,8 @@ export class StructuralContextRepository {
    */
   constructor(dbPath, opts = {}) {
     this._BareCallResolver = typeof opts.BareCallResolver === 'function' ? opts.BareCallResolver : null;
+    // graph/receiver-types.js declaredTypeIn, passed in for the same reason.
+    this._declaredTypeIn = typeof opts.declaredTypeIn === 'function' ? opts.declaredTypeIn : null;
     this._readerVisibility = new CodeGraphReaderVisibility(dbPath, opts);
     this.dbPath = this._readerVisibility.dbPath;
     this.projectRoot = opts.projectRoot || process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd();
@@ -446,6 +448,58 @@ export class StructuralContextRepository {
       .slice(0, limit);
   }
 
+  /**
+   * `self.cmd.get_arguments()` bound to Command.get_arguments: the caller's own type
+   * declares the field (`cmd: &'cmd mut Command`, `private final Command cmd;`,
+   * `db *Database`). Short or abbreviated field names (`cmd`, `db`) name no type, so
+   * the receiver-name gate dropped such edges.
+   */
+  _fieldReceiverBound(db, targetName, caller, resolved) {
+    if (!this._declaredTypeIn || !caller?.parentClass || !resolved?.parentClass) return false;
+    const parts = String(targetName || '').replace(/::/g, '.').split('.').filter(Boolean);
+    if (parts.length === 3 && /^(?:self|this)$/.test(parts[0])) parts.shift();
+    if (parts.length !== 2 || !/^[A-Za-z_]\w*$/.test(parts[0])) return false;
+    const key = `${caller.parentClass}\0${parts[0]}`;
+    this._fieldTypes ||= new Map();
+    let type = this._fieldTypes.get(key);
+    if (type === undefined) {
+      type = null;
+      try {
+        const owners = db.prepare(`SELECT e.file_path, e.start_line, e.end_line FROM entities e
+          WHERE ${this._entitySql(db, 'e')} AND e.name = ?
+            AND e.type IN ('class','struct','record','object','trait','interface')
+          ORDER BY CASE WHEN e.file_path = ? THEN 0 ELSE 1 END LIMIT 4`)
+          .all(...this._entityParams(db), caller.parentClass, caller.filePath || '');
+        for (const o of owners) {
+          const text = this.readFileRange(o.file_path, o.start_line, o.end_line) || '';
+          const found = this._declaredTypeIn(text, parts[0], o.file_path)?.type || null;
+          if (found) { type = found; break; }
+        }
+      } catch {
+        type = null;
+      }
+      this._fieldTypes.set(key, type);
+    }
+    return !!type && type === resolved.parentClass;
+  }
+
+  /**
+   * `instance().handleSessionForResponse(` bound to HttpAppFrameworkImpl's method: the
+   * call that made the receiver is a member of that same type (a singleton `instance()`,
+   * a builder or fluent `with_x()`), so the receiver is that type. A call-result
+   * receiver names no type, so the receiver-name gate dropped these edges.
+   */
+  _sameTypeChainBound(db, targetName, resolved) {
+    const m = /(?:^|\.)([A-Za-z_]\w*)\(\)\.[A-Za-z_]\w*$/.exec(String(targetName || ''));
+    if (!m || !resolved?.parentClass) return false;
+    try {
+      return !!db.prepare(`SELECT 1 FROM entities e WHERE ${this._entitySql(db, 'e')} AND e.name = ? AND e.parent_class = ? LIMIT 1`)
+        .get(...this._entityParams(db), m[1], resolved.parentClass);
+    } catch {
+      return false;
+    }
+  }
+
   /** Other definitions with the target's name (rivals for an unbound qualified call). */
   _namesakes(db, target) {
     try {
@@ -501,7 +555,19 @@ export class StructuralContextRepository {
       ORDER BY r.weight DESC, e.file_path, r.context_line
       LIMIT ?
     `, [...types, ...this._entityParams(db), ...this._relationshipParams(db), target.id, target.id, ...patterns, limit], limit);
-    const named = rows.filter(row => !packageCallUnbound(row)).map(row => ({
+    // `did_you_mean.as_ref()` names a value, not the function did_you_mean: `name.member` is a
+    // use of the target only when the target is a type or module (a static member, a
+    // constructor) or through `.call` / `.apply` / `.bind`.
+    const callableTarget = /^(?:function|method|arrowFunction|assignedFunc|shortFunction|objectMethod|objectArrow|def|func|macro)$/.test(String(target.type || ''));
+    const memberOfName = (tn) => {
+      const raw = String(tn || '');
+      for (const head of [target.name, lowerCamel(target.name)]) {
+        if (raw.startsWith(`${head}.`)) return !/^(?:call|apply|bind)$/.test(raw.slice(head.length + 1));
+      }
+      return false;
+    };
+    const named = rows.filter(row => !packageCallUnbound(row)
+      && !(callableTarget && row.target_id !== target.id && memberOfName(row.target_name))).map(row => ({
       ...this._entityFromRow(row),
       relationship: row.rel_type,
       contextLine: row.context_line || null,
@@ -819,7 +885,8 @@ export class StructuralContextRepository {
         summary: '',
       });
       if (row.id && !packageCallBound(row) && !declaredReceiverBound(row.target_name, target, resolved)
-        && !trustedCalleeEdge(row.target_name, resolved)) resolved = { id: `external:${idx}:${row.target_name || 'unknown'}`, name: row.target_name || 'external', type: 'external', filePath: null, startLine: null, endLine: null, signature: row.target_name || '', summary: '' };
+        && !trustedCalleeEdge(row.target_name, resolved) && !this._fieldReceiverBound(db, row.target_name, target, resolved)
+        && !this._sameTypeChainBound(db, row.target_name, resolved)) resolved = { id: `external:${idx}:${row.target_name || 'unknown'}`, name: row.target_name || 'external', type: 'external', filePath: null, startLine: null, endLine: null, signature: row.target_name || '', summary: '' };
       if (row.id && (this._qualifiedCallToNestedFunction(db, row.target_name, resolved) || this._pythonModuleCall(row.target_name, resolved, target.filePath))) resolved = { id: `external:${idx}:${row.target_name || 'unknown'}`, name: row.target_name || 'external', type: 'external', filePath: null, startLine: null, endLine: null, signature: row.target_name || '', summary: '' };
       if (resolved.id === target.id) {
         resolved = this._resolveQualifiedAlternative(row.target_name, target.id) || resolved;
