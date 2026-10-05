@@ -38,7 +38,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { runClaudeAgent } from '../../../eval/agent-read-workflows/claude-runner.js';
-import { runJudge, _internal as judgeInternal } from '../../../eval/agent-read-workflows/judge-runner.js';
+import { runJudge, isPermanentJudgeFailure, _internal as judgeInternal } from '../../../eval/agent-read-workflows/judge-runner.js';
 import { AGENT_TOOL_CALL_CAP, runAnthropicApiAgent, runOpenRouterApiAgent } from './p7-api-agent-runner.mjs';
 import { runCodexAgent } from './p7-codex-runner.mjs';
 import { hashContent } from './p7-shared.mjs';
@@ -241,14 +241,9 @@ export function parseJudgeScore(text) {
 // A panelist that still fails after runJudge's own retries is asked again after these pauses,
 // so a row is not scored by a smaller panel (dev1005 Codex: 3 of 60 rows were the mean of 2
 // judges after one provider failed, while their pair had the median of 3). A failure that
-// cannot pass on a later attempt (a missing key, 400 / 401 / 403 / 404) is not asked again.
+// cannot pass on a later attempt (isPermanentJudgeFailure: a 4xx other than 429, a missing key)
+// is not asked again.
 const PANEL_RETRY_DELAYS_MS = [15000, 45000];
-const PERMANENT_JUDGE_STATUS = new Set([400, 401, 403, 404]);
-const PERMANENT_JUDGE_ERROR_RE = /not set|api[ _-]?key|unauthori[sz]ed|forbidden|permission/i;
-
-function permanentJudgeFailure(r) {
-  return PERMANENT_JUDGE_STATUS.has(Number(r?.raw?.status)) || PERMANENT_JUDGE_ERROR_RE.test(String(r?.error || ''));
-}
 
 export async function judgePanelScore({ probe, answer, panel = JUDGE_PANEL, runJudgeFn = runJudge, judgeBucket, panelRetryDelaysMs }) {
   const userPrompt = buildJudgeUserPrompt({ probe, answer });
@@ -273,12 +268,15 @@ export async function judgePanelScore({ probe, answer, panel = JUDGE_PANEL, runJ
           await judgeBucket.acquire({ target: `${lineage}:${model}` });
         }
         r = await runJudgeFn({ lineage, model, systemPrompt: JUDGE_SYSTEM_PROMPT, userPrompt });
-        const u = normalizeJudgeUsage(r.raw?.usage);
-        add('input_tokens', u.input_tokens);
-        add('output_tokens', u.output_tokens);
+        // runJudge's own retries are paid for too (raw.attemptUsages).
+        for (const raw of Array.isArray(r.raw?.attemptUsages) ? r.raw.attemptUsages : [r.raw?.usage]) {
+          const u = normalizeJudgeUsage(raw);
+          add('input_tokens', u.input_tokens);
+          add('output_tokens', u.output_tokens);
+        }
         if (typeof r.retryCount === 'number') { retries += r.retryCount; sawRetryCount = true; }
         score = r.isError ? null : parseJudgeScore(r.text);
-        if (score !== null || permanentJudgeFailure(r)) break;
+        if (score !== null || isPermanentJudgeFailure(r)) break;
       }
       // A verdict that never parsed is a failed judge, not a silent abstention.
       const failed = score === null;

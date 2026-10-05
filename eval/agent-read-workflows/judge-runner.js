@@ -264,10 +264,13 @@ export async function runJudge(req) {
   let serverTries = 0;
   let emptyTries = 0;
   let r;
+  // Every attempt is paid for: its usage is kept (raw.attemptUsages), not only the last one's.
+  const attemptUsages = [];
   // Bounded loop: the only paths that `continue` are the retryable ones, each
   // guarded by its own try-counter, so this terminates.
   while (true) {
     r = await dispatch();
+    attemptUsages.push(r?.raw?.usage ?? null);
     const disp = classifyRunnerResult(r);
     if (disp === 'ok' || disp === 'fatal') break;
 
@@ -302,8 +305,19 @@ export async function runJudge(req) {
     lineage: req.lineage,
     model: req.model,
     retryCount,
-    raw: { ...(r.raw || {}), retryCount },
+    raw: { ...(r.raw || {}), retryCount, attemptUsages },
   };
+}
+
+/**
+ * A judge failure no later attempt can fix: a 4xx other than 429 (bad request, auth, model
+ * not found, unprocessable), or a missing key. Network errors and timeouts (no status) are
+ * not permanent.
+ */
+export function isPermanentJudgeFailure(r) {
+  if (!r?.isError) return false;
+  if (typeof r.raw?.status === 'number' && classifyRunnerResult(r) === 'fatal') return true;
+  return /not set|api[ _-]?key/i.test(String(r.error || ''));
 }
 
 // ─── anthropic (claude-runner.js wrapper) ─────────────────────────────────
