@@ -14,6 +14,12 @@ import { runInVirtualProcess } from '../../core/agent-tools/virtual-process.js';
 import { runAgentTool } from '../../eval/agent-read-workflows/bin/_ss-helpers.mjs';
 
 const FILE = 'src/Call.kt';
+const JFILE = 'src/Svc.java';
+// `void a` 1-10, `@First @Second @Third @Fourth` 12-15, `void target` 16-30, filler to 60.
+const JLINES = Array.from({ length: 60 }, (_, i) => `    int y${i + 1} = ${i + 1};`);
+JLINES[0] = '  void a() {'; JLINES[9] = '  }';
+JLINES[11] = '  @First'; JLINES[12] = '  @Second'; JLINES[13] = '  @Third(x = 1)'; JLINES[14] = '  @Fourth';
+JLINES[15] = '  void target() {'; JLINES[29] = '  }';
 const TOTAL = 80;
 // `fun a` 5-20, KDoc 22-25 + `fun callDone` 26-40, `fun z1`..`fun z6` 42-77 (6 lines each).
 function sourceLines() {
@@ -34,6 +40,7 @@ beforeAll(() => {
   mkdirSync(path.join(root, 'src'), { recursive: true });
   mkdirSync(path.join(root, '.sweet-search'), { recursive: true });
   writeFileSync(path.join(root, FILE), sourceLines().join('\n') + '\n');
+  writeFileSync(path.join(root, JFILE), JLINES.join('\n') + '\n');
   const db = new Database(path.join(root, '.sweet-search', 'codebase.db'));
   try {
     db.exec('CREATE TABLE vectors (id TEXT PRIMARY KEY, file_path TEXT, text TEXT, metadata TEXT)');
@@ -42,6 +49,10 @@ beforeAll(() => {
     row('c1', 'a', 5, 20);
     row('c2', 'callDone', 22, 40); // the chunk starts at the KDoc
     for (let k = 1; k <= 6; k++) row(`z${k}`, `z${k}`, 36 + 6 * k, 41 + 6 * k);
+    const jrow = (id, symbol, a, b) => ins.run(id, JFILE, '# x', JSON.stringify({ symbol, chunk_type: 'method', line_start: a, line_end: b, language: 'java' }));
+    jrow('j1', 'a', 1, 10);
+    jrow('j2', 'target', 12, 30);
+    jrow('j3', 'tail', 31, 60);
   } finally {
     db.close();
   }
@@ -54,6 +65,9 @@ beforeAll(() => {
     ins.run(1, 'a', 'method', FILE, 5, 20, null);
     ins.run(2, 'callDone', 'method', FILE, 26, 40, null); // the definition starts after the KDoc
     for (let k = 1; k <= 6; k++) ins.run(2 + k, `z${k}`, 'method', FILE, 36 + 6 * k, 41 + 6 * k, null);
+    ins.run(20, 'a', 'method', JFILE, 1, 10, null);
+    ins.run(21, 'target', 'method', JFILE, 16, 30, null);
+    ins.run(22, 'tail', 'method', JFILE, 31, 60, null);
   } finally {
     graph.close();
   }
@@ -83,6 +97,10 @@ describe('ss-read below: the definition right after the window comes first', () 
 
   it('a window that ends on the line before a definition names it first', async () => {
     expect(await ssRead([FILE, '1', '47'])).toMatch(/^below 48-80: methods z2, /);
+  });
+
+  it('a run of annotations between the window and the definition does not hide it', async () => {
+    expect(await ssRead([JFILE, '1', '12'])).toMatch(/^below 13-60: methods target/);
   });
 
   it('a definition farther than a few lines below is listed in position order only', async () => {
