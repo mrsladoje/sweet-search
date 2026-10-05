@@ -161,6 +161,14 @@ describe('ss-grep line allocation (2026-10-02 rule: sqrt(hits) x prior, Sainte-L
       + '# +20 more hits (raise -k)\n');
     expect(grepCalls[0].grepFileOrder).toBeUndefined();
   });
+
+  it('an --in directory takes the weighted listing: the heavy file is not hidden by path order', async () => {
+    // systest/: bulk_live_cases.go (1 hit) sorts first; export/export_test.go (4) is the heavy file.
+    const out = await ss('grep', ['func .*Export', '-k', '3', '--in', 'systest']);
+    expect(grepCalls[0]).toMatchObject({ grepFileOrder: 'weight', fileFilter: 'systest' });
+    expect(pathLines(out)[0]).toBe('systest/export/export_test.go');
+    expect(out).not.toMatch(/^(backup|worker|protos)\//m);
+  });
 });
 
 describe('Step 2 arms (guarantee and sat2 default ON since 2026-10-03): SS_FIX_GREP_ALLOC_RULE, SS_FIX_GREP_WEIGHT', () => {

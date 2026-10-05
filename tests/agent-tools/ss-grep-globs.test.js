@@ -129,7 +129,8 @@ describe('ss-grep -g (native path, counts after the filter)', () => {
     const { out: scoped } = await ss('grep', ['Head', '-k', '1', '--in', 'lib', '-g', '!tests']);
     expect(grepHitCount(scoped)).toBe(2);
     expect(scoped).toContain('lib/src/Head.h\n1:');
-    expect(scoped).toContain('# +1 more hit (raise -k)');
+    // A directory scope takes the weighted listing: the hidden file is named.
+    expect(scoped).toContain('# +1 more file with 1 hit: lib/src/HttpClient.java');
   });
 
   it('globs that remove every match say so (no bare "(no matches)", no case-insensitive retry)', async () => {

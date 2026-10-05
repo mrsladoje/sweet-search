@@ -726,7 +726,13 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
   // A5: a repaired pattern with zero hits must not read as a clean absence.
   const REPAIRED_NO_MATCH = '(no matches — note: the regex did not parse as written; check the escaping of ( [ { and run again)';
 
-  if (inPaths.length > 0) {
+  // A scope that names a directory holds many files: it takes the weighted listing below, as
+  // an unscoped grep does (r3h-tortoise-orm-03: `--in tortoise -k 15` printed files in path
+  // order, gave 12 of 15 lines to the first heavy file and hid models.py, the second-heaviest
+  // file and the one with the answer). Only scopes that are all files keep the flat output.
+  const dirScoped = inPaths.length > 0 && FIX.grepAlloc && missingScopes(inPaths).length === 0
+    && typedFiles(inPaths).length < inPaths.length;
+  if (inPaths.length > 0 && !dirScoped) {
     // Scoped: flat output, depth up to k across the named scopes.
     const fileFilter = inPaths.length === 1 ? inPaths[0] : inPaths;
     const fetchScoped = async (rx) => {
@@ -837,7 +843,8 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
   // it. At the root, or outside the repository, cwdScope is null: nothing changes.
   const cwdScope = fromFind ? null
     : cwdGrepScope({ cwd: process.cwd(), fileRoot: FILE_ROOT, indexRoot: PROJECT_ROOT });
-  const scopeOpts = cwdScope ? { fileFilter: cwdScope, _cwdScope: true } : {};
+  const scopeOpts = dirScoped ? { fileFilter: inPaths.length === 1 ? inPaths[0] : inPaths }
+    : cwdScope ? { fileFilter: cwdScope, _cwdScope: true } : {};
   const fetchUnscoped = async (rx) => {
     try {
       return await queryWarmSearch(rx, {
@@ -939,7 +946,13 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
   if (hiddenFiles) process.stdout.write(`${hiddenFiles}\n`);
   if (body.truncatedFileCount > 0 || hiddenFiles) process.stdout.write(`${GREP_HIDDEN_HINT}\n`);
   if (body.shownMatches === 0) {
-    process.stdout.write(`${globExcludedNote(result.stats, globs) || (repaired ? REPAIRED_NO_MATCH : '(no matches)')}\n`);
+    // A typed directory scope the index cannot answer for says so, as the flat scoped path does.
+    const globNote = globExcludedNote(result.stats, globs);
+    let note = null;
+    if (!globNote && dirScoped && result.stats?.scopeInGrepIndex !== true) {
+      for (const p of inPaths) { note = await notIndexedNote(p); if (note) break; }
+    }
+    process.stdout.write(`${globNote || (note ? note.text : (repaired ? REPAIRED_NO_MATCH : '(no matches)'))}\n`);
   }
   writeRegexDialectHintAfterRepair(result.stats, repaired);
   process.exit(0);
