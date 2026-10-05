@@ -136,6 +136,28 @@ describe('judgePanelScore — panel retry (2026-10-05: rows scored by 2 of 3 jud
     expect(judges[0]).toMatchObject({ isError: true, input_tokens: 300, output_tokens: 30, retry_count: 4 });
   });
 
+  it('usage counts every runJudge attempt (raw.attemptUsages), not only the last', async () => {
+    const runJudgeFn = async ({ lineage, model }) => ({
+      text: JSON.stringify({ score: 0.5 }), isError: false, retryCount: 2, lineage, model,
+      raw: { usage: { input_tokens: 100, output_tokens: 5 }, attemptUsages: [{ input_tokens: 100 }, { input_tokens: 100 }, { input_tokens: 100, output_tokens: 5 }] },
+    });
+    const { judges } = await judgePanelScore({ probe: makeProbe(), answer: 'a', runJudgeFn });
+    expect(judges[0]).toMatchObject({ input_tokens: 300, output_tokens: 5, retry_count: 2 });
+  });
+
+  it('a 422 is permanent too; a network error (no status) is asked again', async () => {
+    const calls = new Map();
+    const runJudgeFn = async ({ lineage, model }) => {
+      calls.set(lineage, (calls.get(lineage) || 0) + 1);
+      if (lineage === JUDGE_PANEL[0].lineage) return { text: '', isError: true, lineage, model, raw: { status: 422 } };
+      if (lineage === JUDGE_PANEL[1].lineage) return { text: '', isError: true, error: 'fetch failed', lineage, model, raw: {} };
+      return { text: JSON.stringify({ score: 1 }), isError: false, lineage, model, raw: {} };
+    };
+    await judgePanelScore({ probe: makeProbe(), answer: 'a', runJudgeFn });
+    expect(calls.get(JUDGE_PANEL[0].lineage)).toBe(1);
+    expect(calls.get(JUDGE_PANEL[1].lineage)).toBe(3);
+  });
+
   it('a permanent failure (401, missing key) is not asked again', async () => {
     let calls = 0;
     const runJudgeFn = async ({ lineage, model }) => {
