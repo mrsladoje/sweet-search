@@ -270,8 +270,20 @@ export function applyGrepFileDiversity(matches, opts = {}) {
 // Ties: higher hits first, then engine path order (bareGrep's localeCompare sort; the start
 // offset of a file's group in the sorted match list encodes it).
 
-/** Generated, vendored or minified by path shape (the replay's rule); precompiled once. */
-const GENERATED_PATH_RE = /\.pb\.go$|_pb2\.py$|\.generated\.|(^|\/)(vendor|dist|build|node_modules)\/|\.min\.js$/i;
+/**
+ * Generated, vendored or minified by path shape (the replay's rule); precompiled once. Also the
+ * lockfiles of the package managers (written by the tool, never by hand: r3-jj-35 `ss-grep
+ * "gc|…"` printed web/docs/package-lock.json sha512 lines as its FIRST file) and Kotlin
+ * binary-compatibility API dumps (`api/<module>.api`, written by apiDump: r3hb-okhttp-12
+ * printed two identical dumps before the source).
+ */
+const GENERATED_PATH_RE = new RegExp([
+  String.raw`\.pb\.go$|_pb2\.py$|\.generated\.|(^|\/)(vendor|dist|build|node_modules)\/|\.min\.js$`,
+  String.raw`(^|\/)(package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|pnpm-lock\.ya?ml|bun\.lockb?|Cargo\.lock`
+    + String.raw`|go\.sum|poetry\.lock|Pipfile\.lock|uv\.lock|pdm\.lock|composer\.lock|Gemfile\.lock|Podfile\.lock`
+    + String.raw`|Package\.resolved|mix\.lock|pubspec\.lock|flake\.lock|gradle\.lockfile|packages\.lock\.json|deno\.lock)$`,
+  String.raw`(^|\/)api\/([^/]+\/)?[^/]+\.api$`,
+].join('|'), 'i');
 
 /**
  * One-regex pre-check: every test rule (isTestLikePath) and every generated rule above
@@ -280,7 +292,7 @@ const GENERATED_PATH_RE = /\.pb\.go$|_pb2\.py$|\.generated\.|(^|\/)(vendor|dist|
  * (Not memoised: the engine hands every match a fresh path string, so a Map lookup must
  * hash the path and costs about as much as this pass; a per-directory variant was slower.)
  */
-const PRIOR_KEYWORD_RE = /test|spec|fixture|mock|e2e|pb2?[._]|generated|vendor|dist\/|build\/|node_modules|\.min\./i;
+const PRIOR_KEYWORD_RE = /test|spec|fixture|mock|e2e|pb2?[._]|generated|vendor|dist\/|build\/|node_modules|\.min\.|lock|shrinkwrap|go\.sum|\.resolved$|\.api$/i;
 
 const SCALE_SOURCE = 16;  // prior 1
 const SCALE_TEST = 4;     // prior 0.5
@@ -290,6 +302,45 @@ function priorScale(file) {
   if (!PRIOR_KEYWORD_RE.test(file)) return SCALE_SOURCE;
   if (GENERATED_PATH_RE.test(file)) return SCALE_GENERATED;
   return isTestLikePath(file) ? SCALE_TEST : SCALE_SOURCE;
+}
+
+/**
+ * A hit line that is mostly one machine token: a hash, a base64 or hex blob of 40+ characters
+ * with letters and digits (lockfile `integrity` lines, checksums, embedded keys). Nobody greps
+ * for the text inside one; a regex like `gc` matches it by accident.
+ */
+const BLOB_RUN_RE = /[A-Za-z0-9+/=_-]{40,}/g;
+function isBlobLine(text) {
+  const t = String(text || '').trim();
+  if (t.length < 40) return false;
+  let longest = '';
+  for (const m of t.matchAll(BLOB_RUN_RE)) if (m[0].length > longest.length) longest = m[0];
+  if (longest.length * 2 < t.length) return false;
+  // Random text: digits are >= 10% of it, and no lowercase word of 7+ letters (an identifier
+  // such as `parseConfigurationFile2024` has words; a hash or base64 string has none; a hex
+  // run like `daddada` uses only a-f and is no word).
+  const digits = (longest.match(/\d/g) || []).length;
+  const wordy = (longest.match(/[a-z]{7,}/g) || []).some((w) => /[g-z]/.test(w));
+  return digits * 10 >= longest.length && /[A-Za-z]/.test(longest) && !wordy;
+}
+
+/** Hits looked at per file by the blob check: enough to see a pattern, bounded per file. */
+const BLOB_SAMPLE_HITS = 4;
+
+/**
+ * The scale of one file's group matches[start..end): its path prior, or the generated prior
+ * when every sampled hit line is a blob (a lockfile or data dump under any name).
+ */
+function groupScale(file, matches, start, end) {
+  const scale = priorScale(file);
+  if (scale === SCALE_GENERATED) return scale;
+  const stop = Math.min(end, start + BLOB_SAMPLE_HITS);
+  for (let j = start; j < stop; j++) {
+    const m = matches[j];
+    if (m?.file !== file) break;
+    if (!isBlobLine(m?.content ?? m?.matchText)) return scale;
+  }
+  return stop > start ? SCALE_GENERATED : scale;
 }
 
 /** The file-type prior of a match path: 1 source, 0.5 test/spec/fixture, 0.25 generated/vendored/minified. */
@@ -392,12 +443,13 @@ export function selectGrepFilesByWeight(matches, opts = {}) {
       hiddenFileCount++;
       hiddenMatchCount += total;
       if (sampleLen < sampleSize || bound > sample[3 * sampleSize - 3]) {
-        const scale = priorScale(file);
+        const scale = groupScale(file, matches, start, i);
         sampleLen = sampleInsert(sample, sampleLen, sampleSize, sat ? grepWeightKey(total, scale, 'sat2') : total * scale, total, start);
       }
       continue;
     }
-    const key = sat ? grepWeightKey(total, priorScale(file), 'sat2') : total * priorScale(file);
+    const fileScale = groupScale(file, matches, start, i);
+    const key = sat ? grepWeightKey(total, fileScale, 'sat2') : total * fileScale;
     if (size < maxFiles) {
       if (size === capacity) {
         const grown = new Float64Array(heap.length * 2);
@@ -431,7 +483,7 @@ export function selectGrepFilesByWeight(matches, opts = {}) {
     size = last;
     if (size > 0) fileHeapSiftDown(heap, size, 0);
     ords[last] = ord;
-    const scale = sat ? priorScale(matches[ord].file) : key / tot;
+    const scale = sat ? groupScale(matches[ord].file, matches, ord, ord + tot) : key / tot;
     files[last] = { file: matches[ord].file, total: tot, kept: Math.min(tot, perFileCap), prior: scale === SCALE_SOURCE ? 1 : scale === SCALE_TEST ? 0.5 : 0.25 };
   }
   const kept = [];
@@ -802,47 +854,68 @@ export function renderGrepListing(rows, { before = 0, after = 0, getLines = null
   // nothing when it is the only file of the listing.
   const typedSet = new Set(typed);
   const files = [...groups.keys()];
+  // A copy of an earlier file — the same file name and exactly the same printed lines (per-platform
+  // dumps: r3hb-okhttp-12 printed api/android/okhttp.api and api/jvm/okhttp.api, 9 identical
+  // lines each; mirrored docs: jj docs/ and web/docs/src/content/docs/) — prints its path and
+  // the twin's name, not the lines again.
+  const bodies = new Map();
   for (const [file, { rows: hits, more }] of groups) {
     const head = !typedSet.has(file) ? file : (files.length > 1 ? typedPathLabel(file, files) : '');
-    if (head) out.push(head);
-    // The count of this file's hits not shown follows its last shown hit (owner review
-    // 2026-10-04: the hits first, then what is missing from them).
-    const moreLine = more > 0 ? `(+${more} more)` : null;
-    const plain = (row) => (dropText ? `${row.line}` : `${row.line}:${row.text ?? ''}`);
-    const lines = withContext && getLines ? getLines(file) : null;
-    if (!lines) {
-      for (const row of hits) out.push(plain(row));
-      if (moreLine) out.push(moreLine);
+    const body = [];
+    renderGrepFileBody(body, file, hits, more, { before, after, getLines, matchLines, dropText, withContext });
+    const key = `${file.slice(file.lastIndexOf('/') + 1)}\n${body.join('\n')}`;
+    // dropText prints line numbers only: equal numbers in two files are no twin.
+    const twin = head && !dropText && body.length > 1 ? bodies.get(key) : undefined;
+    if (twin) {
+      const n = hits.length + (more > 0 ? more : 0);
+      out.push(`${head} (same lines as ${twin}; ${n} ${n === 1 ? 'hit' : 'hits'})`);
       continue;
     }
-    const windows = [];
-    for (const row of [...hits].sort((a, b) => a.line - b.line)) {
-      if (row.line < 1 || row.line > lines.length) {
-        windows.push({ plain: plain(row) });           // stale: the hit alone
-        continue;
-      }
-      const start = Math.max(1, row.line - before);
-      const end = Math.min(lines.length, row.line + after);
-      const cur = windows[windows.length - 1];
-      if (cur && !cur.plain && start <= cur.end + 1) {
-        cur.end = Math.max(cur.end, end);
-        cur.hits.add(row.line);
-      } else {
-        windows.push({ start, end, hits: new Set([row.line]) });
-      }
-    }
-    const matched = matchLines?.get(file);
-    windows.forEach((w, i) => {
-      if (i > 0) out.push('--');
-      if (w.plain) { out.push(w.plain); return; }
-      for (let n = w.start; n <= w.end; n++) {
-        const text = String(lines[n - 1] ?? '').replace(/\r$/, '');
-        out.push(`${n}${w.hits.has(n) || matched?.has(n) ? ':' : '-'}${text}`);
-      }
-    });
-    if (moreLine) out.push(moreLine);
+    if (head && !bodies.has(key)) bodies.set(key, head);
+    if (head) out.push(head);
+    out.push(...body);
   }
   return out;
+}
+
+/** One file's lines of a grep listing (hits, or context windows), appended to `out`. */
+function renderGrepFileBody(out, file, hits, more, { before, after, getLines, matchLines, dropText, withContext }) {
+  // The count of this file's hits not shown follows its last shown hit (owner review
+  // 2026-10-04: the hits first, then what is missing from them).
+  const moreLine = more > 0 ? `(+${more} more)` : null;
+  const plain = (row) => (dropText ? `${row.line}` : `${row.line}:${row.text ?? ''}`);
+  const lines = withContext && getLines ? getLines(file) : null;
+  if (!lines) {
+    for (const row of hits) out.push(plain(row));
+    if (moreLine) out.push(moreLine);
+    return;
+  }
+  const windows = [];
+  for (const row of [...hits].sort((a, b) => a.line - b.line)) {
+    if (row.line < 1 || row.line > lines.length) {
+      windows.push({ plain: plain(row) });           // stale: the hit alone
+      continue;
+    }
+    const start = Math.max(1, row.line - before);
+    const end = Math.min(lines.length, row.line + after);
+    const cur = windows[windows.length - 1];
+    if (cur && !cur.plain && start <= cur.end + 1) {
+      cur.end = Math.max(cur.end, end);
+      cur.hits.add(row.line);
+    } else {
+      windows.push({ start, end, hits: new Set([row.line]) });
+    }
+  }
+  const matched = matchLines?.get(file);
+  windows.forEach((w, i) => {
+    if (i > 0) out.push('--');
+    if (w.plain) { out.push(w.plain); return; }
+    for (let n = w.start; n <= w.end; n++) {
+      const text = String(lines[n - 1] ?? '').replace(/\r$/, '');
+      out.push(`${n}${w.hits.has(n) || matched?.has(n) ? ':' : '-'}${text}`);
+    }
+  });
+  if (moreLine) out.push(moreLine);
 }
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;

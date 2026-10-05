@@ -13,6 +13,9 @@ export function grepHitCount(out) {
     if (more) n += Number(more[1]);
     const files = /^# \+\d+ more files? with (\d+) hits?/.exec(line);
     if (files) n += Number(files[1]);
+    // A copy of an earlier file prints one line with its hit count (renderGrepListing).
+    const twin = /\(same lines as \S+; (\d+) hits?\)$/.exec(line);
+    if (twin) n += Number(twin[1]);
   }
   return n;
 }
@@ -20,5 +23,6 @@ export function grepHitCount(out) {
 /** The path lines, in print order (a `(+N more)` line is not one). */
 export function grepFiles(out) {
   return String(out).split('\n')
-    .filter((l) => l && !/^(\d|#|--|\()/.test(l));
+    .filter((l) => l && !/^(\d|#|--|\()/.test(l))
+    .map((l) => l.replace(/ \(same lines as \S+; \d+ hits?\)$/, ''));
 }
