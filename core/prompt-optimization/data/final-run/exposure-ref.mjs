@@ -23,6 +23,8 @@ if (!root0 || !cell || !out0) { console.error('usage: exposure-ref.mjs <product-
 const root = path.resolve(root0), out = path.resolve(out0);
 const CELLS = {
   'cc-opus55-medium': { harness: 'cc' },
+  'cc-opus55-high': { harness: 'cc' },
+  'cc-sonnet55-high': { harness: 'cc' },
   'codex-sol61-high': { harness: 'codex', model: 'gpt-6.1-sol' },
   'oc-sol61-high': { harness: 'opencode', model: 'openai/gpt-6.1-sol' },
 };
