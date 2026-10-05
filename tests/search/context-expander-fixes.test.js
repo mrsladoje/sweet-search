@@ -683,7 +683,7 @@ describe('body type names: member access and Go visibility (2026-10-05 dgraph re
     findEntitiesByNames: (names) => have.filter((h) => names.includes(h.name)),
   });
 
-  it('a lowercase name after `.` / `->` is a field, not a type; Go unexported types stay in their package', () => {
+  it('Go: a lowercase name after `.` is a field, not a type; unexported types stay in their package', () => {
     const repo = repoWith([
       { id: 'w', name: 'rateLimiter', type: 'struct', filePath: 'worker/proposal.go', startLine: 42, endLine: 46 },
       { id: 'n', name: 'nodeState', type: 'struct', filePath: 'worker/state.go', startLine: 1, endLine: 9 },
@@ -694,11 +694,23 @@ describe('body type names: member access and Go visibility (2026-10-05 dgraph re
       entity: { id: 'a', filePath: 'dgraph/cmd/zero/assign.go', startLine: 172, endLine: 279, name: 'AssignIds', type: 'method' },
       skipKeys: new Set(),
       tokenCap: 600,
-      body: 'func (s *Server) AssignIds() {\n  if s.rateLimiter == nil { return }\n  var st nodeState\n  var ls leaseState\n  p->rateLimiter = nil\n}',
+      body: 'func (s *Server) AssignIds() {\n  if s.rateLimiter == nil { return }\n  var st nodeState\n  var ls leaseState\n}',
     });
     expect(out.rendered).toMatch(/leaseState/);       // same package: kept
     expect(out.rendered).not.toMatch(/rateLimiter/);  // only ever a field
     expect(out.rendered).not.toMatch(/nodeState/);    // unexported, other package
+  });
+
+  it('other languages keep a lowercase-leading qualified type (`models.userRecord`)', () => {
+    const repo = repoWith([{ id: 'u', name: 'userRecord', type: 'class', filePath: 'app/models.py', startLine: 1, endLine: 9 }]);
+    const out = renderGraphNeighbors({
+      codeGraphRepo: repo,
+      entity: { id: 'f', filePath: 'app/views.py', startLine: 1, endLine: 3, name: 'show', type: 'function' },
+      skipKeys: new Set(),
+      tokenCap: 600,
+      body: 'def show(value: models.userRecord):\n    return value',
+    });
+    expect(out.rendered).toMatch(/userRecord/);
   });
 
   it('the same name used bare still counts; an exported Go type of another package counts', () => {

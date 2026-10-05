@@ -1300,7 +1300,7 @@ function goUnexportedElsewhere(fromFile, t) {
   return path.posix.dirname(String(fromFile)) !== path.posix.dirname(String(t.filePath));
 }
 
-function extractTypeCandidates(code, ownName) {
+function extractTypeCandidates(code, ownName, { go = false } = {}) {
   if (!code) return [];
   const own = (ownName || '').toLowerCase();
   const seen = new Set();
@@ -1308,9 +1308,10 @@ function extractTypeCandidates(code, ownName) {
   for (const m of code.matchAll(/\b[A-Za-z_][A-Za-z0-9_]{2,}\b/g)) {
     const id = m[0];
     if (seen.has(id)) continue;
-    // A lowercase name right after `.` or `->` is a member access (`s.rateLimiter`, a field),
-    // never a type: no language names a type that way. Its other occurrences still count.
-    if (/^[a-z_]/.test(id) && /(?:\.|->)\s*$/.test(code.slice(Math.max(0, m.index - 3), m.index))) continue;
+    // Go: a lowercase name right after `.` is a field or method (`s.rateLimiter`), never a
+    // type — Go names another package's type only as `pkg.Exported`. (Other languages allow
+    // `models.userRecord`.) Its other occurrences still count.
+    if (go && /^[a-z_]/.test(id) && /\.\s*$/.test(code.slice(Math.max(0, m.index - 3), m.index))) continue;
     seen.add(id);
     if (LANG_KEYWORDS.has(id)) continue;
     if (id.toLowerCase() === own) continue;
@@ -1416,7 +1417,7 @@ export function renderGraphNeighbors(opts) {
   // Same-file types count (Engine next to handleHTTPRequest); range dedupe uses skipKeys.
   if (body && typeof codeGraphRepo.findEntitiesByNames === 'function') {
     try {
-      const ids = extractTypeCandidates(body, entity.name);
+      const ids = extractTypeCandidates(body, entity.name, { go: /\.go$/.test(String(entity.filePath || '')) });
       if (ids.length) {
         const rows = codeGraphRepo.findEntitiesByNames(ids, { types: TYPE_KINDS, limit: 32, distinct: false }) || [];
         countDefs(rows.map((t) => t.name));
