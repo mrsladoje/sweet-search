@@ -1198,15 +1198,17 @@ export function formatTraceCompact(result, { mode = null, inFile = null, notes =
     if (!show(title)) continue;
     const internal = section.items.filter((i) => !isExternalItem(i));
     const external = section.external ?? (section.items.length - internal.length);
+    // A type's callees are its methods' calls out of it (structural-context.js); the line says
+    // so, and how many methods were read when that is not all of them — also when none called out.
+    const members = section.viaMembers > 0 ? (String(section.memberTotal) !== String(section.viaMembers)
+      ? `# calls out of ${t.name}'s first ${section.viaMembers} of its ${section.memberTotal} methods`
+      : `# calls out of ${t.name}'s ${section.viaMembers} ${section.viaMembers === 1 ? 'method' : 'methods'}`) : null;
     if (!internal.length) {
+      if (members) lines.push(members);
       lines.push(`(no ${title} in the repository)`);
     } else {
       if (mode === null) lines.push(`## ${title}`);
-      // A type's callees are its methods' calls out of it (structural-context.js).
-      if (section.viaMembers > 0) {
-        const of = section.memberTotal > section.viaMembers ? `first ${section.viaMembers} of its ${section.memberTotal}` : `${section.viaMembers}`;
-        lines.push(`# calls out of ${t.name}'s ${of} ${section.viaMembers === 1 && of === '1' ? 'method' : 'methods'}`);
-      }
+      if (members) lines.push(members);
       lines.push(...groupedRows(internal, label, t));
     }
     for (const item of internal) listed.add(`${item.file}:${item.startLine || '?'}`);

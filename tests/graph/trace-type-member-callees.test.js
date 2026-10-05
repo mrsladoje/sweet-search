@@ -177,6 +177,14 @@ describe('ss-trace callees of a type = its methods\' calls out of the type', () 
     expect(calleeNames(trace(twin, 'Server', { modeSection: 'callees', filePath: 'zero/zero.go' }))).not.toContain('helperFar');
   });
 
+  it('a type whose methods call nothing outside still says which methods were read', async () => {
+    const g = await buildGraph({ 'k.kt': ['class K {', '  fun a(): Int {', '    return b()', '  }', '  fun b(): Int = 1', '}'] });
+    const r = trace(g, 'K', { modeSection: 'callees' });
+    const out = formatTraceCompact(r, { mode: 'callees' });
+    expect(out).toContain("# calls out of K's 2 methods");
+    expect(out).toContain('(no callees in the repository)');
+  });
+
   it('a function target is unchanged (no member gathering)', async () => {
     const g = await buildGraph({
       'a.go': ['package a', '', 'func Outer() int {', '\treturn inner()', '}', '', 'func inner() int {', '\treturn 1', '}'],
