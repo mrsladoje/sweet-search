@@ -646,7 +646,7 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 <br/>
 
-- Each file's path prints once, with no header or legend. That is a third fewer tokens than our old output on 20 real agent calls, with no hit or count lost.
+- Each file's path prints once, with no header or legend. That is a third fewer tokens than the standard grep shape, with no hit or count lost.
 - Method, per-repo results and the optimization log: [`docs/GREP_INDEXING_STRATEGY.md`](docs/GREP_INDEXING_STRATEGY.md).
 - A regex with no fixed text (for example `\w+\d`) cannot use the index, so it scans every indexed file.
 
