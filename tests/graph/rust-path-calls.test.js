@@ -134,6 +134,19 @@ describe('Rust path calls bind to a free function of the named module', () => {
     g.close();
   });
 
+  it('a `pub use x::f as g` rename: `m::g()` reaches f in the module it came from', async () => {
+    const g = await buildGraph({
+      ...CRATE,
+      'src/lib.rs': ['pub mod de;', 'pub mod value;', 'pub mod commands;'],
+      'src/commands/mod.rs': ['mod auth;', 'pub(crate) use auth::login::login as auth_login;'],
+      'src/commands/auth/mod.rs': ['pub mod login;'],
+      'src/commands/auth/login.rs': ['pub fn login(user: &str) -> u32 {', '    0', '}'],
+      'src/main.rs': ['fn main() {', '    serde_json::commands::auth_login("me");', '}'],
+    });
+    expect(g.out('main')['commands.auth_login']).toBe('src/commands/auth/login.rs:1');
+    g.close();
+  });
+
   it('a path into another crate or std gets no edge to a repo namesake', async () => {
     const g = await buildGraph({
       ...CRATE,
