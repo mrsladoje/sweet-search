@@ -41,6 +41,17 @@ if [ "${FR_NO_BEFORE:-0}" = 1 ]; then
   _o=(); while IFS= read -r l; do _o+=("$l"); done < <(strip_before "${OPENAI_STEPS[@]}"); OPENAI_STEPS=("${_o[@]}")   # bash 3.2: no mapfile
   _c=(); while IFS= read -r l; do _c+=("$l"); done < <(strip_before "${CLAUDE_STEPS[@]}"); CLAUDE_STEPS=("${_c[@]}")
 fi
+# FR_REPS=N (with FR_NO_BEFORE=1): N reps of BOTH arms, sweet and native. OpenAI lane: one interleaved
+# step per (cell, rep). Claude lane: arm order alternates per rep (A B, B A, A B …), never two at once.
+if [ -n "${FR_REPS:-}" ]; then
+  [ "${FR_NO_BEFORE:-0}" = 1 ] || { echo "FR_REPS needs FR_NO_BEFORE=1"; exit 2; }
+  OPENAI_STEPS=(); CLAUDE_STEPS=()
+  for ((r = 1; r <= FR_REPS; r++)); do
+    OPENAI_STEPS+=("codex-sol61-high $r native,sweet interleave" "oc-sol61-high $r native,sweet interleave")
+    if [ $((r % 2)) = 1 ]; then CLAUDE_STEPS+=("cc-opus55-medium $r sweet seq" "cc-opus55-medium $r native seq")
+    else CLAUDE_STEPS+=("cc-opus55-medium $r native seq" "cc-opus55-medium $r sweet seq"); fi
+  done
+fi
 in_cells() { case " $FR_CELLS " in *" $1 "*) return 0;; *) return 1;; esac; }
 step_id() { echo "$1-r$2-${3//,/+}"; }
 step_dir() { echo "$RESULTS/r282-$1-$FR_TAG-r$2"; }
@@ -55,7 +66,11 @@ step_missing() { # <cell> <rep> <arms>
 
 preflight() { # prints problems; returns 1 on any blocker
   local bad=0
-  node "$FR_HERE/select-questions.mjs" --check >/dev/null || { echo "BLOCK questions.json does not match a fresh seed-42 draw"; bad=1; }
+  if [ "$(basename "$QUESTIONS")" = questions-heldout.json ]; then
+    node "$FR_HERE/select-heldout.mjs" --check >/dev/null || { echo "BLOCK questions-heldout.json does not match the frozen held-out manifests"; bad=1; }
+  else
+    node "$FR_HERE/select-questions.mjs" --check >/dev/null || { echo "BLOCK questions.json does not match a fresh seed-42 draw"; bad=1; }
+  fi
   local nb="${FR_NO_BEFORE:-0}" roots="$FINAL_ROOT"; [ "$nb" = 1 ] || roots="$FINAL_ROOT $BEFORE_ROOT"
   for w in $roots; do
     [ -z "$(git -C "$w" status --porcelain --untracked-files=no)" ] || { echo "BLOCK $w has uncommitted tracked changes (rows must name the code they ran)"; bad=1; }
@@ -166,8 +181,9 @@ case "$CMD" in
   stop)
     if [ -f "$PIDF" ]; then pkill -TERM -P "$(cat "$PIDF")" 2>/dev/null; kill "$(cat "$PIDF")" 2>/dev/null; fi
     pkill -TERM -f "retrieval-bench-282.mjs.*--tag $FR_TAG-r" 2>/dev/null   # the bench reaps its daemons on SIGTERM
-    sleep 10; for c in $FR_CELLS; do for r in 1 2; do reap_step "$c" "$r"; done; done
+    sleep 10; for c in $FR_CELLS; do for r in $(seq 1 "${FR_REPS:-2}"); do reap_step "$c" "$r"; done; done
     rm -f "$PIDF"; log "stopped" ;;
-  analyze) node "$FR_HERE/analyze.mjs" --tag "$FR_TAG" --out "$FR_STATE/report-$FR_TAG.json" ;;
+  analyze) node "$FR_HERE/analyze.mjs" --tag "$FR_TAG" --out "$FR_STATE/report-$FR_TAG.json" \
+             $([ "$(basename "$QUESTIONS")" = questions-heldout.json ] && echo --heldout) ;;
   *) echo "usage: run.sh plan|start|status|stop|analyze"; exit 2 ;;
 esac

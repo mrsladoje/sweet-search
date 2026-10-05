@@ -13,6 +13,7 @@
 // question-clustered percentile bootstrap intervals (questions resampled with replacement, within tier
 // for the pooled scope; B = 10000, seed 42). Only questions where both arms have an ok row count.
 // This is a DEV set: the per-question swing list is allowed (trace reading, §7.5).
+// --heldout: a HELD-OUT question set — aggregates only; no swing list, no per-question value anywhere.
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,6 +27,7 @@ const CELLS = String(flag('--cells', 'cc-opus55-medium,codex-sol61-high,oc-sol61
 const OUT = flag('--out', null);
 const SWINGS = Number(flag('--swings', 5));
 const B = Number(flag('--boot', 10000));
+const HELDOUT = argv.includes('--heldout');
 const ARM_NAME = { sweet: 'after', before: 'before', native: 'native' };
 const METRICS = [
   ['score', r => r.score, 'pt'],
@@ -146,6 +148,7 @@ for (const cell of CELLS) {
     }
     console.log('');
   }
+  if (HELDOUT) { report.cells[cell] = cellOut; console.log('Held-out: aggregates only (no per-question swings).\n'); continue; }
   // §7.5: the biggest swings, for trace reading (DEV questions only).
   const swings = (a, b, m) => [...q.entries()].filter(([, e]) => fin(e.arms[a]?.[m]) && fin(e.arms[b]?.[m]))
     .map(([id, e]) => ({ id, tier: e.tier, a: e.arms[a][m], b: e.arms[b][m], d: e.arms[a][m] - e.arms[b][m] }))
