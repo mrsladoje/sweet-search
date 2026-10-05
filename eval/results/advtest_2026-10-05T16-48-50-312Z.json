@@ -1,0 +1,318 @@
+{
+  "timestamp": "2026-10-05T16:48:50.310Z",
+  "dataset": "advtest",
+  "queryCount": 19210,
+  "corpusSize": 19210,
+  "searchMode": "auto",
+  "totalTimeMs": 1044361,
+  "errors": 0,
+  "config": {
+    "profile": "full",
+    "k": 20,
+    "useLateInteraction": true,
+    "buildLateInteraction": true,
+    "lateInteractionModel": null,
+    "graphExpand": "none",
+    "stage3Candidates": 30,
+    "stage3CandidatesProductionDefault": 30,
+    "cascadeEnabled": false,
+    "embedTextVariant": "current",
+    "vocabAutoExpand": false,
+    "vocab": {
+      "useVocabulary": false,
+      "autoExpand": false,
+      "maxTerms": 10000,
+      "path": "/root/sweet-search-private/eval/corpus/advtest/.sweet-search/query-vocabulary.json",
+      "termCount": 0,
+      "metadata": {
+        "schemaVersion": 3,
+        "provider": null,
+        "model": null,
+        "dimension": null,
+        "created": null,
+        "lastUpdated": null
+      }
+    },
+    "concurrency": 1,
+    "maxQueries": 19210,
+    "skipIndex": true,
+    "ablations": null,
+    "split": "all"
+  },
+  "aggregate": {
+    "mrr_at_10": 0.5156,
+    "ndcg_at_10": 0.5534,
+    "map_at_10": 0.5156,
+    "recall_at_5": 0.6276,
+    "recall_at_10": 0.671,
+    "recall_at_20": 0.6906,
+    "recall_at_50": 0.6906,
+    "recall_at_100": 0.6906,
+    "gold_missing_top10_rate": 0.329,
+    "gold_missing_top100_rate": 0.3094,
+    "success_at_1": 0.4332,
+    "success_at_5": 0.6276,
+    "latency_p50_ms": 52.6568,
+    "latency_p95_ms": 68.8683,
+    "latency_mean_ms": 53.9726
+  },
+  "perLanguage": {
+    "python": {
+      "count": 19210,
+      "mrr_at_10": 0.5156,
+      "ndcg_at_10": 0.5534,
+      "map_at_10": 0.5156,
+      "recall_at_5": 0.6276,
+      "recall_at_10": 0.671,
+      "recall_at_20": 0.6906,
+      "recall_at_50": 0.6906,
+      "recall_at_100": 0.6906,
+      "gold_missing_top10_rate": 0.329,
+      "gold_missing_top100_rate": 0.3094,
+      "success_at_1": 0.4332,
+      "success_at_5": 0.6276,
+      "latency_p50_ms": 52.6568,
+      "latency_p95_ms": 68.8683,
+      "latency_mean_ms": 53.9726
+    }
+  },
+  "failedQueries": [
+    {
+      "queryId": "AT00000",
+      "query": "str->list",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00001",
+      "query": "Downloads Sina videos by URL.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00002",
+      "query": "Format text with color or other effects into ANSI escaped string.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00003",
+      "query": "Print a log message to standard error.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00004",
+      "query": "Print an error log message.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00006",
+      "query": "str->None",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00007",
+      "query": "str->dict",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00008",
+      "query": "str->list of str",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00009",
+      "query": "Converts a string to a valid filename.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00010",
+      "query": "Downloads CBS videos by URL.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00011",
+      "query": "Override the original one",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00012",
+      "query": "str, str, str, bool, bool ->None",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00013",
+      "query": "Scans through a string for substrings matched some patterns.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00014",
+      "query": "Parses the query string of a URL and returns the value of a parameter.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00015",
+      "query": "Post the content of a URL via sending a HTTP POST request.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00017",
+      "query": "str->str",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00018",
+      "query": "JSON, int, int, int->str",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00019",
+      "query": "int->None",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00020",
+      "query": "int, int, int->None",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "AT00027",
+      "query": "Runs forever, monitoring the child processes of @gunicorn_master_proc and",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}

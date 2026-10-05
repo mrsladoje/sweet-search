@@ -69,14 +69,14 @@ function parseArgs() {
     // Pass --graph-expand=auto to restore auto-promotion ('2hop'), or
     // --graph-expand=1hop / --graph-expand=2hop to force a specific mode.
     graphExpand: 'none',
-    // Stage 3 (CE rerank + legacy LI rerank) candidate window. Production
-    // default in core/infrastructure/config/vector-store.js is 30, calibrated
-    // on the real-codebase graph benchmark. For dense single-function
-    // retrieval (GCSN, AdvTest, CodeSearchNet, CosQA) this harness defaults
-    // to 15 — that is the headline-MRR sweet spot on the 2026-05-03
-    // GCSN dense sweep (MRR@10 85.61 % vs 85.35 % at s3=30, p50 244 vs 252 ms).
-    // Pass --stage3-candidates=N to override.
-    stage3Candidates: 15,
+    // Stage 3 (CE rerank + legacy LI rerank) candidate window. Matches the
+    // production default in core/infrastructure/config/vector-store.js (30),
+    // so published numbers are what users get. A narrower window (15) gained
+    // 0.26 pp on the 2026-05-03 GCSN dev sweep but cost 2.6 pp on CoSQA
+    // (2026-10-05), and it amplifies index-precision noise: small first-stage
+    // rank shifts push the gold past the window. Pass --stage3-candidates=N
+    // to override.
+    stage3Candidates: 30,
     // Query-vocabulary cache. The persistent cache returns slightly
     // different embeddings than a fresh model call (~1 pp MRR drift on
     // GCSN), so reproducible benchmarks must default to OFF. Pass
@@ -157,12 +157,8 @@ Options:
                        single-function gold answers do not exercise graph
                        structure; pass --graph-expand=auto to match
                        production sweet-search behaviour.)
-  --stage3-candidates=N  CE rerank + LI rerank window [default: 15]
-                       (15 is the headline-MRR sweet spot for dense GCSN-style
-                       single-function retrieval; production sweet-search
-                       default is 30, calibrated on the real-codebase
-                       graph benchmark. Set --stage3-candidates=30 to match
-                       production exactly.)
+  --stage3-candidates=N  CE rerank + LI rerank window [default: 30, same as
+                       production sweet-search]
   --use-vocab          Allow benchmarks to consult the persistent
                        query-vocabulary cache. Default OFF for
                        reproducibility — a populated cache returns slightly
@@ -254,7 +250,7 @@ async function main() {
   console.log(`  Profile:     ${opts.profile}`);
   console.log(`  Index mode:  ${profileOpts.indexMode}  |  SQLite fast: ${profileOpts.sqliteFast}`);
   console.log(`  Graph expand: ${opts.graphExpand}  (production default is auto; this harness defaults off)`);
-  console.log(`  Stage3 cand:  ${opts.stage3Candidates}  (production default is 30; this harness defaults to 15 for dense MRR)`);
+  console.log(`  Stage3 cand:  ${opts.stage3Candidates}  (same as production)`);
   console.log(`  Vocab cache: useVocabulary=${process.env.SWEET_SEARCH_VOCAB_USE}, autoExpand=${process.env.SWEET_SEARCH_VOCAB_AUTO_EXPAND}  (default OFF for reproducibility; --use-vocab / --auto-expand-vocab to opt in)`);
   if (opts.ablations.length) {
     console.log(`  Ablations:   ${opts.ablations.join(', ')}`);

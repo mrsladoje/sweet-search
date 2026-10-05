@@ -1,0 +1,357 @@
+{
+  "timestamp": "2026-10-05T16:31:25.785Z",
+  "dataset": "m2crb",
+  "queryCount": 5795,
+  "corpusSize": 5795,
+  "searchMode": "auto",
+  "totalTimeMs": 351006,
+  "errors": 0,
+  "config": {
+    "profile": "full",
+    "k": 20,
+    "useLateInteraction": true,
+    "buildLateInteraction": true,
+    "lateInteractionModel": null,
+    "graphExpand": "none",
+    "stage3Candidates": 30,
+    "stage3CandidatesProductionDefault": 30,
+    "cascadeEnabled": false,
+    "embedTextVariant": "current",
+    "vocabAutoExpand": false,
+    "vocab": {
+      "useVocabulary": false,
+      "autoExpand": false,
+      "maxTerms": 10000,
+      "path": "/root/sweet-search-private/eval/corpus/m2crb/.sweet-search/query-vocabulary.json",
+      "termCount": 0,
+      "metadata": {
+        "schemaVersion": 3,
+        "provider": null,
+        "model": null,
+        "dimension": null,
+        "created": null,
+        "lastUpdated": null
+      }
+    },
+    "concurrency": 1,
+    "maxQueries": 5795,
+    "skipIndex": true,
+    "ablations": null,
+    "split": "all"
+  },
+  "aggregate": {
+    "mrr_at_10": 0.5438,
+    "ndcg_at_10": 0.5797,
+    "map_at_10": 0.5438,
+    "recall_at_5": 0.6476,
+    "recall_at_10": 0.6908,
+    "recall_at_20": 0.7094,
+    "recall_at_50": 0.7094,
+    "recall_at_100": 0.7094,
+    "gold_missing_top10_rate": 0.3092,
+    "gold_missing_top100_rate": 0.2906,
+    "success_at_1": 0.4645,
+    "success_at_5": 0.6476,
+    "latency_p50_ms": 56.5673,
+    "latency_p95_ms": 85.4251,
+    "latency_mean_ms": 59.2738
+  },
+  "perLanguage": {
+    "python": {
+      "count": 3769,
+      "mrr_at_10": 0.5888,
+      "ndcg_at_10": 0.6286,
+      "map_at_10": 0.5888,
+      "recall_at_5": 0.7079,
+      "recall_at_10": 0.7514,
+      "recall_at_20": 0.7681,
+      "recall_at_50": 0.7681,
+      "recall_at_100": 0.7681,
+      "gold_missing_top10_rate": 0.2486,
+      "gold_missing_top100_rate": 0.2319,
+      "success_at_1": 0.498,
+      "success_at_5": 0.7079,
+      "latency_p50_ms": 56.6232,
+      "latency_p95_ms": 79.8736,
+      "latency_mean_ms": 58.5063
+    },
+    "java": {
+      "count": 814,
+      "mrr_at_10": 0.5218,
+      "ndcg_at_10": 0.5447,
+      "map_at_10": 0.5218,
+      "recall_at_5": 0.5799,
+      "recall_at_10": 0.6167,
+      "recall_at_20": 0.6302,
+      "recall_at_50": 0.6302,
+      "recall_at_100": 0.6302,
+      "gold_missing_top10_rate": 0.3833,
+      "gold_missing_top100_rate": 0.3698,
+      "success_at_1": 0.4754,
+      "success_at_5": 0.5799,
+      "latency_p50_ms": 57.0764,
+      "latency_p95_ms": 83.837,
+      "latency_mean_ms": 58.9238
+    },
+    "javascript": {
+      "count": 1212,
+      "mrr_at_10": 0.4185,
+      "ndcg_at_10": 0.4508,
+      "map_at_10": 0.4185,
+      "recall_at_5": 0.5058,
+      "recall_at_10": 0.552,
+      "recall_at_20": 0.58,
+      "recall_at_50": 0.58,
+      "recall_at_100": 0.58,
+      "gold_missing_top10_rate": 0.448,
+      "gold_missing_top100_rate": 0.42,
+      "success_at_1": 0.3531,
+      "success_at_5": 0.5058,
+      "latency_p50_ms": 55.9387,
+      "latency_p95_ms": 108.9642,
+      "latency_mean_ms": 61.8955
+    }
+  },
+  "failedQueries": [
+    {
+      "queryId": "M200004",
+      "query": "Fonction de lecture d'une variable utilisateur",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200005",
+      "query": "Ajouter/mettre à jour une propriété d'un champ du formulaire courant",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "queryId": "M200010",
+      "query": "Initialise la connexion au serveur. Attent les messages venant du",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200012",
+      "query": "Renvoie True si le coup joué (lig,col) forme une ligne de 4 jetons",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200013",
+      "query": "Fusionne 2 blocs de texte.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200019",
+      "query": "Réinitialise l'ancienne valeur0, la valeur1 courante, et l'opération.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "queryId": "M200021",
+      "query": "Renvoie le DataFrame correspondant à l'instance",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200024",
+      "query": "définit l'égalité entre deux vecteurs",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200027",
+      "query": "Créer un nouveau jeu de données.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200028",
+      "query": "Permet de fermet la connection à la base de données lorsque le serveur HTTP est arreté",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200031",
+      "query": "Rejoue les enveloppes d'amplitude et de décalage de fréquences",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200033",
+      "query": "Code les équations (3.3.7) des \"numericals recipes\" (juste membre de droite)",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200037",
+      "query": "Conversion de type pour parser.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200039",
+      "query": "Retourne le signal audio de la classe, pour le post-traitement.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200045",
+      "query": "Attache une alerte à i=une notice bibliographique",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200047",
+      "query": "Exécute une sauvegarde complète du code",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200048",
+      "query": "nouveau jeu",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200051",
+      "query": "attributions : bouton 'Modifier une photo' l. afpt",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200052",
+      "query": "Initialisation de la grille",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "M200053",
+      "query": "Test si la date indiquée tombe sur un jour ouvert du partner",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}

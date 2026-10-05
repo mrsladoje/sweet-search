@@ -1,0 +1,375 @@
+{
+  "timestamp": "2026-10-05T18:09:50.286Z",
+  "dataset": "crosscodeeval",
+  "queryCount": 4000,
+  "corpusSize": 4000,
+  "searchMode": "auto",
+  "totalTimeMs": 346920,
+  "errors": 0,
+  "config": {
+    "profile": "full",
+    "k": 20,
+    "useLateInteraction": true,
+    "buildLateInteraction": true,
+    "lateInteractionModel": null,
+    "graphExpand": "none",
+    "stage3Candidates": 30,
+    "stage3CandidatesProductionDefault": 30,
+    "cascadeEnabled": false,
+    "embedTextVariant": "current",
+    "vocabAutoExpand": false,
+    "vocab": {
+      "useVocabulary": false,
+      "autoExpand": false,
+      "maxTerms": 10000,
+      "path": "/root/sweet-search-private/eval/corpus/crosscodeeval/.sweet-search/query-vocabulary.json",
+      "termCount": 0,
+      "metadata": {
+        "schemaVersion": 3,
+        "provider": null,
+        "model": null,
+        "dimension": null,
+        "created": null,
+        "lastUpdated": null
+      }
+    },
+    "concurrency": 1,
+    "maxQueries": 4000,
+    "skipIndex": true,
+    "ablations": null,
+    "split": "all"
+  },
+  "aggregate": {
+    "mrr_at_10": 0.1765,
+    "ndcg_at_10": 0.2078,
+    "map_at_10": 0.1765,
+    "recall_at_5": 0.263,
+    "recall_at_10": 0.307,
+    "recall_at_20": 0.3365,
+    "recall_at_50": 0.3435,
+    "recall_at_100": 0.3435,
+    "gold_missing_top10_rate": 0.693,
+    "gold_missing_top100_rate": 0.6565,
+    "success_at_1": 0.1198,
+    "success_at_5": 0.263,
+    "latency_p50_ms": 74.0774,
+    "latency_p95_ms": 210.2114,
+    "latency_mean_ms": 84.5688
+  },
+  "perLanguage": {
+    "python": {
+      "count": 1000,
+      "mrr_at_10": 0.2916,
+      "ndcg_at_10": 0.3293,
+      "map_at_10": 0.2916,
+      "recall_at_5": 0.418,
+      "recall_at_10": 0.446,
+      "recall_at_20": 0.458,
+      "recall_at_50": 0.461,
+      "recall_at_100": 0.461,
+      "gold_missing_top10_rate": 0.554,
+      "gold_missing_top100_rate": 0.539,
+      "success_at_1": 0.215,
+      "success_at_5": 0.418,
+      "latency_p50_ms": 72.4689,
+      "latency_p95_ms": 155.7458,
+      "latency_mean_ms": 78.3005
+    },
+    "java": {
+      "count": 1000,
+      "mrr_at_10": 0.1358,
+      "ndcg_at_10": 0.1646,
+      "map_at_10": 0.1358,
+      "recall_at_5": 0.208,
+      "recall_at_10": 0.257,
+      "recall_at_20": 0.278,
+      "recall_at_50": 0.283,
+      "recall_at_100": 0.283,
+      "gold_missing_top10_rate": 0.743,
+      "gold_missing_top100_rate": 0.717,
+      "success_at_1": 0.087,
+      "success_at_5": 0.208,
+      "latency_p50_ms": 68.9886,
+      "latency_p95_ms": 151.9395,
+      "latency_mean_ms": 66.1521
+    },
+    "typescript": {
+      "count": 1000,
+      "mrr_at_10": 0.1091,
+      "ndcg_at_10": 0.141,
+      "map_at_10": 0.1091,
+      "recall_at_5": 0.18,
+      "recall_at_10": 0.244,
+      "recall_at_20": 0.281,
+      "recall_at_50": 0.289,
+      "recall_at_100": 0.289,
+      "gold_missing_top10_rate": 0.756,
+      "gold_missing_top100_rate": 0.711,
+      "success_at_1": 0.058,
+      "success_at_5": 0.18,
+      "latency_p50_ms": 75.1752,
+      "latency_p95_ms": 198.4681,
+      "latency_mean_ms": 85.5089
+    },
+    "csharp": {
+      "count": 1000,
+      "mrr_at_10": 0.1696,
+      "ndcg_at_10": 0.1964,
+      "map_at_10": 0.1696,
+      "recall_at_5": 0.246,
+      "recall_at_10": 0.281,
+      "recall_at_20": 0.329,
+      "recall_at_50": 0.341,
+      "recall_at_100": 0.341,
+      "gold_missing_top10_rate": 0.719,
+      "gold_missing_top100_rate": 0.659,
+      "success_at_1": 0.119,
+      "success_at_5": 0.246,
+      "latency_p50_ms": 78.0268,
+      "latency_p95_ms": 292.0736,
+      "latency_mean_ms": 108.3134
+    }
+  },
+  "failedQueries": [
+    {
+      "queryId": "CC00000",
+      "query": "old_tail = tokenizer.decode(generator.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        1,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00001",
+      "query": "generator.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00002",
+      "query": "generator.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00003",
+      "query": "utilized_prompt = tokenizer.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00004",
+      "query": "generator.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00005",
+      "query": "ids, mask = tokenizer.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00006",
+      "query": "output = tokenizer.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00007",
+      "query": "config.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00008",
+      "query": "output = generator.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00009",
+      "query": "config.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00010",
+      "query": "logits = model.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00013",
+      "query": "compile.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00014",
+      "query": "config.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00015",
+      "query": "sampled_token, _ = generator.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        1,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00016",
+      "query": "logits = model.forward(generator.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        1
+      ]
+    },
+    {
+      "queryId": "CC00017",
+      "query": "json.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00018",
+      "query": "generator.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00020",
+      "query": "final_options.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        1,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00021",
+      "query": "assert agent.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "queryId": "CC00023",
+      "query": "assert client.",
+      "language": "python",
+      "topRelevance": [
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    }
+  ]
+}
