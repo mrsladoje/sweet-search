@@ -440,6 +440,16 @@ function findToken(line, token, from, plan) {
   return -1;
 }
 
+// A local bound to a member without calling it: `f = self.db.executor_class.get_filter`
+// (Python), `const f = obj.handler;` (JS/TS), `f := n.calculateSnapshot` (Go method value).
+// Group 1: the local; group 2: the member path. A later bare call `f(` is a call of that
+// member (tortoise MetaInfo._generate_filters called get_overridden_filter_func only so).
+const ALIAS_ASSIGN = /^(?:(?:const|let|var|val|final|auto)\s+)?([A-Za-z_]\w*)\s*(?::=|=)\s*((?:[@$]{0,2}[A-Za-z_]\w*\s*(?:\?\.|\.|->|::)\s*)+[A-Za-z_]\w*)\s*;?$/;
+// How many lines an alias stays bound (a function body; the scanner sees no scopes).
+const ALIAS_WINDOW_LINES = 80;
+// A line that opens a function ends every alias (they are locals of the previous body).
+const FUNCTION_START = /^(?:(?:public|private|protected|internal|static|async|export|default|override|open|final|pub(?:\([\w:]+\))?|unsafe|suspend|inline|extern|const)\s+)*(?:def|func|fn|function|fun|sub)\b/;
+
 export class CallSiteScanner {
   constructor(langInfo) {
     this.language = langInfo?.id || 'unknown';
@@ -450,6 +460,9 @@ export class CallSiteScanner {
 
   reset() {
     this.blockEnd = null; // active block-comment terminator, or null
+    // Local aliases of members (ALIAS_ASSIGN): local name → { target, line }.
+    this.aliases = null;
+    this.lineNo = 0;
     // Previous code line (comment-stripped, string-blanked, trimmed).
     // Continuation receivers are derived from it lazily — only when the
     // current line needs one.
@@ -461,6 +474,7 @@ export class CallSiteScanner {
 
   /** A line the caller skips (e.g. minified, over the length cap) breaks any chain. */
   skipLine() {
+    this.lineNo++;
     this.prevCode = null;
     this.openString = null;
   }
@@ -712,12 +726,22 @@ export class CallSiteScanner {
    */
   scanLine(line, emit, emitBare = null, isDefinedHere = null) {
     const plan = this.plan;
+    const lineNo = ++this.lineNo;
     const raw = this.codeOf(line).trim();
     if (!raw) return;
     // Every call shape is read from string-blanked code: call text inside a
     // log message, SQL or doc string is not a call; interpolations stay.
     const trimmed = this._blank(raw);
     const contRecv = this._prevTrailingSep();
+    // A bare call of a local alias calls the member it names: `recv.member`.
+    if (emitBare && this.aliases) {
+      const bare = emitBare;
+      emitBare = (name) => {
+        const a = this.aliases.get(name);
+        if (a && lineNo - a.line <= ALIAS_WINDOW_LINES) emit(a.target);
+        else bare(name);
+      };
+    }
     if (emitBare) {
       if (plan.commandCalls) this._scanCommands(trimmed, emitBare, isDefinedHere);
       else if (trimmed.indexOf('(') !== -1) this._scanBare(trimmed, emitBare, isDefinedHere, !!contRecv && !startsWithSeparator(trimmed));
@@ -807,6 +831,25 @@ export class CallSiteScanner {
         const lm = plan.leadingClosure.exec(trimmed);
         const tail = lm ? this._prevTail() : null;
         if (tail) emit(`${tail}.${lm[1]}`);
+      }
+    }
+
+    // `f = a.b.member` (no call on the line): remember the alias. Any other assignment
+    // to the same name ends it, and so does the start of the next function.
+    if (this.aliases?.size && FUNCTION_START.test(trimmed)) this.aliases.clear();
+    if (trimmed.indexOf('=') !== -1 && !plan.commandCalls) {
+      const am = ALIAS_ASSIGN.exec(trimmed);
+      if (am) {
+        const segs = am[2].split(/\?\.|\.|->|::/).map(x => x.trim().replace(/^[@$]+/, '')).filter(Boolean);
+        const recv = segs[segs.length - 2];
+        const member = segs[segs.length - 1];
+        // `let p = p.sqlExpression` rebinds a parameter to a value: no alias.
+        if (recv && member && !this.skip.has(recv) && segs[0] !== am[1]) {
+          (this.aliases ||= new Map()).set(am[1], { target: `${recv}.${member}`, line: lineNo });
+        }
+      } else if (this.aliases?.size) {
+        const lhs = /^(?:(?:const|let|var|val|final|auto)\s+)?([A-Za-z_]\w*)\s*(?::=|=)(?!=)/.exec(trimmed);
+        if (lhs) this.aliases.delete(lhs[1]);
       }
     }
 

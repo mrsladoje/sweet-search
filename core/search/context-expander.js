@@ -1615,6 +1615,63 @@ export function relatedRowScore(row, queryTokens, candidates = []) {
   return nameHits + 0.5 * pathHits + (candidate ? 1 : 0);
 }
 
+// ---------------------------------------------------------------------------
+// Container rows (2026-10-05, r3hb-sequel-08). A summary row that names a large type
+// (`lib/sequel/model/base.rb 4-2449 class Model`, an entity hit on the name Model) points at
+// 2,445 lines and gave the agent nothing to read; the method that answered,
+// primary_key_lookup at 1079, sat inside it. Such a row now names the type's members whose
+// names agree with the query on at least CONTAINER_MEMBER_MIN_AGREE subtokens, best first.
+// ---------------------------------------------------------------------------
+export const CONTAINER_ROW_MIN_LINES = 120;
+const CONTAINER_MEMBER_MIN_AGREE = 2;
+const CONTAINER_MEMBERS_MAX = 3;
+const CONTAINER_TYPES = new Set(['class', 'module', 'struct', 'interface', 'trait', 'impl', 'object', 'enum', 'protocol', 'extension', 'namespace', 'record', 'actor']);
+const MEMBER_TYPES = new Set(['method', 'function', 'constructor', 'getter', 'setter', 'property', 'field', 'macro', 'constant']);
+
+/**
+ * The members of `row`'s span (entities of its file) that the query names: callables and
+ * fields whose name subtokens agree with >= CONTAINER_MEMBER_MIN_AGREE query subtokens.
+ * Best agreement first, then the larger share of the name, then file order; one per name.
+ */
+export function containerRowMembers(entities, row, queryTokens, max = CONTAINER_MEMBERS_MAX) {
+  if (!Array.isArray(entities) || !queryTokens?.length) return [];
+  const scored = [];
+  for (const e of entities) {
+    if (!e?.name || !MEMBER_TYPES.has(String(e.type || '').toLowerCase())) continue;
+    // A constructor named like its type (`BatchInsertSpans` in class BatchInsertSpans) adds nothing.
+    if (row.symbol && e.name === row.symbol) continue;
+    if (!(e.startLine > row.startLine && e.endLine <= row.endLine)) continue;
+    const tokens = [...informativeSubtokens(e.name)];
+    if (!tokens.length) continue;
+    const agree = countAgreeing(tokens, queryTokens);
+    if (agree < CONTAINER_MEMBER_MIN_AGREE) continue;
+    scored.push({ e, agree, share: agree / tokens.length });
+  }
+  scored.sort((a, b) => b.agree - a.agree || b.share - a.share || a.e.startLine - b.e.startLine);
+  const out = [];
+  for (const { e } of scored) {
+    if (out.some(o => o.name === e.name)) continue;
+    out.push({ name: e.name, type: e.type || null, startLine: e.startLine, endLine: e.endLine });
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+/** Stamp `memberHits` on summary rows of large types (see containerRowMembers). */
+export function annotateContainerRowMembers(results, codeGraphRepo, query) {
+  if (!Array.isArray(results) || typeof codeGraphRepo?.findEntitiesInFile !== 'function') return;
+  const queryTokens = [...informativeSubtokens(query || '')];
+  if (!queryTokens.length) return;
+  for (const r of results) {
+    if (!isSummaryOnly(r) || !r.file || !CONTAINER_TYPES.has(String(r.symbolType || '').toLowerCase())) continue;
+    if (!(Number.isInteger(r.startLine) && Number.isInteger(r.endLine)) || r.endLine - r.startLine + 1 < CONTAINER_ROW_MIN_LINES) continue;
+    let entities = [];
+    try { entities = codeGraphRepo.findEntitiesInFile(r.file, { limit: 2048 }); } catch { entities = []; }
+    const members = containerRowMembers(entities, r, queryTokens);
+    if (members.length) r.memberHits = members;
+  }
+}
+
 /** Rows to show: no test-file rows unless the query asks about tests; score >= 1; best first; at most maxRows. */
 export function selectRelatedRows(rows, query, candidates = [], maxRows = RELATED_DEFAULT_ROWS) {
   const queryTokens = [...informativeSubtokens(query)];
@@ -2445,9 +2502,24 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
   let tokensUsed = 0;
   const agentResults = [];
 
+  // Test-file hits print as rows, not code (2026-10-05). On the 30 dev questions (6 runs,
+  // 175 ss-search/ss-find calls) test-file bodies were 51 of 414 bodies and 10.2% of the
+  // output characters, and none of them was a gold file (15 were rank 1). The row keeps the
+  // path and span; the code slot it would have used goes to the next non-test hit. Kept when
+  // the query asks about tests, or when every hit is a test file (a test framework's own repo).
+  const testRowIdx = new Set();
+  if (_isAgentFormat === true && !ablations.has('no-test-rows') && !TEST_QUERY_RE.test(String(query || ''))) {
+    workingResults.forEach((r, idx) => { if (isTestLikePath(r?.metadata?.file || r?.file)) testRowIdx.add(idx); });
+    if (testRowIdx.size === workingResults.length) testRowIdx.clear();
+  }
+  const SUMMARY_ALLOCATION = { presentation: 'summary', tokenCap: 0 };
+  let allocIdx = 0;
+  const hitAllocations = workingResults.map((_, idx) => (testRowIdx.has(idx)
+    ? SUMMARY_ALLOCATION : (allocations[allocIdx++] || SUMMARY_ALLOCATION)));
+
   for (let i = 0; i < workingResults.length; i++) {
     const result = workingResults[i];
-    const allocation = allocations[i] || { presentation: 'summary', tokenCap: 0 };
+    const allocation = hitAllocations[i];
     const meta = result.metadata || {};
     const filePath = meta.file || result.file;
     const remainingBudget = Math.max(0, tokenBudget - tokensUsed);
@@ -2722,7 +2794,7 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
         // file:line refs but no edge attribution.
         const skipKeys = new Set();
         for (let j = 0; j < workingResults.length; j++) {
-          const tier = allocations[j]?.presentation;
+          const tier = hitAllocations[j]?.presentation;
           if (tier !== 'full' && tier !== 'preview') continue;
           const r = workingResults[j];
           const f = r.metadata?.file || r.file;
@@ -2897,6 +2969,8 @@ export function packageForAgent(rankedResultsIn, searchStats, opts) {
     tokensUsed = completion.tokensUsed;
     // Entry labels name every top-level symbol of the span (not only the chunk's first).
     if (codeGraphRepo) annotateEntrySymbols(agentResults, codeGraphRepo);
+    // A row naming a large type names the members of it the query names.
+    if (codeGraphRepo && !ablations.has('no-container-members')) annotateContainerRowMembers(agentResults, codeGraphRepo, query);
   }
 
   return {
