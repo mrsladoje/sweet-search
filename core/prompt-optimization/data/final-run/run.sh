@@ -141,7 +141,8 @@ run_step() { # <cell> <rep> <arms> <mode>
 # Processes that must not overlap a step: index builds, GCSN, task bench, other retrieval benches
 # (not ours), and for a Claude Code step any Claude Code bench session not started by this driver.
 busy_foreign_list() {
-  pgrep -fl "index-codebase|run_benchmark|run-pilot" | grep -v pgrep
+  # Local jobs only: a command that runs one of these on another machine over ssh does not count.
+  pgrep -fl "index-codebase|run_benchmark|run-pilot" | grep -v -E "pgrep|ssh |/bin/zsh -c|/bin/bash -c"
   # FR_ALLOW_PARALLEL_BENCH=1: another session's retrieval bench may run alongside (other subscription);
   # index builds, GCSN, task runs and (for a Claude Code step) other Claude Code sessions still block.
   [ "${FR_ALLOW_PARALLEL_BENCH:-0}" = 1 ] || pgrep -fl "retrieval-bench-282.mjs" | grep -v -- "--tag $FR_TAG-r" | grep -v pgrep
