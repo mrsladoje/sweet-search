@@ -746,3 +746,25 @@ describe('round 11 — Elixir clauses, heads and heredocs', () => {
     ])).toEqual(['call 7-7']);
   });
 });
+
+describe('round 11 — chained calls on deep or parenthesised receivers', () => {
+  const scan = (language, line) => {
+    const out = [];
+    new CallSiteScanner({ id: language }).scanLine(line, (n) => out.push(n));
+    return out;
+  };
+
+  it('`(await handler(x)).readAsString(` is a call on handler()\'s result (shelf tests)', () => {
+    expect(scan('dart', "expect(await (await handler(_get('/'))).readAsString(), equals('1'));")).toContain('handler().readAsString');
+    expect(scan('javascript', 'return (new Foo(1)).bar();')).toEqual(['Foo().bar']);
+  });
+
+  it('arguments nested more than one level still give the chained call', () => {
+    expect(scan('javascript', 'const x = a(b(c(d))).run(1);')).toEqual(['a().run']);
+  });
+
+  it('a parenthesised expression that is no single call, or a keyword before the group, gives nothing', () => {
+    expect(scan('javascript', 'const y = (a + b).run(2);')).toEqual([]);
+    expect(scan('java', 'if (x).y(')).toEqual([]);
+  });
+});

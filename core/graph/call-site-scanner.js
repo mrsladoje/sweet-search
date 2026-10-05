@@ -267,6 +267,57 @@ function sepAlternation(separators) {
     .join('|');
 }
 
+/**
+ * Chained calls the `chained` pattern cannot read: arguments nested two or
+ * more levels (`a(b(c(x))).m(`) and a parenthesised call as the receiver
+ * (`(await handler(_get('/'))).readAsString(`, `(new Foo(x)).m(`), the
+ * shape of most shelf test assertions. Walks back from each `)` SEP name `(`
+ * to its `(` and names the call that produced the receiver: `prev().m`.
+ * A parenthesised expression that is not one call (`(a + b).m(`) is skipped.
+ */
+function deepChainCalls(code, afterParen, keywords) {
+  const out = [];
+  afterParen.lastIndex = 0;
+  let m;
+  while ((m = afterParen.exec(code)) !== null) {
+    const close = m.index;
+    const open = matchingOpen(code, close);
+    if (open < 0) continue;
+    const before = /([A-Za-z_]\w*)\s*$/.exec(code.slice(0, open));
+    // `name(…)` SEP m — a keyword before the group (`await (…)`) names no call.
+    if (before && !keywords?.has(before[1])) {
+      out.push(`${before[1]}().${m[1]}`);
+      continue;
+    }
+    const inner = code.slice(open + 1, close);
+    const call = /^\s*(?:(?:await|new|try)\s+)?([A-Za-z_]\w*)\s*\(/.exec(inner);
+    if (!call || keywords?.has(call[1])) continue;
+    const argsOpen = open + 1 + call[0].length - 1;
+    const argsClose = matchingClose(code, argsOpen);
+    if (argsClose < 0 || code.slice(argsClose + 1, close).replace(/[\s!?]/g, '') !== '') continue;
+    out.push(`${call[1]}().${m[1]}`);
+  }
+  return out;
+}
+
+function matchingOpen(code, close) {
+  let depth = 0;
+  for (let i = close; i >= 0; i--) {
+    if (code[i] === ')') depth++;
+    else if (code[i] === '(' && --depth === 0) return i;
+  }
+  return -1;
+}
+
+function matchingClose(code, open) {
+  let depth = 0;
+  for (let i = open; i < code.length; i++) {
+    if (code[i] === '(') depth++;
+    else if (code[i] === ')' && --depth === 0) return i;
+  }
+  return -1;
+}
+
 const planCache = new Map();
 
 function buildPlan(language, langInfo) {
@@ -303,6 +354,8 @@ function buildPlan(language, langInfo) {
     // for the next match so `a(x).b(y).c(` yields both `a().b` and `b().c`.
     // Arguments may hold one level of calls: `addMiddleware(logRequests()).addHandler(`.
     chained: new RegExp(String.raw`\b(\w+)${parenPrefix}${ONE_NESTED_ARGS}\s*(?:${sep})\s*(?=(\w+)${GENERIC_ARGS}${callOpen})`, 'g'),
+    // `)` SEP method (   — any receiver ending in `)`; deepChainCalls finds its `(`.
+    afterParen: new RegExp(String.raw`\)\s*[?!]*\s*(?:${sep})\s*(?=(\w+)${GENERIC_ARGS}${callOpen})`, 'g'),
     // Continuation line: `.method(` / `?.method(` at line start.
     leading: new RegExp(String.raw`^(?:${sep})\s*(\w+)${GENERIC_ARGS}${callOpen}`),
     // Previous line ends with a receiver: `name`, `name(…)` or `name)` → tail.
@@ -707,10 +760,18 @@ export class CallSiteScanner {
       if (trimmed.indexOf(')') !== -1) {
         const c = plan.chained;
         c.lastIndex = 0;
+        const chainedNames = new Set();
         while ((m = c.exec(trimmed)) !== null) {
           // `super().__init__(` / `print(x).y(`: a skipped receiver stays skipped.
+          // `return (x).y(` / `if (a).b(`: a keyword before the group is no call.
+          if (plan.bareKeywords.has(m[1])) { if (m[0] === '') c.lastIndex++; continue; }
+          chainedNames.add(`${m[1]}().${m[2]}`);
           if (!this.skip.has(m[1])) emit(`${m[1]}().${m[2]}`);
           if (m[0] === '') c.lastIndex++;
+        }
+        for (const name of deepChainCalls(trimmed, plan.afterParen, plan.bareKeywords)) {
+          if (chainedNames.has(name) || this.skip.has(name.slice(0, name.indexOf('(')))) continue;
+          emit(name);
         }
       }
       // Continuation lines.
