@@ -423,16 +423,25 @@ function _bodyEntityAcross(graph, filePathRel, line, step) {
   return { symbol: e.name, type: e.type, startLine: e.startLine, endLine: e.endLine };
 }
 
-// Lines between a window's end and the next definition that still count as "right after"
-// (a blank line, an annotation).
+// Lines between a window's end and the next definition that still count as "right after":
+// up to NEXT_DEFINITION_GAP lines, plus any run of blank, annotation, attribute or decorator
+// lines (`@Override`, `#[test]`, `[Fact]`), within NEXT_DEFINITION_SCAN lines.
 const NEXT_DEFINITION_GAP = 3;
+const NEXT_DEFINITION_SCAN = 16;
+const DECORATION_LINE_RE = /^\s*(?:$|@[\w.]+|#!?\[|\[[A-Z][\w.]*(?:\(|\]))/;
 
-/** The function / method / type whose first line is within NEXT_DEFINITION_GAP lines after `endLine`. */
-function _definitionRightAfter(projectRoot, filePathRel, endLine) {
+/** The function / method / type that starts right after `endLine` (see NEXT_DEFINITION_GAP). */
+function _definitionRightAfter(projectRoot, filePathRel, endLine, textAfter = '') {
   const graph = _getGraphRepo(projectRoot);
   if (!graph || typeof graph.findEntitiesInRange !== 'function') return null;
+  let decorations = 0;
+  for (const line of String(textAfter).split('\n')) {
+    if (!DECORATION_LINE_RE.test(line)) break;
+    decorations++;
+  }
+  const reach = Math.min(NEXT_DEFINITION_SCAN, Math.max(NEXT_DEFINITION_GAP, decorations + 1));
   let rows = [];
-  try { rows = graph.findEntitiesInRange(filePathRel, endLine + 1, endLine + NEXT_DEFINITION_GAP) || []; } catch { rows = []; }
+  try { rows = graph.findEntitiesInRange(filePathRel, endLine + 1, endLine + reach) || []; } catch { rows = []; }
   const e = rows.find(r => r?.name && (BODY_ENTITY_TYPES.has(r.type) || TYPE_ENTITY_TYPES.has(r.type))
     && Number.isInteger(r.startLine) && Number.isInteger(r.endLine));
   return e ? { symbol: e.name, type: e.type, startLine: e.startLine } : null;
@@ -752,7 +761,9 @@ async function _readFileUnpinned(req) {
     // chunk starts at the comment, inside the window (r3hb-okhttp-12: `ss-read RealCall.kt 360
     // 407` ended on callDone's KDoc; the list named five other methods, the agent read again).
     const next = remainderLines >= UNREAD_SYMBOLS_MIN_LINES
-      ? _definitionRightAfter(projectRoot, relForIndex, sliced.endLine) : null;
+      ? _definitionRightAfter(projectRoot, relForIndex, sliced.endLine,
+        disk.text != null ? _sliceLines(disk.text, disk.lineOffsets, sliced.endLine + 1, Math.min(sliced.totalLines, sliced.endLine + NEXT_DEFINITION_SCAN)).text : '')
+      : null;
     if (next) symbols = [next, ...symbols.filter(s => s.symbol !== next.symbol)];
     unreadBelow = {
       startLine: sliced.endLine + 1,
