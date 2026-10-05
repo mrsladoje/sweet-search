@@ -854,21 +854,23 @@ export function renderGrepListing(rows, { before = 0, after = 0, getLines = null
   // nothing when it is the only file of the listing.
   const typedSet = new Set(typed);
   const files = [...groups.keys()];
-  // A copy of an earlier file — the same file name and exactly the same printed lines (per-platform
-  // dumps: r3hb-okhttp-12 printed api/android/okhttp.api and api/jvm/okhttp.api, 9 identical
-  // lines each; mirrored docs: jj docs/ and web/docs/src/content/docs/) — prints its path and
-  // the twin's name, not the lines again.
+  // A copy of an earlier file — the same file name and the same printed text, line numbers aside
+  // (per-platform dumps: r3hb-okhttp-12 printed api/android/okhttp.api and api/jvm/okhttp.api, 9
+  // identical lines each; mirrored docs: jj docs/ and web/docs/src/content/docs/, shifted by 2
+  // lines) — prints its path, the twin's name and its own hit lines, not the text again.
   const bodies = new Map();
   for (const [file, { rows: hits, more }] of groups) {
     const head = !typedSet.has(file) ? file : (files.length > 1 ? typedPathLabel(file, files) : '');
     const body = [];
     renderGrepFileBody(body, file, hits, more, { before, after, getLines, matchLines, dropText, withContext });
-    const key = `${file.slice(file.lastIndexOf('/') + 1)}\n${body.join('\n')}`;
+    // The text without line numbers: a mirror is often shifted (front matter).
+    const key = `${file.slice(file.lastIndexOf('/') + 1)}\n${body.map((l) => l.replace(/^\d+[:-]/, '')).join('\n')}`;
     // dropText prints line numbers only: equal numbers in two files are no twin.
     const twin = head && !dropText && body.length > 1 ? bodies.get(key) : undefined;
     if (twin) {
-      const n = hits.length + (more > 0 ? more : 0);
-      out.push(`${head} (same lines as ${twin}; ${n} ${n === 1 ? 'hit' : 'hits'})`);
+      const at = [...hits].map((h) => h.line).sort((a, b) => a - b).join(', ');
+      out.push(`${head} (same text as ${twin}, hits at ${at})`);
+      if (more > 0) out.push(`(+${more} more)`);
       continue;
     }
     if (head && !bodies.has(key)) bodies.set(key, head);
