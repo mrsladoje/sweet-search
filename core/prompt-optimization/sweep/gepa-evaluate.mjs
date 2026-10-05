@@ -240,8 +240,15 @@ export function parseJudgeScore(text) {
  */
 // A panelist that still fails after runJudge's own retries is asked again after these pauses,
 // so a row is not scored by a smaller panel (dev1005 Codex: 3 of 60 rows were the mean of 2
-// judges after one provider failed, while their pair had the median of 3).
+// judges after one provider failed, while their pair had the median of 3). A failure that
+// cannot pass on a later attempt (a missing key, 400 / 401 / 403 / 404) is not asked again.
 const PANEL_RETRY_DELAYS_MS = [15000, 45000];
+const PERMANENT_JUDGE_STATUS = new Set([400, 401, 403, 404]);
+const PERMANENT_JUDGE_ERROR_RE = /not set|api[ _-]?key|unauthori[sz]ed|forbidden|permission/i;
+
+function permanentJudgeFailure(r) {
+  return PERMANENT_JUDGE_STATUS.has(Number(r?.raw?.status)) || PERMANENT_JUDGE_ERROR_RE.test(String(r?.error || ''));
+}
 
 export async function judgePanelScore({ probe, answer, panel = JUDGE_PANEL, runJudgeFn = runJudge, judgeBucket, panelRetryDelaysMs }) {
   const userPrompt = buildJudgeUserPrompt({ probe, answer });
@@ -250,27 +257,38 @@ export async function judgePanelScore({ probe, answer, panel = JUDGE_PANEL, runJ
   const results = await Promise.all(
     panel.map(async ({ lineage, model }) => {
       let r;
-      let panelRetries = 0;
+      let score = null;
+      let retries = 0;
+      let sawRetryCount = false;
+      // Every attempt is paid for: usage sums over attempts.
+      // (null = no attempt reported it.)
+      const usage = { input_tokens: null, output_tokens: null };
+      const add = (k, v) => { if (typeof v === 'number') usage[k] = (usage[k] ?? 0) + v; };
       for (let attempt = 0; attempt <= delays.length; attempt++) {
         if (attempt > 0) {
-          panelRetries++;
+          retries++;
           if (delays[attempt - 1] > 0) await new Promise((resolve) => setTimeout(resolve, delays[attempt - 1]));
         }
         if (judgeBucket && typeof judgeBucket.acquire === 'function') {
           await judgeBucket.acquire({ target: `${lineage}:${model}` });
         }
         r = await runJudgeFn({ lineage, model, systemPrompt: JUDGE_SYSTEM_PROMPT, userPrompt });
-        if (!r.isError && parseJudgeScore(r.text) !== null) break;
+        const u = normalizeJudgeUsage(r.raw?.usage);
+        add('input_tokens', u.input_tokens);
+        add('output_tokens', u.output_tokens);
+        if (typeof r.retryCount === 'number') { retries += r.retryCount; sawRetryCount = true; }
+        score = r.isError ? null : parseJudgeScore(r.text);
+        if (score !== null || permanentJudgeFailure(r)) break;
       }
-      const usage = normalizeJudgeUsage(r.raw?.usage);
-      const score = r.isError ? null : parseJudgeScore(r.text);
+      // A verdict that never parsed is a failed judge, not a silent abstention.
+      const failed = score === null;
       return {
         lineage,
         model,
         score,
-        isError: !!r.isError,
-        error: r.isError ? (r.error || 'judge-error') : undefined,
-        retryCount: typeof r.retryCount === 'number' ? r.retryCount + panelRetries : (panelRetries || null),
+        isError: failed,
+        error: failed ? (r.error || (r.isError ? 'judge-error' : 'unparsable-verdict')) : undefined,
+        retryCount: sawRetryCount || retries > 0 ? retries : null,
         usage,
       };
     }),
