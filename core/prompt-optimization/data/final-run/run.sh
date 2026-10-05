@@ -99,6 +99,10 @@ preflight() { # prints problems; returns 1 on any blocker
   return $bad
 }
 
+# Per-lane concurrency (ramp.sh / ramp-report.mjs decide it): FR_CONC_OPENAI (Codex, opencode) and
+# FR_CONC_CLAUDE (Claude Code); each defaults to FR_CONC. FR_MAX_DAEMONS overrides the bench daemon cap
+# (one ss-* server per repo per cell; below the repo count the sweet arm evicts and cold-starts servers).
+conc_of() { case "$1" in cc-*) echo "${FR_CONC_CLAUDE:-$FR_CONC}";; *) echo "${FR_CONC_OPENAI:-$FR_CONC}";; esac; }
 run_step() { # <cell> <rep> <arms> <mode>
   local cell=$1 rep=$2 arms=$3 mode=$4 id; id=$(step_id "$cell" "$rep" "$arms")
   [ -f "$STEPS_DIR/$id.done" ] && { log "skip $id (done)"; return 0; }
@@ -110,7 +114,7 @@ run_step() { # <cell> <rep> <arms> <mode>
     local n=0
     while busy_foreign "$cell"; do [ $((n % 10)) -eq 0 ] && log "$id waiting: $(busy_foreign_list "$cell" | head -2 | tr '\n' ';')"; n=$((n + 1)); sleep 60; done
     attempt=$((attempt + 1)); log "START $id (attempt $attempt)"
-    ( cd "$FINAL_ROOT" && env $FR_COMMON_ENV CELL="$cell" node scripts/retrieval-bench-282.mjs --conc "$FR_CONC" \
+    ( cd "$FINAL_ROOT" && env $FR_COMMON_ENV ${FR_MAX_DAEMONS:+SWEET_SEARCH_MAX_DAEMONS=$FR_MAX_DAEMONS} CELL="$cell" node scripts/retrieval-bench-282.mjs --conc "$(conc_of "$cell")" \
         --probes "$QUESTIONS" --arms "$arms" --before-root "$BEFORE_ROOT" --before-repos "$BEFORE_REPOS" --after-repos "$AFTER_COPY" \
         --index-stamps "$FR_STATE/index-stamps" --require-index-stamp --tag "$FR_TAG-r$rep" ${extra[@]+"${extra[@]}"} ) >> "$LOGS/$id.log" 2>&1
     rc=$?
@@ -157,7 +161,7 @@ lane() { # <name> <steps...>
 case "$CMD" in
   plan)
     echo "questions: $NQ ($QUESTIONS) | repos: $(fr_repos)"
-    echo "before: $BEFORE_ROOT @ $(git -C "$BEFORE_ROOT" rev-parse --short=8 HEAD) | after: $FINAL_ROOT @ $(git -C "$FINAL_ROOT" rev-parse --short=8 HEAD) | lanes: ${FR_LANES:-parallel} | conc $FR_CONC"
+    echo "before: $BEFORE_ROOT @ $(git -C "$BEFORE_ROOT" rev-parse --short=8 HEAD) | after: $FINAL_ROOT @ $(git -C "$FINAL_ROOT" rev-parse --short=8 HEAD) | lanes: ${FR_LANES:-parallel} | conc openai $(conc_of codex) claude $(conc_of cc-) | daemons cap ${FR_MAX_DAEMONS:-config}"
     echo "--- preflight"; preflight && echo "PREFLIGHT OK" || echo "PREFLIGHT BLOCKED"
     echo "--- steps (missing rollouts)"
     for s in "${OPENAI_STEPS[@]}" "${CLAUDE_STEPS[@]}"; do read -r cell rep arms mode <<< "$s"; in_cells "$cell" || continue
@@ -169,7 +173,7 @@ case "$CMD" in
     echo $! > "$PIDF"; disown
     echo "started (pid $(cat "$PIDF")); log $LOGS/run.log; per-step logs $LOGS/<step>.log" ;;
   _run)
-    log "=== run start: tag $FR_TAG, lanes ${FR_LANES:-parallel}, cells $FR_CELLS"
+    log "=== run start: tag $FR_TAG, lanes ${FR_LANES:-parallel}, cells $FR_CELLS, conc openai $(conc_of codex) claude $(conc_of cc-), daemons cap ${FR_MAX_DAEMONS:-config}"
     if [ "${FR_LANES:-parallel}" = serial ]; then lane openai "${OPENAI_STEPS[@]}"; lane claude "${CLAUDE_STEPS[@]}"
     else lane openai "${OPENAI_STEPS[@]}" & p1=$!; lane claude "${CLAUDE_STEPS[@]}" & p2=$!; wait $p1 $p2; fi
     log "=== run end"; rm -f "$PIDF" ;;
