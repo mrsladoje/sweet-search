@@ -386,6 +386,17 @@ const AST_CALL_QUERIES = {
 
 const TAGS_QUERIES = {
   javascript: `
+    ; A named function expression is a definition: \`wrapAsync(async function
+    ; dispatchHttpRequest(…) {…})\`, \`export default ok && function httpAdapter(…)\`,
+    ; \`return function inner(…)\` (axios http.js: a 600-line adapter body was
+    ; top-level code). Pairs and member assignments are captured above.
+    (arguments (function_expression name: (identifier) @function.definition))
+    (binary_expression (function_expression name: (identifier) @function.definition))
+    (return_statement (function_expression name: (identifier) @function.definition))
+    (parenthesized_expression (function_expression name: (identifier) @function.definition))
+    (variable_declarator
+      name: (identifier) @function.definition
+      value: (function_expression))
     (function_declaration name: (identifier) @function.definition)
     (generator_function_declaration name: (identifier) @function.definition)
     (class_declaration name: (identifier) @class.definition)
@@ -432,6 +443,17 @@ const TAGS_QUERIES = {
       right: [(function_expression) (arrow_function)]) @method.definition
   `,
   typescript: `
+    ; A named function expression is a definition: \`wrapAsync(async function
+    ; dispatchHttpRequest(…) {…})\`, \`export default ok && function httpAdapter(…)\`,
+    ; \`return function inner(…)\` (axios http.js: a 600-line adapter body was
+    ; top-level code). Pairs and member assignments are captured above.
+    (arguments (function_expression name: (identifier) @function.definition))
+    (binary_expression (function_expression name: (identifier) @function.definition))
+    (return_statement (function_expression name: (identifier) @function.definition))
+    (parenthesized_expression (function_expression name: (identifier) @function.definition))
+    (variable_declarator
+      name: (identifier) @function.definition
+      value: (function_expression))
     (function_declaration name: (identifier) @function.definition)
     (generator_function_declaration name: (identifier) @function.definition)
     (class_declaration name: (type_identifier) @class.definition)
@@ -472,6 +494,17 @@ const TAGS_QUERIES = {
   // need their own captures (the surrounding function/component declaration is
   // what we care about). We MUST keep these in sync if typescript adds new rules.
   tsx: `
+    ; A named function expression is a definition: \`wrapAsync(async function
+    ; dispatchHttpRequest(…) {…})\`, \`export default ok && function httpAdapter(…)\`,
+    ; \`return function inner(…)\` (axios http.js: a 600-line adapter body was
+    ; top-level code). Pairs and member assignments are captured above.
+    (arguments (function_expression name: (identifier) @function.definition))
+    (binary_expression (function_expression name: (identifier) @function.definition))
+    (return_statement (function_expression name: (identifier) @function.definition))
+    (parenthesized_expression (function_expression name: (identifier) @function.definition))
+    (variable_declarator
+      name: (identifier) @function.definition
+      value: (function_expression))
     (function_declaration name: (identifier) @function.definition)
     (generator_function_declaration name: (identifier) @function.definition)
     (class_declaration name: (type_identifier) @class.definition)

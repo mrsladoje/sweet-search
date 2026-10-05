@@ -830,3 +830,20 @@ describe('round 11 — OCaml calls, Scala/Lua spans, local values', () => {
     expect(spans(r)).toContain('function sort 1-7');
   });
 });
+
+describe('round 12 — named function expressions are definitions', () => {
+  it('argument, `&&`, return and `const f = function` forms (axios dispatchHttpRequest)', async () => {
+    const p = new TreeSitterProvider();
+    const syms = await p.extractSymbols([
+      'export default ok && function httpAdapter(config) {',
+      '  return wrapAsync(async function dispatchHttpRequest(resolve) {',
+      '    buildFullPath(config);',
+      '  });',
+      '}',
+      'const k = function () {};',
+    ].join('\n'), 'javascript');
+    expect(syms.map((s) => `${s.name} ${s.startLine}-${s.endLine}`)).toEqual(expect.arrayContaining([
+      'httpAdapter 0-4', 'dispatchHttpRequest 1-3', 'k 5-5', // 0-based rows
+    ]));
+  });
+});
