@@ -425,6 +425,8 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 
 <details>
 <summary><b>Per-benchmark notes & methodology</b></summary>
+
+</br>  
   
 | Benchmark | Score | Notes |
 |---|---|---|
