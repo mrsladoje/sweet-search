@@ -227,22 +227,65 @@ export function logError(message) {
 // `index --full` over an existing index).
 const SQLITE_SIDECARS = ['-wal', '-shm', '-journal'];
 
-async function moveSidecars(fromPath, toPath) {
-  for (const ext of SQLITE_SIDECARS) {
-    try {
-      await fs.rename(fromPath + ext, toPath + ext);
-    } catch (err) {
-      if (err.code !== 'ENOENT') throw err;
-    }
+const DB_FILES = ['', ...SQLITE_SIDECARS];
+
+async function removeIfPresent(file) {
+  try {
+    await fs.unlink(file);
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
   }
 }
 
-async function unlinkSidecars(dbPath) {
-  for (const ext of SQLITE_SIDECARS) {
+/**
+ * Move a database and its sidecars `fromPath*` → `toPath*`, recording each done
+ * rename in `moved` so a failure can undo them.
+ */
+async function moveDatabaseFiles(fromPath, toPath, moved) {
+  for (const ext of DB_FILES) {
+    if (!existsSync(fromPath + ext)) continue;
+    await fs.rename(fromPath + ext, toPath + ext);
+    moved.push([fromPath + ext, toPath + ext]);
+  }
+}
+
+/**
+ * One swap: `finalPath` (+ sidecars) → `.bak`, `tmpPath` (+ sidecars) →
+ * `finalPath`, then the backup goes. All or nothing: on any failure every
+ * rename already done is undone in reverse order, so the database the caller
+ * had is in place again (and a retry starts from the same state).
+ */
+async function swapOnce(tmpPath, finalPath, bakPath) {
+  // A backup with no database beside it is the only copy (a swap stopped
+  // between its two moves): put it back before anything else.
+  if (!existsSync(finalPath) && existsSync(bakPath)) {
+    await moveDatabaseFiles(bakPath, finalPath, []);
+  }
+  // Any other backup is stale. A file that cannot be removed fails the swap
+  // here, before anything moved.
+  for (const ext of DB_FILES) await removeIfPresent(bakPath + ext);
+
+  const moved = [];
+  try {
+    await moveDatabaseFiles(finalPath, bakPath, moved);
+    await moveDatabaseFiles(tmpPath, finalPath, moved);
+    if (!existsSync(finalPath)) throw Object.assign(new Error(`swap source missing: ${tmpPath}`), { code: 'ENOENT' });
+  } catch (err) {
+    for (const [from, to] of moved.reverse()) {
+      try {
+        await fs.rename(to, from);
+      } catch (undoErr) {
+        logError(`CRITICAL: database swap failed and could not undo ${to} -> ${from}: ${undoErr.message}`);
+      }
+    }
+    throw err;
+  }
+  for (const ext of DB_FILES) {
     try {
-      await fs.unlink(dbPath + ext);
+      await removeIfPresent(bakPath + ext);
     } catch (err) {
-      if (err.code !== 'ENOENT') logError(`WARN: Failed to remove ${dbPath + ext}: ${err.message}`);
+      // The new database is in place; a leftover backup is removed by the next swap.
+      logError(`WARN: Failed to clean up backup ${bakPath + ext}: ${err.message}`);
     }
   }
 }
@@ -254,50 +297,13 @@ export async function atomicSwapDatabase(tmpPath, finalPath) {
 
   for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
     try {
-      try {
-        await fs.unlink(bakPath);
-      } catch (err) {
-        // No stale backup
-      }
-      await unlinkSidecars(bakPath);
-
-      let hadOriginal = false;
-      if (existsSync(finalPath)) {
-        await fs.rename(finalPath, bakPath);
-        hadOriginal = true;
-      }
-      await moveSidecars(finalPath, bakPath);
-
-      await fs.rename(tmpPath, finalPath);
-      await moveSidecars(tmpPath, finalPath);
-
-      if (hadOriginal) {
-        try {
-          await fs.unlink(bakPath);
-        } catch (err) {
-          if (err.code !== 'ENOENT') {
-            logError(`WARN: Failed to clean up backup ${bakPath}: ${err.message}`);
-          }
-        }
-      }
-      await unlinkSidecars(bakPath);
-
+      await swapOnce(tmpPath, finalPath, bakPath);
       return true;
     } catch (err) {
       if (err.code === 'EBUSY' && attempt < MAX_RETRIES - 1) {
         logError(`Database busy, retry ${attempt + 1}/${MAX_RETRIES}...`);
         await new Promise(r => setTimeout(r, RETRY_DELAY));
         continue;
-      }
-
-      if (existsSync(bakPath) && !existsSync(finalPath)) {
-        try {
-          await fs.rename(bakPath, finalPath);
-          await moveSidecars(bakPath, finalPath);
-          log(`⚠ Swap failed, restored from backup: ${err.message}`, 'yellow');
-        } catch (restoreErr) {
-          logError(`CRITICAL: Swap failed AND restore failed: ${restoreErr.message}`);
-        }
       }
       throw err;
     }
