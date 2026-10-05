@@ -152,19 +152,60 @@ function boundaryScore(entity, queryEvidence, parentClass, gap) {
   return exact + matched * 10 + sameParent + (MAX_BOUNDARY_GAP_LINES - gap) / 100;
 }
 
-// Comments and string literals (block, line, triple-quoted, quoted, template). A name that
-// only appears in them is mentioned, not used. `#` starts a comment only at a line start or
-// after a space (not JS `this.#private()`), and never as an attribute (`#[derive]`, `#![...]`).
-const COMMENT_OR_STRING_RE = /\/\*[\s\S]*?\*\/|"""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`|\/\/[^\n]*|(?<=^|\s)#(?![[!])[^\n]*/gm;
-// The same without single-quoted literals: in Rust and OCaml `'a` is a lifetime / type variable,
-// and two of them on one line would pair up as a string.
-const COMMENT_OR_STRING_NO_SQ_RE = new RegExp(COMMENT_OR_STRING_RE.source.replace(`|'(?:\\\\.|[^'\\\\\\n])*'`, ''), 'gm');
+// Comments and string literals, by language (from the file extension). A name that only
+// appears in them is mentioned, not used — but code inside string interpolation (`${f()}`,
+// Python f-string `{f()}`, Ruby / Elixir `#{f()}`, Swift `\(f())`) is code and stays, and so do
+// C preprocessor lines (`#define X() f()`).
+// - `#` comments only in languages that have them, anywhere outside a string (`x = 1# note`);
+//   never an attribute (`#[derive]`, `#![...]`, PHP `#[Attr]`).
+// - `--` comments in Lua / SQL / Haskell.
+// - Single-quoted literals except in Rust and OCaml, where `'a` is a lifetime / type variable.
+const HASH_COMMENT_EXT_RE = /\.(?:py|pyi|pyw|rb|rake|gemspec|sh|bash|zsh|fish|r|ex|exs|pl|pm|nim|cr|jl|coffee|yml|yaml|toml|php|tcl|cmake|ps1|mk)$|(?:^|\/)(?:Makefile|Rakefile|Gemfile|Dockerfile)$/i;
+const DASH_COMMENT_EXT_RE = /\.(?:lua|sql|hs|lhs|elm|ada|adb|ads|vhd|vhdl)$/i;
 const TICK_IS_NO_QUOTE_RE = /\.(?:rs|mli?)$/i;
+const BLANKERS = new Map();
 
-/** The code with its comments and string literals blanked (`file` picks the quote rules). */
+function blankerFor(file) {
+  const f = String(file || '');
+  const hash = HASH_COMMENT_EXT_RE.test(f);
+  const dash = DASH_COMMENT_EXT_RE.test(f);
+  const tick = !TICK_IS_NO_QUOTE_RE.test(f);
+  const key = `${hash}${dash}${tick}`;
+  if (!BLANKERS.has(key)) {
+    const strings = [
+      String.raw`"""[\s\S]*?"""`,
+      String.raw`'''[\s\S]*?'''`,
+      String.raw`"(?:\\.|[^"\\\n])*"`,
+      ...(tick ? [String.raw`'(?:\\.|[^'\\\n])*'`] : []),
+      String.raw`\x60(?:\\.|[^\x60\\])*\x60`,
+    ];
+    const parts = [
+      String.raw`\/\*[\s\S]*?\*\/`,
+      // Strings, with an optional prefix (Python f / r / b, C# $ / @).
+      String.raw`(?<p>(?<![\w$])[A-Za-z$@]{1,2}|)(?:` + strings.join('|') + ')',
+      String.raw`\/\/[^\n]*`,
+      ...(hash ? [String.raw`#(?![[!])[^\n]*`] : []),
+      ...(dash ? [String.raw`--[^\n]*`] : []),
+    ];
+    BLANKERS.set(key, new RegExp(parts.join('|'), 'g'));
+  }
+  return BLANKERS.get(key);
+}
+
+const INTERPOLATION_RE = /\$\{((?:[^{}]|\{[^{}]*\})*)\}|#\{((?:[^{}]|\{[^{}]*\})*)\}|\\\(((?:[^()]|\([^()]*\))*)\)/g;
+const PY_FSTRING_FIELD_RE = /\{([^{}]*)\}/g;
+
+/** The code with its comments and string literals blanked (`file` picks the language rules). */
 export function codeWithoutCommentsAndStrings(code, file = '') {
-  const re = TICK_IS_NO_QUOTE_RE.test(String(file || '')) ? COMMENT_OR_STRING_NO_SQ_RE : COMMENT_OR_STRING_RE;
-  return String(code || '').replace(re, ' ');
+  return String(code || '').replace(blankerFor(file), (match, ...args) => {
+    const prefix = args[args.length - 1]?.p;
+    if (prefix === undefined) return ' ';           // a comment
+    const kept = [];
+    for (const m of match.matchAll(INTERPOLATION_RE)) kept.push(m[1] ?? m[2] ?? m[3] ?? '');
+    // Python f"{x}" and C# $"{x}" fields.
+    if (/[f$]/i.test(prefix)) for (const m of match.matchAll(PY_FSTRING_FIELD_RE)) kept.push(m[1]);
+    return ` ${prefix} ${kept.join(' ')} `;
+  });
 }
 
 function bodySiblingScore(entity, code, file = '') {
