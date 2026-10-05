@@ -79,7 +79,10 @@ preflight() { # prints problems; returns 1 on any blocker
   fi
   local nb="${FR_NO_BEFORE:-0}" roots="$FINAL_ROOT"; [ "$nb" = 1 ] || roots="$FINAL_ROOT $BEFORE_ROOT"
   for w in $roots; do
-    [ -z "$(git -C "$w" status --porcelain --untracked-files=no)" ] || { echo "BLOCK $w has uncommitted tracked changes (rows must name the code they ran)"; bad=1; }
+    # Only the code a rollout runs or is scored by: product, ss-* wrappers, harness, bench, this driver.
+    # Other sessions' edits elsewhere (e.g. eval/run_benchmark.js) do not block.
+    local dirty; dirty=$(git -C "$w" status --porcelain --untracked-files=no -- core bin crates mcp scripts package.json package-lock.json eval/agent-read-workflows eval/task-completion-bench/harness)
+    [ -z "$dirty" ] || { echo "BLOCK $w has uncommitted tracked changes in run code (rows must name the code they ran): $(echo "$dirty" | head -3 | tr '\n' ' ')"; bad=1; }
   done
   [ "$nb" = 1 ] || [ "$(git -C "$BEFORE_ROOT" rev-parse HEAD)" = "$(git -C "$BEFORE_ROOT" rev-parse "$BEFORE_COMMIT^{commit}")" ] || { echo "BLOCK before worktree is not at $BEFORE_COMMIT"; bad=1; }
   bash "$FR_HERE/prepare-native.sh" "$([ "$nb" = 1 ] && echo final || echo both)" > "$LOGS/prepare-native.log" 2>&1 || { echo "BLOCK native build/verify failed ($LOGS/prepare-native.log)"; bad=1; }
