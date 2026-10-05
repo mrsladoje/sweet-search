@@ -276,6 +276,9 @@ export const CODEX_TRIM_BATCH_DEFAULT = 'yt3batch2';
 // while harness/ (under <repo>/eval) is masked there.
 export const CODEX_HARNESS_TRIM_STATE_FILE = 'codex-instructions.md';
 
+export const CODEX_STOCKPREFIX_SOURCES = Object.freeze({
+  'gpt-6.1-sol': path.join(path.dirname(fileURLToPath(import.meta.url)), 'trim', 'codex-0.159.2-instructions-stockprefix-gpt-6.1-sol.md'),
+});
 export function codexHarnessTrim({ sweet, mode, model = 'openai/gpt-5.5', env = process.env } = {}) {
   if (mode === undefined) mode = env.CODEX_HARNESS_TRIM;
   // Native has no ss-* rules to contradict and keeps Codex's full request in every condition.
@@ -286,7 +289,14 @@ export function codexHarnessTrim({ sweet, mode, model = 'openai/gpt-5.5', env = 
   // origin = where the mode came from ('default' | 'env'), stamped on the row as harnessTrimSource.
   const origin = defaulted ? 'default' : 'env';
   if (m === '0') return { mode: null, origin };
-  if (m !== '1' && m !== 'max-wait' && m !== 'v3' && m !== 'conflict') throw new Error(`CODEX_HARNESS_TRIM=${m}: expected 0, 1, max-wait, v3 or conflict`);
+  // stockprefix (research, 2026-10-05): the model's unmodified stock instructions as a byte-identical prefix
+  // (stock prompt-cache hit) + an appended sweet-search section (rg override, yt3 cell form, read batch).
+  if (m === 'stockprefix') {
+    const source = CODEX_STOCKPREFIX_SOURCES[String(model).replace(/^openai\//, '')];
+    if (!source) throw new Error(`CODEX_HARNESS_TRIM=stockprefix: no captured stock text for ${model} (have ${Object.keys(CODEX_STOCKPREFIX_SOURCES).join(', ')})`);
+    return { mode: 'instructions-stockprefix', source, config: [], origin };
+  }
+  if (m !== '1' && m !== 'max-wait' && m !== 'v3' && m !== 'conflict') throw new Error(`CODEX_HARNESS_TRIM=${m}: expected 0, 1, max-wait, v3, conflict or stockprefix`);
   if (m === 'conflict') {
     // The shipped instructions for any model (the product does not look at the model).
     const rawBatch = String(env.CODEX_TRIM_BATCH ?? '').trim();
