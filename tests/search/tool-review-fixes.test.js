@@ -1061,3 +1061,16 @@ describe('independent review (Codex) of the overnight fixes', () => {
     expect(spans(r)).toEqual(['run 1-5']);
   });
 });
+
+describe('round 17 — Scala `def` is a callable', () => {
+  it('a bare call in a Scala trait binds to the def of its own type', async () => {
+    const { resolveBareCall } = await import('../../core/graph/bare-call-resolution.js');
+    const { createCallResolutionIndex } = await import('../../core/graph/relationship-resolver.js');
+    const ent = (id, name, extra = {}) => ({ id, name, file_path: 'xml/parsing/MarkupParser.scala', type: 'def', start_line: 1, end_line: 5, parent_class: 'MarkupParser', signature: '', ...extra });
+    const caller = ent('c', 'xAttributes', { start_line: 321, end_line: 353 });
+    const target = ent('t', 'nextch', { start_line: 307, end_line: 313 });
+    const other = ent('o', 'nextch', { file_path: 'xml/parsing/MarkupParserCommon.scala', parent_class: 'MarkupParserCommon', start_line: 187, end_line: 187 });
+    const idx = createCallResolutionIndex([caller, target, other], {});
+    expect(resolveBareCall(caller, [target, other], idx).map((c) => c.id)).toEqual(['t']);
+  });
+});

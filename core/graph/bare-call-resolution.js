@@ -83,6 +83,8 @@ export const BARE_CALLABLE_TYPES = new Set([
   'function', 'method', 'rpc', 'arrowFunction', 'objectArrow', 'objectMethod', 'procedure', 'subroutine', 'macro_function',
   // Registry entity types: Lua `local f = function`, Julia `f(x) = …`, Elixir `defp`.
   'assignedFunc', 'shortFunction', 'private',
+  // Scala `def`, Nim `proc`, Swift-fallback `func`, SQL `procedure`.
+  'def', 'func', 'proc', 'procedure',
 ]);
 
 export function languageOfPath(filePath) {
