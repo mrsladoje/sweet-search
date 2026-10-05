@@ -867,6 +867,17 @@ describe('round 12 — super calls', () => {
     expect(narrowCallCandidates([pager], 'super', { id: 's2', parent_class: 'RecordingStream', file_path: 't.py' }, idx)).toEqual([]);
   });
 
+  it('a capitalized receiver names a module: a specialization matches, a longer owner name does not', async () => {
+    const { narrowCallCandidates } = await import('../../core/graph/relationship-resolver.js');
+    const typeSup = { id: 'a', name: 'start_link', parent_class: 'Postgrex.TypeSupervisor', file_path: 'lib/postgrex/type_supervisor.ex' };
+    const repo = { id: 'b', name: 'all', parent_class: 'Ecto.Repo', file_path: 'lib/ecto/repo.ex' };
+    const idx = { ownerOf: (e) => e.parent_class || null };
+    const caller = { id: 's', parent_class: 'Postgrex.App', file_path: 'lib/postgrex/app.ex' };
+    expect(narrowCallCandidates([typeSup], 'Supervisor', caller, idx)).toEqual([]);
+    expect(narrowCallCandidates([typeSup], 'TypeSupervisor', caller, idx)).toEqual([typeSup]);
+    expect(narrowCallCandidates([repo], 'TestRepo', caller, idx)).toEqual([repo]);
+  });
+
   it('super.m reaches the nearest supertype that defines m; Go `super` is a variable', async () => {
     const { narrowCallCandidates } = await import('../../core/graph/relationship-resolver.js');
     const base = { id: 'g', name: 'run', parent_class: 'Base', file_path: 'a.py' };
@@ -964,6 +975,13 @@ describe('round 16 — an unbound qualified call fits several same-named definit
     expect(trustedCallerEdge(edge, target, [target, rival])).toBe(false);
     // Bound by the index, or named by the exact owner: trusted as before.
     expect(trustedCallerEdge({ ...edge, targetName: 'repositorySet.findPackages' }, target, [target, rival])).toBe(true);
+  });
+
+  it('a word of the shared directory path makes no rival (held-out audit)', () => {
+    const target = { id: 't', name: 'parse', filePath: 'Sources/ArgumentParser/Parsable Types/ParsableArguments.swift', parentClass: 'ParsableArguments' };
+    const other = { id: 'r', name: 'parse', filePath: 'Sources/ArgumentParser/Parsing/CommandParser.swift', parentClass: 'CommandParser' };
+    const edge = { targetName: 'RequiredArray_Argument_Transform.parse', filePath: 'Tests/EndToEnd/DefaultsEndToEndTests.swift', targetId: null };
+    expect(trustedCallerEdge(edge, target, [target, other])).toBe(true);
   });
 });
 

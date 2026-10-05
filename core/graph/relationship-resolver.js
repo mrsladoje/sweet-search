@@ -784,7 +784,17 @@ export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, inde
     // The receiver naming the owner or file (`Planner.query` → planner.ex) outranks an
     // import: ecto's queryable.ex imports planner.ex, assoc.ex and preloader.ex, all
     // with a `query`, and three owners left meant no edge.
-    const named = pool.filter(c => receiverMatches(r, factsOf(c).ownerKey) || receiverMatches(r, factsOf(c).stemKey));
+    // A capitalized receiver names a module or type. It may name a specialization of
+    // the owner (`BufferPool` → Pool, `TestRepo` → repo.ex), but never a part of a
+    // longer name: `Supervisor.start_link` is not TypeSupervisor's. Variables keep
+    // both directions (`observationBroker` → DatabaseObservationBroker).
+    const leaf = receiver.split(/[.:]+/).pop() || '';
+    const leafKey = normalizeName(leaf);
+    const endsIn = (key) => !!key && (leafKey === key || (key.length >= 4 && leafKey.endsWith(key)));
+    const names = /^[A-Z]/.test(leaf)
+      ? (f) => r === f.ownerKey || endsIn(f.stemKey) || endsIn(normalizeName(String(f.owner || '').split(/[.:]+/).pop()))
+      : (f) => receiverMatches(r, f.ownerKey) || receiverMatches(r, f.stemKey);
+    const named = pool.filter(c => names(factsOf(c)));
     const evident = named.length > 0 ? named : pool.filter(c => isImported(callerImports, c.file_path));
     return preferImported(evident, sourceEntity, importsOf);
   }
