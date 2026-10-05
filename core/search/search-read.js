@@ -434,9 +434,16 @@ const DECORATION_LINE_RE = /^\s*(?:$|@[\w.]+|#!?\[|\[[A-Z][\w.]*(?:\(|\]))/;
 function _definitionRightAfter(projectRoot, filePathRel, endLine, textAfter = '') {
   const graph = _getGraphRepo(projectRoot);
   if (!graph || typeof graph.findEntitiesInRange !== 'function') return null;
+  // A decoration may run over several lines (`@Route(\n  path = "/x"\n)`): its open brackets
+  // carry it on.
   let decorations = 0;
+  let depth = 0;
   for (const line of String(textAfter).split('\n')) {
-    if (!DECORATION_LINE_RE.test(line)) break;
+    if (depth === 0 && !DECORATION_LINE_RE.test(line)) break;
+    for (const ch of line) {
+      if (ch === '(' || ch === '[' || ch === '{') depth++;
+      else if ((ch === ')' || ch === ']' || ch === '}') && depth > 0) depth--;
+    }
     decorations++;
   }
   const reach = Math.min(NEXT_DEFINITION_SCAN, Math.max(NEXT_DEFINITION_GAP, decorations + 1));
@@ -762,7 +769,9 @@ async function _readFileUnpinned(req) {
     // 407` ended on callDone's KDoc; the list named five other methods, the agent read again).
     const next = remainderLines >= UNREAD_SYMBOLS_MIN_LINES
       ? _definitionRightAfter(projectRoot, relForIndex, sliced.endLine,
-        disk.text != null ? _sliceLines(disk.text, disk.lineOffsets, sliced.endLine + 1, Math.min(sliced.totalLines, sliced.endLine + NEXT_DEFINITION_SCAN)).text : '')
+        (disk.text != null
+          ? _sliceLines(disk.text, disk.lineOffsets, sliced.endLine + 1, Math.min(sliced.totalLines, sliced.endLine + NEXT_DEFINITION_SCAN))
+          : await _sliceLinesFromDisk(absPath, disk.lineOffsets, disk.size, sliced.endLine + 1, Math.min(sliced.totalLines, sliced.endLine + NEXT_DEFINITION_SCAN))).text)
       : null;
     if (next) symbols = [next, ...symbols.filter(s => s.symbol !== next.symbol)];
     unreadBelow = {
