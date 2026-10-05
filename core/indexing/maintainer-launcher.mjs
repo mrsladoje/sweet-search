@@ -66,7 +66,7 @@ export const MAINTAINER_SPAWN_CLAIM_FILENAME = 'maintainer-spawn.claim';
  * Five seconds covers the interval between `spawn` returning and the child
  * writing its lock, which is a node process start.
  */
-const SPAWN_CLAIM_TTL_MS = 5_000;
+export const SPAWN_CLAIM_TTL_MS = 5_000;
 
 /**
  * Per-process floor between supervision ticks.
