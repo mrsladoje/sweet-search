@@ -349,7 +349,8 @@ function buildPlan(language, langInfo) {
     // obj SEP method [generics] (   — no space before SEP: `case .success(`,
     // `return .failure(` are Swift implicit-member expressions, not calls on
     // `case` / `return`.
-    qualified: new RegExp(String.raw`\b(\w+)(?:${sep})\s*(\w+)${GENERIC_ARGS}${callOpen}`, 'g'),
+    // JS/TS `this.#fetch(`: a `#private` member keeps its `#` (the entity's name).
+    qualified: new RegExp(String.raw`\b(\w+)(?:${sep})\s*(${OPTIONAL_CALL_LANGUAGES.has(language) ? '#?' : ''}\w+)${GENERIC_ARGS}${callOpen}`, 'g'),
     // prev( … ) SEP method [generics] (   — lookahead keeps `method(` available
     // for the next match so `a(x).b(y).c(` yields both `a().b` and `b().c`.
     // Arguments may hold one level of calls: `addMiddleware(logRequests()).addHandler(`.

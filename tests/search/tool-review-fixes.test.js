@@ -979,3 +979,19 @@ describe('round 14/15 — C++ receiver types, aliases, fields, values named like
     expect(declaredTypeInR15('class Svc {\n  private final Database db;\n}', 'db', 'src/Svc.java')?.type).toBe('Database');
   });
 });
+
+describe('round 15 — JS/TS private member calls', () => {
+  it('`this.#fetch()` is a call of the #fetch method', async () => {
+    const r = await new GraphExtractor({}).extractFromFile('source/core/Ky.ts', [
+      'class Ky {',
+      '  async #retry() {',
+      '    try { return await this.#fetch(); } catch (e) { return this.#retryFromError(e); }',
+      '  }',
+      '  async #fetch() { return 1 }',
+      '  async #retryFromError(e) { return 2 }',
+      '}',
+    ].join('\n'));
+    expect(r.relationships.filter((x) => x.type === 'calls').map((x) => `${x.target_name}@${x.context_line}`))
+      .toEqual(['this.#fetch@3', 'this.#retryFromError@3']);
+  });
+});
