@@ -17,6 +17,12 @@
  * receiver-name rules. Languages without written types (JS, Ruby) are skipped;
  * Python counts only annotated names (`b: Buffer`).
  *
+ * A local bound exactly once, by a whole-statement call to a method or function
+ * defined in the same file (`$i = $this->getInstaller(…);`, `val d = pick(x)`,
+ * `x, err := s.load(k)`), takes that callee's declared return type
+ * (`getInstaller(string $type): InstallerInterface`). Same file only: the
+ * callee's header is read from this file's text, so no other file decides it.
+ *
  * PHP: typed parameters and catch variables (`Foo $b`, `?Foo $b`), `$b = new Foo(…);`,
  * and one origin hint: `$b = Foo::create(…);` is stored as `recvtype:?Foo` — the
  * resolver reads it only when the repo defines no type `Foo` (an object a library's
@@ -351,6 +357,7 @@ export function annotateReceiverTypes(filePath, content, entities, relationships
   })();
   const memo = new Map();
   const bodies = new Map();
+  let returnTypes = null;
   const phpAliases = PHP_FILE.test(filePath) ? phpUseAliases(content) : null;
   // C++: a template parameter (`template <typename Handler>` … `Handler &&handler`) names
   // any type; it gets no annotation, so the receiver-name rules still apply.
@@ -378,6 +385,11 @@ export function annotateReceiverTypes(filePath, content, entities, relationships
         bodies.set(src.id, text);
       }
       let declared = declaredTypeInCode(text, recv, filePath);
+      if (!declared) {
+        lines ??= content.split('\n');
+        returnTypes ??= sameFileReturnTypes(entities, lines, filePath);
+        declared = returnBoundType(text, recv, filePath, src, returnTypes);
+      }
       if (declared && phpAliases?.has(declared.type)) declared.type = phpAliases.get(declared.type);
       if (declared && templateParams?.has(declared.type)) declared = null;
       annotation = declared ? receiverAnnotation(declared, { isGo, ownDir, goPackages }) : null;
@@ -410,6 +422,167 @@ function phpUseAliases(content) {
   let m;
   while ((m = re.exec(String(content || ''))) !== null) aliases.set(m[2], m[1]);
   return aliases;
+}
+
+// ---------------------------------------------------------------------------
+// Locals typed by a same-file callee's declared return type
+// ---------------------------------------------------------------------------
+
+const RET_TYPE_LANG = (f) => (PHP_FILE.test(f) ? 'php' : GO.test(f) ? 'go' : TYPE_FIRST.test(f) ? 'tf'
+  : PY_FILE.test(f) ? 'py' : RUST_FILE.test(f) ? 'rs' : /\.swift$/i.test(f) ? 'swift'
+  : COLON_TYPED_FILE.test(f) ? 'colon' : null);
+// Lines of a callee's header read for its return type (multi-line parameter lists).
+const MAX_HEADER_LINES = 12;
+const RET_PHP = /\)\s*:\s*\??\s*\\?((?:\w+\\)*)([A-Za-z_]\w*)\s*(?:\{|;|$)/;
+const RET_COLON = /\)\s*:\s*((?:[A-Za-z_]\w*\.)*)([A-Z]\w*)\s*\??\s*(?:\{|=|$|where\b)/;
+const RET_ARROW = /\)\s*(?:(?:async|throws|rethrows)\s+)*->\s*(?:&\s*(?:'\w+\s+)?(?:mut\s+)?)?["']?((?:[A-Za-z_]\w*(?:\.|::))*)([A-Z]\w*)["']?\s*\??\s*(?:\{|:|where\b|$)/;
+const RET_GO = /\)\s*(?:\*?\s*((?:[a-z_]\w*\.)?)([A-Z]\w*)|\(\s*\*?\s*((?:[a-z_]\w*\.)?)([A-Z]\w*)\s*,[^)]*\))\s*\{/;
+const TF_MODIFIERS = new Set(['public', 'private', 'protected', 'internal', 'static', 'final', 'abstract',
+  'synchronized', 'native', 'virtual', 'override', 'async', 'sealed', 'extern', 'unsafe', 'new', 'partial', 'readonly', 'default', 'strictfp']);
+
+/**
+ * The declared return type in a callee's header (its definition line(s) up to
+ * the body), or null: unknown, generic, a union, a collection or a builtin.
+ * `self`/`static`/`Self` name the callee's own class.
+ */
+export function headerReturnType(header, name, filePath, ownerClass = null) {
+  const lang = RET_TYPE_LANG(String(filePath || ''));
+  if (!lang || !header || !name) return null;
+  // The parameter list: from `name(` to its closing paren; the return type follows it.
+  const at = new RegExp(`(?<![\\w$])${name.replace(/[$]/g, '\\$')}\\s*(?:<[^<>()]*(?:<[^<>()]*>[^<>()]*)*>\\s*)?\\(`).exec(header);
+  if (!at) return null;
+  const open = at.index + at[0].length - 1;
+  const close = closingParen(header, open);
+  if (close < 0) return null;
+  const tail = header.slice(close);
+  let qualifier = '';
+  let type = null;
+  if (lang === 'tf') {
+    // Type-first: `public Foo name(`, `Foo name(`; not `void`, a generic or an array.
+    const before = header.slice(0, at.index).replace(/@\w+(?:\([^)]*\))?/g, ' ').trim();
+    const words = before.split(/\s+/);
+    const last = words[words.length - 1] || '';
+    const m = /^((?:[A-Za-z_]\w*\.)*)([A-Z]\w*)$/.exec(last);
+    if (!m || words.slice(0, -1).some(w => !TF_MODIFIERS.has(w))) return null;
+    qualifier = m[1].replace(/\.$/, ''); type = m[2];
+  } else {
+    const re = lang === 'php' ? RET_PHP : lang === 'go' ? RET_GO : (lang === 'py' || lang === 'rs' || lang === 'swift') ? RET_ARROW : RET_COLON;
+    const m = re.exec(tail);
+    if (!m || m.index !== 0) return null;
+    if (lang === 'go') { qualifier = (m[1] ?? m[3] ?? '').replace(/\.$/, ''); type = m[2] ?? m[4]; }
+    else { qualifier = (m[1] || '').replace(/(?:\\|\.|::)$/, '').replace(/::|\\/g, '.'); type = m[2]; }
+  }
+  if (!type) return null;
+  if (lang === 'php') {
+    if (type === 'self' || type === 'static') type = ownerClass;
+    else if (!/^[A-Z]/.test(type)) return null;   // array, string, mixed, void …
+    qualifier = '';
+  }
+  if (lang === 'rs' && type === 'Self') type = ownerClass;
+  if (!type || !/^[A-Z]/.test(type)) return null;
+  return { type, qualifier: lang === 'go' ? qualifier : '' };
+}
+
+// Per file: callee name → [{ owner, type }] for its callables whose header declares a return type.
+function sameFileReturnTypes(entities, lines, filePath) {
+  const out = new Map();
+  for (const e of entities) {
+    if (!e || !CALLABLE.has(e.type) || !e.name || e.start_line == null) continue;
+    const header = lines.slice(e.start_line - 1, e.start_line - 1 + MAX_HEADER_LINES).join('\n');
+    const brace = header.search(/\{|=>/);
+    const ret = headerReturnType(brace >= 0 ? header.slice(0, brace + 1) : header, e.name, filePath, e.parent_class || null);
+    const list = out.get(e.name) || [];
+    list.push({ owner: e.parent_class || null, type: ret });
+    out.set(e.name, list);
+  }
+  return out;
+}
+
+const SELF_CALL = '(?:this\\s*\\.|self\\s*\\.|cls\\s*\\.|Self::|\\$this\\s*->|self::|static::)';
+// The receiver's one binding as a whole-statement call: `<bind> name = [self.]callee(…)<end>`.
+function bindingPattern(lang, name, goRecv) {
+  const n = name;
+  switch (lang) {
+    case 'php': return new RegExp(`(?:^|[;{}])\\s*\\$${n}\\s*=\\s*(?:\\$this\\s*->|self::|static::)(\\w+)\\s*\\(`, 'gm');
+    case 'tf': return new RegExp(`(?:^|[;{}])\\s*(?:var|final)\\s+${n}\\s*=\\s*(this\\s*\\.\\s*)?(\\w+)\\s*\\(`, 'gm');
+    case 'py': return new RegExp(`^[ \\t]*${n}\\s*=\\s*((?:self|cls)\\s*\\.\\s*)?(\\w+)\\s*\\(`, 'gm');
+    case 'rs': return new RegExp(`(?:^|[;{}])\\s*let\\s+(?:mut\\s+)?${n}\\s*=\\s*(self\\s*\\.\\s*|Self::)?(\\w+)\\s*\\(`, 'gm');
+    case 'go': return new RegExp(`(?:^|[;{}])[ \\t]*${n}(?:\\s*,\\s*\\w+)*\\s*:=\\s*(${goRecv ? `${goRecv}\\s*\\.\\s*` : '(?!)'})?(\\w+)\\s*\\(`, 'gm');
+    default: return new RegExp(`(?:^|[;{}])\\s*(?:val|var|let|const)\\s+${n}\\s*=\\s*((?:this|self)\\s*\\.\\s*)?(\\w+)\\s*\\(`, 'gm');
+  }
+}
+
+// How many times the body binds the name without a written type (the scanner's own
+// untyped-binding patterns: assignments, loop and lambda variables, destructuring). A
+// statically typed local keeps its inferred type across reassignment, so there it is
+// declarations that count; PHP and Python count every assignment.
+function untypedBindingCount(text, name, lang) {
+  const patterns = lang === 'php' ? [PHP_UNTYPED] : lang === 'go' ? [GO_UNTYPED] : lang === 'tf' ? [TF_UNTYPED]
+    : lang === 'py' ? [COLON_UNTYPED, PY_UNTYPED] : [COLON_UNTYPED];
+  const varRe = new RegExp(`\\$${name}\\b`);
+  let count = 0;
+  const seen = new Set();
+  for (const re of patterns) {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      if (m[0] === '') { re.lastIndex++; continue; }
+      let hit = false;
+      for (let i = 1; i < m.length && !hit; i++) {
+        if (m[i] === undefined) continue;
+        hit = lang === 'php' ? (i <= 4 ? m[i] === name : varRe.test(m[i])) : namesIn(m[i]).includes(name);
+      }
+      if (hit && !seen.has(m.index)) { seen.add(m.index); count++; }
+    }
+  }
+  if (lang === 'php') {
+    // A parameter of the function or of a closure in it.
+    PHP_PARAMS_OPEN.lastIndex = 0;
+    let m;
+    while ((m = PHP_PARAMS_OPEN.exec(text)) !== null) {
+      const open = m.index + m[0].length - 1;
+      const close = closingParen(text, open);
+      if (close < 0) break;
+      if (varRe.test(text.slice(open, close + 1))) count++;
+    }
+  }
+  return count;
+}
+
+/**
+ * The declared type of a local bound exactly once by a whole-statement call to
+ * a callable of this file (own-class method through self, or a same-file
+ * function), or null.
+ */
+function returnBoundType(text, name, filePath, source, returnTypes) {
+  const lang = RET_TYPE_LANG(String(filePath || ''));
+  if (!lang || !returnTypes || returnTypes.size === 0) return null;
+  const goRecv = lang === 'go' ? (/^\s*func\s*\(\s*(\w+)\s+\*?\s*\w+/.exec(source?.signature || '')?.[1] || null) : null;
+  const re = bindingPattern(lang, name, goRecv);
+  re.lastIndex = 0;
+  const matches = [...text.matchAll(re)];
+  if (matches.length !== 1) return null;
+  const m = matches[0];
+  // A whole statement: the call's `)` ends it (no `->x()`, `?`, `.unwrap()`, `!!`).
+  const open = m.index + m[0].length - 1;
+  const close = closingParen(text, open);
+  if (close < 0 || !/^[ \t]*(?:;|\r?\n|$)/.test(text.slice(close + 1, close + 40))) return null;
+  // The only binding of the name in the body.
+  if (untypedBindingCount(text, name, lang) !== 1) return null;
+  const viaSelf = lang === 'php' ? true : !!(m[1]);
+  const callee = lang === 'php' ? m[1] : m[2];
+  const ownerClass = source?.parent_class || null;
+  const defs = returnTypes.get(callee);
+  if (!defs || defs.length === 0) return null;
+  // Own-class methods for a self call (and a bare call in a type-first language,
+  // where `m()` means `this.m()`); same-file functions for a bare call elsewhere.
+  const implicitSelf = !viaSelf && (lang === 'tf' || lang === 'colon' || lang === 'swift');
+  let pick = (viaSelf || implicitSelf) && ownerClass ? defs.filter(d => d.owner === ownerClass) : [];
+  if (pick.length === 0 && !viaSelf) pick = defs.filter(d => !d.owner);
+  if (pick.length === 0) return null;
+  const first = pick[0].type;
+  if (!first || pick.some(d => !d.type || d.type.type !== first.type || d.type.qualifier !== first.qualifier)) return null;
+  return { ...first };
 }
 
 function receiverAnnotation({ type, qualifier, factory = false }, { isGo, ownDir, goPackages }) {
