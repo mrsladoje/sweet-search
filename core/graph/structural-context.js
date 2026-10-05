@@ -27,8 +27,10 @@ const TYPE_USER_TARGETS = new Set([
   'type', 'typeAlias', 'typealias', 'union', 'actor',
 ]);
 const TYPE_REF_CALLER_LIMIT = 40;
-// The most methods of a type whose calls ss-trace gathers as the type's callees.
-const MEMBER_CALLEE_SOURCES = 80;
+// The most methods of a type whose calls ss-trace gathers as the type's callees (the output
+// says when a type has more), and the most it knows as the type's own.
+const MEMBER_CALLEE_SOURCES = 200;
+const MEMBER_IDENTITY_LIMIT = 5000;
 const TYPE_REF_IMPORTANCE = 0.5;
 // Rows rank by tier, then importance: calls, then implementations / subtypes (`overrides`,
 // `implements`, `extends`), then signature users. okhttp Interceptor.intercept has ~25
@@ -907,27 +909,30 @@ export class StructuralContextBuilder {
     calleesRaw = bindCalleeOverloads(this.repo, target, calleesRaw);
     // A type calls nothing itself: its callees are its methods' calls out of the type
     // (r3hb-okhttp-12: `ss-trace RealCall callees` printed "(no callees in the repository)"
-    // for a 560-line class). Calls between its own methods are left out.
+    // for a 560-line class). The type's own rows (field initialisers) stay. Calls between
+    // its own methods are left out: every method counts as its own, also past the gathering cap.
     let memberCount = 0;
-    // (A class's own rows are at most a few unresolved calls in field initialisers: RealCall had 2.)
-    const inRepo = (x) => x?.filePath && !String(x.id).startsWith('external:');
-    if (!calleesRaw.some(inRepo) && TYPE_USER_TARGETS.has(target.type) && typeof this.repo.getMemberCallables === 'function') {
-      const members = this.repo.getMemberCallables(target, { limit: MEMBER_CALLEE_SOURCES });
+    let memberTotal = 0;
+    // Only when the trace prints callees: a callers-only trace of a big type pays nothing.
+    const wantsCallees = options.modeSection == null || options.modeSection === 'callees';
+    if (wantsCallees && TYPE_USER_TARGETS.has(target.type) && typeof this.repo.getMemberCallables === 'function') {
+      const members = this.repo.getMemberCallables(target, { limit: MEMBER_IDENTITY_LIMIT });
       const own = new Set([target.id, ...members.map(m => m.id)]);
+      const sources = members.slice(0, MEMBER_CALLEE_SOURCES);
       const rows = [];
-      for (const m of members) {
+      for (const m of sources) {
         for (const c of [...this.repo.getCallees(m, { limit: 80 }), ...(this.repo.getBareCallees?.(m, { limit: 40 }) || [])]) {
           if (own.has(c.id)) continue;
           // Unresolved rows carry a per-query index in their id: one row per called name.
           rows.push(String(c.id).startsWith('external:') ? { ...c, id: `external:member:${c.name}` } : c);
         }
       }
-      const fromMembers = mergeCallSites([...calleesRaw, ...rows])
-        .map(x => (callIntoTestTree(target.filePath, x.filePath) ? asUnresolved(x, 0) : x))
-        .map(x => ({ ...x, depth: 1 }));
-      if (fromMembers.some(inRepo)) {
-        calleesRaw = fromMembers;
-        memberCount = members.length;
+      if (rows.length) {
+        calleesRaw = mergeCallSites([...calleesRaw, ...rows])
+          .map(x => (callIntoTestTree(target.filePath, x.filePath) ? asUnresolved(x, 0) : x))
+          .map(x => ({ ...x, depth: 1 }));
+        memberCount = sources.length;
+        memberTotal = members.length;
       }
     }
     if (!calleesRaw.length) {
@@ -1061,7 +1066,7 @@ export class StructuralContextBuilder {
           total: siteCount(callees), siteNoun: siteNoun(callees), distinct: targetFan.fanOut, shown: calleesPack.items.length, items: calleesPack.items,
           ...rowCounts(callees, calleesPack.items),
           // > 0: a type's callees, gathered from this many of its methods.
-          ...(memberCount > 0 ? { viaMembers: memberCount } : {}),
+          ...(memberCount > 0 ? { viaMembers: memberCount, memberTotal } : {}),
         },
         impact: { total: impactPaths.length, shown: impactPack.paths.length, hidden: impactPack.hidden, paths: impactPack.paths },
       },

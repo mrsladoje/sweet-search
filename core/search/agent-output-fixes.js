@@ -1203,7 +1203,10 @@ export function formatTraceCompact(result, { mode = null, inFile = null, notes =
     } else {
       if (mode === null) lines.push(`## ${title}`);
       // A type's callees are its methods' calls out of it (structural-context.js).
-      if (section.viaMembers > 0) lines.push(`# calls out of ${t.name}'s ${section.viaMembers} ${section.viaMembers === 1 ? 'method' : 'methods'}`);
+      if (section.viaMembers > 0) {
+        const of = section.memberTotal > section.viaMembers ? `first ${section.viaMembers} of its ${section.memberTotal}` : `${section.viaMembers}`;
+        lines.push(`# calls out of ${t.name}'s ${of} ${section.viaMembers === 1 && of === '1' ? 'method' : 'methods'}`);
+      }
       lines.push(...groupedRows(internal, label, t));
     }
     for (const item of internal) listed.add(`${item.file}:${item.startLine || '?'}`);
