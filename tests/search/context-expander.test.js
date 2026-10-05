@@ -1603,7 +1603,8 @@ describe('symbol sandwich rendering (integration)', () => {
     expect(r.code).toMatch(/\}\s*$/);
 
     // Elision markers are present and indicate the right gap sizes
-    expect(r.code).toMatch(/\/\/ \.\.\. \(\d+ lines elided\)/);
+    // Each gap names its lines and the ss-read command that prints them.
+    expect(r.code).toMatch(/\/\/ \.\.\. \(not shown: lines (\d+)-(\d+) — ss-read \S+ \1 \2\) \.\.\./);
     expect(r.sandwich.elisionMarkers).toBe(2);
     expect(r.sandwich.elidedHead).toBeGreaterThan(400); // ~496 lines between sig and gold
     expect(r.sandwich.elidedTail).toBeGreaterThan(400); // ~489 lines between gold and closing
