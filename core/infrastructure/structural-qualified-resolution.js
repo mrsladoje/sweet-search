@@ -80,10 +80,21 @@ export function trustedCallerEdge(edge, target, namesakes = null) {
     const rival = namesakes.some(n => n.id !== target.id
       && (fromTest || !isTestLikePath(n.filePath || ''))
       && (n.filePath !== target.filePath || (n.parentClass || null) !== (target.parentClass || null))
-      && (String(n.parentClass || '').toLowerCase() === qualifier || shouldTrustQualifiedResolution(tn, n)));
+      && rivalFits(qualifier, n));
     if (rival) return false;
   }
   return true;
+}
+
+// A rival fits only when the receiver names its owner or file. The directory path does not
+// count: in swift-argument-parser every file is under Sources/ArgumentParser/, so
+// `RequiredArray_Argument_Transform.parse` "fit" CommandParser.parse through "argument".
+function rivalFits(qualifier, n) {
+  const owner = String(n.parentClass || '').toLowerCase();
+  if (owner === qualifier) return true;
+  const file = String(n.filePath || '').toLowerCase();
+  const hay = `${file.slice(file.lastIndexOf('/') + 1)} ${owner}`;
+  return qualifierTerms(qualifier).some(term => hay.includes(term));
 }
 
 function rustMethodCallOnFreeFunction(targetName, entity) {
