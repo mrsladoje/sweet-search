@@ -152,12 +152,24 @@ function boundaryScore(entity, queryEvidence, parentClass, gap) {
   return exact + matched * 10 + sameParent + (MAX_BOUNDARY_GAP_LINES - gap) / 100;
 }
 
+// Comments and string literals (block, line, triple-quoted, quoted, template). A name that
+// only appears in them is mentioned, not used.
+const COMMENT_OR_STRING_RE = /\/\*[\s\S]*?\*\/|"""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`|\/\/[^\n]*|#[^\n]*/g;
+
+/** The code with its comments and string literals blanked. */
+export function codeWithoutCommentsAndStrings(code) {
+  return String(code || '').replace(COMMENT_OR_STRING_RE, ' ');
+}
+
 function bodySiblingScore(entity, code) {
   const candidateTokens = [...informativeSubtokens(entity?.name)]
     .filter((token) => !BODY_REFERENCE_GENERIC_TOKENS.has(token));
   if (candidateTokens.length < 2 || !code) return 0;
   let inspected = 0;
-  for (const [identifier] of String(code).matchAll(IDENTIFIER_RE)) {
+  // A sibling named only in an error message or a comment is no reference (GRDB:
+  // asyncConcurrentRead's precondition text "use DatabasePool.writeWithoutTransaction
+  // instead" printed writeWithoutTransaction, 141 lines below, as its continuation).
+  for (const [identifier] of codeWithoutCommentsAndStrings(code).matchAll(IDENTIFIER_RE)) {
     if (++inspected > 256) break;
     const referenceTokens = informativeSubtokens(identifier);
     let overlap = 0;
@@ -203,7 +215,8 @@ function findBoundaryContinuation(results, query, regex, codeGraphRepo) {
         ? boundaryScore(entity, evidence, parentClass, gap) : 0;
       const referencedScore = result.rank === 1 ? bodySiblingScore(entity, result.code) : 0;
       const score = Math.max(namedScore, referencedScore);
-      return score > 0 ? [{ trigger: result, entity, score, gap }] : [];
+      // Past the boundary gap only a body reference can have chosen it: it is no continuation.
+      return score > 0 ? [{ trigger: result, entity, score, gap, referenced: gap > MAX_BOUNDARY_GAP_LINES }] : [];
     }).sort((a, b) => b.score - a.score || a.gap - b.gap || a.entity.startLine - b.entity.startLine);
     if (candidates.length > 0) return candidates[0];
   }
@@ -579,7 +592,7 @@ function demoteDonor(result) {
 function completeContinuation(boundary, fileCache, projectRoot, estimateTokens) {
   if (!boundary) return null;
   const { trigger, entity } = boundary;
-  const header = `# continues at ${trigger.file}:${entity.startLine} ${entity.name}`;
+  const header = `# ${boundary.referenced ? 'referenced' : 'continues'} at ${trigger.file}:${entity.startLine} ${entity.name}`;
   // A gap of at most MAX_IMMEDIATE_GAP_LINES (blank lines, an annotation) after a trigger that
   // shows its whole span is read too: the continuation then starts right after the trigger's
   // code and the renderer prints both as one block (`## 85-88 request, proceed`).
@@ -598,6 +611,7 @@ function completeContinuation(boundary, fileCache, projectRoot, estimateTokens) 
       endLine: entity.endLine,
       symbol: entity.name,
       symbolType: entity.type || null,
+      ...(boundary.referenced ? { referenced: true } : {}),
       code,
       rendered: header,
       tokens: estimateTokens(`${header}\n${code}`),
@@ -609,9 +623,10 @@ function completeContinuation(boundary, fileCache, projectRoot, estimateTokens) 
 function trailerContinuation(boundary, estimateTokens) {
   if (!boundary) return null;
   const { trigger, entity } = boundary;
-  const rendered = `# continues at ${trigger.file}:${entity.startLine} ${entity.name}`;
+  const rendered = `# ${boundary.referenced ? 'referenced' : 'continues'} at ${trigger.file}:${entity.startLine} ${entity.name}`;
   return {
     kind: 'trailer',
+    ...(boundary.referenced ? { referenced: true } : {}),
     file: trigger.file,
     startLine: entity.startLine,
     endLine: entity.endLine,

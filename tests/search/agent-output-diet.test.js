@@ -79,6 +79,13 @@ describe('1b / 2c: continuations and the summary rows they cover', () => {
     expect(out.match(/okhttp\/Interceptor\.kt/g)).toHaveLength(1);
   });
 
+  it('a sibling the body uses, further below, prints as `referenced:`, not `continues:`', () => {
+    const referenced = { ...entry, continuation: { ...entry.continuation, startLine: 245, endLine: 247, symbol: 'wait', code: 'def wait\nend\nx', referenced: true } };
+    const out = render([referenced]);
+    expect(out).toContain('```\nreferenced: 245-247 function wait\n```\ndef wait\nend\nx\n```\n');
+    expect(out).not.toContain('continues:');
+  });
+
   it('a cut entry never merges with its continuation (the cut lines would vanish)', () => {
     const cut = { ...entry, endLine: 86, shownEndLine: 85, code: '    fun request(): Request\n// ... (1 more lines)' };
     expect(render([cut])).toContain('1. okhttp/Interceptor.kt 85-86 function request\n');
