@@ -10,7 +10,7 @@ import { classifyShellCommand, unwrapShellCommand, splitShellCommands, TOOL_KIND
 import { CODEX_BATCH_VARIANTS, applyCodexBatch } from './trim/batch-variants.mjs';
 import { stockInstructions } from './trim/build-codex-instructions.mjs';
 // The conflict edit is what `sweet-search init --codex` ships (single source, scripts/harness-prompts/).
-import { CODEX_INSTRUCTIONS_SOURCE, CODEX_STOCK_CAPTURED, codexInstructions } from '../../../scripts/harness-prompts/index.js';
+import { CODEX_INSTRUCTIONS_SOURCE, CODEX_STOCK_CAPTURED, codexInstructions, ANSWER_COVERAGE_LINE } from '../../../scripts/harness-prompts/index.js';
 import {
   resolveSweetRulesPlacement, sweetRulesRowFields, appendSweetRules, sweetRulesOutOfFile, tomlBasicString,
 } from './sweet-rules-placement.mjs';
@@ -292,10 +292,14 @@ export function codexHarnessTrim({ sweet, mode, model = 'openai/gpt-5.5', env = 
   if (m === '0') return { mode: null, origin };
   // stockprefix (research, 2026-10-05): the model's unmodified stock instructions as a byte-identical prefix
   // (stock prompt-cache hit) + an appended sweet-search section (rg override, yt3 cell form, read batch).
-  if (m === 'stockprefix') {
-    if (!CODEX_STOCK_CAPTURED[bare]) throw new Error(`CODEX_HARNESS_TRIM=stockprefix: no captured stock text for ${model} (have ${Object.keys(CODEX_STOCK_CAPTURED).join(', ')})`);
+  if (m === 'stockprefix' || m === 'stockprefix-cov') {
+    if (!CODEX_STOCK_CAPTURED[bare]) throw new Error(`CODEX_HARNESS_TRIM=${m}: no captured stock text for ${model} (have ${Object.keys(CODEX_STOCK_CAPTURED).join(', ')})`);
     // Exactly what `sweet-search init --codex` ships for this model (scripts/harness-prompts, single source).
-    return { mode: 'instructions-stockprefix', text: codexInstructions({ model: bare }), config: [], origin };
+    // stockprefix-cov (research, 2026-10-05): + ANSWER_COVERAGE_LINE at the end of the appended section,
+    // so the stock prefix stays byte-identical.
+    const text = codexInstructions({ model: bare });
+    if (m === 'stockprefix') return { mode: 'instructions-stockprefix', text, config: [], origin };
+    return { mode: 'instructions-stockprefix-cov', text: `${text}${text.endsWith('\n') ? '' : '\n'}${ANSWER_COVERAGE_LINE}\n`, config: [], origin };
   }
   if (m !== '1' && m !== 'max-wait' && m !== 'v3' && m !== 'conflict') throw new Error(`CODEX_HARNESS_TRIM=${m}: expected 0, 1, max-wait, v3, conflict or stockprefix`);
   if (m === 'conflict') {

@@ -86,6 +86,12 @@ export const CODEX_SWEET_APPENDIX = [
   CODEX_STOCK_RG_OVERRIDE, CODEX_YIELD_TEMPLATE3, CODEX_READ_BATCH2, '',
 ].join('\n');
 
+// Answer-coverage line (research, 2026-10-05, NOT shipped): dev traces showed GPT-6.1 Sol reading the
+// gold code and then leaving facts out of a short answer (the rules' "one confirmed file+symbol is
+// enough" taken as an answer rule). Bench modes: Codex CODEX_HARNESS_TRIM=stockprefix-cov (after the
+// stock text), opencode OC_HARNESS_TRIM=conflict3+todo3eff3kcov (after the efficiency line).
+export const ANSWER_COVERAGE_LINE = '- When the request is a question, answer every part of it. Before the final answer, check each part against the code you read, and state every fact you read that bears on it, such as other branches and cases, a condition, and the caller that acts on the result, with file and symbol. One confirmed file and symbol is enough for a question with one part. When the question asks for every place or every case, find them all with one broad search before you answer.';
+
 /** Stock text + our appended section. The stock text stays a byte-identical prefix. */
 export function codexStockPrefixInstructions(stock) {
   return `${stock}${stock.endsWith('\n') ? '' : '\n'}${CODEX_SWEET_APPENDIX}`;
