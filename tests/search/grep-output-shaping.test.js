@@ -1074,22 +1074,22 @@ describe('generated prior: lockfiles, API dumps, blob hit lines; copies collapse
     expect(one('checksum = "5c6cb57a04249c6480766f7f7cef5467412af1490f8d1e243141daddada3264f"')).toBe(0.25);
   });
 
-  it('a copy (same file name, same printed lines) prints one line with its hit count', () => {
+  it('a copy (same file name, same text, line numbers aside) prints one line with its own hit lines', () => {
     const rows = [
       { file: 'docs/git.md', line: 52, text: 'Garbage collection: Yes.' },
       { file: 'docs/git.md', line: 54, text: 'no garbage collection' },
-      { file: 'web/docs/git.md', line: 52, text: 'Garbage collection: Yes.' },
-      { file: 'web/docs/git.md', line: 54, text: 'no garbage collection' },
+      { file: 'web/docs/git.md', line: 54, text: 'Garbage collection: Yes.' },
+      { file: 'web/docs/git.md', line: 56, text: 'no garbage collection' },
       { file: 'web/other.md', line: 52, text: 'Garbage collection: Yes.' },
       { file: 'web/other.md', line: 54, text: 'no garbage collection' },
     ];
     expect(renderGrepListing(rows)).toEqual([
       'docs/git.md', '52:Garbage collection: Yes.', '54:no garbage collection',
-      'web/docs/git.md (same lines as docs/git.md; 2 hits)',
+      'web/docs/git.md (same text as docs/git.md, hits at 54, 56)',
       // another file name is no copy
       'web/other.md', '52:Garbage collection: Yes.', '54:no garbage collection',
     ]);
     // line numbers only (dropText): equal numbers are no evidence of a copy
-    expect(renderGrepListing(rows.slice(0, 4), { dropText: true })).toEqual(['docs/git.md', '52', '54', 'web/docs/git.md', '52', '54']);
+    expect(renderGrepListing(rows.slice(0, 4), { dropText: true })).toEqual(['docs/git.md', '52', '54', 'web/docs/git.md', '54', '56']);
   });
 });
