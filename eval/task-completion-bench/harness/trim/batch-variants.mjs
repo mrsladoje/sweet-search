@@ -21,7 +21,7 @@ import {
 import {
   CODEX_PARALLEL_LINE, CODEX_CHAIN_LINE, CODEX_YIELD_TEMPLATE3 as SHIPPED_CODEX_YIELD_TEMPLATE3,
   CODEX_READ_BATCH2 as SHIPPED_CODEX_READ_BATCH2, OPENCODE_GPT_ORIGINAL as SHIPPED_OPENCODE_GPT_ORIGINAL,
-  OPENCODE_BATCH_BULLET, OPENCODE_TODO3_LINE, EFFICIENCY_LINE_3 as SHIPPED_EFFICIENCY_LINE_3,
+  OPENCODE_BATCH_BULLET, OPENCODE_TODO3_LINE, EFFICIENCY_LINE_3 as SHIPPED_EFFICIENCY_LINE_3, ANSWER_COVERAGE_LINE,
 } from '../../../../scripts/harness-prompts/index.js';
 
 const dep = shell => `Combine dependent shell steps into one ${shell} call where you can, for example an edit made with a short script together with the command that checks it.`;
@@ -209,6 +209,8 @@ Object.assign(OPENCODE_BATCH_VARIANTS_R2, {
   // owner 2026-09-29: keep "When in doubt, use it." in the todowrite description (no todowrite edit).
   todo3eff2k: { bullet: `${OC_BULLET}\n${OC_TODO3}\n${EFFICIENCY_LINE_2}` },
   todo3eff3k: { bullet: `${OC_BULLET}\n${OC_TODO3}\n${EFFICIENCY_LINE_3}` },
+  // research 2026-10-05: + the answer-coverage line (scripts/harness-prompts ANSWER_COVERAGE_LINE), NOT shipped.
+  todo3eff3kcov: { bullet: `${OC_BULLET}\n${OC_TODO3}\n${EFFICIENCY_LINE_3}\n${ANSWER_COVERAGE_LINE}` },
   // todo4: audit beh-oc-p4 fixes (glob 'speculative batch' sentence removed; its intent moves into the efficiency line).
   todo4: { bullet: `${OC_BULLET}\n${OC_TODO4}\n${EFFICIENCY_LINE_4}` }, // pair with base conflict4 (drops the glob 'speculative batch' sentence)
   todo2eff: { bullet: `${OC_BULLET}\n${OC_TODO2}\n${EFFICIENCY_LINE}`, edits: { todowrite: [OC_TODO_DESC_EDITS[1]] } },
