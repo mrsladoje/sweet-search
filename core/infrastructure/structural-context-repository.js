@@ -16,6 +16,15 @@ import { GO_PACKAGE_PREFIX, RUST_PATH_PREFIX, UNRESOLVED_IMPORT_PREFIX } from '.
 import { RECEIVER_TYPE_PREFIX, signatureParamTypes } from './receiver-type-annotation.js';
 import { callTargetAliases, clampLimit, isLikelyCodeEntity, isTestPath, lowerCamel, placeholders, qualifiedTargetName, rowToEntity } from './structural-context-utils.js';
 
+// Entity types ss-trace treats as a type's callables (getMemberCallables).
+const MEMBER_CALLABLE_TYPES = new Set([
+  'function', 'method', 'constructor', 'destructor', 'initializer', 'init', 'rpc', 'arrowFunction',
+  'objectArrow', 'objectMethod', 'procedure', 'subroutine', 'def', 'func', 'proc', 'private',
+  'shortFunction', 'assignedFunc', 'getter', 'setter',
+]);
+const likeEscape = (text) => String(text).replace(/[!%_]/g, (c) => `!${c}`);
+const lastSegment = (name) => String(name || '').split(/::|\.|#/).pop();
+
 // Entity types that own members: a call inside one belongs to its own
 // member of that name (getSameFileCallers).
 const OWNER_TYPES = new Set(['class', 'interface', 'struct', 'enum', 'trait', 'impl', 'object', 'protocol', 'extension', 'record', 'module', 'service']);
@@ -871,6 +880,43 @@ export class StructuralContextRepository {
     } catch { nested = false; }
     this._nestedMemo.set(entity.id, nested);
     return nested;
+  }
+
+  /**
+   * The callables of a type: definitions inside its body (methods, constructors, nested
+   * functions), plus methods declared with the type as their owner in the same directory
+   * (Go receiver methods, Rust `impl` blocks, Swift / Kotlin extensions), in line order.
+   * ss-trace lists a class's callees through them: a class body calls nothing itself.
+   */
+  getMemberCallables(target, opts = {}) {
+    const db = this._open();
+    if (!db || !target?.id || !target.filePath || !target.name
+      || !Number.isInteger(target.startLine) || !Number.isInteger(target.endLine)) return [];
+    const limit = clampLimit(opts.limit, 60, 200);
+    const types = [...MEMBER_CALLABLE_TYPES];
+    const dir = path.posix.dirname(target.filePath);
+    const dirPrefix = dir === '.' ? '' : `${dir}/`;
+    try {
+      const rows = db.prepare(`
+        SELECT e.id, e.name, e.type, e.file_path, e.start_line, e.end_line,
+               e.signature, e.summary, e.parent_class, e.package
+        FROM entities e
+        WHERE e.id <> ? AND e.type IN (${placeholders(types)}) AND ${this._entitySql(db, 'e')}
+          AND ((e.file_path = ? AND e.start_line >= ? AND e.end_line <= ?)
+            OR (e.parent_class = ? AND e.file_path LIKE ? ESCAPE '!' AND e.file_path NOT LIKE ? ESCAPE '!'))
+        ORDER BY e.file_path = ? DESC, e.file_path, e.start_line
+        LIMIT ?
+      `).all(target.id, ...types, ...this._entityParams(db),
+        target.filePath, target.startLine, target.endLine,
+        target.name, `${likeEscape(dirPrefix)}%`, `${likeEscape(dirPrefix)}%/%`,
+        target.filePath, limit);
+      // Methods of a nested type belong to that type (Kotlin `inner class AsyncCall` in RealCall).
+      return rows.map((row) => this._entityFromRow(row))
+        .filter((e) => e && (!e.parentClass || e.filePath !== target.filePath
+          || e.parentClass === target.name || lastSegment(e.parentClass) === target.name));
+    } catch {
+      return [];
+    }
   }
 
   getCallees(target, opts = {}) {
