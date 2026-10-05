@@ -238,8 +238,10 @@ const MODULE_FUNCTION_FILE = /\.(?:py|pyi|go)$/i;
 // information, a `.`-call links only on receiver evidence — the receiver
 // names the candidate's owner, file or an imported file, or is self-like.
 // Otherwise `allocator.free()` binds to whatever repo function is named
-// `free` (Zig spot check: 4 of 6 such edges wrong).
-const RECEIVER_EVIDENCE_FILE = /\.(?:zig|lua|ex|exs|sol|pl|pm|r|jl|m|mm|sh|bash)$/i;
+// `free` (Zig spot check: 4 of 6 such edges wrong). Scala too: most of its
+// `.`-calls reach JDK / stdlib methods with common names, and its package
+// calls (`os.read(…)`) name no owner (os-lib: `os.isDir` bound to StatInfo.isDir).
+const RECEIVER_EVIDENCE_FILE = /\.(?:zig|lua|ex|exs|sol|pl|pm|r|jl|m|mm|sh|bash|scala|sc)$/i;
 // C and C++: the scanner reads `a.f(`, `a->f(` and `ns::f(` as `a.f`, and a
 // local's type (`auto &val = lookup(k)`) is not in the caller's signature.
 // A member call on a receiver that is no repo type, not `this` and has no
@@ -1032,7 +1034,8 @@ function buildEntityLookups(entities) {
   return { byId, byExactName, byMethodName, byFileAndName, byFile };
 }
 
-const CALLABLE_TYPES = new Set(['method', 'function', 'rpc']);
+// Regex-registry callables too: Scala `def`, Nim `proc`, Swift-fallback `func`, SQL `procedure`.
+const CALLABLE_TYPES = new Set(['method', 'function', 'rpc', 'def', 'func', 'proc', 'procedure']);
 const ENTITY_COLUMNS = 'rowid AS _rowid, id, name, type, file_path, parent_class, signature, start_line, end_line';
 const SQL_CHUNK = 500;
 

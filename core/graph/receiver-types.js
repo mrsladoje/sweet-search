@@ -38,7 +38,7 @@ const PHP_FILE = /\.php$/i;
 const CPP_FILE = /\.(?:cc|cpp|cxx|c\+\+|hpp|hh|hxx|h|ipp|inl|tpp)$/i;
 
 const SELF_NAMES = new Set(['this', 'self', 'super', 'cls', 'me', 'static', 'it']);
-const CALLABLE = new Set(['method', 'function', 'constructor', 'rpc']);
+const CALLABLE = new Set(['method', 'function', 'constructor', 'rpc', 'def', 'func', 'proc', 'procedure']);
 // Longest body prefix scanned for declarations (lines from the definition to
 // the call). Longer functions keep the receiver-name rules.
 const MAX_SCAN_LINES = 400;

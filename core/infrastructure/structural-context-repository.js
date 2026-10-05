@@ -105,7 +105,7 @@ const candidateKindTier = (type) => {
   if (['interface', 'enum', 'type', 'typeAlias'].includes(t)) return 1;
   // A function bound to a name (`export const getPath = (req) => {…}`) is a
   // function: hono's central url.ts getPath ranked below an adapter's method.
-  if (['function', 'method', 'arrowFunction', 'objectArrow', 'objectMethod', 'assignedFunc', 'shortFunction'].includes(t)) return 2;
+  if (['function', 'method', 'arrowFunction', 'objectArrow', 'objectMethod', 'assignedFunc', 'shortFunction', 'def', 'func', 'proc', 'procedure'].includes(t)) return 2;
   return 3;
 };
 
@@ -511,7 +511,7 @@ export class StructuralContextRepository {
     if (!db) return false;
     try {
       return !!db.prepare(`SELECT 1 FROM entities e WHERE ${this._entitySql(db, 'e')} AND e.file_path = ?
-        AND e.type IN ('function','method','constructor','arrowFunction','assignedFunc','objectMethod','objectArrow','shortFunction')
+        AND e.type IN ('function','method','constructor','arrowFunction','assignedFunc','objectMethod','objectArrow','shortFunction','def','func','proc','procedure')
         AND e.start_line < ? AND e.end_line >= ? LIMIT 1`).get(...this._entityParams(db), filePath, line, line);
     } catch {
       return false;
