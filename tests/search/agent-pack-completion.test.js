@@ -503,3 +503,30 @@ describe('packageForAgent boundary integration', () => {
     expect(completed.tokensUsed).toBeLessThanOrEqual(completed.tokenBudget);
   });
 });
+describe('referenced sibling: code use only, and labelled as a reference (2026-10-05 GRDB replay)', () => {
+  const far = (code) => {
+    writeSource('src/Pool.swift', Array.from({ length: 200 }, (_, i) => (i === 149 ? 'func writeWithoutTransaction() {' : i === 152 ? '}' : `// line ${i + 1}`)));
+    const results = baseResults({
+      file: 'src/Pool.swift', startLine: 1, endLine: 10, shownEndLine: 10, symbol: 'asyncConcurrentRead', code,
+    });
+    const repo = boundaryRepo({
+      findAdjacentEntities: vi.fn(() => ({ above: [], below: [{
+        id: 'w', name: 'writeWithoutTransaction', type: 'method', startLine: 150, endLine: 153, parentClass: 'Pool',
+      }] })),
+    });
+    applyAgentPackCompletion({
+      results, query: 'reader pool release open read transaction', regex: '', codeGraphRepo: repo,
+      fileCache: new Map(), projectRoot, tokensUsed: 200, tokenBudget: 400, estimateTokens, isAgentFormat: true,
+    });
+    return results[0].continuation;
+  };
+
+  it('a name that appears only in a string or a comment is no reference', () => {
+    expect(far('GRDBPrecondition(!db.isInsideTransaction, """\n  use DatabasePool.writeWithoutTransaction instead\n  """)\n// or writeWithoutTransaction')).toBeFalsy();
+  });
+
+  it('a real use 140 lines up is attached, marked as a reference, and printed as `referenced:`', () => {
+    const cont = far('if done {\n  pool.writeWithoutTransaction()\n}');
+    expect(cont).toMatchObject({ symbol: 'writeWithoutTransaction', startLine: 150, referenced: true });
+  });
+});

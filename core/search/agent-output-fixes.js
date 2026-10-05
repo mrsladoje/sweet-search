@@ -798,13 +798,15 @@ function renderGroupedBlocks(results, plan, { omitted = new Set(), gutter = (cod
       const contFile = cont.file || file;
       const where = contFile === file ? '' : `${label(contFile)}`;
       const what = cont.symbol ? ` ${kindName(cont.symbol, cont.symbolType)}` : '';
+      // A sibling chosen because the entry's body uses it, further below: not the next code.
+      const lead = cont.referenced ? 'referenced' : 'continues';
       if (contSpan) {
-        lines.push(`continues: ${where}${lineRange(contSpan.start, contSpan.end)}${what}`);
+        lines.push(`${lead}: ${where}${lineRange(contSpan.start, contSpan.end)}${what}`);
         if (contOmitted) lines.push(renderAlreadyShownLine(contSpan.file, contSpan.start, contSpan.end));
         else lines.push('```', cont.code, '```');
       } else if (cont.rendered && Number.isInteger(cont.startLine)
           && !(contFile === file && plan.entries.some(({ r: o }) => isSummaryOnly(o) && o.file === file && o.startLine === cont.startLine))) {
-        lines.push(`continues (not shown): ${where}${cont.startLine}${what}`);
+        lines.push(`${lead} (not shown): ${where}${cont.startLine}${what}`);
       } else if (cont.rendered && !Number.isInteger(cont.startLine)) {
         // No coordinates to merge or regroup by: the continuation's own text.
         lines.push(cont.rendered);
