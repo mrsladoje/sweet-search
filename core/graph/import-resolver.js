@@ -879,11 +879,15 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
   function rustPathScope(fromFile, spec) {
     const from = norm(String(fromFile));
     if (from == null) return null;
-    const file = resolve(from, { spec, kind: 'use' }, 'rust');
+    // The called last segment is an item; the module is the path before it
+    // (`crate::load()` is lib.rs's `load` even when a module `load` exists).
+    const segs = spec.split('::');
+    const name = segs.pop();
+    if (segs.length === 0) return null;
+    const file = resolve(from, { spec: segs.join('::'), kind: 'use' }, 'rust');
     if (!file) return null;
     // `pub use auth::login::login as auth_login;` in that module: the call
     // reaches the item under its original name in the module it came from.
-    const name = spec.split('::').pop();
     const renamed = new RegExp(String.raw`^\s*(?:pub(?:\([\w:\s]+\))?\s+)?use\s+((?:[\w]+::)+)(\w+)\s+as\s+${name}\s*;`, 'm').exec(readText(file) || '');
     if (renamed) {
       const origin = resolve(file, { spec: `${renamed[1]}${renamed[2]}`, kind: 'use' }, 'rust');

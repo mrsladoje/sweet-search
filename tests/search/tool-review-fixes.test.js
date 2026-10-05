@@ -866,6 +866,20 @@ describe('round 12 — super calls', () => {
     expect(narrowCallCandidates([ctxM], 'super', { id: 's', parent_class: 'CustomContext', file_path: 't.py' }, idx)).toEqual([ctxM]);
     expect(narrowCallCandidates([pager], 'super', { id: 's2', parent_class: 'RecordingStream', file_path: 't.py' }, idx)).toEqual([]);
   });
+
+  it('super.m reaches the nearest supertype that defines m; Go `super` is a variable', async () => {
+    const { narrowCallCandidates } = await import('../../core/graph/relationship-resolver.js');
+    const base = { id: 'g', name: 'run', parent_class: 'Base', file_path: 'a.py' };
+    const mid = { id: 'p', name: 'run', parent_class: 'Mid', file_path: 'a.py' };
+    const supers = { Leaf: ['Mid'], Mid: ['Base'] };
+    const idx = {
+      ownerOf: (e) => e.parent_class || null,
+      directSupertypesOf: (t) => new Set(supers[t] || []),
+      supertypesOf: (t) => new Set(t === 'Leaf' ? ['Mid', 'Base'] : t === 'Mid' ? ['Base'] : []),
+    };
+    expect(narrowCallCandidates([base, mid], 'super', { id: 's', parent_class: 'Leaf', file_path: 'a.py' }, idx)).toEqual([mid]);
+    expect(narrowCallCandidates([base], 'super', { id: 's', parent_class: 'Leaf', file_path: 'a.go' }, idx)).not.toEqual([]);
+  });
 });
 
 describe('round 13 — private members, abstract declarations, C# tuple returns', () => {
@@ -993,5 +1007,57 @@ describe('round 15 — JS/TS private member calls', () => {
     ].join('\n'));
     expect(r.relationships.filter((x) => x.type === 'calls').map((x) => `${x.target_name}@${x.context_line}`))
       .toEqual(['this.#fetch@3', 'this.#retryFromError@3']);
+  });
+});
+
+describe('independent review (Codex) of the overnight fixes', () => {
+  const extract = async (file, src) => new GraphExtractor({}).extractFromFile(file, src.join('\n'));
+  const spans = (r) => r.entities.map((e) => `${e.name} ${e.start_line}-${e.end_line}`);
+
+  it('Elixir: sigils hold no block keywords; `# """` in a comment opens no heredoc', async () => {
+    const r = await extract('lib/a.ex', [
+      'defmodule Example do',
+      '  # """',
+      '  def real(), do: :ok',
+      '',
+      '  def matches?(text) do',
+      '    Regex.match?(~r/do/, text) and String.contains?(text, ~s(end))',
+      '  end',
+      '',
+      '  def next(), do: :ok',
+      'end',
+    ]);
+    expect(spans(r)).toEqual(expect.arrayContaining(['real 3-3', 'matches? 5-7', 'next 9-9']));
+  });
+
+  it('OCaml: a parameter, a `let … in` or a match binding of the name is no call of a definition', async () => {
+    const r = await extract('lib/a.ml', [
+      'let f v = v',
+      'let apply f value =',
+      '  f value',
+      'let map x = x',
+      'let run input =',
+      '  let map x = x + 1 in',
+      '  match input with Some g -> g 1 | None -> map input',
+      'let go x = f (map x)',
+      'let m x =',
+      '  let module M = struct',
+      '    let helper y = y',
+      '  end in',
+      '  M.helper x',
+    ]);
+    expect(r.entities.map((e) => e.name)).not.toContain('helper');
+    expect((r.callSites || []).filter((c) => c.callee_name).map((c) => `${c.callee_name}@${c.context_line}`)).toEqual(['f@8', 'map@8']);
+  });
+
+  it('Lua: a short string continued with `\\` holds no `end`', async () => {
+    const r = await extract('a.lua', [
+      'local function run()',
+      '  local text = "first\\',
+      'end"',
+      '  return work()',
+      'end',
+    ]);
+    expect(spans(r)).toEqual(['run 1-5']);
   });
 });

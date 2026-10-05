@@ -493,8 +493,13 @@ export class StructuralContextRepository {
     const m = /(?:^|\.)([A-Za-z_]\w*)\(\)\.[A-Za-z_]\w*$/.exec(String(targetName || ''));
     if (!m || !resolved?.parentClass) return false;
     try {
-      return !!db.prepare(`SELECT 1 FROM entities e WHERE ${this._entitySql(db, 'e')} AND e.name = ? AND e.parent_class = ? LIMIT 1`)
-        .get(...this._entityParams(db), m[1], resolved.parentClass);
+      // Only a producer whose signature returns its own type (`static App &instance()`,
+      // `-> Self`, `): this`): a factory `create(): Product` makes another type.
+      const owner = resolved.parentClass.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const ownType = new RegExp(`\\b(?:${owner}|Self|this)\\b`);
+      return db.prepare(`SELECT e.signature FROM entities e WHERE ${this._entitySql(db, 'e')} AND e.name = ? AND e.parent_class = ? LIMIT 4`)
+        .all(...this._entityParams(db), m[1], resolved.parentClass)
+        .some(r => ownType.test(String(r.signature || '').replace(new RegExp(`(?:\\w+::)*\\b${m[1]}\\b[\\s\\S]*?\\(`), '(')));
     } catch {
       return false;
     }

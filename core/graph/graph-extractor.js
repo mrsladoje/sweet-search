@@ -132,15 +132,44 @@ export function elixirHeredocLines(lines) {
       else inside.add(i);
       continue;
     }
-    const m = /("""|''')/.exec(raw);
+    const m = elixirFence(raw);
     if (m && !raw.slice(m.index + 3).includes(m[1])) fence = m[1];
   }
   return inside;
 }
 
-/** Elixir code of one line: string, charlist and comment text blanked. */
+/**
+ * The first heredoc fence (`"""` / `'''`) of an Elixir line that is code: not
+ * inside a one-line string, not after a `#` comment (`# """` opens nothing).
+ * Returns a RegExp-exec-like `{ index, 1: fence }` or null.
+ */
+function elixirFence(raw) {
+  let quote = null;
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw[i];
+    if (quote) {
+      if (c === '\\') i++;
+      else if (c === quote) quote = null;
+      continue;
+    }
+    if ((c === '"' || c === "'") && raw[i + 1] === c && raw[i + 2] === c) return { index: i, 1: c.repeat(3) };
+    if (c === '#') return null;
+    if (c === '?' && !/[\w?!]/.test(raw[i - 1] || '')) { i += raw[i + 1] === '\\' ? 2 : 1; continue; }
+    if (c === '"' || c === "'") quote = c;
+  }
+  return null;
+}
+
+// Sigils (`~r/do/`, `~s(end)`, `~w[fn x]`, `~S"…"`) with any of the eight delimiters.
+const ELIXIR_SIGIL = /~[a-zA-Z]+(?:\/(?:[^/\\]|\\.)*\/|\((?:[^)\\]|\\.)*\)|\[(?:[^\]\\]|\\.)*\]|\{(?:[^}\\]|\\.)*\}|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|<(?:[^>\\]|\\.)*>|\|(?:[^|\\]|\\.)*\|)[a-zA-Z]*/g;
+
+/** Elixir code of one line: sigil, string, charlist, `?c` char and comment text blanked. */
 function elixirCode(line) {
-  return String(line || '').replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, '""').replace(/#.*$/, '');
+  return String(line || '')
+    .replace(ELIXIR_SIGIL, '""')
+    .replace(/(?<![\w?!])\?(?:\\.|[^\s\\])/g, '0')
+    .replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, '""')
+    .replace(/#.*$/, '');
 }
 
 /**
@@ -164,7 +193,7 @@ function elixirEndLine(lines, startIndex) {
       if (raw.includes(heredoc)) heredoc = null;
       continue;
     }
-    const fence = /("""|\'\'\')/.exec(raw);
+    const fence = elixirFence(raw);
     let code = elixirCode(fence ? raw.slice(0, fence.index) : raw);
     if (fence && !raw.slice(fence.index + 3).includes(fence[1])) heredoc = fence[1];
     code = code.replace(/:(?:do|end|fn)\b/g, '');
@@ -291,9 +320,12 @@ function scalaEndLine(lines, startIndex, braceEnd) {
  * inner `end)` (18-39 of 18-71). Strings, `--` comments and `[[ ]]` long
  * brackets are blanked.
  */
+const LUA_LONG_OPEN = /(?:--)?\[(=*)\[/y;
+
 function luaEndLine(lines, startIndex) {
   let depth = 0;
   let longClose = null;
+  let openQuote = null; // a short string continued past a line end with `\`
   for (let i = startIndex; i < lines.length; i++) {
     let raw = String(lines[i] || '');
     if (longClose) {
@@ -303,20 +335,35 @@ function luaEndLine(lines, startIndex) {
       longClose = null;
     }
     let code = '';
-    for (let k = 0; k < raw.length; k++) {
-      const long = /^(?:--)?\[(=*)\[/.exec(raw.slice(k));
-      if (long) {
-        const close = `]${long[1]}]`;
-        const end = raw.indexOf(close, k + long[0].length);
-        if (end < 0) { longClose = close; break; }
-        k = end + close.length - 1;
+    let k = 0;
+    if (openQuote) {
+      while (k < raw.length && raw[k] !== openQuote) k += raw[k] === '\\' ? 2 : 1;
+      if (k >= raw.length) {
+        if (!raw.endsWith('\\')) openQuote = null;
         continue;
       }
-      if (raw.startsWith('--', k)) break;
+      openQuote = null;
+      k++;
+    }
+    for (; k < raw.length; k++) {
       const c = raw[k];
+      if (c === '[' || (c === '-' && raw[k + 1] === '-' && raw[k + 2] === '[')) {
+        LUA_LONG_OPEN.lastIndex = k;
+        const long = LUA_LONG_OPEN.exec(raw);
+        if (long) {
+          const close = `]${long[1]}]`;
+          const end = raw.indexOf(close, k + long[0].length);
+          if (end < 0) { longClose = close; break; }
+          k = end + close.length - 1;
+          continue;
+        }
+      }
+      if (c === '-' && raw[k + 1] === '-') break;
       if (c === '"' || c === "'") {
         let j = k + 1;
         while (j < raw.length && raw[j] !== c) j += raw[j] === '\\' ? 2 : 1;
+        // `"first\` + newline: the string goes on to the next line.
+        if (j >= raw.length && raw.endsWith('\\')) openQuote = c;
         k = j;
         code += ' ';
         continue;
@@ -2161,8 +2208,11 @@ export class GraphExtractor {
           // A constant / variable declared inside a function body is a local
           // value, not a definition (http.zig `const serialized = try
           // serializeCookie(…)` in setCookie was listed as its caller).
+          // Only under a span that closed before the file end: one that runs to the
+          // end may be an unbalanced guess (CMake `function(x)` … `endfunction()` has
+          // no braces) and would swallow the file's real top-level values.
           if (enclosing && REGEX_LOCAL_STATE_TYPES.has(type) && REGEX_FUNCTION_SCOPE_TYPES.has(enclosing.type)
-            && lineNum > enclosing.start_line) break;
+            && lineNum > enclosing.start_line && enclosing.end_line < lines.length) break;
           const parentClass = !langInfo.endKeyword && enclosing
             && REGEX_CONTAINER_TYPES.has(enclosing.type) ? enclosing.name : null;
           const { id: entityId, duplicate } = this.entityId(filePath, type, name, {

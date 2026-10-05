@@ -68,8 +68,8 @@ describe('findAliasCallers reads only files that import the target', () => {
     // Same span as main (lines 2-4) in the indexed app/main.js.
     const text = [
       "import { add as plus } from '../lib/math';",
-      'export function main() { // plus(9, 9) in a line comment',
-      '   * plus(7, 7) on a block-comment line',
+      'export function main() { // plus(9, 9) in a line comment /*',
+      '  /* plus(7, 7) in a block comment */',
       '  return plus(1, 2); }',
     ].join('\n');
     const target = { id: 't', name: 'add', filePath: 'lib/math.js' };
@@ -86,6 +86,18 @@ describe('findAliasCallers reads only files that import the target', () => {
     const target = { id: 't', name: 'add', filePath: 'lib/math.js' };
     const callers = findAliasCallers({ db, target, readFileRange: () => text });
     expect(callers.map(c => `${c.filePath}:${c.contextLine}`)).toEqual(['app/main.js:3']);
+  });
+
+  it('block-comment text is no caller; code after a closed comment is', () => {
+    const text = [
+      "import { add as plus } from '../lib/math';",
+      'export function main() { /*',
+      '    Example: plus(1, 2)',
+      '  */ return plus(3, 4); }',
+    ].join('\n');
+    const target = { id: 't', name: 'add', filePath: 'lib/math.js' };
+    const callers = findAliasCallers({ db, target, readFileRange: () => text });
+    expect(callers.map(c => `${c.filePath}:${c.contextLine}`)).toEqual(['app/main.js:4']);
   });
 
   it('a target in a language without alias forms reads nothing', () => {

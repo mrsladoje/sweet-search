@@ -386,6 +386,50 @@ const AST_CALL_QUERIES = {
   ocaml: '(application_expression . (value_path) @call)',
 };
 
+function hasAncestorType(node, re) {
+  for (let p = node?.parent; p; p = p.parent) if (re.test(p.type)) return true;
+  return false;
+}
+
+/** Names bound by patterns under `node` (`value_pattern`, `value_name` leaves). */
+function ocamlPatternNames(node, out) {
+  if (!node) return out;
+  if ((node.type === 'value_pattern' || node.type === 'value_name') && node.childCount === 0) out.add(node.text);
+  for (const c of node.namedChildren) ocamlPatternNames(c, out);
+  return out;
+}
+
+/**
+ * True when `name`, called at `callNode`, is bound in an enclosing scope: a parameter
+ * of an enclosing function (`let f a b =`, `fun a ->`), a `let … in` binding whose body
+ * holds the call, or a `match` / `function` case pattern.
+ */
+function ocamlLocallyBound(callNode, name) {
+  let child = callNode;
+  for (let p = callNode.parent; p; child = p, p = p.parent) {
+    if (p.type === 'compilation_unit' || p.type === 'structure') return false;
+    const names = new Set();
+    if (p.type === 'let_binding' || p.type === 'fun_expression') {
+      for (const c of p.namedChildren) if (c.type === 'parameter') ocamlPatternNames(c, names);
+    } else if (p.type === 'let_expression') {
+      // Bindings reach the body (and themselves under `let rec`, not shadowing then).
+      const def = p.namedChildren.find(c => c.type === 'value_definition');
+      if (def && child !== def) {
+        for (const b of def.namedChildren) {
+          if (b.type !== 'let_binding') continue;
+          const pat = b.childForFieldName?.('pattern') || b.namedChildren[0];
+          ocamlPatternNames(pat, names);
+        }
+      }
+    } else if (p.type === 'match_case') {
+      const pat = p.namedChildren[0];
+      if (pat && child !== pat) ocamlPatternNames(pat, names);
+    }
+    if (names.has(name)) return true;
+  }
+  return false;
+}
+
 const TAGS_QUERIES = {
   javascript: `
     ; A named function expression is a definition: \`wrapAsync(async function
@@ -1389,6 +1433,9 @@ export class TreeSitterProvider {
         // state entities existed (see STATE_ONLY_FALLBACK_LANGUAGES).
         if (extentNode.hasError && STATE_CAPTURE_LANGUAGES.has(languageId)
           && STATE_ENTITY_TYPES.has(entityType)) continue;
+        // OCaml: a structure inside an expression (`let module M = struct … end in`)
+        // is local to it.
+        if (languageId === 'ocaml' && hasAncestorType(node, /_expression$/)) continue;
         const key = isGoSpecName
           ? `${extentNode.startIndex}:${entityType}:${node.text}`
           : `${extentNode.startIndex}:${entityType}`;
@@ -1497,7 +1544,11 @@ export class TreeSitterProvider {
           this._callQueryCache.set(language, callQuery);
         }
         symbols.calls = callQuery.captures(tree.rootNode)
-          .map(({ node }) => ({ line: node.startPosition.row + 1, name: node.text.replace(/\s+/g, '') }));
+          .map(({ node }) => ({ node, line: node.startPosition.row + 1, name: node.text.replace(/\s+/g, '') }))
+          // A parameter or local binding of that name is no call of a definition
+          // (`let apply f v = f v` calls its argument, not a top-level `f`).
+          .filter(({ node, name }) => name.includes('.') || !ocamlLocallyBound(node, name))
+          .map(({ line, name }) => ({ line, name }));
       }
       return symbols;
     } catch {
