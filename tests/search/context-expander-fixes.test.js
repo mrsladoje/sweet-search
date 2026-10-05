@@ -675,3 +675,45 @@ describe('packageForAgent (graph-neighbour reservation)', () => {
     expect(pack.results[0].neighbors).toBeFalsy();
   });
 });
+
+describe('body type names: member access and Go visibility (2026-10-05 dgraph replay)', () => {
+  const repoWith = (have) => ({
+    getOutgoingRelationships: () => [],
+    getIncomingRelationships: () => [],
+    findEntitiesByNames: (names) => have.filter((h) => names.includes(h.name)),
+  });
+
+  it('a lowercase name after `.` / `->` is a field, not a type; Go unexported types stay in their package', () => {
+    const repo = repoWith([
+      { id: 'w', name: 'rateLimiter', type: 'struct', filePath: 'worker/proposal.go', startLine: 42, endLine: 46 },
+      { id: 'n', name: 'nodeState', type: 'struct', filePath: 'worker/state.go', startLine: 1, endLine: 9 },
+      { id: 'z', name: 'leaseState', type: 'struct', filePath: 'dgraph/cmd/zero/lease.go', startLine: 3, endLine: 9 },
+    ]);
+    const out = renderGraphNeighbors({
+      codeGraphRepo: repo,
+      entity: { id: 'a', filePath: 'dgraph/cmd/zero/assign.go', startLine: 172, endLine: 279, name: 'AssignIds', type: 'method' },
+      skipKeys: new Set(),
+      tokenCap: 600,
+      body: 'func (s *Server) AssignIds() {\n  if s.rateLimiter == nil { return }\n  var st nodeState\n  var ls leaseState\n  p->rateLimiter = nil\n}',
+    });
+    expect(out.rendered).toMatch(/leaseState/);       // same package: kept
+    expect(out.rendered).not.toMatch(/rateLimiter/);  // only ever a field
+    expect(out.rendered).not.toMatch(/nodeState/);    // unexported, other package
+  });
+
+  it('the same name used bare still counts; an exported Go type of another package counts', () => {
+    const repo = repoWith([
+      { id: 'x', name: 'RateLimiter', type: 'struct', filePath: 'x/x.go', startLine: 1, endLine: 9 },
+      { id: 'm', name: 'methodTree', type: 'struct', filePath: 'tree.go', startLine: 45, endLine: 49 },
+    ]);
+    const out = renderGraphNeighbors({
+      codeGraphRepo: repo,
+      entity: { id: 'g', filePath: 'gin.go', startLine: 1, endLine: 9, name: 'handle', type: 'method' },
+      skipKeys: new Set(),
+      tokenCap: 600,
+      body: 'func handle() {\n  r := x.RateLimiter{}\n  _ = e.methodTree\n  var t methodTree\n}',
+    });
+    expect(out.rendered).toMatch(/RateLimiter/);
+    expect(out.rendered).toMatch(/methodTree/);
+  });
+});

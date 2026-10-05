@@ -1289,14 +1289,28 @@ export function graphNeighborsEnabled({ mode = null, ablations = new Set() } = {
  * @param {string|null} ownName - the symbol's own name, excluded from results
  * @returns {string[]}
  */
+/**
+ * A Go type whose name starts lowercase is unexported: only code of its own package (its
+ * directory) can name it. dgraph AssignIds (dgraph/cmd/zero) was linked to `struct
+ * rateLimiter` of package worker by name alone.
+ */
+function goUnexportedElsewhere(fromFile, t) {
+  if (!/\.go$/.test(String(fromFile || '')) || !/\.go$/.test(String(t?.filePath || ''))) return false;
+  if (!/^[a-z_]/.test(String(t.name || ''))) return false;
+  return path.posix.dirname(String(fromFile)) !== path.posix.dirname(String(t.filePath));
+}
+
 function extractTypeCandidates(code, ownName) {
   if (!code) return [];
-  const matches = code.match(/\b[A-Za-z_][A-Za-z0-9_]{2,}\b/g) || [];
   const own = (ownName || '').toLowerCase();
   const seen = new Set();
   const out = [];
-  for (const id of matches) {
+  for (const m of code.matchAll(/\b[A-Za-z_][A-Za-z0-9_]{2,}\b/g)) {
+    const id = m[0];
     if (seen.has(id)) continue;
+    // A lowercase name right after `.` or `->` is a member access (`s.rateLimiter`, a field),
+    // never a type: no language names a type that way. Its other occurrences still count.
+    if (/^[a-z_]/.test(id) && /(?:\.|->)\s*$/.test(code.slice(Math.max(0, m.index - 3), m.index))) continue;
     seen.add(id);
     if (LANG_KEYWORDS.has(id)) continue;
     if (id.toLowerCase() === own) continue;
@@ -1411,6 +1425,7 @@ export function renderGraphNeighbors(opts) {
           const n = defs(t.name);
           if (n != null && n >= RELATED_AMBIGUOUS_DEFS) continue;
           if (isTestLikePath(t.filePath)) continue;
+          if (goUnexportedElsewhere(entity.filePath, t)) continue;
           const prev = byName.get(`${t.name}|${t.type}`);
           if (!prev || (t.endLine - t.startLine) < (prev.endLine - prev.startLine)) byName.set(`${t.name}|${t.type}`, t);
         }
