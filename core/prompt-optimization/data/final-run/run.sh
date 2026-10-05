@@ -34,6 +34,13 @@ OPENAI_STEPS=("codex-sol61-high 1 native,sweet,before interleave" "oc-sol61-high
               "codex-sol61-high 2 sweet,before interleave" "oc-sol61-high 2 sweet,before interleave")
 CLAUDE_STEPS=("cc-opus55-medium 1 sweet seq" "cc-opus55-medium 1 before seq" "cc-opus55-medium 1 native seq"
               "cc-opus55-medium 2 before seq" "cc-opus55-medium 2 sweet seq")
+# FR_NO_BEFORE=1: sweet vs native only (a dev rerun of the current code); steps drop the before arm,
+# steps left with no arm are skipped, and preflight skips the before checkout and its index.
+if [ "${FR_NO_BEFORE:-0}" = 1 ]; then
+  strip_before() { local out=() s c r a m; for s in "$@"; do read -r c r a m <<< "$s"; a=$(echo ",$a," | sed 's/,before,/,/; s/^,//; s/,$//'); [ -n "$a" ] && out+=("$c $r $a $m"); done; printf '%s\n' "${out[@]}"; }
+  _o=(); while IFS= read -r l; do _o+=("$l"); done < <(strip_before "${OPENAI_STEPS[@]}"); OPENAI_STEPS=("${_o[@]}")   # bash 3.2: no mapfile
+  _c=(); while IFS= read -r l; do _c+=("$l"); done < <(strip_before "${CLAUDE_STEPS[@]}"); CLAUDE_STEPS=("${_c[@]}")
+fi
 in_cells() { case " $FR_CELLS " in *" $1 "*) return 0;; *) return 1;; esac; }
 step_id() { echo "$1-r$2-${3//,/+}"; }
 step_dir() { echo "$RESULTS/r282-$1-$FR_TAG-r$2"; }
@@ -49,12 +56,13 @@ step_missing() { # <cell> <rep> <arms>
 preflight() { # prints problems; returns 1 on any blocker
   local bad=0
   node "$FR_HERE/select-questions.mjs" --check >/dev/null || { echo "BLOCK questions.json does not match a fresh seed-42 draw"; bad=1; }
-  for w in "$FINAL_ROOT" "$BEFORE_ROOT"; do
+  local nb="${FR_NO_BEFORE:-0}" roots="$FINAL_ROOT"; [ "$nb" = 1 ] || roots="$FINAL_ROOT $BEFORE_ROOT"
+  for w in $roots; do
     [ -z "$(git -C "$w" status --porcelain --untracked-files=no)" ] || { echo "BLOCK $w has uncommitted tracked changes (rows must name the code they ran)"; bad=1; }
   done
-  [ "$(git -C "$BEFORE_ROOT" rev-parse HEAD)" = "$(git -C "$BEFORE_ROOT" rev-parse "$BEFORE_COMMIT^{commit}")" ] || { echo "BLOCK before worktree is not at $BEFORE_COMMIT"; bad=1; }
-  bash "$FR_HERE/prepare-native.sh" both > "$LOGS/prepare-native.log" 2>&1 || { echo "BLOCK native build/verify failed ($LOGS/prepare-native.log)"; bad=1; }
-  for arm in before after; do
+  [ "$nb" = 1 ] || [ "$(git -C "$BEFORE_ROOT" rev-parse HEAD)" = "$(git -C "$BEFORE_ROOT" rev-parse "$BEFORE_COMMIT^{commit}")" ] || { echo "BLOCK before worktree is not at $BEFORE_COMMIT"; bad=1; }
+  bash "$FR_HERE/prepare-native.sh" "$([ "$nb" = 1 ] && echo final || echo both)" > "$LOGS/prepare-native.log" 2>&1 || { echo "BLOCK native build/verify failed ($LOGS/prepare-native.log)"; bad=1; }
+  for arm in $([ "$nb" = 1 ] && echo after || echo before after); do
     for r in $(fr_repos); do
       local st="$FR_STATE/index-stamps/$arm/$r.json"
       [ -f "$st" ] || { echo "BLOCK no $arm index stamp for $r — run: bash index-repos.sh $arm"; bad=1; continue; }
