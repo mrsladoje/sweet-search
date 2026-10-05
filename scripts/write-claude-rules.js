@@ -65,6 +65,41 @@ function buildBody(variant = 'cli', layout = 'full', env = process.env, memoryDi
   return `${SENTINEL}\n${getPolicyBody(variant, env).trimEnd()}\n`;
 }
 
+// The pointer file names this machine's memory directory (an absolute path under the
+// user's home), so in a git project it is kept out of commits: init adds this block to the
+// project's .gitignore (creating the file if needed) and uninstall removes it again.
+const GITIGNORE_COMMENT = '# sweet-search: machine-specific (local memory path); written by `sweet-search init`';
+const GITIGNORE_ENTRY = `/${CLAUDE_RULES_REL}`;
+
+function inGitRepo(projectRoot) {
+  for (let dir = projectRoot; ; dir = dirname(dir)) {
+    if (existsSync(join(dir, '.git'))) return true;
+    if (dirname(dir) === dir) return false;
+  }
+}
+
+function setRulesGitignored(projectRoot, ignored) {
+  try {
+    const path = join(projectRoot, '.gitignore');
+    const exists = existsSync(path);
+    const content = exists ? readFileSync(path, 'utf8') : '';
+    const lines = content.split(/\r?\n/);
+    const has = lines.some((l) => l.trim() === GITIGNORE_ENTRY);
+    if (ignored) {
+      if (has || !inGitRepo(projectRoot)) return;
+      const sep = content.length === 0 || content.endsWith('\n') ? '' : '\n';
+      const gap = content.length === 0 ? '' : '\n';
+      writeFileSync(path, `${content}${sep}${gap}${GITIGNORE_COMMENT}\n${GITIGNORE_ENTRY}\n`);
+      return;
+    }
+    if (!has) return;
+    const kept = lines.filter((l) => l.trim() !== GITIGNORE_ENTRY && l.trim() !== GITIGNORE_COMMENT);
+    const next = kept.join('\n').replace(/\n{3,}/g, '\n\n').replace(/\n+$/, '');
+    if (next.trim() === '') unlinkSync(path);
+    else writeFileSync(path, `${next}\n`);
+  } catch { /* best-effort — never block init or uninstall on .gitignore */ }
+}
+
 function isOwned(text) {
   return text.includes(SENTINEL) || text.includes(LEGACY_SENTINEL);
 }
@@ -84,19 +119,22 @@ export function writeClaudeRules({ projectRoot, variant = 'cli', layout = 'full'
   if (!projectRoot) throw new TypeError('write-claude-rules: projectRoot is required');
   const filePath = join(projectRoot, CLAUDE_RULES_REL);
   const body = buildBody(variant, layout, env, memoryDir);
+  const machineSpecific = layout === 'pointer' && Boolean(memoryDir);
   if (!existsSync(filePath)) {
     mkdirSync(dirname(filePath), { recursive: true });
     writeFileSync(filePath, body);
+    setRulesGitignored(projectRoot, machineSpecific);
     return 'created';
   }
   const current = readFileSync(filePath, 'utf8');
-  if (current === body) return 'unchanged';
   // If the existing file is sweet-search-managed (sentinel present), rewrite
   // it. If a user wrote their own file at this path, leave it alone — they
   // can opt out by removing the sentinel-tagged version manually.
-  if (!isOwned(current)) {
+  if (current !== body && !isOwned(current)) {
     return 'preserved-user-file';
   }
+  setRulesGitignored(projectRoot, machineSpecific);
+  if (current === body) return 'unchanged';
   writeFileSync(filePath, body);
   return 'updated';
 }
@@ -115,6 +153,7 @@ export function removeClaudeRules({ projectRoot, dryRun = false } = {}) {
   if (!isOwned(text)) return 'preserved-user-file';
   if (dryRun) return 'dry-run';
   unlinkSync(filePath);
+  setRulesGitignored(projectRoot, false);
   try { rmdirSync(dirname(filePath)); } catch { /* preserve non-empty rules directory */ }
   return 'removed';
 }
