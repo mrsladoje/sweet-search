@@ -40,6 +40,7 @@ const work = path.join(os.tmpdir(), 'r282-exposure', cell, 'work');
 fs.rmSync(work, { recursive: true, force: true }); fs.mkdirSync(work, { recursive: true });
 try {
   if (C.harness === 'cc') {
+    process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = '1'; // as the bench (no memory in a benchmark)
     const wr = await im('scripts/write-claude-rules.js');
     const lean = await im('scripts/install-claude-lean-harness.js');
     const proj = path.join(work, 'repo'), home = path.join(work, 'home');

@@ -99,6 +99,11 @@ const CELLS = {
 };
 const CELL_NAME = process.env.CELL;
 const CELL = CELLS[CELL_NAME];
+// No memory in any benchmarked harness (owner, 2026-10-05): a memory saved in one rollout would carry
+// facts into later rollouts. Claude Code: auto memory off in both arms (the sweet installer reads
+// process.env, so the product's agent file drops its memory section too). Codex: features.memories=false
+// in both arms. opencode has no memory store. assertNoMemory fails a rollout that finds one anyway.
+if (CELL?.harness === 'cc') process.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY = '1';
 if (!CELL) { console.error(`CELL must be one of: ${Object.keys(CELLS).join(', ')}`); process.exit(2); }
 const PRICE = priceFor(CELL.price);
 
@@ -542,6 +547,7 @@ async function runClaude(probe, sweet, arm) {
   let r = await once(); let p = parseClaudeStream(r.stdout); let startRetried = false;
   if (isZeroCallStartFailure(r, p.toolCalls, p.answer) && !p.accountFatal) { startRetried = true; r = await once(); p = parseClaudeStream(r.stdout); }
   if (p.accountFatal) throw Object.assign(new Error(`ACCOUNT FATAL: ${p.accountFatal}`), { fatal: true });
+  assertNoMemory(home, cwd);
   const wallMs = Date.now() - t0;
   // Sidechain-inclusive cost (the task-bench contract): main context + every subagent transcript.
   const main = selectClaudeMainCosts({ streamTurns: p.turns, transcriptTurns: turnsFromTranscript(home, p.sessionId), resultUsage: p.resultUsage, price: PRICE });
@@ -632,6 +638,16 @@ function codexRolloutTurns(home, stdout) {
     return file ? turnsFromRollout(file) : [];
   } catch { return []; }
 }
+// Any memory a harness saved: Claude Code <home>/projects/*/memory/*, Codex <home>/memories/*, and
+// MEMORY.md / CLAUDE.md / AGENTS.md / GEMINI.md written into the clone. Throws so the rollout is an error row.
+function assertNoMemory(home, cwd) {
+  const found = [];
+  const list = (d) => { try { return fs.readdirSync(d, { withFileTypes: true }); } catch { return []; } };
+  for (const p of list(path.join(home, 'projects'))) for (const f of list(path.join(home, 'projects', p.name, 'memory'))) found.push(path.join('projects', p.name, 'memory', f.name));
+  for (const f of list(path.join(home, 'memories'))) found.push(path.join('memories', f.name));
+  for (const f of ['MEMORY.md', 'CLAUDE.md', 'AGENTS.md', 'GEMINI.md', '.claude/CLAUDE.md']) if (fs.existsSync(path.join(cwd, f))) found.push(`clone:${f}`);
+  if (found.length) throw new Error(`MEMORY FOUND (no memory allowed in a benchmark): ${found.join(', ')}`);
+}
 async function runCodex(probe, sweet, arm) {
   const cwd = probe._cwd;
   const { home, phome } = codexHome();
@@ -642,12 +658,13 @@ async function runCodex(probe, sweet, arm) {
   const env = { ...baseEnv(sweet, cwd, arm), CODEX_HOME: home, HOME: phome, SS_READ_GUTTER: gutterFor(arm) };
   delete env.OPENAI_API_KEY;
   const args = ['exec', '--dangerously-bypass-approvals-and-sandbox', '--skip-git-repo-check', '--json',
-    '-c', `model_reasoning_effort="${CELL.effort}"`, ...trimArgs, '-m', CELL.model, '-C', cwd, '-'];
+    '-c', `model_reasoning_effort="${CELL.effort}"`, '-c', 'features.memories=false', ...trimArgs, '-m', CELL.model, '-C', cwd, '-'];
   const t0 = Date.now();
   const once = () => spawnWithTimeout(path.join(BIN.codex, 'codex'), args, { cwd, env, timeoutMs: TIMEOUT_MS, stdinText: promptFor(probe) });
   let r = await once(); let p = parseCodexAgentStream(r.stdout); let startRetried = false;
   if (isZeroCallStartFailure(r, p.toolCalls, p.answer)) { startRetried = true; r = await once(); p = parseCodexAgentStream(r.stdout); }
   codexSyncAuthBack(home);
+  assertNoMemory(home, cwd);
   fs.rmSync(stateDir, { recursive: true, force: true });
   const errText = p.errors.join(' ');
   if (/refresh token|usage limit|log ?in|unauthorized|401/i.test(errText) && !p.toolCalls.length) throw Object.assign(new Error(`ACCOUNT FATAL: ${errText.slice(0, 200)}`), { fatal: true });
@@ -753,6 +770,7 @@ async function runOpencode(probe, sweet, arm) {
   let r = await once(); let p = parseOpencodeStream(r.stdout); let startRetried = false;
   if (isZeroCallStartFailure(r, p.toolCalls, p.answer)) { startRetried = true; r = await once(); p = parseOpencodeStream(r.stdout); }
   if (CELL.ocAuth) ocSyncAuthBack(ocData, CELL.ocAuth);
+  assertNoMemory(path.join(STATE, `oc-home-${ocDir}`), cwd); // opencode keeps no memory store; this checks the clone
   const trimReport = path.join(stateDir, P.OPENCODE_TRIM_REPORT);
   const trimApplied = trim.mode ? fs.existsSync(trimReport) : null;
   fs.rmSync(stateDir, { recursive: true, force: true });
