@@ -241,8 +241,8 @@ async function removeIfPresent(file) {
  * Move a database and its sidecars `fromPath*` → `toPath*`, recording each done
  * rename in `moved` so a failure can undo them.
  */
-async function moveDatabaseFiles(fromPath, toPath, moved) {
-  for (const ext of DB_FILES) {
+async function moveDatabaseFiles(fromPath, toPath, moved, { mainLast = false } = {}) {
+  for (const ext of mainLast ? [...SQLITE_SIDECARS, ''] : DB_FILES) {
     if (!existsSync(fromPath + ext)) continue;
     await fs.rename(fromPath + ext, toPath + ext);
     moved.push([fromPath + ext, toPath + ext]);
@@ -258,8 +258,23 @@ async function moveDatabaseFiles(fromPath, toPath, moved) {
 async function swapOnce(tmpPath, finalPath, bakPath) {
   // A backup with no database beside it is the only copy (a swap stopped
   // between its two moves): put it back before anything else.
+  // Sidecars first and the database last, all or nothing: a database put back without
+  // its -wal would lose the committed pages the WAL holds, and the stale-backup removal
+  // below would then delete them.
   if (!existsSync(finalPath) && existsSync(bakPath)) {
-    await moveDatabaseFiles(bakPath, finalPath, []);
+    const restored = [];
+    try {
+      await moveDatabaseFiles(bakPath, finalPath, restored, { mainLast: true });
+    } catch (err) {
+      for (const [from, to] of restored.reverse()) {
+        try {
+          await fs.rename(to, from);
+        } catch (undoErr) {
+          logError(`CRITICAL: backup restore failed and could not undo ${to} -> ${from}: ${undoErr.message}`);
+        }
+      }
+      throw err;
+    }
   }
   // Any other backup is stale. A file that cannot be removed fails the swap
   // here, before anything moved.

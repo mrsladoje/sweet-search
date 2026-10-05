@@ -63,10 +63,16 @@ export function declaredTypeIn(text, name, filePath) {
 }
 
 // Comments are no code: `// Act` above `_builder.Add()` is no `Act _builder`.
+const SINGLE_QUOTE_STRING_FILE = /\.(?:py|pyi|[cm]?[jt]sx?|rb|php)$/i;
+// String contents are no code either: `puts("{ Foo client;")` declares no `client`.
 function stripComments(text, filePath) {
+  // Triple-quoted blocks first (Python, Kotlin, Scala, Swift, Java text blocks), then
+  // one-line strings; `'…'` is a string in Python, JS/TS, Ruby and PHP only.
+  let t = text.replace(/"""[\s\S]*?"""|'''[\s\S]*?'''/g, '""').replace(/"(?:[^"\\\n]|\\.)*"/g, '""');
+  if (SINGLE_QUOTE_STRING_FILE.test(String(filePath || ''))) t = t.replace(/'(?:[^'\\\n]|\\.)*'/g, "''");
   return PY_FILE.test(String(filePath || ''))
-    ? text.replace(/#.*$/gm, '')
-    : text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:"'\\])\/\/.*$/gm, '$1');
+    ? t.replace(/#.*$/gm, '')
+    : t.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:"'\\])\/\/.*$/gm, '$1');
 }
 
 // Every pattern is compiled once and captures the declared name(s); a match
@@ -87,7 +93,7 @@ const TF_BUILT = new RegExp(`(?<![\\w.$])var\\s+(${ID})\\s*=\\s*new\\s+((?:${ID}
 const TF_UNTYPED = new RegExp(`(?<![\\w.$])(?:var|final|dynamic)\\s+(${ID})\\b|(?<![\\w.$])(${ID})\\s*(?:->|=>)|\\(\\s*(${ID}(?:\\s*,\\s*${ID})*)\\s*\\)\\s*(?:->|=>)`, 'g');
 // Kotlin / TS / Swift / Rust / Scala / Python: `b: Foo`, `b: &mut Foo`, `inout b: Foo`, `_ db: Database`
 // after `(`, `,`, line start or a binding keyword — not `x ? b : Foo`, `{ b: Foo }`, `f(b: Foo.x)`.
-const COLON_TYPED = new RegExp(`(?:^|[(,])\\s*(?:(?:val|var|let|const|mut|lateinit|readonly|private|public|protected|internal|override|inout|final|ref|${ID})[ \\t]+)*(${ID})\\s*\\??\\s*:\\s*(?:&\\s*(?:'\\w+\\s+)?(?:mut\\s+)?|inout\\s+|\\*)?((?:${ID}\\.)*)([A-Z]\\w*)(${GENERICS})?(?!\\s*[.([\\w])`, 'gm');
+const COLON_TYPED = new RegExp(`(?:^|[(,])\\s*(?:(?:val|var|let|const|mut|lateinit|readonly|private|public|protected|internal|override|inout|final|ref|${ID})[ \\t]+)*(${ID})\\s*\\??\\s*:\\s*(?:&\\s*(?:'\\w+\\s+)?(?:mut\\s+)?|inout\\s+|\\*)?((?:${ID}\\.)*)([A-Z]\\w*)(${GENERICS})?(?![ \\t]*[.([\\w])`, 'gm');
 const BIND = '\\b(?:val|var|let|const)\\s+(?:mut\\s+)?';
 // Construction: Kotlin/Swift/Scala `val b = Foo(`, TS `const b = new Foo(`, Rust `let b = Foo {`.
 const CTOR_KSS = new RegExp(`${BIND}(${ID})\\s*=\\s*((?:${ID}\\.)*[A-Z]\\w*)\\s*\\(`, 'g');

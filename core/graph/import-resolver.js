@@ -846,6 +846,8 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
       if (src === null) return null;
       // `crate::Item` lives in (or is re-exported by) the crate root; a
       // deeper path whose module file is missing stays unresolved.
+      // `crate` alone (the module of `crate::load()`) is the crate root.
+      if (segs.length === 1) return rustCrateRootFile(src);
       return rustModuleFile(src, segs.slice(1)) || (segs.length === 2 ? rustCrateRootFile(src) : null);
     }
     if (head === 'self' || head === 'super') {

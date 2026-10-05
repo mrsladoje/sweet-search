@@ -281,7 +281,9 @@ function scalaEndLine(lines, startIndex, braceEnd) {
     const next = String(lines[j] || '');
     const continues = indentOf(next) > base
       ? /^\s*(?:(?:extends|with|derives)\b|[:(\[{])/.test(next)
-      : indentOf(next) === base && /^\s*\{/.test(next); // the body's `{` on its own line
+      // Same indent: the body's `{` on its own line, or `extends` / `with` / `derives`
+      // (never a statement start, so the header still goes on).
+      : indentOf(next) === base && /^\s*(?:\{|(?:extends|with|derives)\b)/.test(next);
     if (j < lines.length && continues) {
       i = j - 1;
       continue;
@@ -2210,9 +2212,11 @@ export class GraphExtractor {
           // serializeCookie(…)` in setCookie was listed as its caller).
           // Only under a span that closed before the file end: one that runs to the
           // end may be an unbalanced guess (CMake `function(x)` … `endfunction()` has
-          // no braces) and would swallow the file's real top-level values.
+          // no braces) and would swallow the file's real top-level values; a `}` on the
+          // last line (a file with no final newline) is a real close.
           if (enclosing && REGEX_LOCAL_STATE_TYPES.has(type) && REGEX_FUNCTION_SCOPE_TYPES.has(enclosing.type)
-            && lineNum > enclosing.start_line && enclosing.end_line < lines.length) break;
+            && lineNum > enclosing.start_line
+            && (enclosing.end_line < lines.length || /^\s*\}/.test(lines[enclosing.end_line - 1] || ''))) break;
           const parentClass = !langInfo.endKeyword && enclosing
             && REGEX_CONTAINER_TYPES.has(enclosing.type) ? enclosing.name : null;
           const { id: entityId, duplicate } = this.entityId(filePath, type, name, {

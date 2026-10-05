@@ -50,6 +50,8 @@ export function trustedCallerEdge(edge, target, namesakes = null) {
   // cannot reach it (dgraph zero's `s.Node.proposeAndWait` listed as a caller of worker's
   // node.proposeAndWait).
   if (goPackagePrivateFrom(edge.filePath, target)) return false;
+  // A private member is reachable only from its own file (a C# partial type: its own type).
+  if (privateFrom(edge, target)) return false;
   // Resolution already bound this call to ANOTHER definition (a different
   // file or owning type): `database.statementDidFail` → Database's method is
   // not a caller of DatabaseObservationBroker.statementDidFail. Same file and
@@ -102,6 +104,20 @@ function rustMethodCallOnFreeFunction(targetName, entity) {
   if (!/\.rs$/.test(String(entity?.filePath || '')) || entity?.parentClass) return false;
   if (!/(?:^|[^:])\.[A-Za-z_]\w*$/.test(raw) || raw.includes('::')) return false;
   return entity.type === 'function';
+}
+
+// Not PHP: a trait's private method is callable from every class that uses the trait,
+// and the caller check here cannot see the owner's kind.
+const PRIVATE_DECL_FILE = /\.(?:swift|kt|kts|java|cs|ts|tsx|mts|cts|scala)$/i;
+
+/** True when `target` is declared `private`/`fileprivate` and the caller is in another file and type. */
+export function privateFrom(edge, target) {
+  const file = String(target?.filePath || '');
+  if (!edge?.filePath || edge.filePath === file || !PRIVATE_DECL_FILE.test(file)) return false;
+  if (edge.parentClass && target.parentClass && edge.parentClass === target.parentClass) return false;
+  const sig = String(target.signature || '');
+  const at = target.name ? sig.indexOf(target.name) : -1;
+  return /(?:^|\s)(?:fileprivate|private)(?![\w([])/.test(at >= 0 ? sig.slice(0, at) : sig.split('(')[0]);
 }
 
 /** True when `target` is a Go method or function unexported from its package and `fromFile` is in another one. */

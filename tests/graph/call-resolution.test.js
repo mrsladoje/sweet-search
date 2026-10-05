@@ -79,8 +79,9 @@ describe('narrowCallCandidates', () => {
     expect(narrowCallCandidates([loads], 'serializers', caller, idx).map(c => c.id)).toEqual(['l']);
     // Go: package qualifier = directory name.
     const join = ent('j', 'Join', 'internal/paths/join.go', 1, 4);
-    expect(narrowCallCandidates([join], 'filepath', caller, idx)).toEqual([]);
-    expect(narrowCallCandidates([join], 'paths', caller, idx).map(c => c.id)).toEqual(['j']);
+    const goCaller = ent('g', 'handler', 'cmd/main.go', 1, 9);
+    expect(narrowCallCandidates([join], 'filepath', goCaller, idx)).toEqual([]);
+    expect(narrowCallCandidates([join], 'paths', goCaller, idx).map(c => c.id)).toEqual(['j']);
   });
 
   it('prefers a definition in a file the caller imports', () => {
