@@ -18,7 +18,7 @@ import { classifyIntent, getIntentPolicy } from '../query/intent-router.js';
 import { applyFileKindRanking, applyResultDemotions, classifyFileKindIntent } from '../ranking/file-kind-ranking.js';
 import { recordQueryTelemetry } from '../embedding/embedding-cache.js';
 import { expandAliases } from './dedup/sibling-expander.js';
-import { capToFinalK } from './final-k.js';
+import { capToFinalK, pinNarrowTop1 } from './final-k.js';
 import { dedupeIdenticalSpans } from './span-dedupe.js';
 import { applyFinalListMMR, SPAN_MMR_WEIGHTS, CONTENT_MMR_WEIGHTS } from '../ranking/mmr.js';
 import { refrontPins } from './body-lexical.js';
@@ -989,6 +989,13 @@ export async function applyPostRetrieval(results, query, options, searchContext)
     const __t_shape = __ptStart();
     results = shapeFinalList(results, { k: finalK, format: options.format, ablations: options.ablations, stats });
     __ptEnd('post:shapeFinalList', __t_shape);
+  }
+  // Agent formats seed a wider pool than k (AGENT_SEED_POOL_MIN, final-k.js); rank 1 stays what
+  // the first k seeds ranked first.
+  if (AGENT_FORMATS.has(options.format) && Array.isArray(results)) {
+    const pinned = pinNarrowTop1(results, finalK);
+    if (pinned !== results) stats.narrowTop1Pinned = true;
+    results = pinned;
   }
 
   // Final-k cut. Graph expansion (above) appends neighbours after the seed

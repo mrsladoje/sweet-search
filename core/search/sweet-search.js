@@ -45,6 +45,9 @@ import * as postprocess from './search-postprocess.js';
 import * as pattern from './search-pattern.js';
 import { packageForAgent } from './context-expander.js';
 import { seedPoolSize } from './final-k.js';
+
+const AGENT_SEARCH_FORMATS = new Set(['agent', 'agent_preview', 'agent_full', 'agent_full_xl']);
+const isAgentSearchFormat = (format) => AGENT_SEARCH_FORMATS.has(format);
 import { beginPinnedRead, endPinnedRead } from './search-reader-pin.js';
 
 export { ROUTE_ALPHAS } from './search-fusion.js';
@@ -771,7 +774,7 @@ export class SweetSearch {
           // Seed pool (== k by default; see final-k.js for why a wider pool is
           // opt-in). Graph expansion + cascade rerank run on this pool and
           // applyPostRetrieval cuts the final list back to k.
-          k: seedPoolSize(k),
+          k: seedPoolSize(k, { agentFormat: isAgentSearchFormat(options.format) }),
           useLateInteraction,
           format: options.format,
           routing,
@@ -796,6 +799,9 @@ export class SweetSearch {
           _fileKindCache,
         });
         results = hybridResult.results || hybridResult;
+        // Seed order before graph expansion and rerank: the final list keeps what the first k
+        // seeds would have put first (pinNarrowTop1, agent formats).
+        if (Array.isArray(results)) results = results.map((r, i) => ({ ...r, seedRank: i }));
         semanticStats = hybridResult.semanticStats || null;
         stats.path = 'hybrid';
         stats.fusion = hybridResult.fusionStats?.method || 'cc';
