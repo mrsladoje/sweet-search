@@ -103,17 +103,36 @@ export function looksLikeIdentifierToken(token) {
  * Pull literal runs out of a user regex (ss-find / ss-grep patterns):
  * unescape metachar escapes, drop anchors, split on regex syntax, keep
  * word-ish runs of length ≥ 3. "\\bChunkerParams\\b" → ["ChunkerParams"].
+ *
+ * A plain lowercase word followed by whitespace and more of the same
+ * alternative qualifies what comes after it (`def name`, `function name`,
+ * `return null`): it is the declaration or statement keyword, not the
+ * thing searched for, so it is not a run. Shape rule, no keyword list.
  */
 export function regexLiteralRuns(regexSource) {
   if (!regexSource) return [];
   const unescaped = String(regexSource)
-    .replace(/\\[bBdDsSwWAZz]/g, ' ')       // char-class/anchor escapes → separator
+    .replace(/\\s[+*?]?/g, ' ')              // \s, \s+ → a space (kept: it marks a qualifier)
+    .replace(/\\[bBdDSwWAZz]/g, '\u0000')    // other class/anchor escapes → separator
     .replace(/\\([^A-Za-z0-9])/g, '$1');    // \. \( … → literal char
-  const runs = unescaped.split(/[\^$.|?*+()[\]{}<>=!,\s]+/);
+  const SEP = /[\^$.|?*+()[\]{}<>=!,\s\u0000]/;
   const out = [];
-  for (const run of runs) {
+  let i = 0;
+  const n = unescaped.length;
+  while (i < n) {
+    if (SEP.test(unescaped[i])) { i++; continue; }
+    let j = i;
+    while (j < n && !SEP.test(unescaped[j])) j++;
+    const run = unescaped.slice(i, j);
+    // Rest of this alternative after the run: a qualifier needs whitespace right
+    // after it and something searchable before the next `|`.
+    let k = j;
+    while (k < n && unescaped[k] !== '|') k++;
+    const rest = unescaped.slice(j, k);
+    const qualifier = /^[a-z]+$/.test(run) && /^\s/.test(rest) && /[^\s\u0000]/.test(rest);
     const trimmed = run.replace(/^[-:/\\]+|[-:/\\]+$/g, '');
-    if (trimmed.length >= 3 && /[A-Za-z]/.test(trimmed)) out.push(trimmed);
+    if (!qualifier && trimmed.length >= 3 && /[A-Za-z]/.test(trimmed)) out.push(trimmed);
+    i = j;
   }
   return out;
 }
@@ -191,6 +210,15 @@ export function extractQueryEvidence(query, regex) {
   const push = (tok) => {
     if (tok && tok.length >= 3 && !seen.has(tok)) { seen.add(tok); anchors.push(tok); }
   };
+
+  // ss-grep sends its pattern as both query and regex. Regex source is not
+  // prose: splitting it on spaces keeps `a|b` alternations whole and takes
+  // `def`/`function` keywords as anchors. Read it only as a regex.
+  if (regex && q === String(regex)) {
+    const runs = regexLiteralRuns(regex);
+    for (const run of runs) push(run);
+    return { anchors, subtokens: informativeSubtokens(runs.join(' ')) };
+  }
 
   // Quoted literals (error strings, config keys) — strongest anchors.
   const quoteRe = /"([^"\n]{3,120})"|'([^'\n]{3,120})'|`([^`\n]{3,120})`/g;
