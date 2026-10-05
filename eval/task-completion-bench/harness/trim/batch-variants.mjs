@@ -94,6 +94,10 @@ const CODEX_YIELD_TEMPLATE4 = CODEX_YIELD_TEMPLATE3.replace(
 const CODEX_READ_BATCH3 = CODEX_READ_BATCH2 + ' When you are not sure of a name or where it lives, search for several likely names in one command.';
 const CODEX_SAME_FAILURE = '- If a failure stays the same after two different fixes, find out what the failing check requires before you edit again.';
 const CODEX_BASE = `${CODEX_PAR}\n${CODEX_CHAIN}`;
+// GPT-6.1 Sol stock line (codex 0.159.2 base instructions, verbatim): the code-mode batching method
+// that the shipped 0.146.1-based text lacks (2026-10-05: stock-prompt sessions batch with
+// Promise.allSettled, the product only with `;` inside one exec_command).
+const CODEX_SOL_ALLSETTLED = '- Batch independent searches and reads in one functions.exec using await Promise.allSettled([...]); inspect every result. Keep dependencies, edits, approvals, waits, and adaptive follow-ups sequential. Avoid unnecessary output.';
 export const CODEX_BATCH_VARIANTS = Object.freeze({
   unchain: CODEX_PAR,
   dep: `${CODEX_PAR}\n- ${dep('shell')}`,
@@ -121,6 +125,8 @@ export const CODEX_BATCH_VARIANTS = Object.freeze({
   yt3batch2: `${CODEX_BASE}\n${CODEX_YIELD_TEMPLATE3}\n${CODEX_READ_BATCH2}`,
   yt3batch2w: `${CODEX_BASE}\n${CODEX_YIELD_TEMPLATE3}\n${CODEX_READ_BATCH2}`, // + CODEX_TEXT_EDITS.yt3batch2w
   yt3batch3: `${CODEX_BASE}\n${CODEX_YIELD_TEMPLATE4}\n${CODEX_READ_BATCH3}\n${CODEX_SAME_FAILURE}`,
+  // yt3batch2sol (2026-10-05): the shipped yt3batch2 plus the Sol stock Promise.allSettled line.
+  yt3batch2sol: `${CODEX_BASE}\n${CODEX_SOL_ALLSETTLED}\n${CODEX_YIELD_TEMPLATE3}\n${CODEX_READ_BATCH2}`,
 });
 // yt3batch2w (audit cx-audit2 + owner, 2026-09-29): yt3batch2 plus two rewordings (no deletion) of the
 // stock 60-second lines, so they stop contradicting the long-command cell form while keeping the
