@@ -800,8 +800,8 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 ### 📖 Read the code, see what you skipped
 > Give `ss-read` a file and a line range. It reads from disk, so the code is always current, and it names what the agent has not read yet.
 
-<table>
-<tr><td valign="top">
+<table width="100%">
+<tr><td width="100%" valign="top">
 
 **🧭 Above, below, already read**
 
