@@ -153,15 +153,21 @@ function boundaryScore(entity, queryEvidence, parentClass, gap) {
 }
 
 // Comments and string literals (block, line, triple-quoted, quoted, template). A name that
-// only appears in them is mentioned, not used.
-const COMMENT_OR_STRING_RE = /\/\*[\s\S]*?\*\/|"""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`|\/\/[^\n]*|#[^\n]*/g;
+// only appears in them is mentioned, not used. `#` starts a comment only at a line start or
+// after a space (not JS `this.#private()`), and never as an attribute (`#[derive]`, `#![...]`).
+const COMMENT_OR_STRING_RE = /\/\*[\s\S]*?\*\/|"""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\\n])*"|'(?:\\.|[^'\\\n])*'|`(?:\\.|[^`\\])*`|\/\/[^\n]*|(?<=^|\s)#(?![[!])[^\n]*/gm;
+// The same without single-quoted literals: in Rust and OCaml `'a` is a lifetime / type variable,
+// and two of them on one line would pair up as a string.
+const COMMENT_OR_STRING_NO_SQ_RE = new RegExp(COMMENT_OR_STRING_RE.source.replace(`|'(?:\\\\.|[^'\\\\\\n])*'`, ''), 'gm');
+const TICK_IS_NO_QUOTE_RE = /\.(?:rs|mli?)$/i;
 
-/** The code with its comments and string literals blanked. */
-export function codeWithoutCommentsAndStrings(code) {
-  return String(code || '').replace(COMMENT_OR_STRING_RE, ' ');
+/** The code with its comments and string literals blanked (`file` picks the quote rules). */
+export function codeWithoutCommentsAndStrings(code, file = '') {
+  const re = TICK_IS_NO_QUOTE_RE.test(String(file || '')) ? COMMENT_OR_STRING_NO_SQ_RE : COMMENT_OR_STRING_RE;
+  return String(code || '').replace(re, ' ');
 }
 
-function bodySiblingScore(entity, code) {
+function bodySiblingScore(entity, code, file = '') {
   const candidateTokens = [...informativeSubtokens(entity?.name)]
     .filter((token) => !BODY_REFERENCE_GENERIC_TOKENS.has(token));
   if (candidateTokens.length < 2 || !code) return 0;
@@ -169,7 +175,7 @@ function bodySiblingScore(entity, code) {
   // A sibling named only in an error message or a comment is no reference (GRDB:
   // asyncConcurrentRead's precondition text "use DatabasePool.writeWithoutTransaction
   // instead" printed writeWithoutTransaction, 141 lines below, as its continuation).
-  for (const [identifier] of codeWithoutCommentsAndStrings(code).matchAll(IDENTIFIER_RE)) {
+  for (const [identifier] of codeWithoutCommentsAndStrings(code, file).matchAll(IDENTIFIER_RE)) {
     if (++inspected > 256) break;
     const referenceTokens = informativeSubtokens(identifier);
     let overlap = 0;
@@ -213,7 +219,7 @@ function findBoundaryContinuation(results, query, regex, codeGraphRepo) {
       if (overlapsShown(candidate, results)) return [];
       const namedScore = gap <= MAX_BOUNDARY_GAP_LINES
         ? boundaryScore(entity, evidence, parentClass, gap) : 0;
-      const referencedScore = result.rank === 1 ? bodySiblingScore(entity, result.code) : 0;
+      const referencedScore = result.rank === 1 ? bodySiblingScore(entity, result.code, result.file) : 0;
       const score = Math.max(namedScore, referencedScore);
       // Past the boundary gap only a body reference can have chosen it: it is no continuation.
       return score > 0 ? [{ trigger: result, entity, score, gap, referenced: gap > MAX_BOUNDARY_GAP_LINES }] : [];

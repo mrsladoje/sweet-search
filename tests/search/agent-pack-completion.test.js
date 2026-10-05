@@ -530,3 +530,12 @@ describe('referenced sibling: code use only, and labelled as a reference (2026-1
     expect(cont).toMatchObject({ symbol: 'writeWithoutTransaction', startLine: 150, referenced: true });
   });
 });
+describe('codeWithoutCommentsAndStrings', () => {
+  it('blanks comments and strings but keeps JS private calls, Rust attributes and lifetimes', async () => {
+    const { codeWithoutCommentsAndStrings: blank } = await import('../../core/search/agent-pack-completion.js');
+    expect(blank('this.#writeWithoutTransaction() # py note')).toContain('this.#writeWithoutTransaction()');
+    expect(blank('#[derive(Debug)]\nstruct A')).toContain('#[derive(Debug)]');
+    expect(blank("fn f<'a>(x: &'a str) -> &'a str { foo(x) } // writeX", 'src/a.rs')).toBe("fn f<'a>(x: &'a str) -> &'a str { foo(x) }  ");
+    expect(blank("x = 'writeA' + \"writeB\" + writeC()  # writeD", 'a.py')).toBe('x =   +   + writeC()   ');
+  });
+});
