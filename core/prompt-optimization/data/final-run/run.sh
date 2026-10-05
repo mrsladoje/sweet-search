@@ -48,8 +48,14 @@ if [ -n "${FR_REPS:-}" ]; then
   OPENAI_STEPS=(); CLAUDE_STEPS=()
   for ((r = 1; r <= FR_REPS; r++)); do
     OPENAI_STEPS+=("codex-sol61-high $r native,sweet interleave" "oc-sol61-high $r native,sweet interleave")
-    if [ $((r % 2)) = 1 ]; then CLAUDE_STEPS+=("cc-opus55-medium $r sweet seq" "cc-opus55-medium $r native seq")
-    else CLAUDE_STEPS+=("cc-opus55-medium $r native seq" "cc-opus55-medium $r sweet seq"); fi
+  done
+  # Claude cells run one after another (all reps of a cell, then the next cell); FR_CELLS selects them.
+  for cc in $FR_CELLS; do
+    [[ "$cc" == cc-* ]] || continue
+    for ((r = 1; r <= FR_REPS; r++)); do
+      if [ $((r % 2)) = 1 ]; then CLAUDE_STEPS+=("$cc $r sweet seq" "$cc $r native seq")
+      else CLAUDE_STEPS+=("$cc $r native seq" "$cc $r sweet seq"); fi
+    done
   done
 fi
 in_cells() { case " $FR_CELLS " in *" $1 "*) return 0;; *) return 1;; esac; }
