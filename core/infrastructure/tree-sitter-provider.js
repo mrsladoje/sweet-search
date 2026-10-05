@@ -376,6 +376,14 @@ const OCAML_RESCRIPT_BINDING_WRAPPERS = {
 //     typed configs). Scoped to export_statement on purpose: we don't want to
 //     extract every internal `const x = 1` inside a function body. Tree-sitter
 //     emits @arrowFunction in priority over @variable when value is an arrow.
+// Call sites read from the tree, for languages whose calls have no `name(`
+// shape for the line scanner (call-site-scanner.js): OCaml applies a function
+// by juxtaposition (`parse_list (s :: acc) xs`, `Unescape.unescape (lexeme b)`),
+// so its graph stored no calls at all. The called value is the first child.
+const AST_CALL_QUERIES = {
+  ocaml: '(application_expression . (value_path) @call)',
+};
+
 const TAGS_QUERIES = {
   javascript: `
     (function_declaration name: (identifier) @function.definition)
@@ -719,8 +727,11 @@ const TAGS_QUERIES = {
     (operator_definition name: (identifier) @function.definition)
   `,
   // OCaml (tree-sitter-ocaml) — names nested in the *_binding child.
+  // Only file- and module-level lets: a `let … in` inside a body is a local
+  // value (yojson parser.ml `let s = …` became a top-level function).
   ocaml: `
-    (value_definition (let_binding (value_name) @function.definition))
+    (compilation_unit (value_definition (let_binding (value_name) @function.definition)))
+    (structure (value_definition (let_binding (value_name) @function.definition)))
     (type_definition (type_binding (type_constructor) @type.definition))
     (module_definition (module_binding (module_name) @namespace.definition))
   `,
@@ -1439,6 +1450,17 @@ export class TreeSitterProvider {
       }
 
       symbols.hasParseError = tree.rootNode.hasError;
+      const callQueryString = AST_CALL_QUERIES[languageId];
+      if (callQueryString) {
+        this._callQueryCache ||= new WeakMap();
+        let callQuery = this._callQueryCache.get(language);
+        if (!callQuery) {
+          callQuery = await this._createQuery(language, callQueryString);
+          this._callQueryCache.set(language, callQuery);
+        }
+        symbols.calls = callQuery.captures(tree.rootNode)
+          .map(({ node }) => ({ line: node.startPosition.row + 1, name: node.text.replace(/\s+/g, '') }));
+      }
       return symbols;
     } catch {
       return null;

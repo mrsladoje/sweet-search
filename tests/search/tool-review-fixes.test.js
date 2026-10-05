@@ -768,3 +768,65 @@ describe('round 11 — chained calls on deep or parenthesised receivers', () => 
     expect(scan('java', 'if (x).y(')).toEqual([]);
   });
 });
+
+describe('round 11 — OCaml calls, Scala/Lua spans, local values', () => {
+  const extract = async (file, src) => new GraphExtractor({}).extractFromFile(file, src.join('\n'));
+  const spans = (r) => r.entities.map((e) => `${e.type} ${e.name} ${e.start_line}-${e.end_line}`);
+
+  it('OCaml: calls by juxtaposition are read from the tree; a local `let … in` is no definition', async () => {
+    const r = await extract('lib/parser.ml', [
+      'let rec parse_list acc = function',
+      '  | [] -> acc',
+      '  | x :: xs -> let s = Unescape.unescape x in parse_list (s :: acc) xs',
+      'and parse = function _ -> parse_list [] []',
+    ]);
+    expect(r.entities.map((e) => e.name)).toEqual(['parse_list', 'parse']);
+    expect(r.relationships.filter((x) => x.type === 'calls').map((x) => `${x.target_name}@${x.context_line}`)).toEqual(['Unescape.unescape@3']);
+    expect((r.callSites || []).filter((c) => c.callee_name === 'parse_list').map((c) => c.context_line)).toEqual([3, 4]);
+  });
+
+  it('Scala: abstract and expression-bodied defs end at their header or indented body; block bodies count braces', async () => {
+    const r = await extract('os/A.scala', [
+      'trait Reader {',
+      '  def readInt(): Int',
+      '  def readLine() = buffered.readLine()',
+      '  def isLink(mode: Int): Boolean =',
+      '    (mode & 1) == 1',
+      '  def bytes: Array[Byte] = synchronized {',
+      '    transfer(a, b)',
+      '  }',
+      '  def /(chunk: String): Reader = this',
+      '}',
+      '@deprecated("this class will be made final", "1")',
+      'case class Point(x: Int, y: Int)',
+    ]);
+    expect(spans(r)).toEqual([
+      'trait Reader 1-10', 'def readInt 2-2', 'def readLine 3-3', 'def isLink 4-5', 'def bytes 6-8', 'def / 9-9', 'class Point 12-12',
+    ]);
+  });
+
+  it('Zig: a `const` inside a function body is local, so the call on its line belongs to the function', async () => {
+    const r = await extract('src/response.zig', [
+      'pub fn setCookie(self: *Response, name: []const u8) !void {',
+      '    const serialized = try serializeCookie(self.arena, name);',
+      '    self.header("Set-Cookie", serialized);',
+      '}',
+      'pub const max = 10;',
+    ]);
+    expect(r.entities.map((e) => e.name)).toEqual(['setCookie', 'max']);
+  });
+
+  it('Lua: an inline `function … end)` does not close the enclosing function', async () => {
+    const r = await extract('busted/execute.lua', [
+      'local function sort(elements)',
+      '  table.sort(elements, function(t1, t2)',
+      "    if t1.name then return t1.name < t2.name end -- end",
+      '    return t2.name ~= nil',
+      '  end)',
+      '  return elements',
+      'end',
+      'local s = [[ function end ]]',
+    ]);
+    expect(spans(r)).toContain('function sort 1-7');
+  });
+});
