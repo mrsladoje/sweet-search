@@ -31,6 +31,7 @@ const TYPE_REF_CALLER_LIMIT = 40;
 // says when a type has more), and the most it knows as the type's own.
 const MEMBER_CALLEE_SOURCES = 200;
 const MEMBER_IDENTITY_LIMIT = 5000;
+const MEMBER_GATHER_BUDGET_MS = 1000;
 const TYPE_REF_IMPORTANCE = 0.5;
 // Rows rank by tier, then importance: calls, then implementations / subtypes (`overrides`,
 // `implements`, `extends`), then signature users. okhttp Interceptor.intercept has ~25
@@ -918,9 +919,14 @@ export class StructuralContextBuilder {
     if (wantsCallees && TYPE_USER_TARGETS.has(target.type) && typeof this.repo.getMemberCallables === 'function') {
       const members = this.repo.getMemberCallables(target, { limit: MEMBER_IDENTITY_LIMIT });
       const own = new Set([target.id, ...members.map(m => m.id)]);
-      const sources = members.slice(0, MEMBER_CALLEE_SOURCES);
       const rows = [];
-      for (const m of sources) {
+      // Bounded: at most MEMBER_CALLEE_SOURCES methods and MEMBER_GATHER_BUDGET_MS; the output
+      // says how many methods were read when that is not all of them.
+      const deadline = performance.now() + MEMBER_GATHER_BUDGET_MS;
+      let read = 0;
+      for (const m of members) {
+        if (read >= MEMBER_CALLEE_SOURCES || (read > 0 && performance.now() > deadline)) break;
+        read++;
         for (const c of [...this.repo.getCallees(m, { limit: 80 }), ...(this.repo.getBareCallees?.(m, { limit: 40 }) || [])]) {
           if (own.has(c.id)) continue;
           // Unresolved rows carry a per-query index in their id: one row per called name.
@@ -931,11 +937,15 @@ export class StructuralContextBuilder {
         calleesRaw = mergeCallSites([...calleesRaw, ...rows])
           .map(x => (callIntoTestTree(target.filePath, x.filePath) ? asUnresolved(x, 0) : x))
           .map(x => ({ ...x, depth: 1 }));
-        memberCount = sources.length;
-        memberTotal = members.length;
+      }
+      if (members.length) {
+        memberCount = read;
+        // At the identity limit the real count is unknown: it is at least that many.
+        memberTotal = members.length >= MEMBER_IDENTITY_LIMIT ? `${MEMBER_IDENTITY_LIMIT}+` : members.length;
       }
     }
-    if (!calleesRaw.length) {
+    // (Not for a type whose methods were read: its body's names are its own methods.)
+    if (!calleesRaw.length && memberCount === 0) {
       // No stored callees: fall back to names called in the body. A qualified
       // name binds only through bindQualifiedHint (own-type receiver, same
       // file); an unqualified name binds to its one free definition.
