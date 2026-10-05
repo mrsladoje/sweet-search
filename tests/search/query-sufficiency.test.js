@@ -46,6 +46,14 @@ describe('regexLiteralRuns', () => {
   it('returns nothing for pure metachar patterns', () => {
     expect(regexLiteralRuns('\\b\\w+\\b')).toEqual([]);
   });
+  it('drops a lowercase keyword that qualifies the rest of its alternative', () => {
+    expect(regexLiteralRuns('def primary_key_lookup|def \\[\\]|fast_pk')).toEqual(['primary_key_lookup', 'fast_pk']);
+    expect(regexLiteralRuns('fn\\s+parse_args')).toEqual(['parse_args']);
+    expect(regexLiteralRuns('function runCleanup')).toEqual(['runCleanup']);
+    // A bare lowercase identifier is still the thing searched for.
+    expect(regexLiteralRuns('lock')).toEqual(['lock']);
+    expect(regexLiteralRuns('lock|unlock')).toEqual(['lock', 'unlock']);
+  });
 });
 
 describe('informativeSubtokens', () => {
@@ -68,6 +76,14 @@ describe('extractQueryEvidence', () => {
     expect(anchors).toContain('unhandled error');
     expect(anchors).toContain('parseConfig');
     expect(anchors).toContain('Default');
+  });
+  it('reads an ss-grep pattern (query === regex) only as a regex', () => {
+    const p = 'def primary_key_lookup|def \\[\\]|fast_pk|def reset_fast_pk_lookup_sql';
+    const { anchors, subtokens } = extractQueryEvidence(p, p);
+    expect(anchors).toEqual(['primary_key_lookup', 'fast_pk', 'reset_fast_pk_lookup_sql']);
+    expect(anchors.some((a) => a.includes('|'))).toBe(false);
+    expect(subtokens.has('def')).toBe(false);
+    expect(subtokens.has('lookup')).toBe(true);
   });
 });
 
