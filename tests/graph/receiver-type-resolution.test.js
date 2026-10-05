@@ -648,3 +648,93 @@ describe('one repo method of a generic API name (many distinct receivers)', () =
     }
   });
 });
+
+describe('a local bound once by a same-file call takes the callee\'s declared return type (composer InstallationManager)', () => {
+  const REPO = {
+    'src/Installer/InstallerInterface.php': [
+      '<?php',
+      'interface InstallerInterface {',
+      '    public function cleanup(string $type, $package);',
+      '}',
+    ],
+    'src/Installer/LibraryInstaller.php': [
+      '<?php',
+      'class LibraryInstaller implements InstallerInterface {',
+      '    public function cleanup(string $type, $package) { return null; }',
+      '}',
+    ],
+    'src/Util/Remover.php': [
+      '<?php',
+      'class Remover {',
+      '    public function cleanup(string $type, $package) { return null; }',
+      '}',
+    ],
+    'src/Installer/InstallationManager.php': [
+      '<?php',
+      'class InstallationManager {',
+      '    public function getInstaller(string $type): InstallerInterface',
+      '    {',
+      '        return $this->installers[$type];',
+      '    }',
+      '    private function getRemover(): array { return []; }',
+      '    public function run($package): void',
+      '    {',
+      '        $installer = $this->getInstaller($package->getType());',
+      '        $cleanups[] = static function () use ($installer, $package) {',
+      '            return $installer->cleanup("x", $package);',
+      '        };',
+      '    }',
+      '    public function rebound($package): void',
+      '    {',
+      '        $installer = $this->getInstaller("a");',
+      '        $installer = $other;',
+      '        $installer->cleanup("x", $package);',
+      '    }',
+      '    public function chained($package): void',
+      '    {',
+      '        $installer = $this->getInstaller("a")->wrap();',
+      '        $installer->cleanup("x", $package);',
+      '    }',
+      '    public function untypedReturn($package): void',
+      '    {',
+      '        $remover = $this->getRemover();',
+      '        $remover->cleanup("x", $package);',
+      '    }',
+      '}',
+    ],
+  };
+
+  it('binds $installer->cleanup to the interface method; a rebinding, a chain or an untyped return keeps no type', async () => {
+    const { dbPath } = await buildGraph(REPO);
+    expect(callTargets(dbPath, 'run')['installer.cleanup']).toBe('src/Installer/InstallerInterface.php#InstallerInterface.cleanup');
+    expect(callTargets(dbPath, 'rebound')['installer.cleanup'] ?? null).not.toBe('src/Installer/InstallerInterface.php#InstallerInterface.cleanup');
+    expect(callTargets(dbPath, 'chained')['installer.cleanup'] ?? null).not.toBe('src/Installer/InstallerInterface.php#InstallerInterface.cleanup');
+    expect(callTargets(dbPath, 'untypedReturn')['remover.cleanup'] ?? null).not.toBe('src/Installer/InstallerInterface.php#InstallerInterface.cleanup');
+  });
+});
+
+describe('headerReturnType', () => {
+  const cases = [
+    ['a.php', '    public function getInstaller(string $type): InstallerInterface', 'getInstaller', 'InstallerInterface'],
+    ['a.php', '    public function find($p): ?\\Composer\\Downloader\\DownloaderInterface', 'find', 'DownloaderInterface'],
+    ['a.php', '    public function all(): array', 'all', null],
+    ['a.php', '    public function withX(): static', 'withX', 'Owner'],
+    ['A.java', '  public Call newCall(Request request) {', 'newCall', 'Call'],
+    ['A.java', '  public List<Foo> all() {', 'all', null],
+    ['A.java', '  void run() {', 'run', null],
+    ['A.kt', '  fun newCall(\n    request: Request,\n  ): Call {', 'newCall', 'Call'],
+    ['a.ts', '  getRepo(id: string): Promise<Repo> {', 'getRepo', null],
+    ['a.ts', '  getRepo(id: string): Repo | null {', 'getRepo', null],
+    ['a.go', 'func (s *Server) load(k string) (*Posting, error) {', 'load', 'Posting'],
+    ['a.go', 'func f() (*pb.Item, error) {', 'f', 'pb.Item'],
+    ['a.py', '    def make(self, x) -> "Builder":', 'make', 'Builder'],
+    ['a.rs', '    fn build(&self) -> Self {', 'build', 'Owner'],
+    ['a.rs', '    fn get(&self) -> Option<Foo> {', 'get', null],
+    ['a.swift', '  func load() throws -> Store {', 'load', 'Store'],
+  ];
+  it.each(cases)('%s %j %s → %s', async (file, header, name, want) => {
+    const { headerReturnType } = await import('../../core/graph/receiver-types.js');
+    const r = headerReturnType(header, name, file, 'Owner');
+    expect(r ? `${r.qualifier ? `${r.qualifier}.` : ''}${r.type}` : null).toBe(want);
+  });
+});
