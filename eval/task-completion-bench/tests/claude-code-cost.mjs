@@ -23,8 +23,7 @@ import {
   CC_HARNESS_TRIM_DEFAULT, CC_TRIM_BATCH_DEFAULT,
 } from '../harness/claude-code-task-runner.mjs';
 import { resolveSweetRulesPlacement, sweetRulesRowFields } from '../harness/sweet-rules-placement.mjs';
-// Rules v2 (default): the shipped override exempts file-name search (CLAUDE_SYSTEM_OVERRIDE_V2).
-import { CLAUDE_SYSTEM_OVERRIDE_V2 as CLAUDE_SYSTEM_OVERRIDE } from '../../../scripts/install-claude-system-prompt.js';
+import { CLAUDE_SYSTEM_OVERRIDE } from '../../../scripts/install-claude-system-prompt.js';
 import { transcriptMetricsFromFile, repOfSlug } from '../harness/claude-code-accounting.mjs';
 import { normalizeReadInput, readHookDecision } from '../harness/claude-read-pages-hook.mjs';
 import { costsFromTurns } from '../harness/agent-runner-shared.mjs';
@@ -410,7 +409,7 @@ assert(trimProduct.mode === 'product' && trimProduct.installLean === true
   for (const rel of [CLAUDE_LEAN_SUBAGENT_REL, CLAUDE_LEAN_PLAN_REL, '.claude/settings.json'])
     assert(read(benchDir, rel) === read(shipDir, rel), `default: ${rel} = the shipped file, byte for byte`);
   const placement = resolveSweetRulesPlacement({ sweet: true, env: {}, harness: 'claude-code' });
-  assert(placement === 'file' && JSON.stringify(sweetRulesRowFields(placement, { sweet: true, env: {} })) === '{"sweetRulesPlacement":"file","sweetRulesPlacementSource":"default","rulesV2":1}',
+  assert(placement === 'file' && JSON.stringify(sweetRulesRowFields(placement, { sweet: true, env: {} })) === '{"sweetRulesPlacement":"file","sweetRulesPlacementSource":"default"}',
     'default: rules stay in .claude/rules (placement file, as init installs them); the row stamps it');
   assert(claudeHarnessTrim('0').mode === null && resolveSweetRulesPlacement({ sweet: false, env: {}, harness: 'claude-code' }) === 'file',
     'native (the runner passes 0) and the explicit opt-out: stock Claude Code');

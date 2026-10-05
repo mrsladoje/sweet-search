@@ -28,6 +28,13 @@
  *   case          sensitive, as rg's -g.
  *
  * DELIBERATE DEVIATIONS from rg (decided, documented):
+ *   0. An include glob whose last segment is no file pattern (no `.` in it: `lib/sequel/model*`,
+ *      `tests`, `lib/*`) also takes every file below a DIRECTORY it matches. In rg,
+ *      `-g 'lib/sequel/model*'` searches lib/sequel/model.rb and nothing in lib/sequel/model/;
+ *      agents almost always mean the directory too, and a silently narrow scope costs a whole
+ *      extra call (r282 sequel-08). The directories taken this way are reported
+ *      (`dirsMatched`), so the output can name them. File patterns (`*.rb`, `lib/*.go`) keep
+ *      rg's file-only rule.
  *   1. Exclusion always wins. rg lets the LAST matching glob decide, so
  *      `-g '!src/**' -g 'src/m.h'` searches src/m.h in rg and nothing here. An agent that
  *      excludes a path means it; order-dependent re-inclusion is a trap, not a feature.
@@ -76,8 +83,11 @@ export function compilePathGlob(raw) {
   // `/` in the body, that is exactly "the last segment matches the body", which is far cheaper
   // to test than `**/body` against the whole path.
   const mm = new Minimatch(body, MINIMATCH_OPTIONS);
+  const lastSegment = body.slice(body.lastIndexOf('/') + 1);
   return {
     raw, exclude, dirOnly, anchored,
+    // Deviation 0: an include that may name a directory (its last segment has no `.`).
+    coversDirs: !exclude && !lastSegment.includes('.'),
     // `path`: whole repo-relative path; `name`: its last segment.
     match: (path, name) => mm.match(anchored ? path : name),
   };
@@ -100,7 +110,10 @@ export function compilePathGlobs(globs) {
   if (list.length === 0) return null;
   const includes = list.filter(g => !g.exclude);
   const excludes = list.filter(g => g.exclude);
+  const dirIncludes = includes.filter(g => g.coversDirs);
   const memo = new Map();
+  // Directories that brought files in through deviation 0 (outermost match per file).
+  const dirsMatched = new Set();
   // Excluded directories, memoised per directory: the files of one directory share the walk.
   const dirMemo = new Map();
   const dirExcluded = (segs, n) => {
@@ -123,11 +136,18 @@ export function compilePathGlobs(globs) {
     if (dirExcluded(segs, segs.length - 1)) return false;
     if (includes.length === 0) return true;
     // Include: the file itself must match (a directory-only include matches no file, as in rg).
-    return includes.some(g => !g.dirOnly && g.match(full, name));
+    if (includes.some(g => !g.dirOnly && g.match(full, name))) return true;
+    // Deviation 0: or a directory above it matches an include that may name a directory.
+    for (let n = 1; n < segs.length && dirIncludes.length; n++) {
+      const dir = segs.slice(0, n).join('/');
+      if (dirIncludes.some(g => g.match(dir, segs[n - 1]))) { dirsMatched.add(dir); return true; }
+    }
+    return false;
   };
   return {
     includes,
     excludes,
+    dirsMatched,
     matches(file) {
       const key = String(file);
       let v = memo.get(key);

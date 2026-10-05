@@ -1,0 +1,1175 @@
+{
+ "version": "final-run-2026-10-03",
+ "purpose": "PLAN.md §7.1 — frozen question set for the final before/after/native comparison (DEV only, no held-out)",
+ "frozenAt": "2026-10-03T13:48:25.020Z",
+ "seed": 42,
+ "method": "mulberry32(42); seeded shuffle + greedy fill under stratum quotas and a per-repo cap; first draw meeting every quota and repo floor (select-questions.mjs)",
+ "sources": {
+  "easy": {
+   "file": "core/prompt-optimization/data/final-tuning/r3/r3-probes.json",
+   "sha256": "ba49df55e86087c113bb44676c909c3fe85c0b83a314d25e3e405e73311fc10a",
+   "manifest": "core/prompt-optimization/data/final-tuning/r3/MANIFEST.json",
+   "pool": "ids.devTrain + ids.devValidation",
+   "poolSize": 60,
+   "afterSmokeExclusion": 60,
+   "drawAttempt": 1,
+   "quota": {
+    "multi-hop": 3,
+    "concept": 2,
+    "enforcement": 2,
+    "locate-explain": 2,
+    "negative": 3
+   },
+   "repoPerRepo": 2
+  },
+  "hard": {
+   "file": "core/prompt-optimization/data/final-tuning/r3/r3-hard-probes.json",
+   "sha256": "09b0ab9f9f8aabfeaf569a52e0acd810445617c1236c5967c2ec31953d70ea4d",
+   "manifest": "core/prompt-optimization/data/final-tuning/r3/MANIFEST-HARD.json",
+   "pool": "ids.dev",
+   "poolSize": 97,
+   "afterSmokeExclusion": 86,
+   "drawAttempt": 2,
+   "quota": {
+    "chain": 3,
+    "completeness": 3,
+    "decoy": 3,
+    "cross-layer": 3,
+    "condition": 3,
+    "negative-decoy": 3
+   },
+   "repoPerRepo": "1-2"
+  },
+  "excludedSmokeIds": {
+   "file": "core/prompt-optimization/data/obs-loop/smoke-ids.txt",
+   "ids": [
+    "r3h-jj-11",
+    "r3hb-grdb-03",
+    "r3h-typedoc-02",
+    "r3hb-okhttp-06",
+    "r3h-dgraph-09",
+    "r3h-ocelot-04",
+    "r3hb-composer-06",
+    "r3hb-drogon-06",
+    "r3hb-grdb-02",
+    "r3hb-drogon-10",
+    "r3h-typedoc-09"
+   ]
+  }
+ },
+ "n": {
+  "easy": 12,
+  "hard": 18,
+  "total": 30
+ },
+ "byStratum": {
+  "easy": {
+   "locate-explain": 2,
+   "negative": 3,
+   "multi-hop": 3,
+   "enforcement": 2,
+   "concept": 2
+  },
+  "hard": {
+   "decoy": 3,
+   "condition": 3,
+   "completeness": 3,
+   "negative-decoy": 3,
+   "chain": 3,
+   "cross-layer": 3
+  }
+ },
+ "byRepo": {
+  "easy": {
+   "r3-dgraph": 2,
+   "r3-jj": 2,
+   "r3-ocelot": 2,
+   "r3-tortoise-orm": 2,
+   "r3-typedoc": 2,
+   "r3-zipkin": 2
+  },
+  "hard": {
+   "r3-dgraph": 2,
+   "r3-jj": 2,
+   "r3-ocelot": 1,
+   "r3-tortoise-orm": 2,
+   "r3-typedoc": 2,
+   "r3-zipkin": 2,
+   "r3-composer": 2,
+   "r3-drogon": 1,
+   "r3-grdb": 2,
+   "r3-okhttp": 1,
+   "r3-sequel": 1
+  },
+  "all": {
+   "r3-dgraph": 4,
+   "r3-jj": 4,
+   "r3-ocelot": 3,
+   "r3-tortoise-orm": 4,
+   "r3-typedoc": 4,
+   "r3-zipkin": 4,
+   "r3-composer": 2,
+   "r3-drogon": 1,
+   "r3-grdb": 2,
+   "r3-okhttp": 1,
+   "r3-sequel": 1
+  }
+ },
+ "noMatchQuestions": [
+  "r3-dgraph-31",
+  "r3-jj-35",
+  "r3-tortoise-orm-36",
+  "r3h-ocelot-24",
+  "r3h-typedoc-23",
+  "r3h-zipkin-23"
+ ],
+ "ids": {
+  "easy": [
+   "r3-dgraph-29",
+   "r3-dgraph-31",
+   "r3-jj-09",
+   "r3-jj-35",
+   "r3-ocelot-03",
+   "r3-ocelot-27",
+   "r3-tortoise-orm-22",
+   "r3-tortoise-orm-36",
+   "r3-typedoc-10",
+   "r3-typedoc-15",
+   "r3-zipkin-02",
+   "r3-zipkin-20"
+  ],
+  "hard": [
+   "r3h-dgraph-12",
+   "r3h-dgraph-21",
+   "r3h-jj-09",
+   "r3h-jj-12",
+   "r3h-ocelot-24",
+   "r3h-tortoise-orm-03",
+   "r3h-tortoise-orm-06",
+   "r3h-typedoc-16",
+   "r3h-typedoc-23",
+   "r3h-zipkin-22",
+   "r3h-zipkin-23",
+   "r3hb-composer-07",
+   "r3hb-composer-11",
+   "r3hb-drogon-01",
+   "r3hb-grdb-07",
+   "r3hb-grdb-11",
+   "r3hb-okhttp-12",
+   "r3hb-sequel-08"
+  ]
+ },
+ "probes": [
+  {
+   "id": "r3-dgraph-29",
+   "repo": "r3-dgraph",
+   "language": "Go",
+   "stratum": "locate-explain",
+   "difficulty": "hard",
+   "query": "Why can't the write-ahead log simply be truncated up to the most recent committed entry, and what decides the safe cut point?",
+   "expectedFiles": [
+    "worker/draft.go"
+   ],
+   "expectedSymbols": [
+    "node.calculateSnapshot",
+    "node.proposeSnapshot"
+   ],
+   "expectedFacts": [
+    "Pre-writes of uncommitted transactions are not persisted in the main store, so their Raft entries must be kept until the transaction commits or aborts.",
+    "calculateSnapshot scans entries and sets the snapshot index just before the first mutation whose start ts is at or above the minimum pending start ts; the minimum is the smaller of the Oracle's MinPendingStartTs and the CDC tracker's oldest unsent ts.",
+    "The snapshot's ReadTs is the maximum commit timestamp seen; no snapshot is made if nothing can be discarded."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 6,
+   "tier": "easy",
+   "author": "r3-dgraph-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: worker/draft.go:1728-1756 doc comment and signature (MUST keep all pending transactions in the Raft logs at 1736; 'we don't persist pre-writes to disk in pstore' at 1734-1735); :1845-1851 `start >= minPendingStart && snapshotIdx == 0 -> snapshotIdx = entry.Index - 1`; :1852-1856 maxCommitTs; :1135 `minPendingStart := x.Min(posting.Oracle().MinPendingStartTs(), n.cdcTracker.getTs())`; :1879-1884 skip if insufficient entries; posting/oracle.go:243-254 MinPendingStartTs.",
+   "repoSha": "6cd03dca3b003dae29df904c0a09667f7edb703b",
+   "set": "easy",
+   "devSplit": "train",
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3-dgraph-31",
+   "repo": "r3-dgraph",
+   "language": "Go",
+   "stratum": "negative",
+   "difficulty": "hard",
+   "query": "How does the server lock a user account after too many consecutive wrong passwords?",
+   "expectedFiles": [],
+   "expectedSymbols": [],
+   "expectedFacts": [
+    "Not implemented: login only runs a query that evaluates checkpwd against the stored hash and returns x.ErrorInvalidLogin on mismatch.",
+    "There is no failure counter, lockout state, or login throttling; the only gate before credential checks is the IP whitelist / auth token in hasAdminAuth."
+   ],
+   "expectedNoMatch": true,
+   "max_turns": 6,
+   "tier": "easy",
+   "author": "r3-dgraph-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION (absence): edgraph/access.go:42-105 Login, :110-159 authenticateLogin (failure -> x.ErrorInvalidLogin at 70/155, no counter), :275-314 authorizeUser (checkpwd query). Greps over *.go/*.proto/*.graphql excluding tests: `lockout|lock.?out|brute.?force` no hits; `failed.{0,10}(login|attempt|auth)|consecutive.{0,15}fail|login.{0,10}(rate|throttl|limit)` only unrelated hits (zero/tablet.go move-failure comments, t/t.go, predicate_acl.go message 'failed to authorize guardians'); `max.*attempts` only test harness files. x/x.go:1529 RateLimiter is used only for UID leases.",
+   "repoSha": "6cd03dca3b003dae29df904c0a09667f7edb703b",
+   "set": "easy",
+   "devSplit": "validation",
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3-jj-09",
+   "repo": "r3-jj",
+   "language": "Rust",
+   "stratum": "multi-hop",
+   "difficulty": "medium",
+   "query": "When I let jj search history for the first commit that breaks my test script, how is each commit's exit code translated into a verdict, and which component chooses the next commit to try?",
+   "expectedFiles": [
+    "cli/src/commands/bisect/run.rs",
+    "lib/src/bisect.rs"
+   ],
+   "expectedSymbols": [
+    "evaluate_commit",
+    "Bisector::next_step"
+   ],
+   "expectedFacts": [
+    "evaluate_commit checks out the candidate commit, runs the command, and maps exit status 0 to Good, 125 to Skip, 127 (command not found) to Abort, and any other nonzero code to Bad.",
+    "Bisector::next_step first returns any pending precondition verifications; otherwise it evaluates candidates().bisect().latest(1), where the candidates are the input range between the good heads and bad roots, minus bad and skipped commits.",
+    "Skipped commits are removed from the candidate set, and the result can be FoundDespiteSkips when skipped commits sit between good and bad."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 6,
+   "tier": "easy",
+   "author": "r3-jj-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: cli/src/commands/bisect/run.rs:334 evaluate_commit (tx.check_out :342; exit mapping :358-365: success Good, Some(125) Skip :362, Some(127) Abort :363, else Bad); loop calls bisector.next_step :158. lib/src/bisect.rs:282 next_step ('self.candidates().bisect().latest(1)' :290; verifications pop after), candidates :261, FoundDespiteSkips :114/:326.",
+   "repoSha": "030ecf22c56b98bf6507067dca0df3dffa6de498",
+   "set": "easy",
+   "devSplit": "validation",
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3-jj-35",
+   "repo": "r3-jj",
+   "language": "Rust",
+   "stratum": "negative",
+   "difficulty": "hard",
+   "query": "Where does jj automatically run background garbage collection, for example after a certain number of operations, to prune old operations and unreachable objects?",
+   "expectedFiles": [],
+   "expectedSymbols": [],
+   "expectedFacts": [
+    "jj has no automatic garbage collection: collection only happens when the user runs the util gc command (cmd_util_gc in cli/src/commands/util/gc.rs).",
+    "That command prunes objects and operations older than 2 weeks (or --expire now) via op_store.gc and git_backend.gc, and needs operations abandoned first.",
+    "Nothing in lib or other CLI commands calls gc or schedules it; there is no auto-gc or interval setting."
+   ],
+   "expectedNoMatch": true,
+   "max_turns": 6,
+   "tier": "easy",
+   "author": "r3-jj-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION (negative): rg -n '\\.gc\\(|fn gc|run_gc' lib/src cli/src -> callers only cli/src/commands/util/gc.rs:63 (op_store().gc) and :67 (git_backend.gc), definitions lib/src/git_backend.rs:1563 and run_git_gc :968; rg -in 'auto.gc|background.gc|gc.interval|auto_gc' lib/src cli/src -> 0 hits; cli/src/commands/util/gc.rs:26-28 docs 'Run backend-dependent garbage collection', default 14-day expiry :55.",
+   "repoSha": "030ecf22c56b98bf6507067dca0df3dffa6de498",
+   "set": "easy",
+   "devSplit": "validation",
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3-ocelot-03",
+   "repo": "r3-ocelot",
+   "language": "C#",
+   "stratum": "multi-hop",
+   "difficulty": "hard",
+   "query": "A composite endpoint merges several backend calls, and a later call needs an identifier found inside the first call's JSON reply. How is the identifier extracted, and how does it end up in the later call's URL?",
+   "expectedFiles": [
+    "src/Multiplexer/MultiplexingMiddleware.cs",
+    "src/DownstreamUrlCreator/DownstreamPathPlaceholderReplacer.cs"
+   ],
+   "expectedSymbols": [
+    "MultiplexingMiddleware.ProcessRoutesWithRouteKeysAsync",
+    "MultiplexingMiddleware.ProcessRouteWithComplexAggregation",
+    "DownstreamPathPlaceholderReplacer.Replace"
+   ],
+   "expectedFacts": [
+    "The first downstream route is processed first; its response body is read as a string and parsed with JToken.Parse.",
+    "For each later route whose key has a matching route-keys config entry, the configured JSON path is applied with SelectTokens, distinct values are taken, and one downstream call is made per distinct value.",
+    "For each call, a placeholder named after the configured parameter and holding the extracted value is added to a copy of the request's placeholder list, which is stored on the cloned request context.",
+    "DownstreamPathPlaceholderReplacer.Replace substitutes each placeholder name with its value inside the downstream path template."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 6,
+   "tier": "easy",
+   "author": "r3-ocelot-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: src/Multiplexer/MultiplexingMiddleware.cs:54-57 (Case 4: ProcessMainRouteAsync then ProcessRoutesWithRouteKeysAsync), :125-126 (ReadAsStringAsync + JToken.Parse), :130-133 (matchAdvancedAgg by RouteKey), :157-173 (SelectTokens(JsonPath).Select(ToString).Distinct(); new PlaceholderNameAndValue(matchAdvancedAgg.Parameter, value, true) at :167; ProcessRouteAsync per value). src/DownstreamUrlCreator/DownstreamPathPlaceholderReplacer.cs:11-20 (StringBuilder.Replace(name, value)). Caller src/DownstreamUrlCreator/DownstreamUrlCreatorMiddleware.cs:37-38. Placeholders copied to new context at src/Multiplexer/MultiplexingMiddleware.cs:196 (UpsertTemplatePlaceholderNameAndValues(placeholders ?? ...)).",
+   "repoSha": "fcebf2b96c1811500037e010ee3b09e25ac39b19",
+   "set": "easy",
+   "devSplit": "train",
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3-ocelot-27",
+   "repo": "r3-ocelot",
+   "language": "C#",
+   "stratum": "locate-explain",
+   "difficulty": "medium",
+   "query": "Which headers sent by the client are deliberately not copied onto the outgoing backend request for ordinary HTTP calls, and where is that list kept?",
+   "expectedFiles": [
+    "src/Request/Mapper/RequestMapper.cs"
+   ],
+   "expectedSymbols": [
+    "RequestMapper.UnsupportedHeaders",
+    "RequestMapper.MapHeaders"
+   ],
+   "expectedFacts": [
+    "The unsupported set contains 'host' and 'transfer-encoding', compared case-insensitively.",
+    "MapHeaders copies every other request header with TryAddWithoutValidation; content-related headers (such as Content-Length, Content-Encoding, Content-Type) are added to the content object instead."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 6,
+   "tier": "easy",
+   "author": "r3-ocelot-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: src/Request/Mapper/RequestMapper.cs:10 (UnsupportedHeaders = { 'host', 'transfer-encoding' }, OrdinalIgnoreCase), :11 (ContentHeaders list), :48-68 (AddContentHeaders), :78-90 (MapHeaders / IsSupportedHeader). Lures: WebSocket list src/WebSockets/WebSocketsProxyMiddleware.cs:16-20; response-side Transfer-Encoding removal src/Headers/RemoveOutputHeaders.cs:13-20.",
+   "repoSha": "fcebf2b96c1811500037e010ee3b09e25ac39b19",
+   "set": "easy",
+   "devSplit": "train",
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3-tortoise-orm-22",
+   "repo": "r3-tortoise-orm",
+   "language": "Python",
+   "stratum": "enforcement",
+   "difficulty": "hard",
+   "query": "When inserting many objects in one call and a column has a database-side default, where does the library detect that some objects supplied a value while others expected the default, and what does it do in that case?",
+   "expectedFiles": [
+    "tortoise/queryset.py"
+   ],
+   "expectedSymbols": [
+    "BulkCreateQuery._analyze_db_default_fields"
+   ],
+   "expectedFacts": [
+    "BulkCreateQuery._analyze_db_default_fields scans every instance for each db_default column: values that are DatabaseDefault sentinels count as 'default', anything else as 'explicit'.",
+    "If one column has both kinds it raises OperationalError explaining the options (set everywhere, omit everywhere, or split the call).",
+    "If every instance relies on the default, the column is added to the returned omit set; both callers (__await__ and sql()) pass that set to _make_queries so the column is left out of the INSERT and the database default applies."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 6,
+   "tier": "easy",
+   "author": "r3-tortoise-orm-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: tortoise/queryset.py:2163-2197 (_analyze_db_default_fields; OperationalError at 2185-2194; omit_fields at 2195-2197), :2324 (__await__ call), :2340 (sql() call). DatabaseDefault sentinel: tortoise/fields/base.py:40-63. Docstring restating the rule: tortoise/models.py:1449-1498.",
+   "repoSha": "1979f27d6a37db991ca5c934e2394faa6c942d52",
+   "set": "easy",
+   "devSplit": "train",
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3-tortoise-orm-36",
+   "repo": "r3-tortoise-orm",
+   "language": "Python",
+   "stratum": "negative",
+   "difficulty": "hard",
+   "query": "Where can I register a function that runs only after the surrounding transaction has been successfully committed?",
+   "expectedFiles": [],
+   "expectedSymbols": [],
+   "expectedFacts": [
+    "There is no after-commit hook: the only hooks are the four model signals pre_save, post_save, pre_delete and post_delete (signals.Signals), which fire inside save()/delete() regardless of whether an enclosing transaction later commits.",
+    "Transaction contexts (TransactionContextPooled.__aexit__, SqliteTransactionContext.__aexit__) simply commit or roll back and release the connection; they call no callbacks."
+   ],
+   "expectedNoMatch": true,
+   "max_turns": 6,
+   "tier": "easy",
+   "author": "r3-tortoise-orm-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION OF ABSENCE: grep -rniE 'on_commit|after_commit|commit_hook|run_after|transaction.*callback|callback' tortoise --include='*.py' -> 0 hits; grep -rn 'commit' models.py queryset.py transactions.py signals.py -> 0 hits. Present instead: tortoise/signals.py:9 (Signals enum of four), models.py:1105-1129 (_wait_for_listeners/_pre_save/_post_save), :1194-1195 (post_save fired right after the write), tortoise/backends/base/client.py:373-385 and tortoise/backends/sqlite/client.py:198-212 (commit/rollback only).",
+   "repoSha": "1979f27d6a37db991ca5c934e2394faa6c942d52",
+   "set": "easy",
+   "devSplit": "validation",
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3-typedoc-10",
+   "repo": "r3-typedoc",
+   "language": "TypeScript",
+   "stratum": "concept",
+   "difficulty": "medium",
+   "query": "A class declares a property using the constructor-parameter shorthand and documents it only through an entry for that parameter in the constructor's doc comment. Where does that text become the property's description?",
+   "expectedFiles": [
+    "src/lib/converter/comments/index.ts"
+   ],
+   "expectedSymbols": [
+    "getConstructorParamPropertyComment",
+    "getComment"
+   ],
+   "expectedFacts": [
+    "getComment falls back to getConstructorParamPropertyComment only when no comment was found for a Property reflection.",
+    "getConstructorParamPropertyComment finds the parameter declaration of the symbol, takes its parent constructor's signature comment, and looks up the param tag with the same name.",
+    "If a matching param tag exists, it returns a new Comment built from that tag's content, keeping the constructor comment's source path."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 6,
+   "tier": "easy",
+   "author": "r3-typedoc-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: comments/index.ts:211-216 `if (!comment && kind === ReflectionKind.Property) return getConstructorParamPropertyComment(symbol, context);`; :273-289 function (decl = symbol.declarations?.find(ts.isParameter) :277, ctor = decl.parent :280, getSignatureComment(ctor) :281, getIdentifiedTag(symbol.name, \"@param\") :283, new Comment(paramTag.content) :285-287). Discovery of parameter-property comments on the parameter itself is handled in discovery.ts:14-15 (Parameter in variablePropertyKinds).",
+   "repoSha": "6d8c856bbb46b089371952981f113c3e318818fd",
+   "set": "easy",
+   "devSplit": "train",
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3-typedoc-15",
+   "repo": "r3-typedoc",
+   "language": "TypeScript",
+   "stratum": "concept",
+   "difficulty": "medium",
+   "query": "In the generated site's search box, how are matches ordered and how many are shown at most? Does a name that starts with what I typed rank higher?",
+   "expectedFiles": [
+    "src/frontend/typedoc/components/Search.ts"
+   ],
+   "expectedSymbols": [
+    "updateResults"
+   ],
+   "expectedFacts": [
+    "updateResults turns each space-separated word of the query into a wildcard term (*word*) and runs the lunr index search in the browser.",
+    "Results hidden by active sidebar visibility filters are dropped, using the classes stored in each row and classListWillBeFiltered.",
+    "A result whose name starts with the typed text has its score multiplied by 10 / (1 + |name length - query length|); results are sorted by score and at most 10 are rendered."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 6,
+   "tier": "easy",
+   "author": "r3-typedoc-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: Search.ts:205-306 updateResults; wildcard query :226-231; filtering :233-239; boost :255-266 (startsWith :261, factor :262); sort :268; cap `Math.min(10, res.length)` :270. Index built server-side in src/lib/output/plugins/JavascriptIndexPlugin.ts:66-153 and loaded with Index.load in Search.ts:46-55.",
+   "repoSha": "6d8c856bbb46b089371952981f113c3e318818fd",
+   "set": "easy",
+   "devSplit": "train",
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3-zipkin-02",
+   "repo": "r3-zipkin",
+   "language": "Java",
+   "stratum": "multi-hop",
+   "difficulty": "medium",
+   "query": "On the Elasticsearch backend, how does a trace search with service, tag and duration filters first find the matching traces and then return complete traces rather than only the matching spans?",
+   "expectedFiles": [
+    "zipkin-storage/elasticsearch/src/main/java/zipkin2/elasticsearch/ElasticsearchSpanStore.java"
+   ],
+   "expectedSymbols": [
+    "ElasticsearchSpanStore.getTraces",
+    "ElasticsearchSpanStore.GetSpansByTraceId"
+   ],
+   "expectedFacts": [
+    "getTraces first sends a filtered search (time range, service, remote service, span name, _q tag terms, duration range) with a terms aggregation on traceId limited to the requested number and ordered by the minimum timestamp descending.",
+    "The resulting trace IDs are passed through GetSpansByTraceId, which issues a second search over the same daily indices for all spans whose traceId is in that list.",
+    "The spans are then grouped by trace ID, and when strict trace ID is enabled they are filtered again client-side."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 6,
+   "tier": "easy",
+   "author": "r3-zipkin-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: ElasticsearchSpanStore.java:54-111 getTraces; filters built :60-84; aggregation Aggregation.terms(\"traceId\", limit).addSubAggregation(min timestamp_millis).orderBy(...desc) at :93-96; first call traceIdsCall :104; flatMap(new GetSpansByTraceId(search, indices)).map(groupByTraceId) at :106-107; strict filter :110; GetSpansByTraceId.map at :202-217 builds SearchRequest.create(indices).terms(\"traceId\", input).",
+   "repoSha": "878ce2a1fad54ca941d17fdcf2e1d924b148eb1f",
+   "set": "easy",
+   "devSplit": "train",
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3-zipkin-20",
+   "repo": "r3-zipkin",
+   "language": "Java",
+   "stratum": "enforcement",
+   "difficulty": "hard",
+   "query": "A client posts old-style JSON containing binary annotations to the newer spans upload endpoint. Where is that mismatch detected and rejected?",
+   "expectedFiles": [
+    "zipkin-server/src/main/java/zipkin2/server/internal/ZipkinHttpCollector.java"
+   ],
+   "expectedSymbols": [
+    "ZipkinHttpCollector.validateAndStoreSpans",
+    "ZipkinHttpCollector.testForUnexpectedFormat"
+   ],
+   "expectedFacts": [
+    "validateAndStoreSpans calls testForUnexpectedFormat(decoder, body) before handing the bytes to the collector; for the v2 JSON decoder it looks for the byte sequence ending in yAnnotations\" (binaryAnnotations) and reports JSON_V1.",
+    "On a mismatch it fails the request with an IllegalArgumentException (Expected a JSON_V2 encoded list, but received: JSON_V1) and does not pass the body to the collector."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 6,
+   "tier": "easy",
+   "author": "r3-zipkin-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: ZipkinHttpCollector.java:134-139 (unexpectedDecoder check and error), :169-180 testForUnexpectedFormat (JSON_V2 branch :170-173 with BINARY_ANNOTATION_FIELD_SUFFIX defined :182-183), :184 comment 'copy-pasted from SpanBytesDecoderDetector'; :43 @ExceptionHandler(BodyIsExceptionMessage.class); BodyIsExceptionMessage.java:30-31 (400 for IllegalArgumentException). Decoy: SpanBytesDecoderDetector.java:84-95.",
+   "repoSha": "878ce2a1fad54ca941d17fdcf2e1d924b148eb1f",
+   "set": "easy",
+   "devSplit": "validation",
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3h-dgraph-12",
+   "repo": "r3-dgraph",
+   "language": "Go",
+   "stratum": "decoy",
+   "difficulty": "hard",
+   "query": "Several customers share one cluster. An operator needs every customer other than the primary one to be unable to obtain new node identifiers faster than a fixed budget per period. Where is that budget configured, where is it enforced, and what happens to a request that exceeds it?",
+   "expectedFiles": [
+    "dgraph/cmd/zero/run.go",
+    "dgraph/cmd/zero/zero.go",
+    "dgraph/cmd/zero/assign.go",
+    "x/x.go"
+   ],
+   "expectedSymbols": [
+    "LimiterConf",
+    "NewRateLimiter",
+    "RateLimiter.Allow",
+    "Server.AssignIds",
+    "RefillPeriodically"
+   ],
+   "expectedFacts": [
+    "CRITICAL: The budget lives in Zero's own limit option group (identifier-lease amount and refill interval), parsed in dgraph/cmd/zero/run.go into x.LimiterConf; it is not an Alpha option.",
+    "Server init in dgraph/cmd/zero/zero.go creates the x.RateLimiter only when the lease amount is above zero; the default of 0 means no limiting at all.",
+    "CRITICAL: The check is the rateLimit closure inside Server.AssignIds (dgraph/cmd/zero/assign.go): it applies only to UID leases, skips the root namespace and requests that carry no namespace, and rejects any single request larger than the whole budget.",
+    "RateLimiter.Allow (x/x.go) keeps one token counter per namespace; RefillPeriodically resets every counter to the maximum on each refill interval.",
+    "An over-budget request sleeps a random time up to the refill interval and then fails with a 'lease exhausted, retry after some time' error."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "hard",
+   "author": "r3h-dgraph-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: dgraph/cmd/zero/run.go:90-107 (limit superflag: uid-lease, refill-interval), :222-228 (LimiterConf), :238-241; worker/server_state.go:41 (ZeroLimitsDefaults uid-lease=0; refill-interval=30s); dgraph/cmd/zero/zero.go:96-100; dgraph/cmd/zero/assign.go:183-211 (rateLimit: UID only :186; root ns / missing ns :190-193; num.Val > UidLeaseLimit :197; Allow :202; random delay :205-206), called at :217-219 inside the leader branch; x/x.go:1522-1580 (LimiterConf, RateLimiter, Allow, RefillPeriodically). CHEAPEST ROUTE (5 dependent steps): (1) find where identifiers are leased (zero/assign.go); (2) spot rateLimit and the s.rateLimiter field; (3) follow the field to zero.go Init and x.NewRateLimiter; (4) follow opts.limiterConfig to zero/run.go flag parsing; (5) read x.RateLimiter for per-namespace semantics. DECOYS (named so the question detail selects one): worker/proposal.go rateLimiter (pending-proposal limit on data servers, keyed on Raft backlog not tenants), edgraph/server.go max-pending-queries (global 429 on queries), worker/worker.go limiter initialisation; the detail 'per customer' and 'new node identifiers' selects the Zero limiter. FIRST-3-GREPS: 'budget' / 'time window' / 'customers share' hit none; 'node identifiers' hits many UID paths. est. turns: 6",
+   "repoSha": "6cd03dca3b003dae29df904c0a09667f7edb703b",
+   "group": "A",
+   "set": "hard",
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3h-dgraph-21",
+   "repo": "r3-dgraph",
+   "language": "Go",
+   "stratum": "condition",
+   "difficulty": "hard",
+   "query": "A query block asks for only the first few results, possibly with a skip offset. Sometimes the storage read itself stops early; sometimes everything is read and trimmed afterwards. What decides which, and after how many entries does the storage read stop?",
+   "expectedFiles": [
+    "query/query.go",
+    "worker/task.go"
+   ],
+   "expectedSymbols": [
+    "calculatePaginationParams",
+    "createTaskQuery",
+    "uidReadFirst",
+    "SubGraph.applyPagination",
+    "shouldPrecalculateUids"
+   ],
+   "expectedFacts": [
+    "CRITICAL: calculatePaginationParams (query/query.go) pushes count and offset into the storage query only if the block has no filter, no ordering, a non-zero count, and its source function is not one of the multi-token string matchers (regular expression, all-of-terms, all-of-text, fuzzy match, n-gram).",
+    "Otherwise it asks for the maximum count with offset 0, so the whole list is read and the count and offset are applied afterwards in the query layer (applyPagination, or the ordering path for blocks with an order).",
+    "CRITICAL: On the worker, uidReadFirst (worker/task.go) turns a positive pushed-down count into count plus max(offset, 0) entries to read; zero or the maximum value means read everything, and a negative count is passed through without adding the offset.",
+    "Bounded reads also disable uid precalculation for the key (shouldPrecalculateUids returns false when the read is bounded), so those lists are not materialized into the cache."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "hard",
+   "author": "r3h-dgraph-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: query/query.go:920-985 createTaskQuery (First/Offset from calculatePaginationParams :950, set in pb.Query :975-976), :989-1040 calculatePaginationParams (shouldExclude list :1008-1017; `len(sg.Filters) == 0 && len(sg.Params.Order) == 0 && !shouldExclude` :1027; else MaxInt32, 0), :2380 and :2493-2508 applyPagination; worker/task.go:799-808 uidReadFirst, :1166-1170 (opts.First = uidReadFirst(q)), :781-795 shouldPrecalculateUids. CHEAPEST ROUTE (5 dependent steps): (1) find how first/offset are carried (query/query.go params.fill, createTaskQuery); (2) read calculatePaginationParams; (3) follow First/Offset into the pb.Query consumer (worker/task.go helpProcessTask); (4) read uidReadFirst; (5) compare with applyPagination to see the later trimming. DECOYS: applyOrderAndPagination (default count of 1000 for ordered results), x.PageRange, worker/sort.go (ordering pagination), the cascade pagination handling in params.addCascadePaginationArguments. est. turns: 6",
+   "repoSha": "6cd03dca3b003dae29df904c0a09667f7edb703b",
+   "group": "A",
+   "set": "hard",
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3h-jj-09",
+   "repo": "r3-jj",
+   "language": "Rust",
+   "stratum": "completeness",
+   "difficulty": "hard",
+   "query": "When I run the command that applies my configured formatters to a range of commits, in which situations is a file's content not sent through a formatter, or a formatter's output thrown away? Name every place in the code that decides one of these.",
+   "expectedFiles": [
+    "cli/src/commands/fix.rs",
+    "lib/src/fix.rs"
+   ],
+   "expectedSymbols": [
+    "get_tools_config",
+    "fix_files",
+    "fix_one_file",
+    "run_tool"
+   ],
+   "expectedFacts": [
+    "get_tools_config drops tools that are disabled and returns a config error if none are left.",
+    "CRITICAL: fix_files only visits paths that match the path filter and that changed relative to the base commit (or were fixed in an ancestor), unless unchanged files are requested; deleted files are skipped.",
+    "fix_files only passes regular file entries to the fixer; symlinks, directories and submodules are skipped.",
+    "fix_one_file leaves a file untouched if no tool's patterns match it, and never runs tools on an empty file.",
+    "A tool configured with line ranges is skipped for a file with no changed lines unless the run-if-zero-ranges option is set.",
+    "CRITICAL: A tool that cannot start or exits non-zero is ignored: a warning is printed, the previous content is kept, and nothing new is stored."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "hard",
+   "author": "r3h-jj-drafter",
+   "date": "2026-10-01",
+   "notes": "ROUTE (~6 steps): 1) the agent must find the command by its role ('formatters'): grep 'formatter' -> cli/src/commands/fix.rs docs and diff_util Formatter (noise); 2) read fix_one_file (:279-410) and run_tool (:417-478); 3) read get_tools_config (:554-602); 4) lib/src/fix.rs fix_files (:181-374) for matcher/changed-file/deleted/File-only logic. Members are in two files with different local names. est. turns: 7. DECOYS: lib/src/absorb.rs to_file_value (similar skip rules but for absorb); ParallelFileFixer::fix_files only parallelizes. VERIFICATION: fix.rs:288-292,:310-312,:340-347,:376-396,:446-476,:554-602; lib/src/fix.rs:249-266,:292-306.",
+   "repoSha": "030ecf22c56b98bf6507067dca0df3dffa6de498",
+   "group": "A",
+   "set": "hard",
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3h-jj-12",
+   "repo": "r3-jj",
+   "language": "Rust",
+   "stratum": "decoy",
+   "difficulty": "hard",
+   "query": "Setting aside the explicit command for moving bookmarks, is there a setting that makes a bookmark follow me automatically when I create the next commit on top of the one it marks? Which bookmarks qualify, which commands honor it, and exactly which bookmark moves to which commit?",
+   "expectedFiles": [
+    "cli/src/cli_util.rs",
+    "cli/src/commands/new.rs",
+    "cli/src/commands/commit.rs",
+    "cli/src/config/misc.toml"
+   ],
+   "expectedSymbols": [
+    "load_advance_bookmarks_matcher",
+    "WorkspaceCommandHelper::get_advanceable_bookmarks",
+    "WorkspaceCommandTransaction::advance_bookmarks",
+    "AdvanceableBookmark"
+   ],
+   "expectedFacts": [
+    "CRITICAL: The feature is controlled by the experimental-advance-branches enabled and disabled name lists, both empty by default in misc.toml, so it is off.",
+    "load_advance_bookmarks_matcher returns None when the enabled list is empty, otherwise a matcher for enabled names and not disabled names.",
+    "CRITICAL: commit passes the parents of the working-copy commit being committed as the source commits and advances matching bookmarks to the newly committed commit.",
+    "new advances only when exactly one parent is given and no insert-before or insert-after is used; bookmarks on that parent's parents move to that parent.",
+    "advance_bookmarks merges each bookmark from its old commit to the new one, so a conflicted bookmark stays conflicted."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "hard",
+   "author": "r3h-jj-drafter",
+   "date": "2026-10-01",
+   "notes": "ROUTE (~6 steps): 1) grep 'advance' -> commands/bookmark/advance.rs (decoy, explicit command) first, plus cli_util.rs AdvanceableBookmark (:899-946); 2) read load_advance_bookmarks_matcher and get_advanceable_bookmarks (:2673-2696) and advance_bookmarks (:2875-2891); 3) find callers: commit.rs (:101-102,:183-192), new.rs (:194-203,:279-282); 4) check defaults in cli/src/config/misc.toml (:20-22). DECOYS: bookmark/advance.rs (revsets.bookmark-advance-from, refuses sideways/backward), bookmark/move.rs, bookmark/set.rs; split.legacy-bookmark-behavior. FIRST-3-GREPS of question words ('bookmark follow', 'next commit'): hit bookmark commands (decoys) and new.rs; the setting name is not in the question. est. turns: 7. VERIFICATION: misc.toml:20-22; cli_util.rs:923-946,:2673-2696,:2875-2891; commit.rs:101-102,:189-191; new.rs:195-202,:280-281.",
+   "repoSha": "030ecf22c56b98bf6507067dca0df3dffa6de498",
+   "group": "A",
+   "set": "hard",
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3h-ocelot-24",
+   "repo": "r3-ocelot",
+   "language": "C#",
+   "stratum": "negative-decoy",
+   "difficulty": "hard",
+   "query": "A route requires sign-in tokens. Where does the gateway verify the token when the caller's connection is a WebSocket upgrade request?",
+   "expectedFiles": [],
+   "expectedSymbols": [],
+   "expectedFacts": [
+    "CRITICAL: AuthenticationMiddleware and AuthorizationMiddleware are registered only in the ordinary pipeline built by BuildOcelotPipeline, after the MapWhen fork for WebSocket requests.",
+    "The WebSocket branch (ConfigureWebSockets) registers only the route finder, multiplexer, IP security, request initialiser, load balancing, URL creator and the proxy middleware.",
+    "CRITICAL: WebSocketsProxyMiddleware forwards the client's headers except Connection, Host, Upgrade and Sec-WebSocket-*, so an Authorization header reaches the backend for it to judge."
+   ],
+   "expectedNoMatch": true,
+   "max_turns": 15,
+   "tier": "hard",
+   "author": "r3h-ocelot-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION (negative): grep -rn 'AuthenticationMiddleware\\|UseAuthentication' src -> registered only at OcelotPipelineExtensions.cs:80 (plus the pipeline-configuration property); OcelotPipelineExtensions.cs:38 (MapWhen IsWebSocketRequest -> ConfigureWebSockets) precedes :80, and :137-146 lists the branch without authentication, authorization, rate limiting or claims transforms; grep -rn 'IsAuthenticated\\|AuthenticateAsync\\|User' src/WebSockets src/Security -> no matches; WebSocketsProxyMiddleware.cs:16-20, :110-125. CHEAPEST ROUTE: (1) grep 'websocket' -> WebSockets folder + pipeline; (2) grep 'Authenticat' -> middleware registered once; (3) read OcelotPipelineExtensions: the branch list lacks it; (4) confirm WebSockets/Security folders do no auth; (5) conclude none. DECOYS: AuthenticationMiddleware, AuthorizationMiddleware, existing r3 question about the HTTP credential check, SecurityMiddleware (IP policy does run on sockets). est. turns: 6.",
+   "repoSha": "fcebf2b96c1811500037e010ee3b09e25ac39b19",
+   "group": "A",
+   "set": "hard",
+   "pilot": true,
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3h-tortoise-orm-03",
+   "repo": "r3-tortoise-orm",
+   "language": "Python",
+   "stratum": "chain",
+   "difficulty": "hard",
+   "query": "I write an explanatory remark with a special comment marker directly above a column attribute inside my model class, without passing any description argument. When tables are created on PostgreSQL, that remark appears as documentation attached to the column in the database. Trace how it gets there.",
+   "expectedFiles": [
+    "tortoise/models.py",
+    "tortoise/backends/base/schema_generator.py",
+    "tortoise/backends/base_postgres/schema_generator.py"
+   ],
+   "expectedSymbols": [
+    "_get_comments",
+    "ModelMeta.__new__",
+    "BaseSchemaGenerator._get_field_comment",
+    "BasePostgresSchemaGenerator._column_comment_generator",
+    "BasePostgresSchemaGenerator._post_table_hook",
+    "BaseSchemaGenerator._get_table_sql"
+   ],
+   "expectedFacts": [
+    "_get_comments (models.py:148-177) extracts the #: comment lines above attribute assignments from the class source.",
+    "CRITICAL: ModelMeta.__new__ (models.py:555-561) sets the field's description to the first comment line when none was given, unless _no_comments is set on the class.",
+    "BaseSchemaGenerator._get_field_comment calls the dialect hook only when the field has a description (base/schema_generator.py:232-237).",
+    "CRITICAL: BasePostgresSchemaGenerator._column_comment_generator records a COMMENT ON COLUMN statement in comments_array and returns an empty inline string (base_postgres/schema_generator.py:46-52).",
+    "_post_table_hook emits the recorded statements after the CREATE TABLE (base_postgres/schema_generator.py:54-60, called at base/schema_generator.py:503)."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "hard",
+   "author": "r3h-tortoise-orm-drafter",
+   "date": "2026-10-01",
+   "notes": "CHEAPEST ROUTE: (1) 'comment marker'/'remark' find nothing; grep 'comment' in backends/base_postgres/schema_generator.py or 'COMMENT ON'; (2) see _column_comment_generator and comments_array; (3) trace its caller _get_field_comment in base/schema_generator.py -> field.description; (4) find where description is set from a source comment: grep 'description =' -> models.py ModelMeta.__new__ -> _get_comments; (5) confirm _post_table_hook placement. 5 dependent steps. FIRST GREPS: 'comment marker' -> none; 'remark' -> none; 'documentation' -> only fields/data.py (not gold). DECOYS: MySQL inlines COMMENT (mysql/schema_generator.py:_column_comment_generator); SQLite emits /* */; the migration editor copy (migrations/schema_editor/base_postgres.py:36-52) is not used by generate_schemas; MSSQL drops comments. VERIFICATION: read models.py:148-177, 549-566; backends/base/schema_generator.py:232-237, 480-506; backends/base_postgres/schema_generator.py:19-60. Closed-book risk: low. est. turns: 7.",
+   "repoSha": "1979f27d6a37db991ca5c934e2394faa6c942d52",
+   "group": "A",
+   "set": "hard",
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3h-tortoise-orm-06",
+   "repo": "r3-tortoise-orm",
+   "language": "Python",
+   "stratum": "chain",
+   "difficulty": "hard",
+   "query": "On SQLite, matching a text column against a regular expression only works if I opt in with a parameter in the connection address. Trace how the opt-in changes behaviour, from the address text to the condition in the generated SQL, including how the case-insensitive variant is realised.",
+   "expectedFiles": [
+    "tortoise/backends/base/config_generator.py",
+    "tortoise/connection.py",
+    "tortoise/backends/sqlite/__init__.py",
+    "tortoise/backends/sqlite/client.py",
+    "tortoise/contrib/sqlite/regex.py",
+    "tortoise/backends/sqlite/executor.py"
+   ],
+   "expectedSymbols": [
+    "expand_db_url",
+    "ConnectionHandler._discover_client_class",
+    "get_client_class",
+    "SqliteClientWithRegexpSupport.create_connection",
+    "install_regexp_functions",
+    "posix_sqlite_regexp",
+    "insensitive_posix_sqlite_regexp",
+    "SqliteExecutor.FILTER_FUNC_OVERRIDE"
+   ],
+   "expectedFacts": [
+    "CRITICAL: The sqlite entry of DB_LOOKUP casts the install_regexp_functions parameter with bool (config_generator.py:64-73, :192-193), so any non-empty text counts as true.",
+    "ConnectionHandler._discover_client_class asks the engine module's get_client_class (connection.py:115-128); sqlite/__init__.py:5-10 returns SqliteClientWithRegexpSupport when the credential is truthy.",
+    "SqliteClientWithRegexpSupport.create_connection calls install_regexp_functions after the normal connect (sqlite/client.py:279-295).",
+    "install_regexp_functions registers Python functions named regexp (case-sensitive) and match (re.IGNORECASE) on the connection (contrib/sqlite/regex.py:32-43).",
+    "CRITICAL: SqliteExecutor.FILTER_FUNC_OVERRIDE maps the lookups to builders that emit the REGEXP operator, and the case-insensitive one the MATCH operator (sqlite/executor.py:27-30; contrib/sqlite/regex.py:20-29).",
+    "The generic regex lookups raise NotImplementedError, and MetaInfo._generate_filters swaps in the override (filters.py:160-170, models.py:492-503)."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "hard",
+   "author": "r3h-tortoise-orm-drafter",
+   "date": "2026-10-01",
+   "notes": "CHEAPEST ROUTE: (1) 'regular expression' only hits docs/query.rst, so grep 'regexp' / sqlite client; (2) read sqlite/client.py SqliteClientWithRegexpSupport; (3) find who picks it: backends/sqlite/__init__.py get_client_class; (4) find who produces the credential: config_generator.py cast table; (5) find how the lookup SQL is built: sqlite executor FILTER_FUNC_OVERRIDE + contrib/sqlite/regex.py; (6) confirm the wiring in models._generate_filters. 6 dependent steps. GATING: the plain SqliteClient is the default and the decoy. FIRST GREPS: 'regular expression' -> only docs/query.rst; 'opt in' -> none; 'connection address' -> none. DECOYS: SqliteClient (default), PostgreSQL/MySQL regex overrides (base_postgres/executor.py:75-85, mysql/executor.py:115-128). Observation (not a fact): SqliteClient.__init__ copies leftover kwargs into pragmas (sqlite/client.py:66-69), so the opt-in is also sent as a PRAGMA. VERIFICATION: read config_generator.py:64-73 and 186-195, connection.py:115-153, sqlite/__init__.py, sqlite/client.py:50-95, 279-295, contrib/sqlite/regex.py, sqlite/executor.py:21-31, models.py:492-503. est. turns: 8.",
+   "repoSha": "1979f27d6a37db991ca5c934e2394faa6c942d52",
+   "group": "A",
+   "set": "hard",
+   "pilot": true,
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3h-typedoc-16",
+   "repo": "r3-typedoc",
+   "language": "TypeScript",
+   "stratum": "cross-layer",
+   "difficulty": "hard",
+   "query": "My team documents code with runs of consecutive lines that begin with three forward slashes instead of block comments, and by default none of that text shows up in the generated docs. What changes this, and where is the decision made about which comments count as documentation, including what happens when a line starts with a longer run of slashes?",
+   "expectedFiles": [
+    "src/lib/utils/options/sources/typedoc.ts",
+    "src/lib/converter/converter.ts",
+    "src/lib/converter/comments/index.ts",
+    "src/lib/converter/comments/discovery.ts"
+   ],
+   "expectedSymbols": [
+    "addTypeDocOptions",
+    "Converter._buildCommentParserConfig",
+    "getComment",
+    "discoverComment",
+    "permittedRange",
+    "collectCommentRanges"
+   ],
+   "expectedFacts": [
+    "CRITICAL: The comment-style setting (default jsdoc) selects which comments are documentation; its choices are jsdoc, block, line, triple-slash and all.",
+    "Converter._buildCommentParserConfig copies the setting into the parser config that Context hands to the comment functions.",
+    "comments/index.ts getComment/getNodeComment/getSignatureComment pass the style into discovery.ts (discoverComment, discoverNodeComment, discoverSignatureComment, file comments).",
+    "CRITICAL: discovery.ts permittedRange accepts a single-line comment group in triple-slash style only when the first range's third character is '/' and its fourth is not '/', so four slashes are not documentation; the default jsdoc style accepts only block comments starting with two asterisks.",
+    "collectCommentRanges groups consecutive single-line comments into one range list and comments/index.ts lexes them with lexLineComments, so a run of lines forms one comment."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "hard",
+   "author": "r3h-typedoc-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: sources/typedoc.ts:749-755 (default CommentStyle.JSDoc); utils/options/declaration.ts:24-31 (values). converter.ts:791-813 (:804 commentStyle). converter/context.ts:373-381, :383-389. comments/index.ts:199-205 (discoverComment(... commentStyle ...)), :227, :296; :89-95 SingleLineCommentTrivia -> lexLineComments. discovery.ts:177-197, :199-219, :221-255, :391-437 (all call permittedRange), :694-725 collectCommentRanges, :727-753 permittedRange (:739-744 triple-slash, :745-751 jsdoc). DECOYS: the ts compiler's own JSDoc handling (findJsDocForComment), lineLexer.ts (lexes text, never decides eligibility), site/options/comments.md, tests. CHEAPEST ROUTE: (1) grep 'slash' / 'comment' under converter/comments -> lineLexer.ts and discovery.ts (words are generic, many hits); (2) find the eligibility function in discovery.ts (permittedRange) and who passes its style; (3) trace the style parameter back through comments/index.ts to Context.createCommentContext -> converter config; (4) find the setting declaration in sources/typedoc.ts; (5) read the enum in declaration.ts for the style names. est. turns: 7.",
+   "repoSha": "6d8c856bbb46b089371952981f113c3e318818fd",
+   "group": "A",
+   "set": "hard",
+   "pilot": true,
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3h-typedoc-23",
+   "repo": "r3-typedoc",
+   "language": "TypeScript",
+   "stratum": "negative-decoy",
+   "difficulty": "hard",
+   "query": "When the setting that makes generated links absolute (based on the address where the site is hosted) is turned on, where in the rendering path do links between pages of the site get turned into absolute addresses?",
+   "expectedFiles": [],
+   "expectedSymbols": [],
+   "expectedFacts": [
+    "No code in the rendering path produces absolute page links from that setting: the only consumer is ContextAwareRendererComponent.getRelativeUrl (output/components.ts:63-80), which has no callers anywhere in src.",
+    "CRITICAL: Page-to-page links come from the router (BaseRouter.relativeUrl and baseRelativeUrl) via DefaultThemeRenderContext.urlTo and relativeURL, and these always build relative paths.",
+    "Application._bootstrap (application.ts:351-359) only validates the setting: it warns and switches it off when no hosted address is configured.",
+    "The hosted address is really used for the canonical link and sitemap (SitemapPlugin), the site metadata block in the layout, and for treating same-site http links as non-external in MarkedPlugin."
+   ],
+   "expectedNoMatch": true,
+   "max_turns": 15,
+   "tier": "hard",
+   "author": "r3h-typedoc-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION (negative), greps over src: (1) rg 'useHostedBaseUrlForAbsoluteLinks' -> only application.ts:352-358, components.ts:45-46 and :71, sources/typedoc.ts:520, declaration.ts:100,273 and locale strings; (2) rg 'getRelativeUrl' src -> a single hit, the definition at output/components.ts:63 (no caller in src/lib, src/frontend or src/test); (3) rg 'new URL\\(' src/lib/output -> SitemapPlugin.ts:53, components.ts:72 (inside the dead method), default.tsx:33 (site metadata) only; (4) router.ts:216-278 relativeUrl/baseRelativeUrl return relative strings only; DefaultThemeRenderContext.ts:92-106 relativeURL/urlTo delegate to the router; MarkedPlugin.tsx:235-243 uses context.relativeURL/urlTo. site/options/output.md:643-644 documents the behaviour that the code path above does not deliver. WHAT LOOKS PRESENT: option declared (sources/typedoc.ts:519-523), accessor + branch in components.ts:45-46,71-73, startup validation in application.ts:351-359, and docs promising absolute links. WHY IT DOES NOTHING: the method containing the branch is never called. DECOYS: SitemapPlugin.hostedBaseUrl (really used for sitemap/canonical), MarkedPlugin.tsx:389 (external-link detection), layouts/default.tsx:33 (site metadata). CHEAPEST ROUTE: (1) grep the setting name -> application.ts, components.ts, typedoc.ts; (2) read components.ts getRelativeUrl and see the absolute branch; (3) grep its name for callers -> none; (4) read router.relativeUrl/baseRelativeUrl and DefaultThemeRenderContext.relativeURL/urlTo to confirm links are relative; (5) check MarkedPlugin link rendering. est. turns: 7.",
+   "repoSha": "6d8c856bbb46b089371952981f113c3e318818fd",
+   "group": "A",
+   "set": "hard",
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3h-zipkin-22",
+   "repo": "r3-zipkin",
+   "language": "Java",
+   "stratum": "condition",
+   "difficulty": "hard",
+   "query": "In the MySQL backend, a client span and its server counterpart are recorded under the same span identifier and are written in separate batches, in either order. Whose start timestamp ends up in the stored row, and which rule in the write path produces that?",
+   "expectedFiles": [
+    "zipkin-storage/mysql-v1/src/main/java/zipkin2/storage/mysql/v1/MySQLSpanConsumer.java",
+    "zipkin-storage/mysql-v1/src/main/resources/mysql.sql"
+   ],
+   "expectedSymbols": [
+    "MySQLSpanConsumer.BatchInsertSpans.apply",
+    "MySQLSpanConsumer.updateName"
+   ],
+   "expectedFacts": [
+    "The primary key (trace_id_high, trace_id, id) in mysql.sql makes both halves of the RPC target the same zipkin_spans row.",
+    "CRITICAL: BatchInsertSpans.apply sets start_ts in the INSERT whenever the span has a timestamp, even a shared (server) one, as a tentative value.",
+    "CRITICAL: On duplicate key the update set includes start_ts only when the span is not shared, so the client's timestamp wins regardless of arrival order.",
+    "A non-zero parent_id goes into the update set whether or not the span is shared (unlike start_ts).",
+    "Name and remote service name are updated only when not null and not \"unknown\" (updateName)."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "hard",
+   "author": "r3h-zipkin-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: MySQLSpanConsumer.java:77-83 (comments 'tentatively' / 'replace any tentative'), :90-99, :106-109, :184-193; mysql.sql:5-15. All read. DECOYS: V2SpanConverter.convert (drops timestamp/duration for shared spans in the v1 form, but the consumer reads v2.timestampAsLong()), Trace.merge (shared flag backfill), V1SpanConverter. CHEAPEST ROUTE: (1) grep 'shared' in the MySQL module -> MySQLSpanConsumer (also V2SpanConverter in core); (2) read BatchInsertSpans.apply; (3) confirm key semantics in mysql.sql; (4) check updateFields vs insert-only fields. est. turns: 6.",
+   "repoSha": "878ce2a1fad54ca941d17fdcf2e1d924b148eb1f",
+   "group": "A",
+   "set": "hard",
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3h-zipkin-23",
+   "repo": "r3-zipkin",
+   "language": "Java",
+   "stratum": "negative-decoy",
+   "difficulty": "hard",
+   "query": "Where does the server hold back or reject trace searches and lookups when the storage is struggling, using the same protection that limits parallel writes?",
+   "expectedFiles": [],
+   "expectedSymbols": [],
+   "expectedFacts": [
+    "CRITICAL: No code protects reads: ThrottledStorageComponent extends ForwardingStorageComponent but overrides only spanConsumer() (plus close and toString), so spanStore(), traces(), serviceAndSpanNames() and autocompleteTags() are forwarded unchanged.",
+    "The protection exists for writes only: ThrottledSpanConsumer.accept wraps the delegate's write in a ThrottledCall.",
+    "ZipkinQueryApiV2 calls storage.spanStore()/traces()/serviceAndSpanNames() directly, which resolve to the unthrottled delegates.",
+    "What exists for reads is a request timeout set in ZipkinHttpConfiguration, not a throttle."
+   ],
+   "expectedNoMatch": true,
+   "max_turns": 15,
+   "tier": "hard",
+   "author": "r3h-zipkin-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: ThrottledStorageComponent.java:116-131 (only delegate(), spanConsumer(), close(), toString()), :133-162 (ThrottledSpanConsumer); ForwardingStorageComponent.java:36-50; ZipkinQueryApiV2.java:81,138,147,172; ZipkinHttpConfiguration.java:44-54. Greps run: grep -rn 'Throttled' zipkin-server/src/main/java (wrapper bean + throttle package only); grep -rn 'limiter' zipkin-server/src/main/java (only throttle package); grep -rn 'spanStore()' zipkin-server/src/main/java (query API + tracing wrapper only). DECOYS: STORAGE_THROTTLE_* settings, the component name ThrottledStorageComponent (suggests whole component), Cassandra/ES isOverCapacity (write failure classification), the query timeout. CHEAPEST ROUTE: (1) grep 'throttle' -> throttle package; (2) read ThrottledStorageComponent and see only spanConsumer overridden; (3) read ForwardingStorageComponent to confirm reads forward; (4) read ZipkinQueryApiV2 to confirm the read path uses storage directly; (5) check ZipkinHttpConfiguration for timeouts. est. turns: 6.",
+   "repoSha": "878ce2a1fad54ca941d17fdcf2e1d924b148eb1f",
+   "group": "A",
+   "set": "hard",
+   "pilot": true,
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3hb-composer-07",
+   "repo": "r3-composer",
+   "language": "PHP",
+   "stratum": "completeness",
+   "difficulty": "hard",
+   "query": "When an install or update is interrupted, either by a failure or by a termination request from the operating system, which separate pieces of leftover state does Composer clean up, and which component does each one? Give the trigger and each distinct cleanup action.",
+   "expectedFiles": [
+    "src/Composer/Installer/InstallationManager.php",
+    "src/Composer/Installer/LibraryInstaller.php",
+    "src/Composer/Downloader/DownloadManager.php",
+    "src/Composer/Downloader/FileDownloader.php",
+    "src/Composer/Downloader/ArchiveDownloader.php",
+    "src/Composer/Downloader/ZipDownloader.php",
+    "src/Composer/Downloader/VcsDownloader.php"
+   ],
+   "expectedSymbols": [
+    "InstallationManager::execute",
+    "InstallationManager::runCleanup",
+    "InstallationManager::downloadAndExecuteBatch",
+    "FileDownloader::cleanup",
+    "ArchiveDownloader::cleanup",
+    "ArchiveDownloader::install",
+    "ZipDownloader::extractWithSystemUnzip",
+    "VcsDownloader::cleanup"
+   ],
+   "expectedFacts": [
+    "CRITICAL: InstallationManager::execute registers a signal handler for SIGINT, SIGTERM and SIGHUP and also catches exceptions; both call InstallationManager::runCleanup, which aborts running HTTP jobs (loop->abortJobs) and runs every queued per-operation cleanup callback.",
+    "InstallationManager::downloadAndExecuteBatch queues one cleanup callback per operation that calls the installer's cleanup (skipped when the package has no installation source yet); LibraryInstaller::cleanup forwards it to DownloadManager::cleanup; the same callbacks also run after a successful operation and in download-only mode.",
+    "FileDownloader::cleanup deletes the downloaded archive file, removes any extra registered cleanup paths, and removes the package directory, the vendor/<vendor> directory, vendor/composer and the vendor directory when each is empty and is not the current working directory.",
+    "ArchiveDownloader::install defines a local cleanup closure run when extraction fails: it clears the cache entry written for the file, removes the temporary extraction directory and the target path (unless it is the current directory) and unregisters those cleanup paths.",
+    "ArchiveDownloader::cleanup records that cleanup was executed for the package, and ZipDownloader's system-unzip failure handler checks that record and throws 'installation was aborted by another package operation' instead of falling back to ZipArchive.",
+    "CRITICAL: VcsDownloader::cleanup, on an 'update' where local changes were stashed in prepare, re-applies those changes to the checkout (reapplyChanges) and forgets the stash marker."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "hard",
+   "author": "r3hb-composer-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: Installer/InstallationManager.php:186-190 (SignalHandler SIGINT/SIGTERM/SIGHUP -> runCleanup), :222-224 (catch -> runCleanup), :269-277 (queued cleanup closure; skip if getInstallationSource() null), :293 (download-only runCleanup), :383 (->then($cleanupPromises[$index]) after success), :650-672 (runCleanup, abortJobs :654); Installer/LibraryInstaller.php:128-135; Downloader/DownloadManager.php:377-387; Downloader/FileDownloader.php:316-343 (unlink file, additionalCleanupPaths, dirsToCleanUp with realpath != cwd), :399-411 (add/removeCleanupPath); Downloader/ArchiveDownloader.php:42-47 (cleanupExecuted), :74-79 (addCleanupPath), :86-101 (cleanup closure incl clearLastCacheWrite), :199-201; Downloader/ZipDownloader.php:186-188; Downloader/VcsDownloader.php:113-120 (+ stash at :99-100). DECOYS: Filesystem::removeDirectory callers, GitDownloader cleanup of stash is not in cleanup(), Cache::gc, Installer::run signal handler in RequireCommand.php:160 (reverts composer.json, different cleanup), Util/Git temp clone dirs. CHEAPEST ROUTE: (1) grep cleanup -> 13 definitions across installers/downloaders; (2) read InstallationManager execute/runCleanup/batch; (3) read LibraryInstaller->DownloadManager->FileDownloader::cleanup; (4) read ArchiveDownloader (cleanup + install closure) and find ZipDownloader's cleanupExecuted use by grep; (5) read VcsDownloader::cleanup and its prepare counterpart. Five+ dependent steps; no shared token among all five members beyond the word cleanup. est. turns: 9.",
+   "repoSha": "6712f83974b4469f764963f3a65852496f254350",
+   "group": "B",
+   "set": "hard",
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3hb-composer-11",
+   "repo": "r3-composer",
+   "language": "PHP",
+   "stratum": "cross-layer",
+   "difficulty": "hard",
+   "query": "A project-defined shell step that watches files gets killed after about five minutes during a Composer run. Where does that five-minute limit come from, how does the configured value end up on the running child process, and, apart from changing the setting itself or an environment variable, which two mechanisms let one script run without the limit? The limit is unrelated to the separate time limits for network transfers.",
+   "expectedFiles": [
+    "src/Composer/Config.php",
+    "src/Composer/IO/BaseIO.php",
+    "src/Composer/Factory.php",
+    "src/Composer/Util/ProcessExecutor.php",
+    "src/Composer/Command/RunScriptCommand.php"
+   ],
+   "expectedSymbols": [
+    "Config::get",
+    "Config::disableProcessTimeout",
+    "BaseIO::loadConfiguration",
+    "ProcessExecutor::setTimeout",
+    "ProcessExecutor::getTimeout",
+    "ProcessExecutor::runProcess",
+    "RunScriptCommand::execute"
+   ],
+   "expectedFacts": [
+    "Config defaults the 'process-timeout' key to 300 seconds, and Config::get lets the COMPOSER_PROCESS_TIMEOUT environment variable override it and returns max(0, value).",
+    "CRITICAL: BaseIO::loadConfiguration (called from Factory::createComposer once the full Composer is built) copies that value into the static ProcessExecutor::setTimeout.",
+    "CRITICAL: ProcessExecutor::runProcess (and the async variant) builds the Symfony Process with static::getTimeout() as the timeout, so every child command, including script commands run by the EventDispatcher, is bound by it; the static default in ProcessExecutor is also 300.",
+    "RunScriptCommand::execute overrides the timeout for the run when the --timeout option is given (digits only, 0 means forever) by calling ProcessExecutor::setTimeout.",
+    "A script list can include the static PHP callable Composer\\Config::disableProcessTimeout as an earlier entry; it calls ProcessExecutor::setTimeout(0)."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "hard",
+   "author": "r3hb-composer-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: Config.php:39 (process-timeout default 300), :371-391 (env override + max(0,...)), :743-757 (disableProcessTimeout docblock + setTimeout(0)); IO/BaseIO.php:211-213 (ProcessExecutor::setTimeout($config->get('process-timeout'))); Factory.php:356-357 ($io->loadConfiguration($config) in fullLoad branch); Util/ProcessExecutor.php:53 (static $timeout = 300), :133 and :139 (Process created with static::getTimeout()), :326-328 (async), :448-461 (getTimeout/setTimeout); Command/RunScriptCommand.php:59 (--timeout option), :130-136; EventDispatcher/EventDispatcher.php:478-485 (executeTty -> $this->process), Console/Application.php:580-583 (ProcessTimedOutException hint). DECOYS: Util/Http/CurlDownloader.php:243-244 (CURLOPT_CONNECTTIMEOUT 10, CURLOPT_TIMEOUT max(default_socket_timeout,300)), Repository/ComposerRepository.php:786 and FilterList/FilterListApiClient.php:62 (10s http timeouts), Installer/InstallationManager.php:594,626 (3s/6s release-check timeouts), ProcessExecutor::checkTimeout. CHEAPEST ROUTE: (1) grep 'timeout' -> ~20 hits across HTTP, process, config; must separate process from network; (2) Config.php process-timeout; (3) find who applies it: grep setTimeout -> BaseIO::loadConfiguration, RunScriptCommand, Config::disableProcessTimeout; (4) read ProcessExecutor to see the static used in Process construction; (5) verify the EventDispatcher uses a ProcessExecutor (Factory wiring). Five dependent steps with strong decoys. est. turns: 7.",
+   "repoSha": "6712f83974b4469f764963f3a65852496f254350",
+   "group": "B",
+   "set": "hard",
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3hb-drogon-01",
+   "repo": "r3-drogon",
+   "language": "C++",
+   "stratum": "chain",
+   "difficulty": "hard",
+   "query": "A site enables two bundled request-rewriting plugins: one that tidies repeated and trailing path separators and is set to answer with a redirect instead of rewriting silently, and one that forces encrypted transport and has no alternative secure host configured. A client sends an unencrypted request for a path with doubled and trailing separators, plus a query string. Which chain of code produces the single reply the client gets? Start where the framework first lets plugin code intercept the request, and say what status and location the reply carries.",
+   "expectedFiles": [
+    "lib/src/HttpServer.cc",
+    "lib/src/AOPAdvice.cc",
+    "lib/src/Redirector.cc",
+    "lib/src/SlashRemover.cc",
+    "lib/src/SecureSSLRedirector.cc"
+   ],
+   "expectedSymbols": [
+    "HttpServer::onRequests",
+    "passSyncAdvices",
+    "AopAdvice::passSyncAdvices",
+    "Redirector::initAndStart",
+    "SlashRemover::initAndStart",
+    "handleReq",
+    "SecureSSLRedirector::redirectingAdvice",
+    "SecureSSLRedirector::redirectToSSL",
+    "HttpResponse::newRedirectionResponse"
+   ],
+   "expectedFacts": [
+    "CRITICAL: Redirector::initAndStart registers one synchronous advice with the framework. HttpServer::onRequests calls the static passSyncAdvices in HttpServer.cc, which calls AopAdvice::passSyncAdvices before routing. A non-null response from that advice is sent and the request is not routed.",
+    "SlashRemover::initAndStart registers its handleReq function as a path-rewrite handler (not a forward handler) because redirect is on. handleReq collapses the doubled and trailing separators with setPath.",
+    "The Redirector advice runs all path-rewrite handlers first, then all redirect handlers. So the secure-transport handler sees the already-rewritten path.",
+    "SecureSSLRedirector::redirectToSSL sets the protocol to https:// and leaves the host empty when no secure host is configured and the request has a Host header.",
+    "CRITICAL: Redirector builds the location from the protocol, the request's Host header, the rewritten path, and '?' plus the original query. It returns HttpResponse::newRedirectionResponse(url) whose default status is 302 Found.",
+    "The client therefore gets one 302 reply to the https URL with the cleaned path (for example //docs//a/ becomes /docs/a), not two redirects."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "hard",
+   "author": "r3hb-drogon-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: HttpServer.cc:292,369 (calls) and :1230-1250 (static passSyncAdvices -> AopAdvice::passSyncAdvices, response queued, request skipped); AOPAdvice.cc:56-66; Redirector.cc:21-82 (advice lambda: pathRewriteHandlers_ loop :33, handlers_ loop :37, URL build :44-72, newRedirectionResponse :74, forwardHandlers_ :76); SlashRemover.cc:196-221 (redirect_ -> registerPathRewriteHandler :216, else registerForwardHandler :220); SlashRemover.cc:153-194 handleReq (both mode :183), findExcessiveSlashes :86-132; SecureSSLRedirector.cc:15-81 initAndStart (registerRedirectHandler :64), redirectingAdvice :83-107, redirectToSSL :109-137 (secureHost_ empty + Host header -> protocol https://, host empty); HttpResponseImpl.cc:197-206 + HttpResponse.h:441 (default k302Found). Hand-traced path //docs//a/ -> /docs/a. DECOYS: SecureSSLRedirector is not a separate sync advice (it only registers a handler); GlobalFilters pre-routing advice (not involved); HttpServer::handleHttpOptions/NotFound redirects; Redirector forwardHandlers_ branch (used only when redirect=false). CHEAPEST ROUTE: (1) grep redirect/slash -> Redirector.cc, SlashRemover.cc, SecureSSLRedirector.cc; (2) read Redirector.cc advice to learn ordering; (3) read SlashRemover.cc to learn which handler kind is used and what the path becomes; (4) read SecureSSLRedirector.cc for the protocol/host outcome; (5) grep registerSyncAdvice -> AOPAdvice.cc/HttpServer.cc to name the entry hop; (6) assemble URL and 302 from newRedirectionResponse default. Note: the first grep for 'redirect' does reach gold files, but the answer needs hops 2-6 (>=4 dependent). est. turns: 7 FIRST-3-GREPS: 'redirect' reaches Redirector.cc/SecureSSLRedirector.cc (gold) at once, so only hops 3-6 are the dependent work.",
+   "repoSha": "bfb3ae2e13572a30cbdbd623da1798794d5f2706",
+   "group": "B",
+   "set": "hard",
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3hb-grdb-07",
+   "repo": "r3-grdb",
+   "language": "Swift",
+   "stratum": "completeness",
+   "difficulty": "hard",
+   "query": "In a database with several reader connections, what makes sure a reader never goes back into the pool of reusable readers while it is still inside an open read transaction, or else is thrown away instead of reused? Name each safeguard and where it lives.",
+   "expectedFiles": [
+    "GRDB/Core/DatabasePool.swift",
+    "GRDB/Core/SerializedDatabase.swift",
+    "GRDB/Core/Database.swift",
+    "GRDB/Core/WALSnapshotTransaction.swift",
+    "GRDB/Utils/Pool.swift"
+   ],
+   "expectedSymbols": [
+    "DatabasePool.init",
+    "SerializedDatabase.preconditionNoUnsafeTransactionLeft",
+    "Database.isolated",
+    "DatabasePool.asyncRead",
+    "DatabasePool.walSnapshotTransaction",
+    "WALSnapshotTransaction.commitAndRelease",
+    "Pool.release"
+   ],
+   "expectedFacts": [
+    "DatabasePool.init forces allowsUnsafeTransactions = false on the reader configuration, whatever the user configured, because the same reader may not be obtained again to close a dangling transaction (DatabasePool.swift:56-63; Configuration.swift:278-282).",
+    "CRITICAL: SerializedDatabase.preconditionNoUnsafeTransactionLeft is a fatal precondition run (via defer) at the end of sync, reentrantSync, async and async execute accesses; it fails if the connection is still inside a transaction, unless an override or the configuration allows it (SerializedDatabase.swift:131, 142, 197-234, 261, 297-309).",
+    "Synchronous DatabasePool.read runs the user closure inside Database.isolated, which opens a savepoint (a real transaction when outermost) and commits it when the closure returns (DatabasePool.swift:339-352; Database.swift:1569-1597).",
+    "The async read paths begin a deferred transaction and use a defer that tries commit and falls back to rollback before the reader is released with .reuse (DatabasePool.swift:354-379, 381-415).",
+    "CRITICAL: For long-lived snapshot reads, walSnapshotTransaction and asyncWALSnapshotTransaction release the reader with .discard instead of .reuse when it is still inside a transaction, and WALSnapshotTransaction.commitAndRelease tries hard to leave the transaction first; Pool.release removes a discarded reader from the pool (DatabasePool.swift:694-700, 716-723; WALSnapshotTransaction.swift:13-27; Pool.swift:165-175)."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "hard",
+   "author": "r3hb-grdb-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: DatabasePool.swift:56-63 (readerConfiguration then allowsUnsafeTransactions = false at :63), :339-352 (sync read -> db.isolated at :346), :354-379 and :381-415 (async read/asyncRead: commit/rollback defer, releaseReader(.reuse) at :403), :421-470 (unsafeRead variants: no isolation), :694-700 and :716-723 (.discard when isInsideTransaction); SerializedDatabase.swift:20-21 and :92-99 and :153-160 (override flag), :131/:142/:197/:210/:223/:234/:261 (precondition calls), :297-309; Database.swift:1569-1597 (isolated); WALSnapshotTransaction.swift:9-27; Utils/Pool.swift:165-175 (.discard removes item). CHEAPEST ROUTE (5 dependent steps): (1) grep 'reader' + 'transaction' in DatabasePool.swift -> read/asyncRead; (2) spot the commit/rollback defer; (3) find why configuration matters -> readerConfiguration + Configuration.allowsUnsafeTransactions doc; (4) grep allowsUnsafeTransactions -> SerializedDatabase precondition; (5) grep 'discard' -> walSnapshotTransaction + Pool.release. FIRST 3 GREPS of the question's words: 'reader' (hundreds of hits), 'pool' (Pool.swift, DatabasePool.swift, ValueObservation noise), 'open transaction' (DatabaseQueue, Database.swift, docs). Members use five different names (allowsUnsafeTransactions, preconditionNoUnsafeTransactionLeft, isolated, defer commit/rollback, .discard). DECOYS: DatabasePool.unsafeRead / asyncUnsafeRead (deliberately skip isolation; still protected only by the precondition), SerializedDatabase.sync(allowingLongLivedTransaction:) override used by WALSnapshotTransaction (the one intentional exception), DatabaseSnapshot / DatabaseSnapshotPool (set allowsUnsafeTransactions = true on purpose), DatabaseQueue (single connection, no pool). est. turns: 8.",
+   "repoSha": "0d8cf958b4b66a0473ec6e6986eb9da462171da9",
+   "group": "B",
+   "set": "hard",
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3hb-grdb-11",
+   "repo": "r3-grdb",
+   "language": "Swift",
+   "stratum": "cross-layer",
+   "difficulty": "hard",
+   "query": "A developer backs a record type with an SQL view. Saving or finding by key fails because the library says the view has no key. How can the application tell the library which columns identify a row of a view, where is that information consulted, what happens when several such providers are combined, and in which situation is it deliberately switched off?",
+   "expectedFiles": [
+    "GRDB/Core/Configuration.swift",
+    "GRDB/Core/Database.swift",
+    "GRDB/Core/Database+Schema.swift",
+    "GRDB/Core/DatabaseSchemaSource.swift",
+    "GRDB/Migration/Migration.swift"
+   ],
+   "expectedSymbols": [
+    "Configuration.schemaSource",
+    "DatabaseSchemaSource.columnsForPrimaryKey(_:inView:)",
+    "Database.primaryKey",
+    "Database.fetchPrimitivePrimaryKey(forView:columns:)",
+    "DatabaseSchemaSource.then(_:)",
+    "Chained2SchemaSource",
+    "Database.withSchemaSource",
+    "Migration.run"
+   ],
+   "expectedFacts": [
+    "CRITICAL: The application sets Configuration.schemaSource to a DatabaseSchemaSource implementing columnsForPrimaryKey(_:inView:); each connection copies it in Database.init (Configuration.swift:441; Database.swift:467).",
+    "CRITICAL: The private Database.primaryKey(_:) first checks, when a schemaSource exists and the name is a view, schemaSource.columnsForPrimaryKey, and turns the columns into key info with fetchPrimitivePrimaryKey(forView:columns:) (a regular key, tableHasRowID false); otherwise it falls back to table introspection, which for a view leads to the 'database view has no primary key' error (Database+Schema.swift:415-437, 534-566, 372-376).",
+    "Several sources are combined with then(_:) into Chained2SchemaSource: the first source returning non-nil wins, results are never merged (DatabaseSchemaSource.swift:195-216).",
+    "Migration.run executes every migration inside db.withSchemaSource(nil), so migrations see the raw SQLite schema; withSchemaSource swaps the source and clears the schema cache before and after the block (Migration.swift:29-33; Database+Schema.swift:42-57).",
+    "The source also affects unique-key lookups: columnsForUniqueKey calls primaryKey(_:), so the columns a source returns for a view count as a unique key of that view (Database+Schema.swift:1101-1121)."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "hard",
+   "author": "r3hb-grdb-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: Configuration.swift:430-441 (schemaSource doc + property: 'automatically disabled during database migrations'), Database.swift:210 (property) and :467 (copy from configuration); Database+Schema.swift:42-57 (withSchemaSource), :361-376 (public primaryKey -> error for view), :414-437 (private primaryKey consults schemaSource), :534-566 (fetchPrimitivePrimaryKey(forView:columns:), .regular(..., tableHasRowID: false) at :566), :1110-1125 (unique key lookup mentions schemaSource); DatabaseSchemaSource.swift:163-216 (protocol default nil, then(_:), Chained2SchemaSource 'We should NEVER MERGE'); Migration.swift:29-33; QueryInterface/SQL/SQLRelation.swift:290-296 (comment about views not customized with the schemaSource). CHEAPEST ROUTE (5 dependent steps): (1) grep 'view' + 'primary key' -> Database+Schema.swift 'database view ... has no primary key' error, Documentation; (2) read the error site -> sees schemaSource mentioned in the doc comment -> grep schemaSource -> Configuration, Database, Database+Schema, Migration, SQLRelation; (3) open DatabaseSchemaSource.swift for the protocol and then(_:); (4) find where the protocol method is called -> Database.primaryKey private function; (5) read Migration.run -> withSchemaSource(nil). FIRST 3 GREPS of the question's words: 'view' (hundreds), 'primary key' (hundreds), 'no key' (no code hits; the code string is 'has no primary key' in Database+Schema.swift, reachable by grep 2 variants). The identifiers schemaSource / columnsForPrimaryKey are not in the question; the error text is the only bridge. Gold files other than Database+Schema.swift (Configuration, Migration, DatabaseSchemaSource) are not reached by the first three greps. DECOYS: Database.primaryKey(_:in:) public wrapper (throws for views), TableInfo/PRAGMA table_info introspection (fetchPrimitivePrimaryKey(forTable:)), Documentation/Views or docs examples, GRDB/Documentation.docc entries. est. turns: 7.",
+   "repoSha": "0d8cf958b4b66a0473ec6e6986eb9da462171da9",
+   "group": "B",
+   "set": "hard",
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3hb-okhttp-12",
+   "repo": "r3-okhttp",
+   "language": "Kotlin",
+   "stratum": "condition",
+   "difficulty": "hard",
+   "query": "An application interceptor swaps in a different pool of reusable connections for just one call. Which pool supplies and receives the connection that call uses, and which pool is told when the call ends and its connection becomes idle? Do these differ, and what is the consequence?",
+   "expectedFiles": [
+    "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/http/RealInterceptorChain.kt",
+    "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/RealCall.kt",
+    "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/RealRoutePlanner.kt",
+    "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/ConnectPlan.kt",
+    "okhttp/src/commonJvmAndroid/kotlin/okhttp3/internal/connection/RealConnectionPool.kt"
+   ],
+   "expectedSymbols": [
+    "RealInterceptorChain.withConnectionPool",
+    "RealCall.enterNetworkInterceptorExchange",
+    "RealCall.releaseConnectionNoEvents",
+    "ConnectPlan.handleSuccess",
+    "RealConnectionPool.connectionBecameIdle"
+   ],
+   "expectedFacts": [
+    "RealInterceptorChain.withConnectionPool returns a chain copy with the override and is allowed only before an exchange exists (check(exchange == null)), so a network interceptor gets an IllegalStateException.",
+    "RealCall.enterNetworkInterceptorExchange builds the RealRoutePlanner with chain.connectionPool.delegate, so pooled-connection lookups (callAcquirePooledConnection) use the override pool, and ConnectPlan.handleSuccess puts a newly made connection into that same pool (connectionPool.put) which schedules its cleanup.",
+    "CRITICAL: RealCall keeps a private connectionPool field initialised once from client.connectionPool.delegate, and releaseConnectionNoEvents calls that field's connectionBecameIdle(connection) when the call's last use ends; so the idle notification goes to the client's own pool, not the override pool.",
+    "CRITICAL: Consequence: the client pool's connectionBecameIdle will, if the connection has noNewExchanges or the client pool's maxIdleConnections is 0, mark it noNewExchanges, try to remove it (a no-op there) and return true so RealCall closes the socket even though it lives in the override pool; otherwise it only schedules the client pool's cleanup and returns false. The override pool is never told and relies on its own cleanup task."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "hard",
+   "author": "r3hb-okhttp-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: RealInterceptorChain.kt:301-306 (withConnectionPool: check(exchange == null), copy(connectionPool)); RealCall.kt:74 (`private val connectionPool: RealConnectionPool = client.connectionPool.delegate`), :272-288 (RealRoutePlanner(connectionPool = chain.connectionPool.delegate)), :444-461 (releaseConnectionNoEvents: idleAtNs, `connectionPool.connectionBecameIdle(connection)` :457; callDone :408-440 closes returned socket); RealRoutePlanner.kt:189-196 (callAcquirePooledConnection on its pool); ConnectPlan.kt:560-579 (handleSuccess -> connectionPool.put :572; the plan's pool comes from RealRoutePlanner param :241); RealConnectionPool.kt:134-143 (put -> scheduleCloser), :146-160 (connectionBecameIdle: noNewExchanges || maxIdleConnections == 0 -> noNewExchanges=true, connections.remove, return true; else scheduleCloser, false). grep `connectionPool\\.` in internal/connection confirms only RealCall:457 uses the client's pool field. CHEAPEST ROUTE (est. 7 steps): 1 grep 'ConnectionPool' override words -> Interceptor.Chain.withConnectionPool docs and RealInterceptorChain; 2 follow chain.connectionPool.delegate -> RealCall.enterNetworkInterceptorExchange; 3 RealRoutePlanner pool use; 4 ConnectPlan.handleSuccess put; 5 grep 'connectionBecameIdle' -> RealCall.releaseConnectionNoEvents; 6 notice the RealCall field at :74 is from the client, not the chain; 7 read connectionBecameIdle to derive the consequence. The deciding detail (field captured at construction) is easy to miss; a naive answer says 'the override pool'. DECOYS: Interceptor.Chain.connectionPool/withConnectionPool KDoc, OkHttpClient.connectionPool, ConnectionPool.evictAll, RealConnection.connectionPool property (the connection's own pool, passed from the plan, is the override pool). Closed-book risk: very low. est. turns: 7.",
+   "repoSha": "e9eae50d36e938603811a41f9e2ab04182bcb515",
+   "group": "B",
+   "set": "hard",
+   "sourceSet": "dev"
+  },
+  {
+   "id": "r3hb-sequel-08",
+   "repo": "r3-sequel",
+   "language": "Ruby",
+   "stratum": "decoy",
+   "difficulty": "hard",
+   "query": "Several code paths in the model layer fetch one row by its primary key value: the model class's subscript form, a class-level finder method, a dataset-level finder, and an instance reload. In a standard model whose table is a plain table name and whose primary key is a single column, which one runs when application code looks a record up through the class's subscript form with a single key value, how does it build its SELECT, and in which configurations does it fall back to a general first-row query?",
+   "expectedFiles": [
+    "lib/sequel/model/base.rb"
+   ],
+   "expectedSymbols": [
+    "Model::ClassMethods#[]",
+    "Model::ClassMethods#primary_key_lookup",
+    "Model::ClassMethods#reset_fast_pk_lookup_sql",
+    "Model::ClassMethods#convert_input_dataset",
+    "Model::ClassMethods#set_primary_key"
+   ],
+   "expectedFacts": [
+    "CRITICAL: Model.[] with a non-hash argument calls primary_key_lookup (hash arguments go to first).",
+    "CRITICAL: primary_key_lookup, when @fast_pk_lookup_sql is set, duplicates that prefix string, appends the literalized key with literal_append and runs fetch_rows, returning the first row through the dataset's row_proc (no LIMIT clause); otherwise it calls dataset.first(primary_key_hash(pk)).",
+    "@fast_pk_lookup_sql is the string 'SELECT * FROM <table> WHERE <pk> = ' built by reset_fast_pk_lookup_sql, only when both @simple_table and @simple_pk are set.",
+    "@simple_table is set by convert_input_dataset for a symbol/identifier/qualified identifier, or for a dataset that is a simple select-all (unset for aliased/literal sources and joined datasets), and @simple_pk by set_primary_key only for a single non-array key.",
+    "set_dataset clears the fast SQL when the dataset does not support placeholder literalizers, and the sql_comments plugin disables it by overriding reset_fast_pk_lookup_sql.",
+    "The look-alike paths differ: Dataset#with_pk uses a cached placeholder-literalizer loader with a table-qualified condition and LIMIT 1, Model.with_pk delegates to primary_key_lookup, and Model#refresh's _refresh_get uses the fast SQL unless the dataset has a lock style."
+   ],
+   "expectedNoMatch": false,
+   "max_turns": 15,
+   "tier": "hard",
+   "author": "r3hb-sequel-drafter",
+   "date": "2026-10-01",
+   "notes": "VERIFICATION: model/base.rb:218-221 Model.[], :1079-1089 primary_key_lookup, :1098-1105 reset_fast_pk_lookup_sql, :629 / :740-751 simple_table assignments (simple_select_all? at :748), :672-674 simple_pk (set_primary_key :663), :637 nil when !supports_placeholder_literalizer?, :711-713 Model.with_pk, :2287-2291 Dataset#[], :2371-2377 Dataset#with_pk, :2402-2415 _with_pk_loader, :1900-1909 _refresh_get; plugins/sql_comments.rb:113-115; plugins/prepared_statements.rb:118; plugins/caching.rb:149, primary_key_lookup_check_values.rb:109, static_cache.rb:249/:293 (override primary_key_lookup). All read. DECOYS: Dataset#with_pk / _with_pk_loader (placeholder literalizer, qualified, LIMIT 1), Model.with_pk, Dataset#[] (integer arg -> with_pk), Model#_refresh_get (instance reload), plugin overrides of primary_key_lookup, plugins/finder.rb. CHEAPEST ROUTE: (1) grep 'primary key' -> hundreds of hits; (2) guess the subscript form and read Model.[] in base.rb; (3) read primary_key_lookup; (4) find where the fast SQL string is built (reset_fast_pk_lookup_sql); (5) trace simple_table / simple_pk assignments (convert_input_dataset, set_primary_key); (6) check set_dataset and plugin resets. est. turns: 7. Closed-book risk: low.",
+   "repoSha": "3acf523e8accb7a745e364b4db3bb51b172162b3",
+   "group": "B",
+   "set": "hard",
+   "sourceSet": "dev"
+  }
+ ]
+}

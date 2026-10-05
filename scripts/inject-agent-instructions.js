@@ -23,8 +23,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, lstatSync, readlinkSync, symlinkSync, unlinkSync } from 'node:fs';
-import { policyTextForEnv } from './harness-prompts/rules-v2.js';
-import { dirname, join, relative } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const MARKER_BEGIN = '<!-- sweet-search:agent-instructions:begin -->';
@@ -117,13 +116,23 @@ export function getMcpPolicyBody() {
 
 /**
  * Resolve the policy body for a contact-surface variant.
- *   'cli' (default) → the frozen ss-* CLI champion (CANONICAL_POLICY_BODY); with
- *                     SS_FIX_RULES_V2=0 in `env`, the pre-v2 text byte for byte
- *                     (harness-prompts/rules-v2.js)
+ *   'cli' (default) → the frozen ss-* CLI champion (CANONICAL_POLICY_BODY), or the file named
+ *                     by SS_VARIANT_RULES_FILE in `env` (bench-only, see below)
  *   'mcp'           → the MCP-tool variant (init --mcp --no-cli); not affected by the switch
  */
 export function getPolicyBody(variant = 'cli', env = process.env) {
-  return variant === 'mcp' ? getMcpPolicyBody() : policyTextForEnv(CANONICAL_POLICY_BODY, env);
+  return variant === 'mcp' ? getMcpPolicyBody() : cliPolicyBody(env);
+}
+
+// BENCH-ONLY A/B switch (delete when the rules A/Bs end): SS_VARIANT_RULES_FILE=<path relative to the
+// repo root> replaces the CLI policy body, so Claude Code (lean agent file / rules file) installs the
+// variant text. Same read as rulesFor() in scripts/retrieval-bench-282.mjs: leading YAML front matter
+// is stripped. Unset = CANONICAL_POLICY_BODY.
+function cliPolicyBody(env) {
+  const f = env?.SS_VARIANT_RULES_FILE;
+  if (!f) return CANONICAL_POLICY_BODY;
+  const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
+  return stripFrontMatter(readFileSync(resolve(repoRoot, f), 'utf8')).trimEnd();
 }
 
 const CURSOR_FRONTMATTER = `---

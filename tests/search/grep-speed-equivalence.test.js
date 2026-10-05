@@ -126,9 +126,7 @@ describe('file selection from per-file totals', () => {
 
   for (const opts of [
     { perFileCap: 5, maxFiles: 3 },
-    { perFileCap: 5, maxFiles: 3, order: 'weight' },
-    { perFileCap: 5, maxFiles: 3, order: 'weight', weight: 'sat2' },
-    { perFileCap: 20, maxFiles: 20, order: 'weight', weight: 'sat2' },
+    { perFileCap: 20, maxFiles: 20 },
     { perFileCap: 1, maxFiles: 2, hiddenSampleSize: 2 },
   ]) {
     it(`keeps the same files, lines and counts (${JSON.stringify(opts)})`, () => {

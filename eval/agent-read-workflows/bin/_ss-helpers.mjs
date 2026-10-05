@@ -33,6 +33,7 @@ import {
   renderGrepListing,
 } from '../../../core/search/grep-output-shaping.js';
 import { cwdGrepScope, resolveCwdGlob, resolveCwdPath } from '../../../core/search/cwd-paths.js';
+import { SEARCH_LOADING_WAIT_MS, searchNotReadyLine, callStartedMs } from '../../../core/agent-tools/tools.js';
 import { formatRouteMetadata } from '../../../core/search/search-format.js';
 import { createAdmissionPolicy } from '../../../core/indexing/admission-policy.js';
 import { createIndexCoverage, semanticTargetFor } from '../../../core/search/index-coverage.js';
@@ -393,6 +394,16 @@ function globExcludedNote(stats, globs) {
     + `${files ? ` in ${files} file(s)` : ''}; drop or widen a glob to see them)`;
 }
 
+// An include glob that matched a directory took the files below it (grep-path-globs.js,
+// deviation 0). One line names those directories, so the wider scope is never silent.
+function globDirNote(stats) {
+  const dirs = Array.isArray(stats?.pathGlobDirs) ? stats.pathGlobDirs : [];
+  if (!dirs.length) return null;
+  const shown = dirs.slice(0, 3).map(d => `${d}/`).join(', ');
+  const more = dirs.length > 3 ? ` +${dirs.length - 3} more` : '';
+  return `# -g also matched ${dirs.length === 1 ? 'directory' : 'directories'} ${shown}${more} — searched the files below`;
+}
+
 // Grep muscle memory writes `ss-grep "pat" src/foo` with the scope as a bare
 // positional instead of `--in src/foo`. Absorb any such trailing positional that
 // resolves to a real path under the project (pure logic lives in _ss-argparse so
@@ -549,25 +560,49 @@ async function getSweetSearch() {
   }
 }
 
-async function ensureWarmServerReady({ timeoutMs = 60000, intervalMs = 500 } = {}) {
-  // Inside the daemon: it is the warm server, and it only takes a call once ready.
-  if (host.getSearcher) return true;
-  const { isServerRunning, autoSpawnServer } = await import(path.join(REPO_ROOT, 'core/search/search-server.js'));
-  if (await isServerRunning()) return true;
+// ss-search has no cold fallback here, so it waits for a daemon that is still loading.
+// r282 Codex r1 typedoc: the daemon was cold-starting while another cell warmed 8 servers;
+// the 60 s wait ran out and 5 searches were refused. A daemon that is listening (busy
+// loading) is waited for, never replaced: a second spawn would only race it for the socket.
+// The wait is SEARCH_LOADING_WAIT_MS (90 s), under the harnesses' 120 s command cap.
+const SPAWN_RETRY_MS = 60_000;
 
-  // autoSpawnServer has a short built-in timeout. It may return false while the
-  // detached server is still finishing model/index load, so poll afterwards.
-  await autoSpawnServer();
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    if (await isServerRunning()) return true;
-    await new Promise(resolve => setTimeout(resolve, intervalMs));
+/** 'ready', 'loading' (not ready by the deadline) or 'failed' (init failed, even after one replacement). */
+async function ensureWarmServerReady({ timeoutMs = SEARCH_LOADING_WAIT_MS, startedMs = Date.now(), intervalMs = 500 } = {}) {
+  // Inside the daemon: it is the warm server, and it only takes a call once ready.
+  if (host.getSearcher) return 'ready';
+  const { getServerHealth, isServerListening, autoSpawnServer } = await import(path.join(REPO_ROOT, 'core/search/search-server.js'));
+  const deadline = startedMs + timeoutMs;
+  let spawns = 0;
+  let lastSpawnAt = 0;
+  for (;;) {
+    const health = await getServerHealth({ timeoutMs: 1000 });
+    if (health?.status === 'ready' || health?.warm === true) return 'ready';
+    // A daemon whose init failed stays resident until its idle TTL; a fresh spawn replaces
+    // it (the new daemon's startup guard stops a failed one). Once, then give up.
+    if (health?.status === 'failed') {
+      if (spawns > 0 || Date.now() >= deadline) return 'failed';
+      spawns++;
+      lastSpawnAt = Date.now();
+      await autoSpawnServer({ quiet: true });
+      continue;
+    }
+    if (Date.now() >= deadline) return 'loading';
+    // No daemon at all (never started, or it exited): start one. autoSpawnServer has a
+    // short built-in wait and may return before the detached server binds its socket, so
+    // a second spawn waits SPAWN_RETRY_MS — sooner, it would race the first for the socket.
+    if (!health && spawns < 2 && Date.now() - lastSpawnAt >= SPAWN_RETRY_MS && !await isServerListening()) {
+      spawns++;
+      lastSpawnAt = Date.now();
+      await autoSpawnServer({ quiet: true });
+      continue;
+    }
+    await new Promise(resolve => setTimeout(resolve, Math.min(intervalMs, Math.max(0, deadline - Date.now()))));
   }
-  return false;
 }
 
 async function queryWarmSearch(query, options) {
-  if (!await ensureWarmServerReady({ timeoutMs: 5000 })) {
+  if (await ensureWarmServerReady({ timeoutMs: 5000 }) !== 'ready') {
     throw new Error('warm server is not ready');
   }
   const { queryServer } = await import(path.join(REPO_ROOT, 'core/search/search-server.js'));
@@ -733,6 +768,8 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
       ...context, dropText, typed: typedFiles(inPaths),
       ...(withContext ? { getLines: grepContextLineReader(), matchLines: grepMatchLines(result.results) } : {}),
     })) process.stdout.write(`${line}\n`);
+    const dirNote = globDirNote(result.stats);
+    if (dirNote) process.stdout.write(`${dirNote}\n`);
     writeGrepInterfaceHint(total, shown);
     const cut = total - rows.length;
     if (cut > 0) process.stdout.write(`# +${cut} more ${cut === 1 ? 'hit' : 'hits'} (raise -k)\n`);
@@ -887,6 +924,8 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
   // above; sites that already print as a hit or context row are left out.
   const siblings = grepSiblingLine(result.siblingLine, body.rows, context);
   if (siblings) process.stdout.write(`${siblings}\n`);
+  const dirNote = globDirNote(result.stats);
+  if (dirNote) process.stdout.write(`${dirNote}\n`);
   writeGrepInterfaceHint(total, body.rows);
   const hiddenFiles = renderGrepHiddenFiles(body.hidden);
   if (hiddenFiles) process.stdout.write(`${hiddenFiles}\n`);
@@ -1022,6 +1061,8 @@ async function cmdFind(rawArgs) {
 
   // -g globs that removed every candidate: say so, not a bare "(no matches)".
   const findGlobNote = response.results?.length ? null : globExcludedNote(response.stats, globs);
+  const findDirNote = response.results?.length ? globDirNote(response.stats) : null;
+  if (findDirNote) process.stdout.write(`${findDirNote}\n`);
   if (findGlobNote) {
     process.stdout.write(`${findGlobNote}\n`);
   } else if (renderFix) {
@@ -1318,9 +1359,12 @@ async function cmdAgentSearch(rawArgs) {
     process.exit(2);
   }
 
-  const serverUsed = await ensureWarmServerReady();
-  if (!serverUsed) {
-    process.stderr.write('[ss-search] warm server is not ready; refusing cold direct search in benchmark wrapper\n');
+  // The budget counts from the start of the agent's command (the native client may already
+  // have waited for the socket, and the daemon route for the indexes).
+  const waitStart = callStartedMs(process.env);
+  const warm = await ensureWarmServerReady({ startedMs: waitStart });
+  if (warm !== 'ready') {
+    process.stderr.write(searchNotReadyLine(Math.round((Date.now() - waitStart) / 1000), warm === 'failed'));
     process.exit(1);
   }
 
@@ -1493,7 +1537,7 @@ async function cmdAgentSearch(rawArgs) {
     routeConfidence,
     routeMethod,
     routerLatency_us,
-    serverUsed,
+    serverUsed: true,
     serverProjectRoot,
     requestedProjectRoot,
     repoMatches,
@@ -1595,7 +1639,7 @@ async function cmdSemantic(rawArgs) {
   };
   let r;
   try {
-    if (!await ensureWarmServerReady({ timeoutMs: 5000 })) throw new Error('warm server is not ready');
+    if (await ensureWarmServerReady({ timeoutMs: 5000 }) !== 'ready') throw new Error('warm server is not ready');
     const { queryReadSemanticServer } = await import(path.join(REPO_ROOT, 'core/search/search-server.js'));
     r = await queryReadSemanticServer({
       path: file, query, projectRoot: FILE_ROOT, maxChars: maxTokens * 4, wholeFileMaxChars,

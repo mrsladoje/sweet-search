@@ -8,7 +8,7 @@
  *   exact    → N<TAB>  a carried delimiter is rejected loudly, so the cheapest form
  *   tolerant → N:      a carried tab is absorbed and written; a colon cannot be indentation
  *   clipped  → none    tolerant AND output-clipped (codex): the gutter is pure cost
- * Measured: claude-code none (tab until 2026-10-02), opencode colon, codex none. Inferred from source:
+ * Measured: claude-code none (tab until 2026-10-02), opencode none (colon until 2026-10-03), codex none. Inferred from source:
  * cursor colon, pi tab, devin tab, grok-build arrow (its read tool's own prefix),
  * deepseek-harness colon (plugin-selected matcher). Unknown → colon.
  * These tests lock the mapping, the detection order (explicit env → measured
@@ -47,7 +47,7 @@ const table = (rows) => (pid) => rows[pid] || null;
 describe('harness → form mapping', () => {
   it('is exactly the decided table', () => {
     expect(HARNESS_DEFAULT_FORM).toEqual({
-      'claude-code': 'none', opencode: 'colon', codex: 'none', cursor: 'colon',
+      'claude-code': 'none', opencode: 'none', codex: 'none', cursor: 'colon',
       pi: 'tab', devin: 'tab', 'grok-build': 'arrow', 'deepseek-harness': 'colon',
     });
     expect(GUTTER_FORMS).toEqual({ tab: '\t', pipe: '| ', colon: ':', arrow: '→', none: '' });
@@ -69,11 +69,13 @@ describe('harness → form mapping', () => {
       if (!profile.form) expect(form, harness).toBe(MATCHER_FAMILY_FORM[profile.family]);
     }
     // The two overrides: grok-build renders the prefix its own read tool prints;
-    // claude-code gets none by measurement (2026-08-28 study, 2026-10-02 smoke).
+    // claude-code and opencode get none by measurement (2026-08-28 study, 2026-10-02 and
+    // 2026-10-03 smokes).
     expect(HARNESS_PROFILE['grok-build']).toEqual({ family: 'exact', form: 'arrow' });
     expect(HARNESS_PROFILE['claude-code']).toEqual({ family: 'exact', form: 'none' });
+    expect(HARNESS_PROFILE.opencode).toEqual({ family: 'tolerant', form: 'none' });
     expect(Object.entries(HARNESS_PROFILE).filter(([, p]) => p.form).map(([h]) => h).sort())
-      .toEqual(['claude-code', 'grok-build']);
+      .toEqual(['claude-code', 'grok-build', 'opencode']);
   });
 
   it('assumes an unknown harness is tolerant, so the fallback is colon and never tab', () => {
@@ -96,7 +98,7 @@ describe('the measured harnesses are locked', () => {
   it('keep their forms', () => {
     expect(HARNESS_DEFAULT_FORM['claude-code']).toBe('none');
     expect(HARNESS_DEFAULT_FORM.codex).toBe('none');
-    expect(HARNESS_DEFAULT_FORM.opencode).toBe('colon');
+    expect(HARNESS_DEFAULT_FORM.opencode).toBe('none');
   });
 
   it('resolve from their own markers before anything else, even with inferred markers present', () => {
@@ -104,13 +106,13 @@ describe('the measured harnesses are locked', () => {
     const noWalk = () => { throw new Error('must not walk'); };
     expect(resolveGutterForm({ ...leaked, CLAUDECODE: '1' }, { ancestry: noWalk })).toMatchObject({ form: 'none', harness: 'claude-code', source: 'env-marker' });
     expect(resolveGutterForm({ ...leaked, CODEX_SANDBOX_NETWORK_DISABLED: '1' }, { ancestry: noWalk })).toMatchObject({ form: 'none', harness: 'codex', source: 'env-marker' });
-    expect(resolveGutterForm({ ...leaked, OPENCODE: '1' }, { ancestry: noWalk })).toMatchObject({ form: 'colon', harness: 'opencode', source: 'env-marker' });
+    expect(resolveGutterForm({ ...leaked, OPENCODE: '1' }, { ancestry: noWalk })).toMatchObject({ form: 'none', harness: 'opencode', source: 'env-marker' });
   });
 
   it('resolve from ancestry before any inferred marker (a leaked marker cannot pre-empt the nearest harness)', () => {
     const leaked = { PI_CODING_AGENT: 'true', GROK_AGENT: '1', DSH_SESSION_ID: 's1' };
     expect(resolveGutterForm(leaked, { ancestry: () => 'codex' })).toMatchObject({ form: 'none', harness: 'codex', source: 'ancestry' });
-    expect(resolveGutterForm(leaked, { ancestry: () => 'opencode' })).toMatchObject({ form: 'colon', harness: 'opencode', source: 'ancestry' });
+    expect(resolveGutterForm(leaked, { ancestry: () => 'opencode' })).toMatchObject({ form: 'none', harness: 'opencode', source: 'ancestry' });
     expect(resolveGutterForm(leaked, { ancestry: () => 'claude-code' })).toMatchObject({ form: 'none', harness: 'claude-code', source: 'ancestry' });
   });
 
@@ -315,7 +317,7 @@ describe('resolveGutterForm (pure, injected env)', () => {
   });
 
   it('falls back to ancestry, then to the inferred markers, then to colon', () => {
-    expect(resolveGutterForm({}, { ancestry: () => 'opencode' })).toMatchObject({ form: 'colon', harness: 'opencode', source: 'ancestry' });
+    expect(resolveGutterForm({}, { ancestry: () => 'opencode' })).toMatchObject({ form: 'none', harness: 'opencode', source: 'ancestry' });
     expect(resolveGutterForm({}, { ancestry: () => 'codex' })).toMatchObject({ form: 'none', harness: 'codex', source: 'ancestry' });
     expect(resolveGutterForm({ GROK_AGENT: '1' }, { ancestry: noAncestry })).toMatchObject({ form: 'arrow', harness: 'grok-build', source: 'env-marker' });
     expect(resolveGutterForm({}, { ancestry: noAncestry })).toEqual({ form: 'colon', delimiter: ':', harness: null, source: 'default' });
@@ -327,7 +329,7 @@ describe('resolveGutterForm (pure, injected env)', () => {
   });
 
   it('SS_READ_GUTTER=auto means detect, not the fallback', () => {
-    expect(resolveGutterForm({ SS_READ_GUTTER: 'auto' }, { ancestry: () => 'opencode' }).form).toBe('colon');
+    expect(resolveGutterForm({ SS_READ_GUTTER: 'auto' }, { ancestry: () => 'opencode' }).form).toBe('none');
     expect(resolveGutterForm({ SS_READ_GUTTER: 'auto' }, { ancestry: () => 'claude-code' }).form).toBe('none');
   });
 
@@ -353,7 +355,7 @@ describe('resolveGutterForm (real process env)', () => {
     const savedEntry = process.env.CLAUDE_CODE_ENTRYPOINT;
     delete process.env.CLAUDE_CODE_ENTRYPOINT;
     try {
-      const first = resolveGutterForm(process.env, { ancestry: () => 'opencode' });
+      const first = resolveGutterForm(process.env, { ancestry: () => 'cursor' });
       expect(first.form).toBe('colon');
       expect(process.env.SS_READ_GUTTER).toBe('colon');
       // A second call with a different (fake) ancestry returns the memoised answer.
@@ -545,7 +547,7 @@ describe('grok-build', () => {
 
   it('a GROK_AGENT leaked from dotfiles cannot pre-empt a real harness in the tree', () => {
     expect(resolveGutterForm({ GROK_AGENT: '1' }, { ancestry: () => 'codex' })).toMatchObject({ form: 'none', harness: 'codex' });
-    expect(resolveGutterForm({ GROK_AGENT: '1' }, { ancestry: () => 'opencode' })).toMatchObject({ form: 'colon', harness: 'opencode' });
+    expect(resolveGutterForm({ GROK_AGENT: '1' }, { ancestry: () => 'opencode' })).toMatchObject({ form: 'none', harness: 'opencode' });
   });
 });
 

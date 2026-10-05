@@ -17,7 +17,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { runInVirtualProcess } from './virtual-process.js';
-import { AGENT_TOOL_SUBCOMMANDS, SEARCHER_SUBCOMMANDS } from './tools.js';
+import { AGENT_TOOL_SUBCOMMANDS, SEARCHER_SUBCOMMANDS, SEARCH_LOADING_WAIT_MS, searchNotReadyLine, callStartedMs } from './tools.js';
 
 export const AGENT_TOOL_BODY_MAX_BYTES = 1024 * 1024;
 const MAX_ARGS = 256;
@@ -56,6 +56,7 @@ export function validateAgentToolPayload(payload) {
  * @param {boolean} deps.isUnixSocket
  * @param {object} deps.searcher                 the daemon's SweetSearch
  * @param {() => boolean} deps.isReady
+ * @param {() => boolean} [deps.isFailed]       its index load failed
  * @param {() => Promise<void>} deps.waitForServerReady
  * @param {(sub, args, host) => Promise<void>} [deps.runTool]  test seam
  */
@@ -63,6 +64,7 @@ export async function buildAgentToolDaemonResponse(payload, {
   isUnixSocket = false,
   searcher = null,
   isReady = () => false,
+  isFailed = () => false,
   waitForServerReady = async () => {},
   runTool = null,
 } = {}) {
@@ -74,8 +76,18 @@ export async function buildAgentToolDaemonResponse(payload, {
   if (SEARCHER_SUBCOMMANDS.has(call.tool)) {
     // The tools always allowed a cold daemon 60 s to load (ensureWarmServerReady). A 503
     // sends the call to the in-process fallback, which would only wait again.
-    if (!isReady()) await waitForServerReady(READY_WAIT_MS);
-    if (!isReady()) return json(503, { error: 'Server is not ready', status: 'starting' });
+    // ss-search has no cold fallback worth having (the fallback would wait on this same
+    // daemon), so it waits the ss-search budget and then answers with the retry line.
+    const search = call.tool === 'agent-search';
+    const started = callStartedMs(call.env);
+    const budget = search ? Math.max(0, SEARCH_LOADING_WAIT_MS - (Date.now() - started)) : READY_WAIT_MS;
+    if (!isReady() && budget > 0) await waitForServerReady(budget);
+    if (!isReady()) {
+      if (search && !isFailed()) {
+        return json(200, { v: 1, code: 1, stdout: '', stderr: searchNotReadyLine(Math.round((Date.now() - started) / 1000)) });
+      }
+      return json(503, { error: 'Server is not ready', status: isFailed() ? 'failed' : 'starting' });
+    }
   }
 
   const daemonRoot = canonical(searcher?.projectRoot || process.cwd());

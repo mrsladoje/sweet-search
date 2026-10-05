@@ -22,7 +22,7 @@ import path from 'node:path';
 import { ISOLATION_ON, startJail, stopJail, jailArgv, jailEnv, jailDenials, rolloutStateDir } from './agent-jail.mjs';
 import { auditRollout, UNAUDITED } from './escape-audit.mjs';
 import {
-  FRAME_OPEN, FRAME_CLOSE, ANTI_THRASH_TEXT,
+  FRAME_OPEN, FRAME_CLOSE,
   writeRunTestsShim, installCommandWrappers, shimIntegritySnapshot,
   verifyShimIntegrity, verifyRunnerDirectoryIntegrity, writePromptToStdin,
 } from './codex-task-runner.mjs';
@@ -34,8 +34,6 @@ export { resolveSweetRulesPlacement, sweetRulesRowFields, appendSweetRules } fro
 import { sweetRulesOutOfFile } from './sweet-rules-placement.mjs';
 
 const DOCKER_HOST = process.env.DOCKER_HOST || 'unix:///var/run/docker.sock';
-const L1_CONDENSE = process.env.SS_NO_CMD_CONDENSE !== '1';
-const L2_RT_AUTHORITY = process.env.SS_NO_RT_AUTHORITY !== '1';
 export const PACKING_TREATMENTS = Object.freeze(['off', 'parallel-bash']);
 const PACKING_INSTRUCTIONS = Object.freeze({
   off: '',
@@ -103,15 +101,13 @@ export function setupRunner({
   const ipcStateDir = runnerStateDir;
   const shimInfo = writeRunTestsShim(binDir, {
     image, workdir, testScript, rundir, testTimeoutSec,
-    netArgs, brokerMode: isolate, dockerBin: realDocker, rtAuthority: L2_RT_AUTHORITY,
+    netArgs, brokerMode: isolate, dockerBin: realDocker, rtAuthority: true,
     stateDir: ipcStateDir, _isAgentFormat: sweet, label, taskId, arm, injectedFiles,
     installSeds,
   });
   let wrapperFiles = [];
-  if (L1_CONDENSE) {
-    try { wrapperFiles = Object.values(installCommandWrappers(binDir, { realDocker })); }
-    catch (e) { console.error(`  [L1] wrapper install skipped: ${String(e.message).slice(0, 100)}`); }
-  }
+  try { wrapperFiles = Object.values(installCommandWrappers(binDir, { realDocker })); }
+  catch (e) { console.error(`  [L1] wrapper install skipped: ${String(e.message).slice(0, 100)}`); }
   const runnerFiles = [...(shimInfo.files || []), ...wrapperFiles];
   const integrity = shimIntegritySnapshot(runnerFiles);
   // The broker runs OUTSIDE the jail (it needs docker); the agent reaches it only
@@ -202,19 +198,6 @@ const FRAME_CHECKPOINT_VARIANTS = { '1': FRAME_CHECKPOINT_TEXT, v1: FRAME_CHECKP
 export function frameCheckpointText(env = process.env) {
   const sel = String(env.SS_FRAME_CHECKPOINT || '').trim();
   return FRAME_CHECKPOINT_VARIANTS[sel] || '';
-}
-
-// The full agent prompt: completion frame (both arms) + M++ retrieval guidance (sweet
-// only, bracketed so completion authority wins) + the issue. Identical assembly to codex.
-export function buildPrompt({ sweet, mppText, problemStatement }) {
-  const antiThrash = process.env.SS_NO_ANTITHRASH ? '' : ANTI_THRASH_TEXT;
-  const packing = packingTreatmentRowFields({ sweet });
-  const packingGuidance = sweet && packing.packingTreatment !== 'off'
-    ? `\n\n${PACKING_INSTRUCTIONS[packing.packingTreatment]}` : '';
-  const sweetGuidance = sweet
-    ? `\n\n=== Code-search expertise — use the ss-* commands (ss-search / ss-grep / ss-find / ss-read / ss-semantic / ss-trace) per this guidance; this is your advantage, use it to locate code in fewer, sharper steps ===\n${mppText}${antiThrash}${packingGuidance}`
-    : '';
-  return `${FRAME_OPEN}${sweetGuidance}\n\n${FRAME_CLOSE}${frameReflectText()}${frameCheckpointText()}\n\n=== ISSUE ===\n${problemStatement || ''}`;
 }
 
 // Aggregate a normalized toolCalls list ([{kind, command, resultText, isError}]) into

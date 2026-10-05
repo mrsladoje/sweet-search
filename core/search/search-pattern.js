@@ -423,6 +423,7 @@ export async function bareGrep(query, routing, options = {}) {
         pathGlobExcludedMatches: globExcluded.excludedMatches,
         pathGlobExcludedFiles: globExcluded.excludedFiles,
       }),
+      ...(pathGlobs?.dirsMatched?.size && { pathGlobDirs: [...pathGlobs.dirsMatched].sort() }),
       ...(fallback.stats || {}),
       ...(lineClassStats ? { lineClassFiles: lineClassStats.files, lineClassStamped: lineClassStats.stamped } : {}),
       symbolType,
@@ -564,6 +565,7 @@ export async function patternSearch(query, routing, options = {}) {
       ...(regexDialectHint && { regexDialectHint }),
       // ss-find -g: the matches the globs removed, so "(no matches)" can say why.
       ...(pathGlobs && { pathGlobExcludedMatches: candidateResult.stats.pathGlobExcludedMatches || 0 }),
+      ...(pathGlobs?.dirsMatched?.size && { pathGlobDirs: [...pathGlobs.dirsMatched].sort() }),
       total_ms: Math.round(performance.now() - start),
     };
 
