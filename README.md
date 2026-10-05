@@ -805,9 +805,10 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 <br/>
 
-- ***Below:*** the functions after the range, with their line range.
-- ***Above:*** fields and constants the code uses but the agent has not seen.
-- ***Already read:*** unchanged lines come back as a one-line reminder.
+- After the code, it names what the agent has not read yet:
+  - the functions that come after the range, with their line ranges;
+  - the fields and constants above the range that the code uses.
+- Lines the agent already read, if unchanged, come back as a one-line reminder instead of the code.
 - `10-20`, `10:20` and `40 5` (5 lines from line 40) also work as ranges.
 - Minified and generated files are refused.
 - Set the line-number format with `SS_READ_GUTTER=tab|colon|none`.
