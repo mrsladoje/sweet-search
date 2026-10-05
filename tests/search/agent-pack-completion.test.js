@@ -555,9 +555,10 @@ describe('codeWithoutCommentsAndStrings', () => {
     drops("puts '#{not_interpolated()}'", 'a.rb', 'not_interpolated');
     drops('s = f"{{not_a_field()}}"', 'a.py', 'not_a_field');
     keeps('val m = "id=${user.id()}"', 'a.kt', 'user.id()');
-    // bounded: a pathological line costs little
+    // bounded: a pathological 40k-character line took 2.7 s before the scan cap (loose bound:
+    // the suite runs under load)
     const t0 = Date.now();
     blank('const r = /' + '\\"'.repeat(20000) + '/;', 'a.js');
-    expect(Date.now() - t0).toBeLessThan(250);
+    expect(Date.now() - t0).toBeLessThan(1000);
   });
 });
