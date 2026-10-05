@@ -157,8 +157,8 @@ sweet-search uninstall --dry-run    # preview cleanup for the current repo
 ```
 
 - **Footprint:** CPU-only hosts download a few hundred MB of INT8 models; GPU hosts add ~1.2 GB of FP32 backbones (skipped automatically where they'd be useless); M3+ Macs can additionally fetch a ~3.2 GB CoreML cascade for Neural Engine acceleration. Everything lands in `~/.cache/sweet-search/models/` and is used strictly on-device.
-- **Claude Code wiring (default):** init leaves `CLAUDE.md` untouched, writes the verbatim evolved guide to `.claude/rules/sweet-search.md`, installs `.claude/output-styles/sweet-search.md`, and selects it in `.claude/settings.json`. It also registers a session-start prewarm hook and installs the `/sweet-index` skill.
-- **Output-style conflicts:** init never silently replaces another selected style. It still installs the Sweet Search style so it appears under `/config`, then emits a warning. A higher-priority `.claude/settings.local.json` selection is also detected and reported. Select `sweet-search`, then run `/clear` or restart Claude Code.
+- **Claude Code wiring (default):** init leaves `CLAUDE.md` untouched. It writes a main agent to `.claude/agents/sweet-search.md` and selects it with `"agent": "sweet-search"` in `.claude/settings.json`, so every new session in the project starts with the sweet-search prompt: Claude Code's own guidance without its grep-first search advice, plus the evolved guide. It also replaces the built-in `general-purpose` and `Plan` subagents with versions that carry no search advice, denies the Explore subagent, writes a short reminder to `.claude/rules/sweet-search.md` (gitignored in git projects, as it names your local memory folder), and installs the `/sweet-index` skill. A project-local install also registers a session-start prewarm hook. Sessions opened before init keep the old prompt; start a new one.
+- **Agent conflicts:** init never replaces a main agent you chose. If `.claude/settings.json` or `.claude/settings.local.json` already selects another agent, or `.claude/agents/sweet-search.md` is your own file, init keeps it, writes the full guide to `.claude/rules/sweet-search.md`, installs the `sweet-search` output style as a fallback, and prints a warning.
 - **Which agents:** `init` alone sets up Claude Code. `--codex` and `--opencode` set up only those agents; add `--claude` to include Claude Code too. `--agents`, `--gemini` and `--cursor` add their file to that selection (alone, they keep Claude Code). Indexing, `.sweet-search/` and `--mcp` are the same for every selection.
 - **Codex/opencode wiring:** `--codex` puts the guide and our tested base instructions in the project `.codex/config.toml` (`developer_instructions`, `model_instructions_file`); `--opencode` puts the guide, our tested prompt and a tool-description plugin under `.opencode/` (an existing `.opencode/opencode.jsonc` or commented `opencode.json` is edited in place, comments kept). Neither writes `AGENTS.md`. Codex reads a project `.codex/` layer only after you trust the project: init checks your Codex config (read only) and, if the project is not trusted, says how to trust it and keeps an old sweet-search `AGENTS.md` block until then. The Codex prewarm hook needs sweet-search installed in the project (a dev dependency); a global install skips it, and search does not need it. `--agents` still writes `AGENTS.md` for other tools.
 - **What gets indexed:** what you'd expect — `.gitignore` is respected, `node_modules`/build dirs/minified artifacts are denied, files over 1 MB skipped, with a `.sweet-search-ignore` for extra rules.
@@ -225,8 +225,8 @@ The CLI is the default contact surface. To also register the MCP server, run
 | `--force` | Skip the confirmation prompt. |
 | `--help`, `-h` | Show uninstall help. |
 
-`sweet-search uninstall` removes Sweet Search's rule, output style and active
-selection, AGENTS/GEMINI/Cursor instruction blocks, project hooks and skill,
+`sweet-search uninstall` removes Sweet Search's rule, main agent and subagent
+files with their settings entries, output style, AGENTS/GEMINI/Cursor instruction blocks, project hooks and skill,
 MCP registration, enforcement/reminder artifacts, and `.sweet-search/` from the
 current repo. The shared model cache stays for your other repos. It
 preserves user-authored content. Generic Codex `[features] hooks = true` flags
