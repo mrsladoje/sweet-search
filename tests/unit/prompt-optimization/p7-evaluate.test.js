@@ -107,7 +107,7 @@ describe('judgePanelScore — panel retry (2026-10-05: rows scored by 2 of 3 jud
     expect(score).toBe(0.5);
     expect(judges.every((j) => !j.isError)).toBe(true);
     expect(calls.get(JUDGE_PANEL[0].lineage)).toBe(2);
-    expect(judges[0].retry_count).toBe(3);
+    expect(judges[0].retry_count).toBe(5); // runJudge retried 2 + 2 times, plus 1 panel retry
     expect(calls.get(JUDGE_PANEL[1].lineage)).toBe(1);
   });
 
@@ -121,6 +121,30 @@ describe('judgePanelScore — panel retry (2026-10-05: rows scored by 2 of 3 jud
     const { judges } = await judgePanelScore({ probe: makeProbe(), answer: 'a', runJudgeFn });
     expect(judges.filter((j) => j.isError).map((j) => j.lineage)).toEqual([JUDGE_PANEL[1].lineage]);
     expect(unparsable).toBe(2);
+  });
+
+  it('a verdict that never parses is a failed judge; usage and retries sum over attempts', async () => {
+    let n = 0;
+    const runJudgeFn = async ({ lineage, model }) => {
+      if (lineage !== JUDGE_PANEL[0].lineage) return { text: JSON.stringify({ score: 0.4 }), isError: false, lineage, model, raw: {} };
+      n++;
+      return n < 3
+        ? { text: 'no verdict', isError: false, retryCount: 1, lineage, model, raw: { usage: { input_tokens: 100, output_tokens: 10 } } }
+        : { text: 'still none', isError: false, retryCount: 0, lineage, model, raw: { usage: { input_tokens: 100, output_tokens: 10 } } };
+    };
+    const { judges } = await judgePanelScore({ probe: makeProbe(), answer: 'a', runJudgeFn });
+    expect(judges[0]).toMatchObject({ isError: true, input_tokens: 300, output_tokens: 30, retry_count: 4 });
+  });
+
+  it('a permanent failure (401, missing key) is not asked again', async () => {
+    let calls = 0;
+    const runJudgeFn = async ({ lineage, model }) => {
+      if (lineage !== JUDGE_PANEL[0].lineage) return { text: JSON.stringify({ score: 0.4 }), isError: false, lineage, model, raw: {} };
+      calls++;
+      return { text: '', isError: true, lineage, model, raw: { status: 401 } };
+    };
+    await judgePanelScore({ probe: makeProbe(), answer: 'a', runJudgeFn });
+    expect(calls).toBe(1);
   });
 });
 
