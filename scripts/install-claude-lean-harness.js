@@ -353,7 +353,7 @@ export function claudeLeanContextSection({ memoryDir = null, memoryEnabled = tru
       '# Memory',
       memoryDir
         ? `You have a file-based memory that lasts across sessions, in \`${memoryDir}\`. sweet-search init computed this path; if it does not exist on this machine, the directory is ${rule}. A MEMORY.md loaded into your context shows the directory in use.`
-        : `You have a file-based memory that lasts across sessions. A MEMORY.md loaded into your context shows its directory; without one, the directory is ${rule}.`,
+        : `You have a file-based memory that lasts across sessions. Its directory is named in the sweet-search project rules in your context; a loaded MEMORY.md also shows it. Without either, the directory is ${rule}.`,
       '- One fact per file. Start the file with frontmatter: `name` (a short kebab-case name), `description` (one line, used later to judge relevance) and `metadata:` with `type:` user, feedback, project or reference. Write the file with Write; it creates a missing directory.',
       '- Types: user = who the user is (role, skills, preferences). feedback = how the user wants you to work, both corrections and approaches they confirmed, with the reason. project = ongoing work, goals or constraints that the code and git history do not show; write dates as absolute dates. reference = where outside information lives (URLs, dashboards, tickets).',
       '- After the fact in a feedback or project memory, add a **Why:** line and a **How to apply:** line. Link related memories as [[name]]; a link to a memory not written yet is fine.',
@@ -546,8 +546,11 @@ export function installClaudeLeanHarness({
 
   const memory = claudeAutoMemoryDir({ projectRoot, configDir, visibleConfigDir, env });
   const wantedFiles = {
+    // No per-project memory path in the agent file: the file (the system prompt) is then the same in
+    // every project and its cache entry is shared across projects. The path goes into the pointer rules
+    // file (`memoryDir` in the result), which Claude Code puts in the first user message, per project anyway.
     [CLAUDE_LEAN_AGENT_REL]: claudeLeanAgentFile({
-      appendOverride, promptEdits, memoryDir: memory.dir, memoryEnabled: memory.enabled, rules: rulesText,
+      appendOverride, promptEdits, memoryDir: null, memoryEnabled: memory.enabled, rules: rulesText,
     }),
     [CLAUDE_LEAN_SUBAGENT_REL]: claudeLeanSubagentFile(),
     [CLAUDE_LEAN_PLAN_REL]: claudeLeanPlanFile(),
@@ -647,6 +650,7 @@ export function installClaudeLeanHarness({
     detail: changes.length ? changes.join('; ') : 'lean harness already installed',
     active: true,
     rulesInPrompt: rulesText !== null,
+    memoryDir: memory.enabled ? memory.dir : null,
   };
   if (warnings.length) result.warning = warnings.join(' ');
   return result;

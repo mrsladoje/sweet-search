@@ -367,6 +367,14 @@ describe('writeClaudeRules / removeClaudeRules', () => {
     expect(writeClaudeRules({ projectRoot: tmpRoot, layout: 'pointer' })).toBe('unchanged');
   });
 
+  it('pointer layout names the memory directory when the lean harness gives one', () => {
+    expect(writeClaudeRules({ projectRoot: tmpRoot, layout: 'pointer', memoryDir: '/cfg/projects/-p/memory/' })).toBe('created');
+    expect(read(CLAUDE_RULES_REL)).toBe(`${POINTER}Your file-based memory directory for this project is \`/cfg/projects/-p/memory/\`.\n`);
+    // The full layout carries the whole policy and no memory line.
+    expect(writeClaudeRules({ projectRoot: tmpRoot, layout: 'full', memoryDir: '/cfg/projects/-p/memory/' })).toBe('updated');
+    expect(read(CLAUDE_RULES_REL)).toBe(FULL);
+  });
+
   it('switches an owned file between the full and the pointer layout in place', () => {
     writeClaudeRules({ projectRoot: tmpRoot });
     expect(writeClaudeRules({ projectRoot: tmpRoot, layout: 'pointer' })).toBe('updated');

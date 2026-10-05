@@ -2443,7 +2443,7 @@ export async function runInit(args) {
         try {
           const inPrompt = leanReportForRules?.active === true && leanReportForRules.rulesInPrompt === true;
           const layout = inPrompt ? 'pointer' : 'full';
-          const status = writeClaudeRules({ projectRoot, variant: promptVariant, layout });
+          const status = writeClaudeRules({ projectRoot, variant: promptVariant, layout, memoryDir: inPrompt ? leanReportForRules.memoryDir : null });
           claudeRulesReport = { status, variant: promptVariant, layout };
           const where = layout === 'pointer'
             ? ' [pointer; the full rules are in .claude/agents/sweet-search.md]' : '';

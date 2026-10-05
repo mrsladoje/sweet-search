@@ -47,7 +47,7 @@ try {
     const layout = wr.resolveClaudeRulesLayout ? wr.resolveClaudeRulesLayout(process.env, { strict: true }).layout : 'pointer';
     const r = lean.installClaudeLeanHarness({ projectRoot: proj, configDir: home, visibleConfigDir: home });
     if (r.active !== true) throw new Error(`lean harness not active: ${r.status} ${r.detail}`);
-    if (layout !== 'none') wr.writeClaudeRules({ projectRoot: proj, layout: layout === 'pointer' ? 'pointer' : 'full' });
+    if (layout !== 'none') wr.writeClaudeRules({ projectRoot: proj, layout: layout === 'pointer' ? 'pointer' : 'full', memoryDir: layout === 'pointer' ? r.memoryDir : null });
     const norm = (t) => t.split(fs.realpathSync(proj)).join('<PROJECT>').split(proj).join('<PROJECT>').split(fs.realpathSync(home)).join('<HOME>').split(home).join('<HOME>');
     for (const f of ['.claude/rules/sweet-search.md', '.claude/agents/sweet-search.md', '.claude/agents/general-purpose.md', '.claude/agents/Plan.md', '.claude/sweet-search-harness.json', '.claude/settings.json']) {
       const fp = path.join(proj, f); if (fs.existsSync(fp)) texts[f.replace(/\//g, '__')] = norm(fs.readFileSync(fp, 'utf8'));
