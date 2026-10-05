@@ -272,6 +272,17 @@ Any new ranking signal must be gated on agent format (`opts._isAgentFormat`). Un
 | Live removal of ss-semantic, ss-find or ss-trace | Open ($0 estimates only) |
 | Prefix byte-stability and cache-write behaviour on Anthropic and DeepSeek cells | Open (luna replay only) |
 | Per-rule ablation of the 30 rules | Open |
-| Stop guidance aimed at retrieval Q&A | Open but no measured waste yet |
+| Stop guidance aimed at retrieval Q&A | Tested once 2026-10-05 (set-coverage rule, below): no gain |
 | Default `-k` of ss-grep and ss-find | Open |
 | Anything on Sol, Sonnet 5.5 or DeepSeek V4.1 Flash | Open (no lever was ever tested there) |
+
+---
+
+## 2026-10-05 — set-coverage stop rule (Claude Code, Opus 5.5 medium)
+
+- **Lever.** `variants/rules-set-coverage.md`: two sentences added to the shipped rules. "Search output": when what you look for is a set (each case, every place, all implementations, which ones), map it with ONE broad `ss-grep` or `ss-trace`, then cover each member. "Multi-file": "every implementing class, when the question asks for all of them".
+- **Why.** composer-07 replay (dev run 2026-10-05): sweet stopped after one downloader and scored 0.4 v native 0.8; the rules say "one confirmed file+symbol is enough".
+- **Run.** Sweet arm only, both arms on the engine of branch fix/cc-replay-1005 (return-type locals, interface class set, config-key line), private repo copies with graphs rebuilt by that code. 6 DEV questions: composer-07 (target), jj-09 and ocelot-27 (set-shaped rotation), sequel-08, zipkin-20, zipkin-23 (controls). REPS 2, order A1 B1 B2 A2, conc 1. Results `core/prompt-optimization/data/results/r282-cc-opus55-medium-ccset-{A,B}-r{1,2}` (gitignored).
+- **Outcome.** Score sum A 11.00 v B 10.93 (12 runs each); realized cost A $0.983 v B $1.012 (+3%); calls 42 v 44. composer-07 A 0.65/0.80 v B 0.85/0.40: no flip. No control regressed beyond noise.
+- **Status.** DEAD as a prompt lever (no gain, slightly costlier). The engine change carried the target: the interface class line appeared in all 4 composer runs, and composer scored 0.65/0.80/0.85/0.40 against 0.40/0.80 on the old engine (dev r1/r2; different cache conditions, so not a clean comparison).
+
