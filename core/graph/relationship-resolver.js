@@ -661,12 +661,26 @@ export function narrowCallCandidates(candidates, receiverRaw, sourceEntity, inde
   // caller's own type, never a same-named method elsewhere. A parent outside
   // the repo (Python `io.StringIO`) has no definition here: no edge (click's
   // RecordingStream.write → super().write was bound to _PagerWriter.write).
-  if (receiver === 'super' || (receiver === 'base' && /\.cs$/.test(sourceEntity?.file_path || ''))
-    || (receiver === 'parent' && /\.php$/.test(sourceEntity?.file_path || ''))) {
+  // Go has no `super`: there it is a variable name.
+  const srcFile = sourceEntity?.file_path || '';
+  if ((receiver === 'super' && !/\.go$/.test(srcFile)) || (receiver === 'base' && /\.cs$/.test(srcFile))
+    || (receiver === 'parent' && /\.php$/.test(srcFile))) {
     const srcOwner = sourceEntity ? ownerOf(sourceEntity) : null;
     if (!srcOwner) return [];
-    const supers = supertypesOf(srcOwner);
-    return supers && supers.size > 0 ? ownedBy(candidates, supers) : [];
+    // The nearest supertype level that defines it (a parent's override, not also the
+    // grandparent's original). Two types at one level (multiple inheritance) stay
+    // ambiguous: the caller links only one type's methods.
+    const directSupers = index.directSupertypesOf || index.supertypesOf || NO_INDEX.directSupertypesOf;
+    const seen = new Set([srcOwner]);
+    let level = [...directSupers(srcOwner)];
+    for (let depth = 0; depth < 16 && level.length > 0; depth++) {
+      const names = new Set(level.filter(n => !seen.has(n)));
+      for (const n of names) seen.add(n);
+      const hit = ownedBy(candidates, names);
+      if (hit.length > 0) return hit;
+      level = [...names].flatMap(n => [...directSupers(n)]);
+    }
+    return [];
   }
 
   let pool = candidates;

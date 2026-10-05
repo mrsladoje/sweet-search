@@ -123,6 +123,18 @@ function isVisibleViaImport(imported, filePath, language) {
   return false;
 }
 
+const JS_PATH = /\.(?:[cm]?[jt]sx?)$/;
+const JS_FUNCTION_DECLARATION = /^(?:(?:export|default|async|declare)\s+)*function\b/;
+
+/** A JS/TS named function expression (not a `function name(` statement). */
+function isFunctionExpression(c) {
+  if (c.type !== 'function' || !JS_PATH.test(String(c.file_path || ''))) return false;
+  const sig = String(c.signature || '').trim();
+  if (JS_FUNCTION_DECLARATION.test(sig)) return false;
+  const name = String(c.name || '').replace(/[$]/g, '\\$');
+  return new RegExp(`(?<![\\w$])function\\s*\\*?\\s*${name}\\s*[(<]`).test(sig);
+}
+
 /** One overload set: every definition in one file under one owner. */
 function asDecision(tier, ownerOf, preferNonTest) {
   if (tier.length === 0) return null;
@@ -155,6 +167,12 @@ export function resolveBareCall(caller, candidates, index, info = null) {
   // A function nested in another function (a local helper, a closure) is
   // visible only inside that function's span.
   const visibleNested = (c) => {
+    // A named function expression (`wrapAsync(async function dispatch(…) {`,
+    // `return function inner(`) binds its name only inside its own body.
+    if (isFunctionExpression(c)) {
+      return caller.file_path === c.file_path
+        && caller.start_line >= c.start_line && (caller.end_line ?? caller.start_line) <= c.end_line;
+    }
     const host = enclosingFunctionOf(c);
     if (!host) return true;
     if (host.id === caller.id) return true;

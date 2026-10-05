@@ -114,25 +114,82 @@ function importingFiles(db, targetFile, entitySql, entityParams) {
 }
 
 /**
- * The match sits in a comment: after `//` on its line (Rust `///` / `//!`
- * doc examples, JS line comments) or on a block-comment line (`/*`, ` * `).
- * serde_json's lib.rs docs (`//!     let v = serde_json::from_str(data)?;`)
- * were listed as callers of from_str.
+ * Character ranges of comments in `text` (JS/TS/Rust): `//` to the line end and
+ * `/* … *\/` blocks, never inside a string. JS template literals are strings
+ * except their `${…}` parts; Rust `'` opens a lifetime more often than a char,
+ * so only `"` quotes there. serde_json's lib.rs docs
+ * (`//!     let v = serde_json::from_str(data)?;`) were listed as callers.
  */
-function inLineComment(text, index, filePath = '') {
-  const prefix = text.slice(text.lastIndexOf('\n', index - 1) + 1, index);
-  if (/^\s*(?:\/\*|\*)/.test(prefix)) return true;
-  // `//` outside string literals only: `fetch("https://x", f(y))` is code.
-  // Rust `'` opens a lifetime more often than a char, so only `"` quotes there.
-  const quotes = /\.rs$/.test(filePath) ? '"' : '"\'`';
-  let quote = null;
-  for (let i = 0; i < prefix.length; i++) {
-    const c = prefix[i];
-    if (quote) {
-      if (c === '\\') i++;
-      else if (c === quote) quote = null;
-    } else if (quotes.includes(c)) quote = c;
-    else if (c === '/' && prefix[i + 1] === '/') return true;
+export function commentRanges(text, filePath = '') {
+  const ranges = [];
+  const rust = /\.rs$/.test(filePath);
+  const n = text.length;
+  let i = 0;
+  const templateDepth = []; // brace depth at each open `${`
+  let braces = 0;
+  while (i < n) {
+    const c = text[i];
+    const d = text[i + 1];
+    if (c === '/' && d === '/') {
+      const e = text.indexOf('\n', i);
+      const stop = e < 0 ? n : e;
+      ranges.push([i, stop]);
+      i = stop;
+      continue;
+    }
+    if (c === '/' && d === '*') {
+      const e = text.indexOf('*/', i + 2);
+      const stop = e < 0 ? n : e + 2;
+      ranges.push([i, stop]);
+      i = stop;
+      continue;
+    }
+    if (c === '"' || (!rust && c === "'")) {
+      i++;
+      while (i < n && text[i] !== c && text[i] !== '\n') i += text[i] === '\\' ? 2 : 1;
+      i++;
+      continue;
+    }
+    if (!rust && c === '`') {
+      i++;
+      while (i < n && text[i] !== '`') {
+        if (text[i] === '\\') { i += 2; continue; }
+        if (text[i] === '$' && text[i + 1] === '{') { templateDepth.push(braces); braces++; i += 2; break; }
+        i++;
+      }
+      if (text[i] === '`') i++;
+      continue;
+    }
+    if (c === '{') braces++;
+    else if (c === '}') {
+      braces--;
+      // The `}` closing a template's `${`: back into the template text.
+      if (templateDepth.length && braces === templateDepth[templateDepth.length - 1]) {
+        templateDepth.pop();
+        i++;
+        while (i < n && text[i] !== '`') {
+          if (text[i] === '\\') { i += 2; continue; }
+          if (text[i] === '$' && text[i + 1] === '{') { templateDepth.push(braces); braces++; i += 2; break; }
+          i++;
+        }
+        if (text[i] === '`') i++;
+        continue;
+      }
+    }
+    i++;
+  }
+  return ranges;
+}
+
+function inRanges(ranges, index) {
+  let lo = 0;
+  let hi = ranges.length - 1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    const [a, b] = ranges[mid];
+    if (index < a) hi = mid - 1;
+    else if (index >= b) lo = mid + 1;
+    else return true;
   }
   return false;
 }
@@ -187,10 +244,11 @@ export function findAliasCallers({
       });
     }
     if (!patterns.length) continue;
+    const comments = commentRanges(text, filePath);
     for (const pattern of patterns) {
       const re = pattern.re;
       for (const match of text.matchAll(re)) {
-        if (inLineComment(text, match.index || 0, filePath)) continue;
+        if (inRanges(comments, match.index || 0)) continue;
         const line = lineOfIndex(text, match.index || 0);
         let entity = entityAtLine.get(...entityParams, filePath, line, line);
         if (!entity && fileNodeAt) {
