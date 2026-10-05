@@ -909,7 +909,9 @@ export class StructuralContextBuilder {
     // (r3hb-okhttp-12: `ss-trace RealCall callees` printed "(no callees in the repository)"
     // for a 560-line class). Calls between its own methods are left out.
     let memberCount = 0;
-    if (!calleesRaw.length && TYPE_USER_TARGETS.has(target.type) && typeof this.repo.getMemberCallables === 'function') {
+    // (A class's own rows are at most a few unresolved calls in field initialisers: RealCall had 2.)
+    const inRepo = (x) => x?.filePath && !String(x.id).startsWith('external:');
+    if (!calleesRaw.some(inRepo) && TYPE_USER_TARGETS.has(target.type) && typeof this.repo.getMemberCallables === 'function') {
       const members = this.repo.getMemberCallables(target, { limit: MEMBER_CALLEE_SOURCES });
       const own = new Set([target.id, ...members.map(m => m.id)]);
       const rows = [];
@@ -920,10 +922,10 @@ export class StructuralContextBuilder {
           rows.push(String(c.id).startsWith('external:') ? { ...c, id: `external:member:${c.name}` } : c);
         }
       }
-      const fromMembers = mergeCallSites(rows)
+      const fromMembers = mergeCallSites([...calleesRaw, ...rows])
         .map(x => (callIntoTestTree(target.filePath, x.filePath) ? asUnresolved(x, 0) : x))
         .map(x => ({ ...x, depth: 1 }));
-      if (fromMembers.length) {
+      if (fromMembers.some(inRepo)) {
         calleesRaw = fromMembers;
         memberCount = members.length;
       }
