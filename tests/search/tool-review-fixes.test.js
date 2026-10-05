@@ -939,3 +939,16 @@ describe('overnight audit — fresh-repo regressions (scala-xml, ecto)', () => {
     expect(spans(r)).toEqual(expect.arrayContaining(['function opts 2-4']));
   });
 });
+
+describe('round 16 — an unbound qualified call fits several same-named definitions', () => {
+  it('`$repository->findPackages(` is no caller of RepositorySet.findPackages when ArrayRepository has one too', () => {
+    const target = { id: 't', name: 'findPackages', filePath: 'src/Repository/RepositorySet.php', parentClass: 'RepositorySet' };
+    const rival = { id: 'r', name: 'findPackages', filePath: 'src/Repository/ArrayRepository.php', parentClass: 'ArrayRepository' };
+    const fixture = { id: 'x', name: 'findPackages', filePath: 'tests/Repository/FakeRepository.php', parentClass: 'FakeRepository' };
+    const edge = { targetName: 'repository.findPackages', filePath: 'src/Repository/CompositeRepository.php', targetId: null };
+    expect(trustedCallerEdge(edge, target, [target, fixture])).toBe(true);
+    expect(trustedCallerEdge(edge, target, [target, rival])).toBe(false);
+    // Bound by the index, or named by the exact owner: trusted as before.
+    expect(trustedCallerEdge({ ...edge, targetName: 'repositorySet.findPackages' }, target, [target, rival])).toBe(true);
+  });
+});

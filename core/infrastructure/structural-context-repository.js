@@ -446,6 +446,18 @@ export class StructuralContextRepository {
       .slice(0, limit);
   }
 
+  /** Other definitions with the target's name (rivals for an unbound qualified call). */
+  _namesakes(db, target) {
+    try {
+      return db.prepare(`SELECT e.id, e.file_path, e.parent_class, e.package, e.signature, e.summary, e.name
+        FROM entities e WHERE ${this._entitySql(db, 'e')} AND e.name = ? LIMIT 200`)
+        .all(...this._entityParams(db), target.name)
+        .map(r => ({ id: r.id, name: r.name, filePath: r.file_path, parentClass: r.parent_class, package: r.package, signature: r.signature, summary: r.summary }));
+    } catch {
+      return null;
+    }
+  }
+
   getCallers(target, opts = {}) {
     const db = this._open();
     if (!db || !target?.id) return [];
@@ -520,14 +532,15 @@ export class StructuralContextRepository {
     // Python: `pkg.method(` through a module the caller imports never reaches a class method.
     for (let i = named.length - 1; i >= 0; i--) if (this._pythonModuleCall(named[i].targetName, target, named[i].filePath)) named.splice(i, 1);
     const targetNested = this._qualifiedCallToNestedFunction(db, 'x.y', target);
-    const edges = named.filter(edge => trustedCallerEdge(edge, target)
+    const namesakes = this._namesakes(db, target);
+    const edges = named.filter(edge => trustedCallerEdge(edge, target, namesakes)
       && !(targetNested && /[.:]/.test(String(edge.targetName || ''))));
     // `opts.unresolved`: calls of the same name the graph bound to no definition and the
     // receiver check could not trust (`loadBalancer.Data.LeaseAsync(`). They are no caller
     // the graph knows, but the agent must know they exist.
     if (Array.isArray(opts.unresolved)) {
       for (const edge of named) {
-        if (!edge.targetId && edge.relationship === 'calls' && !trustedCallerEdge(edge, target)
+        if (!edge.targetId && edge.relationship === 'calls' && !trustedCallerEdge(edge, target, namesakes)
           && !goPackagePrivateFrom(edge.filePath, target)) opts.unresolved.push(edge);
       }
     }
@@ -650,7 +663,8 @@ export class StructuralContextRepository {
       // call_sites has one row per site: one caller item per calling entity,
       // carrying every line it calls the target on.
       const byCaller = new Map();
-      for (const row of resolver.callersOf(target, { limit: limit * 4 })) {
+      const ambiguousSites = Array.isArray(opts.ambiguous) ? [] : null;
+      for (const row of resolver.callersOf(target, { limit: limit * 4, ambiguous: ambiguousSites })) {
         const line = row.context_line || null;
         const prev = byCaller.get(row.id);
         if (prev) {
@@ -664,6 +678,17 @@ export class StructuralContextRepository {
           contextLine: line,
           contextLines: line ? [line] : [],
           targetId: target.id,
+          targetName: target.name,
+          weight: 1,
+          bare: true,
+        });
+      }
+      for (const row of ambiguousSites || []) {
+        opts.ambiguous.push({
+          ...this._entityFromRow(row),
+          relationship: 'calls',
+          contextLine: row.context_line || null,
+          targetId: null,
           targetName: target.name,
           weight: 1,
           bare: true,
@@ -862,7 +887,7 @@ export class StructuralContextRepository {
       resolvedParent: row.resolved_parent || null,
       contextLine: row.context_line || null,
       weight: row.weight ?? 1,
-    })).filter(edge => (edge.targetId && idSet.has(edge.targetId)) || trustedCallerEdge(edge, target));
+    })).filter(edge => (edge.targetId && idSet.has(edge.targetId)) || trustedCallerEdge(edge, target, this._namesakes(db, target)));
   }
 
   getForwardDependencies(frontierIds, opts = {}) {

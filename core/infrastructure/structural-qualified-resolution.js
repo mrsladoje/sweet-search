@@ -1,3 +1,5 @@
+import { isTestLikePath } from './test-paths.js';
+
 function qualifierTerms(qualifier) {
   const raw = String(qualifier || '').toLowerCase();
   return [raw, ...raw.split(/[^a-z0-9]+/)].filter(t => t.length >= 3);
@@ -40,7 +42,7 @@ export function trustedCalleeEdge(targetName, resolved) {
  * target. `edge` carries the CALLING entity's fields (filePath, parentClass)
  * plus targetId/targetName from the relationship row.
  */
-export function trustedCallerEdge(edge, target) {
+export function trustedCallerEdge(edge, target, namesakes = null) {
   const tn = String(edge?.targetName || '').trim();
   if (!tn || !target?.name) return true;
   if (edge.targetId && edge.targetId === target.id) return true;
@@ -67,7 +69,21 @@ export function trustedCallerEdge(edge, target) {
     .filter(Boolean)
     .map(s => String(s).toLowerCase());
   if (targetNames.includes(qualifier)) return true;
-  return shouldTrustQualifiedResolution(tn, target);
+  if (!shouldTrustQualifiedResolution(tn, target)) return false;
+  // A call the index bound to nothing, whose receiver fits another definition of the same
+  // name as well (`$repository->findPackages(` and ArrayRepository, ComposerRepository,
+  // RepositorySet, … all hold "repository"): the index refused to pick one, and the query
+  // must not pick this one. Overloads in the target's own file and owner are no rivals.
+  if (!edge.targetId && Array.isArray(namesakes)) {
+    // Production code never calls into a test file's helper of the same name.
+    const fromTest = isTestLikePath(edge.filePath || '');
+    const rival = namesakes.some(n => n.id !== target.id
+      && (fromTest || !isTestLikePath(n.filePath || ''))
+      && (n.filePath !== target.filePath || (n.parentClass || null) !== (target.parentClass || null))
+      && (String(n.parentClass || '').toLowerCase() === qualifier || shouldTrustQualifiedResolution(tn, n)));
+    if (rival) return false;
+  }
+  return true;
 }
 
 function rustMethodCallOnFreeFunction(targetName, entity) {
