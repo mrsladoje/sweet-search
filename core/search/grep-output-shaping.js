@@ -327,9 +327,9 @@ const BLOB_MIN_HITS = 3;
 /**
  * The scale of one file's group matches[start..end): its path prior, or the generated prior
  * when the file has BLOB_MIN_HITS hits or more and every one is a blob line (a lockfile or
- * data dump under any name). One ordinary hit keeps the path prior.
+ * data dump under any name), every hit seen. One ordinary hit keeps the path prior.
  */
-function groupScale(file, matches, start, end) {
+function groupScale(file, matches, start, end, total = Infinity) {
   const scale = priorScale(file);
   if (scale === SCALE_GENERATED) return scale;
   let n = 0;
@@ -339,7 +339,8 @@ function groupScale(file, matches, start, end) {
     if (!isBlobLine(m?.content ?? m?.matchText)) return scale;
     n++;
   }
-  return n >= BLOB_MIN_HITS ? SCALE_GENERATED : scale;
+  // Every hit of the file must have been seen: an unread hit may be ordinary code.
+  return n >= BLOB_MIN_HITS && (total === Infinity || n >= total) ? SCALE_GENERATED : scale;
 }
 
 /** The file-type prior of a match path: 1 source, 0.5 test/spec/fixture, 0.25 generated/vendored/minified. */
@@ -442,12 +443,12 @@ export function selectGrepFilesByWeight(matches, opts = {}) {
       hiddenFileCount++;
       hiddenMatchCount += total;
       if (sampleLen < sampleSize || bound > sample[3 * sampleSize - 3]) {
-        const scale = groupScale(file, matches, start, i);
+        const scale = groupScale(file, matches, start, i, total);
         sampleLen = sampleInsert(sample, sampleLen, sampleSize, sat ? grepWeightKey(total, scale, 'sat2') : total * scale, total, start);
       }
       continue;
     }
-    const fileScale = groupScale(file, matches, start, i);
+    const fileScale = groupScale(file, matches, start, i, total);
     const key = sat ? grepWeightKey(total, fileScale, 'sat2') : total * fileScale;
     if (size < maxFiles) {
       if (size === capacity) {
@@ -482,7 +483,7 @@ export function selectGrepFilesByWeight(matches, opts = {}) {
     size = last;
     if (size > 0) fileHeapSiftDown(heap, size, 0);
     ords[last] = ord;
-    const scale = sat ? groupScale(matches[ord].file, matches, ord, ord + tot) : key / tot;
+    const scale = sat ? groupScale(matches[ord].file, matches, ord, ord + tot, tot) : key / tot;
     files[last] = { file: matches[ord].file, total: tot, kept: Math.min(tot, perFileCap), prior: scale === SCALE_SOURCE ? 1 : scale === SCALE_TEST ? 0.5 : 0.25 };
   }
   const kept = [];
@@ -867,13 +868,15 @@ export function renderGrepListing(rows, { before = 0, after = 0, getLines = null
     const key = `${file.slice(file.lastIndexOf('/') + 1)}\n${body.map((l) => l.replace(/^\d+[:-]/, '')).join('\n')}`;
     // dropText prints line numbers only: equal numbers in two files are no twin.
     // Only files that show every hit: hidden hits may differ.
-    const twin = head && !dropText && more === 0 && body.length > 1 ? bodies.get(key) : undefined;
+    // A shown line cut short (`…`) is no evidence of equal lines.
+    const whole = !body.some((l) => l.includes('…'));
+    const twin = head && !dropText && more === 0 && whole && body.length > 1 ? bodies.get(key) : undefined;
     if (twin) {
       const at = [...hits].map((h) => h.line).sort((a, b) => a - b).join(', ');
       out.push(`${head} (same matching lines as ${twin}, at ${at})`);
       continue;
     }
-    if (head && more === 0 && !bodies.has(key)) bodies.set(key, head);
+    if (head && more === 0 && whole && !bodies.has(key)) bodies.set(key, head);
     if (head) out.push(head);
     out.push(...body);
   }
