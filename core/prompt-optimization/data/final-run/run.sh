@@ -195,8 +195,14 @@ case "$CMD" in
       id=$(step_id "$cell" "$rep" "$arms"); printf '  %-44s %s missing %s\n' "$id" "$([ -f "$STEPS_DIR/$id.done" ] && echo DONE || echo '    ')" "$(step_missing "$cell" "$rep" "$arms")"; done
     tail -5 "$LOGS/run.log" 2>/dev/null ;;
   stop)
-    if [ -f "$PIDF" ]; then pkill -TERM -P "$(cat "$PIDF")" 2>/dev/null; kill "$(cat "$PIDF")" 2>/dev/null; fi
-    pkill -TERM -f "retrieval-bench-282.mjs.*--tag $FR_TAG-r" 2>/dev/null   # the bench reaps its daemons on SIGTERM
+    # Only THIS driver's process tree: another driver may run the same tag (other lane / cells).
+    if [ -f "$PIDF" ]; then
+      tree() { local p; for p in $(pgrep -P "$1"); do echo "$p"; tree "$p"; done; }
+      pids=$(tree "$(cat "$PIDF")")
+      kill "$(cat "$PIDF")" 2>/dev/null
+      for p in $pids; do ps -o command= -p "$p" | grep -q "retrieval-bench-282.mjs" && kill -TERM "$p" 2>/dev/null; done   # the bench reaps its daemons on SIGTERM
+      for p in $pids; do kill "$p" 2>/dev/null; done
+    fi
     sleep 10; for c in $FR_CELLS; do for r in $(seq 1 "${FR_REPS:-2}"); do reap_step "$c" "$r"; done; done
     rm -f "$PIDF"; log "stopped" ;;
   analyze) node "$FR_HERE/analyze.mjs" --tag "$FR_TAG" --out "$FR_STATE/report-$FR_TAG.json" \
