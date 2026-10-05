@@ -786,6 +786,8 @@ export async function patternSearch(query, routing, options = {}) {
     plannerRoute: candidateResult.stats.plannerRoute,
     trackerLastIndex: candidateResult.stats.trackerLastIndex,
     ...(regexDialectHint && { regexDialectHint }),
+    // ss-find -g: directories an include glob took whole (grep-path-globs.js, deviation 0).
+    ...(pathGlobs?.dirsMatched?.size && { pathGlobDirs: [...pathGlobs.dirsMatched].sort() }),
     total_ms: Math.round(totalTime),
     allCandidateIds,
     allMappedChunkIds,

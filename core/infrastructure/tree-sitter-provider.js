@@ -1951,8 +1951,12 @@ export class TreeSitterProvider {
           if (opening.length > 0 && node.endIndex - first.startIndex > maxSize) {
             const openingSpan = spanOf(opening[0], opening[opening.length - 1]);
             if (!mergeIntoPrev(opening) && openingSpan.text) {
+              // Inside a declaration with no header chunk (`interface Chain {` too short to
+              // stand alone), the opening tokens are its first part: named and typed after it.
+              const partName = takePartName();
               this._pushChunk(chunks, openingSpan, {
-                chunkId: this._nextChunkId(), ...parentFields(), type: 'code', name: null, signature: null,
+                chunkId: this._nextChunkId(), ...parentFields(),
+                type: partName ? partOf.type : 'code', name: partName, signature: partName ? partOf.signature : null,
               });
             }
             buffer = [...leading, node];

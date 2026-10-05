@@ -22,8 +22,8 @@ import {
   selectEntries,
 } from '../../core/search/agent-output-fixes.js';
 
-const plan = (results) => selectEntries(results);
-const render = (results) => renderFixedBlocks(results, plan(results));
+const plan = (results) => selectEntries(results, { dedupe: 'a2', k: 10 });
+const render = (results) => renderFixedBlocks(results, plan(results), { compact: true });
 
 // ---------------------------------------------------------------------------------------------
 describe('1b / 2c: continuations and the summary rows they cover', () => {

@@ -417,7 +417,11 @@ describe('patternSearch — fileFilter scope', () => {
   it('ss-find -g globs restrict the candidates too, alone and ANDed with --in', async () => {
     const run = opts => patternSearch.call(scopeSearcher(), 'auth', null, { regex: 'AuthService', k: 10, ...opts });
     expect(files(await run({ pathGlobs: ['!src/sub/**'] }))).toEqual(['lib/auth.js', 'src/auth.js']);
-    expect(files(await run({ pathGlobs: ['src/*'] }))).toEqual(['src/auth.js']);
+    expect(files(await run({ pathGlobs: ['src/*.js'] }))).toEqual(['src/auth.js']);
+    // An include that may name a directory takes the files below it, and says which.
+    const dirs = await run({ pathGlobs: ['src/*'], format: 'agent' });
+    expect(files(dirs)).toEqual(['src/auth.js', 'src/sub/auth.js']);
+    expect(dirs.stats.pathGlobDirs).toEqual(['src/sub']);
     expect(files(await run({ fileFilter: 'src', pathGlobs: ['!sub'] }))).toEqual(['src/auth.js']);
     const none = await run({ pathGlobs: ['*.py'], format: 'agent' });
     expect(none.results).toEqual([]);
