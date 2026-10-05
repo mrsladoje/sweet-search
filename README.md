@@ -460,13 +460,13 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 
 <div align="center">
 
-**10.2×** ripgrep's median grep &nbsp;·&nbsp; **2.9 ms** warm queries &nbsp;·&nbsp; **47×** MaxSim kernels &nbsp;·&nbsp; **−33%** HNSW search p50
+**2×** ripgrep, end to end &nbsp;·&nbsp; **2.9 ms** warm queries &nbsp;·&nbsp; **47×** MaxSim kernels &nbsp;·&nbsp; **−33%** HNSW search p50
 
 </div>
 
 | ⚙️ What | 📈 Result | 📄 Source |
 |------|--------|--------|
-| ⚡ Indexed grep vs ripgrep | **10.2× faster** at the median (8.5–17.7× across 5 repos, 353 realistic queries, 1 ms p50 — identical match counts on every query) | [`docs/GREP_INDEXING_STRATEGY.md`](docs/GREP_INDEXING_STRATEGY.md) |
+| ⚡ Indexed grep vs ripgrep | **2× faster** end to end at the median (1,600 queries modelled on real agent greps, 13 repos, 3.6 ms vs 7.3 ms — same hits and counts) | [`docs/GREP_INDEXING_STRATEGY.md`](docs/GREP_INDEXING_STRATEGY.md) |
 | ⏱️ Warm query latency (native CLI) | **2.9 ms** warm · 108 ms cold | [`docs/INIT_STRATEGY.md`](docs/INIT_STRATEGY.md) |
 | 🧮 MaxSim rerank kernels | **1.26 s → 27 ms** for a 231-candidate pass (47× native Rust; 16× WASM SIMD) | [`docs/MAXSIM_OPTIMIZATION.md`](docs/MAXSIM_OPTIMIZATION.md) |
 | 🧠 HNSW tuning for code | **−33%** search p50, **+5.9 pp** recall@200 | [`docs/HNSW_APPROACH.md`](docs/HNSW_APPROACH.md) |
@@ -614,12 +614,12 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 ---
 
 <a id="tool-ss-grep"></a>
-### <img src="assets/tools/ss-grep.svg" width="40" align="center" alt="" /> 2. `ss-grep`: grep, minus every wasted millisecond
+### <img src="assets/tools/ss-grep.svg" width="40" align="center" alt="" /> 2. `ss-grep`: grep, minus every wasted millisecond and token
 
 <img src="assets/tools/ss-grep-io.svg" alt="ss-grep takes the regex session.*expired and returns every file:line hit, with the match highlighted" width="100%" />
 
-### ⚡ 10.2× faster than ripgrep
-> Median, end to end, on 353 real queries across 5 repos (8.5–17.7× per repo, about 1 ms per query). Same match count as ripgrep on every query.
+### ⚡ 2× faster than ripgrep, end to end
+> Median over 1,600 queries modelled on 19,762 real agent greps, on 13 repos of 130 to 63,000 files. Each call is timed from process start until all output is read: 3.6 ms for `ss-grep`, 7.3 ms for ripgrep. Same hits and counts as ripgrep, in our order.
 
 <table><tr><td>
 
@@ -633,11 +633,21 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 <img src="assets/tools/ss-grep-ngrams.svg" alt="For the regex session.*expired, trigrams give 10 common pieces. Sparse n-grams give 2 rare pieces, so far fewer files are left to check." width="100%" />
 
+<table><tr><td>
+
+**What makes it rank better**
+
+- 🗳️ **Best files and lines first.** Files are ranked by hit count and type: source before tests, generated files last. Output lines are shared out like parliament seats ([Sainte-Laguë](https://en.wikipedia.org/wiki/Webster/Sainte-Lagu%C3%AB_method)), one per file first, and the lines that declare a function or class come first.
+- 🔁 **Proven on real agent runs.** We replayed 1,036 real agent grep calls with known answers. When the hits overflow, the line that declares the answer now shows up in 64% of calls, up from 34%.
+
+</td></tr></table>
+
 <details>
 <summary><b>More</b></summary>
 
 <br/>
 
+- Each file's path prints once, with no header or legend. That is a third fewer tokens than our old output on 20 real agent calls, with no hit or count lost.
 - Method, per-repo results and the optimization log: [`docs/GREP_INDEXING_STRATEGY.md`](docs/GREP_INDEXING_STRATEGY.md).
 - A regex with no fixed text (for example `\w+\d`) cannot use the index, so it scans every indexed file.
 
@@ -661,7 +671,7 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 **⚡ Built on `ss-grep`**
 
 - The regex runs on the sparse n-gram index.
-- That index makes `ss-grep` 10.2× faster than ripgrep.
+- That index makes `ss-grep` 2× faster than ripgrep, end to end.
 - Your query is turned into embeddings at the same time.
 
 </td>
