@@ -196,10 +196,10 @@ export const OBJECT_ORIENTED_LANGUAGES = {
       // named `will`. A def may have no parameter list (`def bytes: Array[Byte] =`)
       // and a symbolic name (`def /(chunk: PathChunk)`).
       entities: {
-        class: /^(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:private|protected)(?:\[[\w.]+\])?\s+|(?:final|sealed|abstract|implicit|case|open|inline|transparent)\s+)*class\s+(\w+)(?:\s*\([^)]*\))?(?:\s+extends\s+(\w+))?/,
-        object: /^(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:private|protected)(?:\[[\w.]+\])?\s+|(?:final|implicit|case|transparent)\s+)*object\s+(\w+)/,
-        trait: /^(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:private|protected)(?:\[[\w.]+\])?\s+|(?:sealed|transparent)\s+)*trait\s+(\w+)/,
-        def: /^(?:@\w+(?:\([^)]*\))?\s+)*(?:(?:private|protected)(?:\[[\w.]+\])?\s+|(?:final|override|implicit|inline|transparent|abstract|lazy)\s+)*def\s+([A-Za-z_$][\w$]*|[!#%&*+\-/:<=>?@\\^|~]+)\s*(?:\[([^\]]*)\])?\s*(?:\(([^)]*)\))?/,
+        class: /^(?:@[\w.]+(?:\[[^\]]*\])?(?:\((?:[^()]|\([^()]*\))*\))?\s+)*(?:(?:private|protected)(?:\[[\w.]+\])?\s+|(?:final|sealed|abstract|implicit|case|open|inline|transparent)\s+)*class\s+(\w+)(?:\s*\([^)]*\))?(?:\s+extends\s+(\w+))?/,
+        object: /^(?:@[\w.]+(?:\[[^\]]*\])?(?:\((?:[^()]|\([^()]*\))*\))?\s+)*(?:(?:private|protected)(?:\[[\w.]+\])?\s+|(?:final|implicit|case|transparent|package)\s+)*object\s+(\w+)/,
+        trait: /^(?:@[\w.]+(?:\[[^\]]*\])?(?:\((?:[^()]|\([^()]*\))*\))?\s+)*(?:(?:private|protected)(?:\[[\w.]+\])?\s+|(?:sealed|transparent)\s+)*trait\s+(\w+)/,
+        def: /^(?:@[\w.]+(?:\[[^\]]*\])?(?:\((?:[^()]|\([^()]*\))*\))?\s+)*(?:(?:private|protected)(?:\[[\w.]+\])?\s+|(?:final|override|implicit|inline|transparent|abstract|lazy)\s+)*def\s+([A-Za-z_$][\w$]*|[!#%&*+\-/:<=>?@\\^|~]+)\s*(?:\[([^\]]*)\])?\s*(?:\(([^)]*)\))?/,
       },
       relationships: {
         import: /^import\s+([\w._{}]+)/,

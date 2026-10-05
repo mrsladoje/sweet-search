@@ -172,7 +172,7 @@ function elixirEndLine(lines, startIndex) {
       if (c === '(' || c === '[' || c === '{') parens++;
       else if (c === ')' || c === ']' || c === '}') parens--;
     }
-    const opens = (code.match(/\b(?:do\b(?!:)|fn\b)/g) || []).length;
+    const opens = (code.match(/\b(?:do|fn)\b(?!:)/g) || []).length;
     const closes = (code.match(/\bend\b(?!:)/g) || []).length;
     if (depth === 0 && opens === 0 && /\bdo:/.test(code)) keyword = true;
     depth += opens - closes;
@@ -230,6 +230,7 @@ function elixirBodilessHeadEnd(lines, startIndex) {
 function scalaEndLine(lines, startIndex, braceEnd) {
   const indentOf = (l) => l.length - l.trimStart().length;
   const code = (l) => codeBeforeComment(String(l || '')).replace(/"(?:[^"\\]|\\.)*"/g, '""');
+  const base = indentOf(lines[startIndex]);
   let depth = 0;
   let header = '';
   let headerEnd = startIndex;
@@ -241,7 +242,22 @@ function scalaEndLine(lines, startIndex, braceEnd) {
       if (ch === '(' || ch === '[') depth++;
       else if (ch === ')' || ch === ']') depth--;
     }
-    if (depth <= 0) break;
+    if (depth > 0) continue;
+    // The header goes on when the next line continues it (scalafmt style):
+    // `abstract class MetaData` / `  extends AbstractIterable[MetaData]` /
+    // `  with Equality {`, a second parameter list, a return type on its own line.
+    if (/\{|(?<![=<>!:])=(?![=>])/.test(c)) break;
+    let j = i + 1;
+    while (j < lines.length && !String(lines[j] || '').trim()) j++;
+    const next = String(lines[j] || '');
+    const continues = indentOf(next) > base
+      ? /^\s*(?:(?:extends|with|derives)\b|[:(\[{])/.test(next)
+      : indentOf(next) === base && /^\s*\{/.test(next); // the body's `{` on its own line
+    if (j < lines.length && continues) {
+      i = j - 1;
+      continue;
+    }
+    break;
   }
   // Top-level `=` (not ==, =>, <=, >=, !=) outside parentheses / brackets.
   let eq = -1;
@@ -257,7 +273,6 @@ function scalaEndLine(lines, startIndex, braceEnd) {
   if (eq >= 0 && /\{/.test(rest)) return braceEnd(startIndex);
   const opensIndented = eq >= 0 || /:\s*$/.test(header);
   if (!opensIndented) return headerEnd + 1;
-  const base = indentOf(lines[startIndex]);
   let end = headerEnd;
   for (let i = headerEnd + 1; i < lines.length; i++) {
     if (!lines[i].trim()) continue;
