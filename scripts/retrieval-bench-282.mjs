@@ -494,7 +494,7 @@ function installClaudeProduct(cwds, home, product = THIS_PRODUCT) {
     const lean = product.installClaudeLeanHarness({ projectRoot: cwd, configDir: home, visibleConfigDir: home });   // reads SS_VARIANT_RULES_FILE from process.env, as init does
     if (lean.active !== true) throw new Error(`lean harness not active in ${cwd}: ${lean.status} ${lean.detail}`);
     if (lean.rulesInPrompt !== true) throw new Error(`rules placement mismatch in ${cwd}: rulesInPrompt=${lean.rulesInPrompt}`);
-    const rules = product.writeClaudeRules({ projectRoot: cwd, layout: 'pointer' });
+    const rules = product.writeClaudeRules({ projectRoot: cwd, layout: 'pointer', memoryDir: lean.memoryDir });
     if (rules !== 'created') throw new Error(`rules not created in ${cwd}: ${rules}`);
   }
   return installed;
@@ -900,7 +900,7 @@ function exposureTexts(arm) {
       fs.mkdirSync(proj); fs.mkdirSync(home);
       const lean = P.installClaudeLeanHarness({ projectRoot: proj, configDir: home, visibleConfigDir: home });
       if (lean.active !== true) throw new Error(`exposure: lean harness not active: ${lean.status} ${lean.detail}`);
-      P.writeClaudeRules({ projectRoot: proj, layout: 'pointer' });
+      P.writeClaudeRules({ projectRoot: proj, layout: 'pointer', memoryDir: lean.memoryDir });
       const out = {};
       // settings.json too (hooks, permissions); the scratch paths are normalised so two runs compare.
       const norm = (t) => t.split(fs.realpathSync(proj)).join('<PROJECT>').split(proj).join('<PROJECT>').split(fs.realpathSync(home)).join('<HOME>').split(home).join('<HOME>');

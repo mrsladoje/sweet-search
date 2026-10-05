@@ -276,11 +276,15 @@ describe('memory and session context (v2.1)', () => {
     expect(claudeAutoMemoryDir({ projectRoot: root, configDir: cfg(), env: {} }).enabled).toBe(false);
   });
 
-  it('the installed main agent tells the model its memory directory and how to save', () => {
-    installClaudeLeanHarness({ projectRoot: root, configDir: cfg(), env: {} });
+  it('the installed main agent says how to save memory; the path is in the result, not the agent file', () => {
+    const r = installClaudeLeanHarness({ projectRoot: root, configDir: cfg(), env: {} });
     const main = read(CLAUDE_LEAN_AGENT_REL);
     const dir = `${cfg()}/projects/${claudeProjectSlug(realpathSync(root))}/memory/`;
-    expect(main).toContain(`in \`${dir}\``);
+    // The agent file (the system prompt) is the same in every project, so its cache entry is shared;
+    // the per-project path goes into the pointer rules file (first user message) via r.memoryDir.
+    expect(main).not.toContain(dir);
+    expect(main).toContain('named in the sweet-search project rules');
+    expect(r.memoryDir).toBe(dir);
     for (const needle of [
       '# Memory', 'One fact per file', '`name`', '`description`', 'type:', 'user, feedback, project or reference',
       '**Why:**', '**How to apply:**', '[[name]]', '`MEMORY.md`', '- [Title](file.md) — hook',
@@ -296,7 +300,7 @@ describe('memory and session context (v2.1)', () => {
   it('says how to find the directory when it could not be computed, and drops memory when it is off', () => {
     const fallback = claudeLeanContextSection({ memoryDir: null });
     expect(fallback).toContain('$CLAUDE_CONFIG_DIR, else ~/.claude');
-    expect(fallback).toContain('A MEMORY.md loaded into your context shows its directory');
+    expect(fallback).toContain('a loaded MEMORY.md also shows it');
     const off = claudeLeanContextSection({ memoryDir: '/x/memory/', memoryEnabled: false });
     expect(off).not.toContain('# Memory');
     expect(off).toContain('# Session context');
@@ -351,7 +355,7 @@ describe('upgrade from a v1 install', () => {
     expect(r.active).toBe(true);
     const mem = claudeAutoMemoryDir({ projectRoot: root });
     // V1b: the product default carries the rules in the main agent (V1b).
-    expect(read(CLAUDE_LEAN_AGENT_REL)).toBe(claudeLeanAgentFile({ memoryDir: mem.dir, memoryEnabled: mem.enabled, rules: getPolicyBody('cli') }));
+    expect(read(CLAUDE_LEAN_AGENT_REL)).toBe(claudeLeanAgentFile({ memoryDir: null, memoryEnabled: mem.enabled, rules: getPolicyBody('cli') }));
     expect(r.rulesInPrompt).toBe(true);
     expect(read(CLAUDE_LEAN_SUBAGENT_REL)).toBe(V1_SUB);
     expect(existsSync(join(root, CLAUDE_LEAN_PLAN_REL))).toBe(true);

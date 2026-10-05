@@ -38,6 +38,7 @@ import {
   CLAUDE_LEAN_MANIFEST_REL,
   CLAUDE_LEAN_PLAN_REL,
   CLAUDE_LEAN_SUBAGENT_REL,
+  claudeAutoMemoryDir,
 } from '../../scripts/install-claude-lean-harness.js';
 import {
   CANONICAL_POLICY_BODY,
@@ -48,6 +49,7 @@ import {
 import {
   CLAUDE_RULES_POINTER,
   CLAUDE_RULES_REL,
+  claudeRulesMemoryLine,
   _internal as claudeRulesInternal,
 } from '../../scripts/write-claude-rules.js';
 import { installPromptReminderHook } from '../../scripts/install-prompt-reminders.js';
@@ -83,7 +85,8 @@ function runCli(args, env = {}) {
 
 const readText = (rel) => readFileSync(join(tmpRoot, rel), 'utf8');
 const FULL_RULE = `${claudeRulesInternal.SENTINEL}\n${CANONICAL_POLICY_BODY}\n`;
-const POINTER_RULE = `${claudeRulesInternal.SENTINEL}\n${CLAUDE_RULES_POINTER}\n`;
+// The pointer rule also names this project's memory directory (the lean agent file no longer does).
+const pointerRule = () => `${claudeRulesInternal.SENTINEL}\n${CLAUDE_RULES_POINTER}\n${claudeRulesMemoryLine(claudeAutoMemoryDir({ projectRoot: tmpRoot }).dir)}\n`;
 const timesIn = (text, needle) => text.split(needle).length - 1;
 // V1b: the main agent carries the policy exactly once, ahead of its memory section.
 function expectRulesInAgent() {
@@ -120,7 +123,7 @@ describe('lifecycle: default init → uninstall (Scenario A)', () => {
     // .claude/ ecosystem. V1b: the policy rides in the lean main agent (the system
     // prompt); the project rule is the short pointer.
     expect(exists(CLAUDE_RULES_REL)).toBe(true);
-    expect(readText(CLAUDE_RULES_REL)).toBe(POINTER_RULE);
+    expect(readText(CLAUDE_RULES_REL)).toBe(pointerRule());
     expectRulesInAgent();
     expect(r.stderr).toContain('[init] Claude rules: created [pointer;');
     // The lean harness carries the override in the main-agent prompt; the output
@@ -257,7 +260,7 @@ describe('lifecycle: upgrade from the legacy Claude layout', () => {
     expect(result.code, `init failed: ${result.stderr}`).toBe(0);
 
     expect(readFileSync(join(tmpRoot, 'CLAUDE.md'), 'utf8')).toBe('# User rules\nKeep me.\n');
-    expect(readText(CLAUDE_RULES_REL)).toBe(POINTER_RULE);
+    expect(readText(CLAUDE_RULES_REL)).toBe(pointerRule());
     expectRulesInAgent();
     expect(exists('.claude/hooks/sweet-search-remind-tools.mjs')).toBe(false);
     expect(readJson('.claude/settings.json').hooks?.UserPromptSubmit).toBeUndefined();
@@ -344,7 +347,7 @@ describe('lifecycle: Claude CLI → MCP-only contact surface', () => {
     const cli = runCli(COMMON_INIT_ARGS);
     expect(cli.code, `CLI init failed: ${cli.stderr}`).toBe(0);
     expect(exists(CLAUDE_LEAN_AGENT_REL)).toBe(true);
-    expect(readText(CLAUDE_RULES_REL)).toBe(POINTER_RULE);
+    expect(readText(CLAUDE_RULES_REL)).toBe(pointerRule());
 
     const mcp = runCli([...COMMON_INIT_ARGS, '--mcp', '--no-cli']);
     expect(mcp.code, `MCP re-init failed: ${mcp.stderr}`).toBe(0);
@@ -371,7 +374,7 @@ describe('lifecycle: V1b rules placement', () => {
     expect(first.code, `init failed: ${first.stderr}`).toBe(0);
     expect(first.stderr).toContain('[init] Claude rules: created [pointer;');
     const after = snapshot();
-    expect(after[CLAUDE_RULES_REL]).toBe(POINTER_RULE);
+    expect(after[CLAUDE_RULES_REL]).toBe(pointerRule());
     expectRulesInAgent();
     const m = readJson(CLAUDE_LEAN_MANIFEST_REL);
     for (const rel of [CLAUDE_LEAN_AGENT_REL, CLAUDE_LEAN_SUBAGENT_REL, CLAUDE_LEAN_PLAN_REL]) {
