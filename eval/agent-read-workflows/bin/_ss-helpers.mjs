@@ -1275,7 +1275,7 @@ async function cmdRead(rawArgs) {
     }
   }
 
-  const { readFile, renderUnreadBelow, renderUnreadAbove, renderEnclosingStart, renderInterfaceImpls, fenceBody, numberCodeLines, resolveSymbolRead, definitionNamesInFile } = await import(path.join(REPO_ROOT, 'core/search/search-read.js'));
+  const { readFile, renderUnreadBelow, renderUnreadAbove, renderEnclosingStart, renderInterfaceImpls, renderConfigKeyRefs, fenceBody, numberCodeLines, resolveSymbolRead, definitionNamesInFile } = await import(path.join(REPO_ROOT, 'core/search/search-read.js'));
   // ss-read <file> <symbol>: the definition's lines, from its doc comment to its end.
   let symbolNote = '';
   if (symbolSpec) {
@@ -1375,7 +1375,9 @@ async function cmdRead(rawArgs) {
   ].filter(Boolean).join('; ');
   // The interface-call line sits first after the code: the call it names is in view.
   const implLine = renderInterfaceImpls(r);
-  const tail = [implLine, symbolNote, aboveLine, remainder].filter(Boolean).map((l) => `${l}\n`).join('');
+  // Config files that declare a key the window reads (its defaults, its schema).
+  const configLine = renderConfigKeyRefs(r);
+  const tail = [implLine, configLine, symbolNote, aboveLine, remainder].filter(Boolean).map((l) => `${l}\n`).join('');
   if (!r.text) {
     // An empty file (or a window of nothing) prints no empty fence.
     process.stdout.write(`${resolvedLine}${head}# empty file\n${tail}`);

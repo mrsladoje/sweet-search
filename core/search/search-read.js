@@ -4,7 +4,9 @@
  * `text` always comes from node:fs, never from the (truncated) DB column.
  */
 
-import { promises as fs, readFileSync, realpathSync, statSync } from 'node:fs';
+import { promises as fs, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import { createHash } from 'node:crypto';
 import { GUTTER_FORMS, resolveGutterForm, gutterDelimiter } from './gutter-form.js';
 import path from 'node:path';
 import { CodebaseRepository } from '../infrastructure/codebase-repository.js';
@@ -26,6 +28,7 @@ import { selectUnreadSymbols, nameWordsMatched } from './unread-symbol-ranking.j
 import { isTestPath } from '../graph/relationship-resolver.js';
 import { containsToken, informativeSubtokens } from './query-sufficiency.js';
 import { kindName, kindNameList } from './kind-words.js';
+import { loadSparseGramIndex, getSparseGramAllFiles } from '../infrastructure/native-sparse-gram.js';
 
 const CACHE_MAX_ENTRIES = 64;
 const CACHE_LARGE_FILE_BYTES = 4 * 1024 * 1024; // 4MB — switch to range-read mode
@@ -168,6 +171,133 @@ function _getGraphRepo(projectRoot) {
     catch { _graphRepos.set(dbPath, false); }
   }
   return _graphRepos.get(dbPath) || null;
+}
+
+// ---------------------------------------------------------------------------
+// Config keys the window reads (2026-10-05, jj-12 replay: the code read
+// `"experimental-advance-branches"` and the agent never saw misc.toml, where
+// its defaults live). A key-shaped string literal in the window that a config
+// file declares as a key gets one line naming where. Agent format only.
+// ---------------------------------------------------------------------------
+
+const CONFIG_FILE_RE = /\.(?:toml|ya?ml|json|jsonc|json5|ini|properties|cfg|conf)$/i;
+const CONFIG_SKIP_DIR_RE = /(?:^|\/)(?:tests?|testdata|test-data|systests?|e2e|fixtures?|examples?|samples?|snapshots?|__snapshots__|node_modules|vendor|third_party|dist|build)\//i;
+const CONFIG_SKIP_FILE_RE = /(?:^|\/)[^/]*(?:lock|\.min)[^/]*$/i;
+const CODE_NAME_RE = /\.(?:rs|go|py|php|js|mjs|cjs|ts|tsx|jsx|java|kt|kts|rb|swift|cs|c|h|cc|cpp|hpp|m|scala|ex|exs|lua|md|txt|html|css|png|svg|json|toml|ya?ml|lock|sh)$/i;
+const CONFIG_KEYS_MAX_CANDIDATES = 6;
+const CONFIG_KEYS_SHOWN = 2;
+const CONFIG_REFS_PER_KEY = 2;
+const CONFIG_FILES_MAX = 4000;
+const CONFIG_FILE_MAX_BYTES = 256 * 1024;
+const _configFileLists = new Map();
+
+/** Key-shaped string literals in `text`: a letter first, a `-` `.` or `_` inside, no file name. */
+export function configKeyCandidates(text) {
+  const out = [];
+  const seen = new Set();
+  for (const m of String(text || '').matchAll(/(["'`])([A-Za-z][A-Za-z0-9_.-]{4,62}[A-Za-z0-9])\1/g)) {
+    const key = m[2];
+    if (seen.has(key) || !/[-._]/.test(key) || CODE_NAME_RE.test(key)) continue;
+    if ((key.match(/\./g) || []).length > 2) continue;   // a dotted package or host name
+    seen.add(key);
+    out.push(key);
+    if (out.length >= CONFIG_KEYS_MAX_CANDIDATES) break;
+  }
+  return out;
+}
+
+// The index's config files, cached on disk by the index file's identity: each ss-read is
+// its own process, and loading the sparse-gram index costs 15-80 ms; the list is ~1 KB.
+function _configFiles(projectRoot) {
+  const root = path.resolve(projectRoot || process.cwd());
+  if (_configFileLists.has(root)) return _configFileLists.get(root);
+  let files = null;
+  try {
+    const indexPath = path.join(root, path.basename(path.dirname(DB_PATHS.codeGraph || '.sweet-search/code-graph.db')), 'codebase-sparse-grams.idx');
+    const st = statSync(indexPath);
+    const cachePath = path.join(os.tmpdir(), 'sweet-search-config-files',
+      `${createHash('sha1').update(indexPath).digest('hex').slice(0, 16)}.json`);
+    try {
+      const cached = JSON.parse(readFileSync(cachePath, 'utf8'));
+      if (cached?.mtimeMs === st.mtimeMs && cached?.size === st.size && (cached.files === null || Array.isArray(cached.files))) files = cached.files;
+      else throw new Error('stale');
+    } catch {
+      const index = loadSparseGramIndex(indexPath);
+      const all = index ? getSparseGramAllFiles(index) : null;
+      if (Array.isArray(all)) {
+        files = all.filter(f => CONFIG_FILE_RE.test(f) && !CONFIG_SKIP_DIR_RE.test(f) && !CONFIG_SKIP_FILE_RE.test(f) && !isTestLikePath(f));
+        if (files.length > CONFIG_FILES_MAX) files = null;
+        try {
+          mkdirSync(path.dirname(cachePath), { recursive: true });
+          writeFileSync(cachePath, JSON.stringify({ mtimeMs: st.mtimeMs, size: st.size, files }));
+        } catch { /* the cache is best effort */ }
+      }
+    }
+  } catch { files = null; }
+  _configFileLists.set(root, files);
+  return files;
+}
+
+const _escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+// A key position: a line that starts with the key (`key =`, `key:`, `"key":`), an inline
+// object member (`{"key":`, `, key:`), or a TOML table name (`[key]`, `[a.key]`). A quoted
+// value (`"key=v"`, a description naming the key) is no declaration.
+function _configKeyRegex(alt) {
+  return `^\\s*(?:"(?:${alt})"|'(?:${alt})'|(?:${alt}))\\s*[:=]`
+    + `|[{,]\\s*["']?(?:${alt})["']?\\s*:`
+    + `|^\\s*\\[\\[?(?:[A-Za-z0-9_-]+\\.)*(?:${alt})\\]`;
+}
+
+/**
+ * Config files that declare a key-shaped literal of `text` as a key (`"key":`, `key =`,
+ * `[key]`, `[a.key]`, `key:`), not as a value or inside prose. Keys in window order, at most
+ * CONFIG_KEYS_SHOWN, each with up to CONFIG_REFS_PER_KEY `file:line`. Nothing for a config
+ * file being read.
+ */
+export function configKeyRefs(projectRoot, filePathRel, text, { files: configFiles = null } = {}) {
+  if (CONFIG_FILE_RE.test(filePathRel || '')) return [];
+  const keys = configKeyCandidates(text);
+  if (keys.length === 0) return [];
+  const files = (configFiles || _configFiles(projectRoot) || []).filter(f => f !== filePathRel);
+  if (files.length === 0) return [];
+  // Plain JS over a few hundred KB: a substring check first, the line rule only on a hit.
+  // (The native grep costs more here: its addon load and thread start-up, 25-60 ms.)
+  const root = path.resolve(projectRoot || process.cwd());
+  const keyRes = new Map(keys.map(k => [k, new RegExp(_configKeyRegex(_escapeRe(k)))]));
+  const refs = new Map();
+  for (const file of files) {
+    let content;
+    try {
+      if (statSync(path.join(root, file)).size > CONFIG_FILE_MAX_BYTES) continue;
+      content = readFileSync(path.join(root, file), 'utf8');
+    } catch { continue; }
+    const present = keys.filter(k => content.includes(k) && (refs.get(k)?.length ?? 0) < CONFIG_REFS_PER_KEY);
+    if (present.length === 0) continue;
+    const lines = content.split('\n');
+    for (const key of present) {
+      const re = keyRes.get(key);
+      const at = lines.findIndex(l => l.includes(key) && re.test(l));
+      if (at < 0) continue;
+      const list = refs.get(key) || [];
+      list.push({ file, line: at + 1 });
+      refs.set(key, list);
+    }
+  }
+  return keys.filter(k => refs.has(k)).slice(0, CONFIG_KEYS_SHOWN).map(k => ({ key: k, refs: refs.get(k) }));
+}
+
+/** `config keys: a in x.toml:3, y.json:9; b in x.toml:4` — '' when none. */
+export function renderConfigKeyRefs(result) {
+  const list = result?.configKeys;
+  if (!Array.isArray(list) || list.length === 0) return '';
+  const shown = new Set();
+  const where = (r) => {
+    const name = shown.has(r.file) ? path.basename(r.file) : r.file;
+    shown.add(r.file);
+    return `${name}:${r.line}`;
+  };
+  return `config keys: ${list.map(k => `${k.key} in ${k.refs.map(where).join(', ')}`).join('; ')}`;
 }
 
 /** The project's code-graph repository (null when it cannot be opened); shared with read-semantic. */
@@ -930,8 +1060,10 @@ async function _readFileUnpinned(req) {
   // the interface method to the class that implements it (`overrides` edges), so the
   // read names that class. Agent format only; ss-read renders it (renderInterfaceImpls).
   let interfaceCalls = [];
+  let configKeys = [];
   if (req.format === 'agent') {
     interfaceCalls = _collectInterfaceCalls(relForIndex, projectRoot, sliced.startLine, sliced.endLine);
+    configKeys = configKeyRefs(projectRoot, relForIndex, sliced.text);
   }
 
   // If a line range was requested, narrow attached chunks to the overlap.
@@ -962,6 +1094,7 @@ async function _readFileUnpinned(req) {
     enclosingStart,
     enclosingEnd,
     interfaceCalls,
+    configKeys,
     timings: { totalMs: +(performance.now() - t0).toFixed(2) },
   };
 }
