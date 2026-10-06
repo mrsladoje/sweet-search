@@ -29,6 +29,14 @@ const CASCADE_DEFERRED_STATS = { skipped: true, reason: 'cascade_deferred', prov
 const FULL_VECTOR_STAGE_WEIGHT = 0.80;
 const FULL_VECTOR_STAGE_LIMIT = 200;
 
+/**
+ * Stage 2.5 (float-512 rescore) and its store are off unless
+ * SS_FIX_FLOAT512=1.
+ */
+export function float512StageEnabled() {
+  return process.env.SS_FIX_FLOAT512 === '1';
+}
+
 function cascadeDefer(candidates, stats, searchPath, k = 50) {
   const results = candidates.slice(0, k).map(r => ({ ...r, searchPath }));
   stats.rerank = CASCADE_DEFERRED_STATS;
@@ -445,7 +453,14 @@ export async function semanticSearch3Stage(query, options = {}) {
   const stage2_5Pool = adaptiveStage2_5Pool(k, int8Analysis, adaptiveConfig);
   const stage2_5Count = Math.min(stage2_5Pool.size, scoredCandidates.length);
 
-  if (stage2_5Count > 0 && embedResult.float) {
+  // Off by default (float512StageEnabled): end-to-end GCSN dev MRR was the
+  // same without it (0.8703 both, LI on; 0.8541 vs 0.8542, LI off), and its
+  // store is 61% of the vector-search RAM. The full-vector blend then uses
+  // the int8 score as its base.
+  if (stage2_5Count > 0 && !float512StageEnabled()) {
+    // Same head as Stage 2.5 would keep, ordered by int8 score.
+    scoredCandidates = scoredCandidates.slice(0, stage2_5Count);
+  } else if (stage2_5Count > 0 && embedResult.float) {
     const stage2_5Start = performance.now();
     try {
       const pool = scoredCandidates.slice(0, stage2_5Count);

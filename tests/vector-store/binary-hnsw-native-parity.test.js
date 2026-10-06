@@ -6,7 +6,7 @@
  * snapshot. Skipped when the native addon is not built or SS_FIX_HNSW_NATIVE=0.
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, readFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -59,6 +59,16 @@ async function searchBoth(index, queries, k) {
 }
 
 describe.skipIf(!hasNative)('BinaryHNSWIndex native search parity', () => {
+  // Exact equality with the JS walk needs the JS-exact heaps and the walk
+  // itself (not the small-index exact scan).
+  const saved = {};
+  beforeAll(() => {
+    for (const k of ['SS_FIX_HNSW_BUCKET', 'SS_FIX_HNSW_SCAN']) { saved[k] = process.env[k]; process.env[k] = '0'; }
+  });
+  afterAll(() => {
+    for (const [k, v] of Object.entries(saved)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+  });
+
   it('matches the JS path exactly, before and after mutations', async () => {
     const index = new BinaryHNSWIndex({ M: 16, efConstruction: 64, efSearch: 50, indexPath: '/nonexistent/parity.idx' });
     index.resetForBuild();
