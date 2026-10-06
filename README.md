@@ -479,11 +479,12 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 
 | | median | |
 |:--|--:|:--|
-| `ss-grep` | **3.59 ms** | `████████` |
-| ripgrep 15.1 | 7.29 ms | `████████████████` |
+| `ss-grep` | **3.59 ms** | `████` |
+| ripgrep 15.1 | 7.29 ms | `████████` |
 
-<sub>1,600 queries shaped like 19,762 real agent greps · 13 repos</sub><br>
-<sub>same hit counts · dev split 2.01× · M3 Max · [method](docs/GREP_INDEXING_STRATEGY.md)</sub>
+<sub>1,600 queries shaped like 19,762 agent greps</sub><br>
+<sub>13 repos · same hit counts · dev split 2.01×</sub><br>
+<sub>M3 Max · [method](docs/GREP_INDEXING_STRATEGY.md)</sub>
 
 </td>
 <td width="50%" valign="top" align="center">
@@ -494,13 +495,14 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 
 <sub>4k+ replayed production calls, same ranking</sub>
 
-| | agent p50 | | sweet is |
-|:--|--:|:--|:--|
-| **sweet** | **0.137 ms** | `██` | — |
-| NumPy | 0.272 ms | `████` | **1.6–1.9×** faster |
-| maxsim-cpu | 0.540 ms | `████████` | **2.9–3.9×** faster |
+| | p50, ms | sweet faster |
+|:--|--:|:--|
+| **sweet** | **0.137** | `██` |
+| NumPy | 0.272 | `████` **1.6–1.9×** |
+| maxsim-cpu | 0.540 | `████████` **2.9–3.9×** |
 
-<sub>maxsim-cpu in its best case (f32, pre-normalized) · 1.6–1.9× vs NumPy · [method](eval/maxsim-bench/README.md)</sub>
+<sub>maxsim-cpu in its best case (f32, pre-normalized)</sub><br>
+<sub>M3 Max · [method](eval/maxsim-bench/README.md)</sub>
 
 </td>
 </tr>
