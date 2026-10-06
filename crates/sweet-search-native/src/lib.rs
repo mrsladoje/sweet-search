@@ -14,6 +14,7 @@
 
 mod dedup;
 mod grep_file_cache;
+mod hnsw_search;
 mod inference;
 mod native_grep;
 mod regex_literals;

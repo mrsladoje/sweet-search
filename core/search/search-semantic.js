@@ -43,6 +43,37 @@ function dotProduct(a, b) {
   return score;
 }
 
+/**
+ * dotProduct(a, v) for each v (null for a missing v), four vectors per pass.
+ * Each sum keeps its own accumulator and the same sequential order, so every
+ * score is bit-identical to dotProduct(); the interleaving only adds ILP.
+ */
+function dotProducts(a, vectors) {
+  const out = new Array(vectors.length);
+  const na = a?.length || 0;
+  let i = 0;
+  for (; i + 3 < vectors.length; i += 4) {
+    const b0 = vectors[i], b1 = vectors[i + 1], b2 = vectors[i + 2], b3 = vectors[i + 3];
+    const n = b0 ? Math.min(na, b0.length) : 0;
+    if (n === 0 || !b1 || !b2 || !b3
+      || Math.min(na, b1.length) !== n || Math.min(na, b2.length) !== n || Math.min(na, b3.length) !== n) {
+      for (let j = i; j < i + 4; j++) out[j] = vectors[j] ? dotProduct(a, vectors[j]) : null;
+      continue;
+    }
+    let s0 = 0, s1 = 0, s2 = 0, s3 = 0;
+    for (let k = 0; k < n; k++) {
+      const q = a[k];
+      s0 += q * b0[k];
+      s1 += q * b1[k];
+      s2 += q * b2[k];
+      s3 += q * b3[k];
+    }
+    out[i] = s0; out[i + 1] = s1; out[i + 2] = s2; out[i + 3] = s3;
+  }
+  for (; i < vectors.length; i++) out[i] = vectors[i] ? dotProduct(a, vectors[i]) : null;
+  return out;
+}
+
 function normalizeScore(value, min, max) {
   if (!Number.isFinite(value)) return 0;
   if (!(max > min)) return 0.5;
@@ -68,9 +99,9 @@ function applyFullVectorStageRescore(candidates, queryFloat, codebaseRepo, opts 
   const embeddings = codebaseRepo.getEmbeddingsByIds(ids);
   if (!embeddings || embeddings.size < 2) return { candidates, stats: null };
 
+  const fullScores = dotProducts(queryFloat, head.map(c => (c.id ? embeddings.get(c.id) : null) || null));
   const scored = head.map((candidate, index) => {
-    const vector = candidate.id ? embeddings.get(candidate.id) : null;
-    const fullScore = vector ? dotProduct(queryFloat, vector) : null;
+    const fullScore = fullScores[index];
     const baseScore = candidate.floatScore ?? candidate.int8Score ?? candidate.score ?? 0;
     return { candidate, index, baseScore, fullScore };
   });
@@ -87,7 +118,7 @@ function applyFullVectorStageRescore(candidates, queryFloat, codebaseRepo, opts 
 
   const reranked = scored.map(item => {
     if (!Number.isFinite(item.fullScore)) {
-      return { ...item.candidate, _fullVectorStageOrigIndex: item.index };
+      return { ...item.candidate };
     }
     const baseNorm = normalizeScore(item.baseScore, minBase, maxBase);
     const fullNorm = normalizeScore(item.fullScore, minFull, maxFull);
@@ -97,20 +128,22 @@ function applyFullVectorStageRescore(candidates, queryFloat, codebaseRepo, opts 
       fullVectorNorm: fullNorm,
       preFullVectorScore: item.baseScore,
       semanticBlendScore: (1 - weight) * baseNorm + weight * fullNorm,
-      _fullVectorStageOrigIndex: item.index,
     };
   });
-  reranked.sort((a, b) => {
-    const d = (b.semanticBlendScore || 0) - (a.semanticBlendScore || 0);
-    return d !== 0 ? d : a._fullVectorStageOrigIndex - b._fullVectorStageOrigIndex;
+  // Sort positions (ties by original index) instead of tagging each object
+  // with a temporary key: same order, and no delete (dictionary-mode objects).
+  const order = reranked.map((_, i) => i);
+  order.sort((x, y) => {
+    const d = (reranked[y].semanticBlendScore || 0) - (reranked[x].semanticBlendScore || 0);
+    return d !== 0 ? d : x - y;
   });
-  for (const candidate of reranked) {
-    delete candidate._fullVectorStageOrigIndex;
+  const sorted = order.map(i => reranked[i]);
+  for (const candidate of sorted) {
     candidate.score = candidate.semanticBlendScore;
   }
 
   return {
-    candidates: limit === candidates.length ? reranked : reranked.concat(candidates.slice(limit)),
+    candidates: limit === candidates.length ? sorted : sorted.concat(candidates.slice(limit)),
     stats: { candidates: withFull.length, window: limit, weight },
   };
 }
