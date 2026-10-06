@@ -469,18 +469,29 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 
 <div align="center">
 
-**2×** ripgrep, end to end &nbsp;·&nbsp; **2.9 ms** warm queries &nbsp;·&nbsp; **47×** MaxSim kernels &nbsp;·&nbsp; **−33%** HNSW search p50
+**2×** ripgrep, end to end &nbsp;·&nbsp; **2.9–3.9×** maxsim-cpu &nbsp;·&nbsp; **2.9 ms** warm queries &nbsp;·&nbsp; **−33%** HNSW search p50
 
 </div>
 
+| ⚙️ What | 🆚 Compared with | 📈 Result | 📄 Source |
+|------|------|--------|--------|
+| ⚡ Indexed grep | [ripgrep](https://github.com/BurntSushi/ripgrep) 15.1 | **2.06× faster** end to end at the median on held-out queries (3.59 ms vs 7.29 ms; dev 2.01×). 1,600 queries modelled on 19,762 real agent greps, 13 repos, same hit counts. M3 Max. | [`docs/GREP_INDEXING_STRATEGY.md`](docs/GREP_INDEXING_STRATEGY.md) |
+| 🧮 MaxSim rerank kernel | [maxsim-cpu](https://github.com/mixedbread-ai/maxsim-cpu), NumPy | **2.9–3.9× faster** than maxsim-cpu in its best case, **1.6–1.9×** faster than NumPy. 4,237 replayed production calls (agent p50 0.137 ms vs 0.540 ms). Same ranking. M3 Max; x86 not measured. | [`eval/maxsim-bench/`](eval/maxsim-bench/README.md) |
+| ⏱️ Warm query latency (native CLI) | — | **2.9 ms** warm · 108 ms cold | [`docs/INIT_STRATEGY.md`](docs/INIT_STRATEGY.md) |
+| 🧠 HNSW tuning for code | our earlier HNSW | **−33%** search p50, **+5.9 pp** recall@200 | [`docs/HNSW_APPROACH.md`](docs/HNSW_APPROACH.md) |
+
+<details>
+<summary><b>🔧 Internal optimisations (against our own earlier versions)</b></summary>
+
+<br/>
+
 | ⚙️ What | 📈 Result | 📄 Source |
 |------|--------|--------|
-| ⚡ Indexed grep vs ripgrep | **2× faster** end to end at the median (1,600 queries modelled on real agent greps, 13 repos, 3.6 ms vs 7.3 ms — same hits and counts) | [`docs/GREP_INDEXING_STRATEGY.md`](docs/GREP_INDEXING_STRATEGY.md) |
-| ⏱️ Warm query latency (native CLI) | **2.9 ms** warm · 108 ms cold | [`docs/INIT_STRATEGY.md`](docs/INIT_STRATEGY.md) |
-| 🧮 MaxSim rerank kernels | **1.26 s → 27 ms** for a 231-candidate pass (47× native Rust; 16× WASM SIMD) | [`docs/MAXSIM_OPTIMIZATION.md`](docs/MAXSIM_OPTIMIZATION.md) |
-| 🧠 HNSW tuning for code | **−33%** search p50, **+5.9 pp** recall@200 | [`docs/HNSW_APPROACH.md`](docs/HNSW_APPROACH.md) |
+| 🧮 MaxSim kernel vs plain code | **1.26 s → 27 ms** for a 231-candidate pass (47× native Rust; 16× WASM SIMD) | [`docs/MAXSIM_OPTIMIZATION.md`](docs/MAXSIM_OPTIMIZATION.md) |
 | 💾 Indexing memory | peak JS heap **785 MB → 213 MB** | [`docs/DISK_FLUSHING_STRATEGY.md`](docs/DISK_FLUSHING_STRATEGY.md) |
 | 🍏 CoreML cascade (M3 Max) | **18% faster** full indexing vs the Metal baseline | [`docs/INIT_STRATEGY.md`](docs/INIT_STRATEGY.md) |
+
+</details>
 
 ---
 
