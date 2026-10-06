@@ -18,7 +18,7 @@ import { spawn } from 'node:child_process';
 import { execSync, execFileSync } from 'node:child_process';
 import {
   chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync, appendFileSync,
-  copyFileSync, existsSync, symlinkSync,
+  copyFileSync, existsSync, symlinkSync, renameSync, statSync,
 } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -272,6 +272,20 @@ export const CODEX_HARNESS_TRIM_CONFLICT_SOURCES = Object.freeze({
   'gpt-5.6-luna': CODEX_INSTRUCTIONS_SOURCE,
 });
 // The product default (see the header).
+// Subscription login write-back (2026-10-06; same rule as scripts/retrieval-bench-282.mjs
+// codexSyncAuthBack): codex refreshes the ChatGPT login inside the rollout's private codex-home, and the
+// refresh token is single-use. Without writing the refreshed file back, the master keeps a spent token
+// and every later rollout fails with "refresh token was already used" (the 2026-08-17 auth-decay trap).
+const MASTER_CODEX_AUTH = path.join(process.env.HOME || '/root', '.codex', 'auth.json');
+export function codexSyncAuthBack(home, master = MASTER_CODEX_AUTH) {
+  const local = path.join(home, 'auth.json');
+  try {
+    const a = readFileSync(local), b = readFileSync(master);
+    if (a.equals(b) || statSync(local).mtimeMs <= statSync(master).mtimeMs) return false;
+    const tmp = `${master}.tmp-${process.pid}`; writeFileSync(tmp, a, { mode: 0o600 }); renameSync(tmp, master);
+    return true;
+  } catch { return false; }
+}
 export const CODEX_HARNESS_TRIM_DEFAULT = 'conflict';
 export const CODEX_TRIM_BATCH_DEFAULT = 'yt3batch2';
 // Written into the runner state dir: that dir is bound at the same path inside the jail,
@@ -779,6 +793,12 @@ export async function runCodexTask(task, { arm, apiModel = 'openai/gpt-5.5', rea
       try { if (existsSync(src) && !existsSync(dst)) copyFileSync(src, dst); } catch { /* codex will report it */ }
     }
   }
+  // Subscription login freshness (2026-10-06): the copies above keep an EXISTING rollout copy, so a
+  // codex-home reused by a later attempt could hold a token the master has since replaced. Always seed
+  // the master's current login; codexSyncAuthBack below keeps the master current.
+  if (codexSubscription) {
+    try { copyFileSync(MASTER_CODEX_AUTH, path.join(codexHome, 'auth.json')); chmodSync(path.join(codexHome, 'auth.json'), 0o600); } catch { /* codex will report it */ }
+  }
   const jailBinds = [{ src: codexHome, dst: path.join(process.env.HOME || '/root', '.codex') }];
   // Resolve the REAL docker binary from the HARNESS PATH (no binDir → no self-ref), so
   // both the run_tests shim (cfg.dockerBin) and the L1 wrapper invoke it directly.
@@ -1071,6 +1091,7 @@ ${ho}`;
     try { rmSync(path.join(rundir, C3_HANDOFF_FILE), { force: true }); } catch { /* best effort */ }
   }
   const wallMs = Date.now() - t0;
+  const codexAuthSynced = codexSubscription ? codexSyncAuthBack(codexHome) : null;
   const { toolCalls, answer, usage } = parsed;
 
   // tool composition + trajectory
@@ -1243,6 +1264,7 @@ ${ho}`;
 
   return {
     ...shimInfo.controller,
+    ...(codexSubscription ? { codexAuthSynced } : {}),
     toolKindVersion: TOOL_KIND_VERSION, // shell-command-kind.mjs: never pool ss/toolCounts across versions
     calls, ss: toolCounts.ss, nativeGrep: toolCounts.nativeGrep, toolCounts, subCommandCounts, codexPollCalls,
     patchHunks, patchFiles, finalPatch, ranTests: toolCounts.test > 0,

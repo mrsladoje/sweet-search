@@ -20,7 +20,7 @@ import {
 import { createHash, randomBytes } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { addSidechainCostsChecked } from './claude-code-accounting.mjs';
-import { existsSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, symlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isZeroCallStartFailure } from './codex-task-runner.mjs';
@@ -833,6 +833,30 @@ export function opencodeRunMessage(prompt) {
   return text.includes(' ') ? `"${text.replace(/"/g, '\\"')}"` : text;
 }
 
+// OC_SUBSCRIPTION=openai (opt-in; unset = OpenRouter exactly as before): the model runs on opencode's
+// built-in `openai` provider with the operator's ChatGPT login, as the retrieval bench's oc-sol61-high
+// cell does (scripts/retrieval-bench-282.mjs ocSeedAuth / ocSyncAuthBack). The master entry in
+// ~/.local/share/opencode/auth.json is copied into the rollout's private data dir, and a refreshed entry
+// is written back after the rollout: OAuth refresh tokens are single-use (the codex auth-decay trap).
+// Only that provider's entry is ever touched. Legs using it run CONCURRENCY=1 (one refresh at a time).
+const MASTER_OC_AUTH = path.join(process.env.HOME || '/root', '.local/share/opencode/auth.json');
+const readJsonOr = (f, d = null) => { try { return JSON.parse(readFileSync(f, 'utf8')); } catch { return d; } };
+export function ocSeedAuth(ocData, provider, master = MASTER_OC_AUTH) {
+  const entry = readJsonOr(master)?.[provider];
+  if (!entry) throw new Error(`OC_SUBSCRIPTION=${provider}: no ${provider} login in ${master} — run: opencode auth login`);
+  writeFileSync(path.join(ocData, 'auth.json'), JSON.stringify({ [provider]: entry }, null, 2), { mode: 0o600 });
+}
+export function ocSyncAuthBack(ocData, provider, master = MASTER_OC_AUTH) {
+  const mine = readJsonOr(path.join(ocData, 'auth.json'))?.[provider];
+  const all = readJsonOr(master);
+  if (!mine || !all || JSON.stringify(all[provider]) === JSON.stringify(mine)) return false;
+  if ((mine.expires ?? 0) < (all[provider]?.expires ?? 0)) return false; // master is already newer
+  const tmp = `${master}.tmp-${process.pid}`;
+  writeFileSync(tmp, JSON.stringify({ ...all, [provider]: mine }, null, 2), { mode: 0o600 });
+  renameSync(tmp, master);
+  return true;
+}
+
 export async function runOpencodeTask(task, {
   arm, apiModel = 'x-ai/grok-4.5', ssBinDir, mppText, image, t, perCallTimeoutMs = 900000,
 } = {}) {
@@ -842,12 +866,16 @@ export async function runOpencodeTask(task, {
   const testScript = [].concat(t.install_config?.test_cmd || []).join(' && ');
   const price = priceFor(apiModel);
   const openrouterModel = `openrouter/${apiModel}`;
+  const ocSubscription = process.env.OC_SUBSCRIPTION || null;
+  if (ocSubscription && !apiModel.startsWith(`${ocSubscription}/`)) throw new Error(`OC_SUBSCRIPTION=${ocSubscription}: MODEL ${apiModel} is not a ${ocSubscription}/ model`);
+  const ocModel = ocSubscription ? apiModel : openrouterModel;
 
   const netArgs = computeNetArgs(t);
   const label = `${task.id || 'task'}-${arm}`;
   // opencode's own state, per rollout instead of the shared 1.8 GB store (see
   // rolloutStateDir): config + provider SDKs read-only, session DB private and retained.
   const ocData = rolloutStateDir(label, 'opencode-data');
+  if (ocSubscription) ocSeedAuth(ocData, ocSubscription);
   const retainedRoot = rolloutStateDir(label, 'opencode-retained');
   const retainedSession = path.join(retainedRoot, `session-${Date.now()}-${process.pid}-${randomBytes(4).toString('hex')}`);
   mkdirSync(retainedSession, { recursive: true, mode: 0o700 });
@@ -952,7 +980,8 @@ export async function runOpencodeTask(task, {
   // (--variant high = reasoning_effort high), as the retrieval bench's oc-sol61-high cell sends it.
   // REASONING is NOT read here — earlier opencode legs passed REASONING=medium with no effect.
   const ocVariant = process.env.OC_VARIANT || null;
-  const args = ['run', '--format', 'json', '--agent', 'build', '--auto', '--model', openrouterModel, ...(ocVariant ? ['--variant', ocVariant] : []), '--dir', rundir];
+  const args = ['run', '--format', 'json', '--agent', 'build', '--auto', '--model', ocModel, ...(ocVariant ? ['--variant', ocVariant] : []), '--dir', rundir];
+  if (ocSubscription === 'openai') delete env.OPENAI_API_KEY; // the subscription login must pay, never a key
   const stdinText = opencodeRunMessage(prompt);
 
   const t0 = Date.now();
@@ -970,6 +999,7 @@ export async function runOpencodeTask(task, {
     parsed = parseOpencodeStream(r.stdout);
   }
   const wallMs = Date.now() - t0;
+  const ocAuthSynced = ocSubscription ? ocSyncAuthBack(ocData, ocSubscription) : null;
   const { toolCalls, answer, turns, errors } = parsed;
   const progressTurnMap = finalizeProgressModelTurns(progressConfig, toolCalls);
 
@@ -1036,6 +1066,7 @@ export async function runOpencodeTask(task, {
     // plugin's own report of the description edits it applied (null = it never ran).
     harnessTrim: harnessTrim.mode,
     ...(ocVariant ? { ocVariant } : {}),
+    ...(ocSubscription ? { ocSubscription, ocModel, ocAuthSynced } : {}),
     ...(sweet ? { harnessTrimSource: harnessTrim.origin } : {}),
     ...(harnessTrim.mode ? { harnessTrimToolEdits } : {}),
     ...sweetRulesRowFields(rulesPlacement, { sweet }),
