@@ -56,30 +56,84 @@ chunking improvements, query expansion, or stronger reranking models.
 float rescore → full-dimension blend, `semanticSearch3Stage`) compare with
 FAISS, USearch and hnswlib, on both quality and speed?
 
-**Method (dev data only):**
-- Same CodeRankEmbed embeddings for every system. Each rival indexes the full
-  768-d float vectors its own documented way: FAISS `IndexHNSWFlat` (M=16/32,
-  efC=40/200), USearch (defaults, f16 and i8), hnswlib (M=16, efC=200). Their
-  efSearch is swept (16–2048). They return top-10 directly; no shared rescore.
-- Our side is the unchanged production cascade, called on the production index.
-- Queries: 3,600 GenCodeSearchNet **dev** queries; MRR@10 at document level.
-- Sizes: GCSN alone (6.9k vectors), and GCSN plus distractor chunks from our
-  dev eval repos (held-out repos excluded) at 20k, 50k and 157k vectors.
-- Latency: single thread, median of 3 runs per query, M3 Max. Query embedding
-  is excluded for every system. Rivals are timed through Python (about 5–15 µs
-  call overhead); ours through Node.
+### v2 (2026-10-06): held-out queries, equal build budget, memory, throughput
 
-**Result (p50 · MRR@10):**
+**Method:**
+- **Data.** Headline: the 2,400 GenCodeSearchNet **held-out** queries (seed-42
+  split; aggregate metrics only, no per-query inspection), on GCSN alone
+  (6.9k vectors) and with distractor chunks from our dev eval repos (20k,
+  157k; held-out repos excluded). Check on data we never tuned on: 3,000
+  AdvTest queries (seed 42) over its full index (21.7k chunks).
+- **Same embeddings for all** (CodeRankEmbed). Each rival builds HNSW from the
+  full 768-d floats its own way, at its default budget and at ours (M=64,
+  efC=800): FAISS `IndexHNSWFlat` f32 (M16/efC40, M32/efC200, M64/efC800),
+  hnswlib f32 (M16/efC200, M64/efC800), USearch f16 (M16/efC128, M64/efC800)
+  and i8 (M64/efC800). efSearch is swept 16 → 2048 (stop at recall 0.999 or
+  15 ms). Rivals return top-10 directly; no shared rescore.
+- **Ours:** the unchanged production cascade on the production index.
+- **Latency:** 1 thread, median of 3 runs per query, M3 Max, query embedding
+  excluded. Rivals run through Python: a per-call floor of about 5–15 µs
+  (FAISS, USearch) and about 48 µs (hnswlib).
+- **Throughput:** 12 cores. Rivals: one batched call with 12 threads. Ours:
+  12 Node worker threads, each with its own copy of the index.
+- **Metrics:** MRR@10 at document level (main), and recall@10 against exact
+  768-d cosine kNN. Recall vs exact is not like-for-like for us: our last
+  stage blends scores on purpose, so our top 10 is a ranking, not an
+  approximation of exact kNN (ours: 0.76–0.87). Rivals reach that recall at
+  small efSearch.
 
-| vectors | sweet | FAISS (best) | USearch (best) | hnswlib (best) |
+**Result: p50 latency at which each system first reaches our MRR@10**
+(best of its build configs):
+
+| set | vectors | exact-kNN MRR | **sweet** p50 · MRR | FAISS | USearch | hnswlib |
+|---|---|---|---|---|---|---|
+| GCSN held-out | 6.9k | 0.837 | 0.16 ms · 0.833 | **0.09 ms** (M32) | 0.36 ms (f16) | 0.95 ms |
+| GCSN held-out | 20k | 0.829 | **0.26 ms** · 0.821 | never (max 0.820) | 0.56 ms (i8) | 1.86 ms |
+| GCSN held-out | 157k | 0.798 | **0.41 ms** · 0.786 | 2.15 ms (M64) | 1.48 ms (i8) | 4.32 ms |
+| AdvTest (never tuned) | 21.7k | 0.474 | 0.29 ms · 0.469 | 0.41 ms (M64) | **0.19 ms** (i8) | 1.86 ms |
+
+- FAISS stalls at recall 0.989 on the 20k set even at M64/efC800/ef2048. This
+  set mixes in real-repo chunks, which contain near-duplicate code, a known
+  weak spot of HNSW graphs. Our 1,000-candidate rescore is not affected.
+- At the default build budgets, FAISS (M16, M32), hnswlib M16 and USearch
+  f16 M16 never reach our MRR at 157k.
+- Our MRR is within 0.4–1.3 pp of exact kNN on every set.
+
+**Throughput, 12 cores (queries/s, each rival at its fastest setting above):**
+
+| set | sweet | FAISS | USearch | hnswlib |
 |---|---|---|---|---|
-| 6.9k | 0.16 ms · 0.848 | 0.09 ms · 0.848 (M16, ef80) | never reaches 0.848 | 1.6 ms · 0.849 (ef256) |
-| 20k | 0.26 ms · 0.837 | 0.74 ms · 0.818 (ef512) | 1.12 ms · 0.832 (f16, ef512) | 2.83 ms · 0.834 (ef512) |
-| 50k | 0.31 ms · 0.823 | 0.99 ms · 0.781 (ef512) | — | — |
-| 157k | 0.40 ms · 0.802 | 6.86 ms · 0.800 (ef2048) | 3.92 ms · 0.796 (i8, ef2048) | 3.67 ms · 0.768 (ef512) |
+| GCSN 6.9k | 26.8k | **61.0k** | 26.9k (f16) | 10.8k |
+| GCSN 20k | **17.9k** | 1.1k (max quality) | 15.5k (i8) | 4.4k |
+| GCSN 157k | **8.1k** | 1.3k | 3.0k (f16) / 2.3k (i8) | 1.5k |
+| AdvTest 21.7k | 7.7k | 5.3k | **25.7k** (i8) | — |
 
-FAISS is faster on the smallest index. From 20k vectors up, no rival reaches
-our MRR at any efSearch tested.
+**Build and memory** (index structures kept in RAM; build threads in brackets):
+
+| vectors | sweet | FAISS M64/efC800 | USearch i8 M64/efC800 | hnswlib M64/efC800 |
+|---|---|---|---|---|
+| 6.9k | 42 MB, 3.2 s (1) | 24 MB, 0.5 s (12) | 16 MB, 0.4 s (12) | 24 MB, 2.0 s (12) |
+| 21.7k (AdvTest) | 69 MB, 13.6 s (1) | 75 MB, 6.0 s (12) | 48 MB, 1.6 s (12) | 75 MB, 10.8 s (12) |
+| 157k | 504 MB, 192 s (1) | 541 MB, 104 s (12) | 242 MB, 49 s (12) | 542 MB, 193 s (12) |
+
+Ours: binary vectors + graph + int8 + float-512 copies (+ the full-768 cache
+up to 16k vectors); the 768-d floats stay in SQLite on disk. The float-512
+copy is 61% of our total.
+
+**Reading:** on held-out GCSN we are the fastest system at our quality from
+20k vectors up (3.6× the best rival at 157k, single query and 12 cores).
+FAISS is faster on the 6.9k index. On AdvTest, which we never tuned on,
+USearch i8 is faster than us (0.19 vs 0.29 ms; 3.3× our 12-core throughput)
+at the same MRR. USearch i8 also uses half our memory at 157k. Scripts:
+`eval/benchmarks/hnsw-rivals/`.
+
+### v1 (2026-10-06, superseded): dev queries, rivals at default budgets
+
+- 3,600 GCSN **dev** queries, same sizes plus 50k; rivals at their documented
+  budgets only (FAISS M16/32 efC40/200, USearch defaults, hnswlib M16/efC200).
+- p50 · MRR@10 after the speed passes: sweet 0.16 ms · 0.848 (6.9k),
+  0.26 ms · 0.837 (20k), 0.31 ms · 0.823 (50k), 0.40 ms · 0.802 (157k);
+  FAISS best 0.09 ms · 0.848 at 6.9k; at 157k FAISS 6.86 ms · 0.800.
 
 **Native walk (commit `37534e57`):** `crates/sweet-search-native/src/hnsw_search.rs`
 is an exact port of the JS query walk (same visit order, same heap tie rules).
