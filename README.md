@@ -136,8 +136,8 @@ That's it. From then on, the index updates itself as you work.
 To uninstall 😢:
 
 ```bash
-sweet-search uninstall        # this repo only
-sweet-search uninstall --all  # everything: all repos, models, and the CLI
+sweet-search uninstall          # this repo only
+sweet-search uninstall --all    # everything: all repos, models, and the CLI
 ```
 
 <details>
