@@ -471,7 +471,7 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 <tr>
 <td width="50%" valign="top" align="center">
 
-<h3>⚡⚡ `ss-grep` </h3>
+<h3>⚡⚡ <code>ss-grep</code></h3>
 
 ### 2.06× faster
 
@@ -488,7 +488,7 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 </td>
 <td width="50%" valign="top" align="center">
 
-<h3>🧮 **Custom MaxSim kernel** </h3>
+<h3>🧮 <b>Custom MaxSim kernel</b></h3>
 
 ### 2.9–3.9× faster
 
