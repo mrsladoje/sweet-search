@@ -494,7 +494,18 @@ if (SR_MODE) {
   const stockSpecs = selSpecs.filter(s => !s._origImage);
   const warmSpecs = selSpecs.filter(s => s._origImage);
   const failures = [...preflightEnvLedger(stockSpecs, ledgerMap, pfOpts).failures];
-  for (const s of warmSpecs) {
+  // SS_PREFLIGHT_WARM_VERIFIED=<where/when> (opt-in, for a RESUME of a run whose full pre-flight already
+  // passed): skip ONLY the warm-image load → hash → rmi loop (~40 min for 45 images). Stock hashes, the
+  // golden and model gates still run. The ledger row must still exist and be gold-valid.
+  const warmVerified = process.env.SS_PREFLIGHT_WARM_VERIFIED || '';
+  if (warmVerified) {
+    console.log(`[env-ledger] SS_PREFLIGHT_WARM_VERIFIED=${warmVerified} — ${warmSpecs.length} warm task(s) NOT re-hashed (ledger status still required)`);
+    for (const s of warmSpecs) {
+      const row = ledgerMap.get(s.instance_id);
+      if (!row || row.status !== 'gold-valid') failures.push({ instance_id: s.instance_id, reason: 'not-gold-FULL', detail: `ledger status=${row?.status || 'missing'}` });
+    }
+  }
+  for (const s of (warmVerified ? [] : warmSpecs)) {
     const already = imgLoaded(s.image_name);
     if (!already) {
       const tar = path.join(DERIVED_BK, vaultTarName(s.image_name));
