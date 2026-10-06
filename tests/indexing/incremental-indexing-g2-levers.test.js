@@ -20,7 +20,7 @@
  *   - E.4 pragmas: byte-identical (cache/heap settings don't change output).
  */
 
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, beforeAll, afterAll } from 'vitest';
 import {
   mkdtempSync,
   mkdirSync,
@@ -54,9 +54,19 @@ import {
   fts5WatermarkBudgetPages,
   fts5Optimize,
 } from '../../core/incremental-indexing/infrastructure/sqlite-fts5.mjs';
-import { flushFloatStore } from '../../core/incremental-indexing/application/production-reconciler-helpers.mjs';
+import { flushFloatStore, maintainFloatStore } from '../../core/incremental-indexing/application/production-reconciler-helpers.mjs';
 import { defaultMaintenanceHandlers } from '../../core/incremental-indexing/application/maintenance-worker.mjs';
 import { FloatVectorStore, getFloatStorePath } from '../../core/vector-store/float-vector-store.js';
+
+// These tests cover the float-512 store, which is written only with
+// SS_FIX_FLOAT512=1 (off by default).
+const savedFloat512 = process.env.SS_FIX_FLOAT512;
+beforeAll(() => { process.env.SS_FIX_FLOAT512 = '1'; });
+afterAll(() => {
+  if (savedFloat512 === undefined) delete process.env.SS_FIX_FLOAT512;
+  else process.env.SS_FIX_FLOAT512 = savedFloat512;
+});
+
 
 const MODEL_INFO = Object.freeze({ provider: 'test', model: 'fake', dimension: 8, hnswDimension: 8 });
 const silent = { info() {}, warn() {}, error() {} };
@@ -257,6 +267,32 @@ describe('G2 flushFloatStore (E.1 tick-finalize)', () => {
   it('no-ops (saved=false) on an empty delta', async () => {
     const r = await flushFloatStore({ binaryHnswPath: '/nope/x.idx', upserts: [], removeIds: [], binaryVectorsBefore: 0, dimension: 8 });
     expect(r.saved).toBe(false);
+  });
+});
+
+describe('float-512 store off by default (SS_FIX_FLOAT512 unset)', () => {
+  it('flushFloatStore and maintainFloatStore write nothing and remove an old store', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'g2-float-off-'));
+    const saved = process.env.SS_FIX_FLOAT512;
+    try {
+      const binPath = join(dir, 'codebase-binary-hnsw.idx');
+      const floatPath = getFloatStorePath(binPath);
+      const old = new FloatVectorStore();
+      old.build([{ id: 'stale', vector: Float32Array.from({ length: 8 }, () => 0.3) }], 8);
+      await old.save(floatPath);
+      expect(existsSync(floatPath)).toBe(true);
+      delete process.env.SS_FIX_FLOAT512;
+      const upserts = [{ id: 'a', vector: Float32Array.from({ length: 8 }, () => 0.1) }];
+      const r = await flushFloatStore({ binaryHnswPath: binPath, upserts, removeIds: [], binaryVectorsBefore: 0, dimension: 8 });
+      expect(r.saved).toBe(false);
+      expect(existsSync(floatPath)).toBe(false);
+      expect(existsSync(floatPath.replace(/\.bin$/, '.ids.json'))).toBe(false);
+      await maintainFloatStore(binPath, { upserts, removeIds: [], binaryVectorsBefore: 0, dimension: 8 });
+      expect(existsSync(floatPath)).toBe(false);
+    } finally {
+      if (saved === undefined) delete process.env.SS_FIX_FLOAT512; else process.env.SS_FIX_FLOAT512 = saved;
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

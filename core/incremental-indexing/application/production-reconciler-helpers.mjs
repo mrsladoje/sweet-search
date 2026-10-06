@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { entityHierarchyLevel, normalizeIdentifier } from '../../graph/graph-extractor.js';
-import { FloatVectorStore, getFloatStorePath } from '../../vector-store/float-vector-store.js';
+import { FloatVectorStore, getFloatStorePath, float512StoreEnabled, removeFloatStore } from '../../vector-store/float-vector-store.js';
 import {
   loadBitmap,
   createBitmap,
@@ -246,6 +246,10 @@ export function markBinaryStale(index, id) {
  * @param {number} delta.dimension            hnswDimension to seed a fresh empty store.
  */
 export async function maintainFloatStore(binaryHnswPath, { upserts, removeIds, binaryVectorsBefore, dimension }) {
+  if (!float512StoreEnabled()) {
+    await removeFloatStore(getFloatStorePath(binaryHnswPath));
+    return;
+  }
   if (upserts.length === 0 && removeIds.length === 0) return;
   const floatStorePath = getFloatStorePath(binaryHnswPath);
   if (!existsSync(floatStorePath) && binaryVectorsBefore > 0) return;
@@ -283,6 +287,10 @@ export async function maintainFloatStore(binaryHnswPath, { upserts, removeIds, b
  * @returns {Promise<{saved: boolean}>}
  */
 export async function flushFloatStore({ binaryHnswPath, store = null, upserts = [], removeIds = [], binaryVectorsBefore = 0, dimension }) {
+  if (!float512StoreEnabled()) {
+    await removeFloatStore(getFloatStorePath(binaryHnswPath));
+    return { saved: false };
+  }
   if (upserts.length === 0 && removeIds.length === 0) return { saved: false };
   const floatStorePath = getFloatStorePath(binaryHnswPath);
   if (!existsSync(floatStorePath) && binaryVectorsBefore > 0 && !(store && store.loaded && store.count > 0)) {

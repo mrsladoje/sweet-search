@@ -27,6 +27,7 @@
 
 import { readFile, writeFile, rename } from 'fs/promises';
 import { existsSync } from 'fs';
+import { unlink } from 'fs/promises';
 import path from 'path';
 import { nativeRescoreKernels, scratchArray, scratchFloat64Query } from '../infrastructure/native-rescore.js';
 import { float32BatchDot } from '../infrastructure/simd-distance.js';
@@ -34,6 +35,22 @@ import { float32BatchDot } from '../infrastructure/simd-distance.js';
 const MAGIC = 0x43455646; // "FVEC" in little-endian
 const VERSION = 1;
 const HEADER_SIZE = 20;
+
+/**
+ * The float-512 store feeds only Stage 2.5 of the semantic cascade, which is
+ * off by default (same end-to-end GCSN MRR without it; the store was 61% of
+ * the vector-search RAM). Off: the indexer and the maintainer do not write
+ * it, search does not load it. SS_FIX_FLOAT512=1 restores all three.
+ */
+export function float512StoreEnabled() {
+  return process.env.SS_FIX_FLOAT512 === '1';
+}
+
+/** Delete a float store (`.bin` + `.ids.json`), so no stale copy is ever loaded. */
+export async function removeFloatStore(binPath) {
+  await unlink(binPath).catch(() => {});
+  await unlink(binPath.replace(/\.bin$/, '.ids.json')).catch(() => {});
+}
 
 export class FloatVectorStore {
   constructor() {

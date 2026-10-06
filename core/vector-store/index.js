@@ -9,7 +9,7 @@
 export { BinaryHNSWIndex, createBinaryHNSWIndex } from './binary-hnsw-index.js';
 
 // --- Float vector store (Stage 2.5 rescoring) ---
-export { FloatVectorStore, getFloatStorePath } from './float-vector-store.js';
+export { FloatVectorStore, getFloatStorePath, float512StoreEnabled, removeFloatStore } from './float-vector-store.js';
 
 // --- SEISMIC sparse vector index ---
 export { SeismicIndex, TopKHeap, Block, InvertedList, sparseDotProduct } from './seismic-index.js';

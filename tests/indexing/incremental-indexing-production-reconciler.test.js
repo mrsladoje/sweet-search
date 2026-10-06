@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, beforeAll, afterAll } from 'vitest';
 import Database from 'better-sqlite3';
 import {
   existsSync,
@@ -17,6 +17,16 @@ import { resolveLatestRecords } from '../../core/incremental-indexing/infrastruc
 import { LateInteractionIndex } from '../../core/ranking/late-interaction-index.js';
 import { FloatVectorStore } from '../../core/vector-store/float-vector-store.js';
 import { readVectorsSidecar, readInt8Sidecar } from '../../core/vector-store/binary-hnsw-index.js';
+
+// These tests cover the float-512 store, which is written only with
+// SS_FIX_FLOAT512=1 (off by default).
+const savedFloat512 = process.env.SS_FIX_FLOAT512;
+beforeAll(() => { process.env.SS_FIX_FLOAT512 = '1'; });
+afterAll(() => {
+  if (savedFloat512 === undefined) delete process.env.SS_FIX_FLOAT512;
+  else process.env.SS_FIX_FLOAT512 = savedFloat512;
+});
+
 
 const MODEL_INFO = Object.freeze({
   provider: 'test',
