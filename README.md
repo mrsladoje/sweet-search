@@ -471,7 +471,7 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 <tr>
 <td width="50%" valign="top" align="center">
 
-⚡ **`ss-grep` vs [ripgrep](https://github.com/BurntSushi/ripgrep)**
+<h3>⚡⚡ `ss-grep` </h3>
 
 ### 2.06× faster
 
@@ -488,20 +488,19 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 </td>
 <td width="50%" valign="top" align="center">
 
-🧮 **MaxSim kernel vs [maxsim-cpu](https://github.com/mixedbread-ai/maxsim-cpu)**
+<h3>🧮 **Custom MaxSim kernel** </h3>
 
 ### 2.9–3.9× faster
 
-<sub>4,237 replayed production calls, same ranking</sub>
+<sub>4k+ replayed production calls, same ranking</sub>
 
 | | agent p50 | |
 |:--|--:|:--|
-| **ours** | **0.137 ms** | `████` |
+| **sweet** | **0.137 ms** | `████` |
 | NumPy | 0.272 ms | `████████` |
 | maxsim-cpu | 0.540 ms | `████████████████` |
 
-<sub>maxsim-cpu in its best case (f32, pre-normalized) · 1.6–1.9× vs NumPy</sub><br>
-<sub>ARM (M3 Max), x86 not measured · [method](eval/maxsim-bench/README.md)</sub>
+<sub>maxsim-cpu in its best case (f32, pre-normalized) · 1.6–1.9× vs NumPy · [method](eval/maxsim-bench/README.md)</sub>
 
 </td>
 </tr>
