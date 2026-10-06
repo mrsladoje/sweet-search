@@ -360,7 +360,7 @@ per task. The harnesses run **as they ship** — no tools disabled, no delegatio
 
 <div align="center">
 
-<img src="assets/task-completion-stats.svg" alt="Held-out task-completion results, sweet-search vs native, 200 SWE-rebench tasks, 1 rep. Claude Code with Sonnet 5.5 high: billed cost −8.5%, cost per solved task −13.8%, 88 vs 83 tasks solved; none significant yet. Opus 5.5 medium and high, opencode and Codex with Sol 6.1: coming soon." width="100%" />
+<img src="assets/task-completion-stats.svg" alt="Held-out task-completion results, sweet-search vs native, 200 SWE-rebench tasks, 1 rep. Claude Code with Sonnet 5.5 high: billed cost −8.5%, cost per solved task −13.8%, 91 vs 86 of 193 graded tasks solved; none significant yet. Opus 5.5 medium and high, opencode and Codex with Sol 6.1: coming soon." width="100%" />
 
 <sub>frozen held-out set · 200 tasks · 1 rep per arm · grey = not significant yet · more arms running</sub>
 
