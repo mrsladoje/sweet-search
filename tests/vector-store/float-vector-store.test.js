@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, rmSync, writeFileSync, readFileSync } from 'fs
 import { join } from 'path';
 import { tmpdir } from 'os';
 import { FloatVectorStore } from '../../core/vector-store/float-vector-store.js';
+import { float32BatchDot } from '../../core/infrastructure/simd-distance.js';
 
 // Incremental writer-side methods used by the reconcile maintainer to keep the
 // Stage 2.5 float store (codebase-float-vectors.bin) in lockstep with the
@@ -162,3 +163,23 @@ describe('FloatVectorStore incremental maintenance', () => {
     expect(loaded.loaded).toBe(false);
   });
 });
+
+describe('FloatVectorStore.batchScore', () => {
+  it('scores exactly as float32BatchDot over the stored rows (any query type)', () => {
+    let seed = 5;
+    const r = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296) - 0.5;
+    const dim = 512;
+    const entries = Array.from({ length: 300 }, (_, i) => ({ id: `c${i}`, vector: Float32Array.from({ length: dim }, r) }));
+    const store = new FloatVectorStore();
+    store.build(entries, dim);
+    const ids = ['c3', 'missing', 'c299', 'c3', ...Array.from({ length: 40 }, (_, i) => `c${(i * 37) % 300}`)];
+    for (const query of [Float32Array.from({ length: dim }, r), Array.from({ length: dim }, r)]) {
+      const got = store.batchScore(query, ids);
+      const valid = ids.filter((id) => store.idToIndex.has(id));
+      const want = float32BatchDot(query, valid.map((id) => store.get(id)));
+      expect(got.missing).toBe(1);
+      expect([...got.scores]).toEqual([...new Map(valid.map((id, i) => [id, want[i]]))]);
+    }
+  });
+});
+

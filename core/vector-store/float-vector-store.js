@@ -28,6 +28,7 @@
 import { readFile, writeFile, rename } from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'path';
+import { nativeRescoreKernels, scratchArray, scratchFloat64Query } from '../infrastructure/native-rescore.js';
 import { float32BatchDot } from '../infrastructure/simd-distance.js';
 
 const MAGIC = 0x43455646; // "FVEC" in little-endian
@@ -273,6 +274,8 @@ export class FloatVectorStore {
    * @returns {{ scores: Map<string, number>, missing: number }}
    */
   batchScore(query, ids) {
+    const kernels = query.length === this.dimension ? nativeRescoreKernels() : null;
+    if (kernels && this.data) return this._nativeBatchScore(kernels, query, ids);
     const candidates = [];
     const validIds = [];
     let missing = 0;
@@ -299,6 +302,33 @@ export class FloatVectorStore {
       scores.set(validIds[i], dotScores[i]);
     }
 
+    return { scores, missing };
+  }
+
+  /**
+   * batchScore on the native kernel: same scores (sequential f64 sums, as in
+   * float32BatchDot), without a subarray view per candidate.
+   */
+  _nativeBatchScore(kernels, query, ids) {
+    const rows = scratchArray('floatRows', Uint32Array, ids.length);
+    const validIds = [];
+    let missing = 0;
+    for (const id of ids) {
+      const idx = this.idToIndex.get(id);
+      if (idx !== undefined) {
+        rows[validIds.length] = idx;
+        validIds.push(id);
+      } else {
+        missing++;
+      }
+    }
+    if (validIds.length === 0) return { scores: new Map(), missing };
+    const dotScores = scratchArray('floatScores', Float64Array, validIds.length);
+    kernels.f32DotScores(this.data, this.dimension, scratchFloat64Query(query), rows.subarray(0, validIds.length), dotScores);
+    const scores = new Map();
+    for (let i = 0; i < validIds.length; i++) {
+      scores.set(validIds[i], dotScores[i]);
+    }
     return { scores, missing };
   }
 

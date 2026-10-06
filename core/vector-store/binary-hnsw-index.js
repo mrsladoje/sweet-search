@@ -46,6 +46,7 @@ import { HammingSlab } from '../infrastructure/hamming-kernel.js';
 import { TypedMinHeap, TypedMaxHeap, VisitedList } from './binary-heap.js';
 import { loadBitmap, isSet, popcountRange } from '../infrastructure/tombstone-bitmap-reader.js';
 import { loadNativeAddon } from '../infrastructure/native-resolver.js';
+import { nativeRescoreKernels, scratchArray } from '../infrastructure/native-rescore.js';
 
 // Native query path (crates/sweet-search-native/src/hnsw_search.rs): an exact
 // port of greedySearchQuery/searchLayerQuery over a CSR snapshot of the graph.
@@ -59,6 +60,22 @@ function nativeHnswSearcherCtor() {
   const res = loadNativeAddon({ validate: (m) => typeof m.HnswSearcher === 'function' });
   if (res) _NativeHnswSearcher = res.mod.HnswSearcher;
   return _NativeHnswSearcher;
+}
+
+// Flattened early-termination thresholds for the native walk, rebuilt only
+// when the config array changes.
+const nativeThresholds = { list: null, flat: null };
+
+/**
+ * id -> Int8Array map that counts its own writes, so a derived structure
+ * (the node-ordered int8 slab) can tell when it is out of date.
+ */
+class Int8VectorMap extends Map {
+  set(k, v) { this.gen = (this.gen | 0) + 1; return super.set(k, v); }
+  delete(k) { this.gen = (this.gen | 0) + 1; return super.delete(k); }
+  clear() { this.gen = (this.gen | 0) + 1; return super.clear(); }
+  /** Replace a value with an equal-content view without counting a write. */
+  _rebind(k, v) { return super.set(k, v); }
 }
 
 // Shared empty neighbor list for graph misses in the hot search loops —
@@ -571,7 +588,8 @@ export class BinaryHNSWIndex {
     this.initialized = false;
 
     // For int8 rescoring
-    this.int8Vectors = new Map(); // id → Int8Array
+    this.int8Vectors = new Int8VectorMap(); // id → Int8Array
+    this._int8Slab = null;       // node-ordered copy for native rescoring
 
     // Graph structure (simplified HNSW for pure JS)
     this._graphGen = 0;
@@ -1269,26 +1287,38 @@ export class BinaryHNSWIndex {
     return searcher;
   }
 
-  /** Native layer-0 search: `[visitedCount, n, idx[0..n), dist[0..n)]`. */
+  /**
+   * Native layer-0 search: `[visitedCount, n, idx[0..n), dist[0..n)]` in a
+   * shared scratch buffer, valid until the next native search call.
+   */
   _nativeSearchLayer(searcher, startNode, ef, level) {
     const et = BINARY_HNSW_CONFIG.earlyTermination || {};
-    const flat = new Float64Array((et.thresholds || [[0.3, 0.05], [0.6, 0.10]]).flat());
-    return searcher.searchLayer(startNode, ef, level, et.windowSize || 16, flat);
+    const list = et.thresholds || [[0.3, 0.05], [0.6, 0.10]];
+    if (nativeThresholds.list !== list) {
+      nativeThresholds.list = list;
+      nativeThresholds.flat = new Float64Array(list.flat());
+    }
+    const out = scratchArray('hnswLayer', Uint32Array, 2 + 2 * ef);
+    searcher.searchLayerInto(startNode, ef, level, et.windowSize || 16, nativeThresholds.flat, out);
+    return out;
   }
 
-  /** Live (non-stale) entries of a native layer result, as [idx, dist] arrays. */
+  /**
+   * Live (non-stale) entries of a native layer result, copied into plain
+   * arrays (young-generation heap: cheap to collect, and they outlive the
+   * scratch buffer).
+   */
   _nativeLive(out, staleBitmap) {
     const n = out[1];
-    const idx = out.subarray(2, 2 + n);
-    const dist = out.subarray(2 + n, 2 + 2 * n);
-    if (!staleBitmap) return { idx, dist, length: n };
-    const li = new Uint32Array(n), ld = new Uint32Array(n);
-    let m = 0;
+    const idx = [];
+    const dist = [];
     for (let i = 0; i < n; i++) {
-      if (this._isIndexStale(idx[i], staleBitmap)) continue;
-      li[m] = idx[i]; ld[m] = dist[i]; m++;
+      const node = out[2 + i];
+      if (staleBitmap && this._isIndexStale(node, staleBitmap)) continue;
+      idx.push(node);
+      dist.push(out[2 + n + i]);
     }
-    return { idx: li, dist: ld, length: m };
+    return { idx, dist, length: idx.length };
   }
 
   /**
@@ -1296,7 +1326,7 @@ export class BinaryHNSWIndex {
    * result objects as the JS path, without the intermediate {idx, dist}
    * objects.
    */
-  _finishNativeSearch(nat, currentNode, ef, k, staleBitmap, start) {
+  _finishNativeSearch(nat, currentNode, ef, k, staleBitmap, start, lazy = false) {
     let out = this._nativeSearchLayer(nat, currentNode, ef, 0);
     const visitedCount = out[0];
     let live = this._nativeLive(out, staleBitmap);
@@ -1309,14 +1339,28 @@ export class BinaryHNSWIndex {
     }
     const maxDist = this.dimension * 8;
     const n = Math.min(k, live.length);
-    const results = new Array(n);
-    for (let i = 0; i < n; i++) {
-      const v = this.vectors[live.idx[i]];
-      const dist = live.dist[i];
-      results[i] = { id: v.id, score: 1 - (dist / maxDist), hammingDistance: dist, metadata: v.metadata };
+    const materialize = (m) => {
+      const results = new Array(m);
+      for (let i = 0; i < m; i++) {
+        const v = this.vectors[live.idx[i]];
+        const dist = live.dist[i];
+        results[i] = { id: v.id, score: 1 - (dist / maxDist), hammingDistance: dist, metadata: v.metadata };
+      }
+      return results;
+    };
+    let results = null;
+    let lazyFields = null;
+    if (lazy) {
+      // The caller reads all n scores but builds result objects only for the
+      // head it keeps: materialize(m) gives the first m of the same results.
+      const scores = new Array(n);
+      for (let i = 0; i < n; i++) scores[i] = 1 - (live.dist[i] / maxDist);
+      lazyFields = { count: n, scores, materialize: (m) => materialize(Math.min(m, n)) };
+    } else {
+      results = materialize(n);
     }
     const latency = performance.now() - start;
-    return {
+    const ret = {
       results,
       latency_us: Math.round(latency * 1000),
       latency_ms: latency.toFixed(3),
@@ -1326,6 +1370,11 @@ export class BinaryHNSWIndex {
       adaptiveEf: ef,
       useAsymmetric: this.useAsymmetric,
     };
+    // Node index of each result, for int8ScoresForNodes. Non-enumerable so
+    // the visible result shape is unchanged.
+    Object.defineProperty(ret, 'nodeIndices', { value: n === live.idx.length ? live.idx : live.idx.slice(0, n) });
+    if (lazyFields) Object.assign(ret, lazyFields);
+    return ret;
   }
 
   async search(queryVector, k = 10, opts = {}) {
@@ -1377,7 +1426,7 @@ export class BinaryHNSWIndex {
     }
 
     // Level 0 search — pure Hamming, no asymmetric in the traversal loop
-    if (nat) return this._finishNativeSearch(nat, currentNode, ef, k, staleBitmap, start);
+    if (nat) return this._finishNativeSearch(nat, currentNode, ef, k, staleBitmap, start, opts.lazy === true);
 
     const searchResult = this.searchLayerQuery(currentNode, queryBinary, ef, 0);
     let candidates = searchResult.candidates;
@@ -1704,6 +1753,69 @@ export class BinaryHNSWIndex {
    * @param {string[]} ids
    * @returns {Array<Int8Array|undefined>} aligned with ids
    */
+  /**
+   * Node-ordered int8 slab: row i holds int8Vectors.get(vectors[i].id), and
+   * `present[i]` says whether that vector exists. Rebuilt after any write to
+   * the map or the node list; the map's values are re-pointed at the slab
+   * rows (same bytes), so the vectors are stored once.
+   */
+  _int8NodeSlab() {
+    const map = this.int8Vectors;
+    if (!(map instanceof Int8VectorMap) || this._mmapBacked) return null;
+    const n = this.vectors.length;
+    const c = this._int8Slab;
+    if (c && c.map === map && c.gen === map.gen && c.graphGen === this._graphGen && c.n === n) return c;
+    let dim = 0;
+    for (const v of map.values()) {
+      if (dim === 0) dim = v.length;
+      else if (v.length !== dim) return null; // mixed widths: keep the JS path
+    }
+    if (dim === 0) return null;
+    const slab = new Int8Array(n * dim);
+    const present = new Uint8Array(n);
+    for (let i = 0; i < n; i++) {
+      const id = this.vectors[i]?.id;
+      const v = id === undefined ? undefined : map.get(id);
+      if (!v) continue;
+      const row = slab.subarray(i * dim, (i + 1) * dim);
+      row.set(v);
+      map._rebind(id, row);
+      present[i] = 1;
+    }
+    this._int8Slab = { slab, present, dim, n, map, gen: map.gen, graphGen: this._graphGen };
+    return this._int8Slab;
+  }
+
+  /**
+   * Stage-2 int8 scores for stage-1 node indices, exactly as
+   * int8BatchDotScores(query, getInt8VectorsForIds(ids)) would give them.
+   * Returns { scores, missing } aligned with `nodes`, or null when the
+   * native path is unavailable (callers then use getInt8VectorsForIds).
+   */
+  int8ScoresForNodes(queryInt8, nodes) {
+    const kernels = nativeRescoreKernels();
+    if (!kernels || !nodes) return null;
+    const store = this._int8NodeSlab();
+    if (!store || queryInt8.length !== store.dim) return null;
+    const bitmap = this._loadStaleBitmap();
+    const missing = new Array(nodes.length).fill(false);
+    const rows = scratchArray('int8Rows', Uint32Array, nodes.length);
+    let m = 0;
+    for (let i = 0; i < nodes.length; i++) {
+      const node = nodes[i];
+      if (node >= store.n || !store.present[node] || this._isIndexStale(node, bitmap)) {
+        missing[i] = true;
+      } else {
+        rows[m++] = node;
+      }
+    }
+    const packed = scratchArray('int8Scores', Float64Array, m);
+    if (m > 0) kernels.int8DotScores(store.slab, store.dim, queryInt8, rows.subarray(0, m), packed);
+    const scores = new Array(nodes.length).fill(0);
+    for (let i = 0, j = 0; i < nodes.length; i++) if (!missing[i]) scores[i] = packed[j++];
+    return { scores, missing, queryInt8 };
+  }
+
   getInt8VectorsForIds(ids) {
     const bitmap = this._loadStaleBitmap();
     const out = new Array(ids.length);
@@ -1971,6 +2083,7 @@ export class BinaryHNSWIndex {
     // Build the native snapshot now, not on the first query (and release
     // the JS graph arrays it replaces).
     this._nativeSearcher();
+    if (nativeRescoreKernels()) this._int8NodeSlab();
     bootLog(`BinaryHNSW: Loaded ${this.vectors.length} vectors from ${indexPath} (asymmetric=${this.useAsymmetric})`);
   }
 

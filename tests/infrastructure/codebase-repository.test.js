@@ -226,6 +226,46 @@ describe('CodebaseRepository', () => {
   });
 
   // -------------------------------------------------------------------------
+  // embeddingDotScores
+  // -------------------------------------------------------------------------
+
+  describe('embeddingDotScores', () => {
+    const seqDot = (a, b) => { let s = 0; for (let i = 0; i < a.length; i++) s += a[i] * b[i]; return s; };
+
+    it('matches sequential dots over getEmbeddingsByIds (resident store)', () => {
+      let seed = 9;
+      const r = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296) - 0.5;
+      const rows = Array.from({ length: 40 }, (_, i) => ({
+        id: `v${i}`, file_path: 'a.js', embedding: makeEmbedding(Array.from({ length: 768 }, r)),
+      }));
+      ({ dbPath, tmpDir } = createTestDb(rows));
+      repo = new CodebaseRepository(dbPath);
+      const ids = ['v1', null, 'nope', 'v39', 'v1', ...Array.from({ length: 20 }, (_, i) => `v${(i * 7) % 40}`)];
+      const query = Array.from({ length: 768 }, r);
+      const got = repo.embeddingDotScores(query, ids);
+      const emb = repo.getEmbeddingsByIds(ids.filter(Boolean));
+      if (!got.scores) {
+        // No native addon: the call hands back the plain fetch.
+        expect([...got.embeddings.keys()].sort()).toEqual([...emb.keys()].sort());
+        return;
+      }
+      expect(got.found).toBe(emb.size);
+      expect(got.scores).toEqual(ids.map((id) => (id && emb.get(id) ? seqDot(query, emb.get(id)) : null)));
+    });
+
+    it('falls back to the plain fetch for mixed vector widths', () => {
+      ({ dbPath, tmpDir } = createTestDb([
+        { id: 'v1', file_path: 'a.js', embedding: makeEmbedding([1, 2, 3]) },
+        { id: 'v2', file_path: 'b.js', embedding: makeEmbedding([1, 2]) },
+      ]));
+      repo = new CodebaseRepository(dbPath);
+      const got = repo.embeddingDotScores([1, 1, 1], ['v1', 'v2']);
+      expect(got.scores).toBeUndefined();
+      expect([...got.embeddings.keys()].sort()).toEqual(['v1', 'v2']);
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // getChunkTexts
   // -------------------------------------------------------------------------
 

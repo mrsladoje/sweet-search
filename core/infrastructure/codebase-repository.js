@@ -9,6 +9,7 @@ import Database from 'better-sqlite3';
 import path from 'node:path';
 import { applyReadPragmas, assertInClauseSize } from './db-utils.js';
 import { readJsonFileCached } from './cached-json-file.js';
+import { nativeRescoreKernels, scratchArray, scratchFloat64Query } from './native-rescore.js';
 
 function readAdjacentManifest(dbPath) {
   try {
@@ -31,6 +32,30 @@ function resolveManifestVectorsPath(dbPath, manifest = readAdjacentManifest(dbPa
 // rows, same bytes, so scores are unchanged. Bounded by vector count;
 // SS_FIX_EMBED_CACHE=0 disables it.
 const EMBEDDING_CACHE_MAX_VECTORS = Number.parseInt(process.env.SWEET_SEARCH_EMBEDDING_CACHE_MAX_VECTORS || '', 10) || 16384;
+
+/**
+ * Pack a resident id → Float32Array map into one contiguous array when every
+ * vector has the same non-zero width, re-pointing the map at the packed rows
+ * (same values, stored once). Returns { data, dim, rowOf } or null.
+ */
+function flattenEmbeddings(map) {
+  let dim = 0;
+  for (const v of map.values()) {
+    if (dim === 0) dim = v.length;
+    if (v.length !== dim || dim === 0) return null;
+  }
+  if (dim === 0) return null;
+  const data = new Float32Array(map.size * dim);
+  const rowOf = new Map();
+  let row = 0;
+  for (const [id, v] of map) {
+    const view = data.subarray(row * dim, (row + 1) * dim);
+    view.set(v);
+    map.set(id, view);
+    rowOf.set(id, row++);
+  }
+  return { data, dim, rowOf };
+}
 
 export class CodebaseRepository {
   constructor(dbPath, options = {}) {
@@ -120,7 +145,11 @@ export class CodebaseRepository {
     assertInClauseSize(uniqueIds.length, 'CodebaseRepository.getEmbeddingsByIds');
 
     const db = this._open();
-    const cached = this._residentEmbeddings(db);
+    return this._embeddingsFor(db, this._residentEmbeddings(db), uniqueIds);
+  }
+
+  /** getEmbeddingsByIds after validation: resident map or SQLite. */
+  _embeddingsFor(db, cached, uniqueIds) {
     if (cached) {
       const result = new Map();
       for (const id of uniqueIds) {
@@ -179,6 +208,7 @@ export class CodebaseRepository {
     const where = visibility.sql ? ` WHERE ${visibility.sql}` : '';
     const count = db.prepare(`SELECT count(*) AS n FROM vectors${where}`).get(...visibility.params).n;
     let map = null;
+    let flat = null;
     if (count <= EMBEDDING_CACHE_MAX_VECTORS) {
       map = new Map();
       for (const row of db.prepare(`SELECT id, embedding FROM vectors${where}`).iterate(...visibility.params)) {
@@ -189,9 +219,48 @@ export class CodebaseRepository {
           )));
         }
       }
+      flat = flattenEmbeddings(map);
     }
-    this._embeddingCache = { db, version, visKey, map };
+    this._embeddingCache = { db, version, visKey, map, flat };
     return map;
+  }
+
+  /**
+   * Full-vector scores for the semantic blend in one repository round trip.
+   * From the resident store on the native kernel: { scores, found } —
+   * dotProduct(query, embedding) per id (null when missing) and the number
+   * of distinct ids found, exactly what getEmbeddingsByIds + dotProducts
+   * give. Otherwise (large index, mixed widths, no addon, other query
+   * width): { embeddings }, the getEmbeddingsByIds(ids) result.
+   * @param {ArrayLike<number>} query
+   * @param {Array<string|null>} ids
+   * @returns {{ scores: Array<number|null>, found: number } | { embeddings: Map<string, Float32Array> }}
+   */
+  embeddingDotScores(query, ids) {
+    const uniqueIds = [...new Set(ids.filter(Boolean))];
+    if (uniqueIds.length === 0) return { embeddings: new Map() };
+    assertInClauseSize(uniqueIds.length, 'CodebaseRepository.getEmbeddingsByIds');
+    const db = this._open();
+    const cached = this._residentEmbeddings(db);
+    const flat = cached ? this._embeddingCache.flat : null;
+    const kernels = flat && query && query.length === flat.dim ? nativeRescoreKernels() : null;
+    if (!kernels) return { embeddings: this._embeddingsFor(db, cached, uniqueIds) };
+    const rows = scratchArray('embRows', Uint32Array, ids.length);
+    const slot = new Array(ids.length).fill(-1);
+    const found = new Set();
+    let m = 0;
+    for (let i = 0; i < ids.length; i++) {
+      const row = ids[i] ? flat.rowOf.get(ids[i]) : undefined;
+      if (row === undefined) continue;
+      found.add(ids[i]);
+      slot[i] = m;
+      rows[m++] = row;
+    }
+    const dots = scratchArray('embScores', Float64Array, m);
+    if (m > 0) kernels.f32DotScores(flat.data, flat.dim, scratchFloat64Query(query), rows.subarray(0, m), dots);
+    const scores = new Array(ids.length);
+    for (let i = 0; i < ids.length; i++) scores[i] = slot[i] < 0 ? null : dots[slot[i]];
+    return { scores, found: found.size };
   }
 
   /**
