@@ -50,6 +50,44 @@ chunking improvements, query expansion, or stronger reranking models.
 
 ---
 
+## Competitor benchmark (2026-10)
+
+**Question:** how does our full vector pipeline (binary HNSW → int8 rescore →
+float rescore → full-dimension blend, `semanticSearch3Stage`) compare with
+FAISS, USearch and hnswlib, on both quality and speed?
+
+**Method (dev data only):**
+- Same CodeRankEmbed embeddings for every system. Each rival indexes the full
+  768-d float vectors its own documented way: FAISS `IndexHNSWFlat` (M=16/32,
+  efC=40/200), USearch (defaults, f16 and i8), hnswlib (M=16, efC=200). Their
+  efSearch is swept (16–2048). They return top-10 directly; no shared rescore.
+- Our side is the unchanged production cascade, called on the production index.
+- Queries: 3,600 GenCodeSearchNet **dev** queries; MRR@10 at document level.
+- Sizes: GCSN alone (6.9k vectors), and GCSN plus distractor chunks from our
+  dev eval repos (held-out repos excluded) at 20k, 50k and 157k vectors.
+- Latency: single thread, median of 3 runs per query, M3 Max. Query embedding
+  is excluded for every system. Rivals are timed through Python (about 5–15 µs
+  call overhead); ours through Node.
+
+**Result (p50 · MRR@10):**
+
+| vectors | sweet | FAISS (best) | USearch (best) | hnswlib (best) |
+|---|---|---|---|---|
+| 6.9k | 0.20 ms · 0.848 | 0.09 ms · 0.848 (M16, ef80) | never reaches 0.848 | 1.6 ms · 0.849 (ef256) |
+| 20k | 0.31 ms · 0.837 | 0.74 ms · 0.818 (ef512) | 1.12 ms · 0.832 (f16, ef512) | 2.83 ms · 0.834 (ef512) |
+| 50k | 0.41 ms · 0.823 | 0.99 ms · 0.781 (ef512) | — | — |
+| 157k | 0.51 ms · 0.802 | 6.86 ms · 0.800 (ef2048) | 3.92 ms · 0.796 (i8, ef2048) | 3.67 ms · 0.768 (ef512) |
+
+FAISS is faster on the smallest index. From 20k vectors up, no rival reaches
+our MRR at any efSearch tested.
+
+**Native walk (commit `37534e57`):** `crates/sweet-search-native/src/hnsw_search.rs`
+is an exact port of the JS query walk (same visit order, same heap tie rules).
+Verified bit-identical: 0 / 32,400 stage-1 mismatches and 0 / 7,200 top-10
+differences in any field against the previous code. Pipeline p50 went from
+544 → 201 µs (6.9k) and 1,569 → 505 µs (157k). `SS_FIX_HNSW_NATIVE=0` restores
+the JS walk.
+
 ## Original Plan (v2)
 
 > Goal: Improve Stage 1 candidate recall (currently 80.6% recall@200, plateau at top-100)
