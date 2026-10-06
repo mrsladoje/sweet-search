@@ -96,10 +96,20 @@ function applyFullVectorStageRescore(candidates, queryFloat, codebaseRepo, opts 
   const ids = head.map(c => c.id).filter(Boolean);
   if (ids.length === 0) return { candidates, stats: null };
 
-  const embeddings = codebaseRepo.getEmbeddingsByIds(ids);
-  if (!embeddings || embeddings.size < 2) return { candidates, stats: null };
-
-  const fullScores = dotProducts(queryFloat, head.map(c => (c.id ? embeddings.get(c.id) : null) || null));
+  // Native path over the resident store; same scores and found count as
+  // getEmbeddingsByIds + dotProducts below.
+  const fetched = codebaseRepo.embeddingDotScores
+    ? codebaseRepo.embeddingDotScores(queryFloat, head.map(c => c.id || null))
+    : { embeddings: codebaseRepo.getEmbeddingsByIds(ids) };
+  let fullScores;
+  if (fetched.scores) {
+    if (fetched.found < 2) return { candidates, stats: null };
+    fullScores = fetched.scores;
+  } else {
+    const embeddings = fetched.embeddings;
+    if (!embeddings || embeddings.size < 2) return { candidates, stats: null };
+    fullScores = dotProducts(queryFloat, head.map(c => (c.id ? embeddings.get(c.id) : null) || null));
+  }
   const scored = head.map((candidate, index) => {
     const fullScore = fullScores[index];
     const baseScore = candidate.floatScore ?? candidate.int8Score ?? candidate.score ?? 0;
@@ -291,19 +301,24 @@ export async function semanticSearch3Stage(query, options = {}) {
   // Pass floatQuery for asymmetric distance during graph traversal
   const stage1Start = performance.now();
   const truncatedFloat = truncateForHNSW(embedResult.float);
+  // lazy: the native path returns all scores but builds result objects only
+  // for the head kept below (stage1Result.materialize); other paths return
+  // the full results array as before.
   const stage1Result = await this.binaryHnswIndex.search(
-    embedResult.binary, this.stage1Candidates, { floatQuery: truncatedFloat }
+    embedResult.binary, this.stage1Candidates, { floatQuery: truncatedFloat, lazy: true }
   );
-  const stage1Scores = stage1Result.results.map(r => r.score);
+  const stage1Lazy = stage1Result.results === null && typeof stage1Result.materialize === 'function';
+  const stage1Count = stage1Lazy ? stage1Result.count : stage1Result.results.length;
+  const stage1Scores = stage1Lazy ? stage1Result.scores : stage1Result.results.map(r => r.score);
   const stage1Analysis = analyzeScoreSpread(stage1Scores);
   stats.stages.binary = {
     latency_us: stage1Result.latency_us,
-    candidates: stage1Result.results.length,
+    candidates: stage1Count,
     scoreDistribution: stage1Analysis,
   };
-  this.log(`Stage 1 (Binary): ${stage1Result.latency_us}us, ${stage1Result.results.length} candidates`);
+  this.log(`Stage 1 (Binary): ${stage1Result.latency_us}us, ${stage1Count} candidates`);
 
-  if (stage1Result.results.length === 0) {
+  if (stage1Count === 0) {
     stats.rerank = {
       skipped: true,
       reason: 'no_candidates',
@@ -327,50 +342,73 @@ export async function semanticSearch3Stage(query, options = {}) {
 
   // Phase 3: Adaptive Stage 2 pool size (uses shared score-spread analysis)
   const stage2Pool = adaptiveStage2Pool(k, stage1Analysis, adaptiveConfig);
-  const stage2Count = Math.min(stage2Pool.size, stage1Result.results.length);
+  const stage2Count = Math.min(stage2Pool.size, stage1Count);
 
   // Collect int8 vectors for scoring
-  const stage2Candidates = stage1Result.results.slice(0, stage2Count);
+  const stage2Candidates = stage1Lazy
+    ? stage1Result.materialize(stage2Count)
+    : stage1Result.results.slice(0, stage2Count);
   const int8Vectors = [];
   const validIndices = [];
   let missingInt8Count = 0;
 
-  // One stale-bitmap snapshot for the whole pool (getInt8Vector would stat
-  // the bitmap file once per candidate). Falls back per-id for injected
-  // index doubles without the batch method.
-  const poolIds = stage2Candidates.map((c) => c.id);
-  const poolInt8 = typeof this.binaryHnswIndex.getInt8VectorsForIds === 'function'
-    ? this.binaryHnswIndex.getInt8VectorsForIds(poolIds)
-    : poolIds.map((id) => this.binaryHnswIndex.getInt8Vector(id));
-  for (let i = 0; i < stage2Candidates.length; i++) {
-    const int8Vector = poolInt8[i];
-    if (int8Vector) {
-      int8Vectors.push(int8Vector);
-      validIndices.push(i);
-    } else {
-      stage2Candidates[i].int8Score = 0.0;
-      stage2Candidates[i].missingInt8 = true;
-      missingInt8Count++;
-    }
-  }
+  // Native path: score straight from the index's node-ordered int8 slab by
+  // stage-1 node index. Same scores and missing set as the path below.
+  const nativeInt8 = useBatchedDot && stage1Result.nodeIndices
+    && typeof this.binaryHnswIndex.int8ScoresForNodes === 'function'
+    ? this.binaryHnswIndex.int8ScoresForNodes(
+      normalizedFloatToInt8(truncatedFloat), stage1Result.nodeIndices.slice(0, stage2Count))
+    : null;
 
-  if (useBatchedDot) {
-    // Phase 1 NEW PATH: Batched normalized dot product
-    // Use same quantizer as index time. No per-candidate norms.
-    const queryInt8 = normalizedFloatToInt8(truncatedFloat);
-    stats.queryInt8 = queryInt8;
-    if (int8Vectors.length > 0) {
-      const batchScores = int8BatchDotScores(queryInt8, int8Vectors);
-      for (let j = 0; j < validIndices.length; j++) {
-        stage2Candidates[validIndices[j]].int8Score = batchScores[j];
+  if (nativeInt8) {
+    stats.queryInt8 = nativeInt8.queryInt8;
+    for (let i = 0; i < stage2Candidates.length; i++) {
+      if (nativeInt8.missing[i]) {
+        stage2Candidates[i].int8Score = 0.0;
+        stage2Candidates[i].missingInt8 = true;
+        missingInt8Count++;
+      } else {
+        stage2Candidates[i].int8Score = nativeInt8.scores[i];
       }
     }
   } else {
-    // Phase 1 OLD PATH (fallback): Per-candidate int8 cosine similarity
-    const queryInt8 = floatToInt8(truncatedFloat);
-    stats.queryInt8 = queryInt8;
-    for (let j = 0; j < validIndices.length; j++) {
-      stage2Candidates[validIndices[j]].int8Score = int8CosineSimilarity(queryInt8, int8Vectors[j]);
+    // One stale-bitmap snapshot for the whole pool (getInt8Vector would stat
+    // the bitmap file once per candidate). Falls back per-id for injected
+    // index doubles without the batch method.
+    const poolIds = stage2Candidates.map((c) => c.id);
+    const poolInt8 = typeof this.binaryHnswIndex.getInt8VectorsForIds === 'function'
+      ? this.binaryHnswIndex.getInt8VectorsForIds(poolIds)
+      : poolIds.map((id) => this.binaryHnswIndex.getInt8Vector(id));
+    for (let i = 0; i < stage2Candidates.length; i++) {
+      const int8Vector = poolInt8[i];
+      if (int8Vector) {
+        int8Vectors.push(int8Vector);
+        validIndices.push(i);
+      } else {
+        stage2Candidates[i].int8Score = 0.0;
+        stage2Candidates[i].missingInt8 = true;
+        missingInt8Count++;
+      }
+    }
+
+    if (useBatchedDot) {
+      // Phase 1 NEW PATH: Batched normalized dot product
+      // Use same quantizer as index time. No per-candidate norms.
+      const queryInt8 = normalizedFloatToInt8(truncatedFloat);
+      stats.queryInt8 = queryInt8;
+      if (int8Vectors.length > 0) {
+        const batchScores = int8BatchDotScores(queryInt8, int8Vectors);
+        for (let j = 0; j < validIndices.length; j++) {
+          stage2Candidates[validIndices[j]].int8Score = batchScores[j];
+        }
+      }
+    } else {
+      // Phase 1 OLD PATH (fallback): Per-candidate int8 cosine similarity
+      const queryInt8 = floatToInt8(truncatedFloat);
+      stats.queryInt8 = queryInt8;
+      for (let j = 0; j < validIndices.length; j++) {
+        stage2Candidates[validIndices[j]].int8Score = int8CosineSimilarity(queryInt8, int8Vectors[j]);
+      }
     }
   }
 

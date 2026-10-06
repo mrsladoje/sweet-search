@@ -18,6 +18,7 @@ mod hnsw_search;
 mod inference;
 mod native_grep;
 mod regex_literals;
+mod rescore;
 mod simd_intersect;
 mod sparse_gram;
 mod tokenizer;

@@ -43,159 +43,136 @@ fn key_of(e: u64) -> u32 {
     e as u32
 }
 
-/// Min-heap with the exact sift rules of `TypedMinHeap`.
-#[derive(Default)]
-struct MinHeap {
-    a: Vec<u64>,
+// Heap storage: `buf` stays fully initialized and at least 2 * len + 16
+// long, so a sift can read a node's four grandchildren together with its
+// two children (the grandchildren of an inner node always sit below
+// 2 * len + 16). Reading one level ahead halves the chain of dependent loads
+// per level; the decisions themselves are unchanged.
+#[inline(always)]
+fn grow(buf: &mut Vec<u64>, len: usize) {
+    let need = 2 * len + 16;
+    if buf.len() < need {
+        buf.resize(need.next_power_of_two(), 0);
+    }
 }
 
-impl MinHeap {
+/// Sift `x` up from slot `i0` (min order when `MIN`): it passes every
+/// ancestor that is strictly worse, as in the JS heaps.
+#[inline(always)]
+unsafe fn sift_up<const MIN: bool>(buf: *mut u64, i0: usize, x: u64) {
+    let xv = val_of(x);
+    let mut i = i0;
+    while i > 0 {
+        let p = (i - 1) >> 1;
+        let pe = *buf.add(p);
+        if if MIN { xv >= val_of(pe) } else { xv <= val_of(pe) } { break; }
+        *buf.add(i) = pe;
+        i = p;
+    }
+    *buf.add(i) = x;
+}
+
+/// Sift `x` down from the root over `n` live slots. JS rule (min order):
+/// smallest = i; take left if left < x; take right if right < (that).
+/// Equivalent: the child is right iff right < left (ties go left), and x
+/// moves down iff that child < x. Max order mirrors every comparison.
+#[inline(always)]
+unsafe fn sift_down<const MIN: bool>(buf: *mut u64, n: usize, x: u64) {
+    let xv = val_of(x);
+    let mut i = 0usize;
+    let mut l = *buf.add(1);
+    let mut r = *buf.add(2);
+    loop {
+        let left = 2 * i + 1;
+        if left >= n {
+            break;
+        }
+        // Volatile so the four grandchild loads issue now, before the
+        // child choice is known (the compiler would otherwise load only the
+        // chosen pair, after the compare).
+        let g = buf.add(4 * i + 3);
+        let (g0, g1, g2, g3) = (
+            std::ptr::read_volatile(g),
+            std::ptr::read_volatile(g.add(1)),
+            std::ptr::read_volatile(g.add(2)),
+            std::ptr::read_volatile(g.add(3)),
+        );
+        let lv = val_of(l);
+        let rv = if left + 1 < n { val_of(r) } else if MIN { u32::MAX } else { 0 };
+        let tr = if MIN { rv < lv } else { rv > lv };
+        let (cv, ce) = if tr { (rv, r) } else { (lv, l) };
+        if if MIN { cv >= xv } else { cv <= xv } {
+            break;
+        }
+        *buf.add(i) = ce;
+        i = left + tr as usize;
+        l = if tr { g2 } else { g0 };
+        r = if tr { g3 } else { g1 };
+    }
+    *buf.add(i) = x;
+}
+
+/// Binary heap with the exact sift rules of `TypedMinHeap` (`MIN`) or
+/// `TypedMaxHeap`.
+#[derive(Default)]
+struct Heap<const MIN: bool> {
+    buf: Vec<u64>,
+    n: usize,
+}
+
+type MinHeap = Heap<true>;
+type MaxHeap = Heap<false>;
+
+impl<const MIN: bool> Heap<MIN> {
     fn clear(&mut self) {
-        self.a.clear();
+        self.n = 0;
+        grow(&mut self.buf, 0);
     }
     #[inline(always)]
     fn len(&self) -> usize {
-        self.a.len()
+        self.n
     }
     #[inline(always)]
     fn peek_val(&self) -> u32 {
-        val_of(self.a[0])
+        val_of(self.buf[0])
     }
     #[inline(always)]
     fn peek_key(&self) -> Option<u32> {
-        self.a.first().map(|&e| key_of(e))
+        (self.n > 0).then(|| key_of(self.buf[0]))
     }
     #[inline(always)]
     fn insert(&mut self, key: u32, val: u32) {
-        let x = pack(key, val);
-        self.a.push(x);
-        let a = self.a.as_mut_slice();
-        let mut i = a.len() - 1;
-        while i > 0 {
-            let parent = (i - 1) >> 1;
-            // JS: if (vals[i] >= vals[parent]) break;
-            if val >= val_of(a[parent]) {
-                break;
-            }
-            a[i] = a[parent];
-            i = parent;
-        }
-        a[i] = x;
+        grow(&mut self.buf, self.n + 1);
+        // SAFETY: buf holds at least 2 * (n + 1) + 16 slots.
+        unsafe { sift_up::<MIN>(self.buf.as_mut_ptr(), self.n, pack(key, val)) };
+        self.n += 1;
     }
+    /// Remove the root (`extractMin` / `extractMax`), returning its key.
     #[inline(always)]
-    fn extract_min(&mut self) -> u32 {
-        let key = key_of(self.a[0]);
-        let last = self.a.pop().unwrap();
-        let n = self.a.len();
+    fn pop(&mut self) -> u64 {
+        let top = self.buf[0];
+        self.n -= 1;
+        let n = self.n;
         if n > 0 {
-            let a = self.a.as_mut_slice();
-            let xv = val_of(last);
-            let mut i = 0;
-            // JS rule: smallest = i; take left if left < x; take right if
-            // right < (that). Equivalent: the child is right iff right < left
-            // (ties go left), and we move iff child < x. Child pick is a
-            // select, not a branch.
-            loop {
-                let left = 2 * i + 1;
-                if left >= n {
-                    break;
-                }
-                let right = left + 1;
-                let lv = val_of(a[left]);
-                let rv = if right < n { val_of(a[right]) } else { u32::MAX };
-                let take_right = rv < lv;
-                let c = if take_right { right } else { left };
-                let cv = if take_right { rv } else { lv };
-                if cv >= xv {
-                    break;
-                }
-                a[i] = a[c];
-                i = c;
-            }
-            a[i] = last;
+            let last = self.buf[n];
+            // SAFETY: buf holds at least 2 * n + 16 slots.
+            unsafe { sift_down::<MIN>(self.buf.as_mut_ptr(), n, last) };
         }
-        key
+        top
     }
-}
-
-/// Max-heap with the exact sift rules of `TypedMaxHeap`.
-#[derive(Default)]
-struct MaxHeap {
-    a: Vec<u64>,
-}
-
-impl MaxHeap {
-    fn clear(&mut self) {
-        self.a.clear();
-    }
+    /// Overwrite the root and sift it down (max heap: `replaceMax`).
     #[inline(always)]
-    fn len(&self) -> usize {
-        self.a.len()
+    fn replace_top(&mut self, key: u32, val: u32) {
+        // SAFETY: as in pop.
+        unsafe { sift_down::<MIN>(self.buf.as_mut_ptr(), self.n, pack(key, val)) };
     }
-    #[inline(always)]
-    fn peek_val(&self) -> u32 {
-        val_of(self.a[0])
-    }
-    #[inline(always)]
-    fn insert(&mut self, key: u32, val: u32) {
-        let x = pack(key, val);
-        self.a.push(x);
-        let a = self.a.as_mut_slice();
-        let mut i = a.len() - 1;
-        while i > 0 {
-            let parent = (i - 1) >> 1;
-            // JS: if (vals[i] <= vals[parent]) break;
-            if val <= val_of(a[parent]) {
-                break;
-            }
-            a[i] = a[parent];
-            i = parent;
-        }
-        a[i] = x;
-    }
-    /// Sift `x` down from the root of `a` (len n), hole-based.
-    #[inline(always)]
-    fn sift_down_from_root(a: &mut [u64], x: u64) {
-        let n = a.len();
-        let xv = val_of(x);
-        let mut i = 0;
-        // JS rule: largest = i; take left if left > x; take right if
-        // right > (that). Equivalent: the child is right iff right > left
-        // (ties go left), and we move iff child > x.
-        loop {
-            let left = 2 * i + 1;
-            if left >= n {
-                break;
-            }
-            let right = left + 1;
-            let lv = val_of(a[left]);
-            let rv = if right < n { val_of(a[right]) } else { 0 };
-            let take_right = rv > lv;
-            let c = if take_right { right } else { left };
-            let cv = if take_right { rv } else { lv };
-            if cv <= xv {
-                break;
-            }
-            a[i] = a[c];
-            i = c;
-        }
-        a[i] = x;
-    }
-    #[inline(always)]
-    fn replace_max(&mut self, key: u32, val: u32) {
-        Self::sift_down_from_root(&mut self.a, pack(key, val));
-    }
-    /// Ascending drain, same extraction order as `drainSorted`.
-    fn drain_sorted(&mut self, out_keys: &mut [u32], out_vals: &mut [u32]) {
-        let n = self.a.len();
-        for i in (0..n).rev() {
-            let top = self.a[0];
+    /// Pop everything into `out_*`, filled from the back (max heap: ascending,
+    /// same extraction order as `drainSorted`).
+    fn drain_into(&mut self, out_keys: &mut [u32], out_vals: &mut [u32]) {
+        for i in (0..self.n).rev() {
+            let top = self.pop();
             out_keys[i] = key_of(top);
             out_vals[i] = val_of(top);
-            let last = self.a.pop().unwrap();
-            if !self.a.is_empty() {
-                Self::sift_down_from_root(&mut self.a, last);
-            }
         }
     }
 }
@@ -224,6 +201,42 @@ fn hamming(a: &[u64], b: &[u64]) -> u32 {
         d += (a[w] ^ b[w]).count_ones();
     }
     d
+}
+
+/// 512-bit Hamming distances, four vectors per step: the per-vector
+/// popcounts are reduced together with pairwise adds instead of one
+/// horizontal add per vector.
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+unsafe fn hamming512_batch(slab: *const u64, query: *const u64, ids: &[u32], out: &mut [u32]) {
+    use std::arch::aarch64::*;
+    let q = query as *const u8;
+    let (q0, q1, q2, q3) = (vld1q_u8(q), vld1q_u8(q.add(16)), vld1q_u8(q.add(32)), vld1q_u8(q.add(48)));
+    // Per-vector popcount, folded to 16 lanes of at most 32 each.
+    let pc = |id: u32| -> uint8x16_t {
+        let p = slab.add(id as usize * 8) as *const u8;
+        let c0 = vcntq_u8(veorq_u8(vld1q_u8(p), q0));
+        let c1 = vcntq_u8(veorq_u8(vld1q_u8(p.add(16)), q1));
+        let c2 = vcntq_u8(veorq_u8(vld1q_u8(p.add(32)), q2));
+        let c3 = vcntq_u8(veorq_u8(vld1q_u8(p.add(48)), q3));
+        vaddq_u8(vaddq_u8(c0, c1), vaddq_u8(c2, c3))
+    };
+    let n = ids.len();
+    let mut i = 0;
+    while i + 4 <= n {
+        let (a, b, c, d) = (pc(ids[i]), pc(ids[i + 1]), pc(ids[i + 2]), pc(ids[i + 3]));
+        // Lanes: 32 -> 64 -> 128 (u8), then widen: 4 lanes per vector -> 1.
+        let ab = vpaddq_u8(a, b);
+        let cd = vpaddq_u8(c, d);
+        let abcd = vpaddq_u8(ab, cd);
+        let s = vpaddlq_u16(vpaddlq_u8(abcd));
+        vst1q_u32(out.as_mut_ptr().add(i), s);
+        i += 4;
+    }
+    while i < n {
+        out[i] = vaddlvq_u8(pc(ids[i])) as u32;
+        i += 1;
+    }
 }
 
 #[inline(always)]
@@ -258,6 +271,7 @@ pub struct HnswSearcher {
     levels: Vec<Csr>,
     query: Vec<u64>,
     batch: Vec<u32>,
+    dists: Vec<u32>,
     // Generation-stamped visited bytes: one byte per node, so neighboring
     // checks never share a word (no store-to-load chains), and no per-query
     // clear except on wrap.
@@ -296,6 +310,7 @@ impl HnswSearcher {
             levels: Vec::new(),
             query: vec![0u64; words],
             batch: Vec::new(),
+            dists: Vec::new(),
             visited: vec![0u8; count as usize],
             visit_gen: 0,
             cand: MinHeap::default(),
@@ -337,6 +352,21 @@ impl HnswSearcher {
         hamming(&self.slab[base..base + self.words], &self.query)
     }
 
+    /// Hamming distances from the staged query to each of `ids`.
+    #[inline(always)]
+    fn dist_batch(&self, ids: &[u32], out: &mut [u32]) {
+        #[cfg(target_arch = "aarch64")]
+        if self.words == 8 {
+            // SAFETY: every id < count (set_level checks), so each vector is
+            // 64 readable bytes inside the slab; the query holds 8 words.
+            unsafe { hamming512_batch(self.slab.as_ptr(), self.query.as_ptr(), ids, out) };
+            return;
+        }
+        for (o, &id) in out.iter_mut().zip(ids) {
+            *o = self.dist_q(id);
+        }
+    }
+
     /// Hamming distance from the staged query to vector `idx`.
     #[napi]
     pub fn dist(&self, idx: u32) -> u32 {
@@ -376,6 +406,31 @@ impl HnswSearcher {
         window_size: u32,
         thresholds: Float64Array,
     ) -> Uint32Array {
+        let mut out = vec![0u32; 2 + 2 * ef as usize];
+        let n = self.walk(start, ef, level, window_size, &thresholds, &mut out);
+        out.truncate(2 + 2 * n);
+        Uint32Array::new(out)
+    }
+
+    /// `search_layer` into a caller buffer of at least `2 + 2 * ef` slots
+    /// (reused across queries, so no per-query allocation). Returns n.
+    #[napi]
+    pub fn search_layer_into(
+        &mut self,
+        start: u32,
+        ef: u32,
+        level: u32,
+        window_size: u32,
+        thresholds: Float64Array,
+        mut out: Uint32Array,
+    ) -> napi::Result<u32> {
+        if out.len() < 2 + 2 * ef as usize {
+            return Err(napi::Error::from_reason("search_layer_into: output shorter than 2 + 2 * ef"));
+        }
+        Ok(self.walk(start, ef, level, window_size, &thresholds, out.as_mut()) as u32)
+    }
+
+    fn walk(&mut self, start: u32, ef: u32, level: u32, window_size: u32, thresholds: &[f64], out: &mut [u32]) -> usize {
         let ef_us = ef as usize;
         let thresholds: Vec<(f64, f64)> = thresholds.chunks_exact(2).map(|c| (c[0], c[1])).collect();
 
@@ -406,7 +461,12 @@ impl HnswSearcher {
             if res.len() >= ef_us && cand.peek_val() > res.peek_val() {
                 break;
             }
-            let current = cand.extract_min();
+            let current = key_of(cand.pop());
+            // Likely next node (unless a closer neighbor turns up): start
+            // loading its list now, one expansion ahead.
+            if let Some(next) = cand.peek_key() {
+                prefetch_list(csr.of(next));
+            }
             visited_count += 1;
             let list = csr.of(current);
             prefetch_list(list);
@@ -438,18 +498,47 @@ impl HnswSearcher {
             for &nb in &batch[..m] {
                 prefetch(slab.wrapping_add(nb as usize * self.words));
             }
-            for &nb in &batch[..m] {
-                let d = self.dist_q(nb);
-                if res.len() < ef_us {
-                    cand.insert(nb, d);
-                    res.insert(nb, d);
-                    found_new = true;
-                } else if d < res.peek_val() {
-                    cand.insert(nb, d);
-                    res.replace_max(nb, d);
-                    found_new = true;
+            let mut dists = std::mem::take(&mut self.dists);
+            if dists.len() < m {
+                dists.resize(m, 0);
+            }
+            self.dist_batch(&batch[..m], &mut dists[..m]);
+            if res.len() >= ef_us {
+                // The result heap is full, so its max only falls during this
+                // batch. A neighbor at or above the max at batch start would
+                // be rejected anyway: drop those first (branchless), then run
+                // the exact per-neighbor test on the few left, in order.
+                let thr = res.peek_val();
+                let mut s = 0usize;
+                for j in 0..m {
+                    let d = dists[j];
+                    batch[s] = batch[j];
+                    dists[s] = d;
+                    s += (d < thr) as usize;
+                }
+                for j in 0..s {
+                    let d = dists[j];
+                    if d < res.peek_val() {
+                        cand.insert(batch[j], d);
+                        res.replace_top(batch[j], d);
+                        found_new = true;
+                    }
+                }
+            } else {
+                for j in 0..m {
+                    let (nb, d) = (batch[j], dists[j]);
+                    if res.len() < ef_us {
+                        cand.insert(nb, d);
+                        res.insert(nb, d);
+                        found_new = true;
+                    } else if d < res.peek_val() {
+                        cand.insert(nb, d);
+                        res.replace_top(nb, d);
+                        found_new = true;
+                    }
                 }
             }
+            self.dists = dists;
             self.batch = batch;
             // The next node to expand is (usually) the new heap minimum:
             // start loading its list while the bookkeeping below runs.
@@ -475,14 +564,13 @@ impl HnswSearcher {
         }
 
         let n = res.len();
-        let mut out = vec![0u32; 2 + 2 * n];
         out[0] = visited_count;
         out[1] = n as u32;
-        let (head, tail) = out[2..].split_at_mut(n);
-        res.drain_sorted(head, tail);
+        let (head, tail) = out[2..2 + 2 * n].split_at_mut(n);
+        res.drain_into(head, tail);
         self.cand = cand;
         self.res = res;
-        Uint32Array::new(out)
+        n
     }
 
     /// Level `level` as `[offsets[0..=count], neighbors...]`,

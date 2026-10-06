@@ -517,12 +517,12 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 
 | vectors | **sweet** p50 · MRR@10 | best rival p50 · MRR@10 | rival |
 |:--|--:|--:|:--|
-| 7k | 0.20 ms · 0.848 | **0.09 ms** · 0.848 | FAISS |
-| 20k | **0.31 ms** · **0.837** | 2.83 ms · 0.834 | hnswlib |
-| 157k | **0.51 ms** · **0.802** | 6.86 ms · 0.800 | FAISS |
+| 7k | 0.16 ms · 0.848 | **0.09 ms** · 0.848 | FAISS |
+| 20k | **0.26 ms** · **0.837** | 2.83 ms · 0.834 | hnswlib |
+| 157k | **0.40 ms** · **0.802** | 6.86 ms · 0.800 | FAISS |
 
 <sub>rivals swept to efSearch 512–2048; from 20k up none reached our MRR · FAISS is faster at 7k</sub><br>
-<sub>native Rust walk: same output as our JS HNSW, 2.7–3.1× faster pipeline</sub><br>
+<sub>native Rust walk + rescore: same output as our JS HNSW, 3.4–3.9× faster pipeline</sub><br>
 <sub>3,600 GCSN dev queries + dev-repo distractors · M3 Max, 1 thread · [method](docs/HNSW_APPROACH.md#competitor-benchmark-2026-10)</sub>
 
 </td>

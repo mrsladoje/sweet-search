@@ -12,6 +12,8 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { BinaryHNSWIndex } from '../../core/vector-store/binary-hnsw-index.js';
 import { loadNativeAddon } from '../../core/infrastructure/native-resolver.js';
+import { nativeRescoreKernels } from '../../core/infrastructure/native-rescore.js';
+import { int8BatchDotScores } from '../../core/embedding/embedding-service.js';
 
 const hasNative = process.env.SS_FIX_HNSW_NATIVE !== '0'
   && !!loadNativeAddon({ validate: (m) => typeof m.HnswSearcher === 'function' });
@@ -32,6 +34,11 @@ function makeVectors(n, seed) {
     for (let f = 0; f < 40; f++) v[Math.floor(r() * 64)] ^= 1 << Math.floor(r() * 8);
     return v;
   });
+}
+
+function makeInt8(n, seed) {
+  const r = rng(seed);
+  return Array.from({ length: n }, () => Int8Array.from({ length: 64 }, () => Math.floor(r() * 255) - 127));
 }
 
 async function searchBoth(index, queries, k) {
@@ -104,4 +111,51 @@ describe.skipIf(!hasNative)('BinaryHNSWIndex native search parity', () => {
       rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  it('lazy search gives the same scores, results and node indices', async () => {
+    const index = new BinaryHNSWIndex({ M: 16, efConstruction: 64, efSearch: 50, indexPath: '/nonexistent/lazy.idx' });
+    index.resetForBuild();
+    index.initialized = true;
+    makeVectors(1500, 21).forEach((v, i) => index.addSync(`v${i}`, v, { i }));
+    for (const q of makeVectors(20, 4)) {
+      const eager = await index.search(q, 300);
+      const lazy = await index.search(q, 300, { lazy: true });
+      expect(lazy.results).toBeNull();
+      expect(lazy.count).toBe(eager.results.length);
+      expect(Array.from(lazy.scores)).toEqual(eager.results.map((r) => r.score));
+      expect(lazy.materialize(120)).toEqual(eager.results.slice(0, 120));
+      expect(lazy.nodeIndices.map((i) => index.vectors[i].id)).toEqual(eager.results.map((r) => r.id));
+      expect(Object.keys(eager)).not.toContain('nodeIndices');
+    }
+  });
+
+  it.skipIf(!nativeRescoreKernels())('int8ScoresForNodes matches int8BatchDotScores over getInt8VectorsForIds', async () => {
+    const index = new BinaryHNSWIndex({ M: 16, efConstruction: 64, efSearch: 50, indexPath: '/nonexistent/int8.idx' });
+    index.resetForBuild();
+    index.initialized = true;
+    const vectors = makeVectors(1200, 31);
+    const int8 = makeInt8(1200, 32);
+    // Every 7th node has no int8 vector (counts as missing).
+    vectors.forEach((v, i) => index.addSync(`v${i}`, v, {}, i % 7 === 0 ? null : int8[i]));
+    const check = async (seed) => {
+      for (const q of makeVectors(10, seed)) {
+        const r = await index.search(q, 150, { lazy: true });
+        const nodes = r.nodeIndices.slice(0, 100);
+        const queryInt8 = makeInt8(1, seed + 1)[0];
+        const got = index.int8ScoresForNodes(queryInt8, nodes);
+        const vecs = index.getInt8VectorsForIds(nodes.map((n) => index.vectors[n].id));
+        const present = vecs.map(Boolean);
+        expect(got.missing).toEqual(present.map((p) => !p));
+        const want = int8BatchDotScores(queryInt8, vecs.filter(Boolean));
+        expect(got.scores.filter((_, i) => present[i])).toEqual(Array.from(want));
+      }
+    };
+    await check(40);
+    // Writes invalidate the node-ordered slab: replace one vector, add nodes.
+    index.int8Vectors.set('v1', makeInt8(1, 77)[0]);
+    makeVectors(100, 50).forEach((v, i) => index.addSync(`w${i}`, v, {}, makeInt8(1, 900 + i)[0]));
+    await check(60);
+    expect(Array.from(index.int8Vectors.get('v1'))).toEqual(Array.from(makeInt8(1, 77)[0]));
+  });
 });
+

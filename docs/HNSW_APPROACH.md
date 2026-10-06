@@ -73,10 +73,10 @@ FAISS, USearch and hnswlib, on both quality and speed?
 
 | vectors | sweet | FAISS (best) | USearch (best) | hnswlib (best) |
 |---|---|---|---|---|
-| 6.9k | 0.20 ms · 0.848 | 0.09 ms · 0.848 (M16, ef80) | never reaches 0.848 | 1.6 ms · 0.849 (ef256) |
-| 20k | 0.31 ms · 0.837 | 0.74 ms · 0.818 (ef512) | 1.12 ms · 0.832 (f16, ef512) | 2.83 ms · 0.834 (ef512) |
-| 50k | 0.41 ms · 0.823 | 0.99 ms · 0.781 (ef512) | — | — |
-| 157k | 0.51 ms · 0.802 | 6.86 ms · 0.800 (ef2048) | 3.92 ms · 0.796 (i8, ef2048) | 3.67 ms · 0.768 (ef512) |
+| 6.9k | 0.16 ms · 0.848 | 0.09 ms · 0.848 (M16, ef80) | never reaches 0.848 | 1.6 ms · 0.849 (ef256) |
+| 20k | 0.26 ms · 0.837 | 0.74 ms · 0.818 (ef512) | 1.12 ms · 0.832 (f16, ef512) | 2.83 ms · 0.834 (ef512) |
+| 50k | 0.31 ms · 0.823 | 0.99 ms · 0.781 (ef512) | — | — |
+| 157k | 0.40 ms · 0.802 | 6.86 ms · 0.800 (ef2048) | 3.92 ms · 0.796 (i8, ef2048) | 3.67 ms · 0.768 (ef512) |
 
 FAISS is faster on the smallest index. From 20k vectors up, no rival reaches
 our MRR at any efSearch tested.
@@ -87,6 +87,32 @@ Verified bit-identical: 0 / 32,400 stage-1 mismatches and 0 / 7,200 top-10
 differences in any field against the previous code. Pipeline p50 went from
 544 → 201 µs (6.9k) and 1,569 → 505 µs (157k). `SS_FIX_HNSW_NATIVE=0` restores
 the JS walk.
+
+**Second speed pass (same output):** pipeline p50 201 → 160 µs (6.9k),
+313 → 261 µs (20k), 413 → 310 µs (50k), 505 → 395 µs (157k).
+- Walk: Hamming distances four at a time. A neighbor at or above the
+  result-heap maximum is dropped before the exact heap test (that maximum only
+  falls, so the test would reject it). Heap sift-down loads the four
+  grandchildren with the two children, which halves the chain of dependent
+  loads. The next candidate's neighbor list is prefetched one expansion ahead.
+- Rescore: int8 and float scores run natively over contiguous slabs by row
+  (`crates/sweet-search-native/src/rescore.rs`): exact integer sums, and f64
+  sums in the JS order. The full-768 blend uses the same kernel on the
+  resident store. `SS_FIX_RESCORE_NATIVE=0` restores the JS/WASM scoring.
+- Stage 1 builds result objects only for the stage-2 pool.
+- Native calls write into reused buffers. Per-query typed arrays had pushed V8
+  into full GCs: 157k p99 went 645 → 571 µs.
+- Tried and rejected (slower or under 3%): branch-free sift-up, two-level
+  lookahead, leaf-first sift-down, bit-set visited list, prefetch of the
+  predicted next node's vectors, a learned id → rowid fetch path, a larger
+  SQLite mmap.
+- Verified: 0 / 3,600 top-10 differences in any field against the pre-change
+  baseline at 6.9k and 157k, on the native path and with each native part
+  switched off; parity tests for each new path; full test suite green.
+
+At 6.9k the walk is now about 58% of the time, and the two binary heaps are
+most of the walk. Identical output fixes their operation count, so this is
+close to the floor for an exact walk. At 157k the walk waits on memory.
 
 ## Original Plan (v2)
 
