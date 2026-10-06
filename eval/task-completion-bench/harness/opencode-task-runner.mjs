@@ -948,7 +948,11 @@ export async function runOpencodeTask(task, {
   const prompt = issuePrompt(task.problem_statement);
   // The prompt rides on stdin, never in argv (see spawnWithTimeout). opencodeRunMessage keeps
   // the message the model gets byte-identical to the argv form.
-  const args = ['run', '--format', 'json', '--agent', 'build', '--auto', '--model', openrouterModel, '--dir', rundir];
+  // OC_VARIANT (opt-in; unset = byte-identical args to before): opencode's reasoning variant
+  // (--variant high = reasoning_effort high), as the retrieval bench's oc-sol61-high cell sends it.
+  // REASONING is NOT read here — earlier opencode legs passed REASONING=medium with no effect.
+  const ocVariant = process.env.OC_VARIANT || null;
+  const args = ['run', '--format', 'json', '--agent', 'build', '--auto', '--model', openrouterModel, ...(ocVariant ? ['--variant', ocVariant] : []), '--dir', rundir];
   const stdinText = opencodeRunMessage(prompt);
 
   const t0 = Date.now();
@@ -1031,6 +1035,7 @@ export async function runOpencodeTask(task, {
     // harnessTrimSource = 'default' | 'env' (sweet only); when on, the
     // plugin's own report of the description edits it applied (null = it never ran).
     harnessTrim: harnessTrim.mode,
+    ...(ocVariant ? { ocVariant } : {}),
     ...(sweet ? { harnessTrimSource: harnessTrim.origin } : {}),
     ...(harnessTrim.mode ? { harnessTrimToolEdits } : {}),
     ...sweetRulesRowFields(rulesPlacement, { sweet }),
