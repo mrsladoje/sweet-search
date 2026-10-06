@@ -308,7 +308,7 @@ We measure sweet-search four ways — from how much it helps a real agent down t
 </div>
 
 <details>
-<summary><b>📋 Full per-harness results & how it's measured</b></summary>
+<summary><b>📋 Full results & details</b></summary>
 
 <br/>
 
@@ -340,6 +340,8 @@ Each value is sweet-search minus native, relative to native, pooled over 200 que
 - **Validity checks:** 6,000 rollouts, 0 failed. Cache-fairness checks passed for Claude Code and Codex. opencode shows a warning because sweet-search ships a cache-key plugin and stock opencode does not. That is a product difference, so "cost without cache" is the fair comparison there (−25.4%).
 - **Honest caveats:** (1) On Sol 6.1, sweet-search costs about 2.5–3% accuracy. (2) The Codex saving exists only with the prompt cache. (3) The index was built from one commit (`65c4f20d`). Commits that landed during the run did not change the text or tools the agent sees.
 - **Reproduction:** results, intervals and the correction script are in [`core/prompt-optimization/data/final-run/`](core/prompt-optimization/data/final-run/) (`HO1005-RESULTS.md`, `bh-heldout.mjs`, `questions-heldout.json`). The earlier sealed-vault study on older models is in [`docs/PHASE7.md`](docs/PHASE7.md).
+
+**Why Sol 6.1 loses accuracy.** We diagnosed it on dev questions only, not on held-out ones. Sol 6.1 takes the sweet-search rules too literally. The rules say to stop searching once one file and symbol are confirmed. Sol obeys and stops, then writes a short answer that leaves out facts it already found. In about 13 of the 14 worst questions, the gold fact was in a tool output, but not in the answer. Sonnet 5.5 and Opus 5.5 read the same rules as guidance and still write complete answers. A rule change that targeted Sol did not hold up on fresh dev questions, so we did not ship it.
 
 </details>
 
