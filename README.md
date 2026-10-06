@@ -360,22 +360,11 @@ per task. The harnesses run **as they ship** — no tools disabled, no delegatio
 
 <div align="center">
 
-<img src="assets/task-completion-stats.svg" alt="Three harness profiles comparing sweet-search with native grep-and-read on task-completion cost, resolve rate, subagent calls and tool calls" width="100%" />
+<img src="assets/task-completion-stats.svg" alt="Held-out task-completion results, sweet-search vs native, 200 SWE-rebench tasks, 1 rep. Claude Code with Sonnet 5.5 high: billed cost −8.5%, cost per solved task −13.8%, 88 vs 83 tasks solved; none significant yet. Opus 5.5 medium and high, opencode and Codex with Sol 6.1: coming soon." width="100%" />
 
-<sub>frozen held-out set · 200 tasks · 1 rep · 1,200 rollouts · gpt-5.6-luna · opened once</sub>
+<sub>frozen held-out set · 200 tasks · 1 rep per arm · grey = not significant yet · more arms running</sub>
 
 </div>
-
-**The headline, honestly:**
-
-- 💰 **Cheaper on every harness, by 2% to 31%** — measured on the tasks **both arms solved**, so it's
-  like-for-like and not sweet giving up early on hard tasks.
-- 🤝 **Resolve rate is a tie, and sweet is slightly behind** — −3, −6 and −7 tasks out of 200. None
-  significant (McNemar p = 0.66, 0.18, 0.12). **This is not a resolve-rate win and we don't claim one.**
-- 🪆 **The saving scales with how much the harness delegates** — Claude Code's native arm fired
-  **1,191 subagent requests against sweet-search's 150**, and that gap *is* the 31%. Codex has no
-  subagent tier and shows 2.1%.
-- 🧭 **Fewer tool calls where it matters** — 19.6 vs 35.8 on Claude Code, 19.0 vs 24.4 on opencode.
 
 <details>
 <summary><b>📋 Full per-harness results & how it's measured</b></summary>
