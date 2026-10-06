@@ -52,6 +52,9 @@ chunking improvements, query expansion, or stronger reranking models.
 
 ## Competitor benchmark (2026-10)
 
+> All results in one place: [`HNSW_BENCHMARK.md`](HNSW_BENCHMARK.md). The
+> sections below are the working log.
+
 **Question:** how does our full vector pipeline (binary HNSW → int8 rescore →
 float rescore → full-dimension blend, `semanticSearch3Stage`) compare with
 FAISS, USearch and hnswlib, on both quality and speed?
@@ -151,8 +154,10 @@ building our cascade on their kernels would be slower and not better.
 - **Bucket queues in the walk** (`SS_FIX_HNSW_BUCKET=0` restores the
   JS-exact heaps): one bucket per Hamming distance, O(1) per operation.
 - **Float-512 stage off** (`SS_FIX_FLOAT512=1` restores it): the blend's 20%
-  base uses the int8 score on the same 50-candidate pool, and the float-512
-  store is not loaded.
+  base uses the int8 score on the same 50-candidate pool. The float-512
+  store is not loaded, and (follow-up commit) neither the indexer nor the
+  incremental maintainer writes it; an old copy is deleted. That saves about
+  308 MB of disk and RAM at 157k vectors.
 - Tried and dropped: int8 over all 1,000 candidates → 768-d on the top 50
   with no blend. +0.17 to +0.67 pp vector-only MRR on dev, but +0.03 pp
   end-to-end (the postprocess full-vector rescore already captures it), at

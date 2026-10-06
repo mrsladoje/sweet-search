@@ -26,7 +26,7 @@ import {
   deleteFileSignature,
   saveCutoffCache,
 } from '../domain/cutoff-cache.mjs';
-import { FloatVectorStore, getFloatStorePath } from '../../vector-store/float-vector-store.js';
+import { FloatVectorStore, getFloatStorePath, float512StoreEnabled } from '../../vector-store/float-vector-store.js';
 import { createGraphSchema, entityParentIds, GraphExtractor, insertCallSites } from '../../graph/graph-extractor.js';
 import { createImportResolver, importEdgesEnabled } from '../../graph/import-resolver.js';
 import { syncFileNode } from '../../infrastructure/file-nodes.js';
@@ -583,7 +583,7 @@ class ProductionReconcileAdapter {
       ctx.index = index;
       // Captured BEFORE the float store loads, exactly as the eager path did.
       ctx.binaryVectorsBefore = index.idToIndex?.size ?? 0;
-      if (!floatStore) {
+      if (!floatStore && float512StoreEnabled()) {
         floatStore = new FloatVectorStore();
         try {
           await floatStore.loadOrInit(getFloatStorePath(ctx.indexPath), this.modelInfo.hnswDimension);
@@ -700,7 +700,7 @@ class ProductionReconcileAdapter {
             entry.deletedCount = 0;
             entry.dirty = false;
             hnswSaved = true;
-          } else if (ctx.floatUpserts.length || ctx.floatRemoveIds.length) {
+          } else if (ctx.floatStore && (ctx.floatUpserts.length || ctx.floatRemoveIds.length)) {
             // Keep the float store's in-memory delta consistent with the live
             // index even when we skip the disk save (so a later threshold save
             // writes the full set).

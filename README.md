@@ -513,7 +513,7 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 
 <sub>rivals built at their defaults and at our budget (M64, efC800), efSearch to 2048 · USearch i8 wins on AdvTest</sub><br>
 <sub>our binary walk alone is 5–8× faster than FAISS / USearch binary HNSW at equal recall · index RAM at 157k: 197 MB vs USearch i8 242 MB, FAISS 541 MB</sub><br>
-<sub>2,400 GCSN held-out queries (seed 42) + dev-repo distractors · 3,000 AdvTest queries · M3 Max · [method](docs/HNSW_APPROACH.md#competitor-benchmark-2026-10)</sub>
+<sub>2,400 GCSN held-out queries (seed 42) + dev-repo distractors · 3,000 AdvTest queries · M3 Max · [full results](docs/HNSW_BENCHMARK.md)</sub>
 
 </td>
 </tr>

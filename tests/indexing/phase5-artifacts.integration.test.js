@@ -46,6 +46,16 @@ const TEST_GRAPH_FILE = TEST_HNSW_INDEX.replace('.idx', '.graph.json');
 // back-compat) — read them through the canonical readers, not JSON.parse.
 import { readInt8Sidecar, readVectorsSidecar } from '../../core/vector-store/binary-hnsw-index.js';
 
+// These tests cover the float-512 store, which is written only with
+// SS_FIX_FLOAT512=1 (off by default).
+const savedFloat512 = process.env.SS_FIX_FLOAT512;
+beforeAll(() => { process.env.SS_FIX_FLOAT512 = '1'; });
+afterAll(() => {
+  if (savedFloat512 === undefined) delete process.env.SS_FIX_FLOAT512;
+  else process.env.SS_FIX_FLOAT512 = savedFloat512;
+});
+
+
 async function loadInt8(p) {
   const m = new Map();
   await readInt8Sidecar(p, m);

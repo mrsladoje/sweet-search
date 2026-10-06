@@ -47,6 +47,16 @@ import {
   __testing as dumpers,
 } from '../../eval/index-maintainer-determinism/dump-artifacts.mjs';
 
+// These tests cover the float-512 store, which is written only with
+// SS_FIX_FLOAT512=1 (off by default).
+const savedFloat512 = process.env.SS_FIX_FLOAT512;
+beforeAll(() => { process.env.SS_FIX_FLOAT512 = '1'; });
+afterAll(() => {
+  if (savedFloat512 === undefined) delete process.env.SS_FIX_FLOAT512;
+  else process.env.SS_FIX_FLOAT512 = savedFloat512;
+});
+
+
 // The index code is chatty on stdout/stderr; silence it so the test output is
 // readable. Restored in afterAll.
 const savedConsole = {};

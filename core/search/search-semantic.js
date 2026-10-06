@@ -24,6 +24,7 @@ import {
   int8BatchDotScores,
 } from '../embedding/embedding-service.js';
 import { EMBEDDING_CONFIG, BINARY_HNSW_CONFIG } from '../infrastructure/config/index.js';
+import { float512StoreEnabled } from '../vector-store/float-vector-store.js';
 
 const CASCADE_DEFERRED_STATS = { skipped: true, reason: 'cascade_deferred', provider: null, documents: 0, tokens: 0 };
 const FULL_VECTOR_STAGE_WEIGHT = 0.80;
@@ -34,7 +35,7 @@ const FULL_VECTOR_STAGE_LIMIT = 200;
  * SS_FIX_FLOAT512=1.
  */
 export function float512StageEnabled() {
-  return process.env.SS_FIX_FLOAT512 === '1';
+  return float512StoreEnabled();
 }
 
 function cascadeDefer(candidates, stats, searchPath, k = 50) {
