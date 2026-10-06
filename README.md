@@ -465,14 +465,7 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 ---
 
 <a id="bench-engine-speed"></a>
-### ⚡ 4. Engine speed — *systems benchmarks, measured in-repo*
-
-<div align="center">
-
-**2×** ripgrep, end to end &nbsp;·&nbsp; **2.9–3.9×** maxsim-cpu &nbsp;·&nbsp; **2.9 ms** warm queries &nbsp;·&nbsp; **−33%** HNSW search p50
-
-</div>
-
+### ⚡ 4. Engine speed and quality
 | ⚙️ What | 🆚 Compared with | 📈 Result | 📄 Source |
 |------|------|--------|--------|
 | ⚡ Indexed grep | [ripgrep](https://github.com/BurntSushi/ripgrep) 15.1 | **2.06× faster** end to end at the median on held-out queries (3.59 ms vs 7.29 ms; dev 2.01×). 1,600 queries modelled on 19,762 real agent greps, 13 repos, same hit counts. M3 Max. | [`docs/GREP_INDEXING_STRATEGY.md`](docs/GREP_INDEXING_STRATEGY.md) |
