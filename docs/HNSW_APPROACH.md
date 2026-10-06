@@ -127,6 +127,60 @@ USearch i8 is faster than us (0.19 vs 0.29 ms; 3.3× our 12-core throughput)
 at the same MRR. USearch i8 also uses half our memory at 157k. Scripts:
 `eval/benchmarks/hnsw-rivals/`.
 
+### v3 (2026-10-07): binary-kernel rivals, then exact scan + bucket queues + no float-512
+
+**Binary kernels on identical inputs** (our 512-bit codes, M=64, efC=800, 1,000
+candidates, 1 thread, dev queries). Stage-1 recall = share of the exact
+768-d top 10 inside the 1,000 candidates.
+
+| set | our walk | USearch b1 (ef1000) | FAISS `IndexBinaryHNSW` (ef1000) | stage-1 recall: ours / exact scan / USearch / FAISS |
+|---|---|---|---|---|
+| 6.9k | **94 µs** | 592 µs | 924 µs | 0.996 / 0.996 / 0.994 / 0.996 |
+| 20k | **117 µs** | 780 µs | 1,039 µs | 0.982 / 0.981 / 0.972 / 0.976 |
+| AdvTest 21.7k | **138 µs** | 903 µs | 1,121 µs | 0.970 / 0.970 / 0.966 / 0.969 |
+| 157k | **251 µs** | 1,400 µs | 1,387 µs | 0.947 / 0.947 / 0.946 / 0.926 |
+
+Our walk loses nothing against an exact Hamming scan. With the same exact
+768-d rescore, the rivals' cascades reach the same or slightly lower MRR, so
+building our cascade on their kernels would be slower and not better.
+
+**Changes (commit `977bc3e2`), each with its own switch:**
+- **Exact scan up to 15k vectors** (`SS_FIX_HNSW_SCAN=0` keeps the walk):
+  native exact top-k over every binary code, counting sort over the 513
+  distances, ties in node order. No extra RAM.
+- **Bucket queues in the walk** (`SS_FIX_HNSW_BUCKET=0` restores the
+  JS-exact heaps): one bucket per Hamming distance, O(1) per operation.
+- **Float-512 stage off** (`SS_FIX_FLOAT512=1` restores it): the blend's 20%
+  base uses the int8 score on the same 50-candidate pool, and the float-512
+  store is not loaded.
+- Tried and dropped: int8 over all 1,000 candidates → 768-d on the top 50
+  with no blend. +0.17 to +0.67 pp vector-only MRR on dev, but +0.03 pp
+  end-to-end (the postprocess full-vector rescore already captures it), at
+  +20–90 µs.
+
+**Effect:**
+- Dev p50: 6.9k 160 → 79 µs, 20k 261 → 204 µs, 157k 395 → 317 µs.
+- Vector-only dev MRR: −0.05 / −0.08 / −0.01 pp.
+- End-to-end GCSN dev MRR@10: 0.8703 → 0.8703 (late interaction on),
+  0.8541 → 0.8542 (off).
+- End-to-end GCSN held-out (run once, aggregate): 0.8642, against 0.8641
+  for the same code with the three switches off. The 0.8651 of 2026-10-05
+  predates other commits.
+- RAM: our index structures at 157k fall from 504 MB to 197 MB.
+
+**Held-out vector benchmark rerun (rivals as in v2):**
+
+| set | sweet p50 · MRR | fastest rival at our MRR |
+|---|---|---|
+| GCSN held-out 6.9k | **0.08 ms** · 0.833 | 0.09 ms FAISS M32 |
+| GCSN held-out 20k | **0.21 ms** · 0.820 | 0.56 ms USearch i8 |
+| GCSN held-out 157k | **0.32 ms** · 0.785 | 1.48 ms USearch i8 |
+| AdvTest 21.7k | 0.23 ms · 0.469 | **0.19 ms** USearch i8 |
+
+Our index RAM: 6.9k 29 MB (20 MB of it the resident full-768 cache), 20k
+25 MB, AdvTest 27 MB, 157k 197 MB. The v2 throughput table predates this
+change; a rerun was not reliable (machine load average 9–14).
+
 ### v1 (2026-10-06, superseded): dev queries, rivals at default budgets
 
 - 3,600 GCSN **dev** queries, same sizes plus 50k; rivals at their documented
