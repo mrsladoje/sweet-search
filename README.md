@@ -301,7 +301,7 @@ Same questions, same judges, same harness version, paired question by question.
 
 <div align="center">
 
-<img src="assets/code-retrieval-stats.svg" alt="Held-out results, sweet-search vs native, 200 questions, 3 reps. Claude Code with Sonnet 5.5 high: accuracy +2.4%, billed cost −7.6%. Claude Code with Opus 5.5 medium and high: accuracy equal, billed cost −9.5%, tool calls −22.8%. opencode with Sol 6.1: accuracy −2.8%, billed cost −50.2%. Codex with Sol 6.1: accuracy −2.5%, billed cost −7.7%, cost without cache +22.9%." width="100%" />
+<img src="assets/code-retrieval-stats.svg" alt="Held-out results, sweet-search vs native, 200 questions, 3 reps. Claude Code with Sonnet 5.5 high: accuracy +2.4%, billed cost −7.6%. Claude Code with Opus 5.5 medium and high: accuracy equal, billed cost −9.5%, tool calls −22.8%. opencode with Sol 6.1: accuracy −2.8%, billed cost −50.2%. Codex with Sol 6.1: accuracy −2.5%, billed cost −7.7%, tool calls equal." width="100%" />
 
 <sub>held-out set · 200 questions · 11 repos in 11 languages · 3 reps per arm · 6,000 rollouts · run once, aggregates only</sub>
 
