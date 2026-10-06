@@ -45,6 +45,21 @@ import { wasmHammingDistance as hammingDistance } from '../infrastructure/simd-d
 import { HammingSlab } from '../infrastructure/hamming-kernel.js';
 import { TypedMinHeap, TypedMaxHeap, VisitedList } from './binary-heap.js';
 import { loadBitmap, isSet, popcountRange } from '../infrastructure/tombstone-bitmap-reader.js';
+import { loadNativeAddon } from '../infrastructure/native-resolver.js';
+
+// Native query path (crates/sweet-search-native/src/hnsw_search.rs): an exact
+// port of greedySearchQuery/searchLayerQuery over a CSR snapshot of the graph.
+// Same visit order and heap tie rules, so results are identical to the JS
+// path. SS_FIX_HNSW_NATIVE=0 restores the JS loop. Probed once per process.
+let _NativeHnswSearcher;
+function nativeHnswSearcherCtor() {
+  if (_NativeHnswSearcher !== undefined) return _NativeHnswSearcher;
+  _NativeHnswSearcher = null;
+  if (process.env.SS_FIX_HNSW_NATIVE === '0') return null;
+  const res = loadNativeAddon({ validate: (m) => typeof m.HnswSearcher === 'function' });
+  if (res) _NativeHnswSearcher = res.mod.HnswSearcher;
+  return _NativeHnswSearcher;
+}
 
 // Shared empty neighbor list for graph misses in the hot search loops —
 // callers only iterate it, so one frozen instance replaces a fresh `[]`
@@ -559,6 +574,9 @@ export class BinaryHNSWIndex {
     this.int8Vectors = new Map(); // id → Int8Array
 
     // Graph structure (simplified HNSW for pure JS)
+    this._graphGen = 0;
+    this._native = null;
+    this._graphFrozen = null;    // shape of a graph released to the native snapshot
     this.graph = [];             // Array of neighbor lists per level
     this.entryPoint = -1;
     this.maxLevel = 0;
@@ -583,6 +601,59 @@ export class BinaryHNSWIndex {
     // read/search-only. Null/false on the default JSON path.
     this._mmapBacked = false;
     this._mmapFd = null;
+
+  }
+
+  /**
+   * Neighbor lists per level. After a native snapshot is built the JS arrays
+   * are released (the snapshot holds the same lists); any reader rebuilds
+   * them exactly from the snapshot on first access. Assignment bumps
+   * _graphGen so the snapshot is rebuilt.
+   */
+  get graph() {
+    if (this._graphFrozen) this._thawGraph();
+    return this._graphStore;
+  }
+
+  set graph(value) {
+    this._graphStore = value;
+    this._graphFrozen = null;
+    this._graphGen++;
+  }
+
+  /** Release the JS graph arrays; the native snapshot is the only copy. */
+  _freezeGraph() {
+    const levels = this._graphStore;
+    this._graphFrozen = {
+      lengths: levels.map((level) => level.length),
+      present: levels.map((level) => {
+        const flags = new Uint8Array(level.length);
+        for (let i = 0; i < level.length; i++) flags[i] = level[i] ? 1 : 0;
+        return flags;
+      }),
+    };
+    this._graphStore = null;
+  }
+
+  /** Rebuild the JS graph arrays from the native snapshot (exact lists). */
+  _thawGraph() {
+    const { lengths, present } = this._graphFrozen;
+    const searcher = this._native.searcher;
+    const n = this._native.n;
+    const levels = lengths.map((len, l) => {
+      const flat = searcher.exportLevel(l);
+      const level = new Array(len).fill(null);
+      for (let i = 0; i < len; i++) {
+        if (!present[l][i]) continue;
+        const from = flat[i], to = flat[i + 1];
+        const list = new Array(to - from);
+        for (let j = from; j < to; j++) list[j - from] = flat[n + 1 + j];
+        level[i] = list;
+      }
+      return level;
+    });
+    this._graphStore = levels;
+    this._graphFrozen = null;
   }
 
   /** Reset to empty state for a fresh build (skips loading from disk). */
@@ -752,6 +823,8 @@ export class BinaryHNSWIndex {
       binary = new Uint8Array(binaryVector);
     }
 
+    this._graphGen++;
+
     // Check if already exists
     if (this.idToIndex.has(id)) {
       const idx = this.idToIndex.get(id);
@@ -912,6 +985,7 @@ export class BinaryHNSWIndex {
    * Uses heuristic selection + level-aware M0=2*M.
    */
   addToGraph(idx, level) {
+    this._graphGen++;
     // Ensure graph has enough levels
     while (this.graph.length <= level) {
       this.graph.push([]);
@@ -1122,6 +1196,7 @@ export class BinaryHNSWIndex {
    * Level-aware: M0=2*M on layer 0, M on higher layers.
    */
   pruneNeighbors(nodeIdx, level) {
+    this._graphGen++;
     const neighbors = this.graph[level][nodeIdx];
     const maxM = this.getMaxM(level);
     const slab = this._slab;
@@ -1155,6 +1230,104 @@ export class BinaryHNSWIndex {
    * @param {object} opts - Optional { floatQuery: Float32Array } for asymmetric mode
    * @returns {Promise<{results: Array, latency_us: number}>}
    */
+  /**
+   * Native searcher over a CSR snapshot of the resident graph, or null (no
+   * addon, SS_FIX_HNSW_NATIVE=0, or the mmap-proxy path). Rebuilt lazily after
+   * any mutation (_graphGen) or a graph reassignment (load/reset).
+   */
+  _nativeSearcher() {
+    if (!this._slab || this._mmapBacked) return null;
+    const n = this.vectors.length;
+    const cached = this._native;
+    if (cached && cached.gen === this._graphGen && cached.n === n) {
+      return cached.searcher;
+    }
+    const Ctor = nativeHnswSearcherCtor();
+    if (!Ctor || this._slab.count < n) return null;
+    const searcher = new Ctor(this.dimension, n, this._slab.slab.subarray(0, n * this.dimension));
+    for (let l = 0; l < this.graph.length; l++) {
+      const level = this.graph[l] || EMPTY_NEIGHBORS;
+      const offsets = new Uint32Array(n + 1);
+      let total = 0;
+      for (let i = 0; i < n; i++) {
+        offsets[i] = total;
+        const nb = level[i];
+        if (nb) total += nb.length;
+      }
+      offsets[n] = total;
+      const neighbors = new Uint32Array(total);
+      let p = 0;
+      for (let i = 0; i < n; i++) {
+        const nb = level[i];
+        if (nb) for (let j = 0; j < nb.length; j++) neighbors[p++] = nb[j];
+      }
+      searcher.setLevel(l, offsets, neighbors);
+    }
+    this._native = { searcher, gen: this._graphGen, n };
+    // Release the JS lists (read paths use the snapshot; writers thaw).
+    if (process.env.SS_FIX_HNSW_FREEZE !== '0') this._freezeGraph();
+    return searcher;
+  }
+
+  /** Native layer-0 search: `[visitedCount, n, idx[0..n), dist[0..n)]`. */
+  _nativeSearchLayer(searcher, startNode, ef, level) {
+    const et = BINARY_HNSW_CONFIG.earlyTermination || {};
+    const flat = new Float64Array((et.thresholds || [[0.3, 0.05], [0.6, 0.10]]).flat());
+    return searcher.searchLayer(startNode, ef, level, et.windowSize || 16, flat);
+  }
+
+  /** Live (non-stale) entries of a native layer result, as [idx, dist] arrays. */
+  _nativeLive(out, staleBitmap) {
+    const n = out[1];
+    const idx = out.subarray(2, 2 + n);
+    const dist = out.subarray(2 + n, 2 + 2 * n);
+    if (!staleBitmap) return { idx, dist, length: n };
+    const li = new Uint32Array(n), ld = new Uint32Array(n);
+    let m = 0;
+    for (let i = 0; i < n; i++) {
+      if (this._isIndexStale(idx[i], staleBitmap)) continue;
+      li[m] = idx[i]; ld[m] = dist[i]; m++;
+    }
+    return { idx: li, dist: ld, length: m };
+  }
+
+  /**
+   * Tail of search() on the native path: same stale filtering, retry and
+   * result objects as the JS path, without the intermediate {idx, dist}
+   * objects.
+   */
+  _finishNativeSearch(nat, currentNode, ef, k, staleBitmap, start) {
+    let out = this._nativeSearchLayer(nat, currentNode, ef, 0);
+    const visitedCount = out[0];
+    let live = this._nativeLive(out, staleBitmap);
+    if (live.length < k && ef < this.vectors.length) {
+      const retryEf = Math.min(this.vectors.length, ef * 2);
+      if (retryEf > ef) {
+        out = this._nativeSearchLayer(nat, currentNode, retryEf, 0);
+        live = this._nativeLive(out, staleBitmap);
+      }
+    }
+    const maxDist = this.dimension * 8;
+    const n = Math.min(k, live.length);
+    const results = new Array(n);
+    for (let i = 0; i < n; i++) {
+      const v = this.vectors[live.idx[i]];
+      const dist = live.dist[i];
+      results[i] = { id: v.id, score: 1 - (dist / maxDist), hammingDistance: dist, metadata: v.metadata };
+    }
+    const latency = performance.now() - start;
+    return {
+      results,
+      latency_us: Math.round(latency * 1000),
+      latency_ms: latency.toFixed(3),
+      k,
+      total: this._liveVectorCount(staleBitmap),
+      visitedNodes: visitedCount,
+      adaptiveEf: ef,
+      useAsymmetric: this.useAsymmetric,
+    };
+  }
+
   async search(queryVector, k = 10, opts = {}) {
     if (!this.initialized) await this.init();
 
@@ -1182,15 +1355,19 @@ export class BinaryHNSWIndex {
     }
     // Stage the query once: traversal distances become resident-slab calls.
     this._setQuery(queryBinary);
+    const nat = this._nativeSearcher();
+    if (nat) nat.setQuery(queryBinary);
     let currentNode = this.entryPoint;
 
     for (let l = this.maxLevel; l >= 1; l--) {
-      currentNode = this.greedySearchQuery(currentNode, queryBinary, l);
+      currentNode = nat
+        ? nat.greedy(currentNode, l)
+        : this.greedySearchQuery(currentNode, queryBinary, l);
     }
 
     // Adaptive ef: easy queries get a smaller budget, hard queries get more
     let ef = Math.max(this._oversampleTarget(k, staleBitmap), this.efSearch);
-    const greedyDist = this._distQ(currentNode);
+    const greedyDist = nat ? nat.dist(currentNode) : this._distQ(currentNode);
     const maxDist = this.dimension * 8;
     const greedyQuality = 1 - (greedyDist / maxDist);
     if (greedyQuality > 0.85) {
@@ -1200,6 +1377,8 @@ export class BinaryHNSWIndex {
     }
 
     // Level 0 search — pure Hamming, no asymmetric in the traversal loop
+    if (nat) return this._finishNativeSearch(nat, currentNode, ef, k, staleBitmap, start);
+
     const searchResult = this.searchLayerQuery(currentNode, queryBinary, ef, 0);
     let candidates = searchResult.candidates;
 
@@ -1789,6 +1968,9 @@ export class BinaryHNSWIndex {
     this._visitedList.ensureCapacity(this.vectors.length);
 
     this.initialized = true;
+    // Build the native snapshot now, not on the first query (and release
+    // the JS graph arrays it replaces).
+    this._nativeSearcher();
     bootLog(`BinaryHNSW: Loaded ${this.vectors.length} vectors from ${indexPath} (asymmetric=${this.useAsymmetric})`);
   }
 

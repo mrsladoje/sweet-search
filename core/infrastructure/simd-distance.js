@@ -259,12 +259,30 @@ function _jsInt8BatchDot(query, candidates) {
  */
 export function float32BatchDot(query, candidates) {
   const dim = query.length;
-  const scores = new Float64Array(candidates.length);
-  for (let c = 0; c < candidates.length; c++) {
-    const v = candidates[c];
-    if (v.length !== dim) {
-      throw new Error(`float32BatchDot dimension mismatch: query=${dim}, candidate[${c}]=${v.length}`);
+  const count = candidates.length;
+  const scores = new Float64Array(count);
+  for (let c = 0; c < count; c++) {
+    if (candidates[c].length !== dim) {
+      throw new Error(`float32BatchDot dimension mismatch: query=${dim}, candidate[${c}]=${candidates[c].length}`);
     }
+  }
+  // Four candidates per pass, one accumulator each in the same sequential
+  // order: bit-identical to one dot at a time, but with 4x the ILP.
+  let c = 0;
+  for (; c + 3 < count; c += 4) {
+    const v0 = candidates[c], v1 = candidates[c + 1], v2 = candidates[c + 2], v3 = candidates[c + 3];
+    let d0 = 0, d1 = 0, d2 = 0, d3 = 0;
+    for (let i = 0; i < dim; i++) {
+      const q = query[i];
+      d0 += q * v0[i];
+      d1 += q * v1[i];
+      d2 += q * v2[i];
+      d3 += q * v3[i];
+    }
+    scores[c] = d0; scores[c + 1] = d1; scores[c + 2] = d2; scores[c + 3] = d3;
+  }
+  for (; c < count; c++) {
+    const v = candidates[c];
     let dot = 0;
     for (let i = 0; i < dim; i++) dot += query[i] * v[i];
     scores[c] = dot;

@@ -26,6 +26,12 @@ function resolveManifestVectorsPath(dbPath, manifest = readAdjacentManifest(dbPa
   return path.isAbsolute(descriptor) ? descriptor : path.join(path.dirname(dbPath), descriptor);
 }
 
+// Small indexes keep every float embedding resident, so the per-query
+// full-vector rescore reads memory instead of a 200-id SQLite IN query. Same
+// rows, same bytes, so scores are unchanged. Bounded by vector count;
+// SS_FIX_EMBED_CACHE=0 disables it.
+const EMBEDDING_CACHE_MAX_VECTORS = Number.parseInt(process.env.SWEET_SEARCH_EMBEDDING_CACHE_MAX_VECTORS || '', 10) || 16384;
+
 export class CodebaseRepository {
   constructor(dbPath, options = {}) {
     this._baseDbPath = dbPath;
@@ -37,6 +43,7 @@ export class CodebaseRepository {
       : dbPath;
     this._db = null;
     this._hasEpochVisibility = null;
+    this._embeddingCache = null;
     if (!this._explicitManifestEpoch) {
       this._syncAdjacentManifest();
     }
@@ -113,12 +120,32 @@ export class CodebaseRepository {
     assertInClauseSize(uniqueIds.length, 'CodebaseRepository.getEmbeddingsByIds');
 
     const db = this._open();
-    const placeholders = uniqueIds.map(() => '?').join(',');
+    const cached = this._residentEmbeddings(db);
+    if (cached) {
+      const result = new Map();
+      for (const id of uniqueIds) {
+        const vector = cached.get(id);
+        if (vector) result.set(id, vector);
+      }
+      return result;
+    }
     const visibility = this._visibility(db);
     const visibilityClause = visibility.sql ? ` AND ${visibility.sql}` : '';
-    const rows = db.prepare(
-      `SELECT id, embedding FROM vectors WHERE id IN (${placeholders})${visibilityClause}`
-    ).all(...uniqueIds, ...visibility.params);
+    // Statements are cached per (connection, id count, visibility clause):
+    // compiling a 200-placeholder IN query costs more than running it.
+    const stmtKey = `${uniqueIds.length}|${visibilityClause}`;
+    if (this._embStmtDb !== db) {
+      this._embStmtDb = db;
+      this._embStmts = new Map();
+    }
+    let stmt = this._embStmts.get(stmtKey);
+    if (!stmt) {
+      const placeholders = uniqueIds.map(() => '?').join(',');
+      stmt = db.prepare(`SELECT id, embedding FROM vectors WHERE id IN (${placeholders})${visibilityClause}`);
+      if (this._embStmts.size >= 64) this._embStmts.clear();
+      this._embStmts.set(stmtKey, stmt);
+    }
+    const rows = stmt.all(...uniqueIds, ...visibility.params);
 
     const result = new Map();
     for (const row of rows) {
@@ -130,6 +157,41 @@ export class CodebaseRepository {
       }
     }
     return result;
+  }
+
+  /**
+   * All visible embeddings as id → Float32Array when the index is small,
+   * else null. Reloaded when the connection, the visibility epoch, or the
+   * database contents (PRAGMA data_version: commits by other connections;
+   * this connection is read-only) change.
+   */
+  _residentEmbeddings(db) {
+    if (process.env.SS_FIX_EMBED_CACHE === '0') return null;
+    const visibility = this._visibility(db);
+    if (this._dataVersionStmt?.database !== db) {
+      this._dataVersionStmt = db.prepare('PRAGMA data_version').pluck();
+    }
+    const version = this._dataVersionStmt.get();
+    const visKey = `${visibility.sql}|${visibility.params.join(',')}`;
+    const c = this._embeddingCache;
+    if (c && c.db === db && c.version === version && c.visKey === visKey) return c.map;
+
+    const where = visibility.sql ? ` WHERE ${visibility.sql}` : '';
+    const count = db.prepare(`SELECT count(*) AS n FROM vectors${where}`).get(...visibility.params).n;
+    let map = null;
+    if (count <= EMBEDDING_CACHE_MAX_VECTORS) {
+      map = new Map();
+      for (const row of db.prepare(`SELECT id, embedding FROM vectors${where}`).iterate(...visibility.params)) {
+        if (row.embedding) {
+          // Copy: iterate() may reuse row buffers.
+          map.set(row.id, new Float32Array(row.embedding.buffer.slice(
+            row.embedding.byteOffset, row.embedding.byteOffset + row.embedding.length
+          )));
+        }
+      }
+    }
+    this._embeddingCache = { db, version, visKey, map };
+    return map;
   }
 
   /**
@@ -346,6 +408,7 @@ export class CodebaseRepository {
       this._db.close();
       this._db = null;
     }
+    this._embeddingCache = null;
     this._hasEpochVisibility = null;
     this._hasChunkTextFts = undefined;
   }
