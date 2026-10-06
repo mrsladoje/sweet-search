@@ -177,6 +177,152 @@ impl<const MIN: bool> Heap<MIN> {
     }
 }
 
+/// Candidate queue of the walk: pops the smallest distance.
+trait CandQueue: Default {
+    fn reset(&mut self, max_dist: usize);
+    fn len(&self) -> usize;
+    fn peek_val(&self) -> u32;
+    fn peek_key(&self) -> Option<u32>;
+    fn pop_key(&mut self) -> u32;
+    fn insert(&mut self, key: u32, val: u32);
+}
+
+/// Result set of the walk: the `ef` best seen, largest distance on top.
+trait ResQueue: Default {
+    fn reset(&mut self, max_dist: usize);
+    fn len(&self) -> usize;
+    fn peek_val(&self) -> u32;
+    fn insert(&mut self, key: u32, val: u32);
+    /// Drop one entry at the largest distance and add (key, val), val < top.
+    fn replace_top(&mut self, key: u32, val: u32);
+    /// All entries ascending by distance.
+    fn drain_into(&mut self, keys: &mut [u32], vals: &mut [u32]);
+}
+
+impl CandQueue for MinHeap {
+    fn reset(&mut self, _: usize) { self.clear() }
+    fn len(&self) -> usize { self.n }
+    fn peek_val(&self) -> u32 { Heap::peek_val(self) }
+    fn peek_key(&self) -> Option<u32> { Heap::peek_key(self) }
+    fn pop_key(&mut self) -> u32 { key_of(self.pop()) }
+    fn insert(&mut self, key: u32, val: u32) { Heap::insert(self, key, val) }
+}
+
+impl ResQueue for MaxHeap {
+    fn reset(&mut self, _: usize) { self.clear() }
+    fn len(&self) -> usize { self.n }
+    fn peek_val(&self) -> u32 { Heap::peek_val(self) }
+    fn insert(&mut self, key: u32, val: u32) { Heap::insert(self, key, val) }
+    fn replace_top(&mut self, key: u32, val: u32) { Heap::replace_top(self, key, val) }
+    fn drain_into(&mut self, keys: &mut [u32], vals: &mut [u32]) { Heap::drain_into(self, keys, vals) }
+}
+
+/// Bucket queues: Hamming distances are small integers (0..=bits), so one
+/// bucket per distance gives O(1) push and amortized O(1) pop / top, where
+/// the binary heaps spend ~10 dependent steps per operation. Equal distances
+/// come out newest first (the heaps' tie order is not reproduced).
+#[derive(Default)]
+struct Buckets {
+    b: Vec<Vec<u32>>,
+    n: usize,
+    lo: usize, // smallest non-empty bucket (when n > 0)
+    hi: usize, // largest non-empty bucket (when n > 0)
+}
+
+impl Buckets {
+    fn reset(&mut self, max_dist: usize) {
+        if self.b.len() <= max_dist {
+            self.b.resize_with(max_dist + 1, Vec::new);
+        }
+        if self.n > 0 {
+            for v in &mut self.b[self.lo..=self.hi] {
+                v.clear();
+            }
+        }
+        self.n = 0;
+    }
+    #[inline(always)]
+    fn push(&mut self, key: u32, val: u32) {
+        let v = val as usize;
+        if self.n == 0 {
+            self.lo = v;
+            self.hi = v;
+        } else {
+            self.lo = self.lo.min(v);
+            self.hi = self.hi.max(v);
+        }
+        self.b[v].push(key);
+        self.n += 1;
+    }
+}
+
+#[derive(Default)]
+struct BucketMin(Buckets);
+
+impl CandQueue for BucketMin {
+    fn reset(&mut self, max_dist: usize) { self.0.reset(max_dist) }
+    #[inline(always)]
+    fn len(&self) -> usize { self.0.n }
+    #[inline(always)]
+    fn peek_val(&self) -> u32 { self.0.lo as u32 }
+    #[inline(always)]
+    fn peek_key(&self) -> Option<u32> {
+        if self.0.n == 0 { None } else { self.0.b[self.0.lo].last().copied() }
+    }
+    #[inline(always)]
+    fn pop_key(&mut self) -> u32 {
+        let q = &mut self.0;
+        let k = q.b[q.lo].pop().unwrap();
+        q.n -= 1;
+        if q.n > 0 {
+            while q.b[q.lo].is_empty() {
+                q.lo += 1;
+            }
+        }
+        k
+    }
+    #[inline(always)]
+    fn insert(&mut self, key: u32, val: u32) { self.0.push(key, val) }
+}
+
+#[derive(Default)]
+struct BucketMax(Buckets);
+
+impl ResQueue for BucketMax {
+    fn reset(&mut self, max_dist: usize) { self.0.reset(max_dist) }
+    #[inline(always)]
+    fn len(&self) -> usize { self.0.n }
+    #[inline(always)]
+    fn peek_val(&self) -> u32 { self.0.hi as u32 }
+    #[inline(always)]
+    fn insert(&mut self, key: u32, val: u32) { self.0.push(key, val) }
+    #[inline(always)]
+    fn replace_top(&mut self, key: u32, val: u32) {
+        let q = &mut self.0;
+        q.b[q.hi].pop();
+        q.n -= 1;
+        q.push(key, val);
+        while q.b[q.hi].is_empty() {
+            q.hi -= 1;
+        }
+    }
+    fn drain_into(&mut self, keys: &mut [u32], vals: &mut [u32]) {
+        let q = &mut self.0;
+        let mut i = 0;
+        if q.n > 0 {
+            for v in q.lo..=q.hi {
+                for &k in &q.b[v] {
+                    keys[i] = k;
+                    vals[i] = v as u32;
+                    i += 1;
+                }
+                q.b[v].clear();
+            }
+        }
+        q.n = 0;
+    }
+}
+
 /// Hamming distance over `words` u64 words. 512-bit vectors (the production
 /// shape) take a NEON path on aarch64.
 #[inline(always)]
@@ -272,6 +418,7 @@ pub struct HnswSearcher {
     query: Vec<u64>,
     batch: Vec<u32>,
     dists: Vec<u32>,
+    all_ids: Vec<u32>,
     // Generation-stamped visited bytes: one byte per node, so neighboring
     // checks never share a word (no store-to-load chains), and no per-query
     // clear except on wrap.
@@ -279,6 +426,10 @@ pub struct HnswSearcher {
     visit_gen: u8,
     cand: MinHeap,
     res: MaxHeap,
+    bcand: BucketMin,
+    bres: BucketMax,
+    // Bucket queues (default) or the JS-exact binary heaps.
+    bucket: bool,
 }
 
 #[napi]
@@ -311,10 +462,14 @@ impl HnswSearcher {
             query: vec![0u64; words],
             batch: Vec::new(),
             dists: Vec::new(),
+            all_ids: Vec::new(),
             visited: vec![0u8; count as usize],
             visit_gen: 0,
             cand: MinHeap::default(),
             res: MaxHeap::default(),
+            bcand: BucketMin::default(),
+            bres: BucketMax::default(),
+            bucket: true,
         })
     }
 
@@ -430,7 +585,44 @@ impl HnswSearcher {
         Ok(self.walk(start, ef, level, window_size, &thresholds, out.as_mut()) as u32)
     }
 
+    /// Bucket queues (fast; equal distances may come out in another order)
+    /// or binary heaps with the JS tie rules (exact match of the JS walk).
+    #[napi]
+    pub fn set_bucket_queue(&mut self, on: bool) {
+        self.bucket = on;
+    }
+
     fn walk(&mut self, start: u32, ef: u32, level: u32, window_size: u32, thresholds: &[f64], out: &mut [u32]) -> usize {
+        if self.bucket {
+            let mut c = std::mem::take(&mut self.bcand);
+            let mut r = std::mem::take(&mut self.bres);
+            let n = self.walk_with(&mut c, &mut r, start, ef, level, window_size, thresholds, out);
+            self.bcand = c;
+            self.bres = r;
+            n
+        } else {
+            let mut c = std::mem::take(&mut self.cand);
+            let mut r = std::mem::take(&mut self.res);
+            let n = self.walk_with(&mut c, &mut r, start, ef, level, window_size, thresholds, out);
+            self.cand = c;
+            self.res = r;
+            n
+        }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    #[inline(always)]
+    fn walk_with<C: CandQueue, Q: ResQueue>(
+        &mut self,
+        cand: &mut C,
+        res: &mut Q,
+        start: u32,
+        ef: u32,
+        level: u32,
+        window_size: u32,
+        thresholds: &[f64],
+        out: &mut [u32],
+    ) -> usize {
         let ef_us = ef as usize;
         let thresholds: Vec<(f64, f64)> = thresholds.chunks_exact(2).map(|c| (c[0], c[1])).collect();
 
@@ -440,10 +632,9 @@ impl HnswSearcher {
             self.visit_gen = 1;
         }
         let gen = self.visit_gen;
-        let mut cand = std::mem::take(&mut self.cand);
-        let mut res = std::mem::take(&mut self.res);
-        cand.clear();
-        res.clear();
+        let max_dist = self.words * 64;
+        cand.reset(max_dist);
+        res.reset(max_dist);
 
         self.visited[start as usize] = gen;
         let start_dist = self.dist_q(start);
@@ -461,7 +652,7 @@ impl HnswSearcher {
             if res.len() >= ef_us && cand.peek_val() > res.peek_val() {
                 break;
             }
-            let current = key_of(cand.pop());
+            let current = cand.pop_key();
             // Likely next node (unless a closer neighbor turns up): start
             // loading its list now, one expansion ahead.
             if let Some(next) = cand.peek_key() {
@@ -568,9 +759,67 @@ impl HnswSearcher {
         out[1] = n as u32;
         let (head, tail) = out[2..2 + 2 * n].split_at_mut(n);
         res.drain_into(head, tail);
-        self.cand = cand;
-        self.res = res;
         n
+    }
+
+    /// Exact top-`k` by Hamming distance over all vectors (small indexes:
+    /// cheaper than the graph walk and never misses a neighbor). Same layout
+    /// as `search_layer_into`: `[n, k, keys[0..k], dists[0..k]]`, ascending
+    /// by distance, equal distances in node order. Counting sort over the
+    /// `words * 64 + 1` possible distances, so O(count). Returns k.
+    #[napi]
+    pub fn scan_into(&mut self, k: u32, mut out: Uint32Array) -> napi::Result<u32> {
+        let n = self.count as usize;
+        let k = (k as usize).min(n);
+        if out.len() < 2 + 2 * k {
+            return Err(napi::Error::from_reason("scan_into: output shorter than 2 + 2 * k"));
+        }
+        if self.all_ids.len() != n {
+            self.all_ids = (0..n as u32).collect();
+        }
+        let mut d = std::mem::take(&mut self.dists);
+        if d.len() < n {
+            d.resize(n, 0);
+        }
+        let ids = std::mem::take(&mut self.all_ids);
+        self.dist_batch(&ids, &mut d[..n]);
+        self.all_ids = ids;
+        // Histogram, then the cutoff distance t: all of d < t plus the first
+        // (k - below) nodes at d == t, in node order.
+        let mut hist = vec![0u32; self.words * 64 + 2];
+        for &x in &d[..n] {
+            hist[x as usize] += 1;
+        }
+        let mut pos = vec![0u32; hist.len()];
+        let mut acc = 0u32;
+        let mut t = hist.len() - 1;
+        for (v, &h) in hist.iter().enumerate() {
+            pos[v] = acc;
+            if acc + h >= k as u32 {
+                t = v;
+                break;
+            }
+            acc += h;
+        }
+        let out = out.as_mut();
+        out[0] = n as u32;
+        out[1] = k as u32;
+        if k > 0 {
+            let (keys, rest) = out[2..2 + 2 * k].split_at_mut(k);
+            for i in 0..n {
+                let x = d[i] as usize;
+                if x <= t {
+                    let p = pos[x] as usize;
+                    if p < k {
+                        keys[p] = i as u32;
+                        rest[p] = x as u32;
+                        pos[x] += 1;
+                    }
+                }
+            }
+        }
+        self.dists = d;
+        Ok(k as u32)
     }
 
     /// Level `level` as `[offsets[0..=count], neighbors...]`,

@@ -256,7 +256,8 @@ export class SweetSearch {
 
       // Float store loads separately — a corrupt/missing float store must NOT
       // disable the entire 3-stage pipeline. Stage 2.5 falls back to SQLite.
-      if (this.hasBinaryHnswIndex) {
+      // Only Stage 2.5 reads it, and that stage is off by default.
+      if (this.hasBinaryHnswIndex && semantic.float512StageEnabled()) {
         try {
           const floatStorePath = getFloatStorePath(this.binaryHnswPath);
           const floatLoaded = await this.floatVectorStore.load(floatStorePath);
@@ -496,7 +497,9 @@ export class SweetSearch {
         await nextBinary.load();
         this.binaryHnswIndex = nextBinary;
         this.floatVectorStore = new FloatVectorStore();
-        await this.floatVectorStore.load(getFloatStorePath(this.binaryHnswPath));
+        if (semantic.float512StageEnabled()) {
+          await this.floatVectorStore.load(getFloatStorePath(this.binaryHnswPath));
+        }
       } catch (err) {
         this.log(`BinaryHNSW: Failed to reload after manifest publish: ${err.message}`);
         this.hasBinaryHnswIndex = false;

@@ -22,7 +22,18 @@
  *      a packed `.idx` with no `.meta.json` present.
  */
 
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, beforeAll, afterAll } from 'vitest';
+
+// These tests compare storage formats. The packed (mmap) path runs the JS
+// walk, so the JSON side must run the JS-exact native walk too: no bucket
+// queues, no small-index exact scan.
+const savedEnv = {};
+beforeAll(() => {
+  for (const k of ['SS_FIX_HNSW_BUCKET', 'SS_FIX_HNSW_SCAN']) { savedEnv[k] = process.env[k]; process.env[k] = '0'; }
+});
+afterAll(() => {
+  for (const [k, v] of Object.entries(savedEnv)) { if (v === undefined) delete process.env[k]; else process.env[k] = v; }
+});
 import { mkdtempSync, rmSync, readFileSync, existsSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';

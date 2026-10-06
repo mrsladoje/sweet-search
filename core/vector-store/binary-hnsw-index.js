@@ -62,6 +62,20 @@ function nativeHnswSearcherCtor() {
   return _NativeHnswSearcher;
 }
 
+// At or below this many vectors, search() scans every binary vector exactly
+// instead of walking the graph (SS_FIX_HNSW_SCAN=0 keeps the walk). The scan
+// reads only the resident binary slab, so it adds no memory.
+const EXACT_SCAN_MAX_VECTORS = 15000;
+
+// The native walk uses bucket queues by default (O(1) per queue operation;
+// equal Hamming distances may come out in another order than the JS heaps).
+// SS_FIX_HNSW_BUCKET=0 restores the JS-exact heaps.
+function configureNativeSearcher(searcher) {
+  if (process.env.SS_FIX_HNSW_BUCKET === '0' && typeof searcher.setBucketQueue === 'function') {
+    searcher.setBucketQueue(false);
+  }
+}
+
 // Flattened early-termination thresholds for the native walk, rebuilt only
 // when the config array changes.
 const nativeThresholds = { list: null, flat: null };
@@ -1354,6 +1368,7 @@ export class BinaryHNSWIndex {
     const Ctor = nativeHnswSearcherCtor();
     if (!Ctor || this._slab.count < n) return null;
     const searcher = new Ctor(this.dimension, n, this._slab.slab.subarray(0, n * this.dimension));
+    configureNativeSearcher(searcher);
     for (let l = 0; l < this.graph.length; l++) {
       const level = this.graph[l] || EMPTY_NEIGHBORS;
       const offsets = new Uint32Array(n + 1);
@@ -1392,6 +1407,7 @@ export class BinaryHNSWIndex {
     const csr = await readGraphSidecarCsr(graphPath, n);
     if (!csr) return false;
     const searcher = new Ctor(this.dimension, n, this._slab.slab.subarray(0, n * this.dimension));
+    configureNativeSearcher(searcher);
     csr.levels.forEach((lv, l) => searcher.setLevel(l, lv.offsets, lv.neighbors));
     this.graph = [];  // resets the store and bumps _graphGen
     this._graphStore = null;
@@ -1477,9 +1493,22 @@ export class BinaryHNSWIndex {
    * objects.
    */
   _finishNativeSearch(nat, currentNode, ef, k, staleBitmap, start, lazy = false) {
-    let out = this._nativeSearchLayer(nat, currentNode, ef, 0);
+    let out;
+    let live;
+    const total = this.vectors.length;
+    if (total <= EXACT_SCAN_MAX_VECTORS && process.env.SS_FIX_HNSW_SCAN !== '0') {
+      // Small index: exact top-k over every vector beats the walk on time
+      // and never misses a neighbor. Ask for k plus the stale count so k live
+      // results remain after filtering.
+      const want = Math.min(total, k + (total - this._liveVectorCount(staleBitmap)));
+      out = scratchArray('hnswLayer', Uint32Array, 2 + 2 * want);
+      nat.scanInto(want, out);
+      live = this._nativeLive(out, staleBitmap);
+      return this._nativeResults(live, out[0], ef, k, staleBitmap, start, lazy);
+    }
+    out = this._nativeSearchLayer(nat, currentNode, ef, 0);
     const visitedCount = out[0];
-    let live = this._nativeLive(out, staleBitmap);
+    live = this._nativeLive(out, staleBitmap);
     if (live.length < k && ef < this.vectors.length) {
       const retryEf = Math.min(this.vectors.length, ef * 2);
       if (retryEf > ef) {
@@ -1487,6 +1516,11 @@ export class BinaryHNSWIndex {
         live = this._nativeLive(out, staleBitmap);
       }
     }
+    return this._nativeResults(live, visitedCount, ef, k, staleBitmap, start, lazy);
+  }
+
+  /** Result objects (or the lazy form) from live native candidates. */
+  _nativeResults(live, visitedCount, ef, k, staleBitmap, start, lazy) {
     const maxDist = this.dimension * 8;
     const n = Math.min(k, live.length);
     const materialize = (m) => {
