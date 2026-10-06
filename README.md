@@ -254,20 +254,20 @@ settings file may remain as `{}`.
 
 ## 📊 Benchmarks
 
-We measure sweet-search four ways — from how much it helps a real agent down to raw engine throughput:
+We measure sweet-search four ways; from how much it helps a real agent, down to raw engine throughput:
 
 <table>
 <tr>
 <td width="50%" valign="top">
 
 🤖 **① [Code-retrieval](#bench-code-retrieval)** *(agent-in-the-loop)*<br>
-<sub>Does it make a real coding agent **cheaper at equal accuracy** when it searches your repo? 200 held-out questions, five model × harness cells, 6,000 paired rollouts.</sub>
+<sub>Does it make a coding agent **cheaper at equal accuracy** when it searches your repo?</sub>
 
 </td>
 <td width="50%" valign="top">
 
 🛠️ **② [Task-completion](#bench-task-completion)** *(frozen held-out)*<br>
-<sub>Does cheaper, denser context **compound** across multi-step engineering tasks? 200 SWE-rebench tasks, three harnesses, 1,200 paired rollouts.</sub>
+<sub>Does cheaper, denser context **compound** across multi-step engineering tasks? 200 *SWE-rebench* tasks.</sub>
 
 </td>
 </tr>
@@ -281,7 +281,7 @@ We measure sweet-search four ways — from how much it helps a real agent down t
 <td width="50%" valign="top">
 
 ⚡ **④ [Engine speed](#bench-engine-speed)**<br>
-<sub>Raw systems numbers — grep throughput, query latency, rerank kernels, HNSW.</sub>
+<sub>Raw systems numbers: grep throughput, query latency, MaxSim rerank kernels, HNSW.</sub>
 
 </td>
 </tr>
