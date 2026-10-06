@@ -290,17 +290,20 @@ We measure sweet-search four ways — from how much it helps a real agent down t
 ---
 
 <a id="bench-code-retrieval"></a>
-### 🤖 1. Code-retrieval benchmarks — *the agent-in-the-loop test*
+### 🤖 1. Code-retrieval benchmark
 
-One variable changes: **how the agent searches** — 🍬 sweet-search's [tuned prompt](#-the-system-prompt) and tools vs. 🐌 the same model's native grep-and-read loop.
+> Sweet vs native compared in various code retrieval tasks, judged by *agents-in-the-loop*. 
 
 <div align="center">
 
 <img src="assets/code-retrieval-stats.svg" alt="Held-out results, sweet-search vs native, 200 questions, 3 reps. Claude Code with Sonnet 5.5 high: accuracy +2.4%, billed cost −7.6%. Claude Code with Opus 5.5 medium and high: accuracy +0.2% and −0.5% (not significant), billed cost −9.5%, tool calls −22.8%. opencode with Sol 6.1: accuracy −2.8%, billed cost −50.2%. Codex with Sol 6.1: accuracy −2.5%, billed cost −7.7%, tool calls equal." width="100%" />
 
-| 🔒 Split | 📝 Questions | 📦 Repos | 🔁 Reps | ⚖️ Scoring | 🧪 Design |
-|:---:|:---:|:---:|:---:|:---:|:---:|
-| held-out, run once | 200 · easy + hard | 11 repos, 11 languages | 3 per arm | 3-judge median | paired, pre-registered |
+</br>
+</br>
+
+| 🔒 Split | 📝 Questions | 📦 Repos | 🔁 Reps | ⚖️ Scoring |
+|:---:|:---:|:---:|:---:|:---:|
+| held-out | 200 · easy (103) + hard (97) | 11 repos, 11 languages | 3 per arm | 3-judge median |
 
 </div>
 
