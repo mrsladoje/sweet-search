@@ -466,12 +466,49 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 
 <a id="bench-engine-speed"></a>
 ### ⚡ 4. Engine speed and quality
-| ⚙️ What | 🆚 Compared with | 📈 Result | 📄 Source |
-|------|------|--------|--------|
-| ⚡ Indexed grep | [ripgrep](https://github.com/BurntSushi/ripgrep) 15.1 | **2.06× faster** end to end at the median on held-out queries (3.59 ms vs 7.29 ms; dev 2.01×). 1,600 queries modelled on 19,762 real agent greps, 13 repos, same hit counts. M3 Max. | [`docs/GREP_INDEXING_STRATEGY.md`](docs/GREP_INDEXING_STRATEGY.md) |
-| 🧮 MaxSim rerank kernel | [maxsim-cpu](https://github.com/mixedbread-ai/maxsim-cpu), NumPy | **2.9–3.9× faster** than maxsim-cpu in its best case, **1.6–1.9×** faster than NumPy. 4,237 replayed production calls (agent p50 0.137 ms vs 0.540 ms). Same ranking. M3 Max; x86 not measured. | [`eval/maxsim-bench/`](eval/maxsim-bench/README.md) |
-| ⏱️ Warm query latency (native CLI) | — | **2.9 ms** warm · 108 ms cold | [`docs/INIT_STRATEGY.md`](docs/INIT_STRATEGY.md) |
-| 🧠 HNSW tuning for code | our earlier HNSW | **−33%** search p50, **+5.9 pp** recall@200 | [`docs/HNSW_APPROACH.md`](docs/HNSW_APPROACH.md) |
+
+<table width="100%">
+<tr>
+<td width="50%" valign="top" align="center">
+
+⚡ **`ss-grep` vs [ripgrep](https://github.com/BurntSushi/ripgrep)**
+
+### 2.06× faster
+
+<sub>end to end, median, held-out queries</sub>
+
+| | median | |
+|:--|--:|:--|
+| `ss-grep` | **3.59 ms** | `████████` |
+| ripgrep 15.1 | 7.29 ms | `████████████████` |
+
+<sub>1,600 queries shaped like 19,762 real agent greps · 13 repos</sub><br>
+<sub>same hit counts · dev split 2.01× · M3 Max · [method](docs/GREP_INDEXING_STRATEGY.md)</sub>
+
+</td>
+<td width="50%" valign="top" align="center">
+
+🧮 **MaxSim kernel vs [maxsim-cpu](https://github.com/mixedbread-ai/maxsim-cpu)**
+
+### 2.9–3.9× faster
+
+<sub>4,237 replayed production calls, same ranking</sub>
+
+| | agent p50 | |
+|:--|--:|:--|
+| **ours** | **0.137 ms** | `████` |
+| NumPy | 0.272 ms | `████████` |
+| maxsim-cpu | 0.540 ms | `████████████████` |
+
+<sub>maxsim-cpu in its best case (f32, pre-normalized) · 1.6–1.9× vs NumPy</sub><br>
+<sub>ARM (M3 Max), x86 not measured · [method](eval/maxsim-bench/README.md)</sub>
+
+</td>
+</tr>
+</table>
+
+⏱️ **Warm query latency:** **2.9 ms** warm · 108 ms cold, native CLI ([source](docs/INIT_STRATEGY.md))<br>
+🧠 **HNSW tuned for code:** **−33%** search p50, **+5.9 pp** recall@200, against our earlier HNSW ([source](docs/HNSW_APPROACH.md))
 
 <details>
 <summary><b>🔧 Internal optimisations (against our own earlier versions)</b></summary>
