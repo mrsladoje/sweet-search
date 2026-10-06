@@ -494,11 +494,11 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 
 <sub>4k+ replayed production calls, same ranking</sub>
 
-| | agent p50 | |
-|:--|--:|:--|
-| **sweet** | **0.137 ms** | `████` |
-| NumPy | 0.272 ms | `████████` |
-| maxsim-cpu | 0.540 ms | `████████████████` |
+| | agent p50 | | sweet is |
+|:--|--:|:--|:--|
+| **sweet** | **0.137 ms** | `██` | — |
+| NumPy | 0.272 ms | `████` | **1.6–1.9×** faster |
+| maxsim-cpu | 0.540 ms | `████████` | **2.9–3.9×** faster |
 
 <sub>maxsim-cpu in its best case (f32, pre-normalized) · 1.6–1.9× vs NumPy · [method](eval/maxsim-bench/README.md)</sub>
 
