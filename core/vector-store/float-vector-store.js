@@ -27,7 +27,6 @@
 
 import { readFile, writeFile, rename } from 'fs/promises';
 import { existsSync } from 'fs';
-import { unlink } from 'fs/promises';
 import path from 'path';
 import { nativeRescoreKernels, scratchArray, scratchFloat64Query } from '../infrastructure/native-rescore.js';
 import { float32BatchDot } from '../infrastructure/simd-distance.js';
@@ -44,12 +43,6 @@ const HEADER_SIZE = 20;
  */
 export function float512StoreEnabled() {
   return process.env.SS_FIX_FLOAT512 === '1';
-}
-
-/** Delete a float store (`.bin` + `.ids.json`), so no stale copy is ever loaded. */
-export async function removeFloatStore(binPath) {
-  await unlink(binPath).catch(() => {});
-  await unlink(binPath.replace(/\.bin$/, '.ids.json')).catch(() => {});
 }
 
 export class FloatVectorStore {
