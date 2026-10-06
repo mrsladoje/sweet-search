@@ -54,7 +54,7 @@ export const ARTIFACT_THRESHOLDS = {
 
 import { BinaryHNSWIndex, int8SidecarCount } from '../vector-store/binary-hnsw-index.js';
 import { truncateForHNSW, fisherYatesShuffle, normalizedFloatToInt8, floatToBinary } from '../infrastructure/quantization.js';
-import { FloatVectorStore, getFloatStorePath, float512StoreEnabled, removeFloatStore } from '../vector-store/float-vector-store.js';
+import { FloatVectorStore, getFloatStorePath, float512StoreEnabled } from '../vector-store/float-vector-store.js';
 
 function hasVectorColumn(db, column) {
   try {
@@ -670,7 +670,6 @@ export async function buildFromCodebaseDb(codebaseDbPath = DB_PATHS.codebase, op
   // Float vector store for Stage 2.5 (streamed) — only when that stage is on.
   const floatStorePath = getFloatStorePath(hnswIndexPath);
   if (float512StoreEnabled()) await buildAndSaveFloatStoreFromDb(db, floatDimension, floatStorePath);
-  else await removeFloatStore(floatStorePath);
 
   db.close();
 
@@ -765,11 +764,9 @@ export async function updateArtifacts(newItems, removedIds = [], options = {}) {
   }
 
   // Rebuild float vector store from codebase.db (full rebuild, covers all
-  // entries) — only when Stage 2.5 is on; otherwise drop any old copy.
+  // entries) — only when Stage 2.5 is on.
   const floatStorePath = getFloatStorePath(hnswIndexPath);
-  if (!float512StoreEnabled()) {
-    await removeFloatStore(floatStorePath);
-  } else try {
+  if (float512StoreEnabled()) try {
     const Database = (await import('better-sqlite3')).default;
     const { applyReadPragmas } = await import('../infrastructure/db-utils.js');
     const db = new Database(DB_PATHS.codebase, { readonly: true });

@@ -156,7 +156,7 @@ building our cascade on their kernels would be slower and not better.
 - **Float-512 stage off** (`SS_FIX_FLOAT512=1` restores it): the blend's 20%
   base uses the int8 score on the same 50-candidate pool. The float-512
   store is not loaded, and (follow-up commit) neither the indexer nor the
-  incremental maintainer writes it; an old copy is deleted. That saves about
+  incremental maintainer writes it. That saves about
   308 MB of disk and RAM at 157k vectors.
 - Tried and dropped: int8 over all 1,000 candidates → 768-d on the top 50
   with no blend. +0.17 to +0.67 pp vector-only MRR on dev, but +0.03 pp

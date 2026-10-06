@@ -271,22 +271,17 @@ describe('G2 flushFloatStore (E.1 tick-finalize)', () => {
 });
 
 describe('float-512 store off by default (SS_FIX_FLOAT512 unset)', () => {
-  it('flushFloatStore and maintainFloatStore write nothing and remove an old store', async () => {
+  it('flushFloatStore and maintainFloatStore write nothing', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'g2-float-off-'));
     const saved = process.env.SS_FIX_FLOAT512;
     try {
       const binPath = join(dir, 'codebase-binary-hnsw.idx');
       const floatPath = getFloatStorePath(binPath);
-      const old = new FloatVectorStore();
-      old.build([{ id: 'stale', vector: Float32Array.from({ length: 8 }, () => 0.3) }], 8);
-      await old.save(floatPath);
-      expect(existsSync(floatPath)).toBe(true);
       delete process.env.SS_FIX_FLOAT512;
       const upserts = [{ id: 'a', vector: Float32Array.from({ length: 8 }, () => 0.1) }];
       const r = await flushFloatStore({ binaryHnswPath: binPath, upserts, removeIds: [], binaryVectorsBefore: 0, dimension: 8 });
       expect(r.saved).toBe(false);
       expect(existsSync(floatPath)).toBe(false);
-      expect(existsSync(floatPath.replace(/\.bin$/, '.ids.json'))).toBe(false);
       await maintainFloatStore(binPath, { upserts, removeIds: [], binaryVectorsBefore: 0, dimension: 8 });
       expect(existsSync(floatPath)).toBe(false);
     } finally {
