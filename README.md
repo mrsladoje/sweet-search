@@ -254,19 +254,19 @@ settings file may remain as `{}`.
 
 ## 📊 Benchmarks
 
-We measure sweet-search four ways; from how much it helps a real agent, down to raw engine throughput:
+We measure sweet-search four ways, from how much it helps a real agent, down to raw engine throughput:
 
 <table>
 <tr>
 <td width="50%" valign="top">
 
-🤖 **① [Code-retrieval](#bench-code-retrieval)** *(agent-in-the-loop)*<br>
+🤖 **① [Code-retrieval](#bench-code-retrieval)**<br>
 <sub>Does it make a coding agent **cheaper at equal accuracy** when it searches your repo?</sub>
 
 </td>
 <td width="50%" valign="top">
 
-🛠️ **② [Task-completion](#bench-task-completion)** *(frozen held-out)*<br>
+🛠️ **② [Task-completion](#bench-task-completion)**<br>
 <sub>Does cheaper, denser context **compound** across multi-step engineering tasks? 200 *SWE-rebench* tasks.</sub>
 
 </td>
@@ -274,7 +274,7 @@ We measure sweet-search four ways; from how much it helps a real agent, down to 
 <tr>
 <td width="50%" valign="top">
 
-📄 **③ [Academic IR](#bench-paper-type)** *(full corpus)*<br>
+📄 **③ [Academic IR](#bench-paper-type)**<br>
 <sub>The standard academic code-retrieval suites (GCSN, M2CRB, CoSQA…), full-corpus MRR@10.</sub>
 
 </td>
