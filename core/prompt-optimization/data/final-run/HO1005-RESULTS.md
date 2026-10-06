@@ -21,6 +21,35 @@ the run ended). The "MIXED CODE" lines in the report below are that provenance o
 Cache fairness: all Claude steps ok (deterministic check); Codex ok; opencode WARNING every rep (shipped cache-key
 plugin vs stock opencode — a product difference; see cost without cache).
 
+## BH correction — held-out ho1005, 5 cells × 4 metrics = 20 tests, q = 0.05, B = 20000, seed 42
+
+| Cell | Metric | n | Sweet − native (rel) | 95% CI (rel) | p | BH q | |
+|---|---|---|---|---|---|---|---|
+| cc-sonnet55-high | score | 200 | +2.4% | [+1.1%, +3.7%] | <0.001 | <0.001 | **sig** |
+| cc-sonnet55-high | costBilled | 200 | -7.6% | [-9.9%, -5.2%] | <0.001 | <0.001 | **sig** |
+| cc-sonnet55-high | costNoCache | 200 | -16.6% | [-19.3%, -13.8%] | <0.001 | <0.001 | **sig** |
+| cc-sonnet55-high | calls | 200 | -14.1% | [-17.7%, -10.3%] | <0.001 | <0.001 | **sig** |
+| cc-opus55-medium | score | 200 | +0.2% | [-1.1%, +1.6%] | 0.743 | 0.782 |  |
+| cc-opus55-medium | costBilled | 200 | -9.5% | [-11.4%, -7.6%] | <0.001 | <0.001 | **sig** |
+| cc-opus55-medium | costNoCache | 200 | -7.1% | [-10.0%, -4.3%] | <0.001 | <0.001 | **sig** |
+| cc-opus55-medium | calls | 200 | -22.8% | [-25.8%, -19.8%] | <0.001 | <0.001 | **sig** |
+| cc-opus55-high | score | 200 | -0.5% | [-1.9%, +1.0%] | 0.466 | 0.518 |  |
+| cc-opus55-high | costBilled | 200 | -9.5% | [-11.4%, -7.6%] | <0.001 | <0.001 | **sig** |
+| cc-opus55-high | costNoCache | 200 | -7.4% | [-10.2%, -4.5%] | <0.001 | <0.001 | **sig** |
+| cc-opus55-high | calls | 200 | -22.8% | [-25.7%, -19.8%] | <0.001 | <0.001 | **sig** |
+| oc-sol61-high | score | 200 | -2.8% | [-4.4%, -1.2%] | <0.001 | <0.001 | **sig** |
+| oc-sol61-high | costBilled | 200 | -50.2% | [-54.4%, -45.6%] | <0.001 | <0.001 | **sig** |
+| oc-sol61-high | costNoCache | 200 | -25.4% | [-34.6%, -15.2%] | <0.001 | <0.001 | **sig** |
+| oc-sol61-high | calls | 200 | -33.1% | [-38.0%, -27.7%] | <0.001 | <0.001 | **sig** |
+| codex-sol61-high | score | 200 | -2.5% | [-4.0%, -1.2%] | <0.001 | <0.001 | **sig** |
+| codex-sol61-high | costBilled | 200 | -7.7% | [-10.9%, -4.3%] | <0.001 | <0.001 | **sig** |
+| codex-sol61-high | costNoCache | 200 | +22.9% | [+18.4%, +27.5%] | <0.001 | <0.001 | **sig** |
+| codex-sol61-high | calls | 200 | +0.6% | [-3.7%, +5.2%] | 0.788 | 0.788 |  |
+
+17 of 20 tests significant after BH at q = 0.05.
+
+Computed by `bh-heldout.mjs` (paired, question-clustered, tier-stratified bootstrap; two-sided p).
+
 ## Full report (analyze.mjs --heldout)
 
 # Final comparison (ho1005) — before vs after vs native
