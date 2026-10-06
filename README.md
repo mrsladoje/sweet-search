@@ -292,27 +292,17 @@ We measure sweet-search four ways — from how much it helps a real agent down t
 <a id="bench-code-retrieval"></a>
 ### 🤖 1. Code-retrieval benchmarks — *the agent-in-the-loop test*
 
-One variable changes: **how the agent searches a real repository.**
-
-- 🍬 **sweet-search:** the model gets our [tuned system prompt](#-the-system-prompt) and search tools.
-- 🐌 **Native:** the same model uses its built-in grep-and-read loop.
-
-Same questions, same judges, same harness version, paired question by question.
+One variable changes: **how the agent searches** — 🍬 sweet-search's [tuned prompt](#-the-system-prompt) and tools vs. 🐌 the same model's native grep-and-read loop.
 
 <div align="center">
 
 <img src="assets/code-retrieval-stats.svg" alt="Held-out results, sweet-search vs native, 200 questions, 3 reps. Claude Code with Sonnet 5.5 high: accuracy +2.4%, billed cost −7.6%. Claude Code with Opus 5.5 medium and high: accuracy +0.2% and −0.5% (not significant), billed cost −9.5%, tool calls −22.8%. opencode with Sol 6.1: accuracy −2.8%, billed cost −50.2%. Codex with Sol 6.1: accuracy −2.5%, billed cost −7.7%, tool calls equal." width="100%" />
 
-<sub>held-out set · 200 questions · 11 repos in 11 languages · 3 reps per arm · 6,000 rollouts · run once, aggregates only</sub>
+| 🔒 Split | 📝 Questions | 📦 Repos | 🔁 Reps | ⚖️ Scoring | 🧪 Design |
+|:---:|:---:|:---:|:---:|:---:|:---:|
+| held-out, run once | 200 · easy + hard | 11 repos, 11 languages | 3 per arm | 3-judge median | paired, pre-registered |
 
 </div>
-
-**The headline:**
-
-- 🟣 **Claude Code: equal or better accuracy, and cheaper on every model.** Sonnet 5.5 is **+2.4%** more accurate. Opus 5.5 is equal at medium and at high reasoning. The bill is **7.6–9.5%** lower, with **14–23%** fewer tool calls.
-- 🐚 **opencode + Sol 6.1: half the bill.** **−50%** billed cost and **−33%** tool calls, for **−2.8%** accuracy.
-- 🤖 **Codex + Sol 6.1: a small saving, from caching only.** **−7.7%** billed cost, for **−2.5%** accuracy. Without the prompt cache it costs **+23%** more, so the saving depends on cache hits.
-- 📏 **17 of 20 results survive multiple-comparison correction** (Benjamini–Hochberg, q = 0.05). The 3 that do not: both Opus accuracy deltas (equal) and Codex tool calls (+0.6%).
 
 <details>
 <summary><b>📋 Full per-harness results & how it's measured</b></summary>
@@ -320,6 +310,8 @@ Same questions, same judges, same harness version, paired question by question.
 <br/>
 
 Each value is sweet-search minus native, relative to native, pooled over 200 questions. Brackets hold the 95% interval. **Bold** = significant after Benjamini–Hochberg.
+
+📏 **17 of 20 results survive multiple-comparison correction** (Benjamini–Hochberg, q = 0.05). The 3 that do not: both Opus accuracy deltas (equal) and Codex tool calls (+0.6%).
 
 | 🧰 Harness + model | 🎯 Accuracy | 💰 Billed cost | 🧾 Cost without cache | 🔧 Tool calls | ⏱️ Wall time |
 |---|---:|---:|---:|---:|---:|
