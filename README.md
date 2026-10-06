@@ -261,7 +261,7 @@ We measure sweet-search four ways — from how much it helps a real agent down t
 <td width="50%" valign="top">
 
 🤖 **① [Code-retrieval](#bench-code-retrieval)** *(agent-in-the-loop)*<br>
-<sub>Does it make a real coding agent **cheaper and more useful** when it searches your repo? Paired against each model's own grep-and-read loop.</sub>
+<sub>Does it make a real coding agent **cheaper at equal accuracy** when it searches your repo? 200 held-out questions, five model × harness cells, 6,000 paired rollouts.</sub>
 
 </td>
 <td width="50%" valign="top">
@@ -297,48 +297,54 @@ One variable changes: **how the agent searches a real repository.**
 - 🍬 **sweet-search:** the model gets our [tuned system prompt](#-the-system-prompt) and search tools.
 - 🐌 **Native:** the same model uses its built-in grep-and-read loop.
 
-Same tasks, same judge, paired probe-for-probe.
+Same questions, same judges, same harness version, paired question by question.
 
 <div align="center">
 
-<img src="assets/code-retrieval-stats.svg" alt="Five sealed model-by-harness profiles comparing sweet-search with native grep-and-read on cost, tool calls, useful content, and accuracy" width="100%" />
+<img src="assets/code-retrieval-stats.svg" alt="Held-out results, sweet-search vs native, 200 questions, 3 reps. Claude Code with Sonnet 5.5 high: accuracy +2.4%, billed cost −7.6%. Claude Code with Opus 5.5 medium and high: accuracy equal, billed cost −9.5%, tool calls −22.8%. opencode with Sol 6.1: accuracy −2.8%, billed cost −50.2%. Codex with Sol 6.1: accuracy −2.5%, billed cost −7.7%, cost without cache +22.9%." width="100%" />
 
-<sub>sealed vault · exact paired results · five representative profiles · full 11-cell matrix and held-out/OOD replication below</sub>
+<sub>held-out set · 200 questions · 11 repos in 11 languages · 3 reps per arm · 6,000 rollouts · run once, aggregates only</sub>
 
 </div>
 
-**The headline, in four claims:**
+**The headline:**
 
-- 💰 **Cheaper where the agent thrashes** — up to **−34%** realized cost on Codex; **−18 to −32%** across the GPT-5.5 / opencode / bare-API harnesses.
-- 🔧 **Fewer round-trips** — up to **−56%** tool calls, significant on **9 of 11** cells.
-- ✨ **More useful per response** — **+0.18 to +0.31** on a 5-dimension usefulness score, and *still* denser when length-matched (significant on **8 of 11** cells).
-- 🎯 **Accuracy held — and lifted on the weak** — a statistical tie on flagship models (saturated at 0.94–0.99), and **+3 pp** (up to **+8 pp** out-of-distribution) on weaker models like GLM-5.1 and DeepSeek.
+- 🟣 **Claude Code: equal or better accuracy, and cheaper on every model.** Sonnet 5.5 is **+2.4%** more accurate. Opus 5.5 is equal at medium and at high reasoning. The bill is **7.6–9.5%** lower, with **14–23%** fewer tool calls.
+- 🐚 **opencode + Sol 6.1: half the bill.** **−50%** billed cost and **−33%** tool calls, for **−2.8%** accuracy.
+- 🤖 **Codex + Sol 6.1: a small saving, from caching only.** **−7.7%** billed cost, for **−2.5%** accuracy. Without the prompt cache it costs **+23%** more, so the saving depends on cache hits.
+- 📏 **17 of 20 results survive multiple-comparison correction** (Benjamini–Hochberg, q = 0.05). The 3 that do not: both Opus accuracy deltas (equal) and Codex tool calls (+0.6%).
 
 <details>
 <summary><b>📋 Full per-harness results & how it's measured</b></summary>
 
 <br/>
 
-The win is **harness-adaptive**: where the native loop is disciplined (Claude Code) it shows up as *denser, more useful context per token*; where it thrashes (Codex floods 30k+ tokens of its own grep output into context) it shows up as a *large cost and tool-call cut*. Either way, **final-answer accuracy never significantly regresses**.
+Each value is sweet-search minus native, relative to native, pooled over 200 questions. Brackets hold the 95% interval. **Bold** = significant after Benjamini–Hochberg.
 
-| 🧰 Native agent harness | 💰 Realized cost | 🔧 Tool calls | ✨ Useful content / response | 🎯 Final accuracy |
-|---|---:|---:|---:|:--|
-| 🤖 **Codex** (GPT-5.5) | **−30 to −34%** | **−44 to −56%** | +0.06 → +0.17 ↑ | tie *(saturated)* |
-| 🐚 **opencode** (GPT-5.5 / GLM-5.1) | **−18 to −22%** | −15 to −49% | **+0.23 to +0.31** ↑ | tie |
-| 🔌 **bare API** (GPT-5.5 / GLM / DeepSeek) | −15 to −32% ᵃ | −15 to −33% | +0.08 to +0.24 ↑ | tie · **+3 pp on weak models** |
-| 🟣 **Claude Code** (Sonnet / Opus) | −10% to +14% ᵇ | −5 to −33% | +0.18 to +0.29 ↑ | tie |
+| 🧰 Harness + model | 🎯 Accuracy | 💰 Billed cost | 🧾 Cost without cache | 🔧 Tool calls | ⏱️ Wall time |
+|---|---:|---:|---:|---:|---:|
+| 🟣 **Claude Code** + Sonnet 5.5 high | **+2.4%** [+1.1, +3.7] | **−7.6%** [−9.9, −5.2] | **−16.6%** | **−14.1%** | −5.2% |
+| 🟣 **Claude Code** + Opus 5.5 medium | +0.2% [−1.1, +1.6] | **−9.5%** [−11.4, −7.6] | **−7.1%** | **−22.8%** | −9.1% |
+| 🟣 **Claude Code** + Opus 5.5 high | −0.5% [−1.9, +1.0] | **−9.5%** [−11.4, −7.6] | **−7.4%** | **−22.8%** | −6.9% |
+| 🐚 **opencode** + Sol 6.1 high | **−2.8%** [−4.4, −1.2] | **−50.2%** [−54.4, −45.6] | **−25.4%** | **−33.1%** | −32.1% |
+| 🤖 **Codex** + Sol 6.1 high | **−2.5%** [−4.0, −1.2] | **−7.7%** [−10.9, −4.3] | **+22.9%** | +0.6% | +17.7% |
 
-<sub>↑ "Useful content / response" is the per-response delta on a 5-dimension usefulness score (answer-grounding · workable-code · navigability · edit-locality · sufficiency), 0–1 scale. "tie" = final-answer correctness statistically indistinguishable (saturated in the 0.94–0.99 band on flagships).<br>ᵃ the two cheapest bare models cost fractions of a cent either way (GLM +27% of $0.008; DeepSeek −15% of $0.004). ᵇ Opus −5/−10%; Sonnet +8–14%, which is ≈1¢ on a flat-rate subscription for a richer answer.</sub>
+<sub>Accuracy, sweet / native: Sonnet 0.899 / 0.879 · Opus medium 0.891 / 0.889 · Opus high 0.906 / 0.911 · opencode 0.869 / 0.893 · Codex 0.858 / 0.880. Wall time was not part of the pre-registered test family; its intervals are in the results file.</sub>
 
-**Denser, not just longer.** The usefulness lift survives **length-matching** — comparing sweet-search and native responses of *equal token length*, sweet-search's content is significantly higher on **8 of 11** cells. The validated single-number usefulness composite (grounding × content × density) is significant on **all 11** sealed cells.
+**Easy vs hard questions.** The savings hold on both tiers but shrink on hard questions. Opus 5.5 high: billed cost −11.0% (easy) and −8.5% (hard). Its accuracy delta is −0.1% (easy) and −1.1% (hard), neither significant. On Codex, the billed saving is −18.2% on easy questions and 0.0% on hard ones.
 
-- **What's being compared:** the installed `sweet-search` agent prompt + tools vs. the *same model* using only its built-in file-reading and shell-grep tools. Not a different model — the same model, with and without sweet-search.
-- **Design:** 11 model×harness cells. **Sealed vault** (n=60/arm, the pre-registered primary) opened once; plus **held-out** (n=30) and **out-of-distribution** (n=40) sets for generalization. Stratified, fixed-seed splits.
-- **Judging:** 3-judge panel (DeepSeek-V4-flash + Gemini-3.1-flash-lite + MiniMax-M2.7), paired by probe, 20k-sample bootstrap CIs, **Benjamini–Hochberg FDR** multiplicity correction across each metric family. We report family-level survival counts, never a single cherry-picked cell.
-- **What survives FDR (vault):** useful-content **10/11**, density-composite **11/11**, length-matched content **8/11**, fewer-tool-calls **9/11**. Generalization (held-out + OOD): content **17–18/20**, fewer calls **14/20**.
-- **The token fact that drives everything:** sweet-search's footprint is nearly constant (~1.3k–3.3k tokens) because the tool responses are capped; native's footprint is whatever the model decides to grep — up to **37k tokens** on Codex. That single fact is what drives the cost and tool-call gaps.
-- **Honest caveats we keep attached:** (1) accuracy **ties** on flagship models — it is *not* an accuracy win there, it's saturated; the accuracy gains are real only on weaker models. (2) The two weakest cells for *length-matched* density (Codex-low, DeepSeek) are correct-sign but underpowered — Codex's responses are so token-divergent that too few equal-length pairs exist to reach significance, and DeepSeek is simply under-powered. Those are honest non-victories, not wins.
-- Full methodology and per-cell tables: [`docs/PHASE7.md`](docs/PHASE7.md).
+**Why the harnesses differ.** Claude Code's native loop is already disciplined, so the gain is fewer tool calls at equal accuracy. opencode's native loop thrashes (11.2 calls per question), so the cut is large. On Codex, sweet-search sends more input tokens, but a larger share of them hit the cache, because sweet-search keeps the stock Codex prompt unchanged as the cached prefix.
+
+- **What's being compared:** the installed `sweet-search` prompt and tools vs. the *same model* with only its built-in file-reading and shell-grep tools. Both arms use the same harness version (Claude Code 2.1.281, codex-cli 0.159.2, opencode 1.18.4).
+- **Questions:** the r3 benchmark, pre-registered before any scored run. 11 public repos that we never used in development: jj (Rust), dgraph (Go), tortoise-orm (Python), typedoc (TypeScript), zipkin (Java), Ocelot (C#), plus okhttp (Kotlin), sequel (Ruby), composer (PHP), drogon (C++) and GRDB (Swift) on the hard tier. Question types: multi-hop, cross-layer, call chains, completeness, enforcement, decoys, and **negatives** (the asked-for thing does not exist).
+- **How the questions were built:** agents drafted them with plain tools, not sweet-search. Two non-Claude models verified each gold fact against the code, and Opus agents audited the result. Hard questions also passed a closed-book screen: we dropped any question that models could answer without the code.
+- **Split:** stratified by repo and question type, seed 42. We tuned on the dev split only. The held-out split (103 easy + 97 hard) ran once, at the end, and we looked at aggregates only.
+- **Scoring:** the median of a 3-judge panel (DeepSeek-V4-flash, Gemini-3.1-flash-lite, MiniMax), graded against the gold facts.
+- **Cost:** *billed* = tokens × list price, with cache reads and writes priced as billed. *Without cache* = every input token at the full price. That shows how much of the saving comes from caching.
+- **Statistics:** the unit is the question (mean over 3 reps). Paired, question-clustered bootstrap stratified by tier (B = 20,000, seed 42). Benjamini–Hochberg at q = 0.05 across the pre-registered 5 cells × 4 metrics.
+- **Validity checks:** 6,000 rollouts, 0 failed. Cache-fairness checks passed for Claude Code and Codex. opencode shows a warning because sweet-search ships a cache-key plugin and stock opencode does not. That is a product difference, so "cost without cache" is the fair comparison there (−25.4%).
+- **Honest caveats:** (1) On Sol 6.1, sweet-search costs about 2.5–3% accuracy. (2) The Codex saving exists only with the prompt cache. (3) The index was built from one commit (`65c4f20d`). Commits that landed during the run did not change the text or tools the agent sees.
+- **Reproduction:** results, intervals and the correction script are in [`core/prompt-optimization/data/final-run/`](core/prompt-optimization/data/final-run/) (`HO1005-RESULTS.md`, `bh-heldout.mjs`, `questions-heldout.json`). The earlier sealed-vault study on older models is in [`docs/PHASE7.md`](docs/PHASE7.md).
 
 </details>
 

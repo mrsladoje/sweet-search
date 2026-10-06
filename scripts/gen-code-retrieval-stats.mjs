@@ -1,172 +1,77 @@
 #!/usr/bin/env node
-// Generates assets/code-retrieval-stats.svg — a benchmark headline card with a
-// pixelated dark-blue border (banner-style stepped rounded corners) and faint
-// pixel-candy decorations, on a light background. Headline numbers are a clean
-// readable sans (NOT pixelated); only the border + decorations are pixel art.
+// Generates assets/code-retrieval-stats.svg — the held-out code-retrieval card (ho1005):
+// 5 model × harness cells, sweet-search vs native, 200 questions × 3 reps.
+// Source: core/prompt-optimization/data/final-run/HO1005-RESULTS.md (aggregates only).
 //
 // Re-run after editing stats:  node scripts/gen-code-retrieval-stats.mjs
-// then compress:               npx svgo --config scripts/svgo.stats.mjs assets/code-retrieval-stats.svg
+// then compress (lossless):    npx svgo --config scripts/svgo.stats.mjs assets/code-retrieval-stats.svg
 import { writeFileSync } from 'node:fs';
 
-const W = 920, H = 150;
+const W = 920, H = 392;
+// value colour classes: a = accuracy win, c = cost win, k = calls win, x = not significant after BH, w = significant, worse than native
+const GOOD = { acc: 'a', billed: 'c', nocache: 'c', calls: 'k' };
 
-// ---- palette --------------------------------------------------------------
-const BG = '#f3f5fb';          // light card interior
-const BORDER = '#1f2d6b';      // dark blue pixel border
-const BORDER_HI = '#3b4da0';   // subtle inner-edge highlight
-const CAPTION = '#94a3b8';
-const LABEL = '#5b6b87';
-// readable headline colors (candy hues, darkened to read on light bg)
-const C_GREEN = '#0e9f6e', C_PURPLE = '#7c3aed', C_AMBER = '#d97706', C_PINK = '#db2777';
-// soft candy hues for background decoration
-const SOFT = ['#ff5ba3', '#a78bfa', '#ffc247', '#3fd08f', '#5a73dc', '#fb7185'];
-
-// ---- helpers --------------------------------------------------------------
-// merge horizontal runs of '1' in a grid -> rect strings (crispEdges friendly)
-function gridRects(grid, ox, oy, cs) {
-  const out = [];
-  for (let r = 0; r < grid.length; r++) {
-    const row = grid[r];
-    let c = 0;
-    while (c < row.length) {
-      if (row[c] === '1') {
-        let run = 1;
-        while (c + run < row.length && row[c + run] === '1') run++;
-        out.push(`<rect width="${run * cs}" height="${cs}" x="${ox + c * cs}" y="${oy + r * cs}"/>`);
-        c += run;
-      } else c++;
-    }
-  }
-  return out.join('');
-}
-
-// pixelated rounded-rect silhouette as horizontal bands.
-// corner = inset (px) applied to the top N bands (each `step` tall), mirrored at bottom.
-function pixelRoundRect(x, y, w, h, step, corner) {
-  const n = corner.length;
-  const bands = [];
-  for (let i = 0; i < n; i++) {                       // top corner bands
-    const ins = corner[i];
-    bands.push(`<rect x="${x + ins}" y="${y + i * step}" width="${w - 2 * ins}" height="${step}"/>`);
-  }
-  const midY = y + n * step;
-  const midH = h - 2 * n * step;
-  bands.push(`<rect x="${x}" y="${midY}" width="${w}" height="${midH}"/>`); // straight body
-  for (let i = 0; i < n; i++) {                       // bottom corner bands (mirror)
-    const ins = corner[n - 1 - i];
-    bands.push(`<rect x="${x + ins}" y="${y + h - (n - i) * step}" width="${w - 2 * ins}" height="${step}"/>`);
-  }
-  return bands.join('');
-}
-
-// ---- pixel candy sprites (grid strings, '1' = fill) -----------------------
-const CANDY = {
-  bonbon: [   // wrapped candy / bow-tie
-    '100000001',
-    '110111011',
-    '111111111',
-    '110111011',
-    '100000001',
-  ],
-  round: [    // peppermint blob
-    '00111100',
-    '01111110',
-    '11111111',
-    '11111111',
-    '01111110',
-    '00111100',
-  ],
-  lolly: [    // lollipop: round head + stick
-    '01110',
-    '11111',
-    '11111',
-    '01110',
-    '00100',
-    '00100',
-    '00100',
-  ],
-  drop: [     // gumdrop
-    '00100',
-    '01110',
-    '11111',
-    '11111',
-    '11111',
-  ],
-};
-
-function candy(type, x, y, cs, color, op) {
-  return `<g fill="${color}" opacity="${op}">${gridRects(CANDY[type], x, y, cs)}</g>`;
-}
-
-// ---- build ----------------------------------------------------------------
-const STEP = 6;                 // pixel grid for the border staircase
-const CORNER = [18, 12, 6];     // 3-step pixelated rounded corner
-const T = STEP;                 // border thickness
-
-// outer dark-blue silhouette, then light interior inset by T -> leaves the border
-const outer = pixelRoundRect(0, 0, W, H, STEP, CORNER);
-// lighter-blue ring inset by T, then the light fill inset by 2T -> two-tone pixel border
-const hiRing = pixelRoundRect(T, T, W - 2 * T, H - 2 * T, STEP, CORNER);
-const fill = pixelRoundRect(2 * T, 2 * T, W - 4 * T, H - 4 * T, STEP, CORNER);
-
-// faint background candies — spread out, low opacity, behind the text
-const decos = [
-  ['round',   40,  34, 5, SOFT[2], 0.14],
-  ['bonbon', 150,  98, 4, SOFT[0], 0.12],
-  ['drop',   268,  30, 5, SOFT[3], 0.13],
-  ['lolly',  300, 100, 4, SOFT[1], 0.11],
-  ['bonbon', 430,  96, 5, SOFT[4], 0.10],
-  ['round',  500,  28, 4, SOFT[5], 0.13],
-  ['drop',   636,  98, 5, SOFT[1], 0.12],
-  ['lolly',  690,  26, 4, SOFT[3], 0.12],
-  ['round',  812,  96, 5, SOFT[0], 0.12],
-  ['bonbon', 858,  30, 4, SOFT[2], 0.12],
-  ['drop',    98,  98, 4, SOFT[1], 0.10],
-  ['lolly',  560, 100, 4, SOFT[5], 0.10],
-].map(([t, x, y, cs, col, op]) => candy(t, x, y, cs, col, op)).join('');
-
-// tiny solid candy "sprinkles" tucked into the four corners
-const sprinkles = [
-  [22, 22, C_PINK], [W - 28, 22, C_AMBER],
-  [22, H - 28, C_PURPLE], [W - 28, H - 28, C_GREEN],
-].map(([x, y, c]) => `<rect width="6" height="6" x="${x}" y="${y}" fill="${c}" opacity="0.85"/>`).join('');
-
-// dividers: light pixel dashes between cells
-let dividers = '';
-for (const dx of [230, 460, 690]) {
-  for (let yy = 46; yy <= 104; yy += 12) {
-    dividers += `<rect width="2" height="6" x="${dx - 1}" y="${yy}"/>`;
-  }
-}
-
-const cells = [
-  { cx: 115, num: '−34%',  label: 'LOWER COST · CODEX',     color: C_GREEN },
-  { cx: 345, num: '−56%',  label: 'FEWER TOOL CALLS',           color: C_PURPLE },
-  { cx: 575, num: '1.5–2×', label: 'USEFUL CONTEXT / RESP', color: C_AMBER },
-  { cx: 805, num: '+3pp',       label: 'ACCURACY · WEAK MODELS', color: C_PINK },
+// sig: 'g' = significant win, 'b' = significant loss, 'n' = not significant (BH q = 0.05)
+const rows = [
+  { model: 'SONNET 5.5 HIGH', harness: 'CLAUDE CODE', bar: '#a78bfa',
+    acc: ['+2.4%', 'g', '89.9 / 87.9'], billed: ['−7.6%', 'g', '$0.059 / $0.064'],
+    nocache: ['−16.6%', 'g', '$0.254 / $0.305'], calls: ['−14.1%', 'g', '4.2 / 4.9'] },
+  { model: 'OPUS 5.5 MEDIUM', harness: 'CLAUDE CODE', bar: '#a78bfa',
+    acc: ['EQUAL', 'n', '+0.2% · 89.1 / 88.9'], billed: ['−9.5%', 'g', '$0.073 / $0.081'],
+    nocache: ['−7.1%', 'g', '$0.332 / $0.358'], calls: ['−22.8%', 'g', '3.0 / 3.9'] },
+  { model: 'OPUS 5.5 HIGH', harness: 'CLAUDE CODE', bar: '#a78bfa',
+    acc: ['EQUAL', 'n', '−0.5% · 90.6 / 91.1'], billed: ['−9.5%', 'g', '$0.081 / $0.089'],
+    nocache: ['−7.4%', 'g', '$0.364 / $0.393'], calls: ['−22.8%', 'g', '3.2 / 4.2'] },
+  { model: 'SOL 6.1 HIGH', harness: 'OPENCODE', bar: '#ffc247',
+    acc: ['−2.8%', 'b', '86.9 / 89.3'], billed: ['−50.2%', 'g', '$0.030 / $0.061'],
+    nocache: ['−25.4%', 'g', '$0.121 / $0.162'], calls: ['−33.1%', 'g', '7.5 / 11.2'] },
+  { model: 'SOL 6.1 HIGH', harness: 'CODEX', bar: '#3fd08f',
+    acc: ['−2.5%', 'b', '85.8 / 88.0'], billed: ['−7.7%', 'g', '$0.043 / $0.047'],
+    nocache: ['+22.9%', 'b', '$0.227 / $0.185'], calls: ['+0.6%', 'n', '4.4 / 4.4'] },
 ];
-const numbers = cells.map(c =>
-  `<text x="${c.cx}" y="80" fill="${c.color}" font-size="38" font-weight="800">${c.num}</text>`
-).join('');
-const labels = cells.map(c =>
-  `<text x="${c.cx}" y="104" fill="${LABEL}" font-size="12" letter-spacing="0.4">${c.label}</text>`
-).join('');
+const cols = [['acc', 330, 'ACCURACY'], ['billed', 480, 'BILLED COST'], ['nocache', 640, 'COST WITHOUT CACHE'], ['calls', 805, 'TOOL CALLS']];
 
-const aria = 'Code-retrieval headline: up to 34 percent lower cost on Codex, ' +
-  'up to 56 percent fewer tool calls, 1.5 to 2 times more useful context per response, ' +
-  'and plus 3 percentage points accuracy on weak models.';
+// pixelated rounded rect as one path: 3-step corners of `s` px, inset i
+const frame = (i, s = 6) => {
+  const x = i, y = i, w = W - 2 * i, h = H - 2 * i;
+  return `M${x + 3 * s} ${y}h${w - 6 * s}v${s}h${s}v${s}h${s}v${s}h${s}v${h - 6 * s}h-${s}v${s}h-${s}v${s}h-${s}v${s}H${x + 3 * s}v-${s}h-${s}v-${s}h-${s}v-${s}h-${s}V${y + 3 * s}h${s}v-${s}h${s}v-${s}h${s}z`;
+};
+const rect = (x, y, w, h) => `M${x} ${y}h${w}v${h}h-${w}z`;
+const T0 = 94, RH = 46, GAP = 49;
+const rowY = i => T0 + i * GAP;
+const colour = (k, s) => (s === 'g' ? GOOD[k] : s === 'b' ? 'w' : 'x');
 
-const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="100%" viewBox="0 0 ${W} ${H}" role="img" aria-label="${aria}" shape-rendering="crispEdges" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif">` +
-  `<g fill="${BORDER}">${outer}</g>` +
-  `<g fill="${BORDER_HI}">${hiRing}</g>` +
-  `<g fill="${BG}">${fill}</g>` +
-  decos +
-  sprinkles +
-  `<g fill="#ccd5ea">${dividers}</g>` +
-  `<g text-anchor="middle">` +
-  `<text x="${W / 2}" y="28" fill="${CAPTION}" font-size="11" letter-spacing="1.2">SWEET-SEARCH vs. NATIVE GREP-AND-READ · PAIRED · FDR-CONTROLLED · 11 CELLS</text>` +
-  numbers + labels +
-  `</g></svg>`;
+let body = '';
+rows.forEach((r, i) => {
+  const y = rowY(i);
+  body += `<text x="51" y="${y + 20}" class="n">${r.model}</text><text x="51" y="${y + 37}" class="l">${r.harness} · n=200 × 3</text>`;
+  for (const [k, cx] of cols) {
+    const [v, s, sub] = r[k];
+    body += `<text x="${cx}" y="${y + 23}" class="v ${colour(k, s)}">${v}</text><text x="${cx}" y="${y + 39}" class="s">${sub}</text>`;
+  }
+});
+
+const aria = 'Held-out code-retrieval results, sweet-search versus native grep-and-read, 200 questions, 3 reps. ' +
+  'Claude Code: Sonnet 5.5 high accuracy plus 2.4 percent, billed cost minus 7.6 percent; Opus 5.5 medium and high accuracy equal, billed cost minus 9.5 percent, tool calls minus 22.8 percent. ' +
+  'opencode with Sol 6.1: accuracy minus 2.8 percent, billed cost minus 50.2 percent. Codex with Sol 6.1: accuracy minus 2.5 percent, billed cost minus 7.7 percent, cost without cache plus 22.9 percent.';
+
+const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${aria}" fill="#1f2d6b" font-family="-apple-system,BlinkMacSystemFont,Segoe UI,Helvetica,Arial,Apple Color Emoji,Segoe UI Emoji,sans-serif" font-weight="800" shape-rendering="crispEdges" text-anchor="middle">` +
+  `<style>.v{font-size:22px}.s,.h,.l{fill:#65738d;font-size:10.5px;font-weight:700;letter-spacing:.65px}.s{font-size:9.5px;font-weight:600;letter-spacing:0}.l{font-weight:600;letter-spacing:.4px}.n,.l{text-anchor:start}.n{font-size:15.5px}.a{fill:#db2777}.c{fill:#0e9f6e}.k{fill:#7c3aed}.x{fill:#7b88a3}.w{fill:#c2410c}</style>` +
+  `<path d="${frame(0)}"/><path fill="#3b4da0" d="${frame(6)}"/><path fill="#f3f5fb" d="${frame(12)}"/>` +
+  `<path fill="#db2777" opacity=".85" d="${rect(22, 22, 6, 6)}"/><path fill="#d97706" opacity=".85" d="${rect(892, 22, 6, 6)}"/>` +
+  `<path fill="#7c3aed" opacity=".85" d="${rect(22, H - 28, 6, 6)}"/><path fill="#0e9f6e" opacity=".85" d="${rect(892, H - 28, 6, 6)}"/>` +
+  `<path fill="#ffc247" opacity=".14" d="M44 39h12v4H44zm-4 4h20v4H40zm-4 4h28v4H36zm4 4h20v4H40zm4 4h12v4H44z"/>` +
+  `<path fill="#ff5ba3" opacity=".12" d="M858 39h4v4h-4zm24 0h4v4h-4zm-24 4h8v4h-8zm8 4h8v4h-8zm8-4h8v4h-8zm-16 8h28v4h-28z"/>` +
+  `<g font-size="18"><text x="300" y="48">🍬 sweet-search</text><text x="460" y="48" fill="#7b88a3" font-size="14">vs.</text><text x="635" y="48">🐌 native grep-and-read</text></g>` +
+  `<text x="460" y="66" fill="#7b88a3" font-size="10.5" font-weight="400" letter-spacing="1.05">HELD-OUT · 200 QUESTIONS · 11 REPOS · 3 REPS · 6,000 PAIRED ROLLOUTS</text>` +
+  `<g class="h"><text x="50" y="86" text-anchor="start">MODEL × HARNESS</text>${cols.map(([, cx, t]) => `<text x="${cx}" y="86">${t}</text>`).join('')}</g>` +
+  `<path fill="#fff" d="${[0, 2, 4].map(i => rect(35, rowY(i), 850, RH)).join('')}"/>` +
+  `<path fill="#e9edf7" d="${[1, 3].map(i => rect(35, rowY(i), 850, RH)).join('')}"/>` +
+  rows.map((r, i) => `<path fill="${r.bar}" d="${rect(35, rowY(i), 6, RH)}"/>`).join('') +
+  `<path fill="#ccd5ea" d="${[255, 405, 555, 725].map(x => rect(x, T0, 2, rowY(4) + RH - T0)).join('')}"/>` +
+  body +
+  `<text x="460" y="${rowY(4) + RH + 22}" class="s" fill="#7b88a3">sweet − native, relative · small print = sweet / native · coloured = significant after Benjamini–Hochberg (17 of 20, q = 0.05) · grey = not significant · orange = worse</text>` +
+  `</svg>`;
 
 writeFileSync(new URL('../assets/code-retrieval-stats.svg', import.meta.url), svg + '\n');
 console.log('wrote assets/code-retrieval-stats.svg', svg.length, 'bytes');
