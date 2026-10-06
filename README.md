@@ -298,8 +298,8 @@ We measure sweet-search four ways — from how much it helps a real agent down t
 
 <img src="assets/code-retrieval-stats.svg" alt="Held-out results, sweet-search vs native, 200 questions, 3 reps. Claude Code with Sonnet 5.5 high: accuracy +2.4%, billed cost −7.6%. Claude Code with Opus 5.5 medium and high: accuracy +0.2% and −0.5% (not significant), billed cost −9.5%, tool calls −22.8%. opencode with Sol 6.1: accuracy −2.8%, billed cost −50.2%. Codex with Sol 6.1: accuracy −2.5%, billed cost −7.7%, tool calls equal." width="100%" />
 
-</br>
-</br>
+<br>
+<br>
 
 | 🔒 Split | 📝 Questions | 🧩 Question types | 📦 Repos | 🔁 Reps | ⚖️ Scoring |
 |:---:|:---:|:---:|:---:|:---:|:---:|
@@ -442,7 +442,7 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 <details>
 <summary><b>Per-benchmark notes & methodology</b></summary>
 
-</br>  
+<br>  
   
 | Benchmark | Score | Notes |
 |---|---|---|
