@@ -33,30 +33,6 @@ function resolveManifestVectorsPath(dbPath, manifest = readAdjacentManifest(dbPa
 // SS_FIX_EMBED_CACHE=0 disables it.
 const EMBEDDING_CACHE_MAX_VECTORS = Number.parseInt(process.env.SWEET_SEARCH_EMBEDDING_CACHE_MAX_VECTORS || '', 10) || 16384;
 
-/**
- * Pack a resident id → Float32Array map into one contiguous array when every
- * vector has the same non-zero width, re-pointing the map at the packed rows
- * (same values, stored once). Returns { data, dim, rowOf } or null.
- */
-function flattenEmbeddings(map) {
-  let dim = 0;
-  for (const v of map.values()) {
-    if (dim === 0) dim = v.length;
-    if (v.length !== dim || dim === 0) return null;
-  }
-  if (dim === 0) return null;
-  const data = new Float32Array(map.size * dim);
-  const rowOf = new Map();
-  let row = 0;
-  for (const [id, v] of map) {
-    const view = data.subarray(row * dim, (row + 1) * dim);
-    view.set(v);
-    map.set(id, view);
-    rowOf.set(id, row++);
-  }
-  return { data, dim, rowOf };
-}
-
 export class CodebaseRepository {
   constructor(dbPath, options = {}) {
     this._baseDbPath = dbPath;
@@ -211,15 +187,39 @@ export class CodebaseRepository {
     let flat = null;
     if (count <= EMBEDDING_CACHE_MAX_VECTORS) {
       map = new Map();
+      // Rows go straight into one contiguous array while they all share one
+      // width (the map holds views into it); a row of another width ends
+      // that and gets its own copy.
+      let data = null;
+      let dim = 0;
+      let uniform = true;
+      const rowOf = new Map();
       for (const row of db.prepare(`SELECT id, embedding FROM vectors${where}`).iterate(...visibility.params)) {
-        if (row.embedding) {
+        if (!row.embedding) continue;
+        const blob = row.embedding;
+        // Aligned whole-float blobs are read in place; anything else takes
+        // the copying path (which also throws on a ragged length, as before).
+        const src = blob.byteOffset % 4 === 0 && blob.length % 4 === 0
+          ? new Float32Array(blob.buffer, blob.byteOffset, blob.length / 4)
+          : new Float32Array(blob.buffer.slice(blob.byteOffset, blob.byteOffset + blob.length));
+        const len = src.length;
+        if (uniform && data === null && len > 0) {
+          dim = len;
+          data = new Float32Array(count * dim);
+        }
+        if (uniform && len === dim && len > 0 && !map.has(row.id)) {
+          const r = rowOf.size;
+          const view = data.subarray(r * dim, (r + 1) * dim);
+          view.set(src);
+          map.set(row.id, view);
+          rowOf.set(row.id, r);
+        } else {
+          uniform = false;
           // Copy: iterate() may reuse row buffers.
-          map.set(row.id, new Float32Array(row.embedding.buffer.slice(
-            row.embedding.byteOffset, row.embedding.byteOffset + row.embedding.length
-          )));
+          map.set(row.id, new Float32Array(src));
         }
       }
-      flat = flattenEmbeddings(map);
+      if (uniform && data) flat = { data, dim, rowOf };
     }
     this._embeddingCache = { db, version, visKey, map, flat };
     return map;

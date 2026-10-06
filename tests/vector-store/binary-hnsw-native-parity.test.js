@@ -89,13 +89,18 @@ describe.skipIf(!hasNative)('BinaryHNSWIndex native search parity', () => {
       const built = new BinaryHNSWIndex({ M: 16, efConstruction: 64, efSearch: 50, indexPath: join(dir, 'a.idx') });
       built.resetForBuild();
       built.initialized = true;
-      makeVectors(2000, 11).forEach((v, i) => built.addSync(`v${i}`, v, {}));
+      const int8 = makeInt8(2000, 12);
+      makeVectors(2000, 11).forEach((v, i) => built.addSync(`v${i}`, v, {}, i % 5 === 0 ? null : int8[i]));
       const original = JSON.stringify(built.graph);
       await built.save(join(dir, 'a.idx'));
 
       const loaded = new BinaryHNSWIndex({ indexPath: join(dir, 'a.idx') });
       await loaded.load();
       expect(loaded._graphFrozen).not.toBeNull();
+      // int8 vectors are read straight into the node-ordered slab.
+      expect(loaded.int8Vectors.size).toBe(built.int8Vectors.size);
+      for (const [id, v] of built.int8Vectors) expect(Array.from(loaded.int8Vectors.get(id))).toEqual(Array.from(v));
+      if (nativeRescoreKernels()) expect(loaded._int8NodeSlab()).toBe(loaded._int8Slab);
       const queries = makeVectors(20, 5);
       const before = [];
       for (const q of queries) before.push((await loaded.search(q, 20)).results.map((r) => r.id));

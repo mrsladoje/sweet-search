@@ -110,6 +110,16 @@ the JS walk.
   baseline at 6.9k and 157k, on the native path and with each native part
   switched off; parity tests for each new path; full test suite green.
 
+**Memory (load + 300 queries, RSS increase over a bare process):** the
+first version of this pass held int8 vectors twice and built the JS graph
+before copying it to Rust (freed memory is not returned to the OS), which
+cost +21% (6.9k: 197 → 238 MB; 157k: 1,007 → 1,228 MB). `load()` now reads
+the graph sidecar straight into the native CSR snapshot and the int8 sidecar
+straight into the node-ordered slab, and the resident full-vector cache
+fills one contiguous array. Result: 6.9k 207 MB (+5% over the original JS
+path, the full-vector cache), 157k 934 MB (−7%). Same files on disk, same
+output, no reindex.
+
 At 6.9k the walk is now about 58% of the time, and the two binary heaps are
 most of the walk. Identical output fixes their operation count, so this is
 close to the floor for an exact walk. At 157k the walk waits on memory.

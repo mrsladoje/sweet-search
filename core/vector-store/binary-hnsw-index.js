@@ -452,7 +452,98 @@ export async function readGraphSidecar(graphPath) {
   return graph;
 }
 
-export async function readInt8Sidecar(int8Path, out) {
+/**
+ * Read a v2 graph sidecar straight into per-level CSR arrays, without one JS
+ * array per node (those cost ~1.5 KB of heap per node and the heap does not
+ * shrink back after they are freed). Returns null for the v1 whole-array
+ * format; callers then use readGraphSidecar.
+ *
+ * Level l: neighbors of node i are neighbors[offsets[i]..offsets[i+1]];
+ * present[i] says whether the JS array had a list there (vs a null hole),
+ * so the exact JS graph can be rebuilt later.
+ * @param {string} graphPath
+ * @param {number} n - node count (offsets length is n + 1)
+ */
+export async function readGraphSidecarCsr(graphPath, n) {
+  let header = null;
+  let parsed = 0;
+  let levels = null;
+  for await (const doc of iterateJsonLines(graphPath)) {
+    if (!header) {
+      if (Array.isArray(doc)) return null; // v1
+      if (!doc || doc.version !== 2 || !Array.isArray(doc.lengths) || !Number.isFinite(doc.chunks)) {
+        throw new Error(`BinaryHNSW: unrecognized graph sidecar format: ${graphPath}`);
+      }
+      header = doc;
+      levels = doc.lengths.map((len) => ({
+        len,
+        pos: new Uint32Array(Math.max(len, n)),
+        cnt: new Uint32Array(Math.max(len, n)),
+        present: new Uint8Array(len),
+        buf: new Uint32Array(1024),
+        used: 0,
+        next: 0,        // next node expected for in-order appends
+        inOrder: true,
+      }));
+      continue;
+    }
+    const lv = levels[doc.level];
+    for (let k = 0; k < doc.nodes.length; k++) {
+      const node = doc.start + k;
+      const list = doc.nodes[k];
+      if (node >= lv.len) continue;
+      if (node !== lv.next) lv.inOrder = false;
+      lv.next = node + 1;
+      lv.present[node] = list ? 1 : 0;
+      const m = list ? list.length : 0;
+      if (lv.used + m > lv.buf.length) {
+        const grown = new Uint32Array(Math.max(lv.buf.length * 2, lv.used + m));
+        grown.set(lv.buf.subarray(0, lv.used));
+        lv.buf = grown;
+      }
+      for (let j = 0; j < m; j++) lv.buf[lv.used + j] = list[j];
+      lv.pos[node] = lv.used;
+      lv.cnt[node] = m;
+      lv.used += m;
+    }
+    parsed++;
+  }
+  if (!header) throw new Error(`BinaryHNSW: empty graph sidecar: ${graphPath}`);
+  if (parsed !== header.chunks) {
+    throw new Error(`BinaryHNSW: truncated graph sidecar (${parsed}/${header.chunks} chunks): ${graphPath}`);
+  }
+  return {
+    lengths: header.lengths,
+    present: levels.map((lv) => lv.present),
+    levels: levels.map((lv) => {
+      const offsets = new Uint32Array(n + 1);
+      let total = 0;
+      for (let i = 0; i < n; i++) {
+        offsets[i] = total;
+        if (i < lv.len) total += lv.cnt[i];
+      }
+      offsets[n] = total;
+      if (lv.inOrder && lv.next >= Math.min(lv.len, n) && total === lv.used) {
+        return { offsets, neighbors: lv.buf.subarray(0, total) };
+      }
+      // Out-of-order or repeated chunks: last write wins, as in readGraphSidecar.
+      const neighbors = new Uint32Array(total);
+      for (let i = 0; i < Math.min(lv.len, n); i++) {
+        neighbors.set(lv.buf.subarray(lv.pos[i], lv.pos[i] + lv.cnt[i]), offsets[i]);
+      }
+      return { offsets, neighbors };
+    }),
+  };
+}
+
+/**
+ * @param {string} int8Path
+ * @param {Map<string, Int8Array>} out
+ * @param {(id: string, values: number[]) => Int8Array|null} [place] - may
+ *   return a row view already filled with `values`; otherwise a fresh
+ *   Int8Array is stored.
+ */
+export async function readInt8Sidecar(int8Path, out, place = null) {
   let header = null;
   let first = true;
   let parsed = 0;
@@ -464,14 +555,14 @@ export async function readInt8Sidecar(int8Path, out) {
         // look like a v2 header: its values are arrays, so doc.version is
         // either undefined or a number[] and fails isV2Header.
         for (const [id, vec] of Object.entries(doc || {})) {
-          out.set(id, new Int8Array(vec));
+          out.set(id, (place && place(id, vec)) || new Int8Array(vec));
         }
         return;
       }
       header = doc;
       continue;
     }
-    out.set(doc.id, new Int8Array(doc.v));
+    out.set(doc.id, (place && place(doc.id, doc.v)) || new Int8Array(doc.v));
     parsed++;
   }
   if (header && parsed !== header.count) {
@@ -1288,6 +1379,65 @@ export class BinaryHNSWIndex {
   }
 
   /**
+   * load() helper: read the graph sidecar straight into a native snapshot
+   * and leave the JS graph released (as _nativeSearcher + _freezeGraph would,
+   * without building the JS arrays first). False when the native walk or the
+   * freeze is off, or for a v1 sidecar; the caller then loads JS arrays.
+   */
+  async _loadGraphNative(graphPath) {
+    if (process.env.SS_FIX_HNSW_FREEZE === '0' || !this._slab) return false;
+    const Ctor = nativeHnswSearcherCtor();
+    const n = this.vectors.length;
+    if (!Ctor || this._slab.count < n) return false;
+    const csr = await readGraphSidecarCsr(graphPath, n);
+    if (!csr) return false;
+    const searcher = new Ctor(this.dimension, n, this._slab.slab.subarray(0, n * this.dimension));
+    csr.levels.forEach((lv, l) => searcher.setLevel(l, lv.offsets, lv.neighbors));
+    this.graph = [];  // resets the store and bumps _graphGen
+    this._graphStore = null;
+    this._graphFrozen = { lengths: csr.lengths, present: csr.present };
+    this._native = { searcher, gen: this._graphGen, n };
+    return true;
+  }
+
+  /**
+   * load() helper: `place` for readInt8Sidecar that writes each vector into
+   * the node-ordered int8 slab and returns the row view, so the vectors are
+   * never held twice. `finish` publishes the slab only when every vector had
+   * the same width (else _int8NodeSlab decides, as before).
+   */
+  _int8SlabFiller() {
+    const n = this.vectors.length;
+    let slab = null;
+    let present = null;
+    let dim = 0;
+    let mixed = false;
+    return {
+      place: (id, values) => {
+        if (mixed) return null;
+        if (dim === 0) {
+          dim = values.length;
+          if (dim === 0) { mixed = true; return null; }
+          slab = new Int8Array(n * dim);
+          present = new Uint8Array(n);
+        }
+        if (values.length !== dim) { mixed = true; return null; }
+        const i = this.idToIndex.get(id);
+        if (i === undefined || this.vectors[i]?.id !== id) return null;
+        const row = slab.subarray(i * dim, (i + 1) * dim);
+        row.set(values);
+        present[i] = 1;
+        return row;
+      },
+      finish: () => {
+        const map = this.int8Vectors;
+        if (mixed || !slab || !(map instanceof Int8VectorMap)) return;
+        this._int8Slab = { slab, present, dim, n, map, gen: map.gen, graphGen: this._graphGen };
+      },
+    };
+  }
+
+  /**
    * Native layer-0 search: `[visitedCount, n, idx[0..n), dist[0..n)]` in a
    * shared scratch buffer, valid until the next native search call.
    */
@@ -2059,13 +2209,19 @@ export class BinaryHNSWIndex {
       this.idToIndex.set(this.vectors[i].id, i);
     }
 
-    // Load graph
-    this.graph = await readGraphSidecar(graphPath);
+    // Load graph: straight into the native snapshot when it is available
+    // (no per-node JS arrays), else as JS arrays.
+    if (!(await this._loadGraphNative(graphPath))) {
+      this.graph = await readGraphSidecar(graphPath);
+    }
 
-    // Load int8 vectors if available
+    // Load int8 vectors if available (straight into the node-ordered slab
+    // when native rescoring is available).
     this.int8Vectors.clear();
     if (existsSync(int8Path)) {
-      await readInt8Sidecar(int8Path, this.int8Vectors);
+      const slabFill = nativeRescoreKernels() ? this._int8SlabFiller() : null;
+      await readInt8Sidecar(int8Path, this.int8Vectors, slabFill?.place);
+      slabFill?.finish();
     }
 
     // Load asymmetric calibration data
@@ -2083,7 +2239,7 @@ export class BinaryHNSWIndex {
     // Build the native snapshot now, not on the first query (and release
     // the JS graph arrays it replaces).
     this._nativeSearcher();
-    if (nativeRescoreKernels()) this._int8NodeSlab();
+    if (nativeRescoreKernels()) this._int8NodeSlab();  // no-op when filled at read
     bootLog(`BinaryHNSW: Loaded ${this.vectors.length} vectors from ${indexPath} (asymmetric=${this.useAsymmetric})`);
   }
 
