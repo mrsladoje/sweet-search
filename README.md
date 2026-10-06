@@ -301,9 +301,9 @@ We measure sweet-search four ways — from how much it helps a real agent down t
 </br>
 </br>
 
-| 🔒 Split | 📝 Questions | 📦 Repos | 🔁 Reps | ⚖️ Scoring |
-|:---:|:---:|:---:|:---:|:---:|
-| held-out | 200 · easy (103) + hard (97) | 11 repos, 11 languages | 3 per arm | 3-judge median |
+| 🔒 Split | 📝 Questions | 🧩 Question types | 📦 Repos | 🔁 Reps | ⚖️ Scoring |
+|:---:|:---:|:---:|:---:|:---:|:---:|
+| held-out | 200 · easy (103) + hard (97) | multi-hop · call chains · negatives | 11 repos, 11 languages | 3 per arm | 3-judge median |
 
 </div>
 
