@@ -500,19 +500,20 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 
 <h3>🧠 <b>Native HNSW vector search</b></h3>
 
-### Best quality per ms from 20k vectors
+### Fastest at our quality from 20k vectors (held-out)
 
-<sub>full vector pipeline vs FAISS, USearch, hnswlib · median, embedding excluded</sub>
+<sub>full vector pipeline vs FAISS, USearch, hnswlib · p50, 1 thread, embedding excluded</sub>
 
-| vectors | **sweet** p50 · MRR@10 | best rival p50 · MRR@10 | rival |
-|:--|--:|--:|:--|
-| 7k | 0.16 ms · 0.848 | **0.09 ms** · 0.848 | FAISS |
-| 20k | **0.26 ms** · **0.837** | 2.83 ms · 0.834 | hnswlib |
-| 157k | **0.40 ms** · **0.802** | 6.86 ms · 0.800 | FAISS |
+| set · vectors | **sweet** p50 · MRR@10 | fastest rival at our MRR |
+|:--|--:|--:|
+| GCSN held-out · 7k | 0.16 ms · 0.833 | **0.09 ms** FAISS |
+| GCSN held-out · 20k | **0.26 ms** · 0.821 | 0.56 ms USearch i8 |
+| GCSN held-out · 157k | **0.41 ms** · 0.786 | 1.48 ms USearch i8 |
+| AdvTest (never tuned) · 22k | 0.29 ms · 0.469 | **0.19 ms** USearch i8 |
 
-<sub>rivals swept to efSearch 512–2048; from 20k up none reached our MRR · FAISS is faster at 7k</sub><br>
-<sub>native Rust walk + rescore: same output as our JS HNSW, 3.4–3.9× faster pipeline</sub><br>
-<sub>3,600 GCSN dev queries + dev-repo distractors · M3 Max, 1 thread · [method](docs/HNSW_APPROACH.md#competitor-benchmark-2026-10)</sub>
+<sub>rivals built at their defaults and at our budget (M64, efC800), efSearch to 2048 · FAISS wins at 7k, USearch i8 on AdvTest</sub><br>
+<sub>12 cores at 157k: 8.1k q/s vs best rival 3.0k · index RAM at 157k: 504 MB vs USearch i8 242 MB, FAISS 541 MB</sub><br>
+<sub>2,400 GCSN held-out queries (seed 42) + dev-repo distractors · 3,000 AdvTest queries · M3 Max · [method](docs/HNSW_APPROACH.md#competitor-benchmark-2026-10)</sub>
 
 </td>
 </tr>
