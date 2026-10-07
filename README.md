@@ -500,20 +500,16 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 
 <h3>🧠 <b>Native HNSW vector search</b></h3>
 
-### Fastest at our quality on held-out GCSN
+<img src="assets/hnsw-time-to-quality.svg" alt="Time each library needs to reach sweet-HNSW MRR@10, p50, 1 thread, and how many times slower than sweet-HNSW. 6,918 vectors: sweet-HNSW 78 µs, FAISS 89 µs (1.1x), USearch i8 93 µs (1.2x), USearch f16 356 µs (4.6x), hnswlib 949 µs (12.2x). 20k vectors: sweet-HNSW 207 µs, FAISS 4.73 ms (22.9x), USearch i8 555 µs (2.7x), USearch f16 1.74 ms (8.4x), hnswlib 1.86 ms (9.0x). 157k vectors: sweet-HNSW 320 µs, FAISS 2.15 ms (6.7x), USearch i8 1.48 ms (4.6x), USearch f16 1.83 ms (5.7x), hnswlib 4.32 ms (13.5x)." width="100%" />
 
-<sub>full vector pipeline vs FAISS, USearch, hnswlib · p50, 1 thread, embedding excluded</sub>
+<details>
+<summary><b>📈 The lead grows with index size · speed vs quality at 157k</b></summary>
+<br/>
+<img src="assets/hnsw-scaling.svg" alt="Latency to reach sweet-HNSW quality as the index grows, log scales. sweet-HNSW: 78 µs, 207 µs, 320 µs at 6.9k, 20k, 157k vectors. Fastest rival: 89 µs (FAISS), 555 µs (USearch i8), 1.48 ms (USearch i8). FAISS needs 4.73 ms at 20k and tops out at MRR 81.99 against our 82.00. At 157k sweet-HNSW is 4.6 times faster than the fastest rival." width="100%" />
+<img src="assets/hnsw-speed-quality.svg" alt="Speed and quality at 157k vectors. sweet-HNSW: MRR 78.5 in 320 µs. In the same time, the best rival, USearch i8, reaches 77.1. To reach 78.5, rivals need 1.48 ms (USearch i8), 1.83 ms (USearch f16), 2.15 ms (FAISS), 4.32 ms (hnswlib). Exact search quality 79.8 needs hnswlib at 23 ms." width="100%" />
+</details>
 
-| set · vectors | **sweet** p50 · MRR@10 | fastest rival at our MRR |
-|:--|--:|--:|
-| GCSN held-out · 7k | **0.08 ms** · 0.833 | 0.09 ms FAISS |
-| GCSN held-out · 20k | **0.21 ms** · 0.820 | 0.56 ms USearch i8 |
-| GCSN held-out · 157k | **0.32 ms** · 0.785 | 1.48 ms USearch i8 |
-| AdvTest (never tuned) · 22k | 0.23 ms · 0.469 | **0.19 ms** USearch i8 |
-
-<sub>rivals built at their defaults and at our budget (M64, efC800), efSearch to 2048 · USearch i8 wins on AdvTest</sub><br>
-<sub>our binary walk alone is 5–8× faster than FAISS / USearch binary HNSW at equal recall · index RAM at 157k: 197 MB vs USearch i8 242 MB, FAISS 541 MB</sub><br>
-<sub>2,400 GCSN held-out queries (seed 42) + dev-repo distractors · 3,000 AdvTest queries · M3 Max · [full results](docs/HNSW_BENCHMARK.md)</sub>
+<sub>full vector pipeline vs FAISS, USearch, hnswlib · rivals at their defaults and at our budget (M64, efC800), efSearch to 2048 · binary walk alone 5–8× faster than FAISS / USearch binary HNSW · 157k RAM: 197 MB vs 242 MB USearch i8, 541 MB FAISS · 2,400 GCSN held-out queries (seed 42) + dev-repo distractors · M3 Max · [full results](docs/HNSW_BENCHMARK.md)</sub>
 
 </td>
 </tr>
