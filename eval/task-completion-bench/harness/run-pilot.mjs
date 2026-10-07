@@ -282,7 +282,10 @@ function reapServers() {
 // The golden = clean repo @ base_commit + clean base index, built ONCE and never
 // written. Runs are `cp` copies in unique dirs under RUNS_DIR, deleted after use.
 const GOLDEN_DIR = path.join(EVAL_HOME, 'golden');
-const RUNS_DIR = path.join(EVAL_HOME, 'runs');
+// SS_RUNS_DIR: give each concurrent run-pilot its own runs dir. Rundir names are a per-process
+// counter (r0-1, r0-2, …) and each is rmSync'd before use, so two legs sharing one RUNS_DIR
+// delete each other's live checkouts (2026-10-07 Mac VM: 17 rollouts hit).
+const RUNS_DIR = process.env.SS_RUNS_DIR || path.join(EVAL_HOME, 'runs');
 // Pid ledger for every ss-* daemon/maintainer this pilot causes to start (see
 // spawn-ledger-reap.mjs). Set BEFORE any spawn so every child env (warmup, agent runners,
 // ss-* shims, daemons, maintainers) inherits it; per pilot, keyed per rundir inside core.
