@@ -488,22 +488,23 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 
 <h3>🧠 <b>sweet-HNSW vector search</b></h3>
 
-### 1.1–4.6× faster
+### 1.5–4.5× faster
 
-<sub>to reach our MRR@10 on held-out GCSN, against the fastest rival at each index size</sub>
+<sub>to reach our MRR@10 on held-out GCSN, against the fastest rival at each index size · Apple M3 Max (1.3–3.5× on x86)</sub>
 
-<img src="assets/hnsw-time-to-quality.svg" alt="Time each library needs to reach sweet-HNSW MRR@10, p50, 1 thread, and how many times slower than sweet-HNSW. 6,918 vectors: sweet-HNSW 78 µs, FAISS 89 µs (1.1x), USearch i8 93 µs (1.2x), USearch f16 356 µs (4.6x), hnswlib 949 µs (12.2x). 20k vectors: sweet-HNSW 207 µs, FAISS 4.73 ms (22.9x), USearch i8 555 µs (2.7x), USearch f16 1.74 ms (8.4x), hnswlib 1.86 ms (9.0x). 157k vectors: sweet-HNSW 320 µs, FAISS 2.15 ms (6.7x), USearch i8 1.48 ms (4.6x), USearch f16 1.83 ms (5.7x), hnswlib 4.32 ms (13.5x). AdvTest 21.7k: sweet-HNSW 227 µs, FAISS 409 µs (1.8x), USearch i8 193 µs (0.9x), USearch f16 758 µs (3.3x), hnswlib 1.86 ms (8.2x)." width="100%" />
+<img src="assets/hnsw-time-to-quality.svg" alt="Time each library needs to reach sweet-HNSW MRR@10 on an Apple M3 Max, p50, 1 thread, and how many times slower than sweet-HNSW; each rival is the fastest of its configs. 6,918 vectors: sweet-HNSW 52 µs, FAISS 89 µs (1.7x), USearch 76 µs (1.5x), hnswlib 165 µs (3.2x). 20k vectors: sweet-HNSW 103 µs, FAISS 190 µs (1.8x), USearch 168 µs (1.6x), hnswlib 499 µs (4.8x). 140k vectors: sweet-HNSW 236 µs, FAISS 1.07 ms (4.5x), USearch 1.11 ms (4.7x), hnswlib 1.67 ms (7.1x). AdvTest 21.7k: sweet-HNSW 111 µs, FAISS 208 µs (1.9x), USearch 108 µs (0.97x), hnswlib 534 µs (4.8x)." width="100%" />
 
-<sub>vs FAISS, USearch, hnswlib at their defaults and at our budget (M64, efC800), efSearch to 2048</sub><br>
-<sub>USearch i8 wins on AdvTest, the one set we never tuned on · given 20–70× more time, rivals reach exact quality</sub><br>
-<sub>binary walk alone 5–8× faster than FAISS / USearch binary HNSW · 157k index RAM: 197 MB vs 541 MB FAISS</sub><br>
-<sub>2,400 GCSN held-out queries (seed 42) + dev-repo distractors · 3,000 AdvTest queries · M3 Max · [method](docs/HNSW_BENCHMARK.md)</sub>
+<sub>vs FAISS, USearch, hnswlib in native C++, each at its fastest config (f32, SQ8 or i8 + exact rescore, binary cascade; defaults and our M64 / efC800 budget), efSearch to 2048</sub><br>
+<sub>AdvTest, the one set we never tuned on: USearch ties us on the M3 Max (108 vs 111 µs) and wins on x86 · given far more time (8.5 ms at 140k), rivals reach exact quality</sub><br>
+<sub>exact Hamming scan up to 150k vectors, HNSW walk above · binary walk alone 5–8× faster than FAISS / USearch binary HNSW · 157k index RAM: 197 MB vs 541 MB FAISS</sub><br>
+<sub>2,400 GCSN held-out queries (seed 42) + dev-repo distractors · 3,000 AdvTest queries · M3 Max and x86 AMD EPYC (AVX2) · [method](docs/HNSW_BENCHMARK.md)</sub>
 
 <details>
-<summary><b>📈 The lead grows with index size · speed vs quality at 157k</b></summary>
+<summary><b>📈 x86 results · the lead grows with index size · speed vs quality at 140k</b></summary>
 <br/>
-<img src="assets/hnsw-scaling.svg" alt="Latency to reach sweet-HNSW quality as the index grows, log scales. sweet-HNSW: 78 µs, 207 µs, 320 µs at 6.9k, 20k, 157k vectors. Fastest rival: 89 µs (FAISS), 555 µs (USearch i8), 1.48 ms (USearch i8). FAISS needs 4.73 ms at 20k and tops out at MRR 81.99 against our 82.00. At 157k sweet-HNSW is 4.6 times faster than the fastest rival." width="100%" />
-<img src="assets/hnsw-speed-quality.svg" alt="Speed and quality at 157k vectors. sweet-HNSW: MRR 78.5 in 320 µs. In the same time, the best rival, USearch i8, reaches 77.1. To reach 78.5, rivals need 1.48 ms (USearch i8), 1.83 ms (USearch f16), 2.15 ms (FAISS), 4.32 ms (hnswlib). Exact search quality 79.8 needs hnswlib at 23 ms." width="100%" />
+<img src="assets/hnsw-time-to-quality-x86.svg" alt="Time each library needs to reach sweet-HNSW MRR@10 on an x86 AMD EPYC server, p50, 1 thread; each rival is the fastest of its configs. 6,918 vectors: sweet-HNSW 81 µs, FAISS 109 µs (1.3x), USearch 118 µs (1.5x), hnswlib 163 µs (2.0x). 20k vectors: sweet-HNSW 166 µs, FAISS 253 µs (1.5x), USearch 246 µs (1.5x), hnswlib 498 µs (3.0x). 140k vectors: sweet-HNSW 482 µs, FAISS 1.88 ms (3.9x), USearch 3.37 ms (7.0x), hnswlib 1.67 ms (3.5x). AdvTest 21.7k: sweet-HNSW 182 µs, FAISS 156 µs (0.86x), USearch 141 µs (0.77x), hnswlib 267 µs (1.5x)." width="100%" />
+<img src="assets/hnsw-scaling.svg" alt="Latency to reach sweet-HNSW quality as the index grows, log scales, Apple M3 Max. sweet-HNSW: 52 µs, 103 µs, 236 µs at 6.9k, 20k, 140k vectors. Fastest rival: 76 µs (USearch), 168 µs (USearch), 1.07 ms (FAISS). At 140k sweet-HNSW is 4.5 times faster than the fastest rival." width="100%" />
+<img src="assets/hnsw-speed-quality.svg" alt="Speed and quality at 140k vectors, Apple M3 Max. sweet-HNSW: MRR 78.5 in 236 µs. In the same time, the best rival, USearch b1 cascade, reaches 77.5. To reach 78.5, rivals need 1.07 ms (FAISS SQ8 + refine), 1.11 ms (USearch i8), 1.67 ms (hnswlib). Exact search quality 79.2 needs FAISS SQ8 + refine at 8.5 ms." width="100%" />
 </details>
 
 </td>
@@ -627,7 +628,7 @@ flowchart TD
 
     subgraph ANN ["🧬 three-stage ANN cascade"]
         direction LR
-        BIN["binary <b>HNSW</b><br/>Hamming · ~100µs"] --> INT["INT8<br/>rescore"] --> FL["float32<br/>mmap sidecar"]
+        BIN["binary <b>Hamming</b><br/>exact scan · HNSW above 150k"] --> INT["INT8<br/>rescore"] --> FL["float32<br/>exact rescore"]
     end
 
     BM  --> FUSE
@@ -677,7 +678,7 @@ flowchart TD
 | Stage | What it actually does |
 |-------|-----------------------|
 | 🧭 **Route** | **WASM-exported CatBoost** · lexical / hybrid · **~10 µs** routing · low-confidence → max-recall hybrid |
-| 🧬 **Retrieve** | • **Lexical:** **BM25F** over field-weighted FTS5 (name 10× · signature 5× · alias 4× · doc 1×)<br/>• **Embed:** query vectorized by the local **CodeRankEmbed** model (swappable for Voyage / Jina / Codestral)<br/>• **Vector cascade:** binary **HNSW** (Hamming, 64-byte, ~100 µs) → INT8 rescore → exact float32 from a memory-mapped sidecar |
+| 🧬 **Retrieve** | • **Lexical:** **BM25F** over field-weighted FTS5 (name 10× · signature 5× · alias 4× · doc 1×)<br/>• **Embed:** query vectorized by the local **CodeRankEmbed** model (swappable for Voyage / Jina / Codestral)<br/>• **Vector cascade:** binary Hamming top 1,000 (64-byte codes; exact scan up to 150k vectors, **HNSW** walk above) → INT8 rescore → exact float32 rescore |
 | 🔀 **Fuse** | • **CCFusion:** convex-combine both rankings · per-route weights · quantile-normalized<br/>• **MMR** (λ=0.9) diversity pass over the fused list<br/>• auto **RRF** (k=60) fallback on degenerate score distributions |
 | ⚓ **Anchor** | • **IAR** (Identifier Anchor Retrieval): a real symbol in the query fires an exact-name code-graph lookup that injects that entity, even when the encoder ranked it too low |
 | 🎯 **Intent Rerank** | • demote docs / tests / config when you want implementation<br/>• log-scaled call-site boosts surface the most-referenced function |
