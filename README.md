@@ -371,7 +371,7 @@ per task. The harnesses run **as they ship** — no tools disabled, no delegatio
 
 <img src="assets/task-completion-stats.svg" alt="Held-out task-completion results, sweet-search vs native, 200 SWE-rebench tasks, 1 rep. Claude Code with Sonnet 5.5 high: billed cost −10.8%, cost per solved task −15.6%, 92 vs 87 of 200 tasks solved (not significant). Claude Code with Opus 5.5 medium: billed cost −5.4% (significant), cost per solved task −7.9% (significant), 112 vs 109 of 200 tasks solved (not significant). Claude Code with Opus 5.5 high: billed cost −7.4% (significant), cost per solved task −2.3% (not significant), 109 vs 115 of 200 tasks solved (not significant). opencode with Sol 6.1 high: billed cost −18.6% (significant), cost per solved task −14.7% (significant), 84 vs 88 of 200 tasks solved (not significant). Codex with Sol 6.1 high: billed cost −32.9% (significant), cost per solved task −34.5% (significant), 84 vs 82 of 200 tasks solved (not significant)." width="100%" />
 
-<sub>frozen held-out set · 200 tasks · 1 rep per arm · grey = not significant · Sol rows: 182 tasks on an arm64 VM (Rosetta), 18 on x86, both arms of a task always on one machine</sub>
+<sub>frozen held-out set · 200 tasks · 1 rep per arm · grey = not significant</sub>
 
 </div>
 
@@ -380,13 +380,13 @@ per task. The harnesses run **as they ship** — no tools disabled, no delegatio
 
 <br/>
 
-| 🧰 Harness + model | 💰 Billed cost | 💰 Cost per solved task | 💰 Cost, tasks both arms solved | 🎯 Solved (of 200) | 🔧 Tool calls | ⏱️ Wall time |
-|---|---:|---:|---:|:--|---:|---:|
-| 🟣 **Claude Code** + Sonnet 5.5 high | **−10.8%** [−18.3, −1.7] | **−15.6%** | **−16.3%** (84) | 92 / 87 · *p=0.23* | +9.5% | +7.6% |
-| 🟣 **Claude Code** + Opus 5.5 medium | **−5.4%** [−10.1, −0.2] | **−7.9%** | −5.7% (103) | 112 / 109 · *p=0.61* | +10.5% | +6.0% |
+| 🧰 Harness + model | 💰 Billed cost | 💰 Cost per solved task | 💰 Cost, tasks both arms solved | 🎯 Solved (of 200) | 🔧 Tool calls |
+|---|---:|---:|---:|:--|---:|
+| 🟣 **Claude Code** + Sonnet 5.5 high | **−10.8%** [−18.3, −1.7] | **−15.6%** | **−16.3%** (84) | 92 / 87 · *p=0.23* | +9.5% |
+| 🟣 **Claude Code** + Opus 5.5 medium | **−5.4%** [−10.1, −0.2] | **−7.9%** | −5.7% (103) | 112 / 109 · *p=0.61* | +10.5% |
 | 🟣 **Claude Code** + Opus 5.5 high | **−7.4%** [−11.6, −3.0] | −2.3% | −4.0% (107) | 109 / 115 · *p=0.11* | +7.4% | +2.8% |
-| 🐚 **opencode** + Sol 6.1 high | **−18.6%** [−24.1, −12.7] | **−14.7%** | **−11.4%** (81) | 84 / 88 · *p=0.34* | −13.3% | +14.6% |
-| 🤖 **Codex** + Sol 6.1 high | **−32.9%** [−38.0, −27.2] | **−34.5%** | **−30.0%** (77) | 84 / 82 · *p=0.77* | −6.1% | +10.5% |
+| 🐚 **opencode** + Sol 6.1 high | **−18.6%** [−24.1, −12.7] | **−14.7%** | **−11.4%** (81) | 84 / 88 · *p=0.34* | −13.3% |
+| 🤖 **Codex** + Sol 6.1 high | **−32.9%** [−38.0, −27.2] | **−34.5%** | **−30.0%** (77) | 84 / 82 · *p=0.77* | −6.1% |
 
 <sub>Each value is sweet-search minus native, relative to native. Solved = sweet-search / native, McNemar exact test.
 **Bold** = the 95% interval excludes 0 (paired bootstrap over tasks, B = 20,000, seed 42). Every run used a
