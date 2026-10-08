@@ -360,9 +360,9 @@ per task. The harnesses run **as they ship** — no tools disabled, no delegatio
 
 <div align="center">
 
-<img src="assets/task-completion-stats.svg" alt="Held-out task-completion results, sweet-search vs native, 200 SWE-rebench tasks, 1 rep. Claude Code with Sonnet 5.5 high: billed cost −10.8%, cost per solved task −15.6%, 92 vs 87 of 200 tasks solved (not significant). Claude Code with Opus 5.5 medium: billed cost −6.5% (significant), cost per solved task −9.2%, 109 vs 106 of 192 tasks solved (not significant). Claude Code with Opus 5.5 high: billed cost −6.9% (significant), cost per solved task −1.6% (not significant), 107 vs 113 of 191 tasks solved (not significant). opencode and Codex with Sol 6.1: coming soon." width="100%" />
+<img src="assets/task-completion-stats.svg" alt="Held-out task-completion results, sweet-search vs native, 200 SWE-rebench tasks, 1 rep. Claude Code with Sonnet 5.5 high: billed cost −10.8%, cost per solved task −15.6%, 92 vs 87 of 200 tasks solved (not significant). Claude Code with Opus 5.5 medium: billed cost −6.5% (significant), cost per solved task −9.2%, 109 vs 106 of 192 tasks solved (not significant). Claude Code with Opus 5.5 high: billed cost −6.9% (significant), cost per solved task −1.6% (not significant), 107 vs 113 of 191 tasks solved (not significant). opencode with Sol 6.1 high: billed cost −18.6% (significant), cost per solved task −15.5% (significant), 79 vs 82 of 179 tasks solved (not significant). Codex with Sol 6.1 high: billed cost −32.9% (significant), cost per solved task −34.5% (significant), 78 vs 77 of 192 tasks solved (not significant)." width="100%" />
 
-<sub>frozen held-out set · 200 tasks · 1 rep per arm · grey = not significant or no interval yet · more arms running</sub>
+<sub>frozen held-out set · 200 tasks · 1 rep per arm · grey = not significant · Sol rows: 182 tasks on an arm64 VM (Rosetta), 18 on x86, both arms of a task always on one machine</sub>
 
 </div>
 
