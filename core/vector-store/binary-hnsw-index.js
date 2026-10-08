@@ -64,13 +64,21 @@ function nativeHnswSearcherCtor() {
 
 // At or below this many vectors, search() scans every binary vector exactly
 // instead of walking the graph (SS_FIX_HNSW_SCAN=0 keeps the walk). The scan
-// reads only the resident binary slab, so it adds no memory.
-const EXACT_SCAN_MAX_VECTORS = 15000;
+// reads only the resident binary slab, so it adds no memory. A fixed cap (not
+// a per-machine timing) keeps rankings the same on every machine: the scan is
+// faster than the walk up to 140k vectors on an M3 Max and ties it at 140k on
+// an x86 EPYC (AVX2), so the cap sits just above that.
+const EXACT_SCAN_MAX_VECTORS = 150000;
 
 // The native walk uses bucket queues by default (O(1) per queue operation;
 // equal Hamming distances may come out in another order than the JS heaps).
-// SS_FIX_HNSW_BUCKET=0 restores the JS-exact heaps.
+// SS_FIX_HNSW_BUCKET=0 restores the JS-exact heaps. searchCascade orders the
+// Hamming tie at the int8 pool cutoff by the asymmetric score by default;
+// SS_FIX_HNSW_TIEBREAK=0 keeps stage-1 order there.
 function configureNativeSearcher(searcher) {
+  if (process.env.SS_FIX_HNSW_TIEBREAK === '0' && typeof searcher.setTieBreak === 'function') {
+    searcher.setTieBreak(false);
+  }
   if (process.env.SS_FIX_HNSW_BUCKET === '0' && typeof searcher.setBucketQueue === 'function') {
     searcher.setBucketQueue(false);
   }
@@ -1646,20 +1654,142 @@ export class BinaryHNSWIndex {
     };
   }
 
+  /**
+   * Stages 1 and 2 of the semantic cascade on the native searcher, in one
+   * synchronous span (the native scratch it reads is overwritten by the next
+   * search). Same candidates, scores, order and statistics as
+   * search(..., { lazy: true }) followed by int8ScoresForNodes and the
+   * stable int8 sort in semanticSearch3Stage; only the result objects the
+   * caller keeps are built. Returns null when the native path is not
+   * available (the caller then uses search()).
+   *
+   * Result: stage-1 fields as search() returns them, `count`, `stats`
+   * (`[visited, n, top1, top2, min, mean, variance]` of the stage-1 scores)
+   * and `int8Stage(count)`, which scores (against `opts.queryInt8`, the
+   * stage-2 query) the first `count`
+   * stage-1 results and returns `{ count, missing, stats, materialize(m) }`:
+   * `stats` is `[nonMissing, top1, top2, min, mean, variance]` of the
+   * non-missing int8 scores in sorted order, and `materialize(m)` builds the
+   * first m candidates in int8 order (`{ id, score, hammingDistance,
+   * metadata, int8Score[, missingInt8] }`).
+   */
+  searchCascade(queryVector, k, opts = {}) {
+    if (!this.initialized || this.vectors.length === 0) return null;
+    const kernels = nativeRescoreKernels();
+    if (!kernels) return null;
+    const nat = this._nativeSearcher();
+    if (!nat || typeof nat.cascadeStage1 !== 'function') return null;
+    const store = this._int8NodeSlab();
+    const queryInt8 = opts.queryInt8;
+    if (!store || !queryInt8 || queryInt8.length !== store.dim) return null;
+
+    const start = performance.now();
+    const staleBitmap = this._loadStaleBitmap();
+    let queryBinary;
+    if (queryVector instanceof Uint8Array) {
+      queryBinary = queryVector;
+    } else if (Array.isArray(queryVector) && queryVector.length > this.dimension) {
+      queryBinary = floatToBinary(queryVector.slice(0, this.floatDimension));
+    } else {
+      queryBinary = new Uint8Array(queryVector);
+    }
+    if (this.useAsymmetric && opts.floatQuery) {
+      queryBinary = this.encodeDocument(opts.floatQuery);
+    }
+    this._setQuery(queryBinary);
+    nat.setQuery(queryBinary);
+    let currentNode = this.entryPoint;
+    for (let l = this.maxLevel; l >= 1; l--) currentNode = nat.greedy(currentNode, l);
+
+    let ef = Math.max(this._oversampleTarget(k, staleBitmap), this.efSearch);
+    const maxDist = this.dimension * 8;
+    const greedyQuality = 1 - (nat.dist(currentNode) / maxDist);
+    if (greedyQuality > 0.85) {
+      ef = Math.max(this._oversampleTarget(k, staleBitmap), Math.round(ef * 0.6));
+    } else if (greedyQuality < 0.55) {
+      ef = Math.round(ef * 1.5);
+    }
+
+    const total = this.vectors.length;
+    const live = this._liveVectorCount(staleBitmap);
+    const scan = total <= EXACT_SCAN_MAX_VECTORS && process.env.SS_FIX_HNSW_SCAN !== '0';
+    const want = scan ? Math.min(total, k + (total - live)) : 0;
+    const et = BINARY_HNSW_CONFIG.earlyTermination || {};
+    const list = et.thresholds || [[0.3, 0.05], [0.6, 0.10]];
+    if (nativeThresholds.list !== list) {
+      nativeThresholds.list = list;
+      nativeThresholds.flat = new Float64Array(list.flat());
+    }
+    const stalePayload = staleBitmap ? staleBitmap.payload : null;
+    const staleBits = staleBitmap ? staleBitmap.capacity : 0;
+    const stats = scratchArray('cascadeStats1', Float64Array, 8);
+    const n = nat.cascadeStage1(scan, want, currentNode, ef, k, et.windowSize || 16,
+      nativeThresholds.flat, stalePayload, staleBits, stats);
+    const visitedCount = stats[0];
+    const latency = performance.now() - start;
+
+    const vectors = this.vectors;
+    const int8Stage = (count) => {
+      const m = Math.min(count, n);
+      const nodes = scratchArray('cascadeNodes', Uint32Array, m);
+      const dists = scratchArray('cascadeDists', Uint32Array, m);
+      const scores = scratchArray('cascadeScores', Float64Array, m);
+      const missing = scratchArray('cascadeMissing', Uint8Array, m);
+      const s2 = scratchArray('cascadeStats2', Float64Array, 8);
+      nat.cascadeInt8(store.slab, store.dim, store.n, store.present, queryInt8, m,
+        stalePayload, staleBits, nodes, dists, scores, missing, s2);
+      return {
+        count: m,
+        missing: m - s2[0],
+        stats: s2,
+        materialize: (h) => {
+          const out = new Array(Math.min(h, m));
+          for (let i = 0; i < out.length; i++) {
+            const v = vectors[nodes[i]];
+            const dist = dists[i];
+            const c = { id: v.id, score: 1 - (dist / maxDist), hammingDistance: dist, metadata: v.metadata };
+            if (missing[i]) {
+              c.int8Score = 0.0;
+              c.missingInt8 = true;
+            } else {
+              c.int8Score = scores[i];
+            }
+            out[i] = c;
+          }
+          return out;
+        },
+      };
+    };
+
+    return {
+      results: null,
+      latency_us: Math.round(latency * 1000),
+      latency_ms: latency.toFixed(3),
+      k,
+      total: live,
+      visitedNodes: visitedCount,
+      adaptiveEf: ef,
+      useAsymmetric: this.useAsymmetric,
+      count: n,
+      stats,
+      int8Stage,
+    };
+  }
+
   _loadStaleBitmap() {
     // Freshness contract: an externally written bitmap must be visible on the
     // NEXT call (rescoring-fix-phase0 pins this), so every call stats the
     // file; only the LOAD is cached (by stat identity). Hot rescore paths that
     // would otherwise stat per candidate snapshot once per batch via
     // getInt8VectorsForIds().
-    if (!existsSync(this.stalePath)) {
-      this._staleBitmapCache = null;
-      return null;
-    }
+    // One stat call (no exception when the file is absent).
     let stat;
     try {
-      stat = statSync(this.stalePath, { bigint: true });
+      stat = statSync(this.stalePath, { bigint: true, throwIfNoEntry: false });
     } catch {
+      stat = undefined;
+    }
+    if (!stat) {
       this._staleBitmapCache = null;
       return null;
     }

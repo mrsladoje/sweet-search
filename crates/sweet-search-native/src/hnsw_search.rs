@@ -7,7 +7,7 @@
 //! the packed vector slab; once it exists the JS index releases its own graph
 //! arrays and rebuilds them from `export_level` only when a writer needs them.
 
-use napi::bindgen_prelude::{Float64Array, Uint32Array, Uint8Array};
+use napi::bindgen_prelude::{Float64Array, Int8Array, Uint32Array, Uint8Array};
 use napi_derive::napi;
 
 struct Csr {
@@ -409,6 +409,139 @@ fn prefetch_list(list: &[u32]) {
     }
 }
 
+/// Sum of `q[i]` over the dimensions whose bit is set in `code`, with the
+/// bits packed as `floatToBinary` packs them (dimension i is bit 7 - i % 8
+/// of byte i / 8; bytes little-endian in the u64 words). Since
+/// `query · sign(code) = 2 * this - sum(q)`, it orders codes by the
+/// asymmetric score. Integer arithmetic, so the result is exact.
+fn set_bit_sum(code: &[u64], q: &[i8], v3: bool) -> i32 {
+    let n = q.len().min(code.len() * 64);
+    let mut i = 0;
+    let mut s = 0i32;
+    #[cfg(target_arch = "aarch64")]
+    {
+        // SAFETY: i + 16 <= n keeps the q reads and the code bytes in range.
+        unsafe {
+            use std::arch::aarch64::*;
+            let bytes = code.as_ptr() as *const u8;
+            let pat = vld1q_u8([128u8, 64, 32, 16, 8, 4, 2, 1, 128, 64, 32, 16, 8, 4, 2, 1].as_ptr());
+            let mut acc = vdupq_n_s32(0);
+            while i + 16 <= n {
+                let b = vcombine_u8(vdup_n_u8(*bytes.add(i / 8)), vdup_n_u8(*bytes.add(i / 8 + 1)));
+                let sel = vandq_s8(vld1q_s8(q.as_ptr().add(i)), vreinterpretq_s8_u8(vtstq_u8(b, pat)));
+                acc = vpadalq_s16(acc, vpaddlq_s8(sel));
+                i += 16;
+            }
+            s += vaddvq_s32(acc);
+        }
+    }
+    #[cfg(target_arch = "x86_64")]
+    if v3 {
+        // SAFETY: AVX2 presence checked at construction; i + 32 <= n keeps
+        // the reads in range.
+        unsafe { s += set_bit_sum_avx2(code, q, n, &mut i) };
+    }
+    let _ = v3;
+    while i < n {
+        let byte = (code[i / 64] >> (8 * ((i % 64) / 8))) as u8;
+        s += q[i] as i32 & -(((byte >> (7 - i % 8)) & 1) as i32);
+        i += 1;
+    }
+    s
+}
+
+/// `set_bit_sum` over whole 32-dim blocks (4 code bytes each); advances `i`.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn set_bit_sum_avx2(code: &[u64], q: &[i8], n: usize, i: &mut usize) -> i32 {
+    use std::arch::x86_64::*;
+    let bytes = code.as_ptr() as *const u8;
+    let m = 128u8 as i8;
+    let pat = _mm256_setr_epi8(
+        m, 64, 32, 16, 8, 4, 2, 1, m, 64, 32, 16, 8, 4, 2, 1,
+        m, 64, 32, 16, 8, 4, 2, 1, m, 64, 32, 16, 8, 4, 2, 1,
+    );
+    // Byte b of the 4 goes to lanes 8b..8b + 8 (shuffles stay in 128-bit halves).
+    let spread = _mm256_setr_epi8(
+        0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1,
+        2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3,
+    );
+    let ones8 = _mm256_set1_epi8(1);
+    let ones16 = _mm256_set1_epi16(1);
+    let mut acc = _mm256_setzero_si256();
+    while *i + 32 <= n {
+        let w = (bytes.add(*i / 8) as *const i32).read_unaligned();
+        let b = _mm256_shuffle_epi8(_mm256_set1_epi32(w), spread);
+        let mask = _mm256_cmpeq_epi8(_mm256_and_si256(b, pat), pat);
+        let sel = _mm256_and_si256(_mm256_loadu_si256(q.as_ptr().add(*i) as *const __m256i), mask);
+        acc = _mm256_add_epi32(acc, _mm256_madd_epi16(_mm256_maddubs_epi16(ones8, sel), ones16));
+        *i += 32;
+    }
+    let h = _mm_add_epi32(_mm256_castsi256_si128(acc), _mm256_extracti128_si256::<1>(acc));
+    let h = _mm_add_epi32(h, _mm_shuffle_epi32::<0b01_00_11_10>(h));
+    let h = _mm_add_epi32(h, _mm_shuffle_epi32::<0b10_11_00_01>(h));
+    _mm_cvtsi128_si32(h)
+}
+
+/// x86-64-v3 kernels usable (see `rescore::x86_v3`).
+fn cpu_v3() -> bool {
+    #[cfg(target_arch = "x86_64")]
+    {
+        crate::rescore::x86_v3()
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        false
+    }
+}
+
+/// Distinct 512-bit Hamming distances (0..=512).
+const SCAN_BINS: usize = 512 + 1;
+
+/// Cutoff of a 512-bit scan from its four sub-histograms: `t` such that the
+/// top `k` are all of d < t plus the first (k - below) nodes at d == t, and
+/// `pos[v]`, the output slot of the first node at distance v (v <= t).
+fn scan_cutoff(hist: &[[u32; SCAN_BINS]; 4], k: usize) -> ([u32; SCAN_BINS + 1], usize) {
+    let mut pos = [0u32; SCAN_BINS + 1];
+    let mut acc = 0u32;
+    let mut t = SCAN_BINS;
+    for v in 0..SCAN_BINS {
+        let h = hist[0][v] + hist[1][v] + hist[2][v] + hist[3][v];
+        pos[v] = acc;
+        if acc + h >= k as u32 {
+            t = v;
+            break;
+        }
+        acc += h;
+    }
+    (pos, t)
+}
+
+/// `analyzeScoreSpread` sums over `n` scores, in the same order and
+/// arithmetic: `[top1, top2, min, mean, variance]`.
+fn spread(scores: impl Iterator<Item = f64> + Clone, n: usize) -> [f64; 5] {
+    let (mut top1, mut top2, mut min, mut sum) = (f64::NEG_INFINITY, f64::NEG_INFINITY, f64::INFINITY, 0.0f64);
+    for s in scores.clone() {
+        sum += s;
+        if s > top1 {
+            top2 = top1;
+            top1 = s;
+        } else if s > top2 {
+            top2 = s;
+        }
+        if s < min {
+            min = s;
+        }
+    }
+    let mean = sum / n as f64;
+    let mut variance = 0.0f64;
+    for s in scores {
+        let d = s - mean;
+        variance += d * d;
+    }
+    [top1, top2, min, mean, variance / n as f64]
+}
+
 #[napi]
 pub struct HnswSearcher {
     words: usize, // u64 words per vector
@@ -430,6 +563,20 @@ pub struct HnswSearcher {
     bres: BucketMax,
     // Bucket queues (default) or the JS-exact binary heaps.
     bucket: bool,
+    // Fused cascade state (cascade_stage1 -> cascade_int8): live stage-1
+    // results in rank order, and a scratch layer output.
+    live_idx: Vec<u32>,
+    live_dist: Vec<u32>,
+    layer_out: Vec<u32>,
+    int8_rank: Vec<u32>,
+    int8_score: Vec<f64>,
+    int8_missing: Vec<bool>,
+    scan_d: Vec<u16>,
+    tie_break: bool,
+    /// x86-64-v3 kernels (AVX2, POPCNT, ...) usable; always false elsewhere.
+    v3: bool,
+    tie_keyed: Vec<(i32, u32)>,
+    pool_idx: Vec<u32>,
 }
 
 #[napi]
@@ -470,6 +617,17 @@ impl HnswSearcher {
             bcand: BucketMin::default(),
             bres: BucketMax::default(),
             bucket: true,
+            live_idx: Vec::new(),
+            live_dist: Vec::new(),
+            layer_out: Vec::new(),
+            int8_rank: Vec::new(),
+            int8_score: Vec::new(),
+            int8_missing: Vec::new(),
+            scan_d: Vec::new(),
+            tie_break: true,
+            v3: cpu_v3(),
+            tie_keyed: Vec::new(),
+            pool_idx: Vec::new(),
         })
     }
 
@@ -515,6 +673,23 @@ impl HnswSearcher {
             // SAFETY: every id < count (set_level checks), so each vector is
             // 64 readable bytes inside the slab; the query holds 8 words.
             unsafe { hamming512_batch(self.slab.as_ptr(), self.query.as_ptr(), ids, out) };
+            return;
+        }
+        #[cfg(target_arch = "x86_64")]
+        if self.words == 8 {
+            // Fixed 8 words with the query in registers: no per-word loop.
+            // POPCNT inside `walk_v3`; baseline x86-64 gets the bit-twiddle.
+            let q: [u64; 8] = std::array::from_fn(|w| self.query[w]);
+            let slab = self.slab.as_ptr();
+            for (o, &id) in out.iter_mut().zip(ids) {
+                // SAFETY: every id < count, so the 8 words are in the slab.
+                let p = unsafe { slab.add(id as usize * 8) };
+                let mut d = 0u32;
+                for (w, &qw) in q.iter().enumerate() {
+                    d += unsafe { *p.add(w) ^ qw }.count_ones();
+                }
+                *o = d;
+            }
             return;
         }
         for (o, &id) in out.iter_mut().zip(ids) {
@@ -592,7 +767,67 @@ impl HnswSearcher {
         self.bucket = on;
     }
 
+    /// On by default: `cascade_int8` orders the Hamming tie at its pool
+    /// cutoff by the asymmetric score (see `break_cutoff_tie`). Off keeps
+    /// stage-1 order (`SS_FIX_HNSW_TIEBREAK=0`).
+    #[napi]
+    pub fn set_tie_break(&mut self, on: bool) {
+        self.tie_break = on;
+    }
+
+    /// When the first `count` live results end inside a run of equal Hamming
+    /// distances, which members of the run make the pool depends only on
+    /// stage-1 order (scan: node order; walk: queue order). Reorder the run
+    /// by the asymmetric score `query · sign(code)` (int8 query against the
+    /// code bits), highest first, ties in their current order, so the pool
+    /// takes the members closest to the query. Writes the pool (the first
+    /// `pool.len()` results in that order) to `pool`; stage 1 is unchanged.
+    fn break_cutoff_tie(&mut self, pool: &mut [u32], q: &[i8]) {
+        let count = pool.len();
+        let n = self.live_idx.len();
+        if count == 0 || count >= n || self.live_dist[count] != self.live_dist[count - 1] {
+            return;
+        }
+        let t = self.live_dist[count - 1];
+        let mut g0 = count - 1;
+        while g0 > 0 && self.live_dist[g0 - 1] == t {
+            g0 -= 1;
+        }
+        let mut g1 = count + 1;
+        while g1 < n && self.live_dist[g1] == t {
+            g1 += 1;
+        }
+        let mut keyed = std::mem::take(&mut self.tie_keyed);
+        keyed.clear();
+        for &node in &self.live_idx[g0..g1] {
+            let base = node as usize * self.words;
+            keyed.push((set_bit_sum(&self.slab[base..base + self.words], q, self.v3), node));
+        }
+        keyed.sort_by(|a, b| b.0.cmp(&a.0));
+        for (slot, &(_, node)) in pool[g0..].iter_mut().zip(keyed.iter()) {
+            *slot = node;
+        }
+        self.tie_keyed = keyed;
+    }
+
     fn walk(&mut self, start: u32, ef: u32, level: u32, window_size: u32, thresholds: &[f64], out: &mut [u32]) -> usize {
+        #[cfg(target_arch = "x86_64")]
+        if self.v3 {
+            // SAFETY: the CPU features were checked at construction.
+            return unsafe { self.walk_v3(start, ef, level, window_size, thresholds, out) };
+        }
+        self.walk_impl(start, ef, level, window_size, thresholds, out)
+    }
+
+    /// `walk` compiled with x86-64-v3 (POPCNT for the Hamming distances).
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx2,fma,popcnt,bmi1,bmi2,lzcnt")]
+    unsafe fn walk_v3(&mut self, start: u32, ef: u32, level: u32, window_size: u32, thresholds: &[f64], out: &mut [u32]) -> usize {
+        self.walk_impl(start, ef, level, window_size, thresholds, out)
+    }
+
+    #[inline(always)]
+    fn walk_impl(&mut self, start: u32, ef: u32, level: u32, window_size: u32, thresholds: &[f64], out: &mut [u32]) -> usize {
         if self.bucket {
             let mut c = std::mem::take(&mut self.bcand);
             let mut r = std::mem::take(&mut self.bres);
@@ -769,11 +1004,25 @@ impl HnswSearcher {
     /// `words * 64 + 1` possible distances, so O(count). Returns k.
     #[napi]
     pub fn scan_into(&mut self, k: u32, mut out: Uint32Array) -> napi::Result<u32> {
-        let n = self.count as usize;
-        let k = (k as usize).min(n);
+        let k = (k as usize).min(self.count as usize);
         if out.len() < 2 + 2 * k {
             return Err(napi::Error::from_reason("scan_into: output shorter than 2 + 2 * k"));
         }
+        Ok(self.scan(k, out.as_mut()) as u32)
+    }
+
+    /// `scan_into` body; `k <= count` and `out.len() >= 2 + 2 * k`.
+    fn scan(&mut self, k: usize, out: &mut [u32]) -> usize {
+        #[cfg(target_arch = "aarch64")]
+        if self.words == 8 {
+            return self.scan512(k, out);
+        }
+        #[cfg(target_arch = "x86_64")]
+        if self.words == 8 && self.v3 {
+            // SAFETY: the CPU features were checked at construction.
+            return unsafe { self.scan512_v3(k, out) };
+        }
+        let n = self.count as usize;
         if self.all_ids.len() != n {
             self.all_ids = (0..n as u32).collect();
         }
@@ -801,7 +1050,6 @@ impl HnswSearcher {
             }
             acc += h;
         }
-        let out = out.as_mut();
         out[0] = n as u32;
         out[1] = k as u32;
         if k > 0 {
@@ -819,7 +1067,372 @@ impl HnswSearcher {
             }
         }
         self.dists = d;
-        Ok(k as u32)
+        k
+    }
+
+    /// `scan` for 512-bit codes: the same output (ascending distance, equal
+    /// distances in node order), in two passes. Pass 1 reads the slab in
+    /// order, four codes at a time, and fills the histogram as it goes (four
+    /// sub-histograms, so repeated distances do not serialise on one
+    /// counter). Pass 2 compares sixteen u16 distances at once against the
+    /// cutoff and visits only the matches, so the ~85% of nodes past the
+    /// cutoff cost no branch each.
+    #[cfg(target_arch = "aarch64")]
+    fn scan512(&mut self, k: usize, out: &mut [u32]) -> usize {
+        use std::arch::aarch64::*;
+        let n = self.count as usize;
+        let padded = n.div_ceil(16) * 16;
+        if self.scan_d.len() < padded {
+            self.scan_d.resize(padded, 0);
+        }
+        let d = &mut self.scan_d[..padded];
+        let mut hist = [[0u32; SCAN_BINS]; 4];
+        unsafe {
+            let q = self.query.as_ptr() as *const u8;
+            let (q0, q1, q2, q3) = (vld1q_u8(q), vld1q_u8(q.add(16)), vld1q_u8(q.add(32)), vld1q_u8(q.add(48)));
+            let base = self.slab.as_ptr() as *const u8;
+            let pc = |p: *const u8| -> uint8x16_t {
+                let c0 = vcntq_u8(veorq_u8(vld1q_u8(p), q0));
+                let c1 = vcntq_u8(veorq_u8(vld1q_u8(p.add(16)), q1));
+                let c2 = vcntq_u8(veorq_u8(vld1q_u8(p.add(32)), q2));
+                let c3 = vcntq_u8(veorq_u8(vld1q_u8(p.add(48)), q3));
+                vaddq_u8(vaddq_u8(c0, c1), vaddq_u8(c2, c3))
+            };
+            let dp = d.as_mut_ptr();
+            let mut i = 0;
+            while i + 4 <= n {
+                let p = base.add(i * 64);
+                let (a, b, c, e) = (pc(p), pc(p.add(64)), pc(p.add(128)), pc(p.add(192)));
+                let s = vpaddlq_u16(vpaddlq_u8(vpaddq_u8(vpaddq_u8(a, b), vpaddq_u8(c, e))));
+                let s16 = vmovn_u32(s);
+                vst1_u16(dp.add(i), s16);
+                let (x0, x1, x2, x3) = (
+                    vgetq_lane_u32::<0>(s) as usize,
+                    vgetq_lane_u32::<1>(s) as usize,
+                    vgetq_lane_u32::<2>(s) as usize,
+                    vgetq_lane_u32::<3>(s) as usize,
+                );
+                *hist[0].get_unchecked_mut(x0) += 1;
+                *hist[1].get_unchecked_mut(x1) += 1;
+                *hist[2].get_unchecked_mut(x2) += 1;
+                *hist[3].get_unchecked_mut(x3) += 1;
+                i += 4;
+            }
+            while i < n {
+                let x = vaddlvq_u8(pc(base.add(i * 64))) as usize;
+                *dp.add(i) = x as u16;
+                *hist[0].get_unchecked_mut(x) += 1;
+                i += 1;
+            }
+            // Padding past n never matches (above every real distance).
+            for j in n..padded {
+                *dp.add(j) = u16::MAX;
+            }
+        }
+        let (pos, t) = scan_cutoff(&hist, k);
+        let mut pos = pos;
+        out[0] = n as u32;
+        out[1] = k as u32;
+        if k > 0 {
+            let (keys, rest) = out[2..2 + 2 * k].split_at_mut(k);
+            unsafe {
+                let tv = vdupq_n_u16(t.min(u16::MAX as usize - 1) as u16);
+                let dp = d.as_ptr();
+                let mut b = 0;
+                while b < padded {
+                    let m0 = vcleq_u16(vld1q_u16(dp.add(b)), tv);
+                    let m1 = vcleq_u16(vld1q_u16(dp.add(b + 8)), tv);
+                    // 4 bits per element, element j at bits 4j..4j+3.
+                    let nib = vshrn_n_u16::<4>(vreinterpretq_u16_u8(vcombine_u8(vmovn_u16(m0), vmovn_u16(m1))));
+                    let mut mask = vget_lane_u64::<0>(vreinterpret_u64_u8(nib)) & 0x1111_1111_1111_1111;
+                    while mask != 0 {
+                        let j = b + (mask.trailing_zeros() as usize >> 2);
+                        mask &= mask - 1;
+                        let x = *dp.add(j) as usize;
+                        let p = pos[x] as usize;
+                        if p < k {
+                            *keys.get_unchecked_mut(p) = j as u32;
+                            *rest.get_unchecked_mut(p) = x as u32;
+                            pos[x] += 1;
+                        }
+                    }
+                    b += 16;
+                }
+            }
+        }
+        k
+    }
+
+    /// `scan512` for x86-64-v3: POPCNT distances, four codes per step with
+    /// four sub-histograms, then sixteen u16 distances per AVX2 compare in
+    /// the collect pass. Same output.
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx2,fma,popcnt,bmi1,bmi2,lzcnt")]
+    unsafe fn scan512_v3(&mut self, k: usize, out: &mut [u32]) -> usize {
+        use std::arch::x86_64::*;
+        let n = self.count as usize;
+        let padded = n.div_ceil(16) * 16;
+        if self.scan_d.len() < padded {
+            self.scan_d.resize(padded, 0);
+        }
+        let d = &mut self.scan_d[..padded];
+        let mut hist = [[0u32; SCAN_BINS]; 4];
+        let q: [u64; 8] = std::array::from_fn(|w| self.query[w]);
+        let base = self.slab.as_ptr();
+        let pc = |p: *const u64| -> usize {
+            let mut x = 0u32;
+            for (w, &qw) in q.iter().enumerate() {
+                x += (*p.add(w) ^ qw).count_ones();
+            }
+            x as usize
+        };
+        let dp = d.as_mut_ptr();
+        let mut i = 0;
+        while i + 4 <= n {
+            let p = base.add(i * 8);
+            let (x0, x1, x2, x3) = (pc(p), pc(p.add(8)), pc(p.add(16)), pc(p.add(24)));
+            *dp.add(i) = x0 as u16;
+            *dp.add(i + 1) = x1 as u16;
+            *dp.add(i + 2) = x2 as u16;
+            *dp.add(i + 3) = x3 as u16;
+            *hist[0].get_unchecked_mut(x0) += 1;
+            *hist[1].get_unchecked_mut(x1) += 1;
+            *hist[2].get_unchecked_mut(x2) += 1;
+            *hist[3].get_unchecked_mut(x3) += 1;
+            i += 4;
+        }
+        while i < n {
+            let x = pc(base.add(i * 8));
+            *dp.add(i) = x as u16;
+            *hist[0].get_unchecked_mut(x) += 1;
+            i += 1;
+        }
+        for j in n..padded {
+            *dp.add(j) = u16::MAX;
+        }
+        let (mut pos, t) = scan_cutoff(&hist, k);
+        out[0] = n as u32;
+        out[1] = k as u32;
+        if k > 0 {
+            let (keys, rest) = out[2..2 + 2 * k].split_at_mut(k);
+            let tv = _mm256_set1_epi16(t.min(u16::MAX as usize - 1) as i16);
+            let dp = d.as_ptr();
+            let mut b = 0;
+            while b < padded {
+                let v = _mm256_loadu_si256(dp.add(b) as *const __m256i);
+                // Unsigned v <= t  <=>  max(v, t) == t; two mask bits per u16.
+                let le = _mm256_cmpeq_epi16(_mm256_max_epu16(v, tv), tv);
+                let mut mask = _mm256_movemask_epi8(le) as u32 & 0x5555_5555;
+                while mask != 0 {
+                    let j = b + (mask.trailing_zeros() as usize >> 1);
+                    mask &= mask - 1;
+                    let x = *dp.add(j) as usize;
+                    let p = pos[x] as usize;
+                    if p < k {
+                        *keys.get_unchecked_mut(p) = j as u32;
+                        *rest.get_unchecked_mut(p) = x as u32;
+                        pos[x] += 1;
+                    }
+                }
+                b += 16;
+            }
+        }
+        k
+    }
+
+    /// Live (not stale) entries of a layer output into `live_idx`/`live_dist`.
+    fn collect_live(&mut self, out: &[u32], stale: Option<&[u8]>, stale_bits: usize) {
+        let n = out[1] as usize;
+        self.live_idx.clear();
+        self.live_dist.clear();
+        for i in 0..n {
+            let node = out[2 + i];
+            if let Some(b) = stale {
+                let x = node as usize;
+                if x < stale_bits && b[x >> 3] & (1u8 << (x & 7)) != 0 {
+                    continue;
+                }
+            }
+            self.live_idx.push(node);
+            self.live_dist.push(out[2 + n + i]);
+        }
+    }
+
+    /// Stage 1 of the semantic cascade in one call: the exact scan (`scan`
+    /// true, asking for `want` results) or the layer-0 walk from `start` with
+    /// `ef` (retried once at 2 * ef when fewer than `k` live results remain,
+    /// as `_finishNativeSearch` does), the stale filter, and the score
+    /// spread of the first `k` live results (`analyzeScoreSpread` over
+    /// `1 - dist / maxDist`, same arithmetic order). Results stay here for
+    /// `cascade_int8`. `stats` gets `[visited, n, top1, top2, min, mean,
+    /// variance]`. Returns n.
+    #[napi]
+    #[allow(clippy::too_many_arguments)]
+    pub fn cascade_stage1(
+        &mut self,
+        scan: bool,
+        want: u32,
+        start: u32,
+        ef: u32,
+        k: u32,
+        window_size: u32,
+        thresholds: Float64Array,
+        stale: Option<Uint8Array>,
+        stale_bits: u32,
+        mut stats: Float64Array,
+    ) -> napi::Result<u32> {
+        if stats.len() < 7 || start >= self.count.max(1) {
+            return Err(napi::Error::from_reason("cascade_stage1: bad arguments"));
+        }
+        let stale_ref: Option<&[u8]> = stale.as_ref().map(|b| &b[..]);
+        let stale_bits = match stale_ref {
+            Some(b) => (stale_bits as usize).min(b.len() * 8),
+            None => 0,
+        };
+        let total = self.count as usize;
+        let mut out = std::mem::take(&mut self.layer_out);
+        let visited;
+        if scan {
+            let want = (want as usize).min(total);
+            if out.len() < 2 + 2 * want {
+                out.resize(2 + 2 * want, 0);
+            }
+            self.scan(want, &mut out);
+            visited = out[0];
+            self.collect_live(&out, stale_ref, stale_bits);
+        } else {
+            let need = 2 + 2 * ef as usize;
+            if out.len() < need {
+                out.resize(need, 0);
+            }
+            self.walk(start, ef, 0, window_size, &thresholds, &mut out);
+            visited = out[0];
+            self.collect_live(&out, stale_ref, stale_bits);
+            if self.live_idx.len() < k as usize && (ef as usize) < total {
+                let retry = (total as u32).min(ef * 2);
+                if retry > ef {
+                    let need = 2 + 2 * retry as usize;
+                    if out.len() < need {
+                        out.resize(need, 0);
+                    }
+                    self.walk(start, retry, 0, window_size, &thresholds, &mut out);
+                    self.collect_live(&out, stale_ref, stale_bits);
+                }
+            }
+        }
+        self.layer_out = out;
+        let n = self.live_idx.len().min(k as usize);
+        self.live_idx.truncate(n);
+        self.live_dist.truncate(n);
+        let max_dist = (self.words * 64) as f64;
+        let st = spread(self.live_dist.iter().map(|&d| 1.0 - (d as f64 / max_dist)), n);
+        let stats = stats.as_mut();
+        stats[0] = visited as f64;
+        stats[1] = n as f64;
+        stats[2..7].copy_from_slice(&st);
+        Ok(n as u32)
+    }
+
+    /// Stage 2 of the cascade over the first `count` stage-1 results: int8
+    /// dot scores (`int8ScoresForNodes`: missing when the node has no int8
+    /// row or is stale, score 0), the stable descending sort of
+    /// `scoredCandidates.sort((a, b) => b.int8Score - a.int8Score)`, and the
+    /// spread of the non-missing scores in that order. Writes, in sorted
+    /// order, node, Hamming distance, score and missing flag;
+    /// `stats` gets `[nonMissing, top1, top2, min, mean, variance]`.
+    #[napi]
+    #[allow(clippy::too_many_arguments)]
+    pub fn cascade_int8(
+        &mut self,
+        slab: Int8Array,
+        dim: u32,
+        rows: u32,
+        present: Uint8Array,
+        query: Int8Array,
+        count: u32,
+        stale: Option<Uint8Array>,
+        stale_bits: u32,
+        mut nodes: Uint32Array,
+        mut dists: Uint32Array,
+        mut scores: Float64Array,
+        mut missing: Uint8Array,
+        mut stats: Float64Array,
+    ) -> napi::Result<u32> {
+        let dim = dim as usize;
+        let rows = rows as usize;
+        let count = (count as usize).min(self.live_idx.len());
+        if dim == 0 || query.len() != dim || slab.len() < rows * dim || present.len() < rows
+            || nodes.len() < count || dists.len() < count || scores.len() < count
+            || missing.len() < count || stats.len() < 6
+        {
+            return Err(napi::Error::from_reason("cascade_int8: bad arguments"));
+        }
+        let stale_ref: Option<&[u8]> = stale.as_ref().map(|b| &b[..]);
+        let stale_bits = match stale_ref {
+            Some(b) => (stale_bits as usize).min(b.len() * 8),
+            None => 0,
+        };
+        let q: &[i8] = &query;
+        let slab: &[i8] = &slab;
+        let scale = 1.0f64 / (127.0 * 127.0);
+        let mut pool = std::mem::take(&mut self.pool_idx);
+        pool.clear();
+        pool.extend_from_slice(&self.live_idx[..count]);
+        if self.tie_break {
+            self.break_cutoff_tie(&mut pool, q);
+        }
+        let mut sc = std::mem::take(&mut self.int8_score);
+        let mut miss = std::mem::take(&mut self.int8_missing);
+        sc.clear();
+        miss.clear();
+        for &node in &pool {
+            let node = node as usize;
+            let is_stale = stale_ref.is_some_and(|b| node < stale_bits && b[node >> 3] & (1u8 << (node & 7)) != 0);
+            if node >= rows || present[node] == 0 || is_stale {
+                miss.push(true);
+                sc.push(0.0);
+            } else {
+                let p = slab.as_ptr().wrapping_add(node * dim);
+                let mut off = 0;
+                while off < dim {
+                    prefetch(p.wrapping_add(off) as *const u64);
+                    off += 64;
+                }
+                miss.push(false);
+                sc.push(0.0);
+            }
+        }
+        for i in 0..count {
+            if !miss[i] {
+                let node = pool[i] as usize;
+                let v = &slab[node * dim..(node + 1) * dim];
+                sc[i] = crate::rescore::int8_dot(q, v) as f64 * scale;
+            }
+        }
+        let mut rank = std::mem::take(&mut self.int8_rank);
+        rank.clear();
+        rank.extend(0..count as u32);
+        // Stable, descending; scores are finite, so partial_cmp never fails.
+        rank.sort_by(|&a, &b| sc[b as usize].partial_cmp(&sc[a as usize]).unwrap_or(std::cmp::Ordering::Equal));
+        let (nodes, dists, scores, missing) = (nodes.as_mut(), dists.as_mut(), scores.as_mut(), missing.as_mut());
+        let mut non_missing = 0usize;
+        for (j, &r) in rank.iter().enumerate() {
+            let r = r as usize;
+            nodes[j] = pool[r];
+            dists[j] = self.live_dist[r];
+            scores[j] = sc[r];
+            missing[j] = miss[r] as u8;
+            non_missing += !miss[r] as usize;
+        }
+        let st = spread(rank.iter().filter(|&&r| !miss[r as usize]).map(|&r| sc[r as usize]), non_missing);
+        let stats = stats.as_mut();
+        stats[0] = non_missing as f64;
+        stats[1..6].copy_from_slice(&st);
+        self.int8_rank = rank;
+        self.int8_score = sc;
+        self.int8_missing = miss;
+        self.pool_idx = pool;
+        Ok(count as u32)
     }
 
     /// Level `level` as `[offsets[0..=count], neighbors...]`,

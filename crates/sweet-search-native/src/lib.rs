@@ -20,6 +20,7 @@ mod native_grep;
 mod regex_literals;
 mod rescore;
 mod simd_intersect;
+mod sqlite_ext;
 mod sparse_gram;
 mod tokenizer;
 

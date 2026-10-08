@@ -4,6 +4,7 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { CodebaseRepository } from '../../core/infrastructure/codebase-repository.js';
+import { nativeRescoreKernels } from '../../core/infrastructure/native-rescore.js';
 import { writeManifest, zeroManifest } from '../../core/incremental-indexing/infrastructure/manifest.mjs';
 
 // Helper: create a temp DB with the vectors schema and seed data
@@ -251,6 +252,54 @@ describe('CodebaseRepository', () => {
       }
       expect(got.found).toBe(emb.size);
       expect(got.scores).toEqual(ids.map((id) => (id && emb.get(id) ? seqDot(query, emb.get(id)) : null)));
+    });
+
+    // Large index (no resident store): the ss_full_dots SQLite extension must
+    // give exactly what getEmbeddingsByIds + search-semantic's dotProduct
+    // give: null for missing ids, NULL rows and empty vectors, a min-length
+    // sum for other widths, hidden rows excluded, `found` = rows with an
+    // embedding.
+    it('matches getEmbeddingsByIds + dotProduct through the SQLite extension', () => {
+      const prev = process.env.SS_FIX_EMBED_CACHE;
+      process.env.SS_FIX_EMBED_CACHE = '0';
+      try {
+        let seed = 11;
+        const r = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296) - 0.5;
+        const vec = (n) => makeEmbedding(Array.from({ length: n }, r));
+        const rows = [
+          ...Array.from({ length: 60 }, (_, i) => ({ id: `v${i}`, file_path: 'a.js', embedding: vec(768) })),
+          { id: 'null', file_path: 'a.js', embedding: null },
+          { id: 'empty', file_path: 'a.js', embedding: makeEmbedding([]) },
+          { id: 'short', file_path: 'a.js', embedding: vec(5) },
+          { id: 'long', file_path: 'a.js', embedding: vec(800) },
+          { id: 'retired', file_path: 'a.js', embedding: vec(768), epoch_written: 1, epoch_retired: 2 },
+        ];
+        ({ dbPath, tmpDir } = createVisibilityDb(rows));
+        const minDot = (a, b) => {
+          const n = Math.min(a.length, b.length);
+          if (n === 0) return null;
+          let sum = 0;
+          for (let i = 0; i < n; i++) sum += a[i] * b[i];
+          return sum;
+        };
+        const ids = ['v1', null, 'nope', 'null', 'empty', 'short', 'long', 'retired', 'v1',
+          ...Array.from({ length: 40 }, (_, i) => `v${(i * 7) % 60}`)];
+        for (const query of [Array.from({ length: 768 }, r), Float32Array.from({ length: 768 }, r)]) {
+          repo = new CodebaseRepository(dbPath);
+          const got = repo.embeddingDotScores(query, ids);
+          const emb = repo.getEmbeddingsByIds(ids.filter(Boolean));
+          if (!nativeRescoreKernels()) {
+            expect([...got.embeddings.keys()].sort()).toEqual([...emb.keys()].sort());
+            continue;
+          }
+          expect(repo._fullDotsReady).toBe(true);
+          expect(got.found).toBe(emb.size);
+          expect(got.scores).toEqual(ids.map((id) => (id && emb.get(id) ? minDot(query, emb.get(id)) : null)));
+          repo.close();
+        }
+      } finally {
+        if (prev === undefined) delete process.env.SS_FIX_EMBED_CACHE; else process.env.SS_FIX_EMBED_CACHE = prev;
+      }
     });
 
     it('falls back to the plain fetch for mixed vector widths', () => {

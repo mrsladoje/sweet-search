@@ -13,7 +13,20 @@ const MAX_FILES = 64;
 const cache = new Map();
 
 export function readJsonFileCached(filePath) {
-  const st = statSync(filePath, { bigint: true });
+  return parseCached(filePath, statSync(filePath, { bigint: true }));
+}
+
+/**
+ * readJsonFileCached, but undefined (no exception) when the file does not
+ * exist. Hot callers that treat a missing file as "none" use this: a thrown
+ * ENOENT costs several microseconds (the error and its stack) per call.
+ */
+export function readJsonFileCachedIfExists(filePath) {
+  const st = statSync(filePath, { bigint: true, throwIfNoEntry: false });
+  return st === undefined ? undefined : parseCached(filePath, st);
+}
+
+function parseCached(filePath, st) {
   const signature = `${st.ino}:${st.size}:${st.mtimeNs}:${st.ctimeNs}`;
   const hit = cache.get(filePath);
   if (hit && hit.signature === signature) return hit.value;

@@ -1,9 +1,9 @@
 import { dirname, isAbsolute, join } from 'path';
-import { readJsonFileCached } from './cached-json-file.js';
+import { readJsonFileCachedIfExists } from './cached-json-file.js';
 
 export function readAdjacentManifest(dbPath) {
   try {
-    const manifest = readJsonFileCached(join(dirname(dbPath), 'reconcile-manifest.json'));
+    const manifest = readJsonFileCachedIfExists(join(dirname(dbPath), 'reconcile-manifest.json'));
     return Number.isInteger(manifest?.epoch) ? manifest : null;
   } catch {
     return null;

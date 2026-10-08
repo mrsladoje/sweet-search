@@ -8,13 +8,13 @@
 import Database from 'better-sqlite3';
 import path from 'node:path';
 import { applyReadPragmas, assertInClauseSize } from './db-utils.js';
-import { readJsonFileCached } from './cached-json-file.js';
+import { readJsonFileCachedIfExists } from './cached-json-file.js';
 import { nativeRescoreKernels, scratchArray, scratchFloat64Query } from './native-rescore.js';
 
 function readAdjacentManifest(dbPath) {
   try {
     const manifestPath = path.join(path.dirname(dbPath), 'reconcile-manifest.json');
-    const manifest = readJsonFileCached(manifestPath);
+    const manifest = readJsonFileCachedIfExists(manifestPath);
     return Number.isInteger(manifest?.epoch) ? manifest : null;
   } catch {
     return null;
@@ -244,7 +244,12 @@ export class CodebaseRepository {
     const cached = this._residentEmbeddings(db);
     const flat = cached ? this._embeddingCache.flat : null;
     const kernels = flat && query && query.length === flat.dim ? nativeRescoreKernels() : null;
-    if (!kernels) return { embeddings: this._embeddingsFor(db, cached, uniqueIds) };
+    if (!kernels) {
+      const viaExtension = !cached && query && query.length > 0
+        ? this._extensionDotScores(db, query, ids, uniqueIds)
+        : null;
+      return viaExtension || { embeddings: this._embeddingsFor(db, cached, uniqueIds) };
+    }
     const rows = scratchArray('embRows', Uint32Array, ids.length);
     const slot = new Array(ids.length).fill(-1);
     const found = new Set();
@@ -261,6 +266,65 @@ export class CodebaseRepository {
     const scores = new Array(ids.length);
     for (let i = 0; i < ids.length; i++) scores[i] = slot[i] < 0 ? null : dots[slot[i]];
     return { scores, found: found.size };
+  }
+
+  /**
+   * embeddingDotScores for an index too large to keep resident, in one
+   * SQLite round trip: the ss_full_dots aggregate (native addon, loaded as
+   * an extension into this connection) scores the visible rows with these
+   * ids and returns one blob, instead of one Buffer per row. Same rows as
+   * _embeddingsFor, same scores as dotProducts over them. null when the
+   * extension is not loaded.
+   */
+  _extensionDotScores(db, query, ids, uniqueIds) {
+    if (!this._fullDotsExtension(db)) return null;
+    const visibility = this._visibility(db);
+    const key = visibility.sql;
+    if (this._fullDotsStmt?.db !== db || this._fullDotsStmt.key !== key) {
+      this._fullDotsStmt = {
+        db,
+        key,
+        stmt: db.prepare(
+          `SELECT ss_full_dots(?, h.key, v.embedding) FROM json_each(?) h JOIN vectors v ON v.id = h.value${key ? ` WHERE ${key}` : ''}`
+        ).pluck(),
+      };
+    }
+    const q = scratchFloat64Query(query);
+    const blob = this._fullDotsStmt.stmt.get(Buffer.from(q.buffer, q.byteOffset, q.byteLength), JSON.stringify(uniqueIds), ...visibility.params);
+    const triples = blob.byteOffset % 8 === 0
+      ? new Float64Array(blob.buffer, blob.byteOffset, blob.length / 8)
+      : new Float64Array(blob.buffer.slice(blob.byteOffset, blob.byteOffset + blob.length));
+    // [slot in uniqueIds, flag (0 no embedding, 1 score, 2 empty), score]
+    const byId = new Map();
+    let found = 0;
+    for (let t = 0; t < triples.length; t += 3) {
+      if (triples[t + 1] === 0) continue;
+      found++;
+      byId.set(uniqueIds[triples[t]], triples[t + 1] === 1 ? triples[t + 2] : null);
+    }
+    const scores = new Array(ids.length);
+    for (let i = 0; i < ids.length; i++) {
+      const v = ids[i] ? byId.get(ids[i]) : undefined;
+      scores[i] = v === undefined ? null : v;
+    }
+    return { scores, found };
+  }
+
+  /** Load the ss_full_dots extension into `db` once; false when unavailable. */
+  _fullDotsExtension(db) {
+    if (this._fullDotsDb === db) return this._fullDotsReady;
+    this._fullDotsDb = db;
+    this._fullDotsReady = false;
+    const kernels = process.env.SS_FIX_SQLITE_DOTS === '0' ? null : nativeRescoreKernels();
+    if (kernels?.path && typeof db.loadExtension === 'function') {
+      try {
+        db.loadExtension(kernels.path, 'sqlite3_ssext_init');
+        this._fullDotsReady = true;
+      } catch {
+        // Old addon without the entry point, or extension loading disabled.
+      }
+    }
+    return this._fullDotsReady;
   }
 
   /**
