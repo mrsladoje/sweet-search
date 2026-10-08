@@ -14,3 +14,14 @@ Python: `pip install faiss-cpu usearch hnswlib numpy`.
    `python tput-theirs.py <name> '<configs>'`, `python summarize3.py <names...>`.
 
 Held-out sets: report aggregate numbers only.
+
+## Native harness (2026-10-08, `docs/HNSW_BENCHMARK.md` sections 1–4.2b)
+
+Rivals in C++, no Python in the timed path.
+
+1. `build-native.sh` (macOS) or `build-native-linux.sh` (Linux x86, FAISS AVX2 + OpenBLAS)
+   — builds FAISS 1.15.1, USearch 2.26.4 (+ NumKong), hnswlib → `rivals`, `rivals-hnswlib`.
+2. `python prep.py <set>` — exact 768-d top 10 → `<set>/gt.bin`.
+3. `run-all.sh` / `run-all-linux.sh` — every config, one job at a time → `<set>/runs`, `<set>/res`.
+4. Our cascade → `<set>/ours.json` (`{res, total_us}`), then `python score.py <set>`.
+5. `node build-dedup.mjs` — the 140k distractor set (157k minus exact duplicate vectors).

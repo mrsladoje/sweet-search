@@ -1,106 +1,198 @@
 # Vector search benchmark: sweet-search vs FAISS, USearch, hnswlib
 
-Status: 2026-10-07, main after `977bc3e2` (exact scan, bucket queues, no
-float-512 stage) and the float-512 store removal. All numbers are measured
-on an Apple M3 Max (12 performance cores, 128 GB).
+Status: 2026-10-08. Sections 1–4.2 are measured on two machines: an Apple
+M3 Max (12 performance cores, 128 GB) and an x86 AMD EPYC Milan server
+(Hetzner CCX33, 8 vCPU, AVX2, no AVX-512). Sections 4.3–4.7 are the
+2026-10-07 (v3) measurements on the M3 Max only.
 
 ## 1. Summary
 
 - **Speed at equal quality.** On held-out GCSN queries, sweet-search
-  reaches its MRR faster than any rival at every size: 78 µs vs 89 µs
-  (FAISS) at 6.9k vectors, 207 µs vs 555 µs at 20k, and 320 µs vs 1.48 ms
-  at 157k (both USearch i8).
-- **One loss.** On AdvTest, the one set we never tuned on, USearch i8 is
-  faster (193 µs vs 227 µs) and slightly better (0.471 vs 0.469 MRR) in our
-  time budget.
-- **Quality.** We are 0.4–1.3 MRR points below exact 768-d cosine search.
-  The gap grows with index size. In our time budget, no rival reaches our
-  GCSN quality: we lead by 0.2 (6.9k), 1.3 (20k) and 1.4 (157k) points. A
-  rival that spends 20–70× our latency reaches exact quality and beats us
-  by those 0.4–1.3 points.
-- **Kernel.** Our binary HNSW walk is 5–8× faster than FAISS
-  `IndexBinaryHNSW` and USearch b1 on identical inputs, at the same
-  stage-1 recall as an exact Hamming scan.
-- **Memory.** Our index structures at 157k take 197 MB, vs 242 MB for
-  USearch i8 and 541 MB for FAISS / hnswlib at the same build budget.
-- **Fair claim:** "fastest at near-exact quality on code search". Not
-  "best quality", and not "fastest everywhere".
+  reaches its MRR faster than every rival at 6.9k, 20k and 140k vectors,
+  on both machines:
+
+  | set | M3 Max: sweet / fastest rival | x86 EPYC: sweet / fastest rival |
+  |---|---|---|
+  | GCSN 6.9k | **52 µs** / 76 µs (USearch i8 + rescore) | **81 µs** / 109 µs (FAISS f32) |
+  | GCSN + distractors 20k | **103 µs** / 168 µs (USearch i8 + rescore) | **166 µs** / 246 µs (USearch b1 cascade) |
+  | GCSN + distractors 140k | **236 µs** / 1,072 µs (FAISS SQ8 + refine) | **482 µs** / 1,673 µs (hnswlib) |
+  | AdvTest 21.7k (never tuned) | 111 µs / **108 µs** (USearch i8 + rescore) | 182 µs / **141 µs** (USearch b1 cascade) |
+
+- **One loss.** AdvTest, the set we never tuned on: USearch is about as
+  fast on the M3 Max (108 vs 111 µs) and 1.3× faster on x86, and slightly
+  better inside our time budget (4.2). Most of our AdvTest time is the
+  full-vector stage: above 16,384 vectors the full 768-d vectors are read
+  from SQLite, not kept in RAM (kept on purpose, for memory).
+- **Lead:** 1.35–1.5× at 6.9k and 20k, 3.5–4.5× at 140k.
+- **Quality.** We are 0.3–0.6 MRR points below exact 768-d cosine search.
+  In our time budget, no rival reaches our GCSN quality.
+- **Memory.** Our index structures take 197 MB at 157k (section 4.5).
+  At 140k the rivals' M64 / efC800 indexes take 241 MB (USearch i8) to
+  482–585 MB (hnswlib, FAISS f32, FAISS SQ8).
+- **Fair claim:** "fastest at near-exact quality on code search, on ARM
+  and x86". Not "best quality", and not "fastest everywhere".
 
 ## 2. What is compared
 
 **sweet-search** (production code, `semanticSearch3Stage`):
-1. Stage 1: binary HNSW over 512-bit sign codes (M=64, efC=800), 1,000
-   candidates. Up to 15,000 vectors: an exact Hamming scan instead of the
-   walk.
-2. Stage 2: int8 (512-d) rescore of the top 100–150 candidates
-   (adaptive pool).
+1. Stage 1: the exact Hamming top 1,000 over 512-bit sign codes (a full
+   scan, up to 150,000 vectors); above that, a binary HNSW walk (M=64,
+   efC=800).
+2. Stage 2: int8 (512-d) rescore of the top 40–400 stage-1 candidates
+   (adaptive pool). When the pool cutoff falls inside a run of equal
+   Hamming distances, the run is ordered by the asymmetric score (the
+   query's int8 values summed over the set code bits).
 3. Full-vector stage: exact 768-d dot on the top 30–50, blended 0.8 × full
    + 0.2 × int8 (min-max normalised).
 
-**Rivals:** each builds HNSW from the full 768-d float vectors its own
-documented way, and returns its top 10 directly (no rescore):
+**Rivals** (native C++, `eval/benchmarks/hnsw-rivals/rivals.cpp`, no
+Python in the timed path). Each indexes the full 768-d vectors its own
+documented way. Configs marked "+ rescore" or "cascade" rescore with the
+exact 768-d vectors, like our last stage:
 
-| library | index | build configs (M / efConstruction) |
-|---|---|---|
-| FAISS 1.15.1 | `IndexHNSWFlat` f32, inner product | 16/40 (default), 32/200, 64/800 |
-| hnswlib | f32, cosine | 16/200 (README), 64/800 |
-| USearch 2.26.4 | f16, cosine | 16/128 (default), 64/800 |
-| USearch 2.26.4 | i8, cosine | 64/800 |
+| library | configs (M / efConstruction) |
+|---|---|
+| FAISS 1.15.1 `IndexHNSWFlat` f32 | 16/40 (default), 32/200, 64/800 |
+| FAISS 1.15.1 SQ8 HNSW + exact refine | 64/800 |
+| FAISS 1.15.1 binary HNSW cascade (our codes → exact 768-d) | 64/800 |
+| USearch 2.26.4 (+ NumKong) f16 | 16/128 (default), 64/800 |
+| USearch 2.26.4 i8, i8 + exact rescore, b1 cascade | 64/800 |
+| hnswlib (master) f32 | 16/200 (README), 64/800 |
 
-M=64 / efC=800 is our own build budget, so every rival also gets an
-equal-budget build. efSearch is swept 16 → 2048 (stops at recall 0.999 or
-15 ms p50).
+efSearch is swept 16 → 2048 (stops at recall 0.999 or 15 ms p50).
 
 ## 3. Method
 
-- **Embeddings:** CodeRankEmbed, the same vectors for every system.
+- **Embeddings:** CodeRankEmbed, the same corpus vectors for every system.
 - **Data:**
   - GCSN held-out: the 2,400 GenCodeSearchNet held-out queries (seed-42
     split). Aggregate metrics only; no per-query inspection.
   - Distractor sets: the 6,918 GCSN documents plus chunks from our
-    non-held-out dev eval repos, at 20k and 157k vectors. Queries still
-    have GCSN gold labels.
+    non-held-out dev eval repos, at 20k and 140k vectors (the 140k set is
+    the earlier 157k set with exact duplicate vectors removed).
   - AdvTest: 3,000 queries (seed 42) over the full AdvTest index (21,731
-    chunks). We report AdvTest but never tuned on it.
+    chunks). Reported, never tuned on.
   - CoSQA+ is never used (it is a reported benchmark).
-- **Latency:** 1 thread, median of 3 runs per query, p50 / p99 over all
-  queries, query embedding excluded. sweet-search runs in Node; rivals run
-  from Python, which adds a per-call floor of about 5–15 µs (FAISS,
-  USearch) and about 48 µs (hnswlib).
-- **Quality:** MRR@10 at document level (main metric). Recall@10 against
-  exact 768-d cosine kNN is also reported.
-- **Scripts:** `eval/benchmarks/hnsw-rivals/` (export, our cascade, rival
-  grid, memory, throughput, summary).
+- **Latency:** 1 thread, median of 3 runs per query, p50 over all queries,
+  query embedding excluded. sweet-search runs in Node; rivals run from C++
+  (`-O3 -mcpu=native` / `-march=native`; FAISS with its AVX2 build and
+  OpenBLAS on x86). Index builds use all cores.
+- **Quality:** MRR@10 at document level.
+- **x86 caveat:** on the x86 machine our arm embeds the queries with the
+  CPU (ONNX Runtime) model, while the rivals read the query vectors
+  exported on the Mac. Our x86 MRR therefore differs slightly from our
+  Mac MRR (for example 0.8342 vs 0.8333 on GCSN 6.9k).
+- **Scripts:** `eval/benchmarks/hnsw-rivals/` — `rivals.cpp`,
+  `build-native.sh` / `build-native-linux.sh`, `run-all.sh` /
+  `run-all-linux.sh`, `prep.py` (exact top 10), `score.py`.
 
 ## 4. Results
 
-### 4.1 Latency at which each system reaches our MRR
+### 4.1 Latency at which each system reaches our MRR (held-out, p50)
 
-p50, 1 thread. Rivals: the fastest of their build configs.
+**Apple M3 Max**
 
-| set | vectors | exact-kNN MRR | **sweet** p50 · MRR | FAISS HNSWFlat f32 | USearch f16 | USearch i8 | hnswlib f32 |
-|---|---|---|---|---|---|---|---|
-| GCSN held-out | 6.9k | 0.837 | **78 µs** · 0.833 | 89 µs (M32, ef64) | 356 µs (M64, ef64) | 93 µs (M64, ef64) | 949 µs (M64, ef64) |
-| GCSN held-out + distractors | 20k | 0.829 | **207 µs** · 0.820 | never (max 0.820) | 1.74 ms (M64, ef512) | 555 µs (M64, ef512) | 1.86 ms (M64, ef128) |
-| GCSN held-out + distractors | 157k | 0.798 | **320 µs** · 0.785 | 2.15 ms (M64, ef512) | 1.83 ms (M64, ef256) | 1.48 ms (M64, ef512) | 4.32 ms (M64, ef256) |
-| AdvTest (never tuned) | 21.7k | 0.474 | 227 µs · 0.469 | 409 µs (M64, ef128) | 758 µs (M64, ef128) | **193 µs** (M64, ef128) | 1.86 ms (M16, ef256) |
+| set | exact MRR | **sweet** p50 · MRR | FAISS f32 | FAISS SQ8+refine | FAISS bin cascade | USearch f16 | USearch i8 | USearch i8+rescore | USearch b1 cascade | hnswlib f32 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| GCSN 6.9k | 0.8367 | **52 µs** · 0.8333 | 92 (M32) | 264 | 89 | 359 (M16) | 88 | 76 | never (0.8316) | 165 (M64) |
+| GCSN 20k | 0.8245 | **103 µs** · 0.8191 | 322 (M64) | 443 | 190 | 660 (M64) | 286 | 168 | never (0.8187) | 499 (M64) |
+| GCSN 140k | 0.7918 | **236 µs** · 0.7854 | 1,889 (M64) | 1,072 | 3,705 | 1,688 (M64) | 1,113 | 1,228 | never (0.7840) | 1,668 (M64) |
+| AdvTest 21.7k | 0.4742 | 111 µs · 0.4685 | 335 (M64) | 487 | 208 | 736 (M64) | 183 | **108** | 192 | 534 (M64) |
 
-- FAISS never reaches our MRR at 20k: its recall stalls at 0.989 even at
-  M=64 / efC=800 / efSearch=2048. The 20k set contains real-repo chunks with
-  near-duplicate code, a known weak spot of HNSW graphs.
-- At their default build budgets, FAISS (M16, M32), hnswlib M16 and
-  USearch f16 M16 never reach our MRR at 157k.
+**x86 AMD EPYC Milan**
 
-### 4.2 Quality at equal latency, and at any latency
+| set | exact MRR | **sweet** p50 · MRR | FAISS f32 | FAISS SQ8+refine | FAISS bin cascade | USearch f16 | USearch i8 | USearch i8+rescore | USearch b1 cascade | hnswlib f32 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| GCSN 6.9k | 0.8367 | **81 µs** · 0.8342 | 109 (M32) | 137 | never (0.8337) | 267 (M64) | never (0.8336) | 118 | never (0.8332) | 163 (M64) |
+| GCSN 20k | 0.8245 | **166 µs** · 0.8203 | 348 (M64) | 253 | 637 | 550 (M64) | 265 | 298 | 246 | 498 (M64) |
+| GCSN 140k | 0.7918 | **482 µs** · 0.7865 | 2,310 (M64) | 1,876 | never (0.7853) | 4,734 (M64) | 3,378 | 3,366 | never (0.7841) | 1,673 (M64) |
+| AdvTest 21.7k | 0.4742 | 182 µs · 0.4659 | 203 (M64) | 156 | 358 | 353 (M64) | 186 | 189 | **141** | 267 (M64) |
 
-| set | sweet MRR @ p50 (p99) | best rival within our p50 | best rival at any latency | exact kNN |
+µs at the first efSearch that reaches our MRR; the fastest build config of
+each library. "never (x)": the best MRR it reaches at any efSearch ≤ 2048.
+
+### 4.2 Best rival quality inside our time budget (held-out)
+
+| set | M3 Max: sweet MRR · best rival within our p50 | x86: sweet MRR · best rival within our p50 |
+|---|---|---|
+| GCSN 6.9k | 0.8333 · 0.8308 (USearch i8) | 0.8342 · 0.8307 (FAISS f32 M64) |
+| GCSN 20k | 0.8191 · 0.8167 (FAISS bin cascade) | 0.8203 · 0.8181 (USearch i8) |
+| GCSN 140k | 0.7854 · 0.7748 (USearch b1 cascade) | 0.7865 · 0.7791 (FAISS SQ8 + refine) |
+| AdvTest 21.7k | 0.4685 · **0.4701** (USearch i8 + rescore) | 0.4659 · **0.4671** (FAISS SQ8 + refine) |
+
+### 4.2b The 2026-10-08 speed pass (held-out p50)
+
+Old = main before the pass; new = after it.
+
+| set | M3 Max old → new | x86 old → new |
+|---|---|---|
+| GCSN 6.9k | 77 → 52 µs | 141 → 81 µs |
+| GCSN 20k | 212 → 103 µs | 466 → 166 µs |
+| GCSN 140k | 328 → 236 µs | 862 → 482 µs |
+| AdvTest 21.7k | 238 → 111 µs | 480 → 182 µs |
+
+With the two output changes below switched off (`SS_FIX_HNSW_TIEBREAK=0`
+and the old 15k scan cap), every result object and every stat is identical
+to old on all 10,200 held-out and 10,800 dev queries, on both machines.
+
+What changed:
+- Stages 1 and 2 run in one native call (`searchCascade`): walk or scan,
+  stale filter, score spread, int8 scores and the stable sort. JS builds
+  result objects only for the head it keeps.
+- Exact scan: one sequential pass, four codes per step, four
+  sub-histograms, SIMD compare in the collect pass (NEON and AVX2).
+- Full 768-d dots: two (NEON) or four (AVX2) rows per f64 vector, each
+  row still one sequential sum. FMA only when the query is f32-exact, so
+  the products are exact and the rounding is unchanged.
+- Above 16,384 vectors, the full-vector dots run inside SQLite: an
+  aggregate function from the native addon, loaded into better-sqlite3's
+  own connection (`SS_FIX_SQLITE_DOTS=0` turns it off).
+- x86: the release build targets baseline x86-64, which has no POPCNT
+  instruction. The walk, the scan and the dot kernels are now compiled a
+  second time for x86-64-v3 (AVX2, FMA, POPCNT) and picked at run time
+  (`SS_FIX_X86_V3=0` forces the baseline code; same output, slower).
+  The 512-bit Hamming distance has a fixed 8-word form.
+
+**Two output changes.**
+- *Tie-break at the int8 pool cutoff.* A 512-bit Hamming distance takes
+  only about 100 distinct values, so the int8 pool cutoff often falls
+  inside a run of equal distances. Before, the members of that run that
+  entered the pool depended on stage-1 order only. Now the run is ordered
+  by the asymmetric score (the query's int8 values summed over the set
+  code bits). It costs under 1 µs. `SS_FIX_HNSW_TIEBREAK=0` restores the
+  old order.
+- *Exact scan up to 150,000 vectors (was 15,000).* Stage 1 is then the
+  exact Hamming top 1,000, not the walk's approximation. The scan is
+  faster than the walk up to 140k vectors on the M3 Max (150 vs 180 µs at
+  140k) and ties it at 140k on x86 (341 vs 343 µs); at 20k it is 2.2–2.7×
+  faster. The cap is a fixed number, so rankings do not depend on the
+  machine. It covers all 400 task-bench golden repos (largest 86,751
+  vectors). `SS_FIX_HNSW_SCAN=0` keeps the walk at every size.
+
+MRR@10 change, old → new (both changes on):
+
+| set | dev M3 Max | dev x86 | held-out M3 Max | held-out x86 |
 |---|---|---|---|---|
-| GCSN 6.9k | 0.8330 @ 78 µs (114 µs) | 0.8307 (FAISS M64 ef32, 67 µs) | 0.8369 (hnswlib M16 ef256, 1.62 ms) | 0.8367 |
-| GCSN 20k | 0.8200 @ 207 µs (286 µs) | 0.8074 (USearch i8 M64 ef128, 169 µs) | 0.8277 (hnswlib M64 ef2048, 8.23 ms) | 0.8286 |
-| GCSN 157k | 0.7849 @ 320 µs (430 µs) | 0.7714 (USearch i8 M64 ef128, 310 µs) | 0.7980 (hnswlib M64 ef2048, 22.97 ms) | 0.7980 |
-| AdvTest 21.7k | 0.4685 @ 227 µs (306 µs) | **0.4710** (USearch i8 M64 ef128, 193 µs) | 0.4742 (FAISS M64 ef1024, 2.84 ms) | 0.4742 |
+| GCSN 6.9k | +0.0001 | −0.0001 | +0.0003 | +0.0003 |
+| GCSN 20k | −0.0001 | −0.0001 | +0.0004 | +0.0006 |
+| GCSN 140k | +0.0003 | +0.0004 | +0.0001 | +0.0010 |
+| AdvTest 21.7k | — | — | +0.0000 | +0.0003 |
 
-### 4.3 Recall@10 against exact 768-d kNN
+Every held-out set improves or stays equal. The three small dev drops are
+each under half of one query moving from rank 1 to rank 2 (noise; the
+owner accepted them).
+
+**Kept as is, by rule (no extra memory):** resident full vectors above
+16,384. It would remove most of the SQLite time (about 70 µs of AdvTest's
+111 µs), at about 3 KB of RAM per vector.
+
+**Tried and rejected in this pass:** rowid hints for the SQLite fetch
+(warm-cache gain only); deeper list and code prefetch in the walk (slower
+on both machines, 2× slower on x86); the int8 dot as the tie-break key
+(dev MRR −0.00001 on GCSN 6.9k); including the whole tie run in the pool
+(mixed dev MRR).
+
+### 4.3 Recall@10 against exact 768-d kNN (v3, 2026-10-07, M3 Max, 157k set)
 
 | set | sweet | FAISS (at our MRR / max) | USearch f16 | USearch i8 | hnswlib |
 |---|---|---|---|---|---|
@@ -114,7 +206,7 @@ purpose, so our top 10 is a ranking, not an approximation of the exact kNN
 list. The rivals must copy exact kNN closely (0.91–0.99) to reach our MRR;
 our top 10 differs more and scores almost the same MRR.
 
-### 4.4 Binary kernels on identical inputs
+### 4.4 Binary kernels on identical inputs (v3, M3 Max)
 
 The same 512-bit codes (bit-for-bit our index codes), M=64, efC=800, 1,000
 candidates, 1 thread, GCSN **dev** queries. Stage-1 recall = share of the
@@ -132,7 +224,7 @@ With the same exact 768-d rescore of their candidates, the rival cascades
 reach the same or slightly lower MRR than ours. Building our cascade on
 their kernels would be slower and not better.
 
-### 4.5 Memory and build time
+### 4.5 Memory and build time (v3, M3 Max, 157k set)
 
 Index structures kept in RAM.
 
@@ -190,7 +282,8 @@ Vector cascade p50 on GCSN dev queries (embedding excluded):
 | original JS walk | 544 µs | — | 1,569 µs | baseline |
 | native exact-parity walk (`37534e57`) | 201 µs | 313 µs | 505 µs | identical |
 | speed pass 2 (`aabeb4a5`) | 160 µs | 261 µs | 395 µs | identical |
-| v3: exact scan ≤15k, bucket queues, no float-512 (`977bc3e2`) | **79 µs** | **204 µs** | **317 µs** | MRR within 0.1 pp |
+| v3: exact scan ≤15k, bucket queues, no float-512 (`977bc3e2`) | 79 µs | 204 µs | 317 µs | MRR within 0.1 pp |
+| 2026-10-08: fused native cascade, SIMD scan/dots, SQLite dots, cutoff tie-break, scan ≤150k | **51 µs** | **102 µs** | **237 µs** (140k) | MRR in 4.2b |
 
 Memory over the same period (RSS after load + 300 queries, 157k):
 1,007 MB (original) → 1,228 MB (first native pass) → 934 MB (direct native
@@ -230,19 +323,21 @@ load, `b33ca44e`) → minus the 308 MB float-512 store (v3).
 | env | default | effect |
 |---|---|---|
 | `SS_FIX_HNSW_NATIVE=0` | on | JS walk instead of the native walk |
-| `SS_FIX_HNSW_SCAN=0` | on | graph walk instead of the exact scan up to 15k vectors |
+| `SS_FIX_HNSW_SCAN=0` | on | graph walk instead of the exact scan up to 150k vectors |
 | `SS_FIX_HNSW_BUCKET=0` | on | JS-exact heaps instead of bucket queues |
 | `SS_FIX_HNSW_FREEZE=0` | on | keep the JS graph arrays after the native snapshot |
 | `SS_FIX_RESCORE_NATIVE=0` | on | JS/WASM int8 and float scoring |
 | `SS_FIX_FLOAT512=1` | off | restore the float-512 stage, its store and its upkeep |
 | `SS_FIX_EMBED_CACHE=0` | on | no resident full-768 cache (≤16,384 vectors) |
+| `SS_FIX_HNSW_TIEBREAK=0` | on | stage-1 order (not the asymmetric score) for the Hamming tie at the int8 pool cutoff |
+| `SS_FIX_SQLITE_DOTS=0` | on | fetch full vectors to JS instead of the in-SQLite dot aggregate (>16,384 vectors) |
+| `SS_FIX_X86_V3=0` | on | x86: baseline x86-64 kernels instead of the AVX2/FMA/POPCNT ones |
 
 ## 7. Caveats
 
-- One machine (M3 Max). x86 and Linux are not measured; the NEON paths
-  fall back to scalar code there.
-- Rivals run through Python. Their per-call overhead matters most at the
-  smallest index and on hnswlib.
+- Sections 1–4.2b cover an M3 Max and one x86 server (EPYC Milan, AVX2).
+  AVX-512 is not used or measured. Sections 4.3–4.7 are M3 Max only.
+- The M3 Max is a shared workstation (load average 2–6 during the runs).
 - The distractor sets are built from our dev repos, and GCSN-like data
   favours code-tuned settings. AdvTest is the check against that, and we
   lose it to USearch i8.

@@ -105,8 +105,9 @@ function applyFullVectorStageRescore(candidates, queryFloat, codebaseRepo, opts 
   const ids = head.map(c => c.id).filter(Boolean);
   if (ids.length === 0) return { candidates, stats: null };
 
-  // Native path over the resident store; same scores and found count as
-  // getEmbeddingsByIds + dotProducts below.
+  // Native path (resident store, or SQLite through the ss_full_dots
+  // extension); same scores and found count as getEmbeddingsByIds +
+  // dotProducts below.
   const fetched = codebaseRepo.embeddingDotScores
     ? codebaseRepo.embeddingDotScores(queryFloat, head.map(c => c.id || null))
     : { embeddings: codebaseRepo.getEmbeddingsByIds(ids) };
@@ -215,6 +216,27 @@ function analyzeScoreSpread(scores) {
   };
 }
 
+/**
+ * analyzeScoreSpread's result from precomputed sums (native cascade):
+ * `stats[off..off + 5)` = [top1, top2, min, mean, variance] over `count` scores.
+ */
+function spreadFromStats(count, stats, off) {
+  if (!(count >= 2)) return null;
+  const top1 = stats[off];
+  const top2 = stats[off + 1];
+  const min = stats[off + 2];
+  const mean = stats[off + 3];
+  const topGap = top1 - top2;
+  const spread = top1 - min;
+  return {
+    top1, top2, topGap, spread, mean,
+    stdDev: Math.sqrt(stats[off + 4]),
+    count,
+    isDecisive: topGap > SCORE_SPREAD.topGapThreshold,
+    isAmbiguous: spread < SCORE_SPREAD.spreadThreshold,
+  };
+}
+
 // =============================================================================
 // Phase 3: Adaptive Pool Sizing
 // =============================================================================
@@ -308,139 +330,191 @@ export async function semanticSearch3Stage(query, options = {}) {
 
   // Stage 1: Binary HNSW search
   // Pass floatQuery for asymmetric distance during graph traversal
-  const stage1Start = performance.now();
   const truncatedFloat = truncateForHNSW(embedResult.float);
-  // lazy: the native path returns all scores but builds result objects only
-  // for the head kept below (stage1Result.materialize); other paths return
-  // the full results array as before.
-  const stage1Result = await this.binaryHnswIndex.search(
-    embedResult.binary, this.stage1Candidates, { floatQuery: truncatedFloat, lazy: true }
-  );
-  const stage1Lazy = stage1Result.results === null && typeof stage1Result.materialize === 'function';
-  const stage1Count = stage1Lazy ? stage1Result.count : stage1Result.results.length;
-  const stage1Scores = stage1Lazy ? stage1Result.scores : stage1Result.results.map(r => r.score);
-  const stage1Analysis = analyzeScoreSpread(stage1Scores);
-  stats.stages.binary = {
-    latency_us: stage1Result.latency_us,
-    candidates: stage1Count,
-    scoreDistribution: stage1Analysis,
-  };
-  this.log(`Stage 1 (Binary): ${stage1Result.latency_us}us, ${stage1Count} candidates`);
-
-  if (stage1Count === 0) {
-    stats.rerank = {
-      skipped: true,
-      reason: 'no_candidates',
-      provider: null,
-      documents: 0,
-      tokens: 0,
-    };
-    return { results: [], stats };
-  }
-
-  // -------------------------------------------------------------------------
-  // Stage 2: Int8 Rescore (Phase 1 — batched normalized dot product)
-  //
-  // Key optimization: use normalizedFloatToInt8 (matches index-time quantizer)
-  // and raw dot product scoring. Since both query and document int8 vectors
-  // are quantized from L2-normalized floats, dot/(127²) ≈ cosine.
-  // No per-candidate norm computation needed.
-  // -------------------------------------------------------------------------
-  const stage2Start = performance.now();
   const useBatchedDot = BINARY_HNSW_CONFIG.retrieval.useBatchedDot !== false;
-
-  // Phase 3: Adaptive Stage 2 pool size (uses shared score-spread analysis)
-  const stage2Pool = adaptiveStage2Pool(k, stage1Analysis, adaptiveConfig);
-  const stage2Count = Math.min(stage2Pool.size, stage1Count);
-
-  // Collect int8 vectors for scoring
-  const stage2Candidates = stage1Lazy
-    ? stage1Result.materialize(stage2Count)
-    : stage1Result.results.slice(0, stage2Count);
-  const int8Vectors = [];
-  const validIndices = [];
-  let missingInt8Count = 0;
-
-  // Native path: score straight from the index's node-ordered int8 slab by
-  // stage-1 node index. Same scores and missing set as the path below.
-  const nativeInt8 = useBatchedDot && stage1Result.nodeIndices
-    && typeof this.binaryHnswIndex.int8ScoresForNodes === 'function'
-    ? this.binaryHnswIndex.int8ScoresForNodes(
-      normalizedFloatToInt8(truncatedFloat), stage1Result.nodeIndices.slice(0, stage2Count))
+  // Native stages 1 and 2 in one synchronous span (searchCascade): the same
+  // candidates, scores, order and stats as the path below, but result
+  // objects only for the head kept. null when unavailable.
+  const fusedQueryInt8 = useBatchedDot && typeof this.binaryHnswIndex.searchCascade === 'function'
+    ? normalizedFloatToInt8(truncatedFloat)
     : null;
-
-  if (nativeInt8) {
-    stats.queryInt8 = nativeInt8.queryInt8;
-    for (let i = 0; i < stage2Candidates.length; i++) {
-      if (nativeInt8.missing[i]) {
-        stage2Candidates[i].int8Score = 0.0;
-        stage2Candidates[i].missingInt8 = true;
-        missingInt8Count++;
-      } else {
-        stage2Candidates[i].int8Score = nativeInt8.scores[i];
-      }
+  const fused = fusedQueryInt8
+    ? this.binaryHnswIndex.searchCascade(embedResult.binary, this.stage1Candidates, {
+      floatQuery: truncatedFloat, queryInt8: fusedQueryInt8,
+    })
+    : null;
+  let scoredCandidates;
+  let int8Analysis;
+  if (fused) {
+    const stage1Count = fused.count;
+    const stage1Analysis = spreadFromStats(fused.stats[1], fused.stats, 2);
+    stats.stages.binary = {
+      latency_us: fused.latency_us,
+      candidates: stage1Count,
+      scoreDistribution: stage1Analysis,
+    };
+    this.log(`Stage 1 (Binary): ${fused.latency_us}us, ${stage1Count} candidates`);
+    if (stage1Count === 0) {
+      stats.rerank = { skipped: true, reason: 'no_candidates', provider: null, documents: 0, tokens: 0 };
+      return { results: [], stats };
     }
+
+    const stage2Start = performance.now();
+    const stage2Pool = adaptiveStage2Pool(k, stage1Analysis, adaptiveConfig);
+    const stage2Count = Math.min(stage2Pool.size, stage1Count);
+    stats.queryInt8 = fusedQueryInt8;
+    const int8 = fused.int8Stage(stage2Count);
+    if (int8.missing > 0) {
+      this.log(`Warning: ${int8.missing} candidates missing int8 vectors (given neutral score)`);
+    }
+    int8Analysis = spreadFromStats(int8.stats[0], int8.stats, 1);
+    // Without Stage 2.5 only its head survives, so only that is built.
+    const head = float512StageEnabled()
+      ? int8.count
+      : Math.min(adaptiveStage2_5Pool(k, int8Analysis, adaptiveConfig).size, int8.count);
+    scoredCandidates = int8.materialize(head);
+    stats.stages.int8 = {
+      latency_us: Math.round((performance.now() - stage2Start) * 1000),
+      candidates: int8.count,
+      missingVectors: int8.missing,
+      poolSize: stage2Count,
+      poolReason: stage2Pool.reason,
+      scoringPath: 'batched-dot',
+      scoreDistribution: int8Analysis,
+    };
+    this.log(`Stage 2 (Int8): ${stats.stages.int8.latency_us}us, ${int8.count} rescored (pool: ${stage2Count}, ${stage2Pool.reason}, batched)`);
   } else {
-    // One stale-bitmap snapshot for the whole pool (getInt8Vector would stat
-    // the bitmap file once per candidate). Falls back per-id for injected
-    // index doubles without the batch method.
-    const poolIds = stage2Candidates.map((c) => c.id);
-    const poolInt8 = typeof this.binaryHnswIndex.getInt8VectorsForIds === 'function'
-      ? this.binaryHnswIndex.getInt8VectorsForIds(poolIds)
-      : poolIds.map((id) => this.binaryHnswIndex.getInt8Vector(id));
-    for (let i = 0; i < stage2Candidates.length; i++) {
-      const int8Vector = poolInt8[i];
-      if (int8Vector) {
-        int8Vectors.push(int8Vector);
-        validIndices.push(i);
-      } else {
-        stage2Candidates[i].int8Score = 0.0;
-        stage2Candidates[i].missingInt8 = true;
-        missingInt8Count++;
-      }
+    // lazy: the native path returns all scores but builds result objects only
+    // for the head kept below (stage1Result.materialize); other paths return
+    // the full results array as before.
+    const stage1Result = await this.binaryHnswIndex.search(
+      embedResult.binary, this.stage1Candidates, { floatQuery: truncatedFloat, lazy: true }
+    );
+    const stage1Lazy = stage1Result.results === null && typeof stage1Result.materialize === 'function';
+    const stage1Count = stage1Lazy ? stage1Result.count : stage1Result.results.length;
+    const stage1Scores = stage1Lazy ? stage1Result.scores : stage1Result.results.map(r => r.score);
+    const stage1Analysis = analyzeScoreSpread(stage1Scores);
+    stats.stages.binary = {
+      latency_us: stage1Result.latency_us,
+      candidates: stage1Count,
+      scoreDistribution: stage1Analysis,
+    };
+    this.log(`Stage 1 (Binary): ${stage1Result.latency_us}us, ${stage1Count} candidates`);
+
+    if (stage1Count === 0) {
+      stats.rerank = {
+        skipped: true,
+        reason: 'no_candidates',
+        provider: null,
+        documents: 0,
+        tokens: 0,
+      };
+      return { results: [], stats };
     }
 
-    if (useBatchedDot) {
-      // Phase 1 NEW PATH: Batched normalized dot product
-      // Use same quantizer as index time. No per-candidate norms.
-      const queryInt8 = normalizedFloatToInt8(truncatedFloat);
-      stats.queryInt8 = queryInt8;
-      if (int8Vectors.length > 0) {
-        const batchScores = int8BatchDotScores(queryInt8, int8Vectors);
-        for (let j = 0; j < validIndices.length; j++) {
-          stage2Candidates[validIndices[j]].int8Score = batchScores[j];
+    // -------------------------------------------------------------------------
+    // Stage 2: Int8 Rescore (Phase 1 — batched normalized dot product)
+    //
+    // Key optimization: use normalizedFloatToInt8 (matches index-time quantizer)
+    // and raw dot product scoring. Since both query and document int8 vectors
+    // are quantized from L2-normalized floats, dot/(127²) ≈ cosine.
+    // No per-candidate norm computation needed.
+    // -------------------------------------------------------------------------
+    const stage2Start = performance.now();
+
+    // Phase 3: Adaptive Stage 2 pool size (uses shared score-spread analysis)
+    const stage2Pool = adaptiveStage2Pool(k, stage1Analysis, adaptiveConfig);
+    const stage2Count = Math.min(stage2Pool.size, stage1Count);
+
+    // Collect int8 vectors for scoring
+    const stage2Candidates = stage1Lazy
+      ? stage1Result.materialize(stage2Count)
+      : stage1Result.results.slice(0, stage2Count);
+    const int8Vectors = [];
+    const validIndices = [];
+    let missingInt8Count = 0;
+
+    // Native path: score straight from the index's node-ordered int8 slab by
+    // stage-1 node index. Same scores and missing set as the path below.
+    const nativeInt8 = useBatchedDot && stage1Result.nodeIndices
+      && typeof this.binaryHnswIndex.int8ScoresForNodes === 'function'
+      ? this.binaryHnswIndex.int8ScoresForNodes(
+        normalizedFloatToInt8(truncatedFloat), stage1Result.nodeIndices.slice(0, stage2Count))
+      : null;
+
+    if (nativeInt8) {
+      stats.queryInt8 = nativeInt8.queryInt8;
+      for (let i = 0; i < stage2Candidates.length; i++) {
+        if (nativeInt8.missing[i]) {
+          stage2Candidates[i].int8Score = 0.0;
+          stage2Candidates[i].missingInt8 = true;
+          missingInt8Count++;
+        } else {
+          stage2Candidates[i].int8Score = nativeInt8.scores[i];
         }
       }
     } else {
-      // Phase 1 OLD PATH (fallback): Per-candidate int8 cosine similarity
-      const queryInt8 = floatToInt8(truncatedFloat);
-      stats.queryInt8 = queryInt8;
-      for (let j = 0; j < validIndices.length; j++) {
-        stage2Candidates[validIndices[j]].int8Score = int8CosineSimilarity(queryInt8, int8Vectors[j]);
+      // One stale-bitmap snapshot for the whole pool (getInt8Vector would stat
+      // the bitmap file once per candidate). Falls back per-id for injected
+      // index doubles without the batch method.
+      const poolIds = stage2Candidates.map((c) => c.id);
+      const poolInt8 = typeof this.binaryHnswIndex.getInt8VectorsForIds === 'function'
+        ? this.binaryHnswIndex.getInt8VectorsForIds(poolIds)
+        : poolIds.map((id) => this.binaryHnswIndex.getInt8Vector(id));
+      for (let i = 0; i < stage2Candidates.length; i++) {
+        const int8Vector = poolInt8[i];
+        if (int8Vector) {
+          int8Vectors.push(int8Vector);
+          validIndices.push(i);
+        } else {
+          stage2Candidates[i].int8Score = 0.0;
+          stage2Candidates[i].missingInt8 = true;
+          missingInt8Count++;
+        }
+      }
+
+      if (useBatchedDot) {
+        // Phase 1 NEW PATH: Batched normalized dot product
+        // Use same quantizer as index time. No per-candidate norms.
+        const queryInt8 = normalizedFloatToInt8(truncatedFloat);
+        stats.queryInt8 = queryInt8;
+        if (int8Vectors.length > 0) {
+          const batchScores = int8BatchDotScores(queryInt8, int8Vectors);
+          for (let j = 0; j < validIndices.length; j++) {
+            stage2Candidates[validIndices[j]].int8Score = batchScores[j];
+          }
+        }
+      } else {
+        // Phase 1 OLD PATH (fallback): Per-candidate int8 cosine similarity
+        const queryInt8 = floatToInt8(truncatedFloat);
+        stats.queryInt8 = queryInt8;
+        for (let j = 0; j < validIndices.length; j++) {
+          stage2Candidates[validIndices[j]].int8Score = int8CosineSimilarity(queryInt8, int8Vectors[j]);
+        }
       }
     }
+
+    if (missingInt8Count > 0) {
+      this.log(`Warning: ${missingInt8Count} candidates missing int8 vectors (given neutral score)`);
+    }
+
+    // Sort by int8 score
+    scoredCandidates = [...stage2Candidates];
+    scoredCandidates.sort((a, b) => b.int8Score - a.int8Score);
+
+    const int8Scores = scoredCandidates.filter(c => !c.missingInt8).map(c => c.int8Score);
+    int8Analysis = analyzeScoreSpread(int8Scores);
+    stats.stages.int8 = {
+      latency_us: Math.round((performance.now() - stage2Start) * 1000),
+      candidates: scoredCandidates.length,
+      missingVectors: missingInt8Count,
+      poolSize: stage2Count,
+      poolReason: stage2Pool.reason,
+      scoringPath: useBatchedDot ? 'batched-dot' : 'per-candidate-cosine',
+      scoreDistribution: int8Analysis,
+    };
+    this.log(`Stage 2 (Int8): ${stats.stages.int8.latency_us}us, ${scoredCandidates.length} rescored (pool: ${stage2Count}, ${stage2Pool.reason}, ${useBatchedDot ? 'batched' : 'legacy'})`);
   }
-
-  if (missingInt8Count > 0) {
-    this.log(`Warning: ${missingInt8Count} candidates missing int8 vectors (given neutral score)`);
-  }
-
-  // Sort by int8 score
-  let scoredCandidates = [...stage2Candidates];
-  scoredCandidates.sort((a, b) => b.int8Score - a.int8Score);
-
-  const int8Scores = scoredCandidates.filter(c => !c.missingInt8).map(c => c.int8Score);
-  const int8Analysis = analyzeScoreSpread(int8Scores);
-  stats.stages.int8 = {
-    latency_us: Math.round((performance.now() - stage2Start) * 1000),
-    candidates: scoredCandidates.length,
-    missingVectors: missingInt8Count,
-    poolSize: stage2Count,
-    poolReason: stage2Pool.reason,
-    scoringPath: useBatchedDot ? 'batched-dot' : 'per-candidate-cosine',
-    scoreDistribution: int8Analysis,
-  };
-  this.log(`Stage 2 (Int8): ${stats.stages.int8.latency_us}us, ${scoredCandidates.length} rescored (pool: ${stage2Count}, ${stage2Pool.reason}, ${useBatchedDot ? 'batched' : 'legacy'})`);
 
   // -------------------------------------------------------------------------
   // Stage 2.5: Float Rescore (Phase 2 — fixed dimension, direct-access store)

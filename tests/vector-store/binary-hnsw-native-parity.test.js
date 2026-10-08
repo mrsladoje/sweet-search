@@ -14,6 +14,7 @@ import { BinaryHNSWIndex } from '../../core/vector-store/binary-hnsw-index.js';
 import { loadNativeAddon } from '../../core/infrastructure/native-resolver.js';
 import { nativeRescoreKernels } from '../../core/infrastructure/native-rescore.js';
 import { int8BatchDotScores } from '../../core/embedding/embedding-service.js';
+import { createBitmap, setBit, saveBitmap } from '../../core/infrastructure/tombstone-bitmap-reader.js';
 
 const hasNative = process.env.SS_FIX_HNSW_NATIVE !== '0'
   && !!loadNativeAddon({ validate: (m) => typeof m.HnswSearcher === 'function' });
@@ -36,9 +37,9 @@ function makeVectors(n, seed) {
   });
 }
 
-function makeInt8(n, seed) {
+function makeInt8(n, seed, dim = 64) {
   const r = rng(seed);
-  return Array.from({ length: n }, () => Int8Array.from({ length: 64 }, () => Math.floor(r() * 255) - 127));
+  return Array.from({ length: n }, () => Int8Array.from({ length: dim }, () => Math.floor(r() * 255) - 127));
 }
 
 async function searchBoth(index, queries, k) {
@@ -172,5 +173,125 @@ describe.skipIf(!hasNative)('BinaryHNSWIndex native search parity', () => {
     await check(60);
     expect(Array.from(index.int8Vectors.get('v1'))).toEqual(Array.from(makeInt8(1, 77)[0]));
   });
-});
 
+  // The fused stages 1-2 (searchCascade) against the path semanticSearch3Stage
+  // takes without it: lazy search, int8ScoresForNodes, a stable int8 sort, and
+  // analyzeScoreSpread's sums (same order and arithmetic). One difference by
+  // design: when the pool cutoff falls inside a run of equal Hamming
+  // distances, the run is ordered by the asymmetric score (sum of the query's
+  // int8 values over the set code bits, highest first, ties kept in order).
+  // int8 dim 200 = whole SIMD blocks plus a scalar tail.
+  it.skipIf(!nativeRescoreKernels())('searchCascade matches lazy search + int8ScoresForNodes + stable sort', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'hnsw-cascade-'));
+    const prevScan = process.env.SS_FIX_HNSW_SCAN;
+    try {
+      const index = new BinaryHNSWIndex({ M: 16, efConstruction: 64, efSearch: 50, indexPath: join(dir, 'c.idx') });
+      index.resetForBuild();
+      index.initialized = true;
+      const vectors = makeVectors(1500, 61);
+      const int8 = makeInt8(1500, 62, 200);
+      vectors.forEach((v, i) => index.addSync(`v${i}`, v, { i }, i % 9 === 0 ? null : int8[i]));
+      const spread = (xs) => {
+        let top1 = -Infinity, top2 = -Infinity, min = Infinity, sum = 0;
+        for (const s of xs) {
+          sum += s;
+          if (s > top1) { top2 = top1; top1 = s; } else if (s > top2) top2 = s;
+          if (s < min) min = s;
+        }
+        const mean = sum / xs.length;
+        let variance = 0;
+        for (const s of xs) variance += (s - mean) ** 2;
+        return [top1, top2, min, mean, variance / xs.length];
+      };
+      const setBitSum = (code, q8) => {
+        let s = 0;
+        for (let i = 0; i < Math.min(q8.length, code.length * 8); i++) {
+          if (code[i >> 3] & (1 << (7 - (i & 7)))) s += q8[i];
+        }
+        return s;
+      };
+      // Pool of the first c stage-1 results with the cutoff run reordered.
+      const pool = (all, c, q8) => {
+        const out = all.slice();
+        const d = (i) => out[i].hammingDistance;
+        if (c > 0 && c < out.length && d(c) === d(c - 1)) {
+          let g0 = c - 1;
+          while (g0 > 0 && d(g0 - 1) === d(c)) g0--;
+          let g1 = c + 1;
+          while (g1 < out.length && d(g1) === d(c)) g1++;
+          const key = (x) => setBitSum(vectors[x.metadata.i], q8);
+          const run = out.slice(g0, g1).map((x) => [key(x), x]).sort((a, b) => b[0] - a[0]).map((p) => p[1]);
+          out.splice(g0, g1 - g0, ...run);
+          ties.hit++;
+        }
+        return out.slice(0, c);
+      };
+      const ties = { hit: 0 };
+      const check = async (seed) => {
+        for (const q of makeVectors(12, seed)) {
+          const queryInt8 = makeInt8(1, seed + 3, 200)[0];
+          const ref = await index.search(q, 300, { lazy: true });
+          const got = index.searchCascade(q, 300, { queryInt8 });
+          expect(got.count).toBe(ref.count);
+          expect(got.visitedNodes).toBe(ref.visitedNodes);
+          expect(got.adaptiveEf).toBe(ref.adaptiveEf);
+          expect(Array.from(got.stats.subarray(2, 7))).toEqual(spread(ref.scores));
+          const all = ref.materialize(ref.count);
+          const nodeOf = new Map(Array.from(ref.nodeIndices.slice(0, ref.count), (n, i) => [all[i].id, n]));
+          for (const c of [1, 40, 100, 137, ref.count]) {
+            const cand = pool(all, c, queryInt8).map((x) => ({ ...x }));
+            const r8 = index.int8ScoresForNodes(queryInt8, Uint32Array.from(cand, (x) => nodeOf.get(x.id)));
+            cand.forEach((x, i) => {
+              if (r8.missing[i]) { x.int8Score = 0.0; x.missingInt8 = true; } else x.int8Score = r8.scores[i];
+            });
+            const sorted = [...cand].sort((a, b) => b.int8Score - a.int8Score);
+            const stage = got.int8Stage(c);
+            expect(stage.count).toBe(c);
+            expect(JSON.stringify(stage.materialize(c))).toBe(JSON.stringify(sorted));
+            expect(stage.missing).toBe(sorted.filter((x) => x.missingInt8).length);
+            const kept = sorted.filter((x) => !x.missingInt8).map((x) => x.int8Score);
+            expect(stage.stats[0]).toBe(kept.length);
+            if (kept.length > 0) expect(Array.from(stage.stats.subarray(1, 6))).toEqual(spread(kept));
+          }
+        }
+      };
+      process.env.SS_FIX_HNSW_SCAN = '0';
+      await check(70); // graph walk
+      delete process.env.SS_FIX_HNSW_SCAN;
+      await check(80); // exact scan (small index)
+      // Tombstones: stale nodes are dropped from stage 1 and count as missing.
+      const bm = createBitmap(1500);
+      for (let i = 0; i < 1500; i += 5) setBit(bm, i);
+      saveBitmap(index.stalePath, bm);
+      await check(90);
+      process.env.SS_FIX_HNSW_SCAN = '0';
+      await check(100);
+      expect(ties.hit).toBeGreaterThan(20);
+    } finally {
+      if (prevScan === undefined) delete process.env.SS_FIX_HNSW_SCAN; else process.env.SS_FIX_HNSW_SCAN = prevScan;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it.skipIf(!hasNative)('exact scan = brute force (ascending distance, ties in node order)', () => {
+    const r = rng(5);
+    for (const n of [1, 3, 4, 5, 17, 1000, 1003]) {
+      // Few distinct values per byte: many equal distances.
+      const codes = Array.from({ length: n }, () => Uint8Array.from({ length: 64 }, () => (r() < 0.5 ? 0 : 255) & Math.floor(r() * 256) & 0xf0));
+      const slab = new Uint8Array(n * 64);
+      codes.forEach((c, i) => slab.set(c, i * 64));
+      const searcher = new (loadNativeAddon({ validate: (m) => typeof m.HnswSearcher === 'function' }).mod.HnswSearcher)(64, n, slab);
+      const q = codes[Math.floor(r() * n)].map((b) => b ^ (r() < 0.1 ? 1 : 0));
+      searcher.setQuery(q);
+      const pop = (x) => { let c = 0; while (x) { c += x & 1; x >>= 1; } return c; };
+      const d = codes.map((c) => c.reduce((a, b, j) => a + pop(b ^ q[j]), 0));
+      const order = d.map((_, i) => i).sort((a, b) => d[a] - d[b] || a - b);
+      for (const k of [0, 1, Math.min(n, 7), Math.floor(n / 2), n]) {
+        const out = new Uint32Array(2 + 2 * k);
+        expect(searcher.scanInto(k, out)).toBe(k);
+        expect(Array.from(out.subarray(2, 2 + k))).toEqual(order.slice(0, k));
+        expect(Array.from(out.subarray(2 + k, 2 + 2 * k))).toEqual(order.slice(0, k).map((i) => d[i]));
+      }
+    }
+  });
+});

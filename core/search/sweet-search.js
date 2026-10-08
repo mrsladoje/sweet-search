@@ -27,7 +27,7 @@ import { FloatVectorStore, getFloatStorePath } from '../vector-store/float-vecto
 import { recordQueryTelemetry } from '../embedding/embedding-cache.js';
 import { CodebaseRepository } from '../infrastructure/codebase-repository.js';
 import { CodeGraphRepository } from '../infrastructure/code-graph-repository.js';
-import { readJsonFileCached } from '../infrastructure/cached-json-file.js';
+import { readJsonFileCachedIfExists } from '../infrastructure/cached-json-file.js';
 import { loadSparseGramIndex } from '../infrastructure/native-sparse-gram.js';
 import { expandResults } from '../graph/graph-expansion.js';
 import { applyMMR, shouldApplyMMR, getLambdaForIntent, MMR_CONFIG } from '../ranking/mmr.js';
@@ -396,7 +396,7 @@ export class SweetSearch {
   _readReconcileManifest() {
     try {
       const manifestPath = path.join(this._manifestStateDir, 'reconcile-manifest.json');
-      const manifest = readJsonFileCached(manifestPath);
+      const manifest = readJsonFileCachedIfExists(manifestPath);
       return Number.isInteger(manifest?.epoch) ? manifest : null;
     } catch {
       return null;
