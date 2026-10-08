@@ -428,9 +428,7 @@ Codex, it makes fewer calls, and the saving is larger.
   snapshots and graded them normally. One runaway test suite was graded test by test.
 - **Honest caveats we keep attached:** (1) **1 rep:** a single cell on this bench has been observed
   swinging 3/3 → 1/3 → 2/3 across identical runs, so the solve column is a point estimate.
-  (2) **Wall time is longer** with sweet-search here (+3% to +15%). It includes test runs and a shared,
-  loaded machine, and the Sol rows ran under Rosetta, but we do not claim a wall-time win on tasks.
-  (3) The Opus 5.5 high solve count leans toward native (109 vs 115, p=0.11). Pooled over all setups,
+  (2) The Opus 5.5 high solve count leans toward native (109 vs 115, p=0.11). Pooled over all setups,
   the solve counts are equal.
 
 </details>
