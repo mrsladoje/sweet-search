@@ -27,14 +27,14 @@ Every coding agent today reaches for grep + Read by reflex. *sweet-search* chall
 <tr>
 <td width="50%" valign="top">
 
-💰 **7–27% cheaper agent runs**<br>
-<sub>on 200 real engineering tasks · up to 45% fewer tool calls · solve rate statistically tied</sub>
+💰 **5–33% cheaper agent runs**<br>
+<sub>on 200 real engineering tasks · 5 harness + model setups · same solve count (481 vs 481)</sub>
 
 </td>
 <td width="50%" valign="top">
 
 ⚡ **Saves your time**<br>
-<sub>faster retrieval than classic grep-and-read · reduced walltime of agentic tasks</sub>
+<sub>faster retrieval than classic grep-and-read · code questions answered up to 32% sooner</sub>
 
 </td>
 </tr>
@@ -328,6 +328,15 @@ Each value is sweet-search minus native, relative to native, pooled over 200 que
 
 **Easy vs hard questions.** The savings hold on both tiers but shrink on hard questions. Opus 5.5 high: billed cost −11.0% (easy) and −8.5% (hard). Its accuracy delta is −0.1% (easy) and −1.1% (hard), neither significant. On Codex, the billed saving is −18.2% on easy questions and 0.0% on hard ones.
 
+**Where it helps most** (aggregates over the held-out set; each language is one repo):
+- **TypeScript and Go:** cost falls in all 5 setups. Claude Code gains accuracy on TypeScript in all 3 of its
+  setups (up to +3.6 points), and Sonnet 5.5 gains +4.7 points on Go.
+- **Negatives** ("this thing does not exist"): accuracy is 1.00 on both arms, and cost falls by 9% to 68%.
+  Proving an absence is cheap with an index.
+- **Weak spots:** Ruby and PHP (6 hard questions each) cost more in 3 of 5 setups. On Swift (7 questions),
+  Sol 6.1 loses 8–12 accuracy points. All 11 repos are mid-size (540–1,433 files), so this benchmark
+  says nothing about repo size.
+
 **Why the harnesses differ.** Claude Code's native loop is already disciplined, so the gain is fewer tool calls at equal accuracy. opencode's native loop thrashes (11.2 calls per question), so the cut is large. On Codex, sweet-search sends more input tokens, but a larger share of them hit the cache, because sweet-search keeps the stock Codex prompt unchanged as the cached prefix.
 
 - **What's being compared:** the installed `sweet-search` prompt and tools vs. the *same model* with only its built-in file-reading and shell-grep tools. Both arms use the same harness version (Claude Code 2.1.281, codex-cli 0.159.2, opencode 1.18.4).
@@ -371,43 +380,58 @@ per task. The harnesses run **as they ship** — no tools disabled, no delegatio
 
 <br/>
 
-| 🧰 Harness | 💰 Cost, same tasks solved | 💰 Cost, all tasks | 🎯 Resolved | 🪆 Subagent requests | 🔧 Tool calls |
-|---|---:|---:|:--|---:|---:|
-| 🟣 **Claude Code** | **−31.0%** ᵃ | −27.4% | 66 / 69 · *p=0.66* | **150 / 1,191** | 19.6 / 35.8 |
-| 🐚 **opencode** | **−7.7%** | −11.5% | 65 / 71 · *p=0.18* | not instrumented | 19.0 / 24.4 |
-| 🤖 **Codex** | **−2.1%** ᵇ | −6.8% | 72 / 79 · *p=0.12* | none (no subagent tier) | 10.6 / 8.8 |
+| 🧰 Harness + model | 💰 Billed cost | 💰 Cost per solved task | 💰 Cost, tasks both arms solved | 🎯 Solved (of 200) | 🔧 Tool calls | ⏱️ Wall time |
+|---|---:|---:|---:|:--|---:|---:|
+| 🟣 **Claude Code** + Sonnet 5.5 high | **−10.8%** [−18.3, −1.7] | **−15.6%** | **−16.3%** (84) | 92 / 87 · *p=0.23* | +9.5% | +7.6% |
+| 🟣 **Claude Code** + Opus 5.5 medium | **−5.4%** [−10.1, −0.2] | **−7.9%** | −5.7% (103) | 112 / 109 · *p=0.61* | +10.5% | +6.0% |
+| 🟣 **Claude Code** + Opus 5.5 high | **−7.4%** [−11.6, −3.0] | −2.3% | −4.0% (107) | 109 / 115 · *p=0.11* | +7.4% | +2.8% |
+| 🐚 **opencode** + Sol 6.1 high | **−18.6%** [−24.1, −12.7] | **−14.7%** | **−11.4%** (81) | 84 / 88 · *p=0.34* | −13.3% | +14.6% |
+| 🤖 **Codex** + Sol 6.1 high | **−32.9%** [−38.0, −27.2] | **−34.5%** | **−30.0%** (77) | 84 / 82 · *p=0.77* | −6.1% | +10.5% |
 
-<sub>All figures sweet-search / native. ᵃ Claude Code is the only leg priced from a **real OpenRouter
-invoice** (10,371 generation records, 0 unresolved), sidechain-**inclusive**, because its `rows.json`
-nulls cost arm-asymmetrically and would reverse the sign. ᵇ Codex ran on a ChatGPT subscription, so
-**nothing was billed** — its dollars are list-price-equivalent, not an invoice. opencode is
-list-price ledger with 0 nulls on both arms.</sub>
+<sub>Each value is sweet-search minus native, relative to native. Solved = sweet-search / native, McNemar exact test.
+**Bold** = the 95% interval excludes 0 (paired bootstrap over tasks, B = 20,000, seed 42). Every run used a
+subscription, so the dollars are list-price equivalents (tokens × list price, cache reads and writes priced as
+billed), not an invoice. Three Codex native rows lost their token counts and count as $0; without those 3 tasks
+the Codex saving is −34.2%.</sub>
 
-**The mechanism, stated plainly.** Sweet-search's main-loop spend is close to native's (−6.1% on
-Claude Code). The gap is delegation: native spawns subagents to explore a repo it can't navigate
-cheaply, and each one is a fresh context that gets billed. Better retrieval removes the reason to
-delegate. That's why the same product shows 31% on a harness with a subagent tier and 2% on one
-without — and why we quote a **range, not one number**.
+**Solve rate: a tie.** Pooled over all 5 setups, sweet-search and native each solved **481 of 1,000** tasks. On
+160 of the 200 tasks, the solve flips cancel out across the 5 setups. Sweet-search changes what a task costs,
+not whether it gets solved.
+
+**Where the saving comes from.** In this run, neither arm launched a subagent, so every dollar is main-loop
+spend. On Claude Code, sweet-search makes 7–10% *more* tool calls, and the bill still falls. On opencode and
+Codex, it makes fewer calls, and the saving is larger.
+
+**Where it helps most** (aggregates over the held-out set; small slices are noisy):
+- **Languages:** Go, TypeScript and Java save the most (−17% to −18%, mean of the 5 setups). Python saves
+  the least (−9%). The retrieval benchmark ranks the languages the same way.
+- **Repo size:** on Codex, the saving grows with the repo: −15% below 21k lines, −43% above 58k lines. Claude
+  Code saves the most on mid-size repos (21k–58k lines) and about nothing above 58k lines.
+- **Task kind:** feature requests save more (−18%, significant in all 5 setups) than bug fixes (−12%).
+- **Hard tasks:** 76 tasks were never solved by any of the 10 rollouts. Cost still falls on them in all 5
+  setups, so sweet-search also cuts the cost of failing.
 
 - **What's compared:** the installed `sweet-search` agent prompt + tools vs. the *same model* using
   its built-in file-reading and shell-grep loop. The sweet-search system prompt says nothing about
   subagents or delegation — it only routes code search through `ss-*`.
-- **Design:** 200 tasks × 2 arms × 1 rep × 3 harnesses = **1,200 rollouts**. Tasks drawn from
-  SWE-rebench V1+V2, admitted only if the official gold patch grades FULL in the exact run
+- **Design:** 200 tasks × 2 arms × 1 rep × 5 setups = **2,000 rollouts**, on sweet-search 2.9.0. Tasks drawn
+  from SWE-rebench V1+V2, admitted only if the official gold patch grades FULL in the exact run
   environment (a "green ledger" gate), and re-verified per run.
+- **Machines:** the Claude Code rows ran on an x86 box. The Sol rows ran 182 tasks on an arm64 VM (Rosetta)
+  and 18 on x86. Both arms of a task always ran on one machine.
 - **Isolation:** every rollout runs in its own mount/PID/network jail with an SNI-allowlist egress
   proxy — the agent can reach the model API and nothing else. No GitHub, no package registries.
   Escape attempts are counted, not assumed to be zero.
 - **Grading:** the official SWE-bench/SWE-rebench Docker evaluator, `FAIL_TO_PASS` +
-  `PASS_TO_PASS`. A patch that produces no test evidence is marked **ungradeable**, never scored
-  zero. Final run: **0 ungradeable, 0 zero-call rollouts, 0 run errors** across all 1,200.
+  `PASS_TO_PASS`. All 2,000 rollouts are graded. Rows that Rosetta could not grade were re-graded on x86.
+  19 opencode patches tripped a false-positive tamper flag; we rebuilt them byte-exact from opencode's own
+  snapshots and graded them normally. One runaway test suite was graded test by test.
 - **Honest caveats we keep attached:** (1) **1 rep** — a single cell on this bench has been observed
   swinging 3/3 → 1/3 → 2/3 across identical runs, so the solve column is a point estimate.
-  (2) **37 of 199 stamped tasks (18.6%) are naming lotteries** — the hidden test needs an identifier
-  the reference patch invented, which no amount of retrieval can recover. (3) Three legs, three cost
-  bases, only one a real invoice — **do not pool the dollar figures**. (4) The three solve deltas all
-  lean the same way (−3, −6, −7); individually noise, collectively a hint that sweet-search may cost
-  a little accuracy, and we'd rather say so than round it to zero.
+  (2) **Wall time is longer** with sweet-search here (+3% to +15%). It includes test runs and a shared,
+  loaded machine, and the Sol rows ran under Rosetta, but we do not claim a wall-time win on tasks.
+  (3) The Opus 5.5 high solve count leans toward native (109 vs 115, p=0.11). Pooled over all setups,
+  the solve counts are equal.
 
 </details>
 
