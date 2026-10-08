@@ -357,21 +357,21 @@ Each value is sweet-search minus native, relative to native, pooled over 200 que
 ---
 
 <a id="bench-task-completion"></a>
-### 🛠️ 2. Task-completion benchmarks — *does it compound?*
+### 🛠️ 2. Task-completion benchmark
 
-Retrieval quality is necessary but not sufficient. Cheaper, denser context only matters if it
-**compounds across a real, multi-step engineering task** — find the code, understand it, change it,
-don't break anything. This suite measures exactly that: **resolve-rate and cost on SWE-rebench-style
-multi-file tasks**, sweet-search-wired vs. the same model's native loop.
-
-One variable changes, again: **how the agent searches.** Same model, same tasks, same grader, paired
-per task. The harnesses run **as they ship** — no tools disabled, no delegation switched on or off.
+> Sweet vs native on real engineering tasks: find the code, change it, pass the hidden tests.
 
 <div align="center">
 
 <img src="assets/task-completion-stats.svg" alt="Held-out task-completion results, sweet-search vs native, 200 SWE-rebench tasks, 1 rep. Claude Code with Sonnet 5.5 high: billed cost −10.8%, cost per solved task −15.6%, 92 vs 87 of 200 tasks solved (not significant). Claude Code with Opus 5.5 medium: billed cost −5.4% (significant), cost per solved task −7.9% (significant), 112 vs 109 of 200 tasks solved (not significant). Claude Code with Opus 5.5 high: billed cost −7.4% (significant), cost per solved task −2.3% (not significant), 109 vs 115 of 200 tasks solved (not significant). opencode with Sol 6.1 high: billed cost −18.6% (significant), cost per solved task −14.7% (significant), 84 vs 88 of 200 tasks solved (not significant). Codex with Sol 6.1 high: billed cost −32.9% (significant), cost per solved task −34.5% (significant), 84 vs 82 of 200 tasks solved (not significant)." width="100%" />
 
-<sub>frozen held-out set · 200 tasks · 1 rep per arm · grey = not significant</sub>
+<sub>grey = not significant</sub>
+
+<br>
+
+| 🔒 Split | 🧩 Tasks | 📦 Repos | 🔁 Reps | 🧱 Isolation | ⚖️ Grading |
+|:---:|:---:|:---:|:---:|:---:|:---:|
+| held-out | 200 from SWE-rebench · 125 multi-file | 200, in 16 languages | 1 per arm | jail, model API only | official F2P + P2P tests |
 
 </div>
 
@@ -384,7 +384,7 @@ per task. The harnesses run **as they ship** — no tools disabled, no delegatio
 |---|---:|---:|---:|:--|---:|
 | 🟣 **Claude Code** + Sonnet 5.5 high | **−10.8%** [−18.3, −1.7] | **−15.6%** | **−16.3%** (84) | 92 / 87 · *p=0.23* | +9.5% |
 | 🟣 **Claude Code** + Opus 5.5 medium | **−5.4%** [−10.1, −0.2] | **−7.9%** | −5.7% (103) | 112 / 109 · *p=0.61* | +10.5% |
-| 🟣 **Claude Code** + Opus 5.5 high | **−7.4%** [−11.6, −3.0] | −2.3% | −4.0% (107) | 109 / 115 · *p=0.11* | +7.4% | +2.8% |
+| 🟣 **Claude Code** + Opus 5.5 high | **−7.4%** [−11.6, −3.0] | −2.3% | −4.0% (107) | 109 / 115 · *p=0.11* | +7.4% |
 | 🐚 **opencode** + Sol 6.1 high | **−18.6%** [−24.1, −12.7] | **−14.7%** | **−11.4%** (81) | 84 / 88 · *p=0.34* | −13.3% |
 | 🤖 **Codex** + Sol 6.1 high | **−32.9%** [−38.0, −27.2] | **−34.5%** | **−30.0%** (77) | 84 / 82 · *p=0.77* | −6.1% |
 
@@ -412,21 +412,21 @@ Codex, it makes fewer calls, and the saving is larger.
   setups, so sweet-search also cuts the cost of failing.
 
 - **What's compared:** the installed `sweet-search` agent prompt + tools vs. the *same model* using
-  its built-in file-reading and shell-grep loop. The sweet-search system prompt says nothing about
-  subagents or delegation — it only routes code search through `ss-*`.
+  its built-in file-reading and shell-grep loop. Harnesses run as they ship: no tools disabled. The sweet-search system prompt says nothing about
+  subagents or delegation. It only routes code search through `ss-*`.
 - **Design:** 200 tasks × 2 arms × 1 rep × 5 setups = **2,000 rollouts**, on sweet-search 2.9.0. Tasks drawn
   from SWE-rebench V1+V2, admitted only if the official gold patch grades FULL in the exact run
   environment (a "green ledger" gate), and re-verified per run.
 - **Machines:** the Claude Code rows ran on an x86 box. The Sol rows ran 182 tasks on an arm64 VM (Rosetta)
   and 18 on x86. Both arms of a task always ran on one machine.
 - **Isolation:** every rollout runs in its own mount/PID/network jail with an SNI-allowlist egress
-  proxy — the agent can reach the model API and nothing else. No GitHub, no package registries.
+  proxy. The agent can reach the model API and nothing else. No GitHub, no package registries.
   Escape attempts are counted, not assumed to be zero.
 - **Grading:** the official SWE-bench/SWE-rebench Docker evaluator, `FAIL_TO_PASS` +
   `PASS_TO_PASS`. All 2,000 rollouts are graded. Rows that Rosetta could not grade were re-graded on x86.
   19 opencode patches tripped a false-positive tamper flag; we rebuilt them byte-exact from opencode's own
   snapshots and graded them normally. One runaway test suite was graded test by test.
-- **Honest caveats we keep attached:** (1) **1 rep** — a single cell on this bench has been observed
+- **Honest caveats we keep attached:** (1) **1 rep:** a single cell on this bench has been observed
   swinging 3/3 → 1/3 → 2/3 across identical runs, so the solve column is a point estimate.
   (2) **Wall time is longer** with sweet-search here (+3% to +15%). It includes test runs and a shared,
   loaded machine, and the Sol rows ran under Rosetta, but we do not claim a wall-time win on tasks.
