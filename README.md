@@ -363,7 +363,7 @@ Each value is sweet-search minus native, relative to native, pooled over 200 que
 
 <div align="center">
 
-<img src="assets/task-completion-stats.svg" alt="Held-out task-completion results, sweet-search vs native, 200 SWE-rebench tasks, 1 rep. Claude Code with Sonnet 5.5 high: billed cost −10.8%, cost per solved task −15.6%, 92 vs 87 of 200 tasks solved (not significant). Claude Code with Opus 5.5 medium: billed cost −5.4% (significant), cost per solved task −7.9% (significant), 112 vs 109 of 200 tasks solved (not significant). Claude Code with Opus 5.5 high: billed cost −7.4% (significant), cost per solved task −2.3% (not significant), 109 vs 115 of 200 tasks solved (not significant). opencode with Sol 6.1 high: billed cost −18.6% (significant), cost per solved task −14.7% (significant), 84 vs 88 of 200 tasks solved (not significant). Codex with Sol 6.1 high: billed cost −32.9% (significant), cost per solved task −34.5% (significant), 84 vs 82 of 200 tasks solved (not significant)." width="100%" />
+<img src="assets/task-completion-stats.svg" alt="Held-out task-completion results, sweet-search vs native, 200 SWE-rebench tasks, 1 rep. Claude Code with Sonnet 5.5 high: billed cost −10.8%, cost per solved task −15.6%, 92 vs 87 of 200 tasks solved (not significant). Claude Code with Opus 5.5 medium: billed cost −5.4% (significant), cost per solved task −7.9% (significant), 112 vs 109 of 200 tasks solved (not significant). Claude Code with Opus 5.5 high: billed cost −7.4% (significant), cost per solved task −2.3% (not significant), 109 vs 115 of 200 tasks solved (not significant). opencode with Sol 6.1 high: billed cost −18.6% (significant), cost per solved task −14.7% (significant), 84 vs 88 of 200 tasks solved (not significant). Codex with Sol 6.1 high: billed cost −33.3% (significant), cost per solved task −34.9% (significant), 84 vs 82 of 200 tasks solved (not significant)." width="100%" />
 
 <sub>grey = not significant</sub>
 
@@ -386,13 +386,13 @@ Each value is sweet-search minus native, relative to native, pooled over 200 que
 | 🟣 **Claude Code** + Opus 5.5 medium | **−5.4%** [−10.1, −0.2] | **−7.9%** | −5.7% (103) | 112 / 109 · *p=0.61* | +10.5% |
 | 🟣 **Claude Code** + Opus 5.5 high | **−7.4%** [−11.6, −3.0] | −2.3% | −4.0% (107) | 109 / 115 · *p=0.11* | +7.4% |
 | 🐚 **opencode** + Sol 6.1 high | **−18.6%** [−24.1, −12.7] | **−14.7%** | **−11.4%** (81) | 84 / 88 · *p=0.34* | −13.3% |
-| 🤖 **Codex** + Sol 6.1 high | **−32.9%** [−38.0, −27.2] | **−34.5%** | **−30.0%** (77) | 84 / 82 · *p=0.77* | −6.1% |
+| 🤖 **Codex** + Sol 6.1 high | **−33.3%** [−38.1, −28.1] | **−34.9%** | **−32.8%** (77) | 84 / 82 · *p=0.77* | −6.1% |
 
 <sub>Each value is sweet-search minus native, relative to native. Solved = sweet-search / native, McNemar exact test.
 **Bold** = the 95% interval excludes 0 (paired bootstrap over tasks, B = 20,000, seed 42). Every run used a
 subscription, so the dollars are list-price equivalents (tokens × list price, cache reads and writes priced as
-billed), not an invoice. Three Codex native rows lost their token counts and count as $0; without those 3 tasks
-the Codex saving is −34.2%.</sub>
+billed), not an invoice. Four Codex rows (3 native, 1 sweet) lost the end-of-run usage event; their cost comes from
+the session transcript, which matches the billed cost exactly on 396 of 402 Codex rows that have both.</sub>
 
 **Solve rate: a tie.** Pooled over all 5 setups, sweet-search and native each solved **481 of 1,000** tasks. On
 160 of the 200 tasks, the solve flips cancel out across the 5 setups. Sweet-search changes what a task costs,
