@@ -359,7 +359,7 @@ Each value is sweet-search minus native, relative to native, pooled over 200 que
 <a id="bench-task-completion"></a>
 ### 🛠️ 2. Task-completion benchmark
 
-> Sweet vs native on real engineering tasks: find the code, change it, pass the hidden tests.
+> Sweet vs native on 200 real engineering tasks: find the code, change it, pass the hidden tests.
 
 <div align="center">
 
