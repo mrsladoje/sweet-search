@@ -44,8 +44,15 @@ type FinalFn = unsafe extern "C" fn(*mut Ctx);
 
 static API: AtomicPtr<*const c_void> = AtomicPtr::new(std::ptr::null_mut());
 
+/// True once SQLite has loaded this extension into some connection: the API table of the
+/// process's SQLite library is then known (the native grep lane opens its own connections
+/// through it, never through a second SQLite copy).
+pub(crate) fn api_ready() -> bool {
+    !API.load(Ordering::Acquire).is_null()
+}
+
 #[inline(always)]
-unsafe fn api<T: Copy>(index: usize) -> T {
+pub(crate) unsafe fn api<T: Copy>(index: usize) -> T {
     let table = API.load(Ordering::Acquire) as *const *const c_void;
     std::mem::transmute_copy::<*const c_void, T>(&*table.add(index))
 }

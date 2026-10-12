@@ -226,7 +226,7 @@ pub struct GramGrepLinesResult {
 
 /// Combined gram query + native grep result (full: file + line + column + matchText + content).
 /// The counters search_full reports, besides its matches.
-struct FullSearchStats {
+pub(crate) struct FullSearchStats {
     total_files: u32,
     candidate_files: u32,
     grams_used: u32,
@@ -1087,7 +1087,7 @@ impl NativeSparseGramIndex {
     /// search_full's file selection and grep, with `per_file` run on every file whose whole
     /// text matches: `(stats, [(path, per_file result)])` in candidate order.
     #[allow(clippy::too_many_arguments)]
-    fn search_full_with<T, F>(
+    pub(crate) fn search_full_with<T, F>(
         &self,
         clauses: Vec<Vec<String>>,
         regex: String,

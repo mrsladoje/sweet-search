@@ -9,7 +9,7 @@
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -139,9 +139,36 @@ describe('opencode: shipped prompt and tool edits = bench conflict3+todo3eff3k',
     expect(t.files[OPENCODE_TRIM_PLUGIN]).toBe(readFileSync(OPENCODE_TRIM_PLUGIN_SOURCE, 'utf8'));
   });
 
+  it('the plugin starts the daemon prewarm from the project node_modules, once per load', async () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'oc-prewarm-')));
+    try {
+      const dir = join(root, 'node_modules', 'sweet-search', 'core', 'search');
+      mkdirSync(dir, { recursive: true });
+      const marker = join(root, 'ran');
+      writeFileSync(join(dir, 'session-daemon-prewarm.mjs'),
+        `import { appendFileSync } from 'node:fs'; appendFileSync(${JSON.stringify(marker)}, process.cwd() + '\\n');\n`);
+      mkdirSync(join(root, 'sub'));
+      const { default: plugin } = await import(OPENCODE_TRIM_PLUGIN_SOURCE);
+      await plugin({ worktree: join(root, 'sub') }, {});
+      for (let i = 0; i < 100 && !existsSync(marker); i++) await new Promise(r => setTimeout(r, 50));
+      expect(readFileSync(marker, 'utf8')).toBe(`${join(root, 'sub')}\n`);
+      const saved = process.env.SWEET_SEARCH_PREWARM;
+      process.env.SWEET_SEARCH_PREWARM = '0';
+      try {
+        await plugin({ worktree: root }, {});
+        await new Promise(r => setTimeout(r, 300));
+        expect(readFileSync(marker, 'utf8')).toBe(`${join(root, 'sub')}\n`);
+      } finally {
+        if (saved === undefined) delete process.env.SWEET_SEARCH_PREWARM; else process.env.SWEET_SEARCH_PREWARM = saved;
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('the plugin gives every bash call of one opencode session its own ss-* session key', async () => {
     const { default: plugin } = await import(OPENCODE_TRIM_PLUGIN_SOURCE);
-    const hooks = await plugin({}, {});
+    const hooks = await plugin({ worktree: tmpdir() }, {});
     const envOf = async (input) => { const out = { env: {} }; await hooks['shell.env'](input, out); return out.env; };
     const saved = process.env.SWEET_SEARCH_SESSION_ID;
     delete process.env.SWEET_SEARCH_SESSION_ID;

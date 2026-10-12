@@ -18,6 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { runInVirtualProcess } from './virtual-process.js';
 import { callRealpath } from '../infrastructure/call-fs.js';
+import { shadowGrepCall } from '../search/grep-lane.js';
 import { AGENT_TOOL_SUBCOMMANDS, SEARCHER_SUBCOMMANDS, SEARCH_LOADING_WAIT_MS, searchNotReadyLine, callStartedMs } from './tools.js';
 
 export const AGENT_TOOL_BODY_MAX_BYTES = 1024 * 1024;
@@ -141,11 +142,13 @@ export async function buildAgentToolDaemonResponse(payload, {
   if (mismatch) {
     return json(409, { error: 'Daemon project root mismatch', serverProjectRoot: daemonRoot, requestedProjectRoot: canonical(mismatch.message) });
   }
+  // A byte order mark (U+FEFF) copied from a file's first line means nothing in the output.
+  const stdout = result.stdout.toString('utf8').replaceAll('\uFEFF', '');
+  if (call.tool === 'grep' && process.env.SS_LANE_SHADOW_LOG) shadowGrepCall(call, { code: result.code, stdout });
   return json(200, {
     v: 1,
     code: result.code,
-    // A byte order mark (U+FEFF) copied from a file's first line means nothing in the output.
-    stdout: result.stdout.toString('utf8').replaceAll('\uFEFF', ''),
+    stdout,
     stderr: result.stderr.toString('utf8'),
   });
 }
