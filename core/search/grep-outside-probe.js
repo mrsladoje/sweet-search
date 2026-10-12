@@ -81,6 +81,7 @@ export function probeOutsideScope(searcher, regex, searchDir, options, limit) {
   const budget = scopeAnswered ? OUTSIDE_PROBE_READ_BUDGET : OUTSIDE_PROBE_READ_BUDGET_EMPTY_SCOPE;
   const toRead = Math.min(ordered.length, budget);
   const found = [];
+  const hits = new Map();
   let read = 0;
   while (read < toRead && found.length < limit) {
     if (scopeAnswered && read >= source.length && found.length === 0) break;
@@ -91,10 +92,16 @@ export function probeOutsideScope(searcher, regex, searchDir, options, limit) {
     read += batch.length;
     const result = nativeGrepFull(regex, searchDir, batch, caseInsensitive, { perFileCap: 1, indexPaths: true });
     if (!Array.isArray(result?.matches)) return null;
-    const hit = new Set(result.matches.map((m) => (path.isAbsolute(m.file) ? path.relative(searchDir, m.file) : m.file)));
+    const rel = (f) => (path.isAbsolute(f) ? path.relative(searchDir, f) : f);
+    const hit = new Set(result.matches.map((m) => rel(m.file)));
+    for (const [f, n] of result.fileTotals || []) hits.set(rel(f), n);
     // The addon answers in any order: keep the batch's own order.
     for (const file of batch) if (hit.has(file) && found.length < limit) found.push(file);
   }
+  // Names as the exact line ranks them: source files first, then most hits (path order breaks ties).
+  const order = new Map(found.map((f, i) => [f, i]));
+  found.sort((a, b) => (isOutsideScopeSourceFile(b) - isOutsideScopeSourceFile(a))
+    || ((hits.get(b) || 1) - (hits.get(a) || 1)) || (order.get(a) - order.get(b)));
   // Every candidate read = the file count is exact. A capped list is never all candidates.
   const complete = !capped?.over && read === ordered.length && found.length < limit;
   if (scopeAnswered && found.length && !isOutsideScopeSourceFile(found[0])) return { files: [], limit, complete };
