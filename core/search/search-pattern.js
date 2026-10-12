@@ -21,6 +21,7 @@ import { applyGrepFileDiversity, grepFileFilterPredicate } from './grep-output-s
 import { stampGrepLineClasses } from './grep-line-classes.js';
 import { indexFreshness } from './index-freshness.js';
 import { compilePathGlobs, filterMatchesByPathGlobs } from './grep-path-globs.js';
+import { probeOutsideScope } from './grep-outside-probe.js';
 import { isRipgrepAvailable, runRipgrepJson } from './search-pattern-ripgrep.js';
 import { ensureSparseGramIndex } from './search-pattern-prefilter.js';
 import { packageForAgent } from './context-expander.js';
@@ -237,6 +238,11 @@ function hasCollatingNeighbours(sortedMatches) {
 // Bare grep (wired onto SweetSearch.prototype)
 // =============================================================================
 
+/** The outside-scope probe reads regexes only: fixed strings and symbol filters take the full search. */
+function fixedStringOrSymbol(options, symbolType) {
+  return options.fixedString === true || Boolean(symbolType);
+}
+
 export async function bareGrep(query, routing, options = {}) {
   await this?._refreshManifestPins?.({ reloadScope: 'grep' });
   const regex = options.regex || query;
@@ -256,6 +262,19 @@ export async function bareGrep(query, routing, options = {}) {
   // ripgrep is only required for fixed-string/glob queries or when native is
   // unavailable. Throws a clear error only when neither engine can run.
   await ensureGrepEngineAvailable(this, options, 'Bare grep');
+
+  // ss-grep's outside-scope line: confirm up to N matching files outside the --in scope and
+  // stop. No answer (few candidates, or fewer matching files) = the exact search the line used
+  // before, which is unscoped: the same call without the scope.
+  if (options.grepOutsideProbe > 0) {
+    const probe = fixedStringOrSymbol(options, symbolType)
+      ? null : probeOutsideScope(this || {}, regex, filterRoot, options, options.grepOutsideProbe);
+    if (probe) {
+      return { results: [], stats: { outsideProbe: probe, total_ms: Math.round(performance.now() - start) } };
+    }
+    const { grepOutsideProbe: _probe, fileFilter: _scope, ...unscoped } = options;
+    return bareGrep.call(this, query, routing, unscoped);
+  }
 
   // With a per-file cap (every unscoped ss-grep), only the first perFileCap matches of a file
   // can be kept, so the engine stores no more and counts the rest (`fileTotals`): a flood of
