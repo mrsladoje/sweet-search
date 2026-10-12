@@ -328,14 +328,55 @@ Each value is sweet-search minus native, relative to native, pooled over 200 que
 
 **Easy vs hard questions.** The savings hold on both tiers but shrink on hard questions. Opus 5.5 high: billed cost −11.0% (easy) and −8.5% (hard). Its accuracy delta is −0.1% (easy) and −1.1% (hard), neither significant. On Codex, the billed saving is −18.2% on easy questions and 0.0% on hard ones.
 
-**Where it helps most** (aggregates over the held-out set; each language is one repo):
-- **TypeScript and Go:** cost falls in all 5 setups. Claude Code gains accuracy on TypeScript in all 3 of its
-  setups (up to +3.6 points), and Sonnet 5.5 gains +4.7 points on Go.
-- **Negatives** ("this thing does not exist"): accuracy is 1.00 on both arms, and cost falls by 9% to 68%.
-  Proving an absence is cheap with an index.
-- **Weak spots:** Ruby and PHP (6 hard questions each) cost more in 3 of 5 setups. On Swift (7 questions),
-  Sol 6.1 loses 8–12 accuracy points. All 11 repos are mid-size (540–1,433 files), so this benchmark
-  says nothing about repo size.
+#### 🗺️ Where it helps most
+
+Each cell: **billed cost change · accuracy change in points**, sweet-search vs native. Each language is one repo.
+
+| 🗂️ Slice | 📝 Qs | 🟣 Sonnet | 🟣 Opus med | 🟣 Opus high | 🐚 opencode | 🤖 Codex |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| 🟦 TypeScript | 29 | −9% · +3.6 | −13% · +3.6 | −13% · +0.5 | −41% · −0.3 | −12% · −0.8 |
+| 🐹 Go | 30 | −3% · +4.7 | −12% · −0.1 | −14% · +1.6 | −60% · −4.4 | −9% · −2.2 |
+| ☕ Java | 26 | −9% · +2.4 | −10% · −1.4 | −10% · +0.3 | −50% · −1.8 | −8% · −2.6 |
+| 🟪 C# | 29 | −15% · +1.8 | −9% · +1.9 | −12% · −3.0 | −57% · −3.2 | −18% · −3.8 |
+| 🦀 Rust | 28 | −9% · +1.1 | −10% · +0.3 | −12% · −2.1 | −42% · −3.1 | −4% · 0.0 |
+| 🐍 Python | 27 | −5% · +0.7 | −4% · −2.0 | −5% · −0.1 | −58% · −2.6 | −9% · −3.2 |
+| 🚫 Negatives | 22 | −9% · 0.0 | −16% · 0.0 | −12% · 0.0 | −68% · 0.0 | −41% · 0.0 |
+| 🟠 Kotlin ⁱ | 5 | −15% · −2.1 | −10% · +3.4 | −2% · −0.5 | −42% · −0.6 | −6% · 0.0 |
+| ⚙️ C++ ⁱ | 7 | −2% · +6.5 | −6% · +1.5 | +1% · −2.9 | −53% · +2.1 | +3% · +2.0 |
+| 🍎 Swift ⁱ | 7 | −16% · +0.2 | −10% · −6.2 | −12% · +7.1 | −38% · −8.5 | 0% · −11.8 |
+| 💎 Ruby ⁱ | 6 | +11% · −3.2 | −12% · −8.5 | −5% · −7.7 | −36% · −1.4 | +5% · −1.7 |
+| 🐘 PHP ⁱ | 6 | +7% · −2.1 | −3% · +5.8 | +6% · 0.0 | −18% · +0.1 | +28% · −1.7 |
+
+<sub>ⁱ hard tier only, 5–7 questions: read these rows as direction, not size. Negatives = questions whose answer is "this does not exist"; accuracy is 1.00 on both arms.</sub>
+
+- ✅ **Cost falls in every setup** on all 6 large slices and on negatives. Proving an absence is cheap with an index.
+- 🎯 **Accuracy:** Claude Code gains on TypeScript in all 3 setups (up to +3.6 points); Sonnet gains +4.7 on Go.
+- ⚠️ **Weak spots:** PHP costs more in 3 of 5 setups and Ruby in 2. On Swift, Sol 6.1 loses 8–12 points.
+- 📏 **Repo size:** all 11 repos are mid-size (540–1,433 files), so this benchmark says nothing about size.
+
+#### ⏱️ Model time (estimated)
+
+| 🧰 Harness + model | ⏱️ Model time, est. | 🔁 Model turns | 📐 Model time, measured |
+|---|---:|---:|---:|
+| 🟣 **Claude Code** + Sonnet 5.5 high | **−8.4%** [−10.9, −5.9] · 12.5 vs 13.7 s | **−17%** | **−6.4%** |
+| 🟣 **Claude Code** + Opus 5.5 medium | **−13.6%** [−15.8, −11.4] · 13.6 vs 15.7 s | **−18%** | **−11.6%** |
+| 🟣 **Claude Code** + Opus 5.5 high | **−12.8%** [−14.9, −10.7] · 15.5 vs 17.8 s | **−18%** | **−9.1%** |
+| 🐚 **opencode** + Sol 6.1 high | **−34.4%** [−40.2, −27.9] · 35.2 vs 53.6 s | −4% | **−32.7%** |
+| 🤖 **Codex** + Sol 6.1 high | **+8.0%** [+5.4, +10.7] · 34.7 vs 32.1 s | **+23%** | **+9.8%** |
+
+<sub>**Bold** = the 95% interval excludes 0 (question-clustered bootstrap, B = 10,000, seed 42).</sub>
+
+- **Why not wall time:** the benchmark ran 6–10 rollouts at once. That load slows tool calls, and
+  production does not have it. Tokens and turns do not depend on the load.
+- **The estimate:** model time = Σ over turns (a + b·uncached input + c·cache reads + d·output tokens).
+  One set of a–d per setup, fitted on both arms together (non-negative least squares on the measured
+  model time). So a difference between the arms comes from tokens and turns only.
+- **Check:** the estimate agrees with the measured model time within 1 s per question on every setup.
+- **Not included — tool time:** an `ss-*` call takes longer than a `grep` (about 0.2 s against 0.08 s
+  under the benchmark load). On Claude Code, sweet-search stays faster while its calls take less than
+  0.35–0.82 s each. On Codex, sweet-search is slower at any tool speed: it needs 23% more turns.
+- **Script:** [`latency-model.mjs`](core/prompt-optimization/data/final-run/latency-model.mjs) reads the
+  raw session traces; full output in [`LATENCY-HO1005.md`](core/prompt-optimization/data/final-run/LATENCY-HO1005.md).
 
 **Why the harnesses differ.** Claude Code's native loop is already disciplined, so the gain is fewer tool calls at equal accuracy. opencode's native loop thrashes (11.2 calls per question), so the cut is large. On Codex, sweet-search sends more input tokens, but a larger share of them hit the cache, because sweet-search keeps the stock Codex prompt unchanged as the cached prefix.
 
@@ -397,18 +438,46 @@ the session transcript, which matches the billed cost exactly on 396 of 402 Code
 160 of the 200 tasks, the solve flips cancel out across the 5 setups. Sweet-search changes what a task costs,
 not whether it gets solved.
 
-**Where the saving comes from.** In this run, neither arm launched a subagent, so every dollar is main-loop
-spend. On Claude Code, sweet-search makes 7–10% *more* tool calls, and the bill still falls. On opencode and
+**Where the saving comes from.** On Claude Code and Codex, neither arm launched a subagent, so every dollar is
+main-loop spend. On opencode, native launched subagents in 22 of 200 tasks; their cost is included. On Claude Code, sweet-search makes 7–10% *more* tool calls, and the bill still falls. On opencode and
 Codex, it makes fewer calls, and the saving is larger.
 
-**Where it helps most** (aggregates over the held-out set; small slices are noisy):
-- **Languages:** Go, TypeScript and Java save the most (−17% to −18%, mean of the 5 setups). Python saves
-  the least (−9%). The retrieval benchmark ranks the languages the same way.
-- **Repo size:** on Codex, the saving grows with the repo: −15% below 21k lines, −43% above 58k lines. Claude
-  Code saves the most on mid-size repos (21k–58k lines) and about nothing above 58k lines.
-- **Task kind:** feature requests save more (−18%, significant in all 5 setups) than bug fixes (−12%).
-- **Hard tasks:** 76 tasks were never solved by any of the 10 rollouts. Cost still falls on them in all 5
-  setups, so sweet-search also cuts the cost of failing.
+#### 🗺️ Where it helps most
+
+| 🗂️ Slice | 💰 Billed cost, sweet vs native | 📝 What it means |
+|---|:---:|---|
+| 🐹 Go · 🟦 TypeScript · ☕ Java | **−17% to −18%** | largest saving (mean of the 5 setups) |
+| 🐍 Python | −9% | smallest saving; same ranking as the retrieval benchmark |
+| ✨ Feature requests | **−18%** | significant in all 5 setups |
+| 🐛 Bug fixes | −12% | |
+| 🤖 Codex, repo < 21k lines → > 58k lines | −15% → **−43%** | the saving grows with the repo |
+| 🟣 Claude Code, repo 21k–58k lines | largest | about 0 above 58k lines |
+| 🧱 76 tasks no rollout solved | falls in all 5 setups | sweet-search also cuts the cost of failing |
+
+<sub>Aggregates over the held-out set; small slices are noisy.</sub>
+
+#### ⏱️ Model time per task (estimated, tests excluded)
+
+| 🧰 Harness + model | ⏱️ Model time, est. | 🔁 Model turns | 🧪 Tests + waits, bench |
+|---|---:|---:|---:|
+| 🟣 **Claude Code** + Sonnet 5.5 high | +7.8% [−1.3, +18.5] · 29.0 vs 26.9 s | +4% | −2 s |
+| 🟣 **Claude Code** + Opus 5.5 medium | −2.9% [−8.2, +2.9] · 35.8 vs 36.9 s | +4% | +6 s |
+| 🟣 **Claude Code** + Opus 5.5 high | **−5.3%** [−10.3, −0.2] · 51.9 vs 54.8 s | +2% | **+23 s** |
+| 🐚 **opencode** + Sol 6.1 high | **−16.2%** [−21.2, −10.9] · 83.4 vs 99.6 s | **−23%** | −1 s |
+| 🤖 **Codex** + Sol 6.1 high | **−26.0%** [−31.8, −19.7] · 95.0 vs 128.3 s | **−44%** | **+79 s** |
+
+<sub>**Bold** = the 95% interval excludes 0 (task bootstrap, B = 10,000, seed 42). Tests + waits = extra seconds per task, sweet minus native.</sub>
+
+- **Same estimate as the retrieval benchmark** (one set of time costs per setup, both arms), here on
+  2,000 task traces.
+- **Why tests are left out:** search does not run them, and the benchmark ran them under load (Docker,
+  Rosetta on the Sol rows). They take 75–320 s per task, much more than the model.
+- ⚠️ **Codex:** sweet-search needs 44% fewer turns, but waits 79 s longer on tests (one long call instead
+  of stock Codex's short `wait` calls). With tests, the benchmark wall time is +10.5%.
+- ⚠️ **opencode:** native used subagents in 22 tasks. Without those, the estimate is −4.2%, and the
+  measured model time is equal (+0.2%).
+- **Script:** [`task-latency-model.mjs`](eval/task-completion-bench/stats/task-latency-model.mjs); full output
+  in [`TASK-LATENCY-HO2-290.md`](eval/task-completion-bench/stats/TASK-LATENCY-HO2-290.md).
 
 - **What's compared:** the installed `sweet-search` agent prompt + tools vs. the *same model* using
   its built-in file-reading and shell-grep loop. Harnesses run as they ship: no tools disabled. The sweet-search system prompt says nothing about
