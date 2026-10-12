@@ -577,8 +577,11 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 
 <img src="assets/hnsw-time-to-quality.svg" alt="Time each library needs to reach sweet-HNSW MRR@10 on an Apple M3 Max, p50, 1 thread, and how many times slower than sweet-HNSW; each rival is the fastest of its configs. 6,918 vectors: sweet-HNSW 52 µs, FAISS 89 µs (1.7x), USearch 76 µs (1.5x), hnswlib 165 µs (3.2x). 20k vectors: sweet-HNSW 103 µs, FAISS 190 µs (1.8x), USearch 168 µs (1.6x), hnswlib 499 µs (4.8x). 140k vectors: sweet-HNSW 236 µs, FAISS 1.07 ms (4.5x), USearch 1.11 ms (4.7x), hnswlib 1.67 ms (7.1x). AdvTest 21.7k: sweet-HNSW 111 µs, FAISS 208 µs (1.9x), USearch 108 µs (0.97x), hnswlib 534 µs (4.8x)." width="100%" />
 
+<br>
+<br>
+
 <details>
-<summary><b>📈 Details</b></summary>
+<summary><b>📈 Details and more benchmarks</b></summary>
 <br/>
 
 | | |
@@ -594,10 +597,14 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 | 🖥️ **Hardware** | Apple M3 Max · x86 AMD EPYC (AVX2) |
 | 📐 **Method** | [docs/HNSW_BENCHMARK.md](docs/HNSW_BENCHMARK.md) |
 
+<br>
+
 <img src="assets/hnsw-time-to-quality-x86.svg" alt="Time each library needs to reach sweet-HNSW MRR@10 on an x86 AMD EPYC server, p50, 1 thread; each rival is the fastest of its configs. 6,918 vectors: sweet-HNSW 81 µs, FAISS 109 µs (1.3x), USearch 118 µs (1.5x), hnswlib 163 µs (2.0x). 20k vectors: sweet-HNSW 166 µs, FAISS 253 µs (1.5x), USearch 246 µs (1.5x), hnswlib 498 µs (3.0x). 140k vectors: sweet-HNSW 482 µs, FAISS 1.88 ms (3.9x), USearch 3.37 ms (7.0x), hnswlib 1.67 ms (3.5x). AdvTest 21.7k: sweet-HNSW 182 µs, FAISS 156 µs (0.86x), USearch 141 µs (0.77x), hnswlib 267 µs (1.5x)." width="100%" />
 <img src="assets/hnsw-scaling.svg" alt="Latency to reach sweet-HNSW quality as the index grows, log scales, Apple M3 Max. sweet-HNSW: 52 µs, 103 µs, 236 µs at 6.9k, 20k, 140k vectors. Fastest rival: 76 µs (USearch), 168 µs (USearch), 1.07 ms (FAISS). At 140k sweet-HNSW is 4.5 times faster than the fastest rival." width="100%" />
 <img src="assets/hnsw-speed-quality.svg" alt="Speed and quality at 140k vectors, Apple M3 Max. sweet-HNSW: MRR 78.5 in 236 µs. In the same time, the best rival, USearch b1 cascade, reaches 77.5. To reach 78.5, rivals need 1.07 ms (FAISS SQ8 + refine), 1.11 ms (USearch i8), 1.67 ms (hnswlib). Exact search quality 79.2 needs FAISS SQ8 + refine at 8.5 ms." width="100%" />
 </details>
+
+<br>
 
 </td>
 </tr>
