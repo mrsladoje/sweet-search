@@ -40,7 +40,7 @@ import { createAdmissionPolicy } from '../../../core/indexing/admission-policy.j
 import { createIndexCoverage, semanticTargetFor } from '../../../core/search/index-coverage.js';
 import { resolveRoots } from '../../../core/search/worktree-roots.js';
 import { chainBoundary } from '../../../core/agent-tools/chain.js';
-import { fenceBody, numberCodeLines, lineGutterEnabled, interfaceCallsInRange, renderInterfaceImpls } from '../../../core/search/search-read.js';
+import { fenceBody, numberCodeLines, lineGutterEnabled, interfaceCallsInRanges, renderInterfaceImpls } from '../../../core/search/search-read.js';
 import { renderRegexDialectHint } from '../../../core/search/regex-dialect.js';
 import {
   applyReadOmissionDecisions,
@@ -994,10 +994,21 @@ const GREP_IMPL_HINT_MAX_LINES = 3;
 // line 37 and the interface call `_replacer.Replace` sat on line 38).
 function writeGrepInterfaceHint(total, rows) {
   if (!(total > 0 && total <= GREP_IMPL_HINT_MAX_MATCHES)) return;
+  // One graph query per file, not per hit.
+  const byFile = new Map();
+  for (const r of rows) {
+    if (!byFile.has(r.file)) byFile.set(r.file, []);
+    byFile.get(r.file).push(r);
+  }
+  const callsOf = new Map();
+  for (const [file, hits] of byFile) {
+    const found = interfaceCallsInRanges(PROJECT_ROOT, file, hits.map(r => ({ startLine: r.line, endLine: r.line + GREP_IMPL_HINT_LINES_AFTER })));
+    hits.forEach((r, i) => callsOf.set(r, found[i]));
+  }
   const calls = [];
   const seen = new Set();
   for (const r of rows) {
-    for (const c of interfaceCallsInRange(PROJECT_ROOT, r.file, r.line, r.line + GREP_IMPL_HINT_LINES_AFTER)) {
+    for (const c of callsOf.get(r)) {
       if (seen.has(c.target)) continue;
       seen.add(c.target);
       calls.push(c);

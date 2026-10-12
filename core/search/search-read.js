@@ -593,13 +593,27 @@ function _graphKinds(projectRoot, filePathRel, symbols, lo, hi) {
   if (!symbols.length) return symbols;
   const graph = _getGraphRepo(projectRoot);
   if (!graph || typeof graph.findEntityWithNameInRange !== 'function') return symbols.map(({ endLine: _end, ...row }) => row);
+  // A chunk starts at the doc comment above its definition: the definition starts
+  // somewhere in the chunk's own lines.
+  const rangeOf = (sym) => {
+    const end = Number.isInteger(sym.endLine) && sym.endLine >= sym.startLine ? sym.endLine : sym.startLine;
+    return { startLine: sym.startLine, endLine: Math.min(hi, end), name: sym.symbol };
+  };
+  const looked = symbols.filter(sym => sym?.symbol && Number.isInteger(sym.startLine));
+  // One graph query for the whole file (a long file lists ~100 symbols here).
+  let found = null;
+  if (looked.length > 1 && typeof graph.findEntitiesWithNamesInRanges === 'function') {
+    try { found = new Map(graph.findEntitiesWithNamesInRanges(filePathRel, looked.map(rangeOf)).map((e, i) => [looked[i], e])); }
+    catch { found = null; }
+  }
   return symbols.map((sym) => {
     if (!sym?.symbol || !Number.isInteger(sym.startLine)) return sym;
-    // A chunk starts at the doc comment above its definition: the definition starts
-    // somewhere in the chunk's own lines.
-    const end = Number.isInteger(sym.endLine) && sym.endLine >= sym.startLine ? sym.endLine : sym.startLine;
     let e = null;
-    try { e = graph.findEntityWithNameInRange(filePathRel, sym.startLine, Math.min(hi, end), sym.symbol); } catch { e = null; }
+    if (found) e = found.get(sym) ?? null;
+    else {
+      const r = rangeOf(sym);
+      try { e = graph.findEntityWithNameInRange(filePathRel, r.startLine, r.endLine, r.name); } catch { e = null; }
+    }
     const { endLine: _end, ...row } = sym;
     return e?.type && e.type !== sym.type ? { ...row, type: e.type } : row;
   });
@@ -793,6 +807,25 @@ export function selectInterfaceCalls(rows, filePathRel) {
 /** Interface calls worth a trailer in lines [startLine, endLine] of an indexed file (ss-grep hits). */
 export function interfaceCallsInRange(projectRoot, filePathRel, startLine, endLine) {
   return _collectInterfaceCalls(filePathRel, projectRoot, startLine, endLine);
+}
+
+/**
+ * interfaceCallsInRange for many ranges of one file: one graph query for all of them.
+ * @param {{startLine: number, endLine: number}[]} ranges
+ */
+export function interfaceCallsInRanges(projectRoot, filePathRel, ranges) {
+  const graph = _getGraphRepo(projectRoot);
+  if (!graph || typeof graph.findInterfaceCallImplementationsInRanges !== 'function') {
+    return ranges.map(r => _collectInterfaceCalls(filePathRel, projectRoot, r.startLine, r.endLine));
+  }
+  let rowsPerRange;
+  try { rowsPerRange = graph.findInterfaceCallImplementationsInRanges(filePathRel, ranges); }
+  catch { rowsPerRange = ranges.map(() => []); }
+  return rowsPerRange.map((rows) => {
+    rows = rows || [];
+    _attachShortImplementationCode(rows, projectRoot);
+    return selectInterfaceCalls(rows, filePathRel);
+  });
 }
 
 const ACCESSOR_MAX_LINES = 12;         // a longer implementation is never an accessor
