@@ -265,6 +265,47 @@ export class CodeGraphRepository {
     }
   }
 
+  /**
+   * findEntityWithNameInRange for many {startLine, endLine, name} queries on one file, with
+   * one SQL query instead of up to two per item. The file's rows come back in the same order
+   * as the per-item queries (same index scan and ORDER BY); each pass keeps the subset of
+   * rows the per-item WHERE clause keeps, so every result is the same.
+   *
+   * @returns {({name: string, type: string, startLine: number, endLine: number}|null)[]}
+   */
+  findEntitiesWithNamesInRanges(filePath, queries) {
+    const db = this._open();
+    if (!db) return queries.map(() => null);
+    let rows;
+    try {
+      rows = prepareCached(db, `
+        SELECT name, type, start_line, end_line FROM entities
+        WHERE file_path = ? AND ${this._entityVisibilitySql(db)}
+        ORDER BY (end_line - start_line) DESC
+      `).all(filePath, ...this._entityVisibilityParams(db));
+    } catch {
+      return queries.map(q => this.findEntityWithNameInRange(filePath, q.startLine, q.endLine, q.name));
+    }
+    const isNum = v => typeof v === 'number';
+    const named = rows.filter(row => row.name).map(row => {
+      const nLower = String(row.name).toLowerCase();
+      return { row, nLower, nNorm: nLower.replace(/[_-]/g, '') };
+    });
+    const hit = ({ row }) => ({ name: row.name, type: row.type, startLine: row.start_line, endLine: row.end_line });
+    return queries.map(({ startLine, endLine, name }) => {
+      if (!name) return null;
+      const tLower = String(name).toLowerCase();
+      const tNorm = tLower.replace(/[_-]/g, '');
+      const matches = r => r.nLower === tLower || r.nNorm === tNorm;
+      const contained = named.find(r => isNum(r.row.start_line) && isNum(r.row.end_line)
+        && r.row.start_line >= startLine && r.row.end_line <= endLine && matches(r));
+      if (contained) return hit(contained);
+      const startsIn = named.find(r => isNum(r.row.start_line)
+        && r.row.start_line >= startLine && r.row.start_line <= endLine && matches(r));
+      return startsIn ? hit(startsIn) : null;
+    });
+  }
+
   hasEntityWithNameInRange(filePath, startLine, endLine, targetName) {
     return this.findEntityWithNameInRange(filePath, startLine, endLine, targetName) !== null;
   }
@@ -337,10 +378,54 @@ export class CodeGraphRepository {
     const db = this._open();
     if (!db) return [];
     try {
-      const relSql = (alias) => this._relationshipVisibilitySql(db, alias);
-      const relParams = this._relationshipVisibilityParams(db);
-      const entParams = this._entityVisibilityParams(db);
-      const calls = prepareCached(db, `
+      const calls = prepareCached(db, this._interfaceCallsSql(db, '64')).all(
+        filePath, startLine, endLine, ...this._interfaceCallsParams(db));
+      return this._interfaceCallImplementations(db, calls, new Map());
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * findInterfaceCallImplementations for many line ranges of one file (the ss-grep hits),
+   * with one calls query over the ranges' span instead of one per range. The span query is
+   * the per-range query with a wider line window and no 64-row cut: the same scan emits
+   * rows in the same order and the LIMIT sorter breaks context_line ties by that order,
+   * so each range gets the rows, in the order, its own query returns. Interface and
+   * implementation lookups are cached per target within the call.
+   *
+   * @returns {ReturnType<CodeGraphRepository['findInterfaceCallImplementations']>[]}
+   */
+  findInterfaceCallImplementationsInRanges(filePath, ranges) {
+    if (ranges.length <= 1) return ranges.map(r => this.findInterfaceCallImplementations(filePath, r.startLine, r.endLine));
+    const db = this._open();
+    if (!db) return ranges.map(() => []);
+    let span;
+    try {
+      span = prepareCached(db, this._interfaceCallsSql(db, '?')).all(
+        filePath,
+        Math.min(...ranges.map(r => r.startLine)),
+        Math.max(...ranges.map(r => r.endLine)),
+        ...this._interfaceCallsParams(db),
+        -1,
+      );
+    } catch {
+      return ranges.map(r => this.findInterfaceCallImplementations(filePath, r.startLine, r.endLine));
+    }
+    const cache = new Map();
+    return ranges.map(({ startLine, endLine }) => {
+      try {
+        const calls = span.filter(c => c.line >= startLine && c.line <= endLine).slice(0, 64);
+        return this._interfaceCallImplementations(db, calls, cache);
+      } catch {
+        return [];
+      }
+    });
+  }
+
+  _interfaceCallsSql(db, limit) {
+    const relSql = (alias) => this._relationshipVisibilitySql(db, alias);
+    return `
         SELECT r.context_line AS line, r.target_name AS call, t.id AS tid, t.name AS tname,
                p.name AS pname, p.type AS ptype
         FROM relationships r
@@ -354,10 +439,22 @@ export class CodeGraphRepository {
           AND ${this._entityVisibilitySql(db, 's')}
           AND ${this._entityVisibilitySql(db, 't')}
         ORDER BY r.context_line ASC
-        LIMIT 64
-      `).all(filePath, startLine, endLine, ...relParams, ...entParams, ...entParams);
-      if (calls.length === 0) return [];
-      const interfaceOf = prepareCached(db, `
+        LIMIT ${limit}
+      `;
+  }
+
+  _interfaceCallsParams(db) {
+    const entParams = this._entityVisibilityParams(db);
+    return [...this._relationshipVisibilityParams(db), ...entParams, ...entParams];
+  }
+
+  /** The interface calls among `calls` rows, with their implementations. `cache` maps per-target lookups. */
+  _interfaceCallImplementations(db, calls, cache) {
+    if (calls.length === 0) return [];
+    const relSql = (alias) => this._relationshipVisibilitySql(db, alias);
+    const relParams = this._relationshipVisibilityParams(db);
+    const entParams = this._entityVisibilityParams(db);
+    const interfaceOf = prepareCached(db, `
         SELECT im.id AS id, im.name AS name, ip.name AS pname
         FROM relationships o
         JOIN entities im ON im.id = o.target_id
@@ -369,7 +466,7 @@ export class CodeGraphRepository {
           AND ${this._entityVisibilitySql(db, 'im')}
         LIMIT 1
       `);
-      const implsOf = prepareCached(db, `
+    const implsOf = prepareCached(db, `
         SELECT i.name, i.parent_class, i.file_path, i.start_line, i.end_line
         FROM relationships o
         JOIN entities i ON i.id = o.source_id
@@ -380,29 +477,31 @@ export class CodeGraphRepository {
         ORDER BY i.file_path ASC, i.start_line ASC
         LIMIT 64
       `);
-      const out = [];
-      for (const c of calls) {
-        let iface = null;
-        if (INTERFACE_ENTITY_TYPES.has(c.ptype)) iface = { id: c.tid, name: c.tname, pname: c.pname };
-        else iface = interfaceOf.get(c.tid, ...relParams, ...entParams) || null;
-        if (!iface) continue;
-        out.push({
-          line: c.line,
-          call: c.call,
-          target: iface.pname ? `${iface.pname}.${iface.name}` : iface.name,
-          impls: implsOf.all(iface.id, ...relParams, ...entParams).map(i => ({
-            name: i.name,
-            owner: i.parent_class || null,
-            filePath: i.file_path,
-            startLine: i.start_line,
-            endLine: i.end_line ?? null,
-          })),
-        });
-      }
-      return out;
-    } catch {
-      return [];
+    const memo = (key, fn) => {
+      if (!cache.has(key)) cache.set(key, fn());
+      return cache.get(key);
+    };
+    const out = [];
+    for (const c of calls) {
+      let iface = null;
+      if (INTERFACE_ENTITY_TYPES.has(c.ptype)) iface = { id: c.tid, name: c.tname, pname: c.pname };
+      else iface = memo(`if:${c.tid}`, () => interfaceOf.get(c.tid, ...relParams, ...entParams) || null);
+      if (!iface) continue;
+      const impls = memo(`im:${iface.id}`, () => implsOf.all(iface.id, ...relParams, ...entParams));
+      out.push({
+        line: c.line,
+        call: c.call,
+        target: iface.pname ? `${iface.pname}.${iface.name}` : iface.name,
+        impls: impls.map(i => ({
+          name: i.name,
+          owner: i.parent_class || null,
+          filePath: i.file_path,
+          startLine: i.start_line,
+          endLine: i.end_line ?? null,
+        })),
+      });
     }
+    return out;
   }
 
   findEntitiesInRange(filePath, startLine, endLine) {

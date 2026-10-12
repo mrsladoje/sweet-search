@@ -121,6 +121,8 @@ fn falsey(v: &str) -> bool {
 const CHAIN_LATER_ENV: &str = "SWEET_SEARCH_CHAIN_LATER";
 const CHAIN_PID_ENV: &str = "SWEET_SEARCH_CHAIN_PID";
 const CHAIN_TTL_SECS: u64 = 30 * 60;
+const CHAIN_SWEEP_SECS: u64 = 60;
+const CHAIN_SWEEP_STAMP: &str = ".last-sweep";
 const SHELLS: [&str; 11] = [
     "sh", "bash", "zsh", "dash", "ksh", "mksh", "ash", "fish", "tcsh", "csh", "busybox",
 ];
@@ -235,6 +237,14 @@ fn register_chain_call(dir: &Path, key: &str) -> bool {
         .open(&file)
     {
         Ok(_) => {
+            // Sweep at most once a minute: every shell adds a key, so a sweep on every call
+            // costs a stat per key of the last 30 minutes (~15 ms at 6,000 keys). A key
+            // left over longer is never read as fresh (the age check below).
+            let stamp = dir.join(CHAIN_SWEEP_STAMP);
+            if age_secs(&stamp).map_or(false, |a| a < CHAIN_SWEEP_SECS) {
+                return false;
+            }
+            let _ = fs::File::create(&stamp).and_then(|f| f.set_modified(std::time::SystemTime::now()));
             if let Ok(entries) = fs::read_dir(dir) {
                 for e in entries.flatten() {
                     if age_secs(&e.path()).map_or(false, |a| a > CHAIN_TTL_SECS) {
