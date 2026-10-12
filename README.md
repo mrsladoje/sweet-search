@@ -1223,7 +1223,7 @@ Compressed vectors make the index <i>~3× smaller</i>, with no measurable loss i
 
 #### ⚡ GPU-accelerated
 > - Runs on candle with Metal and CUDA, plus a Neural Engine cascade on M3+.
-> - **Hand-written fused attention kernels** for both models.
+> - **Our own attention layer** for both models, rebuilt on fused GPU kernels.
 
 | Your hardware | What runs |
 |--|--|
@@ -1242,7 +1242,7 @@ Compressed vectors make the index <i>~3× smaller</i>, with no measurable loss i
 > - INT4 vectors make the late-interaction index ~3× smaller, with no measurable retrieval loss.
 
 <details>
-<summary><b>Under the hood: the GPU kernels we hand-wrote, and the upstream bugs we fixed</b></summary>
+<summary><b>Under the hood: the attention layers we rewrote, and the upstream bugs we fixed</b></summary>
 
 <br/>
 
@@ -1256,7 +1256,7 @@ Compressed vectors make the index <i>~3× smaller</i>, with no measurable loss i
 #### 🔪 Surgical attention swap
 - We vendor the upstream models (NomicBERT for embeddings, ModernBERT for late interaction) and replace **only the attention forward pass**.
 - **Why:** upstream attention builds the full attention matrix in every layer. On Metal, one batch took ~4.2 s, ~10% slower than the CPU path.
-- **Metal:** a fused SDPA kernel ported from MLX.
+- **Metal:** candle's fused SDPA kernel (ported from MLX).
 - **CUDA (Ampere+):** `candle-flash-attn` with variable-length packing. Candle's SDPA has no CUDA backend, and the naive BF16 fallback drifted (per-token cosine down to 0.69).
 - **CPU:** byte-for-byte upstream math, so the fallback is provably identical.
 

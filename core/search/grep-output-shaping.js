@@ -960,17 +960,20 @@ export function isOutsideScopeSourceFile(file, prior = grepFilePrior(file)) {
 }
 
 /**
- * The outside-scope line when the early-stop check (grep-outside-probe.js) confirmed `limit`
- * matching files outside the scope: `# also 20+ files outside --in: a, b, c`. `files` come
- * source first, so a first name that is no source file means no source file matched. The
- * rules of renderOutsideScopeLine hold: silent when only tests, docs or examples match outside
- * a scope that answered. Null = print nothing.
+ * The outside-scope line from the cost-bounded check (grep-outside-probe.js), which read only
+ * part of the candidates: `# also 20+ files outside --in: a, b, c`, or `# also 3+ files ...`
+ * when the read budget ran out first. `complete` = every candidate was read: the count is
+ * exact and has no `+`. `files` come source first, so a first name that is no source file
+ * means no source file matched. The rules of renderOutsideScopeLine hold: silent when only
+ * tests, docs or examples match outside a scope that answered. Null = print nothing.
  */
-export function renderOutsideScopeProbeLine({ files, limit, scopedTotal, scopes, max = 3 }) {
+export function renderOutsideScopeProbeLine({ files, limit, complete = false, scopedTotal, scopes, max = 3 }) {
   const outside = (files || []).filter(f => !fileInScopes(f, scopes));
   if (!outside.length) return null;
   if (!isOutsideScopeSourceFile(outside[0]) && scopedTotal > 0) return null;
-  return `# also ${limit}+ files outside --in: ${outside.slice(0, max).join(', ')}`;
+  const n = Math.min(outside.length, limit);
+  const more = !complete || outside.length >= limit ? '+' : '';
+  return `# also ${n}${more} ${n === 1 && !more ? 'file' : 'files'} outside --in: ${outside.slice(0, max).join(', ')}`;
 }
 
 /**

@@ -966,12 +966,12 @@ const OUTSIDE_SCOPE_MAX_FILES = 20;
 async function outsideScopeLine(rx, scopedTotal, scopes, globOpts) {
   if (process.env.SS_GREP_OUTSIDE_SCOPE === '0') return null;
   try {
-    // Early stop first: past OUTSIDE_SCOPE_MAX_FILES matching files the line names a few
-    // source files and says "N+" (grep-outside-probe.js). Otherwise the engine runs the exact
-    // unscoped search in the same call (the scope only feeds the probe).
+    // Cost bound first: past ~800 candidate files the engine reads a budget of them, source
+    // first, and the line says "N+ files" (grep-outside-probe.js). Otherwise it runs the exact
+    // unscoped search in the same call (the scope only feeds the bound).
     const result = await queryWarmSearch(rx, {
       mode: 'grep', regex: rx, maxMatches: 0, contextLines: 0,
-      fileFilter: scopes, grepOutsideProbe: OUTSIDE_SCOPE_MAX_FILES,
+      fileFilter: scopes, grepOutsideProbe: OUTSIDE_SCOPE_MAX_FILES, grepOutsideScopedTotal: scopedTotal,
       perFileCap: 1, maxFiles: OUTSIDE_SCOPE_MAX_FILES, grepFileOrder: 'weight',
       expand: false, rerank: false, useLateInteraction: false, _isAgentFormat: true,
       ...globOpts,
