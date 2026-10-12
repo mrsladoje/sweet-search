@@ -7,7 +7,7 @@ call takes, and how the output is ranked and shaped. Updated 2026-10-05.
 
 ## Performance
 
-### End to end, as an agent calls it (2026-10-04)
+### End to end, as an agent calls it (2026-10-13)
 
 Each call is timed from process start until all output is read from a pipe, for `ss-grep` and
 for `rg -n` with the same intent. 7 interleaved repetitions per query; the median counts.
@@ -18,42 +18,52 @@ for `rg -n` with the same intent. 7 interleaved repetitions per query; the media
   rails, django, react, go, kubernetes, rust (130 to 63,416 files).
 - **Split:** stratified by repo and query class, 60% dev / 40% held-out, seed 42. The tables
   below are held-out (638 queries).
-- **Setup:** Apple M3 Max, ripgrep 15.1.0, sweet-search `59e72df1`, warm daemon. Median 1-minute
-  load 5.8.
+- **Setup:** Apple M3 Max, ripgrep 15.1.0, sweet-search `db408c54` (native lane), warm daemon.
+  Median 1-minute load 4.7.
 
-**Held-out result: median 2.06x faster than ripgrep** (`ss-grep` 3.59 ms, ripgrep 7.29 ms).
-542 wins, 44 losses, 52 ties (5% margin). Dev: 2.01x (3.54 ms vs 7.24 ms).
+**Held-out result: median 2.46x faster than ripgrep** (`ss-grep` 3.65 ms, ripgrep 7.51 ms).
+494 wins, 120 losses, 24 ties (5% margin). Equal weight per size class: 2.36x. Dev: 2.37x
+(3.60 ms vs 6.99 ms).
 
 | Repo size | Queries | Median speedup | `ss-grep` ms | ripgrep ms |
 |-----------|---------|----------------|--------------|------------|
-| small     | 162     | 2.00x          | 3.04         | 6.18       |
-| medium    | 157     | 2.29x          | 3.60         | 7.60       |
-| large     | 159     | 2.18x          | 3.46         | 7.48       |
-| xlarge    | 160     | 1.76x          | 4.98         | 8.01       |
+| small     | 162     | 2.42x          | 3.02         | 6.62       |
+| medium    | 157     | 2.60x          | 3.47         | 7.94       |
+| large     | 159     | 2.53x          | 3.73         | 7.48       |
+| xlarge    | 160     | 1.94x          | 5.74         | 8.02       |
 
 By query class (held-out; classes with at least 20 queries):
 
 | Class              | Queries | Median speedup |
 |--------------------|---------|----------------|
-| `-w` word          | 26      | 6.45x          |
-| `-F` fixed string  | 25      | 5.28x          |
-| path-like          | 26      | 4.48x          |
-| flood (very common token) | 26 | 3.28x       |
-| multi-token regex  | 71      | 2.29x          |
-| `-i`               | 45      | 2.19x          |
-| zero hits          | 53      | 2.18x          |
-| regex class        | 21      | 2.14x          |
-| `-g` glob          | 134     | 2.13x          |
-| `--in` scope       | 172     | 1.11x          |
-| `-C` context       | 31      | 1.04x          |
+| `-w` word          | 26      | 7.86x          |
+| `-F` fixed string  | 25      | 6.13x          |
+| path-like          | 26      | 5.81x          |
+| flood (very common token) | 26 | 3.93x       |
+| multi-token regex  | 71      | 2.77x          |
+| regex class        | 21      | 2.63x          |
+| `-g` glob          | 134     | 2.59x          |
+| `-i`               | 45      | 2.56x          |
+| zero hits          | 53      | 1.89x          |
+| `--in` scope       | 172     | 1.03x          |
+| `-C` context       | 31      | 0.98x          |
 
-**Why about 2x and not more:** both tools pay a process start, and `ss-grep` also pays one round
-trip to the daemon. The search itself is about 1 ms, so these fixed costs set the floor on small
-repos. Scoped and context greps read few files, where ripgrep is fast too.
+**History of this bench** (held-out median speedup, same queries and repos): 2026-10-04
+`59e72df1` 2.06x (3.59 ms); 2026-10-12 `28c56b8d` 1.60x (5.20 ms: per-call costs had grown in
+the daemon); 2026-10-13 `db408c54` 2.46x (3.65 ms: per-call costs cut, then the native lane).
+On a Linux x86 VM (Hetzner, 30 queries per repo, median), the lane took gin from 5.69 to 2.93 ms,
+kubernetes from 10.76 to 7.94 ms and rust from 10.14 to 7.30 ms.
+
+**Why about 2.5x and not more:** both tools pay a process start; a minimal Rust binary takes
+~1.6 ms to start on this Mac (`/usr/bin/true`: ~1 ms), and `ss-grep` also pays a socket round
+trip to the daemon. The lane then answers most calls in 0.5-1.5 ms. Scoped and context greps
+read few files, where ripgrep is fast too, and a file-scoped `ss-grep` also searches the whole
+repo once more for its outside-scope line.
 
 **Hit counts:** on the same file list, `ss-grep` and ripgrep report the same hit count for 1,583
-of 1,600 queries. The 17 differences come from the check: its file list missed files changed
-after the index build, and ripgrep searches some binary files that the index skips.
+of 1,600 queries (checked 2026-10-04; the lane prints the same bytes as the JS tool it replaced).
+The 17 differences come from the check: its file list missed files changed after the index
+build, and ripgrep searches some binary files that the index skips.
 
 ### In-process engine (2026-04-07, historical)
 
@@ -102,14 +112,29 @@ runs on all indexed files.
 
 ### The call path
 
-1. **`ss-grep` binary:** a thin native Rust client (`crates/sweet-search-cli`). It sends the call
-   over a Unix socket to the project's daemon (`/agent-tool`), and starts the daemon if no socket
+1. **`ss-grep` binary:** a thin native Rust client (`crates/sweet-search-cli`). It first sends the
+   call to the daemon's **native lane** (`<daemon socket>.grep`). On a decline, or with no lane,
+   it sends the call to the daemon's JS route (`/agent-tool`), and starts the daemon if no socket
    answers. Without a daemon it runs the tool in-process.
-2. **Daemon:** a long-lived Node process (`core/search/search-server.js`). It keeps the index
-   loaded, runs the query planner (`core/search/search-pattern-planner.js`), and calls its own
-   search handler directly, without a second socket round trip.
-3. **Native addon:** gram lookup, intersection and grep run in one NAPI call where possible.
+2. **Native lane** (since `0bac2f3a`): a thread in the daemon's Rust addon
+   (`crates/sweet-search-native/src/lane/`, with the output logic in `crates/ss-grep-core/`). It
+   answers the whole call in Rust: argument parsing, the planner's routes (with the delta
+   overlay), the native search, the ranking and the rendered text, byte for byte what the JS tool
+   prints. It declines what its port does not cover (zero hits, usage errors, grep switches,
+   worktrees, non-ASCII paths in the path sort, non-English collation locales); the JS route then
+   answers. On the 2,042 calls of the end-to-end bench it answers 1,667 (82%).
+3. **Daemon JS route:** a long-lived Node process (`core/search/search-server.js`). It keeps the
+   index loaded, runs the query planner (`core/search/search-pattern-planner.js`), and calls its
+   own search handler directly, without a second socket round trip.
+4. **Native addon:** gram lookup, intersection and grep run in one NAPI call where possible.
    Matches come back as typed arrays plus two strings, not one object per match.
+
+**Parity rule.** The lane re-implements the JS tool. A change to the JS that shapes ss-grep output
+must be ported to the lane in the same commit (each Rust function names the JS it mirrors in a
+`// Mirrors:` comment). Check with the shadow mode: a daemon started with
+`SS_LANE_SHADOW_LOG=<file>` runs every JS-answered grep through the lane as well and logs any
+byte difference (call the tool with `SWEET_SEARCH_GREP_LANE=0` so the JS answers).
+`SWEET_SEARCH_GREP_LANE=0` in the daemon's environment turns the lane off.
 
 ### Query routes
 
@@ -403,16 +428,29 @@ previous commit).
     scope: ~34 ms -> ~5-7 ms.
   - `59e72df1`: a root-anchored scope finds its files by path prefix in a sorted list.
   - `4c27d7d5`: the scope test rejects by substring first (30k kubernetes paths: 14.6 -> 2.6 ms).
+- **Fewer per-call costs in the daemon** (`4a714715`): file-system answers are memoized for the
+  length of one call (the manifest was stat'ed ~21 times per grep); one reader heartbeat file per
+  epoch and process instead of a create and an unlink per call; the native client sends its
+  harness key instead of the daemon walking the process tree; the Linux client is a static musl
+  binary. Mac -10-16%, Linux -12-36% per call.
+- **Native lane** (`0bac2f3a`): the daemon's addon answers ss-grep in Rust, without JavaScript
+  (see "The call path"). Parity: 2,042 calls on 13 repos, old route vs lane, 0 byte differences
+  in stdout, stderr or exit code; 209 chained and same-session calls, 0 differences.
 
 ---
 
 ## Known slow cases and open work
 
-- **Scoped (`--in`) and context (`-C`) greps** are only ~1.1x faster end to end: they read few
-  files, and the fixed costs dominate.
+- **Scoped (`--in`) and context (`-C`) greps** are about as fast as ripgrep end to end (1.03x,
+  0.98x): they read few files, and the fixed costs dominate.
 - **A regex with no fixed text** (e.g. `\w+\d`) cannot use the index and scans every indexed file.
-- **The planner is still JavaScript.** Moving literal extraction, gram lookup, intersection and
-  verification behind one Rust call would remove the remaining JS planning time per call.
+- **Zero-hit greps still take the JS route.** The lane declines them, because the JS tool then
+  retries in a regex dialect or case-insensitively, greps unindexed files and explains the zero.
+  A decline costs about 0.2-0.4 ms.
+- **The client process sets the floor.** Starting the native client costs ~1.7 ms on the Mac
+  (`/usr/bin/true`: ~1 ms; ripgrep `--version`: ~2 ms), before any search.
+- **A file-scoped grep pays for the outside-scope line:** it searches the whole repo once more
+  (or reads a bounded probe) to name hits outside `--in`.
 
 ---
 

@@ -613,17 +613,17 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 
 <h3>⚡<code>ss-grep</code>⚡</h3> 
 
-### 2.06× faster
+### 2.46× faster
 
 <sub>end to end, median, held-out queries</sub>
 
 | | median | |
 |:--|--:|:--|
-| `ss-grep` | **3.59 ms** | `████` |
-| ripgrep 15.1 | 7.29 ms | `████████` |
+| `ss-grep` | **3.65 ms** | `████` |
+| ripgrep 15.1 | 7.51 ms | `████████` |
 
 <sub>1,600 queries shaped like 19,762 agent greps</sub><br>
-<sub>13 repos · same hit counts · dev split 2.01×</sub><br>
+<sub>13 repos · same hit counts · dev split 2.37×</sub><br>
 <sub>M3 Max · [method](docs/GREP_INDEXING_STRATEGY.md)</sub>
 
 </td>
@@ -793,7 +793,7 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 <img src="assets/tools/ss-grep-io.svg" alt="ss-grep takes the regex session.*expired and returns every file:line hit, with the match highlighted" width="100%" />
 
-### ⚡ 2× faster than ripgrep, end to end
+### ⚡ 2.46× faster than ripgrep, end to end
 > Median over 1,600 queries on 13 repos of 130 to 63k files. Query shape distribution is modelled on 20k real agent greps.
 
 <table><tr><td>
@@ -802,7 +802,7 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 - 🧩 **Sparse n-gram index.** Grams are sized to your repo's own text, so each one points to few files. The idea comes from [Cursor's fast regex search](https://cursor.com/blog/fast-regex-search) and [GitHub's Blackbird](https://github.blog/engineering/architecture-optimization/the-technology-behind-githubs-new-code-search/).
 - 🎯 **Literal filter.** The fixed text is pulled out of the regex, and SIMD intersects the file lists. Only 0.1–5% of files see the real regex.
-- 🦀 **All in-process.** Rust regex runs on all cores inside the warm daemon. No subprocess, no pipes, no JSON parsing.
+- 🦀 **All in Rust, in-process.** The whole grep (planning, search, ranking, output) runs as native code inside the warm daemon, on all cores. No subprocess, no pipes, no JavaScript on the hot path.
 
 </td></tr>
 <tr><td>
@@ -845,7 +845,7 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 **⚡ Built on `ss-grep`**
 
 - The regex runs on the sparse n-gram index.
-- That index makes `ss-grep` 2× faster than ripgrep, end to end.
+- That index makes `ss-grep` 2.46× faster than ripgrep, end to end.
 - Your query is turned into embeddings at the same time.
 
 </td>
