@@ -3,6 +3,7 @@
 import http from 'node:http';
 import { projectSocketPath } from './server-identity.js';
 import { resolveAgentSessionId } from './agent-span-ledger.js';
+import { currentCall } from '../agent-tools/virtual-process.js';
 
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -65,7 +66,8 @@ export async function sendAgentSpanOperation(input, { timeoutMs = 500 } = {}) {
   const body = serializeBoundedPayload(payload);
   if (!body) return null;
 
-  if (inProcessAgentSpans && inProcessAgentSpans.socketPath === projectSocketPath()) {
+  // An ss-* call the daemon runs for its own repository always asks this daemon.
+  if (inProcessAgentSpans && (currentCall()?.inDaemon === true || inProcessAgentSpans.socketPath === projectSocketPath())) {
     try {
       // The payload goes through JSON as on the wire: the handler gets its own copy.
       const response = inProcessAgentSpans.handle(JSON.parse(body));

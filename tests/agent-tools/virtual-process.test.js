@@ -5,11 +5,45 @@
  */
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { runInVirtualProcess, currentCall } from '../../core/agent-tools/virtual-process.js';
+import { runInVirtualProcess, currentCall, callMemo, ExitSignal } from '../../core/agent-tools/virtual-process.js';
 
 const tick = (ms) => new Promise((r) => setTimeout(r, ms));
 
 describe('virtual process', () => {
+  it('callMemo answers once per call, never across calls, and never outside one', async () => {
+    let n = 0;
+    const ask = () => callMemo('k', () => ++n);
+    expect([ask(), ask()]).toEqual([1, 2]);
+    const seen = [];
+    await runInVirtualProcess({ env: {}, cwd: '/' }, async () => {
+      seen.push(ask());
+      await tick(1);
+      seen.push(ask(), callMemo('other', () => 'x'));
+    });
+    await runInVirtualProcess({ env: {}, cwd: '/' }, async () => { seen.push(ask()); });
+    expect(seen).toEqual([3, 3, 'x', 4]);
+    // An undefined answer is kept; a throw is not.
+    let calls = 0;
+    await runInVirtualProcess({ env: {}, cwd: '/' }, async () => {
+      callMemo('u', () => { calls++; return undefined; });
+      callMemo('u', () => { calls++; return undefined; });
+      expect(() => callMemo('t', () => { throw new Error('no'); })).toThrow('no');
+      expect(callMemo('t', () => 'after')).toBe('after');
+    });
+    expect(calls).toBe(1);
+  });
+
+  it('process.exit inside a call captures no stack', async () => {
+    let signal = null;
+    const r = await runInVirtualProcess({ env: {}, cwd: '/' }, async () => {
+      try { process.exit(4); } catch (err) { signal = err; throw err; }
+    });
+    expect(r.code).toBe(4);
+    expect(signal).toBeInstanceOf(ExitSignal);
+    expect(signal.stack.split('\n')).toHaveLength(1);
+    expect(new Error('x').stack.split('\n').length).toBeGreaterThan(1);
+  });
+
   it('keeps env, cwd and output apart between interleaved calls', async () => {
     const [a, b] = await Promise.all([
       runInVirtualProcess({ env: { WHO: 'a' }, cwd: '/tmp' }, async () => {

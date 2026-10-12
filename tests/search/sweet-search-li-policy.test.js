@@ -19,6 +19,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { SweetSearch } from '../../core/search/sweet-search.js';
+import { _flushLingeringPins } from '../../core/search/search-reader-pin.js';
 import { LATE_INTERACTION_CONFIG } from '../../core/infrastructure/config/ranking.js';
 import { FALLBACK_WEIGHTS_ID } from '../../core/incremental-indexing/infrastructure/sparse-gram-delta.mjs';
 
@@ -251,7 +252,10 @@ describe('SweetSearch manifest refresh', () => {
         epoch: 4,
         meta: { tool: 'search', mode: 'hybrid', query: 'auth query' },
       });
+      // The heartbeat lingers for the next read of epoch 4, then goes.
       const readerDir = join(stateDir, 'readers');
+      expect(readdirSync(readerDir)).toHaveLength(1);
+      _flushLingeringPins();
       expect(existsSync(readerDir) ? readdirSync(readerDir) : []).toEqual([]);
     } finally {
       searcher.close();

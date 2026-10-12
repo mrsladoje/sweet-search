@@ -27,7 +27,7 @@ import {
   __resetReadCachesForTests,
   __testing,
 } from '../../core/search/search-read.js';
-import { withPinnedRead } from '../../core/search/search-reader-pin.js';
+import { withPinnedRead, _flushLingeringPins } from '../../core/search/search-reader-pin.js';
 
 let TMP;
 
@@ -253,8 +253,38 @@ describe('readFiles — batch', () => {
       expect(payload).toMatchObject({ epoch: 12, meta: { tool: 'test-read' } });
     });
 
+    // The heartbeat lingers for the next read of the same epoch, then goes.
     const readerDir = path.join(stateDir, 'readers');
+    expect(readdirSync(readerDir)).toHaveLength(1);
+    _flushLingeringPins();
     expect(existsSync(readerDir) ? readdirSync(readerDir) : []).toEqual([]);
+  });
+
+  it('reads of one epoch share one heartbeat; another epoch gets its own', async () => {
+    const stateDir = path.join(TMP, '.sweet-search');
+    mkdirSync(stateDir, { recursive: true });
+    const readerDir = path.join(stateDir, 'readers');
+    writeFileSync(path.join(stateDir, 'reconcile-manifest.json'), JSON.stringify({ epoch: 3 }));
+    let first;
+    await withPinnedRead({ projectRoot: TMP }, async () => { first = readdirSync(readerDir); });
+    await withPinnedRead({ projectRoot: TMP }, async () => {
+      await withPinnedRead({ projectRoot: TMP }, async () => { expect(readdirSync(readerDir)).toEqual(first); });
+    });
+    writeFileSync(path.join(stateDir, 'reconcile-manifest.json'), JSON.stringify({ epoch: 4 }));
+    await withPinnedRead({ projectRoot: TMP }, async (epoch) => {
+      expect(epoch).toBe(4);
+      expect(readdirSync(readerDir)).toHaveLength(2);
+    });
+    // A heartbeat removed under a pin is written again by the next read; the reads that
+    // held it still count, so it stays until the last one ends.
+    await withPinnedRead({ projectRoot: TMP }, async () => {
+      for (const f of readdirSync(readerDir)) rmSync(path.join(readerDir, f));
+      await withPinnedRead({ projectRoot: TMP }, async () => { expect(readdirSync(readerDir)).toHaveLength(1); });
+      _flushLingeringPins();
+      expect(readdirSync(readerDir)).toHaveLength(1);
+    });
+    _flushLingeringPins();
+    expect(readdirSync(readerDir)).toEqual([]);
   });
 
   it('reads up to 20 files and returns per-file results', async () => {

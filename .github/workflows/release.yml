@@ -29,20 +29,27 @@ jobs:
   # rebuild the CLI independently. Duplication is intentional — the
   # CUDA workflows are self-contained and do not depend on this job
   # graph.
+  # The Linux CLI is a static musl binary (cli_target): no dynamic loader or libc to map at
+  # start, which takes ~1 ms off every ss-* call (an x86 VM: 3.3 -> 2.3 ms per start). It
+  # needs no glibc at all, so it runs wherever the glibc-2.17 addon does.
   build-cli:
     strategy:
       matrix:
         include:
           - target: aarch64-apple-darwin
+            cli_target: aarch64-apple-darwin
             os: macos-14
             platform: darwin-arm64
           - target: x86_64-apple-darwin
+            cli_target: x86_64-apple-darwin
             os: macos-14
             platform: darwin-x64
           - target: x86_64-unknown-linux-gnu
+            cli_target: x86_64-unknown-linux-musl
             os: ubuntu-latest
             platform: linux-x64-gnu
           - target: aarch64-unknown-linux-gnu
+            cli_target: aarch64-unknown-linux-musl
             os: ubuntu-latest
             platform: linux-arm64-gnu
     runs-on: ${{ matrix.os }}
@@ -53,12 +60,11 @@ jobs:
       - uses: dtolnay/rust-toolchain@master
         with:
           toolchain: 1.97.1
-          targets: ${{ matrix.target }}
+          targets: ${{ matrix.cli_target }}
 
-      # Linux targets cross-compile against glibc 2.17 via cargo-zigbuild, so the
-      # binary loads on ANY glibc >= 2.17 — Debian 11 (2.31), RHEL/Rocky 8 (2.28),
-      # Amazon Linux 2 (2.26), and every newer distro. cargo-zigbuild also builds
-      # the arm64 target from this x64 runner, so no QEMU/cross is needed.
+      # Linux targets build with cargo-zigbuild: a static musl binary, which runs on any
+      # Linux, glibc or not. cargo-zigbuild also builds the arm64 target from this x64
+      # runner, so no QEMU/cross is needed.
       # (Pinned zig 0.16.0 + cargo-zigbuild 0.22.3 — the combo validated locally
       # to emit a glibc-2.17 addon that loads on Debian 11.)
       - name: Set up zig (Linux targets)
@@ -73,17 +79,18 @@ jobs:
       - name: Build CLI
         working-directory: crates/sweet-search-cli
         run: |
-          if [[ "${{ matrix.target }}" == *linux* ]]; then
-            cargo zigbuild --release --target ${{ matrix.target }}.2.17
+          if [[ "${{ matrix.cli_target }}" == *linux* ]]; then
+            cargo zigbuild --release --target ${{ matrix.cli_target }}
+            file target/${{ matrix.cli_target }}/release/sweet-search | grep -Eq 'statically linked|static-pie linked'
           else
-            cargo build --release --target ${{ matrix.target }}
+            cargo build --release --target ${{ matrix.cli_target }}
           fi
 
       - name: Upload CLI binary
         uses: actions/upload-artifact@v4
         with:
           name: cli-${{ matrix.platform }}
-          path: crates/sweet-search-cli/target/${{ matrix.target }}/release/sweet-search
+          path: crates/sweet-search-cli/target/${{ matrix.cli_target }}/release/sweet-search
 
   # ─────────────────────────────────────────────────────
   # Build native MaxSim addon for each platform

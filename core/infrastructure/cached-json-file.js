@@ -8,12 +8,17 @@
  */
 
 import { readFileSync, statSync } from 'node:fs';
+import { currentCall } from '../agent-tools/virtual-process.js';
 
 const MAX_FILES = 64;
 const cache = new Map();
+const RECHECK_MS = 5;
+const lastChecked = new Map(); // path -> { at: performance.now(), missing }
 
 export function readJsonFileCached(filePath) {
-  return parseCached(filePath, statSync(filePath, { bigint: true }));
+  const value = readJsonFileCachedIfExists(filePath);
+  // No file: the read that throws what readFileSync throws.
+  return value !== undefined ? value : parseCached(filePath, statSync(filePath, { bigint: true }));
 }
 
 /**
@@ -22,8 +27,26 @@ export function readJsonFileCached(filePath) {
  * ENOENT costs several microseconds (the error and its stack) per call.
  */
 export function readJsonFileCachedIfExists(filePath) {
+  // During an ss-* call, a file checked in the last RECHECK_MS is not stat'ed again: one call
+  // read reconcile-manifest.json ~21 times. The answer is the newest version this process has
+  // read (never an older one), at most RECHECK_MS late. Outside a call every read checks.
+  const now = currentCall() ? performance.now() : null;
+  if (now !== null) {
+    const seen = lastChecked.get(filePath);
+    if (seen && now - seen.at < RECHECK_MS) {
+      if (seen.missing) return undefined;
+      const hit = cache.get(filePath);
+      if (hit) return hit.value;
+    }
+  }
   const st = statSync(filePath, { bigint: true, throwIfNoEntry: false });
-  return st === undefined ? undefined : parseCached(filePath, st);
+  const value = st === undefined ? undefined : parseCached(filePath, st);
+  if (now !== null) {
+    lastChecked.delete(filePath);
+    while (lastChecked.size >= MAX_FILES) lastChecked.delete(lastChecked.keys().next().value);
+    lastChecked.set(filePath, { at: now, missing: st === undefined });
+  }
+  return value;
 }
 
 function parseCached(filePath, st) {

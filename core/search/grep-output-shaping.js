@@ -31,11 +31,12 @@
  * SS_FIX_GREP_ALLOC_RULE=guarantee|hh, SS_FIX_GREP_LINES (which stored matches a file shows).
  */
 
-import { existsSync, realpathSync } from 'node:fs';
+import { realpathSync } from 'node:fs';
 import path from 'node:path';
 import { grepHitText, isTestLikePath, typedPathLabel } from './agent-output-fixes.js';
 import { allocateGrepLinesWithFirstLine, grepWeightKey } from './grep-allocation-rules.js';
 import { selectGrepLinesByClass } from './grep-line-classes.js';
+import { callExistsSync } from '../infrastructure/call-fs.js';
 
 /** Split a path into whole segments, dropping "" and "." (so "./a//b" → [a,b]). */
 function pathSegments(value) {
@@ -151,7 +152,7 @@ export function grepFileFilterPredicate(filter, projectRoot = null) {
     // ROOT-ANCHORED: the scope names a path at the repository root.
     let atRoot = false;
     if (projectRoot && isAbsolutePath(projectRoot)) {
-      try { atRoot = existsSync(path.join(projectRoot, ...scope)); } catch { atRoot = false; }
+      try { atRoot = callExistsSync(path.join(projectRoot, ...scope)); } catch { atRoot = false; }
     }
     if (atRoot) return withNeedle(scope, (target) => scope.length <= target.length && runAt(target, scope, 0));
 

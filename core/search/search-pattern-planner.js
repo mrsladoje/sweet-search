@@ -10,7 +10,6 @@
  *   4. Return indexed + overlay matches with detailed stats
  */
 
-import { existsSync } from 'node:fs';
 import path from 'node:path';
 import {
   extractLiteralClauses, prefilterLiteralClauses, runLiteralPrefilterClauses, querySparseGramCandidates,
@@ -25,6 +24,7 @@ import {
 import { resolveSearchSymbolFilter } from './search-pattern-chunks.js';
 import { _getRgCapabilities, runRipgrepFilesWithMatches, runRipgrepJson, normalizeSearchPath } from './search-pattern-ripgrep.js';
 import { isSymlinkedRelUnder } from '../indexing/admission-policy.js';
+import { callExistsSync } from '../infrastructure/call-fs.js';
 
 /**
  * Normalize match file paths from native grep (which returns absolute paths)
@@ -154,7 +154,7 @@ function rootAnchoredScopes(fileFilter, root) {
     const segs = normalized.split('/').filter((seg) => seg !== '' && seg !== '.');
     if (segs.includes('..')) continue;
     if (segs.length === 0) return null;
-    if (!existsSync(path.join(root, ...segs))) return null;
+    if (!callExistsSync(path.join(root, ...segs))) return null;
     out.push(segs.join('/'));
   }
   return out;

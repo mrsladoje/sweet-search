@@ -12,6 +12,16 @@ import Database from 'better-sqlite3';
 import { existsSync, statSync } from 'fs';
 import { applyReadPragmas, prepareCached } from './db-utils.js';
 import { readAdjacentManifest, resolveManifestCodeGraphPath, sqlAliasPrefix } from './code-graph-visibility.js';
+import { callMemo } from '../agent-tools/virtual-process.js';
+
+// A connection's identity for callMemo keys.
+const connectionIds = new WeakMap();
+let nextConnectionId = 1;
+function connectionId(db) {
+  let id = connectionIds.get(db);
+  if (id === undefined) connectionIds.set(db, (id = nextConnectionId++));
+  return id;
+}
 
 function pathIsUnsafe(value) {
   return value.startsWith('/') || value === '..' || value.startsWith('../') || value.includes('/../');
@@ -728,7 +738,11 @@ export class CodeGraphRepository {
   /** findEntitiesInFile's answers for this connection, epoch and database state (or null). */
   _fileEntitiesCache(db) {
     let dataVersion;
-    try { dataVersion = prepareCached(db, 'PRAGMA data_version').pluck().get(); } catch { return null; }
+    // Once per ss-* call (callMemo), not once per file: an ss-grep call asks for up to 100 files.
+    try {
+      dataVersion = callMemo(`codeGraphDataVersion\0${connectionId(db)}`,
+        () => prepareCached(db, 'PRAGMA data_version').pluck().get());
+    } catch { return null; }
     const version = `${this._dbPath}\0${this._manifestEpoch}\0${dataVersion}`;
     if (this._fileEntitiesDb !== db || this._fileEntitiesVersion !== version) {
       this._fileEntitiesDb = db;

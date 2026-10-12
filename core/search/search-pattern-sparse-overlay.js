@@ -10,7 +10,7 @@ import {
 } from '../infrastructure/native-sparse-gram.js';
 import { readSparseGramDeltaRecordsSince } from '../infrastructure/sparse-gram-delta-reader.js';
 import { DB_PATHS, PROJECT_ROOT } from '../infrastructure/config/index.js';
-import { readJsonFileCached } from '../infrastructure/cached-json-file.js';
+import { readJsonFileCachedIfExists } from '../infrastructure/cached-json-file.js';
 import { resolveSearchSymbolFilter } from './search-pattern-chunks.js';
 
 const RECONCILE_MANIFEST_FILENAME = 'reconcile-manifest.json';
@@ -111,8 +111,8 @@ function readSparseManifest(searcher, options, indexPath) {
 function readSparseManifestFromDir(dir) {
   try {
     const manifestPath = path.join(dir, RECONCILE_MANIFEST_FILENAME);
-    if (!fs.existsSync(manifestPath)) return null;
-    const manifest = readJsonFileCached(manifestPath);
+    const manifest = readJsonFileCachedIfExists(manifestPath);
+    if (manifest === undefined) return null;
     const epoch = manifest?.sparseGram?.epoch ?? manifest?.epoch;
     return {
       epoch: Number.isInteger(epoch) ? epoch : null,

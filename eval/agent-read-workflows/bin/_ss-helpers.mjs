@@ -17,7 +17,7 @@
 
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import {
   parseBoolFlag, parseValueFlag, parsePositiveIntFlag,
@@ -40,6 +40,7 @@ import { formatRouteMetadata } from '../../../core/search/search-format.js';
 import { createAdmissionPolicy } from '../../../core/indexing/admission-policy.js';
 import { createIndexCoverage, semanticTargetFor } from '../../../core/search/index-coverage.js';
 import { resolveRoots } from '../../../core/search/worktree-roots.js';
+import { callExistsSync, callStatSync } from '../../../core/infrastructure/call-fs.js';
 import { chainBoundary } from '../../../core/agent-tools/chain.js';
 import { fenceBody, numberCodeLines, lineGutterEnabled, interfaceCallsInRanges, renderInterfaceImpls } from '../../../core/search/search-read.js';
 import { renderRegexDialectHint } from '../../../core/search/regex-dialect.js';
@@ -112,6 +113,14 @@ function gutter(text, startLine) {
   return (lineGutterEnabled() && text) ? numberCodeLines(text, startLine || 1) : text;
 }
 
+// core/search/search-server.js, loaded once per process (an `await import()` per call costs ~10 µs).
+let searchServerModule = null;
+function loadSearchServerModule() {
+  searchServerModule ||= import(path.join(REPO_ROOT, 'core/search/search-server.js'))
+    .catch((err) => { searchServerModule = null; throw err; });
+  return searchServerModule;
+}
+
 
 /**
  * Run one ss-* subcommand. See the header: this must run inside a virtual process.
@@ -153,7 +162,7 @@ if (ROOT_REFUSAL) {
   process.stderr.write(`${ROOT_REFUSAL}\n`);
   process.exit(2);
 }
-if (!existsSync(path.join(PROJECT_ROOT, '.sweet-search', 'codebase.db'))) {
+if (!callExistsSync(path.join(PROJECT_ROOT, '.sweet-search', 'codebase.db'))) {
   process.stderr.write(
     `[ss-*] no Sweet Search index at ${PROJECT_ROOT}/.sweet-search/codebase.db\n` +
     `Run: SWEET_SEARCH_PROJECT_ROOT=${PROJECT_ROOT} node ${REPO_ROOT}/core/indexing/index-codebase-v21.js --full --sqlite-fast\n`
@@ -360,7 +369,7 @@ async function resolveShortFile(typed, file, tool) {
 // The --in scopes that are files: paths the agent typed, which the output need not repeat.
 function typedFiles(inPaths) {
   return (inPaths || []).filter((p) => {
-    try { return !!p && statSync(path.resolve(FILE_ROOT, p)).isFile(); } catch { return false; }
+    try { return !!p && !!callStatSync(path.resolve(FILE_ROOT, p))?.isFile(); } catch { return false; }
   });
 }
 
@@ -536,7 +545,7 @@ async function exitScopeNotFound(missing) {
 function missingScopes(scopePaths) {
   return (scopePaths || []).filter((p) => {
     if (!p) return false;
-    try { return !existsSync(path.isAbsolute(p) ? p : path.resolve(FILE_ROOT, p)); }
+    try { return !callExistsSync(path.isAbsolute(p) ? p : path.resolve(FILE_ROOT, p)); }
     catch { return false; }
   });
 }
@@ -607,7 +616,7 @@ async function queryWarmSearch(query, options) {
   if (await ensureWarmServerReady({ timeoutMs: 5000 }) !== 'ready') {
     throw new Error('warm server is not ready');
   }
-  const { queryServer } = await import(path.join(REPO_ROOT, 'core/search/search-server.js'));
+  const { queryServer } = await loadSearchServerModule();
   const response = await queryServer(query, {
     ...options,
     projectRoot: PROJECT_ROOT,

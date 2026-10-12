@@ -9,12 +9,14 @@
  */
 
 import fs from 'fs/promises';
-import { existsSync, realpathSync } from 'fs';
+import { existsSync } from 'fs';
 import path from 'node:path';
 import { LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
 import { clearCache } from '../embedding/embedding-cache.js';
 import { createSupervisionState, runSupervisionTick } from '../indexing/maintainer-launcher.mjs';
 import { projectSocketPath, projectPidFile, tcpPort, resolveProjectRoot } from './server-identity.js';
+import { currentCall } from '../agent-tools/virtual-process.js';
+import { callRealpathNative } from '../infrastructure/call-fs.js';
 import {
   AgentSpanLedger,
   applyReadOmissionDecisions,
@@ -79,11 +81,7 @@ export function resolveAgentSearchRequest(rawFormat, agentRequested = false) {
 
 function canonicalProjectRoot(root) {
   const resolved = path.resolve(root || process.cwd());
-  try {
-    return realpathSync.native(resolved);
-  } catch {
-    return resolved;
-  }
+  return callRealpathNative(resolved) ?? resolved;
 }
 
 function parseFiniteNumber(value, name) {
@@ -200,18 +198,30 @@ export async function readBoundedJsonBody(req, maxBytes = AGENT_SPAN_BODY_MAX_BY
     err.status = 413;
     throw err;
   }
+  // Stream events, not `for await`: the async iterator cost ~90 µs per request on a Linux VM.
+  // An oversized body stops the read and destroys the request, as leaving the loop did.
   const chunks = [];
   let bytes = 0;
-  for await (const chunk of req) {
-    bytes += chunk.length;
-    if (bytes > maxBytes) {
-      const err = new Error('Request body too large');
-      err.status = 413;
-      throw err;
-    }
-    chunks.push(chunk);
-  }
-  try { return JSON.parse(Buffer.concat(chunks).toString('utf8'));
+  const body = await new Promise((resolve, reject) => {
+    let done = false;
+    const fail = (err) => { if (!done) { done = true; reject(err); } };
+    req.on('data', (chunk) => {
+      if (done) return;
+      bytes += chunk.length;
+      if (bytes > maxBytes) {
+        const err = new Error('Request body too large');
+        err.status = 413;
+        fail(err);
+        req.destroy();
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => { if (!done) { done = true; resolve(Buffer.concat(chunks)); } });
+    req.on('error', fail);
+    req.on('close', () => fail(Object.assign(new Error('Request aborted'), { status: 400 })));
+  });
+  try { return JSON.parse(body.toString('utf8'));
   } catch {
     const err = new Error('Invalid JSON body');
     err.status = 400;
@@ -720,11 +730,15 @@ export function renderAgentSearchResponse(response, { compact = readFixFlags().c
 }
 
 function buildJsonSearchResponse(results, stats, totalTime, extra = {}) {
-  return JSON.stringify({
+  return JSON.stringify(jsonSearchPayload(results, stats, totalTime, extra));
+}
+
+function jsonSearchPayload(results, stats, totalTime, extra = {}) {
+  return {
     results,
     stats: { ...stats, server_ms: totalTime },
     ...extra,
-  });
+  };
 }
 
 // =============================================================================
@@ -946,7 +960,9 @@ export async function startServer() {
       // One ss-* call from the native client, run warm in this process
       // (core/agent-tools/daemon-route.js). Real query traffic: resets the idle clock.
       lastActivityMs = Date.now();
-      const { buildAgentToolDaemonResponse, AGENT_TOOL_BODY_MAX_BYTES } = await import('../agent-tools/daemon-route.js');
+      daemonRouteModule ||= import('../agent-tools/daemon-route.js')
+        .catch((err) => { daemonRouteModule = null; throw err; });
+      const { buildAgentToolDaemonResponse, AGENT_TOOL_BODY_MAX_BYTES } = await daemonRouteModule;
       let response;
       try {
         const payload = req.socket.remoteAddress ? null : await readBoundedJsonBody(req, AGENT_TOOL_BODY_MAX_BYTES);
@@ -1199,12 +1215,17 @@ export async function startServer() {
             res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
             res.end(out);
           } else {
-            res.writeHead(200, { 'Content-Type': 'application/json' });
-            res.end(buildJsonSearchResponse(results, stats, totalTime, {
+            const extra = {
               ...(searchResult.fileSummary ? { fileSummary: searchResult.fileSummary } : {}),
               ...(searchResult.familyManifest ? { familyManifest: searchResult.familyManifest } : {}),
               ...(searchResult.siblingLine ? { siblingLine: searchResult.siblingLine } : {}),
-            }));
+            };
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            // In process (inProcessSearch): the reply object itself, not its JSON text parsed
+            // back (~2x40 µs per small grep, milliseconds for a flood). Every value in it is
+            // built for this request and is plain JSON data, so the caller reads the same thing.
+            if (typeof res.endObject === 'function') res.endObject(jsonSearchPayload(results, stats, totalTime, extra));
+            else res.end(buildJsonSearchResponse(results, stats, totalTime, extra));
           }
         }
       } catch (err) {
@@ -1380,6 +1401,7 @@ export async function startServer() {
         setHeader() {},
         write(chunk) { chunks.push(String(chunk)); return true; },
         end(chunk) { if (chunk != null) chunks.push(String(chunk)); resolve(chunks.join('')); },
+        endObject(value) { resolve(value); },
         on() { return this; },
         once() { return this; },
       };
@@ -1599,13 +1621,16 @@ function guardQueryRequest(req, reject, route) {
 
 // Set by startServer: this process's own /search handler (see there).
 let inProcessSearch = null;
+// Loaded once, on the first /agent-tool call.
+let daemonRouteModule = null;
+let httpModule = null;
 /** A failure the agent should read as one line: the tool host prints the message, not a stack. */
 function daemonError(message) {
   return Object.assign(new Error(message), { userFacing: true });
 }
 
 export async function queryServer(query, options = {}) {
-  const http = await import('http');
+  const http = await (httpModule ||= import('http').catch((err) => { httpModule = null; throw err; }));
   const {
     mode = 'auto',
     regex = '',
@@ -1696,9 +1721,11 @@ export async function queryServer(query, options = {}) {
       }
     }
 
-    // Inside the daemon, asking its own socket: call the handler directly.
-    if (inProcessSearch && inProcessSearch.socketPath === projectSocketPath()) {
+    // Inside the daemon, asking its own socket: call the handler directly. An ss-* call the
+    // daemon runs for its own repository (daemon-route.js checked the root) always asks it.
+    if (inProcessSearch && (currentCall()?.inDaemon === true || inProcessSearch.socketPath === projectSocketPath())) {
       inProcessSearch.request(`/search?${params.toString()}`).then((data) => {
+        if (typeof data !== 'string') { resolve(data); return; }
         try {
           resolve(JSON.parse(data));
         } catch (err) {
