@@ -6,6 +6,16 @@ import { resolveAgentSessionId } from './agent-span-ledger.js';
 
 const MAX_BODY_BYTES = 64 * 1024;
 
+// Inside the daemon, a request to its own socket reaches the /agent-spans handler directly
+// (search-server.js registers it): same handler, same ledger, same reply, no loopback HTTP
+// round trip on every ss-* call (~1.5 ms each on the x86 bench box).
+let inProcessAgentSpans = null;
+
+/** @param {{ socketPath: string, handle: (payload: object) => { status: number, body: string } } | null} handler */
+export function setInProcessAgentSpans(handler) {
+  inProcessAgentSpans = handler;
+}
+
 export function buildAgentSpanRequestPayload({
   operation,
   spans = [],
@@ -54,6 +64,17 @@ export async function sendAgentSpanOperation(input, { timeoutMs = 500 } = {}) {
   if (!payload) return null;
   const body = serializeBoundedPayload(payload);
   if (!body) return null;
+
+  if (inProcessAgentSpans && inProcessAgentSpans.socketPath === projectSocketPath()) {
+    try {
+      // The payload goes through JSON as on the wire: the handler gets its own copy.
+      const response = inProcessAgentSpans.handle(JSON.parse(body));
+      if (response?.status !== 200 || Buffer.byteLength(response.body) > MAX_BODY_BYTES) return null;
+      return JSON.parse(response.body);
+    } catch {
+      return null;
+    }
+  }
 
   return new Promise((resolve) => {
     const req = http.request({
