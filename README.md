@@ -296,7 +296,7 @@ We measure sweet-search four ways, from how much it helps a real agent, down to 
 
 <div align="center">
 
-<img src="assets/code-retrieval-stats.svg" alt="Held-out results, sweet-search vs native, 200 questions, 3 reps. Claude Code with Sonnet 5.5 high: accuracy +2.4%, billed cost −7.6%. Claude Code with Opus 5.5 medium and high: accuracy +0.2% and −0.5% (not significant), billed cost −9.5%, tool calls −22.8%. opencode with Sol 6.1: accuracy −2.8%, billed cost −50.2%. Codex with Sol 6.1: accuracy −2.5%, billed cost −7.7%, tool calls equal." width="100%" />
+<img src="assets/code-retrieval-stats.svg" alt="Held-out results, sweet-search vs native, 200 questions, 3 reps. Claude Code with Sonnet 5.5 high: accuracy +2.4%, billed cost −7.6%. Claude Code with Opus 5.5 medium and high: accuracy +0.2% and −0.5% (not significant), billed cost −9.5%, tool calls −22.8%. opencode with Sol 6.1: accuracy −2.8%, billed cost −50.2%. Codex with Sol 6.1: accuracy −2.5%, billed cost −7.7%, tool calls equal. Model time, estimated from tokens and turns: Sonnet −8.4%, Opus medium −13.6%, Opus high −12.8%, opencode −34.4%, Codex +8.0%." width="100%" />
 
 <br>
 <br>
@@ -363,7 +363,7 @@ Each value is sweet-search minus native, relative to native, pooled over 200 que
 
 <div align="center">
 
-<img src="assets/task-completion-stats.svg" alt="Held-out task-completion results, sweet-search vs native, 200 SWE-rebench tasks, 1 rep. Claude Code with Sonnet 5.5 high: billed cost −10.8%, cost per solved task −15.6%, 92 vs 87 of 200 tasks solved (not significant). Claude Code with Opus 5.5 medium: billed cost −5.4% (significant), cost per solved task −7.9% (significant), 112 vs 109 of 200 tasks solved (not significant). Claude Code with Opus 5.5 high: billed cost −7.4% (significant), cost per solved task −2.3% (not significant), 109 vs 115 of 200 tasks solved (not significant). opencode with Sol 6.1 high: billed cost −18.6% (significant), cost per solved task −14.7% (significant), 84 vs 88 of 200 tasks solved (not significant). Codex with Sol 6.1 high: billed cost −33.3% (significant), cost per solved task −34.9% (significant), 84 vs 82 of 200 tasks solved (not significant)." width="100%" />
+<img src="assets/task-completion-stats.svg" alt="Held-out task-completion results, sweet-search vs native, 200 SWE-rebench tasks, 1 rep. Claude Code with Sonnet 5.5 high: billed cost −10.8%, cost per solved task −15.6%, 92 vs 87 of 200 tasks solved (not significant). Claude Code with Opus 5.5 medium: billed cost −5.4% (significant), cost per solved task −7.9% (significant), 112 vs 109 of 200 tasks solved (not significant). Claude Code with Opus 5.5 high: billed cost −7.4% (significant), cost per solved task −2.3% (not significant), 109 vs 115 of 200 tasks solved (not significant). opencode with Sol 6.1 high: billed cost −18.6% (significant), cost per solved task −14.7% (significant), 84 vs 88 of 200 tasks solved (not significant). Codex with Sol 6.1 high: billed cost −33.3% (significant), cost per solved task −34.9% (significant), 84 vs 82 of 200 tasks solved (not significant). Model time per task, estimated from tokens and turns, tests excluded: Sonnet +7.8% (not significant), Opus medium −2.9% (not significant), Opus high −5.3%, opencode −16.2%, Codex −26.0%." width="100%" />
 
 <sub>grey = not significant</sub>
 
