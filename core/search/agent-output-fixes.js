@@ -195,10 +195,19 @@ export function isSummaryOnly(r) {
 // `file:line — symbol (kind)`, and the forms without a kind (`file:line — code block`, a chunk
 // with no symbol: typedoc printed `src/lib/models/Reflection.ts:356 — code block` under a row).
 const RESTATING_SUMMARY_RE = /^\S+:\d+ — (?:.+ \([^)]*\)|code block|[^\s()]+)$/;
+// The same text after the entry's own `file:` prefix; the path may hold spaces (`Sloth Web/...`).
+const RESTATING_SUMMARY_TAIL_RE = /^\d+ — (?:.+ \([^)]*\)|code block|[^\s()]+)$/;
 
-/** True when the summary text only restates the entry header (`file:line — symbol (kind)`). */
-export function summaryRestatesHeader(summary) {
-  return RESTATING_SUMMARY_RE.test(String(summary ?? '').trim());
+/**
+ * True when the summary text only restates the entry header (`file:line — symbol (kind)`).
+ * Pass the entry's file: a path with spaces then matches too.
+ */
+export function summaryRestatesHeader(summary, file = null) {
+  const text = String(summary ?? '').trim();
+  if (file && text.startsWith(`${file}:`)) {
+    return RESTATING_SUMMARY_TAIL_RE.test(text.slice(file.length + 1));
+  }
+  return RESTATING_SUMMARY_RE.test(text);
 }
 
 /**
@@ -765,7 +774,7 @@ function renderGroupedBlocks(results, plan, { omitted = new Set(), gutter = (cod
       const row = renderSummaryRow(r, spans);
       n++;
       lines.push(`${n}. ${label(file)}${row}`);
-      if (r.summary && !summaryRestatesHeader(r.summary)) lines.push(r.summary);
+      if (r.summary && !summaryRestatesHeader(r.summary, r.file)) lines.push(r.summary);
       const alsoLine = renderAlsoInFile(also);
       if (alsoLine) lines.push(alsoLine);
       continue;
@@ -790,7 +799,7 @@ function renderGroupedBlocks(results, plan, { omitted = new Set(), gutter = (cod
     if (r.code) {
       if (codeOmitted) lines.push(renderAlreadyShownLine(r.file, r.startLine, r.endLine));
       else lines.push('```', gutter(merge ? `${r.code}\n${cont.code}` : r.code, r.startLine), '```');
-    } else if (r.summary && !summaryRestatesHeader(r.summary)) {
+    } else if (r.summary && !summaryRestatesHeader(r.summary, r.file)) {
       lines.push(r.summary);
     }
     if (cont && !merge) {
@@ -884,7 +893,7 @@ export function renderFixedBlocks(results, plan, {
     if (r.code) {
       if (codeOmitted) out(`${renderAlreadyShownLine(r.file, r.startLine, r.endLine)}\n`);
       else out(`\`\`\`\n${gutter(r.code, r.startLine)}\n\`\`\`\n`);
-    } else if (r.summary && !(dropRestatingSummary && summaryRestatesHeader(r.summary))) {
+    } else if (r.summary && !(dropRestatingSummary && summaryRestatesHeader(r.summary, r.file))) {
       out(`${r.summary}\n`);
     }
     if (r.neighbors && r.neighbors.rendered) {

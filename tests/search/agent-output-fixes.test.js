@@ -408,6 +408,11 @@ describe('summary rendering (A2)', () => {
   it('knows which summary text only restates the header', () => {
     expect(summaryRestatesHeader('tree.go:135 — addRoute (method)')).toBe(true);
     expect(summaryRestatesHeader('tree.go:135 handles routes')).toBe(false);
+    // A path with spaces matches when the entry's file is passed.
+    const spaced = 'Sloth Web/Central/src/ApiKeyToken.java';
+    expect(summaryRestatesHeader(`${spaced}:1 — ApiKeyToken (class)`, spaced)).toBe(true);
+    expect(summaryRestatesHeader(`${spaced}:1 — code block`, spaced)).toBe(true);
+    expect(summaryRestatesHeader(`${spaced}:1 handles keys`, spaced)).toBe(false);
     expect(isSummaryOnly(entry({}))).toBe(true);
     expect(isSummaryOnly(entry({ presentation: 'full', code: 'x', summary: null }))).toBe(false);
   });
