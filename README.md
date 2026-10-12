@@ -34,7 +34,7 @@ Every coding agent today reaches for grep + Read by reflex. *sweet-search* chall
 <td width="50%" valign="top">
 
 ⚡ **Saves your time**<br>
-<sub>faster retrieval than classic grep-and-read · code questions answered up to 32% sooner</sub>
+<sub>faster retrieval than classic grep-and-read · up to 34% less model time per code question</sub>
 
 </td>
 </tr>
@@ -281,7 +281,7 @@ We measure sweet-search four ways, from how much it helps a real agent, down to 
 <td width="50%" valign="top">
 
 ⚡ **④ [Engine speed](#bench-engine-speed)**<br>
-<sub>Raw systems numbers: grep throughput, query latency, MaxSim rerank kernels, HNSW.</sub>
+<sub>Raw systems numbers: grep throughput, query latency, MaxSim rerank kernels, vector search.</sub>
 
 </td>
 </tr>
@@ -324,7 +324,7 @@ Each value is sweet-search minus native, relative to native, pooled over 200 que
 | 🐚 **opencode** + Sol 6.1 high | **−2.8%** [−4.4, −1.2] | **−50.2%** [−54.4, −45.6] | **−25.4%** | **−33.1%** | −32.1% |
 | 🤖 **Codex** + Sol 6.1 high | **−2.5%** [−4.0, −1.2] | **−7.7%** [−10.9, −4.3] | **+22.9%** | +0.6% | +17.7% |
 
-<sub>Accuracy, sweet / native: Sonnet 0.899 / 0.879 · Opus medium 0.891 / 0.889 · Opus high 0.906 / 0.911 · opencode 0.869 / 0.893 · Codex 0.858 / 0.880. Wall time was not part of the pre-registered test family; its intervals are in the results file.</sub>
+<sub>Accuracy, sweet / native: Sonnet 0.899 / 0.879 · Opus medium 0.891 / 0.889 · Opus high 0.906 / 0.911 · opencode 0.869 / 0.893 · Codex 0.858 / 0.880. Wall time was not part of the pre-registered test family; its intervals are in the results file. The two Opus rows share −9.5% and −22.8% by coincidence: their dollar amounts and call counts differ.</sub>
 
 **Easy vs hard questions.** The savings hold on both tiers but shrink on hard questions. Opus 5.5 high: billed cost −11.0% (easy) and −8.5% (hard). Its accuracy delta is −0.1% (easy) and −1.1% (hard), neither significant. On Codex, the billed saving is −18.2% on easy questions and 0.0% on hard ones.
 
@@ -641,7 +641,7 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 | NumPy | 0.272 | `████` **1.6–1.9×** |
 | maxsim-cpu | 0.540 | `████████` **2.9–3.9×** |
 
-<sub>maxsim-cpu in its best case (f32, pre-normalized)</sub><br>
+<sub>× = median of per-call ratios · maxsim-cpu in its best case (f32, pre-normalized)</sub><br>
 <sub>M3 Max · [method](eval/maxsim-bench/README.md)</sub>
 
 </td>
@@ -649,7 +649,7 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 </table>
 
 ⏱️ **Warm query latency:** **2.9 ms** warm · 108 ms cold, native CLI ([source](docs/INIT_STRATEGY.md))<br>
-🧠 **HNSW tuned for code:** **−33%** search p50, **+5.9 pp** recall@200, against our earlier HNSW ([source](docs/HNSW_APPROACH.md))
+🧠 **HNSW graph, above 150k vectors:** **−33%** search p50, **+5.9 pp** recall@200, against our earlier HNSW ([source](docs/HNSW_APPROACH.md))
 
 <details>
 <summary><b>🔧 Internal optimisations (against our own earlier versions)</b></summary>
@@ -716,7 +716,7 @@ read files from disk
 
 A hybrid search pipeline with late interaction reranking that returns actual code blocks.
 
-SOTA on [2 of 4 academic code-search benchmarks](#bench-paper-type).
+SOTA on M2CRB and zero-shot SOTA on CoSQA ([academic benchmarks](#bench-paper-type)).
 
 ```mermaid
 flowchart TD
@@ -792,7 +792,7 @@ flowchart TD
 
 <br/>
 
-- 🧠 **A denser vector graph than most.** Our own binary HNSW raised recall@200 from 80.6% to 86.5% and got about a third faster.
+- 🧠 **A better vector graph for big repos.** Above 150k vectors, our own binary HNSW raised recall@200 from 80.6% to 86.5% and got about a third faster than our earlier version.
 - ⚡ **Native reranking.** The MaxSim math runs in Rust on all CPU cores, 47× faster than plain code.
 - 📦 **A small index.** Token vectors are packed into 4 bits, which makes that index 3.4× smaller.
 - 🎛️ **Quality scores.** Each chunk is scored on test proximity, git recency, call-graph centrality, comments and complexity. Production code rises and old fixtures sink.
@@ -884,7 +884,6 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 <br/>
 
 - **Ranking:** on 60 pattern queries, MRR@10 is 0.45. Grep order gets 0.11, and search without the regex gets 0.30.
-- **Agent eval (April 2026):** Claude Sonnet 4.6 answered 30 fastify questions. Versus grep + read, follow-up reads fell from 4.9 to 0 and tokens fell 25.4%, at equal quality (blind Claude Opus 4.6 judge). The prompt was tuned on these same 30 questions.
 - Needs the late-interaction index, which is built by default.
 - Also available as `sweet-search --mode pattern` and as the `regex` argument of the MCP `search` tool.
 - Kernel details: [`docs/MAXSIM_OPTIMIZATION.md`](docs/MAXSIM_OPTIMIZATION.md).
@@ -1258,7 +1257,7 @@ Compressed vectors make the index <i>~3× smaller</i>, with no measurable loss i
 - **Why:** upstream attention builds the full attention matrix in every layer. On Metal, one batch took ~4.2 s, ~10% slower than the CPU path.
 - **Metal:** candle's fused SDPA kernel (ported from MLX).
 - **CUDA (Ampere+):** `candle-flash-attn` with variable-length packing. Candle's SDPA has no CUDA backend, and the naive BF16 fallback drifted (per-token cosine down to 0.69).
-- **CPU:** byte-for-byte upstream math, so the fallback is provably identical.
+- **CPU:** byte-for-byte upstream math, so the fallback is identical to upstream.
 
 #### 🔒 A silent GPU race, fixed
 - Concurrent Metal command-buffer submissions share candle's global command queue and silently corrupt outputs.
@@ -1289,7 +1288,7 @@ You never run a command.
 
 | ⏱️ **Always current** | 🎯 **Re-embeds only what changed** | ⚛️ **Never half-updated** |
 |:--|:--|:--|
-| Edits are searchable within ~20–60 s, tuned to your machine | One edited function means one chunk to the encoder, not the whole file | Every index switches to the new version in one atomic step |
+| Edits are usually searchable within ~20–60 s, up to 5 min under heavy load | One edited function means one chunk to the encoder, not the whole file | Every index switches to the new version in one atomic step |
 
 <details>
 <summary><b>Under the hood: how the daemon stays fast, safe, and light</b></summary>
@@ -1349,7 +1348,7 @@ upgrade that changes the models or chunking, we tell you to run `sweet-search in
 | Windows | ⚡ Native, inside WSL2. Native Windows is not supported yet. |
 | Other (musl/Alpine, other CPUs) | WASM/JS fallback |
 
-- **Native**: every performance-critical path runs in our native engine, compiled ahead of time for your exact OS and CPU. Speedups reach *100× and more* over plain JavaScript.
+- **Native**: every performance-critical path runs in our native engine, compiled ahead of time for your exact OS and CPU. Speedups reach *47×* over plain JavaScript (the MaxSim rerank).
 - **WASM/JS fallback**: general-purpose, so it runs on more machines, but slower.
 - **Zero setup**: `npm install` picks the right package for your machine. Needs Node ≥ 22.
 
