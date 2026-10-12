@@ -395,6 +395,42 @@ fn run_in_process(sub: &str, args: &[String], chain: &str) -> ! {
     process::exit(1);
 }
 
+enum Lane {
+    Answered(i32, Vec<u8>),
+    Declined,
+    Unreachable,
+}
+
+/// One call on the daemon's native grep lane. Wire: crates/sweet-search-native/src/lane/mod.rs.
+/// Anything but a whole answer is a decline or an unreachable lane: the JS route answers then.
+fn lane_call(socket: &str, body: &[u8]) -> Lane {
+    use std::io::Read;
+    use std::os::unix::net::UnixStream;
+    let Ok(mut s) = UnixStream::connect(socket) else { return Lane::Unreachable };
+    let _ = s.set_read_timeout(Some(std::time::Duration::from_secs(120)));
+    let mut req = Vec::with_capacity(4 + body.len());
+    req.extend_from_slice(&(body.len() as u32).to_be_bytes());
+    req.extend_from_slice(body);
+    if s.write_all(&req).is_err() {
+        return Lane::Declined;
+    }
+    let mut tag = [0u8; 1];
+    if s.read_exact(&mut tag).is_err() || tag[0] != b'H' {
+        return Lane::Declined;
+    }
+    let mut head = [0u8; 8];
+    if s.read_exact(&mut head).is_err() {
+        return Lane::Declined;
+    }
+    let code = i32::from_be_bytes([head[0], head[1], head[2], head[3]]);
+    let len = u32::from_be_bytes([head[4], head[5], head[6], head[7]]) as usize;
+    let mut stdout = vec![0u8; len];
+    if s.read_exact(&mut stdout).is_err() {
+        return Lane::Declined;
+    }
+    Lane::Answered(code, stdout)
+}
+
 fn write_out(bytes: &[u8], stderr: bool) {
     // A closed pipe (`ss-grep … | head`) is not an error worth reporting.
     let _ = if stderr {
@@ -461,6 +497,18 @@ pub fn run(sub: &str, args: &[String]) -> ! {
         Err(_) => run_in_process(sub, args, chain),
     };
 
+    // ss-grep: the daemon's native lane first (crates/sweet-search-native/src/lane). It answers
+    // with the bytes the JS tool would print, or declines; a decline, a missing lane or any
+    // socket error sends the call to /agent-tool below.
+    let lane = (sub == "grep" && !env::var("SWEET_SEARCH_GREP_LANE").map_or(false, |v| falsey(&v)))
+        .then(|| format!("{socket}.grep"));
+    if let Some(lane) = &lane {
+        if let Lane::Answered(code, stdout) = lane_call(lane, &body) {
+            write_out(&stdout, false);
+            process::exit(code);
+        }
+    }
+
     // Any transport failure means the daemon did not answer this call (or died with it,
     // taking its per-session state along); run it here instead.
     let mut started = false;
@@ -473,6 +521,20 @@ pub fn run(sub: &str, args: &[String]) -> ! {
                 started = true;
                 if super::auto_start_server_for(&root, true).is_none() {
                     run_in_process(sub, args, chain);
+                }
+                // A daemon just started: its grep lane comes up right after its socket, long
+                // before the models the JS route waits for. Give it two seconds.
+                if let Some(lane) = &lane {
+                    for _ in 0..40 {
+                        match lane_call(lane, &body) {
+                            Lane::Answered(code, stdout) => {
+                                write_out(&stdout, false);
+                                process::exit(code);
+                            }
+                            Lane::Declined => break,
+                            Lane::Unreachable => std::thread::sleep(std::time::Duration::from_millis(50)),
+                        }
+                    }
                 }
             }
             Err(_) => run_in_process(sub, args, chain),

@@ -369,7 +369,7 @@ where
 /// `index_paths`: the files are the index's own paths, read as the unified search reads them
 /// (root.join(file), no realpath check). The caller drops every symlink alias afterwards, and
 /// a path the check would refuse is always one (it leaves the root only through a symlink).
-fn grep_matching_files_with_mode<'f, T, F>(
+pub(crate) fn grep_matching_files_with_mode<'f, T, F>(
     re: &regex::bytes::Regex,
     root: &std::path::Path,
     files: &'f [String],
@@ -935,6 +935,39 @@ impl FilePack {
     pub(crate) fn with_final_kind(mut self, kind: Option<bool>) -> Self {
         self.final_kind = kind;
         self
+    }
+
+    /// What an lstat of the file found when it was read (alias_verdicts).
+    pub(crate) fn final_kind(&self) -> Option<bool> {
+        self.final_kind
+    }
+
+    /// Every matching line of the file, stored or not.
+    pub(crate) fn total(&self) -> u32 {
+        self.total
+    }
+
+    /// The stored matches as `(line, column, matchText, content)`, the strings JS reads out of
+    /// the pack (native-sparse-gram.js unpackFullResult).
+    pub(crate) fn decode(&self) -> Vec<(u32, u32, String, String)> {
+        let mut out = Vec::with_capacity(self.lines.len());
+        let (mut pos, mut wide_pos) = (0usize, 0usize);
+        for i in 0..self.lines.len() {
+            let match_end = self.ends[2 * i] as usize;
+            let content_end = self.ends[2 * i + 1] as usize;
+            if self.in_wide[i] == 1 {
+                let m = String::from_utf16_lossy(&self.wide[wide_pos..match_end]);
+                let c = String::from_utf16_lossy(&self.wide[match_end..content_end]);
+                out.push((self.lines[i], self.columns[i], m, c));
+                wide_pos = content_end;
+            } else {
+                let m = String::from_utf8_lossy(&self.ascii[pos..match_end]).into_owned();
+                let c = String::from_utf8_lossy(&self.ascii[match_end..content_end]).into_owned();
+                out.push((self.lines[i], self.columns[i], m, c));
+                pos = content_end;
+            }
+        }
+        out
     }
 }
 

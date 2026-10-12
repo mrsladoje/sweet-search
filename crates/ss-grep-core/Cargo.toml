@@ -1,0 +1,11 @@
+[package]
+name = "ss-grep-core"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+description = "ss-grep's output logic in Rust: the same bytes as the JS tool (eval/agent-read-workflows/bin/_ss-helpers.mjs cmdGrep), for the native lane"
+
+[dependencies]
+regex = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

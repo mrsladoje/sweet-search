@@ -30,6 +30,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokenizers = { version = "0.21", default-features = false, features = ["fancy-regex"] }
 sha1 = "0.10"
+ss-grep-core = { path = "../ss-grep-core" }
 
 [dev-dependencies]
 tempfile = "3"
@@ -90,3 +91,12 @@ opt-level = 3
 lto = true
 codegen-units = 1
 strip = true
+
+# Local iteration only (not used by any release build): release code without LTO, so a
+# change to this crate rebuilds in seconds instead of minutes.
+[profile.lane-dev]
+inherits = "release"
+lto = false
+codegen-units = 16
+incremental = true
+strip = false

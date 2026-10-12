@@ -11,12 +11,14 @@
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
 import path from 'node:path';
-import { LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
+import { DB_PATHS, LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
 import { clearCache } from '../embedding/embedding-cache.js';
 import { createSupervisionState, runSupervisionTick } from '../indexing/maintainer-launcher.mjs';
 import { projectSocketPath, projectPidFile, tcpPort, resolveProjectRoot } from './server-identity.js';
 import { currentCall } from '../agent-tools/virtual-process.js';
 import { callRealpathNative } from '../infrastructure/call-fs.js';
+import { startGrepLane, stopGrepLane, grepLaneHandledCount, drainGrepLaneReceipts } from './grep-lane.js';
+import { beginPinnedRead, endPinnedRead } from './search-reader-pin.js';
 import {
   AgentSpanLedger,
   applyReadOmissionDecisions,
@@ -847,6 +849,16 @@ export async function startServer() {
   let lastActivityMs = Date.now();
   let idleTimer = null;
   let registryTimer = null;
+  let laneTimer = null;
+  // The lane reads the index outside every JS read, so this process keeps its reader heartbeat
+  // (search-reader-pin.js) on the manifest's current epoch while the lane runs: the maintainer
+  // then never prunes rows of the epoch the lane reads. A pin lingers 30 s after its release, so
+  // the 2 s lane timer keeps one up and moves it to a new epoch within 2 s.
+  let laneOn = false;
+  const holdLanePin = () => {
+    try { endPinnedRead(beginPinnedRead({ stateDir: laneStateDirOf() })); } catch { /* advisory */ }
+  };
+  const laneStateDirOf = () => path.dirname(DB_PATHS.codebase);
   let shuttingDown = false;
 
   // Close a server, letting in-flight requests finish but never letting an idle
@@ -869,12 +881,14 @@ export async function startServer() {
     if (shuttingDown) return;
     shuttingDown = true;
     if (idleTimer) { clearInterval(idleTimer); idleTimer = null; }
+    if (laneTimer) { clearInterval(laneTimer); laneTimer = null; }
     if (registryTimer) { clearInterval(registryTimer); registryTimer = null; }
     if (capEnabled) {
       try { await registryRemoveSelf(process.pid); } catch (err) {
         if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] registry remove: ${err?.message || err}\n`);
       }
     }
+    stopGrepLane();
     await closeServerGracefully(tcpServer);
     await closeServerGracefully(unixServer);
     try { searcher.close(); } catch (err) {
@@ -933,6 +947,10 @@ export async function startServer() {
       }
       console.log(`[Server] Cache cleared after ${requestCount} requests`);
     }
+
+    // The native grep lane's answered calls go to the shown-span ledger before any other call
+    // reads or writes it, so the ledger sees every call in order.
+    if (req.method === 'POST' && (reqUrl === '/agent-tool' || reqUrl === '/agent-spans')) applyLaneReceipts();
 
     if (req.method === 'POST' && reqUrl === '/agent-spans') {
       if (req.socket.remoteAddress) {
@@ -1365,6 +1383,21 @@ export async function startServer() {
   // arrived, which is the staleness bug wearing a smaller hat.
   const SETTLED_REASONS = new Set(['spawned', 'already-running', 'paused', 'opted-out', 'no-state-dir']);
 
+  // The shown-span receipts of calls the native grep lane answered (recordAgentToolCall's
+  // `observe`, as the JS tool sends it).
+  const applyLaneReceipts = () => {
+    for (const r of drainGrepLaneReceipts()) {
+      try {
+        const response = buildAgentSpanDaemonResponse({
+          operation: 'observe', sessionId: r.sessionId, force: false, spans: [],
+          ...(r.query != null ? { query: r.query } : {}),
+          ...(r.regex != null ? { regex: r.regex } : {}),
+        }, { isUnixSocket: true, ledger: agentSpanLedger ||= new AgentSpanLedger() });
+        if (response.status === 200) lastActivityMs = Date.now();
+      } catch { /* a receipt is best effort, as on the JS route */ }
+    }
+  };
+
   const maybeSuperviseMaintainer = ({ force = false } = {}) => {
     if (shuttingDown) return;
     // Only real query routes advance lastActivityMs, so /health and /stop never
@@ -1478,6 +1511,18 @@ export async function startServer() {
     if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
   }
   console.log(`[Server] Unix socket listening on ${socketPath}`);
+  // The native ss-grep lane needs only the index files: it serves before the models load.
+  const laneStateDir = laneStateDirOf();
+  startGrepLane({
+    socketPath: `${socketPath}.grep`,
+    projectRoot: canonicalProjectRoot(searcher.projectRoot || process.cwd()),
+    stateDir: laneStateDir,
+  }).then((on) => {
+    if (!on) return;
+    laneOn = true;
+    holdLanePin();
+    console.log(`[Server] Native grep lane on ${socketPath}.grep`);
+  }, () => {});
   console.log(`[Server] Fast access: curl --unix-socket ${socketPath} "http://localhost/search?q=query"`);
 
   console.log('[Server] Initializing indexes (one-time cost)...');
@@ -1558,6 +1603,21 @@ export async function startServer() {
     if (everQueried && idleFor <= activeWindow) maybeSuperviseMaintainer({ force: true });
   }, Number(process.env.SWEET_SEARCH_DAEMON_IDLE_CHECK_MS ?? 60_000));
   if (idleTimer.unref) idleTimer.unref();
+
+  // Calls the native grep lane answers never reach handleRequest: count them as query traffic
+  // (idle clock, maintainer supervision) and hand their receipts to the ledger.
+  let laneHandledSeen = 0;
+  laneTimer = setInterval(() => {
+    if (laneOn) holdLanePin();
+    const handled = grepLaneHandledCount();
+    if (handled !== laneHandledSeen) {
+      laneHandledSeen = handled;
+      lastActivityMs = Date.now();
+      applyLaneReceipts();
+      maybeSuperviseMaintainer();
+    }
+  }, 2000);
+  if (laneTimer.unref) laneTimer.unref();
 
   // (2) Resident-daemon LRU cap — default OFF. Only when SWEET_SEARCH_MAX_DAEMONS
   // is opted into do we touch the shared registry at all: register self, then
