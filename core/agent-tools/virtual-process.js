@@ -32,7 +32,14 @@ const storage = new AsyncLocalStorage();
 /** Thrown by process.exit inside a call; carries the exit code out of the tool code. */
 export class ExitSignal extends Error {
   constructor(code) {
-    super(`ss-* call exited with code ${code}`);
+    // Every call ends with one: no stack (capturing it cost ~15 µs a call), nothing reads it.
+    const limit = Error.stackTraceLimit;
+    Error.stackTraceLimit = 0;
+    try {
+      super(`ss-* call exited with code ${code}`);
+    } finally {
+      Error.stackTraceLimit = limit;
+    }
     this.name = 'ExitSignal';
     this.exitCode = code;
   }
@@ -41,6 +48,23 @@ export class ExitSignal extends Error {
 /** The active call ({ env, cwd, pid, ... }) or null outside a call. */
 export function currentCall() {
   return storage.getStore() ?? null;
+}
+
+/**
+ * `compute()` once per call for `key`: a file-system fact a call asks for many times (the
+ * reconcile manifest was stat'ed ~20 times per ss-grep call, the project root realpath'd ~6
+ * times; each probe is several µs, ~10 µs on a Linux VM). One call sees one answer, as if it
+ * had read the file system once when it started; the next call asks again. Outside a call
+ * (MCP, the human CLI, the maintainer) nothing is kept. A throw is not kept.
+ */
+export function callMemo(key, compute) {
+  const call = storage.getStore();
+  if (!call) return compute();
+  const memo = (call.memo ||= new Map());
+  if (memo.has(key)) return memo.get(key);
+  const value = compute();
+  memo.set(key, value);
+  return value;
 }
 
 let installed = null;
@@ -133,12 +157,15 @@ export function installVirtualProcess() {
  *   used (writes land in it), so pass a copy unless the real env is meant.
  * @param {string} opts.cwd                 the caller's working directory (absolute)
  * @param {number} [opts.pid]               the caller's pid (harness detection walks up from it)
+ * @param {boolean} [opts.inDaemon]         the resident daemon runs this call for its own
+ *   repository (the route checked the root): the call's requests to "its" daemon are this
+ *   process (search-server.js queryServer, agent-span-client.js)
  * @param {() => Promise<void>} fn
  * @returns {Promise<{code: number, stdout: Buffer, stderr: Buffer}>}
  */
-export async function runInVirtualProcess({ env, cwd, pid = process.pid }, fn) {
+export async function runInVirtualProcess({ env, cwd, pid = process.pid, inDaemon = false }, fn) {
   installVirtualProcess();
-  const call = { env, cwd, pid, stdout: [], stderr: [] };
+  const call = { env, cwd, pid, inDaemon, stdout: [], stderr: [] };
   let code = 0;
   await storage.run(call, async () => {
     try {

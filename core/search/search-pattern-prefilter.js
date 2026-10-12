@@ -50,6 +50,7 @@ export {
 } from './search-pattern-sparse-overlay.js';
 import { DB_PATHS } from '../infrastructure/config/index.js';
 import { resolveSearchSymbolFilter } from './search-pattern-chunks.js';
+import { callMemo } from '../agent-tools/virtual-process.js';
 
 // =============================================================================
 // Case-insensitive flag detection
@@ -491,6 +492,14 @@ export function extractLiteralClauses(regex, options = {}) {
   if (!regex || typeof regex !== 'string') {
     return { clauses: [], source: 'none' };
   }
+  // One ss-grep call extracts the same pattern's literals for each search it runs (the hits,
+  // the outside-scope line, a retry): once per call, each caller with its own arrays.
+  const key = `literals\0${options.fixedString ? 1 : 0}${options.forceHeuristic ? 1 : 0}\0${regex}`;
+  const plan = callMemo(key, () => extractLiteralClausesUncached(regex, options));
+  return { clauses: plan.clauses.map((clause) => [...clause]), source: plan.source };
+}
+
+function extractLiteralClausesUncached(regex, options) {
   // A fixed-string search (`search -F -e`, the server's fixedString param) hands over raw
   // text, not a regex: the text itself is the only literal (`foo\.bar` is "foo\.bar", never
   // "foo.bar"). A line break would make it several patterns for `rg -F`: no prefilter then.

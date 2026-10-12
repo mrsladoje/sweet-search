@@ -14,9 +14,23 @@ import {
   liveReaders,
   minLiveEpoch,
   isReaderAlive,
+  processStartMs,
+  bootIdStub,
 } from '../../core/incremental-indexing/infrastructure/reader-heartbeat.mjs';
 
 describe('reader-heartbeat', () => {
+  it('a pid taken by a process that started after the reader is not that reader', () => {
+    const parentStart = processStartMs(process.ppid);
+    expect(parentStart).toBeGreaterThan(0);
+    expect(parentStart).toBeLessThanOrEqual(Date.now());
+    // The reader started long after the parent: the parent is the same live process.
+    expect(isReaderAlive(process.ppid, bootIdStub(), Date.now())).toBe(true);
+    // The reader started long before the parent: the pid was reused.
+    expect(isReaderAlive(process.ppid, bootIdStub(), parentStart - 3_600_000)).toBe(false);
+    // Old heartbeats carry no start time: the pid check alone.
+    expect(isReaderAlive(process.ppid, bootIdStub())).toBe(true);
+  });
+
   let dir;
   beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sweet-search-heartbeat-'));

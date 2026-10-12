@@ -21,10 +21,11 @@
  * shared daemon must never resolve against its own cwd.
  */
 import path from 'node:path';
-import { existsSync, realpathSync } from 'node:fs';
+import { existsSync } from 'node:fs';
+import { callRealpathNative } from '../infrastructure/call-fs.js';
 
 function realOrResolved(p) {
-  try { return realpathSync.native(p); } catch { return path.resolve(p); }
+  return callRealpathNative(p) ?? path.resolve(p);
 }
 
 /**

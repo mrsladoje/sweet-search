@@ -26,6 +26,7 @@
  */
 
 import fs from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -97,6 +98,8 @@ export function beginRead(stateDir, epoch, meta = {}) {
     bootId,
     readId,
     startedAt: new Date().toISOString(),
+    // When this process started: a later process that reuses the pid is not this reader.
+    procStartMs: Math.round(performance.timeOrigin),
     meta,
   };
   fs.writeFileSync(p, JSON.stringify(payload));
@@ -131,14 +134,39 @@ export function endRead(stateDir, record) {
  * @param {number} pid
  * @param {string} bootId
  */
-export function isReaderAlive(pid, bootId) {
+export function isReaderAlive(pid, bootId, procStartMs = null) {
   if (!Number.isInteger(pid) || pid <= 0) return false;
   if (bootId !== bootIdStub()) return false;
   try {
     process.kill(pid, 0);
-    return true;
   } catch (err) {
-    return err.code === 'EPERM';
+    if (err.code !== 'EPERM') return false;
+  }
+  // A heartbeat outlives its reads (search-reader-pin.js), so a reader killed without its exit
+  // hook leaves a file whose pid a later process can take. That process started after the
+  // reader did. (Start times read to the second; a minute of slack.)
+  if (Number.isFinite(procStartMs) && pid !== process.pid) {
+    const started = processStartMs(pid);
+    if (started !== null && started > procStartMs + 60_000) return false;
+  }
+  return true;
+}
+
+/** Epoch ms at which process `pid` started, or null when it cannot be read. */
+export function processStartMs(pid) {
+  try {
+    if (process.platform === 'linux') {
+      const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf-8');
+      const ticks = Number(stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19]);
+      const btime = Number(/^btime (\d+)$/m.exec(fs.readFileSync('/proc/stat', 'utf-8'))?.[1]);
+      // USER_HZ is 100 on every Linux build Node supports.
+      return Number.isFinite(ticks) && Number.isFinite(btime) ? (btime + ticks / 100) * 1000 : null;
+    }
+    const out = execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+    const ms = Date.parse(out.trim().replace(/\s+/g, ' '));
+    return Number.isFinite(ms) ? ms : null;
+  } catch {
+    return null;
   }
 }
 
@@ -167,7 +195,7 @@ export function liveReaders(stateDir) {
       tryUnlinkAfterGrace(p);
       continue;
     }
-    if (!isReaderAlive(payload.pid, payload.bootId)) {
+    if (!isReaderAlive(payload.pid, payload.bootId, payload.procStartMs)) {
       tryUnlinkAfterGrace(p);
       continue;
     }

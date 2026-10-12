@@ -17,6 +17,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { runInVirtualProcess } from './virtual-process.js';
+import { callRealpath } from '../infrastructure/call-fs.js';
 import { AGENT_TOOL_SUBCOMMANDS, SEARCHER_SUBCOMMANDS, SEARCH_LOADING_WAIT_MS, searchNotReadyLine, callStartedMs } from './tools.js';
 
 export const AGENT_TOOL_BODY_MAX_BYTES = 1024 * 1024;
@@ -27,6 +28,30 @@ class ProjectRootMismatch extends Error {}
 
 function canonical(p) {
   try { return fs.realpathSync(p); } catch { return path.resolve(p); }
+}
+
+// The daemon's own root, canonical: one realpath per daemon, not per call (a root that does not
+// resolve is asked again next call).
+const daemonRoots = new Map();
+function daemonRootOf(root) {
+  let canon = daemonRoots.get(root);
+  if (canon === undefined) {
+    try {
+      canon = fs.realpathSync(root);
+      if (daemonRoots.size < 16) daemonRoots.set(root, canon);
+    } catch {
+      canon = path.resolve(root);
+    }
+  }
+  return canon;
+}
+
+// The tool code, loaded once (an `await import()` per call cost ~10 µs).
+let toolModule = null;
+function loadToolModule() {
+  toolModule ||= import('../../eval/agent-read-workflows/bin/_ss-helpers.mjs')
+    .catch((err) => { toolModule = null; throw err; });
+  return toolModule;
 }
 
 function json(status, body) {
@@ -90,21 +115,21 @@ export async function buildAgentToolDaemonResponse(payload, {
     }
   }
 
-  const daemonRoot = canonical(searcher?.projectRoot || process.cwd());
+  const daemonRoot = daemonRootOf(searcher?.projectRoot || process.cwd());
   const host = {
     getSearcher: () => searcher,
     assertProjectRoot(root) {
-      if (canonical(root) !== daemonRoot) throw new ProjectRootMismatch(root);
+      if ((callRealpath(root) ?? path.resolve(root)) !== daemonRoot) throw new ProjectRootMismatch(root);
     },
   };
   const run = runTool || (async (sub, args, h) => {
-    const { runAgentTool } = await import('../../eval/agent-read-workflows/bin/_ss-helpers.mjs');
+    const { runAgentTool } = await loadToolModule();
     await runAgentTool(sub, args, h);
   });
 
   let mismatch = null;
   const result = await runInVirtualProcess(
-    { env: { ...call.env }, cwd: call.cwd, pid: call.pid },
+    { env: { ...call.env }, cwd: call.cwd, pid: call.pid, inDaemon: true },
     async () => {
       try { await run(call.tool, call.args, host); }
       catch (err) {

@@ -334,6 +334,21 @@ describe('read omission rendering', () => {
     expect(resolveAgentSessionId(null, { OPENCODE_PID: '900' }, { procInfo, pid: 400 })).toBe('proc-900-111');
   });
 
+  it("takes the native client's harness key when it was made from this call's inputs", () => {
+    // The table would give proc-900-111; the stamp's key wins only for the same pid and OPENCODE_PID.
+    const o = { procInfo, pid: 700 };
+    expect(resolveAgentSessionId(null, { SWEET_SEARCH_HARNESS_KEY: '700::proc-1-2' }, o)).toBe('proc-1-2');
+    expect(resolveAgentSessionId(null, { SWEET_SEARCH_HARNESS_KEY: '700::' }, o)).toBeNull();
+    expect(resolveAgentSessionId(null, { SWEET_SEARCH_HARNESS_KEY: '701::proc-1-2' }, o)).toBe('proc-900-111');
+    expect(resolveAgentSessionId(null, { SWEET_SEARCH_HARNESS_KEY: '700:900:proc-1-2' }, o)).toBe('proc-900-111');
+    expect(resolveAgentSessionId(null, { OPENCODE_PID: '900', SWEET_SEARCH_HARNESS_KEY: '700:900:proc-900-5' }, o)).toBe('proc-900-5');
+    expect(resolveAgentSessionId(null, { OPENCODE_PID: '900', SWEET_SEARCH_HARNESS_KEY: '700::proc-900-5' }, o)).toBe('proc-900-111');
+    expect(resolveAgentSessionId(null, { SWEET_SEARCH_CHAIN_PID: '600', SWEET_SEARCH_HARNESS_KEY: '600::proc-7-8' }, o)).toBe('proc-7-8');
+    expect(resolveAgentSessionId(null, { SWEET_SEARCH_HARNESS_KEY: 'garbage' }, o)).toBe('proc-900-111');
+    // An exported session id still comes first.
+    expect(resolveAgentSessionId(null, { CODEX_THREAD_ID: 't', SWEET_SEARCH_HARNESS_KEY: '700::proc-1-2' }, o)).toBe('t');
+  });
+
   it('no key when the walk ends at pid 1 or a process cannot be read', () => {
     expect(resolveAgentSessionId(null, {}, { procInfo, pid: 400 })).toBeNull();
     expect(resolveAgentSessionId(null, {}, { procInfo, pid: 4242 })).toBeNull();

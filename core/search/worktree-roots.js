@@ -41,6 +41,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { callExistsSync, callRealpathNative } from '../infrastructure/call-fs.js';
 
 const INDEX_FILE = path.join('.sweet-search', 'codebase.db');
 
@@ -50,7 +51,7 @@ const GIT_LOCATION_VARS = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_CE
 
 /** True when `dir` holds a usable Sweet Search index. */
 export function hasIndex(dir) {
-  return !!dir && fs.existsSync(path.join(dir, INDEX_FILE));
+  return !!dir && callExistsSync(path.join(dir, INDEX_FILE));
 }
 
 function git(args, cwd) {
@@ -60,7 +61,7 @@ function git(args, cwd) {
 }
 
 function real(p) {
-  try { return fs.realpathSync.native(p); } catch { return null; }
+  return callRealpathNative(p);
 }
 
 function* ancestors(dir) {

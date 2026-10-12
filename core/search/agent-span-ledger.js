@@ -71,7 +71,14 @@ export function validAgentSessionId(value) {
  *
  * `opts.procInfo` / `opts.pid` are for tests; the call's pid is the launcher's
  * (SWEET_SEARCH_CHAIN_PID), else the virtual process's caller, else this process.
+ *
+ * The native client reads the same processes for its chained-call key and sends the
+ * fallback key it found as HARNESS_KEY_ENV, `<call pid>:<OPENCODE_PID>:<key>` (agent_tools.rs
+ * harness_stamp). A stamp made from this call's inputs replaces the walk, which reads one
+ * /proc file per process on Linux and starts one `ps` per process on macOS.
  */
+export const HARNESS_KEY_ENV = 'SWEET_SEARCH_HARNESS_KEY';
+
 export function resolveAgentSessionId(explicit, env = process.env, { procInfo = readProcInfo, pid = null } = {}) {
   const candidates = [
     explicit,
@@ -86,6 +93,10 @@ export function resolveAgentSessionId(explicit, env = process.env, { procInfo = 
     : (Number.isInteger(pid) && pid > 0 ? pid : (currentCall()?.pid ?? process.pid));
   const oc = String(env?.OPENCODE_PID ?? '');
   const harnessPid = /^\d+$/.test(oc) ? Number(oc) : null;
+  const stamp = /^(\d+):(\d*):(.*)$/s.exec(String(env?.[HARNESS_KEY_ENV] ?? ''));
+  if (stamp && Number(stamp[1]) === selfPid && stamp[2] === (harnessPid === null ? '' : oc)) {
+    return stamp[3] && validAgentSessionId(stamp[3]) ? stamp[3] : null;
+  }
   try {
     const key = harnessKey(selfPid, { procInfo, harnessPid });
     return validAgentSessionId(key) ? key : null;

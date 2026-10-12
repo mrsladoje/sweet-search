@@ -4,7 +4,7 @@
  * `publishedAt` is stale.
  */
 
-import fs from 'node:fs';
+import { callStatSync } from '../infrastructure/call-fs.js';
 
 /**
  * @param {string} absPath
@@ -15,10 +15,7 @@ import fs from 'node:fs';
 export function indexFreshness(absPath, manifest) {
   const publishedMs = Date.parse(manifest?.publishedAt || '');
   if (!Number.isFinite(publishedMs)) return { known: false, stale: false, mtime: null };
-  try {
-    const stat = fs.statSync(absPath);
-    return { known: true, stale: stat.mtimeMs > publishedMs, mtime: stat.mtime };
-  } catch {
-    return { known: false, stale: false, mtime: null };
-  }
+  const stat = callStatSync(absPath);
+  if (!stat) return { known: false, stale: false, mtime: null };
+  return { known: true, stale: stat.mtimeMs > publishedMs, mtime: stat.mtime };
 }

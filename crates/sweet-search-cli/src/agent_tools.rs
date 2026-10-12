@@ -119,6 +119,8 @@ fn falsey(v: &str) -> bool {
 // ---------------------------------------------------------------------------------------
 
 const CHAIN_LATER_ENV: &str = "SWEET_SEARCH_CHAIN_LATER";
+/// Mirrors core/search/agent-span-ledger.js HARNESS_KEY_ENV.
+const HARNESS_KEY_ENV: &str = "SWEET_SEARCH_HARNESS_KEY";
 const CHAIN_PID_ENV: &str = "SWEET_SEARCH_CHAIN_PID";
 const CHAIN_TTL_SECS: u64 = 30 * 60;
 const CHAIN_SWEEP_SECS: u64 = 60;
@@ -191,16 +193,45 @@ fn proc_info(_pid: i32) -> Option<ProcInfo> {
     None
 }
 
+#[cfg(test)]
 fn chain_key(self_pid: i32, info: &dyn Fn(i32) -> Option<ProcInfo>) -> Option<String> {
-    let me = info(self_pid)?;
-    if me.ppid > 1 {
-        if let Some(parent) = info(me.ppid) {
-            if is_shell_name(&parent.comm) {
-                return Some(format!("{}-{}", me.ppid, parent.start));
+    walk_procs(self_pid, info).chain.map(|(key, _)| key)
+}
+
+/// What one read of this call's processes decides: each process is read once for both keys.
+struct CallProcs {
+    /// The chain registry key, and whether it is this process's own key: the shell exec'd
+    /// this call (its last command), or no shell started it. Then no later call of that
+    /// shell can follow, so the call only looks the key up and never creates it.
+    chain: Option<(String, bool)>,
+    /// The agent-session key the daemon would otherwise compute for this call by reading the
+    /// same processes again (core/agent-tools/chain.js harnessKey with no harness pid):
+    /// `proc-<pid>-<start>` of the shell's parent, or of this process's parent when no shell
+    /// started it. None = no key.
+    harness: Option<String>,
+}
+
+fn walk_procs(self_pid: i32, info: &dyn Fn(i32) -> Option<ProcInfo>) -> CallProcs {
+    let me = info(self_pid);
+    let parent = me.as_ref().filter(|m| m.ppid > 1).and_then(|m| info(m.ppid));
+    let parent_is_shell = parent.as_ref().map_or(false, |p| is_shell_name(&p.comm));
+    let chain = me.as_ref().map(|m| match &parent {
+        Some(p) if parent_is_shell => (format!("{}-{}", m.ppid, p.start), false),
+        _ => (format!("{}-{}", self_pid, m.start), true),
+    });
+    let harness = match (&me, &parent) {
+        (Some(_), Some(p)) if parent_is_shell => {
+            let pid = p.ppid;
+            if pid > 1 {
+                info(pid).map(|h| format!("proc-{pid}-{}", h.start))
+            } else {
+                None
             }
         }
-    }
-    Some(format!("{}-{}", self_pid, me.start))
+        (Some(m), Some(p)) => Some(format!("proc-{}-{}", m.ppid, p.start)),
+        _ => None,
+    };
+    CallProcs { chain, harness }
 }
 
 fn chain_dir() -> PathBuf {
@@ -216,6 +247,20 @@ fn age_secs(path: &Path) -> Option<u64> {
             .map(|d| d.as_secs())
             .unwrap_or(0),
     )
+}
+
+/// True when an earlier call of the same shell registered `key` (this process's own key:
+/// look it up, never create it; see CallProcs).
+fn chain_key_registered(dir: &Path, key: &str) -> bool {
+    let file = dir.join(key);
+    if !age_secs(&file).map_or(false, |a| a <= CHAIN_TTL_SECS) {
+        return false;
+    }
+    let _ = fs::File::options()
+        .write(true)
+        .open(&file)
+        .and_then(|f| f.set_modified(std::time::SystemTime::now()));
+    true
 }
 
 /// True when an earlier call of the same shell registered first.
@@ -266,23 +311,61 @@ fn register_chain_call(dir: &Path, key: &str) -> bool {
     }
 }
 
-/// "1" when this call is a later call of a chained command, else "0". An answer already
-/// in the environment (a launcher decided) stands.
-fn chain_position() -> &'static str {
-    match env::var(CHAIN_LATER_ENV).as_deref() {
-        Ok("1") => return "1",
-        Ok("0") => return "0",
-        _ => {}
+/// Mirrors core/search/agent-span-ledger.js validAgentSessionId.
+fn valid_session_id(v: &str) -> bool {
+    let units = v.encode_utf16().count();
+    units > 0 && units <= 256 && !v.chars().any(|c| (c as u32) < 0x20 || c as u32 == 0x7f)
+}
+
+/// The harness key stamp for the daemon (HARNESS_KEY_ENV): `<self pid>:<OPENCODE_PID>:<key>`,
+/// the inputs it was computed from first, so the daemon uses it only when its own inputs are
+/// the same. None when the harness exports a session id (the daemon never walks then) or
+/// OPENCODE_PID is out of range.
+fn harness_stamp(self_pid: i32, procs: Option<&CallProcs>) -> Option<String> {
+    let exported = ["SWEET_SEARCH_SESSION_ID", "CODEX_THREAD_ID", "CLAUDE_CODE_SESSION_ID"]
+        .iter()
+        .any(|name| env::var(name).map_or(false, |v| valid_session_id(&v)));
+    if exported {
+        return None;
     }
+    let oc = env::var("OPENCODE_PID").unwrap_or_default();
+    let oc_digits = !oc.is_empty() && oc.bytes().all(|b| b.is_ascii_digit());
+    let harness_pid = if oc_digits { oc.parse::<i32>().ok()? } else { 0 };
+    let key = if harness_pid > 0 {
+        proc_info(harness_pid).map(|h| format!("proc-{harness_pid}-{}", h.start))
+    } else {
+        match procs {
+            Some(p) => p.harness.clone(),
+            None => walk_procs(self_pid, &proc_info).harness,
+        }
+    };
+    let oc_field = if oc_digits { oc.as_str() } else { "" };
+    Some(format!("{self_pid}:{oc_field}:{}", key.as_deref().unwrap_or("")))
+}
+
+/// "1" when this call is a later call of a chained command, else "0" (an answer already in
+/// the environment, a launcher's, stands); and the harness key stamp.
+fn chain_position() -> (&'static str, Option<String>) {
     let pid = env::var(CHAIN_PID_ENV)
         .ok()
         .and_then(|v| v.trim().parse::<i32>().ok())
         .filter(|p| *p > 1)
         .unwrap_or(process::id() as i32);
-    match chain_key(pid, &proc_info) {
-        Some(key) if register_chain_call(&chain_dir(), &key) => "1",
-        _ => "0",
+    let decided = match env::var(CHAIN_LATER_ENV).as_deref() {
+        Ok("1") => Some("1"),
+        Ok("0") => Some("0"),
+        _ => None,
+    };
+    if let Some(d) = decided {
+        return (d, harness_stamp(pid, None));
     }
+    let procs = walk_procs(pid, &proc_info);
+    let later = match &procs.chain {
+        Some((key, true)) => chain_key_registered(&chain_dir(), key),
+        Some((key, false)) => register_chain_call(&chain_dir(), key),
+        None => false,
+    };
+    (if later { "1" } else { "0" }, harness_stamp(pid, Some(&procs)))
 }
 
 /// Run the tool in a fresh node process (core/agent-tools/cli.js). Never returns.
@@ -334,7 +417,7 @@ pub fn run(sub: &str, args: &[String]) -> ! {
     env::set_var(CALL_STARTED_ENV, now_ms.to_string());
     // Decided once, before either path runs the tool: the in-process runner gets it in its
     // environment and must not register the call a second time.
-    let chain = chain_position();
+    let (chain, harness) = chain_position();
     if env::var("SWEET_SEARCH_AGENT_TOOLS_VIA_DAEMON").map_or(false, |v| falsey(&v)) {
         run_in_process(sub, args, chain);
     }
@@ -360,6 +443,11 @@ pub fn run(sub: &str, args: &[String]) -> ! {
         })
         .collect();
     env_map.insert(CHAIN_LATER_ENV.into(), Value::String(chain.into()));
+    // Only the daemon reads it, for this call: never the in-process runner's environment.
+    match harness {
+        Some(stamp) => env_map.insert(HARNESS_KEY_ENV.into(), Value::String(stamp)),
+        None => env_map.remove(HARNESS_KEY_ENV),
+    };
     let payload = json!({
         "v": 1,
         "tool": sub,
@@ -590,6 +678,57 @@ mod tests {
         let other = fake(vec![(7, 1, "claude", "50"), (200, 7, "sweet-search", "90")]);
         assert_eq!(chain_key(200, &other).as_deref(), Some("200-90"));
         assert_eq!(chain_key(999, &info), None);
+    }
+
+    #[test]
+    fn one_walk_gives_the_chain_key_and_the_harness_key() {
+        // chain.js harnessKey on the same table: the shell's parent, else this process's parent.
+        let info = fake(vec![
+            (7, 1, "claude", "50"),
+            (100, 7, "zsh", "60"),
+            (101, 100, "sweet-search", "61"),
+            (200, 7, "sweet-search", "90"),
+            (300, 1, "bash", "70"),
+            (301, 300, "sweet-search", "71"),
+        ]);
+        let child = walk_procs(101, &info);
+        assert_eq!(child.chain, Some(("100-60".to_string(), false)));
+        assert_eq!(child.harness.as_deref(), Some("proc-7-50"));
+        // Exec'd by its shell (or started by the harness): its own key, looked up only.
+        let execd = walk_procs(200, &info);
+        assert_eq!(execd.chain, Some(("200-90".to_string(), true)));
+        assert_eq!(execd.harness.as_deref(), Some("proc-7-50"));
+        // A shell whose parent is pid 1 has no harness.
+        let orphan = walk_procs(301, &info);
+        assert_eq!(orphan.chain, Some(("300-70".to_string(), false)));
+        assert_eq!(orphan.harness, None);
+        let unknown = walk_procs(999, &info);
+        assert_eq!(unknown.chain, None);
+        assert_eq!(unknown.harness, None);
+    }
+
+    #[test]
+    fn an_own_key_is_looked_up_never_created() {
+        let dir = temp_dir("chain-own");
+        assert!(!chain_key_registered(&dir, "100-60"));
+        assert!(!dir.join("100-60").exists(), "a lookup creates nothing");
+        // A shell's first call registered the key: the exec'd last call is a later call.
+        assert!(!register_chain_call(&dir, "100-60"));
+        assert!(chain_key_registered(&dir, "100-60"));
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn session_ids_match_the_js_rule() {
+        assert!(valid_session_id("abc"));
+        assert!(valid_session_id(&"x".repeat(256)));
+        assert!(!valid_session_id(&"x".repeat(257)));
+        assert!(!valid_session_id(""));
+        assert!(!valid_session_id("a\nb"));
+        assert!(!valid_session_id("a\u{7f}"));
+        // UTF-16 units, as JS counts: one astral char is two.
+        assert!(!valid_session_id(&"\u{1F600}".repeat(129)));
+        assert!(valid_session_id(&"\u{1F600}".repeat(128)));
     }
 
     #[test]

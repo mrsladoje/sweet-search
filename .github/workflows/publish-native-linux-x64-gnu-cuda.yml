@@ -112,7 +112,7 @@ jobs:
         run: |
           curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
             sh -s -- -y --default-toolchain stable --profile minimal \
-              --target x86_64-unknown-linux-gnu
+              --target x86_64-unknown-linux-gnu --target x86_64-unknown-linux-musl
           echo "$HOME/.cargo/bin" >> $GITHUB_PATH
 
       - name: Verify CUDA toolkit
@@ -139,18 +139,20 @@ jobs:
             --features cuda,flash-attn
           ls -la sweet-search-native.*.node
 
+      # A static musl binary, as release.yml builds it (~1 ms less per ss-* call). The
+      # default linker: the clang + lld RUSTFLAGS above are for the addon's huge link.
       - name: Build CLI binary
         working-directory: crates/sweet-search-cli
         run: |
-          cargo build --release --target x86_64-unknown-linux-gnu
-          ls -la target/x86_64-unknown-linux-gnu/release/sweet-search
+          RUSTFLAGS= cargo build --release --target x86_64-unknown-linux-musl
+          ls -la target/x86_64-unknown-linux-musl/release/sweet-search
 
       - name: Stage CUDA package
         run: |
           cd packages/native-linux-x64-gnu-cuda
           cp ../../crates/sweet-search-native/sweet-search-native.linux-x64-gnu.node \
              sweet-search-native.node
-          cp ../../crates/sweet-search-cli/target/x86_64-unknown-linux-gnu/release/sweet-search \
+          cp ../../crates/sweet-search-cli/target/x86_64-unknown-linux-musl/release/sweet-search \
              sweet-search
           chmod +x sweet-search-native.node sweet-search
           ls -la
