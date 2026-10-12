@@ -134,7 +134,8 @@ pub trait CodeGraph {
     /// Mirrors CodeGraphRepository.findEntitiesInFile(filePath, opts) (code-graph-repository.js
     /// :613). `limit` = `opts.limit` (None = `{}`): effective LIMIT is
     /// `min(max(1, limit|0 || 512), 2048)`. Rows `ORDER BY start_line ASC, end_line DESC`.
-    fn find_entities_in_file(&self, file_path: &str, limit: Option<i64>) -> Result<Vec<Entity>, GraphThrew>;
+    /// Shared: the same list may answer every call that reads the file.
+    fn find_entities_in_file(&self, file_path: &str, limit: Option<i64>) -> Result<std::sync::Arc<Vec<Entity>>, GraphThrew>;
     /// Mirrors CodeGraphRepository.findEntitiesInRange(filePath, startLine, endLine) (:517).
     fn find_entities_in_range(&self, file_path: &str, start_line: i64, end_line: i64) -> Result<Vec<Entity>, GraphThrew>;
     /// Mirrors CodeGraphRepository.findEnclosingEntity(filePath, startLine, endLine) (:153).
@@ -1318,7 +1319,7 @@ pub fn build_same_file_sibling_line(
     };
 
     let mut scored: Vec<Scored> = Vec::new();
-    for entity in &entities {
+    for entity in entities.iter() {
         let (name, es, ee) = match (entity.name.as_deref(), entity.start_line, entity.end_line) {
             (Some(n), Some(s), Some(e)) if !n.is_empty() => (n, s, e),
             _ => continue,
@@ -2000,9 +2001,9 @@ pub fn bare_grep_enrich(
             let defined_name = defined_name_from_regex(regex);
             // A capped entity list would class every line past the cap's last span as
             // "outside every symbol": a file that fills the cap keeps the prefix instead.
-            let mut entities_in_file = |file: &str| -> Result<Vec<Entity>, GraphThrew> {
+            let mut entities_in_file = |file: &str| -> Result<std::sync::Arc<Vec<Entity>>, GraphThrew> {
                 let entities = g.find_entities_in_file(file, Some(GREP_LINE_CLASS_ENTITY_CAP as i64))?;
-                Ok(if entities.len() >= GREP_LINE_CLASS_ENTITY_CAP { Vec::new() } else { entities })
+                Ok(if entities.len() >= GREP_LINE_CLASS_ENTITY_CAP { Default::default() } else { entities })
             };
             let mut io = StampIo { entities_in_file: &mut entities_in_file, is_fresh, defined_name: defined_name.as_deref() };
             out.line_class_stats = Some(stamp_grep_line_classes(results, &mut io));

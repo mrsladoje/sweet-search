@@ -88,10 +88,11 @@ fn normalize_path(p: &str) -> Result<Option<String>, &'static str> {
 
 /// listSparseGramDeltaSegments(indexPath, { maxEpoch, segments }) for the manifest's entries
 /// (resolveDeltaSegments): existing segment files under `<index>.deltas/`, by (epoch, seq).
-fn list_segments(index_path: &str, state_dir: &str, entries: &[String], max_epoch: Option<i64>) -> Vec<String> {
+/// Each with its stat signature (one stat per segment: a missing file is skipped).
+fn list_segments(index_path: &str, state_dir: &str, entries: &[String], max_epoch: Option<i64>) -> Vec<(String, String)> {
     let base_dir = std::path::Path::new(index_path).parent().map(|p| p.to_string_lossy().into_owned()).unwrap_or_default();
     let delta_root = format!("{index_path}.deltas");
-    let mut found: Vec<(i64, i64, String)> = Vec::new();
+    let mut found: Vec<(i64, i64, String, String)> = Vec::new();
     let mut seen = HashSet::new();
     for entry in entries {
         let candidates: Vec<String> = if entry.starts_with('/') {
@@ -114,16 +115,15 @@ fn list_segments(index_path: &str, state_dir: &str, entries: &[String], max_epoc
                 continue;
             }
             let (Ok(epoch), Ok(seq)) = (e.parse::<i64>(), s.parse::<i64>()) else { continue };
-            if max_epoch.map_or(false, |m| epoch > m) || !std::path::Path::new(&normalized).exists() {
+            if max_epoch.map_or(false, |m| epoch > m) || !seen.insert(normalized.clone()) {
                 continue;
             }
-            if seen.insert(normalized.clone()) {
-                found.push((epoch, seq, normalized));
-            }
+            let Some(sig) = super::engine::file_signature(&normalized) else { continue };
+            found.push((epoch, seq, normalized, sig));
         }
     }
     found.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
-    found.into_iter().map(|(_, _, p)| p).collect()
+    found.into_iter().map(|(_, _, p, s)| (p, s)).collect()
 }
 
 /// path.resolve of an absolute POSIX path.
@@ -141,15 +141,15 @@ fn resolve_abs(p: &str) -> String {
     format!("/{}", out.join("/"))
 }
 
-fn segments_signature(segments: &[String]) -> Option<String> {
+fn segments_signature(segments: &[(String, String)]) -> String {
     let mut sig = String::new();
-    for s in segments {
-        sig.push_str(s);
+    for (path, s) in segments {
+        sig.push_str(path);
         sig.push('\0');
-        sig.push_str(&super::engine::file_signature(s)?);
+        sig.push_str(s);
         sig.push('\n');
     }
-    Some(sig)
+    sig
 }
 
 /// The JS Map key of a record's `fileId` (1 and "1" are different keys).
@@ -189,7 +189,7 @@ impl Overlay {
         if segments.is_empty() {
             return Ok(None);
         }
-        let signature = format!("{max_epoch:?}\0{weights_id:?}\0{}", segments_signature(&segments).ok_or("delta segment vanished")?);
+        let signature = format!("{max_epoch:?}\0{weights_id:?}\0{}", segments_signature(&segments));
         if let Some(p) = prev {
             if p.signature == signature {
                 return Ok(Some(p));
@@ -199,7 +199,7 @@ impl Overlay {
         let mut entries_map: HashMap<String, Entry> = HashMap::new();
         let mut postings: HashMap<String, Vec<u32>> = HashMap::new();
         let mut next_slot: u32 = 0;
-        for seg in &segments {
+        for (seg, _) in &segments {
             let bytes = match std::fs::read(seg) {
                 Ok(b) => b,
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,

@@ -101,12 +101,12 @@ impl RecordedGraph {
 }
 
 impl CodeGraph for RecordedGraph {
-    fn find_entities_in_file(&self, file_path: &str, limit: Option<i64>) -> Result<Vec<Entity>, GraphThrew> {
+    fn find_entities_in_file(&self, file_path: &str, limit: Option<i64>) -> Result<std::sync::Arc<Vec<Entity>>, GraphThrew> {
         let args = match limit {
             Some(l) => json!([file_path, { "limit": l }]),
             None => json!([file_path]),
         };
-        Ok(entities(&self.answer("findEntitiesInFile", args)?))
+        Ok(std::sync::Arc::new(entities(&self.answer("findEntitiesInFile", args)?)))
     }
     fn find_entities_in_range(&self, file_path: &str, start_line: i64, end_line: i64) -> Result<Vec<Entity>, GraphThrew> {
         Ok(entities(&self.answer("findEntitiesInRange", json!([file_path, start_line, end_line]))?))

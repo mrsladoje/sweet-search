@@ -50,6 +50,10 @@ pub(crate) struct GraphCache {
     version: String,
     entities: std::collections::HashMap<(String, i64), Vec<GEntity>>,
     scans: std::collections::HashMap<String, Vec<GEntity>>,
+    /// findEntitiesInFile answers as the CodeGraph trait hands them out (shared, converted once).
+    shared: std::collections::HashMap<(String, i64), std::sync::Arc<Vec<ss_grep_core::enrich::Entity>>>,
+    /// The epoch columns of entities and relationships, read once per connection.
+    schema: Option<(bool, bool)>,
 }
 
 const INTERFACE_ENTITY_TYPES: [&str; 3] = ["interface", "protocol", "trait"];
@@ -92,14 +96,24 @@ fn entity_row(r: &[Val]) -> Result<GEntity, ()> {
 
 impl<'a> GraphDb<'a> {
     pub fn new(db: &'a mut Db, epoch: Option<i64>, db_path: &str, cache: &'a mut GraphCache) -> Self {
-        let ent_epoch = has_columns(db, "entities", &["epoch_written", "epoch_retired"]);
-        let rel_epoch = has_columns(db, "relationships", &["epoch_written", "epoch_retired"]);
+        let (ent_epoch, rel_epoch) = match cache.schema {
+            Some(s) => s,
+            None => {
+                let s = (
+                    has_columns(db, "entities", &["epoch_written", "epoch_retired"]),
+                    has_columns(db, "relationships", &["epoch_written", "epoch_retired"]),
+                );
+                cache.schema = Some(s);
+                s
+            }
+        };
         // Read once per call, as the JS reads it once per ss-* call.
         let data_version = db.scalar("PRAGMA data_version", &[]).and_then(|v| v.int());
         let version = format!("{db_path}\0{epoch:?}\0{data_version:?}");
         if data_version.is_none() || cache.version != version {
             cache.entities.clear();
             cache.scans.clear();
+            cache.shared.clear();
             cache.version = if data_version.is_some() { version } else { String::new() };
         }
         GraphDb { db, epoch, ent_epoch, rel_epoch, cache }
@@ -160,6 +174,28 @@ impl<'a> GraphDb<'a> {
                 self.cache.entities.clear();
             }
             self.cache.entities.insert(key, out.clone());
+        }
+        Ok(out)
+    }
+
+    /// find_entities_in_file, converted by `conv` once per cached answer and shared after.
+    pub fn find_entities_in_file_shared(
+        &mut self,
+        file_path: &str,
+        limit: i64,
+        conv: impl FnOnce(Vec<GEntity>) -> Vec<ss_grep_core::enrich::Entity>,
+    ) -> Result<std::sync::Arc<Vec<ss_grep_core::enrich::Entity>>, ()> {
+        let limit = limit.clamp(1, 2048);
+        let key = (file_path.to_string(), limit);
+        if let Some(hit) = self.cache.shared.get(&key) {
+            return Ok(hit.clone());
+        }
+        let out = std::sync::Arc::new(conv(self.find_entities_in_file(file_path, limit)?));
+        if self.cache_on() {
+            if self.cache.shared.len() >= 1024 {
+                self.cache.shared.clear();
+            }
+            self.cache.shared.insert(key, out.clone());
         }
         Ok(out)
     }

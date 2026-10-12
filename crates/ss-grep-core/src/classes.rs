@@ -210,7 +210,7 @@ pub fn classify_grep_lines(rows: &[ClassRow<'_>], entities: &[Entity], mut symbo
 /// The io stampGrepLineClasses reads through: `entitiesInFile` (Err = it threw),
 /// `isFresh`, and the pattern's own identifier (`definedName`).
 pub struct StampIo<'a> {
-    pub entities_in_file: &'a mut dyn FnMut(&str) -> Result<Vec<Entity>, GraphThrew>,
+    pub entities_in_file: &'a mut dyn FnMut(&str) -> Result<std::sync::Arc<Vec<Entity>>, GraphThrew>,
     pub is_fresh: &'a mut dyn FnMut(&str) -> bool,
     pub defined_name: Option<&'a str>,
 }
