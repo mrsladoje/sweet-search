@@ -263,16 +263,16 @@ export async function bareGrep(query, routing, options = {}) {
   // unavailable. Throws a clear error only when neither engine can run.
   await ensureGrepEngineAvailable(this, options, 'Bare grep');
 
-  // ss-grep's outside-scope line: confirm up to N matching files outside the --in scope and
-  // stop. No answer (few candidates, or fewer matching files) = the exact search the line used
-  // before, which is unscoped: the same call without the scope.
+  // ss-grep's outside-scope line: past ~800 candidate files, read a budget of them outside the
+  // --in scope and stop at N matching files (grep-outside-probe.js). No answer = the exact
+  // search the line used before, which is unscoped: the same call without the scope.
   if (options.grepOutsideProbe > 0) {
     const probe = fixedStringOrSymbol(options, symbolType)
       ? null : probeOutsideScope(this || {}, regex, filterRoot, options, options.grepOutsideProbe);
     if (probe) {
       return { results: [], stats: { outsideProbe: probe, total_ms: Math.round(performance.now() - start) } };
     }
-    const { grepOutsideProbe: _probe, fileFilter: _scope, ...unscoped } = options;
+    const { grepOutsideProbe: _probe, grepOutsideScopedTotal: _total, fileFilter: _scope, ...unscoped } = options;
     return bareGrep.call(this, query, routing, unscoped);
   }
 

@@ -48,26 +48,38 @@ describe('renderOutsideScopeLine', () => {
 
 describe('renderOutsideScopeProbeLine', () => {
   const scopes = ['pkg/config/types.go'];
+  const many = Array.from({ length: 20 }, (_, i) => `pkg/f${i}.go`);
 
-  it('says N+ files and names the first source files', () => {
-    const files = ['cmd/a.go', 'pkg/b.go', 'pkg/c.go', 'pkg/d.go', 'test/e_test.go'];
-    expect(renderOutsideScopeProbeLine({ files, limit: 20, scopedTotal: 1, scopes }))
-      .toBe('# also 20+ files outside --in: cmd/a.go, pkg/b.go, pkg/c.go');
+  it('says limit+ files and names the first source files', () => {
+    expect(renderOutsideScopeProbeLine({ files: many, limit: 20, scopedTotal: 1, scopes }))
+      .toBe('# also 20+ files outside --in: pkg/f0.go, pkg/f1.go, pkg/f2.go');
+  });
+
+  it('says N+ files when the read budget ran out first', () => {
+    expect(renderOutsideScopeProbeLine({ files: ['cmd/a.go', 'pkg/b.go'], limit: 20, scopedTotal: 1, scopes }))
+      .toBe('# also 2+ files outside --in: cmd/a.go, pkg/b.go');
+  });
+
+  it('gives an exact file count when every candidate was read', () => {
+    expect(renderOutsideScopeProbeLine({ files: ['cmd/a.go'], limit: 20, complete: true, scopedTotal: 1, scopes }))
+      .toBe('# also 1 file outside --in: cmd/a.go');
+    expect(renderOutsideScopeProbeLine({ files: ['cmd/a.go', 'pkg/b.go'], limit: 20, complete: true, scopedTotal: 1, scopes }))
+      .toBe('# also 2 files outside --in: cmd/a.go, pkg/b.go');
   });
 
   it('stays silent when no source file matched outside a scope that answered', () => {
-    const files = ['test/a_test.go', 'docs/b.md', 'hack/gen.sh'];
+    const files = ['test/a_test.go', 'docs/b.md'];
     expect(renderOutsideScopeProbeLine({ files, limit: 20, scopedTotal: 1, scopes })).toBeNull();
+    expect(renderOutsideScopeProbeLine({ files: [], limit: 20, scopedTotal: 0, scopes })).toBeNull();
   });
 
   it('names test hits when the scope itself had none', () => {
-    const files = ['test/a_test.go', 'test/b_test.go'];
-    expect(renderOutsideScopeProbeLine({ files, limit: 20, scopedTotal: 0, scopes }))
-      .toBe('# also 20+ files outside --in: test/a_test.go, test/b_test.go');
+    expect(renderOutsideScopeProbeLine({ files: ['test/a_test.go'], limit: 20, scopedTotal: 0, scopes }))
+      .toBe('# also 1+ files outside --in: test/a_test.go');
   });
 
   it('never names a file inside the scope', () => {
     expect(renderOutsideScopeProbeLine({ files: ['pkg/config/types.go', 'pkg/b.go'], limit: 20, scopedTotal: 1, scopes }))
-      .toBe('# also 20+ files outside --in: pkg/b.go');
+      .toBe('# also 1+ files outside --in: pkg/b.go');
   });
 });

@@ -125,6 +125,9 @@ export function readGrepShapingParams(searchParams) {
     // ss-grep's outside-scope line: confirm up to N matching files outside the --in scope
     // (grep-outside-probe.js) instead of grepping.
     grepOutsideProbe: parseBoundedSearchInteger(searchParams.get('outsideProbe'), 'outsideProbe', 1000) || undefined,
+    // The scope's own hit count: a scope with none lets the probe read more (grep-outside-probe.js).
+    grepOutsideScopedTotal: searchParams.has('outsideScopedTotal')
+      ? parseBoundedSearchInteger(searchParams.get('outsideScopedTotal'), 'outsideScopedTotal', 1e9) : undefined,
   };
 }
 
@@ -1057,9 +1060,9 @@ export async function startServer() {
         res.end(JSON.stringify({ error: `File filter too long (max ${SEARCH_SERVER_MAX_READ_PATH_LENGTH} chars)` }));
         return;
       }
-      let perFileCap; let maxFiles; let grepFileOrder; let grepFileWeight; let grepLineClasses; let grepOutsideProbe;
+      let perFileCap; let maxFiles; let grepFileOrder; let grepFileWeight; let grepLineClasses; let grepOutsideProbe; let grepOutsideScopedTotal;
       try {
-        ({ perFileCap, maxFiles, grepFileOrder, grepFileWeight, grepLineClasses, grepOutsideProbe } = readGrepShapingParams(url.searchParams));
+        ({ perFileCap, maxFiles, grepFileOrder, grepFileWeight, grepLineClasses, grepOutsideProbe, grepOutsideScopedTotal } = readGrepShapingParams(url.searchParams));
       } catch (err) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: err.message }));
@@ -1123,6 +1126,7 @@ export async function startServer() {
           ...(grepFileWeight ? { grepFileWeight } : {}),
           ...(grepLineClasses ? { grepLineClasses } : {}),
           ...(grepOutsideProbe ? { grepOutsideProbe } : {}),
+          ...(grepOutsideScopedTotal != null ? { grepOutsideScopedTotal } : {}),
           fixedString,
           type: symbolType,
           globs,
@@ -1601,6 +1605,7 @@ export async function queryServer(query, options = {}) {
     grepFileWeight,
     grepLineClasses = false,
     grepOutsideProbe = 0,
+    grepOutsideScopedTotal,
     fixedString = false,
     type = '',
     globs = [],
@@ -1647,6 +1652,7 @@ export async function queryServer(query, options = {}) {
     if (grepFileWeight === 'sat2') params.set('fileWeight', 'sat2');
     if (grepLineClasses === true) params.set('lineClasses', '1');
     if (grepOutsideProbe > 0) params.set('outsideProbe', String(grepOutsideProbe));
+    if (Number.isInteger(grepOutsideScopedTotal)) params.set('outsideScopedTotal', String(grepOutsideScopedTotal));
     if (fixedString) params.set('fixedString', 'true');
     if (type) params.set('type', type);
     if (!literalFilter) params.set('literalFilter', 'false');
