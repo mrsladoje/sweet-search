@@ -26,6 +26,7 @@ import {
   resolveAgentSessionId,
   validAgentSessionId,
 } from './agent-span-ledger.js';
+import { setInProcessAgentSpans } from './agent-span-client.js';
 import {
   upsertSelf as registryUpsertSelf,
   touchSelf as registryTouchSelf,
@@ -1385,6 +1386,21 @@ export async function startServer() {
       handleRequest(req, res).catch(reject);
     }),
   };
+  // The ss-* tools' shown-span receipts (agent-span-client.js) reach the /agent-spans handler
+  // the same way: what the POST route does, without the socket.
+  setInProcessAgentSpans({
+    socketPath,
+    handle: (payload) => {
+      const response = buildAgentSpanDaemonResponse(payload, {
+        isUnixSocket: true,
+        ledger: agentSpanLedger ||= new AgentSpanLedger(),
+      });
+      if (response.status === 200 && (payload.operation === 'read' || payload.operation === 'observe')) {
+        lastActivityMs = Date.now();
+      }
+      return response;
+    },
+  });
 
   // One wrapper for both servers. It returns `handleRequest`'s promise exactly
   // as `createServer` received it before, so request semantics are unchanged.
