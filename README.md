@@ -380,7 +380,17 @@ Each cell: **billed cost change · accuracy change in points**, sweet-search vs 
 
 **Why the harnesses differ.** Claude Code's native loop is already disciplined, so the gain is fewer tool calls at equal accuracy. opencode's native loop thrashes (11.2 calls per question), so the cut is large. On Codex, sweet-search sends more input tokens, but a larger share of them hit the cache, because sweet-search keeps the stock Codex prompt unchanged as the cached prefix.
 
-- **What's being compared:** the installed `sweet-search` prompt and tools vs. the *same model* with only its built-in file-reading and shell-grep tools. Both arms use the same harness version (Claude Code 2.1.281, codex-cli 0.159.2, opencode 1.18.4).
+#### 📌 Pinned harness versions
+
+| 🧰 Harness | 📌 Pinned version | 🧠 Model · reasoning effort |
+|---|:---:|---|
+| 🟣 Claude Code | `2.1.281` | Sonnet 5.5 high · Opus 5.5 medium · Opus 5.5 high |
+| 🐚 opencode | `1.18.4` | Sol 6.1 high (`gpt-6.1-sol`) |
+| 🤖 Codex | `codex-cli 0.159.2` | Sol 6.1 high (`gpt-6.1-sol`) |
+
+<sub>Both arms of a setup ran the same pinned binary for the whole run. Every result row records the version it ran, and each harness shows exactly one version.</sub>
+
+- **What's being compared:** the installed `sweet-search` prompt and tools vs. the *same model* with only its built-in file-reading and shell-grep tools, on the pinned harness versions above.
 - **Questions:** the r3 benchmark, pre-registered before any scored run. 11 public repos that we never used in development: jj (Rust), dgraph (Go), tortoise-orm (Python), typedoc (TypeScript), zipkin (Java), Ocelot (C#), plus okhttp (Kotlin), sequel (Ruby), composer (PHP), drogon (C++) and GRDB (Swift) on the hard tier. Question types: multi-hop, cross-layer, call chains, completeness, enforcement, decoys, and **negatives** (the asked-for thing does not exist).
 - **How the questions were built:** agents drafted them with plain tools, not sweet-search. Two non-Claude models verified each gold fact against the code, and Opus agents audited the result. Hard questions also passed a closed-book screen: we dropped any question that models could answer without the code.
 - **Split:** stratified by repo and question type, seed 42. We tuned on the dev split only. The held-out split (103 easy + 97 hard) ran once, at the end, and we looked at aggregates only.
@@ -479,8 +489,18 @@ Codex, it makes fewer calls, and the saving is larger.
 - **Script:** [`task-latency-model.mjs`](eval/task-completion-bench/stats/task-latency-model.mjs); full output
   in [`TASK-LATENCY-HO2-290.md`](eval/task-completion-bench/stats/TASK-LATENCY-HO2-290.md).
 
+#### 📌 Pinned harness versions
+
+| 🧰 Harness | 📌 Pinned version | 🧠 Model · reasoning effort |
+|---|:---:|---|
+| 🟣 Claude Code | `2.1.281` | Sonnet 5.5 high · Opus 5.5 medium · Opus 5.5 high |
+| 🐚 opencode | `1.18.4` | Sol 6.1 high (`gpt-6.1-sol`) |
+| 🤖 Codex | `codex-cli 0.159.2` | Sol 6.1 high (`gpt-6.1-sol`) |
+
+<sub>Both arms of a setup ran the same pinned binary for the whole run. Every result row records the version it ran, and each harness shows exactly one version.</sub>
+
 - **What's compared:** the installed `sweet-search` agent prompt + tools vs. the *same model* using
-  its built-in file-reading and shell-grep loop. Harnesses run as they ship: no tools disabled. The sweet-search system prompt says nothing about
+  its built-in file-reading and shell-grep loop, on the pinned harness versions above. Harnesses run as they ship: no tools disabled. The sweet-search system prompt says nothing about
   subagents or delegation. It only routes code search through `ss-*`.
 - **Design:** 200 tasks × 2 arms × 1 rep × 5 setups = **2,000 rollouts**, on sweet-search 2.9.0. Tasks drawn
   from SWE-rebench V1+V2, admitted only if the official gold patch grades FULL in the exact run
