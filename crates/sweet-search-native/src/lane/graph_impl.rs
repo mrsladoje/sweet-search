@@ -50,15 +50,15 @@ fn path_is_unsafe(v: &str) -> bool {
 }
 
 impl CodeGraph for LaneGraph<'_> {
-    fn find_entities_in_file(&self, file_path: &str, limit: Option<i64>) -> Result<Vec<Entity>, GraphThrew> {
-        let Some(g) = &self.g else { return Ok(Vec::new()) };
+    fn find_entities_in_file(&self, file_path: &str, limit: Option<i64>) -> Result<std::sync::Arc<Vec<Entity>>, GraphThrew> {
+        let Some(g) = &self.g else { return Ok(Default::default()) };
         if file_path.is_empty() {
-            return Ok(Vec::new());
+            return Ok(Default::default());
         }
         // `Math.min(Math.max(1, opts.limit | 0 || 512), 2048)`
         let l = limit.map(|v| v as i32 as i64).filter(|v| *v != 0).unwrap_or(512);
         let l = l.max(1).min(2048);
-        Ok(g.borrow_mut().find_entities_in_file(file_path, l).map(|v| v.into_iter().map(ent).collect()).unwrap_or_default())
+        Ok(g.borrow_mut().find_entities_in_file_shared(file_path, l, |v| v.into_iter().map(ent).collect()).unwrap_or_default())
     }
 
     fn find_entities_in_range(&self, file_path: &str, start_line: i64, end_line: i64) -> Result<Vec<Entity>, GraphThrew> {

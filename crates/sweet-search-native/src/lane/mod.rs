@@ -83,6 +83,30 @@ pub(crate) struct Lane {
     pub counters: Mutex<Counters>,
     /// The index and graph the lane has loaded (one call at a time uses them).
     pub loaded: Mutex<state::Loaded>,
+    /// The manifest as last parsed, with its file's stat signature.
+    pub manifest: Mutex<Option<(String, state::Manifest)>>,
+}
+
+impl Lane {
+    /// The reconcile manifest, parsed again only when its file changed (it is replaced by a
+    /// rename on every publish).
+    fn manifest(&self) -> state::Manifest {
+        let path = format!("{}/reconcile-manifest.json", self.config.state_dir.trim_end_matches('/'));
+        let Some(sig) = engine::file_signature(&path) else { return state::Manifest::default() };
+        if let Ok(mut slot) = self.manifest.lock() {
+            if let Some((s, m)) = slot.as_ref() {
+                if *s == sig {
+                    return m.clone();
+                }
+            }
+            let m = state::read_manifest(&self.config.state_dir);
+            if m.present {
+                *slot = Some((sig, m.clone()));
+            }
+            return m;
+        }
+        state::read_manifest(&self.config.state_dir)
+    }
 }
 
 static RECEIPTS: OnceLock<Mutex<Vec<LaneReceipt>>> = OnceLock::new();
@@ -119,7 +143,7 @@ fn call(lane: &Lane, payload: &[u8]) -> Outcome {
         Ok(s) => s,
         Err(why) => return Outcome::Decline(why),
     };
-    let manifest = state::read_manifest(&lane.config.state_dir);
+    let manifest = lane.manifest();
     if !manifest.present {
         return Outcome::Decline("no manifest");
     }
@@ -185,7 +209,7 @@ fn prepare(lane: &Lane, manifest: &state::Manifest, loaded: &mut state::Loaded) 
 /// Loads the index, overlay and graph before the first call (a session's first ss-grep then
 /// finds them warm). Best effort: a call loads whatever this did not.
 fn warm(lane: &Lane) {
-    let manifest = state::read_manifest(&lane.config.state_dir);
+    let manifest = lane.manifest();
     if !manifest.present {
         return;
     }
@@ -207,6 +231,7 @@ pub fn grep_lane_start(opts: LaneOptions) -> napi::Result<bool> {
         config: LaneConfig { project_root: opts.project_root, state_dir: opts.state_dir },
         counters: Mutex::new(Counters::default()),
         loaded: Mutex::new(state::Loaded::default()),
+        manifest: Mutex::new(None),
     });
     let mut slot = running().lock().map_err(|_| napi::Error::from_reason("lane lock"))?;
     // An old lane goes first: its stop removes its socket file, which may be the same path.
@@ -260,6 +285,7 @@ fn shadow_lane(project_root: &str, state_dir: &str) -> Arc<Lane> {
         config: LaneConfig { project_root: project_root.to_string(), state_dir: state_dir.to_string() },
         counters: Mutex::new(Counters::default()),
         loaded: Mutex::new(state::Loaded::default()),
+        manifest: Mutex::new(None),
     });
     *g = Some(l.clone());
     l
