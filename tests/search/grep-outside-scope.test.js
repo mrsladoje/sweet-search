@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { fileInScopes, renderOutsideScopeLine } from '../../core/search/grep-output-shaping.js';
+import { fileInScopes, renderOutsideScopeLine, renderOutsideScopeProbeLine } from '../../core/search/grep-output-shaping.js';
 
 describe('fileInScopes', () => {
   it('matches a file scope exactly and a directory scope by prefix', () => {
@@ -43,5 +43,31 @@ describe('renderOutsideScopeLine', () => {
 
   it('prints nothing when nothing matches outside', () => {
     expect(renderOutsideScopeLine({ files: [files[0]], outsideTotal: 0, scopedTotal: 9, scopes })).toBeNull();
+  });
+});
+
+describe('renderOutsideScopeProbeLine', () => {
+  const scopes = ['pkg/config/types.go'];
+
+  it('says N+ files and names the first source files', () => {
+    const files = ['cmd/a.go', 'pkg/b.go', 'pkg/c.go', 'pkg/d.go', 'test/e_test.go'];
+    expect(renderOutsideScopeProbeLine({ files, limit: 20, scopedTotal: 1, scopes }))
+      .toBe('# also 20+ files outside --in: cmd/a.go, pkg/b.go, pkg/c.go');
+  });
+
+  it('stays silent when no source file matched outside a scope that answered', () => {
+    const files = ['test/a_test.go', 'docs/b.md', 'hack/gen.sh'];
+    expect(renderOutsideScopeProbeLine({ files, limit: 20, scopedTotal: 1, scopes })).toBeNull();
+  });
+
+  it('names test hits when the scope itself had none', () => {
+    const files = ['test/a_test.go', 'test/b_test.go'];
+    expect(renderOutsideScopeProbeLine({ files, limit: 20, scopedTotal: 0, scopes }))
+      .toBe('# also 20+ files outside --in: test/a_test.go, test/b_test.go');
+  });
+
+  it('never names a file inside the scope', () => {
+    expect(renderOutsideScopeProbeLine({ files: ['pkg/config/types.go', 'pkg/b.go'], limit: 20, scopedTotal: 1, scopes }))
+      .toBe('# also 20+ files outside --in: pkg/b.go');
   });
 });

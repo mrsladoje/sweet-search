@@ -122,6 +122,9 @@ export function readGrepShapingParams(searchParams) {
     grepFileOrder: searchParams.get('fileOrder') === 'weight' ? 'weight' : undefined,
     grepFileWeight: searchParams.get('fileWeight') === 'sat2' ? 'sat2' : undefined,
     grepLineClasses: searchParams.get('lineClasses') === '1' ? true : undefined,
+    // ss-grep's outside-scope line: confirm up to N matching files outside the --in scope
+    // (grep-outside-probe.js) instead of grepping.
+    grepOutsideProbe: parseBoundedSearchInteger(searchParams.get('outsideProbe'), 'outsideProbe', 1000) || undefined,
   };
 }
 
@@ -1054,9 +1057,9 @@ export async function startServer() {
         res.end(JSON.stringify({ error: `File filter too long (max ${SEARCH_SERVER_MAX_READ_PATH_LENGTH} chars)` }));
         return;
       }
-      let perFileCap; let maxFiles; let grepFileOrder; let grepFileWeight; let grepLineClasses;
+      let perFileCap; let maxFiles; let grepFileOrder; let grepFileWeight; let grepLineClasses; let grepOutsideProbe;
       try {
-        ({ perFileCap, maxFiles, grepFileOrder, grepFileWeight, grepLineClasses } = readGrepShapingParams(url.searchParams));
+        ({ perFileCap, maxFiles, grepFileOrder, grepFileWeight, grepLineClasses, grepOutsideProbe } = readGrepShapingParams(url.searchParams));
       } catch (err) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: err.message }));
@@ -1119,6 +1122,7 @@ export async function startServer() {
           ...(grepFileOrder ? { grepFileOrder } : {}),
           ...(grepFileWeight ? { grepFileWeight } : {}),
           ...(grepLineClasses ? { grepLineClasses } : {}),
+          ...(grepOutsideProbe ? { grepOutsideProbe } : {}),
           fixedString,
           type: symbolType,
           globs,
@@ -1596,6 +1600,7 @@ export async function queryServer(query, options = {}) {
     grepFileOrder,
     grepFileWeight,
     grepLineClasses = false,
+    grepOutsideProbe = 0,
     fixedString = false,
     type = '',
     globs = [],
@@ -1641,6 +1646,7 @@ export async function queryServer(query, options = {}) {
     if (grepFileOrder === 'weight') params.set('fileOrder', 'weight');
     if (grepFileWeight === 'sat2') params.set('fileWeight', 'sat2');
     if (grepLineClasses === true) params.set('lineClasses', '1');
+    if (grepOutsideProbe > 0) params.set('outsideProbe', String(grepOutsideProbe));
     if (fixedString) params.set('fixedString', 'true');
     if (type) params.set('type', type);
     if (!literalFilter) params.set('literalFilter', 'false');

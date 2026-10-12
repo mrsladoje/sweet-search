@@ -954,6 +954,25 @@ export function fileInScopes(file, scopes) {
   return false;
 }
 
+/** A source file for the outside-scope line: source prior, not prose or an example. */
+export function isOutsideScopeSourceFile(file, prior = grepFilePrior(file)) {
+  return prior === 1 && !DOC_PATH_RE.test(file);
+}
+
+/**
+ * The outside-scope line when the early-stop check (grep-outside-probe.js) confirmed `limit`
+ * matching files outside the scope: `# also 20+ files outside --in: a, b, c`. `files` come
+ * source first, so a first name that is no source file means no source file matched. The
+ * rules of renderOutsideScopeLine hold: silent when only tests, docs or examples match outside
+ * a scope that answered. Null = print nothing.
+ */
+export function renderOutsideScopeProbeLine({ files, limit, scopedTotal, scopes, max = 3 }) {
+  const outside = (files || []).filter(f => !fileInScopes(f, scopes));
+  if (!outside.length) return null;
+  if (!isOutsideScopeSourceFile(outside[0]) && scopedTotal > 0) return null;
+  return `# also ${limit}+ files outside --in: ${outside.slice(0, max).join(', ')}`;
+}
+
 /**
  * The hits a scoped ss-grep (`--in`) did not show: one line naming the matching files outside
  * the scope (r3hb-sequel-08: `ss-grep fast_pk_lookup --in model/base.rb` hid the plugin that
@@ -967,7 +986,7 @@ export function renderOutsideScopeLine({ files, hiddenFiles = 0, outsideTotal, s
   if (!(outsideTotal > 0)) return null;
   const outside = (files || []).filter(f => !fileInScopes(f.file, scopes));
   if (!outside.length) return null;
-  const source = outside.filter(f => (f.prior ?? grepFilePrior(f.file)) === 1 && !DOC_PATH_RE.test(f.file));
+  const source = outside.filter(f => isOutsideScopeSourceFile(f.file, f.prior ?? grepFilePrior(f.file)));
   if (!source.length && scopedTotal > 0) return null;
   const named = [...source, ...outside.filter(f => !source.includes(f))].slice(0, max).map(f => f.file);
   const rest = outside.length - named.length + Math.max(0, hiddenFiles | 0);
