@@ -372,9 +372,6 @@ Each cell: **billed cost change · accuracy change in points**, sweet-search vs 
   One set of a–d per setup, fitted on both arms together (non-negative least squares on the measured
   model time). So a difference between the arms comes from tokens and turns only.
 - **Check:** the estimate agrees with the measured model time within 1 s per question on every setup.
-- **Not included — tool time:** an `ss-*` call takes longer than a `grep` (about 0.2 s against 0.08 s
-  under the benchmark load). On Claude Code, sweet-search stays faster while its calls take less than
-  0.35–0.82 s each. On Codex, sweet-search is slower at any tool speed: it needs 23% more turns.
 - **Script:** [`latency-model.mjs`](core/prompt-optimization/data/final-run/latency-model.mjs) reads the
   raw session traces; full output in [`LATENCY-HO1005.md`](core/prompt-optimization/data/final-run/LATENCY-HO1005.md).
 
