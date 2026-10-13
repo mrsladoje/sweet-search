@@ -631,18 +631,19 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 
 <h3>🧮 <b>Sweet MaxSim kernel</b></h3>
 
-### 1.6–3.9× faster
+### 1.4–6.9× faster
 
-<sub>4k+ replayed production calls, same ranking</sub>
+<sub>4,389 held-out production calls · same top hit as exact math</sub>
 
-| | p50, ms | sweet faster |
-|:--|--:|:--|
-| **sweet** | **0.137** | `██` |
-| NumPy | 0.272 | `████` **1.6–1.9×** |
-| maxsim-cpu | 0.540 | `████████` **2.9–3.9×** |
+| sweet faster than | M3 Max | x86 (EPYC) |
+|:--|--:|--:|
+| NumPy | **2.0–2.1×** | **1.4–1.6×** |
+| PyTorch | **4.2–6.6×** | **1.9–2.8×** |
+| maxsim-cpu | **6.5–6.9×** | **2.4–2.7×** |
 
-<sub>× = median of per-call ratios · maxsim-cpu in its best case (f32, pre-normalized)</sub><br>
-<sub>M3 Max · [method](eval/maxsim-bench/README.md)</sub>
+<sub>× = geometric mean of per-call ratios · warm, all cores</sub><br>
+<sub>each rival at its fastest config · [where we lose](eval/maxsim-bench/RESULTS.md)</sub><br>
+<sub>[method](eval/maxsim-bench/README.md)</sub>
 
 </td>
 </tr>
@@ -766,7 +767,7 @@ flowchart TD
 | ⚓ **Anchor** | • **IAR** (Identifier Anchor Retrieval): a real symbol in the query fires an exact-name code-graph lookup that injects that entity, even when the encoder ranked it too low |
 | 🎯 **Intent Rerank** | • demote docs / tests / config when you want implementation<br/>• log-scaled call-site boosts surface the most-referenced function |
 | 🕸️ **Graph Expansion** | • typed-edge walks (`imports`/`extends`/`calls`/`uses`) · adaptive 2-hop on the AST graph · edges picked by intent<br/>• **PathRAG** flow pruning + degree normalization → hubs can't dominate |
-| 🧮 **Late interaction Rerank** | • Query embedded per-token by **LateOn-Code** (149M; a 17M **edge** variant auto-selected on low-RAM hosts)<br/>• **MaxSim** against the pre-indexed quantized token vectors<br/>• native Rust+Rayon MaxSim kernel ⚡ · WASM-SIMD fallback |
+| 🧮 **Late interaction Rerank** | • Query embedded per-token by **LateOn-Code** (149M; a 17M **edge** variant auto-selected on low-RAM hosts)<br/>• **MaxSim** against the pre-indexed quantized token vectors<br/>• native Rust SIMD MaxSim kernel on all cores ⚡ · WASM-SIMD fallback |
 | 📦 **Package** | • entity-aware expansion → whole functions (imports, docstrings, decorators)<br/>• same-file overlap demotion → diverse, non-overlapping spans<br/>• **symbol-family completion** (agent mode): generated/width families surface as a compact indexed manifest instead of truncating silently, inside the same budget<br/>• auto-selected **3k / 8k / 12k** token budget |
 
 </details>
@@ -777,7 +778,7 @@ flowchart TD
 <br/>
 
 - 🧠 **A better vector graph for big repos.** Above 150k vectors, our own binary HNSW raised recall@200 from 80.6% to 86.5% and got about a third faster than our earlier version.
-- ⚡ **Native reranking.** The MaxSim math runs in Rust on all CPU cores, over 100× faster than plain code.
+- ⚡ **Native reranking.** The MaxSim math runs in Rust SIMD on all CPU cores, 1.4–6.9× faster than NumPy, PyTorch and maxsim-cpu.
 - 📦 **A small index.** Token vectors are packed into 4 bits, which makes that index 3.4× smaller.
 - 🎛️ **Quality scores.** Each chunk is scored on test proximity, git recency, call-graph centrality, comments and complexity. Production code rises and old fixtures sink.
 - 🛟 **A reranker we switched off.** We built a cross-encoder too. It was 3× slower and did not beat MaxSim, so it ships disabled.
@@ -855,7 +856,7 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 - Rust + SIMD, on all cores.
 - Code embeddings are stored at index time, so no model reads your code at query time.
-- Over 100× faster than plain JS.
+- 1.4–6.9× faster than NumPy, PyTorch and maxsim-cpu ([results](eval/maxsim-bench/RESULTS.md)).
 
 </td>
 </tr>
@@ -1331,7 +1332,7 @@ upgrade that changes the models or chunking, we tell you to run `sweet-search in
 | Windows | ⚡ Native, inside WSL2. Native Windows is not supported yet. |
 | Other (musl/Alpine, other CPUs) | WASM/JS fallback |
 
-- **Native**: every performance-critical path runs in our native engine, compiled ahead of time for your exact OS and CPU. Speedups reach *100× and more* over plain JavaScript.
+- **Native**: every performance-critical path runs in our native engine, compiled ahead of time for your exact OS and CPU. The MaxSim rerank kernel, for example, is 9–21× faster than its WASM fallback and 80–200× faster than plain JavaScript.
 - **WASM/JS fallback**: general-purpose, so it runs on more machines, but slower.
 - **Zero setup**: `npm install` picks the right package for your machine. Needs Node ≥ 22.
 
