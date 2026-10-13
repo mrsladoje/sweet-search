@@ -16,7 +16,7 @@ import { existsSync, createWriteStream, createReadStream, statSync } from 'fs';
 import readline from 'readline';
 import path from 'path';
 import { DB_PATHS, LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
-import { wasmMaxSimF32, wasmMaxSimDequantPerToken, wasmMaxSimDequant4Bit, wasmMaxSimPrepareQuery, nativeMaxSimBatch, nativeMaxSimBatchPerToken, nativeMaxSimBatch4Bit, initWasm, isNativeMaxSimAvailable, isNativePerTokenAvailable, isNative4BitAvailable } from '../infrastructure/simd-distance.js';
+import { wasmMaxSimF32, wasmMaxSimDequantPerToken, wasmMaxSimDequant4Bit, wasmMaxSimPrepareQuery, nativeMaxSimBatch, nativeMaxSimPacked, nativeMaxSimPrewarm, initWasm, isNativeMaxSimAvailable, isNativePerTokenAvailable, isNative4BitAvailable } from '../infrastructure/simd-distance.js';
 import { fastRotate, generateSignVector, calibrateWUSH, wushRotate } from '../infrastructure/quantization.js';
 import { poolTokens } from './late-interaction-model.js';
 import { loadBitmap, isSet } from '../infrastructure/tombstone-bitmap-reader.js';
@@ -874,18 +874,61 @@ export class LateInteractionIndex {
   }
 
   /**
+   * Lay the per-token docs' typed arrays (tokens, minArray, scaleArray,
+   * tokenNorms) out in shared slabs of up to `maxSlabBytes`, replacing them with
+   * views (each field 4-byte aligned). The native MaxSim entry point then takes
+   * one buffer per slab instead of four per candidate, which saves ~0.5-1 µs of
+   * N-API work per candidate on every query. Docs whose arrays already share one
+   * buffer (SSLX segment slabs) stay as they are. Bytes are copied unchanged.
+   */
+  _packDocsIntoSlabs(maxSlabBytes = 64 * 1024 * 1024) {
+    const align4 = (n) => (n + 3) & ~3;
+    const FIELDS = ['tokens', 'minArray', 'scaleArray', 'tokenNorms'];
+    let batch = [];
+    let bytes = 0;
+    const flush = () => {
+      if (batch.length === 0) return;
+      const slab = new ArrayBuffer(bytes);
+      const u8 = new Uint8Array(slab);
+      let at = 0;
+      for (const doc of batch) {
+        for (const field of FIELDS) {
+          const arr = doc[field];
+          u8.set(new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength), at);
+          doc[field] = new arr.constructor(slab, at, arr.length);
+          at += align4(arr.byteLength);
+        }
+      }
+      batch = [];
+      bytes = 0;
+    };
+    for (const doc of this.documents.values()) {
+      if (!ArrayBuffer.isView(doc.tokens) || !doc.minArray || !doc.scaleArray || !doc.tokenNorms) continue;
+      const buf = doc.tokens.buffer;
+      if (doc.minArray.buffer === buf && doc.scaleArray.buffer === buf && doc.tokenNorms.buffer === buf) continue;
+      const need = FIELDS.reduce((sum, field) => sum + align4(doc[field].byteLength), 0);
+      if (bytes + need > maxSlabBytes) flush();
+      batch.push(doc);
+      bytes += need;
+    }
+    flush();
+  }
+
+  /**
    * Read a segment file. Auto-detects format by magic:
    *   0x4C495345 ("LISE") → legacy binary-header + JSON body
    *   0x53534C58 ("SSLX") → v3 fully-binary format
    *
-   * Returns an array of doc objects for uniform downstream handling.
+   * Returns an array of doc objects for uniform downstream handling. With
+   * `skip(docIndex)` (SSLX only), skipped docs are `null` and their data is
+   * never copied.
    */
-  async _readSegmentFile(segPath) {
+  async _readSegmentFile(segPath, skip = null) {
     const buf = await fs.readFile(segPath);
     const magic = buf.readUInt32LE(0);
 
     if (magic === SSLX_SEGMENT_MAGIC) {
-      return this._readSegmentSSLX(buf, segPath);
+      return this._readSegmentSSLX(buf, segPath, skip);
     }
     if (magic === LI_SEGMENT_MAGIC) {
       const body = buf.subarray(64);
@@ -1042,9 +1085,10 @@ export class LateInteractionIndex {
 
   /**
    * Parse an SSLX v3 fully-binary segment buffer.
-   * Returns array of { id, tokens (Int8Array/Float32Array), numTokens, dim, min, scale, tokenNorms }.
+   * Returns array of { id, tokens (Int8Array/Float32Array), numTokens, dim, min, scale, tokenNorms },
+   * with `null` for docs where `skip(docIndex)` is true.
    */
-  _readSegmentSSLX(buf, segPath) {
+  _readSegmentSSLX(buf, segPath, skip = null) {
     // Validate CRC32
     const storedCrc = buf.readUInt32LE(buf.length - 4);
     const computedCrc = crc32(buf.subarray(0, buf.length - 4));
@@ -1094,50 +1138,59 @@ export class LateInteractionIndex {
     const slabStart = docTableStart + numDocs * SSLX_DOC_ENTRY_SIZE + 4 + totalIdBytes;
     const docs = [];
 
+    // Every kept doc's arrays are views into ONE fresh ArrayBuffer per segment
+    // (always aligned; each field padded to 4 bytes, since the file slab start
+    // need not be 4-byte aligned). The native MaxSim entry point then takes one
+    // buffer per segment instead of four per candidate, and the heap holds one
+    // ArrayBuffer per segment instead of four per doc. Skipped docs are not copied.
+    const align4 = (n) => (n + 3) & ~3;
+    const payloadOf = (numTokens) => Math.ceil(numTokens * tokenDim * bytesPerDim);
+    let slabBytes = 0;
     for (let i = 0; i < numDocs; i++) {
+      if (skip && skip(i)) continue;
+      const { numTokens, isPerToken, hasPreNorms } = docEntries[i];
+      slabBytes += align4(payloadOf(numTokens)) + numTokens * 4 * (1 + (isPerToken ? 2 : 0) + (hasPreNorms ? 1 : 0));
+    }
+    const slab = new ArrayBuffer(slabBytes);
+    const slabU8 = new Uint8Array(slab);
+    let slabAt = 0;
+    const copyOut = (from, len) => {
+      slabU8.set(buf.subarray(from, from + len), slabAt);
+      const at = slabAt;
+      slabAt += align4(len);
+      return at;
+    };
+
+    for (let i = 0; i < numDocs; i++) {
+      if (skip && skip(i)) { docs.push(null); continue; }
       const { tokenDataOffset, numTokens, min, scale, isPerToken, hasPreNorms } = docEntries[i];
       const absOffset = slabStart + tokenDataOffset;
       // 4-bit: ceil(tokenDim/2) bytes per token; 8-bit: tokenDim; float32: tokenDim*4
-      const tokenPayload = Math.ceil(numTokens * tokenDim * bytesPerDim);
+      const tokenPayload = payloadOf(numTokens);
       let cursor = absOffset;
 
-      // Alignment-safe copy: create fresh ArrayBuffer (always aligned) and
-      // copy raw bytes from the file buffer. This avoids RangeError when the
-      // slab start isn't 4-byte-aligned (ID table has variable length).
-      let tokens;
-      {
-        const ab = new ArrayBuffer(tokenPayload);
-        new Uint8Array(ab).set(buf.subarray(cursor, cursor + tokenPayload));
-        tokens = is4bit ? new Uint8Array(ab) : (isInt8 ? new Int8Array(ab) : new Float32Array(ab));
-      }
+      const tokAt = copyOut(cursor, tokenPayload);
+      const tokens = is4bit ? new Uint8Array(slab, tokAt, tokenPayload)
+        : (isInt8 ? new Int8Array(slab, tokAt, tokenPayload) : new Float32Array(slab, tokAt, tokenPayload / 4));
       cursor += tokenPayload;
 
       // Per-token min/scale arrays (only for docs flagged as per-token)
       let minArray, scaleArray;
       if (isPerToken) {
-        const minAb = new ArrayBuffer(numTokens * 4);
-        new Uint8Array(minAb).set(buf.subarray(cursor, cursor + numTokens * 4));
-        minArray = new Float32Array(minAb);
+        minArray = new Float32Array(slab, copyOut(cursor, numTokens * 4), numTokens);
         cursor += numTokens * 4;
-
-        const scaleAb = new ArrayBuffer(numTokens * 4);
-        new Uint8Array(scaleAb).set(buf.subarray(cursor, cursor + numTokens * 4));
-        scaleArray = new Float32Array(scaleAb);
+        scaleArray = new Float32Array(slab, copyOut(cursor, numTokens * 4), numTokens);
         cursor += numTokens * 4;
       }
 
       // Per-token norms (f32)
-      const normAb = new ArrayBuffer(numTokens * 4);
-      new Uint8Array(normAb).set(buf.subarray(cursor, cursor + numTokens * 4));
-      const tokenNorms = new Float32Array(normAb);
+      const tokenNorms = new Float32Array(slab, copyOut(cursor, numTokens * 4), numTokens);
       cursor += numTokens * 4;
 
       // CRA-6: Pre-normalization norms for token importance weighting
       let preNorms = null;
       if (hasPreNorms) {
-        const preNormAb = new ArrayBuffer(numTokens * 4);
-        new Uint8Array(preNormAb).set(buf.subarray(cursor, cursor + numTokens * 4));
-        preNorms = new Float32Array(preNormAb);
+        preNorms = new Float32Array(slab, copyOut(cursor, numTokens * 4), numTokens);
         cursor += numTokens * 4;
       }
 
@@ -1842,6 +1895,10 @@ export class LateInteractionIndex {
       ? this.pruneQueryTokens(queryTokens, { maxQueryTokens, normThreshold })
       : queryTokens;
 
+    // Wake the native worker pool now: the candidate grouping, doc lookups and
+    // packing below (~0.1 ms) then overlap the pool's wake-up.
+    if (!maxDocTokens && !this.useTokenWeights && toScore.length > 1) nativeMaxSimPrewarm();
+
     const scored = [];
     const pushScored = (c, score) => scored.push({ ...c, lateInteractionScore: score, originalScore: c.score });
     const pushFallback = (c, extra) => scored.push({ ...c, lateInteractionScore: c.score || 0, originalScore: c.score, ...extra });
@@ -1884,13 +1941,12 @@ export class LateInteractionIndex {
       }
 
       const tokenBuf = doc => Buffer.from(doc.tokens.buffer, doc.tokens.byteOffset, doc.tokens.byteLength);
-      const perTokenCand = doc => ({ tokens: tokenBuf(doc), numTokens: doc.numTokens, dim: doc.dim, minArray: doc.minArray, scaleArray: doc.scaleArray, tokenNorms: doc.tokenNorms });
+      const numQ = effectiveQueryTokens.length;
 
       // Score each group with its native kernel, collect results
-      const batchScore = (group, buildCand, scoreFn) => {
+      const batchScore = (group, scoreFn) => {
         if (group.length === 0 || !scoreFn) return;
-        const nativeCands = group.map(g => buildCand(g.doc));
-        const scores = scoreFn(queryFlat, effectiveQueryTokens.length, scoringDim, nativeCands);
+        const scores = scoreFn(group.map(g => g.doc));
         if (scores) {
           for (let i = 0; i < group.length; i++) {
             if (this.isDocumentTombstoned(lookupDocIdOf(group[i].candidate))) {
@@ -1904,9 +1960,14 @@ export class LateInteractionIndex {
         }
       };
 
-      batchScore(groups.bit4, perTokenCand, isNative4BitAvailable() ? nativeMaxSimBatch4Bit : null);
-      batchScore(groups.perToken, perTokenCand, isNativePerTokenAvailable() ? nativeMaxSimBatchPerToken : null);
-      batchScore(groups.perDoc, doc => ({ tokens: tokenBuf(doc), numTokens: doc.numTokens, dim: doc.dim, min: doc.min, scale: doc.scale }), isNativeMaxSimAvailable() ? nativeMaxSimBatch : null);
+      // Per-token docs go through the packed entry point (one descriptor array,
+      // no N-API object per candidate); legacy per-doc-quantized docs keep the
+      // object API.
+      batchScore(groups.bit4, isNative4BitAvailable() ? docs => nativeMaxSimPacked(queryFlat, numQ, scoringDim, 4, docs) : null);
+      batchScore(groups.perToken, isNativePerTokenAvailable() ? docs => nativeMaxSimPacked(queryFlat, numQ, scoringDim, 8, docs) : null);
+      batchScore(groups.perDoc, isNativeMaxSimAvailable()
+        ? docs => nativeMaxSimBatch(queryFlat, numQ, scoringDim, docs.map(doc => ({ tokens: tokenBuf(doc), numTokens: doc.numTokens, dim: doc.dim, min: doc.min, scale: doc.scale })))
+        : null);
     }
 
     // Tier 2 & 3: WASM fused dequant or JS fallback for candidates not scored natively.
@@ -2421,6 +2482,7 @@ export class LateInteractionIndex {
 
       // Rebuild norms only for docs that don't have persisted norms
       this._rebuildTokenNorms();
+      this._packDocsIntoSlabs();
 
       // CRA-3: Load WUSH calibration for legacy single-file indexes
       const wushPath = this.indexPath + '.wush-calibration.json';
@@ -2501,8 +2563,8 @@ export class LateInteractionIndex {
         continue;
       }
 
-      const docs = await this._readSegmentFile(segPath);
       const staleBitmap = this._loadSegmentStaleBitmap(segPath);
+      const docs = await this._readSegmentFile(segPath, staleBitmap ? (docIndex) => isSet(staleBitmap, docIndex) : null);
 
       for (let docIndex = 0; docIndex < docs.length; docIndex++) {
         const doc = docs[docIndex];
@@ -2546,6 +2608,7 @@ export class LateInteractionIndex {
       break;
     }
     this._rebuildTokenNorms();
+    this._packDocsIntoSlabs();
     this._segmentDir = segmentDir;
     this._segments = manifest.segments.map(s => ({ path: path.join(segmentDir, s.path), count: s.count }));
 

@@ -1,0 +1,19 @@
+# C ABI over the production MaxSim kernel (crates/sweet-search-native/src/maxsim/kernel.rs,
+# compiled in unchanged) so the benchmark can time it from Python in the same
+# process as the rival libraries. Build: cargo build --release
+[package]
+name = "ss-maxsim-capi"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+libc = "0.2"
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1

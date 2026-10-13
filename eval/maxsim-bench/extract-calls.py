@@ -1,13 +1,17 @@
+# python3 extract-calls.py <out/calls.json> [--heldout]
+# Unique ss-search / ss-semantic / ss-find calls from retrieval-bench runs. Dev (default):
+# dev runs and dev question ids only. --heldout: held-out question ids only (any run).
 import json,glob,re,shlex,collections,sys,os
+HELDOUT='--heldout' in sys.argv; argv=[a for a in sys.argv[1:] if a!='--heldout']
 R=os.path.join(os.path.dirname(os.path.abspath(__file__)),'../../core/prompt-optimization/data')
 H=json.load(open(R+'/final-run/questions-heldout.json'))
 ho=set(H['ids']['easy'])|set(H['ids'].get('hard',[]))|set(i for v in H['ids'].values() for i in v)
 REPOS=['composer','dgraph','drogon','grdb','jj','ocelot','okhttp','sequel','tortoise-orm','typedoc','zipkin']
 out=collections.defaultdict(list); seen=set(); skipped=collections.Counter()
 for f in sorted(glob.glob(R+'/results/r282-*/captures/sweet.*.json')):
-  if 'ho' in f.split('/')[-3]: continue
+  if not HELDOUT and 'ho' in f.split('/')[-3]: continue
   d=json.load(open(f))
-  if d['id'] in ho: skipped['heldout']+=1; continue
+  if (d['id'] in ho)!=HELDOUT: skipped['other-split']+=1; continue
   m=re.match(r'r3h?b?-(.+)-\d+$',d['id'])
   if not m or m.group(1) not in REPOS: continue
   repo=m.group(1)
@@ -29,6 +33,6 @@ for f in sorted(glob.glob(R+'/results/r282-*/captures/sweet.*.json')):
 tot=sum(len(v) for v in out.values())
 print('unique calls',tot,{k:len(v) for k,v in out.items()}, dict(skipped))
 print(collections.Counter(c['tool'] for v in out.values() for c in v))
-dest=sys.argv[1] if len(sys.argv)>1 else 'calls.json'
+dest=argv[0] if argv else 'calls.json'
 os.makedirs(os.path.dirname(os.path.abspath(dest)),exist_ok=True)
 json.dump(out,open(dest,'w'))

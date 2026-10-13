@@ -16,24 +16,45 @@ if (dir) {
       if (!orig) return;
       mod[name] = (q, numQ, dim, cands) => {
         const scores = orig(q, numQ, dim, cands);
-        const file = `${tag}-${String(n++).padStart(6, '0')}.bin`;
-        const parts = [Buffer.from(q.buffer, q.byteOffset, numQ * dim * 4)];
-        const meta = [];
-        for (const c of cands) {
-          const tok = Buffer.from(c.tokens.buffer, c.tokens.byteOffset, c.tokens.byteLength);
-          parts.push(tok);
-          const m = { nt: c.numTokens, dim: c.dim, tb: tok.length };
-          if (c.minArray) for (const a of [c.minArray, c.scaleArray, c.tokenNorms]) parts.push(Buffer.from(a.buffer, a.byteOffset, c.numTokens * 4));
-          else { m.min = c.min; m.scale = c.scale; }
-          meta.push(m);
-        }
-        fs.writeFileSync(path.join(dir, file), Buffer.concat(parts));
-        fs.writeSync(index, JSON.stringify({ file, kind, numQ, dim, cands: meta, scores: Array.from(scores) }) + '\n');
+        record(q, numQ, dim, cands, scores, kind);
         return scores;
       };
+    };
+    const record = (q, numQ, dim, cands, scores, kind) => {
+      const file = `${tag}-${String(n++).padStart(6, '0')}.bin`;
+      const parts = [Buffer.from(q.buffer, q.byteOffset, numQ * dim * 4)];
+      const meta = [];
+      for (const c of cands) {
+        const tok = Buffer.from(c.tokens.buffer, c.tokens.byteOffset, c.tokens.byteLength);
+        parts.push(tok);
+        const m = { nt: c.numTokens, dim: c.dim, tb: tok.length };
+        if (c.minArray) for (const a of [c.minArray, c.scaleArray, c.tokenNorms]) parts.push(Buffer.from(a.buffer, a.byteOffset, c.numTokens * 4));
+        else { m.min = c.min; m.scale = c.scale; }
+        meta.push(m);
+      }
+      fs.writeFileSync(path.join(dir, file), Buffer.concat(parts));
+      fs.writeSync(index, JSON.stringify({ file, kind, numQ, dim, cands: meta, scores: Array.from(scores) }) + '\n');
     };
     wrap('maxsimScoreBatchPertoken', 'pertoken');
     wrap('maxsimScoreBatch4Bit', 'int4');
     wrap('maxsimScoreBatch', 'perdoc');
+    // The packed entry point (production path): unpack the descriptor into the
+    // same per-candidate record the object entry points write.
+    const packed = mod.maxsimScorePacked?.bind(mod);
+    if (packed) {
+      mod.maxsimScorePacked = (q, numQ, dim, bits, buffers, desc) => {
+        const scores = packed(q, numQ, dim, bits, buffers, desc);
+        const tb = bits === 4 ? (dim + 1) >> 1 : dim;
+        const view = (b, off, n, C) => new C(buffers[b].buffer, buffers[b].byteOffset + off, n);
+        const cands = [];
+        for (let i = 0; i < desc.length; i += 10) {
+          const nt = desc[i];
+          cands.push({ tokens: view(desc[i + 2], desc[i + 3], nt * tb, Uint8Array), numTokens: nt, dim: desc[i + 1],
+            minArray: view(desc[i + 4], desc[i + 5], nt, Float32Array), scaleArray: view(desc[i + 6], desc[i + 7], nt, Float32Array), tokenNorms: view(desc[i + 8], desc[i + 9], nt, Float32Array) });
+        }
+        record(q, numQ, dim, cands, scores, bits === 4 ? 'int4' : 'pertoken');
+        return scores;
+      };
+    }
   }
 }

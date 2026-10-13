@@ -18,6 +18,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync, existsSync } from 'fs';
 import { loadNativeAddon } from './native-resolver.js';
+import { packMaxSimDocs } from './maxsim-pack.js';
 
 const DATA_OFFSET = 0; // SIMD popcount needs no LUT
 
@@ -535,6 +536,35 @@ export function nativeMaxSimBatchPerToken(queryFlat, numQ, dim, candidates) {
 export function nativeMaxSimBatch4Bit(queryFlat, numQ, dim, candidates) {
   if (!nativeMaxsim?.maxsimScoreBatch4Bit) return null;
   return nativeMaxsim.maxsimScoreBatch4Bit(queryFlat, numQ, dim, candidates);
+}
+
+/**
+ * Native batch scoring of per-token docs (int4 when bits = 4, int8 when bits = 8)
+ * through the packed entry point: N-API work per call scales with the number of
+ * distinct buffers, not candidates. Same scores as nativeMaxSimBatch4Bit /
+ * nativeMaxSimBatchPerToken. Falls back to those on an addon without it.
+ * @returns {Float64Array|number[]|null}
+ */
+export function nativeMaxSimPacked(queryFlat, numQ, dim, bits, docs) {
+  if (nativeMaxsim?.maxsimScorePacked) {
+    const { buffers, desc } = packMaxSimDocs(docs);
+    return nativeMaxsim.maxsimScorePacked(queryFlat, numQ, dim, bits, buffers, desc);
+  }
+  const cands = docs.map(d => ({
+    tokens: Buffer.from(d.tokens.buffer, d.tokens.byteOffset, d.tokens.byteLength),
+    numTokens: d.numTokens, dim: d.dim, minArray: d.minArray, scaleArray: d.scaleArray, tokenNorms: d.tokenNorms,
+  }));
+  return bits === 4 ? nativeMaxSimBatch4Bit(queryFlat, numQ, dim, cands) : nativeMaxSimBatchPerToken(queryFlat, numQ, dim, cands);
+}
+
+/**
+ * Wake the native MaxSim worker pool ahead of a batch, so the time sleeping
+ * threads and idle cores take to come up overlaps the JS work before the
+ * kernel call. Workers spin up to `windowUs` (default 1000) for the batch, then
+ * park again. No-op without the native addon. Scores are unaffected.
+ */
+export function nativeMaxSimPrewarm(windowUs) {
+  nativeMaxsim?.maxsimPrewarm?.(windowUs);
 }
 
 export function isNativePerTokenAvailable() {
