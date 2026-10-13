@@ -389,3 +389,179 @@ pub unsafe extern "C" fn maxsim_dequant_4bit(
 
     total / nq as f32
 }
+
+// =============================================================================
+// 4-bit MaxSim, tiled across pairs: same scores as maxsim_dequant_4bit
+// =============================================================================
+//
+// `maxsim_dequant_4bit` sums each (query token, doc token) pair as one scalar
+// chain, `dot = ((0 + q0*v0) + q1*v1) + ...`, and dequantizes every doc token
+// again for every query token. Here each doc token is dequantized once per
+// 64-token tile into a transposed buffer (`scratch`, element-major, 64 floats
+// per element), and f32x4 lanes hold 4 different doc tokens: lane l of an
+// accumulator runs exactly that scalar chain for its own pair (mul, then add,
+// in element order), so every dot, similarity and score is the same f32. Four
+// query rows × 8 doc tokens give 8 independent chains. The per-query maximum
+// uses `pmax` (b < a ? a : b, i.e. `if sim > best`: a NaN never wins); padded
+// lanes (zero doc rows, norm 1) can only lift a maximum to 0, which contributes 0.
+
+const T4_TILE: usize = 64;
+
+/// One block: query rows `q0..q0+R` (row stride `d`) × 4·B doc tokens of the
+/// transposed tile starting at column `t0`. Returns the updated per-row maxima.
+#[inline(always)]
+unsafe fn t4_block<const R: usize, const B: usize>(
+    q_ptr: *const f32,
+    qn: *const f32,
+    tile_t: *const f32,
+    norms: *const f32,
+    d: usize,
+    q0: usize,
+    t0: usize,
+    best: &mut [v128; 4],
+) {
+    let mut acc = [[f32x4_splat(0.0); B]; R];
+    for k in 0..d {
+        let row = tile_t.add(k * T4_TILE + t0);
+        let mut dv = [f32x4_splat(0.0); B];
+        for b in 0..B {
+            dv[b] = v128_load(row.add(4 * b) as *const v128);
+        }
+        for r in 0..R {
+            let qv = f32x4_splat(*q_ptr.add((q0 + r) * d + k));
+            for b in 0..B {
+                acc[r][b] = f32x4_add(acc[r][b], f32x4_mul(qv, dv[b]));
+            }
+        }
+    }
+    let eps = f32x4_splat(1e-8);
+    for r in 0..R {
+        let qnv = f32x4_splat(*qn.add(q0 + r));
+        for b in 0..B {
+            let nv = v128_load(norms.add(t0 + 4 * b) as *const v128);
+            let sim = f32x4_div(acc[r][b], f32x4_add(f32x4_mul(qnv, nv), eps));
+            best[r] = f32x4_pmax(best[r], sim);
+        }
+    }
+}
+
+#[inline(always)]
+unsafe fn t4_rows<const R: usize>(
+    q_ptr: *const f32,
+    qn: *const f32,
+    tile_t: *const f32,
+    norms: *const f32,
+    d: usize,
+    q0: usize,
+    len_pad: usize,
+    best_out: *mut f32,
+) {
+    let mut best = [f32x4_splat(-1.0); 4];
+    let mut t0 = 0;
+    while t0 + 8 <= len_pad {
+        t4_block::<R, 2>(q_ptr, qn, tile_t, norms, d, q0, t0, &mut best);
+        t0 += 8;
+    }
+    if t0 < len_pad {
+        t4_block::<R, 1>(q_ptr, qn, tile_t, norms, d, q0, t0, &mut best);
+    }
+    for r in 0..R {
+        let b = best_out.add(q0 + r);
+        let lanes = [
+            f32x4_extract_lane::<0>(best[r]),
+            f32x4_extract_lane::<1>(best[r]),
+            f32x4_extract_lane::<2>(best[r]),
+            f32x4_extract_lane::<3>(best[r]),
+        ];
+        for v in lanes {
+            if v > *b {
+                *b = v;
+            }
+        }
+    }
+}
+
+/// Same contract and result as `maxsim_dequant_4bit`. `scratch` must point to
+/// `16 + 4 * (2 * num_q + 4 + T4_TILE * (dim + 1))` writable bytes (16-byte
+/// aligned after rounding up) that do not overlap the inputs.
+#[no_mangle]
+pub unsafe extern "C" fn maxsim_dequant_4bit_tiled(
+    q_ptr: *const f32,
+    d_ptr: *const u8,
+    min_ptr: *const f32,
+    scale_ptr: *const f32,
+    norm_ptr: *const f32,
+    num_q: u32,
+    num_d: u32,
+    dim: u32,
+    scratch: *mut f32,
+) -> f32 {
+    let nq = num_q as usize;
+    let nd = num_d as usize;
+    let d = dim as usize;
+    let packed_dim = (d + 1) / 2;
+    // Scratch: [tile_t: T4_TILE * d][norms: T4_TILE][qn: nq][best: nq], 16-byte aligned.
+    let base = ((scratch as usize + 15) & !15) as *mut f32;
+    let tile_t = base;
+    let norms = tile_t.add(T4_TILE * d);
+    let qn = norms.add(T4_TILE);
+    let best = qn.add(nq);
+
+    // Query norms: the same computation as maxsim_dequant_4bit.
+    for qi in 0..nq {
+        let qb = q_ptr.add(qi * d);
+        let mut qacc = f32x4_splat(0.0);
+        for k in 0..(d & !3) / 4 {
+            let qv = v128_load(qb.add(k * 4) as *const v128);
+            qacc = f32x4_add(qacc, f32x4_mul(qv, qv));
+        }
+        let mut q_norm_sq = hsum(qacc);
+        scalar_tail_norm(qb, d & !3, d, &mut q_norm_sq);
+        *qn.add(qi) = sqrt(q_norm_sq);
+        *best.add(qi) = -1.0;
+    }
+
+    let mut start = 0;
+    while start < nd {
+        let len = if nd - start < T4_TILE { nd - start } else { T4_TILE };
+        let len_pad = (len + 3) & !3;
+        for t in 0..len {
+            let di = start + t;
+            let db = d_ptr.add(di * packed_dim);
+            let tmin = *min_ptr.add(di);
+            let tscale = *scale_ptr.add(di);
+            for k in 0..d {
+                let byte = *db.add(k / 2);
+                let nib = if k & 1 == 0 { byte & 0x0F } else { (byte >> 4) & 0x0F };
+                *tile_t.add(k * T4_TILE + t) = nib as f32 * tscale + tmin;
+            }
+            *norms.add(t) = *norm_ptr.add(di);
+        }
+        for t in len..len_pad {
+            for k in 0..d {
+                *tile_t.add(k * T4_TILE + t) = 0.0;
+            }
+            *norms.add(t) = 1.0;
+        }
+        let mut q0 = 0;
+        while q0 < nq {
+            match nq - q0 {
+                1 => t4_rows::<1>(q_ptr, qn, tile_t, norms, d, q0, len_pad, best),
+                2 => t4_rows::<2>(q_ptr, qn, tile_t, norms, d, q0, len_pad, best),
+                3 => t4_rows::<3>(q_ptr, qn, tile_t, norms, d, q0, len_pad, best),
+                _ => t4_rows::<4>(q_ptr, qn, tile_t, norms, d, q0, len_pad, best),
+            }
+            q0 += 4;
+        }
+        start += len;
+    }
+
+    let mut total: f32 = 0.0;
+    for qi in 0..nq {
+        let b = *best.add(qi);
+        if b > 0.0 {
+            total += b;
+        }
+    }
+    total / nq as f32
+}
