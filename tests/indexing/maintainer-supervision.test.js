@@ -17,7 +17,7 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { spawn, spawnSync } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -237,6 +237,26 @@ describe('maintainer supervision — the spawn claim', () => {
       state: createSupervisionState(), env: baseEnv(), cwd: root, launch: recordingLaunch(calls), now: 1_000_000,
     });
     expect(result.acted).toBe(true);
+    expect(calls).toHaveLength(1);
+  });
+
+  it('counts an empty claim (created, not yet written) as held while it is fresh', () => {
+    const claim = join(stateDir, MAINTAINER_SPAWN_CLAIM_FILENAME);
+    writeFileSync(claim, '');
+    const calls = [];
+    const held = runSupervisionTick({
+      state: createSupervisionState(), env: baseEnv(), cwd: root, launch: recordingLaunch(calls),
+    });
+    expect(held.reason).toBe('claim-held');
+    expect(held.acted).toBe(false);
+    expect(calls).toHaveLength(0);
+    // Left behind by a supervisor that died between create and write: stale after the TTL.
+    const old = (Date.now() - 60_000) / 1000;
+    utimesSync(claim, old, old);
+    const stolen = runSupervisionTick({
+      state: createSupervisionState(), env: baseEnv(), cwd: root, launch: recordingLaunch(calls),
+    });
+    expect(stolen.acted).toBe(true);
     expect(calls).toHaveLength(1);
   });
 
