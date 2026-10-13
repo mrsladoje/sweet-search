@@ -24,10 +24,13 @@
 //!   - SM ≥ 8.0                        — flash-attn-v2 has no Volta/Turing path
 //!   - dtype is F16 or BF16            — flash-attn rejects F32 inputs
 //!   - seq_len > 8                     — match the existing short-seq gate
+//!   - `flash_attn_usable` self-check  — the kernel must give the naive
+//!                                        path's numbers on this GPU
 
 #![cfg(feature = "flash-attn")]
 
 use candle_core::{DType, Device, Result, Tensor, D};
+use std::sync::OnceLock;
 
 /// Threshold below which a mask value is treated as padding.
 ///
@@ -334,4 +337,102 @@ pub fn flash_attn_padded(
     } else {
         unpack(&out_packed, &seqlens, batch_size, seq_len)
     }
+}
+
+/// Largest absolute difference allowed between flash-attn and naive
+/// attention in the self-check. Half-precision rounding of the inputs and
+/// the output gives about 1e-2; a kernel that did not run gives NaN,
+/// zeros or uninitialised memory, far outside this band.
+const SELF_CHECK_MAX_ABS_DIFF: f32 = 5e-2;
+
+/// Whether the flash-attn kernel gives correct output on this GPU in
+/// `dtype`. Runs a small self-check once per dtype and caches the answer.
+///
+/// Why: the shipped addon holds flash-attn only as SASS for the build's
+/// `CUDA_COMPUTE_CAP` (sm_80), with no PTX. The kernel cannot start on a
+/// GPU of another major architecture (Hopper sm_90, Blackwell sm_100 /
+/// sm_120), and candle-flash-attn does not check the launch error, so the
+/// call "succeeds" and returns an uninitialised buffer. On an RTX 5090 /
+/// RTX PRO 4500 (sm_120) every BF16/F16 embedding was garbage (NaN for a
+/// single text, cosine 0.13 against the CPU reference) while the naive
+/// path in the same dtype gave cosine 0.93. The self-check catches that
+/// case and any other kernel that is present but wrong.
+pub fn flash_attn_usable(device: &Device, dtype: DType) -> bool {
+    static BF16: OnceLock<bool> = OnceLock::new();
+    static F16: OnceLock<bool> = OnceLock::new();
+    let cell = match dtype {
+        DType::BF16 => &BF16,
+        DType::F16 => &F16,
+        _ => return false,
+    };
+    *cell.get_or_init(|| {
+        let result = self_check(device, dtype);
+        let usable = matches!(result, Ok(diff) if diff <= SELF_CHECK_MAX_ABS_DIFF);
+        if !usable {
+            let detail = match &result {
+                Ok(diff) => format!("max abs diff {diff} > {SELF_CHECK_MAX_ABS_DIFF}"),
+                Err(e) => format!("error: {e}"),
+            };
+            eprintln!(
+                "[NativeInference] flash-attn self-check FAILED on this GPU \
+                 (compute capability {}, {:?}; {}); using standard attention",
+                super::cuda_compute_capability_from_env(),
+                dtype,
+                detail
+            );
+        }
+        usable
+    })
+}
+
+/// Max absolute difference (NaN maps to +inf) between `flash_attn_padded`
+/// and naive attention on a small padded batch: B=2, H=2, S=32, D=64, the
+/// second row padded to 20 tokens.
+fn self_check(device: &Device, dtype: DType) -> Result<f32> {
+    let (b, h, s, d) = (2usize, 2usize, 32usize, 64usize);
+    // Deterministic inputs in [-1, 1) from a fixed LCG, built on the host.
+    let mut state: u32 = 0x9E37_79B9;
+    let mut gen = |n: usize| -> Vec<f32> {
+        (0..n)
+            .map(|_| {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                (state >> 8) as f32 / (1u32 << 23) as f32 - 1.0
+            })
+            .collect()
+    };
+    let n = b * h * s * d;
+    let to_dev = |v: Vec<f32>| -> Result<Tensor> {
+        Tensor::from_vec(v, (b, h, s, d), &Device::Cpu)?
+            .to_device(device)?
+            .to_dtype(dtype)
+    };
+    let q = to_dev(gen(n))?;
+    let k = to_dev(gen(n))?;
+    let v = to_dev(gen(n))?;
+    let mut mask = vec![0f32; b * s];
+    for slot in mask.iter_mut().skip(s + 20) {
+        *slot = -1e4;
+    }
+    let mask = Tensor::from_vec(mask, (b, 1, 1, s), &Device::Cpu)?.to_device(device)?;
+    let scale = 1.0 / (d as f32).sqrt();
+
+    let fused = flash_attn_padded(&q, &k, &v, &mask.to_dtype(dtype)?, scale, None)?
+        .to_dtype(DType::F32)?;
+
+    // Reference: naive attention in F32 on the same (rounded) inputs.
+    let (q, k, v) = (
+        q.to_dtype(DType::F32)?,
+        k.to_dtype(DType::F32)?,
+        v.to_dtype(DType::F32)?,
+    );
+    let scores = (q.matmul(&k.t()?)? * scale as f64)?.broadcast_add(&mask)?;
+    let reference = candle_nn::ops::softmax_last_dim(&scores)?.matmul(&v)?;
+
+    let diff = (fused - reference)?
+        .abs()?
+        .flatten_all()?
+        .to_vec1::<f32>()?
+        .into_iter()
+        .fold(0f32, |m, x| if x.is_nan() { f32::INFINITY } else { m.max(x) });
+    Ok(diff)
 }
