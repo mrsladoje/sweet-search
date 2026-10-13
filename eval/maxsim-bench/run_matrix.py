@@ -25,6 +25,7 @@ p.add_argument('--gap-ms', type=float, default=0.0)
 p.add_argument('--max-busy', type=float, default=0.0)
 p.add_argument('--limit', type=int, default=0)
 p.add_argument('--stride', type=int, default=1)
+p.add_argument('--prewarm-lead-us', type=float, default=0.0)
 a = p.parse_args()
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -75,7 +76,7 @@ for r in range(a.rounds):
             if '~' in arm:
                 arm, variant = arm.split('~')
                 env['SS_CAPI'] = os.path.join(os.environ['SS_CAPI_DIR'], variant + ('.dylib' if sys.platform == 'darwin' else '.so'))
-            cmd = [PY, '-I', os.path.join(HERE, 'bench.py'), '--arm', arm, '--threads', threads or '0'] + common + sets
+            cmd = [PY, '-I', os.path.join(HERE, 'bench.py'), '--arm', arm, '--threads', threads or '0', '--prewarm-lead-us', str(a.prewarm_lead_us)] + common + sets
         res = subprocess.run(cmd, capture_output=True, text=True, env=env)
         tail = (res.stdout.strip().splitlines() or [''])[-1]
         say(f'r{r} {spec}: {tail}' if res.returncode == 0 else f'r{r} {spec}: FAILED rc={res.returncode} {res.stderr.strip()[-400:]}')
