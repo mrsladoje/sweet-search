@@ -834,7 +834,7 @@ fn bytes_as_i8(bytes: &[u8]) -> &[i8] {
 /// `SS_MAXSIM_THREADS` overrides it. On macOS the workers run at the
 /// user-interactive QoS class, which keeps them on performance cores.
 mod pool {
-    use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicPtr, AtomicU64, AtomicUsize, Ordering::*};
     use std::sync::{Arc, Condvar, Mutex, OnceLock};
     use std::time::{Duration, Instant};
 
@@ -844,45 +844,46 @@ mod pool {
     /// Upper bound on a `prewarm` spin window.
     const MAX_WARM: Duration = Duration::from_millis(5);
 
-    /// A lifetime-erased pointer to the batch task.
-    #[derive(Clone, Copy)]
-    pub struct TaskPtr(pub *const (dyn Fn(usize) + Sync));
-    // SAFETY: the pointee is Sync; `run_batch` keeps it alive until every
-    // claimed index has finished.
-    unsafe impl Send for TaskPtr {}
-    unsafe impl Sync for TaskPtr {}
-
-    pub struct Job {
+    /// One batch, owned by the calling thread's stack frame for the whole call.
+    struct Job {
         next: AtomicUsize,
         done: AtomicUsize,
         n: usize,
-        task: TaskPtr,
+        task: *const (dyn Fn(usize) + Sync),
     }
 
     impl Job {
         fn work(&self) {
             loop {
-                let k = self.next.fetch_add(1, Ordering::Relaxed);
+                let k = self.next.fetch_add(1, Relaxed);
                 if k >= self.n {
                     return;
                 }
                 // SAFETY: `run_batch` returns only after all n claimed indices
                 // are done, so the task outlives this call. Late workers claim
                 // k >= n and never dereference it.
-                unsafe { (*self.task.0)(k) };
-                self.done.fetch_add(1, Ordering::Release);
+                unsafe { (*self.task)(k) };
+                self.done.fetch_add(1, Release);
             }
         }
     }
 
+    /// Lock-free hand-off: the caller publishes a pointer to its stack `Job`
+    /// and bumps `epoch`; spinning workers see the bump and join without any
+    /// lock. A worker counts itself in `active` before it reads `job` and out
+    /// after it is done with it, and the caller returns only once it has
+    /// unpublished the job and `active` is 0, so no worker touches a dead job.
+    /// The mutex and condvar are used only to park and to wake parked workers.
     struct Shared {
-        /// Bumped (under `slot`) for every published batch and every prewarm.
         epoch: AtomicU64,
+        job: AtomicPtr<Job>,
+        active: AtomicUsize,
+        parked: AtomicUsize,
         /// Workers keep spinning until this time (ns after `start`) when a
         /// prewarm asked for a longer window than `SPIN`.
         warm_until: AtomicU64,
         start: Instant,
-        slot: Mutex<Option<Arc<Job>>>,
+        lock: Mutex<()>,
         wake: Condvar,
     }
 
@@ -913,9 +914,18 @@ mod pool {
     fn pool() -> &'static Pool {
         static POOL: OnceLock<Pool> = OnceLock::new();
         POOL.get_or_init(|| {
-            let shared = Arc::new(Shared { epoch: AtomicU64::new(0), warm_until: AtomicU64::new(0), start: Instant::now(), slot: Mutex::new(None), wake: Condvar::new() });
-            let workers = threads() - 1;
-            for i in 0..workers {
+            let shared = Arc::new(Shared {
+                epoch: AtomicU64::new(0),
+                job: AtomicPtr::new(std::ptr::null_mut()),
+                active: AtomicUsize::new(0),
+                parked: AtomicUsize::new(0),
+                warm_until: AtomicU64::new(0),
+                start: Instant::now(),
+                lock: Mutex::new(()),
+                wake: Condvar::new(),
+            });
+            let mut workers = 0;
+            for i in 0..threads() - 1 {
                 let shared = Arc::clone(&shared);
                 let spawned = std::thread::Builder::new()
                     .name(format!("ss-maxsim-{i}"))
@@ -926,6 +936,7 @@ mod pool {
                     // always finishes its own batch.
                     break;
                 }
+                workers += 1;
             }
             Pool { shared, workers }
         })
@@ -937,30 +948,45 @@ mod pool {
         unsafe {
             libc::pthread_set_qos_class_self_np(libc::qos_class_t::QOS_CLASS_USER_INTERACTIVE, 0);
         }
-        let mut seen = 0u64;
+        let mut seen = shared.epoch.load(SeqCst);
         loop {
-            let warm = shared.start + Duration::from_nanos(shared.warm_until.load(Ordering::Relaxed));
+            let warm = shared.start + Duration::from_nanos(shared.warm_until.load(Relaxed));
             let spin_until = (Instant::now() + SPIN).max(warm);
             let mut spins = 0u32;
-            while shared.epoch.load(Ordering::Acquire) == seen {
+            while shared.epoch.load(Acquire) == seen {
                 std::hint::spin_loop();
                 spins = spins.wrapping_add(1);
                 if spins % 64 == 0 && Instant::now() >= spin_until {
-                    let mut slot = shared.slot.lock().unwrap_or_else(|e| e.into_inner());
-                    while shared.epoch.load(Ordering::Acquire) == seen {
-                        slot = shared.wake.wait(slot).unwrap_or_else(|e| e.into_inner());
+                    // Park. `parked` is raised before the epoch re-check, and
+                    // a publisher bumps `epoch` before reading `parked` (both
+                    // SeqCst), so either it sees us parked and wakes us, or we
+                    // see its bump here and do not wait.
+                    let mut g = shared.lock.lock().unwrap_or_else(|e| e.into_inner());
+                    shared.parked.fetch_add(1, SeqCst);
+                    while shared.epoch.load(SeqCst) == seen {
+                        g = shared.wake.wait(g).unwrap_or_else(|e| e.into_inner());
                     }
+                    shared.parked.fetch_sub(1, SeqCst);
                     break;
                 }
             }
-            let job = {
-                let slot = shared.slot.lock().unwrap_or_else(|e| e.into_inner());
-                seen = shared.epoch.load(Ordering::Acquire);
-                slot.clone()
-            };
-            if let Some(job) = job {
-                job.work();
+            seen = shared.epoch.load(Acquire);
+            shared.active.fetch_add(1, SeqCst);
+            let job = shared.job.load(SeqCst);
+            if !job.is_null() {
+                // SAFETY: we are counted in `active`, so the publisher has not
+                // returned (it waits for `active == 0` after unpublishing).
+                unsafe { (*job).work() };
             }
+            shared.active.fetch_sub(1, Release);
+        }
+    }
+
+    fn publish(shared: &Shared) {
+        shared.epoch.fetch_add(1, SeqCst);
+        if shared.parked.load(SeqCst) > 0 {
+            let _g = shared.lock.lock().unwrap_or_else(|e| e.into_inner());
+            shared.wake.notify_all();
         }
     }
 
@@ -971,19 +997,15 @@ mod pool {
 
     /// Wakes every parked worker and keeps the pool spinning for up to
     /// `window` (capped at `MAX_WARM`), so a batch that starts within it finds
-    /// the workers awake. Costs the caller one broadcast.
+    /// the workers awake.
     pub fn prewarm(window: Duration) {
         let p = pool();
         if p.workers == 0 {
             return;
         }
         let until = (p.shared.start.elapsed() + window.min(MAX_WARM)).as_nanos() as u64;
-        p.shared.warm_until.fetch_max(until, Ordering::Relaxed);
-        {
-            let _slot = p.shared.slot.lock().unwrap_or_else(|e| e.into_inner());
-            p.shared.epoch.fetch_add(1, Ordering::Release);
-        }
-        p.shared.wake.notify_all();
+        p.shared.warm_until.fetch_max(until, Relaxed);
+        publish(&p.shared);
     }
 
     /// Runs `task(0..n)` on the calling thread plus every pool worker, each
@@ -993,25 +1015,26 @@ mod pool {
             return;
         }
         // SAFETY: lifetime erasure only; see `Job::work`.
-        let ptr = TaskPtr(unsafe { std::mem::transmute::<&(dyn Fn(usize) + Sync), &'static (dyn Fn(usize) + Sync)>(task) });
-        let job = Arc::new(Job { next: AtomicUsize::new(0), done: AtomicUsize::new(0), n, task: ptr });
+        let task: *const (dyn Fn(usize) + Sync) = unsafe { std::mem::transmute::<&(dyn Fn(usize) + Sync), &'static (dyn Fn(usize) + Sync)>(task) };
+        let job = Job { next: AtomicUsize::new(0), done: AtomicUsize::new(0), n, task };
         let p = pool();
-        if n > 1 && p.workers > 0 {
-            {
-                let mut slot = p.shared.slot.lock().unwrap_or_else(|e| e.into_inner());
-                *slot = Some(Arc::clone(&job));
-                p.shared.epoch.fetch_add(1, Ordering::Release);
-            }
-            p.shared.wake.notify_all();
+        let shared = &p.shared;
+        let me = &job as *const Job as *mut Job;
+        let helped = n > 1 && p.workers > 0;
+        if helped {
+            shared.job.store(me, SeqCst);
+            publish(shared);
         }
         job.work();
-        while job.done.load(Ordering::Acquire) < n {
+        while job.done.load(Acquire) < n {
             std::hint::spin_loop();
         }
-        if n > 1 && p.workers > 0 {
-            let mut slot = p.shared.slot.lock().unwrap_or_else(|e| e.into_inner());
-            if slot.as_ref().is_some_and(|j| Arc::ptr_eq(j, &job)) {
-                *slot = None;
+        if helped {
+            // Unpublish (unless another caller has published since), then wait
+            // until no worker can still be reading this job.
+            let _ = shared.job.compare_exchange(me, std::ptr::null_mut(), SeqCst, SeqCst);
+            while shared.active.load(SeqCst) > 0 {
+                std::hint::spin_loop();
             }
         }
     }

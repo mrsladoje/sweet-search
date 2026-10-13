@@ -35,6 +35,8 @@ p.add_argument('--gap-ms', type=float, default=0.0)
 p.add_argument('--limit', type=int, default=0, help='first N calls per set (0 = all)')
 p.add_argument('--stride', type=int, default=1, help='every Nth call per set')
 p.add_argument('--threads', type=int, default=0, help='arm thread count (0 = its default)')
+p.add_argument('--prewarm-lead-us', type=float, default=0.0,
+               help='ours only: call the pool prewarm, busy-wait this long (untimed: other work), then time the call; the prewarm call is timed too')
 args = p.parse_args()
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -92,6 +94,8 @@ def _ours_lib():
     vp, u32 = ctypes.c_void_p, ctypes.c_uint32
     lib.ss_maxsim_per_token.argtypes = [vp, u32, u32, u32, u32, vp, vp, vp, vp, vp, vp]
     lib.ss_maxsim_per_token.restype = None
+    lib.ss_maxsim_prewarm.argtypes = [u32]
+    lib.ss_maxsim_prewarm.restype = None
     return lib
 
 
@@ -112,6 +116,13 @@ def ours(call):
     def run(_keep=keep, _ptrs=ptrs, _nts=nts):
         lib.ss_maxsim_per_token(*a)
         return out
+    if args.prewarm_lead_us > 0:
+        window = int(max(1000, args.prewarm_lead_us * 2))
+        def before():
+            t0 = time.perf_counter_ns(); lib.ss_maxsim_prewarm(window); t = time.perf_counter_ns() - t0
+            busy(args.prewarm_lead_us / 1000)
+            return t
+        run.before = before
     return run
 
 
@@ -423,7 +434,8 @@ def main():
             for _ in range(args.reps):
                 if args.gap_ms > 0:
                     busy(args.gap_ms)
-                t0 = time.perf_counter_ns(); run(); ts.append(time.perf_counter_ns() - t0)
+                extra = run.before() if hasattr(run, 'before') else 0
+                t0 = time.perf_counter_ns(); run(); ts.append(time.perf_counter_ns() - t0 + extra)
             ts.sort()
             ref_raw, ref_clamp = reference_cached(root, call)
             ref = ref_clamp if clamp else ref_raw
