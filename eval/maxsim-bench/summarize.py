@@ -101,7 +101,8 @@ for s in replay:
     spec = [(FIXED['ours'], 'ours')] + [(LIBS[l] + ', dequantizes int4 itself', best_config(warm, l, keys, int4=True)) for l in ('numpy', 'maxsim_cpu')]
     table(warm, keys, 'ours', spec, f'{s}, rivals given the same int4 storage (dequantization inside their timed call)')
     spec = [(FIXED['ours@t1'], 'ours@t1')] + [(LIBS[l], best_config(warm, l, keys, single=True)) for l in LIBS]
-    table(warm, keys, 'ours@t1', spec, f'{s}, one thread each')
+    amx = ' NumPy here uses Apple Accelerate, which runs matrix products on the AMX matrix coprocessor whatever the thread limit: its row is not one CPU core.' if 'macOS' in str(env.get('platform', '')) or 'Darwin' in str(env.get('platform', '')) else ''
+    table(warm, keys, 'ours@t1', spec, f'{s}, one thread each.{amx}')
     if cold:
         ck = [k for k in cold['ours']['rows'] if k[0] == s]
         spec = [(FIXED['ours'], 'ours'), (FIXED['node-production'], 'node-production'), (FIXED['node-prewarm'], 'node-prewarm'), (FIXED['node-legacy'], 'node-legacy')]
