@@ -29,7 +29,7 @@
  */
 
 import { spawn } from 'node:child_process';
-import { closeSync, constants as fsConstants, existsSync, lstatSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeSync } from 'node:fs';
+import { closeSync, constants as fsConstants, existsSync, linkSync, lstatSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { reconcileEnablement } from '../incremental-indexing/domain/interval-autotune.mjs';
@@ -354,9 +354,31 @@ export function reconcilePaused(stateDir) {
  */
 function claimSpawnBudget(stateDir, nowMs, pid) {
   const claimFile = join(stateDir, MAINTAINER_SPAWN_CLAIM_FILENAME);
-  const write = () => {
+  const body = JSON.stringify({ pid, at: nowMs });
+  const writeDirect = () => {
     const fd = openSync(claimFile, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY, 0o600);
-    try { writeSync(fd, JSON.stringify({ pid, at: nowMs })); } finally { closeSync(fd); }
+    try { writeSync(fd, body); } finally { closeSync(fd); }
+  };
+  // The claim appears whole: written to a private file, then hard-linked into place (EEXIST
+  // when another supervisor holds it). Created in place, a peer could read it empty or half
+  // written, take it for a corrupt claim and spawn too. A file system without hard links gets
+  // the direct create.
+  const write = () => {
+    const tmp = `${claimFile}.${pid}.${process.hrtime.bigint()}.tmp`;
+    try {
+      const fd = openSync(tmp, fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY, 0o600);
+      try { writeSync(fd, body); } finally { closeSync(fd); }
+    } catch {
+      return writeDirect();
+    }
+    try {
+      linkSync(tmp, claimFile);
+    } catch (err) {
+      if (err?.code === 'EEXIST') throw err;
+      writeDirect();
+    } finally {
+      try { unlinkSync(tmp); } catch { /* already gone */ }
+    }
   };
 
   try {
@@ -378,6 +400,11 @@ function claimSpawnBudget(stateDir, nowMs, pid) {
     const st = lstatSync(claimFile);
     if (!st.isFile()) {
       try { unlinkSync(claimFile); } catch { /* leave it; we simply will not read it */ }
+    } else if (st.size === 0) {
+      // Another supervisor created the claim (O_EXCL) and has not written it yet: it is that
+      // supervisor's claim, as old as the file. Read as stale, both supervisors spawned (two
+      // launches milliseconds apart in the four-racer test on a loaded CI runner).
+      heldAt = Math.floor(st.mtimeMs); // whole ms, as Date.now(): a claim written this ms is not "from the future"
     } else {
       const parsed = Number(JSON.parse(readFileSync(claimFile, 'utf-8'))?.at);
       if (Number.isFinite(parsed)) heldAt = parsed;
