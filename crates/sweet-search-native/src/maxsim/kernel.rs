@@ -893,8 +893,9 @@ mod pool {
     }
 
     fn threads() -> usize {
-        if let Some(n) = std::env::var("SS_MAXSIM_THREADS").ok().and_then(|v| v.parse::<usize>().ok()) {
-            return n.max(1);
+        // SS_MAXSIM_THREADS: thread count, caller included (0 or unset = default).
+        if let Some(n) = std::env::var("SS_MAXSIM_THREADS").ok().and_then(|v| v.parse::<usize>().ok()).filter(|&n| n > 0) {
+            return n;
         }
         #[cfg(target_os = "macos")]
         {
