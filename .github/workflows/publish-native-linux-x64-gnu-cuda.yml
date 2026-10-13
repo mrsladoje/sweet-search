@@ -67,12 +67,14 @@ env:
   # runners. Constrain to a single compute capability and cap parallel
   # nvcc processes to stay under the memory ceiling.
   #
-  # CUDA_COMPUTE_CAP=80 compiles flash-attn for Ampere only (A100, A10,
-  # RTX 3090/4090, L4). SM 8.6/8.9/9.0 hosts run the SM 8.0 kernels
-  # forward-compatibly. SM 7.0/7.5 hosts skip flash-attn entirely at
-  # runtime and use candle's naive attention path — the addon supports
-  # both. If Hopper-specific kernels are needed later, bump to
-  # '80;90' at the cost of longer builds and higher peak memory.
+  # CUDA_COMPUTE_CAP=80 compiles flash-attn as sm_80 SASS only, with no
+  # PTX. It runs on SM 8.x (A100, A10, RTX 3090/4090, L4) only. It does
+  # NOT run on Hopper (9.0) or Blackwell (10.x/12.x): the launch fails
+  # without an error and returns garbage. The addon's flash-attn
+  # self-check (src/inference/varlen.rs:flash_attn_usable) detects this
+  # and uses candle's standard attention, as on SM 7.0/7.5. To give those
+  # GPUs the fused kernel, build more architectures (needs CUDA >= 12.8
+  # for sm_120) at the cost of longer builds and higher peak memory.
   CUDA_COMPUTE_CAP: '80'
   CARGO_BUILD_JOBS: '2'
 
