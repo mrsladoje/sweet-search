@@ -3,8 +3,9 @@
 // The Node twin of bench.py (same timing protocol, same JSON) for the paths a
 // sweet-search process actually runs:
 //   production  core/infrastructure/simd-distance.js nativeMaxSimPacked, the call the
-//               LI rerank stage makes (docs in one slab, as loaded from an index
-//               segment; per-call JS packing and N-API included)
+//               LI rerank stage makes (per-call JS packing and N-API included)
+// All arms see the docs laid out as the index loader lays them out: every call's
+// docs are copied once, before any timing, into shared 64 MB slabs.
 //   prewarm     production, with nativeMaxSimPrewarm() called PREP_US (busy JS work,
 //               default 100 µs) before the call, as the rerank stage does on entry;
 //               latency = the prewarm call + the scoring call (the JS work is not
@@ -20,7 +21,6 @@ import os from 'node:os';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { loadCalls } from './replay.mjs';
-import { toSlab } from './slab.mjs';
 
 const argv = process.argv.slice(2);
 const opt = (k, d) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : d; };
@@ -39,8 +39,36 @@ const legacy = arm === 'legacy' ? (await import('node:module')).createRequire(im
 
 const busy = (ms) => { const end = performance.now() + ms; while (performance.now() < end); };
 
+// Lay every doc of every call out in shared slabs, once (LateInteractionIndex
+// _packDocsIntoSlabs does the same at index load).
+function packAll(calls) {
+  const al = n => (n + 3) & ~3;
+  const MAX = 64 * 1024 * 1024;
+  let batch = [], bytes = 0;
+  const flush = () => {
+    if (!batch.length) return;
+    const slab = new ArrayBuffer(bytes), u8 = new Uint8Array(slab);
+    let at = 0;
+    for (const d of batch) {
+      for (const f of ['tokens', 'minArray', 'scaleArray', 'tokenNorms']) {
+        const a = d[f];
+        u8.set(new Uint8Array(a.buffer, a.byteOffset, a.byteLength), at);
+        d[f] = new a.constructor(slab, at, a.length);
+        at += al(a.byteLength);
+      }
+    }
+    batch = []; bytes = 0;
+  };
+  for (const c of calls) for (const d of c.cands) {
+    const need = al(d.tokens.byteLength) + 3 * al(d.numTokens * 4);
+    if (bytes + need > MAX) flush();
+    batch.push(d); bytes += need;
+  }
+  flush();
+}
+
 function build(c) {
-  const docs = toSlab(c.cands);
+  const docs = c.cands;
   if (arm === 'production') return () => sd.nativeMaxSimPacked(c.query, c.numQ, c.dim, c.kind === 'int4' ? 4 : 8, docs);
   if (arm === 'prewarm') {
     const score = () => sd.nativeMaxSimPacked(c.query, c.numQ, c.dim, c.kind === 'int4' ? 4 : 8, docs);
@@ -103,6 +131,7 @@ const out = { env: { arm, reps, gap_ms: gapMs, sets, node: process.version, plat
 for (const root of sets) {
   let calls = loadCalls(root).filter((_, i) => i % stride === 0);
   if (limit) calls = calls.slice(0, limit);
+  packAll(calls);
   for (const c of calls) {
     if (c.kind !== 'int4' && arm !== 'production' && arm !== 'prewarm') throw new Error('wasm/js/legacy arms cover int4 calls only');
     const run = build(c);
