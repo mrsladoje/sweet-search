@@ -450,13 +450,13 @@ export function wasmMaxSimPrepareQuery(queryFlat, numQ, dim) {
 // A live `querySession` from wasmMaxSimPrepareQuery (matching qBytes and
 // memory buffer) means the query bytes already sit at DATA_OFFSET, so the
 // query memcpy is skipped.
-function _wasmPerTokenLayout(queryFlat, docData, minArray, scaleArray, tokenNorms, numQ, numD, dim, dBytes, querySession) {
+function _wasmPerTokenLayout(queryFlat, docData, minArray, scaleArray, tokenNorms, numQ, numD, dim, dBytes, querySession, scratchBytes = 0) {
   const qBytes = numQ * dim * 4;
   const paramBytes = numD * 4 * 3;
   if (!maxsimMem || maxsimMem.buffer !== maxsimExports.memory.buffer) {
     maxsimMem = new Uint8Array(maxsimExports.memory.buffer);
   }
-  if (qBytes + dBytes + paramBytes + 1024 > maxsimMem.length) return null;
+  if (qBytes + dBytes + paramBytes + scratchBytes + 1024 > maxsimMem.length) return null;
 
   const qPtr = DATA_OFFSET;
   const dPtr = qPtr + qBytes;
@@ -477,7 +477,7 @@ function _wasmPerTokenLayout(queryFlat, docData, minArray, scaleArray, tokenNorm
   maxsimMem.set(new Uint8Array(scaleArray.buffer, scaleArray.byteOffset, numD * 4), scalePtr);
   maxsimMem.set(new Uint8Array(tokenNorms.buffer, tokenNorms.byteOffset, numD * 4), normPtr);
 
-  return { qPtr, dPtr, minPtr, scalePtr, normPtr };
+  return { qPtr, dPtr, minPtr, scalePtr, normPtr, scratchPtr: normPtr + numD * 4 };
 }
 
 export function wasmMaxSimDequantPerToken(queryFlat, docInt8, minArray, scaleArray, tokenNorms, numQ, numD, dim, querySession) {
@@ -489,7 +489,16 @@ export function wasmMaxSimDequantPerToken(queryFlat, docInt8, minArray, scaleArr
 
 export function wasmMaxSimDequant4Bit(queryFlat, docPacked, minArray, scaleArray, tokenNorms, numQ, numD, dim, querySession) {
   if (!maxsimExports?.maxsim_dequant_4bit) return null;
-  const ptrs = _wasmPerTokenLayout(queryFlat, docPacked, minArray, scaleArray, tokenNorms, numQ, numD, dim, numD * Math.ceil(dim / 2), querySession);
+  // maxsim_dequant_4bit_tiled (same scores, ~7x faster) needs scratch after the
+  // inputs: a transposed 64-token tile plus per-query state.
+  // When the scratch does not fit, the plain export runs (as before).
+  const tiled = maxsimExports.maxsim_dequant_4bit_tiled;
+  const dBytes = numD * Math.ceil(dim / 2);
+  if (tiled) {
+    const ptrs = _wasmPerTokenLayout(queryFlat, docPacked, minArray, scaleArray, tokenNorms, numQ, numD, dim, dBytes, querySession, 16 + 4 * (2 * numQ + 4 + 64 * (dim + 1)));
+    if (ptrs) return tiled(ptrs.qPtr, ptrs.dPtr, ptrs.minPtr, ptrs.scalePtr, ptrs.normPtr, numQ, numD, dim, ptrs.scratchPtr);
+  }
+  const ptrs = _wasmPerTokenLayout(queryFlat, docPacked, minArray, scaleArray, tokenNorms, numQ, numD, dim, dBytes, querySession);
   if (!ptrs) return null;
   return maxsimExports.maxsim_dequant_4bit(ptrs.qPtr, ptrs.dPtr, ptrs.minPtr, ptrs.scalePtr, ptrs.normPtr, numQ, numD, dim);
 }
