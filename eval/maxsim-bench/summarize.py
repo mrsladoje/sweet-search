@@ -22,6 +22,16 @@ FIXED = {'ours': 'sweet kernel', 'ours@t1': 'sweet kernel, 1 thread', 'node-prod
          'node-wasm': 'WASM tier', 'node-js': 'plain-JS tier'}
 
 
+PAD_MARK = '¹'
+PAD_SHORT = '¹ maxsim-cpu\'s list API zero-pads docs inside its batches; see the note under the first table.'
+PAD_NOTE = ('¹ This difference does not come from the benchmark, and it does not affect timing. maxsim-cpu\'s list API (`maxsim_scores_variable`, arm64 build) pads shorter docs '
+            'with zero vectors inside its batches. A zero vector scores 0, so for some docs a query token whose best '
+            'cosine is below 0 counts as 0, which is the `max(0, ·)` clamp that sweet applies on purpose. Which docs get '
+            'it depends on the other docs in the call; one doc per call is exact. Its padded 3D API and its x86 build are '
+            'exact on every call here. Reproduce: `maxsim_cpu_padding.py`.')
+ISSUE1 = 'https://github.com/mixedbread-ai/maxsim-cpu/issues/1'
+
+
 def load(dir_):
     runs = collections.defaultdict(list)
     for f in sorted(glob.glob(os.path.join(dir_, '*.r*.json'))):
@@ -69,6 +79,7 @@ def table(arms, keys, base, rows_spec, title):
         return
     b = np.array([arms[base]['rows'][k]['ms'] for k in keys])
     say(f'\n**{title}** ({len(keys)} calls; ratio = other / {FIXED.get(base, base)}, > 1 = sweet faster)\n')
+    notes = set()
     say('| | config | p50 ms | p95 ms | total s | ratio [95% CI] | sweet faster on | max abs err | top-1 = exact |')
     say('|---|---|--:|--:|--:|--:|--:|--:|--:|')
     for label, arm in rows_spec:
@@ -79,16 +90,28 @@ def table(arms, keys, base, rows_spec, title):
         g, lo, hi = ratio(ms, b)
         rat = '1' if arm == base else f'{g:.2f}× [{lo:.2f}, {hi:.2f}]'
         win = '' if arm == base else f'{np.mean(b < ms) * 100:.0f}%'
+        err = max(r['err'] for r in rs)
+        mark = PAD_MARK if arm.startswith('maxsim_cpu_variable') and err > 1e-5 else ''
+        notes.update([mark] if mark else [])
         say(f"| {label} | `{arm}` | {np.percentile(ms, 50):.3f} | {np.percentile(ms, 95):.3f} | {ms.sum() / 1e3:.2f} | {rat} | {win} | "
-            f"{max(r['err'] for r in rs):.1e} | {np.mean([r['top1'] for r in rs]) * 100:.1f}% |")
+            f"{err:.1e}{mark} | {np.mean([r['top1'] for r in rs]) * 100:.1f}% |")
+    if notes:
+        say('\n' + (PAD_NOTE if not table.pad_said else PAD_SHORT))
+        table.pad_said = True
 
 
+table.pad_said = False
 warm = load(a.prefix + '-warm') if os.path.isdir(a.prefix + '-warm') else {}
 cold = load(a.prefix + '-cold') if os.path.isdir(a.prefix + '-cold') else {}
 tiers = load(a.prefix + '-tiers') if os.path.isdir(a.prefix + '-tiers') else {}
 env = warm.get('ours', {}).get('env', {})
 say(f"## {a.prefix}: {env.get('cpu', '?')}, {env.get('cpu_count', '?')} logical CPUs, {env.get('platform', '?')}")
 say(f"Python {env.get('python')}, NumPy {env.get('numpy')}; rounds: {warm.get('ours', {}).get('rounds')}")
+if 'x86' in str(env.get('platform', '')):
+    say(f"\nmaxsim-cpu runs here in 32-token query chunks: its x86 build returns wrong scores for longer queries once a "
+        f"doc reaches 64 tokens ([maxsim-cpu#1]({ISSUE1}), reproduced on this machine). The chunk sums add up to the full "
+        f"score exactly; see its max abs err column. Fewer than 1% of the replayed calls have more "
+        f"than 32 query tokens, so almost every call is one chunk.")
 
 replay = ['agent-ho', 'gcsn-ho']
 for s in replay:

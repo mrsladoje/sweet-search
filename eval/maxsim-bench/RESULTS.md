@@ -47,6 +47,28 @@ Where sweet is **not** the fastest:
 Fallback tiers (hosts without the native addon), production path vs: WASM 18-21x
 (M3 Max) and 9x (EPYC) slower; plain JS 170-196x (M3 Max) and 77-84x (EPYC) slower.
 
+**What this claims, and what it does not.** It is a kernel benchmark. The kernel takes
+22-44 µs per call (p50) on the M3 Max and 44-102 µs on the EPYC; on the M3 Max, the
+JavaScript around it in the rerank stage adds ~30-45 µs. Both are a small part of a
+search, which also embeds the query with a neural model. We do not claim a faster
+search end to end. A faster kernel lets the rerank stage score more candidates for the
+same time.
+
+**Notes on maxsim-cpu's scores** (they do not change its timing):
+
+- On x86 it runs in 32-token query chunks, because its x86 build returns wrong scores
+  (up to 1e38 and inf) for longer queries once a doc reaches 64 tokens
+  ([mixedbread-ai/maxsim-cpu#1](https://github.com/mixedbread-ai/maxsim-cpu/issues/1),
+  reproduced on the EPYC). The chunk sums add up to the full score exactly. Fewer than 1%
+  of the replayed calls have more than 32 query tokens.
+- On the M3 Max, its list API (`maxsim_scores_variable`) shows a max abs err of ~4e-2.
+  Inside a call it pads shorter docs with zero vectors, and a zero vector scores 0. For
+  some docs, a query token whose best cosine is below 0 then counts as 0: that is the
+  `max(0, ·)` clamp that sweet applies on purpose. Which docs get it depends on the other
+  docs in the call; one doc per call, its padded 3D API and its x86 build are exact here.
+  Its top document matches the exact one on 100% of calls. Reproduce with synthetic data:
+  `maxsim_cpu_padding.py`.
+
 ## Apple M3 Max: Apple M3 Max, 16 logical CPUs, macOS-26.3.1-arm64-arm-64bit
 Python 3.12.13, NumPy 2.5.4; rounds: 2
 
@@ -59,8 +81,10 @@ Python 3.12.13, NumPy 2.5.4; rounds: 2
 | previous production path | `node-legacy` | 0.146 | 0.216 | 0.31 | 3.46× [3.41, 3.50] | 100% | 1.6e-07 | 100.0% |
 | NumPy | `numpy_packed` | 0.092 | 0.146 | 0.20 | 2.00× [1.99, 2.01] | 100% | 1.1e-07 | 99.9% |
 | PyTorch | `torch_pad_bmm@t1` | 0.213 | 0.248 | 0.44 | 4.24× [4.19, 4.28] | 100% | 1.1e-07 | 99.9% |
-| maxsim-cpu | `maxsim_cpu_variable@t1` | 0.327 | 0.473 | 0.69 | 6.51× [6.42, 6.61] | 99% | 4.1e-02 | 100.0% |
+| maxsim-cpu | `maxsim_cpu_variable@t1` | 0.327 | 0.473 | 0.69 | 6.51× [6.42, 6.61] | 99% | 4.1e-02¹ | 100.0% |
 | NumKong (approx.) | `numkong_f16@t1` | 0.121 | 0.229 | 0.29 | 2.64× [2.62, 2.67] | 100% | 8.3e-02 | 86.2% |
+
+¹ This difference does not come from the benchmark, and it does not affect timing. maxsim-cpu's list API (`maxsim_scores_variable`, arm64 build) pads shorter docs with zero vectors inside its batches. A zero vector scores 0, so for some docs a query token whose best cosine is below 0 counts as 0, which is the `max(0, ·)` clamp that sweet applies on purpose. Which docs get it depends on the other docs in the call; one doc per call is exact. Its padded 3D API and its x86 build are exact on every call here. Reproduce: `maxsim_cpu_padding.py`.
 
 **agent-ho, rivals given the same int4 storage (dequantization inside their timed call)** (2004 calls; ratio = other / sweet kernel, > 1 = sweet faster)
 
@@ -68,7 +92,9 @@ Python 3.12.13, NumPy 2.5.4; rounds: 2
 |---|---|--:|--:|--:|--:|--:|--:|--:|
 | sweet kernel | `ours` | 0.044 | 0.079 | 0.10 | 1 |  | 1.6e-07 | 100.0% |
 | NumPy, dequantizes int4 itself | `numpy_packed_int4` | 0.990 | 1.543 | 2.14 | 20.84× [20.64, 21.03] | 100% | 1.1e-07 | 99.9% |
-| maxsim-cpu, dequantizes int4 itself | `maxsim_cpu_variable_int4` | 1.516 | 2.089 | 3.12 | 30.50× [30.14, 30.85] | 100% | 4.1e-02 | 100.0% |
+| maxsim-cpu, dequantizes int4 itself | `maxsim_cpu_variable_int4` | 1.516 | 2.089 | 3.12 | 30.50× [30.14, 30.85] | 100% | 4.1e-02¹ | 100.0% |
+
+¹ maxsim-cpu's list API zero-pads docs inside its batches; see the note under the first table.
 
 **agent-ho, one thread each. NumPy here uses Apple Accelerate, which runs matrix products on the AMX matrix coprocessor whatever the thread limit: its row is not one CPU core.** (2004 calls; ratio = other / sweet kernel, 1 thread, > 1 = sweet faster)
 
@@ -77,8 +103,10 @@ Python 3.12.13, NumPy 2.5.4; rounds: 2
 | sweet kernel, 1 thread | `ours@t1` | 0.392 | 0.755 | 0.90 | 1 |  | 1.6e-07 | 100.0% |
 | NumPy | `numpy_packed@t1` | 0.092 | 0.145 | 0.20 | 0.24× [0.24, 0.24] | 0% | 1.1e-07 | 99.9% |
 | PyTorch | `torch_pad_bmm@t1` | 0.213 | 0.248 | 0.44 | 0.51× [0.51, 0.52] | 2% | 1.1e-07 | 99.9% |
-| maxsim-cpu | `maxsim_cpu_variable@t1` | 0.327 | 0.473 | 0.69 | 0.79× [0.78, 0.80] | 11% | 4.1e-02 | 100.0% |
+| maxsim-cpu | `maxsim_cpu_variable@t1` | 0.327 | 0.473 | 0.69 | 0.79× [0.78, 0.80] | 11% | 4.1e-02¹ | 100.0% |
 | NumKong (approx.) | `numkong_f16@t1` | 0.121 | 0.229 | 0.29 | 0.32× [0.32, 0.32] | 0% | 8.3e-02 | 86.2% |
+
+¹ maxsim-cpu's list API zero-pads docs inside its batches; see the note under the first table.
 
 **agent-ho, cold (5 ms of busy main thread before every call)** (2004 calls; ratio = other / sweet kernel, > 1 = sweet faster)
 
@@ -90,8 +118,10 @@ Python 3.12.13, NumPy 2.5.4; rounds: 2
 | previous production path | `node-legacy` | 0.230 | 0.291 | 0.47 | 2.41× [2.38, 2.43] | 99% | 1.6e-07 | 100.0% |
 | NumPy | `numpy_packed` | 0.095 | 0.154 | 0.21 | 0.93× [0.92, 0.95] | 42% | 1.1e-07 | 99.9% |
 | PyTorch | `torch_pad_bmm` | 0.313 | 0.402 | 0.65 | 2.93× [2.89, 2.98] | 97% | 1.1e-07 | 99.9% |
-| maxsim-cpu | `maxsim_cpu_variable@t12` | 0.522 | 0.660 | 1.03 | 4.46× [4.37, 4.56] | 97% | 4.1e-02 | 100.0% |
+| maxsim-cpu | `maxsim_cpu_variable@t12` | 0.522 | 0.660 | 1.03 | 4.46× [4.37, 4.56] | 97% | 4.1e-02¹ | 100.0% |
 | NumKong (approx.) | `numkong_f16` | 0.267 | 0.336 | 0.53 | 2.57× [2.54, 2.60] | 99% | 8.3e-02 | 86.2% |
+
+¹ maxsim-cpu's list API zero-pads docs inside its batches; see the note under the first table.
 
 **agent-ho, native vs the fallback tiers (every 4th call)** (501 calls; ratio = other / sweet, production path (Node), > 1 = sweet faster)
 
@@ -110,8 +140,10 @@ Python 3.12.13, NumPy 2.5.4; rounds: 2
 | previous production path | `node-legacy` | 0.104 | 0.154 | 0.26 | 4.65× [4.61, 4.69] | 100% | 2.0e-07 | 100.0% |
 | NumPy | `numpy_packed` | 0.046 | 0.068 | 0.11 | 2.05× [2.04, 2.06] | 100% | 1.3e-07 | 100.0% |
 | PyTorch | `torch_pad_bmm@t1` | 0.158 | 0.184 | 0.37 | 6.65× [6.59, 6.71] | 100% | 1.3e-07 | 100.0% |
-| maxsim-cpu | `maxsim_cpu_variable@t1` | 0.155 | 0.223 | 0.38 | 6.86× [6.81, 6.91] | 100% | 3.4e-02 | 100.0% |
+| maxsim-cpu | `maxsim_cpu_variable@t1` | 0.155 | 0.223 | 0.38 | 6.86× [6.81, 6.91] | 100% | 3.4e-02¹ | 100.0% |
 | NumKong (approx.) | `numkong_f16@t1` | 0.059 | 0.106 | 0.15 | 2.56× [2.54, 2.57] | 100% | 9.3e-02 | 94.5% |
+
+¹ maxsim-cpu's list API zero-pads docs inside its batches; see the note under the first table.
 
 **gcsn-ho, rivals given the same int4 storage (dequantization inside their timed call)** (2385 calls; ratio = other / sweet kernel, > 1 = sweet faster)
 
@@ -119,7 +151,9 @@ Python 3.12.13, NumPy 2.5.4; rounds: 2
 |---|---|--:|--:|--:|--:|--:|--:|--:|
 | sweet kernel | `ours` | 0.022 | 0.037 | 0.06 | 1 |  | 2.0e-07 | 100.0% |
 | NumPy, dequantizes int4 itself | `numpy_packed_int4` | 0.434 | 0.646 | 1.07 | 19.14× [18.99, 19.29] | 100% | 1.3e-07 | 100.0% |
-| maxsim-cpu, dequantizes int4 itself | `maxsim_cpu_variable_int4` | 0.845 | 1.087 | 2.04 | 37.09× [36.78, 37.40] | 100% | 3.4e-02 | 100.0% |
+| maxsim-cpu, dequantizes int4 itself | `maxsim_cpu_variable_int4` | 0.845 | 1.087 | 2.04 | 37.09× [36.78, 37.40] | 100% | 3.4e-02¹ | 100.0% |
+
+¹ maxsim-cpu's list API zero-pads docs inside its batches; see the note under the first table.
 
 **gcsn-ho, one thread each. NumPy here uses Apple Accelerate, which runs matrix products on the AMX matrix coprocessor whatever the thread limit: its row is not one CPU core.** (2385 calls; ratio = other / sweet kernel, 1 thread, > 1 = sweet faster)
 
@@ -128,8 +162,10 @@ Python 3.12.13, NumPy 2.5.4; rounds: 2
 | sweet kernel, 1 thread | `ours@t1` | 0.167 | 0.318 | 0.43 | 1 |  | 2.0e-07 | 100.0% |
 | NumPy | `numpy_packed@t1` | 0.046 | 0.067 | 0.11 | 0.28× [0.28, 0.28] | 0% | 1.3e-07 | 100.0% |
 | PyTorch | `torch_pad_bmm@t1` | 0.158 | 0.184 | 0.37 | 0.91× [0.90, 0.92] | 39% | 1.3e-07 | 100.0% |
-| maxsim-cpu | `maxsim_cpu_variable@t1` | 0.155 | 0.223 | 0.38 | 0.94× [0.93, 0.95] | 39% | 3.4e-02 | 100.0% |
+| maxsim-cpu | `maxsim_cpu_variable@t1` | 0.155 | 0.223 | 0.38 | 0.94× [0.93, 0.95] | 39% | 3.4e-02¹ | 100.0% |
 | NumKong (approx.) | `numkong_f16@t1` | 0.059 | 0.106 | 0.15 | 0.35× [0.35, 0.35] | 0% | 9.3e-02 | 94.5% |
+
+¹ maxsim-cpu's list API zero-pads docs inside its batches; see the note under the first table.
 
 **gcsn-ho, cold (5 ms of busy main thread before every call)** (2385 calls; ratio = other / sweet kernel, > 1 = sweet faster)
 
@@ -141,8 +177,10 @@ Python 3.12.13, NumPy 2.5.4; rounds: 2
 | previous production path | `node-legacy` | 0.208 | 0.246 | 0.50 | 3.27× [3.24, 3.30] | 100% | 2.0e-07 | 100.0% |
 | NumPy | `numpy_packed` | 0.046 | 0.070 | 0.12 | 0.74× [0.73, 0.74] | 1% | 1.3e-07 | 100.0% |
 | PyTorch | `torch_pad_bmm` | 0.251 | 0.302 | 0.59 | 3.85× [3.82, 3.88] | 100% | 1.3e-07 | 100.0% |
-| maxsim-cpu | `maxsim_cpu_variable@t12` | 0.371 | 0.438 | 0.88 | 5.78× [5.74, 5.82] | 100% | 3.4e-02 | 100.0% |
+| maxsim-cpu | `maxsim_cpu_variable@t12` | 0.371 | 0.438 | 0.88 | 5.78× [5.74, 5.82] | 100% | 3.4e-02¹ | 100.0% |
 | NumKong (approx.) | `numkong_f16` | 0.224 | 0.257 | 0.54 | 3.55× [3.53, 3.58] | 100% | 9.3e-02 | 94.5% |
+
+¹ maxsim-cpu's list API zero-pads docs inside its batches; see the note under the first table.
 
 **gcsn-ho, native vs the fallback tiers (every 4th call)** (597 calls; ratio = other / sweet, production path (Node), > 1 = sweet faster)
 
@@ -196,6 +234,8 @@ np = NumPy, pt = PyTorch, mx = maxsim-cpu.
 
 ## AMD EPYC Milan (Hetzner CCX33 VM): AMD EPYC-Milan Processor, 8 logical CPUs, Linux-7.0.0-28-generic-x86_64-with-glibc2.43
 Python 3.12.13, NumPy 2.5.4; rounds: 2
+
+maxsim-cpu runs here in 32-token query chunks: its x86 build returns wrong scores for longer queries once a doc reaches 64 tokens ([maxsim-cpu#1](https://github.com/mixedbread-ai/maxsim-cpu/issues/1), reproduced on this machine). The chunk sums add up to the full score exactly; see its max abs err column. Fewer than 1% of the replayed calls have more than 32 query tokens, so almost every call is one chunk.
 
 **agent-ho, warm (back-to-back)** (2004 calls; ratio = other / sweet kernel, > 1 = sweet faster)
 
