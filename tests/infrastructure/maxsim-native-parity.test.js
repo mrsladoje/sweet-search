@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { createRequire } from 'node:module';
 import { loadNativeAddon } from '../../core/infrastructure/native-resolver.js';
+import { packMaxSimDocs } from '../../core/infrastructure/maxsim-pack.js';
 
 // Native MaxSim kernels vs a plain JS reference of the output contract:
 //   score = mean over query tokens of max(0, max_d dot(q, d) / (|q|·|d| + 1e-8))
@@ -160,5 +161,72 @@ run('native MaxSim kernels match the reference contract', () => {
     const query = makeQuery(r, 4, 128);
     const doc = makeDoc(r, 10, 96, 4);
     expect(() => score(4, query, 4, 128, [doc])).toThrow(/dim/);
+  });
+});
+
+// The packed entry point (production path) must return exactly the object API's
+// scores, whether a doc's arrays live in their own buffers or in one shared slab
+// (as the segment loader lays them out), and reject malformed descriptors.
+const runPacked = native?.maxsimScorePacked ? describe : describe.skip;
+
+function toSlab(docs) {
+  const al = n => (n + 3) & ~3;
+  const total = docs.reduce((a, d) => a + al(d.tokens.byteLength) + 3 * al(d.numTokens * 4), 0);
+  const slab = new ArrayBuffer(total);
+  const u8 = new Uint8Array(slab);
+  let off = 0;
+  const copy = (arr, Ctor) => {
+    u8.set(new Uint8Array(arr.buffer, arr.byteOffset, arr.byteLength), off);
+    const view = new Ctor(slab, off, Ctor === Float32Array ? arr.byteLength / 4 : arr.byteLength);
+    off += al(arr.byteLength);
+    return view;
+  };
+  return docs.map(d => ({ ...d, tokens: copy(d.tokens, Uint8Array), minArray: copy(d.minArray, Float32Array), scaleArray: copy(d.scaleArray, Float32Array), tokenNorms: copy(d.tokenNorms, Float32Array) }));
+}
+
+function scorePacked(bits, query, numQ, dim, docs) {
+  const { buffers, desc } = packMaxSimDocs(docs);
+  return Array.from(native.maxsimScorePacked(query, numQ, dim, bits, buffers, desc));
+}
+
+runPacked('native packed MaxSim entry point', () => {
+  for (const bits of [4, 8]) {
+    it(`int${bits}: same scores as the object API, separate buffers and one slab`, () => {
+      const r = rng(1234 + bits);
+      for (const dim of DIMS) {
+        for (const numQ of QUERY_TOKENS) {
+          const query = makeQuery(r, numQ, dim);
+          const docs = DOC_TOKENS.map(n => makeDoc(r, n, dim, bits)).map(({ codes, ...c }) => c);
+          const want = Array.from(score(bits, query, numQ, dim, docs));
+          for (const form of [docs, toSlab(docs)]) {
+            const got = scorePacked(bits, query, numQ, dim, form);
+            got.forEach((g, i) => expect(Object.is(g, want[i]), `dim=${dim} numQ=${numQ} doc=${i}`).toBe(true));
+          }
+        }
+      }
+    });
+  }
+
+  it('prewarm does not change scores', () => {
+    const r = rng(77);
+    const query = makeQuery(r, 14, 128);
+    const docs = toSlab([5, 64, 300].map(n => makeDoc(r, n, 128, 4)).map(({ codes, ...c }) => c));
+    const before = scorePacked(4, query, 14, 128, docs);
+    native.maxsimPrewarm?.(500);
+    expect(scorePacked(4, query, 14, 128, docs)).toEqual(before);
+  });
+
+  it('rejects malformed descriptors with a JS error', () => {
+    const r = rng(8);
+    const query = makeQuery(r, 4, 128);
+    const { buffers, desc } = packMaxSimDocs(toSlab([makeDoc(r, 5, 128, 4)].map(({ codes, ...c }) => c)));
+    const call = (bits, d) => () => native.maxsimScorePacked(query, 4, 128, bits, buffers, d);
+    expect(call(5, desc)).toThrow(/bits/);
+    expect(call(4, desc.subarray(0, 9))).toThrow(/multiple of 10/);
+    expect(call(4, desc.map((v, i) => (i === 1 ? 96 : v)))).toThrow(/dim/);
+    expect(call(4, desc.map((v, i) => (i === 2 ? 7 : v)))).toThrow(/buffer index/);
+    expect(call(4, desc.map((v, i) => (i === 3 ? 1e9 : v)))).toThrow(/outside buffer/);
+    expect(call(4, desc.map((v, i) => (i === 0 ? 1e6 : v)))).toThrow(/outside buffer/);
+    expect(call(4, desc.map((v, i) => (i === 5 ? v + 1 : v)))).toThrow(/aligned/);
   });
 });
