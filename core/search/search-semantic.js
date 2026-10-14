@@ -27,7 +27,10 @@ import { EMBEDDING_CONFIG, BINARY_HNSW_CONFIG } from '../infrastructure/config/i
 import { float512StoreEnabled } from '../vector-store/float-vector-store.js';
 
 const CASCADE_DEFERRED_STATS = { skipped: true, reason: 'cascade_deferred', provider: null, documents: 0, tokens: 0 };
-const FULL_VECTOR_STAGE_WEIGHT = 0.80;
+// 1 = the final semantic order is the full-vector cosine alone. 0.8 -> 1
+// (2026-10-14, kernel dev sets, 3,600 queries each): MRR@10 +0.0016..+0.0028
+// on 1M / 140k / 20k / 6.9k, same time. Legacy: SWEET_SEARCH_FULL_VECTOR_STAGE_WEIGHT=0.8.
+const FULL_VECTOR_STAGE_WEIGHT = 1.0;
 const FULL_VECTOR_STAGE_LIMIT = 200;
 
 /**
@@ -269,6 +272,16 @@ function adaptiveStage2Pool(k, analysis, config) {
 }
 
 /**
+ * Stage 2 scores every stage-1 candidate with int8 (the slab dot is cheap);
+ * SS_FIX_INT8_ALL=0 restores the adaptive pool (k=10: the top 100 of stage 1).
+ * 2026-10-14, csn1m-dev: the adaptive pool dropped exact top-10 neighbours
+ * that stage 1 had found; all + stage1Candidates 1000 = +0.0040 MRR@10.
+ */
+function stage2PoolCount(stage2Pool, stage1Count) {
+  return process.env.SS_FIX_INT8_ALL === '0' ? Math.min(stage2Pool.size, stage1Count) : stage1Count;
+}
+
+/**
  * Stage-1 result count: the configured floor, raised to the largest pool
  * adaptiveStage2Pool can ask for at this k, so stage 2 never sees fewer
  * candidates than its pool (k=10: 250; k>=27: 400).
@@ -371,7 +384,7 @@ export async function semanticSearch3Stage(query, options = {}) {
 
     const stage2Start = performance.now();
     const stage2Pool = adaptiveStage2Pool(k, stage1Analysis, adaptiveConfig);
-    const stage2Count = Math.min(stage2Pool.size, stage1Count);
+    const stage2Count = stage2PoolCount(stage2Pool, stage1Count);
     stats.queryInt8 = fusedQueryInt8;
     const int8 = fused.int8Stage(stage2Count);
     if (int8.missing > 0) {
@@ -434,7 +447,7 @@ export async function semanticSearch3Stage(query, options = {}) {
 
     // Phase 3: Adaptive Stage 2 pool size (uses shared score-spread analysis)
     const stage2Pool = adaptiveStage2Pool(k, stage1Analysis, adaptiveConfig);
-    const stage2Count = Math.min(stage2Pool.size, stage1Count);
+    const stage2Count = stage2PoolCount(stage2Pool, stage1Count);
 
     // Collect int8 vectors for scoring
     const stage2Candidates = stage1Lazy
