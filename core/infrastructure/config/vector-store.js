@@ -62,10 +62,11 @@ export const BINARY_HNSW_CONFIG = {
   // 3-stage retrieval configuration
   retrieval: {
     // Binary HNSW retrieves at least this many (semanticSearch3Stage raises it
-    // to the largest possible stage-2 pool for k). 1000 -> 250 (2026-10-14,
-    // csn1m-dev 3,600 queries): MRR@10 +0.0007 [+0.0001, +0.0015], recall@10
-    // vs exact .833 -> .842, 1M p50 ~2x faster; k=50 MRR -0.0001 (ns).
-    stage1Candidates: 250,
+    // to the largest possible stage-2 pool for k); stage 2 int8-scores all of
+    // them. 2026-10-14, csn1m-dev 3,600 queries, with int8-all + weight 1:
+    // 1000 vs 400 MRR@10 +0.0018 [+0.0006, +0.0032] (1000 = exact-search MRR
+    // in a brute-force sim; 2000 adds nothing); 1M x86 p50 ~445 -> ~850 us.
+    stage1Candidates: 1000,
     stage2Candidates: 200,   // Int8 rescores top 200 (legacy fixed, used as maxStage2 fallback)
     stage2_5Candidates: 200, // Float rescore pool size (legacy fixed, used as maxStage2_5 fallback)
     stage3Candidates: 30,    // Reranker sees top 30 (validated 2026-05-03 on GenCodeSearchNet n=6000: +1.52pp R@10, +0.34pp MRR vs 20, no per-language regression)

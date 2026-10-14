@@ -221,3 +221,41 @@ Level-0 re-prune to 128 (heuristic, no back-fill; mean level-0 degree is 180): M
 S1=250. Re-prune at 96: worse. Tie stop (`>=`): same MRR, changes 0.6% of queries, no clear time gain.
 Open: re-prune WITH back-fill: MRR -.0003 [-.0010, +.0001] vs S1=250 on Mac dev, x86 ~17% faster (412 -> 343 us).
 Kept as an off-by-default switch (`SS_HNSW_PRUNE0=128 SS_HNSW_PRUNE0_FILL=1`); not adopted.
+
+### 8b. MRR round (2026-10-14, same day): weight 1 + int8 on all stage-1 candidates + stage 1 = 1000
+
+Read-only checks first (brute-force cascade sims on csn1m-dev: sim-int8.py (1,000 queries), sim-centre.py and
+sim-depth.py (3,600 queries)):
+- int8 scale: |q| p50/p99/max = 4/15/47 of 127 (81 levels used). A global p99.99 scale or a per-vector scale
+  picks the same stage-2.5 pool as exact 512-d scoring -> no gain; NO reindex for item 2.
+- Centring before the sign bit (bits are unbalanced: mean |p-0.5| = 0.116, corpus mean-vector norm 0.43):
+  stage-1 recall .910 -> .896, MRR -0.0011 [-0.0037, +0.0012]; centred cosine for the final score -0.0136.
+  Rejected; NO reindex for item 4.
+- Where MRR is lost: all at stage 1 / the stage-2 cut. Brute Hamming top-M then exact: M=250 .5523, 500 .5539,
+  1000 .5554, 2000 .5555 = exact 768-d search .5555. Pool sizes after stage 2 change nothing (+-0.0000).
+  The product int8-scored only the adaptive pool (k=10: top 100 of stage 1) and dropped the rest.
+
+Box A/B (x86, 3,600 dev queries per set, MRR identical on the Mac):
+| arm vs prod (S1=250, W=0.8) | 1M | 140k | 20k | 6.9k |
+|---|---|---|---|---|
+| W=1 | +.0028 [+.0012,+.0046] | +.0016 [-.0000,+.0034] | +.0017 [+.0000,+.0035] | +.0019 [+.0002,+.0036] |
+| POOL=2 | +.0016 | +.0014 | +.0015 | +.0004 |
+| POOL25=2 (full-vector pool only) | +.0003 (ns) | +.0001 | +.0003 | +.0003 |
+| W=1 + int8-all S1=1000 | +.0068 [+.0045,+.0094] | +.0049 (MRR diff) | +.0036 | +.0022 |
+Within W=1 + int8-all at 1M: S1 1000 vs 400 +.0018 [+.0006,+.0032]; S1 600 vs 400 +.0012. Small sets: 1000 vs 400
+ns. x86 p50 1M: prod 414, W=1 406, all-250 437, all-400 445, all-600 580, all-1000 847 us.
+
+Shipped: FULL_VECTOR_STAGE_WEIGHT 0.8 -> 1 (legacy `SWEET_SEARCH_FULL_VECTOR_STAGE_WEIGHT=0.8`); stage 2 int8-scores
+every stage-1 candidate (legacy `SS_FIX_INT8_ALL=0`); stage1Candidates 250 -> 1000.
+Final code = tested arm on 3,600 queries (0 diffs); legacy switches + S1=250 = old prod (0 diffs).
+k=50 (1M dev): +.0047 [+.0025,+.0069], p50 977 -> 1,599 us.
+Full pipeline GCSN dev (run_benchmark --profile=full, LI on, Mac): MRR@10 87.00 -> 87.06 (+.0006 [-.0005,+.0019]),
+1% of queries change.
+Held-out (aggregate only, one run, box): csn1m-ho .5300 -> .5353 (+.0054 [+.0021,+.0090]); gcsn-ho +.0030
+[+.0004,+.0057]; d20k-ho +.0038 [+.0013,+.0066]; dall-ho +.0043 [+.0012,+.0075]; advtest +.0049 [+.0019,+.0079].
+Recall@10 vs exact: 1M .839 -> .967, AdvTest .805 -> .958.
+Cost (x86 p50, held-out): 1M 414 -> 880 us (still below this morning's 1,291); 140k 458 -> 521; 20k 159 -> 225;
+6.9k 80 -> 133; AdvTest 176 -> 236. Mac 1M dev p50 253 -> 463 us (2 interleaved runs).
+Tests: vector-store, indexing, search, embedding: 4,410 pass (the full suite stalled in one idle worker; not traced). Cheaper option kept open: S1=400 gives ~3/4 of the 1M gain at 445 us.
+The full-vector stage is skipped for format 'agent' (search-semantic.js), so W=1 does not touch agent output;
+int8-all does.

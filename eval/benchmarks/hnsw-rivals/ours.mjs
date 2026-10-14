@@ -9,7 +9,8 @@
 //   S1    stage-1 candidates (production 1000; exact scan <=150k vectors, binary HNSW walk above)
 //   EF    walk efSearch floor (production 400; the walk uses max(EF, S1-derived target))
 //   POOL  scale factor for the adaptive int8 / full-vector pool bounds (production 1)
-//   SWEET_SEARCH_FULL_VECTOR_STAGE_WEIGHT  full-vector blend weight (production 0.8; 1 = pure exact rescore)
+//   POOL2 / POOL25  scale only the int8 (stage 2) or only the full-vector (stage 2.5) pool bounds
+//   SWEET_SEARCH_FULL_VECTOR_STAGE_WEIGHT  full-vector blend weight (production 1 = pure exact rescore; legacy 0.8)
 //   SS_FIX_HNSW_SCAN=0  force the walk at every size
 import fs from 'node:fs';
 import os from 'node:os';
@@ -24,11 +25,16 @@ const { queryCache } = await import(`${R}/core/embedding/embedding-cache.js`);
 const { truncateForHNSW, floatToBinary } = await import(`${R}/core/embedding/embedding-service.js`);
 const { BINARY_HNSW_CONFIG } = await import(`${R}/core/config.js`);
 
-const knobs = { S1: Number(process.env.S1 || BINARY_HNSW_CONFIG.retrieval.stage1Candidates), EF: Number(process.env.EF || BINARY_HNSW_CONFIG.efSearch), POOL: Number(process.env.POOL || 1), WEIGHT: process.env.SWEET_SEARCH_FULL_VECTOR_STAGE_WEIGHT || '0.8', SCAN: process.env.SS_FIX_HNSW_SCAN !== '0' };
+const knobs = { S1: Number(process.env.S1 || BINARY_HNSW_CONFIG.retrieval.stage1Candidates), EF: Number(process.env.EF || BINARY_HNSW_CONFIG.efSearch), POOL: Number(process.env.POOL || 1), POOL2: Number(process.env.POOL2 || 1), POOL25: Number(process.env.POOL25 || 1), WEIGHT: process.env.SWEET_SEARCH_FULL_VECTOR_STAGE_WEIGHT || '1', SCAN: process.env.SS_FIX_HNSW_SCAN !== '0' };
 if (knobs.POOL !== 1) {
   const a = BINARY_HNSW_CONFIG.retrieval.adaptive;
   for (const k of ['minStage2', 'maxStage2', 'minStage2_5', 'maxStage2_5']) a[k] = Math.max(1, Math.round(a[k] * knobs.POOL));
   for (const k of ['oversample1', 'oversample2']) a[k] = a[k] * knobs.POOL;
+}
+for (const [f, ks] of [[knobs.POOL2, ['minStage2', 'maxStage2', 'oversample1']], [knobs.POOL25, ['minStage2_5', 'maxStage2_5', 'oversample2']]]) {
+  if (f === 1) continue;
+  const a = BINARY_HNSW_CONFIG.retrieval.adaptive;
+  for (const k of ks) a[k] = k.startsWith('over') ? a[k] * f : Math.max(1, Math.round(a[k] * f));
 }
 const tLoad = performance.now();
 const idx = new BinaryHNSWIndex({ indexPath: `${ss}/codebase-binary-hnsw.idx` }); await idx.load();
