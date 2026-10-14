@@ -270,3 +270,7 @@ x86 417 -> 444 us, Mac 248 -> 263 us. k=50 1M dev: .5512 -> .5540, 977 -> 915 us
 Held-out guard (aggregate, one run, vs legacy): 1M +.0032 [+.0002, +.0063] 414 -> 455 us; gcsn +.0024 [-.0000,
 +.0050]; d20k +.0023 [+.0000, +.0047]; dall +.0026 [-.0001, +.0055]; advtest +.0044 [+.0016, +.0073].
 S1=1000 stays reachable by config (`stage1Candidates: 1000`): +.0018 more on 1M at ~1.9x time.
+Knee check (3 interleaved runs per point, both machines, csn1m-dev, W=1, int8-all; p50 x86 / Mac, MRR@10):
+S1 250 433/263 .5527; 300 428/262 .5532; 400 441/261 .5540; 500 507/303 .5544 (+.0004 ns vs 400); 600 576/325 .5552
+(+.0012 [+.0004,+.0022]). Adaptive pool S1 250: 407/262 .5518. 250-400 cost the same (walk ef = max(S1, 400) = 400),
+so 400 = widest stage 1 that does not widen the walk. int8-all costs ~34 us on x86, ~0 on the Mac.
