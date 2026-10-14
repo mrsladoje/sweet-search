@@ -195,3 +195,29 @@ Box (root@167.233.69.121):
 - 446 idle leftover `_rt_broker.mjs` node processes (task-bench, ~7 days old, 1.5 GB RSS, 0% CPU) — ask
   the owner before killing.
 - Disk ~20–26 GB free.
+
+## 8. Kernel A/B round (2026-10-14, after this handoff)
+
+Driver `ab.sh` (arms interleaved, order rotated per rep), scorer `abscore.py` (MRR@10 with a paired bootstrap CI
+vs a base arm, recall@10 vs exact, overlap, identical-output share, p50 per run). `ours.mjs` gained `K`.
+Choices made on csn1m-dev (GCSN dev queries over the 1M corpus, 3,600 queries) and the 6.9k/20k/140k dev sets;
+held-out read once, aggregate only, after the choice.
+
+Shipped (default on):
+1. Code slab, CSR graph and visited bytes in 2 MB-aligned blocks with MADV_HUGEPAGE on Linux (blocks >= 4 MB;
+   smaller ones 64-byte aligned). Output identical on every query. 1M dev p50: x86 1,386 -> 719 us (3 reps
+   each), M3 Max equal (418 vs 417). 140k dev x86 458 -> 435. Legacy: `SS_FIX_HNSW_HUGE=0`.
+2. stage1Candidates 1000 -> 250, raised to the largest stage-2 pool for k (k=10: 250, ef = max(250, 400) = 400;
+   k>=27: 400). 1M dev: MRR@10 .5483 -> .5490 (+.0007 [+.0001, +.0015]), recall@10 vs exact .833 -> .842;
+   k=50: MRR -.0001 [-.0004, +.0001], top-50 overlap 98.4%. 6.9k/20k/140k dev: -.0000/+.0001/+.0001 (all CIs
+   cross 0). Legacy: `stage1Candidates: 1000` in vector-store.js.
+Final code vs the tested arms: 0 result diffs on 3,600 queries (Mac and box); legacy switches vs old code: 0 diffs.
+Combined, 1M dev p50: x86 1,249 -> 417 us, Mac 414 -> 249 us.
+Held-out csn1m-ho (aggregate only, 1 run): MRR .5306 -> .5300 (-.0006 [-.0020, +.0006]), recall@10 vs exact
+.832 -> .839, p50 x86 1,291 -> 428 us, Mac 415 -> 255 us.
+
+Rejected: windowed code prefetch (8/16 ahead): Mac +41% time; x86 helps only without huge pages, hurts with them.
+Level-0 re-prune to 128 (heuristic, no back-fill; mean level-0 degree is 180): MRR -.0014 [-.0026, -.0003] vs
+S1=250. Re-prune at 96: worse. Tie stop (`>=`): same MRR, changes 0.6% of queries, no clear time gain.
+Open: re-prune WITH back-fill: MRR -.0003 [-.0010, +.0001] vs S1=250 on Mac dev, x86 ~17% faster (412 -> 343 us).
+Kept as an off-by-default switch (`SS_HNSW_PRUNE0=128 SS_HNSW_PRUNE0_FILL=1`); not adopted.

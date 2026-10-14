@@ -4,7 +4,7 @@
 // identical inputs. Latency = median of 3 runs per query, query embedding excluded (it is a cache hit).
 //
 // usage: node ours.mjs <setDir>
-// env: R (repo root), OUT (file in <setDir>, default ours.json), NQ (limit queries)
+// env: R (repo root), OUT (file in <setDir>, default ours.json), NQ (limit queries), K (results per query, default 10)
 //   sweep knobs (unset = production values):
 //   S1    stage-1 candidates (production 1000; exact scan <=150k vectors, binary HNSW walk above)
 //   EF    walk efSearch floor (production 400; the walk uses max(EF, S1-derived target))
@@ -14,7 +14,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 const R = process.env.R || '/Users/admin/Projects/sweet-search-private';
-const set = process.argv[2]; const NQ = Number(process.env.NQ || 1e9);
+const set = process.argv[2]; const NQ = Number(process.env.NQ || 1e9); const K = Number(process.env.K || 10);
 const meta = JSON.parse(fs.readFileSync(`${set}/meta.json`));
 const ss = `${meta.root}/.sweet-search`;
 const { BinaryHNSWIndex } = await import(`${R}/core/vector-store/index.js`);
@@ -50,14 +50,14 @@ const inject = i => {
   const float = Q.slice(i * D, (i + 1) * D);
   queryCache.set(`binary:${qs[i].text}`, { binary: floatToBinary(truncateForHNSW(float)), float });
 };
-const run = i => { inject(i); return semanticSearch3Stage.call(self, qs[i].text, { k: 10, rerank: false }); };
+const run = i => { inject(i); return semanticSearch3Stage.call(self, qs[i].text, { k: K, rerank: false }); };
 for (let i = 0; i < Math.min(200, qs.length); i++) await run(i);
-const out = { system: 'sweet', knobs, n: idx.vectors.length, load_s: loadS, host: os.hostname(), cpu: os.cpus()[0].model, node: process.version, total_us: [], stage1_us: [], res: [] };
+const out = { system: 'sweet', knobs: { ...knobs, K, HNSW_ENV: Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith('SS_HNSW_'))) }, n: idx.vectors.length, load_s: loadS, host: os.hostname(), cpu: os.cpus()[0].model, node: process.version, total_us: [], stage1_us: [], res: [] };
 for (let i = 0; i < qs.length; i++) {
   const t = [], s1 = []; let r;
   for (let rep = 0; rep < 3; rep++) {
     inject(i);
-    const s = process.hrtime.bigint(); r = await semanticSearch3Stage.call(self, qs[i].text, { k: 10, rerank: false }); const tot = Number(process.hrtime.bigint() - s) / 1e3;
+    const s = process.hrtime.bigint(); r = await semanticSearch3Stage.call(self, qs[i].text, { k: K, rerank: false }); const tot = Number(process.hrtime.bigint() - s) / 1e3;
     if (r.stats.embedding?.source !== 'cache') throw new Error('query vector not injected: ' + r.stats.embedding.source);
     t.push(tot - (r.stats.embed_us || 0)); s1.push(r.stats.stages.binary.latency_us);
   }
