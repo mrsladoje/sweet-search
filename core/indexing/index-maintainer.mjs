@@ -2356,7 +2356,7 @@ async function spawnIndexer(files, options = {}) {
   if (quiet) args.push('--quiet');
 
   return new Promise((resolve) => {
-    const child = spawn('node', args, {
+    const child = spawn(process.execPath, args, {
       cwd: PROJECT_ROOT,
       stdio: ['pipe', 'pipe', 'pipe'],
       env: process.env,
