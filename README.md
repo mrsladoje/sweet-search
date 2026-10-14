@@ -1383,6 +1383,8 @@ sweet-search stands on a lot of shoulders, and we'd rather name them than preten
 
 [Apache-2.0](LICENSE) © Marko Sladojević and [PanonIT](https://panonit.com)
 
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) — pull requests need a one-time [CLA](CLA.md).
+
 ---
 
 <div align="center">
