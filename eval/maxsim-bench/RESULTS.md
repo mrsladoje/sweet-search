@@ -67,7 +67,8 @@ same time.
   `max(0, ·)` clamp that sweet applies on purpose. Which docs get it depends on the other
   docs in the call; one doc per call, its padded 3D API and its x86 build are exact here.
   Its top document matches the exact one on 100% of calls. Reproduce with synthetic data:
-  `maxsim_cpu_padding.py`.
+  `maxsim_cpu_padding.py`; reported as
+  [mixedbread-ai/maxsim-cpu#5](https://github.com/mixedbread-ai/maxsim-cpu/issues/5).
 
 ## Apple M3 Max: Apple M3 Max, 16 logical CPUs, macOS-26.3.1-arm64-arm-64bit
 Python 3.12.13, NumPy 2.5.4; rounds: 2
@@ -84,7 +85,7 @@ Python 3.12.13, NumPy 2.5.4; rounds: 2
 | maxsim-cpu | `maxsim_cpu_variable@t1` | 0.327 | 0.473 | 0.69 | 6.51× [6.42, 6.61] | 99% | 4.1e-02¹ | 100.0% |
 | NumKong (approx.) | `numkong_f16@t1` | 0.121 | 0.229 | 0.29 | 2.64× [2.62, 2.67] | 100% | 8.3e-02 | 86.2% |
 
-¹ This difference does not come from the benchmark, and it does not affect timing. maxsim-cpu's list API (`maxsim_scores_variable`, arm64 build) pads shorter docs with zero vectors inside its batches. A zero vector scores 0, so for some docs a query token whose best cosine is below 0 counts as 0, which is the `max(0, ·)` clamp that sweet applies on purpose. Which docs get it depends on the other docs in the call; one doc per call is exact. Its padded 3D API and its x86 build are exact on every call here. Reproduce: `maxsim_cpu_padding.py`.
+¹ This difference does not come from the benchmark, and it does not affect timing. maxsim-cpu's list API (`maxsim_scores_variable`, arm64 build) pads shorter docs with zero vectors inside its batches. A zero vector scores 0, so for some docs a query token whose best cosine is below 0 counts as 0, which is the `max(0, ·)` clamp that sweet applies on purpose. Which docs get it depends on the other docs in the call; one doc per call is exact. Its padded 3D API and its x86 build are exact on every call here. Reproduce: `maxsim_cpu_padding.py`; reported as [maxsim-cpu#5](https://github.com/mixedbread-ai/maxsim-cpu/issues/5).
 
 **agent-ho, rivals given the same int4 storage (dequantization inside their timed call)** (2004 calls; ratio = other / sweet kernel, > 1 = sweet faster)
 

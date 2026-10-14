@@ -41,7 +41,8 @@ for queries over 32 tokens once a doc reaches 64 tokens
 reproduced on the box), so on x86 it is run in 32-token query chunks, whose sums add up
 exactly. maxsim-cpu's list API on arm64 zero-pads shorter docs inside a call, so some
 docs get a `max(0, ·)` clamp depending on the other docs in the call (max error ~4e-2,
-top-1 unaffected; `maxsim_cpu_padding.py` reproduces it). NumKong is approximate (max
+top-1 unaffected; `maxsim_cpu_padding.py` reproduces it;
+[mixedbread-ai/maxsim-cpu#5](https://github.com/mixedbread-ai/maxsim-cpu/issues/5)). NumKong is approximate (max
 error ~0.1, top-1 agreement ~92% on these calls).
 
 ## Data (held-out only in RESULTS.md)
