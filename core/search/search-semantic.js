@@ -275,7 +275,7 @@ function adaptiveStage2Pool(k, analysis, config) {
  * Stage 2 scores every stage-1 candidate with int8 (the slab dot is cheap);
  * SS_FIX_INT8_ALL=0 restores the adaptive pool (k=10: the top 100 of stage 1).
  * 2026-10-14, csn1m-dev: the adaptive pool dropped exact top-10 neighbours
- * that stage 1 had found; all + stage1Candidates 1000 = +0.0040 MRR@10.
+ * that stage 1 had found; all + stage1Candidates 400 = +0.0022 MRR@10.
  */
 function stage2PoolCount(stage2Pool, stage1Count) {
   return process.env.SS_FIX_INT8_ALL === '0' ? Math.min(stage2Pool.size, stage1Count) : stage1Count;

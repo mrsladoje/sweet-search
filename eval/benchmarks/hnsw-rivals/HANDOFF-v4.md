@@ -259,3 +259,14 @@ Cost (x86 p50, held-out): 1M 414 -> 880 us (still below this morning's 1,291); 1
 Tests: vector-store, indexing, search, embedding: 4,410 pass (the full suite stalled in one idle worker; not traced). Cheaper option kept open: S1=400 gives ~3/4 of the 1M gain at 445 us.
 The full-vector stage is skipped for format 'agent' (search-semantic.js), so W=1 does not touch agent output;
 int8-all does.
+
+### 8c. Pareto cut (same day): stage1Candidates 1000 -> 400
+
+Owner: the 1000 point is too slow for its MRR; goal = Pareto knee. 1M dev x86 frontier (p50 / MRR@10):
+morning 414 / .5490; W=1 406 / .5518; +int8-all S1=250 437 / .5527; S1=400 445 / .5540; S1=600 580 / .5552;
+S1=1000 847 / .5558. 400 is the knee (above it: +.0012 for +135 us, then +.0006 for +267 us). Kept W=1 and int8-all.
+Final code = tested S1=400 arm on all 4 dev sets (0 diffs). vs morning build, 1M dev: +.0050 [+.0030, +.0071];
+x86 417 -> 444 us, Mac 248 -> 263 us. k=50 1M dev: .5512 -> .5540, 977 -> 915 us (faster than legacy).
+Held-out guard (aggregate, one run, vs legacy): 1M +.0032 [+.0002, +.0063] 414 -> 455 us; gcsn +.0024 [-.0000,
++.0050]; d20k +.0023 [+.0000, +.0047]; dall +.0026 [-.0001, +.0055]; advtest +.0044 [+.0016, +.0073].
+S1=1000 stays reachable by config (`stage1Candidates: 1000`): +.0018 more on 1M at ~1.9x time.

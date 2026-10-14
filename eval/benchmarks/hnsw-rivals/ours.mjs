@@ -6,7 +6,7 @@
 // usage: node ours.mjs <setDir>
 // env: R (repo root), OUT (file in <setDir>, default ours.json), NQ (limit queries), K (results per query, default 10)
 //   sweep knobs (unset = production values):
-//   S1    stage-1 candidates (production 1000; exact scan <=150k vectors, binary HNSW walk above)
+//   S1    stage-1 candidates (production 400; exact scan <=150k vectors, binary HNSW walk above)
 //   EF    walk efSearch floor (production 400; the walk uses max(EF, S1-derived target))
 //   POOL  scale factor for the adaptive int8 / full-vector pool bounds (production 1)
 //   POOL2 / POOL25  scale only the int8 (stage 2) or only the full-vector (stage 2.5) pool bounds
