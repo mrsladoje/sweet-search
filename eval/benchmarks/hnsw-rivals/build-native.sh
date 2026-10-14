@@ -3,7 +3,7 @@
 # hnswlib gets its own binary with the flags from hnswlib's CMakeLists (-ffast-math -ftree-vectorize): it has no NEON
 # code, and without those flags its distance loops stay scalar on ARM (about 5x slower).
 set -e
-S=${1:-src}; mkdir -p $S; OMP=$(brew --prefix libomp)
+S=${1:-src}; mkdir -p $S; S=$(cd $S && pwd); OMP=$(brew --prefix libomp)
 [ -d $S/faiss ] || git clone -q --depth 1 --branch v1.15.1 https://github.com/facebookresearch/faiss.git $S/faiss
 [ -d $S/usearch ] || git clone -q --depth 1 --branch v2.26.4 --recurse-submodules --shallow-submodules https://github.com/unum-cloud/usearch.git $S/usearch
 [ -d $S/hnswlib ] || git clone -q --depth 1 https://github.com/nmslib/hnswlib.git $S/hnswlib
