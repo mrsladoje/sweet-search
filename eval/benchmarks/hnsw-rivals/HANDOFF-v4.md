@@ -274,3 +274,35 @@ Knee check (3 interleaved runs per point, both machines, csn1m-dev, W=1, int8-al
 S1 250 433/263 .5527; 300 428/262 .5532; 400 441/261 .5540; 500 507/303 .5544 (+.0004 ns vs 400); 600 576/325 .5552
 (+.0012 [+.0004,+.0022]). Adaptive pool S1 250: 407/262 .5518. 250-400 cost the same (walk ef = max(S1, 400) = 400),
 so 400 = widest stage 1 that does not widen the walk. int8-all costs ~34 us on x86, ~0 on the Mac.
+
+### 8d. Re-prune on by default above 150k + x86 rival rescore (same day, box only; Mac busy)
+
+Box A/B, 3 interleaved runs, vs current main (S1 400, W=1, int8-all):
+- Level-0 re-prune to 128 WITH back-fill (load time, Rust): csn1m-dev MRR@10 -.0002 [-.0010, +.0004], R@10 .9389
+  -> .9393, p50 447 -> 378 us (stage 1 254 -> 188), RSS -220 MB, index load 24 -> 35 s (8 vCPU). SHIPPED as the default
+  when the index has > 150,000 vectors (below that the exact scan answers; the graph is not searched). Legacy:
+  `SS_HNSW_PRUNE0=0`; `SS_HNSW_PRUNE0_FILL=0` = no back-fill. Parity: default = tested arm on csn1m-dev (0 diffs of
+  3,600); PRUNE0=0 = old main (0 diffs); d20k-dev unchanged (0 diffs). Held-out csn1m-ho (aggregate, 3 runs):
+  .5331 -> .5330 (-.0001 [-.0014, +.0011]), R@10 .9381 -> .9379, p50 442 -> 372 us.
+  Committed .node binaries are not rebuilt (as for the earlier Rust commits); release CI builds them.
+- Walk floor 300 (S1 = EF = 300): -.0008 [-.0017, -.0001], p50 -13%. REJECTED (significant MRR loss).
+- Half the full-vector head (POOL25=0.5): MRR -.0001..-.0003 (all ns) on 5 dev sets, p50 -8..-17%, but recall@10 vs
+  exact -3 pp (1M .939 -> .909, AdvTest .912 -> .880). REJECTED: a faster read is the better fix (below).
+- Full vectors resident in RAM (SWEET_SEARCH_EMBEDDING_CACHE_MAX_VECTORS=2000000, identical output): p50 20k 175 -> 124,
+  AdvTest 192 -> 137, 140k 459 -> 399 us, 6.9k unchanged (already resident); RSS 140k +460 MB. NOT SHIPPED (RAM).
+  Micro-bench (AdvTest, x86): stage 3 via ss_full_dots = 71 us for 30 ids, 123 us for 60; the id seek alone 24 us;
+  rows are ~4 KB (embedding + text + metadata), one page each. Plan item #7 (node-ordered f32 file, mmap) would
+  remove ~50 us/query on every index > 16,384 vectors; needs an append path for incremental updates and costs
+  3 KB/vector of disk. Owner decision pending.
+- Profile (AdvTest x86, cpu-prof): _extensionDotScores 36% self, native stage 1 21%, int8Stage 9%.
+
+x86 rival rescore with the shipped build (held-out, our arm 3 runs tonight; rival runs 13-14 Oct, same box and
+binaries; score4b.py; ratio = rival p50 / ours at the first sweep point reaching our MRR@10):
+  csn1m-ho  ours 372 us .5330: usearch_i8 x2.39, faiss_sq8_refine x3.08, faiss_flat M64 x3.79, hnswlib M64 x5.34,
+            binflat x6.44; bin_cascade / usearch_b1 never.
+  dall-ho   ours 457 us .7881: binflat x1.07, hnswlib M64 x3.70, sq8 x4.08; 8 configs never.
+  d20k-ho   ours 178 us .8220: binflat x1.02, RaBitQ-flat x2.05, sq8 x2.56, flat M32 x2.63.
+  advtest   ours 191 us .4731: RaBitQ-flat x2.15, binflat x2.30, sq8 x2.79, usearch_i8_rescore x3.28.
+  gcsn-ho   ours 96 us .8359: binflat x1.34, RaBitQ-flat x1.39, hnswlib M64 x1.82.
+No rival is faster than us at our MRR on any x86 set; binflat ties at 20k and 140k (within box noise, H3).
+Mac not rerun (owner's machine busy). Backups: v4/<set>/scored4.pre-1014b.json; ours-final-r{1,2,3}.json = ab-ho4-fin.

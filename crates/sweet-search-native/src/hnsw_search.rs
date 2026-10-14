@@ -677,15 +677,23 @@ pub struct HnswSearcher {
     tie_keyed: Vec<(i32, u32)>,
     pool_idx: Vec<u32>,
     huge: bool,
-    // Experiment, off by default: re-prune level-0 lists at load to at most
-    // this many links (`SS_HNSW_PRUNE0`, 0 = keep the built lists). 1M dev
-    // set at stage1 250: 128 without fill lost MRR@10 (-0.0014); with fill
-    // -0.0003 (not significant), x86 ~15% faster. Not adopted.
+    // Level-0 lists are re-pruned at load to at most this many links when
+    // the index is walked (more than PRUNE0_MIN_COUNT vectors; smaller ones
+    // use the exact scan, so the graph is not searched). `SS_HNSW_PRUNE0`
+    // sets the cap (0 = keep the built lists). 1M dev, stage1 400: 128 with
+    // back-fill MRR@10 -0.0002 [-0.0010, +0.0004], recall@10 equal, x86 p50
+    // 447 -> 378 us, load +10 s; without back-fill MRR -0.0014.
     prune0: usize,
-    // `SS_HNSW_PRUNE0_FILL=1`: back-fill pruned lists with the nearest
-    // dropped links up to `prune0` (as the build does).
+    // Back-fill pruned lists with the nearest dropped links up to `prune0`
+    // (as the build does). `SS_HNSW_PRUNE0_FILL=0` turns it off.
     prune0_fill: bool,
 }
+
+/// Default level-0 re-prune cap (M0) for walked indexes.
+const PRUNE0_DEFAULT: usize = 128;
+/// Re-prune only above this many vectors: up to it the JS side answers with
+/// the exact scan (`EXACT_SCAN_MAX_VECTORS` in binary-hnsw-index.js).
+const PRUNE0_MIN_COUNT: usize = 150_000;
 
 #[napi]
 impl HnswSearcher {
@@ -739,8 +747,11 @@ impl HnswSearcher {
             tie_keyed: Vec::new(),
             pool_idx: Vec::new(),
             huge,
-            prune0: std::env::var("SS_HNSW_PRUNE0").ok().and_then(|v| v.parse().ok()).unwrap_or(0usize),
-            prune0_fill: std::env::var("SS_HNSW_PRUNE0_FILL").map(|v| v == "1").unwrap_or(false),
+            prune0: std::env::var("SS_HNSW_PRUNE0")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(if count as usize > PRUNE0_MIN_COUNT { PRUNE0_DEFAULT } else { 0 }),
+            prune0_fill: std::env::var("SS_HNSW_PRUNE0_FILL").map(|v| v != "0").unwrap_or(true),
         })
     }
 
