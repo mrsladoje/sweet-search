@@ -668,6 +668,7 @@ pub struct HnswSearcher {
     live_dist: Vec<u32>,
     layer_out: Vec<u32>,
     int8_rank: Vec<u32>,
+    int8_keys: Vec<u64>,
     int8_score: Vec<f64>,
     int8_missing: Vec<bool>,
     scan_d: Vec<u16>,
@@ -739,6 +740,7 @@ impl HnswSearcher {
             live_dist: Vec::new(),
             layer_out: Vec::new(),
             int8_rank: Vec::new(),
+            int8_keys: Vec::new(),
             int8_score: Vec::new(),
             int8_missing: Vec::new(),
             scan_d: Vec::new(),
@@ -1581,18 +1583,27 @@ impl HnswSearcher {
                 sc.push(0.0);
             }
         }
+        // Sort keys: score = dot * scale with scale > 0, so descending score
+        // is descending integer dot (a missing row scores 0.0, as dot 0).
+        // Key = (i32::MAX - dot) << 32 | position: an unstable sort of these
+        // keys gives the stable descending order by score.
+        let mut keys = std::mem::take(&mut self.int8_keys);
+        keys.clear();
         for i in 0..count {
+            let mut dot = 0i32;
             if !miss[i] {
                 let node = pool[i] as usize;
                 let v = &slab[node * dim..(node + 1) * dim];
-                sc[i] = crate::rescore::int8_dot(q, v) as f64 * scale;
+                dot = crate::rescore::int8_dot(q, v);
+                sc[i] = dot as f64 * scale;
             }
+            keys.push(((i32::MAX as i64 - dot as i64) as u64) << 32 | i as u64);
         }
+        keys.sort_unstable();
         let mut rank = std::mem::take(&mut self.int8_rank);
         rank.clear();
-        rank.extend(0..count as u32);
-        // Stable, descending; scores are finite, so partial_cmp never fails.
-        rank.sort_by(|&a, &b| sc[b as usize].partial_cmp(&sc[a as usize]).unwrap_or(std::cmp::Ordering::Equal));
+        rank.extend(keys.iter().map(|&key| key as u32));
+        self.int8_keys = keys;
         let (nodes, dists, scores, missing) = (nodes.as_mut(), dists.as_mut(), scores.as_mut(), missing.as_mut());
         let mut non_missing = 0usize;
         for (j, &r) in rank.iter().enumerate() {

@@ -358,7 +358,7 @@ export async function buildHnswIndex(items, options = {}) {
     // Optionally include int8 for rescoring
     const int8 = includeInt8 ? quantizeToInt8(truncated[idx]) : null;
 
-    await index.add(item.id, binary, item.metadata || {}, int8);
+    await index.add(item.id, binary, item.metadata || {}, int8, item.embedding);
 
     processed++;
     if (onProgress && (processed % 500 === 0 || processed === items.length)) {
@@ -477,7 +477,7 @@ async function buildHnswIndexFromDb(db, options = {}) {
     const int8 = includeInt8 ? quantizeToInt8(truncated) : null;
     const metadata = row.metadata ? JSON.parse(row.metadata) : {};
 
-    await index.add(row.id, binary, metadata, int8);
+    await index.add(row.id, binary, metadata, int8, embedding);
 
     processed++;
     if (onProgress && (processed % 500 === 0 || processed === totalVectors)) {
@@ -756,7 +756,7 @@ export async function updateArtifacts(newItems, removedIds = [], options = {}) {
       const int8 = quantizeToInt8(truncated);
 
       // Add to HNSW index (int8 stored in index.int8Vectors Map)
-      await hnswIndex.add(item.id, binary, item.metadata || {}, int8);
+      await hnswIndex.add(item.id, binary, item.metadata || {}, int8, item.embedding);
     }
 
     // Save updated HNSW (includes .int8.json sidecar)

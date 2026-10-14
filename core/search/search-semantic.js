@@ -108,12 +108,14 @@ function applyFullVectorStageRescore(candidates, queryFloat, codebaseRepo, opts 
   const ids = head.map(c => c.id).filter(Boolean);
   if (ids.length === 0) return { candidates, stats: null };
 
-  // Native path (resident store, or SQLite through the ss_full_dots
-  // extension); same scores and found count as getEmbeddingsByIds +
-  // dotProducts below.
-  const fetched = codebaseRepo.embeddingDotScores
-    ? codebaseRepo.embeddingDotScores(queryFloat, head.map(c => c.id || null))
-    : { embeddings: codebaseRepo.getEmbeddingsByIds(ids) };
+  // Native paths (the index's full-vector file, else the resident store or
+  // SQLite through the ss_full_dots extension); same scores and found count
+  // as getEmbeddingsByIds + dotProducts below.
+  const headIds = head.map(c => c.id || null);
+  const fetched = opts.fullVectors?.fullDotScores?.(queryFloat, headIds, opts.nodes?.subarray(0, limit))
+    || (codebaseRepo.embeddingDotScores
+      ? codebaseRepo.embeddingDotScores(queryFloat, headIds)
+      : { embeddings: codebaseRepo.getEmbeddingsByIds(ids) });
   let fullScores;
   if (fetched.scores) {
     if (fetched.found < 2) return { candidates, stats: null };
@@ -139,19 +141,19 @@ function applyFullVectorStageRescore(candidates, queryFloat, codebaseRepo, opts 
   const maxFull = Math.max(...fullValues);
   const weight = opts.weight ?? envNumber('SWEET_SEARCH_FULL_VECTOR_STAGE_WEIGHT', FULL_VECTOR_STAGE_WEIGHT, 0, 1);
 
+  // `opts.owned`: the caller built these candidates for this query alone,
+  // so the fields are set on them instead of on copies (same keys, same
+  // order, same values).
   const reranked = scored.map(item => {
-    if (!Number.isFinite(item.fullScore)) {
-      return { ...item.candidate };
-    }
+    const c = opts.owned ? item.candidate : { ...item.candidate };
+    if (!Number.isFinite(item.fullScore)) return c;
     const baseNorm = normalizeScore(item.baseScore, minBase, maxBase);
     const fullNorm = normalizeScore(item.fullScore, minFull, maxFull);
-    return {
-      ...item.candidate,
-      fullVectorScore: item.fullScore,
-      fullVectorNorm: fullNorm,
-      preFullVectorScore: item.baseScore,
-      semanticBlendScore: (1 - weight) * baseNorm + weight * fullNorm,
-    };
+    c.fullVectorScore = item.fullScore;
+    c.fullVectorNorm = fullNorm;
+    c.preFullVectorScore = item.baseScore;
+    c.semanticBlendScore = (1 - weight) * baseNorm + weight * fullNorm;
+    return c;
   });
   // Sort positions (ties by original index) instead of tagging each object
   // with a temporary key: same order, and no delete (dictionary-mode objects).
@@ -368,6 +370,7 @@ export async function semanticSearch3Stage(query, options = {}) {
     : null;
   let scoredCandidates;
   let int8Analysis;
+  let headNodes = null;
   if (fused) {
     const stage1Count = fused.count;
     const stage1Analysis = spreadFromStats(fused.stats[1], fused.stats, 2);
@@ -396,6 +399,9 @@ export async function semanticSearch3Stage(query, options = {}) {
       ? int8.count
       : Math.min(adaptiveStage2_5Pool(k, int8Analysis, adaptiveConfig).size, int8.count);
     scoredCandidates = int8.materialize(head);
+    // Stage 2.5 (float-512, off by default) reorders the head; without it the
+    // full-vector stage gets the head in this order.
+    headNodes = float512StageEnabled() ? null : int8.nodes(head);
     stats.stages.int8 = {
       latency_us: Math.round((performance.now() - stage2Start) * 1000),
       candidates: int8.count,
@@ -656,7 +662,8 @@ export async function semanticSearch3Stage(query, options = {}) {
     const fullVectorStage = applyFullVectorStageRescore(
       scoredCandidates,
       embedResult.float,
-      this.codebaseRepo
+      this.codebaseRepo,
+      { fullVectors: this.binaryHnswIndex, nodes: headNodes, owned: headNodes !== null }
     );
     scoredCandidates = fullVectorStage.candidates;
     if (fullVectorStage.stats) stats.stages.fullVector = fullVectorStage.stats;
@@ -763,10 +770,14 @@ export async function semanticSearch3Stage(query, options = {}) {
     };
   }
 
-  const formattedResults = results.map(r => ({
-    ...r,
-    searchPath: 'semantic-3stage',
-  }));
+  // Candidates from the fused native path were built for this query alone
+  // (materialize), so they are tagged in place instead of copied.
+  const formattedResults = headNodes !== null
+    ? results.map(r => { r.searchPath = 'semantic-3stage'; return r; })
+    : results.map(r => ({
+      ...r,
+      searchPath: 'semantic-3stage',
+    }));
 
   // Return both results and stats for proper propagation
   return { results: formattedResults, stats };

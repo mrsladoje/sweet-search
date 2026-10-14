@@ -47,6 +47,15 @@ import { TypedMinHeap, TypedMaxHeap, VisitedList } from './binary-heap.js';
 import { loadBitmap, isSet, popcountRange } from '../infrastructure/tombstone-bitmap-reader.js';
 import { loadNativeAddon } from '../infrastructure/native-resolver.js';
 import { nativeRescoreKernels, scratchArray } from '../infrastructure/native-rescore.js';
+import {
+  FullVectorWriter,
+  closeFullVectors,
+  fullDotScoresForNodes,
+  fullVectorsEnabled,
+  openFullVectors,
+  readFullVector,
+  removeFullVectorFiles,
+} from './full-vector-file.js';
 
 // Native query path (crates/sweet-search-native/src/hnsw_search.rs): an exact
 // port of greedySearchQuery/searchLayerQuery over a CSR snapshot of the graph.
@@ -726,6 +735,12 @@ export class BinaryHNSWIndex {
     this.useAsymmetric = false; // Enabled after calibration
     this._staleBitmapCache = null;
     this._cleanBuild = false;
+    // Full-vector file (full-vector-file.js): the writer is chosen at the
+    // first add (fresh for an empty index, else resume the published file);
+    // the reader is opened by load() and save().
+    this._fullWriter = undefined;
+    this._fullReader = null;
+    this._fullDirty = false;
 
     // G9 mmap: set when this instance is backed by an open, packed .idx fd
     // (loadMmap). `vectors`/`graph` are then lazy proxies and the index is
@@ -803,6 +818,11 @@ export class BinaryHNSWIndex {
     this.initialized = true;
     this._staleBitmapCache = null;
     this._cleanBuild = true;
+    this._fullWriter?.close();
+    this._fullWriter = undefined;
+    closeFullVectors(this._fullReader);
+    this._fullReader = null;
+    this._fullDirty = false;
   }
 
   /** Close an open packed-file descriptor if this index is mmap-backed. */
@@ -919,9 +939,9 @@ export class BinaryHNSWIndex {
    * @param {object} metadata - Optional metadata
    * @param {Int8Array} int8Vector - Optional int8 vector for rescoring
    */
-  async add(id, binaryVector, metadata = {}, int8Vector = null) {
+  async add(id, binaryVector, metadata = {}, int8Vector = null, fullVector = null) {
     if (!this.initialized) await this.init();
-    return this.addSync(id, binaryVector, metadata, int8Vector);
+    return this.addSync(id, binaryVector, metadata, int8Vector, fullVector);
   }
 
   /**
@@ -929,7 +949,7 @@ export class BinaryHNSWIndex {
    * (build loops, addBatch). Identical semantics to add() minus the init
    * probe — avoids per-insert promise machinery on hot construction paths.
    */
-  addSync(id, binaryVector, metadata = {}, int8Vector = null) {
+  addSync(id, binaryVector, metadata = {}, int8Vector = null, fullVector = null) {
     // The packed (mmap) layout is a read/search-only representation: `vectors`
     // and `graph` are lazy fd-backed proxies, not mutable plain arrays. Build
     // paths must construct on plain arrays and persist via save()/saveMmap().
@@ -955,6 +975,12 @@ export class BinaryHNSWIndex {
     }
 
     this._graphGen++;
+    if (this._fullWriter === undefined) {
+      this._fullWriter = !fullVectorsEnabled() ? null
+        : this.vectors.length === 0 ? FullVectorWriter.fresh(this.indexPath)
+          : FullVectorWriter.resume(this.indexPath, this.vectors.length);
+    }
+    this._fullDirty = true;
 
     // Check if already exists
     if (this.idToIndex.has(id)) {
@@ -963,6 +989,7 @@ export class BinaryHNSWIndex {
       if (int8Vector) {
         this.int8Vectors.set(id, int8Vector);
       }
+      this._fullWriter?.put(idx, fullVector);
       return idx;
     }
 
@@ -972,6 +999,7 @@ export class BinaryHNSWIndex {
     if (this._slab.ensure(idx + 1)) this._repointSlabViews();
     this.vectors.push({ id, binary: this._slab.set(idx, binary), metadata });
     this.idToIndex.set(id, idx);
+    this._fullWriter?.put(idx, fullVector);
 
     if (int8Vector) {
       this.int8Vectors.set(id, int8Vector);
@@ -1599,22 +1627,26 @@ export class BinaryHNSWIndex {
     const nat = this._nativeSearcher();
     if (nat) nat.setQuery(queryBinary);
     let currentNode = this.entryPoint;
-
-    for (let l = this.maxLevel; l >= 1; l--) {
-      currentNode = nat
-        ? nat.greedy(currentNode, l)
-        : this.greedySearchQuery(currentNode, queryBinary, l);
-    }
-
-    // Adaptive ef: easy queries get a smaller budget, hard queries get more
     let ef = Math.max(this._oversampleTarget(k, staleBitmap), this.efSearch);
-    const greedyDist = nat ? nat.dist(currentNode) : this._distQ(currentNode);
     const maxDist = this.dimension * 8;
-    const greedyQuality = 1 - (greedyDist / maxDist);
-    if (greedyQuality > 0.85) {
-      ef = Math.max(this._oversampleTarget(k, staleBitmap), Math.round(ef * 0.6));
-    } else if (greedyQuality < 0.55) {
-      ef = Math.round(ef * 1.5);
+    // The native exact scan (_finishNativeSearch) uses neither the entry node
+    // nor ef, so only a walk descends the upper layers.
+    const scan = nat && this.vectors.length <= EXACT_SCAN_MAX_VECTORS && process.env.SS_FIX_HNSW_SCAN !== '0';
+    if (!scan) {
+      for (let l = this.maxLevel; l >= 1; l--) {
+        currentNode = nat
+          ? nat.greedy(currentNode, l)
+          : this.greedySearchQuery(currentNode, queryBinary, l);
+      }
+
+      // Adaptive ef: easy queries get a smaller budget, hard queries get more
+      const greedyDist = nat ? nat.dist(currentNode) : this._distQ(currentNode);
+      const greedyQuality = 1 - (greedyDist / maxDist);
+      if (greedyQuality > 0.85) {
+        ef = Math.max(this._oversampleTarget(k, staleBitmap), Math.round(ef * 0.6));
+      } else if (greedyQuality < 0.55) {
+        ef = Math.round(ef * 1.5);
+      }
     }
 
     // Level 0 search — pure Hamming, no asymmetric in the traversal loop
@@ -1698,21 +1730,24 @@ export class BinaryHNSWIndex {
     }
     this._setQuery(queryBinary);
     nat.setQuery(queryBinary);
-    let currentNode = this.entryPoint;
-    for (let l = this.maxLevel; l >= 1; l--) currentNode = nat.greedy(currentNode, l);
-
-    let ef = Math.max(this._oversampleTarget(k, staleBitmap), this.efSearch);
-    const maxDist = this.dimension * 8;
-    const greedyQuality = 1 - (nat.dist(currentNode) / maxDist);
-    if (greedyQuality > 0.85) {
-      ef = Math.max(this._oversampleTarget(k, staleBitmap), Math.round(ef * 0.6));
-    } else if (greedyQuality < 0.55) {
-      ef = Math.round(ef * 1.5);
-    }
 
     const total = this.vectors.length;
     const live = this._liveVectorCount(staleBitmap);
     const scan = total <= EXACT_SCAN_MAX_VECTORS && process.env.SS_FIX_HNSW_SCAN !== '0';
+    const maxDist = this.dimension * 8;
+    let currentNode = this.entryPoint;
+    let ef = Math.max(this._oversampleTarget(k, staleBitmap), this.efSearch);
+    // The exact scan uses neither the entry node nor ef, so only the walk
+    // descends the upper layers.
+    if (!scan) {
+      for (let l = this.maxLevel; l >= 1; l--) currentNode = nat.greedy(currentNode, l);
+      const greedyQuality = 1 - (nat.dist(currentNode) / maxDist);
+      if (greedyQuality > 0.85) {
+        ef = Math.max(this._oversampleTarget(k, staleBitmap), Math.round(ef * 0.6));
+      } else if (greedyQuality < 0.55) {
+        ef = Math.round(ef * 1.5);
+      }
+    }
     const want = scan ? Math.min(total, k + (total - live)) : 0;
     const et = BINARY_HNSW_CONFIG.earlyTermination || {};
     const list = et.thresholds || [[0.3, 0.05], [0.6, 0.10]];
@@ -1742,6 +1777,8 @@ export class BinaryHNSWIndex {
         count: m,
         missing: m - s2[0],
         stats: s2,
+        // Node indices of the first h candidates (a copy: the scratch is shared).
+        nodes: (h) => nodes.slice(0, Math.min(h, m)),
         materialize: (h) => {
           const out = new Array(Math.min(h, m));
           for (let i = 0; i < out.length; i++) {
@@ -2040,7 +2077,7 @@ export class BinaryHNSWIndex {
 
     const results = [];
     for (const item of items) {
-      const idx = this.addSync(item.id, item.binary || item.vector, item.metadata, item.int8);
+      const idx = this.addSync(item.id, item.binary || item.vector, item.metadata, item.int8, item.full || null);
       results.push(idx);
     }
     return results;
@@ -2067,6 +2104,50 @@ export class BinaryHNSWIndex {
    * @param {string[]} ids
    * @returns {Array<Int8Array|undefined>} aligned with ids
    */
+  /**
+   * save() helper: publish the full-vector file for this save, or remove it
+   * when this save's nodes have no full vectors (so no reader pairs an old
+   * map with a new graph), then reopen the reader on what was published.
+   */
+  async _publishFullVectors(indexPath, pidSuffix) {
+    const w = this._fullWriter;
+    if (w) {
+      await w.publish(indexPath, this.vectors.length, pidSuffix);
+    } else if (this._fullDirty || this.vectors.length === 0) {
+      await removeFullVectorFiles(indexPath);
+    }
+    this._fullDirty = false;
+    closeFullVectors(this._fullReader);
+    this._fullReader = openFullVectors(indexPath, this.vectors.length);
+  }
+
+  /**
+   * Full-vector scores for the final rescore from the full-vector file:
+   * { scores, found } aligned with `ids` (as CodebaseRepository
+   * .embeddingDotScores gives them), or null when the file is absent or any
+   * id has no row there (the caller then reads SQLite). `nodes`, when
+   * given, are the ids' node indices (from searchCascade), so no id lookup.
+   */
+  fullDotScores(query, ids, nodes = null) {
+    const reader = this._fullReader;
+    if (!reader) return null;
+    if (!nodes || nodes.length !== ids.length || !this._nodesMatch(nodes, ids)) {
+      nodes = new Array(ids.length);
+      for (let i = 0; i < ids.length; i++) nodes[i] = ids[i] == null ? undefined : this.idToIndex.get(ids[i]);
+    }
+    return fullDotScoresForNodes(reader, query, nodes, ids);
+  }
+
+  _nodesMatch(nodes, ids) {
+    for (let i = 0; i < ids.length; i++) if (this.vectors[nodes[i]]?.id !== ids[i]) return false;
+    return true;
+  }
+
+  /** A copy of node `node`'s full vector from the file, or null. */
+  fullVectorOf(node) {
+    return readFullVector(this._fullReader, node);
+  }
+
   /**
    * Node-ordered int8 slab: row i holds int8Vectors.get(vectors[i].id), and
    * `present[i]` says whether that vector exists. Rebuilt after any write to
@@ -2267,6 +2348,7 @@ export class BinaryHNSWIndex {
     else await fs.rm(int8Path, { force: true });
     if (stagedCalib) await fs.rename(calibPath + pidSuffix, calibPath);
     else await fs.rm(calibPath, { force: true });
+    await this._publishFullVectors(indexPath, pidSuffix);
     await fs.rename(metaPath + pidSuffix, metaPath);
 
     if (this._cleanBuild) {
@@ -2399,6 +2481,12 @@ export class BinaryHNSWIndex {
     // Resize visited list to actual vector count
     this._visitedList.ensureCapacity(this.vectors.length);
 
+    this._fullWriter?.close();
+    this._fullWriter = undefined;
+    this._fullDirty = false;
+    closeFullVectors(this._fullReader);
+    this._fullReader = openFullVectors(indexPath, this.vectors.length);
+
     this.initialized = true;
     // Build the native snapshot now, not on the first query (and release
     // the JS graph arrays it replaces).
@@ -2427,6 +2515,13 @@ export class BinaryHNSWIndex {
    */
   async saveMmap(indexPath = this.indexPath) {
     await fs.mkdir(path.dirname(indexPath), { recursive: true });
+    // The packed format has no full-vector file; the rescore reads SQLite.
+    this._fullWriter?.close();
+    this._fullWriter = undefined;
+    closeFullVectors(this._fullReader);
+    this._fullReader = null;
+    this._fullDirty = false;
+    await removeFullVectorFiles(indexPath);
 
     const dim = this.dimension;
     const n = this.vectors.length;
@@ -2774,6 +2869,12 @@ export class BinaryHNSWIndex {
     await fs.rm(this.stalePath, { force: true });
     this._staleBitmapCache = null;
     this._cleanBuild = false;
+    this._fullWriter?.close();
+    this._fullWriter = undefined;
+    closeFullVectors(this._fullReader);
+    this._fullReader = null;
+    this._fullDirty = false;
+    await removeFullVectorFiles(this.indexPath);
   }
 
   /**
@@ -2782,6 +2883,7 @@ export class BinaryHNSWIndex {
    */
   close() {
     this._closeMmap();
+    closeFullVectors(this._fullReader);
   }
 }
 

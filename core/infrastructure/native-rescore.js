@@ -15,7 +15,7 @@ export function nativeRescoreKernels() {
   const res = loadNativeAddon({
     validate: (m) => typeof m.int8DotScores === 'function' && typeof m.f32DotScores === 'function',
   });
-  if (res) kernels = { int8DotScores: res.mod.int8DotScores, f32DotScores: res.mod.f32DotScores, path: res.path };
+  if (res) kernels = { int8DotScores: res.mod.int8DotScores, f32DotScores: res.mod.f32DotScores, FullVectorFile: res.mod.FullVectorFile || null, path: res.path };
   return kernels;
 }
 
