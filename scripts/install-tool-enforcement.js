@@ -125,7 +125,8 @@ function upsertSettings({
     const entry = {
       matcher: addPreToolUseHook.matcher,
       hooks: [
-        { type: 'command', command: addPreToolUseHook.command, timeout: 4000, continueOnError: true },
+        // `timeout` is in seconds; a failed hint never blocks the Read.
+        { type: 'command', command: addPreToolUseHook.command, timeout: 5 },
       ],
     };
     const ownedIdx = arr.findIndex(group =>

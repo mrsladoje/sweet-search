@@ -18,9 +18,11 @@ export const AGENT_TOOL_SUBCOMMANDS = Object.freeze(new Set(Object.values(AGENT_
 
 // Commands a harness runs (MCP server, session hooks) → the package script each runs. The
 // native binary answers to these names too: it finds the package and runs the script with
-// the node that installed it, so a harness started without node on PATH (nvm not loaded,
-// a GUI app, a Rust-binary harness) still starts them. Mirrors
-// crates/sweet-search-cli/src/main.rs NODE_ENTRY_COMMANDS.
+// the node that installed it, so a harness whose PATH has the command but no node (nvm not
+// loaded in its shell, a Rust-binary harness) still runs them. A host started outside a
+// shell (a macOS app from the Dock) has neither on PATH: it needs the absolute path
+// (`command -v sweet-search-mcp`). Mirrors crates/sweet-search-cli/src/main.rs
+// NODE_ENTRY_COMMANDS.
 export const NODE_ENTRY_COMMANDS = Object.freeze({
   'sweet-search-mcp': 'mcp/server.js',
   'sweet-search-hook': 'scripts/hooks/hook.mjs',

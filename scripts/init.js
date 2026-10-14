@@ -1147,19 +1147,21 @@ export function registerPrewarmSessionStartHook({
   settings.hooks = settings.hooks || {};
   const sessionStart = Array.isArray(settings.hooks.SessionStart) ? settings.hooks.SessionStart : [];
 
+  // Claude Code hook `timeout` is in seconds. A failed hook never blocks the
+  // session (`onFailure` defaults to "continue"). The launcher detaches and
+  // returns in well under a second.
   const entry = {
     matcher: 'startup|resume|clear|compact',
     hooks: [
       {
         type: 'command',
         command,
-        timeout: 4000,
-        continueOnError: true,
+        timeout: 10,
       },
     ],
   };
 
-  // Find and replace any existing sweet-search-owned entry by filename match.
+  // Find and replace any existing sweet-search-owned entry by command match.
   const ownedIdx = sessionStart.findIndex((group) =>
     Array.isArray(group?.hooks) &&
     group.hooks.some((h) => typeof h?.command === 'string' && h.command.includes(PREWARM_HOOK_COMMAND))
@@ -1180,8 +1182,8 @@ export function registerPrewarmSessionStartHook({
       {
         type: 'command',
         command: dropCommand,
-        timeout: 2000,
-        continueOnError: true,
+        // SessionEnd hooks share a 1.5 s budget in Claude Code.
+        timeout: 2,
       },
     ],
   };
