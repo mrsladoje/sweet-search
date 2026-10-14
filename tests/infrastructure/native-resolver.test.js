@@ -216,7 +216,7 @@ describe('native-resolver', () => {
       const calls = [];
       const spawn = (...args) => {
         calls.push(args);
-        return { status: 0, stdout: 'sweet-search-agent-tools-protocol=1\n', stderr: '' };
+        return { status: 0, stdout: 'sweet-search-agent-tools-protocol=2\n', stderr: '' };
       };
       expect(nativeBinarySupportsAgentTools('/tmp/sweet-search', { spawn })).toBe(true);
       expect(calls[0][0]).toBe('/tmp/sweet-search');
@@ -229,8 +229,11 @@ describe('native-resolver', () => {
       expect(nativeBinarySupportsAgentTools('/tmp/legacy', {
         spawn: () => ({ status: 0, stdout: 'Usage: sweet-search query', stderr: '' }),
       })).toBe(false);
+      expect(nativeBinarySupportsAgentTools('/tmp/v1', {
+        spawn: () => ({ status: 0, stdout: 'sweet-search-agent-tools-protocol=1\n', stderr: '' }),
+      }), 'a version-1 binary has no sweet-search-mcp / sweet-search-hook').toBe(false);
       expect(nativeBinarySupportsAgentTools('/tmp/new', {
-        spawn: () => ({ status: 1, stdout: 'sweet-search-agent-tools-protocol=1', stderr: '' }),
+        spawn: () => ({ status: 1, stdout: 'sweet-search-agent-tools-protocol=2', stderr: '' }),
       })).toBe(false);
       expect(nativeBinarySupportsAgentTools('/tmp/broken', {
         spawn: () => ({ status: null, stdout: '', stderr: '', error: new Error('ENOEXEC') }),

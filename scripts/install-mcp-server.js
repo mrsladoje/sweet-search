@@ -23,14 +23,16 @@ export const MCP_CONFIG_FILE = '.mcp.json';
 export const MCP_SERVER_KEY = 'sweet-search';
 
 /**
- * The canonical server entry. Uses `npx -y sweet-search-mcp` (the published bin)
- * so the registration keeps working after a global/local install without a
- * hard-coded path, and pins the target repo via `--project-root`.
+ * The canonical server entry: the `sweet-search-mcp` command, which the install links
+ * (global bin, or ~/.local/bin for a project install: scripts/user-shims.js). It is the
+ * native binary: it finds the installed package and runs the server with the node that
+ * installed it, so the MCP host needs neither node nor npx on its PATH, and nothing is
+ * fetched from the registry. `--project-root` pins the target repo.
  */
 export function buildServerEntry({ projectRoot }) {
   return {
-    command: 'npx',
-    args: ['-y', 'sweet-search-mcp', '--project-root', projectRoot],
+    command: 'sweet-search-mcp',
+    args: ['--project-root', projectRoot],
   };
 }
 

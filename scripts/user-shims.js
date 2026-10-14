@@ -36,7 +36,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
-import { AGENT_TOOLS } from '../core/agent-tools/tools.js';
+import { NATIVE_COMMANDS } from '../core/agent-tools/tools.js';
 
 const MANIFEST_VERSION = 1;
 
@@ -150,7 +150,7 @@ export function installUserShims({
   packageRoot = '',
   env = process.env,
   home = os.homedir(),
-  names = Object.keys(AGENT_TOOLS),
+  names = NATIVE_COMMANDS,
 } = {}) {
   const manifest = readShimManifest(home);
   const ours = new Map(manifest.shims.map((e) => [e.path, e]));

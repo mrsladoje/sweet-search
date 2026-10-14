@@ -177,7 +177,7 @@ sweet-search uninstall --dry-run    # preview cleanup for the current repo
   - Codex ignores `.codex/` until you trust the project; init tells you how.
 - **opencode** — our guide, tested prompt and a tool-description plugin in `.opencode/`:
   - An existing `opencode.json` / `.jsonc` is edited in place, comments kept.
-- **Prewarm hook** (Claude Code, Codex): only with a project-local install (`npm i -D sweet-search`). Search works without it.
+- **Prewarm hook** (Claude Code, Codex): starts the search daemon when a session starts. Search works without it.
 - **What gets indexed:** `.gitignore` is respected; `node_modules`, build dirs, minified files and files over 1 MB are skipped; add extra rules in `.sweet-search-ignore`.
 
 ### MCP and other integrations
@@ -189,8 +189,8 @@ The CLI is the default contact surface. To also register the MCP server, run
 {
   "mcpServers": {
     "sweet-search": {
-      "command": "npx",
-      "args": ["-y", "sweet-search-mcp", "--project-root", "/absolute/path/to/your/repo"]
+      "command": "sweet-search-mcp",
+      "args": ["--project-root", "/absolute/path/to/your/repo"]
     }
   }
 }
@@ -217,7 +217,7 @@ The CLI is the default contact surface. To also register the MCP server, run
 | `--skip-cuda` | Disable the CUDA backend even when available. |
 | `--skip-prewarm-hook` | Do not register the Claude/Codex session-start prewarm hook. |
 | `--agents` | Also write the verbatim guide to `AGENTS.md` (not needed for Codex or opencode). |
-| `--codex` | Set up Codex only, in `.codex/`: guide, our base instructions, and the prewarm hook with its feature flag (project-local installs). |
+| `--codex` | Set up Codex only, in `.codex/`: guide, our base instructions, and the prewarm hook with its feature flag. |
 | `--opencode` | Set up opencode only, in `.opencode/`: guide, our prompt, tool-description plugin, grep and explore off. |
 | `--claude` | Include Claude Code together with `--codex` / `--opencode`. |
 | `--codex-enable-global-hooks` | Advanced opt-in: also enable hooks in the user-level Codex config. |

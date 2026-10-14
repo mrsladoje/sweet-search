@@ -5,8 +5,8 @@
  * and scripts/uninstall.js::removePrewarmSessionStartHook:
  *   - merge is non-destructive (preserves other hooks, permissions, env)
  *   - idempotent re-install updates in place (does not duplicate)
- *   - filename-based marker detection (no shell-comment trick)
- *   - refuses to write machine-specific absolute paths
+ *   - command-name marker detection (no shell-comment trick)
+ *   - the command is `sweet-search-hook`: no `node`, no path
  *   - uninstall removes only sweet-search-owned entries
  *   - dry-run and not-found paths do not touch the file
  */
@@ -16,7 +16,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { registerPrewarmSessionStartHook, PREWARM_HOOK_FILENAME } from '../../scripts/init.js';
+import { registerPrewarmSessionStartHook, PREWARM_HOOK_COMMAND } from '../../scripts/init.js';
 import { removePrewarmSessionStartHook } from '../../scripts/uninstall.js';
 
 // ---------------------------------------------------------------------------
@@ -24,8 +24,6 @@ import { removePrewarmSessionStartHook } from '../../scripts/uninstall.js';
 // ---------------------------------------------------------------------------
 
 let projectRoot;
-let packageRoot;     // Default: inside projectRoot (realistic npm install).
-let externalRoot;    // For tests exercising the "outside projectRoot" refusal.
 let settingsPath;
 
 function writeSettings(obj) {
@@ -37,26 +35,13 @@ function readSettings() {
   return JSON.parse(readFileSync(settingsPath, 'utf-8'));
 }
 
-function seedHookScript(pkgRoot) {
-  const hookDir = join(pkgRoot, 'core', 'search');
-  mkdirSync(hookDir, { recursive: true });
-  writeFileSync(join(hookDir, PREWARM_HOOK_FILENAME), '// test fixture', 'utf-8');
-}
-
 beforeEach(() => {
   projectRoot = mkdtempSync(join(tmpdir(), 'ss-preheat-proj-'));
-  // Realistic install: package lives at projectRoot/node_modules/sweet-search
-  packageRoot = join(projectRoot, 'node_modules', 'sweet-search');
-  seedHookScript(packageRoot);
-  externalRoot = mkdtempSync(join(tmpdir(), 'ss-preheat-ext-'));
-  seedHookScript(externalRoot);
   settingsPath = join(projectRoot, '.claude', 'settings.json');
 });
 
 afterEach(() => {
-  for (const d of [projectRoot, externalRoot]) {
-    try { rmSync(d, { recursive: true, force: true }); } catch { /* ignore */ }
-  }
+  try { rmSync(projectRoot, { recursive: true, force: true }); } catch { /* ignore */ }
 });
 
 // ---------------------------------------------------------------------------
@@ -65,7 +50,7 @@ afterEach(() => {
 
 describe('registerPrewarmSessionStartHook', () => {
   it('creates settings.json with a SessionStart entry when none exists', () => {
-    const result = registerPrewarmSessionStartHook({ projectRoot, packageRoot });
+    const result = registerPrewarmSessionStartHook({ projectRoot });
 
     expect(result.status).toBe('registered');
     expect(result.detail).toContain('added');
@@ -73,20 +58,17 @@ describe('registerPrewarmSessionStartHook', () => {
     const s = readSettings();
     expect(s.hooks.SessionStart).toHaveLength(1);
     expect(s.hooks.SessionStart[0].matcher).toBe('startup|resume|clear|compact');
-    const cmd = s.hooks.SessionStart[0].hooks[0].command;
-    expect(cmd).toContain(PREWARM_HOOK_FILENAME);
-    expect(cmd).toContain('--agent-session-hook');
-    // Filename alone is the marker — no shell-comment trick.
-    expect(cmd).not.toContain('#');
-    expect(cmd.startsWith('node ')).toBe(true);
+    // The native `sweet-search-hook` command: no `node` (the harness may have none on
+    // PATH), no path (settings.json is often committed).
+    expect(s.hooks.SessionStart[0].hooks[0].command).toBe(`${PREWARM_HOOK_COMMAND} --agent-session-hook`);
     expect(s.hooks.SessionEnd).toHaveLength(1);
-    expect(s.hooks.SessionEnd[0].hooks[0].command).toContain('--agent-session-drop');
+    expect(s.hooks.SessionEnd[0].hooks[0].command).toBe(`${PREWARM_HOOK_COMMAND} --agent-session-drop`);
   });
 
   it('is idempotent: re-running updates in place, never duplicates', () => {
-    registerPrewarmSessionStartHook({ projectRoot, packageRoot });
-    registerPrewarmSessionStartHook({ projectRoot, packageRoot });
-    const result = registerPrewarmSessionStartHook({ projectRoot, packageRoot });
+    registerPrewarmSessionStartHook({ projectRoot });
+    registerPrewarmSessionStartHook({ projectRoot });
+    const result = registerPrewarmSessionStartHook({ projectRoot });
 
     expect(result.status).toBe('registered');
     expect(result.detail).toContain('updated');
@@ -105,12 +87,12 @@ describe('registerPrewarmSessionStartHook', () => {
       },
     });
 
-    registerPrewarmSessionStartHook({ projectRoot, packageRoot });
+    registerPrewarmSessionStartHook({ projectRoot });
 
     const s = readSettings();
     expect(s.hooks.SessionStart).toHaveLength(2);
     expect(s.hooks.SessionStart[0].hooks[0].command).toContain('agentic-qe');
-    expect(s.hooks.SessionStart[1].hooks[0].command).toContain(PREWARM_HOOK_FILENAME);
+    expect(s.hooks.SessionStart[1].hooks[0].command).toContain(PREWARM_HOOK_COMMAND);
   });
 
   it('preserves other top-level keys (permissions, env, PreToolUse)', () => {
@@ -122,7 +104,7 @@ describe('registerPrewarmSessionStartHook', () => {
       env: { FOO: 'bar' },
     });
 
-    registerPrewarmSessionStartHook({ projectRoot, packageRoot });
+    registerPrewarmSessionStartHook({ projectRoot });
 
     const s = readSettings();
     expect(s.hooks.PreToolUse).toHaveLength(1);
@@ -133,7 +115,7 @@ describe('registerPrewarmSessionStartHook', () => {
   });
 
   it('short-circuits when skipped=true and does not touch settings.json', () => {
-    const result = registerPrewarmSessionStartHook({ projectRoot, packageRoot, skipped: true });
+    const result = registerPrewarmSessionStartHook({ projectRoot, skipped: true });
 
     expect(result.status).toBe('skipped');
     expect(existsSync(settingsPath)).toBe(false);
@@ -143,40 +125,12 @@ describe('registerPrewarmSessionStartHook', () => {
     mkdirSync(join(projectRoot, '.claude'), { recursive: true });
     writeFileSync(settingsPath, '{ this is not json', 'utf-8');
 
-    const result = registerPrewarmSessionStartHook({ projectRoot, packageRoot });
+    const result = registerPrewarmSessionStartHook({ projectRoot });
 
     expect(result.status).toBe('error');
     expect(result.detail).toContain('JSON');
   });
 
-  it('returns error when hook script is missing from packageRoot', () => {
-    rmSync(join(packageRoot, 'core', 'search', PREWARM_HOOK_FILENAME));
-
-    const result = registerPrewarmSessionStartHook({ projectRoot, packageRoot });
-
-    expect(result.status).toBe('error');
-    expect(result.detail).toContain('missing');
-  });
-
-  it('refuses to write absolute path when package lives outside projectRoot', () => {
-    // externalRoot is a separate tmpdir — simulates hoisted pnpm /
-    // npm-linked / globally-installed sweet-search, which used to
-    // leak an absolute path into the committed settings.json.
-    const result = registerPrewarmSessionStartHook({ projectRoot, packageRoot: externalRoot });
-
-    expect(result.status).toBe('skipped');
-    expect(result.detail).toMatch(/outside projectRoot|hoisted|linked/i);
-    expect(existsSync(settingsPath)).toBe(false);
-  });
-
-  it('writes a relative node_modules/ path in a realistic install layout', () => {
-    const result = registerPrewarmSessionStartHook({ projectRoot, packageRoot });
-
-    expect(result.status).toBe('registered');
-    expect(result.hookPath.startsWith('node_modules/')).toBe(true);
-    expect(result.hookPath).not.toMatch(/^\//);
-    expect(result.hookPath).not.toContain('..');
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -198,7 +152,7 @@ describe('removePrewarmSessionStartHook', () => {
     expect(result.status).toBe('not-found');
   });
 
-  it('returns not-found when no entry matches the marker filename', () => {
+  it('returns not-found when no entry matches the marker command', () => {
     writeSettings({
       hooks: { SessionStart: [{ hooks: [{ type: 'command', command: 'npx agentic-qe hooks session-start' }] }] },
     });
@@ -216,7 +170,7 @@ describe('removePrewarmSessionStartHook', () => {
       hooks: {
         SessionStart: [
           { hooks: [{ type: 'command', command: 'npx agentic-qe hooks session-start --json' }] },
-          { hooks: [{ type: 'command', command: `node core/search/${PREWARM_HOOK_FILENAME}` }] },
+          { hooks: [{ type: 'command', command: `${PREWARM_HOOK_COMMAND} --agent-session-hook` }] },
           { hooks: [{ type: 'command', command: 'node .claude/helpers/brain-checkpoint.cjs verify' }] },
         ],
         PreToolUse: [{ matcher: '^Write$', hooks: [{ type: 'command', command: 'echo pre' }] }],
@@ -233,14 +187,14 @@ describe('removePrewarmSessionStartHook', () => {
     const cmds = s.hooks.SessionStart.map((g) => g.hooks[0].command);
     expect(cmds.some((c) => c.includes('agentic-qe'))).toBe(true);
     expect(cmds.some((c) => c.includes('brain-checkpoint'))).toBe(true);
-    expect(cmds.some((c) => c.includes(PREWARM_HOOK_FILENAME))).toBe(false);
+    expect(cmds.some((c) => c.includes(PREWARM_HOOK_COMMAND))).toBe(false);
     // Sibling sections untouched.
     expect(s.hooks.PreToolUse).toHaveLength(1);
     expect(s.permissions.allow).toEqual(['Bash(npx foo:*)']);
   });
 
   it('removes the paired SessionEnd receipt cleanup hook', () => {
-    registerPrewarmSessionStartHook({ projectRoot, packageRoot });
+    registerPrewarmSessionStartHook({ projectRoot });
     const before = readSettings();
     expect(before.hooks.SessionEnd).toHaveLength(1);
 
@@ -253,7 +207,7 @@ describe('removePrewarmSessionStartHook', () => {
 
   it('cleans up empty SessionStart array when sweet-search was the sole entry', () => {
     writeSettings({
-      hooks: { SessionStart: [{ hooks: [{ type: 'command', command: `node ${PREWARM_HOOK_FILENAME}` }] }] },
+      hooks: { SessionStart: [{ hooks: [{ type: 'command', command: `${PREWARM_HOOK_COMMAND} --agent-session-hook` }] }] },
     });
 
     removePrewarmSessionStartHook(projectRoot);
@@ -265,7 +219,7 @@ describe('removePrewarmSessionStartHook', () => {
 
   it('dry-run reports the entry exists but does not write', () => {
     writeSettings({
-      hooks: { SessionStart: [{ hooks: [{ type: 'command', command: `node ${PREWARM_HOOK_FILENAME}` }] }] },
+      hooks: { SessionStart: [{ hooks: [{ type: 'command', command: `${PREWARM_HOOK_COMMAND} --agent-session-hook` }] }] },
     });
     const beforeMtime = readFileSync(settingsPath, 'utf-8');
 
@@ -302,7 +256,7 @@ describe('register + remove round-trip', () => {
     writeSettings(preExisting);
     const original = readFileSync(settingsPath, 'utf-8');
 
-    registerPrewarmSessionStartHook({ projectRoot, packageRoot });
+    registerPrewarmSessionStartHook({ projectRoot });
     // After register, settings differs.
     expect(readFileSync(settingsPath, 'utf-8')).not.toBe(original);
 

@@ -16,7 +16,7 @@ function devLocal(platform) {
     return {
       mcpServers: {
         'sweet-search': {
-          command: 'node',
+          command: process.execPath,
           args: ['./mcp/server.js'],
         },
       },
@@ -26,7 +26,7 @@ function devLocal(platform) {
   // codex
   return [
     '[mcp_servers.sweet-search]',
-    'command = "node"',
+    `command = ${JSON.stringify(process.execPath)}`,
     'args = ["./mcp/server.js"]',
   ].join('\n');
 }
@@ -39,7 +39,7 @@ function externalProject(platform, targetPath) {
     return {
       mcpServers: {
         'sweet-search': {
-          command: 'node',
+          command: process.execPath,
           args: [serverPath, '--project-root', target],
           env: {
             SWEET_SEARCH_PROJECT_ROOT: target,
@@ -52,7 +52,7 @@ function externalProject(platform, targetPath) {
   // codex
   return [
     '[mcp_servers.sweet-search]',
-    `command = "node"`,
+    `command = ${JSON.stringify(process.execPath)}`,
     `args = ["${serverPath}"]`,
     `cwd = "${target}"`,
     `env = { "SWEET_SEARCH_PROJECT_ROOT" = "${target}" }`,
@@ -69,8 +69,8 @@ function published(platform) {
     return {
       mcpServers: {
         'sweet-search': {
-          command: 'npx',
-          args: ['-y', 'sweet-search-mcp'],
+          command: 'sweet-search-mcp',
+          args: [],
         },
       },
     };
@@ -79,8 +79,7 @@ function published(platform) {
   // codex
   return [
     '[mcp_servers.sweet-search]',
-    'command = "npx"',
-    'args = ["-y", "sweet-search-mcp"]',
+    'command = "sweet-search-mcp"',
     '# env = { "SWEET_SEARCH_PROJECT_ROOT" = "/path/to/project" }',
     '# enabled = true',
     '# startup_timeout_sec = 15',

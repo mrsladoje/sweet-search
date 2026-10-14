@@ -15,11 +15,11 @@
 
 import { existsSync, readdirSync, readFileSync, realpathSync, renameSync, rmdirSync, rmSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
-import { execSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { getCoremlCascadeRoot, getCoremlCascadeState } from '../core/infrastructure/coreml-cascade.js';
-import { PREWARM_HOOK_FILENAME, readCreatedPaths } from './init.js';
+import { PREWARM_HOOK_COMMAND, readCreatedPaths } from './init.js';
 import { removeAgentInstructions } from './inject-agent-instructions.js';
 import { removeClaudeRules } from './write-claude-rules.js';
 import { removeClaudeSystemPrompt } from './install-claude-system-prompt.js';
@@ -27,7 +27,6 @@ import { removeClaudeLeanHarness } from './install-claude-lean-harness.js';
 import { removeMcpServer } from './install-mcp-server.js';
 import { removeCodexHarness } from './install-codex-harness.js';
 import { removeOpencodeHarness } from './install-opencode-harness.js';
-import { removePromptReminderHook } from './install-prompt-reminders.js';
 import { removeToolEnforcement } from './install-tool-enforcement.js';
 import { projectSocketPath, projectPidFile } from '../core/search/server-identity.js';
 import { existingRegisteredRepos, unregisterRepos } from './repo-registry.js';
@@ -201,7 +200,7 @@ export function stopRunningDaemon({
   const cliPath = join(PACKAGE_ROOT, 'core', 'cli.js');
   if (existsSync(cliPath)) {
     try {
-      execSync(`node ${JSON.stringify(cliPath)} --stop`, {
+      execFileSync(process.execPath, [cliPath, '--stop'], {
         cwd: projectRoot || PACKAGE_ROOT,
         stdio: ['pipe', 'pipe', 'pipe'],
         timeout: 5000,
@@ -294,70 +293,6 @@ export function stopRunningMaintainer({
 }
 
 /**
- * Remove the index-maintainer daemon hook init copied into
- * `.claude/hooks/index-maintainer.mjs`. Only removes the file when it
- * matches the bytes init shipped — never deletes a user-modified file
- * we don't own. The marker is the source path: init does
- * `copyFileSync(<pkg>/core/indexing/index-maintainer.mjs, dest)`, so
- * we compare destination bytes to the package source.
- *
- * Returns `{ status, detail }`:
- *   not-found  — file absent (nothing to do)
- *   removed    — file removed (matched shipped bytes)
- *   skipped    — file present but contents differ (user-modified) — left intact
- *   dry-run    — found the file but skipped the delete
- *   error      — rm or read failed; uninstall continues
- */
-export function removeIndexMaintainerHook(projectRoot, { dryRun = false } = {}) {
-  const hookPath = join(projectRoot, '.claude', 'hooks', 'index-maintainer.mjs');
-  if (!existsSync(hookPath)) {
-    return { status: 'not-found', detail: 'no .claude/hooks/index-maintainer.mjs' };
-  }
-
-  // Only remove when the bytes match the version init shipped — refuses to
-  // delete a hook the user has customized. Failing the byte compare is a
-  // soft skip, not an error.
-  const shippedPath = join(PACKAGE_ROOT, 'core', 'indexing', 'index-maintainer.mjs');
-  let bytesMatch = false;
-  try {
-    if (existsSync(shippedPath)) {
-      const a = readFileSync(hookPath);
-      const b = readFileSync(shippedPath);
-      bytesMatch = a.length === b.length && a.equals(b);
-    }
-  } catch {
-    // Read errored on either side — treat as "don't remove, surface the
-    // file path so the user can clean up manually if they want to".
-    return { status: 'skipped', detail: `cannot compare bytes (${hookPath})` };
-  }
-
-  if (!bytesMatch) {
-    return {
-      status: 'skipped',
-      detail: `${hookPath} differs from shipped version — leaving in place (delete manually if intended)`,
-    };
-  }
-
-  if (dryRun) {
-    return { status: 'dry-run', detail: hookPath };
-  }
-
-  try {
-    unlinkSync(hookPath);
-    // Best-effort: prune the parent .claude/hooks/ if it's now empty (we
-    // own the file, not the directory; only delete if WE made it empty).
-    try {
-      const parent = dirname(hookPath);
-      const entries = readdirSync(parent);
-      if (entries.length === 0) rmdirSync(parent);
-    } catch { /* ignore — sibling files exist or rmdir failed */ }
-    return { status: 'removed', detail: hookPath };
-  } catch (err) {
-    return { status: 'error', detail: err.message };
-  }
-}
-
-/**
  * Remove the sweet-search /sweet-index skill from `.claude/skills/sweet-index/`.
  * Only removes the directory we created — leaves `.claude/skills/` and `.claude/`
  * untouched even if they're empty afterwards, because the user may add other
@@ -388,8 +323,8 @@ export function removeSweetIndexSkill(projectRoot, { dryRun = false } = {}) {
 /**
  * Remove the sweet-search-owned SessionStart and SessionEnd entries from `.claude/settings.json`,
  * preserving every other hook, permission, and top-level key. Detection is
- * filename-based (see PREWARM_HOOK_FILENAME) — only entries whose command
- * references the sweet-search preheat script are removed.
+ * by command name (see PREWARM_HOOK_COMMAND) — only entries whose command
+ * runs `sweet-search-hook` are removed.
  *
  * Returns `{ status, detail }`:
  *   not-found  — no settings.json, or no matching entry (nothing to do)
@@ -423,7 +358,7 @@ export function removePrewarmSessionStartHook(projectRoot, { dryRun = false } = 
     if (!Array.isArray(groups)) continue;
     const filtered = groups.filter((group) =>
       !(Array.isArray(group?.hooks) &&
-        group.hooks.some((h) => typeof h?.command === 'string' && h.command.includes(PREWARM_HOOK_FILENAME)))
+        group.hooks.some((h) => typeof h?.command === 'string' && h.command.includes(PREWARM_HOOK_COMMAND)))
     );
     if (filtered.length !== groups.length) changes.push({ event, groups, filtered });
   }
@@ -500,7 +435,7 @@ export function removeCodexSessionStartHook(projectRoot, { dryRun = false } = {}
 
   const filtered = sessionStart.filter((group) =>
     !(Array.isArray(group?.hooks) &&
-      group.hooks.some((h) => typeof h?.command === 'string' && h.command.includes(PREWARM_HOOK_FILENAME)))
+      group.hooks.some((h) => typeof h?.command === 'string' && h.command.includes(PREWARM_HOOK_COMMAND)))
   );
 
   if (filtered.length === sessionStart.length) {
@@ -658,12 +593,6 @@ export function planProjectUninstall(projectRoot) {
   if (removeSweetIndexSkill(projectRoot, { dryRun: true }).status === 'dry-run') {
     lines.push('/sweet-index skill (.claude/skills/sweet-index/)');
   }
-  const maintainerHook = removeIndexMaintainerHook(projectRoot, { dryRun: true });
-  if (maintainerHook.status === 'dry-run') {
-    lines.push('index-maintainer hook (.claude/hooks/index-maintainer.mjs)');
-  } else if (maintainerHook.status === 'skipped') {
-    lines.push(`[skipped] ${maintainerHook.detail}`);
-  }
   // Agent-instruction files, the Claude project rule, and any legacy CLAUDE.md
   // marker. The marker/sentinel contracts preserve user-authored content.
   const agentInstructions = removeAgentInstructions({ projectRoot, dryRun: true });
@@ -677,8 +606,6 @@ export function planProjectUninstall(projectRoot) {
   if (systemPrompt.status === 'dry-run') lines.push(`Claude system-prompt output style (${systemPrompt.detail})`);
   const lean = removeClaudeLeanHarness({ projectRoot, dryRun: true });
   if (lean.status === 'dry-run') lines.push(`Claude lean harness (${lean.detail})`);
-  const reminder = removePromptReminderHook({ projectRoot, dryRun: true });
-  if (reminder.status === 'dry-run') lines.push(`UserPromptSubmit reminder hook (${reminder.detail})`);
   const enforcement = removeToolEnforcement({ projectRoot, dryRun: true });
   if (enforcement.status === 'dry-run') lines.push(`tool-enforcement strict mode (${enforcement.detail})`);
   if (removeCodexSessionStartHook(projectRoot, { dryRun: true }).status === 'dry-run') {
@@ -704,7 +631,7 @@ export function planProjectUninstall(projectRoot) {
  * first). A path init did not create, or one that still holds anything, stays.
  * Returns the removed paths (relative).
  */
-const INIT_CLAUDE_DIRS = ['.claude/skills', '.claude/hooks', '.claude/agents', '.claude/rules', '.claude/output-styles', '.claude'];
+const INIT_CLAUDE_DIRS = ['.claude/skills', '.claude/agents', '.claude/rules', '.claude/output-styles', '.claude'];
 
 export function pruneCreatedPaths(projectRoot, createdPaths = [], { dryRun = false } = {}) {
   const removed = [];
@@ -788,9 +715,6 @@ function executeProjectUninstall(plan) {
 
   report(removeSweetIndexSkill(projectRoot), { label: '/sweet-index skill' });
   report(removePrewarmSessionStartHook(projectRoot), { label: 'daemon-prewarm SessionStart hook' });
-  // Bytes-match check inside the helper guarantees we never delete a
-  // user-customised file.
-  report(removeIndexMaintainerHook(projectRoot), { label: 'index-maintainer hook', keptWhen: ['skipped'] });
   report(removeCodexSessionStartHook(projectRoot), { label: 'Codex SessionStart hook' });
   // Only what the Codex / opencode harness manifests record as added and unchanged since
   // (the config.toml hooks flag only when init added it). After the hook, so an emptied
@@ -837,7 +761,6 @@ function executeProjectUninstall(plan) {
 
   // Only what the lean-harness manifest records as added and unchanged since.
   report(removeClaudeLeanHarness({ projectRoot }), { label: 'Claude lean harness' });
-  report(removePromptReminderHook({ projectRoot }), { label: 'UserPromptSubmit reminder hook' });
   report(removeToolEnforcement({ projectRoot }), { label: 'tool-enforcement' });
 
   const mcpServerResult = removeMcpServer({ projectRoot });

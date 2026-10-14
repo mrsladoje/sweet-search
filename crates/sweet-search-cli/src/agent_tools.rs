@@ -28,7 +28,7 @@ use serde_json::{json, Value};
 /// Printed by `sweet-search --agent-tools-protocol`. The JS side reads it out of the
 /// binary before it lets the binary stand in for an ss-* command
 /// (core/agent-tools/tools.js AGENT_TOOLS_PROTOCOL_MARKER).
-pub const PROTOCOL_MARKER: &str = "sweet-search-agent-tools-protocol=1";
+pub const PROTOCOL_MARKER: &str = "sweet-search-agent-tools-protocol=2";
 
 /// Command name → subcommand of runAgentTool. Mirrors core/agent-tools/tools.js.
 const TOOLS: [(&str, &str); 6] = [

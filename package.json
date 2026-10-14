@@ -35,7 +35,8 @@
   ],
   "bin": {
     "sweet-search": "core/cli.js",
-    "sweet-search-mcp": "mcp/server.js",
+    "sweet-search-mcp": "bin/sweet-search-mcp",
+    "sweet-search-hook": "bin/sweet-search-hook",
     "ss-search": "bin/ss-search",
     "ss-grep": "bin/ss-grep",
     "ss-find": "bin/ss-find",
@@ -78,7 +79,6 @@
     "scripts/install-opencode-harness.js",
     "scripts/harness-prompts/",
     "scripts/install-mcp-server.js",
-    "scripts/install-prompt-reminders.js",
     "scripts/install-tool-enforcement.js",
     "scripts/hooks/",
     "core/training/query-router/features/",

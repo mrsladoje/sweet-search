@@ -44,8 +44,14 @@ launcher from several layers (or repeatedly) never starts a second maintainer.
 `sweet-search init` registers one SessionStart entry in `.claude/settings.json`:
 
 ```
-node <pkg>/core/search/session-daemon-prewarm.mjs
+sweet-search-hook --agent-session-hook
 ```
+
+`sweet-search-hook` is a command the install links to the native binary (with
+`sweet-search-mcp` and the `ss-*` tools). It finds the package (project or global
+install) and runs the launcher with the Node.js that installed sweet-search, so the
+hook needs no `node` on the harness's PATH and holds no path in the often committed
+settings file.
 
 On every Claude Code session start the hook launches **two** independent,
 fully-detached background processes, then exits immediately so the session is
@@ -119,16 +125,14 @@ wallclock, CPU pressure, and maintenance backlog, and never overlaps ticks.
 The auto-launch above is a **Claude Code** SessionStart hook (`.claude/settings.json`).
 Other agents don't read that file. For the OpenAI Codex CLI, `sweet-search init
 --codex` is the **complete normal setup** — one command, no extra flags. It wires
-the Codex equivalent, reusing the same `session-daemon-prewarm.mjs` launcher (it's
+the Codex equivalent, reusing the same `sweet-search-hook` launcher (it's
 harness-agnostic — reads only env/cwd, writes nothing to stdout):
 
 - **`.codex/hooks.json`** — a `SessionStart` hook (`matcher: "startup|resume"`)
   whose command is git-root anchored:
-  `cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && node <relpath>`.
-  Codex runs hook commands with the *session* cwd (which may be a subdirectory),
-  so a bare relative path is unreliable — anchoring to the git root fixes both
-  path resolution and the launcher's own project-root detection without writing
-  a machine-specific absolute path into the (often committed) file.
+  `cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && sweet-search-hook --agent-session-hook`.
+  Codex runs hook commands with the *session* cwd (which may be a subdirectory);
+  anchoring to the git root gives the launcher's project-root detection the repo root.
 - **`[features] hooks = true`** in the project `.codex/config.toml` — the
   canonical feature flag (hooks are a **stable**, current-Codex feature, v0.132+).
   `init --codex` enables it for the project itself via a comment-preserving,
@@ -143,10 +147,8 @@ harness-agnostic — reads only env/cwd, writes nothing to stdout):
   `.codex/sweet-search-instructions.md`) in the same project `.codex/config.toml`.
   `--codex` no longer writes `AGENTS.md`; an old sweet-search block there is removed
   once the project is trusted (until then Codex still reads it).
-- **Only with a project-local install.** The hook command must be a path inside
-  the repo (no machine path in a committed file), so a global / linked / hoisted
-  install skips the hook — and then init writes no `[features] hooks` flag
-  either, and says so. Install sweet-search as a dev dependency for the hook.
+- **Any install.** The hook command holds no path, so a global, project, linked
+  or hoisted install all get it.
 - **MCP is not touched.** `init --codex` never writes `.mcp.json`; MCP stays
   optional and unrelated to default incremental indexing.
 

@@ -20,31 +20,29 @@ config Claude Code reads (create it if needed):
 {
   "mcpServers": {
     "sweet-search": {
-      "command": "npx",
-      "args": ["-y", "sweet-search-mcp", "--project-root", "/absolute/path/to/project"]
+      "command": "sweet-search-mcp",
+      "args": ["--project-root", "/absolute/path/to/project"]
     }
   }
 }
 ```
 
-Or with a local installation:
-
-```json
-{
-  "mcpServers": {
-    "sweet-search": {
-      "command": "node",
-      "args": ["node_modules/sweet-search/mcp/server.js", "--project-root", "/absolute/path/to/project"]
-    }
-  }
-}
-```
+`sweet-search-mcp` is a command the install puts on your PATH (a project install:
+`sweet-search init` copies it into `~/.local/bin`). It runs the server with the Node.js
+that installed sweet-search, so the MCP host needs no `node` or `npx` on its PATH.
 
 Restart Claude Code, then verify with `/mcp list`.
 
 ## Codex Setup
 
-Add the same `mcpServers` block to your Codex MCP configuration file.
+Add the server to `.codex/config.toml` (project) or `~/.codex/config.toml`:
+
+```toml
+[mcp_servers.sweet-search]
+command = "sweet-search-mcp"
+args = ["--project-root", "/absolute/path/to/project"]
+```
+
 Restart Codex to apply.
 
 ## MCP Tools
@@ -98,8 +96,8 @@ Environment variables:
 
 ## Troubleshooting
 
-**Server not starting**: Check `node --version` >= 22, verify `npx sweet-search-mcp`
-resolves, ensure project root exists and is absolute.
+**Server not starting**: verify `command -v sweet-search-mcp` finds the command (re-run
+`sweet-search init` if not), and that the project root exists and is absolute.
 
 **No search results**: Run the `index` tool first. Check `health` tool for
 subsystem status.
