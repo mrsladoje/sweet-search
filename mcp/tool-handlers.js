@@ -304,7 +304,7 @@ export async function handleIndex({ mode }, { PROJECT_ROOT, coreDir }) {
   const start = Date.now();
 
   return new Promise((resolve) => {
-    const child = spawn('node', [indexerPath, ...args], {
+    const child = spawn(process.execPath, [indexerPath, ...args], {
       cwd: PROJECT_ROOT,
       env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: PROJECT_ROOT },
       stdio: ['ignore', 'pipe', 'pipe'],

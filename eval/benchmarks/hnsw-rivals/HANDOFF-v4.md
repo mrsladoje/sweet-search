@@ -129,10 +129,13 @@ H2 — The x86 walk is memory-latency bound and suffers more than the rivals. Ou
   on the box, so V8 ArrayBuffers get no huge pages). M3 uses 16 KB pages and has a stronger memory
   subsystem. Popcount is NOT the cause: `walk_v3` (hnsw_search.rs:824) is already compiled with
   avx2/popcnt/bmi and selected at runtime; the box loads our fresh local release build.
-  Test in progress at handoff time: interleaved A/B/A/B of THP madvise vs always (+defrag always), result in
-  /private/tmp/claude-501/-Users-admin-Projects-sweet-search-private/6ca60aef-05d9-489f-9697-b3baa46109c0/tasks/bbes269xo.output
-  (first point: madvise 1,228 us, only 2 MB huge pages). The script resets THP to madvise at the end;
-  CHECK `cat /sys/kernel/mm/transparent_hugepage/{enabled,defrag}` = madvise on the box.
+  THP test (box, 1M, prod point, interleaved, after `echo 1 > /proc/sys/vm/compact_memory`):
+  madvise 1,228 us (stage 1: 1,009) | always 1,086 (877) | madvise 1,289 (1,057) | always 1,133 (915).
+  Huge pages: ~11% faster total, ~13% faster stage 1, in both pairs, although the kernel gave only
+  40–141 MB of huge pages (of ~3.2 GB RSS; memory is fragmented after 80 days uptime). So the full effect
+  may be larger. THP was reset to madvise/madvise afterwards (verified). Outputs: sets/thp2-*.json on the box.
+  Conclusion: page size explains part of the x86 gap, not 4.5x. The rest is likely the walk's access
+  pattern (~10^5 random reads per query at ef ~1000).
   Possible fixes: madvise(MADV_HUGEPAGE) on the slab + graph from Rust (allocate in Rust, not V8); store each
   node's neighbour codes contiguously (USearch/FAISS layouts are more cache-friendly); prefetch deeper;
   int8 or compressed neighbour ids.
