@@ -1,0 +1,5 @@
+#!/usr/bin/env node
+// `sweet-search-mcp` — replaced by the native binary at install time (scripts/link-native-tools.js),
+// which runs mcp/server.js with the node that installed the package. This stub serves the installs
+// where the step could not run.
+import '../mcp/server.js';

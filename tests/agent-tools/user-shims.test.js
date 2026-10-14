@@ -11,9 +11,9 @@ import {
   agentPathDirs, installUserShims, planUserShimRemovals, readShimManifest, refreshUserShims, removeUserShims, shimManifestPath,
 } from '../../scripts/user-shims.js';
 import { setUpAgentTools } from '../../scripts/init.js';
-import { AGENT_TOOLS } from '../../core/agent-tools/tools.js';
+import { NATIVE_COMMANDS } from '../../core/agent-tools/tools.js';
 
-const NAMES = Object.keys(AGENT_TOOLS);
+const NAMES = NATIVE_COMMANDS;
 
 function world() {
   const base = mkdtempSync(path.join(tmpdir(), 'ss-shims-'));
@@ -31,7 +31,7 @@ function world() {
 }
 
 describe('installUserShims', () => {
-  it('copies the binary under every ss-* name into ~/.local/bin and records each file', () => {
+  it('copies the binary under every command name into ~/.local/bin and records each file', () => {
     const w = world();
     const r = installUserShims({ binary: w.binary, packageRoot: w.pkg, env: w.env, home: w.home });
     expect(r.status).toBe('installed');
@@ -43,7 +43,7 @@ describe('installUserShims', () => {
       expect(statSync(f).mode & 0o111).toBeTruthy();
       inodes.add(statSync(f).ino);
     }
-    expect(inodes.size, 'one file on disk, six names').toBe(1);
+    expect(inodes.size, 'one file on disk, every name').toBe(1);
     expect(readShimManifest(w.home).shims.map((e) => e.path).sort()).toEqual(NAMES.map((n) => path.join(w.userBin, n)).sort());
     expect(readdirSync(w.userBin).sort(), 'no temporary files left').toEqual([...NAMES].sort());
   });

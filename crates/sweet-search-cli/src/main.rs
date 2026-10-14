@@ -1679,6 +1679,33 @@ fn real_exe() -> Option<PathBuf> {
         .map(|p| fs::canonicalize(&p).unwrap_or(p))
 }
 
+/// Commands a harness runs → the package script each runs (MCP server, session hooks).
+/// Mirrors core/agent-tools/tools.js NODE_ENTRY_COMMANDS.
+const NODE_ENTRY_COMMANDS: [(&str, &str); 2] = [
+    ("sweet-search-mcp", "mcp/server.js"),
+    ("sweet-search-hook", "scripts/hooks/hook.mjs"),
+];
+
+/// Called as `sweet-search-mcp` / `sweet-search-hook`: run the package script with the node
+/// that installed the package (`node_for`). The harness that runs these commands may have
+/// no node on PATH (nvm not loaded, a GUI app, a Rust-binary harness). stdin, stdout and
+/// the exit code are the script's own. Never returns.
+fn run_node_entry(prog: &str, rel: &str, args: &[String]) -> ! {
+    use std::os::unix::process::CommandExt;
+    let Some(script) = find_package_file(Path::new(rel)) else {
+        eprintln!(
+            "[{prog}] sweet-search is not installed here (no node_modules/sweet-search above this directory, no sweet-search on PATH): run npm i -g sweet-search"
+        );
+        process::exit(127);
+    };
+    let err = Command::new(node_for(Path::new(&script)))
+        .arg(&script)
+        .args(args)
+        .exec();
+    eprintln!("[{prog}] failed to start node: {err}");
+    process::exit(1);
+}
+
 /// Mirrors scripts/link-native-tools.js INSTALL_NODE_FILE.
 const INSTALL_NODE_FILE: &str = ".install-node";
 
@@ -1808,6 +1835,9 @@ fn main() {
 
     let cli_args: Vec<String> = args.into_iter().skip(1).collect();
 
+    if let Some((_, rel)) = NODE_ENTRY_COMMANDS.iter().find(|(name, _)| *name == prog) {
+        run_node_entry(&prog, rel, &cli_args);
+    }
     // Called as ss-search / ss-grep / …: the multi-call agent tools (agent_tools.rs).
     if let Some(sub) = agent_tools::subcommand_for(&prog) {
         agent_tools::run(sub, &cli_args);

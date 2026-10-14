@@ -11,7 +11,7 @@
  */
 
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
-import { dirname, isAbsolute, join, relative } from 'node:path';
+import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -56,13 +56,12 @@ import {
   CODEX_MANIFEST_REL, ensureCodexHooksFeatureFlag, formatCodexUntrustedWarning, installCodexHarness, readCodexProjectTrust,
 } from './install-codex-harness.js';
 import { installOpencodeHarness, opencodeCacheKeyOffByEnv } from './install-opencode-harness.js';
-import { removePromptReminderHook } from './install-prompt-reminders.js';
 import { installToolEnforcement, removeToolEnforcement } from './install-tool-enforcement.js';
 import { isNativeInferenceAvailable } from '../core/infrastructure/native-inference.js';
 import { registerRepo } from './repo-registry.js';
 import { linkNativeAgentTools } from './link-native-tools.js';
 import { agentPathDirs, installUserShims, whichOnPath } from './user-shims.js';
-import { AGENT_TOOLS } from '../core/agent-tools/tools.js';
+import { NATIVE_COMMANDS } from '../core/agent-tools/tools.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(__dirname, '..');
@@ -188,8 +187,8 @@ export function parseInitArgs(args) {
       result.symlinkInstructionFiles = true;
     } else if (arg === '--no-claude') {
       // P1: opt out of every .claude/* write that init normally performs
-      // (rules file, /sweet-index skill,
-      // index-maintainer hook, prewarm SessionStart entry). Universal
+      // (rules file, /sweet-index skill, prewarm SessionStart
+      // entry). Universal
       // gate — the user has signalled they don't use Claude Code.
       // If `--agents` / `--gemini` / `--cursor` is also set, AGENTS.md
       // (or whichever opt-in is canonical) carries the policy instead.
@@ -381,7 +380,7 @@ function maybeIgnoreDataDir(projectRoot) {
 // removes a directory or settings file the user had.
 export const CREATED_PATHS_FILE = 'created-paths.json';
 export const TRACKED_CREATED_PATHS = Object.freeze([
-  '.claude', '.claude/settings.json', '.claude/skills', '.claude/hooks', '.claude/rules',
+  '.claude', '.claude/settings.json', '.claude/skills', '.claude/rules',
   '.claude/agents', '.claude/output-styles', '.cursor', '.cursor/rules',
 ]);
 
@@ -728,7 +727,7 @@ export function setUpAgentTools({
   let linkReport;
   try { linkReport = link(); }
   catch (err) { linkReport = { status: 'failed', detail: String(err?.message || err) }; }
-  const names = Object.keys(AGENT_TOOLS);
+  const names = NATIVE_COMMANDS;
   let shimReport = null;
   if (linkReport.status === 'linked' && linkReport.binary) {
     try { shimReport = shims({ binary: linkReport.binary, packageRoot: linkReport.packageRoot || '', env, home, names }); }
@@ -890,7 +889,7 @@ function printReport(report) {
     profile, maxsimTier, routerType, models, verification, runtimeDownloads,
     capability, cascadeReport, dedupReport, prewarmHookReport, skillReport,
     liChoices, agentInstructionsReport, claudeRulesReport, claudeSystemPromptReport,
-    promptReminderReport, toolEnforcementReport, mcpServerReport,
+    toolEnforcementReport, mcpServerReport,
     codexHarnessReport, opencodeHarnessReport, agentToolsReport,
   } = report;
 
@@ -1018,9 +1017,6 @@ function printReport(report) {
   if (opencodeHarnessReport) {
     console.log(`  opencode harness:     ${opencodeHarnessReport.status} (.opencode/)`);
   }
-  if (promptReminderReport && promptReminderReport.status !== 'skipped') {
-    console.log(`  Prompt reminder hook: ${promptReminderReport.status}`);
-  }
   if (toolEnforcementReport && toolEnforcementReport.status !== 'skipped') {
     console.log(`  Tool enforcement:     ${toolEnforcementReport.status} (Grep deny + Read hint)`);
   }
@@ -1102,17 +1098,18 @@ export function inspectDedupReadiness({ deep = false, skipped = false } = {}) {
 // Claude Code SessionStart daemon-prewarm hook
 // ---------------------------------------------------------------------------
 
-// The hook script's filename doubles as the ownership marker — a path-based
-// marker works on every OS and survives JSON re-serialization without shell-
-// syntax concerns. Both init and uninstall grep the command string for this
-// substring to find entries sweet-search owns.
+// The hook command is the `sweet-search-hook` command (core/agent-tools/tools.js
+// NODE_ENTRY_COMMANDS): the native binary runs the launcher with the node that
+// installed the package. No `node` (the harness may start without node on PATH)
+// and no path (settings files are often committed). Its name doubles as the
+// ownership marker: init and uninstall grep the command string for it.
 //
 // The hook spawns a detached search daemon at Claude Code SessionStart so the
 // user's first `sweet-search <query>` hits an already-warm daemon (~80ms
 // instead of ~2.5s cold). The earlier page-cache preheat
 // (`session-preheat-hook.mjs`) was measured to save ~0ms on query latency —
 // the daemon's own init warms the same pages anyway — and was replaced.
-export const PREWARM_HOOK_FILENAME = 'session-daemon-prewarm.mjs';
+export const PREWARM_HOOK_COMMAND = 'sweet-search-hook';
 
 /**
  * Register (or update) a SessionStart entry in `.claude/settings.json` that
@@ -1123,35 +1120,17 @@ export const PREWARM_HOOK_FILENAME = 'session-daemon-prewarm.mjs';
  *
  * Returns `{ status, detail }` suitable for the init report.
  *   registered  — entry written (new or updated)
- *   skipped     — --skip-prewarm-hook, or package lives outside projectRoot
+ *   skipped     — --skip-prewarm-hook
  *   error       — write failed; init continues (never blocks)
  */
 export function registerPrewarmSessionStartHook({
   projectRoot,
-  packageRoot,
   skipped = false,
 } = {}) {
   if (skipped) return { status: 'skipped', detail: '--skip-prewarm-hook flag' };
 
-  const hookScriptAbs = join(packageRoot, 'core', 'search', PREWARM_HOOK_FILENAME);
-  if (!existsSync(hookScriptAbs)) {
-    return { status: 'error', detail: `hook script missing: ${hookScriptAbs}` };
-  }
-
-  // Refuse to write a machine-specific absolute path into settings.json — that
-  // file is frequently committed, and an absolute path from a hoisted pnpm /
-  // npm-linked / globally-installed sweet-search would leak the init machine's
-  // filesystem layout to every teammate.
-  const hookPath = relative(projectRoot, hookScriptAbs);
-  if (hookPath.startsWith('..') || isAbsolute(hookPath)) {
-    return {
-      status: 'skipped',
-      detail: 'package lives outside projectRoot (hoisted / linked / global install) — re-run with --skip-prewarm-hook to silence this',
-    };
-  }
-
-  const command = `node ${hookPath} --agent-session-hook`;
-  const dropCommand = `node ${hookPath} --agent-session-drop`;
+  const command = `${PREWARM_HOOK_COMMAND} --agent-session-hook`;
+  const dropCommand = `${PREWARM_HOOK_COMMAND} --agent-session-drop`;
 
   const settingsDir = join(projectRoot, '.claude');
   const settingsPath = join(settingsDir, 'settings.json');
@@ -1183,7 +1162,7 @@ export function registerPrewarmSessionStartHook({
   // Find and replace any existing sweet-search-owned entry by filename match.
   const ownedIdx = sessionStart.findIndex((group) =>
     Array.isArray(group?.hooks) &&
-    group.hooks.some((h) => typeof h?.command === 'string' && h.command.includes(PREWARM_HOOK_FILENAME))
+    group.hooks.some((h) => typeof h?.command === 'string' && h.command.includes(PREWARM_HOOK_COMMAND))
   );
 
   if (ownedIdx >= 0) {
@@ -1209,7 +1188,7 @@ export function registerPrewarmSessionStartHook({
   const ownedEndIdx = sessionEnd.findIndex((group) =>
     Array.isArray(group?.hooks) &&
     group.hooks.some((h) => typeof h?.command === 'string'
-      && h.command.includes(PREWARM_HOOK_FILENAME)
+      && h.command.includes(PREWARM_HOOK_COMMAND)
       && h.command.includes('--agent-session-drop'))
   );
   if (ownedEndIdx >= 0) sessionEnd[ownedEndIdx] = endEntry;
@@ -1228,7 +1207,6 @@ export function registerPrewarmSessionStartHook({
   return {
     status: 'registered',
     detail: ownedIdx >= 0 ? 'updated existing entry' : 'added new entry',
-    hookPath,
   };
 }
 
@@ -1242,49 +1220,33 @@ export const CODEX_HOOKS_FILENAME = 'hooks.json';
  * Register (or update) a Codex CLI SessionStart hook in `.codex/hooks.json`
  * that launches the search server + incremental-index maintainer on every
  * Codex session — the Codex analogue of `registerPrewarmSessionStartHook`.
- * Reuses the same harness-agnostic launcher (`session-daemon-prewarm.mjs`,
- * matched by `PREWARM_HOOK_FILENAME`), which reads only env/cwd and writes
- * nothing to stdout, so it is safe under Codex's hook contract.
+ * Reuses the same harness-agnostic launcher (`sweet-search-hook`, matched by
+ * `PREWARM_HOOK_COMMAND`), which reads only env/cwd and writes nothing to
+ * stdout, so it is safe under Codex's hook contract.
  *
  * Codex hook schema (developers.openai.com/codex/hooks):
  *   { "hooks": { "SessionStart": [ { "hooks": [ { type, command, timeout } ] } ] } }
  *
  * Non-destructive + idempotent: preserves other events/entries and replaces
- * the sweet-search-owned entry (matched by the launcher filename) instead of
- * appending a duplicate. Refuses to write a machine-specific absolute path
- * into the (often committed) `.codex/hooks.json`, mirroring the Claude path.
+ * the sweet-search-owned entry (matched by the command name) instead of
+ * appending a duplicate. The command holds no path, so the (often committed)
+ * `.codex/hooks.json` works on every machine with sweet-search installed.
  *
  * NOTE: hooks only fire when Codex's `[features] hooks` flag is enabled and the
  * project `.codex/` layer is trusted (reviewed via `/hooks`) — neither of which
  * a project init can fully guarantee. `ensureCodexHooksFeatureFlag` handles the
  * flag (best-effort) and the init report prints the trust caveat.
  *
- * @returns {{status:'registered'|'skipped'|'error', detail:string, hookPath?:string}}
+ * @returns {{status:'registered'|'skipped'|'error', detail:string}}
  */
-export function registerCodexSessionStartHook({ projectRoot, packageRoot, skipped = false } = {}) {
+export function registerCodexSessionStartHook({ projectRoot, skipped = false } = {}) {
   if (skipped) return { status: 'skipped', detail: '--skip-prewarm-hook flag' };
 
-  const hookScriptAbs = join(packageRoot, 'core', 'search', PREWARM_HOOK_FILENAME);
-  if (!existsSync(hookScriptAbs)) {
-    return { status: 'error', detail: `hook script missing: ${hookScriptAbs}` };
-  }
-
-  const hookPath = relative(projectRoot, hookScriptAbs);
-  if (hookPath.startsWith('..') || isAbsolute(hookPath)) {
-    return {
-      status: 'skipped',
-      detail: 'package lives outside projectRoot (hoisted / linked / global install) — re-run with --skip-prewarm-hook to silence this',
-    };
-  }
-
   // Codex runs hook commands with the *session* cwd, and per its hooks docs a
-  // session "may be started from a subdirectory", so a bare relative path is
-  // unreliable — the docs explicitly recommend resolving from the git root.
-  // We `cd` to the git toplevel first (falling back to the current dir outside
-  // a repo), which fixes both path resolution AND the launcher's own
-  // `process.cwd()` project-root detection, while staying machine-portable
-  // (no absolute path is written into the often-committed hooks.json).
-  const command = `cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && node ${JSON.stringify(hookPath)} --agent-session-hook`;
+  // session "may be started from a subdirectory". We `cd` to the git toplevel
+  // first (falling back to the current dir outside a repo) so the launcher's
+  // `process.cwd()` project-root detection finds the project root.
+  const command = `cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && ${PREWARM_HOOK_COMMAND} --agent-session-hook`;
   const codexDir = join(projectRoot, '.codex');
   const hooksPath = join(codexDir, CODEX_HOOKS_FILENAME);
 
@@ -1317,7 +1279,7 @@ export function registerCodexSessionStartHook({ projectRoot, packageRoot, skippe
 
   const ownedIdx = sessionStart.findIndex((group) =>
     Array.isArray(group?.hooks) &&
-    group.hooks.some((h) => typeof h?.command === 'string' && h.command.includes(PREWARM_HOOK_FILENAME))
+    group.hooks.some((h) => typeof h?.command === 'string' && h.command.includes(PREWARM_HOOK_COMMAND))
   );
 
   if (ownedIdx >= 0) {
@@ -1339,7 +1301,6 @@ export function registerCodexSessionStartHook({ projectRoot, packageRoot, skippe
   return {
     status: 'registered',
     detail: ownedIdx >= 0 ? 'updated existing entry' : 'added new entry',
-    hookPath,
   };
 }
 
@@ -1354,7 +1315,7 @@ export function hasCodexPrewarmHook(projectRoot) {
     const groups = doc?.hooks?.SessionStart;
     return Array.isArray(groups) && groups.some((group) =>
       Array.isArray(group?.hooks)
-      && group.hooks.some((h) => typeof h?.command === 'string' && h.command.includes(PREWARM_HOOK_FILENAME)));
+      && group.hooks.some((h) => typeof h?.command === 'string' && h.command.includes(PREWARM_HOOK_COMMAND)));
   } catch {
     return false;
   }
@@ -1370,26 +1331,15 @@ function hasLegacyAgentsBlock(projectRoot) {
 }
 
 /**
- * The init line for a Codex SessionStart hook that was not installed. A global
- * (or hoisted / linked) install lives outside the project, and the often
- * committed .codex/hooks.json must not carry a machine-specific path, so no
- * hook and no [features] hooks flag are written. Nothing depends on the hook:
- * the CLI starts the search server and index maintainer on first use.
+ * The init line for a Codex SessionStart hook that was not installed
+ * (--skip-prewarm-hook, or a write error). Nothing depends on the hook: the
+ * CLI starts the search server and index maintainer on first use.
  */
 export function formatCodexHookSkipped(report = {}) {
   if (report.status === 'error') {
     return `[init] Codex SessionStart hook: not installed (${report.detail}); no [features] hooks flag set.\n`;
   }
-  if (report.detail === '--skip-prewarm-hook flag') {
-    return '[init] Codex SessionStart hook: not installed (--skip-prewarm-hook); no [features] hooks flag set.\n';
-  }
-  return (
-    '[init] Codex SessionStart hook: not installed — sweet-search is installed outside this project\n'
-    + '         (global, linked or hoisted install), and .codex/hooks.json must not hold a machine path.\n'
-    + '         No [features] hooks flag was set. Search and index freshness do not need the hook:\n'
-    + '         sweet-search starts its server and index maintainer on first use. For the early\n'
-    + '         prewarm, install sweet-search as a project dev dependency and re-run init.\n'
-  );
+  return '[init] Codex SessionStart hook: not installed (--skip-prewarm-hook); no [features] hooks flag set.\n';
 }
 
 /**
@@ -1574,7 +1524,6 @@ Options:
                             .claude/rules/sweet-search.md +
                             .claude/output-styles/sweet-search.md +
                             the outputStyle selection in .claude/settings.json +
-                            .claude/hooks/index-maintainer.mjs +
                             .claude/skills/sweet-index/ +
                             .claude/settings.json prewarm SessionStart entry.
                             Combine with --agents / --gemini / --cursor to
@@ -1669,7 +1618,7 @@ Options:
                             workflows legitimately need Read. Always
                             implied off when --no-claude or --no-cli is set.
   --mcp                     Register the sweet-search MCP server in the project
-                            root .mcp.json (an "npx -y sweet-search-mcp" entry
+                            root .mcp.json (a "sweet-search-mcp" entry
                             under mcpServers.sweet-search). Additive and
                             idempotent — the CLI surface stays, other servers
                             and JSON keys are preserved. Root-level and
@@ -2106,31 +2055,14 @@ export async function runInit(args) {
   // Harness paths that exist before init writes any (see recordCreatedPaths).
   const trackedBefore = snapshotTrackedPaths(projectRoot);
 
-  // 10. Install index-maintainer daemon hook (Claude-only — gated on
-  //     --no-claude per the universal "don't touch .claude/" contract).
   let skillReport = null;
   let prewarmHookReport = null;
   if (parsed.noClaude) {
     if (parsed.verbose) {
       const why = parsed.explicitNoClaude ? '--no-claude' : 'Claude Code not selected; add --claude to include it';
-      process.stderr.write(`[init] Skipping all .claude/ writes (${why}): index-maintainer hook, /sweet-index skill, prewarm SessionStart entry\n`);
+      process.stderr.write(`[init] Skipping all .claude/ writes (${why}): /sweet-index skill, prewarm SessionStart entry\n`);
     }
   } else {
-    try {
-      const hookDir = join(projectRoot, '.claude', 'hooks');
-      const hookDest = join(hookDir, 'index-maintainer.mjs');
-      const hookSrc = join(PACKAGE_ROOT, 'core', 'indexing', 'index-maintainer.mjs');
-      if (!existsSync(hookDest)) {
-        mkdirSync(hookDir, { recursive: true });
-        copyFileSync(hookSrc, hookDest);
-        process.stderr.write(`[init] Installed index-maintainer daemon to ${hookDir}\n`);
-      } else {
-        process.stderr.write(`[init] Index-maintainer daemon already installed\n`);
-      }
-    } catch (e) {
-      process.stderr.write(`[init] Warning: Could not install index-maintainer: ${e.message}\n`);
-    }
-
     // 11. Install /sweet-index skill — Claude-only artifact, gated on --no-claude.
     skillReport = installSweetIndexSkill({
       projectRoot,
@@ -2153,7 +2085,6 @@ export async function runInit(args) {
     //       on next session start.
     prewarmHookReport = registerPrewarmSessionStartHook({
       projectRoot,
-      packageRoot: PACKAGE_ROOT,
       skipped: parsed.skipPrewarmHook,
     });
     if (parsed.verbose || prewarmHookReport.status === 'error') {
@@ -2186,11 +2117,9 @@ export async function runInit(args) {
   if (parsed.codex) {
     codexHookReport = registerCodexSessionStartHook({
       projectRoot,
-      packageRoot: PACKAGE_ROOT,
       skipped: parsed.skipPrewarmHook,
     });
-    // The [features] hooks flag goes in only with a hook for it to run (a global
-    // install skips the hook: see registerCodexSessionStartHook).
+    // The [features] hooks flag goes in only with a hook for it to run.
     const codexHookInstalled = codexHookReport.status === 'registered' || hasCodexPrewarmHook(projectRoot);
     codexHarnessReport = installCodexHarness({
       projectRoot,
@@ -2469,24 +2398,6 @@ export async function runInit(args) {
     process.stderr.write(`[init] Agent instructions: skipped (--no-agent-instructions)\n`);
   }
 
-  // 16. Remove the legacy UserPromptSubmit reminder if an older init installed
-  //     it. The rule is now the one detailed policy source and the compact
-  //     system-priority override is the only Claude-specific reinforcement.
-  //     Repeating a second hand-authored decision tree on every prompt costs
-  //     tokens and risks drifting away from the frozen shipped policy.
-  let promptReminderReport = null;
-  if (!parsed.noClaude) {
-    const cleanup = removePromptReminderHook({ projectRoot });
-    if (cleanup.status !== 'not-found') {
-      promptReminderReport = cleanup;
-      process.stderr.write(
-        `[init] Legacy prompt reminder hook: ${cleanup.status}`
-        + (cleanup.detail ? ` — ${cleanup.detail}` : '')
-        + '\n',
-      );
-    }
-  }
-
   // 17. Tool enforcement (P3 — plan §4D / §10 step 17). Opt-in via
   //     `--enforce-tools`; universal `--no-claude` gate above. Adds
   //     `permissions.deny: ["Grep"]` and a PreToolUse hint hook for `Read`
@@ -2505,7 +2416,6 @@ export async function runInit(args) {
     } else {
       toolEnforcementReport = installToolEnforcement({
         projectRoot,
-        packageRoot: PACKAGE_ROOT,
         skipped: !parsed.enforceTools,
       });
       if (parsed.verbose || toolEnforcementReport.status === 'error') {
@@ -2533,7 +2443,6 @@ export async function runInit(args) {
     agentInstructionsReport,
     claudeRulesReport,
     claudeSystemPromptReport,
-    promptReminderReport,
     toolEnforcementReport,
     mcpServerReport,
     codexHarnessReport,

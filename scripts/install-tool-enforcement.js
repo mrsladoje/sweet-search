@@ -12,15 +12,18 @@
  *   2. PreToolUse hint hook for `Read` — *hints*, never blocks. Edit
  *      workflows require Read before Edit, so a deny would break tooling.
  *
+ * The hook command is `sweet-search-hook --read-hint` (scripts/hooks/hook.mjs): the
+ * native binary runs it with the node that installed the package, so it needs no node
+ * on Claude Code's PATH and holds no path in the (often committed) settings.json.
+ *
  * Removable cleanly: tracks the deny entry by exact value match and the
- * hook entry by filename match (same pattern as prewarm SessionStart hook).
+ * hook entry by its command (same pattern as prewarm SessionStart hook).
  */
 
-import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
-import { dirname, isAbsolute, join, relative } from 'node:path';
+import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 
-export const INTERCEPT_READ_HOOK_FILENAME = 'sweet-search-intercept-read.mjs';
-const SOURCE_REL = ['scripts', 'hooks', 'intercept-read.mjs'];
+export const READ_HINT_HOOK_COMMAND = 'sweet-search-hook --read-hint';
 const GREP_DENY_VALUE = 'Grep';
 
 /**
@@ -29,52 +32,29 @@ const GREP_DENY_VALUE = 'Grep';
  *
  * @param {object} args
  * @param {string} args.projectRoot
- * @param {string} args.packageRoot
  * @param {boolean} [args.skipped=false]  — set when --enforce-tools is OFF
- * @returns {{ status: string, detail: string, hookPath?: string }}
+ * @returns {{ status: string, detail: string }}
  *   status ∈ { installed, skipped, error }
  */
-export function installToolEnforcement({ projectRoot, packageRoot, skipped = false } = {}) {
+export function installToolEnforcement({ projectRoot, skipped = false } = {}) {
   if (skipped) return { status: 'skipped', detail: '--enforce-tools not set' };
   if (!projectRoot) return { status: 'error', detail: 'install-tool-enforcement: projectRoot is required' };
-  if (!packageRoot) return { status: 'error', detail: 'install-tool-enforcement: packageRoot is required' };
 
-  // Hook source must exist in the package (covered by package.json files).
-  const hookSrcAbs = join(packageRoot, ...SOURCE_REL);
-  if (!existsSync(hookSrcAbs)) {
-    return { status: 'error', detail: `hook source missing: ${hookSrcAbs}` };
-  }
-
-  const hookDestAbs = join(projectRoot, '.claude', 'hooks', INTERCEPT_READ_HOOK_FILENAME);
-  const hookRelFromProject = relative(projectRoot, hookDestAbs);
-  if (hookRelFromProject.startsWith('..') || isAbsolute(hookRelFromProject)) {
-    return { status: 'error', detail: 'hook destination escapes projectRoot' };
-  }
-
-  try {
-    mkdirSync(dirname(hookDestAbs), { recursive: true });
-    copyFileSync(hookSrcAbs, hookDestAbs);
-  } catch (err) {
-    return { status: 'error', detail: `hook copy failed: ${err.message}` };
-  }
-
-  const settingsResult = upsertSettings({
+  return upsertSettings({
     projectRoot,
     addDeny: GREP_DENY_VALUE,
     addPreToolUseHook: {
       matcher: 'Read',
-      command: `node ${hookRelFromProject}`,
-      ownershipFilename: INTERCEPT_READ_HOOK_FILENAME,
+      command: READ_HINT_HOOK_COMMAND,
+      ownershipMarker: READ_HINT_HOOK_COMMAND,
     },
   });
-  if (settingsResult.status !== 'installed') return settingsResult;
-  return { ...settingsResult, hookPath: hookRelFromProject };
 }
 
 /**
  * Reverse `installToolEnforcement`. Removes the Grep deny entry (only
- * when present), the PreToolUse hook entry (by filename match), and the
- * hook script file. Other denies / hooks are preserved.
+ * when present) and the PreToolUse hook entry (by its command). Other
+ * denies / hooks are preserved.
  *
  * @returns {{ status: string, detail: string }} status ∈
  *   { removed, not-found, dry-run, error }
@@ -82,40 +62,23 @@ export function installToolEnforcement({ projectRoot, packageRoot, skipped = fal
 export function removeToolEnforcement({ projectRoot, dryRun = false } = {}) {
   if (!projectRoot) return { status: 'error', detail: 'remove-tool-enforcement: projectRoot is required' };
 
-  const hookDestAbs = join(projectRoot, '.claude', 'hooks', INTERCEPT_READ_HOOK_FILENAME);
   const settingsPath = join(projectRoot, '.claude', 'settings.json');
 
-  const hookExists = existsSync(hookDestAbs);
   const denyExists = settingsHasDeny(settingsPath, GREP_DENY_VALUE);
-  const hookEntryExists = settingsHasPreToolUseHook(settingsPath, INTERCEPT_READ_HOOK_FILENAME);
+  const hookEntryExists = settingsHasPreToolUseHook(settingsPath, READ_HINT_HOOK_COMMAND);
 
-  if (!hookExists && !denyExists && !hookEntryExists) {
+  if (!denyExists && !hookEntryExists) {
     return { status: 'not-found', detail: 'no enforcement to undo' };
   }
-  if (dryRun) {
-    const parts = [
-      hookExists && 'hook file',
-      denyExists && 'Grep deny',
-      hookEntryExists && 'PreToolUse entry',
-    ].filter(Boolean);
-    return { status: 'dry-run', detail: parts.join(' + ') };
-  }
+  const removed = [denyExists && 'Grep deny', hookEntryExists && 'PreToolUse entry'].filter(Boolean);
+  if (dryRun) return { status: 'dry-run', detail: removed.join(' + ') };
 
-  const removed = [];
-  if (hookExists) {
-    try { unlinkSync(hookDestAbs); removed.push('hook file'); }
-    catch (err) { return { status: 'error', detail: `failed to remove hook: ${err.message}` }; }
-  }
-  if (denyExists || hookEntryExists) {
-    const r = upsertSettings({
-      projectRoot,
-      removeDeny: denyExists ? GREP_DENY_VALUE : null,
-      removePreToolUseHook: hookEntryExists ? INTERCEPT_READ_HOOK_FILENAME : null,
-    });
-    if (r.status === 'error') return r;
-    if (denyExists) removed.push('Grep deny');
-    if (hookEntryExists) removed.push('PreToolUse entry');
-  }
+  const r = upsertSettings({
+    projectRoot,
+    removeDeny: denyExists ? GREP_DENY_VALUE : null,
+    removePreToolUseHook: hookEntryExists ? READ_HINT_HOOK_COMMAND : null,
+  });
+  if (r.status === 'error') return r;
   return { status: 'removed', detail: removed.join(' + ') };
 }
 
@@ -167,7 +130,7 @@ function upsertSettings({
     };
     const ownedIdx = arr.findIndex(group =>
       Array.isArray(group?.hooks)
-      && group.hooks.some(h => typeof h?.command === 'string' && h.command.includes(addPreToolUseHook.ownershipFilename)),
+      && group.hooks.some(h => typeof h?.command === 'string' && h.command.includes(addPreToolUseHook.ownershipMarker)),
     );
     if (ownedIdx >= 0) arr[ownedIdx] = entry;
     else arr.push(entry);
@@ -207,14 +170,14 @@ function settingsHasDeny(settingsPath, value) {
   } catch { return false; }
 }
 
-function settingsHasPreToolUseHook(settingsPath, ownershipFilename) {
+function settingsHasPreToolUseHook(settingsPath, ownershipMarker) {
   if (!existsSync(settingsPath)) return false;
   try {
     const settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
     const arr = Array.isArray(settings?.hooks?.PreToolUse) ? settings.hooks.PreToolUse : [];
     return arr.some(group =>
       Array.isArray(group?.hooks)
-      && group.hooks.some(h => typeof h?.command === 'string' && h.command.includes(ownershipFilename)),
+      && group.hooks.some(h => typeof h?.command === 'string' && h.command.includes(ownershipMarker)),
     );
   } catch { return false; }
 }

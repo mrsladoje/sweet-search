@@ -1,0 +1,5 @@
+#!/usr/bin/env node
+// `sweet-search-hook` — the harness hooks (scripts/hooks/hook.mjs). Replaced by the native binary
+// at install time (scripts/link-native-tools.js), which runs the hook with the node that installed
+// the package. This stub serves the installs where the step could not run.
+import '../scripts/hooks/hook.mjs';

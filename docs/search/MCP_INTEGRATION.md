@@ -220,15 +220,15 @@ node mcp/config-gen.js [claude|codex] [--profile dev-local|external-project|publ
 
 Profile behavior:
 
-- `dev-local`: runs `node ./mcp/server.js`
+- `dev-local`: runs `./mcp/server.js` with the node that ran config-gen (an absolute path: an MCP host may have no node on PATH)
 - `external-project`: points at server path and target project root (`--project-root` for Claude output; `cwd` + env for Codex output)
-- `published`: runs `npx -y sweet-search-mcp`
+- `published`: runs the `sweet-search-mcp` command
 
 ## Package and Local Config Wiring
 
 ### `package.json`
 
-- `bin.sweet-search-mcp = "./mcp/server.js"`
+- `bin.sweet-search-mcp = "bin/sweet-search-mcp"` (a stub the install replaces with the native binary, which runs `mcp/server.js` with the node that installed the package)
 - `scripts.mcp = "node mcp/server.js"`
 - `files` includes `mcp/`
 - Dependencies include `@modelcontextprotocol/sdk` and `zod`
@@ -237,7 +237,7 @@ Profile behavior:
 
 Project-local MCP registration (written by `sweet-search init --mcp`, at the repo root):
 
-- `sweet-search` server using `npx` with `args: ["-y", "sweet-search-mcp", "--project-root", "<repo-root>"]`
+- `sweet-search` server: `command: "sweet-search-mcp"`, `args: ["--project-root", "<repo-root>"]`
 
 ## Test Coverage for MCP Integration
 

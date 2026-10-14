@@ -90,9 +90,9 @@ describe('installMcpServer — .mcp.json registration', () => {
 
     const cfg = readJson(MCP_CONFIG_FILE);
     expect(cfg.mcpServers[MCP_SERVER_KEY]).toEqual(buildServerEntry({ projectRoot: tmpRoot }));
-    expect(cfg.mcpServers[MCP_SERVER_KEY].command).toBe('npx');
-    expect(cfg.mcpServers[MCP_SERVER_KEY].args).toContain('sweet-search-mcp');
-    expect(cfg.mcpServers[MCP_SERVER_KEY].args).toContain(tmpRoot);
+    // The native command: no node / npx on the MCP host's PATH, no registry fetch.
+    expect(cfg.mcpServers[MCP_SERVER_KEY].command).toBe('sweet-search-mcp');
+    expect(cfg.mcpServers[MCP_SERVER_KEY].args).toEqual(['--project-root', tmpRoot]);
   });
 
   it('is idempotent — second run is unchanged', () => {

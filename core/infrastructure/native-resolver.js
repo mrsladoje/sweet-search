@@ -28,7 +28,7 @@ import { createRequire } from 'module';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const root = join(__dirname, '..', '..');
 const require = createRequire(import.meta.url);
-const AGENT_TOOLS_CAPABILITY_MARKER = 'sweet-search-agent-tools-protocol=1';
+const AGENT_TOOLS_CAPABILITY_MARKER = 'sweet-search-agent-tools-protocol=2';  // tools.js AGENT_TOOLS_PROTOCOL_MARKER
 
 // Supported targets — only these get native resolution.
 const SUPPORTED_TARGETS = new Set([

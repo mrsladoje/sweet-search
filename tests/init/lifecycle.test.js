@@ -52,7 +52,6 @@ import {
   claudeRulesMemoryLine,
   _internal as claudeRulesInternal,
 } from '../../scripts/write-claude-rules.js';
-import { installPromptReminderHook } from '../../scripts/install-prompt-reminders.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(__dirname, '..', '..');
@@ -134,17 +133,16 @@ describe('lifecycle: default init → uninstall (Scenario A)', () => {
     );
     expect(exists(CLAUDE_LEAN_SUBAGENT_REL)).toBe(true);
     expect(exists(CLAUDE_LEAN_PLAN_REL)).toBe(true);
-    expect(exists('.claude/hooks/index-maintainer.mjs')).toBe(true);
     expect(exists('.claude/skills/sweet-index/SKILL.md')).toBe(true);
-    // No duplicate hand-authored UserPromptSubmit guidance.
-    expect(exists('.claude/hooks/sweet-search-remind-tools.mjs')).toBe(false);
+    // init copies no hook scripts: every hook runs the `sweet-search-hook` command.
+    expect(exists('.claude/hooks')).toBe(false);
     const settings = readJson('.claude/settings.json');
     expect(settings.outputStyle).toBeUndefined();
     expect(settings.agent).toBe(CLAUDE_LEAN_AGENT_NAME);
     expect(settings.hooks?.UserPromptSubmit).toBeUndefined();
     // P3: tool enforcement NOT installed without --enforce-tools (the lean
     // harness denies only search-delegation subagent types, never Grep).
-    expect(exists('.claude/hooks/sweet-search-intercept-read.mjs')).toBe(false);
+    expect(exists('.claude/hooks')).toBe(false);
     expect(settings.permissions.deny).toEqual([...CLAUDE_LEAN_HARNESS_DENY]);
     expect(settings.env.CLAUDE_CODE_DISABLE_AUTO_MEMORY).toBeUndefined();
     expect(settings.env.CLAUDE_CODE_DISABLE_GIT_INSTRUCTIONS).toBeUndefined();
@@ -191,9 +189,8 @@ describe('lifecycle: default init → uninstall (Scenario A)', () => {
     expect(exists(CLAUDE_LEAN_SUBAGENT_REL)).toBe(false);
     expect(exists(CLAUDE_LEAN_PLAN_REL)).toBe(false);
     expect(exists(CLAUDE_LEAN_MANIFEST_REL)).toBe(false);
-    expect(exists('.claude/hooks/index-maintainer.mjs')).toBe(false);
     expect(exists('.claude/skills/sweet-index')).toBe(false);
-    expect(exists('.claude/hooks/sweet-search-remind-tools.mjs')).toBe(false);
+    expect(exists('.claude/hooks')).toBe(false);
     // settings.json may exist as `{}` after entries are stripped.
     if (exists('.claude/settings.json')) {
       expect(readJson('.claude/settings.json')).toEqual({});
@@ -241,7 +238,7 @@ describe('lifecycle: --no-lean-harness opt-out', () => {
 });
 
 describe('lifecycle: upgrade from the legacy Claude layout', () => {
-  it('moves policy out of CLAUDE.md, replaces the old rule, and removes the reminder', () => {
+  it('moves policy out of CLAUDE.md and replaces the old rule', () => {
     writeFileSync(
       join(tmpRoot, 'CLAUDE.md'),
       `${MARKER_BEGIN}\nlegacy managed policy\n${MARKER_END}\n\n# User rules\nKeep me.\n`,
@@ -251,19 +248,12 @@ describe('lifecycle: upgrade from the legacy Claude layout', () => {
       join(tmpRoot, CLAUDE_RULES_REL),
       `${claudeRulesInternal.LEGACY_SENTINEL}\nlegacy contradictory rule\n`,
     );
-    expect(installPromptReminderHook({
-      projectRoot: tmpRoot,
-      packageRoot: REPO_ROOT,
-    }).status).toBe('registered');
-
     const result = runCli(COMMON_INIT_ARGS);
     expect(result.code, `init failed: ${result.stderr}`).toBe(0);
 
     expect(readFileSync(join(tmpRoot, 'CLAUDE.md'), 'utf8')).toBe('# User rules\nKeep me.\n');
     expect(readText(CLAUDE_RULES_REL)).toBe(pointerRule());
     expectRulesInAgent();
-    expect(exists('.claude/hooks/sweet-search-remind-tools.mjs')).toBe(false);
-    expect(readJson('.claude/settings.json').hooks?.UserPromptSubmit).toBeUndefined();
   });
 });
 
@@ -290,12 +280,12 @@ describe('lifecycle: full surface init → uninstall (Scenario B)', () => {
     expect(agents).not.toContain('@CLAUDE.md');
 
     // P3 enforcement landed
-    expect(exists('.claude/hooks/sweet-search-intercept-read.mjs')).toBe(true);
     const settings = readJson('.claude/settings.json');
     expect(settings.agent).toBe(CLAUDE_LEAN_AGENT_NAME);
     expect(settings.permissions.deny).toContain('Grep');
     expect(settings.hooks.PreToolUse).toBeDefined();
     expect(settings.hooks.PreToolUse[0].matcher).toBe('Read');
+    expect(settings.hooks.PreToolUse[0].hooks[0].command).toBe('sweet-search-hook --read-hint');
     expect(settings.hooks.UserPromptSubmit).toBeUndefined();
   });
 
@@ -311,8 +301,7 @@ describe('lifecycle: full surface init → uninstall (Scenario B)', () => {
     expect(exists('CLAUDE.md')).toBe(false);
 
     // Enforcement gone
-    expect(exists('.claude/hooks/sweet-search-intercept-read.mjs')).toBe(false);
-    expect(exists('.claude/hooks/sweet-search-remind-tools.mjs')).toBe(false);
+    expect(exists('.claude/hooks')).toBe(false);
     expect(exists(CLAUDE_OUTPUT_STYLE_REL)).toBe(false);
     expect(exists(CLAUDE_LEAN_AGENT_REL)).toBe(false);
     if (exists('.claude/settings.json')) {

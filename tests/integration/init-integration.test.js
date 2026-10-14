@@ -119,7 +119,8 @@ describe('sweet-search init (integration)', () => {
   // ── --mcp / --no-cli contact-surface flags (end-to-end) ───────────────────
   const FAST = ['--profile', 'core', '--skip-dedup', '--skip-coreml-cascade'];
   const rulesPath = () => join(tempDir, '.claude', 'rules', 'sweet-search.md');
-  const reminderHookPath = () => join(tempDir, '.claude', 'hooks', 'sweet-search-remind-tools.mjs');
+  // init writes no hook scripts: every hook runs the `sweet-search-hook` command.
+  const hooksDir = () => join(tempDir, '.claude', 'hooks');
   // The pointer rule file: sentinel, pointer, then the lean harness's auto-memory directory line.
   const expectPointerRules = () => {
     const [head, memory, rest] = readFileSync(rulesPath(), 'utf8').split(/(?<=\n)(?=Your file-based memory)/);
@@ -141,8 +142,7 @@ describe('sweet-search init (integration)', () => {
     expect(exitCode).toBe(0);
 
     const mcp = JSON.parse(readFileSync(join(tempDir, '.mcp.json'), 'utf8'));
-    expect(mcp.mcpServers['sweet-search'].command).toBe('npx');
-    expect(mcp.mcpServers['sweet-search'].args).toContain('sweet-search-mcp');
+    expect(mcp.mcpServers['sweet-search'].command).toBe('sweet-search-mcp');
     // CLI surface intact: the exact ss-* rules in the lean main agent, the pointer rule file,
     // the system override; CLAUDE.md untouched.
     expect(existsSync(join(tempDir, 'CLAUDE.md'))).toBe(false);
@@ -151,7 +151,7 @@ describe('sweet-search init (integration)', () => {
     // The CLI override ships in the lean-harness main agent (not the output style).
     expect(existsSync(join(tempDir, CLAUDE_LEAN_AGENT_REL))).toBe(true);
     expect(existsSync(join(tempDir, CLAUDE_OUTPUT_STYLE_REL))).toBe(false);
-    expect(existsSync(reminderHookPath())).toBe(false);
+    expect(existsSync(hooksDir())).toBe(false);
     expect(stdout).toContain('MCP server'); // surfaced in the final report
   });
 
@@ -164,7 +164,7 @@ describe('sweet-search init (integration)', () => {
     // The CLI override ships in the lean-harness main agent (not the output style).
     expect(existsSync(join(tempDir, CLAUDE_LEAN_AGENT_REL))).toBe(true);
     expect(existsSync(join(tempDir, CLAUDE_OUTPUT_STYLE_REL))).toBe(false);
-    expect(existsSync(reminderHookPath())).toBe(false);
+    expect(existsSync(hooksDir())).toBe(false);
     expect(existsSync(join(tempDir, 'CLAUDE.md'))).toBe(false);
 
     // 2. Re-init flipping to the MCP-only contact surface.
@@ -179,9 +179,7 @@ describe('sweet-search init (integration)', () => {
     expect(existsSync(join(tempDir, 'CLAUDE.md'))).toBe(false);
     expect(existsSync(join(tempDir, '.mcp.json'))).toBe(true);
 
-    // No stale duplicate reminder survives either variant.
-    expect(existsSync(reminderHookPath())).toBe(false);
-    const settings = readFileSync(join(tempDir, '.claude', 'settings.json'), 'utf8');
-    expect(settings).not.toContain('sweet-search-remind-tools.mjs');
+    expect(existsSync(hooksDir())).toBe(false);
+    expect(JSON.parse(readFileSync(join(tempDir, '.claude', 'settings.json'), 'utf8')).hooks?.UserPromptSubmit).toBeUndefined();
   });
 });

@@ -6,11 +6,13 @@ import { describe, it, expect } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, statSync, chmodSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { linkNativeAgentTools } from '../../scripts/link-native-tools.js';
+import { INSTALL_NODE_FILE, linkNativeAgentTools } from '../../scripts/link-native-tools.js';
 import { setUpAgentTools } from '../../scripts/init.js';
-import { AGENT_TOOLS, AGENT_TOOLS_PROTOCOL_MARKER, subcommandFor } from '../../core/agent-tools/tools.js';
+import {
+  AGENT_TOOLS, AGENT_TOOLS_PROTOCOL_MARKER, NATIVE_COMMANDS, NODE_ENTRY_COMMANDS, subcommandFor,
+} from '../../core/agent-tools/tools.js';
 
-const NAMES = Object.keys(AGENT_TOOLS);
+const NAMES = NATIVE_COMMANDS;
 
 function fakeInstall() {
   const base = mkdtempSync(path.join(tmpdir(), 'ss-link-'));
@@ -28,7 +30,9 @@ describe('linkNativeAgentTools', () => {
     const { pkg, binary } = fakeInstall();
     const r = linkNativeAgentTools({ packageRoot: pkg, resolveBinary: () => binary, supportsAgentTools: () => true });
     expect(r.status).toBe('linked');
-    expect(r.linked).toEqual(NAMES);
+    expect(r.linked).toEqual([...NAMES]);
+    // The node that ran the step, for the binary to start node scripts with.
+    expect(readFileSync(path.join(pkg, INSTALL_NODE_FILE), 'utf8')).toBe(`${process.execPath}\n`);
     for (const n of NAMES) {
       const f = path.join(pkg, 'bin', n);
       expect(readFileSync(f, 'utf8')).toContain(AGENT_TOOLS_PROTOCOL_MARKER);
@@ -81,6 +85,12 @@ describe('tool table', () => {
       expect(readFileSync(path.resolve(__dirname, '../../bin', name), 'utf8')).toContain(`launchAgentTool('${name}')`);
     }
     expect(rs).toContain(`"${AGENT_TOOLS_PROTOCOL_MARKER}"`);
+    const main = readFileSync(path.resolve(__dirname, '../../crates/sweet-search-cli/src/main.rs'), 'utf8');
+    for (const [name, script] of Object.entries(NODE_ENTRY_COMMANDS)) {
+      expect(main).toContain(`("${name}", "${script}")`);
+      expect(existsSync(path.resolve(__dirname, '../..', script)), script).toBe(true);
+      expect(readFileSync(path.resolve(__dirname, '../../bin', name), 'utf8')).toContain(`import '../${script}'`);
+    }
     const pkg = JSON.parse(readFileSync(path.resolve(__dirname, '../../package.json'), 'utf8'));
     for (const name of NAMES) expect(pkg.bin[name]).toBe(`bin/${name}`);
   });

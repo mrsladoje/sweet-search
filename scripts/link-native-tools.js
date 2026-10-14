@@ -9,6 +9,8 @@
  * hard link, or a copy across file systems) — the esbuild install optimisation. The PATH
  * entries npm made point at the stub paths, so after the swap `ss-grep` starts the Rust
  * client directly: no node process, one socket round trip to the warm daemon.
+ * `sweet-search-mcp` and `sweet-search-hook` (core/agent-tools/tools.js NODE_ENTRY_COMMANDS)
+ * get the same swap: the binary runs their script with the node recorded below.
  *
  * Runs from postinstall and again from `sweet-search init` (installs that skip install
  * scripts — pnpm by default, --ignore-scripts — get it there). It never fails the caller:
@@ -26,7 +28,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { nativeBinarySupportsAgentTools, resolveNativeBinary } from '../core/infrastructure/native-resolver.js';
-import { AGENT_TOOLS } from '../core/agent-tools/tools.js';
+import { NATIVE_COMMANDS } from '../core/agent-tools/tools.js';
 import { refreshUserShims } from './user-shims.js';
 
 /** Mirrors crates/sweet-search-cli/src/main.rs INSTALL_NODE_FILE. */
@@ -93,12 +95,12 @@ export function linkNativeAgentTools({
   try { fs.writeFileSync(path.join(packageRoot, INSTALL_NODE_FILE), `${process.execPath}\n`); }
   catch { /* the binary falls back to node on PATH */ }
   try {
-    for (const name of Object.keys(AGENT_TOOLS)) {
+    for (const name of NATIVE_COMMANDS) {
       replaceWithBinary(binary, path.join(packageRoot, 'bin', name));
       linked.push(name);
     }
   } catch (err) {
-    return { status: 'failed', detail: `${err?.code || err?.message || err} after ${linked.length} of ${Object.keys(AGENT_TOOLS).length}; the JS stubs serve the rest`, linked };
+    return { status: 'failed', detail: `${err?.code || err?.message || err} after ${linked.length} of ${NATIVE_COMMANDS.length}; the JS stubs serve the rest`, linked };
   }
   return { status: 'linked', detail: `ss-* run the native binary (${binary})`, linked, binary, packageRoot };
 }

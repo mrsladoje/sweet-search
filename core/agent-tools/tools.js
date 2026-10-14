@@ -16,6 +16,19 @@ export const AGENT_TOOLS = Object.freeze({
 
 export const AGENT_TOOL_SUBCOMMANDS = Object.freeze(new Set(Object.values(AGENT_TOOLS)));
 
+// Commands a harness runs (MCP server, session hooks) → the package script each runs. The
+// native binary answers to these names too: it finds the package and runs the script with
+// the node that installed it, so a harness started without node on PATH (nvm not loaded,
+// a GUI app, a Rust-binary harness) still starts them. Mirrors
+// crates/sweet-search-cli/src/main.rs NODE_ENTRY_COMMANDS.
+export const NODE_ENTRY_COMMANDS = Object.freeze({
+  'sweet-search-mcp': 'mcp/server.js',
+  'sweet-search-hook': 'scripts/hooks/hook.mjs',
+});
+
+// Every command name the install links to the native binary (bin/<name>).
+export const NATIVE_COMMANDS = Object.freeze([...Object.keys(AGENT_TOOLS), ...Object.keys(NODE_ENTRY_COMMANDS)]);
+
 // Subcommands that query the search engine. The daemon runs them only once its indexes
 // are loaded; ss-read and ss-trace open their own databases and run at once.
 export const SEARCHER_SUBCOMMANDS = Object.freeze(new Set(['agent-search', 'grep', 'find', 'semantic']));
@@ -45,9 +58,10 @@ export function searchNotReadyLine(seconds, failed = false) {
 }
 
 // Printed by `sweet-search --agent-tools-protocol` and embedded in the native binary.
-// A binary without it predates the native ss-* tools and must never be run as one: it
-// would read the tool's arguments as a search query.
-export const AGENT_TOOLS_PROTOCOL_MARKER = 'sweet-search-agent-tools-protocol=1';
+// A binary without it (or with an older version) does not answer to every name in
+// NATIVE_COMMANDS and must never be linked as one: it would read the arguments as a search
+// query. Version 2 added NODE_ENTRY_COMMANDS.
+export const AGENT_TOOLS_PROTOCOL_MARKER = 'sweet-search-agent-tools-protocol=2';
 
 /** `ss-grep` → `grep`; a bare subcommand passes through; anything else → null. */
 export function subcommandFor(name) {

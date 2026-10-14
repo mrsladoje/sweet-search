@@ -139,14 +139,15 @@ describe('opencode: shipped prompt and tool edits = bench conflict3+todo3eff3k',
     expect(t.files[OPENCODE_TRIM_PLUGIN]).toBe(readFileSync(OPENCODE_TRIM_PLUGIN_SOURCE, 'utf8'));
   });
 
-  it('the plugin starts the daemon prewarm from the project node_modules, once per load', async () => {
+  it('the plugin starts the daemon prewarm through sweet-search-hook on PATH, once per load', async () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'oc-prewarm-')));
+    const savedPath = process.env.PATH;
     try {
-      const dir = join(root, 'node_modules', 'sweet-search', 'core', 'search');
-      mkdirSync(dir, { recursive: true });
+      const bin = join(root, 'bin');
+      mkdirSync(bin);
       const marker = join(root, 'ran');
-      writeFileSync(join(dir, 'session-daemon-prewarm.mjs'),
-        `import { appendFileSync } from 'node:fs'; appendFileSync(${JSON.stringify(marker)}, process.cwd() + '\\n');\n`);
+      writeFileSync(join(bin, 'sweet-search-hook'), `#!/bin/sh\npwd >> ${JSON.stringify(marker)}\n`, { mode: 0o755 });
+      process.env.PATH = `${bin}:${savedPath}`;
       mkdirSync(join(root, 'sub'));
       const { default: plugin } = await import(OPENCODE_TRIM_PLUGIN_SOURCE);
       await plugin({ worktree: join(root, 'sub') }, {});
@@ -161,7 +162,10 @@ describe('opencode: shipped prompt and tool edits = bench conflict3+todo3eff3k',
       } finally {
         if (saved === undefined) delete process.env.SWEET_SEARCH_PREWARM; else process.env.SWEET_SEARCH_PREWARM = saved;
       }
+      process.env.PATH = '/nonexistent';
+      await expect(plugin({ worktree: root }, {}), 'no command on PATH: nothing happens').resolves.toBeTruthy();
     } finally {
+      process.env.PATH = savedPath;
       rmSync(root, { recursive: true, force: true });
     }
   });

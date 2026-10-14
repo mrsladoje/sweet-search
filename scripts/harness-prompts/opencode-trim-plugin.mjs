@@ -12,10 +12,11 @@
 // A SWEET_SEARCH_SESSION_ID set by the user wins.
 //
 // Prewarm: as opencode loads the plugin, the sweet-search daemon starts in the background
-// (core/search/session-daemon-prewarm.mjs, the launcher Claude Code and Codex run from their
-// SessionStart hooks), so the first ss-* call of a session finds it warm. The launcher comes
-// from the project's node_modules (nearest first); with none there, or no `node` on PATH, the
-// plugin does nothing. SWEET_SEARCH_PREWARM=0 turns it off.
+// (`sweet-search-hook`, the launcher Claude Code and Codex run from their SessionStart hooks),
+// so the first ss-* call of a session finds it warm. The command is the native binary: it
+// finds the package (project or global install) and runs the launcher with the node that
+// installed it, so no `node` on opencode's PATH is needed. Without the command the plugin does
+// nothing. SWEET_SEARCH_PREWARM=0 turns it off.
 //
 // options.edits  { <toolID>: [[find, replace], ...] }  — applied in order, every occurrence.
 // options.report path of a JSON file rewritten on every hook call:
@@ -23,21 +24,13 @@
 //                A missing edit means the pinned opencode text changed; the runner records
 //                the report on the row so a half-trimmed rollout is visible.
 import { spawn } from 'node:child_process';
-import { existsSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-
-const PREWARM_REL = join('node_modules', 'sweet-search', 'core', 'search', 'session-daemon-prewarm.mjs');
+import { writeFileSync } from 'node:fs';
 
 function prewarm(root) {
   if (['0', 'false', 'off', 'no'].includes(String(process.env.SWEET_SEARCH_PREWARM ?? '').trim().toLowerCase())) return;
-  for (let dir = root; dir; dir = dirname(dir) === dir ? null : dirname(dir)) {
-    const hook = join(dir, PREWARM_REL);
-    if (!existsSync(hook)) continue;
-    const child = spawn('node', [hook], { cwd: root, detached: true, stdio: 'ignore' });
-    child.on('error', () => {});
-    child.unref();
-    return;
-  }
+  const child = spawn('sweet-search-hook', [], { cwd: root, detached: true, stdio: 'ignore' });
+  child.on('error', () => {});
+  child.unref();
 }
 
 export default async (input, options = {}) => {

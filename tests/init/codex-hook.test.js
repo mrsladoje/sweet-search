@@ -8,8 +8,8 @@
  * Mirrors tests/init/prewarm-hook.test.js (the Claude prewarm equivalent):
  *   - merge is non-destructive (preserves other events/entries)
  *   - idempotent re-install updates in place (no duplicate)
- *   - filename-based marker detection (the shared launcher filename)
- *   - refuses to write a machine-specific absolute path
+ *   - command-name marker detection (the shared `sweet-search-hook` launcher)
+ *   - the command holds no `node` and no path
  *   - feature-flag editor is comment-preserving + append-if-absent
  *   - uninstall removes only the sweet-search-owned entry
  */
@@ -29,38 +29,24 @@ import {
   ensureCodexHooksFeatureFlag,
   formatCodexSetupGuidance,
   CODEX_HOOKS_FILENAME,
-  PREWARM_HOOK_FILENAME,
+  PREWARM_HOOK_COMMAND,
 } from '../../scripts/init.js';
 import { removeCodexSessionStartHook } from '../../scripts/uninstall.js';
 
 let projectRoot;
-let packageRoot;
-let externalRoot;
 let hooksPath;
 
 function readHooks() {
   return JSON.parse(readFileSync(hooksPath, 'utf-8'));
 }
 
-function seedHookScript(pkgRoot) {
-  const hookDir = join(pkgRoot, 'core', 'search');
-  mkdirSync(hookDir, { recursive: true });
-  writeFileSync(join(hookDir, PREWARM_HOOK_FILENAME), '// test fixture', 'utf-8');
-}
-
 beforeEach(() => {
   projectRoot = mkdtempSync(join(tmpdir(), 'ss-codex-proj-'));
-  packageRoot = join(projectRoot, 'node_modules', 'sweet-search');
-  seedHookScript(packageRoot);
-  externalRoot = mkdtempSync(join(tmpdir(), 'ss-codex-ext-'));
-  seedHookScript(externalRoot);
   hooksPath = join(projectRoot, '.codex', CODEX_HOOKS_FILENAME);
 });
 
 afterEach(() => {
-  for (const d of [projectRoot, externalRoot]) {
-    try { rmSync(d, { recursive: true, force: true }); } catch { /* ignore */ }
-  }
+  try { rmSync(projectRoot, { recursive: true, force: true }); } catch { /* ignore */ }
 });
 
 // ---------------------------------------------------------------------------
@@ -69,7 +55,7 @@ afterEach(() => {
 
 describe('registerCodexSessionStartHook', () => {
   it('creates .codex/hooks.json with a SessionStart entry when none exists', () => {
-    const result = registerCodexSessionStartHook({ projectRoot, packageRoot });
+    const result = registerCodexSessionStartHook({ projectRoot });
 
     expect(result.status).toBe('registered');
     expect(result.detail).toContain('added');
@@ -80,21 +66,18 @@ describe('registerCodexSessionStartHook', () => {
     expect(group.matcher).toBe('startup|resume|clear|compact');
     const handler = group.hooks[0];
     expect(handler.type).toBe('command');
-    expect(handler.command).toContain(PREWARM_HOOK_FILENAME);
-    expect(handler.command).toContain('--agent-session-hook');
     expect(typeof handler.timeout).toBe('number');
-    // Resolves from the git root (not a bare relative path) per the Codex
-    // docs, and invokes node.
-    expect(handler.command).toContain('git rev-parse --show-toplevel');
-    expect(handler.command).toContain('node ');
-    // No shell-comment marker trick.
-    expect(handler.command).not.toContain('#');
+    // cd to the git root (the session may start in a subdirectory), then the native
+    // `sweet-search-hook` command: no `node` (Codex may have none on PATH), no path.
+    expect(handler.command).toBe(
+      `cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && ${PREWARM_HOOK_COMMAND} --agent-session-hook`,
+    );
   });
 
   it('is idempotent: re-running updates in place, never duplicates', () => {
-    registerCodexSessionStartHook({ projectRoot, packageRoot });
-    registerCodexSessionStartHook({ projectRoot, packageRoot });
-    const result = registerCodexSessionStartHook({ projectRoot, packageRoot });
+    registerCodexSessionStartHook({ projectRoot });
+    registerCodexSessionStartHook({ projectRoot });
+    const result = registerCodexSessionStartHook({ projectRoot });
 
     expect(result.status).toBe('registered');
     expect(result.detail).toContain('updated');
@@ -114,19 +97,19 @@ describe('registerCodexSessionStartHook', () => {
       },
     }, null, 2), 'utf-8');
 
-    registerCodexSessionStartHook({ projectRoot, packageRoot });
+    registerCodexSessionStartHook({ projectRoot });
 
     const doc = readHooks();
     expect(doc.hooks.SessionStart).toHaveLength(2);
     expect(doc.hooks.SessionStart[0].hooks[0].command).toContain('other-session-start');
-    expect(doc.hooks.SessionStart[1].hooks[0].command).toContain(PREWARM_HOOK_FILENAME);
+    expect(doc.hooks.SessionStart[1].hooks[0].command).toContain(PREWARM_HOOK_COMMAND);
     // Sibling event untouched.
     expect(doc.hooks.Stop).toHaveLength(1);
     expect(doc.hooks.Stop[0].hooks[0].command).toContain('done');
   });
 
   it('short-circuits when skipped=true and does not touch the file', () => {
-    const result = registerCodexSessionStartHook({ projectRoot, packageRoot, skipped: true });
+    const result = registerCodexSessionStartHook({ projectRoot, skipped: true });
     expect(result.status).toBe('skipped');
     expect(existsSync(hooksPath)).toBe(false);
   });
@@ -135,33 +118,11 @@ describe('registerCodexSessionStartHook', () => {
     mkdirSync(join(projectRoot, '.codex'), { recursive: true });
     writeFileSync(hooksPath, '{ not json', 'utf-8');
 
-    const result = registerCodexSessionStartHook({ projectRoot, packageRoot });
+    const result = registerCodexSessionStartHook({ projectRoot });
     expect(result.status).toBe('error');
     expect(result.detail).toContain('JSON');
   });
 
-  it('returns error when the hook script is missing from packageRoot', () => {
-    rmSync(join(packageRoot, 'core', 'search', PREWARM_HOOK_FILENAME));
-
-    const result = registerCodexSessionStartHook({ projectRoot, packageRoot });
-    expect(result.status).toBe('error');
-    expect(result.detail).toContain('missing');
-  });
-
-  it('refuses to write an absolute path when the package lives outside projectRoot', () => {
-    const result = registerCodexSessionStartHook({ projectRoot, packageRoot: externalRoot });
-    expect(result.status).toBe('skipped');
-    expect(result.detail).toMatch(/outside projectRoot|hoisted|linked/i);
-    expect(existsSync(hooksPath)).toBe(false);
-  });
-
-  it('writes a relative node_modules/ path in a realistic install layout', () => {
-    const result = registerCodexSessionStartHook({ projectRoot, packageRoot });
-    expect(result.status).toBe('registered');
-    expect(result.hookPath.startsWith('node_modules/')).toBe(true);
-    expect(result.hookPath).not.toMatch(/^\//);
-    expect(result.hookPath).not.toContain('..');
-  });
 });
 
 // ---------------------------------------------------------------------------
@@ -288,7 +249,7 @@ describe('removeCodexSessionStartHook', () => {
     expect(removeCodexSessionStartHook(projectRoot).status).toBe('not-found');
   });
 
-  it('returns not-found when no entry matches the marker filename', () => {
+  it('returns not-found when no entry matches the marker command', () => {
     mkdirSync(join(projectRoot, '.codex'), { recursive: true });
     writeFileSync(hooksPath, JSON.stringify({
       hooks: { SessionStart: [{ hooks: [{ type: 'command', command: 'echo other' }] }] },
@@ -300,7 +261,7 @@ describe('removeCodexSessionStartHook', () => {
   });
 
   it('removes only the sweet-search-owned entry, preserving the rest', () => {
-    registerCodexSessionStartHook({ projectRoot, packageRoot });
+    registerCodexSessionStartHook({ projectRoot });
     // Add a foreign entry alongside ours.
     const doc = readHooks();
     doc.hooks.SessionStart.unshift({ hooks: [{ type: 'command', command: 'echo other' }] });
@@ -317,7 +278,7 @@ describe('removeCodexSessionStartHook', () => {
   });
 
   it('deletes the file when our entry was the only content', () => {
-    registerCodexSessionStartHook({ projectRoot, packageRoot });
+    registerCodexSessionStartHook({ projectRoot });
     expect(existsSync(hooksPath)).toBe(true);
 
     const result = removeCodexSessionStartHook(projectRoot);
@@ -326,7 +287,7 @@ describe('removeCodexSessionStartHook', () => {
   });
 
   it('dry-run reports the entry exists but does not write', () => {
-    registerCodexSessionStartHook({ projectRoot, packageRoot });
+    registerCodexSessionStartHook({ projectRoot });
     const before = readFileSync(hooksPath, 'utf-8');
 
     const result = removeCodexSessionStartHook(projectRoot, { dryRun: true });
@@ -348,7 +309,7 @@ describe('removeCodexSessionStartHook', () => {
 
 describe('register + remove round-trip', () => {
   it('restores .codex/ to its pre-registration state (file deleted) when ours was the only entry', () => {
-    registerCodexSessionStartHook({ projectRoot, packageRoot });
+    registerCodexSessionStartHook({ projectRoot });
     removeCodexSessionStartHook(projectRoot);
     expect(existsSync(hooksPath)).toBe(false);
   });
@@ -358,7 +319,7 @@ describe('register + remove round-trip', () => {
     const foreign = { hooks: { SessionStart: [{ hooks: [{ type: 'command', command: 'echo other' }] }] } };
     writeFileSync(hooksPath, JSON.stringify(foreign, null, 2), 'utf-8');
 
-    registerCodexSessionStartHook({ projectRoot, packageRoot });
+    registerCodexSessionStartHook({ projectRoot });
     removeCodexSessionStartHook(projectRoot);
 
     const after = readHooks();
@@ -387,10 +348,9 @@ describe('init --codex (end-to-end flag wiring)', () => {
     }
   });
 
-  // In this harness the CLI runs from the repo, so the hook script lives outside
-  // the temp project (like a global install) and hook registration is skipped.
-  // Then the project flag is NOT written either: no half-set-up hook.
-  it('explicit --codex-enable-global-hooks writes the global flag; no project flag without a hook', () => {
+  // The CLI runs from the repo, outside the temp project (like a global install): the hook
+  // command holds no path, so the hook and its project flag are installed anyway.
+  it('explicit --codex-enable-global-hooks also writes the global flag', () => {
     // HOME / CODEX_HOME are redirected to a temp dir so the global-flag write never touches
     // the real ~/.codex. --profile core avoids any model downloads.
     const r = spawnSync(
@@ -400,11 +360,10 @@ describe('init --codex (end-to-end flag wiring)', () => {
     );
     expect(r.status).toBe(0);
 
-    // No project flag: the hook was not installed.
     const projCfg = readFileSync(join(proj, '.codex', 'config.toml'), 'utf-8');
-    expect(projCfg).not.toMatch(/^\s*hooks\s*=/m);
+    expect(projCfg).toMatch(/^hooks\s*=\s*true/m);
     expect(projCfg).not.toMatch(/codex_hooks/);
-    expect(existsSync(join(proj, '.codex', 'hooks.json'))).toBe(false);
+    expect(existsSync(join(proj, '.codex', 'hooks.json'))).toBe(true);
 
     // Global flag (in the redirected HOME, not the real one).
     const globalCfg = readFileSync(join(home, '.codex', 'config.toml'), 'utf-8');
@@ -416,13 +375,27 @@ describe('init --codex (end-to-end flag wiring)', () => {
     expect(r.stderr).not.toMatch(/codex_hooks\s*=\s*true/);
   });
 
-  it('init --codex with the hook skipped (global install) sets no flag, says so, never writes the global config or .mcp.json', () => {
+  it('init --codex (global install) registers the hook and the project flag, never the global config or .mcp.json', () => {
     // No --codex-enable-global-hooks: the normal path must be self-sufficient.
-    // The registered-hook path (flag written) is covered by installCodexHarness unit
-    // tests, formatCodexSetupGuidance and the packed-install smoke.
     const r = spawnSync(
       process.execPath,
       [INIT_CLI, '--codex', '--profile', 'core'],
+      { cwd: proj, env: { ...process.env, HOME: home, CODEX_HOME: join(home, '.codex') }, encoding: 'utf-8', timeout: 60_000 },
+    );
+    expect(r.status).toBe(0);
+
+    const hooks = JSON.parse(readFileSync(join(proj, '.codex', 'hooks.json'), 'utf-8'));
+    expect(hooks.hooks.SessionStart[0].hooks[0].command).toContain(`${PREWARM_HOOK_COMMAND} --agent-session-hook`);
+    expect(readFileSync(join(proj, '.codex', 'config.toml'), 'utf-8')).toMatch(/^hooks\s*=\s*true/m);
+    expect(existsSync(join(home, '.codex', 'config.toml'))).toBe(false);
+    expect(r.stderr).not.toContain('--codex-enable-global-hooks');
+    expect(existsSync(join(proj, '.mcp.json'))).toBe(false);
+  });
+
+  it('init --codex --skip-prewarm-hook sets no flag and says so', () => {
+    const r = spawnSync(
+      process.execPath,
+      [INIT_CLI, '--codex', '--skip-prewarm-hook', '--profile', 'core'],
       { cwd: proj, env: { ...process.env, HOME: home, CODEX_HOME: join(home, '.codex') }, encoding: 'utf-8', timeout: 60_000 },
     );
     expect(r.status).toBe(0);
@@ -438,8 +411,8 @@ describe('init --codex (end-to-end flag wiring)', () => {
 
     // Output says plainly that the hook (and so the flag) was not installed, and never
     // pushes the legacy global flag or the deprecated key for the normal path.
-    expect(r.stderr).toContain('Codex SessionStart hook: not installed');
-    expect(r.stderr).toContain('No [features] hooks flag was set');
+    expect(r.stderr).toContain('Codex SessionStart hook: not installed (--skip-prewarm-hook)');
+    expect(r.stderr).toContain('no [features] hooks flag set');
     expect(r.stderr).not.toContain('--codex-enable-global-hooks');
     expect(r.stderr).not.toMatch(/codex_hooks\s*=\s*true/);
 
