@@ -125,51 +125,77 @@ function applyFullVectorStageRescore(candidates, queryFloat, codebaseRepo, opts 
     if (!embeddings || embeddings.size < 2) return { candidates, stats: null };
     fullScores = dotProducts(queryFloat, head.map(c => (c.id ? embeddings.get(c.id) : null) || null));
   }
-  const scored = head.map((candidate, index) => {
-    const fullScore = fullScores[index];
+  // One pass for the base and full-score ranges (Math.min / Math.max folds,
+  // so NaN and -0 behave as with the spread form).
+  const n = head.length;
+  const baseScores = new Array(n);
+  let withFull = 0;
+  let minBase = Infinity, maxBase = -Infinity, minFull = Infinity, maxFull = -Infinity;
+  for (let i = 0; i < n; i++) {
+    const candidate = head[i];
     const baseScore = candidate.floatScore ?? candidate.int8Score ?? candidate.score ?? 0;
-    return { candidate, index, baseScore, fullScore };
-  });
-  const withFull = scored.filter(item => Number.isFinite(item.fullScore));
-  if (withFull.length < 2) return { candidates, stats: null };
-
-  const baseValues = scored.map(item => item.baseScore);
-  const fullValues = withFull.map(item => item.fullScore);
-  const minBase = Math.min(...baseValues);
-  const maxBase = Math.max(...baseValues);
-  const minFull = Math.min(...fullValues);
-  const maxFull = Math.max(...fullValues);
+    baseScores[i] = baseScore;
+    minBase = Math.min(minBase, baseScore);
+    maxBase = Math.max(maxBase, baseScore);
+    const fullScore = fullScores[i];
+    if (Number.isFinite(fullScore)) {
+      withFull++;
+      minFull = Math.min(minFull, fullScore);
+      maxFull = Math.max(maxFull, fullScore);
+    }
+  }
+  if (withFull < 2) return { candidates, stats: null };
   const weight = opts.weight ?? envNumber('SWEET_SEARCH_FULL_VECTOR_STAGE_WEIGHT', FULL_VECTOR_STAGE_WEIGHT, 0, 1);
 
   // `opts.owned`: the caller built these candidates for this query alone,
   // so the fields are set on them instead of on copies (same keys, same
   // order, same values).
-  const reranked = scored.map(item => {
-    const c = opts.owned ? item.candidate : { ...item.candidate };
-    if (!Number.isFinite(item.fullScore)) return c;
-    const baseNorm = normalizeScore(item.baseScore, minBase, maxBase);
-    const fullNorm = normalizeScore(item.fullScore, minFull, maxFull);
-    c.fullVectorScore = item.fullScore;
-    c.fullVectorNorm = fullNorm;
-    c.preFullVectorScore = item.baseScore;
-    c.semanticBlendScore = (1 - weight) * baseNorm + weight * fullNorm;
-    return c;
-  });
-  // Sort positions (ties by original index) instead of tagging each object
-  // with a temporary key: same order, and no delete (dictionary-mode objects).
-  const order = reranked.map((_, i) => i);
-  order.sort((x, y) => {
-    const d = (reranked[y].semanticBlendScore || 0) - (reranked[x].semanticBlendScore || 0);
-    return d !== 0 ? d : x - y;
-  });
-  const sorted = order.map(i => reranked[i]);
-  for (const candidate of sorted) {
+  const reranked = new Array(n);
+  const key = new Float64Array(n);
+  for (let i = 0; i < n; i++) {
+    const c = opts.owned ? head[i] : { ...head[i] };
+    const fullScore = fullScores[i];
+    if (Number.isFinite(fullScore)) {
+      const baseNorm = normalizeScore(baseScores[i], minBase, maxBase);
+      const fullNorm = normalizeScore(fullScore, minFull, maxFull);
+      c.fullVectorScore = fullScore;
+      c.fullVectorNorm = fullNorm;
+      c.preFullVectorScore = baseScores[i];
+      c.semanticBlendScore = (1 - weight) * baseNorm + weight * fullNorm;
+    }
+    reranked[i] = c;
+    key[i] = c.semanticBlendScore || 0;
+  }
+  // Positions by blend score, descending, ties by original index (a stable
+  // order). Short heads use an insertion sort; longer ones the comparator.
+  const order = new Array(n);
+  for (let i = 0; i < n; i++) order[i] = i;
+  if (n <= 64) {
+    for (let i = 1; i < n; i++) {
+      const x = order[i];
+      let j = i - 1;
+      while (j >= 0 && key[order[j]] < key[x]) {
+        order[j + 1] = order[j];
+        j--;
+      }
+      order[j + 1] = x;
+    }
+  } else {
+    order.sort((x, y) => {
+      const d = key[y] - key[x];
+      return d !== 0 ? d : x - y;
+    });
+  }
+  const sorted = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const candidate = reranked[order[i]];
     candidate.score = candidate.semanticBlendScore;
+    sorted[i] = candidate;
   }
 
   return {
     candidates: limit === candidates.length ? sorted : sorted.concat(candidates.slice(limit)),
-    stats: { candidates: withFull.length, window: limit, weight },
+    stats: { candidates: withFull, window: limit, weight },
   };
 }
 
