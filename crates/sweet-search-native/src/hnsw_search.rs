@@ -10,12 +10,110 @@
 use napi::bindgen_prelude::{Float64Array, Int8Array, Uint32Array, Uint8Array};
 use napi_derive::napi;
 
+/// Heap block for the large read-mostly arrays of the walk (codes, graph,
+/// visited bytes). With `huge` on, a block of 4 MB or more is 2 MB aligned and, on Linux,
+/// marked MADV_HUGEPAGE before it is first written, so the kernel can back it
+/// with huge pages (fewer TLB misses on the random reads of the walk) and
+/// every 64-byte code sits in one cache line. With `huge` off it has the
+/// alignment of `T`, as a `Vec<T>` (glibc puts a large block 16 bytes past a
+/// page start). `SS_FIX_HNSW_HUGE=0` turns it off. Same results either
+/// way; 1M dev set (2026-10-14): x86 EPYC p50 1,386 -> 719 us, M3 Max equal.
+struct AlignedBuf<T: Copy> {
+    ptr: std::ptr::NonNull<T>,
+    len: usize,
+    layout: std::alloc::Layout,
+}
+
+unsafe impl<T: Copy + Send> Send for AlignedBuf<T> {}
+unsafe impl<T: Copy + Sync> Sync for AlignedBuf<T> {}
+
+const HUGE_PAGE: usize = 2 << 20;
+
+fn huge_on() -> bool {
+    std::env::var("SS_FIX_HNSW_HUGE").map(|v| v != "0").unwrap_or(true)
+}
+
+impl<T: Copy> AlignedBuf<T> {
+    fn zeroed(len: usize, huge: bool) -> Self {
+        let elem = std::mem::size_of::<T>();
+        if len == 0 || elem == 0 {
+            let layout = std::alloc::Layout::from_size_align(0, std::mem::align_of::<T>()).unwrap();
+            return Self { ptr: std::ptr::NonNull::dangling(), len: 0, layout };
+        }
+        let bytes = len * elem;
+        // Huge pages only for blocks of 2+ huge pages (the round-up wastes
+        // under half); smaller blocks just get cache-line alignment.
+        let madv = huge && bytes >= 2 * HUGE_PAGE;
+        let (size, align) = if madv {
+            (bytes.div_ceil(HUGE_PAGE) * HUGE_PAGE, HUGE_PAGE)
+        } else if huge {
+            (bytes, std::mem::align_of::<T>().max(64))
+        } else {
+            (bytes, std::mem::align_of::<T>())
+        };
+        let layout = std::alloc::Layout::from_size_align(size, align).expect("AlignedBuf layout");
+        // SAFETY: size > 0. The block is zeroed below before any read.
+        let raw = unsafe { std::alloc::alloc(layout) };
+        if raw.is_null() {
+            std::alloc::handle_alloc_error(layout);
+        }
+        #[cfg(target_os = "linux")]
+        if madv {
+            // SAFETY: [raw, raw + size) is our own 2 MB-aligned block.
+            unsafe { libc::madvise(raw as *mut libc::c_void, size, libc::MADV_HUGEPAGE) };
+        }
+        // SAFETY: raw holds `size` writable bytes.
+        unsafe { std::ptr::write_bytes(raw, 0, size) };
+        Self { ptr: std::ptr::NonNull::new(raw as *mut T).unwrap(), len, layout }
+    }
+
+    fn from_slice(src: &[T], huge: bool) -> Self {
+        let mut b = Self::zeroed(src.len(), huge);
+        b.copy_from_slice(src);
+        b
+    }
+}
+
+impl<T: Copy> Drop for AlignedBuf<T> {
+    fn drop(&mut self) {
+        if self.layout.size() > 0 {
+            // SAFETY: allocated in `zeroed` with this layout.
+            unsafe { std::alloc::dealloc(self.ptr.as_ptr() as *mut u8, self.layout) };
+        }
+    }
+}
+
+impl<T: Copy> std::ops::Deref for AlignedBuf<T> {
+    type Target = [T];
+    fn deref(&self) -> &[T] {
+        // SAFETY: ptr holds len initialized values (or is dangling with len 0).
+        unsafe { std::slice::from_raw_parts(self.ptr.as_ptr(), self.len) }
+    }
+}
+
+impl<T: Copy> std::ops::DerefMut for AlignedBuf<T> {
+    fn deref_mut(&mut self) -> &mut [T] {
+        // SAFETY: as in deref, and &mut self is unique.
+        unsafe { std::slice::from_raw_parts_mut(self.ptr.as_ptr(), self.len) }
+    }
+}
+
+impl<T: Copy> Default for AlignedBuf<T> {
+    fn default() -> Self {
+        Self::zeroed(0, false)
+    }
+}
+
 struct Csr {
-    offsets: Vec<u32>, // len = nodes + 1
-    neighbors: Vec<u32>,
+    offsets: AlignedBuf<u32>, // len = nodes + 1
+    neighbors: AlignedBuf<u32>,
 }
 
 impl Csr {
+    fn empty() -> Self {
+        Csr { offsets: AlignedBuf::from_slice(&[0], false), neighbors: AlignedBuf::default() }
+    }
+
     #[inline(always)]
     fn of(&self, node: u32) -> &[u32] {
         let i = node as usize;
@@ -545,9 +643,10 @@ fn spread(scores: impl Iterator<Item = f64> + Clone, n: usize) -> [f64; 5] {
 #[napi]
 pub struct HnswSearcher {
     words: usize, // u64 words per vector
-    slab: Vec<u64>,
+    slab: AlignedBuf<u64>,
     count: u32,
     levels: Vec<Csr>,
+    empty_level: Csr,
     query: Vec<u64>,
     batch: Vec<u32>,
     dists: Vec<u32>,
@@ -555,7 +654,7 @@ pub struct HnswSearcher {
     // Generation-stamped visited bytes: one byte per node, so neighboring
     // checks never share a word (no store-to-load chains), and no per-query
     // clear except on wrap.
-    visited: Vec<u8>,
+    visited: AlignedBuf<u8>,
     visit_gen: u8,
     cand: MinHeap,
     res: MaxHeap,
@@ -577,6 +676,15 @@ pub struct HnswSearcher {
     v3: bool,
     tie_keyed: Vec<(i32, u32)>,
     pool_idx: Vec<u32>,
+    huge: bool,
+    // Experiment, off by default: re-prune level-0 lists at load to at most
+    // this many links (`SS_HNSW_PRUNE0`, 0 = keep the built lists). 1M dev
+    // set at stage1 250: 128 without fill lost MRR@10 (-0.0014); with fill
+    // -0.0003 (not significant), x86 ~15% faster. Not adopted.
+    prune0: usize,
+    // `SS_HNSW_PRUNE0_FILL=1`: back-fill pruned lists with the nearest
+    // dropped links up to `prune0` (as the build does).
+    prune0_fill: bool,
 }
 
 #[napi]
@@ -591,7 +699,8 @@ impl HnswSearcher {
         // Zero-pad each vector to whole u64 words (padding bits are equal on
         // both sides, so XOR-popcount is unchanged).
         let words = dim.div_ceil(8);
-        let mut packed = vec![0u64; words * count as usize];
+        let huge = huge_on();
+        let mut packed = AlignedBuf::<u64>::zeroed(words * count as usize, huge);
         for v in 0..count as usize {
             let src = &slab[v * dim..(v + 1) * dim];
             for w in 0..words {
@@ -606,11 +715,12 @@ impl HnswSearcher {
             slab: packed,
             count,
             levels: Vec::new(),
+            empty_level: Csr::empty(),
             query: vec![0u64; words],
             batch: Vec::new(),
             dists: Vec::new(),
             all_ids: Vec::new(),
-            visited: vec![0u8; count as usize],
+            visited: AlignedBuf::zeroed(count as usize, huge),
             visit_gen: 0,
             cand: MinHeap::default(),
             res: MaxHeap::default(),
@@ -628,6 +738,9 @@ impl HnswSearcher {
             v3: cpu_v3(),
             tie_keyed: Vec::new(),
             pool_idx: Vec::new(),
+            huge,
+            prune0: std::env::var("SS_HNSW_PRUNE0").ok().and_then(|v| v.parse().ok()).unwrap_or(0usize),
+            prune0_fill: std::env::var("SS_HNSW_PRUNE0_FILL").map(|v| v == "1").unwrap_or(false),
         })
     }
 
@@ -640,9 +753,13 @@ impl HnswSearcher {
             return Err(napi::Error::from_reason("HnswSearcher: neighbor index out of range"));
         }
         while self.levels.len() <= level {
-            self.levels.push(Csr { offsets: vec![0], neighbors: Vec::new() });
+            self.levels.push(Csr::empty());
         }
-        let csr = Csr { offsets: offsets.to_vec(), neighbors: neighbors.to_vec() };
+        let csr = if level == 0 && self.prune0 > 0 {
+            self.prune_level(&offsets, &neighbors)
+        } else {
+            Csr { offsets: AlignedBuf::from_slice(&offsets, self.huge), neighbors: AlignedBuf::from_slice(&neighbors, self.huge) }
+        };
         self.levels[level] = csr;
         Ok(())
     }
@@ -695,6 +812,58 @@ impl HnswSearcher {
         for (o, &id) in out.iter_mut().zip(ids) {
             *o = self.dist_q(id);
         }
+    }
+
+    /// Level-0 CSR re-pruned to at most `prune0` links per node with the
+    /// HNSW heuristic (Algorithm 4) on Hamming distance: links in order of
+    /// distance to the node; a link is dropped when it is closer to a kept
+    /// link than to the node. With `prune0_fill`, the nearest dropped links
+    /// fill the list up to `prune0`. Kept links stay in distance order.
+    fn prune_level(&self, offsets: &[u32], neighbors: &[u32]) -> Csr {
+        use rayon::prelude::*;
+        let n = offsets.len().saturating_sub(1);
+        let (cap, fill, w) = (self.prune0, self.prune0_fill, self.words);
+        let code = |i: u32| &self.slab[i as usize * w..(i as usize + 1) * w];
+        let lists: Vec<Vec<u32>> = (0..n)
+            .into_par_iter()
+            .map(|v| {
+                let list = &neighbors[offsets[v] as usize..offsets[v + 1] as usize];
+                if list.len() <= cap {
+                    return list.to_vec();
+                }
+                let mut c: Vec<(u32, u32)> = list.iter().map(|&nb| (hamming(code(v as u32), code(nb)), nb)).collect();
+                c.sort_by_key(|&(d, _)| d);
+                let mut kept: Vec<u32> = Vec::with_capacity(cap);
+                let mut dropped: Vec<u32> = Vec::new();
+                for &(d, nb) in &c {
+                    if kept.len() >= cap {
+                        break;
+                    }
+                    if kept.iter().all(|&r| hamming(code(nb), code(r)) > d) {
+                        kept.push(nb);
+                    } else {
+                        dropped.push(nb);
+                    }
+                }
+                if fill {
+                    for nb in dropped {
+                        if kept.len() >= cap {
+                            break;
+                        }
+                        kept.push(nb);
+                    }
+                }
+                kept
+            })
+            .collect();
+        let mut off = Vec::with_capacity(n + 1);
+        let mut nbr = Vec::with_capacity(lists.iter().map(|l| l.len()).sum());
+        off.push(0u32);
+        for l in &lists {
+            nbr.extend_from_slice(l);
+            off.push(nbr.len() as u32);
+        }
+        Csr { offsets: AlignedBuf::from_slice(&off, self.huge), neighbors: AlignedBuf::from_slice(&nbr, self.huge) }
     }
 
     /// Hamming distance from the staged query to vector `idx`.
@@ -876,8 +1045,7 @@ impl HnswSearcher {
         cand.insert(start, start_dist);
         res.insert(start, start_dist);
 
-        let empty = Csr { offsets: vec![0], neighbors: Vec::new() };
-        let csr = self.levels.get(level as usize).unwrap_or(&empty);
+        let csr = self.levels.get(level as usize).unwrap_or(&self.empty_level);
 
         let mut visited_count: u32 = 0;
         let mut recent_discoveries: u32 = 0;

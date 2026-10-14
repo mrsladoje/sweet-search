@@ -269,6 +269,16 @@ function adaptiveStage2Pool(k, analysis, config) {
 }
 
 /**
+ * Stage-1 result count: the configured floor, raised to the largest pool
+ * adaptiveStage2Pool can ask for at this k, so stage 2 never sees fewer
+ * candidates than its pool (k=10: 250; k>=27: 400).
+ */
+function stage1Count(floor, k, config) {
+  const { minStage2 = 40, maxStage2 = 400, oversample1 = 10 } = config;
+  return Math.max(floor, Math.min(maxStage2, Math.floor(Math.max(minStage2, k * oversample1) * 1.5)));
+}
+
+/**
  * Compute adaptive Stage 2.5 pool size.
  * Always smaller than Stage 2 pool — float rescoring is more expensive.
  */
@@ -339,7 +349,7 @@ export async function semanticSearch3Stage(query, options = {}) {
     ? normalizedFloatToInt8(truncatedFloat)
     : null;
   const fused = fusedQueryInt8
-    ? this.binaryHnswIndex.searchCascade(embedResult.binary, this.stage1Candidates, {
+    ? this.binaryHnswIndex.searchCascade(embedResult.binary, stage1Count(this.stage1Candidates, k, adaptiveConfig), {
       floatQuery: truncatedFloat, queryInt8: fusedQueryInt8,
     })
     : null;
@@ -388,7 +398,7 @@ export async function semanticSearch3Stage(query, options = {}) {
     // for the head kept below (stage1Result.materialize); other paths return
     // the full results array as before.
     const stage1Result = await this.binaryHnswIndex.search(
-      embedResult.binary, this.stage1Candidates, { floatQuery: truncatedFloat, lazy: true }
+      embedResult.binary, stage1Count(this.stage1Candidates, k, adaptiveConfig), { floatQuery: truncatedFloat, lazy: true }
     );
     const stage1Lazy = stage1Result.results === null && typeof stage1Result.materialize === 'function';
     const stage1Count = stage1Lazy ? stage1Result.count : stage1Result.results.length;
