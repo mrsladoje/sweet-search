@@ -19,11 +19,9 @@ S=${1:-src}; mkdir -p $S; CXX=${CXX:-g++}; J=$(nproc)
 # with FAISS_OPT_LEVEL=avx2 the AVX2 kernels live in libfaiss_avx2.a (the generic libfaiss.a is built too); link the AVX2 one
 FLIB=$S/faiss/build/faiss/libfaiss_avx2.a; [ -f $FLIB ] || FLIB=$S/faiss/build/faiss/libfaiss.a
 echo "linking FAISS: $FLIB"
-sed "s/THREADS = 12;/THREADS = $J;/" rivals.cpp > rivals-linux.cpp
-grep -q "THREADS = $J;" rivals-linux.cpp
 FLAGS=(-std=c++17 -O3 -march=native -DNDEBUG -fopenmp -I$S/faiss -I$S/hnswlib -I$S/usearch/include
        -I$S/usearch/numkong/include -DUSEARCH_USE_NUMKONG=1 -DNK_DYNAMIC_DISPATCH=1)
 LIBS=($FLIB -L$S/usearch/numkong/build -lnumkong -Wl,-rpath,$HERE/$S/usearch/numkong/build -lopenblas -lgomp -lpthread)
-$CXX "${FLAGS[@]}" rivals-linux.cpp "${LIBS[@]}" -o rivals
-$CXX "${FLAGS[@]}" -ffast-math -ftree-vectorize rivals-linux.cpp "${LIBS[@]}" -o rivals-hnswlib
+$CXX "${FLAGS[@]}" rivals.cpp "${LIBS[@]}" -o rivals
+$CXX "${FLAGS[@]}" -ffast-math -ftree-vectorize rivals.cpp "${LIBS[@]}" -o rivals-hnswlib
 echo built rivals rivals-hnswlib
