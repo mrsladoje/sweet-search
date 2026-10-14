@@ -385,8 +385,8 @@ fn run_in_process(sub: &str, args: &[String], chain: &str) -> ! {
             process::exit(127);
         }
     };
-    let err = Command::new("node")
-        .arg(script)
+    let err = Command::new(super::node_for(Path::new(&script)))
+        .arg(&script)
         .arg(sub)
         .args(args)
         .env(CHAIN_LATER_ENV, chain)

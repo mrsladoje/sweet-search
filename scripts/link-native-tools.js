@@ -15,6 +15,11 @@
  * when it cannot swap, the JS stubs stay and still work (core/agent-tools/launch.js).
  *
  * Refuses to touch a development checkout: the stubs there are tracked source files.
+ *
+ * It also records the node that runs it in `<package>/.install-node`. The binary starts
+ * the daemon and its in-process fallback with that node, so an ss-* call works in a shell
+ * without node on PATH (nvm not loaded) and never runs the package's native modules under
+ * another node version's ABI.
  */
 
 import fs from 'node:fs';
@@ -22,6 +27,10 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { nativeBinarySupportsAgentTools, resolveNativeBinary } from '../core/infrastructure/native-resolver.js';
 import { AGENT_TOOLS } from '../core/agent-tools/tools.js';
+import { refreshUserShims } from './user-shims.js';
+
+/** Mirrors crates/sweet-search-cli/src/main.rs INSTALL_NODE_FILE. */
+export const INSTALL_NODE_FILE = '.install-node';
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -81,6 +90,8 @@ export function linkNativeAgentTools({
   if (!supportsAgentTools(binary)) {
     return { status: 'skipped', detail: `native binary ${binary} has no ss-* support; the JS stubs serve`, linked };
   }
+  try { fs.writeFileSync(path.join(packageRoot, INSTALL_NODE_FILE), `${process.execPath}\n`); }
+  catch { /* the binary falls back to node on PATH */ }
   try {
     for (const name of Object.keys(AGENT_TOOLS)) {
       replaceWithBinary(binary, path.join(packageRoot, 'bin', name));
@@ -96,6 +107,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
   try {
     const report = linkNativeAgentTools();
     if (process.env.SWEET_SEARCH_DEBUG_INSTALL) process.stderr.write(`[sweet-search] ss-* tools: ${report.status} — ${report.detail}\n`);
+    // An upgrade: the ss-* copies init put in ~/.local/bin (scripts/user-shims.js) take the new binary.
+    if (report.status === 'linked') refreshUserShims({ binary: report.binary, packageRoot: report.packageRoot });
   } catch {
     // Never fail an install over an optimisation.
   }
