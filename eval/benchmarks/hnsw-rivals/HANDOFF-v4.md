@@ -299,8 +299,8 @@ Box A/B, 3 interleaved runs, vs current main (S1 400, W=1, int8-all):
 x86 rival rescore with the shipped build (held-out, our arm 3 runs tonight; rival runs 13-14 Oct, same box and
 binaries; score4b.py; ratio = rival p50 / ours at the first sweep point reaching our MRR@10):
   csn1m-ho  ours 372 us .5330: usearch_i8 x2.39, faiss_sq8_refine x3.08, faiss_flat M64 x3.79, hnswlib M64 x5.34,
-            binflat x6.44; bin_cascade / usearch_b1 never.
-  dall-ho   ours 457 us .7881: binflat x1.07, hnswlib M64 x3.70, sq8 x4.08; 8 configs never.
+            binflat x6.44; bin_cascade, flat M16, usearch_b1 never.
+  dall-ho   ours 457 us .7881: binflat x1.07, hnswlib M64 x3.70, sq8 x4.08; 9 configs never.
   d20k-ho   ours 178 us .8220: binflat x1.02, RaBitQ-flat x2.05, sq8 x2.56, flat M32 x2.63.
   advtest   ours 191 us .4731: RaBitQ-flat x2.15, binflat x2.30, sq8 x2.79, usearch_i8_rescore x3.28.
   gcsn-ho   ours 96 us .8359: binflat x1.34, RaBitQ-flat x1.39, hnswlib M64 x1.82.
