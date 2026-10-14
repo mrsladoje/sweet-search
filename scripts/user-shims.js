@@ -18,6 +18,15 @@
  * of extending it. Why not npm's global bin directory: a later `npm i -g sweet-search`
  * would then fail with EEXIST on the files we put there.
  *
+ * A global install inside the home directory (nvm, fnm, `npm config set prefix ~/...`) gets
+ * the copies too. Its bin directory is on PATH only after a shell startup script ran: the
+ * nvm lines sit at the end of ~/.bashrc, past the early return for non-interactive shells,
+ * so an agent's `bash -lc` does not have them. Such a shell then finds no ss-*, or, under
+ * WSL, the Windows npm copy on the inherited Windows PATH, which runs `node` and fails.
+ * The copies in ~/.local/bin (on PATH from ~/.profile) reach the global package through
+ * `packageRoot` in the manifest, and the binary starts the daemon with the node recorded
+ * in the package (scripts/link-native-tools.js), so neither needs node on PATH.
+ *
  * Ownership: every file written is recorded (path, device, inode, SHA-256) in
  * ~/.cache/sweet-search/user-shims.json. A file is replaced or removed only when it still
  * matches its record, so a user's own `ss-grep` is never touched.
@@ -68,6 +77,30 @@ export function readShimManifest(home = os.homedir()) {
     if (m?.version === MANIFEST_VERSION && Array.isArray(m.shims)) return m;
   } catch { /* none, or unreadable: nothing is provably ours */ }
   return { version: MANIFEST_VERSION, shims: [] };
+}
+
+/** `<prefix>/lib/node_modules/sweet-search`: the layout of `npm i -g` on Linux and macOS. */
+export function isGlobalPackageRoot(packageRoot) {
+  const parent = path.dirname(packageRoot);
+  return path.basename(parent) === 'node_modules' && path.basename(path.dirname(parent)) === 'lib';
+}
+
+function isInside(dir, root) {
+  const rel = path.relative(root, dir);
+  return rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel);
+}
+
+/**
+ * True when every ss-* command resolves into one directory inside `home` that is not a
+ * user bin directory: a global install whose bin directory a shell startup script puts on
+ * PATH (nvm, fnm, a home npm prefix), which an agent's shell may not have run.
+ */
+function inHomeNodePrefix(hits, home) {
+  const dirs = new Set(hits.map((h) => real(path.dirname(h))));
+  if (dirs.size !== 1) return false;
+  const [dir] = dirs;
+  const userDirs = [path.join(home, '.local', 'bin'), path.join(home, 'bin')].map(real);
+  return isInside(dir, real(home)) && !userDirs.includes(dir);
 }
 
 function writeShimManifest(home, manifest) {
@@ -123,10 +156,12 @@ export function installUserShims({
   const ours = new Map(manifest.shims.map((e) => [e.path, e]));
   const isOurs = (file) => ours.has(file) && matchesRecord(file, ours.get(file));
   const dirs = agentPathDirs(env);
+  const global = Boolean(packageRoot) && isGlobalPackageRoot(packageRoot);
   // Global install (or the user's own commands): every name resolves to a file that is
-  // not ours. Nothing to do.
+  // not ours. Nothing to do, unless that global install lives in a home node prefix.
   const firstHits = names.map((n) => whichOnPath(n, dirs));
-  if (firstHits.every((hit) => hit && !isOurs(hit))) {
+  const homePrefix = global && firstHits.every(Boolean) && inHomeNodePrefix(firstHits, home);
+  if (firstHits.every((hit) => hit && !isOurs(hit)) && !homePrefix) {
     return { status: 'not-needed', dir: null, detail: 'on PATH', conflicts: [] };
   }
   if (packageRoot.split(path.sep).includes('_npx')) {
@@ -134,6 +169,10 @@ export function installUserShims({
       detail: 'an npx run leaves no package an agent\'s shell can use: install sweet-search (npm i -D sweet-search, or -g)' };
   }
   const dir = pickUserBinDir({ env, home });
+  if (!dir && homePrefix) {
+    // On PATH in this shell; nothing to put them in for a shell without the node prefix.
+    return { status: 'not-needed', dir: null, detail: 'on PATH', conflicts: [] };
+  }
   if (!dir) {
     return { status: 'no-dir', dir: null, conflicts: [],
       detail: `no user bin directory on PATH (looked for ${path.join(home, '.local', 'bin')} and ${path.join(home, 'bin')})` };
@@ -168,15 +207,43 @@ export function installUserShims({
       if (ours.has(target) && !conflicts.includes(target)) ours.set(target, recordFor(target));
     }
   } catch (err) {
-    writeShimManifest(home, { version: MANIFEST_VERSION, shims: [...ours.values()].filter((e) => fs.existsSync(e.path)) });
+    writeShimManifest(home, { ...manifest, shims: [...ours.values()].filter((e) => fs.existsSync(e.path)) });
     return { status: 'failed', dir, conflicts, detail: `${err?.code || err?.message || err} writing ${dir}` };
   }
-  writeShimManifest(home, { version: MANIFEST_VERSION, shims: [...ours.values()] });
+  // The package a copy runs when no project above the cwd has one (the native client's
+  // package lookup). Only a global install: a project's package serves that project only.
+  const next = { ...manifest, shims: [...ours.values()] };
+  if (global) next.packageRoot = real(packageRoot);
+  writeShimManifest(home, next);
   const status = changed === 0 ? 'current' : 'installed';
   const detail = conflicts.length
     ? `${dir} (left your own ${conflicts.map((c) => path.basename(c)).join(', ')} in place)`
     : dir;
   return { status, dir, detail, conflicts };
+}
+
+/**
+ * After `npm i -g sweet-search` upgrades the package: replace the recorded copies that are
+ * still ours with the new binary, and point the manifest at the new package. Copies the
+ * user changed are left alone. Returns the number of copies replaced.
+ */
+export function refreshUserShims({ binary, packageRoot, home = os.homedir() } = {}) {
+  const manifest = readShimManifest(home);
+  if (manifest.shims.length === 0 || !isGlobalPackageRoot(packageRoot)) return 0;
+  const want = sha256(binary);
+  let changed = 0;
+  const shims = manifest.shims.map((entry) => {
+    if (!matchesRecord(entry.path, entry) || entry.sha256 === want) return entry;
+    const tmp = `${entry.path}.sweet-search-${process.pid}`;
+    fs.rmSync(tmp, { force: true });
+    fs.copyFileSync(binary, tmp);
+    fs.chmodSync(tmp, 0o755);
+    fs.renameSync(tmp, entry.path);
+    changed++;
+    return recordFor(entry.path);
+  });
+  writeShimManifest(home, { ...manifest, shims, packageRoot: real(packageRoot) });
+  return changed;
 }
 
 /** The recorded copies that are still ours (for the uninstall report). */

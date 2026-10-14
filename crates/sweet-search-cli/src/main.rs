@@ -1526,7 +1526,7 @@ fn auto_start_server_for(project_root: &Path, quiet: bool) -> Option<String> {
     // through) and pin SWEET_SEARCH_PROJECT_ROOT to our canonical root so the JS
     // server derives the SAME per-project socket we'll connect to, and the
     // maintainer targets the right project (C3 + canonical /tmp vs /private/tmp).
-    let spawn_result = Command::new("node")
+    let spawn_result = Command::new(node_for(Path::new(script)))
         .arg(format!(
             "--max-old-space-size={}",
             daemon_heap_mb(memory_limit_bytes())
@@ -1679,9 +1679,50 @@ fn real_exe() -> Option<PathBuf> {
         .map(|p| fs::canonicalize(&p).unwrap_or(p))
 }
 
+/// Mirrors scripts/link-native-tools.js INSTALL_NODE_FILE.
+const INSTALL_NODE_FILE: &str = ".install-node";
+
+/// The node that runs `script`, a file of the package: `$SWEET_SEARCH_NODE`, else the node
+/// that installed the package (recorded in its root), else `node` on PATH. The recorded
+/// node works in a shell without node on PATH (nvm not loaded) and matches the ABI of the
+/// package's native modules.
+pub(crate) fn node_for(script: &Path) -> std::ffi::OsString {
+    if let Some(v) = env::var_os("SWEET_SEARCH_NODE").filter(|v| !v.is_empty()) {
+        return v;
+    }
+    recorded_node(script).map(PathBuf::into_os_string).unwrap_or_else(|| "node".into())
+}
+
+fn recorded_node(script: &Path) -> Option<PathBuf> {
+    let root = script.ancestors().skip(1).find(|d| d.join("package.json").is_file())?;
+    let text = fs::read_to_string(root.join(INSTALL_NODE_FILE)).ok()?;
+    let node = PathBuf::from(text.trim());
+    (node.is_absolute() && node.is_file()).then_some(node)
+}
+
+/// `rel` in the global package recorded by `sweet-search init` beside the ss-* copies in
+/// the user bin directory (scripts/user-shims.js: `packageRoot` in the manifest). It
+/// serves a shell whose PATH lacks the global install's bin directory (nvm not loaded).
+fn recorded_package_file(
+    rel: &Path,
+    home: Option<&std::ffi::OsStr>,
+    exists: &dyn Fn(&Path) -> bool,
+) -> Option<PathBuf> {
+    let manifest = Path::new(home?)
+        .join(".cache")
+        .join("sweet-search")
+        .join("user-shims.json");
+    let text = fs::read_to_string(manifest).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let candidate = PathBuf::from(value.get("packageRoot")?.as_str()?).join(rel);
+    exists(&candidate).then_some(candidate)
+}
+
 /// `rel` in the package that the `sweet-search` command on `path_var` belongs to. An ss-*
 /// shim copied into a user bin directory (scripts/user-shims.js) has no package beside
-/// it; outside a project with a local install, this finds the global one.
+/// it; outside a project with a local install, this finds the global one. A Windows npm
+/// directory (WSL puts the Windows PATH on the Linux one) is skipped: its package carries
+/// the Windows native modules.
 fn package_file_on_path(
     rel: &Path,
     path_var: Option<&std::ffi::OsStr>,
@@ -1689,7 +1730,7 @@ fn package_file_on_path(
 ) -> Option<PathBuf> {
     for dir in env::split_paths(path_var?) {
         let cmd = dir.join("sweet-search");
-        if !exists(&cmd) {
+        if !exists(&cmd) || exists(&dir.join("sweet-search.cmd")) {
             continue;
         }
         let real = fs::canonicalize(&cmd).unwrap_or(cmd);
@@ -1704,14 +1745,16 @@ fn package_file_on_path(
 }
 
 /// A file of the installed package (`rel` from its root), located like the server entry
-/// but without the override and without a diagnostic, then through the `sweet-search`
-/// command on $PATH.
+/// but without the override and without a diagnostic, then through the global package
+/// recorded by `sweet-search init`, then through the `sweet-search` command on $PATH.
 fn find_package_file(rel: &Path) -> Option<String> {
     let cwd = env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let exe = real_exe();
     let exists = |p: &Path| p.exists();
     let (found, _) = resolve_package_file(rel, &cwd, exe.as_deref(), None, &exists);
-    let found = found.or_else(|| package_file_on_path(rel, env::var_os("PATH").as_deref(), &exists));
+    let found = found
+        .or_else(|| recorded_package_file(rel, env::var_os("HOME").as_deref(), &exists))
+        .or_else(|| package_file_on_path(rel, env::var_os("PATH").as_deref(), &exists));
     found.map(|p| {
         p.canonicalize()
             .unwrap_or(p)
@@ -2078,6 +2121,59 @@ mod tests {
         let only_empty = env::join_paths([empty]).unwrap();
         assert_eq!(package_file_on_path(&rel, Some(&only_empty), &exists), None);
         assert_eq!(package_file_on_path(&rel, None, &exists), None);
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
+    fn package_file_on_path_skips_a_windows_npm_directory() {
+        // WSL: the Windows npm directory on the inherited PATH holds `sweet-search` (a sh
+        // shim) beside `sweet-search.cmd`; its package is the Windows build.
+        let exists = exists_set(&[
+            "/mnt/c/npm/sweet-search",
+            "/mnt/c/npm/sweet-search.cmd",
+            "/mnt/c/npm/core/agent-tools/cli.js",
+        ]);
+        let rel = Path::new("core").join("agent-tools").join("cli.js");
+        let path_var = std::ffi::OsString::from("/mnt/c/npm");
+        assert_eq!(package_file_on_path(&rel, Some(&path_var), &exists), None);
+    }
+
+    #[test]
+    fn recorded_package_file_reads_the_init_manifest() {
+        let home = env::temp_dir().join(format!("ss-recorded-pkg-{}", std::process::id()));
+        let dir = home.join(".cache").join("sweet-search");
+        fs::create_dir_all(&dir).unwrap();
+        let rel = Path::new("core").join("agent-tools").join("cli.js");
+        let exists = exists_set(&["/nvm/lib/node_modules/sweet-search/core/agent-tools/cli.js"]);
+        assert_eq!(recorded_package_file(&rel, Some(home.as_os_str()), &exists), None, "no manifest");
+        fs::write(
+            dir.join("user-shims.json"),
+            r#"{"version":1,"shims":[],"packageRoot":"/nvm/lib/node_modules/sweet-search"}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            recorded_package_file(&rel, Some(home.as_os_str()), &exists),
+            Some(PathBuf::from("/nvm/lib/node_modules/sweet-search/core/agent-tools/cli.js"))
+        );
+        let gone = exists_set(&[]);
+        assert_eq!(recorded_package_file(&rel, Some(home.as_os_str()), &gone), None, "package removed");
+        fs::remove_dir_all(home).unwrap();
+    }
+
+    #[test]
+    fn recorded_node_comes_from_the_package_root() {
+        let base = env::temp_dir().join(format!("ss-install-node-{}", std::process::id()));
+        let pkg = base.join("sweet-search");
+        fs::create_dir_all(pkg.join("core").join("agent-tools")).unwrap();
+        fs::write(pkg.join("package.json"), b"{}").unwrap();
+        let script = pkg.join("core").join("agent-tools").join("cli.js");
+        assert_eq!(recorded_node(&script), None, "nothing recorded");
+        let node = base.join("node");
+        fs::write(&node, b"").unwrap();
+        fs::write(pkg.join(INSTALL_NODE_FILE), format!("{}\n", node.display())).unwrap();
+        assert_eq!(recorded_node(&script), Some(node.clone()));
+        fs::remove_file(&node).unwrap();
+        assert_eq!(recorded_node(&script), None, "recorded node uninstalled");
         fs::remove_dir_all(base).unwrap();
     }
 

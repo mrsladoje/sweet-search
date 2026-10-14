@@ -4,11 +4,11 @@
  * and `uninstall --all` removes exactly those files — never a user's own ss-*.
  */
 import { describe, it, expect } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, statSync, chmodSync, existsSync, readdirSync, renameSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, statSync, chmodSync, existsSync, readdirSync, renameSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
-  agentPathDirs, installUserShims, planUserShimRemovals, readShimManifest, removeUserShims, shimManifestPath,
+  agentPathDirs, installUserShims, planUserShimRemovals, readShimManifest, refreshUserShims, removeUserShims, shimManifestPath,
 } from '../../scripts/user-shims.js';
 import { setUpAgentTools } from '../../scripts/init.js';
 import { AGENT_TOOLS } from '../../core/agent-tools/tools.js';
@@ -101,6 +101,55 @@ describe('installUserShims', () => {
     const r = installUserShims({ binary: w.binary, packageRoot: w.pkg, env: { ...w.env, SWEET_SEARCH_BIN_DIR: own }, home: w.home });
     expect(r.dir).toBe(own);
     expect(readFileSync(path.join(own, 'ss-trace'), 'utf8')).toBe('native v1');
+  });
+});
+
+describe('a global install in a home node prefix (nvm)', () => {
+  // ~/.nvm/versions/node/v22/{bin,lib/node_modules/sweet-search}: on PATH only once nvm.sh ran.
+  function nvmWorld() {
+    const w = world();
+    const prefix = path.join(w.home, '.nvm', 'versions', 'node', 'v22');
+    const nvmBin = path.join(prefix, 'bin');
+    const pkg = path.join(prefix, 'lib', 'node_modules', 'sweet-search');
+    mkdirSync(nvmBin, { recursive: true });
+    mkdirSync(pkg, { recursive: true });
+    for (const n of NAMES) writeFileSync(path.join(nvmBin, n), 'global', { mode: 0o755 });
+    return { ...w, nvmBin, pkg, env: { PATH: `${nvmBin}:${w.userBin}:${w.sys}` } };
+  }
+
+  it('copies ss-* into ~/.local/bin and records the package for a shell without nvm', () => {
+    const w = nvmWorld();
+    const r = installUserShims({ binary: w.binary, packageRoot: w.pkg, env: w.env, home: w.home });
+    expect(r.status).toBe('installed');
+    expect(readFileSync(path.join(w.userBin, 'ss-search'), 'utf8')).toBe('native v1');
+    expect(readShimManifest(w.home).packageRoot).toBe(realpathSync(w.pkg));
+    expect(installUserShims({ binary: w.binary, packageRoot: w.pkg, env: w.env, home: w.home }).status).toBe('current');
+  });
+
+  it('stays quiet without a user bin directory: the commands are on PATH in this shell', () => {
+    const w = nvmWorld();
+    const r = installUserShims({ binary: w.binary, packageRoot: w.pkg, env: { PATH: `${w.nvmBin}:${w.sys}` }, home: w.home });
+    expect(r.status).toBe('not-needed');
+  });
+
+  it('a global install outside the home directory still needs nothing', () => {
+    const w = world();
+    const pkg = path.join(w.base, 'usr', 'lib', 'node_modules', 'sweet-search');
+    mkdirSync(pkg, { recursive: true });
+    for (const n of NAMES) writeFileSync(path.join(w.sys, n), 'global', { mode: 0o755 });
+    expect(installUserShims({ binary: w.binary, packageRoot: pkg, env: w.env, home: w.home }).status).toBe('not-needed');
+    expect(readdirSync(w.userBin)).toEqual([]);
+  });
+
+  it('an upgrade of the global package refreshes the copies; a local install does not', () => {
+    const w = nvmWorld();
+    installUserShims({ binary: w.binary, packageRoot: w.pkg, env: w.env, home: w.home });
+    writeFileSync(w.binary, 'native v2');
+    expect(refreshUserShims({ binary: w.binary, packageRoot: path.join(w.base, 'proj', 'node_modules', 'sweet-search'), home: w.home })).toBe(0);
+    expect(refreshUserShims({ binary: w.binary, packageRoot: w.pkg, home: w.home })).toBe(NAMES.length);
+    for (const n of NAMES) expect(readFileSync(path.join(w.userBin, n), 'utf8')).toBe('native v2');
+    expect(planUserShimRemovals({ home: w.home }), 'still recorded as ours').toHaveLength(NAMES.length);
+    expect(refreshUserShims({ binary: w.binary, packageRoot: w.pkg, home: w.home })).toBe(0);
   });
 });
 
