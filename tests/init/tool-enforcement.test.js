@@ -42,7 +42,7 @@ describe('installToolEnforcement', () => {
     const entry = settings.hooks.PreToolUse[0];
     expect(entry.matcher).toBe('Read');
     // The native `sweet-search-hook` command: no `node`, no path.
-    expect(entry.hooks[0].command).toBe(READ_HINT_HOOK_COMMAND);
+    expect(entry.hooks[0]).toEqual({ type: 'command', command: READ_HINT_HOOK_COMMAND, timeout: 5 });
   });
 
   it('idempotent: second run does not duplicate Grep deny or PreToolUse entry', () => {

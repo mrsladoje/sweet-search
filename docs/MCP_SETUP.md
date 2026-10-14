@@ -30,6 +30,8 @@ config Claude Code reads (create it if needed):
 `sweet-search-mcp` is a command the install puts on your PATH (a project install:
 `sweet-search init` copies it into `~/.local/bin`). It runs the server with the Node.js
 that installed sweet-search, so the MCP host needs no `node` or `npx` on its PATH.
+A host started outside a shell (a macOS app opened from the Dock) does not get your
+shell's PATH: give it the absolute path that `command -v sweet-search-mcp` prints.
 
 Restart Claude Code, then verify with `/mcp list`.
 

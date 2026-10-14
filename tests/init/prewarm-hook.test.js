@@ -63,6 +63,9 @@ describe('registerPrewarmSessionStartHook', () => {
     expect(s.hooks.SessionStart[0].hooks[0].command).toBe(`${PREWARM_HOOK_COMMAND} --agent-session-hook`);
     expect(s.hooks.SessionEnd).toHaveLength(1);
     expect(s.hooks.SessionEnd[0].hooks[0].command).toBe(`${PREWARM_HOOK_COMMAND} --agent-session-drop`);
+    // Claude Code reads `timeout` in seconds, and knows no `continueOnError` field.
+    expect(s.hooks.SessionStart[0].hooks[0]).toEqual({ type: 'command', command: `${PREWARM_HOOK_COMMAND} --agent-session-hook`, timeout: 10 });
+    expect(s.hooks.SessionEnd[0].hooks[0].timeout).toBe(2);
   });
 
   it('is idempotent: re-running updates in place, never duplicates', () => {
