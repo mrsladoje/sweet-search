@@ -28,7 +28,7 @@ PAD_NOTE = ('¹ This difference does not come from the benchmark, and it does no
             'with zero vectors inside its batches. A zero vector scores 0, so for some docs a query token whose best '
             'cosine is below 0 counts as 0, which is the `max(0, ·)` clamp that sweet applies on purpose. Which docs get '
             'it depends on the other docs in the call; one doc per call is exact. Its padded 3D API and its x86 build are '
-            'exact on every call here. Reproduce: `maxsim_cpu_padding.py`.')
+            'exact on every call here. Reproduce: `maxsim_cpu_padding.py`; reported as [maxsim-cpu#5](https://github.com/mixedbread-ai/maxsim-cpu/issues/5).')
 ISSUE1 = 'https://github.com/mixedbread-ai/maxsim-cpu/issues/1'
 
 
