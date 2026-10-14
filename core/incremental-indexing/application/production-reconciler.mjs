@@ -657,7 +657,7 @@ class ProductionReconcileAdapter {
         let done = 0;
         for (const op of pending) {
           const truncated = truncateForHNSW(op.embedding, this.modelInfo.hnswDimension);
-          await ctx.index.add(op.addId, floatToBinary(truncated), op.metadata || {}, normalizedFloatToInt8(truncated));
+          await ctx.index.add(op.addId, floatToBinary(truncated), op.metadata || {}, normalizedFloatToInt8(truncated), op.embedding);
           ctx.floatUpserts.push({ id: op.addId, vector: truncated });
           if ((++done) % 100 === 0) this.progress('production:binary-hnsw-loop');
         }
@@ -1387,7 +1387,7 @@ class ProductionReconcileAdapter {
       }
       if (op.addId && op.embedding) {
         const truncated = truncateForHNSW(op.embedding, this.modelInfo.hnswDimension);
-        await index.add(op.addId, floatToBinary(truncated), op.metadata || {}, normalizedFloatToInt8(truncated));
+        await index.add(op.addId, floatToBinary(truncated), op.metadata || {}, normalizedFloatToInt8(truncated), op.embedding);
         floatUpserts.push({ id: op.addId, vector: truncated });
         append += 1;
       }

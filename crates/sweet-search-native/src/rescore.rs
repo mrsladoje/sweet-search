@@ -22,7 +22,7 @@ fn prefetch(p: *const u8) {
     }
 }
 
-fn prefetch_rows(base: *const u8, row_bytes: usize, rows: &[u32]) {
+pub(crate) fn prefetch_rows(base: *const u8, row_bytes: usize, rows: &[u32]) {
     for &r in rows {
         let p = base.wrapping_add(r as usize * row_bytes);
         let mut off = 0;
@@ -61,10 +61,40 @@ fn int8_dot_portable(q: &[i8], v: &[i8]) -> i32 {
     dot
 }
 
+/// AVX2: sign-extend 16 bytes at a time to i16 and multiply-add pairs into
+/// i32 lanes (`vpmaddwd`). Each pair sum is at most 2 * 127 * 128, so it is
+/// exact, and integer sums do not depend on order: the same value as the
+/// portable loop, which the compiler widens to slow 32-bit multiplies.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2")]
 unsafe fn int8_dot_avx2(q: &[i8], v: &[i8]) -> i32 {
-    int8_dot_portable(q, v)
+    use std::arch::x86_64::*;
+    let n = q.len().min(v.len());
+    let (qp, vp) = (q.as_ptr(), v.as_ptr());
+    let mut acc0 = _mm256_setzero_si256();
+    let mut acc1 = _mm256_setzero_si256();
+    let mut i = 0;
+    while i + 32 <= n {
+        let a = _mm256_loadu_si256(qp.add(i) as *const __m256i);
+        let b = _mm256_loadu_si256(vp.add(i) as *const __m256i);
+        let a_lo = _mm256_cvtepi8_epi16(_mm256_castsi256_si128(a));
+        let b_lo = _mm256_cvtepi8_epi16(_mm256_castsi256_si128(b));
+        let a_hi = _mm256_cvtepi8_epi16(_mm256_extracti128_si256::<1>(a));
+        let b_hi = _mm256_cvtepi8_epi16(_mm256_extracti128_si256::<1>(b));
+        acc0 = _mm256_add_epi32(acc0, _mm256_madd_epi16(a_lo, b_lo));
+        acc1 = _mm256_add_epi32(acc1, _mm256_madd_epi16(a_hi, b_hi));
+        i += 32;
+    }
+    let acc = _mm256_add_epi32(acc0, acc1);
+    let s = _mm_add_epi32(_mm256_castsi256_si128(acc), _mm256_extracti128_si256::<1>(acc));
+    let s = _mm_add_epi32(s, _mm_shuffle_epi32::<0b01_00_11_10>(s));
+    let s = _mm_add_epi32(s, _mm_shuffle_epi32::<0b10_11_00_01>(s));
+    let mut dot = _mm_cvtsi128_si32(s);
+    while i < n {
+        dot += *qp.add(i) as i32 * *vp.add(i) as i32;
+        i += 1;
+    }
+    dot
 }
 
 /// Integer dot of two int8 rows (exact, so every path agrees).
@@ -121,6 +151,18 @@ pub fn f32_dot_scores(data: Float32Array, dim: u32, query: Float64Array, rows: U
     Ok(())
 }
 
+/// The last fewer-than-16 rows as one full block of 16: the padding repeats
+/// the first of them and its scores are dropped. A short block keeps only
+/// one or two dependent sums in flight, so it waits on add latency; a full
+/// block keeps four (x86) or eight (ARM). Each row's own sum is unchanged.
+#[cfg(any(target_arch = "aarch64", target_arch = "x86_64"))]
+#[inline(always)]
+fn padded16(rest: &[u32]) -> ([u32; 16], [f64; 16]) {
+    let mut pr = [rest[0]; 16];
+    pr[..rest.len()].copy_from_slice(rest);
+    (pr, [0f64; 16])
+}
+
 pub(crate) fn f64_dots(data: &[f32], dim: usize, q: &[f64], rows: &[u32], out: &mut [f64]) {
     let mut c = 0;
     #[cfg(target_arch = "aarch64")]
@@ -132,9 +174,11 @@ pub(crate) fn f64_dots(data: &[f32], dim: usize, q: &[f64], rows: &[u32], out: &
             unsafe { pairs::<8>(data, dim, q, &rows[c..c + 16], &mut out[c..c + 16], fused) };
             c += 16;
         }
-        while c + 2 <= rows.len() {
-            unsafe { pairs::<1>(data, dim, q, &rows[c..c + 2], &mut out[c..c + 2], fused) };
-            c += 2;
+        if c < rows.len() {
+            let (pr, mut po) = padded16(&rows[c..]);
+            unsafe { pairs::<8>(data, dim, q, &pr, &mut po, fused) };
+            out[c..rows.len()].copy_from_slice(&po[..rows.len() - c]);
+            c = rows.len();
         }
     }
     #[cfg(target_arch = "x86_64")]
@@ -144,9 +188,11 @@ pub(crate) fn f64_dots(data: &[f32], dim: usize, q: &[f64], rows: &[u32], out: &
             unsafe { quads_avx2::<4>(data, dim, q, &rows[c..c + 16], &mut out[c..c + 16], fused) };
             c += 16;
         }
-        while c + 4 <= rows.len() {
-            unsafe { quads_avx2::<1>(data, dim, q, &rows[c..c + 4], &mut out[c..c + 4], fused) };
-            c += 4;
+        if c < rows.len() {
+            let (pr, mut po) = padded16(&rows[c..]);
+            unsafe { quads_avx2::<4>(data, dim, q, &pr, &mut po, fused) };
+            out[c..rows.len()].copy_from_slice(&po[..rows.len() - c]);
+            c = rows.len();
         }
     }
     while c < rows.len() {

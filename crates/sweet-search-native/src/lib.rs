@@ -13,6 +13,7 @@
 #![cfg_attr(test, allow(dead_code, unreachable_code))]
 
 mod dedup;
+mod full_vectors;
 mod grep_file_cache;
 mod hnsw_search;
 mod inference;

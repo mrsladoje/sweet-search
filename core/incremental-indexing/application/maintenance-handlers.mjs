@@ -172,7 +172,7 @@ export async function binaryHnswHandler(job, { stateDir, onProgress = null }) {
     const isStale = liveIds ? !liveIds.has(v.id) : (staleBitmap && isSet(staleBitmap, i));
     if (isStale) continue;
     const int8 = existing.int8Vectors.get(v.id) || null;
-    live.push({ id: v.id, binary: v.binary, metadata: v.metadata, int8 });
+    live.push({ id: v.id, binary: v.binary, metadata: v.metadata, int8, node: i });
     if (i > 0 && i % 1000 === 0) progress('maintenance:binary-hnsw:scan');
   }
   const dropped = existing.vectors.length - live.length;
@@ -205,7 +205,9 @@ export async function binaryHnswHandler(job, { stateDir, onProgress = null }) {
     : live;
   let added = 0;
   for (const v of insertOrder) {
-    await fresh.add(v.id, v.binary, v.metadata, v.int8);
+    // Full vectors carry over from the old file (read one at a time, so the
+    // compaction never holds them all).
+    await fresh.add(v.id, v.binary, v.metadata, v.int8, existing.fullVectorOf(v.node));
     added += 1;
     if (added % 500 === 0) progress('maintenance:binary-hnsw:add');
   }
