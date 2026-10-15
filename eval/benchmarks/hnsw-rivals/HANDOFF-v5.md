@@ -416,3 +416,19 @@ Wiki: https://claude.ai/artifact/M1SCsePXYngJba19gvcnve (v11).
   W5 BFS relabel over level 0 from the entry point (`relabel.mjs`, every node reached): same = 1.0000, p50
   204 -> 203 us (runs 204/204/209 vs 205/199/203): noise, REJECTED (as BFS at 157k on the Mac). Locality of the
   node numbering is not what bounds the x86 walk now that the buffers sit in huge pages.
+- 2026-10-15 round 4 (box, csn1m-dev, 3 runs; bench-only env knobs, deleted): W8 graph shape, via the load-time
+  re-prune (no rebuild): cap 96 -0.0015 [-0.0029, -0.0003] (185 us), cap 64 -0.0034 (161 us), alpha 1.2 on every
+  list no fill +0.0000 but 209 us, alpha 1.2 + fill +0.0000 / 204 us (no gain), alpha 1.2 + cap 96 -0.0011
+  [-0.0024, -0.0001]: ALL REJECTED (fewer links lose MRR at equal S1; alpha alone buys nothing). W6 discovery-rate
+  stop, thresholds only (`ET=` knob in ours.mjs): knee sweep on csn1m-dev (+ the 140k set forced to walk as a
+  second walk set, not a product path):
+    base [[.3,.05],[.6,.10]] 201 us | e2 [[.3,.10],[.6,.15]] -0.0001 [-0.0003,+0.0000] 185 | e4 same results 183 |
+    e5 [[.2,.10],[.5,.15]] -0.0001 [-0.0003,+0.0000] R@10 .9393 = .9393 181 | e6 [[.3,.15],[.6,.20]] -0.0005
+    [-0.0012,-0.0000] 172 | e7 [[.3,.08],[.6,.12]] +0.0000 201. 140k-walk: e2 -0.0004, e5 -0.0003, e6 -0.0007
+    (all CIs cross 0).
+  SHIPPED e5 (knee: fastest arm inside the equal band at 1M; only > 150k indexes walk, the 4 smaller sets are
+  unchanged). 1M x86 p50 201 -> 181 us (-10%). Final code = tested arm (0 diffs, 1M and 6.9k). Caution for the
+  held-out read: the 140k-walk point estimates are negative (ns). The rule scales with ef: at ef 50 a clustered
+  synthetic walk now stops before an exact self-match (test changed to check the update at ef 400; production
+  ef >= 400). The B4 low-S1 sweep points get faster and lower; that is the curve, not a bug.
+

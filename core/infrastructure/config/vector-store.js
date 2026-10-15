@@ -96,9 +96,12 @@ export const BINARY_HNSW_CONFIG = {
     windowSize: 16,             // Sliding window for discovery rate
     // [progressThreshold, discoveryRateThreshold]
     // "If progress > X and discoveryRate < Y, stop."
+    // 2026-10-15 knee (csn1m-dev, 3,600 queries, 3 runs): MRR@10 -0.0001
+    // [-0.0003, +0.0000], recall@10 vs exact .9393 = .9393, x86 p50 201 -> 181 us
+    // against [[0.3, 0.05], [0.6, 0.10]]. Only the walk (> 150k vectors) uses it.
     thresholds: [
-      [0.3, 0.05],  // Mature search with near-zero discovery
-      [0.6, 0.10],  // Well-explored with diminishing returns
+      [0.2, 0.10],  // Early in the walk, few new results per expansion
+      [0.5, 0.15],  // Past half of ef, diminishing returns
     ],
   },
 };
