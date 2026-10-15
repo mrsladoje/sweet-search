@@ -1,7 +1,7 @@
 /**
  * `sweet-search uninstall` scope:
  *   - default: this repo only; the shared model cache is kept for other repos
- *   - --all (alias --purge): every repo init recorded, the shared cache, and
+ *   - --all: every repo init recorded, the shared cache, and
  *     the npm package
  *
  * Every CLI run here sets HOME to a temp dir, so `--all` can only ever delete
@@ -139,15 +139,6 @@ describe('uninstall scope', () => {
     expect(JSON.parse(readFileSync(registry, 'utf8')).repos).toEqual([b]);
   });
 
-  it('--keep-models is still accepted and behaves like the default', () => {
-    const a = makeRepo('repo-a');
-    initRepo(a);
-    const models = fakeModelCache();
-    const r = runCli(a, ['uninstall', '--force', '--keep-models']);
-    expect(r.code, r.out).toBe(0);
-    expect(existsSync(models)).toBe(true);
-  });
-
   it('--all --dry-run lists every recorded repo and the shared cache, removes nothing', () => {
     const a = makeRepo('repo-a');
     const b = makeRepo('repo-b');
@@ -250,14 +241,5 @@ describe('uninstall scope', () => {
     expect(existsSync(modelDir)).toBe(false);
     expect(existsSync(theirs)).toBe(true);
     expect(existsSync(custom)).toBe(true);
-  });
-
-  it('--purge is an alias for --all', () => {
-    const a = makeRepo('repo-a');
-    initRepo(a);
-    fakeModelCache();
-    const r = runCli(a, ['uninstall', '--purge', '--force']);
-    expect(r.code, r.out).toBe(0);
-    expect(existsSync(join(home, '.cache', 'sweet-search'))).toBe(false);
   });
 });

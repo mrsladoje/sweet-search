@@ -95,7 +95,7 @@ export function parseInitArgs(args) {
     // CLAUDE.md is never created or modified.
     //   --agents / --gemini / --cursor opt INTO additional harness files, on
     //     top of Claude Code unless --codex / --opencode exclude it.
-    //   --no-claude opts OUT of every .claude/* write (kept for compatibility).
+    //   --no-claude opts OUT of every .claude/* write.
     //   --no-agent-instructions is the umbrella: skip policy surfaces but
     //     keep unrelated .claude/* hooks unless --no-claude.
     skipAgentInstructions: false,
@@ -734,13 +734,18 @@ export function setUpAgentTools({
     catch (err) { shimReport = { status: 'failed', detail: String(err?.message || err) }; }
   }
   const dirs = agentPathDirs(env);
+  const copied = shimReport && ['installed', 'current'].includes(shimReport.status);
+  // Copies in a directory only a new login shell has (scripts/user-shims.js loginShellBinDir).
+  const loginOnly = copied && shimReport.dir && !dirs.includes(shimReport.dir);
+  if (loginOnly) dirs.push(shimReport.dir);
   const missing = names.filter((name) => !whichOnPath(name, dirs));
   const onPath = missing.length === 0;
   const kind = linkReport.status === 'linked' ? 'native' : 'node';
-  const via = shimReport && ['installed', 'current'].includes(shimReport.status) ? ` via ${shimReport.detail}` : '';
+  const via = copied ? ` via ${shimReport.detail}${loginOnly ? ' (in new login shells)' : ''}` : '';
   const why = shimReport && ['no-dir', 'skipped', 'failed'].includes(shimReport.status) ? ` (${shimReport.detail})` : '';
+  const note = onPath && shimReport?.status === 'no-dir' ? `. Note: ${shimReport.detail}.` : '';
   const detail = onPath
-    ? `on PATH${via} (${kind}${linkReport.status === 'linked' ? '' : `: ${linkReport.detail}`})`
+    ? `on PATH${via} (${kind}${linkReport.status === 'linked' ? '' : `: ${linkReport.detail}`})${note}`
     : `NOT on PATH (${missing.join(', ')}) — agents cannot run them${why}. Install globally `
       + `(npm install -g sweet-search), or put ${join(home, '.local', 'bin')} on your PATH and re-run sweet-search init.`;
   return { status: onPath ? kind : 'missing', detail, onPath, shims: shimReport };
