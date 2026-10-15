@@ -175,7 +175,7 @@ describe('lifecycle: default init → uninstall (Scenario A)', () => {
     runCli(COMMON_INIT_ARGS);
     expect(readFileSync(join(tmpRoot, 'CLAUDE.md'), 'utf8')).toBe(userClaude);
 
-    const r = runCli(['uninstall', '--force', '--keep-models']);
+    const r = runCli(['uninstall', '--force']);
     expect(r.code, `uninstall failed: ${r.stderr}`).toBe(0);
 
     // .sweet-search/ gone
@@ -269,7 +269,7 @@ describe('lifecycle: full surface init → uninstall (Scenario B)', () => {
 
   it('uninstall removes the full surface + enforcement + symlinks', () => {
     runCli(FULL_ARGS);
-    const r = runCli(['uninstall', '--force', '--keep-models']);
+    const r = runCli(['uninstall', '--force']);
     expect(r.code, `uninstall failed: ${r.stderr}`).toBe(0);
 
     // All managed harness files gone; CLAUDE.md was never created.
@@ -363,7 +363,7 @@ describe('lifecycle: V1b rules placement', () => {
     expect(r.stderr).toContain('[init] Claude rules: preserved-user-file [pointer;');
     expect(r.stderr).toContain('is user-authored and was kept');
     expectRulesInAgent();
-    const u = runCli(['uninstall', '--force', '--keep-models']);
+    const u = runCli(['uninstall', '--force']);
     expect(u.code, `uninstall failed: ${u.stderr}`).toBe(0);
     expect(readText(CLAUDE_RULES_REL)).toBe(mine);
     expect(exists(CLAUDE_LEAN_AGENT_REL)).toBe(false);
@@ -391,7 +391,7 @@ describe('lifecycle: V1b rules placement', () => {
   it('uninstall after a re-init leaves no Claude Code file behind', () => {
     expect(runCli(COMMON_INIT_ARGS).code).toBe(0);
     expect(runCli(COMMON_INIT_ARGS).code).toBe(0);
-    const u = runCli(['uninstall', '--force', '--keep-models']);
+    const u = runCli(['uninstall', '--force']);
     expect(u.code, `uninstall failed: ${u.stderr}`).toBe(0);
     for (const rel of CLAUDE_FILES) {
       if (rel === '.claude/settings.json' && exists(rel)) expect(readJson(rel)).toEqual({});

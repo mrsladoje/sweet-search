@@ -811,11 +811,10 @@ created.
 - Idempotent: second run reports "nothing to remove"
 - Works even when runtime is partially broken (graceful degradation)
 
-Flags: `--all` (alias `--purge`), `--dry-run`, `--force` (skip confirmation).
-`--keep-models` is accepted as a no-op; keeping the models is the default.
+Flags: `--all`, `--dry-run`, `--force` (skip confirmation). Keeping the models is the default.
 
 Constraints: never touches files outside `.sweet-search/`, the managed model cache
-(including the CoreML cascade subtree), and (with `--purge`) `node_modules`. Never
+(including the CoreML cascade subtree), and (with `--all`) `node_modules`. Never
 deletes user source code, indexes, or databases.
 
 ---

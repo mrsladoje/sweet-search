@@ -44,10 +44,7 @@ function parseArgs(args) {
   const result = { dryRun: false, all: false, force: false, help: false };
   for (const arg of args) {
     if (arg === '--dry-run') result.dryRun = true;
-    // --purge is the pre-2.9 name for --all; --keep-models is now the default
-    // behaviour and accepted as a no-op so old scripts keep working.
-    else if (arg === '--all' || arg === '--purge') result.all = true;
-    else if (arg === '--keep-models') { /* default since 2.9 */ }
+    else if (arg === '--all') result.all = true;
     else if (arg === '--force') result.force = true;
     else if (arg === '--help' || arg === '-h') result.help = true;
   }

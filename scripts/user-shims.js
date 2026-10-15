@@ -36,6 +36,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { spawnSync } from 'node:child_process';
 import { NATIVE_COMMANDS } from '../core/agent-tools/tools.js';
 
 const MANIFEST_VERSION = 1;
@@ -135,6 +136,39 @@ export function pickUserBinDir({ env = process.env, home = os.homedir() } = {}) 
   return null;
 }
 
+const LOGIN_PATH_MARK = '__SWEET_SEARCH_LOGIN_PATH__=';
+
+/**
+ * The PATH of a fresh login shell (`$SHELL -lc`, as an agent harness starts one), or null.
+ * It starts from a bare environment, so it shows what the user's startup files add.
+ */
+export function loginShellPathDirs({ env = process.env, home = os.homedir() } = {}) {
+  const shell = env.SHELL && path.isAbsolute(env.SHELL) ? env.SHELL : '/bin/sh';
+  const r = spawnSync(shell, ['-lc', `printf '\\n${LOGIN_PATH_MARK}%s\\n' "$PATH"`], {
+    env: { HOME: home, USER: env.USER || '', LOGNAME: env.LOGNAME || env.USER || '', SHELL: shell, PATH: '/usr/bin:/bin:/usr/sbin:/sbin' },
+    stdio: ['ignore', 'pipe', 'ignore'],
+    encoding: 'utf8',
+    timeout: 5000,
+  });
+  const line = String(r.stdout || '').split('\n').reverse().find((l) => l.startsWith(LOGIN_PATH_MARK));
+  return line ? line.slice(LOGIN_PATH_MARK.length).split(path.delimiter).filter(Boolean) : null;
+}
+
+/**
+ * ~/.local/bin when a fresh login shell puts it on PATH, else null. Ubuntu's (and WSL's)
+ * default ~/.profile adds it only when it exists, so it is created first, and removed
+ * again when no login shell would use it.
+ */
+export function loginShellBinDir({ env = process.env, home = os.homedir(), probe = loginShellPathDirs } = {}) {
+  const dir = path.join(home, '.local', 'bin');
+  let created;
+  try { created = fs.mkdirSync(dir, { recursive: true }); } catch { return null; }
+  const dirs = probe({ env, home });
+  if (dirs && dirs.some((d) => real(d) === real(dir))) return dir;
+  if (created) { try { fs.rmSync(created, { recursive: true }); } catch { /* leave an empty dir */ } }
+  return null;
+}
+
 /**
  * Put the ss-* commands on the agent's PATH when only a local install has them.
  *
@@ -151,6 +185,7 @@ export function installUserShims({
   env = process.env,
   home = os.homedir(),
   names = NATIVE_COMMANDS,
+  loginBinDir = loginShellBinDir,
 } = {}) {
   const manifest = readShimManifest(home);
   const ours = new Map(manifest.shims.map((e) => [e.path, e]));
@@ -168,10 +203,13 @@ export function installUserShims({
     return { status: 'skipped', dir: null, conflicts: [],
       detail: 'an npx run leaves no package an agent\'s shell can use: install sweet-search (npm i -D sweet-search, or -g)' };
   }
-  const dir = pickUserBinDir({ env, home });
+  // No user bin directory on this PATH: a new login shell may still have ~/.local/bin.
+  const dir = pickUserBinDir({ env, home }) || loginBinDir({ env, home });
   if (!dir && homePrefix) {
-    // On PATH in this shell; nothing to put them in for a shell without the node prefix.
-    return { status: 'not-needed', dir: null, detail: 'on PATH', conflicts: [] };
+    // On PATH in this shell only: a shell that skips the startup file loading nvm/fnm finds none.
+    return { status: 'no-dir', dir: null, conflicts: [],
+      detail: `${path.dirname(firstHits[0])} is on PATH only after your shell startup files run (nvm, fnm), so a shell that skips them finds no ss-*. `
+        + `Put ${path.join(home, '.local', 'bin')} on PATH in ~/.profile (bash) or ~/.zprofile (zsh), then re-run sweet-search init` };
   }
   if (!dir) {
     return { status: 'no-dir', dir: null, conflicts: [],

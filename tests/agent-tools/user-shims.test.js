@@ -8,7 +8,8 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, statSync, chmodSyn
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import {
-  agentPathDirs, installUserShims, planUserShimRemovals, readShimManifest, refreshUserShims, removeUserShims, shimManifestPath,
+  agentPathDirs, installUserShims, loginShellBinDir, planUserShimRemovals, readShimManifest, refreshUserShims, removeUserShims,
+  shimManifestPath,
 } from '../../scripts/user-shims.js';
 import { setUpAgentTools } from '../../scripts/init.js';
 import { NATIVE_COMMANDS } from '../../core/agent-tools/tools.js';
@@ -89,7 +90,8 @@ describe('installUserShims', () => {
 
   it('writes nothing without a user bin directory on PATH, or for an npx cache copy', () => {
     const w = world();
-    expect(installUserShims({ binary: w.binary, packageRoot: w.pkg, env: { PATH: w.sys }, home: w.home }).status).toBe('no-dir');
+    const noLoginDir = () => null;
+    expect(installUserShims({ binary: w.binary, packageRoot: w.pkg, env: { PATH: w.sys }, home: w.home, loginBinDir: noLoginDir }).status).toBe('no-dir');
     const npx = path.join(w.base, '_npx', 'abc', 'node_modules', 'sweet-search');
     expect(installUserShims({ binary: w.binary, packageRoot: npx, env: w.env, home: w.home }).status).toBe('skipped');
     expect(readdirSync(w.userBin)).toEqual([]);
@@ -126,10 +128,20 @@ describe('a global install in a home node prefix (nvm)', () => {
     expect(installUserShims({ binary: w.binary, packageRoot: w.pkg, env: w.env, home: w.home }).status).toBe('current');
   });
 
-  it('stays quiet without a user bin directory: the commands are on PATH in this shell', () => {
+  it('uses ~/.local/bin when only a new login shell has it on PATH (Ubuntu/WSL ~/.profile)', () => {
     const w = nvmWorld();
-    const r = installUserShims({ binary: w.binary, packageRoot: w.pkg, env: { PATH: `${w.nvmBin}:${w.sys}` }, home: w.home });
-    expect(r.status).toBe('not-needed');
+    const r = installUserShims({ binary: w.binary, packageRoot: w.pkg, env: { PATH: `${w.nvmBin}:${w.sys}` }, home: w.home, loginBinDir: () => w.userBin });
+    expect(r.status).toBe('installed');
+    expect(readFileSync(path.join(w.userBin, 'ss-search'), 'utf8')).toBe('native v1');
+  });
+
+  it('says how to reach a shell without nvm when no login shell has a user bin directory', () => {
+    const w = nvmWorld();
+    const r = installUserShims({ binary: w.binary, packageRoot: w.pkg, env: { PATH: `${w.nvmBin}:${w.sys}` }, home: w.home, loginBinDir: () => null });
+    expect(r.status).toBe('no-dir');
+    expect(r.detail).toContain(w.nvmBin);
+    expect(r.detail).toContain('~/.profile');
+    expect(readdirSync(w.userBin)).toEqual([]);
   });
 
   it('a global install outside the home directory still needs nothing', () => {
@@ -150,6 +162,36 @@ describe('a global install in a home node prefix (nvm)', () => {
     for (const n of NAMES) expect(readFileSync(path.join(w.userBin, n), 'utf8')).toBe('native v2');
     expect(planUserShimRemovals({ home: w.home }), 'still recorded as ours').toHaveLength(NAMES.length);
     expect(refreshUserShims({ binary: w.binary, packageRoot: w.pkg, home: w.home })).toBe(0);
+  });
+});
+
+describe('loginShellBinDir', () => {
+  function bareHome() {
+    const home = path.join(mkdtempSync(path.join(tmpdir(), 'ss-login-')), 'home');
+    mkdirSync(home);
+    return home;
+  }
+
+  it('creates ~/.local/bin and keeps it when a new login shell puts it on PATH', () => {
+    const home = bareHome();
+    const dir = path.join(home, '.local', 'bin');
+    expect(loginShellBinDir({ home, probe: () => [dir, '/usr/bin'] })).toBe(dir);
+    expect(existsSync(dir)).toBe(true);
+  });
+
+  it('removes what it created when no login shell uses it', () => {
+    const home = bareHome();
+    expect(loginShellBinDir({ home, probe: () => ['/usr/bin'] })).toBe(null);
+    expect(existsSync(path.join(home, '.local'))).toBe(false);
+  });
+
+  it('a real login shell with Ubuntu\'s default ~/.profile rule (adds ~/.local/bin if it exists)', () => {
+    const home = bareHome();
+    writeFileSync(path.join(home, '.profile'), 'if [ -d "$HOME/.local/bin" ] ; then\n    PATH="$HOME/.local/bin:$PATH"\nfi\n');
+    expect(loginShellBinDir({ home, env: { SHELL: '/bin/sh' } })).toBe(path.join(home, '.local', 'bin'));
+    const bare = bareHome();
+    expect(loginShellBinDir({ home: bare, env: { SHELL: '/bin/sh' } })).toBe(null);
+    expect(existsSync(path.join(bare, '.local'))).toBe(false);
   });
 });
 
