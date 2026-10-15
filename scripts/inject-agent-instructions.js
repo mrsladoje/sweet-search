@@ -4,15 +4,12 @@
  *
  * Claude Code is intentionally different: its verbatim policy lives in the
  * auto-loaded `.claude/rules/sweet-search.md`, written by
- * `write-claude-rules.js`. `CLAUDE.md` is never created or modified by a new
- * install. During an upgrade, this module removes only the marker block owned
- * by the older CLAUDE.md-based layout and preserves all user-authored prose.
+ * `write-claude-rules.js`. `CLAUDE.md` is never created or modified.
  *
  * AGENTS.md (--agents) carries the policy directly for any tool that reads it.
  * Codex and opencode do NOT use it: `init --codex` / `--opencode` deliver the
  * policy through their own project config (install-codex-harness.js,
- * install-opencode-harness.js), and `stripLegacyAgentsBlock` migrates an older
- * install's AGENTS.md block away. Gemini may symlink to AGENTS.md when both are
+ * install-opencode-harness.js). Gemini may symlink to AGENTS.md when both are
  * enabled; otherwise its own file carries the body. Cursor always carries the
  * body behind its required frontmatter.
  *
@@ -292,8 +289,7 @@ function injectRegularFilePreservingForeignSymlink({ filePath, block }) {
 
 /**
  * Install the policy into each enabled non-Claude harness. Claude Code's rule
- * is written separately by `writeClaudeRules`; this function only removes a
- * legacy sweet-search marker from CLAUDE.md during upgrades.
+ * is written separately by `writeClaudeRules`; CLAUDE.md is left untouched.
  *
  * @param {object} args
  * @param {string} args.projectRoot
@@ -315,18 +311,8 @@ export function injectAgentInstructions({
   // Variant selects the exact body delivered to every enabled surface.
   const policyBody = getPolicyBody(variant);
 
-  // 1. Claude Code: never create or add to CLAUDE.md. Strip only our legacy
-  // marker block so upgrading from the old layout produces the clean rule-only
-  // layout while preserving user-authored instructions.
-  if (enabled.has('claude-code')) {
-    const legacyStatus = stripMarkerBlock({
-      filePath: join(projectRoot, CLAUDE_FILE),
-    });
-    report.harnesses['claude-code'] =
-      legacyStatus === 'removed' ? 'legacy-block-removed'
-        : legacyStatus === 'file-deleted' ? 'legacy-file-removed'
-          : 'untouched';
-  }
+  // 1. Claude Code: never create or add to CLAUDE.md (its rule is .claude/rules/).
+  if (enabled.has('claude-code')) report.harnesses['claude-code'] = 'untouched';
 
   // 2. AGENTS.md (--agents) is always a direct M± surface. It never
   // imports CLAUDE.md, so Claude's project instructions cannot leak into those
@@ -341,14 +327,10 @@ export function injectAgentInstructions({
 
   // 3. GEMINI.md may share AGENTS.md when that surface is enabled. Without an
   // AGENTS.md surface it carries the policy directly; it never points at
-  // CLAUDE.md. Migrate only symlinks whose targets match our old layout.
+  // CLAUDE.md.
   if (enabled.has('gemini')) {
     const geminiPath = join(projectRoot, GEMINI_FILE);
     if (enabled.has('agents') && useSymlinks) {
-      removeSymlinkIfOurs({
-        linkPath: geminiPath,
-        expectedTargets: [CLAUDE_FILE],
-      });
       report.harnesses.gemini = symlinkOrFallback({
         linkPath: geminiPath,
         targetPath: join(projectRoot, AGENTS_FILE),
@@ -358,9 +340,10 @@ export function injectAgentInstructions({
         }),
       });
     } else {
+      // A re-run without --agents: our GEMINI.md → AGENTS.md symlink gives way to a file.
       removeSymlinkIfOurs({
         linkPath: geminiPath,
-        expectedTargets: [CLAUDE_FILE, AGENTS_FILE],
+        expectedTargets: [AGENTS_FILE],
       });
       const block = enabled.has('agents')
         ? buildImportBlock({ importTargets: [AGENTS_FILE] })
@@ -397,23 +380,6 @@ export function injectAgentInstructions({
 }
 
 /**
- * Migration for `init --codex` / `init --opencode` (without `--agents`): those harnesses now get the
- * policy through their own project config (.codex/config.toml, .opencode/opencode.json), so an
- * older install's AGENTS.md block would deliver it twice. Strip only our marker block (the file is
- * deleted when nothing else remains, as for the legacy CLAUDE.md block), and remove a GEMINI.md
- * symlink of ours that would now dangle.
- * @returns 'removed' | 'file-deleted' | 'not-found'
- */
-export function stripLegacyAgentsBlock({ projectRoot } = {}) {
-  if (!projectRoot) throw new TypeError('strip-legacy-agents-block: projectRoot is required');
-  const status = stripMarkerBlock({ filePath: join(projectRoot, AGENTS_FILE) });
-  if (status === 'file-deleted') {
-    removeSymlinkIfOurs({ linkPath: join(projectRoot, GEMINI_FILE), expectedTargets: [AGENTS_FILE] });
-  }
-  return status;
-}
-
-/**
  * Reverse `injectAgentInstructions`. Strips marker blocks (preserving user
  * content) and removes our symlinks. Per §4A: never modify content outside
  * the marker; never delete a file the user created.
@@ -421,27 +387,24 @@ export function stripLegacyAgentsBlock({ projectRoot } = {}) {
 export function removeAgentInstructions({ projectRoot, dryRun = false } = {}) {
   if (!projectRoot) throw new TypeError('remove-agent-instructions: projectRoot is required');
   const report = { harnesses: {} };
-  const claudePath = join(projectRoot, CLAUDE_FILE);
   const agentsPath = join(projectRoot, AGENTS_FILE);
   const geminiPath = join(projectRoot, GEMINI_FILE);
   const cursorPath = join(projectRoot, CURSOR_FILE);
 
   if (dryRun) {
-    report.harnesses['claude-code'] = previewMarkerStrip(claudePath);
     report.harnesses.agents = previewMarkerStrip(agentsPath);
-    report.harnesses.gemini = previewSymlinkRemoval(geminiPath, [CLAUDE_FILE, AGENTS_FILE])
+    report.harnesses.gemini = previewSymlinkRemoval(geminiPath, [AGENTS_FILE])
       || previewMarkerStrip(geminiPath);
     report.harnesses.cursor = previewWholeFileRemoval(cursorPath);
     return report;
   }
 
-  report.harnesses['claude-code'] = stripMarkerBlock({ filePath: claudePath });
   report.harnesses.agents = stripMarkerBlock({ filePath: agentsPath });
-  // GEMINI.md: try symlink removal first (accept either canonical target),
-  // then fall back to marker strip if it was a copy.
+  // GEMINI.md: try symlink removal first, then fall back to marker strip if it
+  // was a copy.
   const geminiSymlink = removeSymlinkIfOurs({
     linkPath: geminiPath,
-    expectedTargets: [CLAUDE_FILE, AGENTS_FILE],
+    expectedTargets: [AGENTS_FILE],
   });
   report.harnesses.gemini = geminiSymlink !== 'not-our-symlink'
     ? geminiSymlink

@@ -42,8 +42,6 @@ import {
 } from '../../scripts/install-claude-lean-harness.js';
 import {
   CANONICAL_POLICY_BODY,
-  MARKER_BEGIN,
-  MARKER_END,
   getMcpPolicyBody,
 } from '../../scripts/inject-agent-instructions.js';
 import {
@@ -234,26 +232,6 @@ describe('lifecycle: --no-lean-harness opt-out', () => {
     expect(settings.outputStyle).toBe(CLAUDE_OUTPUT_STYLE_NAME);
     // The agent file that carried the rules is gone, so the rule file carries them again.
     expect(readText(CLAUDE_RULES_REL)).toBe(FULL_RULE);
-  });
-});
-
-describe('lifecycle: upgrade from the legacy Claude layout', () => {
-  it('moves policy out of CLAUDE.md and replaces the old rule', () => {
-    writeFileSync(
-      join(tmpRoot, 'CLAUDE.md'),
-      `${MARKER_BEGIN}\nlegacy managed policy\n${MARKER_END}\n\n# User rules\nKeep me.\n`,
-    );
-    mkdirSync(join(tmpRoot, '.claude', 'rules'), { recursive: true });
-    writeFileSync(
-      join(tmpRoot, CLAUDE_RULES_REL),
-      `${claudeRulesInternal.LEGACY_SENTINEL}\nlegacy contradictory rule\n`,
-    );
-    const result = runCli(COMMON_INIT_ARGS);
-    expect(result.code, `init failed: ${result.stderr}`).toBe(0);
-
-    expect(readFileSync(join(tmpRoot, 'CLAUDE.md'), 'utf8')).toBe('# User rules\nKeep me.\n');
-    expect(readText(CLAUDE_RULES_REL)).toBe(pointerRule());
-    expectRulesInAgent();
   });
 });
 

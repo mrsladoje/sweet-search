@@ -148,65 +148,17 @@ describe('init: per-project rules, never AGENTS.md / CLAUDE.md', () => {
   });
 });
 
-describe('migration of an old AGENTS.md block', () => {
-  for (const flag of ['--codex', '--opencode']) {
-    it(`${flag}: strips the block and keeps the user's text`, () => {
-      if (flag === '--codex') trustCodexProject();
-      writeFileSync(join(proj, 'AGENTS.md'), `${OLD_BLOCK}\n# My notes\nkeep me\n`);
-      init(flag);
-      const text = read('AGENTS.md');
-      expect(text).not.toContain(MARKER_BEGIN);
-      expect(text).toContain('keep me');
-    });
-
-    it(`${flag}: deletes an AGENTS.md that held only the block`, () => {
-      if (flag === '--codex') trustCodexProject();
-      writeFileSync(join(proj, 'AGENTS.md'), OLD_BLOCK);
-      init(flag);
-      expect(exists('AGENTS.md')).toBe(false);
-    });
-  }
-
-  for (const flags of [['--codex'], ['--codex', '--opencode']]) {
-    it(`${flags.join(' ')} in an untrusted Codex project keeps the block until the project is trusted`, () => {
-      writeFileSync(join(proj, 'AGENTS.md'), OLD_BLOCK);
-      const r = init(...flags);
-      expect(read('AGENTS.md')).toBe(OLD_BLOCK);
-      expect(r.stderr).toContain('AGENTS.md: kept the old sweet-search block');
-      expect(r.stderr).toContain('not trusted yet');
-      // Once trusted, the next init strips it.
+describe('an AGENTS.md init did not write', () => {
+  for (const flags of [['--codex'], ['--opencode'], []]) {
+    it(`init ${flags.join(' ') || '(Claude only)'} leaves it alone`, () => {
       trustCodexProject();
+      writeFileSync(join(proj, 'AGENTS.md'), OLD_BLOCK);
       init(...flags);
-      expect(exists('AGENTS.md')).toBe(false);
+      expect(read('AGENTS.md')).toBe(OLD_BLOCK);
     });
   }
-
-  it('--opencode alone keeps the block while an old Codex layer (no new Codex harness) still reads it', () => {
-    // An older `init --codex` left AGENTS.md + a legacy .codex/config.toml; now only --opencode runs.
-    trustCodexProject();
-    mkdirSync(join(proj, '.codex'));
-    writeFileSync(join(proj, CODEX_CONFIG_REL), '[features]\nhooks = true\n');
-    writeFileSync(join(proj, 'AGENTS.md'), OLD_BLOCK);
-    const r = init('--opencode');
-    expect(read('AGENTS.md')).toBe(OLD_BLOCK);
-    expect(r.stderr).toContain('run `sweet-search init --codex`');
-    // After the Codex harness moves to its project config (trusted), the block goes.
-    init('--codex');
-    expect(exists('AGENTS.md')).toBe(false);
-  });
-
-  it('--opencode alone strips the block when the repo has no Codex layer', () => {
-    writeFileSync(join(proj, 'AGENTS.md'), OLD_BLOCK);
-    init('--opencode');
-    expect(exists('AGENTS.md')).toBe(false);
-  });
-
-  it('plain init (Claude only) leaves AGENTS.md alone', () => {
-    writeFileSync(join(proj, 'AGENTS.md'), OLD_BLOCK);
-    init();
-    expect(read('AGENTS.md')).toBe(OLD_BLOCK);
-  });
 });
+
 
 describe('uninstall restores the harness defaults', () => {
   it('removes every file and key init wrote for all three harnesses', () => {
@@ -247,33 +199,13 @@ describe('uninstall restores the harness defaults', () => {
     expect(readdirSync(join(proj, '.claude', 'skills'))).toEqual(['mine']);
   });
 
-  it('adopts a config.toml an older init wrote (only the hooks flag) and removes it on uninstall', () => {
-    mkdirSync(join(proj, '.codex'));
-    writeFileSync(join(proj, CODEX_CONFIG_REL), '[features]\nhooks = true\n');
-    init('--codex');
-    expect(read(CODEX_CONFIG_REL)).not.toMatch(/^hooks = true$/m); // no hook here, so no flag
-    uninstall();
-    expect(exists('.codex')).toBe(false);
-  });
-
-  it('removes a legacy hooks-only config.toml and empty .claude/ dirs left by an older init', () => {
-    // No manifest and no created-paths record: what an init before these versions left behind.
+  it('keeps a config.toml and an empty .claude/ init did not create', () => {
     mkdirSync(join(proj, '.codex'));
     writeFileSync(join(proj, CODEX_CONFIG_REL), '[features]\nhooks = true\n');
     mkdirSync(join(proj, '.claude', 'skills'), { recursive: true });
     uninstall();
-    expect(exists('.codex')).toBe(false);
-    expect(exists('.claude')).toBe(false);
-  });
-
-  it('keeps a legacy-looking config.toml the user changed, and a non-empty .claude/', () => {
-    mkdirSync(join(proj, '.codex'));
-    writeFileSync(join(proj, CODEX_CONFIG_REL), '[features]\nhooks = true\nmodel = "mine"\n');
-    mkdirSync(join(proj, '.claude', 'skills'), { recursive: true });
-    writeFileSync(join(proj, '.claude', 'notes.md'), 'mine');
-    uninstall();
-    expect(read(CODEX_CONFIG_REL)).toContain('model = "mine"');
-    expect(read('.claude/notes.md')).toBe('mine');
+    expect(read(CODEX_CONFIG_REL)).toBe('[features]\nhooks = true\n');
+    expect(exists('.claude/skills')).toBe(true);
   });
 
   it('keeps a hand-edited shipped file and says so', () => {
