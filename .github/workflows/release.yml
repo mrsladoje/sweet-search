@@ -362,7 +362,7 @@ jobs:
       # Warm the GLOBAL model cache (~/.cache/sweet-search/models) before the
       # test suite. The streaming-vectors integration test runs the indexer's
       # native path, which assumes tokenizer.json is already on disk and does
-      # NOT fetch it on demand; and the init --profile full test otherwise
+      # NOT fetch it on demand; and the full init smoke test otherwise
       # downloads models inside its 30s timeout. Pre-fetching via init (the
       # registry-backed path that does download tokenizer.json) makes both run
       # for real instead of failing on a cold cache.
@@ -370,11 +370,11 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/ss-prefetch"
           echo '{"name":"ss-prefetch"}' > "$RUNNER_TEMP/ss-prefetch/package.json"
-          # init --profile full warms the embedding stack (it downloads the
+          # A plain init warms the embedding stack (it downloads the
           # CodeRankEmbed-onnx-int8 tokenizer + FP32 weights). It does more than
           # download (runtime verify, hook registration) and can exit non-zero in
           # a bare temp dir, so tolerate its exit code.
-          SWEET_SEARCH_PROJECT_ROOT="$RUNNER_TEMP/ss-prefetch" node scripts/init.js --profile full \
+          SWEET_SEARCH_PROJECT_ROOT="$RUNNER_TEMP/ss-prefetch" node scripts/init.js \
             || echo "init returned non-zero — continuing to explicit LI fetch"
           # init selects the *edge* LI variant, but the native indexer loads the
           # STANDARD lightonai/LateOn-Code, so fetch that registry entry directly
@@ -402,11 +402,11 @@ jobs:
       - name: Run unit tests
         run: npm test -- --run
 
-      - name: Smoke test (core profile)
-        run: node scripts/smoke-test.js --profile core
+      - name: Smoke test (init --skip-models)
+        run: node scripts/smoke-test.js --mode deferred
 
-      - name: Smoke test (full profile)
-        run: node scripts/smoke-test.js --profile full
+      - name: Smoke test (full init)
+        run: node scripts/smoke-test.js --mode full
         env:
           SWEET_SEARCH_TEST_DOWNLOADS: '1'
 

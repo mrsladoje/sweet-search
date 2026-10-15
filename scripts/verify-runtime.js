@@ -73,7 +73,6 @@ export function probeSqliteBinding() {
  * Run runtime verification.
  *
  * @param {object} options
- * @param {string} options.profile - Init profile ('core' or 'full')
  * @param {string[]} options.modelKeys - Model registry keys to verify
  * @param {boolean} [options.deep=false] - Run deep verification (load modules, verify checksums)
  * @param {string} [options.packageRoot] - Override package root (for testing)
@@ -81,7 +80,6 @@ export function probeSqliteBinding() {
  */
 export async function verifyRuntime(options) {
   const {
-    profile,
     modelKeys = [],
     deep = false,
     packageRoot = PACKAGE_ROOT,
@@ -108,7 +106,7 @@ export async function verifyRuntime(options) {
     }
   }
 
-  // 2. Verify model files for the profile
+  // 2. Verify the model files init fetched
   for (const modelKey of modelKeys) {
     const entry = getModelEntry(modelKey);
     if (!entry) {

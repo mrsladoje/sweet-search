@@ -35,6 +35,7 @@ import {
   defaultOrtExecutionMode,
   detectLastLevelCacheBytes,
   computeWeightsAwareBatchCap,
+  getOrtGraphCacheDir,
 } from '../infrastructure/onnx-session-utils.js';
 export { bestIntraOpThreads };
 
@@ -157,8 +158,7 @@ export function resolveLocalModelName(quantized) {
  * Uses the actual model name in the hash so FP32 and INT8 never share a cache file.
  */
 export function getOptimizedModelPath(quantLabel = 'q8') {
-  const cacheDir = path.join(os.homedir(), '.cache', 'sweet-search');
-  mkdirSync(cacheDir, { recursive: true });
+  const cacheDir = getOrtGraphCacheDir();
 
   let ortVersion = 'unknown';
   try {
@@ -512,7 +512,7 @@ export async function getLocalPipeline() {
     // ORT 1.24.3 can't serialize models with CoreML compiled nodes, causing a
     // ~12s cold-start penalty from 3 failed session attempts. Cache the failure
     // so subsequent loads skip CoreML probing entirely.
-    const coremlFlagPath = path.join(os.homedir(), '.cache', 'sweet-search', '.coreml-embedding-failed');
+    const coremlFlagPath = path.join(getOrtGraphCacheDir(), '.coreml-embedding-failed');
     let coremlAvailable = false;
     if (isAppleSilicon() && !existsSync(coremlFlagPath)) {
       coremlAvailable = await isCoreMLProviderAvailable();

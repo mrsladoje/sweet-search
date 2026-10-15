@@ -24,21 +24,6 @@ const manifest = {
     'linux-x64-gnu': '@sweet-search/native-linux-x64-gnu',
     'linux-arm64-gnu': '@sweet-search/native-linux-arm64-gnu',
   },
-  profiles: {
-    core: {
-      description: 'Lightweight search (no models)',
-      models: [],
-    },
-    full: {
-      description: 'Full search with all models',
-      models: [
-        'lateon-code',
-        'lateon-code-edge',
-        'gte-reranker-modernbert-base',
-        'coderankembed-int8',
-      ],
-    },
-  },
   modelSources: {
     'lateon-code': { type: 'init-managed' },
     'lateon-code-edge': { type: 'init-managed' },

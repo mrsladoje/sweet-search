@@ -820,9 +820,19 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
 }
 
 export async function updateIncrementalStatePhase(options = {}) {
-  const { dryRun, fullReindex, incrementalInfo, allFiles, vectorStats, graphStats, manifestStateDir, sparseGramResult } = options;
+  const { dryRun, fullReindex, incrementalInfo, allFiles, vectorStats, graphStats, manifestStateDir, sparseGramResult, graphOnly, vectorsOnly } = options;
 
   if (dryRun) return;
+
+  // The state file says "these files are fully indexed": the next run skips them, and a
+  // config fingerprint in it marks the baseline as complete for the maintainer. A run that
+  // built one tier (--graph-only, --vectors-only) must not write it, or a later plain
+  // `index` reports "up to date" while the other tier is missing.
+  if (graphOnly || vectorsOnly) {
+    log(`\nIncremental state not saved: ${graphOnly ? '--graph-only' : '--vectors-only'} built one part of the index.`, 'yellow');
+    log('  Run `sweet-search index` to build the complete index.', 'dim');
+    return;
+  }
 
   if (incrementalInfo) {
     await updateState(incrementalInfo.currentHashes, {

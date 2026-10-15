@@ -252,6 +252,13 @@ Output:
   // scratch exactly as `--full` would. An incremental run would load the
   // old-format LI/HNSW stores and add new-format entries to them.
   let fullReindex = fullReindexFlag;
+  // A state file without the search database: a partial run (an older --graph-only wrote
+  // the state too) or a deleted database. The state would call every file up to date.
+  if (!fullReindex && !dryRun && !graphOnly && !filesFromStdin
+      && existsSync(DB_PATHS.merkle) && !existsSync(DB_PATHS.codebase)) {
+    fullReindex = true;
+    log('\nThe search database is missing — building the index from scratch (as --full).', 'yellow');
+  }
   if (!fullReindex && !dryRun && !graphOnly && !filesFromStdin && existsSync(DB_PATHS.merkle)) {
     const { configValid, configValidation } = await validateCurrentState();
     if (!configValid) {
@@ -402,6 +409,8 @@ Output:
     // =========================================================================
     await runPhase('Update Incremental State', updateIncrementalStatePhase, {
       dryRun,
+      graphOnly,
+      vectorsOnly,
       fullReindex,
       incrementalInfo,
       allFiles,

@@ -14,7 +14,6 @@ import {
   ensureDataDir,
   loadInitConfig,
   writeInitConfig,
-  resolveProfile,
   verifyRuntimeAssets,
   checkNativeStatus,
   downloadModelsForProfile,
@@ -25,9 +24,9 @@ import {
 // ---------------------------------------------------------------------------
 
 describe('parseInitArgs', () => {
-  it('defaults to profile null, no flags', () => {
+  it('defaults to no flags', () => {
     const result = parseInitArgs([]);
-    expect(result.profile).toBe(null);
+    expect(result.skipModels).toBe(false);
     expect(result.verifyDeep).toBe(false);
     expect(result.force).toBe(false);
     expect(result.verbose).toBe(false);
@@ -40,7 +39,7 @@ describe('parseInitArgs', () => {
   });
 
   it('--skip-cuda is false by default', () => {
-    expect(parseInitArgs(['--profile', 'full']).skipCuda).toBe(false);
+    expect(parseInitArgs(['--skip-models']).skipCuda).toBe(false);
   });
 
   it('combines --skip-cuda with other flags', () => {
@@ -51,16 +50,11 @@ describe('parseInitArgs', () => {
     expect(result.verbose).toBe(true);
   });
 
-  it('parses --profile core', () => {
-    expect(parseInitArgs(['--profile', 'core']).profile).toBe('core');
-  });
-
-  it('parses --profile=full', () => {
-    expect(parseInitArgs(['--profile=full']).profile).toBe('full');
-  });
-
-  it('parses -p full', () => {
-    expect(parseInitArgs(['-p', 'full']).profile).toBe('full');
+  it('flags the removed --profile option in each form', () => {
+    expect(parseInitArgs(['--profile', 'core']).removedProfileFlag).toBe(true);
+    expect(parseInitArgs(['--profile=full']).removedProfileFlag).toBe(true);
+    expect(parseInitArgs(['-p', 'full']).removedProfileFlag).toBe(true);
+    expect(parseInitArgs([]).removedProfileFlag).toBe(false);
   });
 
   it('parses --verify-deep', () => {
@@ -88,8 +82,8 @@ describe('parseInitArgs', () => {
   });
 
   it('handles combined flags', () => {
-    const result = parseInitArgs(['--profile', 'core', '--force', '--verify-deep', '-v']);
-    expect(result.profile).toBe('core');
+    const result = parseInitArgs(['--skip-models', '--force', '--verify-deep', '-v']);
+    expect(result.skipModels).toBe(true);
     expect(result.force).toBe(true);
     expect(result.verifyDeep).toBe(true);
     expect(result.verbose).toBe(true);
@@ -197,7 +191,6 @@ describe('loadInitConfig / writeInitConfig', () => {
   it('round-trips config through write and load', () => {
     const config = {
       version: 1,
-      profile: 'full',
       initTimestamp: '2026-03-27T00:00:00.000Z',
       runtime: { allowRuntimeModelDownload: false },
     };
@@ -207,41 +200,10 @@ describe('loadInitConfig / writeInitConfig', () => {
   });
 
   it('overwrites existing config', () => {
-    writeInitConfig(tempDir, { version: 1, profile: 'core' });
-    writeInitConfig(tempDir, { version: 1, profile: 'full' });
+    writeInitConfig(tempDir, { version: 1, runtime: { allowRuntimeModelDownload: true } });
+    writeInitConfig(tempDir, { version: 1, runtime: { allowRuntimeModelDownload: false } });
     const loaded = loadInitConfig(tempDir);
-    expect(loaded.profile).toBe('full');
-  });
-});
-
-// ---------------------------------------------------------------------------
-// resolveProfile
-// ---------------------------------------------------------------------------
-
-describe('resolveProfile', () => {
-  it('uses CLI flag when provided', () => {
-    expect(resolveProfile('core', null)).toBe('core');
-    expect(resolveProfile('full', null)).toBe('full');
-  });
-
-  it('uses existing config when no CLI flag', () => {
-    expect(resolveProfile(null, { profile: 'core' })).toBe('core');
-  });
-
-  it('defaults to full when no flag and no config', () => {
-    expect(resolveProfile(null, null)).toBe('full');
-  });
-
-  it('CLI flag overrides existing config', () => {
-    expect(resolveProfile('core', { profile: 'full' })).toBe('core');
-  });
-
-  it('throws for unknown profile', () => {
-    expect(() => resolveProfile('unknown', null)).toThrow(/Unknown profile/);
-  });
-
-  it('ignores invalid profile in existing config', () => {
-    expect(resolveProfile(null, { profile: 'invalid' })).toBe('full');
+    expect(loaded.runtime.allowRuntimeModelDownload).toBe(false);
   });
 });
 
@@ -285,12 +247,6 @@ describe('checkNativeStatus', () => {
 // ---------------------------------------------------------------------------
 
 describe('downloadModelsForProfile', () => {
-  it('returns empty for core profile', async () => {
-    const result = await downloadModelsForProfile('core');
-    expect(result.results.size).toBe(0);
-    expect(result.failures).toEqual([]);
-  });
-
   it('returns 7 model results for full profile by default (opt-in rerankers excluded, using cache)', async () => {
     // Skip when ANY of the full-profile model caches is missing (CI without
     // pre-cached models). Pre-Phase-4 this only checked the standard model;

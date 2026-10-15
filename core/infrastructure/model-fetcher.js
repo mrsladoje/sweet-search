@@ -185,8 +185,30 @@ function recordVerified(filePath, sha256) {
 export function getModelCacheDir(hfId) {
   const normalized = hfId.replace('/', '--');
   const dir = join(MODEL_DELIVERY_CONFIG.modelCacheRoot, normalized);
-  mkdirSync(dir, { recursive: true });
+  try {
+    mkdirSync(dir, { recursive: true });
+  } catch (err) {
+    throw modelCacheWriteError(err, MODEL_DELIVERY_CONFIG.modelCacheRoot);
+  }
   return dir;
+}
+
+/**
+ * An unwritable model cache, said so that a person or an agent can act on it. The usual
+ * cause is a sandbox that allows writes only inside the project (Codex's default).
+ * Other errors pass through unchanged.
+ */
+export function modelCacheWriteError(err, cacheRoot) {
+  if (!['EPERM', 'EACCES', 'EROFS'].includes(err?.code)) return err;
+  const wrapped = new Error(
+    `Cannot write the model cache at ${cacheRoot} (${err.code}). `
+    + 'A common cause is a sandbox that allows writes only inside the project. '
+    + 'Fix: allow writes to that directory, or set SWEET_SEARCH_MODEL_CACHE '
+    + 'to a writable directory and run the command again.',
+  );
+  wrapped.code = err.code;
+  wrapped.cause = err;
+  return wrapped;
 }
 
 /**

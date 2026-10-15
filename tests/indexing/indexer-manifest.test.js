@@ -121,6 +121,24 @@ describe('indexer manifest publication', () => {
     expect(readManifest(stateDir)?.sparseGram.weightsId).toBe('corpus-bigram-v1-0123456789abcdef');
   });
 
+  it.each([
+    ['graphOnly', { graphOnly: true }],
+    ['vectorsOnly', { vectorsOnly: true }],
+  ])('updateIncrementalStatePhase saves no state and publishes no manifest after a %s run', async (_name, flags) => {
+    await updateIncrementalStatePhase({
+      dryRun: false,
+      fullReindex: true,
+      incrementalInfo: { currentHashes: { 'a.js': { hash: 'x' } } },
+      allFiles: ['a.js'],
+      vectorStats: { chunks: 0, embeddings: 0 },
+      graphStats: { entities: 1, relationships: 0 },
+      manifestStateDir: stateDir,
+      ...flags,
+    });
+
+    expect(readManifest(stateDir)).toBeFalsy();
+  });
+
   it('full-reindex fallback persists the complete stat tuple without downgrading state', async () => {
     const projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-full-reindex-state-'));
     const previousProjectRoot = process.env.SWEET_SEARCH_PROJECT_ROOT;

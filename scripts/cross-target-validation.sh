@@ -194,7 +194,7 @@ run_docker_test() {
     -e "WITH_NATIVE=$with_native"
     -e "SKIP_MODELS=$SKIP_MODELS"
     -e "TARGET=$target"
-    -e "PROFILE=both"
+    -e "INIT_MODE=both"
   )
 
   # Bundle tarballs + run script into a tar and pipe into docker run.
@@ -304,16 +304,17 @@ run_host_test() {
     node "$cli" --help > /dev/null 2>&1  # top-level help
     node "$cli" init --help > /dev/null 2>&1
 
-    # Check 4-5: init profiles (core and full)
-    for profile in core full; do
-      local init_dir
+    # Check 4-5: init modes (init --skip-models and a plain init)
+    for mode in deferred full; do
+      local init_dir init_flags=""
+      [ "$mode" = "deferred" ] && init_flags="--skip-models"
       init_dir=$(mktemp -d)
       echo '{"name":"init-test"}' > "$init_dir/package.json"
       set +e
-      (cd "$init_dir" && node "$cli" init --profile "$profile" > /dev/null 2>&1)
+      (cd "$init_dir" && node "$cli" init $init_flags > /dev/null 2>&1)
       local init_rc=$?
       set -e
-      if [ "$profile" = "full" ] && [ $init_rc -ne 0 ]; then
+      if [ "$mode" = "full" ] && [ $init_rc -ne 0 ]; then
         test -f "$init_dir/.sweet-search/config.json"
       else
         test -f "$init_dir/.sweet-search/config.json"
@@ -328,7 +329,7 @@ run_host_test() {
     local uninst_dir
     uninst_dir=$(mktemp -d)
     echo '{"name":"uninst-test"}' > "$uninst_dir/package.json"
-    (cd "$uninst_dir" && node "$cli" init --profile core > /dev/null 2>&1)
+    (cd "$uninst_dir" && node "$cli" init --skip-models > /dev/null 2>&1)
     (cd "$uninst_dir" && node "$cli" uninstall --dry-run --force > /dev/null 2>&1)
     test -d "$uninst_dir/.sweet-search"  # dry-run preserves
     (cd "$uninst_dir" && node "$cli" uninstall --force > /dev/null 2>&1)
@@ -339,7 +340,7 @@ run_host_test() {
     SMOKE_OUT=$(mktemp)
     set +e
     SWEET_SEARCH_ALLOW_RUNTIME_DOWNLOAD=false \
-      node "$ss_pkg/scripts/smoke-test.js" --profile core --skip-models > "$SMOKE_OUT" 2>&1
+      node "$ss_pkg/scripts/smoke-test.js" --mode deferred --skip-models > "$SMOKE_OUT" 2>&1
     smoke_exit=$?
     set -e
     cat "$SMOKE_OUT"

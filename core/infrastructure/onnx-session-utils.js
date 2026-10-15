@@ -10,7 +10,6 @@ import { fileURLToPath } from 'url';
 import { shouldUseCoreML, getCoreMLExecutionProviders } from './coreml-provider.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-let _cacheDirEnsured = false;
 
 export function getOnnxRuntimeVersion() {
   try {
@@ -30,12 +29,37 @@ export function getOnnxRuntimeVersion() {
   }
 }
 
-export function getOptimizedGraphPath(modelId, suffix) {
-  const cacheDir = path.join(os.homedir(), '.cache', 'sweet-search');
-  if (!_cacheDirEnsured) {
-    mkdirSync(cacheDir, { recursive: true });
-    _cacheDirEnsured = true;
+const UNWRITABLE_CODES = new Set(['EPERM', 'EACCES', 'EROFS']);
+let _graphCacheDir = null;
+
+/**
+ * Directory for ORT's optimized-graph files: ~/.cache/sweet-search, or a directory under
+ * the OS temp dir when that one cannot be written (a sandbox that allows writes only in the
+ * project and the temp dir, as Codex's does). These files are a start-up cache; losing
+ * them costs one re-optimization, so the temp dir is a safe fallback.
+ */
+export function getOrtGraphCacheDir({ homeDir = os.homedir(), tmpDir = os.tmpdir(), mkdir = mkdirSync } = {}) {
+  if (_graphCacheDir) return _graphCacheDir;
+  const preferred = path.join(homeDir, '.cache', 'sweet-search');
+  try {
+    mkdir(preferred, { recursive: true });
+    _graphCacheDir = preferred;
+  } catch (err) {
+    if (!UNWRITABLE_CODES.has(err?.code)) throw err;
+    const fallback = path.join(tmpDir, 'sweet-search-cache');
+    mkdir(fallback, { recursive: true });
+    _graphCacheDir = fallback;
   }
+  return _graphCacheDir;
+}
+
+/** Test hook: forget the resolved directory. */
+export function _resetOrtGraphCacheDir() {
+  _graphCacheDir = null;
+}
+
+export function getOptimizedGraphPath(modelId, suffix) {
+  const cacheDir = getOrtGraphCacheDir();
   const hash = crypto.createHash('sha256').update(modelId).digest('hex').slice(0, 12);
   return path.join(cacheDir, `${suffix}-optimized-ort${getOnnxRuntimeVersion()}-${hash}.onnx`);
 }

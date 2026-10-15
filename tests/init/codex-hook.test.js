@@ -350,10 +350,10 @@ describe('init --codex (end-to-end flag wiring)', () => {
   // command holds no path, so the hook and its project flag are installed anyway.
   it('explicit --codex-enable-global-hooks also writes the global flag', () => {
     // HOME / CODEX_HOME are redirected to a temp dir so the global-flag write never touches
-    // the real ~/.codex. --profile core avoids any model downloads.
+    // the real ~/.codex. --skip-models avoids any model downloads.
     const r = spawnSync(
       process.execPath,
-      [INIT_CLI, '--codex', '--codex-enable-global-hooks', '--profile', 'core'],
+      [INIT_CLI, '--codex', '--codex-enable-global-hooks', '--skip-models'],
       { cwd: proj, env: { ...process.env, HOME: home, CODEX_HOME: join(home, '.codex') }, encoding: 'utf-8', timeout: 60_000 },
     );
     expect(r.status).toBe(0);
@@ -377,7 +377,7 @@ describe('init --codex (end-to-end flag wiring)', () => {
     // No --codex-enable-global-hooks: the normal path must be self-sufficient.
     const r = spawnSync(
       process.execPath,
-      [INIT_CLI, '--codex', '--profile', 'core'],
+      [INIT_CLI, '--codex', '--skip-models'],
       { cwd: proj, env: { ...process.env, HOME: home, CODEX_HOME: join(home, '.codex') }, encoding: 'utf-8', timeout: 60_000 },
     );
     expect(r.status).toBe(0);
@@ -393,7 +393,7 @@ describe('init --codex (end-to-end flag wiring)', () => {
   it('init --codex --skip-prewarm-hook sets no flag and says so', () => {
     const r = spawnSync(
       process.execPath,
-      [INIT_CLI, '--codex', '--skip-prewarm-hook', '--profile', 'core'],
+      [INIT_CLI, '--codex', '--skip-prewarm-hook', '--skip-models'],
       { cwd: proj, env: { ...process.env, HOME: home, CODEX_HOME: join(home, '.codex') }, encoding: 'utf-8', timeout: 60_000 },
     );
     expect(r.status).toBe(0);

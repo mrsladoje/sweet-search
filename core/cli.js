@@ -112,44 +112,82 @@ if (args[0] === 'init') {
   // Warm search server lifecycle is implemented in JS.
   const { runCli } = await import('./search/index.js');
   await runCli(args);
-} else if (args[0] === '--help' || args[0] === '-h' || args.length === 0) {
-  console.log(`sweet-search — hybrid code search engine
+} else if (args[0] === 'status') {
+  const { runStatusCli } = await import('./search/setup-status.js');
+  await runStatusCli(args.slice(1));
+} else if (args[0] === 'daemon') {
+  // Server lifecycle (start / status / stop / restart) lives in the native client, which
+  // also owns the search path's start-up wait.
+  const { resolveNativeBinary } = await import('./infrastructure/index.js');
+  const nativeBin = resolveNativeBinary();
+  if (!nativeBin) {
+    console.error('The daemon commands need the native client, which is not installed for this platform.');
+    console.error('The search server still starts on the first search. Check it with: sweet-search status');
+    process.exit(1);
+  }
+  const result = spawnSync(nativeBin, args, { stdio: 'inherit' });
+  process.exit(result.status ?? 1);
+} else if (args[0] === '--help' || args[0] === '-h' || args[0] === 'help' || args.length === 0) {
+  console.log(`sweet-search — local code search for coding agents (text, embeddings and code graph)
 
-Usage:
-  sweet-search <query>                  Search the indexed codebase
+Set up a project (run these in the project root, in this order):
+  1. sweet-search init       Download the models (about 523 MB, once per machine)
+                             and write the agent instruction files.
+  2. sweet-search index      Build the index in .sweet-search/. Run it again after
+                             large changes; small edits are picked up automatically.
+  3. sweet-search "<query>"  Search. The first search starts a background search
+                             server and waits while it loads the index.
+  At any time: sweet-search status    shows what is missing and names the next command.
+
+What setup needs (agent sandboxes often block these; ask for permission to run
+init, index and the first search outside the sandbox):
+  - npm 11 or later may skip install scripts. Install with:
+      npm install -g sweet-search --allow-scripts=sweet-search,onnxruntime-node
+  - Network access to huggingface.co during init (or SWEET_SEARCH_HF_ENDPOINT).
+  - Write access to the model cache, ~/.cache/sweet-search/models
+    (or set SWEET_SEARCH_MODEL_CACHE to a writable directory).
+  - A background process that outlives the command: the search server. It keeps
+    the index in memory. Manage it with: sweet-search daemon start|status|stop|restart
+    Its log is .sweet-search/daemon.log.
+
+Search and read:
+  sweet-search "<query>"                Search the indexed codebase
   sweet-search trace <symbol>           Structural context: callers, callees, impact
   sweet-search read <file...>           Filesystem-grounded read (1-20 files)
   sweet-search read-semantic <f> <q>    Return only file spans relevant to a query
-  sweet-search index [options]          Build / update the codebase index
-  sweet-search index --add <path>       Hint a file as dirty
-  sweet-search reconcile status         Show incremental epoch and dirty status
-  sweet-search reconcile inspect <path> Explain why a file is dirty or clean
-  sweet-search reconcile pause|resume   Pause or resume automatic reconcile work
-                                        (paused: no maintainer starts; pause --reason <text>)
-  sweet-search rebuild status           Show incremental maintenance queue
-  sweet-search rebuild force <tier>     Queue maintenance for a tier
-  sweet-search init [options]           Set up runtime assets and models
-  sweet-search uninstall [opts]         Remove local state created by init
-  sweet-search prewarm-vocab [file]     Pre-warm vocabulary cache with terms
-  sweet-search --help                   Show this help
 
-Options:
-  --mode <mode>     Search mode: auto, lexical, semantic, hybrid, pattern
+Search options:
+  --mode <mode>     auto (default), lexical, semantic, hybrid, pattern
   --top, -k <n>     Number of results (default: 10)
   --json            Output results as JSON
-  --cold            Force cold start (skip warm server)
+  --cold            Run in this process (skip the search server)
+  Run 'sweet-search "x" --help' for all search options.
 
-Indexing flags (sweet-search index ...):
-  --full            Full reindex from scratch
-  --graph-only      Build code graph only
-  --vectors-only    Build vectors + HNSW only (skips code graph)
-  --files-from-stdin  Read newline-delimited paths from stdin
-  --add <path>        Queue a dirty-file hint without running the indexer
-  --late-interaction-model=ID  Override the LI variant for this run
-  --no-late-interaction        Skip LI index build
-  --quiet | --verbose          Logging verbosity
+Setup and state:
+  sweet-search init [options]           Set up models and agent files ('init --help')
+  sweet-search status [--json]          Show the setup and the next command to run
+  sweet-search daemon <command>         start | status | stop | restart the search server
+  sweet-search uninstall [options]      Remove local state created by init
+  sweet-search index [options]          Build or update the index
+  sweet-search index --add <path>       Mark a file as changed
+  sweet-search reconcile status         Show the automatic update state
+  sweet-search reconcile inspect <path> Explain why a file is or is not marked changed
+  sweet-search reconcile pause|resume   Pause or resume automatic updates
+                                        (pause --reason <text>)
+  sweet-search rebuild status           Show the update queue
+  sweet-search rebuild force <tier>     Queue a rebuild of one index part
+  sweet-search prewarm-vocab [file]     Pre-warm the vocabulary cache with terms
 
-Run 'sweet-search init --help' or 'sweet-search uninstall --help' for subcommand options.`);
+Index options (sweet-search index ...):
+  --full            Rebuild everything from scratch
+  --graph-only      Build only the code graph (search needs a full index)
+  --vectors-only    Build only vectors and the vector index (skips the code graph)
+  --files-from-stdin  Read newline-separated paths from stdin
+  --late-interaction-model=ID  Use another late-interaction model for this run
+  --no-late-interaction        Skip the late-interaction index
+  --quiet | --verbose          Less or more output
+
+Exit codes: 0 success; 1 failure; 2 usage error.`);
 } else {
   const { resolveNativeBinary } = await import('./infrastructure/index.js');
   const nativeBin = resolveNativeBinary();

@@ -36,7 +36,8 @@ import { connect } from 'node:net';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { launchMaintainer } from '../indexing/maintainer-launcher.mjs';
-import { projectSocketPath, projectPidFile } from './server-identity.js';
+import { projectSocketPath, projectPidFile, resolveProjectRoot } from './server-identity.js';
+import { openDaemonLog, closeDaemonLog } from './daemon-log.js';
 import { daemonNodeArgs } from './daemon-heap.js';
 import { sendAgentSpanOperation } from './agent-span-client.js';
 import { validAgentSessionId } from './agent-span-ledger.js';
@@ -282,13 +283,20 @@ async function prewarmServer() {
     return;
   }
   try {
-    // Fully detach: new session, no stdio, parent can exit while daemon loads.
-    const child = spawn(process.execPath, [...daemonNodeArgs(), SERVER_ENTRY, '--serve'], {
-      detached: true,
-      stdio: 'ignore',
-      cwd: process.cwd(),
-      env: process.env,
-    });
+    // Fully detach: new session, output to the daemon log, parent can exit while the
+    // daemon loads.
+    const logFd = openDaemonLog(resolveProjectRoot());
+    let child;
+    try {
+      child = spawn(process.execPath, [...daemonNodeArgs(), SERVER_ENTRY, '--serve'], {
+        detached: true,
+        stdio: ['ignore', logFd, logFd],
+        cwd: process.cwd(),
+        env: process.env,
+      });
+    } finally {
+      closeDaemonLog(logFd);
+    }
     child.unref();
     log(`daemon spawned (pid ${child.pid}, detached)`);
   } finally {

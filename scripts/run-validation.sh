@@ -10,7 +10,7 @@
 #   WITH_NATIVE      - true | false              (default: true)
 #   SKIP_MODELS      - true | false              (default: true)
 #   TARGET           - linux-x64-gnu | linux-arm64-gnu | darwin-arm64 | ...
-#   PROFILE          - core | full | both        (default: both)
+#   INIT_MODE        - deferred | full | both    (default: both; deferred = init --skip-models)
 #
 # Expects:
 #   /tarballs/  - mounted read-only, contains npm-packed .tgz files
@@ -22,7 +22,7 @@ PM="${PACKAGE_MANAGER:-npm}"
 WITH_NATIVE="${WITH_NATIVE:-true}"
 SKIP_MODELS="${SKIP_MODELS:-true}"
 TARGET="${TARGET:-unknown}"
-PROFILE="${PROFILE:-both}"
+INIT_MODE="${INIT_MODE:-both}"
 PNPM_ALLOW_BUILD="better-sqlite3,onnxruntime-node,sharp,usearch"
 
 NODE=$(command -v node)
@@ -34,7 +34,7 @@ echo "  PM: $PM"
 echo "  Target: $TARGET"
 echo "  Native: $WITH_NATIVE"
 echo "  Models: $([ "$SKIP_MODELS" = "true" ] && echo "skip" || echo "download")"
-echo "  Profile: $PROFILE"
+echo "  Init mode: $INIT_MODE"
 echo ""
 
 passed=0
@@ -212,27 +212,29 @@ check "npm bin symlink exists (.bin/sweet-search)" test -e "$BIN_LINK"
 check_output "sweet-search --help (via bin)" "sweet-search" "$NODE" "$CLI" --help
 
 # Test init --help
-check_output "sweet-search init --help" "--profile" "$NODE" "$CLI" init --help
+check_output "sweet-search init --help" "--skip-models" "$NODE" "$CLI" init --help
 
 # Test uninstall --help
 check_output "sweet-search uninstall --help" "--dry-run" "$NODE" "$CLI" uninstall --help
 
 # ─────────────────────────────────────────────────────────────────────
-# 4-5. Init profiles (core and full)
+# 4-5. Init modes (init --skip-models and a plain init)
 # ─────────────────────────────────────────────────────────────────────
 
 echo ""
-echo "--- Phase 8 Checks 4-5: Init profiles ---"
+echo "--- Phase 8 Checks 4-5: Init modes ---"
 
-run_init_profile() {
-  local profile="$1"
-  if [ "$profile" = "full" ] && [ "$SKIP_MODELS" = "true" ]; then
-    echo "  SKIP  init --profile full (--skip-models)"
+run_init_mode() {
+  local mode="$1"
+  local init_flags=""
+  [ "$mode" = "deferred" ] && init_flags="--skip-models"
+  if [ "$mode" = "full" ] && [ "$SKIP_MODELS" = "true" ]; then
+    echo "  SKIP  full init (--skip-models)"
     return 0
   fi
 
   local init_dir
-  init_dir=$(mktemp -d /tmp/ss-init-${profile}-XXXXXX)
+  init_dir=$(mktemp -d /tmp/ss-init-${mode}-XXXXXX)
   echo '{"name":"init-test"}' > "$init_dir/package.json"
 
   # init.js uses process.cwd() to detect project root, so cd there.
@@ -240,40 +242,41 @@ run_init_profile() {
   local init_out
   init_out=$(mktemp)
   set +e
-  (cd "$init_dir" && "$NODE" "$CLI" init --profile "$profile" > "$init_out" 2>&1)
+  (cd "$init_dir" && "$NODE" "$CLI" init $init_flags > "$init_out" 2>&1)
   init_exit=$?
   set -e
   tail -5 "$init_out"
   rm -f "$init_out"
 
-  check "init --profile $profile" test "$init_exit" -eq 0
+  check "init $init_flags ($mode)" test "$init_exit" -eq 0
 
   local config_path="$init_dir/.sweet-search/config.json"
-  check "config.json exists ($profile)" test -f "$config_path"
+  check "config.json exists ($mode)" test -f "$config_path"
 
   if [ -f "$config_path" ]; then
-    local cfg_profile
+    local cfg_downloads expected_downloads=false
+    [ "$mode" = "deferred" ] && expected_downloads=true
     set +e
-    cfg_profile=$("$NODE" -e "import{readFileSync}from'fs';console.log(JSON.parse(readFileSync('$config_path','utf8')).profile)" 2>/dev/null)
+    cfg_downloads=$("$NODE" -e "import{readFileSync}from'fs';console.log(JSON.parse(readFileSync('$config_path','utf8')).runtime.allowRuntimeModelDownload)" 2>/dev/null)
     set -e
-    check "config.json profile=$profile" test "$cfg_profile" = "$profile"
+    check "config.json runtime downloads=$expected_downloads ($mode)" test "$cfg_downloads" = "$expected_downloads"
 
     local rerun_exit=0
     set +e
-    (cd "$init_dir" && "$NODE" "$CLI" init --profile "$profile" > /dev/null 2>&1)
+    (cd "$init_dir" && "$NODE" "$CLI" init $init_flags > /dev/null 2>&1)
     rerun_exit=$?
     set -e
-    check "idempotent re-run ($profile)" test "$rerun_exit" -eq 0
+    check "idempotent re-run ($mode)" test "$rerun_exit" -eq 0
   fi
 
   rm -rf "$init_dir"
 }
 
-if [ "$PROFILE" = "core" ] || [ "$PROFILE" = "both" ]; then
-  run_init_profile core
+if [ "$INIT_MODE" = "deferred" ] || [ "$INIT_MODE" = "both" ]; then
+  run_init_mode deferred
 fi
-if [ "$PROFILE" = "full" ] || [ "$PROFILE" = "both" ]; then
-  run_init_profile full
+if [ "$INIT_MODE" = "full" ] || [ "$INIT_MODE" = "both" ]; then
+  run_init_mode full
 fi
 
 # ─────────────────────────────────────────────────────────────────────
@@ -389,7 +392,7 @@ echo "--- Phase 8 Checks 12-13: Uninstall ---"
 UNINST_DIR=$(mktemp -d /tmp/ss-uninst-XXXXXX)
 echo '{"name":"uninst-test"}' > "$UNINST_DIR/package.json"
 set +e
-(cd "$UNINST_DIR" && "$NODE" "$CLI" init --profile core > /dev/null 2>&1)
+(cd "$UNINST_DIR" && "$NODE" "$CLI" init --skip-models > /dev/null 2>&1)
 set -e
 
 # Check 12: uninstall --dry-run reports what init created
@@ -455,7 +458,7 @@ fi
 echo ""
 echo "--- Phase 8 Check 6: Smoke test (E2E via smoke-test.js) ---"
 
-SMOKE_ARGS="--profile core --skip-models"
+SMOKE_ARGS="--mode deferred --skip-models"
 if [ "$SKIP_MODELS" = "true" ]; then
   export SWEET_SEARCH_ALLOW_RUNTIME_DOWNLOAD=false
 fi
@@ -520,7 +523,7 @@ cat > "$RESULT_FILE" << ENDJSON
   "packageManager": "$PM",
   "nativePresent": $WITH_NATIVE,
   "skipModels": $SKIP_MODELS,
-  "profile": "$PROFILE",
+  "initMode": "$INIT_MODE",
   "platform": "$(uname -m)",
   "nodeVersion": "$($NODE --version)",
   "passed": $passed,

@@ -50,38 +50,39 @@ describe('sweet-search init (integration)', () => {
     const { stdout, exitCode } = runInit(['--help'], tempDir);
     expect(exitCode).toBe(0);
     expect(stdout).toContain('Sweet Search init');
-    expect(stdout).toContain('--profile');
+    expect(stdout).toContain('--skip-models');
+    expect(stdout).not.toContain('--profile');
   });
 
-  it('exits with error for unknown profile', () => {
-    const { exitCode } = runInit(['--profile', 'bogus'], tempDir);
+  it('rejects the removed --profile option and names --skip-models', () => {
+    const { exitCode, stderr } = runInit(['--profile', 'core'], tempDir);
     expect(exitCode).not.toBe(0);
+    expect(stderr).toMatch(/--profile was removed.*--skip-models/);
   });
 
-  it('init --profile core creates config.json in temp dir', () => {
-    const result = runInit(['--profile', 'core'], tempDir);
+  it('init --skip-models creates config.json in temp dir', () => {
+    const result = runInit(['--skip-models'], tempDir);
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toContain('Sweet Search init complete');
-    expect(result.stdout).toContain('core');
+    expect(result.stdout).toContain('not downloaded (--skip-models)');
 
     const configPath = join(tempDir, '.sweet-search', 'config.json');
     expect(existsSync(configPath)).toBe(true);
 
     const config = JSON.parse(readFileSync(configPath, 'utf8'));
-    expect(config.profile).toBe('core');
     expect(config.version).toBe(1);
     expect(config.runtime.allowRuntimeModelDownload).toBe(true);
   });
 
-  it('init --profile core is idempotent', () => {
-    const first = runInit(['--profile', 'core'], tempDir);
-    const second = runInit(['--profile', 'core'], tempDir);
+  it('init --skip-models is idempotent', () => {
+    const first = runInit(['--skip-models'], tempDir);
+    const second = runInit(['--skip-models'], tempDir);
     expect(first.exitCode).toBe(0);
     expect(second.exitCode).toBe(0);
     expect(second.stdout).toContain('Sweet Search init complete');
   });
 
-  it('init --profile full with cached models sets downloads disabled', () => {
+  it('a plain init with cached models sets downloads disabled', () => {
     // This test uses the global model cache — if models are not cached,
     // it will attempt downloads. Guard for CI with an env var.
     if (!process.env.SWEET_SEARCH_TEST_DOWNLOADS && !existsSync(
@@ -90,10 +91,10 @@ describe('sweet-search init (integration)', () => {
       return; // skip when models not cached and downloads not enabled
     }
 
-    const result = runInit(['--profile', 'full'], tempDir);
+    const result = runInit([], tempDir);
     if (result.exitCode !== 0) {
       console.error(
-        `\n[init --profile full] FAILED: exitCode=${result.exitCode} signal=${result.signal}\n` +
+        `\n[init] FAILED: exitCode=${result.exitCode} signal=${result.signal}\n` +
         `--- stdout (tail) ---\n${String(result.stdout).slice(-3000)}\n` +
         `--- stderr (tail) ---\n${String(result.stderr).slice(-3000)}\n`
       );
@@ -102,13 +103,12 @@ describe('sweet-search init (integration)', () => {
 
     const configPath = join(tempDir, '.sweet-search', 'config.json');
     const config = JSON.parse(readFileSync(configPath, 'utf8'));
-    expect(config.profile).toBe('full');
     expect(config.runtime.allowRuntimeModelDownload).toBe(false);
   });
 
   it('config bridge works from subdirectory', () => {
     // Init at project root
-    const result = runInit(['--profile', 'core'], tempDir);
+    const result = runInit(['--skip-models'], tempDir);
     expect(result.exitCode).toBe(0);
 
     // Verify config exists at project root
@@ -117,7 +117,7 @@ describe('sweet-search init (integration)', () => {
   });
 
   // ── --mcp / --no-cli contact-surface flags (end-to-end) ───────────────────
-  const FAST = ['--profile', 'core', '--skip-dedup', '--skip-coreml-cascade'];
+  const FAST = ['--skip-models', '--skip-dedup', '--skip-coreml-cascade'];
   const rulesPath = () => join(tempDir, '.claude', 'rules', 'sweet-search.md');
   // init writes no hook scripts: every hook runs the `sweet-search-hook` command.
   const hooksDir = () => join(tempDir, '.claude', 'hooks');

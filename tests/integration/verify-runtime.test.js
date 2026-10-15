@@ -19,9 +19,8 @@ const PACKAGE_ROOT = join(import.meta.dirname, '../..');
 // ---------------------------------------------------------------------------
 
 describe('verifyRuntime (fast)', () => {
-  it('passes for core profile with real package root', async () => {
+  it('passes with no model keys (init --skip-models) and the real package root', async () => {
     const result = await verifyRuntime({
-      profile: 'core',
       modelKeys: [],
       deep: false,
       packageRoot: PACKAGE_ROOT,
@@ -45,7 +44,6 @@ describe('verifyRuntime (fast)', () => {
   // could not index at all.
   it('probes the native SQLite binding during FAST verification', async () => {
     const result = await verifyRuntime({
-      profile: 'core',
       modelKeys: [],
       deep: false,
       packageRoot: PACKAGE_ROOT,
@@ -77,9 +75,9 @@ describe('probeSqliteBinding', () => {
 
   // CI-skipped: GitHub runners do not run `sweet-search init` first and can
   // have a partial ~/.cache/sweet-search/models directory from earlier jobs,
-  // which makes this full-profile cache assertion nondeterministic. Local runs
+  // which makes this full-model-set cache assertion nondeterministic. Local runs
   // still exercise the real cached-model verification path when models exist.
-  it.skipIf(process.env.CI === 'true')('passes for full profile with cached models', async () => {
+  it.skipIf(process.env.CI === 'true')('passes with the full model set cached', async () => {
     // Skip when model cache does not exist (CI without pre-cached models)
     const { existsSync } = await import('node:fs');
     const { join: pathJoin } = await import('node:path');
@@ -90,7 +88,6 @@ describe('probeSqliteBinding', () => {
 
     const modelKeys = ['lateon-code', 'lateon-code-edge', 'gte-reranker-modernbert-base', 'coderankembed-int8'];
     const result = await verifyRuntime({
-      profile: 'full',
       modelKeys,
       deep: false,
       packageRoot: PACKAGE_ROOT,
@@ -107,7 +104,6 @@ describe('probeSqliteBinding', () => {
 
   it('fails for missing manifest', async () => {
     const result = await verifyRuntime({
-      profile: 'core',
       modelKeys: [],
       deep: false,
       packageRoot: '/tmp/nonexistent',
@@ -120,7 +116,6 @@ describe('probeSqliteBinding', () => {
 
   it('fails for unknown model key', async () => {
     const result = await verifyRuntime({
-      profile: 'full',
       modelKeys: ['nonexistent-model'],
       deep: false,
       packageRoot: PACKAGE_ROOT,
@@ -134,7 +129,6 @@ describe('probeSqliteBinding', () => {
 
   it('reports native status as warn when addon/binary missing', async () => {
     const result = await verifyRuntime({
-      profile: 'core',
       modelKeys: [],
       deep: false,
       packageRoot: PACKAGE_ROOT,
@@ -156,7 +150,6 @@ describe('probeSqliteBinding', () => {
 describe('verifyRuntime (deep)', () => {
   it('includes load checks for wasm-router and catboost-router', async () => {
     const result = await verifyRuntime({
-      profile: 'core',
       modelKeys: [],
       deep: true,
       packageRoot: PACKAGE_ROOT,

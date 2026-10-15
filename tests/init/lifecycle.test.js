@@ -94,7 +94,7 @@ function expectRulesInAgent() {
 
 const COMMON_INIT_ARGS = [
   'init',
-  '--profile=core',
+  '--skip-models',
   '--skip-prewarm-hook', // SessionStart entry adds noise; tested separately
   '--skip-cuda',
 ];
