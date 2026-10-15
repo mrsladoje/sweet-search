@@ -69,6 +69,10 @@ struct LiInner {
     device: Device,
     backbone_dim: usize,
     token_dim: usize,
+    /// Backend that serves this model, e.g. "cuda/bf16" or
+    /// "coreml+metal/bf16". Exposed as the `backend` getter so callers can
+    /// confirm the requested backend actually ran.
+    backend: String,
 }
 
 /// Match `EmbeddingInner::Drop` — dumps LI cascade dispatch stats on
@@ -195,8 +199,8 @@ fn parse_li_variant_filename(fname: &str) -> Option<(usize, usize, usize)> {
 }
 
 /// Startup parity check between candle and CoreML for LI. Runs one
-/// synthetic batch through both backends and returns the mean cosine
-/// similarity across active-token pairs. Because both backends emit
+/// synthetic batch through both backends and returns the min and mean
+/// cosine across active-token pairs. Because both backends emit
 /// per-token L2-normalised vectors, each per-token cosine is the dot
 /// product of the two `token_dim`-dim outputs.
 ///
@@ -218,7 +222,7 @@ fn li_parity_cosine(
     backbone_dim: usize,
     token_dim: usize,
     coreml: &CoremlLi,
-) -> std::result::Result<f32, String> {
+) -> std::result::Result<super::parity::CosineStats, String> {
     const ACTIVE: usize = 64;
     let parity = coreml
         .parity_variant()
@@ -307,26 +311,10 @@ fn li_parity_cosine(
             ACTIVE, counts
         ));
     }
-    if candle_active.len() != coreml_active.len() {
-        return Err(format!(
-            "length mismatch: candle={} coreml={}",
-            candle_active.len(),
-            coreml_active.len()
-        ));
-    }
-
-    // Mean per-token cosine across the ACTIVE positions. Each 128-d
-    // slice is already L2-normalised so per-token cosine = dot product.
-    let mut sum = 0.0f32;
-    for t in 0..ACTIVE {
-        let base = t * token_dim;
-        let mut dot = 0.0f32;
-        for k in 0..token_dim {
-            dot += candle_active[base + k] * coreml_active[base + k];
-        }
-        sum += dot;
-    }
-    Ok(sum / ACTIVE as f32)
+    // Equal token counts, finite values and unit norms are checked
+    // inside cosine_stats; the min catches one bad token that the mean
+    // would hide.
+    super::parity::cosine_stats(&coreml_active, &candle_active, token_dim)
 }
 
 /// Parity threshold for LI. Spike measured 0.9999 mean per-token cosine
@@ -335,6 +323,11 @@ fn li_parity_cosine(
 /// actual breakage.
 #[cfg(feature = "coreml")]
 const COREML_LI_PARITY_THRESHOLD: f32 = 0.998;
+
+/// Lowest per-token cosine the LI parity check accepts. A mean-only gate
+/// passed one token at 0.90 among 63 perfect ones (mean 0.9984).
+#[cfg(feature = "coreml")]
+const COREML_LI_MIN_TOKEN_THRESHOLD: f32 = 0.99;
 
 /// Native ModernBERT late interaction model for LateOn-Code inference.
 ///
@@ -556,17 +549,28 @@ impl NativeLateInteractionModel {
                 token_dim,
                 &c,
             ) {
-                Ok(cos) if cos >= COREML_LI_PARITY_THRESHOLD => {
+                Ok(stats)
+                    if stats.mean >= COREML_LI_PARITY_THRESHOLD
+                        && stats.min >= COREML_LI_MIN_TOKEN_THRESHOLD =>
+                {
                     eprintln!(
-                        "[NativeLI] CoreML parity OK (mean cosine {:.6} ≥ {:.3})",
-                        cos, COREML_LI_PARITY_THRESHOLD
+                        "[NativeLI] CoreML parity OK ({} tokens, mean cosine {:.6} ≥ {:.3}, min {:.6} ≥ {:.3})",
+                        stats.vectors,
+                        stats.mean,
+                        COREML_LI_PARITY_THRESHOLD,
+                        stats.min,
+                        COREML_LI_MIN_TOKEN_THRESHOLD
                     );
                     Some(c)
                 }
-                Ok(cos) => {
+                Ok(stats) => {
                     eprintln!(
-                        "[NativeLI] CoreML parity FAILED (mean cosine {:.6} < {:.3}) — dropping CoreML backend",
-                        cos, COREML_LI_PARITY_THRESHOLD
+                        "[NativeLI] CoreML parity FAILED ({} tokens, mean cosine {:.6} vs {:.3}, min {:.6} vs {:.3}) — dropping CoreML backend",
+                        stats.vectors,
+                        stats.mean,
+                        COREML_LI_PARITY_THRESHOLD,
+                        stats.min,
+                        COREML_LI_MIN_TOKEN_THRESHOLD
                     );
                     None
                 }
@@ -580,6 +584,13 @@ impl NativeLateInteractionModel {
             },
         };
 
+        #[allow(unused_mut)]
+        let mut backend = format!("{device_name}/{dtype_name}");
+        #[cfg(feature = "coreml")]
+        if coreml.is_some() {
+            backend = format!("coreml+{backend}");
+        }
+
         Ok(Self {
             inner: Arc::new(LiInner {
                 model,
@@ -589,8 +600,16 @@ impl NativeLateInteractionModel {
                 device,
                 backbone_dim,
                 token_dim,
+                backend,
             }),
         })
+    }
+
+    /// Backend serving this late-interaction model: `<device>/<dtype>`, prefixed
+    /// with `coreml+` when the CoreML cascade passed its parity check.
+    #[napi(getter)]
+    pub fn backend(&self) -> String {
+        self.inner.backend.clone()
     }
 
     /// Return the per-token embedding dimension after the final

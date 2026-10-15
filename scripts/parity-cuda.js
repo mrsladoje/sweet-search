@@ -13,15 +13,24 @@
  *   automatically carry over — we have to verify parity explicitly per
  *   compute-capability tier.
  *
- * What it checks:
- *   1. Embedding: encode a corpus of 64 queries on CUDA and on CPU.
- *      Cosine similarity per pair must be ≥ 0.999 (min) and ≥ 0.9998 (mean).
- *   2. Late-interaction: encode a corpus of 32 docs on CUDA and on CPU.
- *      Per-token cosine must be ≥ 0.999 (min) and ≥ 0.9998 (mean) across
- *      all active tokens concatenated.
- *   3. Dtype tier reporting: prints the compute capability detected by
- *      hardware-capability.js so the user knows which tier (Ampere
- *      BF16 / Turing F16 / Volta F32) was exercised.
+ * What it checks (rules in core/infrastructure/inference-parity.js):
+ *   0. Backend: each loaded model must report the requested device
+ *      (`model.backend`), so a silent CPU fallback cannot pass.
+ *   1. Embedding: encode a corpus of 64 code samples on the device and on
+ *      CPU. Equal counts and dimensions, finite unit vectors, then per-pair
+ *      cosine min and mean.
+ *   2. Late-interaction: encode the LI corpus on both. Equal document and
+ *      per-document token counts, finite unit token vectors, per-token
+ *      cosine min and mean, then MaxSim scores (every document as a query
+ *      against every document) within a relative tolerance, with no
+ *      document order flipped.
+ *   3. Reports the compute capability and the dtype the model actually
+ *      loaded with. The shipped CUDA builds target SM 8.0 (x64) and 8.7
+ *      (arm64); their kernels cannot run on older GPUs at all.
+ *
+ * The reference is candle on CPU in F32. It shares model code with the
+ * device path, so a bug in that shared code passes this gate; an
+ * independent upstream reference is a separate check.
  *
  * Usage:
  *   # On a RunPod / Linux host with NVIDIA GPU + -cuda package installed:
@@ -29,6 +38,7 @@
  *
  *   # Environment:
  *   #   SWEET_SEARCH_NATIVE_DTYPE=f32|f16|bf16  — override dtype for A/B
+ *   #   SWEET_SEARCH_PARITY_DEVICE=cuda|metal   — device under test (default cuda)
  *   #   SWEET_SEARCH_PARITY_SAMPLES=<N>         — override corpus size
  *
  * Exit codes:
@@ -36,7 +46,7 @@
  *   1  — parity failed (do not ship; investigate which layer regressed)
  *   2  — environment not ready (no CUDA addon / no GPU); skipped, not failure
  *
- * This script does NOT run on darwin-arm64 (no CUDA). Skipped cleanly.
+ * On darwin-arm64 it skips unless SWEET_SEARCH_PARITY_DEVICE=metal.
  */
 
 import { detectHardwareCapability } from '../core/infrastructure/hardware-capability.js';
@@ -47,6 +57,11 @@ import {
   nativeLiEncode,
   unloadNativeModels,
 } from '../core/infrastructure/native-inference.js';
+import {
+  compareEmbeddings,
+  compareLateInteraction,
+  checkBackend,
+} from '../core/infrastructure/inference-parity.js';
 
 // Per-model parity thresholds.
 //
@@ -68,6 +83,14 @@ const EMBED_MIN_THRESHOLD = 0.99;
 const EMBED_MEAN_THRESHOLD = 0.9998;
 const LI_MIN_THRESHOLD = 0.999;
 const LI_MEAN_THRESHOLD = 0.9998;
+// Relative MaxSim score tolerance for F32 LI (CUDA default): scores agree
+// to ~1e-6 there.
+const LI_MAXSIM_REL_TOL = 5e-3;
+// Half-precision LI (Metal default, CUDA override). PROVISIONAL: set from
+// one measurement after the rotary-position fix (Metal BF16 on M3 Max,
+// LI corpus: token min 0.9938, mean 0.99994, MaxSim rel 6.6e-3). Replace
+// with tolerances measured against independent reference fixtures.
+const LI_HALF_THRESHOLDS = { minTokenCosine: 0.99, meanTokenCosine: 0.9995, maxSimRelTol: 1e-2 };
 const DEFAULT_SAMPLES = 64;
 
 // Corpus spans the indexer's shape stair (s=96, s=192, s=384, s=512, s=1024,
@@ -115,12 +138,6 @@ const LI_CORPUS = [
   '/**\n * IndexerOrchestrator — drives the full indexing pipeline in phases:\n * 1. Discovery: walk the project tree, filter by gitignore, classify by language.\n * 2. Parse: tree-sitter AST pass per language, emit ASTChunks.\n * 3. Dedup: SimHash + MinHash-LSH to skip near-duplicate chunks.\n * 4. Embed: native embedding model (CodeRankEmbed) on GPU if available.\n * 5. LI Encode: ModernBERT LI on GPU, per-token 128d vectors.\n * 6. HNSW Build: binary + int8 rescore indexes, atomically swapped.\n * 7. Graph Extract: HCGS relations + community detection.\n * 8. Finalize: write manifest, install daemon hooks, print report.\n */\nexport class IndexerOrchestrator {\n  constructor(\n    private readonly discovery: FileDiscovery,\n    private readonly parser: AstChunker,\n    private readonly dedup: DedupService,\n    private readonly embedding: EmbeddingProvider,\n    private readonly li: LateInteractionProvider,\n    private readonly vectorStore: VectorStore,\n    private readonly graph: GraphExtractor,\n    private readonly logger: Logger,\n    private readonly config: IndexerConfig,\n  ) {}\n\n  async run(projectRoot: string, options: RunOptions = {}): Promise<RunReport> {\n    const phases: PhaseReport[] = [];\n    const startAt = Date.now();\n\n    const discoveryReport = await this.runPhase("discovery", () => this.discovery.walk(projectRoot, { gitignoreAllowlist: this.config.allowlist }));\n    phases.push(discoveryReport);\n    if (discoveryReport.failed) return this.abortReport(phases, startAt, discoveryReport.error);\n\n    const files = discoveryReport.output.files;\n    this.logger.info(`[index] Discovered ${files.length} files across ${discoveryReport.output.languages.size} languages`);\n\n    const parseReport = await this.runPhase("parse", () => this.parser.chunkMany(files, { maxChunkLines: this.config.maxChunkLines }));\n    phases.push(parseReport);\n    if (parseReport.failed) return this.abortReport(phases, startAt, parseReport.error);\n\n    const chunks = parseReport.output.chunks;\n    const dedupReport = await this.runPhase("dedup", () => this.dedup.clusterChunks(chunks, this.config.dedup));\n    phases.push(dedupReport);\n    const exemplars = dedupReport.output.exemplars;\n\n    const embedReport = await this.runPhase("embed", () => this.embedding.embedBatch(exemplars.map((c) => c.text), { maxLength: this.config.embedMaxSeq }));\n    phases.push(embedReport);\n    if (embedReport.failed) return this.abortReport(phases, startAt, embedReport.error);\n\n    const liReport = await this.runPhase("li-encode", () => this.li.encodeDocuments(exemplars.map((c) => c.text), { maxLength: this.config.liMaxSeq }));\n    phases.push(liReport);\n\n    const hnswReport = await this.runPhase("hnsw-build", () => this.vectorStore.build(exemplars, embedReport.output, liReport.output));\n    phases.push(hnswReport);\n    if (hnswReport.failed) return this.abortReport(phases, startAt, hnswReport.error);\n\n    const graphReport = await this.runPhase("graph-extract", () => this.graph.extract(files, chunks));\n    phases.push(graphReport);\n\n    return {\n      success: true,\n      durationMs: Date.now() - startAt,\n      phases,\n      stats: {\n        filesIndexed: files.length,\n        chunksCreated: chunks.length,\n        exemplarsEmbedded: exemplars.length,\n        duplicatesSkipped: chunks.length - exemplars.length,\n      },\n    };\n  }\n\n  private async runPhase<T>(name: string, fn: () => Promise<T>): Promise<PhaseReport<T>> {\n    const startAt = Date.now();\n    try {\n      const output = await fn();\n      return { name, failed: false, durationMs: Date.now() - startAt, output, error: null };\n    } catch (err) {\n      this.logger.error(`[index] Phase ${name} failed`, { error: err });\n      return { name, failed: true, durationMs: Date.now() - startAt, output: null as any, error: err };\n    }\n  }\n\n  private abortReport(phases: PhaseReport[], startAt: number, error: unknown): RunReport {\n    return { success: false, durationMs: Date.now() - startAt, phases, error };\n  }\n}',
 ];
 
-function cosineSimilarity(a, b) {
-  let dot = 0;
-  for (let i = 0; i < a.length; i++) dot += a[i] * b[i];
-  return dot; // both vectors are L2-normalized by the addon
-}
-
 function summarize(cosines) {
   const sorted = [...cosines].sort((x, y) => x - y);
   const n = sorted.length;
@@ -144,8 +161,12 @@ async function encodeWithDevice(deviceKind, embedTexts, liTexts) {
   // takes effect. Otherwise the CPU call after CUDA would reuse the
   // CUDA model and produce trivially matching cosines.
   unloadNativeModels();
-  await loadNativeEmbeddingModelWithDevice(deviceKind);
-  await loadNativeLiModelWithDevice(deviceKind);
+  const embedModel = await loadNativeEmbeddingModelWithDevice(deviceKind);
+  const liModel = await loadNativeLiModelWithDevice(deviceKind);
+  const backendReasons = [
+    ...checkBackend(embedModel, deviceKind).reasons.map((r) => `embedding ${r}`),
+    ...checkBackend(liModel, deviceKind).reasons.map((r) => `LI ${r}`),
+  ];
 
   const embedVectors = await nativeEmbed(embedTexts);
   // Convert to plain arrays so the second pass doesn't accidentally
@@ -157,7 +178,12 @@ async function encodeWithDevice(deviceKind, embedTexts, liTexts) {
   // the addon buffer before we switch devices.
   const liArr = liBatches.map((doc) => doc.map((tok) => Float32Array.from(tok)));
 
-  return { embed: embedArr, li: liArr };
+  return {
+    embed: embedArr,
+    li: liArr,
+    backends: { embed: embedModel?.backend, li: liModel?.backend },
+    backendReasons,
+  };
 }
 
 async function main() {
@@ -173,24 +199,22 @@ async function main() {
   console.log(`CUDA reason:        ${hw.cudaReason}`);
   console.log();
 
-  if (!hw.cudaAvailable) {
+  const device = (process.env.SWEET_SEARCH_PARITY_DEVICE || 'cuda').toLowerCase();
+  if (device !== 'cuda' && device !== 'metal') {
+    console.log(`SWEET_SEARCH_PARITY_DEVICE must be cuda or metal, got ${device}`);
+    process.exit(2);
+  }
+  if (device === 'cuda' && !hw.cudaAvailable) {
     console.log('SKIP — CUDA not available on this host. Run on Linux+NVIDIA with the -cuda native package installed.');
     process.exit(2);
   }
-
-  // Thresholds depend on the dtype tier. BF16 on Ampere should hit
-  // 0.9999+; F16 on Turing is expected to be noisier but still pass
-  // the same 0.999 floor that we use for CoreML parity. Volta pins F32
-  // and should be essentially bit-identical (cosine ≥ 0.99999).
-  const cc = hw.nvidiaGpu?.computeCapabilityFloat ?? 0;
-  let expectedDtype;
-  if (cc >= 8.0) expectedDtype = 'BF16';
-  else if (cc >= 7.5) expectedDtype = 'F16';
-  else expectedDtype = 'F32';
-  if (process.env.SWEET_SEARCH_NATIVE_DTYPE) {
-    expectedDtype = process.env.SWEET_SEARCH_NATIVE_DTYPE.toUpperCase();
+  if (device === 'metal' && !(hw.platform === 'darwin' && hw.arch === 'arm64')) {
+    console.log('SKIP — Metal needs Apple Silicon.');
+    process.exit(2);
   }
-  console.log(`Expected dtype:     ${expectedDtype} (override via SWEET_SEARCH_NATIVE_DTYPE)`);
+  console.log(`Device under test:  ${device}`);
+  // CoreML would otherwise answer for Metal; this gate tests candle Metal.
+  if (device === 'metal') process.env.SWEET_SEARCH_COREML_CASCADE = '0';
 
   // Expand the embed corpus if the user asked for more samples. We cycle
   // through the base corpus (which intentionally covers multiple shape
@@ -214,9 +238,9 @@ async function main() {
   console.log();
 
   // Pass 1: CUDA.
-  console.log('[1/2] Encoding on CUDA...');
+  console.log(`[1/2] Encoding on ${device}...`);
   const t0 = Date.now();
-  const cuda = await encodeWithDevice('cuda', embedTexts, liTexts);
+  const cuda = await encodeWithDevice(device, embedTexts, liTexts);
   console.log(`      done in ${Date.now() - t0}ms`);
 
   // Pass 2: CPU reference.
@@ -226,37 +250,42 @@ async function main() {
   console.log(`      done in ${Date.now() - t1}ms`);
   console.log();
 
+  console.log(`Backends:           ${device}: embed ${cuda.backends.embed}, LI ${cuda.backends.li}; cpu: embed ${cpu.backends.embed}, LI ${cpu.backends.li}`);
+  const backendReasons = [...cuda.backendReasons, ...cpu.backendReasons];
+  for (const r of backendReasons) console.log(`  FAIL ${r}`);
+
   // Embedding parity.
-  const embedCosines = cuda.embed.map((vec, i) => cosineSimilarity(vec, cpu.embed[i]));
-  const eStats = summarize(embedCosines);
+  const embed = compareEmbeddings(cuda.embed, cpu.embed, {
+    minCosine: EMBED_MIN_THRESHOLD,
+    meanCosine: EMBED_MEAN_THRESHOLD,
+  });
   console.log('── Embedding parity ──────────────────────────────────────────────');
-  console.log(`  n=${eStats.n}  min=${fmt(eStats.min)}  p01=${fmt(eStats.p01)}  p50=${fmt(eStats.p50)}  mean=${fmt(eStats.mean)}  max=${fmt(eStats.max)}`);
-  const embedPass = eStats.min >= EMBED_MIN_THRESHOLD && eStats.mean >= EMBED_MEAN_THRESHOLD;
-  console.log(`  min ≥ ${EMBED_MIN_THRESHOLD}: ${eStats.min >= EMBED_MIN_THRESHOLD ? 'PASS' : 'FAIL'}`);
-  console.log(`  mean ≥ ${EMBED_MEAN_THRESHOLD}: ${eStats.mean >= EMBED_MEAN_THRESHOLD ? 'PASS' : 'FAIL'}`);
-
-  // LI parity — flatten per-token cosines across all docs.
-  const liCosines = [];
-  for (let d = 0; d < cuda.li.length; d++) {
-    const cudaDoc = cuda.li[d];
-    const cpuDoc = cpu.li[d];
-    const n = Math.min(cudaDoc.length, cpuDoc.length);
-    for (let t = 0; t < n; t++) {
-      liCosines.push(cosineSimilarity(cudaDoc[t], cpuDoc[t]));
-    }
+  if (embed.cosines) {
+    const eStats = summarize(embed.cosines);
+    console.log(`  n=${eStats.n}  min=${fmt(eStats.min)}  p01=${fmt(eStats.p01)}  p50=${fmt(eStats.p50)}  mean=${fmt(eStats.mean)}  max=${fmt(eStats.max)}`);
   }
-  const liStats = summarize(liCosines);
+  console.log(`  ${embed.ok ? 'PASS' : 'FAIL'} (min ≥ ${EMBED_MIN_THRESHOLD}, mean ≥ ${EMBED_MEAN_THRESHOLD})`);
+  for (const r of embed.reasons) console.log(`  FAIL ${r}`);
+
+  // LI parity — structure, per-token cosines, MaxSim scores.
+  const liDtype = String(cuda.backends.li ?? '').split('/')[1];
+  const liThresholds = liDtype === 'bf16' || liDtype === 'f16'
+    ? LI_HALF_THRESHOLDS
+    : { minTokenCosine: LI_MIN_THRESHOLD, meanTokenCosine: LI_MEAN_THRESHOLD, maxSimRelTol: LI_MAXSIM_REL_TOL };
+  const li = compareLateInteraction(cuda.li, cpu.li, liThresholds);
   console.log();
-  console.log('── LI parity (per-token cosines) ─────────────────────────────────');
-  console.log(`  n=${liStats.n}  min=${fmt(liStats.min)}  p01=${fmt(liStats.p01)}  p50=${fmt(liStats.p50)}  mean=${fmt(liStats.mean)}  max=${fmt(liStats.max)}`);
-  const liPass = liStats.min >= LI_MIN_THRESHOLD && liStats.mean >= LI_MEAN_THRESHOLD;
-  console.log(`  min ≥ ${LI_MIN_THRESHOLD}: ${liStats.min >= LI_MIN_THRESHOLD ? 'PASS' : 'FAIL'}`);
-  console.log(`  mean ≥ ${LI_MEAN_THRESHOLD}: ${liStats.mean >= LI_MEAN_THRESHOLD ? 'PASS' : 'FAIL'}`);
+  console.log('── LI parity (per-token cosines + MaxSim) ────────────────────────');
+  if (li.tokenStats) {
+    console.log(`  tokens=${li.tokenStats.n}  min=${fmt(li.tokenStats.min)}  mean=${fmt(li.tokenStats.mean)}`);
+    console.log(`  MaxSim max relative diff=${li.maxSim.maxRelDiff.toExponential(3)}  order flips=${li.maxSim.flips}`);
+  }
+  console.log(`  ${li.ok ? 'PASS' : 'FAIL'} (${liDtype ?? '?'}: token min ≥ ${liThresholds.minTokenCosine}, mean ≥ ${liThresholds.meanTokenCosine}, MaxSim rel ≤ ${liThresholds.maxSimRelTol})`);
+  for (const r of li.reasons) console.log(`  FAIL ${r}`);
 
   console.log();
-  const allPass = embedPass && liPass;
+  const allPass = backendReasons.length === 0 && embed.ok && li.ok;
   if (allPass) {
-    console.log(`✓ PARITY PASS — candle-cuda (${expectedDtype}) matches candle-cpu within retrieval-safe bounds.`);
+    console.log(`✓ PARITY PASS — candle-${device} (embed ${cuda.backends.embed}, LI ${cuda.backends.li}) matches candle-cpu within retrieval-safe bounds.`);
     process.exit(0);
   } else {
     console.log(`✗ PARITY FAIL — investigate before shipping. Check:`);
