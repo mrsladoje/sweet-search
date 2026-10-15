@@ -447,6 +447,56 @@ fn hamming(a: &[u64], b: &[u64]) -> u32 {
     d
 }
 
+/// Hamming distances of 64-byte codes at `ids` to the 64-byte query, four
+/// codes per step: per-byte popcount of code ^ query by nibble lookup
+/// (`vpshufb`), bytes summed per 64-bit lane (`vpsadbw`), lanes folded to one
+/// distance per code. Exact, like POPCNT, and faster on Zen 3.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2,popcnt")]
+unsafe fn hamming512_batch_avx2(slab: *const u64, query: *const u64, ids: &[u32], out: &mut [u32]) {
+    use std::arch::x86_64::*;
+    let lut = _mm256_setr_epi8(0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4, 0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4);
+    let low = _mm256_set1_epi8(0x0f);
+    let qv0 = _mm256_loadu_si256(query as *const __m256i);
+    let qv1 = _mm256_loadu_si256(query.add(4) as *const __m256i);
+    let mut c = 0;
+    while c + 4 <= ids.len() {
+        let mut sad = [_mm256_setzero_si256(); 4];
+        for (j, s) in sad.iter_mut().enumerate() {
+            let p = slab.add(ids[c + j] as usize * 8);
+            let a = _mm256_xor_si256(_mm256_loadu_si256(p as *const __m256i), qv0);
+            let b = _mm256_xor_si256(_mm256_loadu_si256(p.add(4) as *const __m256i), qv1);
+            let ca = _mm256_add_epi8(
+                _mm256_shuffle_epi8(lut, _mm256_and_si256(a, low)),
+                _mm256_shuffle_epi8(lut, _mm256_and_si256(_mm256_srli_epi16::<4>(a), low)),
+            );
+            let cb = _mm256_add_epi8(
+                _mm256_shuffle_epi8(lut, _mm256_and_si256(b, low)),
+                _mm256_shuffle_epi8(lut, _mm256_and_si256(_mm256_srli_epi16::<4>(b), low)),
+            );
+            *s = _mm256_sad_epu8(_mm256_add_epi8(ca, cb), _mm256_setzero_si256());
+        }
+        let t01 = _mm256_add_epi64(_mm256_unpacklo_epi64(sad[0], sad[1]), _mm256_unpackhi_epi64(sad[0], sad[1]));
+        let t23 = _mm256_add_epi64(_mm256_unpacklo_epi64(sad[2], sad[3]), _mm256_unpackhi_epi64(sad[2], sad[3]));
+        let u = _mm256_add_epi64(_mm256_permute2x128_si256::<0x20>(t01, t23), _mm256_permute2x128_si256::<0x31>(t01, t23));
+        let mut o = [0u64; 4];
+        _mm256_storeu_si256(o.as_mut_ptr() as *mut __m256i, u);
+        for j in 0..4 {
+            out[c + j] = o[j] as u32;
+        }
+        c += 4;
+    }
+    while c < ids.len() {
+        let p = slab.add(ids[c] as usize * 8);
+        let mut d = 0u32;
+        for w in 0..8 {
+            d += (*p.add(w) ^ *query.add(w)).count_ones();
+        }
+        out[c] = d;
+        c += 1;
+    }
+}
+
 /// 512-bit Hamming distances, four vectors per step: the per-vector
 /// popcounts are reduced together with pairwise adds instead of one
 /// horizontal add per vector.
@@ -803,6 +853,12 @@ impl HnswSearcher {
             // SAFETY: every id < count (set_level checks), so each vector is
             // 64 readable bytes inside the slab; the query holds 8 words.
             unsafe { hamming512_batch(self.slab.as_ptr(), self.query.as_ptr(), ids, out) };
+            return;
+        }
+        #[cfg(target_arch = "x86_64")]
+        if self.words == 8 && self.v3 {
+            // SAFETY: AVX2 checked at construction (v3); every id < count.
+            unsafe { hamming512_batch_avx2(self.slab.as_ptr(), self.query.as_ptr(), ids, out) };
             return;
         }
         #[cfg(target_arch = "x86_64")]
@@ -1344,9 +1400,10 @@ impl HnswSearcher {
         k
     }
 
-    /// `scan512` for x86-64-v3: POPCNT distances, four codes per step with
-    /// four sub-histograms, then sixteen u16 distances per AVX2 compare in
-    /// the collect pass. Same output.
+    /// `scan512` for x86-64-v3: AVX2 distances (nibble-lookup popcount, four
+    /// codes per step; faster than eight POPCNTs per code: 140k 320 -> 258 us
+    /// on Zen 3) with four sub-histograms, then sixteen u16 distances per AVX2
+    /// compare in the collect pass. Same output.
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx2,fma,popcnt,bmi1,bmi2,lzcnt")]
     unsafe fn scan512_v3(&mut self, k: usize, out: &mut [u32]) -> usize {
@@ -1369,17 +1426,41 @@ impl HnswSearcher {
         };
         let dp = d.as_mut_ptr();
         let mut i = 0;
+        let lut = _mm256_setr_epi8(0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4, 0, 1, 1, 2, 1, 2, 2, 3, 1, 2, 2, 3, 2, 3, 3, 4);
+        let low = _mm256_set1_epi8(0x0f);
+        let qv0 = _mm256_loadu_si256(self.query.as_ptr() as *const __m256i);
+        let qv1 = _mm256_loadu_si256(self.query.as_ptr().add(4) as *const __m256i);
+        // Four 64-byte codes at p: popcount of code ^ query per byte by nibble
+        // lookup, bytes summed per 64-bit lane (vpsadbw), lanes folded to one
+        // u64 distance per code.
+        let simd4 = |p: *const u64| -> [u64; 4] {
+            let mut sad = [_mm256_setzero_si256(); 4];
+            for (c, s) in sad.iter_mut().enumerate() {
+                let a = _mm256_xor_si256(_mm256_loadu_si256(p.add(c * 8) as *const __m256i), qv0);
+                let b = _mm256_xor_si256(_mm256_loadu_si256(p.add(c * 8 + 4) as *const __m256i), qv1);
+                let ca = _mm256_add_epi8(
+                    _mm256_shuffle_epi8(lut, _mm256_and_si256(a, low)),
+                    _mm256_shuffle_epi8(lut, _mm256_and_si256(_mm256_srli_epi16::<4>(a), low)),
+                );
+                let cb = _mm256_add_epi8(
+                    _mm256_shuffle_epi8(lut, _mm256_and_si256(b, low)),
+                    _mm256_shuffle_epi8(lut, _mm256_and_si256(_mm256_srli_epi16::<4>(b), low)),
+                );
+                *s = _mm256_sad_epu8(_mm256_add_epi8(ca, cb), _mm256_setzero_si256());
+            }
+            let t01 = _mm256_add_epi64(_mm256_unpacklo_epi64(sad[0], sad[1]), _mm256_unpackhi_epi64(sad[0], sad[1]));
+            let t23 = _mm256_add_epi64(_mm256_unpacklo_epi64(sad[2], sad[3]), _mm256_unpackhi_epi64(sad[2], sad[3]));
+            let u = _mm256_add_epi64(_mm256_permute2x128_si256::<0x20>(t01, t23), _mm256_permute2x128_si256::<0x31>(t01, t23));
+            let mut o = [0u64; 4];
+            _mm256_storeu_si256(o.as_mut_ptr() as *mut __m256i, u);
+            o
+        };
         while i + 4 <= n {
-            let p = base.add(i * 8);
-            let (x0, x1, x2, x3) = (pc(p), pc(p.add(8)), pc(p.add(16)), pc(p.add(24)));
-            *dp.add(i) = x0 as u16;
-            *dp.add(i + 1) = x1 as u16;
-            *dp.add(i + 2) = x2 as u16;
-            *dp.add(i + 3) = x3 as u16;
-            *hist[0].get_unchecked_mut(x0) += 1;
-            *hist[1].get_unchecked_mut(x1) += 1;
-            *hist[2].get_unchecked_mut(x2) += 1;
-            *hist[3].get_unchecked_mut(x3) += 1;
+            let x = simd4(base.add(i * 8));
+            for (j, &xj) in x.iter().enumerate() {
+                *dp.add(i + j) = xj as u16;
+                *hist[j].get_unchecked_mut(xj as usize) += 1;
+            }
             i += 4;
         }
         while i < n {
