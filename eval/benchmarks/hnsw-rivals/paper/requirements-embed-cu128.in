@@ -1,0 +1,13 @@
+# Embedding environment for the RunPod GPU (Linux x86_64, CUDA 12.8 wheels). Python 3.12. Same pins as requirements-embed.in,
+# except torch: the PyPI torch 2.14.1 pulls CUDA 13 wheels (NVIDIA driver >= 580 needed); RunPod hosts often have older drivers.
+# torch 2.11.0+cu128 is the newest cu128 build on download.pytorch.org/whl/cu128; it ships SASS/PTX for sm_89 (Ada, RTX 4090)
+# and sm_120 (Blackwell, RTX 5090 / RTX PRO 4500). CUDA 12.8 runtime needs NVIDIA driver >= 570.
+#   uv pip compile requirements-embed-cu128.in --generate-hashes --python-version 3.12 --python-platform x86_64-unknown-linux-gnu --index-strategy unsafe-best-match -o requirements-embed-linux-x86_64-cu128.lock
+--index-url https://download.pytorch.org/whl/cu128
+--extra-index-url https://pypi.org/simple
+torch==2.11.0+cu128
+transformers==4.46.3
+tokenizers==0.20.3
+sentence-transformers==3.3.1
+einops==0.8.1
+numpy==2.5.4

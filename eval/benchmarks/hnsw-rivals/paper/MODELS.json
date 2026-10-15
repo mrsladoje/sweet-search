@@ -1,0 +1,71 @@
+{
+  "_comment": "Per-model contract of the paper harness (PAPER_PLAN section 4 and 9; DESIGN.md section 2). embed.py reads this file. 'revision' = Hugging Face commit resolved on 2026-10-15; embed.py --revision latest ignores it and records what it resolved. All three models are 768-d (stated limit). The first 512 dimensions of a vector feed our binary code and int8 screen (code_width / int8_width are the K4 defaults; dev decides, frozen at S7); this is an empirical choice, not a property of the model.",
+  "contract": {
+    "dim": 768,
+    "inference_precision": "fp32",
+    "normalised": true,
+    "stored_precision": "float32",
+    "our_f16_rounding": "nearest-even (round to nearest, ties to even, float32 -> float16 for our vector file)",
+    "max_length": 512,
+    "truncation": "tokenizer truncation to 512 tokens, right side, for documents and queries; counts of cut texts are written to model.json",
+    "ground_truth_cosine": "stored float32 vectors normalised in float64 (gt.py); the stored vectors are L2-normalised to float32 precision"
+  },
+  "models": {
+    "CodeRankEmbed": {
+      "hf_id": "nomic-ai/CodeRankEmbed",
+      "revision": "3c4b60807d71f79b43f3c4363786d9493691f8b1",
+      "license": "MIT",
+      "kind": "code",
+      "trust_remote_code": true,
+      "pooling": "mean",
+      "query_prefix": "Represent this query for searching relevant code: ",
+      "doc_prefix": "",
+      "max_length": 512,
+      "dim": 768,
+      "code_width": 512,
+      "int8_width": 512,
+      "card": "model card: sentence-transformers Transformer + CLS Pooling (1_Pooling/config.json: pooling_mode_cls_token true); queries need the prefix, documents none. THE PRODUCT DOES NOT FOLLOW THE CARD: it mean-pools (crates/sweet-search-native/src/inference/embedding_model.rs: NomicBERT encoder -> mean_pool(hidden, mask) -> L2_normalize). All existing CodeRankEmbed vectors of the paper (code sets) are mean-pooled.",
+      "notes": "Pooling is 'mean' (the product's) so that embed.py output is the same model as the existing code-set vectors: measured on 16 GCSN documents with exact texts, fp32 HF weights + mean pooling vs the stored vectors: min cosine 0.99969, median 0.99975; with the card's CLS pooling: min 0.704, median 0.832. The existing vectors were made by the product's native Metal / CoreML path (bf16 weights) and the product text recipe; the queries by the product's query path (prefix as in query_prefix).",
+      "model_args": {
+        "add_pooling_layer": false,
+        "safe_serialization": true
+      },
+      "card_pooling": "cls"
+    },
+    "jina-v2-base-code": {
+      "hf_id": "jinaai/jina-embeddings-v2-base-code",
+      "revision": "516f4baf13dec4ddddda8631e019b5737c8bc250",
+      "license": "Apache-2.0",
+      "kind": "code",
+      "trust_remote_code": true,
+      "remote_code_repos": {
+        "jinaai/jina-bert-v2-qk-post-norm": "3baf9e3ac750e76e8edd3019170176884695fb94"
+      },
+      "pooling": "mean",
+      "query_prefix": "",
+      "doc_prefix": "",
+      "max_length": 512,
+      "dim": 768,
+      "code_width": 512,
+      "int8_width": 512,
+      "card": "1_Pooling/config.json: pooling_mode_mean_tokens true; no prefixes; ALiBi, native length 8192 (we cut at 512 for all models)",
+      "notes": "Remote code (JinaBertModel) is loaded from the repository named in remote_code_repos."
+    },
+    "bge-base-en-v1.5": {
+      "hf_id": "BAAI/bge-base-en-v1.5",
+      "revision": "a5beb1e3e68b9ab74eb54cfd186867f64f240e1a",
+      "license": "MIT",
+      "kind": "text",
+      "trust_remote_code": false,
+      "pooling": "cls",
+      "query_prefix": "Represent this sentence for searching relevant passages: ",
+      "doc_prefix": "",
+      "max_length": 512,
+      "dim": 768,
+      "code_width": 512,
+      "int8_width": 512,
+      "card": "1_Pooling/config.json: pooling_mode_cls_token true, then Normalize; the retrieval instruction is added to queries only (BEIR / C-MTEB retrieval)",
+      "notes": "Used for the text (BEIR) sets. Its tokenizer lower-cases (do_lower_case true)."
+    }
+  }
+}

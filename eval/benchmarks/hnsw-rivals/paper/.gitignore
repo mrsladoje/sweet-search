@@ -1,0 +1,4 @@
+# account values (PAPER_PLAN.md rule 9)
+aws/env.local
+*.so
+__pycache__/
