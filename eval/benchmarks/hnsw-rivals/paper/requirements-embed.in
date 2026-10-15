@@ -1,0 +1,14 @@
+# Embedding environment of the paper harness (paper/embed.py, paper/check_embed.py). Python 3.12.
+# Lock files (hashes): requirements-embed-linux-x86_64-cu128.lock (RunPod GPU; from requirements-embed-cu128.in), requirements-embed-macos-arm64.lock:
+# GPU run (RunPod): requirements-embed-linux-x86_64-cu128.lock (CUDA 12.8 wheels, driver >= 570). The CUDA 13 lock was removed (it needed driver >= 580).
+#   uv pip compile requirements-embed.in --generate-hashes --python-version 3.12 --python-platform x86_64-unknown-linux-gnu -o requirements-embed-linux-x86_64-cu128.lock (see that file for the cu128 flags)
+#   MACOSX_DEPLOYMENT_TARGET=14.0 uv pip compile requirements-embed.in --generate-hashes --python-version 3.12 --python-platform aarch64-apple-darwin -o requirements-embed-macos-arm64.lock
+# transformers is pinned to 4.46.3 on purpose: the remote code of jina-embeddings-v2-base-code imports
+# transformers.pytorch_utils.find_pruneable_heads_and_indices, which transformers 5.x removed, and the remote code of
+# CodeRankEmbed needs its own safetensors loader path (safe_serialization=True, see MODELS.json model_args).
+torch==2.14.1
+transformers==4.46.3
+tokenizers==0.20.3
+sentence-transformers==3.3.1
+einops==0.8.1
+numpy==2.5.4

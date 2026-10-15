@@ -1,0 +1,22 @@
+# Texts bundle for the pod (GPU re-embedding). Source: Mac ~/.ss-eval/hnsw-paper (csn1m texts.jsonl exists on the Mac only).
+# Needed by embed.py: texts.jsonl + queries.jsonl. set.json, vectors.jsonl, texts.json: membership / hashes for later steps (gt.py, quality.py).
+# Sizes in bytes (2026-10-15). quora/texts.jsonl was rebuilt on the Mac from BEIR quora.zip on 2026-10-15; its SHA-256 equals the recorded one.
+
+set        texts.jsonl  queries.jsonl  set.json  vectors.jsonl  texts.json
+csn1m        831416504        1182887      1512      222507102        1597
+quora         60198344        1354727      1444       16518434         226
+dall         169142144        1182887      1499       18540698        6259
+fiqa          47603669         100624      1434        1822912         223
+advtest       17402858         444851      1304        1902921        1611
+d20k          20826459        1182887      1496        2491733        2378
+gcsn           6142169        1182887      1514         947463        1475
+
+total, all files:                     1,424,119,132 bytes = 1424.1 MB (about 1358 MiB)
+total, texts.jsonl + queries.jsonl only: 1,159,363,897 bytes = 1159.4 MB
+
+# Files per set: sets/<set>/{texts.jsonl,queries.jsonl,set.json,vectors.jsonl,texts.json}. Plus the references: embed-ref/ (about 3.3 MB, 21 dirs).
+# From the Mac (zstd cuts the text size to about a third; check with `zstd -T0 -3` first):
+#   cd ~/.ss-eval/hnsw-paper && tar -cf - sets/*/{texts.jsonl,queries.jsonl,set.json,vectors.jsonl,texts.json} embed-ref | zstd -T0 -3 > /tmp/hnsw-texts-bundle.tar.zst
+#   scp / rsync the bundle to the pod, then on the pod:  mkdir -p /workspace/hnsw-data && cd /workspace/hnsw-data && zstd -dc bundle.tar.zst | tar -xf -
+# Then verify: sha256sum sets/*/texts.jsonl against the `texts_sha256` field of sets/<set>/texts.json (embed.py stores it in model.json too).
+# Pod DATA root = /workspace/hnsw-data (NOT the old root; embed_all.sh refuses symlinked output dirs).
