@@ -1,6 +1,13 @@
 # HNSW kernel + paper benchmark — plan and handoff v5
 
-Written 2026-10-15 on main 39a4c4aa. Read `HANDOFF-v4.md` §8–8f first (how we got here), then this file.
+Written 2026-10-15 on main 39a4c4aa. Read first, in this order:
+1. The wiki artifact **https://claude.ai/artifact/M1SCsePXYngJba19gvcnve** (v11; read it with the Artifact tool,
+   `action: "read"`). It holds the cascade, every trick with its evidence, the open questions (§10), the action
+   plan (§11), the research findings (§12), the rival playbook (§13) and the paper strategy (§14). §5 of this file
+   lists every wiki strategy that is still untested; each one gets a test (owner: "try each of those that we
+   haven't yet").
+2. `HANDOFF-v4.md` §8–8f (how we got here).
+3. This file.
 
 Goal, in the owner's order:
 1. Keep improving the vector kernel until it stops paying: **memory footprint, storage size, speed**, with
@@ -20,10 +27,26 @@ release before an arXiv paper. Phases B–D (kernel) must not eat the time of ph
 - **No back-compat, no migration code.** An old index can stop working; a full rebuild fixes it. No `SS_FIX_*`
   legacy switches for new work: A/B through `ab.sh` arms (env knobs that are deleted after the decision) or
   through two repo copies (`R=` per arm).
-- **Accuracy is not traded.** Output-changing levers ship only when every dev set has MRR@10 change with a 95%
-  paired-bootstrap CI that contains 0 and a point estimate >= -0.0002, and recall@10 vs exact does not drop
-  by more than 0.002. Identical-output levers ship on any speed / memory / disk win that is mechanistically
-  sound and above noise (owner: "any win however small").
+- **Never slower and never less accurate, unless the trade is clearly worth it** (owner, 10-15). Decision
+  rule for every lever, with deltas from the phase-A tools on all 5 dev sets, both machines:
+
+  | Lever result | Ship? |
+  |---|---|
+  | Identical output, faster or smaller, above noise | Yes, any size (owner: "any win however small") |
+  | Identical output, no gain | No (no code for nothing) |
+  | MRR equal (95% paired CI contains 0, point >= -0.0002, recall@10 vs exact >= -0.002), faster and/or smaller | Yes |
+  | MRR equal, slower by <= 5% p50 on every set, AND a large saving: >= 20% of working RAM or >= 25% of disk at 1M | Yes, if still Pareto-best (below) |
+  | MRR equal, more RAM or disk by <= 5%, AND >= 10% faster on the 1M and 140k sets | Yes, if still Pareto-best |
+  | MRR down beyond the equal band | No, whatever the gain |
+  | Slower by > 5%, or more RAM / disk by > 5% | No (re-run the knee instead if it is a knob) |
+
+  "Still Pareto-best": rivals were run on held-out queries only, so do not read held-out for this. Take the
+  closest-rival ratio of §1.1 for each set and machine and divide it by (new p50 / old p50) from the dev runs.
+  It must stay > 1.2 on every set (the smallest today is x1.62 at 140k). MRR is inside the equal band by the
+  rows above, so the rival points at or above our MRR do not change.
+  **Slowdown budget:** all accepted slowdowns together may cost at most 5% p50 per set from the phase-A
+  baseline. They do not stack beyond that: a later trade must first win back time elsewhere.
+  Prefer to pair a slowing memory lever with a speed lever in the same round, so the net change is >= 0.
 - **Kernel knobs: Pareto knee**, not max MRR (owner cut S1 1000 -> 400 on 10-14).
 - **One heavy job per machine.** Mac: only when the owner's machine is quiet (two readings 30 min apart:
   5- and 15-min load < 5, top process < 150% CPU, >= 50% memory free; `wait-quiet.sh` pattern). Box first.
@@ -96,7 +119,8 @@ For every lever in phases B–E:
    commit + push, one line in this file's log (§9), wiki update (artifact M1SCsePXYngJba19gvcnve).
 6. Mac check of each shipped batch when the Mac is quiet (ARM parity + p50).
 
-Stop rule per axis: stop that axis after two rounds in a row ship nothing, or when its target in §3 is met.
+Stop rule per axis: stop that axis after two rounds in a row ship nothing AND every §5 item for that axis has
+had its test, or when its target in §3 is met and the §5 items for it are done.
 
 
 ## 3. Targets (1M, both machines)
@@ -135,7 +159,35 @@ A6. Fix `tput-ours.mjs`: today each worker loads its own index (memory x workers
 Deliverable: a filled §1.2 with measured numbers, and the order of B–D items re-ranked by measured size.
 
 
-## 5. Phase B — speed (identical output)
+## 5. Every untested strategy from the wiki (artifact §10–§14), and where it runs
+
+Status as of v11. "Already done" items are left out (huge pages, S1 split + knee, re-prune with back-fill,
+vector file, W = 1, int8-all, AVX2 kernels). Rejected items stay rejected (sliding prefetch window, tie stop,
+per-vector int8 scale, centring, asymmetric rotation, inline neighbour codes, ScaNN partitions + 4-bit scan,
+LVQ navigation, Hamming early-abandon, RaBitQ bound skipping). Each item below is one round of §2.
+
+| # | Strategy (wiki ref) | Output | Axis | Phase | Note for the test |
+|---|---|---|---|---|---|
+| W1 | Node per-query overhead: LRU lookup, promise hops, result objects (H6) | identical | speed | B1–B3 | measure in A5 first |
+| W2 | Prefetch the visited byte and CSR offset of the next node (plan #3, hnswlib hnswalg.h:398-436) | identical | speed | B | skipped on 10-14; visited bytes fit in cache at 1M, so expect noise; one A/B on x86 |
+| W3 | Greedy descent outside the v3 kernel copies (O7) | identical | speed | B | check its share in the profile; move into the v3 copy if > noise |
+| W4 | Stride / small prefetch per VSAG (+2–7%, §12) | identical | speed | B | not the rejected window; a 1–2 node lookahead on the candidate heap |
+| W5 | Relabel nodes by k-means leaf or hub order (Gorder / RCM, plan #14, Coleman et al.) | identical if ties do not depend on id | speed | B | BFS failed at 157k on the Mac; test 1M on x86 where memory latency dominates; check ties |
+| W6 | Adaptive early stop: Elastic 2026 rule, Ada-ef, DARTH (plan #12, O11) | changes | speed | B | calibrate on final MRR on dev, not Hamming recall; also gives low-MRR points for the paper curve |
+| W7 | Stored edge length to skip code fetches (CRouting, plan #13; 2 B/edge) | changes | speed vs RAM | B | +~0.25 GB at 1M: falls under the "+<=5% RAM for >= 10% faster" row; likely fails the RAM side unless the edge data replaces something |
+| W8 | Forward links at M = 64 and Vamana alpha = 1.2 pruning, or RP-Tuning alpha after build (plan #6 rest, §12) | changes | speed + RAM | C/D | fewer links = smaller CSR and fewer distances; must keep MRR |
+| W9 | Compressed links (delta / bit-packed, Qdrant) in RAM, not only on disk | identical | RAM vs speed | C | decode cost on every expansion: the <= 5% slower row; measure CSR saving first |
+| W10 | int8 walk arm (USearch playbook idea): walk on int8 instead of sign bits | changes | speed? | E | int8 slab is already in RAM, so no RAM cost; fewer hops may beat costlier distances |
+| W11 | Asymmetric 4-bit query against 1-bit codes (plan #11, Qdrant / Weaviate / Knowhere / Elastic BBQ) | changes | accuracy / speed | E | never tested without rotation; may let S1 shrink at equal MRR |
+| W12 | Stale-aware walk: stale nodes steer but do not fill results (plan #10, MN-RU, MERIT, IP-DiskANN) | identical on a fresh index | speed with edits | B | removes the 2x ef retry; needs a dev bench with edits (incremental indexing) |
+| W13 | Deterministic parallel build in Rust (plan #15, ParlayANN, FAISS main) | new graph | build time | B5 / C1 | same as the native insert of C1; parity = deterministic output, then dev MRR |
+| W14 | Bare-metal x86 run (O6, H3) | — | paper | G7 | paid: owner decides |
+
+Read-only checks from wiki §11 still open and still useful for the paper (phase G): share of walk expansions
+that are Hamming ties (O10), sign entropy per dimension (partly done 10-14: mean |p - 0.5| = 0.116).
+
+
+## 6. Phase B — speed (identical output)
 
 B1. **Fused native cascade.** One native call: query encode (cut to 512, renormalise, sign bits, int8),
     stage 1 (scan or walk), int8 rescore of all candidates, head trim, full-vector rescore from the mmap
@@ -150,7 +202,7 @@ B4. Expose S1 below 150 at k = 10 for the bench sweep only (today stage 1 never 
 B5. Native build / insert (only if A4 shows our build is a reviewer problem, or if C1 needs it anyway).
 
 
-## 6. Phase C — memory (identical output)
+## 7. Phase C — memory (identical output)
 
 C1. **One owner of the graph.** Native CSR is the only copy at query time. Inserts: either native insert
     (port `addToGraph` / `searchLayer` / `pruneNeighbors` / `selectNeighborsHeuristic` to Rust, which also
@@ -166,7 +218,7 @@ C4. int8 slab: anonymous (today) vs mmap from the new index file. A/B, it is a s
 C5. Report the vector file's page-cache share separately (file-backed, reclaimable). No change needed.
 
 
-## 7. Phase D — storage
+## 8. Phase D — storage
 
 D1. **One binary index file** replacing `.vectors.json`, `.graph.json`, `.int8.json`, `.meta.json` and the
     opt-in packed format (`SWEET_SEARCH_HNSW_MMAP=1`, `saveMmap`/`loadMmap`): header (version, dims, counts,
@@ -187,22 +239,22 @@ D5. **No second copy of the full vector in SQLite.** `vectors.embedding BLOB NOT
     read the vector file instead). Product-wide change in the indexer: show the owner the reader list first.
 
 
-## 8. Phase E — accuracy (only if B–D leave time; low expectations)
+## 9. Phase E — accuracy and walk-metric ideas (every item gets its test; low expectations)
 
-Untested ideas, each a dev A/B at the knee:
+Untested ideas, each a dev A/B at the knee (plus W10 and W11 from §5):
 - Wider full-vector head (k x 8, k x 10): cheap at stage 3, may close part of the .0017 gap at 1M.
 - int8 over all 768 dims instead of the first 512 (+256 B/vector RAM; check the cost against D/C gains).
 - Binary codes over 768 bits for the scan path only (<= 150k sets), where stage 1 is a scan, not a walk.
 Do not retry the rejected list in §1.3.
 
 
-## 9. Phase F — freeze
+## 10. Phase F — freeze
 
 Tag the kernel commit (`hnsw-kernel-freeze-YYYYMMDD`). Rebuild the Mac addon locally (gitignored). From here
 until phase H ends, no kernel change; if one is unavoidable, restart phase H for every system.
 
 
-## 10. Phase G — harden the benchmark (before any final run)
+## 11. Phase G — harden the benchmark (before any final run)
 
 G1. **Embedding models.** Today one model (CodeRankEmbed, 768-d). Add one more code model and one text model,
     open weights, run on our GPU box. Prefer 768-d first (no kernel change); one model with another width
@@ -232,11 +284,19 @@ G8. **Disclosure, written now:** held-out aggregates were read at milestones on 
     made on dev; seeds; library versions; machine specs; all configs swept.
 G9. **Release kit:** data splits, ground truth, harness, "add a system" guide, licence; Zenodo DOI (target
     ~10 Nov).
-G10. **Dry run on dev** of the whole matrix (all models x sets x systems, reduced sweeps) to catch harness
+G10. **Paper items from wiki §14:** tie / duplicate / oversampling analyses (read-only, back contributions 3, 4
+    and 6; note the product no longer has a candidate cut, since int8 scores all of stage 1, so the tie finding
+    becomes "ties decide the cut; scoring the whole stage-1 list removes it"); Elastic BBQ and Qdrant BQ configs
+    if possible (their users then read and cite); licence check of the CodeSearchNet-derived data before
+    release; publish vectors / splits / qrels on Hugging Face and propose the suite to ANN-Benchmarks; repeat
+    the gap search with a Semantic Scholar API key before submission; cite and set us apart from Iceberg,
+    Recall What Matters, Bang for the Buck and Lin early. Venue: PVLDB Experiment, Analysis & Benchmark
+    (rolling, 1st of each month), arXiv first; the owner chooses its order against the MSR paper.
+G11. **Dry run on dev** of the whole matrix (all models x sets x systems, reduced sweeps) to catch harness
     bugs before held-out.
 
 
-## 11. Phase H — the held-out run (once)
+## 12. Phase H — the held-out run (once)
 
 1. Box: all systems x models x sets, 3 rounds, held-out queries. Then the Mac, same matrix, when quiet.
 2. Score aggregates only (`score4.py`, `closest.py`, `front.py`), write the paper tables. No tuning after this.
@@ -246,16 +306,17 @@ G10. **Dry run on dev** of the whole matrix (all models x sets x systems, reduce
    the new index file anyway).
 
 
-## 12. Owner decisions needed (ask when the phase starts, not before)
+## 13. Owner decisions needed (ask when the phase starts, not before)
 
 - Models for G1 and the BEIR sets for G2.
 - Bare-metal x86 rental (G7), any API model (G1): paid.
 - D5 (drop the SQLite embedding copy): touches the indexer and incremental indexing.
 - Phase H step 4 timing (reindex).
-- If the deadline gets close: cut order is E, then B5, then D3, then G7. Never cut G1, G3, G4, G6, G8.
+- If the deadline gets close: the owner wants every §5 item tested, so any cut needs the owner's OK. Proposed
+  cut order then: E, then B5, then D3, then G7. Never cut G1, G3, G4, G6, G8.
 
 
-## 13. Tools and places
+## 14. Tools and places
 
 Repo `eval/benchmarks/hnsw-rivals/`: `ours.mjs` (our arm, knobs S1 / EF / K, OUT=), `ab.sh` (interleaved
 arms, rotated order, `R=` per arm), `abscore.py` (A/B scorer), `score4.py` (rival + ours scoring, writes
@@ -270,6 +331,6 @@ queues `queue-box*`, scoring dirs `v4s/<set>`.
 Wiki: https://claude.ai/artifact/M1SCsePXYngJba19gvcnve (v11).
 
 
-## 14. Log
+## 15. Log
 
 - 2026-10-15: plan written (main 39a4c4aa). Nothing from phases A–H started.
