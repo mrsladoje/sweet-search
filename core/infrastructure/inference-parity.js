@@ -149,7 +149,8 @@ export function maxSimScore(queryTokens, docTokens) {
  * Checks, in order: equal document counts, equal per-document token
  * counts, equal dimension, finite values and unit norms (both sides);
  * then per-token cosine min and mean; then MaxSim scores with every
- * document used as a query against every document. Scores must agree
+ * document (or each index in `queryIndices`) used as a query against
+ * every document. Scores must agree
  * within `maxSimRelTol` (relative), and no reference ordering whose gap
  * exceeds that tolerance may flip.
  */
@@ -157,6 +158,7 @@ export function compareLateInteraction(candidate, reference, {
   minTokenCosine,
   meanTokenCosine,
   maxSimRelTol,
+  queryIndices,
 }) {
   const count = reference?.length ?? 0;
   const dim = reference?.[0]?.[0]?.length ?? 0;
@@ -177,7 +179,7 @@ export function compareLateInteraction(candidate, reference, {
 
   let maxRelDiff = 0;
   let flips = 0;
-  for (let q = 0; q < count; q++) {
+  for (const q of queryIndices ?? reference.keys()) {
     const ref = reference.map((doc) => maxSimScore(reference[q], doc));
     const cand = candidate.map((doc) => maxSimScore(candidate[q], doc));
     for (let d = 0; d < count; d++) {
