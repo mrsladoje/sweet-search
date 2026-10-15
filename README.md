@@ -14,7 +14,7 @@ Every coding agent today reaches for grep + Read by reflex. *sweet-search* chall
 [![GitHub stars](https://img.shields.io/github/stars/mrsladoje/sweet-search?style=social)](https://github.com/mrsladoje/sweet-search/stargazers)
 [![license](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 [![node](https://img.shields.io/badge/node-%E2%89%A522-brightgreen)](package.json)
-[![platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#platform-support)
+[![platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#compatibility)
 [![inference](https://img.shields.io/badge/inference-100%25%20local-success)](#the-index)
 
 </div>
@@ -67,8 +67,8 @@ Every coding agent today reaches for grep + Read by reflex. *sweet-search* chall
 [🚀 Quickstart](#-quickstart)<br>
 <sub>three commands to a searchable repo</sub>
 
-[🖥️ Platform Support](#platform-support)<br>
-<sub>macOS · Linux · WASM fallback</sub>
+[🖥️ Compatibility](#compatibility)<br>
+<sub>OS · harnesses · languages · hardware</sub>
 
 [⭐ A star pls? 🥺🙏](#found-it-useful)<br>
 <sub>it really helps</sub>
@@ -116,7 +116,7 @@ Every coding agent today reaches for grep + Read by reflex. *sweet-search* chall
 ## 🚀 Quickstart
 
 - **Requires:** Node.js 22+
-- **Runs on:** macOS (Apple silicon or Intel), Linux (x64 or ARM64), and Windows via WSL2
+- **Runs on:** macOS (Apple silicon or Intel), Linux (x64 or ARM64), and Windows via WSL2 ([details](#compatibility))
 
 ```bash
 npm install -g sweet-search
@@ -251,6 +251,81 @@ are left in place because other tools may share them, and an otherwise-empty
 settings file may remain as `{}`.
 
 </details>
+
+<a id="compatibility"></a>
+
+## 🖥️ Compatibility
+
+### 💻 Platforms
+
+| Platform | How it runs |
+|----------|-------------|
+| macOS (Apple Silicon and Intel) | ⚡ Native |
+| Linux x64 and arm64 (glibc) | ⚡ Native |
+| Windows | ⚡ Native, inside WSL2. Native Windows is not supported yet. |
+| Other (musl/Alpine, other CPUs) | WASM/JS fallback |
+
+- **Native**: every performance-critical path runs in our native engine, compiled ahead of time for your exact OS and CPU. The MaxSim rerank kernel, for example, is 9–21× faster than its WASM fallback and 80–200× faster than plain JavaScript.
+- **WASM/JS fallback**: general-purpose, so it runs on more machines, but slower.
+- **Zero setup**: `npm install` picks the right package for your machine. Needs Node ≥ 22.
+
+### 🤖 Harnesses
+
+Any agent that can run a shell command can use sweet-search: the six tools are plain CLI commands. Three harnesses get first-class support: `init` wires them up, the prompt is tuned for them, and the [benchmarks](#-benchmarks) measure them.
+
+| Harness | Support | What `init` sets up |
+|---|:---:|---|
+| 🟣 Claude Code | ✅ First-class | Main agent, subagents, guide, `/sweet-index` skill, prewarm hook |
+| 🤖 Codex | ✅ First-class (`--codex`) | Guide and tested base instructions in `.codex/`, prewarm hook |
+| 🐚 opencode | ✅ First-class (`--opencode`) | Guide, tested prompt and a tool-description plugin in `.opencode/` |
+| Cursor · Gemini CLI · other `AGENTS.md` readers | ⚠️ Works, not tuned | An instruction file (`--cursor`, `--gemini`, `--agents`) |
+| Any MCP client | ⚠️ Works, not tuned | The MCP server (`--mcp`), see [MCP and other integrations](#mcp-and-other-integrations) |
+| Any agent with a shell | ⚠️ Works, not tuned | Nothing: call the `ss-*` commands directly |
+
+<sub>✅ tuned and benchmarked · ⚠️ works, but we have not tuned or benchmarked it.</sub>
+
+### 🗣️ Languages
+
+sweet-search indexes 96 languages and file formats. All of them get every search mode (grep, keyword and embedding search). What changes is how a file is cut into chunks:
+
+| Tier | How chunks are cut | Languages |
+|---|---|---|
+| 🌳 **AST** (18) | Along functions, classes and methods, from a real [tree-sitter](https://tree-sitter.github.io/) parse | JavaScript · TypeScript · TSX · Python · Go · Rust · Java · C · C++ · C# · Ruby · PHP · Kotlin · Swift · Solidity · OCaml · ReScript · TLA+ |
+| 🔍 **Regex** (25) | Along functions and blocks, found by per-language pattern rules | Dart · Elixir · F# · Groovy · Lua · Nim · Objective-C · Scala · Zig · Shell (Bash, Zsh, Fish) · PowerShell · SQL · GraphQL · Protobuf · HTML (with Vue, Svelte, Astro and HTML templates) · CSS · SCSS · Sass · Less · JSON · YAML · TOML · XML · Dockerfile · Makefile |
+
+<details><summary><b>📄 Fallback (53): the rest</b></summary>
+
+<br/>
+
+Lossless fixed-size windows, so nothing is dropped. Markdown, reStructuredText and plain text are cut along their headings instead.
+
+| Group | Languages |
+|---|---|
+| Programming | Clojure · Crystal · CoffeeScript · Elm · Emacs Lisp · Erlang · Haskell · Haxe · Julia · Pascal · Perl · R · Tcl · Vala · Vim script · CodeQL · Zeek · Spicy · Assembly · COBOL · Fortran |
+| GPU shaders | GLSL · HLSL · Metal · WGSL · Cg · ShaderLab |
+| Build and config | CMake · Gradle · Meson · Ninja · Jam · Starlark (Bazel) · Earthfile · just · HCL (Terraform) · INI · Java properties · Nix · M4 · AWK · sed · SystemRDL |
+| Templates and styles | Jinja (and other text templates) · EJS · Pug · Haml · Slim · Stylus |
+| Docs and notebooks | Markdown · reStructuredText · plain text · Jupyter notebooks |
+
+</details>
+
+### 🔋 Hardware
+
+sweet-search runs on any machine that runs Node 22. `init` reads your hardware and picks the fastest backend and the right model size for it.
+
+| Your machine | Indexing runs on | Model tier `init` picks |
+|---|---|---|
+| Apple Silicon M3 or newer | CoreML on the Neural Engine, plus Metal GPU | Standard |
+| Apple Silicon M1 / M2 | Metal GPU | Edge with ≤ 16 GB RAM, standard above |
+| Linux with an NVIDIA GPU (compute 7.0+) | CUDA, with the `-cuda` native package | Standard |
+| Anything else | CPU, with INT8 models | Standard |
+| Any machine with ≤ 8 GB RAM | Same as above | Edge |
+
+- **Edge tier**: a 17M-parameter late-interaction model instead of the 149M standard one. Indexing is faster and the index is smaller. Search-time reranking turns off on edge.
+- **Disk**: a few hundred MB of models on CPU-only machines. GPUs add about 1.2 GB. The optional CoreML cascade on M3+ adds about 3.2 GB.
+- **Memory**: the background index maintainer restarts itself past 25% of your RAM (clamped to 4–8 GiB). See [Bounded memory](#-bounded-memory).
+- **No models at all**: `sweet-search init --profile core` gives lexical search only, with no downloads. Good for CI.
+- **Override**: `--li-model standard|edge|none` and `--skip-cuda` overrule the automatic choice. `init --wizard` shows what it detected.
 
 ## 📊 Benchmarks
 
@@ -1320,21 +1395,6 @@ A recycle or eviction never touches the index. Every update publishes before the
 upgrade that changes the models or chunking, we tell you to run `sweet-search index`, which then re-embeds everything.
 
 </details>
-
-<a id="platform-support"></a>
-
-## 🖥️ Platform Support
-
-| Platform | How it runs |
-|----------|-------------|
-| macOS (Apple Silicon and Intel) | ⚡ Native |
-| Linux x64 and arm64 (glibc) | ⚡ Native |
-| Windows | ⚡ Native, inside WSL2. Native Windows is not supported yet. |
-| Other (musl/Alpine, other CPUs) | WASM/JS fallback |
-
-- **Native**: every performance-critical path runs in our native engine, compiled ahead of time for your exact OS and CPU. The MaxSim rerank kernel, for example, is 9–21× faster than its WASM fallback and 80–200× faster than plain JavaScript.
-- **WASM/JS fallback**: general-purpose, so it runs on more machines, but slower.
-- **Zero setup**: `npm install` picks the right package for your machine. Needs Node ≥ 22.
 
 ## 🧭 The Competition
 
