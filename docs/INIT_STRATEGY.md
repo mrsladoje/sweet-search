@@ -56,17 +56,15 @@ downloads.
 
 ---
 
-## Init Profiles
+## What init installs
 
-### `core`
+init has one install set. (The old `--profile core|full` option was removed:
+`core` only moved the model download to the first index, and no search mode
+works without the models.)
 
-Verifies: main package JS, WASM blobs (`core/infrastructure/maxsim.wasm`,
-`core/infrastructure/simd-distance.wasm`), WASM router, CatBoost router, native package.
-Does not fetch model artifacts. Suitable for CI and lightweight lexical search.
-
-### `full` (default)
-
-Everything in `core`, plus init-managed fetch of:
+Every init verifies the main package JS, WASM blobs
+(`core/infrastructure/maxsim.wasm`, `core/infrastructure/simd-distance.wasm`),
+WASM router, CatBoost router and native package, and fetches:
 
 | Model | HF ID | Size | Used by |
 |-------|-------|------|---------|
@@ -99,12 +97,13 @@ INT8 embedding (`coderankembed-int8`), the active LI ONNX model (unless
 still fetched; opt-in reranker env vars are still honored.
 
 All artifacts are verified with SHA256 checksums from
-`core/infrastructure/model-registry.js`. The registry lists every model
-with `profile: 'full'`. Note: `core/infrastructure/manifest.json` currently
-lists only the four ORT-side models in its `profiles.full.models` array;
-the FP32 native backbones, FlashRank, and semantic cache models are
-fetched via the registry's `getModelsForProfile()` but are not yet in
-the manifest.
+`core/infrastructure/model-registry.js`, which is the one list of models
+init fetches (every entry has `profile: 'full'`, read by
+`getModelsForProfile()`).
+
+`--skip-models` fetches no models and no CoreML cascade. It records
+`runtime.allowRuntimeModelDownload: true`, so the first `sweet-search index`
+downloads the same models. Use it for CI and tests that do not index.
 
 ---
 
@@ -205,7 +204,7 @@ The cascade ships two ways, both landing at the same on-disk state:
    smaller edge ModernBERT LI variant, ~3.4 GB total) and hosted at
    [`mrsladoje/sweet-search-coreml-cascade`](https://huggingface.co/mrsladoje/sweet-search-coreml-cascade)
    under `embed/`, `li/`, and `li-edge/` subdirs.
-   `sweet-search init --profile full` on M3+ Apple Silicon fetches each
+   `sweet-search init` on M3+ Apple Silicon fetches each
    tarball via `core/infrastructure/coreml-cascade.js::fetchCoremlCascade()`
    using the same `model-fetcher.js::fetchModelFile` primitive as the other
    models (atomic writes, SHA256 verification, retries, resumable). Each
@@ -622,15 +621,15 @@ binary; `scripts/uninstall.js` is a no-op for CUDA.
 1. Check Node.js version (fails fast below 18.0.0).
 2. Detect project root (walk up from cwd to find `.git` or `package.json`).
 3. Create `.sweet-search/` directory.
-4. Resolve profile from `--profile` flag or default.
+4. Load the previous `.sweet-search/config.json` (LI choices, harness records).
 5. Verify all universal assets (WASM, router) are present in the package.
 6. Resolve native package for current platform; log notice if absent (not error).
-7. For `full`: fetch missing model artifacts via `core/infrastructure/model-fetcher.js`.
+7. Unless `--skip-models`: fetch missing model artifacts via `core/infrastructure/model-fetcher.js`.
    - 3 retry attempts with exponential backoff from 1s.
    - Written to `.tmp` file first; atomically renamed on success.
    - SHA256 verified against `core/infrastructure/model-registry.js` for every LFS file.
    - Resumable (sends `Range` header for partial content).
-8. Resolve hardware capability + CoreML cascade state (`full` profile only).
+8. Resolve hardware capability + CoreML cascade state (not with `--skip-models`).
    - `detectHardwareCapability()` classifies chip generation.
    - `getCoremlCascadeReport()` inspects the managed cache dir.
    - On M3+ with `--build-coreml-cascade`, runs `scripts/build-coreml-cascade.js`
@@ -653,7 +652,6 @@ binary; `scripts/uninstall.js` is a no-op for CUDA.
 ```
 Sweet Search init complete
 
-  Profile:              full
   Hardware:             Apple M3 Max (darwin-arm64)
   MaxSim:               native
   Router:               wasm
@@ -666,7 +664,7 @@ Sweet Search init complete
   Verification:         fast-pass (23/23)
 ```
 
-Flags: `--profile <core|full>`, `--verify-deep`, `--force`, `--verbose`,
+Flags: `--skip-models`, `--verify-deep`, `--force`, `--verbose`,
 `--build-coreml-cascade`, `--skip-coreml-cascade`, `--skip-dedup`,
 `--skip-cuda`.
 
@@ -1028,7 +1026,7 @@ Apple Silicon; other hardware is filtered out before any download. See the
 
 Exit criteria (all met):
 
-- Running `sweet-search init --profile full` on a fresh M3+ machine installs
+- Running `sweet-search init` on a fresh M3+ machine installs
   the cascade via the HF download path with no Python dependency
 - Cascade state in the init report is "present" after init completes
 - `sweet-search uninstall` cleans the cascade cache dir alongside the regular

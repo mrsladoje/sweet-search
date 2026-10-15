@@ -3,13 +3,14 @@
 /**
  * Sweet Search smoke test — validates a complete install on any platform.
  *
- * Checks: runtime assets, native resolution, init profiles, config bridge.
+ * Checks: runtime assets, native resolution, init modes, config bridge.
  * Exit 0 = all checks passed, exit 1 = at least one failed.
  *
  * Usage:
  *   node scripts/smoke-test.js                      # All tests
- *   node scripts/smoke-test.js --profile core        # Core profile only
- *   node scripts/smoke-test.js --skip-models         # Skip model download tests
+ *   node scripts/smoke-test.js --mode deferred       # Only 'init --skip-models'
+ *   node scripts/smoke-test.js --mode full           # Only a plain 'init' (downloads models)
+ *   node scripts/smoke-test.js --skip-models         # Skip the model download tests
  */
 
 import { execFileSync } from 'node:child_process';
@@ -25,8 +26,8 @@ const CLI = join(PACKAGE_ROOT, 'core', 'cli.js');
 
 const args = process.argv.slice(2);
 const skipModels = args.includes('--skip-models');
-const profileFilter = (() => {
-  const idx = args.indexOf('--profile');
+const modeFilter = (() => {
+  const idx = args.indexOf('--mode');
   return idx >= 0 ? args[idx + 1] : null;
 })();
 
@@ -220,44 +221,49 @@ writeFileSync(join(tempDir, 'package.json'), '{"name":"smoke-test"}');
 
 check('sweet-search init --help', () => {
   const output = runCli(['init', '--help'], tempDir);
-  assert(output.includes('--profile'), 'Missing --profile in init help');
+  assert(output.includes('--skip-models'), 'Missing --skip-models in init help');
 });
 
 // ---------------------------------------------------------------------------
-// 4. Init profiles
+// 4. Init modes: 'deferred' (init --skip-models) and 'full' (a plain init)
 // ---------------------------------------------------------------------------
 
-const profiles = profileFilter ? [profileFilter] : ['core', 'full'];
+const MODE_ARGS = { deferred: ['init', '--skip-models'], full: ['init'] };
+const modes = modeFilter ? [modeFilter] : ['deferred', 'full'];
 
-for (const profile of profiles) {
-  console.log(`\n--- Init Profile: ${profile} ---`);
+for (const mode of modes) {
+  console.log(`\n--- Init mode: ${mode} ---`);
+  const initArgs = MODE_ARGS[mode];
+  if (!initArgs) {
+    console.error(`Unknown --mode "${mode}". Valid modes: ${Object.keys(MODE_ARGS).join(', ')}`);
+    process.exit(2);
+  }
 
-  const profileDir = mkdtempSync(join(tmpdir(), `ss-smoke-${profile}-`));
-  writeFileSync(join(profileDir, 'package.json'), '{"name":"smoke-test"}');
+  const modeDir = mkdtempSync(join(tmpdir(), `ss-smoke-${mode}-`));
+  writeFileSync(join(modeDir, 'package.json'), '{"name":"smoke-test"}');
 
-  if (profile === 'full' && skipModels) {
+  if (mode === 'full' && skipModels) {
     console.log('  SKIP  (--skip-models)');
     continue;
   }
 
-  await checkAsync(`init --profile ${profile}`, async () => {
-    const { stdout, exitCode } = runCliMayFail(['init', '--profile', profile], profileDir);
+  await checkAsync(initArgs.join(' '), async () => {
+    const { stdout, exitCode } = runCliMayFail(initArgs, modeDir);
     assert(exitCode === 0, `Exit code ${exitCode}. Output: ${stdout}`);
     assert(stdout.includes('Sweet Search init complete'), 'Missing completion message');
   });
 
-  check(`config.json exists (${profile})`, () => {
-    const configPath = join(profileDir, '.sweet-search', 'config.json');
+  check(`config.json exists (${mode})`, () => {
+    const configPath = join(modeDir, '.sweet-search', 'config.json');
     assert(existsSync(configPath), 'config.json not created');
   });
 
-  check(`config.json content (${profile})`, () => {
-    const configPath = join(profileDir, '.sweet-search', 'config.json');
+  check(`config.json content (${mode})`, () => {
+    const configPath = join(modeDir, '.sweet-search', 'config.json');
     const config = JSON.parse(readFileSync(configPath, 'utf8'));
     assert(config.version === 1, `Bad config version: ${config.version}`);
-    assert(config.profile === profile, `Bad profile: ${config.profile}`);
 
-    if (profile === 'full') {
+    if (mode === 'full') {
       assert(config.runtime.allowRuntimeModelDownload === false, 'Runtime downloads should be disabled for full');
       // Model count is hardware-conditional since commit d282bb0 ("use ORT CPU
       // without accelerators"): a NO-ACCELERATOR host (no CoreML/CUDA/Metal —
@@ -274,17 +280,17 @@ for (const profile of profiles) {
         `Expected ≥3 core models, got ${Object.keys(config.models).length}`,
       );
     } else {
-      assert(config.runtime.allowRuntimeModelDownload === true, 'Runtime downloads should be enabled for core');
+      assert(config.runtime.allowRuntimeModelDownload === true, 'Runtime downloads should be enabled for --skip-models');
     }
   });
 
-  check(`idempotent re-run (${profile})`, () => {
-    const { exitCode } = runCliMayFail(['init', '--profile', profile], profileDir);
+  check(`idempotent re-run (${mode})`, () => {
+    const { exitCode } = runCliMayFail(initArgs, modeDir);
     assert(exitCode === 0, `Re-run failed with exit code ${exitCode}`);
   });
 
   // Cleanup
-  rmSync(profileDir, { recursive: true, force: true });
+  rmSync(modeDir, { recursive: true, force: true });
 }
 
 // ---------------------------------------------------------------------------
@@ -391,7 +397,7 @@ check('allowRuntimeModelDownload reads from init config', () => {
   writeFileSync(join(bridgeDir, 'package.json'), '{"name":"bridge-test"}');
   mkdirSync(join(bridgeDir, '.sweet-search'), { recursive: true });
   writeFileSync(join(bridgeDir, '.sweet-search', 'config.json'), JSON.stringify({
-    version: 1, profile: 'full',
+    version: 1,
     runtime: { allowRuntimeModelDownload: false },
   }));
 

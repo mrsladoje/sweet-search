@@ -203,7 +203,7 @@ print('OK')
 
 /**
  * Source safetensors are required — the Python trace script reads
- * them directly. If the user hasn't run `sweet-search init --profile full`
+ * them directly. If the user hasn't run `sweet-search init`
  * yet, these won't exist. Report clearly.
  */
 function checkSourceSafetensors() {
@@ -217,7 +217,7 @@ function checkSourceSafetensors() {
   if (missing.length > 0) {
     return {
       ok: false,
-      error: `Source safetensors missing:\n  - ${missing.join('\n  - ')}\n  Run \`sweet-search init --profile full\` first to fetch them.`,
+      error: `Source safetensors missing:\n  - ${missing.join('\n  - ')}\n  Run \`sweet-search init\` first to fetch them.`,
     };
   }
   return { ok: true };

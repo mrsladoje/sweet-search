@@ -51,7 +51,7 @@ function runCli(cwd, args) {
 }
 
 function initRepo(root) {
-  const r = runCli(root, ['init', '--profile=core', '--skip-prewarm-hook', '--skip-cuda']);
+  const r = runCli(root, ['init', '--skip-models', '--skip-prewarm-hook', '--skip-cuda']);
   expect(r.code, r.out).toBe(0);
 }
 

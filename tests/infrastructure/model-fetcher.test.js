@@ -170,3 +170,44 @@ describe('model-fetcher', () => {
     });
   });
 });
+
+describe('model cache write errors', () => {
+  it('turns an unwritable cache into a message that names the fix', async () => {
+    const { modelCacheWriteError } = await import('../../core/infrastructure/model-fetcher.js');
+    const cause = Object.assign(new Error("EPERM: operation not permitted, mkdir '/x'"), { code: 'EPERM' });
+    const err = modelCacheWriteError(cause, '/home/u/.cache/sweet-search/models');
+    expect(err.message).toMatch(/Cannot write the model cache at \/home\/u\/\.cache\/sweet-search\/models \(EPERM\)/);
+    expect(err.message).toMatch(/SWEET_SEARCH_MODEL_CACHE/);
+    expect(err.code).toBe('EPERM');
+    expect(err.cause).toBe(cause);
+  });
+
+  it('passes other errors through unchanged', async () => {
+    const { modelCacheWriteError } = await import('../../core/infrastructure/model-fetcher.js');
+    const other = Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+    expect(modelCacheWriteError(other, '/c')).toBe(other);
+  });
+});
+
+describe('ORT graph cache directory', () => {
+  it('falls back to the temp dir when ~/.cache cannot be written', async () => {
+    const { getOrtGraphCacheDir, _resetOrtGraphCacheDir } = await import('../../core/infrastructure/onnx-session-utils.js');
+    _resetOrtGraphCacheDir();
+    const made = [];
+    const mkdir = (dir) => {
+      if (dir.startsWith('/home/u')) throw Object.assign(new Error('denied'), { code: 'EPERM' });
+      made.push(dir);
+    };
+    expect(getOrtGraphCacheDir({ homeDir: '/home/u', tmpDir: '/tmp/x', mkdir })).toBe('/tmp/x/sweet-search-cache');
+    expect(made).toEqual(['/tmp/x/sweet-search-cache']);
+    _resetOrtGraphCacheDir();
+  });
+
+  it('rethrows errors that are not about permissions', async () => {
+    const { getOrtGraphCacheDir, _resetOrtGraphCacheDir } = await import('../../core/infrastructure/onnx-session-utils.js');
+    _resetOrtGraphCacheDir();
+    const mkdir = () => { throw Object.assign(new Error('disk full'), { code: 'ENOSPC' }); };
+    expect(() => getOrtGraphCacheDir({ homeDir: '/home/u', tmpDir: '/tmp/x', mkdir })).toThrow('disk full');
+    _resetOrtGraphCacheDir();
+  });
+});

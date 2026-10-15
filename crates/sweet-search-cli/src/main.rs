@@ -1375,19 +1375,11 @@ fn find_socket_path_with(
     }
 }
 
-fn find_socket() -> Option<String> {
-    find_socket_for(&resolve_project_root())
-}
-
 fn find_socket_for(project_root: &Path) -> Option<String> {
     let primary = socket_path_for(project_root);
     find_socket_path_with(&primary, &|p| p.exists(), &|p| {
         UnixStream::connect(p).is_ok()
     })
-}
-
-fn do_request(socket_path: &str, path: &str) -> io::Result<()> {
-    do_request_with_status(socket_path, path).map(|_| ())
 }
 
 fn do_request_with_status(socket_path: &str, path: &str) -> io::Result<u16> {
@@ -1441,12 +1433,6 @@ fn parse_http_status(headers: &[u8]) -> Option<u16> {
     let mut parts = first.split_whitespace();
     let _http = parts.next()?;
     parts.next()?.parse().ok()
-}
-
-/// Auto-start the Node server and wait for the socket to appear.
-/// Matches ss.sh lines 19-25: spawn in background, poll 100ms intervals, max 5s.
-fn auto_start_server() -> Option<String> {
-    auto_start_server_for(&resolve_project_root(), false)
 }
 
 /// JS heap ceiling of the daemon, in MiB: a quarter of the memory limit, never below V8's
@@ -1506,69 +1492,378 @@ fn physical_memory_bytes() -> u64 {
     pages as u64 * page_size as u64
 }
 
-/// `quiet`: print nothing on failure. The ss-* client then runs the tool in-process, and
-/// a diagnostic on stderr would reach the agent next to a good answer.
-fn auto_start_server_for(project_root: &Path, quiet: bool) -> Option<String> {
-    // Find the core/start-server.js relative to the binary or cwd
-    let server_script = if quiet {
-        find_package_file(&Path::new("core").join("start-server.js"))
-    } else {
-        find_server_script()
-    };
-    let script = match &server_script {
-        // find_server_script() prints a detailed "tried these locations"
-        // diagnostic on failure, so we just bail here.
-        Some(s) => s.as_str(),
-        None => return None,
-    };
+/// The daemon's log, beside the index: `.sweet-search/daemon.log`. None before the project
+/// has a `.sweet-search/` directory (nothing indexed yet).
+fn daemon_log_path(project_root: &Path) -> Option<PathBuf> {
+    let dir = project_root.join(".sweet-search");
+    dir.is_dir().then(|| dir.join("daemon.log"))
+}
 
-    // Spawn server in background. Inherit env (so SWEET_SEARCH_SOCKET_PATH passes
-    // through) and pin SWEET_SEARCH_PROJECT_ROOT to our canonical root so the JS
-    // server derives the SAME per-project socket we'll connect to, and the
-    // maintainer targets the right project (C3 + canonical /tmp vs /private/tmp).
-    let spawn_result = Command::new(node_for(Path::new(script)))
-        .arg(format!(
-            "--max-old-space-size={}",
-            daemon_heap_mb(memory_limit_bytes())
-        ))
-        .arg(script)
-        .arg("--serve")
-        .env("SWEET_SEARCH_PROJECT_ROOT", project_root)
-        // The daemon outlives this call; it must not carry the call's start time.
-        .env_remove(agent_tools::CALL_STARTED_ENV)
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn();
-    if let Err(e) = spawn_result {
-        if !quiet {
-            let a = ansi(incidental_color());
-            eprintln!("{}Error:{} Failed to start server: {e}", a.fa, a.r);
-        }
-        return None;
+/// Above this size the log starts over at the next daemon start.
+const DAEMON_LOG_MAX_BYTES: u64 = 1024 * 1024;
+
+/// Opens the daemon log for appending. Append mode, because a second daemon started at the
+/// same moment writes into the same file and then exits; truncation would leave holes in
+/// the first one's output.
+fn open_daemon_log(project_root: &Path) -> Option<fs::File> {
+    let path = daemon_log_path(project_root)?;
+    if fs::metadata(&path).is_ok_and(|m| m.len() > DAEMON_LOG_MAX_BYTES) {
+        let _ = fs::remove_file(&path);
     }
+    let mut file = fs::OpenOptions::new().create(true).append(true).open(&path).ok()?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
+    let _ = writeln!(file, "--- daemon start (unix time {now})");
+    Some(file)
+}
 
-    // Poll for socket (100ms intervals): 5s for the human CLI; 30s for an ss-* call. The
-    // daemon binds its socket before it loads the indexes, so 30 s is ample; ss-search's
-    // 90 s loading budget (tools.js) also has to cover the daemon route's wait after this.
-    let attempts = if quiet { 300 } else { 50 };
-    for _ in 0..attempts {
+/// The last `max_lines` lines of the daemon log, for a start-up failure message.
+fn daemon_log_tail(project_root: &Path, max_lines: usize) -> Vec<String> {
+    let Some(text) = daemon_log_path(project_root).and_then(|p| fs::read_to_string(p).ok()) else {
+        return Vec::new();
+    };
+    // Only the latest start: earlier starts already ended one way or another.
+    let latest = text.rsplit("--- daemon start").next().unwrap_or("");
+    let lines: Vec<&str> = latest.lines().skip(1).filter(|l| !l.trim().is_empty()).collect();
+    lines[lines.len().saturating_sub(max_lines)..].iter().map(|l| l.to_string()).collect()
+}
+
+/// Starts the search daemon for `project_root` from `script` (core/start-server.js).
+///
+/// The daemon gets its own session (setsid), as the JS spawners do with `detached: true`.
+/// Without it the daemon stays in the caller's process group, and a harness that ends a
+/// shell command by signalling its process group (Codex does) stops the daemon with the
+/// command. stdout and stderr go to `.sweet-search/daemon.log`, so a daemon that fails at
+/// start leaves its reason behind.
+fn spawn_daemon(project_root: &Path, script: &str) -> io::Result<process::Child> {
+    use std::os::unix::process::CommandExt;
+    let (out, err) = match open_daemon_log(project_root) {
+        Some(file) => match file.try_clone() {
+            Ok(clone) => (Stdio::from(file), Stdio::from(clone)),
+            Err(_) => (Stdio::null(), Stdio::null()),
+        },
+        None => (Stdio::null(), Stdio::null()),
+    };
+    let mut cmd = Command::new(node_for(Path::new(script)));
+    cmd.arg(format!(
+        "--max-old-space-size={}",
+        daemon_heap_mb(memory_limit_bytes())
+    ))
+    .arg(script)
+    .arg("--serve")
+    // Pin the root so the JS server derives the SAME per-project socket we connect to,
+    // and the maintainer targets the right project (C3 + canonical /tmp vs /private/tmp).
+    .env("SWEET_SEARCH_PROJECT_ROOT", project_root)
+    // The daemon outlives this call; it must not carry the call's start time.
+    .env_remove(agent_tools::CALL_STARTED_ENV)
+    .current_dir(project_root)
+    .stdin(Stdio::null())
+    .stdout(out)
+    .stderr(err);
+    // SAFETY: setsid is async-signal-safe and touches no memory of the parent.
+    unsafe {
+        cmd.pre_exec(|| {
+            libc::setsid();
+            Ok(())
+        });
+    }
+    cmd.spawn()
+}
+
+/// Starts the daemon and waits for its socket. For the ss-* client (agent_tools.rs), which
+/// prints nothing on failure (the human CLI waits through `ready_server`): it then runs the tool in-process, and a diagnostic on stderr
+/// would reach the agent next to a good answer. 30 s: the daemon binds its socket before it
+/// loads the indexes, and ss-search's 90 s loading budget (tools.js) also has to cover the
+/// daemon route's wait after this.
+fn auto_start_server_for(project_root: &Path) -> Option<String> {
+    let script = find_package_file(&Path::new("core").join("start-server.js"))?;
+    let mut child = spawn_daemon(project_root, &script).ok()?;
+    for _ in 0..300 {
         thread::sleep(Duration::from_millis(100));
         if let Some(path) = find_socket_for(project_root) {
             return Some(path);
         }
+        if matches!(child.try_wait(), Ok(Some(_))) {
+            // Exited: another daemon won the socket race (it is found above on the next
+            // poll), or start-up failed.
+            return find_socket_for(project_root);
+        }
     }
+    None
+}
 
-    if quiet {
-        return None;
+/// What the daemon's /health reports.
+#[derive(Debug, PartialEq)]
+enum Health {
+    Ready { pid: Option<u64> },
+    /// Bound its socket, still loading the indexes (or too busy to answer the probe).
+    Starting,
+    /// Start-up failed; the daemon stays resident with the reason until it is replaced.
+    Failed { pid: Option<u64>, error: String },
+    /// No process accepts connections on the socket.
+    Gone,
+}
+
+fn parse_health(body: &[u8]) -> Health {
+    let Ok(v) = serde_json::from_slice::<serde_json::Value>(body) else {
+        return Health::Starting;
+    };
+    let pid = v.get("pid").and_then(|p| p.as_u64());
+    match v.get("status").and_then(|s| s.as_str()) {
+        Some("ready") => Health::Ready { pid },
+        Some("failed") => Health::Failed {
+            pid,
+            error: v
+                .pointer("/init/error")
+                .and_then(|e| e.as_str())
+                .unwrap_or("unknown error")
+                .to_string(),
+        },
+        _ if v.get("warm") == Some(&serde_json::Value::Bool(true)) => Health::Ready { pid },
+        _ => Health::Starting,
+    }
+}
+
+fn probe_health(socket: &str) -> (Health, Option<serde_json::Value>) {
+    match http_transport::get(socket, "/health", Duration::from_secs(2)) {
+        Ok((200, body)) => (parse_health(&body), serde_json::from_slice(&body).ok()),
+        // A reply with another status, or a timeout: the process is alive but busy.
+        Ok(_) => (Health::Starting, None),
+        Err(e)
+            if matches!(
+                e.kind(),
+                io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused
+            ) =>
+        {
+            (Health::Gone, None)
+        }
+        Err(_) => (Health::Starting, None),
+    }
+}
+
+/// How long the CLI waits for a daemon to load its indexes before it gives up. A large
+/// index loads in tens of seconds; this is a backstop, not an expected wait.
+const READY_BUDGET: Duration = Duration::from_secs(120);
+
+/// Prints a start-up failure with the daemon's own last log lines and the next step, and
+/// exits 1.
+fn exit_daemon_failure(project_root: &Path, headline: &str) -> ! {
+    let a = ansi(incidental_color());
+    eprintln!("{}Error:{} {headline}", a.fa, a.r);
+    let tail = daemon_log_tail(project_root, 12);
+    if !tail.is_empty() {
+        eprintln!("Last lines of the server log:");
+        for line in &tail {
+            eprintln!("  {line}");
+        }
+    }
+    if let Some(log) = daemon_log_path(project_root) {
+        eprintln!("Full log: {}", log.display());
+    }
+    eprintln!("Check the setup: sweet-search status");
+    process::exit(1);
+}
+
+/// The socket of this project's daemon, ready to answer queries. Starts a daemon when none
+/// runs and waits while it loads its indexes. A daemon whose start-up failed is replaced
+/// once (the new daemon's start-up guard stops the failed one), because the cause may be
+/// gone: an index built after the failure, a model downloaded since. Exits with a message
+/// that names the next step when no ready daemon can be had.
+fn ready_server(project_root: &Path) -> String {
+    let socket = socket_path_for(project_root);
+    let deadline = std::time::Instant::now() + READY_BUDGET;
+    let mut child: Option<process::Child> = None;
+    // pid of a failed daemon we replaced: it reports `failed` until it has shut down.
+    let mut replaced_pid: Option<Option<u64>> = None;
+    let mut noted = false;
+    let start = |child: &mut Option<process::Child>| {
+        let Some(script) = find_server_script() else { process::exit(1) };
+        match spawn_daemon(project_root, &script) {
+            Ok(c) => *child = Some(c),
+            Err(e) => {
+                let a = ansi(incidental_color());
+                eprintln!("{}Error:{} Cannot start the search server: {e}", a.fa, a.r);
+                process::exit(1);
+            }
+        }
+    };
+    loop {
+        let (health, _) = probe_health(&socket);
+        match health {
+            Health::Ready { .. } => return socket,
+            Health::Starting => {}
+            Health::Failed { pid, error } => match replaced_pid {
+                None => {
+                    replaced_pid = Some(pid);
+                    start(&mut child);
+                }
+                Some(old) if old == pid => {} // the old daemon is still shutting down
+                Some(_) => exit_daemon_failure(
+                    project_root,
+                    &format!("The search server could not load this project: {error}"),
+                ),
+            },
+            Health::Gone => match child.as_mut().map(|c| c.try_wait()) {
+                None => start(&mut child),
+                Some(Ok(Some(status))) => {
+                    // Our daemon exited. When another daemon won the socket race, the next
+                    // probe finds it; give it one more look before calling this a failure.
+                    thread::sleep(Duration::from_millis(200));
+                    if probe_health(&socket).0 == Health::Gone {
+                        exit_daemon_failure(
+                            project_root,
+                            &format!("The search server exited during start-up ({status})."),
+                        );
+                    }
+                }
+                Some(_) => {} // still running; it has not bound its socket yet
+            },
+        }
+        if std::time::Instant::now() >= deadline {
+            exit_daemon_failure(
+                project_root,
+                &format!(
+                    "The search server did not become ready within {} s.",
+                    READY_BUDGET.as_secs()
+                ),
+            );
+        }
+        if !noted {
+            let a = ansi(incidental_color());
+            eprintln!(
+                "{}Starting the search server and loading the index...{}",
+                a.fg, a.r
+            );
+            noted = true;
+        }
+        thread::sleep(Duration::from_millis(150));
+    }
+}
+
+fn print_daemon_usage(prog: &str) {
+    println!("Usage: {prog} daemon <start|status|stop|restart> [--json]");
+    println!();
+    println!("The search server keeps the index in memory for this project. The first search");
+    println!("starts it in the background; these commands manage it directly.");
+    println!();
+    println!("  start     Start the server in the background and wait until it is ready.");
+    println!("  status    Show whether it runs, its process id and any start-up error.");
+    println!("            Exit code 0 means ready; 1 means not running, starting or failed.");
+    println!("  stop      Stop the server. Succeeds when none runs.");
+    println!("  restart   Stop it, then start it. Use it after a failed start-up.");
+    println!("  --json    status only: print the server's raw health report.");
+    println!();
+    println!("Server log: .sweet-search/daemon.log in the project.");
+}
+
+/// Stops this project's daemon and waits up to 10 s for its socket to close. Succeeds when
+/// none runs: the goal state is already reached.
+fn daemon_stop(project_root: &Path) -> bool {
+    let socket = socket_path_for(project_root);
+    if probe_health(&socket).0 == Health::Gone {
+        return false;
+    }
+    let _ = http_transport::get(&socket, "/stop", Duration::from_secs(5));
+    for _ in 0..100 {
+        if probe_health(&socket).0 == Health::Gone {
+            return true;
+        }
+        thread::sleep(Duration::from_millis(100));
     }
     let a = ansi(incidental_color());
-    eprintln!(
-        "{}Error:{} Server did not start within 5 seconds",
-        a.fa, a.r
-    );
-    eprintln!("Start server manually: node core/start-server.js");
-    None
+    eprintln!("{}Error:{} The search server did not stop within 10 s.", a.fa, a.r);
+    process::exit(1);
+}
+
+fn print_ready(socket: &str) {
+    let pid = match probe_health(socket).0 {
+        Health::Ready { pid: Some(pid) } => format!(" (process id {pid})"),
+        _ => String::new(),
+    };
+    println!("The search server is ready{pid}.");
+}
+
+/// `sweet-search daemon <start|status|stop|restart>`. Never returns.
+fn run_daemon_command(prog: &str, args: &[String]) -> ! {
+    let json = args.iter().any(|a| a == "--json");
+    let sub = args.iter().find(|a| !a.starts_with('-')).map(String::as_str);
+    let root = resolve_project_root();
+    match sub {
+        Some("start") => {
+            let socket = ready_server(&root);
+            print_ready(&socket);
+        }
+        Some("restart") => {
+            daemon_stop(&root);
+            let socket = ready_server(&root);
+            print_ready(&socket);
+        }
+        Some("stop") => {
+            if daemon_stop(&root) {
+                println!("Stopped the search server.");
+            } else {
+                println!("No search server runs for this project.");
+            }
+        }
+        Some("status") => {
+            let socket = socket_path_for(&root);
+            let (health, report) = probe_health(&socket);
+            if json {
+                let report = report.unwrap_or_else(|| {
+                    let status = if health == Health::Gone { "not-running" } else { "starting" };
+                    serde_json::json!({ "status": status })
+                });
+                println!("{report}");
+            } else {
+                let state = match &health {
+                    Health::Ready { .. } => "ready",
+                    Health::Starting => "starting (loading the index)",
+                    Health::Failed { .. } => "failed",
+                    Health::Gone => "not running",
+                };
+                println!("Search server: {state}");
+                println!("  Project: {}", root.display());
+                if let Some(r) = &report {
+                    if let Some(pid) = r.get("pid").and_then(|v| v.as_u64()) {
+                        println!("  Process id: {pid}");
+                    }
+                    if let Some(up) = r.get("uptimeSec").and_then(|v| v.as_u64()) {
+                        println!("  Running for: {up} s");
+                    }
+                    if let Some(ms) = r.pointer("/init/elapsedMs").and_then(|v| v.as_u64()) {
+                        println!("  Index load time: {ms} ms");
+                    }
+                }
+                println!("  Socket: {socket}");
+                if let Some(log) = daemon_log_path(&root) {
+                    println!("  Log: {}", log.display());
+                }
+                match &health {
+                    Health::Failed { error, .. } => {
+                        println!("  Error: {error}");
+                        println!("Next step: fix the error, then run: {prog} daemon restart");
+                    }
+                    Health::Gone => println!(
+                        "It starts on the first search. To start it now: {prog} daemon start"
+                    ),
+                    _ => {}
+                }
+            }
+            process::exit(if matches!(health, Health::Ready { .. }) { 0 } else { 1 });
+        }
+        Some("help") => print_daemon_usage(prog),
+        None if args.iter().any(|a| a == "-h" || a == "--help") => print_daemon_usage(prog),
+        _ => {
+            if let Some(other) = sub {
+                let a = ansi(incidental_color());
+                eprintln!("{}Error:{} Unknown daemon command '{other}'.", a.fa, a.r);
+            }
+            print_daemon_usage(prog);
+            process::exit(2);
+        }
+    }
+    process::exit(0);
 }
 
 /// Pure resolver for `core/start-server.js`. Given the cwd, the binary path, an
@@ -1850,6 +2145,10 @@ fn main() {
     // Color for messages emitted before the full policy is known (parse errors).
     let ea = ansi(incidental_color());
 
+    if cli_args.first().map(|s| s.as_str()) == Some("daemon") {
+        run_daemon_command(&prog, &cli_args[1..]);
+    }
+
     if cli_args.first().map(|s| s.as_str()) == Some("read-semantic") {
         let mut rs_opts = match parse_read_semantic_args(&cli_args[1..]) {
             Ok(o) => o,
@@ -1880,13 +2179,7 @@ fn main() {
         };
 
         let policy = resolve_output_policy(rs_opts.json, rs_opts.plain, rs_opts.no_banner);
-        let socket = match find_socket() {
-            Some(s) => s,
-            None => match auto_start_server() {
-                Some(s) => s,
-                None => process::exit(1),
-            },
-        };
+        let socket = ready_server(&resolve_project_root());
         if !rs_opts.json {
             let detail = format!("{file} · \"{query}\"");
             emit_tool_identity("read-semantic", &detail, &policy);
@@ -1924,13 +2217,7 @@ fn main() {
             }
         };
         let policy = resolve_output_policy(t_opts.json, t_opts.plain, t_opts.no_banner);
-        let socket = match find_socket() {
-            Some(s) => s,
-            None => match auto_start_server() {
-                Some(s) => s,
-                None => process::exit(1),
-            },
-        };
+        let socket = ready_server(&resolve_project_root());
         if !t_opts.json {
             emit_tool_identity("trace", symbol, &policy);
         }
@@ -1970,13 +2257,7 @@ fn main() {
         }
         let json = r_opts.format == "json";
         let policy = resolve_output_policy(json, r_opts.plain, r_opts.no_banner);
-        let socket = match find_socket() {
-            Some(s) => s,
-            None => match auto_start_server() {
-                Some(s) => s,
-                None => process::exit(1),
-            },
-        };
+        let socket = ready_server(&resolve_project_root());
         if !json {
             let detail = if r_opts.paths.len() == 1 {
                 r_opts.paths[0].clone()
@@ -2020,22 +2301,7 @@ fn main() {
     }
 
     if opts.stop {
-        let socket = match find_socket() {
-            Some(s) => s,
-            None => {
-                eprintln!(
-                    "{}Error:{} No server running (socket not found)",
-                    ea.fa, ea.r
-                );
-                process::exit(1);
-            }
-        };
-        println!("{}Stopping server...{}", sa.fa, sa.r);
-        if let Err(e) = do_request(&socket, "/stop") {
-            eprintln!("{}Error:{} {e}", ea.fa, ea.r);
-            process::exit(1);
-        }
-        return;
+        run_daemon_command(&prog, &["stop".to_string()]);
     }
 
     // grep run from a project subdirectory searches that subdirectory, as grep -r / rg do.
@@ -2076,13 +2342,7 @@ fn main() {
     }
 
     // Find or start server
-    let socket = match find_socket() {
-        Some(s) => s,
-        None => match auto_start_server() {
-            Some(s) => s,
-            None => process::exit(1),
-        },
-    };
+    let socket = ready_server(&resolve_project_root());
 
     // Result body is colored / prefaced with the stats line only when it streams
     // to a real terminal; a captured pipe or /dev/tty side-channel keeps the body
@@ -2109,6 +2369,37 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_health_reads_status_pid_and_error() {
+        assert_eq!(
+            parse_health(br#"{"status":"ready","warm":true,"pid":42}"#),
+            Health::Ready { pid: Some(42) }
+        );
+        assert_eq!(parse_health(br#"{"status":"starting","warm":false}"#), Health::Starting);
+        assert_eq!(
+            parse_health(br#"{"status":"failed","pid":7,"init":{"error":"no index"}}"#),
+            Health::Failed { pid: Some(7), error: "no index".into() }
+        );
+        // A daemon from before the status field: warm alone means ready.
+        assert_eq!(parse_health(br#"{"warm":true}"#), Health::Ready { pid: None });
+        assert_eq!(parse_health(b"not json"), Health::Starting);
+    }
+
+    #[test]
+    fn daemon_log_tail_keeps_only_the_latest_start() {
+        let dir = env::temp_dir().join(format!("ss-log-tail-{}", process::id()));
+        fs::create_dir_all(dir.join(".sweet-search")).unwrap();
+        fs::write(
+            dir.join(".sweet-search").join("daemon.log"),
+            "--- daemon start (unix time 1)\nold failure\n--- daemon start (unix time 2)\nline a\n\nline b\nline c\n",
+        )
+        .unwrap();
+        assert_eq!(daemon_log_tail(&dir, 2), vec!["line b", "line c"]);
+        assert_eq!(daemon_log_tail(&dir, 10), vec!["line a", "line b", "line c"]);
+        fs::remove_dir_all(&dir).unwrap();
+        assert!(daemon_log_tail(&dir, 10).is_empty());
+    }
     use std::collections::HashSet;
 
     /// Build an existence predicate that returns true only for the given paths.

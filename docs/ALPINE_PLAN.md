@@ -140,8 +140,8 @@ Add CI verification that proves the native path is active on Alpine:
 - `resolveNativeBinary()` returns non-null
 - addon can be `require()`d successfully
 - `sweet-search --help` works
-- `scripts/smoke-test.js --profile core`
-- `scripts/smoke-test.js --profile full`
+- `scripts/smoke-test.js --mode deferred`
+- `scripts/smoke-test.js --mode full`
 
 ## 9. Update docs
 

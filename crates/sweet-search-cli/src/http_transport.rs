@@ -202,6 +202,19 @@ fn read_close_delimited_body<R: Read>(input: &mut R, initial: Vec<u8>) -> io::Re
     }
 }
 
+/// GET `path` and read the whole reply. `timeout` bounds each read and write: a daemon busy
+/// loading its indexes answers a probe late or not at all, and the caller decides what a
+/// timeout means.
+pub(super) fn get(socket_path: &str, path: &str, timeout: Duration) -> io::Result<(u16, Vec<u8>)> {
+    validate_socket_path(socket_path)?;
+    let mut stream = UnixStream::connect(socket_path)?;
+    stream.set_read_timeout(Some(timeout))?;
+    stream.set_write_timeout(Some(timeout))?;
+    let headers = format!("GET {path} HTTP/1.0\r\nHost: l\r\nConnection: close\r\n\r\n");
+    stream.write_all(headers.as_bytes())?;
+    read_http_response(&mut stream)
+}
+
 pub(super) fn post_json(socket_path: &str, path: &str, body: &[u8]) -> io::Result<(u16, Vec<u8>)> {
     validate_socket_path(socket_path)?;
     let mut stream = UnixStream::connect(socket_path)?;

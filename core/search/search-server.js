@@ -2093,12 +2093,22 @@ export async function autoSpawnServer({ quiet = false } = {}) {
   const { CALL_STARTED_ENV } = await import('../agent-tools/tools.js');
   const env = { ...process.env };
   delete env[CALL_STARTED_ENV];
-  const child = spawn(process.execPath, [...daemonNodeArgs(), sweetSearchPath, '--serve'], {
-    detached: true,
-    stdio: 'ignore',
-    cwd: path.dirname(__filename),
-    env,
-  });
+  // The daemon runs from the package directory, so it cannot find the project from its
+  // cwd: pin the caller's project root, as the native CLI does.
+  if (!env.SWEET_SEARCH_PROJECT_ROOT) env.SWEET_SEARCH_PROJECT_ROOT = resolveProjectRoot();
+  const { openDaemonLog, closeDaemonLog } = await import('./daemon-log.js');
+  const logFd = openDaemonLog(env.SWEET_SEARCH_PROJECT_ROOT);
+  let child;
+  try {
+    child = spawn(process.execPath, [...daemonNodeArgs(), sweetSearchPath, '--serve'], {
+      detached: true,
+      stdio: ['ignore', logFd, logFd],
+      cwd: path.dirname(__filename),
+      env,
+    });
+  } finally {
+    closeDaemonLog(logFd);
+  }
 
   child.unref();
   // Bench-only pid ledger (no-op unless SWEET_SEARCH_SPAWN_LEDGER_DIR is set):

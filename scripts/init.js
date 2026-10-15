@@ -3,11 +3,11 @@
 /**
  * Sweet Search init — idempotent setup command.
  *
- * Detects project root, resolves profile, verifies/downloads required assets,
- * generates .sweet-search/config.json, runs verification, and prints a report.
+ * Detects project root, verifies/downloads required assets, generates
+ * .sweet-search/config.json, runs verification, and prints a report.
  *
  * Usage:
- *   sweet-search init [--profile <core|full>] [--verify-deep] [--force] [--verbose]
+ *   sweet-search init [--skip-models] [--verify-deep] [--force] [--verbose]
  */
 
 import { copyFileSync, existsSync, mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
@@ -22,6 +22,7 @@ import {
   getPlatformInfo, resolveNativeAddon, resolveNativeBinary,
   detectHardwareCapability,
   getCoremlCascadeState, getCoremlCascadeReport, fetchCoremlCascade,
+  getCascadeSpec, resolveFamiliesToFetch,
   isDedupAvailable, getDedupLoadError, computeFingerprints, clusterFingerprints,
   DEDUP_CONFIG,
 } from '../core/infrastructure/index.js';
@@ -59,14 +60,15 @@ import { installOpencodeHarness, opencodeCacheKeyOffByEnv } from './install-open
 import { installToolEnforcement, removeToolEnforcement } from './install-tool-enforcement.js';
 import { isNativeInferenceAvailable } from '../core/infrastructure/native-inference.js';
 import { registerRepo } from './repo-registry.js';
-import { linkNativeAgentTools } from './link-native-tools.js';
+import { linkNativeAgentTools, INSTALL_NODE_FILE } from './link-native-tools.js';
 import { agentPathDirs, installUserShims, whichOnPath } from './user-shims.js';
 import { NATIVE_COMMANDS } from '../core/agent-tools/tools.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(__dirname, '..');
 
-const VALID_PROFILES = ['core', 'full'];
+// Every model in the registry belongs to the one install set, 'full'.
+const MODEL_SET = 'full';
 const DATA_DIR_NAME = '.sweet-search';
 
 // ---------------------------------------------------------------------------
@@ -75,7 +77,8 @@ const DATA_DIR_NAME = '.sweet-search';
 
 export function parseInitArgs(args) {
   const result = {
-    profile: null,
+    removedProfileFlag: false, // --profile was removed; validateInitArgs names the replacement
+    skipModels: false,         // --skip-models: download the models at the first index, not now
     verifyDeep: false,
     force: false,
     verbose: false,
@@ -128,9 +131,12 @@ export function parseInitArgs(args) {
     if (arg === '--help' || arg === '-h') {
       result.help = true;
     } else if (arg === '--profile' || arg === '-p') {
-      result.profile = args[++i] || null;
+      result.removedProfileFlag = true;
+      i++;
     } else if (arg.startsWith('--profile=')) {
-      result.profile = arg.split('=')[1];
+      result.removedProfileFlag = true;
+    } else if (arg === '--skip-models') {
+      result.skipModels = true;
     } else if (arg === '--li-model') {
       result.liModel = args[++i] || null;
     } else if (arg.startsWith('--li-model=')) {
@@ -275,6 +281,13 @@ export function parseInitArgs(args) {
  * and `--claude` contradicts `--no-claude`. Returns `{ ok, error }`.
  */
 export function validateInitArgs(parsed) {
+  if (parsed.removedProfileFlag) {
+    return {
+      ok: false,
+      error: '--profile was removed. init always sets up full search. '
+        + 'To download the models at the first index instead of now, pass --skip-models.',
+    };
+  }
   if (parsed.claude && parsed.explicitNoClaude) {
     return {
       ok: false,
@@ -660,22 +673,59 @@ export async function runInitWizard({ existingConfig, capability, recommendation
 }
 
 // ---------------------------------------------------------------------------
-// Profile resolution
+// Download size reporting
 // ---------------------------------------------------------------------------
 
-export function resolveProfile(cliProfile, existingConfig) {
-  if (cliProfile) {
-    if (!VALID_PROFILES.includes(cliProfile)) {
-      throw new Error(
-        `Unknown profile "${cliProfile}". Valid profiles: ${VALID_PROFILES.join(', ')}`
-      );
+export function formatDownloadSize(bytes) {
+  if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(1)} GB`;
+  return `${Math.round(bytes / 1e6)} MB`;
+}
+
+/**
+ * Total compressed bytes of the CoreML cascade tarballs that init will fetch, or null
+ * when the spec has no size data for them. Mirrors the family choice in fetchCoremlCascade.
+ */
+export function cascadeDownloadBytes(spec, liVariantKey) {
+  if (!spec) return null;
+  const keyOf = { embed: 'embed', li: 'li', 'li-edge': 'liEdge' };
+  let total = 0;
+  for (const family of resolveFamiliesToFetch('auto', liVariantKey)) {
+    for (const v of spec[keyOf[family]]?.variants ?? []) {
+      if (!v.tarballSizeBytes) return null;
+      total += v.tarballSizeBytes;
     }
-    return cliProfile;
   }
-  if (existingConfig?.profile && VALID_PROFILES.includes(existingConfig.profile)) {
-    return existingConfig.profile;
+  return total > 0 ? total : null;
+}
+
+/** Total bytes of registry files for these model keys that are not in the cache yet. */
+export function pendingModelBytes(modelKeys, force = false) {
+  let total = 0;
+  for (const key of modelKeys) {
+    const entry = getModelEntry(key);
+    if (!entry) continue;
+    const dir = getModelCacheDir(entry.hfId);
+    for (const file of entry.files) {
+      if (force || !existsSync(join(dir, file.path))) total += file.sizeBytes || 0;
+    }
   }
-  return 'full';
+  return total;
+}
+
+/**
+ * npm 11+ can skip install scripts. The postinstall step writes <package>/.install-node,
+ * so an installed package without it did not run postinstall. Null when the check does
+ * not apply (development checkout, unsupported platform).
+ */
+export function detectSkippedPostinstall(packageRoot, platform = process.platform, exists = existsSync) {
+  if (platform !== 'darwin' && platform !== 'linux') return null;
+  if (!packageRoot.split(/[\\/]/).includes('node_modules')) return null;
+  if (exists(join(packageRoot, INSTALL_NODE_FILE))) return null;
+  const global = /[\\/]lib[\\/]node_modules[\\/]sweet-search$/.test(packageRoot);
+  return {
+    global,
+    fix: `npm install ${global ? '-g ' : ''}sweet-search --allow-scripts=sweet-search,onnxruntime-node`,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -891,17 +941,19 @@ export async function downloadModelsForProfile(profile, options = {}) {
 
 function printReport(report) {
   const {
-    profile, maxsimTier, routerType, models, verification, runtimeDownloads,
+    skipModels, maxsimTier, routerType, models, verification, runtimeDownloads,
     capability, cascadeReport, dedupReport, prewarmHookReport, skillReport,
     liChoices, agentInstructionsReport, claudeRulesReport, claudeSystemPromptReport,
     toolEnforcementReport, mcpServerReport,
-    codexHarnessReport, opencodeHarnessReport, agentToolsReport,
+    codexHarnessReport, opencodeHarnessReport, agentToolsReport, projectRoot,
   } = report;
 
   console.log('');
   console.log('Sweet Search init complete');
   console.log('');
-  console.log(`  Profile:              ${profile}`);
+  if (skipModels) {
+    console.log('  Models:               not downloaded (--skip-models); the first index downloads them');
+  }
   if (capability?.brandString) {
     console.log(`  Hardware:             ${capability.brandString} (${capability.platform}-${capability.arch})`);
   } else {
@@ -944,7 +996,7 @@ function printReport(report) {
     );
   }
 
-  if (profile !== 'core') {
+  if (!skipModels) {
     for (const [key, info] of models) {
       const label = key.replace(/-/g, ' ');
       console.log(`  ${label}: ${info.status}`);
@@ -1038,6 +1090,22 @@ function printReport(report) {
   const totalCount = verification.checks.length;
   console.log(`  Verification:         ${verification.type}-pass (${passedCount}/${totalCount})`);
   console.log('');
+  console.log(`Next step: ${initNextStep(skipModels, projectRoot)}`);
+  console.log('');
+}
+
+/**
+ * The command to run after init. Init sets up models and agent files; it builds no
+ * index, and an agent that reads "init complete" as "ready to search" fails next.
+ */
+export function initNextStep(skipModels, projectRoot, exists = existsSync) {
+  const indexed = Boolean(projectRoot) && exists(join(projectRoot, '.sweet-search', 'codebase.db'));
+  if (indexed) {
+    return 'search with sweet-search "<query>". Run sweet-search index after large changes.';
+  }
+  return skipModels
+    ? 'sweet-search index (it downloads the models first, about 523 MB).'
+    : 'sweet-search index (builds the search index; then search with sweet-search "<query>").';
 }
 
 // ---------------------------------------------------------------------------
@@ -1466,7 +1534,12 @@ Harnesses (which coding agents init sets up):
   every selection.
 
 Options:
-  --profile <profile>       Install profile: core, full (default: full)
+  --skip-models             Download no models now. The first 'sweet-search
+                            index' downloads them instead (the same ~523 MB),
+                            so indexing still needs network access and a
+                            writable model cache. Also skips the CoreML
+                            cascade. Use it to defer the download (CI, tests),
+                            not to avoid it: there is no model-free search.
   --li-model <choice>       Late-interaction model: standard | edge | none.
                             Aliases: 'standard' = lateon-code (149M, 128d, accuracy
                             default), 'edge' = lateon-code-edge (17M, 48d, smaller +
@@ -1646,17 +1719,17 @@ Options:
   --verbose, -v             Enable verbose output
   --help, -h                Show this help
 
-Profiles:
-  core    Lightweight search setup (no models)
-  full    Full search with all models (~523 MB download + ~1.8 GB CoreML
-          cascade on M3+ Apple Silicon)
+Downloads:
+  init downloads all models (~523 MB) to ~/.cache/sweet-search/models
+  (SWEET_SEARCH_MODEL_CACHE picks another directory), plus the optional
+  CoreML cascade (~1.8 GB) on M3+ Apple Silicon.
 
 CoreML cascade (M3+ Apple Silicon only):
   A fast-path for NomicBERT embedding + ModernBERT late-interaction
   inference via Apple's Neural Engine. Gives ~18% faster full indexing
   on M3 Max vs the candle Metal baseline. Fetched automatically from
-  mrsladoje/sweet-search-coreml-cascade on HuggingFace as part of the
-  full profile. Non-eligible hardware (Intel Mac, Linux, M1/M2) never
+  mrsladoje/sweet-search-coreml-cascade on HuggingFace during init
+  (not with --skip-models or --skip-coreml-cascade). Non-eligible hardware (Intel Mac, Linux, M1/M2) never
   downloads the cascade. See docs/INIT_STRATEGY.md for the delivery
   strategy.
 
@@ -1672,8 +1745,8 @@ ss-* commands (ss-search, ss-grep, ss-find, ss-read, ss-semantic, ss-trace):
   no such directory on PATH, init names the fix instead.
 
 Examples:
-  sweet-search init                         # Full profile (default); CLI contact surface
-  sweet-search init --profile core          # Core profile (no model downloads)
+  sweet-search init                         # Full setup; CLI contact surface
+  sweet-search init --skip-models           # Download models at the first index, not now
   sweet-search init --force                 # Re-download all models
   sweet-search init --codex                 # Codex only
   sweet-search init --codex --opencode      # Codex and opencode
@@ -1726,10 +1799,9 @@ export async function runInit(args) {
     process.stderr.write(`[init] Data directory: ${dataDir}\n`);
   }
 
-  // 4. Resolve profile
+  // 4. Load the previous init's config (LI choices and harness records read it)
   const existingConfig = loadInitConfig(dataDir);
-  const profile = resolveProfile(parsed.profile, existingConfig);
-  process.stderr.write(`[init] Profile: ${profile}\n`);
+  const { skipModels } = parsed;
 
   // 4.5. Resolve LI policy (Phase 4 — `--li-model`, `--search-reranking`,
   //      `--wizard`). Done early so the model-fetch loop, cascade fetch,
@@ -1796,7 +1868,15 @@ export async function runInit(args) {
 
   // 6. Check native status
   const nativeStatus = checkNativeStatus();
+  const skippedPostinstall = detectSkippedPostinstall(PACKAGE_ROOT);
   const agentToolsReport = setUpAgentTools();
+  if (skippedPostinstall) {
+    process.stderr.write('[init] WARNING: npm did not run the sweet-search install scripts.\n');
+    process.stderr.write(agentToolsReport.status === 'native'
+      ? '[init]   Init linked the native ss-* tools itself.\n'
+      : '[init]   The native ss-* tools are not linked.\n');
+    process.stderr.write(`[init]   To run the install scripts, run: ${skippedPostinstall.fix}\n`);
+  }
   process.stderr.write(`[init] ss-* tools: ${agentToolsReport.detail}\n`);
   const maxsimTier = getMaxsimTier();
   const routerType = getRouterType();
@@ -1805,11 +1885,11 @@ export async function runInit(args) {
     process.stderr.write(`[init] Router type: ${routerType}\n`);
   }
 
-  // 7. Download models for profile (filtered by LI choice).
+  // 7. Download the models (filtered by LI choice), unless --skip-models.
   //    `liModel === 'none'` skips every lateon-* key; 'standard' skips edge
   //    variants; 'edge' skips standard variants. Saves disk + bandwidth on
   //    constrained installs.
-  const allModelKeys = getModelsForProfile(profile);
+  const allModelKeys = skipModels ? [] : getModelsForProfile(MODEL_SET);
   const liFilteredKeys = filterModelKeysForLiChoice(allModelKeys, liChoices.liModel);
   // CPU-only hosts (no Metal/CoreML/CUDA) skip native FP32 safetensors. Apply
   // the same filter to the keys handed to verification below, so we only verify
@@ -1830,7 +1910,7 @@ export async function runInit(args) {
       + `(indexing uses ORT INT8 CPU)\n`,
     );
   }
-  const skippedOptIns = getSkippedOptInModels(profile);
+  const skippedOptIns = getSkippedOptInModels(MODEL_SET);
   let modelResults = new Map();
 
   // Opt-in models (e.g. cross-encoder rerankers, disabled by default since
@@ -1847,8 +1927,11 @@ export async function runInit(args) {
   }
 
   if (modelKeys.length > 0) {
-    process.stderr.write(`[init] Downloading models for profile "${profile}"...\n`);
-    const downloadResult = await downloadModelsForProfile(profile, {
+    const pendingBytes = pendingModelBytes(modelKeys, parsed.force);
+    process.stderr.write(pendingBytes > 0
+      ? `[init] Downloading models (${formatDownloadSize(pendingBytes)} to download)...\n`
+      : '[init] Downloading models (all files already cached)...\n');
+    const downloadResult = await downloadModelsForProfile(MODEL_SET, {
       force: parsed.force,
       liModel: liChoices.liModel,
       hasAccelerator,
@@ -1865,7 +1948,7 @@ export async function runInit(args) {
 
       // Write partial config for diagnostics before exiting
       const partialConfig = buildConfig({
-        profile, maxsimTier, routerType, nativeStatus,
+        maxsimTier, routerType, nativeStatus,
         modelResults, verification: { type: 'none', timestamp: new Date().toISOString(), checks: [] },
         failed: true,
         liChoices,
@@ -1878,8 +1961,8 @@ export async function runInit(args) {
     const cached = downloadResult.totalCached;
     const downloaded = downloadResult.totalDownloaded;
     process.stderr.write(`[init] Models: ${cached} cached, ${downloaded} downloaded\n`);
-  } else {
-    process.stderr.write(`[init] No models required for profile "${profile}"\n`);
+  } else if (skipModels) {
+    process.stderr.write('[init] Models: not downloaded (--skip-models). The first sweet-search index downloads them.\n');
   }
 
   // 8. Resolve hardware capability + CoreML cascade state.
@@ -1911,10 +1994,10 @@ export async function runInit(args) {
   // standard or edge LI tarballs we'll never use. Skipping outright is
   // cleaner and saves ~600 MB.
   const skipCascadeForLiNone = liChoices.liModel === LI_MODEL_NONE;
-  if (skipCascadeForLiNone && !parsed.skipCoremlCascade && profile !== 'core' && parsed.verbose) {
+  if (skipCascadeForLiNone && !parsed.skipCoremlCascade && !skipModels && parsed.verbose) {
     process.stderr.write('[init]   liModel=none → skipping CoreML cascade fetch\n');
   }
-  if (!parsed.skipCoremlCascade && !skipCascadeForLiNone && profile !== 'core') {
+  if (!parsed.skipCoremlCascade && !skipCascadeForLiNone && !skipModels) {
     cascadeReport = getCoremlCascadeReport();
 
     if (cascadeReport.applicable && cascadeReport.status !== 'present') {
@@ -1937,7 +2020,11 @@ export async function runInit(args) {
         // download + checksum verification + tarball extraction
         // and never throws. Failures are reported but don't
         // abort init.
-        process.stderr.write('[init] Fetching CoreML variant cascade from HuggingFace...\n');
+        let cascadeBytes = null;
+        try { cascadeBytes = cascadeDownloadBytes(getCascadeSpec(), liChoices.liModel); } catch { /* no spec */ }
+        const cascadeSize = cascadeBytes ? formatDownloadSize(cascadeBytes) : '~1.8 GB';
+        process.stderr.write(`[init] Fetching CoreML variant cascade from HuggingFace (${cascadeSize} to download).\n`);
+        process.stderr.write('[init]   The cascade is optional. It only makes indexing faster. Pass --skip-coreml-cascade to skip it.\n');
         try {
           const fetchResult = await fetchCoremlCascade({
             force: parsed.force,
@@ -2002,11 +2089,13 @@ export async function runInit(args) {
   }
 
   // 9. Write init config (before verification so it's available for diagnostics)
-  const runtimeDownloads = profile === 'core' ? 'enabled' : 'disabled';
-  const allowRuntimeModelDownload = profile === 'core';
+  // --skip-models lets the first index fetch the models; a full init keeps
+  // query-time downloads off (init already fetched and verified them).
+  const runtimeDownloads = skipModels ? 'enabled' : 'disabled';
+  const allowRuntimeModelDownload = skipModels;
 
   const preVerifyConfig = buildConfig({
-    profile, maxsimTier, routerType, nativeStatus,
+    maxsimTier, routerType, nativeStatus,
     modelResults, allowRuntimeModelDownload,
     verification: { type: 'pending', timestamp: new Date().toISOString(), checks: [] },
     failed: false,
@@ -2020,7 +2109,6 @@ export async function runInit(args) {
   // 10. Run verification
   process.stderr.write(`[init] Running ${parsed.verifyDeep ? 'deep' : 'fast'} verification...\n`);
   const verification = await verifyRuntime({
-    profile,
     modelKeys,
     deep: parsed.verifyDeep,
     packageRoot: PACKAGE_ROOT,
@@ -2028,7 +2116,7 @@ export async function runInit(args) {
 
   // Update config with verification result
   const finalConfig = buildConfig({
-    profile, maxsimTier, routerType, nativeStatus,
+    maxsimTier, routerType, nativeStatus,
     modelResults, allowRuntimeModelDownload,
     verification,
     failed: false,
@@ -2384,7 +2472,8 @@ export async function runInit(args) {
 
   // 18. Print report
   printReport({
-    profile,
+    projectRoot,
+    skipModels,
     maxsimTier,
     routerType,
     models: modelResults,
@@ -2454,7 +2543,7 @@ function runCoremlCascadeBuild(options = {}) {
 // ---------------------------------------------------------------------------
 
 function buildConfig({
-  profile, maxsimTier, routerType, nativeStatus, modelResults,
+  maxsimTier, routerType, nativeStatus, modelResults,
   allowRuntimeModelDownload, verification, failed,
   capability, cascadeReport, dedupReport, liChoices,
 }) {
@@ -2475,7 +2564,7 @@ function buildConfig({
   const runtime = {
     maxsimTier,
     routerType,
-    allowRuntimeModelDownload: allowRuntimeModelDownload !== undefined ? allowRuntimeModelDownload : profile === 'core',
+    allowRuntimeModelDownload: allowRuntimeModelDownload === true,
   };
   if (capability) {
     runtime.hardware = {
@@ -2523,7 +2612,6 @@ function buildConfig({
 
   return {
     version: 1,
-    profile,
     initTimestamp: new Date().toISOString(),
     sweetSearchVersion: pkg.version,
     platform: {

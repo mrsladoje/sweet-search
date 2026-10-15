@@ -12,8 +12,8 @@
  * different bytes for an un-indexed project:
  *   - in-process fallback: pretty-printed JSON with "fellBack": true + the
  *     "file not indexed" reason (handleReadSemanticCli → formatReadSemanticResult).
- *   - native (default) path: the native client's single-line daemon error
- *     ("Server initialization failed: No search indexes found").
+ *   - native (default) path: the native client's daemon error on stderr
+ *     ("The search server could not load this project: No search indexes found").
  * No daemon is started and an isolated tmp project root is used, so the shared
  * m2crb index and the user's working-repo daemons are never touched.
  */
@@ -96,8 +96,11 @@ function runReadSemantic(args, extraEnv = {}) {
 
 const isInProcessFallback = (out) =>
   out.includes('"fellBack": true') && out.includes('file not indexed');
+// The native client reports a daemon that cannot load the project on stderr
+// ("The search server could not load this project: ...").
 const isNativeDaemonPath = (out) =>
-  out.includes('Server initialization failed') || out.includes('No search indexes found');
+  out.includes('Server initialization failed') || out.includes('No search indexes found')
+  || out.includes('could not load this project');
 
 // ---------------------------------------------------------------------------
 // envFalsey truth table, observed through the dispatch branch it selects.
@@ -109,7 +112,7 @@ describe('cli.js read-semantic — envFalsey routing', () => {
       SWEET_SEARCH_SEMANTIC_VIA_DAEMON: '0',
     });
     expect(isInProcessFallback(r.stdout)).toBe(true);
-    expect(isNativeDaemonPath(r.stdout)).toBe(false);
+    expect(isNativeDaemonPath(r.stdout + r.stderr)).toBe(false);
   });
 
   it.each(['false', 'off', 'no', 'FALSE', 'Off'])(
@@ -134,7 +137,7 @@ describe('cli.js read-semantic — envFalsey routing', () => {
       // + no reachable daemon, returns the daemon-init error), NOT the JS
       // in-process fallback.
       expect(isInProcessFallback(r.stdout)).toBe(false);
-      expect(isNativeDaemonPath(r.stdout)).toBe(true);
+      expect(isNativeDaemonPath(r.stdout + r.stderr)).toBe(true);
     },
   );
 
@@ -145,7 +148,7 @@ describe('cli.js read-semantic — envFalsey routing', () => {
       SWEET_SEARCH_SEMANTIC_VIA_DAEMON: '',
     });
     expect(isInProcessFallback(r.stdout)).toBe(false);
-    expect(isNativeDaemonPath(r.stdout)).toBe(true);
+    expect(isNativeDaemonPath(r.stdout + r.stderr)).toBe(true);
   });
 });
 

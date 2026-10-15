@@ -519,7 +519,7 @@ pub fn run(sub: &str, args: &[String]) -> ! {
                 && matches!(e.kind(), io::ErrorKind::NotFound | io::ErrorKind::ConnectionRefused) =>
             {
                 started = true;
-                if super::auto_start_server_for(&root, true).is_none() {
+                if super::auto_start_server_for(&root).is_none() {
                     run_in_process(sub, args, chain);
                 }
                 // A daemon just started: its grep lane comes up right after its socket, long

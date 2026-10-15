@@ -58,8 +58,8 @@ function trustCodexProject() {
   mkdirSync(join(home, '.codex'), { recursive: true });
   writeFileSync(join(home, '.codex', 'config.toml'), `model = "m"\n\n[projects.${JSON.stringify(`${proj}/`)}]\ntrust_level = "trusted"\n`);
 }
-const init = (...flags) => run(['init', '--profile=core', '--skip-prewarm-hook', '--skip-cuda', ...flags]);
-const initEnv = (env, ...flags) => run(['init', '--profile=core', '--skip-prewarm-hook', '--skip-cuda', ...flags], { env });
+const init = (...flags) => run(['init', '--skip-models', '--skip-prewarm-hook', '--skip-cuda', ...flags]);
+const initEnv = (env, ...flags) => run(['init', '--skip-models', '--skip-prewarm-hook', '--skip-cuda', ...flags], { env });
 const uninstall = () => run(['uninstall', '--force']);
 const OLD_BLOCK = `${MARKER_BEGIN}\nold policy\n${MARKER_END}\n`;
 
@@ -117,7 +117,7 @@ describe('init: per-project rules, never AGENTS.md / CLAUDE.md', () => {
   });
 
   it('--claude --no-claude is rejected before any write', () => {
-    const r = run(['init', '--profile=core', '--claude', '--no-claude', '--codex'], { status: 1 });
+    const r = run(['init', '--skip-models', '--claude', '--no-claude', '--codex'], { status: 1 });
     expect(r.stderr).toContain('--claude and --no-claude');
     for (const rel of ['.claude', '.codex', '.sweet-search']) expect(exists(rel), rel).toBe(false);
   });
