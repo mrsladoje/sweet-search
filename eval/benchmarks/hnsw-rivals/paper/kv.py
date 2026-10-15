@@ -1,8 +1,10 @@
 # k_v per set and model, on dev only (PAPER_PLAN.md section 4): the smallest number of vectors k_v at which
 # the exact vector list yields 10 distinct documents (self-matches removed) for >= 99.9% of dev queries.
 # Quora (self_match) systems then return k_v + 1 vectors. Writes nothing; print the value for set.json /
-# shortlist.json at the freeze.
+# shortlist.json at the freeze. A query whose 100 stored exact vectors hold fewer than 10 documents gets its
+# full exact vector list (float64, ties lower vid, as gt.py), so k_v may exceed 100.
 # usage: python kv.py <DATA> <set> <model> [--share 0.999]
+import json
 import sys
 import numpy as np
 
@@ -26,7 +28,28 @@ for i, qi in enumerate(qidx):
         if len(seen) == 10:
             need[i] = k + 1
             break
-ok = need < 10 ** 9
-kv = int(np.quantile(need[ok], share, method='higher')) if ok.mean() >= share else None
+deep = np.flatnonzero(need == 10 ** 9)
+if len(deep):  # walk the whole exact list for these queries only
+    ed = f'{data}/emb/{model}/{name}'
+    dim = json.load(open(f'{ed}/model.json'))['dim']
+    C = np.memmap(f'{ed}/corpus.f32', dtype='<f4', mode='r').reshape(-1, dim).astype(np.float64)
+    C /= np.maximum(np.sqrt((C * C).sum(axis=1)), 1e-300)[:, None]
+    Qv = np.memmap(f'{ed}/queries.f32', dtype='<f4', mode='r').reshape(-1, dim)
+    for i in deep:
+        qi = qidx[i]
+        q = Qv[qi].astype(np.float64); q /= np.sqrt((q * q).sum()) or 1.0
+        sc = C @ q
+        seen, k = set(), 0
+        for v in np.lexsort((np.arange(len(sc)), -sc)):
+            d = int(S.doc_of_vec[v])
+            if d == S.self_doc[qi]:  # self-match vectors are not in the list (gt.py)
+                continue
+            k += 1
+            seen.add(d)
+            if len(seen) == 10:
+                need[i] = k
+                break
+reach = need < 10 ** 9
+kv = int(np.quantile(need, share, method='higher')) if reach.mean() >= share else None
 print(f'{name}/{model}: k_v = {kv} ({share:.1%} of {len(qidx)} dev queries reach 10 documents; '
-      f'{(~ok).sum()} need more than the 100 exact vectors kept; median {int(np.median(need[ok]))}, max {int(need[ok].max())})')
+      f'{len(deep)} needed more than the 100 stored exact vectors (deepest {int(need[reach].max())}); median {int(np.median(need[reach]))})')
