@@ -67,11 +67,9 @@ describe('registerCodexSessionStartHook', () => {
     const handler = group.hooks[0];
     expect(handler.type).toBe('command');
     expect(typeof handler.timeout).toBe('number');
-    // cd to the git root (the session may start in a subdirectory), then the native
-    // `sweet-search-hook` command: no `node` (Codex may have none on PATH), no path.
-    expect(handler.command).toBe(
-      `cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && ${PREWARM_HOOK_COMMAND} --agent-session-hook`,
-    );
+    // The native `sweet-search-hook` command: no `node` (Codex may have none on PATH), no
+    // path, no shell syntax (the hook moves to the project root itself).
+    expect(handler.command).toBe(`${PREWARM_HOOK_COMMAND} --agent-session-hook`);
   });
 
   it('is idempotent: re-running updates in place, never duplicates', () => {

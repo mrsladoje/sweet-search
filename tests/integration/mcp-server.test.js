@@ -381,3 +381,31 @@ describe('MCP Server stdout hygiene', () => {
     }
   }, 15000);
 });
+
+describe('MCP server — project root without --project-root', () => {
+  it('walks up from a subdirectory to the folder holding the .sweet-search/ index', async () => {
+    const { mkdtempSync, mkdirSync, realpathSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const root = realpathSync(mkdtempSync(path.join(tmpdir(), 'ss-mcp-root-')));
+    const sub = path.join(root, 'src', 'deep');
+    mkdirSync(path.join(root, '.sweet-search'), { recursive: true });
+    mkdirSync(sub, { recursive: true });
+    const env = { ...process.env, SWEET_SEARCH_RECONCILE_V2: '0' };
+    delete env.SWEET_SEARCH_PROJECT_ROOT;
+    try {
+      const child = spawn(process.execPath, [SERVER_PATH], { cwd: sub, env, stdio: ['pipe', 'pipe', 'pipe'] });
+      const stderr = await new Promise((resolve) => {
+        let err = '';
+        const timer = setTimeout(() => child.kill('SIGKILL'), 10000);
+        child.stderr.on('data', (chunk) => {
+          err += chunk.toString();
+          if (err.includes('Server started')) child.kill('SIGTERM');
+        });
+        child.on('close', () => { clearTimeout(timer); resolve(err); });
+      });
+      expect(stderr).toContain(`Server started (project: ${root})`);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 15000);
+});

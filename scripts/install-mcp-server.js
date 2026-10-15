@@ -27,12 +27,14 @@ export const MCP_SERVER_KEY = 'sweet-search';
  * (global bin, or ~/.local/bin for a project install: scripts/user-shims.js). It is the
  * native binary: it finds the installed package and runs the server with the node that
  * installed it, so the MCP host needs neither node nor npx on its PATH, and nothing is
- * fetched from the registry. `--project-root` pins the target repo.
+ * fetched from the registry. No `--project-root`: the host starts the server in the
+ * project, and the server walks up to the `.sweet-search/` index (mcp/server.js), so
+ * the committed `.mcp.json` holds no machine-specific path.
  */
-export function buildServerEntry({ projectRoot }) {
+export function buildServerEntry() {
   return {
     command: 'sweet-search-mcp',
-    args: ['--project-root', projectRoot],
+    args: [],
   };
 }
 
@@ -56,7 +58,7 @@ function deepEqual(a, b) {
 export function installMcpServer({ projectRoot, configFile = MCP_CONFIG_FILE } = {}) {
   if (!projectRoot) throw new TypeError('install-mcp-server: projectRoot is required');
   const configPath = join(projectRoot, configFile);
-  const entry = buildServerEntry({ projectRoot });
+  const entry = buildServerEntry();
 
   let config = {};
   const existed = existsSync(configPath);
