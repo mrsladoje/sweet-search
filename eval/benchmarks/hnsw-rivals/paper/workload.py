@@ -41,6 +41,8 @@ def lat(fam, n):
 
 def build_cs(fam, n):
     s = (n / 1e6) ** 1.1
+    if f'build_{fam}_1m' in A:  # measured per family (S3a pilot), core-seconds at 1M
+        return A[f'build_{fam}_1m'] * s
     if fam == 'ours':
         return A['build_ours_1m'] * s
     if fam.startswith('diskann') or fam.startswith('svs'):
@@ -79,7 +81,8 @@ for s, (n, kind, ndev, nho) in SETS.items():
                          ho_h=ho, gpu_h=emb))
         tot['build_core_h'] += bch; tot['dev_h'] += dev_b + dev_a; tot['ho_h'] += ho; tot['gpu_h'] += emb
 
-print('# Workload table (estimates; UNVALIDATED until the S3a pilot)\n')
+print('# Workload table (build rows measured by the S3a pilot; timing rows are estimates from v4)\n' if P else '# Workload table (estimates; UNVALIDATED until the S3a pilot)\n')
+if P: print(f"Pilot: {P.get('source', '')}\n")
 print(f'Assumptions: {json.dumps(A)}. Dev sweep rounds per point: {a.rounds_dev}; held-out rounds R = {a.rounds}.')
 print('Times are machine-hours per AWS timing machine (intel, amd, arm each run the same rows); builds run once on '
       '`build` and are copied (index files are portable across CPUs; checked in S3a).\n')

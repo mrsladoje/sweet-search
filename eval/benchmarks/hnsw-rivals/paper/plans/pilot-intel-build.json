@@ -1,0 +1,22 @@
+{
+ "source": "S3a pilot, intel c8i.4xlarge (16 vCPU), csn1m/CodeRankEmbed, 2026-10-15; build core-s = build_s x threads at n=1,004,739",
+ "assumptions": {
+  "build_svs_vamana_leanvec_1m": 1930,
+  "build_usearch_f16_1m": 24525,
+  "build_faiss_hnsw_sq8_1m": 20815,
+  "build_scann_1m": 801,
+  "build_faiss_hnsw_flat_1m": 20225,
+  "build_faiss_rabitq_ivf_1m": 138,
+  "build_svs_vamana_lvq_1m": 5101,
+  "build_usearch_b1_rescore_1m": 3158,
+  "build_faiss_bin_hnsw_1m": 3406,
+  "build_faiss_ivfpq_fs_1m": 152,
+  "build_diskann_vamana_1m": 6470,
+  "build_hnswlib_f32_1m": 22535,
+  "build_faiss_rabitq_hnsw_1m": 2616,
+  "build_faiss_bin_flat_1m": 1,
+  "build_ours_1m": 7541,
+  "build_usearch_i8_1m": 24525,
+  "embed_docs_per_s": 1000000000000.0
+ }
+}
