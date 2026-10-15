@@ -1245,10 +1245,9 @@ export function registerCodexSessionStartHook({ projectRoot, skipped = false } =
   if (skipped) return { status: 'skipped', detail: '--skip-prewarm-hook flag' };
 
   // Codex runs hook commands with the *session* cwd, and per its hooks docs a
-  // session "may be started from a subdirectory". We `cd` to the git toplevel
-  // first (falling back to the current dir outside a repo) so the launcher's
-  // `process.cwd()` project-root detection finds the project root.
-  const command = `cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && ${PREWARM_HOOK_COMMAND} --agent-session-hook`;
+  // session "may be started from a subdirectory". The hook itself moves to the
+  // project root (scripts/hooks/hook.mjs), so the command needs no shell syntax.
+  const command = `${PREWARM_HOOK_COMMAND} --agent-session-hook`;
   const codexDir = join(projectRoot, '.codex');
   const hooksPath = join(codexDir, CODEX_HOOKS_FILENAME);
 

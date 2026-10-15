@@ -28,7 +28,8 @@ Resolved once at startup with this precedence:
 
 1. `--project-root <path>`
 2. `SWEET_SEARCH_PROJECT_ROOT`
-3. `process.cwd()`
+3. the nearest ancestor of `process.cwd()` holding a `.sweet-search/` index (`resolveProjectRoot`, core/search/server-identity.js)
+4. `process.cwd()`
 
 Behavior:
 
@@ -237,7 +238,7 @@ Profile behavior:
 
 Project-local MCP registration (written by `sweet-search init --mcp`, at the repo root):
 
-- `sweet-search` server: `command: "sweet-search-mcp"`, `args: ["--project-root", "<repo-root>"]`
+- `sweet-search` server: `command: "sweet-search-mcp"`, `args: []` (no machine-specific path: the file is often committed)
 
 ## Test Coverage for MCP Integration
 

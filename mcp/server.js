@@ -12,6 +12,7 @@ import { existsSync, statSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { launchMaintainer } from '../core/indexing/maintainer-launcher.mjs';
+import { resolveProjectRoot as resolveIndexedRoot } from '../core/search/server-identity.js';
 import {
   collectSemanticShownSpans,
   exactRereadOmissionEnabled,
@@ -63,10 +64,11 @@ function resolveProjectRoot() {
   let root;
   if (rootFlagIdx !== -1 && args[rootFlagIdx + 1]) {
     root = args[rootFlagIdx + 1];
-  } else if (process.env.SWEET_SEARCH_PROJECT_ROOT) {
-    root = process.env.SWEET_SEARCH_PROJECT_ROOT;
   } else {
-    root = process.cwd();
+    // SWEET_SEARCH_PROJECT_ROOT, else the nearest ancestor of the working directory
+    // holding a `.sweet-search/` index (the ss-* tools' rule), else the working
+    // directory: `.mcp.json` needs no path, so it stays portable when committed.
+    root = resolveIndexedRoot(process.env, process.cwd());
   }
 
   root = path.resolve(root);

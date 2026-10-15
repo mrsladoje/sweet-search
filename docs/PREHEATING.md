@@ -128,11 +128,10 @@ Other agents don't read that file. For the OpenAI Codex CLI, `sweet-search init
 the Codex equivalent, reusing the same `sweet-search-hook` launcher (it's
 harness-agnostic — reads only env/cwd, writes nothing to stdout):
 
-- **`.codex/hooks.json`** — a `SessionStart` hook (`matcher: "startup|resume"`)
-  whose command is git-root anchored:
-  `cd "$(git rev-parse --show-toplevel 2>/dev/null || pwd)" && sweet-search-hook --agent-session-hook`.
+- **`.codex/hooks.json`** — a `SessionStart` hook (`matcher: "startup|resume|clear|compact"`)
+  whose command is `sweet-search-hook --agent-session-hook`.
   Codex runs hook commands with the *session* cwd (which may be a subdirectory);
-  anchoring to the git root gives the launcher's project-root detection the repo root.
+  the hook first moves to the nearest ancestor holding the `.sweet-search/` index.
 - **`[features] hooks = true`** in the project `.codex/config.toml` — the
   canonical feature flag (hooks are a **stable**, current-Codex feature, v0.132+).
   `init --codex` enables it for the project itself via a comment-preserving,

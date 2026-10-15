@@ -13,8 +13,14 @@
  * on PATH still runs the hooks, and the hook commands hold no path.
  */
 
+import { resolveProjectRoot } from '../../core/search/server-identity.js';
+
 if (process.argv.includes('--read-hint')) {
   await import('./intercept-read.mjs');
 } else {
+  // A harness may start the session in a subdirectory (Codex runs hooks with the session
+  // cwd). The prewarm serves its working directory, so move to the project root first:
+  // the nearest ancestor holding the `.sweet-search/` index, the ss-* tools' rule.
+  try { process.chdir(resolveProjectRoot()); } catch { /* stay in the session cwd */ }
   await import('../../core/search/session-daemon-prewarm.mjs');
 }

@@ -190,7 +190,7 @@ The CLI is the default contact surface. To also register the MCP server, run
   "mcpServers": {
     "sweet-search": {
       "command": "sweet-search-mcp",
-      "args": ["--project-root", "/absolute/path/to/your/repo"]
+      "args": []
     }
   }
 }

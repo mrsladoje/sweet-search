@@ -21,7 +21,7 @@ config Claude Code reads (create it if needed):
   "mcpServers": {
     "sweet-search": {
       "command": "sweet-search-mcp",
-      "args": ["--project-root", "/absolute/path/to/project"]
+      "args": []
     }
   }
 }
@@ -42,7 +42,6 @@ Add the server to `.codex/config.toml` (project) or `~/.codex/config.toml`:
 ```toml
 [mcp_servers.sweet-search]
 command = "sweet-search-mcp"
-args = ["--project-root", "/absolute/path/to/project"]
 ```
 
 Restart Codex to apply.
@@ -89,8 +88,10 @@ Check status of all search subsystems. No parameters.
 
 ## Configuration
 
-The `--project-root` argument must be an absolute path. It determines where
-the `.sweet-search/` data directory is created.
+The server serves the nearest ancestor of its working directory that holds a
+`.sweet-search/` index (the same rule as the `ss-*` tools), else the working
+directory. MCP hosts start the server in the project, so the config needs no path.
+To pin a project anyway, pass `--project-root /absolute/path/to/project`.
 
 Environment variables:
 - `SWEET_SEARCH_DATA_DIR` -- override data directory name (default: `.sweet-search`)
@@ -99,7 +100,7 @@ Environment variables:
 ## Troubleshooting
 
 **Server not starting**: verify `command -v sweet-search-mcp` finds the command (re-run
-`sweet-search init` if not), and that the project root exists and is absolute.
+`sweet-search init` if not). The server logs its project root to stderr at startup.
 
 **No search results**: Run the `index` tool first. Check `health` tool for
 subsystem status.

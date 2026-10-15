@@ -83,16 +83,18 @@ describe('validateInitArgs — --no-cli requires --mcp', () => {
 });
 
 describe('installMcpServer — .mcp.json registration', () => {
-  it('creates .mcp.json with the sweet-search server entry pinned to projectRoot', () => {
+  it('creates .mcp.json with the sweet-search server entry, no machine-specific path', () => {
     const r = installMcpServer({ projectRoot: tmpRoot });
     expect(r.status).toBe('created');
     expect(exists(MCP_CONFIG_FILE)).toBe(true);
 
     const cfg = readJson(MCP_CONFIG_FILE);
-    expect(cfg.mcpServers[MCP_SERVER_KEY]).toEqual(buildServerEntry({ projectRoot: tmpRoot }));
+    expect(cfg.mcpServers[MCP_SERVER_KEY]).toEqual(buildServerEntry());
     // The native command: no node / npx on the MCP host's PATH, no registry fetch.
     expect(cfg.mcpServers[MCP_SERVER_KEY].command).toBe('sweet-search-mcp');
-    expect(cfg.mcpServers[MCP_SERVER_KEY].args).toEqual(['--project-root', tmpRoot]);
+    // No --project-root: the server walks up to the index, and a committed .mcp.json stays portable.
+    expect(cfg.mcpServers[MCP_SERVER_KEY].args).toEqual([]);
+    expect(read(MCP_CONFIG_FILE)).not.toContain(tmpRoot);
   });
 
   it('is idempotent — second run is unchanged', () => {
@@ -123,7 +125,7 @@ describe('installMcpServer — .mcp.json registration', () => {
     const r = installMcpServer({ projectRoot: tmpRoot });
     expect(r.status).toBe('updated');
     expect(readJson(MCP_CONFIG_FILE).mcpServers[MCP_SERVER_KEY]).toEqual(
-      buildServerEntry({ projectRoot: tmpRoot }),
+      buildServerEntry(),
     );
   });
 
