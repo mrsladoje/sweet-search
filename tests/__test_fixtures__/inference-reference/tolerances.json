@@ -1,0 +1,65 @@
+{
+ "_comment": "Fixed per model and backend class. Measured 2026-10-15 on M3 Max against the fixtures (worst case over alone + batch runs): metal/bf16 embed min 0.99567 mean 0.99757; coreml embed min 0.99862 mean 0.99948; metal/bf16 LI token min 0.99233 (edge) / 0.99295, mean >= 0.99994, MaxSim rel <= 1.11e-2; coreml LI token min 0.99807 on CoreML-served shapes (the cascade falls back to candle Metal for shapes no variant fits, so coreml uses the metal/bf16 LI min and MaxSim bounds; its token mean is lower: 0.99979); f32 on cpu and metal: cosine 1.000000, MaxSim rel <= 1.12e-6. Classes not listed (cuda/*, metal/f16) have no tolerances and fail until measured. Do not loosen to make a run pass; a failure means the output changed.",
+ "coderankembed": {
+  "cpu/f32": {
+   "minCosine": 0.99999,
+   "meanCosine": 0.99999
+  },
+  "metal/f32": {
+   "minCosine": 0.99999,
+   "meanCosine": 0.99999
+  },
+  "metal/bf16": {
+   "minCosine": 0.993,
+   "meanCosine": 0.996
+  },
+  "coreml": {
+   "minCosine": 0.993,
+   "meanCosine": 0.996
+  }
+ },
+ "lateon-code": {
+  "cpu/f32": {
+   "minTokenCosine": 0.99999,
+   "meanTokenCosine": 0.99999,
+   "maxSimRelTol": 1e-05
+  },
+  "metal/f32": {
+   "minTokenCosine": 0.99999,
+   "meanTokenCosine": 0.99999,
+   "maxSimRelTol": 1e-05
+  },
+  "metal/bf16": {
+   "minTokenCosine": 0.99,
+   "meanTokenCosine": 0.9998,
+   "maxSimRelTol": 0.02
+  },
+  "coreml": {
+   "minTokenCosine": 0.99,
+   "meanTokenCosine": 0.9995,
+   "maxSimRelTol": 0.02
+  }
+ },
+ "lateon-code-edge": {
+  "cpu/f32": {
+   "minTokenCosine": 0.99999,
+   "meanTokenCosine": 0.99999,
+   "maxSimRelTol": 1e-05
+  },
+  "metal/f32": {
+   "minTokenCosine": 0.99999,
+   "meanTokenCosine": 0.99999,
+   "maxSimRelTol": 1e-05
+  },
+  "metal/bf16": {
+   "minTokenCosine": 0.99,
+   "meanTokenCosine": 0.9998,
+   "maxSimRelTol": 0.02
+  },
+  "coreml": {
+   "minTokenCosine": 0.99,
+   "meanTokenCosine": 0.9995,
+   "maxSimRelTol": 0.02
+  }
+ }
+}
