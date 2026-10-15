@@ -156,6 +156,7 @@ stage optional quality-venv quality
   echo "code-bundle-sha256=$(cat "$ROOT/code-bundle.sha256" 2>/dev/null)"
   echo "--- stages"; cat "$STAGES"
   echo "--- families"; tr '\n' ' ' < "$RES/$MACHINE/families.txt"; echo
+  echo "--- scann import"; "$ROOT/venv-scann/bin/python" -I -c "import scann; print('scann', scann.__file__)" 2>&1 | tail -3
   for b in rivals5 rivals5-ext librescore5.so; do [ -f "$ROOT/build/$b" ] && sha256sum "$ROOT/build/$b"; done
   [ -f "$ROOT/build/build-info.json" ] && echo "build-info.json present: $ROOT/build/build-info.json"
   [ -f "$ROOT/build-new/build-info-new.json" ] && echo "build-info-new.json present"

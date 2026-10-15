@@ -11,6 +11,8 @@
 #   DATA=a.tar.zst,b.tar.zst   data archives in s3://$BUCKET/hnsw/data/ (default: gcsn set + CodeRankEmbed gcsn)
 #   BUNDLE=name      code bundle in s3://$BUCKET/hnsw/code/ (default: the newest ss-HEAD-*.tar.zst)
 #   IDLE_MIN=60      idle minutes before the watchdog shuts the machine down
+#   STOP_MIN=4320    hard stop in minutes (the 72-hour stop; a pilot uses less)
+#   SMOKE_BUILD=1    smoke mode builds its own small builds
 #   IOPS=  THROUGHPUT=   gp3 settings above the baseline (3000 IOPS, 125 MB/s)
 set -euo pipefail
 DRY=0; ARGS=()
@@ -25,14 +27,15 @@ case "$ARCH" in amd64|arm64) ;; *) echo "arch must be amd64 or arm64"; exit 2;; 
 # Graviton families carry a 'g' after the generation digit (c8g, c7gd, m7g ...)
 if [[ $TYPE =~ ^[a-z]+[0-9]+g[a-z]*\. ]]; then WANT=arm64; else WANT=amd64; fi
 [ "$WANT" = "$ARCH" ] || { echo "instance type $TYPE needs arch $WANT, not $ARCH"; exit 2; }
-DISK_GB=100; DATA=sets-gcsn.tar.zst,emb-CodeRankEmbed-gcsn.tar.zst; BUNDLE=; IDLE_MIN=60; IOPS=; THROUGHPUT=
+DISK_GB=100; DATA=sets-gcsn.tar.zst,emb-CodeRankEmbed-gcsn.tar.zst; BUNDLE=; IDLE_MIN=60; IOPS=; THROUGHPUT=; STOP_MIN=4320; SMOKE_BUILD=
 for kv in "$@"; do
   case "$kv" in
-    DISK_GB=*|DATA=*|BUNDLE=*|IDLE_MIN=*|IOPS=*|THROUGHPUT=*) declare "${kv%%=*}=${kv#*=}";;
+    DISK_GB=*|DATA=*|BUNDLE=*|IDLE_MIN=*|IOPS=*|THROUGHPUT=*|STOP_MIN=*|SMOKE_BUILD=*) declare "${kv%%=*}=${kv#*=}";;
     *) echo "unknown option $kv"; exit 2;;
   esac
 done
 [[ $DISK_GB =~ ^[0-9]+$ ]] || { echo "DISK_GB must be a number"; exit 2; }
+[[ $STOP_MIN =~ ^[0-9]+$ ]] && [ "$STOP_MIN" -le 4320 ] || { echo "STOP_MIN must be a number <= 4320 (the 72-hour stop)"; exit 2; }
 
 if [ $DRY = 1 ]; then
   AMI="<AMI-from-SSM /aws/service/canonical/ubuntu/server/24.04/stable/current/$ARCH/hvm/ebs-gp3/ami-id>"
@@ -49,8 +52,8 @@ TAGS="{Key=Project,Value=$TAG_PROJECT},{Key=Name,Value=hnsw-$NAME}"
 UD=$(mktemp)
 cat > "$UD" <<UDATA
 #!/bin/bash
-shutdown -h +4320
-export MACHINE=$NAME MODE=$MODE BUCKET=$BUCKET BUNDLE=$BUNDLE DATA=$DATA IDLE_MIN=$IDLE_MIN
+shutdown -h +$STOP_MIN
+export MACHINE=$NAME MODE=$MODE BUCKET=$BUCKET BUNDLE=$BUNDLE DATA=$DATA IDLE_MIN=$IDLE_MIN SMOKE_BUILD=$SMOKE_BUILD
 for i in 1 2 3 4 5 6; do command -v aws >/dev/null && break; sleep 10; done
 if ! command -v aws >/dev/null; then apt-get update -q && apt-get install -y -q unzip curl && curl -sSfo /tmp/a.zip "https://awscli.amazonaws.com/awscli-exe-linux-\$(uname -m).zip" && unzip -q /tmp/a.zip -d /tmp && /tmp/aws/install; fi
 aws s3 cp --only-show-errors "s3://$BUCKET/hnsw/code/bootstrap.sh" /opt/hnsw-bootstrap.sh && bash /opt/hnsw-bootstrap.sh

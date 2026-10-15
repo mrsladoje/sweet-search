@@ -61,9 +61,12 @@ down() {
   s3 sync "$S3E/" "$DATA/emb/" --exclude '*' --include '*/*/index*/*'
 }
 up() {
+  # the build record of this machine: library commits, SIMD levels, binary hashes (PAPER_PLAN 5.5)
+  for f in "$BUILD/build-info.json" "$ROOT/build-new/build-info-new.json" "$ROOT/stages.txt"; do [ -f "$f" ] && cp "$f" "$OUT/"; done
   s3 sync "$OUT/" "$S3R/" --exclude 'stale/*'
   [ -d "$DATA/builds/shared" ] && s3 sync "$DATA/builds/shared/" "$S3B/" --exclude '*.stale-*/*'
-  [ -d "$DATA/emb" ] && s3 sync "$DATA/emb/" "$S3E/" --exclude '*' --include '*/*/index*/*'
+  # our indexes and their exports (codes, int8 rows, f16 vectors), which timing machines read
+  [ -d "$DATA/emb" ] && s3 sync "$DATA/emb/" "$S3E/" --exclude '*' --include '*/*/index*/*' --include '*/*/export/*'
 }
 
 MODES=$(echo "$1" | tr ',' ' ')

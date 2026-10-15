@@ -58,7 +58,7 @@ fi
 if [ $DATAB = 1 ]; then
   for S in $(echo "$SETLIST" | tr ',' ' '); do
     [ -d "$DATA/sets/$S" ] || { echo "no set $S in $DATA/sets"; exit 1; }
-    tar --no-xattrs -C "$DATA" -cf - "sets/$S" | zstd -q -10 --long=27 -T0 -f -o "$STAGE/data/sets-$S.tar.zst"
+    tar --no-xattrs --exclude texts.jsonl -C "$DATA" -cf - "sets/$S" | zstd -q -10 --long=27 -T0 -f -o "$STAGE/data/sets-$S.tar.zst"
     for M in $(echo "$MODELLIST" | tr ',' ' '); do
       E=$DATA/emb/$M/$S
       [ -d "$E" ] || { echo "skip: no embeddings of $M for $S"; continue; }
@@ -66,7 +66,8 @@ if [ $DATAB = 1 ]; then
         [ -e "$E/$f" ] && FILES+=("emb/$M/$S/$f") || echo "note: $M/$S has no $f"
       done
       [ -e "$E/corpus.f32" ] || { echo "skip: $M/$S has no corpus.f32"; continue; }
-      tar --no-xattrs -C "$DATA" -cf - "${FILES[@]}" | zstd -q -10 --long=27 -T0 -f -o "$STAGE/data/emb-$M-$S.tar.zst"
+      # -h: store the vectors, not a symbolic link to them
+      tar --no-xattrs -h -C "$DATA" -cf - "${FILES[@]}" | zstd -q -10 --long=27 -T0 -f -o "$STAGE/data/emb-$M-$S.tar.zst"
     done
   done
 fi
