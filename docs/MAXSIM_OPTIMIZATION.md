@@ -1,7 +1,8 @@
 # MaxSim Optimization
 
-**Last synced with the code:** 2026-10-13
-**Current kernel:** 2026-10-13 pass (AVX2 block kernel, worker pool, packed entry point,
+**Last synced with the code:** 2026-10-15
+**Current kernel:** AVX-512 path for the x86 block (2026-10-15, bit-identical to the AVX2
+block) on the 2026-10-13 pass (AVX2 block kernel, worker pool, packed entry point,
 slab-backed docs), on top of the NEON 4×4 kernel `f1ee878b` (2026-10-06) and the tiled
 SIMD rewrite `3343e949` (2026-07-04). Every change of the 2026-10-13 pass keeps every
 score bit-identical to the kernel before it, on each platform.
@@ -117,6 +118,13 @@ and int8).
    old x86 kernel bit for bit. The fold of block j runs while block j+1's FMAs execute
    (software pipelined); chain loops have compile-time trip counts for dims 128 / 96 /
    64 / 48 / 32. 2.1-2.7x per core over the old x86 kernel.
+   **AVX-512** (runtime-detected `avx512f`, 2026-10-15): the same block with 16-lane
+   registers. A pair's four 8-lane chains fit two per register (`[chain 0 | chain 1]`,
+   `[chain 2 | chain 3]`): lanes 0-7 and 8-15 of a 16-float load at `32m` are exactly the
+   floats chains 0 and 1 take. Half the FMA and load instructions; the fold keeps the
+   grouping of every addition, so scores are bit-identical to the AVX2 block. Dev data,
+   warm: Granite Rapids (c8i) agent calls 1.09-1.10x, GCSN 1.08x; Zen 5 (c8a) agent
+   1.11-1.12x, GCSN 1.09-1.10x, large calls up to 1.47x (`eval/maxsim-bench/results-dev/C0-log.md`).
 3. **Vector dequantization.** NEON and AVX2 int4 / int8 dequant for any `dim % 16 == 0`
    (mul then add, the scalar path's rounding). The 48-dim edge model was on the scalar
    path before; 1.5x on that model.
@@ -277,6 +285,11 @@ held-out score (86.1 MRR@10); it measures the whole pipeline, not this kernel.
   within noise.
 - **x86: one thread per physical core on SMT machines**: 6-24% faster on tiny cold
   calls, 8-16% slower on large and on typical warm calls; the default stays all logical CPUs.
+- **x86: a thread rule by call size** (2026-10-15; physical cores below a work threshold,
+  every logical CPU above it, the unused workers parked apart so small calls never wake
+  them): on Granite Rapids with the AVX-512 block, GCSN calls 1.03-1.09x but agent calls
+  below the 3% bar or unclear at both thresholds tried (2^18, 2^20 query × doc tokens), some
+  sweep cells slower. Dropped. Small calls on an SMT machine vary too much between runs.
 - **x86: 4 query x 3 doc block**: estimated at ≤7% fewer instructions (the fold, the
   chain spills and the loads that the bit-identical summation order requires stay);
   not built.
@@ -301,8 +314,6 @@ Earlier:
 
 ## Open work
 
-- AVX-512 path (two 8-lane chains per register, same summation order): not built, no
-  AVX-512 machine to measure on. AVX-512 CPUs run the AVX2 kernel.
 - WASM int8 per-token kernel: still scalar per pair (production indexes are int4; the
   int4 WASM kernel is tiled, `maxsim_dequant_4bit_tiled`).
 - JS around the kernel call in `scoreWithLateInteraction`: ~30-45 µs per call on M3 Max

@@ -121,6 +121,15 @@ fn have_avx2_fma() -> bool {
     *HAVE_AVX2_FMA.get_or_init(|| is_x86_feature_detected!("avx2") && is_x86_feature_detected!("fma"))
 }
 
+/// AVX-512F (with AVX2 + FMA) present (detected once per process).
+#[cfg(target_arch = "x86_64")]
+#[inline(always)]
+fn have_avx512() -> bool {
+    use std::sync::OnceLock;
+    static HAVE_AVX512: OnceLock<bool> = OnceLock::new();
+    *HAVE_AVX512.get_or_init(|| have_avx2_fma() && is_x86_feature_detected!("avx512f"))
+}
+
 /// x86_64 dot: AVX2+FMA when the CPU has it, scalar otherwise.
 #[cfg(target_arch = "x86_64")]
 #[inline(always)]
@@ -176,9 +185,14 @@ fn maxsim_range<F: FnMut(usize, usize, &mut [f32])>(
         return maxsim_range_neon(qb, from, to, stored_norms, fill_tile, best);
     }
     #[cfg(target_arch = "x86_64")]
+    if qb.dim % 8 == 0 && have_avx512() {
+        // SAFETY: AVX-512F + AVX2 + FMA verified at runtime.
+        return unsafe { maxsim_range_x86::<true, F>(qb, from, to, stored_norms, fill_tile, best) };
+    }
+    #[cfg(target_arch = "x86_64")]
     if qb.dim % 8 == 0 && have_avx2_fma() {
         // SAFETY: AVX2 + FMA verified at runtime.
-        return unsafe { maxsim_range_avx2(qb, from, to, stored_norms, fill_tile, best) };
+        return unsafe { maxsim_range_x86::<false, F>(qb, from, to, stored_norms, fill_tile, best) };
     }
     let (query, query_norms, num_q, dim) = (qb.query, &qb.norms[..qb.num_q], qb.num_q, qb.dim);
     let tile_rows = MAXSIM_TILE.min((to - from).max(1));
@@ -405,9 +419,13 @@ unsafe fn neon_rows<const R: usize>(qb: &QueryBlock, q0: usize, tp: *const f32, 
 /// similarity and every score is the same f32. Padding is as in the NEON
 /// kernel: zero query rows are not summed, and a zero doc row can only lift a
 /// per-query maximum to 0, which contributes 0 either way.
+///
+/// `W512`: the 4 × 2 block runs with 16-lane registers (`avx512_rows`; the
+/// caller verified AVX-512F), with the same chains and the same fold, so the
+/// scores are the same f32 as with the 8-lane block (`avx2_rows`).
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2,fma")]
-unsafe fn maxsim_range_avx2<F: FnMut(usize, usize, &mut [f32])>(
+unsafe fn maxsim_range_x86<const W512: bool, F: FnMut(usize, usize, &mut [f32])>(
     qb: &QueryBlock,
     from: usize,
     to: usize,
@@ -445,11 +463,15 @@ unsafe fn maxsim_range_avx2<F: FnMut(usize, usize, &mut [f32])>(
             let mut q0 = 0usize;
             while q0 < qb.num_q {
                 let tp = tile.as_ptr();
-                match qb.num_q - q0 {
-                    1 => avx2_rows::<1>(qb, q0, tp, len_pad, &norms_pad, best),
-                    2 => avx2_rows::<2>(qb, q0, tp, len_pad, &norms_pad, best),
-                    3 => avx2_rows::<3>(qb, q0, tp, len_pad, &norms_pad, best),
-                    _ => avx2_rows::<4>(qb, q0, tp, len_pad, &norms_pad, best),
+                match (W512, qb.num_q - q0) {
+                    (true, 1) => avx512_rows::<1>(qb, q0, tp, len_pad, &norms_pad, best),
+                    (true, 2) => avx512_rows::<2>(qb, q0, tp, len_pad, &norms_pad, best),
+                    (true, 3) => avx512_rows::<3>(qb, q0, tp, len_pad, &norms_pad, best),
+                    (true, _) => avx512_rows::<4>(qb, q0, tp, len_pad, &norms_pad, best),
+                    (false, 1) => avx2_rows::<1>(qb, q0, tp, len_pad, &norms_pad, best),
+                    (false, 2) => avx2_rows::<2>(qb, q0, tp, len_pad, &norms_pad, best),
+                    (false, 3) => avx2_rows::<3>(qb, q0, tp, len_pad, &norms_pad, best),
+                    (false, _) => avx2_rows::<4>(qb, q0, tp, len_pad, &norms_pad, best),
                 }
                 q0 += 4;
             }
@@ -458,7 +480,7 @@ unsafe fn maxsim_range_avx2<F: FnMut(usize, usize, &mut [f32])>(
     });
 }
 
-/// One block row of `maxsim_range_avx2`: query rows `q0..q0 + R` against tile
+/// One block row of `maxsim_range_x86`: query rows `q0..q0 + R` against tile
 /// rows `0..len_pad` (a multiple of 2) in 2-doc blocks. Rows `R..4` of the
 /// block are absent: their chains stay zero and their lanes never update a
 /// query maximum. Each present pair is summed exactly as for R = 4.
@@ -575,6 +597,138 @@ unsafe fn fold_4x2_avx2(chains: &[[std::arch::x86_64::__m256; 8]; 4]) -> std::ar
     let v_efgh = fold(t_ef, t_gh);
     // (s0 + s2) + (s1 + s3): lanes [A, C, E, G, B, D, F, H].
     _mm256_add_ps(_mm256_shuffle_ps(v_abcd, v_efgh, 0b10_00_10_00), _mm256_shuffle_ps(v_abcd, v_efgh, 0b11_01_11_01))
+}
+
+/// `avx2_rows` with 16-lane registers. A pair's four 8-lane chains sit in two
+/// registers, `[chain 0 | chain 1]` and `[chain 2 | chain 3]`: lanes 0-7 and
+/// 8-15 of a 16-float load at `32m` are exactly the floats chains 0 and 1 take
+/// (`32m + 8k`). The chains, the trailing chunks of chain 0 and the fold are
+/// those of `dot_avx2_fma`, so every dot, similarity and maximum is the same
+/// f32 as in `avx2_rows`; only half as many FMA and load instructions run.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f,avx2,fma")]
+unsafe fn avx512_rows<const R: usize>(qb: &QueryBlock, q0: usize, tile: *const f32, len_pad: usize, norms_pad: &[f32; MAXSIM_TILE], best: &mut [f32]) {
+    use std::arch::x86_64::*;
+    let dim = qb.dim;
+    let eps = _mm256_set1_ps(1e-8);
+    let qp = qb.padded.as_ptr().add(q0 * dim);
+    let qn4 = _mm_loadu_ps(qb.norms.as_ptr().add(q0));
+    let qn = _mm256_set_m128(qn4, qn4);
+    let mut bmax = _mm256_set1_ps(-1.0);
+    // Software-pipelined by one block, as in avx2_rows.
+    let mut chains = [[[_mm512_setzero_ps(); 2]; 8]; 2];
+    let finish = |d0: usize, ch: &[[__m512; 2]; 8], bmax: &mut __m256| {
+        // Lanes: [q0·d0, q1·d0, q2·d0, q3·d0, q0·d1, q1·d1, q2·d1, q3·d1].
+        let dots = fold_4x2_avx512(ch);
+        let dn = _mm256_set_m128(_mm_set1_ps(norms_pad[d0 + 1]), _mm_set1_ps(norms_pad[d0]));
+        let sim = _mm256_div_ps(dots, _mm256_add_ps(_mm256_mul_ps(qn, dn), eps));
+        *bmax = _mm256_max_ps(sim, *bmax);
+    };
+    let mut d0 = 0usize;
+    while d0 < len_pad {
+        let cur = (d0 / 2) & 1;
+        let tp = tile.add(d0 * dim);
+        match dim {
+            128 => chains_4x2_avx512::<128, R>(qp, tp, dim, &mut chains[cur]),
+            96 => chains_4x2_avx512::<96, R>(qp, tp, dim, &mut chains[cur]),
+            64 => chains_4x2_avx512::<64, R>(qp, tp, dim, &mut chains[cur]),
+            48 => chains_4x2_avx512::<48, R>(qp, tp, dim, &mut chains[cur]),
+            32 => chains_4x2_avx512::<32, R>(qp, tp, dim, &mut chains[cur]),
+            _ => chains_4x2_avx512::<0, R>(qp, tp, dim, &mut chains[cur]),
+        }
+        if d0 > 0 {
+            finish(d0 - 2, &chains[cur ^ 1], &mut bmax);
+        }
+        d0 += 2;
+    }
+    if len_pad > 0 {
+        finish(len_pad - 2, &chains[((len_pad - 2) / 2) & 1], &mut bmax);
+    }
+    let mut m = [0.0f32; 4];
+    _mm_storeu_ps(m.as_mut_ptr(), _mm_max_ps(_mm256_castps256_ps128(bmax), _mm256_extractf128_ps(bmax, 1)));
+    for r in 0..R {
+        if m[r] > best[q0 + r] {
+            best[q0 + r] = m[r];
+        }
+    }
+}
+
+/// `chains_4x2_avx2` with 16-lane registers: `chains[2r + j][0]` holds chains
+/// 0 and 1 of the pair (query r, doc j), `chains[2r + j][1]` chains 2 and 3.
+/// Each lane takes the same floats in the same order as in `chains_4x2_avx2`;
+/// chain 0's trailing 8-float chunks go to lanes 0-7 only (masked FMA).
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f,avx2,fma")]
+#[inline]
+unsafe fn chains_4x2_avx512<const DIM: usize, const R: usize>(qp: *const f32, tp: *const f32, dim: usize, chains: &mut [[std::arch::x86_64::__m512; 2]; 8]) {
+    use std::arch::x86_64::*;
+    let d = if DIM > 0 { DIM } else { dim };
+    let (main, extra) = (d / 32, (d % 32) / 8);
+    let mut acc = [[_mm512_setzero_ps(); 2]; 8];
+    for m in 0..main {
+        let off = 32 * m;
+        let d0a = _mm512_loadu_ps(tp.add(off));
+        let d0b = _mm512_loadu_ps(tp.add(off + 16));
+        let d1a = _mm512_loadu_ps(tp.add(dim + off));
+        let d1b = _mm512_loadu_ps(tp.add(dim + off + 16));
+        for r in 0..R {
+            let qa = _mm512_loadu_ps(qp.add(r * dim + off));
+            let qb = _mm512_loadu_ps(qp.add(r * dim + off + 16));
+            acc[2 * r][0] = _mm512_fmadd_ps(qa, d0a, acc[2 * r][0]);
+            acc[2 * r][1] = _mm512_fmadd_ps(qb, d0b, acc[2 * r][1]);
+            acc[2 * r + 1][0] = _mm512_fmadd_ps(qa, d1a, acc[2 * r + 1][0]);
+            acc[2 * r + 1][1] = _mm512_fmadd_ps(qb, d1b, acc[2 * r + 1][1]);
+        }
+    }
+    // Chain 0's trailing chunks follow the 32-float blocks, as in dot_avx2_fma.
+    const LO: __mmask16 = 0x00FF;
+    for e in 0..extra {
+        let off = 32 * main + 8 * e;
+        let d0 = _mm512_maskz_loadu_ps(LO, tp.add(off));
+        let d1 = _mm512_maskz_loadu_ps(LO, tp.add(dim + off));
+        for r in 0..R {
+            let q = _mm512_maskz_loadu_ps(LO, qp.add(r * dim + off));
+            acc[2 * r][0] = _mm512_mask3_fmadd_ps(q, d0, acc[2 * r][0], LO);
+            acc[2 * r + 1][0] = _mm512_mask3_fmadd_ps(q, d1, acc[2 * r + 1][0], LO);
+        }
+    }
+    *chains = acc;
+}
+
+/// Folds `chains_4x2_avx512` output into the 8 dots with the additions of
+/// `fold_4x2_avx2` (`dot_avx2_fma`): per pair `s = (c0 + c1) + (c2 + c3)`,
+/// `t_l = s_l + s_{l+4}`, `dot = (t0 + t2) + (t1 + t3)`. Each step works on
+/// several pairs per register; the grouping of every addition is unchanged.
+/// Returns `[q0·d0, q1·d0, q2·d0, q3·d0, q0·d1, q1·d1, q2·d1, q3·d1]`.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f,avx2,fma")]
+#[inline]
+unsafe fn fold_4x2_avx512(chains: &[[std::arch::x86_64::__m512; 2]; 8]) -> std::arch::x86_64::__m256 {
+    use std::arch::x86_64::*;
+    // Pair p = 2r + j. Slots 0..7 hold pairs 0, 4, 1, 5, 2, 6, 3, 7, so the
+    // last step leaves the dots in the order above.
+    // [s_p | s_q] = ([c0_p | c0_q] + [c1_p | c1_q]) + ([c2_p | c2_q] + [c3_p | c3_q]).
+    let s2 = |p: usize, q: usize| {
+        let (a, b) = (chains[p][0], chains[q][0]);
+        let x = _mm512_add_ps(_mm512_shuffle_f32x4(a, b, 0b01_00_01_00), _mm512_shuffle_f32x4(a, b, 0b11_10_11_10));
+        let (a, b) = (chains[p][1], chains[q][1]);
+        let y = _mm512_add_ps(_mm512_shuffle_f32x4(a, b, 0b01_00_01_00), _mm512_shuffle_f32x4(a, b, 0b11_10_11_10));
+        _mm512_add_ps(x, y)
+    };
+    let s01 = s2(0, 4);
+    let s23 = s2(1, 5);
+    let s45 = s2(2, 6);
+    let s67 = s2(3, 7);
+    // 128-bit lane i of t_lo = t of slot i, of t_hi = t of slot i + 4 (lanes l + (l + 4) of s).
+    let t = |a: __m512, b: __m512| _mm512_add_ps(_mm512_shuffle_f32x4(a, b, 0b10_00_10_00), _mm512_shuffle_f32x4(a, b, 0b11_01_11_01));
+    let t_lo = t(s01, s23);
+    let t_hi = t(s45, s67);
+    // Lane i: [t0 + t2, t1 + t3] of slot i, then of slot i + 4.
+    let w = _mm512_add_ps(_mm512_shuffle_ps(t_lo, t_hi, 0b01_00_01_00), _mm512_shuffle_ps(t_lo, t_hi, 0b11_10_11_10));
+    // (t0 + t2) + (t1 + t3) per slot; slot order 0, 4, 1, 5, 2, 6, 3, 7.
+    let even = _mm512_permutexvar_ps(_mm512_setr_epi32(0, 2, 4, 6, 8, 10, 12, 14, 0, 0, 0, 0, 0, 0, 0, 0), w);
+    let odd = _mm512_permutexvar_ps(_mm512_setr_epi32(1, 3, 5, 7, 9, 11, 13, 15, 0, 0, 0, 0, 0, 0, 0, 0), w);
+    _mm256_add_ps(_mm512_castps512_ps256(even), _mm512_castps512_ps256(odd))
 }
 
 /// Dequantize int4 nibble rows `[start, start+len)` into `tile` (row-major).
