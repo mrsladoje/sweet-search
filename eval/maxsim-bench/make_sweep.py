@@ -30,8 +30,10 @@ out_dir, sets = args[0], args[1:]
 rng = random.Random(seed)
 
 queries, docs, seen_q, seen_d = [], [], set(), set()
+# The source sets are read unfiltered (EXCLUDE.json ignored), so a rebuild gives the same
+# bytes as the original build; the split-overlap audit found no excluded query in a sweep.
 for s in sets:
-    for c in load_set(s):
+    for c in load_set(s, honor_exclude=False):
         if c['kind'] != 'int4':
             continue
         h = hashlib.sha1(c['q'].tobytes()).digest()

@@ -1,0 +1,420 @@
+{
+ "machine": "arm",
+ "made": "2026-10-15T22:52:33",
+ "source": "dev-warm",
+ "families": {
+  "agent": {
+   "nextplaid": {
+    "f32": {
+     "primary": "nextplaid",
+     "also": [
+      "nextplaid@1"
+     ],
+     "single": "nextplaid@1",
+     "total_ms": {
+      "nextplaid": 96.718,
+      "nextplaid@1": 570.271
+     }
+    }
+   },
+   "numkong": {
+    "bf16": {
+     "primary": "numkong_native_bf16",
+     "also": [
+      "numkong_bf16"
+     ],
+     "single": null,
+     "total_ms": {
+      "numkong_native_bf16": 32.817,
+      "numkong_bf16": 199.65
+     }
+    },
+    "f16": {
+     "primary": "numkong_native_f16",
+     "also": [
+      "numkong_native_f16@1"
+     ],
+     "single": "numkong_native_f16@1",
+     "total_ms": {
+      "numkong_native_f16": 34.477,
+      "numkong_native_f16@1": 166.526,
+      "numkong_f16@1": 188.288,
+      "numkong_f16": 198.724
+     }
+    },
+    "f32": {
+     "primary": "numkong_native_f32",
+     "also": [
+      "numkong_f32"
+     ],
+     "single": null,
+     "total_ms": {
+      "numkong_native_f32": 34.512,
+      "numkong_f32": 197.957
+     }
+    }
+   },
+   "numpy": {
+    "f32": {
+     "primary": "numpy_packed",
+     "also": [
+      "numpy_packed_t"
+     ],
+     "single": "numpy_packed@1",
+     "total_ms": {
+      "numpy_packed": 71.889,
+      "numpy_packed_t": 124.209,
+      "numpy_perdoc": 279.379,
+      "numpy_packed@1": 633.533
+     }
+    },
+    "int4-self": {
+     "primary": "numpy_packed_int4",
+     "also": [],
+     "single": null,
+     "total_ms": {
+      "numpy_packed_int4": 1009.248
+     }
+    }
+   },
+   "torch": {
+    "f32": {
+     "primary": "torch_pad_flat",
+     "also": [
+      "torch_pad_bmm"
+     ],
+     "single": "torch_pad_bmm@1",
+     "total_ms": {
+      "torch_pad_flat": 113.945,
+      "torch_pad_bmm": 151.37,
+      "torch_segment_reduce": 183.497,
+      "torch_pylate": 328.661,
+      "torch_colbert_packed": 387.708,
+      "torch_pad_bmm@1": 673.355
+     }
+    },
+    "bf16": {
+     "primary": "torch_pad_bmm_bf16",
+     "also": [
+      "torch_pad_flat_bf16"
+     ],
+     "single": null,
+     "total_ms": {
+      "torch_pad_bmm_bf16": 146.241,
+      "torch_pad_flat_bf16": 154.201
+     }
+    }
+   }
+  },
+  "gcsn": {
+   "nextplaid": {
+    "f32": {
+     "primary": "nextplaid",
+     "also": [
+      "nextplaid@1"
+     ],
+     "single": "nextplaid@1",
+     "total_ms": {
+      "nextplaid": 332.223,
+      "nextplaid@1": 1221.228
+     }
+    }
+   },
+   "numkong": {
+    "bf16": {
+     "primary": "numkong_native_bf16",
+     "also": [
+      "numkong_bf16"
+     ],
+     "single": null,
+     "total_ms": {
+      "numkong_native_bf16": 93.248,
+      "numkong_bf16": 1069.511
+     }
+    },
+    "f16": {
+     "primary": "numkong_native_f16",
+     "also": [
+      "numkong_native_f16@1"
+     ],
+     "single": "numkong_native_f16@1",
+     "total_ms": {
+      "numkong_native_f16": 96.642,
+      "numkong_native_f16@1": 328.808,
+      "numkong_f16@1": 392.829,
+      "numkong_f16": 1066.074
+     }
+    },
+    "f32": {
+     "primary": "numkong_native_f32",
+     "also": [
+      "numkong_f32"
+     ],
+     "single": null,
+     "total_ms": {
+      "numkong_native_f32": 97.424,
+      "numkong_f32": 1055.908
+     }
+    }
+   },
+   "numpy": {
+    "f32": {
+     "primary": "numpy_packed",
+     "also": [
+      "numpy_packed_t"
+     ],
+     "single": "numpy_packed@1",
+     "total_ms": {
+      "numpy_packed": 190.75,
+      "numpy_packed_t": 238.116,
+      "numpy_perdoc": 887.14,
+      "numpy_packed@1": 1224.848
+     }
+    },
+    "int4-self": {
+     "primary": "numpy_packed_int4",
+     "also": [],
+     "single": null,
+     "total_ms": {
+      "numpy_packed_int4": 2182.934
+     }
+    }
+   },
+   "torch": {
+    "f32": {
+     "primary": "torch_pad_flat",
+     "also": [
+      "torch_segment_reduce"
+     ],
+     "single": "torch_pad_bmm@1",
+     "total_ms": {
+      "torch_pad_flat": 490.374,
+      "torch_segment_reduce": 612.64,
+      "torch_pad_bmm": 711.514,
+      "torch_pylate": 1085.571,
+      "torch_colbert_packed": 2014.941,
+      "torch_pad_bmm@1": 2779.195
+     }
+    },
+    "bf16": {
+     "primary": "torch_pad_flat_bf16",
+     "also": [
+      "torch_pad_bmm_bf16"
+     ],
+     "single": null,
+     "total_ms": {
+      "torch_pad_flat_bf16": 554.128,
+      "torch_pad_bmm_bf16": 852.642
+     }
+    }
+   }
+  },
+  "sweep": {
+   "nextplaid": {
+    "f32": {
+     "primary": "nextplaid",
+     "also": [
+      "nextplaid@1"
+     ],
+     "single": "nextplaid@1",
+     "total_ms": {
+      "nextplaid": 432.479,
+      "nextplaid@1": 4921.324
+     }
+    }
+   },
+   "numkong": {
+    "bf16": {
+     "primary": "numkong_native_bf16",
+     "also": [
+      "numkong_bf16"
+     ],
+     "single": null,
+     "total_ms": {
+      "numkong_native_bf16": 142.353,
+      "numkong_bf16": 391.7
+     }
+    },
+    "f16": {
+     "primary": "numkong_native_f16",
+     "also": [
+      "numkong_f16"
+     ],
+     "single": "numkong_native_f16@1",
+     "total_ms": {
+      "numkong_native_f16": 150.656,
+      "numkong_f16": 392.931,
+      "numkong_native_f16@1": 1782.474,
+      "numkong_f16@1": 1893.484
+     }
+    },
+    "f32": {
+     "primary": "numkong_native_f32",
+     "also": [
+      "numkong_f32"
+     ],
+     "single": null,
+     "total_ms": {
+      "numkong_native_f32": 156.333,
+      "numkong_f32": 392.173
+     }
+    }
+   },
+   "numpy": {
+    "f32": {
+     "primary": "numpy_packed",
+     "also": [
+      "numpy_perdoc"
+     ],
+     "single": "numpy_packed@1",
+     "total_ms": {
+      "numpy_packed": 728.409,
+      "numpy_perdoc": 1902.42,
+      "numpy_packed_t": 2409.39,
+      "numpy_packed@1": 6844.903
+     }
+    },
+    "int4-self": {
+     "primary": "numpy_packed_int4",
+     "also": [],
+     "single": null,
+     "total_ms": {
+      "numpy_packed_int4": 6587.512
+     }
+    }
+   },
+   "torch": {
+    "f32": {
+     "primary": "torch_colbert_packed",
+     "also": [
+      "torch_pad_flat"
+     ],
+     "single": "torch_pad_bmm@1",
+     "total_ms": {
+      "torch_colbert_packed": 490.983,
+      "torch_pad_flat": 522.542,
+      "torch_pad_bmm": 1172.676,
+      "torch_segment_reduce": 1259.677,
+      "torch_pylate": 2189.27,
+      "torch_pad_bmm@1": 3535.986
+     }
+    },
+    "bf16": {
+     "primary": "torch_pad_flat_bf16",
+     "also": [
+      "torch_pad_bmm_bf16"
+     ],
+     "single": null,
+     "total_ms": {
+      "torch_pad_flat_bf16": 322.432,
+      "torch_pad_bmm_bf16": 1409.842
+     }
+    }
+   }
+  },
+  "beir": {
+   "nextplaid": {
+    "f32": {
+     "primary": "nextplaid",
+     "also": [
+      "nextplaid@1"
+     ],
+     "single": "nextplaid@1",
+     "total_ms": {
+      "nextplaid": 137.144,
+      "nextplaid@1": 1539.982
+     }
+    }
+   },
+   "numkong": {
+    "bf16": {
+     "primary": "numkong_native_bf16",
+     "also": [
+      "numkong_bf16"
+     ],
+     "single": null,
+     "total_ms": {
+      "numkong_native_bf16": 44.456,
+      "numkong_bf16": 130.717
+     }
+    },
+    "f16": {
+     "primary": "numkong_native_f16",
+     "also": [
+      "numkong_f16"
+     ],
+     "single": "numkong_native_f16@1",
+     "total_ms": {
+      "numkong_native_f16": 47.366,
+      "numkong_f16": 130.721,
+      "numkong_native_f16@1": 559.552,
+      "numkong_f16@1": 592.778
+     }
+    },
+    "f32": {
+     "primary": "numkong_native_f32",
+     "also": [
+      "numkong_f32"
+     ],
+     "single": null,
+     "total_ms": {
+      "numkong_native_f32": 49.683,
+      "numkong_f32": 130.622
+     }
+    }
+   },
+   "numpy": {
+    "f32": {
+     "primary": "numpy_packed",
+     "also": [
+      "numpy_perdoc"
+     ],
+     "single": "numpy_packed@1",
+     "total_ms": {
+      "numpy_packed": 226.804,
+      "numpy_perdoc": 700.323,
+      "numpy_packed_t": 782.104,
+      "numpy_packed@1": 2202.359
+     }
+    },
+    "int4-self": {
+     "primary": "numpy_packed_int4",
+     "also": [],
+     "single": null,
+     "total_ms": {
+      "numpy_packed_int4": 2178.375
+     }
+    }
+   },
+   "torch": {
+    "f32": {
+     "primary": "torch_pad_flat",
+     "also": [
+      "torch_colbert_packed"
+     ],
+     "single": "torch_pad_bmm@1",
+     "total_ms": {
+      "torch_pad_flat": 139.329,
+      "torch_colbert_packed": 140.456,
+      "torch_pad_bmm": 274.03,
+      "torch_segment_reduce": 375.468,
+      "torch_pylate": 960.557,
+      "torch_pad_bmm@1": 1016.93
+     }
+    },
+    "bf16": {
+     "primary": "torch_pad_flat_bf16",
+     "also": [
+      "torch_pad_bmm_bf16"
+     ],
+     "single": null,
+     "total_ms": {
+      "torch_pad_flat_bf16": 95.963,
+      "torch_pad_bmm_bf16": 121.973
+     }
+    }
+   }
+  }
+ },
+ "rule": "per family x library x input type: two fastest by total of per-call medians, plus the fastest one-thread configuration; beir = 32-query-token sweep cells"
+}

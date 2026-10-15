@@ -1,0 +1,560 @@
+{
+ "machine": "amd",
+ "made": "2026-10-15T22:52:30",
+ "source": "dev-warm",
+ "families": {
+  "agent": {
+   "maxsim_cpu": {
+    "f32": {
+     "primary": "maxsim_cpu_variable",
+     "also": [
+      "maxsim_cpu_3d"
+     ],
+     "single": "maxsim_cpu_variable@1",
+     "total_ms": {
+      "maxsim_cpu_variable": 78.324,
+      "maxsim_cpu_3d": 91.739,
+      "maxsim_cpu_variable@1": 543.829
+     }
+    },
+    "int4-self": {
+     "primary": "maxsim_cpu_variable_int4",
+     "also": [],
+     "single": null,
+     "total_ms": {
+      "maxsim_cpu_variable_int4": 828.584
+     }
+    }
+   },
+   "nextplaid": {
+    "f32": {
+     "primary": "nextplaid@1",
+     "also": [
+      "nextplaid"
+     ],
+     "single": "nextplaid@1",
+     "total_ms": {
+      "nextplaid@1": 283.624,
+      "nextplaid": 320.258
+     }
+    }
+   },
+   "numkong": {
+    "bf16": {
+     "primary": "numkong_native_bf16",
+     "also": [
+      "numkong_bf16"
+     ],
+     "single": null,
+     "total_ms": {
+      "numkong_native_bf16": 32.671,
+      "numkong_bf16": 194.49
+     }
+    },
+    "f16": {
+     "primary": "numkong_native_f16",
+     "also": [
+      "numkong_native_f16@1"
+     ],
+     "single": "numkong_native_f16@1",
+     "total_ms": {
+      "numkong_native_f16": 31.471,
+      "numkong_native_f16@1": 99.845,
+      "numkong_f16@1": 106.814,
+      "numkong_f16": 187.209
+     }
+    },
+    "f32": {
+     "primary": "numkong_native_f32",
+     "also": [
+      "numkong_f32"
+     ],
+     "single": null,
+     "total_ms": {
+      "numkong_native_f32": 30.907,
+      "numkong_f32": 188.45
+     }
+    }
+   },
+   "numpy+blis": {
+    "f32": {
+     "primary": "numpy_packed@1%blis",
+     "also": [
+      "numpy_packed%blis"
+     ],
+     "single": "numpy_packed@1%blis",
+     "total_ms": {
+      "numpy_packed@1%blis": 1220.267,
+      "numpy_packed%blis": 1221.92
+     }
+    }
+   },
+   "numpy": {
+    "f32": {
+     "primary": "numpy_packed",
+     "also": [
+      "numpy_packed_t"
+     ],
+     "single": "numpy_packed@1",
+     "total_ms": {
+      "numpy_packed": 86.74,
+      "numpy_packed_t": 96.057,
+      "numpy_packed@1": 218.274,
+      "numpy_perdoc": 295.945
+     }
+    },
+    "int4-self": {
+     "primary": "numpy_packed_int4",
+     "also": [],
+     "single": null,
+     "total_ms": {
+      "numpy_packed_int4": 779.525
+     }
+    }
+   },
+   "torch": {
+    "f32": {
+     "primary": "torch_pad_bmm",
+     "also": [
+      "torch_pylate"
+     ],
+     "single": "torch_pad_bmm@1",
+     "total_ms": {
+      "torch_pad_bmm": 65.483,
+      "torch_pylate": 156.726,
+      "torch_pad_flat": 269.853,
+      "torch_segment_reduce": 366.466,
+      "torch_pad_bmm@1": 426.106,
+      "torch_colbert_packed": 1561.347
+     }
+    },
+    "bf16": {
+     "primary": "torch_pad_bmm_bf16",
+     "also": [
+      "torch_pad_flat_bf16"
+     ],
+     "single": null,
+     "total_ms": {
+      "torch_pad_bmm_bf16": 55.221,
+      "torch_pad_flat_bf16": 80.626
+     }
+    }
+   }
+  },
+  "gcsn": {
+   "maxsim_cpu": {
+    "f32": {
+     "primary": "maxsim_cpu_variable",
+     "also": [
+      "maxsim_cpu_3d"
+     ],
+     "single": "maxsim_cpu_variable@1",
+     "total_ms": {
+      "maxsim_cpu_variable": 272.418,
+      "maxsim_cpu_3d": 385.462,
+      "maxsim_cpu_variable@1": 1105.9
+     }
+    },
+    "int4-self": {
+     "primary": "maxsim_cpu_variable_int4",
+     "also": [],
+     "single": null,
+     "total_ms": {
+      "maxsim_cpu_variable_int4": 1968.465
+     }
+    }
+   },
+   "nextplaid": {
+    "f32": {
+     "primary": "nextplaid",
+     "also": [
+      "nextplaid@1"
+     ],
+     "single": "nextplaid@1",
+     "total_ms": {
+      "nextplaid": 660.497,
+      "nextplaid@1": 683.013
+     }
+    }
+   },
+   "numkong": {
+    "bf16": {
+     "primary": "numkong_native_bf16",
+     "also": [
+      "numkong_bf16"
+     ],
+     "single": null,
+     "total_ms": {
+      "numkong_native_bf16": 95.484,
+      "numkong_bf16": 1040.609
+     }
+    },
+    "f16": {
+     "primary": "numkong_native_f16",
+     "also": [
+      "numkong_native_f16@1"
+     ],
+     "single": "numkong_native_f16@1",
+     "total_ms": {
+      "numkong_native_f16": 93.45,
+      "numkong_native_f16@1": 201.632,
+      "numkong_f16@1": 238.246,
+      "numkong_f16": 1026.667
+     }
+    },
+    "f32": {
+     "primary": "numkong_native_f32",
+     "also": [
+      "numkong_f32"
+     ],
+     "single": null,
+     "total_ms": {
+      "numkong_native_f32": 88.817,
+      "numkong_f32": 1041.573
+     }
+    }
+   },
+   "numpy+blis": {
+    "f32": {
+     "primary": "numpy_packed%blis",
+     "also": [
+      "numpy_packed@1%blis"
+     ],
+     "single": "numpy_packed@1%blis",
+     "total_ms": {
+      "numpy_packed%blis": 2367.273,
+      "numpy_packed@1%blis": 2368.793
+     }
+    }
+   },
+   "numpy": {
+    "f32": {
+     "primary": "numpy_packed_t",
+     "also": [
+      "numpy_packed"
+     ],
+     "single": "numpy_packed@1",
+     "total_ms": {
+      "numpy_packed_t": 257.424,
+      "numpy_packed": 309.281,
+      "numpy_packed@1": 448.324,
+      "numpy_perdoc": 696.301
+     }
+    },
+    "int4-self": {
+     "primary": "numpy_packed_int4",
+     "also": [],
+     "single": null,
+     "total_ms": {
+      "numpy_packed_int4": 1733.565
+     }
+    }
+   },
+   "torch": {
+    "f32": {
+     "primary": "torch_pad_bmm",
+     "also": [
+      "torch_pylate"
+     ],
+     "single": "torch_pad_bmm@1",
+     "total_ms": {
+      "torch_pad_bmm": 278.869,
+      "torch_pylate": 488.753,
+      "torch_segment_reduce": 691.886,
+      "torch_pad_flat": 830.349,
+      "torch_pad_bmm@1": 1324.578,
+      "torch_colbert_packed": 7323.768
+     }
+    },
+    "bf16": {
+     "primary": "torch_pad_bmm_bf16",
+     "also": [
+      "torch_pad_flat_bf16"
+     ],
+     "single": null,
+     "total_ms": {
+      "torch_pad_bmm_bf16": 263.356,
+      "torch_pad_flat_bf16": 290.179
+     }
+    }
+   }
+  },
+  "sweep": {
+   "maxsim_cpu": {
+    "f32": {
+     "primary": "maxsim_cpu_variable",
+     "also": [
+      "maxsim_cpu_3d"
+     ],
+     "single": "maxsim_cpu_variable@1",
+     "total_ms": {
+      "maxsim_cpu_variable": 498.345,
+      "maxsim_cpu_3d": 625.126,
+      "maxsim_cpu_variable@1": 6832.223
+     }
+    },
+    "int4-self": {
+     "primary": "maxsim_cpu_variable_int4",
+     "also": [],
+     "single": null,
+     "total_ms": {
+      "maxsim_cpu_variable_int4": 5309.835
+     }
+    }
+   },
+   "nextplaid": {
+    "f32": {
+     "primary": "nextplaid",
+     "also": [
+      "nextplaid@1"
+     ],
+     "single": "nextplaid@1",
+     "total_ms": {
+      "nextplaid": 2351.754,
+      "nextplaid@1": 2383.388
+     }
+    }
+   },
+   "numkong": {
+    "bf16": {
+     "primary": "numkong_native_bf16",
+     "also": [
+      "numkong_bf16"
+     ],
+     "single": null,
+     "total_ms": {
+      "numkong_native_bf16": 105.889,
+      "numkong_bf16": 275.663
+     }
+    },
+    "f16": {
+     "primary": "numkong_native_f16",
+     "also": [
+      "numkong_f16"
+     ],
+     "single": "numkong_native_f16@1",
+     "total_ms": {
+      "numkong_native_f16": 112.056,
+      "numkong_f16": 266.629,
+      "numkong_native_f16@1": 1301.685,
+      "numkong_f16@1": 1314.398
+     }
+    },
+    "f32": {
+     "primary": "numkong_native_f32",
+     "also": [
+      "numkong_f32"
+     ],
+     "single": null,
+     "total_ms": {
+      "numkong_native_f32": 110.586,
+      "numkong_f32": 271.247
+     }
+    }
+   },
+   "numpy+blis": {
+    "f32": {
+     "primary": "numpy_packed%blis",
+     "also": [
+      "numpy_packed@1%blis"
+     ],
+     "single": "numpy_packed@1%blis",
+     "total_ms": {
+      "numpy_packed%blis": 14907.214,
+      "numpy_packed@1%blis": 15014.277
+     }
+    }
+   },
+   "numpy": {
+    "f32": {
+     "primary": "numpy_packed",
+     "also": [
+      "numpy_packed_t"
+     ],
+     "single": "numpy_packed@1",
+     "total_ms": {
+      "numpy_packed": 508.53,
+      "numpy_packed_t": 1971.452,
+      "numpy_packed@1": 2082.888,
+      "numpy_perdoc": 3345.151
+     }
+    },
+    "int4-self": {
+     "primary": "numpy_packed_int4",
+     "also": [],
+     "single": null,
+     "total_ms": {
+      "numpy_packed_int4": 5016.434
+     }
+    }
+   },
+   "torch": {
+    "f32": {
+     "primary": "torch_pad_bmm",
+     "also": [
+      "torch_pad_flat"
+     ],
+     "single": "torch_pad_bmm@1",
+     "total_ms": {
+      "torch_pad_bmm": 625.055,
+      "torch_pad_flat": 1149.423,
+      "torch_pylate": 1298.222,
+      "torch_colbert_packed": 1398.008,
+      "torch_segment_reduce": 3504.065,
+      "torch_pad_bmm@1": 5232.014
+     }
+    },
+    "bf16": {
+     "primary": "torch_pad_bmm_bf16",
+     "also": [
+      "torch_pad_flat_bf16"
+     ],
+     "single": null,
+     "total_ms": {
+      "torch_pad_bmm_bf16": 347.906,
+      "torch_pad_flat_bf16": 362.281
+     }
+    }
+   }
+  },
+  "beir": {
+   "maxsim_cpu": {
+    "f32": {
+     "primary": "maxsim_cpu_variable",
+     "also": [
+      "maxsim_cpu_3d"
+     ],
+     "single": "maxsim_cpu_variable@1",
+     "total_ms": {
+      "maxsim_cpu_variable": 147.456,
+      "maxsim_cpu_3d": 187.444,
+      "maxsim_cpu_variable@1": 2036.169
+     }
+    },
+    "int4-self": {
+     "primary": "maxsim_cpu_variable_int4",
+     "also": [],
+     "single": null,
+     "total_ms": {
+      "maxsim_cpu_variable_int4": 1723.322
+     }
+    }
+   },
+   "nextplaid": {
+    "f32": {
+     "primary": "nextplaid@1",
+     "also": [
+      "nextplaid"
+     ],
+     "single": "nextplaid@1",
+     "total_ms": {
+      "nextplaid@1": 731.622,
+      "nextplaid": 763.922
+     }
+    }
+   },
+   "numkong": {
+    "bf16": {
+     "primary": "numkong_native_bf16",
+     "also": [
+      "numkong_bf16"
+     ],
+     "single": null,
+     "total_ms": {
+      "numkong_native_bf16": 31.838,
+      "numkong_bf16": 94.167
+     }
+    },
+    "f16": {
+     "primary": "numkong_native_f16",
+     "also": [
+      "numkong_f16"
+     ],
+     "single": "numkong_native_f16@1",
+     "total_ms": {
+      "numkong_native_f16": 36.399,
+      "numkong_f16": 90.833,
+      "numkong_native_f16@1": 404.656,
+      "numkong_f16@1": 408.015
+     }
+    },
+    "f32": {
+     "primary": "numkong_native_f32",
+     "also": [
+      "numkong_f32"
+     ],
+     "single": null,
+     "total_ms": {
+      "numkong_native_f32": 33.314,
+      "numkong_f32": 93.578
+     }
+    }
+   },
+   "numpy+blis": {
+    "f32": {
+     "primary": "numpy_packed%blis",
+     "also": [
+      "numpy_packed@1%blis"
+     ],
+     "single": "numpy_packed@1%blis",
+     "total_ms": {
+      "numpy_packed%blis": 4666.154,
+      "numpy_packed@1%blis": 4706.785
+     }
+    }
+   },
+   "numpy": {
+    "f32": {
+     "primary": "numpy_packed",
+     "also": [
+      "numpy_packed_t"
+     ],
+     "single": "numpy_packed@1",
+     "total_ms": {
+      "numpy_packed": 166.471,
+      "numpy_packed_t": 587.713,
+      "numpy_packed@1": 672.016,
+      "numpy_perdoc": 886.771
+     }
+    },
+    "int4-self": {
+     "primary": "numpy_packed_int4",
+     "also": [],
+     "single": null,
+     "total_ms": {
+      "numpy_packed_int4": 1672.583
+     }
+    }
+   },
+   "torch": {
+    "f32": {
+     "primary": "torch_pad_bmm",
+     "also": [
+      "torch_pad_flat"
+     ],
+     "single": "torch_pad_bmm@1",
+     "total_ms": {
+      "torch_pad_bmm": 193.478,
+      "torch_pad_flat": 426.122,
+      "torch_pylate": 441.748,
+      "torch_colbert_packed": 485.686,
+      "torch_segment_reduce": 1124.616,
+      "torch_pad_bmm@1": 1652.359
+     }
+    },
+    "bf16": {
+     "primary": "torch_pad_bmm_bf16",
+     "also": [
+      "torch_pad_flat_bf16"
+     ],
+     "single": null,
+     "total_ms": {
+      "torch_pad_bmm_bf16": 109.514,
+      "torch_pad_flat_bf16": 147.486
+     }
+    }
+   }
+  }
+ },
+ "rule": "per family x library x input type: two fastest by total of per-call medians, plus the fastest one-thread configuration; beir = 32-query-token sweep cells"
+}

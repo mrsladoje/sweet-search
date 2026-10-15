@@ -1,6 +1,9 @@
 // node bench-node.mjs --arm NAME --out FILE.json --set DIR [--set DIR ...] [--reps N] [--gap-ms G] [--limit N] [--stride N]
+//                      [--keep-scores] [--job-key K]
 //
-// The Node twin of bench.py (same timing protocol, same JSON) for the paths a
+// The Node twin of bench.py (same timing protocol, same JSON: every timed repetition in
+// ts_ns, provenance per call, contract-S references from the per-set cache that
+// contracts.py --ensure builds, atomic output with complete=true) for the paths a
 // sweet-search process actually runs:
 //   production  core/infrastructure/simd-distance.js nativeMaxSimPacked, the call the
 //               LI rerank stage makes (per-call JS packing and N-API included)
@@ -19,8 +22,8 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { performance } from 'node:perf_hooks';
-import { loadCalls } from './replay.mjs';
+import { loadCalls, loadProvenance } from './replay.mjs';
+import { packAll, makeBuild, busy } from './node-arms.mjs';
 
 const argv = process.argv.slice(2);
 const opt = (k, d) => { const i = argv.indexOf(`--${k}`); return i >= 0 ? argv[i + 1] : d; };
@@ -28,6 +31,7 @@ const sets = argv.flatMap((a, i) => (a === '--set' ? [argv[i + 1]] : []));
 const arm = opt('arm'), outFile = opt('out');
 const reps = Number(opt('reps', 5)), gapMs = Number(opt('gap-ms', 0)), limit = Number(opt('limit', 0)), stride = Number(opt('stride', 1));
 const PREP = Number(process.env.PREP_US || 100) / 1000;
+const keepAll = argv.includes('--keep-scores'), jobKey = opt('job-key', '');
 
 const SRC = path.resolve(new URL('.', import.meta.url).pathname, '../..');
 const sd = await import(`${SRC}/core/infrastructure/simd-distance.js`);
@@ -37,98 +41,35 @@ const jsScore = arm === 'js'
   : null;
 const legacy = arm === 'legacy' ? (await import('node:module')).createRequire(import.meta.url)(process.env.LEGACY_ADDON) : null;
 
-const busy = (ms) => { const end = performance.now() + ms; while (performance.now() < end); };
+const build = makeBuild({ sd, arm, legacy, jsScore, prepMs: PREP });
 
-// Lay every doc of every call out in shared slabs, once (LateInteractionIndex
-// _packDocsIntoSlabs does the same at index load).
-function packAll(calls) {
-  const al = n => (n + 3) & ~3;
-  const MAX = 64 * 1024 * 1024;
-  let batch = [], bytes = 0;
-  const flush = () => {
-    if (!batch.length) return;
-    const slab = new ArrayBuffer(bytes), u8 = new Uint8Array(slab);
-    let at = 0;
-    for (const d of batch) {
-      for (const f of ['tokens', 'minArray', 'scaleArray', 'tokenNorms']) {
-        const a = d[f];
-        u8.set(new Uint8Array(a.buffer, a.byteOffset, a.byteLength), at);
-        d[f] = new a.constructor(slab, at, a.length);
-        at += al(a.byteLength);
-      }
+// Contract-S reference (float64, from the raw nibbles) from the set's cache
+// <set>/refs-v2 (contracts.py --ensure). Every node arm runs contract S with the clamp,
+// so its reference (a) and (b) are both S-clamp.
+function refReader(root) {
+  const idx = JSON.parse(fs.readFileSync(path.join(root, 'refs-v2', 'index.json'), 'utf8'));
+  const arrays = new Map();
+  return (c) => {
+    const [o, n] = idx.calls[`${c.repo}/${c.file}`];
+    if (!arrays.has(c.repo)) {
+      const b = fs.readFileSync(path.join(root, 'refs-v2', c.repo, 'S-clamp.f64'));
+      arrays.set(c.repo, new Float64Array(b.buffer, b.byteOffset, b.byteLength / 8));
     }
-    batch = []; bytes = 0;
+    return Array.from(arrays.get(c.repo).subarray(o, o + n));
   };
-  for (const c of calls) for (const d of c.cands) {
-    const need = al(d.tokens.byteLength) + 3 * al(d.numTokens * 4);
-    if (bytes + need > MAX) flush();
-    batch.push(d); bytes += need;
-  }
-  flush();
 }
 
-function build(c) {
-  const docs = c.cands;
-  if (arm === 'production') return () => sd.nativeMaxSimPacked(c.query, c.numQ, c.dim, c.kind === 'int4' ? 4 : 8, docs);
-  if (arm === 'prewarm') {
-    const score = () => sd.nativeMaxSimPacked(c.query, c.numQ, c.dim, c.kind === 'int4' ? 4 : 8, docs);
-    score.before = () => { const t0 = performance.now(); sd.nativeMaxSimPrewarm(); const t = performance.now() - t0; busy(PREP); return t; };
-    return score;
-  }
-  if (arm === 'wasm') {
-    return () => {
-      const session = sd.wasmMaxSimPrepareQuery(c.query, c.numQ, c.dim);
-      return docs.map(d => sd.wasmMaxSimDequant4Bit(c.query, d.tokens, d.minArray, d.scaleArray, d.tokenNorms, c.numQ, d.numTokens, c.dim, session));
-    };
-  }
-  if (arm === 'legacy') {
-    return () => legacy.maxsimScoreBatch4Bit(c.query, c.numQ, c.dim, docs.map(d => ({
-      tokens: Buffer.from(d.tokens.buffer, d.tokens.byteOffset, d.tokens.byteLength),
-      numTokens: d.numTokens, dim: d.dim, minArray: d.minArray, scaleArray: d.scaleArray, tokenNorms: d.tokenNorms,
-    })));
-  }
-  if (arm === 'js') {
-    const rows = Array.from({ length: c.numQ }, (_, i) => c.query.subarray(i * c.dim, (i + 1) * c.dim));
-    const self = { useTokenWeights: false };
-    return () => docs.map(d => jsScore.call(self, rows, { ...d, quantBits: 4 }, c.query));
-  }
-  throw new Error(`unknown arm ${arm}`);
-}
+const agree = (ref, got) => {
+  const order = (s) => s.map((v, i) => [v, i]).sort((a, b) => b[0] - a[0] || a[1] - b[1]).map(x => x[1]);
+  const oR = order(ref), oG = order(got); const k = Math.min(10, got.length);
+  return [!got.length || oR[0] === oG[0], k ? oR.slice(0, k).filter(i => oG.slice(0, k).includes(i)).length / k : 1];
+};
 
-// float64 reference of our contract: per query token max(0, max cosine), mean over tokens.
-// bench.py caches it per set in <set>/<repo>/refs.json ([raw, clamped] per call); use
-// that when present (the scalar JS below is slow on the largest sweep cells).
-const refCache = new Map();
-function cachedReference(root, c) {
-  const p = path.join(root, c.repo, 'refs.json');
-  if (!refCache.has(p)) refCache.set(p, fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : {});
-  const r = refCache.get(p)[c.file];
-  return r ? r[1] : reference(c);
-}
-function reference(c) {
-  const { numQ, dim, query } = c; const pd = (dim + 1) >> 1;
-  const qn = []; for (let i = 0; i < numQ; i++) { let s = 0; for (let k = 0; k < dim; k++) s += query[i * dim + k] ** 2; qn.push(Math.sqrt(s)); }
-  return c.cands.map(d => {
-    let total = 0;
-    for (let i = 0; i < numQ; i++) {
-      let best = -Infinity;
-      for (let t = 0; t < d.numTokens; t++) {
-        let dot = 0;
-        for (let k = 0; k < dim; k++) {
-          const b = d.tokens[t * pd + (k >> 1)]; const nib = (k & 1) ? b >> 4 : b & 15;
-          dot += query[i * dim + k] * (nib * d.scaleArray[t] + d.minArray[t]);
-        }
-        const sim = dot / (qn[i] * d.tokenNorms[t]);
-        if (sim > best) best = sim;
-      }
-      total += Math.max(0, best);
-    }
-    return total / numQ;
-  });
-}
-
-const out = { env: { arm, reps, gap_ms: gapMs, sets, node: process.version, platform: `${os.platform()} ${os.release()}`, machine: os.arch(), cpu: os.cpus()[0]?.model, cpu_count: os.cpus().length, loadavg: os.loadavg(), started: new Date().toISOString() }, clamp: true, calls: [] };
+const out = { env: { arm, reps, gap_ms: gapMs, sets, node: process.version, platform: `${os.platform()} ${os.release()}`, machine: os.arch(), cpu: os.cpus()[0]?.model, cpu_count: os.cpus().length, loadavg: os.loadavg(), started: new Date().toISOString(), instance: process.env.SS_INSTANCE_ID || os.hostname() },
+  arm: `node:${arm}`, contract: 'S', clamp: true, precision: 'int4', ref_a: 'S-clamp', ref_b: 'S-clamp', job_key: jobKey, complete: false, calls: [] };
 for (const root of sets) {
+  const refOf = refReader(root), prov = loadProvenance(root);
+  const name = path.basename(root.replace(/\/$/, '')), keep = keepAll || name.startsWith('beir-');
   let calls = loadCalls(root).filter((_, i) => i % stride === 0);
   if (limit) calls = calls.slice(0, limit);
   packAll(calls);
@@ -140,19 +81,24 @@ for (const root of sets) {
     for (let r = 0; r < reps; r++) {
       if (gapMs > 0) busy(gapMs);
       const extra = run.before ? run.before() : 0;
-      const t0 = performance.now(); run(); ts.push(performance.now() - t0 + extra);
+      const t0 = process.hrtime.bigint(); run(); ts.push(Number(process.hrtime.bigint() - t0) + Math.round(extra * 1e6));
     }
-    ts.sort((a, b) => a - b);
-    const ref = cachedReference(root, c);
-    const order = (s) => s.map((v, i) => [v, i]).sort((a, b) => b[0] - a[0] || a[1] - b[1]).map(x => x[1]);
-    const oR = order(ref), oG = order(got); const k = Math.min(10, got.length);
-    const top10 = k ? oR.slice(0, k).filter(i => oG.slice(0, k).includes(i)).length / k : 1;
-    out.calls.push({ set: path.basename(root.replace(/\/$/, '')), file: c.file, nq: c.numQ, pool: c.cands.length, tokens: c.cands.reduce((a, d) => a + d.numTokens, 0),
-      ms: ts[ts.length >> 1], err: got.length ? Math.max(...got.map((g, i) => Math.abs(g - ref[i]))) : 0, top1: !got.length || oR[0] === oG[0], top10 });
+    const sorted = [...ts].sort((a, b) => a - b), mid = sorted.length >> 1;
+    const med = sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    const ref = refOf(c);
+    const [top1, top10] = agree(ref, got);
+    const pv = prov.get(`${c.repo}/${c.file}`) || {};
+    const rec = { set: name, repo: c.repo, file: c.file, query_id: pv.query_id ?? null, query_sha256: pv.query_sha256 ?? null,
+      nq: c.numQ, pool: c.cands.length, tokens: c.cands.reduce((a, d) => a + d.numTokens, 0), ms: med / 1e6, ts_ns: ts,
+      err: got.length ? Math.max(...got.map((g, i) => Math.abs(g - ref[i]))) : 0, err_input: 0, top1, top10, top1_S: top1, top10_S: top10 };
+    if (keep) rec.scores = got;
+    out.calls.push(rec);
   }
 }
 out.env.loadavg_end = os.loadavg(); out.env.ended = new Date().toISOString();
-fs.writeFileSync(outFile, JSON.stringify(out));
+out.complete = true; out.n_calls = out.calls.length;
+fs.writeFileSync(outFile + '.tmp', JSON.stringify(out));
+fs.renameSync(outFile + '.tmp', outFile);
 const lat = out.calls.map(c => c.ms).sort((a, b) => a - b);
-console.log(`${arm} gap=${gapMs}ms calls=${lat.length} p50=${lat[lat.length >> 1].toFixed(4)} ms total=${lat.reduce((a, b) => a + b, 0).toFixed(1)} ms max|err|=${Math.max(...out.calls.map(c => c.err)).toExponential(2)} top1=${(out.calls.filter(c => c.top1).length / lat.length * 100).toFixed(2)}%`);
+console.log(`${arm} gap=${gapMs}ms calls=${lat.length} p50=${lat[lat.length >> 1].toFixed(4)} ms total=${lat.reduce((a, b) => a + b, 0).toFixed(1)} ms max|err|=${Math.max(...out.calls.map(c => c.err)).toExponential(2)} top1_S=${(out.calls.filter(c => c.top1).length / lat.length * 100).toFixed(2)}%`);
 process.exit(0);

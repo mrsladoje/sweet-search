@@ -2,3 +2,6 @@ venv/
 results/
 PAPER_PLAN.md
 aws/env.local
+venv-*/
+__pycache__/
+*.tmp

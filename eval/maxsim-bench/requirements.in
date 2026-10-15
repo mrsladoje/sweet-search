@@ -1,0 +1,9 @@
+# Rival libraries and tools of the benchmark venv (bench.py). Versions as measured in v1
+# (RESULTS.md). Lock files: requirements-<platform>.lock (uv pip compile --generate-hashes);
+# bootstrap.sh installs only from them.
+numpy==2.5.4
+torch==2.14.1
+maxsim-cpu==0.1.0
+numkong==7.8.5
+threadpoolctl==3.7.0
+ninja
