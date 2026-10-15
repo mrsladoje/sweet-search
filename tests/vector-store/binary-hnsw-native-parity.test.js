@@ -91,7 +91,11 @@ describe.skipIf(!hasNative)('BinaryHNSWIndex native search parity', () => {
     const { js, nat } = await searchBoth(index, queries, 50);
     expect(nat).toEqual(js);
     expect(index._native).not.toBe(before);
-    expect(nat[0].hits[0]).toEqual(['v0', 0]);
+    // The in-place update is what the walk now sees: v0's code is the query,
+    // and a search at a production-like width finds it first. (At ef 50 the
+    // discovery-rate stop may end this clustered walk before it.)
+    expect(Array.from(index.nodeBinary(index.idToIndex.get('v0')))).toEqual(Array.from(queries[0]));
+    expect((await index.search(queries[0], 400)).results[0]).toMatchObject({ id: 'v0', hammingDistance: 0 });
   });
 
   it('releases the JS graph after load and rebuilds it exactly; save output is unchanged', async () => {

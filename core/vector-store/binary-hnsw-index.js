@@ -1122,7 +1122,7 @@ export class BinaryHNSWIndex {
    */
   _nativeSearchLayer(searcher, startNode, ef, level) {
     const et = BINARY_HNSW_CONFIG.earlyTermination || {};
-    const list = et.thresholds || [[0.3, 0.05], [0.6, 0.10]];
+    const list = et.thresholds || [[0.2, 0.10], [0.5, 0.15]];
     if (nativeThresholds.list !== list) {
       nativeThresholds.list = list;
       nativeThresholds.flat = new Float64Array(list.flat());
@@ -1376,7 +1376,7 @@ export class BinaryHNSWIndex {
     }
     const want = scan ? Math.min(total, k + (total - live)) : 0;
     const et = BINARY_HNSW_CONFIG.earlyTermination || {};
-    const list = et.thresholds || [[0.3, 0.05], [0.6, 0.10]];
+    const list = et.thresholds || [[0.2, 0.10], [0.5, 0.15]];
     if (nativeThresholds.list !== list) {
       nativeThresholds.list = list;
       nativeThresholds.flat = new Float64Array(list.flat());
@@ -1620,7 +1620,7 @@ export class BinaryHNSWIndex {
 
     const etConfig = BINARY_HNSW_CONFIG.earlyTermination || {};
     const windowSize = etConfig.windowSize || 16;
-    const etThresholds = etConfig.thresholds || [[0.3, 0.05], [0.6, 0.10]];
+    const etThresholds = etConfig.thresholds || [[0.2, 0.10], [0.5, 0.15]];
     let visitedCount = 0;
     let recentDiscoveries = 0;
     let recentVisits = 0;

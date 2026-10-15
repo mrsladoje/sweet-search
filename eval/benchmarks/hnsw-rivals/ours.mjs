@@ -36,6 +36,9 @@ for (const [f, ks] of [[knobs.POOL2, ['minStage2', 'maxStage2', 'oversample1']],
   const a = BINARY_HNSW_CONFIG.retrieval.adaptive;
   for (const k of ks) a[k] = k.startsWith('over') ? a[k] * f : Math.max(1, Math.round(a[k] * f));
 }
+// ET / ETW: early-stop thresholds (JSON [[progress, rate], ...]) and window, for walk sweeps (W6).
+if (process.env.ET) BINARY_HNSW_CONFIG.earlyTermination = { ...BINARY_HNSW_CONFIG.earlyTermination, thresholds: JSON.parse(process.env.ET) };
+if (process.env.ETW) BINARY_HNSW_CONFIG.earlyTermination = { ...BINARY_HNSW_CONFIG.earlyTermination, windowSize: Number(process.env.ETW) };
 const tLoad = performance.now();
 const idx = new BinaryHNSWIndex({ indexPath: `${ss}/codebase-binary-hnsw.idx` }); await idx.load();
 idx.efSearch = knobs.EF;
@@ -58,7 +61,7 @@ const inject = i => {
 };
 const run = i => { inject(i); return semanticSearch3Stage.call(self, qs[i].text, { k: K, rerank: false }); };
 for (let i = 0; i < Math.min(200, qs.length); i++) await run(i);
-const out = { system: 'sweet', knobs: { ...knobs, K, HNSW_ENV: Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith('SS_HNSW_'))) }, n: (idx.size ?? idx.vectors.length), load_s: loadS, host: os.hostname(), cpu: os.cpus()[0].model, node: process.version, total_us: [], stage1_us: [], res: [] };
+const out = { system: 'sweet', knobs: { ...knobs, K, HNSW_ENV: Object.fromEntries(Object.entries(process.env).filter(([k]) => /^(SS_HNSW_|SS_W8_|ET)/.test(k))) }, n: (idx.size ?? idx.vectors.length), load_s: loadS, host: os.hostname(), cpu: os.cpus()[0].model, node: process.version, total_us: [], stage1_us: [], res: [] };
 for (let i = 0; i < qs.length; i++) {
   const t = [], s1 = []; let r;
   for (let rep = 0; rep < 3; rep++) {
