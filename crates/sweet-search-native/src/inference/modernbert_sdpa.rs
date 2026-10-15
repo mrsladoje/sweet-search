@@ -71,15 +71,21 @@ impl RotaryEmbedding {
             .map(|i| 1f32 / rope_theta.powf(i as f64 / dim as f64) as f32)
             .collect();
         let inv_freq_len = inv_freq.len();
-        let inv_freq = Tensor::from_vec(inv_freq, (1, inv_freq_len), dev)?.to_dtype(dtype)?;
+        let inv_freq = Tensor::from_vec(inv_freq, (1, inv_freq_len), dev)?;
         let max_seq_len = config.max_position_embeddings;
+        // Positions and angles stay in F32; only the final sin/cos tables
+        // take the model dtype. BF16 holds integers exactly only up to 256,
+        // so casting the positions first merged neighbouring positions above
+        // 256 (steps of 2, 4, then 8 up to 2048). On Metal BF16 that cut the
+        // per-token cosine of a 1170-token document to min 0.70 / mean 0.96
+        // against CPU F32, while documents under 180 tokens stayed >= 0.994.
         let t = Tensor::arange(0u32, max_seq_len as u32, dev)?
-            .to_dtype(dtype)?
+            .to_dtype(DType::F32)?
             .reshape((max_seq_len, 1))?;
         let freqs = t.matmul(&inv_freq)?;
         Ok(Self {
-            sin: freqs.sin()?,
-            cos: freqs.cos()?,
+            sin: freqs.sin()?.to_dtype(dtype)?,
+            cos: freqs.cos()?.to_dtype(dtype)?,
         })
     }
 
