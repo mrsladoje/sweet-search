@@ -49,6 +49,10 @@ struct EmbeddingInner {
     coreml: Option<CoremlEmbedding>,
     device: candle_core::Device,
     hidden_size: usize,
+    /// Backend that serves this model, e.g. "cuda/bf16" or
+    /// "coreml+metal/bf16". Exposed as the `backend` getter so callers can
+    /// confirm the requested backend actually ran.
+    backend: String,
 }
 
 /// When the process shuts down (or the addon drops the last Arc
@@ -163,13 +167,15 @@ fn parse_embed_variant_filename(fname: &str) -> Option<(usize, usize)> {
 /// ~0.996 cosine, triggering false-negative parity failures even though
 /// the spike measured 0.9998 on real sentences.
 ///
-/// We run the check against the LARGEST cascade variant only. All
-/// smaller variants are traced from the same PyTorch model (see
-/// scripts/spike-coreml/trace_cascade.py:TracedNomicBert), so a
-/// cosine mismatch on the largest variant would equally break every
-/// smaller one; running the check on each variant would waste ~20 s
-/// of startup (one mlpackage compile per variant) with no extra
-/// coverage.
+/// We run the check against ONE cascade variant only: the
+/// smallest-batch variant that `pick()` returns for a single row (see
+/// `parity_variant()`). All other variants are traced from the same
+/// PyTorch model (see
+/// scripts/spike-coreml/trace_cascade.py:TracedNomicBert), but each
+/// variant is compiled separately for the Neural Engine, so this check
+/// does NOT prove the other variants correct. Checking every variant at
+/// startup costs ~20 s (one mlpackage compile each); a per-variant check
+/// before first use is the planned replacement.
 #[cfg(feature = "coreml")]
 fn embedding_parity_cosine(
     candle_model: &nomic_bert::NomicBertModel,
@@ -247,20 +253,9 @@ fn embedding_parity_cosine(
     let coreml_mask = vec![mask_row];
     let coreml_vec = coreml.embed(&coreml_input_ids, &coreml_mask)?;
 
-    if candle_vec.len() != coreml_vec.len() {
-        return Err(format!(
-            "length mismatch: candle={} coreml={}",
-            candle_vec.len(),
-            coreml_vec.len()
-        ));
-    }
-
-    let dot: f32 = candle_vec
-        .iter()
-        .zip(coreml_vec.iter())
-        .map(|(&a, &b)| a * b)
-        .sum();
-    Ok(dot)
+    // Length, finite values and unit norm are checked inside
+    // cosine_stats; one pooled vector, so min == mean.
+    super::parity::cosine_stats(&coreml_vec, &candle_vec, hidden_size).map(|s| s.min)
 }
 
 /// Parity threshold below which the CoreML backend is dropped. The spike
@@ -434,6 +429,13 @@ impl NativeEmbeddingModel {
             },
         };
 
+        #[allow(unused_mut)]
+        let mut backend = format!("{device_name}/{dtype_name}");
+        #[cfg(feature = "coreml")]
+        if coreml.is_some() {
+            backend = format!("coreml+{backend}");
+        }
+
         Ok(Self {
             inner: Arc::new(EmbeddingInner {
                 model,
@@ -441,8 +443,16 @@ impl NativeEmbeddingModel {
                 coreml,
                 device,
                 hidden_size,
+                backend,
             }),
         })
+    }
+
+    /// Backend serving this embedding model: `<device>/<dtype>`, prefixed
+    /// with `coreml+` when the CoreML cascade passed its parity check.
+    #[napi(getter)]
+    pub fn backend(&self) -> String {
+        self.inner.backend.clone()
     }
 
     /// Return the embedding dimension (768 for CodeRankEmbed).

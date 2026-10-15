@@ -12,6 +12,7 @@ mod embedding_model;
 mod li_model;
 mod modernbert_sdpa;
 mod nomic_bert_sdpa;
+pub(crate) mod parity;
 
 // Variable-length packing helpers for candle-flash-attn. Compiled in only
 // when the `flash-attn` Cargo feature is enabled (CUDA Ampere+ builds).
