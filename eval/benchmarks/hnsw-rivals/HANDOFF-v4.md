@@ -385,3 +385,28 @@ Below our fastest point the rivals own the front: our floor is stage 1 (the exac
 plus ~25 us of int8 + rescore + JS. Examples: 6.9k binflat ef20 18 us .8208, ef50 21 us .8292; 1M hnswlib M16
 ef32 97 us .4753. So: Pareto-best from our fastest point up (every rival point at or above our MRR is slower),
 not at every quality level.
+
+Mac (M3 Max) after the cleanup (4ead179f, 2026-10-15, run once the owner's machine was quiet):
+- Addon rebuilt (`npx napi build --platform --release`), vector files written for the 5 held-out bench indexes
+  (0 nodes without a vector), ARM vitest of the vector-file / native-parity / mmap / postprocess / repository suites:
+  73 pass. First run of the ARM rescore kernels (until now only compiled).
+- ARM vs x86 parity, same index files and queries: identical results (same = 1.0000) on gcsn dev (.8496) and
+  csn1m dev (.5538). So the 1M index is the same file on both machines, and the NEON and AVX2 kernels agree.
+  Mac dev p50: 6.9k 38 us (box 51), 1M 145 us (box 218).
+- Held-out, 3 interleaved runs per point, MRR@10 identical to the box at every point; p50 us / MRR@10:
+    6.9k  150: 30 .8335 | 200: 31 .8348 | 300: 35 .8351 | 400 (prod): 38 .8359
+    20k   150: 43 .8200 | 200: 45 .8212 | 300: 48 .8217 | 400: 51 .8220
+    AdvTest 150: 45 .4711 | 200: 47 .4713 | 300: 50 .4728 | 400: 54 .4731
+    140k  150: 164 .7844 | 200: 166 .7865 | 300: 169 .7876 | 400: 173 .7881
+    1M    150: 85 .5269 | 200: 98 .5307 | 300: 123 .5328 | 400: 145 .5330
+  vs the Mac table in section 3 (code of 10-13): 6.9k 59 -> 38, 20k 102 -> 51, AdvTest 111 -> 54, 140k 237 -> 173,
+  1M 442 -> 145 us.
+- Closest rival time-to-our-MRR ratio (Mac rival runs of the v4 rounds, 3 rounds; 1M rivals 2 rounds):
+  6.9k binflat x2.18, 20k binflat x2.12, AdvTest binflat x5.21, 140k binflat x1.67, 1M usearch_i8 x2.28
+  (never: 9 / 5 / 10 / 8 / 4 configs).
+- No Mac rival point is both as fast and as good as any of our 4 points. Below our fastest point the rivals are
+  faster at lower MRR: 6.9k binflat 27 us .8325 / 19 us .8292; 20k binflat 42 us .8188; AdvTest binflat 36 us
+  .4612; 140k USearch b1 cascade 114 us .7595; 1M FAISS Flat M32 73 us .4740. Same reading as x86: Pareto-best
+  from our fastest point up.
+- The local addon `sweet-search-native.darwin-arm64.node` (gitignored) is now the 4ead179f build, so the Mac's
+  ss-* tools have the vector-file reader again (indexes still need a full rebuild to get the file).
