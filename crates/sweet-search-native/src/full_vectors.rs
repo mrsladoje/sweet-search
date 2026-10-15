@@ -14,6 +14,7 @@
 
 use memmap2::Mmap;
 use napi::bindgen_prelude::{Float64Array, Uint32Array};
+use napi::{Env, JsBuffer};
 use napi_derive::napi;
 use std::fs::File;
 
@@ -126,4 +127,30 @@ impl FullVectorFile {
         self.dots(&query, &rows, out.as_mut());
         Ok(())
     }
+}
+
+/// A private (copy-on-write) mapping of `len` bytes of `path` at `offset`, as
+/// a Buffer that shares the mapped pages (phase K3: the index file's int8
+/// rows). Reads come from the page cache (file-backed, reclaimable), not the
+/// heap; a write copies only the page it touches and never reaches the file.
+/// The mapping lives until the Buffer is garbage-collected, so it survives a
+/// later save that renames a new index file over this one.
+#[napi]
+pub fn map_file_section(env: Env, path: String, offset: f64, len: f64) -> napi::Result<JsBuffer> {
+    let len = len as usize;
+    if len == 0 {
+        return env.create_buffer(0).map(|b| b.into_raw());
+    }
+    let file = File::open(&path).map_err(|e| napi::Error::from_reason(format!("map_file_section: {path}: {e}")))?;
+    // SAFETY: a private mapping; the index file is replaced by rename, never
+    // rewritten in place, so the mapped bytes do not change under it.
+    let mut map = unsafe { memmap2::MmapOptions::new().offset(offset as u64).len(len).map_copy(&file) }
+        .map_err(|e| napi::Error::from_reason(format!("map_file_section: mmap {path}: {e}")))?;
+    // Rows are read in random order: no read-ahead.
+    #[cfg(unix)]
+    let _ = map.advise(memmap2::Advice::Random);
+    let ptr = map.as_mut_ptr();
+    // SAFETY: `map` moves into the finalizer, which runs after V8 drops the
+    // last reference to the buffer, so `ptr` stays valid for the buffer's life.
+    unsafe { env.create_buffer_with_borrowed_data(ptr, len, map, |m, _| drop(m)) }.map(|b| b.into_raw())
 }

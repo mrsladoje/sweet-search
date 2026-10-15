@@ -301,6 +301,8 @@ export async function buildHnswIndex(items, options = {}) {
     includeInt8 = true,
     onProgress = null,
   } = options;
+  // int8 rows may use another prefix width than the codes (bench K4: 512 or all dims); default the same.
+  const int8Dimension = options.int8Dimension || floatDimension;
   // Derive binary dimension from float dimension (not from global default)
   const dimension = options.dimension || Math.ceil(floatDimension / 8);
 
@@ -355,7 +357,9 @@ export async function buildHnswIndex(items, options = {}) {
     const binary = index.encodeDocument(truncated[idx]);
 
     // Optionally include int8 for rescoring
-    const int8 = includeInt8 ? quantizeToInt8(truncated[idx]) : null;
+    const int8 = includeInt8
+      ? quantizeToInt8(int8Dimension === floatDimension ? truncated[idx] : truncateForHNSW(item.embedding, int8Dimension))
+      : null;
 
     await index.add(item.id, binary, item.metadata || {}, int8, item.embedding);
 

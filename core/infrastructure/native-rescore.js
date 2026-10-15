@@ -15,7 +15,10 @@ export function nativeRescoreKernels() {
     validate: (m) => typeof m.int8DotScores === 'function' && typeof m.f32DotScores === 'function'
       && typeof m.FullVectorFile === 'function',
   });
-  if (res) kernels = { int8DotScores: res.mod.int8DotScores, f32DotScores: res.mod.f32DotScores, FullVectorFile: res.mod.FullVectorFile };
+  if (res) {
+    kernels = { int8DotScores: res.mod.int8DotScores, f32DotScores: res.mod.f32DotScores, FullVectorFile: res.mod.FullVectorFile,
+      mapFileSection: res.mod.mapFileSection };
+  }
   return kernels;
 }
 

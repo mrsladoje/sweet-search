@@ -31,7 +31,7 @@ import {
 import path from 'path';
 import { BINARY_HNSW_CONFIG, DB_PATHS } from '../infrastructure/config/index.js';
 import {
-  floatToBinary,
+  floatToBinary, normalizedFloatToInt8, truncateForHNSW,
   asymmetricDocEncode, asymmetricQueryEncode,
   computeCentroid, generateSignVector,
 } from '../infrastructure/quantization.js';
@@ -139,6 +139,18 @@ function readSection(fd, dataStart, sec, Ctor) {
   const out = new Ctor(sec.len / Ctor.BYTES_PER_ELEMENT);
   readFully(fd, new Uint8Array(out.buffer, out.byteOffset, sec.len), dataStart + sec.off);
   return out;
+}
+
+/**
+ * A section as a typed array over a private memory mapping of the file (the
+ * int8 rows: file-backed pages instead of a heap copy; a write copies only the
+ * page it touches). null when the addon lacks the call; the caller then reads.
+ */
+function mappedSection(path, dataStart, sec, Ctor) {
+  const fn = nativeRescoreKernels()?.mapFileSection;
+  if (typeof fn !== 'function') return null;
+  const buf = fn(path, dataStart + sec.off, sec.len);
+  return new Ctor(buf.buffer, buf.byteOffset, sec.len / Ctor.BYTES_PER_ELEMENT);
 }
 
 /** A record section (ids or metas) as one array. */
@@ -1339,8 +1351,11 @@ export class BinaryHNSWIndex {
     const nat = this._nativeSearcher();
     if (!nat || typeof nat.cascadeStage1 !== 'function') return null;
     const store = this._int8NodeSlab();
-    const queryInt8 = opts.queryInt8;
-    if (!store || !queryInt8 || queryInt8.length !== store.dim) return null;
+    if (!store) return null;
+    // opts.queryFloat (the full query vector): the int8 query is encoded here at
+    // the index's int8 width; otherwise opts.queryInt8 is the encoded query.
+    const queryInt8 = opts.queryInt8 || (opts.queryFloat ? normalizedFloatToInt8(truncateForHNSW(opts.queryFloat, store.dim)) : null);
+    if (!queryInt8 || queryInt8.length !== store.dim) return null;
 
     const start = performance.now();
     const staleBitmap = this._loadStaleBitmap();
@@ -1354,6 +1369,9 @@ export class BinaryHNSWIndex {
     }
     if (this.useAsymmetric && opts.floatQuery) {
       queryBinary = this.encodeDocument(opts.floatQuery);
+    } else if (opts.queryFloat && queryBinary.length !== this.dimension) {
+      // An index whose codes use another prefix width than the configured one (K4).
+      queryBinary = floatToBinary(truncateForHNSW(opts.queryFloat, this.floatDimension));
     }
     nat.setQuery(queryBinary);
 
@@ -1477,6 +1495,7 @@ export class BinaryHNSWIndex {
       useAsymmetric: this.useAsymmetric,
       count: n,
       stats,
+      queryInt8,
       int8Stage,
     };
   }
@@ -2055,7 +2074,7 @@ export class BinaryHNSWIndex {
       for (let i = 0; i < n; i++) this.idToIndex.set(this._ids[i], i);
 
       this._int8 = header.int8Dim > 0
-        ? new Int8Rows(header.int8Dim, readSection(fd, dataStart, sec.int8, Int8Array),
+        ? new Int8Rows(header.int8Dim, mappedSection(indexPath, dataStart, sec.int8, Int8Array) ?? readSection(fd, dataStart, sec.int8, Int8Array),
           readSection(fd, dataStart, sec.int8Present, Uint8Array))
         : null;
 
