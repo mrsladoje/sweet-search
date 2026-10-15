@@ -26,7 +26,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import { FloatVectorStore } from '../../core/vector-store/float-vector-store.js';
-import { readVectorsSidecarSync, readGraphSidecarSync, readInt8SidecarSync } from '../../core/vector-store/binary-hnsw-index.js';
+import { readIndexFileSync } from '../../core/vector-store/binary-hnsw-index.js';
 import { resolveLatestRecords, listDeltaSegments } from '../../core/incremental-indexing/infrastructure/sparse-gram-delta.mjs';
 import { LateInteractionIndex } from '../../core/ranking/late-interaction-index.js';
 
@@ -271,12 +271,8 @@ function stripEpochDeep(value) {
 }
 
 // ---------------------------------------------------------------------------
-// Binary HNSW dumper (JSON sidecars, sorted by id; graph re-keyed to ids)
+// Binary HNSW dumper (index file, sorted by id; graph re-keyed to ids)
 // ---------------------------------------------------------------------------
-
-function readSidecarIfExists(read) {
-  try { return read(); } catch { return null; }
-}
 
 function readJsonIfExists(p) {
   try {
@@ -287,17 +283,14 @@ function readJsonIfExists(p) {
 }
 
 /**
- * Dump the binary HNSW sidecars canonically. The save format is:
- *   - .meta.json     descriptor (savedAt timestamp stripped)
- *   - .vectors.json  [{ id, binary:[...], metadata }] in INSERTION order
- *   - .graph.json    [level][idx] -> [neighborIdx...]  (positional!)
- *   - .int8.json     { id: [int8...] }
- *   - .calibration.json (optional asymmetric centroid/sign)
+ * Dump the binary HNSW index file canonically. The file holds, in node
+ * order, the ids, sign codes, metadata, int8 rows and the graph (positional
+ * neighbor indices per level), plus a header (savedAt stripped below).
  *
- * The `.vectors.json` array order and the `.graph.json` positional indices are
- * the load-bearing determinism signal: per-file vs batched insertion can yield
- * a different node order AND different levels (the G1 prerequisite). To make
- * the dump comparable while preserving the graph *structure*, we:
+ * The node order and the positional graph indices are the load-bearing
+ * determinism signal: per-file vs batched insertion can yield a different
+ * node order AND different levels (the G1 prerequisite). To make the dump
+ * comparable while preserving the graph *structure*, we:
  *   1. sort vectors by id,
  *   2. re-express the graph adjacency in terms of vector *ids* (not positional
  *      idx), then sort each neighbor list, then sort the per-level adjacency by
@@ -307,15 +300,16 @@ function readJsonIfExists(p) {
  */
 export function dumpBinaryHnsw(stateDir) {
   const idxPath = path.join(stateDir, ARTIFACTS.binaryHnswIdx);
-  const metaPath = idxPath.replace('.idx', '.meta.json');
-  if (!fs.existsSync(metaPath)) return null;
+  let file = null;
+  try { file = readIndexFileSync(idxPath); } catch { file = null; }
+  if (!file) return null;
 
-  const meta = readJsonIfExists(metaPath) || {};
-  // NDJSON v2 sidecars (v1 back-compat) — canonical sync readers.
-  const vectors = readSidecarIfExists(() => readVectorsSidecarSync(idxPath.replace('.idx', '.vectors.json'))) || [];
-  const graph = readSidecarIfExists(() => readGraphSidecarSync(idxPath.replace('.idx', '.graph.json'))) || [];
-  const int8 = readSidecarIfExists(() => readInt8SidecarSync(idxPath.replace('.idx', '.int8.json'))) || {};
-  const calibration = readJsonIfExists(idxPath.replace('.idx', '.calibration.json'));
+  const meta = { ...file.header, vectorCount: file.header.count };
+  const vectors = file.nodes;
+  const graph = file.graph;
+  const int8 = {};
+  for (const v of vectors) if (v.int8) int8[v.id] = v.int8;
+  const calibration = file.header.calibration;
 
   // idx -> id (positional). Empty slots (retired/never-filled) map to null.
   const idForIdx = vectors.map((v) => (v && v.id != null ? stripEpochToken(v.id) : null));

@@ -16,6 +16,7 @@ import { runDedupPhase, formatDedupSummary } from './dedup/dedup-phase.js';
 import { DEDUP_CONFIG } from '../infrastructure/config/index.js';
 import { buildLateInteractionIndex, buildQuantizedArtifactsPhase } from './indexer-ann.js';
 import { buildSparseGramArtifact } from './indexer-sparse-gram.js';
+import { binaryHnswIndexExists } from '../vector-store/index-file-header.js';
 import { publishIndexerManifest } from './indexer-manifest.js';
 import { contentHashSync } from '../incremental-indexing/infrastructure/hashing.mjs';
 import {
@@ -918,7 +919,7 @@ export function printSummaryPhase(options) {
   if (!vectorsOnly) log(`  - ${DB_PATHS.codeGraph}`, 'green');
   if (!graphOnly) {
     log(`  - ${DB_PATHS.codebase}`, 'green');
-    if (existsSync(DB_PATHS.binaryHnswIndex.replace('.idx', '.meta.json'))) {
+    if (binaryHnswIndexExists(DB_PATHS.binaryHnswIndex)) {
       log(`  - ${DB_PATHS.binaryHnswIndex} (Binary HNSW, 32x smaller)`, 'green');
     }
     if (existsSync(DB_PATHS.int8Vectors)) {

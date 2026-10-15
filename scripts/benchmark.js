@@ -17,6 +17,7 @@ import { DB_PATHS, PERFORMANCE_TARGETS, EMBEDDING_CONFIG } from '../core/config.
 import { QueryRouter } from '../core/query/index.js';
 import { GraphSearch } from '../core/graph/index.js';
 import { BinaryHNSWIndex } from '../core/vector-store/index.js';
+import { binaryHnswIndexExists } from '../core/vector-store/index-file-header.js';
 import { Reranker } from '../core/ranking/index.js';
 import SweetSearch from '../core/search/index.js';
 
@@ -146,8 +147,7 @@ async function benchmarkRouting(iterations = 1000) {
 async function benchmarkHNSW(iterations = 100) {
   console.log('\n=== Binary HNSW Index Benchmark ===');
 
-  const hnswPath = DB_PATHS.binaryHnswIndex.replace('.idx', '.meta.json');
-  if (!existsSync(hnswPath)) {
+  if (!binaryHnswIndexExists(DB_PATHS.binaryHnswIndex)) {
     console.log('  Binary HNSW index not found. Run indexing first.');
     console.log('  Falling back to synthetic benchmark...');
     return benchmarkHNSWSynthetic(iterations);
@@ -279,7 +279,7 @@ async function benchmarkLexical(iterations = 50) {
 async function benchmarkSemantic(iterations = 20) {
   console.log('\n=== Semantic Search Benchmark ===');
 
-  const hasHNSW = existsSync(DB_PATHS.binaryHnswIndex.replace('.idx', '.meta.json'));
+  const hasHNSW = binaryHnswIndexExists(DB_PATHS.binaryHnswIndex);
   const hasCodebase = existsSync(DB_PATHS.codebase);
 
   if (!hasHNSW && !hasCodebase) {

@@ -134,7 +134,7 @@ async function checkConnectivity(indexPath) {
   const index = new BinaryHNSWIndex({ indexPath });
   await index.load(indexPath);
 
-  const n = index.vectors.length;
+  const n = index.size;
   console.log(`Vectors: ${n}, Levels: ${index.maxLevel + 1}, Entry: ${index.entryPoint}\n`);
 
   for (let level = 0; level <= index.maxLevel; level++) {

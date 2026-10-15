@@ -4,7 +4,7 @@
  * Every per-tier writer in the incremental-indexing context stages its
  * output to a sibling temp path and then `rename`s it into the canonical
  * name:
- *   - HNSW / Binary HNSW sidecars: `<name>.tmp.<pid>`
+ *   - HNSW sidecars / Binary HNSW index file: `<name>.tmp.<pid>`
  *   - manifest / merkle / metrics (production-reconciler, index-maintainer,
  *     operator-cli, production-li-delta): `<name>.tmp.<pid>`
  *   - reconcile manifest + LI segment manifest: `<name>.json.tmp`

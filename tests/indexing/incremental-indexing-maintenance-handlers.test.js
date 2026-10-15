@@ -25,7 +25,7 @@ import {
   reclamationHandlers,
 } from '../../core/incremental-indexing/application/maintenance-handlers.mjs';
 import { appendDeltaRecord, listDeltaSegments, deltaSizeStats } from '../../core/incremental-indexing/infrastructure/sparse-gram-delta.mjs';
-import { BinaryHNSWIndex } from '../../core/vector-store/binary-hnsw-index.js';
+import { BinaryHNSWIndex, readIndexHeader } from '../../core/vector-store/binary-hnsw-index.js';
 import { LateInteractionIndex } from '../../core/ranking/late-interaction-index.js';
 import {
   createBitmap, setBit, saveBitmap, loadBitmap, popcount,
@@ -146,7 +146,7 @@ describe('binaryHnswHandler', () => {
     // Reload — no tombstoned ids should appear in vectors.
     const reloaded = new BinaryHNSWIndex({ indexPath });
     await reloaded.load(indexPath);
-    const ids = new Set(reloaded.vectors.map((v) => v.id));
+    const ids = new Set(Array.from({ length: reloaded.size }, (_, i) => reloaded.nodeId(i)));
     expect(ids.has('vec-1')).toBe(false);
     expect(ids.has('vec-4')).toBe(false);
     expect(ids.size).toBe(4);
@@ -431,7 +431,7 @@ describe('cross-process publish atomicity', () => {
     expect(records.size).toBe(3);
   });
 
-  it('BinaryHNSWIndex.load detects a persistent torn (meta, vectors) pair and refuses', async () => {
+  it('BinaryHNSWIndex.load refuses an index file whose entry point is outside the node table', async () => {
     const indexPath = path.join(stateDir, 'codebase-binary-hnsw.idx');
     const idx = new BinaryHNSWIndex({ indexPath, floatDimension: 32 });
     await idx.init();
@@ -440,16 +440,17 @@ describe('cross-process publish atomicity', () => {
     }
     await idx.save(indexPath);
 
-    // Forge a torn pair: meta claims 99 vectors with entryPoint=42,
-    // vectors.json still has 3. The microsecond publish-window
-    // scenario in production; here we make it permanent so the load
-    // guard's terminal-throw path is deterministic.
-    const metaPath = indexPath.replace('.idx', '.meta.json');
-    const realMeta = JSON.parse(fs.readFileSync(metaPath, 'utf-8'));
-    fs.writeFileSync(metaPath, JSON.stringify({ ...realMeta, vectorCount: 99, entryPoint: 42 }, null, 2));
+    // Forge an inconsistent header: entryPoint 9 with only 3 nodes. The patch
+    // keeps the header length, so every section offset stays valid.
+    const bytes = fs.readFileSync(indexPath);
+    const text = bytes.toString('latin1');
+    const field = text.match(/"entryPoint"\s*:\s*\d+/)[0];
+    const patched = field.replace(/\d+$/, '9'.padEnd(field.match(/\d+$/)[0].length, ' '));
+    bytes.write(patched, text.indexOf(field), 'latin1');
+    fs.writeFileSync(indexPath, bytes);
 
     const reloader = new BinaryHNSWIndex({ indexPath });
-    await expect(reloader.load(indexPath)).rejects.toThrow(/persistent meta\/vectors inconsistency/);
+    await expect(reloader.load(indexPath)).rejects.toThrow(/entry point 9 out of range/);
   });
 
   it('binaryHnswHandler leaves no orphan `.tmp.<pid>` files', async () => {
@@ -473,9 +474,7 @@ describe('cross-process publish atomicity', () => {
     const orphans = fs.readdirSync(stateDir).filter((name) => name.includes('.tmp.'));
     expect(orphans).toEqual([]);
 
-    // Canonical sidecars are all present.
-    for (const suffix of ['meta.json', 'vectors.json', 'graph.json']) {
-      expect(fs.existsSync(indexPath.replace('.idx', '.' + suffix))).toBe(true);
-    }
+    // The single index file is present and readable.
+    expect(readIndexHeader(indexPath).header.count).toBe(3);
   });
 });

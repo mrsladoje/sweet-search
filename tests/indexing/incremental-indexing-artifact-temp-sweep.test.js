@@ -44,7 +44,7 @@ describe('artifact-temp-sweep', () => {
     it('matches reconcile/maintenance staging temps', () => {
       expect(isOrphanTempName('codebase-hnsw.usearch.tmp.12345')).toBe(true);
       expect(isOrphanTempName('codebase-hnsw.meta.json.tmp.999')).toBe(true);
-      expect(isOrphanTempName('codebase-binary-hnsw.vectors.json.tmp.7')).toBe(true);
+      expect(isOrphanTempName('codebase-binary-hnsw.idx.tmp.7')).toBe(true);
       expect(isOrphanTempName('12-3.ssgrmdelta.compacting.tmp')).toBe(true);
       expect(isOrphanTempName('seg-001.sslx.compacting.tmp')).toBe(true);
       expect(isOrphanTempName('reconcile-manifest.json.tmp')).toBe(true);
@@ -58,7 +58,7 @@ describe('artifact-temp-sweep', () => {
         'codebase.db', 'code-graph.db', 'codebase.db-wal', 'codebase.db-shm',
         'codebase-hnsw.idx', 'codebase-hnsw.usearch', 'codebase-hnsw.meta.json',
         'codebase-hnsw.vectors.json', 'codebase-hnsw.idx.stale.bin',
-        'codebase-binary-hnsw.graph.json', 'codebase-binary-hnsw.int8.json',
+        'codebase-binary-hnsw.idx', 'codebase-binary-hnsw.idx.stale.bin',
         'reconcile-manifest.json', 'merkle-state.json', 'manifest.json',
         '12-0.ssgrmdelta', 'seg-001.sslx',
         'rebuild-queue.jsonl', 'rebuild-queue.dead-letter.jsonl',
@@ -99,7 +99,7 @@ describe('artifact-temp-sweep', () => {
     const orphans = [
       'codebase-hnsw.usearch.tmp.111',
       'codebase-hnsw.meta.json.tmp.111',
-      'codebase-binary-hnsw.vectors.json.tmp.222',
+      'codebase-binary-hnsw.idx.tmp.222',
       'reconcile-manifest.json.tmp',
       'codebase-hnsw.idx.stale.bin.tmp',
       'codebase-late-interaction.db.selfheal.tmp',

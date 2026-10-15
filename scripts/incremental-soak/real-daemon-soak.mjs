@@ -48,7 +48,7 @@ import { fileURLToPath } from 'node:url';
 import { runProductionReconcileTick } from '../../core/incremental-indexing/application/production-reconciler.mjs';
 import { readManifest } from '../../core/incremental-indexing/infrastructure/manifest.mjs';
 import { listDeltaSegments } from '../../core/incremental-indexing/infrastructure/sparse-gram-delta.mjs';
-import { readVectorsSidecarSync } from '../../core/vector-store/binary-hnsw-index.js';
+import { readIndexHeader } from '../../core/vector-store/index-file-header.js';
 import { readGraphGcState, readFts5State } from '../../core/incremental-indexing/infrastructure/maintenance-state-reader.mjs';
 import { loadBitmap, popcount } from '../../core/infrastructure/tombstone-bitmap-reader.js';
 import { generateInitialFixture } from './fixture.mjs';
@@ -497,8 +497,7 @@ function measureArtifacts(stateDir) {
 
   let binaryHnswRows = 0; let binaryHnswTombstones = 0;
   try {
-    const vec = readVectorsSidecarSync(path.join(stateDir, 'codebase-binary-hnsw.vectors.json')); // NDJSON v2 (v1 back-compat)
-    binaryHnswRows = Array.isArray(vec) ? vec.length : 0;
+    binaryHnswRows = readIndexHeader(path.join(stateDir, 'codebase-binary-hnsw.idx'))?.header.count ?? 0;
     const bm = loadBitmap(path.join(stateDir, 'codebase-binary-hnsw.idx.stale.bin'));
     if (bm) binaryHnswTombstones = popcount(bm);
   } catch { /* no binary hnsw */ }
@@ -513,7 +512,7 @@ function measureArtifacts(stateDir) {
     bytes: {
       vectorsDb: safeStatSize(path.join(stateDir, 'codebase.db')),
       graphDb: safeStatSize(path.join(stateDir, 'code-graph.db')),
-      binaryHnswVectors: safeStatSize(path.join(stateDir, 'codebase-binary-hnsw.vectors.json')),
+      binaryHnswVectors: safeStatSize(path.join(stateDir, 'codebase-binary-hnsw.idx')),
     },
     sparseDeltaSegments,
     liSegments,
@@ -1228,8 +1227,8 @@ async function modeCrashProbe({ args, emit, fixtureRoot, stateDir }) {
   // the canonical files. (Mirrors the real runReconcileV2Main sweep, which
   // the wrapper now also runs after lock acquisition.)
   const plantedOrphans = [
-    path.join(stateDir, 'codebase-binary-hnsw.int8.json.tmp.999999'),
-    path.join(stateDir, 'codebase-binary-hnsw.graph.json.tmp.999998'),
+    path.join(stateDir, 'codebase-binary-hnsw.idx.tmp.999999'),
+    path.join(stateDir, 'codebase-binary-hnsw.fullvec.map.tmp.999998'),
     path.join(stateDir, 'codebase-late-interaction.db.selfheal.tmp'),
   ];
   const deltaDir = path.join(stateDir, 'codebase-sparse-grams.idx.deltas');

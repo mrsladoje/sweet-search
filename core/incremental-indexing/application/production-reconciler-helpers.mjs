@@ -177,7 +177,7 @@ export function resolveTouchedEdges(db, { epoch, sourceIds = [], retiredIds = []
  * fsyncs the bitmap file once PER RETIRED ID — O(retires × bitmap size) with
  * an fsync each. A batch loads the bitmap once (lazily, on the first mark),
  * applies every mark in memory with the exact per-op semantics (idToIndex /
- * int8Vectors pruned immediately, reader cache invalidated), and persists
+ * int8 row dropped immediately, reader cache invalidated), and persists
  * once in flush(). End state on disk is identical to N sequential
  * markBinaryStale calls.
  *
@@ -199,12 +199,12 @@ export function createStaleBatch(index) {
         loaded = true;
       }
       bitmap = bitmap
-        ? resizeBitmap(bitmap, Math.max(idx + 1, index.vectors.length, 1))
-        : createBitmap(Math.max(idx + 1, index.vectors.length, 1));
+        ? resizeBitmap(bitmap, Math.max(idx + 1, index.size, 1))
+        : createBitmap(Math.max(idx + 1, index.size, 1));
       setBit(bitmap, idx);
       dirty = true;
+      index.deleteInt8(id);
       index.idToIndex.delete(id);
-      index.int8Vectors.delete(id);
       index._staleBitmapCache = null;
       return true;
     },

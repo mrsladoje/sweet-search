@@ -447,6 +447,17 @@ fn hamming(a: &[u64], b: &[u64]) -> u32 {
     d
 }
 
+/// `hamming` with the POPCNT instruction (the baseline x86-64 build has none).
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "popcnt")]
+unsafe fn hamming_popcnt(a: &[u64], b: &[u64]) -> u32 {
+    let mut d = 0u32;
+    for w in 0..a.len() {
+        d += (a[w] ^ b[w]).count_ones();
+    }
+    d
+}
+
 /// Hamming distances of 64-byte codes at `ids` to the 64-byte query, four
 /// codes per step: per-byte popcount of code ^ query by nibble lookup
 /// (`vpshufb`), bytes summed per 64-bit lane (`vpsadbw`), lanes folded to one
@@ -647,6 +658,12 @@ pub struct HnswSearcher {
     int8_keys: Vec<u64>,
     int8_score: Vec<f64>,
     int8_missing: Vec<bool>,
+    // Distances of one neighbor list in greedy().
+    greedy_d: Vec<u32>,
+    // Nodes of the last cascade_int8 call in int8 order (for cascade_full).
+    int8_nodes: Vec<u32>,
+    full_rows: Vec<u32>,
+    full_scores: Vec<f64>,
     scan_d: Vec<u16>,
     /// x86-64-v3 kernels (AVX2, POPCNT, ...) usable; always false elsewhere.
     v3: bool,
@@ -715,6 +732,10 @@ impl HnswSearcher {
             int8_keys: Vec::new(),
             int8_score: Vec::new(),
             int8_missing: Vec::new(),
+            greedy_d: Vec::new(),
+            int8_nodes: Vec::new(),
+            full_rows: Vec::new(),
+            full_scores: Vec::new(),
             scan_d: Vec::new(),
             v3: cpu_v3(),
             pool_idx: Vec::new(),
@@ -808,7 +829,21 @@ impl HnswSearcher {
         use rayon::prelude::*;
         let n = offsets.len().saturating_sub(1);
         let (cap, w) = (self.prune0, self.words);
+        // Lists saved already pruned (save() prunes level 0 the same way):
+        // nothing to do but copy.
+        if offsets.windows(2).all(|p| (p[1] - p[0]) as usize <= cap) {
+            return Csr { offsets: AlignedBuf::from_slice(offsets, self.huge), neighbors: AlignedBuf::from_slice(neighbors, self.huge) };
+        }
         let code = |i: u32| &self.slab[i as usize * w..(i as usize + 1) * w];
+        #[cfg(target_arch = "x86_64")]
+        let hamming = |a: &[u64], b: &[u64]| -> u32 {
+            if self.v3 {
+                // SAFETY: POPCNT checked at construction (v3).
+                unsafe { hamming_popcnt(a, b) }
+            } else {
+                hamming(a, b)
+            }
+        };
         let lists: Vec<Vec<u32>> = (0..n)
             .into_par_iter()
             .map(|v| {
@@ -851,24 +886,34 @@ impl HnswSearcher {
         self.dist_q(idx)
     }
 
-    /// Port of `greedySearchQuery`.
+    /// Port of `greedySearchQuery`. Each neighbor list is scored in one batch
+    /// (the walk's kernels: AVX2 / NEON), then scanned in order with the same
+    /// update rule, so the result is the same node.
     #[napi]
-    pub fn greedy(&self, start: u32, level: u32) -> u32 {
-        let Some(csr) = self.levels.get(level as usize) else { return start };
+    pub fn greedy(&mut self, start: u32, level: u32) -> u32 {
+        if level as usize >= self.levels.len() {
+            return start;
+        }
+        let mut d = std::mem::take(&mut self.greedy_d);
+        d.resize(1, 0);
+        self.dist_batch(&[start], &mut d);
         let mut current = start;
-        let mut current_dist = self.dist_q(current);
+        let mut current_dist = d[0];
         let mut improved = true;
         while improved {
             improved = false;
-            for &nb in csr.of(current) {
-                let d = self.dist_q(nb);
-                if d < current_dist {
+            let nbs = self.levels[level as usize].of(current);
+            d.resize(nbs.len(), 0);
+            self.dist_batch(nbs, &mut d);
+            for (&nb, &dn) in nbs.iter().zip(d.iter()) {
+                if dn < current_dist {
                     current = nb;
-                    current_dist = d;
+                    current_dist = dn;
                     improved = true;
                 }
             }
         }
+        self.greedy_d = d;
         current
     }
 
@@ -1551,8 +1596,10 @@ impl HnswSearcher {
         self.int8_keys = keys;
         let (nodes, dists, scores, missing) = (nodes.as_mut(), dists.as_mut(), scores.as_mut(), missing.as_mut());
         let mut non_missing = 0usize;
+        self.int8_nodes.clear();
         for (j, &r) in rank.iter().enumerate() {
             let r = r as usize;
+            self.int8_nodes.push(pool[r]);
             nodes[j] = pool[r];
             dists[j] = self.live_dist[r];
             scores[j] = sc[r];
@@ -1568,6 +1615,86 @@ impl HnswSearcher {
         self.int8_missing = miss;
         self.pool_idx = pool;
         Ok(count as u32)
+    }
+
+    /// Final (full-vector) order of the first `h` candidates of the last
+    /// `cascade_int8` call, as `applyFullVectorStageRescore` computes it:
+    /// each candidate's full 768-d dot with `query` (f64, the f32 query values)
+    /// from `file` through the node -> row map `row_map` (no row, or a row at
+    /// or past the file's end, = missing); min-max normalised over the found
+    /// scores (0.5 each when all are equal); then a stable sort by normalised
+    /// score, descending (missing ones count as 0). Writes, per head
+    /// position, `full` (NaN when missing) and `norm`, and the positions in
+    /// final order to `order`. Returns how many candidates had a full vector;
+    /// below 2, or with fewer than 3 candidates, nothing is written and the
+    /// int8 order stands.
+    #[napi]
+    #[allow(clippy::too_many_arguments)]
+    pub fn cascade_full(
+        &mut self,
+        file: &crate::full_vectors::FullVectorFile,
+        row_map: Uint32Array,
+        query: Float64Array,
+        h: u32,
+        mut order: Uint32Array,
+        mut full: Float64Array,
+        mut norm: Float64Array,
+    ) -> napi::Result<u32> {
+        let h = (h as usize).min(self.int8_nodes.len());
+        if h < 3 || query.len() != file.width() {
+            return Ok(0);
+        }
+        if order.len() < h || full.len() < h || norm.len() < h {
+            return Err(napi::Error::from_reason("cascade_full: output too short"));
+        }
+        let file_rows = file.row_count();
+        let mut rows = std::mem::take(&mut self.full_rows);
+        rows.clear();
+        let (full, norm, order) = (full.as_mut(), norm.as_mut(), order.as_mut());
+        for (j, &node) in self.int8_nodes[..h].iter().enumerate() {
+            let row = row_map.get(node as usize).copied().unwrap_or(u32::MAX);
+            if row == u32::MAX || row as usize >= file_rows {
+                full[j] = f64::NAN;
+            } else {
+                full[j] = 0.0;
+                rows.push(row);
+            }
+        }
+        let found = rows.len();
+        if found < 2 {
+            self.full_rows = rows;
+            return Ok(0);
+        }
+        let mut scores = std::mem::take(&mut self.full_scores);
+        scores.clear();
+        scores.resize(found, 0.0);
+        file.dots(&query, &rows, &mut scores);
+        let (mut min, mut max) = (f64::INFINITY, f64::NEG_INFINITY);
+        let mut m = 0;
+        for f in full[..h].iter_mut() {
+            if !f.is_nan() {
+                *f = scores[m];
+                m += 1;
+                min = min.min(*f);
+                max = max.max(*f);
+            }
+        }
+        for j in 0..h {
+            let f = full[j];
+            norm[j] = if f.is_nan() {
+                0.0
+            } else if !(max > min) {
+                0.5
+            } else {
+                ((f - min) / (max - min)).min(1.0).max(0.0)
+            };
+            order[j] = j as u32;
+        }
+        // Stable descending by normalised score (ties keep int8 order).
+        order[..h].sort_by(|&a, &b| norm[b as usize].partial_cmp(&norm[a as usize]).unwrap().then(a.cmp(&b)));
+        self.full_rows = rows;
+        self.full_scores = scores;
+        Ok(found as u32)
     }
 
     /// Level `level` as `[offsets[0..=count], neighbors...]`,

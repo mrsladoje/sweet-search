@@ -32,7 +32,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 
-import { BinaryHNSWIndex } from '../../vector-store/binary-hnsw-index.js';
+import { BinaryHNSWIndex, binaryHnswIndexExists } from '../../vector-store/binary-hnsw-index.js';
 import { LateInteractionIndex } from '../../ranking/late-interaction-index.js';
 import { compactDeltaSegments, listDeltaSegments } from '../infrastructure/sparse-gram-delta.mjs';
 import { mergeLiSegments, LI_MERGE_GRACE_MS } from '../infrastructure/li-segment-merge.mjs';
@@ -152,8 +152,7 @@ function readLiveVectorIds(stateDir) {
 export async function binaryHnswHandler(job, { stateDir, onProgress = null }) {
   const progress = progressFn(onProgress);
   const indexPath = path.join(stateDir, 'codebase-binary-hnsw.idx');
-  const metaPath = path.join(stateDir, 'codebase-binary-hnsw.meta.json');
-  if (!fs.existsSync(metaPath)) return { skipped: 'no-index' };
+  if (!binaryHnswIndexExists(indexPath)) return { skipped: 'no-index' };
 
   const existing = new BinaryHNSWIndex({ indexPath });
   await existing.load(indexPath);
@@ -167,23 +166,22 @@ export async function binaryHnswHandler(job, { stateDir, onProgress = null }) {
   const liveIds = readLiveVectorIds(stateDir);
   const staleBitmap = existing._loadStaleBitmap();
   const live = [];
-  for (let i = 0; i < existing.vectors.length; i += 1) {
-    const v = existing.vectors[i];
-    const isStale = liveIds ? !liveIds.has(v.id) : (staleBitmap && isSet(staleBitmap, i));
+  for (let i = 0; i < existing.size; i += 1) {
+    const id = existing.nodeId(i);
+    const isStale = liveIds ? !liveIds.has(id) : (staleBitmap && isSet(staleBitmap, i));
     if (isStale) continue;
-    const int8 = existing.int8Vectors.get(v.id) || null;
-    live.push({ id: v.id, binary: v.binary, metadata: v.metadata, int8, node: i });
+    const int8 = existing.nodeInt8(i) || null;
+    live.push({ id, binary: existing.nodeBinary(i), metadata: existing.nodeMetadata(i), int8, node: i });
     if (i > 0 && i % 1000 === 0) progress('maintenance:binary-hnsw:scan');
   }
-  const dropped = existing.vectors.length - live.length;
+  const dropped = existing.size - live.length;
   if (dropped === 0) {
     return { skipped: 'no-stale-vectors', dropped: 0 };
   }
 
   // Rebuild the index in memory and let `BinaryHNSWIndex.save()`
-  // publish via its tmp+rename protocol — every sidecar is staged then
-  // atomically renamed (data first, .meta.json last) so fresh readers
-  // don't see torn `(meta, vectors, graph, int8)` tuples.
+  // publish it (one file, tmp + rename) so fresh readers never see a torn
+  // index.
   const fresh = new BinaryHNSWIndex({
     indexPath,
     floatDimension: existing.floatDimension,

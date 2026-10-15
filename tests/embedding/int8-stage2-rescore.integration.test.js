@@ -2,12 +2,12 @@
  * Int8 Stage-2 Rescoring Integration Test
  *
  * Workstream H Acceptance Criteria:
- *   - One canonical int8 source (.int8.json sidecar)
+ *   - One canonical int8 source (the int8 section of the index file)
  *   - Document choice in code comments
  *   - Smoke test proves stage-2 reranking works
  *
  * This test verifies:
- *   1. Int8 vectors are stored in .int8.json sidecar (not SQLite)
+ *   1. Int8 vectors are stored inside the index file (not SQLite)
  *   2. BinaryHNSWIndex.getInt8Vector() returns valid vectors
  *   3. Stage-2 rescoring computes correct int8 dot product scores
  */
@@ -56,7 +56,7 @@ describe('Int8 Stage-2 Rescoring', () => {
   });
 
   describe('Canonical Int8 Storage', () => {
-    it('should store int8 vectors in .int8.json sidecar', async () => {
+    it('should store int8 vectors inside the index file', async () => {
       const index = new BinaryHNSWIndex({ indexPath: TEST_INDEX_PATH });
       await index.init();
 
@@ -74,17 +74,16 @@ describe('Int8 Stage-2 Rescoring', () => {
         await index.add(v.id, binary, { name: v.id }, int8);
       }
 
-      // Save index (should create .int8.json sidecar)
+      // Save index (int8 rows go into the index file itself)
       await index.save(TEST_INDEX_PATH);
 
-      // Verify .int8.json sidecar exists
-      const int8SidecarPath = TEST_INDEX_PATH.replace('.idx', '.int8.json');
-      expect(existsSync(int8SidecarPath)).toBe(true);
-
-      // Verify content (NDJSON v2 sidecar — read via the canonical reader)
-      const { readInt8Sidecar } = await import('../../core/vector-store/binary-hnsw-index.js');
-      const int8Map = new Map();
-      await readInt8Sidecar(int8SidecarPath, int8Map);
+      // Verify the header records the int8 rows and the reader returns them
+      const { readIndexHeader, readIndexFileSync } = await import('../../core/vector-store/binary-hnsw-index.js');
+      const { header } = readIndexHeader(TEST_INDEX_PATH);
+      expect(header.int8Dim).toBe(512);
+      expect(header.int8Count).toBe(3);
+      const { nodes } = readIndexFileSync(TEST_INDEX_PATH);
+      const int8Map = new Map(nodes.filter((n) => n.int8).map((n) => [n.id, Int8Array.from(n.int8)]));
       expect(int8Map.size).toBe(3);
       expect(int8Map.get('test-1')).toBeDefined();
       expect(int8Map.get('test-1')).toBeInstanceOf(Int8Array);

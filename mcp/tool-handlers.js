@@ -7,6 +7,7 @@ import path from 'node:path';
 import { collectAgentShownSpans, exactRereadOmissionEnabled, renderShownFullTrailer, shownSpanTrailerEnabled } from '../core/search/agent-span-ledger.js';
 import { sendAgentSpanOperation } from '../core/search/agent-span-client.js';
 import { renderRegexDialectHint } from '../core/search/regex-dialect.js';
+import { binaryHnswIndexExists } from '../core/vector-store/index-file-header.js';
 // ---------------------------------------------------------------------------
 // Output schemas (Zod — SDK converts to JSON Schema for clients)
 // ---------------------------------------------------------------------------
@@ -379,7 +380,7 @@ export async function checkHealth({ getConfig, PROJECT_ROOT }) {
 
     const checks = [
       { name: 'graph-index', check: () => existsSync(config.DB_PATHS.codeGraph) },
-      { name: 'binary-hnsw', check: () => existsSync(config.DB_PATHS.binaryHnswIndex?.replace('.idx', '.meta.json')) },
+      { name: 'binary-hnsw', check: () => !!config.DB_PATHS.binaryHnswIndex && binaryHnswIndexExists(config.DB_PATHS.binaryHnswIndex) },
       { name: 'late-interaction', check: () => existsSync(config.DB_PATHS.lateInteraction || path.join(PROJECT_ROOT, '.sweet-search', 'late-interaction-tokens.db')) },
       { name: 'embedding-service', check: () => true },
       { name: 'reranker', check: () => true },

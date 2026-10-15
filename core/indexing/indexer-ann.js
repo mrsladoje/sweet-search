@@ -758,7 +758,7 @@ export async function buildQuantizedArtifactsPhase(dryRun = false, options = {})
     log('Building quantized artifacts from codebase.db...', 'yellow');
     log(`  Reason: ${skipCheck.reason}`, 'dim');
     log('  Binary HNSW: 32x memory reduction, Hamming distance', 'dim');
-    log('  Int8 vectors: 4x memory reduction, stored in .int8.json sidecar', 'dim');
+    log('  Int8 vectors: 4x memory reduction, stored in the index file', 'dim');
 
     const result = await buildQuantizedArtifacts(DB_PATHS.codebase, {
       hnswIndexPath: DB_PATHS.binaryHnswIndex,
@@ -769,7 +769,7 @@ export async function buildQuantizedArtifactsPhase(dryRun = false, options = {})
     const int8SizeMB = ((int8Count * (result.hnsw.floatDimension || 512)) / 1024 / 1024).toFixed(2);
 
     log(`\n✓ Binary HNSW: ${result.hnsw.totalVectors} vectors (${result.hnsw.buildTimeMs}ms, ${result.hnsw.vectorsPerSecond} vec/s)`, 'green');
-    log(`✓ Int8 vectors: ${int8Count} vectors (~${int8SizeMB} MB) → ${result.hnsw.int8SidecarPath}`, 'green');
+    log(`✓ Int8 vectors: ${int8Count} vectors (~${int8SizeMB} MB) → ${result.hnsw.path}`, 'green');
 
     await updateArtifactState({
       rebuilt: true,
@@ -782,7 +782,7 @@ export async function buildQuantizedArtifactsPhase(dryRun = false, options = {})
       int8: {
         count: int8Count,
         sizeMB: int8SizeMB,
-        path: result.hnsw.int8SidecarPath,
+        path: result.hnsw.path,
       },
     };
   } catch (err) {

@@ -4,8 +4,9 @@
  * memory-mapped, append-only file instead of SQLite. These tests cover the
  * fresh build, appends on a loaded index (new nodes and re-added ids), nodes
  * without a vector, removal when a save has no vectors, the generation check,
- * an index saved before the file existed, and the packed (mmap) format.
- * Scores must equal the sequential f64 dot exactly.
+ * and an index saved before the file existed. Rows are stored as f16 (round
+ * to nearest, ties to even); scores must equal the sequential f64 dot of the
+ * query with the f16-rounded vector exactly.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -15,6 +16,7 @@ import path from 'node:path';
 
 import { BinaryHNSWIndex } from '../../core/vector-store/binary-hnsw-index.js';
 import { nativeRescoreKernels } from '../../core/infrastructure/native-rescore.js';
+import { f32ToF16, f16ToF32 } from '../../core/vector-store/full-vector-file.js';
 
 const native = Boolean(nativeRescoreKernels());
 const DIM = 12;
@@ -28,7 +30,6 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  delete process.env.SWEET_SEARCH_HNSW_MMAP;
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -41,9 +42,16 @@ function vec(i, salt = 0) {
   return v;
 }
 
+// The stored row: each value rounded to f16.
+function half(v) {
+  return Float32Array.from(v, (x) => f16ToF32(f32ToF16(x)));
+}
+
+// Score of a stored row: the sequential f64 dot with the f16-rounded vector.
 function dot(q, v) {
+  const h = half(v);
   let s = 0;
-  for (let d = 0; d < q.length; d++) s += q[d] * v[d];
+  for (let d = 0; d < q.length; d++) s += q[d] * h[d];
   return s;
 }
 
@@ -77,7 +85,7 @@ describe.skipIf(!native)('full-vector file', () => {
     const got = idx.fullDotScores(query, ids);
     expect(got.found).toBe(5);
     expect(got.scores).toEqual(ids.map((id) => dot(query, vec(Number(id.slice(4))))));
-    expect(fs.statSync(dataPath()).size).toBe(64 + 1300 * DIM * 4);
+    expect(fs.statSync(dataPath()).size).toBe(64 + 1300 * DIM * 2);
   });
 
   it('appends new nodes and re-added ids without rewriting old rows', async () => {
@@ -88,7 +96,7 @@ describe.skipIf(!native)('full-vector file', () => {
     await idx.add('doc-4', new Uint8Array([4]), {}, null, vec(4, 9));
     await idx.save(indexPath);
     const after = fs.readFileSync(dataPath());
-    expect(after.length).toBe(before.length + 2 * DIM * 4);
+    expect(after.length).toBe(before.length + 2 * DIM * 2);
     expect(after.subarray(0, before.length).equals(before)).toBe(true);
     const re = await loaded();
     const got = re.fullDotScores(query, ['doc-new', 'doc-4', 'doc-5']);
@@ -125,7 +133,7 @@ describe.skipIf(!native)('full-vector file', () => {
   it('copies a node vector out for compaction', async () => {
     await build(10);
     const idx = await loaded();
-    expect(Array.from(idx.fullVectorOf(idx.idToIndex.get('doc-6')))).toEqual(Array.from(vec(6)));
+    expect(Array.from(idx.fullVectorOf(idx.idToIndex.get('doc-6')))).toEqual(Array.from(half(vec(6))));
   });
 
   it('an index saved without the file stays without it until a full rebuild', async () => {
@@ -141,13 +149,15 @@ describe.skipIf(!native)('full-vector file', () => {
     expect((await loaded()).fullDotScores(query, ['doc-1']).scores).toEqual([dot(query, vec(1))]);
   });
 
-  it('the packed (mmap) format keeps the file beside it', async () => {
-    process.env.SWEET_SEARCH_HNSW_MMAP = '1';
-    await build(30);
-    const idx = await loaded();
-    expect(idx.fullDotScores(query, ['doc-0', 'doc-29'])).toEqual({
-      scores: [dot(query, vec(0)), dot(query, vec(29))],
-      found: 2,
-    });
+  it('rounds to the nearest f16, ties to even, and widens back exactly', () => {
+    expect(f32ToF16(1)).toBe(0x3c00);
+    expect(f32ToF16(-2)).toBe(0xc000);
+    expect(f32ToF16(65504)).toBe(0x7bff);
+    expect(f32ToF16(65520)).toBe(0x7c00);                 // halfway to 65536: ties to even -> infinity
+    expect(f32ToF16(1 + 2 ** -11)).toBe(0x3c00);           // halfway, even neighbour below
+    expect(f32ToF16(1 + 3 * 2 ** -11)).toBe(0x3c02);       // halfway, even neighbour above
+    expect(f32ToF16(2 ** -24)).toBe(0x0001);
+    expect(f32ToF16(2 ** -25)).toBe(0x0000);
+    for (let h = 0; h < 0x7c00; h += 37) expect(f32ToF16(f16ToF32(h))).toBe(h);
   });
 });

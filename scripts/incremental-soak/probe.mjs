@@ -28,7 +28,7 @@ import Database from 'better-sqlite3';
 import { readManifest } from '../../core/incremental-indexing/infrastructure/manifest.mjs';
 import { resolveLatestRecords, listDeltaSegments } from '../../core/incremental-indexing/infrastructure/sparse-gram-delta.mjs';
 import { loadBitmap, isSet } from '../../core/infrastructure/tombstone-bitmap-reader.js';
-import { readVectorsSidecarSync, readInt8SidecarSync } from '../../core/vector-store/binary-hnsw-index.js';
+import { readIndexIdsSync } from '../../core/vector-store/binary-hnsw-index.js';
 
 export class Probe {
   constructor({ projectRoot, stateDir }) {
@@ -143,15 +143,11 @@ export class Probe {
   }
 
   _readBinaryHnsw() {
-    const vecPath = path.join(this.stateDir, 'codebase-binary-hnsw.vectors.json');
-    const int8Path = path.join(this.stateDir, 'codebase-binary-hnsw.int8.json');
     const stalePath = path.join(this.stateDir, 'codebase-binary-hnsw.idx.stale.bin');
-    // NDJSON v2 sidecars (v1 back-compat) — canonical sync readers.
-    const vectors = readSidecarSafe(() => readVectorsSidecarSync(vecPath)) || [];
-    const int8 = readSidecarSafe(() => readInt8SidecarSync(int8Path)) || {};
-    const vectorRows = vectors || [];
-    const vectorIds = new Set(vectorRows.map((r) => r.id));
-    const int8Ids = new Set(Object.keys(int8 || {}));
+    const file = readSidecarSafe(() => readIndexIdsSync(path.join(this.stateDir, 'codebase-binary-hnsw.idx')));
+    const vectorRows = (file?.ids || []).map((id) => ({ id }));
+    const vectorIds = new Set(file?.ids || []);
+    const int8Ids = new Set(file?.int8Ids || []);
     // Load the stale bitmap and compute the *visible* set (vector rows minus
     // tombstoned indices). Binary HNSW keeps retired vectors in the JSON and
     // filters at query time via the bitmap.
@@ -249,14 +245,14 @@ export function checkInvariants(observation, ground) {
   if (hnswMissing.length > 0) violations.push({ kind: 'hnsw_missing_live_vectors', count: hnswMissing.length, sample: hnswMissing.slice(0, 5) });
   if (hnswExtra.length > 0) violations.push({ kind: 'hnsw_has_retired_vectors', count: hnswExtra.length, sample: hnswExtra.slice(0, 5) });
 
-  // === Binary HNSW: every live vector must be VISIBLE (not tombstoned, present in vectors.json).
-  // Binary HNSW keeps retired rows in the JSON and uses a stale bitmap to filter at query time.
+  // === Binary HNSW: every live vector must be VISIBLE (not tombstoned, present in the index file).
+  // Binary HNSW keeps retired rows in the index file and uses a stale bitmap to filter at query time.
   const binMissingVec = [...vectorLiveIds].filter((id) => !binaryHnsw.visibleIds.has(id));
   // The visible set must not contain any non-live id (would be a real leak past the tombstone filter).
   const binVisibleRetired = [...binaryHnsw.visibleIds].filter((id) => !vectorLiveIds.has(id));
   if (binMissingVec.length > 0) violations.push({ kind: 'binary_hnsw_missing_live_vectors', count: binMissingVec.length, sample: binMissingVec.slice(0, 5) });
   if (binVisibleRetired.length > 0) violations.push({ kind: 'binary_hnsw_visible_retired_vectors', count: binVisibleRetired.length, sample: binVisibleRetired.slice(0, 5) });
-  // int8 sidecar should contain every live id (it's pruned, unlike vectors.json).
+  // int8 sidecar should contain every live id (rows of retired ids are dropped).
   const binMissingInt8 = [...vectorLiveIds].filter((id) => !binaryHnsw.int8Ids.has(id));
   if (binMissingInt8.length > 0) violations.push({ kind: 'binary_hnsw_int8_missing_live', count: binMissingInt8.length, sample: binMissingInt8.slice(0, 5) });
 

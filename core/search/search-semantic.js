@@ -129,6 +129,17 @@ function applyFullVectorStageRescore(candidates, queryFloat, opts = {}) {
   };
 }
 
+/**
+ * Whether the final full-vector rescore runs: not for the agent format (its
+ * postprocess blend does that job) and not under the ablation.
+ */
+function fullVectorStageWanted(options) {
+  const skip = options.ablations instanceof Set
+    ? options.ablations.has('no-full-vector-stage-rescore')
+    : Array.isArray(options.ablations) && options.ablations.includes('no-full-vector-stage-rescore');
+  return options.format !== 'agent' && !skip;
+}
+
 // =============================================================================
 // Phase 0: Score-Spread Analysis (shared signal source)
 // =============================================================================
@@ -289,6 +300,7 @@ export async function semanticSearch3Stage(query, options = {}) {
   let scoredCandidates;
   let int8Analysis;
   let headNodes = null;
+  let fullDone = false;
   if (fused) {
     const stage1Count = fused.count;
     const stage1Analysis = spreadFromStats(fused.stats[1], fused.stats, 2);
@@ -317,10 +329,28 @@ export async function semanticSearch3Stage(query, options = {}) {
     const head = float512StageEnabled()
       ? int8.count
       : Math.min(adaptiveStage2_5Pool(k, int8Analysis, adaptiveConfig).size, int8.count);
-    scoredCandidates = int8.materialize(head);
-    // Stage 2.5 (float-512, off by default) reorders the head; without it the
-    // full-vector stage gets the head in this order.
-    headNodes = float512StageEnabled() ? null : int8.nodes(head);
+    // The full-vector stage below, done natively on the head: then result
+    // objects are built only for the candidates the caller reads.
+    const fr = !float512StageEnabled() && fullVectorStageWanted(options) && typeof int8.fullOrder === 'function'
+      ? int8.fullOrder(embedResult.float, head)
+      : null;
+    if (fr) {
+      const need = this.cascadeEnabled
+        ? Math.min(head, options.cascadeK ?? 50)
+        : (rerank && this.reranker.isAnyAvailable?.() ? head : Math.min(head, Math.max(k, 10)));
+      if (fr.found >= 2) {
+        scoredCandidates = int8.materializeFull(need, fr);
+        stats.stages.fullVector = { candidates: fr.found, window: head };
+      } else {
+        scoredCandidates = int8.materialize(need);
+      }
+      fullDone = true;
+    } else {
+      scoredCandidates = int8.materialize(head);
+      // Stage 2.5 (float-512, off by default) reorders the head; without it the
+      // full-vector stage gets the head in this order.
+      headNodes = float512StageEnabled() ? null : int8.nodes(head);
+    }
     stats.stages.int8 = {
       latency_us: Math.round((performance.now() - stage2Start) * 1000),
       candidates: int8.count,
@@ -571,10 +601,7 @@ export async function semanticSearch3Stage(query, options = {}) {
   }
 
   // CASCADE MODE: Return broad candidate set, let postprocess handle scoring.
-  const skipFullVectorRescore = options.ablations instanceof Set
-    ? options.ablations.has('no-full-vector-stage-rescore')
-    : Array.isArray(options.ablations) && options.ablations.includes('no-full-vector-stage-rescore');
-  if (options.format !== 'agent' && !skipFullVectorRescore) {
+  if (!fullDone && fullVectorStageWanted(options)) {
     const fullVectorStage = applyFullVectorStageRescore(
       scoredCandidates,
       embedResult.float,
