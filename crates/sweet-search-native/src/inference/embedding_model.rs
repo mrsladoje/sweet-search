@@ -519,6 +519,34 @@ impl Task for EmbedBatchTask {
     type JsValue = Float32Array;
 
     fn compute(&mut self) -> Result<Self::Output> {
+        let output = self.compute_unchecked()?;
+        // Reject a wrong batch before it can reach the index: one unit
+        // vector per input row, all values finite. Costs one pass over
+        // batch × 768 floats.
+        let batch_size = self.input_ids.len();
+        if batch_size > 0 {
+            let rows = super::parity::check_unit_vectors(
+                &output,
+                self.inner.hidden_size,
+                "[NativeEmbedding] output",
+            )
+            .map_err(Error::from_reason)?;
+            if rows != batch_size {
+                return Err(Error::from_reason(format!(
+                    "[NativeEmbedding] output has {rows} vectors for {batch_size} inputs"
+                )));
+            }
+        }
+        Ok(output)
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+        Ok(output)
+    }
+}
+
+impl EmbedBatchTask {
+    fn compute_unchecked(&mut self) -> Result<Float32Array> {
         let inner = &*self.inner;
         let batch_size = self.input_ids.len();
         if batch_size == 0 {
@@ -655,16 +683,9 @@ impl Task for EmbedBatchTask {
             }
         };
 
-        // The l2_normalize fix in nomic_bert_sdpa.rs guarantees no NaN/Inf
-        // in the normalised output even for fully-padded rows. We could
-        // still scrub the buffer here for defence-in-depth, but the cost is
-        // a per-element scan of every output and Float32Array does not
-        // forbid NaN the way JSON does, so we trust the upstream fix.
+        // `compute` checks this buffer (counts, finite, unit norm) before
+        // it reaches JS.
         Ok(Float32Array::new(result))
-    }
-
-    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
-        Ok(output)
     }
 }
 
