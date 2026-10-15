@@ -306,3 +306,45 @@ binaries; score4b.py; ratio = rival p50 / ours at the first sweep point reaching
   gcsn-ho   ours 96 us .8359: binflat x1.34, RaBitQ-flat x1.39, hnswlib M64 x1.82.
 No rival is faster than us at our MRR on any x86 set; binflat ties at 20k and 140k (within box noise, H3).
 Mac not rerun (owner's machine busy). Backups: v4/<set>/scored4.pre-1014b.json; ours-final-r{1,2,3}.json = ab-ho4-fin.
+
+### 8e. Full-vector file + kernel pass (2026-10-15, box only; commits 36a8843c, 9c53de24, 3bb57de4)
+
+All changes keep results identical (0 differences on 5 dev + 5 held-out sets vs main). Box p50, 3 interleaved runs:
+
+| Set | main (f9dd6757) | 36a8843c vector file + int8/f64 kernels | 9c53de24 rescore rewrite | 3bb57de4 AVX2 popcount |
+|---|---|---|---|---|
+| 6.9k | 97 us | 64 | 59 | 55 |
+| 20k | 175 | 96 | 90 | 80 |
+| AdvTest | 189 | 104 | 96 | 85 |
+| 140k | 455 | 366 | 365 | 299 |
+| 1M | 365 | 227 | 225 | 215 |
+
+- Vector file: `<index>.fullvec.bin` (append-only f32 rows, node order, 64-byte header with generation) +
+  `.fullvec.map` (node -> row, published with each save before .meta.json). Written by every add path (build,
+  reconciler tick, compaction via plain reads); read by the native mmap reader (MADV_RANDOM) with the same f64
+  kernel as ss_full_dots. Missing row -> SQLite for that query. `SS_FIX_FULLVEC=0` = legacy. Bench indexes got the
+  file from `build-fullvec.mjs` (1M: 2.9 GB, 50 s). Disk: +3 KB/vector. RSS: small sets drop (no RAM cache);
+  at 1M RSS shows the whole file after a long run (kernel fault-around maps cached neighbour pages; file-backed,
+  reclaimable; the search daemon is not under the maintainer RSS budget).
+- Kernels: AVX2 int8 dot (vpmaddwd, exact), integer-key sort in cascade_int8, padded 16-row f64 block, AVX2
+  nibble-lookup popcount for scan and walk (Zen 3: faster than 8 POPCNT per code), no upper-layer descent when
+  the exact scan answers, node indices passed to the full-vector stage, in-place fields on owned candidates.
+- Rejected (no gain or noise): int8 vpmaddubsw kernel (int8 stage is L3-bound, not ALU), sliding int8
+  prefetch window, scalar/SIMD popcount interleave, 32-row f64 block (register spill), native int8 query
+  conversion, Set-free found count.
+- Bench method note: ours.mjs and rivals.cpp both time 3 consecutive runs of the SAME query and keep the median,
+  so per-query caches are warm on both sides (fair, but optimistic vs cold queries; a cold pass at 1M gives stage 1
+  ~290 us instead of ~170).
+
+x86 held-out rival rescore (score4b; our arm 3 runs of 3bb57de4, rivals 13-14 Oct runs): time a rival needs to
+reach our MRR@10 / our p50:
+  6.9k 56 us: binflat x2.25, RaBitQ-flat x2.34, hnswlib M64 x3.06 (9 configs never)
+  20k 81 us: binflat x2.23, RaBitQ-flat x4.51, sq8 x5.62 (6 never)
+  AdvTest 88 us: RaBitQ-flat x4.63, binflat x4.97, sq8 x6.02 (9 never)
+  140k 308 us: binflat x1.60, hnswlib M64 x5.57, sq8 x6.14 (9 never)
+  1M 225 us: usearch_i8 x4.06, sq8 x5.24 (3 never)
+No rival point reaches our MRR at or below our time on any set. Faster rival points exist only at lower MRR
+(binflat ef100: 6.9k 30 us .8325 vs our .8359; 20k 59 us .8188 vs .8220; AdvTest 64 us .4686 vs .4731; 140k ef50
+302 us .7781 vs .7881). Our own faster/lower-MRR points (smaller S1) were not measured with this build.
+Mac: NOT rerun (owner's machine busy); the ARM build compiles (cargo check aarch64 on the box), ARM kernels
+unchanged except the padded f64 tail; committed .node binaries are not rebuilt.
