@@ -2,8 +2,7 @@
  * Install the sweet-search opencode harness (project scope, `sweet-search init --opencode`).
  *
  * Everything goes into the project's `.opencode/` directory, which opencode 1.18.4 loads as a
- * project config layer. No AGENTS.md and no root opencode.json are written (an older install's
- * AGENTS.md block is migrated away by init):
+ * project config layer. No AGENTS.md and no root opencode.json are written:
  *
  *   .opencode/sweet-search.md             the sweet-search rules
  *   .opencode/sweet-search-prompt.txt     our full build/general agent prompt (scripts/harness-prompts/:

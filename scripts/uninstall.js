@@ -530,8 +530,8 @@ Removed from each repo:
   - Claude Code wiring: output style + selection, .claude/rules/sweet-search.md,
     the /sweet-index skill, the index-maintainer and prewarm hooks, optional
     tool-enforcement and reminder hooks
-  - Sweet-search-owned blocks/files in AGENTS.md, GEMINI.md, CLAUDE.md
-    (legacy installs), and .cursor/rules/sweet-search.mdc
+  - Sweet-search-owned blocks/files in AGENTS.md, GEMINI.md, and
+    .cursor/rules/sweet-search.mdc
   - The Codex SessionStart hook and the MCP server registration
   - Codex wiring: the config.toml keys init added (model_instructions_file,
     developer_instructions, and [features] hooks when init added it),
@@ -593,8 +593,8 @@ export function planProjectUninstall(projectRoot) {
   if (removeSweetIndexSkill(projectRoot, { dryRun: true }).status === 'dry-run') {
     lines.push('/sweet-index skill (.claude/skills/sweet-index/)');
   }
-  // Agent-instruction files, the Claude project rule, and any legacy CLAUDE.md
-  // marker. The marker/sentinel contracts preserve user-authored content.
+  // Agent-instruction files and the Claude project rule. The marker/sentinel
+  // contracts preserve user-authored content.
   const agentInstructions = removeAgentInstructions({ projectRoot, dryRun: true });
   const agentTargets = Object.entries(agentInstructions.harnesses ?? {})
     .filter(([, v]) => v === 'dry-run').map(([k]) => k);
@@ -631,8 +631,6 @@ export function planProjectUninstall(projectRoot) {
  * first). A path init did not create, or one that still holds anything, stays.
  * Returns the removed paths (relative).
  */
-const INIT_CLAUDE_DIRS = ['.claude/skills', '.claude/agents', '.claude/rules', '.claude/output-styles', '.claude'];
-
 export function pruneCreatedPaths(projectRoot, createdPaths = [], { dryRun = false } = {}) {
   const removed = [];
   const created = new Set(createdPaths);
@@ -647,10 +645,8 @@ export function pruneCreatedPaths(projectRoot, createdPaths = [], { dryRun = fal
       }
     } catch { /* absent or not JSON: keep */ }
   }
-  // Older inits did not record created paths: also offer the .claude/
-  // directories any init writes into. Only EMPTY directories are removed, so no
-  // content can be lost.
-  const dirs = [...new Set([...created, ...INIT_CLAUDE_DIRS])].filter((rel) => rel !== settingsRel)
+  // Only EMPTY directories are removed, so no content can be lost.
+  const dirs = [...created].filter((rel) => rel !== settingsRel)
     .sort((a, b) => b.split('/').length - a.split('/').length);
   for (const rel of dirs) {
     const path = join(projectRoot, rel);

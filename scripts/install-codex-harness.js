@@ -1,8 +1,7 @@
 /**
  * Install the sweet-search Codex CLI harness (project scope, `sweet-search init --codex`).
  *
- * Everything goes into the project's `.codex/` layer; AGENTS.md is NOT written (an older install's
- * AGENTS.md block is migrated away by init):
+ * Everything goes into the project's `.codex/` layer; AGENTS.md is NOT written:
  *
  *   .codex/sweet-search-instructions.md   our full base instructions (scripts/harness-prompts/:
  *                                         codex 0.146.1's own text minus the `rg` search steer,
@@ -52,9 +51,6 @@ const BLOCK_BEGIN = '# >>> sweet-search: added by `sweet-search init --codex`; `
 const BLOCK_END = '# <<< sweet-search';
 const BLOCK_RE = /^# >>> sweet-search[^\n]*\n[\s\S]*?^# <<< sweet-search[^\n]*(?:\n|$)/m;
 const OWNED_KEYS = Object.freeze(['model_instructions_file', 'developer_instructions']);
-// The whole config.toml an init older than the manifest wrote (the hooks flag, before and after
-// the `codex_hooks` → `hooks` rename).
-const LEGACY_CONFIG_TEXTS = new Set(['[features]\nhooks = true\n', '[features]\ncodex_hooks = true\n']);
 
 const sha = s => createHash('sha256').update(s).digest('hex');
 
@@ -238,9 +234,8 @@ export function formatCodexUntrustedWarning({ projectKey, configPath }) {
  * `hooks` is the canonical key as of Codex v0.132+. The earlier `codex_hooks`
  * key is deprecated (Codex now prints a deprecation warning for it), so this
  * function also MIGRATES a legacy `codex_hooks` flag to `hooks` instead of
- * writing the deprecated name. Legacy handling is deliberate: users who ran an
- * older sweet-search (which wrote `codex_hooks`) or older Codex shouldn't be
- * left with a deprecated, warning-producing flag.
+ * writing the deprecated name: a user who set it under an older Codex should
+ * not be left with a deprecated, warning-producing flag.
  *
  * Behaviour:
  *   - `hooks = true` already present → no-op ('already'); if a deprecated
@@ -396,16 +391,13 @@ export function installCodexHarness({
   const manifestRead = readJson(manifestPath);
   const manifest = manifestRead.error ? {} : manifestRead.value;
   const configExisted = existsSync(configPath);
-  // An init older than this manifest created a config.toml that holds only the hooks flag:
-  // adopt it, so uninstall removes it.
-  const legacy = !manifestRead.exists && configExisted && LEGACY_CONFIG_TEXTS.has(readFileSync(configPath, 'utf8'));
   const next = {
     version: MANIFEST_VERSION,
     files: { ...(manifest.files || {}) },
     configBlock: manifest.configBlock || null,
-    createdConfig: manifestRead.exists ? Boolean(manifest.createdConfig) : (!configExisted || legacy),
-    addedFeaturesTable: Boolean(manifest.addedFeaturesTable) || legacy,
-    addedHooksFlag: Boolean(manifest.addedHooksFlag) || legacy,
+    createdConfig: manifestRead.exists ? Boolean(manifest.createdConfig) : !configExisted,
+    addedFeaturesTable: Boolean(manifest.addedFeaturesTable),
+    addedHooksFlag: Boolean(manifest.addedHooksFlag),
   };
   const changes = [];
   const warnings = [];
@@ -525,18 +517,7 @@ export function removeCodexHarness({ projectRoot, dryRun = false } = {}) {
   const manifestRead = readJson(manifestPath);
   if (manifestRead.error) return { status: 'error', detail: manifestRead.error };
   const configPath = join(projectRoot, CODEX_CONFIG_REL);
-  if (!manifestRead.exists) {
-    // An older init (before the manifest) wrote exactly the legacy hooks flag
-    // file; it is ours when its text is still byte-identical.
-    let legacyText = null;
-    try { legacyText = readFileSync(configPath, 'utf8'); } catch { /* absent */ }
-    if (legacyText == null || !LEGACY_CONFIG_TEXTS.has(legacyText)) return { status: 'not-found', detail: 'no Codex harness manifest' };
-    const detail = `${CODEX_CONFIG_REL} (legacy hooks flag from an older init)`;
-    if (dryRun) return { status: 'dry-run', detail };
-    unlinkSync(configPath);
-    try { const dir = join(projectRoot, CODEX_DIR_REL); if (readdirSync(dir).length === 0) rmdirSync(dir); } catch { /* keep a non-empty directory */ }
-    return { status: 'removed', detail };
-  }
+  if (!manifestRead.exists) return { status: 'not-found', detail: 'no Codex harness manifest' };
   const manifest = manifestRead.value;
   const parts = [];
   const kept = [];

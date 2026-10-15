@@ -38,7 +38,7 @@ import {
 import { describeDedupConfig } from '../core/infrastructure/index.js';
 import { verifyRuntime, getMaxsimTier, getRouterType } from './verify-runtime.js';
 import {
-  ALL_HARNESSES, MARKER_BEGIN, getPolicyBody, injectAgentInstructions, stripLegacyAgentsBlock,
+  ALL_HARNESSES, getPolicyBody, injectAgentInstructions,
 } from './inject-agent-instructions.js';
 import { writeClaudeRules } from './write-claude-rules.js';
 import {
@@ -53,7 +53,7 @@ import {
 } from './install-claude-lean-harness.js';
 import { installMcpServer } from './install-mcp-server.js';
 import {
-  CODEX_MANIFEST_REL, ensureCodexHooksFeatureFlag, formatCodexUntrustedWarning, installCodexHarness, readCodexProjectTrust,
+  ensureCodexHooksFeatureFlag, formatCodexUntrustedWarning, installCodexHarness, readCodexProjectTrust,
 } from './install-codex-harness.js';
 import { installOpencodeHarness, opencodeCacheKeyOffByEnv } from './install-opencode-harness.js';
 import { installToolEnforcement, removeToolEnforcement } from './install-tool-enforcement.js';
@@ -1322,15 +1322,6 @@ export function hasCodexPrewarmHook(projectRoot) {
   }
 }
 
-/** True when AGENTS.md still holds the sweet-search block an older init wrote. */
-function hasLegacyAgentsBlock(projectRoot) {
-  try {
-    return readFileSync(join(projectRoot, 'AGENTS.md'), 'utf-8').includes(MARKER_BEGIN);
-  } catch {
-    return false;
-  }
-}
-
 /**
  * The init line for a Codex SessionStart hook that was not installed
  * (--skip-prewarm-hook, or a write error). Nothing depends on the hook: the
@@ -2114,7 +2105,6 @@ export async function runInit(args) {
   //       core CLI/warm-server first-use launcher regardless of editor or MCP.
   let codexHookReport = null;
   let codexHarnessReport = null;
-  let codexTrust = null;
   if (parsed.codex) {
     codexHookReport = registerCodexSessionStartHook({
       projectRoot,
@@ -2130,7 +2120,7 @@ export async function runInit(args) {
     });
     // Codex reads the project .codex/ layer only for a trusted project (READ ONLY
     // check of $CODEX_HOME/config.toml; init never writes the user's Codex config).
-    codexTrust = readCodexProjectTrust({ projectRoot });
+    const codexTrust = readCodexProjectTrust({ projectRoot });
     const projectFlag = codexHarnessReport.hooksFlag ?? { status: codexHarnessReport.status };
     process.stderr.write(
       `[init] Codex harness: ${codexHarnessReport.status}`
@@ -2186,46 +2176,6 @@ export async function runInit(args) {
       + (opencodeHarnessReport.detail ? ` — ${opencodeHarnessReport.detail}` : '') + '\n'
       + (opencodeHarnessReport.warning ? `[init] Note: ${opencodeHarnessReport.warning}\n` : ''),
     );
-  }
-
-  // 11.8. Migration: before the per-project config layers, --codex implied
-  //       --agents and AGENTS.md carried the policy. Codex/opencode now read it
-  //       from their own config, so strip our old AGENTS.md block (unless the
-  //       user asks for AGENTS.md with --agents) — the rules would arrive twice.
-  //       Codex ignores its project config until the project is trusted, so an
-  //       untrusted Codex project keeps the old block (the user keeps the rules
-  //       until they trust it; the next init after that strips it).
-  //       The block is Codex's only rules source unless a TRUSTED project reads our
-  //       Codex config (this run installed it, or an earlier init did). A repo with
-  //       an old Codex layer but no new harness (old `init --codex`, then only
-  //       `init --opencode`) keeps it too. No `.codex/` at all = nothing needs it.
-  const hasCodexLayer = existsSync(join(projectRoot, '.codex'));
-  const codexHarnessPresent = parsed.codex || existsSync(join(projectRoot, CODEX_MANIFEST_REL));
-  if (!codexTrust && hasCodexLayer && codexHarnessPresent) codexTrust = readCodexProjectTrust({ projectRoot });
-  const codexNeedsAgentsBlock = hasCodexLayer && !(codexHarnessPresent && codexTrust?.trusted);
-  if ((parsed.codex || parsed.opencode) && !parsed.skipAgentInstructions && !parsed.optInHarnesses.has('agents')) {
-    if (codexNeedsAgentsBlock) {
-      if (hasLegacyAgentsBlock(projectRoot)) {
-        process.stderr.write(codexHarnessPresent
-          ? '[init] AGENTS.md: kept the old sweet-search block — Codex reads it until this project is trusted; '
-            + 're-run init after trusting it to remove the block\n'
-          : '[init] AGENTS.md: kept the old sweet-search block — Codex still reads its rules from it; '
-            + 'run `sweet-search init --codex` to move Codex to its project config\n',
-        );
-      }
-    } else {
-      try {
-        const legacy = stripLegacyAgentsBlock({ projectRoot });
-        if (legacy !== 'not-found') {
-          process.stderr.write(
-            `[init] AGENTS.md: ${legacy === 'file-deleted' ? 'removed (it held only the old sweet-search block)' : 'removed the old sweet-search block'}`
-            + ' — Codex/opencode now read the rules from their project config\n',
-          );
-        }
-      } catch (err) {
-        process.stderr.write(`[init] Warning: AGENTS.md migration failed: ${err.message}\n`);
-      }
-    }
   }
 
   // 12-15. Inject the sweet-search policy across coding-agent harnesses.

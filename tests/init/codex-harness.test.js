@@ -194,25 +194,16 @@ describe('hooks flag only with a hook', () => {
   });
 });
 
-describe('upgrade from an init older than the manifest', () => {
-  for (const legacy of ['[features]\nhooks = true\n', '[features]\ncodex_hooks = true\n']) {
-    it(`adopts a config.toml that is exactly ${JSON.stringify(legacy)}`, () => {
-      write(CODEX_CONFIG_REL, legacy);
+describe('a config.toml that existed before init is the user\'s', () => {
+  for (const user of ['[features]\nhooks = true\n', '[features]\nhooks = true\nweb_search = true\n']) {
+    it(`never adopts ${JSON.stringify(user)}`, () => {
+      write(CODEX_CONFIG_REL, user);
       installCodexHarness({ projectRoot: root, rules: RULES });
-      expect(manifest()).toMatchObject({ createdConfig: true, addedHooksFlag: true, addedFeaturesTable: true });
+      expect(manifest()).toMatchObject({ createdConfig: false, addedHooksFlag: false });
       removeCodexHarness({ projectRoot: root });
-      expect(existsSync(join(root, '.codex'))).toBe(false);
+      expect(read(CODEX_CONFIG_REL)).toBe(user);
     });
   }
-
-  it('does not adopt a config.toml with anything else in it', () => {
-    const user = '[features]\nhooks = true\nweb_search = true\n';
-    write(CODEX_CONFIG_REL, user);
-    installCodexHarness({ projectRoot: root, rules: RULES });
-    expect(manifest()).toMatchObject({ createdConfig: false, addedHooksFlag: false });
-    removeCodexHarness({ projectRoot: root });
-    expect(read(CODEX_CONFIG_REL)).toBe(user);
-  });
 });
 
 describe('Codex project trust (read only)', () => {

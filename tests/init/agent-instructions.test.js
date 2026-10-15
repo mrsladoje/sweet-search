@@ -174,19 +174,6 @@ describe('injectAgentInstructions — idempotent rewrite', () => {
     expect(read(CLAUDE_FILE)).toBe(original);
   });
 
-  it('migrates the legacy managed CLAUDE.md block while preserving user prose', () => {
-    writeFileSync(
-      join(tmpRoot, CLAUDE_FILE),
-      `${MARKER_BEGIN}\nlegacy sweet-search policy\n${MARKER_END}\n\n# Project Claude rules\nKeep me.\n`,
-    );
-    const r = injectAgentInstructions({ projectRoot: tmpRoot, harnesses: ['claude-code'] });
-    expect(r.harnesses['claude-code']).toBe('legacy-block-removed');
-    const text = read(CLAUDE_FILE);
-    expect(text).not.toContain(MARKER_BEGIN);
-    expect(text).not.toContain('legacy sweet-search policy');
-    expect(text).toContain('# Project Claude rules');
-    expect(text).toContain('Keep me.');
-  });
 });
 
 describe('injectAgentInstructions — symlink edge cases', () => {
@@ -218,15 +205,15 @@ describe('injectAgentInstructions — symlink edge cases', () => {
     expect(r2.harnesses.gemini).toBe('already-correct');
   });
 
-  it('migrates an old GEMINI.md → CLAUDE.md symlink to AGENTS.md', () => {
+  it('keeps a user GEMINI.md → CLAUDE.md symlink', () => {
     writeFileSync(join(tmpRoot, CLAUDE_FILE), '# user Claude instructions\n');
     symlinkSync(CLAUDE_FILE, join(tmpRoot, GEMINI_FILE));
     const r = injectAgentInstructions({
       projectRoot: tmpRoot,
       harnesses: ['claude-code', 'agents', 'gemini'],
     });
-    expect(r.harnesses.gemini).toBe('created');
-    expect(readlinkSync(join(tmpRoot, GEMINI_FILE))).toBe(AGENTS_FILE);
+    expect(r.harnesses.gemini).toBe('preserved-existing');
+    expect(readlinkSync(join(tmpRoot, GEMINI_FILE))).toBe(CLAUDE_FILE);
     expect(read(CLAUDE_FILE)).toBe('# user Claude instructions\n');
   });
 });
@@ -236,7 +223,7 @@ describe('removeAgentInstructions', () => {
     injectAgentInstructions({ projectRoot: tmpRoot });
 
     const r = removeAgentInstructions({ projectRoot: tmpRoot });
-    expect(r.harnesses['claude-code']).toBe('not-found');
+    expect(r.harnesses['claude-code']).toBeUndefined();
     expect(r.harnesses.agents).toBe('file-deleted');
     expect(r.harnesses.gemini).toBe('removed');
     expect(r.harnesses.cursor).toBe('file-deleted');
@@ -247,23 +234,17 @@ describe('removeAgentInstructions', () => {
     expect(exists(CURSOR_FILE)).toBe(false);
   });
 
-  it('removes a legacy managed CLAUDE.md block and preserves user prose', () => {
-    writeFileSync(
-      join(tmpRoot, CLAUDE_FILE),
-      `${MARKER_BEGIN}\nlegacy\n${MARKER_END}\n\n# My note\nKeep me.\n`,
-    );
-    const r = removeAgentInstructions({ projectRoot: tmpRoot });
-    expect(r.harnesses['claude-code']).toBe('removed');
-    const claude = read(CLAUDE_FILE);
-    expect(claude).not.toContain(MARKER_BEGIN);
-    expect(claude).toContain('Keep me.');
+  it('never touches CLAUDE.md (init never writes it)', () => {
+    const original = `${MARKER_BEGIN}\nuser text\n${MARKER_END}\n\n# My note\nKeep me.\n`;
+    writeFileSync(join(tmpRoot, CLAUDE_FILE), original);
+    removeAgentInstructions({ projectRoot: tmpRoot });
+    expect(read(CLAUDE_FILE)).toBe(original);
   });
 
   it('dry-run reports without modifying anything', () => {
     injectAgentInstructions({ projectRoot: tmpRoot });
     const before = read(AGENTS_FILE);
     const r = removeAgentInstructions({ projectRoot: tmpRoot, dryRun: true });
-    expect(r.harnesses['claude-code']).toBe('not-found');
     expect(r.harnesses.agents).toBe('dry-run');
     expect(r.harnesses.gemini).toBe('dry-run');
     expect(r.harnesses.cursor).toBe('dry-run');
@@ -323,18 +304,6 @@ describe('writeClaudeRules / removeClaudeRules', () => {
     writeFileSync(join(tmpRoot, CLAUDE_RULES_REL), '# My rules\nNo sentinel.\n');
     expect(writeClaudeRules({ projectRoot: tmpRoot })).toBe('preserved-user-file');
     expect(read(CLAUDE_RULES_REL)).toBe('# My rules\nNo sentinel.\n');
-  });
-
-  it('upgrades the legacy hand-authored managed rule to verbatim M±', () => {
-    mkdirSync(join(tmpRoot, '.claude', 'rules'), { recursive: true });
-    writeFileSync(
-      join(tmpRoot, CLAUDE_RULES_REL),
-      `${claudeRulesInternal.LEGACY_SENTINEL}\nlegacy contradictory guidance\n`,
-    );
-    expect(writeClaudeRules({ projectRoot: tmpRoot })).toBe('updated');
-    expect(read(CLAUDE_RULES_REL)).toBe(
-      `${claudeRulesInternal.SENTINEL}\n${CANONICAL_POLICY_BODY}\n`,
-    );
   });
 
   it('gitignores the pointer file in a git project because it names a local memory path', () => {
