@@ -284,19 +284,18 @@ export async function semanticSearch3Stage(query, options = {}) {
 
   // Stage 1: Binary HNSW search
   // Pass floatQuery for asymmetric distance during graph traversal
-  const truncatedFloat = truncateForHNSW(embedResult.float);
   const useBatchedDot = BINARY_HNSW_CONFIG.retrieval.useBatchedDot !== false;
   // Native stages 1 and 2 in one synchronous span (searchCascade): the same
   // candidates, scores, order and stats as the path below, but result
-  // objects only for the head kept. null when unavailable.
-  const fusedQueryInt8 = useBatchedDot && typeof this.binaryHnswIndex.searchCascade === 'function'
-    ? normalizedFloatToInt8(truncatedFloat)
-    : null;
-  const fused = fusedQueryInt8
+  // objects only for the head kept. The index encodes the int8 query from
+  // the float query at its own widths (K4). null when unavailable.
+  const fused = useBatchedDot && typeof this.binaryHnswIndex.searchCascade === 'function' && embedResult.float
     ? this.binaryHnswIndex.searchCascade(embedResult.binary, stage1Count(this.stage1Candidates, k, adaptiveConfig), {
-      floatQuery: truncatedFloat, queryInt8: fusedQueryInt8,
+      queryFloat: embedResult.float,
     })
     : null;
+  const fusedQueryInt8 = fused ? fused.queryInt8 : null;
+  const truncatedFloat = fused ? null : truncateForHNSW(embedResult.float);
   let scoredCandidates;
   let int8Analysis;
   let headNodes = null;
@@ -515,7 +514,7 @@ export async function semanticSearch3Stage(query, options = {}) {
     try {
       const pool = scoredCandidates.slice(0, stage2_5Count);
       // Phase 2 fix: query at intended dimension (truncated + normalized)
-      const queryFloat = truncatedFloat;
+      const queryFloat = truncatedFloat ?? truncateForHNSW(embedResult.float);
       const poolIds = pool.map(c => c.id);
 
       let floatVectors = null;
