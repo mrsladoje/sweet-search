@@ -681,6 +681,49 @@ impl Task for LiEncodeTask {
     type JsValue = LiEncodingResult;
 
     fn compute(&mut self) -> Result<Self::Output> {
+        let output = self.compute_unchecked()?;
+        // Reject a wrong batch before it can reach the index: one token
+        // count per row equal to the row's attended tokens, one finite unit
+        // vector per token. Costs one pass over the output.
+        let expected: Vec<u32> = self
+            .attention_mask
+            .iter()
+            .map(|row| row.iter().filter(|&&v| v != 0).count() as u32)
+            .collect();
+        if output.token_counts != expected {
+            return Err(Error::from_reason(format!(
+                "[NativeLI] output token counts {:?} do not match the attended tokens {:?}",
+                output.token_counts, expected
+            )));
+        }
+        let total: u32 = expected.iter().sum();
+        if total > 0 {
+            let tokens = super::parity::check_unit_vectors(
+                &output.vectors,
+                self.inner.token_dim,
+                "[NativeLI] output",
+            )
+            .map_err(Error::from_reason)?;
+            if tokens != total as usize {
+                return Err(Error::from_reason(format!(
+                    "[NativeLI] output has {tokens} token vectors for {total} attended tokens"
+                )));
+            }
+        } else if !output.vectors.is_empty() {
+            return Err(Error::from_reason(
+                "[NativeLI] output has vectors for a batch with no attended tokens",
+            ));
+        }
+        Ok(output)
+    }
+
+    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
+        Ok(output)
+    }
+}
+
+impl LiEncodeTask {
+    fn compute_unchecked(&mut self) -> Result<LiEncodingResult> {
         let inner = &*self.inner;
         let batch_size = self.input_ids.len();
         if batch_size == 0 {
@@ -854,10 +897,6 @@ impl Task for LiEncodeTask {
             vectors: Float32Array::new(all_vectors),
             token_counts,
         })
-    }
-
-    fn resolve(&mut self, _env: Env, output: Self::Output) -> Result<Self::JsValue> {
-        Ok(output)
     }
 }
 
