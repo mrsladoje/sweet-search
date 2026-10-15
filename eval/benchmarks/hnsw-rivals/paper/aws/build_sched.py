@@ -17,7 +17,7 @@
 # store, DATA/builds/shared/<set>/<model>/<family>/<hash>, keyed without machine or binary. A build is made once
 # and copied to every machine. --shard i/n: this machine builds only the builds with int(hash, 16) % n == i, so
 # several build machines share the work without overlap (ours: the hash of the set, model and seed).
-import argparse, json, os, shutil, subprocess, sys, time
+import shlex, argparse, json, os, shutil, subprocess, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PAPER = os.path.dirname(HERE)
@@ -95,10 +95,21 @@ def done(w):
         return False
     if w['kind'] == 'ours':
         try:
-            return json.load(open(bj)).get('seed') == w['seed']
+            return json.load(open(bj)).get('seed') == w['seed'] and os.path.exists(export_json(w))
         except Exception:
             return False
     return True
+
+
+def export_json(w):
+    """The export of our index (codes, int8 rows, f16 vectors: functions of the vectors only), which the
+    binary rival builds read their codes from and the (A) path reads its rows from."""
+    return os.path.join(a.data, 'emb', w['model'], w['set'], 'export', 'export.json')
+
+
+def ready(w):
+    """A rival build waits for the export of its set and model (made right after our index)."""
+    return w['kind'] == 'ours' or os.path.exists(export_json(w))
 
 
 todo = [w for w in work if not done(w)]
@@ -164,7 +175,9 @@ def rss_kb(pid):
 def command(w):
     d = w['root']
     if w['kind'] == 'ours':
-        return [a.node, os.path.join(PAPER, 'build_ours.mjs'), a.data, w['set'], w['model'], '--out', d, '--seed', str(w['seed'])]
+        b_ours = [a.node, os.path.join(PAPER, 'build_ours.mjs'), a.data, w['set'], w['model'], '--out', d, '--seed', str(w['seed'])]
+        exp = [a.node, os.path.join(PAPER, 'export_index.mjs'), a.data, w['set'], w['model'], d]
+        return ['bash', '-c', ' '.join(map(shlex.quote, b_ours)) + ' && ' + ' '.join(map(shlex.quote, exp))]
     b = w['spec']
     params = ','.join(f'{k}={v}' for k, v in sorted(b['build_params'].items()))
     return runner(b['family']) + ['build', '--data', a.data, '--set', b['set'], '--model', b['model'], '--family', b['family'],
@@ -237,12 +250,15 @@ while pending or running:
         owed = sum(max(0, r['w']['est_kb'] - rss_kb(r['p'].pid)) for r in running)
         room = mi['MemAvailable'] - reserve - owed
         pick = None
-        if a.isolated or not running:
-            pick = pending[0]
+        avail = [w for w in pending if ready(w)]
+        if not avail and not running:
+            sys.exit('rival builds wait for an export that no pending build makes: build our index of that set first')
+        if (a.isolated or not running) and avail:
+            pick = avail[0]
             if pick['est_kb'] > room:
                 print(f"warning: {pick['label']} needs about {pick['est_kb'] // 1024} MB, room is {int(room) // 1024} MB: runs alone", flush=True)
         else:
-            pick = next((w for w in pending if w['est_kb'] <= room), None)
+            pick = next((w for w in avail if w['est_kb'] <= room), None)
         if pick:
             pending.remove(pick)
             start(pick, f"room {int(room) // 1024} MB")

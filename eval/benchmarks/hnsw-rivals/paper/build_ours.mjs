@@ -22,8 +22,19 @@ const Database = (await import(`${R}/node_modules/better-sqlite3/lib/index.js`))
 
 const keys = fs.readFileSync(`${DATA}/sets/${set}/vectors.jsonl`, 'utf8').split('\n').filter(Boolean).map(l => JSON.parse(l).vid);
 const D = 768, n = keys.length;
-const X = new Float32Array(fs.readFileSync(`${emb}/corpus.f32`).buffer.slice(0));
-if (X.length !== n * D) throw new Error(`corpus.f32 has ${X.length / D} rows, the set ${n}`);
+// read in chunks: readFileSync stops at 2 GiB, and the 1M corpus is 3.1 GB
+const bytes = fs.statSync(`${emb}/corpus.f32`).size;
+if (bytes !== n * D * 4) throw new Error(`corpus.f32 has ${bytes / (D * 4)} rows, the set ${n}`);
+const X = new Float32Array(n * D);
+{
+  const fd = fs.openSync(`${emb}/corpus.f32`, 'r'), u8 = new Uint8Array(X.buffer), CH = 1 << 28;
+  for (let off = 0; off < bytes;) {
+    const got = fs.readSync(fd, u8, off, Math.min(CH, bytes - off), off);
+    if (got <= 0) throw new Error('short read of corpus.f32');
+    off += got;
+  }
+  fs.closeSync(fd);
+}
 function perm(m, s0) {  // the harness's order (ours5.mjs perm)
   let s = BigInt.asUintN(64, BigInt(s0)); const M = (1n << 64n) - 1n;
   const next = () => { s = (s + 0x9e3779b97f4a7c15n) & M; let z = s; z = ((z ^ (z >> 30n)) * 0xbf58476d1ce4e5b9n) & M; z = ((z ^ (z >> 27n)) * 0x94d049bb133111ebn) & M; return z ^ (z >> 31n); };
@@ -42,7 +53,11 @@ const { index } = await buildHnswIndex(items, { indexPath: idxPath, floatDimensi
 const buildS = (performance.now() - t0) / 1000;
 await index.save(idxPath);
 const totalS = (performance.now() - t0) / 1000;
-const sha = p => crypto.createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+const sha = p => {  // chunked: a whole-file buffer stops at 2 GiB
+  const h = crypto.createHash('sha256'), fd = fs.openSync(p, 'r'), buf = Buffer.alloc(1 << 24);
+  for (let k; (k = fs.readSync(fd, buf, 0, buf.length, null)) > 0;) h.update(buf.subarray(0, k));
+  fs.closeSync(fd); return h.digest('hex');
+};
 const files = {};
 for (const f of ['codebase-binary-hnsw.idx', 'codebase-binary-hnsw.fullvec.bin', 'codebase-binary-hnsw.fullvec.map']) {
   files[f] = { bytes: fs.statSync(`${SS}/${f}`).size, sha256: sha(`${SS}/${f}`) };

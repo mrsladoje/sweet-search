@@ -36,7 +36,12 @@ if (idx.size !== n) throw new Error(`index has ${idx.size} nodes, set has ${n} v
 const codes = idx._codes(), cb = idx.dimension;        // bytes per code
 const s8 = idx._int8NodeSlab(); const W8 = s8.dim;
 const fv = `${idxPath.replace(/\.idx$/, '')}.fullvec`;
-const data = fs.readFileSync(`${fv}.bin`), map = fs.readFileSync(`${fv}.map`);
+const readAll = p => {  // chunked: readFileSync stops at 2 GiB
+  const size = fs.statSync(p).size, b = Buffer.allocUnsafe(size), fd = fs.openSync(p, 'r');
+  for (let off = 0; off < size;) { const k = fs.readSync(fd, b, off, Math.min(1 << 28, size - off), off); if (k <= 0) throw new Error(`short read of ${p}`); off += k; }
+  fs.closeSync(fd); return b;
+};
+const data = readAll(`${fv}.bin`), map = fs.readFileSync(`${fv}.map`);
 if (data.subarray(0, 8).toString('latin1') !== 'SSFVEC2\0' || map.subarray(0, 8).toString('latin1') !== 'SSFVMAP1') throw new Error('vector file magic');
 const fdim = data.readUInt32LE(8); if (fdim !== D) throw new Error(`vector file dim ${fdim}`);
 if (map.readUInt32LE(8) !== data.readUInt32LE(12) || map.readUInt32LE(12) !== n) throw new Error('vector map generation or count differs');

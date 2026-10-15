@@ -28,4 +28,4 @@ for b in "$BUILD/rivals5" "$BUILD/rivals5-ext" "$BUILD/librescore5.so" "$BUILD/b
   [ -f "$b" ] && echo "$(shasum -a 256 "$b" 2>/dev/null || sha256sum "$b")"
 done
 echo "families:"; "$BUILD/rivals5" families | tr '\n' ' '; echo
-[ -f "$BUILD/rivals5-ext" ] && { "$BUILD/rivals5-ext" families | tr '\n' ' '; echo; }
+if [ -f "$BUILD/rivals5-ext" ]; then "$BUILD/rivals5-ext" families | tr '\n' ' '; echo; fi

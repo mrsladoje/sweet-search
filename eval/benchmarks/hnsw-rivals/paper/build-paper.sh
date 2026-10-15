@@ -62,8 +62,18 @@ cmake -S "$SRC/faiss" -B "$BUILD/faiss" -DFAISS_ENABLE_GPU=OFF -DFAISS_ENABLE_PY
 FTARGET=faiss; [ "$FLEVEL" = generic ] || FTARGET=faiss_$FLEVEL   # only the target that gets linked
 nice cmake --build "$BUILD/faiss" --target $FTARGET -j "$JOBS" >"$BUILD/faiss-build.log" 2>&1
 FLIB=$BUILD/faiss/faiss/libfaiss_$FLEVEL.a; [ -f "$FLIB" ] || FLIB=$BUILD/faiss/faiss/libfaiss.a
-cmake -S "$SRC/usearch/numkong" -B "$BUILD/numkong" -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=$CXX -DNK_BUILD_SHARED=ON -DNK_MARCH_NATIVE=ON -DNK_ENABLE_ASAN=OFF >"$BUILD/numkong-cmake.log" 2>&1
-nice cmake --build "$BUILD/numkong" -j "$JOBS" >"$BUILD/numkong-build.log" 2>&1
+# NK_MARCH_NATIVE=ON first; GCC 13 on Graviton4 (Ubuntu 24.04) rejects it ("inlining failed ... target specific
+# option mismatch" in the SVE headers), so fall back to OFF there. NumKong picks its SIMD kernels at run time either
+# way (dynamic dispatch); the choice is recorded in build-info.json (numkong_march_native).
+NK_NATIVE=ON
+for NK_NATIVE in ON OFF; do
+  rm -rf "$BUILD/numkong"
+  cmake -S "$SRC/usearch/numkong" -B "$BUILD/numkong" -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=$CXX -DNK_BUILD_SHARED=ON -DNK_MARCH_NATIVE=$NK_NATIVE -DNK_ENABLE_ASAN=OFF >"$BUILD/numkong-cmake.log" 2>&1 \
+    && nice cmake --build "$BUILD/numkong" -j "$JOBS" >"$BUILD/numkong-build.log" 2>&1 && break
+  echo "numkong with NK_MARCH_NATIVE=$NK_NATIVE failed (see numkong-build.log)"
+  [ $NK_NATIVE = OFF ] && exit 1
+done
+export NK_NATIVE
 echo "FAISS lib: $FLIB"
 
 # ---- adapters ----
@@ -101,7 +111,7 @@ json.dump({
   "faiss_opt_level": e["FLEVEL"], "faiss_cmake_args": e["FCMAKE_S"],
   "cxxflags": e["CXXFLAGS_S"], "hnswlib_extra_flags": "-ffast-math -ftree-vectorize (hnswlib_adapter.cpp only)", "link": e["LIBS_S"],
   "commits": {"faiss": e["FAISS_COMMIT"], "faiss_tag": e["FAISS_TAG"], "usearch": e["USEARCH_COMMIT"], "usearch_tag": e["USEARCH_TAG"],
-              "numkong": e["NUMKONG_COMMIT"], "stringzilla": e["STRINGZILLA_COMMIT"], "hnswlib": e["HNSWLIB_COMMIT"]},
+              "numkong": e["NUMKONG_COMMIT"], "numkong_march_native": e.get("NK_NATIVE"), "stringzilla": e["STRINGZILLA_COMMIT"], "hnswlib": e["HNSWLIB_COMMIT"]},
   "sha256": {"adapter_test": e["SHA_TEST"], e["FLIB_NAME"]: e["SHA_FAISS"], e["NKLIB_NAME"]: e["SHA_NK"], "libpaper_adapters.a": e["SHA_ADAPTERS"]},
 }, open(sys.argv[1], "w"), indent=2)
 PY
