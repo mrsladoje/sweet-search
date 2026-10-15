@@ -27,10 +27,6 @@ import { EMBEDDING_CONFIG, BINARY_HNSW_CONFIG } from '../infrastructure/config/i
 import { float512StoreEnabled } from '../vector-store/float-vector-store.js';
 
 const CASCADE_DEFERRED_STATS = { skipped: true, reason: 'cascade_deferred', provider: null, documents: 0, tokens: 0 };
-// 1 = the final semantic order is the full-vector cosine alone. 0.8 -> 1
-// (2026-10-14, kernel dev sets, 3,600 queries each): MRR@10 +0.0016..+0.0028
-// on 1M / 140k / 20k / 6.9k, same time. Legacy: SWEET_SEARCH_FULL_VECTOR_STAGE_WEIGHT=0.8.
-const FULL_VECTOR_STAGE_WEIGHT = 1.0;
 const FULL_VECTOR_STAGE_LIMIT = 200;
 
 /**
@@ -47,96 +43,32 @@ function cascadeDefer(candidates, stats, searchPath, k = 50) {
   return { results, stats };
 }
 
-function dotProduct(a, b) {
-  const n = Math.min(a?.length || 0, b?.length || 0);
-  if (n === 0) return null;
-  let score = 0;
-  for (let i = 0; i < n; i++) score += a[i] * b[i];
-  return score;
-}
-
-/**
- * dotProduct(a, v) for each v (null for a missing v), four vectors per pass.
- * Each sum keeps its own accumulator and the same sequential order, so every
- * score is bit-identical to dotProduct(); the interleaving only adds ILP.
- */
-function dotProducts(a, vectors) {
-  const out = new Array(vectors.length);
-  const na = a?.length || 0;
-  let i = 0;
-  for (; i + 3 < vectors.length; i += 4) {
-    const b0 = vectors[i], b1 = vectors[i + 1], b2 = vectors[i + 2], b3 = vectors[i + 3];
-    const n = b0 ? Math.min(na, b0.length) : 0;
-    if (n === 0 || !b1 || !b2 || !b3
-      || Math.min(na, b1.length) !== n || Math.min(na, b2.length) !== n || Math.min(na, b3.length) !== n) {
-      for (let j = i; j < i + 4; j++) out[j] = vectors[j] ? dotProduct(a, vectors[j]) : null;
-      continue;
-    }
-    let s0 = 0, s1 = 0, s2 = 0, s3 = 0;
-    for (let k = 0; k < n; k++) {
-      const q = a[k];
-      s0 += q * b0[k];
-      s1 += q * b1[k];
-      s2 += q * b2[k];
-      s3 += q * b3[k];
-    }
-    out[i] = s0; out[i + 1] = s1; out[i + 2] = s2; out[i + 3] = s3;
-  }
-  for (; i < vectors.length; i++) out[i] = vectors[i] ? dotProduct(a, vectors[i]) : null;
-  return out;
-}
-
 function normalizeScore(value, min, max) {
   if (!Number.isFinite(value)) return 0;
   if (!(max > min)) return 0.5;
   return Math.max(0, Math.min(1, (value - min) / (max - min)));
 }
 
-function envNumber(name, fallback, min = 0, max = Infinity) {
-  const value = process.env[name];
-  if (value == null || value === '') return fallback;
-  const parsed = Number.parseFloat(value);
-  return Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : fallback;
-}
-
-function applyFullVectorStageRescore(candidates, queryFloat, codebaseRepo, opts = {}) {
-  if (!Array.isArray(candidates) || candidates.length < 3) return { candidates, stats: null };
-  if (!queryFloat || !codebaseRepo?.getEmbeddingsByIds) return { candidates, stats: null };
+/**
+ * Final semantic order: the full-vector cosine of the head, min-max
+ * normalised (2026-10-14: the full score alone beat an 0.8 blend with the
+ * stage-2 score by MRR@10 +0.0016..+0.0028 on the kernel dev sets). Full
+ * vectors come from the index's full-vector file (opts.fullVectors); an
+ * index without one keeps the stage-2 order.
+ */
+function applyFullVectorStageRescore(candidates, queryFloat, opts = {}) {
+  if (!Array.isArray(candidates) || candidates.length < 3 || !queryFloat) return { candidates, stats: null };
 
   const limit = Math.min(candidates.length, opts.limit ?? FULL_VECTOR_STAGE_LIMIT);
   const head = candidates.slice(0, limit);
-  const ids = head.map(c => c.id).filter(Boolean);
-  if (ids.length === 0) return { candidates, stats: null };
-
-  // Native paths (the index's full-vector file, else the resident store or
-  // SQLite through the ss_full_dots extension); same scores and found count
-  // as getEmbeddingsByIds + dotProducts below.
-  const headIds = head.map(c => c.id || null);
-  const fetched = opts.fullVectors?.fullDotScores?.(queryFloat, headIds, opts.nodes?.subarray(0, limit))
-    || (codebaseRepo.embeddingDotScores
-      ? codebaseRepo.embeddingDotScores(queryFloat, headIds)
-      : { embeddings: codebaseRepo.getEmbeddingsByIds(ids) });
-  let fullScores;
-  if (fetched.scores) {
-    if (fetched.found < 2) return { candidates, stats: null };
-    fullScores = fetched.scores;
-  } else {
-    const embeddings = fetched.embeddings;
-    if (!embeddings || embeddings.size < 2) return { candidates, stats: null };
-    fullScores = dotProducts(queryFloat, head.map(c => (c.id ? embeddings.get(c.id) : null) || null));
-  }
-  // One pass for the base and full-score ranges (Math.min / Math.max folds,
-  // so NaN and -0 behave as with the spread form).
+  const fetched = opts.fullVectors?.fullDotScores?.(
+    queryFloat, head.map(c => c.id || null), opts.nodes?.subarray(0, limit));
+  if (!fetched || fetched.found < 2) return { candidates, stats: null };
+  const fullScores = fetched.scores;
   const n = head.length;
-  const baseScores = new Array(n);
   let withFull = 0;
-  let minBase = Infinity, maxBase = -Infinity, minFull = Infinity, maxFull = -Infinity;
+  let minFull = Infinity, maxFull = -Infinity;
   for (let i = 0; i < n; i++) {
-    const candidate = head[i];
-    const baseScore = candidate.floatScore ?? candidate.int8Score ?? candidate.score ?? 0;
-    baseScores[i] = baseScore;
-    minBase = Math.min(minBase, baseScore);
-    maxBase = Math.max(maxBase, baseScore);
     const fullScore = fullScores[i];
     if (Number.isFinite(fullScore)) {
       withFull++;
@@ -145,7 +77,6 @@ function applyFullVectorStageRescore(candidates, queryFloat, codebaseRepo, opts 
     }
   }
   if (withFull < 2) return { candidates, stats: null };
-  const weight = opts.weight ?? envNumber('SWEET_SEARCH_FULL_VECTOR_STAGE_WEIGHT', FULL_VECTOR_STAGE_WEIGHT, 0, 1);
 
   // `opts.owned`: the caller built these candidates for this query alone,
   // so the fields are set on them instead of on copies (same keys, same
@@ -156,12 +87,11 @@ function applyFullVectorStageRescore(candidates, queryFloat, codebaseRepo, opts 
     const c = opts.owned ? head[i] : { ...head[i] };
     const fullScore = fullScores[i];
     if (Number.isFinite(fullScore)) {
-      const baseNorm = normalizeScore(baseScores[i], minBase, maxBase);
       const fullNorm = normalizeScore(fullScore, minFull, maxFull);
       c.fullVectorScore = fullScore;
       c.fullVectorNorm = fullNorm;
-      c.preFullVectorScore = baseScores[i];
-      c.semanticBlendScore = (1 - weight) * baseNorm + weight * fullNorm;
+      c.preFullVectorScore = c.floatScore ?? c.int8Score ?? c.score ?? 0;
+      c.semanticBlendScore = fullNorm;
     }
     reranked[i] = c;
     key[i] = c.semanticBlendScore || 0;
@@ -195,7 +125,7 @@ function applyFullVectorStageRescore(candidates, queryFloat, codebaseRepo, opts 
 
   return {
     candidates: limit === candidates.length ? sorted : sorted.concat(candidates.slice(limit)),
-    stats: { candidates: withFull, window: limit, weight },
+    stats: { candidates: withFull, window: limit },
   };
 }
 
@@ -273,46 +203,8 @@ function spreadFromStats(count, stats, off) {
 // =============================================================================
 
 /**
- * Compute adaptive Stage 2 pool size based on k and pre-computed score signals.
- * Uses the same isDecisive/isAmbiguous signals as shouldSkipRerank.
- */
-function adaptiveStage2Pool(k, analysis, config) {
-  const {
-    minStage2 = 40,
-    maxStage2 = 400,
-    oversample1 = 10,
-  } = config;
-
-  let base = Math.max(minStage2, k * oversample1);
-
-  if (analysis) {
-    if (analysis.isDecisive) {
-      base = Math.max(minStage2, Math.floor(base * 0.6));
-      return { size: Math.min(base, maxStage2), reason: `shrink_decisive (gap=${analysis.topGap.toFixed(3)})` };
-    }
-    if (analysis.isAmbiguous) {
-      base = Math.min(maxStage2, Math.floor(base * 1.5));
-      return { size: base, reason: `widen_ambiguous (spread=${analysis.spread.toFixed(3)})` };
-    }
-  }
-
-  return { size: Math.min(base, maxStage2), reason: 'default' };
-}
-
-/**
- * Stage 2 scores every stage-1 candidate with int8 (the slab dot is cheap);
- * SS_FIX_INT8_ALL=0 restores the adaptive pool (k=10: the top 100 of stage 1).
- * 2026-10-14, csn1m-dev: the adaptive pool dropped exact top-10 neighbours
- * that stage 1 had found; all + stage1Candidates 400 = +0.0022 MRR@10.
- */
-function stage2PoolCount(stage2Pool, stage1Count) {
-  return process.env.SS_FIX_INT8_ALL === '0' ? Math.min(stage2Pool.size, stage1Count) : stage1Count;
-}
-
-/**
- * Stage-1 result count: the configured floor, raised to the largest pool
- * adaptiveStage2Pool can ask for at this k, so stage 2 never sees fewer
- * candidates than its pool (k=10: 250; k>=27: 400).
+ * Stage-1 result count: the configured floor, raised for a large k to
+ * 1.5 x max(minStage2, k x oversample1), capped at maxStage2 (k>=27: 400).
  */
 function stage1Count(floor, k, config) {
   const { minStage2 = 40, maxStage2 = 400, oversample1 = 10 } = config;
@@ -412,8 +304,9 @@ export async function semanticSearch3Stage(query, options = {}) {
     }
 
     const stage2Start = performance.now();
-    const stage2Pool = adaptiveStage2Pool(k, stage1Analysis, adaptiveConfig);
-    const stage2Count = stage2PoolCount(stage2Pool, stage1Count);
+    // Stage 2 scores every stage-1 candidate (2026-10-14, csn1m-dev: the
+    // adaptive pool dropped exact top-10 neighbours that stage 1 had found).
+    const stage2Count = stage1Count;
     stats.queryInt8 = fusedQueryInt8;
     const int8 = fused.int8Stage(stage2Count);
     if (int8.missing > 0) {
@@ -433,11 +326,10 @@ export async function semanticSearch3Stage(query, options = {}) {
       candidates: int8.count,
       missingVectors: int8.missing,
       poolSize: stage2Count,
-      poolReason: stage2Pool.reason,
       scoringPath: 'batched-dot',
       scoreDistribution: int8Analysis,
     };
-    this.log(`Stage 2 (Int8): ${stats.stages.int8.latency_us}us, ${int8.count} rescored (pool: ${stage2Count}, ${stage2Pool.reason}, batched)`);
+    this.log(`Stage 2 (Int8): ${stats.stages.int8.latency_us}us, ${int8.count} rescored (pool: ${stage2Count}, batched)`);
   } else {
     // lazy: the native path returns all scores but builds result objects only
     // for the head kept below (stage1Result.materialize); other paths return
@@ -477,9 +369,8 @@ export async function semanticSearch3Stage(query, options = {}) {
     // -------------------------------------------------------------------------
     const stage2Start = performance.now();
 
-    // Phase 3: Adaptive Stage 2 pool size (uses shared score-spread analysis)
-    const stage2Pool = adaptiveStage2Pool(k, stage1Analysis, adaptiveConfig);
-    const stage2Count = stage2PoolCount(stage2Pool, stage1Count);
+    // Every stage-1 candidate (as in the fused path).
+    const stage2Count = stage1Count;
 
     // Collect int8 vectors for scoring
     const stage2Candidates = stage1Lazy
@@ -564,11 +455,10 @@ export async function semanticSearch3Stage(query, options = {}) {
       candidates: scoredCandidates.length,
       missingVectors: missingInt8Count,
       poolSize: stage2Count,
-      poolReason: stage2Pool.reason,
       scoringPath: useBatchedDot ? 'batched-dot' : 'per-candidate-cosine',
       scoreDistribution: int8Analysis,
     };
-    this.log(`Stage 2 (Int8): ${stats.stages.int8.latency_us}us, ${scoredCandidates.length} rescored (pool: ${stage2Count}, ${stage2Pool.reason}, ${useBatchedDot ? 'batched' : 'legacy'})`);
+    this.log(`Stage 2 (Int8): ${stats.stages.int8.latency_us}us, ${scoredCandidates.length} rescored (pool: ${stage2Count}, ${useBatchedDot ? 'batched' : 'legacy'})`);
   }
 
   // -------------------------------------------------------------------------
@@ -688,7 +578,6 @@ export async function semanticSearch3Stage(query, options = {}) {
     const fullVectorStage = applyFullVectorStageRescore(
       scoredCandidates,
       embedResult.float,
-      this.codebaseRepo,
       { fullVectors: this.binaryHnswIndex, nodes: headNodes, owned: headNodes !== null }
     );
     scoredCandidates = fullVectorStage.candidates;

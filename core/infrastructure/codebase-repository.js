@@ -9,7 +9,6 @@ import Database from 'better-sqlite3';
 import path from 'node:path';
 import { applyReadPragmas, assertInClauseSize } from './db-utils.js';
 import { readJsonFileCachedIfExists } from './cached-json-file.js';
-import { nativeRescoreKernels, scratchArray, scratchFloat64Query } from './native-rescore.js';
 
 function readAdjacentManifest(dbPath) {
   try {
@@ -27,12 +26,6 @@ function resolveManifestVectorsPath(dbPath, manifest = readAdjacentManifest(dbPa
   return path.isAbsolute(descriptor) ? descriptor : path.join(path.dirname(dbPath), descriptor);
 }
 
-// Small indexes keep every float embedding resident, so the per-query
-// full-vector rescore reads memory instead of a 200-id SQLite IN query. Same
-// rows, same bytes, so scores are unchanged. Bounded by vector count;
-// SS_FIX_EMBED_CACHE=0 disables it.
-const EMBEDDING_CACHE_MAX_VECTORS = Number.parseInt(process.env.SWEET_SEARCH_EMBEDDING_CACHE_MAX_VECTORS || '', 10) || 16384;
-
 export class CodebaseRepository {
   constructor(dbPath, options = {}) {
     this._baseDbPath = dbPath;
@@ -44,7 +37,6 @@ export class CodebaseRepository {
       : dbPath;
     this._db = null;
     this._hasEpochVisibility = null;
-    this._embeddingCache = null;
     if (!this._explicitManifestEpoch) {
       this._syncAdjacentManifest();
     }
@@ -121,19 +113,6 @@ export class CodebaseRepository {
     assertInClauseSize(uniqueIds.length, 'CodebaseRepository.getEmbeddingsByIds');
 
     const db = this._open();
-    return this._embeddingsFor(db, this._residentEmbeddings(db), uniqueIds);
-  }
-
-  /** getEmbeddingsByIds after validation: resident map or SQLite. */
-  _embeddingsFor(db, cached, uniqueIds) {
-    if (cached) {
-      const result = new Map();
-      for (const id of uniqueIds) {
-        const vector = cached.get(id);
-        if (vector) result.set(id, vector);
-      }
-      return result;
-    }
     const visibility = this._visibility(db);
     const visibilityClause = visibility.sql ? ` AND ${visibility.sql}` : '';
     // Statements are cached per (connection, id count, visibility clause):
@@ -162,169 +141,6 @@ export class CodebaseRepository {
       }
     }
     return result;
-  }
-
-  /**
-   * All visible embeddings as id → Float32Array when the index is small,
-   * else null. Reloaded when the connection, the visibility epoch, or the
-   * database contents (PRAGMA data_version: commits by other connections;
-   * this connection is read-only) change.
-   */
-  _residentEmbeddings(db) {
-    if (process.env.SS_FIX_EMBED_CACHE === '0') return null;
-    const visibility = this._visibility(db);
-    if (this._dataVersionStmt?.database !== db) {
-      this._dataVersionStmt = db.prepare('PRAGMA data_version').pluck();
-    }
-    const version = this._dataVersionStmt.get();
-    const visKey = `${visibility.sql}|${visibility.params.join(',')}`;
-    const c = this._embeddingCache;
-    if (c && c.db === db && c.version === version && c.visKey === visKey) return c.map;
-
-    const where = visibility.sql ? ` WHERE ${visibility.sql}` : '';
-    const count = db.prepare(`SELECT count(*) AS n FROM vectors${where}`).get(...visibility.params).n;
-    let map = null;
-    let flat = null;
-    if (count <= EMBEDDING_CACHE_MAX_VECTORS) {
-      map = new Map();
-      // Rows go straight into one contiguous array while they all share one
-      // width (the map holds views into it); a row of another width ends
-      // that and gets its own copy.
-      let data = null;
-      let dim = 0;
-      let uniform = true;
-      const rowOf = new Map();
-      for (const row of db.prepare(`SELECT id, embedding FROM vectors${where}`).iterate(...visibility.params)) {
-        if (!row.embedding) continue;
-        const blob = row.embedding;
-        // Aligned whole-float blobs are read in place; anything else takes
-        // the copying path (which also throws on a ragged length, as before).
-        const src = blob.byteOffset % 4 === 0 && blob.length % 4 === 0
-          ? new Float32Array(blob.buffer, blob.byteOffset, blob.length / 4)
-          : new Float32Array(blob.buffer.slice(blob.byteOffset, blob.byteOffset + blob.length));
-        const len = src.length;
-        if (uniform && data === null && len > 0) {
-          dim = len;
-          data = new Float32Array(count * dim);
-        }
-        if (uniform && len === dim && len > 0 && !map.has(row.id)) {
-          const r = rowOf.size;
-          const view = data.subarray(r * dim, (r + 1) * dim);
-          view.set(src);
-          map.set(row.id, view);
-          rowOf.set(row.id, r);
-        } else {
-          uniform = false;
-          // Copy: iterate() may reuse row buffers.
-          map.set(row.id, new Float32Array(src));
-        }
-      }
-      if (uniform && data) flat = { data, dim, rowOf };
-    }
-    this._embeddingCache = { db, version, visKey, map, flat };
-    return map;
-  }
-
-  /**
-   * Full-vector scores for the semantic blend in one repository round trip.
-   * From the resident store on the native kernel: { scores, found } —
-   * dotProduct(query, embedding) per id (null when missing) and the number
-   * of distinct ids found, exactly what getEmbeddingsByIds + dotProducts
-   * give. Otherwise (large index, mixed widths, no addon, other query
-   * width): { embeddings }, the getEmbeddingsByIds(ids) result.
-   * @param {ArrayLike<number>} query
-   * @param {Array<string|null>} ids
-   * @returns {{ scores: Array<number|null>, found: number } | { embeddings: Map<string, Float32Array> }}
-   */
-  embeddingDotScores(query, ids) {
-    const uniqueIds = [...new Set(ids.filter(Boolean))];
-    if (uniqueIds.length === 0) return { embeddings: new Map() };
-    assertInClauseSize(uniqueIds.length, 'CodebaseRepository.getEmbeddingsByIds');
-    const db = this._open();
-    const cached = this._residentEmbeddings(db);
-    const flat = cached ? this._embeddingCache.flat : null;
-    const kernels = flat && query && query.length === flat.dim ? nativeRescoreKernels() : null;
-    if (!kernels) {
-      const viaExtension = !cached && query && query.length > 0
-        ? this._extensionDotScores(db, query, ids, uniqueIds)
-        : null;
-      return viaExtension || { embeddings: this._embeddingsFor(db, cached, uniqueIds) };
-    }
-    const rows = scratchArray('embRows', Uint32Array, ids.length);
-    const slot = new Array(ids.length).fill(-1);
-    const found = new Set();
-    let m = 0;
-    for (let i = 0; i < ids.length; i++) {
-      const row = ids[i] ? flat.rowOf.get(ids[i]) : undefined;
-      if (row === undefined) continue;
-      found.add(ids[i]);
-      slot[i] = m;
-      rows[m++] = row;
-    }
-    const dots = scratchArray('embScores', Float64Array, m);
-    if (m > 0) kernels.f32DotScores(flat.data, flat.dim, scratchFloat64Query(query), rows.subarray(0, m), dots);
-    const scores = new Array(ids.length);
-    for (let i = 0; i < ids.length; i++) scores[i] = slot[i] < 0 ? null : dots[slot[i]];
-    return { scores, found: found.size };
-  }
-
-  /**
-   * embeddingDotScores for an index too large to keep resident, in one
-   * SQLite round trip: the ss_full_dots aggregate (native addon, loaded as
-   * an extension into this connection) scores the visible rows with these
-   * ids and returns one blob, instead of one Buffer per row. Same rows as
-   * _embeddingsFor, same scores as dotProducts over them. null when the
-   * extension is not loaded.
-   */
-  _extensionDotScores(db, query, ids, uniqueIds) {
-    if (!this._fullDotsExtension(db)) return null;
-    const visibility = this._visibility(db);
-    const key = visibility.sql;
-    if (this._fullDotsStmt?.db !== db || this._fullDotsStmt.key !== key) {
-      this._fullDotsStmt = {
-        db,
-        key,
-        stmt: db.prepare(
-          `SELECT ss_full_dots(?, h.key, v.embedding) FROM json_each(?) h JOIN vectors v ON v.id = h.value${key ? ` WHERE ${key}` : ''}`
-        ).pluck(),
-      };
-    }
-    const q = scratchFloat64Query(query);
-    const blob = this._fullDotsStmt.stmt.get(Buffer.from(q.buffer, q.byteOffset, q.byteLength), JSON.stringify(uniqueIds), ...visibility.params);
-    const triples = blob.byteOffset % 8 === 0
-      ? new Float64Array(blob.buffer, blob.byteOffset, blob.length / 8)
-      : new Float64Array(blob.buffer.slice(blob.byteOffset, blob.byteOffset + blob.length));
-    // [slot in uniqueIds, flag (0 no embedding, 1 score, 2 empty), score]
-    const byId = new Map();
-    let found = 0;
-    for (let t = 0; t < triples.length; t += 3) {
-      if (triples[t + 1] === 0) continue;
-      found++;
-      byId.set(uniqueIds[triples[t]], triples[t + 1] === 1 ? triples[t + 2] : null);
-    }
-    const scores = new Array(ids.length);
-    for (let i = 0; i < ids.length; i++) {
-      const v = ids[i] ? byId.get(ids[i]) : undefined;
-      scores[i] = v === undefined ? null : v;
-    }
-    return { scores, found };
-  }
-
-  /** Load the ss_full_dots extension into `db` once; false when unavailable. */
-  _fullDotsExtension(db) {
-    if (this._fullDotsDb === db) return this._fullDotsReady;
-    this._fullDotsDb = db;
-    this._fullDotsReady = false;
-    const kernels = process.env.SS_FIX_SQLITE_DOTS === '0' ? null : nativeRescoreKernels();
-    if (kernels?.path && typeof db.loadExtension === 'function') {
-      try {
-        db.loadExtension(kernels.path, 'sqlite3_ssext_init');
-        this._fullDotsReady = true;
-      } catch {
-        // Old addon without the entry point, or extension loading disabled.
-      }
-    }
-    return this._fullDotsReady;
   }
 
   /**
@@ -541,7 +357,6 @@ export class CodebaseRepository {
       this._db.close();
       this._db = null;
     }
-    this._embeddingCache = null;
     this._hasEpochVisibility = null;
     this._hasChunkTextFts = undefined;
   }

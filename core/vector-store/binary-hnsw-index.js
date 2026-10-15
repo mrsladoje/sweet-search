@@ -51,7 +51,6 @@ import {
   FullVectorWriter,
   closeFullVectors,
   fullDotScoresForNodes,
-  fullVectorsEnabled,
   openFullVectors,
   readFullVector,
   removeFullVectorFiles,
@@ -81,16 +80,10 @@ const EXACT_SCAN_MAX_VECTORS = 150000;
 
 // The native walk uses bucket queues by default (O(1) per queue operation;
 // equal Hamming distances may come out in another order than the JS heaps).
-// SS_FIX_HNSW_BUCKET=0 restores the JS-exact heaps. searchCascade orders the
-// Hamming tie at the int8 pool cutoff by the asymmetric score by default;
-// SS_FIX_HNSW_TIEBREAK=0 keeps stage-1 order there.
+// SS_FIX_HNSW_BUCKET=0 selects the JS-exact heaps (the native-vs-JS parity
+// tests use it).
 function configureNativeSearcher(searcher) {
-  if (process.env.SS_FIX_HNSW_TIEBREAK === '0' && typeof searcher.setTieBreak === 'function') {
-    searcher.setTieBreak(false);
-  }
-  if (process.env.SS_FIX_HNSW_BUCKET === '0' && typeof searcher.setBucketQueue === 'function') {
-    searcher.setBucketQueue(false);
-  }
+  if (process.env.SS_FIX_HNSW_BUCKET === '0') searcher.setBucketQueue(false);
 }
 
 // Flattened early-termination thresholds for the native walk, rebuilt only
@@ -976,9 +969,10 @@ export class BinaryHNSWIndex {
 
     this._graphGen++;
     if (this._fullWriter === undefined) {
-      this._fullWriter = !fullVectorsEnabled() ? null
-        : this.vectors.length === 0 ? FullVectorWriter.fresh(this.indexPath)
-          : FullVectorWriter.resume(this.indexPath, this.vectors.length);
+      // An index loaded without the file (built before it existed) has no
+      // writer: it gets the file at its next full rebuild.
+      this._fullWriter = this.vectors.length === 0 ? FullVectorWriter.fresh(this.indexPath)
+        : FullVectorWriter.resume(this.indexPath, this.vectors.length);
     }
     this._fullDirty = true;
 
@@ -1425,18 +1419,18 @@ export class BinaryHNSWIndex {
     }
     this._native = { searcher, gen: this._graphGen, n };
     // Release the JS lists (read paths use the snapshot; writers thaw).
-    if (process.env.SS_FIX_HNSW_FREEZE !== '0') this._freezeGraph();
+    this._freezeGraph();
     return searcher;
   }
 
   /**
    * load() helper: read the graph sidecar straight into a native snapshot
    * and leave the JS graph released (as _nativeSearcher + _freezeGraph would,
-   * without building the JS arrays first). False when the native walk or the
-   * freeze is off, or for a v1 sidecar; the caller then loads JS arrays.
+   * without building the JS arrays first). False when the native walk is
+   * off, or for a v1 sidecar; the caller then loads JS arrays.
    */
   async _loadGraphNative(graphPath) {
-    if (process.env.SS_FIX_HNSW_FREEZE === '0' || !this._slab) return false;
+    if (!this._slab) return false;
     const Ctor = nativeHnswSearcherCtor();
     const n = this.vectors.length;
     if (!Ctor || this._slab.count < n) return false;
@@ -2123,10 +2117,9 @@ export class BinaryHNSWIndex {
 
   /**
    * Full-vector scores for the final rescore from the full-vector file:
-   * { scores, found } aligned with `ids` (as CodebaseRepository
-   * .embeddingDotScores gives them), or null when the file is absent or any
-   * id has no row there (the caller then reads SQLite). `nodes`, when
-   * given, are the ids' node indices (from searchCascade), so no id lookup.
+   * { scores, found } aligned with `ids` (null score for an id without a
+   * row), or null when the index has no file. `nodes`, when given, are the
+   * ids' node indices (from searchCascade), so no id lookup.
    */
   fullDotScores(query, ids, nodes = null) {
     const reader = this._fullReader;
@@ -2486,6 +2479,9 @@ export class BinaryHNSWIndex {
     this._fullDirty = false;
     closeFullVectors(this._fullReader);
     this._fullReader = openFullVectors(indexPath, this.vectors.length);
+    if (!this._fullReader && this.vectors.length > 0) {
+      bootLog(`BinaryHNSW: no full-vector file at ${indexPath}; the final rescore is off until a full rebuild`);
+    }
 
     this.initialized = true;
     // Build the native snapshot now, not on the first query (and release
@@ -2515,13 +2511,6 @@ export class BinaryHNSWIndex {
    */
   async saveMmap(indexPath = this.indexPath) {
     await fs.mkdir(path.dirname(indexPath), { recursive: true });
-    // The packed format has no full-vector file; the rescore reads SQLite.
-    this._fullWriter?.close();
-    this._fullWriter = undefined;
-    closeFullVectors(this._fullReader);
-    this._fullReader = null;
-    this._fullDirty = false;
-    await removeFullVectorFiles(indexPath);
 
     const dim = this.dimension;
     const n = this.vectors.length;
@@ -2625,6 +2614,8 @@ export class BinaryHNSWIndex {
 
     const tmpPath = `${indexPath}.tmp.${process.pid}`;
     await fs.writeFile(tmpPath, full);
+    // The full-vector file sits beside the packed file as beside the JSON one.
+    await this._publishFullVectors(indexPath, `.tmp.${process.pid}`);
     await fs.rename(tmpPath, indexPath);
 
     // Retire any legacy JSON sidecars at this path so a stale descriptor can
@@ -2762,6 +2753,11 @@ export class BinaryHNSWIndex {
       this._mmapFd = fd;
       this._mmapBacked = true;
       this._visitedList.ensureCapacity(n);
+      this._fullWriter?.close();
+      this._fullWriter = undefined;
+      this._fullDirty = false;
+      closeFullVectors(this._fullReader);
+      this._fullReader = openFullVectors(indexPath, n);
       this.initialized = true;
 
       // Touch the file size to keep the consistency contract auditable.

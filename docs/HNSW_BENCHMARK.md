@@ -144,9 +144,10 @@ What changed:
 - Full 768-d dots: two (NEON) or four (AVX2) rows per f64 vector, each
   row still one sequential sum. FMA only when the query is f32-exact, so
   the products are exact and the rounding is unchanged.
-- Above 16,384 vectors, the full-vector dots run inside SQLite: an
-  aggregate function from the native addon, loaded into better-sqlite3's
-  own connection (`SS_FIX_SQLITE_DOTS=0` turns it off).
+- The full vectors for the final rescore come from `<index>.fullvec.bin`
+  beside the index (memory-mapped by the addon, rows in node order), not
+  from SQLite. An index built before this file existed skips the final
+  rescore until it is rebuilt.
 - x86: the release build targets baseline x86-64, which has no POPCNT
   instruction. The walk, the scan and the dot kernels are now compiled a
   second time for x86-64-v3 (AVX2, FMA, POPCNT) and picked at run time
@@ -159,8 +160,9 @@ What changed:
   inside a run of equal distances. Before, the members of that run that
   entered the pool depended on stage-1 order only. Now the run is ordered
   by the asymmetric score (the query's int8 values summed over the set
-  code bits). It costs under 1 µs. `SS_FIX_HNSW_TIEBREAK=0` restores the
-  old order.
+  code bits). It costs under 1 µs. Removed on 2026-10-15: since
+  2026-10-14 stage 2 scores every stage-1 candidate, so there is no pool
+  cutoff inside stage 1.
 - *Exact scan up to 150,000 vectors (was 15,000).* Stage 1 is then the
   exact Hamming top 1,000, not the walk's approximation. The scan is
   faster than the walk up to 140k vectors on the M3 Max (150 vs 180 µs at
@@ -236,8 +238,8 @@ Index structures kept in RAM.
 | 157k | **197 MB** | 541 MB | 242 MB | 370 MB | 542 MB |
 
 - sweet at 157k: 10 MB binary codes, 110 MB graph, 77 MB int8. At 6.9k,
-  20 MB of the 29 MB is the resident full-768 cache, which is kept only up
-  to 16,384 vectors (`SS_FIX_EMBED_CACHE=0` turns it off).
+  20 MB of the 29 MB was the resident full-768 cache (since removed: the
+  full vectors are now read from the memory-mapped vector file).
 - The full 768-d vectors stay in SQLite on disk; rivals keep theirs in RAM.
 - Build time at 157k: sweet 192 s (1 JS thread), FAISS 104 s, USearch i8
   49 s, USearch f16 212 s, hnswlib 193 s (all 12 threads, M64/efC800).
@@ -325,12 +327,7 @@ load, `b33ca44e`) → minus the 308 MB float-512 store (v3).
 | `SS_FIX_HNSW_NATIVE=0` | on | JS walk instead of the native walk |
 | `SS_FIX_HNSW_SCAN=0` | on | graph walk instead of the exact scan up to 150k vectors |
 | `SS_FIX_HNSW_BUCKET=0` | on | JS-exact heaps instead of bucket queues |
-| `SS_FIX_HNSW_FREEZE=0` | on | keep the JS graph arrays after the native snapshot |
-| `SS_FIX_RESCORE_NATIVE=0` | on | JS/WASM int8 and float scoring |
 | `SS_FIX_FLOAT512=1` | off | restore the float-512 stage, its store and its upkeep |
-| `SS_FIX_EMBED_CACHE=0` | on | no resident full-768 cache (≤16,384 vectors) |
-| `SS_FIX_HNSW_TIEBREAK=0` | on | stage-1 order (not the asymmetric score) for the Hamming tie at the int8 pool cutoff |
-| `SS_FIX_SQLITE_DOTS=0` | on | fetch full vectors to JS instead of the in-SQLite dot aggregate (>16,384 vectors) |
 | `SS_FIX_X86_V3=0` | on | x86: baseline x86-64 kernels instead of the AVX2/FMA/POPCNT ones |
 
 ## 7. Caveats

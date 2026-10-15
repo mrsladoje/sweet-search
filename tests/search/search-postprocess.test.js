@@ -261,11 +261,13 @@ describe('Late interaction post-expansion reranking', () => {
         lateInteractionScore: index === 0 ? 0.9 : index === 1 ? 0.1 : 0.0,
       }))
     );
-    searcher.codebaseRepo = {
-      getEmbeddingsByIds: vi.fn(ids => new Map(ids.map(id => [
-        id,
-        id === 'a' ? [0, 1] : id === 'b' ? [1, 0] : [0.5, 0],
-      ]))),
+    const vectors = { a: [0, 1], b: [1, 0], c: [0.5, 0] };
+    searcher.binaryHnswIndex = {
+      ...searcher.binaryHnswIndex,
+      fullDotScores: vi.fn((query, ids) => ({
+        scores: ids.map(id => vectors[id][0] * query[0] + vectors[id][1] * query[1]),
+        found: ids.length,
+      })),
     };
 
     const results = [
