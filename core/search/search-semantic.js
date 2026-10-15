@@ -368,17 +368,17 @@ export async function semanticSearch3Stage(query, options = {}) {
       embedResult.binary, stage1Count(this.stage1Candidates, k, adaptiveConfig), { floatQuery: truncatedFloat, lazy: true }
     );
     const stage1Lazy = stage1Result.results === null && typeof stage1Result.materialize === 'function';
-    const stage1Count = stage1Lazy ? stage1Result.count : stage1Result.results.length;
+    const stage1Found = stage1Lazy ? stage1Result.count : stage1Result.results.length;
     const stage1Scores = stage1Lazy ? stage1Result.scores : stage1Result.results.map(r => r.score);
     const stage1Analysis = analyzeScoreSpread(stage1Scores);
     stats.stages.binary = {
       latency_us: stage1Result.latency_us,
-      candidates: stage1Count,
+      candidates: stage1Found,
       scoreDistribution: stage1Analysis,
     };
-    this.log(`Stage 1 (Binary): ${stage1Result.latency_us}us, ${stage1Count} candidates`);
+    this.log(`Stage 1 (Binary): ${stage1Result.latency_us}us, ${stage1Found} candidates`);
 
-    if (stage1Count === 0) {
+    if (stage1Found === 0) {
       stats.rerank = {
         skipped: true,
         reason: 'no_candidates',
@@ -400,7 +400,7 @@ export async function semanticSearch3Stage(query, options = {}) {
     const stage2Start = performance.now();
 
     // Every stage-1 candidate (as in the fused path).
-    const stage2Count = stage1Count;
+    const stage2Count = stage1Found;
 
     // Collect int8 vectors for scoring
     const stage2Candidates = stage1Lazy
