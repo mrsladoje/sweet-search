@@ -411,3 +411,8 @@ Wiki: https://claude.ai/artifact/M1SCsePXYngJba19gvcnve (v11).
     F16C exactness checked with a standalone program (0 / 65,536 mismatches).
   - Owed: Mac (ARM) parity + `sdot` timing when the Mac is quiet; product indexes need a full rebuild for the new
     file (owner: no reindex until tuning is done).
+- 2026-10-15 round 3 (box, csn1m-dev): D2 measured: 1M load 2.37 -> 1.79 s, load peak 3,100 -> 2,077 MB
+  (2 loads each; part of de66e593). Phase-A to now at 1M: load 35.4 -> 1.8 s, load peak 4,279 -> 2,077 MB.
+  W5 BFS relabel over level 0 from the entry point (`relabel.mjs`, every node reached): same = 1.0000, p50
+  204 -> 203 us (runs 204/204/209 vs 205/199/203): noise, REJECTED (as BFS at 157k on the Mac). Locality of the
+  node numbering is not what bounds the x86 walk now that the buffers sit in huge pages.
