@@ -1,0 +1,9 @@
+# Dependencies of beir_prep.py and quality.py (separate from venv/, which holds the pinned rival libraries).
+# On Linux, install CPU-only torch with:  --extra-index-url https://download.pytorch.org/whl/cpu
+pylate
+bm25s
+datasets
+numpy
+torch
+transformers
+huggingface_hub

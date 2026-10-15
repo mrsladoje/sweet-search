@@ -1,16 +1,38 @@
 // Loads a replay set written by hook.mjs: one entry per native MaxSim call
-// (query, candidate pool, captured scores).
+// (query, candidate pool, captured scores). <set>/EXCLUDE.json lists calls that are not
+// part of the set (replay_py.py does the same).
 import fs from 'node:fs';
 import path from 'node:path';
 
+export function excluded(root) {
+  const p = path.join(root, 'EXCLUDE.json');
+  return new Set(fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')).files : []);
+}
+
+// Map "<subdir>/<file>" -> provenance record, from every <subdir>/provenance.jsonl.
+export function loadProvenance(root) {
+  const out = new Map();
+  for (const sub of fs.readdirSync(root).sort()) {
+    const p = path.join(root, sub, 'provenance.jsonl');
+    if (!fs.existsSync(p)) continue;
+    for (const line of fs.readFileSync(p, 'utf8').split('\n').filter(Boolean)) {
+      const r = JSON.parse(line);
+      out.set(`${sub}/${r.file}`, r);
+    }
+  }
+  return out;
+}
+
 export function loadCalls(root) {
   const calls = [];
+  const skip = excluded(root);
   for (const repo of fs.readdirSync(root).sort()) {
     const dir = path.join(root, repo);
-    if (!fs.statSync(dir).isDirectory()) continue;
+    if (repo === 'refs-v2' || repo === 'stale' || !fs.statSync(dir).isDirectory()) continue;
     for (const f of fs.readdirSync(dir).filter(f => f.startsWith('index-')).sort()) {
       for (const line of fs.readFileSync(path.join(dir, f), 'utf8').split('\n').filter(Boolean)) {
         const m = JSON.parse(line);
+        if (skip.has(`${repo}/${m.file}`)) continue;
         const buf = fs.readFileSync(path.join(dir, m.file));
         let off = 0;
         const take = (n) => { const b = buf.subarray(off, off + n); off += n; return b; };

@@ -1,0 +1,114 @@
+{
+  "sets": {
+    "agent-dev": {
+      "calls": 655,
+      "distinct_query_embeddings": 651,
+      "distinct_doc_blobs": 7533
+    },
+    "gcsn-dev": {
+      "calls": 3582,
+      "distinct_query_embeddings": 3580,
+      "distinct_doc_blobs": 6859
+    },
+    "sweep-dev": {
+      "calls": 207,
+      "distinct_query_embeddings": 111,
+      "distinct_doc_blobs": 13840
+    },
+    "agent-ho": {
+      "calls": 2004,
+      "distinct_query_embeddings": 1933,
+      "distinct_doc_blobs": 12374
+    },
+    "gcsn-ho": {
+      "calls": 2385,
+      "distinct_query_embeddings": 2382,
+      "distinct_doc_blobs": 6794
+    },
+    "sweep-ho": {
+      "calls": 2913,
+      "distinct_query_embeddings": 903,
+      "distinct_doc_blobs": 51209
+    }
+  },
+  "pairs": {
+    "agent-dev x agent-ho": {
+      "text_hash_overlap_distinct": 0,
+      "text_heldout_calls_with_overlapping_text_via_sidecar": 0,
+      "sidecar_text_overlap_heldout_calls": 0,
+      "query_embedding_overlap_distinct": 0,
+      "query_embedding_overlap_heldout_calls": 0,
+      "doc_blob_overlap_distinct": 3449,
+      "doc_blob_overlap_share_of_heldout_docs": 0.2787
+    },
+    "agent-dev x gcsn-ho": {
+      "text_hash_overlap_distinct": 0,
+      "text_heldout_calls_with_overlapping_text_via_sidecar": 0,
+      "sidecar_text_overlap_heldout_calls": 0,
+      "query_embedding_overlap_distinct": 0,
+      "query_embedding_overlap_heldout_calls": 0,
+      "doc_blob_overlap_distinct": 0,
+      "doc_blob_overlap_share_of_heldout_docs": 0.0
+    },
+    "agent-dev x sweep-ho": {
+      "text_hash_overlap_distinct": null,
+      "sidecar_text_overlap_heldout_calls": 0,
+      "query_embedding_overlap_distinct": 0,
+      "query_embedding_overlap_heldout_calls": 0,
+      "doc_blob_overlap_distinct": 3439,
+      "doc_blob_overlap_share_of_heldout_docs": 0.0672
+    },
+    "gcsn-dev x agent-ho": {
+      "text_hash_overlap_distinct": 0,
+      "text_heldout_calls_with_overlapping_text_via_sidecar": 0,
+      "sidecar_text_overlap_heldout_calls": 0,
+      "query_embedding_overlap_distinct": 0,
+      "query_embedding_overlap_heldout_calls": 0,
+      "doc_blob_overlap_distinct": 0,
+      "doc_blob_overlap_share_of_heldout_docs": 0.0
+    },
+    "gcsn-dev x gcsn-ho": {
+      "text_hash_overlap_distinct": 6,
+      "text_heldout_calls_with_overlapping_text_via_sidecar": 7,
+      "sidecar_text_overlap_heldout_calls": 7,
+      "query_embedding_overlap_distinct": 6,
+      "query_embedding_overlap_heldout_calls": 7,
+      "doc_blob_overlap_distinct": 6755,
+      "doc_blob_overlap_share_of_heldout_docs": 0.9943
+    },
+    "gcsn-dev x sweep-ho": {
+      "text_hash_overlap_distinct": null,
+      "sidecar_text_overlap_heldout_calls": 0,
+      "query_embedding_overlap_distinct": 0,
+      "query_embedding_overlap_heldout_calls": 0,
+      "doc_blob_overlap_distinct": 6727,
+      "doc_blob_overlap_share_of_heldout_docs": 0.1314
+    },
+    "sweep-dev x agent-ho": {
+      "text_hash_overlap_distinct": null,
+      "sidecar_text_overlap_heldout_calls": 0,
+      "query_embedding_overlap_distinct": 0,
+      "query_embedding_overlap_heldout_calls": 0,
+      "doc_blob_overlap_distinct": 3330,
+      "doc_blob_overlap_share_of_heldout_docs": 0.2691
+    },
+    "sweep-dev x gcsn-ho": {
+      "text_hash_overlap_distinct": null,
+      "sidecar_text_overlap_heldout_calls": 0,
+      "query_embedding_overlap_distinct": 0,
+      "query_embedding_overlap_heldout_calls": 0,
+      "doc_blob_overlap_distinct": 6464,
+      "doc_blob_overlap_share_of_heldout_docs": 0.9514
+    },
+    "sweep-dev x sweep-ho": {
+      "text_hash_overlap_distinct": null,
+      "sidecar_text_overlap_heldout_calls": 0,
+      "query_embedding_overlap_distinct": 0,
+      "query_embedding_overlap_heldout_calls": 0,
+      "doc_blob_overlap_distinct": 9756,
+      "doc_blob_overlap_share_of_heldout_docs": 0.1905
+    }
+  },
+  "agent_question_ids_shared_dev_ho": 0,
+  "heldout_calls_flagged_for_drop": 7
+}
