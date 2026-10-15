@@ -210,8 +210,8 @@ the JS walk.
   loads. The next candidate's neighbor list is prefetched one expansion ahead.
 - Rescore: int8 and float scores run natively over contiguous slabs by row
   (`crates/sweet-search-native/src/rescore.rs`): exact integer sums, and f64
-  sums in the JS order. The full-768 blend uses the same kernel on the
-  resident store. `SS_FIX_RESCORE_NATIVE=0` restores the JS/WASM scoring.
+  sums in the JS order. The full-768 rescore runs the same f64 kernel on the
+  memory-mapped full-vector file (`crates/sweet-search-native/src/full_vectors.rs`).
 - Stage 1 builds result objects only for the stage-2 pool.
 - Native calls write into reused buffers. Per-query typed arrays had pushed V8
   into full GCs: 157k p99 went 645 → 571 µs.

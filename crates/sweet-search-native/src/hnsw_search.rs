@@ -557,80 +557,6 @@ fn prefetch_list(list: &[u32]) {
     }
 }
 
-/// Sum of `q[i]` over the dimensions whose bit is set in `code`, with the
-/// bits packed as `floatToBinary` packs them (dimension i is bit 7 - i % 8
-/// of byte i / 8; bytes little-endian in the u64 words). Since
-/// `query · sign(code) = 2 * this - sum(q)`, it orders codes by the
-/// asymmetric score. Integer arithmetic, so the result is exact.
-fn set_bit_sum(code: &[u64], q: &[i8], v3: bool) -> i32 {
-    let n = q.len().min(code.len() * 64);
-    let mut i = 0;
-    let mut s = 0i32;
-    #[cfg(target_arch = "aarch64")]
-    {
-        // SAFETY: i + 16 <= n keeps the q reads and the code bytes in range.
-        unsafe {
-            use std::arch::aarch64::*;
-            let bytes = code.as_ptr() as *const u8;
-            let pat = vld1q_u8([128u8, 64, 32, 16, 8, 4, 2, 1, 128, 64, 32, 16, 8, 4, 2, 1].as_ptr());
-            let mut acc = vdupq_n_s32(0);
-            while i + 16 <= n {
-                let b = vcombine_u8(vdup_n_u8(*bytes.add(i / 8)), vdup_n_u8(*bytes.add(i / 8 + 1)));
-                let sel = vandq_s8(vld1q_s8(q.as_ptr().add(i)), vreinterpretq_s8_u8(vtstq_u8(b, pat)));
-                acc = vpadalq_s16(acc, vpaddlq_s8(sel));
-                i += 16;
-            }
-            s += vaddvq_s32(acc);
-        }
-    }
-    #[cfg(target_arch = "x86_64")]
-    if v3 {
-        // SAFETY: AVX2 presence checked at construction; i + 32 <= n keeps
-        // the reads in range.
-        unsafe { s += set_bit_sum_avx2(code, q, n, &mut i) };
-    }
-    let _ = v3;
-    while i < n {
-        let byte = (code[i / 64] >> (8 * ((i % 64) / 8))) as u8;
-        s += q[i] as i32 & -(((byte >> (7 - i % 8)) & 1) as i32);
-        i += 1;
-    }
-    s
-}
-
-/// `set_bit_sum` over whole 32-dim blocks (4 code bytes each); advances `i`.
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2")]
-unsafe fn set_bit_sum_avx2(code: &[u64], q: &[i8], n: usize, i: &mut usize) -> i32 {
-    use std::arch::x86_64::*;
-    let bytes = code.as_ptr() as *const u8;
-    let m = 128u8 as i8;
-    let pat = _mm256_setr_epi8(
-        m, 64, 32, 16, 8, 4, 2, 1, m, 64, 32, 16, 8, 4, 2, 1,
-        m, 64, 32, 16, 8, 4, 2, 1, m, 64, 32, 16, 8, 4, 2, 1,
-    );
-    // Byte b of the 4 goes to lanes 8b..8b + 8 (shuffles stay in 128-bit halves).
-    let spread = _mm256_setr_epi8(
-        0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1,
-        2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3,
-    );
-    let ones8 = _mm256_set1_epi8(1);
-    let ones16 = _mm256_set1_epi16(1);
-    let mut acc = _mm256_setzero_si256();
-    while *i + 32 <= n {
-        let w = (bytes.add(*i / 8) as *const i32).read_unaligned();
-        let b = _mm256_shuffle_epi8(_mm256_set1_epi32(w), spread);
-        let mask = _mm256_cmpeq_epi8(_mm256_and_si256(b, pat), pat);
-        let sel = _mm256_and_si256(_mm256_loadu_si256(q.as_ptr().add(*i) as *const __m256i), mask);
-        acc = _mm256_add_epi32(acc, _mm256_madd_epi16(_mm256_maddubs_epi16(ones8, sel), ones16));
-        *i += 32;
-    }
-    let h = _mm_add_epi32(_mm256_castsi256_si128(acc), _mm256_extracti128_si256::<1>(acc));
-    let h = _mm_add_epi32(h, _mm_shuffle_epi32::<0b01_00_11_10>(h));
-    let h = _mm_add_epi32(h, _mm_shuffle_epi32::<0b10_11_00_01>(h));
-    _mm_cvtsi128_si32(h)
-}
-
 /// x86-64-v3 kernels usable (see `rescore::x86_v3`).
 fn cpu_v3() -> bool {
     #[cfg(target_arch = "x86_64")]
@@ -722,22 +648,18 @@ pub struct HnswSearcher {
     int8_score: Vec<f64>,
     int8_missing: Vec<bool>,
     scan_d: Vec<u16>,
-    tie_break: bool,
     /// x86-64-v3 kernels (AVX2, POPCNT, ...) usable; always false elsewhere.
     v3: bool,
-    tie_keyed: Vec<(i32, u32)>,
     pool_idx: Vec<u32>,
     huge: bool,
     // Level-0 lists are re-pruned at load to at most this many links when
     // the index is walked (more than PRUNE0_MIN_COUNT vectors; smaller ones
-    // use the exact scan, so the graph is not searched). `SS_HNSW_PRUNE0`
-    // sets the cap (0 = keep the built lists). 1M dev, stage1 400: 128 with
-    // back-fill MRR@10 -0.0002 [-0.0010, +0.0004], recall@10 equal, x86 p50
-    // 447 -> 378 us, load +10 s; without back-fill MRR -0.0014.
+    // use the exact scan, so the graph is not searched); 0 keeps the built
+    // lists. Pruned lists are back-filled with the nearest dropped links up
+    // to the cap, as the build does. 1M dev, stage1 400: 128 with back-fill
+    // MRR@10 -0.0002 [-0.0010, +0.0004], recall@10 equal, x86 p50 447 -> 378
+    // us, load +10 s; without back-fill MRR -0.0014.
     prune0: usize,
-    // Back-fill pruned lists with the nearest dropped links up to `prune0`
-    // (as the build does). `SS_HNSW_PRUNE0_FILL=0` turns it off.
-    prune0_fill: bool,
 }
 
 /// Default level-0 re-prune cap (M0) for walked indexes.
@@ -794,16 +716,10 @@ impl HnswSearcher {
             int8_score: Vec::new(),
             int8_missing: Vec::new(),
             scan_d: Vec::new(),
-            tie_break: true,
             v3: cpu_v3(),
-            tie_keyed: Vec::new(),
             pool_idx: Vec::new(),
             huge,
-            prune0: std::env::var("SS_HNSW_PRUNE0")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(if count as usize > PRUNE0_MIN_COUNT { PRUNE0_DEFAULT } else { 0 }),
-            prune0_fill: std::env::var("SS_HNSW_PRUNE0_FILL").map(|v| v != "0").unwrap_or(true),
+            prune0: if count as usize > PRUNE0_MIN_COUNT { PRUNE0_DEFAULT } else { 0 },
         })
     }
 
@@ -886,12 +802,12 @@ impl HnswSearcher {
     /// Level-0 CSR re-pruned to at most `prune0` links per node with the
     /// HNSW heuristic (Algorithm 4) on Hamming distance: links in order of
     /// distance to the node; a link is dropped when it is closer to a kept
-    /// link than to the node. With `prune0_fill`, the nearest dropped links
-    /// fill the list up to `prune0`. Kept links stay in distance order.
+    /// link than to the node; then the nearest dropped links fill the list
+    /// up to `prune0`. Kept links stay in distance order.
     fn prune_level(&self, offsets: &[u32], neighbors: &[u32]) -> Csr {
         use rayon::prelude::*;
         let n = offsets.len().saturating_sub(1);
-        let (cap, fill, w) = (self.prune0, self.prune0_fill, self.words);
+        let (cap, w) = (self.prune0, self.words);
         let code = |i: u32| &self.slab[i as usize * w..(i as usize + 1) * w];
         let lists: Vec<Vec<u32>> = (0..n)
             .into_par_iter()
@@ -914,14 +830,8 @@ impl HnswSearcher {
                         dropped.push(nb);
                     }
                 }
-                if fill {
-                    for nb in dropped {
-                        if kept.len() >= cap {
-                            break;
-                        }
-                        kept.push(nb);
-                    }
-                }
+                let room = cap - kept.len();
+                kept.extend(dropped.into_iter().take(room));
                 kept
             })
             .collect();
@@ -1003,49 +913,6 @@ impl HnswSearcher {
     #[napi]
     pub fn set_bucket_queue(&mut self, on: bool) {
         self.bucket = on;
-    }
-
-    /// On by default: `cascade_int8` orders the Hamming tie at its pool
-    /// cutoff by the asymmetric score (see `break_cutoff_tie`). Off keeps
-    /// stage-1 order (`SS_FIX_HNSW_TIEBREAK=0`).
-    #[napi]
-    pub fn set_tie_break(&mut self, on: bool) {
-        self.tie_break = on;
-    }
-
-    /// When the first `count` live results end inside a run of equal Hamming
-    /// distances, which members of the run make the pool depends only on
-    /// stage-1 order (scan: node order; walk: queue order). Reorder the run
-    /// by the asymmetric score `query · sign(code)` (int8 query against the
-    /// code bits), highest first, ties in their current order, so the pool
-    /// takes the members closest to the query. Writes the pool (the first
-    /// `pool.len()` results in that order) to `pool`; stage 1 is unchanged.
-    fn break_cutoff_tie(&mut self, pool: &mut [u32], q: &[i8]) {
-        let count = pool.len();
-        let n = self.live_idx.len();
-        if count == 0 || count >= n || self.live_dist[count] != self.live_dist[count - 1] {
-            return;
-        }
-        let t = self.live_dist[count - 1];
-        let mut g0 = count - 1;
-        while g0 > 0 && self.live_dist[g0 - 1] == t {
-            g0 -= 1;
-        }
-        let mut g1 = count + 1;
-        while g1 < n && self.live_dist[g1] == t {
-            g1 += 1;
-        }
-        let mut keyed = std::mem::take(&mut self.tie_keyed);
-        keyed.clear();
-        for &node in &self.live_idx[g0..g1] {
-            let base = node as usize * self.words;
-            keyed.push((set_bit_sum(&self.slab[base..base + self.words], q, self.v3), node));
-        }
-        keyed.sort_by(|a, b| b.0.cmp(&a.0));
-        for (slot, &(_, node)) in pool[g0..].iter_mut().zip(keyed.iter()) {
-            *slot = node;
-        }
-        self.tie_keyed = keyed;
     }
 
     fn walk(&mut self, start: u32, ef: u32, level: u32, window_size: u32, thresholds: &[f64], out: &mut [u32]) -> usize {
@@ -1640,9 +1507,6 @@ impl HnswSearcher {
         let mut pool = std::mem::take(&mut self.pool_idx);
         pool.clear();
         pool.extend_from_slice(&self.live_idx[..count]);
-        if self.tie_break {
-            self.break_cutoff_tie(&mut pool, q);
-        }
         let mut sc = std::mem::take(&mut self.int8_score);
         let mut miss = std::mem::take(&mut self.int8_missing);
         sc.clear();

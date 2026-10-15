@@ -1,8 +1,8 @@
 /**
  * Native exact rescoring kernels (crates/sweet-search-native/src/rescore.rs):
  * int8 and f32 dot scores over row indices of a contiguous slab, with the
- * same arithmetic as the JS/WASM paths. SS_FIX_RESCORE_NATIVE=0 disables
- * them. Probed once per process; null when the addon is missing.
+ * same arithmetic as the JS/WASM paths, and the full-vector file reader
+ * (full_vectors.rs). Probed once per process; null when the addon is missing.
  */
 import { loadNativeAddon } from './native-resolver.js';
 
@@ -11,11 +11,11 @@ let kernels;
 export function nativeRescoreKernels() {
   if (kernels !== undefined) return kernels;
   kernels = null;
-  if (process.env.SS_FIX_RESCORE_NATIVE === '0') return null;
   const res = loadNativeAddon({
-    validate: (m) => typeof m.int8DotScores === 'function' && typeof m.f32DotScores === 'function',
+    validate: (m) => typeof m.int8DotScores === 'function' && typeof m.f32DotScores === 'function'
+      && typeof m.FullVectorFile === 'function',
   });
-  if (res) kernels = { int8DotScores: res.mod.int8DotScores, f32DotScores: res.mod.f32DotScores, FullVectorFile: res.mod.FullVectorFile || null, path: res.path };
+  if (res) kernels = { int8DotScores: res.mod.int8DotScores, f32DotScores: res.mod.f32DotScores, FullVectorFile: res.mod.FullVectorFile };
   return kernels;
 }
 

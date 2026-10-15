@@ -4,7 +4,8 @@
  * memory-mapped, append-only file instead of SQLite. These tests cover the
  * fresh build, appends on a loaded index (new nodes and re-added ids), nodes
  * without a vector, removal when a save has no vectors, the generation check,
- * and the legacy switch. Scores must equal the sequential f64 dot exactly.
+ * an index saved before the file existed, and the packed (mmap) format.
+ * Scores must equal the sequential f64 dot exactly.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -15,7 +16,7 @@ import path from 'node:path';
 import { BinaryHNSWIndex } from '../../core/vector-store/binary-hnsw-index.js';
 import { nativeRescoreKernels } from '../../core/infrastructure/native-rescore.js';
 
-const native = Boolean(nativeRescoreKernels()?.FullVectorFile);
+const native = Boolean(nativeRescoreKernels());
 const DIM = 12;
 
 let dir;
@@ -27,7 +28,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  delete process.env.SS_FIX_FULLVEC;
+  delete process.env.SWEET_SEARCH_HNSW_MMAP;
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
@@ -94,12 +95,14 @@ describe.skipIf(!native)('full-vector file', () => {
     expect(got.scores).toEqual([dot(query, vec(100)), dot(query, vec(4, 9)), dot(query, vec(5))]);
   });
 
-  it('falls back (null) when a candidate has no row, and serves the others', async () => {
+  it('scores null for a candidate without a row and serves the others', async () => {
     await build(10, (i) => (i === 3 ? null : vec(i)));
     const idx = await loaded();
-    expect(idx.fullDotScores(query, ['doc-1', 'doc-3'])).toBeNull();
-    expect(idx.fullDotScores(query, ['doc-1', 'doc-2']).scores).toEqual([dot(query, vec(1)), dot(query, vec(2))]);
-    expect(idx.fullDotScores(query, ['doc-1', 'no-such-id'])).toBeNull();
+    expect(idx.fullDotScores(query, ['doc-1', 'doc-3', 'doc-2', null, 'no-such-id', 'doc-1'])).toEqual({
+      scores: [dot(query, vec(1)), null, dot(query, vec(2)), null, null, dot(query, vec(1))],
+      found: 2,
+    });
+    expect(idx.fullDotScores(query, ['doc-1', 'doc-2'])).toEqual({ scores: [dot(query, vec(1)), dot(query, vec(2))], found: 2 });
   });
 
   it('removes the files when a rebuild at the same path has no vectors', async () => {
@@ -125,13 +128,26 @@ describe.skipIf(!native)('full-vector file', () => {
     expect(Array.from(idx.fullVectorOf(idx.idToIndex.get('doc-6')))).toEqual(Array.from(vec(6)));
   });
 
-  it('SS_FIX_FULLVEC=0 writes and reads nothing, and removes a stale file on save', async () => {
+  it('an index saved without the file stays without it until a full rebuild', async () => {
     await build(10);
-    process.env.SS_FIX_FULLVEC = '0';
-    expect((await loaded()).fullDotScores(query, ['doc-1'])).toBeNull();
+    fs.rmSync(mapPath());
+    fs.rmSync(dataPath());
     const idx = await loaded();
+    expect(idx.fullDotScores(query, ['doc-1'])).toBeNull();
     await idx.add('doc-1', new Uint8Array([1]), {}, null, vec(1, 3));
     await idx.save(indexPath);
     expect(fs.existsSync(mapPath())).toBe(false);
+    await build(10);
+    expect((await loaded()).fullDotScores(query, ['doc-1']).scores).toEqual([dot(query, vec(1))]);
+  });
+
+  it('the packed (mmap) format keeps the file beside it', async () => {
+    process.env.SWEET_SEARCH_HNSW_MMAP = '1';
+    await build(30);
+    const idx = await loaded();
+    expect(idx.fullDotScores(query, ['doc-0', 'doc-29'])).toEqual({
+      scores: [dot(query, vec(0)), dot(query, vec(29))],
+      found: 2,
+    });
   });
 });

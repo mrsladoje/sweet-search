@@ -176,11 +176,9 @@ describe.skipIf(!hasNative)('BinaryHNSWIndex native search parity', () => {
 
   // The fused stages 1-2 (searchCascade) against the path semanticSearch3Stage
   // takes without it: lazy search, int8ScoresForNodes, a stable int8 sort, and
-  // analyzeScoreSpread's sums (same order and arithmetic). One difference by
-  // design: when the pool cutoff falls inside a run of equal Hamming
-  // distances, the run is ordered by the asymmetric score (sum of the query's
-  // int8 values over the set code bits, highest first, ties kept in order).
-  // int8 dim 200 = whole SIMD blocks plus a scalar tail.
+  // analyzeScoreSpread's sums (same order and arithmetic). The pool is the
+  // first c stage-1 results. int8 dim 200 = whole SIMD blocks plus a scalar
+  // tail.
   it.skipIf(!nativeRescoreKernels())('searchCascade matches lazy search + int8ScoresForNodes + stable sort', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'hnsw-cascade-'));
     const prevScan = process.env.SS_FIX_HNSW_SCAN;
@@ -203,30 +201,6 @@ describe.skipIf(!hasNative)('BinaryHNSWIndex native search parity', () => {
         for (const s of xs) variance += (s - mean) ** 2;
         return [top1, top2, min, mean, variance / xs.length];
       };
-      const setBitSum = (code, q8) => {
-        let s = 0;
-        for (let i = 0; i < Math.min(q8.length, code.length * 8); i++) {
-          if (code[i >> 3] & (1 << (7 - (i & 7)))) s += q8[i];
-        }
-        return s;
-      };
-      // Pool of the first c stage-1 results with the cutoff run reordered.
-      const pool = (all, c, q8) => {
-        const out = all.slice();
-        const d = (i) => out[i].hammingDistance;
-        if (c > 0 && c < out.length && d(c) === d(c - 1)) {
-          let g0 = c - 1;
-          while (g0 > 0 && d(g0 - 1) === d(c)) g0--;
-          let g1 = c + 1;
-          while (g1 < out.length && d(g1) === d(c)) g1++;
-          const key = (x) => setBitSum(vectors[x.metadata.i], q8);
-          const run = out.slice(g0, g1).map((x) => [key(x), x]).sort((a, b) => b[0] - a[0]).map((p) => p[1]);
-          out.splice(g0, g1 - g0, ...run);
-          ties.hit++;
-        }
-        return out.slice(0, c);
-      };
-      const ties = { hit: 0 };
       const check = async (seed) => {
         for (const q of makeVectors(12, seed)) {
           const queryInt8 = makeInt8(1, seed + 3, 200)[0];
@@ -239,7 +213,7 @@ describe.skipIf(!hasNative)('BinaryHNSWIndex native search parity', () => {
           const all = ref.materialize(ref.count);
           const nodeOf = new Map(Array.from(ref.nodeIndices.slice(0, ref.count), (n, i) => [all[i].id, n]));
           for (const c of [1, 40, 100, 137, ref.count]) {
-            const cand = pool(all, c, queryInt8).map((x) => ({ ...x }));
+            const cand = all.slice(0, c).map((x) => ({ ...x }));
             const r8 = index.int8ScoresForNodes(queryInt8, Uint32Array.from(cand, (x) => nodeOf.get(x.id)));
             cand.forEach((x, i) => {
               if (r8.missing[i]) { x.int8Score = 0.0; x.missingInt8 = true; } else x.int8Score = r8.scores[i];
@@ -266,7 +240,6 @@ describe.skipIf(!hasNative)('BinaryHNSWIndex native search parity', () => {
       await check(90);
       process.env.SS_FIX_HNSW_SCAN = '0';
       await check(100);
-      expect(ties.hit).toBeGreaterThan(20);
     } finally {
       if (prevScan === undefined) delete process.env.SS_FIX_HNSW_SCAN; else process.env.SS_FIX_HNSW_SCAN = prevScan;
       rmSync(dir, { recursive: true, force: true });

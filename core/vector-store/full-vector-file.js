@@ -2,12 +2,11 @@
  * Full-vector file beside the binary HNSW index, for the final rescore.
  *
  * The final rescore needs the full embedding (768-d) of each stage-2
- * candidate. From SQLite that is one B-tree lookup and one ~4 KB row per id
- * (about 70 us for 30 ids on the x86 box). This file holds the same f32 bytes
- * in node order, so the native reader (crates/sweet-search-native/src/
- * full_vectors.rs) memory-maps it and scores rows in place: same arithmetic
- * as the SQLite path, so the same scores, and the page cache holds the
- * vectors instead of the process heap.
+ * candidate. This file holds those f32 vectors in node order, so the native
+ * reader (crates/sweet-search-native/src/full_vectors.rs) memory-maps it and
+ * scores rows in place (sequential f64 sums), and the page cache holds the
+ * vectors instead of the process heap. A SQLite read cost one B-tree lookup
+ * and one ~4 KB row per id (about 70 us for 30 ids on the x86 box).
  *
  * Files (next to `<name>.idx`):
  *   <name>.fullvec.bin  64-byte header (`SSFVEC1\0`, dim u32, generation u32)
@@ -20,10 +19,9 @@
  * the old row stays as garbage until the next full rebuild writes a new file.
  * save() publishes the map with the other sidecars (data first, map before
  * .meta.json). A reader uses the file only when the map's generation and node
- * count match the data file and the index it loaded; otherwise, or for any
- * candidate without a row, the rescore reads SQLite as before.
- *
- * SS_FIX_FULLVEC=0: no file is written or read (legacy SQLite path).
+ * count match the data file and the index it loaded. The final rescore reads
+ * full vectors only from this file: an index without it (built before the
+ * file existed) skips that stage until it is rebuilt.
  */
 import fs from 'fs';
 import { randomInt } from 'crypto';
@@ -36,10 +34,6 @@ const MAP_HEADER = 16;
 export const NO_ROW = 0xffffffff;
 // Rows buffered before one write (x 3 KB at 768-d).
 const FLUSH_ROWS = 512;
-
-export function fullVectorsEnabled() {
-  return process.env.SS_FIX_FULLVEC !== '0';
-}
 
 export function fullVectorPaths(indexPath) {
   return {
@@ -244,9 +238,8 @@ export class FullVectorWriter {
  * with `nodeCount`, or the native reader is unavailable.
  */
 export function openFullVectors(indexPath, nodeCount) {
-  if (!fullVectorsEnabled()) return null;
   const kernels = nativeRescoreKernels();
-  if (!kernels?.FullVectorFile) return null;
+  if (!kernels) return null;
   const paths = fullVectorPaths(indexPath);
   const map = readMap(paths.map);
   if (!map || map.rows.length !== nodeCount) return null;
@@ -261,24 +254,42 @@ export function openFullVectors(indexPath, nodeCount) {
 }
 
 /**
- * Full-vector scores for candidate nodes, as embeddingDotScores gives them:
- * { scores, found } aligned with `nodes`, or null when any node has no row
- * (the caller then reads SQLite for the whole set).
+ * Full-vector scores for candidate nodes: { scores, found } aligned with
+ * `nodes`. A node without a row (no embedding) scores null and is not
+ * counted in `found` (the number of distinct ids with a row). null when the
+ * index has no file or the query has another width.
  */
 export function fullDotScoresForNodes(reader, query, nodes, ids) {
   if (!reader || !query || query.length !== reader.dim) return null;
-  const rows = scratchArray('fullRows', Uint32Array, nodes.length);
-  for (let i = 0; i < nodes.length; i++) {
+  const n = nodes.length;
+  const rows = scratchArray('fullRows', Uint32Array, n);
+  let m = 0;
+  let missing = false;
+  for (let i = 0; i < n; i++) {
     const node = nodes[i];
     const row = node === undefined || node >= reader.rows.length ? NO_ROW : reader.rows[node];
-    if (row === NO_ROW || row >= reader.fileRows) return null;
-    rows[i] = row;
+    if (row === NO_ROW || row >= reader.fileRows) missing = true;
+    else rows[m++] = row;
   }
-  const out = scratchArray('fullScores', Float64Array, nodes.length);
-  reader.file.dotScores(scratchFloat64Query(query), rows.subarray(0, nodes.length), out);
-  const scores = new Array(nodes.length);
-  for (let i = 0; i < nodes.length; i++) scores[i] = out[i];
-  return { scores, found: new Set(ids.filter(Boolean)).size };
+  const out = scratchArray('fullScores', Float64Array, n);
+  if (m > 0) reader.file.dotScores(scratchFloat64Query(query), rows.subarray(0, m), out);
+  const scores = new Array(n);
+  if (!missing) {
+    for (let i = 0; i < n; i++) scores[i] = out[i];
+    return { scores, found: new Set(ids.filter(Boolean)).size };
+  }
+  const found = new Set();
+  for (let i = 0, j = 0; i < n; i++) {
+    const node = nodes[i];
+    const row = node === undefined || node >= reader.rows.length ? NO_ROW : reader.rows[node];
+    if (row === NO_ROW || row >= reader.fileRows) {
+      scores[i] = null;
+    } else {
+      scores[i] = out[j++];
+      if (ids[i]) found.add(ids[i]);
+    }
+  }
+  return { scores, found: found.size };
 }
 
 /**

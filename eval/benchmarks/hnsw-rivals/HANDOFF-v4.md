@@ -348,3 +348,26 @@ No rival point reaches our MRR at or below our time on any set. Faster rival poi
 302 us .7781 vs .7881). Our own faster/lower-MRR points (smaller S1) were not measured with this build.
 Mac: NOT rerun (owner's machine busy); the ARM build compiles (cargo check aarch64 on the box), ARM kernels
 unchanged except the padded f64 tail; committed .node binaries are not rebuilt.
+
+### 8f. Cleanup: no legacy paths in the vector cascade (2026-10-15, box only)
+
+Owner rule: no back-compat, no migration code. Removed:
+- SQLite full-vector reads for the rescore: the resident embedding cache (≤16,384 vectors), `embeddingDotScores`,
+  the `ss_full_dots` SQLite aggregate (sqlite_ext.rs keeps only the API-table entry point the grep lane needs).
+  Both full-vector rescores (search-semantic stage 3 and the postprocess window) read only the vector file. A row
+  without a vector scores null for that candidate (as a missing SQLite row did). An index without the file skips
+  the stage (bootLog says so) until a full rebuild. The packed format (SWEET_SEARCH_HNSW_MMAP=1) now also writes
+  and reads the file.
+- Switches: SS_FIX_FULLVEC, SS_FIX_INT8_ALL (stage 2 = every stage-1 candidate; adaptiveStage2Pool deleted),
+  SWEET_SEARCH_FULL_VECTOR_STAGE_WEIGHT (final order = full-vector cosine), SS_HNSW_PRUNE0 / SS_HNSW_PRUNE0_FILL
+  (constants), SS_FIX_HNSW_TIEBREAK (dead since int8-all: the pool is all of stage 1, so no cutoff tie),
+  SS_FIX_HNSW_FREEZE, SS_FIX_RESCORE_NATIVE, SS_FIX_EMBED_CACHE, SS_FIX_SQLITE_DOTS.
+- Kept on purpose: SS_FIX_HNSW_NATIVE / SS_FIX_HNSW_SCAN / SS_FIX_HNSW_BUCKET (the native-vs-JS parity tests and
+  the walk-at-any-size bench use them; the JS walk is the no-addon path) and SS_FIX_X86_V3 (tests the baseline
+  x86 kernels on a v3 CPU).
+- The addon must have `FullVectorFile`: an older local build fails validation, so the int8 stage falls back to JS
+  and the final rescore is off until `npx napi build --platform --release` is rerun.
+
+Box check vs HEAD 1b4600a3 (3 interleaved runs, 3,600 dev queries per set): identical results on all 5 sets
+(same = 1.0000); p50 6.9k 54 -> 51 us, 20k 82 -> 78, AdvTest 86 -> 82, 140k 302 -> 301, 1M 212 -> 216 (noise).
+Box tests: 4,682 pass (vector-store, search, indexing, incremental-indexing, infrastructure).

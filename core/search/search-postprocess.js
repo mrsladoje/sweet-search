@@ -272,14 +272,6 @@ function resultIdentity(result) {
   return result?.id || result?.metadata?.id || null;
 }
 
-function dotProduct(a, b) {
-  const n = Math.min(a?.length || 0, b?.length || 0);
-  if (n === 0) return null;
-  let score = 0;
-  for (let i = 0; i < n; i++) score += a[i] * b[i];
-  return score;
-}
-
 function normalizeScore(value, min, max) {
   if (!Number.isFinite(value)) return 0;
   if (!(max > min)) return 0.5;
@@ -289,29 +281,23 @@ function normalizeScore(value, min, max) {
 function applyFullVectorRescore(results, opts = {}) {
   if (hasAblation(opts.ablations, 'no-full-vector-rescore')) return results;
   if (!Array.isArray(results) || results.length < 3) return results;
-  if (!opts.queryFloat || !opts.codebaseRepo?.getEmbeddingsByIds) return results;
+  if (!opts.queryFloat || !opts.fullVectors?.fullDotScores) return results;
 
   const window = Math.min(
     results.length,
     Math.max(3, opts.window ?? FULL_VECTOR_RESCORE_WINDOW)
   );
-  const ids = results.slice(0, window).map(resultIdentity).filter(Boolean);
-  if (ids.length === 0) return results;
+  const head = results.slice(0, window);
+  // Full vectors from the index's full-vector file (null score: no row).
+  const fetched = opts.fullVectors.fullDotScores(opts.queryFloat, head.map(resultIdentity));
+  if (!fetched || fetched.found === 0) return results;
 
-  const embeddings = opts.codebaseRepo.getEmbeddingsByIds(ids);
-  if (!embeddings || embeddings.size === 0) return results;
-
-  const scored = results.slice(0, window).map((result, index) => {
-    const id = resultIdentity(result);
-    const vector = id ? embeddings.get(id) : null;
-    const fullScore = vector ? dotProduct(opts.queryFloat, vector) : null;
-    return {
-      result,
-      index,
-      baseScore: typeof result.score === 'number' ? result.score : 0,
-      fullScore,
-    };
-  });
+  const scored = head.map((result, index) => ({
+    result,
+    index,
+    baseScore: typeof result.score === 'number' ? result.score : 0,
+    fullScore: fetched.scores[index],
+  }));
 
   const withFullScore = scored.filter(item => Number.isFinite(item.fullScore));
   if (withFullScore.length < 2) return results;
@@ -948,7 +934,7 @@ export async function applyPostRetrieval(results, query, options, searchContext)
           ablations: options.ablations,
           query,
           queryFloat: semanticStats?.queryFloat,
-          codebaseRepo: this.codebaseRepo,
+          fullVectors: this.binaryHnswIndex,
           projectRoot: this.projectRoot,
           window: options.fullVectorRescoreWindow,
           weight: options.fullVectorRescoreWeight,
