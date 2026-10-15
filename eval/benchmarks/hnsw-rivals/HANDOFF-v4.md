@@ -371,3 +371,17 @@ Owner rule: no back-compat, no migration code. Removed:
 Box check vs HEAD 1b4600a3 (3 interleaved runs, 3,600 dev queries per set): identical results on all 5 sets
 (same = 1.0000); p50 6.9k 54 -> 51 us, 20k 82 -> 78, AdvTest 86 -> 82, 140k 302 -> 301, 1M 212 -> 216 (noise).
 Box tests: 4,682 pass (vector-store, search, indexing, incremental-indexing, infrastructure).
+
+x86 held-out after the cleanup (4ead179f, 3 interleaved runs; rivals 13-14 Oct): closest rival time-to-our-MRR
+ratio 6.9k binflat x2.45, 20k binflat x2.31, AdvTest RaBitQ-flat x4.85, 140k binflat x1.62, 1M usearch_i8 x4.19
+(never: 9 / 6 / 9 / 9 / 3 configs). Our own lower-MRR points (S1 = 50..300, EF = S1; stage 1 never returns fewer
+than 150 at k = 10, so 50 = 100 = 150): p50 / MRR@10
+  6.9k  150: 45 us .8335 | 200: 46 .8348 | 300: 49 .8351 | 400: 52 .8359
+  20k   150: 68 .8200 | 200: 69 .8212 | 300: 74 .8217 | 400: 77 .8220
+  AdvTest 150: 73 .4711 | 200: 76 .4713 | 300: 80 .4728 | 400: 85 .4731
+  140k  150: 288 .7844 | 200: 289 .7865 | 300: 300 .7876 | 400: 304 .7881
+  1M    150: 123 .5269 | 200: 143 .5307 | 300: 179 .5328 | 400: 217 .5330
+Below our fastest point the rivals own the front: our floor is stage 1 (the exact scan at <=150k, ~17-260 us)
+plus ~25 us of int8 + rescore + JS. Examples: 6.9k binflat ef20 18 us .8208, ef50 21 us .8292; 1M hnswlib M16
+ef32 97 us .4753. So: Pareto-best from our fastest point up (every rival point at or above our MRR is slower),
+not at every quality level.
