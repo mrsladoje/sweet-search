@@ -10,7 +10,7 @@ load() { if [ -r /proc/loadavg ]; then cut -d' ' -f1-3 /proc/loadavg; else sysct
 for rep in $(seq 1 $REPS); do
   for i in $(seq 0 $((N - 1))); do
     IFS='|' read -r name envs <<< "${ARMS[$(( (i + rep - 1) % N ))]}"
-    line=$(env $envs R=$R OUT=ab-$TAG-$name-$rep.json $NODE $OURS $S 2>&1 | grep -v '^\[' | tail -1)
+    line=$(env R=$R $envs OUT=ab-$TAG-$name-$rep.json $NODE $OURS $S 2>&1 | grep -v '^\[' | tail -1)
     echo "$(date +%T) load $(load) | rep $rep $name [$envs] $line" | tee -a $S/ab-$TAG.log
   done
 done
