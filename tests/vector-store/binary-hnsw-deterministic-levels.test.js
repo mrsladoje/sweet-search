@@ -181,13 +181,13 @@ describe('BinaryHNSWIndex deterministic-levels gate (default OFF)', () => {
       }
       // Map each id → its top graph level.
       const levels = new Map();
-      for (const v of idx.vectors) {
-        const i = idx.idToIndex.get(v.id);
+      for (let i = 0; i < idx.size; i++) {
+        const id = idx.nodeId(i);
         let top = 0;
         for (let l = 0; l < idx.graph.length; l += 1) {
           if (idx.graph[l] && idx.graph[l][i]) top = l;
         }
-        levels.set(v.id, top);
+        levels.set(id, top);
       }
       return levels;
     };
@@ -277,8 +277,8 @@ describe('BinaryHNSWIndex deterministic entry-point (FIX-B, flag ON)', () => {
       const fwd = await buildInOrder(ids, M);
       const rev = await buildInOrder([...ids].reverse(), M);
 
-      const epFwd = fwd.vectors[fwd.entryPoint].id;
-      const epRev = rev.vectors[rev.entryPoint].id;
+      const epFwd = fwd.nodeId(fwd.entryPoint);
+      const epRev = rev.nodeId(rev.entryPoint);
       const expected = expectedEntryPointId(ids, M);
 
       expect(epFwd, `M=${M}`).toBe(epRev);
@@ -338,8 +338,8 @@ describe('BinaryHNSWIndex deterministic entry-point (FIX-B, flag ON)', () => {
       const rp = new BinaryHNSWIndex({ M, indexPath: idxPath });
       await rp.load();
 
-      const epBatched = rb.vectors[rb.entryPoint].id;
-      const epPerFile = rp.vectors[rp.entryPoint].id;
+      const epBatched = rb.nodeId(rb.entryPoint);
+      const epPerFile = rp.nodeId(rp.entryPoint);
       expect(epBatched).toBe(epPerFile);
       expect(epBatched).toBe(expectedEntryPointId(ids, M));
       expect(rb.maxLevel).toBe(rp.maxLevel);
@@ -363,6 +363,14 @@ describe('BinaryHNSWIndex entry-point default path (FIX-B, flag OFF unchanged)',
     return b;
   }
 
+  // Register a node without graphing it (the test drives addToGraph itself).
+  function registerNode(idx, id, binary) {
+    const slab = idx._codes();
+    slab.set(idx._ids.length, binary);
+    idx._ids.push(id);
+    idx._metas.push({});
+  }
+
   it('flag OFF (explicit =0): a tie at the max level keeps the FIRST-inserted node (legacy behavior)', async () => {
     // Det-levels is now DEFAULT-ON, so the legacy first-inserted-wins entry-point
     // path must be exercised by explicitly disabling the flag with '0'.
@@ -374,29 +382,29 @@ describe('BinaryHNSWIndex entry-point default path (FIX-B, flag OFF unchanged)',
     const idx = new BinaryHNSWIndex({ M: 8 });
     idx.resetForBuild();
     // Manually register two vectors and graph them at the same level.
-    idx.vectors.push({ id: 'z-node', binary: bin(1), metadata: {} });
+    registerNode(idx, 'z-node', bin(1));
     idx.idToIndex.set('z-node', 0);
     idx.addToGraph(0, 1); // first node at level 1 → entry point
-    idx.vectors.push({ id: 'a-node', binary: bin(2), metadata: {} });
+    registerNode(idx, 'a-node', bin(2));
     idx.idToIndex.set('a-node', 1);
     idx.addToGraph(1, 1); // tie at maxLevel — flag OFF must NOT move EP
 
     expect(idx.maxLevel).toBe(1);
-    expect(idx.vectors[idx.entryPoint].id).toBe('z-node');
+    expect(idx.nodeId(idx.entryPoint)).toBe('z-node');
   });
 
   it('flag ON: the same forced tie refines the entry point to the min id', async () => {
     process.env.SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS = '1';
     const idx = new BinaryHNSWIndex({ M: 8 });
     idx.resetForBuild();
-    idx.vectors.push({ id: 'z-node', binary: bin(1), metadata: {} });
+    registerNode(idx, 'z-node', bin(1));
     idx.idToIndex.set('z-node', 0);
     idx.addToGraph(0, 1);
-    idx.vectors.push({ id: 'a-node', binary: bin(2), metadata: {} });
+    registerNode(idx, 'a-node', bin(2));
     idx.idToIndex.set('a-node', 1);
     idx.addToGraph(1, 1); // tie — flag ON refines to smallest id ('a-node')
 
     expect(idx.maxLevel).toBe(1);
-    expect(idx.vectors[idx.entryPoint].id).toBe('a-node');
+    expect(idx.nodeId(idx.entryPoint)).toBe('a-node');
   });
 });

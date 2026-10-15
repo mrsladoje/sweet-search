@@ -16,7 +16,7 @@ import { runProductionReconcileTick } from '../../core/incremental-indexing/appl
 import { resolveLatestRecords } from '../../core/incremental-indexing/infrastructure/sparse-gram-delta.mjs';
 import { LateInteractionIndex } from '../../core/ranking/late-interaction-index.js';
 import { FloatVectorStore } from '../../core/vector-store/float-vector-store.js';
-import { readVectorsSidecar, readInt8Sidecar } from '../../core/vector-store/binary-hnsw-index.js';
+import { readIndexFileSync } from '../../core/vector-store/binary-hnsw-index.js';
 
 // These tests cover the float-512 store, which is written only with
 // SS_FIX_FLOAT512=1 (off by default).
@@ -116,16 +116,12 @@ function liveFtsNames(stateDir, term) {
 }
 
 async function binaryArtifacts(stateDir) {
-  // NDJSON v2 sidecars (v1 back-compat) — read via the canonical readers.
-  const int8Path = join(stateDir, 'codebase-binary-hnsw.int8.json');
+  // The single index file holds the nodes and their int8 rows.
+  const file = readIndexFileSync(join(stateDir, 'codebase-binary-hnsw.idx'));
   const int8 = {};
-  if (existsSync(int8Path)) {
-    const m = new Map();
-    await readInt8Sidecar(int8Path, m);
-    for (const [id, vec] of m) int8[id] = Array.from(vec);
-  }
+  for (const node of file?.nodes ?? []) if (node.int8) int8[node.id] = node.int8;
   return {
-    vectors: await readVectorsSidecar(join(stateDir, 'codebase-binary-hnsw.vectors.json')),
+    vectors: (file?.nodes ?? []).map((node) => ({ id: node.id })),
     int8,
   };
 }

@@ -7,8 +7,8 @@
  *
  * These tests verify:
  *   1. buildFromCodebaseDb() returns expected shape: { hnsw, stats }
- *   2. hnsw.int8SidecarPath points to a real file
- *   3. The int8 sidecar contains valid JSON with expected structure
+ *   2. hnsw.path points to the single index file (int8 rows live inside it)
+ *   3. The index file header and int8 rows have the expected structure
  *   4. Phase 5 in the indexer correctly handles the return value
  *   5. Artifact file existence after successful build
  *
@@ -21,7 +21,7 @@
  *     - result.int8.sizeMB     <-- IMPORTANT: This is NOT returned by buildFromCodebaseDb!
  *
  *   The artifact-builder.js buildFromCodebaseDb() actually returns:
- *     - hnsw: { totalVectors, buildTimeMs, vectorsPerSecond, path, int8SidecarPath, ...stats }
+ *     - hnsw: { totalVectors, buildTimeMs, vectorsPerSecond, path, ...stats }
  *     - stats: { totalVectors, floatDimension, binaryDimension, memoryReduction }
  *
  *   This test suite documents this contract mismatch and verifies correct behavior.
@@ -37,14 +37,10 @@ import Database from 'better-sqlite3';
 const TEST_DIR = path.join(import.meta.dirname, '..', '__test_fixtures__', 'phase5-artifacts');
 const TEST_CODEBASE_DB = path.join(TEST_DIR, 'test-codebase.db');
 const TEST_HNSW_INDEX = path.join(TEST_DIR, 'test-binary-hnsw.idx');
-const TEST_INT8_SIDECAR = TEST_HNSW_INDEX.replace('.idx', '.int8.json');
-const TEST_META_FILE = TEST_HNSW_INDEX.replace('.idx', '.meta.json');
-const TEST_VECTORS_FILE = TEST_HNSW_INDEX.replace('.idx', '.vectors.json');
-const TEST_GRAPH_FILE = TEST_HNSW_INDEX.replace('.idx', '.graph.json');
 
-// The big sidecars are NDJSON v2 (one header line + one record per line, v1
-// back-compat) — read them through the canonical readers, not JSON.parse.
-import { readInt8Sidecar, readVectorsSidecar } from '../../core/vector-store/binary-hnsw-index.js';
+// The index is one file (header + node table + graph + int8 rows) — read it
+// through the canonical readers.
+import { readIndexHeader, readIndexIdsSync, readIndexFileSync } from '../../core/vector-store/binary-hnsw-index.js';
 
 // These tests cover the float-512 store, which is written only with
 // SS_FIX_FLOAT512=1 (off by default).
@@ -57,10 +53,8 @@ afterAll(() => {
 
 
 async function loadInt8(p) {
-  const m = new Map();
-  await readInt8Sidecar(p, m);
   const obj = {};
-  for (const [id, vec] of m) obj[id] = Array.from(vec);
+  for (const node of readIndexFileSync(p).nodes) if (node.int8) obj[node.id] = node.int8;
   return obj;
 }
 
@@ -170,7 +164,7 @@ describe('Phase 5: Artifact Builder Contract', () => {
   describe('buildFromCodebaseDb() Return Shape', () => {
     beforeEach(async () => {
       // Clean up artifact files before each test
-      const files = [TEST_HNSW_INDEX, TEST_INT8_SIDECAR, TEST_META_FILE, TEST_VECTORS_FILE, TEST_GRAPH_FILE];
+      const files = [TEST_HNSW_INDEX];
       for (const file of files) {
         try {
           await fs.unlink(file);
@@ -203,14 +197,12 @@ describe('Phase 5: Artifact Builder Contract', () => {
       expect(result.hnsw).toHaveProperty('buildTimeMs');
       expect(result.hnsw).toHaveProperty('vectorsPerSecond');
       expect(result.hnsw).toHaveProperty('path');
-      expect(result.hnsw).toHaveProperty('int8SidecarPath');
 
       // Type checks
       expect(typeof result.hnsw.totalVectors).toBe('number');
       expect(typeof result.hnsw.buildTimeMs).toBe('number');
       expect(typeof result.hnsw.vectorsPerSecond).toBe('number');
       expect(typeof result.hnsw.path).toBe('string');
-      expect(typeof result.hnsw.int8SidecarPath).toBe('string');
     });
 
     it('should return stats object with required properties', async () => {
@@ -231,15 +223,15 @@ describe('Phase 5: Artifact Builder Contract', () => {
       expect(result.stats.binaryDimension).toBe(64); // 512 / 8
     });
 
-    it('should have int8SidecarPath pointing to .int8.json file', async () => {
+    it('should point hnsw.path at the single index file (no separate int8 path)', async () => {
       await createTestCodebaseDb(5);
 
       const result = await buildFromCodebaseDb(TEST_CODEBASE_DB, {
         hnswIndexPath: TEST_HNSW_INDEX,
       });
 
-      expect(result.hnsw.int8SidecarPath).toMatch(/\.int8\.json$/);
-      expect(result.hnsw.int8SidecarPath).toBe(TEST_INT8_SIDECAR);
+      expect(result.hnsw).not.toHaveProperty('int8SidecarPath');
+      expect(result.hnsw.path).toBe(TEST_HNSW_INDEX);
     });
 
     /**
@@ -280,7 +272,7 @@ describe('Phase 5: Artifact Builder Contract', () => {
       expect(result.stats.totalVectors).toBe(3);
       expect(result.hnsw.totalVectors).toBe(3);
 
-      const int8Data = await loadInt8(TEST_INT8_SIDECAR);
+      const int8Data = await loadInt8(TEST_HNSW_INDEX);
       expect(Object.keys(int8Data).sort()).toEqual([
         'test-file-0.js:0',
         'test-file-2.js:20',
@@ -302,57 +294,37 @@ describe('Phase 5: Artifact Builder Contract', () => {
       await createTestCodebaseDb(10);
     });
 
-    it('should create .int8.json sidecar file', async () => {
+    it('should create the single index file', async () => {
       await buildFromCodebaseDb(TEST_CODEBASE_DB, {
         hnswIndexPath: TEST_HNSW_INDEX,
       });
 
-      expect(existsSync(TEST_INT8_SIDECAR)).toBe(true);
+      expect(existsSync(TEST_HNSW_INDEX)).toBe(true);
+      expect(readIndexHeader(TEST_HNSW_INDEX).header.format).toBe(3);
     });
 
-    it('should create .meta.json file', async () => {
+    it('should hold the int8 rows inside the index file', async () => {
       await buildFromCodebaseDb(TEST_CODEBASE_DB, {
         hnswIndexPath: TEST_HNSW_INDEX,
       });
 
-      expect(existsSync(TEST_META_FILE)).toBe(true);
+      expect(readIndexHeader(TEST_HNSW_INDEX).header.int8Count).toBe(10);
     });
 
-    it('should create .vectors.json file', async () => {
+    it('should not write JSON sidecars or leave staging files', async () => {
       await buildFromCodebaseDb(TEST_CODEBASE_DB, {
         hnswIndexPath: TEST_HNSW_INDEX,
       });
 
-      expect(existsSync(TEST_VECTORS_FILE)).toBe(true);
-    });
-
-    it('should create .graph.json file', async () => {
-      await buildFromCodebaseDb(TEST_CODEBASE_DB, {
-        hnswIndexPath: TEST_HNSW_INDEX,
-      });
-
-      expect(existsSync(TEST_GRAPH_FILE)).toBe(true);
-    });
-
-    it('should create all 4 artifact files', async () => {
-      await buildFromCodebaseDb(TEST_CODEBASE_DB, {
-        hnswIndexPath: TEST_HNSW_INDEX,
-      });
-
-      const expectedFiles = [
-        TEST_INT8_SIDECAR,
-        TEST_META_FILE,
-        TEST_VECTORS_FILE,
-        TEST_GRAPH_FILE,
-      ];
-
-      for (const file of expectedFiles) {
-        expect(existsSync(file)).toBe(true);
+      for (const ext of ['int8.json', 'meta.json', 'vectors.json', 'graph.json', 'calibration.json']) {
+        expect(existsSync(TEST_HNSW_INDEX.replace('.idx', '.' + ext)), ext).toBe(false);
       }
+      const leftovers = (await fs.readdir(TEST_DIR)).filter((name) => name.includes('.tmp.'));
+      expect(leftovers).toEqual([]);
     });
   });
 
-  describe('Int8 Sidecar Content Validation', () => {
+  describe('Int8 Row Content Validation', () => {
     beforeEach(async () => {
       await createTestCodebaseDb(10, 512);
       await buildFromCodebaseDb(TEST_CODEBASE_DB, {
@@ -361,26 +333,21 @@ describe('Phase 5: Artifact Builder Contract', () => {
       });
     });
 
-    it('should be NDJSON v2: every line valid JSON, v2 header first', async () => {
-      const content = await fs.readFile(TEST_INT8_SIDECAR, 'utf-8');
-      const lines = content.split('\n').filter((l) => l.length > 0);
+    it('should record the int8 width and row count in the file header', async () => {
+      const { header } = readIndexHeader(TEST_HNSW_INDEX);
 
-      for (const line of lines) {
-        expect(() => JSON.parse(line)).not.toThrow();
-      }
-      const header = JSON.parse(lines[0]);
-      expect(header.version).toBe(2);
-      expect(header.count).toBe(lines.length - 1);
+      expect(header.int8Dim).toBe(512);
+      expect(header.int8Count).toBe(10);
     });
 
     it('should have one entry per vector', async () => {
-      const int8Data = await loadInt8(TEST_INT8_SIDECAR);
+      const int8Data = await loadInt8(TEST_HNSW_INDEX);
 
       expect(Object.keys(int8Data)).toHaveLength(10);
     });
 
     it('should have arrays as values (int8 vectors)', async () => {
-      const int8Data = await loadInt8(TEST_INT8_SIDECAR);
+      const int8Data = await loadInt8(TEST_HNSW_INDEX);
 
       for (const [id, vec] of Object.entries(int8Data)) {
         expect(Array.isArray(vec)).toBe(true);
@@ -388,7 +355,7 @@ describe('Phase 5: Artifact Builder Contract', () => {
     });
 
     it('should have correct dimension for int8 vectors (floatDimension)', async () => {
-      const int8Data = await loadInt8(TEST_INT8_SIDECAR);
+      const int8Data = await loadInt8(TEST_HNSW_INDEX);
 
       for (const [id, vec] of Object.entries(int8Data)) {
         expect(vec.length).toBe(512); // floatDimension, not binaryDimension
@@ -396,7 +363,7 @@ describe('Phase 5: Artifact Builder Contract', () => {
     });
 
     it('should have int8 values in range [-128, 127]', async () => {
-      const int8Data = await loadInt8(TEST_INT8_SIDECAR);
+      const int8Data = await loadInt8(TEST_HNSW_INDEX);
 
       for (const [id, vec] of Object.entries(int8Data)) {
         for (const val of vec) {
@@ -406,12 +373,13 @@ describe('Phase 5: Artifact Builder Contract', () => {
       }
     });
 
-    it('should have matching IDs between vectors.json and int8.json', async () => {
-      const int8Data = await loadInt8(TEST_INT8_SIDECAR);
-      const vectorsData = await readVectorsSidecar(TEST_VECTORS_FILE);
+    it('should have int8 rows for exactly the node ids', async () => {
+      const int8Data = await loadInt8(TEST_HNSW_INDEX);
+      const { ids, int8Ids: rowIds } = readIndexIdsSync(TEST_HNSW_INDEX);
 
+      expect(new Set(rowIds)).toEqual(new Set(ids));
       const int8Ids = new Set(Object.keys(int8Data));
-      const vectorIds = new Set(vectorsData.map(v => v.id));
+      const vectorIds = new Set(ids);
 
       expect(int8Ids.size).toBe(vectorIds.size);
       for (const id of int8Ids) {
@@ -420,7 +388,7 @@ describe('Phase 5: Artifact Builder Contract', () => {
     });
   });
 
-  describe('Meta File Content Validation', () => {
+  describe('Index Header Content Validation', () => {
     beforeEach(async () => {
       await createTestCodebaseDb(10, 512);
       await buildFromCodebaseDb(TEST_CODEBASE_DB, {
@@ -429,38 +397,39 @@ describe('Phase 5: Artifact Builder Contract', () => {
       });
     });
 
-    it('should contain valid JSON', async () => {
-      const content = await fs.readFile(TEST_META_FILE, 'utf-8');
-      expect(() => JSON.parse(content)).not.toThrow();
+    it('should have a readable format-3 header', async () => {
+      const head = readIndexHeader(TEST_HNSW_INDEX);
+      expect(head).not.toBeNull();
+      expect(head.header.format).toBe(3);
     });
 
     it('should have required metadata fields', async () => {
-      const meta = JSON.parse(await fs.readFile(TEST_META_FILE, 'utf-8'));
+      const meta = readIndexHeader(TEST_HNSW_INDEX).header;
 
       expect(meta).toHaveProperty('dimension');
       expect(meta).toHaveProperty('floatDimension');
       expect(meta).toHaveProperty('M');
       expect(meta).toHaveProperty('efConstruction');
       expect(meta).toHaveProperty('efSearch');
-      expect(meta).toHaveProperty('vectorCount');
+      expect(meta).toHaveProperty('count');
     });
 
     it('should have correct floatDimension', async () => {
-      const meta = JSON.parse(await fs.readFile(TEST_META_FILE, 'utf-8'));
+      const meta = readIndexHeader(TEST_HNSW_INDEX).header;
 
       expect(meta.floatDimension).toBe(512);
     });
 
     it('should have correct binaryDimension (floatDim / 8)', async () => {
-      const meta = JSON.parse(await fs.readFile(TEST_META_FILE, 'utf-8'));
+      const meta = readIndexHeader(TEST_HNSW_INDEX).header;
 
       expect(meta.dimension).toBe(64); // 512 / 8
     });
 
     it('should have correct vectorCount', async () => {
-      const meta = JSON.parse(await fs.readFile(TEST_META_FILE, 'utf-8'));
+      const meta = readIndexHeader(TEST_HNSW_INDEX).header;
 
-      expect(meta.vectorCount).toBe(10);
+      expect(meta.count).toBe(10);
     });
   });
 
@@ -482,21 +451,21 @@ describe('Phase 5: Artifact Builder Contract', () => {
       const index = new BinaryHNSWIndex({ indexPath: TEST_HNSW_INDEX });
       await index.load(TEST_HNSW_INDEX);
 
-      expect(index.vectors.length).toBe(10);
+      expect(index.size).toBe(10);
     });
 
-    it('should have int8Vectors Map populated after load', async () => {
+    it('should have int8 rows populated after load', async () => {
       const index = new BinaryHNSWIndex({ indexPath: TEST_HNSW_INDEX });
       await index.load(TEST_HNSW_INDEX);
 
-      expect(index.int8Vectors.size).toBe(10);
+      expect(index.int8Count()).toBe(10);
     });
 
     it('should return Int8Array from getInt8Vector()', async () => {
       const index = new BinaryHNSWIndex({ indexPath: TEST_HNSW_INDEX });
       await index.load(TEST_HNSW_INDEX);
 
-      const firstId = index.vectors[0].id;
+      const firstId = index.nodeId(0);
       const int8Vec = index.getInt8Vector(firstId);
 
       expect(int8Vec).toBeInstanceOf(Int8Array);
@@ -628,7 +597,7 @@ describe('Phase 5: Artifact Builder Contract', () => {
       expect(result.int8).toBeUndefined();
 
       // To fix this, the indexer should either:
-      // 1. Not log int8 stats (int8 is now in the sidecar, accessed via hnsw)
+      // 1. Not log int8 stats (int8 rows are now inside the index file, accessed via hnsw)
       // 2. Or the artifact-builder should add int8 stats to the return value
 
       // The int8 info IS available via:
@@ -636,7 +605,7 @@ describe('Phase 5: Artifact Builder Contract', () => {
       expect(int8Count).toBe(10);
 
       // For size, we'd need to stat the file:
-      const int8Stats = await fs.stat(result.hnsw.int8SidecarPath);
+      const int8Stats = await fs.stat(result.hnsw.path);
       const sizeMB = (int8Stats.size / 1024 / 1024).toFixed(2);
       expect(parseFloat(sizeMB)).toBeGreaterThan(0);
     });
@@ -649,9 +618,9 @@ describe('Phase 5: Artifact Builder Contract', () => {
         floatDimension: 512,
       });
 
-      // The int8SidecarPath is provided
-      expect(result.hnsw.int8SidecarPath).toBeDefined();
-      expect(existsSync(result.hnsw.int8SidecarPath)).toBe(true);
+      // The int8 rows are inside the index file at hnsw.path
+      expect(existsSync(result.hnsw.path)).toBe(true);
+      expect(readIndexHeader(result.hnsw.path).header.int8Count).toBe(10);
 
       // Count can be inferred from totalVectors (1:1 mapping)
       expect(result.hnsw.totalVectors).toBe(10);
@@ -803,7 +772,7 @@ describe('Phase 5: Edge Cases', () => {
     expect(result.stats.floatDimension).toBe(512);
 
     // Verify int8 vectors are 512-dim
-    const int8Data = await loadInt8(TEST_HNSW_INDEX.replace('.idx', '.int8.json'));
+    const int8Data = await loadInt8(TEST_HNSW_INDEX);
     const firstVec = Object.values(int8Data)[0];
     expect(firstVec.length).toBe(512);
   });

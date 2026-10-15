@@ -28,6 +28,7 @@ import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import Database from 'better-sqlite3';
+import { binaryHnswIndexExists } from '../../core/vector-store/index-file-header.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -127,7 +128,7 @@ describe('streaming vectors (large-repo OOM regression)', () => {
     } finally {
       db.close();
     }
-    expect(existsSync(join(REPO, '.sweet-search', 'codebase-binary-hnsw.meta.json'))).toBe(true);
+    expect(binaryHnswIndexExists(join(REPO, '.sweet-search', 'codebase-binary-hnsw.idx'))).toBe(true);
     expect(existsSync(join(REPO, '.sweet-search', 'codebase-late-interaction.db'))).toBe(true);
   });
 

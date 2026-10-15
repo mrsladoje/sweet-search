@@ -17,7 +17,7 @@ import { getGlobalLocalReranker } from '../ranking/local-reranker.js';
 import { QueryRouter, routeQuery } from '../query/query-router.js';
 import { GraphSearch } from '../graph/graph-search.js';
 import { SYMBOL_KIND_WEIGHTS, DEFINITION_TYPES } from '../infrastructure/constants.js';
-import { BinaryHNSWIndex } from '../vector-store/binary-hnsw-index.js';
+import { BinaryHNSWIndex, binaryHnswIndexExists } from '../vector-store/binary-hnsw-index.js';
 import { Reranker } from '../ranking/flashrank.js';
 import { LateInteractionIndex } from '../ranking/late-interaction-index.js';
 import { resolveSearchRerankPolicy } from '../ranking/late-interaction-policy.js';
@@ -230,7 +230,7 @@ export class SweetSearch {
     this._syncManifestPaths(this._readReconcileManifest());
 
     this.hasGraphIndex = existsSync(this.graphDbPath);
-    this.hasBinaryHnswIndex = existsSync(this.binaryHnswPath.replace('.idx', '.meta.json'));
+    this.hasBinaryHnswIndex = binaryHnswIndexExists(this.binaryHnswPath);
     this.hasCodebaseIndex = existsSync(this.codebaseDbPath);
     this.hasLateInteractionIndex = existsSync(this.lateInteractionIndex.indexPath);
     this.hasSparseGramIndex = existsSync(this.sparseGramIndexPath);
@@ -486,7 +486,7 @@ export class SweetSearch {
     const grepOnly = reloadScope === 'grep';
 
     if (!grepOnly) {
-      this.hasBinaryHnswIndex = existsSync(this.binaryHnswPath.replace('.idx', '.meta.json'));
+      this.hasBinaryHnswIndex = binaryHnswIndexExists(this.binaryHnswPath);
     }
     if (!grepOnly && this.hasBinaryHnswIndex && this.use3Stage) {
       try {

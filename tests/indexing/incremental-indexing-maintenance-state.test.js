@@ -18,6 +18,7 @@ import {
   readBinaryHnswState,
   readLiSegmentsState,
 } from '../../core/incremental-indexing/infrastructure/maintenance-state-reader.mjs';
+import { BinaryHNSWIndex } from '../../core/vector-store/binary-hnsw-index.js';
 import {
   createBitmap, setBit, saveBitmap,
 } from '../../core/incremental-indexing/infrastructure/tombstone-bitmap.mjs';
@@ -26,6 +27,15 @@ import { evaluateWatermarks, DEFAULT_WATERMARKS } from '../../core/incremental-i
 function writeJson(p, payload) {
   fs.mkdirSync(path.dirname(p), { recursive: true });
   fs.writeFileSync(p, JSON.stringify(payload));
+}
+
+// Save a tiny real index with `count` nodes as the state dir's binary HNSW file.
+async function writeIndex(stateDir, count) {
+  const indexPath = path.join(stateDir, 'codebase-binary-hnsw.idx');
+  const index = new BinaryHNSWIndex({ indexPath, dimension: 1, floatDimension: 8, M: 2, efSearch: 4 });
+  index.resetForBuild();
+  for (let i = 0; i < count; i++) await index.add(`doc-${i}`, new Uint8Array([i & 0xff]), {});
+  await index.save(indexPath);
 }
 
 function writeBitmap(p, capacity, bitsToSet = []) {
@@ -49,8 +59,8 @@ describe('maintenance-state-reader / missing artifacts', () => {
     expect(state.liSegments).toEqual([]);
   });
 
-  it('handles a corrupt meta.json without throwing', () => {
-    fs.writeFileSync(path.join(stateDir, 'codebase-binary-hnsw.meta.json'), '{{{broken');
+  it('handles a corrupt index file without throwing', () => {
+    fs.writeFileSync(path.join(stateDir, 'codebase-binary-hnsw.idx'), Buffer.from('garbage bytes, not an index file'));
     fs.writeFileSync(path.join(stateDir, 'codebase-late-interaction.db'), '<<<');
     const state = readMaintenanceState(stateDir);
     expect(state.binaryHnsw.deadDocRatio).toBe(0);
@@ -65,19 +75,19 @@ describe('maintenance-state-reader / Binary HNSW', () => {
   });
   afterEach(() => fs.rmSync(stateDir, { recursive: true, force: true }));
 
-  it('returns zero when meta is absent', () => {
+  it('returns zero when the index file is absent', () => {
     expect(readBinaryHnswState(stateDir)).toEqual({ deadDocRatio: 0 });
   });
 
-  it('computes deadDocRatio = popcount / vectorCount', () => {
-    writeJson(path.join(stateDir, 'codebase-binary-hnsw.meta.json'), { vectorCount: 20 });
+  it('computes deadDocRatio = popcount / vectorCount', async () => {
+    await writeIndex(stateDir, 20);
     writeBitmap(path.join(stateDir, 'codebase-binary-hnsw.idx.stale.bin'), 32, [0, 1, 2, 3, 4, 5, 6, 7]);
     // 8 tombstoned / 20 total = 0.4
     expect(readBinaryHnswState(stateDir).deadDocRatio).toBeCloseTo(0.4, 5);
   });
 
-  it('crosses the default watermark and schedules binary_hnsw', () => {
-    writeJson(path.join(stateDir, 'codebase-binary-hnsw.meta.json'), { vectorCount: 20 });
+  it('crosses the default watermark and schedules binary_hnsw', async () => {
+    await writeIndex(stateDir, 20);
     writeBitmap(path.join(stateDir, 'codebase-binary-hnsw.idx.stale.bin'), 32, [0, 1, 2, 3, 4, 5, 6, 7]);
     const state = readMaintenanceState(stateDir);
     const jobs = evaluateWatermarks(state, DEFAULT_WATERMARKS);

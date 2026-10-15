@@ -105,7 +105,148 @@ pub(crate) fn int8_dot(q: &[i8], v: &[i8]) -> i32 {
         // SAFETY: AVX2 presence checked at run time.
         return unsafe { int8_dot_avx2(q, v) };
     }
+    #[cfg(target_arch = "aarch64")]
+    if arm_dotprod() {
+        // SAFETY: dotprod presence checked at run time.
+        return unsafe { int8_dot_sdot(q, v) };
+    }
     int8_dot_portable(q, v)
+}
+
+/// True when the CPU has the Armv8.2 dot-product instructions (`sdot`).
+/// Detected once; `SS_FIX_ARM_DOTPROD=0` forces the portable loop.
+#[cfg(target_arch = "aarch64")]
+pub(crate) fn arm_dotprod() -> bool {
+    use std::sync::OnceLock;
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| {
+        std::env::var("SS_FIX_ARM_DOTPROD").as_deref() != Ok("0")
+            && std::arch::is_aarch64_feature_detected!("dotprod")
+    })
+}
+
+/// `sdot`: four signed 8-bit products summed into each i32 lane.
+#[cfg(target_arch = "aarch64")]
+#[inline(always)]
+unsafe fn sdot(acc: std::arch::aarch64::int32x4_t, a: std::arch::aarch64::int8x16_t,
+               b: std::arch::aarch64::int8x16_t) -> std::arch::aarch64::int32x4_t {
+    let mut r = acc;
+    // The intrinsic (vdotq_s32) is not stable yet; the instruction is.
+    std::arch::asm!("sdot {r:v}.4s, {a:v}.16b, {b:v}.16b",
+        r = inout(vreg) r, a = in(vreg) a, b = in(vreg) b, options(pure, nomem, nostack));
+    r
+}
+
+/// NEON dot product (`sdot`), four accumulators. Integer sums, so the value
+/// equals the portable loop.
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "dotprod")]
+unsafe fn int8_dot_sdot(q: &[i8], v: &[i8]) -> i32 {
+    use std::arch::aarch64::*;
+    let n = q.len().min(v.len());
+    let (qp, vp) = (q.as_ptr(), v.as_ptr());
+    let mut a = [vdupq_n_s32(0); 4];
+    let mut i = 0;
+    while i + 64 <= n {
+        for k in 0..4 {
+            a[k] = sdot(a[k], vld1q_s8(qp.add(i + 16 * k)), vld1q_s8(vp.add(i + 16 * k)));
+        }
+        i += 64;
+    }
+    while i + 16 <= n {
+        a[0] = sdot(a[0], vld1q_s8(qp.add(i)), vld1q_s8(vp.add(i)));
+        i += 16;
+    }
+    let mut dot = vaddvq_s32(vaddq_s32(vaddq_s32(a[0], a[1]), vaddq_s32(a[2], a[3])));
+    while i < n {
+        dot += *qp.add(i) as i32 * *vp.add(i) as i32;
+        i += 1;
+    }
+    dot
+}
+
+/// IEEE f16 bits to f32 (exact for every value: subnormals, infinities, NaN payloads).
+#[inline(always)]
+pub(crate) fn f16_bits_to_f32(h: u16) -> f32 {
+    let sign = ((h & 0x8000) as u32) << 16;
+    let e = ((h >> 10) & 0x1f) as u32;
+    let mut m = (h & 0x3ff) as u32;
+    let bits = if e == 0 {
+        if m == 0 {
+            sign
+        } else {
+            let mut ee = 113u32;
+            while m & 0x400 == 0 {
+                m <<= 1;
+                ee -= 1;
+            }
+            sign | (ee << 23) | ((m & 0x3ff) << 13)
+        }
+    } else if e == 0x1f {
+        sign | 0x7f80_0000 | (m << 13)
+    } else {
+        sign | ((e + 112) << 23) | (m << 13)
+    };
+    f32::from_bits(bits)
+}
+
+/// Widen f16 values to f32 (exact on every path, so x86 and ARM agree).
+pub(crate) fn f16_to_f32(src: &[u16], dst: &mut [f32]) {
+    let n = src.len().min(dst.len());
+    let mut i = 0;
+    #[cfg(target_arch = "x86_64")]
+    if x86_f16c() {
+        // SAFETY: F16C and AVX checked at run time.
+        i = unsafe { f16_to_f32_f16c(&src[..n], &mut dst[..n]) };
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        // SAFETY: fcvtl is base Armv8 Advanced SIMD.
+        i = unsafe { f16_to_f32_neon(&src[..n], &mut dst[..n]) };
+    }
+    while i < n {
+        dst[i] = f16_bits_to_f32(src[i]);
+        i += 1;
+    }
+}
+
+#[cfg(target_arch = "x86_64")]
+fn x86_f16c() -> bool {
+    use std::sync::OnceLock;
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| is_x86_feature_detected!("f16c") && is_x86_feature_detected!("avx"))
+}
+
+/// `vcvtph2ps`, 8 values per step; returns how many it widened.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx,f16c")]
+unsafe fn f16_to_f32_f16c(src: &[u16], dst: &mut [f32]) -> usize {
+    use std::arch::x86_64::*;
+    let mut i = 0;
+    while i + 8 <= src.len() {
+        let h = _mm_loadu_si128(src.as_ptr().add(i) as *const __m128i);
+        _mm256_storeu_ps(dst.as_mut_ptr().add(i), _mm256_cvtph_ps(h));
+        i += 8;
+    }
+    i
+}
+
+/// `fcvtl` / `fcvtl2`, 8 values per step; returns how many it widened.
+#[cfg(target_arch = "aarch64")]
+unsafe fn f16_to_f32_neon(src: &[u16], dst: &mut [f32]) -> usize {
+    use std::arch::aarch64::*;
+    let mut i = 0;
+    while i + 8 <= src.len() {
+        let h = vld1q_u16(src.as_ptr().add(i));
+        let lo: float32x4_t;
+        let hi: float32x4_t;
+        std::arch::asm!("fcvtl {lo:v}.4s, {h:v}.4h", "fcvtl2 {hi:v}.4s, {h:v}.8h",
+            lo = out(vreg) lo, hi = out(vreg) hi, h = in(vreg) h, options(pure, nomem, nostack));
+        vst1q_f32(dst.as_mut_ptr().add(i), lo);
+        vst1q_f32(dst.as_mut_ptr().add(i + 4), hi);
+        i += 8;
+    }
+    i
 }
 
 fn check_rows(rows: &[u32], dim: usize, len: usize) -> napi::Result<()> {
@@ -319,5 +460,47 @@ unsafe fn quads_avx2<const P: usize>(data: &[f32], dim: usize, q: &[f64], rows: 
     }
     for (p, a) in acc.iter().enumerate() {
         _mm256_storeu_pd(out.as_mut_ptr().add(4 * p), *a);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn int8_kernels_match_the_portable_loop() {
+        let mut seed = 0x9e3779b97f4a7c15u64;
+        let mut rnd = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        for &dim in &[1usize, 15, 16, 17, 63, 64, 65, 512, 768] {
+            for _ in 0..50 {
+                // Full range, including the extremes -128 and 127.
+                let q: Vec<i8> = (0..dim).map(|_| rnd() as u8 as i8).collect();
+                let v: Vec<i8> = (0..dim).map(|_| rnd() as u8 as i8).collect();
+                let want = int8_dot_portable(&q, &v);
+                assert_eq!(int8_dot(&q, &v), want, "int8_dot dim {dim}");
+            }
+        }
+    }
+
+    #[test]
+    fn f16_widening_is_exact_for_every_value() {
+        let src: Vec<u16> = (0..=u16::MAX).collect();
+        let mut dst = vec![0f32; src.len()];
+        f16_to_f32(&src, &mut dst);
+        for (&h, &f) in src.iter().zip(&dst) {
+            let want = f16_bits_to_f32(h);
+            assert!(f.to_bits() == want.to_bits() || (f.is_nan() && want.is_nan()), "f16 {h:#06x}");
+        }
+        // Spot values.
+        assert_eq!(f16_bits_to_f32(0x3c00), 1.0);
+        assert_eq!(f16_bits_to_f32(0xc000), -2.0);
+        assert_eq!(f16_bits_to_f32(0x0001), 2f32.powi(-24));
+        assert_eq!(f16_bits_to_f32(0x7bff), 65504.0);
+        assert_eq!(f16_bits_to_f32(0x7c00), f32::INFINITY);
     }
 }

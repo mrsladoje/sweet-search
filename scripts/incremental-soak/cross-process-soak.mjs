@@ -37,7 +37,7 @@ import { createHash } from 'node:crypto';
 import Database from 'better-sqlite3';
 
 import { runProductionReconcileTick } from '../../core/incremental-indexing/application/production-reconciler.mjs';
-import { readVectorsSidecarSync, readInt8SidecarSync } from '../../core/vector-store/binary-hnsw-index.js';
+import { readIndexIdsSync } from '../../core/vector-store/binary-hnsw-index.js';
 import {
   processMaintenanceQueue,
   defaultMaintenanceHandlers,
@@ -454,31 +454,22 @@ function authoritativeProbe(stateDir) {
     } catch (err) { out.errors.push({ surface: 'hnsw_meta', error: err.message }); }
   }
 
-  const binMeta = path.join(stateDir, 'codebase-binary-hnsw.meta.json');
-  const binVectors = path.join(stateDir, 'codebase-binary-hnsw.vectors.json');
-  if (fs.existsSync(binMeta) && fs.existsSync(binVectors)) {
+  const binIndex = readIndexIdsSync(path.join(stateDir, 'codebase-binary-hnsw.idx'));
+  if (binIndex) {
     try {
-      const vec = readVectorsSidecarSync(binVectors); // NDJSON v2 (v1 back-compat)
-      const allIds = vec.map((v) => v.id);
+      const allIds = binIndex.ids;
       const stalePath = path.join(stateDir, 'codebase-binary-hnsw.idx.stale.bin');
       let bm = null;
       if (fs.existsSync(stalePath)) { try { bm = loadBitmap(stalePath); } catch { bm = null; } }
       const visible = [];
       let stalePopcount = 0;
-      for (let i = 0; i < vec.length; i += 1) {
+      for (let i = 0; i < allIds.length; i += 1) {
         if (bm && isSet(bm, i)) stalePopcount += 1;
-        else visible.push(vec[i].id);
+        else visible.push(allIds[i]);
       }
-      let int8Ids = [];
-      const int8Path = path.join(stateDir, 'codebase-binary-hnsw.int8.json');
-      if (fs.existsSync(int8Path)) {
-        try {
-          const obj = readInt8SidecarSync(int8Path); // NDJSON v2 (v1 back-compat)
-          int8Ids = Object.keys(obj || {});
-        } catch { /* tolerate */ }
-      }
+      const int8Ids = binIndex.int8Ids;
       out.binaryHnsw = {
-        totalVectors: vec.length,
+        totalVectors: allIds.length,
         visible: hashDigest(visible),
         all: hashDigest(allIds),
         int8: hashDigest(int8Ids),

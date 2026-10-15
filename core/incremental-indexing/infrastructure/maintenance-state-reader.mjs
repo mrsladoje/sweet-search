@@ -18,6 +18,7 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 
 import { loadBitmap, popcount } from './tombstone-bitmap.mjs';
+import { readIndexHeader } from '../../vector-store/index-file-header.js';
 import { deltaSizeStats } from './sparse-gram-delta.mjs';
 import { evaluateSegmentRatios, LI_SEGMENT_SIZE } from './li-segment-state.mjs';
 import { fts5SegmentCount } from './sqlite-fts5.mjs';
@@ -62,17 +63,15 @@ export function readSparseGramState(stateDir) {
 }
 
 /**
- * Binary HNSW: meta.json's `vectorCount` is the row count in `vectors.json`
- * (never pruned — see `binary-hnsw-index.js::save`). The bitmap at
+ * Binary HNSW: the index file header's `count` is the node count (stale
+ * nodes included — see `binary-hnsw-index.js::save`). The bitmap at
  * `.idx.stale.bin` flags retired rows; deadDocRatio = popcount / total.
  */
 export function readBinaryHnswState(stateDir) {
   const empty = { deadDocRatio: 0 };
-  const metaPath = path.join(stateDir, 'codebase-binary-hnsw.meta.json');
-  if (!fs.existsSync(metaPath)) return empty;
-  const meta = readJson(metaPath);
-  if (!meta) return empty;
-  const total = Number(meta.vectorCount) || 0;
+  const head = readIndexHeader(path.join(stateDir, 'codebase-binary-hnsw.idx'));
+  if (!head) return empty;
+  const total = Number(head.header.count) || 0;
   if (total <= 0) return empty;
   let bitmap = null;
   try { bitmap = loadBitmap(path.join(stateDir, 'codebase-binary-hnsw.idx.stale.bin')); } catch { bitmap = null; }

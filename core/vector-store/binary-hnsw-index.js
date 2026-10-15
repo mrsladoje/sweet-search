@@ -8,15 +8,11 @@
  *   Stage 2: Int8 rescore (100 candidates, ~1ms)
  *   Stage 3: Rerank (top 20 → k)
  *
- * CANONICAL INT8 STORAGE (Workstream H resolution):
- *   Int8 vectors for stage-2 rescoring are stored in this index's .int8.json sidecar.
- *   This file is saved/loaded alongside the binary HNSW index artifacts.
- *   - save(): Writes .int8.json (NDJSON v2: header line + one {id, v} per line)
- *   - load(): Populates this.int8Vectors Map from .int8.json (v1 back-compat)
- *   - getInt8Vector(id): O(1) lookup used by sweet-search.js during stage-2
- *
- *   This is the ONLY source of int8 vectors. The SQLite approach (codebase-int8.db)
- *   was removed as redundant - it was created but never used by search.
+ * STORAGE: one index file (format 3, see "INDEX FILE" below) holds the sign
+ *   codes, ids, metadata, int8 rows and graph; the full 768-d vectors are in
+ *   the full-vector file beside it (full-vector-file.js). In memory: ids and
+ *   metadata in two arrays, int8 rows in one node-ordered Int8Array, codes and
+ *   graph in the native searcher (a JS copy is built only for writes).
  *
  * Reference: https://huggingface.co/blog/embedding-quantization
  *
@@ -29,11 +25,9 @@
 import fs from 'fs/promises';
 import { bootLog } from '../infrastructure/boot-log.js';
 import {
-  existsSync, statSync, readFileSync,
+  existsSync, statSync,
   openSync, readSync, closeSync, fstatSync,
-  createWriteStream, createReadStream,
 } from 'fs';
-import readline from 'readline';
 import path from 'path';
 import { BINARY_HNSW_CONFIG, DB_PATHS } from '../infrastructure/config/index.js';
 import {
@@ -41,12 +35,12 @@ import {
   asymmetricDocEncode, asymmetricQueryEncode,
   computeCentroid, generateSignVector,
 } from '../infrastructure/quantization.js';
-import { wasmHammingDistance as hammingDistance } from '../infrastructure/simd-distance.js';
 import { HammingSlab } from '../infrastructure/hamming-kernel.js';
 import { TypedMinHeap, TypedMaxHeap, VisitedList } from './binary-heap.js';
 import { loadBitmap, isSet, popcountRange } from '../infrastructure/tombstone-bitmap-reader.js';
 import { loadNativeAddon } from '../infrastructure/native-resolver.js';
-import { nativeRescoreKernels, scratchArray } from '../infrastructure/native-rescore.js';
+import { INDEX_MAGIC, alignUp, readHeaderFd, binaryHnswIndexExists } from './index-file-header.js';
+import { nativeRescoreKernels, scratchArray, scratchFloat64Query } from '../infrastructure/native-rescore.js';
 import {
   FullVectorWriter,
   closeFullVectors,
@@ -90,18 +84,6 @@ function configureNativeSearcher(searcher) {
 // when the config array changes.
 const nativeThresholds = { list: null, flat: null };
 
-/**
- * id -> Int8Array map that counts its own writes, so a derived structure
- * (the node-ordered int8 slab) can tell when it is out of date.
- */
-class Int8VectorMap extends Map {
-  set(k, v) { this.gen = (this.gen | 0) + 1; return super.set(k, v); }
-  delete(k) { this.gen = (this.gen | 0) + 1; return super.delete(k); }
-  clear() { this.gen = (this.gen | 0) + 1; return super.clear(); }
-  /** Replace a value with an equal-content view without counting a write. */
-  _rebind(k, v) { return super.set(k, v); }
-}
-
 // Shared empty neighbor list for graph misses in the hot search loops —
 // callers only iterate it, so one frozen instance replaces a fresh `[]`
 // allocation per miss.
@@ -113,564 +95,236 @@ const EMPTY_NEIGHBORS = Object.freeze([]);
 const PIPELINE_VERSION = 2;
 
 // =============================================================================
-// G9 — PACKED MMAP FORMAT (gated, NO MIGRATION)
+// INDEX FILE (format 3)
 // =============================================================================
 //
-// The default on-disk format is the JSON sidecar tuple
-// (.meta.json / .vectors.json / .graph.json / .int8.json / .calibration.json),
-// written by save() and read by load() — the big sidecars as NDJSON v2 with
-// v1 read back-compat (see the sidecar-format block below). This whole mmap
-// subsystem is inert when SWEET_SEARCH_HNSW_MMAP !== '1'. Existing on-disk
-// indexes (the 200 bench repos) keep loading via the JSON path regardless of
-// the flag: format is detected by inspecting the .idx file's magic header
-// (`_indexFormatOnDisk`), never by the flag.
+// One file per index (`codebase-binary-hnsw.idx`), written to `<path>.tmp.<pid>`
+// and published by one atomic rename, so a reader sees a whole old or a whole
+// new index. No other format is read: an index in an older format fails to
+// load and is rebuilt.
 //
-// When SWEET_SEARCH_HNSW_MMAP === '1', NEWLY written indexes are packed into a
-// single flat-binary `.idx` file (magic-prefixed) whose vectors / graph
-// adjacency / int8 sections are laid out so the read/search path can fault in
-// only the pages it touches (lazy fd reads → OS page cache). The packed format
-// preserves the deterministic levels (G1) and deterministic entry point (FIX-B)
-// because those are properties of the in-memory graph/entryPoint that get
-// serialized verbatim — packing does not re-run construction.
-//
-// MMAP_MAGIC is 8 ASCII bytes so a packed file is trivially and cheaply
-// distinguishable from a JSON sidecar's `.idx` (which today is never written
-// with content — only the sidecars carry data) without parsing.
-const MMAP_MAGIC = Buffer.from('SSHNSWP\0', 'ascii'); // 8 bytes
-const MMAP_FORMAT_VERSION = 1;
+// Layout (integers little-endian):
+//   magic 'SSHNSW3\0' (8) | header length u32 | header JSON (utf-8)
+//   zero padding to a 64-byte boundary = the data start; then the sections,
+//   each at a 64-byte aligned offset from the data start:
+//     codes        count x dimension bytes: the sign codes, node order
+//     ids          JSON arrays of RECORD_CHUNK ids each, back to back
+//     metas        the same for the per-node metadata objects
+//     int8         count x int8Dim bytes, node order (zero rows where absent)
+//     int8Present  count bytes: 1 = node has an int8 row
+//     per level    present (length bytes: 1 = the node has a list there),
+//                  offsets ((count + 1) x u32, CSR over all nodes),
+//                  neighbors (links x u32)
+// The header holds the index fields, the asymmetric calibration, and every
+// section's { off, len } relative to the data start (record sections also
+// list their chunk offsets).
+export { readIndexHeader, binaryHnswIndexExists } from './index-file-header.js';
 
-function hnswMmapEnabled() {
-  return process.env.SWEET_SEARCH_HNSW_MMAP === '1';
+const RECORD_CHUNK = 4096;
+// readSync/write move at most 2 GB per call.
+const IO_BLOCK = 1 << 30;
+
+/** Fill `bytes` from the file at `pos`; throws on a short read. */
+function readFully(fd, bytes, pos) {
+  for (let done = 0; done < bytes.length;) {
+    const want = Math.min(IO_BLOCK, bytes.length - done);
+    const got = readSync(fd, bytes, done, want, pos + done);
+    if (got <= 0) throw new Error('BinaryHNSW: index file is truncated');
+    done += got;
+  }
+}
+
+/** A section as a new typed array of type `Ctor`. */
+function readSection(fd, dataStart, sec, Ctor) {
+  const out = new Ctor(sec.len / Ctor.BYTES_PER_ELEMENT);
+  readFully(fd, new Uint8Array(out.buffer, out.byteOffset, sec.len), dataStart + sec.off);
+  return out;
+}
+
+/** A record section (ids or metas) as one array. */
+function readRecords(fd, dataStart, sec, count) {
+  const bytes = Buffer.allocUnsafe(sec.len);
+  readFully(fd, bytes, dataStart + sec.off);
+  const out = new Array(count);
+  let i = 0;
+  const ends = sec.chunks;
+  for (let c = 0; c < ends.length; c++) {
+    const records = JSON.parse(bytes.toString('utf-8', c === 0 ? 0 : ends[c - 1], ends[c]));
+    for (let j = 0; j < records.length; j++) out[i++] = records[j];
+  }
+  if (i !== count) throw new Error(`BinaryHNSW: index file holds ${i} records, header says ${count}`);
+  return out;
+}
+
+/** UTF-8 JSON chunks of `values` and their end offsets. */
+function recordChunks(values) {
+  const parts = [];
+  const chunks = [];
+  let len = 0;
+  for (let i = 0; i < values.length; i += RECORD_CHUNK) {
+    const part = Buffer.from(JSON.stringify(values.slice(i, i + RECORD_CHUNK)), 'utf-8');
+    parts.push(part);
+    len += part.length;
+    chunks.push(len);
+  }
+  return { parts, chunks };
 }
 
 /**
- * Sliding-window sequential reader over one packed-file section. The mmap
- * load path scans structural integers across whole sections; doing that with
- * one readSync per integer costs a syscall per node per level (500k+ on big
- * indexes). This reader keeps an 8MB window resident and refills it
- * sequentially, so a full-section scan is ~len/8MB syscalls while heap usage
- * stays bounded by the window.
+ * Write an index file: `header` plus `sections` (name -> list of byte
+ * views; a name with `chunks` keeps them). Fills header.sections and returns
+ * once the file is closed.
  */
-class SectionWindow {
-  constructor(fd, base, totalLen, windowSize = 8 << 20) {
-    this._fd = fd;
-    this._base = base;
-    this._total = totalLen;
-    this._size = Math.min(windowSize, Math.max(totalLen, 4));
-    this._buf = Buffer.allocUnsafe(this._size);
-    this._start = 0;
-    this._len = 0;
+async function writeIndexFile(filePath, header, sections) {
+  const placed = {};
+  let off = 0;
+  for (const [name, s] of sections) {
+    off = alignUp(off);
+    const len = s.parts.reduce((a, p) => a + p.byteLength, 0);
+    placed[name] = s.chunks ? { off, len, chunks: s.chunks } : { off, len };
+    off += len;
   }
-
-  _ensure(rel, need) {
-    if (rel >= this._start && rel + need <= this._start + this._len) return;
-    if (need > this._size) {
-      throw new Error(`SectionWindow: record of ${need} bytes exceeds window`);
-    }
-    if (rel + need > this._total) {
-      throw new Error('SectionWindow: read past end of section');
-    }
-    this._start = rel;
-    this._len = Math.min(this._size, this._total - rel);
-    readSync(this._fd, this._buf, 0, this._len, this._base + rel);
-  }
-
-  u32(rel) {
-    this._ensure(rel, 4);
-    return this._buf.readUInt32LE(rel - this._start);
-  }
-
-  /** Copy [rel, rel+len) into target (a Uint8Array) at offset 0. */
-  copyTo(rel, len, target) {
-    this._ensure(rel, len);
-    target.set(this._buf.subarray(rel - this._start, rel - this._start + len));
-  }
-}
-
-/**
- * Lazy, fd-backed graph adjacency for the packed (mmap) read path.
- *
- * Behaves like `graph[level][nodeIndex] -> number[]` (the JSON-loaded shape)
- * but reads each (level, node) neighbor list from the open file descriptor on
- * first touch and caches it, so a cold search faults in only the pages it
- * visits. `?.[idx]` / `.length` / iteration over a returned neighbor list all
- * work identically to a plain array because each level proxies an array-like
- * via numeric-index getters that materialize lazily.
- *
- * The on-disk graph section layout (all little-endian uint32):
- *   [levelCount]
- *   per level: [nodeCount] then nodeCount × [neighborCount, n0, n1, ...]
- * Per-(level,node) byte offsets are precomputed once into a flat index at load
- * so a touch is an O(1) seek + a single readSync of just that list.
- */
-class MmapGraphLevel {
-  constructor(fd, sectionBase, nodeOffsets, nodeCount) {
-    this._fd = fd;
-    this._base = sectionBase;
-    this._nodeOffsets = nodeOffsets; // Int32Array of byte offsets (relative) per node, -1 if empty
-    this._cache = new Array(nodeCount);
-    this.length = nodeCount;
-  }
-
-  _materialize(i) {
-    if (i < 0 || i >= this.length) return undefined;
-    const cached = this._cache[i];
-    if (cached !== undefined) return cached;
-    const rel = this._nodeOffsets[i];
-    if (rel < 0) {
-      this._cache[i] = [];
-      return this._cache[i];
-    }
-    const head = Buffer.allocUnsafe(4);
-    readSync(this._fd, head, 0, 4, this._base + rel);
-    const count = head.readUInt32LE(0);
-    const list = new Array(count);
-    if (count > 0) {
-      const body = Buffer.allocUnsafe(count * 4);
-      readSync(this._fd, body, 0, count * 4, this._base + rel + 4);
-      for (let j = 0; j < count; j += 1) list[j] = body.readUInt32LE(j * 4);
-    }
-    this._cache[i] = list;
-    return list;
-  }
-}
-
-// Numeric-index access (graph[level][idx]) is the hot path; back each level
-// with a Proxy that maps integer keys to lazy materialization and forwards
-// `length`. Optional-chaining (`graph[level]?.[idx]`) and `.length` both work.
-function makeMmapGraphLevelProxy(level) {
-  return new Proxy(level, {
-    get(target, prop) {
-      if (prop === 'length') return target.length;
-      if (typeof prop === 'string') {
-        const n = Number(prop);
-        if (Number.isInteger(n) && n >= 0) return target._materialize(n);
-      }
-      return target[prop];
-    },
-    has(target, prop) {
-      if (prop === 'length') return true;
-      const n = Number(prop);
-      if (Number.isInteger(n) && n >= 0 && n < target.length) return true;
-      return prop in target;
-    },
-  });
-}
-
-/**
- * Lazy, fd-backed vectors store for the packed read path.
- *
- * Behaves like `vectors[idx] -> { id, binary, metadata }`. `id` and `metadata`
- * are kept fully resident (they live in the small header JSON, parsed once),
- * but the `binary` Uint8Array is read from the flat vector blob on first touch
- * so cold ticks hold near-zero binary bytes in heap. Each materialized record
- * is cached so repeated touches in a search don't re-read.
- */
-class MmapVectorStore {
-  constructor(fd, blobBase, dimension, ids, metas) {
-    this._fd = fd;
-    this._base = blobBase;
-    this._dim = dimension;
-    this._ids = ids;       // string[]
-    this._metas = metas;   // object[]
-    this._cache = new Array(ids.length);
-    this.length = ids.length;
-  }
-
-  _materialize(i) {
-    if (i < 0 || i >= this.length) return undefined;
-    const cached = this._cache[i];
-    if (cached !== undefined) return cached;
-    const buf = Buffer.allocUnsafe(this._dim);
-    readSync(this._fd, buf, 0, this._dim, this._base + i * this._dim);
-    // Copy into a standalone Uint8Array so callers (hammingDistance) see a
-    // tight, stable view independent of the scratch Buffer.
-    const binary = new Uint8Array(this._dim);
-    binary.set(buf);
-    const rec = { id: this._ids[i], binary, metadata: this._metas[i] };
-    this._cache[i] = rec;
-    return rec;
-  }
-}
-
-function makeMmapVectorProxy(store) {
-  return new Proxy(store, {
-    get(target, prop) {
-      if (prop === 'length') return target.length;
-      if (typeof prop === 'string') {
-        const n = Number(prop);
-        if (Number.isInteger(n) && n >= 0) return target._materialize(n);
-      }
-      return target[prop];
-    },
-    has(target, prop) {
-      if (prop === 'length') return true;
-      const n = Number(prop);
-      if (Number.isInteger(n) && n >= 0 && n < target.length) return true;
-      return prop in target;
-    },
-  });
-}
-
-// =============================================================================
-// NDJSON SIDECAR FORMAT (v2)
-// =============================================================================
-//
-// The big JSON sidecars (.vectors.json / .graph.json / .int8.json) used to be
-// written with one monolithic JSON.stringify. Past ~500k vectors that single
-// string crosses V8's ~512 MB ceiling and save() dies with "Invalid string
-// length" (libsql: 637,550 vectors) — the same failure mode the LI alias
-// sidecar hit, fixed the same way in 2.6.9. Cure: NDJSON v2 — one
-// {version:2,...} header line, then one record per line, flushed through a
-// write stream in bounded batches so no serialized string ever approaches the
-// ceiling. .meta.json / .calibration.json stay monolithic JSON (O(1)-sized).
-//
-// Back-compat: a v1 sidecar is a single line holding the whole payload, and
-// any v1 file on disk was produced by a JSON.stringify that SUCCEEDED — so it
-// fits back into one string, and the line-streaming readers handle it as
-// "first line IS the payload". Format is detected from the first line, never
-// from config, so old and new indexes coexist with zero migration.
-//
-// Truncation guard: NDJSON cut at a line boundary (crash mid-write, disk
-// full) is valid prefix NDJSON and would otherwise load a silent subset, so
-// every v2 reader enforces the header's record count and throws on mismatch —
-// callers route that to the rebuild path like any other corrupt artifact.
-// (The tmp+rename publish in save() makes this unreachable in normal
-// operation; the guard covers torn tmp files that somehow got renamed.)
-
-const NDJSON_LINE_BATCH = 20000;
-// Graph chunk lines are ~MB-sized, so batch flushes are bounded by chars too.
-const NDJSON_CHAR_BATCH = 8 * 1024 * 1024;
-const GRAPH_CHUNK_NODES = 10000;
-
-async function writeNdjsonSidecar(filePath, header, records) {
-  const ws = createWriteStream(filePath, { encoding: 'utf8' });
-  const finished = new Promise((resolve, reject) => {
-    ws.on('error', reject);
-    ws.on('finish', resolve);
-  });
-  const flush = (str) => new Promise((resolve, reject) => {
-    ws.write(str, (err) => (err ? reject(err) : resolve()));
-  });
+  header.sections = placed;
+  const headerBuf = Buffer.from(JSON.stringify(header), 'utf-8');
+  const prefix = Buffer.alloc(INDEX_MAGIC.length + 4);
+  INDEX_MAGIC.copy(prefix, 0);
+  prefix.writeUInt32LE(headerBuf.length, INDEX_MAGIC.length);
+  const dataStart = alignUp(prefix.length + headerBuf.length);
+  const fh = await fs.open(filePath, 'w');
   try {
-    let lines = [JSON.stringify(header)];
-    let chars = lines[0].length;
-    for (const record of records) {
-      const line = JSON.stringify(record);
-      lines.push(line);
-      chars += line.length;
-      if (lines.length >= NDJSON_LINE_BATCH || chars >= NDJSON_CHAR_BATCH) {
-        await flush(lines.join('\n') + '\n');
-        lines = [];
-        chars = 0;
+    let pos = 0;
+    const put = async (bytes) => {
+      for (let done = 0; done < bytes.byteLength;) {
+        const n = Math.min(IO_BLOCK, bytes.byteLength - done);
+        const { bytesWritten } = await fh.write(bytes, done, n, pos);
+        done += bytesWritten;
+        pos += bytesWritten;
       }
-    }
-    if (lines.length > 0) await flush(lines.join('\n') + '\n');
-    ws.end();
-    await finished;
-  } catch (err) {
-    finished.catch(() => { /* surfaced via throw below */ });
-    ws.destroy();
-    throw err;
-  }
-}
-
-// Yields one parsed JSON document per non-empty line. The input stream is
-// destroyed in `finally`: early exits abandon the readline iterator, and
-// rl.close() does NOT destroy its input — without the explicit destroy every
-// early return leaks an fd (fatal only in long-lived processes like the
-// daemon, but a leak everywhere).
-async function* iterateJsonLines(filePath) {
-  const input = createReadStream(filePath, { encoding: 'utf8' });
-  const rl = readline.createInterface({ input, crlfDelay: Infinity });
-  try {
-    for await (const line of rl) {
-      if (!line) continue;
-      yield JSON.parse(line);
+    };
+    const padTo = async (target) => { if (target > pos) await put(Buffer.alloc(target - pos)); };
+    await put(prefix);
+    await put(headerBuf);
+    for (const [name, s] of sections) {
+      await padTo(dataStart + placed[name].off);
+      for (const p of s.parts) await put(new Uint8Array(p.buffer, p.byteOffset, p.byteLength));
     }
   } finally {
-    rl.close();
-    input.destroy();
+    await fh.close();
   }
-}
-
-function isV2Header(doc) {
-  return !!doc && !Array.isArray(doc) && doc.version === 2 && Number.isFinite(doc.count);
-}
-
-export async function readVectorsSidecar(vectorsPath) {
-  let header = null;
-  let first = true;
-  const entries = [];
-  for await (const doc of iterateJsonLines(vectorsPath)) {
-    if (first) {
-      first = false;
-      if (Array.isArray(doc)) return doc; // v1 — the whole payload is this line
-      if (!isV2Header(doc)) {
-        throw new Error(`BinaryHNSW: unrecognized vectors sidecar format: ${vectorsPath}`);
-      }
-      header = doc;
-      continue;
-    }
-    entries.push(doc);
-  }
-  if (!header) {
-    throw new Error(`BinaryHNSW: empty vectors sidecar: ${vectorsPath}`);
-  }
-  if (entries.length !== header.count) {
-    throw new Error(
-      `BinaryHNSW: truncated vectors sidecar (${entries.length}/${header.count} records): ${vectorsPath}`
-    );
-  }
-  return entries;
-}
-
-// Graph v2 records tile each level's node array in fixed-size chunks. Holes in
-// the (sparse) upper-level arrays serialize to null inside a chunk, matching
-// what JSON.parse produced for the v1 whole-array format.
-function* graphChunkRecords(graph) {
-  for (let level = 0; level < graph.length; level++) {
-    const nodes = graph[level];
-    for (let start = 0; start < nodes.length; start += GRAPH_CHUNK_NODES) {
-      yield { level, start, nodes: nodes.slice(start, start + GRAPH_CHUNK_NODES) };
-    }
-  }
-}
-
-function graphChunkCount(graph) {
-  let count = 0;
-  for (const nodes of graph) count += Math.ceil(nodes.length / GRAPH_CHUNK_NODES);
-  return count;
-}
-
-export async function readGraphSidecar(graphPath) {
-  let header = null;
-  let first = true;
-  let graph = null;
-  let parsed = 0;
-  for await (const doc of iterateJsonLines(graphPath)) {
-    if (first) {
-      first = false;
-      if (Array.isArray(doc)) return doc; // v1 — the whole payload is this line
-      if (!doc || doc.version !== 2 || !Array.isArray(doc.lengths) || !Number.isFinite(doc.chunks)) {
-        throw new Error(`BinaryHNSW: unrecognized graph sidecar format: ${graphPath}`);
-      }
-      header = doc;
-      graph = doc.lengths.map((len) => new Array(len).fill(null));
-      continue;
-    }
-    const target = graph[doc.level];
-    for (let i = 0; i < doc.nodes.length; i++) {
-      target[doc.start + i] = doc.nodes[i];
-    }
-    parsed++;
-  }
-  if (!header) {
-    throw new Error(`BinaryHNSW: empty graph sidecar: ${graphPath}`);
-  }
-  if (parsed !== header.chunks) {
-    throw new Error(
-      `BinaryHNSW: truncated graph sidecar (${parsed}/${header.chunks} chunks): ${graphPath}`
-    );
-  }
-  return graph;
 }
 
 /**
- * Read a v2 graph sidecar straight into per-level CSR arrays, without one JS
- * array per node (those cost ~1.5 KB of heap per node and the heap does not
- * shrink back after they are freed). Returns null for the v1 whole-array
- * format; callers then use readGraphSidecar.
- *
- * Level l: neighbors of node i are neighbors[offsets[i]..offsets[i+1]];
- * present[i] says whether the JS array had a list there (vs a null hole),
- * so the exact JS graph can be rebuilt later.
- * @param {string} graphPath
- * @param {number} n - node count (offsets length is n + 1)
+ * Tooling (soak probes): node ids of an index file and the ids that have an
+ * int8 row, or null when there is no format-3 file at `indexPath`.
+ * @returns {{ ids: string[], int8Ids: string[] } | null}
  */
-export async function readGraphSidecarCsr(graphPath, n) {
-  let header = null;
-  let parsed = 0;
-  let levels = null;
-  for await (const doc of iterateJsonLines(graphPath)) {
-    if (!header) {
-      if (Array.isArray(doc)) return null; // v1
-      if (!doc || doc.version !== 2 || !Array.isArray(doc.lengths) || !Number.isFinite(doc.chunks)) {
-        throw new Error(`BinaryHNSW: unrecognized graph sidecar format: ${graphPath}`);
-      }
-      header = doc;
-      levels = doc.lengths.map((len) => ({
-        len,
-        pos: new Uint32Array(Math.max(len, n)),
-        cnt: new Uint32Array(Math.max(len, n)),
-        present: new Uint8Array(len),
-        buf: new Uint32Array(1024),
-        used: 0,
-        next: 0,        // next node expected for in-order appends
-        inOrder: true,
-      }));
-      continue;
+export function readIndexIdsSync(indexPath) {
+  let fd;
+  try { fd = openSync(indexPath, 'r'); } catch { return null; }
+  try {
+    const parsed = readHeaderFd(fd);
+    if (!parsed) return null;
+    const { header, dataStart } = parsed;
+    const ids = readRecords(fd, dataStart, header.sections.ids, header.count);
+    const int8Ids = [];
+    if (header.int8Dim > 0) {
+      const present = readSection(fd, dataStart, header.sections.int8Present, Uint8Array);
+      for (let i = 0; i < ids.length; i++) if (present[i]) int8Ids.push(ids[i]);
     }
-    const lv = levels[doc.level];
-    for (let k = 0; k < doc.nodes.length; k++) {
-      const node = doc.start + k;
-      const list = doc.nodes[k];
-      if (node >= lv.len) continue;
-      if (node !== lv.next) lv.inOrder = false;
-      lv.next = node + 1;
-      lv.present[node] = list ? 1 : 0;
-      const m = list ? list.length : 0;
-      if (lv.used + m > lv.buf.length) {
-        const grown = new Uint32Array(Math.max(lv.buf.length * 2, lv.used + m));
-        grown.set(lv.buf.subarray(0, lv.used));
-        lv.buf = grown;
-      }
-      for (let j = 0; j < m; j++) lv.buf[lv.used + j] = list[j];
-      lv.pos[node] = lv.used;
-      lv.cnt[node] = m;
-      lv.used += m;
-    }
-    parsed++;
+    return { ids, int8Ids };
+  } finally {
+    closeSync(fd);
   }
-  if (!header) throw new Error(`BinaryHNSW: empty graph sidecar: ${graphPath}`);
-  if (parsed !== header.chunks) {
-    throw new Error(`BinaryHNSW: truncated graph sidecar (${parsed}/${header.chunks} chunks): ${graphPath}`);
-  }
-  return {
-    lengths: header.lengths,
-    present: levels.map((lv) => lv.present),
-    levels: levels.map((lv) => {
-      const offsets = new Uint32Array(n + 1);
-      let total = 0;
-      for (let i = 0; i < n; i++) {
-        offsets[i] = total;
-        if (i < lv.len) total += lv.cnt[i];
-      }
-      offsets[n] = total;
-      if (lv.inOrder && lv.next >= Math.min(lv.len, n) && total === lv.used) {
-        return { offsets, neighbors: lv.buf.subarray(0, total) };
-      }
-      // Out-of-order or repeated chunks: last write wins, as in readGraphSidecar.
-      const neighbors = new Uint32Array(total);
-      for (let i = 0; i < Math.min(lv.len, n); i++) {
-        neighbors.set(lv.buf.subarray(lv.pos[i], lv.pos[i] + lv.cnt[i]), offsets[i]);
-      }
-      return { offsets, neighbors };
-    }),
-  };
 }
 
 /**
- * @param {string} int8Path
- * @param {Map<string, Int8Array>} out
- * @param {(id: string, values: number[]) => Int8Array|null} [place] - may
- *   return a row view already filled with `values`; otherwise a fresh
- *   Int8Array is stored.
+ * Tooling (determinism dumps): the whole index file as plain arrays, or null
+ * when there is no format-3 file at `indexPath`. `graph[l][i]` is node i's
+ * list on level l (null when absent), as the JS graph holds it.
  */
-export async function readInt8Sidecar(int8Path, out, place = null) {
-  let header = null;
-  let first = true;
-  let parsed = 0;
-  for await (const doc of iterateJsonLines(int8Path)) {
-    if (first) {
-      first = false;
-      if (!isV2Header(doc)) {
-        // v1 — the whole { id: number[] } map is this line. A v1 map can never
-        // look like a v2 header: its values are arrays, so doc.version is
-        // either undefined or a number[] and fails isV2Header.
-        for (const [id, vec] of Object.entries(doc || {})) {
-          out.set(id, (place && place(id, vec)) || new Int8Array(vec));
-        }
-        return;
-      }
-      header = doc;
-      continue;
+export function readIndexFileSync(indexPath) {
+  let fd;
+  try { fd = openSync(indexPath, 'r'); } catch { return null; }
+  try {
+    const parsed = readHeaderFd(fd);
+    if (!parsed) return null;
+    const { header, dataStart } = parsed;
+    const sec = header.sections;
+    const n = header.count;
+    const ids = readRecords(fd, dataStart, sec.ids, n);
+    const metas = readRecords(fd, dataStart, sec.metas, n);
+    const codes = readSection(fd, dataStart, sec.codes, Uint8Array);
+    const int8 = header.int8Dim > 0
+      ? new Int8Rows(header.int8Dim, readSection(fd, dataStart, sec.int8, Int8Array),
+        readSection(fd, dataStart, sec.int8Present, Uint8Array))
+      : null;
+    const graph = header.levels.map((lv, l) => {
+      const present = readSection(fd, dataStart, sec[`l${l}.present`], Uint8Array);
+      const offsets = readSection(fd, dataStart, sec[`l${l}.offsets`], Uint32Array);
+      const neighbors = readSection(fd, dataStart, sec[`l${l}.neighbors`], Uint32Array);
+      const level = new Array(lv.len).fill(null);
+      for (let i = 0; i < lv.len; i++) if (present[i]) level[i] = Array.from(neighbors.subarray(offsets[i], offsets[i + 1]));
+      return level;
+    });
+    const nodes = ids.map((id, i) => ({
+      id,
+      binary: Array.from(codes.subarray(i * header.dimension, (i + 1) * header.dimension)),
+      metadata: metas[i],
+      int8: int8?.has(i) ? Array.from(int8.get(i)) : null,
+    }));
+    return { header, nodes, graph };
+  } finally {
+    closeSync(fd);
+  }
+}
+
+/**
+ * Node-ordered int8 rows (one Int8Array) with a presence flag per node. The
+ * width is set by the first row; a row of another width is an error.
+ */
+class Int8Rows {
+  constructor(dim, rows = null, present = null) {
+    this.dim = dim;
+    this.rows = rows || new Int8Array(0);
+    this.present = present || new Uint8Array(0);
+  }
+
+  get capacity() { return this.present.length; }
+
+  put(node, vec) {
+    if (vec.length !== this.dim) {
+      throw new Error(`BinaryHNSW: int8 row of width ${vec.length}, index uses ${this.dim}`);
     }
-    out.set(doc.id, (place && place(doc.id, doc.v)) || new Int8Array(doc.v));
-    parsed++;
-  }
-  if (header && parsed !== header.count) {
-    throw new Error(
-      `BinaryHNSW: truncated int8 sidecar (${parsed}/${header.count} records): ${int8Path}`
-    );
-  }
-}
-
-// Entry count without materializing the payload: v2 reads only the header
-// line; v1 (single line = whole map) is parsed from that same first line.
-// Used by diagnostics (getArtifactStats) so stats never re-load the index.
-export async function int8SidecarCount(int8Path) {
-  for await (const doc of iterateJsonLines(int8Path)) {
-    return isV2Header(doc) ? doc.count : Object.keys(doc || {}).length;
-  }
-  return 0;
-}
-
-// ---------------------------------------------------------------------------
-// Sync sidecar readers — TOOLING ONLY (soak probes, determinism dumps).
-// These readFileSync the whole file, so they inherit the very string ceiling
-// the streaming readers exist to avoid; fine at tool-corpus scale, never for
-// production-scale indexes. Same v1/v2 detection and truncation guards.
-// ---------------------------------------------------------------------------
-
-function parseSidecarLinesSync(filePath) {
-  return readFileSync(filePath, 'utf-8')
-    .split('\n')
-    .filter((l) => l.length > 0)
-    .map((l) => JSON.parse(l));
-}
-
-export function readVectorsSidecarSync(vectorsPath) {
-  const docs = parseSidecarLinesSync(vectorsPath);
-  if (Array.isArray(docs[0])) return docs[0]; // v1
-  if (!isV2Header(docs[0])) {
-    throw new Error(`BinaryHNSW: unrecognized vectors sidecar format: ${vectorsPath}`);
-  }
-  const entries = docs.slice(1);
-  if (entries.length !== docs[0].count) {
-    throw new Error(
-      `BinaryHNSW: truncated vectors sidecar (${entries.length}/${docs[0].count} records): ${vectorsPath}`
-    );
-  }
-  return entries;
-}
-
-export function readGraphSidecarSync(graphPath) {
-  const docs = parseSidecarLinesSync(graphPath);
-  if (Array.isArray(docs[0])) return docs[0]; // v1
-  const header = docs[0];
-  if (!header || header.version !== 2 || !Array.isArray(header.lengths) || !Number.isFinite(header.chunks)) {
-    throw new Error(`BinaryHNSW: unrecognized graph sidecar format: ${graphPath}`);
-  }
-  if (docs.length - 1 !== header.chunks) {
-    throw new Error(
-      `BinaryHNSW: truncated graph sidecar (${docs.length - 1}/${header.chunks} chunks): ${graphPath}`
-    );
-  }
-  const graph = header.lengths.map((len) => new Array(len).fill(null));
-  for (const rec of docs.slice(1)) {
-    const target = graph[rec.level];
-    for (let i = 0; i < rec.nodes.length; i++) {
-      target[rec.start + i] = rec.nodes[i];
+    if (node >= this.capacity) {
+      let cap = Math.max(1024, this.capacity * 2);
+      while (cap <= node) cap *= 2;
+      const rows = new Int8Array(cap * this.dim);
+      rows.set(this.rows);
+      const present = new Uint8Array(cap);
+      present.set(this.present);
+      this.rows = rows;
+      this.present = present;
     }
+    this.rows.set(vec, node * this.dim);
+    this.present[node] = 1;
   }
-  return graph;
-}
 
-// Returns the v1-shaped plain object { id: number[] } for both formats.
-export function readInt8SidecarSync(int8Path) {
-  const docs = parseSidecarLinesSync(int8Path);
-  if (docs.length === 0) return {};
-  if (!isV2Header(docs[0])) return docs[0] || {}; // v1 — whole map on one line
-  const records = docs.slice(1);
-  if (records.length !== docs[0].count) {
-    throw new Error(
-      `BinaryHNSW: truncated int8 sidecar (${records.length}/${docs[0].count} records): ${int8Path}`
-    );
+  has(node) { return node < this.capacity && this.present[node] === 1; }
+
+  /** A view of node's row (shares the bytes), or undefined. */
+  get(node) {
+    return this.has(node) ? this.rows.subarray(node * this.dim, (node + 1) * this.dim) : undefined;
   }
-  const out = {};
-  for (const rec of records) out[rec.id] = rec.v;
-  return out;
+
+  drop(node) { if (node < this.capacity) this.present[node] = 0; }
+
+  /** Rows present among the first n nodes. */
+  count(n) {
+    let c = 0;
+    const m = Math.min(n, this.capacity);
+    for (let i = 0; i < m; i++) c += this.present[i];
+    return c;
+  }
 }
 
 // =============================================================================
@@ -692,24 +346,26 @@ export class BinaryHNSWIndex {
     this.indexPath = options.indexPath || DB_PATHS.binaryHnswIndex;
     this.stalePath = options.stalePath || `${this.indexPath}.stale.bin`;
 
-    // Storage. `vectors[i].binary` is a subarray view into the contiguous
-    // HammingSlab (G1/G2): one flat allocation for all vector bytes, mirrored
-    // into a resident WASM instance so hot-loop distances are single FFI
-    // calls with zero per-call copies.
-    this.vectors = [];           // Array of { id, binary: Uint8Array view, metadata }
-    this.idToIndex = new Map();  // id → array index
+    // Nodes: node i has id _ids[i] and metadata _metas[i]; its sign code is
+    // row i of the code slab, its int8 row is row i of _int8.
+    this._ids = [];
+    this._metas = [];
+    this.idToIndex = new Map();  // id → node
+    // Sign codes for the JS paths (build, insert, the no-addon walk): a
+    // HammingSlab (JS bytes + WASM mirror). A loaded index with the native
+    // searcher leaves it unbuilt; _codes() reads it from the index file on
+    // the first write.
     this._slab = new HammingSlab(this.dimension);
     this._queryBinary = null;    // staged query for the fallback distance path
     this.initialized = false;
 
-    // For int8 rescoring
-    this.int8Vectors = new Int8VectorMap(); // id → Int8Array
-    this._int8Slab = null;       // node-ordered copy for native rescoring
+    // int8 rows for stage-2 rescoring (Int8Rows, node order), or null.
+    this._int8 = null;
 
     // Graph structure (simplified HNSW for pure JS)
     this._graphGen = 0;
     this._native = null;
-    this._graphFrozen = null;    // shape of a graph released to the native snapshot
+    this._graphFrozen = null;    // shape of a graph released to the native snapshot or left on disk
     this.graph = [];             // Array of neighbor lists per level
     this.entryPoint = -1;
     this.maxLevel = 0;
@@ -735,19 +391,56 @@ export class BinaryHNSWIndex {
     this._fullReader = null;
     this._fullDirty = false;
 
-    // G9 mmap: set when this instance is backed by an open, packed .idx fd
-    // (loadMmap). `vectors`/`graph` are then lazy proxies and the index is
-    // read/search-only. Null/false on the default JSON path.
-    this._mmapBacked = false;
-    this._mmapFd = null;
+    // The loaded index file, kept open while parts of it are not in memory
+    // (the code slab, or a graph the exact scan never reads): { fd, dataStart,
+    // codes, levels }. The fd keeps the loaded version readable after a newer
+    // save renames over the path.
+    this._file = null;
+  }
 
+  /** Number of nodes (stale ones included). */
+  get size() {
+    return this._ids.length;
+  }
+
+  /** Id of node i. */
+  nodeId(i) {
+    return this._ids[i];
+  }
+
+  /** Metadata object of node i. */
+  nodeMetadata(i) {
+    return this._metas[i];
+  }
+
+  /** Sign code of node i (a view into the code slab). */
+  nodeBinary(i) {
+    return this._codes().view(i);
+  }
+
+  /**
+   * The code slab for the JS paths, read from the index file when the load
+   * left it out.
+   */
+  _codes() {
+    if (this._slab) return this._slab;
+    const slab = new HammingSlab(this.dimension);
+    const n = this._ids.length;
+    if (n > 0) {
+      const f = this._file;
+      slab.fill(readSection(f.fd, f.dataStart, f.codes, Uint8Array), n);
+    }
+    this._slab = slab;
+    this._releaseFile();
+    return slab;
   }
 
   /**
    * Neighbor lists per level. After a native snapshot is built the JS arrays
    * are released (the snapshot holds the same lists); any reader rebuilds
-   * them exactly from the snapshot on first access. Assignment bumps
-   * _graphGen so the snapshot is rebuilt.
+   * them exactly from the snapshot, or from the index file when the load
+   * left the graph there, on first access. Assignment bumps _graphGen so the
+   * snapshot is rebuilt.
    */
   get graph() {
     if (this._graphFrozen) this._thawGraph();
@@ -758,6 +451,7 @@ export class BinaryHNSWIndex {
     this._graphStore = value;
     this._graphFrozen = null;
     this._graphGen++;
+    this._releaseFile();
   }
 
   /** Release the JS graph arrays; the native snapshot is the only copy. */
@@ -770,38 +464,76 @@ export class BinaryHNSWIndex {
         for (let i = 0; i < level.length; i++) flags[i] = level[i] ? 1 : 0;
         return flags;
       }),
+      links: null,
+      onDisk: false,
     };
     this._graphStore = null;
   }
 
-  /** Rebuild the JS graph arrays from the native snapshot (exact lists). */
+  /**
+   * Level l of the frozen graph as CSR over the nodes it was frozen with:
+   * { offsets (n + 1), neighbors }, from the native snapshot or the file.
+   */
+  _frozenLevelCsr(l) {
+    if (!this._graphFrozen.onDisk) {
+      // The snapshot's node count (an insert may already have appended a node).
+      const n = this._native.n;
+      const flat = this._native.searcher.exportLevel(l);
+      return { offsets: flat.subarray(0, n + 1), neighbors: flat.subarray(n + 1) };
+    }
+    const f = this._file;
+    const lv = f.levels[l];
+    return {
+      offsets: readSection(f.fd, f.dataStart, lv.offsets, Uint32Array),
+      neighbors: readSection(f.fd, f.dataStart, lv.neighbors, Uint32Array),
+    };
+  }
+
+  /** Rebuild the JS graph arrays from the native snapshot or the file (exact lists). */
   _thawGraph() {
     const { lengths, present } = this._graphFrozen;
-    const searcher = this._native.searcher;
-    const n = this._native.n;
     const levels = lengths.map((len, l) => {
-      const flat = searcher.exportLevel(l);
+      const { offsets, neighbors } = this._frozenLevelCsr(l);
       const level = new Array(len).fill(null);
       for (let i = 0; i < len; i++) {
         if (!present[l][i]) continue;
-        const from = flat[i], to = flat[i + 1];
+        const from = offsets[i], to = offsets[i + 1];
         const list = new Array(to - from);
-        for (let j = from; j < to; j++) list[j - from] = flat[n + 1 + j];
+        for (let j = from; j < to; j++) list[j - from] = neighbors[j];
         level[i] = list;
       }
       return level;
     });
+    const onDisk = this._graphFrozen.onDisk;
     this._graphStore = levels;
     this._graphFrozen = null;
+    if (onDisk) this._releaseFile();
+  }
+
+  /** Close the index file once nothing is read from it any more. */
+  _releaseFile() {
+    const f = this._file;
+    if (!f || !this._slab || this._graphFrozen?.onDisk) return;
+    try { closeSync(f.fd); } catch { /* best-effort */ }
+    this._file = null;
+  }
+
+  _closeFile() {
+    const f = this._file;
+    this._file = null;
+    if (f) {
+      try { closeSync(f.fd); } catch { /* best-effort */ }
+    }
   }
 
   /** Reset to empty state for a fresh build (skips loading from disk). */
   resetForBuild() {
-    this._closeMmap();
-    this.vectors = [];
+    this._closeFile();
+    this._ids = [];
+    this._metas = [];
     this._slab = new HammingSlab(this.dimension);
     this.idToIndex = new Map();
-    this.int8Vectors.clear();
+    this._int8 = null;
     this.graph = [];
     this.entryPoint = -1;
     this.maxLevel = 0;
@@ -818,15 +550,6 @@ export class BinaryHNSWIndex {
     this._fullDirty = false;
   }
 
-  /** Close an open packed-file descriptor if this index is mmap-backed. */
-  _closeMmap() {
-    if (this._mmapFd != null) {
-      try { closeSync(this._mmapFd); } catch { /* best-effort */ }
-    }
-    this._mmapFd = null;
-    this._mmapBacked = false;
-  }
-
   _stalePathForIndex(indexPath = this.indexPath) {
     return indexPath === this.indexPath ? this.stalePath : `${indexPath}.stale.bin`;
   }
@@ -837,22 +560,9 @@ export class BinaryHNSWIndex {
   async init() {
     if (this.initialized) return;
 
-    // Try to load an existing index. Detect the on-disk format by inspecting
-    // the artifacts (NOT the flag): a JSON sidecar tuple is identified by its
-    // .meta.json descriptor; a packed (mmap) index is identified by the magic
-    // header on the .idx file itself. Old indexes always take the JSON path
-    // regardless of SWEET_SEARCH_HNSW_MMAP (no migration, ever).
-    const metaPath = this.indexPath.replace('.idx', '.meta.json');
-    const onDisk = _indexFormatOnDisk(this.indexPath);
-    if (onDisk === 'packed') {
-      try {
-        await this.load(); // load() routes to loadMmap() for packed files
-        this.initialized = true;
-        return;
-      } catch (err) {
-        console.log(`BinaryHNSW: Failed to load packed index, creating new: ${err.message}`);
-      }
-    } else if (existsSync(metaPath)) {
+    // Load the index file when there is one (format 3; anything else is
+    // rebuilt).
+    if (existsSync(this.indexPath)) {
       try {
         await this.load();
         this.initialized = true;
@@ -862,9 +572,12 @@ export class BinaryHNSWIndex {
       }
     }
 
-    this.vectors = [];
+    this._closeFile();
+    this._ids = [];
+    this._metas = [];
     this._slab = new HammingSlab(this.dimension);
     this.idToIndex = new Map();
+    this._int8 = null;
     this.graph = [];
     this.entryPoint = -1;
     this.maxLevel = 0;
@@ -943,19 +656,6 @@ export class BinaryHNSWIndex {
    * probe — avoids per-insert promise machinery on hot construction paths.
    */
   addSync(id, binaryVector, metadata = {}, int8Vector = null, fullVector = null) {
-    // The packed (mmap) layout is a read/search-only representation: `vectors`
-    // and `graph` are lazy fd-backed proxies, not mutable plain arrays. Build
-    // paths must construct on plain arrays and persist via save()/saveMmap().
-    // Mutating a packed-loaded index would silently corrupt the graph, so fail
-    // loudly instead. (This is unreachable on the default path; the reconciler
-    // builds in memory and only the read side mmap-loads.)
-    if (this._mmapBacked) {
-      throw new Error(
-        'BinaryHNSW: cannot add() to an mmap-backed (packed) index — '
-        + 'it is a read/search-only view. Rebuild on a fresh in-memory index.'
-      );
-    }
-
     // Convert float to binary if needed
     let binary;
     if (binaryVector instanceof Uint8Array) {
@@ -967,37 +667,35 @@ export class BinaryHNSWIndex {
       binary = new Uint8Array(binaryVector);
     }
 
+    const slab = this._codes();
     this._graphGen++;
     if (this._fullWriter === undefined) {
       // An index loaded without the file (built before it existed) has no
       // writer: it gets the file at its next full rebuild.
-      this._fullWriter = this.vectors.length === 0 ? FullVectorWriter.fresh(this.indexPath)
-        : FullVectorWriter.resume(this.indexPath, this.vectors.length);
+      this._fullWriter = this._ids.length === 0 ? FullVectorWriter.fresh(this.indexPath)
+        : FullVectorWriter.resume(this.indexPath, this._ids.length);
     }
     this._fullDirty = true;
 
     // Check if already exists
     if (this.idToIndex.has(id)) {
       const idx = this.idToIndex.get(id);
-      this.vectors[idx] = { id, binary: this._slab.set(idx, binary), metadata };
-      if (int8Vector) {
-        this.int8Vectors.set(id, int8Vector);
-      }
+      slab.set(idx, binary);
+      this._metas[idx] = metadata;
+      if (int8Vector) this._putInt8(idx, int8Vector);
       this._fullWriter?.put(idx, fullVector);
       return idx;
     }
 
-    // Add new vector. Slab growth reallocates the backing buffer, so re-point
-    // existing nodes' views at the fresh buffer (amortized O(1) per insert).
-    const idx = this.vectors.length;
-    if (this._slab.ensure(idx + 1)) this._repointSlabViews();
-    this.vectors.push({ id, binary: this._slab.set(idx, binary), metadata });
+    // Add new vector.
+    const idx = this._ids.length;
+    slab.set(idx, binary);
+    this._ids.push(id);
+    this._metas.push(metadata);
     this.idToIndex.set(id, idx);
     this._fullWriter?.put(idx, fullVector);
 
-    if (int8Vector) {
-      this.int8Vectors.set(id, int8Vector);
-    }
+    if (int8Vector) this._putInt8(idx, int8Vector);
 
     // Add to HNSW graph.
     // Gate: deterministic per-id levels are DEFAULT-ON (disable with
@@ -1022,12 +720,10 @@ export class BinaryHNSWIndex {
     return level === 0 ? this.M * 2 : this.M;
   }
 
-  /** Re-point every node's binary view after a slab reallocation. */
-  _repointSlabViews() {
-    const slab = this._slab;
-    for (let i = 0; i < this.vectors.length; i++) {
-      this.vectors[i].binary = slab.view(i);
-    }
+  /** Store node's int8 row (the first row sets the width). */
+  _putInt8(node, vec) {
+    if (!this._int8) this._int8 = new Int8Rows(vec.length);
+    this._int8.put(node, vec);
   }
 
   /**
@@ -1036,22 +732,18 @@ export class BinaryHNSWIndex {
    * back to the copy-per-call kernel on the mmap-proxy read path.
    */
   _distPair(aIdx, bIdx) {
-    const s = this._slab;
-    if (s) return s.dist(aIdx, bIdx);
-    return hammingDistance(this.vectors[aIdx].binary, this.vectors[bIdx].binary);
+    return this._codes().dist(aIdx, bIdx);
   }
 
   /** Stage the query for _distQ(). */
   _setQuery(queryBinary) {
     this._queryBinary = queryBinary;
-    if (this._slab) this._slab.setQuery(queryBinary);
+    this._codes().setQuery(queryBinary);
   }
 
   /** Hamming distance from the staged query to a resident vector. */
   _distQ(idx) {
-    const s = this._slab;
-    if (s) return s.distToQuery(idx);
-    return hammingDistance(this.vectors[idx].binary, this._queryBinary);
+    return this._codes().distToQuery(idx);
   }
 
   /**
@@ -1128,8 +820,8 @@ export class BinaryHNSWIndex {
   _entryPointWinner(idxA, idxB) {
     if (idxA === -1) return idxB;
     if (idxB === -1) return idxA;
-    const idA = String(this.vectors[idxA].id);
-    const idB = String(this.vectors[idxB].id);
+    const idA = String(this._ids[idxA]);
+    const idB = String(this._ids[idxB]);
     return idA <= idB ? idxA : idxB;
   }
 
@@ -1220,7 +912,7 @@ export class BinaryHNSWIndex {
    * Greedy search to find closest node at a given level
    */
   greedySearch(startNode, targetIdx, level) {
-    const slab = this._slab;
+    const slab = this._codes();
     let currentNode = startNode;
     let currentDist = this._distPair(currentNode, targetIdx);
 
@@ -1262,12 +954,12 @@ export class BinaryHNSWIndex {
    */
   searchLayer(startNode, targetIdx, ef, level) {
     const visited = this._visitedList;
-    visited.ensureCapacity(this.vectors.length);
+    visited.ensureCapacity(this._ids.length);
     visited.reset();
     visited.mark(startNode);
 
     const startDist = this._distPair(startNode, targetIdx);
-    const slab = this._slab;
+    const slab = this._codes();
 
     // candidates = min-heap (explore closest first)
     const candidates = this._candHeap;
@@ -1352,7 +1044,7 @@ export class BinaryHNSWIndex {
     this._graphGen++;
     const neighbors = this.graph[level][nodeIdx];
     const maxM = this.getMaxM(level);
-    const slab = this._slab;
+    const slab = this._codes();
 
     let withDist;
     const n = neighbors.length;
@@ -1385,19 +1077,20 @@ export class BinaryHNSWIndex {
    */
   /**
    * Native searcher over a CSR snapshot of the resident graph, or null (no
-   * addon, SS_FIX_HNSW_NATIVE=0, or the mmap-proxy path). Rebuilt lazily after
-   * any mutation (_graphGen) or a graph reassignment (load/reset).
+   * addon, or SS_FIX_HNSW_NATIVE=0). Rebuilt lazily after any mutation
+   * (_graphGen) or a graph reassignment (load/reset).
    */
   _nativeSearcher() {
-    if (!this._slab || this._mmapBacked) return null;
-    const n = this.vectors.length;
+    const n = this._ids.length;
     const cached = this._native;
     if (cached && cached.gen === this._graphGen && cached.n === n) {
       return cached.searcher;
     }
     const Ctor = nativeHnswSearcherCtor();
-    if (!Ctor || this._slab.count < n) return null;
-    const searcher = new Ctor(this.dimension, n, this._slab.slab.subarray(0, n * this.dimension));
+    if (!Ctor) return null;
+    const slab = this._codes();
+    if (slab.count < n) return null;
+    const searcher = new Ctor(this.dimension, n, slab.slab.subarray(0, n * this.dimension));
     configureNativeSearcher(searcher);
     for (let l = 0; l < this.graph.length; l++) {
       const level = this.graph[l] || EMPTY_NEIGHBORS;
@@ -1421,66 +1114,6 @@ export class BinaryHNSWIndex {
     // Release the JS lists (read paths use the snapshot; writers thaw).
     this._freezeGraph();
     return searcher;
-  }
-
-  /**
-   * load() helper: read the graph sidecar straight into a native snapshot
-   * and leave the JS graph released (as _nativeSearcher + _freezeGraph would,
-   * without building the JS arrays first). False when the native walk is
-   * off, or for a v1 sidecar; the caller then loads JS arrays.
-   */
-  async _loadGraphNative(graphPath) {
-    if (!this._slab) return false;
-    const Ctor = nativeHnswSearcherCtor();
-    const n = this.vectors.length;
-    if (!Ctor || this._slab.count < n) return false;
-    const csr = await readGraphSidecarCsr(graphPath, n);
-    if (!csr) return false;
-    const searcher = new Ctor(this.dimension, n, this._slab.slab.subarray(0, n * this.dimension));
-    configureNativeSearcher(searcher);
-    csr.levels.forEach((lv, l) => searcher.setLevel(l, lv.offsets, lv.neighbors));
-    this.graph = [];  // resets the store and bumps _graphGen
-    this._graphStore = null;
-    this._graphFrozen = { lengths: csr.lengths, present: csr.present };
-    this._native = { searcher, gen: this._graphGen, n };
-    return true;
-  }
-
-  /**
-   * load() helper: `place` for readInt8Sidecar that writes each vector into
-   * the node-ordered int8 slab and returns the row view, so the vectors are
-   * never held twice. `finish` publishes the slab only when every vector had
-   * the same width (else _int8NodeSlab decides, as before).
-   */
-  _int8SlabFiller() {
-    const n = this.vectors.length;
-    let slab = null;
-    let present = null;
-    let dim = 0;
-    let mixed = false;
-    return {
-      place: (id, values) => {
-        if (mixed) return null;
-        if (dim === 0) {
-          dim = values.length;
-          if (dim === 0) { mixed = true; return null; }
-          slab = new Int8Array(n * dim);
-          present = new Uint8Array(n);
-        }
-        if (values.length !== dim) { mixed = true; return null; }
-        const i = this.idToIndex.get(id);
-        if (i === undefined || this.vectors[i]?.id !== id) return null;
-        const row = slab.subarray(i * dim, (i + 1) * dim);
-        row.set(values);
-        present[i] = 1;
-        return row;
-      },
-      finish: () => {
-        const map = this.int8Vectors;
-        if (mixed || !slab || !(map instanceof Int8VectorMap)) return;
-        this._int8Slab = { slab, present, dim, n, map, gen: map.gen, graphGen: this._graphGen };
-      },
-    };
   }
 
   /**
@@ -1525,7 +1158,7 @@ export class BinaryHNSWIndex {
   _finishNativeSearch(nat, currentNode, ef, k, staleBitmap, start, lazy = false) {
     let out;
     let live;
-    const total = this.vectors.length;
+    const total = this._ids.length;
     if (total <= EXACT_SCAN_MAX_VECTORS && process.env.SS_FIX_HNSW_SCAN !== '0') {
       // Small index: exact top-k over every vector beats the walk on time
       // and never misses a neighbor. Ask for k plus the stale count so k live
@@ -1539,8 +1172,8 @@ export class BinaryHNSWIndex {
     out = this._nativeSearchLayer(nat, currentNode, ef, 0);
     const visitedCount = out[0];
     live = this._nativeLive(out, staleBitmap);
-    if (live.length < k && ef < this.vectors.length) {
-      const retryEf = Math.min(this.vectors.length, ef * 2);
+    if (live.length < k && ef < this._ids.length) {
+      const retryEf = Math.min(this._ids.length, ef * 2);
       if (retryEf > ef) {
         out = this._nativeSearchLayer(nat, currentNode, retryEf, 0);
         live = this._nativeLive(out, staleBitmap);
@@ -1556,9 +1189,9 @@ export class BinaryHNSWIndex {
     const materialize = (m) => {
       const results = new Array(m);
       for (let i = 0; i < m; i++) {
-        const v = this.vectors[live.idx[i]];
+        const node = live.idx[i];
         const dist = live.dist[i];
-        results[i] = { id: v.id, score: 1 - (dist / maxDist), hammingDistance: dist, metadata: v.metadata };
+        results[i] = { id: this._ids[node], score: 1 - (dist / maxDist), hammingDistance: dist, metadata: this._metas[node] };
       }
       return results;
     };
@@ -1597,7 +1230,7 @@ export class BinaryHNSWIndex {
     const start = performance.now();
     const staleBitmap = this._loadStaleBitmap();
 
-    if (this.vectors.length === 0) {
+    if (this._ids.length === 0) {
       return { results: [], latency_us: 0, k, total: 0 };
     }
 
@@ -1617,15 +1250,15 @@ export class BinaryHNSWIndex {
       queryBinary = this.encodeDocument(opts.floatQuery);
     }
     // Stage the query once: traversal distances become resident-slab calls.
-    this._setQuery(queryBinary);
     const nat = this._nativeSearcher();
     if (nat) nat.setQuery(queryBinary);
+    else this._setQuery(queryBinary);
     let currentNode = this.entryPoint;
     let ef = Math.max(this._oversampleTarget(k, staleBitmap), this.efSearch);
     const maxDist = this.dimension * 8;
     // The native exact scan (_finishNativeSearch) uses neither the entry node
     // nor ef, so only a walk descends the upper layers.
-    const scan = nat && this.vectors.length <= EXACT_SCAN_MAX_VECTORS && process.env.SS_FIX_HNSW_SCAN !== '0';
+    const scan = nat && this._ids.length <= EXACT_SCAN_MAX_VECTORS && process.env.SS_FIX_HNSW_SCAN !== '0';
     if (!scan) {
       for (let l = this.maxLevel; l >= 1; l--) {
         currentNode = nat
@@ -1650,8 +1283,8 @@ export class BinaryHNSWIndex {
     let candidates = searchResult.candidates;
 
     candidates = candidates.filter(c => !this._isIndexStale(c.idx, staleBitmap));
-    if (candidates.length < k && ef < this.vectors.length) {
-      const retryEf = Math.min(this.vectors.length, ef * 2);
+    if (candidates.length < k && ef < this._ids.length) {
+      const retryEf = Math.min(this._ids.length, ef * 2);
       if (retryEf > ef) {
         const retry = this.searchLayerQuery(currentNode, queryBinary, retryEf, 0);
         candidates = retry.candidates.filter(c => !this._isIndexStale(c.idx, staleBitmap));
@@ -1660,10 +1293,10 @@ export class BinaryHNSWIndex {
 
     // Return top k
     const results = candidates.slice(0, k).map(c => ({
-      id: this.vectors[c.idx].id,
+      id: this._ids[c.idx],
       score: 1 - (c.dist / maxDist),
       hammingDistance: c.dist,
-      metadata: this.vectors[c.idx].metadata,
+      metadata: this._metas[c.idx],
     }));
 
     const latency = performance.now() - start;
@@ -1700,7 +1333,7 @@ export class BinaryHNSWIndex {
    * metadata, int8Score[, missingInt8] }`).
    */
   searchCascade(queryVector, k, opts = {}) {
-    if (!this.initialized || this.vectors.length === 0) return null;
+    if (!this.initialized || this._ids.length === 0) return null;
     const kernels = nativeRescoreKernels();
     if (!kernels) return null;
     const nat = this._nativeSearcher();
@@ -1722,10 +1355,9 @@ export class BinaryHNSWIndex {
     if (this.useAsymmetric && opts.floatQuery) {
       queryBinary = this.encodeDocument(opts.floatQuery);
     }
-    this._setQuery(queryBinary);
     nat.setQuery(queryBinary);
 
-    const total = this.vectors.length;
+    const total = this._ids.length;
     const live = this._liveVectorCount(staleBitmap);
     const scan = total <= EXACT_SCAN_MAX_VECTORS && process.env.SS_FIX_HNSW_SCAN !== '0';
     const maxDist = this.dimension * 8;
@@ -1757,7 +1389,8 @@ export class BinaryHNSWIndex {
     const visitedCount = stats[0];
     const latency = performance.now() - start;
 
-    const vectors = this.vectors;
+    const ids = this._ids;
+    const metas = this._metas;
     const int8Stage = (count) => {
       const m = Math.min(count, n);
       const nodes = scratchArray('cascadeNodes', Uint32Array, m);
@@ -1773,12 +1406,53 @@ export class BinaryHNSWIndex {
         stats: s2,
         // Node indices of the first h candidates (a copy: the scratch is shared).
         nodes: (h) => nodes.slice(0, Math.min(h, m)),
+        // The final (full-vector) order of the first h candidates, computed
+        // natively as applyFullVectorStageRescore would: { found, order,
+        // full, norm } (scratch views; `found` < 2 = the stage does not
+        // apply), or null when the native step or the vector file is missing.
+        fullOrder: (queryFloat, h) => {
+          const reader = this._fullReader;
+          if (!reader || typeof nat.cascadeFull !== 'function' || !queryFloat || queryFloat.length !== reader.dim) return null;
+          const hh = Math.min(h, m);
+          const order = scratchArray('cascadeOrder', Uint32Array, hh);
+          const full = scratchArray('cascadeFull', Float64Array, hh);
+          const norm = scratchArray('cascadeNorm', Float64Array, hh);
+          const found = nat.cascadeFull(reader.file, reader.rows, scratchFloat64Query(queryFloat), hh, order, full, norm);
+          return { found, order, full, norm };
+        },
+        // The first `need` candidates in the final order of `fr` (from
+        // fullOrder), with the fields applyFullVectorStageRescore sets.
+        materializeFull: (need, fr) => {
+          const out = new Array(need);
+          for (let j = 0; j < need; j++) {
+            const pos = fr.order[j];
+            const node = nodes[pos];
+            const dist = dists[pos];
+            const c = { id: ids[node], score: 1 - (dist / maxDist), hammingDistance: dist, metadata: metas[node] };
+            if (missing[pos]) {
+              c.int8Score = 0.0;
+              c.missingInt8 = true;
+            } else {
+              c.int8Score = scores[pos];
+            }
+            const f = fr.full[pos];
+            if (!Number.isNaN(f)) {
+              c.fullVectorScore = f;
+              c.fullVectorNorm = fr.norm[pos];
+              c.preFullVectorScore = c.int8Score;
+              c.semanticBlendScore = fr.norm[pos];
+            }
+            c.score = c.semanticBlendScore;
+            out[j] = c;
+          }
+          return out;
+        },
         materialize: (h) => {
           const out = new Array(Math.min(h, m));
           for (let i = 0; i < out.length; i++) {
-            const v = vectors[nodes[i]];
+            const node = nodes[i];
             const dist = dists[i];
-            const c = { id: v.id, score: 1 - (dist / maxDist), hammingDistance: dist, metadata: v.metadata };
+            const c = { id: ids[node], score: 1 - (dist / maxDist), hammingDistance: dist, metadata: metas[node] };
             if (missing[i]) {
               c.int8Score = 0.0;
               c.missingInt8 = true;
@@ -1855,7 +1529,7 @@ export class BinaryHNSWIndex {
     // memoized on the bitmap cache entry: bits only ever get SET, and every
     // setter nulls the cache, so a cached count stays exact for the cached
     // bitmap at a given vector count.
-    const n = this.vectors.length;
+    const n = this._ids.length;
     if (!bitmap) return n;
     const cache = this._staleBitmapCache;
     if (cache && cache.bitmap === bitmap) {
@@ -1871,9 +1545,9 @@ export class BinaryHNSWIndex {
   _oversampleTarget(k, bitmap) {
     if (!bitmap) return k;
     const live = this._liveVectorCount(bitmap);
-    const tombstoned = Math.max(0, this.vectors.length - live);
+    const tombstoned = Math.max(0, this._ids.length - live);
     if (tombstoned === 0) return k;
-    const s = Math.max(0, Math.min(tombstoned / Math.max(1, this.vectors.length), 0.5));
+    const s = Math.max(0, Math.min(tombstoned / Math.max(1, this._ids.length), 0.5));
     return Math.min(Math.max(k + 64, Math.ceil(k / Math.max(0.05, 1 - s) * 2)), k * 20);
   }
 
@@ -1883,7 +1557,7 @@ export class BinaryHNSWIndex {
   greedySearchQuery(startNode, queryBinary, level) {
     // Direct callers (outside search()) may pass their own query — stage it.
     if (queryBinary !== this._queryBinary) this._setQuery(queryBinary);
-    const slab = this._slab;
+    const slab = this._codes();
     let currentNode = startNode;
     let currentDist = this._distQ(currentNode);
 
@@ -1931,12 +1605,12 @@ export class BinaryHNSWIndex {
     // Direct callers (outside search()) may pass their own query — stage it.
     if (queryBinary !== this._queryBinary) this._setQuery(queryBinary);
     const visited = this._visitedList;
-    visited.ensureCapacity(this.vectors.length);
+    visited.ensureCapacity(this._ids.length);
     visited.reset();
     visited.mark(startNode);
 
     const startDist = this._distQ(startNode);
-    const slab = this._slab;
+    const slab = this._codes();
     const candidates = this._candHeap;
     candidates.clear();
     const results = this._resHeap;
@@ -2086,18 +1760,25 @@ export class BinaryHNSWIndex {
     if (this._isIndexStale(idx, this._loadStaleBitmap())) {
       return undefined;
     }
-    return this.int8Vectors.get(id);
+    return this._int8?.get(idx);
   }
 
-  /**
-   * Batch variant of getInt8Vector for hot rescore loops: snapshots the stale
-   * bitmap ONCE for the whole batch (one existsSync+statSync instead of one
-   * pair per candidate). All candidates see a single coherent bitmap — the
-   * same per-query snapshot granularity search() itself uses.
-   *
-   * @param {string[]} ids
-   * @returns {Array<Int8Array|undefined>} aligned with ids
-   */
+  /** int8 row of node i (a view, shares the bytes), or undefined. */
+  nodeInt8(i) {
+    return this._int8?.get(i);
+  }
+
+  /** Drop the int8 row of `id` (a deleted chunk). */
+  deleteInt8(id) {
+    const idx = this.idToIndex.get(id);
+    if (idx !== undefined) this._int8?.drop(idx);
+  }
+
+  /** Number of nodes with an int8 row. */
+  int8Count() {
+    return this._int8 ? this._int8.count(this._ids.length) : 0;
+  }
+
   /**
    * save() helper: publish the full-vector file for this save, or remove it
    * when this save's nodes have no full vectors (so no reader pairs an old
@@ -2106,13 +1787,13 @@ export class BinaryHNSWIndex {
   async _publishFullVectors(indexPath, pidSuffix) {
     const w = this._fullWriter;
     if (w) {
-      await w.publish(indexPath, this.vectors.length, pidSuffix);
-    } else if (this._fullDirty || this.vectors.length === 0) {
+      await w.publish(indexPath, this._ids.length, pidSuffix);
+    } else if (this._fullDirty || this._ids.length === 0) {
       await removeFullVectorFiles(indexPath);
     }
     this._fullDirty = false;
     closeFullVectors(this._fullReader);
-    this._fullReader = openFullVectors(indexPath, this.vectors.length);
+    this._fullReader = openFullVectors(indexPath, this._ids.length);
   }
 
   /**
@@ -2132,7 +1813,7 @@ export class BinaryHNSWIndex {
   }
 
   _nodesMatch(nodes, ids) {
-    for (let i = 0; i < ids.length; i++) if (this.vectors[nodes[i]]?.id !== ids[i]) return false;
+    for (let i = 0; i < ids.length; i++) if (this._ids[nodes[i]] !== ids[i]) return false;
     return true;
   }
 
@@ -2142,36 +1823,26 @@ export class BinaryHNSWIndex {
   }
 
   /**
-   * Node-ordered int8 slab: row i holds int8Vectors.get(vectors[i].id), and
-   * `present[i]` says whether that vector exists. Rebuilt after any write to
-   * the map or the node list; the map's values are re-pointed at the slab
-   * rows (same bytes), so the vectors are stored once.
+   * Node-ordered int8 rows for the native rescore: { slab, present, dim, n },
+   * or null when the index has none.
    */
   _int8NodeSlab() {
-    const map = this.int8Vectors;
-    if (!(map instanceof Int8VectorMap) || this._mmapBacked) return null;
-    const n = this.vectors.length;
-    const c = this._int8Slab;
-    if (c && c.map === map && c.gen === map.gen && c.graphGen === this._graphGen && c.n === n) return c;
-    let dim = 0;
-    for (const v of map.values()) {
-      if (dim === 0) dim = v.length;
-      else if (v.length !== dim) return null; // mixed widths: keep the JS path
-    }
-    if (dim === 0) return null;
-    const slab = new Int8Array(n * dim);
+    const s = this._int8;
+    const n = this._ids.length;
+    if (!s || s.capacity < n) return s && n > 0 ? this._int8Grow(n) : null;
+    return { slab: s.rows, present: s.present, dim: s.dim, n };
+  }
+
+  /** Grow the int8 rows to cover all n nodes (absent rows stay absent). */
+  _int8Grow(n) {
+    const s = this._int8;
+    const rows = new Int8Array(n * s.dim);
+    rows.set(s.rows.subarray(0, Math.min(s.rows.length, rows.length)));
     const present = new Uint8Array(n);
-    for (let i = 0; i < n; i++) {
-      const id = this.vectors[i]?.id;
-      const v = id === undefined ? undefined : map.get(id);
-      if (!v) continue;
-      const row = slab.subarray(i * dim, (i + 1) * dim);
-      row.set(v);
-      map._rebind(id, row);
-      present[i] = 1;
-    }
-    this._int8Slab = { slab, present, dim, n, map, gen: map.gen, graphGen: this._graphGen };
-    return this._int8Slab;
+    present.set(s.present.subarray(0, Math.min(s.present.length, n)));
+    s.rows = rows;
+    s.present = present;
+    return { slab: rows, present, dim: s.dim, n };
   }
 
   /**
@@ -2204,6 +1875,13 @@ export class BinaryHNSWIndex {
     return { scores, missing, queryInt8 };
   }
 
+  /**
+   * Batch variant of getInt8Vector for hot rescore loops: snapshots the stale
+   * bitmap ONCE for the whole batch.
+   *
+   * @param {string[]} ids
+   * @returns {Array<Int8Array|undefined>} aligned with ids
+   */
   getInt8VectorsForIds(ids) {
     const bitmap = this._loadStaleBitmap();
     const out = new Array(ids.length);
@@ -2211,423 +1889,108 @@ export class BinaryHNSWIndex {
       const idx = this.idToIndex.get(ids[i]);
       out[i] = (idx === undefined || this._isIndexStale(idx, bitmap))
         ? undefined
-        : this.int8Vectors.get(ids[i]);
+        : this._int8?.get(idx);
     }
     return out;
   }
 
   /**
-   * Save index to disk.
-   *
-   * Publish semantics: every sidecar is written to a sibling
-   * `<path>.tmp.<pid>` then atomically renamed into its canonical
-   * name. Cross-process readers loading the index never observe a
-   * torn `(meta, vectors, graph, int8)` tuple — POSIX `rename` is
-   * atomic per-file, and the publish order below puts the
-   * descriptor (`.meta.json`) LAST so that any reader that observes
-   * the new meta.json is guaranteed to read the matching data
-   * sidecars alongside it.
-   *
-   * The brief window between data renames remains: a reader can
-   * still observe `(NEW vectors, OLD graph)` for a few microseconds.
-   * The size of the rebuilt index makes this window negligible on
-   * the existing single-writer process model; a deeper fix would
-   * publish all sidecars via a single packaged artifact under
-   * versioned manifest paths.
+   * Level l as CSR over all n nodes for save(): { len, present, offsets, neighbors }.
+   */
+  _levelForSave(l, n) {
+    const frozen = this._graphFrozen;
+    if (frozen) {
+      const { offsets, neighbors } = this._frozenLevelCsr(l);
+      return { len: frozen.lengths[l], present: frozen.present[l], offsets, neighbors };
+    }
+    const level = this._graphStore[l] || EMPTY_NEIGHBORS;
+    const len = level.length;
+    const present = new Uint8Array(len);
+    const offsets = new Uint32Array(n + 1);
+    let total = 0;
+    for (let i = 0; i < n; i++) {
+      offsets[i] = total;
+      const nb = level[i];
+      if (nb) { total += nb.length; if (i < len) present[i] = 1; }
+    }
+    offsets[n] = total;
+    const neighbors = new Uint32Array(total);
+    let p = 0;
+    for (let i = 0; i < n; i++) {
+      const nb = level[i];
+      if (nb) for (let j = 0; j < nb.length; j++) neighbors[p++] = nb[j];
+    }
+    // Level 0 of a walked index is re-pruned to 128 links when the native
+    // searcher takes it; save it pruned (the same native routine) so loads
+    // skip that pass. The JS lists stay as built.
+    const Ctor = l === 0 && n > EXACT_SCAN_MAX_VECTORS ? nativeHnswSearcherCtor() : null;
+    if (Ctor) {
+      const t = new Ctor(this.dimension, n, this._codes().slab.subarray(0, n * this.dimension));
+      t.setLevel(0, offsets, neighbors);
+      const flat = t.exportLevel(0);
+      return { len, present, offsets: flat.subarray(0, n + 1), neighbors: flat.subarray(n + 1) };
+    }
+    return { len, present, offsets, neighbors };
+  }
+
+  /**
+   * Save index to disk: one index file (format 3) written to
+   * `<path>.tmp.<pid>` and renamed over `<path>`, so readers see the old or
+   * the new index, never a mix. The full-vector file is published first.
    */
   async save(indexPath = this.indexPath) {
-    // G9 gate. Default OFF → the JSON-sidecar writer below runs UNCHANGED, so
-    // every existing index keeps its exact byte format and there is no
-    // migration. ONLY when SWEET_SEARCH_HNSW_MMAP === '1' do NEW writes pack
-    // into the mmap-friendly flat-binary .idx (a distinct on-disk format with
-    // its own magic/version). The deterministic levels (G1) and entry point
-    // (FIX-B) live in `this.graph`/`this.entryPoint`, which both writers
-    // serialize verbatim — packing preserves them.
-    if (hnswMmapEnabled()) {
-      return this.saveMmap(indexPath);
-    }
-
     await fs.mkdir(path.dirname(indexPath), { recursive: true });
-
-    const meta = {
-      dimension: this.dimension,
-      floatDimension: this.floatDimension,
-      M: this.M,
-      efConstruction: this.efConstruction,
-      efSearch: this.efSearch,
-      maxElements: this.maxElements,
-      vectorCount: this.vectors.length,
-      maxLevel: this.maxLevel,
-      entryPoint: this.entryPoint,
-      useAsymmetric: this.useAsymmetric,
-      pipelineVersion: PIPELINE_VERSION,
-      savedAt: new Date().toISOString(),
-    };
-
-    const metaPath = indexPath.replace('.idx', '.meta.json');
-    const vectorsPath = indexPath.replace('.idx', '.vectors.json');
-    const graphPath = indexPath.replace('.idx', '.graph.json');
-    const int8Path = indexPath.replace('.idx', '.int8.json');
-    const calibPath = indexPath.replace('.idx', '.calibration.json');
-    const pidSuffix = `.tmp.${process.pid}`;
-
-    // Stage all sidecars to sibling temp paths. The big three are NDJSON v2
-    // (see the sidecar-format block above the class) — one record per line
-    // through a write stream — so no serialized string can cross V8's ceiling
-    // on large indexes. Records are yielded lazily so no whole-index
-    // intermediate array/object is materialized either.
-    await fs.writeFile(metaPath + pidSuffix, JSON.stringify(meta, null, 2));
-
-    const vectors = this.vectors;
-    await writeNdjsonSidecar(
-      vectorsPath + pidSuffix,
-      { version: 2, count: vectors.length },
-      (function* () {
-        for (const v of vectors) {
-          yield { id: v.id, binary: Array.from(v.binary), metadata: v.metadata };
-        }
-      })()
-    );
-
-    await writeNdjsonSidecar(
-      graphPath + pidSuffix,
-      {
-        version: 2,
-        lengths: this.graph.map((nodes) => nodes.length),
-        chunks: graphChunkCount(this.graph),
-      },
-      graphChunkRecords(this.graph)
-    );
-
-    let stagedInt8 = false;
-    if (this.int8Vectors.size > 0) {
-      const liveIds = new Set(this.vectors.map(v => v.id));
-      let liveCount = 0;
-      for (const id of this.int8Vectors.keys()) {
-        if (liveIds.has(id)) liveCount++;
-      }
-      if (liveCount > 0) {
-        const int8Vectors = this.int8Vectors;
-        await writeNdjsonSidecar(
-          int8Path + pidSuffix,
-          { version: 2, count: liveCount },
-          (function* () {
-            for (const [id, vec] of int8Vectors) {
-              if (!liveIds.has(id)) continue;
-              yield { id, v: Array.from(vec) };
-            }
-          })()
-        );
-        stagedInt8 = true;
-      }
-    }
-
-    let stagedCalib = false;
-    if (this.useAsymmetric && this.centroid && this.signVector) {
-      await fs.writeFile(calibPath + pidSuffix, JSON.stringify({
-        centroid: Array.from(this.centroid),
-        signVector: Array.from(this.signVector),
-      }));
-      stagedCalib = true;
-    }
-
-    // Atomic publish in safety order: data sidecars first, descriptor
-    // (.meta.json) LAST. Optional sidecars without staged content are
-    // unlinked from the canonical path so the canonical state matches
-    // the staged tuple exactly.
-    await fs.rename(vectorsPath + pidSuffix, vectorsPath);
-    await fs.rename(graphPath + pidSuffix, graphPath);
-    if (stagedInt8) await fs.rename(int8Path + pidSuffix, int8Path);
-    else await fs.rm(int8Path, { force: true });
-    if (stagedCalib) await fs.rename(calibPath + pidSuffix, calibPath);
-    else await fs.rm(calibPath, { force: true });
-    await this._publishFullVectors(indexPath, pidSuffix);
-    await fs.rename(metaPath + pidSuffix, metaPath);
-
-    if (this._cleanBuild) {
-      await fs.rm(this._stalePathForIndex(indexPath), { force: true });
-      this._staleBitmapCache = null;
-      this._cleanBuild = false;
-    }
-
-    console.log(`BinaryHNSW: Saved ${this.vectors.length} vectors to ${indexPath} (asymmetric=${this.useAsymmetric})`);
-  }
-
-  /**
-   * Load index from disk.
-   *
-   * Torn-publish handling: `save()` publishes data sidecars and
-   * `.meta.json` via separate atomic renames. A reader that opens the
-   * index in the microsecond window between renames can observe a torn
-   * `(meta, vectors)` pair where `meta.entryPoint` references an index
-   * past `vectors.length`. The first `search()` call would then
-   * `TypeError` on `this.vectors[entryPoint].binary`. To keep fresh
-   * readers crash-free we re-read the pair up to three times on
-   * `(vectorCount, entryPoint)` inconsistency — the publish window
-   * closes in microseconds so a brief retry self-heals it. A persistent
-   * mismatch surfaces as an explicit load error rather than a deferred
-   * search crash.
-   */
-  async load(indexPath = this.indexPath) {
-    // Route by DETECTED on-disk format, never by the flag: a packed .idx
-    // (magic header) is read via the mmap path even with the flag off, and a
-    // JSON-sidecar index is read via the JSON path even with the flag on. This
-    // is what lets old and new coexist with zero migration.
-    if (_indexFormatOnDisk(indexPath) === 'packed') {
-      return this.loadMmap(indexPath);
-    }
-
-    const metaPath = indexPath.replace('.idx', '.meta.json');
-    const vectorsPath = indexPath.replace('.idx', '.vectors.json');
-    const graphPath = indexPath.replace('.idx', '.graph.json');
-    const int8Path = indexPath.replace('.idx', '.int8.json');
-
-    if (!existsSync(metaPath)) {
-      throw new Error(`Index metadata not found: ${metaPath}`);
-    }
-
-    // Validate pipeline version first — a stale on-disk artifact from a
-    // previous quantization scheme is a callable-level error, not a
-    // torn-publish race, and the caller needs the specific message to
-    // route to the rebuild path.
-    const initialMeta = JSON.parse(await fs.readFile(metaPath, 'utf-8'));
-    const storedVersion = initialMeta.pipelineVersion || 1;
-    if (storedVersion !== PIPELINE_VERSION) {
-      throw new Error(
-        `Pipeline version mismatch: index=${storedVersion}, current=${PIPELINE_VERSION}. ` +
-        `Index must be rebuilt (quantization pipeline changed).`
-      );
-    }
-
-    let meta;
-    let vectorsData;
-    let attempt = 0;
-    while (true) {
-      meta = attempt === 0 ? initialMeta : JSON.parse(await fs.readFile(metaPath, 'utf-8'));
-      vectorsData = await readVectorsSidecar(vectorsPath);
-      const consistent = meta.vectorCount === vectorsData.length
-        && (meta.entryPoint === -1 || meta.entryPoint < vectorsData.length);
-      if (consistent) break;
-      if (attempt >= 2) {
-        throw new Error(
-          `BinaryHNSW: persistent meta/vectors inconsistency at ${indexPath} ` +
-          `(meta.vectorCount=${meta.vectorCount}, vectors.length=${vectorsData.length}, ` +
-          `entryPoint=${meta.entryPoint})`
-        );
-      }
-      // Brief delay to let an in-flight save() finish its second rename.
-      await new Promise((resolve) => setTimeout(resolve, 5 * (attempt + 1)));
-      attempt += 1;
-    }
-
-    this.dimension = meta.dimension;
-    this.floatDimension = meta.floatDimension;
-    this.M = meta.M;
-    this.efConstruction = meta.efConstruction;
-    this.efSearch = meta.efSearch;
-    this.maxLevel = meta.maxLevel;
-    this.entryPoint = meta.entryPoint;
-    this.useAsymmetric = meta.useAsymmetric || false;
-    this.centroid = null;
-    this.signVector = null;
-
-    // Vectors already read above as part of the consistency probe. Rebuild
-    // the slab at the on-disk dimension (meta may differ from the
-    // constructor default), then store slab views on the node records.
-    this._slab = new HammingSlab(this.dimension);
-    this._slab.ensure(vectorsData.length);
-    this.vectors = vectorsData.map((v, i) => ({
-      id: v.id,
-      binary: this._slab.set(i, v.binary instanceof Uint8Array ? v.binary : Uint8Array.from(v.binary)),
-      metadata: v.metadata,
-    }));
-
-    // Rebuild id map
-    this.idToIndex.clear();
-    for (let i = 0; i < this.vectors.length; i++) {
-      this.idToIndex.set(this.vectors[i].id, i);
-    }
-
-    // Load graph: straight into the native snapshot when it is available
-    // (no per-node JS arrays), else as JS arrays.
-    if (!(await this._loadGraphNative(graphPath))) {
-      this.graph = await readGraphSidecar(graphPath);
-    }
-
-    // Load int8 vectors if available (straight into the node-ordered slab
-    // when native rescoring is available).
-    this.int8Vectors.clear();
-    if (existsSync(int8Path)) {
-      const slabFill = nativeRescoreKernels() ? this._int8SlabFiller() : null;
-      await readInt8Sidecar(int8Path, this.int8Vectors, slabFill?.place);
-      slabFill?.finish();
-    }
-
-    // Load asymmetric calibration data
-    const calibPath = indexPath.replace('.idx', '.calibration.json');
-    if (this.useAsymmetric && existsSync(calibPath)) {
-      const calibData = JSON.parse(await fs.readFile(calibPath, 'utf-8'));
-      this.centroid = new Float32Array(calibData.centroid);
-      this.signVector = new Float32Array(calibData.signVector);
-    }
-
-    // Resize visited list to actual vector count
-    this._visitedList.ensureCapacity(this.vectors.length);
-
-    this._fullWriter?.close();
-    this._fullWriter = undefined;
-    this._fullDirty = false;
-    closeFullVectors(this._fullReader);
-    this._fullReader = openFullVectors(indexPath, this.vectors.length);
-    if (!this._fullReader && this.vectors.length > 0) {
-      bootLog(`BinaryHNSW: no full-vector file at ${indexPath}; the final rescore is off until a full rebuild`);
-    }
-
-    this.initialized = true;
-    // Build the native snapshot now, not on the first query (and release
-    // the JS graph arrays it replaces).
-    this._nativeSearcher();
-    if (nativeRescoreKernels()) this._int8NodeSlab();  // no-op when filled at read
-    bootLog(`BinaryHNSW: Loaded ${this.vectors.length} vectors from ${indexPath} (asymmetric=${this.useAsymmetric})`);
-  }
-
-  /**
-   * Save the index in the packed, mmap-friendly flat-binary format (G9).
-   *
-   * Activated only via save() under SWEET_SEARCH_HNSW_MMAP === '1'. The whole
-   * index is serialized into a SINGLE `.idx` file (so the read path can fault
-   * in only touched pages) and the legacy JSON sidecars for this path are
-   * removed so a stale JSON descriptor can never shadow the packed file. The
-   * graph + entryPoint are written verbatim, preserving G1/FIX-B determinism.
-   *
-   * On-disk layout (all integers little-endian):
-   *   magic(8) | formatVersion(u32) | headerLen(u32) | header(JSON utf-8) | sections...
-   * The header JSON carries the meta fields, the id/metadata arrays, the
-   * asymmetric calibration (inlined — small), and { offset, len } descriptors
-   * for the three binary sections (vectors, graph, int8), each section offset
-   * being relative to the start of the section region (right after the header).
-   *
-   * Publish is atomic: write to `<path>.tmp.<pid>` then rename over `<path>`.
-   */
-  async saveMmap(indexPath = this.indexPath) {
-    await fs.mkdir(path.dirname(indexPath), { recursive: true });
-
+    const n = this._ids.length;
     const dim = this.dimension;
-    const n = this.vectors.length;
+    const levelCount = this._graphFrozen ? this._graphFrozen.lengths.length : this._graphStore.length;
 
-    // --- Section 1: vectors blob (flat n*dim bytes) ---
-    const vectorsBlob = Buffer.allocUnsafe(n * dim);
-    const ids = new Array(n);
-    const metas = new Array(n);
-    for (let i = 0; i < n; i += 1) {
-      const v = this.vectors[i];
-      ids[i] = v.id;
-      metas[i] = v.metadata;
-      vectorsBlob.set(v.binary, i * dim);
+    const sections = [];
+    sections.push(['codes', { parts: [this._codes().slab.subarray(0, n * dim)] }]);
+    sections.push(['ids', recordChunks(this._ids)]);
+    sections.push(['metas', recordChunks(this._metas)]);
+    let int8Dim = 0;
+    const int8Count = this.int8Count();
+    if (int8Count > 0) {
+      const s = this._int8NodeSlab();
+      int8Dim = s.dim;
+      sections.push(['int8', { parts: [s.slab.subarray(0, n * s.dim)] }]);
+      sections.push(['int8Present', { parts: [s.present.subarray(0, n)] }]);
+    }
+    const levels = [];
+    for (let l = 0; l < levelCount; l++) {
+      const lv = this._levelForSave(l, n);
+      levels.push({ len: lv.len, links: lv.neighbors.length });
+      sections.push([`l${l}.present`, { parts: [lv.present] }]);
+      sections.push([`l${l}.offsets`, { parts: [lv.offsets] }]);
+      sections.push([`l${l}.neighbors`, { parts: [lv.neighbors] }]);
     }
 
-    // --- Section 2: graph blob ---
-    // [levelCount] then per level [nodeCount] then per node [count, n0, n1...]
-    const graphParts = [];
-    const lvlHead = Buffer.allocUnsafe(4);
-    lvlHead.writeUInt32LE(this.graph.length, 0);
-    graphParts.push(lvlHead);
-    for (let l = 0; l < this.graph.length; l += 1) {
-      const level = this.graph[l] || [];
-      const nodeHead = Buffer.allocUnsafe(4);
-      nodeHead.writeUInt32LE(level.length, 0);
-      graphParts.push(nodeHead);
-      for (let i = 0; i < level.length; i += 1) {
-        const neighbors = level[i] || [];
-        const buf = Buffer.allocUnsafe(4 + neighbors.length * 4);
-        buf.writeUInt32LE(neighbors.length, 0);
-        for (let j = 0; j < neighbors.length; j += 1) {
-          buf.writeUInt32LE(neighbors[j], 4 + j * 4);
-        }
-        graphParts.push(buf);
-      }
-    }
-    const graphBlob = Buffer.concat(graphParts);
-
-    // --- Section 3: int8 blob (only live ids, matching JSON save() semantics) ---
-    // [entryCount] then per entry [idIndex(u32), len(u32), bytes...]
-    const liveIds = new Set(ids);
-    const int8Parts = [];
-    const idToIdx = new Map();
-    for (let i = 0; i < n; i += 1) idToIdx.set(ids[i], i);
-    let int8Count = 0;
-    const int8Body = [];
-    for (const [id, vec] of this.int8Vectors) {
-      if (!liveIds.has(id)) continue;
-      const idIndex = idToIdx.get(id);
-      if (idIndex === undefined) continue;
-      const entry = Buffer.allocUnsafe(8 + vec.length);
-      entry.writeUInt32LE(idIndex, 0);
-      entry.writeUInt32LE(vec.length, 4);
-      // Int8Array → bytes (two's complement, identical layout)
-      Buffer.from(vec.buffer, vec.byteOffset, vec.byteLength).copy(entry, 8);
-      int8Body.push(entry);
-      int8Count += 1;
-    }
-    const int8Head = Buffer.allocUnsafe(4);
-    int8Head.writeUInt32LE(int8Count, 0);
-    int8Parts.push(int8Head, ...int8Body);
-    const int8Blob = Buffer.concat(int8Parts);
-
-    // --- Header ---
-    let vOff = 0;
-    const gOff = vOff + vectorsBlob.length;
-    const iOff = gOff + graphBlob.length;
     const header = {
-      magic: 'SSHNSWP',
-      formatVersion: MMAP_FORMAT_VERSION,
+      format: 3,
+      pipelineVersion: PIPELINE_VERSION,
       dimension: this.dimension,
       floatDimension: this.floatDimension,
       M: this.M,
       efConstruction: this.efConstruction,
       efSearch: this.efSearch,
       maxElements: this.maxElements,
-      vectorCount: n,
+      count: n,
       maxLevel: this.maxLevel,
       entryPoint: this.entryPoint,
       useAsymmetric: this.useAsymmetric,
-      pipelineVersion: PIPELINE_VERSION,
-      savedAt: new Date().toISOString(),
-      ids,
-      metas,
       calibration: (this.useAsymmetric && this.centroid && this.signVector)
         ? { centroid: Array.from(this.centroid), signVector: Array.from(this.signVector) }
         : null,
-      sections: {
-        vectors: { offset: vOff, len: vectorsBlob.length },
-        graph: { offset: gOff, len: graphBlob.length },
-        int8: { offset: iOff, len: int8Blob.length },
-      },
+      int8Dim,
+      int8Count,
+      levels,
+      savedAt: new Date().toISOString(),
     };
-    const headerBuf = Buffer.from(JSON.stringify(header), 'utf-8');
-    const prefix = Buffer.allocUnsafe(MMAP_MAGIC.length + 8);
-    MMAP_MAGIC.copy(prefix, 0);
-    prefix.writeUInt32LE(MMAP_FORMAT_VERSION, MMAP_MAGIC.length);
-    prefix.writeUInt32LE(headerBuf.length, MMAP_MAGIC.length + 4);
 
-    const full = Buffer.concat([prefix, headerBuf, vectorsBlob, graphBlob, int8Blob]);
-
-    const tmpPath = `${indexPath}.tmp.${process.pid}`;
-    await fs.writeFile(tmpPath, full);
-    // The full-vector file sits beside the packed file as beside the JSON one.
-    await this._publishFullVectors(indexPath, `.tmp.${process.pid}`);
-    await fs.rename(tmpPath, indexPath);
-
-    // Retire any legacy JSON sidecars at this path so a stale descriptor can
-    // never shadow the packed file on the next load. This is NOT a migration
-    // of other indexes — it only cleans up the path we just wrote.
-    await Promise.all([
-      fs.rm(indexPath.replace('.idx', '.meta.json'), { force: true }),
-      fs.rm(indexPath.replace('.idx', '.vectors.json'), { force: true }),
-      fs.rm(indexPath.replace('.idx', '.graph.json'), { force: true }),
-      fs.rm(indexPath.replace('.idx', '.int8.json'), { force: true }),
-      fs.rm(indexPath.replace('.idx', '.calibration.json'), { force: true }),
-    ]);
+    const pidSuffix = `.tmp.${process.pid}`;
+    await writeIndexFile(indexPath + pidSuffix, header, sections);
+    await this._publishFullVectors(indexPath, pidSuffix);
+    await fs.rename(indexPath + pidSuffix, indexPath);
 
     if (this._cleanBuild) {
       await fs.rm(this._stalePathForIndex(indexPath), { force: true });
@@ -2635,47 +1998,43 @@ export class BinaryHNSWIndex {
       this._cleanBuild = false;
     }
 
-    console.log(`BinaryHNSW: Saved ${n} vectors to ${indexPath} (packed/mmap, asymmetric=${this.useAsymmetric})`);
+    console.log(`BinaryHNSW: Saved ${n} vectors to ${indexPath} (asymmetric=${this.useAsymmetric})`);
   }
 
   /**
-   * Load a packed (mmap) index for read/search (G9).
+   * Load index from disk (format 3; any other file is an error the caller
+   * routes to a rebuild).
    *
-   * Keeps the `.idx` file descriptor OPEN and backs `vectors`/`graph` with
-   * lazy fd-readers so a cold tick faults in only the pages a search visits
-   * (touched-pages-only, near-zero heap until traversed). The header (ids,
-   * metadata, calibration, section offsets) is small and parsed eagerly. The
-   * resulting in-memory graph/entryPoint are byte-equivalent to what a
-   * JSON-sidecar build of the same ids would hold, so search results are
-   * identical.
+   * With the native searcher, the codes and the graph go straight into it.
+   * The JS code slab is left out until a write needs it, and so is the graph
+   * when the exact scan answers (at most EXACT_SCAN_MAX_VECTORS nodes): both
+   * stay readable from the file, kept open for that.
    */
-  async loadMmap(indexPath = this.indexPath) {
-    this._closeMmap();
+  async load(indexPath = this.indexPath) {
+    this._closeFile();
     const fd = openSync(indexPath, 'r');
+    let keep = false;
     try {
-      const stat = fstatSync(fd);
-      const prefix = Buffer.allocUnsafe(MMAP_MAGIC.length + 8);
-      readSync(fd, prefix, 0, prefix.length, 0);
-      if (!prefix.subarray(0, MMAP_MAGIC.length).equals(MMAP_MAGIC)) {
-        throw new Error(`BinaryHNSW: not a packed index (bad magic): ${indexPath}`);
-      }
-      const fmt = prefix.readUInt32LE(MMAP_MAGIC.length);
-      if (fmt !== MMAP_FORMAT_VERSION) {
-        throw new Error(
-          `BinaryHNSW: packed format version mismatch: file=${fmt}, current=${MMAP_FORMAT_VERSION}.`
-        );
-      }
-      const headerLen = prefix.readUInt32LE(MMAP_MAGIC.length + 4);
-      const headerBuf = Buffer.allocUnsafe(headerLen);
-      readSync(fd, headerBuf, 0, headerLen, prefix.length);
-      const header = JSON.parse(headerBuf.toString('utf-8'));
-
+      const parsed = readHeaderFd(fd);
+      if (!parsed) throw new Error(`BinaryHNSW: not an index file (format 3): ${indexPath}`);
+      const { header, dataStart } = parsed;
       const storedVersion = header.pipelineVersion || 1;
       if (storedVersion !== PIPELINE_VERSION) {
         throw new Error(
-          `Pipeline version mismatch: index=${storedVersion}, current=${PIPELINE_VERSION}. `
-          + 'Index must be rebuilt (quantization pipeline changed).'
+          `Pipeline version mismatch: index=${storedVersion}, current=${PIPELINE_VERSION}. ` +
+          `Index must be rebuilt (quantization pipeline changed).`
         );
+      }
+      const n = header.count;
+      if (header.entryPoint !== -1 && header.entryPoint >= n) {
+        throw new Error(`BinaryHNSW: entry point ${header.entryPoint} out of range (${n} nodes): ${indexPath}`);
+      }
+      const sec = header.sections;
+      // Parts of the file may be read only later (scan-size graph, code slab),
+      // so check now that every section is there.
+      const end = Object.values(sec).reduce((a, x) => Math.max(a, x.off + x.len), 0);
+      if (fstatSync(fd).size < dataStart + end) {
+        throw new Error(`BinaryHNSW: index file is truncated: ${indexPath}`);
       }
 
       this.dimension = header.dimension;
@@ -2683,170 +2042,127 @@ export class BinaryHNSWIndex {
       this.M = header.M;
       this.efConstruction = header.efConstruction;
       this.efSearch = header.efSearch;
-      this.maxElements = header.maxElements;
+      this.maxElements = header.maxElements ?? this.maxElements;
       this.maxLevel = header.maxLevel;
       this.entryPoint = header.entryPoint;
       this.useAsymmetric = header.useAsymmetric || false;
-      this.centroid = null;
-      this.signVector = null;
-      if (this.useAsymmetric && header.calibration) {
-        this.centroid = new Float32Array(header.calibration.centroid);
-        this.signVector = new Float32Array(header.calibration.signVector);
-      }
+      this.centroid = this.useAsymmetric && header.calibration ? new Float32Array(header.calibration.centroid) : null;
+      this.signVector = this.useAsymmetric && header.calibration ? new Float32Array(header.calibration.signVector) : null;
 
-      const sectionsBase = prefix.length + headerLen;
-      const sec = header.sections;
-      const n = header.vectorCount;
-      const ids = header.ids;
-      const metas = header.metas;
+      this._ids = readRecords(fd, dataStart, sec.ids, n);
+      this._metas = readRecords(fd, dataStart, sec.metas, n);
+      this.idToIndex = new Map();
+      for (let i = 0; i < n; i++) this.idToIndex.set(this._ids[i], i);
 
-      // Consistency probe mirroring the JSON load() invariant.
-      if (ids.length !== n || (this.entryPoint !== -1 && this.entryPoint >= n)) {
-        throw new Error(
-          `BinaryHNSW: packed index inconsistency at ${indexPath} `
-          + `(vectorCount=${n}, ids=${ids.length}, entryPoint=${this.entryPoint})`
-        );
-      }
+      this._int8 = header.int8Dim > 0
+        ? new Int8Rows(header.int8Dim, readSection(fd, dataStart, sec.int8, Int8Array),
+          readSection(fd, dataStart, sec.int8Present, Uint8Array))
+        : null;
 
-      // id → index map (resident; needed by getInt8Vector and searches).
-      this.idToIndex.clear();
-      for (let i = 0; i < n; i += 1) this.idToIndex.set(ids[i], i);
+      const levels = header.levels.map((lv, l) => ({
+        len: lv.len,
+        present: sec[`l${l}.present`],
+        offsets: sec[`l${l}.offsets`],
+        neighbors: sec[`l${l}.neighbors`],
+      }));
+      const lengths = levels.map((lv) => lv.len);
+      const present = levels.map((lv) => readSection(fd, dataStart, lv.present, Uint8Array));
+      const codes = readSection(fd, dataStart, sec.codes, Uint8Array);
 
-      // Lazy vectors store (binary bytes faulted in per touch). No resident
-      // slab on this path — distance helpers fall back to the copy-per-call
-      // kernel against the lazily-materialized views.
-      this._slab = null;
-      const vectorStore = new MmapVectorStore(
-        fd, sectionsBase + sec.vectors.offset, this.dimension, ids, metas
-      );
-      this.vectors = makeMmapVectorProxy(vectorStore);
-
-      // Build the per-(level,node) offset table for the graph section so each
-      // touch is an O(1) seek. We read the section's structural integers once
-      // (small relative to the neighbor bodies); neighbor LISTS stay on disk
-      // until touched.
-      const graphBase = sectionsBase + sec.graph.offset;
-      const graphLevels = this._buildMmapGraphOffsets(fd, graphBase, sec.graph.len);
-      this.graph = graphLevels;
-
-      // int8 vectors: small Int8Arrays, read eagerly into the resident Map
-      // (getInt8Vector is an O(1) Map lookup on the hot rescore path; keeping
-      // them resident matches the JSON path and avoids per-lookup seeks).
-      // Windowed sequential parse: ~len/8MB syscalls and bounded transient
-      // heap instead of 3 syscalls + a per-byte readInt8 loop per entry.
-      this.int8Vectors.clear();
-      if (sec.int8 && sec.int8.len >= 4) {
-        const win = new SectionWindow(fd, sectionsBase + sec.int8.offset, sec.int8.len);
-        const entryCount = win.u32(0);
-        let cursor = 4;
-        for (let e = 0; e < entryCount; e += 1) {
-          const idIndex = win.u32(cursor);
-          const len = win.u32(cursor + 4);
-          const vec = new Int8Array(len);
-          // Bytes are two's complement — identical layout, bulk copy.
-          win.copyTo(cursor + 8, len, new Uint8Array(vec.buffer));
-          this.int8Vectors.set(ids[idIndex], vec);
-          cursor += 8 + len;
+      this.graph = [];  // resets the store and bumps _graphGen
+      this._graphStore = null;
+      const Ctor = nativeHnswSearcherCtor();
+      if (Ctor) {
+        const searcher = new Ctor(this.dimension, n, codes);
+        configureNativeSearcher(searcher);
+        const scanOnly = n <= EXACT_SCAN_MAX_VECTORS && process.env.SS_FIX_HNSW_SCAN !== '0';
+        if (!scanOnly) {
+          levels.forEach((lv, l) => searcher.setLevel(l,
+            readSection(fd, dataStart, lv.offsets, Uint32Array),
+            readSection(fd, dataStart, lv.neighbors, Uint32Array)));
         }
+        this._graphFrozen = { lengths, present, onDisk: scanOnly };
+        this._native = { searcher, gen: this._graphGen, n };
+        this._slab = null;
+        this._file = { fd, dataStart, codes: sec.codes, levels };
+        keep = true;
+      } else {
+        // No addon: the JS walk needs the code slab and the graph arrays.
+        const slab = new HammingSlab(this.dimension);
+        if (n > 0) slab.fill(codes, n);
+        this._slab = slab;
+        this._native = null;
+        this._file = { fd, dataStart, codes: sec.codes, levels };
+        this._graphFrozen = { lengths, present, onDisk: true };
+        this._thawGraph();
+        keep = this._file !== null;
       }
 
-      this._mmapFd = fd;
-      this._mmapBacked = true;
       this._visitedList.ensureCapacity(n);
       this._fullWriter?.close();
       this._fullWriter = undefined;
       this._fullDirty = false;
       closeFullVectors(this._fullReader);
       this._fullReader = openFullVectors(indexPath, n);
-      this.initialized = true;
-
-      // Touch the file size to keep the consistency contract auditable.
-      void stat.size;
-      bootLog(`BinaryHNSW: Loaded ${n} vectors from ${indexPath} (packed/mmap, asymmetric=${this.useAsymmetric})`);
-    } catch (err) {
-      try { closeSync(fd); } catch { /* best-effort */ }
-      this._mmapFd = null;
-      this._mmapBacked = false;
-      throw err;
-    }
-  }
-
-  /**
-   * Scan the graph section's structural integers once and build a flat
-   * per-(level,node) byte-offset table, returning an array of lazy level
-   * proxies. Only the [levelCount]/[nodeCount]/[neighborCount] integers are
-   * read here; the neighbor id lists themselves remain on disk until a level
-   * proxy materializes a node on touch.
-   */
-  _buildMmapGraphOffsets(fd, base, sectionLen) {
-    // Windowed sequential scan of the structural integers (level/node/
-    // neighbor counts): ~sectionLen/8MB syscalls instead of one 4-byte
-    // readSync PER NODE PER LEVEL (500k+ syscalls on large indexes).
-    // Neighbor-list BODIES stay lazy — the window is scan-only scratch and
-    // is dropped when this method returns.
-    const win = new SectionWindow(fd, base, sectionLen);
-    const levelCount = win.u32(0);
-    let cursor = 4; // relative to base
-    const levels = new Array(levelCount);
-    for (let l = 0; l < levelCount; l += 1) {
-      const nodeCount = win.u32(cursor);
-      cursor += 4;
-      const nodeOffsets = new Int32Array(nodeCount);
-      for (let i = 0; i < nodeCount; i += 1) {
-        // Record this node's neighbor-list offset (points at its [count] word).
-        nodeOffsets[i] = cursor;
-        const neighborCount = win.u32(cursor);
-        cursor += 4 + neighborCount * 4;
+      if (!this._fullReader && n > 0) {
+        bootLog(`BinaryHNSW: no full-vector file at ${indexPath}; the final rescore is off until a full rebuild`);
       }
-      const level = new MmapGraphLevel(fd, base, nodeOffsets, nodeCount);
-      levels[l] = makeMmapGraphLevelProxy(level);
+      this.initialized = true;
+      bootLog(`BinaryHNSW: Loaded ${n} vectors from ${indexPath} (asymmetric=${this.useAsymmetric})`);
+    } finally {
+      if (!keep) {
+        if (this._file?.fd === fd) this._file = null;
+        try { closeSync(fd); } catch { /* best-effort */ }
+      }
     }
-    if (cursor !== sectionLen) {
-      // Structural mismatch → corrupt/truncated section.
-      throw new Error(
-        `BinaryHNSW: packed graph section length mismatch (read ${cursor}, expected ${sectionLen})`
-      );
-    }
-    return levels;
   }
 
   /**
-   * Get index statistics
+   * Get index statistics (from the header shape and link counts; no graph
+   * arrays are rebuilt).
    */
   getStats() {
-    // On the packed mmap path each `this.graph[l]` is a lazy level proxy, not a
-    // real Array, so Array.prototype.filter/reduce are unavailable and walking
-    // it would also fault in every neighbor list (defeating mmap). Iterate by
-    // index instead, which works for both representations.
     let graphNodes = 0;
     let graphEdges = 0;
-    for (let l = 0; l < this.graph.length; l += 1) {
-      const level = this.graph[l];
-      if (!level) continue;
-      for (let i = 0; i < level.length; i += 1) {
-        const neighbors = level[i];
-        if (neighbors) {
-          graphNodes += 1;
-          graphEdges += neighbors.length || 0;
+    let graphLevels;
+    const frozen = this._graphFrozen;
+    if (frozen) {
+      graphLevels = frozen.lengths.length;
+      for (let l = 0; l < graphLevels; l++) {
+        const p = frozen.present[l];
+        for (let i = 0; i < p.length; i++) graphNodes += p[i];
+        graphEdges += this._frozenLevelCsr(l).neighbors.length;
+      }
+    } else {
+      const graph = this._graphStore;
+      graphLevels = graph.length;
+      for (const level of graph) {
+        if (!level) continue;
+        for (const neighbors of level) {
+          if (neighbors) {
+            graphNodes += 1;
+            graphEdges += neighbors.length;
+          }
         }
       }
     }
 
+    const n = this._ids.length;
     return {
       dimension: this.dimension,
       floatDimension: this.floatDimension,
-      totalVectors: this.vectors.length,
+      totalVectors: n,
       maxElements: this.maxElements,
       M: this.M,
       efConstruction: this.efConstruction,
       efSearch: this.efSearch,
       maxLevel: this.maxLevel,
-      graphLevels: this.graph.length,
+      graphLevels,
       graphNodes,
       graphEdges,
-      int8VectorCount: this.int8Vectors.size,
-      memorySizeBytes: this.vectors.length * this.dimension, // Just binary vectors
-      memorySizeMB: (this.vectors.length * this.dimension / 1024 / 1024).toFixed(2),
+      int8VectorCount: this.int8Count(),
+      memorySizeBytes: n * this.dimension, // Just binary vectors
+      memorySizeMB: (n * this.dimension / 1024 / 1024).toFixed(2),
     };
   }
 
@@ -2854,11 +2170,12 @@ export class BinaryHNSWIndex {
    * Clear all data
    */
   async clear() {
-    this._closeMmap();
-    this.vectors = [];
+    this._closeFile();
+    this._ids = [];
+    this._metas = [];
     this._slab = new HammingSlab(this.dimension);
-    this.idToIndex.clear();
-    this.int8Vectors.clear();
+    this.idToIndex = new Map();
+    this._int8 = null;
     this.graph = [];
     this.entryPoint = -1;
     this.maxLevel = 0;
@@ -2874,11 +2191,11 @@ export class BinaryHNSWIndex {
   }
 
   /**
-   * Release the packed (mmap) file descriptor, if any. The OS page cache may
-   * retain touched pages; this only drops the fd. Safe no-op on the JSON path.
+   * Release the open index file and the full-vector reader. The index stays
+   * searchable only from what is in memory.
    */
   close() {
-    this._closeMmap();
+    this._closeFile();
     closeFullVectors(this._fullReader);
   }
 }
@@ -2890,7 +2207,7 @@ export class BinaryHNSWIndex {
 export async function createBinaryHNSWIndex(options = {}) {
   const index = new BinaryHNSWIndex(options);
 
-  if (options.load !== false && binaryHnswArtifactsExist(options.indexPath || DB_PATHS.binaryHnswIndex)) {
+  if (options.load !== false && binaryHnswIndexExists(options.indexPath || DB_PATHS.binaryHnswIndex)) {
     try {
       await index.load(options.indexPath);
     } catch (err) {
@@ -2902,45 +2219,6 @@ export async function createBinaryHNSWIndex(options = {}) {
   }
 
   return index;
-}
-
-function binaryHnswArtifactsExist(indexPath) {
-  // A packed (mmap) index is a single .idx file; the JSON format is the sidecar
-  // tuple. Either is loadable, so report presence of EITHER. Detection is by
-  // on-disk content (magic header) — never the flag — so old + new coexist.
-  if (_indexFormatOnDisk(indexPath) === 'packed') return true;
-  return existsSync(indexPath.replace('.idx', '.meta.json'))
-    && existsSync(indexPath.replace('.idx', '.vectors.json'))
-    && existsSync(indexPath.replace('.idx', '.graph.json'));
-}
-
-/**
- * Detect the on-disk format of an HNSW index WITHOUT loading it, by content:
- *   - 'packed'  : the `.idx` file exists and begins with the MMAP magic header.
- *   - 'json'    : the JSON-sidecar descriptor (`.meta.json`) exists.
- *   - 'none'    : neither.
- * Reads only the leading magic bytes of the `.idx` (cheap), so the JSON path is
- * chosen for every legacy index regardless of SWEET_SEARCH_HNSW_MMAP — the
- * guarantee that existing on-disk indexes load unchanged with no migration.
- */
-function _indexFormatOnDisk(indexPath) {
-  try {
-    if (existsSync(indexPath)) {
-      const st = statSync(indexPath);
-      if (st.isFile() && st.size >= MMAP_MAGIC.length) {
-        const fd = openSync(indexPath, 'r');
-        try {
-          const head = Buffer.allocUnsafe(MMAP_MAGIC.length);
-          readSync(fd, head, 0, MMAP_MAGIC.length, 0);
-          if (head.equals(MMAP_MAGIC)) return 'packed';
-        } finally {
-          closeSync(fd);
-        }
-      }
-    }
-  } catch { /* fall through to JSON detection */ }
-  if (existsSync(indexPath.replace('.idx', '.meta.json'))) return 'json';
-  return 'none';
 }
 
 // =============================================================================

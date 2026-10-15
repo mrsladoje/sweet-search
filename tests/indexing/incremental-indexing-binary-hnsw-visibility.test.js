@@ -2,7 +2,7 @@
  * Tests for the Binary-HNSW stale-visibility fix.
  *
  * Bug: a vector retired in codebase.db could remain *visible* in the Binary-HNSW
- * coarse index (present in vectors.json, stale bit unset) indefinitely. Root
+ * coarse index (present in the index file, stale bit unset) indefinitely. Root
  * cause: binary reclamation trusted its own stale bitmap as the liveness
  * authority, while codebase.db is the real source of truth — so a retire that
  * never set the binary stale bit (a rare op-delivery gap) was never healed
@@ -29,7 +29,7 @@ import { binaryHnswHandler } from '../../core/incremental-indexing/application/m
 import { readBinaryHnswState } from '../../core/incremental-indexing/infrastructure/maintenance-state-reader.mjs';
 import { evaluateWatermarks, DEFAULT_WATERMARKS } from '../../core/incremental-indexing/domain/watermark-scheduler.mjs';
 import { markBinaryStale } from '../../core/incremental-indexing/application/production-reconciler-helpers.mjs';
-import { BinaryHNSWIndex, readVectorsSidecar } from '../../core/vector-store/binary-hnsw-index.js';
+import { BinaryHNSWIndex, readIndexIdsSync } from '../../core/vector-store/binary-hnsw-index.js';
 import { loadBitmap, isSet } from '../../core/incremental-indexing/infrastructure/tombstone-bitmap.mjs';
 
 function mkState() {
@@ -74,7 +74,7 @@ function buildVectorsDb(stateDir, { live = [], retired = [] }) {
 
 /** Probe-equivalent: binary ids that are visible (stale bit unset) but not live in codebase.db. */
 async function visibleRetired(stateDir) {
-  const vec = await readVectorsSidecar(path.join(stateDir, 'codebase-binary-hnsw.vectors.json'));
+  const vec = readIndexIdsSync(path.join(stateDir, 'codebase-binary-hnsw.idx')).ids.map((id) => ({ id }));
   const db = new Database(path.join(stateDir, 'codebase.db'), { readonly: true });
   let live;
   try { live = new Set(db.prepare('SELECT id FROM vectors WHERE epoch_retired IS NULL').all().map((r) => r.id)); }
@@ -89,7 +89,7 @@ async function visibleRetired(stateDir) {
 }
 
 async function binaryIds(stateDir) {
-  const vec = await readVectorsSidecar(path.join(stateDir, 'codebase-binary-hnsw.vectors.json'));
+  const vec = readIndexIdsSync(path.join(stateDir, 'codebase-binary-hnsw.idx')).ids.map((id) => ({ id }));
   return new Set(vec.map((v) => v.id));
 }
 
@@ -200,7 +200,7 @@ describe('markBinaryStale / stale bitmap persists across save+load', () => {
 
     const reloaded = new BinaryHNSWIndex({ indexPath, floatDimension: 32 });
     await reloaded.load(indexPath);
-    const pos = reloaded.vectors.findIndex((v) => v.id === 'p1');
+    const pos = reloaded.idToIndex.get('p1');
     const bm = loadBitmap(path.join(stateDir, 'codebase-binary-hnsw.idx.stale.bin'));
     expect(bm).not.toBeNull();
     expect(isSet(bm, pos)).toBe(true);

@@ -52,7 +52,7 @@ export const ARTIFACT_THRESHOLDS = {
   stateFile: '.sweet-search/artifact-rebuild-state.json',
 };
 
-import { BinaryHNSWIndex, int8SidecarCount } from '../vector-store/binary-hnsw-index.js';
+import { BinaryHNSWIndex, binaryHnswIndexExists, readIndexHeader } from '../vector-store/binary-hnsw-index.js';
 import { truncateForHNSW, fisherYatesShuffle, normalizedFloatToInt8, floatToBinary } from '../infrastructure/quantization.js';
 import { FloatVectorStore, getFloatStorePath, float512StoreEnabled } from '../vector-store/float-vector-store.js';
 
@@ -160,8 +160,7 @@ export async function shouldSkipArtifactRebuild(options = {}) {
   }
 
   // Force rebuild if no artifacts exist
-  const hnswMetaPath = DB_PATHS.binaryHnswIndex.replace('.idx', '.meta.json');
-  if (!existsSync(hnswMetaPath)) {
+  if (!binaryHnswIndexExists(DB_PATHS.binaryHnswIndex)) {
     return {
       shouldSkip: false,
       reason: 'No existing binary HNSW artifacts found',
@@ -508,12 +507,12 @@ async function buildHnswIndexFromDb(db, options = {}) {
 }
 
 // =============================================================================
-// INT8 VECTORS (DEPRECATED - Use binary-hnsw-index.js .int8.json sidecar)
+// INT8 VECTORS (DEPRECATED - int8 rows live in the binary HNSW index file)
 // =============================================================================
 
 /**
- * @deprecated Use BinaryHNSWIndex.int8Vectors Map instead.
- * Int8 vectors are stored in .int8.json sidecar alongside the binary HNSW index.
+ * @deprecated Use BinaryHNSWIndex.getInt8Vector instead.
+ * Int8 vectors are stored in the binary HNSW index file.
  * This provides O(1) lookup during stage-2 rescoring vs O(log n) + I/O for SQLite.
  *
  * The SQLite functions below are kept for backward compatibility but are NOT used
@@ -689,7 +688,6 @@ export async function buildFromCodebaseDb(codebaseDbPath = DB_PATHS.codebase, op
       // Keep inner build phase timing available for debugging/regression triage.
       indexBuildTimeMs: hnswBuildStats.buildTimeMs,
       path: hnswIndexPath,
-      int8SidecarPath: hnswIndexPath.replace('.idx', '.int8.json'),
       floatStorePath,
     },
     stats: {
@@ -707,8 +705,7 @@ export async function buildFromCodebaseDb(codebaseDbPath = DB_PATHS.codebase, op
 /**
  * Incrementally update artifacts for changed files
  *
- * Int8 vectors are updated in the BinaryHNSWIndex.int8Vectors Map and saved
- * to .int8.json sidecar alongside the HNSW index.
+ * Int8 vectors are stored with each node and saved in the index file.
  *
  * @param {Array<{id: string, embedding: number[], metadata?: object}>} newItems - New/changed items
  * @param {string[]} removedIds - IDs to remove
@@ -720,7 +717,7 @@ export async function updateArtifacts(newItems, removedIds = [], options = {}) {
     floatDimension = EMBEDDING_CONFIG.hnswDimension,
   } = options;
 
-  // Load existing HNSW index (includes int8 vectors from .int8.json)
+  // Load existing HNSW index (includes the int8 rows)
   const hnswIndex = new BinaryHNSWIndex({ indexPath: hnswIndexPath });
 
   try {
@@ -755,11 +752,11 @@ export async function updateArtifacts(newItems, removedIds = [], options = {}) {
       const binary = hnswIndex.encodeDocument(truncated);
       const int8 = quantizeToInt8(truncated);
 
-      // Add to HNSW index (int8 stored in index.int8Vectors Map)
+      // Add to HNSW index (int8 row stored with the node)
       await hnswIndex.add(item.id, binary, item.metadata || {}, int8, item.embedding);
     }
 
-    // Save updated HNSW (includes .int8.json sidecar)
+    // Save updated HNSW (one index file)
     await hnswIndex.save(hnswIndexPath);
   }
 
@@ -808,44 +805,23 @@ export async function getArtifactStats() {
     int8Sidecar: null,
   };
 
-  // Check HNSW index
-  const hnswMetaPath = DB_PATHS.binaryHnswIndex.replace('.idx', '.meta.json');
-  if (existsSync(hnswMetaPath)) {
-    try {
-      const meta = JSON.parse(await fs.readFile(hnswMetaPath, 'utf-8'));
-      stats.binaryHnsw = {
-        ...meta,
+  // Check HNSW index (header only; int8 rows are in the same file)
+  const head = readIndexHeader(DB_PATHS.binaryHnswIndex);
+  if (head) {
+    const { header } = head;
+    const { sections: _sections, levels: _levels, ...meta } = header;
+    stats.binaryHnsw = { ...meta, vectorCount: header.count, exists: true };
+    stats.int8Sidecar = header.int8Count > 0
+      ? {
         exists: true,
-      };
-    } catch (err) {
-      stats.binaryHnsw = { exists: false, error: err.message };
-    }
+        count: header.int8Count,
+        dimension: header.int8Dim,
+        path: DB_PATHS.binaryHnswIndex,
+        note: 'Canonical source for stage-2 rescoring (in the index file)',
+      }
+      : { exists: false };
   } else {
     stats.binaryHnsw = { exists: false };
-  }
-
-  // Check int8 sidecar (.int8.json - canonical source)
-  const int8SidecarPath = DB_PATHS.binaryHnswIndex.replace('.idx', '.int8.json');
-  if (existsSync(int8SidecarPath)) {
-    try {
-      const fileStats = await fs.stat(int8SidecarPath);
-      // Header-only count (NDJSON v2 sidecar; v1 back-compat) — never
-      // JSON.parse the whole file, which exceeds V8's string ceiling on
-      // large indexes.
-      const count = await int8SidecarCount(int8SidecarPath);
-
-      stats.int8Sidecar = {
-        exists: true,
-        count,
-        sizeBytes: fileStats.size,
-        sizeMB: (fileStats.size / 1024 / 1024).toFixed(2),
-        path: int8SidecarPath,
-        note: 'Canonical source for stage-2 rescoring',
-      };
-    } catch (err) {
-      stats.int8Sidecar = { exists: false, error: err.message };
-    }
-  } else {
     stats.int8Sidecar = { exists: false };
   }
 
@@ -879,34 +855,34 @@ export async function verifyArtifacts() {
     await hnswIndex.load();
 
     // Run a test search
-    if (hnswIndex.vectors.length > 0) {
-      const testVector = hnswIndex.vectors[0].binary;
+    if (hnswIndex.size > 0) {
+      const testVector = hnswIndex.nodeBinary(0);
       const searchResult = await hnswIndex.search(testVector, 1);
 
       if (searchResult.results.length > 0) {
         results.binaryHnsw.valid = true;
-        results.binaryHnsw.vectorCount = hnswIndex.vectors.length;
+        results.binaryHnsw.vectorCount = hnswIndex.size;
       }
     } else {
       results.binaryHnsw.valid = true;
       results.binaryHnsw.vectorCount = 0;
     }
 
-    // Verify int8 sidecar (loaded with HNSW index)
-    results.int8Sidecar.count = hnswIndex.int8Vectors.size;
+    // Verify the int8 rows (loaded with the HNSW index)
+    const int8Count = hnswIndex.int8Count();
+    results.int8Sidecar.count = int8Count;
     results.int8Sidecar.valid = true;
 
-    if (hnswIndex.int8Vectors.size > 0) {
-      // Sample an int8 vector to verify dimension
-      const sampleId = hnswIndex.int8Vectors.keys().next().value;
-      const sampleVec = hnswIndex.int8Vectors.get(sampleId);
-      results.int8Sidecar.sampleDimension = sampleVec?.length || 0;
-      results.int8Sidecar.note = 'Loaded from .int8.json sidecar (canonical source)';
+    if (int8Count > 0) {
+      let node = 0;
+      while (!hnswIndex.nodeInt8(node)) node++;
+      results.int8Sidecar.sampleDimension = hnswIndex.nodeInt8(node).length;
+      results.int8Sidecar.note = 'Loaded from the index file (canonical source)';
     }
 
     // Verify stage-2 rescoring works end-to-end
-    if (hnswIndex.vectors.length > 0 && hnswIndex.int8Vectors.size > 0) {
-      const testId = hnswIndex.vectors[0].id;
+    if (hnswIndex.size > 0 && int8Count > 0) {
+      const testId = hnswIndex.nodeId(0);
       const int8Vec = hnswIndex.getInt8Vector(testId);
 
       if (int8Vec && int8Vec.length > 0) {

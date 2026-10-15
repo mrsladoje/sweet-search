@@ -77,14 +77,48 @@ it rivals are faster at lower MRR (HANDOFF-v4 §8f has both sweeps).
 Flat M64 3.1 GB, FAISS RaBitQ+refine 3.0 GB, FAISS SQ8+refine 4.2 GB, binflat 61 MB (+ full vectors to rerank).
 Our RSS mixes anonymous memory with file-backed pages of the mmap vector file; nobody has split it yet.
 
-Read from the code (NOT measured; phase A measures it):
-- The level lists live twice: JS `this.graph[l][i]` (arrays of numbers, ~8 B per link + array headers, ~1 GB+
-  at 1M) and the native CSR copy (4 B per link, ~0.5 GB). The JS copy stays because inserts
-  (`addToGraph`, `pruneNeighbors`) are JS, and incremental indexing inserts into a live index.
-- Per node: a `{id, binary, metadata}` object, an `idToIndex` Map entry with a string key, and an Int8Array view
-  per int8 row (`Int8VectorMap`, rows rebound into one slab). Several hundred MB at 1M.
-- Codes: JS slab + native aligned copy (64 B each per vector).
-- `oursmem.mjs` is stale: it still counts `float512` and `full768Cache`.
+Read from the code before phase A (two of the three readings were wrong, see the measured table below):
+- ~~The level lists live twice~~: no. The native load path (`_loadGraphNative`) released the JS graph; JS
+  arrays exist only after a write thaws them.
+- Per node: a `{id, binary view, metadata}` object, an `idToIndex` Map entry, and an Int8Array view per int8 row.
+- Codes: THREE copies, not two: JS slab + its WASM mirror + the native aligned copy.
+
+**Phase A measured (2026-10-15, x86 box, main 4ead179f code, 3,600 dev queries x 3 runs, `oursmem.mjs`):**
+
+| | 6.9k | 20k | AdvTest 22k | 140k | 1M |
+|---|---|---|---|---|---|
+| load s | 0.2 | 0.5 | 0.7 | 3.1 | 35.3 |
+| peak RSS during load MB | 149 | 210 | 344 | 565 | 4,279 |
+| anonymous MB after load | 89 | 133 | 251 | 439 | 2,640 |
+| vector-file pages in RSS after queries MB | 20 | 59 | 64 | 412 | 2,872 |
+| native CSR graph MB | 5 | 14 | 15 | 100 (unused: exact scan) | 527 |
+| int8 slab MB + per-row JS views MB | 3 + 1 | 10 + 4 | 11 + 4 | 69 + 30 | 491 + 234 |
+| node records (heap freed when dropped) MB | 3 | 5 | 9 | 38 | 313 |
+| codes: native + JS slab (+ WASM mirror) MB | 0.4 + 0.5 | 1 + 2 | 1 + 2 | 9 + 16 | 61 + 64 |
+| V8 heap total / used MB | 63 / 14 | 69 / 21 | 125 / 25 | 146 / 96 | 917 / 712 |
+| disk B/vector (index files + codebase.db) | 11,455 | 9,913 | 11,142 | 10,054 | 10,346 |
+
+(1M "anonymous after queries" in the first tool run read 3,164 MB; 520 MB of that was the tool's own `exportLevel`
+copies. `oursmem.mjs` now reads the graph after the memory readings; a per-mapping diff over 10,800 queries shows
++16 MB, no leak.) Bench metadata is `{}` per node; product indexes hold a 12-field object per node (file, lines,
+language, simhash, cluster ids), so product node records are larger than the bench shows.
+
+Build (A4, `buildtime.mjs`, one JS thread): 140k 266 s, peak RSS 1,653 MB (input embeddings 558 MB of it);
+1M: see the log (§15).
+
+Time split per query (A5, `split.mjs`, x86, p50 us; total = semanticSearch3Stage as ours.mjs times it):
+
+| Set | total | embed (LRU) | encode | stage-1 JS prelude | stage 1 native | int8 (400) | head objects | full-vector (50) | rest |
+|---|---|---|---|---|---|---|---|---|---|
+| 6.9k | 50.3 | 0.9 | 2.9 | 3.7 | 13.6 | 13.1 | 1.4 | 10.1 | 4.8 |
+| 20k | 75.8 | 0.9 | 3.5 | 3.7 | 37.3 | 13.5 | 1.5 | 10.7 | 4.9 |
+| AdvTest | 84.3 | 0.9 | 3.5 | 3.9 | 43.9 | 13.9 | 1.6 | 10.8 | 4.9 |
+| 140k | 295.6 | 1.0 | 3.4 | 4.3 | 249.9 | 15.3 | 1.8 | 11.5 | 7.9 |
+| 1M | 200.2 | 1.1 | 4.4 | 9.9 | 147.4 | 16.6 | 2.2 | 12.4 | 2.9 |
+
+JS around the native calls costs 13-21 us per query (26% at 6.9k, 10% at 1M). The int8 stage costs 13-17 us at
+every size, so it is compute-bound, not memory-bound (the query was re-widened for each of the 400 rows; ARM used a
+plain loop, not `sdot`). The 400-key sort is 2.4 us on the M3 (a radix sort saves 0.4 us: not worth it).
 
 Disk per vector at 1M (csn1m bench index):
 
@@ -334,3 +368,46 @@ Wiki: https://claude.ai/artifact/M1SCsePXYngJba19gvcnve (v11).
 ## 15. Log
 
 - 2026-10-15: plan written (main 39a4c4aa). Nothing from phases A–H started.
+- 2026-10-15 phase A done (box): §1.2 holds the measured memory, disk, load and per-stage time. Tools:
+  `oursmem.mjs` (rewritten), `split.mjs`, `buildtime.mjs`; `ROOT=` lets an arm use another copy of an index.
+  A4 build (one JS thread): 140k 266 s / peak 1,653 MB; **1M 7,245 s (2 h) / peak 9,794 MB** (input embeddings
+  3,617 MB of it; save 56 s). Rivals build 1M in minutes on 12 threads: B5 (native parallel build) is a reviewer
+  item, not optional. A6 (shared-index throughput) needs a native multi-query entry point: after B1.
+  AdvTest has no dev/held-out split (the same 3,000 queries served both): fine for identical-output timing,
+  not for MRR choices; split it 60/40 seed 42 in phase G and disclose (G8).
+- 2026-10-15 round S1 (storage, C1-C3 + D1, identical output): one binary index file (format 3, magic
+  `SSHNSW3`, one atomic rename) replaces `.meta/.vectors/.graph/.int8/.calibration.json` and the packed mmap
+  format (deleted, no back-compat); ids + metadata in two arrays instead of per-node objects; int8 rows in one
+  node-ordered Int8Array (no per-row views, no id map); the JS code slab and, for indexes the exact scan answers
+  (<= 150k), the graph are left in the open file until a write needs them. Bench indexes converted with
+  `convert-v3.mjs` (same graph). Box, 3 interleaved runs x 3,600 dev queries: same = 1.0000 on all 5 sets,
+  p50 equal (6.9k 53/52, 20k 78/80, AdvTest 86/83, 140k 304/301, 1M 216/213 us). Memory/load (before -> after):
+  1M load 35.4 -> 2.4 s, load peak 4,270 -> 3,098 MB, anonymous RSS 2,652 -> 1,522 MB (-43%), V8 heap 917 -> 387 MB;
+  140k anon 440 -> 175 MB, load 3.0 -> 0.17 s; 6.9k anon 89 -> 27 MB. Index file 1,220 B/vector at 1M (JSON
+  sidecars 3,038). Tests: index-file test (new, 10 cases incl. truncation), 13 test files ported, pass on the Mac.
+- 2026-10-15 round 2 (B1 part, W3, D4, D2 part), box, 3 interleaved runs, arms base = S1, b, h = b + f16:
+  - B1 (part): `cascadeFull` (native) does the final full-vector step on the int8 head: dots from the vector file,
+    min-max norm, stable sort, as `applyFullVectorStageRescore`; JS builds result objects only for what the caller
+    reads (k, cascadeK, or the whole head when a reranker runs). W3: the greedy descent scores each neighbor list
+    with the walk's batch kernels (it used the baseline-x86 software popcount). b vs base: same = 1.0000 on all 5
+    sets; p50 6.9k 53 -> 50, 20k 77 -> 74, AdvTest 85 -> 80, 140k 298 -> 297, 1M 215 -> 204 us. Split: head objects
+    1.3 -> 0.1 us, 1M stage-1 JS prelude 9.0 -> 6.7 us.
+  - int8 kernels: x86 query widened to i16 once: no gain (int8 stage 13 -> 14 us, noise): REMOVED. ARM `sdot`
+    (exact, Rust unit test incl. -128/127): kept, Mac timing owed (step 6). The int8 stage is not dot-bound on x86.
+  - D4 f16 full vectors (`SSFVEC2`, round to nearest even; JS + Rust converters exact on all 65,536 values, F16C
+    and `fcvtl` widen exactly): bench corpora are 99.99-100% f16-exact already (CodeRankEmbed inference output), so
+    6.9k / 20k / AdvTest / 140k results are identical; 1M changes 1.2% of queries, MRR@10 .5538 = .5538, R@10
+    .9393 = .9393, CI [+0.0000, +0.0000]. Sim (`sim-f16.py`, 6.9k): bf16 (8x coarser) changes 2 / 3,600 queries,
+    MRR +-0.00001. Vector file 3,072 -> 1,536 B/vector (1M 2,943 -> 1,472 MB, page cache halves). Cost 2-3 us per
+    query (row widening): h vs b p50 +3..+7% on <=140k, vs the phase-A baseline <= +2.6% (20k) -> inside the 5%
+    budget with a >= 25% disk saving (vector data 4,296 -> 2,760 B/vector, -36%); closest-rival ratio stays > 1.2
+    (smallest x1.62 / 1.026 = x1.58). SHIPPED with b. Budget used: 20k +2.6%, 140k +2.0% (6.9k, AdvTest, 1M none).
+  - D2 (part): save() writes level 0 already pruned (the native routine, JS lists untouched) when n > 150k; the
+    native re-prune skips the per-node pass when every list is within the cap, and uses POPCNT on x86. Identical
+    output; load-time gain not measured yet (round 3).
+  - Final code = tested h arm on all 5 sets (same = 1.0000). Box vitest (vector-store, search, indexing,
+    infrastructure, embedding): 4,594 pass; the 16 other failing files fail the same way on the unchanged base copy
+    (the box repo lacks `eval/agent-read-workflows` etc.). Linux Rust test binaries cannot load (napi symbols):
+    F16C exactness checked with a standalone program (0 / 65,536 mismatches).
+  - Owed: Mac (ARM) parity + `sdot` timing when the Mac is quiet; product indexes need a full rebuild for the new
+    file (owner: no reindex until tuning is done).

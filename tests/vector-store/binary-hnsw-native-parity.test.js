@@ -7,10 +7,10 @@
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, readFileSync, rmSync } from 'fs';
+import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
-import { BinaryHNSWIndex } from '../../core/vector-store/binary-hnsw-index.js';
+import { BinaryHNSWIndex, readIndexFileSync } from '../../core/vector-store/binary-hnsw-index.js';
 import { loadNativeAddon } from '../../core/infrastructure/native-resolver.js';
 import { nativeRescoreKernels } from '../../core/infrastructure/native-rescore.js';
 import { int8BatchDotScores } from '../../core/embedding/embedding-service.js';
@@ -109,9 +109,14 @@ describe.skipIf(!hasNative)('BinaryHNSWIndex native search parity', () => {
       await loaded.load();
       expect(loaded._graphFrozen).not.toBeNull();
       // int8 vectors are read straight into the node-ordered slab.
-      expect(loaded.int8Vectors.size).toBe(built.int8Vectors.size);
-      for (const [id, v] of built.int8Vectors) expect(Array.from(loaded.int8Vectors.get(id))).toEqual(Array.from(v));
-      if (nativeRescoreKernels()) expect(loaded._int8NodeSlab()).toBe(loaded._int8Slab);
+      expect(loaded.int8Count()).toBe(built.int8Count());
+      for (let i = 0; i < built.size; i++) {
+        const want = built.getInt8Vector(built.nodeId(i));
+        const got = loaded.getInt8Vector(loaded.nodeId(i));
+        if (want === undefined) expect(got).toBeUndefined();
+        else expect(Array.from(got)).toEqual(Array.from(want));
+      }
+      if (nativeRescoreKernels()) expect(loaded._int8NodeSlab()).not.toBeNull();
       const queries = makeVectors(20, 5);
       const before = [];
       for (const q of queries) before.push((await loaded.search(q, 20)).results.map((r) => r.id));
@@ -119,7 +124,11 @@ describe.skipIf(!hasNative)('BinaryHNSWIndex native search parity', () => {
 
       expect(JSON.stringify(loaded.graph)).toBe(original); // thaw is exact
       await loaded.save(join(dir, 'b.idx'));
-      expect(readFileSync(join(dir, 'b.graph.json'), 'utf8')).toBe(readFileSync(join(dir, 'a.graph.json'), 'utf8'));
+      const fileA = readIndexFileSync(join(dir, 'a.idx'));
+      const fileB = readIndexFileSync(join(dir, 'b.idx'));
+      expect(fileB.graph).toEqual(fileA.graph);
+      expect(fileB.nodes).toEqual(fileA.nodes);
+      expect({ ...fileB.header, savedAt: null }).toEqual({ ...fileA.header, savedAt: null });
       for (let i = 0; i < queries.length; i++) {
         expect((await loaded.search(queries[i], 20)).results.map((r) => r.id)).toEqual(before[i]);
       }
@@ -140,7 +149,7 @@ describe.skipIf(!hasNative)('BinaryHNSWIndex native search parity', () => {
       expect(lazy.count).toBe(eager.results.length);
       expect(Array.from(lazy.scores)).toEqual(eager.results.map((r) => r.score));
       expect(lazy.materialize(120)).toEqual(eager.results.slice(0, 120));
-      expect(lazy.nodeIndices.map((i) => index.vectors[i].id)).toEqual(eager.results.map((r) => r.id));
+      expect(lazy.nodeIndices.map((i) => index.nodeId(i))).toEqual(eager.results.map((r) => r.id));
       expect(Object.keys(eager)).not.toContain('nodeIndices');
     }
   });
@@ -159,7 +168,7 @@ describe.skipIf(!hasNative)('BinaryHNSWIndex native search parity', () => {
         const nodes = r.nodeIndices.slice(0, 100);
         const queryInt8 = makeInt8(1, seed + 1)[0];
         const got = index.int8ScoresForNodes(queryInt8, nodes);
-        const vecs = index.getInt8VectorsForIds(nodes.map((n) => index.vectors[n].id));
+        const vecs = index.getInt8VectorsForIds(nodes.map((n) => index.nodeId(n)));
         const present = vecs.map(Boolean);
         expect(got.missing).toEqual(present.map((p) => !p));
         const want = int8BatchDotScores(queryInt8, vecs.filter(Boolean));
@@ -168,10 +177,10 @@ describe.skipIf(!hasNative)('BinaryHNSWIndex native search parity', () => {
     };
     await check(40);
     // Writes invalidate the node-ordered slab: replace one vector, add nodes.
-    index.int8Vectors.set('v1', makeInt8(1, 77)[0]);
+    index.addSync('v1', vectors[1], {}, makeInt8(1, 77)[0]);
     makeVectors(100, 50).forEach((v, i) => index.addSync(`w${i}`, v, {}, makeInt8(1, 900 + i)[0]));
     await check(60);
-    expect(Array.from(index.int8Vectors.get('v1'))).toEqual(Array.from(makeInt8(1, 77)[0]));
+    expect(Array.from(index.getInt8Vector('v1'))).toEqual(Array.from(makeInt8(1, 77)[0]));
   });
 
   // The fused stages 1-2 (searchCascade) against the path semanticSearch3Stage

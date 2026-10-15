@@ -154,6 +154,14 @@ export class HammingSlab {
     return this.slab.subarray(off, off + this.dim);
   }
 
+  /** Load `count` vectors from `bytes` (count x dim, node order) at once. */
+  fill(bytes, count) {
+    this.ensure(count);
+    this.slab.set(bytes.subarray(0, count * this.dim));
+    if (this.wasm) this._wasmView().set(this.slab.subarray(0, count * this.dim), SLAB_BASE);
+    this.count = Math.max(this.count, count);
+  }
+
   /** Re-point a node's canonical view after grows (rarely needed by callers
    *  that persist views long-term across many inserts). */
   view(idx) {

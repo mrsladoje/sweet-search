@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { runProductionReconcileTick } from '../../core/incremental-indexing/application/production-reconciler.mjs';
 import { LateInteractionIndex } from '../../core/ranking/late-interaction-index.js';
 import { FloatVectorStore } from '../../core/vector-store/float-vector-store.js';
-import { readVectorsSidecar } from '../../core/vector-store/binary-hnsw-index.js';
+import { readIndexIdsSync } from '../../core/vector-store/binary-hnsw-index.js';
 
 // These tests cover the float-512 store, which is written only with
 // SS_FIX_FLOAT512=1 (off by default).
@@ -48,10 +48,9 @@ function liveVectorIds(stateDir) {
   } finally { db.close(); }
 }
 async function hnswVectorIds(stateDir) {
-  const p = join(stateDir, 'codebase-binary-hnsw.vectors.json');
-  if (!existsSync(p)) return new Set();
-  const rows = await readVectorsSidecar(p); // NDJSON v2 sidecar (v1 back-compat)
-  return new Set(rows.filter((v) => v && v.id != null).map((v) => v.id));
+  const found = readIndexIdsSync(join(stateDir, 'codebase-binary-hnsw.idx'));
+  if (!found) return new Set();
+  return new Set(found.ids.filter((id) => id != null));
 }
 async function floatStoreIds(stateDir) {
   const store = new FloatVectorStore();
@@ -116,9 +115,7 @@ describe('crash-consistency: torn SQLite-committed row is re-added to HNSW + LI'
    */
   function simulateCrashResidue() {
     for (const name of [
-      'codebase-binary-hnsw.idx', 'codebase-binary-hnsw.meta.json',
-      'codebase-binary-hnsw.vectors.json', 'codebase-binary-hnsw.graph.json',
-      'codebase-binary-hnsw.int8.json', 'codebase-binary-hnsw.stale.bin',
+      'codebase-binary-hnsw.idx', 'codebase-binary-hnsw.stale.bin',
       'codebase-float-vectors.bin', 'merkle-state.json',
       // The chunk-cutoff cache (lever E.6, now DEFAULT-ON) is persisted by
       // persistManifest in the SAME step that advances the merkle (see

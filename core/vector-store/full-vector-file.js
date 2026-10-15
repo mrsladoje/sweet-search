@@ -2,23 +2,24 @@
  * Full-vector file beside the binary HNSW index, for the final rescore.
  *
  * The final rescore needs the full embedding (768-d) of each stage-2
- * candidate. This file holds those f32 vectors in node order, so the native
+ * candidate. This file holds those vectors as f16 in node order (the
+ * embedding models' values are f16 numbers already; others are rounded to
+ * the nearest f16, ties to even), so the native
  * reader (crates/sweet-search-native/src/full_vectors.rs) memory-maps it and
  * scores rows in place (sequential f64 sums), and the page cache holds the
  * vectors instead of the process heap. A SQLite read cost one B-tree lookup
  * and one ~4 KB row per id (about 70 us for 30 ids on the x86 box).
  *
  * Files (next to `<name>.idx`):
- *   <name>.fullvec.bin  64-byte header (`SSFVEC1\0`, dim u32, generation u32)
- *                       + rows of dim f32. Append-only: a row is never
+ *   <name>.fullvec.bin  64-byte header (`SSFVEC2\0`, dim u32, generation u32)
+ *                       + rows of dim f16. Append-only: a row is never
  *                       rewritten, so a reader's mapping never changes.
  *   <name>.fullvec.map  `SSFVMAP1`, generation u32, node count u32, then one
  *                       u32 row per node (NO_ROW when the node has none).
  * The writer that maintains the index puts each node's vector as it adds the
  * node (build, incremental tick, compaction). A re-added node gets a new row;
  * the old row stays as garbage until the next full rebuild writes a new file.
- * save() publishes the map with the other sidecars (data first, map before
- * .meta.json). A reader uses the file only when the map's generation and node
+ * save() publishes the map before it renames the index file. A reader uses the file only when the map's generation and node
  * count match the data file and the index it loaded. The final rescore reads
  * full vectors only from this file: an index without it (built before the
  * file existed) skips that stage until it is rebuilt.
@@ -27,13 +28,67 @@ import fs from 'fs';
 import { randomInt } from 'crypto';
 import { nativeRescoreKernels, scratchArray, scratchFloat64Query } from '../infrastructure/native-rescore.js';
 
-const DATA_MAGIC = Buffer.from('SSFVEC1\0', 'ascii');
+const DATA_MAGIC = Buffer.from('SSFVEC2\0', 'ascii');
 const MAP_MAGIC = Buffer.from('SSFVMAP1', 'ascii');
 const HEADER = 64;
 const MAP_HEADER = 16;
+// Bytes per stored value (f16).
+const VALUE_BYTES = 2;
 export const NO_ROW = 0xffffffff;
-// Rows buffered before one write (x 3 KB at 768-d).
+// Rows buffered before one write (x 1.5 KB at 768-d).
 const FLUSH_ROWS = 512;
+
+const f32Scratch = new Float32Array(1);
+const u32Scratch = new Uint32Array(f32Scratch.buffer);
+
+/** IEEE f16 bits of `x` (rounded to nearest, ties to even). */
+export function f32ToF16(x) {
+  f32Scratch[0] = x;
+  const b = u32Scratch[0];
+  const sign = (b >>> 16) & 0x8000;
+  const e = (b >>> 23) & 0xff;
+  const m = b & 0x7fffff;
+  if (e === 0xff) return sign | 0x7c00 | (m ? 0x200 : 0);
+  const he = e - 127 + 15;
+  if (he >= 0x1f) return sign | 0x7c00;
+  if (he <= 0) {
+    if (he < -10) return sign;
+    const mm = m | 0x800000;
+    const shift = 14 - he;
+    let h = mm >>> shift;
+    const rem = mm & ((1 << shift) - 1);
+    const mid = 1 << (shift - 1);
+    if (rem > mid || (rem === mid && (h & 1))) h++;
+    return sign | h;
+  }
+  let h = (he << 10) | (m >>> 13);
+  const rem = m & 0x1fff;
+  if (rem > 0x1000 || (rem === 0x1000 && (h & 1))) h++;
+  return sign | h;
+}
+
+/** The f32 value of IEEE f16 bits `h` (exact). */
+export function f16ToF32(h) {
+  const sign = (h & 0x8000) << 16;
+  const e = (h >>> 10) & 0x1f;
+  let m = h & 0x3ff;
+  let bits;
+  if (e === 0) {
+    if (m === 0) {
+      bits = sign;
+    } else {
+      let ee = 113;
+      while ((m & 0x400) === 0) { m <<= 1; ee--; }
+      bits = sign | (ee << 23) | ((m & 0x3ff) << 13);
+    }
+  } else if (e === 0x1f) {
+    bits = sign | 0x7f800000 | (m << 13);
+  } else {
+    bits = sign | ((e + 112) << 23) | (m << 13);
+  }
+  u32Scratch[0] = bits >>> 0;
+  return f32Scratch[0];
+}
 
 export function fullVectorPaths(indexPath) {
   return {
@@ -97,11 +152,11 @@ export class FullVectorWriter {
     try {
       const head = readDataHeader(fd);
       const size = fs.fstatSync(fd).size;
-      if (!head || head.generation !== map.generation || (size - HEADER) % (head.dim * 4) !== 0) return null;
+      if (!head || head.generation !== map.generation || (size - HEADER) % (head.dim * VALUE_BYTES) !== 0) return null;
       const w = new FullVectorWriter(indexPath);
       w.generation = head.generation;
       w.dim = head.dim;
-      w.fileRows = (size - HEADER) / (head.dim * 4);
+      w.fileRows = (size - HEADER) / (head.dim * VALUE_BYTES);
       w.nodeRow = Array.from(map.rows);
       w.fresh = false;
       return w;
@@ -116,7 +171,7 @@ export class FullVectorWriter {
     this.dim = 0;
     this.fileRows = 0;     // rows already written to the data file
     this.nodeRow = [];     // node -> row
-    this.buf = null;       // Float32Array of FLUSH_ROWS rows not yet written
+    this.buf = null;       // Uint16Array (f16 bits) of FLUSH_ROWS rows not yet written
     this.bufRows = 0;
     this.fd = null;
     this.fresh = true;
@@ -146,7 +201,7 @@ export class FullVectorWriter {
       const fd = fs.openSync(fullVectorPaths(this.indexPath).data, 'r+');
       const head = readDataHeader(fd);
       const size = fs.fstatSync(fd).size;
-      if (!head || head.generation !== this.generation || size !== HEADER + this.fileRows * this.dim * 4) {
+      if (!head || head.generation !== this.generation || size !== HEADER + this.fileRows * this.dim * VALUE_BYTES) {
         fs.closeSync(fd);
         this.broken = true;
         return;
@@ -159,8 +214,8 @@ export class FullVectorWriter {
     if (this.bufRows === 0 || this.broken) return;
     this._open();
     if (this.broken) return;
-    const bytes = Buffer.from(this.buf.buffer, 0, this.bufRows * this.dim * 4);
-    const at = HEADER + this.fileRows * this.dim * 4;
+    const bytes = Buffer.from(this.buf.buffer, 0, this.bufRows * this.dim * VALUE_BYTES);
+    const at = HEADER + this.fileRows * this.dim * VALUE_BYTES;
     let off = 0;
     while (off < bytes.length) off += fs.writeSync(this.fd, bytes, off, bytes.length - off, at + off);
     this.fileRows += this.bufRows;
@@ -179,8 +234,9 @@ export class FullVectorWriter {
       this.broken = true;
       return;
     }
-    if (!this.buf) this.buf = new Float32Array(FLUSH_ROWS * this.dim);
-    this.buf.set(vector, this.bufRows * this.dim);
+    if (!this.buf) this.buf = new Uint16Array(FLUSH_ROWS * this.dim);
+    const at = this.bufRows * this.dim;
+    for (let i = 0; i < this.dim; i++) this.buf[at + i] = f32ToF16(vector[i]);
     this.nodeRow[node] = this.fileRows + this.bufRows;
     this.bufRows++;
     this.rowsWithVector++;
@@ -302,9 +358,11 @@ export function readFullVector(reader, node) {
   const row = reader.rows[node];
   if (row === NO_ROW || row >= reader.fileRows) return null;
   if (reader.fd === null) reader.fd = fs.openSync(reader.path, 'r');
+  const half = new Uint16Array(reader.dim);
+  const bytes = Buffer.from(half.buffer);
+  fs.readSync(reader.fd, bytes, 0, bytes.length, HEADER + row * reader.dim * VALUE_BYTES);
   const out = new Float32Array(reader.dim);
-  const bytes = Buffer.from(out.buffer);
-  fs.readSync(reader.fd, bytes, 0, bytes.length, HEADER + row * reader.dim * 4);
+  for (let i = 0; i < reader.dim; i++) out[i] = f16ToF32(half[i]);
   return out;
 }
 

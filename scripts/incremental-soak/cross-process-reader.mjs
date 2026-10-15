@@ -32,7 +32,7 @@ import readline from 'node:readline';
 import Database from 'better-sqlite3';
 import { createHash } from 'node:crypto';
 
-import { BinaryHNSWIndex } from '../../core/vector-store/binary-hnsw-index.js';
+import { BinaryHNSWIndex, binaryHnswIndexExists } from '../../core/vector-store/binary-hnsw-index.js';
 import { LateInteractionIndex } from '../../core/ranking/late-interaction-index.js';
 import { readManifest } from '../../core/incremental-indexing/infrastructure/manifest.mjs';
 import {
@@ -71,9 +71,8 @@ class ReaderState {
     this.loadedAt = Date.now();
     this.manifestAtLoad = readManifest(this.stateDir);
 
-    const binMetaPath = path.join(this.stateDir, 'codebase-binary-hnsw.meta.json');
     this.binaryHnsw = null;
-    if (fs.existsSync(binMetaPath)) {
+    if (binaryHnswIndexExists(path.join(this.stateDir, 'codebase-binary-hnsw.idx'))) {
       const idx = new BinaryHNSWIndex({
         indexPath: path.join(this.stateDir, 'codebase-binary-hnsw.idx'),
         stalePath: path.join(this.stateDir, 'codebase-binary-hnsw.idx.stale.bin'),
@@ -168,7 +167,7 @@ class ReaderState {
       if (this.binaryHnsw && this.binaryHnsw._loadError) {
         out.binaryHnsw = { loadError: this.binaryHnsw._loadError };
       } else if (this.binaryHnsw) {
-        const totalVecs = this.binaryHnsw.vectors?.length ?? 0;
+        const totalVecs = this.binaryHnsw.size ?? 0;
         let stalePopcount = 0;
         const visibleIds = [];
         const allIds = [];
@@ -177,7 +176,7 @@ class ReaderState {
           const bm = this.binaryHnsw._loadStaleBitmap?.() || null;
           stalePresent = !!bm;
           for (let i = 0; i < totalVecs; i += 1) {
-            const id = this.binaryHnsw.vectors[i]?.id;
+            const id = this.binaryHnsw.nodeId(i);
             if (!id) continue;
             allIds.push(id);
             if (bm && this.binaryHnsw._isIndexStale?.(i, bm)) {
@@ -189,7 +188,8 @@ class ReaderState {
         } catch (err) {
           errors.push({ surface: 'binary_hnsw_stale', error: err.message });
         }
-        const int8Ids = [...(this.binaryHnsw.int8Vectors?.keys?.() || [])];
+        const int8Ids = [];
+        for (let i = 0; i < totalVecs; i += 1) if (this.binaryHnsw.nodeInt8(i)) int8Ids.push(this.binaryHnsw.nodeId(i));
         out.binaryHnsw = {
           totalVectors: totalVecs,
           visible: digest(visibleIds),
