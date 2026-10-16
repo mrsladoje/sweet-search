@@ -72,6 +72,11 @@ for pf in a.plan:
             work.append(dict(kind='ours', family='ours', set=j['set'], model=j['model'], seed=j.get('build_seed', 42),
                              root=j.get('index') or os.path.join(a.data, 'emb', j['model'], j['set'], 'index'),
                              label=f"ours {j['set']}/{j['model']}"))
+        elif j.get('family') and 'build_params' in j:  # timing plans list no builds: the rival build a job needs
+            b = dict(set=j['set'], model=j['model'], family=j['family'], build_params=j['build_params'],
+                     build_seed=j.get('build_seed', 42))
+            work.append(dict(kind='rival', family=b['family'], set=b['set'], model=b['model'], spec=b, root=jobs.build_dir(a.data, b),
+                             label=f"{b['family']} {b['set']}/{b['model']} " + ','.join(f'{k}={v}' for k, v in sorted(b['build_params'].items()))))
 uniq = []
 for w in work:
     if w['root'] not in seen:
