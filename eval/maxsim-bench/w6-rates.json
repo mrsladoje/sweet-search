@@ -1,0 +1,117 @@
+{
+ "rates": {
+  "intel": {
+   "agent": [
+    573.057,
+    1146.114,
+    1719.17
+   ],
+   "gcsn": [
+    1048.644,
+    2097.288,
+    3145.932
+   ]
+  },
+  "amd": {
+   "agent": [
+    745.345,
+    1490.691,
+    2236.036
+   ],
+   "gcsn": [
+    1471.697,
+    2943.395,
+    4415.092
+   ]
+  },
+  "arm": {
+   "agent": [
+    987.365,
+    1974.731,
+    2962.096
+   ],
+   "gcsn": [
+    859.103,
+    1718.206,
+    2577.309
+   ]
+  },
+  "epyc": {
+   "agent": [
+    364.179,
+    728.358,
+    1092.536
+   ],
+   "gcsn": [
+    929.836,
+    1859.672,
+    2789.507
+   ]
+  },
+  "m3max": {
+   "agent": [
+    3907.877,
+    7815.755,
+    11723.632
+   ],
+   "gcsn": [
+    3052.402,
+    6104.803,
+    9157.205
+   ]
+  }
+ },
+ "slowest": {
+  "intel": {
+   "agent": {
+    "arm": "nextplaid",
+    "saturation_per_s": 2292.227038165955
+   },
+   "gcsn": {
+    "arm": "nextplaid",
+    "saturation_per_s": 4194.57538189867
+   }
+  },
+  "amd": {
+   "agent": {
+    "arm": "nextplaid",
+    "saturation_per_s": 2981.381789620801
+   },
+   "gcsn": {
+    "arm": "nextplaid",
+    "saturation_per_s": 5886.789842928862
+   }
+  },
+  "arm": {
+   "agent": {
+    "arm": "torch_pad_bmm",
+    "saturation_per_s": 3949.461984993323
+   },
+   "gcsn": {
+    "arm": "torch_pad_bmm",
+    "saturation_per_s": 3436.4113539729547
+   }
+  },
+  "epyc": {
+   "agent": {
+    "arm": "nextplaid",
+    "saturation_per_s": 1456.7150813374324
+   },
+   "gcsn": {
+    "arm": "nextplaid",
+    "saturation_per_s": 3719.343328192513
+   }
+  },
+  "m3max": {
+   "agent": {
+    "arm": "torch_pad_bmm",
+    "saturation_per_s": 15631.509897418633
+   },
+   "gcsn": {
+    "arm": "torch_pad_bmm",
+    "saturation_per_s": 12209.606798816265
+   }
+  }
+ },
+ "rule": "per machine type and family: 25/50/75 % of the closed-loop saturation throughput of the slowest rival arm (dev design runs; ours and node arms excluded)"
+}
