@@ -3,7 +3,7 @@
 # and the power of the primary comparisons. Writes shortlist-<type>.json (plan.py --mode heldout --shortlist)
 # and a plain report. Dev data only: refuses any held-out record.
 #
-#   python select.py --data DATA --results RESULTS --type intel [--machines 'dev-intel-*'] [--out DIR]
+#   python dev_select.py --data DATA --results RESULTS --type intel [--machines 'dev-intel-*'] [--out DIR]
 #
 # A point is one (system, family, build_params, search, ours knobs) on one (set, model). Our records written
 # before the job key held ef / S1 / EF share hashes, so points are identified from each record's own params
