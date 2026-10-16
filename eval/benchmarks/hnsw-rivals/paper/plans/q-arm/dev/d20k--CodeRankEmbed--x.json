@@ -1,0 +1,310 @@
+{
+"step": "devx-d20k--CodeRankEmbed",
+"builds": [],
+"jobs": [
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 141
+},
+"search": {
+"nprobe": 70,
+"refine": 5
+},
+"kv": 36
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 141
+},
+"search": {
+"nprobe": 70,
+"refine": 20
+},
+"kv": 36
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 141
+},
+"search": {
+"nprobe": 141,
+"refine": 5
+},
+"kv": 36
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 141
+},
+"search": {
+"nprobe": 141,
+"refine": 20
+},
+"kv": 36
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 564
+},
+"search": {
+"nprobe": 282,
+"refine": 5
+},
+"kv": 36
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 564
+},
+"search": {
+"nprobe": 282,
+"refine": 20
+},
+"kv": 36
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 564
+},
+"search": {
+"nprobe": 564,
+"refine": 5
+},
+"kv": 36
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 564
+},
+"search": {
+"nprobe": 564,
+"refine": 20
+},
+"kv": 36
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "faiss_ivfpq_fs",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_ivfpq_fs",
+"build_params": {
+"nlist": 141
+},
+"search": {
+"nprobe": 70,
+"refine": 5
+},
+"kv": 36
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "faiss_ivfpq_fs",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_ivfpq_fs",
+"build_params": {
+"nlist": 141
+},
+"search": {
+"nprobe": 70,
+"refine": 20
+},
+"kv": 36
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "faiss_ivfpq_fs",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_ivfpq_fs",
+"build_params": {
+"nlist": 141
+},
+"search": {
+"nprobe": 141,
+"refine": 5
+},
+"kv": 36
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "faiss_ivfpq_fs",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_ivfpq_fs",
+"build_params": {
+"nlist": 141
+},
+"search": {
+"nprobe": 141,
+"refine": 20
+},
+"kv": 36
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "faiss_ivfpq_fs",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_ivfpq_fs",
+"build_params": {
+"nlist": 564
+},
+"search": {
+"nprobe": 282,
+"refine": 5
+},
+"kv": 36
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "faiss_ivfpq_fs",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_ivfpq_fs",
+"build_params": {
+"nlist": 564
+},
+"search": {
+"nprobe": 282,
+"refine": 20
+},
+"kv": 36
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "faiss_ivfpq_fs",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_ivfpq_fs",
+"build_params": {
+"nlist": 564
+},
+"search": {
+"nprobe": 564,
+"refine": 5
+},
+"kv": 36
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "faiss_ivfpq_fs",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_ivfpq_fs",
+"build_params": {
+"nlist": 564
+},
+"search": {
+"nprobe": 564,
+"refine": 20
+},
+"kv": 36
+}
+]
+}

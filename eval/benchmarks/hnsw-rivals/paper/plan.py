@@ -64,7 +64,9 @@ def b_points(fam, bp, n, kv):
     if fam == 'faiss_rabitq_flat':
         return [dict(refine=r) for r in REFINE]
     if fam in ('faiss_rabitq_ivf', 'faiss_ivfpq_fs'):
-        return [dict(nprobe=p, refine=r) for p in nprobes(bp['nlist']) for r in (5, 20)]
+        # powers of two up to nlist/2, then nlist/2 and every list (S5b: the grid must reach the high fractions)
+        probes = sorted(set(nprobes(bp['nlist'])) | {bp['nlist'] // 2, bp['nlist']})
+        return [dict(nprobe=p, refine=r) for p in probes for r in (5, 20)]
     if fam == 'faiss_bin_hnsw':
         return [dict(ef=e, refine=kv * r) for e in EF_SWEEP for r in (5, 20)]
     if fam in ('faiss_hnsw_sq8', 'faiss_rabitq_hnsw'):
@@ -76,7 +78,7 @@ def b_points(fam, bp, n, kv):
     if fam == 'scann':
         if bp.get('mode') != 'tree_ah':
             return [dict(reorder=kv * r) for r in (5, 20, 50)] if bp.get('mode') == 'ah' else [{}]
-        return [dict(leaves_to_search=max(1, int(bp['leaves'] * f)), reorder=kv * r) for f in (0.01, 0.03, 0.1, 0.3) for r in (10, 50)]
+        return [dict(leaves_to_search=max(1, int(bp['leaves'] * f)), reorder=kv * r) for f in (0.01, 0.03, 0.1, 0.3, 0.5, 1.0) for r in (10, 50)]
     return [dict(ef=e) for e in EF_SWEEP if e >= kv]
 
 
