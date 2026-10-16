@@ -41,8 +41,11 @@ build parameters → kept (12-word fast path not done: 768-bit codes 141 vs 83 �
 harness. K3/K4: 4,667 box tests + 3 new tests pass; ARM parity identical. H2 (gcsn dev): tie runs split at
 the C = 400 cut on 97.8% of queries; tie order changes the retained set on ~28%, top-10 documents on ~1.6%,
 MRR@10 range 0.0001 over 5 orders. k_v gcsn/CodeRankEmbed = 36 (re-embedded vectors, 10-16: see set.json). S5a on
-`amd` (c8a, Zen 5, 10-16): K6 AVX-512 VPOPCNTDQ Hamming (scan + walk) identical lists (6/6 round pairs) but no
-gain (gcsn scan 59.4 vs 58.2 µs, dall scan 292.6 vs 288.0 µs, AVX-512 on vs off, 3 interleaved rounds) → dropped;
+`amd` (c8a, Zen 5, 10-16): K6 AVX-512 VPOPCNTDQ Hamming (scan + walk): v1 (one horizontal add per code) identical lists
+but AMD +1.6% slower, Intel −6 to −7% → reworked; v2 (8 codes per transposed reduction) identical lists in every
+round pair, AMD dall scan 287.0 → 278.6 µs and csn1m walk 270.4 → 241.8 µs, Intel (c8i) dall 474.6 → 442.2 µs and
+csn1m walk 352.3 → 336.2 µs (AVX-512 off → on, 3 interleaved rounds, medians) → kept (`SS_HNSW_NO_AVX512=1` turns
+it off); parity: paper/phasek/k6_parity.py (random, 0/512, single bit, tails) on Intel and AMD;
 K7 skipped by its rule (perf, dall scan C 400: Hamming scan 54% of samples, int8 dot 6%: not dot-bound). K8 on `arm` (c8g,
 Graviton4): result lists byte-identical to x86 (gcsn and dall dev scan, our own build on each CPU); perf: scan 50%,
 int8 sdot 4.7%; SVE vector length on Neoverse V2 is 128 bits (= NEON), so no SVE2 path → K8 closed, no change. Findings for the owner: d20k/dall
