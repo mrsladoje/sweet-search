@@ -24,6 +24,14 @@ bge-base-en-v1.5; (2) BEIR Quora + FiQA, no NQ; (3) no fresh code set: all code 
 AWS GPU request: embeddings run on a RunPod GPU (paid; S3a go still needed); (7) δ = 0.005, δ_K =
 0.001; short track plus **H2 (ties, dev only)** added back.
 
+**Later owner decisions (2026-10-15/16):** re-embed every set with every model (RunPod GPU, done); S4 + S5 go
+with a **$350 ceiling** for the full HNSW cloud run; vCPU 256 → 512 requested (300 granted so far), shared with
+the MaxSim paper; a bench-only IAM key (`hnsw-bench`) for HNSW launches. **Local scope (box + Mac, 10-16):
+reduced** — the frozen operating points of the primary comparisons only (ours vs the best rival of each family
+at the 3 frozen recall fractions, (A) and (B)), all 7 sets, one model per set kind (CodeRankEmbed for code,
+bge-base-en-v1.5 for BEIR), R = 5, plus memory and cold start. Paper wording: local rows are "secondary
+platforms, reduced grid"; the full grid runs on the three AWS CPUs.
+
 **S1 status (2026-10-15, done on the box and the Mac; nothing committed).** Harness in `paper/` (formats:
 `paper/DESIGN.md`). Sets: 7 set definitions (`sets.py`; AdvTest split 60/40 seed 42, cluster = query id; dev
 and held-out code queries share 198 of 240 repositories). Quality: `gt.py`, `quality.py`, `stats.py`,
