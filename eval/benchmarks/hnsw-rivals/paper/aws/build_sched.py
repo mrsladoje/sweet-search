@@ -178,7 +178,17 @@ def peak_kb(w):
     other = [(k[3] / k[2]) for k in known if k[0] == fam and k[2]]
     if other:
         return int(max(other) * n), 'build.json, same family, scaled by n'
-    return int(n * 768 * 4 * 2 / 1024 + 512 * 1024), 'estimate: 2 x float32 corpus + 512 MB'
+    if fam in PILOT_PEAK_1M_GB:  # S3a pilot (intel, csn1m, n = 1,004,739), scaled by n, at least 1 GB
+        return int(max(1.0, PILOT_PEAK_1M_GB[fam] * n / 1004739) * 1024 * 1024), 'S3a pilot peak, scaled by n'
+    return int(n * 768 * 4 * 2 / 1024 + 512 * 1024) * 2, 'estimate: 2 x (2 x float32 corpus + 512 MB)'
+
+
+# peak RSS (GB) of each family at 1M in the S3a pilot (build.json memory.maxrss_kb; ours peak_rss_kb); families the
+# pilot did not build take the largest graph value
+PILOT_PEAK_1M_GB = dict(ours=12.1, faiss_hnsw_flat=6.6, faiss_hnsw_sq8=6.0, faiss_bin_hnsw=6.0, faiss_bin_flat=6.0,
+                        faiss_ivfpq_fs=6.0, faiss_rabitq_hnsw=6.0, faiss_rabitq_ivf=6.0, hnswlib_f32=6.7, scann=10.7,
+                        svs_vamana_leanvec=7.6, svs_vamana_lvq=6.1, usearch_b1_rescore=6.0, usearch_f16=6.0,
+                        diskann_vamana=6.5, usearch_i8=6.7, faiss_exact=6.7, faiss_rabitq_flat=6.7)
 
 
 for w in todo:
