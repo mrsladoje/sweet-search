@@ -30,7 +30,9 @@
 # printed: {"<type>": {"n", "assign": {"<group id>": k}, "load": [...]}}; freeze_check.py
 # --shards puts it into FREEZE.json. A machine named <type>-<k> (intel-2) runs only the
 # groups of shard k of its type from FREEZE.json "shards"; a group missing from the table
-# stops the plan (nothing is dropped silently). Group id = "<tag>/<set name>".
+# stops the plan (nothing is dropped silently). Group id = "<tag>/<set name>". A replica
+# machine is named <type>-replica (intel-replica): the type's shortlist, all replica groups,
+# its own results folder (never a shard's).
 #
 # Arms that cannot run on this machine (library not installed, no shim, no legacy addon)
 # are left out and listed in <results>/<machine>/missing-arms.txt by run.sh.
@@ -51,8 +53,8 @@ p.add_argument('--R', type=int, default=0, help='without FREEZE.json (before S7:
 p.add_argument('--print-shards', type=int, default=0)
 p.add_argument('--weights', default='')
 a = p.parse_args()
-m = re.match(r'(.+)-(\d+)$', a.machine)
-MTYPE, SHARD_K = (m.group(1), int(m.group(2))) if m and m.group(1) in ('intel', 'amd', 'arm') else (a.machine, 0)
+m = re.match(r'(.+)-(\d+|replica)$', a.machine)
+MTYPE, SHARD_K = (m.group(1), 0 if m.group(2) == 'replica' else int(m.group(2))) if m and m.group(1) in ('intel', 'amd', 'arm') else (a.machine, 0)
 
 R = a.replay
 
@@ -320,7 +322,7 @@ if SHARD_K:
     if lost:
         sys.exit(f'{a.machine}: groups missing from the frozen shard table: {lost[:5]}')
     groups = [g for g in groups if tab['assign'][gid(g)] == SHARD_K]
-elif a.mode in ('heldout', 'replica') and fz.get('shards', {}).get(MTYPE, {}).get('n', 1) > 1:
+elif a.mode == 'heldout' and fz.get('shards', {}).get(MTYPE, {}).get('n', 1) > 1:
     sys.exit(f"{a.machine}: FREEZE.json shards {MTYPE} into {fz['shards'][MTYPE]['n']} machines; name the machine {MTYPE}-<k>")
 
 for g in groups:

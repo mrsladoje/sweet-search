@@ -56,7 +56,7 @@ for MODE in $MODES; do
     if ! $PY -I "$H/freeze_check.py" "$FZ" >> "$LOG" 2>&1; then
       say "mode $MODE refused: FREEZE.json missing or the code does not match it"; FAILED+=("$MODE:freeze"); continue
     fi
-    MTYPE=$(echo "$MACHINE" | sed -E 's/^(intel|amd|arm)-[0-9]+$/\1/')   # S8 shard machines intel-1..n use the type's shortlist
+    MTYPE=$(echo "$MACHINE" | sed -E 's/^(intel|amd|arm)-([0-9]+|replica)$/\1/')   # S8 shard machines intel-1..n and replicas intel-replica use the type's shortlist
     EXTRA=(--freeze "$FZ" --shortlist "$H/shortlist-$MTYPE.json" --beir "$BEIR")
   fi
   if [ "$MODE" = progression ]; then
