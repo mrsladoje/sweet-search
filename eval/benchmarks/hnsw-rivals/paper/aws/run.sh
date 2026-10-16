@@ -22,6 +22,8 @@
 # indexes ($DATA/emb/<model>/<set>/index) sync with s3://$BUCKET/hnsw/emb/. A build machine uploads what it
 # builds; a timing machine downloads before it times and never builds (modes dev, aa, heldout only check).
 # SHARD=i/n: several build machines build in parallel; a shard holds whole (set, model) groups (build_sched.py).
+# QUEUE=name + LAZY_BUILDS=1: timing machines of one CPU type share a mode's plans through S3 claims and fetch only
+# the builds of the plan they run (see claim, fetch_builds).
 # Smoke builds its own small builds only when SMOKE_BUILD=1 or when the chain also holds a build mode.
 #
 # For every mode: download s3://$BUCKET/hnsw/results/<machine>/ (and the builds) first (resume; run.py
@@ -57,8 +59,31 @@ S3R="s3://${BUCKET:-}/hnsw/results/$MACHINE"; S3B="s3://${BUCKET:-}/hnsw/builds/
 down() {
   s3 sync "$S3R/" "$OUT/" --exclude 'machine.txt' --exclude 'families.txt'
   [ "$LOCAL" = 1 ] || mkdir -p "$DATA/builds/shared"
+  [ "${LAZY_BUILDS:-0}" = 1 ] && return 0   # timing machine with a queue: builds come per plan (fetch_builds)
   s3 sync "$S3B/" "$DATA/builds/shared/" --exclude '*.stale-*/*'
   s3 sync "$S3E/" "$DATA/emb/" --exclude '*' --include '*/*/index*/*'
+}
+# QUEUE=<name>: several machines of one CPU type share the plan files of a mode; a plan runs on the machine that
+# first creates s3://$BUCKET/hnsw/queue/<name>/<plan>.claim (conditional put), largest plans first.
+claim() {  # claim <plan> -> 0 if this machine owns it
+  [ -z "${QUEUE:-}" ] && return 0
+  [ "$LOCAL" = 1 ] && return 0
+  local k="hnsw/queue/$QUEUE/$(basename "$1" .json).claim"
+  echo "$MACHINE $(date -u +%FT%TZ)" > "$OUT/.claim"
+  aws s3api put-object --bucket "$BUCKET" --key "$k" --body "$OUT/.claim" --if-none-match '*' >/dev/null 2>&1
+}
+fetch_builds() {  # fetch_builds <plan>: only the builds and our index of the plan's (set, model)
+  [ "${LAZY_BUILDS:-0}" = 1 ] || return 0
+  local sm; sm=$($PY -I -c 'import json,sys; d=json.load(open(sys.argv[1])); x=(d.get("jobs") or d.get("builds"))[0]; print(x["set"], x["model"])' "$1")
+  set -- $sm
+  s3 sync "$S3B/$1/$2/" "$DATA/builds/shared/$1/$2/" --exclude '*.stale-*/*'
+  s3 sync "$S3E/$2/$1/" "$DATA/emb/$2/$1/" --exclude '*' --include 'index*/*' --include 'export/*'
+}
+drop_builds() {  # drop_builds <plan>: free the disk after the plan (LAZY_BUILDS)
+  [ "${LAZY_BUILDS:-0}" = 1 ] || return 0
+  local sm; sm=$($PY -I -c 'import json,sys; d=json.load(open(sys.argv[1])); x=(d.get("jobs") or d.get("builds"))[0]; print(x["set"], x["model"])' "$1")
+  set -- $sm
+  rm -rf "$DATA/builds/shared/$1/$2"
 }
 up() {
   # the build record of this machine: library commits, SIMD levels, binary hashes (PAPER_PLAN 5.5)
@@ -202,18 +227,34 @@ for MODE in $MODES; do
   SMOKE_OWN=${SMOKE_BUILD:-0}; case ",$1," in *,build,*|*,build-isolated,*) SMOKE_OWN=1;; esac
   if [ "$MODE" = smoke ] && [ "$SMOKE_OWN" = 1 ]; then   # smoke builds its small builds (a build machine only), then times
     if ! sched "${PLANS[@]}" >> "$LOG" 2>&1; then say "mode smoke: build FAILED"; FAILED+=("smoke:build"); continue; fi
-  else                           # a timing run builds nothing: the shared builds come from S3
+  elif [ "${LAZY_BUILDS:-0}" != 1 ]; then   # a timing run builds nothing: the shared builds come from S3
     SCHED_ARGS=(--check)
     if ! sched "${PLANS[@]}" >> "$LOG" 2>&1; then say "mode $MODE: builds missing (see MISSING lines above); run mode build first"; FAILED+=("$MODE:builds-missing"); continue; fi
+  fi
+  if [ -n "${QUEUE:-}" ]; then  # largest (set, model) first: n of the set
+    mapfile -t PLANS < <($PY -I -c '
+import json, sys
+sys.path.insert(0, sys.argv[1]); from grid import SETS
+ps = sys.argv[2:]
+def n(p):
+    d = json.load(open(p)); x = (d.get("jobs") or d.get("builds"))[0]; return SETS[x["set"]][0]
+print("\n".join(sorted(ps, key=lambda p: (-n(p), p))))' "$H" "${PLANS[@]}")
   fi
   prepare_timing
   EXPECTED=()
   for p in "${PLANS[@]}"; do
     STEP=$(plan_field "$p" step)
+    if ! claim "$p"; then say "plan $STEP claimed by another machine (queue $QUEUE): skip"; continue; fi
     say "plan $STEP ($p) start"
     EXPECTED+=("$OUT/jobs-expected-$STEP.json")
+    fetch_builds "$p"
+    SCHED_ARGS=(--check)
+    if [ "${LAZY_BUILDS:-0}" = 1 ] && ! sched "$p" >> "$LOG" 2>&1; then
+      say "plan $STEP: builds missing in S3"; FAILED+=("$MODE:$STEP:builds-missing"); drop_builds "$p"; continue
+    fi
     if run_plan "$p" ${EXTRA[@]+"${EXTRA[@]}"}; then say "plan $STEP ok"; else say "plan $STEP FAILED"; FAILED+=("$MODE:$STEP"); fi
     up
+    drop_builds "$p"
   done
   MISSING_E=0; for e in "${EXPECTED[@]}"; do [ -f "$e" ] || { say "no jobs list $e"; MISSING_E=1; }; done
   if [ $MISSING_E = 0 ] && $PY -I "$H/check_complete.py" "${EXPECTED[@]}" >> "$LOG" 2>&1; then say "mode $MODE: check_complete passed"

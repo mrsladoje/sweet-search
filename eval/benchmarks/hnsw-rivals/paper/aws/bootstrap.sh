@@ -168,6 +168,6 @@ install_watchdog
 
 # ---- run
 cd "$H"
-nohup env MACHINE="$MACHINE" SHARD="${SHARD:-0/1}" DATA=$DATAD ROOT=$ROOT RESULTS=$RES SS_INSTANCE_ID="$IID" MAX_BUSY=${MAX_BUSY:-10} \
+nohup env MACHINE="$MACHINE" SHARD="${SHARD:-0/1}" QUEUE="${QUEUE:-}" LAZY_BUILDS="${LAZY_BUILDS:-0}" PLAN_DIR="${PLAN_DIR:-}" BUCKET="$BUCKET" DATA=$DATAD ROOT=$ROOT RESULTS=$RES SS_INSTANCE_ID="$IID" MAX_BUSY=${MAX_BUSY:-10} \
   bash aws/run.sh "$MODE" > "$RES/run.out" 2>&1 &
 echo "== run.sh started (pid $!)"
