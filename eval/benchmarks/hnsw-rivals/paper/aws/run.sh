@@ -11,7 +11,7 @@
 #   hold             do not shut down at the end (the idle watchdog still ends an idle machine)
 # The machine shuts down ONCE, after the last mode, unless the chain holds "hold".
 #
-# Plan files (the format of run.py): $PLAN_DIR/*.json, else plans/<machine>/<mode>/*.json, else
+# Plan files (the format of run.py): $PLAN_ROOT/<mode>/*.json, else $PLAN_DIR/*.json, else plans/<machine>/<mode>/*.json, else
 # plans/<mode>/*.json (next to this script's parent), else plan.py --mode M --machine X --data D --out DIR
 # [--limit 50 for smoke] [--families $RESULTS/<machine>/families.txt] [--shortlist $SHORTLIST for heldout].
 # The mode "build" reads the plans of the directory "build". plan.py needs k_v in sets/<set>/set.json
@@ -32,7 +32,7 @@
 # "done" only when every plan of every mode passed; otherwise "FAILED: ..." and exit 1.
 # Before a timing plan: CPU governor performance, THP madvise (both recorded), run.py pinned to one core.
 #
-# Environment: MACHINE (required), SHARD (i/n, default 0/1), SHORTLIST, SMOKE_BUILD, DATA, ROOT, RESULTS, REPO (default: the repo root above this script), PLAN_DIR, SS_LOCAL=1 (no S3, no shutdown, no change
+# Environment: MACHINE (required), SHARD (i/n, default 0/1), SHORTLIST, SMOKE_BUILD, DATA, ROOT, RESULTS, REPO (default: the repo root above this script), PLAN_ROOT, PLAN_DIR, SS_LOCAL=1 (no S3, no shutdown, no change
 # of governor / THP; SS_TUNE=1 turns the change back on), SS_PIN=0|1 (default 1 in the cloud, 0 local).
 # Cloud values (BUCKET, ...) come from env.local next to this script (git-ignored).
 set -u
@@ -47,6 +47,7 @@ SCANN_PY=$ROOT/venv-scann/bin/python; [ -x "$SCANN_PY" ] || SCANN_PY=$PY
 BUILD=$ROOT/build   # rivals5, rivals5-ext (x86 only), librescore5.so
 RIVALS=$BUILD/rivals5; EXTB=$BUILD/rivals5-ext
 SHARD=${SHARD:-0/1}
+case "${PLAN_ROOT:-}" in ""|/*) ;; *) PLAN_ROOT=$H/$PLAN_ROOT;; esac   # relative to the paper directory
 SHORTLIST=${SHORTLIST:-$H/shortlist.json}
 OUT=$RESULTS/$MACHINE
 PIN=${SS_PIN:-$([ "$LOCAL" = 1 ] && echo 0 || echo 1)}
@@ -68,7 +69,7 @@ down() {
 claim() {  # claim <plan> -> 0 if this machine owns it
   [ -z "${QUEUE:-}" ] && return 0
   [ "$LOCAL" = 1 ] && return 0
-  local k="hnsw/queue/$QUEUE/$(basename "$1" .json).claim"
+  local k="hnsw/queue/$QUEUE/$MODE/$(basename "$1" .json).claim"
   echo "$MACHINE $(date -u +%FT%TZ)" > "$OUT/.claim"
   aws s3api put-object --bucket "$BUCKET" --key "$k" --body "$OUT/.claim" --if-none-match '*' >/dev/null 2>&1
 }
@@ -155,7 +156,7 @@ PYEOF
 # ---- plan files of a mode
 plan_files() {  # plan_files <mode> -> one path per line (non-zero if none)
   local m=$1 d f
-  for d in "${PLAN_DIR:-}" "$H/plans/$MACHINE/$m" "$H/plans/$m"; do
+  for d in "${PLAN_ROOT:+$PLAN_ROOT/$m}" "${PLAN_DIR:-}" "$H/plans/$MACHINE/$m" "$H/plans/$m"; do
     [ -n "$d" ] && [ -d "$d" ] && ls "$d"/*.json >/dev/null 2>&1 && { ls "$d"/*.json; return 0; }
   done
   if [ -f "$H/plan.py" ]; then

@@ -1,0 +1,146 @@
+{
+"step": "aa-quora--bge-base-en-v1.5",
+"builds": [],
+"jobs": [
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"kv": 11,
+"options": {
+"arm": "a1"
+}
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"kv": 11,
+"options": {
+"arm": "a2"
+}
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 1,
+"kind": "timing",
+"build_seed": 42,
+"kv": 11,
+"options": {
+"arm": "a1"
+}
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 1,
+"kind": "timing",
+"build_seed": 42,
+"kv": 11,
+"options": {
+"arm": "a2"
+}
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 2,
+"kind": "timing",
+"build_seed": 42,
+"kv": 11,
+"options": {
+"arm": "a1"
+}
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 2,
+"kind": "timing",
+"build_seed": 42,
+"kv": 11,
+"options": {
+"arm": "a2"
+}
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 3,
+"kind": "timing",
+"build_seed": 42,
+"kv": 11,
+"options": {
+"arm": "a1"
+}
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 3,
+"kind": "timing",
+"build_seed": 42,
+"kv": 11,
+"options": {
+"arm": "a2"
+}
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 4,
+"kind": "timing",
+"build_seed": 42,
+"kv": 11,
+"options": {
+"arm": "a1"
+}
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 4,
+"kind": "timing",
+"build_seed": 42,
+"kv": 11,
+"options": {
+"arm": "a2"
+}
+}
+]
+}

@@ -1,0 +1,146 @@
+{
+"step": "aa-advtest--jina-v2-base-code",
+"builds": [],
+"jobs": [
+{
+"set": "advtest",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"kv": 16,
+"options": {
+"arm": "a1"
+}
+},
+{
+"set": "advtest",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"kv": 16,
+"options": {
+"arm": "a2"
+}
+},
+{
+"set": "advtest",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 1,
+"kind": "timing",
+"build_seed": 42,
+"kv": 16,
+"options": {
+"arm": "a1"
+}
+},
+{
+"set": "advtest",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 1,
+"kind": "timing",
+"build_seed": 42,
+"kv": 16,
+"options": {
+"arm": "a2"
+}
+},
+{
+"set": "advtest",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 2,
+"kind": "timing",
+"build_seed": 42,
+"kv": 16,
+"options": {
+"arm": "a1"
+}
+},
+{
+"set": "advtest",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 2,
+"kind": "timing",
+"build_seed": 42,
+"kv": 16,
+"options": {
+"arm": "a2"
+}
+},
+{
+"set": "advtest",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 3,
+"kind": "timing",
+"build_seed": 42,
+"kv": 16,
+"options": {
+"arm": "a1"
+}
+},
+{
+"set": "advtest",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 3,
+"kind": "timing",
+"build_seed": 42,
+"kv": 16,
+"options": {
+"arm": "a2"
+}
+},
+{
+"set": "advtest",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 4,
+"kind": "timing",
+"build_seed": 42,
+"kv": 16,
+"options": {
+"arm": "a1"
+}
+},
+{
+"set": "advtest",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 4,
+"kind": "timing",
+"build_seed": 42,
+"kv": 16,
+"options": {
+"arm": "a2"
+}
+}
+]
+}

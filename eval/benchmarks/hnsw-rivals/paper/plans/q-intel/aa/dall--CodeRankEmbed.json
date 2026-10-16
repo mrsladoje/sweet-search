@@ -1,0 +1,146 @@
+{
+"step": "aa-dall--CodeRankEmbed",
+"builds": [],
+"jobs": [
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"kv": 25,
+"options": {
+"arm": "a1"
+}
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"kv": 25,
+"options": {
+"arm": "a2"
+}
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 1,
+"kind": "timing",
+"build_seed": 42,
+"kv": 25,
+"options": {
+"arm": "a1"
+}
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 1,
+"kind": "timing",
+"build_seed": 42,
+"kv": 25,
+"options": {
+"arm": "a2"
+}
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 2,
+"kind": "timing",
+"build_seed": 42,
+"kv": 25,
+"options": {
+"arm": "a1"
+}
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 2,
+"kind": "timing",
+"build_seed": 42,
+"kv": 25,
+"options": {
+"arm": "a2"
+}
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 3,
+"kind": "timing",
+"build_seed": 42,
+"kv": 25,
+"options": {
+"arm": "a1"
+}
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 3,
+"kind": "timing",
+"build_seed": 42,
+"kv": 25,
+"options": {
+"arm": "a2"
+}
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 4,
+"kind": "timing",
+"build_seed": 42,
+"kv": 25,
+"options": {
+"arm": "a1"
+}
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 4,
+"kind": "timing",
+"build_seed": 42,
+"kv": 25,
+"options": {
+"arm": "a2"
+}
+}
+]
+}
