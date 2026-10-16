@@ -119,6 +119,65 @@ def eval_lists(S, qidx, vids, scores, metric=None, exact_vecs=None):
     return {'q': q, 'n_docs': nd, 'short': int((nd < CUT).sum()), 'recall': rc}
 
 
+def eval_lists_fast(S, qidx, vids, scores, metric=None, cut=CUT):
+    """eval_lists without the per-query Python loop (same rules: self-match dropped, doc score = max of
+    its vector scores, score desc then lower doc id, cut at `cut`). Returns the per-query metric and the
+    number of lists with fewer than `cut` documents. Checked equal to eval_lists (select.py --check)."""
+    n, L = vids.shape
+    qidx = np.asarray(qidx)
+    D = np.where(vids >= 0, S.doc_of_vec[np.clip(vids, 0, None)], -1).astype(np.int64)
+    selfd = np.asarray(S.self_doc, dtype=np.int64)[qidx][:, None]
+    valid = (D >= 0) & (D != selfd)
+    row = np.repeat(np.arange(n), L)
+    d, sc, ok = D.ravel(), scores.ravel().astype(np.float64), valid.ravel()
+    d, sc, row = d[ok], sc[ok], row[ok]
+    # the first entry of each (row, doc) in (row, doc, score desc) order holds the doc's max score
+    o = np.lexsort((-sc, d, row))
+    d, sc, row = d[o], sc[o], row[o]
+    first = np.ones(len(d), bool)
+    first[1:] = (row[1:] != row[:-1]) | (d[1:] != d[:-1])
+    d, sc, row = d[first], sc[first], row[first]
+    # documents per row by (score desc, doc asc), rank within row, keep rank < cut
+    o = np.lexsort((d, -sc, row))
+    d, row = d[o], row[o]
+    start = np.searchsorted(row, np.arange(n))
+    rank = np.arange(len(row)) - start[row]
+    keep = rank < cut
+    d, row, rank = d[keep], row[keep], rank[keep]
+    ndocs = np.bincount(row, minlength=n)
+    # judged grades via sorted (query, doc) keys
+    m = metric or default_metric(S)
+    if not hasattr(S, '_relkeys'):
+        ks, gs = [], []
+        for qi, rel in enumerate(S.rel):
+            for doc, g in rel.items():
+                if g > 0:
+                    ks.append(qi * S.n_docs + doc); gs.append(g)
+        o2 = np.argsort(ks)
+        S._relkeys, S._relg = np.asarray(ks, dtype=np.int64)[o2], np.asarray(gs, dtype=np.float64)[o2]
+    key = qidx[row].astype(np.int64) * S.n_docs + d
+    pos = np.searchsorted(S._relkeys, key)
+    pos_c = np.minimum(pos, len(S._relkeys) - 1)
+    hit = (len(S._relkeys) > 0) & (S._relkeys[pos_c] == key)
+    g = np.where(hit, S._relg[pos_c], 0.0)
+    q = np.zeros(n)
+    if m == 'mrr':
+        h = np.nonzero(g > 0)[0]
+        firsts = {}
+        for r_, k_ in zip(row[h], rank[h]):  # few hits: first relevant rank per row
+            if r_ not in firsts:
+                firsts[r_] = k_
+        for r_, k_ in firsts.items():
+            q[r_] = 1.0 / (k_ + 1)
+    else:
+        dcg = np.zeros(n)
+        np.add.at(dcg, row, g / np.log2(rank + 2.0))
+        idcg = np.array([sum(gg / math.log2(r + 2) for r, gg in enumerate(sorted(S.rel_all[qi], reverse=True)[:cut]))
+                         for qi in qidx])
+        q = np.where(idcg > 0, dcg / np.where(idcg > 0, idcg, 1), 0.0)
+    return {'q': q, 'n_docs': ndocs, 'short': int((ndocs < cut).sum())}
+
+
 def read_gt(data, model, name, split):
     d = f'{data}/emb/{model}/{name}/gt'
     r = {}

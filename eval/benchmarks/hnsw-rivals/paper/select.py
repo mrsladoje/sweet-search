@@ -27,6 +27,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument('--data', required=True); ap.add_argument('--results', required=True); ap.add_argument('--type', required=True)
 ap.add_argument('--machines', help="glob over machine dirs (default 'dev-<type>-*')"); ap.add_argument('--out', default='.')
 ap.add_argument('--target', type=float, default=0.02, help='R rule: 95%% half-width of the latency ratio')
+ap.add_argument('--check', type=int, default=0, help='also run stats.selection on N points per (set, model) and compare')
 a = ap.parse_args()
 pat = a.machines or f'dev-{a.type}-*'
 mdirs = sorted(d for d in glob.glob(os.path.join(a.results, '*')) if fnmatch.fnmatch(os.path.basename(d), pat))
@@ -91,20 +92,38 @@ for (s, m) in sorted({(k[0], k[1]) for k in pts}):
     def qual(e):
         if e['rec'] not in qcache:
             _, vids, sc = Q.read_record(e['rec'])
-            qcache[e['rec']] = Q.eval_lists(S, qidx, vids, sc, None, gt['vecs'])
+            qcache[e['rec']] = Q.eval_lists_fast(S, qidx, vids, sc)
         return qcache[e['rec']]
 
     B = pts.get((s, m, 'B'), {})
     by_sys = {}
     for e in B.values():
         by_sys.setdefault(e['point']['system'], []).append(e)
+    # every point's bootstrap lower bound at every f in one product (the same resamples as stats.selection)
+    allp = sorted(B.values(), key=lambda e: json.dumps(e['point'], sort_keys=True))
+    lower = {}
+    if allp:
+        Qm = np.stack([qual(e)['q'] for e in allp], axis=1)                     # n_dev x P
+        for f in FRACTIONS:
+            dm = Qm - f * qx[:, None]
+            cs = np.stack([np.bincount(boot.cidx, weights=dm[:, j], minlength=boot.C) for j in range(dm.shape[1])], axis=1)
+            means = np.empty((boot.B, dm.shape[1]))
+            for b0 in range(0, boot.B, 1000):
+                means[b0:b0 + 1000] = (boot.counts[b0:b0 + 1000].astype(np.float64) @ cs) / boot.denom[b0:b0 + 1000, None]
+            lo = np.percentile(means, 100 * stats.ALPHA, axis=0)
+            for j, e in enumerate(allp):
+                lower[(id(e), f)] = dict(f=f, mean_d=float(dm[:, j].mean()), lower=float(lo[j]), qualifies=bool(lo[j] >= 0))
+    for e in allp[:a.check]:  # the batch bounds equal stats.selection
+        for f in FRACTIONS:
+            r = stats.selection(boot, qual(e)['q'], qx, f)
+            assert abs(r['lower'] - lower[(id(e), f)]['lower']) < 1e-12, (s, m, e['point'], f)
     sel, chosen = {}, {}
     for sysname, es in sorted(by_sys.items()):
         sel[sysname] = {}
         for f in FRACTIONS:
             best = None
             for e in es:
-                r = stats.selection(boot, qual(e)['q'], qx, f)
+                r = lower[(id(e), f)]
                 if r['qualifies'] and (best is None or e['lat_us'] < best[0]['lat_us']):
                     best = (e, r)
             if best:
