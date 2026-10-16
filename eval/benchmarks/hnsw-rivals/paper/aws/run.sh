@@ -265,6 +265,7 @@ print("\n".join(sorted(ps, key=lambda p: (-n(p), p))))' "$H" "${PLANS[@]}")
     TODO=(${LATER[@]+"${LATER[@]}"})
     [ ${#TODO[@]} -gt 0 ] && { say "${#TODO[@]} plans wait for builds"; sleep 600; }
   done
+  if [ -n "${QUEUE:-}" ] && [ ${#EXPECTED[@]} -eq 0 ]; then say "mode $MODE: every plan ran on other machines of queue $QUEUE"; up; continue; fi
   MISSING_E=0; for e in "${EXPECTED[@]}"; do [ -f "$e" ] || { say "no jobs list $e"; MISSING_E=1; }; done
   if [ $MISSING_E = 0 ] && $PY -I "$H/check_complete.py" "${EXPECTED[@]}" >> "$LOG" 2>&1; then say "mode $MODE: check_complete passed"
   else say "mode $MODE: check_complete FAILED"; FAILED+=("$MODE:check_complete"); fi
