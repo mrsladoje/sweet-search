@@ -40,7 +40,10 @@ mapped from the index file: −487 MB anonymous at 1M, same speed, load 1.93 →
 build parameters → kept (12-word fast path not done: 768-bit codes 141 vs 83 µs at 6.9k); K5 in the
 harness. K3/K4: 4,667 box tests + 3 new tests pass; ARM parity identical. H2 (gcsn dev): tie runs split at
 the C = 400 cut on 97.8% of queries; tie order changes the retained set on ~28%, top-10 documents on ~1.6%,
-MRR@10 range 0.0001 over 5 orders. k_v gcsn/CodeRankEmbed = 36. Findings for the owner: d20k/dall
+MRR@10 range 0.0001 over 5 orders. k_v gcsn/CodeRankEmbed = 36 (re-embedded vectors, 10-16: see set.json). S5a on
+`amd` (c8a, Zen 5, 10-16): K6 AVX-512 VPOPCNTDQ Hamming (scan + walk) identical lists (6/6 round pairs) but no
+gain (gcsn scan 59.4 vs 58.2 µs, dall scan 292.6 vs 288.0 µs, AVX-512 on vs off, 3 interleaved rounds) → dropped;
+K7 skipped by its rule (perf, dall scan C 400: Hamming scan 54% of samples, int8 dot 6%: not dot-bound). Findings for the owner: d20k/dall
 distractor texts do not reproduce the stored vectors; stored CodeRankEmbed vectors mix Metal bf16 documents
 and ORT INT8 queries; builds per CPU vs once.
 
