@@ -508,6 +508,67 @@ unsafe fn hamming512_batch_avx2(slab: *const u64, query: *const u64, ids: &[u32]
     }
 }
 
+/// Eight per-word popcount vectors (one per code) summed to one zmm of eight
+/// distances (lane j = code j) by a transposed reduction: 4 unpack adds, 2 + 1
+/// block-shuffle adds instead of eight horizontal adds.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f")]
+#[inline]
+unsafe fn sum8_transposed(c: [std::arch::x86_64::__m512i; 8]) -> std::arch::x86_64::__m512i {
+    use std::arch::x86_64::*;
+    let u = |a: __m512i, b: __m512i| _mm512_add_epi64(_mm512_unpacklo_epi64(a, b), _mm512_unpackhi_epi64(a, b));
+    let (u01, u23, u45, u67) = (u(c[0], c[1]), u(c[2], c[3]), u(c[4], c[5]), u(c[6], c[7]));
+    let w = |a: __m512i, b: __m512i| _mm512_add_epi64(_mm512_shuffle_i64x2::<0b10_00_10_00>(a, b), _mm512_shuffle_i64x2::<0b11_01_11_01>(a, b));
+    let (w03, w47) = (w(u01, u23), w(u45, u67));
+    w(w03, w47)
+}
+
+/// Hamming distances of 64-byte codes at `ids` to the 64-byte query with
+/// AVX-512 VPOPCNTDQ: one zmm per code, eight 64-bit popcounts, eight codes
+/// reduced together. Exact, the same distances as POPCNT.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f,avx512vpopcntdq,avx2,popcnt")]
+unsafe fn hamming512_batch_avx512(slab: *const u64, query: *const u64, ids: &[u32], out: &mut [u32]) {
+    use std::arch::x86_64::*;
+    let q = _mm512_loadu_si512(query as *const _);
+    let pc = |id: u32| _mm512_popcnt_epi64(_mm512_xor_si512(_mm512_loadu_si512(slab.add(id as usize * 8) as *const _), q));
+    let mut c = 0;
+    while c + 8 <= ids.len() {
+        let s = sum8_transposed(std::array::from_fn(|j| pc(ids[c + j])));
+        _mm256_storeu_si256(out.as_mut_ptr().add(c) as *mut __m256i, _mm512_cvtepi64_epi32(s));
+        c += 8;
+    }
+    while c < ids.len() {
+        out[c] = _mm512_reduce_add_epi64(pc(ids[c])) as u32;
+        c += 1;
+    }
+}
+
+/// Eight 512-bit Hamming distances (consecutive codes at `p`), for the scan.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f,avx512vpopcntdq")]
+#[inline]
+unsafe fn hamming512_x8_avx512(p: *const u64, query: *const u64) -> [u64; 8] {
+    use std::arch::x86_64::*;
+    let q = _mm512_loadu_si512(query as *const _);
+    let s = sum8_transposed(std::array::from_fn(|j| _mm512_popcnt_epi64(_mm512_xor_si512(_mm512_loadu_si512(p.add(j * 8) as *const _), q))));
+    let mut o = [0u64; 8];
+    _mm512_storeu_si512(o.as_mut_ptr() as *mut _, s);
+    o
+}
+
+/// Four 512-bit Hamming distances (consecutive codes at `p`) with AVX-512
+/// VPOPCNTDQ, for the scan: the same values as the AVX2 nibble-lookup path.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx512f,avx512vpopcntdq")]
+#[inline]
+unsafe fn hamming512_x4_avx512(p: *const u64, query: *const u64) -> [u64; 4] {
+    use std::arch::x86_64::*;
+    let q = _mm512_loadu_si512(query as *const _);
+    let d = |c: usize| _mm512_reduce_add_epi64(_mm512_popcnt_epi64(_mm512_xor_si512(_mm512_loadu_si512(p.add(c * 8) as *const _), q))) as u64;
+    [d(0), d(1), d(2), d(3)]
+}
+
 /// 512-bit Hamming distances, four vectors per step: the per-vector
 /// popcounts are reduced together with pairwise adds instead of one
 /// horizontal add per vector.
@@ -573,6 +634,22 @@ fn cpu_v3() -> bool {
     #[cfg(target_arch = "x86_64")]
     {
         crate::rescore::x86_v3()
+    }
+    #[cfg(not(target_arch = "x86_64"))]
+    {
+        false
+    }
+}
+
+/// AVX-512 VPOPCNTDQ usable for 512-bit Hamming (one code = one zmm), on
+/// top of x86-64-v3. `SS_HNSW_NO_AVX512=1` turns it off (A/B in one binary).
+fn cpu_v4() -> bool {
+    #[cfg(target_arch = "x86_64")]
+    {
+        cpu_v3()
+            && is_x86_feature_detected!("avx512f")
+            && is_x86_feature_detected!("avx512vpopcntdq")
+            && std::env::var("SS_HNSW_NO_AVX512").map_or(true, |v| v != "1")
     }
     #[cfg(not(target_arch = "x86_64"))]
     {
@@ -667,6 +744,8 @@ pub struct HnswSearcher {
     scan_d: Vec<u16>,
     /// x86-64-v3 kernels (AVX2, POPCNT, ...) usable; always false elsewhere.
     v3: bool,
+    /// AVX-512 VPOPCNTDQ Hamming for 512-bit codes (implies v3).
+    v4: bool,
     pool_idx: Vec<u32>,
     huge: bool,
     // Level-0 lists are re-pruned at load to at most this many links when
@@ -738,6 +817,7 @@ impl HnswSearcher {
             full_scores: Vec::new(),
             scan_d: Vec::new(),
             v3: cpu_v3(),
+            v4: cpu_v4(),
             pool_idx: Vec::new(),
             huge,
             prune0: if count as usize > PRUNE0_MIN_COUNT { PRUNE0_DEFAULT } else { 0 },
@@ -790,6 +870,12 @@ impl HnswSearcher {
             // SAFETY: every id < count (set_level checks), so each vector is
             // 64 readable bytes inside the slab; the query holds 8 words.
             unsafe { hamming512_batch(self.slab.as_ptr(), self.query.as_ptr(), ids, out) };
+            return;
+        }
+        #[cfg(target_arch = "x86_64")]
+        if self.words == 8 && self.v4 {
+            // SAFETY: AVX-512F and VPOPCNTDQ checked at construction (v4); every id < count.
+            unsafe { hamming512_batch_avx512(self.slab.as_ptr(), self.query.as_ptr(), ids, out) };
             return;
         }
         #[cfg(target_arch = "x86_64")]
@@ -1167,6 +1253,11 @@ impl HnswSearcher {
             return self.scan512(k, out);
         }
         #[cfg(target_arch = "x86_64")]
+        if self.words == 8 && self.v4 {
+            // SAFETY: the CPU features were checked at construction.
+            return unsafe { self.scan512_v4(k, out) };
+        }
+        #[cfg(target_arch = "x86_64")]
         if self.words == 8 && self.v3 {
             // SAFETY: the CPU features were checked at construction.
             return unsafe { self.scan512_v3(k, out) };
@@ -1319,6 +1410,20 @@ impl HnswSearcher {
     #[cfg(target_arch = "x86_64")]
     #[target_feature(enable = "avx2,fma,popcnt,bmi1,bmi2,lzcnt")]
     unsafe fn scan512_v3(&mut self, k: usize, out: &mut [u32]) -> usize {
+        self.scan512_x86::<false>(k, out)
+    }
+
+    /// `scan512_v3` with AVX-512 VPOPCNTDQ distances (one zmm per code); the
+    /// histogram and the AVX2 collect pass are the same. Same output.
+    #[cfg(target_arch = "x86_64")]
+    #[target_feature(enable = "avx512f,avx512vpopcntdq,avx2,fma,popcnt,bmi1,bmi2,lzcnt")]
+    unsafe fn scan512_v4(&mut self, k: usize, out: &mut [u32]) -> usize {
+        self.scan512_x86::<true>(k, out)
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    #[inline(always)]
+    unsafe fn scan512_x86<const V4: bool>(&mut self, k: usize, out: &mut [u32]) -> usize {
         use std::arch::x86_64::*;
         let n = self.count as usize;
         let padded = n.div_ceil(16) * 16;
@@ -1367,8 +1472,16 @@ impl HnswSearcher {
             _mm256_storeu_si256(o.as_mut_ptr() as *mut __m256i, u);
             o
         };
+        while V4 && i + 8 <= n {
+            let x = hamming512_x8_avx512(base.add(i * 8), self.query.as_ptr());
+            for (j, &xj) in x.iter().enumerate() {
+                *dp.add(i + j) = xj as u16;
+                *hist[j & 3].get_unchecked_mut(xj as usize) += 1;
+            }
+            i += 8;
+        }
         while i + 4 <= n {
-            let x = simd4(base.add(i * 8));
+            let x = if V4 { hamming512_x4_avx512(base.add(i * 8), self.query.as_ptr()) } else { simd4(base.add(i * 8)) };
             for (j, &xj) in x.iter().enumerate() {
                 *dp.add(i + j) = xj as u16;
                 *hist[j].get_unchecked_mut(xj as usize) += 1;
