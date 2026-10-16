@@ -242,6 +242,13 @@ def main(a, group):
                                         throughput=len(lat) / (wall / 1e9), p50_ms=float(np.percentile(la, 50)) / 1e6,
                                         p99_ms=float(np.percentile(la, 99)) / 1e6, lat_ns=[int(x) for x in lat]))
                 print(f'{arm} {kind} {ex} n={n} rate={rate}: {len(lat)} requests', flush=True)
+                # rival_inputs caches each call's decoded inputs in the call dict; in the
+                # parent that is the whole set in f32 (9.4 GB on agent-ho), and 16 caller
+                # processes beside it ran out of RAM on 32 GB. Drop it after every run.
+                for c in calls:
+                    for k in [k for k in c if k.startswith('in_')]:
+                        del c[k]
+                trim()
         except Exception as e:
             failed.append(arm); print(f'FAILED {arm}: {e}', flush=True); continue
         res['complete'] = True
