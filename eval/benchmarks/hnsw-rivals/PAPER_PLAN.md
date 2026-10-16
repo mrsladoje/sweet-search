@@ -43,7 +43,9 @@ the C = 400 cut on 97.8% of queries; tie order changes the retained set on ~28%,
 MRR@10 range 0.0001 over 5 orders. k_v gcsn/CodeRankEmbed = 36 (re-embedded vectors, 10-16: see set.json). S5a on
 `amd` (c8a, Zen 5, 10-16): K6 AVX-512 VPOPCNTDQ Hamming (scan + walk) identical lists (6/6 round pairs) but no
 gain (gcsn scan 59.4 vs 58.2 µs, dall scan 292.6 vs 288.0 µs, AVX-512 on vs off, 3 interleaved rounds) → dropped;
-K7 skipped by its rule (perf, dall scan C 400: Hamming scan 54% of samples, int8 dot 6%: not dot-bound). Findings for the owner: d20k/dall
+K7 skipped by its rule (perf, dall scan C 400: Hamming scan 54% of samples, int8 dot 6%: not dot-bound). K8 on `arm` (c8g,
+Graviton4): result lists byte-identical to x86 (gcsn and dall dev scan, our own build on each CPU); perf: scan 50%,
+int8 sdot 4.7%; SVE vector length on Neoverse V2 is 128 bits (= NEON), so no SVE2 path → K8 closed, no change. Findings for the owner: d20k/dall
 distractor texts do not reproduce the stored vectors; stored CodeRankEmbed vectors mix Metal bf16 documents
 and ORT INT8 queries; builds per CPU vs once.
 
