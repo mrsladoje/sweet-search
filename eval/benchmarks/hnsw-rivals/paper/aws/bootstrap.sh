@@ -118,9 +118,9 @@ newlibs() {
     cat > "$ROOT/build-new/build-info-new.json" <<JSON
 { "machine": "linux-aarch64", "diskann_vamana": {"status": "awaiting platform: no arm64 port (MKL and AVX2 only)"},
   "svs": {"status": "unavailable: Linux x86_64 only, LVQ / LeanVec on Intel CPUs only"},
-  "scann": {"status": "built from adapters/requirements-scann-linux-aarch64.lock"} }
+  "scann": {"status": "built from adapters/requirements-scann-linux-aarch64.lock, Python 3.12 (the cp313 aarch64 wheel of 1.4.2 needs _PyThreadState_UncheckedGet, removed in 3.13)"} }
 JSON
-    uv venv --python 3.13 "$ROOT/venv-scann"
+    uv venv --python 3.12 "$ROOT/venv-scann"
     VIRTUAL_ENV=$ROOT/venv-scann uv pip install --require-hashes --no-deps -r adapters/requirements-scann-linux-aarch64.lock
   fi
 }
