@@ -11,7 +11,7 @@ SETS = {  # name: (vectors, kind, dev queries, held-out queries)
     'fiqa': (57638, 'beir', 389, 259),
     'quora': (522931, 'beir', 6000, 4000),
 }
-MODELS = ['CodeRankEmbed', 'jina-embeddings-v2-base-code', 'bge-base-en-v1.5']
+MODELS = ['CodeRankEmbed', 'jina-v2-base-code', 'bge-base-en-v1.5']
 MACHINES = ['intel', 'amd', 'arm', 'box', 'mac']
 
 # (A) common rescoring: C candidates -> int8 keeps H -> full rescoring; H = C is the no-screen arm.

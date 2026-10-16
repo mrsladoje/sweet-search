@@ -8,25 +8,25 @@ Times are machine-hours per AWS timing machine (intel, amd, arm each run the sam
 | Set | Model | Vectors | Builds | Build core-h | (B) dev points | (A) dev points | Dev h / machine | Held-out h / machine | GPU h |
 |---|---|---:|---:|---:|---:|---:|---:|---:|---:|
 | gcsn | CodeRankEmbed | 6,918 | 67 | 0.9 | 657 | 264 | 0.9 | 1.5 | 0.00 |
-| gcsn | jina-embeddings-v2-base-code | 6,918 | 67 | 0.9 | 657 | 264 | 0.9 | 1.5 | 0.00 |
+| gcsn | jina-v2-base-code | 6,918 | 67 | 0.9 | 657 | 264 | 0.9 | 1.5 | 0.00 |
 | gcsn | bge-base-en-v1.5 | 6,918 | 67 | 0.9 | 657 | 264 | 0.9 | 1.5 | 0.00 |
 | d20k | CodeRankEmbed | 20,000 | 67 | 3.0 | 665 | 264 | 1.0 | 1.6 | 0.00 |
-| d20k | jina-embeddings-v2-base-code | 20,000 | 67 | 3.0 | 665 | 264 | 1.0 | 1.6 | 0.00 |
+| d20k | jina-v2-base-code | 20,000 | 67 | 3.0 | 665 | 264 | 1.0 | 1.6 | 0.00 |
 | d20k | bge-base-en-v1.5 | 20,000 | 67 | 3.0 | 665 | 264 | 1.0 | 1.6 | 0.00 |
 | advtest | CodeRankEmbed | 21,731 | 67 | 3.3 | 665 | 264 | 0.9 | 1.6 | 0.00 |
-| advtest | jina-embeddings-v2-base-code | 21,731 | 67 | 3.3 | 665 | 264 | 0.9 | 1.6 | 0.00 |
+| advtest | jina-v2-base-code | 21,731 | 67 | 3.3 | 665 | 264 | 0.9 | 1.6 | 0.00 |
 | advtest | bge-base-en-v1.5 | 21,731 | 67 | 3.3 | 665 | 264 | 0.9 | 1.6 | 0.00 |
 | dall | CodeRankEmbed | 140,449 | 70 | 25.5 | 697 | 264 | 1.7 | 2.6 | 0.00 |
-| dall | jina-embeddings-v2-base-code | 140,449 | 70 | 25.5 | 697 | 264 | 1.7 | 2.6 | 0.00 |
+| dall | jina-v2-base-code | 140,449 | 70 | 25.5 | 697 | 264 | 1.7 | 2.6 | 0.00 |
 | dall | bge-base-en-v1.5 | 140,449 | 70 | 25.5 | 697 | 264 | 1.7 | 2.6 | 0.00 |
 | csn1m | CodeRankEmbed | 1,004,739 | 70 | 222.1 | 705 | 264 | 5.8 | 8.4 | 0.00 |
-| csn1m | jina-embeddings-v2-base-code | 1,004,739 | 70 | 222.1 | 705 | 264 | 5.8 | 8.4 | 0.00 |
+| csn1m | jina-v2-base-code | 1,004,739 | 70 | 222.1 | 705 | 264 | 5.8 | 8.4 | 0.00 |
 | csn1m | bge-base-en-v1.5 | 1,004,739 | 70 | 222.1 | 705 | 264 | 5.8 | 8.4 | 0.00 |
 | fiqa | CodeRankEmbed | 57,638 | 67 | 9.5 | 665 | 264 | 1.0 | 1.7 | 0.00 |
-| fiqa | jina-embeddings-v2-base-code | 57,638 | 67 | 9.5 | 665 | 264 | 1.0 | 1.7 | 0.00 |
+| fiqa | jina-v2-base-code | 57,638 | 67 | 9.5 | 665 | 264 | 1.0 | 1.7 | 0.00 |
 | fiqa | bge-base-en-v1.5 | 57,638 | 67 | 9.5 | 665 | 264 | 1.0 | 1.7 | 0.00 |
 | quora | CodeRankEmbed | 522,931 | 70 | 108.3 | 705 | 264 | 4.0 | 5.6 | 0.00 |
-| quora | jina-embeddings-v2-base-code | 522,931 | 70 | 108.3 | 705 | 264 | 4.0 | 5.6 | 0.00 |
+| quora | jina-v2-base-code | 522,931 | 70 | 108.3 | 705 | 264 | 4.0 | 5.6 | 0.00 |
 | quora | bge-base-en-v1.5 | 522,931 | 70 | 108.3 | 705 | 264 | 4.0 | 5.6 | 0.00 |
 | **total** | | | 1434 | 1118 | 14277 | 5544 | 46 | 69 | 0.0 |
 

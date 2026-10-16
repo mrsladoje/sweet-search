@@ -155,10 +155,16 @@ static int cmd_build() {
     uint64_t seed = std::stoull(arg("seed", "42"));
     std::string emb = D + "/emb/" + model + "/" + set;
     auto X = load_f32(emb + "/corpus.f32"); size_t n = X.size() / FULL_D; normalize(X.data(), n, FULL_D);
-    std::string ex = slurp(emb + "/export/export.json");
-    Map codes = map_file(emb + "/export/codes.u8");
-    Corpus c; c.n = n; c.d = FULL_D; c.x = X.data(); c.codes = (const uint8_t*)codes.p; c.code_bytes = (int)json_num(ex, "code_bytes");
-    if ((size_t)json_num(ex, "n") != n || codes.n != n * c.code_bytes) { fprintf(stderr, "export does not match the corpus\n"); return 1; }
+    // the export (our codes) only when it exists: the float families build without it, the binary families
+    // (adapters that read Corpus::codes) stop with an error if it is missing
+    Corpus c; c.n = n; c.d = FULL_D; c.x = X.data();
+    Map codes;
+    if (access((emb + "/export/export.json").c_str(), R_OK) == 0) {
+        std::string ex = slurp(emb + "/export/export.json");
+        codes = map_file(emb + "/export/codes.u8");
+        c.codes = (const uint8_t*)codes.p; c.code_bytes = (int)json_num(ex, "code_bytes");
+        if ((size_t)json_num(ex, "n") != n || codes.n != n * c.code_bytes) { fprintf(stderr, "export does not match the corpus\n"); return 1; }
+    }
     mkdir(dir.c_str(), 0755);
     auto ad = it->second();
     auto t0 = clk::now();
