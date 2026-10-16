@@ -21,7 +21,7 @@
 # $DATA/builds/shared/<set>/<model>/<family>/<hash>, which syncs with s3://$BUCKET/hnsw/builds/shared/. Our own
 # indexes ($DATA/emb/<model>/<set>/index) sync with s3://$BUCKET/hnsw/emb/. A build machine uploads what it
 # builds; a timing machine downloads before it times and never builds (modes dev, aa, heldout only check).
-# SHARD=i/n: several build machines build in parallel; a build belongs to shard int(hash, 16) % n.
+# SHARD=i/n: several build machines build in parallel; a shard holds whole (set, model) groups (build_sched.py).
 # Smoke builds its own small builds only when SMOKE_BUILD=1 or when the chain also holds a build mode.
 #
 # For every mode: download s3://$BUCKET/hnsw/results/<machine>/ (and the builds) first (resume; run.py
@@ -176,7 +176,10 @@ for MODE in $MODES; do
   case "$MODE" in
   build|build-isolated)
     SCHED_ARGS=(); [ "$MODE" = build-isolated ] && SCHED_ARGS=(--isolated)
+    # upload every 30 minutes while building, so a stopped machine loses only the builds in progress
+    ( while sleep 1800; do up >> "$LOG" 2>&1; done ) & UPLOADER=$!
     if sched "${PLANS[@]}" >> "$LOG" 2>&1; then say "mode $MODE: all builds present"; else say "mode $MODE: build FAILED"; FAILED+=("$MODE:build"); fi
+    kill $UPLOADER 2>/dev/null; wait $UPLOADER 2>/dev/null
     up; continue;;
   esac
 

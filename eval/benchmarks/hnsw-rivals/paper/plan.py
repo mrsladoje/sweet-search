@@ -153,8 +153,8 @@ for s, m in pairs:
             ab = dict(set=s, model=m, family=g, build_params=a_build(g, s, m), build_seed=42)
             if ab not in bl:
                 bl.append(ab)
-        if a.mode == 'build':
-            write(tag, f'build-{tag}', bl, [])
+        if a.mode == 'build':  # our index too: the build plans hold no ours jobs that would ask for it
+            write(tag, f'build-{tag}', [dict(set=s, model=m, family='ours', build_seed=42)] + bl, [])
             continue
         kv = k_v(s, m)
         jobs = []

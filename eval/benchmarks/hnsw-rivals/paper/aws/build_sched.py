@@ -15,8 +15,8 @@
 #  * --check: build nothing; exit 1 and list the builds that are missing (timing modes use it).
 # The build directory of a rival build comes from paper/jobs.py build_dir (the same call as run.py): one shared
 # store, DATA/builds/shared/<set>/<model>/<family>/<hash>, keyed without machine or binary. A build is made once
-# and copied to every machine. --shard i/n: this machine builds only the builds with int(hash, 16) % n == i, so
-# several build machines share the work without overlap (ours: the hash of the set, model and seed).
+# and copied to every machine. --shard i/n: this machine builds only the (set, model) groups of shard i (balanced by size), so
+# several build machines share the work without overlap; a shard holds whole (set, model) groups.
 import shlex, argparse, json, os, shutil, subprocess, sys, time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -79,9 +79,24 @@ for w in work:
 work = uniq
 
 
+# Shards hold whole (set, model) groups: the rival builds of a group read the export of our index of that group,
+# so they must run on the machine that builds it. Groups go to shards by longest-processing-time first, weighted
+# by n^1.1 (the build cost scaling), ties by name: every machine computes the same split from the same plans.
+def _shard_map():
+    from grid import SETS
+    groups = sorted({(w['set'], w['model']) for w in work}, key=lambda g: (-SETS[g[0]][0], g))
+    load, out = [0.0] * SHARD_N, {}
+    for g in groups:
+        i = min(range(SHARD_N), key=lambda k: (load[k], k))
+        out[g] = i; load[i] += SETS[g[0]][0] ** 1.1
+    return out
+
+
+SHARD_MAP = _shard_map()
+
+
 def shard_of(w):
-    key = os.path.basename(w['root']) if w['kind'] == 'rival' else jobs.sha_json([w['set'], w['model'], w['seed'], os.path.basename(w['root'])])
-    return int(key, 16) % SHARD_N
+    return SHARD_MAP[(w['set'], w['model'])]
 
 
 if SHARD_N > 1 and not a.check:
@@ -94,8 +109,10 @@ def done(w):
     if not os.path.exists(bj):
         return False
     if w['kind'] == 'ours':
+        # our index is keyed by set, model and seed only, so it is current only when its export was made from the
+        # corpus that model.json names now (an index from earlier vectors must be rebuilt, not reused)
         try:
-            return json.load(open(bj)).get('seed') == w['seed'] and os.path.exists(export_json(w))
+            return json.load(open(bj)).get('seed') == w['seed'] and export_current(w)
         except Exception:
             return False
     return True
@@ -107,9 +124,23 @@ def export_json(w):
     return os.path.join(a.data, 'emb', w['model'], w['set'], 'export', 'export.json')
 
 
+def export_current(w):
+    """True when the export exists and was made from the corpus that model.json names now."""
+    try:
+        ex = json.load(open(export_json(w)))
+        cur = json.load(open(os.path.join(a.data, 'emb', w['model'], w['set'], 'model.json'))).get('corpus_sha256')
+        return cur is not None and ex.get('corpus_sha256') == cur
+    except Exception:
+        return False
+
+
+CODE_FAMILIES = {'faiss_bin_hnsw', 'faiss_bin_flat', 'usearch_b1_rescore'}  # adapters that read Corpus::codes
+
+
 def ready(w):
-    """A rival build waits for the export of its set and model (made right after our index)."""
-    return w['kind'] == 'ours' or os.path.exists(export_json(w))
+    """A binary rival build waits for the current export of its set and model (made right after our index);
+    the float families do not read the export and start at once."""
+    return w['kind'] == 'ours' or w['family'] not in CODE_FAMILIES or export_current(w)
 
 
 todo = [w for w in work if not done(w)]

@@ -22,9 +22,13 @@ class UsearchAdapter : public Adapter {
 
     bool b1() const { return kind_ == B1_RESCORE; }
     static std::string path(const std::string& dir) { return dir + "/index.usearch"; }
-    index_dense_t make_index(size_t d, size_t M, size_t efC) const {
+    size_t d_ = 768;
+    metric_punned_t make_metric(size_t d) const {
         scalar_kind_t sk = kind_ == F16 ? scalar_kind_t::f16_k : b1() ? scalar_kind_t::b1x8_k : scalar_kind_t::i8_k;
-        metric_punned_t metric(b1() ? 512 : d, b1() ? metric_kind_t::hamming_k : metric_kind_t::cos_k, sk);
+        return metric_punned_t(b1() ? 512 : d, b1() ? metric_kind_t::hamming_k : metric_kind_t::cos_k, sk);
+    }
+    index_dense_t make_index(size_t d, size_t M, size_t efC) const {
+        metric_punned_t metric = make_metric(d);
         auto st = index_dense_t::make(metric, index_dense_config_t(M, efC, 64));
         if (!st) die(std::string("usearch make failed: ") + st.error.what());
         return std::move(st.index);
@@ -35,6 +39,7 @@ public:
 
     void build(const Corpus& c, const Params& p, int threads, uint64_t, const std::string& dir) override {
         if (b1() && !c.codes) die("b1 index needs Corpus::codes");
+        d_ = c.d;
         auto idx = make_index(c.d, param_i(p, "M", 16), param_i(p, "efC", 200));
         idx.reserve(index_limits_t(c.n, threads));
         // the library's own executor, as its Python binding uses (a plain std::thread pool builds a worse graph)
@@ -48,7 +53,7 @@ public:
         auto sr = idx.save(path(dir).c_str()); if (!sr) die(std::string("usearch save failed: ") + sr.error.what());
     }
     void load(const std::string& dir, const Corpus& c, const Params& bp) override {
-        c_ = c; need(path(dir));
+        c_ = c; d_ = c.d; need(path(dir));
         idx_ = make_index(c.d, param_i(bp, "M", 16), param_i(bp, "efC", 200));
         auto lr = idx_.load(path(dir).c_str()); if (!lr) die(std::string("usearch load failed: ") + lr.error.what());
         idx_.reserve(index_limits_t(c.n, 1));
@@ -75,7 +80,8 @@ public:
     std::vector<std::string> files(const std::string& dir) const override { return {path(dir)}; }
     std::map<std::string, std::string> info() const override {
         return {{"library", "usearch"}, {"version", "2.26.4"}, {"commit", PAPER_USEARCH_COMMIT},
-                {"simd", idx_.metric().isa_name()}, {"simd_note", "NumKong dynamic dispatch"}};
+                // a fresh metric of the same kind: in a build, idx_ is never made (the build uses its own index)
+                {"simd", make_metric(d_).isa_name()}, {"simd_note", "NumKong dynamic dispatch"}};
     }
 };
 
