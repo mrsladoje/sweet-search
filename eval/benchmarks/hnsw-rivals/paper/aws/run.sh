@@ -71,7 +71,9 @@ claim() {  # claim <plan> -> 0 if this machine owns it
   [ "$LOCAL" = 1 ] && return 0
   local k="hnsw/queue/$QUEUE/$MODE/$(basename "$1" .json).claim"
   echo "$MACHINE $(date -u +%FT%TZ)" > "$OUT/.claim"
-  aws s3api put-object --bucket "$BUCKET" --key "$k" --body "$OUT/.claim" --if-none-match '*' >/dev/null 2>&1
+  aws s3api put-object --bucket "$BUCKET" --key "$k" --body "$OUT/.claim" --if-none-match '*' >/dev/null 2>&1 && return 0
+  # a claim this machine made before a restart is still its own (the plan resumes here)
+  [ "$(aws s3 cp --only-show-errors "s3://$BUCKET/$k" - 2>/dev/null | awk '{print $1}')" = "$MACHINE" ]
 }
 fetch_builds() {  # fetch_builds <plan>: only the builds and our index of the plan's (set, model)
   [ "${LAZY_BUILDS:-0}" = 1 ] || return 0

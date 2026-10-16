@@ -94,10 +94,15 @@ def binaries(job, repo):
 
 
 KEY_FIELDS = ('comparison', 'system', 'family', 'build_params', 'build_seed', 'search', 'C', 'H', 'kv', 'gen', 'round',
-              'split', 'kind', 'options')
+              'split', 'kind', 'options', 'ef', 'S1', 'EF')
+# fields a job may carry outside the key (they are in the key through other entries: set hashes, machine, index hash)
+UNKEYED = {'set', 'model', 'machine', 'index', 'build_dir', 'binary', 'python'}
 
 
 def job_key(job, data, repo):
+    extra = set(job) - set(KEY_FIELDS) - UNKEYED
+    if extra:  # a parameter outside the key would make different jobs share one record
+        raise ValueError(f'job fields not in the job key: {sorted(extra)}')
     mem, qry = set_hashes(data, job['set'])
     key = dict(set=job['set'], set_membership=mem, queries=qry, model=job['model'],
                model_manifest=model_hash(data, job['model'], job['set']),
