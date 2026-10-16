@@ -243,19 +243,27 @@ print("\n".join(sorted(ps, key=lambda p: (-n(p), p))))' "$H" "${PLANS[@]}")
   fi
   prepare_timing
   EXPECTED=()
-  for p in "${PLANS[@]}"; do
-    STEP=$(plan_field "$p" step)
-    if ! claim "$p"; then say "plan $STEP claimed by another machine (queue $QUEUE): skip"; continue; fi
-    say "plan $STEP ($p) start"
-    EXPECTED+=("$OUT/jobs-expected-$STEP.json")
-    fetch_builds "$p"
-    SCHED_ARGS=(--check)
-    if [ "${LAZY_BUILDS:-0}" = 1 ] && ! sched "$p" >> "$LOG" 2>&1; then
-      say "plan $STEP: builds missing in S3"; FAILED+=("$MODE:$STEP:builds-missing"); drop_builds "$p"; continue
-    fi
-    if run_plan "$p" ${EXTRA[@]+"${EXTRA[@]}"}; then say "plan $STEP ok"; else say "plan $STEP FAILED"; FAILED+=("$MODE:$STEP"); fi
-    up
-    drop_builds "$p"
+  # Each pass runs every plan whose builds are complete (LAZY_BUILDS: fetched, then checked before the claim);
+  # a plan whose builds are not all in S3 yet is left unclaimed and tried again 10 minutes later.
+  TODO=("${PLANS[@]}")
+  while [ ${#TODO[@]} -gt 0 ]; do
+    LATER=()
+    for p in "${TODO[@]}"; do
+      STEP=$(plan_field "$p" step)
+      fetch_builds "$p"
+      SCHED_ARGS=(--check)
+      if [ "${LAZY_BUILDS:-0}" = 1 ] && ! sched "$p" >> "$LOG" 2>&1; then
+        say "plan $STEP: builds not all in S3 yet, later"; LATER+=("$p"); drop_builds "$p"; continue
+      fi
+      if ! claim "$p"; then say "plan $STEP claimed by another machine (queue $QUEUE): skip"; drop_builds "$p"; continue; fi
+      say "plan $STEP ($p) start"
+      EXPECTED+=("$OUT/jobs-expected-$STEP.json")
+      if run_plan "$p" ${EXTRA[@]+"${EXTRA[@]}"}; then say "plan $STEP ok"; else say "plan $STEP FAILED"; FAILED+=("$MODE:$STEP"); fi
+      up
+      drop_builds "$p"
+    done
+    TODO=(${LATER[@]+"${LATER[@]}"})
+    [ ${#TODO[@]} -gt 0 ] && { say "${#TODO[@]} plans wait for builds"; sleep 600; }
   done
   MISSING_E=0; for e in "${EXPECTED[@]}"; do [ -f "$e" ] || { say "no jobs list $e"; MISSING_E=1; }; done
   if [ $MISSING_E = 0 ] && $PY -I "$H/check_complete.py" "${EXPECTED[@]}" >> "$LOG" 2>&1; then say "mode $MODE: check_complete passed"
