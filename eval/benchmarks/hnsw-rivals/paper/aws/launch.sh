@@ -14,6 +14,7 @@
 #   STOP_MIN=4320    hard stop in minutes (the 72-hour stop; a pilot uses less)
 #   SMOKE_BUILD=1    smoke mode builds its own small builds
 #   SHARD=i/n        build mode: build only the (set, model) groups of shard i of n (several build machines)
+#   QUEUE=name LAZY_BUILDS=1 PLAN_DIR=plans/x/dev   timing machines share plan files through S3 claims (run.sh)
 #   IOPS=  THROUGHPUT=   gp3 settings above the baseline (3000 IOPS, 125 MB/s)
 set -euo pipefail
 DRY=0; ARGS=()
@@ -28,10 +29,10 @@ case "$ARCH" in amd64|arm64) ;; *) echo "arch must be amd64 or arm64"; exit 2;; 
 # Graviton families carry a 'g' after the generation digit (c8g, c7gd, m7g ...)
 if [[ $TYPE =~ ^[a-z]+[0-9]+g[a-z]*\. ]]; then WANT=arm64; else WANT=amd64; fi
 [ "$WANT" = "$ARCH" ] || { echo "instance type $TYPE needs arch $WANT, not $ARCH"; exit 2; }
-DISK_GB=100; DATA=sets-gcsn.tar.zst,emb-CodeRankEmbed-gcsn.tar.zst; BUNDLE=; IDLE_MIN=60; IOPS=; THROUGHPUT=; STOP_MIN=4320; SMOKE_BUILD=; SHARD=0/1
+DISK_GB=100; DATA=sets-gcsn.tar.zst,emb-CodeRankEmbed-gcsn.tar.zst; BUNDLE=; IDLE_MIN=60; IOPS=; THROUGHPUT=; STOP_MIN=4320; SMOKE_BUILD=; SHARD=0/1; QUEUE=; LAZY_BUILDS=; PLAN_DIR=
 for kv in "$@"; do
   case "$kv" in
-    DISK_GB=*|DATA=*|BUNDLE=*|IDLE_MIN=*|IOPS=*|THROUGHPUT=*|STOP_MIN=*|SMOKE_BUILD=*|SHARD=*) declare "${kv%%=*}=${kv#*=}";;
+    DISK_GB=*|DATA=*|BUNDLE=*|IDLE_MIN=*|IOPS=*|THROUGHPUT=*|STOP_MIN=*|SMOKE_BUILD=*|SHARD=*|QUEUE=*|LAZY_BUILDS=*|PLAN_DIR=*) declare "${kv%%=*}=${kv#*=}";;
     *) echo "unknown option $kv"; exit 2;;
   esac
 done
@@ -55,7 +56,7 @@ UD=$(mktemp)
 cat > "$UD" <<UDATA
 #!/bin/bash
 shutdown -h +$STOP_MIN
-export MACHINE=$NAME MODE=$MODE BUCKET=$BUCKET BUNDLE=$BUNDLE DATA=$DATA IDLE_MIN=$IDLE_MIN SMOKE_BUILD=$SMOKE_BUILD SHARD=$SHARD
+export MACHINE=$NAME MODE=$MODE BUCKET=$BUCKET BUNDLE=$BUNDLE DATA=$DATA IDLE_MIN=$IDLE_MIN SMOKE_BUILD=$SMOKE_BUILD SHARD=$SHARD QUEUE=$QUEUE LAZY_BUILDS=$LAZY_BUILDS PLAN_DIR=$PLAN_DIR
 for i in 1 2 3 4 5 6; do command -v aws >/dev/null && break; sleep 10; done
 if ! command -v aws >/dev/null; then apt-get update -q && apt-get install -y -q unzip curl && curl -sSfo /tmp/a.zip "https://awscli.amazonaws.com/awscli-exe-linux-\$(uname -m).zip" && unzip -q /tmp/a.zip -d /tmp && /tmp/aws/install; fi
 aws s3 cp --only-show-errors "s3://$BUCKET/hnsw/code/bootstrap.sh" /opt/hnsw-bootstrap.sh && bash /opt/hnsw-bootstrap.sh
