@@ -1,0 +1,26 @@
+\section{Related work}
+\label{sec:related}
+
+\paragraph{Late-interaction retrieval and its cost.}
+ColBERT~\cite{khattab2020colbert} introduced late interaction with the MaxSim operator; ColBERTv2~\cite{santhanam2022colbertv2} added residual compression of token vectors.
+Most efficiency work reduces how many tokens or documents reach exact MaxSim.
+PLAID~\cite{santhanam2022plaid}, EMVB~\cite{nardini2024emvb} and WARP~\cite{scheerer2025warp} are retrieval engines that prune candidates before scoring; DESSERT~\cite{engels2023dessert}, MUVERA~\cite{dhulipala2024muvera} and LEMUR~\cite{jaasaari2026lemur} approximate multi-vector similarity with hashing or single-vector proxies; XTR~\cite{lee2023xtr} and SPLATE~\cite{formal2024splate} change how candidates are found.
+Token pruning~\cite{lassance2022learnedpruning,schlatt2026tokenpruning}, token pooling~\cite{clavie2026tokenpooling}, ColBERTer~\cite{hofstatter2022colberter} and CrossQ~\cite{salla2026crossq} shrink the number or the size of stored token vectors.
+These methods are complementary to this paper: after any of them, an exact MaxSim over the surviving candidates remains, and that step is what \benchname measures.
+
+\paragraph{MaxSim kernels.}
+Flash-MaxSim~\cite{pony2026flashmaxsim}, TileMaxSim~\cite{sharma2026tilemaxsim} and the maxsim library of Kaum~\cite{kaum2026maxsim} are fused GPU kernels that avoid building the full similarity matrix.
+On CPU, maxsim-cpu~\cite{clavie2025maxsimcpu} computes float32 MaxSim with libxsmm on x86 and Apple Accelerate on ARM; NextPlaid~\cite{lightonai2026nextplaid} is a CPU-oriented multi-vector engine with its own scorer; NumKong~\cite{vardanian2026numkong} (formerly SimSIMD) offers packed MaxSim kernels with an approximate token choice; PyLate~\cite{chaffin2025pylatecikm} scores with PyTorch.
+maxsim-lut~\cite{joe32140maxsimlut} scores residual-coded tokens with lookup tables on CPU; it needs another input format and therefore another contract, so we discuss it but do not run it.
+Col-Bandit~\cite{pony2026colbandit} is the closest measurement: it times exhaustive CPU MaxSim with NumKong and maxsim-cpu on two CPUs as baselines for an approximate, bandit-based method.
+\benchname differs in three ways: it measures exhaustive scoring only, it checks each implementation against a float64 reference of its own scoring rule, and it replays captured production calls under a pre-registered protocol on five CPUs.
+
+\paragraph{Engines.}
+Vespa~\cite{bergum2024vespacolbert}, Qdrant~\cite{qdrant2026multivector}, LanceDB~\cite{lancedb2026multivector} and Weaviate~\cite{weaviate2026multivector} support multi-vector fields with a MaxSim comparison, usually as a rerank over candidates.
+We do not benchmark engines: their latency includes storage, networking and query planning.
+
+\paragraph{Benchmark methodology.}
+Measurements in shared clouds vary between instances and over time~\cite{leitner2016patterns,uta2020bigdata}, and small changes in the environment can bias results~\cite{mytkowicz2009wrongdata}.
+We follow common rules for reporting performance~\cite{hoefler2015scientific}: repeated processes, interleaved arms, all individual timings, and uncertainty from both the workload and the execution.
+For quality we use paired bootstrap tests over queries~\cite{sakai2006bootstrap,efron1993bootstrap}, a non-inferiority margin in the sense of one-sided equivalence testing~\cite{schuirmann1987tost}, and Holm's correction~\cite{holm1979simple}.
+In the spirit of BEIR's zero-shot evaluation~\cite{thakur2021beir}, no tuning touched the BEIR sets.

@@ -1,0 +1,91 @@
+\section{Method}
+\label{sec:method}
+
+\subsection{Machines}
+
+Table~\ref{tab:machines} lists the five CPUs.
+The three cloud types are AWS EC2 on-demand instances in us-east-1.
+Each held-out set ran whole on one instance; four instances per type shared the sets (shards), and a fifth instance per type (the replica) repeated agent-ho and gcsn-ho.
+The Linux machines report no frequency governor (the hypervisor controls frequency).
+No arm was pinned to a core; the one-thread runs set a thread budget of one.
+All Linux machines used Python~3.12.3, NumPy~2.5.4 on OpenBLAS~0.3.34 (BLIS~2.0 for one AMD variant), PyTorch~2.14.1 (CPU build), Node.js~24.18.0 and Rust~1.97.1; the Mac used Python~3.12.13 and Apple Accelerate.
+Lock files pin every Python and Rust dependency.
+
+\begin{table}[!htbp]
+\centering\small
+\caption{CPUs. Physical cores $\times$ hardware threads per core. ``jobs'' counts the held-out result jobs that passed the completeness check (shards; replica in parentheses).}
+\label{tab:machines}
+\resizebox{\linewidth}{!}{%
+\begin{tabular}{llllr}
+\toprule
+name & CPU & cores $\times$ threads & vector units & jobs \\
+\midrule
+Intel & Xeon 6 6975P-C (Granite Rapids), c8i.4xlarge & $8\times2$ & AVX-512, AMX & \nm{count.intel} (\nm{count.intel-replica}) \\
+AMD & EPYC 9R45 (Zen 5), c8a.4xlarge & $16\times1$ & AVX-512 & \nm{count.amd} (\nm{count.amd-replica}) \\
+Graviton4 & Neoverse V2, c8g.4xlarge & $16\times1$ & NEON, SVE2 & \nm{count.arm} (\nm{count.arm-replica}) \\
+M3 Max & Apple M3 Max, macOS 26.3.1 & 12 P + 4 E & NEON (+ AMX via Accelerate) & \nm{count.m3max} \\
+EPYC & AMD EPYC (Zen 3), Hetzner CCX33 & \TODO{epyc} & AVX2 & \TODO{epyc} \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\subsection{Arms and the frozen shortlist}
+
+Each library ran in several configurations: API variant, input type (float32, bfloat16, float16; for NumPy and maxsim-cpu also ``int4-self'', where the rival decodes the int4 storage inside its timed call), and thread budget (library default, the physical or performance cores, and one).
+On the development sets, a script chose per machine, library, input type and workload family the fastest two configurations and the fastest one-thread configuration.
+This \emph{shortlist} was frozen with everything else.
+Every table reports the frozen configuration; the fastest configuration on the held-out calls themselves appears only in the released per-machine summaries, labelled ``post hoc''.
+
+We gave the rivals their best case.
+Their inputs are decoded, normalized, cast and packed outside the timer (and counted in the memory measurement).
+NumKong has no batch interface, so besides its Python interface we looped its C kernel over the documents in Rust (``native'' arms); NextPlaid's scorer was looped the same way, single-threaded and with a thread pool.
+maxsim-cpu's x86 build returns wrong scores for queries over 32 tokens once a document has 64 tokens (Section~\ref{sec:correctness}); on x86 we therefore call it in 32-token query chunks, whose sums are exact.
+Intel MKL NumPy did not install from Intel's package index and is missing.
+maxsim-cpu has no Linux AArch64 wheel and is missing on Graviton4.
+
+\subsection{Timing}
+
+Each arm runs in its own process, because rival thread pools keep spinning after a call (OpenBLAS for up to about 100\,ms) and would slow the next arm.
+Before each arm, the runner waits until machine CPU use, sampled over one second, is below 10\% (15\% on the Mac).
+Per call, one untimed warm-up precedes the timed repetitions.
+\begin{description}
+\item[Warm] calls back to back; 5 timed repetitions per call.
+\item[Pool-parked (5\,ms busy gap)] the main thread spins for 5\,ms before every call, so worker pools that park after a short idle time have parked; 3 timed repetitions. This mode does \emph{not} test cold caches or process start.
+\item[One thread] the arms' one-thread configurations, warm.
+\item[Parallel callers] see Section~\ref{sec:conc}.
+\end{description}
+Every arm runs $R = 5$ process repetitions $\times$ 2 rounds, the second round in reversed arm order, so that slow drift affects all arms alike.
+A call's latency is the median over its 10 runs of the per-run median.
+We keep every individual timing: ``per-request p95/p99'' pools all of them and is the only tail statistic we report.
+
+\paragraph{Ratios and uncertainty.}
+A speed ratio is the geometric mean over calls of (rival time / \sweet time); above 1 means \sweet is faster.
+We report two uncertainty numbers apart.
+The \emph{workload interval} is a 95\% cluster-bootstrap interval (10,000 resamples, seed 42) that resamples repositories for agent calls (11 clusters), queries for GCSN and BEIR, and calls for sweep cells.
+The \emph{execution spread} is the range of the ratio over the 5 process repetitions; the replica instance adds an instance-to-instance spread (Section~\ref{sec:spread}).
+
+\paragraph{Noise check and $R$.}
+On development data, an A/A run (the same build as two arms, 5 process repetitions) gave per machine the coefficient of variation $cv$ of the set-level geometric mean and the noise band $n = \max(1\%, 2\,cv)$: Intel \nm{noise.intel}\%, AMD \nm{noise.amd}\%, Graviton4 \nm{noise.arm}\%, M3 Max \nm{noise.m3max}\%, EPYC \nm{noise.epyc}\%.
+The rule $R = \operatorname{clamp}(\lceil (cv/0.01)^2\rceil, 3, 8)$ gave 3 or 4. We used $R = \max(5, \text{noise rule}) = 5$ on all machines (an early plan with $R = 3$ was corrected before any held-out run).
+
+\subsection{Correctness on every call}
+
+Every timed run also checks every score.
+Per arm we report the largest absolute error against reference (a) of its own contract, the input-rounding effect, and the agreement of its top-ranked document with the contract-S reference (``top-1 = S'').
+For the BEIR sets every arm stores all its scores, so each implementation gets its own quality curve.
+
+\subsection{Development, freeze and held-out runs}
+\label{sec:freeze}
+
+All tuning used development data only.
+The last kernel change (the AVX-512 block) was kept on development data under a pre-set rule: at least 3\% faster and above the noise band in two rounds on the target machine, no slowdown above the band elsewhere, and bit-identical scores.
+A second candidate (a thread-count rule by call size) failed that rule and was dropped.
+
+Then we froze, in one file, the code state, every adapter, the shortlists, the analysis scripts, the dataset definitions, the contracts, $R$, the quality margin $\delta$, the four primary quality tests, the parallel-caller rates, and a rule for a stronger claim.
+Three commits define the freeze: \texttt{a4317ba9} (the frozen code), \texttt{ea84951f} (the freeze file re-made after a replica naming fix; the held-out bundle came from it) and \texttt{daf54122} (a memory fix in the parallel-caller harness with its new freeze entry, applied to every machine before any reached a parallel-caller group).
+A script checks the SHA-256 of every frozen file before use.
+Analysis code written after the freeze lives in a separate folder and is named so here.
+
+\paragraph{Held-out discipline.}
+We read held-out results only as aggregates.
+No per-query or per-call held-out row was printed or inspected, and nothing was tuned after a held-out result was seen.

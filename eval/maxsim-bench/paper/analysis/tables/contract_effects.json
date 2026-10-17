@@ -1,0 +1,143 @@
+{
+ "agent-ho": {
+  "calls": 2004,
+  "effects": {
+   "epsilon placement (S vs S-pre, no clamp)": {
+    "max_abs": 4.440892098500626e-16,
+    "top1_agree": 1.0,
+    "top10_overlap": 1.0,
+    "calls_with_2plus": 1982
+   },
+   "clamp (S with vs without max(0, .))": {
+    "max_abs": 0.05443033403627562,
+    "top1_agree": 0.9989909182643795,
+    "top10_overlap": 0.9994954591321897,
+    "calls_with_2plus": 1982
+   },
+   "S vs C (NumKong contract)": {
+    "max_abs": 0.054567141819137285,
+    "top1_agree": 0.9757820383451059,
+    "top10_overlap": 0.9921291624621594,
+    "calls_with_2plus": 1982
+   },
+   "PyLate zero padding (S-pre-pad0 vs S-pre)": {
+    "max_abs": 0.040835487413569724,
+    "top1_agree": 0.9989909182643795,
+    "top10_overlap": 0.9995459132189707,
+    "calls_with_2plus": 1982
+   },
+   "f32 pre-scaling of rival inputs": {
+    "max_abs": 4.134591513604846e-08,
+    "top1_agree": 1.0,
+    "top10_overlap": 1.0,
+    "calls_with_2plus": 1982
+   },
+   "bf16 cast of rival inputs": {
+    "max_abs": 0.0008987681486710697,
+    "top1_agree": 0.9984863773965691,
+    "top10_overlap": 0.9992431886982845,
+    "calls_with_2plus": 1982
+   },
+   "f16 cast of rival inputs": {
+    "max_abs": 9.494731588977068e-05,
+    "top1_agree": 0.9994954591321897,
+    "top10_overlap": 0.999949545913219,
+    "calls_with_2plus": 1982
+   }
+  }
+ },
+ "gcsn-ho": {
+  "calls": 2378,
+  "effects": {
+   "epsilon placement (S vs S-pre, no clamp)": {
+    "max_abs": 4.440892098500626e-16,
+    "top1_agree": 1.0,
+    "top10_overlap": 1.0,
+    "calls_with_2plus": 2378
+   },
+   "clamp (S with vs without max(0, .))": {
+    "max_abs": 0.03449879294199279,
+    "top1_agree": 0.9995794785534062,
+    "top10_overlap": 0.9994953742640875,
+    "calls_with_2plus": 2378
+   },
+   "S vs C (NumKong contract)": {
+    "max_abs": 0.03448464381787006,
+    "top1_agree": 0.9882253994953742,
+    "top10_overlap": 0.9899074852817493,
+    "calls_with_2plus": 2378
+   },
+   "PyLate zero padding (S-pre-pad0 vs S-pre)": {
+    "max_abs": 0.03449879294199277,
+    "top1_agree": 0.9995794785534062,
+    "top10_overlap": 0.9995374264087469,
+    "calls_with_2plus": 2378
+   },
+   "f32 pre-scaling of rival inputs": {
+    "max_abs": 3.8060639973025445e-08,
+    "top1_agree": 1.0,
+    "top10_overlap": 1.0,
+    "calls_with_2plus": 2378
+   },
+   "bf16 cast of rival inputs": {
+    "max_abs": 0.0009397329102897034,
+    "top1_agree": 0.9991589571068125,
+    "top10_overlap": 0.9992010092514718,
+    "calls_with_2plus": 2378
+   },
+   "f16 cast of rival inputs": {
+    "max_abs": 0.00011833723345999747,
+    "top1_agree": 0.9995794785534062,
+    "top10_overlap": 0.9999158957106813,
+    "calls_with_2plus": 2378
+   }
+  }
+ },
+ "beir (20 sets)": {
+  "calls": 6230,
+  "effects": {
+   "epsilon placement (S vs S-pre, no clamp)": {
+    "max_abs": 4.440892098500626e-16,
+    "top1_agree": 1.0,
+    "top10_overlap": 1.0,
+    "calls_with_2plus": 6230
+   },
+   "clamp (S with vs without max(0, .))": {
+    "max_abs": 0.07584912613549878,
+    "top1_agree": 1.0,
+    "top10_overlap": 0.999983948635634,
+    "calls_with_2plus": 6230
+   },
+   "S vs C (NumKong contract)": {
+    "max_abs": 0.07505767279372516,
+    "top1_agree": 0.7850722311396469,
+    "top10_overlap": 0.8458426966292135,
+    "calls_with_2plus": 6230
+   },
+   "PyLate zero padding (S-pre-pad0 vs S-pre)": {
+    "max_abs": 0.07584912613549878,
+    "top1_agree": 1.0,
+    "top10_overlap": 0.999983948635634,
+    "calls_with_2plus": 6230
+   },
+   "f32 pre-scaling of rival inputs": {
+    "max_abs": 9.238407061573639e-08,
+    "top1_agree": 1.0,
+    "top10_overlap": 1.0,
+    "calls_with_2plus": 6230
+   },
+   "bf16 cast of rival inputs": {
+    "max_abs": 0.0016344474763049233,
+    "top1_agree": 0.9858747993579454,
+    "top10_overlap": 0.98784911717496,
+    "calls_with_2plus": 6230
+   },
+   "f16 cast of rival inputs": {
+    "max_abs": 0.00022455641227836498,
+    "top1_agree": 0.9964686998394864,
+    "top10_overlap": 0.9982182985553771,
+    "calls_with_2plus": 6230
+   }
+  }
+ }
+}

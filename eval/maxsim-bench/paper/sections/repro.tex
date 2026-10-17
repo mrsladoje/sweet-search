@@ -1,0 +1,17 @@
+\section{Reproducibility}
+\label{sec:repro}
+
+\paragraph{Code.}
+The benchmark, the kernel and the analysis are in the public repository of sweet-search~\cite{sweetsearch_repo}, folder \texttt{eval/maxsim-bench}.
+The frozen state is commit \texttt{a4317ba9}; the freeze file (\texttt{FREEZE.json}) holds the SHA-256 of every frozen file, the shortlists, $R$, $\delta$, the primary tests, the parallel-caller rates and the claim rule, and \texttt{freeze\_check.py} verifies them.
+Lock files pin every Python and Rust dependency per platform.
+The analysis code written after the freeze is in \texttt{paper/analysis}; one command per file rebuilds every table, figure and number of this paper (\texttt{paper/README.md}), and \texttt{RESULTS-paper.md} lists each number with its source file.
+
+\paragraph{Data.}
+The release \TODO{Zenodo DOI} holds every raw result file (each timed repetition of each call, scores for the BEIR sets, memory and parallel-caller records), the completeness logs, the replay sets whose licences allow it, and release identifiers with rebuild scripts for the others (Appendix~\ref{app:data}).
+Cloud instance identifiers are replaced by neutral host labels; each scrubbed file carries its own SHA-256, and the job keys stored inside the files then no longer match a recomputed key.
+
+\paragraph{Adding an implementation.}
+An arm is a Python function that receives one call (query, candidates in the replay format) and returns one score per candidate, plus a contract name.
+The harness times it, checks it against the reference of its contract and writes the same records as for every other arm.
+A small example (one replay set, three arms) runs in under ten minutes on a laptop \TODO{reproduction example: path and timing}.

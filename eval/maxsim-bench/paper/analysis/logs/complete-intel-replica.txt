@@ -1,0 +1,2 @@
+676 of 676 jobs complete
+rc=0

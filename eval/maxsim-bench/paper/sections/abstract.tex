@@ -1,0 +1,15 @@
+\begin{abstract}
+\noindent
+We present \benchname, a benchmark for CPU kernels that rerank candidate documents with late-interaction (MaxSim) scores.
+It replays real rerank calls from a code-search engine, a public code-search benchmark, a size sweep and two BEIR datasets.
+It checks every implementation against a float64 reference of its own scoring contract, and it keeps development data and held-out data apart under a recorded freeze.
+We use it to measure an int4 SIMD kernel from the open-source engine sweet-search against NumPy, PyTorch, maxsim-cpu, NextPlaid and NumKong on four CPUs, with a fifth CPU to follow \TODO{epyc}.
+With all cores and warm calls, the kernel was faster than every frozen exact rival configuration with float32 inputs on the three replayed workloads and on every CPU: the fastest such rival needed \nm{best.warm.agent-ho.f32.min}--\nm{best.warm.agent-ho.f32.max}$\times$ the time on agent calls and \nm{best.warm.beir.f32.min}--\nm{best.warm.beir.f32.max}$\times$ on BEIR calls (geometric means).
+The kernel was not the fastest everywhere.
+NumKong, which approximates the maximum, was faster on two CPUs; PyTorch with bfloat16 inputs was faster on BEIR calls on the Xeon (\nm{best.warm.intel.beir.any}$\times$).
+With one thread, a rival was faster on BEIR calls on every CPU; after a 5\,ms idle gap, NumPy was faster on three CPUs; and with 16 parallel callers, an exact rival reached a higher throughput in two of eight CPU--workload pairs.
+On BEIR, int4 storage with the production scoring rule showed no material loss in nDCG@10 for ColBERTv2 (margin 0.01, Holm correction, four CPUs), but it lost \nm{q.intel.scifact.answersmall.relabs}\% and \nm{q.intel.nfcorpus.answersmall.relabs}\% for answerai-colbert-small.
+A post-hoc analysis traces this loss to the division by the stored pre-quantization norm, not to the kernel's arithmetic.
+The reference checks found two new defects in other libraries and confirmed a known one.
+We release the replay format, the contract references and all raw results \TODO{Zenodo DOI}.
+\end{abstract}

@@ -1,0 +1,566 @@
+{
+ "bm25": {
+  "scifact|colbertv2|k10": 0.6616913885341652,
+  "scifact|colbertv2|k25": 0.6616913885341652,
+  "scifact|colbertv2|k50": 0.6616913885341652,
+  "scifact|colbertv2|k100": 0.6616913885341652,
+  "scifact|colbertv2|k200": 0.6616913885341652,
+  "scifact|answersmall|k10": 0.6616913885341652,
+  "scifact|answersmall|k25": 0.6616913885341652,
+  "scifact|answersmall|k50": 0.6616913885341652,
+  "scifact|answersmall|k100": 0.6616913885341652,
+  "scifact|answersmall|k200": 0.6616913885341652,
+  "nfcorpus|colbertv2|k10": 0.30641933083855877,
+  "nfcorpus|colbertv2|k25": 0.30641933083855877,
+  "nfcorpus|colbertv2|k50": 0.30641933083855877,
+  "nfcorpus|colbertv2|k100": 0.30641933083855877,
+  "nfcorpus|colbertv2|k200": 0.30641933083855877,
+  "nfcorpus|answersmall|k10": 0.30641933083855877,
+  "nfcorpus|answersmall|k25": 0.30641933083855877,
+  "nfcorpus|answersmall|k50": 0.30641933083855877,
+  "nfcorpus|answersmall|k100": 0.30641933083855877,
+  "nfcorpus|answersmall|k200": 0.30641933083855877
+ },
+ "refs": {
+  "scifact|colbertv2|k10": {
+   "S-clamp": 0.652244356306366,
+   "Spre-b-noclamp": 0.652244356306366,
+   "C-b-noclamp": 0.6515757655449392,
+   "C-a-f32-noclamp": 0.6515757655449392,
+   "C-a-bf16-noclamp": 0.6515757655449392,
+   "C-a-f16-noclamp": 0.6515757655449392
+  },
+  "scifact|colbertv2|k25": {
+   "S-clamp": 0.6551594791042182,
+   "Spre-b-noclamp": 0.6551594791042182,
+   "C-b-noclamp": 0.6547441488357522,
+   "C-a-f32-noclamp": 0.6547441488357522,
+   "C-a-bf16-noclamp": 0.6547441488357522,
+   "C-a-f16-noclamp": 0.6547441488357522
+  },
+  "scifact|colbertv2|k50": {
+   "S-clamp": 0.6495393514985938,
+   "Spre-b-noclamp": 0.6495393514985938,
+   "C-b-noclamp": 0.6490172348416388,
+   "C-a-f32-noclamp": 0.6490172348416388,
+   "C-a-bf16-noclamp": 0.6490172348416388,
+   "C-a-f16-noclamp": 0.6490172348416388
+  },
+  "scifact|colbertv2|k100": {
+   "S-clamp": 0.645059454276747,
+   "Spre-b-noclamp": 0.645059454276747,
+   "C-b-noclamp": 0.644619157149353,
+   "C-a-f32-noclamp": 0.644619157149353,
+   "C-a-bf16-noclamp": 0.644619157149353,
+   "C-a-f16-noclamp": 0.644619157149353
+  },
+  "scifact|colbertv2|k200": {
+   "S-clamp": 0.6500478715338531,
+   "Spre-b-noclamp": 0.6500478715338531,
+   "C-b-noclamp": 0.6505115623056935,
+   "C-a-f32-noclamp": 0.6505115623056935,
+   "C-a-bf16-noclamp": 0.6505115623056935,
+   "C-a-f16-noclamp": 0.6505115623056935
+  },
+  "scifact|answersmall|k10": {
+   "S-clamp": 0.6866288327769392,
+   "Spre-b-noclamp": 0.6866288327769392,
+   "C-b-noclamp": 0.6964227775567547,
+   "C-a-f32-noclamp": 0.6964227775567547,
+   "C-a-bf16-noclamp": 0.6964227775567547,
+   "C-a-f16-noclamp": 0.6964227775567547
+  },
+  "scifact|answersmall|k25": {
+   "S-clamp": 0.7015325300732566,
+   "Spre-b-noclamp": 0.7015325300732566,
+   "C-b-noclamp": 0.7127602814756246,
+   "C-a-f32-noclamp": 0.7127602814756246,
+   "C-a-bf16-noclamp": 0.7127602814756246,
+   "C-a-f16-noclamp": 0.7127602814756246
+  },
+  "scifact|answersmall|k50": {
+   "S-clamp": 0.7062870380004413,
+   "Spre-b-noclamp": 0.7062870380004413,
+   "C-b-noclamp": 0.7210678180166478,
+   "C-a-f32-noclamp": 0.7210678180166478,
+   "C-a-bf16-noclamp": 0.7210678180166478,
+   "C-a-f16-noclamp": 0.7210678180166478
+  },
+  "scifact|answersmall|k100": {
+   "S-clamp": 0.6997539007395852,
+   "Spre-b-noclamp": 0.6997539007395852,
+   "C-b-noclamp": 0.7189705123854193,
+   "C-a-f32-noclamp": 0.7189705123854193,
+   "C-a-bf16-noclamp": 0.7189705123854193,
+   "C-a-f16-noclamp": 0.7189705123854193
+  },
+  "scifact|answersmall|k200": {
+   "S-clamp": 0.70764061520077,
+   "Spre-b-noclamp": 0.70764061520077,
+   "C-b-noclamp": 0.728946584801834,
+   "C-a-f32-noclamp": 0.728946584801834,
+   "C-a-bf16-noclamp": 0.728946584801834,
+   "C-a-f16-noclamp": 0.728946584801834
+  },
+  "nfcorpus|colbertv2|k10": {
+   "S-clamp": 0.3134784888200589,
+   "Spre-b-noclamp": 0.3134784888200589,
+   "C-b-noclamp": 0.3127452404361604,
+   "C-a-f32-noclamp": 0.3127452404361604,
+   "C-a-bf16-noclamp": 0.3127452404361604,
+   "C-a-f16-noclamp": 0.3127452404361604
+  },
+  "nfcorpus|colbertv2|k25": {
+   "S-clamp": 0.31741732074680223,
+   "Spre-b-noclamp": 0.31741732074680223,
+   "C-b-noclamp": 0.31733986034445766,
+   "C-a-f32-noclamp": 0.31733986034445766,
+   "C-a-bf16-noclamp": 0.3171428919599408,
+   "C-a-f16-noclamp": 0.31733986034445766
+  },
+  "nfcorpus|colbertv2|k50": {
+   "S-clamp": 0.320309173124287,
+   "Spre-b-noclamp": 0.320309173124287,
+   "C-b-noclamp": 0.3200558997394061,
+   "C-a-f32-noclamp": 0.3200558997394061,
+   "C-a-bf16-noclamp": 0.3200558997394061,
+   "C-a-f16-noclamp": 0.3200558997394061
+  },
+  "nfcorpus|colbertv2|k100": {
+   "S-clamp": 0.3233716952684518,
+   "Spre-b-noclamp": 0.3233716952684518,
+   "C-b-noclamp": 0.322938513789992,
+   "C-a-f32-noclamp": 0.322938513789992,
+   "C-a-bf16-noclamp": 0.322938513789992,
+   "C-a-f16-noclamp": 0.322938513789992
+  },
+  "nfcorpus|colbertv2|k200": {
+   "S-clamp": 0.32473401748420766,
+   "Spre-b-noclamp": 0.32473401748420766,
+   "C-b-noclamp": 0.3241209377167094,
+   "C-a-f32-noclamp": 0.3241209377167094,
+   "C-a-bf16-noclamp": 0.3241209377167094,
+   "C-a-f16-noclamp": 0.3241209377167094
+  },
+  "nfcorpus|answersmall|k10": {
+   "S-clamp": 0.3016875143237638,
+   "Spre-b-noclamp": 0.3016875143237638,
+   "C-b-noclamp": 0.31963501853151116,
+   "C-a-f32-noclamp": 0.31963501853151116,
+   "C-a-bf16-noclamp": 0.31962842177265166,
+   "C-a-f16-noclamp": 0.3196051570865331
+  },
+  "nfcorpus|answersmall|k25": {
+   "S-clamp": 0.2895775683066161,
+   "Spre-b-noclamp": 0.2895775683066161,
+   "C-b-noclamp": 0.3317603129558372,
+   "C-a-f32-noclamp": 0.3317603129558372,
+   "C-a-bf16-noclamp": 0.3321994749185147,
+   "C-a-f16-noclamp": 0.3317399038213623
+  },
+  "nfcorpus|answersmall|k50": {
+   "S-clamp": 0.28018729430370337,
+   "Spre-b-noclamp": 0.28018729430370337,
+   "C-b-noclamp": 0.3342079531503751,
+   "C-a-f32-noclamp": 0.3342079531503751,
+   "C-a-bf16-noclamp": 0.3340366773068195,
+   "C-a-f16-noclamp": 0.3342248042992832
+  },
+  "nfcorpus|answersmall|k100": {
+   "S-clamp": 0.27138686844078225,
+   "Spre-b-noclamp": 0.27138686844078225,
+   "C-b-noclamp": 0.33787356142440667,
+   "C-a-f32-noclamp": 0.33787356142440667,
+   "C-a-bf16-noclamp": 0.33797806811493175,
+   "C-a-f16-noclamp": 0.33803499877687276
+  },
+  "nfcorpus|answersmall|k200": {
+   "S-clamp": 0.2636552378696586,
+   "Spre-b-noclamp": 0.2636552378696586,
+   "C-b-noclamp": 0.3425460427505895,
+   "C-a-f32-noclamp": 0.3425460427505895,
+   "C-a-bf16-noclamp": 0.3426429565348886,
+   "C-a-f16-noclamp": 0.34269320487132615
+  }
+ },
+ "kernel_across_platforms": {
+  "scifact|colbertv2|k10": {
+   "amd vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
+   },
+   "arm vs intel": {
+    "bit_equal_share": 0.6216666666666667,
+    "max_abs": 1.1920928955078125e-07,
+    "same_ranking_share": 1.0
+   },
+   "m3max vs intel": {
+    "bit_equal_share": 0.6216666666666667,
+    "max_abs": 1.1920928955078125e-07,
+    "same_ranking_share": 1.0
+   }
+  },
+  "scifact|colbertv2|k25": {
+   "amd vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
+   },
+   "arm vs intel": {
+    "bit_equal_share": 0.6152,
+    "max_abs": 1.1920928955078125e-07,
+    "same_ranking_share": 1.0
+   },
+   "m3max vs intel": {
+    "bit_equal_share": 0.6152,
+    "max_abs": 1.1920928955078125e-07,
+    "same_ranking_share": 1.0
+   }
+  },
+  "scifact|colbertv2|k50": {
+   "amd vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
+   },
+   "arm vs intel": {
+    "bit_equal_share": 0.6240666666666667,
+    "max_abs": 1.4901161193847656e-07,
+    "same_ranking_share": 1.0
+   },
+   "m3max vs intel": {
+    "bit_equal_share": 0.6240666666666667,
+    "max_abs": 1.4901161193847656e-07,
+    "same_ranking_share": 1.0
+   }
+  },
+  "scifact|colbertv2|k100": {
+   "amd vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
+   },
+   "arm vs intel": {
+    "bit_equal_share": 0.6221333333333333,
+    "max_abs": 1.7881393432617188e-07,
+    "same_ranking_share": 1.0
+   },
+   "m3max vs intel": {
+    "bit_equal_share": 0.6221333333333333,
+    "max_abs": 1.7881393432617188e-07,
+    "same_ranking_share": 1.0
+   }
+  },
+  "scifact|colbertv2|k200": {
+   "amd vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
+   },
+   "arm vs intel": {
+    "bit_equal_share": 0.62375,
+    "max_abs": 1.7881393432617188e-07,
+    "same_ranking_share": 1.0
+   },
+   "m3max vs intel": {
+    "bit_equal_share": 0.62375,
+    "max_abs": 1.7881393432617188e-07,
+    "same_ranking_share": 1.0
+   }
+  },
+  "scifact|answersmall|k10": {
+   "amd vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
+   },
+   "arm vs intel": {
+    "bit_equal_share": 0.5996666666666667,
+    "max_abs": 2.980232238769531e-07,
+    "same_ranking_share": 1.0
+   },
+   "m3max vs intel": {
+    "bit_equal_share": 0.5996666666666667,
+    "max_abs": 2.980232238769531e-07,
+    "same_ranking_share": 1.0
+   }
+  },
+  "scifact|answersmall|k25": {
+   "amd vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
+   },
+   "arm vs intel": {
+    "bit_equal_share": 0.5972,
+    "max_abs": 2.980232238769531e-07,
+    "same_ranking_share": 1.0
+   },
+   "m3max vs intel": {
+    "bit_equal_share": 0.5972,
+    "max_abs": 2.980232238769531e-07,
+    "same_ranking_share": 1.0
+   }
+  },
+  "scifact|answersmall|k50": {
+   "amd vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
+   },
+   "arm vs intel": {
+    "bit_equal_share": 0.5936666666666667,
+    "max_abs": 2.980232238769531e-07,
+    "same_ranking_share": 1.0
+   },
+   "m3max vs intel": {
+    "bit_equal_share": 0.5936666666666667,
+    "max_abs": 2.980232238769531e-07,
+    "same_ranking_share": 1.0
+   }
+  },
+  "scifact|answersmall|k100": {
+   "amd vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
+   },
+   "arm vs intel": {
+    "bit_equal_share": 0.5953333333333334,
+    "max_abs": 2.980232238769531e-07,
+    "same_ranking_share": 0.99
+   },
+   "m3max vs intel": {
+    "bit_equal_share": 0.5953333333333334,
+    "max_abs": 2.980232238769531e-07,
+    "same_ranking_share": 0.99
+   }
+  },
+  "scifact|answersmall|k200": {
+   "amd vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
+   },
+   "arm vs intel": {
+    "bit_equal_share": 0.59425,
+    "max_abs": 2.980232238769531e-07,
+    "same_ranking_share": 0.96
+   },
+   "m3max vs intel": {
+    "bit_equal_share": 0.59425,
+    "max_abs": 2.980232238769531e-07,
+    "same_ranking_share": 0.96
+   }
+  },
+  "nfcorpus|colbertv2|k10": {
+   "amd vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
+   },
+   "arm vs intel": {
+    "bit_equal_share": 0.6130030959752322,
+    "max_abs": 1.7881393432617188e-07,
+    "same_ranking_share": 1.0
+   },
+   "m3max vs intel": {
+    "bit_equal_share": 0.6130030959752322,
+    "max_abs": 1.7881393432617188e-07,
+    "same_ranking_share": 1.0
+   }
+  },
+  "nfcorpus|colbertv2|k25": {
+   "amd vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
+   },
+   "arm vs intel": {
+    "bit_equal_share": 0.6019814241486068,
+    "max_abs": 1.7881393432617188e-07,
+    "same_ranking_share": 1.0
+   },
+   "m3max vs intel": {
+    "bit_equal_share": 0.6019814241486068,
+    "max_abs": 1.7881393432617188e-07,
+    "same_ranking_share": 1.0
+   }
+  },
+  "nfcorpus|colbertv2|k50": {
+   "amd vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
+   },
+   "arm vs intel": {
+    "bit_equal_share": 0.5930030959752322,
+    "max_abs": 1.7881393432617188e-07,
+    "same_ranking_share": 1.0
+   },
+   "m3max vs intel": {
+    "bit_equal_share": 0.5930030959752322,
+    "max_abs": 1.7881393432617188e-07,
+    "same_ranking_share": 1.0
+   }
+  },
+  "nfcorpus|colbertv2|k100": {
+   "amd vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
+   },
+   "arm vs intel": {
+    "bit_equal_share": 0.5886068111455108,
+    "max_abs": 1.7881393432617188e-07,
+    "same_ranking_share": 1.0
+   },
+   "m3max vs intel": {
+    "bit_equal_share": 0.5886068111455108,
+    "max_abs": 1.7881393432617188e-07,
+    "same_ranking_share": 1.0
+   }
+  },
+  "nfcorpus|colbertv2|k200": {
+   "amd vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
+   },
+   "arm vs intel": {
+    "bit_equal_share": 0.5815634674922601,
+    "max_abs": 1.7881393432617188e-07,
+    "same_ranking_share": 1.0
+   },
+   "m3max vs intel": {
+    "bit_equal_share": 0.5815634674922601,
+    "max_abs": 1.7881393432617188e-07,
+    "same_ranking_share": 1.0
+   }
+  },
+  "nfcorpus|answersmall|k10": {
+   "amd vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
+   },
+   "arm vs intel": {
+    "bit_equal_share": 0.5913312693498453,
+    "max_abs": 2.384185791015625e-07,
+    "same_ranking_share": 1.0
+   },
+   "m3max vs intel": {
+    "bit_equal_share": 0.5913312693498453,
+    "max_abs": 2.384185791015625e-07,
+    "same_ranking_share": 1.0
+   }
+  },
+  "nfcorpus|answersmall|k25": {
+   "amd vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
+   },
+   "arm vs intel": {
+    "bit_equal_share": 0.5907120743034056,
+    "max_abs": 2.384185791015625e-07,
+    "same_ranking_share": 1.0
+   },
+   "m3max vs intel": {
+    "bit_equal_share": 0.5907120743034056,
+    "max_abs": 2.384185791015625e-07,
+    "same_ranking_share": 1.0
+   }
+  },
+  "nfcorpus|answersmall|k50": {
+   "amd vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
+   },
+   "arm vs intel": {
+    "bit_equal_share": 0.5894117647058823,
+    "max_abs": 2.980232238769531e-07,
+    "same_ranking_share": 0.9969040247678018
+   },
+   "m3max vs intel": {
+    "bit_equal_share": 0.5894117647058823,
+    "max_abs": 2.980232238769531e-07,
+    "same_ranking_share": 0.9969040247678018
+   }
+  },
+  "nfcorpus|answersmall|k100": {
+   "amd vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
+   },
+   "arm vs intel": {
+    "bit_equal_share": 0.5913003095975232,
+    "max_abs": 2.980232238769531e-07,
+    "same_ranking_share": 0.9907120743034056
+   },
+   "m3max vs intel": {
+    "bit_equal_share": 0.5913003095975232,
+    "max_abs": 2.980232238769531e-07,
+    "same_ranking_share": 0.9907120743034056
+   }
+  },
+  "nfcorpus|answersmall|k200": {
+   "amd vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
+   },
+   "arm vs intel": {
+    "bit_equal_share": 0.5922910216718267,
+    "max_abs": 2.980232238769531e-07,
+    "same_ranking_share": 0.9442724458204335
+   },
+   "m3max vs intel": {
+    "bit_equal_share": 0.5922910216718267,
+    "max_abs": 2.980232238769531e-07,
+    "same_ranking_share": 0.9442724458204335
+   }
+  }
+ },
+ "int4_diagnostic": {
+  "scifact|colbertv2": {
+   "dim": 128,
+   "tokens": 100000,
+   "rel_err_median": 0.09811459186474346,
+   "rel_err_p90": 0.11222401853896782,
+   "cos_median": 0.9952586450974519,
+   "cos_p10": 0.9937997751658306,
+   "peak_to_rms_median": 2.7747326724120285
+  },
+  "scifact|answersmall": {
+   "dim": 96,
+   "tokens": 100000,
+   "rel_err_median": 0.09444085852187653,
+   "rel_err_p90": 0.10479023990534869,
+   "cos_median": 0.9956171099824356,
+   "cos_p10": 0.994591752696495,
+   "peak_to_rms_median": 2.6949324190171113
+  },
+  "nfcorpus|colbertv2": {
+   "dim": 128,
+   "tokens": 100000,
+   "rel_err_median": 0.0977934154388894,
+   "rel_err_p90": 0.1117984078829128,
+   "cos_median": 0.9952878130059348,
+   "cos_p10": 0.9938480625065059,
+   "peak_to_rms_median": 2.769646065059966
+  },
+  "nfcorpus|answersmall": {
+   "dim": 96,
+   "tokens": 100000,
+   "rel_err_median": 0.09255955825331694,
+   "rel_err_p90": 0.10253956710690568,
+   "cos_median": 0.9957862262809509,
+   "cos_p10": 0.9948242430102647,
+   "peak_to_rms_median": 2.6286859020291917
+  }
+ }
+}

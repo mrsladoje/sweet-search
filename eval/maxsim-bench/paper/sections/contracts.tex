@@ -1,0 +1,58 @@
+\section{Scoring contracts and the kernel}
+\label{sec:contracts}
+
+\subsection{Four scoring rules}
+
+All tested implementations compute ``MaxSim'', but not the same number.
+We write $q_i$ for a raw query token (float32 as stored), $\hat d_j$ for a decoded int4 document token, $n_j$ for its stored pre-quantization norm, and $\epsilon = 10^{-8}$.
+A score is always the mean over query tokens $i$ of a per-token maximum over document tokens $j$.
+Table~\ref{tab:contracts} defines each rule once.
+
+\begin{table}[!htbp]
+\centering\small
+\caption{Scoring contracts. Every arm is checked against a float64 reference of its own contract, computed from the raw nibbles.}
+\label{tab:contracts}
+\begin{tabularx}{\linewidth}{lXl}
+\toprule
+contract & per-token value & used by \\
+\midrule
+S & $\max(0, \max_j \langle q_i, \hat d_j\rangle / (\|q_i\|\,n_j + \epsilon))$; float32 arithmetic on int4 storage & \sweet (all paths) \\
+S-pre & $\max_j \langle q_i/\|q_i\|,\ \hat d_j/(n_j+\epsilon)\rangle$, inputs scaled in float32 before the call; clamp per arm & NumPy, PyTorch, maxsim-cpu, NextPlaid, colbert-ai \\
+S-pre-pad0 & as S-pre, but a document shorter than the call's longest document also gets $\max(0,\cdot)$ (zero padding times a mask) & PyLate (CPU path) \\
+C & $\max_j \cos(x_i, y_j)$ of the vectors the library receives, no epsilon, no clamp; a zero vector has cosine 0 & NumKong \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Two details matter later.
+First, S divides by the \emph{stored} norm $n_j$ of the float vector before quantization, while C divides by the norm of the vector it receives, which for the rivals is the decoded and pre-scaled token.
+Second, NumKong is approximate: per query token, an int8 screen picks one document token, and only that token is refined in higher precision~\cite{vardanian2026numkong}.
+Its reported maximum can therefore come from a token that is not the true maximum.
+
+\paragraph{Two references per rival.}
+For every rival we compute (a) its contract on the arm's actual input arrays (after its float32 scaling and its cast to bf16 or f16), and (b) the same contract on float64 data decoded from the nibbles.
+The arm's error against (a) is its \emph{implementation error}.
+The difference (a)$-$(b) is the \emph{input-rounding effect}.
+\emph{Contract effects} compare reference (b) with reference (b) of another contract, so no implementation error enters them.
+
+\paragraph{Fixtures.}
+A separate script builds hand-made cases byte by byte and computes their expected values with plain Python loops in float64; it shares no code with the benchmark.
+The cases are: a negative best match (all cosines below 0), an opposite pair (cosine $-1$), a stored norm 1.10 times the decoded norm, a zero query token, a constant document token (scale 0), a zero document vector, ragged candidates of 1, 3, 17 and 64 tokens in one call, and dimensions 96, 128 and 127.
+Every arm had to match its contract on every case before any timing on each machine.
+
+\subsection{The \sweet kernel}
+\label{sec:kernel}
+
+The kernel computes contract S directly on int4 storage.
+It is written in Rust, called from Node.js through N-API in the product, and through a C ABI from Python in this benchmark; both entry points compile the same source.
+Its design choices are:
+\begin{itemize}
+\item \textbf{Register blocking.} On AArch64, a 4 query $\times$ 4 document block of NEON accumulators (8 loads per 16 fused multiply-adds). On x86-64, a 4 $\times$ 2 block with AVX2, and an AVX-512 variant that packs two of the four 8-lane accumulation chains per register.
+\item \textbf{int4 decoding in tiles.} Each 64-token tile of a document is decoded once into a per-thread buffer and reused by all query blocks; the document is never expanded to float32 as a whole.
+\item \textbf{Ragged batches.} Candidates of different lengths share one call without padding; a descriptor of 10 integers per document points into shared buffers.
+\item \textbf{Worker pool.} One thread per performance core (all logical CPUs on the Linux machines here). The caller works from the first microsecond; workers join without a lock and spin for 200\,$\mu$s before they park. Work is cut into whole-tile units, about four per thread, claimed largest first.
+\item \textbf{Fixed summation order.} The order of additions does not depend on the thread count or the work split; a maximum is exact in any order. Each kernel change had to keep every score bit-identical to the previous version on each platform (a gate over fixtures and every replayed development call).
+\end{itemize}
+Scores therefore differ between instruction sets (AVX2/AVX-512 vs NEON) by at most a few units in the last place, but not between thread budgets or runs.
+Section~\ref{sec:quality} measures both.
+The storage cost is $\lceil \text{dim}/2\rceil + 12$ bytes per token: 76 bytes at dimension 128 against 512 for float32, a $6.7\times$ reduction in storage bytes.

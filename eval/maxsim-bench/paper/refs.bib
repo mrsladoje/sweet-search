@@ -1,0 +1,476 @@
+% refs.bib -- verified 2026-10-17 by the related-work literature search.
+% Every entry was checked against a primary source (arXiv API/abs page, Crossref,
+% publisher/proceedings page, or the GitHub API). See analysis/related-work-notes.md
+% for what was checked and for the UNVERIFIED list.
+
+% ---------------------------------------------------------------- late interaction core
+
+@inproceedings{khattab2020colbert,
+  author    = {Khattab, Omar and Zaharia, Matei},
+  title     = {{ColBERT}: Efficient and Effective Passage Search via Contextualized Late Interaction over {BERT}},
+  booktitle = {Proceedings of the 43rd International ACM SIGIR Conference on Research and Development in Information Retrieval},
+  year      = {2020},
+  pages     = {39--48},
+  publisher = {ACM},
+  doi       = {10.1145/3397271.3401075},
+  eprint    = {2004.12832},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{santhanam2022colbertv2,
+  author    = {Santhanam, Keshav and Khattab, Omar and Saad-Falcon, Jon and Potts, Christopher and Zaharia, Matei},
+  title     = {{ColBERTv2}: Effective and Efficient Retrieval via Lightweight Late Interaction},
+  booktitle = {Proceedings of the 2022 Conference of the North American Chapter of the Association for Computational Linguistics: Human Language Technologies},
+  year      = {2022},
+  pages     = {3715--3734},
+  publisher = {Association for Computational Linguistics},
+  doi       = {10.18653/v1/2022.naacl-main.272},
+  eprint    = {2112.01488},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{santhanam2022plaid,
+  author    = {Santhanam, Keshav and Khattab, Omar and Potts, Christopher and Zaharia, Matei},
+  title     = {{PLAID}: An Efficient Engine for Late Interaction Retrieval},
+  booktitle = {Proceedings of the 31st ACM International Conference on Information and Knowledge Management},
+  year      = {2022},
+  pages     = {1747--1756},
+  publisher = {ACM},
+  doi       = {10.1145/3511808.3557325},
+  eprint    = {2205.09707},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{scheerer2025warp,
+  author    = {Scheerer, Jan Luca and Zaharia, Matei and Potts, Christopher and Alonso, Gustavo and Khattab, Omar},
+  title     = {{WARP}: An Efficient Engine for Multi-Vector Retrieval},
+  booktitle = {Proceedings of the 48th International ACM SIGIR Conference on Research and Development in Information Retrieval},
+  year      = {2025},
+  pages     = {2504--2512},
+  publisher = {ACM},
+  doi       = {10.1145/3726302.3729904},
+  eprint    = {2501.17788},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{nardini2024emvb,
+  author    = {Nardini, Franco Maria and Rulli, Cosimo and Venturini, Rossano},
+  title     = {Efficient Multi-Vector Dense Retrieval with Bit Vectors},
+  booktitle = {Advances in Information Retrieval (ECIR 2024)},
+  series    = {Lecture Notes in Computer Science},
+  year      = {2024},
+  pages     = {3--17},
+  publisher = {Springer Nature Switzerland},
+  doi       = {10.1007/978-3-031-56060-6_1},
+  eprint    = {2404.02805},
+  archivePrefix = {arXiv},
+  note      = {The arXiv title reads ``Efficient Multi-Vector Dense Retrieval Using Bit Vectors''; the system is called EMVB}
+}
+
+@inproceedings{engels2023dessert,
+  author    = {Engels, Joshua and Coleman, Benjamin and Lakshman, Vihan and Shrivastava, Anshumali},
+  title     = {{DESSERT}: An Efficient Algorithm for Vector Set Search with Vector Set Queries},
+  booktitle = {Advances in Neural Information Processing Systems 36 (NeurIPS 2023)},
+  year      = {2023},
+  eprint    = {2210.15748},
+  archivePrefix = {arXiv},
+  url       = {https://proceedings.neurips.cc/paper_files/paper/2023/hash/d6cc45de2e2dea14b96c1eba88fd8ef7-Abstract.html}
+}
+
+@inproceedings{dhulipala2024muvera,
+  author    = {Dhulipala, Laxman and Hadian, Majid and Jayaram, Rajesh and Lee, Jason and Mirrokni, Vahab},
+  title     = {{MUVERA}: Multi-Vector Retrieval via Fixed Dimensional Encodings},
+  booktitle = {Advances in Neural Information Processing Systems 37 (NeurIPS 2024)},
+  year      = {2024},
+  pages     = {101042--101073},
+  doi       = {10.52202/079017-3204},
+  eprint    = {2405.19504},
+  archivePrefix = {arXiv},
+  note      = {The NeurIPS proceedings title is ``MUVERA: Multi-Vector Retrieval via Fixed Dimensional Encoding''}
+}
+
+@inproceedings{lee2023xtr,
+  author    = {Lee, Jinhyuk and Dai, Zhuyun and Duddu, Sai Meher Karthik and Lei, Tao and Naim, Iftekhar and Chang, Ming-Wei and Zhao, Vincent Y.},
+  title     = {Rethinking the Role of Token Retrieval in Multi-Vector Retrieval},
+  booktitle = {Advances in Neural Information Processing Systems 36 (NeurIPS 2023)},
+  year      = {2023},
+  pages     = {15384--15405},
+  doi       = {10.52202/075280-0677},
+  eprint    = {2304.01982},
+  archivePrefix = {arXiv}
+}
+
+@misc{formal2024splate,
+  author    = {Formal, Thibault and Clinchant, St{\'e}phane and D{\'e}jean, Herv{\'e} and Lassance, Carlos},
+  title     = {{SPLATE}: Sparse Late Interaction Retrieval},
+  year      = {2024},
+  eprint    = {2404.13950},
+  archivePrefix = {arXiv},
+  primaryClass = {cs.IR}
+}
+
+@misc{hofstatter2022colberter,
+  author    = {Hofst{\"a}tter, Sebastian and Khattab, Omar and Althammer, Sophia and Sertkan, Mete and Hanbury, Allan},
+  title     = {Introducing Neural Bag of Whole-Words with {ColBERTer}: Contextualized Late Interactions using Enhanced Reduction},
+  year      = {2022},
+  eprint    = {2203.13088},
+  archivePrefix = {arXiv},
+  primaryClass = {cs.IR},
+  note      = {Published at CIKM 2022; the CIKM DOI was not checked}
+}
+
+@inproceedings{lassance2022learnedpruning,
+  author    = {Lassance, Carlos and Maachou, Maroua and Park, Joohee and Clinchant, St{\'e}phane},
+  title     = {Learned Token Pruning in Contextualized Late Interaction over {BERT} ({ColBERT})},
+  booktitle = {Proceedings of the 45th International ACM SIGIR Conference on Research and Development in Information Retrieval},
+  year      = {2022},
+  publisher = {ACM},
+  doi       = {10.1145/3477495.3531835}
+}
+
+@article{clavie2026tokenpooling,
+  author    = {Clavi{\'e}, Benjamin and Chaffin, Antoine and Adams, Griffin and Kato, Makoto P.},
+  title     = {Token Pooling: Reducing the Footprint of Multi-Vector Retrieval with Minimal Performance Impact},
+  journal   = {Journal of Natural Language Processing},
+  volume    = {33},
+  number    = {3},
+  pages     = {1484--1509},
+  year      = {2026},
+  doi       = {10.5715/jnlp.33.1484},
+  note      = {Earlier arXiv version (3 authors, no Kato), title ``Reducing the Footprint of Multi-Vector Retrieval with Minimal Performance Impact via Token Pooling'': arXiv:2409.14683}
+}
+
+@inproceedings{schlatt2026tokenpruning,
+  author    = {Schlatt, Ferdinand and Barschel, Nils and Hagen, Matthias},
+  title     = {Comparing Token Pruning Approaches for Multi-Vector Retrieval},
+  booktitle = {Proceedings of the 49th International ACM SIGIR Conference on Research and Development in Information Retrieval},
+  year      = {2026},
+  pages     = {3050--3058},
+  publisher = {ACM},
+  doi       = {10.1145/3805712.3808564}
+}
+
+@misc{salla2026crossq,
+  author    = {Salla, Rohit Kumar and Saravanan, Manoj and Amancherla, Ramya Manasa},
+  title     = {{CrossQ}: Task-Aligned Cross-Token Conditional Quantization for Late Interaction Retrieval},
+  year      = {2026},
+  eprint    = {2608.19204},
+  archivePrefix = {arXiv},
+  primaryClass = {cs.IR},
+  note      = {ICML 2026 poster (icml.cc/virtual/2026/poster/62085); the proceedings entry was not checked}
+}
+
+@misc{jaasaari2026lemur,
+  author    = {J{\"a}{\"a}saari, Elias and Hyv{\"o}nen, Ville and Roos, Teemu},
+  title     = {{LEMUR}: Learned Multi-Vector Retrieval},
+  year      = {2026},
+  eprint    = {2601.21853},
+  archivePrefix = {arXiv},
+  primaryClass = {cs.IR},
+  note      = {Accepted to ICML 2026 (arXiv comment); the proceedings entry was not checked}
+}
+
+% ---------------------------------------------------------------- MaxSim kernels (papers)
+
+@misc{pony2026flashmaxsim,
+  author    = {Pony, Roi and Ezer, Daniel and Goldfarb, Adi Raz and Friedman, Idan and Naparstek, Oshri and Barzelay, Udi},
+  title     = {{FLASH-MAXSIM}: {IO}-Aware Fused Kernels for Late-Interaction Retrieval},
+  year      = {2026},
+  eprint    = {2605.29517},
+  archivePrefix = {arXiv},
+  primaryClass = {cs.IR},
+  note      = {Preprint, v3 of 2026-09-27; GPU (A100)}
+}
+
+@misc{sharma2026tilemaxsim,
+  author    = {Sharma, Ashutosh},
+  title     = {{TileMaxSim}: {IO}-Aware {GPU} {MaxSim} Scoring with Dimension Tiling and Fused Product Quantization},
+  year      = {2026},
+  eprint    = {2606.26439},
+  archivePrefix = {arXiv},
+  primaryClass = {cs.IR},
+  note      = {Preprint, v1 of 2026-06-24; GPU (H100)}
+}
+
+@misc{pony2026colbandit,
+  author    = {Pony, Roi and Goldfarb, Adi Raz and Naparstek, Oshri and Friedman, Idan and Barzelay, Udi and Schwartz, Eli},
+  title     = {{Col-Bandit}: Query-Time Top-$K$ Estimation for Late-Interaction Retrieval},
+  year      = {2026},
+  eprint    = {2602.02827},
+  archivePrefix = {arXiv},
+  primaryClass = {cs.IR},
+  note      = {Preprint, v1 of 2026-02-02, v2 of 2026-06-02}
+}
+
+% ---------------------------------------------------------------- software
+
+@misc{kaum2026maxsim,
+  author       = {Kaum, Erik},
+  title        = {maxsim: A fast, memory-efficient exact {MaxSim} kernel for late-interaction retrieval and reranking},
+  year         = {2026},
+  howpublished = {\url{https://github.com/ErikKaum/maxsim}},
+  note         = {GPU (CUDA, Metal); no release; last commit 6bcaa61919, 2026-05-27. Accessed 2026-10-17}
+}
+
+@misc{joe32140maxsimlut,
+  author       = {{joe32140}},
+  title        = {maxsim-lut: Asymmetric int8-query $\times$ fused-{LUT} {MaxSim} kernel for {ColBERT}/{PLAID}-style late interaction},
+  year         = {2026},
+  howpublished = {\url{https://github.com/joe32140/maxsim-lut}},
+  note         = {Rust, CPU; no release; last commit 2fe12beaec, 2026-09-05. Accessed 2026-10-17}
+}
+
+@misc{clavie2025maxsimcpu,
+  author       = {Clavi{\'e}, Benjamin and Lee, Sean},
+  title        = {maxsim-cpu: Maximising {MaxSim} Efficiency},
+  year         = {2025},
+  howpublished = {\url{https://www.mixedbread.com/blog/maxsim-cpu}},
+  note         = {Mixedbread blog post; code at \url{https://github.com/mixedbread-ai/maxsim-cpu} (release 0.1.0, 2025-07-10, last commit 7377aa542d, 2025-07-10). Accessed 2026-10-17}
+}
+
+@misc{lightonai2026nextplaid,
+  author       = {Sourty, Rapha{\"e}l and {LightOn contributors}},
+  title        = {{NextPlaid}, {ColGREP}: Multi-vector search, from database to coding agents},
+  year         = {2026},
+  howpublished = {\url{https://github.com/lightonai/next-plaid}},
+  note         = {Release v1.8.5, 2026-10-10 (commit c6c091d7ee); v1.7.0 of 2026-08-18 added the LUT scoring kernel. Accessed 2026-10-17}
+}
+
+@misc{vardanian2026numkong,
+  author       = {Vardanian, Ash},
+  title        = {{NumKong}: 2000 Mixed Precision Kernels For All},
+  year         = {2026},
+  howpublished = {\url{https://github.com/ashvardanian/NumKong}},
+  note         = {Renamed from SimSIMD (the GitHub API redirects \texttt{ashvardanian/SimSIMD} to repository id 613772664, created 2023-03-14); release v7.8.5, 2026-10-05. Accessed 2026-10-17}
+}
+
+@misc{chaffin2025pylate,
+  author    = {Chaffin, Antoine and Sourty, Rapha{\"e}l},
+  title     = {{PyLate}: Flexible Training and Retrieval for Late Interaction Models},
+  year      = {2025},
+  eprint    = {2508.03555},
+  archivePrefix = {arXiv},
+  primaryClass = {cs.IR}
+}
+
+@inproceedings{chaffin2025pylatecikm,
+  author    = {Chaffin, Antoine and Sourty, Rapha{\"e}l},
+  title     = {{PyLate}: Flexible Training and Retrieval for Late Interaction Models},
+  booktitle = {Proceedings of the 34th ACM International Conference on Information and Knowledge Management},
+  year      = {2025},
+  pages     = {6334--6339},
+  publisher = {ACM},
+  doi       = {10.1145/3746252.3761608},
+  eprint    = {2508.03555},
+  archivePrefix = {arXiv}
+}
+
+@misc{bergum2024vespacolbert,
+  author       = {Bergum, Jo Kristian},
+  title        = {Announcing the {Vespa} {ColBERT} embedder},
+  year         = {2024},
+  howpublished = {\url{https://blog.vespa.ai/announcing-colbert-embedder-in-vespa/}},
+  note         = {Vespa blog, 2024-02-14. Accessed 2026-10-17}
+}
+
+@misc{vespa2026embedding,
+  author       = {{Vespa}},
+  title        = {Vespa documentation: Embedding (ColBERT embedder, \texttt{max\_sim})},
+  howpublished = {\url{https://docs.vespa.ai/en/embedding.html}},
+  note         = {Accessed 2026-10-17}
+}
+
+@misc{qdrant2026multivector,
+  author       = {{Qdrant}},
+  title        = {Multivector Representations for Reranking in {Qdrant}},
+  howpublished = {\url{https://qdrant.tech/documentation/tutorials-search-engineering/using-multivector-representations/}},
+  note         = {Accessed 2026-10-17}
+}
+
+@misc{lancedb2026multivector,
+  author       = {{LanceDB}},
+  title        = {Multivector Search in {LanceDB}},
+  howpublished = {\url{https://docs.lancedb.com/search/multivector-search}},
+  note         = {Accessed 2026-10-17}
+}
+
+@misc{weaviate2026multivector,
+  author       = {{Weaviate}},
+  title        = {Multi-vector embeddings ({ColBERT}, {ColPali}) tutorial},
+  howpublished = {\url{https://docs.weaviate.io/weaviate/tutorials/multi-vector-embeddings}},
+  note         = {Accessed 2026-10-17}
+}
+
+@misc{weaviate2025muvera,
+  author       = {{Weaviate}},
+  title        = {More efficient multi-vector embeddings with {MUVERA}},
+  howpublished = {\url{https://weaviate.io/blog/muvera}},
+  note         = {Weaviate blog; {MUVERA} encoding is implemented in Weaviate 1.31. Accessed 2026-10-17}
+}
+
+% ---------------------------------------------------------------- datasets and models
+
+@inproceedings{thakur2021beir,
+  author    = {Thakur, Nandan and Reimers, Nils and R{\"u}ckl{\'e}, Andreas and Srivastava, Abhishek and Gurevych, Iryna},
+  title     = {{BEIR}: A Heterogenous Benchmark for Zero-shot Evaluation of Information Retrieval Models},
+  booktitle = {Thirty-fifth Conference on Neural Information Processing Systems Datasets and Benchmarks Track (Round 2)},
+  year      = {2021},
+  eprint    = {2104.08663},
+  archivePrefix = {arXiv},
+  url       = {https://openreview.net/forum?id=wCu6T5xFjeJ}
+}
+
+@inproceedings{wadden2020scifact,
+  author    = {Wadden, David and Lin, Shanchuan and Lo, Kyle and Wang, Lucy Lu and van Zuylen, Madeleine and Cohan, Arman and Hajishirzi, Hannaneh},
+  title     = {Fact or Fiction: Verifying Scientific Claims},
+  booktitle = {Proceedings of the 2020 Conference on Empirical Methods in Natural Language Processing (EMNLP)},
+  year      = {2020},
+  pages     = {7534--7550},
+  publisher = {Association for Computational Linguistics},
+  doi       = {10.18653/v1/2020.emnlp-main.609}
+}
+
+@inproceedings{boteva2016nfcorpus,
+  author    = {Boteva, Vera and Gholipour, Demian and Sokolov, Artem and Riezler, Stefan},
+  title     = {A Full-Text Learning to Rank Dataset for Medical Information Retrieval},
+  booktitle = {Advances in Information Retrieval (ECIR 2016)},
+  series    = {Lecture Notes in Computer Science},
+  year      = {2016},
+  publisher = {Springer},
+  doi       = {10.1007/978-3-319-30671-1_58}
+}
+
+@misc{husain2019codesearchnet,
+  author    = {Husain, Hamel and Wu, Ho-Hsiang and Gazit, Tiferet and Allamanis, Miltiadis and Brockschmidt, Marc},
+  title     = {{CodeSearchNet} Challenge: Evaluating the State of Semantic Code Search},
+  year      = {2019},
+  eprint    = {1909.09436},
+  archivePrefix = {arXiv},
+  primaryClass = {cs.LG}
+}
+
+@misc{diera2023gencodesearchnet,
+  author    = {Diera, Andor and Dahou, Abdelhalim and Galke, Lukas and Karl, Fabian and Sihler, Florian and Scherp, Ansgar},
+  title     = {{GenCodeSearchNet}: A Benchmark Test Suite for Evaluating Generalization in Programming Language Understanding},
+  year      = {2023},
+  eprint    = {2311.09707},
+  archivePrefix = {arXiv}
+}
+
+@misc{clavie2024answerai,
+  author       = {Clavi{\'e}, Benjamin},
+  title        = {Small but Mighty: Introducing answerai-colbert-small},
+  year         = {2024},
+  howpublished = {\url{https://answer.ai/posts/2024-08-13-small-but-mighty-colbert.html}},
+  note         = {Answer.AI blog, 2024-08-13; model card: \url{https://huggingface.co/answerdotai/answerai-colbert-small-v1}. Accessed 2026-10-17}
+}
+
+@article{clavie2025jacolbertv25,
+  author    = {Clavi{\'e}, Benjamin},
+  title     = {{JaColBERTv2.5}: Optimising Multi-Vector Retrievers to Create State-of-the-Art {Japanese} Retrievers with Constrained Resources},
+  journal   = {Journal of Natural Language Processing},
+  volume    = {32},
+  number    = {1},
+  pages     = {176--218},
+  year      = {2025},
+  doi       = {10.5715/jnlp.32.176},
+  eprint    = {2407.20750},
+  archivePrefix = {arXiv}
+}
+
+@misc{lu2024bm25s,
+  author    = {L{\`u}, Xing Han},
+  title     = {{BM25S}: Orders of magnitude faster lexical search via eager sparse scoring},
+  year      = {2024},
+  eprint    = {2407.03618},
+  archivePrefix = {arXiv},
+  primaryClass = {cs.IR}
+}
+
+% ---------------------------------------------------------------- statistics and measurement
+
+@article{holm1979simple,
+  author    = {Holm, Sture},
+  title     = {A Simple Sequentially Rejective Multiple Test Procedure},
+  journal   = {Scandinavian Journal of Statistics},
+  volume    = {6},
+  number    = {2},
+  pages     = {65--70},
+  year      = {1979},
+  url       = {https://www.jstor.org/stable/4615733}
+}
+
+@inproceedings{sakai2006bootstrap,
+  author    = {Sakai, Tetsuya},
+  title     = {Evaluating Evaluation Metrics Based on the Bootstrap},
+  booktitle = {Proceedings of the 29th Annual International ACM SIGIR Conference on Research and Development in Information Retrieval},
+  year      = {2006},
+  pages     = {525--532},
+  publisher = {ACM},
+  doi       = {10.1145/1148170.1148261}
+}
+
+@book{efron1993bootstrap,
+  author    = {Efron, Bradley and Tibshirani, Robert J.},
+  title     = {An Introduction to the Bootstrap},
+  series    = {Monographs on Statistics and Applied Probability},
+  number    = {57},
+  publisher = {Chapman \& Hall},
+  year      = {1993},
+  isbn      = {0-412-04231-2}
+}
+
+@article{schuirmann1987tost,
+  author    = {Schuirmann, Donald J.},
+  title     = {A comparison of the Two One-Sided Tests Procedure and the Power Approach for assessing the equivalence of average bioavailability},
+  journal   = {Journal of Pharmacokinetics and Biopharmaceutics},
+  volume    = {15},
+  number    = {6},
+  pages     = {657--680},
+  year      = {1987},
+  doi       = {10.1007/BF01068419}
+}
+
+@article{leitner2016patterns,
+  author    = {Leitner, Philipp and Cito, J{\"u}rgen},
+  title     = {Patterns in the Chaos --- A Study of Performance Variation and Predictability in Public {IaaS} Clouds},
+  journal   = {ACM Transactions on Internet Technology},
+  volume    = {16},
+  number    = {3},
+  pages     = {1--23},
+  year      = {2016},
+  doi       = {10.1145/2885497}
+}
+
+@inproceedings{uta2020bigdata,
+  author    = {Uta, Alexandru and Custura, Alexandru and Duplyakin, Dmitry and Jimenez, Ivo and Rellermeyer, Jan and Maltzahn, Carlos and Ricci, Robert and Iosup, Alexandru},
+  title     = {Is Big Data Performance Reproducible in Modern Cloud Networks?},
+  booktitle = {17th USENIX Symposium on Networked Systems Design and Implementation (NSDI 20)},
+  year      = {2020},
+  pages     = {513--527},
+  address   = {Santa Clara, CA},
+  publisher = {USENIX Association},
+  eprint    = {1912.09256},
+  archivePrefix = {arXiv},
+  url       = {https://www.usenix.org/conference/nsdi20/presentation/uta}
+}
+
+@inproceedings{hoefler2015scientific,
+  author    = {Hoefler, Torsten and Belli, Roberto},
+  title     = {Scientific Benchmarking of Parallel Computing Systems: Twelve Ways to Tell the Masses When Reporting Performance Results},
+  booktitle = {Proceedings of the International Conference for High Performance Computing, Networking, Storage and Analysis (SC '15)},
+  year      = {2015},
+  pages     = {1--12},
+  publisher = {ACM},
+  doi       = {10.1145/2807591.2807644}
+}
+
+@inproceedings{mytkowicz2009wrongdata,
+  author    = {Mytkowicz, Todd and Diwan, Amer and Hauswirth, Matthias and Sweeney, Peter F.},
+  title     = {Producing Wrong Data Without Doing Anything Obviously Wrong!},
+  booktitle = {Proceedings of the 14th International Conference on Architectural Support for Programming Languages and Operating Systems (ASPLOS XIV)},
+  year      = {2009},
+  pages     = {265--276},
+  publisher = {ACM},
+  doi       = {10.1145/1508244.1508275}
+}

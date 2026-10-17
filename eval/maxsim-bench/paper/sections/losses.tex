@@ -1,0 +1,29 @@
+\section{Where \sweet loses}
+\label{sec:losses}
+
+We list every case in which a frozen rival configuration was faster than \sweet.
+Across all CPUs, modes, sets, sweep cells and frozen configurations, there are \nm{losses.total} such cases; Table~\ref{tab:losses} groups them, and the released analysis tables list each one.
+``Significant'' counts the cases whose whole 95\% workload interval is below 1.
+
+\begin{enumerate}
+\item \textbf{NumKong, approximate.} With all cores and warm calls, NumKong was faster on Intel and Graviton4 on all three replayed workloads, about equal on M3 Max BEIR calls, and faster in most sweep cells on every CPU. It approximates the maximum (Section~\ref{sec:contracts}): on agent calls its top document agreed with the exact one on 86\% of calls, on BEIR calls on 57--58\%, and its BEIR quality fell sharply for answerai-colbert-small (Table~\ref{tab:effects}). It is a different trade-off, not an exact rival, but it is faster.
+\item \textbf{bfloat16 on AMX.} PyTorch with bfloat16 inputs was faster on Intel BEIR calls (\nm{warm.intel.beir.torch.bf16}$\times$) and in many Intel sweep cells. It rounds its inputs to bfloat16; its top document agreed with the exact one on 97.5\% of BEIR calls and on 99.6--100\% of agent and GCSN calls.
+\item \textbf{Mid-size and large sweep cells.} The fastest exact float32 rival beat \sweet in \nm{sweep.intel.lose} (Intel), \nm{sweep.amd.lose} (AMD), \nm{sweep.arm.lose} (Graviton4) and \nm{sweep.m3max.lose} (M3 Max) sweep cells; the lowest cell ratio was \nm{sweep.amd.worst} on AMD (Section~\ref{sec:sweep}). On AMD, the band of pools of 64 to 1,024 documents also covers sizes that occur in real calls (Table~\ref{tab:workload}).
+\item \textbf{After an idle gap.} After 5\,ms of other work, NumPy was faster than the bare kernel on Intel, Graviton4 and the M3 Max on agent and GCSN calls, and on Intel BEIR calls (Section~\ref{sec:parked}). With the product path's prewarm call, \sweet was about as fast as NumPy on Intel agent calls (\nm{parked.intel.agent-ho.node-prewarm} against \nm{parked.intel.agent-ho.numpy.f32}) and faster on M3 Max agent calls, but still slower on Graviton4 (\nm{parked.arm.agent-ho.node-prewarm} against \nm{parked.arm.agent-ho.numpy.f32}).
+\item \textbf{One thread.} With one thread, a rival was faster on BEIR calls on every CPU, and on the M3 Max on every workload (Section~\ref{sec:single}).
+\item \textbf{Parallel callers.} At 16 callers, NumPy (M3 Max, agent calls) and NextPlaid (Graviton4, GCSN calls) had a higher throughput than \sweet, and NumKong had a higher throughput everywhere. At the highest common open-loop rate, NumPy had a lower p99 latency on M3 Max GCSN calls (Section~\ref{sec:conc}).
+\item \textbf{Quality with one model.} Contract S on int4 storage lost \nm{q.intel.scifact.answersmall.relabs}\% and \nm{q.intel.nfcorpus.answersmall.relabs}\% nDCG@10 for answerai-colbert-small (Section~\ref{sec:quality}). Every float32 rival on the same int4 data inherits the same loss, but a system that stores float32 does not have it.
+\end{enumerate}
+
+\begin{table}[!htbp]
+\centering\scriptsize
+\caption{Cases where a frozen rival configuration was faster than \sweet, by CPU and mode. Count (in parentheses: whole 95\% interval below 1), libraries involved, and the worst ratio with its set or sweep cell (q = query tokens, d = documents, len = doc tokens).}
+\label{tab:losses}
+\begin{tabular}{lllrll}
+\toprule
+CPU & mode & rival & cases & libraries & worst ratio (where) \\
+\midrule
+\inputtable{tables/losses.tex}
+\bottomrule
+\end{tabular}
+\end{table}
