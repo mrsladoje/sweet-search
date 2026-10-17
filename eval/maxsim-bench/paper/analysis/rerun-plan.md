@@ -35,3 +35,40 @@ ratios repeat on a second instance of the same type?
 - No tuning, no change of any claim threshold after seeing the result. If a ratio changes
   sides of 1, the paper reports the case as not reproducible on a second instance.
 - The result goes into the instance-to-instance spread section and the deviations appendix.
+
+# Post-freeze rerun: parallel callers with a fixed harness (written before the run)
+
+Written 2026-10-17 ~17:20 UTC, before any run of it. Approved by the owner on 2026-10-17.
+
+## Why
+
+The three reviews of the first draft found four defects in the frozen parallel-caller
+harness (`concurrency.py`): callers of the per-process executor started up to 50 ms
+before the recorded start; a fixed thread count in an arm overrode the per-process budget
+(oversubscription); the BLIS environment was ignored; every configuration ran once for
+20 to 500 ms, and the two executors warmed up differently.
+
+## What runs
+
+- Harness: `rerun/concurrency2.py`, a copy of the frozen harness with exactly these four
+  fixes (its header lists them): a common busy-waited start with recorded real start
+  times; in the per-process executor a fixed thread count is capped at max(1, cores // N);
+  arms with an environment part (BLIS) are left out; every closed-loop caller replays its
+  share until at least 3 s have passed, every open-loop trace has at least 3 s of
+  arrivals, every configuration runs 3 times, and both executors warm up every call.
+- Everything else unchanged: the frozen `ho-conc-agent-ho` / `ho-conc-gcsn-ho` group
+  lines of each machine (same arms, sets, callers 1/4/16, both executors, the frozen
+  absolute open-loop rates, seed 42), the frozen kernel and adapters (`bench.py`).
+- Machines: the cloud instances of the BEIR rerun after their BEIR groups (agent-ho on
+  `<type>-r2a`, gcsn-ho on `<type>-r2b`); the M3 Max and the EPYC box after the HNSW
+  session's timing window, one machine at a time per set.
+
+## What is reported (fixed now)
+
+- Closed loop per CPU, set, executor and caller count: median throughput over the 3 runs
+  and its range; sweet / best exact rival and sweet / best NumKong configuration.
+- Open loop: per-request p50 / p99 (median over runs) and the achieved rate; an arm that
+  achieves less than 95 % of the offered rate is marked as overloaded.
+- These results replace the frozen single-run parallel-caller results in the main text;
+  the frozen results move to an appendix with their correction. No other number changes.
+- No tuning and no threshold change after seeing the results.
