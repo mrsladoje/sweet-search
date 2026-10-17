@@ -1,0 +1,22 @@
+{
+ "scifact": {
+  "docs": 5178,
+  "cut_180": 0.910196987253766,
+  "equal": 0.08980301274623406,
+  "colbertv2_longer": 0.0,
+  "median_tokens": {
+   "answersmall": 252.0,
+   "colbertv2": 160.0
+  }
+ },
+ "nfcorpus": {
+  "docs": 3626,
+  "cut_180": 0.9205736348593492,
+  "equal": 0.07942636514065085,
+  "colbertv2_longer": 0.0,
+  "median_tokens": {
+   "answersmall": 249.0,
+   "colbertv2": 157.0
+  }
+ }
+}

@@ -95,19 +95,24 @@ The verdicts do not depend on the exact margin: ColBERTv2 passes the interval co
 For ColBERTv2, both sets pass: K $-$ F is \nm{q.intel.scifact.colbertv2.diff} on SciFact and \nm{q.intel.nfcorpus.colbertv2.diff} on NFCorpus.
 For answerai-colbert-small, both sets fail: K $-$ F is \nm{q.intel.scifact.answersmall.diff} (\nm{q.intel.scifact.answersmall.rel}\%) on SciFact and \nm{q.intel.nfcorpus.answersmall.diff} (\nm{q.intel.nfcorpus.answersmall.rel}\%) on NFCorpus.
 On NFCorpus this reranking is worse than the BM25 order itself (\nm{nd.nfcorpus.answersmall.K} against \nm{nd.nfcorpus.answersmall.bm25}).
-On SciFact, even float32 ColBERTv2 reranking (F, \nm{nd.scifact.colbertv2.F}) did not reach the BM25 order (\nm{nd.scifact.colbertv2.bm25}); the quality tests compare storage formats, not reranking against no reranking.
-The ColBERTv2 paper reports 0.693 (SciFact) and 0.338 (NFCorpus) for end-to-end retrieval~\cite{santhanam2022colbertv2}; our values are lower, as expected when reranking only BM25's top 100 with PyLate's default 180-token documents.
+On SciFact, even float32 ColBERTv2 reranking (F, \nm{nd.scifact.colbertv2.F}) did not reach the BM25 order (\nm{nd.scifact.colbertv2.bm25}).
+The ColBERTv2 paper reports 0.693 (SciFact) and 0.338 (NFCorpus) for end-to-end retrieval~\cite{santhanam2022colbertv2}.
+A likely cause of our lower values is document length.
+We encoded documents with each model's default length: 180 tokens for ColBERTv2 and 300 for answerai-colbert-small.
+The two models use the same tokenizer, and the 180-token limit cut \nm{beir.cut.scifact}\% of SciFact and \nm{beir.cut.nfcorpus}\% of NFCorpus documents.
+\TODO{reproduction check: ColBERTv2 at 300 tokens, F nDCG@10 on SciFact and NFCorpus}
+The quality tests compare storage formats on the same encoded vectors, so this length does not change K $-$ F.
 K and Q+c (int4 decoded in float64, contract S) give the same nDCG@10 to four decimals in every cell, on every CPU and $k$.
 
 \begin{table}[!htbp]
 \centering\scriptsize
 \setlength{\tabcolsep}{3pt}
-\caption{Primary non-inferiority tests (fresh held-out; $k = 100$; $\delta = 0.01$ absolute nDCG@10; paired bootstrap over queries, 10,000 resamples, seed 42; Holm over the four tests). Per CPU: lower 95\% bound of K $-$ F / Holm-adjusted $p$, and the verdict (\cmark: no material loss).}
+\caption{Primary non-inferiority tests (fresh held-out; $k = 100$; $\delta = 0.01$ absolute nDCG@10; paired bootstrap over queries, 10,000 resamples, seed 42; Holm over the four tests). Lower 95\% bound of K $-$ F, Holm-adjusted $p$, and the verdict (\cmark: no material loss). The test ran on each of the five CPUs and gave these values on every one, because the kernel's nDCG@10 is the same on all of them.}
 \label{tab:primary}
 \resizebox{\linewidth}{!}{%
-\begin{tabular}{llrrrrr|ccccc}
+\begin{tabular}{llrrrrr|rrc}
 \toprule
-dataset & model & queries & F & K & K $-$ F & relative & Intel & AMD & Graviton4 & M3 Max & EPYC \\
+dataset & model & queries & F & K & K $-$ F & relative & lower bound & Holm $p$ & verdict \\
 \midrule
 \inputtable{tables/primary.tex}
 \bottomrule
@@ -216,6 +221,7 @@ In this mode the harness runs 0.1\,ms of busy work between the prewarm and the c
 With it, a call took \nm{range.parked.prewarm.agent.min}--\nm{range.parked.prewarm.agent.max}$\times$ the time of the bare kernel on agent calls.
 The result depends on that overlap, and the rivals had no prewarm, so this comparison is not symmetric.
 With prewarm, \sweet was still slower than NumPy on Intel GCSN calls (\nm{parked.intel.gcsn-ho.node-prewarm} against \nm{parked.intel.gcsn-ho.numpy.f32}) and on Graviton4 GCSN calls (\nm{parked.arm.gcsn-ho.node-prewarm} against \nm{parked.arm.gcsn-ho.numpy.f32}).
+On the EPYC, prewarm did not shorten the call at all (\nm{parked.epyc.agent-ho.node-prewarm} and \nm{parked.epyc.gcsn-ho.node-prewarm} of the bare kernel's time), so \sweet stayed clearly slower than NumPy (\nm{parked.epyc.agent-ho.numpy.f32} and \nm{parked.epyc.gcsn-ho.numpy.f32}).
 On the Mac and the EPYC box the BEIR busy-gap groups were not run (Appendix~\ref{app:deviations}).
 
 \begin{table}[!htbp]
@@ -345,7 +351,9 @@ The first number adds the computed size of the int4 store (for arms that read it
 The memory pass uses other allocator settings than the timing runs, and the Mac's 0.2\,ms sampler can miss short peaks, so Mac peaks are lower bounds.
 \sweet holds \nm{mem.intel.ours.bpt} bytes per token at dimension 128 and \nm{mem.intel.ours.bpt96} at dimension 96, the size of the int4 store itself; this follows from the format.
 The float32 rivals hold their decoded copy: about 520 bytes per token for NumPy and \nm{mem.intel.torch_pad_bmm.bpt} for padded PyTorch on Intel.
-NumKong's float32 arms hold more than 512 bytes per token; we did not analyse why.
+NumKong's packed format holds more than its input precision: \nm{mem.amd.numkong_native_f32.bpt} bytes per token for float32 and \nm{mem.amd.numkong_native_bf16.bpt} for bfloat16 on AMD.
+This fits its method: the int8 screen needs an int8 copy of every token (128 bytes at dimension 128) beside the full-precision copy.
+We did not break down the remainder of 35 to 150 bytes per token, which depends on the CPU.
 The int4-self rivals hold the store and peak at about 280\,MB of temporary memory on the largest agent call.
 
 \begin{table}[!htbp]

@@ -37,6 +37,7 @@ None changed a frozen file after the held-out runs began, except where stated.
 25 & EPYC box: every planned group passed; the 4 SciFact busy-gap groups (and earlier the 4 NFCorpus ones) were skipped as decided. Its sweep holds \nm{sweep.epyc.cells} cells: the 24 planned plus 4 complete cells from before the cut. \\
 \bottomrule
 \end{longtable}
+\addtocounter{table}{-1}% uncaptioned longtable: no number
 \end{small}
 
 \section{Data and licences}
@@ -51,15 +52,16 @@ None changed a frozen file after the held-out runs began, except where stated.
 \item \textbf{Models}: answerai-colbert-small-v1 (Apache-2.0) and ColBERTv2 (MIT); exact revisions are in the release manifest.
 \end{itemize}
 
-\section{Threats to validity and where we address them}
+\section{Threats to validity}
 \label{app:threats}
 
-A review of the plan by an AI model (GPT-6 Astra), run by the authors, raised the following points before any held-out run; the protocol answers each.
+The table lists the threats to validity that we identified before any held-out run, and how the protocol addresses each one.
+A review of the plan raised most of them; we ran that review with an AI model (GPT-6 Astra), so it is not an independent review.
 
 \begin{small}
 \begin{longtable}{p{0.45\linewidth}p{0.48\linewidth}}
 \toprule
-concern & answer \\
+threat & how the protocol addresses it \\
 \midrule
 \endhead
 Rivals compute different scores (normalization, epsilon, clamp, precision) & Four contracts, two float64 references per rival, contract effects measured apart (Section~\ref{sec:contracts}, Table~\ref{tab:contract-effects}) \\
@@ -84,6 +86,7 @@ Failure handling untested & Harness failure tests (interrupted output, missing c
 Optional items must stay optional & Decomposition and version study not run, stated \\
 \bottomrule
 \end{longtable}
+\addtocounter{table}{-1}% uncaptioned longtable: no number
 \end{small}
 
 \section{Terms and arm names}
@@ -115,6 +118,7 @@ BLIS & NumPy built on BLIS instead of OpenBLAS (AMD only) \\
 $n$ thr. & a fixed thread count of $n$ \\
 \bottomrule
 \end{longtable}
+\addtocounter{table}{-1}% uncaptioned longtable: no number
 \end{small}
 
 \section{Robustness of the warm ratios}
