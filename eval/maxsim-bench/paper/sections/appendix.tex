@@ -14,7 +14,7 @@ None changed a frozen file after the held-out runs began, except where stated.
 2 & AMD: the BLIS NumPy arms were missing at the start of the held-out runs (a machine-name test in the setup script) and were added in place; they ran after the other arms of their groups, not interleaved. \\
 3 & Intel: MKL NumPy did not install from Intel's index and is left out. The development ``NumPy (MKL)'' arm had in fact used OpenBLAS (a mislabelled duplicate). \\
 4 & Repetitions: $R = \max(5, \text{noise rule}) = 5$; an early plan with $R = 3$ was corrected before any held-out run. \\
-5 & Mac and EPYC box: reduced sweep grid, 24 of 84 cells (decided before any held-out result was read). The Mac also holds 2 further complete cells, reported; 6 cells started before the decision have no job list and are left out. \\
+5 & Mac and EPYC box: reduced sweep grid, 24 of 84 cells (decided before any held-out result was read). The Mac also holds 2 and the EPYC 4 further complete cells, reported; 6 Mac cells started before the decision have no job list and are left out. \\
 6 & Mac and EPYC box: all 8 BEIR busy-gap groups dropped for machine time (decided 2026-10-17 before any held-out result was read). BEIR busy-gap results come from the three cloud CPUs. \\
 7 & gcsn-ho: 6 query texts (7 calls) that also occur in gcsn-dev were removed before the freeze. \\
 8 & maxsim-cpu has no Linux AArch64 wheel: missing on Graviton4. \\
@@ -34,7 +34,7 @@ None changed a frozen file after the held-out runs began, except where stated.
 22 & Harness behaviour found in the analysis: the correctness check reads the scores of the untimed warm-up call of each run, not of the timed repetitions (Section~\ref{sec:method}). \\
 23 & Harness behaviour found in the analysis: in the parallel-caller harness, a configuration with a fixed thread count keeps it in every caller process, which oversubscribed the CPU in \nm{conc.oversub.n} rival runs (marked in Table~\ref{tab:conc}). \\
 24 & Harness behaviour found in the analysis: the per-arm maximum error skips NaN scores. NumKong returned NaN on some calls on Intel (Section~\ref{sec:correctness}); a separate scan counts them. \\
-25 & EPYC box: \TODO{epyc: completeness and any group that ran despite the cut}. \\
+25 & EPYC box: every planned group passed; the 4 SciFact busy-gap groups (and earlier the 4 NFCorpus ones) were skipped as decided. Its sweep holds \nm{sweep.epyc.cells} cells: the 24 planned plus 4 complete cells from before the cut. \\
 \bottomrule
 \end{longtable}
 \end{small}

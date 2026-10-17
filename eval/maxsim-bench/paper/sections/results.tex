@@ -5,7 +5,6 @@ The agent, GCSN and sweep sets are held out from development but were \emph{prev
 Only the BEIR sets are fresh held-out data.
 Every table and figure says which kind it shows.
 Ratios are rival / \sweet; above 1 means \sweet is faster.
-The EPYC (Zen~3) rows are still to come \TODO{epyc}.
 
 \subsection{Warm calls}
 \label{sec:warm}
@@ -13,13 +12,13 @@ The EPYC (Zen~3) rows are still to come \TODO{epyc}.
 Table~\ref{tab:warm} and Figure~\ref{fig:ratios} give the main comparison.
 Each rival is at the faster of its two frozen configurations, so ``all cores'' is not always the tested condition: on the M3 Max, several rivals are fastest with one thread.
 
-On agent and GCSN calls (previously examined), \sweet was faster than every exact rival with float32 inputs on all four CPUs.
+On agent and GCSN calls (previously examined), \sweet was faster than every exact rival with float32 inputs on all five CPUs.
 The fastest such rival needed \nm{best.warm.agent-ho.f32.min}--\nm{best.warm.agent-ho.f32.max}$\times$ the time on agent calls and \nm{best.warm.gcsn-ho.f32.min}--\nm{best.warm.gcsn-ho.f32.max}$\times$ on GCSN calls.
-On BEIR calls (fresh), \sweet was faster on AMD, Graviton4 and the M3 Max; the closest float32 rival needed \nm{best.warm.arm.beir.f32}--\nm{best.warm.amd.beir.f32}$\times$ the time.
+On BEIR calls (fresh), \sweet was faster on AMD, Graviton4, the M3 Max and the EPYC; the closest float32 rival needed \nm{best.warm.epyc.beir.f32}--\nm{best.warm.amd.beir.f32}$\times$ the time.
 On Intel BEIR calls, PyTorch with float32 inputs (padded flat layout) was faster: it needed \nm{warm.intel.beir.torch.f32}$\times$ the time of \sweet.
 The frozen primary PyTorch configuration of that family was slower than \sweet; the faster one is the second frozen configuration.
 BEIR calls have 32 query tokens and up to 200 candidates of about 166 tokens, so they are larger than the agent and GCSN calls.
-The pooled BEIR row can hide losses on single sets. Set by set, PyTorch with bfloat16 inputs was faster on \nm{beirset.arm.PyTorch.bf16} of the 20 sets on Graviton4 and \nm{beirset.intel.PyTorch.bf16} on Intel, and PyTorch with float32 inputs on \nm{beirset.m3max.PyTorch.f32} sets on the M3 Max.
+The pooled BEIR row can hide losses on single sets. Set by set, PyTorch with bfloat16 inputs was faster on \nm{beirset.arm.PyTorch.bf16} of the 20 sets on Graviton4 and \nm{beirset.intel.PyTorch.bf16} on Intel, PyTorch with float32 inputs on \nm{beirset.m3max.PyTorch.f32} sets on the M3 Max, and NumPy on \nm{beirset.epyc.NumPy.f32} set on the EPYC.
 
 Two more rival types were faster in some cells.
 NumKong, which approximates the maximum (Section~\ref{sec:contracts}), was faster on Intel and Graviton4 on all three sets, and slightly faster on M3 Max BEIR calls (\nm{warm.m3max.beir.numkong.best}$\times$). On AMD it was faster on \nm{beirset.amd.NumKong.f32} of the 20 BEIR sets, although not on the pooled row.
@@ -57,9 +56,9 @@ CPU & set & calls & NumPy & PyTorch & PyTorch bf16 & maxsim-cpu & NextPlaid & Nu
 
 Figure~\ref{fig:sweep} shows, per sweep cell, the fastest frozen exact rival with float32 inputs against \sweet.
 On the cloud CPUs all 84 cells ran.
-The M3 Max ran \nm{sweep.m3max.cells} cells: a reduced grid of 24, decided before any result, plus 2 complete cells from before that decision.
-The fastest exact float32 rival was faster than \sweet in \nm{sweep.intel.lose} of \nm{sweep.intel.cells} cells on Intel, \nm{sweep.amd.lose} on AMD, \nm{sweep.arm.lose} on Graviton4 and \nm{sweep.m3max.lose} of \nm{sweep.m3max.cells} on the M3 Max.
-If bfloat16 rivals count too, the numbers are \nm{sweep.intel.loseany}, \nm{sweep.amd.loseany}, \nm{sweep.arm.loseany} and \nm{sweep.m3max.loseany}.
+The M3 Max ran \nm{sweep.m3max.cells} cells and the EPYC \nm{sweep.epyc.cells}: a reduced grid of 24, decided before any result, plus 2 and 4 complete cells from before that decision.
+The fastest exact float32 rival was faster than \sweet in \nm{sweep.intel.lose} of \nm{sweep.intel.cells} cells on Intel, \nm{sweep.amd.lose} on AMD, \nm{sweep.arm.lose} on Graviton4, \nm{sweep.m3max.lose} of \nm{sweep.m3max.cells} on the M3 Max and \nm{sweep.epyc.lose} of \nm{sweep.epyc.cells} on the EPYC.
+If bfloat16 rivals count too, the numbers are \nm{sweep.intel.loseany}, \nm{sweep.amd.loseany}, \nm{sweep.arm.loseany}, \nm{sweep.m3max.loseany} and \nm{sweep.epyc.loseany}.
 The worst cell was on Intel: PyTorch with bfloat16 inputs needed \nm{sweep.intel.worstany}$\times$ the time of \sweet (\nm{sweep.intel.worstany.where}).
 With float32 inputs the worst cell needed \nm{sweep.intel.worst}$\times$ (Intel, \nm{sweep.intel.worstcell}).
 
@@ -147,13 +146,16 @@ dataset & model & BM25 & F & F+c & Q+c & K & C-b & C-a & NumKong \\
 NumKong's own scores fell far below the exact value of its own contract with answerai-colbert-small: \nm{nd.scifact.answersmall.NK} against \nm{nd.scifact.answersmall.Ca} on SciFact, below even the BM25 order.
 With ColBERTv2 the loss was small (\nm{nd.scifact.colbertv2.NK} against \nm{nd.scifact.colbertv2.Ca}).
 On BEIR calls its top-ranked document agreed with the contract-S reference on only 57--58\% of calls; its bfloat16 path on the Xeon, which uses AMX, agreed on 78\%.
-The cause is not known.
-Our adapter passed the fixtures at dimension 96, and each call's error is measured against NumKong's contract on the same inputs.
-We have not yet reproduced the collapse with NumKong's own interface alone, so we call it unexplained \TODO{standalone NumKong check at dims 96/128 with the owner's approval; report upstream if it reproduces}.
+A post-hoc check on synthetic vectors explains the collapse (\texttt{numkong\_check.py}).
+Our Rust loop and NumKong's own Python interface returned identical scores (largest difference \nm{nkcheck.adapter}), so the adapter is not the cause.
+When the candidates' scores lay about \nm{nkcheck.random.gap}\% apart, NumKong's candidate order kept a rank correlation of \nm{nkcheck.random.rho.min}--\nm{nkcheck.random.rho.max} with the exact order.
+When they lay about \nm{nkcheck.clustered.gap}\% apart, the correlation fell to \nm{nkcheck.clustered.rho.min}--\nm{nkcheck.clustered.rho.max}, and the top document agreed in \nm{nkcheck.clustered.top1.min}--\nm{nkcheck.clustered.top1.max}\% of queries.
+Dimension 96 and 128 behaved the same.
+So NumKong's one-token refinement fails when candidate scores lie close together, as they do for answerai-colbert-small, and holds up better when they lie far apart, as for ColBERTv2.
 
 \paragraph{The kernel across CPUs.}
-The kernel's BEIR scores were bit-identical between Intel and AMD (both AVX-512) and between Graviton4 and the M3 Max (both NEON).
-Between the two instruction sets, \nm{xplat.armequal.lo}--\nm{xplat.armequal.hi}\% of scores were bit-identical, and the largest difference was \nm{xplat.maxabs}.
+The kernel's BEIR scores were bit-identical across the three x86 CPUs (AVX-512 on Intel and AMD, AVX2 on the EPYC, by design) and between Graviton4 and the M3 Max (both NEON).
+Between x86 and ARM, \nm{xplat.armequal.lo}--\nm{xplat.armequal.hi}\% of scores were bit-identical, and the largest difference was \nm{xplat.maxabs}.
 The full candidate ranking was the same on at least \nm{xplat.sameranking.min}\% of calls, and nDCG@10 agreed to four decimals.
 Within one CPU, the scores of all thread budgets, rounds and processes were bit-identical (\nm{xplat.files} result files, \nm{xplat.scores} million scores).
 
@@ -203,7 +205,7 @@ CPU & set & \sweet & best exact & NumKong & f32 storage & \sweet & best exact & 
 
 When other work runs for 5\,ms before each call, the worker pool of \sweet has parked and must wake.
 Table~\ref{tab:parked} shows that this changes the ranking.
-NumPy was faster than \sweet on Intel (\nm{parked.intel.agent-ho.numpy.f32}$\times$ on agent calls, \nm{parked.intel.gcsn-ho.numpy.f32}$\times$ on GCSN calls, \nm{parked.intel.beir.numpy.f32}$\times$ on BEIR calls), on Graviton4 (\nm{parked.arm.agent-ho.numpy.f32}$\times$ and \nm{parked.arm.gcsn-ho.numpy.f32}$\times$) and on the M3 Max (\nm{parked.m3max.agent-ho.numpy.f32}$\times$ and \nm{parked.m3max.gcsn-ho.numpy.f32}$\times$).
+NumPy was faster than \sweet on the EPYC (\nm{parked.epyc.agent-ho.numpy.f32}$\times$ and \nm{parked.epyc.gcsn-ho.numpy.f32}$\times$), on Intel (\nm{parked.intel.agent-ho.numpy.f32}$\times$ on agent calls, \nm{parked.intel.gcsn-ho.numpy.f32}$\times$ on GCSN calls, \nm{parked.intel.beir.numpy.f32}$\times$ on BEIR calls), on Graviton4 (\nm{parked.arm.agent-ho.numpy.f32}$\times$ and \nm{parked.arm.gcsn-ho.numpy.f32}$\times$) and on the M3 Max (\nm{parked.m3max.agent-ho.numpy.f32}$\times$ and \nm{parked.m3max.gcsn-ho.numpy.f32}$\times$).
 On AMD, \sweet stayed faster than every exact rival.
 The product path calls a prewarm function when the rerank stage starts, so the pool wakes while other work runs.
 In this mode the harness runs 0.1\,ms of busy work between the prewarm and the call, and that time is outside the timer.
@@ -230,8 +232,8 @@ CPU & set & calls & NumPy & PyTorch & PyTorch bf16 & maxsim-cpu & NextPlaid & Nu
 
 Table~\ref{tab:single} compares each library's frozen one-thread configuration with \sweet on one thread.
 The runs set a thread budget of one but were not pinned to a core.
-On agent and GCSN calls on the three Linux CPUs, \sweet was faster than every exact rival; the closest needed \nm{range.single.exact.linux.agentgcsn.min}--\nm{range.single.exact.linux.agentgcsn.max}$\times$ the time.
-On BEIR calls a rival was faster on every CPU: NumPy on Intel (\nm{single.intel.beir.numpy.f32}$\times$) and AMD (\nm{single.amd.beir.numpy.f32}$\times$), PyTorch (\nm{single.arm.beir.torch.f32}$\times$) and NextPlaid (\nm{single.arm.beir.nextplaid.f32}$\times$) on Graviton4.
+On agent and GCSN calls on the four Linux CPUs, \sweet was faster than every exact rival; the closest needed \nm{range.single.exact.linux.agentgcsn.min}--\nm{range.single.exact.linux.agentgcsn.max}$\times$ the time.
+On BEIR calls a rival was faster on every CPU: NumPy on Intel (\nm{single.intel.beir.numpy.f32}$\times$), AMD (\nm{single.amd.beir.numpy.f32}$\times$) and the EPYC (\nm{single.epyc.beir.numpy.f32}$\times$), PyTorch (\nm{single.arm.beir.torch.f32}$\times$) and NextPlaid (\nm{single.arm.beir.nextplaid.f32}$\times$) on Graviton4.
 On the M3 Max, NumPy, PyTorch and maxsim-cpu call Apple Accelerate.
 Accelerate runs matrix products on the AMX coprocessor whatever the thread limit, so these rows are not one core against one core.
 They were faster than \sweet on all three sets.
@@ -289,8 +291,8 @@ The harness does not check the scores of these runs, and the AMD BLIS arms are l
 Table~\ref{tab:conc} and Figure~\ref{fig:conc} give the results.
 With one caller, \sweet had \nm{range.conc.n1.min}--\nm{range.conc.n1.max}$\times$ the throughput of the best exact rival in the same executor (threads).
 With 16 callers the result depends on the executor.
-With one process per caller, an exact rival had the higher throughput in \nm{conc.n16.procs.lost} of 8 CPU--workload pairs.
-In one shared process, an exact rival had the higher throughput in \nm{conc.n16.threads.lost} of 8 pairs: the throughput of \sweet fell as threads shared its pool.
+With one process per caller, an exact rival had the higher throughput in \nm{conc.n16.procs.lost} of 10 CPU--workload pairs.
+In one shared process, an exact rival had the higher throughput in \nm{conc.n16.threads.lost} of 10 pairs: the throughput of \sweet fell as threads shared its pool.
 NumKong had a higher throughput than \sweet at 16 callers in most pairs.
 At the highest common open-loop rate, the best exact rival had a lower per-request p99 than \sweet on M3 Max GCSN calls only.
 On M3 Max agent calls that rate is above the closed-loop capacity of the best exact rival ($\S$), so the rival's p99 there measures queue growth, not a steady state.
@@ -298,7 +300,7 @@ On M3 Max agent calls that rate is above the closed-loop capacity of the best ex
 During the analysis we found a defect in the procs executor: in closed-loop runs the callers start about 50\,ms before the recorded start time, so the recorded wall time is too short.
 We corrected these throughputs by adding 50\,ms, the time between the start file and the recorded start; scheduling delays can add more, so the corrected throughputs are approximate, and so are ratios between them.
 For \sweet the correction is large: it makes up at least \nm{conc.corr.share.min}\% of the corrected time, and in \nm{conc.corr.negative} of \nm{conc.corr.runs} runs the recorded wall time was negative.
-A check supports the correction: with one caller, where the executor should matter little, corrected procs and threads throughputs of \sweet agree within 2.5\% on all six Linux CPU--workload pairs.
+A check supports the correction: with one caller, where the executor should matter little, corrected procs and threads throughputs of \sweet agree within 2.5\% on the six cloud CPU--workload pairs.
 Per-request latencies need no correction (Appendix~\ref{app:deviations}).
 
 \begin{table}[!htbp]

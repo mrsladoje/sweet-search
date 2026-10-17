@@ -738,3 +738,205 @@ Closed-loop saturation: N callers replay their share back to back; throughput in
 | `torch_segment_reduce` | open | procs | 16 | 6105 | 6173 | 0.254 | 2.106 |
 | `torch_segment_reduce` | open | procs | 16 | 9157 | 9243 | 0.246 | 2.625 |
 
+## EPYC — agent-ho
+
+| arm | mode | executor | callers | rate /s | throughput /s | p50 ms | p99 ms |
+|---|---|---|--:|--:|--:|--:|--:|
+| `ours` | closed | threads | 1 |  | 7847 | 0.110 | 0.606 |
+| `ours` | closed | threads | 4 |  | 5974 | 0.314 | 4.329 |
+| `ours` | closed | threads | 16 |  | 3261 | 2.254 | 30.919 |
+| `ours` | closed | procs | 1 |  | 7328 | 0.110 | 0.636 |
+| `ours` | closed | procs | 4 |  | 7674 | 0.382 | 2.233 |
+| `ours` | closed | procs | 16 |  | 6673 | 0.787 | 11.061 |
+| `ours` | open | threads | 16 | 364 | 364 | 8.780 | 28.069 |
+| `ours` | open | threads | 16 | 728 | 728 | 10.432 | 40.342 |
+| `ours` | open | threads | 16 | 1093 | 1092 | 10.895 | 39.920 |
+| `ours` | open | procs | 16 | 364 | 364 | 1.327 | 9.668 |
+| `ours` | open | procs | 16 | 728 | 728 | 1.473 | 10.203 |
+| `ours` | open | procs | 16 | 1093 | 1093 | 1.473 | 13.512 |
+| `maxsim_cpu_variable` | closed | threads | 1 |  | 3274 | 0.272 | 1.239 |
+| `maxsim_cpu_variable` | closed | threads | 4 |  | 3931 | 0.828 | 3.803 |
+| `maxsim_cpu_variable` | closed | threads | 16 |  | 3956 | 1.478 | 32.314 |
+| `maxsim_cpu_variable` | closed | procs | 1 |  | 2949 | 0.279 | 1.606 |
+| `maxsim_cpu_variable` | closed | procs | 4 |  | 3598 | 0.824 | 4.479 |
+| `maxsim_cpu_variable` | closed | procs | 16 |  | 2706 | 2.937 | 19.587 |
+| `maxsim_cpu_variable` | open | threads | 16 | 364 | 364 | 11.058 | 25.061 |
+| `maxsim_cpu_variable` | open | threads | 16 | 728 | 728 | 12.316 | 33.211 |
+| `maxsim_cpu_variable` | open | threads | 16 | 1093 | 1092 | 14.332 | 37.399 |
+| `maxsim_cpu_variable` | open | procs | 16 | 364 | 364 | 5.389 | 28.856 |
+| `maxsim_cpu_variable` | open | procs | 16 | 728 | 727 | 5.476 | 46.150 |
+| `maxsim_cpu_variable` | open | procs | 16 | 1093 | 1082 | 5.760 | 86.368 |
+| `nextplaid` | closed | threads | 1 |  | 1456 | 0.502 | 5.193 |
+| `nextplaid` | closed | threads | 4 |  | 1600 | 1.840 | 13.988 |
+| `nextplaid` | closed | threads | 16 |  | 1606 | 3.036 | 99.644 |
+| `nextplaid` | closed | procs | 1 |  | 1390 | 0.536 | 5.513 |
+| `nextplaid` | closed | procs | 4 |  | 183 | 3.937 | 228.138 |
+| `nextplaid` | closed | procs | 16 |  | 50 | 110.292 | 2212.385 |
+| `nextplaid` | open | threads | 16 | 364 | 359 | 15.710 | 2634.868 |
+| `nextplaid` | open | threads | 16 | 728 | 707 | 19.708 | 455.697 |
+| `nextplaid` | open | threads | 16 | 1093 | 902 | 1040.294 | 1255.493 |
+| `nextplaid` | open | procs | 16 | 364 | 49 | 40432.146 | 71676.348 |
+| `nextplaid` | open | procs | 16 | 728 | 48 | 44148.275 | 77437.559 |
+| `nextplaid` | open | procs | 16 | 1093 | 47 | 43753.097 | 81675.020 |
+| `nextplaid@4` | closed | threads | 1 |  | 1424 | 0.527 | 4.352 |
+| `nextplaid@4` | closed | threads | 4 |  | 1455 | 1.716 | 17.085 |
+| `nextplaid@4` | closed | threads | 16 |  | 1552 | 3.985 | 92.491 |
+| `nextplaid@4` | closed | procs | 1 |  | 1547 | 0.518 | 4.171 |
+| `nextplaid@4` | closed | procs | 4 |  | 112 | 6.613 | 266.186 |
+| `nextplaid@4` | closed | procs | 16 |  | 42 | 219.272 | 2078.327 |
+| `nextplaid@4` | open | threads | 16 | 364 | 360 | 11.071 | 1137.601 |
+| `nextplaid@4` | open | threads | 16 | 728 | 707 | 14.030 | 458.552 |
+| `nextplaid@4` | open | threads | 16 | 1093 | 986 | 558.793 | 686.422 |
+| `nextplaid@4` | open | procs | 16 | 364 | 41 | 47432.612 | 86624.330 |
+| `nextplaid@4` | open | procs | 16 | 728 | 41 | 51476.734 | 92793.018 |
+| `nextplaid@4` | open | procs | 16 | 1093 | 41 | 52329.050 | 93744.215 |
+| `numkong_native_f16` | closed | threads | 1 |  | 9453 | 0.091 | 0.383 |
+| `numkong_native_f16` | closed | threads | 4 |  | 11685 | 0.281 | 1.243 |
+| `numkong_native_f16` | closed | threads | 16 |  | 11926 | 0.559 | 11.000 |
+| `numkong_native_f16` | closed | procs | 1 |  | 8262 | 0.093 | 0.407 |
+| `numkong_native_f16` | closed | procs | 4 |  | 9026 | 0.289 | 1.929 |
+| `numkong_native_f16` | closed | procs | 16 |  | 8397 | 0.475 | 10.359 |
+| `numkong_native_f16` | open | threads | 16 | 364 | 364 | 9.618 | 22.054 |
+| `numkong_native_f16` | open | threads | 16 | 728 | 728 | 9.901 | 26.088 |
+| `numkong_native_f16` | open | threads | 16 | 1093 | 1092 | 10.681 | 27.060 |
+| `numkong_native_f16` | open | procs | 16 | 364 | 364 | 0.951 | 7.513 |
+| `numkong_native_f16` | open | procs | 16 | 728 | 728 | 1.039 | 7.988 |
+| `numkong_native_f16` | open | procs | 16 | 1093 | 1092 | 0.966 | 7.964 |
+| `numpy_packed` | closed | threads | 1 |  | 4865 | 0.188 | 0.795 |
+| `numpy_packed` | closed | threads | 4 |  | 4338 | 0.198 | 11.111 |
+| `numpy_packed` | closed | threads | 16 |  | 4276 | 0.201 | 50.330 |
+| `numpy_packed` | closed | procs | 1 |  | 2348 | 0.256 | 1.684 |
+| `numpy_packed` | closed | procs | 4 |  | 3599 | 0.562 | 3.254 |
+| `numpy_packed` | closed | procs | 16 |  | 3158 | 1.048 | 13.020 |
+| `numpy_packed` | open | threads | 16 | 364 | 364 | 13.604 | 176.496 |
+| `numpy_packed` | open | threads | 16 | 728 | 678 | 1442.773 | 2457.224 |
+| `numpy_packed` | open | threads | 16 | 1093 | 998 | 833.274 | 1466.306 |
+| `numpy_packed` | open | procs | 16 | 364 | 364 | 1.557 | 15.055 |
+| `numpy_packed` | open | procs | 16 | 728 | 728 | 1.682 | 12.968 |
+| `numpy_packed` | open | procs | 16 | 1093 | 1092 | 1.817 | 34.090 |
+| `torch_pad_bmm` | closed | threads | 1 |  | 3109 | 0.295 | 1.388 |
+| `torch_pad_bmm` | closed | threads | 4 |  | 3805 | 0.892 | 3.728 |
+| `torch_pad_bmm` | closed | threads | 16 |  | 4273 | 3.094 | 15.378 |
+| `torch_pad_bmm` | closed | procs | 1 |  | 2172 | 0.325 | 7.090 |
+| `torch_pad_bmm` | closed | procs | 4 |  | 3671 | 0.742 | 6.986 |
+| `torch_pad_bmm` | closed | procs | 16 |  | 2661 | 1.593 | 18.309 |
+| `torch_pad_bmm` | open | threads | 16 | 364 | 364 | 87.195 | 228.328 |
+| `torch_pad_bmm` | open | threads | 16 | 728 | 283 | 1706.398 | 3093.596 |
+| `torch_pad_bmm` | open | threads | 16 | 1093 | 926 | 1468.287 | 2469.334 |
+| `torch_pad_bmm` | open | procs | 16 | 364 | 364 | 2.441 | 20.280 |
+| `torch_pad_bmm` | open | procs | 16 | 728 | 728 | 2.444 | 30.103 |
+| `torch_pad_bmm` | open | procs | 16 | 1093 | 1091 | 2.564 | 65.916 |
+| `torch_pad_bmm@4` | closed | threads | 1 |  | 3178 | 0.294 | 1.345 |
+| `torch_pad_bmm@4` | closed | threads | 4 |  | 3875 | 0.888 | 4.059 |
+| `torch_pad_bmm@4` | closed | threads | 16 |  | 4222 | 2.714 | 15.894 |
+| `torch_pad_bmm@4` | closed | procs | 1 |  | 2987 | 0.299 | 1.353 |
+| `torch_pad_bmm@4` | closed | procs | 4 |  | 860 | 0.466 | 20.319 |
+| `torch_pad_bmm@4` | closed | procs | 16 |  | 233 | 67.463 | 117.976 |
+| `torch_pad_bmm@4` | open | threads | 16 | 364 | 362 | 518.643 | 655.185 |
+| `torch_pad_bmm@4` | open | threads | 16 | 728 | 668 | 1455.529 | 2684.426 |
+| `torch_pad_bmm@4` | open | threads | 16 | 1093 | 932 | 1373.832 | 2340.071 |
+| `torch_pad_bmm@4` | open | procs | 16 | 364 | 238 | 2608.298 | 5615.922 |
+| `torch_pad_bmm@4` | open | procs | 16 | 728 | 244 | 5339.289 | 10704.069 |
+| `torch_pad_bmm@4` | open | procs | 16 | 1093 | 241 | 6388.323 | 12793.990 |
+
+## EPYC — gcsn-ho
+
+| arm | mode | executor | callers | rate /s | throughput /s | p50 ms | p99 ms |
+|---|---|---|--:|--:|--:|--:|--:|
+| `ours` | closed | threads | 1 |  | 17205 | 0.052 | 0.143 |
+| `ours` | closed | threads | 4 |  | 13832 | 0.085 | 4.319 |
+| `ours` | closed | threads | 16 |  | 6664 | 0.292 | 17.837 |
+| `ours` | closed | procs | 1 |  | 15431 | 0.053 | 0.195 |
+| `ours` | closed | procs | 4 |  | 18248 | 0.187 | 0.611 |
+| `ours` | closed | procs | 16 |  | 13554 | 0.335 | 8.351 |
+| `ours` | open | threads | 16 | 930 | 941 | 8.106 | 34.595 |
+| `ours` | open | threads | 16 | 1860 | 1878 | 11.532 | 47.354 |
+| `ours` | open | threads | 16 | 2790 | 2816 | 16.216 | 51.642 |
+| `ours` | open | procs | 16 | 930 | 940 | 0.657 | 6.361 |
+| `ours` | open | procs | 16 | 1860 | 1879 | 0.805 | 6.412 |
+| `ours` | open | procs | 16 | 2790 | 2821 | 0.762 | 6.540 |
+| `maxsim_cpu_variable` | closed | threads | 1 |  | 6427 | 0.147 | 0.358 |
+| `maxsim_cpu_variable` | closed | threads | 4 |  | 8603 | 0.418 | 1.348 |
+| `maxsim_cpu_variable` | closed | threads | 16 |  | 8868 | 0.736 | 17.843 |
+| `maxsim_cpu_variable` | closed | procs | 1 |  | 5271 | 0.155 | 0.991 |
+| `maxsim_cpu_variable` | closed | procs | 4 |  | 7954 | 0.385 | 1.879 |
+| `maxsim_cpu_variable` | closed | procs | 16 |  | 5727 | 1.689 | 6.540 |
+| `maxsim_cpu_variable` | open | threads | 16 | 930 | 941 | 11.164 | 25.797 |
+| `maxsim_cpu_variable` | open | threads | 16 | 1860 | 1822 | 131.742 | 306.738 |
+| `maxsim_cpu_variable` | open | threads | 16 | 2790 | 2474 | 392.061 | 671.883 |
+| `maxsim_cpu_variable` | open | procs | 16 | 930 | 938 | 4.230 | 17.430 |
+| `maxsim_cpu_variable` | open | procs | 16 | 1860 | 1875 | 4.403 | 21.285 |
+| `maxsim_cpu_variable` | open | procs | 16 | 2790 | 2799 | 4.671 | 41.035 |
+| `nextplaid` | closed | threads | 1 |  | 2980 | 0.196 | 3.024 |
+| `nextplaid` | closed | threads | 4 |  | 3451 | 0.675 | 10.009 |
+| `nextplaid` | closed | threads | 16 |  | 3319 | 1.993 | 44.275 |
+| `nextplaid` | closed | procs | 1 |  | 2593 | 0.215 | 4.805 |
+| `nextplaid` | closed | procs | 4 |  | 371 | 0.432 | 139.081 |
+| `nextplaid` | closed | procs | 16 |  | 208 | 10.959 | 713.981 |
+| `nextplaid` | open | threads | 16 | 930 | 910 | 292.792 | 495.108 |
+| `nextplaid` | open | threads | 16 | 1860 | 1325 | 1112.280 | 1387.386 |
+| `nextplaid` | open | threads | 16 | 2790 | 1537 | 1252.253 | 1427.348 |
+| `nextplaid` | open | procs | 16 | 930 | 203 | 8501.265 | 18720.433 |
+| `nextplaid` | open | procs | 16 | 1860 | 201 | 9723.191 | 21210.807 |
+| `nextplaid` | open | procs | 16 | 2790 | 201 | 10986.325 | 22000.527 |
+| `nextplaid@4` | closed | threads | 1 |  | 3166 | 0.197 | 2.067 |
+| `nextplaid@4` | closed | threads | 4 |  | 3812 | 0.606 | 9.339 |
+| `nextplaid@4` | closed | threads | 16 |  | 3494 | 1.778 | 52.964 |
+| `nextplaid@4` | closed | procs | 1 |  | 3394 | 0.237 | 1.002 |
+| `nextplaid@4` | closed | procs | 4 |  | 327 | 0.503 | 139.898 |
+| `nextplaid@4` | closed | procs | 16 |  | 159 | 42.013 | 727.019 |
+| `nextplaid@4` | open | threads | 16 | 930 | 910 | 154.575 | 426.624 |
+| `nextplaid@4` | open | threads | 16 | 1860 | 1350 | 1094.062 | 1339.665 |
+| `nextplaid@4` | open | threads | 16 | 2790 | 1572 | 1261.005 | 1355.863 |
+| `nextplaid@4` | open | procs | 16 | 930 | 160 | 12241.183 | 24729.495 |
+| `nextplaid@4` | open | procs | 16 | 1860 | 160 | 13232.541 | 27300.650 |
+| `nextplaid@4` | open | procs | 16 | 2790 | 161 | 13532.807 | 27878.609 |
+| `numkong_native_f16` | closed | threads | 1 |  | 17005 | 0.053 | 0.157 |
+| `numkong_native_f16` | closed | threads | 4 |  | 21913 | 0.163 | 0.502 |
+| `numkong_native_f16` | closed | threads | 16 |  | 24138 | 0.304 | 5.185 |
+| `numkong_native_f16` | closed | procs | 1 |  | 14179 | 0.057 | 0.208 |
+| `numkong_native_f16` | closed | procs | 4 |  | 18306 | 0.159 | 0.727 |
+| `numkong_native_f16` | closed | procs | 16 |  | 18896 | 0.233 | 6.402 |
+| `numkong_native_f16` | open | threads | 16 | 930 | 941 | 9.365 | 24.204 |
+| `numkong_native_f16` | open | threads | 16 | 1860 | 1880 | 13.200 | 35.037 |
+| `numkong_native_f16` | open | threads | 16 | 2790 | 2718 | 186.671 | 388.581 |
+| `numkong_native_f16` | open | procs | 16 | 930 | 941 | 0.530 | 6.221 |
+| `numkong_native_f16` | open | procs | 16 | 1860 | 1880 | 0.513 | 7.183 |
+| `numkong_native_f16` | open | procs | 16 | 2790 | 2819 | 0.569 | 6.716 |
+| `numpy_packed` | closed | threads | 1 |  | 8507 | 0.091 | 0.259 |
+| `numpy_packed` | closed | threads | 4 |  | 8646 | 0.094 | 9.023 |
+| `numpy_packed` | closed | threads | 16 |  | 7788 | 0.097 | 41.873 |
+| `numpy_packed` | closed | procs | 1 |  | 6969 | 0.132 | 0.364 |
+| `numpy_packed` | closed | procs | 4 |  | 12383 | 0.271 | 0.922 |
+| `numpy_packed` | closed | procs | 16 |  | 10505 | 0.433 | 9.359 |
+| `numpy_packed` | open | threads | 16 | 930 | 912 | 555.011 | 1248.761 |
+| `numpy_packed` | open | threads | 16 | 1860 | 1691 | 530.473 | 1299.239 |
+| `numpy_packed` | open | threads | 16 | 2790 | 2649 | 306.155 | 456.378 |
+| `numpy_packed` | open | procs | 16 | 930 | 941 | 0.888 | 6.362 |
+| `numpy_packed` | open | procs | 16 | 1860 | 1880 | 0.961 | 6.940 |
+| `numpy_packed` | open | procs | 16 | 2790 | 2815 | 0.847 | 7.264 |
+| `torch_pad_bmm` | closed | threads | 1 |  | 4447 | 0.218 | 0.469 |
+| `torch_pad_bmm` | closed | threads | 4 |  | 5635 | 0.674 | 1.551 |
+| `torch_pad_bmm` | closed | threads | 16 |  | 6288 | 2.280 | 6.122 |
+| `torch_pad_bmm` | closed | procs | 1 |  | 2196 | 0.205 | 11.993 |
+| `torch_pad_bmm` | closed | procs | 4 |  | 6718 | 0.542 | 1.513 |
+| `torch_pad_bmm` | closed | procs | 16 |  | 5448 | 1.100 | 9.301 |
+| `torch_pad_bmm` | open | threads | 16 | 930 | 861 | 1617.013 | 2954.399 |
+| `torch_pad_bmm` | open | threads | 16 | 1860 | 1514 | 1261.289 | 2017.112 |
+| `torch_pad_bmm` | open | threads | 16 | 2790 | 2017 | 1029.835 | 1452.378 |
+| `torch_pad_bmm` | open | procs | 16 | 930 | 940 | 2.206 | 10.678 |
+| `torch_pad_bmm` | open | procs | 16 | 1860 | 1880 | 2.183 | 9.301 |
+| `torch_pad_bmm` | open | procs | 16 | 2790 | 2815 | 2.501 | 13.025 |
+| `torch_pad_bmm@4` | closed | threads | 1 |  | 4873 | 0.203 | 0.372 |
+| `torch_pad_bmm@4` | closed | threads | 4 |  | 5722 | 0.669 | 1.357 |
+| `torch_pad_bmm@4` | closed | threads | 16 |  | 6297 | 2.359 | 5.916 |
+| `torch_pad_bmm@4` | closed | procs | 1 |  | 4704 | 0.200 | 0.615 |
+| `torch_pad_bmm@4` | closed | procs | 4 |  | 765 | 0.360 | 25.002 |
+| `torch_pad_bmm@4` | closed | procs | 16 |  | 218 | 69.041 | 121.584 |
+| `torch_pad_bmm@4` | open | threads | 16 | 930 | 862 | 1638.545 | 2953.798 |
+| `torch_pad_bmm@4` | open | threads | 16 | 1860 | 1519 | 1243.747 | 1999.612 |
+| `torch_pad_bmm@4` | open | threads | 16 | 2790 | 2037 | 1007.384 | 1429.593 |
+| `torch_pad_bmm@4` | open | procs | 16 | 930 | 233 | 7709.853 | 15062.400 |
+| `torch_pad_bmm@4` | open | procs | 16 | 1860 | 232 | 9227.785 | 17697.814 |
+| `torch_pad_bmm@4` | open | procs | 16 | 2790 | 231 | 9553.975 | 18611.108 |
+

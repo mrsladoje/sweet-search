@@ -123,6 +123,12 @@ def speed_table(mode, fname, extra=()):
 
 
 # ------------------------------------------------------------------ main
+def np_median(x):
+    x = sorted(x)
+    n = len(x)
+    return x[n // 2] if n % 2 else (x[n // 2 - 1] + x[n // 2]) / 2
+
+
 def cache_agent_sizes():
     import pickle, collections
     f = os.path.expanduser('~/.ss-eval/maxsim-analysis/cache/intel-ho-warm.pkl')
@@ -348,8 +354,8 @@ def main():
     open(os.path.join(TEX, 'effects.tex'), 'w').write('\n'.join(rows) + '\n')
     # cross-platform kernel agreement
     kap = QX.get('kernel_across_platforms', {})
-    eqx = [v['bit_equal_share'] for c in kap.values() for pair, v in c.items() if pair.startswith('amd')]
-    neq = [v['bit_equal_share'] for c in kap.values() for pair, v in c.items() if not pair.startswith('amd')]
+    eqx = [v['bit_equal_share'] for c in kap.values() for pair, v in c.items() if pair.split()[0] in ('amd', 'epyc')]
+    neq = [v['bit_equal_share'] for c in kap.values() for pair, v in c.items() if pair.split()[0] in ('arm', 'm3max')]
     mx = max(v['max_abs'] for c in kap.values() for v in c.values()) if kap else 0
     sr = min(v['same_ranking_share'] for c in kap.values() for v in c.values()) if kap else 0
     put('xplat.x86equal', f'{min(eqx) * 100:.0f}' if eqx else '?', 'quality_extra.json', 'AMD vs Intel bit-equal share, %')
@@ -383,6 +389,17 @@ def main():
             arm, tag, fam = k_.split('|')
             put(f'nan.{p}.{arm}.{tag}.{fam}', f"{v['nan'] / v['runs'] * 100:.1f}", 'nan.json', f"{v['nan']} of {v['runs']} call runs")
     put('nan.platforms', ', '.join(p for p, d in NAN.items() if len(d) > 1) or 'none', 'nan.json', 'platforms with any NaN score')
+
+    NKC = load('numkong_check.json').get('results', {})
+    if NKC:
+        for kind in ('random', 'clustered'):
+            v = [x for k_, x in NKC.items() if f'|{kind}|' in k_]
+            put(f'nkcheck.{kind}.rho.min', f"{min(x['spearman_median'] for x in v):.2f}", 'numkong_check.json')
+            put(f'nkcheck.{kind}.rho.max', f"{max(x['spearman_median'] for x in v):.2f}", 'numkong_check.json')
+            put(f'nkcheck.{kind}.top1.min', f"{min(x['top1_agreement'] for x in v) * 100:.0f}", 'numkong_check.json')
+            put(f'nkcheck.{kind}.top1.max', f"{max(x['top1_agreement'] for x in v) * 100:.0f}", 'numkong_check.json')
+            put(f'nkcheck.{kind}.gap', f"{np_median([x['top1_top10_gap_median'] for x in v]) * 100:.1f}", 'numkong_check.json')
+        put('nkcheck.adapter', f"{max(x['adapter_vs_python_max_abs'] or 0 for x in NKC.values()):.1g}", 'numkong_check.json', 'max |rust loop - python API|')
 
     # ------------------------------------------------------------------ contract effects
     CE = load('contract_effects.json')

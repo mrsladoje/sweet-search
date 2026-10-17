@@ -3,6 +3,7 @@
  "amd": 34866,
  "arm-replica": 546,
  "arm": 29792,
+ "epyc": 15050,
  "intel-replica": 676,
  "intel": 37188,
  "m3max": 15931

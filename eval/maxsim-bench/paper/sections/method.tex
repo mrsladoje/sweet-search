@@ -7,7 +7,7 @@ Table~\ref{tab:machines} lists the five CPUs.
 The three cloud types are AWS EC2 on-demand instances in us-east-1.
 Each held-out set ran whole on one instance; four instances per type shared the sets.
 A fifth instance per type (the replica) repeated the agent and GCSN sets.
-The Linux machines report no frequency governor; the hypervisor controls frequency.
+The EPYC is a dedicated-vCPU virtual machine at Hetzner. The Linux machines report no frequency governor; the hypervisor controls frequency.
 No arm was pinned to a core.
 The Linux machines used Python~3.12.3, NumPy~2.5.4 on OpenBLAS~0.3.34, PyTorch~2.14.1 (CPU build), Node.js~24.18.0 and Rust~1.97.1.
 One AMD variant used NumPy on BLIS~2.0, and NextPlaid links OpenBLAS~0.3.26.
@@ -27,7 +27,7 @@ Intel & Xeon 6 6975P-C (Granite Rapids), c8i.4xlarge & $8\times2$ & AVX-512, AMX
 AMD & EPYC 9R45 (Zen 5), c8a.4xlarge & $16\times1$ & AVX-512 & \nm{count.amd} (\nm{count.amd-replica}) \\
 Graviton4 & Neoverse V2, c8g.4xlarge & $16\times1$ & NEON, SVE2 & \nm{count.arm} (\nm{count.arm-replica}) \\
 M3 Max & Apple M3 Max, macOS 26.3.1 & 12 P + 4 E & NEON (+ AMX via Accelerate) & \nm{count.m3max} \\
-EPYC & AMD EPYC (Zen 3), Hetzner CCX33 & \TODO{epyc} & AVX2 & \TODO{epyc} \\
+EPYC & AMD EPYC 7003 (Milan, Zen 3), Hetzner CCX33 & $4\times2$ & AVX2 & \nm{count.epyc} \\
 \bottomrule
 \end{tabular}}
 \end{table}

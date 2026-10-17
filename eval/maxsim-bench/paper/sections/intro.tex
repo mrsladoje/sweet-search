@@ -21,7 +21,7 @@ This paper makes four contributions.
 \item \textbf{A benchmark} (\benchname). It has a replay format for rerank calls, four workload families, adapters for eight implementations, and a timing record for every repetition of every call.
 \item \textbf{Scoring contracts.} The tested libraries compute different scores. They differ in normalization, in the place of an epsilon, in a $\max(0,\cdot)$ clamp, and in padding. We define each rule once, compute a float64 reference per rule, and check every implementation against the reference of its own rule (Section~\ref{sec:contracts}).
 \item \textbf{A measurement protocol.} The code, the rival configurations, the repetition count, the quality margin and the primary tests were frozen before any held-out run (Section~\ref{sec:method}). The tables of this paper come from analysis code written after the freeze; Appendix~\ref{app:deviations} lists each difference from the frozen scripts.
-\item \textbf{Results on five CPUs} (Granite Rapids, Zen~5, Graviton4, Apple M3 Max, and Zen~3 \TODO{epyc}). We measure speed under warm, busy-gap, one-thread and parallel-caller conditions, memory per stored token, and quality per latency budget. Section~\ref{sec:losses} lists every condition in which a rival was faster.
+\item \textbf{Results on five CPUs} (Granite Rapids, Zen~5, Graviton4, Apple M3 Max, and Zen~3). We measure speed under warm, busy-gap, one-thread and parallel-caller conditions, memory per stored token, and quality per latency budget. Section~\ref{sec:losses} lists every condition in which a rival was faster.
 \end{enumerate}
 
 One of the implementations is an int4 kernel from the open-source code-search engine sweet-search (\sweet below).
