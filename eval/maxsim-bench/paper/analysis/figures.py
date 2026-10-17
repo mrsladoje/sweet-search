@@ -138,7 +138,12 @@ def fig_budget():
         for j, cell in enumerate(cells):
             ax = axes[i][j]
             curves = bd[p].get(cell, {}).get('curves', {})
+            fs = curves.get('f32store')
+            if fs:
+                ax.plot([x['p95_ms'] for x in fs['points']], [x['ndcg10'] for x in fs['points']], marker='x', color=INK, ls='--', ms=3, lw=0.9, zorder=4)
             for arm, c in sorted(curves.items(), key=lambda x: x[0] != 'ours'):
+                if arm == 'f32store':
+                    continue
                 lab = c['label']
                 if 'int4-self' in lab:
                     continue
@@ -163,6 +168,7 @@ def fig_budget():
                 ax.set_xlabel('per-request p95, ms')
     handles = [plt.Line2D([], [], marker=LIB[L][1], color=LIB[L][0], ms=4, label=LIB[L][2] + (' (f32 input)' if L == 'numkong' else ''))
                for L in ('ours', 'numpy', 'torch', 'torch_bf16', 'maxsim_cpu', 'nextplaid', 'numkong')]
+    handles.append(plt.Line2D([], [], marker='x', color=INK, ls='--', ms=4, label='float32 storage (F quality, fastest exact float32 rival time)'))
     fig.legend(handles=handles, loc='lower center', ncol=4, frameon=False, bbox_to_anchor=(0.5, -0.005))
     fig.tight_layout(rect=(0, 0.06, 1, 1))
     fig.savefig(os.path.join(FIG, 'budget.pdf')); plt.close(fig)

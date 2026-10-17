@@ -47,14 +47,16 @@ def frozen(platform, fam, lib, itype, single=False):
 
 
 def frozen_rivals(platform, fam, single=False):
-    """[(lib, itype, arm)] of the frozen shortlist for a workload family."""
+    """[(lib, itype, [arms])] of the frozen shortlist for a workload family: the primary and the
+    'also' configurations (two fastest on development data), or the one-thread configuration."""
     out = []
     fams = shortlist(platform)['families'].get(fam, {})
     for lib in sorted(fams, key=lambda x: LIB_ORDER.index(x) if x in LIB_ORDER else 99):
-        for it in fams[lib]:
-            a = frozen(platform, fam, lib, it, single)
-            if a:
-                out.append((lib, it, a))
+        for it, cfg in fams[lib].items():
+            specs = [cfg.get('single')] if single else [cfg.get('primary')] + list(cfg.get('also') or [])
+            arms = [rl.spec_to_file(x) for x in specs if x]
+            if arms:
+                out.append((lib, it, arms))
     return out
 
 
@@ -87,16 +89,51 @@ def pooled(c, sets, arm, base='ours'):
             {p: np.concatenate(v) for p, v in pb.items() if len(v) == len(sets)})
 
 
+def jackknife(c, sets, arm, base='ours'):
+    """Execution spread with the point estimator itself: leave one process repetition out, take
+    per call the median of the remaining runs of each arm, then the geometric-mean ratio."""
+    o_runs, b_runs, o_keys, b_keys = [], [], None, None
+    for s in sets:
+        A, B = c[s]['arms'][arm], c[s]['arms'][base]
+        o_runs.append(A['runs']); b_runs.append(B['runs'])
+        o_keys, b_keys = A['run_keys'], B['run_keys']
+    O, Bm = np.concatenate(o_runs), np.concatenate(b_runs)
+    procs = sorted({p for _, p in o_keys} & {p for _, p in b_keys})
+    out = []
+    for p in procs:
+        oi = [i for i, (_, pp) in enumerate(o_keys) if pp != p]
+        bi = [i for i, (_, pp) in enumerate(b_keys) if pp != p]
+        out.append(rl.geomean_ratio(np.nanmedian(O[:, oi], axis=1), np.nanmedian(Bm[:, bi], axis=1)))
+    return out
+
+
 def ratio(c, sets, arm, base='ours'):
-    """Geometric-mean ratio arm / base with the workload interval and the execution spread."""
+    """Geometric-mean ratio arm / base with the workload interval, the execution spread
+    (leave-one-process-out, same estimator), the total-time ratio, and for agent sets the
+    per-repository range."""
     r = pooled(c, sets, arm, base)
     if r is None:
         return None
     o, b, cl, po, pb = r
     g, lo, hi, k = rl.cluster_bootstrap(o, b, cl)
+    jk = jackknife(c, sets, arm, base)
     pp = [rl.geomean_ratio(po[p], pb[p]) for p in sorted(po)]
-    return dict(ratio=g, lo=lo, hi=hi, clusters=k, calls=int(len(o)), spread=(min(pp), max(pp)) if pp else None, R=len(pp),
-                faster_share=float(np.mean(b < o)), p50_arm=float(np.median(o)), p50_base=float(np.median(b)))
+    out = dict(ratio=g, lo=lo, hi=hi, clusters=k, calls=int(len(o)), spread=(min(jk), max(jk)) if jk else None, R=len(jk),
+               spread_frozen=(min(pp), max(pp)) if pp else None, total_ratio=float(o.sum() / b.sum()),
+               faster_share=float(np.mean(b < o)), p50_arm=float(np.median(o)), p50_base=float(np.median(b)))
+    if sets == ['agent-ho']:
+        reps = {}
+        for x, ob, bb in zip(cl, o, b):
+            reps.setdefault(x[1], []).append((ob, bb))
+        per = [rl.geomean_ratio([u for u, _ in v], [w for _, w in v]) for v in reps.values()]
+        out['repo_range'] = (min(per), max(per))
+        out['repo_loo'] = (min(rl.geomean_ratio([u for kk, v in reps.items() if kk != drop for u, _ in v],
+                                                [w for kk, v in reps.items() if kk != drop for _, w in v]) for drop in reps),
+                           max(rl.geomean_ratio([u for kk, v in reps.items() if kk != drop for u, _ in v],
+                                                [w for kk, v in reps.items() if kk != drop for _, w in v]) for drop in reps))
+    out['rival_faster'] = bool(hi < 1 and jk and max(jk) < 1)
+    out['sweet_faster'] = bool(lo > 1 and jk and min(jk) > 1)
+    return out
 
 
 def arm_stats(c, sets, arm):

@@ -2,35 +2,40 @@
 \label{sec:intro}
 
 Late-interaction retrieval models such as ColBERT~\cite{khattab2020colbert,santhanam2022colbertv2} keep one vector per token.
-They score a query $q$ against a document $d$ with MaxSim: each query token takes its best similarity over the document tokens, and the score is the mean of these maxima.
-Many systems use MaxSim as a reranking stage: a first stage (BM25 or a single-vector index) returns some tens or hundreds of candidates, and MaxSim orders them.
+They score a query against a document with MaxSim.
+Each query token takes its best similarity over the document tokens, and the score is the mean of these maxima.
+Many systems use MaxSim as a reranking stage.
+A first stage (BM25 or a single-vector index) returns tens or hundreds of candidates, and MaxSim orders them.
 
 Rerank calls are small.
 In the coding-agent workload of this paper, the median call has \nm{wl.agent-ho.q50} query tokens and \nm{wl.agent-ho.pool50} candidates of about \nm{wl.agent-ho.dt50} tokens each (Section~\ref{sec:workload}).
-At this size, a call takes tens of microseconds.
+At this size a call takes tens of microseconds.
 Fixed costs such as library dispatch, thread wake-up and input conversion can then matter as much as arithmetic.
-Common tools, however, are built for large matrix products.
-So which CPU implementation is fastest for these calls, at what quality, and under which conditions, is an empirical question.
-Earlier work timed CPU MaxSim libraries as baselines for faster approximate methods~\cite{pony2026colbandit}, or for a single library~\cite{clavie2025maxsimcpu}. We found no public benchmark that compares CPU MaxSim implementations on captured rerank calls, with each implementation checked against its own scoring rule.
+Common tools are built for large matrix products.
+Which CPU implementation is fastest for such calls, at what quality and under which conditions, is therefore an empirical question.
+Earlier work timed CPU MaxSim libraries as baselines for faster approximate methods~\cite{pony2026colbandit}, or timed a single library~\cite{clavie2025maxsimcpu}.
+We found no public benchmark that compares CPU MaxSim implementations on captured rerank calls and checks each implementation against its own scoring rule.
 
-This paper contributes four things.
+This paper makes four contributions.
 \begin{enumerate}
-\item \textbf{A benchmark} (\benchname): a replay format for rerank calls; four workload families (captured agent calls, GenCodeSearchNet calls, a size sweep, and BEIR SciFact and NFCorpus with two public ColBERT models); adapters for eight implementations; and per-call timing records for every repetition.
-\item \textbf{Scoring contracts.} The tested libraries compute different scores: they differ in normalization, in where an epsilon goes, in a $\max(0,\cdot)$ clamp, and in padding. We define each rule once, compute a float64 reference per rule, and check every arm against the reference of its own rule (Section~\ref{sec:contracts}). Independent hand-built fixtures test each rule.
-\item \textbf{A measurement protocol} that keeps development and held-out data apart. All configurations, the repetition count, the quality margin and the analysis code were frozen before any held-out run (Section~\ref{sec:method}). We report two uncertainty numbers apart: a workload interval and an execution spread.
-\item \textbf{Results on five CPUs} (Granite Rapids, Zen~5, Graviton4, Apple M3 Max, and Zen~3 \TODO{epyc}): speed under warm, idle-gap, one-thread and parallel-caller conditions; memory per stored token; and quality per latency budget. Every case where a rival is faster is in the main text (Section~\ref{sec:losses}).
+\item \textbf{A benchmark} (\benchname). It has a replay format for rerank calls, four workload families, adapters for eight implementations, and a timing record for every repetition of every call.
+\item \textbf{Scoring contracts.} The tested libraries compute different scores. They differ in normalization, in the place of an epsilon, in a $\max(0,\cdot)$ clamp, and in padding. We define each rule once, compute a float64 reference per rule, and check every implementation against the reference of its own rule (Section~\ref{sec:contracts}).
+\item \textbf{A measurement protocol.} The code, the rival configurations, the repetition count, the quality margin and the primary tests were frozen before any held-out run (Section~\ref{sec:method}). The tables of this paper come from analysis code written after the freeze; Appendix~\ref{app:deviations} lists each difference from the frozen scripts.
+\item \textbf{Results on five CPUs} (Granite Rapids, Zen~5, Graviton4, Apple M3 Max, and Zen~3 \TODO{epyc}). We measure speed under warm, busy-gap, one-thread and parallel-caller conditions, memory per stored token, and quality per latency budget. Section~\ref{sec:losses} lists every condition in which a rival was faster.
 \end{enumerate}
 
-One implementation is an int4 kernel from the open-source code-search engine sweet-search (\sweet below).
-It is careful engineering, not a new algorithm: SIMD register blocking, int4 decoding inside the kernel, ragged batches without padding, and its own worker pool (Section~\ref{sec:kernel}).
+One of the implementations is an int4 kernel from the open-source code-search engine sweet-search (\sweet below).
+It is careful engineering, not a new algorithm (Section~\ref{sec:kernel}).
 The authors of this paper also wrote that kernel.
-We therefore designed the protocol so that its results do not depend on our judgment after the data were seen: the rival configurations come from a frozen shortlist chosen on development data, and the claims follow fixed rules.
+For this reason, the rival configurations come from a shortlist that was chosen on development data and frozen, and the claims follow rules that were fixed before the held-out runs.
 
 \paragraph{What we claim.}
-On the tested CPUs, this implementation reduced warm scoring latency for captured reranking workloads, relative to the tested library configurations, with exhaustive scoring over stored int4 representations and measured floating-point error.
-We do not claim the fastest MaxSim in general, any end-to-end search speed-up, or results for GPUs.
+On the tested CPUs, with warm calls, this implementation reduced scoring latency for the captured agent and code-search rerank calls, relative to the tested exact library configurations with float32 inputs.
+It does so with exhaustive scoring over stored int4 representations and measured floating-point error.
+This claim does not hold for every condition: Section~\ref{sec:losses} lists where it fails.
+We do not claim the fastest MaxSim in general, any end-to-end search speed-up, or any GPU result.
 A stronger claim, that fixed costs dominate at real call sizes, needs a cost decomposition that we did not run (Section~\ref{sec:limits}).
 
 \paragraph{What we found besides speed.}
 The reference checks found two new defects in other libraries and confirmed a known one (Section~\ref{sec:correctness}).
-The quality test found that the production int4 scoring rule loses quality with one of the two public models, and a post-hoc analysis locates the cause in the normalization step (Section~\ref{sec:quality}).
+The quality test found that the production int4 scoring rule loses quality with one of the two public models (Section~\ref{sec:quality}).

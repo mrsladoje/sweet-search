@@ -14,6 +14,7 @@ PAPER = os.path.dirname(HERE)
 TEX = os.path.join(PAPER, 'tables')
 PLAT = ['intel', 'amd', 'arm', 'm3max', 'epyc']
 PN = {'intel': 'Xeon 6 (Granite Rapids)', 'amd': 'EPYC 9R45 (Zen 5)', 'arm': 'Graviton4', 'm3max': 'Apple M3 Max', 'epyc': 'EPYC 7003 (Zen 3)'}
+LIBN = {'numpy': 'NumPy', 'numpy+blis': 'NumPy (BLIS)', 'torch': 'PyTorch', 'maxsim_cpu': 'maxsim-cpu', 'nextplaid': 'NextPlaid', 'numkong': 'NumKong'}
 PS = {'intel': 'Intel', 'amd': 'AMD', 'arm': 'Graviton4', 'm3max': 'M3 Max', 'epyc': 'EPYC'}
 NUM = []   # (key, value, source, note)
 CMD = {
@@ -44,9 +45,26 @@ def f2(x):
     return f'{x:.2f}'
 
 
+ARM_NAME = [('numpy_packed_int4', 'NumPy int4-self'), ('numpy_packed_t', 'NumPy (transposed)'), ('numpy_packed', 'NumPy'),
+            ('numpy_perdoc', 'NumPy (per document)'), ('torch_pad_bmm', 'PyTorch padded bmm'), ('torch_pad_flat', 'PyTorch padded flat'),
+            ('torch_colbert_packed', 'PyTorch colbert-ai packed'), ('torch_segment_reduce', 'PyTorch segment-reduce'),
+            ('torch_pylate', 'PyLate'), ('maxsim_cpu_variable_int4', 'maxsim-cpu int4-self'), ('maxsim_cpu_variable', 'maxsim-cpu list'),
+            ('maxsim_cpu_3d', 'maxsim-cpu 3D'), ('nextplaid', 'NextPlaid'), ('numkong_native', 'NumKong'), ('numkong', 'NumKong (Python)')]
+
+
 def tx(name):
-    """An arm name as LaTeX text."""
-    return name.split('@')[0].replace('%', '+').replace('_', '-')
+    """A result-file arm name as reader-facing text (the terminology table in the appendix lists them)."""
+    base = name.split('+')[0].split('@')[0]
+    lab = next((v for k, v in ARM_NAME if base.startswith(k)), base.replace('_', '-'))
+    for suf in ('_bf16', '_f16', '_f32'):
+        if base.endswith(suf) and not lab.endswith(suf[1:]):
+            lab += ' ' + suf[1:]
+    if '+blis' in name:
+        lab += ' (BLIS)'
+    m = __import__('re').search(r'@t?(\d+)', name)
+    if m:
+        lab += f', {m.group(1)} thr.'
+    return lab
 
 
 def todo(p):
@@ -105,6 +123,15 @@ def speed_table(mode, fname, extra=()):
 
 
 # ------------------------------------------------------------------ main
+def cache_agent_sizes():
+    import pickle, collections
+    f = os.path.expanduser('~/.ss-eval/maxsim-analysis/cache/intel-ho-warm.pkl')
+    if not os.path.exists(f):
+        return None
+    c = pickle.load(open(f, 'rb'))['agent-ho']['clusters']
+    return list(collections.Counter(x for x in c).values())
+
+
 def main():
     os.makedirs(TEX, exist_ok=True)
     speed_table('warm', 'warm.tex', extra=[('node-legacy', 'prev. path'), ('node-production', 'prod. path')])
@@ -185,6 +212,14 @@ def main():
             w = min(lose, key=lambda c: c['best']['ratio'])
             put(f'sweep.{p}.worst', f2(w['best']['ratio']), 'speed.json', f"q{w['q']} d{w['docs']} len{w['len']} {w['best']['lib']}")
             put(f'sweep.{p}.worstcell', f"{w['q']} query tokens, {w['docs']} docs, {w['len'] if w['len'] != 'nat' else 'natural'} doc tokens", 'speed.json')
+        anyw = [(r['ratio'], c, r) for c in cells.values() for r in c['rows'] if r.get('ratio') and r['itype'] in ('f32', 'bf16') and r['lib'] != 'numkong']
+        if anyw:
+            v, c, r = min(anyw, key=lambda x: x[0])
+            put(f'sweep.{p}.worstany', f2(v), 'speed.json', f"{r['arm']} q{c['q']} d{c['docs']} len{c['len']}")
+            put(f'sweep.{p}.worstany.where', f"{c['q']} query tokens, {c['docs']} docs, {c['len'] if c['len'] != 'nat' else 'natural'} doc tokens, {tx(r['arm'])}", 'speed.json')
+            put(f'sweep.{p}.loseany', str(sum(1 for c in cells.values() if any(r.get('ratio') and r['ratio'] < 1 and r['itype'] in ('f32', 'bf16') and r['lib'] != 'numkong' for r in c['rows']))), 'speed.json', 'cells where some exact rival of any input type is faster')
+        put(f'nksweep.{p}', str(sum(1 for c in cells.values() if any(r.get('ratio') and r['ratio'] < 1 and r['lib'] == 'numkong' for r in c['rows']))),
+            'speed.json', 'sweep cells where a NumKong configuration is faster')
         win = [c['best']['ratio'] for c in cells.values() if c['best'] and c['best']['ratio'] >= 1]
         if win:
             put(f'sweep.{p}.maxwin', f2(max(win)), 'speed.json')
@@ -213,6 +248,10 @@ def main():
         L.append(r'\addlinespace')
     open(os.path.join(TEX, 'losses.tex'), 'w').write('\n'.join(L) + '\n')
     put('losses.total', str(len(losses)), 'speed.json', 'all (platform, mode, set/cell, frozen config) with ratio < 1')
+    bs = collections.Counter((x['platform'], x['label']) for x in losses if x['mode'] == 'warm BEIR set' and x['significant'])
+    for (p_, lab), n in bs.items():
+        key = lab.replace(' (approx.)', '').replace(', ', '.').replace(' ', '')
+        put(f'beirset.{p_}.{key}', str(n), 'speed.json', f'BEIR sets (of 20) where {lab} is faster')
     # replica spread
     rep = SPEED.get('replica', {})
     allr = [r['rel_diff'] for p in rep for w in rep[p] for r in rep[p][w]['rows']]
@@ -235,6 +274,35 @@ def main():
                 R.append(f"{PS[p]} & {w} & {len(xs)} & {statistics.median(xs):.1f} & {max(xs):.1f} & {(d['ours_geomean_replica_over_shard'] - 1) * 100:+.1f} \\\\")
         open(os.path.join(TEX, 'replica.tex'), 'w').write('\n'.join(R) + '\n')
 
+    # robustness of the warm agent and BEIR ratios: per-repository range, leave-one-repository-out range,
+    # total-time ratio (sum of rival call times / sum of sweet call times) beside the geometric mean
+    rows = []
+    for p in PLAT:
+        if p not in SPEED.get('warm', {}):
+            rows.append(f'{PS[p]} & \\multicolumn{{6}}{{l}}{{{todo("epyc")}}} \\\\'); continue
+        first = True
+        for w, wl in (('agent-ho', 'agent'), ('gcsn-ho', 'GCSN'), ('beir', 'BEIR')):
+            for r in SPEED['warm'][p][w]:
+                if 'ratio' not in r or r.get('lib') in ('node-production', 'node-legacy', 'numkong') or r.get('itype') not in ('f32',):
+                    continue
+                rr = r.get('repo_range'); lo_ = r.get('repo_loo')
+                put(f'robust.{p}.{w}.{r["lib"]}.total', f2(r['total_ratio']), 'speed.json', 'total-time ratio')
+                rows.append(f"{PS[p] if first else ''} & {wl} & {LIBN.get(r['lib'], r['lib'])} & {r['ratio']:.2f} & {r['total_ratio']:.2f} & "
+                            + (f"{rr[0]:.2f}--{rr[1]:.2f} & {lo_[0]:.2f}--{lo_[1]:.2f}" if rr else '-- & --') + r' \\')
+                first = False
+        rows.append(r'\addlinespace')
+    open(os.path.join(TEX, 'robust.tex'), 'w').write('\n'.join(rows) + '\n')
+    tot_lt1 = [(p, w, r['lib']) for p in SPEED.get('warm', {}) for w in ('agent-ho', 'gcsn-ho', 'beir') for r in SPEED['warm'][p][w]
+               if 'total_ratio' in r and r.get('itype') == 'f32' and r.get('lib') != 'numkong' and (r['total_ratio'] < 1) != (r['ratio'] < 1)]
+    put('robust.signflips', str(len(tot_lt1)), 'speed.json', 'exact f32 rows where total-time and geometric-mean ratios fall on different sides of 1: ' + str(tot_lt1))
+
+    # agent repository weights (cluster sizes) and the effective number of clusters
+    wa = cache_agent_sizes()
+    if wa:
+        tot = sum(wa); sh = sorted((x / tot for x in wa), reverse=True)
+        put('agent.repos.min', str(min(wa)), 'load.py cache', 'calls of the smallest repository'); put('agent.repos.max', str(max(wa)), 'load.py cache')
+        put('agent.repos.top5', f'{sum(sh[:5]) * 100:.0f}', 'load.py cache', 'share of calls in the 5 largest repositories, %')
+        put('agent.repos.eff', f'{1 / sum(x * x for x in sh):.1f}', 'load.py cache', 'effective number of clusters, 1 / sum of squared shares')
     # ------------------------------------------------------------------ quality
     QP = load('quality_primary.json')
     rows = []
@@ -271,7 +339,7 @@ def main():
             refs = QX['refs'][f'{ds}|{mk}|k100']
             key = f'nd.{ds}.{mk}'
             vals = dict(bm25=QX['bm25'][f'{ds}|{mk}|k100'], F=src['F']['ndcg10'], Fc=src['F+c']['ndcg10'], Qc=src['Q+c']['ndcg10'], K=src['K']['ndcg10'],
-                        Cb=refs['C-b-noclamp'], Ca=refs['C-a-f32-noclamp'], NK=nk.get('intel'))
+                        Cb=refs['C-b-noclamp'], Ca=refs['C-a-f32-noclamp'], NK=nk.get('amd'))
             for k_, v in vals.items():
                 if v is not None:
                     put(f'{key}.{k_}', f'{v:.4f}', 'quality_primary.json / quality_extra.json')
@@ -287,9 +355,34 @@ def main():
     put('xplat.x86equal', f'{min(eqx) * 100:.0f}' if eqx else '?', 'quality_extra.json', 'AMD vs Intel bit-equal share, %')
     put('xplat.armequal.lo', f'{min(neq) * 100:.0f}' if neq else '?', 'quality_extra.json'); put('xplat.armequal.hi', f'{max(neq) * 100:.0f}' if neq else '?', 'quality_extra.json')
     put('xplat.maxabs', f'{mx:.1e}', 'quality_extra.json'); put('xplat.sameranking.min', f'{sr * 100:.1f}', 'quality_extra.json')
+    kw = QX.get('kernel_within_cpu', {})
+    if kw:
+        put('xplat.files', f"{kw['files']:,}", 'quality_extra.json', f"bit-equal {kw['bit_equal']} of {kw['scores']}")
+        put('xplat.scores', f"{kw['scores'] / 1e6:.0f}", 'quality_extra.json', 'million scores')
+        put('xplat.withinequal', 'yes' if kw['bit_equal'] == kw['scores'] else 'NO', 'quality_extra.json')
+    for k_, v in QX.get('score_margins', {}).items():
+        ds, mk = k_.split('|')
+        put(f'margin.{ds}.{mk}', f"{v['top1_top10_gap_median'] * 100:.1f}", 'quality_extra.json', '(top1 - top10) / top1 under F, median over queries, %')
+    for cell_, d in QX.get('posthoc_tests', {}).items():
+        ds, mk, _ = cell_.split('|')
+        t = d['C-b - F']
+        put(f'ph.{ds}.{mk}.Cb.diff', f"{t['mean_diff']:+.4f}", 'quality_extra.json'); put(f'ph.{ds}.{mk}.Cb.lo', f"{t['ci95'][0]:+.4f}", 'quality_extra.json')
+        put(f'ph.{ds}.{mk}.Cb.hi', f"{t['ci95'][1]:+.4f}", 'quality_extra.json')
+    for k_, v in QX.get('int4_diagnostic', {}).items():
+        ds_, mk_ = k_.split('|')
+        put(f'int4diag.{ds_}.{mk_}.lenp10', f"{v['decoded_over_stored_p10']:.3f}", 'quality_extra.json'); put(f'int4diag.{ds_}.{mk_}.lenp90', f"{v['decoded_over_stored_p90']:.3f}", 'quality_extra.json')
     for k_, v in QX.get('int4_diagnostic', {}).items():
         ds, mk = k_.split('|')
         put(f'int4diag.{ds}.{mk}.relerr', f"{v['rel_err_median']:.3f}", 'quality_extra.json'); put(f'int4diag.{ds}.{mk}.cos', f"{v['cos_median']:.4f}", 'quality_extra.json')
+
+    NAN = load('nan.json')
+    for p, d in NAN.items():
+        for k_, v in d.items():
+            if k_.startswith('_'):
+                continue
+            arm, tag, fam = k_.split('|')
+            put(f'nan.{p}.{arm}.{tag}.{fam}', f"{v['nan'] / v['runs'] * 100:.1f}", 'nan.json', f"{v['nan']} of {v['runs']} call runs")
+    put('nan.platforms', ', '.join(p for p, d in NAN.items() if len(d) > 1) or 'none', 'nan.json', 'platforms with any NaN score')
 
     # ------------------------------------------------------------------ contract effects
     CE = load('contract_effects.json')
@@ -351,40 +444,68 @@ def main():
     CC = load('conc.json')
     rows = []
     CONC_N1 = []
+    corr_share = []
+    over = []
+    exact = lambda a: a != 'ours' and not a.startswith('numkong')
+    nk = lambda a: a.startswith('numkong')
+
+    def explicit_threads(a):
+        m = __import__('re').search(r'@(\d+)', a)
+        return int(m.group(1)) if m else 0
     for p in PLAT:
         if p not in CC:
-            rows.append(f'{PS[p]} & \\multicolumn{{7}}{{l}}{{{todo("epyc")}}} \\\\'); continue
+            rows.append(f'{PS[p]} & \\multicolumn{{10}}{{l}}{{{todo("epyc")}}} \\\\'); continue
+        cores = next(iter(next(iter(CC[p].values())).values()))['cores']
         for fam in ('agent', 'gcsn'):
             arms = CC[p].get(fam, {})
 
-            def best(pred, n):
-                v = [(r['throughput'], a, r['executor']) for a, d in arms.items() if pred(a) for r in d['runs'] if r['type'] == 'closed' and r['callers'] == n]
+            def best(pred, n, ex):
+                v = [(r['throughput'], a) for a, d in arms.items() if pred(a) for r in d['runs']
+                     if r['type'] == 'closed' and r['callers'] == n and r['executor'] == ex]
                 return max(v) if v else None
-            exact = lambda a: a != 'ours' and not a.startswith('numkong')
-            nk = lambda a: a.startswith('numkong')
+            for a, d in arms.items():
+                for r in d['runs']:
+                    if r.get('corrected') and a == 'ours':
+                        corr_share.append(50e6 / (r['wall_ns'] + 50e6))
+                    if r['type'] == 'closed' and r['executor'] == 'procs' and r['callers'] * max(explicit_threads(a), 1) > cores:
+                        over.append(f'{p} {fam} {a} n={r["callers"]}')
             cs = []
-            o1, e1 = best(lambda a: a == 'ours', 1), best(exact, 1)
             for n in (1, 16):
-                o, e, k = best(lambda a: a == 'ours', n), best(exact, n), best(nk, n)
-                put(f'conc.{p}.{fam}.n{n}.ours', f'{o[0] / 1000:.1f}', 'conc.json', 'kcalls/s')
-                put(f'conc.{p}.{fam}.n{n}.exact', f'{e[0] / 1000:.1f}', 'conc.json', e[1])
-                put(f'conc.{p}.{fam}.n{n}.exactratio', f2(o[0] / e[0]), 'conc.json', 'ours / best exact rival throughput')
-                put(f'conc.{p}.{fam}.n{n}.nk', f2(o[0] / k[0]), 'conc.json', 'ours / best NumKong throughput')
-                r_e, r_k = o[0] / e[0], o[0] / k[0]
-                cs += [f'{o[0] / 1000:.1f}', ('\\loss{' if r_e < 1 else '{') + f"{r_e:.2f}}} ({tx(e[1])})", ('\\loss{' if r_k < 1 else '{') + f'{r_k:.2f}}}']
+                for ex in ('procs', 'threads'):
+                    o, e, k = best(lambda a: a == 'ours', n, ex), best(exact, n, ex), best(nk, n, ex)
+                    r_e, r_k = o[0] / e[0], o[0] / k[0]
+                    put(f'conc.{p}.{fam}.n{n}.{ex}.ours', f'{o[0] / 1000:.1f}', 'conc.json', 'kcalls/s')
+                    put(f'conc.{p}.{fam}.n{n}.{ex}.exactratio', f2(r_e), 'conc.json', f'ours / {e[1]}')
+                    put(f'conc.{p}.{fam}.n{n}.{ex}.nk', f2(r_k), 'conc.json', f'ours / {k[1]}')
+                    flag = '$^\\ddagger$' if ex == 'procs' and n > 1 and n * max(explicit_threads(e[1]), 1) > cores else ''
+                    cs += [f'{o[0] / 1000:.1f}', ('\\loss{' if r_e < 1 else '{') + f'{r_e:.2f}}}{flag}', ('\\loss{' if r_k < 1 else '{') + f'{r_k:.2f}}}']
+                if n == 1:
+                    o1 = best(lambda a: a == 'ours', 1, 'threads'); e1 = best(exact, 1, 'threads')
+                    CONC_N1.append((o1[0] / e1[0], f'{p} {fam} threads'))
             rates = sorted({r['rate'] for d in arms.values() for r in d['runs'] if r['type'] != 'closed' and r['rate']})
             top = rates[-1]
+            cap = {a: max(r['throughput'] for r in d['runs'] if r['type'] == 'closed') for a, d in arms.items()}
             op = {a: min((r for r in d['runs'] if r['type'] != 'closed' and r['rate'] == top), key=lambda r: r['p99_ms']) for a, d in arms.items()}
-            ex = min((v['p99_ms'], a) for a, v in op.items() if exact(a))
+            exa = min((v['p99_ms'], a) for a, v in op.items() if exact(a))
+            ov_o = '$^\\S$' if top > cap['ours'] else ''
+            ov_e = '$^\\S$' if top > cap[exa[1]] else ''
             put(f'conc.{p}.{fam}.open.rate', f'{top:.0f}', 'conc.json'); put(f'conc.{p}.{fam}.open.ours', f"{op['ours']['p99_ms']:.2f}", 'conc.json')
-            put(f'conc.{p}.{fam}.open.exact', f'{ex[0]:.2f}', 'conc.json', ex[1])
-            cs += [f'{top:.0f}', f"{op['ours']['p99_ms']:.2f}", ('\\loss{' if ex[0] < op['ours']['p99_ms'] else '{') + f'{ex[0]:.2f}}} ({tx(ex[1])})']
+            put(f'conc.{p}.{fam}.open.exact', f'{exa[0]:.2f}', 'conc.json', exa[1])
+            cs += [f'{top:.0f}', f"{op['ours']['p99_ms']:.2f}{ov_o}", ('\\loss{' if exa[0] < op['ours']['p99_ms'] else '{') + f'{exa[0]:.2f}}}{ov_e}']
             rows.append(f"{PS[p] if fam == 'agent' else ''} & {fam} & " + ' & '.join(cs) + r' \\')
-            CONC_N1.append((o1[0] / e1[0], f'{p} {fam}'))
         rows.append(r'\addlinespace')
     open(os.path.join(TEX, 'conc.tex'), 'w').write('\n'.join(rows) + '\n')
     if CONC_N1:
         put('range.conc.n1.min', f2(min(CONC_N1)[0]), 'conc.json', min(CONC_N1)[1]); put('range.conc.n1.max', f2(max(CONC_N1)[0]), 'conc.json', max(CONC_N1)[1])
+    if corr_share:
+        put('conc.corr.share.min', f'{min(corr_share) * 100:.0f}', 'conc.json', 'share of the corrected wall time that the 50 ms term makes up, kernel procs runs')
+        put('conc.corr.negative', str(sum(1 for x in corr_share if x > 1)), 'conc.json', 'kernel procs closed-loop runs whose recorded wall time was negative')
+        put('conc.corr.runs', str(len(corr_share)), 'conc.json')
+    put('conc.oversub.n', str(len(over)), 'conc.json', '; '.join(over[:40]))
+    # counts of 16-caller pairs where an exact rival beats sweet, per executor
+    for ex in ('procs', 'threads'):
+        lost = [k_ for k_, v, _, _ in NUM if k_.endswith(f'.n16.{ex}.exactratio') and float(v) < 1]
+        put(f'conc.n16.{ex}.lost', str(len(set(lost))), 'conc.json', ', '.join(sorted(set(lost))))
 
     # ------------------------------------------------------------------ budget (one line per platform and cell at 0.25 / 0.5 ms)
     BD = load('budget.json')
@@ -399,12 +520,14 @@ def main():
             for X in ('0.25', '0.5'):
                 row = d['budget'][X]
                 o = row.get('ours')
-                ex = [(v['k'], v['ndcg10'], a) for a, v in row.items() if v and a != 'ours' and not a.startswith('numkong') and 'int4' not in a]
+                ex = [(v['k'], v['ndcg10'], a) for a, v in row.items() if v and a not in ('ours', 'f32store') and not a.startswith('numkong') and 'int4' not in a]
                 bex = max(ex) if ex else None
                 nkk = [(v['k'], v['ndcg10'], a) for a, v in row.items() if v and a.startswith('numkong')]
                 bnk = max(nkk, key=lambda x: x[1]) if nkk else None
                 fmt = lambda t: '--' if not t else f'{t[0]} ({t[1]:.3f})'
-                cs += [fmt(None if not o else (o['k'], o['ndcg10'])), fmt(bex) + ('' if not bex else f" {tx(bex[2])}"), fmt(bnk)]
+                fs = row.get('f32store')
+                cs += [fmt(None if not o else (o['k'], o['ndcg10'])), fmt(bex) + ('' if not bex else f" {tx(bex[2])}"), fmt(bnk),
+                       fmt(None if not fs else (fs['k'], fs['ndcg10']))]
                 put(f'budget.{p}.{cellk.replace("|", ".")}.{X}.ours', str(o['k']) if o else '--', 'budget.json')
             ds, mk = cellk.split('|')
             rows.append(f"{PS[p] if first else ''} & {'SciFact' if ds == 'scifact' else 'NFCorpus'}, {'ColBERTv2' if mk == 'colbertv2' else 'AA-small'} & " + ' & '.join(cs) + r' \\')

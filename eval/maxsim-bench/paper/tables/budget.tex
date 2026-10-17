@@ -1,13 +1,13 @@
-Intel & SciFact, ColBERTv2 & 50 (0.650) & 100 (0.645) torch-pad-bmm-bf16 & 200 (0.650) & 100 (0.645) & 200 (0.650) torch-pad-bmm-bf16 & 200 (0.650) \\
- & NFCorpus, AA-small & 50 (0.280) & 100 (0.272) torch-pad-bmm-bf16 & 200 (0.326) & 100 (0.271) & 200 (0.265) torch-pad-bmm-bf16 & 200 (0.326) \\
+Intel & SciFact, ColBERTv2 & 50 (0.650) & 100 (0.645) PyTorch padded flat bf16 & 200 (0.650) & 100 (0.644) & 100 (0.645) & 200 (0.650) PyTorch padded flat bf16 & 200 (0.650) & 200 (0.650) \\
+ & NFCorpus, AA-small & 50 (0.280) & 100 (0.272) PyTorch padded bmm bf16 & 200 (0.326) & 100 (0.345) & 100 (0.271) & 200 (0.265) PyTorch padded bmm bf16 & 200 (0.326) & 200 (0.351) \\
 \addlinespace
-AMD & SciFact, ColBERTv2 & 200 (0.650) & 100 (0.645) torch-pad-bmm-bf16 & 200 (0.642) & 200 (0.650) & 200 (0.650) torch-pad-bmm-bf16 & 200 (0.642) \\
- & NFCorpus, AA-small & 200 (0.264) & 100 (0.272) torch-pad-bmm-bf16 & 200 (0.169) & 200 (0.264) & 200 (0.265) torch-pad-bmm-bf16 & 200 (0.169) \\
+AMD & SciFact, ColBERTv2 & 200 (0.650) & 100 (0.645) PyTorch padded flat bf16 & 10 (0.649) & 100 (0.644) & 200 (0.650) & 200 (0.650) PyTorch padded flat bf16 & 200 (0.642) & 200 (0.650) \\
+ & NFCorpus, AA-small & 200 (0.264) & 100 (0.272) PyTorch padded bmm bf16 & 10 (0.279) & 50 (0.339) & 200 (0.264) & 200 (0.265) PyTorch padded bmm bf16 & 50 (0.200) & 200 (0.351) \\
 \addlinespace
-Graviton4 & SciFact, ColBERTv2 & 100 (0.645) & 100 (0.645) torch-pad-flat-bf16 & 200 (0.642) & 200 (0.650) & 200 (0.650) torch-pad-flat-bf16 & 200 (0.642) \\
- & NFCorpus, AA-small & 50 (0.280) & 50 (0.281) torch-pad-flat-bf16 & 200 (0.169) & 100 (0.271) & 200 (0.265) torch-pad-flat-bf16 & 200 (0.169) \\
+Graviton4 & SciFact, ColBERTv2 & 100 (0.645) & 100 (0.645) PyTorch padded flat bf16 & 10 (0.649) & 50 (0.649) & 200 (0.650) & 200 (0.650) PyTorch padded flat bf16 & 200 (0.642) & 100 (0.644) \\
+ & NFCorpus, AA-small & 50 (0.280) & 50 (0.281) PyTorch padded flat bf16 & 10 (0.279) & 50 (0.339) & 100 (0.271) & 200 (0.265) PyTorch padded flat bf16 & 50 (0.200) & 100 (0.345) \\
 \addlinespace
-M3 Max & SciFact, ColBERTv2 & 50 (0.650) & 50 (0.650) numpy-packed & 50 (0.638) & 200 (0.650) & 200 (0.650) torch-colbert-packed & 200 (0.642) \\
- & NFCorpus, AA-small & 50 (0.280) & 50 (0.280) numpy-packed & 100 (0.180) & 200 (0.264) & 200 (0.264) torch-colbert-packed & 200 (0.169) \\
+M3 Max & SciFact, ColBERTv2 & 50 (0.650) & 50 (0.650) PyTorch padded flat & 10 (0.649) & 50 (0.649) & 200 (0.650) & 200 (0.650) PyTorch padded flat & 25 (0.645) & 200 (0.650) \\
+ & NFCorpus, AA-small & 50 (0.280) & 50 (0.280) PyTorch padded flat & 10 (0.279) & 50 (0.339) & 200 (0.264) & 200 (0.264) PyTorch padded flat & 25 (0.230) & 200 (0.351) \\
 \addlinespace
 EPYC & \multicolumn{6}{l}{\TODO{epyc}} \\

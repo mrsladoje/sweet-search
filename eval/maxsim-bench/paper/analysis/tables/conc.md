@@ -280,30 +280,6 @@ Closed-loop saturation: N callers replay their share back to back; throughput in
 | `numpy_packed` | open | procs | 16 | 745 | 745 | 0.385 | 2.213 |
 | `numpy_packed` | open | procs | 16 | 1491 | 1491 | 0.397 | 2.260 |
 | `numpy_packed` | open | procs | 16 | 2236 | 2236 | 0.409 | 2.600 |
-| `numpy_packed%blis` | closed | threads | 1 |  | 2699 | 0.324 | 1.701 |
-| `numpy_packed%blis` | closed | threads | 4 |  | 8201 | 0.351 | 1.931 |
-| `numpy_packed%blis` | closed | threads | 16 |  | 15937 | 0.762 | 3.864 |
-| `numpy_packed%blis` | closed | procs | 1 |  | 4299 | 0.229 | 0.674 |
-| `numpy_packed%blis` | closed | procs | 4 |  | 12643 | 0.237 | 1.154 |
-| `numpy_packed%blis` | closed | procs | 16 |  | 15830 | 0.779 | 4.537 |
-| `numpy_packed%blis` | open | threads | 16 | 745 | 745 | 8.417 | 20.044 |
-| `numpy_packed%blis` | open | threads | 16 | 1491 | 1490 | 8.724 | 21.940 |
-| `numpy_packed%blis` | open | threads | 16 | 2236 | 2234 | 10.790 | 26.553 |
-| `numpy_packed%blis` | open | procs | 16 | 745 | 745 | 0.374 | 2.435 |
-| `numpy_packed%blis` | open | procs | 16 | 1491 | 1491 | 0.397 | 3.218 |
-| `numpy_packed%blis` | open | procs | 16 | 2236 | 2236 | 0.397 | 2.398 |
-| `numpy_packed@1%blis` | closed | threads | 1 |  | 2696 | 0.329 | 1.685 |
-| `numpy_packed@1%blis` | closed | threads | 4 |  | 8764 | 0.349 | 2.100 |
-| `numpy_packed@1%blis` | closed | threads | 16 |  | 15806 | 0.769 | 4.110 |
-| `numpy_packed@1%blis` | closed | procs | 1 |  | 2215 | 0.407 | 2.152 |
-| `numpy_packed@1%blis` | closed | procs | 4 |  | 6987 | 0.430 | 2.332 |
-| `numpy_packed@1%blis` | closed | procs | 16 |  | 11997 | 0.609 | 7.125 |
-| `numpy_packed@1%blis` | open | threads | 16 | 745 | 745 | 8.446 | 20.051 |
-| `numpy_packed@1%blis` | open | threads | 16 | 1491 | 1490 | 8.695 | 21.889 |
-| `numpy_packed@1%blis` | open | threads | 16 | 2236 | 2234 | 13.158 | 33.056 |
-| `numpy_packed@1%blis` | open | procs | 16 | 745 | 745 | 0.383 | 2.149 |
-| `numpy_packed@1%blis` | open | procs | 16 | 1491 | 1491 | 0.396 | 2.410 |
-| `numpy_packed@1%blis` | open | procs | 16 | 2236 | 2236 | 0.386 | 2.282 |
 | `numpy_packed_t` | closed | threads | 1 |  | 1716 | 0.517 | 2.669 |
 | `numpy_packed_t` | closed | threads | 4 |  | 5647 | 0.537 | 3.025 |
 | `numpy_packed_t` | closed | threads | 16 |  | 10967 | 0.939 | 9.296 |
@@ -405,30 +381,6 @@ Closed-loop saturation: N callers replay their share back to back; throughput in
 | `numpy_packed` | open | procs | 16 | 1472 | 1489 | 0.175 | 0.839 |
 | `numpy_packed` | open | procs | 16 | 2943 | 2979 | 0.177 | 0.456 |
 | `numpy_packed` | open | procs | 16 | 4415 | 4468 | 0.176 | 0.444 |
-| `numpy_packed%blis` | closed | threads | 1 |  | 6304 | 0.150 | 0.319 |
-| `numpy_packed%blis` | closed | threads | 4 |  | 20758 | 0.177 | 0.382 |
-| `numpy_packed%blis` | closed | threads | 16 |  | 39413 | 0.376 | 0.837 |
-| `numpy_packed%blis` | closed | procs | 1 |  | 6261 | 0.162 | 0.337 |
-| `numpy_packed%blis` | closed | procs | 4 |  | 27033 | 0.116 | 0.332 |
-| `numpy_packed%blis` | closed | procs | 16 |  | 24378 | 0.305 | 3.695 |
-| `numpy_packed%blis` | open | threads | 16 | 1472 | 1489 | 7.788 | 24.233 |
-| `numpy_packed%blis` | open | threads | 16 | 2943 | 2969 | 19.054 | 46.660 |
-| `numpy_packed%blis` | open | threads | 16 | 4415 | 4292 | 189.110 | 330.945 |
-| `numpy_packed%blis` | open | procs | 16 | 1472 | 1489 | 0.174 | 0.405 |
-| `numpy_packed%blis` | open | procs | 16 | 2943 | 2979 | 0.176 | 1.664 |
-| `numpy_packed%blis` | open | procs | 16 | 4415 | 4468 | 0.177 | 0.436 |
-| `numpy_packed@1%blis` | closed | threads | 1 |  | 6246 | 0.151 | 0.316 |
-| `numpy_packed@1%blis` | closed | threads | 4 |  | 22066 | 0.167 | 0.346 |
-| `numpy_packed@1%blis` | closed | threads | 16 |  | 32411 | 0.399 | 2.085 |
-| `numpy_packed@1%blis` | closed | procs | 1 |  | 5380 | 0.172 | 0.411 |
-| `numpy_packed@1%blis` | closed | procs | 4 |  | 19761 | 0.183 | 0.433 |
-| `numpy_packed@1%blis` | closed | procs | 16 |  | 27852 | 0.267 | 3.562 |
-| `numpy_packed@1%blis` | open | threads | 16 | 1472 | 1489 | 7.565 | 23.926 |
-| `numpy_packed@1%blis` | open | threads | 16 | 2943 | 2963 | 42.405 | 76.994 |
-| `numpy_packed@1%blis` | open | threads | 16 | 4415 | 4283 | 170.755 | 335.658 |
-| `numpy_packed@1%blis` | open | procs | 16 | 1472 | 1489 | 0.173 | 0.530 |
-| `numpy_packed@1%blis` | open | procs | 16 | 2943 | 2979 | 0.176 | 2.466 |
-| `numpy_packed@1%blis` | open | procs | 16 | 4415 | 4468 | 0.177 | 0.457 |
 | `numpy_packed_t` | closed | threads | 1 |  | 4228 | 0.223 | 0.456 |
 | `numpy_packed_t` | closed | threads | 4 |  | 15454 | 0.242 | 0.487 |
 | `numpy_packed_t` | closed | threads | 16 |  | 26693 | 0.550 | 1.383 |

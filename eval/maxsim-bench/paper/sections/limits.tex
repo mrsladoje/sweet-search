@@ -2,15 +2,17 @@
 \label{sec:limits}
 
 \paragraph{Scope.}
-CPU only and reranking only.
-We did not run GPU kernels, WARP, EMVB, PLAID's candidate generation or full engines; they solve a different problem (search over a corpus) or need a different input.
+This paper covers CPUs and reranking only.
+We did not run GPU kernels, WARP, EMVB, PLAID's candidate generation or full engines.
+They solve a different problem (search over a corpus) or need a different input.
 maxsim-lut uses a compressed residual format and therefore another contract; we discuss it but did not run it.
 
 \paragraph{No cost decomposition.}
-We froze a rule for a stronger claim before the held-out runs: ``use the stronger claim only if all hold: (a) at 14 query tokens, pool 25, 366 doc tokens per candidate, the fixed share $f/t$ of the fastest rival is $> 50\%$ on at least 4 of 5 CPUs; (b) the cost model predicts the measured winner on $\geq 80\%$ of held-out sweep cells; (c) it beats the constant-winner baseline by $\geq 10$ percentage points on held-out cells. Otherwise the narrow claim.''
-The decomposition that this rule needs (stage variants of the kernel and a fitted cost model) was not built before the freeze, for lack of time.
+Before the held-out runs we froze a rule for a stronger claim: ``use the stronger claim only if all hold: (a) at 14 query tokens, pool 25, 366 doc tokens per candidate, the fixed share $f/t$ of the fastest rival is $> 50\%$ on at least 4 of 5 CPUs; (b) the cost model predicts the measured winner on $\geq 80\%$ of held-out sweep cells; (c) it beats the constant-winner baseline by $\geq 10$ percentage points on held-out cells. Otherwise the narrow claim.''
+The shape in (a) is the median agent call of the development data.
+The rule needs stage variants of the kernel and a fitted cost model, which were not built before the freeze, for lack of time.
 The rule therefore could not apply, and the paper uses the narrow claim.
-In particular, we do not know why \sweet loses in the sweep bands of Section~\ref{sec:sweep} or after an idle gap.
+In particular, we do not know why \sweet loses in the sweep bands, on Intel BEIR calls, after a busy gap, or with many callers in one process.
 
 \paragraph{No historical progression study.}
 A planned study of older kernel versions (optional in the frozen plan) was dropped for time.
@@ -18,25 +20,43 @@ A planned study of older kernel versions (optional in the frozen plan) was dropp
 \paragraph{Workloads.}
 The agent and GCSN calls come from one engine with one production model (dimension 128).
 Their shapes are unique calls with duplicates removed, not a request-frequency distribution.
-The BEIR sets use two public models and two small datasets; FiQA was planned but not built, because its licence allows only non-commercial use and we could not release derived data.
-Only the BEIR sets are fresh held-out data; the other sets were examined in an earlier version of this benchmark.
+The agent, GCSN and sweep sets were examined in an earlier version of this benchmark; only the BEIR sets are fresh.
+The BEIR sets use two public models and two small datasets, and they repeat each query over two models and five values of $k$.
+FiQA was planned but not built: its licence allows only non-commercial use, so we could not release derived data.
+The geometric mean weights every call equally; Appendix~\ref{app:robust} gives the total-time ratio beside it.
+
+\paragraph{Uncertainty.}
+The agent interval rests on 11 repositories; with so few clusters a percentile bootstrap can be too narrow, so we also give per-repository ranges.
+The BEIR intervals cover the sampling of queries only, not other datasets or models.
+The ``faster'' rule is applied to many comparisons without correction.
+The parallel-caller results come from single runs of 20 to 500\,ms, and the per-process executor needed a correction of its wall time.
 
 \paragraph{Machines.}
-Three CPU types ran in a public cloud with shared tenancy, on four instances per type plus a replica instance; we measured the instance-to-instance spread but cannot show that the physical hosts differed.
-The Mac and the EPYC box ran a reduced sweep grid (24 of 84 cells) and no BEIR idle-gap groups.
+Three CPU types ran in a public cloud with shared tenancy, four instances per type plus a replica.
+We measured the instance-to-instance spread on the agent and GCSN sets only, and we cannot show that the physical hosts differed.
+The Mac and the EPYC box ran a reduced sweep grid (24 of 84 cells) and no BEIR busy-gap groups.
 The Mac is a desktop computer; its idle gate allowed 15\% background load.
-No arm was pinned to a core, and the one-thread runs are therefore one-thread, not one-core, results.
+No arm was pinned to a core, so the one-thread results are one-thread, not one-core, results.
 
-\paragraph{Interfaces.}
-We measured each library through the tested interface (Python, or a Rust loop over its C API) with its best shortlisted configuration.
-A different binding, BLAS build or batching scheme can change a rival's numbers.
-Intel MKL NumPy did not install from Intel's index, and maxsim-cpu has no AArch64 Linux wheel.
+\paragraph{Rivals.}
+We measured each library through the tested interface (Python, or a Rust loop over its C API).
+A different binding, BLAS build or batching scheme can change its numbers.
+The shortlist chose configurations by total development time, while we report geometric means; the BEIR configurations were chosen on sweep cells with the BEIR query length, because BEIR has no development data.
+The choice was a poor proxy at least once: the first frozen PyTorch configuration on Intel BEIR calls was much slower than the second.
+Intel MKL NumPy did not install from Intel's index; a conda build might have.
+maxsim-cpu has no AArch64 Linux wheel; a source build might have run on Graviton4.
 The BLIS NumPy arms on AMD ran after the other arms of their groups, not interleaved with them.
+The int4-self arms decode with NumPy array code; a compiled decoder would be faster.
+The rivals had no prewarm call; the kernel's product path had one.
+The kernel received one more round of tuning on development data; the rivals received configuration selection only.
 
 \paragraph{Quality.}
-The non-inferiority test covers $k = 100$ on four model--dataset pairs.
+The non-inferiority test covers $k = 100$ on four model--dataset pairs; the margin $\delta = 0.01$ was set by the authors, not derived from an application.
 The normalization analysis of Section~\ref{sec:quality} is post hoc; we did not test a changed scoring rule.
+NumKong's quality collapse with answerai-colbert-small is unexplained.
 
 \paragraph{Authors.}
-The authors wrote \sweet and this benchmark.
-The freeze, the frozen shortlist, the fixed claim rules and the release of all raw results are our answer to this conflict; readers can recompute every table.
+The authors wrote \sweet, the benchmark and the rival adapters.
+The freeze, the frozen shortlist, the fixed claim rules, two independent reviews of this paper, and the release of all raw results are our answer to this conflict.
+Readers can recompute every table from the released results.
+An independent rerun by others would be stronger.
