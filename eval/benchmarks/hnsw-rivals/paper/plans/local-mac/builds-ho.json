@@ -1,0 +1,1566 @@
+[
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"family": "faiss_bin_flat",
+"build_params": {},
+"build_seed": 42
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"family": "faiss_exact",
+"build_params": {},
+"build_seed": 42
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 16,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"family": "faiss_hnsw_sq8",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"family": "faiss_hnsw_sq8",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"family": "faiss_ivfpq_fs",
+"build_params": {
+"nlist": 147
+},
+"build_seed": 42
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"family": "faiss_rabitq_flat",
+"build_params": {},
+"build_seed": 42
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"family": "faiss_rabitq_hnsw",
+"build_params": {
+"M": 64,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 147
+},
+"build_seed": 42
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"family": "hnswlib_f32",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"family": "usearch_f16",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"family": "usearch_f16",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"family": "usearch_i8",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"family": "usearch_i8",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"family": "faiss_bin_flat",
+"build_params": {},
+"build_seed": 42
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 64,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"family": "faiss_exact",
+"build_params": {},
+"build_seed": 42
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 64,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"family": "faiss_hnsw_sq8",
+"build_params": {
+"M": 32,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"family": "faiss_hnsw_sq8",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"family": "faiss_ivfpq_fs",
+"build_params": {
+"nlist": 4008
+},
+"build_seed": 42
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"family": "faiss_ivfpq_fs",
+"build_params": {
+"nlist": 1002
+},
+"build_seed": 42
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"family": "faiss_rabitq_flat",
+"build_params": {},
+"build_seed": 42
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"family": "faiss_rabitq_hnsw",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 4008
+},
+"build_seed": 42
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 1002
+},
+"build_seed": 42
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"family": "hnswlib_f32",
+"build_params": {
+"M": 64,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"family": "usearch_f16",
+"build_params": {
+"M": 32,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"family": "usearch_f16",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"family": "usearch_i8",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"family": "usearch_i8",
+"build_params": {
+"M": 32,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"family": "faiss_bin_flat",
+"build_params": {},
+"build_seed": 42
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"family": "faiss_exact",
+"build_params": {},
+"build_seed": 42
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 16,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"family": "faiss_hnsw_sq8",
+"build_params": {
+"M": 16,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"family": "faiss_hnsw_sq8",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"family": "faiss_ivfpq_fs",
+"build_params": {
+"nlist": 141
+},
+"build_seed": 42
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"family": "faiss_rabitq_flat",
+"build_params": {},
+"build_seed": 42
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"family": "faiss_rabitq_hnsw",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 564
+},
+"build_seed": 42
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 141
+},
+"build_seed": 42
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"family": "hnswlib_f32",
+"build_params": {
+"M": 16,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 16,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"family": "usearch_f16",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"family": "usearch_f16",
+"build_params": {
+"M": 64,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"family": "usearch_i8",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"family": "usearch_i8",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"family": "faiss_bin_flat",
+"build_params": {},
+"build_seed": 42
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"family": "faiss_exact",
+"build_params": {},
+"build_seed": 42
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 16,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"family": "faiss_hnsw_sq8",
+"build_params": {
+"M": 16,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"family": "faiss_hnsw_sq8",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"family": "faiss_ivfpq_fs",
+"build_params": {
+"nlist": 1500
+},
+"build_seed": 42
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"family": "faiss_ivfpq_fs",
+"build_params": {
+"nlist": 375
+},
+"build_seed": 42
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"family": "faiss_rabitq_flat",
+"build_params": {},
+"build_seed": 42
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"family": "faiss_rabitq_hnsw",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 1500
+},
+"build_seed": 42
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 375
+},
+"build_seed": 42
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"family": "hnswlib_f32",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"family": "usearch_f16",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"family": "usearch_f16",
+"build_params": {
+"M": 16,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"family": "usearch_f16",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"family": "usearch_i8",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"family": "faiss_exact",
+"build_params": {},
+"build_seed": 42
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"family": "faiss_hnsw_sq8",
+"build_params": {
+"M": 16,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"family": "faiss_hnsw_sq8",
+"build_params": {
+"M": 64,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"family": "faiss_ivfpq_fs",
+"build_params": {
+"nlist": 960
+},
+"build_seed": 42
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"family": "faiss_ivfpq_fs",
+"build_params": {
+"nlist": 240
+},
+"build_seed": 42
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"family": "faiss_rabitq_flat",
+"build_params": {},
+"build_seed": 42
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"family": "faiss_rabitq_hnsw",
+"build_params": {
+"M": 16,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"family": "faiss_rabitq_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"family": "faiss_rabitq_hnsw",
+"build_params": {
+"M": 64,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 960
+},
+"build_seed": 42
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"family": "hnswlib_f32",
+"build_params": {
+"M": 16,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"family": "usearch_f16",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"family": "usearch_i8",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 240
+},
+"build_seed": 42
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"family": "faiss_bin_flat",
+"build_params": {},
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "faiss_bin_flat",
+"build_params": {},
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 64,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "faiss_exact",
+"build_params": {},
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 16,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 64,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "faiss_hnsw_sq8",
+"build_params": {
+"M": 16,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "faiss_hnsw_sq8",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "faiss_hnsw_sq8",
+"build_params": {
+"M": 64,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "faiss_ivfpq_fs",
+"build_params": {
+"nlist": 83
+},
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "faiss_rabitq_flat",
+"build_params": {},
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "faiss_rabitq_hnsw",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "faiss_rabitq_hnsw",
+"build_params": {
+"M": 32,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 332
+},
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 83
+},
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "hnswlib_f32",
+"build_params": {
+"M": 16,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "hnswlib_f32",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 16,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "usearch_f16",
+"build_params": {
+"M": 16,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "usearch_f16",
+"build_params": {
+"M": 32,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "usearch_i8",
+"build_params": {
+"M": 16,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "usearch_i8",
+"build_params": {
+"M": 64,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"family": "faiss_bin_flat",
+"build_params": {},
+"build_seed": 42
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"family": "faiss_exact",
+"build_params": {},
+"build_seed": 42
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 16,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 16,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"family": "faiss_hnsw_sq8",
+"build_params": {
+"M": 16,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"family": "faiss_hnsw_sq8",
+"build_params": {
+"M": 32,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"family": "faiss_ivfpq_fs",
+"build_params": {
+"nlist": 723
+},
+"build_seed": 42
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"family": "faiss_rabitq_flat",
+"build_params": {},
+"build_seed": 42
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"family": "faiss_rabitq_hnsw",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"family": "faiss_rabitq_hnsw",
+"build_params": {
+"M": 64,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 2892
+},
+"build_seed": 42
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"family": "hnswlib_f32",
+"build_params": {
+"M": 16,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"family": "hnswlib_f32",
+"build_params": {
+"M": 64,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 16,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 16,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"family": "usearch_f16",
+"build_params": {
+"M": 16,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"family": "usearch_f16",
+"build_params": {
+"M": 64,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"family": "usearch_i8",
+"build_params": {
+"M": 16,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"family": "usearch_i8",
+"build_params": {
+"M": 64,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"family": "usearch_i8",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 723
+},
+"build_seed": 42
+}
+]
