@@ -77,9 +77,23 @@ claim() {  # claim <plan> -> 0 if this machine owns it
 }
 fetch_builds() {  # fetch_builds <plan>: only the builds and our index of the plan's (set, model)
   [ "${LAZY_BUILDS:-0}" = 1 ] || return 0
-  local sm; sm=$($PY -I -c 'import json,sys; d=json.load(open(sys.argv[1])); x=(d.get("jobs") or d.get("builds"))[0]; print(x["set"], x["model"])' "$1")
+  local P_ARG=$1 sm; sm=$($PY -I -c 'import json,sys; d=json.load(open(sys.argv[1])); x=(d.get("jobs") or d.get("builds"))[0]; print(x["set"], x["model"])' "$1")
   set -- $sm
-  s3 sync "$S3B/$1/$2/" "$DATA/builds/shared/$1/$2/" --exclude '*.stale-*/*'
+  # only the build dirs the plan's jobs use (a whole 1M (set, model) store is ~117 GB)
+  local rel
+  for rel in $($PY -I -c '
+import json, os, sys
+sys.path.insert(0, sys.argv[2]); import jobs
+d = json.load(open(sys.argv[1])); data = sys.argv[3]; seen = set()
+for j in (d.get("jobs") or []) + (d.get("builds") or []):
+    if j.get("system", j.get("family", "")).startswith("ours") or "build_params" not in j:
+        continue
+    b = dict(set=j["set"], model=j["model"], family=j["family"], build_params=j["build_params"], build_seed=j.get("build_seed", 42))
+    r = os.path.relpath(jobs.build_dir(data, b), os.path.join(data, "builds", "shared"))
+    if r not in seen:
+        seen.add(r); print(r)' "$P_ARG" "$H" "$DATA"); do
+    s3 sync "$S3B/$rel/" "$DATA/builds/shared/$rel/" --exclude '*.stale-*/*'
+  done
   s3 sync "$S3E/$2/$1/" "$DATA/emb/$2/$1/" --exclude '*' --include 'index*/*' --include 'export/*'
 }
 drop_builds() {  # drop_builds <plan>: free the disk after the plan (LAZY_BUILDS)
