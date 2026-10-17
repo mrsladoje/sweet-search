@@ -1,0 +1,44 @@
+\section{Correctness findings}
+\label{sec:correctness}
+
+Every arm was checked on every call against a float64 reference of its own contract.
+Table~\ref{tab:correctness} (Appendix~\ref{app:tables}) lists, per CPU and arm, the largest implementation error, the input-rounding effect and the top-1 agreement with the contract-S reference.
+Apart from maxsim-cpu on the M3 Max (issue \#5 below), every exact arm with float32 inputs stayed within $4\times10^{-7}$ of its own reference on every call.
+The checks found two new defects in other libraries, which we reported upstream, and confirmed a third that was already reported.
+
+\paragraph{maxsim-cpu, x86 build, long queries (issue \#1).}
+For queries with more than 32 tokens, once a document has 64 or more tokens, the x86 wheel of maxsim-cpu~0.1.0 returned wrong scores, up to $10^{38}$ and infinity.
+Another user had reported this behaviour in 2025~\cite{maxsimcpu_issue1}; our reference check found it independently, and we reproduced it on a second x86 CPU.
+Its sums over 32-token query chunks are exact, so the benchmark calls it that way on x86; fewer than 1\% of agent calls have more than 32 query tokens.
+
+\paragraph{maxsim-cpu, AArch64 build, zero padding (issue \#5).}
+Its list interface pads shorter documents with zero vectors inside a call.
+A zero vector scores 0, so for a query token whose best cosine is negative, the padded documents get 0 instead: a $\max(0,\cdot)$ clamp that depends on which other documents share the call~\cite{maxsimcpu_issue5}.
+The ragged-length fixture catches it on AArch64.
+On the M3 Max its largest error against its own contract was $4\times10^{-2}$ to $8\times10^{-2}$; its top document still agreed with the contract-S reference on every call, because S applies the same clamp on purpose.
+
+\paragraph{NumKong, AMX path (issue \#406).}
+On CPUs with AMX, NumKong~7.8.5's packed MaxSim kernel scans all 16 columns of a partially filled last tile.
+When a document's token count modulo 64 is 49 to 63 and every cosine of a query token is negative, a padding column wins, and the result is wrong (NaN, 0, 1 or very large values)~\cite{numkong_issue406}.
+The negative-best-match fixture found it on the Granite Rapids machine, and a standalone script reproduced it on a second machine of the same type.
+On the replayed data, NumKong's errors on Intel were no larger than on the CPUs without AMX, so the defect did not affect the reported numbers.
+
+\paragraph{Contract differences are not defects.}
+NumKong's cosine of the received vectors (contract C) and PyLate's zero-padding rule (contract S-pre-pad0) are design choices, not bugs.
+Table~\ref{tab:contract-effects} measures them reference against reference.
+Contract C keeps the top document of contract S on \nm{ce.agent-ho.S-vs-C.top1}\% of agent calls and \nm{ce.gcsn-ho.S-vs-C.top1}\% of GCSN calls, but on only \nm{ce.beir.S-vs-C.top1}\% of BEIR calls.
+The clamp changes the top document on at most 0.1\% of calls; the epsilon placement changes no score by more than $10^{-15}$.
+An earlier version of this benchmark~\cite{sweetsearch2026maxsimv1} reported that NumKong's top document differed on 6--14\% of calls; that number mixed the contract effect with the approximation effect, and the separation here replaces it.
+
+\begin{table}[!htbp]
+\centering\scriptsize
+\caption{Contract effects, float64 reference against float64 reference (held-out sets; calls with at least two candidates). No implementation error enters these numbers.}
+\label{tab:contract-effects}
+\begin{tabular}{llrrrr}
+\toprule
+set & effect & calls & max $|\Delta|$ & top-1 agreement & top-10 overlap \\
+\midrule
+\inputtable{tables/contract_effects.tex}
+\bottomrule
+\end{tabular}
+\end{table}

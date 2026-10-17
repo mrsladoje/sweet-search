@@ -1,0 +1,26 @@
+\section{Share of MaxSim in a search}
+\label{sec:pipeline}
+
+Microseconds in the kernel matter only if MaxSim is a visible part of a search.
+We timed the stages of the production search path of sweet-search with per-stage timers, on the held-out agent queries, on the M3 Max, with the production configuration and a CPU query encoder.
+This measurement ran after the freeze, on the frozen code, and changed no kernel code.
+We report aggregates only.
+
+\begin{table}[h]
+\centering\small
+\caption{Share of each stage in the time of one search (held-out agent queries, M3 Max; median and p90 over queries). \TODO{W7: pipeline time-share results}}
+\label{tab:pipeline}
+\begin{tabular}{lrr}
+\toprule
+stage & median share & p90 share \\
+\midrule
+query encoding & \TODO{W7} & \TODO{W7} \\
+candidate fetch & \TODO{W7} & \TODO{W7} \\
+int4 load & \TODO{W7} & \TODO{W7} \\
+MaxSim & \TODO{W7} & \TODO{W7} \\
+the rest & \TODO{W7} & \TODO{W7} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\TODO{W7: one paragraph on the result: which stage dominates; what share MaxSim takes; what a faster kernel can and cannot change. This is not an end-to-end speed-up claim.}

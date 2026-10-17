@@ -1,0 +1,59 @@
+\section{Workloads}
+\label{sec:workload}
+
+\benchname replays rerank calls.
+A call is one query and its candidate documents, in the storage format that a scorer reads.
+Table~\ref{tab:workload} gives the call shapes of the held-out sets.
+
+\paragraph{Replay format.}
+A set is a folder with one JSON index line per call (query length, dimension, and per candidate its token count and byte size) and one binary file per call.
+The binary file holds the raw float32 query tokens and, per candidate, the int4 nibbles (low nibble first), a float32 minimum and scale per token, and the float32 norm of each token before quantization.
+A token decodes as $\hat d = \text{nibble}\cdot s + m$.
+A provenance file gives, per call, the source repository or dataset, the query identifier and a hash of the normalized query text.
+The int4 encoding is the production quantizer of sweet-search: per token, $s = (\max - \min)/15$ in float64, rounding half up, and $m$ and $s$ stored as float32.
+Our Python copy of it is byte-identical to the JavaScript original on a test of random tokens.
+Token rotation (a Walsh--Hadamard transform that the engine supports) is off in production and in every set here.
+
+\paragraph{Agent calls (agent-ho).}
+Coding agents answered held-out questions about 11 open-source repositories (permissive licences; Appendix~\ref{app:data}) with the engine's search tools.
+We replayed every search call through the production search path and captured each MaxSim call.
+The set holds the \nm{wl.agent-ho.calls} unique calls.
+Duplicates are removed, so these shapes are \emph{not} a request-frequency distribution.
+
+\paragraph{GCSN calls (gcsn-ho).}
+The held-out split of our GenCodeSearchNet benchmark (CodeSearchNet test functions in six languages~\cite{husain2019codesearchnet}) gave \nm{wl.gcsn-ho.calls} calls, captured in the same way.
+We removed 6 query texts (7 calls) that also occur in the development split.
+
+\paragraph{Size sweep (sweep-ho).}
+84 cells: queries cut to 8, 32 or 64 tokens, $\times$ pools of 1 to 4,096 documents, $\times$ documents at natural length or cut to 32, 128 or 512 tokens.
+All vectors are real held-out embeddings; a fixed seed (42) selects them.
+
+\paragraph{BEIR sets.}
+SciFact~\cite{wadden2020scifact} (300 test queries, 5,183 documents, of which 5,178 give tokens) and NFCorpus~\cite{boteva2016nfcorpus} (323 test queries, 3,633 documents, 3,626 with tokens) from BEIR~\cite{thakur2021beir}, encoded on CPU with PyLate~\cite{chaffin2025pylate} by two public models: answerai-colbert-small-v1~\cite{clavie2024answerai} (dimension 96) and ColBERTv2~\cite{santhanam2022colbertv2} (dimension 128).
+Queries keep the models' default length of 32 tokens with query expansion.
+Candidates are the top $k \in \{10, 25, 50, 100, 200\}$ documents of BM25 (bm25s~\cite{lu2024bm25s}, default settings, English stopwords).
+This gives 20 sets.
+The BEIR sets are the only data in this paper that no one had examined before the freeze.
+
+\paragraph{Previously examined data.}
+An earlier version of this benchmark reported aggregates on agent-ho, gcsn-ho and sweep-ho~\cite{sweetsearch2026maxsimv1}.
+These sets therefore count as \emph{previously examined} on every CPU here: a new CPU adds hardware coverage, not fresh queries.
+Every table labels them so.
+
+\paragraph{Development sets.}
+agent-dev (655 calls), gcsn-dev (3,582) and sweep-dev (207) come from the development splits of the same sources.
+We used them for all tuning and configuration choices.
+No query text and no query embedding occurs in both a development set and a held-out set, after the removal above.
+
+\begin{table}[!htbp]
+\centering\small
+\caption{Call shapes of the held-out sets (unique calls; duplicates removed, so this is not a request-frequency distribution). Query tokens p10/p50/p90; pool = candidates per call p10/p50/p90/max; doc tokens per candidate p10/p50/p90; stored doc tokens per call p50/p90/max.}
+\label{tab:workload}
+\begin{tabular}{lrrrrr}
+\toprule
+set & calls & query tokens & pool & doc tokens / cand. & doc tokens / call \\
+\midrule
+\inputtable{tables/workload.tex}
+\bottomrule
+\end{tabular}
+\end{table}

@@ -1,0 +1,104 @@
+\section{Deviations from the plan}
+\label{app:deviations}
+
+Every deviation from the frozen plan and every fix during the analysis, in one line each.
+None changed a frozen file after the held-out runs began, except where stated.
+
+\begin{small}
+\begin{longtable}{rp{0.88\linewidth}}
+\toprule
+\# & deviation \\
+\midrule
+\endhead
+1 & Parallel-caller harness, out-of-memory fixes (two). Development run, 2026-10-15: each caller process held the whole set. Held-out run, 2026-10-16: the parent process cached decoded inputs of every call; fixed in place on every machine before any other machine reached a parallel-caller group, new SHA-256 in the freeze file (commit \texttt{daf54122}); the one affected group (Graviton4, agent calls) ran again in full. Memory only; timing code unchanged. \\
+2 & AMD: the BLIS NumPy arms were missing at the start of the held-out runs (a machine-name test in the setup script) and were added in place; they ran after the other arms of their groups, not interleaved. \\
+3 & Intel: MKL NumPy did not install from Intel's index and is left out. The development ``NumPy (MKL)'' arm had in fact used OpenBLAS (a mislabelled duplicate). \\
+4 & Repetitions: $R = \max(5, \text{noise rule}) = 5$; an early plan with $R = 3$ was corrected before any held-out run. \\
+5 & Mac and EPYC box: reduced sweep grid, 24 of 84 cells (decided before any held-out result was read). The Mac also holds 2 further complete cells, reported; 6 cells started before the decision have no job list and are left out. \\
+6 & Mac and EPYC box: all 8 BEIR idle-gap groups dropped for machine time (decided 2026-10-17 before any held-out result was read). BEIR idle-gap results come from the three cloud CPUs. \\
+7 & gcsn-ho: 6 query texts (7 calls) that also occur in gcsn-dev were removed before the freeze. \\
+8 & maxsim-cpu has no Linux AArch64 wheel: missing on Graviton4. \\
+9 & maxsim-cpu issue \#5 (zero padding) is caught by the padding fixture on AArch64; recorded as a known upstream defect, not a pass. \\
+10 & Kernel tuning (the AVX-512 block) used development data only, with a 3\% rule above the noise band and a bit-identity gate. The development runs used the kernel before this change. \\
+11 & The GenCodeSearchNet index of the engine was rebuilt from the paper commit (the old index had lost a file); the development MRR@10 gate passed (86.74\% with the old and the new addon, all 3,600 queries). \\
+12 & Mac: idle gate raised from 10\% to 15\% CPU use (desktop background load), logged. \\
+13 & The Intel replica failed once (two fixture checks raced after a double restart) and was relaunched; the AMD replica was relaunched for the BLIS fix. \\
+14 & Analysis fix: the per-machine summaries written during the runs did not use the frozen shortlist (a file-name mismatch); every table here was regenerated with it. \\
+15 & Three commits define the freeze: \texttt{a4317ba9} (frozen code), \texttt{ea84951f} (freeze file re-made after a replica naming fix), \texttt{daf54122} (item 1). \TODO{post-freeze change: the machine-name test in the setup script, with old and new SHA-256; no result affected}. \\
+16 & Analysis fix: the frozen quality script keys an implementation by the arm name inside the result file, which drops the thread budget and the BLIS variant. Its quality numbers are unaffected for the kernel (all kernel result files of a set are bit-identical), but its latency points pool several configurations; the quality-per-budget analysis here recomputes them per result file. \\
+17 & Analysis fix: in closed-loop runs of the per-process parallel-caller executor, callers start up to 50\,ms before the recorded start; throughputs are corrected by 48.8--50\,ms (lower bound reported). Latencies need no correction. \\
+18 & The cloud instance metadata does not expose the physical host of shared-tenancy instances; the replica is shown to be a different instance in the same zone, not a different host. \\
+19 & The one-thread runs were not pinned to a core (the plan asked for pinning). \\
+20 & EPYC box: \TODO{epyc: completeness and any group that ran despite the cut}. \\
+\bottomrule
+\end{longtable}
+\end{small}
+
+\section{Data and licences}
+\label{app:data}
+
+\begin{itemize}
+\item \textbf{Agent sets}: embeddings of code chunks from 11 repositories under MIT or Apache-2.0 (composer, dgraph, drogon, GRDB.swift, jj, Ocelot, okhttp, sequel, tortoise-orm, typedoc, zipkin) and of agent queries. Released under CC-BY-4.0 with an attribution file. Query texts are not released (they may quote code).
+\item \textbf{SciFact}: corpus ODC-By 1.0, claims CC-BY-4.0; embeddings, BM25 lists and identifiers released with attribution.
+\item \textbf{NFCorpus}: ``free to use for academic purposes''; no redistribution statement. Released as identifiers, BM25 lists and the rebuild script only.
+\item \textbf{GenCodeSearchNet}: CodeSearchNet functions carry per-repository licences that the dataset does not list. Released as identifiers and the rebuild script only.
+\item \textbf{FiQA-2018}: non-commercial use only; not built.
+\item \textbf{Models}: answerai-colbert-small-v1 (Apache-2.0) and ColBERTv2 (MIT); exact revisions are in the release manifest.
+\end{itemize}
+
+\section{Threats to validity and where we address them}
+\label{app:threats}
+
+An independent review of the plan raised the following points before any held-out run; the protocol answers each.
+
+\begin{small}
+\begin{longtable}{p{0.45\linewidth}p{0.48\linewidth}}
+\toprule
+concern & answer \\
+\midrule
+\endhead
+Rivals compute different scores (normalization, epsilon, clamp, precision) & Four contracts, two float64 references per rival, contract effects measured apart (Section~\ref{sec:contracts}, Table~\ref{tab:contract-effects}) \\
+Results seen before development ended; checks after held-out & One freeze before held-out runs; BEIR fresh; other sets labelled previously examined (Section~\ref{sec:freeze}) \\
+Stale or skipped results; failures reported as done; unpinned dependencies & Job keys over set, arm, binary, options and instance; completeness check before any table; failure tests; lock files \\
+Speed does not show that fixed costs dominate & Narrow claim; frozen claim rule not applicable without a decomposition (Section~\ref{sec:limits}) \\
+Missing rivals; per-document Python calls & NextPlaid added; NumKong and NextPlaid looped natively; maxsim-lut discussed \\
+Two rounds cannot resolve small effects; no provenance; configuration chosen on reported calls & $R = 5$ processes $\times$ 2 rounds, noise band per machine, provenance per call, frozen shortlist from development data \\
+No quality margin; effects mixed; p50 is not a deadline & $\delta$ fixed before the freeze, effects separated, per-request p95/p99 from every timing \\
+A version-by-version study cannot attribute speed & Not run; no attribution claimed \\
+Physical cores on c8a; ``bytes read'' not measured; 8$\times$ storage claim & Cores and threads per machine; ``storage bytes''; $6.7\times$ \\
+Unique calls; overlap between splits; ``cold'' naming; closed loop is not service latency & Stated in Section~\ref{sec:workload}; overlap removed; ``pool-parked''; open-loop runs at common rates \\
+Contract C clamp, epsilon and precision unclear & Defined from NumKong's source (Table~\ref{tab:contracts}) \\
+No independent fixtures & Hand-built fixtures with plain-Python expected values \\
+Wake-up probe and ``unexplained remainder'' & Decomposition not run \\
+No constant-winner baseline for a cost model & Part of the frozen claim rule; not reached \\
+p95 of per-call medians is not a tail; per-arm rates are not equal traffic & Per-request percentiles; common absolute open-loop rates \\
+Non-inferiority on the kernel's actual scores; $\delta$ absolute & K $-$ F primary, absolute $\delta$, relative loss shown \\
+Validate on all five machines & Fixtures and development runs on all five machines before the freeze \\
+Earlier sets stay previously examined on new CPUs & Labelled on every table \\
+Failure handling untested & Harness failure tests (interrupted output, missing calls, failed arm, changed identity, resume) \\
+Optional items must stay optional & Decomposition and version study not run, stated \\
+\bottomrule
+\end{longtable}
+\end{small}
+
+\section{Per-machine tables}
+\label{app:tables}
+
+\begin{small}
+\setlength{\tabcolsep}{4pt}
+\begin{longtable}{lllllrr}
+\caption{Correctness per arm (warm; agent-ho previously examined, BEIR fresh): contract (+c: clamp), largest error against reference (a) of the arm's own contract, input-rounding effect, top-1 agreement with the contract-S reference.}\label{tab:correctness}\\
+\toprule
+CPU & set & arm & contract & max error & input rounding & top-1 = S \\
+\midrule
+\endfirsthead
+\toprule
+CPU & set & arm & contract & max error & input rounding & top-1 = S \\
+\midrule
+\endhead
+\inputtable{tables/correctness.tex}
+\bottomrule
+\end{longtable}
+\end{small}
+
+Full per-machine tables for every set, sweep cell, mode and configuration (including the post-hoc fastest configurations) are in the released analysis folder (\texttt{paper/analysis/tables/speed.md}, \texttt{memory.md}, \texttt{conc.md}, \texttt{budget.md}).

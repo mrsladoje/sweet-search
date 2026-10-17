@@ -1,0 +1,18 @@
+/Users/admin/.ss-eval/maxsim-local/m3max: 108 planned groups
+  ho-conc-agent-ho       ok       1
+  ho-conc-gcsn-ho        ok       1
+  ho-mem                 ok       47
+  ho-parked              dropped  8
+  ho-parked              ok       2
+  ho-tiers               ok       2
+  ho-warm                ok       47
+dropped by note: 8
+  6b6752443d7d8941 ho-parked beir-nfcorpus-answersmall-k100: not run: dropped by the owner 2026-10-17 08:30 UTC for Mac time
+  35b2afab8a291c8f ho-parked beir-nfcorpus-answersmall-k25: not run: dropped by the owner 2026-10-17 08:30 UTC for Mac time
+  a9d24ef0edc0454c ho-parked beir-nfcorpus-colbertv2-k100: not run: dropped by the owner 2026-10-17 08:30 UTC for Mac time
+  ed909c2469071408 ho-parked beir-nfcorpus-colbertv2-k25: not run: dropped by the owner 2026-10-17 08:30 UTC for Mac time
+  17fd936ff4487e4a ho-parked beir-scifact-answersmall-k100: not run: dropped by the owner 2026-10-17 10:20 UTC for Mac time (scifact)
+  8a3b81eb1fb524c6 ho-parked beir-scifact-answersmall-k25: not run: dropped by the owner 2026-10-17 10:20 UTC for Mac time (scifact)
+  2f746bbf5820f7d7 ho-parked beir-scifact-colbertv2-k100: not run: dropped by the owner 2026-10-17 10:20 UTC for Mac time (scifact)
+  6ca1baecfac67071 ho-parked beir-scifact-colbertv2-k25: not run: dropped by the owner 2026-10-17 10:20 UTC for Mac time (scifact)
+not ok: 0

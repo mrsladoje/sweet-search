@@ -1,0 +1,31 @@
+Intel & warm & exact & 1 (1) & PyTorch & 0.85 (beir) \\
+ & warm & NumKong & 9 (9) & NumKong  & 0.33 (beir) \\
+ & warm sweep & exact & 50 (42) & NumPy, PyTorch, maxsim-cpu & 0.25 (q64-d64-len512) \\
+ & warm sweep & NumKong & 205 (197) & NumKong  & 0.10 (q64-d256-len512) \\
+ & pool-parked & exact & 3 (3) & NumPy & 0.50 (gcsn-ho) \\
+ & pool-parked & NumKong & 5 (5) & NumKong  & 0.21 (gcsn-ho) \\
+ & one thread & exact & 2 (2) & NumPy, PyTorch & 0.83 (beir) \\
+ & one thread & NumKong & 3 (3) & NumKong  & 0.10 (agent-ho) \\
+\addlinespace
+AMD & warm sweep & exact & 53 (40) & NextPlaid, PyTorch & 0.39 (q64-d256-len128) \\
+ & warm sweep & NumKong & 144 (140) & NumKong  & 0.29 (q32-d256-lennat) \\
+ & one thread & exact & 1 (1) & NumPy & 0.77 (beir) \\
+ & one thread & NumKong & 3 (3) & NumKong  & 0.45 (gcsn-ho) \\
+\addlinespace
+Graviton4 & warm & NumKong & 9 (9) & NumKong  & 0.55 (beir) \\
+ & warm sweep & exact & 47 (44) & NextPlaid, NumPy, PyTorch & 0.44 (q64-d4096-len512) \\
+ & warm sweep & NumKong & 174 (171) & NumKong  & 0.27 (q8-d256-lennat) \\
+ & pool-parked & exact & 2 (2) & NumPy & 0.82 (gcsn-ho) \\
+ & pool-parked & NumKong & 6 (3) & NumKong  & 0.66 (beir) \\
+ & one thread & exact & 2 (2) & NextPlaid, PyTorch & 0.83 (beir) \\
+ & one thread & NumKong & 3 (3) & NumKong  & 0.29 (agent-ho) \\
+\addlinespace
+M3 Max & warm & NumKong & 2 (2) & NumKong  & 0.99 (beir) \\
+ & warm sweep & exact & 21 (20) & NextPlaid, NumPy, PyTorch, maxsim-cpu & 0.51 (q32-d1-len128) \\
+ & warm sweep & NumKong & 39 (39) & NumKong  & 0.16 (q32-d4096-len512) \\
+ & pool-parked & exact & 2 (2) & NumPy & 0.74 (gcsn-ho) \\
+ & pool-parked & NumKong & 1 (1) & NumKong  & 0.88 (gcsn-ho) \\
+ & one thread & exact & 9 (9) & NumPy, PyTorch, maxsim-cpu & 0.16 (beir) \\
+ & one thread & NumKong & 3 (3) & NumKong  & 0.26 (beir) \\
+\addlinespace
+EPYC & \multicolumn{4}{l}{\TODO{epyc}} \\

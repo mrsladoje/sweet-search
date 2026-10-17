@@ -5,3 +5,9 @@ aws/env.local
 venv-*/
 __pycache__/
 *.tmp
+paper/main.pdf
+paper/*.log
+paper/*.blg
+paper/*.aux
+paper/*.bbl
+paper/*.out
