@@ -210,6 +210,9 @@ def main():
                     vals.append(b['ratio'])
                 if vals:
                     put(f'best.{mode}.{w}.{kind}.min', f2(min(vals)), 'speed.json'); put(f'best.{mode}.{w}.{kind}.max', f2(max(vals)), 'speed.json')
+                    nointel = [float(v) for k_, v, _, _ in NUM if k_.startswith(f'best.{mode}.') and k_.endswith(f'.{w}.{kind}') and '.intel.' not in k_]
+                    if nointel:
+                        put(f'best.{mode}.{w}.{kind}.nointel.min', f2(min(nointel)), 'speed.json'); put(f'best.{mode}.{w}.{kind}.nointel.max', f2(max(nointel)), 'speed.json')
     # sweep summary numbers
     for p, cells in SPEED.get('sweep', {}).items():
         n = len(cells); lose = [c for c in cells.values() if c['best'] and c['best']['ratio'] < 1]
@@ -240,7 +243,7 @@ def main():
         if p not in SPEED.get('warm', {}):
             L.append(f'{PS[p]} & \\multicolumn{{4}}{{l}}{{{todo("epyc")}}} \\\\'); continue
         first = True
-        for mode in ('warm', 'warm sweep', 'pool-parked', 'one thread'):
+        for mode in ('warm', 'warm BEIR set', 'warm sweep', 'pool-parked', 'one thread'):
             for kind in ('exact', 'NumKong'):
                 v = agg.get((p, mode, kind))
                 if not v:
@@ -254,6 +257,17 @@ def main():
         L.append(r'\addlinespace')
     open(os.path.join(TEX, 'losses.tex'), 'w').write('\n'.join(L) + '\n')
     put('losses.total', str(len(losses)), 'speed.json', 'all (platform, mode, set/cell, frozen config) with ratio < 1')
+    flips = []
+    for p_, ws in SPEED.get('warm', {}).items():
+        for w_ in ('agent-ho', 'gcsn-ho', 'beir'):
+            for r in ws.get(w_, []):
+                if 'total_ratio' in r and r.get('lib') not in ('node-production', 'node-legacy') and (r['total_ratio'] < 1) != (r['ratio'] < 1):
+                    flips.append(f"{PS[p_]} {w_.replace('-ho', '')} {r['label'].replace(' (approx.)', '')} ({r['ratio']:.2f} geometric, {r['total_ratio']:.2f} total)")
+    put('totalflip.n', str(len(flips)), 'speed.json', 'warm rows whose total-time ratio lies on the other side of 1 than the geometric mean')
+    put('totalflip.list', '; '.join(flips) if flips else 'none', 'speed.json')
+    rows_all = [r for p_, ws in SPEED.get('warm', {}).items() for w_ in ('agent-ho', 'gcsn-ho', 'beir') for r in ws.get(w_, []) if 'spread_frozen' in r and r.get('spread_frozen')]
+    put('spread.outside.n', str(sum(1 for r in rows_all if r.get('outside_frozen_spread'))), 'speed.json', 'warm rows whose ratio lies outside the frozen per-process range')
+    put('spread.rows.n', str(len(rows_all)), 'speed.json')
     bs = collections.Counter((x['platform'], x['label']) for x in losses if x['mode'] == 'warm BEIR set' and x['significant'])
     for (p_, lab), n in bs.items():
         key = lab.replace(' (approx.)', '').replace(', ', '.').replace(' ', '')
@@ -401,6 +415,13 @@ def main():
             put(f'nkcheck.{kind}.gap', f"{np_median([x['top1_top10_gap_median'] for x in v]) * 100:.1f}", 'numkong_check.json')
         put('nkcheck.adapter', f"{max(x['adapter_vs_python_max_abs'] or 0 for x in NKC.values()):.1g}", 'numkong_check.json', 'max |rust loop - python API|')
 
+    nk1 = [(r['top1'], p_, w_) for p_, ws in SPEED.get('warm', {}).items() if p_ != 'intel' for w_ in ('agent-ho', 'beir') for r in ws.get(w_, [])
+           if r.get('lib') == 'numkong' and 'top1' in r]
+    for w_ in ('agent-ho', 'beir'):
+        v = [x[0] for x in nk1 if x[2] == w_]
+        if v:
+            put(f'nk.top1own.{w_}.min', f'{min(v) * 100:.0f}', 'speed.json', 'NumKong top-1 vs its own contract reference (non-AMX CPUs)')
+            put(f'nk.top1own.{w_}.max', f'{max(v) * 100:.0f}', 'speed.json')
     # ------------------------------------------------------------------ contract effects
     CE = load('contract_effects.json')
     rows = []
@@ -501,11 +522,12 @@ def main():
                     CONC_N1.append((o1[0] / e1[0], f'{p} {fam} threads'))
             rates = sorted({r['rate'] for d in arms.values() for r in d['runs'] if r['type'] != 'closed' and r['rate']})
             top = rates[-1]
-            cap = {a: max(r['throughput'] for r in d['runs'] if r['type'] == 'closed') for a, d in arms.items()}
             op = {a: min((r for r in d['runs'] if r['type'] != 'closed' and r['rate'] == top), key=lambda r: r['p99_ms']) for a, d in arms.items()}
             exa = min((v['p99_ms'], a) for a, v in op.items() if exact(a))
-            ov_o = '$^\\S$' if top > cap['ours'] else ''
-            ov_e = '$^\\S$' if top > cap[exa[1]] else ''
+            achieved = lambda r: r['n'] / (r['wall_ns'] / 1e9) if r.get('wall_ns') else float('inf')
+            ov_o = '$^\\S$' if achieved(op['ours']) < 0.95 * top else ''      # the arm did not keep up with the offered rate
+            ov_e = '$^\\S$' if achieved(op[exa[1]]) < 0.95 * top else ''
+            put(f'conc.{p}.{fam}.open.achieved.ours', f"{achieved(op['ours']):.0f}", 'conc.json', 'calls/s achieved at the top rate')
             put(f'conc.{p}.{fam}.open.rate', f'{top:.0f}', 'conc.json'); put(f'conc.{p}.{fam}.open.ours', f"{op['ours']['p99_ms']:.2f}", 'conc.json')
             put(f'conc.{p}.{fam}.open.exact', f'{exa[0]:.2f}', 'conc.json', exa[1])
             cs += [f'{top:.0f}', f"{op['ours']['p99_ms']:.2f}{ov_o}", ('\\loss{' if exa[0] < op['ours']['p99_ms'] else '{') + f'{exa[0]:.2f}}}{ov_e}']
@@ -540,7 +562,7 @@ def main():
                 ex = [(v['k'], v['ndcg10'], a) for a, v in row.items() if v and a not in ('ours', 'f32store') and not a.startswith('numkong') and 'int4' not in a]
                 bex = max(ex) if ex else None
                 nkk = [(v['k'], v['ndcg10'], a) for a, v in row.items() if v and a.startswith('numkong')]
-                bnk = max(nkk, key=lambda x: x[1]) if nkk else None
+                bnk = max(nkk) if nkk else None   # largest k, as in the caption (ties: better quality)
                 fmt = lambda t: '--' if not t else f'{t[0]} ({t[1]:.3f})'
                 fs = row.get('f32store')
                 cs += [fmt(None if not o else (o['k'], o['ndcg10'])), fmt(bex) + ('' if not bex else f" {tx(bex[2])}"), fmt(bnk),

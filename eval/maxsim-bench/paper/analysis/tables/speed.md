@@ -727,8 +727,8 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | AMD | warm BEIR set | beir-scifact-answersmall-k200 | NumKong (approx.), f16 | 0.67 [0.67, 0.68] (0.67–0.68) | yes |
 | AMD | warm BEIR set | beir-scifact-answersmall-k200 | NumKong (approx.), f32 | 0.69 [0.68, 0.69] (0.69–0.69) | yes |
 | AMD | warm BEIR set | beir-scifact-answersmall-k50 | NumKong (approx.), f32 | 0.91 [0.90, 0.92] (0.91–0.92) | yes |
-| AMD | warm BEIR set | beir-scifact-answersmall-k50 | NumKong (approx.), f16 | 0.93 [0.92, 0.94] (0.93–0.94) | yes |
-| AMD | warm BEIR set | beir-scifact-answersmall-k50 | NumKong (approx.), bf16 | 0.98 [0.96, 0.99] (0.97–0.99) | yes |
+| AMD | warm BEIR set | beir-scifact-answersmall-k50 | NumKong (approx.), f16 | 0.93 [0.92, 0.94] (0.93–0.94) | no |
+| AMD | warm BEIR set | beir-scifact-answersmall-k50 | NumKong (approx.), bf16 | 0.98 [0.96, 0.99] (0.97–0.99) | no |
 | AMD | warm BEIR set | beir-scifact-colbertv2-k100 | NumKong (approx.), f32 | 0.79 [0.78, 0.80] (0.78–0.80) | yes |
 | AMD | warm BEIR set | beir-scifact-colbertv2-k100 | NumKong (approx.), f16 | 0.80 [0.79, 0.81] (0.79–0.81) | yes |
 | AMD | warm BEIR set | beir-scifact-colbertv2-k100 | NumKong (approx.), bf16 | 0.84 [0.83, 0.85] (0.83–0.85) | yes |
@@ -737,7 +737,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | AMD | warm BEIR set | beir-scifact-colbertv2-k200 | NumKong (approx.), f32 | 0.62 [0.61, 0.62] (0.61–0.62) | yes |
 | AMD | warm BEIR set | beir-scifact-colbertv2-k25 | NumKong (approx.), f32 | 0.96 [0.94, 0.98] (0.95–0.97) | yes |
 | AMD | warm BEIR set | beir-scifact-colbertv2-k25 | NumKong (approx.), f16 | 0.98 [0.96, 0.99] (0.97–0.98) | yes |
-| AMD | warm BEIR set | beir-scifact-colbertv2-k25 | NumKong (approx.), bf16 | 0.98 [0.96, 1.00] (0.96–0.99) | yes |
+| AMD | warm BEIR set | beir-scifact-colbertv2-k25 | NumKong (approx.), bf16 | 0.98 [0.96, 1.00] (0.96–0.99) | no |
 | AMD | warm BEIR set | beir-scifact-colbertv2-k50 | NumKong (approx.), f32 | 0.85 [0.84, 0.86] (0.84–0.85) | yes |
 | AMD | warm BEIR set | beir-scifact-colbertv2-k50 | NumKong (approx.), f16 | 0.90 [0.89, 0.91] (0.89–0.91) | yes |
 | AMD | warm BEIR set | beir-scifact-colbertv2-k50 | NumKong (approx.), bf16 | 0.91 [0.90, 0.92] (0.90–0.92) | yes |
@@ -860,7 +860,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | AMD | warm sweep | q64-d256-lennat | NumKong (approx.), bf16 | 0.33 [0.26, 0.41] (0.32–0.33) | yes |
 | AMD | warm sweep | q64-d256-lennat | NumKong (approx.), f32 | 0.33 [0.27, 0.42] (0.33–0.34) | yes |
 | AMD | warm sweep | q64-d256-lennat | NumKong (approx.), f16 | 0.34 [0.28, 0.43] (0.34–0.35) | yes |
-| AMD | warm sweep | q64-d256-lennat | PyTorch, bf16 | 0.60 [0.43, 0.82] (0.56–0.81) | yes |
+| AMD | warm sweep | q64-d256-lennat | PyTorch, bf16 | 0.60 [0.43, 0.82] (0.56–0.81) | no |
 | AMD | warm sweep | q64-d4096-len128 | NumKong (approx.), bf16 | 0.60 [0.57, 0.63] (0.60–0.60) | yes |
 | AMD | warm sweep | q64-d4096-len128 | NumKong (approx.), f16 | 0.61 [0.58, 0.64] (0.61–0.62) | yes |
 | AMD | warm sweep | q64-d4096-len128 | NumKong (approx.), f32 | 0.65 [0.62, 0.69] (0.65–0.65) | yes |
@@ -904,7 +904,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | AMD | warm sweep | q8-d1024-len32 | NumKong (approx.), f16 | 0.53 [0.42, 0.64] (0.49–0.54) | yes |
 | AMD | warm sweep | q8-d1024-len32 | PyTorch, bf16 | 0.57 [0.50, 0.65] (0.54–0.58) | yes |
 | AMD | warm sweep | q8-d1024-len32 | PyTorch, f32 | 0.59 [0.50, 0.67] (0.55–0.58) | yes |
-| AMD | warm sweep | q8-d1024-len32 | NextPlaid, f32 | 0.79 [0.68, 0.90] (0.74–0.82) | yes |
+| AMD | warm sweep | q8-d1024-len32 | NextPlaid, f32 | 0.79 [0.68, 0.90] (0.74–0.82) | no |
 | AMD | warm sweep | q8-d1024-len32 | maxsim-cpu, f32 | 0.90 [0.77, 1.02] (0.85–0.91) | no |
 | AMD | warm sweep | q8-d1024-lennat | NumKong (approx.), bf16 | 0.80 [0.71, 0.88] (0.72–0.87) | yes |
 | AMD | warm sweep | q8-d1024-lennat | NumKong (approx.), f16 | 0.83 [0.78, 0.89] (0.76–0.90) | yes |
@@ -1062,7 +1062,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | Graviton4 | warm sweep | q32-d16-len512 | NumKong (approx.), bf16 | 0.35 [0.34, 0.36] (0.34–0.36) | yes |
 | Graviton4 | warm sweep | q32-d16-len512 | NumKong (approx.), f16 | 0.36 [0.35, 0.38] (0.35–0.37) | yes |
 | Graviton4 | warm sweep | q32-d16-len512 | NumKong (approx.), f32 | 0.37 [0.36, 0.39] (0.36–0.39) | yes |
-| Graviton4 | warm sweep | q32-d16-len512 | PyTorch, bf16 | 0.95 [0.93, 0.96] (0.93–0.98) | yes |
+| Graviton4 | warm sweep | q32-d16-len512 | PyTorch, bf16 | 0.95 [0.93, 0.96] (0.93–0.98) | no |
 | Graviton4 | warm sweep | q32-d16-lennat | NumKong (approx.), f32 | 0.90 [0.85, 0.95] (0.88–0.92) | yes |
 | Graviton4 | warm sweep | q32-d16-lennat | NumKong (approx.), bf16 | 0.91 [0.86, 0.97] (0.90–0.93) | yes |
 | Graviton4 | warm sweep | q32-d16-lennat | NumKong (approx.), f16 | 0.99 [0.93, 1.06] (0.97–1.02) | no |
@@ -1099,7 +1099,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | Graviton4 | warm sweep | q32-d4096-len512 | NumKong (approx.), f32 | 0.35 [0.35, 0.35] (0.35–0.35) | yes |
 | Graviton4 | warm sweep | q32-d4096-len512 | PyTorch, bf16 | 0.52 [0.52, 0.52] (0.52–0.52) | yes |
 | Graviton4 | warm sweep | q32-d4096-len512 | PyTorch, f32 | 0.77 [0.76, 0.77] (0.77–0.77) | yes |
-| Graviton4 | warm sweep | q32-d4096-len512 | NextPlaid, f32 | 0.99 [0.99, 0.99] (0.99–0.99) | yes |
+| Graviton4 | warm sweep | q32-d4096-len512 | NextPlaid, f32 | 0.99 [0.99, 0.99] (0.99–0.99) | no |
 | Graviton4 | warm sweep | q32-d4096-lennat | NumKong (approx.), bf16 | 0.33 [0.32, 0.33] (0.33–0.33) | yes |
 | Graviton4 | warm sweep | q32-d4096-lennat | NumKong (approx.), f16 | 0.35 [0.35, 0.35] (0.35–0.35) | yes |
 | Graviton4 | warm sweep | q32-d4096-lennat | NumKong (approx.), f32 | 0.37 [0.36, 0.37] (0.37–0.37) | yes |
@@ -1121,13 +1121,13 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | Graviton4 | warm sweep | q32-d64-lennat | NumKong (approx.), f16 | 0.50 [0.47, 0.52] (0.48–0.50) | yes |
 | Graviton4 | warm sweep | q32-d64-lennat | NumKong (approx.), f32 | 0.51 [0.49, 0.53] (0.50–0.52) | yes |
 | Graviton4 | warm sweep | q64-d1-len128 | NumPy, f32 | 0.84 [0.82, 0.85] (0.83–0.84) | yes |
-| Graviton4 | warm sweep | q64-d1-len128 | NumKong (approx.), bf16 | 0.98 [0.95, 1.00] (0.97–0.98) | yes |
+| Graviton4 | warm sweep | q64-d1-len128 | NumKong (approx.), bf16 | 0.98 [0.95, 1.00] (0.97–0.98) | no |
 | Graviton4 | warm sweep | q64-d1-lennat | NumPy, f32 | 0.89 [0.81, 0.96] (0.88–0.89) | yes |
 | Graviton4 | warm sweep | q64-d1024-len128 | NumKong (approx.), bf16 | 0.36 [0.36, 0.36] (0.36–0.36) | yes |
 | Graviton4 | warm sweep | q64-d1024-len128 | NumKong (approx.), f16 | 0.39 [0.39, 0.39] (0.39–0.39) | yes |
 | Graviton4 | warm sweep | q64-d1024-len128 | NumKong (approx.), f32 | 0.44 [0.44, 0.45] (0.44–0.44) | yes |
 | Graviton4 | warm sweep | q64-d1024-len128 | PyTorch, bf16 | 0.51 [0.51, 0.51] (0.51–0.51) | yes |
-| Graviton4 | warm sweep | q64-d1024-len128 | PyTorch, f32 | 0.99 [0.98, 0.99] (0.98–0.99) | yes |
+| Graviton4 | warm sweep | q64-d1024-len128 | PyTorch, f32 | 0.99 [0.98, 0.99] (0.98–0.99) | no |
 | Graviton4 | warm sweep | q64-d1024-len32 | NumKong (approx.), bf16 | 0.39 [0.38, 0.39] (0.38–0.39) | yes |
 | Graviton4 | warm sweep | q64-d1024-len32 | PyTorch, bf16 | 0.45 [0.45, 0.45] (0.45–0.45) | yes |
 | Graviton4 | warm sweep | q64-d1024-len32 | NumKong (approx.), f16 | 0.48 [0.48, 0.48] (0.48–0.48) | yes |
@@ -1148,7 +1148,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | Graviton4 | warm sweep | q64-d16-len128 | NumKong (approx.), f32 | 0.51 [0.48, 0.53] (0.48–0.53) | yes |
 | Graviton4 | warm sweep | q64-d16-len32 | NumKong (approx.), bf16 | 0.82 [0.78, 0.87] (0.75–0.86) | yes |
 | Graviton4 | warm sweep | q64-d16-len32 | NumKong (approx.), f16 | 0.89 [0.85, 0.93] (0.82–0.91) | yes |
-| Graviton4 | warm sweep | q64-d16-len32 | NumKong (approx.), f32 | 0.96 [0.92, 1.00] (0.88–1.00) | yes |
+| Graviton4 | warm sweep | q64-d16-len32 | NumKong (approx.), f32 | 0.96 [0.92, 1.00] (0.88–1.00) | no |
 | Graviton4 | warm sweep | q64-d16-len512 | NumKong (approx.), bf16 | 0.34 [0.32, 0.36] (0.33–0.35) | yes |
 | Graviton4 | warm sweep | q64-d16-len512 | NumKong (approx.), f32 | 0.35 [0.33, 0.37] (0.35–0.36) | yes |
 | Graviton4 | warm sweep | q64-d16-len512 | NumKong (approx.), f16 | 0.36 [0.34, 0.38] (0.35–0.37) | yes |
@@ -1228,7 +1228,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | Graviton4 | warm sweep | q8-d1024-lennat | NumKong (approx.), f32 | 0.39 [0.39, 0.40] (0.39–0.39) | yes |
 | Graviton4 | warm sweep | q8-d16-len128 | NumKong (approx.), bf16 | 0.91 [0.83, 0.98] (0.86–0.93) | yes |
 | Graviton4 | warm sweep | q8-d16-len128 | NumKong (approx.), f16 | 0.92 [0.85, 0.99] (0.87–0.94) | yes |
-| Graviton4 | warm sweep | q8-d16-len128 | NumKong (approx.), f32 | 0.92 [0.85, 0.99] (0.87–0.95) | yes |
+| Graviton4 | warm sweep | q8-d16-len128 | NumKong (approx.), f32 | 0.92 [0.85, 0.99] (0.87–0.95) | no |
 | Graviton4 | warm sweep | q8-d16-len512 | NumKong (approx.), bf16 | 0.50 [0.48, 0.52] (0.48–0.51) | yes |
 | Graviton4 | warm sweep | q8-d16-len512 | NumKong (approx.), f16 | 0.51 [0.49, 0.52] (0.50–0.51) | yes |
 | Graviton4 | warm sweep | q8-d16-len512 | NumKong (approx.), f32 | 0.51 [0.50, 0.53] (0.50–0.53) | yes |
@@ -1422,7 +1422,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | Intel | warm BEIR set | beir-scifact-colbertv2-k50 | PyTorch, f32 | 0.54 [0.54, 0.54] (0.54–0.54) | yes |
 | Intel | warm BEIR set | beir-scifact-colbertv2-k50 | PyTorch, bf16 | 0.77 [0.77, 0.77] (0.77–0.78) | yes |
 | Intel | warm sweep | q32-d1-len128 | NumKong (approx.), bf16 | 0.60 [0.59, 0.61] (0.59–0.60) | yes |
-| Intel | warm sweep | q32-d1-len128 | NumKong (approx.), f16 | 0.95 [0.93, 0.98] (0.91–0.98) | yes |
+| Intel | warm sweep | q32-d1-len128 | NumKong (approx.), f16 | 0.95 [0.93, 0.98] (0.91–0.98) | no |
 | Intel | warm sweep | q32-d1-len128 | NumKong (approx.), f32 | 0.99 [0.97, 1.02] (0.93–1.41) | no |
 | Intel | warm sweep | q32-d1-len512 | NumKong (approx.), bf16 | 0.51 [0.49, 0.54] (0.50–0.53) | yes |
 | Intel | warm sweep | q32-d1-len512 | NumKong (approx.), f32 | 0.85 [0.79, 0.90] (0.81–0.88) | yes |
@@ -1433,7 +1433,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | Intel | warm sweep | q32-d1024-len128 | NumKong (approx.), bf16 | 0.20 [0.19, 0.21] (0.20–0.20) | yes |
 | Intel | warm sweep | q32-d1024-len128 | NumKong (approx.), f32 | 0.22 [0.21, 0.23] (0.21–0.22) | yes |
 | Intel | warm sweep | q32-d1024-len128 | PyTorch, bf16 | 0.57 [0.49, 0.69] (0.54–0.58) | yes |
-| Intel | warm sweep | q32-d1024-len128 | PyTorch, f32 | 0.78 [0.74, 0.83] (0.75–0.86) | yes |
+| Intel | warm sweep | q32-d1024-len128 | PyTorch, f32 | 0.78 [0.74, 0.83] (0.75–0.86) | no |
 | Intel | warm sweep | q32-d1024-len32 | NumKong (approx.), bf16 | 0.25 [0.24, 0.25] (0.24–0.25) | yes |
 | Intel | warm sweep | q32-d1024-len32 | NumKong (approx.), f16 | 0.30 [0.30, 0.31] (0.30–0.30) | yes |
 | Intel | warm sweep | q32-d1024-len32 | NumKong (approx.), f32 | 0.39 [0.38, 0.40] (0.39–0.39) | yes |
@@ -1679,10 +1679,10 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | Intel | warm sweep | q8-d256-len128 | NumKong (approx.), bf16 | 0.46 [0.36, 0.57] (0.43–0.52) | yes |
 | Intel | warm sweep | q8-d256-len128 | PyTorch, bf16 | 0.57 [0.44, 0.68] (0.51–0.64) | yes |
 | Intel | warm sweep | q8-d256-len128 | PyTorch, f32 | 0.83 [0.64, 1.02] (0.75–0.93) | no |
-| Intel | warm sweep | q8-d256-len32 | NumKong (approx.), f16 | 0.93 [0.91, 0.94] (0.92–0.94) | yes |
-| Intel | warm sweep | q8-d256-len32 | NumKong (approx.), bf16 | 0.93 [0.91, 0.95] (0.93–0.94) | yes |
+| Intel | warm sweep | q8-d256-len32 | NumKong (approx.), f16 | 0.93 [0.91, 0.94] (0.92–0.94) | no |
+| Intel | warm sweep | q8-d256-len32 | NumKong (approx.), bf16 | 0.93 [0.91, 0.95] (0.93–0.94) | no |
 | Intel | warm sweep | q8-d256-len32 | PyTorch, bf16 | 0.96 [0.95, 0.97] (0.96–0.97) | yes |
-| Intel | warm sweep | q8-d256-len32 | NumKong (approx.), f32 | 0.97 [0.96, 0.99] (0.97–0.98) | yes |
+| Intel | warm sweep | q8-d256-len32 | NumKong (approx.), f32 | 0.97 [0.96, 0.99] (0.97–0.98) | no |
 | Intel | warm sweep | q8-d256-len512 | NumKong (approx.), f16 | 0.29 [0.28, 0.31] (0.29–0.30) | yes |
 | Intel | warm sweep | q8-d256-len512 | NumKong (approx.), f32 | 0.30 [0.29, 0.31] (0.29–0.30) | yes |
 | Intel | warm sweep | q8-d256-len512 | NumKong (approx.), bf16 | 0.43 [0.42, 0.45] (0.42–0.44) | yes |
@@ -1734,8 +1734,8 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | M3 Max | pool-parked | agent-ho | NumPy, f32 | 0.92 [0.88, 0.97] (0.92–0.92) | yes |
 | M3 Max | pool-parked | gcsn-ho | NumPy, f32 | 0.74 [0.73, 0.74] (0.73–0.74) | yes |
 | M3 Max | pool-parked | gcsn-ho | NumKong (approx.), f16 | 0.88 [0.87, 0.89] (0.88–0.88) | yes |
-| M3 Max | warm | beir | NumKong (approx.), f16 | 0.99 [0.98, 0.99] (0.98–0.99) | yes |
-| M3 Max | warm | beir | NumKong (approx.), bf16 | 0.99 [0.99, 0.99] (0.99–0.99) | yes |
+| M3 Max | warm | beir | NumKong (approx.), f16 | 0.99 [0.98, 0.99] (0.98–0.99) | no |
+| M3 Max | warm | beir | NumKong (approx.), bf16 | 0.99 [0.99, 0.99] (0.99–0.99) | no |
 | M3 Max | warm BEIR set | beir-nfcorpus-answersmall-k100 | NumKong (approx.), bf16 | 0.61 [0.61, 0.62] (0.57–0.62) | yes |
 | M3 Max | warm BEIR set | beir-nfcorpus-answersmall-k100 | NumKong (approx.), f16 | 0.62 [0.61, 0.62] (0.57–0.63) | yes |
 | M3 Max | warm BEIR set | beir-nfcorpus-answersmall-k100 | NumKong (approx.), f32 | 0.62 [0.62, 0.63] (0.57–0.64) | yes |
@@ -1754,7 +1754,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | M3 Max | warm BEIR set | beir-nfcorpus-colbertv2-k200 | PyTorch, f32 | 0.95 [0.95, 0.96] (0.95–0.95) | yes |
 | M3 Max | warm BEIR set | beir-nfcorpus-colbertv2-k50 | NumKong (approx.), f16 | 0.90 [0.89, 0.91] (0.90–0.91) | yes |
 | M3 Max | warm BEIR set | beir-nfcorpus-colbertv2-k50 | NumKong (approx.), bf16 | 0.91 [0.90, 0.91] (0.90–0.91) | yes |
-| M3 Max | warm BEIR set | beir-nfcorpus-colbertv2-k50 | NumKong (approx.), f32 | 0.91 [0.91, 0.92] (0.91–0.92) | yes |
+| M3 Max | warm BEIR set | beir-nfcorpus-colbertv2-k50 | NumKong (approx.), f32 | 0.91 [0.91, 0.92] (0.91–0.92) | no |
 | M3 Max | warm BEIR set | beir-scifact-answersmall-k100 | NumKong (approx.), f16 | 0.62 [0.61, 0.62] (0.60–0.62) | yes |
 | M3 Max | warm BEIR set | beir-scifact-answersmall-k100 | NumKong (approx.), bf16 | 0.62 [0.62, 0.62] (0.60–0.63) | yes |
 | M3 Max | warm BEIR set | beir-scifact-answersmall-k100 | NumKong (approx.), f32 | 0.63 [0.63, 0.63] (0.61–0.64) | yes |
@@ -1789,8 +1789,8 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | M3 Max | warm sweep | q32-d4096-len512 | NumKong (approx.), f16 | 0.16 [0.13, 0.20] (0.15–0.18) | yes |
 | M3 Max | warm sweep | q32-d4096-len512 | NumKong (approx.), bf16 | 0.16 [0.13, 0.20] (0.15–0.18) | yes |
 | M3 Max | warm sweep | q32-d4096-len512 | NumKong (approx.), f32 | 0.17 [0.14, 0.21] (0.16–0.19) | yes |
-| M3 Max | warm sweep | q32-d4096-len512 | PyTorch, f32 | 0.74 [0.61, 0.94] (0.72–0.85) | yes |
-| M3 Max | warm sweep | q32-d4096-len512 | NextPlaid, f32 | 0.78 [0.68, 0.91] (0.77–0.80) | yes |
+| M3 Max | warm sweep | q32-d4096-len512 | PyTorch, f32 | 0.74 [0.61, 0.94] (0.72–0.85) | no |
+| M3 Max | warm sweep | q32-d4096-len512 | NextPlaid, f32 | 0.78 [0.68, 0.91] (0.77–0.80) | no |
 | M3 Max | warm sweep | q32-d4096-len512 | NumPy, f32 | 0.89 [0.73, 1.12] (0.86–1.01) | no |
 | M3 Max | warm sweep | q32-d4096-lennat | NumKong (approx.), bf16 | 0.29 [0.28, 0.29] (0.29–0.29) | yes |
 | M3 Max | warm sweep | q32-d4096-lennat | NumKong (approx.), f16 | 0.29 [0.28, 0.29] (0.29–0.29) | yes |

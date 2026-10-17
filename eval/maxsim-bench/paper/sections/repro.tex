@@ -14,4 +14,4 @@ Cloud instance identifiers are replaced by neutral host labels; each scrubbed fi
 \paragraph{Adding an implementation.}
 An arm is a Python function that receives one call (query, candidates in the replay format) and returns one score per candidate, plus a contract name.
 The harness times it, checks it against the reference of its contract and writes the same records as for every other arm.
-A small example (one replay set, three arms) runs in under ten minutes on a laptop \TODO{reproduction example: path and timing}.
+A small example, \texttt{examples/quickstart.py}, builds a synthetic replay set (or reads a given one), runs three arms and checks each against its contract; on the M3 Max it took about 4\,s for 50 calls, after the dependencies are installed. \texttt{examples/ADDING\_AN\_IMPLEMENTATION.md} shows how to add an arm in a fork.

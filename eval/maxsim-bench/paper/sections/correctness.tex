@@ -4,7 +4,7 @@
 Every arm was checked on every call against a float64 reference of its own contract.
 Table~\ref{tab:correctness} (Appendix~\ref{app:tables}) lists, per CPU and arm, the largest implementation error, the input-rounding effect and the top-1 agreement with the contract-S reference.
 Apart from maxsim-cpu on the M3 Max (issue \#5 below), every exact arm with float32 inputs stayed within $4\times10^{-7}$ of its own reference on every call.
-The checks found two new defects in other libraries and confirmed a third that was already reported. We reported the two new ones upstream in October 2026; the maintainers have not yet confirmed them.
+The checks found two new defects in other libraries and confirmed a third that was already reported. We reported the two new ones upstream in October 2026. The NumKong maintainer acknowledged the AMX defect, and another contributor opened a fix~\cite{numkong_pr409}; the maxsim-cpu report is still open.
 
 \paragraph{maxsim-cpu, x86 build, long queries (issue \#1).}
 For queries with more than 32 tokens, once a document has 64 or more tokens, the x86 wheel of maxsim-cpu~0.1.0 returned wrong scores, up to $10^{38}$ and infinity.

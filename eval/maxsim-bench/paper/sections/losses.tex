@@ -4,14 +4,15 @@
 This section lists every condition in which a frozen rival was faster than \sweet.
 Table~\ref{tab:losses} counts the cases by CPU and mode.
 A case is one CPU, mode, set or sweep cell, library and input type, with the rival at the faster of its frozen configurations.
-There are \nm{losses.total} cases with a ratio below 1; the number in parentheses counts those that meet our rule for ``faster'' (interval and all leave-one-process-out estimates below 1).
+There are \nm{losses.total} cases with a ratio below 1; the number in parentheses counts those that meet our rule for ``faster'' (Section~\ref{sec:method}). The parallel-caller and budget losses below are not in the table.
 The released tables list each case.
 
 \begin{enumerate}
 \item \textbf{PyTorch on BEIR calls.} On Intel, with float32 inputs and its padded flat layout, PyTorch needed \nm{warm.intel.beir.torch.f32}$\times$ the time of \sweet on the fresh BEIR calls and was faster on all 20 sets. With bfloat16 inputs it was faster on \nm{beirset.intel.PyTorch.bf16} sets on Intel and \nm{beirset.arm.PyTorch.bf16} on Graviton4; with float32 inputs on \nm{beirset.m3max.PyTorch.f32} sets on the M3 Max.
-\item \textbf{Size sweep.} Exact rivals were faster in \nm{sweep.intel.loseany} (Intel), \nm{sweep.amd.loseany} (AMD), \nm{sweep.arm.loseany} (Graviton4), \nm{sweep.m3max.loseany} of \nm{sweep.m3max.cells} (M3 Max) and \nm{sweep.epyc.loseany} of \nm{sweep.epyc.cells} (EPYC) sweep cells. The worst cell was \nm{sweep.intel.worstany}$\times$ (Intel, \nm{sweep.intel.worstany.where}). On AMD, the losing band of 64 to 1,024 documents covers sizes that occur in real calls (Table~\ref{tab:workload}).
-\item \textbf{NumKong, approximate.} NumKong was faster on Intel and Graviton4 on all three replayed sets, slightly faster on M3 Max BEIR calls, faster on \nm{beirset.amd.NumKong.f32} of 20 BEIR sets on AMD, and faster in \nm{nksweep.m3max} of \nm{sweep.m3max.cells} to \nm{nksweep.intel} of 84 sweep cells. On Intel its bfloat16 path gave better quality than \sweet with answerai-colbert-small at a lower p95. Its top document agreed with the exact one on 86\% of agent calls and 57--58\% of BEIR calls, and its BEIR quality collapsed for answerai-colbert-small, whose candidate scores lie close together (Section~\ref{sec:quality}).
-\item \textbf{After a busy gap.} After 5\,ms of other work, NumPy was faster than the bare kernel on Intel, Graviton4, the M3 Max and the EPYC (Section~\ref{sec:parked}). With the product path's prewarm call (which the rivals did not get), \sweet was about as fast as NumPy on Intel agent calls (\nm{parked.intel.agent-ho.node-prewarm} against \nm{parked.intel.agent-ho.numpy.f32}), faster on M3 Max agent calls, and still slower on Graviton4 (\nm{parked.arm.agent-ho.node-prewarm} against \nm{parked.arm.agent-ho.numpy.f32}).
+\item \textbf{Size sweep.} Exact rivals had a ratio below 1 in \nm{sweep.intel.loseany} (Intel), \nm{sweep.amd.loseany} (AMD), \nm{sweep.arm.loseany} (Graviton4), \nm{sweep.m3max.loseany} of \nm{sweep.m3max.cells} (M3 Max) and \nm{sweep.epyc.loseany} of \nm{sweep.epyc.cells} (EPYC) sweep cells. The worst cell was \nm{sweep.intel.worstany}$\times$ (Intel, \nm{sweep.intel.worstany.where}). On AMD, the losing band of 64 to 1,024 documents lies above the 90th percentile of agent pools (25) and above every GCSN pool (20), but such pools occur in BEIR-like reranking (Table~\ref{tab:workload}).
+\item \textbf{NumKong, approximate.} NumKong was faster on Intel and Graviton4 on all three replayed sets, slightly faster on M3 Max BEIR calls, faster on \nm{beirset.amd.NumKong.f32} of 20 BEIR sets on AMD, and faster in \nm{nksweep.m3max} of \nm{sweep.m3max.cells} to \nm{nksweep.intel} of 84 sweep cells. On Intel its bfloat16 path (AMX, no NaN returned) gave better quality than \sweet with answerai-colbert-small at a lower p95. Its top document agreed with the exact one on 86\% of agent calls and 57--58\% of BEIR calls, and its BEIR quality collapsed for answerai-colbert-small, whose candidate scores lie close together (Section~\ref{sec:quality}).
+\item \textbf{Total time.} Measured by total time instead of the geometric mean, which weights large calls more, \nm{totalflip.n} BEIR rows change sides of 1: \nm{totalflip.list}.
+\item \textbf{After a busy gap.} After 5\,ms of other work, NumPy was faster than the bare kernel on Intel, Graviton4, the M3 Max and the EPYC (Section~\ref{sec:parked}). With the product path's prewarm call (which the rivals did not get), \sweet was about as fast as NumPy on Intel agent calls (\nm{parked.intel.agent-ho.node-prewarm} against \nm{parked.intel.agent-ho.numpy.f32}), faster on M3 Max agent calls, and still slower on Graviton4 agent calls (\nm{parked.arm.agent-ho.node-prewarm} against \nm{parked.arm.agent-ho.numpy.f32}) and on Intel and Graviton4 GCSN calls.
 \item \textbf{One thread.} With one thread, a rival was faster on BEIR calls on every CPU, and on the M3 Max on every set (Section~\ref{sec:single}).
 \item \textbf{Parallel callers.} With 16 callers in one shared process, an exact rival had the higher throughput in \nm{conc.n16.threads.lost} of 10 CPU--workload pairs; with one process per caller, in \nm{conc.n16.procs.lost} of 10. NumKong had the higher throughput in most pairs. These are single short runs (Section~\ref{sec:conc}).
 \item \textbf{Quality per budget.} On Intel, PyTorch with bfloat16 inputs reached twice the $k$ of \sweet at both budgets of Table~\ref{tab:budget}; on Graviton4 one cell went the same way. With answerai-colbert-small, float32 storage gave better quality at every budget on every CPU.
@@ -22,11 +23,12 @@ The released tables list each case.
 \centering\scriptsize
 \caption{Cases where a frozen rival was faster than \sweet (ratio below 1), by CPU and mode. Count (in parentheses: interval and all leave-one-process-out estimates below 1), libraries, and the worst ratio with its set or sweep cell (q: query tokens, d: documents, len: doc tokens). Descriptive; not corrected for multiple comparisons.}
 \label{tab:losses}
+\resizebox{\linewidth}{!}{%
 \begin{tabular}{lllrll}
 \toprule
 CPU & mode & rival & cases & libraries & worst ratio (where) \\
 \midrule
 \inputtable{tables/losses.tex}
 \bottomrule
-\end{tabular}
+\end{tabular}}
 \end{table}
