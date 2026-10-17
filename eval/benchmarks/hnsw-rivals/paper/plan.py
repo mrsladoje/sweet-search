@@ -120,7 +120,8 @@ def a_build(gen, s, m):
 
 
 def job(s, m, split, comp, system, rnd, **kw):
-    j = dict(set=s, model=m, split=split, comparison=comp, system=system, round=rnd, kind=kw.pop('kind', 'timing'), build_seed=42)
+    j = dict(set=s, model=m, split=split, comparison=comp, system=system, round=rnd, kind=kw.pop('kind', 'timing'), build_seed=42,
+             pagecache='warm')  # run.py reads the job's files into the page cache first (S5b repair)
     if a.limit:
         j['options'] = dict(limit=a.limit)
     j.update(kw)

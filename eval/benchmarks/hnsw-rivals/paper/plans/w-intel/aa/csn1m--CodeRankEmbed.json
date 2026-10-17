@@ -1,0 +1,156 @@
+{
+"step": "aaw-csn1m--CodeRankEmbed",
+"builds": [],
+"jobs": [
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"kv": 19,
+"options": {
+"arm": "a1"
+},
+"pagecache": "warm"
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"kv": 19,
+"options": {
+"arm": "a2"
+},
+"pagecache": "warm"
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 1,
+"kind": "timing",
+"build_seed": 42,
+"kv": 19,
+"options": {
+"arm": "a1"
+},
+"pagecache": "warm"
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 1,
+"kind": "timing",
+"build_seed": 42,
+"kv": 19,
+"options": {
+"arm": "a2"
+},
+"pagecache": "warm"
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 2,
+"kind": "timing",
+"build_seed": 42,
+"kv": 19,
+"options": {
+"arm": "a1"
+},
+"pagecache": "warm"
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 2,
+"kind": "timing",
+"build_seed": 42,
+"kv": 19,
+"options": {
+"arm": "a2"
+},
+"pagecache": "warm"
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 3,
+"kind": "timing",
+"build_seed": 42,
+"kv": 19,
+"options": {
+"arm": "a1"
+},
+"pagecache": "warm"
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 3,
+"kind": "timing",
+"build_seed": 42,
+"kv": 19,
+"options": {
+"arm": "a2"
+},
+"pagecache": "warm"
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 4,
+"kind": "timing",
+"build_seed": 42,
+"kv": 19,
+"options": {
+"arm": "a1"
+},
+"pagecache": "warm"
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 4,
+"kind": "timing",
+"build_seed": 42,
+"kv": 19,
+"options": {
+"arm": "a2"
+},
+"pagecache": "warm"
+}
+]
+}

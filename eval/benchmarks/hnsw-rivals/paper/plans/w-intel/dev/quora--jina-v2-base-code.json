@@ -1,0 +1,4272 @@
+{
+"step": "devw-quora--jina-v2-base-code",
+"builds": [],
+"jobs": [
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"kv": 11,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"kv": 11,
+"S1": 50,
+"EF": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"kv": 11,
+"S1": 100,
+"EF": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"kv": 11,
+"S1": 150,
+"EF": 150,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"kv": 11,
+"S1": 200,
+"EF": 200,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"kv": 11,
+"S1": 300,
+"EF": 300,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"kv": 11,
+"S1": 600,
+"EF": 600,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"kv": 11,
+"S1": 1000,
+"EF": 1000,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_walk",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "walk",
+"C": 100,
+"H": 50,
+"ef": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_walk",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "walk",
+"C": 100,
+"H": 50,
+"ef": 200,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_walk",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "walk",
+"C": 100,
+"H": 100,
+"ef": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_walk",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "walk",
+"C": 100,
+"H": 100,
+"ef": 200,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_walk",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "walk",
+"C": 200,
+"H": 50,
+"ef": 200,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_walk",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "walk",
+"C": 200,
+"H": 50,
+"ef": 400,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_walk",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "walk",
+"C": 200,
+"H": 100,
+"ef": 200,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_walk",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "walk",
+"C": 200,
+"H": 100,
+"ef": 400,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_walk",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "walk",
+"C": 400,
+"H": 50,
+"ef": 400,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_walk",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "walk",
+"C": 400,
+"H": 50,
+"ef": 800,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_walk",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "walk",
+"C": 400,
+"H": 100,
+"ef": 400,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_walk",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "walk",
+"C": 400,
+"H": 100,
+"ef": 800,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_walk",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "walk",
+"C": 1000,
+"H": 50,
+"ef": 1000,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_walk",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "walk",
+"C": 1000,
+"H": 50,
+"ef": 2000,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_walk",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "walk",
+"C": 1000,
+"H": 100,
+"ef": 1000,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_walk",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "walk",
+"C": 1000,
+"H": 100,
+"ef": 2000,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_walk",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "walk",
+"C": 200,
+"H": 200,
+"ef": 200,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_walk",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "walk",
+"C": 200,
+"H": 200,
+"ef": 400,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_walk",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "walk",
+"C": 400,
+"H": 400,
+"ef": 400,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_walk",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "walk",
+"C": 400,
+"H": 400,
+"ef": 800,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_walk",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "walk",
+"C": 1000,
+"H": 1000,
+"ef": 1000,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_walk",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "walk",
+"C": 1000,
+"H": 1000,
+"ef": 2000,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_scan",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "scan",
+"C": 100,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_scan",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "scan",
+"C": 100,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_scan",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "scan",
+"C": 200,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_scan",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "scan",
+"C": 200,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_scan",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "scan",
+"C": 400,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_scan",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "scan",
+"C": 400,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_scan",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "scan",
+"C": 1000,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_scan",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "scan",
+"C": 1000,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_scan",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "scan",
+"C": 200,
+"H": 200,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_scan",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "scan",
+"C": 400,
+"H": 400,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "ours_scan",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"gen": "scan",
+"C": 1000,
+"H": 1000,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_hnsw",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 100
+},
+"C": 100,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_hnsw",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 200
+},
+"C": 100,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_hnsw",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 100
+},
+"C": 100,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_hnsw",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 200
+},
+"C": 100,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_hnsw",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 200
+},
+"C": 200,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_hnsw",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 400
+},
+"C": 200,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_hnsw",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 200
+},
+"C": 200,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_hnsw",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 400
+},
+"C": 200,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_hnsw",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 400
+},
+"C": 400,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_hnsw",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 800
+},
+"C": 400,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_hnsw",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 400
+},
+"C": 400,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_hnsw",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 800
+},
+"C": 400,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_hnsw",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 1000
+},
+"C": 1000,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_hnsw",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 2000
+},
+"C": 1000,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_hnsw",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 1000
+},
+"C": 1000,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_hnsw",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 2000
+},
+"C": 1000,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_hnsw",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 200
+},
+"C": 200,
+"H": 200,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_hnsw",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 400
+},
+"C": 200,
+"H": 200,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_hnsw",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 400
+},
+"C": 400,
+"H": 400,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_hnsw",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 800
+},
+"C": 400,
+"H": 400,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_hnsw",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 1000
+},
+"C": 1000,
+"H": 1000,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_hnsw",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 2000
+},
+"C": 1000,
+"H": 1000,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_flat",
+"build_params": {},
+"search": {},
+"C": 100,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_flat",
+"build_params": {},
+"search": {},
+"C": 100,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_flat",
+"build_params": {},
+"search": {},
+"C": 200,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_flat",
+"build_params": {},
+"search": {},
+"C": 200,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_flat",
+"build_params": {},
+"search": {},
+"C": 400,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_flat",
+"build_params": {},
+"search": {},
+"C": 400,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_flat",
+"build_params": {},
+"search": {},
+"C": 1000,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_flat",
+"build_params": {},
+"search": {},
+"C": 1000,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_flat",
+"build_params": {},
+"search": {},
+"C": 200,
+"H": 200,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_flat",
+"build_params": {},
+"search": {},
+"C": 400,
+"H": 400,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_bin_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_bin_flat",
+"build_params": {},
+"search": {},
+"C": 1000,
+"H": 1000,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "usearch_b1_rescore",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 100
+},
+"C": 100,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "usearch_b1_rescore",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 200
+},
+"C": 100,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "usearch_b1_rescore",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 100
+},
+"C": 100,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "usearch_b1_rescore",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 200
+},
+"C": 100,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "usearch_b1_rescore",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 200
+},
+"C": 200,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "usearch_b1_rescore",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 400
+},
+"C": 200,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "usearch_b1_rescore",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 200
+},
+"C": 200,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "usearch_b1_rescore",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 400
+},
+"C": 200,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "usearch_b1_rescore",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 400
+},
+"C": 400,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "usearch_b1_rescore",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 800
+},
+"C": 400,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "usearch_b1_rescore",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 400
+},
+"C": 400,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "usearch_b1_rescore",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 800
+},
+"C": 400,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "usearch_b1_rescore",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 1000
+},
+"C": 1000,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "usearch_b1_rescore",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 2000
+},
+"C": 1000,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "usearch_b1_rescore",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 1000
+},
+"C": 1000,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "usearch_b1_rescore",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 2000
+},
+"C": 1000,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "usearch_b1_rescore",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 200
+},
+"C": 200,
+"H": 200,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "usearch_b1_rescore",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 400
+},
+"C": 200,
+"H": 200,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "usearch_b1_rescore",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 400
+},
+"C": 400,
+"H": 400,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "usearch_b1_rescore",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 800
+},
+"C": 400,
+"H": 400,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "usearch_b1_rescore",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 1000
+},
+"C": 1000,
+"H": 1000,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "usearch_b1_rescore",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 2000
+},
+"C": 1000,
+"H": 1000,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "hnswlib_f32",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 100
+},
+"C": 100,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "hnswlib_f32",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 200
+},
+"C": 100,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "hnswlib_f32",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 100
+},
+"C": 100,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "hnswlib_f32",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 200
+},
+"C": 100,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "hnswlib_f32",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 200
+},
+"C": 200,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "hnswlib_f32",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 400
+},
+"C": 200,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "hnswlib_f32",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 200
+},
+"C": 200,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "hnswlib_f32",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 400
+},
+"C": 200,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "hnswlib_f32",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 400
+},
+"C": 400,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "hnswlib_f32",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 800
+},
+"C": 400,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "hnswlib_f32",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 400
+},
+"C": 400,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "hnswlib_f32",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 800
+},
+"C": 400,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "hnswlib_f32",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 1000
+},
+"C": 1000,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "hnswlib_f32",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 2000
+},
+"C": 1000,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "hnswlib_f32",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 1000
+},
+"C": 1000,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "hnswlib_f32",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 2000
+},
+"C": 1000,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "hnswlib_f32",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 200
+},
+"C": 200,
+"H": 200,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "hnswlib_f32",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 400
+},
+"C": 200,
+"H": 200,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "hnswlib_f32",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 400
+},
+"C": 400,
+"H": 400,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "hnswlib_f32",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 800
+},
+"C": 400,
+"H": 400,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "hnswlib_f32",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 1000
+},
+"C": 1000,
+"H": 1000,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "hnswlib_f32",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "hnswlib_f32",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 2000
+},
+"C": 1000,
+"H": 1000,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_hnsw_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 100
+},
+"C": 100,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_hnsw_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 200
+},
+"C": 100,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_hnsw_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 100
+},
+"C": 100,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_hnsw_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 200
+},
+"C": 100,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_hnsw_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 200
+},
+"C": 200,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_hnsw_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 400
+},
+"C": 200,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_hnsw_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 200
+},
+"C": 200,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_hnsw_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 400
+},
+"C": 200,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_hnsw_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 400
+},
+"C": 400,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_hnsw_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 800
+},
+"C": 400,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_hnsw_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 400
+},
+"C": 400,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_hnsw_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 800
+},
+"C": 400,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_hnsw_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 1000
+},
+"C": 1000,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_hnsw_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 2000
+},
+"C": 1000,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_hnsw_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 1000
+},
+"C": 1000,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_hnsw_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 2000
+},
+"C": 1000,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_hnsw_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 200
+},
+"C": 200,
+"H": 200,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_hnsw_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 400
+},
+"C": 200,
+"H": 200,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_hnsw_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 400
+},
+"C": 400,
+"H": 400,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_hnsw_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 800
+},
+"C": 400,
+"H": 400,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_hnsw_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 1000
+},
+"C": 1000,
+"H": 1000,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_hnsw_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 2000
+},
+"C": 1000,
+"H": 1000,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_flat",
+"build_params": {},
+"search": {},
+"C": 100,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_flat",
+"build_params": {},
+"search": {},
+"C": 100,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_flat",
+"build_params": {},
+"search": {},
+"C": 200,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_flat",
+"build_params": {},
+"search": {},
+"C": 200,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_flat",
+"build_params": {},
+"search": {},
+"C": 400,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_flat",
+"build_params": {},
+"search": {},
+"C": 400,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_flat",
+"build_params": {},
+"search": {},
+"C": 1000,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_flat",
+"build_params": {},
+"search": {},
+"C": 1000,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_flat",
+"build_params": {},
+"search": {},
+"C": 200,
+"H": 200,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_flat",
+"build_params": {},
+"search": {},
+"C": 400,
+"H": 400,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_flat",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_flat",
+"build_params": {},
+"search": {},
+"C": 1000,
+"H": 1000,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 723
+},
+"search": {
+"nprobe": 1
+},
+"C": 100,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 723
+},
+"search": {
+"nprobe": 2
+},
+"C": 100,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 723
+},
+"search": {
+"nprobe": 1
+},
+"C": 100,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 723
+},
+"search": {
+"nprobe": 2
+},
+"C": 100,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 723
+},
+"search": {
+"nprobe": 1
+},
+"C": 200,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 723
+},
+"search": {
+"nprobe": 2
+},
+"C": 200,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 723
+},
+"search": {
+"nprobe": 1
+},
+"C": 200,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 723
+},
+"search": {
+"nprobe": 2
+},
+"C": 200,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 723
+},
+"search": {
+"nprobe": 2
+},
+"C": 400,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 723
+},
+"search": {
+"nprobe": 4
+},
+"C": 400,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 723
+},
+"search": {
+"nprobe": 2
+},
+"C": 400,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 723
+},
+"search": {
+"nprobe": 4
+},
+"C": 400,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 723
+},
+"search": {
+"nprobe": 5
+},
+"C": 1000,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 723
+},
+"search": {
+"nprobe": 10
+},
+"C": 1000,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 723
+},
+"search": {
+"nprobe": 5
+},
+"C": 1000,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 723
+},
+"search": {
+"nprobe": 10
+},
+"C": 1000,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 723
+},
+"search": {
+"nprobe": 1
+},
+"C": 200,
+"H": 200,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 723
+},
+"search": {
+"nprobe": 2
+},
+"C": 200,
+"H": 200,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 723
+},
+"search": {
+"nprobe": 2
+},
+"C": 400,
+"H": 400,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 723
+},
+"search": {
+"nprobe": 4
+},
+"C": 400,
+"H": 400,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 723
+},
+"search": {
+"nprobe": 5
+},
+"C": 1000,
+"H": 1000,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "faiss_rabitq_ivf",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 723
+},
+"search": {
+"nprobe": 10
+},
+"C": 1000,
+"H": 1000,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "scann",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "scann",
+"build_params": {
+"mode": "tree_ah",
+"leaves": 723,
+"soar": 0
+},
+"search": {
+"leaves_to_search": 1,
+"reorder": 100
+},
+"C": 100,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "scann",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "scann",
+"build_params": {
+"mode": "tree_ah",
+"leaves": 723,
+"soar": 0
+},
+"search": {
+"leaves_to_search": 2,
+"reorder": 100
+},
+"C": 100,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "scann",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "scann",
+"build_params": {
+"mode": "tree_ah",
+"leaves": 723,
+"soar": 0
+},
+"search": {
+"leaves_to_search": 1,
+"reorder": 100
+},
+"C": 100,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "scann",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "scann",
+"build_params": {
+"mode": "tree_ah",
+"leaves": 723,
+"soar": 0
+},
+"search": {
+"leaves_to_search": 2,
+"reorder": 100
+},
+"C": 100,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "scann",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "scann",
+"build_params": {
+"mode": "tree_ah",
+"leaves": 723,
+"soar": 0
+},
+"search": {
+"leaves_to_search": 1,
+"reorder": 200
+},
+"C": 200,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "scann",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "scann",
+"build_params": {
+"mode": "tree_ah",
+"leaves": 723,
+"soar": 0
+},
+"search": {
+"leaves_to_search": 2,
+"reorder": 200
+},
+"C": 200,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "scann",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "scann",
+"build_params": {
+"mode": "tree_ah",
+"leaves": 723,
+"soar": 0
+},
+"search": {
+"leaves_to_search": 1,
+"reorder": 200
+},
+"C": 200,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "scann",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "scann",
+"build_params": {
+"mode": "tree_ah",
+"leaves": 723,
+"soar": 0
+},
+"search": {
+"leaves_to_search": 2,
+"reorder": 200
+},
+"C": 200,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "scann",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "scann",
+"build_params": {
+"mode": "tree_ah",
+"leaves": 723,
+"soar": 0
+},
+"search": {
+"leaves_to_search": 2,
+"reorder": 400
+},
+"C": 400,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "scann",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "scann",
+"build_params": {
+"mode": "tree_ah",
+"leaves": 723,
+"soar": 0
+},
+"search": {
+"leaves_to_search": 4,
+"reorder": 400
+},
+"C": 400,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "scann",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "scann",
+"build_params": {
+"mode": "tree_ah",
+"leaves": 723,
+"soar": 0
+},
+"search": {
+"leaves_to_search": 2,
+"reorder": 400
+},
+"C": 400,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "scann",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "scann",
+"build_params": {
+"mode": "tree_ah",
+"leaves": 723,
+"soar": 0
+},
+"search": {
+"leaves_to_search": 4,
+"reorder": 400
+},
+"C": 400,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "scann",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "scann",
+"build_params": {
+"mode": "tree_ah",
+"leaves": 723,
+"soar": 0
+},
+"search": {
+"leaves_to_search": 5,
+"reorder": 1000
+},
+"C": 1000,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "scann",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "scann",
+"build_params": {
+"mode": "tree_ah",
+"leaves": 723,
+"soar": 0
+},
+"search": {
+"leaves_to_search": 10,
+"reorder": 1000
+},
+"C": 1000,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "scann",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "scann",
+"build_params": {
+"mode": "tree_ah",
+"leaves": 723,
+"soar": 0
+},
+"search": {
+"leaves_to_search": 5,
+"reorder": 1000
+},
+"C": 1000,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "scann",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "scann",
+"build_params": {
+"mode": "tree_ah",
+"leaves": 723,
+"soar": 0
+},
+"search": {
+"leaves_to_search": 10,
+"reorder": 1000
+},
+"C": 1000,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "scann",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "scann",
+"build_params": {
+"mode": "tree_ah",
+"leaves": 723,
+"soar": 0
+},
+"search": {
+"leaves_to_search": 1,
+"reorder": 200
+},
+"C": 200,
+"H": 200,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "scann",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "scann",
+"build_params": {
+"mode": "tree_ah",
+"leaves": 723,
+"soar": 0
+},
+"search": {
+"leaves_to_search": 2,
+"reorder": 200
+},
+"C": 200,
+"H": 200,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "scann",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "scann",
+"build_params": {
+"mode": "tree_ah",
+"leaves": 723,
+"soar": 0
+},
+"search": {
+"leaves_to_search": 2,
+"reorder": 400
+},
+"C": 400,
+"H": 400,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "scann",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "scann",
+"build_params": {
+"mode": "tree_ah",
+"leaves": 723,
+"soar": 0
+},
+"search": {
+"leaves_to_search": 4,
+"reorder": 400
+},
+"C": 400,
+"H": 400,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "scann",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "scann",
+"build_params": {
+"mode": "tree_ah",
+"leaves": 723,
+"soar": 0
+},
+"search": {
+"leaves_to_search": 5,
+"reorder": 1000
+},
+"C": 1000,
+"H": 1000,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "scann",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "scann",
+"build_params": {
+"mode": "tree_ah",
+"leaves": 723,
+"soar": 0
+},
+"search": {
+"leaves_to_search": 10,
+"reorder": 1000
+},
+"C": 1000,
+"H": 1000,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "diskann_vamana",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "diskann_vamana",
+"build_params": {
+"R": 64,
+"L": 200,
+"alpha": 1.2
+},
+"search": {
+"L": 100
+},
+"C": 100,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "diskann_vamana",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "diskann_vamana",
+"build_params": {
+"R": 64,
+"L": 200,
+"alpha": 1.2
+},
+"search": {
+"L": 200
+},
+"C": 100,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "diskann_vamana",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "diskann_vamana",
+"build_params": {
+"R": 64,
+"L": 200,
+"alpha": 1.2
+},
+"search": {
+"L": 100
+},
+"C": 100,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "diskann_vamana",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "diskann_vamana",
+"build_params": {
+"R": 64,
+"L": 200,
+"alpha": 1.2
+},
+"search": {
+"L": 200
+},
+"C": 100,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "diskann_vamana",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "diskann_vamana",
+"build_params": {
+"R": 64,
+"L": 200,
+"alpha": 1.2
+},
+"search": {
+"L": 200
+},
+"C": 200,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "diskann_vamana",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "diskann_vamana",
+"build_params": {
+"R": 64,
+"L": 200,
+"alpha": 1.2
+},
+"search": {
+"L": 400
+},
+"C": 200,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "diskann_vamana",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "diskann_vamana",
+"build_params": {
+"R": 64,
+"L": 200,
+"alpha": 1.2
+},
+"search": {
+"L": 200
+},
+"C": 200,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "diskann_vamana",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "diskann_vamana",
+"build_params": {
+"R": 64,
+"L": 200,
+"alpha": 1.2
+},
+"search": {
+"L": 400
+},
+"C": 200,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "diskann_vamana",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "diskann_vamana",
+"build_params": {
+"R": 64,
+"L": 200,
+"alpha": 1.2
+},
+"search": {
+"L": 400
+},
+"C": 400,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "diskann_vamana",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "diskann_vamana",
+"build_params": {
+"R": 64,
+"L": 200,
+"alpha": 1.2
+},
+"search": {
+"L": 800
+},
+"C": 400,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "diskann_vamana",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "diskann_vamana",
+"build_params": {
+"R": 64,
+"L": 200,
+"alpha": 1.2
+},
+"search": {
+"L": 400
+},
+"C": 400,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "diskann_vamana",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "diskann_vamana",
+"build_params": {
+"R": 64,
+"L": 200,
+"alpha": 1.2
+},
+"search": {
+"L": 800
+},
+"C": 400,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "diskann_vamana",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "diskann_vamana",
+"build_params": {
+"R": 64,
+"L": 200,
+"alpha": 1.2
+},
+"search": {
+"L": 1000
+},
+"C": 1000,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "diskann_vamana",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "diskann_vamana",
+"build_params": {
+"R": 64,
+"L": 200,
+"alpha": 1.2
+},
+"search": {
+"L": 2000
+},
+"C": 1000,
+"H": 50,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "diskann_vamana",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "diskann_vamana",
+"build_params": {
+"R": 64,
+"L": 200,
+"alpha": 1.2
+},
+"search": {
+"L": 1000
+},
+"C": 1000,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "diskann_vamana",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "diskann_vamana",
+"build_params": {
+"R": 64,
+"L": 200,
+"alpha": 1.2
+},
+"search": {
+"L": 2000
+},
+"C": 1000,
+"H": 100,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "diskann_vamana",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "diskann_vamana",
+"build_params": {
+"R": 64,
+"L": 200,
+"alpha": 1.2
+},
+"search": {
+"L": 200
+},
+"C": 200,
+"H": 200,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "diskann_vamana",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "diskann_vamana",
+"build_params": {
+"R": 64,
+"L": 200,
+"alpha": 1.2
+},
+"search": {
+"L": 400
+},
+"C": 200,
+"H": 200,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "diskann_vamana",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "diskann_vamana",
+"build_params": {
+"R": 64,
+"L": 200,
+"alpha": 1.2
+},
+"search": {
+"L": 400
+},
+"C": 400,
+"H": 400,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "diskann_vamana",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "diskann_vamana",
+"build_params": {
+"R": 64,
+"L": 200,
+"alpha": 1.2
+},
+"search": {
+"L": 800
+},
+"C": 400,
+"H": 400,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "diskann_vamana",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "diskann_vamana",
+"build_params": {
+"R": 64,
+"L": 200,
+"alpha": 1.2
+},
+"search": {
+"L": 1000
+},
+"C": 1000,
+"H": 1000,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "A",
+"system": "diskann_vamana",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"family": "diskann_vamana",
+"build_params": {
+"R": 64,
+"L": 200,
+"alpha": 1.2
+},
+"search": {
+"L": 2000
+},
+"C": 1000,
+"H": 1000,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"kv": 11,
+"S1": 1500,
+"EF": 1500,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"kv": 11,
+"S1": 2000,
+"EF": 2000,
+"pagecache": "warm"
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "dev",
+"comparison": "B",
+"system": "ours_cascade",
+"round": 0,
+"kind": "timing",
+"build_seed": 42,
+"kv": 11,
+"S1": 3000,
+"EF": 3000,
+"pagecache": "warm"
+}
+]
+}
