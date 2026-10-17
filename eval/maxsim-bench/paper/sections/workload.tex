@@ -30,7 +30,7 @@ We removed 6 query texts (7 calls) that also occur in the development split.
 All vectors are real held-out embeddings; a fixed seed (42) selects them.
 
 \paragraph{BEIR sets.}
-SciFact~\cite{wadden2020scifact} (300 test queries, 5,183 documents, of which 5,178 give tokens) and NFCorpus~\cite{boteva2016nfcorpus} (323 test queries, 3,633 documents, 3,626 with tokens) from BEIR~\cite{thakur2021beir}, encoded on CPU with PyLate~\cite{chaffin2025pylate} by two public models: answerai-colbert-small-v1~\cite{clavie2024answerai} (dimension 96) and ColBERTv2~\cite{santhanam2022colbertv2} (dimension 128).
+SciFact~\cite{wadden2020scifact} (300 test queries, 5,183 documents, of which 5,178 give tokens) and NFCorpus~\cite{boteva2016nfcorpus} (323 test queries, 3,633 documents, 3,626 with tokens) from BEIR~\cite{thakur2021beir}, encoded on CPU with PyLate~\cite{chaffin2025pylatecikm} by two public models: answerai-colbert-small-v1~\cite{clavie2024answerai} (dimension 96) and ColBERTv2~\cite{santhanam2022colbertv2} (dimension 128).
 Queries keep the models' default length of 32 tokens with query expansion.
 Candidates are the top $k \in \{10, 25, 50, 100, 200\}$ documents of BM25 (bm25s~\cite{lu2024bm25s}, default settings, English stopwords).
 This gives 20 sets.

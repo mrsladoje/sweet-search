@@ -20,6 +20,7 @@ NUM = []   # (key, value, source, note)
 CMD = {
     'speed.json': 'venv/bin/python -I paper/analysis/load.py intel amd arm m3max epyc {intel,amd,arm}-replica && venv/bin/python -I paper/analysis/tables.py',
     'conc.json': 'venv/bin/python -I paper/analysis/conc.py',
+    'beir_lengths.json': 'venv/bin/python -I paper/analysis/beir_lengths.py',
     'memory.json': 'venv/bin/python -I paper/analysis/memory.py',
     'contract_effects.json': 'venv/bin/python -I paper/analysis/contract_effects.py',
     'quality_extra.json': 'venv/bin/python -I paper/analysis/quality_extra.py',
@@ -327,6 +328,9 @@ def main():
         put('agent.repos.top5', f'{sum(sh[:5]) * 100:.0f}', 'load.py cache', 'share of calls in the 5 largest repositories, %')
         put('agent.repos.eff', f'{1 / sum(x * x for x in sh):.1f}', 'load.py cache', 'effective number of clusters, 1 / sum of squared shares')
     # ------------------------------------------------------------------ quality
+    BL = load('beir_lengths.json')
+    for ds in ('scifact', 'nfcorpus'):
+        put(f'beir.cut.{ds}', f"{BL[ds]['cut_180'] * 100:.0f}", 'beir_lengths.json', 'share of documents cut by the 180-token limit (ColBERTv2), %')
     QP = load('quality_primary.json')
     rows = []
     for ds, mk in (('scifact', 'colbertv2'), ('nfcorpus', 'colbertv2'), ('scifact', 'answersmall'), ('nfcorpus', 'answersmall')):
@@ -343,11 +347,14 @@ def main():
             put(k + '.p', f"{t['p_holm']:.4f}", 'quality_primary.json', 'Holm-adjusted one-sided p')
             put(k + '.F', f"{t['mean_b']:.4f}", 'quality_primary.json'); put(k + '.K', f"{t['mean_a']:.4f}", 'quality_primary.json')
             ok = t['no_material_loss'] and t['noninferior_holm_0.05']
-            cells_.append(f"{t['ci95'][0]:+.4f} / {t['p_holm']:.4f} {'\\cmark' if ok else '\\xmark'}")
+            cells_.append(f"{t['ci95'][0]:+.4f} & {t['p_holm']:.4f} & {'\\cmark' if ok else '\\xmark'}")
             base = t
+        # the kernel's nDCG@10 is the same on every CPU, so the five per-CPU results are one column
+        if len(set(cells_)) != 1:
+            sys.exit(f'primary test differs between CPUs for {ds} {mk}: {cells_}')
         mname = 'ColBERTv2' if mk == 'colbertv2' else 'AnswerAI-small'
         rows.append(f"{'SciFact' if ds == 'scifact' else 'NFCorpus'} & {mname} & {base['n']} & {base['mean_b']:.4f} & {base['mean_a']:.4f} & {base['mean_diff']:+.4f} "
-                    f"& {base['rel_diff'] * 100:+.2f}\\% & " + ' & '.join(cells_) + r' \\')
+                    f"& {base['rel_diff'] * 100:+.2f}\\% & " + cells_[0] + r' \\')
     open(os.path.join(TEX, 'primary.tex'), 'w').write('\n'.join(rows) + '\n')
     # effect decomposition at k = 100
     QX = load('quality_extra.json')

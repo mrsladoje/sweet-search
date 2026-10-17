@@ -87,7 +87,7 @@ def fig_ratios():
                   fontsize=7.5, color=INK, y=0.09)
     fig.legend(handles=handles, loc='lower center', ncol=6, frameon=False, bbox_to_anchor=(0.5, -0.02))
     fig.tight_layout(rect=(0, 0.1, 1, 1))
-    fig.savefig(os.path.join(FIG, 'ratios.pdf')); plt.close(fig)
+    fig.savefig(os.path.join(FIG, 'ratios.pdf'), bbox_inches='tight', pad_inches=0.02); plt.close(fig)
 
 
 def fig_sweep():
@@ -127,7 +127,7 @@ def fig_sweep():
             if i == len(plats) - 1:
                 ax.set_xlabel('doc tokens')
     fig.tight_layout()
-    fig.savefig(os.path.join(FIG, 'sweep.pdf')); plt.close(fig)
+    fig.savefig(os.path.join(FIG, 'sweep.pdf'), bbox_inches='tight', pad_inches=0.02); plt.close(fig)
 
 
 def fig_budget():
@@ -167,7 +167,7 @@ def fig_budget():
                 ax.spines[s].set_visible(False)
             if i == 0:
                 ds, mk = cell.split('|')
-                ax.set_title(f"{'SciFact' if ds == 'scifact' else 'NFCorpus'}, {'ColBERTv2' if mk == 'colbertv2' else 'AnswerAI-small'}", color=INK)
+                ax.set_title(f"{'SciFact' if ds == 'scifact' else 'NFCorpus'}\n{'ColBERTv2' if mk == 'colbertv2' else 'AnswerAI-small'}", color=INK)
             if j == 0:
                 ax.set_ylabel(f'{PNAME[p]}\nnDCG@10', color=INK)
             if i == len(plats) - 1:
@@ -175,11 +175,11 @@ def fig_budget():
     handles = [plt.Line2D([], [], marker=LIB[L][1], color=LIB[L][0], ms=4, label=LIB[L][2])
                for L in ('ours', 'numpy', 'torch', 'torch_bf16', 'maxsim_cpu', 'nextplaid', 'numkong')]
     handles[-1] = plt.Line2D([], [], marker=LIB['numkong'][1], color=LIB['numkong'][0], ms=4, label='NumKong (approx.), every input type')
-    handles.append(plt.Line2D([], [], marker='x', color=INK, ls='--', ms=4, label='float32 storage, constructed: F quality at the fastest float32 rival time'))
+    handles.append(plt.Line2D([], [], marker='x', color=INK, ls='--', ms=4, label='float32 storage (constructed)'))
     handles.append(plt.Line2D([], [], color=MUTED, ls=':', label='BM25 order (no reranking)'))
-    fig.legend(handles=handles, loc='lower center', ncol=4, frameon=False, bbox_to_anchor=(0.5, -0.005))
-    fig.tight_layout(rect=(0, 0.06, 1, 1))
-    fig.savefig(os.path.join(FIG, 'budget.pdf')); plt.close(fig)
+    fig.legend(handles=handles, loc='lower center', ncol=3, frameon=False, bbox_to_anchor=(0.5, -0.005))
+    fig.tight_layout(rect=(0, 0.075, 1, 1))
+    fig.savefig(os.path.join(FIG, 'budget.pdf'), bbox_inches='tight', pad_inches=0.02); plt.close(fig)
 
 
 def fig_conc():
@@ -217,7 +217,7 @@ def fig_conc():
     handles = [plt.Line2D([], [], marker=LIB[L][1], color=LIB[L][0], ms=4, label=LIB[L][2]) for L in groups]
     fig.legend(handles=handles, loc='lower center', ncol=6, frameon=False, bbox_to_anchor=(0.5, -0.01))
     fig.tight_layout(rect=(0, 0.08, 1, 1))
-    fig.savefig(os.path.join(FIG, 'conc.pdf')); plt.close(fig)
+    fig.savefig(os.path.join(FIG, 'conc.pdf'), bbox_inches='tight', pad_inches=0.02); plt.close(fig)
 
 
 if __name__ == '__main__':
