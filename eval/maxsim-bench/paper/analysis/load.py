@@ -1,4 +1,4 @@
-# venv/bin/python -I paper/analysis/load.py <platform> [...]     (intel amd arm m3max epyc, <type>-replica)
+# venv/bin/python -I paper/analysis/load.py <platform> [...]     (intel amd arm m3max epyc, <type>-replica, <type>-r2)
 #
 # Post-freeze analysis code (not frozen). Builds one cache per platform and tag from the
 # held-out result tree, with the loading rules of results_lib.py / summarize.py (per call:
@@ -19,6 +19,7 @@ import results_lib as rl  # noqa: E402
 HOME = os.path.expanduser('~')
 CLOUD = os.path.join(HOME, '.ss-eval/maxsim-cloud/s8')
 LOCAL = os.path.join(HOME, '.ss-eval/maxsim-local')
+R2 = os.path.join(HOME, '.ss-eval/maxsim-cloud/r2')
 CACHE = os.path.join(HOME, '.ss-eval/maxsim-analysis/cache')
 TAGS = ('ho-warm', 'ho-parked', 'ho-tiers')
 
@@ -28,6 +29,8 @@ def roots(platform):
         return sorted(glob.glob(os.path.join(CLOUD, f'{platform}-[0-9]*')), key=lambda x: int(x.rsplit('-', 1)[1]))
     if platform.endswith('-replica'):
         return [os.path.join(CLOUD, platform)]
+    if platform.endswith('-r2'):            # post-freeze BEIR rerun: <type>-r2a (k = 100 sets), <type>-r2b (k = 25 sets)
+        return sorted(glob.glob(os.path.join(R2, f'{platform}[ab]')))
     return [os.path.join(LOCAL, platform)]
 
 
