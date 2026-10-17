@@ -1,0 +1,3078 @@
+{
+ "arm": {
+  "agent": {
+   "nextplaid": {
+    "cores": 16,
+    "reps": 3,
+    "min_seconds": 3.0,
+    "runs": [
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 1,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       16
+      ],
+      "n": 22044,
+      "wall_ns": 3095670533.0,
+      "throughput": 7120.912824866173,
+      "throughput_range": [
+       6936.73180309227,
+       7181.705521174793
+      ],
+      "p50_ms": 0.1272385,
+      "p99_ms": 0.4107233699999999,
+      "p99_range": [
+       0.40877685999999874,
+       0.41712048999999973
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.000342
+     },
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 4,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       4
+      ],
+      "n": 30561,
+      "wall_ns": 3124181041.0,
+      "throughput": 9782.083560118499,
+      "throughput_range": [
+       9746.919968027703,
+       9861.68283936723
+      ],
+      "p50_ms": 0.334281,
+      "p99_ms": 1.4791100000000048,
+      "p99_range": [
+       1.4701926000000003,
+       1.5052526000000013
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.000266
+     },
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 16,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 45718,
+      "wall_ns": 3156796540.0,
+      "throughput": 14482.40310096133,
+      "throughput_range": [
+       14467.6989109186,
+       14505.429946700551
+      ],
+      "p50_ms": 0.9715655,
+      "p99_ms": 4.982550410000082,
+      "p99_range": [
+       4.969909360000015,
+       5.031129960000005
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.00021
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 1,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 22044,
+      "wall_ns": 3093454454.0,
+      "throughput": 7126.014081602509,
+      "throughput_range": [
+       7111.917639479584,
+       7187.337086598103
+      ],
+      "p50_ms": 0.127191,
+      "p99_ms": 0.41226528999999984,
+      "p99_range": [
+       0.4107167599999997,
+       0.4153116699999999
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 4,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 34068,
+      "wall_ns": 3140217153.0,
+      "throughput": 10848.931249054927,
+      "throughput_range": [
+       10815.189917858754,
+       10904.05798922197
+      ],
+      "p50_ms": 0.313449,
+      "p99_ms": 1.1875670700000014,
+      "p99_range": [
+       1.1823388400000001,
+       1.2423369600000047
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 16,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 36324,
+      "wall_ns": 3087290165.0,
+      "throughput": 11730.799689176727,
+      "throughput_range": [
+       11639.781965509634,
+       11765.657926099084
+      ],
+      "p50_ms": 0.759542,
+      "p99_ms": 9.306286139999937,
+      "p99_range": [
+       9.211159530000005,
+       9.825059000000026
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 987.365,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 4008,
+      "wall_ns": 4059361589.0,
+      "throughput": 987.3473727644321,
+      "throughput_range": [
+       987.3420064706906,
+       987.3474111943397
+      ],
+      "p50_ms": 0.7848005,
+      "p99_ms": 4.447820489999997,
+      "p99_range": [
+       4.411339709999999,
+       4.453695449999997
+      ],
+      "achieved_rate": 987.3473727644321,
+      "start_skew_ms_max": 0.00022
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 1974.731,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 5924,
+      "wall_ns": 2951518014.0,
+      "throughput": 2007.1027762326237,
+      "throughput_range": [
+       2007.0636253005898,
+       2007.1317089463269
+      ],
+      "p50_ms": 0.8100335,
+      "p99_ms": 7.67234544999999,
+      "p99_range": [
+       7.629879999999993,
+       7.727185489999961
+      ],
+      "achieved_rate": 2007.1027762326237,
+      "start_skew_ms_max": 0.000212
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 2962.096,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 8886,
+      "wall_ns": 2964932047.0,
+      "throughput": 2997.0332739973246,
+      "throughput_range": [
+       2996.9856597494213,
+       2997.050648191986
+      ],
+      "p50_ms": 0.84545,
+      "p99_ms": 10.912970699999962,
+      "p99_range": [
+       10.844903449999997,
+       11.01610949999999
+      ],
+      "achieved_rate": 2997.0332739973246,
+      "start_skew_ms_max": 0.000211
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 987.365,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 4008,
+      "wall_ns": 4059445843.0,
+      "throughput": 987.3268803206942,
+      "throughput_range": [
+       987.3228859814706,
+       987.3547199847702
+      ],
+      "p50_ms": 9.4740085,
+      "p99_ms": 18.93466896999999,
+      "p99_range": [
+       18.470481479999986,
+       19.65078542
+      ],
+      "achieved_rate": 987.3268803206942,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 1974.731,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 5924,
+      "wall_ns": 2956551700.0,
+      "throughput": 2003.6855773568918,
+      "throughput_range": [
+       1998.7698489313452,
+       2005.0487255524963
+      ],
+      "p50_ms": 23.2162175,
+      "p99_ms": 57.369172429999956,
+      "p99_range": [
+       38.514506329999996,
+       89.66951840999998
+      ],
+      "achieved_rate": 2003.6855773568918,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 2962.096,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 8886,
+      "wall_ns": 3202878432.0,
+      "throughput": 2774.379417969742,
+      "throughput_range": [
+       2766.1643425116863,
+       2781.1486564284455
+      ],
+      "p50_ms": 496.0622635,
+      "p99_ms": 940.13300715,
+      "p99_range": [
+       915.9851382999999,
+       970.5126204500001
+      ],
+      "achieved_rate": 2774.379417969742,
+      "start_skew_ms_max": 0.0
+     }
+    ]
+   },
+   "numkong_native_f16": {
+    "cores": 16,
+    "reps": 3,
+    "min_seconds": 3.0,
+    "runs": [
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 1,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       16
+      ],
+      "n": 56112,
+      "wall_ns": 3052709134.0,
+      "throughput": 18394.963376677613,
+      "throughput_range": [
+       18381.05025305041,
+       18763.117807596413
+      ],
+      "p50_ms": 0.0476805,
+      "p99_ms": 0.1433687399999999,
+      "p99_range": [
+       0.14179954999999977,
+       0.14497948999999993
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.000277
+     },
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 4,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       4
+      ],
+      "n": 78156,
+      "wall_ns": 3048661172.0,
+      "throughput": 25696.244753170056,
+      "throughput_range": [
+       25636.171286534824,
+       25711.42551487766
+      ],
+      "p50_ms": 0.1308385,
+      "p99_ms": 0.6277138499999998,
+      "p99_range": [
+       0.627688299999999,
+       0.6373183200000001
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.000239
+     },
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 16,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 140160,
+      "wall_ns": 3039718523.0,
+      "throughput": 46085.36713468444,
+      "throughput_range": [
+       45822.00586866641,
+       46239.88461231738
+      ],
+      "p50_ms": 0.3099365,
+      "p99_ms": 1.5439595100000034,
+      "p99_range": [
+       1.5292230799999837,
+       1.5489601999999947
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.000239
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 1,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 58116,
+      "wall_ns": 3029764019.0,
+      "throughput": 19197.766789552526,
+      "throughput_range": [
+       19181.69191908936,
+       19475.69883865057
+      ],
+      "p50_ms": 0.046096,
+      "p99_ms": 0.1389988999999999,
+      "p99_range": [
+       0.13660887999999943,
+       0.14066129999999957
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 4,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 90180,
+      "wall_ns": 3035611882.0,
+      "throughput": 29707.35505903518,
+      "throughput_range": [
+       29655.279035680436,
+       29873.39855897256
+      ],
+      "p50_ms": 0.116188,
+      "p99_ms": 0.42163426,
+      "p99_range": [
+       0.4209222800000011,
+       0.4240947999999997
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 16,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 97197,
+      "wall_ns": 3029706882.0,
+      "throughput": 32006.80990002727,
+      "throughput_range": [
+       31998.806861879795,
+       32122.909505936816
+      ],
+      "p50_ms": 0.36272,
+      "p99_ms": 2.537077039999998,
+      "p99_range": [
+       2.4347663199999987,
+       2.555016939999996
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 987.365,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 4008,
+      "wall_ns": 4058784165.0,
+      "throughput": 987.487837998895,
+      "throughput_range": [
+       987.4861015950802,
+       987.4899400848241
+      ],
+      "p50_ms": 0.2807595,
+      "p99_ms": 1.5079454199999995,
+      "p99_range": [
+       1.4711029799999993,
+       1.5960614399999768
+      ],
+      "achieved_rate": 987.487837998895,
+      "start_skew_ms_max": 0.000211
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 1974.731,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 5924,
+      "wall_ns": 2950056238.0,
+      "throughput": 2008.0973113977632,
+      "throughput_range": [
+       2008.036286636646,
+       2008.119398247931
+      ],
+      "p50_ms": 0.2796875,
+      "p99_ms": 1.9791585099999989,
+      "p99_range": [
+       1.9368743799999975,
+       1.986139629999991
+      ],
+      "achieved_rate": 2008.0973113977632,
+      "start_skew_ms_max": 0.000206
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 2962.096,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 8886,
+      "wall_ns": 2964377662.0,
+      "throughput": 2997.59376610766,
+      "throughput_range": [
+       2997.592915684425,
+       2997.5944426040146
+      ],
+      "p50_ms": 0.2826315,
+      "p99_ms": 2.139302399999981,
+      "p99_range": [
+       2.083183849999993,
+       2.197538699999992
+      ],
+      "achieved_rate": 2997.59376610766,
+      "start_skew_ms_max": 0.000229
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 987.365,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 4008,
+      "wall_ns": 4059414606.0,
+      "throughput": 987.3344777535149,
+      "throughput_range": [
+       987.3079793043308,
+       987.3351706903478
+      ],
+      "p50_ms": 8.999174,
+      "p99_ms": 19.664904689999997,
+      "p99_range": [
+       19.322260939999968,
+       19.703752509999994
+      ],
+      "achieved_rate": 987.3344777535149,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 1974.731,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 5924,
+      "wall_ns": 2951122164.0,
+      "throughput": 2007.3719997990568,
+      "throughput_range": [
+       2007.2534781221693,
+       2007.7018336629258
+      ],
+      "p50_ms": 10.156114,
+      "p99_ms": 22.397857949999988,
+      "p99_range": [
+       22.036960079999975,
+       23.076007029999992
+      ],
+      "achieved_rate": 2007.3719997990568,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 2962.096,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 8886,
+      "wall_ns": 3016484803.0,
+      "throughput": 2945.812951274464,
+      "throughput_range": [
+       2941.7328949389457,
+       2946.4766644817773
+      ],
+      "p50_ms": 274.556037,
+      "p99_ms": 590.0552154499999,
+      "p99_range": [
+       589.4836988999999,
+       616.98019815
+      ],
+      "achieved_rate": 2945.812951274464,
+      "start_skew_ms_max": 0.0
+     }
+    ]
+   },
+   "numpy_packed": {
+    "cores": 16,
+    "reps": 3,
+    "min_seconds": 3.0,
+    "runs": [
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 1,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       16
+      ],
+      "n": 26052,
+      "wall_ns": 3104972135.0,
+      "throughput": 8390.413461794238,
+      "throughput_range": [
+       8369.081476259495,
+       8403.290175696811
+      ],
+      "p50_ms": 0.1047,
+      "p99_ms": 0.4789904999999997,
+      "p99_range": [
+       0.4778292699999918,
+       0.48190123999999596
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.000251
+     },
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 4,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       4
+      ],
+      "n": 35070,
+      "wall_ns": 3131937707.0,
+      "throughput": 11274.710354267938,
+      "throughput_range": [
+       11197.540717881206,
+       11308.720999342722
+      ],
+      "p50_ms": 0.310183,
+      "p99_ms": 1.5997097999999972,
+      "p99_range": [
+       1.554827450000008,
+       1.617793649999996
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.00023
+     },
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 16,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 39957,
+      "wall_ns": 3140464925.0,
+      "throughput": 12723.275360255775,
+      "throughput_range": [
+       12633.19828325327,
+       12752.759981298263
+      ],
+      "p50_ms": 1.092395,
+      "p99_ms": 5.5151202000000215,
+      "p99_range": [
+       5.48127248,
+       5.557152830000016
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.000197
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 1,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 26052,
+      "wall_ns": 3041870723.0,
+      "throughput": 8564.466531406897,
+      "throughput_range": [
+       8559.213671807966,
+       8586.544545480601
+      ],
+      "p50_ms": 0.102896,
+      "p99_ms": 0.4730090999999968,
+      "p99_range": [
+       0.4723118899999948,
+       0.48031276999999845
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 4,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 24549,
+      "wall_ns": 3135368288.0,
+      "throughput": 7829.702205624911,
+      "throughput_range": [
+       7623.729629594866,
+       7982.461416628533
+      ],
+      "p50_ms": 0.106113,
+      "p99_ms": 9.998347229999998,
+      "p99_range": [
+       9.978262680000002,
+       10.675276840000087
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 16,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 24549,
+      "wall_ns": 3128348095.0,
+      "throughput": 7830.453188995027,
+      "throughput_range": [
+       7806.676002275251,
+       7890.477072442437
+      ],
+      "p50_ms": 0.108115,
+      "p99_ms": 41.75673823000003,
+      "p99_range": [
+       40.43598886000006,
+       42.249559640000015
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 987.365,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 4008,
+      "wall_ns": 4059471364.0,
+      "throughput": 987.3206732146318,
+      "throughput_range": [
+       987.3168703336161,
+       987.3276824515324
+      ],
+      "p50_ms": 0.9308035,
+      "p99_ms": 6.328057049999984,
+      "p99_range": [
+       6.25098588,
+       6.36921459999999
+      ],
+      "achieved_rate": 987.3206732146318,
+      "start_skew_ms_max": 0.000207
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 1974.731,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 5924,
+      "wall_ns": 2952382960.0,
+      "throughput": 2006.514764602218,
+      "throughput_range": [
+       2006.361796640957,
+       2006.564502868562
+      ],
+      "p50_ms": 0.973905,
+      "p99_ms": 12.662494069999054,
+      "p99_range": [
+       12.631226659999136,
+       12.72889851999905
+      ],
+      "achieved_rate": 2006.514764602218,
+      "start_skew_ms_max": 0.000207
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 2962.096,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 8886,
+      "wall_ns": 2965191539.0,
+      "throughput": 2996.7709954402376,
+      "throughput_range": [
+       2996.662404016129,
+       2996.814076028835
+      ],
+      "p50_ms": 1.032818,
+      "p99_ms": 19.861978549999833,
+      "p99_range": [
+       19.437974999999824,
+       19.97522444999997
+      ],
+      "achieved_rate": 2996.7709954402376,
+      "start_skew_ms_max": 0.000214
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 987.365,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 4008,
+      "wall_ns": 4073162381.0,
+      "throughput": 984.0020173750102,
+      "throughput_range": [
+       982.5417433153823,
+       987.2452383426839
+      ],
+      "p50_ms": 70.1908235,
+      "p99_ms": 506.52744769,
+      "p99_range": [
+       236.43771353999983,
+       507.51008986999994
+      ],
+      "achieved_rate": 984.0020173750102,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 1974.731,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 5924,
+      "wall_ns": 3264225971.0,
+      "throughput": 1814.8253376542968,
+      "throughput_range": [
+       1770.0535403458316,
+       1852.9237639862079
+      ],
+      "p50_ms": 664.030449,
+      "p99_ms": 1032.07662594,
+      "p99_range": [
+       1012.7723833,
+       1375.53962999
+      ],
+      "achieved_rate": 1814.8253376542968,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 2962.096,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 8886,
+      "wall_ns": 3568249707.0,
+      "throughput": 2490.2965682496724,
+      "throughput_range": [
+       2407.489141795223,
+       2873.60561072899
+      ],
+      "p50_ms": 795.5130235,
+      "p99_ms": 1520.8899006499998,
+      "p99_range": [
+       336.33516254999995,
+       1811.6908635
+      ],
+      "achieved_rate": 2490.2965682496724,
+      "start_skew_ms_max": 0.0
+     }
+    ]
+   },
+   "ours": {
+    "cores": 16,
+    "reps": 3,
+    "min_seconds": 3.0,
+    "runs": [
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 1,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       16
+      ],
+      "n": 44088,
+      "wall_ns": 3026111859.0,
+      "throughput": 14569.190451065875,
+      "throughput_range": [
+       14395.504914647026,
+       14664.420732089573
+      ],
+      "p50_ms": 0.0605135,
+      "p99_ms": 0.28534425999999896,
+      "p99_range": [
+       0.28228015999999967,
+       0.31687411999999965
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.000468
+     },
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 4,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       4
+      ],
+      "n": 52104,
+      "wall_ns": 3117706378.0,
+      "throughput": 16712.2857904998,
+      "throughput_range": [
+       16681.20482137877,
+       16721.001803355422
+      ],
+      "p50_ms": 0.2098405,
+      "p99_ms": 1.073522970000001,
+      "p99_range": [
+       1.067939290000002,
+       1.0814331800000014
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.000238
+     },
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 16,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 54112,
+      "wall_ns": 3133778498.0,
+      "throughput": 17267.333997771275,
+      "throughput_range": [
+       17192.29147456919,
+       17289.554568466516
+      ],
+      "p50_ms": 0.8043405,
+      "p99_ms": 4.16962318,
+      "p99_range": [
+       4.1533580699999995,
+       4.175803719999999
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.000192
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 1,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 44088,
+      "wall_ns": 3038766835.0,
+      "throughput": 14508.5169063325,
+      "throughput_range": [
+       14497.364991453656,
+       14517.15259004376
+      ],
+      "p50_ms": 0.060625,
+      "p99_ms": 0.2860502899999991,
+      "p99_range": [
+       0.28528535999999927,
+       0.291310789999999
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 4,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 33066,
+      "wall_ns": 3052627195.0,
+      "throughput": 10831.98107327351,
+      "throughput_range": [
+       10694.858588461411,
+       11234.750190376593
+      ],
+      "p50_ms": 0.14837,
+      "p99_ms": 3.3326852,
+      "p99_range": [
+       3.181280240000004,
+       3.706816639999999
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 16,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 26177,
+      "wall_ns": 3112818611.0,
+      "throughput": 8409.420294358424,
+      "throughput_range": [
+       8407.51435866506,
+       8515.32116786318
+      ],
+      "p50_ms": 1.378265,
+      "p99_ms": 8.251508399999992,
+      "p99_range": [
+       8.192794619999999,
+       8.436820489999999
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 987.365,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 4008,
+      "wall_ns": 4059179163.0,
+      "throughput": 987.3917457335943,
+      "throughput_range": [
+       987.3884509353035,
+       987.3935598888395
+      ],
+      "p50_ms": 0.705753,
+      "p99_ms": 4.517480129999998,
+      "p99_range": [
+       4.488671919999995,
+       4.739852839999998
+      ],
+      "achieved_rate": 987.3917457335943,
+      "start_skew_ms_max": 0.000211
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 1974.731,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 5924,
+      "wall_ns": 2951336153.0,
+      "throughput": 2007.2264536787245,
+      "throughput_range": [
+       2007.2046700653884,
+       2007.2361479807528
+      ],
+      "p50_ms": 0.717711,
+      "p99_ms": 7.337363879999997,
+      "p99_range": [
+       7.2415120399998365,
+       7.418155589999982
+      ],
+      "achieved_rate": 2007.2264536787245,
+      "start_skew_ms_max": 0.000206
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 2962.096,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 8886,
+      "wall_ns": 2964676355.0,
+      "throughput": 2997.29175665787,
+      "throughput_range": [
+       2997.284527004752,
+       2997.2923046206943
+      ],
+      "p50_ms": 0.7320115,
+      "p99_ms": 9.37564619999991,
+      "p99_range": [
+       9.046072349999994,
+       10.05181344999995
+      ],
+      "achieved_rate": 2997.29175665787,
+      "start_skew_ms_max": 0.000208
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 987.365,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 4008,
+      "wall_ns": 4059553972.0,
+      "throughput": 987.3005821931218,
+      "throughput_range": [
+       987.2893326677585,
+       987.4124554247483
+      ],
+      "p50_ms": 8.629,
+      "p99_ms": 20.631667479999987,
+      "p99_range": [
+       20.615510009999984,
+       21.265246899999998
+      ],
+      "achieved_rate": 987.3005821931218,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 1974.731,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 5924,
+      "wall_ns": 2952251967.0,
+      "throughput": 2006.6037947363318,
+      "throughput_range": [
+       2006.1778146155161,
+       2007.294395337427
+      ],
+      "p50_ms": 10.738022,
+      "p99_ms": 37.275488069999845,
+      "p99_range": [
+       32.91226597999996,
+       40.19591794999997
+      ],
+      "achieved_rate": 2006.6037947363318,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 2962.096,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 8886,
+      "wall_ns": 3031625947.0,
+      "throughput": 2931.100391456044,
+      "throughput_range": [
+       2860.2437629066953,
+       2996.892127756204
+      ],
+      "p50_ms": 261.8438395,
+      "p99_ms": 508.29184749999996,
+      "p99_range": [
+       258.79155019999996,
+       547.8125004499999
+      ],
+      "achieved_rate": 2931.100391456044,
+      "start_skew_ms_max": 0.0
+     }
+    ]
+   },
+   "torch_pad_flat": {
+    "cores": 16,
+    "reps": 3,
+    "min_seconds": 3.0,
+    "runs": [
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 1,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       16
+      ],
+      "n": 12024,
+      "wall_ns": 3271780164.0,
+      "throughput": 3675.063542563858,
+      "throughput_range": [
+       3574.5824881410817,
+       3683.172080762631
+      ],
+      "p50_ms": 0.248023,
+      "p99_ms": 0.8433336600000008,
+      "p99_range": [
+       0.8346374700000011,
+       0.9486743600000003
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.000353
+     },
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 4,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       4
+      ],
+      "n": 6012,
+      "wall_ns": 3394015759.0,
+      "throughput": 1771.353000957,
+      "throughput_range": [
+       1763.4429511803255,
+       1774.637087062535
+      ],
+      "p50_ms": 2.1395045,
+      "p99_ms": 4.597927920000012,
+      "p99_range": [
+       4.517435570000001,
+       5.127025690000005
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.000394
+     },
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 16,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 11399,
+      "wall_ns": 3516960826.0,
+      "throughput": 3248.659149636658,
+      "throughput_range": [
+       3241.1506877557695,
+       3292.6023470758305
+      ],
+      "p50_ms": 4.587104,
+      "p99_ms": 10.66162306,
+      "p99_range": [
+       10.596617200000027,
+       10.829114840000003
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.000254
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 1,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 8016,
+      "wall_ns": 3239801940.0,
+      "throughput": 2474.225322551662,
+      "throughput_range": [
+       2431.3104302798897,
+       2526.0299977992813
+      ],
+      "p50_ms": 0.376331,
+      "p99_ms": 0.96181015,
+      "p99_range": [
+       0.9249507500000013,
+       0.9769634500000008
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 4,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 14028,
+      "wall_ns": 3060693679.0,
+      "throughput": 4583.274731558003,
+      "throughput_range": [
+       4498.362702278569,
+       4603.670248210321
+      ],
+      "p50_ms": 0.7788065,
+      "p99_ms": 2.5677797899999955,
+      "p99_range": [
+       2.492093899999999,
+       2.6641188099999944
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 16,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 14028,
+      "wall_ns": 3139653341.0,
+      "throughput": 4468.009196050922,
+      "throughput_range": [
+       4434.13892005133,
+       4482.532133550695
+      ],
+      "p50_ms": 3.3815865,
+      "p99_ms": 7.9800443399999965,
+      "p99_range": [
+       7.922026299999986,
+       8.000842589999994
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 987.365,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 4008,
+      "wall_ns": 4062446520.0,
+      "throughput": 986.5976032590332,
+      "throughput_range": [
+       986.4134954065507,
+       986.7559973522797
+      ],
+      "p50_ms": 3.638325,
+      "p99_ms": 14.740756849999968,
+      "p99_range": [
+       14.718969679999995,
+       15.051290039999975
+      ],
+      "achieved_rate": 986.5976032590332,
+      "start_skew_ms_max": 0.00024
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 1974.731,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 5924,
+      "wall_ns": 2964397355.0,
+      "throughput": 1998.382568385472,
+      "throughput_range": [
+       1996.8948669097094,
+       1999.9774607536742
+      ],
+      "p50_ms": 6.0599285,
+      "p99_ms": 54.765429759999776,
+      "p99_range": [
+       51.392945959998876,
+       72.098277199998
+      ],
+      "achieved_rate": 1998.382568385472,
+      "start_skew_ms_max": 0.000206
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 2962.096,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 8886,
+      "wall_ns": 3013757144.0,
+      "throughput": 2948.4791160730633,
+      "throughput_range": [
+       2939.928866227549,
+       2954.7091566656227
+      ],
+      "p50_ms": 14.624704,
+      "p99_ms": 101.25002194999952,
+      "p99_range": [
+       97.32088394999943,
+       153.3922236999988
+      ],
+      "achieved_rate": 2948.4791160730633,
+      "start_skew_ms_max": 0.000216
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 987.365,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 4008,
+      "wall_ns": 4714091181.0,
+      "throughput": 850.2169020731125,
+      "throughput_range": [
+       848.6085447419138,
+       857.3335346481388
+      ],
+      "p50_ms": 1728.2276845,
+      "p99_ms": 2957.14989315,
+      "p99_range": [
+       2770.7133986199997,
+       2962.9150329699996
+      ],
+      "achieved_rate": 850.2169020731125,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 1974.731,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 5924,
+      "wall_ns": 4119075259.0,
+      "throughput": 1438.1868811589006,
+      "throughput_range": [
+       1436.093421189469,
+       1459.7295695537323
+      ],
+      "p50_ms": 1792.309098,
+      "p99_ms": 2551.34703977,
+      "p99_range": [
+       2418.76433126,
+       2576.8470229299996
+      ],
+      "achieved_rate": 1438.1868811589006,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 2962.096,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 8886,
+      "wall_ns": 4755898312.0,
+      "throughput": 1868.4167358202337,
+      "throughput_range": [
+       1854.5274333108728,
+       1872.4519304160444
+      ],
+      "p50_ms": 2191.4007795,
+      "p99_ms": 2652.0202764,
+      "p99_range": [
+       2643.7865545,
+       2696.14053705
+      ],
+      "achieved_rate": 1868.4167358202337,
+      "start_skew_ms_max": 0.0
+     }
+    ]
+   }
+  },
+  "gcsn": {
+   "nextplaid": {
+    "cores": 16,
+    "reps": 3,
+    "min_seconds": 3.0,
+    "runs": [
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 1,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       16
+      ],
+      "n": 33292,
+      "wall_ns": 3201815796.0,
+      "throughput": 10397.849883054298,
+      "throughput_range": [
+       10380.956799168083,
+       10854.938249199902
+      ],
+      "p50_ms": 0.093415,
+      "p99_ms": 0.16988888999999993,
+      "p99_range": [
+       0.16430079999999994,
+       0.1701626499999997
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.000415
+     },
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 4,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       4
+      ],
+      "n": 57072,
+      "wall_ns": 3052144290.0,
+      "throughput": 18755.73737602114,
+      "throughput_range": [
+       18698.984902840224,
+       18766.209318587065
+      ],
+      "p50_ms": 0.191423,
+      "p99_ms": 0.5037750200000001,
+      "p99_range": [
+       0.49805683999999906,
+       0.5140584600000001
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.000281
+     },
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 16,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 101656,
+      "wall_ns": 3064039671.0,
+      "throughput": 33177.1161327108,
+      "throughput_range": [
+       33174.44411957853,
+       33211.343293512604
+      ],
+      "p50_ms": 0.44373,
+      "p99_ms": 1.0244944499999997,
+      "p99_range": [
+       1.0234659999999995,
+       1.0257464799999965
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.000214
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 1,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 33292,
+      "wall_ns": 3096124642.0,
+      "throughput": 10752.797076830346,
+      "throughput_range": [
+       10682.174005494597,
+       10758.487500358166
+      ],
+      "p50_ms": 0.0898105,
+      "p99_ms": 0.17010184999999978,
+      "p99_range": [
+       0.16602785999999947,
+       0.17066865999999975
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 4,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 59450,
+      "wall_ns": 3042745577.0,
+      "throughput": 19620.90683208831,
+      "throughput_range": [
+       19538.275053090318,
+       19703.93539108732
+      ],
+      "p50_ms": 0.185944,
+      "p99_ms": 0.4985714700000004,
+      "p99_range": [
+       0.4953738800000007,
+       0.5087688200000003
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 16,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 68516,
+      "wall_ns": 3057767635.0,
+      "throughput": 22392.103975717946,
+      "throughput_range": [
+       22211.62890946748,
+       22426.663853424616
+      ],
+      "p50_ms": 0.449481,
+      "p99_ms": 4.201605100000046,
+      "p99_range": [
+       4.199954600000016,
+       4.330922870000009
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 859.103,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 4756,
+      "wall_ns": 5470263314.0,
+      "throughput": 869.4279830786222,
+      "throughput_range": [
+       869.4258183602227,
+       869.4303237521224
+      ],
+      "p50_ms": 0.3691055,
+      "p99_ms": 0.8388037499999993,
+      "p99_range": [
+       0.8354512499999998,
+       0.8391055499999996
+      ],
+      "achieved_rate": 869.4279830786222,
+      "start_skew_ms_max": 0.000225
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 1718.206,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 5154,
+      "wall_ns": 2954327434.0,
+      "throughput": 1744.559503014113,
+      "throughput_range": [
+       1744.5443518435068,
+       1744.5623103025428
+      ],
+      "p50_ms": 0.3710365,
+      "p99_ms": 0.8980425500000004,
+      "p99_range": [
+       0.8948466500000042,
+       0.9001847700000011
+      ],
+      "achieved_rate": 1744.559503014113,
+      "start_skew_ms_max": 0.000231
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 2577.309,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 7731,
+      "wall_ns": 2957316285.0,
+      "throughput": 2614.1945111562527,
+      "throughput_range": [
+       2614.1409557267075,
+       2614.195137894881
+      ],
+      "p50_ms": 0.375433,
+      "p99_ms": 0.8993682999999998,
+      "p99_range": [
+       0.8970791999999997,
+       0.9017347999999995
+      ],
+      "achieved_rate": 2614.1945111562527,
+      "start_skew_ms_max": 0.000217
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 859.103,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 4756,
+      "wall_ns": 5470891350.0,
+      "throughput": 869.3281762943437,
+      "throughput_range": [
+       869.3276187123303,
+       869.3418198769377
+      ],
+      "p50_ms": 9.205468,
+      "p99_ms": 18.452171449999984,
+      "p99_range": [
+       17.623821049999997,
+       18.497912399999976
+      ],
+      "achieved_rate": 869.3281762943437,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 1718.206,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 5154,
+      "wall_ns": 2955208019.0,
+      "throughput": 1744.039663828484,
+      "throughput_range": [
+       1743.9356594042579,
+       1744.1297566915844
+      ],
+      "p50_ms": 10.9630665,
+      "p99_ms": 23.011869730000015,
+      "p99_range": [
+       22.499713460000017,
+       23.584088460000043
+      ],
+      "achieved_rate": 1744.039663828484,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 2577.309,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 7731,
+      "wall_ns": 3029959735.0,
+      "throughput": 2551.519055087377,
+      "throughput_range": [
+       2549.8507051528018,
+       2554.76227614825
+      ],
+      "p50_ms": 311.949724,
+      "p99_ms": 616.9650667000001,
+      "p99_range": [
+       606.4206446000001,
+       640.4983748
+      ],
+      "achieved_rate": 2551.519055087377,
+      "start_skew_ms_max": 0.0
+     }
+    ]
+   },
+   "numkong_native_f16": {
+    "cores": 16,
+    "reps": 3,
+    "min_seconds": 3.0,
+    "runs": [
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 1,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       16
+      ],
+      "n": 95120,
+      "wall_ns": 3019422560.0,
+      "throughput": 31502.71222720148,
+      "throughput_range": [
+       31395.324124529165,
+       31577.102960753728
+      ],
+      "p50_ms": 0.029884,
+      "p99_ms": 0.078904,
+      "p99_range": [
+       0.07768728999999998,
+       0.07906062
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.000369
+     },
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 4,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       4
+      ],
+      "n": 129009,
+      "wall_ns": 3033420294.0,
+      "throughput": 42567.50747067705,
+      "throughput_range": [
+       42529.220317796164,
+       42769.708091684704
+      ],
+      "p50_ms": 0.086693,
+      "p99_ms": 0.205418,
+      "p99_range": [
+       0.20527083999999995,
+       0.20605791999999992
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.000284
+     },
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 16,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 305413,
+      "wall_ns": 3021533676.0,
+      "throughput": 101121.01719041284,
+      "throughput_range": [
+       101078.80061900063,
+       101140.64072847087
+      ],
+      "p50_ms": 0.146952,
+      "p99_ms": 0.3546766800000001,
+      "p99_range": [
+       0.35450946999999955,
+       0.35509004000000016
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.000225
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 1,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 95120,
+      "wall_ns": 3026890683.0,
+      "throughput": 31467.607441737433,
+      "throughput_range": [
+       31424.986879844975,
+       31942.06361619105
+      ],
+      "p50_ms": 0.030071,
+      "p99_ms": 0.07942425999999966,
+      "p99_range": [
+       0.07234459999999998,
+       0.07969995999999996
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 4,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 145652,
+      "wall_ns": 3019796893.0,
+      "throughput": 48183.77296566787,
+      "throughput_range": [
+       48035.680921538056,
+       48475.898039951484
+      ],
+      "p50_ms": 0.076293,
+      "p99_ms": 0.20684883999999984,
+      "p99_range": [
+       0.20570079999999888,
+       0.20843444999999977
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 16,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 166158,
+      "wall_ns": 3032970125.0,
+      "throughput": 54920.188435483906,
+      "throughput_range": [
+       54686.658016455076,
+       55070.181992895
+      ],
+      "p50_ms": 0.243699,
+      "p99_ms": 1.1500991600000001,
+      "p99_range": [
+       1.1295582999999993,
+       1.1528163000000007
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 859.103,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 4756,
+      "wall_ns": 5470037694.0,
+      "throughput": 869.4638439542716,
+      "throughput_range": [
+       869.4622690780744,
+       869.4646215395766
+      ],
+      "p50_ms": 0.136221,
+      "p99_ms": 0.3148554499999992,
+      "p99_range": [
+       0.3126516499999998,
+       0.3150646999999999
+      ],
+      "achieved_rate": 869.4638439542716,
+      "start_skew_ms_max": 0.000236
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 1718.206,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 5154,
+      "wall_ns": 2954150895.0,
+      "throughput": 1744.6637572655204,
+      "throughput_range": [
+       1744.6608403935675,
+       1744.6666871400403
+      ],
+      "p50_ms": 0.13618,
+      "p99_ms": 0.31824008000000065,
+      "p99_range": [
+       0.31772385000000025,
+       0.3195241200000001
+      ],
+      "achieved_rate": 1744.6637572655204,
+      "start_skew_ms_max": 0.00023
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 2577.309,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 7731,
+      "wall_ns": 2957020101.0,
+      "throughput": 2614.4563567172045,
+      "throughput_range": [
+       2614.4557059812155,
+       2614.4565972066735
+      ],
+      "p50_ms": 0.136058,
+      "p99_ms": 0.3151011999999999,
+      "p99_range": [
+       0.3140419999999998,
+       0.3176052
+      ],
+      "achieved_rate": 2614.4563567172045,
+      "start_skew_ms_max": 0.000245
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 859.103,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 4756,
+      "wall_ns": 5470963570.0,
+      "throughput": 869.3167006410902,
+      "throughput_range": [
+       869.3134477250957,
+       869.3297540217333
+      ],
+      "p50_ms": 8.6767575,
+      "p99_ms": 20.92333525,
+      "p99_range": [
+       20.401301899999986,
+       21.054461599999996
+      ],
+      "achieved_rate": 869.3167006410902,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 1718.206,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 5154,
+      "wall_ns": 2955142897.0,
+      "throughput": 1744.0780969449004,
+      "throughput_range": [
+       1744.0764822029332,
+       1744.1007337465626
+      ],
+      "p50_ms": 8.701103,
+      "p99_ms": 22.096132520000037,
+      "p99_range": [
+       21.338315890000004,
+       22.191564800000027
+      ],
+      "achieved_rate": 1744.0780969449004,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 2577.309,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 7731,
+      "wall_ns": 2959636812.0,
+      "throughput": 2612.1448309651582,
+      "throughput_range": [
+       2611.0067537166638,
+       2613.6722047010057
+      ],
+      "p50_ms": 17.861496,
+      "p99_ms": 50.07994719999999,
+      "p99_range": [
+       44.659404599999995,
+       78.24990469999999
+      ],
+      "achieved_rate": 2612.1448309651582,
+      "start_skew_ms_max": 0.0
+     }
+    ]
+   },
+   "numpy_packed": {
+    "cores": 16,
+    "reps": 3,
+    "min_seconds": 3.0,
+    "runs": [
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 1,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       16
+      ],
+      "n": 47560,
+      "wall_ns": 3145169283.0,
+      "throughput": 15113.671024061428,
+      "throughput_range": [
+       15028.851219846005,
+       15121.602597693944
+      ],
+      "p50_ms": 0.0645995,
+      "p99_ms": 0.11933818999999977,
+      "p99_range": [
+       0.11830991999999996,
+       0.11946109000000002
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.00053
+     },
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 4,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       4
+      ],
+      "n": 78475,
+      "wall_ns": 3083803034.0,
+      "throughput": 25447.474801336484,
+      "throughput_range": [
+       25435.24678424622,
+       25698.208334071347
+      ],
+      "p50_ms": 0.144916,
+      "p99_ms": 0.34282345999999964,
+      "p99_range": [
+       0.34126023999999994,
+       0.34342901999999986
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.000279
+     },
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 16,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 93481,
+      "wall_ns": 3070752663.0,
+      "throughput": 30445.483667396347,
+      "throughput_range": [
+       30442.048011992556,
+       30619.88904456251
+      ],
+      "p50_ms": 0.480304,
+      "p99_ms": 1.2117689999999999,
+      "p99_range": [
+       1.2112745999999974,
+       1.2192856800000014
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.000234
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 1,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 47560,
+      "wall_ns": 3110433404.0,
+      "throughput": 15290.473648732715,
+      "throughput_range": [
+       15288.595340314781,
+       15305.134845032937
+      ],
+      "p50_ms": 0.063789,
+      "p99_ms": 0.11612635999999964,
+      "p99_range": [
+       0.11600641999999976,
+       0.11706572999999942
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 4,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 43399,
+      "wall_ns": 3095791294.0,
+      "throughput": 14018.709880124108,
+      "throughput_range": [
+       13910.844908730225,
+       14073.645462723425
+      ],
+      "p50_ms": 0.06508,
+      "p99_ms": 6.299639479997932,
+      "p99_range": [
+       6.157565699999995,
+       6.899236899999802
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 16,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 40879,
+      "wall_ns": 3090492392.0,
+      "throughput": 13227.34205909024,
+      "throughput_range": [
+       12991.29680286543,
+       13443.219095148195
+      ],
+      "p50_ms": 0.065898,
+      "p99_ms": 32.03969626,
+      "p99_range": [
+       28.887077699999953,
+       33.13386306000001
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 859.103,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 4756,
+      "wall_ns": 5470304137.0,
+      "throughput": 869.4214948363482,
+      "throughput_range": [
+       869.4172749799217,
+       869.4244352983545
+      ],
+      "p50_ms": 0.408375,
+      "p99_ms": 1.0080478499999992,
+      "p99_range": [
+       0.9993438499999975,
+       1.0516500499999997
+      ],
+      "achieved_rate": 869.4214948363482,
+      "start_skew_ms_max": 0.000237
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 1718.206,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 5154,
+      "wall_ns": 2954374403.0,
+      "throughput": 1744.5317677970688,
+      "throughput_range": [
+       1744.5290143414522,
+       1744.5412599930228
+      ],
+      "p50_ms": 0.4109035,
+      "p99_ms": 1.0537976700000002,
+      "p99_range": [
+       1.0503821900000014,
+       1.0555575000000015
+      ],
+      "achieved_rate": 1744.5317677970688,
+      "start_skew_ms_max": 0.000256
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 2577.309,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 7731,
+      "wall_ns": 2957458617.0,
+      "throughput": 2614.0686992409064,
+      "throughput_range": [
+       2614.0680089228395,
+       2614.0722975628782
+      ],
+      "p50_ms": 0.416258,
+      "p99_ms": 1.0807918999999995,
+      "p99_range": [
+       1.0720530999999993,
+       1.0825294999999997
+      ],
+      "achieved_rate": 2614.0686992409064,
+      "start_skew_ms_max": 0.000219
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 859.103,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 4756,
+      "wall_ns": 5471082363.0,
+      "throughput": 869.2978252647081,
+      "throughput_range": [
+       869.2920619022015,
+       869.3008881893927
+      ],
+      "p50_ms": 4.6599815,
+      "p99_ms": 156.76016874999985,
+      "p99_range": [
+       60.07094084999997,
+       198.52863734999994
+      ],
+      "achieved_rate": 869.2978252647081,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 1718.206,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 5154,
+      "wall_ns": 2956406019.0,
+      "throughput": 1743.3329410360668,
+      "throughput_range": [
+       1721.6182890040159,
+       1743.6306038414236
+      ],
+      "p50_ms": 141.5224985,
+      "p99_ms": 425.21474536,
+      "p99_range": [
+       6.5528041,
+       442.1313163700002
+      ],
+      "achieved_rate": 1743.3329410360668,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 2577.309,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 7731,
+      "wall_ns": 3057622563.0,
+      "throughput": 2528.4350310440855,
+      "throughput_range": [
+       2438.3824300331953,
+       2613.4904969168592
+      ],
+      "p50_ms": 204.831568,
+      "p99_ms": 522.2366325999999,
+      "p99_range": [
+       57.0363081,
+       1023.5139595
+      ],
+      "achieved_rate": 2528.4350310440855,
+      "start_skew_ms_max": 0.0
+     }
+    ]
+   },
+   "ours": {
+    "cores": 16,
+    "reps": 3,
+    "min_seconds": 3.0,
+    "runs": [
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 1,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       16
+      ],
+      "n": 87986,
+      "wall_ns": 3011943059.0,
+      "throughput": 29305.727071529764,
+      "throughput_range": [
+       29212.37164065524,
+       29495.32627845542
+      ],
+      "p50_ms": 0.031931,
+      "p99_ms": 0.07298979999999981,
+      "p99_range": [
+       0.07216494999999992,
+       0.07359091999999992
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.000707
+     },
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 4,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       4
+      ],
+      "n": 120685,
+      "wall_ns": 3047488116.0,
+      "throughput": 39515.31682275641,
+      "throughput_range": [
+       39406.224217741954,
+       39651.45317021676
+      ],
+      "p50_ms": 0.092765,
+      "p99_ms": 0.2398813200000001,
+      "p99_range": [
+       0.23863280000000053,
+       0.24432310999999998
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.000372
+     },
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 16,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 128853,
+      "wall_ns": 3052302733.0,
+      "throughput": 42183.30675958189,
+      "throughput_range": [
+       42159.75772728213,
+       42263.828749780834
+      ],
+      "p50_ms": 0.348207,
+      "p99_ms": 0.9044188799999998,
+      "p99_range": [
+       0.9035357800000001,
+       0.9067670399999992
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.000228
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 1,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 87986,
+      "wall_ns": 3021675935.0,
+      "throughput": 29126.03086994212,
+      "throughput_range": [
+       29118.27803268387,
+       29412.939002041683
+      ],
+      "p50_ms": 0.031945,
+      "p99_ms": 0.07114742999999982,
+      "p99_range": [
+       0.0710126999999999,
+       0.07219989999999997
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 4,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 67178,
+      "wall_ns": 3030129648.0,
+      "throughput": 22098.056177241702,
+      "throughput_range": [
+       21118.49209326428,
+       25701.870562338394
+      ],
+      "p50_ms": 0.0517365,
+      "p99_ms": 2.7140486399999646,
+      "p99_range": [
+       2.430552649999986,
+       3.034207900000002
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 16,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 53354,
+      "wall_ns": 3066568681.0,
+      "throughput": 17499.56174182064,
+      "throughput_range": [
+       17237.186363273468,
+       17544.038825328367
+      ],
+      "p50_ms": 0.666449,
+      "p99_ms": 4.32981464,
+      "p99_range": [
+       4.24683866,
+       4.421751159999972
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 859.103,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 4756,
+      "wall_ns": 5470202458.0,
+      "throughput": 869.4376554645612,
+      "throughput_range": [
+       869.4375526299584,
+       869.4380559952396
+      ],
+      "p50_ms": 0.3033915,
+      "p99_ms": 0.791492599999999,
+      "p99_range": [
+       0.787496349999999,
+       0.796600449999999
+      ],
+      "achieved_rate": 869.4376554645612,
+      "start_skew_ms_max": 0.000235
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 1718.206,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 5154,
+      "wall_ns": 2954242509.0,
+      "throughput": 1744.6096535062754,
+      "throughput_range": [
+       1744.6072033434114,
+       1744.6136987408154
+      ],
+      "p50_ms": 0.305001,
+      "p99_ms": 0.8027723100000004,
+      "p99_range": [
+       0.8020420700000002,
+       0.8882124900000007
+      ],
+      "achieved_rate": 1744.6096535062754,
+      "start_skew_ms_max": 0.00022
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 2577.309,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 7731,
+      "wall_ns": 2957187330.0,
+      "throughput": 2614.3085091602907,
+      "throughput_range": [
+       2614.2674614845005,
+       2614.3092579528743
+      ],
+      "p50_ms": 0.305494,
+      "p99_ms": 0.8183526,
+      "p99_range": [
+       0.8133625,
+       0.9789074999999998
+      ],
+      "achieved_rate": 2614.3085091602907,
+      "start_skew_ms_max": 0.000211
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 859.103,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 4756,
+      "wall_ns": 5470749906.0,
+      "throughput": 869.3506524185827,
+      "throughput_range": [
+       869.3418894776113,
+       869.3561082708476
+      ],
+      "p50_ms": 8.0310255,
+      "p99_ms": 20.314124499999995,
+      "p99_range": [
+       19.800999849999993,
+       20.360211899999996
+      ],
+      "achieved_rate": 869.3506524185827,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 1718.206,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 5154,
+      "wall_ns": 2955394193.0,
+      "throughput": 1743.9297986737297,
+      "throughput_range": [
+       1743.904794237492,
+       1744.0065796082765
+      ],
+      "p50_ms": 8.2783395,
+      "p99_ms": 24.726743050000035,
+      "p99_range": [
+       23.89137757000003,
+       25.65758419000001
+      ],
+      "achieved_rate": 1743.9297986737297,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 2577.309,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 7731,
+      "wall_ns": 2958037539.0,
+      "throughput": 2613.5570959026963,
+      "throughput_range": [
+       2613.235891942556,
+       2613.7576793775265
+      ],
+      "p50_ms": 15.147048,
+      "p99_ms": 48.774470199999975,
+      "p99_range": [
+       34.8850883,
+       51.82957059999998
+      ],
+      "achieved_rate": 2613.5570959026963,
+      "start_skew_ms_max": 0.0
+     }
+    ]
+   },
+   "torch_pad_flat": {
+    "cores": 16,
+    "reps": 3,
+    "min_seconds": 3.0,
+    "runs": [
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 1,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       16
+      ],
+      "n": 14268,
+      "wall_ns": 3428521013.0,
+      "throughput": 4161.561193849973,
+      "throughput_range": [
+       4113.490706959813,
+       4200.605456687529
+      ],
+      "p50_ms": 0.2617945,
+      "p99_ms": 0.45930932999999946,
+      "p99_range": [
+       0.42275115999999996,
+       0.51813071
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.000329
+     },
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 4,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       4
+      ],
+      "n": 7134,
+      "wall_ns": 3640824300.0,
+      "throughput": 1959.446381414231,
+      "throughput_range": [
+       1946.8772077716142,
+       1961.8576839098978
+      ],
+      "p50_ms": 2.055256,
+      "p99_ms": 3.5850940700000025,
+      "p99_range": [
+       3.5398204200000003,
+       3.6868132600000005
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.000392
+     },
+     {
+      "type": "closed",
+      "executor": "procs",
+      "callers": 16,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 12482,
+      "wall_ns": 3476717491.0,
+      "throughput": 3590.7432894149983,
+      "throughput_range": [
+       3588.056604488793,
+       3603.3992203083662
+      ],
+      "p50_ms": 4.31739,
+      "p99_ms": 6.560872960000004,
+      "p99_range": [
+       6.526283050000001,
+       7.236271639999998
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.000308
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 1,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 9512,
+      "wall_ns": 3691808376.0,
+      "throughput": 2576.5150926674205,
+      "throughput_range": [
+       2548.974325759183,
+       2604.6323447588547
+      ],
+      "p50_ms": 0.395059,
+      "p99_ms": 0.630742999999999,
+      "p99_range": [
+       0.6293169399999996,
+       0.6438307599999997
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 4,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 16646,
+      "wall_ns": 3124042357.0,
+      "throughput": 5328.352851139016,
+      "throughput_range": [
+       5287.858184967551,
+       5369.877481935412
+      ],
+      "p50_ms": 0.7257925,
+      "p99_ms": 1.3393180499999997,
+      "p99_range": [
+       1.3172639499999992,
+       1.3400670499999998
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "closed",
+      "executor": "threads",
+      "callers": 16,
+      "rate": null,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 16646,
+      "wall_ns": 3261942296.0,
+      "throughput": 5103.0945643681,
+      "throughput_range": [
+       5060.135527914659,
+       5112.7777301076285
+      ],
+      "p50_ms": 3.068351,
+      "p99_ms": 5.114443349999997,
+      "p99_range": [
+       5.097295649999996,
+       5.3278179499999965
+      ],
+      "achieved_rate": null,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 859.103,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 4756,
+      "wall_ns": 5473389152.0,
+      "throughput": 868.9314550678599,
+      "throughput_range": [
+       868.8719735563908,
+       869.0019368627981
+      ],
+      "p50_ms": 3.075869,
+      "p99_ms": 9.394052049999999,
+      "p99_range": [
+       9.206264699999995,
+       9.64052674999999
+      ],
+      "achieved_rate": 868.9314550678599,
+      "start_skew_ms_max": 0.000302
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 1718.206,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 5154,
+      "wall_ns": 2962836359.0,
+      "throughput": 1739.5493289205986,
+      "throughput_range": [
+       1737.768667524227,
+       1739.6235690934166
+      ],
+      "p50_ms": 4.24849,
+      "p99_ms": 16.272334270000027,
+      "p99_range": [
+       16.153127290000022,
+       16.703066890000017
+      ],
+      "achieved_rate": 1739.5493289205986,
+      "start_skew_ms_max": 0.000256
+     },
+     {
+      "type": "open",
+      "executor": "procs",
+      "callers": 16,
+      "rate": 2577.309,
+      "reps": 3,
+      "effective_threads": [
+       1
+      ],
+      "n": 7731,
+      "wall_ns": 2970732671.0,
+      "throughput": 2602.3883183664625,
+      "throughput_range": [
+       2595.7057091969914,
+       2603.027091753783
+      ],
+      "p50_ms": 6.531606,
+      "p99_ms": 31.902152399999984,
+      "p99_range": [
+       26.109203799999996,
+       32.574079
+      ],
+      "achieved_rate": 2602.3883183664625,
+      "start_skew_ms_max": 0.00022
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 859.103,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 4756,
+      "wall_ns": 6123532826.0,
+      "throughput": 776.6758397711903,
+      "throughput_range": [
+       775.5471811864394,
+       777.3196197028287
+      ],
+      "p50_ms": 2050.121058,
+      "p99_ms": 3704.5836378999998,
+      "p99_range": [
+       3661.0280436999997,
+       3731.3557538499995
+      ],
+      "achieved_rate": 776.6758397711903,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 1718.206,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 5154,
+      "wall_ns": 3821862443.0,
+      "throughput": 1348.5571699316129,
+      "throughput_range": [
+       1346.6769639882627,
+       1362.2879634698882
+      ],
+      "p50_ms": 1608.454919,
+      "p99_ms": 2467.19901136,
+      "p99_range": [
+       2364.2610240600006,
+       2498.63510402
+      ],
+      "achieved_rate": 1348.5571699316129,
+      "start_skew_ms_max": 0.0
+     },
+     {
+      "type": "open",
+      "executor": "threads",
+      "callers": 16,
+      "rate": 2577.309,
+      "reps": 3,
+      "effective_threads": [
+       0
+      ],
+      "n": 7731,
+      "wall_ns": 4338850244.0,
+      "throughput": 1781.8084435365915,
+      "throughput_range": [
+       1779.0509796626575,
+       1783.2930194276805
+      ],
+      "p50_ms": 1975.508778,
+      "p99_ms": 2639.1958268,
+      "p99_range": [
+       2637.0720999,
+       2661.8732401999996
+      ],
+      "achieved_rate": 1781.8084435365915,
+      "start_skew_ms_max": 0.0
+     }
+    ]
+   }
+  }
+ }
+}

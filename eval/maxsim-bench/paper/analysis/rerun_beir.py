@@ -66,7 +66,7 @@ def bit_equal(p):
                     ok = np.isfinite(x) & np.isfinite(y)
                     if ok.any():
                         a['maxabs'] = max(a['maxabs'], float(np.max(np.abs(x[ok] - y[ok]))))
-    return {k: dict(v, bit_equal_share=v['equal'] / max(v['scores'], 1)) for k, v in out.items()}
+    return {k: dict(v, bit_equal_share=v['equal'] / v['scores']) for k, v in out.items() if v['files']}
 
 
 def main():
@@ -82,8 +82,12 @@ def main():
                 continue
             res[p][grp] = dict(sets=sets, **compare(workload_rows(w0, sets, 'beir', p, fixed=FIXED), workload_rows(w1, sets, 'beir', p, fixed=FIXED)))
             g = res[p][grp]
+            # the kernel's own time on the rerun instance against the first one (geometric mean over the calls)
+            o0 = np.concatenate([w0[s]['arms']['ours']['ms'] for s in sets]); o1 = np.concatenate([w1[s]['arms']['ours']['ms'] for s in sets])
+            g['ours_rerun_over_first'] = float(np.exp(np.mean(np.log(o1 / o0))))
             print(p, grp, len(sets), 'sets;', len(g['configs']), 'configurations; |rel diff| median',
-                  f"{g['abs_rel_diff_median']:.3f} max {g['abs_rel_diff_max']:.3f};", len(g['side_changes']), 'rows change sides')
+                  f"{g['abs_rel_diff_median']:.3f} max {g['abs_rel_diff_max']:.3f};", len(g['side_changes']), 'rows and', len(g['config_side_changes']),
+                  'configurations change sides; kernel time rerun / first', f"{g['ours_rerun_over_first']:.3f}")
         res[p]['scores'] = bit_equal(p)
         bad = {k: round(v['bit_equal_share'], 4) for k, v in res[p]['scores'].items() if v['bit_equal_share'] < 1}
         print(p, 'scores:', 'all bit-equal' if not bad else bad)

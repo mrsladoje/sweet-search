@@ -1,0 +1,2192 @@
+{
+ "intel": {
+  "k100": {
+   "sets": [
+    "beir-nfcorpus-answersmall-k100",
+    "beir-nfcorpus-colbertv2-k100",
+    "beir-scifact-answersmall-k100",
+    "beir-scifact-colbertv2-k100"
+   ],
+   "rows": [
+    {
+     "label": "sweet, production path (Node)",
+     "arm0": "node-production",
+     "arm1": "node-production",
+     "first": 1.0632005912131863,
+     "rerun": 1.06018278775692,
+     "rerun_lo": 1.0573881284261128,
+     "rerun_hi": 1.0630650495519594,
+     "rel_diff": -0.0028384140125643498,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "NumPy, f32",
+     "arm0": "numpy_packed@t8",
+     "arm1": "numpy_packed@t8",
+     "first": 1.530627980308698,
+     "rerun": 1.5938721643725962,
+     "rerun_lo": 1.5893490241480872,
+     "rerun_hi": 1.5984948149701526,
+     "rel_diff": 0.041319108808623106,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "PyTorch, f32",
+     "arm0": "torch_pad_flat",
+     "arm1": "torch_pad_flat",
+     "first": 0.5137427589269634,
+     "rerun": 0.5279009181081429,
+     "rerun_lo": 0.5260520111886611,
+     "rerun_hi": 0.5297776585680906,
+     "rel_diff": 0.02755884912276163,
+     "side_change": false,
+     "faster_rule": [
+      true,
+      true
+     ]
+    },
+    {
+     "label": "PyTorch, bf16",
+     "arm0": "torch_pad_bmm_bf16",
+     "arm1": "torch_pad_bmm_bf16",
+     "first": 0.5904076843411872,
+     "rerun": 0.564068531406401,
+     "rerun_lo": 0.561866003830366,
+     "rerun_hi": 0.5662910685346073,
+     "rel_diff": -0.04461180576295687,
+     "side_change": false,
+     "faster_rule": [
+      true,
+      true
+     ]
+    },
+    {
+     "label": "maxsim-cpu, f32",
+     "arm0": "maxsim_cpu_variable",
+     "arm1": "maxsim_cpu_variable",
+     "first": 1.3419006781367984,
+     "rerun": 1.2983054473990379,
+     "rerun_lo": 1.2949008109856843,
+     "rerun_hi": 1.30176183037029,
+     "rel_diff": -0.03248767322950574,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "NextPlaid, f32",
+     "arm0": "nextplaid@t8",
+     "arm1": "nextplaid@t8",
+     "first": 9.083986758596437,
+     "rerun": 8.812555553836146,
+     "rerun_lo": 8.787955679875198,
+     "rerun_hi": 8.837806459271759,
+     "rel_diff": -0.029880184986336267,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "NumKong (approx.), bf16",
+     "arm0": "numkong_native_bf16",
+     "arm1": "numkong_native_bf16",
+     "first": 0.24995544931506164,
+     "rerun": 0.23922544696142342,
+     "rerun_lo": 0.23827968230189117,
+     "rerun_hi": 0.24022798027224884,
+     "rel_diff": -0.042927659241040805,
+     "side_change": false,
+     "faster_rule": [
+      true,
+      true
+     ]
+    },
+    {
+     "label": "NumKong (approx.), f16",
+     "arm0": "numkong_native_f16",
+     "arm1": "numkong_native_f16",
+     "first": 0.2174377339868238,
+     "rerun": 0.2186073436886281,
+     "rerun_lo": 0.21769946861902448,
+     "rerun_hi": 0.219520242408901,
+     "rel_diff": 0.005379055789255016,
+     "side_change": false,
+     "faster_rule": [
+      true,
+      true
+     ]
+    },
+    {
+     "label": "NumKong (approx.), f32",
+     "arm0": "numkong_native_f32",
+     "arm1": "numkong_native_f32",
+     "first": 0.2397423568049215,
+     "rerun": 0.2427563013772507,
+     "rerun_lo": 0.2416611388172277,
+     "rerun_hi": 0.24389339258497958,
+     "rel_diff": 0.012571598162696151,
+     "side_change": false,
+     "faster_rule": [
+      true,
+      true
+     ]
+    }
+   ],
+   "configs": [
+    {
+     "label": "NumPy, f32",
+     "arm": "numpy_packed",
+     "first": 1.7319422329515477,
+     "rerun": 1.7179381594367897,
+     "rel_diff": -0.008085762474243974,
+     "side_change": false
+    },
+    {
+     "label": "NumPy, f32",
+     "arm": "numpy_packed@t8",
+     "first": 1.530627980308698,
+     "rerun": 1.5938721643725962,
+     "rel_diff": 0.041319108808623106,
+     "side_change": false
+    },
+    {
+     "label": "PyTorch, f32",
+     "arm": "torch_colbert_packed",
+     "first": 1.311164751065955,
+     "rerun": 1.3167804360478608,
+     "rel_diff": 0.004282974338152723,
+     "side_change": false
+    },
+    {
+     "label": "PyTorch, f32",
+     "arm": "torch_pad_flat",
+     "first": 0.5137427589269634,
+     "rerun": 0.5279009181081429,
+     "rel_diff": 0.02755884912276163,
+     "side_change": false
+    },
+    {
+     "label": "PyTorch, bf16",
+     "arm": "torch_pad_bmm_bf16",
+     "first": 0.5904076843411872,
+     "rerun": 0.564068531406401,
+     "rel_diff": -0.04461180576295687,
+     "side_change": false
+    },
+    {
+     "label": "PyTorch, bf16",
+     "arm": "torch_pad_flat_bf16",
+     "first": 0.8433237732080369,
+     "rerun": 0.8054728291702733,
+     "rel_diff": -0.04488305113678592,
+     "side_change": false
+    },
+    {
+     "label": "maxsim-cpu, f32",
+     "arm": "maxsim_cpu_variable",
+     "first": 1.3419006781367984,
+     "rerun": 1.2983054473990379,
+     "rel_diff": -0.03248767322950574,
+     "side_change": false
+    },
+    {
+     "label": "maxsim-cpu, f32",
+     "arm": "maxsim_cpu_variable@t8",
+     "first": 1.7336000814175483,
+     "rerun": 1.6870158595115157,
+     "rel_diff": -0.026871377317853606,
+     "side_change": false
+    },
+    {
+     "label": "NextPlaid, f32",
+     "arm": "nextplaid@t8",
+     "first": 9.083986758596437,
+     "rerun": 8.812555553836146,
+     "rel_diff": -0.029880184986336267,
+     "side_change": false
+    },
+    {
+     "label": "NextPlaid, f32",
+     "arm": "nextplaid",
+     "first": 9.184338468022029,
+     "rerun": 8.962161314091555,
+     "rel_diff": -0.02419087174368073,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), bf16",
+     "arm": "numkong_native_bf16",
+     "first": 0.24995544931506164,
+     "rerun": 0.23922544696142342,
+     "rel_diff": -0.042927659241040805,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), bf16",
+     "arm": "numkong_bf16",
+     "first": 4.656300524998321,
+     "rerun": 4.455411474798032,
+     "rel_diff": -0.04314348893972253,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), f16",
+     "arm": "numkong_native_f16",
+     "first": 0.2174377339868238,
+     "rerun": 0.2186073436886281,
+     "rel_diff": 0.005379055789255016,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), f16",
+     "arm": "numkong_f16",
+     "first": 4.627331451311094,
+     "rerun": 4.42501742642075,
+     "rel_diff": -0.04372153303023518,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), f32",
+     "arm": "numkong_native_f32",
+     "first": 0.2397423568049215,
+     "rerun": 0.2427563013772507,
+     "rel_diff": 0.012571598162696151,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), f32",
+     "arm": "numkong_f32",
+     "first": 4.641704431851663,
+     "rerun": 4.4316897390345735,
+     "rel_diff": -0.04524516713644133,
+     "side_change": false
+    }
+   ],
+   "abs_rel_diff_median": 0.031183929107921005,
+   "abs_rel_diff_max": 0.04524516713644133,
+   "side_changes": [],
+   "config_side_changes": [],
+   "ours_rerun_over_first": 1.0555334002660495
+  },
+  "k25": {
+   "sets": [
+    "beir-nfcorpus-answersmall-k25",
+    "beir-nfcorpus-colbertv2-k25",
+    "beir-scifact-answersmall-k25",
+    "beir-scifact-colbertv2-k25"
+   ],
+   "rows": [
+    {
+     "label": "sweet, production path (Node)",
+     "arm0": "node-production",
+     "arm1": "node-production",
+     "first": 1.0817504344147082,
+     "rerun": 1.1426705221187394,
+     "rerun_lo": 1.1399586981889631,
+     "rerun_hi": 1.1454736477340832,
+     "rel_diff": 0.05631621283978738,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "NumPy, f32",
+     "arm0": "numpy_packed@t8",
+     "arm1": "numpy_packed@t8",
+     "first": 1.495031305288173,
+     "rerun": 1.5947008652616494,
+     "rerun_lo": 1.5902057292596115,
+     "rerun_hi": 1.5992202890818918,
+     "rel_diff": 0.06666720597818165,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "PyTorch, f32",
+     "arm0": "torch_pad_flat",
+     "arm1": "torch_pad_flat",
+     "first": 0.712182635309233,
+     "rerun": 0.7459521301105642,
+     "rerun_lo": 0.743179382468486,
+     "rerun_hi": 0.7486754202497345,
+     "rel_diff": 0.04741690280986455,
+     "side_change": false,
+     "faster_rule": [
+      true,
+      true
+     ]
+    },
+    {
+     "label": "PyTorch, bf16",
+     "arm0": "torch_pad_bmm_bf16",
+     "arm1": "torch_pad_bmm_bf16",
+     "first": 1.1443922792347903,
+     "rerun": 1.216990013516496,
+     "rerun_lo": 1.2132547149207873,
+     "rerun_hi": 1.220682497274549,
+     "rel_diff": 0.06343780502455765,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "maxsim-cpu, f32",
+     "arm0": "maxsim_cpu_variable",
+     "arm1": "maxsim_cpu_variable",
+     "first": 1.6033812650710968,
+     "rerun": 1.7276291863138482,
+     "rerun_lo": 1.7223980675936037,
+     "rerun_hi": 1.7328065141916813,
+     "rel_diff": 0.07749118936926203,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "NextPlaid, f32",
+     "arm0": "nextplaid@t8",
+     "arm1": "nextplaid@t8",
+     "first": 8.288517346484628,
+     "rerun": 8.958350067413578,
+     "rerun_lo": 8.92674501863577,
+     "rerun_hi": 8.988201423768961,
+     "rel_diff": 0.080814540517677,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "NumKong (approx.), bf16",
+     "arm0": "numkong_native_bf16",
+     "arm1": "numkong_native_bf16",
+     "first": 0.4439368190893447,
+     "rerun": 0.48054208040792884,
+     "rerun_lo": 0.4787435782095841,
+     "rerun_hi": 0.48231832232437216,
+     "rel_diff": 0.08245601568636096,
+     "side_change": false,
+     "faster_rule": [
+      true,
+      true
+     ]
+    },
+    {
+     "label": "NumKong (approx.), f16",
+     "arm0": "numkong_native_f16",
+     "arm1": "numkong_native_f16",
+     "first": 0.44166662725899225,
+     "rerun": 0.4712336329451248,
+     "rerun_lo": 0.469130969838894,
+     "rerun_hi": 0.47328334325434557,
+     "rel_diff": 0.06694416979074713,
+     "side_change": false,
+     "faster_rule": [
+      true,
+      true
+     ]
+    },
+    {
+     "label": "NumKong (approx.), f32",
+     "arm0": "numkong_native_f32",
+     "arm1": "numkong_native_f32",
+     "first": 0.44748422503612906,
+     "rerun": 0.4793851747710598,
+     "rerun_lo": 0.47756886991221753,
+     "rerun_hi": 0.48127338988173085,
+     "rel_diff": 0.07128955156431527,
+     "side_change": false,
+     "faster_rule": [
+      true,
+      true
+     ]
+    }
+   ],
+   "configs": [
+    {
+     "label": "NumPy, f32",
+     "arm": "numpy_packed",
+     "first": 1.7883524542366043,
+     "rerun": 1.9145346927300806,
+     "rel_diff": 0.07055781325126986,
+     "side_change": false
+    },
+    {
+     "label": "NumPy, f32",
+     "arm": "numpy_packed@t8",
+     "first": 1.495031305288173,
+     "rerun": 1.5947008652616494,
+     "rel_diff": 0.06666720597818165,
+     "side_change": false
+    },
+    {
+     "label": "PyTorch, f32",
+     "arm": "torch_colbert_packed",
+     "first": 2.9620956360098325,
+     "rerun": 3.2966203423671114,
+     "rel_diff": 0.1129351470933293,
+     "side_change": false
+    },
+    {
+     "label": "PyTorch, f32",
+     "arm": "torch_pad_flat",
+     "first": 0.712182635309233,
+     "rerun": 0.7459521301105642,
+     "rel_diff": 0.04741690280986455,
+     "side_change": false
+    },
+    {
+     "label": "PyTorch, bf16",
+     "arm": "torch_pad_bmm_bf16",
+     "first": 1.1443922792347903,
+     "rerun": 1.216990013516496,
+     "rel_diff": 0.06343780502455765,
+     "side_change": false
+    },
+    {
+     "label": "PyTorch, bf16",
+     "arm": "torch_pad_flat_bf16",
+     "first": 1.1656179729900729,
+     "rerun": 1.263861195807281,
+     "rel_diff": 0.08428423814124297,
+     "side_change": false
+    },
+    {
+     "label": "maxsim-cpu, f32",
+     "arm": "maxsim_cpu_variable",
+     "first": 1.6033812650710968,
+     "rerun": 1.7276291863138482,
+     "rel_diff": 0.07749118936926203,
+     "side_change": false
+    },
+    {
+     "label": "maxsim-cpu, f32",
+     "arm": "maxsim_cpu_variable@t8",
+     "first": 2.1087215498699274,
+     "rerun": 2.2998359753223494,
+     "rel_diff": 0.09063047013685166,
+     "side_change": false
+    },
+    {
+     "label": "NextPlaid, f32",
+     "arm": "nextplaid@t8",
+     "first": 8.288517346484628,
+     "rerun": 8.958350067413578,
+     "rel_diff": 0.080814540517677,
+     "side_change": false
+    },
+    {
+     "label": "NextPlaid, f32",
+     "arm": "nextplaid",
+     "first": 8.363177782786916,
+     "rerun": 9.174137025554831,
+     "rel_diff": 0.09696783493435124,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), bf16",
+     "arm": "numkong_native_bf16",
+     "first": 0.4439368190893447,
+     "rerun": 0.48054208040792884,
+     "rel_diff": 0.08245601568636096,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), bf16",
+     "arm": "numkong_bf16",
+     "first": 7.490206731448314,
+     "rerun": 8.08045392897256,
+     "rel_diff": 0.07880252424089162,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), f16",
+     "arm": "numkong_native_f16",
+     "first": 0.44166662725899225,
+     "rerun": 0.4712336329451248,
+     "rel_diff": 0.06694416979074713,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), f16",
+     "arm": "numkong_f16",
+     "first": 7.934180247140966,
+     "rerun": 8.5631549283953,
+     "rel_diff": 0.07927406003676074,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), f32",
+     "arm": "numkong_native_f32",
+     "first": 0.44748422503612906,
+     "rerun": 0.4793851747710598,
+     "rel_diff": 0.07128955156431527,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), f32",
+     "arm": "numkong_f32",
+     "first": 7.943143084948779,
+     "rerun": 8.545754550357584,
+     "rel_diff": 0.07586561880657494,
+     "side_change": false
+    }
+   ],
+   "abs_rel_diff_median": 0.07814685680507683,
+   "abs_rel_diff_max": 0.1129351470933293,
+   "side_changes": [],
+   "config_side_changes": [],
+   "ours_rerun_over_first": 0.9127663673638178
+  },
+  "scores": {
+   "torch_pad_bmm@t1": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numkong_f16@t1": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numkong_bf16": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "nextplaid": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numkong_native_f16": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "maxsim_cpu_variable@t8": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "torch_colbert_packed": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "maxsim_cpu_variable": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "torch_pad_bmm_bf16": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "nextplaid@t8": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "torch_pad_flat_bf16": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numpy_packed@t8": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numkong_native_f16@t1": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "ours@t1": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "torch_pad_flat": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numkong_native_f32": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "torch_pad_bmm@t8": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numpy_packed": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "torch_pad_bmm": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "maxsim_cpu_variable_int4": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numkong_f16": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "maxsim_cpu_variable@t1": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "nextplaid@t1": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numpy_packed@t1": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "ours": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "ours@t8": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numkong_f32": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557310,
+    "maxabs": 1.6953976023615262e+74,
+    "bit_equal_share": 0.9998780096308186
+   },
+   "numkong_native_bf16": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "node-production": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numpy_packed_int4": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   }
+  }
+ },
+ "amd": {
+  "k100": {
+   "sets": [
+    "beir-nfcorpus-answersmall-k100",
+    "beir-nfcorpus-colbertv2-k100",
+    "beir-scifact-answersmall-k100",
+    "beir-scifact-colbertv2-k100"
+   ],
+   "rows": [
+    {
+     "label": "sweet, production path (Node)",
+     "arm0": "node-production",
+     "arm1": "node-production",
+     "first": 1.1567503824044834,
+     "rerun": 1.153432497832849,
+     "rerun_lo": 1.1497188941830014,
+     "rerun_hi": 1.157123169487294,
+     "rel_diff": -0.002868280505546661,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "NumPy, f32",
+     "arm0": "numpy_packed",
+     "arm1": "numpy_packed",
+     "first": 3.8624977590373177,
+     "rerun": 3.737004418887573,
+     "rerun_lo": 3.717075783177196,
+     "rerun_hi": 3.755710115695789,
+     "rel_diff": -0.0324902040023507,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "PyTorch, f32",
+     "arm0": "torch_pad_bmm",
+     "arm1": "torch_pad_bmm",
+     "first": 2.1168117440691745,
+     "rerun": 2.0336817317837546,
+     "rerun_lo": 2.021244046840796,
+     "rerun_hi": 2.045210569522061,
+     "rel_diff": -0.0392713298753804,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "PyTorch, bf16",
+     "arm0": "torch_pad_bmm_bf16",
+     "arm1": "torch_pad_bmm_bf16",
+     "first": 1.7112819112960718,
+     "rerun": 1.6410167688036035,
+     "rerun_lo": 1.6320999250615082,
+     "rerun_hi": 1.6490970948587897,
+     "rel_diff": -0.04105994578020855,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "maxsim-cpu, f32",
+     "arm0": "maxsim_cpu_variable",
+     "arm1": "maxsim_cpu_variable",
+     "first": 2.986940592322282,
+     "rerun": 2.8929646019982265,
+     "rerun_lo": 2.8783054262523597,
+     "rerun_hi": 2.906210823955679,
+     "rel_diff": -0.03146228973070775,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "NextPlaid, f32",
+     "arm0": "nextplaid",
+     "arm1": "nextplaid",
+     "first": 19.0619500220426,
+     "rerun": 18.00775000974854,
+     "rerun_lo": 17.89923656406751,
+     "rerun_hi": 18.106178158634087,
+     "rel_diff": -0.055303891316209275,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "NumKong (approx.), bf16",
+     "arm0": "numkong_native_bf16",
+     "arm1": "numkong_native_bf16",
+     "first": 0.8651446194098972,
+     "rerun": 0.9412004886256816,
+     "rerun_lo": 0.9325361358606199,
+     "rerun_hi": 0.9494588731848822,
+     "rel_diff": 0.08791116249172437,
+     "side_change": false,
+     "faster_rule": [
+      true,
+      true
+     ]
+    },
+    {
+     "label": "NumKong (approx.), f16",
+     "arm0": "numkong_native_f16",
+     "arm1": "numkong_native_f16",
+     "first": 0.8378757881568467,
+     "rerun": 0.9111656269495316,
+     "rerun_lo": 0.9031477521404889,
+     "rerun_hi": 0.9190055088904013,
+     "rel_diff": 0.08747100683492404,
+     "side_change": false,
+     "faster_rule": [
+      true,
+      true
+     ]
+    },
+    {
+     "label": "NumKong (approx.), f32",
+     "arm0": "numkong_native_f32",
+     "arm1": "numkong_native_f32",
+     "first": 0.8197853941469313,
+     "rerun": 0.8652354463251234,
+     "rerun_lo": 0.8585033948978787,
+     "rerun_hi": 0.8717549297680124,
+     "rel_diff": 0.05544140271672848,
+     "side_change": false,
+     "faster_rule": [
+      true,
+      true
+     ]
+    }
+   ],
+   "configs": [
+    {
+     "label": "NumPy, f32",
+     "arm": "numpy_packed",
+     "first": 3.8624977590373177,
+     "rerun": 3.737004418887573,
+     "rel_diff": -0.0324902040023507,
+     "side_change": false
+    },
+    {
+     "label": "NumPy, f32",
+     "arm": "numpy_packed_t",
+     "first": 5.1653966081667,
+     "rerun": 5.140600801198074,
+     "rel_diff": -0.004800368461431059,
+     "side_change": false
+    },
+    {
+     "label": "PyTorch, f32",
+     "arm": "torch_pad_bmm",
+     "first": 2.1168117440691745,
+     "rerun": 2.0336817317837546,
+     "rel_diff": -0.0392713298753804,
+     "side_change": false
+    },
+    {
+     "label": "PyTorch, f32",
+     "arm": "torch_pad_flat",
+     "first": 4.261430550144279,
+     "rerun": 4.127825435461765,
+     "rel_diff": -0.031352174606715355,
+     "side_change": false
+    },
+    {
+     "label": "PyTorch, bf16",
+     "arm": "torch_pad_bmm_bf16",
+     "first": 1.7112819112960718,
+     "rerun": 1.6410167688036035,
+     "rel_diff": -0.04105994578020855,
+     "side_change": false
+    },
+    {
+     "label": "PyTorch, bf16",
+     "arm": "torch_pad_flat_bf16",
+     "first": 2.266847469003658,
+     "rerun": 2.1722430851203085,
+     "rel_diff": -0.041733899248603046,
+     "side_change": false
+    },
+    {
+     "label": "maxsim-cpu, f32",
+     "arm": "maxsim_cpu_variable",
+     "first": 2.986940592322282,
+     "rerun": 2.8929646019982265,
+     "rel_diff": -0.03146228973070775,
+     "side_change": false
+    },
+    {
+     "label": "maxsim-cpu, f32",
+     "arm": "maxsim_cpu_3d",
+     "first": 3.1087978777821976,
+     "rerun": 3.0195091438541306,
+     "rel_diff": -0.028721305610181824,
+     "side_change": false
+    },
+    {
+     "label": "NextPlaid, f32",
+     "arm": "nextplaid@t1",
+     "first": 19.701161549573655,
+     "rerun": 19.052028313915415,
+     "rel_diff": -0.03294898293305393,
+     "side_change": false
+    },
+    {
+     "label": "NextPlaid, f32",
+     "arm": "nextplaid",
+     "first": 19.0619500220426,
+     "rerun": 18.00775000974854,
+     "rel_diff": -0.055303891316209275,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), bf16",
+     "arm": "numkong_native_bf16",
+     "first": 0.8651446194098972,
+     "rerun": 0.9412004886256816,
+     "rel_diff": 0.08791116249172437,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), bf16",
+     "arm": "numkong_bf16",
+     "first": 5.763076085011365,
+     "rerun": 5.43047506207558,
+     "rel_diff": -0.0577124122655287,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), f16",
+     "arm": "numkong_native_f16",
+     "first": 0.8378757881568467,
+     "rerun": 0.9111656269495316,
+     "rel_diff": 0.08747100683492404,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), f16",
+     "arm": "numkong_f16",
+     "first": 5.5080891447699605,
+     "rerun": 5.216893357815257,
+     "rel_diff": -0.0528669343035596,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), f32",
+     "arm": "numkong_native_f32",
+     "first": 0.8197853941469313,
+     "rerun": 0.8652354463251234,
+     "rel_diff": 0.05544140271672848,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), f32",
+     "arm": "numkong_f32",
+     "first": 5.489471152501947,
+     "rerun": 5.1942478032269905,
+     "rel_diff": -0.05377992543788157,
+     "side_change": false
+    }
+   ],
+   "abs_rel_diff_median": 0.0413969225144058,
+   "abs_rel_diff_max": 0.08791116249172437,
+   "side_changes": [],
+   "config_side_changes": [],
+   "ours_rerun_over_first": 1.0367146515827599
+  },
+  "k25": {
+   "sets": [
+    "beir-nfcorpus-answersmall-k25",
+    "beir-nfcorpus-colbertv2-k25",
+    "beir-scifact-answersmall-k25",
+    "beir-scifact-colbertv2-k25"
+   ],
+   "rows": [
+    {
+     "label": "sweet, production path (Node)",
+     "arm0": "node-production",
+     "arm1": "node-production",
+     "first": 1.1610108615899108,
+     "rerun": 1.0767654264855004,
+     "rerun_lo": 1.064473670542592,
+     "rerun_hi": 1.0880828738718638,
+     "rel_diff": -0.07256214208801037,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "NumPy, f32",
+     "arm0": "numpy_packed_t",
+     "arm1": "numpy_packed_t",
+     "first": 4.770259974362061,
+     "rerun": 4.501000529644059,
+     "rerun_lo": 4.434404468316513,
+     "rerun_hi": 4.5624358788346075,
+     "rel_diff": -0.05644544451773004,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "PyTorch, f32",
+     "arm0": "torch_pad_bmm",
+     "arm1": "torch_pad_bmm",
+     "first": 2.4619965129799235,
+     "rerun": 2.313242836814865,
+     "rerun_lo": 2.2800648928826988,
+     "rerun_hi": 2.344188961320789,
+     "rel_diff": -0.06041993779471744,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "PyTorch, bf16",
+     "arm0": "torch_pad_bmm_bf16",
+     "arm1": "torch_pad_bmm_bf16",
+     "first": 2.386398925503011,
+     "rerun": 2.227511030997702,
+     "rerun_lo": 2.194828781161213,
+     "rerun_hi": 2.2576452544299452,
+     "rel_diff": -0.06658060930521836,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "maxsim-cpu, f32",
+     "arm0": "maxsim_cpu_3d",
+     "arm1": "maxsim_cpu_3d",
+     "first": 3.3064536834404303,
+     "rerun": 3.0733894428865205,
+     "rerun_lo": 3.037234679438502,
+     "rerun_hi": 3.108188988571504,
+     "rel_diff": -0.07048767739320094,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "NextPlaid, f32",
+     "arm0": "nextplaid@t1",
+     "arm1": "nextplaid@t1",
+     "first": 15.104069276574279,
+     "rerun": 14.149993462015466,
+     "rerun_lo": 13.953213919073459,
+     "rerun_hi": 14.327964767774361,
+     "rel_diff": -0.06316680604997893,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "NumKong (approx.), bf16",
+     "arm0": "numkong_native_bf16",
+     "arm1": "numkong_native_bf16",
+     "first": 1.140373886222507,
+     "rerun": 1.1477607661052978,
+     "rerun_lo": 1.127705300804372,
+     "rerun_hi": 1.1672000978232306,
+     "rel_diff": 0.006477594736284065,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "NumKong (approx.), f16",
+     "arm0": "numkong_native_f16",
+     "arm1": "numkong_native_f16",
+     "first": 1.1110575727053833,
+     "rerun": 1.1091806070509003,
+     "rerun_lo": 1.0905708246523085,
+     "rerun_hi": 1.1271246118074445,
+     "rel_diff": -0.0016893504896534628,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "NumKong (approx.), f32",
+     "arm0": "numkong_native_f32",
+     "arm1": "numkong_native_f32",
+     "first": 1.066608947827678,
+     "rerun": 1.059171827318263,
+     "rerun_lo": 1.0431577686586329,
+     "rerun_hi": 1.074772605675666,
+     "rel_diff": -0.0069726777790133365,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    }
+   ],
+   "configs": [
+    {
+     "label": "NumPy, f32",
+     "arm": "numpy_packed",
+     "first": 5.184980167721937,
+     "rerun": 4.852718874385821,
+     "rel_diff": -0.06408149743841696,
+     "side_change": false
+    },
+    {
+     "label": "NumPy, f32",
+     "arm": "numpy_packed_t",
+     "first": 4.770259974362061,
+     "rerun": 4.501000529644059,
+     "rel_diff": -0.05644544451773004,
+     "side_change": false
+    },
+    {
+     "label": "PyTorch, f32",
+     "arm": "torch_pad_bmm",
+     "first": 2.4619965129799235,
+     "rerun": 2.313242836814865,
+     "rel_diff": -0.06041993779471744,
+     "side_change": false
+    },
+    {
+     "label": "PyTorch, f32",
+     "arm": "torch_pad_flat",
+     "first": 3.8984854570182943,
+     "rerun": 3.6477837099516592,
+     "rel_diff": -0.06430747269181325,
+     "side_change": false
+    },
+    {
+     "label": "PyTorch, bf16",
+     "arm": "torch_pad_bmm_bf16",
+     "first": 2.386398925503011,
+     "rerun": 2.227511030997702,
+     "rel_diff": -0.06658060930521836,
+     "side_change": false
+    },
+    {
+     "label": "PyTorch, bf16",
+     "arm": "torch_pad_flat_bf16",
+     "first": 2.650380709462919,
+     "rerun": 2.4981645761167632,
+     "rel_diff": -0.05743179944024013,
+     "side_change": false
+    },
+    {
+     "label": "maxsim-cpu, f32",
+     "arm": "maxsim_cpu_variable",
+     "first": 3.3207510867493077,
+     "rerun": 3.1136016563713462,
+     "rel_diff": -0.062380294387177515,
+     "side_change": false
+    },
+    {
+     "label": "maxsim-cpu, f32",
+     "arm": "maxsim_cpu_3d",
+     "first": 3.3064536834404303,
+     "rerun": 3.0733894428865205,
+     "rel_diff": -0.07048767739320094,
+     "side_change": false
+    },
+    {
+     "label": "NextPlaid, f32",
+     "arm": "nextplaid@t1",
+     "first": 15.104069276574279,
+     "rerun": 14.149993462015466,
+     "rel_diff": -0.06316680604997893,
+     "side_change": false
+    },
+    {
+     "label": "NextPlaid, f32",
+     "arm": "nextplaid",
+     "first": 16.21611268887767,
+     "rerun": 14.30545720418345,
+     "rel_diff": -0.11782450710303105,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), bf16",
+     "arm": "numkong_native_bf16",
+     "first": 1.140373886222507,
+     "rerun": 1.1477607661052978,
+     "rel_diff": 0.006477594736284065,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), bf16",
+     "arm": "numkong_bf16",
+     "first": 10.431425011596938,
+     "rerun": 9.645519431860405,
+     "rel_diff": -0.07534019358455979,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), f16",
+     "arm": "numkong_native_f16",
+     "first": 1.1110575727053833,
+     "rerun": 1.1091806070509003,
+     "rel_diff": -0.0016893504896534628,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), f16",
+     "arm": "numkong_f16",
+     "first": 10.139450987297192,
+     "rerun": 9.368038677162971,
+     "rel_diff": -0.07608028394245936,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), f32",
+     "arm": "numkong_native_f32",
+     "first": 1.066608947827678,
+     "rerun": 1.059171827318263,
+     "rel_diff": -0.0069726777790133365,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), f32",
+     "arm": "numkong_f32",
+     "first": 10.16296653153435,
+     "rerun": 9.394625843487885,
+     "rel_diff": -0.07560200908488723,
+     "side_change": false
+    }
+   ],
+   "abs_rel_diff_median": 0.06362415174419794,
+   "abs_rel_diff_max": 0.11782450710303105,
+   "side_changes": [],
+   "config_side_changes": [],
+   "ours_rerun_over_first": 1.0642081616828016
+  },
+  "scores": {
+   "torch_pad_bmm@t1": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "torch_pylate": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numpy_packed_t": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numkong_bf16": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "nextplaid": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numkong_native_f16": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "maxsim_cpu_variable": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "torch_pad_bmm_bf16": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "torch_pad_flat_bf16": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numkong_native_f16@t1": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "ours@t1": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "maxsim_cpu_3d": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "torch_pad_flat": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numkong_native_f32": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numpy_packed": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "torch_pad_bmm": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "maxsim_cpu_variable_int4": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numkong_f16": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "maxsim_cpu_variable@t1": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "nextplaid@t1": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numpy_packed@t1": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "ours": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numkong_f32": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numkong_native_bf16": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "node-production": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numpy_packed_int4": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   }
+  }
+ },
+ "arm": {
+  "k100": {
+   "sets": [
+    "beir-nfcorpus-answersmall-k100",
+    "beir-nfcorpus-colbertv2-k100",
+    "beir-scifact-answersmall-k100",
+    "beir-scifact-colbertv2-k100"
+   ],
+   "rows": [
+    {
+     "label": "sweet, production path (Node)",
+     "arm0": "node-production",
+     "arm1": "node-production",
+     "first": 1.0516809798660707,
+     "rerun": 1.0520732256230882,
+     "rerun_lo": 1.0505894645500626,
+     "rerun_hi": 1.0536477946709863,
+     "rel_diff": 0.00037297028711846814,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "NumPy, f32",
+     "arm0": "numpy_packed",
+     "arm1": "numpy_packed",
+     "first": 1.5331181566537795,
+     "rerun": 1.5477498179288194,
+     "rerun_lo": 1.5456253012198675,
+     "rerun_hi": 1.5498969651826449,
+     "rel_diff": 0.009543727084268205,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "PyTorch, f32",
+     "arm0": "torch_pad_flat",
+     "arm1": "torch_pad_flat",
+     "first": 1.186037252305202,
+     "rerun": 1.1693161653062343,
+     "rerun_lo": 1.1667923273457927,
+     "rerun_hi": 1.1717838212321583,
+     "rel_diff": -0.014098281454877126,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "PyTorch, bf16",
+     "arm0": "torch_pad_flat_bf16",
+     "arm1": "torch_pad_flat_bf16",
+     "first": 0.7407953830542435,
+     "rerun": 0.7180071447447626,
+     "rerun_lo": 0.7163836331324985,
+     "rerun_hi": 0.7196208110367533,
+     "rel_diff": -0.03076185250443486,
+     "side_change": false,
+     "faster_rule": [
+      true,
+      true
+     ]
+    },
+    {
+     "label": "NextPlaid, f32",
+     "arm0": "nextplaid",
+     "arm1": "nextplaid",
+     "first": 1.2116901349193734,
+     "rerun": 1.2120197371137627,
+     "rerun_lo": 1.210273880819459,
+     "rerun_hi": 1.213803977990954,
+     "rel_diff": 0.0002720185506925876,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "NumKong (approx.), bf16",
+     "arm0": "numkong_native_bf16",
+     "arm1": "numkong_native_bf16",
+     "first": 0.372343413387729,
+     "rerun": 0.3713575495006897,
+     "rerun_lo": 0.37070453030516665,
+     "rerun_hi": 0.3720345778889095,
+     "rel_diff": -0.0026477274784305616,
+     "side_change": false,
+     "faster_rule": [
+      true,
+      true
+     ]
+    },
+    {
+     "label": "NumKong (approx.), f16",
+     "arm0": "numkong_native_f16",
+     "arm1": "numkong_native_f16",
+     "first": 0.3932304713278875,
+     "rerun": 0.3924354556806768,
+     "rerun_lo": 0.39171153053404895,
+     "rerun_hi": 0.39316222565236103,
+     "rel_diff": -0.0020217549380801003,
+     "side_change": false,
+     "faster_rule": [
+      true,
+      true
+     ]
+    },
+    {
+     "label": "NumKong (approx.), f32",
+     "arm0": "numkong_native_f32",
+     "arm1": "numkong_native_f32",
+     "first": 0.4098886596014826,
+     "rerun": 0.40972770838580796,
+     "rerun_lo": 0.4088642799971958,
+     "rerun_hi": 0.4105930409706285,
+     "rel_diff": -0.00039267057505587566,
+     "side_change": false,
+     "faster_rule": [
+      true,
+      true
+     ]
+    }
+   ],
+   "configs": [
+    {
+     "label": "NumPy, f32",
+     "arm": "numpy_packed",
+     "first": 1.5331181566537795,
+     "rerun": 1.5477498179288194,
+     "rel_diff": 0.009543727084268205,
+     "side_change": false
+    },
+    {
+     "label": "NumPy, f32",
+     "arm": "numpy_perdoc",
+     "first": 6.759567913976101,
+     "rerun": 6.54626962736004,
+     "rel_diff": -0.03155501791394755,
+     "side_change": false
+    },
+    {
+     "label": "PyTorch, f32",
+     "arm": "torch_pad_flat",
+     "first": 1.186037252305202,
+     "rerun": 1.1693161653062343,
+     "rel_diff": -0.014098281454877126,
+     "side_change": false
+    },
+    {
+     "label": "PyTorch, f32",
+     "arm": "torch_colbert_packed",
+     "first": 3.1430188616969117,
+     "rerun": 2.903205217130678,
+     "rel_diff": -0.07630041533914256,
+     "side_change": false
+    },
+    {
+     "label": "PyTorch, bf16",
+     "arm": "torch_pad_flat_bf16",
+     "first": 0.7407953830542435,
+     "rerun": 0.7180071447447626,
+     "rel_diff": -0.03076185250443486,
+     "side_change": false
+    },
+    {
+     "label": "PyTorch, bf16",
+     "arm": "torch_pad_bmm_bf16",
+     "first": 1.6077849623538598,
+     "rerun": 1.5548259015885924,
+     "rel_diff": -0.03293914422966948,
+     "side_change": false
+    },
+    {
+     "label": "NextPlaid, f32",
+     "arm": "nextplaid",
+     "first": 1.2116901349193734,
+     "rerun": 1.2120197371137627,
+     "rel_diff": 0.0002720185506925876,
+     "side_change": false
+    },
+    {
+     "label": "NextPlaid, f32",
+     "arm": "nextplaid@t1",
+     "first": 11.541978452384816,
+     "rerun": 11.559159108049084,
+     "rel_diff": 0.0014885364528398615,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), bf16",
+     "arm": "numkong_native_bf16",
+     "first": 0.372343413387729,
+     "rerun": 0.3713575495006897,
+     "rel_diff": -0.0026477274784305616,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), bf16",
+     "arm": "numkong_bf16",
+     "first": 2.8997639179773764,
+     "rerun": 2.8031393961656006,
+     "rel_diff": -0.03332151324897259,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), f16",
+     "arm": "numkong_native_f16",
+     "first": 0.3932304713278875,
+     "rerun": 0.3924354556806768,
+     "rel_diff": -0.0020217549380801003,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), f16",
+     "arm": "numkong_f16",
+     "first": 2.8931734463183463,
+     "rerun": 2.791339588822233,
+     "rel_diff": -0.03519797875433295,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), f32",
+     "arm": "numkong_native_f32",
+     "first": 0.4098886596014826,
+     "rerun": 0.40972770838580796,
+     "rel_diff": -0.00039267057505587566,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), f32",
+     "arm": "numkong_f32",
+     "first": 2.880244468012177,
+     "rerun": 2.7797576568293896,
+     "rel_diff": -0.03488829239975555,
+     "side_change": false
+    }
+   ],
+   "abs_rel_diff_median": 0.022430066979655994,
+   "abs_rel_diff_max": 0.07630041533914256,
+   "side_changes": [],
+   "config_side_changes": [],
+   "ours_rerun_over_first": 0.9958523373888483
+  },
+  "k25": {
+   "sets": [
+    "beir-nfcorpus-answersmall-k25",
+    "beir-nfcorpus-colbertv2-k25",
+    "beir-scifact-answersmall-k25",
+    "beir-scifact-colbertv2-k25"
+   ],
+   "rows": [
+    {
+     "label": "sweet, production path (Node)",
+     "arm0": "node-production",
+     "arm1": "node-production",
+     "first": 1.1385486250500934,
+     "rerun": 1.136918715556051,
+     "rerun_lo": 1.133843115959847,
+     "rerun_hi": 1.1400597288658547,
+     "rel_diff": -0.0014315677505390978,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "NumPy, f32",
+     "arm0": "numpy_packed",
+     "arm1": "numpy_packed",
+     "first": 1.7154149919796782,
+     "rerun": 1.7148662052938517,
+     "rerun_lo": 1.7106922718757689,
+     "rerun_hi": 1.719171029589477,
+     "rel_diff": -0.00031991482433835206,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "PyTorch, f32",
+     "arm0": "torch_pad_flat",
+     "arm1": "torch_pad_flat",
+     "first": 1.9964911191583696,
+     "rerun": 2.0195355845220293,
+     "rerun_lo": 2.0136790493987067,
+     "rerun_hi": 2.0254667608997923,
+     "rel_diff": 0.011542483281054672,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "PyTorch, bf16",
+     "arm0": "torch_pad_flat_bf16",
+     "arm1": "torch_pad_flat_bf16",
+     "first": 1.6585436318765205,
+     "rerun": 1.6760424156017455,
+     "rerun_lo": 1.6711582174483892,
+     "rerun_hi": 1.6809770494656706,
+     "rel_diff": 0.010550692420087993,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "NextPlaid, f32",
+     "arm0": "nextplaid",
+     "arm1": "nextplaid",
+     "first": 1.8333498270920077,
+     "rerun": 1.845943402819578,
+     "rerun_lo": 1.838071048506301,
+     "rerun_hi": 1.8538316871876985,
+     "rel_diff": 0.006869161325062434,
+     "side_change": false,
+     "faster_rule": [
+      false,
+      false
+     ]
+    },
+    {
+     "label": "NumKong (approx.), bf16",
+     "arm0": "numkong_native_bf16",
+     "arm1": "numkong_native_bf16",
+     "first": 0.5294507594100658,
+     "rerun": 0.5381747844380652,
+     "rerun_lo": 0.5367915169204094,
+     "rerun_hi": 0.5396247358517059,
+     "rel_diff": 0.01647750026408512,
+     "side_change": false,
+     "faster_rule": [
+      true,
+      true
+     ]
+    },
+    {
+     "label": "NumKong (approx.), f16",
+     "arm0": "numkong_native_f16",
+     "arm1": "numkong_native_f16",
+     "first": 0.5511506219483638,
+     "rerun": 0.5583407402861189,
+     "rerun_lo": 0.5569397029023878,
+     "rerun_hi": 0.5597849088610354,
+     "rel_diff": 0.013045650411020793,
+     "side_change": false,
+     "faster_rule": [
+      true,
+      true
+     ]
+    },
+    {
+     "label": "NumKong (approx.), f32",
+     "arm0": "numkong_native_f32",
+     "arm1": "numkong_native_f32",
+     "first": 0.5692825215213058,
+     "rerun": 0.5769014076044071,
+     "rerun_lo": 0.575425781543903,
+     "rerun_hi": 0.578421262115317,
+     "rel_diff": 0.013383312845687279,
+     "side_change": false,
+     "faster_rule": [
+      true,
+      true
+     ]
+    }
+   ],
+   "configs": [
+    {
+     "label": "NumPy, f32",
+     "arm": "numpy_packed",
+     "first": 1.7154149919796782,
+     "rerun": 1.7148662052938517,
+     "rel_diff": -0.00031991482433835206,
+     "side_change": false
+    },
+    {
+     "label": "NumPy, f32",
+     "arm": "numpy_perdoc",
+     "first": 6.4099356827938925,
+     "rerun": 6.42507765096313,
+     "rel_diff": 0.0023622652267609734,
+     "side_change": false
+    },
+    {
+     "label": "PyTorch, f32",
+     "arm": "torch_pad_flat",
+     "first": 1.9964911191583696,
+     "rerun": 2.0195355845220293,
+     "rel_diff": 0.011542483281054672,
+     "side_change": false
+    },
+    {
+     "label": "PyTorch, f32",
+     "arm": "torch_colbert_packed",
+     "first": 9.467761150739106,
+     "rerun": 9.670278040267066,
+     "rel_diff": 0.021390156162964802,
+     "side_change": false
+    },
+    {
+     "label": "PyTorch, bf16",
+     "arm": "torch_pad_flat_bf16",
+     "first": 1.6585436318765205,
+     "rerun": 1.6760424156017455,
+     "rel_diff": 0.010550692420087993,
+     "side_change": false
+    },
+    {
+     "label": "PyTorch, bf16",
+     "arm": "torch_pad_bmm_bf16",
+     "first": 2.5511595354152146,
+     "rerun": 2.615853060329299,
+     "rel_diff": 0.025358478768578996,
+     "side_change": false
+    },
+    {
+     "label": "NextPlaid, f32",
+     "arm": "nextplaid",
+     "first": 1.8333498270920077,
+     "rerun": 1.845943402819578,
+     "rel_diff": 0.006869161325062434,
+     "side_change": false
+    },
+    {
+     "label": "NextPlaid, f32",
+     "arm": "nextplaid@t1",
+     "first": 11.004468797000577,
+     "rerun": 11.01719403962402,
+     "rel_diff": 0.001156370458055278,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), bf16",
+     "arm": "numkong_native_bf16",
+     "first": 0.5294507594100658,
+     "rerun": 0.5381747844380652,
+     "rel_diff": 0.01647750026408512,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), bf16",
+     "arm": "numkong_bf16",
+     "first": 5.490275797639311,
+     "rerun": 5.583840987901262,
+     "rel_diff": 0.017041983628979462,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), f16",
+     "arm": "numkong_native_f16",
+     "first": 0.5511506219483638,
+     "rerun": 0.5583407402861189,
+     "rel_diff": 0.013045650411020793,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), f16",
+     "arm": "numkong_f16",
+     "first": 5.454793240530917,
+     "rerun": 5.528842886708745,
+     "rel_diff": 0.013575151781668682,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), f32",
+     "arm": "numkong_native_f32",
+     "first": 0.5692825215213058,
+     "rerun": 0.5769014076044071,
+     "rel_diff": 0.013383312845687279,
+     "side_change": false
+    },
+    {
+     "label": "NumKong (approx.), f32",
+     "arm": "numkong_f32",
+     "first": 5.391229734238679,
+     "rerun": 5.444789909167582,
+     "rel_diff": 0.009934686067772702,
+     "side_change": false
+    }
+   ],
+   "abs_rel_diff_median": 0.012294066846037732,
+   "abs_rel_diff_max": 0.025358478768578996,
+   "side_changes": [],
+   "config_side_changes": [],
+   "ours_rerun_over_first": 1.0010075018974816
+  },
+  "scores": {
+   "torch_pad_bmm@t1": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numpy_packed_t": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numkong_bf16": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "nextplaid": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numkong_native_f16": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "torch_segment_reduce": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "torch_colbert_packed": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "torch_pad_bmm_bf16": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numpy_perdoc": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "torch_pad_flat_bf16": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numkong_native_f16@t1": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "ours@t1": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "torch_pad_flat": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numkong_native_f32": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numpy_packed": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "torch_pad_bmm": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numkong_f16": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "nextplaid@t1": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numpy_packed@t1": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "ours": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numkong_f32": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numkong_native_bf16": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "node-production": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   },
+   "numpy_packed_int4": {
+    "files": 80,
+    "scores": 1557500,
+    "equal": 1557500,
+    "maxabs": 0.0,
+    "bit_equal_share": 1.0
+   }
+  }
+ }
+}

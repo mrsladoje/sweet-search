@@ -92,12 +92,17 @@ def pooled(c, sets, arm, base='ours'):
 def jackknife(c, sets, arm, base='ours'):
     """Execution spread with the point estimator itself: leave one process repetition out, take
     per call the median of the remaining runs of each arm, then the geometric-mean ratio."""
-    o_runs, b_runs, o_keys, b_keys = [], [], None, None
-    for s in sets:
-        A, B = c[s]['arms'][arm], c[s]['arms'][base]
-        o_runs.append(A['runs']); b_runs.append(B['runs'])
-        o_keys, b_keys = A['run_keys'], B['run_keys']
-    O, Bm = np.concatenate(o_runs), np.concatenate(b_runs)
+    # runs aligned by (round, process) key over the sets; a run missing in a set is NaN there
+    o_keys = sorted({k for s in sets for k in c[s]['arms'][arm]['run_keys']})
+    b_keys = sorted({k for s in sets for k in c[s]['arms'][base]['run_keys']})
+
+    def aligned(x, keys):
+        out = np.full((x['runs'].shape[0], len(keys)), np.nan)
+        for j, k in enumerate(x['run_keys']):
+            out[:, keys.index(k)] = x['runs'][:, j]
+        return out
+    O = np.concatenate([aligned(c[s]['arms'][arm], o_keys) for s in sets])
+    Bm = np.concatenate([aligned(c[s]['arms'][base], b_keys) for s in sets])
     procs = sorted({p for _, p in o_keys} & {p for _, p in b_keys})
     out = []
     for p in procs:

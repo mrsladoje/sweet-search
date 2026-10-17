@@ -20,7 +20,10 @@ NUM = []   # (key, value, source, note)
 CMD = {
     'speed.json': 'venv/bin/python -I paper/analysis/load.py intel amd arm m3max epyc {intel,amd,arm}-replica && venv/bin/python -I paper/analysis/tables.py',
     'conc.json': 'venv/bin/python -I paper/analysis/conc.py',
+    'conc2.json': 'venv/bin/python -I paper/analysis/conc2.py',
+    'floor.json': 'venv/bin/python -I paper/analysis/floor_collect.py',
     'beir_lengths.json': 'venv/bin/python -I paper/analysis/beir_lengths.py',
+    'rerun_beir.json': 'venv/bin/python -I paper/analysis/rerun_beir.py   (after load.py intel-r2 amd-r2 arm-r2)',
     'memory.json': 'venv/bin/python -I paper/analysis/memory.py',
     'contract_effects.json': 'venv/bin/python -I paper/analysis/contract_effects.py',
     'quality_extra.json': 'venv/bin/python -I paper/analysis/quality_extra.py',
@@ -276,6 +279,21 @@ def main():
     for (p_, lab), n in bs.items():
         key = lab.replace(' (approx.)', '').replace(', ', '.').replace(' ', '')
         put(f'beirset.{p_}.{key}', str(n), 'speed.json', f'BEIR sets (of 20) where {lab} is faster')
+    # BEIR on a second instance (post-freeze rerun, rerun_beir.py)
+    RB = load('rerun_beir.json')
+    if RB:
+        import statistics
+        cf = [x for p in RB for g in ('k100', 'k25') if g in RB[p] for x in RB[p][g]['configs']]
+        rows_ = [x for p in RB for g in ('k100', 'k25') if g in RB[p] for x in RB[p][g]['rows']]
+        put('rbeir.n', str(len(cf)), 'rerun_beir.json', 'frozen rival configurations compared (3 cloud CPUs x 2 set groups)')
+        put('rbeir.median', f"{statistics.median(abs(x['rel_diff']) for x in cf) * 100:.1f}", 'rerun_beir.json', 'median |relative difference| of a ratio, %')
+        put('rbeir.max', f"{max(abs(x['rel_diff']) for x in cf) * 100:.1f}", 'rerun_beir.json', 'max |relative difference| of a ratio, %')
+        put('rbeir.flips', str(sum(x['side_change'] for x in cf) + sum(x['side_change'] for x in rows_)), 'rerun_beir.json', 'ratios that cross 1')
+        ob = [abs(RB[p][g]['ours_rerun_over_first'] - 1) * 100 for p in RB for g in ('k100', 'k25') if g in RB[p]]
+        put('rbeir.oursmax', f'{max(ob):.1f}', 'rerun_beir.json', 'max |difference| of the kernel geomean latency between instances, %')
+        bad = sorted({a for p in RB for a, v in RB[p].get('scores', {}).items() if v['bit_equal_share'] < 1 and not a.startswith('numkong')})
+        assert all(RB[p]['scores']['ours']['bit_equal_share'] == 1 for p in RB), 'kernel scores differ between instances'
+        put('rbeir.nonbitequal', ', '.join(bad) or 'none', 'rerun_beir.json', 'non-NumKong arms whose scores differ from the first run')
     # replica spread
     rep = SPEED.get('replica', {})
     allr = [r['rel_diff'] for p in rep for w in rep[p] for r in rep[p][w]['rows']]
@@ -489,72 +507,108 @@ def main():
             put(f'mem.{p}.ours.bpt96', f"{r['resident_B_per_token']:.0f}", 'memory.json')
 
     # ------------------------------------------------------------------ parallel callers
-    CC = load('conc.json')
-    rows = []
-    CONC_N1 = []
-    corr_share = []
-    over = []
+    # Main text: the post-freeze rerun with the fixed harness (conc2.json, median of 3 runs).
+    # Appendix: the frozen single runs with their correction (conc.json), keys 'concf.*'.
     exact = lambda a: a != 'ours' and not a.startswith('numkong')
     nk = lambda a: a.startswith('numkong')
 
     def explicit_threads(a):
         m = __import__('re').search(r'@(\d+)', a)
         return int(m.group(1)) if m else 0
-    for p in PLAT:
-        if p not in CC:
-            rows.append(f'{PS[p]} & \\multicolumn{{10}}{{l}}{{{todo("epyc")}}} \\\\'); continue
-        cores = next(iter(next(iter(CC[p].values())).values()))['cores']
-        for fam in ('agent', 'gcsn'):
-            arms = CC[p].get(fam, {})
 
-            def best(pred, n, ex):
-                v = [(r['throughput'], a) for a, d in arms.items() if pred(a) for r in d['runs']
-                     if r['type'] == 'closed' and r['callers'] == n and r['executor'] == ex]
-                return max(v) if v else None
-            for a, d in arms.items():
-                for r in d['runs']:
-                    if r.get('corrected') and a == 'ours':
-                        corr_share.append(50e6 / (r['wall_ns'] + 50e6))
-                    if r['type'] == 'closed' and r['executor'] == 'procs' and r['callers'] * max(explicit_threads(a), 1) > cores:
-                        over.append(f'{p} {fam} {a} n={r["callers"]}')
-            cs = []
-            for n in (1, 16):
-                for ex in ('procs', 'threads'):
-                    o, e, k = best(lambda a: a == 'ours', n, ex), best(exact, n, ex), best(nk, n, ex)
-                    r_e, r_k = o[0] / e[0], o[0] / k[0]
-                    put(f'conc.{p}.{fam}.n{n}.{ex}.ours', f'{o[0] / 1000:.1f}', 'conc.json', 'kcalls/s')
-                    put(f'conc.{p}.{fam}.n{n}.{ex}.exactratio', f2(r_e), 'conc.json', f'ours / {e[1]}')
-                    put(f'conc.{p}.{fam}.n{n}.{ex}.nk', f2(r_k), 'conc.json', f'ours / {k[1]}')
-                    flag = '$^\\ddagger$' if ex == 'procs' and n > 1 and n * max(explicit_threads(e[1]), 1) > cores else ''
-                    cs += [f'{o[0] / 1000:.1f}', ('\\loss{' if r_e < 1 else '{') + f'{r_e:.2f}}}{flag}', ('\\loss{' if r_k < 1 else '{') + f'{r_k:.2f}}}']
-                if n == 1:
-                    o1 = best(lambda a: a == 'ours', 1, 'threads'); e1 = best(exact, 1, 'threads')
-                    CONC_N1.append((o1[0] / e1[0], f'{p} {fam} threads'))
-            rates = sorted({r['rate'] for d in arms.values() for r in d['runs'] if r['type'] != 'closed' and r['rate']})
-            top = rates[-1]
-            op = {a: min((r for r in d['runs'] if r['type'] != 'closed' and r['rate'] == top), key=lambda r: r['p99_ms']) for a, d in arms.items()}
-            exa = min((v['p99_ms'], a) for a, v in op.items() if exact(a))
-            achieved = lambda r: r['n'] / (r['wall_ns'] / 1e9) if r.get('wall_ns') else float('inf')
-            ov_o = '$^\\S$' if achieved(op['ours']) < 0.95 * top else ''      # the arm did not keep up with the offered rate
-            ov_e = '$^\\S$' if achieved(op[exa[1]]) < 0.95 * top else ''
-            put(f'conc.{p}.{fam}.open.achieved.ours', f"{achieved(op['ours']):.0f}", 'conc.json', 'calls/s achieved at the top rate')
-            put(f'conc.{p}.{fam}.open.rate', f'{top:.0f}', 'conc.json'); put(f'conc.{p}.{fam}.open.ours', f"{op['ours']['p99_ms']:.2f}", 'conc.json')
-            put(f'conc.{p}.{fam}.open.exact', f'{exa[0]:.2f}', 'conc.json', exa[1])
-            cs += [f'{top:.0f}', f"{op['ours']['p99_ms']:.2f}{ov_o}", ('\\loss{' if exa[0] < op['ours']['p99_ms'] else '{') + f'{exa[0]:.2f}}}{ov_e}']
-            rows.append(f"{PS[p] if fam == 'agent' else ''} & {fam} & " + ' & '.join(cs) + r' \\')
-        rows.append(r'\addlinespace')
-    open(os.path.join(TEX, 'conc.tex'), 'w').write('\n'.join(rows) + '\n')
-    if CONC_N1:
-        put('range.conc.n1.min', f2(min(CONC_N1)[0]), 'conc.json', min(CONC_N1)[1]); put('range.conc.n1.max', f2(max(CONC_N1)[0]), 'conc.json', max(CONC_N1)[1])
-    if corr_share:
-        put('conc.corr.share.min', f'{min(corr_share) * 100:.0f}', 'conc.json', 'share of the corrected wall time that the 50 ms term makes up, kernel procs runs')
-        put('conc.corr.negative', str(sum(1 for x in corr_share if x > 1)), 'conc.json', 'kernel procs closed-loop runs whose recorded wall time was negative')
-        put('conc.corr.runs', str(len(corr_share)), 'conc.json')
-    put('conc.oversub.n', str(len(over)), 'conc.json', '; '.join(over[:40]))
-    # counts of 16-caller pairs where an exact rival beats sweet, per executor
-    for ex in ('procs', 'threads'):
-        lost = [k_ for k_, v, _, _ in NUM if k_.endswith(f'.n16.{ex}.exactratio') and float(v) < 1]
-        put(f'conc.n16.{ex}.lost', str(len(set(lost))), 'conc.json', ', '.join(sorted(set(lost))))
+    def conc_block(CC, kp, texname, rerun):
+        rows, n1, corr_share, over, spread = [], [], [], [], []
+        for p in PLAT:
+            if p not in CC:
+                rows.append(f'{PS[p]} & \\multicolumn{{16}}{{l}}{{{todo("parallel-caller rerun")}}} \\\\'); continue
+            cores = next(iter(next(iter(CC[p].values())).values()))['cores']
+            for fam in ('agent', 'gcsn'):
+                arms = CC[p].get(fam, {})
+                if not arms:
+                    rows.append(f"{PS[p] if fam == 'agent' else ''} & {fam} & \\multicolumn{{15}}{{l}}{{{todo('parallel-caller rerun')}}} \\\\"); continue
+
+                def best(pred, n, ex):
+                    v = [(r['throughput'], a) for a, d in arms.items() if pred(a) for r in d['runs']
+                         if r['type'] == 'closed' and r['callers'] == n and r['executor'] == ex]
+                    return max(v) if v else None
+                for a, d in arms.items():
+                    for r in d['runs']:
+                        if r.get('corrected') and a == 'ours':
+                            corr_share.append(50e6 / (r['wall_ns'] + 50e6))
+                        if not rerun and r['type'] == 'closed' and r['executor'] == 'procs' and r['callers'] * max(explicit_threads(a), 1) > cores:
+                            over.append(f'{p} {fam} {a} n={r["callers"]}')
+                        if rerun and a == 'ours' and r['type'] == 'closed':
+                            lo_, hi_ = r['throughput_range']
+                            spread.append(((hi_ - lo_) / r['throughput'], f"{p} {fam} {r['executor']} n={r['callers']}"))
+                cs = []
+                for n in (1, 16):
+                    for ex in ('procs', 'threads'):
+                        o, e, k = best(lambda a: a == 'ours', n, ex), best(exact, n, ex), best(nk, n, ex)
+                        r_e, r_k = o[0] / e[0], o[0] / k[0]
+                        put(f'{kp}.{p}.{fam}.n{n}.{ex}.ours', f'{o[0] / 1000:.1f}', texname, 'kcalls/s')
+                        put(f'{kp}.{p}.{fam}.n{n}.{ex}.exactratio', f2(r_e), texname, f'ours / {e[1]}')
+                        put(f'{kp}.{p}.{fam}.n{n}.{ex}.nk', f2(r_k), texname, f'ours / {k[1]}')
+                        flag = '$^\\ddagger$' if not rerun and ex == 'procs' and n > 1 and n * max(explicit_threads(e[1]), 1) > cores else ''
+                        cs += [f'{o[0] / 1000:.1f}', ('\\loss{' if r_e < 1 else '{') + f'{r_e:.2f}}}{flag}', ('\\loss{' if r_k < 1 else '{') + f'{r_k:.2f}}}']
+                    if n == 1:
+                        o1 = best(lambda a: a == 'ours', 1, 'threads'); e1 = best(exact, 1, 'threads')
+                        n1.append((o1[0] / e1[0], f'{p} {fam} threads'))
+                rates = sorted({r['rate'] for d in arms.values() for r in d['runs'] if r['type'] != 'closed' and r['rate']})
+                top = rates[-1]
+                op = {a: min((r for r in d['runs'] if r['type'] != 'closed' and r['rate'] == top), key=lambda r: r['p99_ms']) for a, d in arms.items()}
+                exa = min((v['p99_ms'], a) for a, v in op.items() if exact(a))
+                achieved = (lambda r: r['achieved_rate']) if rerun else (lambda r: r['n'] / (r['wall_ns'] / 1e9) if r.get('wall_ns') else float('inf'))
+                ov_o = '$^\\S$' if achieved(op['ours']) < 0.95 * top else ''      # the arm did not keep up with the offered rate
+                ov_e = '$^\\S$' if achieved(op[exa[1]]) < 0.95 * top else ''
+                put(f'{kp}.{p}.{fam}.open.achieved.ours', f"{achieved(op['ours']):.0f}", texname, 'calls/s achieved at the top rate')
+                put(f'{kp}.{p}.{fam}.open.rate', f'{top:.0f}', texname); put(f'{kp}.{p}.{fam}.open.ours', f"{op['ours']['p99_ms']:.2f}", texname)
+                put(f'{kp}.{p}.{fam}.open.exact', f'{exa[0]:.2f}', texname, exa[1])
+                cs += [f'{top:.0f}', f"{op['ours']['p99_ms']:.2f}{ov_o}", ('\\loss{' if exa[0] < op['ours']['p99_ms'] else '{') + f'{exa[0]:.2f}}}{ov_e}']
+                rows.append(f"{PS[p] if fam == 'agent' else ''} & {fam} & " + ' & '.join(cs) + r' \\')
+            rows.append(r'\addlinespace')
+        open(os.path.join(TEX, kp + '.tex'), 'w').write('\n'.join(rows) + '\n')
+        if n1:
+            put(f'range.{kp}.n1.min', f2(min(n1)[0]), texname, min(n1)[1]); put(f'range.{kp}.n1.max', f2(max(n1)[0]), texname, max(n1)[1])
+        if corr_share:
+            put(f'{kp}.corr.share.min', f'{min(corr_share) * 100:.0f}', texname, 'share of the corrected wall time that the 50 ms term makes up, kernel procs runs')
+            put(f'{kp}.corr.negative', str(sum(1 for x in corr_share if x > 1)), texname, 'kernel procs closed-loop runs whose recorded wall time was negative')
+            put(f'{kp}.corr.runs', str(len(corr_share)), texname)
+        if not rerun:
+            put(f'{kp}.oversub.n', str(len(over)), texname, '; '.join(over[:40]))
+        if spread:
+            put(f'{kp}.ours.spread.max', f'{max(spread)[0] * 100:.0f}', texname, 'largest (max - min) / median of the kernel closed-loop throughput over the 3 runs, %; ' + max(spread)[1])
+            put(f'{kp}.ours.spread.median', f'{sorted(x for x, _ in spread)[len(spread) // 2] * 100:.1f}', texname, 'median of the same, %')
+        # counts of 16-caller pairs where an exact rival beats sweet, per executor
+        for ex in ('procs', 'threads'):
+            lost = [k_ for k_, v, _, _ in NUM if k_.startswith(kp + '.') and k_.endswith(f'.n16.{ex}.exactratio') and float(v) < 1]
+            put(f'{kp}.n16.{ex}.lost', str(len(set(lost))), texname, ', '.join(sorted(set(lost))))
+            put(f'{kp}.pairs', str(sum(1 for p in PLAT if p in CC for fam in ('agent', 'gcsn') if CC[p].get(fam))), texname, 'CPU-workload pairs with results')
+    conc_block(load('conc2.json'), 'conc', 'conc2.json', True)
+    conc_block(load('conc.json'), 'concf', 'conc.json', False)
+
+    # ------------------------------------------------------------------ fixed cost per call (floor_collect.py)
+    FL = load('floor.json')
+    rows, shares = [], {}
+    for p in PLAT:
+        if p not in FL:
+            rows.append(f'{PS[p]} & \\multicolumn{{6}}{{l}}{{{todo("fixed-cost run")}}} \\\\'); continue
+        d = FL[p]; cells = []
+        for lib in ('ours', 'numpy', 'torch', 'maxsim_cpu', 'nextplaid', 'numkong'):
+            a = 'ours' if lib == 'ours' else d['primary'].get(lib)
+            v = d['arms'].get(a) if a else None
+            if not v:
+                cells.append('--'); continue
+            put(f'floor.{p}.{lib}.us', f"{v['floor_us']:.1f}", 'floor.json', a); put(f'floor.{p}.{lib}.med', f"{v['median_us']:.0f}", 'floor.json', a)
+            put(f'floor.{p}.{lib}.share', f"{v['share'] * 100:.0f}", 'floor.json', f'{a}: floor / median call, %')
+            shares.setdefault(lib, []).append((v['share'] * 100, p))
+            cells.append(f"{v['floor_us']:.1f} / {v['median_us']:.0f} ({v['share'] * 100:.0f}\\%)")
+        rows.append(f'{PS[p]} & ' + ' & '.join(cells) + r' \\')
+    open(os.path.join(TEX, 'floor.tex'), 'w').write('\n'.join(rows) + '\n')
+    if FL:
+        sh_ = next(iter(FL.values()))['median_shape']
+        put('floor.shape.nq', str(sh_['nq']), 'floor.json'); put('floor.shape.pool', str(sh_['pool']), 'floor.json'); put('floor.shape.tokens', f"{sh_['tokens']:,}", 'floor.json')
+    for lib, v in shares.items():
+        put(f'range.floor.{lib}.min', f'{min(v)[0]:.0f}', 'floor.json', min(v)[1]); put(f'range.floor.{lib}.max', f'{max(v)[0]:.0f}', 'floor.json', max(v)[1])
 
     # ------------------------------------------------------------------ budget (one line per platform and cell at 0.25 / 0.5 ms)
     BD = load('budget.json')
