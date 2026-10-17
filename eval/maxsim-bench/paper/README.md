@@ -23,8 +23,11 @@ the files directly in `eval/maxsim-bench/`).
 Inputs: the held-out result trees (the data release; cloud shards under `S8=<release>/s8`,
 local machines under `LOCAL=<release>/local`), the BEIR prep folder (raw vectors, BM25
 lists, qrels and the 20 replay sets) and the replay sets with their `refs-v2` caches. The
-scripts read these paths from `~/.ss-eval/...` by default; see the constants at the top of
-`analysis/load.py`, `conc.py`, `memory.py`, `quality_extra.py` and `budget.py`.
+scripts read these paths from constants at the top of each script (`~/.ss-eval/...` by
+default): `analysis/load.py`, `conc.py`, `memory.py`, `nan_scan.py`, `quality_extra.py`,
+`budget.py`, `rival_scores_check.py`. Edit those constants for another layout. The BEIR
+build script (`beir_prep.py`) records the model revisions in its manifest but does not pass
+them to the download; pin them by hand when you rebuild.
 
 From `eval/maxsim-bench`:
 
@@ -47,6 +50,9 @@ venv/bin/python -I paper/analysis/quality_extra.py
 venv/bin/python -I paper/analysis/budget.py
 venv/bin/python -I paper/analysis/workload.py
 venv/bin/python -I paper/analysis/machines.py
+venv/bin/python -I paper/analysis/nan_scan.py            # NaN scores per arm (NumKong on Intel)
+venv/bin/python -I paper/analysis/rival_scores_check.py  # rival scores identical across runs?
+venv/bin/python -I paper/analysis/numkong_check.py      # synthetic NumKong check (no benchmark data)
 # LaTeX numbers and tables, then figures (matplotlib in a separate venv)
 venv/bin/python -I paper/analysis/mktex.py
 <plot-venv>/bin/python -I paper/analysis/figures.py

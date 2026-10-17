@@ -88,6 +88,7 @@ def pick(rows, lib, it):
 def cell(r, key):
     if not r:
         return '--'
+    defective = key.split('.')[1] == 'intel' and '.numkong.' in key   # NaN / garbage outputs on Intel (AMX defect)
     put(key, f2(r['ratio']), 'speed.json', f"[{f2(r['lo'])}, {f2(r['hi'])}] spread {f2(r['spread'][0]) if r.get('spread') else ''}-{f2(r['spread'][1]) if r.get('spread') else ''} arm {r['arm']}")
     put(key + '.lo', f2(r['lo']), 'speed.json'); put(key + '.hi', f2(r['hi']), 'speed.json')
     if r.get('spread'):
@@ -95,6 +96,8 @@ def cell(r, key):
     s = f"{r['ratio']:.2f}"
     if r['hi'] < 1:
         s = r'\loss{' + s + '}'
+    if defective:
+        s += r'$^\ast$'
     return r'\rr{' + s + '}{' + f2(r['lo']) + '}{' + f2(r['hi']) + '}'
 
 

@@ -9,9 +9,12 @@
 # concurrency.py:run_procs sets start = now + 50 ms and writes it to the start file, but
 # _proc_worker begins its closed loop as soon as it reads the file (it does not wait until
 # start), so wall_ns = end - start misses the time between the file write and start. The
-# callers poll the file every 1 ms, so they begin 48.8 to 50 ms before start. Throughput is
-# therefore recomputed with wall + 48.8 ms (lower bound of the time) and wall + 50 ms (upper
-# bound); the per-request latencies are timed per call and need no correction. Open-loop
+# callers poll the file every 1 ms and cannot start before it exists, so they begin at most
+# 50 ms before start. Throughput is recomputed with wall + 50 ms: an upper bound of the time,
+# so a lower bound of the throughput (a reconstruction, not a repaired measurement; the
+# post-freeze rerun in rerun/concurrency2.py measures it properly). The 48.8 ms figure in
+# 'throughput_bounds' assumes prompt polling and is not a guaranteed bound. The per-request
+# latencies are timed per call and need no correction. Open-loop
 # runs (the callers busy-wait until start + arrival) and the threads executor are correct.
 import glob, json, os, sys
 

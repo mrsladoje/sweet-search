@@ -16,7 +16,7 @@ Token rotation (a Walsh--Hadamard transform that the engine supports) is off in 
 
 \paragraph{Agent calls (agent-ho).}
 Coding agents answered the 200 held-out questions of the engine's retrieval benchmark (a frozen, stratified split, seed 42) about 11 open-source repositories (permissive licences; Appendix~\ref{app:data}) with the engine's search tools.
-The development sets use the same repositories with other questions.
+The development sets use the same repositories, and so the same indexed documents, with other questions; only the queries are new. The question split, the capture commands (\texttt{extract-calls.py}, \texttt{run-capture.sh}) and the set manifests are in the release.
 We kept every unique search call (key: repository, tool and arguments), replayed it through the production search path with the production model (lateon-code, 128-dimensional tokens), and captured each MaxSim call through a preload hook.
 The set holds the \nm{wl.agent-ho.calls} unique calls.
 Duplicates are removed, so these shapes are \emph{not} a request-frequency distribution.

@@ -1,11 +1,11 @@
 # Speed tables (held-out; agent-ho, gcsn-ho and sweep-ho previously examined; BEIR fresh)
 
-ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [workload 95% CI: cluster bootstrap, 10,000 resamples, seed 42] (execution spread: min–max over the R = 5 process repetitions).
+ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [workload 95% CI: cluster bootstrap, 10,000 resamples, seed 42] (leave-one-process-out sensitivity: min–max of the ratio when one of the 5 process repetitions is left out; the frozen single-process range is in speed.json as spread_frozen).
 
 ## warm
 
 ### Intel — agent-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | sweet, production path (Node) | `node-production` | 2004 | 11 | 1.08 [1.07, 1.09] (1.08–1.08) | 1.08 | 98% | 1.7e-07 | 100.0% |  |  |
 | previous production path | `node-legacy` | 2004 | 11 | 5.14 [4.98, 5.34] (5.13–5.14) | 4.71 | 100% | 1.7e-07 | 100.0% |  |  |
@@ -20,7 +20,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f32 | `numkong_native_f32` | 2004 | 11 | 0.64 [0.59, 0.70] (0.64–0.64) | 0.54 | 13% | 7.8e-02 | 86.0% | `numkong_native_f32` 0.64; `numkong_f32` 8.66 |  |
 
 ### Intel — gcsn-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | sweet, production path (Node) | `node-production` | 2378 | 2378 | 1.15 [1.15, 1.15] (1.14–1.16) | 1.14 | 100% | 2.4e-07 | 100.0% |  |  |
 | previous production path | `node-legacy` | 2378 | 2378 | 6.52 [6.48, 6.56] (6.48–6.57) | 6.34 | 100% | 2.4e-07 | 100.0% |  |  |
@@ -35,7 +35,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f32 | `numkong_native_f32` | 2378 | 2378 | 0.90 [0.89, 0.91] (0.89–0.91) | 0.86 | 31% | 9.0e-02 | 94.6% | `numkong_native_f32` 0.90; `numkong_f32` 15.60 |  |
 
 ### Intel — beir
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | sweet, production path (Node) | `node-production` | 6230 | 623 | 1.06 [1.06, 1.06] (1.06–1.06) | 1.05 | 97% | 3.4e-07 | 100.0% |  |  |
 | NumPy, f32 | `numpy_packed@t8` | 6230 | 623 | 1.49 [1.49, 1.49] (1.49–1.49) | 1.51 | 100% | 1.1e-07 | 100.0% | `numpy_packed` 1.71; `numpy_packed@t8` 1.49 |  |
@@ -49,7 +49,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f32 | `numkong_native_f32` | 6230 | 623 | 0.34 [0.34, 0.34] (0.34–0.34) | 0.26 | 0% | 2.1e-01 | 57.7% | `numkong_native_f32` 0.34; `numkong_f32` 5.88 |  |
 
 ### AMD — agent-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | sweet, production path (Node) | `node-production` | 2004 | 11 | 1.17 [1.14, 1.22] (1.17–1.18) | 1.16 | 99% | 1.7e-07 | 100.0% |  |  |
 | previous production path | `node-legacy` | 2004 | 11 | 6.28 [6.07, 6.51] (6.26–6.30) | 5.94 | 100% | 1.7e-07 | 100.0% |  |  |
@@ -64,7 +64,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f32 | `numkong_native_f32` | 2004 | 11 | 1.73 [1.60, 1.85] (1.73–1.75) | 1.61 | 96% | 7.8e-02 | 86.0% | `numkong_native_f32` 1.73; `numkong_f32` 10.81 |  |
 
 ### AMD — gcsn-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | sweet, production path (Node) | `node-production` | 2378 | 2378 | 1.23 [1.23, 1.24] (1.22–1.24) | 1.23 | 100% | 2.4e-07 | 100.0% |  |  |
 | previous production path | `node-legacy` | 2378 | 2378 | 7.10 [7.06, 7.14] (7.05–7.13) | 7.04 | 100% | 2.4e-07 | 100.0% |  |  |
@@ -79,7 +79,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f32 | `numkong_native_f32` | 2378 | 2378 | 1.41 [1.40, 1.41] (1.38–1.42) | 1.42 | 100% | 9.0e-02 | 94.6% | `numkong_native_f32` 1.41; `numkong_f32` 17.89 |  |
 
 ### AMD — beir
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | sweet, production path (Node) | `node-production` | 6230 | 623 | 1.12 [1.12, 1.13] (1.12–1.12) | 1.14 | 94% | 3.4e-07 | 100.0% |  |  |
 | NumPy, f32 | `numpy_packed` | 6230 | 623 | 4.39 [4.36, 4.42] (4.37–4.38) | 3.89 | 100% | 1.1e-07 | 100.0% | `numpy_packed` 4.39; `numpy_packed_t` 4.89 |  |
@@ -93,7 +93,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f32 | `numkong_native_f32` | 6230 | 623 | 1.06 [1.05, 1.07] (1.06–1.06) | 0.86 | 44% | 2.1e-01 | 57.7% | `numkong_native_f32` 1.06; `numkong_f32` 7.17 |  |
 
 ### Graviton4 — agent-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | sweet, production path (Node) | `node-production` | 2004 | 11 | 1.15 [1.14, 1.17] (1.15–1.15) | 1.12 | 100% | 1.7e-07 | 100.0% |  |  |
 | previous production path | `node-legacy` | 2004 | 11 | 3.58 [3.39, 3.81] (3.57–3.59) | 3.17 | 100% | 1.7e-07 | 100.0% |  |  |
@@ -106,7 +106,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f32 | `numkong_native_f32` | 2004 | 11 | 0.86 [0.78, 0.98] (0.86–0.86) | 0.77 | 23% | 7.8e-02 | 86.0% | `numkong_native_f32` 0.86; `numkong_f32` 5.79 |  |
 
 ### Graviton4 — gcsn-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | sweet, production path (Node) | `node-production` | 2378 | 2378 | 1.22 [1.22, 1.22] (1.22–1.22) | 1.21 | 100% | 2.0e-07 | 100.0% |  |  |
 | previous production path | `node-legacy` | 2378 | 2378 | 5.39 [5.35, 5.43] (5.38–5.39) | 5.21 | 100% | 2.0e-07 | 100.0% |  |  |
@@ -119,7 +119,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f32 | `numkong_native_f32` | 2378 | 2378 | 0.95 [0.94, 0.95] (0.94–0.95) | 0.92 | 37% | 9.0e-02 | 94.6% | `numkong_native_f32` 0.95; `numkong_f32` 10.65 |  |
 
 ### Graviton4 — beir
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | sweet, production path (Node) | `node-production` | 6230 | 623 | 1.09 [1.09, 1.09] (1.09–1.09) | 1.06 | 100% | 3.3e-07 | 100.0% |  |  |
 | NumPy, f32 | `numpy_packed` | 6230 | 623 | 1.60 [1.59, 1.60] (1.59–1.60) | 1.57 | 100% | 1.1e-07 | 100.0% | `numpy_packed` 1.60; `numpy_perdoc` 6.24 | `numpy_packed_t` 3.95 |
@@ -131,7 +131,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f32 | `numkong_native_f32` | 6230 | 623 | 0.60 [0.60, 0.60] (0.60–0.60) | 0.47 | 20% | 2.1e-01 | 57.7% | `numkong_native_f32` 0.60; `numkong_f32` 3.88 |  |
 
 ### M3 Max — agent-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | sweet, production path (Node) | `node-production` | 2004 | 11 | 1.08 [1.07, 1.10] (1.07–1.09) | 1.08 | 97% | 1.7e-07 | 100.0% |  |  |
 | previous production path | `node-legacy` | 2004 | 11 | 3.44 [3.17, 3.70] (3.33–3.56) | 3.03 | 100% | 1.7e-07 | 100.0% |  |  |
@@ -145,7 +145,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f32 | `numkong_native_f32` | 2004 | 11 | 1.52 [1.39, 1.64] (1.42–1.63) | 1.28 | 88% | 7.8e-02 | 86.0% | `numkong_native_f32` 1.52; `numkong_f32` 4.68 |  |
 
 ### M3 Max — gcsn-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | sweet, production path (Node) | `node-production` | 2378 | 2378 | 1.08 [1.08, 1.08] (1.08–1.08) | 1.07 | 100% | 2.0e-07 | 100.0% |  |  |
 | previous production path | `node-legacy` | 2378 | 2378 | 4.80 [4.77, 4.84] (4.80–4.82) | 4.64 | 100% | 2.0e-07 | 100.0% |  |  |
@@ -159,7 +159,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f32 | `numkong_native_f32` | 2378 | 2378 | 2.74 [2.71, 2.77] (2.74–2.77) | 2.62 | 100% | 9.0e-02 | 94.6% | `numkong_native_f32` 2.74; `numkong_f32` 9.73 |  |
 
 ### M3 Max — beir
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | sweet, production path (Node) | `node-production` | 6230 | 623 | 1.06 [1.05, 1.06] (1.05–1.07) | 1.06 | 99% | 3.3e-07 | 100.0% |  |  |
 | NumPy, f32 | `numpy_packed` | 6230 | 623 | 1.48 [1.47, 1.48] (1.46–1.48) | 1.43 | 100% | 1.1e-07 | 100.0% | `numpy_packed@t12` 1.48; `numpy_packed` 1.48 |  |
@@ -172,7 +172,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f32 | `numkong_native_f32` | 6230 | 623 | 1.00 [1.00, 1.00] (1.00–1.01) | 0.72 | 41% | 2.1e-01 | 57.7% | `numkong_native_f32` 1.00; `numkong_f32` 4.81 |  |
 
 ### EPYC — agent-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | sweet, production path (Node) | `node-production` | 2004 | 11 | 1.16 [1.15, 1.18] (1.16–1.16) | 1.16 | 100% | 1.7e-07 | 100.0% |  |  |
 | previous production path | `node-legacy` | 2004 | 11 | 4.16 [4.04, 4.29] (4.15–4.20) | 3.81 | 100% | 1.7e-07 | 100.0% |  |  |
@@ -186,7 +186,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f32 | `numkong_native_f32` | 2004 | 11 | 1.69 [1.64, 1.75] (1.69–1.70) | 1.50 | 99% | 7.8e-02 | 86.4% | `numkong_native_f32` 1.69; `numkong_f32` 6.17 |  |
 
 ### EPYC — gcsn-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | sweet, production path (Node) | `node-production` | 2378 | 2378 | 1.22 [1.21, 1.22] (1.20–1.24) | 1.19 | 95% | 2.4e-07 | 100.0% |  |  |
 | previous production path | `node-legacy` | 2378 | 2378 | 5.10 [5.06, 5.14] (5.09–5.11) | 4.83 | 100% | 2.4e-07 | 100.0% |  |  |
@@ -200,7 +200,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f32 | `numkong_native_f32` | 2378 | 2378 | 1.91 [1.90, 1.92] (1.91–1.92) | 1.88 | 99% | 9.0e-02 | 94.2% | `numkong_native_f32` 1.91; `numkong_f32` 13.79 |  |
 
 ### EPYC — beir
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | sweet, production path (Node) | `node-production` | 6230 | 623 | 1.15 [1.14, 1.15] (1.15–1.15) | 1.12 | 83% | 3.4e-07 | 100.0% |  |  |
 | NumPy, f32 | `numpy_packed@t4` | 6230 | 623 | 1.12 [1.11, 1.12] (1.12–1.12) | 1.13 | 88% | 6.8e-08 | 100.0% | `numpy_packed` 1.14; `numpy_packed@t4` 1.12 |  |
@@ -215,7 +215,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 ## single
 
 ### Intel — agent-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, f32 | `numpy_packed@t1` | 2004 | 11 | 1.14 [1.12, 1.15] (1.13–1.14) | 1.14 | 88% | 1.0e-07 | 99.9% | `numpy_packed@t1` 1.14 |  |
 | NumPy (MKL), f32 | `numpy_packed@t1+mkl` | — | — | not run | | | | | | |
@@ -225,7 +225,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f16 | `numkong_native_f16@t1` | 2004 | 11 | 0.10 [0.10, 0.11] (0.10–0.10) | 0.11 | 0% | 7.8e-02 | 86.0% | `numkong_native_f16@t1` 0.10 | `numkong_f16@t1` 0.12 |
 
 ### Intel — gcsn-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, f32 | `numpy_packed@t1` | 2378 | 2378 | 1.26 [1.25, 1.27] (1.25–1.27) | 1.21 | 94% | 1.1e-07 | 100.0% | `numpy_packed@t1` 1.26 |  |
 | NumPy (MKL), f32 | `numpy_packed@t1+mkl` | — | — | not run | | | | | | |
@@ -235,7 +235,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f16 | `numkong_native_f16@t1` | 2378 | 2378 | 0.15 [0.15, 0.15] (0.15–0.15) | 0.15 | 0% | 9.0e-02 | 94.5% | `numkong_native_f16@t1` 0.15 | `numkong_f16@t1` 0.18 |
 
 ### Intel — beir
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, f32 | `numpy_packed@t1` | 6230 | 623 | 0.83 [0.83, 0.83] (0.83–0.83) | 0.83 | 1% | 1.1e-07 | 100.0% | `numpy_packed@t1` 0.83 |  |
 | NumPy (MKL), f32 | `numpy_packed@t1+mkl` | — | — | not run | | | | | | |
@@ -245,7 +245,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f16 | `numkong_native_f16@t1` | 6230 | 623 | 0.12 [0.12, 0.12] (0.12–0.12) | 0.14 | 0% | 2.1e-01 | 57.8% | `numkong_native_f16@t1` 0.12 | `numkong_f16@t1` 0.15 |
 
 ### AMD — agent-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, f32 | `numpy_packed@t1` | 2004 | 11 | 1.08 [1.06, 1.10] (1.08–1.08) | 1.06 | 69% | 1.0e-07 | 99.9% | `numpy_packed@t1` 1.08 |  |
 | NumPy (BLIS), f32 | `numpy_packed@t1+blis` | 2004 | 11 | 5.80 [5.73, 5.85] (5.79–5.80) | 5.93 | 100% | 9.5e-08 | 99.9% | `numpy_packed@t1+blis` 5.80 |  |
@@ -255,7 +255,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f16 | `numkong_native_f16@t1` | 2004 | 11 | 0.48 [0.47, 0.48] (0.48–0.48) | 0.49 | 0% | 7.8e-02 | 86.2% | `numkong_native_f16@t1` 0.48 |  |
 
 ### AMD — gcsn-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, f32 | `numpy_packed@t1` | 2378 | 2378 | 1.06 [1.05, 1.07] (1.06–1.06) | 1.02 | 55% | 1.1e-07 | 100.0% | `numpy_packed@t1` 1.06 |  |
 | NumPy (BLIS), f32 | `numpy_packed@t1+blis` | 2378 | 2378 | 5.32 [5.31, 5.34] (5.30–5.34) | 5.37 | 100% | 1.1e-07 | 100.0% | `numpy_packed@t1+blis` 5.32 |  |
@@ -265,7 +265,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f16 | `numkong_native_f16@t1` | 2378 | 2378 | 0.45 [0.45, 0.45] (0.45–0.45) | 0.46 | 0% | 9.0e-02 | 94.5% | `numkong_native_f16@t1` 0.45 |  |
 
 ### AMD — beir
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, f32 | `numpy_packed@t1` | 6230 | 623 | 0.77 [0.77, 0.77] (0.77–0.77) | 0.76 | 1% | 1.1e-07 | 100.0% | `numpy_packed@t1` 0.77 |  |
 | NumPy (BLIS), f32 | `numpy_packed@t1+blis` | 6230 | 623 | 5.41 [5.40, 5.42] (5.40–5.42) | 5.36 | 100% | 9.5e-08 | 100.0% | `numpy_packed@t1+blis` 5.41 |  |
@@ -275,7 +275,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f16 | `numkong_native_f16@t1` | 6230 | 623 | 0.55 [0.55, 0.55] (0.55–0.55) | 0.56 | 0% | 2.1e-01 | 57.8% | `numkong_native_f16@t1` 0.55 |  |
 
 ### Graviton4 — agent-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, f32 | `numpy_packed@t1` | 2004 | 11 | 1.16 [1.16, 1.16] (1.16–1.16) | 1.19 | 100% | 1.0e-07 | 99.9% | `numpy_packed@t1` 1.16 |  |
 | PyTorch, f32 | `torch_pad_bmm@t1` | 2004 | 11 | 1.54 [1.29, 1.81] (1.54–1.54) | 1.39 | 82% | 1.0e-07 | 99.9% | `torch_pad_bmm@t1` 1.54 |  |
@@ -283,7 +283,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f16 | `numkong_native_f16@t1` | 2004 | 11 | 0.29 [0.29, 0.30] (0.29–0.30) | 0.31 | 0% | 7.8e-02 | 86.2% | `numkong_native_f16@t1` 0.29 |  |
 
 ### Graviton4 — gcsn-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, f32 | `numpy_packed@t1` | 2378 | 2378 | 1.17 [1.17, 1.17] (1.17–1.17) | 1.17 | 100% | 1.1e-07 | 100.0% | `numpy_packed@t1` 1.17 |  |
 | PyTorch, f32 | `torch_pad_bmm@t1` | 2378 | 2378 | 2.86 [2.82, 2.91] (2.86–2.87) | 2.76 | 99% | 1.1e-07 | 100.0% | `torch_pad_bmm@t1` 2.86 |  |
@@ -291,7 +291,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f16 | `numkong_native_f16@t1` | 2378 | 2378 | 0.31 [0.31, 0.31] (0.31–0.31) | 0.31 | 0% | 9.0e-02 | 94.5% | `numkong_native_f16@t1` 0.31 |  |
 
 ### Graviton4 — beir
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, f32 | `numpy_packed@t1` | 6230 | 623 | 1.29 [1.29, 1.29] (1.29–1.29) | 1.33 | 100% | 1.1e-07 | 100.0% | `numpy_packed@t1` 1.29 |  |
 | PyTorch, f32 | `torch_pad_bmm@t1` | 6230 | 623 | 0.83 [0.83, 0.84] (0.83–0.83) | 0.76 | 19% | 1.1e-07 | 100.0% | `torch_pad_bmm@t1` 0.83 |  |
@@ -299,7 +299,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f16 | `numkong_native_f16@t1` | 6230 | 623 | 0.32 [0.32, 0.32] (0.32–0.32) | 0.33 | 0% | 2.1e-01 | 57.8% | `numkong_native_f16@t1` 0.32 |  |
 
 ### M3 Max — agent-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, f32 | `numpy_packed@t1` | 2004 | 11 | 0.24 [0.23, 0.25] (0.24–0.24) | 0.22 | 0% | 1.0e-07 | 99.9% | `numpy_packed@t1` 0.24 |  |
 | PyTorch, f32 | `torch_pad_bmm@t1` | 2004 | 11 | 0.51 [0.47, 0.55] (0.51–0.51) | 0.49 | 2% | 1.0e-07 | 99.9% | `torch_pad_bmm@t1` 0.51 |  |
@@ -308,7 +308,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f16 | `numkong_native_f16@t1` | 2004 | 11 | 0.30 [0.29, 0.30] (0.29–0.30) | 0.30 | 0% | 7.8e-02 | 86.2% | `numkong_native_f16@t1` 0.30 | `numkong_f16@t1` 0.32 |
 
 ### M3 Max — gcsn-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, f32 | `numpy_packed@t1` | 2378 | 2378 | 0.28 [0.28, 0.28] (0.28–0.28) | 0.26 | 0% | 1.1e-07 | 100.0% | `numpy_packed@t1` 0.28 |  |
 | PyTorch, f32 | `torch_pad_bmm@t1` | 2378 | 2378 | 0.91 [0.90, 0.92] (0.91–0.91) | 0.85 | 39% | 1.1e-07 | 100.0% | `torch_pad_bmm@t1` 0.91 |  |
@@ -317,7 +317,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f16 | `numkong_native_f16@t1` | 2378 | 2378 | 0.31 [0.31, 0.32] (0.31–0.31) | 0.31 | 0% | 9.0e-02 | 94.5% | `numkong_native_f16@t1` 0.31 | `numkong_f16@t1` 0.35 |
 
 ### M3 Max — beir
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, f32 | `numpy_packed@t1` | 6230 | 623 | 0.16 [0.16, 0.16] (0.16–0.16) | 0.14 | 0% | 1.1e-07 | 100.0% | `numpy_packed@t1` 0.16 |  |
 | PyTorch, f32 | `torch_pad_bmm@t1` | 6230 | 623 | 0.31 [0.31, 0.31] (0.31–0.31) | 0.31 | 0% | 1.1e-07 | 100.0% | `torch_pad_bmm@t1` 0.31 |  |
@@ -326,7 +326,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f16 | `numkong_native_f16@t1` | 6230 | 623 | 0.26 [0.26, 0.26] (0.26–0.27) | 0.26 | 0% | 2.1e-01 | 57.8% | `numkong_native_f16@t1` 0.26 | `numkong_f16@t1` 0.28 |
 
 ### EPYC — agent-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, f32 | `numpy_packed@t1` | 2004 | 11 | 1.11 [1.10, 1.12] (1.08–1.17) | 1.10 | 84% | 1.0e-07 | 98.7% | `numpy_packed@t1` 1.11 |  |
 | PyTorch, f32 | `torch_pad_bmm@t1` | 2004 | 11 | 1.51 [1.43, 1.59] (1.46–1.58) | 1.55 | 100% | 1.0e-07 | 99.9% | `torch_pad_bmm@t1` 1.51 |  |
@@ -335,7 +335,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f16 | `numkong_native_f16@t1` | 2004 | 11 | 0.60 [0.60, 0.61] (0.58–0.63) | 0.61 | 0% | 7.8e-02 | 86.4% | `numkong_native_f16@t1` 0.60 |  |
 
 ### EPYC — gcsn-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, f32 | `numpy_packed@t1` | 2378 | 2378 | 1.23 [1.22, 1.23] (1.22–1.23) | 1.20 | 92% | 1.1e-07 | 100.0% | `numpy_packed@t1` 1.23 |  |
 | PyTorch, f32 | `torch_pad_bmm@t1` | 2378 | 2378 | 2.65 [2.62, 2.67] (2.64–2.65) | 2.58 | 100% | 1.1e-07 | 100.0% | `torch_pad_bmm@t1` 2.65 |  |
@@ -344,7 +344,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f16 | `numkong_native_f16@t1` | 2378 | 2378 | 0.64 [0.63, 0.64] (0.64–0.64) | 0.65 | 0% | 9.0e-02 | 94.3% | `numkong_native_f16@t1` 0.64 |  |
 
 ### EPYC — beir
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, f32 | `numpy_packed@t1` | 6230 | 623 | 0.88 [0.88, 0.88] (0.88–0.88) | 0.86 | 11% | 1.1e-07 | 99.8% | `numpy_packed@t1` 0.88 |  |
 | PyTorch, f32 | `torch_pad_bmm@t1` | 6230 | 623 | 1.15 [1.14, 1.15] (1.15–1.15) | 1.17 | 85% | 1.1e-07 | 100.0% | `torch_pad_bmm@t1` 1.15 |  |
@@ -355,88 +355,88 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 ## int4
 
 ### Intel — agent-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, int4-self | `numpy_packed_int4` | 2004 | 11 | 20.82 [20.24, 21.28] (20.72–20.91) | 22.16 | 100% | 1.0e-07 | 99.9% | `numpy_packed_int4` 20.82 |  |
 | maxsim-cpu, int4-self | `maxsim_cpu_variable_int4` | 2004 | 11 | 25.15 [24.53, 25.54] (25.11–25.19) | 25.44 | 100% | 1.6e-07 | 99.9% | `maxsim_cpu_variable_int4` 25.15 |  |
 
 ### Intel — gcsn-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, int4-self | `numpy_packed_int4` | 2378 | 2378 | 19.36 [19.22, 19.51] (19.25–19.49) | 19.05 | 100% | 1.1e-07 | 100.0% | `numpy_packed_int4` 19.36 |  |
 | maxsim-cpu, int4-self | `maxsim_cpu_variable_int4` | 2378 | 2378 | 23.30 [23.13, 23.48] (23.16–23.50) | 22.92 | 100% | 1.7e-07 | 100.0% | `maxsim_cpu_variable_int4` 23.30 |  |
 
 ### Intel — beir
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, int4-self | `numpy_packed_int4` | 6230 | 623 | 12.69 [12.64, 12.73] (12.68–12.71) | 12.87 | 100% | 1.1e-07 | 100.0% | `numpy_packed_int4` 12.69 |  |
 | maxsim-cpu, int4-self | `maxsim_cpu_variable_int4` | 6230 | 623 | 13.17 [13.14, 13.20] (13.16–13.19) | 13.32 | 100% | 3.2e-07 | 100.0% | `maxsim_cpu_variable_int4` 13.17 |  |
 
 ### AMD — agent-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, int4-self | `numpy_packed_int4` | 2004 | 11 | 34.69 [33.45, 35.66] (34.60–34.78) | 37.36 | 100% | 1.0e-07 | 99.9% | `numpy_packed_int4` 34.69 |  |
 | maxsim-cpu, int4-self | `maxsim_cpu_variable_int4` | 2004 | 11 | 37.60 [36.34, 38.63] (37.52–37.66) | 39.50 | 100% | 1.6e-07 | 99.9% | `maxsim_cpu_variable_int4` 37.60 |  |
 
 ### AMD — gcsn-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, int4-self | `numpy_packed_int4` | 2378 | 2378 | 30.60 [30.44, 30.77] (30.38–30.78) | 30.56 | 100% | 1.1e-07 | 100.0% | `numpy_packed_int4` 30.60 |  |
 | maxsim-cpu, int4-self | `maxsim_cpu_variable_int4` | 2378 | 2378 | 32.64 [32.46, 32.82] (32.46–32.86) | 32.43 | 100% | 1.7e-07 | 100.0% | `maxsim_cpu_variable_int4` 32.64 |  |
 
 ### AMD — beir
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, int4-self | `numpy_packed_int4` | 6230 | 623 | 22.65 [22.50, 22.79] (22.59–22.63) | 23.57 | 100% | 1.1e-07 | 100.0% | `numpy_packed_int4` 22.65 |  |
 | maxsim-cpu, int4-self | `maxsim_cpu_variable_int4` | 6230 | 623 | 22.11 [21.97, 22.24] (22.05–22.08) | 23.71 | 100% | 3.2e-07 | 100.0% | `maxsim_cpu_variable_int4` 22.11 |  |
 
 ### Graviton4 — agent-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, int4-self | `numpy_packed_int4` | 2004 | 11 | 22.10 [21.73, 22.33] (22.08–22.13) | 22.78 | 100% | 1.0e-07 | 99.9% | `numpy_packed_int4` 22.10 |  |
 
 ### Graviton4 — gcsn-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, int4-self | `numpy_packed_int4` | 2378 | 2378 | 21.47 [21.33, 21.62] (21.44–21.50) | 21.15 | 100% | 1.1e-07 | 100.0% | `numpy_packed_int4` 21.47 |  |
 
 ### Graviton4 — beir
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, int4-self | `numpy_packed_int4` | 6230 | 623 | 14.20 [14.16, 14.25] (14.19–14.20) | 14.18 | 100% | 1.1e-07 | 100.0% | `numpy_packed_int4` 14.20 |  |
 
 ### M3 Max — agent-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, int4-self | `numpy_packed_int4` | 2004 | 11 | 18.12 [16.17, 20.18] (16.81–19.21) | 18.70 | 100% | 1.0e-07 | 99.9% | `numpy_packed_int4` 18.12 |  |
 | maxsim-cpu, int4-self | `maxsim_cpu_variable_int4` | 2004 | 11 | 26.87 [24.13, 29.53] (24.99–28.40) | 27.49 | 100% | 4.1e-02 | 100.0% | `maxsim_cpu_variable_int4` 26.87 |  |
 
 ### M3 Max — gcsn-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, int4-self | `numpy_packed_int4` | 2378 | 2378 | 19.97 [19.81, 20.13] (19.91–20.01) | 19.51 | 100% | 1.1e-07 | 100.0% | `numpy_packed_int4` 19.97 |  |
 | maxsim-cpu, int4-self | `maxsim_cpu_variable_int4` | 2378 | 2378 | 39.23 [38.89, 39.58] (39.13–39.32) | 37.65 | 100% | 3.4e-02 | 100.0% | `maxsim_cpu_variable_int4` 39.23 |  |
 
 ### M3 Max — beir
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, int4-self | `numpy_packed_int4` | 6230 | 623 | 12.44 [12.42, 12.46] (12.34–12.47) | 13.20 | 100% | 1.1e-07 | 100.0% | `numpy_packed_int4` 12.44 |  |
 | maxsim-cpu, int4-self | `maxsim_cpu_variable_int4` | 6230 | 623 | 18.90 [18.86, 18.94] (18.74–18.94) | 18.64 | 100% | 7.6e-02 | 100.0% | `maxsim_cpu_variable_int4` 18.90 |  |
 
 ### EPYC — agent-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, int4-self | `numpy_packed_int4` | 2004 | 11 | 10.88 [10.48, 11.11] (10.88–10.98) | 10.92 | 100% | 6.9e-08 | 99.9% | `numpy_packed_int4` 10.88 |  |
 | maxsim-cpu, int4-self | `maxsim_cpu_variable_int4` | 2004 | 11 | 14.40 [13.75, 15.05] (14.49–14.71) | 13.59 | 100% | 1.6e-07 | 99.9% | `maxsim_cpu_variable_int4` 14.40 |  |
 
 ### EPYC — gcsn-ho
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, int4-self | `numpy_packed_int4` | 2378 | 2378 | 11.60 [11.48, 11.72] (11.57–11.64) | 10.89 | 100% | 1.1e-07 | 100.0% | `numpy_packed_int4` 11.60 |  |
 | maxsim-cpu, int4-self | `maxsim_cpu_variable_int4` | 2378 | 2378 | 17.98 [17.76, 18.19] (18.05–18.37) | 17.28 | 100% | 1.7e-07 | 100.0% | `maxsim_cpu_variable_int4` 17.98 |  |
 
 ### EPYC — beir
-| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, int4-self | `numpy_packed_int4` | 6230 | 623 | 6.71 [6.66, 6.75] (6.70–6.71) | 6.35 | 100% | 6.8e-08 | 100.0% | `numpy_packed_int4` 6.71 |  |
 | maxsim-cpu, int4-self | `maxsim_cpu_variable_int4` | 6230 | 623 | 8.02 [7.97, 8.08] (8.02–8.07) | 7.86 | 100% | 3.2e-07 | 100.0% | `maxsim_cpu_variable_int4` 8.02 |  |

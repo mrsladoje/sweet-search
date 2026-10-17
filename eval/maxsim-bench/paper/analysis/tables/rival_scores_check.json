@@ -1,0 +1,1392 @@
+{
+ "intel": {
+  "torch_pad_bmm@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_f16@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317386,
+   "maxabs": 1.6181812105928578e+30,
+   "calls": 56070,
+   "reordered": 2,
+   "bit_equal_share": 0.9999990735143223,
+   "reordered_share": 3.566969859104691e-05
+  },
+  "numkong_bf16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "nextplaid": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_native_f16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "maxsim_cpu_variable@t8": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "torch_colbert_packed": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "maxsim_cpu_variable": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "torch_pad_bmm_bf16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "nextplaid@t8": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "torch_pad_flat_bf16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numpy_packed@t8": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_native_f16@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "ours@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "torch_pad_flat": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_native_f32": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "torch_pad_bmm@t8": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numpy_packed": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "torch_pad_bmm": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "maxsim_cpu_variable_int4": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_f16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317320,
+   "maxabs": 8.684178389806613e+31,
+   "calls": 56070,
+   "reordered": 55,
+   "bit_equal_share": 0.9999837865006405,
+   "reordered_share": 0.0009809167112537899
+  },
+  "maxsim_cpu_variable@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "nextplaid@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numpy_packed@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "ours": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "ours@t8": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_f32": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4316500,
+   "maxabs": 2.4495255124898533e+74,
+   "calls": 56070,
+   "reordered": 506,
+   "bit_equal_share": 0.9997938569367141,
+   "reordered_share": 0.009024433743534867
+  },
+  "numkong_native_bf16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "node-production": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numpy_packed_int4": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  }
+ },
+ "amd": {
+  "torch_pad_bmm@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "torch_pylate": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numpy_packed_t": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_bf16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "nextplaid": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_native_f16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "maxsim_cpu_variable": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "torch_pad_bmm_bf16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "torch_pad_flat_bf16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_native_f16@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "ours@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "maxsim_cpu_3d": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "torch_pad_flat": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_native_f32": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numpy_packed@t1+blis": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numpy_packed": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numpy_packed+blis": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "torch_pad_bmm": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "maxsim_cpu_variable_int4": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_f16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "maxsim_cpu_variable@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "nextplaid@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numpy_packed@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "ours": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_f32": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_native_bf16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "node-production": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numpy_packed_int4": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  }
+ },
+ "arm": {
+  "torch_pad_bmm@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numpy_packed_t": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_bf16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "nextplaid": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_native_f16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "torch_segment_reduce": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "torch_colbert_packed": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "torch_pad_bmm_bf16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numpy_perdoc": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "torch_pad_flat_bf16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_native_f16@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "ours@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "torch_pad_flat": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_native_f32": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numpy_packed": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "torch_pad_bmm": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_f16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "nextplaid@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numpy_packed@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "ours": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_f32": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_native_bf16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "node-production": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numpy_packed_int4": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  }
+ },
+ "m3max": {
+  "torch_pad_bmm@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_f16@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "maxsim_cpu_variable@t12": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_bf16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "nextplaid": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_native_f16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "torch_segment_reduce": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "torch_colbert_packed": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "torch_pad_bmm_bf16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "torch_pad_flat_bf16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "nextplaid@t12": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_native_f16@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "ours@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "maxsim_cpu_3d": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "torch_pad_flat": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_native_f32": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numpy_packed": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "maxsim_cpu_variable_int4": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_f16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "ours@t12": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "maxsim_cpu_variable@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "nextplaid@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numpy_packed@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "ours": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numpy_packed@t12": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_f32": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_native_bf16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "node-production": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numpy_packed_int4": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  }
+ },
+ "epyc": {
+  "torch_pad_bmm@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_bf16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "nextplaid": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_native_f16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "torch_pad_bmm@t4": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "maxsim_cpu_variable": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "torch_pad_bmm_bf16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "ours@t4": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "torch_pad_flat_bf16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_native_f16@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "ours@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_native_f32": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "maxsim_cpu_variable@t4": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numpy_packed": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "torch_pad_bmm": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "maxsim_cpu_variable_int4": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_f16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "maxsim_cpu_variable@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "nextplaid@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numpy_packed@t1": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "ours": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "nextplaid@t4": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_f32": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numkong_native_bf16": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numpy_packed@t4": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "node-production": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  },
+  "numpy_packed_int4": {
+   "files": 180,
+   "scores": 4317390,
+   "equal": 4317390,
+   "maxabs": 0.0,
+   "calls": 56070,
+   "reordered": 0,
+   "bit_equal_share": 1.0,
+   "reordered_share": 0.0
+  }
+ }
+}
