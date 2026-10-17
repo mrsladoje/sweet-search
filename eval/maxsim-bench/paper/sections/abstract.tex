@@ -1,7 +1,7 @@
 \begin{abstract}
 \noindent
-We present \benchname, a benchmark for CPU kernels that rerank candidate documents with late-interaction (MaxSim) scores.
-It replays real rerank calls: agent calls from a code-search engine, calls from a public code-search benchmark, a size sweep, and two BEIR datasets.
+We present \benchname, a benchmark for CPU kernels that rerank candidate documents with late-interaction (MaxSim) scores, as used by ColBERT-style multi-vector retrieval.
+It replays rerank calls captured from a code-search engine (coding-agent queries and a public code-search benchmark) and from two BEIR datasets, and adds a size sweep built from real embeddings.
 It checks each implementation against a float64 reference of its own scoring rule.
 It keeps development and held-out data apart under a recorded freeze.
 We use it to measure an int4 SIMD kernel from the open-source engine sweet-search against NumPy, PyTorch, maxsim-cpu, NextPlaid and NumKong.
@@ -11,8 +11,9 @@ On these previously examined sets, the fastest such rival needed \nm{best.warm.a
 On the fresh BEIR calls, the kernel was faster on four CPUs, but PyTorch was faster on the Xeon (\nm{warm.intel.beir.torch.f32}$\times$ the kernel's time).
 The kernel also lost in other conditions.
 NumKong, which approximates the maximum, was faster on three CPUs.
-Exact rivals were faster in \nm{sweep.m3max.loseany} to \nm{sweep.intel.loseany} sweep cells per CPU, with one thread on BEIR calls, after a 5\,ms busy gap on four CPUs, and with 16 parallel callers in one shared process.
-On BEIR, int4 storage with the production scoring rule showed no material loss in nDCG@10 for ColBERTv2 (margin 0.01, Holm correction).
+Exact rivals had lower times in \nm{sweep.epyc.loseany} to \nm{sweep.intel.loseany} sweep cells per CPU.
+They were also faster with one thread on BEIR calls, after a 5\,ms busy gap on four CPUs, and with 16 parallel callers in one shared process.
+On BEIR, int4 storage with the production scoring rule showed no material loss in nDCG@10 for ColBERTv2 at 100 candidates (margin 0.01, Holm correction).
 For answerai-colbert-small it lost \nm{q.intel.scifact.answersmall.relabs}\% and \nm{q.intel.nfcorpus.answersmall.relabs}\%.
 A post-hoc analysis associates most of this loss with the length error of decoded tokens, which the production scoring rule keeps.
 The reference checks found two new defects in other libraries and confirmed a known one.

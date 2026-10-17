@@ -131,8 +131,11 @@ def ratio(c, sets, arm, base='ours'):
                                                 [w for kk, v in reps.items() if kk != drop for _, w in v]) for drop in reps),
                            max(rl.geomean_ratio([u for kk, v in reps.items() if kk != drop for u, _ in v],
                                                 [w for kk, v in reps.items() if kk != drop for _, w in v]) for drop in reps))
-    out['rival_faster'] = bool(hi < 1 and jk and max(jk) < 1)
-    out['sweet_faster'] = bool(lo > 1 and jk and min(jk) > 1)
+    # "faster" needs the workload interval and both execution views (leave-one-process-out and
+    # the frozen per-process estimates) on one side of 1
+    out['rival_faster'] = bool(hi < 1 and jk and max(jk) < 1 and (not pp or max(pp) < 1))
+    out['sweet_faster'] = bool(lo > 1 and jk and min(jk) > 1 and (not pp or min(pp) > 1))
+    out['outside_frozen_spread'] = bool(pp and not (min(pp) <= g <= max(pp)))
     return out
 
 

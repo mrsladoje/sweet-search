@@ -38,7 +38,7 @@ An \emph{arm} is one implementation in one configuration.
 Each library ran in several configurations: API variant, input type and thread budget.
 The input types are float32, bfloat16 and float16.
 For NumPy and maxsim-cpu there is also ``int4-self'': the rival receives the int4 storage and decodes it with NumPy inside its timed call.
-The thread budgets are the library default, the physical or performance cores, and one.
+The thread budgets are the library default (all logical CPUs), the physical or performance cores, and one; the default was a candidate for every library.
 Appendix~\ref{app:terms} names every variant.
 
 On the development sets, a script chose, per machine, library, input type and workload family, the two configurations with the smallest total time and the fastest one-thread configuration.
@@ -48,6 +48,7 @@ Each table row shows, per library and input type, the faster of its two frozen c
 This choice inside the frozen set can only favour the rival.
 The released tables also give each frozen configuration and the fastest configuration that ran, frozen or not (``post hoc'').
 
+PyLate's scoring is re-implemented line by line from its CPU path (\texttt{colbert\_scores} 1.6.0), and colbert-ai's packed scoring uses its vendored C++ file; no PyLate configuration was shortlisted on any CPU, and colbert-ai's packed scoring appears as one of PyTorch's configurations.
 We gave the rivals their best case.
 Their inputs are the int4 storage decoded to float32, normalized, cast and packed outside the timer; the memory measurement counts these copies.
 So the ``float32'' rivals score the same int4 data as \sweet; Section~\ref{sec:budget} adds float32 storage as a separate line.
@@ -80,12 +81,15 @@ A speed ratio is the geometric mean over calls of (rival time / \sweet time); ab
 We report two uncertainty numbers apart.
 The \emph{workload interval} is a 95\% cluster-bootstrap interval (10,000 resamples, seed 42).
 It resamples repositories for agent calls (11 clusters), queries for GCSN and BEIR calls, and calls for sweep cells.
-With 11 clusters this interval can be too narrow, so Appendix~\ref{app:tables} also gives the per-repository range and the leave-one-repository-out range.
+The 11 repositories hold \nm{agent.repos.min} to \nm{agent.repos.max} calls each, and five of them hold \nm{agent.repos.top5}\% of all calls, so the effective number of clusters is about \nm{agent.repos.eff}.
+With so few clusters this interval can be too narrow, so Appendix~\ref{app:robust} also gives the per-repository range and the leave-one-repository-out range.
 The \emph{execution spread} is the range of the ratio over five leave-one-process-out estimates, each computed with the same median-of-runs estimator.
 The replica instance adds an instance-to-instance spread (Section~\ref{sec:spread}).
-We call a rival \emph{faster} only if its whole workload interval and all five leave-one-process-out estimates are below 1.
+The leave-one-process-out range is narrow, because each estimate shares 8 of 10 runs; the ratio fell outside the range of the five single-process estimates (each the mean of its 2 rounds) in \nm{spread.outside.n} of \nm{spread.rows.n} warm rows, because the median of 10 runs drops slow outlier runs that a mean of 2 keeps.
+We call a rival \emph{faster} only if its whole workload interval, all five leave-one-process-out estimates and all five single-process estimates are below 1; sweep and loss counts that use only the point estimate say ``ratio below 1''.
 This rule is descriptive; we do not correct it for the many comparisons.
-Beside the geometric mean we computed the total-time ratio (sum of rival times over sum of \sweet times); for no exact rival with float32 inputs does it fall on the other side of 1.
+Beside the geometric mean we computed the total-time ratio (sum of rival times over sum of \sweet times), which weights large calls more.
+For no exact rival with float32 inputs does it fall on the other side of 1; for \nm{totalflip.n} BEIR rows with other input types it does (Section~\ref{sec:losses}).
 
 \paragraph{Noise check and $R$.}
 On development data, an A/A run (the same build as two arms, 5 process repetitions) gave per machine the coefficient of variation $cv$ of the set-level geometric mean.
