@@ -4,7 +4,7 @@
 Every arm was checked on every call against a float64 reference of its own contract.
 Table~\ref{tab:correctness} (Appendix~\ref{app:tables}) lists, per CPU and arm, the largest implementation error, the input-rounding effect and the top-1 agreement with the contract-S reference.
 Apart from maxsim-cpu on the M3 Max (issue \#5 below), every exact arm with float32 inputs stayed within $4\times10^{-7}$ of its own reference on every call.
-The checks found two new defects in other libraries, which we reported upstream, and confirmed a third that was already reported.
+The checks found two new defects in other libraries and confirmed a third that was already reported. We reported the two new ones upstream in October 2026; the maintainers have not yet confirmed them.
 
 \paragraph{maxsim-cpu, x86 build, long queries (issue \#1).}
 For queries with more than 32 tokens, once a document has 64 or more tokens, the x86 wheel of maxsim-cpu~0.1.0 returned wrong scores, up to $10^{38}$ and infinity.
@@ -21,10 +21,10 @@ On the M3 Max its largest error against its own contract was $4\times10^{-2}$ to
 On CPUs with AMX, NumKong~7.8.5's packed MaxSim kernel scans all 16 columns of a partially filled last tile.
 When a document's token count modulo 64 is 49 to 63 and every cosine of a query token is negative, a padding column wins, and the result is wrong (NaN, 0, 1 or very large values)~\cite{numkong_issue406}.
 The negative-best-match fixture found it on the Granite Rapids machine, and a standalone script reproduced it on a second machine of the same type.
-On the replayed data, NumKong's errors on Intel were no larger than on the CPUs without AMX, so the defect did not affect the reported numbers.
+The defect also occurred on the replayed data. On Intel, NumKong's float16 arms returned NaN scores on \nm{nan.intel.numkong_native_f16.ho-warm.agent-ho}\% of agent calls, \nm{nan.intel.numkong_native_f16.ho-warm.gcsn-ho}\% of GCSN calls and \nm{nan.intel.numkong_native_f16.ho-warm.beir}\% of BEIR calls; its float32 arms did so on up to \nm{nan.intel.numkong_native_f32.ho-warm.sweep}\% of sweep calls. No arm returned NaN on the CPUs without AMX. The defect's other wrong values (0, 1, very large) are not NaN and can hide inside NumKong's approximation error, so the Intel NumKong rows include an unknown number of further defective calls. Their timings stand as measured; their error and quality numbers do not describe NumKong's intended behaviour, so we take NumKong's quality from the AMD run.
 
 \paragraph{Contract differences are not defects.}
-NumKong's cosine of the received vectors (contract C) and PyLate's zero-padding rule (contract S-pre-pad0) are design choices, not bugs.
+NumKong's cosine of the received vectors (contract C) and PyLate's zero-padding rule (contract S-pre-pad0) are design choices, not bugs. maxsim-cpu's zero padding counts as a defect because the same call gives different scores on its x86 and AArch64 builds and depends on the other documents in the call.
 Table~\ref{tab:contract-effects} measures them reference against reference.
 Contract C keeps the top document of contract S on \nm{ce.agent-ho.S-vs-C.top1}\% of agent calls and \nm{ce.gcsn-ho.S-vs-C.top1}\% of GCSN calls, but on only \nm{ce.beir.S-vs-C.top1}\% of BEIR calls.
 The clamp changes the top document on at most 0.1\% of calls; the epsilon placement changes no score by more than $10^{-15}$.

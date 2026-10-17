@@ -65,9 +65,12 @@ def compact(arms):
             rs = [d['rows'][k] for k in keys]
             procs = sorted(d['procs'])
             proc_ms = {p: np.array([np.median([v for (rd, pp), v in r['runs'].items() if pp == p] or [np.nan]) for r in rs]) for p in procs}
+            # every run per call, columns in (round, process) order, for estimators that need them (jackknife over processes)
+            run_keys = sorted({k for r in rs for k in r['runs']})
+            runs = np.array([[r['runs'].get(k, np.nan) for k in run_keys] for r in rs])
             ts = np.concatenate([np.asarray(r['ts'], float) for r in rs]) / 1e6
             entry['arms'][arm] = dict(
-                ms=np.array([r['ms'] for r in rs]), proc_ms=proc_ms,
+                ms=np.array([r['ms'] for r in rs]), proc_ms=proc_ms, runs=runs, run_keys=run_keys,
                 req=(float(np.percentile(ts, 50)), float(np.percentile(ts, 95)), float(np.percentile(ts, 99))), n_timed=int(ts.size),
                 err=float(max(r['err'] for r in rs)), err_input=float(max(r.get('err_input', 0) for r in rs)),
                 top1=float(np.mean([r['top1'] for r in rs])), top1_S=float(np.mean([r['top1_S'] for r in rs])),

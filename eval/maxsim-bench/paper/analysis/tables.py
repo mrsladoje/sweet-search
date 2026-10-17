@@ -9,6 +9,7 @@ import os, sys
 import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from common import rl  # noqa: E402
 from common import (PLATFORMS, SHORT, LIB_NAME, available, cache, frozen_rivals, beir_sets, sweep_sets, ratio,
                     arm_stats, fmt_ratio, dump, parse_cell, OUT)  # noqa: E402
 
@@ -19,20 +20,41 @@ FIXED = [('node-production', 'sweet, production path (Node)'), ('node-legacy', '
 
 
 def workload_rows(c, sets, fam, platform, base='ours', single=False, int4=False, fixed=()):
+    """Per library and input type: every frozen configuration ('configs'), and as the row the
+    faster of them on these calls (a post-hoc choice inside the frozen set; it can only favour
+    the rival). Plus a 'posthoc' entry: the fastest configuration of that library and input
+    type among ALL arms that ran, frozen or not."""
     rows = []
     for arm, label in fixed:
         r = ratio(c, sets, arm, base)
         if r:
             rows.append(dict(label=label, lib=arm, itype='', arm=arm, **r, **(arm_stats(c, sets, arm) or {})))
-    for lib, it, arm in frozen_rivals(platform, fam, single):
+    for lib, it, arms in frozen_rivals(platform, fam, single):
         if (it == 'int4-self') != int4:
             continue
-        r = ratio(c, sets, arm, base)
-        st = arm_stats(c, sets, arm) or {}
-        if r is None:
-            rows.append(dict(label=f'{LIB_NAME.get(lib, lib)}, {it}', lib=lib, itype=it, arm=arm, missing=True))
+        cfgs = []
+        for arm in arms:
+            r = ratio(c, sets, arm, base)
+            if r is not None:
+                cfgs.append(dict(arm=arm, **r))
+        if not cfgs:
+            rows.append(dict(label=f'{LIB_NAME.get(lib, lib)}, {it}', lib=lib, itype=it, arm=arms[0], missing=True, configs=[]))
             continue
-        rows.append(dict(label=f'{LIB_NAME.get(lib, lib)}, {it}', lib=lib, itype=it, arm=arm, **r, **st))
+        best = min(cfgs, key=lambda x: x['ratio'])
+        st = arm_stats(c, sets, best['arm']) or {}
+        row = dict(label=f'{LIB_NAME.get(lib, lib)}, {it}', lib=lib, itype=it, **best, **st,
+                   configs=[{k: v for k, v in x.items()} for x in cfgs], n_frozen=len(arms))
+        # post hoc: every arm of this library and input type that ran on these sets
+        ph = []
+        for arm in set(a for s in sets for a in c[s]['arms']):
+            if rl.library(arm) == lib and rl.input_type(arm, c[sets[0]]['arms'][arm]['precision']) == it and \
+                    (rl.arm_base(arm)[1] == 1) == single and arm not in arms and all(arm in c[s]['arms'] for s in sets):
+                r = ratio(c, sets, arm, base)
+                if r is not None:
+                    ph.append((r['ratio'], arm))
+        if ph:
+            row['posthoc'] = dict(arm=min(ph)[1], ratio=min(ph)[0])
+        rows.append(row)
     return rows
 
 
@@ -88,14 +110,14 @@ def main():
                             best=None if not b else dict(lib=b['lib'], arm=b['arm'], ratio=b['ratio'], lo=b['lo'], hi=b['hi'],
                                                          spread=b['spread']),
                             rows=[dict(lib=r['lib'], itype=r['itype'], arm=r['arm'], ratio=r.get('ratio'), lo=r.get('lo'), hi=r.get('hi'),
-                                       spread=r.get('spread')) for r in rows])
+                                       spread=r.get('spread'), rival_faster=r.get('rival_faster')) for r in rows])
         res['sweep'][p] = cells
         # losses: every cell where a frozen rival configuration is faster
         def add(mode, where, rows):
             for r in rows:
                 if r.get('ratio') is not None and r['ratio'] < 1 and r.get('lib') not in ('node-production', 'node-legacy', 'node-prewarm'):
                     res['losses'].append(dict(platform=p, mode=mode, where=where, label=r['label'], arm=r['arm'], ratio=r['ratio'],
-                                              lo=r['lo'], hi=r['hi'], spread=r.get('spread'), significant=r['hi'] < 1))
+                                              lo=r['lo'], hi=r['hi'], spread=r.get('spread'), significant=bool(r.get('rival_faster'))))
         for name in res['warm'][p]:
             add('warm', name, res['warm'][p][name])
             add('one thread', name, res['single'][p][name])
@@ -104,6 +126,9 @@ def main():
                 add('pool-parked', name, res['parked'][p][name]['rows'])
         for s, cell in cells.items():
             add('warm sweep', s, [dict(label=f"{LIB_NAME.get(r['lib'], r['lib'])}, {r['itype']}", **r) for r in cell['rows']])
+        # BEIR set by set (the pooled row can hide a loss on single sets)
+        for s in beir_sets(w):
+            add('warm BEIR set', s, workload_rows(w, [s], 'beir', p))
     dump('speed.json', res)
     write_md(res)
 
@@ -117,13 +142,15 @@ def write_md(res):
         for p, ws in res[mode].items():
             for name, rows in ws.items():
                 L.append(f'### {SHORT[p]} — {name}')
-                L.append('| config | arm | calls | clusters | ratio [CI] (spread) | sweet faster on | max err | top-1 = S |')
-                L.append('|---|---|--:|--:|--:|--:|--:|--:|')
+                L.append('| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |')
+                L.append('|---|---|--:|--:|--:|--:|--:|--:|--:|---|---|')
                 for r in rows:
                     if r.get('missing'):
-                        L.append(f"| {r['label']} | `{r['arm']}` | — | — | not run | | | |"); continue
-                    L.append(f"| {r['label']} | `{r['arm']}` | {r['calls']} | {r['clusters']} | {fmt_ratio(r)} | {r['faster_share']*100:.0f}% | "
-                             f"{r.get('err', float('nan')):.1e} | {r.get('top1_S', float('nan'))*100:.1f}% |")
+                        L.append(f"| {r['label']} | `{r['arm']}` | — | — | not run | | | | | | |"); continue
+                    cf = '; '.join(f"`{x['arm']}` {x['ratio']:.2f}" for x in r.get('configs', []))
+                    ph = f"`{r['posthoc']['arm']}` {r['posthoc']['ratio']:.2f}" if r.get('posthoc') else ''
+                    L.append(f"| {r['label']} | `{r['arm']}` | {r['calls']} | {r['clusters']} | {fmt_ratio(r)} | {r.get('total_ratio', float('nan')):.2f} | "
+                             f"{r['faster_share']*100:.0f}% | {r.get('err', float('nan')):.1e} | {r.get('top1_S', float('nan'))*100:.1f}% | {cf} | {ph} |")
                 L.append('')
     L += ['## pool-parked (5 ms busy gap before each call)', '']
     for p, ws in res['parked'].items():

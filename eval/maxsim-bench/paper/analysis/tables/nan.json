@@ -1,0 +1,170 @@
+{
+ "intel": {
+  "numkong_f16@t1|ho-parked|agent-ho": {
+   "nan": 1612,
+   "runs": 20040
+  },
+  "numkong_f16@t1|ho-parked|beir": {
+   "nan": 190,
+   "runs": 24920
+  },
+  "numkong_f16@t1|ho-parked|gcsn-ho": {
+   "nan": 2319,
+   "runs": 23780
+  },
+  "numkong_f16@t1|ho-warm|agent-ho": {
+   "nan": 1611,
+   "runs": 20040
+  },
+  "numkong_f16@t1|ho-warm|beir": {
+   "nan": 650,
+   "runs": 62300
+  },
+  "numkong_f16@t1|ho-warm|gcsn-ho": {
+   "nan": 2331,
+   "runs": 23780
+  },
+  "numkong_f16@t1|ho-warm|sweep": {
+   "nan": 1205,
+   "runs": 29130
+  },
+  "numkong_f16|ho-parked|agent-ho": {
+   "nan": 1610,
+   "runs": 20040
+  },
+  "numkong_f16|ho-parked|beir": {
+   "nan": 190,
+   "runs": 24920
+  },
+  "numkong_f16|ho-parked|gcsn-ho": {
+   "nan": 2326,
+   "runs": 23780
+  },
+  "numkong_f16|ho-warm|agent-ho": {
+   "nan": 1612,
+   "runs": 20040
+  },
+  "numkong_f16|ho-warm|beir": {
+   "nan": 650,
+   "runs": 62300
+  },
+  "numkong_f16|ho-warm|gcsn-ho": {
+   "nan": 2324,
+   "runs": 23780
+  },
+  "numkong_f16|ho-warm|sweep": {
+   "nan": 1202,
+   "runs": 29130
+  },
+  "numkong_f32|ho-parked|agent-ho": {
+   "nan": 23,
+   "runs": 20040
+  },
+  "numkong_f32|ho-parked|gcsn-ho": {
+   "nan": 79,
+   "runs": 23780
+  },
+  "numkong_f32|ho-warm|agent-ho": {
+   "nan": 14,
+   "runs": 20040
+  },
+  "numkong_f32|ho-warm|beir": {
+   "nan": 10,
+   "runs": 62300
+  },
+  "numkong_f32|ho-warm|gcsn-ho": {
+   "nan": 76,
+   "runs": 23780
+  },
+  "numkong_f32|ho-warm|sweep": {
+   "nan": 271,
+   "runs": 29130
+  },
+  "numkong_native_f16@t1|ho-parked|agent-ho": {
+   "nan": 1610,
+   "runs": 20040
+  },
+  "numkong_native_f16@t1|ho-parked|beir": {
+   "nan": 190,
+   "runs": 24920
+  },
+  "numkong_native_f16@t1|ho-parked|gcsn-ho": {
+   "nan": 2310,
+   "runs": 23780
+  },
+  "numkong_native_f16@t1|ho-warm|agent-ho": {
+   "nan": 1610,
+   "runs": 20040
+  },
+  "numkong_native_f16@t1|ho-warm|beir": {
+   "nan": 650,
+   "runs": 62300
+  },
+  "numkong_native_f16@t1|ho-warm|gcsn-ho": {
+   "nan": 2310,
+   "runs": 23780
+  },
+  "numkong_native_f16@t1|ho-warm|sweep": {
+   "nan": 1200,
+   "runs": 29130
+  },
+  "numkong_native_f16|ho-parked|agent-ho": {
+   "nan": 1610,
+   "runs": 20040
+  },
+  "numkong_native_f16|ho-parked|beir": {
+   "nan": 190,
+   "runs": 24920
+  },
+  "numkong_native_f16|ho-parked|gcsn-ho": {
+   "nan": 2310,
+   "runs": 23780
+  },
+  "numkong_native_f16|ho-warm|agent-ho": {
+   "nan": 1610,
+   "runs": 20040
+  },
+  "numkong_native_f16|ho-warm|beir": {
+   "nan": 650,
+   "runs": 62300
+  },
+  "numkong_native_f16|ho-warm|gcsn-ho": {
+   "nan": 2310,
+   "runs": 23780
+  },
+  "numkong_native_f16|ho-warm|sweep": {
+   "nan": 1200,
+   "runs": 29130
+  },
+  "numkong_native_f32|ho-parked|agent-ho": {
+   "nan": 18,
+   "runs": 20040
+  },
+  "numkong_native_f32|ho-parked|gcsn-ho": {
+   "nan": 35,
+   "runs": 23780
+  },
+  "numkong_native_f32|ho-warm|agent-ho": {
+   "nan": 20,
+   "runs": 20040
+  },
+  "numkong_native_f32|ho-warm|gcsn-ho": {
+   "nan": 23,
+   "runs": 23780
+  },
+  "numkong_native_f32|ho-warm|sweep": {
+   "nan": 281,
+   "runs": 29130
+  },
+  "_total_runs": 6140966
+ },
+ "amd": {
+  "_total_runs": 5801726
+ },
+ "arm": {
+  "_total_runs": 4985766
+ },
+ "m3max": {
+  "_total_runs": 4643936
+ }
+}

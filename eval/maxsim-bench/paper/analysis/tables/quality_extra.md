@@ -92,9 +92,31 @@
 
 ## int4 diagnostic (100,000 evenly spaced doc tokens per model and dataset)
 
-| data | dim | rel. error median / p90 | cosine median / p10 | peak-to-RMS median |
-|---|--:|--:|--:|--:|
-| scifact|colbertv2 | 128 | 0.098 / 0.112 | 0.9953 / 0.9938 | 2.77 |
-| scifact|answersmall | 96 | 0.094 / 0.105 | 0.9956 / 0.9946 | 2.69 |
-| nfcorpus|colbertv2 | 128 | 0.098 / 0.112 | 0.9953 / 0.9938 | 2.77 |
-| nfcorpus|answersmall | 96 | 0.093 / 0.103 | 0.9958 / 0.9948 | 2.63 |
+| data | dim | rel. error median / p90 | cosine median / p10 | stored norm p1 / median / p99 | decoded / stored norm p1 / p10 / median / p90 / p99 (sd) |
+|---|--:|--:|--:|--:|--:|
+| scifact|colbertv2 | 128 | 0.098 / 0.112 | 0.9953 / 0.9938 | 1.000 / 1.000 / 1.000 | 0.986 / 0.995 / 1.005 / 1.016 / 1.025 (0.0084) |
+| scifact|answersmall | 96 | 0.094 / 0.105 | 0.9956 / 0.9946 | 1.000 / 1.000 / 1.000 | 0.984 / 0.993 / 1.005 / 1.017 / 1.026 (0.0091) |
+| nfcorpus|colbertv2 | 128 | 0.098 / 0.112 | 0.9953 / 0.9938 | 1.000 / 1.000 / 1.000 | 0.986 / 0.995 / 1.005 / 1.016 / 1.025 (0.0083) |
+| nfcorpus|answersmall | 96 | 0.093 / 0.103 | 0.9958 / 0.9948 | 1.000 / 1.000 / 1.000 | 0.984 / 0.993 / 1.005 / 1.016 / 1.026 (0.0089) |
+
+## Score margins under F at k = 100 (median over queries)
+
+| data | coefficient of variation of candidate scores | (top-1 - top-10) / top-1 |
+|---|--:|--:|
+| scifact|colbertv2 | 0.1872 | 0.2301 |
+| scifact|answersmall | 0.0081 | 0.0214 |
+| nfcorpus|colbertv2 | 0.3538 | 0.3068 |
+| nfcorpus|answersmall | 0.0044 | 0.0084 |
+
+## Post-hoc descriptive tests at k = 100 (same paired bootstrap as the primary test; not pre-registered)
+
+| cell | contrast | mean diff | 95% CI | relative |
+|---|---|--:|--:|--:|
+| scifact|colbertv2|k100 | C-b - F | +0.0002 | [-0.0008, +0.0014] | +0.03% |
+| scifact|colbertv2|k100 | S - F | +0.0006 | [-0.0006, +0.0021] | +0.10% |
+| scifact|answersmall|k100 | C-b - F | -0.0092 | [-0.0185, -0.0006] | -1.27% |
+| scifact|answersmall|k100 | S - F | -0.0285 | [-0.0497, -0.0088] | -3.91% |
+| nfcorpus|colbertv2|k100 | C-b - F | -0.0011 | [-0.0028, +0.0005] | -0.35% |
+| nfcorpus|colbertv2|k100 | S - F | -0.0007 | [-0.0021, +0.0007] | -0.21% |
+| nfcorpus|answersmall|k100 | C-b - F | -0.0069 | [-0.0130, -0.0014] | -2.01% |
+| nfcorpus|answersmall|k100 | S - F | -0.0734 | [-0.0890, -0.0586] | -21.29% |

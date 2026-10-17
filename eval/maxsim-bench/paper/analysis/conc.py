@@ -37,6 +37,10 @@ def main():
                 d = json.load(open(f))
                 if not d.get('complete'):
                     continue
+                if '%' in d['arm']:
+                    # concurrency.py builds every arm in the default interpreter and ignores the environment part
+                    # of the spec (%blis), so these runs used the default NumPy, not BLIS: left out
+                    continue
                 runs = [{k: r.get(k) for k in KEEP} for r in d['runs']]
                 for r in runs:
                     if r['type'] == 'closed' and r['executor'] == 'procs':

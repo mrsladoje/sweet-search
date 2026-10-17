@@ -1,13 +1,13 @@
-Intel & agent & 12.0 & {2.25} (numpy-packed) & \loss{0.55} & 11.0 & {1.33} (maxsim-cpu-variable) & \loss{0.25} & 1719 & 5.49 & {12.15} (maxsim-cpu-variable) \\
- & gcsn & 24.9 & {2.23} (numpy-packed) & \loss{0.79} & 24.7 & {1.40} (maxsim-cpu-variable) & \loss{0.23} & 3146 & 0.93 & {5.08} (maxsim-cpu-variable) \\
+Intel & agent & 12.0 & {2.53} & \loss{0.58} & 11.8 & {2.22} & \loss{0.54} & 11.0 & {1.57} & \loss{0.25} & 8.9 & {1.07} & \loss{0.24} & 1719 & 5.49 & {12.15} \\
+ & gcsn & 24.9 & {3.03} & \loss{0.79} & 24.8 & {2.23} & \loss{0.79} & 24.7 & {1.50} & \loss{0.23} & 17.2 & \loss{0.97} & \loss{0.38} & 3146 & 0.93 & {5.08} \\
 \addlinespace
-AMD & agent & 27.5 & {3.41} (nextplaid) & {1.27} & 25.6 & {1.61} (numpy-packed+blis) & \loss{0.64} & 2236 & 1.93 & {2.28} (numpy-packed) \\
- & gcsn & 45.9 & {4.08} (maxsim-cpu-variable) & {1.35} & 59.4 & {1.34} (numpy-packed-t) & \loss{0.95} & 4415 & 0.36 & {0.44} (numpy-packed+blis) \\
+AMD & agent & 27.5 & {3.98} & {1.32} & 26.8 & {3.33} & {1.24} & 25.6 & {2.04} & {1.06} & 14.0 & \loss{0.90} & \loss{0.35} & 2236 & 1.93 & {2.60} \\
+ & gcsn & 45.9 & {4.69} & {1.36} & 45.6 & {4.04} & {1.34} & 59.4 & {1.34} & {1.03} & 20.6 & \loss{0.55} & \loss{0.33} & 4415 & 0.36 & {0.44} \\
 \addlinespace
-Graviton4 & agent & 14.4 & {1.70} (numpy-packed) & \loss{0.77} & 12.6 & {1.09} (nextplaid) & \loss{0.38} & 2962 & 7.98 & {10.01} (nextplaid) \\
- & gcsn & 29.2 & {1.87} (numpy-packed) & \loss{0.89} & 31.0 & \loss{0.97} (nextplaid) & \loss{0.55} & 2577 & 0.83 & {0.93} (nextplaid) \\
+Graviton4 & agent & 14.4 & {2.10} & \loss{0.88} & 14.4 & {1.70} & \loss{0.77} & 12.6 & {1.13} & \loss{0.38} & 8.1 & \loss{0.70} & \loss{0.28} & 2962 & 7.98 & {10.01} \\
+ & gcsn & 28.9 & {2.91} & \loss{0.90} & 29.2 & {1.87} & \loss{0.89} & 31.0 & \loss{0.97} & \loss{0.60} & 16.3 & \loss{0.74} & \loss{0.29} & 2577 & 0.83 & {0.93} \\
 \addlinespace
-M3 Max & agent & 13.8 & {1.95} (numpy-packed) & {1.23} & 8.3 & \loss{0.89} (numpy-packed) & \loss{0.17} & 11724 & 105.98 & {182.49} (torch-segment-reduce) \\
- & gcsn & 39.7 & {2.45} (numpy-packed) & {2.68} & 49.3 & {1.63} (nextplaid) & \loss{0.55} & 9157 & 1.88 & \loss{1.37} (numpy-packed) \\
+M3 Max & agent & 13.8 & {2.76} & {1.28} & 7.1 & {1.01} & \loss{0.64} & 8.3 & \loss{0.92} & \loss{0.19} & 6.1 & \loss{0.65} & \loss{0.13} & 11724 & 105.98 & {182.49}$^\S$ \\
+ & gcsn & 32.5 & {2.60} & {2.21} & 39.7 & {2.45} & {2.68} & 49.3 & {1.63} & \loss{0.55} & 38.6 & {1.45} & \loss{0.50} & 9157 & 1.88 & \loss{1.37} \\
 \addlinespace
-EPYC & \multicolumn{7}{l}{\TODO{epyc}} \\
+EPYC & \multicolumn{10}{l}{\TODO{epyc}} \\

@@ -46,7 +46,8 @@ def main():
         if not available(p):
             continue
         w = cache(p, 'ho-warm')
-        impls = [('ours', 'sweet kernel')] + [(arm, f"{LIB_NAME.get(lib, lib)}, {it}") for lib, it, arm in frozen_rivals(p, 'beir')]
+        impls = [('ours', 'sweet kernel')] + [(arm, f"{LIB_NAME.get(lib, lib)}, {it} ({arm})") for lib, it, arms in frozen_rivals(p, 'beir') for arm in arms]
+        QP = json.load(open(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'tables', 'quality_primary.json'))).get(p, {})
         res[p] = {}
         for ds in ('scifact', 'nfcorpus'):
             for mk in ('colbertv2', 'answersmall'):
@@ -63,6 +64,18 @@ def main():
                                         ndcg10=arm_ndcg(p, s, arm, P, ds, mk, k)))
                     if pts:
                         cell['curves'][arm] = dict(label=lab, points=pts)
+                # float32 storage: nDCG@10 of F (float32 vectors, float64, no clamp) at the time of the fastest
+                # frozen exact float32 rival at each k (its time does not depend on the vector values)
+                f32 = []
+                for k in KS:
+                    cands = [(pt['p95_ms'], pt['p50_ms'], a) for a, c in cell['curves'].items() if a != 'ours' and ', f32 (' in c['label']
+                             and 'NumKong' not in c['label'] for pt in c['points'] if pt['k'] == k]
+                    src = QP.get('cells', {}).get(f'{ds}|{mk}|k{k}', {}).get('sources', {}).get('F')
+                    if cands and src:
+                        b = min(cands)
+                        f32.append(dict(k=k, p95_ms=b[0], p50_ms=b[1], ndcg10=src['ndcg10'], timed_arm=b[2]))
+                if f32:
+                    cell['curves']['f32store'] = dict(label='float32 storage (F quality, fastest exact float32 rival time)', points=f32)
                 for X in BUDGETS_MS:
                     row = {}
                     for arm, c in cell['curves'].items():

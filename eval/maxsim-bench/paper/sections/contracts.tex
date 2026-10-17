@@ -5,7 +5,7 @@
 
 All tested implementations compute ``MaxSim'', but not the same number.
 We write $q_i$ for a raw query token (float32 as stored), $\hat d_j$ for a decoded int4 document token, $n_j$ for its stored pre-quantization norm, and $\epsilon = 10^{-8}$.
-A score is always the mean over query tokens $i$ of a per-token maximum over document tokens $j$.
+A score is always the mean over query tokens $i$ of a per-token maximum over document tokens $j$; ColBERT uses the sum, which ranks the same, and the adapters divide sums by the query length.
 Table~\ref{tab:contracts} defines each rule once.
 
 \begin{table}[!htbp]
@@ -26,7 +26,7 @@ C & $\max_j \cos(x_i, y_j)$ of the vectors the library receives, no epsilon, no 
 
 Two details matter later.
 First, S divides by the \emph{stored} norm $n_j$ of the float vector before quantization, while C divides by the norm of the vector it receives, which for the rivals is the decoded and pre-scaled token.
-Second, NumKong is approximate: per query token, an int8 screen picks one document token, and only that token is refined in higher precision~\cite{vardanian2026numkong}.
+Second, NumKong is approximate. Per query token, an int8 screen picks one document token, and only that token is refined in higher precision~\cite{vardanian2026numkong}.
 Its reported maximum can therefore come from a token that is not the true maximum.
 
 \paragraph{Two references per rival.}
@@ -38,7 +38,10 @@ The difference (a)$-$(b) is the \emph{input-rounding effect}.
 \paragraph{Fixtures.}
 A separate script builds hand-made cases byte by byte and computes their expected values with plain Python loops in float64; it shares no code with the benchmark.
 The cases are: a negative best match (all cosines below 0), an opposite pair (cosine $-1$), a stored norm 1.10 times the decoded norm, a zero query token, a constant document token (scale 0), a zero document vector, ragged candidates of 1, 3, 17 and 64 tokens in one call, and dimensions 96, 128 and 127.
-Every arm had to match its contract on every case before any timing on each machine.
+Each arm had to match its contract within its precision bound on every case before any timing on each machine.
+The bounds follow the input type, and NumKong, being approximate, has a bound of 0.15.
+Cases that an arm rejects (an odd dimension) count as unsupported, and cases whose inputs are undefined for a contract (a zero query token under S-pre) are informational.
+One known defect was recorded instead of a pass: maxsim-cpu on AArch64 fails the ragged-length case (Section~\ref{sec:correctness}); its M3 Max rows are timed but carry this defect.
 
 \subsection{The \sweet kernel}
 \label{sec:kernel}
