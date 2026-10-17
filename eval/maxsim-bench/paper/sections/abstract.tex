@@ -5,13 +5,13 @@ It replays real rerank calls: agent calls from a code-search engine, calls from 
 It checks each implementation against a float64 reference of its own scoring rule.
 It keeps development and held-out data apart under a recorded freeze.
 We use it to measure an int4 SIMD kernel from the open-source engine sweet-search against NumPy, PyTorch, maxsim-cpu, NextPlaid and NumKong.
-We report results on four CPUs; a fifth CPU follows \TODO{epyc}.
-With warm calls and each rival at its best frozen configuration, the kernel was faster than every exact rival with float32 inputs on the agent and code-search calls, on all four CPUs.
+We report results on five CPUs.
+With warm calls and each rival at its best frozen configuration, the kernel was faster than every exact rival with float32 inputs on the agent and code-search calls, on all five CPUs.
 On these previously examined sets, the fastest such rival needed \nm{best.warm.agent-ho.f32.min}--\nm{best.warm.agent-ho.f32.max}$\times$ the time on agent calls.
-On the fresh BEIR calls, the kernel was faster on three CPUs, but PyTorch was faster on the Xeon (\nm{warm.intel.beir.torch.f32}$\times$ the kernel's time).
+On the fresh BEIR calls, the kernel was faster on four CPUs, but PyTorch was faster on the Xeon (\nm{warm.intel.beir.torch.f32}$\times$ the kernel's time).
 The kernel also lost in other conditions.
 NumKong, which approximates the maximum, was faster on three CPUs.
-Exact rivals were faster in \nm{sweep.m3max.loseany} to \nm{sweep.intel.loseany} sweep cells per CPU, with one thread on BEIR calls, after a 5\,ms busy gap on three CPUs, and with 16 parallel callers in one shared process.
+Exact rivals were faster in \nm{sweep.m3max.loseany} to \nm{sweep.intel.loseany} sweep cells per CPU, with one thread on BEIR calls, after a 5\,ms busy gap on four CPUs, and with 16 parallel callers in one shared process.
 On BEIR, int4 storage with the production scoring rule showed no material loss in nDCG@10 for ColBERTv2 (margin 0.01, Holm correction).
 For answerai-colbert-small it lost \nm{q.intel.scifact.answersmall.relabs}\% and \nm{q.intel.nfcorpus.answersmall.relabs}\%.
 A post-hoc analysis associates most of this loss with the length error of decoded tokens, which the production scoring rule keeps.

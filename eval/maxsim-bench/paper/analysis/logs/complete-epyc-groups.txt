@@ -1,0 +1,14 @@
+/Users/admin/.ss-eval/maxsim-local/epyc: 82 planned groups
+  ho-conc-agent-ho       ok       1
+  ho-conc-gcsn-ho        ok       1
+  ho-mem                 ok       36
+  ho-parked              dropped  4
+  ho-parked              ok       2
+  ho-tiers               ok       2
+  ho-warm                ok       36
+dropped by note: 4
+  1d6e49e5a9b9a346 ho-parked beir-scifact-answersmall-k100: not run: dropped by the owner 2026-10-17 09:10 UTC for time
+  1efa542b1bc7e10f ho-parked beir-scifact-answersmall-k25: not run: dropped by the owner 2026-10-17 09:10 UTC for time
+  cea2d192964b78e2 ho-parked beir-scifact-colbertv2-k100: not run: dropped by the owner 2026-10-17 09:10 UTC for time
+  2d523528cfa2b479 ho-parked beir-scifact-colbertv2-k25: not run: dropped by the owner 2026-10-17 09:10 UTC for time
+not ok: 0

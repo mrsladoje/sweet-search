@@ -166,5 +166,8 @@
  },
  "m3max": {
   "_total_runs": 4643936
+ },
+ "epyc": {
+  "_total_runs": 4331216
  }
 }

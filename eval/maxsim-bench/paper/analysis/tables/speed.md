@@ -171,6 +171,47 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f16 | `numkong_native_f16` | 6230 | 623 | 0.99 [0.98, 0.99] (0.98–0.99) | 0.71 | 41% | 2.1e-01 | 57.8% | `numkong_native_f16` 0.99; `numkong_f16` 4.82 |  |
 | NumKong (approx.), f32 | `numkong_native_f32` | 6230 | 623 | 1.00 [1.00, 1.00] (1.00–1.01) | 0.72 | 41% | 2.1e-01 | 57.7% | `numkong_native_f32` 1.00; `numkong_f32` 4.81 |  |
 
+### EPYC — agent-ho
+| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+|---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
+| sweet, production path (Node) | `node-production` | 2004 | 11 | 1.16 [1.15, 1.18] (1.16–1.16) | 1.16 | 100% | 1.7e-07 | 100.0% |  |  |
+| previous production path | `node-legacy` | 2004 | 11 | 4.16 [4.04, 4.29] (4.15–4.20) | 3.81 | 100% | 1.7e-07 | 100.0% |  |  |
+| NumPy, f32 | `numpy_packed` | 2004 | 11 | 1.44 [1.40, 1.47] (1.44–1.45) | 1.38 | 99% | 6.9e-08 | 99.9% | `numpy_packed` 1.44; `numpy_packed@t4` 1.55 |  |
+| PyTorch, f32 | `torch_pad_bmm` | 2004 | 11 | 1.87 [1.76, 1.97] (1.87–1.89) | 1.92 | 100% | 1.0e-07 | 99.9% | `torch_pad_bmm` 1.87; `torch_pad_bmm@t4` 1.87 |  |
+| PyTorch, bf16 | `torch_pad_bmm_bf16` | 2004 | 11 | 12.64 [12.06, 13.21] (12.64–12.73) | 13.12 | 100% | 9.3e-04 | 99.6% | `torch_pad_bmm_bf16` 12.64; `torch_pad_flat_bf16` 14.57 |  |
+| maxsim-cpu, f32 | `maxsim_cpu_variable` | 2004 | 11 | 2.44 [2.40, 2.51] (2.44–2.46) | 2.29 | 100% | 1.6e-07 | 99.9% | `maxsim_cpu_variable` 2.44; `maxsim_cpu_variable@t4` 3.18 |  |
+| NextPlaid, f32 | `nextplaid` | 2004 | 11 | 4.08 [3.92, 4.22] (4.08–4.11) | 4.10 | 100% | 1.5e-07 | 99.9% | `nextplaid` 4.08; `nextplaid@t4` 4.08 |  |
+| NumKong (approx.), bf16 | `numkong_native_bf16` | 2004 | 11 | 1.67 [1.62, 1.72] (1.67–1.68) | 1.48 | 99% | 8.0e-02 | 86.1% | `numkong_native_bf16` 1.67; `numkong_bf16` 5.99 |  |
+| NumKong (approx.), f16 | `numkong_native_f16` | 2004 | 11 | 1.67 [1.62, 1.73] (1.67–1.68) | 1.48 | 99% | 7.8e-02 | 86.4% | `numkong_native_f16` 1.67; `numkong_native_f16@t1` 2.36 | `numkong_f16` 6.12 |
+| NumKong (approx.), f32 | `numkong_native_f32` | 2004 | 11 | 1.69 [1.64, 1.75] (1.69–1.70) | 1.50 | 99% | 7.8e-02 | 86.4% | `numkong_native_f32` 1.69; `numkong_f32` 6.17 |  |
+
+### EPYC — gcsn-ho
+| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+|---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
+| sweet, production path (Node) | `node-production` | 2378 | 2378 | 1.22 [1.21, 1.22] (1.20–1.24) | 1.19 | 95% | 2.4e-07 | 100.0% |  |  |
+| previous production path | `node-legacy` | 2378 | 2378 | 5.10 [5.06, 5.14] (5.09–5.11) | 4.83 | 100% | 2.4e-07 | 100.0% |  |  |
+| NumPy, f32 | `numpy_packed` | 2378 | 2378 | 1.59 [1.58, 1.60] (1.58–1.60) | 1.52 | 98% | 1.1e-07 | 100.0% | `numpy_packed` 1.59; `numpy_packed@t4` 1.65 |  |
+| PyTorch, f32 | `torch_pad_bmm` | 2378 | 2378 | 2.81 [2.79, 2.84] (2.80–2.82) | 2.71 | 100% | 1.1e-07 | 100.0% | `torch_pad_bmm@t4` 2.81; `torch_pad_bmm` 2.81 |  |
+| PyTorch, bf16 | `torch_pad_bmm_bf16` | 2378 | 2378 | 20.56 [20.36, 20.75] (20.51–20.62) | 20.58 | 100% | 1.1e-03 | 100.0% | `torch_pad_bmm_bf16` 20.56; `torch_pad_flat_bf16` 23.02 |  |
+| maxsim-cpu, f32 | `maxsim_cpu_variable` | 2378 | 2378 | 2.70 [2.69, 2.72] (2.70–2.71) | 2.69 | 100% | 1.7e-07 | 100.0% | `maxsim_cpu_variable` 2.70; `maxsim_cpu_variable@t4` 3.75 |  |
+| NextPlaid, f32 | `nextplaid` | 2378 | 2378 | 3.49 [3.44, 3.53] (3.47–3.50) | 3.71 | 100% | 1.9e-07 | 100.0% | `nextplaid@t4` 3.52; `nextplaid` 3.49 |  |
+| NumKong (approx.), bf16 | `numkong_native_bf16` | 2378 | 2378 | 1.87 [1.86, 1.88] (1.87–1.87) | 1.84 | 99% | 8.9e-02 | 94.1% | `numkong_native_bf16` 1.87; `numkong_bf16` 14.00 |  |
+| NumKong (approx.), f16 | `numkong_native_f16` | 2378 | 2378 | 1.88 [1.86, 1.89] (1.87–1.88) | 1.84 | 99% | 9.0e-02 | 94.3% | `numkong_native_f16` 1.88; `numkong_native_f16@t1` 2.35 | `numkong_f16` 13.79 |
+| NumKong (approx.), f32 | `numkong_native_f32` | 2378 | 2378 | 1.91 [1.90, 1.92] (1.91–1.92) | 1.88 | 99% | 9.0e-02 | 94.2% | `numkong_native_f32` 1.91; `numkong_f32` 13.79 |  |
+
+### EPYC — beir
+| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+|---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
+| sweet, production path (Node) | `node-production` | 6230 | 623 | 1.15 [1.14, 1.15] (1.15–1.15) | 1.12 | 83% | 3.4e-07 | 100.0% |  |  |
+| NumPy, f32 | `numpy_packed@t4` | 6230 | 623 | 1.12 [1.11, 1.12] (1.12–1.12) | 1.13 | 88% | 6.8e-08 | 100.0% | `numpy_packed` 1.14; `numpy_packed@t4` 1.12 |  |
+| PyTorch, f32 | `torch_pad_bmm` | 6230 | 623 | 1.30 [1.30, 1.31] (1.30–1.30) | 1.29 | 98% | 1.1e-07 | 100.0% | `torch_pad_bmm` 1.30; `torch_pad_bmm@t4` 1.30 |  |
+| PyTorch, bf16 | `torch_pad_bmm_bf16` | 6230 | 623 | 11.45 [11.38, 11.51] (11.43–11.45) | 12.00 | 100% | 2.6e-03 | 97.5% | `torch_pad_bmm_bf16` 11.45; `torch_pad_flat_bf16` 11.58 |  |
+| maxsim-cpu, f32 | `maxsim_cpu_variable` | 6230 | 623 | 2.29 [2.29, 2.30] (2.29–2.30) | 2.17 | 100% | 3.2e-07 | 100.0% | `maxsim_cpu_variable` 2.29; `maxsim_cpu_variable@t4` 3.10 |  |
+| NextPlaid, f32 | `nextplaid@t1` | 6230 | 623 | 4.13 [4.11, 4.15] (4.12–4.13) | 4.28 | 100% | 3.3e-07 | 100.0% | `nextplaid@t1` 4.13; `nextplaid` 5.81 | `nextplaid@t4` 6.27 |
+| NumKong (approx.), bf16 | `numkong_native_bf16` | 6230 | 623 | 1.32 [1.31, 1.33] (1.32–1.32) | 1.25 | 97% | 2.1e-01 | 57.8% | `numkong_native_bf16` 1.32; `numkong_bf16` 3.73 |  |
+| NumKong (approx.), f16 | `numkong_native_f16` | 6230 | 623 | 1.32 [1.31, 1.33] (1.32–1.32) | 1.25 | 97% | 2.1e-01 | 57.4% | `numkong_native_f16` 1.32; `numkong_f16` 3.67 |  |
+| NumKong (approx.), f32 | `numkong_native_f32` | 6230 | 623 | 1.34 [1.33, 1.35] (1.34–1.35) | 1.28 | 96% | 2.1e-01 | 57.6% | `numkong_native_f32` 1.34; `numkong_f32` 3.66 |  |
+
 ## single
 
 ### Intel — agent-ho
@@ -284,6 +325,33 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NextPlaid, f32 | `nextplaid@t1` | 6230 | 623 | 1.06 [1.06, 1.06] (1.06–1.06) | 1.06 | 100% | 3.2e-07 | 100.0% | `nextplaid@t1` 1.06 |  |
 | NumKong (approx.), f16 | `numkong_native_f16@t1` | 6230 | 623 | 0.26 [0.26, 0.26] (0.26–0.27) | 0.26 | 0% | 2.1e-01 | 57.8% | `numkong_native_f16@t1` 0.26 | `numkong_f16@t1` 0.28 |
 
+### EPYC — agent-ho
+| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+|---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
+| NumPy, f32 | `numpy_packed@t1` | 2004 | 11 | 1.11 [1.10, 1.12] (1.08–1.17) | 1.10 | 84% | 1.0e-07 | 98.7% | `numpy_packed@t1` 1.11 |  |
+| PyTorch, f32 | `torch_pad_bmm@t1` | 2004 | 11 | 1.51 [1.43, 1.59] (1.46–1.58) | 1.55 | 100% | 1.0e-07 | 99.9% | `torch_pad_bmm@t1` 1.51 |  |
+| maxsim-cpu, f32 | `maxsim_cpu_variable@t1` | 2004 | 11 | 2.31 [2.29, 2.33] (2.23–2.42) | 2.30 | 100% | 1.6e-07 | 99.9% | `maxsim_cpu_variable@t1` 2.31 |  |
+| NextPlaid, f32 | `nextplaid@t1` | 2004 | 11 | 1.22 [1.16, 1.27] (1.18–1.27) | 1.17 | 82% | 1.5e-07 | 99.9% | `nextplaid@t1` 1.22 |  |
+| NumKong (approx.), f16 | `numkong_native_f16@t1` | 2004 | 11 | 0.60 [0.60, 0.61] (0.58–0.63) | 0.61 | 0% | 7.8e-02 | 86.4% | `numkong_native_f16@t1` 0.60 |  |
+
+### EPYC — gcsn-ho
+| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+|---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
+| NumPy, f32 | `numpy_packed@t1` | 2378 | 2378 | 1.23 [1.22, 1.23] (1.22–1.23) | 1.20 | 92% | 1.1e-07 | 100.0% | `numpy_packed@t1` 1.23 |  |
+| PyTorch, f32 | `torch_pad_bmm@t1` | 2378 | 2378 | 2.65 [2.62, 2.67] (2.64–2.65) | 2.58 | 100% | 1.1e-07 | 100.0% | `torch_pad_bmm@t1` 2.65 |  |
+| maxsim-cpu, f32 | `maxsim_cpu_variable@t1` | 2378 | 2378 | 2.51 [2.50, 2.52] (2.51–2.51) | 2.51 | 100% | 1.7e-07 | 100.0% | `maxsim_cpu_variable@t1` 2.51 |  |
+| NextPlaid, f32 | `nextplaid@t1` | 2378 | 2378 | 1.73 [1.71, 1.74] (1.72–1.73) | 1.64 | 100% | 1.9e-07 | 100.0% | `nextplaid@t1` 1.73 |  |
+| NumKong (approx.), f16 | `numkong_native_f16@t1` | 2378 | 2378 | 0.64 [0.63, 0.64] (0.64–0.64) | 0.65 | 0% | 9.0e-02 | 94.3% | `numkong_native_f16@t1` 0.64 |  |
+
+### EPYC — beir
+| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+|---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
+| NumPy, f32 | `numpy_packed@t1` | 6230 | 623 | 0.88 [0.88, 0.88] (0.88–0.88) | 0.86 | 11% | 1.1e-07 | 99.8% | `numpy_packed@t1` 0.88 |  |
+| PyTorch, f32 | `torch_pad_bmm@t1` | 6230 | 623 | 1.15 [1.14, 1.15] (1.15–1.15) | 1.17 | 85% | 1.1e-07 | 100.0% | `torch_pad_bmm@t1` 1.15 |  |
+| maxsim-cpu, f32 | `maxsim_cpu_variable@t1` | 6230 | 623 | 2.63 [2.63, 2.64] (2.63–2.64) | 2.60 | 100% | 3.2e-07 | 100.0% | `maxsim_cpu_variable@t1` 2.63 |  |
+| NextPlaid, f32 | `nextplaid@t1` | 6230 | 623 | 1.07 [1.07, 1.08] (1.07–1.07) | 1.05 | 74% | 3.3e-07 | 100.0% | `nextplaid@t1` 1.07 |  |
+| NumKong (approx.), f16 | `numkong_native_f16@t1` | 6230 | 623 | 0.66 [0.66, 0.66] (0.66–0.66) | 0.64 | 0% | 2.1e-01 | 57.4% | `numkong_native_f16@t1` 0.66 |  |
+
 ## int4
 
 ### Intel — agent-ho
@@ -354,6 +422,24 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 |---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
 | NumPy, int4-self | `numpy_packed_int4` | 6230 | 623 | 12.44 [12.42, 12.46] (12.34–12.47) | 13.20 | 100% | 1.1e-07 | 100.0% | `numpy_packed_int4` 12.44 |  |
 | maxsim-cpu, int4-self | `maxsim_cpu_variable_int4` | 6230 | 623 | 18.90 [18.86, 18.94] (18.74–18.94) | 18.64 | 100% | 7.6e-02 | 100.0% | `maxsim_cpu_variable_int4` 18.90 |  |
+
+### EPYC — agent-ho
+| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+|---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
+| NumPy, int4-self | `numpy_packed_int4` | 2004 | 11 | 10.88 [10.48, 11.11] (10.88–10.98) | 10.92 | 100% | 6.9e-08 | 99.9% | `numpy_packed_int4` 10.88 |  |
+| maxsim-cpu, int4-self | `maxsim_cpu_variable_int4` | 2004 | 11 | 14.40 [13.75, 15.05] (14.49–14.71) | 13.59 | 100% | 1.6e-07 | 99.9% | `maxsim_cpu_variable_int4` 14.40 |  |
+
+### EPYC — gcsn-ho
+| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+|---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
+| NumPy, int4-self | `numpy_packed_int4` | 2378 | 2378 | 11.60 [11.48, 11.72] (11.57–11.64) | 10.89 | 100% | 1.1e-07 | 100.0% | `numpy_packed_int4` 11.60 |  |
+| maxsim-cpu, int4-self | `maxsim_cpu_variable_int4` | 2378 | 2378 | 17.98 [17.76, 18.19] (18.05–18.37) | 17.28 | 100% | 1.7e-07 | 100.0% | `maxsim_cpu_variable_int4` 17.98 |  |
+
+### EPYC — beir
+| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |
+|---|---|--:|--:|--:|--:|--:|--:|--:|---|---|
+| NumPy, int4-self | `numpy_packed_int4` | 6230 | 623 | 6.71 [6.66, 6.75] (6.70–6.71) | 6.35 | 100% | 6.8e-08 | 100.0% | `numpy_packed_int4` 6.71 |  |
+| maxsim-cpu, int4-self | `maxsim_cpu_variable_int4` | 6230 | 623 | 8.02 [7.97, 8.08] (8.02–8.07) | 7.86 | 100% | 3.2e-07 | 100.0% | `maxsim_cpu_variable_int4` 8.02 |  |
 
 ## pool-parked (5 ms busy gap before each call)
 
@@ -514,6 +600,34 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | NumKong (approx.), f16 | `numkong_native_f16@t1` | 2378 | 0.88 [0.87, 0.89] (0.88–0.88) |
 | NumKong (approx.), f32 | `numkong_native_f32` | 2378 | 2.88 [2.85, 2.90] (2.87–2.87) |
 
+### EPYC — agent-ho (1 sets)
+| config | arm | calls | ratio [CI] (spread) |
+|---|---|--:|--:|
+| sweet, production path (Node) | `node-production` | 2004 | 1.13 [1.10, 1.15] (1.11–1.14) |
+| sweet, production path + prewarm | `node-prewarm` | 2004 | 1.05 [1.04, 1.06] (1.04–1.06) |
+| NumPy, f32 | `numpy_packed` | 2004 | 0.71 [0.70, 0.72] (0.70–0.71) |
+| PyTorch, f32 | `torch_pad_bmm` | 2004 | 1.04 [0.99, 1.09] (1.04–1.05) |
+| PyTorch, bf16 | `torch_pad_bmm_bf16` | 2004 | 6.16 [5.90, 6.48] (6.13–6.20) |
+| maxsim-cpu, f32 | `maxsim_cpu_variable` | 2004 | 2.66 [2.58, 2.74] (2.65–2.68) |
+| NextPlaid, f32 | `nextplaid@t4` | 2004 | 2.36 [2.26, 2.44] (2.35–2.38) |
+| NumKong (approx.), bf16 | `numkong_native_bf16` | 2004 | 1.21 [1.15, 1.27] (1.21–1.22) |
+| NumKong (approx.), f16 | `numkong_native_f16@t1` | 2004 | 1.14 [1.10, 1.17] (1.14–1.15) |
+| NumKong (approx.), f32 | `numkong_native_f32` | 2004 | 1.24 [1.18, 1.31] (1.24–1.25) |
+
+### EPYC — gcsn-ho (1 sets)
+| config | arm | calls | ratio [CI] (spread) |
+|---|---|--:|--:|
+| sweet, production path (Node) | `node-production` | 2378 | 1.12 [1.12, 1.12] (1.12–1.13) |
+| sweet, production path + prewarm | `node-prewarm` | 2378 | 1.06 [1.06, 1.06] (1.05–1.07) |
+| NumPy, f32 | `numpy_packed` | 2378 | 0.69 [0.69, 0.70] (0.69–0.70) |
+| PyTorch, f32 | `torch_pad_bmm` | 2378 | 1.35 [1.34, 1.36] (1.34–1.35) |
+| PyTorch, bf16 | `torch_pad_bmm_bf16` | 2378 | 8.60 [8.53, 8.68] (8.60–8.61) |
+| maxsim-cpu, f32 | `maxsim_cpu_variable` | 2378 | 2.95 [2.94, 2.96] (2.94–2.96) |
+| NextPlaid, f32 | `nextplaid@t4` | 2378 | 1.81 [1.79, 1.83] (1.81–1.82) |
+| NumKong (approx.), bf16 | `numkong_native_bf16` | 2378 | 1.53 [1.52, 1.54] (1.53–1.53) |
+| NumKong (approx.), f16 | `numkong_native_f16@t1` | 2378 | 1.01 [1.00, 1.01] (1.00–1.01) |
+| NumKong (approx.), f32 | `numkong_native_f32` | 2378 | 1.56 [1.55, 1.57] (1.56–1.57) |
+
 ## replica host-to-host
 
 | platform | set | config | ratio shard host | ratio replica host | relative difference |
@@ -585,7 +699,7 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | Graviton4 | gcsn-ho | NumKong (approx.), f32 | 0.946 | 0.942 | -0.4% |
 | Graviton4 | gcsn-ho | sweet kernel p50 ms (shard / replica) | 0.0279 | 0.0276 | -1.0% (geomean) |
 
-## losses: 1095 (platform, mode, set or cell, configuration) cases with ratio < 1
+## losses: 1131 (platform, mode, set or cell, configuration) cases with ratio < 1
 
 | platform | mode | where | config | ratio [CI] (spread) | CI below 1 |
 |---|---|---|---|--:|---|
@@ -1155,6 +1269,42 @@ ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [wo
 | Graviton4 | warm sweep | q8-d64-lennat | NumKong (approx.), bf16 | 0.37 [0.32, 0.41] (0.35–0.37) | yes |
 | Graviton4 | warm sweep | q8-d64-lennat | NumKong (approx.), f16 | 0.38 [0.33, 0.42] (0.37–0.38) | yes |
 | Graviton4 | warm sweep | q8-d64-lennat | NumKong (approx.), f32 | 0.39 [0.33, 0.43] (0.38–0.39) | yes |
+| EPYC | one thread | agent-ho | NumKong (approx.), f16 | 0.60 [0.60, 0.61] (0.58–0.63) | yes |
+| EPYC | one thread | beir | NumKong (approx.), f16 | 0.66 [0.66, 0.66] (0.66–0.66) | yes |
+| EPYC | one thread | beir | NumPy, f32 | 0.88 [0.88, 0.88] (0.88–0.88) | yes |
+| EPYC | one thread | gcsn-ho | NumKong (approx.), f16 | 0.64 [0.63, 0.64] (0.64–0.64) | yes |
+| EPYC | pool-parked | agent-ho | NumPy, f32 | 0.71 [0.70, 0.72] (0.70–0.71) | yes |
+| EPYC | pool-parked | gcsn-ho | NumPy, f32 | 0.69 [0.69, 0.70] (0.69–0.70) | yes |
+| EPYC | warm BEIR set | beir-scifact-answersmall-k10 | NumPy, f32 | 0.97 [0.96, 0.98] (0.96–0.99) | yes |
+| EPYC | warm sweep | q32-d16-lennat | NumPy, f32 | 0.90 [0.78, 1.02] (0.89–0.92) | no |
+| EPYC | warm sweep | q32-d256-lennat | NumKong (approx.), f16 | 0.93 [0.68, 1.23] (0.91–0.94) | no |
+| EPYC | warm sweep | q32-d256-lennat | NumKong (approx.), bf16 | 0.94 [0.67, 1.24] (0.92–0.99) | no |
+| EPYC | warm sweep | q32-d4096-len512 | NumKong (approx.), f16 | 0.62 [0.59, 0.65] (0.62–0.62) | yes |
+| EPYC | warm sweep | q32-d4096-len512 | NumKong (approx.), bf16 | 0.62 [0.59, 0.66] (0.62–0.62) | yes |
+| EPYC | warm sweep | q32-d4096-len512 | NumKong (approx.), f32 | 0.64 [0.60, 0.67] (0.63–0.64) | yes |
+| EPYC | warm sweep | q32-d4096-lennat | NumKong (approx.), bf16 | 0.67 [0.63, 0.70] (0.67–0.67) | yes |
+| EPYC | warm sweep | q32-d4096-lennat | NumKong (approx.), f16 | 0.67 [0.63, 0.71] (0.67–0.67) | yes |
+| EPYC | warm sweep | q32-d4096-lennat | NumKong (approx.), f32 | 0.70 [0.66, 0.73] (0.69–0.70) | yes |
+| EPYC | warm sweep | q64-d1-len512 | NumPy, f32 | 0.87 [0.81, 0.92] (0.83–0.88) | yes |
+| EPYC | warm sweep | q64-d1-lennat | NumPy, f32 | 0.91 [0.87, 0.95] (0.88–0.93) | yes |
+| EPYC | warm sweep | q64-d16-len512 | PyTorch, f32 | 0.89 [0.87, 0.92] (0.89–0.90) | yes |
+| EPYC | warm sweep | q64-d16-len512 | NumPy, f32 | 0.90 [0.85, 0.94] (0.90–0.90) | yes |
+| EPYC | warm sweep | q64-d4096-len512 | NumKong (approx.), f16 | 0.68 [0.64, 0.72] (0.68–0.68) | yes |
+| EPYC | warm sweep | q64-d4096-len512 | NumKong (approx.), bf16 | 0.68 [0.64, 0.72] (0.68–0.68) | yes |
+| EPYC | warm sweep | q64-d4096-len512 | NumKong (approx.), f32 | 0.70 [0.66, 0.74] (0.69–0.70) | yes |
+| EPYC | warm sweep | q64-d4096-lennat | NumKong (approx.), f16 | 0.67 [0.63, 0.71] (0.66–0.67) | yes |
+| EPYC | warm sweep | q64-d4096-lennat | NumKong (approx.), bf16 | 0.67 [0.63, 0.71] (0.67–0.67) | yes |
+| EPYC | warm sweep | q64-d4096-lennat | NumKong (approx.), f32 | 0.69 [0.65, 0.73] (0.68–0.69) | yes |
+| EPYC | warm sweep | q8-d256-len512 | NumKong (approx.), f16 | 0.91 [0.74, 1.05] (0.91–0.95) | no |
+| EPYC | warm sweep | q8-d256-len512 | NumKong (approx.), f32 | 0.92 [0.70, 1.09] (0.91–0.94) | no |
+| EPYC | warm sweep | q8-d256-len512 | NumKong (approx.), bf16 | 0.99 [0.90, 1.08] (0.97–1.01) | no |
+| EPYC | warm sweep | q8-d256-lennat | NumKong (approx.), bf16 | 0.76 [0.53, 1.00] (0.74–0.78) | no |
+| EPYC | warm sweep | q8-d256-lennat | NumKong (approx.), f16 | 0.94 [0.75, 1.17] (0.90–0.99) | no |
+| EPYC | warm sweep | q8-d4096-len512 | NumKong (approx.), bf16 | 0.75 [0.71, 0.78] (0.74–0.75) | yes |
+| EPYC | warm sweep | q8-d4096-len512 | NumKong (approx.), f32 | 0.75 [0.71, 0.80] (0.74–0.76) | yes |
+| EPYC | warm sweep | q8-d4096-len512 | NumKong (approx.), f16 | 0.76 [0.72, 0.80] (0.76–0.76) | yes |
+| EPYC | warm sweep | q8-d4096-lennat | NumKong (approx.), bf16 | 0.99 [0.86, 1.07] (0.98–0.99) | no |
+| EPYC | warm sweep | q8-d4096-lennat | NumKong (approx.), f16 | 0.99 [0.87, 1.07] (0.99–1.00) | no |
 | Intel | one thread | agent-ho | NumKong (approx.), f16 | 0.10 [0.10, 0.11] (0.10–0.10) | yes |
 | Intel | one thread | beir | NumKong (approx.), f16 | 0.12 [0.12, 0.12] (0.12–0.12) | yes |
 | Intel | one thread | beir | NumPy, f32 | 0.83 [0.83, 0.83] (0.83–0.83) | yes |

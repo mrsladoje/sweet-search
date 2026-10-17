@@ -1,0 +1,2 @@
+15050 of 15050 jobs complete
+rc=0

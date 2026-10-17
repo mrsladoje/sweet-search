@@ -199,6 +199,11 @@
     "bit_equal_share": 0.6216666666666667,
     "max_abs": 1.1920928955078125e-07,
     "same_ranking_share": 1.0
+   },
+   "epyc vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
    }
   },
   "scifact|colbertv2|k25": {
@@ -215,6 +220,11 @@
    "m3max vs intel": {
     "bit_equal_share": 0.6152,
     "max_abs": 1.1920928955078125e-07,
+    "same_ranking_share": 1.0
+   },
+   "epyc vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
     "same_ranking_share": 1.0
    }
   },
@@ -233,6 +243,11 @@
     "bit_equal_share": 0.6240666666666667,
     "max_abs": 1.4901161193847656e-07,
     "same_ranking_share": 1.0
+   },
+   "epyc vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
    }
   },
   "scifact|colbertv2|k100": {
@@ -249,6 +264,11 @@
    "m3max vs intel": {
     "bit_equal_share": 0.6221333333333333,
     "max_abs": 1.7881393432617188e-07,
+    "same_ranking_share": 1.0
+   },
+   "epyc vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
     "same_ranking_share": 1.0
    }
   },
@@ -267,6 +287,11 @@
     "bit_equal_share": 0.62375,
     "max_abs": 1.7881393432617188e-07,
     "same_ranking_share": 1.0
+   },
+   "epyc vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
    }
   },
   "scifact|answersmall|k10": {
@@ -283,6 +308,11 @@
    "m3max vs intel": {
     "bit_equal_share": 0.5996666666666667,
     "max_abs": 2.980232238769531e-07,
+    "same_ranking_share": 1.0
+   },
+   "epyc vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
     "same_ranking_share": 1.0
    }
   },
@@ -301,6 +331,11 @@
     "bit_equal_share": 0.5972,
     "max_abs": 2.980232238769531e-07,
     "same_ranking_share": 1.0
+   },
+   "epyc vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
    }
   },
   "scifact|answersmall|k50": {
@@ -317,6 +352,11 @@
    "m3max vs intel": {
     "bit_equal_share": 0.5936666666666667,
     "max_abs": 2.980232238769531e-07,
+    "same_ranking_share": 1.0
+   },
+   "epyc vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
     "same_ranking_share": 1.0
    }
   },
@@ -335,6 +375,11 @@
     "bit_equal_share": 0.5953333333333334,
     "max_abs": 2.980232238769531e-07,
     "same_ranking_share": 0.99
+   },
+   "epyc vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
    }
   },
   "scifact|answersmall|k200": {
@@ -352,6 +397,11 @@
     "bit_equal_share": 0.59425,
     "max_abs": 2.980232238769531e-07,
     "same_ranking_share": 0.96
+   },
+   "epyc vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
    }
   },
   "nfcorpus|colbertv2|k10": {
@@ -368,6 +418,11 @@
    "m3max vs intel": {
     "bit_equal_share": 0.6130030959752322,
     "max_abs": 1.7881393432617188e-07,
+    "same_ranking_share": 1.0
+   },
+   "epyc vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
     "same_ranking_share": 1.0
    }
   },
@@ -386,6 +441,11 @@
     "bit_equal_share": 0.6019814241486068,
     "max_abs": 1.7881393432617188e-07,
     "same_ranking_share": 1.0
+   },
+   "epyc vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
    }
   },
   "nfcorpus|colbertv2|k50": {
@@ -402,6 +462,11 @@
    "m3max vs intel": {
     "bit_equal_share": 0.5930030959752322,
     "max_abs": 1.7881393432617188e-07,
+    "same_ranking_share": 1.0
+   },
+   "epyc vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
     "same_ranking_share": 1.0
    }
   },
@@ -420,6 +485,11 @@
     "bit_equal_share": 0.5886068111455108,
     "max_abs": 1.7881393432617188e-07,
     "same_ranking_share": 1.0
+   },
+   "epyc vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
    }
   },
   "nfcorpus|colbertv2|k200": {
@@ -436,6 +506,11 @@
    "m3max vs intel": {
     "bit_equal_share": 0.5815634674922601,
     "max_abs": 1.7881393432617188e-07,
+    "same_ranking_share": 1.0
+   },
+   "epyc vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
     "same_ranking_share": 1.0
    }
   },
@@ -454,6 +529,11 @@
     "bit_equal_share": 0.5913312693498453,
     "max_abs": 2.384185791015625e-07,
     "same_ranking_share": 1.0
+   },
+   "epyc vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
    }
   },
   "nfcorpus|answersmall|k25": {
@@ -470,6 +550,11 @@
    "m3max vs intel": {
     "bit_equal_share": 0.5907120743034056,
     "max_abs": 2.384185791015625e-07,
+    "same_ranking_share": 1.0
+   },
+   "epyc vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
     "same_ranking_share": 1.0
    }
   },
@@ -488,6 +573,11 @@
     "bit_equal_share": 0.5894117647058823,
     "max_abs": 2.980232238769531e-07,
     "same_ranking_share": 0.9969040247678018
+   },
+   "epyc vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
    }
   },
   "nfcorpus|answersmall|k100": {
@@ -505,6 +595,11 @@
     "bit_equal_share": 0.5913003095975232,
     "max_abs": 2.980232238769531e-07,
     "same_ranking_share": 0.9907120743034056
+   },
+   "epyc vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
    }
   },
   "nfcorpus|answersmall|k200": {
@@ -522,6 +617,11 @@
     "bit_equal_share": 0.5922910216718267,
     "max_abs": 2.980232238769531e-07,
     "same_ranking_share": 0.9442724458204335
+   },
+   "epyc vs intel": {
+    "bit_equal_share": 1.0,
+    "max_abs": 0.0,
+    "same_ranking_share": 1.0
    }
   }
  },
@@ -764,8 +864,8 @@
   }
  },
  "kernel_within_cpu": {
-  "files": 2000,
-  "scores": 47971000,
-  "bit_equal": 47971000
+  "files": 2600,
+  "scores": 62362300,
+  "bit_equal": 62362300
  }
 }

@@ -29,4 +29,9 @@ M3 Max & warm & NumKong & 2 (2) & NumKong  & 0.99 (beir) \\
  & one thread & exact & 9 (9) & NumPy, PyTorch, maxsim-cpu & 0.16 (beir) \\
  & one thread & NumKong & 3 (3) & NumKong  & 0.26 (beir) \\
 \addlinespace
-EPYC & \multicolumn{4}{l}{\TODO{epyc}} \\
+EPYC & warm sweep & exact & 5 (4) & NumPy, PyTorch & 0.87 (q64-d1-len512) \\
+ & warm sweep & NumKong & 24 (15) & NumKong  & 0.62 (q32-d4096-len512) \\
+ & pool-parked & exact & 2 (2) & NumPy & 0.69 (gcsn-ho) \\
+ & one thread & exact & 1 (1) & NumPy & 0.88 (beir) \\
+ & one thread & NumKong & 3 (3) & NumKong  & 0.60 (agent-ho) \\
+\addlinespace

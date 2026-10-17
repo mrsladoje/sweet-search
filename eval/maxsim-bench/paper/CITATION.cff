@@ -1,0 +1,31 @@
+cff-version: 1.2.0
+message: "If you use LIRK-Bench, please cite the paper below. Software citation: use the fields of this file."
+type: software
+title: "LIRK-Bench"
+abstract: "A contract-checked benchmark of CPU late-interaction reranking kernels (MaxSim). Code, replay-set format, scoring contracts and analysis."
+authors:
+  - family-names: "TODO"
+    given-names: "TODO"
+    # affiliation: "TODO"
+    # orcid: "https://orcid.org/TODO"
+repository-code: "https://github.com/mrsladoje/sweet-search"
+license: Apache-2.0
+keywords:
+  - late interaction
+  - MaxSim
+  - ColBERT
+  - reranking
+  - benchmark
+  - CPU kernels
+# version: TODO          (set at the release)
+# date-released: TODO    (YYYY-MM-DD, set at the release)
+# doi: TODO              (Zenodo DOI of the data and code release, "10.5281/zenodo.NNNNNNN")
+preferred-citation:
+  type: article
+  title: "LIRK-Bench: A Contract-Checked Benchmark of CPU Late-Interaction Reranking Kernels"
+  authors:
+    - family-names: "TODO"
+      given-names: "TODO"
+  journal: "arXiv preprint"
+  year: 2026
+  notes: "TODO: arXiv identifier (arXiv:TODO). Add 'identifiers' with the arXiv id and the Zenodo DOI once they exist."
