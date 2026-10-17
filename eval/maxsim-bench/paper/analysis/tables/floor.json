@@ -1,0 +1,267 @@
+{
+ "arm": {
+  "source": ".ss-eval/maxsim-cloud/r2/arm-r2b/floor/floor.json",
+  "median_shape": {
+   "nq": 17,
+   "pool": 25,
+   "tokens": 4980
+  },
+  "arms": {
+   "ours": {
+    "floor_us": 1.644,
+    "floor_range": [
+     1.637,
+     1.657
+    ],
+    "median_us": 47.8425,
+    "median_range": [
+     47.706,
+     48.077
+    ],
+    "share": 0.0343627527825678
+   },
+   "ours@1": {
+    "floor_us": 1.643,
+    "floor_range": [
+     1.642,
+     1.666
+    ],
+    "median_us": 514.82,
+    "median_range": [
+     514.517,
+     514.8335
+    ],
+    "share": 0.003191406705256206
+   },
+   "nextplaid": {
+    "floor_us": 13.907,
+    "floor_range": [
+     13.1575,
+     14.2385
+    ],
+    "median_us": 147.173,
+    "median_range": [
+     144.1425,
+     147.8495
+    ],
+    "share": 0.0944942346761974
+   },
+   "nextplaid@1": {
+    "floor_us": 5.041,
+    "floor_range": [
+     5.013,
+     5.079
+    ],
+    "median_us": 627.2865,
+    "median_range": [
+     627.2055,
+     630.271
+    ],
+    "share": 0.008036200364586198
+   },
+   "numkong_native_bf16": {
+    "floor_us": 11.807,
+    "floor_range": [
+     11.719,
+     11.9285
+    ],
+    "median_us": 31.694,
+    "median_range": [
+     31.515,
+     31.8015
+    ],
+    "share": 0.37253107843755917
+   },
+   "numkong_bf16": {
+    "floor_us": 3.135,
+    "floor_range": [
+     3.131,
+     3.153
+    ],
+    "median_us": 338.071,
+    "median_range": [
+     336.9725,
+     347.224
+    ],
+    "share": 0.009273200008282283
+   },
+   "numkong_native_f16": {
+    "floor_us": 11.6945,
+    "floor_range": [
+     11.576,
+     11.8645
+    ],
+    "median_us": 32.3725,
+    "median_range": [
+     32.287,
+     32.393
+    ],
+    "share": 0.36124797281643367
+   },
+   "numkong_native_f16@1": {
+    "floor_us": 3.761,
+    "floor_range": [
+     3.752,
+     3.763
+    ],
+    "median_us": 145.579,
+    "median_range": [
+     145.4955,
+     146.0865
+    ],
+    "share": 0.025834770124811956
+   },
+   "numkong_native_f32": {
+    "floor_us": 11.711,
+    "floor_range": [
+     11.5525,
+     11.823
+    ],
+    "median_us": 33.3175,
+    "median_range": [
+     33.239,
+     33.4775
+    ],
+    "share": 0.3514969610565018
+   },
+   "numkong_f32": {
+    "floor_us": 2.802,
+    "floor_range": [
+     2.801,
+     2.811
+    ],
+    "median_us": 331.045,
+    "median_range": [
+     324.5505,
+     342.8355
+    ],
+    "share": 0.008464106088296152
+   },
+   "numpy_packed": {
+    "floor_us": 3.73,
+    "floor_range": [
+     3.724,
+     3.734
+    ],
+    "median_us": 76.388,
+    "median_range": [
+     76.0375,
+     76.8265
+    ],
+    "share": 0.04882965910876053
+   },
+   "numpy_packed@1": {
+    "floor_us": 3.728,
+    "floor_range": [
+     3.725,
+     3.728
+    ],
+    "median_us": 609.872,
+    "median_range": [
+     605.93,
+     610.3305
+    ],
+    "share": 0.006112758086942834
+   },
+   "numpy_packed_t": {
+    "floor_us": 3.754,
+    "floor_range": [
+     3.72,
+     3.768
+    ],
+    "median_us": 108.063,
+    "median_range": [
+     107.5455,
+     108.213
+    ],
+    "share": 0.03473899484559933
+   },
+   "numpy_packed_int4": {
+    "floor_us": 10.971,
+    "floor_range": [
+     10.9625,
+     10.975
+    ],
+    "median_us": 992.366,
+    "median_range": [
+     990.296,
+     994.345
+    ],
+    "share": 0.011055396899934096
+   },
+   "torch_pad_flat": {
+    "floor_us": 21.008,
+    "floor_range": [
+     20.7395,
+     21.0485
+    ],
+    "median_us": 187.3315,
+    "median_range": [
+     187.1985,
+     188.3675
+    ],
+    "share": 0.11214344624369099
+   },
+   "torch_pad_bmm@1": {
+    "floor_us": 19.7315,
+    "floor_range": [
+     19.4865,
+     19.8165
+    ],
+    "median_us": 1371.512,
+    "median_range": [
+     1368.963,
+     1376.495
+    ],
+    "share": 0.014386676893822293
+   },
+   "torch_pad_bmm": {
+    "floor_us": 20.4325,
+    "floor_range": [
+     20.008,
+     21.317
+    ],
+    "median_us": 229.007,
+    "median_range": [
+     226.907,
+     232.7415
+    ],
+    "share": 0.0892221635146524
+   },
+   "torch_pad_bmm_bf16": {
+    "floor_us": 20.433,
+    "floor_range": [
+     18.785,
+     21.0545
+    ],
+    "median_us": 194.817,
+    "median_range": [
+     190.806,
+     196.9185
+    ],
+    "share": 0.10488304408752828
+   },
+   "torch_pad_flat_bf16": {
+    "floor_us": 18.48,
+    "floor_range": [
+     17.77,
+     18.786
+    ],
+    "median_us": 171.683,
+    "median_range": [
+     171.506,
+     172.9775
+    ],
+    "share": 0.10764024393795542
+   }
+  },
+  "errors": {},
+  "primary": {
+   "numpy": "numpy_packed",
+   "torch": "torch_pad_flat",
+   "nextplaid": "nextplaid",
+   "numkong": "numkong_native_f32"
+  },
+  "instances": 2
+ }
+}

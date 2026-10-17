@@ -283,43 +283,59 @@ CPU & set & NumPy int4-self & maxsim-cpu int4-self \\
 \end{tabular}
 \end{table}
 
+\subsection{Fixed cost per call}
+\label{sec:floor}
+
+At tens of microseconds per call, a rival's time could be mostly fixed cost: Python dispatch, thread wake-up and layout handling, not arithmetic.
+After the freeze, as a review of the draft asked, we timed every arm on the smallest possible call (one query token, one candidate of one token) and on the median development agent call (\nm{floor.shape.nq} query tokens, \nm{floor.shape.pool} candidates, \nm{floor.shape.tokens} candidate tokens).
+Each arm ran in three fresh processes, with 200 warm-up calls and five rounds of timed calls (Appendix~\ref{app:deviations}); the data are development data only.
+Table~\ref{tab:floor} shows that the smallest call took \nm{range.floor.numpy.min}--\nm{range.floor.numpy.max}\% of the median call's time for NumPy and \nm{range.floor.torch.min}--\nm{range.floor.torch.max}\% for PyTorch.
+So most of a typical call's time is not this fixed cost, and \sweet's speed-up on these calls does not come only from avoiding dispatch.
+The smallest call is a lower bound on the fixed cost: a larger call can wake more threads, and this measurement does not separate that cost.
+NumKong's native loop had the largest share (\nm{range.floor.numkong.min}--\nm{range.floor.numkong.max}\%); for \sweet the share was \nm{range.floor.ours.min}--\nm{range.floor.ours.max}\%.
+
+\begin{table}[!htbp]
+\centering\scriptsize
+\caption{Fixed cost per call (development data): time of the smallest call / time of the median agent call, in $\mu$s, and their ratio. Each library at its frozen primary float32 agent configuration; NumKong with its native loop. Median over three processes.}
+\label{tab:floor}
+\begin{tabular}{lllllll}
+\toprule
+CPU & \sweet & NumPy & PyTorch & maxsim-cpu & NextPlaid & NumKong \\
+\midrule
+\inputtable{tables/floor.tex}
+\bottomrule
+\end{tabular}
+\end{table}
+
 \subsection{Parallel callers}
 \label{sec:conc}
 
 In a service, several requests can score at the same time.
 We ran $N \in \{1, 4, 16\}$ callers in two executors.
 The \emph{threads} executor runs $N$ threads in one process, so the library's pool is shared, as in one service process.
-The \emph{procs} executor runs one process per caller with a thread budget of $\max(1, \text{cores}/N)$; a configuration with a fixed thread count keeps that count, which oversubscribed the CPU in \nm{conc.oversub.n} rival runs (marked $\ddagger$).
-On the EPYC, the best exact rival at 16 callers was such an oversubscribed run (marked in Table~\ref{tab:conc}); on the other CPUs it was not. Figure~\ref{fig:conc} includes the oversubscribed runs.
+The \emph{procs} executor runs one process per caller with a thread budget of $\max(1, \text{cores}/N)$.
 \emph{Closed-loop saturation} lets each caller replay its share of the set back to back; we report throughput.
 \emph{Open-loop} runs use one Poisson arrival trace per rate (seed 42; the same timestamps and call order for every arm).
-The rates are absolute and common to all arms on a machine.
-They were frozen as 25, 50 and 75\% of the closed-loop throughput of the slowest shortlisted rival on development data, but that throughput came from the uncorrected per-process wall time (below), so we treat them as fixed stress rates, not as utilization levels.
+The rates are absolute and common to all arms on a machine; we treat them as fixed stress rates, not as utilization levels (Appendix~\ref{app:conc-frozen}).
 Their latency includes queueing.
-The threads executor feeds one shared queue; the procs executor assigns each request to one process in advance, and its arrival loops spin on the same cores that score.
-Each configuration ran once, for 20 to 500\,ms, so these results have no uncertainty interval.
-The harness does not check the scores of these runs, and the AMD BLIS arms are left out: the parallel-caller harness ignored their environment and ran plain NumPy.
+The threads executor feeds one shared queue; the procs executor assigns each request to one process in advance.
+
+The frozen parallel-caller harness had four defects, which the reviews of the first draft found (Appendix~\ref{app:conc-frozen}).
+After the freeze we fixed them in a copy of the harness and ran it again with the same arms, sets, rates and seed; the plan was written before the run (Appendix~\ref{app:deviations}).
+In the fixed harness, all callers start together, a fixed thread count in a configuration is capped at the per-process budget, and the BLIS arms are left out.
+Each configuration runs three times; each closed-loop caller replays its share for at least 3\,s, and each open-loop trace has at least 3\,s of arrivals.
+Both executors warm up every call.
+We report the median of the three runs.
+Over the three runs, the kernel's closed-loop throughput varied by a median of \nm{conc.ours.spread.median}\% and at most \nm{conc.ours.spread.max}\% (maximum minus minimum, over the median).
+The harness does not check the scores of these runs.
 
 Table~\ref{tab:conc} and Figure~\ref{fig:conc} give the results.
-With one caller, \sweet had \nm{range.conc.n1.min}--\nm{range.conc.n1.max}$\times$ the throughput of the best exact rival in the same executor (threads).
-With 16 callers the result depends on the executor.
-With one process per caller, an exact rival had the higher throughput in \nm{conc.n16.procs.lost} of 10 CPU--workload pairs.
-In one shared process, an exact rival had the higher throughput in \nm{conc.n16.threads.lost} of 10 pairs, and the throughput of \sweet fell as callers were added.
-We did not test why; possible causes are the shared worker pool, the Python interpreter lock around each call, and the different warm-up of the two executors. The product runs in Node.js, which has no such lock.
-NumKong had a higher throughput than \sweet at 16 callers in most pairs.
-At the highest common open-loop rate, the best exact rival had a lower per-request p99 than \sweet on M3 Max GCSN calls only.
-On M3 Max agent calls neither arm kept up with that rate ($\S$: \sweet achieved \nm{conc.m3max.agent.open.achieved.ours} calls/s), so both p99 values there measure queue growth, not a steady state.
-
-During the analysis we found a defect in the procs executor: in closed-loop runs the callers start about 50\,ms before the recorded start time, so the recorded wall time is too short.
-We corrected these throughputs by adding 50\,ms, the time between the start file and the recorded start. No caller can start before the start file exists, so the corrected wall time is an upper bound and every corrected throughput is a lower bound; a ratio of two such bounds has no bound.
-For \sweet the correction is large: it makes up at least \nm{conc.corr.share.min}\% of the corrected time, and in \nm{conc.corr.negative} of \nm{conc.corr.runs} runs the recorded wall time was negative.
-A check supports the correction: with one caller, where the executor should matter little, corrected procs and threads throughputs of \sweet agree within 2.5\% on the six cloud CPU--workload pairs; on the M3 Max they differ by up to 1.9$\times$, for reasons we did not find.
-Per-request latencies need no correction (Appendix~\ref{app:deviations}).
+\TODO{parallel-caller results: one caller, 16 callers per executor, NumKong, open loop}
 
 \begin{table}[!htbp]
 \centering\scriptsize
 \setlength{\tabcolsep}{2.5pt}
-\caption{Parallel callers (previously examined sets). Closed loop per executor (procs: one process per caller; threads: one shared process): \sweet throughput in thousand calls/s, \sweet / best exact rival and \sweet / best NumKong configuration (above 1: \sweet faster; red: rival faster). $\ddagger$: the rival oversubscribed the CPU. Open loop: per-request p99 in ms at the highest common rate (calls/s), \sweet and the best exact rival (red: rival lower); $\S$: rate above the arm's closed-loop capacity. Single runs, no interval.}
+\caption{Parallel callers (previously examined sets; post-freeze rerun with the fixed harness, median of three runs). Closed loop per executor (procs: one process per caller; threads: one shared process): \sweet throughput in thousand calls/s, \sweet / best exact rival and \sweet / best NumKong configuration (above 1: \sweet faster; red: rival faster). Open loop: per-request p99 in ms at the highest common rate (calls/s), \sweet and the best exact rival (red: rival lower); $\S$: the arm achieved less than 95\% of the offered rate.}
 \label{tab:conc}
 \resizebox{\linewidth}{!}{%
 \begin{tabular}{llrrrrrrrrrrrrrrr}
@@ -336,7 +352,7 @@ CPU & set & \sweet & exact & NumKong & \sweet & exact & NumKong & \sweet & exact
 \begin{figure}[!htbp]
 \centering
 \includegraphics[width=\linewidth]{figures/conc.pdf}
-\caption{Closed-loop saturation throughput against the number of callers (best executor per library; previously examined sets; log scales; single runs).}
+\caption{Closed-loop saturation throughput against the number of callers (best executor per library; previously examined sets; log scales; post-freeze rerun, median of three runs).}
 \label{fig:conc}
 \end{figure}
 
@@ -378,7 +394,10 @@ No ratio changed sides of 1 (Table~\ref{tab:replica}).
 The kernel's own geometric-mean latency differed by at most \nm{replica.oursmax}\%.
 Each replica was a different instance in the same availability zone.
 EC2 does not expose the physical host of shared-tenancy instances, so we cannot show that the hosts differed.
-The BEIR and sweep sets have no replica; differences smaller than about 13\% on them, such as AMD BEIR NumKong (1.06) or M3 Max BEIR NumKong (0.99), may not repeat on another instance.
+After the freeze, a second instance of each cloud type repeated the BEIR sets with $k = 25$ and $k = 100$ (a rerun planned before it ran; Appendix~\ref{app:deviations}).
+Across \nm{rbeir.n} frozen rival configurations, the ratio on the second instance differed by a median of \nm{rbeir.median}\% and at most \nm{rbeir.max}\%, and \nm{rbeir.flips} ratios changed sides of 1.
+The kernel's own geometric-mean latency differed by at most \nm{rbeir.oursmax}\%, and its scores were bit-identical to the first run.
+The sweep sets have no replica, and the M3 Max and the EPYC are single machines; differences smaller than about 13\% there, such as M3 Max BEIR NumKong (0.99), may not repeat on another machine.
 
 \begin{table}[!htbp]
 \centering\scriptsize
