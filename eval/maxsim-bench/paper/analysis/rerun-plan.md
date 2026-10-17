@@ -99,3 +99,33 @@ the owner on 2026-10-17 together with the other review fixes.
   the share floor / median-call time.
 - Used only to describe how much of a typical call is fixed cost per library. No claim
   threshold, no tuning.
+
+# Post-freeze checks from the external reviews (written before the runs)
+
+Written 2026-10-17 ~20:30 UTC, before any run of them. Approved by the owner on 2026-10-17
+together with the other review fixes.
+
+## Float32 storage, measured directly (`rerun/f32direct.py`)
+
+- Why: the paper's float32-storage line combined the quality of contract F with the time of
+  the fastest float32 rival on the int4-decoded vectors. A review asked for a direct
+  measurement.
+- What runs: on the M3 Max only, the four k = 100 BEIR sets; arms `numpy_packed`,
+  `numpy_packed@12` and `torch_pad_flat` (the rivals that the line used on that CPU). Each arm
+  scores the original float32 token vectors and the int4-decoded vectors, per call in
+  alternating order, 3 rounds x (1 warm-up + 5 timed repetitions).
+- Reported: per cell and arm, nDCG@10 from the arm's own scores and per-request p50 / p95 for
+  both variants, and the p95 ratio original / decoded. If the ratio is within the noise band of
+  the M3 Max, the constructed line stands and the paper says so; if not, the paper reports the
+  measured line. Aggregates only.
+
+## ColBERTv2 document length (`rerun/colbert300.py`)
+
+- Why: float32 ColBERTv2 reranking scored below the BM25 order on SciFact. ColBERTv2's
+  default document length (180 tokens) cut about 9 in 10 BEIR documents.
+- What runs: on the M3 Max, ColBERTv2 (same revision) encodes the BM25 top-100 documents and
+  the queries of both datasets again at 180 tokens (control) and 300 tokens; nDCG@10 of
+  contract F for each.
+- Reported: the four values. The 180-token control must match the paper's F value; if it does
+  not, the paper says so. No test of the paper changes: the tests compare storage formats on
+  the same vectors.
