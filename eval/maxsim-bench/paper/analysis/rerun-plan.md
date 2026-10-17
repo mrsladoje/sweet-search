@@ -72,3 +72,30 @@ before the recorded start; a fixed thread count in an arm overrode the per-proce
 - These results replace the frozen single-run parallel-caller results in the main text;
   the frozen results move to an appendix with their correction. No other number changes.
 - No tuning and no threshold change after seeing the results.
+
+# Post-freeze measurement: fixed cost per call (written before the run)
+
+Written 2026-10-17 ~20:00 UTC, before any run of it. Asked for by an external review of the
+draft ("time every arm on a minimal call to get each binding's fixed-cost floor"); approved by
+the owner on 2026-10-17 together with the other review fixes.
+
+## What runs
+
+- Script: `rerun/floor.py`, frozen kernel and adapters (`bench.py` build functions), no
+  change to them. Development data only (`agent-dev`); the token values do not matter.
+- Arms: per CPU, `ours`, `ours@1` and every frozen agent-family configuration of the
+  shortlist (primary, `also`, one-thread), without environment arms (BLIS, MKL).
+- Two shapes: the floor call (one query token, one candidate of one token, cut from the
+  first development call) and the median development call (median of query tokens x
+  candidate tokens).
+- Per arm, 3 fresh processes in rotated arm order; per process 200 untimed warm-up calls,
+  then 5 rounds (1,000 floor calls or 200 median calls); the per-round median is kept.
+- Machines: the six cloud rerun instances after their parallel-caller rerun; the M3 Max and
+  the EPYC box after the HNSW session's timing window.
+
+## What is reported (fixed now)
+
+- Per CPU and arm: floor time (median over processes, and the range), median-call time, and
+  the share floor / median-call time.
+- Used only to describe how much of a typical call is fixed cost per library. No claim
+  threshold, no tuning.
