@@ -9,6 +9,7 @@
 # before the job key held ef / S1 / EF share hashes, so points are identified from each record's own params
 # and deduplicated (first record of a point wins). Per point: per-query quality from the retained lists
 # (quality.eval_lists; document = max of its vectors, cut 10), latency = median of the per-query timings.
+# Our records and (A) records count only when timed with a warm page cache (run.py pagecache=warm).
 # Selection: d_q = Q_sys,q - f * Q_exact,q; qualifies when the one-sided 97.5% lower bound of mean(d)
 # (cluster bootstrap over repositories for code sets, over queries for BEIR; 10,000 resamples, seed 42)
 # is >= 0; the operating point = the fastest qualifying point of that system.
@@ -64,6 +65,9 @@ for md in mdirs:
         if r['split'] != 'dev':
             sys.exit(f'refusing: held-out record {f}')
         if r['key'].get('kind') != 'timing':
+            continue
+        # our jobs and all (A) jobs read memory-mapped files: only records timed with a warm page cache count
+        if (r['system'].startswith('ours') or r['comparison'] == 'A') and r['key'].get('pagecache') != 'warm':
             continue
         n_rec += 1
         s, m = r['set'], r['model']

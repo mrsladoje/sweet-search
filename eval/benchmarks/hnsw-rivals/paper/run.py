@@ -143,6 +143,24 @@ for j in plan['jobs']:
             subprocess.run(['sync']); open('/proc/sys/vm/drop_caches', 'w').write('3\n')
         else:
             subprocess.run(['sudo', '-n', 'purge'])
+    if j.get('pagecache') == 'warm' and j.get('kind') != 'cold':
+        # every file the timed process maps or reads (index, our vector file, the shared export) is read once
+        # here, so a memory-mapped index starts in the page cache like an in-memory one (S5b: our 1M timings
+        # were read from disk after rival jobs had pushed the pages out)
+        warm_s = time.time()
+        roots = [j['build_dir']] if 'build_dir' in j else [j.get('index') or os.path.join(a.data, 'emb', j['model'], j['set'], 'index')]
+        roots.append(os.path.join(a.data, 'emb', j['model'], j['set'], 'export'))
+        nb = 0
+        for root in roots:
+            for dp, _, fs in os.walk(root):
+                for fn in fs:
+                    with open(os.path.join(dp, fn), 'rb') as fh:
+                        while True:
+                            b = fh.read(1 << 24)
+                            if not b:
+                                break
+                            nb += len(b)
+        say(f'page cache: read {nb / 1e9:.2f} GB in {time.time() - warm_s:.1f} s before the job')
     if j.get('options', {}).get('limit'):
         common += ['--limit', str(j['options']['limit'])]
     if j['system'].startswith('ours'):

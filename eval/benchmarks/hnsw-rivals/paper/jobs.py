@@ -94,7 +94,7 @@ def binaries(job, repo):
 
 
 KEY_FIELDS = ('comparison', 'system', 'family', 'build_params', 'build_seed', 'search', 'C', 'H', 'kv', 'gen', 'round',
-              'split', 'kind', 'options', 'ef', 'S1', 'EF')
+              'split', 'kind', 'options', 'ef', 'S1', 'EF', 'pagecache')
 # fields a job may carry outside the key (they are in the key through other entries: set hashes, machine, index hash)
 UNKEYED = {'set', 'model', 'machine', 'index', 'build_dir', 'binary', 'python'}
 
