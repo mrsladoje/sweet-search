@@ -13,7 +13,7 @@ The kernel also lost in other conditions.
 NumKong, which approximates the maximum, was faster on three CPUs.
 Exact rivals had lower times in \nm{sweep.epyc.loseany} to \nm{sweep.intel.loseany} sweep cells per CPU.
 They were also faster with one thread on BEIR calls, after a 5\,ms busy gap on four CPUs, and with 16 parallel callers in one shared process.
-On BEIR, int4 storage with the production scoring rule showed no material loss in nDCG@10 for ColBERTv2 at 100 candidates (margin 0.01, Holm correction).
+On BEIR, int4 storage with the production scoring rule passed a pre-specified non-inferiority test in nDCG@10 for ColBERTv2 on both datasets at 100 candidates (margin 0.01, Holm correction).
 For answerai-colbert-small it lost \nm{q.intel.scifact.answersmall.relabs}\% and \nm{q.intel.nfcorpus.answersmall.relabs}\%.
 A post-hoc analysis associates most of this loss with the length error of decoded tokens, which the production scoring rule keeps.
 The reference checks found two new defects in other libraries and confirmed a known one.

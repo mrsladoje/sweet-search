@@ -136,13 +136,14 @@ def main():
 def write_md(res):
     L = ['# Speed tables (held-out; agent-ho, gcsn-ho and sweep-ho previously examined; BEIR fresh)', '',
          'ratio = rival / sweet kernel, geometric mean over calls; > 1 = sweet faster. [workload 95% CI: cluster bootstrap, '
-         '10,000 resamples, seed 42] (execution spread: min–max over the R = 5 process repetitions).', '']
+         '10,000 resamples, seed 42] (leave-one-process-out sensitivity: min–max of the ratio when one of the 5 process repetitions is left out; '
+         'the frozen single-process range is in speed.json as spread_frozen).', '']
     for mode in ('warm', 'single', 'int4'):
         L += [f'## {mode}', '']
         for p, ws in res[mode].items():
             for name, rows in ws.items():
                 L.append(f'### {SHORT[p]} — {name}')
-                L.append('| config | arm | calls | clusters | ratio [CI] (spread) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | post hoc fastest |')
+                L.append('| config | arm | calls | clusters | ratio [CI] (leave-one-process-out sensitivity) | total-time ratio | sweet faster on | max err | top-1 = S | each frozen configuration | fastest non-frozen configuration |')
                 L.append('|---|---|--:|--:|--:|--:|--:|--:|--:|---|---|')
                 for r in rows:
                     if r.get('missing'):

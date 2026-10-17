@@ -3,8 +3,8 @@
 
 \paragraph{Code.}
 The benchmark, the kernel and the analysis are in the public repository of sweet-search~\cite{sweetsearch_repo}, folder \texttt{eval/maxsim-bench}.
-The frozen state is commit \texttt{a4317ba9}; the freeze file (\texttt{FREEZE.json}) holds the SHA-256 of every frozen file, the shortlists, $R$, $\delta$, the primary tests, the parallel-caller rates and the claim rule, and \texttt{freeze\_check.py} verifies them.
-Lock files pin every Python and Rust dependency per platform.
+The frozen code is commit \texttt{a4317ba9}, with the two later freeze commits \texttt{ea84951f} and \texttt{daf54122} (Section~\ref{sec:freeze}); the paper and its analysis are at \TODO{final paper commit}. The freeze file (\texttt{FREEZE.json}) holds the SHA-256 of every frozen file, the shortlists, $R$, $\delta$, the primary tests, the parallel-caller rates and the claim rule, and \texttt{freeze\_check.py} verifies them.
+Lock files pin every Python and Rust dependency per platform. The BEIR build script records each model's revision in its manifest but does not pass it to the download; a rebuild must pin the revisions from the manifest.
 The analysis code written after the freeze is in \texttt{paper/analysis}; one command per file rebuilds every table, figure and number of this paper (\texttt{paper/README.md}), and \texttt{RESULTS-paper.md} lists each number with its source file.
 
 \paragraph{Data.}

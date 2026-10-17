@@ -67,11 +67,11 @@ Before each arm, the runner waits until machine CPU use, sampled over one second
 Per call, one untimed warm-up precedes the timed repetitions.
 \begin{description}
 \item[Warm:] calls back to back; 5 timed repetitions per call.
-\item[Pool-parked (5\,ms busy gap):] the main thread spins for 5\,ms before every call, so worker pools that park after a short wait have parked; 3 timed repetitions. This mode does \emph{not} test cold caches or process start.
+\item[Pool-parked (5\,ms busy gap):] the main thread spins for 5\,ms before every call, so worker pools that park after a short wait (\sweet: 200\,$\mu$s) have parked, while pools that spin longer (OpenBLAS) may still be awake; 3 timed repetitions. This mode does \emph{not} test cold caches or process start.
 \item[One thread:] the one-thread configurations, warm.
 \item[Parallel callers:] see Section~\ref{sec:conc}.
 \end{description}
-Every arm runs $R = 5$ process repetitions $\times$ 2 rounds; the second round runs the arms in reversed order.
+Every arm of the matrix runs (warm, busy gap, one thread) runs $R = 5$ process repetitions $\times$ 2 rounds; the second round runs the arms in reversed order. The parallel-caller runs follow their own scheme (Section~\ref{sec:conc}).
 A call's latency is the median of its 10 run medians.
 We keep every individual timing.
 ``Per-request p95/p99'' pools all of them and is the only tail statistic we report.
@@ -83,10 +83,10 @@ The \emph{workload interval} is a 95\% cluster-bootstrap interval (10,000 resamp
 It resamples repositories for agent calls (11 clusters), queries for GCSN and BEIR calls, and calls for sweep cells.
 The 11 repositories hold \nm{agent.repos.min} to \nm{agent.repos.max} calls each, and five of them hold \nm{agent.repos.top5}\% of all calls, so the effective number of clusters is about \nm{agent.repos.eff}.
 With so few clusters this interval can be too narrow, so Appendix~\ref{app:robust} also gives the per-repository range and the leave-one-repository-out range.
-The \emph{execution spread} is the range of the ratio over five leave-one-process-out estimates, each computed with the same median-of-runs estimator.
+As a second number we report a \emph{leave-one-process-out sensitivity}: the range of the ratio when one of the five process repetitions is left out, with the same median-of-runs estimator. It shows how much one process changes the result; it is not a calibrated interval.
 The replica instance adds an instance-to-instance spread (Section~\ref{sec:spread}).
 The leave-one-process-out range is narrow, because each estimate shares 8 of 10 runs; the ratio fell outside the range of the five single-process estimates (each the mean of its 2 rounds) in \nm{spread.outside.n} of \nm{spread.rows.n} warm rows, because the median of 10 runs drops slow outlier runs that a mean of 2 keeps.
-We call a rival \emph{faster} only if its whole workload interval, all five leave-one-process-out estimates and all five single-process estimates are below 1; sweep and loss counts that use only the point estimate say ``ratio below 1''.
+We call a rival \emph{faster} only if its whole workload interval, all five leave-one-process-out estimates and all five single-process estimates are below 1. This rule was set after the freeze, during the analysis. Sweep and loss counts that use only the point estimate say ``ratio below 1''.
 This rule is descriptive; we do not correct it for the many comparisons.
 Beside the geometric mean we computed the total-time ratio (sum of rival times over sum of \sweet times), which weights large calls more.
 For no exact rival with float32 inputs does it fall on the other side of 1; for \nm{totalflip.n} BEIR rows with other input types it does (Section~\ref{sec:losses}).

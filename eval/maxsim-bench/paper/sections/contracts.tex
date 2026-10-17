@@ -41,7 +41,7 @@ The cases are: a negative best match (all cosines below 0), an opposite pair (co
 Each arm had to match its contract within its precision bound on every case before any timing on each machine.
 The bounds follow the input type, and NumKong, being approximate, has a bound of 0.15.
 Cases that an arm rejects (an odd dimension) count as unsupported, and cases whose inputs are undefined for a contract (a zero query token under S-pre) are informational.
-One known defect was recorded instead of a pass: maxsim-cpu on AArch64 fails the ragged-length case (Section~\ref{sec:correctness}); its M3 Max rows are timed but carry this defect.
+Three known defects were recorded instead of a pass: maxsim-cpu on AArch64 fails the ragged-length case, and NumKong's two float16 arms on x86 return NaN on the same case (Section~\ref{sec:correctness}). These arms were timed anyway; their rows carry the defect and are marked.
 
 \subsection{The \sweet kernel}
 \label{sec:kernel}

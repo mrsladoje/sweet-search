@@ -33,6 +33,7 @@ LIB = {  # colour, marker, label
     'torch_bf16': ('#1baf7a', '<', 'PyTorch bf16'),
 }
 INK, MUTED, GRID = '#0b0b0b', '#52514e', '#e4e3df'
+BM25 = {}
 
 plt.rcParams.update({'font.size': 7.5, 'axes.titlesize': 8, 'axes.labelsize': 7.5, 'legend.fontsize': 7, 'xtick.labelsize': 7,
                      'ytick.labelsize': 7, 'pdf.fonttype': 42, 'ps.fonttype': 42, 'axes.edgecolor': MUTED, 'axes.labelcolor': INK,
@@ -131,6 +132,8 @@ def fig_sweep():
 
 def fig_budget():
     bd = load('budget.json')
+    global BM25
+    BM25 = load('quality_extra.json').get('bm25', {})
     plats = [p for p in PLAT if p in bd]
     cells = ['scifact|colbertv2', 'nfcorpus|colbertv2', 'scifact|answersmall', 'nfcorpus|answersmall']
     fig, axes = plt.subplots(len(plats), 4, figsize=(7.0, 1.6 * len(plats) + 0.4), squeeze=False)
@@ -150,11 +153,14 @@ def fig_budget():
                 L = ('ours' if arm == 'ours' else 'torch_bf16' if lab.startswith('PyTorch, bf16') else
                      next((k for k, v in (('numpy', 'NumPy'), ('torch', 'PyTorch'), ('maxsim_cpu', 'maxsim-cpu'), ('nextplaid', 'NextPlaid'),
                                           ('numkong', 'NumKong')) if lab.startswith(v)), None))
-                if L is None or (L == 'numkong' and 'f32' not in lab):
+                if L is None:
                     continue
                 pts = [x for x in c['points'] if x['ndcg10'] is not None]
                 ax.plot([x['p95_ms'] for x in pts], [x['ndcg10'] for x in pts], marker=LIB[L][1], color=LIB[L][0], ms=2.8, lw=1.0,
                         mec='white', mew=0.3, zorder=3 if L == 'ours' else 2)
+            bm = BM25.get(f'{cell}|k100')
+            if bm is not None:
+                ax.axhline(bm, color=MUTED, ls=':', lw=0.9, zorder=1)
             ax.set_xscale('log')
             ax.grid(color=GRID, lw=0.5); ax.set_axisbelow(True)
             for s in ('top', 'right'):
@@ -166,9 +172,11 @@ def fig_budget():
                 ax.set_ylabel(f'{PNAME[p]}\nnDCG@10', color=INK)
             if i == len(plats) - 1:
                 ax.set_xlabel('per-request p95, ms')
-    handles = [plt.Line2D([], [], marker=LIB[L][1], color=LIB[L][0], ms=4, label=LIB[L][2] + (' (f32 input)' if L == 'numkong' else ''))
+    handles = [plt.Line2D([], [], marker=LIB[L][1], color=LIB[L][0], ms=4, label=LIB[L][2])
                for L in ('ours', 'numpy', 'torch', 'torch_bf16', 'maxsim_cpu', 'nextplaid', 'numkong')]
-    handles.append(plt.Line2D([], [], marker='x', color=INK, ls='--', ms=4, label='float32 storage (F quality, fastest exact float32 rival time)'))
+    handles[-1] = plt.Line2D([], [], marker=LIB['numkong'][1], color=LIB['numkong'][0], ms=4, label='NumKong (approx.), every input type')
+    handles.append(plt.Line2D([], [], marker='x', color=INK, ls='--', ms=4, label='float32 storage, constructed: F quality at the fastest float32 rival time'))
+    handles.append(plt.Line2D([], [], color=MUTED, ls=':', label='BM25 order (no reranking)'))
     fig.legend(handles=handles, loc='lower center', ncol=4, frameon=False, bbox_to_anchor=(0.5, -0.005))
     fig.tight_layout(rect=(0, 0.06, 1, 1))
     fig.savefig(os.path.join(FIG, 'budget.pdf')); plt.close(fig)

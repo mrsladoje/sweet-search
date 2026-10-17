@@ -33,7 +33,7 @@ On agent calls these tiers were \nm{range.tiers.agent-ho.node-wasm.min}--\nm{ran
 \begin{table}[!htbp]
 \centering\scriptsize
 \setlength{\tabcolsep}{3pt}
-\caption{Warm calls. Ratio = rival / \sweet kernel, geometric mean over calls (above 1: \sweet faster), with the 95\% workload interval below. Each rival: the faster of its two frozen configurations for that input type. NumKong ($\dagger$, approximate): its fastest input type. Red bold: the rival is faster (interval and all leave-one-process-out estimates below 1). Agent and GCSN: previously examined. BEIR (20 sets pooled; 623 query clusters): fresh held-out. ``prev.\ path'': the engine's previous production path (not run on BEIR); ``prod.\ path'': the Node.js product path over the same kernel.}
+\caption{Warm calls. Ratio = rival / \sweet kernel, geometric mean over calls (above 1: \sweet faster), with the 95\% workload interval below. Each rival: the faster of its two frozen configurations for that input type. NumKong ($\dagger$, approximate): its fastest input type. Red bold: the rival is faster (Section~\ref{sec:method}). $\ast$: the arm returned invalid scores on part of the calls (NumKong on Intel, Section~\ref{sec:correctness}). Agent and GCSN: previously examined. BEIR (20 sets pooled; 623 query clusters): fresh held-out. ``prev.\ path'': the engine's previous production path (not run on BEIR); ``prod.\ path'': the Node.js product path over the same kernel.}
 \label{tab:warm}
 \begin{tabular}{llrrrrrrrrr}
 \toprule
@@ -124,8 +124,8 @@ That length differs from 1 by a similar amount for both models: the middle 80\% 
 The models differ in their score margins.
 For answerai-colbert-small, the candidates of a query differ little: the median gap between the first and the tenth score is \nm{margin.scifact.answersmall}\% (SciFact) and \nm{margin.nfcorpus.answersmall}\% (NFCorpus) of the first score.
 For ColBERTv2 it is \nm{margin.scifact.colbertv2}\% and \nm{margin.nfcorpus.colbertv2}\%.
-A length error of about 1\% can therefore reorder answerai-colbert-small's candidates but rarely ColBERTv2's.
-The direction error of a decoded token (cosine about 0.995) affects contracts S and C alike; the length error affects only S, which explains why C removes most of the loss.
+A possible explanation is that a length error of about 1\% can reorder answerai-colbert-small's candidates more often than ColBERTv2's; the first-to-tenth gap is a coarse measure, so this is not a demonstrated mechanism.
+The direction error of a decoded token (cosine about 0.995) affects contracts S and C alike; the length error affects only S, which fits the observation that C removes most of the loss.
 Contract C divides by the length of the decoded token; on the same int4 data it gives \nm{nd.scifact.answersmall.Cb} on SciFact and \nm{nd.nfcorpus.answersmall.Cb} on NFCorpus, against float32 values of \nm{nd.scifact.answersmall.F} and \nm{nd.nfcorpus.answersmall.F}.
 It removes most, not all, of the loss, and it would still fail the margin of 0.01 on both sets: its own difference to F is \nm{ph.scifact.answersmall.Cb.diff} [\nm{ph.scifact.answersmall.Cb.lo}, \nm{ph.scifact.answersmall.Cb.hi}] and \nm{ph.nfcorpus.answersmall.Cb.diff} [\nm{ph.nfcorpus.answersmall.Cb.lo}, \nm{ph.nfcorpus.answersmall.Cb.hi}].
 This analysis is post hoc and descriptive.
@@ -149,7 +149,7 @@ dataset & model & BM25 & F & F+c & Q+c & K & C-b & C-a & NumKong \\
 \paragraph{NumKong's quality.}
 NumKong's own scores fell far below the exact value of its own contract with answerai-colbert-small: \nm{nd.scifact.answersmall.NK} against \nm{nd.scifact.answersmall.Ca} on SciFact, below even the BM25 order.
 With ColBERTv2 the loss was small (\nm{nd.scifact.colbertv2.NK} against \nm{nd.scifact.colbertv2.Ca}).
-On BEIR calls its top-ranked document agreed with the reference of its own contract on only \nm{nk.top1own.beir.min}--\nm{nk.top1own.beir.max}\% of calls (agent calls: \nm{nk.top1own.agent-ho.min}--\nm{nk.top1own.agent-ho.max}\%), so the approximation, not the contract, causes most of the disagreement; its bfloat16 path on the Xeon, which uses AMX and returned no NaN, agreed with contract S on 78\%.
+On BEIR calls its top-ranked document agreed with the contract-C reference of its own inputs on only \nm{nk.top1own.beir.min}--\nm{nk.top1own.beir.max}\% of calls (agent calls: \nm{nk.top1own.agent-ho.min}--\nm{nk.top1own.agent-ho.max}\%), so the approximation, not the contract, causes most of the disagreement; its bfloat16 path on the Xeon, which uses AMX and returned no NaN, agreed with contract S on 78\%.
 A post-hoc check on synthetic vectors explains the collapse (\texttt{numkong\_check.py}).
 Our Rust loop and NumKong's own Python interface returned identical scores (largest difference \nm{nkcheck.adapter}), so the adapter is not the cause.
 When the candidates' scores lay about \nm{nkcheck.random.gap}\% apart, NumKong's candidate order kept a rank correlation of \nm{nkcheck.random.rho.min}--\nm{nkcheck.random.rho.max} with the exact order.
@@ -167,16 +167,16 @@ Within one CPU, the scores of all thread budgets, rounds and processes were bit-
 \label{sec:budget}
 
 A faster scorer can rerank more candidates in the same time.
-Figure~\ref{fig:budget} plots nDCG@10 against the per-request p95 of the timed scoring call, one point per $k$.
+Figure~\ref{fig:budget} plots nDCG@10 against the warm replay p95 of the timed scoring call (the 95th percentile over all timed repetitions of the BEIR calls, not a service-request distribution), one point per $k$. Each point's quality comes from the arm's first run; every rival's scores were bit-identical across its runs, except NumKong's Python arms on Intel.
 Table~\ref{tab:budget} reads it at two budgets.
 The time covers only the scoring call: the rivals' decoding and casting run outside their timer.
-The dashed line shows float32 storage: the quality of F with the time of the fastest frozen exact float32 rival, whose time does not depend on the vector values.
+The dashed line is a constructed estimate for float32 storage: the reference quality F paired with the time of the fastest frozen exact float32 rival on the same shapes. No single run produced these pairs; the estimate assumes that the rival's time does not depend on the vector values and that its scores would match F. The dotted line is the BM25 order without reranking.
 
 At a p95 budget of 0.25\,ms, \sweet reached a larger $k$ than every exact rival on AMD.
 On Intel the best exact rival (PyTorch with bfloat16 inputs) reached a larger $k$ at both budgets.
 On Graviton4, the M3 Max and the EPYC, \sweet and the best exact rival reached the same $k$, or the rival reached a larger one.
 For ColBERTv2, more candidates do not always help: on SciFact, nDCG@10 is highest at $k = 25$.
-For answerai-colbert-small, float32 storage gave clearly better quality at the same budget than any int4 arm on every CPU, because of the loss above.
+For answerai-colbert-small, the constructed float32-storage estimate lies above every int4 arm at the same budget on every CPU, because of the loss above.
 NumKong reached $k = 200$ within 0.25\,ms on the three cloud CPUs.
 On Intel its bfloat16 path, which uses AMX, also gave better quality than \sweet with answerai-colbert-small at a lower p95 (Table~\ref{tab:budget}); on the other CPUs NumKong's quality with that model collapsed.
 The budget view reads the largest $k$ that fits, which is not always the $k$ with the best quality.
