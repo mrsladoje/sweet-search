@@ -33,6 +33,8 @@ def cell(est, lo, hi):
 
 
 B = collections.defaultdict(dict)  # (t, s, m, f) -> system -> record
+J['B'] = [r for r in J['B'] if not (r['type'] == 'box' and r['set'] == 'csn1m')]  # box: csn1m only partial (DiskANN)
+J['A'] = [r for r in J['A'] if not (r['type'] == 'box' and r['set'] == 'csn1m')]
 for r in J['B']:
     B[(r['type'], r['set'], r['model'], r['f'])][r['system']] = r
 
@@ -107,10 +109,10 @@ for r in J['A']:
 
 
 def eff_val(e):
-    try:
-        return float(e.split()[-1])
-    except ValueError:
-        return 0.0
+    """The declared effort as a tuple of its numbers in field order (ScaNN: leaves, then reorder), so the
+    smaller of the two declared efforts sorts first for every family."""
+    import re
+    return tuple(float(x) for x in re.findall(r'[-+]?\d+(?:\.\d+)?', e)) or (0.0,)
 
 
 GENS = ['ours_scan', 'ours_walk', 'faiss_bin_flat', 'faiss_bin_hnsw', 'usearch_b1_rescore', 'hnswlib_f32', 'faiss_hnsw_flat',
@@ -149,7 +151,7 @@ for s in ('csn1m', 'quora', 'dall'):
 # ---- memory and cold start at 1M (csn1m, CodeRankEmbed, f = 0.99) per Linux AWS CPU
 for t in ('intel', 'amd', 'arm'):
     d = B.get((t, 'csn1m', 'CodeRankEmbed', 0.99), {})
-    o = d.get('ours_cascade'); riv = [(x['rss_mb'], k, x) for k, x in d.items() if not k.startswith('ours') and x.get('rss_mb')]
+    o = d.get('ours_cascade'); riv = [(x['rss_mb'], k, x) for k, x in d.items() if not k.startswith('ours') and k != 'faiss_exact' and x.get('rss_mb')]
     if o and riv:
         nums[f'mem-ours-{t}'] = f"{o['rss_mb'] / 1024:.1f}"; nums[f'cold-ours-{t}'] = f"{o['cold_ms'] / 1000:.1f}" if o.get('cold_ms') else ''
         lo = min(riv); hi = max(riv)
@@ -329,11 +331,121 @@ for t in ('intel', 'amd', 'arm'):
         pa.append(q['power_analytic']); ps.append(q['power_sim'])
 nums['powermin-a'] = f'{min(pa):.2f}'; nums['powermin-s'] = f'{min(ps):.2f}'; nums['powermax'] = f'{max(pa + ps):.2f}'
 
+# ---- sensitivity of the (B) headline at f = 0.99: (1) estimator exp(mean log rival - mean log ours) over rounds
+# (the first post-freeze script), (2) cells where ours misses f or has no point counted
+def gm_of(v):
+    return f'{math.exp(sum(v) / len(v)):.2f}' if v else ''
+sens = collections.defaultdict(list)
+for t in TYPES:
+    if t == 'box':
+        pass
+    for s_ in SETS:
+        for m in MODELS:
+            h = headline(B.get((t, s_, m, 0.99), {}), t, s_, m, 0.99)
+            if not h:
+                continue
+            o, rn, rv = h
+            ml = sum(math.log(x) for x in rv['round_us']) / len(rv['round_us']) - sum(math.log(x) for x in o['round_us']) / len(o['round_us'])
+            grp = 'large' if s_ in ('quora', 'csn1m') else ('small' if s_ in ('gcsn', 'd20k', 'advtest') else 'mid')
+            sens['meanlog-' + grp].append(ml); sens['meanlog-all'].append(ml)
+            sens['median-' + grp].append(math.log(ratio_ci(o['round_us'], rv['round_us'])[0]))
+for k, v in sens.items():
+    nums['sens-' + k] = gm_of(v)
+    if k.startswith('meanlog'):
+        nums['sens-' + k + '-wins'] = str(sum(1 for x in v if x > 0)); nums['sens-' + k + '-n'] = str(len(v))
+# cells at f where a dev rival exists but ours has no frozen point or misses f on held-out
+for f in (0.99, 0.995):
+    tag = str(f).replace('.', '')
+    miss = nopt = tot = 0
+    for t in TYPES:
+        for s_ in SETS:
+            for m in MODELS:
+                d = B.get((t, s_, m, f), {})
+                if not any(not k.startswith('ours') and k != 'faiss_exact' for k in d):
+                    continue
+                tot += 1; o = d.get('ours_cascade')
+                if not o:
+                    nopt += 1
+                elif not o['meets_point']:
+                    miss += 1
+    nums[f'ours-nopoint-{tag}'] = str(nopt); nums[f'ours-miss-{tag}'] = str(miss); nums[f'cells-{tag}'] = str(tot)
+
+# ---- (A) with the rescoring-speed gap removed: per CPU, the time per rescored vector from the H sweep at C = 1000
+# (H 50 -> 1000; the generator output is fixed), ours vs the rivals' shared C++ path; rival cells at H = 100 are
+# reduced by (rival cost - our cost) x 100 and the next-fastest / ours ratio recomputed (a model-based estimate)
+per = collections.defaultdict(lambda: collections.defaultdict(list))
+idx = collections.defaultdict(dict)
+for r in J['A']:
+    if r['C'] == 1000 and r['H'] in (50, 1000):
+        idx[(r['type'], r['set'], r['model'], r['system'], r['effort'])][r['H']] = r['us']
+for (t, s_, m, g, e), v in idx.items():
+    if 50 in v and 1000 in v and not (g == 'ours_scan' and s_ in ('quora', 'csn1m')):
+        per[t]['ours' if g.startswith('ours') else 'riv'].append((v[1000] - v[50]) / 950)
+gap = {t: float(np.median(per[t]['riv']) - np.median(per[t]['ours'])) for t in per if per[t]['riv'] and per[t]['ours']}
+for t in ('intel', 'amd', 'arm'):
+    if t in gap:
+        nums[f'rescore-ours-{t}'] = f"{np.median(per[t]['ours']):.2f}"; nums[f'rescore-riv-{t}'] = f"{np.median(per[t]['riv']):.2f}"
+        nums[f'rescore-x-{t}'] = f"{np.median(per[t]['riv']) / np.median(per[t]['ours']):.1f}"
+ra2 = []
+for t in TYPES:
+    for s_ in SETS:
+        m = 'bge-base-en-v1.5' if s_ in ('quora', 'fiqa') else 'CodeRankEmbed'
+        best = {}
+        for g in GENS:
+            v = sorted(A.get((t, s_, m, 400, 100, g), []), key=lambda r: eff_val(r['effort']))
+            if v and not (g == 'ours_scan' and s_ in ('quora', 'csn1m')):
+                best[g] = v[0]
+        ours = [best[g]['us'] for g in ('ours_scan', 'ours_walk') if g in best]
+        oth = [r['us'] - max(0.0, gap.get(t, 0.0)) * 100 for g, r in best.items() if not g.startswith('ours') and r['share'] >= 0.99]
+        if ours and oth and t in gap:
+            ra2.append(min(oth) / min(ours))
+if ra2:
+    nums['A-adj-min'] = f'{min(ra2):.2f}'; nums['A-adj-gm'] = f'{math.exp(sum(math.log(x) for x in ra2) / len(ra2)):.2f}'
+    nums['A-adj-n'] = str(len(ra2)); nums['A-adj-ours'] = str(sum(1 for x in ra2 if x > 1))
+
+# ---- our frozen (B) points below the product's stage-1 floor: S1 < min(400, 1.5 x max(40, 10 k)), k = k_v
+from paperlib import SL_TYPE  # noqa: E402
+import paperlib  # noqa: E402
+below = 0
+for r in J['B']:
+    if r['system'] == 'ours_cascade' and r['f'] == 0.99:
+        paperlib.dev_latency(r['type'], r['set'], r['model'], 'ours_cascade', 0.99)  # loads the shortlist
+        kv = paperlib._sl[SL_TYPE[r['type']]][r['set']][r['model']]['k_v']
+        if r['point']['S1'] < min(400, 1.5 * max(40, 10 * kv)):
+            below += 1
+nums['ours-below-floor'] = str(below)
+
+# ---- distinct measurements; repeated walk rows
+nums['B-distinct'] = f"{len({(r['type'], r['set'], r['model'], json.dumps(r['point'], sort_keys=True)) for r in J['B']}):,}"
+nums['A-scanrows'] = str(sum(1 for r in J['A'] if r['system'] == 'ours_scan' and r['set'] in ('quora', 'csn1m')))
+for t in ('box', 'mac'):
+    rr = collections.Counter(r['rounds'] for r in J['B'] if r['type'] == t)
+    if rr:
+        nums[f'R-{t}'] = str(rr.most_common(1)[0][0])
+
+# ---- the same cells at every fraction: cells with a headline pair at 0.98, 0.99 and 0.995
+common = None
+vals = {}
+for f in (0.98, 0.99, 0.995):
+    cur = {}
+    for t in TYPES:
+        for s_ in SETS:
+            for m in MODELS:
+                h = headline(B.get((t, s_, m, f), {}), t, s_, m, f)
+                if h:
+                    cur[(t, s_, m)] = math.log(ratio_ci(h[0]['round_us'], h[2]['round_us'])[0])
+    vals[f] = cur; common = set(cur) if common is None else common & set(cur)
+for f in (0.98, 0.99, 0.995):
+    tag = str(f).replace('.', '')
+    v = [vals[f][k] for k in common]
+    nums[f'common-gm-{tag}'] = f'{math.exp(sum(v) / len(v)):.2f}' if v else ''
+nums['common-n'] = str(len(common or ()))
+
 # ---- protocol numbers
 fz = J['freeze']
 nums['delta'] = str(fz['delta'])
 for t in TYPES:
-    nums[f'R-{t}'] = str(J['R'][t]) if J['R'][t] else ''
+    nums[f'R-{t}'] = str(J['R'][t]) if J['R'][t] else nums.get(f'R-{t}', '')
 if a.extra:
     nums.update({k: str(v) for k, v in json.load(open(a.extra)).items()})
 with open(os.path.join(HERE, 'numbers.tex'), 'w') as w:
