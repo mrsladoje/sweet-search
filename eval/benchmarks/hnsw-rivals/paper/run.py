@@ -18,6 +18,7 @@ import argparse, fcntl, json, os, shutil, subprocess, sys, time
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 import jobs  # noqa: E402
+FAULT_LIMIT = 1000  # replication validity rule (major page faults in one job, after loading)
 
 ap = argparse.ArgumentParser()
 for a in ('plan', 'data', 'results', 'machine', 'repo', 'rivals'):
@@ -184,6 +185,23 @@ for j in plan['jobs']:
         assert k.startswith(('SS_FIX_', 'SS_HNSW_')), k
         env[k] = str(v)
     r = subprocess.run(cmd, capture_output=True, text=True, env=env)
+    # Replication validity rule (REPLICATION_PLAN.md, every system alike): more than FAULT_LIMIT major page faults
+    # between loading and the end of the timed pass make the job invalid; it runs once more, and the record of the
+    # second run stands whatever its count (both counts are kept in the record).
+    if not r.returncode and j.get('options', {}).get('faultcheck') and os.path.exists(path):
+        def majflt(p):
+            try:
+                m = json.load(open(p))['memory']; return int(m['after']['majflt']) - int(m['loaded']['majflt'])
+            except Exception:
+                return None
+        f1 = majflt(path)
+        if f1 is not None and f1 > FAULT_LIMIT:
+            say(f"fault rule: {f1} major faults > {FAULT_LIMIT}; running {os.path.basename(path)} once more")
+            os.replace(path, path + f'.faulted.{int(time.time())}')
+            r = subprocess.run(cmd, capture_output=True, text=True, env=env)
+            if not r.returncode and os.path.exists(path):
+                rec = json.load(open(path)); rec['fault_rule'] = {'first_run_majflt': f1, 'rerun': True}
+                json.dump(rec, open(path + '.tmp', 'w')); os.replace(path + '.tmp', path)
     msg = [l for l in r.stdout.splitlines() if l and not l.startswith('[')]
     if r.returncode or jobs.validate(path, j['_hash'], j['_key'], j['_n']):
         failed.append(f"{j['system']} {j['set']}/{j['split']} r{j['round']} {os.path.basename(path)}")

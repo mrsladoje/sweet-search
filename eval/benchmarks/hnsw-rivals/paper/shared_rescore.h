@@ -67,6 +67,14 @@ inline void convert_query(const float* q, Query& out, int code_d = CODE_D, int w
     }
 }
 
+// Replication harness: only the sign code (comparison B, binary-code families); no int8 or float64 copy.
+inline void convert_code_only(const float* q, Query& out, int code_d = CODE_D) {
+    float t[FULL_D];
+    truncate(q, code_d, t);
+    std::memset(out.code, 0, sizeof(out.code));
+    for (int i = 0; i < code_d; i++) if (t[i] > 0) out.code[i >> 3] |= uint8_t(0x80 >> (i & 7));
+}
+
 inline int32_t int8_dot(const int8_t* a, const int8_t* b, int w) {
     int32_t s = 0;
     for (int i = 0; i < w; i++) s += int32_t(a[i]) * int32_t(b[i]);
