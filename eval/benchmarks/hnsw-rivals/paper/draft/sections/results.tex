@@ -1,0 +1,133 @@
+\section{Results}\label{sec:results}
+
+All numbers in this section are held-out: \nm{B-records} frozen points of comparison (B) and
+\nm{A-records} points of comparison (A), over five CPUs, seven sets and three models.
+
+\subsection{Comparison (A): generators under a common rescoring procedure}
+
+Table~\ref{tab:compA-intel} and Figure~\ref{fig:compA} show every generator at the budget
+$C = 400$, $H = 100$ and its smaller declared effort. Under the same int8 screen and the same
+float16 rescoring, retained quality depends on the generator only through its 400 candidates. Every
+graph generator and every flat scan keeps at least 98.4\% of exact quality on every set and CPU (FAISS
+binary HNSW 98.7\%, USearch b1 98.4\% at their lowest; our walk 99.3\%, our scan 99.6\%). The two
+partition generators do not at their declared effort: with the smallest \texttt{nprobe} or leaf count
+that returns 400 candidates, FAISS RaBitQ-IVF keeps 57--92\% and ScaNN 23--100\%, so their speed on the
+large sets comes with a large quality loss. Across all CPUs, \nm{A-lowq} rival generator--set cells stay below 0.99:
+\nm{A-lowq-part} of the partition generators and \nm{A-lowq-graph} of the binary graphs, which stay
+between 0.984 and 0.99. Their larger effort is in the full grid.
+
+Among the generators that keep at least 99\% of exact quality, one of our two generators (exact
+binary scan or binary HNSW walk) is the fastest in all \nm{A-oursbest} of \nm{A-n} (CPU, set) cells.
+The next fastest such generator is \nm{A-min} to \nm{A-max} times slower (geometric mean \nm{A-gm}).
+Our exact scan is the faster of our two generators up to 22k vectors on every CPU (the walk takes
+1.2--1.6 times as long). On FiQA and dall the walk is faster on the x86 CPUs and the Mac (0.6--0.9 of
+the scan's time) and slower on Graviton (1.4 times); above 150k vectors only the walk runs. The flat scans of the rivals (FAISS binary flat, RaBitQ flat) grow linearly
+with corpus size, the float32 graphs (hnswlib, FAISS HNSW) pay for float distance computations, and
+the binary graphs (FAISS binary HNSW, USearch b1) take 1.9--7.3 times as long as our walk at the same
+$ef$ and budget.
+We did not profile the rival generators; the comparison shows the cost of each library's own
+candidate step, not why it costs what it does.
+
+\begin{figure}[t]\centering
+\includegraphics[width=\textwidth]{figures/compA.pdf}
+\caption{Comparison (A), held-out: µs per query of each generator plus the shared int8 screen and
+rescoring, at $C = 400$, $H = 100$, smaller declared effort, against corpus size (one model per set
+kind). Retained quality per cell is in Tables~\ref{tab:compA-intel}--\ref{tab:compA-mac}.}\label{fig:compA}
+\end{figure}
+
+\compAtable{intel}{Intel Xeon 6975P-C}
+
+\subsection{Comparison (B): as shipped, at the same retained quality}
+
+Table~\ref{tab:headline099} compares our cascade with the fastest rival that keeps 99\% of exact
+quality on held-out queries; Figure~\ref{fig:size} plots the same points against corpus size. The
+answer depends on corpus size more than on the CPU.
+
+\begin{itemize}\setlength{\itemsep}{1pt}
+\item \textbf{Large sets} (Quora, 523k; csn1m, 1M): ours is faster in \nm{faster-large} of
+\nm{n-large} cells (whole interval above 1), slower in \nm{slower-large}; ratios \nm{min-large} to
+\nm{max-large}, geometric mean \nm{gm-large}. The fastest rivals here are graph indexes (FAISS HNSW
+with SQ8 or binary codes, SVS Vamana with LVQ or LeanVec on Intel, USearch b1).
+\item \textbf{Middle sets} (FiQA, 58k; dall, 140k): mixed. Ours is faster in \nm{faster-mid} of
+\nm{n-mid} cells and slower in \nm{slower-mid} (geometric mean \nm{gm-mid}). FiQA with jina is our
+largest margin outside the large sets: the rivals need deep refine pools to keep 99\% there.
+\item \textbf{Small code sets} (gcsn, d20k, AdvTest; 7k--22k): the rivals win more often. Ours is
+slower in \nm{slower-small} of \nm{n-small} cells and faster in \nm{faster-small} (geometric mean
+\nm{gm-small}). The winner is usually FAISS binary flat: an exact Hamming scan of the same 512-bit
+codes, followed by float refine, in C++.
+\end{itemize}
+
+Over all CPUs and sets, the geometric mean of the ratio at $\fr = 0.99$ is \nm{gm-all-099}
+(\nm{gmn-all-099} cells, ours faster in \nm{wins-all-099}); per CPU it is \nm{gm-intel-099} (Intel),
+\nm{gm-amd-099} (AMD), \nm{gm-arm-099} (Graviton), \nm{gm-box-099} (box, reduced grid) and
+\nm{gm-mac-099} (Mac, reduced grid). At $\fr = 0.98$ the rivals gain (\nm{gm-all-098}); at
+$\fr = 0.995$ ours gains (\nm{gm-all-0995}), but fewer cells have points at that fraction
+(Appendix~\ref{app:fractions}). The CPU changes the size of the margins more than their sign; the
+large sets are mostly wins and the small code sets mostly losses on every CPU, while some middle cells
+change sign between CPUs (FiQA with bge: 0.88 on Intel, 0.69 on AMD, 1.41 on Graviton).
+
+\headlinetable{0.99}{099}
+
+\begin{figure}[t]\centering
+\includegraphics[width=\textwidth]{figures/size.pdf}
+\caption{Comparison (B), held-out, $\fr = 0.99$: our cascade (blue), the fastest rival that meets
+$\fr$ (red, dashed) and exact float32 search (grey), against corpus size. Circles and squares: code
+sets with CodeRankEmbed and jina; triangles: BEIR sets with bge-base-en-v1.5.}\label{fig:size}
+\end{figure}
+
+\paragraph{Held-out confirmation of the dev points.} Every frozen point was chosen on dev to meet its
+fraction with the one-sided 97.5\% bound. On held-out queries most points still meet it by the point
+estimate, but many no longer meet it by the bound (the tables mark both). This is expected: a point
+chosen as the \emph{fastest} that passes on dev sits close to the boundary, and a fresh sample moves it
+both ways. It holds for ours and for the rivals alike; we report it rather than re-select.
+
+\subsection{Primary comparisons}
+
+Table~\ref{tab:primary} gives the \nm{nprimary} confirmatory comparisons. Quality non-inferiority
+at $\delta = \nm{delta}$ passes in \nm{nprimarypass} of \nm{nprimary} after Holm. The three failures
+are FiQA with bge-base-en-v1.5 on all three CPUs, where the held-out set is small (259 queries) and
+the power was lowest (Appendix~\ref{app:power}); the observed differences there are $-0.0015$ to
+$+0.0005$. On latency, ours is faster in \nm{nprimaryfaster} pairs and slower in
+\nm{nprimaryslower} (whole interval on one side of 1). The pairs where ours is slower are SVS on
+Intel (FiQA and Quora), FAISS IVF-PQ fast scan and hnswlib on AMD FiQA, and FAISS binary HNSW on
+Graviton Quora with bge.
+
+\begin{table}[t]\centering\scriptsize
+\caption{Primary comparisons (pairs fixed on dev; $\fr = 0.99$, comparison B). Ratio: rival / ours
+latency (median over rounds, 95\% bootstrap interval over rounds). Meets: point estimate / bound, for
+ours ; rival. Quality: mean(ours $-$ rival) of per-query nDCG@10 and its one-sided 97.5\% lower
+bound; non-inferiority at $\delta = \nm{delta}$, Holm over all \nm{nprimary}.}\label{tab:primary}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{llllrlrrrl}\toprule
+CPU & Set & Model & Rival & Ratio & Meets & Mean diff & Lower & $p$ & Holm\\\midrule
+\inputtable{tables/primary.tex}
+\bottomrule\end{tabular}
+\end{table}
+
+\subsection{Memory, load and build}
+
+Table~\ref{tab:mem-csn1m} shows memory and cold start at 1M vectors (Quora and dall in
+Appendix~\ref{app:mem}). Our cascade holds the graph, the codes, the int8 rows and the float16
+vectors, memory-mapped from its index files, plus the Node.js runtime: \nm{mem-ours-intel}~GB on
+Intel (\nm{mem-ours-amd} on AMD, \nm{mem-ours-arm} on Graviton). That is more than
+\nm{mem-smaller-intel} of the \nm{mem-nriv-intel} rival points on Intel; the smallest is USearch int8
+at \nm{mem-rivalmin-intel}~GB, and the rivals that refine with float32 originals sit at 3.0--3.7~GB (FAISS HNSW-SQ8 at \nm{mem-rivalmax-intel}~GB).
+Our cold start (load plus first query on a dropped page cache) is \nm{cold-ours-intel}~s on Intel
+against \nm{cold-rivalmin-intel}--\nm{cold-rivalmax-intel}~s for the rivals; as noted in
+\S\ref{sec:systems}, the rival numbers include the harness's buffered read of the originals, so we
+treat this comparison as indicative. Table~\ref{tab:build} lists build cost at 1M: our build took
+\nm{build-ours-s}~s (\nm{build-ours-h}~hours) on one thread with a peak of \nm{build-ours-peak}~GB,
+the longest wall time of any build (the longest rival build took \nm{build-rival-max-s}~s on 16
+threads).
+
+\memtable{csn1m}{csn1m, CodeRankEmbed}
+
+\begin{table}[t]\centering\scriptsize
+\caption{Build cost at 1M vectors (csn1m, CodeRankEmbed), one row per family: the range over its
+build grid. Builds ran under a memory-admission scheduler, several at a time, so wall times are
+indicative. Core-seconds = wall time $\times$ threads.}\label{tab:build}
+\begin{tabular}{lrrrrrr}\toprule
+Family & Builds & Wall s & Threads & Core-s & Size GB & Peak RSS GB\\\midrule
+\inputtable{tables/build.tex}
+\bottomrule\end{tabular}
+\end{table}
