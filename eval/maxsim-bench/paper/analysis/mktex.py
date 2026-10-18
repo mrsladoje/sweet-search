@@ -23,6 +23,7 @@ CMD = {
     'conc2.json': 'venv/bin/python -I paper/analysis/conc2.py',
     'floor.json': 'venv/bin/python -I paper/analysis/floor_collect.py',
     'beir_lengths.json': 'venv/bin/python -I paper/analysis/beir_lengths.py',
+    'checks.json': 'venv/bin/python -I paper/analysis/checks_collect.py   (after rerun/f32direct.py and rerun/colbert300.py on the M3 Max)',
     'rerun_beir.json': 'venv/bin/python -I paper/analysis/rerun_beir.py   (after load.py intel-r2 amd-r2 arm-r2)',
     'memory.json': 'venv/bin/python -I paper/analysis/memory.py',
     'contract_effects.json': 'venv/bin/python -I paper/analysis/contract_effects.py',
@@ -349,6 +350,22 @@ def main():
     BL = load('beir_lengths.json')
     for ds in ('scifact', 'nfcorpus'):
         put(f'beir.cut.{ds}', f"{BL[ds]['cut_180'] * 100:.0f}", 'beir_lengths.json', 'share of documents cut by the 180-token limit (ColBERTv2), %')
+    # review checks on the M3 Max (checks_collect.py): ColBERTv2 at 300 tokens; rivals on original float32 vectors
+    CK = load('checks.json')
+    for k_, v in CK.get('colbert300', {}).get('results', {}).items():
+        ds, L_ = k_.split('|')
+        put(f'c300.{ds}.{L_}', f"{v['ndcg10']:.3f}", 'checks.json', 'contract F nDCG@10, ColBERTv2 documents encoded at this length')
+        put(f'c300.{ds}.{L_}.tokens', f"{v['mean_doc_tokens']:.0f}", 'checks.json', 'mean document tokens')
+    if CK.get('f32direct'):
+        fd = CK['f32direct']
+        r = [(a['p95_ratio_original_over_decoded'], f'{c} {n}') for c, cv in fd['cells'].items() for n, a in cv['arms'].items()]
+        put('f32d.ratio.min', f'{min(r)[0]:.2f}', 'checks.json', min(r)[1]); put('f32d.ratio.max', f'{max(r)[0]:.2f}', 'checks.json', max(r)[1])
+        put('f32d.n', str(len(r)), 'checks.json', 'rival-set pairs'); put('f32d.k', str(fd['k']), 'checks.json')
+        put('f32d.maxdiff', f"{max(c['max_abs_decoded_minus_original'] for c in fd['cells'].values()):.3f}", 'checks.json', 'max |decoded - original| of one coordinate')
+        for c, cv in fd['cells'].items():
+            ds, mk = c.split('|')
+            o = [a['original']['ndcg10'] for a in cv['arms'].values()]
+            put(f'f32d.{ds}.{mk}.orig', f'{o[0]:.3f}', 'checks.json', 'nDCG@10 of the rivals on the original vectors (equal for all arms: ' + ('yes' if max(o) - min(o) < 1e-9 else 'no') + ')')
     QP = load('quality_primary.json')
     rows = []
     for ds, mk in (('scifact', 'colbertv2'), ('nfcorpus', 'colbertv2'), ('scifact', 'answersmall'), ('nfcorpus', 'answersmall')):
@@ -578,6 +595,38 @@ def main():
         if spread:
             put(f'{kp}.ours.spread.max', f'{max(spread)[0] * 100:.0f}', texname, 'largest (max - min) / median of the kernel closed-loop throughput over the 3 runs, %; ' + max(spread)[1])
             put(f'{kp}.ours.spread.median', f'{sorted(x for x, _ in spread)[len(spread) // 2] * 100:.1f}', texname, 'median of the same, %')
+            sp2 = [x for x in spread if not x[1].startswith('m3max')]
+            if sp2:
+                put(f'{kp}.ours.spread.nom3.max', f'{max(sp2)[0] * 100:.0f}', texname, 'the same maximum without the M3 Max, %; ' + max(sp2)[1])
+        if rerun:
+            drop, agree, kl, ol = [], [], {}, 0
+            for p in CC:
+                for fam, arms in CC[p].items():
+                    o = {(r['executor'], r['callers']): r for r in arms['ours']['runs'] if r['type'] == 'closed'}
+                    drop.append((1 - o[('threads', 16)]['throughput'] / o[('threads', 1)]['throughput'], f'{p} {fam}'))
+                    if p in ('intel', 'amd', 'arm'):
+                        a_, b_ = o[('procs', 1)]['throughput'], o[('threads', 1)]['throughput']
+                        agree.append((abs(a_ - b_) / min(a_, b_), f'{p} {fam}'))
+                    lo_, hi_ = o[('threads', 1)]['throughput_range']
+                    put(f'{kp}.{p}.{fam}.ours.t1.lo', f'{lo_ / 1000:.1f}', texname, 'lowest of the 3 runs, kcalls/s'); put(f'{kp}.{p}.{fam}.ours.t1.hi', f'{hi_ / 1000:.1f}', texname)
+                    for n in (1, 16):
+                        for ex in ('procs', 'threads'):
+                            k_ = f'{kp}.{p}.{fam}.n{n}.{ex}.nk'
+                            if any(x[0] == k_ and float(x[1]) < 1 for x in NUM):
+                                kl.setdefault(f'n{n}.{ex}', []).append(f'{p} {fam}')
+                    if any(x[0] == f'{kp}.{p}.{fam}.open.exact' and float(x[1]) < float(next(y[1] for y in NUM if y[0] == f'{kp}.{p}.{fam}.open.ours')) for x in NUM):
+                        ol += 1
+            put(f'{kp}.thrdrop.min', f'{min(drop)[0] * 100:.0f}', texname, 'kernel throughput loss from 1 to 16 callers in one process, %: ' + min(drop)[1])
+            put(f'{kp}.thrdrop.max', f'{max(drop)[0] * 100:.0f}', texname, max(drop)[1])
+            put(f'{kp}.thrdrop.neg', str(sum(x <= 0 for x, _ in drop)), texname, 'pairs where 16 callers in one process did not lower the kernel throughput')
+            put(f'{kp}.n1.agree.max', f'{max(agree)[0] * 100:.0f}', texname, 'largest procs-threads difference of the kernel at one caller, cloud CPUs, %: ' + max(agree)[1])
+            for k_, v in kl.items():
+                put(f'{kp}.{k_}.nklost', str(len(v)), texname, ', '.join(v))
+            for n in (1, 16):
+                for ex in ('procs', 'threads'):
+                    if f'n{n}.{ex}' not in kl:
+                        put(f'{kp}.n{n}.{ex}.nklost', '0', texname)
+            put(f'{kp}.open.lost', str(ol), texname, 'pairs where the best exact rival had the lower p99 at the top rate')
         # counts of 16-caller pairs where an exact rival beats sweet, per executor
         for ex in ('procs', 'threads'):
             lost = [k_ for k_, v, _, _ in NUM if k_.startswith(kp + '.') and k_.endswith(f'.n16.{ex}.exactratio') and float(v) < 1]
@@ -607,6 +656,21 @@ def main():
     if FL:
         sh_ = next(iter(FL.values()))['median_shape']
         put('floor.shape.nq', str(sh_['nq']), 'floor.json'); put('floor.shape.pool', str(sh_['pool']), 'floor.json'); put('floor.shape.tokens', f"{sh_['tokens']:,}", 'floor.json')
+    # a rival's median call minus its floor, over the kernel's median call: above 1 means the rival's
+    # time without its fixed cost is still longer than the kernel's whole call
+    beyond = []
+    for p, d in FL.items():
+        o = d['arms'].get('ours')
+        for lib, a in d['primary'].items():
+            v = d['arms'].get(a)
+            if o and v and v['median_us'] > o['median_us']:          # only pairs where the kernel's median call is shorter
+                beyond.append(((v['median_us'] - v['floor_us']) / o['median_us'], f'{p} {a}'))
+            elif o and v:
+                put(f'floor.{p}.{lib}.faster', 'yes', 'floor.json', f'{a}: median call shorter than the kernel\'s')
+    if beyond:
+        put('floor.beyond.min', f'{min(beyond)[0]:.1f}', 'floor.json', 'min over CPUs and libraries of (rival median - rival floor) / kernel median: ' + min(beyond)[1])
+        put('floor.beyond.below1', str(sum(x < 1 for x, _ in beyond)), 'floor.json', ', '.join(n for x, n in beyond if x < 1) or 'none')
+        put('floor.beyond.n', str(len(beyond)), 'floor.json', 'CPU-library pairs where the kernel\'s median call is shorter')
     for lib, v in shares.items():
         put(f'range.floor.{lib}.min', f'{min(v)[0]:.0f}', 'floor.json', min(v)[1]); put(f'range.floor.{lib}.max', f'{max(v)[0]:.0f}', 'floor.json', max(v)[1])
 

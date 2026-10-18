@@ -1,4 +1,640 @@
 {
+ "intel": {
+  "source": ".ss-eval/maxsim-cloud/r2/intel-r2c/floor/floor.json",
+  "median_shape": {
+   "nq": 17,
+   "pool": 25,
+   "tokens": 4980
+  },
+  "arms": {
+   "ours": {
+    "floor_us": 1.383,
+    "floor_range": [
+     1.371,
+     1.388
+    ],
+    "median_us": 51.7185,
+    "median_range": [
+     51.637,
+     52.01
+    ],
+    "share": 0.026740914759708807
+   },
+   "ours@1": {
+    "floor_us": 1.408,
+    "floor_range": [
+     1.375,
+     1.43
+    ],
+    "median_us": 336.1875,
+    "median_range": [
+     333.596,
+     336.752
+    ],
+    "share": 0.004188139059304703
+   },
+   "maxsim_cpu_variable": {
+    "floor_us": 2.691,
+    "floor_range": [
+     2.654,
+     2.748
+    ],
+    "median_us": 132.9075,
+    "median_range": [
+     129.963,
+     133.496
+    ],
+    "share": 0.02024716438124259
+   },
+   "maxsim_cpu_variable@1": {
+    "floor_us": 2.696,
+    "floor_range": [
+     2.433,
+     2.741
+    ],
+    "median_us": 556.781,
+    "median_range": [
+     518.6905,
+     596.3475
+    ],
+    "share": 0.004842119253350959
+   },
+   "maxsim_cpu_variable@8": {
+    "floor_us": 2.715,
+    "floor_range": [
+     2.615,
+     2.742
+    ],
+    "median_us": 148.7225,
+    "median_range": [
+     146.672,
+     151.803
+    ],
+    "share": 0.018255475802249156
+   },
+   "maxsim_cpu_variable_int4": {
+    "floor_us": 11.119,
+    "floor_range": [
+     11.071,
+     11.137
+    ],
+    "median_us": 1394.5935,
+    "median_range": [
+     1384.1915,
+     1396.843
+    ],
+    "share": 0.007972932614414164
+   },
+   "nextplaid@1": {
+    "floor_us": 5.996,
+    "floor_range": [
+     5.979,
+     6.142
+    ],
+    "median_us": 451.0175,
+    "median_range": [
+     450.189,
+     454.827
+    ],
+    "share": 0.013294384364243074
+   },
+   "nextplaid@8": {
+    "floor_us": 13.6795,
+    "floor_range": [
+     13.3555,
+     14.6365
+    ],
+    "median_us": 501.203,
+    "median_range": [
+     497.859,
+     504.0275
+    ],
+    "share": 0.02729333224262425
+   },
+   "numkong_native_bf16": {
+    "floor_us": 14.6045,
+    "floor_range": [
+     13.9235,
+     18.077
+    ],
+    "median_us": 29.693,
+    "median_range": [
+     29.53,
+     30.375
+    ],
+    "share": 0.49184993096015894
+   },
+   "numkong_bf16": {
+    "floor_us": 2.732,
+    "floor_range": [
+     2.732,
+     2.765
+    ],
+    "median_us": 549.5855,
+    "median_range": [
+     548.583,
+     550.0945
+    ],
+    "share": 0.004971019068006707
+   },
+   "numkong_native_f16": {
+    "floor_us": 17.1135,
+    "floor_range": [
+     15.4635,
+     17.338
+    ],
+    "median_us": 27.8255,
+    "median_range": [
+     26.828,
+     30.2465
+    ],
+    "share": 0.6150293795259743
+   },
+   "numkong_native_f16@1": {
+    "floor_us": 5.0915,
+    "floor_range": [
+     5.091,
+     5.2905
+    ],
+    "median_us": 61.505,
+    "median_range": [
+     61.483,
+     61.515
+    ],
+    "share": 0.08278188765141045
+   },
+   "numkong_native_f32": {
+    "floor_us": 13.8935,
+    "floor_range": [
+     13.238,
+     14.9785
+    ],
+    "median_us": 27.831,
+    "median_range": [
+     27.488,
+     28.166
+    ],
+    "share": 0.4992095145700837
+   },
+   "numkong_f32": {
+    "floor_us": 2.585,
+    "floor_range": [
+     2.581,
+     2.621
+    ],
+    "median_us": 545.858,
+    "median_range": [
+     541.5875,
+     546.778
+    ],
+    "share": 0.004735663853969348
+   },
+   "numpy_packed@8": {
+    "floor_us": 2.7195,
+    "floor_range": [
+     2.7175,
+     2.79
+    ],
+    "median_us": 81.0805,
+    "median_range": [
+     80.4575,
+     82.341
+    ],
+    "share": 0.03354074037530602
+   },
+   "numpy_packed@1": {
+    "floor_us": 2.7315,
+    "floor_range": [
+     2.7145,
+     2.747
+    ],
+    "median_us": 350.649,
+    "median_range": [
+     350.036,
+     366.883
+    ],
+    "share": 0.007789841123174456
+   },
+   "numpy_packed": {
+    "floor_us": 2.755,
+    "floor_range": [
+     2.705,
+     2.825
+    ],
+    "median_us": 101.8905,
+    "median_range": [
+     101.1405,
+     102.642
+    ],
+    "share": 0.027038830901801442
+   },
+   "numpy_packed_int4": {
+    "floor_us": 8.3525,
+    "floor_range": [
+     8.344,
+     8.4245
+    ],
+    "median_us": 1116.85,
+    "median_range": [
+     1094.0755,
+     1120.083
+    ],
+    "share": 0.007478622912656131
+   },
+   "torch_pad_bmm@8": {
+    "floor_us": 9.8325,
+    "floor_range": [
+     9.7755,
+     9.853
+    ],
+    "median_us": 101.7605,
+    "median_range": [
+     101.6635,
+     101.9145
+    ],
+    "share": 0.09662393561352392
+   },
+   "torch_pad_bmm@1": {
+    "floor_us": 9.8715,
+    "floor_range": [
+     9.803,
+     9.9485
+    ],
+    "median_us": 697.2245,
+    "median_range": [
+     694.7655,
+     697.516
+    ],
+    "share": 0.014158280439083822
+   },
+   "torch_pad_bmm": {
+    "floor_us": 9.7985,
+    "floor_range": [
+     9.733,
+     9.8315
+    ],
+    "median_us": 102.3025,
+    "median_range": [
+     102.058,
+     103.0305
+    ],
+    "share": 0.09577967302851838
+   },
+   "torch_pad_bmm_bf16": {
+    "floor_us": 10.087,
+    "floor_range": [
+     9.896,
+     10.091
+    ],
+    "median_us": 88.7735,
+    "median_range": [
+     88.3285,
+     94.4975
+    ],
+    "share": 0.11362625107717957
+   },
+   "torch_pad_flat_bf16": {
+    "floor_us": 9.382,
+    "floor_range": [
+     9.094,
+     9.504
+    ],
+    "median_us": 110.585,
+    "median_range": [
+     109.6025,
+     110.642
+    ],
+    "share": 0.0848397160555229
+   }
+  },
+  "errors": {},
+  "primary": {
+   "numpy": "numpy_packed@8",
+   "torch": "torch_pad_bmm@8",
+   "maxsim_cpu": "maxsim_cpu_variable",
+   "nextplaid": "nextplaid@1",
+   "numkong": "numkong_native_f32"
+  },
+  "instances": 1
+ },
+ "amd": {
+  "source": ".ss-eval/maxsim-cloud/r2/amd-r2c/floor/floor.json",
+  "median_shape": {
+   "nq": 17,
+   "pool": 25,
+   "tokens": 4980
+  },
+  "arms": {
+   "ours": {
+    "floor_us": 1.13,
+    "floor_range": [
+     1.1255,
+     1.14
+    ],
+    "median_us": 21.7905,
+    "median_range": [
+     21.4805,
+     22.25
+    ],
+    "share": 0.051857460820082135
+   },
+   "ours@1": {
+    "floor_us": 1.15,
+    "floor_range": [
+     1.14,
+     1.17
+    ],
+    "median_us": 228.4625,
+    "median_range": [
+     226.432,
+     230.507
+    ],
+    "share": 0.0050336488482792575
+   },
+   "maxsim_cpu_variable": {
+    "floor_us": 1.49,
+    "floor_range": [
+     1.48,
+     1.5
+    ],
+    "median_us": 95.396,
+    "median_range": [
+     93.591,
+     97.8655
+    ],
+    "share": 0.015619103526353305
+   },
+   "maxsim_cpu_variable@1": {
+    "floor_us": 1.5,
+    "floor_range": [
+     1.5,
+     1.52
+    ],
+    "median_us": 525.775,
+    "median_range": [
+     525.351,
+     527.225
+    ],
+    "share": 0.002852931387000143
+   },
+   "maxsim_cpu_3d": {
+    "floor_us": 1.4,
+    "floor_range": [
+     1.39,
+     1.4355
+    ],
+    "median_us": 116.636,
+    "median_range": [
+     116.6315,
+     119.6865
+    ],
+    "share": 0.012003155115058815
+   },
+   "maxsim_cpu_variable_int4": {
+    "floor_us": 8.54,
+    "floor_range": [
+     8.47,
+     8.57
+    ],
+    "median_us": 837.313,
+    "median_range": [
+     835.003,
+     845.7185
+    ],
+    "share": 0.010199292259883698
+   },
+   "nextplaid@1": {
+    "floor_us": 3.43,
+    "floor_range": [
+     3.41,
+     3.56
+    ],
+    "median_us": 341.5235,
+    "median_range": [
+     339.9185,
+     343.174
+    ],
+    "share": 0.010043232749722932
+   },
+   "nextplaid": {
+    "floor_us": 8.0155,
+    "floor_range": [
+     6.8,
+     9.56
+    ],
+    "median_us": 416.8995,
+    "median_range": [
+     395.759,
+     460.019
+    ],
+    "share": 0.01922645625624401
+   },
+   "numkong_native_bf16": {
+    "floor_us": 5.85,
+    "floor_range": [
+     5.675,
+     8.41
+    ],
+    "median_us": 32.2755,
+    "median_range": [
+     29.651,
+     49.98
+    ],
+    "share": 0.1812520332760143
+   },
+   "numkong_bf16": {
+    "floor_us": 2.75,
+    "floor_range": [
+     2.75,
+     2.77
+    ],
+    "median_us": 322.263,
+    "median_range": [
+     320.904,
+     330.3935
+    ],
+    "share": 0.0085334028417783
+   },
+   "numkong_native_f16": {
+    "floor_us": 10.1705,
+    "floor_range": [
+     5.73,
+     12.045
+    ],
+    "median_us": 37.77,
+    "median_range": [
+     33.075,
+     43.1855
+    ],
+    "share": 0.26927455652634363
+   },
+   "numkong_native_f16@1": {
+    "floor_us": 2.56,
+    "floor_range": [
+     2.54,
+     2.57
+    ],
+    "median_us": 98.771,
+    "median_range": [
+     98.681,
+     100.211
+    ],
+    "share": 0.025918538842372763
+   },
+   "numkong_native_f32": {
+    "floor_us": 6.625,
+    "floor_range": [
+     5.875,
+     8.48
+    ],
+    "median_us": 32.615,
+    "median_range": [
+     28.616,
+     39.2455
+    ],
+    "share": 0.20312739537022842
+   },
+   "numkong_f32": {
+    "floor_us": 2.27,
+    "floor_range": [
+     2.24,
+     2.271
+    ],
+    "median_us": 321.868,
+    "median_range": [
+     316.513,
+     322.5285
+    ],
+    "share": 0.007052580560975307
+   },
+   "numpy_packed": {
+    "floor_us": 2.68,
+    "floor_range": [
+     2.66,
+     2.68
+    ],
+    "median_us": 111.851,
+    "median_range": [
+     111.476,
+     112.046
+    ],
+    "share": 0.02396044738089065
+   },
+   "numpy_packed@1": {
+    "floor_us": 2.68,
+    "floor_range": [
+     2.67,
+     2.71
+    ],
+    "median_us": 201.167,
+    "median_range": [
+     199.6665,
+     201.797
+    ],
+    "share": 0.013322264586139875
+   },
+   "numpy_packed_t": {
+    "floor_us": 2.67,
+    "floor_range": [
+     2.67,
+     2.74
+    ],
+    "median_us": 99.306,
+    "median_range": [
+     98.506,
+     104.146
+    ],
+    "share": 0.02688659295510845
+   },
+   "numpy_packed_int4": {
+    "floor_us": 7.92,
+    "floor_range": [
+     7.9,
+     7.92
+    ],
+    "median_us": 781.1975,
+    "median_range": [
+     778.1375,
+     785.738
+    ],
+    "share": 0.010138281292502856
+   },
+   "torch_pad_bmm": {
+    "floor_us": 7.36,
+    "floor_range": [
+     7.311,
+     7.57
+    ],
+    "median_us": 107.431,
+    "median_range": [
+     101.476,
+     107.691
+    ],
+    "share": 0.06850908955515633
+   },
+   "torch_pad_bmm@1": {
+    "floor_us": 7.45,
+    "floor_range": [
+     7.39,
+     7.661
+    ],
+    "median_us": 615.451,
+    "median_range": [
+     614.136,
+     616.171
+    ],
+    "share": 0.012104944179146674
+   },
+   "torch_pylate": {
+    "floor_us": 14.6,
+    "floor_range": [
+     14.3605,
+     14.76
+    ],
+    "median_us": 197.702,
+    "median_range": [
+     196.712,
+     201.082
+    ],
+    "share": 0.07384851948892777
+   },
+   "torch_pad_bmm_bf16": {
+    "floor_us": 7.45,
+    "floor_range": [
+     7.43,
+     7.54
+    ],
+    "median_us": 83.161,
+    "median_range": [
+     82.746,
+     85.416
+    ],
+    "share": 0.0895852623224829
+   },
+   "torch_pad_flat_bf16": {
+    "floor_us": 6.95,
+    "floor_range": [
+     6.92,
+     6.96
+    ],
+    "median_us": 111.366,
+    "median_range": [
+     108.496,
+     124.511
+    ],
+    "share": 0.062406838711994685
+   }
+  },
+  "errors": {},
+  "primary": {
+   "numpy": "numpy_packed",
+   "torch": "torch_pad_bmm",
+   "maxsim_cpu": "maxsim_cpu_variable",
+   "nextplaid": "nextplaid@1",
+   "numkong": "numkong_native_f32"
+  },
+  "instances": 1
+ },
  "arm": {
   "source": ".ss-eval/maxsim-cloud/r2/arm-r2b/floor/floor.json",
   "median_shape": {
@@ -263,5 +899,297 @@
    "numkong": "numkong_native_f32"
   },
   "instances": 2
+ },
+ "m3max": {
+  "source": ".ss-eval/maxsim-local/rerun/m3max/floor/floor.json",
+  "median_shape": {
+   "nq": 17,
+   "pool": 25,
+   "tokens": 4980
+  },
+  "arms": {
+   "ours": {
+    "floor_us": 0.875,
+    "floor_range": [
+     0.875,
+     0.875
+    ],
+    "median_us": 35.375,
+    "median_range": [
+     35.334,
+     36.167
+    ],
+    "share": 0.024734982332155476
+   },
+   "ours@1": {
+    "floor_us": 0.875,
+    "floor_range": [
+     0.875,
+     0.875
+    ],
+    "median_us": 323.312,
+    "median_range": [
+     322.6665,
+     324.875
+    ],
+    "share": 0.002706364131241649
+   },
+   "maxsim_cpu_variable@1": {
+    "floor_us": 1.333,
+    "floor_range": [
+     1.333,
+     1.333
+    ],
+    "median_us": 252.167,
+    "median_range": [
+     252.0,
+     253.5415
+    ],
+    "share": 0.0052861793969869175
+   },
+   "maxsim_cpu_3d": {
+    "floor_us": 1.209,
+    "floor_range": [
+     1.209,
+     1.25
+    ],
+    "median_us": 405.3335,
+    "median_range": [
+     403.5205,
+     406.9375
+    ],
+    "share": 0.0029827290367068107
+   },
+   "maxsim_cpu_variable_int4": {
+    "floor_us": 7.0,
+    "floor_range": [
+     6.958,
+     7.041
+    ],
+    "median_us": 1191.146,
+    "median_range": [
+     1189.583,
+     1195.792
+    ],
+    "share": 0.005876693537148259
+   },
+   "nextplaid": {
+    "floor_us": 17.6875,
+    "floor_range": [
+     17.375,
+     18.479
+    ],
+    "median_us": 149.646,
+    "median_range": [
+     145.2295,
+     154.688
+    ],
+    "share": 0.11819560830226002
+   },
+   "nextplaid@1": {
+    "floor_us": 2.458,
+    "floor_range": [
+     2.417,
+     2.458
+    ],
+    "median_us": 435.313,
+    "median_range": [
+     434.875,
+     435.8125
+    ],
+    "share": 0.0056465118202305015
+   },
+   "nextplaid@12": {
+    "floor_us": 16.709,
+    "floor_range": [
+     16.7085,
+     16.916
+    ],
+    "median_us": 171.042,
+    "median_range": [
+     170.854,
+     171.6045
+    ],
+    "share": 0.09768945639082798
+   },
+   "numkong_native_bf16": {
+    "floor_us": 17.6455,
+    "floor_range": [
+     17.4165,
+     18.042
+    ],
+    "median_us": 63.167,
+    "median_range": [
+     62.6465,
+     63.458
+    ],
+    "share": 0.2793468108347713
+   },
+   "numkong_bf16": {
+    "floor_us": 1.916,
+    "floor_range": [
+     1.875,
+     1.958
+    ],
+    "median_us": 250.7295,
+    "median_range": [
+     249.771,
+     251.8335
+    ],
+    "share": 0.00764170151497929
+   },
+   "numkong_native_f16": {
+    "floor_us": 17.583,
+    "floor_range": [
+     17.4375,
+     17.6455
+    ],
+    "median_us": 64.5,
+    "median_range": [
+     64.2915,
+     64.521
+    ],
+    "share": 0.27260465116279065
+   },
+   "numkong_native_f16@1": {
+    "floor_us": 2.0,
+    "floor_range": [
+     2.0,
+     2.0
+    ],
+    "median_us": 89.416,
+    "median_range": [
+     89.292,
+     89.791
+    ],
+    "share": 0.02236736154603203
+   },
+   "numkong_native_f32": {
+    "floor_us": 17.5625,
+    "floor_range": [
+     17.458,
+     17.9795
+    ],
+    "median_us": 62.708,
+    "median_range": [
+     59.8745,
+     66.708
+    ],
+    "share": 0.2800679339159278
+   },
+   "numkong_f32": {
+    "floor_us": 1.708,
+    "floor_range": [
+     1.667,
+     1.708
+    ],
+    "median_us": 254.542,
+    "median_range": [
+     251.6045,
+     257.396
+    ],
+    "share": 0.006710091065521603
+   },
+   "numpy_packed@1": {
+    "floor_us": 2.25,
+    "floor_range": [
+     2.25,
+     2.25
+    ],
+    "median_us": 70.708,
+    "median_range": [
+     70.625,
+     70.708
+    ],
+    "share": 0.03182101035243537
+   },
+   "numpy_packed": {
+    "floor_us": 2.25,
+    "floor_range": [
+     2.208,
+     2.25
+    ],
+    "median_us": 70.667,
+    "median_range": [
+     70.6045,
+     70.708
+    ],
+    "share": 0.0318394724553186
+   },
+   "numpy_packed_int4": {
+    "floor_us": 6.5,
+    "floor_range": [
+     6.5,
+     6.666
+    ],
+    "median_us": 705.2085,
+    "median_range": [
+     702.833,
+     705.3955
+    ],
+    "share": 0.009217132238196223
+   },
+   "torch_pad_bmm@1": {
+    "floor_us": 5.958,
+    "floor_range": [
+     5.917,
+     6.167
+    ],
+    "median_us": 217.708,
+    "median_range": [
+     217.5835,
+     217.9165
+    ],
+    "share": 0.027366931853675565
+   },
+   "torch_colbert_packed": {
+    "floor_us": 97.75,
+    "floor_range": [
+     97.625,
+     103.25
+    ],
+    "median_us": 189.458,
+    "median_range": [
+     185.667,
+     195.6045
+    ],
+    "share": 0.5159454865986128
+   },
+   "torch_pad_flat_bf16": {
+    "floor_us": 5.375,
+    "floor_range": [
+     5.333,
+     5.417
+    ],
+    "median_us": 378.0415,
+    "median_range": [
+     376.7505,
+     379.667
+    ],
+    "share": 0.014218015746948417
+   },
+   "torch_pad_bmm_bf16": {
+    "floor_us": 6.0,
+    "floor_range": [
+     5.959,
+     6.125
+    ],
+    "median_us": 1239.938,
+    "median_range": [
+     1238.104,
+     1239.9585
+    ],
+    "share": 0.004838951625000604
+   }
+  },
+  "errors": {},
+  "primary": {
+   "numpy": "numpy_packed@1",
+   "torch": "torch_pad_bmm@1",
+   "maxsim_cpu": "maxsim_cpu_variable@1",
+   "nextplaid": "nextplaid",
+   "numkong": "numkong_native_f32"
+  },
+  "instances": 1
  }
 }

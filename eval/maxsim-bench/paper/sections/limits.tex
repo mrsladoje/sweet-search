@@ -12,6 +12,7 @@ Before the held-out runs we froze a rule for a stronger claim: ``use the stronge
 The shape in (a) is the median agent call of the development data.
 The rule needs stage variants of the kernel and a fitted cost model, which were not built before the freeze, for lack of time.
 The rule therefore could not apply, and the paper uses the narrow claim.
+A measurement after the freeze timed the smallest possible call (Section~\ref{sec:floor}); it bounds the fixed cost from below but is not the decomposition the rule needs.
 In particular, we do not know why \sweet loses in the sweep bands, on Intel BEIR calls, after a busy gap, or with many callers in one process.
 
 \paragraph{No historical progression study.}
@@ -29,7 +30,8 @@ The geometric mean weights every call equally; Appendix~\ref{app:robust} gives t
 The agent interval rests on 11 repositories; with so few clusters a percentile bootstrap can be too narrow, so we also give per-repository ranges.
 The BEIR intervals cover the sampling of queries only, not other datasets or models.
 The ``faster'' rule is applied to many comparisons without correction.
-The parallel-caller results come from single runs of 20 to 500\,ms, and the per-process executor needed a correction of its wall time.
+The parallel-caller results come from a post-freeze rerun on previously examined sets, three runs of at least 3\,s per configuration; the frozen runs were single runs of 20 to 500\,ms (Appendix~\ref{app:conc-frozen}).
+The parallel-caller harness does not check scores, and the M3 Max runs of \sweet fell from run to run (Section~\ref{sec:conc}).
 
 \paragraph{Machines.}
 Three CPU types ran in a public cloud with shared tenancy, four instances per type plus a replica.

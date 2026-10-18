@@ -1,0 +1,251 @@
+{
+ "f32direct": {
+  "source": ".ss-eval/maxsim-local/rerun/m3max/f32direct/f32direct.json",
+  "machine": "m3max",
+  "k": 100,
+  "rounds": 3,
+  "reps": 5,
+  "cells": {
+   "scifact|colbertv2": {
+    "calls": 300,
+    "max_abs_decoded_minus_original": 0.023508483543992043,
+    "arms": {
+     "numpy_packed": {
+      "decoded": {
+       "ndcg10": 0.645059454276747,
+       "p50_ms": 0.257916,
+       "p95_ms": 0.278,
+       "n_timed": 4500
+      },
+      "original": {
+       "ndcg10": 0.6444452452559964,
+       "p50_ms": 0.257833,
+       "p95_ms": 0.277375,
+       "n_timed": 4500
+      },
+      "p95_ratio_original_over_decoded": 0.9977517985611509
+     },
+     "numpy_packed@12": {
+      "decoded": {
+       "ndcg10": 0.645059454276747,
+       "p50_ms": 0.258083,
+       "p95_ms": 0.27766905000000003,
+       "n_timed": 4500
+      },
+      "original": {
+       "ndcg10": 0.6444452452559964,
+       "p50_ms": 0.258125,
+       "p95_ms": 0.27800210000000003,
+       "n_timed": 4500
+      },
+      "p95_ratio_original_over_decoded": 1.0011994494885188
+     },
+     "torch_pad_flat": {
+      "decoded": {
+       "ndcg10": 0.645059454276747,
+       "p50_ms": 0.2775205,
+       "p95_ms": 0.3080851,
+       "n_timed": 4500
+      },
+      "original": {
+       "ndcg10": 0.6444452452559964,
+       "p50_ms": 0.277167,
+       "p95_ms": 0.30767320000000004,
+       "n_timed": 4500
+      },
+      "p95_ratio_original_over_decoded": 0.9986630317402563
+     }
+    }
+   },
+   "scifact|answersmall": {
+    "calls": 300,
+    "max_abs_decoded_minus_original": 0.02455918863415718,
+    "arms": {
+     "numpy_packed": {
+      "decoded": {
+       "ndcg10": 0.6997539007395852,
+       "p50_ms": 0.3167085,
+       "p95_ms": 0.3438771,
+       "n_timed": 4500
+      },
+      "original": {
+       "ndcg10": 0.7282048431806387,
+       "p50_ms": 0.315959,
+       "p95_ms": 0.344959,
+       "n_timed": 4500
+      },
+      "p95_ratio_original_over_decoded": 1.0031461821679897
+     },
+     "numpy_packed@12": {
+      "decoded": {
+       "ndcg10": 0.6997539007395852,
+       "p50_ms": 0.316208,
+       "p95_ms": 0.34300210000000003,
+       "n_timed": 4500
+      },
+      "original": {
+       "ndcg10": 0.7282048431806387,
+       "p50_ms": 0.316167,
+       "p95_ms": 0.345041,
+       "n_timed": 4500
+      },
+      "p95_ratio_original_over_decoded": 1.0059442784752628
+     },
+     "torch_pad_flat": {
+      "decoded": {
+       "ndcg10": 0.6997539007395852,
+       "p50_ms": 0.3597705,
+       "p95_ms": 0.4121732,
+       "n_timed": 4500
+      },
+      "original": {
+       "ndcg10": 0.7282048431806387,
+       "p50_ms": 0.3561875,
+       "p95_ms": 0.40250205000000006,
+       "n_timed": 4500
+      },
+      "p95_ratio_original_over_decoded": 0.9765361988600909
+     }
+    }
+   },
+   "nfcorpus|colbertv2": {
+    "calls": 323,
+    "max_abs_decoded_minus_original": 0.02399519830942154,
+    "arms": {
+     "numpy_packed": {
+      "decoded": {
+       "ndcg10": 0.3233716952684518,
+       "p50_ms": 0.252375,
+       "p95_ms": 0.272791,
+       "n_timed": 4845
+      },
+      "original": {
+       "ndcg10": 0.32406019313855056,
+       "p50_ms": 0.2525,
+       "p95_ms": 0.274333,
+       "n_timed": 4845
+      },
+      "p95_ratio_original_over_decoded": 1.0056526791573035
+     },
+     "numpy_packed@12": {
+      "decoded": {
+       "ndcg10": 0.3233716952684518,
+       "p50_ms": 0.25225,
+       "p95_ms": 0.27315860000000003,
+       "n_timed": 4845
+      },
+      "original": {
+       "ndcg10": 0.32406019313855056,
+       "p50_ms": 0.252166,
+       "p95_ms": 0.273583,
+       "n_timed": 4845
+      },
+      "p95_ratio_original_over_decoded": 1.0015536761427244
+     },
+     "torch_pad_flat": {
+      "decoded": {
+       "ndcg10": 0.3233716952684518,
+       "p50_ms": 0.276333,
+       "p95_ms": 0.30436660000000004,
+       "n_timed": 4845
+      },
+      "original": {
+       "ndcg10": 0.32406019313855056,
+       "p50_ms": 0.276167,
+       "p95_ms": 0.3041586,
+       "n_timed": 4845
+      },
+      "p95_ratio_original_over_decoded": 0.9993166135837505
+     }
+    }
+   },
+   "nfcorpus|answersmall": {
+    "calls": 323,
+    "max_abs_decoded_minus_original": 0.023821301758289337,
+    "arms": {
+     "numpy_packed": {
+      "decoded": {
+       "ndcg10": 0.27138686844078225,
+       "p50_ms": 0.309166,
+       "p95_ms": 0.33632500000000004,
+       "n_timed": 4845
+      },
+      "original": {
+       "ndcg10": 0.34481047531363,
+       "p50_ms": 0.308834,
+       "p95_ms": 0.33682500000000004,
+       "n_timed": 4845
+      },
+      "p95_ratio_original_over_decoded": 1.0014866572511707
+     },
+     "numpy_packed@12": {
+      "decoded": {
+       "ndcg10": 0.27138686844078225,
+       "p50_ms": 0.308959,
+       "p95_ms": 0.33746660000000006,
+       "n_timed": 4845
+      },
+      "original": {
+       "ndcg10": 0.34481047531363,
+       "p50_ms": 0.308875,
+       "p95_ms": 0.336542,
+       "n_timed": 4845
+      },
+      "p95_ratio_original_over_decoded": 0.9972601733030764
+     },
+     "torch_pad_flat": {
+      "decoded": {
+       "ndcg10": 0.27138686844078225,
+       "p50_ms": 0.362209,
+       "p95_ms": 0.40775,
+       "n_timed": 4845
+      },
+      "original": {
+       "ndcg10": 0.34481047531363,
+       "p50_ms": 0.358167,
+       "p95_ms": 0.4019500000000001,
+       "n_timed": 4845
+      },
+      "p95_ratio_original_over_decoded": 0.9857755977927654
+     }
+    }
+   }
+  }
+ },
+ "colbert300": {
+  "source": ".ss-eval/maxsim-local/rerun/colbert300.json",
+  "model": "colbert-ir/colbertv2.0",
+  "revision": "c1e84128e85ef755c096a95bdb06b47793b13acf",
+  "k": 100,
+  "results": {
+   "scifact|180": {
+    "document_length": 180,
+    "queries": 300,
+    "docs": 5091,
+    "mean_doc_tokens": 157.5623649577686,
+    "ndcg10": 0.6444452452559964
+   },
+   "scifact|300": {
+    "document_length": 300,
+    "queries": 300,
+    "docs": 5091,
+    "mean_doc_tokens": 236.15753290119818,
+    "ndcg10": 0.6849256346646775
+   },
+   "nfcorpus|180": {
+    "document_length": 180,
+    "queries": 323,
+    "docs": 3526,
+    "mean_doc_tokens": 154.53828701077708,
+    "ndcg10": 0.32406019313855056
+   },
+   "nfcorpus|300": {
+    "document_length": 300,
+    "queries": 323,
+    "docs": 3526,
+    "mean_doc_tokens": 235.64208735110606,
+    "ndcg10": 0.3355366067622515
+   }
+  }
+ }
+}
