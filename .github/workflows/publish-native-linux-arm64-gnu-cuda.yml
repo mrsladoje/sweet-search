@@ -53,9 +53,14 @@ env:
   CARGO_PROFILE_RELEASE_STRIP: 'symbols'
   # lld via clang — same rationale as the x64-cuda workflow.
   RUSTFLAGS: '-C linker=clang -C link-arg=-fuse-ld=lld'
-  # Jetson Orin = SM 8.7 baseline; Grace Hopper SM 9.0 and Xavier SM 7.2
-  # fall back to naive attention. Single-SM build keeps memory under the
-  # arm64 runner's ceiling.
+  # Single compute capability, to stay under the arm64 runner's memory
+  # ceiling. 87 is also the kernel FLOOR: candle's kernels are PTX for
+  # compute_87, and PTX only JIT-compiles forward, so this package runs on
+  # Jetson Orin (8.7) and newer (Grace Hopper 9.0, Thor) and cannot run on
+  # Xavier (7.2) at all; the addon refuses such a GPU at device creation
+  # (inference::cuda_kernel_floor). flash-attn is sm_87 SASS only: on 9.0+
+  # its launch now fails with a reported error and the standard attention
+  # path is used.
   CUDA_COMPUTE_CAP: '87'
   CARGO_BUILD_JOBS: '2'
 
