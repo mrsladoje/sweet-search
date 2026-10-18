@@ -25,7 +25,10 @@ local machines under `LOCAL=<release>/local`), the BEIR prep folder (raw vectors
 lists, qrels and the 20 replay sets) and the replay sets with their `refs-v2` caches. The
 scripts read these paths from constants at the top of each script (`~/.ss-eval/...` by
 default): `analysis/load.py`, `conc.py`, `memory.py`, `nan_scan.py`, `quality_extra.py`,
-`budget.py`, `rival_scores_check.py`. Edit those constants for another layout. The BEIR
+`budget.py`, `rival_scores_check.py`; the post-freeze scripts `checks_collect.py`, `floor_collect.py`,
+`conc2.py` and `post_checks.py` read the release folders `rerun/` (`rerun/checks2/` and
+`rerun/m3max-recheck/` hold the checks of 2026-10-18). Edit those constants for another layout.
+`analysis/scrub.py` built the release folder from the raw results. The BEIR
 build script (`beir_prep.py`) records the model revisions in its manifest but does not pass
 them to the download; pin them by hand when you rebuild.
 
@@ -53,6 +56,13 @@ venv/bin/python -I paper/analysis/machines.py
 venv/bin/python -I paper/analysis/nan_scan.py            # NaN scores per arm (NumKong on Intel)
 venv/bin/python -I paper/analysis/rival_scores_check.py  # rival scores identical across runs?
 venv/bin/python -I paper/analysis/numkong_check.py      # synthetic NumKong check (no benchmark data)
+venv/bin/python -I paper/analysis/beir_lengths.py       # share of BEIR documents cut at 180 tokens
+venv/bin/python -I paper/analysis/load.py intel-r2 amd-r2 arm-r2 && venv/bin/python -I paper/analysis/rerun_beir.py   # BEIR rerun
+venv/bin/python -I paper/analysis/floor_collect.py      # fixed cost per call
+venv/bin/python -I paper/analysis/numkong_gap.py        # synthetic NumKong sweep over score spread (figure nkgap)
+venv/bin/python -I paper/analysis/checks_collect.py     # float32-storage check, ColBERTv2 at 300 tokens (F)
+venv/bin/python -I paper/analysis/post_checks.py        # int4 at 300 tokens, parallel-call scores, pipeline shares, M3 Max recheck
+venv/bin/python -I paper/analysis/conc2.py              # parallel-caller rerun (pools the M3 Max recheck passes)
 # LaTeX numbers and tables, then figures (matplotlib in a separate venv)
 venv/bin/python -I paper/analysis/mktex.py
 <plot-venv>/bin/python -I paper/analysis/figures.py
