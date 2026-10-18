@@ -45,7 +45,7 @@ import {
 } from '../../scripts/install-claude-lean-harness.js';
 import { CLAUDE_SYSTEM_OVERRIDE } from '../../scripts/install-claude-system-prompt.js';
 import { getPolicyBody } from '../../scripts/inject-agent-instructions.js';
-import { sessionTitleFromPrompt } from '../../scripts/hooks/session-title.mjs';
+import { sessionTitleFromPrompt, titleForInput } from '../../scripts/hooks/session-title.mjs';
 
 let root;
 beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'sweet-search-lean-test-')); });
@@ -523,6 +523,20 @@ describe('tab-title hook', () => {
     expect(sessionTitleFromPrompt('/clear')).toBeNull();
     expect(sessionTitleFromPrompt(' \n ')).toBeNull();
     expect(sessionTitleFromPrompt(undefined)).toBeNull();
+  });
+
+  it('keeps a /rename title and its own title on resume; replaces its own title after /clear', () => {
+    const dir = join(root, 'records');
+    const at = (session_id, session_title, prompt) => titleForInput({ session_id, session_title, prompt }, dir);
+    expect(at('s1', '', 'Why is the sky blue')).toBe('Why is the sky blue');
+    expect(at('s1', 'Why is the sky blue', 'And the grass?')).toBeNull();          // later prompt, or a resume
+    expect(at('s2', 'Why is the sky blue', '/compact')).toBeNull();                // /clear, then no topic yet
+    expect(at('s2', 'Why is the sky blue', 'Capital of France')).toBe('Capital of France');
+    expect(at('s2', 'Capital of France', 'And of Spain?')).toBeNull();
+    expect(at('s3', 'my own name', 'Anything')).toBeNull();                        // a /rename carried over /clear
+    expect(at('s4', '', 'Why is the sky blue')).toBe('Why is the sky blue');       // same prompt in a second session
+    expect(at('s1', 'Why is the sky blue', 'more')).toBeNull();
+    expect(at('s4', 'Why is the sky blue', 'more')).toBeNull();
   });
 
   it('the hook answers only a session without a title', () => {
