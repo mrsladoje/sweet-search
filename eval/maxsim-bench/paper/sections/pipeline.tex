@@ -1,26 +1,50 @@
 \section{Share of MaxSim in a search}
 \label{sec:pipeline}
 
-Microseconds in the kernel matter only if MaxSim is a visible part of a search.
-We timed the stages of the production search path of sweet-search with per-stage timers, on the held-out agent queries, on the M3 Max, with the production configuration and a CPU query encoder.
-This measurement ran after the freeze, on the frozen code, and changed no kernel code.
+MaxSim took a small part of a search: a median of \nm{pipe.maxsim.med}\% of the call time on held-out agent calls.
+Microseconds in the kernel matter only if MaxSim is a visible part of a search, so we timed the stages of the production search path of sweet-search.
+We replayed the \nm{pipe.calls.all} held-out agent search calls on the M3 Max, with the production configuration and a CPU query encoder (ONNX Runtime).
+\nm{pipe.calls} of these calls ran MaxSim; Table~\ref{tab:pipeline} reports them.
+Each call ran once to warm up and then \nm{pipe.passes} times with timers; we cleared the query embedding cache before each timed pass, so the encoder ran as for a new query.
+The pass with the median total time gives the split of the call.
+This measurement ran after the freeze, on the frozen code, and changed no engine code: the timers come from a preloaded module.
 We report aggregates only.
 
 \begin{table}[h]
 \centering\small
-\caption{Share of each stage in the time of one search (held-out agent queries, M3 Max; median and p90 over queries). \TODO{pipeline study: pipeline time-share results}}
+\caption{Share of each stage in the time of one search call (\nm{pipe.calls} held-out agent calls that ran MaxSim, M3 Max, CPU query encoder). Median and p90 of the per-call share, the share of the summed time of all calls, and the median time of the stage. A call took a median of \nm{pipe.total.med}\,ms (p90 \nm{pipe.total.p90}\,ms).}
 \label{tab:pipeline}
-\begin{tabular}{lrr}
+\begin{tabular}{lrrrr}
 \toprule
-stage & median share & p90 share \\
+stage & median share (\%) & p90 share (\%) & share of sum (\%) & median (ms) \\
 \midrule
-query encoding & \TODO{pipeline} & \TODO{pipeline} \\
-candidate fetch & \TODO{pipeline} & \TODO{pipeline} \\
-int4 load & \TODO{pipeline} & \TODO{pipeline} \\
-MaxSim & \TODO{pipeline} & \TODO{pipeline} \\
-the rest & \TODO{pipeline} & \TODO{pipeline} \\
+query encoding & \nm{pipe.encoding.med} & \nm{pipe.encoding.p90} & \nm{pipe.encoding.sum} & \nm{pipe.encoding.ms} \\
+candidate fetch & \nm{pipe.fetch.med} & \nm{pipe.fetch.p90} & \nm{pipe.fetch.sum} & \nm{pipe.fetch.ms} \\
+int4 load & \nm{pipe.int4.med} & \nm{pipe.int4.p90} & \nm{pipe.int4.sum} & \nm{pipe.int4.ms} \\
+MaxSim & \nm{pipe.maxsim.med} & \nm{pipe.maxsim.p90} & \nm{pipe.maxsim.sum} & \nm{pipe.maxsim.ms} \\
+the rest & \nm{pipe.rest.med} & \nm{pipe.rest.p90} & \nm{pipe.rest.sum} & \nm{pipe.rest.ms} \\
 \bottomrule
 \end{tabular}
 \end{table}
 
-\TODO{pipeline study: one paragraph on the result: which stage dominates; what share MaxSim takes; what a faster kernel can and cannot change. This is not an end-to-end speed-up claim.}
+The stages are these.
+\emph{Query encoding} is the dense query embedding and the late-interaction query tokens, from the engine's own counters.
+\emph{Candidate fetch} is the first-stage retrieval, minus the encoder and late-interaction time inside it.
+\emph{int4 load} is the late-interaction scoring minus the kernel: the lookup in the in-memory int4 store, grouping and packing.
+\emph{MaxSim} is the native kernel call.
+\emph{The rest} is routing, post-processing and output shaping.
+The fetch of one tool, ss-semantic, has no separate timer, so it counts as the rest.
+
+Candidate fetch and query encoding took most of the time, with medians of \nm{pipe.fetch.med}\% and \nm{pipe.encoding.med}\% of a call.
+The kernel took a median of \nm{pipe.maxsim.ms}\,ms, \nm{pipe.maxsim.med}\% of a call, and \nm{pipe.maxsim.p90}\% at the p90.
+The int4 load took about the same share, \nm{pipe.int4.med}\%.
+So on this path, a kernel with zero cost would shorten the median call by less than 1\%.
+This is not an end-to-end speed-up claim, and it does not show that a slower kernel would be acceptable elsewhere.
+Kernel time matters more when a call scores many more candidates (Section~\ref{sec:sweep}), with many callers at once (Section~\ref{sec:conc}), or with a faster encoder and fetch.
+We did not measure such pipelines.
+
+The indexes differ from production in one step.
+The bench repositories hold indexes in an older file format, which the frozen engine does not read.
+We converted copies of them to the current format with the same graph, codes and int8 rows, without re-embedding.
+The converter does not build the file of full-precision vectors, so the final full-vector rescore of the first-stage candidates was off.
+That step is part of candidate fetch in production, so fetch takes a larger share there and MaxSim a smaller one.

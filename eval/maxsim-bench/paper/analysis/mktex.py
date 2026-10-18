@@ -356,6 +356,50 @@ def main():
         ds, L_ = k_.split('|')
         put(f'c300.{ds}.{L_}', f"{v['ndcg10']:.3f}", 'checks.json', 'contract F nDCG@10, ColBERTv2 documents encoded at this length')
         put(f'c300.{ds}.{L_}.tokens', f"{v['mean_doc_tokens']:.0f}", 'checks.json', 'mean document tokens')
+    # checks of 2026-10-18 (post_checks.py): int4 at 300 tokens, concurrent scores, pipeline stage shares
+    PC = load('post_checks.json')
+    sd = lambda x: f'{x:+.4f}'.replace('-0.0000', '0.0000').replace('+0.0000', '0.0000')
+    for k_, v in PC.get('int4_300', {}).get('results', {}).items():
+        ds, L_ = k_.split('|')
+        for t_ in ('K', 'F', 'C-b'):
+            put(f'i300.{ds}.{L_}.{t_}', f"{v['ndcg10'][t_]:.3f}", 'post_checks.json', 'nDCG@10')
+        for t_, n_ in (('K_vs_F', 'KF'), ('Cb_vs_F', 'CbF')):
+            t = v[t_]
+            put(f'i300.{ds}.{L_}.{n_}', sd(t['mean_diff']), 'post_checks.json', t_ + ' mean difference')
+            put(f'i300.{ds}.{L_}.{n_}.lo', sd(t['ci95'][0]), 'post_checks.json'); put(f'i300.{ds}.{L_}.{n_}.hi', sd(t['ci95'][1]), 'post_checks.json')
+            put(f'i300.{ds}.{L_}.{n_}.pass', 'yes' if t['no_material_loss'] else 'no', 'post_checks.json', 'margin 0.01')
+    CC = PC.get('conc_check', {})
+    if CC:
+        put('cc.ok', 'all' if all(c['ok'] for c in CC.values()) else 'NOT ALL', 'post_checks.json')
+        put('cc.differ', str(sum(c['calls_differing'] for c in CC.values())), 'post_checks.json', 'calls whose concurrent scores differ from one-at-a-time scores')
+        put('cc.arms', str(len({a for c in CC.values() for a in c['arms']})), 'post_checks.json', 'configurations checked')
+        put('cc.rows', str(sum(c['rows'] for c in CC.values())), 'post_checks.json', 'configuration x executor x callers runs')
+    PP = PC.get('pipeline')
+    if PP:
+        cw = PP['calls_with_maxsim']
+        put('pipe.calls', str(cw['calls']), 'post_checks.json', 'held-out agent calls that ran MaxSim')
+        put('pipe.calls.all', str(PP['all_calls']['calls']), 'post_checks.json'); put('pipe.passes', str(PP['passes']), 'post_checks.json')
+        put('pipe.total.med', f"{cw['total_ms']['median']:.1f}", 'post_checks.json', 'ms'); put('pipe.total.p90', f"{cw['total_ms']['p90']:.1f}", 'post_checks.json', 'ms')
+        for s_, v in cw['stages'].items():
+            put(f'pipe.{s_}.med', f"{v['share_median'] * 100:.1f}", 'post_checks.json', 'median share, %')
+            put(f'pipe.{s_}.p90', f"{v['share_p90'] * 100:.1f}", 'post_checks.json', 'p90 share, %')
+            put(f'pipe.{s_}.sum', f"{v['share_of_summed_time'] * 100:.1f}", 'post_checks.json', 'share of the summed time, %')
+            put(f'pipe.{s_}.ms', f"{v['ms_median']:.2f}", 'post_checks.json', 'median ms')
+    M3 = PC.get('m3conc')
+    if M3:
+        sp = lambda v: (max(v.values()) - min(v.values())) / sorted(v.values())[1] * 100
+        first = M3['closed']['agent-ho|ours|threads|1']
+        put('m3c.first.ours', f"{first['pass0'] / 1000:.1f}", 'post_checks.json', 'kernel, agent, threads, 1 caller, first arm of the recheck (pass 0), kcalls/s')
+        put('m3c.other.ours.lo', f"{min(first['pass1'], first['pass2']) / 1000:.1f}", 'post_checks.json')
+        put('m3c.other.ours.hi', f"{max(first['pass1'], first['pass2']) / 1000:.1f}", 'post_checks.json')
+        rest = [sp(v) for k, v in M3['closed'].items() if not k.startswith('agent-ho|ours|')]
+        put('m3c.rest.spread.median', f'{statistics.median(rest):.1f}', 'post_checks.json', 'closed-loop cells except the kernel on agent calls: (max - min) / median over the passes, %')
+        put('m3c.ours.gcsn.spread.max', f"{max(sp(v) for k, v in M3['closed'].items() if k.startswith('gcsn-ho|ours|')):.0f}", 'post_checks.json')
+        put('m3c.ours.agent.later.spread.max', f"{max(abs(v['pass1'] - v['pass2']) / min(v['pass1'], v['pass2']) * 100 for k, v in M3['closed'].items() if k.startswith('agent-ho|ours|')):.0f}",
+            'post_checks.json', 'passes 1 and 2, %')
+        put('m3c.numpy.spread.max', f"{max(sp(v) for k, v in M3['closed'].items() if '|numpy' in k):.0f}", 'post_checks.json')
+        put('m3c.busy.lo', f"{M3['quiet_busy_pct'][0]:.0f}", 'post_checks.json', 'CPU use at the quiet checks, % of all cores')
+        put('m3c.busy.hi', f"{M3['quiet_busy_pct'][1]:.0f}", 'post_checks.json')
     if CK.get('f32direct'):
         fd = CK['f32direct']
         r = [(a['p95_ratio_original_over_decoded'], f'{c} {n}') for c, cv in fd['cells'].items() for n, a in cv['arms'].items()]
@@ -459,6 +503,14 @@ def main():
             put(f'nkcheck.{kind}.top1.max', f"{max(x['top1_agreement'] for x in v) * 100:.0f}", 'numkong_check.json')
             put(f'nkcheck.{kind}.gap', f"{np_median([x['top1_top10_gap_median'] for x in v]) * 100:.1f}", 'numkong_check.json')
         put('nkcheck.adapter', f"{max(x['adapter_vs_python_max_abs'] or 0 for x in NKC.values()):.1g}", 'numkong_check.json', 'max |rust loop - python API|')
+    NKG = load('numkong_gap.json').get('rows', [])
+    if NKG:
+        low = [r for r in NKG if r['gap_median'] < 0.005]
+        put('nkgap.low.rho.max', f"{max(r['spearman_median'] for r in low):.2f}", 'numkong_gap.json', 'max median rank correlation at gaps below 0.5%')
+        rnd = [r for r in NKG if r['noise'] is None]
+        put('nkgap.random.rho.min', f"{min(r['spearman_median'] for r in rnd):.2f}", 'numkong_gap.json'); put('nkgap.random.rho.max', f"{max(r['spearman_median'] for r in rnd):.2f}", 'numkong_gap.json')
+        put('nkgap.random.gap', f"{min(r['gap_median'] for r in rnd) * 100:.1f}", 'numkong_gap.json', 'median gap of the random points, %')
+        put('nkgap.levels', str(len({r['noise'] for r in NKG})), 'numkong_gap.json')
 
     nk1 = [(r['top1'], p_, w_) for p_, ws in SPEED.get('warm', {}).items() if p_ != 'intel' for w_ in ('agent-ho', 'beir') for r in ws.get(w_, [])
            if r.get('lib') == 'numkong' and 'top1' in r]

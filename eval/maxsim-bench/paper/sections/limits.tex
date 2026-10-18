@@ -33,7 +33,7 @@ The BEIR intervals cover the sampling of queries only, not other datasets or mod
 The ``faster'' rule is applied to many comparisons without correction.
 The parallel-caller results come from a post-freeze rerun on previously examined sets, with three runs of at least 3\,s per configuration.
 The frozen runs were single runs of 20 to 500\,ms (Appendix~\ref{app:conc-frozen}).
-The parallel-caller harness does not check scores, and the M3 Max runs of \sweet fell from run to run (Section~\ref{sec:conc}).
+We checked the scores of parallel calls on two CPUs only, the M3 Max and the EPYC, and one M3 Max run of \sweet was an outlier (Section~\ref{sec:conc}).
 
 \paragraph{Machines.}
 Three CPU types ran in a public cloud with shared tenancy, four instances per type plus a replica.
