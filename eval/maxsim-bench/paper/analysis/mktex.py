@@ -604,7 +604,7 @@ def main():
                 for fam, arms in CC[p].items():
                     o = {(r['executor'], r['callers']): r for r in arms['ours']['runs'] if r['type'] == 'closed'}
                     drop.append((1 - o[('threads', 16)]['throughput'] / o[('threads', 1)]['throughput'], f'{p} {fam}'))
-                    if p in ('intel', 'amd', 'arm'):
+                    if p != 'm3max':
                         a_, b_ = o[('procs', 1)]['throughput'], o[('threads', 1)]['throughput']
                         agree.append((abs(a_ - b_) / min(a_, b_), f'{p} {fam}'))
                     lo_, hi_ = o[('threads', 1)]['throughput_range']
@@ -619,7 +619,7 @@ def main():
             put(f'{kp}.thrdrop.min', f'{min(drop)[0] * 100:.0f}', texname, 'kernel throughput loss from 1 to 16 callers in one process, %: ' + min(drop)[1])
             put(f'{kp}.thrdrop.max', f'{max(drop)[0] * 100:.0f}', texname, max(drop)[1])
             put(f'{kp}.thrdrop.neg', str(sum(x <= 0 for x, _ in drop)), texname, 'pairs where 16 callers in one process did not lower the kernel throughput')
-            put(f'{kp}.n1.agree.max', f'{max(agree)[0] * 100:.0f}', texname, 'largest procs-threads difference of the kernel at one caller, cloud CPUs, %: ' + max(agree)[1])
+            put(f'{kp}.n1.agree.max', f'{max(agree)[0] * 100:.0f}', texname, 'largest procs-threads difference of the kernel at one caller, all CPUs but the M3 Max, %: ' + max(agree)[1])
             for k_, v in kl.items():
                 put(f'{kp}.{k_}.nklost', str(len(v)), texname, ', '.join(v))
             for n in (1, 16):

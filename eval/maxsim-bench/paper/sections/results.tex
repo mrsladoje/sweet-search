@@ -302,7 +302,7 @@ Table~\ref{tab:floor} shows that the smallest call took \nm{range.floor.numpy.mi
 So most of a typical call's time is not this fixed cost.
 In each of the \nm{floor.beyond.n} CPU--library pairs where \sweet's median call was shorter, the rival's median call minus its smallest call still took at least \nm{floor.beyond.min} times \sweet's whole median call.
 So, on these calls, \sweet's speed-up does not come only from avoiding dispatch.
-On Intel and Graviton4, NumKong's median call was shorter than \sweet's.
+On Intel, Graviton4 and the EPYC, NumKong's median call was shorter than \sweet's.
 The smallest call is a lower bound on the fixed cost: a larger call can wake more threads, and this measurement does not separate that cost.
 NumKong's native loop had the largest share (\nm{range.floor.numkong.min}--\nm{range.floor.numkong.max}\%); for \sweet the share was \nm{range.floor.ours.min}--\nm{range.floor.ours.max}\%.
 
@@ -343,15 +343,16 @@ The harness does not check the scores of these runs.
 
 Table~\ref{tab:conc} and Figure~\ref{fig:conc} give the results.
 With one caller, \sweet had \nm{range.conc.n1.min}--\nm{range.conc.n1.max} times the throughput of the best exact rival.
-The two executors now agree at one caller: on the cloud CPUs, \sweet's throughput differed between them by at most \nm{conc.n1.agree.max}\%.
-NumKong had a higher throughput than \sweet with one caller in \nm{conc.n1.threads.nklost} of \nm{conc.pairs} CPU--workload pairs (Intel and Graviton4).
+The two executors now agree at one caller: on every CPU except the M3 Max, \sweet's throughput differed between them by at most \nm{conc.n1.agree.max}\%.
+NumKong had a higher throughput than \sweet with one caller in \nm{conc.n1.threads.nklost} of \nm{conc.pairs} CPU--workload pairs (Intel and Graviton4, and EPYC agent calls).
 With 16 callers in separate processes, an exact rival had the higher throughput in \nm{conc.n16.procs.lost} of \nm{conc.pairs} pairs, and NumKong in \nm{conc.n16.procs.nklost}.
 With 16 callers in one shared process, \sweet's throughput was \nm{conc.thrdrop.min}--\nm{conc.thrdrop.max}\% lower than with one caller, on every CPU.
 An exact rival then had the higher throughput in \nm{conc.n16.threads.lost} of \nm{conc.pairs} pairs, and NumKong in \nm{conc.n16.threads.nklost}.
 \sweet's worker pool has one thread per performance core and serves every call (Section~\ref{sec:kernel}); we did not measure where the time goes when 16 calls share one pool.
 So a service that runs many requests in one process should give each call fewer threads or use one process per caller; we did not test the first option.
 In the open loop at the highest common rate, the best exact rival had the lower p99 in \nm{conc.open.lost} of \nm{conc.pairs} pairs.
-That pair is the M3 Max on agent calls: \sweet kept up with only \nm{conc.m3max.agent.open.achieved.ours} of \nm{conc.m3max.agent.open.rate} offered calls per second, so its queue grew.
+On EPYC GCSN calls the two p99 values differ by less than 1\% (\nm{conc.epyc.gcsn.open.ours} against \nm{conc.epyc.gcsn.open.exact}\,ms).
+On M3 Max agent calls, \sweet kept up with only \nm{conc.m3max.agent.open.achieved.ours} of \nm{conc.m3max.agent.open.rate} offered calls per second, so its queue grew.
 
 The M3 Max runs of \sweet are less certain than the others.
 In both workloads \sweet's throughput fell from each of its three runs to the next; with one caller in one process it ranged from \nm{conc.m3max.agent.ours.t1.hi} to \nm{conc.m3max.agent.ours.t1.lo} thousand calls/s on agent calls.
