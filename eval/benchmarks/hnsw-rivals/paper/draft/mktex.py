@@ -20,18 +20,9 @@ def tex(s):
     return str(s).replace('_', r'\_')
 
 
-def ratio_ci(a_meds, b_meds, B=10000, seed=42):
-    """median(b) / median(a) over rounds, 95% percentile interval from a bootstrap over rounds (each arm resampled
-    on its own). Robust to a single slow round (an outlier round moves a mean of logs, not a median)."""
-    a_, b_ = np.asarray(a_meds, float), np.asarray(b_meds, float)
-    est = float(np.median(b_) / np.median(a_))
-    if len(a_) < 2 or len(b_) < 2:
-        return est, None, None
-    rng = np.random.default_rng(seed)
-    ra = np.median(a_[rng.integers(0, len(a_), (B, len(a_)))], axis=1)
-    rb = np.median(b_[rng.integers(0, len(b_), (B, len(b_)))], axis=1)
-    lo, hi = np.percentile(rb / ra, [2.5, 97.5])
-    return est, float(lo), float(hi)
+import sys
+sys.path.insert(0, os.path.join(HERE, '..'))
+from paperlib import ratio_ci, headline, dev_latency  # noqa: E402
 
 
 def cell(est, lo, hi):
@@ -45,29 +36,30 @@ B = collections.defaultdict(dict)  # (t, s, m, f) -> system -> record
 for r in J['B']:
     B[(r['type'], r['set'], r['model'], r['f'])][r['system']] = r
 
-# ---- headline: ours vs the fastest rival that meets f on held-out (point estimate), per CPU and fraction
+# ---- headline: ours vs the rival that was fastest on dev at f (frozen point), held-out, per CPU and fraction
 for f in (0.98, 0.99, 0.995):
-    rows, logs = [], collections.defaultdict(list)
-    for s in SETS:
+    rows, logs, logs_both = [], collections.defaultdict(list), collections.defaultdict(list)
+    for s_ in SETS:
         for m in MODELS:
-            line = [s, MSHORT[m]]; any_ = False
+            line = [s_, MSHORT[m]]; any_ = False
             for t in TYPES:
-                d = B.get((t, s, m, f), {}); o = d.get('ours_cascade')
-                riv = sorted((x['us'], k, x) for k, x in d.items() if not k.startswith('ours') and x['meets_point'])
-                if not o or not riv:
-                    line.append('' if not o else r'\textit{none}'); continue
-                any_ = True
-                est, lo, hi = ratio_ci(o['round_us'], riv[0][2]['round_us'])
-                c = cell(est, lo, hi) + ('' if o['meets_point'] else '$^\\dagger$')
-                line.append(c)
-                if o['meets_point']:
-                    logs[t].append(math.log(est))
+                h = headline(B.get((t, s_, m, f), {}), t, s_, m, f)
+                if not h:
+                    line.append(''); continue
+                any_ = True; o, rn, rv = h
+                est, lo, hi = ratio_ci(o['round_us'], rv['round_us'])
+                mark = ('' if o['meets_point'] else '$^\\dagger$') + ('' if rv['meets_point'] else '$^\\ddagger$')
+                line.append(cell(est, lo, hi) + mark)
+                logs[t].append(math.log(est))
+                if o['meets_point'] and rv['meets_point']:
+                    logs_both[t].append(math.log(est))
             if any_:
                 rows.append(' & '.join(line) + r' \\')
     tag = str(f).replace('.', '')
+    gm = lambda v: f'{math.exp(sum(v) / len(v)):.2f} ({len(v)})' if v else ''
     with open(os.path.join(HERE, 'tables', f'headline-{tag}.tex'), 'w') as w:
-        w.write('\n'.join(rows) + '\n\\midrule\n' + ' & '.join(['geomean', ''] + [
-            (f'{math.exp(sum(logs[t]) / len(logs[t])):.2f} ({len(logs[t])})' if logs[t] else '') for t in TYPES]) + ' \\\\\n')
+        w.write('\n'.join(rows) + '\n\\midrule\n' + ' & '.join(['geomean', 'all'] + [gm(logs[t]) for t in TYPES]) + ' \\\\\n'
+                + ' & '.join(['', 'both meet'] + [gm(logs_both[t]) for t in TYPES]) + ' \\\\\n')
     for t in TYPES:
         if logs[t]:
             nums[f'gm-{t}-{tag}'] = f'{math.exp(sum(logs[t]) / len(logs[t])):.2f}'
@@ -80,15 +72,14 @@ for f in (0.98, 0.99, 0.995):
 with open(os.path.join(HERE, 'tables', 'headline-cols.tex'), 'w') as w:
     w.write(' & '.join(TNAME[t] for t in TYPES))
 
-# ---- which rival was fastest (named), f = 0.99
+# ---- which rival was fastest on dev (named), f = 0.99
 rows = []
-for s in SETS:
+for s_ in SETS:
     for m in MODELS:
-        line = [s, MSHORT[m]]; any_ = False
+        line = [s_, MSHORT[m]]; any_ = False
         for t in TYPES:
-            d = B.get((t, s, m, 0.99), {})
-            riv = sorted((x['us'], k) for k, x in d.items() if not k.startswith('ours') and x['meets_point'])
-            line.append(r'\scriptsize ' + tex(riv[0][1]) if riv else ''); any_ |= bool(riv)
+            h = headline(B.get((t, s_, m, 0.99), {}), t, s_, m, 0.99)
+            line.append(r'\scriptsize ' + tex(h[1]) if h else ''); any_ |= bool(h)
         if any_:
             rows.append(' & '.join(line) + r' \\')
 open(os.path.join(HERE, 'tables', 'fastest-rival-099.tex'), 'w').write('\n'.join(rows) + '\n')
@@ -100,10 +91,12 @@ for p in P:
     if p.get('missing'):
         rows.append(f"{TNAME[p['type']]} & {p['set']} & {MSHORT[p['model']]} & {tex(p['rival'])} & \\multicolumn{{5}}{{l}}{{no held-out record}} & fail \\\\"); continue
     rows.append(f"{TNAME[p['type']]} & {p['set']} & {MSHORT[p['model']]} & {tex(p['rival'])} & {cell(p['ratio'], p['lo'], p['hi'])} & "
-                f"{p['ours_meets']} ; {p['rival_meets']} & {p['mean_diff']:+.4f} & {p['lower']:+.4f} & {p['p']:.4f} & {'pass' if p.get('holm_pass') else 'fail'} \\\\")
+                f"{p['ours_meets']} ; {p['rival_meets']} & {p['mean_diff']:+.4f} & {p['lower']:+.4f} & {p['p']:.4f} & " + {True: 'pass', False: 'fail', None: 'descr.'}[p.get('holm_pass')] + " \\\\")
 open(os.path.join(HERE, 'tables', 'primary.tex'), 'w').write('\n'.join(rows) + '\n')
 nums['nprimary'] = str(len(P)) if P else '15'
 nums['nprimarypass'] = str(sum(1 for p in P if p.get('holm_pass')))
+nums['nconfirm'] = str(sum(1 for p in P if p.get('confirmatory')))
+nums['ndescr'] = str(sum(1 for p in P if not p.get('confirmatory')))
 nums['nprimaryfaster'] = str(sum(1 for p in P if not p.get('missing') and p['lo'] and p['lo'] > 1))
 nums['nprimaryslower'] = str(sum(1 for p in P if not p.get('missing') and p['hi'] and p['hi'] < 1))
 
@@ -198,10 +191,9 @@ def cells(sets, f=0.99):
     for t in TYPES:
         for s in sets:
             for m in MODELS:
-                d = B.get((t, s, m, f), {}); o = d.get('ours_cascade')
-                riv = sorted((x['us'], k, x) for k, x in d.items() if not k.startswith('ours') and x['meets_point'])
-                if o and riv:
-                    out.append((t, s, m) + ratio_ci(o['round_us'], riv[0][2]['round_us']))
+                h = headline(B.get((t, s, m, f), {}), t, s, m, f)
+                if h:
+                    out.append((t, s, m) + ratio_ci(h[0]['round_us'], h[2]['round_us']))
     return out
 for tag, sets in (('large', ('quora', 'csn1m')), ('small', ('gcsn', 'd20k', 'advtest')), ('mid', ('fiqa', 'dall'))):
     c = cells(sets)
@@ -233,6 +225,109 @@ if ra:
 nums['A-lowq'] = str(lowq); nums['A-lowq-part'] = str(lowq_part); nums['A-lowq-graph'] = str(lowq - lowq_part)
 nA = sum(1 for r in J['A']); nums['A-records'] = f'{nA:,}'
 nums['B-records'] = f"{len(J['B']):,}"
+
+# ---- tuning budget: distinct dev configurations of (B) per (set, model), from the frozen plans (first sweep + widening)
+import glob
+tb = collections.defaultdict(lambda: collections.defaultdict(set))
+for t in ('intel', 'amd', 'arm'):
+    for f in glob.glob(os.path.join(HERE, '..', 'plans', f'q-{t}', 'dev', '*.json')) + glob.glob(os.path.join(HERE, '..', 'plans', f'w-{t}', 'dev', '*.json')):
+        for j in json.load(open(f))['jobs']:
+            if j.get('comparison') == 'B' and j.get('kind', 'timing') == 'timing':
+                tb[t][j['system']].add((j['set'], j['model'], json.dumps({x: j.get(x) for x in ('family', 'build_params', 'search', 'S1', 'EF')}, sort_keys=True)))
+syss = sorted({k for v in tb.values() for k in v}, key=lambda k: -len(tb['intel'].get(k, ())))
+rows = []
+for k in syss:
+    n = {t: len(tb[t].get(k, ())) for t in ('intel', 'amd', 'arm')}
+    sm = {t: len({(a, b) for a, b, _ in tb[t].get(k, ())}) or 1 for t in n}
+    rows.append(tex(k) + ' & ' + ' & '.join((f"{n[t] / sm[t]:.0f}" if n[t] else '') for t in ('intel', 'amd', 'arm')) + r' \\')
+    if k == 'ours_cascade':
+        nums['tune-ours'] = f"{n['intel'] / sm['intel']:.0f}"
+nums['tune-max'] = f"{max(len(v) / (len({(a, b) for a, b, _ in v}) or 1) for v in tb['intel'].values()):.0f}"
+open(os.path.join(HERE, 'tables', 'tuning.tex'), 'w').write('\n'.join(rows) + '\n')
+
+# ---- held-out re-test of the dev points at f = 0.99: point estimate and bound, ours vs rivals
+for who, sel in (('ours', lambda k: k == 'ours_cascade'), ('riv', lambda k: not k.startswith('ours') and k != 'faiss_exact')):
+    rr = [r for r in J['B'] if r['f'] == 0.99 and sel(r['system'])]
+    nums[f'ret-{who}-n'] = f'{len(rr):,}'
+    nums[f'ret-{who}-point'] = f"{sum(r['meets_point'] for r in rr):,}"; nums[f'ret-{who}-bound'] = f"{sum(r['meets_bound'] for r in rr):,}"
+    nums[f'ret-{who}-boundpct'] = f"{100 * sum(r['meets_bound'] for r in rr) / len(rr):.0f}"
+    nums[f'ret-{who}-pointpct'] = f"{100 * sum(r['meets_point'] for r in rr) / len(rr):.0f}"
+
+# ---- slow rounds: a round whose median exceeds 3x the fastest round of the same point (B and A)
+slow = collections.Counter(); tot = collections.Counter(); moved = 0
+for r in J['B'] + J['A']:
+    if r['system'] == 'ours_scan' and r['set'] in ('quora', 'csn1m'):
+        continue  # the scan does not exist above 150k vectors (these rows repeat the walk)
+    who = 'ours' if r['system'].startswith('ours') else 'riv'
+    lo = min(r['round_us']); n = sum(1 for x in r['round_us'] if x > 3 * lo)
+    slow[who] += n; tot[who] += len(r['round_us'])
+    if who == 'ours' and n * 2 >= len(r['round_us']) and n:
+        moved += 1
+for who in ('ours', 'riv'):
+    nums[f'slow-{who}'] = f'{slow[who]:,}'; nums[f'rounds-{who}'] = f'{tot[who]:,}'
+nums['slow-ours-pct'] = f"{100 * slow['ours'] / tot['ours']:.1f}"
+nums['slow-moved'] = str(moved)
+
+# ---- (A) over every model, budget and effort: is the fastest generator that keeps >= 0.99 always ours?
+cellsA = collections.defaultdict(list)
+for r in J['A']:
+    if r['system'] == 'ours_scan' and r['set'] in ('quora', 'csn1m'):
+        continue
+    cellsA[(r['type'], r['set'], r['model'], r['C'], r['H'], r['effort'] if not r['system'].startswith('ours') else 'x')].append(r)
+cellsA2 = collections.defaultdict(list)
+for r in J['A']:
+    if r['system'] == 'ours_scan' and r['set'] in ('quora', 'csn1m'):
+        continue
+    cellsA2[(r['type'], r['set'], r['model'], r['C'], r['H'])].append(r)
+nA = exc = noours = 0
+for k, v in cellsA2.items():
+    ok = [r for r in v if r['share'] >= 0.99]
+    if not ok:
+        continue
+    nA += 1
+    if not any(r['system'].startswith('ours') for r in ok):
+        noours += 1
+    elif not min(ok, key=lambda r: r['us'])['system'].startswith('ours'):
+        exc += 1
+byC = collections.Counter(); totC = collections.Counter()
+for k, v in cellsA2.items():
+    band = 'small' if k[3] <= 200 else ('400' if k[3] == 400 else '1000')
+    totC[band] += 1
+    ok = [r for r in v if r['share'] >= 0.99]
+    if ok and not any(r['system'].startswith('ours') for r in ok):
+        byC[band] += 1
+for band in ('small', '400', '1000'):
+    nums[f'Aonly-{band}'] = str(byC[band]); nums[f'Atot-{band}'] = str(totC[band])
+nums['Aall-n'] = f'{nA:,}'; nums['Aall-exc'] = str(exc); nums['Aall-noours'] = str(noours)
+lowest = collections.defaultdict(lambda: 9.0)
+for r in J['A']:
+    if r['C'] == 400 and r['H'] == 100:
+        lowest[r['system']] = min(lowest[r['system']], r['share'])
+for g in ('ours_walk', 'ours_scan', 'faiss_bin_hnsw', 'scann', 'hnswlib_f32'):
+    if g in lowest:
+        nums[f'Aall-min-{g}'] = f'{100 * lowest[g]:.1f}'
+
+# ---- the int8 screen (A): H = C (no screen) vs H = 100 at C = 400, our walk, smaller effort, same rows
+scr = []
+for r in J['A']:
+    if r['system'] == 'ours_walk' and r['C'] == 400 and r['H'] == 400:
+        twin = [x for x in J['A'] if x['system'] == 'ours_walk' and x['C'] == 400 and x['H'] == 100 and x['type'] == r['type']
+                and x['set'] == r['set'] and x['model'] == r['model'] and x['effort'] == r['effort']]
+        if twin:
+            scr.append((r['us'] / twin[0]['us'], r['share'] - twin[0]['share']))
+if scr:
+    q = np.percentile([x[0] for x in scr], [10, 50, 90])
+    nums['screen-p10'], nums['screen-med'], nums['screen-p90'] = (f'{x:.1f}' for x in q)
+    nums['screen-n'] = str(len(scr))
+    nums['screen-tmin'] = f'{min(x[0] for x in scr):.1f}'; nums['screen-tmax'] = f'{max(x[0] for x in scr):.1f}'
+    nums['screen-qmin'] = f'{min(x[1] for x in scr):+.4f}'; nums['screen-qmax'] = f'{max(x[1] for x in scr):+.4f}'
+
+# ---- power range of the primary pairs (dev)
+pa, ps = [], []
+for t in ('intel', 'amd', 'arm'):
+    for q in json.load(open(os.path.join(HERE, '..', 'shortlists', f'shortlist-{t}.json')))['meta']['primary']:
+        pa.append(q['power_analytic']); ps.append(q['power_sim'])
+nums['powermin-a'] = f'{min(pa):.2f}'; nums['powermin-s'] = f'{min(ps):.2f}'; nums['powermax'] = f'{max(pa + ps):.2f}'
 
 # ---- protocol numbers
 fz = J['freeze']

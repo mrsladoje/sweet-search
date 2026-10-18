@@ -13,9 +13,16 @@ above it, only the walk exists. Stage 2
 scores the stage-1 candidates with an int8 dot product over the same 512 dimensions. Stage 3 rescores
 the best candidates with the full 768-dimensional vector stored as float16. The Hamming kernels use
 AVX-512 \texttt{VPOPCNTDQ} where the CPU has it (Intel and AMD here), AVX2 otherwise, and NEON on ARM.
+A short kernel-tuning phase ended before the dev selection and kept three changes: int8 rows mapped
+from the index file (487~MB less anonymous memory at 1M, same speed), the code and int8 widths as build
+parameters, and the AVX-512 Hamming path, which returns byte-identical result lists and cut dall scan
+time on AMD from 287 to 279~\us{} and the 1M walk from 270 to 242~\us{} (dev, three interleaved rounds). Two
+other candidate changes gave no gain and were dropped. Result lists on ARM are byte-identical to x86.
 In comparison (B) the production entry point runs with $k = k_v$ results and two knobs: the stage-1
 candidate count $S_1$ and the walk effort $ef$. It runs in Node.js through a native addon; the timer
-is inside the same process, around the call.
+is inside the same process, around the call, which includes the product's orchestration and metadata
+reads (\S\ref{sec:timing}). The walk adapts its effort per query: after the greedy descent it scales
+$ef$ by 0.6 or 1.5 from the quality of the entry point and may stop early; $ef$ is the starting value.
 
 \subsection{Rivals}
 
@@ -27,8 +34,8 @@ DiskANN~\cite{subramanya2019diskann} at a pinned commit, Intel SVS~\cite{aguerre
 v0.4.0 (LVQ and LeanVec run on Intel only), and ScaNN~\cite{guo2020scann,sun2023soar} 1.4.2 (Python
 wheel; on ARM in a CPython 3.9 environment, the only aarch64 build). DiskANN has no ARM build. ScaNN
 is timed through its Python binding. The binding and wrapper add a fixed cost per query, which we
-measured with a one-vector index (\texttt{py\_overhead.py}, 200,000 calls, pinned): \nm{scann-ovh-intel}~µs
-on Intel, \nm{scann-ovh-amd}~µs on AMD and \nm{scann-ovh-arm}~µs on Graviton (median). We do not
+measured with a one-vector index (\texttt{py\_overhead.py}, 200,000 calls, pinned): \nm{scann-ovh-intel}~\us{}
+on Intel, \nm{scann-ovh-amd}~\us{} on AMD and \nm{scann-ovh-arm}~\us{} on Graviton (median). We do not
 subtract it.
 
 \begin{table}[t]\centering\small
@@ -62,7 +69,11 @@ without the int8 screen. The budget grid is declared: $C \in \{100, 200, 400, 10
 $H \in \{50, 100\}$ with $C \ge H$, plus $H = C$. Every generator runs at two efforts per budget: the
 smallest effort that returns $C$ candidates ($ef = C$ for graphs; the smallest \texttt{nprobe} or
 leaf count that returns at least $C$ candidates on 99.9\% of dev queries for partitions) and twice
-that. Nothing is selected per generator in (A); we report every effort at every budget. Our two
+that. For our walk, $ef$ is the starting value of its adaptive rule. Nothing is selected per generator
+in (A); we report every effort at every budget. The rival graphs of comparison (A) are built once per
+set and model at the middle of their build grids ($M = 32$, $ef_{\text{construction}} = 800$ for HNSW
+graphs; $R = 64$, $L = 200$ for DiskANN; $\sqrt n$ lists for IVF); ours uses its production build
+($M = 64$, $ef_{\text{construction}} = 800$). Our two
 generators (walk and scan) run the same steps through our addon kernels; the shared C++ path gives
 bit-identical retained lists to the addon on every dev set, on x86 and ARM. Generators: our walk, our
 scan, FAISS binary HNSW and binary flat, USearch b1, hnswlib and FAISS HNSW on float32, FAISS RaBitQ

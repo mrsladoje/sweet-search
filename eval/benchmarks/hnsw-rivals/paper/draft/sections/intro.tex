@@ -30,12 +30,12 @@ A/A runs on each machine.
 matched budgets, on seven sets (7k to 1M vectors), three embedding models and five CPUs (Intel
 Granite Rapids, AMD Zen 5, AWS Graviton4, AMD Zen 3, Apple M3 Max).
 \item Task-quality operating points: each system at the fastest configuration that keeps 98\%,
-99\% or 99.5\% of exact-search MRR@10 or nDCG@10, chosen on dev and confirmed once on held-out
-queries with cluster-bootstrap bounds.
-\item Held-out results: under common rescoring, our binary generators are the fastest that keep 99\%
-of exact quality in every CPU--set cell; as shipped, our cascade is faster at 0.5M--1M vectors in
-\nm{faster-large} of \nm{n-large} cells and slower on most small code sets; \nm{nprimarypass} of
-\nm{nprimary} primary quality comparisons pass.
+99\% or 99.5\% of exact-search MRR@10 or nDCG@10, chosen on dev with cluster-bootstrap bounds and re-tested once on held-out queries.
+\item Held-out results: under common rescoring, our binary generators are the fastest of those that
+keep 99\% of exact quality wherever they keep it, while float32 graphs keep it at smaller budgets in some
+cells; as shipped, our cascade is faster at 0.5M--1M vectors in \nm{faster-large} of \nm{n-large} cells
+and slower on most small code sets; \nm{nprimarypass} of \nm{nconfirm} confirmatory quality comparisons
+pass.
 \item Where the cascade loses, in the main text (\S\ref{sec:losses}), and the full data and harness
 for others to add systems (\S\ref{sec:repro}).
 \end{itemize}

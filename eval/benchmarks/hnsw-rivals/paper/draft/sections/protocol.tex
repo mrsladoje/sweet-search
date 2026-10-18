@@ -4,9 +4,10 @@
 
 Table~\ref{tab:sets} lists the seven sets.
 Five are code-search sets built from CodeSearchNet~\cite{husain2019codesearchnet} and
-GenCodeSearchNet~\cite{diera2023gencodesearchnet}: \texttt{gcsn} (6,918 functions), \texttt{d20k} and
-\texttt{dall} (the same queries with 20k and 140k vectors; the extra vectors are distractor functions),
-AdvTest from CodeXGLUE~\cite{lu2021codexglue} (21,731 vectors) and \texttt{csn1m} (1,004,739 vectors).
+GenCodeSearchNet~\cite{diera2023gencodesearchnet}: \texttt{gcsn} (6,000 functions, 6,918 vectors),
+\texttt{d20k}, \texttt{dall} and \texttt{csn1m} (the same queries over 20k, 140k and 1M vectors; the
+extra vectors are distractor functions), and AdvTest from CodeXGLUE~\cite{lu2021codexglue} (21,731
+vectors). The four sizes of the gcsn queries are scale conditions of one test, not four tests.
 Two are BEIR sets~\cite{thakur2021beir}: Quora (522,931 questions) and FiQA-2018 (57,638 passages).
 Every set is embedded with three 768-dimensional models: CodeRankEmbed~\cite{suresh2025cornstack},
 jina-embeddings-v2-base-code~\cite{gunther2023jina2} and bge-base-en-v1.5~\cite{xiao2024cpack}.
@@ -15,8 +16,8 @@ We embedded every set again with every model for this paper, on one GPU, with pi
 
 \begin{table}[t]\centering\small
 \caption{Sets. Queries are split once into dev (60\%) and held-out (40\%), seed 42, stratified by
-language for the code sets. Clusters are the unit of the bootstrap: the source repository for code
-sets, the query for BEIR sets.}\label{tab:sets}
+language for the gcsn-based sets. Clusters are the unit of the bootstrap: the source repository for the
+gcsn-based sets, the query for AdvTest and the BEIR sets.}\label{tab:sets}
 \begin{tabular}{llrrrrl}\toprule
 Set & Kind & Vectors & Documents & Dev queries & Held-out queries & Metric\\\midrule
 gcsn & code & 6,918 & 6,000 & 3,600 & 2,400 & MRR@10\\
@@ -36,7 +37,10 @@ system. The exact ranking defines $Q_{\text{exact},q}$, the per-query quality of
 
 \paragraph{Evaluation unit.} Every system returns its retained vector list with scores. One shared
 function maps vectors to documents (maximum score per document, ties by document id), cuts at 10 and
-computes MRR@10 (code sets) or nDCG@10 (BEIR, graded judgements). We checked this function against
+computes MRR@10 (code sets) or nDCG@10 (BEIR, graded judgements). Missing ranks count as
+non-relevant. On held-out queries (round 0), our cascade returned fewer vectors than requested for
+\nm{short-ours-B}\% of its comparison-(B) lists, the rivals for none; in comparison (A), \nm{short-riv-A}\%
+of rival generator lists and none of ours were short. We checked this function against
 \texttt{ir\_measures} on every set (largest absolute difference $\le 10^{-9}$).
 
 \subsection{Quality fractions and the selection rule}
@@ -58,12 +62,15 @@ with two tests of whether it still meets $\fr$: the point estimate ($\bar d \ge 
 The confirmatory part is small and declared before the held-out run. For each AWS CPU and each
 confirmatory set (Quora, FiQA) and model, at $\fr = 0.99$ in comparison (B), we compare ours against the
 rival that was fastest at that point on dev. The test is quality non-inferiority: $H_0$: mean(ours $-$
-rival) $\le -\delta$ with $\delta = \nm{delta}$ (the owner's margin, set before any output-changing
-work), one-sided $\alpha = 0.025$, cluster bootstrap, Holm correction~\cite{holm1979simple} over all
-\nm{nprimary} comparisons. FiQA with CodeRankEmbed has no primary comparison: on dev, our cascade did not
-reach $\fr = 0.99$ there. Latency ratios are reported with intervals but are descriptive. Power at a
-true difference of 0 was estimated from dev differences scaled to the held-out cluster count, and
-checked by simulation; it is \nm{powermin} to \nm{powermax} (Appendix~\ref{app:power}).
+rival) $\le -\delta$ with $\delta = \nm{delta}$ in absolute MRR@10 or nDCG@10 (fixed before any output-changing work;
+it is 0.6--4.0\% of the exact quality of the set and model, so it is strictest where exact quality is high), one-sided
+$\alpha = 0.025$, cluster bootstrap. FiQA with CodeRankEmbed has no primary comparison: on dev, our
+cascade did not reach $\fr = 0.99$ there. Power at a true difference of 0 was estimated from dev
+differences scaled to the held-out cluster count, and checked by simulation; it is
+\nm{powermin-a} to \nm{powermax} (analytic; \nm{powermin-s} lowest by simulation;
+Appendix~\ref{app:power}). As the plan requires, a pair with power below 0.8 is reported descriptively;
+Holm correction~\cite{holm1979simple} runs over the remaining \nm{nconfirm} confirmatory pairs. Latency
+ratios are reported with intervals but are descriptive.
 Code-set results are exploratory: their queries were examined in earlier work on the same system,
 and dev and held-out code queries share repositories.
 
@@ -71,13 +78,15 @@ and dev and held-out code queries share repositories.
 
 One process runs one (system, build, round). It loads the serialised index (no build in the timed
 process), warms up on 500 dev queries, then times every held-out query once, in a permuted order
-(seed $42 + \text{round}$). The timer covers the query float vector in memory to the retained list:
-query conversion, candidate generation, transfer between stages, screens, rescoring and document
-aggregation. Text embedding is outside the timer for every system. Every system runs single-threaded.
+(seed $42 + \text{round}$). The timer covers the query float vector in memory to the retained vector
+list: query conversion, candidate generation, transfer between stages, screens and rescoring. The
+mapping from vectors to documents runs afterwards, outside the timer, in the shared evaluation code.
+In comparison (B), our timed call is the production search entry point, which also runs its JavaScript
+orchestration and reads result metadata from its SQLite store; the rivals return ids and scores only. Text embedding is outside the timer for every system. Every system runs single-threaded.
 On the Linux machines each process is pinned to one core; macOS has no core pinning, so Mac jobs run
 unpinned on an otherwise idle machine. Before each job, the index files are read once so that the
 page cache is warm for every system. Transparent huge pages stay at the machine default
-(\texttt{madvise}).
+(\texttt{madvise}). Every Linux timing machine recorded its pinning and tuning state with each run.
 
 \paragraph{Rounds.} Each CPU repeats every held-out job in $R$ rounds; the rounds run in separate plan
 files in a shared queue, so one round of a point usually runs on a different machine instance from
@@ -85,15 +94,21 @@ the next. $R$ comes from an A/A run on each machine (the same build as two arms,
 smallest $R$ that gives a 95\% half-width of 2\% or less for the latency ratio, between 3 and 10.
 This gave $R = \nm{R-intel}$ (Intel), \nm{R-amd} (AMD), \nm{R-arm} (Graviton), \nm{R-box} (box) and
 \nm{R-mac} (Mac). The reported latency of a point is the median over rounds of the per-round median
-per-query time. The 95\% interval of a ratio comes from the round medians on the log scale (Welch $t$).
+per-query time. A ratio is the median over rounds of one system divided by that of the other; its 95\%
+interval is the 2.5th--97.5th percentile over 10,000 bootstrap resamples of the rounds of each system
+(seed 42). With 4 to 10 rounds the interval is coarse, and one slow round widens it (\S\ref{sec:losses}).
+The A/A rule sized $R$ for the ratio of medians; on AMD the cap of 10 rounds left an expected
+half-width of about 2.3\%, above the 2\% target.
 
 \subsection{Machines}
 
 Table~\ref{tab:machines} lists the five CPUs. The three AWS types run the full grid. The box and the Mac
-are \emph{secondary platforms with a reduced grid}: the frozen points of comparison (B) for one model
-per set kind (CodeRankEmbed for code, bge-base-en-v1.5 for BEIR), comparison (A) at one budget
-($C = 400$, $H = 100$), memory and cold start. The box skips \texttt{csn1m} (its disk cannot hold the
-1M builds).
+are \emph{secondary platforms with a reduced grid}: comparison (B) for one model per set kind
+(CodeRankEmbed for code, bge-base-en-v1.5 for BEIR), comparison (A) at one budget ($C = 400$,
+$H = 100$), memory and cold start. Their operating points are not selected on these machines: the box
+uses the frozen points of the AMD type and the Mac those of Graviton. The Mac runs no ScaNN (no macOS
+wheel), DiskANN or SVS; the box runs no SVS LVQ or LeanVec (Intel only). The box has no csn1m results
+except DiskANN, because its disk cannot hold the other 1M builds.
 
 \begin{table}[t]\centering\small
 \caption{Machines. All Linux machines are virtual machines; the Mac is a laptop on mains power.}\label{tab:machines}
@@ -112,7 +127,10 @@ mac & Apple M3 Max & laptop, 128 GB & NEON & \nm{R-mac}\\\bottomrule
 Before the freeze we used dev queries only. At the freeze we recorded, in \texttt{FREEZE.json}, the
 SHA-256 of every harness file, adapter, build script, set definition, split and operating-point
 file (from the git blobs of the frozen commit), together with $\delta$, the fractions, the bootstrap
-settings and $R$. Every held-out number in this paper comes from binaries built from that commit.
+settings and $R$. The hashes are those of commit \texttt{4a0d8842}; the freeze record was written again
+at commit \texttt{f57533b0} after a change to the cloud run script (how each machine fetches its
+builds), before any held-out job ran. Every held-out number in this paper comes from binaries built
+from that commit.
 \nm{repairjobs} held-out jobs (\nm{repairshare} of \nm{hojobs}) were lost when the first held-out
 machines reached their hard time limit; we ran them again from the same frozen commit on new
 machines, with no change to any plan except the selection of the missing jobs. The script that selects

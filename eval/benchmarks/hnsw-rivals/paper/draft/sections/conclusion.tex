@@ -1,12 +1,11 @@
 \section{Conclusion}\label{sec:conclusion}
 
-Measured at a fixed fraction of task quality instead of a recall target, the choice of candidate
-generator matters most when the rest of the pipeline is held fixed: under one int8 screen and one
-float16 rescoring, a binary scan or binary HNSW walk gave the same retained quality as float graphs
-and quantised graphs at a fraction of their time, and partition indexes at their smallest effort lost
-quality that the rescoring could not recover. As shipped, the binary cascade was faster than the
-tested rivals at 0.5M--1M vectors on all five CPUs in most cells, and slower than an exact binary scan
-in C++ below about 20k vectors. Its costs are memory, a slow single-threaded build and sensitivity
-of a memory-mapped index to other I/O. Corpus size changed the answer more than the CPU did. These
+Measured at a fixed fraction of task quality instead of a recall target, and with the rest of the
+pipeline held fixed, the binary scan and binary HNSW walk were the fastest candidate generators
+wherever they kept 99\% of exact quality, on five CPUs; float32 graphs kept that quality at smaller
+candidate budgets for some model--set pairs. As shipped, the binary cascade was faster than the rival
+chosen on dev in most cells at 0.5M--1M vectors and slower than an exact binary scan in C++ on most code
+sets below about 20k vectors. Its costs are memory, a slow single-threaded build, and slow timing rounds
+of its memory-mapped index under other I/O. Corpus size changed the answer more than the CPU did. These
 results hold for the tested sets, models and CPUs, within the declared quality margin; the released
 records let others check them and add systems.

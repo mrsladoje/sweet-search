@@ -1,18 +1,18 @@
 \begin{abstract}
-We compare candidate generators for single-query dense retrieval on CPUs at a fixed fraction of the
-task quality of exact search, not at a recall target. Seven sets (code search and BEIR, 7k to 1M
-vectors), three 768-dimensional embedding models and five CPUs (Intel Granite Rapids, AMD Zen 5, AWS
-Graviton4, AMD Zen 3, Apple M3 Max) cover a binary HNSW cascade with an int8 screen and float16
-rescoring, and FAISS, USearch, hnswlib, ScaNN, DiskANN and Intel SVS indexes. Operating points are
-chosen on dev queries and frozen before a single held-out run. Under a common rescoring procedure
-(comparison A), the binary scan or binary HNSW walk of the cascade is the fastest generator that keeps
-99\% of exact quality in all \nm{A-oursbest} CPU--set cells, \nm{A-min} to \nm{A-max} times faster than
-the next; partition generators are faster at their smallest declared effort but lose up to 77\% of
-the quality on the larger sets. As shipped (comparison B, 99\% of exact quality), the cascade is faster on the 0.5M--1M
-sets (geometric mean ratio \nm{gm-large}, ours faster in \nm{faster-large} of \nm{n-large} cells),
-mixed in between, and mostly slower on code sets below 22k vectors, where FAISS binary flat wins
-(geometric mean \nm{gm-small}). Quality non-inferiority at $\delta = \nm{delta}$ holds in
-\nm{nprimarypass} of \nm{nprimary} primary comparisons (Holm). The cascade uses more memory than most
-rivals at 1M, builds single-threaded for \nm{build-ours-h} hours, and its memory-mapped index is
-sensitive to page-cache pressure. We release the harness, the frozen points and every held-out record.
+We compare candidate generators for single-query dense retrieval on CPUs at a fixed fraction of the task
+quality of exact search, not at a recall target. Seven sets (code search and BEIR, 7k to 1M vectors),
+three 768-dimensional embedding models and five CPUs (Intel Granite Rapids, AMD Zen 5, AWS Graviton4,
+AMD Zen 3, Apple M3 Max) cover a binary HNSW cascade with an int8 screen and float16 rescoring, and
+indexes from FAISS, USearch, hnswlib, ScaNN, DiskANN and Intel SVS. Operating points are chosen on dev
+queries and frozen before a single held-out run. Under a common int8 screen and float16 rescoring
+(comparison A), whenever one of the cascade's binary generators keeps 99\% of exact quality it is the
+fastest generator that does, over every CPU, set, model and budget; at small candidate budgets, float32
+graphs keep 99\% in some cells where the binary codes do not. As shipped (comparison B), against the
+rival that was fastest on dev at 99\% of exact quality, the cascade is faster on the 0.5M--1M sets in
+\nm{faster-large} of \nm{n-large} cells (geometric mean ratio \nm{gm-large}), mixed in between, and slower
+on most code sets below 22k vectors, where an exact binary scan in FAISS wins (geometric mean
+\nm{gm-small}). Quality non-inferiority at $\delta = \nm{delta}$ holds in \nm{nprimarypass} of
+\nm{nconfirm} confirmatory comparisons (Holm). The cascade uses more memory than most rivals at 1M,
+builds single-threaded for \nm{build-ours-h} hours, and its memory-mapped index showed slow timing
+rounds that no rival showed. We release the harness, the frozen points and every held-out record.
 \end{abstract}
