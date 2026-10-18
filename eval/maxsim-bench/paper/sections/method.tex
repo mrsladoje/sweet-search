@@ -66,7 +66,7 @@ Rival thread pools keep spinning after a call (OpenBLAS for up to about 100\,ms)
 Before each arm, the runner waits until machine CPU use, sampled over one second, is below 10\% (15\% on the Mac).
 Per call, one untimed warm-up precedes the timed repetitions.
 \begin{description}
-\item[Warm:] calls back to back; 5 timed repetitions per call.
+\item[Warm:] per call, input preparation, one untimed warm-up call and 5 timed repetitions; then the next call. ``Warm'' means this protocol only. It does not show that every arm has reached its speed under sustained load; Section~\ref{sec:floor} found one arm that had not.
 \item[Pool-parked (5\,ms busy gap):] the main thread spins for 5\,ms before every call, so worker pools that park after a short wait (\sweet: 200\,$\mu$s) have parked, while pools that spin longer (OpenBLAS) may still be awake; 3 timed repetitions. This mode does \emph{not} test cold caches or process start.
 \item[One thread:] the one-thread configurations, warm.
 \item[Parallel callers:] see Section~\ref{sec:conc}.

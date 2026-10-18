@@ -1,11 +1,12 @@
 \begin{abstract}
 \noindent
 Libraries that compute late-interaction (MaxSim) scores for ColBERT-style reranking do not all compute the same score: they differ in normalization, epsilon placement, clamping and padding.
-The rules nearly agree on float vectors but diverge on int4 tokens.
+Without quantization, the normalizing rules differ only by epsilon and clamp; int4 storage adds a difference in normalization.
 We present \benchname, a benchmark for CPU MaxSim kernels.
 It defines each scoring rule as a contract and checks every implementation against a float64 reference of its own rule.
 These checks found two new defects in other libraries, among them invalid scores from NumKong on Intel CPUs with AMX, and confirmed a known one.
-The benchmark replays rerank calls captured from a code-search engine and from two BEIR datasets, and it keeps development and held-out data apart under a recorded freeze.
+It replays rerank calls captured from a code-search engine and from two BEIR datasets.
+It keeps development and held-out data apart under a recorded freeze.
 We compare an int4 SIMD kernel from the open-source engine sweet-search with NumPy, PyTorch, maxsim-cpu, NextPlaid and NumKong on five CPUs.
 With warm calls, the kernel was faster than every frozen exact float32 rival configuration on the captured agent and code-search calls on all five CPUs.
 On agent calls, the fastest rival needed \nm{best.warm.agent-ho.f32.min}--\nm{best.warm.agent-ho.f32.max}$\times$ the kernel's time.

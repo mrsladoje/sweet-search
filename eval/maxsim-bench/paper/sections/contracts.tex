@@ -37,11 +37,11 @@ The difference (a)$-$(b) is the \emph{input-rounding effect}.
 
 \paragraph{Fixtures.}
 A separate script builds hand-made cases byte by byte and computes their expected values with plain Python loops in float64; it shares no code with the benchmark.
-The cases are: a negative best match (all cosines below 0), an opposite pair (cosine $-1$), a stored norm 1.10 times the decoded norm, a zero query token, a constant document token (scale 0), a zero document vector, ragged candidates of 1, 3, 17 and 64 tokens in one call, and dimensions 96, 128 and 127.
+The cases are: a negative best match (all cosines below 0), an opposite pair (cosine $-1$), a stored norm 1.10 times the decoded norm, a zero query token, a constant document token (scale 0), a zero document vector, ragged candidates of 1, 3, 17 and 64 tokens in one call, a padding case (one document of 256 tokens and 30 of 64 to 255 tokens in one call, with a query token whose best cosine is negative), and dimensions 96, 128 and 127.
 Each arm had to match its contract within its precision bound on every case before any timing on each machine.
 The bounds follow the input type, and NumKong, being approximate, has a bound of 0.15.
 Cases that an arm rejects (an odd dimension) count as unsupported, and cases whose inputs are undefined for a contract (a zero query token under S-pre) are informational.
-Three known defects were recorded instead of a pass: maxsim-cpu on AArch64 fails the ragged-length case, and NumKong's two float16 arms on x86 return NaN on the same case (Section~\ref{sec:correctness}). These arms were timed anyway; their rows carry the defect and are marked.
+Three arms recorded a known defect on the padding case instead of a pass. They are maxsim-cpu on AArch64 and NumKong's two float16 arms on x86, which return NaN (Section~\ref{sec:correctness}). These arms were timed anyway; their rows carry the defect and are marked.
 
 \subsection{The \sweet kernel}
 \label{sec:kernel}

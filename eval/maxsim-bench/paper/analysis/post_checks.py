@@ -6,6 +6,7 @@
 #   rerun/pipeline.mjs    stage shares of the production search path, held-out agent calls, M3 Max
 #   rerun/concurrency2.py the M3 Max parallel-caller recheck, closed-loop throughput per pass
 #   rerun/nk_harness.py   EPYC: NumKong and the kernel per warm-up count (development agent calls)
+#   rerun/nk_harness2.py  EPYC: every arm under five call protocols (development agent calls)
 # Writes tables/post_checks.json.
 import glob, json, os, re, sys
 
@@ -73,6 +74,14 @@ def main():
         calls = len(json.load(open(os.path.join(LOCAL, 'epyc-nkgap', 'warm-1-ours.json')))['ts_us'])
         res['epyc_warmup'] = dict(source=rel(f), set=d['set'], reps=d['reps'], protocol=d['protocol'], p50_by_warmup=d['p50_by_warmup'], calls=calls)
         print('epyc warm-up', d['p50_by_warmup'])
+    # EPYC: every arm under five call protocols (rerun/nk_harness2.py, development agent calls)
+    f = os.path.join(LOCAL, 'epyc-nkgap2', 'nk_harness2.json')
+    if os.path.exists(f):
+        d = json.load(open(f))
+        res['epyc_protocols'] = dict(source=rel(f), set=d['set'], summary=d['summary'],
+                                     protocols={'main': 'prepare, 1 warm-up, 5 timed (bench.py)', 'A': 'all prepared first, each call timed once, back to back',
+                                                'Arev': 'A in reversed call order', 'Aw': 'A after one untimed pass over all calls', 'B': 'prepare, then time once'})
+        print('epyc protocols', {a: {p: round(sum(v) / len(v), 1) for p, v in x.items()} for a, x in d['summary'].items()})
     dump('post_checks.json', res)
 
 

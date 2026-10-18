@@ -917,5 +917,138 @@
    }
   },
   "calls": 655
+ },
+ "epyc_protocols": {
+  "source": ".ss-eval/maxsim-local/rerun2/epyc-nkgap2/nk_harness2.json",
+  "set": "agent-dev",
+  "summary": {
+   "ours": {
+    "main": [
+     94.9,
+     93.4
+    ],
+    "A": [
+     104.5,
+     103.6
+    ],
+    "Arev": [
+     97.2
+    ],
+    "Aw": [
+     95.7
+    ],
+    "B": [
+     109.8,
+     105.0
+    ]
+   },
+   "numkong_native_f32": {
+    "main": [
+     144.4,
+     146.2
+    ],
+    "A": [
+     107.6,
+     105.3
+    ],
+    "Arev": [
+     115.2
+    ],
+    "Aw": [
+     86.0
+    ],
+    "B": [
+     246.4,
+     229.5
+    ]
+   },
+   "nextplaid": {
+    "main": [
+     368.3,
+     384.9
+    ],
+    "A": [
+     551.4,
+     574.9
+    ],
+    "Arev": [
+     564.2
+    ],
+    "Aw": [
+     529.2
+    ],
+    "B": [
+     476.8,
+     450.6
+    ]
+   },
+   "numpy_packed": {
+    "main": [
+     132.8,
+     133.8
+    ],
+    "A": [
+     235.7,
+     234.3
+    ],
+    "Arev": [
+     235.0
+    ],
+    "Aw": [
+     178.1
+    ],
+    "B": [
+     142.3,
+     146.5
+    ]
+   },
+   "torch_pad_bmm": {
+    "main": [
+     176.8,
+     180.5
+    ],
+    "A": [
+     294.3,
+     294.3
+    ],
+    "Arev": [
+     282.8
+    ],
+    "Aw": [
+     276.1
+    ],
+    "B": [
+     261.9,
+     253.8
+    ]
+   },
+   "maxsim_cpu_variable": {
+    "main": [
+     228.7,
+     227.0
+    ],
+    "A": [
+     274.7,
+     281.5
+    ],
+    "Arev": [
+     284.1
+    ],
+    "Aw": [
+     254.1
+    ],
+    "B": [
+     471.7,
+     463.9
+    ]
+   }
+  },
+  "protocols": {
+   "main": "prepare, 1 warm-up, 5 timed (bench.py)",
+   "A": "all prepared first, each call timed once, back to back",
+   "Arev": "A in reversed call order",
+   "Aw": "A after one untimed pass over all calls",
+   "B": "prepare, then time once"
+  }
  }
 }
