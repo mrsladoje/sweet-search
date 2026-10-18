@@ -1,7 +1,7 @@
 \section{Share of MaxSim in a search}
 \label{sec:pipeline}
 
-MaxSim took a small part of a search: a median of \nm{pipe.maxsim.med}\% of the call time on held-out agent calls.
+In the search path of sweet-search, MaxSim took a median of \nm{pipe.maxsim.med}\% of the time of a held-out agent search call.
 Microseconds in the kernel matter only if MaxSim is a visible part of a search, so we timed the stages of the production search path of sweet-search.
 We replayed the \nm{pipe.calls.all} held-out agent search calls on the M3 Max, with the production configuration and a CPU query encoder (ONNX Runtime).
 \nm{pipe.calls} of these calls ran MaxSim; Table~\ref{tab:pipeline} reports them.
@@ -40,7 +40,7 @@ The kernel took a median of \nm{pipe.maxsim.ms}\,ms, \nm{pipe.maxsim.med}\% of a
 The int4 load took about the same share, \nm{pipe.int4.med}\%.
 So on this path, a kernel with zero cost would shorten the median call by less than 1\%.
 This is not an end-to-end speed-up claim, and it does not show that a slower kernel would be acceptable elsewhere.
-Kernel time matters more when a call scores many more candidates (Section~\ref{sec:sweep}), with many callers at once (Section~\ref{sec:conc}), or with a faster encoder and fetch.
+Kernel time matters more with many more candidates per call (Section~\ref{sec:sweep}), with many callers (Section~\ref{sec:conc}), or with a faster encoder and fetch.
 We did not measure such pipelines.
 
 The indexes differ from production in one step.

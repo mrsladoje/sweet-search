@@ -29,8 +29,9 @@ default): `analysis/load.py`, `conc.py`, `memory.py`, `nan_scan.py`, `quality_ex
 `conc2.py` and `post_checks.py` read the release folders `rerun/` (`rerun/checks2/` and
 `rerun/m3max-recheck/` hold the checks of 2026-10-18). Edit those constants for another layout.
 `analysis/scrub.py` built the release folder from the raw results. The BEIR
-build script (`beir_prep.py`) records the model revisions in its manifest but does not pass
-them to the download; pin them by hand when you rebuild.
+build script (`beir_prep.py`, frozen) records the model revisions in its manifest but does not pass
+them to the download; `rerun/beir_prep_pinned.py --manifest <release>/MANIFEST.json <beir_prep.py arguments>`
+pins them and runs the frozen script unchanged.
 
 From `eval/maxsim-bench`:
 

@@ -2,7 +2,9 @@
 \label{sec:conclusion}
 
 Libraries that compute MaxSim do not compute one function, so a benchmark must check each implementation against its own contract before it times it.
-With such checks, \benchname found three defects in public libraries and separated the effect of a contract from the effect of an approximation.
+With such checks, \benchname found two new defects and confirmed a known one in public libraries.
+It also separated the effect of a contract from the effect of an approximation.
+The contracts nearly agree on float vectors and diverge once tokens are quantized.
 On five CPUs, the int4 kernel of sweet-search was faster than the exact float32 rivals on warm agent and code-search calls.
 It was not faster with one thread, after a busy gap, with many callers in one process, or on some large calls.
 In the search path of sweet-search, the kernel took a median of \nm{pipe.maxsim.med}\% of an agent search call, so its speed changed little there.

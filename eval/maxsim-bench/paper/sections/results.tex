@@ -193,7 +193,8 @@ Within one CPU, the scores of all thread budgets, rounds and processes were bit-
 \subsection{Quality per latency budget}
 \label{sec:budget}
 
-A faster scorer can rerank more candidates in the same time, but at our two latency budgets this gave \sweet a larger $k$ than every exact rival only on AMD.
+A faster scorer can rerank more candidates in the same time.
+But \sweet reached a larger $k$ than every exact rival only on AMD, and only at the lower of our two budgets.
 Figure~\ref{fig:budget} plots nDCG@10 against the warm replay p95 of the timed scoring call (the 95th percentile over all timed repetitions of the BEIR calls, not a service-request distribution), one point per $k$. Each point's quality comes from the arm's first run; every rival's scores were bit-identical across its runs, except NumKong's Python arms on Intel.
 Table~\ref{tab:budget} reads it at two budgets.
 The time covers only the scoring call: the rivals' decoding and casting run outside their timer.
@@ -206,7 +207,7 @@ Their p95 on the original vectors was \nm{f32d.ratio.min}--\nm{f32d.ratio.max} t
 The check ran on one CPU only.
 The dotted line is the BM25 order without reranking.
 
-At a p95 budget of 0.25\,ms, \sweet reached a larger $k$ than every exact rival on AMD.
+At a p95 budget of 0.25\,ms, \sweet reached a larger $k$ than every exact rival on AMD; at the higher budget, the best exact rival on AMD reached the same $k$.
 On Intel the best exact rival (PyTorch with bfloat16 inputs) reached a larger $k$ at both budgets.
 On Graviton4, the M3 Max and the EPYC, \sweet and the best exact rival reached the same $k$, or the rival reached a larger one.
 For ColBERTv2, more candidates do not always help: on SciFact, nDCG@10 is highest at $k = 25$.
@@ -314,22 +315,22 @@ CPU & set & NumPy int4-self & maxsim-cpu int4-self \\
 \end{tabular}
 \end{table}
 
-\subsection{Fixed cost per call (post-freeze)}
+\subsection{Smallest-call probe (post-freeze)}
 \label{sec:floor}
 
-For the exact rivals, fixed cost is a small part of a typical call, so \sweet's lead on these calls is not mainly a fixed-cost effect.
+For the exact rivals, the smallest possible call took \nm{range.floor.exact.min}--\nm{range.floor.exact.max}\% of the time of a median agent call.
 At tens of microseconds per call, a rival's time could in principle be mostly fixed cost: Python dispatch, thread wake-up and layout handling.
-After the freeze we therefore timed every arm on two calls, on development data only.
+After the freeze we probed this by timing every arm on two calls, on development data only.
 The first is the smallest possible call: one query token and one candidate of one token.
 The second is the median development agent call (\nm{floor.shape.nq} query tokens, \nm{floor.shape.pool} candidates, \nm{floor.shape.tokens} candidate tokens).
 Each arm ran in three fresh processes, with 200 warm-up calls and five rounds of timed calls (Appendix~\ref{app:deviations}).
 
 For the exact rivals, the smallest call took \nm{range.floor.exact.min}--\nm{range.floor.exact.max}\% of the median call's time (Table~\ref{tab:floor}); for \sweet it took \nm{range.floor.ours.min}--\nm{range.floor.ours.max}\%.
 In each of the \nm{floor.beyond.n} CPU--library pairs where \sweet's median call was shorter, the rival's median call minus its smallest call still took at least \nm{floor.beyond.min} times \sweet's whole median call.
-So the part of a rival's time that grows with the call was longer than \sweet's whole call.
-Plausible sources of \sweet's lead lie in that part: it reads int4 instead of float32 data, and it does not pad candidates.
-We did not measure which of them matters (Section~\ref{sec:limits}).
-The smallest call is a measurement, not a strict lower bound on the fixed cost of a larger call, which can take another code path or wake more threads.
+This probe does not split a median call into fixed and variable cost.
+A larger call can take another code path, allocate more memory or wake more threads.
+So its fixed cost can be larger than the smallest call's time.
+The probe therefore does not show why \sweet's median call was shorter.
 
 NumKong is different.
 Its native loop had the largest fixed share (\nm{range.floor.numkong.min}--\nm{range.floor.numkong.max}\%), and on Intel, Graviton4 and the EPYC its median call was shorter than \sweet's.
@@ -337,11 +338,19 @@ On the EPYC this disagrees with the main run, where NumKong needed \nm{warm.epyc
 In the main run, the median over held-out agent calls was \nm{p50.epyc.agent.numkong}\,$\mu$s for NumKong's native float32 loop and \nm{p50.epyc.agent.ours}\,$\mu$s for \sweet.
 In the fixed-cost run, NumKong's single median call took \nm{floor.epyc.numkong.med}\,$\mu$s and \sweet's \nm{floor.epyc.ours.med}\,$\mu$s.
 So NumKong's time halved between the two runs, while \sweet's fell by about 10\%.
-The runs differ in their calls (one development call against all held-out calls) and in their process setup; we did not find which difference causes this.
+A post-freeze check on the EPYC found the cause: the two harnesses repeat calls differently (Appendix~\ref{app:deviations}, item 33).
+The main harness times each call after one warm-up call; the probe repeats one call 200 times first.
+On \nm{nkw.calls} development agent calls, NumKong took a median of \nm{nkw.nk.1}\,$\mu$s after one warm-up call and \nm{nkw.nk.200}\,$\mu$s after 200.
+\sweet took \nm{nkw.ours.min}--\nm{nkw.ours.max}\,$\mu$s at every warm-up count.
+NumKong reached its steady speed only after about 50 back-to-back calls (\nm{nkw.nk.50}\,$\mu$s).
+So under continuous load, NumKong's native arm was faster than \sweet on these calls.
+The main run's per-call protocol includes a start-up cost for this arm that \sweet does not have.
+The native arm runs NumKong's kernel in the benchmark's own Rust thread pool, so this cost may come from our adapter, not from NumKong.
+We did not separate thread wake-up from clock ramp-up, and we tested only these two arms.
 
 \begin{table}[!htbp]
 \centering\scriptsize
-\caption{Fixed cost per call (post-freeze; development data): time of the smallest call / time of the median agent call, in $\mu$s, and their ratio. Each library at its frozen primary float32 agent configuration; NumKong with its native loop. Median over three processes.}
+\caption{Smallest-call probe (post-freeze; development data): time of the smallest call / time of the median agent call, in $\mu$s, and their ratio. Each library at its frozen primary float32 agent configuration; NumKong with its native loop. Median over three processes.}
 \label{tab:floor}
 \begin{tabular}{lllllll}
 \toprule
@@ -367,24 +376,12 @@ Their latency includes queueing.
 The threads executor feeds one shared queue; the procs executor assigns each request to one process in advance.
 
 The frozen parallel-caller harness had four defects (Appendix~\ref{app:conc-frozen}).
-After the freeze we fixed them in a copy of the harness and ran it again with the same arms, sets, rates and seed, under a plan written before the run (Appendix~\ref{app:deviations}).
-In the fixed harness, all callers start together, and the BLIS arms are left out.
-The procs executor caps a fixed thread count in a configuration at the per-process budget.
-Each configuration runs three times, and each closed-loop caller replays its share for at least 3\,s.
-Each open-loop trace holds at least the rate times 3\,s of requests, so its arrivals last about 3\,s or more.
-The open loop waits for each arrival time in a busy loop: in the threads executor, a Python thread next to the callers; in the procs executor, each caller process.
-These waits remain in the rerun, so the open-loop latencies apply to this harness.
-The threads executor runs all configurations of a set in turn in one process, so in one configuration a thread setting of the previous configuration stayed in place.
-NextPlaid with four threads on the EPYC ran with all cores; we left out this threads-executor run, and no number in the text or tables changed.
-Both executors warm up every call.
-We report the median of the three runs.
+After the freeze we fixed them in a copy of the harness.
+We ran it again with the same arms, sets, rates and seed, under a plan written before the run.
+Each configuration ran three times, for at least 3\,s each, and we report the median; Appendix~\ref{app:deviations} (item 27) gives the details.
 Over the three runs, the kernel's closed-loop throughput varied by a median of \nm{conc.ours.spread.median}\% (maximum minus minimum, over the median).
-The M3 Max values come from a recheck (see below).
-A separate check after the rerun tested the scores of parallel calls on the M3 Max and the EPYC (\texttt{rerun/conc\_check.py}).
-It ran eight configurations per CPU (the kernel, exact rivals and NumKong) with 1 and 16 callers in both executors.
-It compared each score with the score of the same call run alone, and both with the float64 reference.
-In all \nm{cc.rows} runs, no score of a parallel call differed from the score of the same call alone.
-Errors against the reference were also the same as alone: within the precision bound, except for maxsim-cpu on AArch64 and NumKong, as in Section~\ref{sec:correctness}.
+On the M3 Max and the EPYC, a separate check compared the scores of parallel calls with those of the same calls alone (\texttt{rerun/conc\_check.py}).
+In all \nm{cc.rows} runs, with 1 and 16 callers in both executors, no score differed.
 
 Table~\ref{tab:conc} and Figure~\ref{fig:conc} give the results.
 With one caller, \sweet had \nm{range.conc.n1.min}--\nm{range.conc.n1.max} times the throughput of the best exact rival in the threads executor, and \nm{range.conc.n1.procs.min}--\nm{range.conc.n1.procs.max} times in the procs executor.
@@ -393,30 +390,22 @@ NumKong had a higher throughput than \sweet with one caller in \nm{conc.n1.threa
 With 16 callers in separate processes, an exact rival had the higher throughput in \nm{conc.n16.procs.lost} of \nm{conc.pairs} pairs, and NumKong in \nm{conc.n16.procs.nklost}.
 With 16 callers in one shared process, \sweet's throughput was \nm{conc.thrdrop.min}--\nm{conc.thrdrop.max}\% lower than with one caller, on every CPU.
 An exact rival then had the higher throughput in \nm{conc.n16.threads.lost} of \nm{conc.pairs} pairs, and NumKong in \nm{conc.n16.threads.nklost}.
-\sweet's worker pool has one thread per performance core and serves every call (Section~\ref{sec:kernel}).
-We did not measure where the time goes when 16 calls share one pool.
+\sweet's worker pool has one thread per performance core and serves every call (Section~\ref{sec:kernel}), so 16 calls in one process share one pool.
 For many requests at once, one process per caller was the better setting here.
-Fewer threads per call in one process may also help; we did not test it.
 In the open loop at the highest common rate, the best exact rival had the lower p99 in \nm{conc.open.lost} of \nm{conc.pairs} pairs.
 On EPYC GCSN calls the two p99 values differ by less than 1\% (\nm{conc.epyc.gcsn.open.ours} against \nm{conc.epyc.gcsn.open.exact}\,ms).
 On M3 Max GCSN calls, the best exact rival had the lower p99 (\nm{conc.m3max.gcsn.open.exact} against \nm{conc.m3max.gcsn.open.ours}\,ms).
 
 The M3 Max values come from a recheck, because \sweet's throughput in the first rerun fell from each of its three runs to the next.
-The recheck ran each configuration in its own process, in three passes with different orders: forward, reverse and rotated.
-Before each configuration, it paused for 45\,s and waited for 30\,s of low CPU use.
-The desktop session stayed open, and CPU use at these checks was \nm{m3c.busy.lo}--\nm{m3c.busy.hi}\% of all cores; macOS recorded no thermal or performance warning.
-The recheck covers \sweet, both NumKong configurations, and NumPy and PyTorch, the best exact rivals on the M3 Max in the first rerun.
-It leaves out NextPlaid, never the best exact rival there, and maxsim-cpu, whose AArch64 build gives wrong scores on these calls (Section~\ref{sec:correctness}).
+The recheck ran each configuration in its own process, in three passes with different orders (Appendix~\ref{app:deviations}, item 32).
 Over the three passes, the throughput of a configuration varied by a median of \nm{m3c.rest.spread.median}\%.
-One run was an outlier: \sweet's first agent run, the first run of the recheck, one minute after the study of Section~\ref{sec:pipeline} ended.
-With one caller, it reached \nm{m3c.first.ours} thousand calls/s, against \nm{m3c.other.ours.lo}--\nm{m3c.other.ours.hi} in its other two passes.
-\sweet's other runs varied by at most \nm{m3c.ours.agent.later.spread.max}\% on agent calls and \nm{m3c.ours.gcsn.spread.max}\% on GCSN calls; NumPy varied most, by up to \nm{m3c.numpy.spread.max}\%.
-Table~\ref{tab:conc} gives the median of the three passes, so the outlier sets no value; we cannot say what slowed that run.
+One \sweet agent pass was an outlier, with \nm{m3c.first.ours} against \nm{m3c.other.ours.lo}--\nm{m3c.other.ours.hi} thousand calls/s at one caller, and NumPy varied by up to \nm{m3c.numpy.spread.max}\%.
+Table~\ref{tab:conc} marks these rows, and its values are the medians of the three passes.
 
 \begin{table}[!htbp]
 \centering\scriptsize
 \setlength{\tabcolsep}{2.5pt}
-\caption{Parallel callers (previously examined sets; post-freeze rerun with the fixed harness, median of three runs). Closed loop per executor (procs: one process per caller; threads: one shared process): \sweet throughput in thousand calls/s, \sweet / best exact rival and \sweet / best NumKong configuration (above 1: \sweet faster; red: rival faster). Open loop: per-request p99 in ms at the highest common rate (calls/s), \sweet and the best exact rival (red: rival lower); $\S$: the arm achieved less than 95\% of the offered rate.}
+\caption{Parallel callers (previously examined sets; post-freeze rerun with the fixed harness, median of three runs). Closed loop per executor (procs: one process per caller; threads: one shared process): \sweet throughput in thousand calls/s, \sweet / best exact rival and \sweet / best NumKong configuration (above 1: \sweet faster; red: rival faster). Open loop: per-request p99 in ms at the highest common rate (calls/s), \sweet and the best exact rival (red: rival lower); $\S$: the arm achieved less than 95\% of the offered rate. $\diamond$: M3 Max values from the recheck, median of three passes; one \sweet agent pass reached only \nm{m3c.first.ours} of \nm{m3c.other.ours.lo}--\nm{m3c.other.ours.hi} thousand calls/s with one caller, and NumPy varied by up to \nm{m3c.numpy.spread.max}\% between passes (Section~\ref{sec:conc}).}
 \label{tab:conc}
 \resizebox{\linewidth}{!}{%
 \begin{tabular}{llrrrrrrrrrrrrrrr}
@@ -451,7 +440,7 @@ The memory pass uses other allocator settings than the timing runs, and the Mac'
 The float32 rivals hold their decoded copy: about 520 bytes per token for NumPy and \nm{mem.intel.torch_pad_bmm.bpt} for padded PyTorch on Intel.
 NumKong's packed format holds more than its input precision: \nm{mem.amd.numkong_native_f32.bpt} bytes per token for float32 and \nm{mem.amd.numkong_native_bf16.bpt} for bfloat16 on AMD.
 This fits its method: the int8 screen needs an int8 copy of every token (128 bytes at dimension 128) beside the full-precision copy.
-We did not break down the remainder of 35 to 150 bytes per token, which depends on the CPU.
+The remainder of 35 to 150 bytes per token depends on the CPU.
 The int4-self rivals hold the store and peak at about 280\,MB of temporary memory on the largest agent call.
 
 \begin{table}[!htbp]
@@ -474,8 +463,7 @@ A replica instance of each cloud type repeated the agent and GCSN sets.
 Across \nm{replica.n} rival ratios, the ratio on the replica differed from the first instance by a median of \nm{replica.median}\% and at most \nm{replica.maxabs}\%.
 No ratio changed sides of 1 (Table~\ref{tab:replica}).
 The kernel's own geometric-mean latency differed by at most \nm{replica.oursmax}\%.
-Each replica was a different instance in the same availability zone.
-EC2 does not expose the physical host of shared-tenancy instances, so we cannot show that the hosts differed.
+Each replica was a different instance in the same availability zone (Section~\ref{sec:limits} discusses the hosts).
 After the freeze, two new instances of each cloud type repeated the BEIR sets: one ran the sets with $k = 100$, the other the sets with $k = 25$.
 This rerun was planned before it ran (Appendix~\ref{app:deviations}).
 Across \nm{rbeir.n} frozen rival configurations, the ratio on the new instances differed by a median of \nm{rbeir.median}\% and at most \nm{rbeir.max}\%.

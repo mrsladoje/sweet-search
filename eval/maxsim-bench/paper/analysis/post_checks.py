@@ -5,6 +5,7 @@
 #   rerun/conc_check.py   scores of concurrent calls against one-at-a-time calls, M3 Max and EPYC
 #   rerun/pipeline.mjs    stage shares of the production search path, held-out agent calls, M3 Max
 #   rerun/concurrency2.py the M3 Max parallel-caller recheck, closed-loop throughput per pass
+#   rerun/nk_harness.py   EPYC: NumKong and the kernel per warm-up count (development agent calls)
 # Writes tables/post_checks.json.
 import glob, json, os, re, sys
 
@@ -65,6 +66,13 @@ def main():
         res['m3conc'] = dict(source=rel(os.path.join(LOCAL, 'm3conc')), passes=3, closed=m3, quiet_busy_pct=[min(busy), max(busy)],
                              thermal_warnings=len(re.findall(r'therm: \S', log)))
         print('m3conc', len(m3), 'cells; busy', min(busy), max(busy))
+    # EPYC: NumKong and the kernel per warm-up count (rerun/nk_harness.py, development agent calls)
+    f = os.path.join(LOCAL, 'epyc-nkgap', 'warm-sweep.json')
+    if os.path.exists(f):
+        d = json.load(open(f))
+        calls = len(json.load(open(os.path.join(LOCAL, 'epyc-nkgap', 'warm-1-ours.json')))['ts_us'])
+        res['epyc_warmup'] = dict(source=rel(f), set=d['set'], reps=d['reps'], protocol=d['protocol'], p50_by_warmup=d['p50_by_warmup'], calls=calls)
+        print('epyc warm-up', d['p50_by_warmup'])
     dump('post_checks.json', res)
 
 

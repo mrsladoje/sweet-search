@@ -892,5 +892,30 @@
    16.1
   ],
   "thermal_warnings": 0
+ },
+ "epyc_warmup": {
+  "source": ".ss-eval/maxsim-local/rerun2/epyc-nkgap/warm-sweep.json",
+  "set": "agent-dev",
+  "reps": 5,
+  "protocol": "per call: build, W untimed warm-up calls, 5 timed calls (median); p50 over the 655 calls, us",
+  "p50_by_warmup": {
+   "numkong_native_f32": {
+    "1": 146.5,
+    "2": 143.4,
+    "5": 143.3,
+    "20": 131.9,
+    "50": 80.9,
+    "200": 69.3
+   },
+   "ours": {
+    "1": 93.1,
+    "2": 91.9,
+    "5": 90.2,
+    "20": 90.3,
+    "50": 90.5,
+    "200": 91.5
+   }
+  },
+  "calls": 655
  }
 }
