@@ -12,6 +12,7 @@ POINT_FIELDS = ('family', 'build_params', 'search', 'gen', 'C', 'H', 'ef', 'S1',
 ap = argparse.ArgumentParser()
 ap.add_argument('--results', required=True); ap.add_argument('--type', required=True); ap.add_argument('--machines')
 ap.add_argument('--modes', default='dev,aa'); ap.add_argument('--out', default=os.path.join(HERE, 'plans'))
+ap.add_argument('--src', help="plan folder prefix (default q-<type>; h-<type> for held-out)"); ap.add_argument('--prefix', default='r')
 a = ap.parse_args()
 
 
@@ -51,9 +52,9 @@ def done(j):
 
 tot = miss = 0
 for mode in a.modes.split(','):
-    out = os.path.join(a.out, f'r-{a.type}', mode); os.makedirs(out, exist_ok=True)
+    out = os.path.join(a.out, f'{a.prefix}-{a.type}', mode); os.makedirs(out, exist_ok=True)
     groups = {}
-    for p in sorted(glob.glob(os.path.join(HERE, 'plans', f'q-{a.type}', mode, '*.json'))):
+    for p in sorted(glob.glob(os.path.join(HERE, 'plans', a.src or f'q-{a.type}', mode, '*.json'))):
         for j in json.load(open(p))['jobs']:
             tot += 1
             if not done(j):
