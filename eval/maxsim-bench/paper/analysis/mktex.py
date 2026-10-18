@@ -99,7 +99,7 @@ def cell(r, key):
     if r.get('spread'):
         put(key + '.slo', f2(r['spread'][0]), 'speed.json'); put(key + '.shi', f2(r['spread'][1]), 'speed.json')
     s = f"{r['ratio']:.2f}"
-    if r['hi'] < 1:
+    if r.get('rival_faster', r['hi'] < 1):   # the full rule of Section 5 (interval, leave-one-process-out and single-process estimates all below 1)
         s = r'\loss{' + s + '}'
     if defective:
         s += r'$^\ast$'
@@ -672,9 +672,19 @@ def main():
             elif o and v:
                 put(f'floor.{p}.{lib}.faster', 'yes', 'floor.json', f'{a}: median call shorter than the kernel\'s')
     if beyond:
-        put('floor.beyond.min', f'{min(beyond)[0]:.1f}', 'floor.json', 'min over CPUs and libraries of (rival median - rival floor) / kernel median: ' + min(beyond)[1])
+        put('floor.beyond.min', f'{min(beyond)[0]:.2f}', 'floor.json', 'min over CPUs and libraries of (rival median - rival floor) / kernel median: ' + min(beyond)[1])
         put('floor.beyond.below1', str(sum(x < 1 for x, _ in beyond)), 'floor.json', ', '.join(n for x, n in beyond if x < 1) or 'none')
         put('floor.beyond.n', str(len(beyond)), 'floor.json', 'CPU-library pairs where the kernel\'s median call is shorter')
+    # the main run's median call (held-out agent calls) of the kernel and of NumKong's native float32 loop, beside the
+    # fixed-cost run's single median call: the two runs disagree on the EPYC (Section 6.8)
+    for p in PLAT:
+        nk = [x for x in SPEED.get('warm', {}).get(p, {}).get('agent-ho', []) if x.get('arm') == 'numkong_native_f32']
+        if nk:
+            put(f'p50.{p}.agent.ours', f"{nk[0]['p50_base'] * 1000:.0f}", 'speed.json', 'main run: median over calls of the kernel latency, us')
+            put(f'p50.{p}.agent.numkong', f"{nk[0]['p50_arm'] * 1000:.0f}", 'speed.json', 'main run: median over calls of numkong_native_f32 latency, us')
+    ex = [x for lib in ('numpy', 'torch', 'maxsim_cpu', 'nextplaid') for x in shares.get(lib, [])]
+    if ex:
+        put('range.floor.exact.min', f'{min(ex)[0]:.0f}', 'floor.json', 'exact rivals: ' + min(ex)[1]); put('range.floor.exact.max', f'{max(ex)[0]:.0f}', 'floor.json', 'exact rivals: ' + max(ex)[1])
     for lib, v in shares.items():
         put(f'range.floor.{lib}.min', f'{min(v)[0]:.0f}', 'floor.json', min(v)[1]); put(f'range.floor.{lib}.max', f'{max(v)[0]:.0f}', 'floor.json', max(v)[1])
 
