@@ -28,6 +28,12 @@ NumKong's cosine of the received vectors (contract C) and PyLate's zero-padding 
 Table~\ref{tab:contract-effects} measures them reference against reference.
 Contract C keeps the top document of contract S on \nm{ce.agent-ho.S-vs-C.top1}\% of agent calls and \nm{ce.gcsn-ho.S-vs-C.top1}\% of GCSN calls, but on only \nm{ce.beir.S-vs-C.top1}\% of BEIR calls.
 The clamp changes the top document on at most 0.1\% of calls; the epsilon placement changes no score by more than $10^{-15}$.
+So almost all of the S--C difference comes from normalization.
+Both models produce token vectors of unit length, so the stored norm $n_j$ is 1 (Section~\ref{sec:contracts}).
+On the float vectors, S and C therefore differ only by the epsilon and the clamp.
+On int4 tokens, C divides by the decoded norm, and S does not.
+On development data, the decoded norm differed from 1 by up to about 2.5\%.
+The two rules diverge most on BEIR, where candidate scores lie closest together.
 
 \begin{table}[!htbp]
 \centering\scriptsize

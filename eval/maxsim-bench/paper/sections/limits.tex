@@ -13,8 +13,12 @@ The shape in (a) is the median agent call of the development data.
 The rule needs stage variants of the kernel and a fitted cost model, which were not built before the freeze, for lack of time.
 The rule therefore could not apply, and the paper uses the narrow claim.
 A post-freeze measurement timed the smallest possible call (Section~\ref{sec:floor}).
-It shows that fixed cost is a small part of a typical call for the exact rivals, but it is not the decomposition that the rule needs.
+It is a probe of the smallest call, not the decomposition that the rule needs.
 In particular, we do not know which part of the per-element work gives \sweet its lead, or why \sweet loses in the sweep bands, on Intel BEIR calls, after a busy gap, or with many callers in one process.
+We did not measure where the time goes when 16 calls share \sweet's pool.
+We did not test fewer threads per call in one process.
+The warm-call protocol times each call after one warm-up call. Arms whose thread pools need many back-to-back calls to reach full speed pay a start-up cost under it; we measured this only for NumKong and \sweet on the EPYC (Section~\ref{sec:floor}).
+We did not break down NumKong's memory beyond its two copies of each token.
 
 \paragraph{No historical progression study.}
 A planned study of older kernel versions (optional in the frozen plan) was dropped for time.

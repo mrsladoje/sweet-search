@@ -400,6 +400,14 @@ def main():
         put('m3c.numpy.spread.max', f"{max(sp(v) for k, v in M3['closed'].items() if '|numpy' in k):.0f}", 'post_checks.json')
         put('m3c.busy.lo', f"{M3['quiet_busy_pct'][0]:.0f}", 'post_checks.json', 'CPU use at the quiet checks, % of all cores')
         put('m3c.busy.hi', f"{M3['quiet_busy_pct'][1]:.0f}", 'post_checks.json')
+    EW = PC.get('epyc_warmup')
+    if EW:
+        nk, us = EW['p50_by_warmup']['numkong_native_f32'], EW['p50_by_warmup']['ours']
+        for w in ('1', '50', '200'):
+            put(f'nkw.nk.{w}', f'{nk[w]:.0f}', 'post_checks.json', f'NumKong native f32, EPYC, median over development agent calls after {w} warm-up calls, us')
+        put('nkw.ours.min', f'{min(us.values()):.0f}', 'post_checks.json'); put('nkw.ours.max', f'{max(us.values()):.0f}', 'post_checks.json')
+        if EW.get('calls'):
+            put('nkw.calls', str(EW['calls']), 'post_checks.json')
     if CK.get('f32direct'):
         fd = CK['f32direct']
         r = [(a['p95_ratio_original_over_decoded'], f'{c} {n}') for c, cv in fd['cells'].items() for n, a in cv['arms'].items()]
@@ -634,7 +642,8 @@ def main():
                 put(f'{kp}.{p}.{fam}.open.rate', f'{top:.0f}', texname); put(f'{kp}.{p}.{fam}.open.ours', f"{op['ours']['p99_ms']:.2f}", texname)
                 put(f'{kp}.{p}.{fam}.open.exact', f'{exa[0]:.2f}', texname, exa[1])
                 cs += [f'{top:.0f}', f"{op['ours']['p99_ms']:.2f}{ov_o}", ('\\loss{' if exa[0] < op['ours']['p99_ms'] else '{') + f'{exa[0]:.2f}}}{ov_e}']
-                rows.append(f"{PS[p] if fam == 'agent' else ''} & {fam} & " + ' & '.join(cs) + r' \\')
+                lab = PS[p] + ('$^\\diamond$' if rerun and p == 'm3max' else '')   # M3 Max: the recheck (post_checks.py)
+                rows.append(f"{lab if fam == 'agent' else ''} & {fam} & " + ' & '.join(cs) + r' \\')
             rows.append(r'\addlinespace')
         open(os.path.join(TEX, kp + '.tex'), 'w').write('\n'.join(rows) + '\n')
         if n1:

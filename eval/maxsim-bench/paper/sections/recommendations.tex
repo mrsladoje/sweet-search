@@ -6,10 +6,10 @@ Each names its evidence; the evidence comes from five CPUs, two public models an
 
 \begin{enumerate}
 \item \textbf{Check every implementation against a reference of its own contract.} Include fixtures with negative best matches, ragged document lengths and padding. Such fixtures found all three defects of Section~\ref{sec:correctness}.
-\item \textbf{Report the contract with every score.} Contracts S and C keep the same top document on only \nm{ce.beir.S-vs-C.top1}\% of BEIR calls (Table~\ref{tab:contract-effects}), so speed or quality numbers under different contracts are not comparable.
-\item \textbf{Renormalize decoded token vectors when you store quantized tokens.} On our int4 data, contract C removed most of the loss of answerai-colbert-small (Section~\ref{sec:quality}). This analysis is post hoc, so a changed rule needs a fresh test.
-\item \textbf{Test approximate MaxSim on your own model before you use it.} NumKong's top document agreed with its own exact contract on only \nm{nk.top1own.beir.min}--\nm{nk.top1own.beir.max}\% of BEIR calls, and its ranking failed when candidate scores lay close together.
+\item \textbf{Report the contract and the storage type with every score.} On int4 tokens, contracts S and C keep the same top document on only \nm{ce.beir.S-vs-C.top1}\% of BEIR calls (Table~\ref{tab:contract-effects}). Speed or quality numbers under different contracts are not comparable.
+\item \textbf{Evaluate renormalization of decoded tokens when you store quantized tokens.} On our int4 data, contract C removed most of the loss of answerai-colbert-small (Section~\ref{sec:quality}). This analysis is post hoc and depends on the model, so a changed rule needs a fresh test.
+\item \textbf{Test an approximate MaxSim on your own model before you use it.} In our tests, NumKong's top document agreed with its own exact contract on only \nm{nk.top1own.beir.min}--\nm{nk.top1own.beir.max}\% of BEIR calls. Its ranking failed when candidate scores lay close together.
 \item \textbf{Work around the known maxsim-cpu defects.} On x86, call maxsim-cpu~0.1.0 with at most 32 query tokens per call; on AArch64, do not mix document lengths in one call of its list interface.
 \item \textbf{Prefer one process per caller for many concurrent requests} with \sweet. With 16 callers in one shared process, its throughput fell by \nm{conc.thrdrop.min}--\nm{conc.thrdrop.max}\% (Section~\ref{sec:conc}).
-\item \textbf{Benchmark with your own call shapes and conditions.} The fastest implementation changed with call size, thread budget, busy gaps and the CPU (Sections~\ref{sec:warm}--\ref{sec:conc}).
+\item \textbf{Benchmark with your own call shapes, call rate and conditions.} The fastest implementation changed with call size, thread budget, busy gaps, back-to-back load and the CPU (Sections~\ref{sec:warm}--\ref{sec:conc}).
 \end{enumerate}

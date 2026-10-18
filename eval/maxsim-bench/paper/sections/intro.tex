@@ -10,16 +10,15 @@ A first stage (BM25 or a single-vector index) returns tens or hundreds of candid
 Rerank calls are small.
 In the coding-agent workload of this paper, the median call has \nm{wl.agent-ho.q50} query tokens and \nm{wl.agent-ho.pool50} candidates of about \nm{wl.agent-ho.dt50} tokens each (Section~\ref{sec:workload}).
 At this size a call takes tens of microseconds, while common tools are built for large matrix products.
-A natural guess is that fixed costs, such as library dispatch and thread wake-up, then decide which implementation is fastest.
-Our data do not support this guess for the exact rivals: their smallest possible call took only \nm{range.floor.exact.min}--\nm{range.floor.exact.max}\% of a median call (Section~\ref{sec:floor}).
-Which CPU implementation is fastest for such calls, at what quality and under which conditions, is therefore an empirical question.
+Which CPU implementation is fastest for such calls, at what quality and under which conditions, is an empirical question.
+A natural guess is that fixed costs, such as library dispatch and thread wake-up, decide it; Section~\ref{sec:floor} probes this guess with the smallest possible call.
 Earlier work timed CPU MaxSim libraries as baselines for faster approximate methods~\cite{pony2026colbandit}, or timed a single library~\cite{clavie2025maxsimcpu}.
 We found no public benchmark that compares CPU MaxSim implementations on captured rerank calls and checks each implementation against its own scoring rule.
 
 This paper makes four contributions.
 \begin{enumerate}
 \item \textbf{A benchmark} (\benchname, for Late-Interaction Reranking Kernels). It has a replay format for rerank calls, four workload families, adapters for eight implementations, and a timing record for every repetition of every call.
-\item \textbf{Scoring contracts.} The tested libraries compute different scores. They differ in normalization, in the place of an epsilon, in a $\max(0,\cdot)$ clamp, and in padding. We define each rule once, compute a float64 reference per rule, and check every implementation against the reference of its own rule (Section~\ref{sec:contracts}).
+\item \textbf{Scoring contracts.} The tested libraries compute different scores. They differ in normalization, in the place of an epsilon, in a $\max(0,\cdot)$ clamp, and in padding. On float vectors of unit length the rules nearly agree; on int4 tokens they diverge, because they divide by different norms. We define each rule once, compute a float64 reference per rule, and check every implementation against the reference of its own rule (Section~\ref{sec:contracts}).
 \item \textbf{A measurement protocol.} The code, the rival configurations, the repetition count, the quality margin and the primary tests were frozen before any held-out run (Section~\ref{sec:method}). The tables of this paper come from analysis code written after the freeze; Appendix~\ref{app:deviations} lists each difference from the frozen scripts.
 \item \textbf{Results on five CPUs} (Granite Rapids, Zen~5, Graviton4, Apple M3 Max, and Zen~3). We measure speed under warm, busy-gap, one-thread and parallel-caller conditions, memory per stored token, and quality per latency budget. Section~\ref{sec:losses} lists every condition in which a rival was faster.
 \end{enumerate}
