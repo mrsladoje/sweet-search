@@ -13,6 +13,18 @@ import { buildFromCodebaseDb as buildQuantizedArtifacts, shouldSkipArtifactRebui
 import { log, logProgress } from './indexer-utils.js';
 import { JAVA_FAMILY } from './ast-chunker.js';
 import { isIndexAcceleratorAvailable } from './model-pool.js';
+import { recordEncode } from './inference-provenance.js';
+
+// Index provenance (inference-provenance.js): count each LI batch under the
+// encoder that produced it.
+const LI_ORT_LABEL = 'ort/cpu';
+function counted(encode, label) {
+  return async (texts) => {
+    const out = await encode(texts);
+    recordEncode('li', label(), texts.length);
+    return out;
+  };
+}
 
 
 /**
@@ -520,8 +532,9 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
           const ortPipeline = await liModelMod.getLateInteractionPipeline().catch(() => null);
           if (ortPipeline?.session) {
             useHybrid = true;
-            gpuEncoder = (texts) => liModelMod.encodeDocumentsGpu(texts, encodeOpts);
-            cpuEncoder = (texts) => liModelMod.encodeDocumentsCpu(texts, encodeOpts);
+            const { getNativeLiBackend } = await import('../infrastructure/native-inference.js');
+            gpuEncoder = counted((texts) => liModelMod.encodeDocumentsGpu(texts, encodeOpts), getNativeLiBackend);
+            cpuEncoder = counted((texts) => liModelMod.encodeDocumentsCpu(texts, encodeOpts), () => LI_ORT_LABEL);
             log('LateInteraction: hybrid CPU+GPU dispatch enabled (smart routing: long→GPU, short→CPU)', 'dim');
           }
         }
@@ -539,15 +552,16 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
             threadsPerWorker,
           });
           await liPool.init();
-          singleEncoder = (texts) => liPool.encodeDocuments(texts, encodeOpts);
+          // Pool workers never load the native model: ORT on CPU.
+          singleEncoder = counted((texts) => liPool.encodeDocuments(texts, encodeOpts), () => LI_ORT_LABEL);
           log(`LateInteraction: using ${workerCount} workers x ${threadsPerWorker} threads`, 'dim');
         } catch (err) {
           log(`LateInteraction pool init failed, falling back to inline: ${err.message}`, 'yellow');
         }
       }
       if (!singleEncoder) {
-        const { encodeDocuments } = await import('../ranking/late-interaction-model.js');
-        singleEncoder = (texts) => encodeDocuments(texts, encodeOpts);
+        const { encodeDocuments, liDocumentEncoderLabel } = await import('../ranking/late-interaction-model.js');
+        singleEncoder = counted((texts) => encodeDocuments(texts, encodeOpts), () => liDocumentEncoderLabel?.() ?? 'unknown');
       }
     }
 

@@ -14,6 +14,8 @@ import { DB_PATHS, MODEL_DELIVERY_CONFIG, PROJECT_ROOT } from '../infrastructure
 import { loadInitConfig, resolveRuntimeLiModel } from '../infrastructure/init-config.js';
 import { MODEL_REGISTRY } from '../infrastructure/model-registry.js';
 import { baselineStatus } from '../incremental-indexing/infrastructure/baseline-readiness.mjs';
+import { readManifest } from '../incremental-indexing/infrastructure/manifest.mjs';
+import { classifyProvenance, describeEncoders } from '../indexing/inference-provenance.js';
 import { daemonLogPath } from './daemon-log.js';
 import { projectSocketPath } from './server-identity.js';
 
@@ -79,6 +81,21 @@ function readMerkleStats(file) {
       lastIndex: state.lastIndex || null,
       files: state.stats?.totalFiles ?? Object.keys(state.files || {}).length,
       chunks: state.stats?.totalChunks ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Which encoder backends wrote the stored vectors (inference-provenance.js). */
+function readEncoders(stateDir) {
+  try {
+    const manifest = readManifest(stateDir);
+    if (!manifest) return null;
+    return {
+      dense: describeEncoders(manifest.vectors?.encoders),
+      lateInteraction: describeEncoders(manifest.lateInteraction?.encoders),
+      ...classifyProvenance(manifest),
     };
   } catch {
     return null;
@@ -158,6 +175,7 @@ export async function collectSetupStatus({ env = process.env } = {}) {
       reason: baseline.reason,
       parts,
       state: readMerkleStats(DB_PATHS.merkle),
+      encoders: readEncoders(stateDir),
     },
     server: {
       state: serverState,
@@ -219,6 +237,12 @@ export function formatSetupStatus(s) {
   if (s.index.ready && s.index.state) {
     const chunks = s.index.state.chunks != null ? `, ${s.index.state.chunks} chunks` : '';
     lines.push(`  Last full index: ${s.index.state.lastIndex} (${s.index.state.files} files${chunks})`);
+  }
+  const enc = s.index.encoders;
+  if (s.index.ready && enc) {
+    if (enc.dense) lines.push(`  Dense vectors written by: ${enc.dense}`);
+    if (enc.lateInteraction) lines.push(`  Late-interaction vectors written by: ${enc.lateInteraction}`);
+    for (const note of enc.notes) lines.push(`  Note: ${note}`);
   }
   const pid = s.server.pid ? `, process id ${s.server.pid}` : '';
   lines.push(`Search server: ${SERVER_STATES[s.server.state] || s.server.state}${pid}`);

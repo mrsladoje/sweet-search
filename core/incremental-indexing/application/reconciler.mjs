@@ -31,6 +31,7 @@ import {
   writeManifest,
   zeroManifest,
 } from '../infrastructure/manifest.mjs';
+import { applyProvenance, takeProvenance } from '../../indexing/inference-provenance.js';
 import { evaluateWatermarks, loadWatermarkConfig } from '../domain/watermark-scheduler.mjs';
 import { beginRead, endRead, minLiveEpoch } from '../infrastructure/reader-heartbeat.mjs';
 import { verifyStamp, writeStamp, formatStampMismatch } from '../infrastructure/worktree-stamp.mjs';
@@ -361,6 +362,9 @@ export class Reconciler {
         epoch,
         tiers: finalizeManifestTiers(previous, manifestTiers),
       });
+      // Encoder backends behind this tick's vectors (informational; see
+      // core/indexing/inference-provenance.js). The daemon only adds.
+      applyProvenance(manifest, takeProvenance());
       await this._publishManifest(manifest);
       this.progress('reconciler:manifest-published');
       manifestPublished = true;

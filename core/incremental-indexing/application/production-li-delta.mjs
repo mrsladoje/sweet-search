@@ -3,6 +3,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { LateInteractionIndex } from '../../ranking/late-interaction-index.js';
 import { encodeDocumentsCpu } from '../../ranking/late-interaction-model.js';
+import { recordEncode } from '../../indexing/inference-provenance.js';
 import {
   openSegmentState,
   tombstoneDoc,
@@ -171,7 +172,13 @@ export async function applyLateInteractionDelta({
     return { appended: 0, tombstone: 0 };
   }
 
-  const encode = liEncoder || ((texts) => encodeDocumentsCpu(texts));
+  const encodeRaw = liEncoder || ((texts) => encodeDocumentsCpu(texts));
+  // Index provenance: the daemon's default LI encoder is ORT on CPU.
+  const encode = async (texts) => {
+    const out = await encodeRaw(texts);
+    recordEncode('li', liEncoder ? 'unknown' : 'ort/cpu', texts.length);
+    return out;
+  };
   const existing = fs.existsSync(indexPath);
   const segmented = existing ? segmentedState(indexPath) : null;
 

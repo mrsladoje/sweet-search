@@ -15,7 +15,8 @@ import { getModelEntry } from '../infrastructure/model-registry.js';
 import { isAppleSilicon, isCoreMLProviderAvailable, shouldUseCoreML, getCoreMLExecutionProviders } from '../infrastructure/coreml-provider.js';
 import { createTokenizer } from '../infrastructure/native-tokenizer.js';
 import { initOrt, buildFeed } from '../infrastructure/ort-pipeline.js';
-import { isNativeInferenceAvailable, isNativeEmbeddingModelLoaded, nativeEmbed } from '../infrastructure/native-inference.js';
+import { isNativeInferenceAvailable, isNativeEmbeddingModelLoaded, nativeEmbed, getNativeEmbeddingBackend } from '../infrastructure/native-inference.js';
+import { recordEncode } from '../indexing/inference-provenance.js';
 
 // =============================================================================
 // SEQUENCE LENGTH CONSTANTS (L2: configurable via env)
@@ -703,6 +704,22 @@ export async function callLocalModelCpu(texts, options = {}) {
   return embeddings;
 }
 
+// Encoder labels for index provenance (core/indexing/inference-provenance.js).
+// The embed worker pool always runs the INT8 model on CPU (indexer-worker.js).
+const POOL_ENCODER_LABEL = 'ort-q8/cpu';
+
+function ortEncoderLabel() {
+  return localPipeline ? `ort-${localPipeline.quantLabel}/${localPipeline.backend}` : 'ort';
+}
+
+/** The encoder callLocalModel would use right now (same test). */
+function localEncoderLabel() {
+  if (process.env.SWEET_SEARCH_EMBED_USE_CPU !== '1' && isNativeInferenceAvailable() && isNativeEmbeddingModelLoaded()) {
+    return getNativeEmbeddingBackend();
+  }
+  return ortEncoderLabel();
+}
+
 /**
  * L0: Length-sorted bucketing for local model batch inference.
  * When the embedding worker pool is active, dispatches all batches concurrently
@@ -810,6 +827,7 @@ export async function callLocalModelBucketed(texts, options = {}) {
   const pool = getEmbeddingPool();
   if (pool && !memGuardActive) {
     const batchResults = await embedBatchesWithPool(pool, batches, maxLength, options.onProgress, texts.length);
+    recordEncode('dense', POOL_ENCODER_LABEL, texts.length);
     for (let b = 0; b < batches.length; b++) {
       for (let j = 0; j < batches[b].length; j++) {
         embeddings[batches[b][j].origIdx] = batchResults[b][j];
@@ -869,6 +887,7 @@ export async function callLocalModelBucketed(texts, options = {}) {
         const batch = batches[myIdx];
         const batchTexts = batch.map((b) => b.text);
         const batchEmbeddings = await callLocalModelGpu(batchTexts, { maxLength });
+        recordEncode('dense', getNativeEmbeddingBackend(), batchTexts.length);
         for (let j = 0; j < batch.length; j++) {
           embeddings[batch[j].origIdx] = batchEmbeddings[j];
         }
@@ -883,6 +902,7 @@ export async function callLocalModelBucketed(texts, options = {}) {
         const batch = batches[myIdx];
         const batchTexts = batch.map((b) => b.text);
         const batchEmbeddings = await callLocalModelCpu(batchTexts, { maxLength });
+        recordEncode('dense', ortEncoderLabel(), batchTexts.length);
         for (let j = 0; j < batch.length; j++) {
           embeddings[batch[j].origIdx] = batchEmbeddings[j];
         }
@@ -901,6 +921,7 @@ export async function callLocalModelBucketed(texts, options = {}) {
   for (const batch of batches) {
     const batchTexts = batch.map(b => b.text);
     const batchEmbeddings = await infer(batchTexts, { maxLength });
+    recordEncode('dense', pool ? POOL_ENCODER_LABEL : localEncoderLabel(), batchTexts.length);
     for (let j = 0; j < batch.length; j++) {
       embeddings[batch[j].origIdx] = batchEmbeddings[j];
     }

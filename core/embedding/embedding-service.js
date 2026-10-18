@@ -10,6 +10,7 @@
 
 import { EMBEDDING_CONFIG, EMBEDDING_PROVIDERS } from '../infrastructure/config/index.js';
 import { bootLog } from '../infrastructure/boot-log.js';
+import { recordEncode } from '../indexing/inference-provenance.js';
 import { wasmHammingDistance, wasmInt8Cosine, wasmAsymmetricDistance, wasmInt8BatchDot, isWasmAvailable } from '../infrastructure/simd-distance.js';
 
 // --- Sub-module imports (no circular deps) ---
@@ -359,6 +360,7 @@ async function _generateUncachedEmbeddings(uncachedTexts, provider, providerOpti
         // Guard against a partial/short reply — only trust a complete result.
         if (Array.isArray(rpc) && rpc.length === uncachedTexts.length) {
           if (onProgress) onProgress(uncachedTexts.length, uncachedTexts.length);
+          recordEncode('dense', 'model-server', uncachedTexts.length);
           return rpc;
         }
       } catch (err) {
