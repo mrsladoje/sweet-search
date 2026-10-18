@@ -51,10 +51,10 @@ for r in J['A']:
 
 
 def eff_val(e):
-    try:
-        return float(e.split()[-1])
-    except ValueError:
-        return 0.0
+    """The declared effort as a tuple of its numbers in field order (ScaNN: leaves, then reorder), so the
+    smaller of the two declared efforts sorts first for every family."""
+    import re
+    return tuple(float(x) for x in re.findall(r'[-+]?\d+(?:\.\d+)?', e)) or (0.0,)
 
 
 GENS = ['ours_scan', 'ours_walk', 'faiss_bin_flat', 'faiss_bin_hnsw', 'usearch_b1_rescore', 'hnswlib_f32', 'faiss_hnsw_flat', 'scann', 'diskann_vamana']

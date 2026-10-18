@@ -1,0 +1,27 @@
+\section{Deviations from the plan}\label{app:deviations}
+
+Table~\ref{tab:deviations} lists every departure from the pre-registered plan that we know of, with
+when it happened relative to the freeze and to the held-out run, and where its effect is reported.
+
+\begin{table}[h]\centering\scriptsize
+\caption{Deviations from the pre-registered plan. ``Before freeze'' changes used dev data only.}\label{tab:deviations}
+\begin{tabularx}{\textwidth}{p{3.6cm}p{2.1cm}X}\toprule
+Deviation & When & Effect and where reported\\\midrule
+Our (B) grid widened ($S_1$ = 1500, 2000, 3000), because csn1m with bge reached 99\% only at the grid's
+top & before freeze, after the first dev sweep & frozen points at these values: csn1m--bge at $\fr = 0.99$ on all AWS CPUs, dall--bge at 0.995, one FiQA point; rival effort grids were not widened (IVF probes and ScaNN leaves were, for coverage) \\
+Warm page cache added before each job; only our (B) and all (A) dev jobs rerun & before freeze & rival (B) dev selection uses the first sweep; held-out uses the warm protocol for every system \\
+Our (B) runs below the product's stage-1 floor (a bench-only override) and ties $ef$ to $S_1$ & declared before freeze & \nm{ours-below-floor} of our \nm{ret-ours-n} frozen points at $\fr = 0.99$ are configurations the product does not run (\S\ref{sec:systems}) \\
+Freeze record rewritten after a run-script change & before any held-out job & file hashes unchanged (commit 4a0d8842); record at f57533b0 \\
+Box and Mac: points borrowed from the AMD and Graviton shortlists; $R$ from their own A/A runs (10 and 4) & after freeze & secondary rows; not comparable with the AWS geometric means (\S\ref{sec:limits}) \\
+Box csn1m: only DiskANN ran (disk full) & held-out run & box csn1m left out of all tables \\
+\nm{repairjobs} held-out jobs re-run after a machine time limit (AMD FiQA--jina, AMD Quora--jina, Intel dall--bge, Intel dall--jina, Graviton dall--jina, Graviton FiQA--CRE) & held-out run, same frozen code & complete records for every planned job \\
+Reporting code written after the freeze: \texttt{analyze.py}, \texttt{merge\_results.py}, \texttt{paperlib.py}, \texttt{mem\_patch.py}, \texttt{mktex.py}, \texttt{figures.py} & after the held-out run & see the next three rows \\
+Ratio statistic: median over rounds with a bootstrap interval; the first reporting script used the mean of log round medians (Welch $t$) & changed after the held-out results were seen (slow rounds of ours) & both reported (\S\ref{sec:results}, sensitivity) \\
+Headline rival: first chosen as the fastest rival meeting $\fr$ on held-out; now the rival fastest on dev & changed after the held-out results & dev rule is the plan's; held-out rule not reported \\
+Memory on Linux read from the right field; Mac memory not reported & after the held-out results & \S\ref{sec:systems} \\
+Primary pairs with dev power below 0.8 made descriptive (the plan's rule) & after the held-out results (the rule was not applied at first) & \nm{ndescr} pairs descriptive \\
+Comparison (A): the shared screen and rescoring are bit-identical in output but run in our SIMD kernels for ours and in a scalar C++ path for the rivals; rival graphs $M = 32$, ours $M = 64$ & design, before freeze & (A) ratios with the rescoring difference removed by estimate (\S\ref{sec:results}) \\
+Comparison (B): rival refine is one harness routine, not each library's own; the rival timer includes an unneeded query conversion & design, before freeze & \S\ref{sec:systems}; not measured separately \\
+Not run: native-only timing of our cascade, p95/p99 latency, recall@10, two build seeds, isolated build-cost runs, first-100 cold queries, page-policy arms, dTLB counters & --- & \S\ref{sec:limits} \\\bottomrule
+\end{tabularx}
+\end{table}

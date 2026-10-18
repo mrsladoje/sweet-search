@@ -20,7 +20,7 @@ Our cascade is the one in the \sweet code-search tool~\cite{sweetsearch_repo}: a
 of each vector, an HNSW graph on the codes or an exact scan of them, an int8 screen and a float16
 rescoring. The tool is ours, so we treat the comparison as a test of our own design and follow a
 protocol fixed in advance: dev and held-out query splits, operating points chosen on dev only and
-frozen with every binary and script hash before any held-out query ran, a declared quality margin,
+frozen with the hashes of the harness, plans and set definitions before any held-out query ran, a declared quality margin,
 a small set of primary comparisons with Holm correction, and repeated rounds whose number comes from
 A/A runs on each machine.
 

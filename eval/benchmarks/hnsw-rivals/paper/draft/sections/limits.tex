@@ -4,9 +4,11 @@
 whose leading dimensions carry less of the signal, can change the result.
 
 \paragraph{Models and tasks.} Three embedding models, five code-search sets and two BEIR sets. The
-code-search results are exploratory: the code queries were examined in earlier work on the same
-system, and dev and held-out code queries share most source repositories (the bootstrap resamples
-repositories, which accounts for this inside a set but not across sets). The confirmatory part is
+code-search results are exploratory for our system. Before this study, its production defaults (stage-1
+size, graph pruning, early stopping) were tuned on gcsn queries, including queries that are held-out
+here, with the earlier speed ratio against rivals as an acceptance check; dev and held-out code queries
+also share most source repositories (the bootstrap resamples repositories, which accounts for this
+inside a set but not across sets). The BEIR sets were not used in that tuning. The confirmatory part is
 the \nm{nconfirm} primary comparisons on Quora and FiQA with enough power.
 
 \paragraph{Machines.} Every Linux machine is a virtual machine, so page sizes, frequency and
@@ -41,6 +43,20 @@ not from isolated build runs.
 Graviton types and run a smaller set of rivals (no ScaNN, DiskANN or SVS on the Mac), so their
 geometric means are not comparable with those of the AWS CPUs.
 
-\paragraph{The reporting script.} \texttt{analyze.py} was written after the freeze. It applies the
-frozen rules with the frozen quality and statistics code and selects nothing; we release it with the
-data so that every table can be checked against the raw records.
+\paragraph{Missing analyses.} The plan also asked for native-only timing of our cascade (without the
+Node.js layer), p95 and p99 latencies, recall@10 against exact neighbours next to task quality,
+variation between independent builds, isolated build-cost runs, the first 100 cold queries, the
+memory split into anonymous and file-backed pages with the huge-page backing, and dTLB counters. None
+of these ran; Appendix~\ref{app:deviations} lists them with the other deviations.
+
+\paragraph{Rival configurations.} The refining rivals rescore with float32 originals; ours uses float16
+vectors. A float16 refine for FAISS and a rescoring USearch int8 variant exist in the libraries but were
+not in the grid. Each index was built once, with one seed.
+
+\paragraph{The reporting scripts.} The reporting scripts (\texttt{analyze.py}, \texttt{merge\_results.py},
+\texttt{paperlib.py}, \texttt{mem\_patch.py}, \texttt{mktex.py}, \texttt{figures.py}) were written after
+the freeze, and two of their rules changed after the held-out results were seen (the ratio statistic
+and the choice of the headline rival; Appendix~\ref{app:deviations}). They call the frozen quality and
+statistics code; we release them with the data so that every table can be checked against the raw
+records. The freeze record covers the harness, plans and set definitions, but also files unrelated to
+this study, and it does not hold binary hashes; those are in each machine's build record.

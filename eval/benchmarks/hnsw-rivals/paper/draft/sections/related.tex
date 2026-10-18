@@ -31,7 +31,15 @@ CRouting~\cite{li2025crouting}, Ada-ef~\cite{zhang2026adaef}, DARTH~\cite{chatza
 VSAG~\cite{zhong2025vsag} improve the recall--speed curve of graph search; none of them targets a
 task-quality fraction, and we do not test them. Binary codes followed by a full-vector rerank
 appear in BPR~\cite{yamada2021bpr}, which learns the hash; our cascade quantises an existing
-embedding by sign and adds an int8 screen between the two stages.
+embedding by sign and adds an int8 screen between the two stages. Binary codes with a rescoring step
+are also standard in deployed engines: Lucene and Elasticsearch BBQ~\cite{trent2024bbq}, Qdrant binary
+quantisation with rescoring~\cite{qdrant2026quantization} and Weaviate binary
+quantisation~\cite{weaviate2026bq}; the binary-then-int8 rescoring recipe was described for
+general embedding models in~\cite{shakir2024embeddingquant}. Our codes use the first 512 of 768
+dimensions, a truncation that suits models trained for nested dimensions as in Matryoshka
+representations~\cite{kusupati2022matryoshka}; we did not check how each of the three models was
+trained in this respect. We test libraries, not engines, so these systems are not
+arms of the comparison.
 
 \paragraph{Methodology.} We follow the advice on reporting performance
 experiments~\cite{hoefler2015scientific} and on measurement bias~\cite{mytkowicz2009wrongdata}, and the

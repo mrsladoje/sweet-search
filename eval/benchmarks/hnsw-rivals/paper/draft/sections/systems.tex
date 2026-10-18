@@ -18,8 +18,12 @@ from the index file (487~MB less anonymous memory at 1M, same speed), the code a
 parameters, and the AVX-512 Hamming path, which returns byte-identical result lists and cut dall scan
 time on AMD from 287 to 279~\us{} and the 1M walk from 270 to 242~\us{} (dev, three interleaved rounds). Two
 other candidate changes gave no gain and were dropped. Result lists on ARM are byte-identical to x86.
-In comparison (B) the production entry point runs with $k = k_v$ results and two knobs: the stage-1
-candidate count $S_1$ and the walk effort $ef$. It runs in Node.js through a native addon; the timer
+In comparison (B) the production entry point runs with $k = k_v$ results and one knob: the stage-1
+candidate count $S_1$, with the walk's starting effort $ef = \max(S_1, 50)$. The grid includes values of
+$S_1$ below the product's own floor for $k$, $\min(400, 1.5\max(40, 10k))$, which a bench-only setting
+allows: \nm{ours-below-floor} of our \nm{ret-ours-n} frozen points at $\fr = 0.99$ use such a value, so they
+are configurations the shipped product does not run. The shipped default ($S_1 = 400$) has no row of its
+own. It runs in Node.js through a native addon; the timer
 is inside the same process, around the call, which includes the product's orchestration and metadata
 reads (\S\ref{sec:timing}). The walk adapts its effort per query: after the greedy descent it scales
 $ef$ by 0.6 or 1.5 from the quality of the entry point and may stop early; $ef$ is the starting value.
@@ -27,8 +31,9 @@ $ef$ by 0.6 or 1.5 from the quality of the entry point and may stop early; $ef$ 
 \subsection{Rivals}
 
 Table~\ref{tab:systems} lists the rival families, their libraries and the declared build grids.
-All rivals are built from pinned sources with the same compiler flags on each machine
-(\texttt{-O3 -march=native}; FAISS at its widest SIMD level for the CPU): FAISS~\cite{douze2024faiss}
+All rivals are built from pinned sources with \texttt{-O3 -march=native} on each machine (FAISS at its
+widest SIMD level for the CPU; hnswlib also with \texttt{-ffast-math}; DiskANN with its AVX2 kernels on
+every x86 CPU): FAISS~\cite{douze2024faiss}
 v1.15.1, USearch~\cite{vardanian2023usearch} v2.26.4, hnswlib~\cite{nmslib2017hnswlib} at a pinned commit,
 DiskANN~\cite{subramanya2019diskann} at a pinned commit, Intel SVS~\cite{aguerrebere2023lvq,tepper2024leanvec}
 v0.4.0 (LVQ and LeanVec run on Intel only), and ScaNN~\cite{guo2020scann,sun2023soar} 1.4.2 (Python
@@ -67,22 +72,38 @@ with the int8 dot product and keeps the best $H$ (stable sort; ties keep the gen
 (2) rescores those $H$ with the full float16 vectors in float64 and orders them. $H = C$ is the arm
 without the int8 screen. The budget grid is declared: $C \in \{100, 200, 400, 1000\}$,
 $H \in \{50, 100\}$ with $C \ge H$, plus $H = C$. Every generator runs at two efforts per budget: the
-smallest effort that returns $C$ candidates ($ef = C$ for graphs; the smallest \texttt{nprobe} or
-leaf count that returns at least $C$ candidates on 99.9\% of dev queries for partitions) and twice
-that. For our walk, $ef$ is the starting value of its adaptive rule. Nothing is selected per generator
+smallest effort that returns $C$ candidates ($ef = C$ for graphs) or, for partitions,
+$\lceil 3\,C\,n_{\text{list}}/n\rceil$ lists (about three times $C$ vectors probed), and twice that. The
+partition efforts are small: a partition generator returns $C$ candidates but not necessarily good
+ones, so its (A) quality reflects this effort rule, not the best quality of the method. For our walk, $ef$ is the starting value of its adaptive rule. Nothing is selected per generator
 in (A); we report every effort at every budget. The rival graphs of comparison (A) are built once per
 set and model at the middle of their build grids ($M = 32$, $ef_{\text{construction}} = 800$ for HNSW
 graphs; $R = 64$, $L = 200$ for DiskANN; $\sqrt n$ lists for IVF); ours uses its production build
-($M = 64$, $ef_{\text{construction}} = 800$). Our two
-generators (walk and scan) run the same steps through our addon kernels; the shared C++ path gives
-bit-identical retained lists to the addon on every dev set, on x86 and ARM. Generators: our walk, our
+($M = 64$, $ef_{\text{construction}} = 800$).
+
+\paragraph{What is common and what is not.} The screen and the rescoring are common in their
+\emph{output}: our two generators run the same steps through our addon kernels, and the shared C++ path
+gives bit-identical retained lists to the addon on every dev set, on x86 and ARM. They are not common in
+\emph{speed}. The rivals' path uses a scalar int8 dot product and a software float16 decoder; our addon
+uses SIMD kernels with hardware float16 conversion. From the change in time between $H = 50$ and
+$H = 1000$ at $C = 1000$, where the candidates are fixed, one rescored vector costs a median
+\nm{rescore-ours-intel}~\us{} in ours and \nm{rescore-riv-intel}~\us{} in the shared C++ path on Intel
+(\nm{rescore-x-intel}$\times$), \nm{rescore-x-amd}$\times$ on AMD and \nm{rescore-x-arm}$\times$ on Graviton. In
+addition, our walk uses a denser graph ($M = 64$ against 32), adapts its effort per query, and is the only
+process that asks for transparent huge pages. Comparison (A) therefore measures each generator
+\emph{with its own implementation of the shared steps}; \S\ref{sec:results} gives the ratios with the
+rescoring difference removed by this estimate. Generators: our walk, our
 scan, FAISS binary HNSW and binary flat, USearch b1, hnswlib and FAISS HNSW on float32, FAISS RaBitQ
 (flat and IVF), ScaNN and DiskANN.
 
 \subsection{Comparison (B): as shipped}
 
-In comparison (B) each library uses its own search and its own refine step and returns its top $k_v$
-vectors. $k_v$ is fixed per set and model on dev: the smallest number of vectors at which the exact
+In comparison (B) each library uses its own search and returns its top $k_v$ vectors. Where a
+configuration refines (FAISS binary and quantised indexes, USearch b1), the refine step is one routine
+of our harness for all of them: inner products with the float32 originals and a partial sort, not each
+library's own refine class. The rival timer also includes one conversion of the query into the binary,
+int8 and float64 forms that comparison (A) needs, also for systems that do not use them; this adds a
+small fixed cost to every rival query, which we did not measure separately. $k_v$ is fixed per set and model on dev: the smallest number of vectors at which the exact
 vector list holds 10 distinct documents for at least 99.9\% of dev queries (Quora systems return
 $k_v + 1$ for the self-match). It ranges from 10 (BEIR) to 143 (gcsn with bge-base-en-v1.5). Each family's dev grid sweeps its search effort
 (and refine depth where it has one); the operating point at each fraction is the fastest point that

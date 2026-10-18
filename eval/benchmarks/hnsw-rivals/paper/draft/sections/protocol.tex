@@ -53,7 +53,8 @@ comes from a cluster bootstrap~\cite{efron1993bootstrap,sakai2006bootstrap}: 10,
 clusters (seed 42), one shared index matrix per set and split.
 
 \paragraph{Dev selection.} On dev queries only, for every system and fraction, the \emph{operating
-point} is the fastest configuration of its declared grid that meets $\fr$. These points are frozen
+point} is the fastest configuration of its declared grid that meets $\fr$, judged by one timed round per
+configuration. These points are frozen
 (\S\ref{sec:freeze}) before any held-out query runs. Held-out results report each frozen point once,
 with two tests of whether it still meets $\fr$: the point estimate ($\bar d \ge 0$) and the bound.
 
@@ -93,7 +94,9 @@ files in a shared queue, so one round of a point usually runs on a different mac
 the next. $R$ comes from an A/A run on each machine (the same build as two arms, 5 rounds): we chose the
 smallest $R$ that gives a 95\% half-width of 2\% or less for the latency ratio, between 3 and 10.
 This gave $R = \nm{R-intel}$ (Intel), \nm{R-amd} (AMD), \nm{R-arm} (Graviton), \nm{R-box} (box) and
-\nm{R-mac} (Mac). The reported latency of a point is the median over rounds of the per-round median
+\nm{R-mac} (Mac); the box and Mac values come from A/A runs after the freeze. The A/A runs used our
+cascade only, with both arms in one plan and so usually on one instance, so they do not include the variation between
+instances. The reported latency of a point is the median over rounds of the per-round median
 per-query time. A ratio is the median over rounds of one system divided by that of the other; its 95\%
 interval is the 2.5th--97.5th percentile over 10,000 bootstrap resamples of the rounds of each system
 (seed 42). With 4 to 10 rounds the interval is coarse, and one slow round widens it (\S\ref{sec:losses}).
