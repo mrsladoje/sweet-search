@@ -6,16 +6,18 @@ AMD Zen 3, Apple M3 Max) cover a binary HNSW cascade with an int8 screen and flo
 indexes from FAISS, USearch, hnswlib, ScaNN, DiskANN and Intel SVS. Operating points are chosen on dev
 queries and frozen before a single held-out run. Under a common int8 screen and float16 rescoring
 (comparison A), whenever one of the cascade's binary generators keeps 99\% of exact quality it is the
-fastest generator that does, over every CPU, set, model and budget, although part of the margin comes
-from the cascade's faster implementation of the shared steps; at small candidate budgets, float32 graphs
-keep 99\% in some cells where the binary codes do not. As shipped (comparison B), against the
+fastest generator that does, over every CPU, set, model and budget; part of that margin is the cascade's
+faster implementation of the shared steps, but post-freeze runs with per-stage clocks and equal graph
+settings confirm it for the generator alone (rival graph generators \nm{post-eq-min}--\nm{post-eq-max} times
+slower, geometric mean \nm{post-eq-gm}). At small candidate budgets, float32 graphs keep 99\% in some cells
+where the binary codes do not. As shipped (comparison B), against the
 rival that was fastest on dev at 99\% of exact quality, the cascade is faster on the 0.5M--1M sets in
 \nm{faster-large} of \nm{n-large} cells (geometric mean ratio \nm{gm-large}), mixed in between, and slower
 on most code sets below 22k vectors, where an exact binary scan in FAISS wins (geometric mean
 \nm{gm-small}). Quality non-inferiority at $\delta = \nm{delta}$ holds in \nm{nprimarypass} of
 \nm{nconfirm} confirmatory comparisons (Holm). The cascade uses more memory than most rivals at 1M,
-builds single-threaded for \nm{build-ours-h} hours, and its memory-mapped index showed slow timing
-rounds that no rival showed. Code-set results are exploratory, because our defaults were tuned earlier on the same code queries; the
+builds single-threaded for \nm{build-ours-h} hours, has a longer latency tail, and its memory-mapped files
+cause slow rounds when other I/O evicts them from the page cache, which no rival showed. Code-set results are exploratory, because our defaults were tuned earlier on the same code queries; the
 BEIR comparisons are the confirmatory part. Deviations from the pre-registered plan are listed. We
 release the harness, the frozen points and every held-out record.
 \end{abstract}

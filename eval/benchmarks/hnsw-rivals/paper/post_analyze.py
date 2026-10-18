@@ -69,6 +69,9 @@ for (t, comp, s, m, c), rs in sorted(recs.items()):
     meds = [float(np.median(r['timings_ns'])) / 1e3 for _, _, r in rs]
     row = dict(type=t, set=s, model=m, conf=cd, rounds=len(rs), us=float(np.median(meds)), round_us=meds,
                faults=[faults(r) for _, _, r in rs])
+    lo_ = min(meds); row['slow'] = sum(1 for x in meds if x > 3 * lo_)
+    row['slow_faults'] = [f for x, f in zip(meds, row['faults']) if x > 3 * lo_]
+    row['fast_faults'] = [f for x, f in zip(meds, row['faults']) if x <= 3 * lo_]
     if comp == 'A':
         sg = [r.get('stage_ns') or {} for _, _, r in rs]
         for k in ('conv', 'gen', 'screen', 'rescore', 'rest'):
@@ -84,7 +87,6 @@ for (t, comp, s, m, c), rs in sorted(recs.items()):
             row['native_share'] = float(np.median([np.sum(r['native_ns']) / np.sum(r['timings_ns']) for _, _, r in rs if r.get('native_ns')]))
         else:
             row['share'] = share(s, m, rs[0][1])
-        lo = min(meds); row['slow'] = sum(1 for x in meds if x > 3 * lo)
         PB.append(row)
 json.dump(dict(PA=PA, PB=PB), open(a.out_json, 'w'), indent=0)
 

@@ -5,7 +5,7 @@ import argparse, collections, json, math, os
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ap = argparse.ArgumentParser(); ap.add_argument('json'); ap.add_argument('--extra', help='JSON of extra numbers {key: value}')
+ap = argparse.ArgumentParser(); ap.add_argument('json'); ap.add_argument('--extra', help='JSON of extra numbers {key: value}'); ap.add_argument('--tails', help='tails_recall.py output'); ap.add_argument('--post', help='post_analyze.py output (post-freeze experiments)')
 a = ap.parse_args()
 J = json.load(open(a.json))
 TYPES = [t for t in ('intel', 'amd', 'arm', 'box', 'mac') if t in J['R']]
@@ -440,6 +440,98 @@ for f in (0.98, 0.99, 0.995):
     v = [vals[f][k] for k in common]
     nums[f'common-gm-{tag}'] = f'{math.exp(sum(v) / len(v)):.2f}' if v else ''
 nums['common-n'] = str(len(common or ()))
+
+# ---- tail latency and recall@10 of the headline pairs at f = 0.99 (tails_recall.py)
+if a.tails:
+    T = json.load(open(a.tails)); pr = collections.defaultdict(dict)
+    for r in T:
+        if not (r['type'] == 'box' and r['set'] == 'csn1m'):
+            pr[(r['type'], r['set'], r['model'])][r['role']] = r
+    both = [v for v in pr.values() if 'ours' in v and 'rival' in v]
+    for q in ('p50', 'p95', 'p99'):
+        v = [math.log(x['rival'][q] / x['ours'][q]) for x in both]
+        nums[f'tail-{q}'] = f'{math.exp(sum(v) / len(v)):.2f}'
+        nums[f'tail-{q}-wins'] = str(sum(1 for x in v if x > 0))
+    nums['tail-n'] = str(len(both))
+    ro = sorted(x['ours']['recall10'] for x in both); rr = sorted(x['rival']['recall10'] for x in both)
+    nums['rec-ours-min'] = f'{ro[0]:.2f}'; nums['rec-ours-med'] = f'{ro[len(ro) // 2]:.2f}'
+    nums['rec-riv-min'] = f'{rr[0]:.2f}'; nums['rec-riv-med'] = f'{rr[len(rr) // 2]:.2f}'
+    nums['rec-ours-below09'] = str(sum(1 for x in ro if x < 0.9))
+
+# ---- post-freeze experiments (post_analyze.py): generator-only times, shared-stage gap, slow rounds, (B) rerun
+if a.post:
+    PJ = json.load(open(a.post))
+    PA = [r for r in PJ['PA'] if r['set'] not in ('quora', 'csn1m') or r['conf']['system'] != 'ours_scan']
+    G = collections.defaultdict(list)
+    for r in PA:
+        G[(r['type'], r['set'])].append(r)
+    eq, best_ours, best_any, cells_pa = [], 0, 0, 0
+    gap = collections.defaultdict(lambda: ([], []))
+    rows = []
+    for (t, s_), rs in sorted(G.items(), key=lambda kv: (kv[0][0], SETS.index(kv[0][1]))):
+        ours_fixed = {int(r['conf']['ef']): r for r in rs if r['conf']['system'] == 'ours_walk' and r['conf']['env']}
+        for r in rs:
+            c = r['conf']
+            if c['system'] in ('faiss_bin_hnsw', 'usearch_b1_rescore', 'hnswlib_f32', 'faiss_hnsw_flat') and (c['build'] or {}).get('M') == 64:
+                o = ours_fixed.get(int((c['search'] or {}).get('ef', 0)))
+                if o:
+                    eq.append((t, s_, c['system'], r['gen'] / o['gen']))
+            (gap[t][0] if c['system'].startswith('ours') else gap[t][1]).append(r['rest'])
+        ok = [r for r in rs if r['share'] >= 0.99]
+        if ok:
+            cells_pa += 1
+            w = min(ok, key=lambda r: r['gen'])
+            best_ours += w['conf']['system'].startswith('ours')
+            ob = min((r for r in ok if r['conf']['system'].startswith('ours')), key=lambda r: r['gen'], default=None)
+            rb = min((r for r in ok if not r['conf']['system'].startswith('ours')), key=lambda r: r['gen'], default=None)
+            if ob and rb:
+                rows.append(f"{TNAME[t]} & {s_} & {ob['gen']:.0f} & {tex(rb['conf']['system'])} & {rb['gen']:.0f} & {rb['gen'] / ob['gen']:.1f} \\\\")
+    open(os.path.join(HERE, 'tables', 'post-gen.tex'), 'w').write('\n'.join(rows) + '\n')
+    if eq:
+        v = [x[3] for x in eq]
+        nums['post-eq-min'] = f'{min(v):.1f}'; nums['post-eq-max'] = f'{max(v):.1f}'
+        nums['post-eq-gm'] = f'{math.exp(sum(math.log(x) for x in v) / len(v)):.1f}'; nums['post-eq-n'] = str(len(v))
+        nums['post-eq-ours'] = str(sum(1 for x in v if x > 1))
+    nums['post-best-ours'] = str(best_ours); nums['post-cells'] = str(cells_pa)
+    for t, (o_, r_) in gap.items():
+        if o_ and r_:
+            nums[f'post-shared-ours-{t}'] = f'{np.median(o_):.0f}'; nums[f'post-shared-riv-{t}'] = f'{np.median(r_):.0f}'
+            nums[f'post-shared-x-{t}'] = f'{np.median(r_) / np.median(o_):.1f}'
+    allrows = PJ['PA'] + PJ['PB']
+    so = sum(r['slow'] for r in allrows if r['conf']['system'].startswith('ours')); sr = sum(r['slow'] for r in allrows if not r['conf']['system'].startswith('ours'))
+    nums['post-slow-ours'] = str(so); nums['post-slow-riv'] = str(sr)
+    nums['post-rounds-ours'] = str(sum(r['rounds'] for r in allrows if r['conf']['system'].startswith('ours')))
+    nums['post-rounds-riv'] = str(sum(r['rounds'] for r in allrows if not r['conf']['system'].startswith('ours')))
+    sf = [f for r in allrows for f in r['slow_faults'] if f is not None]; ff = [f for r in allrows if r['conf']['system'].startswith('ours') for f in r['fast_faults'] if f is not None]
+    if sf:
+        nums['post-slow-faults-min'] = f'{min(sf):,}'; nums['post-slow-faults-med'] = f'{int(np.median(sf)):,}'
+    if ff:
+        nums['post-fast-faults-med'] = f'{int(np.median(ff)):,}'; nums['post-fast-faults-p99'] = f'{int(np.percentile(ff, 99)):,}'
+    # (B) rerun on Quora and csn1m
+    PBg = collections.defaultdict(dict)
+    for r in PJ['PB']:
+        c = r['conf']; role = 'native' if c['kind'] == 'native' else ('default' if c['system'] == 'ours_cascade' and c['S1'] == 400 and c['EF'] == 400 else ('ours' if c['system'] == 'ours_cascade' else 'rival'))
+        PBg[(r['type'], r['set'], r['model'])].setdefault(role, r)
+    rat, nat, dq, dt = [], [], [], []
+    rows = []
+    for (t, s_, m), d in sorted(PBg.items()):
+        o, rv = d.get('ours'), d.get('rival')
+        if o and rv:
+            est, lo, hi = ratio_ci(o['round_us'], rv['round_us']); rat.append(math.log(est))
+            rows.append(f"{TNAME[t]} & {s_} & {MSHORT[m]} & {tex(rv['conf']['system'])} & {cell(est, lo, hi)} & {o['slow']} & "
+                        + (f"{d['native']['native_share']:.2f}" if 'native' in d else '') + ' & '
+                        + (f"{d['default']['us'] / o['us']:.2f} / {d['default']['share']:.4f}" if 'default' in d else '') + ' \\\\')
+        if 'native' in d:
+            nat.append(d['native']['native_share'])
+        if o and 'default' in d:
+            dt.append(d['default']['us'] / o['us']); dq.append(d['default']['share'])
+    open(os.path.join(HERE, 'tables', 'post-b.tex'), 'w').write('\n'.join(rows) + '\n')
+    if rat:
+        nums['postb-gm'] = f'{math.exp(sum(rat) / len(rat)):.2f}'; nums['postb-n'] = str(len(rat)); nums['postb-wins'] = str(sum(1 for x in rat if x > 0))
+    if nat:
+        nums['postb-native-min'] = f'{100 * min(nat):.0f}'; nums['postb-native-max'] = f'{100 * max(nat):.0f}'; nums['postb-native-med'] = f'{100 * float(np.median(nat)):.0f}'
+    if dt:
+        nums['postb-default-tmin'] = f'{min(dt):.1f}'; nums['postb-default-tmax'] = f'{max(dt):.1f}'; nums['postb-default-qmin'] = f'{min(dq):.4f}'
 
 # ---- protocol numbers
 fz = J['freeze']

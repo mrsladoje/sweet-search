@@ -36,6 +36,8 @@ keep 99\% of exact quality wherever they keep it, while float32 graphs keep it a
 cells; as shipped, our cascade is faster at 0.5M--1M vectors in \nm{faster-large} of \nm{n-large} cells
 and slower on most small code sets; \nm{nprimarypass} of \nm{nconfirm} confirmatory quality comparisons
 pass.
+\item Post-freeze experiments, reported apart, that isolate generator time with per-stage clocks and
+locate the cascade's slow rounds in page-cache misses (\S\ref{sec:post}).
 \item Where the cascade loses, in the main text (\S\ref{sec:losses}), and the full data and harness
 for others to add systems (\S\ref{sec:repro}).
 \end{itemize}
