@@ -69,7 +69,12 @@ Embeddings are model outputs. Neither model card states a limit on outputs.
 ## Open actions before the release
 
 1. Download CodeSearchNet `_licenses.pkl` and check that all licences are permissive. This decides whether GenCodeSearchNet embeddings can ever join the release.
-2. Scan the 10 other repositories for nested licence files.
+2. Scan the 10 other repositories for nested licence files. Done on 2026-10-18 (files named
+   LICENSE*, COPYING* or NOTICE* below the top level, at the pinned commits). All are MIT or
+   Apache-2.0, with two exceptions. In jj, `docs/images/LICENSE` and its copy under `web/` put
+   two logo images under CC-BY-4.0. Images are not code chunks. In okhttp, a NOTICE puts the
+   test data file `public_suffix_list.dat` under MPL-2.0. This is file-level copyleft on a data
+   file, not on code. No GPL, LGPL, AGPL or share-alike licence was found.
 3. Ask the NFCorpus authors about redistribution of derived data. Optional.
 4. Re-check next-plaid and NumKong upstream licences when versions are pinned.
 5. Have a person with legal knowledge confirm the rule on embeddings as derived works.
