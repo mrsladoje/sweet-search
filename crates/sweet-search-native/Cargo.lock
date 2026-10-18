@@ -395,8 +395,6 @@ dependencies = [
 [[package]]
 name = "cudaforge"
 version = "0.1.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f7a0d45b139b5beeeb1c34188717e12241c44a0120afb498815ce7f5373c691"
 dependencies = [
  "anyhow",
  "fs2",
