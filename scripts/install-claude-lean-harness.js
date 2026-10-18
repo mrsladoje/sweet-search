@@ -27,7 +27,8 @@
  *   .claude/agents/Plan.md             replaces the built-in Plan subagent, which omits the
  *                                      project rules; ours loads the project rules file
  *   .claude/settings.json              `agent`, `permissions.deny` (search-delegation subagent
- *                                      types only) and `env` (conflict and bloat switches)
+ *                                      types only), `env` (conflict and bloat switches) and,
+ *                                      from init only, the tab-title UserPromptSubmit hook
  *
  * Verified by $0 request capture on Claude Code 2.1.281 (handoff harness-prompt-trim).
  *
@@ -253,6 +254,33 @@ export const CLAUDE_LEAN_HARNESS_ENV = Object.freeze({
   CLAUDE_CODE_PARCHMENT_FERN: '1',
 });
 
+// The tab title (2026-10-18). Claude Code 2.1.302 titles the terminal tab with the main agent's
+// name ahead of the title it makes from the first prompt, and does not make that title at all
+// while a main agent is set: every tab reads "sweet-search". This UserPromptSubmit hook
+// (scripts/hooks/session-title.mjs) sets a title from the first prompt instead. Only init installs
+// it (`titleHook`); the benchmark runners keep their settings unchanged. The command string is
+// the ownership marker.
+export const CLAUDE_LEAN_TITLE_HOOK_COMMAND = 'sweet-search-hook --session-title';
+const isTitleHookGroup = group => Array.isArray(group?.hooks)
+  && group.hooks.some(h => typeof h?.command === 'string' && h.command.includes(CLAUDE_LEAN_TITLE_HOOK_COMMAND));
+
+/** Add (`want`) or remove our UserPromptSubmit entry in `settings`. Returns true on a change. */
+function setTitleHook(settings, want) {
+  const groups = Array.isArray(settings.hooks?.UserPromptSubmit) ? settings.hooks.UserPromptSubmit : [];
+  const entry = { hooks: [{ type: 'command', command: CLAUDE_LEAN_TITLE_HOOK_COMMAND, timeout: 5 }] };
+  const at = groups.findIndex(isTitleHookGroup);
+  const kept = groups.filter(g => !isTitleHookGroup(g));
+  // An entry already there keeps its place among the user's hooks.
+  const pos = at < 0 ? kept.length : at;
+  const next = want ? [...kept.slice(0, pos), entry, ...kept.slice(pos)] : kept;
+  if (JSON.stringify(next) === JSON.stringify(groups)) return false;
+  settings.hooks ??= {};
+  if (next.length) settings.hooks.UserPromptSubmit = next;
+  else delete settings.hooks.UserPromptSubmit;
+  if (!Object.keys(settings.hooks).length) delete settings.hooks;
+  return true;
+}
+
 // ---------------------------------------------------------------------------------------------
 // v2.1: what the custom main prompt costs, put back (2026-09-27). Claude Code 2.1.281 drops three
 // stock parts for ANY custom main prompt, and no setting or agent-file key brings them back
@@ -460,6 +488,9 @@ function removeOwnedFile(projectRoot, rel) {
  * the user added themselves are never recorded, so they are never removed. A file an earlier
  * version wrote and this version no longer ships is removed when it is unchanged.
  *
+ * `titleHook`: also install the tab-title UserPromptSubmit hook (init passes true). False removes
+ * an entry an earlier install added.
+ *
  * `configDir` is the Claude Code config directory the sessions will use (default:
  * CLAUDE_CONFIG_DIR, else ~/.claude); it places the auto-memory path written into the main agent.
  * `visibleConfigDir`: see `claudeAutoMemoryDir`. `promptEdits`: see `claudeLeanAgentFile`.
@@ -479,7 +510,7 @@ function removeOwnedFile(projectRoot, rel) {
  */
 export function installClaudeLeanHarness({
   projectRoot, appendOverride = true, promptEdits = true, configDir, visibleConfigDir, env = process.env,
-  rules, variant = 'cli',
+  rules, variant = 'cli', titleHook = false,
 } = {}) {
   if (!projectRoot) return { status: 'error', detail: 'install-claude-lean-harness: projectRoot is required', active: null, rulesInPrompt: false };
   const settingsPath = join(projectRoot, SETTINGS_REL);
@@ -512,6 +543,7 @@ export function installClaudeLeanHarness({
     addedDeny: [...(manifest.addedDeny || [])],
     addedEnv: { ...(manifest.addedEnv || {}) },
     setAgent: Boolean(manifest.setAgent),
+    titleHook: Boolean(manifest.titleHook),
   };
   const changes = [];
   const warnings = [];
@@ -625,6 +657,14 @@ export function installClaudeLeanHarness({
     }
     if (!Object.keys(settings.env).length) delete settings.env;
 
+    if (titleHook || next.titleHook) {
+      if (setTitleHook(settings, titleHook)) {
+        settingsChanged = true;
+        changes.push(titleHook ? 'tab-title hook' : 'removed the tab-title hook an earlier install added');
+      }
+      next.titleHook = titleHook;
+    }
+
     if (settingsChanged) {
       writeJson(settingsPath, settings);
       changes.push(`${SETTINGS_REL} (agent, permissions.deny, env)`);
@@ -632,7 +672,8 @@ export function installClaudeLeanHarness({
     const manifestStale = manifest.version !== MANIFEST_VERSION
       || JSON.stringify(manifest.files || {}) !== JSON.stringify(next.files)
       || JSON.stringify(manifest.addedDeny || []) !== JSON.stringify(next.addedDeny)
-      || JSON.stringify(manifest.addedEnv || {}) !== JSON.stringify(next.addedEnv);
+      || JSON.stringify(manifest.addedEnv || {}) !== JSON.stringify(next.addedEnv)
+      || Boolean(manifest.titleHook) !== next.titleHook;
     if (changes.length || !manifestRead.exists || manifestStale) writeJson(manifestPath, next);
   } catch (err) {
     return { status: 'error', detail: err.message, active: null, rulesInPrompt: false };
@@ -695,6 +736,7 @@ export function removeClaudeLeanHarness({ projectRoot, dryRun = false } = {}) {
   if (manifest.setAgent && settings.agent === CLAUDE_LEAN_AGENT_NAME) parts.push('agent selection');
   if ((manifest.addedDeny || []).length) parts.push('deny entries');
   if (Object.keys(manifest.addedEnv || {}).length) parts.push('env');
+  if (manifest.titleHook && (settings.hooks?.UserPromptSubmit || []).some(isTitleHookGroup)) parts.push('tab-title hook');
   if (dryRun) return { status: 'dry-run', detail: parts.join(' + ') || 'manifest only' };
 
   try {
@@ -712,6 +754,7 @@ export function removeClaudeLeanHarness({ projectRoot, dryRun = false } = {}) {
         }
         if (!Object.keys(settings.env).length) delete settings.env;
       }
+      if (manifest.titleHook) setTitleHook(settings, false);
       writeJson(settingsPath, settings);
     }
     for (const rel of ownedFiles) removeOwnedFile(projectRoot, rel);

@@ -33,6 +33,7 @@ import {
   CLAUDE_LEAN_SUBAGENT_DESCRIPTION,
   CLAUDE_LEAN_SUBAGENT_PROMPT,
   CLAUDE_LEAN_SUBAGENT_REL,
+  CLAUDE_LEAN_TITLE_HOOK_COMMAND,
   claudeAutoMemoryDir,
   claudeCanonicalProjectRoot,
   claudeLeanAgentFile,
@@ -44,6 +45,7 @@ import {
 } from '../../scripts/install-claude-lean-harness.js';
 import { CLAUDE_SYSTEM_OVERRIDE } from '../../scripts/install-claude-system-prompt.js';
 import { getPolicyBody } from '../../scripts/inject-agent-instructions.js';
+import { sessionTitleFromPrompt } from '../../scripts/hooks/session-title.mjs';
 
 let root;
 beforeEach(() => { root = mkdtempSync(join(tmpdir(), 'sweet-search-lean-test-')); });
@@ -473,6 +475,65 @@ describe('removeClaudeLeanHarness', () => {
 
   it('reports not-found without a manifest', () => {
     expect(removeClaudeLeanHarness({ projectRoot: root }).status).toBe('not-found');
+  });
+});
+
+describe('tab-title hook', () => {
+  const titleEntry = { hooks: [{ type: 'command', command: CLAUDE_LEAN_TITLE_HOOK_COMMAND, timeout: 5 }] };
+  const userHook = { hooks: [{ type: 'command', command: 'my-own-hook' }] };
+
+  it('only init installs it; the default form leaves the hooks alone', () => {
+    installClaudeLeanHarness({ projectRoot: root });
+    expect(settings().hooks).toBeUndefined();
+    expect(manifest().titleHook).toBe(false);
+    installClaudeLeanHarness({ projectRoot: root, titleHook: true });
+    expect(settings().hooks).toEqual({ UserPromptSubmit: [titleEntry] });
+    expect(manifest().titleHook).toBe(true);
+  });
+
+  it('is idempotent and keeps the user hooks and their order', () => {
+    write('.claude/settings.json', JSON.stringify({ hooks: { UserPromptSubmit: [userHook], Stop: [userHook] } }));
+    installClaudeLeanHarness({ projectRoot: root, titleHook: true });
+    expect(settings().hooks).toEqual({ UserPromptSubmit: [userHook, titleEntry], Stop: [userHook] });
+    const s = settings();
+    s.hooks.UserPromptSubmit = [titleEntry, userHook];
+    write('.claude/settings.json', JSON.stringify(s));
+    expect(installClaudeLeanHarness({ projectRoot: root, titleHook: true }).status).toBe('unchanged');
+    expect(settings().hooks.UserPromptSubmit).toEqual([titleEntry, userHook]);
+  });
+
+  it('a later install without it removes it; uninstall removes it and keeps the user hooks', () => {
+    write('.claude/settings.json', JSON.stringify({ hooks: { UserPromptSubmit: [userHook] } }));
+    installClaudeLeanHarness({ projectRoot: root, titleHook: true });
+    installClaudeLeanHarness({ projectRoot: root });
+    expect(settings().hooks).toEqual({ UserPromptSubmit: [userHook] });
+    installClaudeLeanHarness({ projectRoot: root, titleHook: true });
+    expect(removeClaudeLeanHarness({ projectRoot: root, dryRun: true }).detail).toContain('tab-title hook');
+    removeClaudeLeanHarness({ projectRoot: root });
+    expect(settings()).toEqual({ hooks: { UserPromptSubmit: [userHook] } });
+  });
+
+  it('makes the title from the start of the prompt', () => {
+    expect(sessionTitleFromPrompt('Fix the flaky daemon test')).toBe('Fix the flaky daemon test');
+    expect(sessionTitleFromPrompt('  ## Why does\n\tthe  index   grow?  ')).toBe('Why does the index grow?');
+    expect(sessionTitleFromPrompt('One bad thing I noticed about sweet search on claude code is that it installs'))
+      .toBe('One bad thing I noticed about sweet search on…');
+    expect(sessionTitleFromPrompt('x'.repeat(80))).toBe(`${'x'.repeat(50)}…`);
+    expect([...sessionTitleFromPrompt('é'.repeat(80))].length).toBe(51);
+    expect(sessionTitleFromPrompt('/clear')).toBeNull();
+    expect(sessionTitleFromPrompt(' \n ')).toBeNull();
+    expect(sessionTitleFromPrompt(undefined)).toBeNull();
+  });
+
+  it('the hook answers only a session without a title', () => {
+    const run = input => execFileSync(process.execPath, ['scripts/hooks/hook.mjs', '--session-title'],
+      { input: JSON.stringify(input), encoding: 'utf8' });
+    expect(JSON.parse(run({ prompt: 'Explain the ranking pipeline', session_title: '' }))).toEqual({
+      hookSpecificOutput: { hookEventName: 'UserPromptSubmit', sessionTitle: 'Explain the ranking pipeline' },
+    });
+    expect(run({ prompt: 'Explain the ranking pipeline', session_title: 'my name' })).toBe('');
+    expect(run({ prompt: '/rename foo' })).toBe('');
+    expect(execFileSync(process.execPath, ['scripts/hooks/hook.mjs', '--session-title'], { input: 'not json', encoding: 'utf8' })).toBe('');
   });
 });
 

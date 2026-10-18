@@ -2369,7 +2369,7 @@ export async function runInit(args) {
               };
             }
           } else {
-            leanReport = installClaudeLeanHarness({ projectRoot });
+            leanReport = installClaudeLeanHarness({ projectRoot, titleHook: true });
             leanReportForRules = leanReport;
             if (leanReport.active === true) {
               const styleRemoved = removeClaudeSystemPrompt({ projectRoot });
