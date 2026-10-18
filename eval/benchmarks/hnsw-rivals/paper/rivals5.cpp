@@ -235,10 +235,14 @@ static int cmd_query() {
     std::vector<float> qn(FULL_D); Query qc;
     // post-freeze (--stages): per-query clocks of query conversion | generator (search) | shared screen + rescoring
     const bool stages = flag("stages"); int64_t last[3] = {0, 0, 0};
+    const bool code_family = fam == "faiss_bin_flat" || fam == "faiss_bin_hnsw" || fam == "usearch_b1_rescore";
     auto one = [&](size_t r) -> size_t {
         const float* q = &Q[r * FULL_D];
         auto c0 = clk::now();
-        convert_query(q, qc, c.code_bytes * 8, w8);  // codes, int8, f64 query (A); the libraries get q normalised in f32
+        // (A): codes, int8, f64 query for the shared stages. (B): only what the family uses (replication fix: the
+        // frozen harness converted every query for every family); the libraries get q normalised in f32.
+        if (comp == "A") convert_query(q, qc, c.code_bytes * 8, w8);
+        else if (code_family) convert_code_only(q, qc, c.code_bytes * 8);
         double s = 0; for (int j = 0; j < FULL_D; j++) s += double(q[j]) * q[j]; float k = float(std::sqrt(s));
         for (int j = 0; j < FULL_D; j++) qn[j] = k > 0 ? q[j] / k : q[j];
         std::fill(cand.begin(), cand.end(), -1);
