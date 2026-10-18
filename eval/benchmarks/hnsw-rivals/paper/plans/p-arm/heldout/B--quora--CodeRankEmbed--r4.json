@@ -1,0 +1,70 @@
+{
+"step": "post-arm-B--quora--CodeRankEmbed--r4",
+"builds": [],
+"jobs": [
+{
+"set": "quora",
+"model": "CodeRankEmbed",
+"split": "ho",
+"build_seed": 42,
+"pagecache": "warm",
+"comparison": "B",
+"kv": 11,
+"kind": "timing",
+"round": 4,
+"system": "ours_cascade",
+"S1": 50,
+"EF": 50
+},
+{
+"set": "quora",
+"model": "CodeRankEmbed",
+"split": "ho",
+"build_seed": 42,
+"pagecache": "warm",
+"comparison": "B",
+"kv": 11,
+"kind": "native",
+"round": 4,
+"system": "ours_cascade",
+"S1": 50,
+"EF": 50
+},
+{
+"set": "quora",
+"model": "CodeRankEmbed",
+"split": "ho",
+"build_seed": 42,
+"pagecache": "warm",
+"comparison": "B",
+"kv": 11,
+"kind": "timing",
+"round": 4,
+"system": "ours_cascade",
+"S1": 400,
+"EF": 400
+},
+{
+"set": "quora",
+"model": "CodeRankEmbed",
+"split": "ho",
+"build_seed": 42,
+"pagecache": "warm",
+"comparison": "B",
+"kv": 11,
+"kind": "timing",
+"round": 4,
+"system": "faiss_bin_hnsw",
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"search": {
+"ef": 64,
+"refine": 55
+},
+"ef": "64"
+}
+]
+}

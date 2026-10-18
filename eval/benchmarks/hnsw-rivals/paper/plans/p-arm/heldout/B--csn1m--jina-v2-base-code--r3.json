@@ -1,0 +1,70 @@
+{
+"step": "post-arm-B--csn1m--jina-v2-base-code--r3",
+"builds": [],
+"jobs": [
+{
+"set": "csn1m",
+"model": "jina-v2-base-code",
+"split": "ho",
+"build_seed": 42,
+"pagecache": "warm",
+"comparison": "B",
+"kv": 15,
+"kind": "timing",
+"round": 3,
+"system": "ours_cascade",
+"S1": 150,
+"EF": 150
+},
+{
+"set": "csn1m",
+"model": "jina-v2-base-code",
+"split": "ho",
+"build_seed": 42,
+"pagecache": "warm",
+"comparison": "B",
+"kv": 15,
+"kind": "native",
+"round": 3,
+"system": "ours_cascade",
+"S1": 150,
+"EF": 150
+},
+{
+"set": "csn1m",
+"model": "jina-v2-base-code",
+"split": "ho",
+"build_seed": 42,
+"pagecache": "warm",
+"comparison": "B",
+"kv": 15,
+"kind": "timing",
+"round": 3,
+"system": "ours_cascade",
+"S1": 400,
+"EF": 400
+},
+{
+"set": "csn1m",
+"model": "jina-v2-base-code",
+"split": "ho",
+"build_seed": 42,
+"pagecache": "warm",
+"comparison": "B",
+"kv": 15,
+"kind": "timing",
+"round": 3,
+"system": "usearch_b1_rescore",
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"search": {
+"ef": 128,
+"rescore": 75
+},
+"ef": "128"
+}
+]
+}

@@ -1,0 +1,67 @@
+{
+"step": "post-intel-B--csn1m--CodeRankEmbed--r2",
+"builds": [],
+"jobs": [
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"split": "ho",
+"build_seed": 42,
+"pagecache": "warm",
+"comparison": "B",
+"kv": 19,
+"kind": "timing",
+"round": 2,
+"system": "ours_cascade",
+"S1": 400,
+"EF": 400
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"split": "ho",
+"build_seed": 42,
+"pagecache": "warm",
+"comparison": "B",
+"kv": 19,
+"kind": "native",
+"round": 2,
+"system": "ours_cascade",
+"S1": 400,
+"EF": 400
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"split": "ho",
+"build_seed": 42,
+"pagecache": "warm",
+"comparison": "B",
+"kv": 19,
+"kind": "timing",
+"round": 2,
+"system": "ours_cascade",
+"S1": 400,
+"EF": 400
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"split": "ho",
+"build_seed": 42,
+"pagecache": "warm",
+"comparison": "B",
+"kv": 19,
+"kind": "timing",
+"round": 2,
+"system": "svs_vamana_lvq",
+"family": "svs_vamana_lvq",
+"build_params": {
+"degree": 64
+},
+"search": {
+"window": 256
+}
+}
+]
+}

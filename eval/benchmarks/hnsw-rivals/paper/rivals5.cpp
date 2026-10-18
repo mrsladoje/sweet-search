@@ -143,6 +143,7 @@ static std::map<std::string, std::string> memory() {
         if (k == "Rss") rss = v; if (k == "Anonymous") anon = v;
     }
     if (rss >= 0) m["file_backed_kb"] = std::to_string(rss - anon);
+    m["majflt"] = std::to_string(ru.ru_majflt); m["minflt"] = std::to_string(ru.ru_minflt);
 #endif
     return m;
 }
@@ -232,19 +233,28 @@ static int cmd_query() {
     size_t K = comp == "A" ? C : L;
     std::vector<int64_t> cand(K), ids(L); std::vector<float> lsc(K); std::vector<double> sc(L);
     std::vector<float> qn(FULL_D); Query qc;
+    // post-freeze (--stages): per-query clocks of query conversion | generator (search) | shared screen + rescoring
+    const bool stages = flag("stages"); int64_t last[3] = {0, 0, 0};
     auto one = [&](size_t r) -> size_t {
         const float* q = &Q[r * FULL_D];
+        auto c0 = clk::now();
         convert_query(q, qc, c.code_bytes * 8, w8);  // codes, int8, f64 query (A); the libraries get q normalised in f32
         double s = 0; for (int j = 0; j < FULL_D; j++) s += double(q[j]) * q[j]; float k = float(std::sqrt(s));
         for (int j = 0; j < FULL_D; j++) qn[j] = k > 0 ? q[j] / k : q[j];
         std::fill(cand.begin(), cand.end(), -1);
+        auto c1 = clk::now();
         size_t got = ad->search(qn.data(), qc.code, K, cand.data(), lsc.data());
-        if (comp == "A") return sh.run(qc, cand.data(), got, H, ids.data(), sc.data());
+        auto c2 = clk::now();
+        if (stages) { last[0] = std::chrono::duration_cast<std::chrono::nanoseconds>(c1 - c0).count();
+                      last[1] = std::chrono::duration_cast<std::chrono::nanoseconds>(c2 - c1).count(); last[2] = 0; }
+        if (comp == "A") { size_t n = sh.run(qc, cand.data(), got, H, ids.data(), sc.data());
+            if (stages) last[2] = std::chrono::duration_cast<std::chrono::nanoseconds>(clk::now() - c2).count(); return n; }
         for (size_t j = 0; j < got && j < L; j++) { ids[j] = cand[j]; sc[j] = lsc[j]; }
         return std::min(got, L);
     };
     if (!cold) { auto w = perm(warm.size(), 7); for (size_t i = 0; i < std::min<size_t>(500, warm.size()); i++) one(warm[w[i]]); }
     std::vector<int32_t> lv(nq * L, -1); std::vector<float> ls(nq * L, NAN); std::vector<int64_t> tns(nq, -1);
+    std::vector<int64_t> sconv(stages ? nq : 0, -1), sgen(stages ? nq : 0, -1), srest(stages ? nq : 0, -1);
     size_t shortl = 0; int64_t first = -1;
     for (size_t qi : perm(nq, 42 + round)) {
         std::fill(ids.begin(), ids.end(), -1); std::fill(sc.begin(), sc.end(), NAN);
@@ -252,6 +262,7 @@ static int cmd_query() {
         size_t n = one(rows[qi]);
         int64_t ns = std::chrono::duration_cast<std::chrono::nanoseconds>(clk::now() - s).count();
         tns[qi] = ns; if (first < 0) first = ns; if (n < L) shortl++;
+        if (stages) { sconv[qi] = last[0]; sgen[qi] = last[1]; srest[qi] = last[2]; }
         for (size_t j = 0; j < L; j++) { lv[qi * L + j] = j < n ? (int32_t)ids[j] : -1; ls[qi * L + j] = j < n ? (float)sc[j] : NAN; }
     }
     auto mem_after = memory();
@@ -263,13 +274,15 @@ static int cmd_query() {
     std::string jk = flag("key") ? slurp(arg("key")) : "null", jh = flag("job-hash") ? jstr(arg("job-hash")) : "null";
     while (!jk.empty() && (jk.back() == '\n' || jk.back() == ' ')) jk.pop_back();
     std::string tj = "["; for (size_t i = 0; i < nq; i++) tj += (i ? "," : "") + std::to_string(tns[i]); tj += "]";
+    auto arr = [&](const std::vector<int64_t>& v) { std::string x = "["; for (size_t i = 0; i < v.size(); i++) x += (i ? "," : "") + std::to_string(v[i]); return x + "]"; };
+    std::string stj = stages ? ",\"stage_ns\":{\"conv\":" + arr(sconv) + ",\"gen\":" + arr(sgen) + ",\"rest\":" + arr(srest) + "}" : "";
     Params pr = sp; if (comp == "A") { pr["C"] = std::to_string(C); pr["H"] = std::to_string(H); } else pr["kv"] = std::to_string(L);
     std::ofstream o(stem + ".json.tmp");
     o << "{\"job_hash\":" << jh << ",\"key\":" << jk << ",\"complete\":true,\"system\":" << jstr(fam) << ",\"comparison\":" << jstr(comp)
       << ",\"set\":" << jstr(set) << ",\"model\":" << jstr(model) << ",\"split\":" << jstr(split) << ",\"round\":" << round
       << ",\"params\":" << jmap(pr) << ",\"build_params\":" << jmap(bp) << ",\"L\":" << L << ",\"n_queries\":" << nq
       << ",\"order_seed\":" << 42 + round << ",\"warmup\":" << (cold ? 0 : std::min<size_t>(500, warm.size())) << ",\"cold\":" << (cold ? "true" : "false")
-      << ",\"timings_ns\":" << tj << ",\"first_query_ns\":" << first << ",\"lists_sha256\":" << jstr(lsha) << ",\"short_lists\":" << shortl
+      << ",\"timings_ns\":" << tj << stj << ",\"first_query_ns\":" << first << ",\"lists_sha256\":" << jstr(lsha) << ",\"short_lists\":" << shortl
       << ",\"memory\":{\"loaded\":" << jmap(mem_loaded) << ",\"after\":" << jmap(mem_after) << "},\"keeps_originals\":" << (need_x ? "true" : "false")
       << ",\"load_s\":" << load_s << ",\"process_s\":" << std::chrono::duration<double>(clk::now() - tproc).count()
       << ",\"info\":" << jmap(ad->info()) << "}\n";
@@ -287,7 +300,7 @@ int main(int argc, char** argv) {
     for (int i = 2; i < argc; i++) {
         std::string a = argv[i]; if (a.rfind("--", 0) != 0) { fprintf(stderr, "bad argument %s\n", a.c_str()); return 2; }
         a = a.substr(2);
-        if (a == "heldout" || a == "cold") args[a] = "1"; else if (i + 1 < argc) args[a] = argv[++i]; else { fprintf(stderr, "--%s needs a value\n", a.c_str()); return 2; }
+        if (a == "heldout" || a == "cold" || a == "stages") args[a] = "1"; else if (i + 1 < argc) args[a] = argv[++i]; else { fprintf(stderr, "--%s needs a value\n", a.c_str()); return 2; }
     }
     if (cmd == "families") { for (auto& [k, v] : registry()) printf("%s\n", k.c_str()); return 0; }
     if (cmd == "build") return cmd_build();

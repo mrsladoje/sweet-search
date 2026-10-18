@@ -1,0 +1,70 @@
+{
+"step": "post-amd-B--csn1m--CodeRankEmbed--r8",
+"builds": [],
+"jobs": [
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"split": "ho",
+"build_seed": 42,
+"pagecache": "warm",
+"comparison": "B",
+"kv": 19,
+"kind": "timing",
+"round": 8,
+"system": "ours_cascade",
+"S1": 400,
+"EF": 400
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"split": "ho",
+"build_seed": 42,
+"pagecache": "warm",
+"comparison": "B",
+"kv": 19,
+"kind": "native",
+"round": 8,
+"system": "ours_cascade",
+"S1": 400,
+"EF": 400
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"split": "ho",
+"build_seed": 42,
+"pagecache": "warm",
+"comparison": "B",
+"kv": 19,
+"kind": "timing",
+"round": 8,
+"system": "ours_cascade",
+"S1": 400,
+"EF": 400
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"split": "ho",
+"build_seed": 42,
+"pagecache": "warm",
+"comparison": "B",
+"kv": 19,
+"kind": "timing",
+"round": 8,
+"system": "faiss_hnsw_sq8",
+"family": "faiss_hnsw_sq8",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"search": {
+"ef": 128,
+"refine": 2
+},
+"ef": "128"
+}
+]
+}

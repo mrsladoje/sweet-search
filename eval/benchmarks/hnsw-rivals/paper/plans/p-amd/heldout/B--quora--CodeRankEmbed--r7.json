@@ -1,0 +1,70 @@
+{
+"step": "post-amd-B--quora--CodeRankEmbed--r7",
+"builds": [],
+"jobs": [
+{
+"set": "quora",
+"model": "CodeRankEmbed",
+"split": "ho",
+"build_seed": 42,
+"pagecache": "warm",
+"comparison": "B",
+"kv": 11,
+"kind": "timing",
+"round": 7,
+"system": "ours_cascade",
+"S1": 50,
+"EF": 50
+},
+{
+"set": "quora",
+"model": "CodeRankEmbed",
+"split": "ho",
+"build_seed": 42,
+"pagecache": "warm",
+"comparison": "B",
+"kv": 11,
+"kind": "native",
+"round": 7,
+"system": "ours_cascade",
+"S1": 50,
+"EF": 50
+},
+{
+"set": "quora",
+"model": "CodeRankEmbed",
+"split": "ho",
+"build_seed": 42,
+"pagecache": "warm",
+"comparison": "B",
+"kv": 11,
+"kind": "timing",
+"round": 7,
+"system": "ours_cascade",
+"S1": 400,
+"EF": 400
+},
+{
+"set": "quora",
+"model": "CodeRankEmbed",
+"split": "ho",
+"build_seed": 42,
+"pagecache": "warm",
+"comparison": "B",
+"kv": 11,
+"kind": "timing",
+"round": 7,
+"system": "usearch_b1_rescore",
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"search": {
+"ef": 16,
+"rescore": 55
+},
+"ef": "16"
+}
+]
+}

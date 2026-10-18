@@ -1,0 +1,13 @@
+{
+ "comment": "Post-freeze runs: the shared files of the build identity (jobs.COMMON) as frozen at f57533b0. The post-freeze edits to rivals5.cpp and py5.py add stage clocks only; they do not change how an index is built, so the frozen builds keep their paths.",
+ "frozen_commit": "f57533b0",
+ "sha256": {
+  "adapter.h": "6a4479cbf2fecd8780fb4065971108cda07c04ff4e5011112d174443fc5f963e",
+  "adapters/common.h": "723b2e50f4ba37e21d4ef3a7ecfd8c31496ec386528003693acc2ab4c4ccc3f5",
+  "rivals5.cpp": "d41c8f1ec33a218ce70fb0d2db81b3c4c2cfbfaaec20f0ce1ffdccc20c715f89",
+  "py5.py": "db7d78ab282706787595484e5da89d2cbf86cf1fa0ab5cccdc1804daf4afaaea",
+  "build-paper.sh": "284af47cf979a0bd115f9720955dace3a2ff3390cf36270ce6e2721f610bb9dc",
+  "adapters/build-new.sh": "f4bcaa2f71e57e87f3c01abf3c6abc343f07e54700d3c377710081ddd70a2dad",
+  "adapters/requirements-scann-linux-x86_64.lock": "f6b8ae1799294aaaca4f84bd507f84644300de61a1fb810fb30e122e677d2f66"
+ }
+}

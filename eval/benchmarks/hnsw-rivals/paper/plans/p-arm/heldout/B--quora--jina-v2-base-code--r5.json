@@ -1,0 +1,70 @@
+{
+"step": "post-arm-B--quora--jina-v2-base-code--r5",
+"builds": [],
+"jobs": [
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "ho",
+"build_seed": 42,
+"pagecache": "warm",
+"comparison": "B",
+"kv": 11,
+"kind": "timing",
+"round": 5,
+"system": "ours_cascade",
+"S1": 100,
+"EF": 100
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "ho",
+"build_seed": 42,
+"pagecache": "warm",
+"comparison": "B",
+"kv": 11,
+"kind": "native",
+"round": 5,
+"system": "ours_cascade",
+"S1": 100,
+"EF": 100
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "ho",
+"build_seed": 42,
+"pagecache": "warm",
+"comparison": "B",
+"kv": 11,
+"kind": "timing",
+"round": 5,
+"system": "ours_cascade",
+"S1": 400,
+"EF": 400
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"split": "ho",
+"build_seed": 42,
+"pagecache": "warm",
+"comparison": "B",
+"kv": 11,
+"kind": "timing",
+"round": 5,
+"system": "faiss_bin_hnsw",
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"search": {
+"ef": 128,
+"refine": 55
+},
+"ef": "128"
+}
+]
+}

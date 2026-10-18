@@ -22,7 +22,7 @@ const R = process.env.R || path.resolve(path.dirname(new URL(import.meta.url).pa
 const argv = process.argv.slice(2), o = {};
 for (let i = 0; i < argv.length; i++) {
   const a = argv[i]; if (!a.startsWith('--')) throw new Error(`bad argument ${a}`);
-  const k = a.slice(2); if (['heldout', 'native-split', 'cold'].includes(k)) o[k] = true; else o[k] = argv[++i];
+  const k = a.slice(2); if (['heldout', 'native-split', 'cold', 'stages'].includes(k)) o[k] = true; else o[k] = argv[++i];
 }
 for (const k of ['data', 'set', 'model', 'split', 'mode', 'round', 'out']) if (o[k] === undefined) throw new Error(`--${k} missing`);
 const round = Number(o.round), mode = o.mode;
@@ -78,6 +78,7 @@ const idOf = new Map(vkeys.map((k, i) => [k, i]));
 const params = {};
 let L, searchOne;
 const dump = !!o.dump, dumpRows = [];
+const stages = !!o.stages, lastStage = [0, 0, 0, 0];  // post-freeze: per-query stage times in comparison A
 let timedPass = false, curRow = -1;
 const inject = r => {
   const float = QF.slice(r * D, (r + 1) * D);
@@ -92,9 +93,15 @@ if (mode === 'A') {
   L = H;
   searchOne = (float, ids, scores) => {
     // As the product calls it: the query code at the index's code width; the index encodes the int8 query (K4).
-    const fused = idx.searchCascade(floatToBinary(truncateForHNSW(float, idx.floatDimension)), C, { queryFloat: float });
+    // Stage clocks (post-freeze, --stages): query code | stage 1 (generator) | int8 screen | full rescoring
+    const c0 = stages ? process.hrtime.bigint() : 0n;
+    const qcode = floatToBinary(truncateForHNSW(float, idx.floatDimension));
+    const c1 = stages ? process.hrtime.bigint() : 0n;
+    const fused = idx.searchCascade(qcode, C, { queryFloat: float });
     if (!fused) throw new Error('native cascade unavailable');
+    const c2 = stages ? process.hrtime.bigint() : 0n;
     const st = fused.int8Stage(fused.count);
+    const c3 = stages ? process.hrtime.bigint() : 0n;
     const fr = st.fullOrder(float, H);
     const h = Math.min(H, st.count);
     if (!fr || (h >= 3 && fr.found < h)) throw new Error('full-vector stage unavailable');
@@ -103,6 +110,7 @@ if (mode === 'A') {
       const p = h >= 3 ? fr.order[j] : j;
       ids[j] = vidOf[nodes[p]]; scores[j] = h >= 3 ? fr.full[p] : NaN;
     }
+    if (stages) { const c4 = process.hrtime.bigint(); lastStage[0] = Number(c1 - c0); lastStage[1] = Number(c2 - c1); lastStage[2] = Number(c3 - c2); lastStage[3] = Number(c4 - c3); }
     if (dump && timedPass) {  // --dump: all C candidates in int8 order with their int8 dots, then the H final vids and f64 scores
       const all = st.nodes(st.count), mat = st.materialize(st.count), rec = new Int32Array(2 * C).fill(-1), fin = new Float64Array(H).fill(NaN), fv = new Int32Array(H).fill(-1);
       for (let j = 0; j < st.count; j++) { rec[j] = vidOf[all[j]]; rec[C + j] = mat[j].missingInt8 ? 0 : Math.round(mat[j].int8Score * 127 * 127); }
@@ -151,6 +159,7 @@ if (o['native-split']) {
 // ---- memory (DESIGN.md 5.4; PAPER_PLAN 5.7)
 function memory() {
   const m = { rss_kb: Math.round(process.memoryUsage().rss / 1024) };
+  try { const f = fs.readFileSync('/proc/self/stat', 'utf8').split(') ')[1].split(' '); m.minflt = Number(f[7]); m.majflt = Number(f[9]); } catch {}
   try {
     for (const l of fs.readFileSync('/proc/self/smaps_rollup', 'utf8').split('\n')) {
       const x = l.match(/^(\w+):\s+(\d+) kB/); if (x) m[x[1]] = Number(x[2]);
@@ -171,6 +180,7 @@ const memLoaded = memory();
 const ids = new Int32Array(L), scores = new Float64Array(L);
 const lists = Buffer.alloc(nq * L * 8); const lv = new Int32Array(lists.buffer, 0, nq * L), ls = new Float32Array(lists.buffer, nq * L * 4, nq * L);
 const timings = new Array(nq).fill(-1), native = o['native-split'] ? new Array(nq).fill(0) : null;
+const stageNs = stages ? [0, 1, 2, 3].map(() => new Array(nq).fill(-1)) : null;
 const run = async r => { curRow = r; ids.fill(-1); scores.fill(NaN); return searchOne(inject(r), ids, scores, queries[r].text); };
 let firstNs = null;
 if (!o.cold) { const w = perm(warm.length, 7); for (let i = 0; i < Math.min(500, warm.length); i++) await run(warm[w[i]]); }
@@ -184,6 +194,7 @@ for (const qi of order) {
   const n = await run(qrows[qi]);
   const ns = Number(process.hrtime.bigint() - s);
   timings[qi] = ns; if (firstNs === null) firstNs = ns; if (native) native[qi] = nativeNs;
+  if (stageNs) for (let k = 0; k < 4; k++) stageNs[k][qi] = lastStage[k];
   if (n < L) short++;
   if (testSleep) Atomics.wait(sleepCell, 0, 0, testSleep);  // test_harness.sh only: a job slow enough to kill mid-run
   for (let j = 0; j < L; j++) { lv[qi * L + j] = ids[j]; ls[qi * L + j] = scores[j]; }
@@ -201,6 +212,8 @@ const rec = {
   system: `ours_${mode === 'A' ? o.gen : 'cascade'}`, comparison: mode, set: o.set, model: o.model, split: o.split, round,
   params, L, n_queries: nq, order_seed: 42 + round, warmup: o.cold ? 0 : Math.min(500, warm.length), cold: !!o.cold,
   timings_ns: timings, native_ns: native, first_query_ns: firstNs,
+  ...(stageNs ? { stage_ns: { conv: stageNs[0], gen: stageNs[1], screen: stageNs[2], rescore: stageNs[3] } } : {}),
+  env_switches: Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith('SS_FIX_') || k.startsWith('SS_HNSW_'))),
   lists_sha256: sha(lists), short_lists: short,
   memory: { loaded: memLoaded, after: memAfter }, load_s: loadS, process_s: (performance.now() - t0) / 1000,
   env: { host: os.hostname(), cpu: os.cpus()[0]?.model, node: process.version, platform: process.platform, arch: process.arch,

@@ -1,0 +1,69 @@
+{
+"step": "post-arm-B--csn1m--bge-base-en-v1.5--r2",
+"builds": [],
+"jobs": [
+{
+"set": "csn1m",
+"model": "bge-base-en-v1.5",
+"split": "ho",
+"build_seed": 42,
+"pagecache": "warm",
+"comparison": "B",
+"kv": 16,
+"kind": "timing",
+"round": 2,
+"system": "ours_cascade",
+"S1": 2000,
+"EF": 2000
+},
+{
+"set": "csn1m",
+"model": "bge-base-en-v1.5",
+"split": "ho",
+"build_seed": 42,
+"pagecache": "warm",
+"comparison": "B",
+"kv": 16,
+"kind": "native",
+"round": 2,
+"system": "ours_cascade",
+"S1": 2000,
+"EF": 2000
+},
+{
+"set": "csn1m",
+"model": "bge-base-en-v1.5",
+"split": "ho",
+"build_seed": 42,
+"pagecache": "warm",
+"comparison": "B",
+"kv": 16,
+"kind": "timing",
+"round": 2,
+"system": "ours_cascade",
+"S1": 400,
+"EF": 400
+},
+{
+"set": "csn1m",
+"model": "bge-base-en-v1.5",
+"split": "ho",
+"build_seed": 42,
+"pagecache": "warm",
+"comparison": "B",
+"kv": 16,
+"kind": "timing",
+"round": 2,
+"system": "faiss_hnsw_flat",
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"search": {
+"ef": 256
+},
+"ef": "256"
+}
+]
+}

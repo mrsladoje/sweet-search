@@ -163,6 +163,8 @@ for j in plan['jobs']:
         say(f'page cache: read {nb / 1e9:.2f} GB in {time.time() - warm_s:.1f} s before the job')
     if j.get('options', {}).get('limit'):
         common += ['--limit', str(j['options']['limit'])]
+    if j.get('options', {}).get('stages'):  # post-freeze: per-query stage clocks (comparison A)
+        common.append('--stages')
     if j['system'].startswith('ours'):
         cmd = [a.node, os.path.join(HERE, 'ours5.mjs'), '--mode', j['comparison']] + common
         for k in ('gen', 'C', 'H', 'ef', 'kv', 'S1', 'EF', 'index'):
@@ -178,6 +180,9 @@ for j in plan['jobs']:
             if k in j:
                 cmd += [f'--{k}', str(j[k])]
         env = dict(os.environ, LIBRESCORE5=os.path.join(os.path.dirname(os.path.abspath(a.rivals)), 'librescore5.so'))
+    for k, v in (j.get('options', {}).get('env') or {}).items():  # post-freeze: bench-only switches (SS_FIX_*), part of the key
+        assert k.startswith(('SS_FIX_', 'SS_HNSW_')), k
+        env[k] = str(v)
     r = subprocess.run(cmd, capture_output=True, text=True, env=env)
     msg = [l for l in r.stdout.splitlines() if l and not l.startswith('[')]
     if r.returncode or jobs.validate(path, j['_hash'], j['_key'], j['_n']):
