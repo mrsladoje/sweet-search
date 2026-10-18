@@ -7,7 +7,7 @@ The benchmark replays rerank calls captured from a code-search engine and from t
 We use it to compare an int4 SIMD kernel from the open-source engine sweet-search with NumPy, PyTorch, maxsim-cpu, NextPlaid and NumKong on five CPUs.
 With warm calls, the kernel was faster than every exact float32 rival on the captured agent and code-search calls on all five CPUs; on agent calls the fastest rival needed \nm{best.warm.agent-ho.f32.min}--\nm{best.warm.agent-ho.f32.max}$\times$ its time.
 These sets were examined during development; on the fresh BEIR calls the kernel was faster on four CPUs, and PyTorch was faster on the Xeon.
-Rivals were faster in other conditions, which we list: one thread, a busy gap before the call, large calls, and NumKong's approximate scores.
+Rivals were faster in other conditions, which we list: one thread, many callers in one process, a busy gap before the call, large calls, and NumKong's approximate scores.
 A pre-registered test showed that the kernel's int4 scoring rule keeps nDCG@10 for ColBERTv2 but loses up to \nm{q.intel.nfcorpus.answersmall.relabs}\% for answerai-colbert-small.
 We release the replay format, the references and all raw results \TODO{Zenodo DOI}.
 \end{abstract}

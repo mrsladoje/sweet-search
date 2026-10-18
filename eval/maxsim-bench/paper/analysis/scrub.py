@@ -61,6 +61,11 @@ def main():
     labels = json.load(open(a.map)) if os.path.exists(a.map) else {}
     rev = {v: k for k, v in labels.items()}   # real -> label
     used = {}
+    for lab in labels:                        # a later run continues the numbering of an earlier one
+        m = re.fullmatch(r'([a-z0-9]+)(-dev)?-host-(\d+)[a-h]?', lab)
+        if m:
+            k = (m.group(1), bool(m.group(2)))
+            used[k] = max(used.get(k, 0), int(m.group(3)))
     os.makedirs(a.out, exist_ok=True)
     sums = []
     for pair in a.pairs:
