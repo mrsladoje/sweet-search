@@ -11,7 +11,7 @@ Headings, captions and paragraphs marked ``post-freeze'' or ``post hoc'' report 
 \subsection{Warm calls}
 \label{sec:warm}
 
-On the captured agent and GCSN calls, \sweet was faster than every exact float32 rival on all five CPUs; on the fresh BEIR calls, PyTorch was faster on Intel.
+Under the warm protocol (Section~\ref{sec:method}), \sweet was faster than every exact float32 rival on the captured agent and GCSN calls on all five CPUs; on the fresh BEIR calls, PyTorch was faster on Intel.
 Table~\ref{tab:warm} and Figure~\ref{fig:ratios} give the main comparison.
 Each rival is at the faster of its two frozen configurations, so ``all cores'' is not always the tested condition: on the M3 Max, several rivals are fastest with one thread.
 
@@ -35,7 +35,7 @@ On agent calls these tiers were \nm{range.tiers.agent-ho.node-wasm.min}--\nm{ran
 \begin{table}[!htbp]
 \centering\scriptsize
 \setlength{\tabcolsep}{3pt}
-\caption{Warm calls. Ratio = rival / \sweet kernel, geometric mean over calls (above 1: \sweet faster), with the 95\% workload interval below. Each rival: the faster of its two frozen configurations for that input type. NumKong ($\dagger$, approximate): its fastest input type. Red bold: the rival is faster (Section~\ref{sec:method}). $\ast$: the arm returned invalid scores on part of the calls (NumKong on Intel, Section~\ref{sec:correctness}). Agent and GCSN: previously examined. BEIR (20 sets pooled; 623 query clusters): fresh held-out. ``prev.\ path'': the engine's previous production path (not run on BEIR); ``prod.\ path'': the Node.js product path over the same kernel.}
+\caption{Warm calls. Ratio = rival / \sweet kernel, geometric mean over calls (above 1: \sweet faster), with the 95\% workload interval below. Each rival: the faster of its two frozen configurations for that input type. NumKong ($\dagger$, approximate): its fastest input type. Red bold: the rival is faster (Section~\ref{sec:method}). NumKong native rows include a start-up cost of the benchmark's adapter under this protocol (about \nm{prot.nk.handicap}$\times$ on the EPYC, Section~\ref{sec:floor}). $\ast$: the arm returned invalid scores on part of the calls (NumKong on Intel, Section~\ref{sec:correctness}). Agent and GCSN: previously examined. BEIR (20 sets pooled; 623 query clusters): fresh held-out. ``prev.\ path'': the engine's previous production path (not run on BEIR); ``prod.\ path'': the Node.js product path over the same kernel.}
 \label{tab:warm}
 \begin{tabular}{llrrrrrrrrr}
 \toprule
@@ -174,7 +174,7 @@ When they lay about \nm{nkcheck.clustered.gap}\% apart, the correlation fell to 
 Dimension 96 and 128 behaved the same.
 So NumKong's one-token refinement fails when candidate scores lie close together, as they do for answerai-colbert-small, and holds up better when they lie far apart, as for ColBERTv2.
 Figure~\ref{fig:nkgap} repeats the check at \nm{nkgap.levels} levels of spread (post hoc, synthetic).
-For gaps below 0.5\% the rank correlation stayed at or below \nm{nkgap.low.rho.max}; for random vectors (gap about \nm{nkgap.random.gap}\%) it reached \nm{nkgap.random.rho.min}--\nm{nkgap.random.rho.max}.
+For gaps below 0.5\% the rank correlation stayed at or below \nm{nkgap.low.rho.max}; for random vectors it reached \nm{nkgap.random.rho.min}--\nm{nkgap.random.rho.max}.
 The median gaps of answerai-colbert-small (\nm{margin.nfcorpus.answersmall}--\nm{margin.scifact.answersmall}\%) lie on the steep part of the curve; those of ColBERTv2 (\nm{margin.scifact.colbertv2}--\nm{margin.nfcorpus.colbertv2}\%) lie far to its right.
 
 \begin{figure}[!htbp]
@@ -333,20 +333,28 @@ So its fixed cost can be larger than the smallest call's time.
 The probe therefore does not show why \sweet's median call was shorter.
 
 NumKong is different.
-Its native loop had the largest fixed share (\nm{range.floor.numkong.min}--\nm{range.floor.numkong.max}\%), and on Intel, Graviton4 and the EPYC its median call was shorter than \sweet's.
+Its native loop had the largest ratio of smallest call to median call (\nm{range.floor.numkong.min}--\nm{range.floor.numkong.max}\%).
+On Intel, Graviton4 and the EPYC, its median call in the probe was shorter than \sweet's.
 On the EPYC this disagrees with the main run, where NumKong needed \nm{warm.epyc.agent-ho.numkong.best}$\times$ the time of \sweet on agent calls (Table~\ref{tab:warm}).
 In the main run, the median over held-out agent calls was \nm{p50.epyc.agent.numkong}\,$\mu$s for NumKong's native float32 loop and \nm{p50.epyc.agent.ours}\,$\mu$s for \sweet.
 In the fixed-cost run, NumKong's single median call took \nm{floor.epyc.numkong.med}\,$\mu$s and \sweet's \nm{floor.epyc.ours.med}\,$\mu$s.
 So NumKong's time halved between the two runs, while \sweet's fell by about 10\%.
-A post-freeze check on the EPYC found the cause: the two harnesses repeat calls differently (Appendix~\ref{app:deviations}, item 33).
+A post-freeze check on the EPYC found the cause: the two harnesses repeat calls differently (Appendix~\ref{app:deviations}, items 33--34).
 The main harness times each call after one warm-up call; the probe repeats one call 200 times first.
-On \nm{nkw.calls} development agent calls, NumKong took a median of \nm{nkw.nk.1}\,$\mu$s after one warm-up call and \nm{nkw.nk.200}\,$\mu$s after 200.
+On \nm{nkw.calls} development agent calls, NumKong took a median of \nm{nkw.nk.1}\,$\mu$s after one warm-up call, \nm{nkw.nk.50}\,$\mu$s after 50 and \nm{nkw.nk.200}\,$\mu$s after 200.
 \sweet took \nm{nkw.ours.min}--\nm{nkw.ours.max}\,$\mu$s at every warm-up count.
-NumKong reached its steady speed only after about 50 back-to-back calls (\nm{nkw.nk.50}\,$\mu$s).
-So under continuous load, NumKong's native arm was faster than \sweet on these calls.
-The main run's per-call protocol includes a start-up cost for this arm that \sweet does not have.
-The native arm runs NumKong's kernel in the benchmark's own Rust thread pool, so this cost may come from our adapter, not from NumKong.
-We did not separate thread wake-up from clock ramp-up, and we tested only these two arms.
+A second check separated two causes.
+With all calls prepared first and then timed once each, back to back, NumKong took \nm{prot.numkong_native_f32.A}\,$\mu$s.
+So the idle gap during each call's preparation explains most of the difference.
+Reused data explains the rest: after one untimed pass over all calls, NumKong took \nm{prot.numkong_native_f32.Aw}\,$\mu$s.
+NumKong needed \nm{prot.nk.main.ratio}$\times$ \sweet's time under the main protocol, \nm{prot.nk.A.ratio}$\times$ with distinct calls back to back, and \nm{prot.nk.Aw.ratio}$\times$ after one untimed pass.
+The main protocol therefore handicaps NumKong's native arm by about \nm{prot.nk.handicap}$\times$.
+This arm runs NumKong's kernel in the benchmark's own Rust thread pool, so this cost may come from our adapter, not from NumKong.
+For the exact rivals, the effect goes the other way.
+With distinct calls back to back, they took \nm{prot.exact.slowA.min}--\nm{prot.exact.slowA.max} times their main-protocol time.
+They then needed \nm{prot.exact.A.min}--\nm{prot.exact.A.max}$\times$ \sweet's time, against \nm{prot.exact.main.min}--\nm{prot.exact.main.max}$\times$ under the main protocol.
+So on the EPYC, the warm protocol did not enlarge \sweet's lead over the exact rivals.
+We did not separate thread wake-up from clock ramp-up, and we ran these checks on the EPYC only.
 
 \begin{table}[!htbp]
 \centering\scriptsize

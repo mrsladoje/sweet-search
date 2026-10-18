@@ -5,7 +5,7 @@ Our results lead to seven recommendations for people who build or choose MaxSim 
 Each names its evidence; the evidence comes from five CPUs, two public models and the workloads of Section~\ref{sec:workload}.
 
 \begin{enumerate}
-\item \textbf{Check every implementation against a reference of its own contract.} Include fixtures with negative best matches, ragged document lengths and padding. Such fixtures found all three defects of Section~\ref{sec:correctness}.
+\item \textbf{Check every implementation against a reference of its own contract.} Include fixtures with negative best matches, ragged document lengths and padding. Such fixtures, and reference checks on replayed calls, found the three defects of Section~\ref{sec:correctness}.
 \item \textbf{Report the contract and the storage type with every score.} On int4 tokens, contracts S and C keep the same top document on only \nm{ce.beir.S-vs-C.top1}\% of BEIR calls (Table~\ref{tab:contract-effects}). Speed or quality numbers under different contracts are not comparable.
 \item \textbf{Evaluate renormalization of decoded tokens when you store quantized tokens.} On our int4 data, contract C removed most of the loss of answerai-colbert-small (Section~\ref{sec:quality}). This analysis is post hoc and depends on the model, so a changed rule needs a fresh test.
 \item \textbf{Test an approximate MaxSim on your own model before you use it.} In our tests, NumKong's top document agreed with its own exact contract on only \nm{nk.top1own.beir.min}--\nm{nk.top1own.beir.max}\% of BEIR calls. Its ranking failed when candidate scores lay close together.

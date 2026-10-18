@@ -408,6 +408,22 @@ def main():
         put('nkw.ours.min', f'{min(us.values()):.0f}', 'post_checks.json'); put('nkw.ours.max', f'{max(us.values()):.0f}', 'post_checks.json')
         if EW.get('calls'):
             put('nkw.calls', str(EW['calls']), 'post_checks.json')
+    EP = PC.get('epyc_protocols')
+    if EP:
+        m = {a: {p: sum(v) / len(v) for p, v in x.items()} for a, x in EP['summary'].items()}
+        exact = [a for a in m if a not in ('ours', 'numkong_native_f32')]
+        for a in m:
+            for p_ in ('main', 'A', 'Aw', 'B'):
+                put(f'prot.{a}.{p_}', f'{m[a][p_]:.0f}', 'post_checks.json', 'EPYC, development agent calls, median per call, us (mean of runs)')
+        nk = m['numkong_native_f32']; us = m['ours']
+        put('prot.nk.handicap', f"{nk['main'] / nk['A']:.2f}", 'post_checks.json', 'NumKong main / A')
+        put('prot.nk.main.ratio', f"{nk['main'] / us['main']:.2f}", 'post_checks.json'); put('prot.nk.A.ratio', f"{nk['A'] / us['A']:.2f}", 'post_checks.json')
+        put('prot.nk.Aw.ratio', f"{nk['Aw'] / us['Aw']:.2f}", 'post_checks.json')
+        for p_ in ('main', 'A'):
+            r = [m[a][p_] / us[p_] for a in exact]
+            put(f'prot.exact.{p_}.min', f'{min(r):.2f}', 'post_checks.json', 'exact rival / ours'); put(f'prot.exact.{p_}.max', f'{max(r):.2f}', 'post_checks.json')
+        r = [m[a]['A'] / m[a]['main'] for a in exact]
+        put('prot.exact.slowA.min', f'{min(r):.1f}', 'post_checks.json', 'exact rival A / main'); put('prot.exact.slowA.max', f'{max(r):.1f}', 'post_checks.json')
     if CK.get('f32direct'):
         fd = CK['f32direct']
         r = [(a['p95_ratio_original_over_decoded'], f'{c} {n}') for c, cv in fd['cells'].items() for n, a in cv['arms'].items()]

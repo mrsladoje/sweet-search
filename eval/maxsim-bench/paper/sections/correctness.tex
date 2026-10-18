@@ -14,13 +14,15 @@ Its sums over 32-token query chunks are exact, so the benchmark calls it that wa
 \paragraph{maxsim-cpu, AArch64 build, zero padding (issue \#5).}
 Its list interface pads shorter documents with zero vectors inside a call.
 A zero vector scores 0, so for a query token whose best cosine is negative, the padded documents get 0 instead: a $\max(0,\cdot)$ clamp that depends on which other documents share the call~\cite{maxsimcpu_issue5}.
-The ragged-length fixture catches it on AArch64.
+The padding fixture catches it on AArch64.
 On the M3 Max its largest error against its own contract was $4\times10^{-2}$ to $8\times10^{-2}$; its top document still agreed with the contract-S reference on every call, because S applies the same clamp on purpose.
 
 \paragraph{NumKong, AMX path (issue \#406).}
 On CPUs with AMX, NumKong~7.8.5's packed MaxSim kernel scans all 16 columns of a partially filled last tile.
-When a document's token count modulo 64 is 49 to 63 and every cosine of a query token is negative, a padding column wins, and the result is wrong (NaN, 0, 1 or very large values)~\cite{numkong_issue406}.
-The negative-best-match fixture found it on the Granite Rapids machine, and a standalone script reproduced it on a second machine of the same type.
+The trigger is a number of document token vectors in one kernel call (the issue's ``document count'') of 49 to 63 modulo 64.
+If every cosine of a query token is then negative, a padding column wins, and the result is wrong (NaN, 0, 1 or very large values)~\cite{numkong_issue406}.
+The padding fixture combines a negative best match with documents of 64 to 256 tokens; it found the defect on the Granite Rapids machine.
+A standalone script reproduced it on a second machine of the same type.
 The defect also occurred on the replayed data. On Intel, NumKong's float16 arms returned NaN scores on \nm{nan.intel.numkong_native_f16.ho-warm.agent-ho}\% of agent calls, \nm{nan.intel.numkong_native_f16.ho-warm.gcsn-ho}\% of GCSN calls and \nm{nan.intel.numkong_native_f16.ho-warm.beir}\% of BEIR calls; its float32 arms did so on up to \nm{nan.intel.numkong_native_f32.ho-warm.sweep}\% of sweep calls. No arm returned NaN on the CPUs without AMX. The defect's other wrong values (0, 1, very large) are not NaN and can hide inside NumKong's approximation error, so the Intel NumKong rows include an unknown number of further defective calls. Across runs, NumKong's Python arms on Intel also returned different scores for the same call (values up to $10^{74}$), while every other arm on every CPU returned bit-identical scores in all its runs. Their timings stand as measured and are marked ($\ast$) in the speed tables; their error and quality numbers do not describe NumKong's intended behaviour, so we take NumKong's quality from the AMD run.
 
 \paragraph{Contract differences are not defects.}
@@ -31,6 +33,7 @@ The clamp changes the top document on at most 0.1\% of calls; the epsilon placem
 So almost all of the S--C difference comes from normalization.
 Both models produce token vectors of unit length, so the stored norm $n_j$ is 1 (Section~\ref{sec:contracts}).
 On the float vectors, S and C therefore differ only by the epsilon and the clamp.
+The clamp can still change scores, for example when every match of a query token is negative.
 On int4 tokens, C divides by the decoded norm, and S does not.
 On development data, the decoded norm differed from 1 by up to about 2.5\%.
 The two rules diverge most on BEIR, where candidate scores lie closest together.
