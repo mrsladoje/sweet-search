@@ -1,4 +1,4 @@
-# Paper: contract-checked benchmark of CPU late-interaction reranking kernels
+# Paper: MaxSim Is Not One Function (LIRK-Bench)
 
 LaTeX source of the paper and the post-freeze analysis code that builds every table,
 figure and number in it. Nothing in this folder is frozen (`freeze_check.py` checks only

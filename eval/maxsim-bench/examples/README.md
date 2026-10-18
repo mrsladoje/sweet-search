@@ -99,7 +99,7 @@ The scoring contracts (`S`, `Spre`, `C`, `Spre-pad0`) are defined at the top of 
 
 ```bibtex
 @misc{lirkbench2026,
-  title        = {{LIRK-Bench}: A Contract-Checked Benchmark of {CPU} Late-Interaction Reranking Kernels},
+  title        = {{MaxSim} Is Not One Function: {LIRK-Bench}, a Benchmark of {CPU} Late-Interaction Kernels for {ColBERT}-Style Reranking},
   author       = {TODO},
   year         = {2026},
   eprint       = {TODO},
@@ -125,7 +125,7 @@ cff-version: 1.2.0
 message: "If you use this software or the LIRK-Bench benchmark, please cite the paper below."
 type: software
 title: "sweet-search"
-abstract: "Local code search. The folder eval/maxsim-bench holds LIRK-Bench, a contract-checked benchmark of CPU late-interaction reranking kernels."
+abstract: "Local code search. The folder eval/maxsim-bench holds LIRK-Bench, a benchmark of CPU late-interaction reranking kernels."
 authors:
   - family-names: "TODO"
     given-names: "TODO"
@@ -136,7 +136,7 @@ license: Apache-2.0
 # doi: TODO             (Zenodo DOI of the release)
 preferred-citation:
   type: article
-  title: "LIRK-Bench: A Contract-Checked Benchmark of CPU MaxSim Kernels for ColBERT-Style Reranking"
+  title: "MaxSim Is Not One Function: LIRK-Bench, a Benchmark of CPU Late-Interaction Kernels for ColBERT-Style Reranking"
   authors:
     - family-names: "TODO"
       given-names: "TODO"

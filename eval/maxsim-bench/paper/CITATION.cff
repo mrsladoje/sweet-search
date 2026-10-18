@@ -2,7 +2,7 @@ cff-version: 1.2.0
 message: "If you use LIRK-Bench, please cite the paper below. Software citation: use the fields of this file."
 type: software
 title: "LIRK-Bench"
-abstract: "A contract-checked benchmark of CPU late-interaction reranking kernels (MaxSim). Code, replay-set format, scoring contracts and analysis."
+abstract: "A benchmark of CPU late-interaction reranking kernels (MaxSim) that checks each implementation against a reference of its own scoring rule. Code, replay-set format, scoring contracts and analysis."
 authors:
   - family-names: "TODO"
     given-names: "TODO"
@@ -22,7 +22,7 @@ keywords:
 # doi: TODO              (Zenodo DOI of the data and code release, "10.5281/zenodo.NNNNNNN")
 preferred-citation:
   type: article
-  title: "LIRK-Bench: A Contract-Checked Benchmark of CPU MaxSim Kernels for ColBERT-Style Reranking"
+  title: "MaxSim Is Not One Function: LIRK-Bench, a Benchmark of CPU Late-Interaction Kernels for ColBERT-Style Reranking"
   authors:
     - family-names: "TODO"
       given-names: "TODO"
