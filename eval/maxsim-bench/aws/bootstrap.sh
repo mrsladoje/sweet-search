@@ -61,7 +61,7 @@ if [ ! -x venv/bin/python ]; then
   VIRTUAL_ENV=$MB/venv uv pip install --require-hashes -r "$LOCK" --extra-index-url https://download.pytorch.org/whl/cpu --index-strategy unsafe-best-match
 fi
 # MKL NumPy on Intel (W5): try once, 30-minute limit; a failure only leaves the arm out.
-if [ "$MACHINE" = intel ] && [ ! -e venv-mkl/.tried ]; then
+if [ "${MACHINE%%-*}" = intel ] && [ ! -e venv-mkl/.tried ]; then
   ( uv venv --python 3.12 venv-mkl && timeout 1800 env VIRTUAL_ENV=$MB/venv-mkl uv pip install numpy threadpoolctl \
       --index-url https://software.repos.intel.com/python/pypi --extra-index-url https://pypi.org/simple \
     && venv-mkl/bin/python -c "import numpy, threadpoolctl; print([t['internal_api'] for t in threadpoolctl.threadpool_info()])" ) \
@@ -72,7 +72,7 @@ fi
 # needs a licence click-through, so this is conda-forge NumPy on upstream BLIS (which has
 # the Zen kernels); the tables name it "NumPy (BLIS)". 30-minute limit; a failure only
 # leaves the arm out.
-if [ "$MACHINE" = amd ] && [ ! -e venv-blis/.tried ]; then
+if [ "${MACHINE%%-*}" = amd ] && [ ! -e venv-blis/.tried ]; then
   ( curl -Ls https://micro.mamba.pm/api/micromamba/linux-64/latest | tar -xj -C /usr/local bin/micromamba \
     && timeout 1800 /usr/local/bin/micromamba create -y -q -p $MB/venv-blis -c conda-forge python=3.12 numpy threadpoolctl "libblas=*=*blis" \
     && venv-blis/bin/python -c "import numpy, threadpoolctl; print(numpy.__version__, [t.get('internal_api') for t in threadpoolctl.threadpool_info()])" ) \
