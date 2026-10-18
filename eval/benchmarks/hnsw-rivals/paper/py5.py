@@ -147,10 +147,12 @@ def query(a):
         ids[:m] = got_ids[:m]; sc[:m] = got_sc[:m]
         return m
 
+    mem_timed = None
     if not a.get('cold'):
         w = perm(L, len(warm), 7)
         for i in range(min(500, len(warm))):
             one(warm[w[i]])
+    mem_timed = memory()  # replication: faults of the timed pass alone (after any warm-up)
     lv = np.full((nq, Lw), -1, dtype=np.int32); ls = np.full((nq, Lw), np.nan, dtype=np.float32)
     tns = [-1] * nq; short = 0; first = -1
     stg = [[-1] * nq for _ in range(3)] if stages else None
@@ -172,7 +174,7 @@ def query(a):
                system=a['family'], comparison=comp, set=a['set'], model=a['model'], split=split, round=rnd, params=pr,
                build_params=bp, L=Lw, n_queries=nq, order_seed=42 + rnd, warmup=0 if a.get('cold') else min(500, len(warm)),
                cold=bool(a.get('cold')), timings_ns=tns, first_query_ns=first, lists_sha256=hashlib.sha256(blob).hexdigest(),
-               short_lists=int(short), memory=dict(loaded=mem_loaded, after=mem_after), keeps_originals=True, load_s=load_s,
+               short_lists=int(short), memory=dict(loaded=mem_loaded, timed=mem_timed, after=mem_after), keeps_originals=True, load_s=load_s,
                process_s=time.perf_counter() - tp, info=ad.info(), harness='python',
                **({'stage_ns': dict(conv=stg[0], gen=stg[1], rest=stg[2])} if stg else {}))
     json.dump(rec, open(stem + '.json.tmp', 'w')); os.replace(stem + '.json.tmp', stem + '.json')

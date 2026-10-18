@@ -150,10 +150,15 @@ for j in plan['jobs']:
         # were read from disk after rival jobs had pushed the pages out)
         warm_s = time.time()
         roots = [j['build_dir']] if 'build_dir' in j else [j.get('index') or os.path.join(a.data, 'emb', j['model'], j['set'], 'index')]
-        roots.append(os.path.join(a.data, 'emb', j['model'], j['set'], 'export'))
+        exp = os.path.join(a.data, 'emb', j['model'], j['set'], 'export')
+        if j['comparison'] == 'A':
+            roots.append(exp)  # the shared stages read the codes, int8 rows and float16 vectors
+        elif not j['system'].startswith('ours') and j.get('family') in ('faiss_bin_flat', 'faiss_bin_hnsw', 'usearch_b1_rescore'):
+            roots.append(os.path.join(exp, 'codes.u8'))  # (B) binary families read our codes; nobody else reads the export
         nb = 0
         for root in roots:
-            for dp, _, fs in os.walk(root):
+            walk = [(os.path.dirname(root), [], [os.path.basename(root)])] if os.path.isfile(root) else os.walk(root)
+            for dp, _, fs in walk:
                 for fn in fs:
                     with open(os.path.join(dp, fn), 'rb') as fh:
                         while True:
@@ -189,9 +194,9 @@ for j in plan['jobs']:
     # between loading and the end of the timed pass make the job invalid; it runs once more, and the record of the
     # second run stands whatever its count (both counts are kept in the record).
     if not r.returncode and j.get('options', {}).get('faultcheck') and os.path.exists(path):
-        def majflt(p):
+        def majflt(p):  # major faults of the timed pass (memory 'timed' snapshot after the warm-up)
             try:
-                m = json.load(open(p))['memory']; return int(m['after']['majflt']) - int(m['loaded']['majflt'])
+                m = json.load(open(p))['memory']; return int(m['after']['majflt']) - int((m.get('timed') or m['loaded'])['majflt'])
             except Exception:
                 return None
         f1 = majflt(path)
@@ -200,7 +205,9 @@ for j in plan['jobs']:
             os.replace(path, path + f'.faulted.{int(time.time())}')
             r = subprocess.run(cmd, capture_output=True, text=True, env=env)
             if not r.returncode and os.path.exists(path):
-                rec = json.load(open(path)); rec['fault_rule'] = {'first_run_majflt': f1, 'rerun': True}
+                f2 = majflt(path)
+                rec = json.load(open(path)); rec['fault_rule'] = {'first_run_majflt': f1, 'rerun': True, 'second_run_majflt': f2,
+                                                                  'invalid': f2 is None or f2 > FAULT_LIMIT}
                 json.dump(rec, open(path + '.tmp', 'w')); os.replace(path + '.tmp', path)
     msg = [l for l in r.stdout.splitlines() if l and not l.startswith('[')]
     if r.returncode or jobs.validate(path, j['_hash'], j['_key'], j['_n']):

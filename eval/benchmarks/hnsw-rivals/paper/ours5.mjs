@@ -184,6 +184,7 @@ const stageNs = stages ? [0, 1, 2, 3].map(() => new Array(nq).fill(-1)) : null;
 const run = async r => { curRow = r; ids.fill(-1); scores.fill(NaN); return searchOne(inject(r), ids, scores, queries[r].text); };
 let firstNs = null;
 if (!o.cold) { const w = perm(warm.length, 7); for (let i = 0; i < Math.min(500, warm.length); i++) await run(warm[w[i]]); }
+const memTimed = memory();  // replication: faults of the timed pass alone
 const testSleep = Number(process.env.SS_TEST_SLEEP_MS || 0), sleepCell = new Int32Array(new SharedArrayBuffer(4));
 const order = perm(nq, 42 + round);
 timedPass = true;
@@ -215,7 +216,7 @@ const rec = {
   ...(stageNs ? { stage_ns: { conv: stageNs[0], gen: stageNs[1], screen: stageNs[2], rescore: stageNs[3] } } : {}),
   env_switches: Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith('SS_FIX_') || k.startsWith('SS_HNSW_'))),
   lists_sha256: sha(lists), short_lists: short,
-  memory: { loaded: memLoaded, after: memAfter }, load_s: loadS, process_s: (performance.now() - t0) / 1000,
+  memory: { loaded: memLoaded, timed: memTimed, after: memAfter }, load_s: loadS, process_s: (performance.now() - t0) / 1000,
   env: { host: os.hostname(), cpu: os.cpus()[0]?.model, node: process.version, platform: process.platform, arch: process.arch,
     index_root: root, thp: (() => { try { return fs.readFileSync('/sys/kernel/mm/transparent_hugepage/enabled', 'utf8').trim(); } catch { return null; } })() },
 };
