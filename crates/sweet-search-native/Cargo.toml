@@ -100,3 +100,7 @@ lto = false
 codegen-units = 16
 incremental = true
 strip = false
+
+# candle-flash-attn 0.10.2 with CUDA errors reported (vendor/candle-flash-attn/PATCHES.md).
+[patch.crates-io]
+candle-flash-attn = { path = "vendor/candle-flash-attn" }

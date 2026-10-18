@@ -376,7 +376,7 @@ pub fn flash_attn_usable(device: &Device, dtype: DType) -> bool {
             eprintln!(
                 "[NativeInference] flash-attn self-check FAILED on this GPU \
                  (compute capability {}, {:?}; {}); using standard attention",
-                super::cuda_compute_capability_from_env(),
+                super::cuda_compute_capability(device),
                 dtype,
                 detail
             );

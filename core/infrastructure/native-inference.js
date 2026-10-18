@@ -26,13 +26,13 @@
  *   SWEET_SEARCH_CUDA=0                        — force-disable CUDA even
  *                                                on an eligible host
  *                                                (diagnostic)
- *   SWEET_SEARCH_CUDA_COMPUTE_CAP=<cc>         — set by this module
- *                                                before addon loads so
- *                                                the Rust dtype policy
- *                                                picks BF16/F16/F32 by
- *                                                compute capability and
- *                                                model family.
- *                                                See mod.rs::optimal_dtype
+ *   SWEET_SEARCH_CUDA_COMPUTE_CAP=<cc>         — diagnostics only:
+ *                                                overrides the compute
+ *                                                capability the addon
+ *                                                reads from CUDA device 0
+ *                                                (dtype policy and
+ *                                                flash-attn gate).
+ *                                                See mod.rs::cuda_compute_capability
  *   SWEET_SEARCH_NATIVE_DTYPE=f32|bf16|f16       Global dtype preference.
  *                                                On CUDA, BF16 is used for
  *                                                embeddings on Ampere+ but
@@ -97,30 +97,6 @@ export function pickCascadeDirForDevice(deviceKind, cascadeDirOverride, resolveC
   if (cascadeDirOverride !== undefined) return cascadeDirOverride;
   if (deviceKind !== 'metal') return undefined;
   return resolveCascadeDir() || undefined;
-}
-
-// ─── CUDA compute-capability env propagation ───
-
-/**
- * Ensure `SWEET_SEARCH_CUDA_COMPUTE_CAP` is set for the current process
- * before the addon loads a CUDA model. The Rust `optimal_dtype` reads
- * this env var to pick BF16 for the embedding model on Ampere+ while
- * keeping ModernBERT LI on F32 unless explicitly overridden.
- *
- * Idempotent: honors an already-set value (useful for forcing a dtype
- * tier in benchmarks) and silently no-ops when there is no NVIDIA GPU.
- */
-function propagateCudaComputeCapToAddonEnv() {
-  if (process.env.SWEET_SEARCH_CUDA_COMPUTE_CAP) return;
-  try {
-    const hw = detectHardwareCapability();
-    if (hw.nvidiaGpu?.computeCapability) {
-      process.env.SWEET_SEARCH_CUDA_COMPUTE_CAP = hw.nvidiaGpu.computeCapability;
-    }
-  } catch {
-    // Hardware detection is advisory. If it fails, the Rust side falls
-    // back to F32 which is always correct, if slower.
-  }
 }
 
 // ─── CoreML cascade resolution ───
@@ -551,7 +527,6 @@ export async function loadNativeEmbeddingModelWithDevice(deviceKind, cascadeDirO
 
     // CUDA needs the compute-capability env set BEFORE the Rust load
     // path picks a dtype. No-op on non-CUDA kinds and already-set envs.
-    if (deviceKind === 'cuda') propagateCudaComputeCapToAddonEnv();
 
     await fetchModel('coderankembed-fp32');
 
@@ -606,7 +581,6 @@ export async function loadNativeLiModelWithDevice(deviceKind, cascadeDirOverride
     if (!addon?.NativeLateInteractionModel?.loadWithDevice) return null;
 
     // See loadNativeEmbeddingModelWithDevice for why this is CUDA-only.
-    if (deviceKind === 'cuda') propagateCudaComputeCapToAddonEnv();
 
     await fetchModel(variant.fp32RegistryKey);
 

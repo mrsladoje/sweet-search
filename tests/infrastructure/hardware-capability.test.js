@@ -15,6 +15,7 @@ import {
   parseAppleChipBrandString,
   parseNvidiaSmiOutput,
   detectHardwareCapability,
+  resolveCudaAvailability,
   _resetHardwareCapabilityCache,
 } from '../../core/infrastructure/hardware-capability.js';
 
@@ -346,5 +347,57 @@ describe('parseNvidiaSmiOutput', () => {
       expect(hw.coremlCascadeEligible).toBe(false);
       expect(hw.coremlCascadeReason).toMatch(/below cascade threshold|ANE/i);
     }
+  });
+});
+
+describe('resolveCudaAvailability', () => {
+  const smi = (name, cc) => ({ name, computeCapability: cc, computeCapabilityFloat: parseFloat(cc), memoryMB: 16376, driverVersion: '550.144.03' });
+  const device = (name, cc, supported, reason = null) => ({ name, computeCapability: cc, totalMemoryMb: 81559, kernelFloor: '8.0', supported, reason });
+  const base = { platform: 'linux', arch: 'x64', forceDisabled: false };
+
+  it('describes CUDA device 0, not the first nvidia-smi line, on a mixed-GPU host', () => {
+    const r = resolveCudaAvailability({
+      ...base,
+      nvidiaGpu: smi('NVIDIA RTX A4000', '8.6'),
+      addon: { available: true, device: device('NVIDIA H100 NVL', '9.0', true) },
+    });
+    expect(r.cudaAvailable).toBe(true);
+    expect(r.nvidiaGpu.name).toBe('NVIDIA H100 NVL');
+    expect(r.nvidiaGpu.computeCapabilityFloat).toBe(9.0);
+    expect(r.nvidiaGpu.driverVersion).toBe('550.144.03');
+    expect(r.cudaReason).toMatch(/nvidia-smi lists NVIDIA RTX A4000 first/);
+  });
+
+  it('refuses a GPU below the build kernel floor even when nvidia-smi passes the old threshold', () => {
+    const r = resolveCudaAvailability({
+      ...base,
+      nvidiaGpu: smi('Tesla T4', '7.5'),
+      addon: { available: false, device: device('Tesla T4', '7.5', false, "Tesla T4 has compute capability 7.5; this build's CUDA kernels need 8.0 or newer") },
+    });
+    expect(r.cudaAvailable).toBe(false);
+    expect(r.cudaReason).toMatch(/need 8\.0 or newer/);
+  });
+
+  it('reports a device that did not initialise', () => {
+    const r = resolveCudaAvailability({
+      ...base,
+      nvidiaGpu: smi('NVIDIA L4', '8.9'),
+      addon: { available: false, device: { name: '', computeCapability: '', totalMemoryMb: 0, kernelFloor: '8.0', supported: false, reason: 'CUDA device 0 did not initialise: driver error' } },
+    });
+    expect(r.cudaAvailable).toBe(false);
+    expect(r.cudaReason).toMatch(/did not initialise/);
+    expect(r.nvidiaGpu.name).toBe('NVIDIA L4');
+  });
+
+  it('falls back to nvidia-smi for an addon without the device record', () => {
+    expect(resolveCudaAvailability({ ...base, nvidiaGpu: smi('NVIDIA L4', '8.9'), addon: { available: true, device: null } }).cudaAvailable).toBe(true);
+    expect(resolveCudaAvailability({ ...base, nvidiaGpu: smi('GTX 1080', '6.1'), addon: { available: true, device: null } }).cudaAvailable).toBe(false);
+    expect(resolveCudaAvailability({ ...base, nvidiaGpu: smi('NVIDIA L4', '8.9'), addon: { available: null, device: null } }).cudaReason).toMatch(/does not expose a CUDA probe/);
+  });
+
+  it('honours the force-disable switch and non-Linux hosts', () => {
+    const addon = { available: true, device: device('NVIDIA L4', '8.9', true) };
+    expect(resolveCudaAvailability({ ...base, forceDisabled: true, nvidiaGpu: null, addon }).cudaAvailable).toBe(false);
+    expect(resolveCudaAvailability({ ...base, platform: 'darwin', nvidiaGpu: null, addon }).cudaAvailable).toBe(false);
   });
 });
