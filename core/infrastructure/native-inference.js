@@ -510,6 +510,20 @@ export function isNativeLiModelLoaded() {
   return _liModels.get(variant.fp32RegistryKey)?.model != null;
 }
 
+/**
+ * Backend label of the loaded native embedding model ("cuda/bf16",
+ * "coreml+metal/bf16", ...), or null. Used for index provenance.
+ */
+export function getNativeEmbeddingBackend() {
+  return typeof _embeddingModel?.backend === 'string' ? _embeddingModel.backend : null;
+}
+
+/** Backend label of the active native LI model, or null. */
+export function getNativeLiBackend() {
+  const model = _liModels.get(resolveNativeLiVariant().fp32RegistryKey)?.model;
+  return typeof model?.backend === 'string' ? model.backend : null;
+}
+
 // ─── Device-explicit loading ───
 
 /**

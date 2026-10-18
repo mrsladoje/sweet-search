@@ -17,6 +17,7 @@ vi.mock('../../core/ranking/late-interaction-model.js', () => ({
     new Float32Array([1, 0, 0, 0]),
     new Float32Array([0, 1, 0, 0]),
   ])),
+  liDocumentEncoderLabel: () => 'ort/cpu',
 }));
 
 vi.mock('../../core/config.js', async (importOriginal) => {

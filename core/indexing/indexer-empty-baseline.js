@@ -32,6 +32,7 @@ import { DB_PATHS } from '../infrastructure/config/index.js';
 import { createVectorSchema } from './indexer-build.js';
 import { createGraphSchema } from '../graph/graph-extractor.js';
 import { publishIndexerManifest } from './indexer-manifest.js';
+import { takeProvenance } from './inference-provenance.js';
 import { updateState } from './incremental-tracker.js';
 import { log } from './indexer-utils.js';
 
@@ -70,7 +71,7 @@ export async function establishEmptyBaseline() {
   const createdCodebase = ensureSchema(DB_PATHS.codebase, createVectorSchema);
   const createdGraph = ensureSchema(DB_PATHS.codeGraph, createGraphSchema);
   await updateState({}, { totalChunks: 0, entities: 0, relationships: 0 });
-  publishIndexerManifest({});
+  publishIndexerManifest({ provenance: { recorded: takeProvenance(), replace: true } });
   log(
     `Established empty index baseline (0 files; codebase.db ${createdCodebase ? 'created' : 'present'}, `
     + `code-graph.db ${createdGraph ? 'created' : 'present'})`,

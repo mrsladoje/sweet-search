@@ -7,6 +7,7 @@ import {
   zeroManifest,
 } from '../incremental-indexing/infrastructure/manifest.mjs';
 import { FALLBACK_WEIGHTS_ID } from '../incremental-indexing/infrastructure/sparse-gram-delta.mjs';
+import { applyProvenance } from './inference-provenance.js';
 
 function basename(filePath) {
   return path.basename(filePath);
@@ -58,6 +59,11 @@ export function publishIndexerManifest(options = {}) {
     epoch,
     tiers,
   });
+  // Encoder backends behind the vectors (informational; see
+  // inference-provenance.js). A full rebuild replaces the counts.
+  if (options.provenance) {
+    applyProvenance(manifest, options.provenance.recorded, { replace: options.provenance.replace === true });
+  }
   writeManifest(stateDir, manifest);
   return manifest;
 }

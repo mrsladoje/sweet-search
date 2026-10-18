@@ -18,6 +18,7 @@ import { buildLateInteractionIndex, buildQuantizedArtifactsPhase } from './index
 import { buildSparseGramArtifact } from './indexer-sparse-gram.js';
 import { binaryHnswIndexExists } from '../vector-store/index-file-header.js';
 import { publishIndexerManifest } from './indexer-manifest.js';
+import { takeProvenance } from './inference-provenance.js';
 import { contentHashSync } from '../incremental-indexing/infrastructure/hashing.mjs';
 import {
   configureLocalModelRuntime,
@@ -880,6 +881,7 @@ export async function updateIncrementalStatePhase(options = {}) {
   publishIndexerManifest({
     ...(manifestStateDir ? { stateDir: manifestStateDir } : {}),
     ...(sparseGramResult ? { sparseGramResult } : {}),
+    provenance: { recorded: takeProvenance(), replace: Boolean(fullReindex) && !graphOnly },
   });
   log('Reconcile manifest published', 'green');
 }

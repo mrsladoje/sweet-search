@@ -20,7 +20,7 @@ import { LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
 import { fetchModelFile, getModelCacheDir, resolveModelFile } from '../infrastructure/model-fetcher.js';
 import { getModelEntry } from '../infrastructure/model-registry.js';
 import { createTokenizer } from '../infrastructure/native-tokenizer.js';
-import { isNativeInferenceAvailable, isNativeLiModelLoaded, nativeLiEncode, nativeLiEncodeTokenized } from '../infrastructure/native-inference.js';
+import { isNativeInferenceAvailable, isNativeLiModelLoaded, nativeLiEncode, nativeLiEncodeTokenized, getNativeLiBackend } from '../infrastructure/native-inference.js';
 // CoreML not used for LI models — see loadModel() comment for benchmarking rationale.
 
 let lateInteractionPipeline = null;
@@ -374,6 +374,18 @@ export async function encodeDocuments(texts, options = {}) {
     return encodeDocumentsGpu(texts, options);
   }
   return encodeDocumentsCpu(texts, options);
+}
+
+/**
+ * Label of the encoder `encodeDocuments` would use right now (same test):
+ * the native model's backend ("cuda/f32", "coreml+metal/bf16", ...) or
+ * "ort/cpu". For index provenance.
+ */
+export function liDocumentEncoderLabel() {
+  if (process.env.SWEET_SEARCH_LI_USE_CPU !== '1' && isNativeInferenceAvailable() && isNativeLiModelLoaded()) {
+    return getNativeLiBackend() ?? 'unknown';
+  }
+  return 'ort/cpu';
 }
 
 /**
