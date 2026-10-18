@@ -213,6 +213,11 @@ async function main() {
       const argv = [fileURLToPath(import.meta.url), '--child', '--model', model, '--backend', backend];
       if (args.measure) argv.push('--measure');
       const r = spawnSync(process.execPath, argv, { env, encoding: 'utf8', maxBuffer: 64 << 20 });
+      // Backend decisions (flash-attn self-check, CUDA refusal, CoreML
+      // probes) are logged by the addon; show them with the result.
+      for (const l of (r.stderr || '').split('\n')) {
+        if (/\[NativeInference\]|flash-attn|CoreML/.test(l)) console.error(`    [${model} × ${backend}] ${l.trim()}`);
+      }
       const line = (r.stdout || '').trim().split('\n').reverse().find((l) => l.startsWith('{'));
       if (!line) {
         failed++;
