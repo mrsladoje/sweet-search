@@ -317,6 +317,7 @@ impl CoremlLi {
             let row_end = row_base + active * token_dim;
             all_vectors.extend_from_slice(&raw_output[row_base..row_end]);
         }
+        super::parity::renormalize_rows(&mut all_vectors, token_dim);
 
         Ok((all_vectors, token_counts))
     }

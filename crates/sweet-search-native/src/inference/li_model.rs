@@ -280,6 +280,7 @@ fn li_parity_cosine(
     }
     let projected = projected
         .reshape((1, seq_len, token_dim))
+        .and_then(|t| t.to_dtype(DType::F32))
         .map_err(|e| format!("projection reshape: {e}"))?;
     let norm = projected
         .sqr()
@@ -843,8 +844,11 @@ impl LiEncodeTask {
                     ))
                 })?;
             }
+            // Normalise in F32: a per-token L2 normalise in BF16 left norms
+            // ~0.3% off 1 (8-bit mantissa), which scales every MaxSim term.
             let projected = projected
                 .reshape((batch_size, seq_len, inner.token_dim))
+                .and_then(|t| t.to_dtype(DType::F32))
                 .map_err(|e| {
                     Error::from_reason(format!("[NativeLI] Projection reshape error: {e}"))
                 })?;

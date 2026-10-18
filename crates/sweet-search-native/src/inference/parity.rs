@@ -13,9 +13,11 @@
 //!     cannot hide behind 63 good ones (mean 0.9984 passes a 0.998
 //!     mean-only gate; the min does not).
 
-/// Largest allowed |norm - 1| for an L2-normalised output vector. FP16
-/// storage of a 128-d unit vector rounds the norm by about 1e-3.
-pub const UNIT_NORM_TOLERANCE: f32 = 1e-2;
+/// Largest allowed |norm - 1| for an L2-normalised output vector. Every
+/// backend normalises in F32 (CoreML outputs through `renormalize_rows`),
+/// so a larger error means a normalise step went missing. Normalising in
+/// BF16 left norms up to ~0.8% off.
+pub const UNIT_NORM_TOLERANCE: f32 = 1e-3;
 
 /// Per-vector cosine statistics between a candidate and a reference.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -75,9 +77,15 @@ pub fn cosine_stats(
     let mut min = f32::INFINITY;
     let mut sum = 0.0f64;
     for (a, b) in candidate.chunks_exact(dim).zip(reference.chunks_exact(dim)) {
+        // True cosine: the norms are bounded by check_unit_vectors, but a
+        // plain dot product of a half-precision output (norm ~1.003) reads
+        // above 1 and hides drift of the same size.
         let dot: f32 = a.iter().zip(b).map(|(x, y)| x * y).sum();
-        min = min.min(dot);
-        sum += dot as f64;
+        let na: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
+        let nb: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
+        let cos = dot / (na * nb);
+        min = min.min(cos);
+        sum += cos as f64;
     }
     Ok(CosineStats {
         vectors: n_candidate,
@@ -86,11 +94,32 @@ pub fn cosine_stats(
     })
 }
 
+/// L2-normalise each `dim`-wide row of `values` in place, in F32. The
+/// CoreML variants normalise inside the model in FP16, which leaves norms
+/// up to ~1e-3 off 1; renormalising on the host makes every backend emit
+/// unit vectors to F32 precision. A zero row stays zero.
+pub fn renormalize_rows(values: &mut [f32], dim: usize) {
+    for row in values.chunks_exact_mut(dim) {
+        let norm = row.iter().map(|x| x * x).sum::<f32>().sqrt();
+        if norm > 0.0 {
+            row.iter_mut().for_each(|x| *x /= norm);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     const DIM: usize = 8;
+
+    #[test]
+    fn renormalize_rows_gives_unit_rows() {
+        let mut v = vec![3.0, 4.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        renormalize_rows(&mut v, DIM);
+        assert!((v[0] - 0.6).abs() < 1e-6 && (v[1] - 0.8).abs() < 1e-6);
+        assert!(v[DIM..].iter().all(|x| *x == 0.0));
+    }
 
     /// `n` distinct unit vectors of width DIM.
     fn unit_rows(n: usize) -> Vec<f32> {

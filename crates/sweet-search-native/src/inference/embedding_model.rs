@@ -235,8 +235,9 @@ fn embedding_parity_cosine(
     let mask_float = mask_u8
         .to_dtype(hidden.dtype())
         .map_err(|e| format!("mask dtype: {e}"))?;
-    let pooled =
-        nomic_bert::mean_pooling(&hidden, &mask_float).map_err(|e| format!("mean pool: {e}"))?;
+    let pooled = nomic_bert::mean_pooling(&hidden, &mask_float)
+        .and_then(|t| t.to_dtype(DType::F32))
+        .map_err(|e| format!("mean pool: {e}"))?;
     let normalized = nomic_bert::l2_normalize(&pooled).map_err(|e| format!("l2 normalize: {e}"))?;
 
     let candle_vec: Vec<f32> = normalized
@@ -651,9 +652,13 @@ impl EmbedBatchTask {
                     "[NativeEmbedding] Mask dtype conversion error: {e}"
                 ))
             })?;
-            let pooled = nomic_bert::mean_pooling(&hidden, &mask_float).map_err(|e| {
-                Error::from_reason(format!("[NativeEmbedding] Mean pooling error: {e}"))
-            })?;
+            // Normalise in F32: an L2 normalise in BF16 left norms ~0.3% off
+            // 1 (8-bit mantissa), which scales every dot-product score.
+            let pooled = nomic_bert::mean_pooling(&hidden, &mask_float)
+                .and_then(|t| t.to_dtype(DType::F32))
+                .map_err(|e| {
+                    Error::from_reason(format!("[NativeEmbedding] Mean pooling error: {e}"))
+                })?;
             let normalized = nomic_bert::l2_normalize(&pooled).map_err(|e| {
                 Error::from_reason(format!("[NativeEmbedding] L2 normalize error: {e}"))
             })?;

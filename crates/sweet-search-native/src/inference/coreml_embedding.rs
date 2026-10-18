@@ -333,6 +333,7 @@ impl CoremlEmbedding {
             .map_err(|e| format!("variant b{}×s{} predict: {}", v_batch, v_seq, e))?;
 
         output.truncate(batch_size * HIDDEN_SIZE);
+        super::parity::renormalize_rows(&mut output, HIDDEN_SIZE);
         Ok(output)
     }
 }
