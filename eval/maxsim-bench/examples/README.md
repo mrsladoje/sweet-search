@@ -136,7 +136,7 @@ license: Apache-2.0
 # doi: TODO             (Zenodo DOI of the release)
 preferred-citation:
   type: article
-  title: "LIRK-Bench: A Contract-Checked Benchmark of CPU Late-Interaction Reranking Kernels"
+  title: "LIRK-Bench: A Contract-Checked Benchmark of CPU MaxSim Kernels for ColBERT-Style Reranking"
   authors:
     - family-names: "TODO"
       given-names: "TODO"

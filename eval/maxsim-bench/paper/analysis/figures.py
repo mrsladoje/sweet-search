@@ -183,7 +183,7 @@ def fig_budget():
 
 
 def fig_conc():
-    cc = load('conc.json')
+    cc = load('conc2.json')          # post-freeze rerun with the fixed harness (median of three runs)
     plats = [p for p in PLAT if p in cc]
     fig, axes = plt.subplots(2, len(plats), figsize=(7.0, 3.2), squeeze=False)
     groups = {'ours': lambda a: a == 'ours', 'numpy': lambda a: a.startswith('numpy') and 'blis' not in a,
