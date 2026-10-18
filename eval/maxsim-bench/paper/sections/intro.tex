@@ -9,9 +9,9 @@ A first stage (BM25 or a single-vector index) returns tens or hundreds of candid
 
 Rerank calls are small.
 In the coding-agent workload of this paper, the median call has \nm{wl.agent-ho.q50} query tokens and \nm{wl.agent-ho.pool50} candidates of about \nm{wl.agent-ho.dt50} tokens each (Section~\ref{sec:workload}).
-At this size a call takes tens of microseconds.
-Fixed costs such as library dispatch, thread wake-up and input conversion can then matter as much as arithmetic.
-Common tools are built for large matrix products.
+At this size a call takes tens of microseconds, while common tools are built for large matrix products.
+A natural guess is that fixed costs, such as library dispatch and thread wake-up, then decide which implementation is fastest.
+Our data do not support this guess for the exact rivals: their smallest possible call took only \nm{range.floor.exact.min}--\nm{range.floor.exact.max}\% of a median call (Section~\ref{sec:floor}).
 Which CPU implementation is fastest for such calls, at what quality and under which conditions, is therefore an empirical question.
 Earlier work timed CPU MaxSim libraries as baselines for faster approximate methods~\cite{pony2026colbandit}, or timed a single library~\cite{clavie2025maxsimcpu}.
 We found no public benchmark that compares CPU MaxSim implementations on captured rerank calls and checks each implementation against its own scoring rule.
@@ -30,12 +30,13 @@ The authors of this paper also wrote that kernel.
 For this reason, the rival configurations come from a shortlist that was chosen on development data and frozen, and the claims follow rules that were fixed before the held-out runs.
 
 \paragraph{What we claim.}
-On the tested CPUs, with warm calls, this implementation reduced scoring latency for the captured agent and code-search rerank calls, relative to the tested exact library configurations with float32 inputs.
+Our first claim concerns the benchmark itself.
+MaxSim implementations compute different scores, so a fair comparison must check each one against a reference of its own rule.
+These checks found two new defects in other libraries and confirmed a known one (Section~\ref{sec:correctness}).
+Our second claim concerns speed.
+On the tested CPUs, with warm calls, \sweet reduced scoring latency for the captured agent and code-search rerank calls, relative to every frozen exact rival configuration with float32 inputs.
 It does so with exhaustive scoring over stored int4 representations and measured floating-point error.
-This claim does not hold for every condition: Section~\ref{sec:losses} lists where it fails.
+This claim does not hold in every condition, and Section~\ref{sec:losses} lists where it fails.
+Our third claim concerns quality: the int4 scoring rule was non-inferior to float32 for ColBERTv2 in the pre-registered test, and it lost quality for answerai-colbert-small (Section~\ref{sec:quality}).
 We do not claim the fastest MaxSim in general, any end-to-end search speed-up, or any GPU result.
-A stronger claim, that fixed costs dominate at real call sizes, needs a cost decomposition that we did not run (Section~\ref{sec:limits}).
-
-\paragraph{What we found besides speed.}
-The reference checks found two new defects in other libraries and confirmed a known one (Section~\ref{sec:correctness}).
-The quality test found that the production int4 scoring rule loses quality with one of the two public models (Section~\ref{sec:quality}).
+We also do not claim why \sweet is faster, because we did not decompose the cost of a call (Section~\ref{sec:limits}).

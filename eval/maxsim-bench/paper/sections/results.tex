@@ -5,15 +5,17 @@ The agent, GCSN and sweep sets are held out from development but were \emph{prev
 Only the BEIR sets are fresh held-out data.
 Every table and figure says which kind it shows.
 Ratios are rival / \sweet; above 1 means \sweet is faster.
+Most results follow the frozen protocol.
+Headings, captions and paragraphs marked ``post-freeze'' or ``post hoc'' report checks that we added after the freeze; these checks change no frozen test result.
 
 \subsection{Warm calls}
 \label{sec:warm}
 
+On the captured agent and GCSN calls, \sweet was faster than every exact float32 rival on all five CPUs; on the fresh BEIR calls, PyTorch was faster on Intel.
 Table~\ref{tab:warm} and Figure~\ref{fig:ratios} give the main comparison.
 Each rival is at the faster of its two frozen configurations, so ``all cores'' is not always the tested condition: on the M3 Max, several rivals are fastest with one thread.
 
-On agent and GCSN calls (previously examined), \sweet was faster than every exact rival with float32 inputs on all five CPUs.
-The fastest such rival needed \nm{best.warm.agent-ho.f32.min}--\nm{best.warm.agent-ho.f32.max}$\times$ the time on agent calls and \nm{best.warm.gcsn-ho.f32.min}--\nm{best.warm.gcsn-ho.f32.max}$\times$ on GCSN calls.
+On agent and GCSN calls (previously examined), the fastest exact float32 rival needed \nm{best.warm.agent-ho.f32.min}--\nm{best.warm.agent-ho.f32.max}$\times$ the time on agent calls and \nm{best.warm.gcsn-ho.f32.min}--\nm{best.warm.gcsn-ho.f32.max}$\times$ on GCSN calls.
 On BEIR calls (fresh), \sweet was faster on AMD, Graviton4, the M3 Max and the EPYC; the closest float32 rival needed \nm{best.warm.beir.f32.nointel.min}--\nm{best.warm.beir.f32.nointel.max}$\times$ the time.
 On Intel BEIR calls, PyTorch with float32 inputs (padded flat layout) was faster: it needed \nm{warm.intel.beir.torch.f32}$\times$ the time of \sweet.
 The frozen primary PyTorch configuration of that family was slower than \sweet; the faster one is the second frozen configuration.
@@ -54,6 +56,7 @@ CPU & set & calls & NumPy & PyTorch & PyTorch bf16 & maxsim-cpu & NextPlaid & Nu
 \subsection{Size sweep}
 \label{sec:sweep}
 
+\sweet did not win at every call size: its losses form bands of call shapes, and the bands differ by CPU.
 Figure~\ref{fig:sweep} shows, per sweep cell, the fastest frozen exact rival with float32 inputs against \sweet.
 On the cloud CPUs all 84 cells ran.
 The M3 Max ran \nm{sweep.m3max.cells} cells and the EPYC \nm{sweep.epyc.cells}: a reduced grid of 24, decided before any result, plus 2 and 4 complete cells from before that decision.
@@ -62,7 +65,6 @@ If bfloat16 rivals count too, the counts are \nm{sweep.intel.loseany}, \nm{sweep
 The worst cell was on Intel: PyTorch with bfloat16 inputs needed \nm{sweep.intel.worstany}$\times$ the time of \sweet (\nm{sweep.intel.worstany.where}).
 With float32 inputs the worst cell needed \nm{sweep.intel.worst}$\times$ (Intel, \nm{sweep.intel.worstcell}).
 
-The losses form bands.
 On Intel, every loss is to PyTorch: 33 of the 56 cells with 32 or 64 query tokens, at pool sizes from 1 to 4,096 documents, and 4 cells with 8 query tokens.
 On AMD, PyTorch was faster for pools of 64 to 1,024 short documents at every query length, while \sweet was faster for smaller and larger pools.
 On Graviton4, the losses are at 32 and 64 query tokens, mostly with 256 to 4,096 documents (PyTorch) and with single documents (NumPy).
@@ -80,6 +82,9 @@ NumKong is not in the figure; it was faster than \sweet in \nm{nksweep.intel} (I
 
 \subsection{Quality on BEIR: int4 against float32}
 \label{sec:quality}
+
+The int4 scoring rule passed the pre-registered test for ColBERTv2 and failed it for answerai-colbert-small.
+The loss comes from the scoring contract, not from the kernel's arithmetic.
 
 \paragraph{The pre-registered test.}
 Before the freeze we fixed four primary comparisons (both models $\times$ both datasets, $k = 100$), the margin $\delta = 0.01$ absolute nDCG@10, and the decision rule.
@@ -174,13 +179,13 @@ Within one CPU, the scores of all thread budgets, rounds and processes were bit-
 \subsection{Quality per latency budget}
 \label{sec:budget}
 
-A faster scorer can rerank more candidates in the same time.
+A faster scorer can rerank more candidates in the same time, but at our two latency budgets this gave \sweet a larger $k$ than every exact rival only on AMD.
 Figure~\ref{fig:budget} plots nDCG@10 against the warm replay p95 of the timed scoring call (the 95th percentile over all timed repetitions of the BEIR calls, not a service-request distribution), one point per $k$. Each point's quality comes from the arm's first run; every rival's scores were bit-identical across its runs, except NumKong's Python arms on Intel.
 Table~\ref{tab:budget} reads it at two budgets.
 The time covers only the scoring call: the rivals' decoding and casting run outside their timer.
 The dashed line is a constructed estimate for float32 storage: the reference quality F paired with the time of the fastest frozen exact float32 rival on the same shapes. No single run produced these pairs.
 The estimate assumes that the rival's time does not depend on the vector values and that its nDCG@10 would equal F.
-A check after the freeze on the M3 Max agrees with both assumptions (Appendix~\ref{app:deviations}).
+A post-freeze check on the M3 Max agrees with both assumptions (Appendix~\ref{app:deviations}).
 NumPy and PyTorch scored the original float32 vectors and the int4-decoded vectors of the four $k = \nm{f32d.k}$ sets, in alternating order.
 On the original vectors their nDCG@10 was equal to F in every cell.
 Their p95 on the original vectors was \nm{f32d.ratio.min}--\nm{f32d.ratio.max} times their p95 on the decoded vectors.
@@ -222,8 +227,8 @@ CPU & set & \sweet & best exact & NumKong & f32 storage & \sweet & best exact & 
 \subsection{Pool-parked calls (5\,ms busy gap)}
 \label{sec:parked}
 
-When other work runs for 5\,ms before each call, the worker pool of \sweet has parked and must wake.
-Table~\ref{tab:parked} shows that this changes the ranking.
+After 5\,ms of other work before each call, NumPy was faster than \sweet on four of the five CPUs.
+By then the worker pool of \sweet has parked and must wake (Table~\ref{tab:parked}).
 NumPy was faster than \sweet on the EPYC (\nm{parked.epyc.agent-ho.numpy.f32}$\times$ and \nm{parked.epyc.gcsn-ho.numpy.f32}$\times$), on Intel (\nm{parked.intel.agent-ho.numpy.f32}$\times$ on agent calls, \nm{parked.intel.gcsn-ho.numpy.f32}$\times$ on GCSN calls, \nm{parked.intel.beir.numpy.f32}$\times$ on BEIR calls), on Graviton4 (\nm{parked.arm.agent-ho.numpy.f32}$\times$ and \nm{parked.arm.gcsn-ho.numpy.f32}$\times$) and on the M3 Max (\nm{parked.m3max.agent-ho.numpy.f32}$\times$ and \nm{parked.m3max.gcsn-ho.numpy.f32}$\times$).
 On AMD, \sweet stayed faster than every exact rival.
 The product path calls a prewarm function when the rerank stage starts, so the pool wakes while other work runs.
@@ -252,6 +257,7 @@ CPU & set & calls & NumPy & PyTorch & PyTorch bf16 & maxsim-cpu & NextPlaid & Nu
 \subsection{One thread}
 \label{sec:single}
 
+With one thread each, \sweet stayed faster on agent and GCSN calls on the four Linux CPUs, but a rival was faster on BEIR calls on every CPU.
 Table~\ref{tab:single} compares each library's frozen one-thread configuration with \sweet on one thread.
 The runs set a thread budget of one but were not pinned to a core.
 On agent and GCSN calls on the four Linux CPUs, \sweet was faster than every exact rival; the closest needed \nm{range.single.exact.linux.agentgcsn.min}--\nm{range.single.exact.linux.agentgcsn.max}$\times$ the time.
@@ -294,26 +300,34 @@ CPU & set & NumPy int4-self & maxsim-cpu int4-self \\
 \end{tabular}
 \end{table}
 
-\subsection{Fixed cost per call}
+\subsection{Fixed cost per call (post-freeze)}
 \label{sec:floor}
 
-At tens of microseconds per call, a rival's time could be mostly fixed cost: Python dispatch, thread wake-up and layout handling, not arithmetic.
-After the freeze, as a review of the draft asked, we timed every arm on two calls.
+For the exact rivals, fixed cost is a small part of a typical call, so \sweet's lead on these calls is not mainly a fixed-cost effect.
+At tens of microseconds per call, a rival's time could in principle be mostly fixed cost: Python dispatch, thread wake-up and layout handling.
+After the freeze we therefore timed every arm on two calls, on development data only.
 The first is the smallest possible call: one query token and one candidate of one token.
 The second is the median development agent call (\nm{floor.shape.nq} query tokens, \nm{floor.shape.pool} candidates, \nm{floor.shape.tokens} candidate tokens).
-Each arm ran in three fresh processes, with 200 warm-up calls and five rounds of timed calls (Appendix~\ref{app:deviations}); the data are development data only.
-Table~\ref{tab:floor} shows that the smallest call took \nm{range.floor.numpy.min}--\nm{range.floor.numpy.max}\% of the median call's time for NumPy and \nm{range.floor.torch.min}--\nm{range.floor.torch.max}\% for PyTorch.
-So the smallest call is a small part of a typical call.
-The smallest call is only a lower bound on the fixed cost: a larger call can wake more threads.
-Thus this measurement is not a decomposition of the call's cost.
-Take the \nm{floor.beyond.n} CPU--library pairs where \sweet's median call was shorter.
-In each, the rival's median call minus its smallest call still took at least \nm{floor.beyond.min} times \sweet's whole median call.
-On Intel, Graviton4 and the EPYC, NumKong's median call was shorter than \sweet's.
-NumKong's native loop had the largest share (\nm{range.floor.numkong.min}--\nm{range.floor.numkong.max}\%); for \sweet the share was \nm{range.floor.ours.min}--\nm{range.floor.ours.max}\%.
+Each arm ran in three fresh processes, with 200 warm-up calls and five rounds of timed calls (Appendix~\ref{app:deviations}).
+
+For the exact rivals, the smallest call took \nm{range.floor.exact.min}--\nm{range.floor.exact.max}\% of the median call's time (Table~\ref{tab:floor}); for \sweet it took \nm{range.floor.ours.min}--\nm{range.floor.ours.max}\%.
+In each of the \nm{floor.beyond.n} CPU--library pairs where \sweet's median call was shorter, the rival's median call minus its smallest call still took at least \nm{floor.beyond.min} times \sweet's whole median call.
+So the part of a rival's time that grows with the call was longer than \sweet's whole call.
+Plausible sources of \sweet's lead lie in that part: it reads int4 instead of float32 data, and it does not pad candidates.
+We did not measure which of them matters (Section~\ref{sec:limits}).
+The smallest call is a measurement, not a strict lower bound on the fixed cost of a larger call, which can take another code path or wake more threads.
+
+NumKong is different.
+Its native loop had the largest fixed share (\nm{range.floor.numkong.min}--\nm{range.floor.numkong.max}\%), and on Intel, Graviton4 and the EPYC its median call was shorter than \sweet's.
+On the EPYC this disagrees with the main run, where NumKong needed \nm{warm.epyc.agent-ho.numkong.best}$\times$ the time of \sweet on agent calls (Table~\ref{tab:warm}).
+In the main run, the median over held-out agent calls was \nm{p50.epyc.agent.numkong}\,$\mu$s for NumKong's native float32 loop and \nm{p50.epyc.agent.ours}\,$\mu$s for \sweet.
+In the fixed-cost run, NumKong's single median call took \nm{floor.epyc.numkong.med}\,$\mu$s and \sweet's \nm{floor.epyc.ours.med}\,$\mu$s.
+So NumKong's time halved between the two runs, while \sweet's fell by about 10\%.
+The runs differ in their calls (one development call against all held-out calls) and in their process setup; we did not find which difference causes this.
 
 \begin{table}[!htbp]
 \centering\scriptsize
-\caption{Fixed cost per call (development data): time of the smallest call / time of the median agent call, in $\mu$s, and their ratio. Each library at its frozen primary float32 agent configuration; NumKong with its native loop. Median over three processes.}
+\caption{Fixed cost per call (post-freeze; development data): time of the smallest call / time of the median agent call, in $\mu$s, and their ratio. Each library at its frozen primary float32 agent configuration; NumKong with its native loop. Median over three processes.}
 \label{tab:floor}
 \begin{tabular}{lllllll}
 \toprule
@@ -324,9 +338,10 @@ CPU & \sweet & NumPy & PyTorch & maxsim-cpu & NextPlaid & NumKong \\
 \end{tabular}
 \end{table}
 
-\subsection{Parallel callers}
+\subsection{Parallel callers (post-freeze rerun)}
 \label{sec:conc}
 
+With 16 callers in one shared process, \sweet's throughput fell and an exact rival had the higher throughput in \nm{conc.n16.threads.lost} of \nm{conc.pairs} CPU--workload pairs; with one process per caller, in \nm{conc.n16.procs.lost}.
 In a service, several requests can score at the same time.
 We ran $N \in \{1, 4, 16\}$ callers in two executors.
 The \emph{threads} executor runs $N$ threads in one process, so all callers share the library's pool, as in one service process.
@@ -337,19 +352,17 @@ The rates are absolute and common to all arms on a machine; we treat them as fix
 Their latency includes queueing.
 The threads executor feeds one shared queue; the procs executor assigns each request to one process in advance.
 
-The frozen parallel-caller harness had four defects, which the reviews of the first draft found (Appendix~\ref{app:conc-frozen}).
-After the freeze we fixed them in a copy of the harness and ran it again with the same arms, sets, rates and seed.
-We wrote the plan before the run (Appendix~\ref{app:deviations}).
+The frozen parallel-caller harness had four defects (Appendix~\ref{app:conc-frozen}).
+After the freeze we fixed them in a copy of the harness and ran it again with the same arms, sets, rates and seed, under a plan written before the run (Appendix~\ref{app:deviations}).
 In the fixed harness, all callers start together, and the BLIS arms are left out.
 The procs executor caps a fixed thread count in a configuration at the per-process budget.
 Each configuration runs three times, and each closed-loop caller replays its share for at least 3\,s.
 Each open-loop trace holds at least the rate times 3\,s of requests, so its arrivals last about 3\,s or more.
 The open loop waits for each arrival time in a busy loop: in the threads executor, a Python thread next to the callers; in the procs executor, each caller process.
 These waits remain in the rerun, so the open-loop latencies apply to this harness.
-The threads executor runs all configurations of a set one after another in one process.
-In two configurations, a thread setting of the previous configuration stayed in place.
+The threads executor runs all configurations of a set in turn in one process, so in two configurations a thread setting of the previous configuration stayed in place.
 PyTorch's segment-reduce layout on the M3 Max ran with one thread, and NextPlaid with four threads on the EPYC ran with all cores.
-We left out their threads-executor runs; without them, no number in the text or tables changed.
+We left out these two threads-executor runs; no number in the text or tables changed.
 Both executors warm up every call.
 We report the median of the three runs.
 Over the three runs, the kernel's closed-loop throughput varied by a median of \nm{conc.ours.spread.median}\% (maximum minus minimum, over the median).
@@ -379,7 +392,7 @@ Most rivals on the M3 Max did not show this fall.
 maxsim-cpu's first agent run came directly after \sweet's and was much slower than its other two.
 \sweet ran first in each group and loaded all cores.
 We did not record clock speed or temperature, so we cannot say why its throughput fell.
-The M3 Max values in Table~\ref{tab:conc} are the median of the three runs and carry this uncertainty.
+The M3 Max values in Table~\ref{tab:conc} are the median of the three runs; we treat them as unstable observations, not as firm comparisons.
 
 \begin{table}[!htbp]
 \centering\scriptsize
@@ -408,6 +421,7 @@ CPU & set & \sweet & exact & NumKong & \sweet & exact & NumKong & \sweet & exact
 \subsection{Memory}
 \label{sec:memory}
 
+The int4 store makes \sweet the smallest arm in memory: \nm{mem.intel.ours.bpt} bytes per stored token on Intel, against \nm{mem.intel.numpy_packed.bpt} for NumPy.
 A separate, untimed pass per arm and set measured resident memory in a fresh process.
 On Linux it reads \texttt{VmRSS}, \texttt{VmHWM} and \texttt{smaps\_rollup}; on macOS a 0.2\,ms sampler reads the resident size.
 The allocator returned freed large blocks at once, so a later phase cannot reuse them unseen.

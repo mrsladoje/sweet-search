@@ -1,0 +1,13 @@
+\begin{center}
+\fbox{\begin{minipage}{0.95\linewidth}
+\small
+\textbf{Key findings}
+\begin{itemize}\setlength\itemsep{1pt}\setlength\parskip{0pt}
+\item \textbf{``MaxSim'' is not one function.} Libraries differ in normalization, epsilon, clamp and padding. NumKong's rule alone keeps the top document of the standard rule on only \nm{ce.beir.S-vs-C.top1}\% of BEIR calls.
+\item \textbf{Three defects in public libraries.} Reference checks found invalid scores from NumKong on Intel CPUs with AMX and a padding clamp in maxsim-cpu's AArch64 build, and confirmed a known maxsim-cpu defect on x86.
+\item \textbf{Approximate MaxSim fails when candidates score close together.} NumKong's rank correlation with the exact order fell from \nm{nkcheck.random.rho.min}--\nm{nkcheck.random.rho.max} to \nm{nkcheck.clustered.rho.min}--\nm{nkcheck.clustered.rho.max} when candidate scores lay close together.
+\item \textbf{int4 storage can cost quality.} Keeping the length of decoded int4 tokens lost up to \nm{q.intel.nfcorpus.answersmall.relabs}\% nDCG@10 for a model with tight score margins; for ColBERTv2 the pre-registered test found no material loss.
+\item \textbf{Speed depends on the condition.} With warm calls, the int4 kernel of sweet-search was faster than every frozen exact float32 rival on captured agent and code-search calls on five CPUs. Rivals were faster with one thread, after a busy gap, with many callers in one process and on some large calls.
+\end{itemize}
+\end{minipage}}
+\end{center}

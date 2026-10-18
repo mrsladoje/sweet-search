@@ -12,9 +12,9 @@ Before the held-out runs we froze a rule for a stronger claim: ``use the stronge
 The shape in (a) is the median agent call of the development data.
 The rule needs stage variants of the kernel and a fitted cost model, which were not built before the freeze, for lack of time.
 The rule therefore could not apply, and the paper uses the narrow claim.
-A measurement after the freeze timed the smallest possible call (Section~\ref{sec:floor}).
-It bounds the fixed cost from below, but it is not the decomposition that the rule needs.
-In particular, we do not know why \sweet loses in the sweep bands, on Intel BEIR calls, after a busy gap, or with many callers in one process.
+A post-freeze measurement timed the smallest possible call (Section~\ref{sec:floor}).
+It shows that fixed cost is a small part of a typical call for the exact rivals, but it is not the decomposition that the rule needs.
+In particular, we do not know which part of the per-element work gives \sweet its lead, or why \sweet loses in the sweep bands, on Intel BEIR calls, after a busy gap, or with many callers in one process.
 
 \paragraph{No historical progression study.}
 A planned study of older kernel versions (optional in the frozen plan) was dropped for time.
@@ -63,6 +63,6 @@ NumKong's quality collapse is explained by a check on synthetic vectors, not on 
 \paragraph{Authors.}
 The authors wrote \sweet, the benchmark and the rival adapters.
 The freeze, the frozen shortlist, the fixed claim rules and the release of all raw results are our answer to this conflict.
-We also ran two review rounds of this paper with AI reviewers (Claude, GPT-5.6 Sol and GPT-6 Astra); the authors chose and ran them, so they are not independent reviews.
+AI models (Claude, GPT-5.6 Sol and GPT-6 Astra) reviewed the protocol and drafts of this paper; the authors chose and ran these reviews, so they are not independent.
 Readers can recompute every table from the released results.
 An independent rerun by others would be stronger.
