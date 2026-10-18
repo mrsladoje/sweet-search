@@ -43,11 +43,11 @@ not from isolated build runs.
 Graviton types and run a smaller set of rivals (no ScaNN, DiskANN or SVS on the Mac), so their
 geometric means are not comparable with those of the AWS CPUs.
 
-\paragraph{Missing analyses.} The plan also asked for native-only timing of our cascade (without the
-Node.js layer), p95 and p99 latencies, recall@10 against exact neighbours next to task quality,
-variation between independent builds, isolated build-cost runs, the first 100 cold queries, the
-memory split into anonymous and file-backed pages with the huge-page backing, and dTLB counters. None
-of these ran; Appendix~\ref{app:deviations} lists them with the other deviations.
+\paragraph{Missing analyses.} Native-only timing, the shipped default and stage clocks ran only after the
+freeze (\S\ref{sec:post}); tail latencies and recall@10 are computed from the held-out records
+(\S\ref{sec:results}). The plan also asked for variation between independent builds, isolated build-cost
+runs, the first 100 cold queries, the memory split into anonymous and file-backed pages with the
+huge-page backing, and dTLB counters; these did not run.
 
 \paragraph{Rival configurations.} The refining rivals rescore with float32 originals; ours uses float16
 vectors. A float16 refine for FAISS and a rescoring USearch int8 variant exist in the libraries but were

@@ -118,6 +118,15 @@ at $\fr$ (red, dashed; Table~\ref{tab:headline099}) and exact float32 search (gr
 jina; triangles: BEIR sets with bge-base-en-v1.5.}\label{fig:size}
 \end{figure}
 
+\paragraph{Tail latency and recall.} For the same \nm{tail-n} pairs, the geometric mean of the rival-to-ours
+ratio is \nm{tail-p50} at the median query, \nm{tail-p95} at the 95th percentile and \nm{tail-p99} at the
+99th percentile (each the median over rounds of that round's percentile): our cascade's slowest queries
+are relatively slower than the rivals'. Recall@10 of the retained vectors against the exact top-10 vectors
+ranges from \nm{rec-ours-min} (median \nm{rec-ours-med}) for our points and from \nm{rec-riv-min} (median
+\nm{rec-riv-med}) for the rivals', although every point shown retains at least 99\% of exact task quality by
+its point estimate or is marked: \nm{rec-ours-below09} of our \nm{tail-n} points have recall@10 below 0.9.
+On these sets, vector recall understates the task quality that a cut at 10 documents keeps.
+
 \paragraph{Held-out re-test of the dev points.} Every frozen point met its fraction on dev with the
 one-sided 97.5\% bound. On held-out queries at $\fr = 0.99$, all \nm{ret-ours-n} of our points meet it by
 the point estimate and \nm{ret-ours-bound} (\nm{ret-ours-boundpct}\%) by the bound; of the

@@ -31,12 +31,18 @@ index file at 1M) and the float16 vectors (1.5~GB), plus the Node.js runtime. Ou
 single-threaded and took \nm{build-ours-h}~hours of wall time with a \nm{build-ours-peak}~GB peak at 1M;
 every rival build took less wall time on 16 threads.
 
+\paragraph{Tail latency.} At the 99th percentile the rival fastest on dev is faster than ours in most
+pairs (geometric mean ratio \nm{tail-p99}, against \nm{tail-p50} at the median); the source of our longer
+tail is not established; the JavaScript part of our timed call (about a third of it, \S\ref{sec:post}) and
+the page cache are candidates.
+
 \paragraph{Slow rounds.} Our index is memory-mapped. Counting a round as slow when its median exceeds
 three times the fastest round of the same point, \nm{slow-ours} of our \nm{rounds-ours} timed rounds
 (\nm{slow-ours-pct}\%) are slow, all on Quora and csn1m, some by a factor of several hundred; none of the
 \nm{rounds-riv} rival rounds is. The rivals read their indexes into anonymous memory. The slow rounds
-cluster on a few machine instances; their cause is not established. Eviction of index pages by other I/O
-on the machine is the most likely one. The median over rounds absorbs a single slow round, but in
+cluster on a few machine instances. The post-freeze runs (\S\ref{sec:post}) show the cause: each slow
+round had thousands of major page faults, so pages of our memory-mapped files had been evicted after the
+pre-read and were read back from disk during the timed pass. The median over rounds absorbs a single slow round, but in
 \nm{slow-moved} of our points (all csn1m, in comparison A) at least half of the rounds are slow, and the
 reported median is then a slow value. Locking the index in memory, or reading it into anonymous memory,
 would remove the effect at the cost of a longer load.

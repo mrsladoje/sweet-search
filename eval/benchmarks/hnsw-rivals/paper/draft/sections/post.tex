@@ -1,0 +1,69 @@
+\section{Post-freeze experiments}\label{sec:post}
+
+The experiments in this section ran after the held-out run, on held-out queries, with the frozen builds
+and operating points and with harness changes that only add clocks and switches (Appendix~\ref{app:deviations}).
+They answer two questions that the main results leave open; they are not part of the pre-registered study.
+
+\subsection{Generator time alone}
+
+We added per-query clocks around the stages of comparison (A) in both harnesses: query conversion, the
+generator, and the shared screen plus rescoring. We reran (A) at $C = 400$, $H = 100$ on the three AWS CPUs
+(one model per set kind, 5 rounds), with every declared effort, with the four graph families also at the
+build our graph uses ($M = 64$, $ef_{\text{construction}} = 800$), and with our walk also at a fixed $ef$,
+without early termination and without huge pages.
+
+\paragraph{Shared stages.} The screen plus rescoring took a median \nm{post-shared-ours-intel}~\us{} in our
+implementation and \nm{post-shared-riv-intel}~\us{} in the rivals' C++ path on Intel
+(\nm{post-shared-x-intel}$\times$), \nm{post-shared-x-amd}$\times$ on AMD and \nm{post-shared-x-arm}$\times$ on
+Graviton: the gap estimated in \S\ref{sec:results} is real and of that size.
+
+\paragraph{Generators at equal settings.} With the same graph build ($M = 64$), the same $ef$, our walk
+without its adaptive rule, early termination or huge pages, and the generator clock alone, the rival
+graph generators took \nm{post-eq-min} to \nm{post-eq-max} times as long as our walk (geometric mean
+\nm{post-eq-gm}, \nm{post-eq-n} comparisons; ours faster in \nm{post-eq-ours}). Table~\ref{tab:postgen}
+gives, per CPU and set, the generator time of the fastest of our configurations and of the fastest rival
+configuration among those whose retained quality is at least 99\%; by generator time alone, ours is the
+fastest in \nm{post-best-ours} of \nm{post-cells} cells.
+
+\begin{table}[h]\centering\scriptsize
+\caption{Post-freeze (A), held-out, $C = 400$, $H = 100$: generator time alone (median over rounds of the
+per-round median, \us{}) of the fastest of our configurations and of the fastest rival configuration with
+retained quality $\ge 0.99$, and their ratio.}\label{tab:postgen}
+\begin{tabular}{llrlrr}\toprule
+CPU & Set & Ours \us{} & Rival & Rival \us{} & Ratio\\\midrule
+\inputtable{tables/post-gen.tex}
+\bottomrule\end{tabular}
+\end{table}
+
+\subsection{Slow rounds and the large sets in comparison (B)}
+
+Every record of the post-freeze runs counts the major page faults of its timed pass. Our cascade had
+\nm{post-slow-ours} slow rounds in \nm{post-rounds-ours}, the rivals \nm{post-slow-riv} in
+\nm{post-rounds-riv}. Every slow round of ours had at least \nm{post-slow-faults-min} major page faults in its timed pass
+(median \nm{post-slow-faults-med}), against a median of \nm{post-fast-faults-med} in our other rounds. So
+in a slow round, pages of our memory-mapped files were read from disk during the timed pass, although
+the pre-read before the job had loaded them: they had been evicted in between. In comparison (A) the stage
+clocks place the extra time of 12 of the 16 slow rounds in the full-vector rescoring (the float16 vector
+file) and of the other 4 in the int8 screen (the int8 rows); the generator is never the slow stage. A
+server whose index shares the page cache with other I/O can see the same effect; the rivals, which read
+their indexes into anonymous memory, cannot.
+
+On Quora and csn1m we reran our frozen point and the rival fastest on dev at $\fr = 0.99$, with the CPU's
+$R$ rounds (Table~\ref{tab:postb}). The geometric mean of the ratio over the \nm{postb-n} cells is
+\nm{postb-gm} (ours faster by point estimate in \nm{postb-wins}). The native calls of our cascade take
+\nm{postb-native-min}--\nm{postb-native-max}\% of its timed query (median \nm{postb-native-med}\%); the rest
+is JavaScript orchestration and metadata reads. Our shipped default ($S_1 = 400$) takes
+\nm{postb-default-tmin}--\nm{postb-default-tmax} times the time of our frozen point: more where the frozen point
+uses a smaller $S_1$ (below the product floor), less on csn1m with bge, where the frozen point uses
+$S_1 = 2000$ or 3000 and the default retains only \nm{postb-default-qmin} of exact quality, below
+$\fr = 0.99$.
+
+\begin{table}[h]\centering\scriptsize
+\caption{Post-freeze (B), held-out, $\fr = 0.99$, Quora and csn1m: rival / our latency of the rerun
+(median over rounds, 95\% bootstrap interval), our slow rounds, the native share of our time, and our
+shipped default ($S_1 = 400$) as time relative to our frozen point / retained quality.}\label{tab:postb}
+\begin{tabular}{llllrrrl}\toprule
+CPU & Set & Model & Rival & Ratio & Slow & Native & Default\\\midrule
+\inputtable{tables/post-b.tex}
+\bottomrule\end{tabular}
+\end{table}
