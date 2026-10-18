@@ -209,7 +209,7 @@ impl ModernBertAttention {
             #[cfg(feature = "flash-attn")]
             {
                 let on_cuda = matches!(hidden_states.device(), Device::Cuda(_));
-                let sm_supports = super::cuda_compute_capability_from_env() >= 8.0;
+                let sm_supports = super::cuda_compute_capability(hidden_states.device()) >= 8.0;
                 let dtype_supports = matches!(q.dtype(), DType::F16 | DType::BF16);
                 yes |= on_cuda
                     && sm_supports

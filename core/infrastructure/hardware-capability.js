@@ -110,9 +110,10 @@ const MIN_APPLE_GENERATION_FOR_CASCADE = 3;
  *
  * See the per-CC dtype policy in
  * crates/sweet-search-native/src/inference/mod.rs::optimal_dtype for
- * the full mapping. JS layer is responsible for parsing the
- * `nvidia-smi` compute_cap output and setting
- * SWEET_SEARCH_CUDA_COMPUTE_CAP before the addon loads models.
+ * the full mapping. The addon reads the compute capability from CUDA
+ * device 0 itself. This threshold applies only to addons without
+ * `nativeCudaDeviceInfo`; newer addons report their own kernel floor
+ * (8.0 for the x86-64 release build, 8.7 for arm64), which is stricter.
  */
 const MIN_CUDA_COMPUTE_CAPABILITY = 7.0;
 
@@ -184,14 +185,78 @@ function detectNvidiaGpu() {
 function probeAddonCudaAvailability() {
   try {
     const addonPath = resolveNativeAddon();
-    if (!addonPath) return null;
+    if (!addonPath) return { available: null, device: null };
     const addonRequire = createRequire(import.meta.url);
     const addon = addonRequire(addonPath);
-    if (typeof addon?.nativeCudaAvailable !== 'function') return null;
-    return Boolean(addon.nativeCudaAvailable());
+    if (typeof addon?.nativeCudaAvailable !== 'function') return { available: null, device: null };
+    const device = typeof addon.nativeCudaDeviceInfo === 'function' ? addon.nativeCudaDeviceInfo() ?? null : null;
+    return { available: Boolean(addon.nativeCudaAvailable()), device };
   } catch {
-    return null;
+    return { available: null, device: null };
   }
+}
+
+/**
+ * Decide whether candle-cuda is usable. Pure, for tests.
+ *
+ * `addon.device` is the addon's record of CUDA device 0 (the device it
+ * will actually run on): name, compute capability, and whether that meets
+ * the build's kernel floor. It wins over `nvidia-smi`, whose first line can
+ * be a different GPU on a mixed-GPU host (CUDA enumerates fastest first).
+ * An addon without that record (older build) falls back to the
+ * `nvidia-smi` row and MIN_CUDA_COMPUTE_CAPABILITY.
+ *
+ * @returns {{ cudaAvailable: boolean, cudaReason: string, nvidiaGpu: object|null }}
+ */
+export function resolveCudaAvailability({ platform, arch, nvidiaGpu, addon, forceDisabled }) {
+  const reinstall = `reinstall with @sweet-search/native-linux-${arch === 'arm64' ? 'arm64' : 'x64'}-gnu-cuda to enable GPU indexing`;
+  if (forceDisabled) return { cudaAvailable: false, cudaReason: 'CUDA force-disabled via SWEET_SEARCH_CUDA=0', nvidiaGpu };
+  if (platform !== 'linux') {
+    return { cudaAvailable: false, cudaReason: `CUDA native backend ships for Linux only (current platform: ${platform})`, nvidiaGpu };
+  }
+  const dev = addon?.device;
+  if (dev) {
+    const ccFloat = parseFloat(dev.computeCapability);
+    const gpu = dev.computeCapability
+      ? {
+          name: dev.name,
+          computeCapability: dev.computeCapability,
+          computeCapabilityFloat: ccFloat,
+          memoryMB: dev.totalMemoryMb,
+          driverVersion: nvidiaGpu?.driverVersion ?? 'unknown',
+          kernelFloor: dev.kernelFloor,
+          source: 'cuda-device-0',
+        }
+      : nvidiaGpu;
+    if (!dev.supported) {
+      return { cudaAvailable: false, cudaReason: dev.reason || 'CUDA device 0 is not supported by this build', nvidiaGpu: gpu };
+    }
+    const smiNote = nvidiaGpu && nvidiaGpu.name !== dev.name ? `; nvidia-smi lists ${nvidiaGpu.name} first` : '';
+    return {
+      cudaAvailable: true,
+      cudaReason: `${gpu.name} (CUDA device 0, compute ${gpu.computeCapability}, ${gpu.memoryMB} MB, kernels need ${dev.kernelFloor}+${smiNote}) — suitable for candle-cuda`,
+      nvidiaGpu: gpu,
+    };
+  }
+  if (!nvidiaGpu) return { cudaAvailable: false, cudaReason: 'No NVIDIA GPU detected (nvidia-smi missing or no device 0)', nvidiaGpu };
+  if (nvidiaGpu.computeCapabilityFloat < MIN_CUDA_COMPUTE_CAPABILITY) {
+    return {
+      cudaAvailable: false,
+      cudaReason: `${nvidiaGpu.name}: compute capability ${nvidiaGpu.computeCapability} below threshold (${MIN_CUDA_COMPUTE_CAPABILITY}+ required)`,
+      nvidiaGpu,
+    };
+  }
+  if (addon?.available == null) {
+    return { cudaAvailable: false, cudaReason: `${nvidiaGpu.name} detected, but the installed native package does not expose a CUDA probe — ${reinstall}`, nvidiaGpu };
+  }
+  if (addon.available === false) {
+    return { cudaAvailable: false, cudaReason: `${nvidiaGpu.name} detected, but the native addon reports Device::new_cuda(0) failed (driver / libcuda.so mismatch?)`, nvidiaGpu };
+  }
+  return {
+    cudaAvailable: true,
+    cudaReason: `${nvidiaGpu.name} (compute ${nvidiaGpu.computeCapability}, ${nvidiaGpu.memoryMB} MB, driver ${nvidiaGpu.driverVersion}) — suitable for candle-cuda`,
+    nvidiaGpu,
+  };
 }
 
 /**
@@ -253,9 +318,8 @@ export function detectHardwareCapability() {
   // NVIDIA GPU detection — Linux only. `nvidia-smi` tells us what's
   // installed; the addon probe tells us whether the installed native
   // package actually knows how to dispatch to it.
-  const nvidiaGpu = detectNvidiaGpu();
-  const addonCudaProbe = probeAddonCudaAvailability();
-  const cudaAddonEnabled = addonCudaProbe === true;
+  const addonCuda = probeAddonCudaAvailability();
+  const cudaAddonEnabled = addonCuda.available === true;
 
   // Diagnostic opt-out: SWEET_SEARCH_CUDA=0 force-disables CUDA even on
   // an otherwise-eligible host. Parallels SWEET_SEARCH_COREML_CASCADE=0.
@@ -263,24 +327,13 @@ export function detectHardwareCapability() {
     (process.env.SWEET_SEARCH_CUDA ?? '').toLowerCase(),
   );
 
-  let cudaAvailable = false;
-  let cudaReason;
-  if (cudaForceDisabled) {
-    cudaReason = 'CUDA force-disabled via SWEET_SEARCH_CUDA=0';
-  } else if (platform !== 'linux') {
-    cudaReason = `CUDA native backend ships for Linux only (current platform: ${platform})`;
-  } else if (!nvidiaGpu) {
-    cudaReason = 'No NVIDIA GPU detected (nvidia-smi missing or no device 0)';
-  } else if (nvidiaGpu.computeCapabilityFloat < MIN_CUDA_COMPUTE_CAPABILITY) {
-    cudaReason = `${nvidiaGpu.name}: compute capability ${nvidiaGpu.computeCapability} below threshold (${MIN_CUDA_COMPUTE_CAPABILITY}+ required)`;
-  } else if (addonCudaProbe === null) {
-    cudaReason = `${nvidiaGpu.name} detected, but the installed native package does not expose a CUDA probe — reinstall with @sweet-search/native-linux-${arch === 'arm64' ? 'arm64' : 'x64'}-gnu-cuda to enable GPU indexing`;
-  } else if (addonCudaProbe === false) {
-    cudaReason = `${nvidiaGpu.name} detected, but the native addon reports Device::new_cuda(0) failed (driver / libcuda.so mismatch?)`;
-  } else {
-    cudaAvailable = true;
-    cudaReason = `${nvidiaGpu.name} (compute ${nvidiaGpu.computeCapability}, ${nvidiaGpu.memoryMB} MB, driver ${nvidiaGpu.driverVersion}) — suitable for candle-cuda`;
-  }
+  const { cudaAvailable, cudaReason, nvidiaGpu } = resolveCudaAvailability({
+    platform,
+    arch,
+    nvidiaGpu: detectNvidiaGpu(),
+    addon: addonCuda,
+    forceDisabled: cudaForceDisabled,
+  });
 
   // Candle GPU backend availability.
   //   darwin-arm64 → metal (bundled with the darwin-arm64 native package)
