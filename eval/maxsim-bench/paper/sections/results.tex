@@ -35,7 +35,7 @@ On agent calls these tiers were \nm{range.tiers.agent-ho.node-wasm.min}--\nm{ran
 \begin{table}[!htbp]
 \centering\scriptsize
 \setlength{\tabcolsep}{3pt}
-\caption{Warm calls. Ratio = rival / \sweet kernel, geometric mean over calls (above 1: \sweet faster), with the 95\% workload interval below. Each rival: the faster of its two frozen configurations for that input type. NumKong ($\dagger$, approximate): its fastest input type. Red bold: the rival is faster (Section~\ref{sec:method}). NumKong native rows include a start-up cost of the benchmark's adapter under this protocol (about \nm{prot.nk.handicap}$\times$ on the EPYC, Section~\ref{sec:floor}). $\ast$: the arm returned invalid scores on part of the calls (NumKong on Intel, Section~\ref{sec:correctness}). Agent and GCSN: previously examined. BEIR (20 sets pooled; 623 query clusters): fresh held-out. ``prev.\ path'': the engine's previous production path (not run on BEIR); ``prod.\ path'': the Node.js product path over the same kernel.}
+\caption{Warm calls. Ratio = rival / \sweet kernel, geometric mean over calls (above 1: \sweet faster), with the 95\% workload interval below. Each rival: the faster of its two frozen configurations for that input type. NumKong ($\dagger$, approximate): its fastest input type. Red bold: the rival is faster (Section~\ref{sec:method}). On the EPYC, this protocol made NumKong's native arm slower than distinct calls back to back did; we did not check this on the other CPUs, and its cause is not established (Section~\ref{sec:floor}). $\ast$: the arm returned invalid scores on part of the calls (NumKong on Intel, Section~\ref{sec:correctness}). Agent and GCSN: previously examined. BEIR (20 sets pooled; 623 query clusters): fresh held-out. ``prev.\ path'': the engine's previous production path (not run on BEIR); ``prod.\ path'': the Node.js product path over the same kernel.}
 \label{tab:warm}
 \begin{tabular}{llrrrrrrrrr}
 \toprule
@@ -344,11 +344,12 @@ The main harness times each call after one warm-up call; the probe repeats one c
 On \nm{nkw.calls} development agent calls, NumKong took a median of \nm{nkw.nk.1}\,$\mu$s after one warm-up call, \nm{nkw.nk.50}\,$\mu$s after 50 and \nm{nkw.nk.200}\,$\mu$s after 200.
 \sweet took \nm{nkw.ours.min}--\nm{nkw.ours.max}\,$\mu$s at every warm-up count.
 A second check separated two causes.
-With all calls prepared first and then timed once each, back to back, NumKong took \nm{prot.numkong_native_f32.A}\,$\mu$s.
+With all calls prepared first and then timed once each, back to back, NumKong took \nm{prot.numkong_native_f32.A}\,$\mu$s, against \nm{prot.numkong_native_f32.main}\,$\mu$s under the main protocol in the same check.
+The main protocol thus made this arm about \nm{prot.nk.handicap}$\times$ slower: the ratio of these two medians over calls, each the mean of two runs.
 So the idle gap during each call's preparation explains most of the difference.
 Reused data explains the rest: after one untimed pass over all calls, NumKong took \nm{prot.numkong_native_f32.Aw}\,$\mu$s.
 NumKong needed \nm{prot.nk.main.ratio}$\times$ \sweet's time under the main protocol, \nm{prot.nk.A.ratio}$\times$ with distinct calls back to back, and \nm{prot.nk.Aw.ratio}$\times$ after one untimed pass.
-The main protocol therefore handicaps NumKong's native arm by about \nm{prot.nk.handicap}$\times$.
+The ratios to \sweet change by a different factor, because \sweet's own time also changed (\nm{prot.ours.main} against \nm{prot.ours.A}\,$\mu$s).
 This arm runs NumKong's kernel in the benchmark's own Rust thread pool, so this cost may come from our adapter, not from NumKong.
 For the exact rivals, the effect goes the other way.
 With distinct calls back to back, they took \nm{prot.exact.slowA.min}--\nm{prot.exact.slowA.max} times their main-protocol time.

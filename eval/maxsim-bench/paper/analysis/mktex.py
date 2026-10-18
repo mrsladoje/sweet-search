@@ -416,7 +416,7 @@ def main():
             for p_ in ('main', 'A', 'Aw', 'B'):
                 put(f'prot.{a}.{p_}', f'{m[a][p_]:.0f}', 'post_checks.json', 'EPYC, development agent calls, median per call, us (mean of runs)')
         nk = m['numkong_native_f32']; us = m['ours']
-        put('prot.nk.handicap', f"{nk['main'] / nk['A']:.2f}", 'post_checks.json', 'NumKong main / A')
+        put('prot.nk.handicap', f"{nk['main'] / nk['A']:.2f}", 'post_checks.json', 'NumKong: median over calls under main / under A, each median the mean of the runs')
         put('prot.nk.main.ratio', f"{nk['main'] / us['main']:.2f}", 'post_checks.json'); put('prot.nk.A.ratio', f"{nk['A'] / us['A']:.2f}", 'post_checks.json')
         put('prot.nk.Aw.ratio', f"{nk['Aw'] / us['Aw']:.2f}", 'post_checks.json')
         for p_ in ('main', 'A'):
