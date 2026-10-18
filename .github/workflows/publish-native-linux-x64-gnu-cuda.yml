@@ -68,12 +68,14 @@ env:
   # nvcc processes to stay under the memory ceiling.
   #
   # CUDA_COMPUTE_CAP=80 compiles flash-attn as sm_80 SASS only, with no
-  # PTX. It runs on SM 8.x (A100, A10, RTX 3090/4090, L4) only. It does
-  # NOT run on Hopper (9.0) or Blackwell (10.x/12.x): the launch fails
-  # without an error and returns garbage. The addon's flash-attn
-  # self-check (src/inference/varlen.rs:flash_attn_usable) detects this
-  # and uses candle's standard attention, as on SM 7.0/7.5. To give those
-  # GPUs the fused kernel, build more architectures (needs CUDA >= 12.8
+  # PTX. It runs on SM 8.x (A100, A10, RTX 3090/4090, L4) only. On Hopper
+  # (9.0) and Blackwell (10.x/12.x) the launch fails; the vendored
+  # candle-flash-attn now reports that error, and the addon's self-check
+  # (src/inference/varlen.rs:flash_attn_usable) then uses candle's standard
+  # attention. 80 is also the kernel FLOOR for the whole addon: candle's
+  # other kernels are compute_80 PTX, which cannot run on SM 7.x, so the
+  # addon refuses Volta/Turing at device creation (CPU path instead). To
+  # give 9.0+ the fused kernel, build more architectures (needs CUDA >= 12.8
   # for sm_120) at the cost of longer builds and higher peak memory.
   CUDA_COMPUTE_CAP: '80'
   CARGO_BUILD_JOBS: '2'
