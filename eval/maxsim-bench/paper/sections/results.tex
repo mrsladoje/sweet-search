@@ -430,8 +430,9 @@ No ratio changed sides of 1 (Table~\ref{tab:replica}).
 The kernel's own geometric-mean latency differed by at most \nm{replica.oursmax}\%.
 Each replica was a different instance in the same availability zone.
 EC2 does not expose the physical host of shared-tenancy instances, so we cannot show that the hosts differed.
-After the freeze, a second instance of each cloud type repeated the BEIR sets with $k = 25$ and $k = 100$ (a rerun planned before it ran; Appendix~\ref{app:deviations}).
-Across \nm{rbeir.n} frozen rival configurations, the ratio on the second instance differed by a median of \nm{rbeir.median}\% and at most \nm{rbeir.max}\%, and \nm{rbeir.flips} ratios changed sides of 1.
+After the freeze, two new instances of each cloud type repeated the BEIR sets: one ran the sets with $k = 100$, the other the sets with $k = 25$.
+This rerun was planned before it ran (Appendix~\ref{app:deviations}).
+Across \nm{rbeir.n} frozen rival configurations, the ratio on the new instances differed by a median of \nm{rbeir.median}\% and at most \nm{rbeir.max}\%, and \nm{rbeir.flips} ratios changed sides of 1.
 The kernel's own geometric-mean latency differed by at most \nm{rbeir.oursmax}\%, and its scores were bit-identical to the first run.
 The sweep sets have no replica, and the M3 Max and the EPYC are single machines; differences smaller than about 13\% there, such as M3 Max BEIR NumKong (0.99), may not repeat on another machine.
 
