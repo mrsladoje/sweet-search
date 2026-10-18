@@ -22,7 +22,7 @@ A planned study of older kernel versions (optional in the frozen plan) was dropp
 \paragraph{Workloads.}
 The agent and GCSN calls come from one engine with one production model (dimension 128).
 Their shapes are unique calls with duplicates removed, not a request-frequency distribution.
-The agent, GCSN and sweep sets were examined in an earlier version of this benchmark; only the BEIR sets are fresh.
+We had seen aggregate results on the agent, GCSN and sweep sets before the freeze; only the BEIR sets are fresh.
 The BEIR sets use two public models and two small datasets, and they repeat each query over two models and five values of $k$.
 FiQA was planned but not built: its licence allows only non-commercial use, so we could not release derived data.
 The geometric mean weights every call equally; Appendix~\ref{app:robust} gives the total-time ratio beside it.
@@ -63,6 +63,5 @@ NumKong's quality collapse is explained by a check on synthetic vectors, not on 
 \paragraph{Authors.}
 The authors wrote \sweet, the benchmark and the rival adapters.
 The freeze, the frozen shortlist, the fixed claim rules and the release of all raw results are our answer to this conflict.
-AI models (Claude, GPT-5.6 Sol and GPT-6 Astra) reviewed the protocol and drafts of this paper; the authors chose and ran these reviews, so they are not independent.
 Readers can recompute every table from the released results.
 An independent rerun by others would be stronger.

@@ -85,7 +85,7 @@ No constant-winner baseline for a cost model & Part of the frozen claim rule; no
 p95 of per-call medians is not a tail; per-arm rates are not equal traffic & Per-request percentiles; common absolute open-loop rates \\
 Non-inferiority on the kernel's actual scores; $\delta$ absolute & K $-$ F primary, absolute $\delta$, relative loss shown \\
 Validate on all five machines & Fixtures and development runs on all five machines before the freeze \\
-Earlier sets stay previously examined on new CPUs & Labelled on every table \\
+Sets seen before the freeze stay previously examined on new CPUs & Labelled on every table \\
 Failure handling untested & Harness failure tests (interrupted output, missing calls, failed arm, changed identity, resume) \\
 Optional items must stay optional & Decomposition and version study not run, stated \\
 \bottomrule
@@ -105,7 +105,7 @@ term & meaning \\
 arm & one implementation in one configuration (library, API variant, input type, thread budget) \\
 exact rival & an implementation that computes the maximum exactly for its own contract and its own inputs; the input type (float32, bfloat16, float16) is given separately \\
 agent / GCSN / BEIR / sweep & the held-out sets agent-ho, gcsn-ho, the 20 BEIR sets, and sweep-ho (Section~\ref{sec:workload}) \\
-previously examined & held out from development, but aggregates appeared in an earlier version of this benchmark \\
+previously examined & held out from development, but aggregate results were seen before the freeze \\
 F, F+c, Q+c, K & float32 vectors in float64 without and with clamp; int4 decoded in float64 under contract S; the kernel's recorded scores \\
 C-b, C-a & contract C on float64-decoded int4 data; on NumKong's own float32 inputs \\
 top-1 = S & share of calls whose top-ranked document equals that of the contract-S reference \\

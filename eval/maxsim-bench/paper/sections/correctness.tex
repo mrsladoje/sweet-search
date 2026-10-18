@@ -28,7 +28,6 @@ NumKong's cosine of the received vectors (contract C) and PyLate's zero-padding 
 Table~\ref{tab:contract-effects} measures them reference against reference.
 Contract C keeps the top document of contract S on \nm{ce.agent-ho.S-vs-C.top1}\% of agent calls and \nm{ce.gcsn-ho.S-vs-C.top1}\% of GCSN calls, but on only \nm{ce.beir.S-vs-C.top1}\% of BEIR calls.
 The clamp changes the top document on at most 0.1\% of calls; the epsilon placement changes no score by more than $10^{-15}$.
-An earlier version of this benchmark~\cite{sweetsearch2026maxsimv1} reported that NumKong's top document differed on 6--14\% of calls; that number mixed the contract effect with the approximation effect, and the separation here replaces it.
 
 \begin{table}[!htbp]
 \centering\scriptsize
