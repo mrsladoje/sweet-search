@@ -18,6 +18,9 @@ candle-transformers = "0.10"
 # `flash-attn` feature is on. Optional + gated through the feature so
 # non-CUDA builds don't pull it in.
 candle-flash-attn = { version = "0.10", optional = true }
+# Direct dependency (cuda feature) for the PTX-set selection the vendored
+# copy adds (vendor/candle-kernels/PATCHES.md).
+candle-kernels = { version = "0.10", optional = true }
 memmap2 = "0.9"
 napi = { version = "2", features = ["default"] }
 napi-derive = "2"
@@ -72,7 +75,7 @@ accelerate = ["candle-core/accelerate"]
 # This is why the cuda-enabled addon ships as a SEPARATE platform package
 # (`@sweet-search/native-linux-{x64,arm64}-gnu-cuda`) rather than being bundled
 # into the standard linux-*-gnu package. See docs/INIT_STRATEGY.md "CUDA Backend".
-cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda"]
+cuda = ["candle-core/cuda", "candle-nn/cuda", "candle-transformers/cuda", "dep:candle-kernels"]
 # cudnn = Optional cuDNN acceleration on top of the CUDA backend. Not currently
 # required for correctness — candle's stock CUDA kernels handle the whole
 # NomicBERT / ModernBERT forward path. Kept as an additive feature so a future
@@ -106,3 +109,5 @@ strip = false
 candle-flash-attn = { path = "vendor/candle-flash-attn" }
 # cudaforge 0.1.5 with a target-aware PTX cache (vendor/cudaforge/PATCHES.md).
 cudaforge = { path = "vendor/cudaforge" }
+# candle-kernels 0.10.2 with compute_70 + build-target PTX sets (vendor/candle-kernels/PATCHES.md).
+candle-kernels = { path = "vendor/candle-kernels" }

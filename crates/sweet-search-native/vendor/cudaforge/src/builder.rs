@@ -657,6 +657,12 @@ pub struct PtxOutput {
 }
 
 impl PtxOutput {
+    /// sweet-search patch: the kernel sources this output was built from,
+    /// for build scripts that write their own bindings.
+    pub fn paths(&self) -> &[PathBuf] {
+        &self.paths
+    }
+
     /// Write a Rust source file with `const` declarations for each PTX file
     pub fn write<P: AsRef<Path>>(&self, out: P) -> Result<()> {
         let mut file = std::fs::File::create(out.as_ref())?;

@@ -5,44 +5,14 @@ use cudaforge::{KernelBuilder, Result};
 use std::path::PathBuf;
 const CUTLASS_COMMIT: &str = "7d49e6c7e2f8896c47f586706e67e1fb215529dc";
 
-const KERNEL_FILES: [&str; 37] = [
+// sweet-search patch: only the kernels the product runs (head dim 64,
+// not causal: NomicBERT, ModernBERT and the edge model all use 64-wide
+// heads with bidirectional / sliding-window attention). run_mha returns
+// cudaErrorInvalidValue for any other shape. See PATCHES.md.
+const KERNEL_FILES: [&str; 3] = [
     "kernels/flash_api.cu",
-    "kernels/flash_fwd_hdim128_fp16_sm80.cu",
-    "kernels/flash_fwd_hdim160_fp16_sm80.cu",
-    "kernels/flash_fwd_hdim192_fp16_sm80.cu",
-    "kernels/flash_fwd_hdim224_fp16_sm80.cu",
-    "kernels/flash_fwd_hdim256_fp16_sm80.cu",
-    "kernels/flash_fwd_hdim512_fp16_sm80.cu",
-    "kernels/flash_fwd_hdim32_fp16_sm80.cu",
     "kernels/flash_fwd_hdim64_fp16_sm80.cu",
-    "kernels/flash_fwd_hdim96_fp16_sm80.cu",
-    "kernels/flash_fwd_hdim128_bf16_sm80.cu",
-    "kernels/flash_fwd_hdim160_bf16_sm80.cu",
-    "kernels/flash_fwd_hdim192_bf16_sm80.cu",
-    "kernels/flash_fwd_hdim224_bf16_sm80.cu",
-    "kernels/flash_fwd_hdim256_bf16_sm80.cu",
-    "kernels/flash_fwd_hdim512_bf16_sm80.cu",
-    "kernels/flash_fwd_hdim32_bf16_sm80.cu",
     "kernels/flash_fwd_hdim64_bf16_sm80.cu",
-    "kernels/flash_fwd_hdim96_bf16_sm80.cu",
-    "kernels/flash_fwd_hdim128_fp16_causal_sm80.cu",
-    "kernels/flash_fwd_hdim160_fp16_causal_sm80.cu",
-    "kernels/flash_fwd_hdim192_fp16_causal_sm80.cu",
-    "kernels/flash_fwd_hdim224_fp16_causal_sm80.cu",
-    "kernels/flash_fwd_hdim256_fp16_causal_sm80.cu",
-    "kernels/flash_fwd_hdim512_fp16_causal_sm80.cu",
-    "kernels/flash_fwd_hdim32_fp16_causal_sm80.cu",
-    "kernels/flash_fwd_hdim64_fp16_causal_sm80.cu",
-    "kernels/flash_fwd_hdim96_fp16_causal_sm80.cu",
-    "kernels/flash_fwd_hdim128_bf16_causal_sm80.cu",
-    "kernels/flash_fwd_hdim160_bf16_causal_sm80.cu",
-    "kernels/flash_fwd_hdim192_bf16_causal_sm80.cu",
-    "kernels/flash_fwd_hdim224_bf16_causal_sm80.cu",
-    "kernels/flash_fwd_hdim256_bf16_causal_sm80.cu",
-    "kernels/flash_fwd_hdim512_bf16_causal_sm80.cu",
-    "kernels/flash_fwd_hdim32_bf16_causal_sm80.cu",
-    "kernels/flash_fwd_hdim64_bf16_causal_sm80.cu",
-    "kernels/flash_fwd_hdim96_bf16_causal_sm80.cu",
 ];
 
 fn main() -> Result<()> {
@@ -93,6 +63,22 @@ fn main() -> Result<()> {
         .arg("--use_fast_math")
         .arg("--verbose")
         .thread_percentage(0.5); // Use up to 50% of available threads
+
+    // sweet-search patch: the FlashAttention-2 kernels also run on Hopper
+    // and Blackwell when compiled for them. Besides the CUDA_COMPUTE_CAP
+    // SASS (sm_80 / sm_87), add sm_90 SASS and compute_90 PTX, which the
+    // driver JIT-compiles on 10.x / 12.x (CUDA 12.2 has no sm_100 / sm_120
+    // target).
+    let base: usize = std::env::var("CUDA_COMPUTE_CAP")
+        .ok()
+        .and_then(|v| v.trim_end_matches(|c: char| c.is_ascii_alphabetic()).parse().ok())
+        .unwrap_or(80);
+    println!("cargo::rerun-if-env-changed=CUDA_COMPUTE_CAP");
+    if base < 90 {
+        builder = builder
+            .arg("-gencode=arch=compute_90,code=sm_90")
+            .arg("-gencode=arch=compute_90,code=compute_90");
+    }
 
     let mut is_target_msvc = false;
     if let Ok(target) = std::env::var("TARGET") {

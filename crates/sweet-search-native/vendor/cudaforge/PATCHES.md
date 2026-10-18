@@ -12,3 +12,8 @@ previous target. `build_ptx` now writes `<kernel>.ptx.target` (the
 `-gencode` argument and extra nvcc arguments) after a successful compile and
 reuses a `.ptx` only when that stamp matches. Clean builds (the release CI)
 were not affected; local and pod rebuilds were.
+
+## `PtxOutput::paths()`
+
+A public accessor for the kernel sources, so vendor/candle-kernels can
+write its own `ptx.rs` for two PTX sets.
