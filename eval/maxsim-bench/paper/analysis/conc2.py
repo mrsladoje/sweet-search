@@ -16,6 +16,15 @@ from common import PLATFORMS, dump  # noqa: E402
 
 CLOUD = os.path.expanduser('~/.ss-eval/maxsim-cloud/r2')       # <type>-r2a (agent-ho), <type>-r2b (gcsn-ho)
 LOCAL = os.path.expanduser('~/.ss-eval/maxsim-local/rerun')    # <m3max|epyc>/
+# The threads executor runs all arms of a set one after another in one parent process, so a
+# thread setting that one arm makes stays for the next arm of the same library (review round
+# 3): torch.set_num_threads persists, and the rivals-rs rayon pool is built once, on first use.
+# Two configurations inherited a setting: on the M3 Max, torch_segment_reduce runs after
+# torch_pad_bmm@1 (so it ran with one thread, not the default); on the EPYC, nextplaid@4 runs
+# after nextplaid (so it used the pool of all cores, not four). Their threads-executor runs are
+# left out. The procs executor starts fresh processes and is not affected; a @1 arm runs on the
+# calling thread and does not build the pool. No other arm order has the problem.
+LEAKED = {('m3max', 'torch_segment_reduce'), ('epyc', 'nextplaid@4')}
 
 
 def files(platform, fam):
@@ -49,8 +58,9 @@ def main():
                 d = json.load(open(f))
                 if not d.get('complete'):
                     continue
+                runs = [r for r in d['runs'] if not ((p, d['arm']) in LEAKED and r['executor'] == 'threads')]
                 res.setdefault(p, {}).setdefault(fam, {})[d['arm']] = dict(cores=d.get('cores'), reps=d['identity']['reps'],
-                                                                           min_seconds=d['identity']['min_seconds'], runs=aggregate(d['runs']))
+                                                                           min_seconds=d['identity']['min_seconds'], runs=aggregate(runs))
             if fam in res.get(p, {}):
                 print(p, fam, len(res[p][fam]), 'arms')
     dump('conc2.json', res)

@@ -5,7 +5,7 @@
 #   paper/tables/*.tex          the bodies of the paper's tables
 #   paper/analysis/RESULTS-paper.md   every number with its key, value, source file and the command
 # A platform without results yet (the EPYC box) gets \TODO{epyc} cells.
-import json, os, sys
+import json, os, statistics, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
@@ -568,8 +568,9 @@ def main():
                         flag = '$^\\ddagger$' if not rerun and ex == 'procs' and n > 1 and n * max(explicit_threads(e[1]), 1) > cores else ''
                         cs += [f'{o[0] / 1000:.1f}', ('\\loss{' if r_e < 1 else '{') + f'{r_e:.2f}}}{flag}', ('\\loss{' if r_k < 1 else '{') + f'{r_k:.2f}}}']
                     if n == 1:
-                        o1 = best(lambda a: a == 'ours', 1, 'threads'); e1 = best(exact, 1, 'threads')
-                        n1.append((o1[0] / e1[0], f'{p} {fam} threads'))
+                        for ex in ('threads', 'procs'):
+                            o1 = best(lambda a: a == 'ours', 1, ex); e1 = best(exact, 1, ex)
+                            n1.append((o1[0] / e1[0], f'{p} {fam} {ex}'))
                 rates = sorted({r['rate'] for d in arms.values() for r in d['runs'] if r['type'] != 'closed' and r['rate']})
                 top = rates[-1]
                 op = {a: min((r for r in d['runs'] if r['type'] != 'closed' and r['rate'] == top), key=lambda r: r['p99_ms']) for a, d in arms.items()}
@@ -585,7 +586,10 @@ def main():
             rows.append(r'\addlinespace')
         open(os.path.join(TEX, kp + '.tex'), 'w').write('\n'.join(rows) + '\n')
         if n1:
-            put(f'range.{kp}.n1.min', f2(min(n1)[0]), texname, min(n1)[1]); put(f'range.{kp}.n1.max', f2(max(n1)[0]), texname, max(n1)[1])
+            for ex in ('threads', 'procs'):
+                v = [x for x in n1 if x[1].endswith(ex)]
+                sfx = '' if ex == 'threads' else '.procs'
+                put(f'range.{kp}.n1{sfx}.min', f2(min(v)[0]), texname, min(v)[1]); put(f'range.{kp}.n1{sfx}.max', f2(max(v)[0]), texname, max(v)[1])
         if corr_share:
             put(f'{kp}.corr.share.min', f'{min(corr_share) * 100:.0f}', texname, 'share of the corrected wall time that the 50 ms term makes up, kernel procs runs')
             put(f'{kp}.corr.negative', str(sum(1 for x in corr_share if x > 1)), texname, 'kernel procs closed-loop runs whose recorded wall time was negative')
@@ -594,7 +598,7 @@ def main():
             put(f'{kp}.oversub.n', str(len(over)), texname, '; '.join(over[:40]))
         if spread:
             put(f'{kp}.ours.spread.max', f'{max(spread)[0] * 100:.0f}', texname, 'largest (max - min) / median of the kernel closed-loop throughput over the 3 runs, %; ' + max(spread)[1])
-            put(f'{kp}.ours.spread.median', f'{sorted(x for x, _ in spread)[len(spread) // 2] * 100:.1f}', texname, 'median of the same, %')
+            put(f'{kp}.ours.spread.median', f'{statistics.median(x for x, _ in spread) * 100:.1f}', texname, 'median of the same, %')
             sp2 = [x for x in spread if not x[1].startswith('m3max')]
             if sp2:
                 put(f'{kp}.ours.spread.nom3.max', f'{max(sp2)[0] * 100:.0f}', texname, 'the same maximum without the M3 Max, %; ' + max(sp2)[1])

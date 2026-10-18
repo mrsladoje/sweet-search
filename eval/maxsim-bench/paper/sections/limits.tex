@@ -37,7 +37,8 @@ The parallel-caller harness does not check scores, and the M3 Max runs of \sweet
 
 \paragraph{Machines.}
 Three CPU types ran in a public cloud with shared tenancy, four instances per type plus a replica.
-We measured the instance-to-instance spread on the agent and GCSN sets only, and we cannot show that the physical hosts differed.
+We measured the instance-to-instance spread on the agent and GCSN sets (replica) and on the BEIR sets with $k = 25$ and $k = 100$ (post-freeze rerun).
+We cannot show that the physical hosts differed.
 The Mac and the EPYC box ran a reduced sweep grid (24 of 84 cells) and no BEIR busy-gap groups.
 The Mac is a desktop computer; its idle gate allowed 15\% background load.
 No arm was pinned to a core, so the one-thread results are one-thread, not one-core, results.
