@@ -35,7 +35,7 @@ res = []
 for t in a.types.split(','):
     sl = json.load(open(os.path.join(HERE, 'shortlists', f'shortlist-rep-{t}.json')))
     recs = collections.defaultdict(list)
-    for md in glob.glob(os.path.join(a.results, f'rh-{t}-*')):
+    for md in glob.glob(os.path.join(a.results, f'hh-{t}-*')):
         for fn in glob.glob(os.path.join(md, '*', '*', '*.json')):
             if fn.endswith('.key.json'):
                 continue

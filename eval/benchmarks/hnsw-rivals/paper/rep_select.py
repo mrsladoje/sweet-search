@@ -1,5 +1,5 @@
 # Replication dev selection (../REPLICATION_PLAN.md section 4) -> shortlists/shortlist-rep-<type>.json.
-#   python rep_select.py --data DATA --results RESULTS --type intel [--machines 'rd-intel-*']
+#   python rep_select.py --data DATA --results RESULTS --type intel [--machines 'hd-intel-*']
 # For every system and f = 0.99: the fastest configuration (median over the 3 dev rounds of the per-round median)
 # whose one-sided 97.5% cluster-bootstrap lower bound of mean(Q_sys - 0.99 Q_exact) is >= 0. The rival = the
 # non-ours system with the lowest dev latency among those with a qualifying point.
@@ -16,7 +16,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument('--data', required=True); ap.add_argument('--results', required=True); ap.add_argument('--type', required=True)
 ap.add_argument('--machines'); ap.add_argument('--out', default=os.path.join(HERE, 'shortlists'))
 a = ap.parse_args()
-pat = a.machines or f'rd-{a.type}-*'
+pat = a.machines or f'hd-{a.type}-*'
 FIELDS = ('family', 'build_params', 'search', 'S1', 'EF')
 recs = collections.defaultdict(list)
 for md in glob.glob(os.path.join(a.results, '*')):
