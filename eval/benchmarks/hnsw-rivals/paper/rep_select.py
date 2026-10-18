@@ -33,6 +33,10 @@ for md in glob.glob(os.path.join(a.results, '*')):
             continue
         k = r['key']; pt = {'system': r['system'], **{f: k[f] for f in FIELDS if k.get(f) is not None}}
         recs[(r['set'], json.dumps(pt, sort_keys=True))].append((r['round'], fn, float(np.median(r['timings_ns'])) / 1e3))
+bad = [k for k, v in recs.items() if sorted(x[0] for x in v) != [0, 1, 2]]
+for k in bad:  # section 4: latency = median of exactly 3 dev rounds; a point without them is not selectable
+    print(f'not selectable (rounds {sorted(x[0] for x in recs[k])}): {k}', file=sys.stderr)
+    del recs[k]
 out = {'meta': {'type': a.type, 'f': F, 'rule': 'REPLICATION_PLAN.md section 4', 'machines': pat}}
 for s in sorted({k[0] for k in recs}):
     S = Q.load_set(a.data, s); qidx = Q.split_index(S, 'dev')

@@ -257,6 +257,7 @@ static int cmd_query() {
         return std::min(got, L);
     };
     if (!cold) { auto w = perm(warm.size(), 7); for (size_t i = 0; i < std::min<size_t>(500, warm.size()); i++) one(warm[w[i]]); }
+    auto mem_timed = memory();  // replication: page faults of the timed pass alone = after - timed
     std::vector<int32_t> lv(nq * L, -1); std::vector<float> ls(nq * L, NAN); std::vector<int64_t> tns(nq, -1);
     std::vector<int64_t> sconv(stages ? nq : 0, -1), sgen(stages ? nq : 0, -1), srest(stages ? nq : 0, -1);
     size_t shortl = 0; int64_t first = -1;
@@ -287,7 +288,7 @@ static int cmd_query() {
       << ",\"params\":" << jmap(pr) << ",\"build_params\":" << jmap(bp) << ",\"L\":" << L << ",\"n_queries\":" << nq
       << ",\"order_seed\":" << 42 + round << ",\"warmup\":" << (cold ? 0 : std::min<size_t>(500, warm.size())) << ",\"cold\":" << (cold ? "true" : "false")
       << ",\"timings_ns\":" << tj << stj << ",\"first_query_ns\":" << first << ",\"lists_sha256\":" << jstr(lsha) << ",\"short_lists\":" << shortl
-      << ",\"memory\":{\"loaded\":" << jmap(mem_loaded) << ",\"after\":" << jmap(mem_after) << "},\"keeps_originals\":" << (need_x ? "true" : "false")
+      << ",\"memory\":{\"loaded\":" << jmap(mem_loaded) << ",\"timed\":" << jmap(mem_timed) << ",\"after\":" << jmap(mem_after) << "},\"keeps_originals\":" << (need_x ? "true" : "false")
       << ",\"load_s\":" << load_s << ",\"process_s\":" << std::chrono::duration<double>(clk::now() - tproc).count()
       << ",\"info\":" << jmap(ad->info()) << "}\n";
     o.close(); rename((stem + ".json.tmp").c_str(), (stem + ".json").c_str());

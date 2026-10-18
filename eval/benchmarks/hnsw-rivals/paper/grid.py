@@ -10,6 +10,9 @@ SETS = {  # name: (vectors, kind, dev queries, held-out queries)
     'csn1m': (1004739, 'code', 3600, 2400),
     'fiqa': (57638, 'beir', 389, 259),
     'quora': (522931, 'beir', 6000, 4000),
+    # replication sets (REPLICATION_PLAN.md; not part of the main study's grid)
+    'cqadup': (457199, 'beir', 7887, 5258),
+    'msmarco1m': (1000000, 'beir', 4188, 2792),
 }
 MODELS = ['CodeRankEmbed', 'jina-v2-base-code', 'bge-base-en-v1.5']
 MACHINES = ['intel', 'amd', 'arm', 'box', 'mac']

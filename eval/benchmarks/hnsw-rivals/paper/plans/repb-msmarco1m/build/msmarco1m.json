@@ -1,0 +1,164 @@
+{
+"step": "rep-build-msmarco1m",
+"builds": [
+{
+"set": "msmarco1m",
+"model": "bge-base-en-v1.5",
+"family": "ours",
+"build_seed": 42
+},
+{
+"set": "msmarco1m",
+"model": "bge-base-en-v1.5",
+"family": "diskann_vamana",
+"build_params": {
+"L": 200,
+"R": 96,
+"alpha": 1.2
+},
+"build_seed": 42
+},
+{
+"set": "msmarco1m",
+"model": "bge-base-en-v1.5",
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "msmarco1m",
+"model": "bge-base-en-v1.5",
+"family": "faiss_hnsw_flat",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "msmarco1m",
+"model": "bge-base-en-v1.5",
+"family": "faiss_hnsw_sq8",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "msmarco1m",
+"model": "bge-base-en-v1.5",
+"family": "faiss_rabitq_hnsw",
+"build_params": {
+"M": 64,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "msmarco1m",
+"model": "bge-base-en-v1.5",
+"family": "hnswlib_f32",
+"build_params": {
+"M": 64,
+"efC": 200
+},
+"build_seed": 42
+},
+{
+"set": "msmarco1m",
+"model": "bge-base-en-v1.5",
+"family": "usearch_b1_rescore",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "msmarco1m",
+"model": "bge-base-en-v1.5",
+"family": "usearch_f16",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "msmarco1m",
+"model": "bge-base-en-v1.5",
+"family": "usearch_i8",
+"build_params": {
+"M": 32,
+"efC": 800
+},
+"build_seed": 42
+},
+{
+"set": "msmarco1m",
+"model": "bge-base-en-v1.5",
+"family": "scann",
+"build_params": {
+"leaves": 1000,
+"mode": "tree_ah",
+"soar": 1
+},
+"build_seed": 42
+},
+{
+"set": "msmarco1m",
+"model": "bge-base-en-v1.5",
+"family": "faiss_ivfpq_fs",
+"build_params": {
+"nlist": 1000
+},
+"build_seed": 42
+},
+{
+"set": "msmarco1m",
+"model": "bge-base-en-v1.5",
+"family": "faiss_rabitq_ivf",
+"build_params": {
+"nlist": 1000
+},
+"build_seed": 42
+},
+{
+"set": "msmarco1m",
+"model": "bge-base-en-v1.5",
+"family": "faiss_bin_flat",
+"build_params": {},
+"build_seed": 42
+},
+{
+"set": "msmarco1m",
+"model": "bge-base-en-v1.5",
+"family": "faiss_rabitq_flat",
+"build_params": {},
+"build_seed": 42
+},
+{
+"set": "msmarco1m",
+"model": "bge-base-en-v1.5",
+"family": "svs_vamana_lvq",
+"build_params": {
+"degree": 64
+},
+"build_seed": 42
+},
+{
+"set": "msmarco1m",
+"model": "bge-base-en-v1.5",
+"family": "svs_vamana_leanvec",
+"build_params": {
+"degree": 64
+},
+"build_seed": 42
+}
+],
+"jobs": []
+}

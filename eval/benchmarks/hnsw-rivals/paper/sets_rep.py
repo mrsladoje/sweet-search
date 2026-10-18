@@ -19,8 +19,14 @@ import sets as S  # noqa: E402
 N_MSMARCO = 1_000_000
 
 
-def emit(name, data, raw, zipname, corpus_ids, texts, queries, qrels, order, extra):
-    dev_ids, ho_ids = S.split_ids(order)
+def emit(name, data, raw, zipname, corpus_ids, texts, queries, qrels, order, extra, strata=None):
+    if strata:  # stratified split: sets.split_ids within each stratum (CQADupStack: forum)
+        dev_ids, ho_ids = set(), set()
+        for g in sorted(set(strata.values())):
+            d_, h_ = S.split_ids([q for q in order if strata[q] == g]); dev_ids |= d_; ho_ids |= h_
+    else:
+        dev_ids, ho_ids = S.split_ids(order)
+    selfm = len(set(order) & set(corpus_ids))
     ordered = [q for q in order if q in dev_ids] + [q for q in order if q in ho_ids]
     rows = [{'qid': q, 'text': queries[q], 'split': 'dev' if q in dev_ids else 'ho', 'rel': qrels[q], 'cluster': q} for q in ordered]
     S.check_counts(name, rows)
@@ -34,8 +40,8 @@ def emit(name, data, raw, zipname, corpus_ids, texts, queries, qrels, order, ext
     zp = os.path.join(raw, zipname + '.zip') if zipname else None
     meta = {'name': name, 'kind': 'beir', 'n_vectors': len(corpus_ids), 'n_docs': len(corpus_ids),
             'n_queries': {'dev': len(dev_ids), 'ho': len(ho_ids)}, 'membership_sha256': None, 'queries_sha256': None,
-            'split': {'seed': S.SEED, 'dev': S.DEV_FRAC, 'stratify': None, 'source': 'sets.split_ids over the query ids (replication set)'},
-            'self_match': False, 'previously_examined': False, 'replication': True, 'k_v': None,
+            'split': {'seed': S.SEED, 'dev': S.DEV_FRAC, 'stratify': 'forum' if strata else None, 'source': 'sets.split_ids over the query ids (replication set)'},
+            'self_match': selfm > 0, 'query_ids_in_corpus': selfm, 'previously_examined': False, 'replication': True, 'k_v': None,
             'cluster': 'query id (each query is its own cluster)',
             'beir': {**({'url': S.BEIR_URL.format(zipname), 'zip_sha256': S.sha256_file(zp), 'zip_bytes': os.path.getsize(zp)} if zp else {}),
                      'doc_text': 'title + " " + text, stripped', **extra}}
@@ -52,6 +58,7 @@ def build_cqadup(data, raw):
     base = os.path.join(raw, 'cqadupstack-hf')
     revs = dict(l.split() for l in open(os.path.join(base, 'revisions.txt')) if l.strip())
     forums = sorted(revs)
+    assert len(forums) == 12, forums
     ids, texts, queries, qrels, order = [], [], {}, {}, []
     for fo in forums:
         for line in open(os.path.join(base, fo, 'corpus.jsonl'), encoding='utf-8'):
@@ -72,7 +79,7 @@ def build_cqadup(data, raw):
     files = {f'{fo}/{x}': S.sha256_file(os.path.join(base, fo, x)) for fo in forums for x in ('corpus.jsonl', 'queries.jsonl', 'qrels/test.tsv')}
     emit('cqadup', data, raw, None, ids, texts, queries, qrels, order,
          {'source': 'huggingface mteb/cqadupstack-<forum> (MTEB copy of the BEIR files)', 'revisions': revs, 'files_sha256': files,
-          'qrels': 'qrels/test.tsv of every forum'})
+          'qrels': 'qrels/test.tsv of every forum'}, strata={q: q.split('/')[0] for q in order})
 
 
 def build_msmarco(data, raw):
