@@ -148,12 +148,16 @@ COMMON = ('adapter.h', 'adapters/common.h', 'rivals5.cpp', 'py5.py', 'build-pape
           'adapters/requirements-scann-linux-x86_64.lock')
 
 
+_PIN = os.path.join(HERE, 'builder-pin.json')
+_PIN = json.load(open(_PIN))['sha256'] if os.path.exists(_PIN) else {}
+
+
 def builder_id(fam):
     """What decides a serialised index, apart from its parameters: the library pins (in the build scripts) and the
     adapter source. Not the CPU or the binary hash: an index is built once and copied to every timing machine
     (owner, 2026-10-15), so all CPUs search the same file."""
     src = SOURCES[fam.split('_')[0]]
-    return sha_json({f: sha_file(os.path.join(HERE, f)) for f in (src,) + COMMON})
+    return sha_json({f: _PIN.get(f) or sha_file(os.path.join(HERE, f)) for f in (src,) + COMMON})  # builder-pin.json: post-freeze
 
 
 def build_dir(data, b):

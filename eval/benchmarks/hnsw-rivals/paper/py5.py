@@ -19,7 +19,7 @@ def parse(argv):
     a, i = {}, 0
     while i < len(argv):
         k = argv[i][2:]
-        if k in ('heldout', 'cold'):
+        if k in ('heldout', 'cold', 'stages'):
             a[k] = True; i += 1
         else:
             a[k] = argv[i + 1]; i += 2
@@ -32,6 +32,7 @@ def params(s):
 
 def memory():
     m = {'maxrss_kb': str(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss // (1024 if sys.platform == 'darwin' else 1))}
+    ru = resource.getrusage(resource.RUSAGE_SELF); m['majflt'] = str(ru.ru_majflt); m['minflt'] = str(ru.ru_minflt)
     try:
         rss = anon = None
         for l in open('/proc/self/smaps_rollup'):
@@ -124,15 +125,23 @@ def query(a):
     code = np.zeros(96, dtype=np.uint8)
     cand = np.empty(K, dtype=np.int64); ids = np.empty(Lw, dtype=np.int64); sc = np.empty(Lw, dtype=np.float64)
 
+    stages = bool(a.get('stages')); last = [0, 0, 0]; pc = time.perf_counter_ns  # post-freeze: conv | gen | rest
+
     def one(r):
+        c0 = pc()
         q = Q[r]
         n = float(np.sqrt(np.dot(q.astype(np.float64), q)))
         qn = (q / np.float32(n)) if n > 0 else q
         if comp == 'A':
             L.r5_query(r5, q.ctypes.data, code.ctypes.data)
+            c1 = pc()
             got_ids, _ = ad.search(qn, K)
             cand[:] = -1; cand[:len(got_ids)] = got_ids
-            return L.r5_run(r5, cand.ctypes.data, len(got_ids), Lw, ids.ctypes.data, sc.ctypes.data)
+            c2 = pc()
+            n_ = L.r5_run(r5, cand.ctypes.data, len(got_ids), Lw, ids.ctypes.data, sc.ctypes.data)
+            if stages:
+                last[0], last[1], last[2] = c1 - c0, c2 - c1, pc() - c2
+            return n_
         got_ids, got_sc = ad.search(qn, K)
         m = min(len(got_ids), Lw)
         ids[:m] = got_ids[:m]; sc[:m] = got_sc[:m]
@@ -144,12 +153,15 @@ def query(a):
             one(warm[w[i]])
     lv = np.full((nq, Lw), -1, dtype=np.int32); ls = np.full((nq, Lw), np.nan, dtype=np.float32)
     tns = [-1] * nq; short = 0; first = -1
+    stg = [[-1] * nq for _ in range(3)] if stages else None
     for qi in perm(L, nq, 42 + rnd):
         ids[:] = -1; sc[:] = np.nan
         s = time.perf_counter_ns()
         n = one(rows[qi])
         ns = time.perf_counter_ns() - s
         tns[qi] = ns; first = ns if first < 0 else first; short += n < Lw
+        if stg:
+            stg[0][qi], stg[1][qi], stg[2][qi] = last
         lv[qi, :n] = ids[:n]; ls[qi, :n] = sc[:n]
     mem_after = memory()
     stem = a['out']; os.makedirs(os.path.dirname(stem), exist_ok=True)
@@ -161,7 +173,8 @@ def query(a):
                build_params=bp, L=Lw, n_queries=nq, order_seed=42 + rnd, warmup=0 if a.get('cold') else min(500, len(warm)),
                cold=bool(a.get('cold')), timings_ns=tns, first_query_ns=first, lists_sha256=hashlib.sha256(blob).hexdigest(),
                short_lists=int(short), memory=dict(loaded=mem_loaded, after=mem_after), keeps_originals=True, load_s=load_s,
-               process_s=time.perf_counter() - tp, info=ad.info(), harness='python')
+               process_s=time.perf_counter() - tp, info=ad.info(), harness='python',
+               **({'stage_ns': dict(conv=stg[0], gen=stg[1], rest=stg[2])} if stg else {}))
     json.dump(rec, open(stem + '.json.tmp', 'w')); os.replace(stem + '.json.tmp', stem + '.json')
     msg = f"{a['family']} {comp} {a['set']}/{a['model']}/{split} r{rnd} nq={nq} short={short}"
     print(msg + ('' if a.get('heldout') else f' p50 {sorted(tns)[nq // 2] / 1e3:.1f} us'))

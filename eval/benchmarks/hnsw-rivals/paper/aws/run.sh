@@ -229,6 +229,8 @@ for MODE in $MODES; do
   EXTRA=(); WANT=dev
   if [ "$MODE" = heldout ]; then
     WANT=ho; FZ=$H/FREEZE.json
+    # post-freeze plans (plans/p-*): the code is checked against POSTFREEZE.json (the post-freeze commit) instead
+    case "${PLAN_ROOT:-}" in plans/p-*) FZ=$H/POSTFREEZE.json; say "post-freeze plans: code checked against POSTFREEZE.json";; esac
     if [ ! -f "$FZ" ] || ! $PY -I "$H/freeze_check.py" "$FZ" "$REPO" >> "$LOG" 2>&1; then
       say "mode heldout refused: FREEZE.json missing or the code does not match it"; FAILED+=("heldout:freeze"); continue
     fi

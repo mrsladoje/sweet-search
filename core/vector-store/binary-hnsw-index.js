@@ -71,6 +71,8 @@ function nativeHnswSearcherCtor() {
 // faster than the walk up to 140k vectors on an M3 Max and ties it at 140k on
 // an x86 EPYC (AVX2), so the cap sits just above that.
 const EXACT_SCAN_MAX_VECTORS = 150000;
+// SS_FIX_HNSW_ADAPTIVE=0 (bench only): no early termination thresholds in the native walk.
+const NO_EARLY_STOP = [];
 
 // The native walk uses bucket queues by default (O(1) per queue operation;
 // equal Hamming distances may come out in another order than the JS heaps).
@@ -1134,7 +1136,7 @@ export class BinaryHNSWIndex {
    */
   _nativeSearchLayer(searcher, startNode, ef, level) {
     const et = BINARY_HNSW_CONFIG.earlyTermination || {};
-    const list = et.thresholds || [[0.2, 0.10], [0.5, 0.15]];
+    const list = process.env.SS_FIX_HNSW_ADAPTIVE === '0' ? NO_EARLY_STOP : (et.thresholds || [[0.2, 0.10], [0.5, 0.15]]);
     if (nativeThresholds.list !== list) {
       nativeThresholds.list = list;
       nativeThresholds.flat = new Float64Array(list.flat());
@@ -1279,9 +1281,12 @@ export class BinaryHNSWIndex {
       }
 
       // Adaptive ef: easy queries get a smaller budget, hard queries get more
+      // (SS_FIX_HNSW_ADAPTIVE=0, bench only: fixed ef and no early termination)
       const greedyDist = nat ? nat.dist(currentNode) : this._distQ(currentNode);
       const greedyQuality = 1 - (greedyDist / maxDist);
-      if (greedyQuality > 0.85) {
+      if (process.env.SS_FIX_HNSW_ADAPTIVE === '0') {
+        // fixed ef
+      } else if (greedyQuality > 0.85) {
         ef = Math.max(this._oversampleTarget(k, staleBitmap), Math.round(ef * 0.6));
       } else if (greedyQuality < 0.55) {
         ef = Math.round(ef * 1.5);
@@ -1386,7 +1391,9 @@ export class BinaryHNSWIndex {
     if (!scan) {
       for (let l = this.maxLevel; l >= 1; l--) currentNode = nat.greedy(currentNode, l);
       const greedyQuality = 1 - (nat.dist(currentNode) / maxDist);
-      if (greedyQuality > 0.85) {
+      if (process.env.SS_FIX_HNSW_ADAPTIVE === '0') {
+        // fixed ef (bench only)
+      } else if (greedyQuality > 0.85) {
         ef = Math.max(this._oversampleTarget(k, staleBitmap), Math.round(ef * 0.6));
       } else if (greedyQuality < 0.55) {
         ef = Math.round(ef * 1.5);
@@ -1394,7 +1401,7 @@ export class BinaryHNSWIndex {
     }
     const want = scan ? Math.min(total, k + (total - live)) : 0;
     const et = BINARY_HNSW_CONFIG.earlyTermination || {};
-    const list = et.thresholds || [[0.2, 0.10], [0.5, 0.15]];
+    const list = process.env.SS_FIX_HNSW_ADAPTIVE === '0' ? NO_EARLY_STOP : (et.thresholds || [[0.2, 0.10], [0.5, 0.15]]);
     if (nativeThresholds.list !== list) {
       nativeThresholds.list = list;
       nativeThresholds.flat = new Float64Array(list.flat());
