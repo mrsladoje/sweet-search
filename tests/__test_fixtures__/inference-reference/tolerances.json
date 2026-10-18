@@ -1,5 +1,5 @@
 {
- "_comment": "Fixed per model and backend class. Cosines are true cosines (norms are checked separately) and every backend L2-normalises in F32. Measured 2026-10-19 on M3 Max against the fixtures (worst case over alone + batch runs): metal/bf16 embed min 0.99971 mean 0.99979; coreml embed min 0.99955 mean 0.99965; metal/bf16 LI token min 0.99921 (lateon-code) / 0.99982 (edge), mean >= 0.99991, MaxSim rel <= 9.84e-3; coreml LI token min 0.99921 (shapes no variant fits run on candle Metal), mean >= 0.99994, MaxSim rel <= 3.6e-3; f32 on cpu and metal: cosine 1.000000, MaxSim rel <= 1e-6. Earlier bounds (min ~0.99) measured dot products of BF16-normalised vectors whose norms were up to ~0.8% off 1. Classes not listed have no tolerances and fail until measured. Do not loosen to make a run pass; a failure means the output changed.",
+ "_comment": "Fixed per model and backend class. Cosines are true cosines (norms are checked separately) and every backend L2-normalises in F32. Measured 2026-10-19 on M3 Max against the fixtures (worst case over alone + batch runs): metal/bf16 embed min 0.99971 mean 0.99979; coreml embed min 0.99955 mean 0.99965; metal/bf16 LI token min 0.99921 (lateon-code) / 0.99982 (edge), mean >= 0.99991, MaxSim rel <= 9.84e-3; coreml LI token min 0.99921 (shapes no variant fits run on candle Metal), mean >= 0.99994, MaxSim rel <= 3.6e-3; f32 on cpu and metal: cosine 1.000000, MaxSim rel <= 1e-6. Earlier bounds (min ~0.99) measured dot products of BF16-normalised vectors whose norms were up to ~0.8% off 1. Classes not listed have no tolerances and fail until measured. Do not loosen to make a run pass; a failure means the output changed. CUDA bounds set 2026-10-19 from an RTX A4000 (sm_86, flash-attn active for half precision) before any other GPU was measured: cuda/f32 cosine 1.000000, MaxSim rel <= 1.6e-6; cuda/bf16 embed min 0.99987 mean 0.99990, LI token min 0.99846 (lateon-code) / 0.99978 (edge), mean >= 0.99992, MaxSim rel <= 7.2e-3; cuda/f16 embed min 0.999998, LI token min 0.99998, MaxSim rel <= 1.5e-3.",
  "coderankembed": {
   "cpu/f32": {
    "minCosine": 0.99999,
@@ -16,6 +16,18 @@
   "coreml": {
    "minCosine": 0.999,
    "meanCosine": 0.9995
+  },
+  "cuda/f32": {
+   "minCosine": 0.99999,
+   "meanCosine": 0.99999
+  },
+  "cuda/bf16": {
+   "minCosine": 0.999,
+   "meanCosine": 0.9995
+  },
+  "cuda/f16": {
+   "minCosine": 0.9999,
+   "meanCosine": 0.99995
   }
  },
  "lateon-code": {
@@ -38,6 +50,21 @@
    "minTokenCosine": 0.998,
    "meanTokenCosine": 0.9998,
    "maxSimRelTol": 0.02
+  },
+  "cuda/f32": {
+   "minTokenCosine": 0.99999,
+   "meanTokenCosine": 0.99999,
+   "maxSimRelTol": 1e-05
+  },
+  "cuda/bf16": {
+   "minTokenCosine": 0.997,
+   "meanTokenCosine": 0.9998,
+   "maxSimRelTol": 0.02
+  },
+  "cuda/f16": {
+   "minTokenCosine": 0.9995,
+   "meanTokenCosine": 0.99995,
+   "maxSimRelTol": 0.005
   }
  },
  "lateon-code-edge": {
@@ -60,6 +87,21 @@
    "minTokenCosine": 0.998,
    "meanTokenCosine": 0.9998,
    "maxSimRelTol": 0.02
+  },
+  "cuda/f32": {
+   "minTokenCosine": 0.99999,
+   "meanTokenCosine": 0.99999,
+   "maxSimRelTol": 1e-05
+  },
+  "cuda/bf16": {
+   "minTokenCosine": 0.997,
+   "meanTokenCosine": 0.9998,
+   "maxSimRelTol": 0.02
+  },
+  "cuda/f16": {
+   "minTokenCosine": 0.9995,
+   "meanTokenCosine": 0.99995,
+   "maxSimRelTol": 0.005
   }
  }
 }
