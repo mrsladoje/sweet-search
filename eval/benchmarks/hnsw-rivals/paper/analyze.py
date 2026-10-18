@@ -19,6 +19,9 @@ FIELDS = ('family', 'build_params', 'search', 'gen', 'C', 'H', 'ef', 'S1', 'EF')
 ap = argparse.ArgumentParser()
 ap.add_argument('--data', required=True); ap.add_argument('--results', required=True); ap.add_argument('--shortlists', required=True)
 ap.add_argument('--builds', help='DATA/builds/shared with build.json files (build cost table)')
+ap.add_argument('--need-lists', help='write the result-relative paths of the .lists.bin files the analysis reads and are missing, then stop')
+ap.add_argument('--json', help='also write every reported value as JSON (tables and numbers of the paper)')
+ap.add_argument('--types', help='comma list of machine types to analyse (parallel runs; merge with merge_results.py)')
 ap.add_argument('--freeze', default=os.path.join(HERE, 'FREEZE.json')); ap.add_argument('--out', default='RESULTS-paper.md')
 a = ap.parse_args()
 fz = json.load(open(a.freeze)); DELTA = fz['delta']
@@ -57,6 +60,11 @@ for md in glob.glob(os.path.join(a.results, '*')):
         elif k.get('kind') == 'timing':
             recs[(t, r['set'], r['model'], r['comparison'])][pk].append((r['round'], f, r))
 print(f"{sum(len(v) for v in recs.values())} held-out points, {len(cold)} cold jobs", file=sys.stderr)
+if a.need_lists:  # quality is read from the lowest round of every point (comparisons A and B)
+    need = [min(rs)[1] for v in recs.values() for rs in v.values()]
+    need = [os.path.relpath(os.path.splitext(f)[0] + '.lists.bin', a.results) for f in need if not os.path.exists(os.path.splitext(f)[0] + '.lists.bin')]
+    open(a.need_lists, 'w').write(''.join(x + '\n' for x in need))
+    print(f'{len(need)} lists missing -> {a.need_lists}', file=sys.stderr); sys.exit(0)
 
 sets_cache, qx_cache, boot_cache = {}, {}, {}
 
@@ -81,34 +89,48 @@ def quality_of(path, s, m):
     return qual_cache[path]
 
 
+def mem_kb(r):
+    """Memory after the timed pass (kB): macOS physical footprint (excludes freed pages the allocator keeps and clean
+    file pages), else Linux Rss from smaps_rollup (anonymous + file-backed), else rss_kb. Values may be strings."""
+    m = (r.get('memory') or {}).get('after') or {}
+    for k in ('phys_footprint_kb', 'Rss', 'rss_kb'):
+        if m.get(k) not in (None, ''):
+            return int(m[k])
+    return None
+
+
 def summarize(rs):
     rs = sorted(rs, key=lambda x: x[0])
     meds = [float(np.median(r['timings_ns'])) / 1e3 for _, _, r in rs]
-    mem = [int(x) for x in (((r.get('memory') or {}).get('after') or {}).get('rss_kb') for _, _, r in rs) if x]  # values may be strings
+    mem = [x for x in (mem_kb(r) for _, _, r in rs) if x]
     return dict(lat=float(np.median(meds)), rounds=len(meds), round_meds=meds, rec0=rs[0][1],
                 rss_mb=(st.median(mem) / 1024 if mem else None))
 
 
-def ratio_ci(a_meds, b_meds):
-    """95% interval of median(b)/median(a) from round medians (log scale, Welch t)."""
-    la, lb = np.log(a_meds), np.log(b_meds)
-    est = math.exp(np.mean(lb) - np.mean(la))
-    if len(la) < 2 or len(lb) < 2:
+def ratio_ci(a_meds, b_meds, B=10000, seed=42):
+    """median(b) / median(a) over rounds, 95% percentile interval from a bootstrap over rounds (each arm resampled
+    on its own). Robust to a single slow round (an outlier round moves a mean of logs, not a median)."""
+    a_, b_ = np.asarray(a_meds, float), np.asarray(b_meds, float)
+    est = float(np.median(b_) / np.median(a_))
+    if len(a_) < 2 or len(b_) < 2:
         return est, None, None
-    se = math.sqrt(np.var(la, ddof=1) / len(la) + np.var(lb, ddof=1) / len(lb))
-    df = max(1, len(la) + len(lb) - 2); tq = 2.0 if df >= 30 else {1: 12.7, 2: 4.3, 3: 3.18, 4: 2.78, 5: 2.57, 6: 2.45, 7: 2.36, 8: 2.31, 9: 2.26}.get(df, 2.1)
-    return est, est * math.exp(-tq * se), est * math.exp(tq * se)
+    rng = np.random.default_rng(seed)
+    ra = np.median(a_[rng.integers(0, len(a_), (B, len(a_)))], axis=1)
+    rb = np.median(b_[rng.integers(0, len(b_), (B, len(b_)))], axis=1)
+    lo, hi = np.percentile(rb / ra, [2.5, 97.5])
+    return est, float(lo), float(hi)
 
 
 out = ['# HNSW rivals paper: held-out results (frozen points)', '',
        f"Freeze: files of commit `{fz['commit'][:10]}` ({fz['frozen_utc']}), delta = {DELTA}, fractions {fz['fractions']}, one-sided alpha {fz['alpha_one_sided']}, "
        f"bootstrap {fz['bootstrap']['resamples']} resamples (seed {fz['bootstrap']['seed']}). Latency = median over R rounds of the per-round "
-       "median per-query time (one pinned core, warm page cache). Ratio = rival / ours (> 1: ours faster), 95% interval over rounds. "
+       "median per-query time (one pinned core, warm page cache). Ratio = median over rounds of rival / median over rounds of ours (> 1: ours faster), 95% percentile interval from a bootstrap over rounds (10,000 resamples, seed 42). "
        "Meets f: the held-out point estimate of retained quality >= f / the one-sided 97.5% cluster-bootstrap bound of "
        "mean(Q_sys - f Q_exact) >= 0 (the dev selection rule, applied once to held-out).", '']
 primaries = []
+J = dict(B=[], A=[], primary=None, build=[], n_ho={}, q_exact={}, R={})
 summary = []  # (type, set, model, f, ours sm, best rival name, its sm): fastest rival whose held-out point estimate meets f
-types = sorted({k[0] for k in recs})
+types = sorted({k[0] for k in recs if not a.types or k[0] in a.types.split(',')})
 for t in types:
     sl_type = {'box': 'amd', 'mac': 'arm'}.get(t, t)
     sl = json.load(open(os.path.join(a.shortlists, f'shortlist-{sl_type}.json')))
@@ -120,6 +142,7 @@ for t in types:
                 continue
             S, qidx, qx, boot = ctx(s, m)
             sel = sl[s][m]['selection']
+            J['n_ho'][s] = len(qidx); J['q_exact'][f'{s}/{m}'] = float(qx.mean()); J['R'][t] = sl['meta']['R'] if t == sl_type else None
             out += [f'### {s} / {m} (n_ho = {len(qidx)}, exact quality {qx.mean():.4f})', '',
                     '| System | f | Held-out µs | Rounds | Retained quality | Meets f (point / bound) | rival/ours [95% CI] | RSS MB | Cold start ms |',
                     '|---|---:|---:|---:|---:|---|---|---:|---:|']
@@ -143,6 +166,9 @@ for t in types:
                     sm.update(q=q, share=float(q.mean() / qx.mean()) if qx.mean() else float('nan'), meets=('yes' if selr['mean_d'] >= 0 else 'no') + ' / ' + ('yes' if selr['qualifies'] else 'no'),
                               cold_ms=((c['load_s'] * 1e3 + c['first_query_ns'] / 1e6) if c and c.get('first_query_ns') else None))
                     rows.append((sysname, f, sm))
+                    J['B'].append(dict(type=t, set=s, model=m, system=sysname, f=float(f), us=sm['lat'], rounds=sm['rounds'], round_us=sm['round_meds'],
+                                       share=sm['share'], meets_point=selr['mean_d'] >= 0, meets_bound=bool(selr['qualifies']), lower=selr['lower'],
+                                       rss_mb=sm['rss_mb'], cold_ms=sm['cold_ms'], point=e['point']))
                     if sysname == 'ours_cascade':
                         ours_at[f] = sm
             for sysname, f, sm in rows:
@@ -161,14 +187,41 @@ for t in types:
             if absent:
                 out.append(f"No held-out record on this machine: {', '.join(absent)}.")
             out.append('')
-            # primary comparison
-            if s in ('quora', 'fiqa') and t in ('intel', 'amd', 'arm') and '0.99' in ours_at:
-                riv = sorted((sm['lat'], sn, sm) for sn, f, sm in rows if sm and f == '0.99' and not sn.startswith('ours') and sn != 'faiss_exact')
-                if riv:
-                    _, rn, rsm = riv[0]
-                    ni = stats.noninferiority(boot, ours_at['0.99']['q'], rsm['q'], DELTA)
-                    est, lo, hi = ratio_ci(ours_at['0.99']['round_meds'], rsm['round_meds'])
-                    primaries.append(dict(type=t, set=s, model=m, rival=rn, ratio=est, lo=lo, hi=hi, ours_meets=ours_at['0.99']['meets'], rival_meets=rsm['meets'], **ni))
+            # primary comparison: the pair fixed on dev (shortlist meta.primary), at f = 0.99 in (B)
+            for pp in (sl['meta'].get('primary') or []) if t == sl_type else []:
+                if (pp['set'], pp['model']) != (s, m):
+                    continue
+                rsm = next((sm for sn, f, sm in rows if sn == pp['rival'] and f == '0.99'), None)
+                o = ours_at.get('0.99')
+                if o is None or rsm is None:
+                    primaries.append(dict(type=t, set=s, model=m, rival=pp['rival'], missing=True)); continue
+                ni = stats.noninferiority(boot, o['q'], rsm['q'], DELTA)
+                est, lo, hi = ratio_ci(o['round_meds'], rsm['round_meds'])
+                primaries.append(dict(type=t, set=s, model=m, rival=pp['rival'], ratio=est, lo=lo, hi=hi, ours_meets=o['meets'], rival_meets=rsm['meets'], **ni))
+            # comparison (A): every generator with the common rescoring, per budget (C candidates, H rescored)
+            Ar = recs.get((t, s, m, 'A'), {})
+            if Ar:
+                cells = collections.defaultdict(list)  # (generator, C, H) -> [(lat, share, meets 0.99 point, effort)]
+                for pk, rs in Ar.items():
+                    d = json.loads(pk); sm = summarize(rs); q = quality_of(sm['rec0'], s, m)
+                    share = float(q.mean() / qx.mean())
+                    sd = d.get('search') or ({'ef': d['ef']} if 'ef' in d else {})
+                    eff = ', '.join(f'{k} {v}' for k, v in sorted(sd.items())) or 'exhaustive'
+                    cells[(d['system'], d.get('C'), d.get('H'))].append((sm['lat'], share, share >= 0.99, eff, sm))
+                    J['A'].append(dict(type=t, set=s, model=m, system=d['system'], C=d.get('C'), H=d.get('H'), effort=eff, us=sm['lat'],
+                                       rounds=sm['rounds'], round_us=sm['round_meds'], share=share, rss_mb=sm['rss_mb']))
+                budgets = sorted({(c, h) for _, c, h in cells})
+                rowsA = sorted({(g, x[3]) for (g, _, _), v in cells.items() for x in v})
+                out += ['Comparison (A), common rescoring, every declared generator effort at every budget (C candidates, H rescored): '
+                        'held-out µs / retained quality.', '',
+                        '| Generator | Effort | ' + ' | '.join(f'C {c} / H {h}' for c, h in budgets) + ' |', '|---|---|' + '---:|' * len(budgets)]
+                for g, eff in rowsA:
+                    row = []
+                    for b in budgets:
+                        v = [x for x in cells.get((g,) + b, []) if x[3] == eff]
+                        row.append(f'{v[0][0]:.1f} / {v[0][1]:.4f}' if v else '')
+                    out.append(f"| {g} | {eff} | " + ' | '.join(row) + ' |')
+                out.append('')
 # summary at the top: ours vs the fastest rival that meets f (point estimate), per fraction
 head = []
 for f in sorted({x[3] for x in summary}):
@@ -191,17 +244,20 @@ for f in sorted({x[3] for x in summary}):
 out[4:4] = head
 # Holm over the primary comparisons
 if primaries:
-    ps = [p['p'] for p in primaries]; hol = stats.holm(ps)
-    out += ['## Primary comparisons (quality non-inferiority of ours vs the fastest rival at f = 0.99, Holm)', '',
+    ps = [p.get('p', 1.0) for p in primaries]; hol = stats.holm(ps)  # a missing comparison counts as p = 1
+    out += ['## Primary comparisons (pairs fixed on dev: quality non-inferiority of ours vs that rival at f = 0.99, Holm)', '',
             '| CPU | Set | Model | Fastest rival | rival/ours latency [95% CI] | Meets 0.99 ours / rival | mean(ours − rival) | lower bound | p | Holm |',
             '|---|---|---|---|---|---|---:|---:|---:|---|']
     for p, h in zip(primaries, hol):
+        if p.get('missing'):
+            out.append(f"| {p['type']} | {p['set']} | {p['model']} | {p['rival']} | no held-out record at f = 0.99 | | | | | fail |"); continue
         out.append(f"| {p['type']} | {p['set']} | {p['model']} | {p['rival']} | {p['ratio']:.2f}" + (f" [{p['lo']:.2f}, {p['hi']:.2f}]" if p['lo'] else '') +
                    f" | {p['ours_meets']} ; {p['rival_meets']} | {p.get('mean_diff', float('nan')):+.4f} | {p.get('lower', float('nan')):+.4f} | {p['p']:.4f} | {'pass' if h else 'fail'} |")
     out.append('')
 # build cost at 1M
+brows = []
 if a.builds:
-    rows = []
+    rows = brows
     for bj in glob.glob(os.path.join(a.builds, 'csn1m', '*', '*', '*', 'build.json')):
         b = json.load(open(bj))
         rows.append((b['model'], b['family'], json.dumps(b['params'], sort_keys=True), b['build_s'], b.get('threads'), b['bytes'] / 1e9,
@@ -214,4 +270,12 @@ if a.builds:
     for r in sorted(rows):
         out.append(f'| {r[0]} | {r[1]} | {r[2]} | {r[3]:.0f} | {r[4]} | {r[3] * (r[4] or 1):.0f} | {r[5]:.2f} | {r[6]:.1f} |')
 open(a.out, 'w').write('\n'.join(out) + '\n')
+if a.json:
+    J['primary'] = [{k: v for k, v in p.items()} for p in primaries]
+    if primaries:
+        for p, h in zip(J['primary'], hol):
+            p['holm_pass'] = bool(h)
+    J['build'] = [dict(model=r[0], family=r[1], params=r[2], wall_s=r[3], threads=r[4], size_gb=r[5], peak_gb=r[6]) for r in (brows if a.builds else [])]
+    J['freeze'] = {k: fz[k] for k in ('commit', 'frozen_utc', 'delta', 'fractions', 'alpha_one_sided', 'bootstrap')}
+    json.dump(J, open(a.json, 'w'), indent=0, default=float)
 print(f'wrote {a.out}: {len(types)} machine types, {len(primaries)} primary comparisons', file=sys.stderr)

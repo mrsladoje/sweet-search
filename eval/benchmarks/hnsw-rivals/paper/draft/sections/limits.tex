@@ -1,0 +1,38 @@
+\section{Limits}\label{sec:limits}
+
+\paragraph{Sizes and dimensions.} The sets hold 7k to 1M vectors. We make no claim beyond 1M vectors,
+where memory-resident flat scans stop being an option and graph and partition indexes have more room
+to pay off. All vectors have 768 dimensions; our codes use the first 512. Other dimensions, and models
+whose leading dimensions carry less of the signal, can change the result.
+
+\paragraph{Models and tasks.} Three embedding models, five code-search sets and two BEIR sets. The
+code-search results are exploratory: the code queries were examined in earlier work on the same
+system, and dev and held-out code queries share most source repositories (the bootstrap resamples
+repositories, which accounts for this inside a set but not across sets). The confirmatory part is
+the \nm{nprimary} primary comparisons on Quora and FiQA.
+
+\paragraph{Machines.} Every Linux machine is a virtual machine, so page sizes, frequency and
+neighbour load are not under our control. A/A runs measured this noise per machine and set $R$; the
+rounds of one point usually ran on different instances, so instance-to-instance variation is inside
+the intervals. Results on bare metal can differ, in particular for the graph walks, whose cost depends
+on TLB behaviour. The Mac runs unpinned. The box and the Mac run a reduced grid.
+
+\paragraph{Single queries, single thread.} We time one query at a time on one core. Batched search,
+multi-threaded search and shared-index throughput are out of scope; several rivals (FAISS flat
+scans, IVF) gain more from batching than graph walks do. Our index build is single-threaded; the
+rival builds used the thread counts in Table~\ref{tab:build}. Build cost is indicative only
+(\S\ref{sec:systems}).
+
+\paragraph{Tested interfaces.} Each rival is used through the interface we wrapped: the C++ API for
+FAISS, hnswlib, USearch, DiskANN and SVS, and the Python binding for ScaNN. Another interface,
+another build of the same library, or parameters outside the declared grids can be faster. We
+declared the grids before the dev runs and widened two (IVF probes and ScaNN leaves) on dev, before
+the freeze, when those families did not reach the fractions.
+
+\paragraph{Our harness.} Our system runs in Node.js with a native addon, the rivals in C++ (ScaNN in
+Python). Comparison (A) runs our generators through the addon and the shared steps in both C++ and the
+addon with bit-identical lists, so the generator times include the language boundary of each system.
+
+\paragraph{The reporting script.} \texttt{analyze.py} was written after the freeze. It applies the
+frozen rules with the frozen quality and statistics code and selects nothing; we release it with the
+data so that every table can be checked against the raw records.

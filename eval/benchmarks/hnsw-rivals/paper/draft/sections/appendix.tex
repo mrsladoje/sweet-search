@@ -1,0 +1,43 @@
+\section{Power of the primary comparisons}\label{app:power}
+
+\begin{table}[h]\centering\scriptsize
+\caption{The \nm{nprimary} primary pairs, fixed on dev before the freeze: our time and the rival's at
+$\fr = 0.99$ on dev, held-out cluster count, the cluster-bootstrap standard error of the mean quality
+difference scaled to held-out, and the power at a true difference of 0 for $\delta = \nm{delta}$
+(analytic and by simulation, 2,000 draws).}\label{tab:power}
+\begin{tabular}{lllrrrrrrr}\toprule
+CPU & Set & Model & Rival & Ours µs & Rival µs & Clusters & SE & Power & Power (sim)\\\midrule
+\inputtable{tables/power.tex}
+\bottomrule\end{tabular}
+\end{table}
+
+\section{Comparison (B) at the other fractions}\label{app:fractions}
+
+\headlinetable{0.98}{098}
+\headlinetable{0.995}{0995}
+
+\begin{table}[h]\centering\scriptsize
+\caption{The fastest rival that meets $\fr = 0.99$ on held-out (point estimate), per cell of
+Table~\ref{tab:headline099}.}\label{tab:fastestrival}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{ll*{5}{l}}\toprule
+Set & Model & \inputtable{tables/headline-cols.tex}\\\midrule
+\inputtable{tables/fastest-rival-099.tex}
+\bottomrule\end{tabular}
+\end{table}
+
+\section{Comparison (A) on every CPU}\label{app:compA}
+
+Tables~\ref{tab:compA-amd}--\ref{tab:compA-mac} repeat Table~\ref{tab:compA-intel} for the other CPUs.
+The full grid (every budget and both efforts, every set and model) is in \texttt{RESULTS-paper.md}
+in the release.
+
+\compAtable{amd}{AMD EPYC 9R45}
+\compAtable{arm}{Graviton4}
+\compAtable{box}{EPYC Milan (box)}
+\compAtable{mac}{Apple M3 Max}
+
+\section{Memory and cold start}\label{app:mem}
+
+\memtable{quora}{Quora, bge-base-en-v1.5}
+\memtable{dall}{dall, CodeRankEmbed}

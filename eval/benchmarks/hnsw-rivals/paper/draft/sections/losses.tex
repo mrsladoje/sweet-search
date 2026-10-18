@@ -1,0 +1,41 @@
+\section{Where the cascade loses}\label{sec:losses}
+
+We list the losses in the main text because they bound what the results support.
+
+\paragraph{Small corpora.} On the small code sets (7k--22k vectors) the rivals win more often than we
+do: ours is slower in \nm{slower-small} of \nm{n-small} cells at $\fr = 0.99$, down to a ratio of
+\nm{min-small} (the rival takes \nm{min-small} of our time). The winner is usually FAISS binary flat,
+which does the same first step as our cascade on these sets (an exact Hamming scan of 512-bit codes)
+and then refines in float. At this size the scan is cheap, so the fixed per-query cost of the rest of
+the pipeline decides; our cascade adds an int8 stage and runs its orchestration in Node.js. We did not
+profile this cost, so we do not attribute the gap to one stage.
+
+\paragraph{Specific rivals at scale.} On Quora with bge-base-en-v1.5, SVS Vamana with LeanVec on Intel
+and FAISS binary HNSW on Graviton are faster than ours at $\fr = 0.99$, and both are primary
+comparisons. SVS (LVQ or LeanVec) also beats us on FiQA on Intel. SVS runs on Intel only in this
+study, so we cannot say how it would fare on the other CPUs.
+
+\paragraph{Quality on FiQA.} On FiQA with CodeRankEmbed our cascade never reached 99\% of exact quality
+on dev, so it has no operating point there at that fraction. On FiQA with bge-base-en-v1.5 the
+non-inferiority test fails on all three CPUs: the held-out set has 259 queries and the power of these
+comparisons was the lowest of all (Appendix~\ref{app:power}). The data do not show a loss larger than
+$\delta$, but they do not exclude one.
+
+\paragraph{Memory and build.} At 1M vectors our process holds more memory than \nm{mem-smaller-intel}
+of the \nm{mem-nriv-intel} rival points on Intel. It keeps the graph with the codes and int8 rows
+(1.2~GB of index file at 1M) and the float16 vectors (1.5~GB), plus the Node.js runtime; rivals that
+refine keep float32 originals but a smaller graph, and quantised graphs without refine keep far less. Our index build is single-threaded and took \nm{build-ours-h}~hours
+with a \nm{build-ours-peak}~GB peak at 1M; every rival build finished faster on 16 threads. A parallel
+build is possible but was out of scope for this study.
+
+\paragraph{Sensitivity to page-cache pressure.} Our index is memory-mapped. In \nm{outlier-ours} of
+\nm{records-ours} held-out records of our cascade (\nm{outlier-share}), all on Quora and csn1m, the
+per-round median query time was more than three times that of the fastest round of the same point, up
+to several hundred times. No record of the \nm{records-rival} rival records had such a round; the rivals
+read their indexes into anonymous memory. The slow rounds cluster on a few machine instances. We did not
+establish the cause; eviction of file pages by other I/O on the machine (for example the periodic
+upload of large result files) is the most likely one. Our reported latency is the median
+over rounds, which such a round does not move, and our ratio intervals come from a bootstrap of
+medians; but the intervals of the affected cells are wide (Table~\ref{tab:headline099}), and a server
+that shares its page cache with heavy I/O can see the same effect. Locking the index in memory, or
+reading it into anonymous memory, would remove it at the cost of a longer load.

@@ -1,0 +1,519 @@
+% refs.bib -- ANN candidate-generator comparison paper (hnsw-rivals).
+% Verified 2026-10-18. Each entry was checked against a primary source:
+% arXiv API, Crossref (DOI), PMLR / NeurIPS proceedings page, ACL Anthology,
+% OpenReview, or the GitHub API. See related-work-notes.md for the UNVERIFIED list.
+% Keys of the form firstauthorYEARword. Entries copied from
+% eval/maxsim-bench/paper/refs.bib keep their keys (last block).
+
+% ------------------------------------------------------------ benchmarks and evaluation studies
+
+@article{aumuller2020annbenchmarks,
+  author    = {Aum{\"u}ller, Martin and Bernhardsson, Erik and Faithfull, Alexander},
+  title     = {{ANN-Benchmarks}: A Benchmarking Tool for Approximate Nearest Neighbor Algorithms},
+  journal   = {Information Systems},
+  volume    = {87},
+  pages     = {101374},
+  year      = {2020},
+  doi       = {10.1016/j.is.2019.02.006},
+  eprint    = {1807.05614},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{simhadri2022bigann21,
+  author    = {Simhadri, Harsha Vardhan and Williams, George and Aum{\"u}ller, Martin and Douze, Matthijs and Babenko, Artem and Baranchuk, Dmitry and Chen, Qi and Hosseini, Lucas and Krishnaswamy, Ravishankar and Srinivasa, Gopal and Subramanya, Suhas Jayaram and Wang, Jingdong},
+  title     = {Results of the {NeurIPS'21} Challenge on Billion-Scale Approximate Nearest Neighbor Search},
+  booktitle = {NeurIPS 2021 Competitions and Demonstrations Track},
+  series    = {Proceedings of Machine Learning Research},
+  volume    = {176},
+  pages     = {177--189},
+  year      = {2022},
+  publisher = {PMLR},
+  url       = {https://proceedings.mlr.press/v176/simhadri22a.html},
+  eprint    = {2205.03763},
+  archivePrefix = {arXiv}
+}
+
+@misc{simhadri2024bigann23,
+  author    = {Simhadri, Harsha Vardhan and Aum{\"u}ller, Martin and Ingber, Amir and Douze, Matthijs and Williams, George and Manohar, Magdalen Dobson and Baranchuk, Dmitry and Liberty, Edo and Liu, Frank and Landrum, Ben and Karjikar, Mazin and Dhulipala, Laxman and Chen, Meng and Chen, Yue and Ma, Rui and Zhang, Kai and Cai, Yuzheng and Shi, Jiayang and Chen, Yizhuo and Zheng, Weiguo and Wan, Zihao and Yin, Jie and Huang, Ben},
+  title     = {Results of the {Big ANN}: {NeurIPS'23} Competition},
+  year      = {2024},
+  eprint    = {2409.17424},
+  archivePrefix = {arXiv},
+  primaryClass = {cs.IR},
+  note      = {A shorter author list is also indexed by Crossref as NeurIPS 2025 proceedings, vol. 38, pp. 76394--76408, doi:10.52202/085713-2303; not independently checked against the proceedings page}
+}
+
+@article{wang2021graphsurvey,
+  author    = {Wang, Mengzhao and Xu, Xiaoliang and Yue, Qiang and Wang, Yuxiang},
+  title     = {A Comprehensive Survey and Experimental Comparison of Graph-Based Approximate Nearest Neighbor Search},
+  journal   = {Proceedings of the VLDB Endowment},
+  volume    = {14},
+  number    = {11},
+  pages     = {1964--1978},
+  year      = {2021},
+  doi       = {10.14778/3476249.3476255},
+  eprint    = {2101.12631},
+  archivePrefix = {arXiv}
+}
+
+@article{azizi2025graphvector,
+  author    = {Azizi, Ilias and Echihabi, Karima and Palpanas, Themis},
+  title     = {Graph-Based Vector Search: An Experimental Evaluation of the State-of-the-Art},
+  journal   = {Proceedings of the ACM on Management of Data},
+  volume    = {3},
+  number    = {1},
+  pages     = {1--31},
+  year      = {2025},
+  doi       = {10.1145/3709693}
+}
+
+@article{chen2026iceberg,
+  author    = {Chen, Tingyang and Fu, Cong and Wu, Jiahua and Wu, Haotian and Fan, Hua and Ke, Xiangyu and Gao, Yunjun and Ni, Yabo and Zeng, Anxiang},
+  title     = {Reveal Hidden Pitfalls and Navigate Next Generation of Vector Similarity Search from Task-Centric Views},
+  journal   = {Proceedings of the ACM on Management of Data},
+  volume    = {4},
+  number    = {1},
+  pages     = {1--25},
+  year      = {2026},
+  doi       = {10.1145/3786690},
+  eprint    = {2512.12980},
+  archivePrefix = {arXiv},
+  note      = {Introduces the Iceberg benchmark suite; SIGMOD 2026}
+}
+
+@inproceedings{lin2025operational,
+  author    = {Lin, Jimmy},
+  title     = {Operational Advice for Dense and Sparse Retrievers: {HNSW}, Flat, or Inverted Indexes?},
+  booktitle = {Proceedings of the 63rd Annual Meeting of the Association for Computational Linguistics (Volume 6: Industry Track)},
+  year      = {2025},
+  pages     = {865--872},
+  address   = {Vienna, Austria},
+  publisher = {Association for Computational Linguistics},
+  doi       = {10.18653/v1/2025.acl-industry.61},
+  eprint    = {2409.06464},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{kuffo2025bang,
+  author    = {Kuffo, Leonardo and Boncz, Peter},
+  title     = {Bang for the Buck: Vector Search on Cloud {CPUs}},
+  booktitle = {Proceedings of the 21st International Workshop on Data Management on New Hardware (DaMoN '25)},
+  year      = {2025},
+  pages     = {1--8},
+  publisher = {ACM},
+  doi       = {10.1145/3736227.3736233},
+  eprint    = {2505.07621},
+  archivePrefix = {arXiv}
+}
+
+@misc{dimitropoulos2026recall,
+  author    = {Dimitropoulos, Dimitris and Mamoulis, Nikos},
+  title     = {{ANN} Search: Recall What Matters},
+  year      = {2026},
+  eprint    = {2606.04522},
+  archivePrefix = {arXiv},
+  primaryClass = {cs.IR}
+}
+
+@inproceedings{xian2024lucene,
+  author    = {Xian, Jasper and Teofili, Tommaso and Pradeep, Ronak and Lin, Jimmy},
+  title     = {Vector Search with {OpenAI} Embeddings: {Lucene} Is All You Need},
+  booktitle = {Proceedings of the 17th ACM International Conference on Web Search and Data Mining (WSDM '24)},
+  year      = {2024},
+  pages     = {1090--1093},
+  publisher = {ACM},
+  doi       = {10.1145/3616855.3635691},
+  note      = {The arXiv version (2308.14963) lists the authors as Lin, Pradeep, Teofili, Xian}
+}
+
+% ------------------------------------------------------------ indexes and ANN methods
+
+@article{malkov2020hnsw,
+  author    = {Malkov, Yu. A. and Yashunin, D. A.},
+  title     = {Efficient and Robust Approximate Nearest Neighbor Search Using Hierarchical Navigable Small World Graphs},
+  journal   = {IEEE Transactions on Pattern Analysis and Machine Intelligence},
+  volume    = {42},
+  number    = {4},
+  pages     = {824--836},
+  year      = {2020},
+  doi       = {10.1109/TPAMI.2018.2889473},
+  eprint    = {1603.09320},
+  archivePrefix = {arXiv}
+}
+
+@article{johnson2021faissgpu,
+  author    = {Johnson, Jeff and Douze, Matthijs and J{\'e}gou, Herv{\'e}},
+  title     = {Billion-Scale Similarity Search with {GPUs}},
+  journal   = {IEEE Transactions on Big Data},
+  volume    = {7},
+  number    = {3},
+  pages     = {535--547},
+  year      = {2021},
+  doi       = {10.1109/TBDATA.2019.2921572},
+  eprint    = {1702.08734},
+  archivePrefix = {arXiv}
+}
+
+@misc{douze2024faiss,
+  author    = {Douze, Matthijs and Guzhva, Alexandr and Deng, Chengqi and Johnson, Jeff and Szilvasy, Gergely and Mazar{\'e}, Pierre-Emmanuel and Lomeli, Maria and Hosseini, Lucas and J{\'e}gou, Herv{\'e}},
+  title     = {The {Faiss} Library},
+  year      = {2024},
+  eprint    = {2401.08281},
+  archivePrefix = {arXiv},
+  primaryClass = {cs.LG}
+}
+
+@article{jegou2011pq,
+  author    = {J{\'e}gou, Herv{\'e} and Douze, Matthijs and Schmid, Cordelia},
+  title     = {Product Quantization for Nearest Neighbor Search},
+  journal   = {IEEE Transactions on Pattern Analysis and Machine Intelligence},
+  volume    = {33},
+  number    = {1},
+  pages     = {117--128},
+  year      = {2011},
+  doi       = {10.1109/TPAMI.2010.57}
+}
+
+@article{gao2024rabitq,
+  author    = {Gao, Jianyang and Long, Cheng},
+  title     = {{RaBitQ}: Quantizing High-Dimensional Vectors with a Theoretical Error Bound for Approximate Nearest Neighbor Search},
+  journal   = {Proceedings of the ACM on Management of Data},
+  volume    = {2},
+  number    = {3},
+  pages     = {1--27},
+  year      = {2024},
+  doi       = {10.1145/3654970},
+  eprint    = {2405.12497},
+  archivePrefix = {arXiv}
+}
+
+@article{gao2025extrabitq,
+  author    = {Gao, Jianyang and Gou, Yutong and Xu, Yuexuan and Yang, Yongyi and Long, Cheng and Wong, Raymond Chi-Wing},
+  title     = {Practical and Asymptotically Optimal Quantization of High-Dimensional Vectors in Euclidean Space for Approximate Nearest Neighbor Search},
+  journal   = {Proceedings of the ACM on Management of Data},
+  volume    = {3},
+  number    = {3},
+  pages     = {1--26},
+  year      = {2025},
+  doi       = {10.1145/3725413},
+  eprint    = {2409.09913},
+  archivePrefix = {arXiv},
+  note      = {Known as Extended RaBitQ}
+}
+
+@inproceedings{guo2020scann,
+  author    = {Guo, Ruiqi and Sun, Philip and Lindgren, Erik and Geng, Quan and Simcha, David and Chern, Felix and Kumar, Sanjiv},
+  title     = {Accelerating Large-Scale Inference with Anisotropic Vector Quantization},
+  booktitle = {Proceedings of the 37th International Conference on Machine Learning},
+  series    = {Proceedings of Machine Learning Research},
+  volume    = {119},
+  pages     = {3887--3896},
+  year      = {2020},
+  publisher = {PMLR},
+  url       = {https://proceedings.mlr.press/v119/guo20h.html},
+  eprint    = {1908.10396},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{sun2023soar,
+  author    = {Sun, Philip and Simcha, David and Dopson, Dave and Guo, Ruiqi and Kumar, Sanjiv},
+  title     = {{SOAR}: Improved Indexing for Approximate Nearest Neighbor Search},
+  booktitle = {Advances in Neural Information Processing Systems 36 (NeurIPS 2023)},
+  year      = {2023},
+  pages     = {3189--3204},
+  doi       = {10.52202/075280-0141},
+  eprint    = {2404.00774},
+  archivePrefix = {arXiv}
+}
+
+@inproceedings{subramanya2019diskann,
+  author    = {Jayaram Subramanya, Suhas and Devvrit and Kadekodi, Rohan and Krishnaswamy, Ravishankar and Simhadri, Harsha Vardhan},
+  title     = {{DiskANN}: Fast Accurate Billion-point Nearest Neighbor Search on a Single Node},
+  booktitle = {Advances in Neural Information Processing Systems 32 (NeurIPS 2019)},
+  year      = {2019},
+  url       = {https://proceedings.neurips.cc/paper/2019/hash/09853c7fb1d3f8ee67a61b6bf4a7f8e6-Abstract.html}
+}
+
+@article{aguerrebere2023lvq,
+  author    = {Aguerrebere, Cecilia and Bhati, Ishwar Singh and Hildebrand, Mark and Tepper, Mariano and Willke, Theodore},
+  title     = {Similarity Search in the Blink of an Eye with Compressed Indices},
+  journal   = {Proceedings of the VLDB Endowment},
+  volume    = {16},
+  number    = {11},
+  pages     = {3433--3446},
+  year      = {2023},
+  doi       = {10.14778/3611479.3611537},
+  eprint    = {2304.04759},
+  archivePrefix = {arXiv}
+}
+
+@article{tepper2024leanvec,
+  author    = {Tepper, Mariano and Bhati, Ishwar Singh and Aguerrebere, Cecilia and Hildebrand, Mark and Willke, Theodore L.},
+  title     = {{LeanVec}: Searching Vectors Faster by Making Them Fit},
+  journal   = {Transactions on Machine Learning Research},
+  year      = {2024},
+  url       = {https://openreview.net/forum?id=wczqrpOrIc},
+  eprint    = {2312.16335},
+  archivePrefix = {arXiv}
+}
+
+@misc{li2025crouting,
+  author    = {Li, Zhenxin and He, Shuibing and Guo, Jiahao and Zhang, Xuechen and Sun, Xian-He and Chen, Gang},
+  title     = {{CRouting}: Reducing Expensive Distance Calls in Graph-Based Approximate Nearest Neighbor Search},
+  year      = {2025},
+  eprint    = {2509.00365},
+  archivePrefix = {arXiv},
+  primaryClass = {cs.DB},
+  note      = {arXiv preprint; publication venue not found}
+}
+
+@article{zhang2026adaef,
+  author    = {Zhang, Chao and Miller, Ren{\'e}e J.},
+  title     = {Distribution-Aware Exploration for Adaptive {HNSW} Search},
+  journal   = {Proceedings of the ACM on Management of Data},
+  volume    = {4},
+  number    = {1},
+  pages     = {1--27},
+  year      = {2026},
+  doi       = {10.1145/3786639},
+  eprint    = {2512.06636},
+  archivePrefix = {arXiv},
+  note      = {Proposes Adaptive-ef (Ada-ef); SIGMOD 2026}
+}
+
+@article{chatzakis2025darth,
+  author    = {Chatzakis, Manos and Papakonstantinou, Yannis and Palpanas, Themis},
+  title     = {{DARTH}: Declarative Recall Through Early Termination for Approximate Nearest Neighbor Search},
+  journal   = {Proceedings of the ACM on Management of Data},
+  volume    = {3},
+  number    = {4},
+  pages     = {1--26},
+  year      = {2025},
+  doi       = {10.1145/3749160},
+  eprint    = {2505.19001},
+  archivePrefix = {arXiv}
+}
+
+@article{zhong2025vsag,
+  author    = {Zhong, Xiaoyao and Li, Haotian and Jin, Jiabao and Yang, Mingyu and Chu, Deming and Wang, Xiangyu and Shen, Zhitao and Jia, Wei and Gu, George and Xie, Yi and Lin, Xuemin and Shen, Heng Tao and Song, Jingkuan and Cheng, Peng},
+  title     = {{VSAG}: An Optimized Search Framework for Graph-Based Approximate Nearest Neighbor Search},
+  journal   = {Proceedings of the VLDB Endowment},
+  volume    = {18},
+  number    = {12},
+  pages     = {5017--5030},
+  year      = {2025},
+  doi       = {10.14778/3750601.3750624},
+  eprint    = {2503.17911},
+  archivePrefix = {arXiv}
+}
+
+@misc{vardanian2023usearch,
+  author    = {Vardanian, Ash},
+  title     = {{USearch}: Smaller \& Faster Similarity Search \& Clustering Engine},
+  year      = {2023},
+  howpublished = {Software, \url{https://github.com/unum-cloud/usearch}},
+  url       = {https://github.com/unum-cloud/usearch},
+  doi       = {10.5281/zenodo.7949415},
+  note      = {Version v2.26.4 (commit 1e8a1925)}
+}
+
+@misc{nmslib2017hnswlib,
+  author    = {Malkov, Yury A. and others},
+  title     = {{hnswlib}: Header-only {C++}/Python Library for Fast Approximate Nearest Neighbors},
+  year      = {2017},
+  howpublished = {Software, \url{https://github.com/nmslib/hnswlib}},
+  url       = {https://github.com/nmslib/hnswlib},
+  note      = {Commit ca426729}
+}
+
+@inproceedings{yamada2021bpr,
+  author    = {Yamada, Ikuya and Asai, Akari and Hajishirzi, Hannaneh},
+  title     = {Efficient Passage Retrieval with Hashing for Open-domain Question Answering},
+  booktitle = {Proceedings of the 59th Annual Meeting of the Association for Computational Linguistics and the 11th International Joint Conference on Natural Language Processing (Volume 2: Short Papers)},
+  year      = {2021},
+  pages     = {979--986},
+  publisher = {Association for Computational Linguistics},
+  doi       = {10.18653/v1/2021.acl-short.123},
+  eprint    = {2106.00882},
+  archivePrefix = {arXiv}
+}
+
+% ------------------------------------------------------------ embedding models
+
+@inproceedings{suresh2025cornstack,
+  author    = {Suresh, Tarun and Reddy, Revanth Gangi and Xu, Yifei and Nussbaum, Zach and Mulyar, Andriy and Duderstadt, Brandon and Ji, Heng},
+  title     = {{CoRNStack}: High-Quality Contrastive Data for Better Code Retrieval and Reranking},
+  booktitle = {The Thirteenth International Conference on Learning Representations (ICLR 2025)},
+  year      = {2025},
+  url       = {https://openreview.net/forum?id=iyJOUELYir},
+  eprint    = {2412.01007},
+  archivePrefix = {arXiv},
+  note      = {Source of the CodeRankEmbed model}
+}
+
+@misc{gunther2023jina2,
+  author    = {G{\"u}nther, Michael and Ong, Jackmin and Mohr, Isabelle and Abdessalem, Alaeddine and Abel, Tanguy and Akram, Mohammad Kalim and Guzman, Susana and Mastrapas, Georgios and Sturua, Saba and Wang, Bo and Werk, Maximilian and Wang, Nan and Xiao, Han},
+  title     = {Jina Embeddings 2: 8192-Token General-Purpose Text Embeddings for Long Documents},
+  year      = {2023},
+  eprint    = {2310.19923},
+  archivePrefix = {arXiv},
+  primaryClass = {cs.CL},
+  note      = {Source of jina-embeddings-v2-base-code; arXiv preprint}
+}
+
+@inproceedings{xiao2024cpack,
+  author    = {Xiao, Shitao and Liu, Zheng and Zhang, Peitian and Muennighoff, Niklas and Lian, Defu and Nie, Jian-Yun},
+  title     = {{C-Pack}: Packed Resources For General {Chinese} Embeddings},
+  booktitle = {Proceedings of the 47th International ACM SIGIR Conference on Research and Development in Information Retrieval},
+  year      = {2024},
+  pages     = {641--649},
+  publisher = {ACM},
+  doi       = {10.1145/3626772.3657878},
+  eprint    = {2309.07597},
+  archivePrefix = {arXiv},
+  note      = {Source of the bge-base-en-v1.5 model family (BGE)}
+}
+
+% ------------------------------------------------------------ datasets
+
+@misc{lu2021codexglue,
+  author    = {Lu, Shuai and Guo, Daya and Ren, Shuo and Huang, Junjie and Svyatkovskiy, Alexey and Blanco, Ambrosio and Clement, Colin and Drain, Dawn and Jiang, Daxin and Tang, Duyu and Li, Ge and Zhou, Lidong and Shou, Linjun and Zhou, Long and Tufano, Michele and Gong, Ming and Zhou, Ming and Duan, Nan and Sundaresan, Neel and Deng, Shao Kun and Fu, Shengyu and Liu, Shujie},
+  title     = {{CodeXGLUE}: A Machine Learning Benchmark Dataset for Code Understanding and Generation},
+  year      = {2021},
+  eprint    = {2102.04664},
+  archivePrefix = {arXiv},
+  primaryClass = {cs.SE},
+  note      = {Contains the CoSQA and AdvTest code-search tasks; arXiv preprint}
+}
+
+@inproceedings{maia2018fiqa,
+  author    = {Maia, Macedo and Handschuh, Siegfried and Freitas, Andr{\'e} and Davis, Brian and McDermott, Ross and Zarrouk, Manel and Balahur, Alexandra},
+  title     = {{WWW'18} Open Challenge: Financial Opinion Mining and Question Answering},
+  booktitle = {Companion Proceedings of The Web Conference 2018 (WWW '18 Companion)},
+  year      = {2018},
+  pages     = {1941--1942},
+  publisher = {ACM},
+  doi       = {10.1145/3184558.3192301}
+}
+
+% ------------------------------------------------------------ copied from eval/maxsim-bench/paper/refs.bib (keys unchanged)
+
+@inproceedings{thakur2021beir,
+  author    = {Thakur, Nandan and Reimers, Nils and R{\"u}ckl{\'e}, Andreas and Srivastava, Abhishek and Gurevych, Iryna},
+  title     = {{BEIR}: A Heterogenous Benchmark for Zero-shot Evaluation of Information Retrieval Models},
+  booktitle = {Thirty-fifth Conference on Neural Information Processing Systems Datasets and Benchmarks Track (Round 2)},
+  year      = {2021},
+  eprint    = {2104.08663},
+  archivePrefix = {arXiv},
+  url       = {https://openreview.net/forum?id=wCu6T5xFjeJ}
+}
+
+@misc{husain2019codesearchnet,
+  author    = {Husain, Hamel and Wu, Ho-Hsiang and Gazit, Tiferet and Allamanis, Miltiadis and Brockschmidt, Marc},
+  title     = {{CodeSearchNet} Challenge: Evaluating the State of Semantic Code Search},
+  year      = {2019},
+  eprint    = {1909.09436},
+  archivePrefix = {arXiv},
+  primaryClass = {cs.LG}
+}
+
+@misc{diera2023gencodesearchnet,
+  author    = {Diera, Andor and Dahou, Abdelhalim and Galke, Lukas and Karl, Fabian and Sihler, Florian and Scherp, Ansgar},
+  title     = {{GenCodeSearchNet}: A Benchmark Test Suite for Evaluating Generalization in Programming Language Understanding},
+  year      = {2023},
+  eprint    = {2311.09707},
+  archivePrefix = {arXiv}
+}
+
+@article{holm1979simple,
+  author    = {Holm, Sture},
+  title     = {A Simple Sequentially Rejective Multiple Test Procedure},
+  journal   = {Scandinavian Journal of Statistics},
+  volume    = {6},
+  number    = {2},
+  pages     = {65--70},
+  year      = {1979},
+  url       = {https://www.jstor.org/stable/4615733}
+}
+
+@inproceedings{sakai2006bootstrap,
+  author    = {Sakai, Tetsuya},
+  title     = {Evaluating Evaluation Metrics Based on the Bootstrap},
+  booktitle = {Proceedings of the 29th Annual International ACM SIGIR Conference on Research and Development in Information Retrieval},
+  year      = {2006},
+  pages     = {525--532},
+  publisher = {ACM},
+  doi       = {10.1145/1148170.1148261}
+}
+
+@book{efron1993bootstrap,
+  author    = {Efron, Bradley and Tibshirani, Robert J.},
+  title     = {An Introduction to the Bootstrap},
+  series    = {Monographs on Statistics and Applied Probability},
+  number    = {57},
+  publisher = {Chapman \& Hall},
+  year      = {1993},
+  isbn      = {0-412-04231-2}
+}
+
+@article{schuirmann1987tost,
+  author    = {Schuirmann, Donald J.},
+  title     = {A comparison of the Two One-Sided Tests Procedure and the Power Approach for assessing the equivalence of average bioavailability},
+  journal   = {Journal of Pharmacokinetics and Biopharmaceutics},
+  volume    = {15},
+  number    = {6},
+  pages     = {657--680},
+  year      = {1987},
+  doi       = {10.1007/BF01068419}
+}
+
+@inproceedings{hoefler2015scientific,
+  author    = {Hoefler, Torsten and Belli, Roberto},
+  title     = {Scientific Benchmarking of Parallel Computing Systems: Twelve Ways to Tell the Masses When Reporting Performance Results},
+  booktitle = {Proceedings of the International Conference for High Performance Computing, Networking, Storage and Analysis (SC '15)},
+  year      = {2015},
+  pages     = {1--12},
+  publisher = {ACM},
+  doi       = {10.1145/2807591.2807644}
+}
+
+@inproceedings{mytkowicz2009wrongdata,
+  author    = {Mytkowicz, Todd and Diwan, Amer and Hauswirth, Matthias and Sweeney, Peter F.},
+  title     = {Producing Wrong Data Without Doing Anything Obviously Wrong!},
+  booktitle = {Proceedings of the 14th International Conference on Architectural Support for Programming Languages and Operating Systems (ASPLOS XIV)},
+  year      = {2009},
+  pages     = {265--276},
+  publisher = {ACM},
+  doi       = {10.1145/1508244.1508275}
+}
+
+@article{leitner2016patterns,
+  author    = {Leitner, Philipp and Cito, J{\"u}rgen},
+  title     = {Patterns in the Chaos --- A Study of Performance Variation and Predictability in Public {IaaS} Clouds},
+  journal   = {ACM Transactions on Internet Technology},
+  volume    = {16},
+  number    = {3},
+  pages     = {1--23},
+  year      = {2016},
+  doi       = {10.1145/2885497}
+}
+
+@inproceedings{uta2020bigdata,
+  author    = {Uta, Alexandru and Custura, Alexandru and Duplyakin, Dmitry and Jimenez, Ivo and Rellermeyer, Jan and Maltzahn, Carlos and Ricci, Robert and Iosup, Alexandru},
+  title     = {Is Big Data Performance Reproducible in Modern Cloud Networks?},
+  booktitle = {17th USENIX Symposium on Networked Systems Design and Implementation (NSDI 20)},
+  year      = {2020},
+  pages     = {513--527},
+  address   = {Santa Clara, CA},
+  publisher = {USENIX Association},
+  eprint    = {1912.09256},
+  archivePrefix = {arXiv},
+  url       = {https://www.usenix.org/conference/nsdi20/presentation/uta}
+}
+@misc{sweetsearch_repo,
+  author       = {Sladojevi\'{c}, Marko},
+  title        = {sweet-search: local code search with late-interaction reranking},
+  howpublished = {\url{https://github.com/mrsladoje/sweet-search}},
+  note         = {Benchmark in \texttt{eval/benchmarks/hnsw-rivals}; frozen commit f57533b0},
+  year         = {2026}
+}

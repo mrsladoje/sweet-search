@@ -1,0 +1,94 @@
+\section{Systems and the two comparisons}\label{sec:systems}
+
+\subsection{Our cascade}
+
+Our system (\sweet~\cite{sweetsearch_repo}) stores three forms of each vector. Stage 1 uses a
+512-bit sign code of the first 512 dimensions (L2-normalised before the sign), searched by Hamming
+distance, either by a walk on an HNSW graph~\cite{malkov2020hnsw} built over the codes ($M = 64$,
+$ef_{\text{construction}} = 800$, single-threaded build) or by an exact scan of all codes. The
+production code scans up to 150,000 vectors and walks above that (a fixed cap, so that rankings do not
+depend on the machine); in comparison (B) our cascade therefore scans on gcsn, d20k, AdvTest, FiQA and
+dall, and walks on Quora and csn1m. In comparison (A) both generators run on every set up to the cap;
+above it, only the walk exists. Stage 2
+scores the stage-1 candidates with an int8 dot product over the same 512 dimensions. Stage 3 rescores
+the best candidates with the full 768-dimensional vector stored as float16. The Hamming kernels use
+AVX-512 \texttt{VPOPCNTDQ} where the CPU has it (Intel and AMD here), AVX2 otherwise, and NEON on ARM.
+In comparison (B) the production entry point runs with $k = k_v$ results and two knobs: the stage-1
+candidate count $S_1$ and the walk effort $ef$. It runs in Node.js through a native addon; the timer
+is inside the same process, around the call.
+
+\subsection{Rivals}
+
+Table~\ref{tab:systems} lists the rival families, their libraries and the declared build grids.
+All rivals are built from pinned sources with the same compiler flags on each machine
+(\texttt{-O3 -march=native}; FAISS at its widest SIMD level for the CPU): FAISS~\cite{douze2024faiss}
+v1.15.1, USearch~\cite{vardanian2023usearch} v2.26.4, hnswlib~\cite{nmslib2017hnswlib} at a pinned commit,
+DiskANN~\cite{subramanya2019diskann} at a pinned commit, Intel SVS~\cite{aguerrebere2023lvq,tepper2024leanvec}
+v0.4.0 (LVQ and LeanVec run on Intel only), and ScaNN~\cite{guo2020scann,sun2023soar} 1.4.2 (Python
+wheel; on ARM in a CPython 3.9 environment, the only aarch64 build). DiskANN has no ARM build. ScaNN
+is timed through its Python binding. The binding and wrapper add a fixed cost per query, which we
+measured with a one-vector index (\texttt{py\_overhead.py}, 200,000 calls, pinned): \nm{scann-ovh-intel}~µs
+on Intel, \nm{scann-ovh-amd}~µs on AMD and \nm{scann-ovh-arm}~µs on Graviton (median). We do not
+subtract it.
+
+\begin{table}[t]\centering\small
+\caption{Rival families in comparison (B), with the build grid of each set. $n$ = vectors; IVF lists
+$\sqrt n$ and $4\sqrt n$. HNSW builds: $M \in \{16, 32, 64\}$, $ef_{\text{construction}} \in \{200, 800\}$.}\label{tab:systems}
+\begin{tabularx}{\textwidth}{llX}\toprule
+System & Library & Index and search\\\midrule
+faiss\_exact & FAISS & exact float32 inner product (the latency reference)\\
+faiss\_bin\_flat & FAISS & exact Hamming scan of 512-bit codes, float rescoring of a refine pool\\
+faiss\_bin\_hnsw & FAISS & HNSW on 512-bit codes, refine pool rescored in float\\
+faiss\_hnsw\_flat & FAISS & HNSW on float32\\
+faiss\_hnsw\_sq8 & FAISS & HNSW on 8-bit scalar-quantised vectors, float refine\\
+faiss\_ivfpq\_fs & FAISS & IVF with 4-bit PQ fast scan, float refine\\
+faiss\_rabitq\_flat / \_ivf / \_hnsw & FAISS & RaBitQ~\cite{gao2024rabitq} codes, flat, IVF or HNSW, float refine\\
+hnswlib\_f32 & hnswlib & HNSW on float32\\
+usearch\_f16 / \_i8 & USearch & HNSW on float16 or int8 vectors\\
+usearch\_b1\_rescore & USearch & HNSW on 1-bit codes, float rescoring of a refine pool\\
+diskann\_vamana & DiskANN & in-memory Vamana graph, $R \in \{32, 64, 96\}$, $L \in \{100, 200\}$\\
+svs\_vamana\_lvq / \_leanvec & SVS & Vamana with LVQ or LeanVec compression (Intel only)\\
+scann & ScaNN & brute force ($n < 20$k), asymmetric hashing ($n < 100$k), tree + AH with and without SOAR\\\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Comparison (A): a common rescoring procedure}\label{sec:compA}
+
+Comparison (A) asks which candidate generator works best when everything after generation is the
+same. Each generator returns its top $C$ vector ids. One shared C++ path then (1) scores all $C$
+with the int8 dot product and keeps the best $H$ (stable sort; ties keep the generator order), and
+(2) rescores those $H$ with the full float16 vectors in float64 and orders them. $H = C$ is the arm
+without the int8 screen. The budget grid is declared: $C \in \{100, 200, 400, 1000\}$,
+$H \in \{50, 100\}$ with $C \ge H$, plus $H = C$. Every generator runs at two efforts per budget: the
+smallest effort that returns $C$ candidates ($ef = C$ for graphs; the smallest \texttt{nprobe} or
+leaf count that returns at least $C$ candidates on 99.9\% of dev queries for partitions) and twice
+that. Nothing is selected per generator in (A); we report every effort at every budget. Our two
+generators (walk and scan) run the same steps through our addon kernels; the shared C++ path gives
+bit-identical retained lists to the addon on every dev set, on x86 and ARM. Generators: our walk, our
+scan, FAISS binary HNSW and binary flat, USearch b1, hnswlib and FAISS HNSW on float32, FAISS RaBitQ
+(flat and IVF), ScaNN and DiskANN.
+
+\subsection{Comparison (B): as shipped}
+
+In comparison (B) each library uses its own search and its own refine step and returns its top $k_v$
+vectors. $k_v$ is fixed per set and model on dev: the smallest number of vectors at which the exact
+vector list holds 10 distinct documents for at least 99.9\% of dev queries (Quora systems return
+$k_v + 1$ for the self-match). It ranges from 10 (BEIR) to 143 (gcsn with bge-base-en-v1.5). Each family's dev grid sweeps its search effort
+(and refine depth where it has one); the operating point at each fraction is the fastest point that
+meets it on dev (\S\ref{sec:protocol}). Comparison (B) answers the practical question: tuned on the
+same dev queries, how fast is each system at the same retained quality?
+
+\subsection{Memory, load and cold start}
+
+Every timed job records the resident set size after loading and after the timed pass (on Linux from
+\texttt{/proc}, on macOS from the task's physical footprint as well). A separate \emph{cold} job per
+frozen point starts a new process after the page cache is dropped (\texttt{drop\_caches} on Linux,
+\texttt{purge} on macOS) and measures index load time and the first query. Memory is resident memory after the timed pass: on Linux \texttt{Rss} (anonymous and file-backed pages, so
+memory-mapped index files count when touched). Rivals that refine with the float32 originals hold them in
+the harness ($n \times 768 \times 4$ bytes), as their library would. We do not report memory on the Mac:
+the rival harness reads the float32 originals through temporary buffers, and macOS keeps those freed pages
+in the process footprint, which inflates the rival numbers there. The same read path makes the cold
+start of the refining rivals include a buffered copy of the originals, which a production server could
+avoid by mapping them; we report cold start as measured and treat it as indicative. Build cost is reported for the 1M set from the builds that produced the timed indexes;
+those builds ran concurrently under a memory-admission scheduler, so their wall times are indicative
+only.

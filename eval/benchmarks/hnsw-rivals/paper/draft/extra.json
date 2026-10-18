@@ -1,0 +1,17 @@
+{
+"repairjobs": "2,493",
+"hojobs": "103,392",
+"repairshare": "2.4\\%",
+"R-box": 10,
+"R-mac": 4,
+"powermin": "0.62",
+"powermax": "1.00",
+"npowerlow": 2,
+"scann-ovh-intel": "1.8",
+"scann-ovh-amd": "1.7",
+"scann-ovh-arm": "2.7",
+"outlier-ours": "241",
+"records-ours": "15,498",
+"records-rival": "85,783",
+"outlier-share": "1.6\\%"
+}

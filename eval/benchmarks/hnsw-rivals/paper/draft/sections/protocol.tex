@@ -1,0 +1,123 @@
+\section{Benchmark and protocol}\label{sec:protocol}
+
+\subsection{Sets, models and ground truth}
+
+Table~\ref{tab:sets} lists the seven sets.
+Five are code-search sets built from CodeSearchNet~\cite{husain2019codesearchnet} and
+GenCodeSearchNet~\cite{diera2023gencodesearchnet}: \texttt{gcsn} (6,918 functions), \texttt{d20k} and
+\texttt{dall} (the same queries with 20k and 140k vectors; the extra vectors are distractor functions),
+AdvTest from CodeXGLUE~\cite{lu2021codexglue} (21,731 vectors) and \texttt{csn1m} (1,004,739 vectors).
+Two are BEIR sets~\cite{thakur2021beir}: Quora (522,931 questions) and FiQA-2018 (57,638 passages).
+Every set is embedded with three 768-dimensional models: CodeRankEmbed~\cite{suresh2025cornstack},
+jina-embeddings-v2-base-code~\cite{gunther2023jina2} and bge-base-en-v1.5~\cite{xiao2024cpack}.
+We embedded every set again with every model for this paper, on one GPU, with pinned model revisions
+(the model manifests in the release record the revision, prefixes, pooling and precision).
+
+\begin{table}[t]\centering\small
+\caption{Sets. Queries are split once into dev (60\%) and held-out (40\%), seed 42, stratified by
+language for the code sets. Clusters are the unit of the bootstrap: the source repository for code
+sets, the query for BEIR sets.}\label{tab:sets}
+\begin{tabular}{llrrrrl}\toprule
+Set & Kind & Vectors & Documents & Dev queries & Held-out queries & Metric\\\midrule
+gcsn & code & 6,918 & 6,000 & 3,600 & 2,400 & MRR@10\\
+d20k & code & 20,000 & 19,082 & 3,600 & 2,400 & MRR@10\\
+advtest & code & 21,731 & 19,210 & 1,800 & 1,200 & MRR@10\\
+dall & code & 140,449 & 139,531 & 3,600 & 2,400 & MRR@10\\
+csn1m & code & 1,004,739 & 1,003,821 & 3,600 & 2,400 & MRR@10\\
+fiqa & BEIR & 57,638 & 57,638 & 389 & 259 & nDCG@10\\
+quora & BEIR & 522,931 & 522,931 & 6,000 & 4,000 & nDCG@10\\\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Ground truth.} For every query, the exact ranking scores every stored float32 vector by
+cosine similarity in float64. A document scores the maximum over its vectors. Ties go to the lower
+document id. For Quora, the document that is the query itself is removed before the cut, for every
+system. The exact ranking defines $Q_{\text{exact},q}$, the per-query quality of exact search.
+
+\paragraph{Evaluation unit.} Every system returns its retained vector list with scores. One shared
+function maps vectors to documents (maximum score per document, ties by document id), cuts at 10 and
+computes MRR@10 (code sets) or nDCG@10 (BEIR, graded judgements). We checked this function against
+\texttt{ir\_measures} on every set (largest absolute difference $\le 10^{-9}$).
+
+\subsection{Quality fractions and the selection rule}
+
+We do not compare systems at a recall target. We compare them at a \emph{retained task quality}: the
+fraction $\fr \in \{0.98, 0.99, 0.995\}$ of the quality of exact search on the same queries. For one
+system and query, $d_q = Q_{\text{sys},q} - \fr\, Q_{\text{exact},q}$. A configuration
+\emph{meets} $\fr$ when the one-sided 97.5\% lower bound of the mean of $d$ is at least 0. The bound
+comes from a cluster bootstrap~\cite{efron1993bootstrap,sakai2006bootstrap}: 10,000 resamples of
+clusters (seed 42), one shared index matrix per set and split.
+
+\paragraph{Dev selection.} On dev queries only, for every system and fraction, the \emph{operating
+point} is the fastest configuration of its declared grid that meets $\fr$. These points are frozen
+(\S\ref{sec:freeze}) before any held-out query runs. Held-out results report each frozen point once,
+with two tests of whether it still meets $\fr$: the point estimate ($\bar d \ge 0$) and the bound.
+
+\subsection{Primary comparisons and their power}
+
+The confirmatory part is small and declared before the held-out run. For each AWS CPU and each
+confirmatory set (Quora, FiQA) and model, at $\fr = 0.99$ in comparison (B), we compare ours against the
+rival that was fastest at that point on dev. The test is quality non-inferiority: $H_0$: mean(ours $-$
+rival) $\le -\delta$ with $\delta = \nm{delta}$ (the owner's margin, set before any output-changing
+work), one-sided $\alpha = 0.025$, cluster bootstrap, Holm correction~\cite{holm1979simple} over all
+\nm{nprimary} comparisons. FiQA with CodeRankEmbed has no primary comparison: on dev, our cascade did not
+reach $\fr = 0.99$ there. Latency ratios are reported with intervals but are descriptive. Power at a
+true difference of 0 was estimated from dev differences scaled to the held-out cluster count, and
+checked by simulation; it is \nm{powermin} to \nm{powermax} (Appendix~\ref{app:power}).
+Code-set results are exploratory: their queries were examined in earlier work on the same system,
+and dev and held-out code queries share repositories.
+
+\subsection{Timing protocol}\label{sec:timing}
+
+One process runs one (system, build, round). It loads the serialised index (no build in the timed
+process), warms up on 500 dev queries, then times every held-out query once, in a permuted order
+(seed $42 + \text{round}$). The timer covers the query float vector in memory to the retained list:
+query conversion, candidate generation, transfer between stages, screens, rescoring and document
+aggregation. Text embedding is outside the timer for every system. Every system runs single-threaded.
+On the Linux machines each process is pinned to one core; macOS has no core pinning, so Mac jobs run
+unpinned on an otherwise idle machine. Before each job, the index files are read once so that the
+page cache is warm for every system. Transparent huge pages stay at the machine default
+(\texttt{madvise}).
+
+\paragraph{Rounds.} Each CPU repeats every held-out job in $R$ rounds; the rounds run in separate plan
+files in a shared queue, so one round of a point usually runs on a different machine instance from
+the next. $R$ comes from an A/A run on each machine (the same build as two arms, 5 rounds): we chose the
+smallest $R$ that gives a 95\% half-width of 2\% or less for the latency ratio, between 3 and 10.
+This gave $R = \nm{R-intel}$ (Intel), \nm{R-amd} (AMD), \nm{R-arm} (Graviton), \nm{R-box} (box) and
+\nm{R-mac} (Mac). The reported latency of a point is the median over rounds of the per-round median
+per-query time. The 95\% interval of a ratio comes from the round medians on the log scale (Welch $t$).
+
+\subsection{Machines}
+
+Table~\ref{tab:machines} lists the five CPUs. The three AWS types run the full grid. The box and the Mac
+are \emph{secondary platforms with a reduced grid}: the frozen points of comparison (B) for one model
+per set kind (CodeRankEmbed for code, bge-base-en-v1.5 for BEIR), comparison (A) at one budget
+($C = 400$, $H = 100$), memory and cold start. The box skips \texttt{csn1m} (its disk cannot hold the
+1M builds).
+
+\begin{table}[t]\centering\small
+\caption{Machines. All Linux machines are virtual machines; the Mac is a laptop on mains power.}\label{tab:machines}
+\begin{tabular}{llllr}\toprule
+Name & CPU & Instance & ISA used & $R$\\\midrule
+intel & Intel Xeon 6975P-C (Granite Rapids) & AWS c8i.4xlarge & AVX-512 (VPOPCNTDQ) & \nm{R-intel}\\
+amd & AMD EPYC 9R45 (Zen 5) & AWS c8a.4xlarge & AVX-512 (VPOPCNTDQ) & \nm{R-amd}\\
+arm & AWS Graviton4 (Neoverse V2) & AWS c8g.4xlarge & NEON & \nm{R-arm}\\
+box & AMD EPYC Milan (Zen 3) & 8-vCPU cloud VM & AVX2 & \nm{R-box}\\
+mac & Apple M3 Max & laptop, 128 GB & NEON & \nm{R-mac}\\\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Freeze and held-out discipline}\label{sec:freeze}
+
+Before the freeze we used dev queries only. At the freeze we recorded, in \texttt{FREEZE.json}, the
+SHA-256 of every harness file, adapter, build script, set definition, split and operating-point
+file (from the git blobs of the frozen commit), together with $\delta$, the fractions, the bootstrap
+settings and $R$. Every held-out number in this paper comes from binaries built from that commit.
+\nm{repairjobs} held-out jobs (\nm{repairshare} of \nm{hojobs}) were lost when the first held-out
+machines reached their hard time limit; we ran them again from the same frozen commit on new
+machines, with no change to any plan except the selection of the missing jobs. The script that selects
+them (\texttt{make\_repair.py}) gained two options after the freeze; it is the only frozen file that
+differs (\texttt{freeze\_check.py}: 1,517 of 1,518 files match), and it does not run on the timing
+machines, whose code bundle is byte-identical to the frozen commit plus the repair plans. The reporting script
+(\texttt{analyze.py}) was written after the freeze. It calls the frozen quality and statistics code
+and applies the rules above; it does not choose any point.

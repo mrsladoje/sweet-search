@@ -1,0 +1,43 @@
+\section{Related work}\label{sec:related}
+
+\paragraph{ANN benchmarks.} ANN-Benchmarks~\cite{aumuller2020annbenchmarks} and the Big-ANN
+competitions~\cite{simhadri2022bigann21,simhadri2024bigann23} compare libraries by recall against exact
+neighbours and by throughput, at up to a billion vectors. Experimental studies of graph
+indexes~\cite{wang2021graphsurvey,azizi2025graphvector} compare many graph methods on vector
+datasets with the same recall metric. Our sets are much smaller (7k to 1M vectors) and our metric is
+different: the task quality of the final document ranking, as a fraction of exact search.
+
+\paragraph{Task-centric evaluation.} Iceberg~\cite{chen2026iceberg} argues that recall against exact
+neighbours can mislead and follows the loss from embedding to the end task. Recall What
+Matters~\cite{dimitropoulos2026recall} argues that Recall@$k$ forces more computation than the task
+needs and proposes a distance-based alternative without task labels. We share the starting point; we
+measure with the task's own labels and put the generators behind one shared rescoring step.
+
+\paragraph{HNSW against flat search.} Lin~\cite{lin2025operational} compares HNSW and flat indexes,
+with and without quantisation, inside Lucene on BEIR, and reports indexing time, query speed and
+quality; earlier work argued that one general engine is enough for dense
+retrieval~\cite{xian2024lucene}. We compare many libraries and a binary cascade, on code and BEIR sets,
+at matched retained quality. Bang for the Buck~\cite{kuffo2025bang} compares vector search on cloud
+CPUs for cost and speed at fixed recall; our five-CPU single-thread latency is a narrower, controlled
+form of the same hardware question.
+
+\paragraph{Indexes and quantisation.} HNSW~\cite{malkov2020hnsw} is the base graph of our cascade
+and of FAISS HNSW, hnswlib and USearch. FAISS~\cite{johnson2021faissgpu,douze2024faiss} provides
+binary, scalar-quantised, product-quantised~\cite{jegou2011pq} and RaBitQ~\cite{gao2024rabitq,gao2025extrabitq}
+indexes. ScaNN~\cite{guo2020scann} uses anisotropic quantisation; SOAR~\cite{sun2023soar} adds spilled
+assignments. DiskANN~\cite{subramanya2019diskann} builds the Vamana graph; SVS adds LVQ and LeanVec
+compression to it~\cite{aguerrebere2023lvq,tepper2024leanvec}. Search-time methods such as
+CRouting~\cite{li2025crouting}, Ada-ef~\cite{zhang2026adaef}, DARTH~\cite{chatzakis2025darth} and
+VSAG~\cite{zhong2025vsag} improve the recall--speed curve of graph search; none of them targets a
+task-quality fraction, and we do not test them. Binary codes followed by a full-vector rerank
+appear in BPR~\cite{yamada2021bpr}, which learns the hash; our cascade quantises an existing
+embedding by sign and adds an int8 screen between the two stages.
+
+\paragraph{Methodology.} We follow the advice on reporting performance
+experiments~\cite{hoefler2015scientific} and on measurement bias~\cite{mytkowicz2009wrongdata}, and the
+cloud-measurement guidance of~\cite{leitner2016patterns,uta2020bigdata}: repeated rounds on several
+instances, A/A runs to size $R$, and intervals for every ratio.
+
+To our knowledge, no earlier study puts these generators behind one rescoring procedure and
+reports task quality as a fraction of exact search with cluster-bootstrap bounds and single-thread
+latency on several CPUs. We searched arXiv, Crossref and OpenReview, not every venue.
