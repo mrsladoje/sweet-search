@@ -7,17 +7,21 @@
  *   sweet-search-hook --agent-session-drop   Claude Code SessionEnd (drop the session's receipts)
  *   sweet-search-hook                        opencode plugin load (daemon prewarm)
  *   sweet-search-hook --read-hint            Claude Code PreToolUse Read hint (init --enforce-tools)
+ *   sweet-search-hook --session-title        Claude Code UserPromptSubmit (tab title from the
+ *                                            first prompt; lean harness only)
  *
  * The command is the native binary (core/agent-tools/tools.js NODE_ENTRY_COMMANDS): it finds
  * the package and runs this file with the node that installed it, so a harness without node
  * on PATH still runs the hooks, and the hook commands hold no path.
  */
 
-import { resolveProjectRoot } from '../../core/search/server-identity.js';
-
 if (process.argv.includes('--read-hint')) {
   await import('./intercept-read.mjs');
+} else if (process.argv.includes('--session-title')) {
+  // Runs on every prompt: load nothing else.
+  await import('./session-title.mjs');
 } else {
+  const { resolveProjectRoot } = await import('../../core/search/server-identity.js');
   // A harness may start the session in a subdirectory (Codex runs hooks with the session
   // cwd). The prewarm serves its working directory, so move to the project root first:
   // the nearest ancestor holding the `.sweet-search/` index, the ss-* tools' rule.

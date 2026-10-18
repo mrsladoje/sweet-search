@@ -38,6 +38,7 @@ import {
   CLAUDE_LEAN_MANIFEST_REL,
   CLAUDE_LEAN_PLAN_REL,
   CLAUDE_LEAN_SUBAGENT_REL,
+  CLAUDE_LEAN_TITLE_HOOK_COMMAND,
   claudeAutoMemoryDir,
 } from '../../scripts/install-claude-lean-harness.js';
 import {
@@ -137,7 +138,8 @@ describe('lifecycle: default init → uninstall (Scenario A)', () => {
     const settings = readJson('.claude/settings.json');
     expect(settings.outputStyle).toBeUndefined();
     expect(settings.agent).toBe(CLAUDE_LEAN_AGENT_NAME);
-    expect(settings.hooks?.UserPromptSubmit).toBeUndefined();
+    // No per-prompt reminder hook (dropped in 2.7.1); only the tab-title hook, which adds no model text.
+    expect(settings.hooks.UserPromptSubmit).toEqual([{ hooks: [{ type: 'command', command: CLAUDE_LEAN_TITLE_HOOK_COMMAND, timeout: 5 }] }]);
     // P3: tool enforcement NOT installed without --enforce-tools (the lean
     // harness denies only search-delegation subagent types, never Grep).
     expect(exists('.claude/hooks')).toBe(false);
@@ -264,7 +266,7 @@ describe('lifecycle: full surface init → uninstall (Scenario B)', () => {
     expect(settings.hooks.PreToolUse).toBeDefined();
     expect(settings.hooks.PreToolUse[0].matcher).toBe('Read');
     expect(settings.hooks.PreToolUse[0].hooks[0].command).toBe('sweet-search-hook --read-hint');
-    expect(settings.hooks.UserPromptSubmit).toBeUndefined();
+    expect(settings.hooks.UserPromptSubmit).toEqual([{ hooks: [{ type: 'command', command: CLAUDE_LEAN_TITLE_HOOK_COMMAND, timeout: 5 }] }]);
   });
 
   it('uninstall removes the full surface + enforcement + symlinks', () => {
