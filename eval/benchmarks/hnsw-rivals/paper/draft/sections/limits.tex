@@ -1,15 +1,13 @@
 \section{Limits}\label{sec:limits}
 
-\paragraph{Sizes and dimensions.} The sets hold 7k to 1M vectors. We make no claim beyond 1M vectors,
-where memory-resident flat scans stop being an option and graph and partition indexes have more room
-to pay off. All vectors have 768 dimensions; our codes use the first 512. Other dimensions, and models
+\paragraph{Sizes and dimensions.} The sets hold 7k to 1M vectors. We make no claim beyond 1M vectors. All vectors have 768 dimensions; our codes use the first 512. Other dimensions, and models
 whose leading dimensions carry less of the signal, can change the result.
 
 \paragraph{Models and tasks.} Three embedding models, five code-search sets and two BEIR sets. The
 code-search results are exploratory: the code queries were examined in earlier work on the same
 system, and dev and held-out code queries share most source repositories (the bootstrap resamples
 repositories, which accounts for this inside a set but not across sets). The confirmatory part is
-the \nm{nprimary} primary comparisons on Quora and FiQA.
+the \nm{nconfirm} primary comparisons on Quora and FiQA with enough power.
 
 \paragraph{Machines.} Every Linux machine is a virtual machine, so page sizes, frequency and
 neighbour load are not under our control. A/A runs measured this noise per machine and set $R$; the
@@ -32,6 +30,16 @@ the freeze, when those families did not reach the fractions.
 \paragraph{Our harness.} Our system runs in Node.js with a native addon, the rivals in C++ (ScaNN in
 Python). Comparison (A) runs our generators through the addon and the shared steps in both C++ and the
 addon with bit-identical lists, so the generator times include the language boundary of each system.
+
+\paragraph{Sources of variance.} Rounds of one point ran on different instances of the same type, so
+instance-to-instance variation is inside the intervals, but we did not separate it, and every index
+was built once (seed 42): variation between independent builds of the same configuration is not
+measured. Build cost comes from the builds that produced the timed indexes, which ran concurrently,
+not from isolated build runs.
+
+\paragraph{Secondary platforms.} The box and the Mac reuse the operating points of the AMD and
+Graviton types and run a smaller set of rivals (no ScaNN, DiskANN or SVS on the Mac), so their
+geometric means are not comparable with those of the AWS CPUs.
 
 \paragraph{The reporting script.} \texttt{analyze.py} was written after the freeze. It applies the
 frozen rules with the frozen quality and statistics code and selects nothing; we release it with the

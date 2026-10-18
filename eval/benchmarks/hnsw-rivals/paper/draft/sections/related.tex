@@ -38,6 +38,6 @@ experiments~\cite{hoefler2015scientific} and on measurement bias~\cite{mytkowicz
 cloud-measurement guidance of~\cite{leitner2016patterns,uta2020bigdata}: repeated rounds on several
 instances, A/A runs to size $R$, and intervals for every ratio.
 
-To our knowledge, no earlier study puts these generators behind one rescoring procedure and
-reports task quality as a fraction of exact search with cluster-bootstrap bounds and single-thread
-latency on several CPUs. We searched arXiv, Crossref and OpenReview, not every venue.
+This study differs from the work above in what it holds fixed and what it measures: every generator
+feeds one shared rescoring procedure, quality is the task metric of the final document ranking as a
+fraction of exact search, with cluster-bootstrap bounds, and latency is single-query on five CPUs.

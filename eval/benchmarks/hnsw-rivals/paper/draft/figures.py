@@ -6,6 +6,8 @@ import collections, json, os, sys
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
+from paperlib import headline  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 J = json.load(open(sys.argv[1]))
@@ -25,17 +27,16 @@ for ax, t in zip(axs[0], TYPES):
         for s, n in sorted(SIZE.items(), key=lambda kv: kv[1]):
             if s in ('quora', 'fiqa') and m != 'bge-base-en-v1.5' or s not in ('quora', 'fiqa') and m == 'bge-base-en-v1.5':
                 continue  # lines join the code sets of the code models; BEIR sets are drawn with bge only
-            d = B.get((t, s, m, 0.99), {}); o = d.get('ours_cascade')
-            riv = sorted((x['us'], k) for k, x in d.items() if not k.startswith('ours') and k != 'faiss_exact' and x['meets_point'])
+            d = B.get((t, s, m, 0.99), {}); h = headline(d, t, s, m, 0.99)
             ex = d.get('faiss_exact')
-            if o:
-                pts.append((n, o['us'], riv[0][0] if riv else None, ex['us'] if ex else None))
+            if h:
+                pts.append((n, h[0]['us'], h[2]['us'], ex['us'] if ex else None))
         if not pts:
             continue
         x = [p[0] for p in pts]
         ax.plot(x, [p[1] for p in pts], marker=mk, color='C0', lw=1, ms=3, label='ours' if m == 'CodeRankEmbed' else None)
         ax.plot([p[0] for p in pts if p[2]], [p[2] for p in pts if p[2]], marker=mk, color='C3', lw=1, ms=3, ls='--',
-                label='fastest rival meeting f' if m == 'CodeRankEmbed' else None)
+                label='rival fastest on dev' if m == 'CodeRankEmbed' else None)
         ax.plot([p[0] for p in pts if p[3]], [p[3] for p in pts if p[3]], marker=mk, color='0.6', lw=0.8, ms=2, ls=':',
                 label='exact (float32)' if m == 'CodeRankEmbed' else None)
     ax.set_xscale('log'); ax.set_yscale('log'); ax.set_title(TNAME[t]); ax.set_xlabel('vectors'); ax.grid(alpha=0.3, which='both', lw=0.3)

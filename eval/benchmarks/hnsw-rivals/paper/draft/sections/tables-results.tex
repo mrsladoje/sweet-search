@@ -15,7 +15,7 @@ Set & Model & \inputtable{tables/headline-cols.tex}\\\midrule
 \newcommand{\compAtable}[2]{%
 \begin{table}[h]\centering\scriptsize
 \caption{Comparison (A) on #2, held-out: every generator feeds the same int8 screen and full-vector
-rescoring at $C = 400$, $H = 100$, at its smaller declared effort ($ef = C$ for graphs). Cells: µs per
+rescoring at $C = 400$, $H = 100$, at its smaller declared effort ($ef = C$ for graphs). Cells: \us{} per
 query and, in brackets, retained quality (share of exact). One model per set kind (CodeRankEmbed for
 code, bge-base-en-v1.5 for BEIR). Empty: the generator does not run on this machine or was not
 planned there.}\label{tab:compA-#1}
@@ -30,7 +30,7 @@ Set & \inputtable{tables/compA-cols.tex}\\\midrule
 \caption{#2 at $\fr = 0.99$ in comparison (B): held-out latency, retained quality, resident memory after
 the timed pass, and cold start (index load plus the first query after the page cache is dropped).}\label{tab:mem-#1}
 \begin{tabular}{llrrrr}\toprule
-CPU & System & µs & Retained & RSS MB & Cold ms\\\midrule
+CPU & System & \us{} & Retained & RSS MB & Cold ms\\\midrule
 \inputtable{tables/mem-#1.tex}
 \bottomrule\end{tabular}
 \end{table}}

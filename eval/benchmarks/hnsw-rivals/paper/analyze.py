@@ -2,7 +2,7 @@
 #   python analyze.py --data DATA --results RESULTS --shortlists DIR [--builds BUILDS] [--out RESULTS-paper.md]
 # Machines are grouped by type from their name (ho-<type>-*, hr-<type>-* repair, box, mac). Per (type, set, model) and frozen point:
 #   latency  = median over rounds of the per-round median per-query time (µs); 95% interval of the ratio
-#              rival/ours from the round medians (log scale, Welch t);
+#              rival/ours as the ratio of medians over rounds, 95% bootstrap interval over rounds (paperlib.ratio_ci);
 #   quality  = held-out MRR@10 (code) or nDCG@10 (BEIR) of round 0, as a share of the exact ranking's quality;
 #              "missed" when the one-sided 97.5% cluster-bootstrap bound of mean(Q_sys - f Q_exact) < 0;
 #   memory   = RSS after the timed pass (MB); cold start = load + first query of the cold job.
