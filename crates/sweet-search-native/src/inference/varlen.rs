@@ -366,8 +366,19 @@ pub fn flash_attn_usable(device: &Device, dtype: DType) -> bool {
         _ => return false,
     };
     *cell.get_or_init(|| {
+        let started = std::time::Instant::now();
         let result = self_check(device, dtype);
         let usable = matches!(result, Ok(diff) if diff <= SELF_CHECK_MAX_ABS_DIFF);
+        if let (true, Ok(diff)) = (usable, &result) {
+            // The first call includes the driver's JIT compile where the
+            // GPU has no SASS for the kernel (Blackwell: compute_90 PTX).
+            eprintln!(
+                "[NativeInference] flash-attn self-check OK (compute capability {:.1}, {:?}; max abs diff {diff:.2e}; {} ms)",
+                super::cuda_compute_capability(device),
+                dtype,
+                started.elapsed().as_millis()
+            );
+        }
         if !usable {
             let detail = match &result {
                 Ok(diff) => format!("max abs diff {diff} > {SELF_CHECK_MAX_ABS_DIFF}"),
@@ -387,7 +398,10 @@ pub fn flash_attn_usable(device: &Device, dtype: DType) -> bool {
 
 /// Max absolute difference (NaN maps to +inf) between `flash_attn_padded`
 /// and naive attention on a small padded batch: B=2, H=2, S=32, D=64, the
-/// second row padded to 20 tokens.
+/// second row padded to 20 tokens, once with full attention and once with
+/// a sliding window of radius 4 (the ModernBERT local-layer path). Padded
+/// query rows are left out of the windowed comparison: the kernel leaves
+/// them undefined and the models never read them.
 fn self_check(device: &Device, dtype: DType) -> Result<f32> {
     let (b, h, s, d) = (2usize, 2usize, 32usize, 64usize);
     // Deterministic inputs in [-1, 1) from a fixed LCG, built on the host.
@@ -416,7 +430,10 @@ fn self_check(device: &Device, dtype: DType) -> Result<f32> {
     let mask = Tensor::from_vec(mask, (b, 1, 1, s), &Device::Cpu)?.to_device(device)?;
     let scale = 1.0 / (d as f32).sqrt();
 
+    const WINDOW: usize = 4;
     let fused = flash_attn_padded(&q, &k, &v, &mask.to_dtype(dtype)?, scale, None)?
+        .to_dtype(DType::F32)?;
+    let fused_window = flash_attn_padded(&q, &k, &v, &mask.to_dtype(dtype)?, scale, Some(WINDOW))?
         .to_dtype(DType::F32)?;
 
     // Reference: naive attention in F32 on the same (rounded) inputs.
@@ -427,12 +444,24 @@ fn self_check(device: &Device, dtype: DType) -> Result<f32> {
     );
     let scores = (q.matmul(&k.t()?)? * scale as f64)?.broadcast_add(&mask)?;
     let reference = candle_nn::ops::softmax_last_dim(&scores)?.matmul(&v)?;
+    let band: Vec<f32> = (0..s * s)
+        .map(|ij| if (ij / s).abs_diff(ij % s) <= WINDOW { 0.0 } else { -1e4 })
+        .collect();
+    let band = Tensor::from_vec(band, (1, 1, s, s), &Device::Cpu)?.to_device(device)?;
+    let reference_window =
+        candle_nn::ops::softmax_last_dim(&scores.broadcast_add(&band)?)?.matmul(&v)?;
 
-    let diff = (fused - reference)?
-        .abs()?
-        .flatten_all()?
-        .to_vec1::<f32>()?
-        .into_iter()
-        .fold(0f32, |m, x| if x.is_nan() { f32::INFINITY } else { m.max(x) });
-    Ok(diff)
+    let max_abs = |t: Tensor| -> Result<f32> {
+        Ok(t.abs()?
+            .flatten_all()?
+            .to_vec1::<f32>()?
+            .into_iter()
+            .fold(0f32, |m, x| if x.is_nan() { f32::INFINITY } else { m.max(x) }))
+    };
+    let full = max_abs((fused - reference)?)?;
+    // Real query rows only: all of batch 0, the first 20 of batch 1.
+    let window_diff = (fused_window - reference_window)?;
+    let windowed = max_abs(window_diff.narrow(0, 0, 1)?)?
+        .max(max_abs(window_diff.narrow(0, 1, 1)?.narrow(2, 0, 20)?)?);
+    Ok(full.max(windowed))
 }

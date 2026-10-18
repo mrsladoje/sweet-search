@@ -27,3 +27,22 @@ Stream: `run_mha` launches on the legacy default stream (stream 0). The
 product creates devices with `Device::new_cuda`, which also uses the default
 stream, so the kernel is ordered with candle's own work. Do not switch to
 `new_cuda_with_stream` without passing that stream through.
+
+## Only the kernels the product runs, for Ampere, Hopper and Blackwell
+
+Upstream builds 36 kernel files (head dims 32-512, causal and not) as SASS
+for `CUDA_COMPUTE_CAP` only, so the x86-64 release (80) carried no kernel
+for Hopper or Blackwell: the launch failed (CUDA error 209, now reported)
+and standard attention ran instead.
+
+- `build.rs` compiles `flash_api.cu` plus the two head-dim-64, non-causal
+  files (fp16, bf16). NomicBERT, ModernBERT and the edge model all use
+  64-wide heads with bidirectional or sliding-window attention.
+- Besides the `CUDA_COMPUTE_CAP` SASS (sm_80 / sm_87), it adds sm_90 SASS
+  and compute_90 PTX, which the driver JIT-compiles on 10.x and 12.x
+  (CUDA 12.2 has no sm_100 / sm_120 target). The JIT result is cached by
+  the driver (`~/.nv/ComputeCache`).
+- `kernels/flash_api.cu`: `run_mha_fwd` refuses any other head dim or a
+  causal call with `cudaErrorInvalidValue` instead of dispatching to a
+  kernel that is not built. The addon gates flash-attn on head dim 64.
+- The other `flash_fwd_hdim*.cu` files are removed from this copy.

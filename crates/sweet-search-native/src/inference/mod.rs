@@ -183,18 +183,22 @@ pub fn native_cuda_device_info() -> Option<NativeCudaDevice> {
 
 /// Lowest compute capability the CUDA kernels in this build can run on.
 ///
-/// candle's kernels are PTX compiled by cudaforge for `CUDA_COMPUTE_CAP`
-/// (build.rs embeds the value), and PTX only JIT-compiles forward: a GPU
-/// below the target cannot load any kernel. The release builds use 80
-/// (x86-64) and 87 (arm64), so Volta/Turing (7.x) cannot run the x86-64
-/// build and only Orin (8.7) and newer can run the arm64 build.
+/// candle's kernels are PTX, and PTX only JIT-compiles forward. The
+/// vendored candle-kernels (vendor/candle-kernels/PATCHES.md) ships two
+/// sets: compute_70 (Volta and newer, no bf16 / fp8 kernels) and the build
+/// target CUDA_COMPUTE_CAP (80 on x86-64, 87 on arm64). The floor is the
+/// LOW set's target, 7.0.
 #[cfg(feature = "cuda")]
 pub(crate) fn cuda_kernel_floor() -> f32 {
-    env!("SWEET_SEARCH_CUDA_KERNEL_CAP")
-        .trim_end_matches(|c: char| c.is_ascii_alphabetic())
-        .parse::<f32>()
-        .map(|cap| cap / 10.0)
-        .unwrap_or(f32::INFINITY)
+    candle_kernels::LOW_PTX_CAP as f32 / 10.0
+}
+
+/// True when this process loads candle's compute_70 PTX set (device below
+/// the build target, or SWEET_SEARCH_CUDA_PTX=low). That set has no bf16
+/// kernels, so the dtype policy must not pick BF16.
+#[cfg(feature = "cuda")]
+pub(crate) fn cuda_low_ptx() -> bool {
+    candle_kernels::uses_low_ptx()
 }
 
 #[cfg(feature = "cuda")]
@@ -211,7 +215,10 @@ fn check_cuda_kernel_floor(name: &str, major: i32, minor: i32) -> Result<(), Str
 }
 
 /// `Device::new_cuda(0)` plus the kernel-floor check, so an unsupported GPU
-/// fails here with a clear reason instead of at the first kernel load.
+/// fails here with a clear reason instead of at the first kernel load. Also
+/// picks candle's PTX set for this device before any kernel loads.
+/// `SWEET_SEARCH_CUDA_PTX=low` forces the compute_70 set (diagnostics: it
+/// lets a newer GPU run the Volta/Turing kernels).
 #[cfg(feature = "cuda")]
 pub(crate) fn new_cuda_device() -> candle_core::Result<Device> {
     let device = Device::new_cuda(0)?;
@@ -219,6 +226,9 @@ pub(crate) fn new_cuda_device() -> candle_core::Result<Device> {
         let ctx = dev.cuda_stream().context().clone();
         let (major, minor) = ctx.compute_capability().map_err(|e| candle_core::Error::Msg(e.to_string()))?;
         check_cuda_kernel_floor(&ctx.name().unwrap_or_default(), major, minor).map_err(candle_core::Error::Msg)?;
+        let force_low = std::env::var("SWEET_SEARCH_CUDA_PTX").map(|v| v.eq_ignore_ascii_case("low")).unwrap_or(false);
+        let cap = if force_low { candle_kernels::LOW_PTX_CAP } else { (major * 10 + minor) as u32 };
+        candle_kernels::select_compute_capability(cap);
     }
     Ok(device)
 }
@@ -304,6 +314,14 @@ pub(crate) fn optimal_dtype(device: &Device, model_kind: ModelKind) -> DType {
         "f32" | "fp32" | "float32" => Some(DType::F32),
         _ => None,
     };
+
+    #[cfg(feature = "cuda")]
+    if matches!(device, Device::Cuda(_)) && cuda_low_ptx() {
+        // The compute_70 kernel set has no bf16 kernels: F16 if asked for,
+        // otherwise F32.
+        let asked = model_dtype.as_deref().and_then(parse_dtype).or_else(|| parse_dtype(&global_dtype));
+        return if asked == Some(DType::F16) { DType::F16 } else { DType::F32 };
+    }
 
     if let Some(dtype) = model_dtype.as_deref().and_then(parse_dtype) {
         return dtype;

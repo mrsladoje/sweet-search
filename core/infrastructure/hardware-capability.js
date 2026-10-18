@@ -111,9 +111,9 @@ const MIN_APPLE_GENERATION_FOR_CASCADE = 3;
  * See the per-CC dtype policy in
  * crates/sweet-search-native/src/inference/mod.rs::optimal_dtype for
  * the full mapping. The addon reads the compute capability from CUDA
- * device 0 itself. This threshold applies only to addons without
- * `nativeCudaDeviceInfo`; newer addons report their own kernel floor
- * (8.0 for the x86-64 release build, 8.7 for arm64), which is stricter.
+ * device 0 itself and reports its own kernel floor (`nativeCudaDeviceInfo`:
+ * 7.0, from the compute_70 PTX set in vendor/candle-kernels). This
+ * threshold applies only to addons without that record.
  */
 const MIN_CUDA_COMPUTE_CAPABILITY = 7.0;
 

@@ -9,12 +9,14 @@ extern "C" const char *flash_attn_error_name(int code) {
 }
 
 void run_mha_fwd(Flash_fwd_params &params, cudaStream_t stream) {
+  // sweet-search patch: only the head-dim-64, non-causal kernels are built
+  // (build.rs). Refuse other shapes instead of linking every variant.
+  if (params.d <= 32 || params.d > 64 || params.is_causal) {
+      flash_attn_first_error = cudaErrorInvalidValue;
+      return;
+  }
   FP16_SWITCH(!params.is_bf16, [&] {
-      HEADDIM_SWITCH(params.d, [&] {
-          BOOL_SWITCH(params.is_causal, Is_causal, [&] {
-              run_mha_fwd_<elem_type, kHeadDim, Is_causal>(params, stream);
-          });
-      });
+      run_mha_fwd_<elem_type, 64, false>(params, stream);
   });
 }
 

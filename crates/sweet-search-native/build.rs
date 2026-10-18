@@ -4,10 +4,9 @@ fn main() {
     napi_build::setup();
 
     // CUDA: the kernel target must be explicit. cudaforge compiles candle's
-    // PTX (and flash-attn's SASS) for CUDA_COMPUTE_CAP; without it, it probes
-    // the build machine's GPU, so the same source gives different binaries
-    // on different hosts. The value is embedded so the addon can refuse a
-    // GPU below it (inference::cuda_kernel_floor).
+    // high PTX set (and flash-attn's base SASS) for CUDA_COMPUTE_CAP;
+    // without it, it probes the build machine's GPU, so the same source
+    // gives different binaries on different hosts.
     if std::env::var_os("CARGO_FEATURE_CUDA").is_some() {
         println!("cargo:rerun-if-env-changed=CUDA_COMPUTE_CAP");
         let cap = std::env::var("CUDA_COMPUTE_CAP").unwrap_or_default();
@@ -17,7 +16,6 @@ fn main() {
                 "CUDA builds need CUDA_COMPUTE_CAP set explicitly (the release builds use 80 on x86-64, 87 on arm64); got {cap:?}"
             );
         }
-        println!("cargo:rustc-env=SWEET_SEARCH_CUDA_KERNEL_CAP={cap}");
     }
 
     // CoreML shim: compile the Objective-C wrapper and link against the

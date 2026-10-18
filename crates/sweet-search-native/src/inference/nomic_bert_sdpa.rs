@@ -287,9 +287,12 @@ impl NomicBertAttention {
                 let on_cuda = matches!(hidden_states.device(), Device::Cuda(_));
                 let sm_supports = super::cuda_compute_capability(hidden_states.device()) >= 8.0;
                 let dtype_supports = matches!(q.dtype(), DType::F16 | DType::BF16);
+                // The vendored flash-attn builds only head-dim-64 kernels.
+                let head_dim_supported = q.dim(D::Minus1).map(|d| d == 64).unwrap_or(false);
                 yes |= on_cuda
                     && sm_supports
                     && dtype_supports
+                    && head_dim_supported
                     && super::varlen::flash_attn_usable(hidden_states.device(), q.dtype());
             }
             yes && seq_len > 8
