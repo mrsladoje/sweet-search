@@ -8,6 +8,7 @@
 \item \textbf{Approximate MaxSim fails when candidates score close together.} NumKong's rank correlation with the exact order fell from \nm{nkcheck.random.rho.min}--\nm{nkcheck.random.rho.max} to \nm{nkcheck.clustered.rho.min}--\nm{nkcheck.clustered.rho.max} when candidate scores lay close together.
 \item \textbf{int4 storage can cost quality.} Keeping the length of decoded int4 tokens lost up to \nm{q.intel.nfcorpus.answersmall.relabs}\% nDCG@10 for a model with tight score margins; for ColBERTv2 the pre-registered test found no material loss.
 \item \textbf{Speed depends on the condition.} With warm calls, the int4 kernel of sweet-search was faster than every frozen exact float32 rival on captured agent and code-search calls on five CPUs. Rivals were faster with one thread, after a busy gap, with many callers in one process and on some large calls.
+\item \textbf{MaxSim is a small part of a search.} On held-out agent calls on the M3 Max, the kernel took a median of \nm{pipe.maxsim.med}\% of a search call. Candidate fetch and query encoding took most of the time.
 \end{itemize}
 \end{minipage}}
 \end{center}

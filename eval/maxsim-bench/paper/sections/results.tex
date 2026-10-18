@@ -109,7 +109,11 @@ A check after the freeze supports this cause (Appendix~\ref{app:deviations}).
 We encoded the same documents again with the same model revision, at 180 and at 300 tokens.
 At 180 tokens, F was \nm{c300.scifact.180} on SciFact and \nm{c300.nfcorpus.180} on NFCorpus, the same as in the main run.
 At 300 tokens, F rose to \nm{c300.scifact.300} and \nm{c300.nfcorpus.300}, close to the published values and above the BM25 order on both sets.
-The int4 tests ran at 180 tokens only; we did not test int4 non-inferiority at 300 tokens.
+The int4 result for ColBERTv2 also holds at 300 tokens.
+In the same check, we stored the 300-token documents in int4 and scored them with the kernel (K) on the M3 Max.
+K $-$ F was \nm{i300.scifact.300.KF} [\nm{i300.scifact.300.KF.lo}, \nm{i300.scifact.300.KF.hi}] on SciFact and \nm{i300.nfcorpus.300.KF} [\nm{i300.nfcorpus.300.KF.lo}, \nm{i300.nfcorpus.300.KF.hi}] on NFCorpus, inside the margin of 0.01 on both sets.
+At 180 tokens, the same check gave \nm{i300.scifact.180.KF} and \nm{i300.nfcorpus.180.KF}, the same as the main run.
+This check is post hoc and reuses the BEIR queries of the main test, so it is descriptive, not a new confirmatory test.
 K and Q+c (int4 decoded in float64, contract S) give the same nDCG@10 to four decimals in every cell, on every CPU and $k$.
 
 \begin{table}[!htbp]
@@ -169,6 +173,16 @@ When the candidates' scores lay about \nm{nkcheck.random.gap}\% apart, NumKong's
 When they lay about \nm{nkcheck.clustered.gap}\% apart, the correlation fell to \nm{nkcheck.clustered.rho.min}--\nm{nkcheck.clustered.rho.max}, and the top document agreed in \nm{nkcheck.clustered.top1.min}--\nm{nkcheck.clustered.top1.max}\% of queries.
 Dimension 96 and 128 behaved the same.
 So NumKong's one-token refinement fails when candidate scores lie close together, as they do for answerai-colbert-small, and holds up better when they lie far apart, as for ColBERTv2.
+Figure~\ref{fig:nkgap} repeats the check at \nm{nkgap.levels} levels of spread (post hoc, synthetic).
+For gaps below 0.5\% the rank correlation stayed at or below \nm{nkgap.low.rho.max}; for random vectors (gap about \nm{nkgap.random.gap}\%) it reached \nm{nkgap.random.rho.min}--\nm{nkgap.random.rho.max}.
+The median gaps of answerai-colbert-small (\nm{margin.nfcorpus.answersmall}--\nm{margin.scifact.answersmall}\%) lie on the steep part of the curve; those of ColBERTv2 (\nm{margin.scifact.colbertv2}--\nm{margin.nfcorpus.colbertv2}\%) lie far to its right.
+
+\begin{figure}[!htbp]
+\centering
+\includegraphics[width=0.6\linewidth]{figures/nkgap.pdf}
+\caption{NumKong's candidate order against the exact order (contract C) as candidate scores move closer together (post hoc; synthetic vectors, float32 inputs, 40 queries of 32 tokens against 100 candidates of 160 tokens per point). Line: median rank correlation over queries; band: interquartile range. Grey: the median gaps of answerai-colbert-small on SciFact and NFCorpus.}
+\label{fig:nkgap}
+\end{figure}
 
 \paragraph{The kernel across CPUs.}
 The kernel's BEIR scores were bit-identical across the three x86 CPUs (AVX-512 on Intel and AMD, AVX2 on the EPYC, by design) and between Graviton4 and the M3 Max (both NEON).
@@ -360,14 +374,17 @@ Each configuration runs three times, and each closed-loop caller replays its sha
 Each open-loop trace holds at least the rate times 3\,s of requests, so its arrivals last about 3\,s or more.
 The open loop waits for each arrival time in a busy loop: in the threads executor, a Python thread next to the callers; in the procs executor, each caller process.
 These waits remain in the rerun, so the open-loop latencies apply to this harness.
-The threads executor runs all configurations of a set in turn in one process, so in two configurations a thread setting of the previous configuration stayed in place.
-PyTorch's segment-reduce layout on the M3 Max ran with one thread, and NextPlaid with four threads on the EPYC ran with all cores.
-We left out these two threads-executor runs; no number in the text or tables changed.
+The threads executor runs all configurations of a set in turn in one process, so in one configuration a thread setting of the previous configuration stayed in place.
+NextPlaid with four threads on the EPYC ran with all cores; we left out this threads-executor run, and no number in the text or tables changed.
 Both executors warm up every call.
 We report the median of the three runs.
 Over the three runs, the kernel's closed-loop throughput varied by a median of \nm{conc.ours.spread.median}\% (maximum minus minimum, over the median).
-The M3 Max runs varied more (see below).
-The harness does not check the scores of these runs.
+The M3 Max values come from a recheck (see below).
+A separate check after the rerun tested the scores of parallel calls on the M3 Max and the EPYC (\texttt{rerun/conc\_check.py}).
+It ran eight configurations per CPU (the kernel, exact rivals and NumKong) with 1 and 16 callers in both executors.
+It compared each score with the score of the same call run alone, and both with the float64 reference.
+In all \nm{cc.rows} runs, no score of a parallel call differed from the score of the same call alone.
+Errors against the reference were also the same as alone: within the precision bound, except for maxsim-cpu on AArch64 and NumKong, as in Section~\ref{sec:correctness}.
 
 Table~\ref{tab:conc} and Figure~\ref{fig:conc} give the results.
 With one caller, \sweet had \nm{range.conc.n1.min}--\nm{range.conc.n1.max} times the throughput of the best exact rival in the threads executor, and \nm{range.conc.n1.procs.min}--\nm{range.conc.n1.procs.max} times in the procs executor.
@@ -382,17 +399,19 @@ For many requests at once, one process per caller was the better setting here.
 Fewer threads per call in one process may also help; we did not test it.
 In the open loop at the highest common rate, the best exact rival had the lower p99 in \nm{conc.open.lost} of \nm{conc.pairs} pairs.
 On EPYC GCSN calls the two p99 values differ by less than 1\% (\nm{conc.epyc.gcsn.open.ours} against \nm{conc.epyc.gcsn.open.exact}\,ms).
-On M3 Max agent calls, \sweet kept up with only \nm{conc.m3max.agent.open.achieved.ours} of \nm{conc.m3max.agent.open.rate} offered calls per second, so its queue grew.
+On M3 Max GCSN calls, the best exact rival had the lower p99 (\nm{conc.m3max.gcsn.open.exact} against \nm{conc.m3max.gcsn.open.ours}\,ms).
 
-The M3 Max runs of \sweet are less certain than the others.
-In both workloads \sweet's throughput fell from each of its three runs to the next.
-With one caller in one process, it went from \nm{conc.m3max.agent.ours.t1.hi} to \nm{conc.m3max.agent.ours.t1.lo} thousand calls/s on agent calls.
-On the other CPUs, \sweet's runs varied by at most \nm{conc.ours.spread.nom3.max}\%.
-Most rivals on the M3 Max did not show this fall.
-maxsim-cpu's first agent run came directly after \sweet's and was much slower than its other two.
-\sweet ran first in each group and loaded all cores.
-We did not record clock speed or temperature, so we cannot say why its throughput fell.
-The M3 Max values in Table~\ref{tab:conc} are the median of the three runs; we treat them as unstable observations, not as firm comparisons.
+The M3 Max values come from a recheck, because \sweet's throughput in the first rerun fell from each of its three runs to the next.
+The recheck ran each configuration in its own process, in three passes with different orders: forward, reverse and rotated.
+Before each configuration, it paused for 45\,s and waited for 30\,s of low CPU use.
+The desktop session stayed open, and CPU use at these checks was \nm{m3c.busy.lo}--\nm{m3c.busy.hi}\% of all cores; macOS recorded no thermal or performance warning.
+The recheck covers \sweet, both NumKong configurations, and NumPy and PyTorch, the best exact rivals on the M3 Max in the first rerun.
+It leaves out NextPlaid, never the best exact rival there, and maxsim-cpu, whose AArch64 build gives wrong scores on these calls (Section~\ref{sec:correctness}).
+Over the three passes, the throughput of a configuration varied by a median of \nm{m3c.rest.spread.median}\%.
+One run was an outlier: \sweet's first agent run, the first run of the recheck, one minute after the study of Section~\ref{sec:pipeline} ended.
+With one caller, it reached \nm{m3c.first.ours} thousand calls/s, against \nm{m3c.other.ours.lo}--\nm{m3c.other.ours.hi} in its other two passes.
+\sweet's other runs varied by at most \nm{m3c.ours.agent.later.spread.max}\% on agent calls and \nm{m3c.ours.gcsn.spread.max}\% on GCSN calls; NumPy varied most, by up to \nm{m3c.numpy.spread.max}\%.
+Table~\ref{tab:conc} gives the median of the three passes, so the outlier sets no value; we cannot say what slowed that run.
 
 \begin{table}[!htbp]
 \centering\scriptsize

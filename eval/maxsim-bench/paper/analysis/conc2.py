@@ -25,9 +25,16 @@ LOCAL = os.path.expanduser('~/.ss-eval/maxsim-local/rerun')    # <m3max|epyc>/
 # left out. The procs executor starts fresh processes and is not affected; a @1 arm runs on the
 # calling thread and does not build the pool. No other arm order has the problem.
 LEAKED = {('m3max', 'torch_segment_reduce'), ('epyc', 'nextplaid@4')}
+# M3 Max recheck (owner approval 2026-10-18; ~/.ss-eval/maxsim-local/rerun2/run-m3conc.sh): the kernel, the
+# best exact rivals and NumKong, each arm in its own process, three passes in different arm orders with a
+# cooldown and a quiet wait before every arm; closed loop at 1, 4, 16 callers and the open loop at the top
+# rate. When it exists it replaces the M3 Max rerun above; the runs of the three passes are pooled per arm.
+M3CHECK = os.path.expanduser('~/.ss-eval/maxsim-local/rerun2/m3conc')
 
 
 def files(platform, fam):
+    if platform == 'm3max' and os.path.isdir(M3CHECK):
+        return sorted(glob.glob(os.path.join(M3CHECK, 'pass*', 'm3max', f'ho-conc-{fam}-ho-rerun', '*', '*.conc2.json')))
     root = (os.path.join(CLOUD, f'{platform}-r2*') if platform in ('intel', 'amd', 'arm') else os.path.join(LOCAL, platform))
     return sorted(glob.glob(os.path.join(root, f'ho-conc-{fam}-ho-rerun', '*', '*.conc2.json')))
 
@@ -54,13 +61,19 @@ def main():
     res = {}
     for p in PLATFORMS:
         for fam in ('agent', 'gcsn'):
+            pooled = {}
             for f in files(p, fam):
                 d = json.load(open(f))
+                for r in d['runs']:
+                    r['src'] = f
                 if not d.get('complete'):
                     continue
-                runs = [r for r in d['runs'] if not ((p, d['arm']) in LEAKED and r['executor'] == 'threads')]
-                res.setdefault(p, {}).setdefault(fam, {})[d['arm']] = dict(cores=d.get('cores'), reps=d['identity']['reps'],
-                                                                           min_seconds=d['identity']['min_seconds'], runs=aggregate(runs))
+                own_process = p == 'm3max' and os.path.isdir(M3CHECK)        # the recheck runs each arm in its own process
+                runs = [r for r in d['runs'] if own_process or not ((p, d['arm']) in LEAKED and r['executor'] == 'threads')]
+                pooled.setdefault((p, fam, d['arm']), dict(cores=d.get('cores'), min_seconds=d['identity']['min_seconds'], runs=[]))['runs'] += runs
+            for (_, _, arm), v in pooled.items():
+                res.setdefault(p, {}).setdefault(fam, {})[arm] = dict(cores=v['cores'], reps=len({(r['src'], r['rep']) for r in v['runs']}),
+                                                                      min_seconds=v['min_seconds'], runs=aggregate(v['runs']))
             if fam in res.get(p, {}):
                 print(p, fam, len(res[p][fam]), 'arms')
     dump('conc2.json', res)

@@ -220,7 +220,32 @@ def fig_conc():
     fig.savefig(os.path.join(FIG, 'conc.pdf'), bbox_inches='tight', pad_inches=0.02); plt.close(fig)
 
 
+def fig_nkgap():
+    g = load('numkong_gap.json')       # post-freeze synthetic check (numkong_gap.py)
+    if not g:
+        return
+    fig, ax = plt.subplots(figsize=(3.4, 2.1))
+    ax.axvspan(0.8, 2.1, color=GRID, lw=0)
+    ax.text(1.3, 0.03, 'answerai-\ncolbert-small', ha='center', va='bottom', fontsize=6, color=MUTED)
+    for dim, mk, col in ((96, 'o', LIB['numkong'][0]), (128, 's', MUTED)):
+        rows = sorted((r for r in g['rows'] if r['dim'] == dim), key=lambda r: r['gap_median'])
+        x = [r['gap_median'] * 100 for r in rows]
+        ax.fill_between(x, [r['spearman_p25'] for r in rows], [r['spearman_p75'] for r in rows], color=col, alpha=0.15, lw=0)
+        ax.plot(x, [r['spearman_median'] for r in rows], marker=mk, color=col, ms=3, mec='white', mew=0.3, label=f'dimension {dim}')
+    ax.set_xscale('log')
+    ax.xaxis.set_major_formatter(matplotlib.ticker.FuncFormatter(lambda v, _: f'{v:g}'))
+    ax.set_xlabel('gap between 1st and 10th score (% of 1st)')
+    ax.set_ylabel('rank correlation with\nthe exact order')
+    ax.set_ylim(0, 1)
+    ax.grid(color=GRID, lw=0.5); ax.set_axisbelow(True)
+    for sp in ('top', 'right'):
+        ax.spines[sp].set_visible(False)
+    ax.legend(frameon=False, loc='upper left')
+    fig.tight_layout()
+    fig.savefig(os.path.join(FIG, 'nkgap.pdf'), bbox_inches='tight', pad_inches=0.02); plt.close(fig)
+
+
 if __name__ == '__main__':
     os.makedirs(FIG, exist_ok=True)
-    fig_ratios(); fig_sweep(); fig_budget(); fig_conc()
+    fig_ratios(); fig_sweep(); fig_budget(); fig_conc(); fig_nkgap()
     print('figures written to', FIG)

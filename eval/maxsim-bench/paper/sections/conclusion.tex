@@ -5,5 +5,6 @@ Libraries that compute MaxSim do not compute one function, so a benchmark must c
 With such checks, \benchname found three defects in public libraries and separated the effect of a contract from the effect of an approximation.
 On five CPUs, the int4 kernel of sweet-search was faster than the exact float32 rivals on warm agent and code-search calls.
 It was not faster with one thread, after a busy gap, with many callers in one process, or on some large calls.
+In the search path of sweet-search, the kernel took a median of \nm{pipe.maxsim.med}\% of an agent search call, so its speed changed little there.
 Its int4 rule kept the quality of ColBERTv2 and lost quality with answerai-colbert-small, a model whose candidates score close together.
 We release the harness, the replay format, the references and every raw result, so that others can add implementations, models and CPUs.

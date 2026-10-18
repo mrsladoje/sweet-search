@@ -11,6 +11,7 @@ On agent calls, the fastest rival needed \nm{best.warm.agent-ho.f32.min}--\nm{be
 We had seen aggregate results on these sets before the freeze.
 On the fresh BEIR calls, the kernel was faster on four CPUs, and PyTorch was faster on the Xeon.
 Rivals were also faster with one thread, with many callers in one process, after a busy gap, on large calls, and with NumKong's approximate scores.
+In the engine's own search path, the kernel took a median of \nm{pipe.maxsim.med}\% of an agent search call.
 A pre-registered test ($k = 100$, margin 0.01 nDCG@10) found the int4 scoring rule non-inferior to float32 for ColBERTv2 on SciFact and NFCorpus.
 For answerai-colbert-small, it lost up to \nm{q.intel.nfcorpus.answersmall.relabs}\%.
 We release the replay format, the references and all raw results \TODO{Zenodo DOI}.
