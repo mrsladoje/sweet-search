@@ -300,7 +300,8 @@ After the freeze, as a review of the draft asked, we timed every arm on the smal
 Each arm ran in three fresh processes, with 200 warm-up calls and five rounds of timed calls (Appendix~\ref{app:deviations}); the data are development data only.
 Table~\ref{tab:floor} shows that the smallest call took \nm{range.floor.numpy.min}--\nm{range.floor.numpy.max}\% of the median call's time for NumPy and \nm{range.floor.torch.min}--\nm{range.floor.torch.max}\% for PyTorch.
 So most of a typical call's time is not this fixed cost.
-In each of the \nm{floor.beyond.n} CPU--library pairs where \sweet's median call was shorter, the rival's median call minus its smallest call still took at least \nm{floor.beyond.min} times \sweet's whole median call.
+Take the \nm{floor.beyond.n} CPU--library pairs where \sweet's median call was shorter.
+In each, the rival's median call minus its smallest call still took at least \nm{floor.beyond.min} times \sweet's whole median call.
 So, on these calls, \sweet's speed-up does not come only from avoiding dispatch.
 On Intel, Graviton4 and the EPYC, NumKong's median call was shorter than \sweet's.
 The smallest call is a lower bound on the fixed cost: a larger call can wake more threads, and this measurement does not separate that cost.
@@ -338,7 +339,8 @@ In the fixed harness, all callers start together, a fixed thread count in a conf
 Each configuration runs three times; each closed-loop caller replays its share for at least 3\,s, and each open-loop trace has at least 3\,s of arrivals.
 Both executors warm up every call.
 We report the median of the three runs.
-Over the three runs, the kernel's closed-loop throughput varied by a median of \nm{conc.ours.spread.median}\% (maximum minus minimum, over the median); the M3 Max runs varied more (see below).
+Over the three runs, the kernel's closed-loop throughput varied by a median of \nm{conc.ours.spread.median}\% (maximum minus minimum, over the median).
+The M3 Max runs varied more (see below).
 The harness does not check the scores of these runs.
 
 Table~\ref{tab:conc} and Figure~\ref{fig:conc} give the results.
@@ -348,17 +350,22 @@ NumKong had a higher throughput than \sweet with one caller in \nm{conc.n1.threa
 With 16 callers in separate processes, an exact rival had the higher throughput in \nm{conc.n16.procs.lost} of \nm{conc.pairs} pairs, and NumKong in \nm{conc.n16.procs.nklost}.
 With 16 callers in one shared process, \sweet's throughput was \nm{conc.thrdrop.min}--\nm{conc.thrdrop.max}\% lower than with one caller, on every CPU.
 An exact rival then had the higher throughput in \nm{conc.n16.threads.lost} of \nm{conc.pairs} pairs, and NumKong in \nm{conc.n16.threads.nklost}.
-\sweet's worker pool has one thread per performance core and serves every call (Section~\ref{sec:kernel}); we did not measure where the time goes when 16 calls share one pool.
-So a service that runs many requests in one process should give each call fewer threads or use one process per caller; we did not test the first option.
+\sweet's worker pool has one thread per performance core and serves every call (Section~\ref{sec:kernel}).
+We did not measure where the time goes when 16 calls share one pool.
+For many requests at once, one process per caller was the better setting here.
+Fewer threads per call in one process may also help; we did not test it.
 In the open loop at the highest common rate, the best exact rival had the lower p99 in \nm{conc.open.lost} of \nm{conc.pairs} pairs.
 On EPYC GCSN calls the two p99 values differ by less than 1\% (\nm{conc.epyc.gcsn.open.ours} against \nm{conc.epyc.gcsn.open.exact}\,ms).
 On M3 Max agent calls, \sweet kept up with only \nm{conc.m3max.agent.open.achieved.ours} of \nm{conc.m3max.agent.open.rate} offered calls per second, so its queue grew.
 
 The M3 Max runs of \sweet are less certain than the others.
-In both workloads \sweet's throughput fell from each of its three runs to the next; with one caller in one process it ranged from \nm{conc.m3max.agent.ours.t1.hi} to \nm{conc.m3max.agent.ours.t1.lo} thousand calls/s on agent calls.
+In both workloads \sweet's throughput fell from each of its three runs to the next.
+With one caller in one process, it went from \nm{conc.m3max.agent.ours.t1.hi} to \nm{conc.m3max.agent.ours.t1.lo} thousand calls/s on agent calls.
 On the other CPUs, \sweet's runs varied by at most \nm{conc.ours.spread.nom3.max}\%.
-Most rivals on the M3 Max did not show this fall; maxsim-cpu's first agent run, which came directly after \sweet's, was much slower than its other two.
-\sweet ran first in each group and loaded all cores; we did not record clock speed or temperature, so we cannot say why its throughput fell.
+Most rivals on the M3 Max did not show this fall.
+maxsim-cpu's first agent run came directly after \sweet's and was much slower than its other two.
+\sweet ran first in each group and loaded all cores.
+We did not record clock speed or temperature, so we cannot say why its throughput fell.
 The M3 Max values in Table~\ref{tab:conc} are the median of the three runs and carry this uncertainty.
 
 \begin{table}[!htbp]
