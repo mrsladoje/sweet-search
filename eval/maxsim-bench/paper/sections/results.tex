@@ -100,7 +100,10 @@ The ColBERTv2 paper reports 0.693 (SciFact) and 0.338 (NFCorpus) for end-to-end 
 A likely cause of our lower values is document length.
 We encoded documents with each model's default length: 180 tokens for ColBERTv2 and 300 for answerai-colbert-small.
 The two models use the same tokenizer, and the 180-token limit cut \nm{beir.cut.scifact}\% of SciFact and \nm{beir.cut.nfcorpus}\% of NFCorpus documents.
-\TODO{reproduction check: ColBERTv2 at 300 tokens, F nDCG@10 on SciFact and NFCorpus}
+A check after the freeze supports this cause (Appendix~\ref{app:deviations}).
+We encoded the same documents again with the same model revision, at 180 and at 300 tokens.
+At 180 tokens, F was \nm{c300.scifact.180} on SciFact and \nm{c300.nfcorpus.180} on NFCorpus, the same as in the main run.
+At 300 tokens, F rose to \nm{c300.scifact.300} and \nm{c300.nfcorpus.300}, close to the published values and above the BM25 order on both sets.
 The quality tests compare storage formats on the same encoded vectors, so this length does not change K $-$ F.
 K and Q+c (int4 decoded in float64, contract S) give the same nDCG@10 to four decimals in every cell, on every CPU and $k$.
 
@@ -175,7 +178,13 @@ A faster scorer can rerank more candidates in the same time.
 Figure~\ref{fig:budget} plots nDCG@10 against the warm replay p95 of the timed scoring call (the 95th percentile over all timed repetitions of the BEIR calls, not a service-request distribution), one point per $k$. Each point's quality comes from the arm's first run; every rival's scores were bit-identical across its runs, except NumKong's Python arms on Intel.
 Table~\ref{tab:budget} reads it at two budgets.
 The time covers only the scoring call: the rivals' decoding and casting run outside their timer.
-The dashed line is a constructed estimate for float32 storage: the reference quality F paired with the time of the fastest frozen exact float32 rival on the same shapes. No single run produced these pairs; the estimate assumes that the rival's time does not depend on the vector values and that its scores would match F. The dotted line is the BM25 order without reranking.
+The dashed line is a constructed estimate for float32 storage: the reference quality F paired with the time of the fastest frozen exact float32 rival on the same shapes. No single run produced these pairs; the estimate assumes that the rival's time does not depend on the vector values and that its scores would match F.
+A check after the freeze on the M3 Max supports both assumptions (Appendix~\ref{app:deviations}).
+NumPy and PyTorch scored the original float32 vectors and the int4-decoded vectors of the four $k = \nm{f32d.k}$ sets, in alternating order.
+On the original vectors their nDCG@10 was equal to F in every cell.
+Their p95 on the original vectors was \nm{f32d.ratio.min}--\nm{f32d.ratio.max} times their p95 on the decoded vectors, inside the M3 Max noise band of $\pm$\nm{noise.m3max}\%.
+The check ran on one CPU only.
+The dotted line is the BM25 order without reranking.
 
 At a p95 budget of 0.25\,ms, \sweet reached a larger $k$ than every exact rival on AMD.
 On Intel the best exact rival (PyTorch with bfloat16 inputs) reached a larger $k$ at both budgets.
@@ -290,7 +299,10 @@ At tens of microseconds per call, a rival's time could be mostly fixed cost: Pyt
 After the freeze, as a review of the draft asked, we timed every arm on the smallest possible call (one query token, one candidate of one token) and on the median development agent call (\nm{floor.shape.nq} query tokens, \nm{floor.shape.pool} candidates, \nm{floor.shape.tokens} candidate tokens).
 Each arm ran in three fresh processes, with 200 warm-up calls and five rounds of timed calls (Appendix~\ref{app:deviations}); the data are development data only.
 Table~\ref{tab:floor} shows that the smallest call took \nm{range.floor.numpy.min}--\nm{range.floor.numpy.max}\% of the median call's time for NumPy and \nm{range.floor.torch.min}--\nm{range.floor.torch.max}\% for PyTorch.
-So most of a typical call's time is not this fixed cost, and \sweet's speed-up on these calls does not come only from avoiding dispatch.
+So most of a typical call's time is not this fixed cost.
+In each of the \nm{floor.beyond.n} CPU--library pairs where \sweet's median call was shorter, the rival's median call minus its smallest call still took at least \nm{floor.beyond.min} times \sweet's whole median call.
+So, on these calls, \sweet's speed-up does not come only from avoiding dispatch.
+On Intel and Graviton4, NumKong's median call was shorter than \sweet's.
 The smallest call is a lower bound on the fixed cost: a larger call can wake more threads, and this measurement does not separate that cost.
 NumKong's native loop had the largest share (\nm{range.floor.numkong.min}--\nm{range.floor.numkong.max}\%); for \sweet the share was \nm{range.floor.ours.min}--\nm{range.floor.ours.max}\%.
 
@@ -326,11 +338,27 @@ In the fixed harness, all callers start together, a fixed thread count in a conf
 Each configuration runs three times; each closed-loop caller replays its share for at least 3\,s, and each open-loop trace has at least 3\,s of arrivals.
 Both executors warm up every call.
 We report the median of the three runs.
-Over the three runs, the kernel's closed-loop throughput varied by a median of \nm{conc.ours.spread.median}\% and at most \nm{conc.ours.spread.max}\% (maximum minus minimum, over the median).
+Over the three runs, the kernel's closed-loop throughput varied by a median of \nm{conc.ours.spread.median}\% (maximum minus minimum, over the median); the M3 Max runs varied more (see below).
 The harness does not check the scores of these runs.
 
 Table~\ref{tab:conc} and Figure~\ref{fig:conc} give the results.
-\TODO{parallel-caller results: one caller, 16 callers per executor, NumKong, open loop}
+With one caller, \sweet had \nm{range.conc.n1.min}--\nm{range.conc.n1.max} times the throughput of the best exact rival.
+The two executors now agree at one caller: on the cloud CPUs, \sweet's throughput differed between them by at most \nm{conc.n1.agree.max}\%.
+NumKong had a higher throughput than \sweet with one caller in \nm{conc.n1.threads.nklost} of \nm{conc.pairs} CPU--workload pairs (Intel and Graviton4).
+With 16 callers in separate processes, an exact rival had the higher throughput in \nm{conc.n16.procs.lost} of \nm{conc.pairs} pairs, and NumKong in \nm{conc.n16.procs.nklost}.
+With 16 callers in one shared process, \sweet's throughput was \nm{conc.thrdrop.min}--\nm{conc.thrdrop.max}\% lower than with one caller, on every CPU.
+An exact rival then had the higher throughput in \nm{conc.n16.threads.lost} of \nm{conc.pairs} pairs, and NumKong in \nm{conc.n16.threads.nklost}.
+\sweet's worker pool has one thread per performance core and serves every call (Section~\ref{sec:kernel}); we did not measure where the time goes when 16 calls share one pool.
+So a service that runs many requests in one process should give each call fewer threads or use one process per caller; we did not test the first option.
+In the open loop at the highest common rate, the best exact rival had the lower p99 in \nm{conc.open.lost} of \nm{conc.pairs} pairs.
+That pair is the M3 Max on agent calls: \sweet kept up with only \nm{conc.m3max.agent.open.achieved.ours} of \nm{conc.m3max.agent.open.rate} offered calls per second, so its queue grew.
+
+The M3 Max runs of \sweet are less certain than the others.
+In both workloads \sweet's throughput fell from each of its three runs to the next; with one caller in one process it ranged from \nm{conc.m3max.agent.ours.t1.hi} to \nm{conc.m3max.agent.ours.t1.lo} thousand calls/s on agent calls.
+On the other CPUs, \sweet's runs varied by at most \nm{conc.ours.spread.nom3.max}\%.
+Most rivals on the M3 Max did not show this fall; maxsim-cpu's first agent run, which came directly after \sweet's, was much slower than its other two.
+\sweet ran first in each group and loaded all cores; we did not record clock speed or temperature, so we cannot say why its throughput fell.
+The M3 Max values in Table~\ref{tab:conc} are the median of the three runs and carry this uncertainty.
 
 \begin{table}[!htbp]
 \centering\scriptsize

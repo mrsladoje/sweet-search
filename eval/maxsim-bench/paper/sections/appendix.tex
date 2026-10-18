@@ -36,6 +36,10 @@ None changed a frozen file after the held-out runs began, except where stated.
 24 & Harness behaviour found in the analysis: the per-arm maximum error skips NaN scores. NumKong returned NaN on some calls on Intel (Section~\ref{sec:correctness}); a separate scan counts them. \\
 25 & EPYC box: every planned group passed; the 4 SciFact busy-gap groups (and earlier the 4 NFCorpus ones) were skipped as decided. Its sweep holds \nm{sweep.epyc.cells} cells: the 24 planned plus 4 complete cells from before the cut. \\
 26 & Post-freeze rerun, approved by the owner after the first review round and planned before it ran (\texttt{paper/analysis/rerun-plan.md}): the 8 BEIR sets with $k \in \{25, 100\}$ on a second instance of each cloud type, with the original held-out bundle and group lines (AMD without the BLIS arms). Section~\ref{sec:spread} reports it; no other number changed. \\
+27 & Post-freeze rerun of the parallel-caller groups on all five CPUs, approved and planned in the same way, with a fixed harness (\texttt{rerun/concurrency2.py}): one common start for all callers, the thread count of a configuration capped at $\max(1, \lfloor\text{cores}/N\rfloor)$ per caller process, runs of at least 3\,s, 3 repetitions, warm-up in both executors, BLIS arms left out. Section~\ref{sec:conc} reports it; the frozen runs are in Appendix~\ref{app:conc-frozen}. On Intel and AMD, the first two instances of each type were stopped by their idle watchdog before they uploaded (its process list did not include the new scripts); one new instance per type ran both workloads with a longer idle limit, and no result of the stopped instances is used. \\
+28 & Post-freeze measurement of the fixed cost per call (\texttt{rerun/floor.py}, development calls only) on all five CPUs, approved and planned in the same way (Section~\ref{sec:floor}). Graviton4 ran it on both rerun instances; the floor of every arm agreed within 11\% and its share of the median call within 0.6 percentage points, and Table~\ref{tab:floor} shows the second instance. \\
+29 & Post-freeze review checks on the M3 Max, approved and planned in the same way: the rivals on the original float32 vectors (\texttt{rerun/f32direct.py}, Section~\ref{sec:budget}) and ColBERTv2 documents at 300 tokens (\texttt{rerun/colbert300.py}, Section~\ref{sec:quality}). Neither changes a test result. \\
+30 & The M3 Max reruns (items 27--29) ran with the desktop session open; its background load was about one third of one core. \\
 \bottomrule
 \end{longtable}
 \addtocounter{table}{-1}% uncaptioned longtable: no number
@@ -77,7 +81,7 @@ Physical cores on c8a; ``bytes read'' not measured; 8$\times$ storage claim & Co
 Unique calls; overlap between splits; ``cold'' naming; closed loop is not service latency & Stated in Section~\ref{sec:workload}; overlap removed; ``pool-parked''; open-loop runs at common rates \\
 Contract C clamp, epsilon and precision unclear & Defined from NumKong's source (Table~\ref{tab:contracts}) \\
 No independent fixtures & Hand-built fixtures with plain-Python expected values \\
-Wake-up probe and ``unexplained remainder'' & Decomposition not run \\
+Wake-up probe and ``unexplained remainder'' & Decomposition not run; post-freeze timing of the smallest call only (Section~\ref{sec:floor}) \\
 No constant-winner baseline for a cost model & Part of the frozen claim rule; not reached \\
 p95 of per-call medians is not a tail; per-arm rates are not equal traffic & Per-request percentiles; common absolute open-loop rates \\
 Non-inferiority on the kernel's actual scores; $\delta$ absolute & K $-$ F primary, absolute $\delta$, relative loss shown \\
