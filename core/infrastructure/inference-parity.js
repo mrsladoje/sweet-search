@@ -17,8 +17,12 @@
  * Mirrors the Rust rules in crates/sweet-search-native/src/inference/parity.rs.
  */
 
-/** Largest allowed |norm - 1| for an L2-normalised output vector. */
-export const UNIT_NORM_TOLERANCE = 1e-2;
+/**
+ * Largest allowed |norm - 1| for an L2-normalised output vector. Every
+ * backend normalises in F32 (CoreML outputs are renormalised on the host),
+ * so a norm off by more than this means a normalise step went missing.
+ */
+export const UNIT_NORM_TOLERANCE = 1e-3;
 
 function result(reasons, extra = {}) {
   return { ok: reasons.length === 0, reasons, ...extra };
@@ -28,6 +32,16 @@ function dot(a, b) {
   let s = 0;
   for (let i = 0; i < a.length; i++) s += a[i] * b[i];
   return s;
+}
+
+/**
+ * True cosine. The structural check already bounds each norm; the
+ * comparison must not depend on it: a half-precision output with norm
+ * 1.003 gave "cosines" above 1 with a plain dot product, which hides drift
+ * of the same size.
+ */
+function cosine(a, b) {
+  return dot(a, b) / Math.sqrt(dot(a, a) * dot(b, b));
 }
 
 /**
@@ -122,7 +136,7 @@ export function compareEmbeddings(candidate, reference, { minCosine, meanCosine 
     ...checkEmbeddingBatch(candidate, { count, dim, label: 'candidate' }).reasons,
   ];
   if (reasons.length) return result(reasons);
-  const cosines = candidate.map((v, i) => dot(v, reference[i]));
+  const cosines = candidate.map((v, i) => cosine(v, reference[i]));
   const stats = cosineStats(cosines);
   if (stats.min < minCosine) reasons.push(`min_cosine: ${stats.min.toFixed(6)} < ${minCosine}`);
   if (stats.mean < meanCosine) reasons.push(`mean_cosine: ${stats.mean.toFixed(6)} < ${meanCosine}`);
@@ -171,7 +185,7 @@ export function compareLateInteraction(candidate, reference, {
 
   const cosines = [];
   for (let d = 0; d < count; d++) {
-    for (let t = 0; t < tokenCounts[d]; t++) cosines.push(dot(candidate[d][t], reference[d][t]));
+    for (let t = 0; t < tokenCounts[d]; t++) cosines.push(cosine(candidate[d][t], reference[d][t]));
   }
   const tokenStats = cosineStats(cosines);
   if (tokenStats.min < minTokenCosine) reasons.push(`min_cosine: token ${tokenStats.min.toFixed(6)} < ${minTokenCosine}`);

@@ -180,8 +180,14 @@ async function runChild({ model, backend, measure }) {
           if (o.length !== r.length) return `${c.id}:count`;
           for (let t = 0; t < r.length; t++) {
             let d = 0;
-            for (let k = 0; k < r[t].length; k++) d += o[t][k] * r[t][k];
-            m = Math.min(m, d);
+            let no = 0;
+            let nr = 0;
+            for (let k = 0; k < r[t].length; k++) {
+              d += o[t][k] * r[t][k];
+              no += o[t][k] * o[t][k];
+              nr += r[t][k] * r[t][k];
+            }
+            m = Math.min(m, d / Math.sqrt(no * nr));
           }
           return `${c.id}:${m.toFixed(4)}`;
         });
