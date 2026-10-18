@@ -1024,7 +1024,7 @@
   "eval/benchmarks/hnsw-rivals/paper/aws/collect.sh": "f6c6ae553e788366a10f6b1349477d622608ba33a3b2b22be3d0c3968e99e3db",
   "eval/benchmarks/hnsw-rivals/paper/aws/launch.sh": "afa886fa5fe3c6bfdbe8e953a16bebcd989270c2bd1f09aef92053cfc0f6026f",
   "eval/benchmarks/hnsw-rivals/paper/aws/make_bundles.sh": "d1cc8f7309cccef9f106f35d9401d5927e6fb8155e7282ed59caa79893c5b593",
-  "eval/benchmarks/hnsw-rivals/paper/aws/run.sh": "deb2c5ea0b954502fcfe3ca70a80c813318e941075f5639600b7e1347c6e027e",
+  "eval/benchmarks/hnsw-rivals/paper/aws/run.sh": "c5351b400d83e2971933857dbb272451cc1d1bcaf3227dfa6879958cea265e43",
   "eval/benchmarks/hnsw-rivals/paper/aws/runpod_embed.sh": "f6edf68e08222fe6e39352cf2e4b0f2f8241debde8feff6244d0297e55454b43",
   "eval/benchmarks/hnsw-rivals/paper/aws/split_plans.py": "77f71da1a9c3100d9f0fdea403c475c7842287b9b7251f79379ce3b9e4006ac4",
   "eval/benchmarks/hnsw-rivals/paper/aws/teardown.sh": "ccbe1d723c3a828bf55ece4eefaa58fabe70b5e93018f9c87e9d9ad06a976d2e",
