@@ -14,6 +14,7 @@ Harness output formats (checked on rows of v1.1/v1.2, 2026-10-19):
 """
 
 import json
+import os
 import re
 import shlex
 
@@ -27,6 +28,87 @@ OPENHANDS_TAIL = re.compile(r"\n?\[(The command completed|Current working direct
 SHELL_EDIT = re.compile(
     r"(\bsed\s+(-[a-zA-Z]*i|--in-place)|\bperl\s+-[a-zA-Z]*i|\bpatch\b|\bgit\s+apply\b|\btee\s+[^|&;]*\.\w+"
     r"|(?<![0-9&])>>?\s*(?!/dev/|/tmp/|&)[\w./-]+\.\w+|open\((?!['\"]/tmp/)[^)]*['\"][wa]['\"])")
+# Edit detector v3 (2026-10-20, after two blind 50-trajectory checks): a write is an edit only if its
+# target is inside the repository. Command words (sed -i, perl -i, patch, git apply, cp, mv, tee) count
+# only at command position, outside here-document bodies. Absolute targets must be under /testbed or
+# /workspace/<dir>/; relative targets are resolved against the command's cd chain (unknown cwd = the
+# repository). Python writes (open(..., 'w'), .write_text/.write_bytes) are read from the whole command.
+CMD_WRITE = re.compile(r"(?:^|[;&|(\n])\s*(?:sudo\s+|command\s+)?(?P<cmd>sed|perl|patch|git\s+apply|cp|mv|tee)\b"
+                       r"(?P<args>[^;&|\n]*)")
+REDIRECT = re.compile(r"(?<![0-9&<>])>>?\s*(?P<t>['\"]?(?!/dev/|&)[\w./~-]+\.\w+['\"]?)")
+PY_WRITE = re.compile(r"open\(\s*(?P<q>['\"]?)(?P<open>[^'\",)]*)(?P=q)[^)]*['\"][wa]b?\+?['\"]"
+                      r"|(?:Path\(\s*['\"](?P<path>[^'\"]*)['\"]\s*\))?\.write_(?:text|bytes)\(")
+REPO_PATH = re.compile(r"^(/testbed(/|$)|/workspace/[^/]+/)")
+CD = re.compile(r"(?:^|[;&|(\n])\s*cd\s+(['\"]?)([^\s;&|'\"]+)\1")
+
+
+def in_repo_path(path):
+    """True for a relative path or an absolute path under the repository root."""
+    return not path.startswith("/") or bool(REPO_PATH.match(path))
+
+
+def _cwd_at(command, pos):
+    """The cwd the command's cd chain gives at pos: an absolute path, or None (unknown: the repository)."""
+    cwd = None
+    for m in CD.finditer(command[:pos]):
+        d = m.group(2)
+        if d.startswith("/"):
+            cwd = d
+        elif cwd is not None and d not in ("-",):
+            cwd = os.path.normpath(cwd + "/" + d)
+    return cwd
+
+
+def _target_in_repo(target, command, pos):
+    target = target.strip("'\"")
+    if not target:
+        return True
+    if target.startswith("/"):
+        return in_repo_path(target)
+    cwd = _cwd_at(command, pos)
+    return cwd is None or in_repo_path(cwd.rstrip("/") + "/")
+
+
+def shell_edit(command):
+    """True if a shell command writes a file inside the repository (edit detector v3)."""
+    # Quoted strings are blanked (same length), so `|` or `;` inside a pattern is not a separator.
+    unquoted = strip_heredocs(command)
+    plain = re.sub(r"'[^']*'|\"(\\.|[^\"\\])*\"", lambda q: " " * len(q.group(0)), unquoted)
+    for m in CMD_WRITE.finditer(plain):
+        cmd, args = m.group("cmd"), m.group("args").split()
+        if cmd in ("sed", "perl") and not any(re.match(r"^-[a-zA-Z]*i", x) or x.startswith("--in-place")
+                                              for x in args):
+            continue
+        if cmd in ("patch",) or cmd.startswith("git"):
+            if _target_in_repo("", plain, m.start()):
+                cwd = _cwd_at(plain, m.start())
+                if cwd is None or in_repo_path(cwd.rstrip("/") + "/"):
+                    return True
+            continue
+        files = [x for x in args if not x.startswith("-")]
+        if not files:
+            continue
+        target = files[0] if cmd == "tee" else files[-1]
+        if cmd in ("cp", "mv") and len(files) < 2:
+            continue
+        if _target_in_repo(target, plain, m.start()):
+            return True
+    for m in REDIRECT.finditer(unquoted):
+        if plain[m.start()] != ">":  # inside a quoted string
+            continue
+        if _target_in_repo(m.group("t"), plain, m.start()):
+            return True
+    for m in PY_WRITE.finditer(command):
+        target = m.group("open") if m.group("open") is not None else (m.group("path") or "")
+        if target.startswith("/") and not in_repo_path(target):
+            continue
+        return True
+    return False
+
+
+def editor_edit(args):
+    """str_replace_editor create/str_replace/insert on a path inside the repository."""
+    return args.get("command") in EDIT_COMMANDS and in_repo_path(args.get("path") or "")
 HEREDOC = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n(.*?)(?:\n\s*\2\s*(?:\n|$)|$)", re.S)
 QUIET = {"cd", "export", "source", "set", "true", "pushd", "popd", "unset", "alias"}
 OPENHANDS_CWD = re.compile(r"\[Current working directory: ([^\]\n]+)\]")
@@ -71,6 +153,10 @@ def normalize_output(harness, content):
         cut = "<response clipped>" in content or "characters were elided" in content
         if content.startswith("OBSERVATION:\n"):
             content = content[len("OBSERVATION:\n"):]
+        if content.startswith("Observation: "):
+            content = content[len("Observation: "):]
+        if content.strip() == "Your command ran successfully and did not produce any output.":
+            content = ""
         return content, cut
     cut = "Observation truncated due to length" in content
     return OPENHANDS_TAIL.sub("", content), cut
@@ -212,13 +298,13 @@ def grep_calls(row):
         except ValueError:
             args = {}
         if fn == "str_replace_editor" and args.get("command") in EDIT_COMMANDS:
-            first_edit_seen = True
+            first_edit_seen |= editor_edit(args)
             continue
         if fn not in BASH_TOOLS:
             continue
         command = args.get("command") or ""
         pipelines = split_commands(command)
-        is_edit = bool(SHELL_EDIT.search(command))
+        is_edit = shell_edit(command)
         if pipelines is None:
             first_edit_seen |= is_edit
             continue
