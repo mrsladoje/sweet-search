@@ -1,0 +1,66 @@
+{
+"step": "laptop-dev-r1",
+"builds": [],
+"jobs": [
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"split": "dev",
+"build_seed": 42,
+"comparison": "B",
+"round": 1,
+"kind": "timing",
+"pagecache": "warm",
+"kv": 43,
+"system": "ours_cascade",
+"S1": 400,
+"EF": 400
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"split": "dev",
+"build_seed": 42,
+"comparison": "B",
+"round": 1,
+"kind": "timing",
+"pagecache": "warm",
+"kv": 43,
+"system": "ours_cascade",
+"S1": 50,
+"EF": 50
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"split": "dev",
+"build_seed": 42,
+"comparison": "B",
+"round": 1,
+"kind": "timing",
+"pagecache": "warm",
+"kv": 43,
+"system": "faiss_bin_flat",
+"family": "faiss_bin_flat",
+"build_params": {},
+"search": {
+"refine": 43
+}
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"split": "dev",
+"build_seed": 42,
+"comparison": "B",
+"round": 1,
+"kind": "timing",
+"pagecache": "warm",
+"kv": 43,
+"system": "faiss_exact",
+"family": "faiss_exact",
+"build_params": {},
+"search": {}
+}
+]
+}

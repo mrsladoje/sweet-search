@@ -1,0 +1,19 @@
+{
+"step": "laptop-build",
+"builds": [
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "ours",
+"build_seed": 42
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"family": "faiss_bin_flat",
+"build_params": {},
+"build_seed": 42
+}
+],
+"jobs": []
+}
