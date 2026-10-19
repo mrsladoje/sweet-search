@@ -22,14 +22,14 @@ Most machine time in v2 went to three items: rebuilding container environments, 
 
 1. **Cost the v2 scope.** The money in v2 is almost all in the continuation experiment (about $150–400) and the end-to-end A/B (about $300–2,000). The v1 must-haves cost almost nothing in API spend. The time risk was engineering and machine time, not money.
 2. **Find what uses machine time.** A grep on a local checkout takes milliseconds. Download, environment setup and agent runs take the time. In v2 these were: container images for every replayed task (0.5–1.4 GB each), the ext4/overlay/APFS/ripgrep-R=10 grid for order dependence, the small LLM reranker, the full speed grid (ugrep, zoekt, BSD grep, git grep, Mac and Linux), and the agent experiments.
-3. **Keep what carries the value.** Citations for this kind of paper come from a benchmark that is easy to run, numbers that people can quote, an early date, and records that join to SWE-bench-style task IDs. The census, the truncation-loss rate, the different-machines result and the selection-track release give all four. The agent experiments mostly help acceptance at a venue, less citations.
+3. **Keep what answers the research question.** The question is how much evidence the output interface hides, and whether a cheap selector keeps more of it at the same budget. The census, the truncation-loss measurement, the order-dependence result, the selector benchmark and the label audit answer it. None of them needs containers, agent runs or the full speed grid. What v1 cannot show is better agent performance or lower task cost; that stays future work (ISSTA and ASE).
 4. **List the risks of the cut, then test them before committing.** Three risks could break "most of the value at 3 days":
    - clean checkouts could fail on exactly the large outputs that the paper is about;
    - a 5k-trajectory sample could give too few usable calls;
    - the ext4 order effect, which is the paper's hook, was not verified.
 5. **Run a half-day yield check** (`YIELD_CHECK.md`) that tests the three risks, then fix the scope from its numbers. §A.3 gives the results.
 
-The claim "v3 keeps about 90% of the value of v1" is a judgement, not a measurement. For the ISSTA version, v3 keeps less, because reviewers there will ask for causal agent evidence.
+The justification for the cut is that **the reduced study answers its evidence-selection question with much less work**. It makes no forecast of citations or of a share of "value". Reviewers at ISSTA will ask for causal agent evidence, which v1 does not have.
 
 ### A.3 Evidence from the yield check
 
@@ -46,7 +46,7 @@ All per-call numbers come from dev repositories only (provisional split: sha256(
 | Only one grep in the command | 8,134 |
 | Visible output was cut | **754** (0.15 per trajectory) |
 
-- 97% of the cuts came from the agent's own `head`. Only 18 cuts came from a harness limit.
+- In this filtered yield-check sample, 97% of the cuts came from the agent's own `head`, and only 18 came from a harness limit. This describes these three harnesses on these models, not coding agents in general.
 - The largest loss in the funnel is chained greps (`grep a; grep b`). They halve the pool.
 
 **Replay of 240 dev calls on clean checkouts** (GNU grep 3.12, shallow fetch of the base commit, no container):
@@ -57,7 +57,9 @@ All per-call numbers come from dev repositories only (provisional split: sha256(
 | Cut calls: every visible line found in the replay | 132/147 (90%) | 91/95 | 41/52 |
 | Of those, a real overflow (full output larger) | 124/132 (94%) | 85/91 | 39/41 |
 | Of those, a gold-patch file in the full output (evidence-bearing, file level) | 49/124 (40%) | 26/85 | 23/39 |
-| Of those, no gold-patch file visible (truncation miss, file level) | **5/49 (10%; Wilson 95% 4–22%)** | 5/26 | 0/23 |
+| Of those, no gold-patch file visible (truncation miss, file level) | 5/49 (10%; Wilson 95% 4–22%) | **5/26 (19%; Wilson 95% 9–38%)** | 0/23 |
+
+**Independent cases.** The 49 evidence-bearing calls come from 48 tasks in 45 repositories. The 26 on SWE-rebench-V2 come from 26 tasks in 24 repositories. The 5 misses are 5 different tasks in 5 different repositories (swc, urlaubsverwaltung, go-tpm, cargo-generate, Sage carbon), from two harnesses and four models. So they are not one failure repeated. Five events are still a small base; the intervals above ignore clustering.
 
 **What these numbers decided:**
 
@@ -74,10 +76,11 @@ All per-call numbers come from dev repositories only (provisional split: sha256(
 |---|---:|
 | Candidate cut calls | about 11,000 |
 | Evidence-bearing overflowing calls | about 2,900 (about 1,200 held-out) |
-| File-level truncation misses at the pooled 10% | about 290 |
+| File-level truncation misses at the SWE-rebench-V2 rate of 19% (9–38%) | about 560 (about 250–1,100) |
+| File-level truncation misses at the pooled 10% (a conservative planning floor, not the observed rate for this source) | about 290 |
 | Replay cost at the measured 3.4 s and 43 MB per call | about 10–11 hours, network-bound; delete each checkout after use |
 
-These rates are file level. The paper's L1 labels are at record level, where misses will be more frequent. The interval above ignores clustering (about 15 trajectories share each task), so it is too narrow. **Gate A (about 5%) is inside the current interval, so the full run decides it, not this sample.**
+These rates are file level. The paper's primary L1 level is the definition (§3.3), where both the evidence-bearing share and the miss rate can differ a lot from file level; the pilot measures them first. The intervals ignore clustering (about 15 trajectories share each task), so they are too narrow. **The SWE-rebench-V2 interval (9–38%) lies above the Gate A threshold of about 5%, but five events cannot settle the gate. The full dev pilot decides it.**
 
 ### A.4 What v3 drops or defers, and the cost of each cut
 
@@ -98,7 +101,8 @@ These rates are file level. The paper's L1 labels are at record level, where mis
 | Work | Where | Estimate | Basis |
 |---|---|---|---|
 | Parse all local trajectories (census E0 and the candidate list) | Mac | under 10 minutes | 65 s measured for the 5k sample |
-| Replay SWE-rebench-V2 candidates (about 11,000 cut calls) | Mac | about 10–11 hours | 3.4 s per call measured |
+| Replay SWE-rebench-V2 candidates (about 11,000 cut calls), dev first, held-out after the pre-registration | Mac | about 10–11 hours | 3.4 s per call measured |
+| Rival tools (Signal Grep, RTK) on the same checkout, before it is deleted | Mac | not measured; check on the first 50 calls | they read live files |
 | Replay uncut calls for the synthetic-overflow set (about 3,000) | Mac | about 3 hours | same |
 | Container gap sample (50 calls) | Box (amd64) | 1–2 hours | 0.8–1.4 GB per image |
 | Order dependence: two ext4 images + tmpfs on about 1,000 evidence-bearing calls | Box | about 2 hours | the ext4 test took under 1 minute for 325 files |
@@ -107,7 +111,26 @@ These rates are file level. The paper's L1 labels are at record level, where mis
 | Optional: Scale-SWE image HEADs for up to 200 tasks | Box | 2–4 hours, about 100–200 GB transfer | 0.5 GB per image; pull and delete one at a time (box has about 24 GB free) |
 | **Total** | | **about 1.5–2 days; 2.5 with the Scale-SWE option** | |
 
-Replays are network-bound and use little CPU. They still never run during a peer's timed window ([[feedback_no_tests_during_mac_bench_queue]]). The machine budget does not shorten engineering or annotation time (§12).
+Replays are network-bound and use little CPU. They still never run during a peer's timed window ([[feedback_no_tests_during_mac_bench_queue]]). **Three days is a compute target, not a completion estimate.** The machine budget does not shorten engineering, annotation or writing time (§12).
+
+### A.6 Changes after the external reviews of v3 (2026-10-19)
+
+Two reviews (ChatGPT, Claude web) approved the scope with changes. Adopted:
+
+| Change | Where |
+|---|---|
+| The agent's own `head` is the headline budget. The selector prints its reveal order in grep's `path:line:text` format, so the agent's `\| head -N` yields the selector's N-line prefix with no harness change. A one-line summary goes first, not a footer last. Token budgets become secondary. | §0, §2, §5.1, §7 |
+| L1 at the **definition** level is primary (a match counts if it falls inside the span of a definition that the gold patch touches). File and line levels are secondary. The pilot checks the definition-level evidence-bearing rate first. | §3.3, E1 |
+| A trajectory-level exposure rate: the share of trajectories with at least one evidence-bearing truncation miss before the first edit, reported as a lower bound. | §2, E2 |
+| Source-specific rates and counts of independent tasks and repositories, not the pooled rate. | §A.3 |
+| Gate B's threshold is a relative reduction, fixed from the dev pilot before any held-out replay. | E4, S5 |
+| Rival tools run on the live checkout during the replay, and their outputs are frozen with provenance. A tool that cannot run headless is not replaced by a hand-written imitation; the frequency-order arm is labelled as our own baseline. Signal Grep's driver is timeboxed to half a day. | §4, S2 |
+| Held-out protection: the 1,115 repositories inspected per call in the yield check are listed in `mine/inspected_repos.txt` and stay in dev in the final split. Dev replay and the pilot come first; held-out is replayed only after the pre-registration. | §3.4, §13 |
+| Wording: the 50 shuffles are a sensitivity experiment, not an upper bound. L3 is a behavioural proxy without truncation censoring; it still has position and policy bias. | E3, §3.3 |
+| Optional from the start, each with an entry check: E5a (count comparable miss/shown pairs within task, model and harness first); the backend 2×2; CPU neural rerankers (measure throughput on a small batch first). | E4, E5a, §12 |
+| Calendar: a writing week, the second annotator found now, an early arXiv submission, and an endorsement check. | §12 |
+
+Not adopted: "v3 keeps the things that drive citations" (a forecast; see §A.2).
 
 ---
 
@@ -116,10 +139,12 @@ Replays are network-bound and use little CPU. They still never run during a peer
 **Research question.** Search often finds useful evidence. How much of that evidence does the output interface then hide from the agent? Can we keep it inside the same context budget?
 
 Agents call grep constantly. Both sides of the grep-versus-semantic-search debate agree on that. Harnesses and agents then cut the output by position:
-- the agent's own `| head` (97% of the cuts in the yield check);
+- the agent's own `| head` (97% of the cuts in the filtered yield-check sample);
 - the Claude Code line limit;
 - the Codex head-plus-tail split;
 - SWE-agent dropping every result above its cap.
+
+**The one-sentence story.** Agents already cut grep with `head`; we change the order, not the cut.
 
 No published work measures what this cut costs coding agents. This paper does three things:
 1. It measures the cost.
@@ -194,9 +219,9 @@ Rival documentation describes features, not measured results. The benchmark meas
 - **Candidate set C.** All source records the call produces at the replayed revision: the full match set M plus its context records.
 - **Rendering.** The exact bytes printed for a chosen set of records, including paths, headers, `--` separators, role tags and the footer. Excerpts are built independently of the budget: one fixed clipping rule per line.
 - **Budget.**
-  - The **primary** budget is a token budget T on the complete serialized rendering. The tokenizer is fixed and named: o200k, plus the Claude tokenizer if available.
-  - The **secondary** budget is a line budget N, for readability.
-  - The **headline** budget for a call is the **token count of its as-seen rendering**: what the agent's `head -N`, or the harness cap that applied, actually printed. Every policy pays for its paths, headers and footer from the same tokens the agent received. The selector is reported with and without its footer at this budget.
+  - The **headline** budget is the **agent's own line limit N**: the `head -N` it typed (97% of the cuts in the yield-check sample). Every policy prints in grep's `path:line:text` format and is cut at the same N lines. This is the exact deployment that those calls would see, because a selector that prints its reveal order line by line gives the agent's `head` the selector's N-line prefix. The selector is reported with and without its one-line summary header, which uses one of the N lines.
+  - For calls cut by a harness limit (characters or tokens), the headline budget is that limit, applied to every policy.
+  - The **secondary** budget is a token budget T on the complete serialized rendering, for harness integration (a harness that cuts by tokens). The tokenizer is fixed and named: o200k, plus the Claude tokenizer if available.
 - **Policy.** A function from (call, C, budget) to the rendering. Query-only policies see only the call. Task-informed policies also see the issue text.
 - **Events,** per call and label set:
   - **Retrieval miss.** C contains no labelled evidence.
@@ -211,6 +236,7 @@ Rival documentation describes features, not measured results. The benchmark meas
   1. **Evidence-bearing overflowing calls:** C's full rendering exceeds the budget, and C contains L1 evidence. This is the **primary** base. Gate A, the Gate B threshold and the E5a groups use it. In the yield check, only 40% of overflowing calls were evidence-bearing at file level; the others looked for callers, tests or configuration.
   2. **Eligible overflowing calls:** C's full rendering exceeds the budget.
   3. **The sampled workload:** all eligible calls.
+- **Trajectory-level exposure.** The share of trajectories with at least one evidence-bearing truncation miss before the first edit. It is a **lower bound**, because eligibility excludes chained greps and post-edit greps. The paper says so wherever it prints the number.
 - **Budget utilization.** The share of the budget filled. The prefix cut can leave room unused when a later, shorter item would fit. We report it.
 
 ## 3. Data, replay fidelity and labels
@@ -266,22 +292,24 @@ The yield check measured tier-O agreement at 96% for SWE-rebench-V2 cut calls (9
 
 ### 3.3 Labels
 
-- **L1, gold-patch evidence (all calls).** Map the gold patch to the base revision:
-  - Deleted and modified lines count as evidence.
-  - Added lines map to the enclosing definition at the base revision, or else to the anchor lines around the hunk.
-  - Files the patch creates are excluded, because they cannot be retrieved.
+- **L1, gold-patch evidence (all calls).** Map every hunk of the gold patch to the base revision, then to the span of its **enclosing definition** (function, method, class or top-level block) at that revision. A match record counts as evidence if it falls inside such a span. Reason: grep matches are lines that contain the pattern (often the `def` line or a call), while the patch usually edits lines in the body, so exact-line overlap is rare. Hunks outside any definition use the anchor lines around the hunk. Files the patch creates are excluded, because they cannot be retrieved.
+  - **Levels:** definition (primary), file (the level of the yield check), and line (strict). All three are reported.
+  - **Definition spans** come from the ss-grep code-graph entity spans where the language is supported (as `eval/grep-allocation-replay/collect.mjs` reads them), and else from tree-sitter. The share of hunks mapped to a definition is reported by language.
+  - The E1 pilot measures the definition-level evidence-bearing rate first. If it is much lower than the 40% seen at file level, the pool is resized before any held-out replay.
 
-  L1 is reported at **record level** (the primary level) and at **file level** (the level of the yield check). L1 is a localization proxy, not all useful evidence.
+  L1 is a localization proxy, not all useful evidence.
 - **v1 label audit (required).** A stratified audit of at least 100 calls, with two annotators on an overlap for agreement. It checks:
   1. whether the base-revision mapping of L1 is correct;
   2. whether the conclusions change when callers, tests and configuration also count as evidence.
 - **L2, audited evidence (about 300 calls).** ISSTA. Seeded with the context that independent successful trajectories of the same task used, as SWE-Explore does.
-- **L3, next-opened file (behavioural).** Only on tier-F calls, where the agent saw everything. So L3 evaluates selection only on the synthetic-overflow set.
+- **L3, next-opened file (behavioural).** Only on tier-F calls, where the agent saw everything. There it is a behavioural proxy **without truncation censoring**; position bias and the agent's own policy still shape it. So L3 is secondary, and only on the synthetic-overflow set.
 
 ### 3.4 Independence and splits
 
 - **Deduplication.** Keep one trajectory per (task, harness, model), and collapse identical repeated commands. Report the counts of calls, unique tasks and unique repositories.
-- **Split.** By repository: 60% dev, 40% held-out, seed 42. The yield check used the provisional hash split sha256("42:" + repo) < 0.6. Pre-registration (S5) fixes the final split, stratified by harness and language, and spends the repository budget on held-out first.
+- **Split.** By repository: 60% dev, 40% held-out, seed 42. The yield check used the provisional hash split sha256("42:" + repo) < 0.6. Pre-registration (S5) fixes the final split, stratified by harness and language.
+- **Inspected repositories stay in dev.** The 1,115 repositories with per-call records or replays from the yield check are listed in `mine/inspected_repos.txt` (frozen 2026-10-19). The final split assigns all of them to dev; the stratified draw applies to the rest.
+- **Order of work.** Dev replay, the pilot and the selector freeze come first. Held-out calls are replayed only after the pre-registration is public.
 - **Intervals.** Cluster bootstrap by repository, with tasks nested inside. About 15 trajectories share each task, so per-call intervals without clustering are too narrow.
 - **Held-out discipline.** Look at held-out only as aggregates, and only at milestones (CLAUDE.md rule).
 
@@ -302,13 +330,14 @@ The repository is public. Before any held-out replay, publish a tagged commit wi
 5. **Round robin over files** in sorted path order: the file-diversity baseline.
 6. **Frequency order.** Files sorted by match count, then cut with `head` (the Signal Grep ordering).
 
-**Rival tools,** run as real processes on the frozen calls: Signal Grep and RTK; Rustygrep and tokenix only if they run headless with no extra work.
-- **Budget rule.** We take each tool's native output and cut it at T with the same longest-fitting-prefix rule as everything else (§5.1). We also report each tool at its native size, with its token count.
-- **Headless drivers.** Signal Grep runs as a Pi extension or an MCP server. S4 includes time to build a headless driver.
+**Rival tools,** run as real processes: Signal Grep and RTK; Rustygrep and tokenix only if they run headless with no extra work.
+- **They run on the live checkout.** These tools read files, repository structure or parsers themselves, so frozen records are not enough. They run during the replay, on the same checkout, before it is deleted. Their outputs are saved with provenance (tool version, command, checkout commit), and all later scoring is offline.
+- **Budget rule.** Each tool's native output is cut at the call's N lines (headline) and at T tokens (secondary). We also report each tool at its native size.
+- **Headless drivers.** RTK is a plain CLI. Signal Grep runs as a Pi extension or an MCP server; its MCP client driver is **timeboxed to half a day**. If it overruns, Signal Grep moves to ISSTA. A tool that cannot run is never replaced by a hand-written imitation presented as that tool; the frequency-order arm (item 6) is labelled as our own baseline.
 
 **The ss-grep selector** (§5), frozen, with these ablations: no coverage floor; no declarations-first; no file-kind prior; no saturation; the divisor rule set to D'Hondt, Hamilton or Sainte-Laguë; the saturation constant k ∈ {1, 2, 4}.
 
-**Task-informed baselines** (separate sub-track): BM25 on the issue text (GrepRAG style), one cross-encoder reranker (RARG style), and SWE-Pruner if it runs on CPU. These are **task-informed baselines, not upper bounds**. The small LLM reranker and Squeez move to ISSTA.
+**Task-informed baselines** (separate sub-track): BM25 on the issue text (GrepRAG style); one cross-encoder reranker (RARG style) and SWE-Pruner, each only after its CPU throughput is measured on a 50-call batch and the full run fits the budget. These are **task-informed baselines, not upper bounds**. The small LLM reranker and Squeez move to ISSTA.
 
 **Oracle.** It knows the L1 labels. It gives the ceiling.
 
@@ -327,14 +356,14 @@ The selector builds one deterministic **reveal order** over items. An item is on
 3. **Phase 2, apportionment.** Interleave the remaining items by the Sainte-Laguë quotient w_f / (2s_f + 1). A file that runs out of items leaves the sequence. Ties break by admission order.
 4. **Order inside a file.** Declaration lines first, then the rest in line order.
 
-**The cut and the rendering:**
-- **Footer.** The footer gets a reservation f(T) = min(r, ⌊αT⌋), with α < 1. Here r is the full footer size, and α is fixed in the pre-registration (for example α = 0.15). The item space T − f(T) never decreases as T grows. Small budgets (`head -5`, `head -10`) get small footers. The footer gives:
-  - the exact number of hidden match records and hidden files;
-  - the unseen files with their match counts, as many as fit;
-  - one suggested narrowing (`--include` or a subdirectory);
-  - a `--more` cursor.
+**The rendering, line mode (headline).** The selector prints the whole reveal order line by line, in grep's normal `path:line:text` format (context lines in grep's `path-line-text` form, `--` between groups). It does not cut. The agent's own `| head -N` makes the cut, so the agent sees the selector's N-line prefix. Every prefix is a good prefix, which is what the nested-set property guarantees (§5.2).
+- **Summary header.** The first line is a one-line summary, for example `# 1,312 matches in 183 files, ranked; full list: --raw`. A footer at the end never survives `| head`, so the summary goes first. Results are reported with and without this line.
+- **Print order** is the reveal order itself. Phase 1 shows one line from each file in turn, so files are interleaved rather than grouped. Whether interleaving hurts readability is a question for the continuation experiment (ISSTA).
+
+**The rendering, token mode (secondary, harness integration).**
+- **Footer.** The footer gets a reservation f(T) = min(r, ⌊αT⌋), with α < 1. Here r is the full footer size, and α is fixed in the pre-registration (for example α = 0.15). The item space T − f(T) never decreases as T grows. The footer gives the exact number of hidden match records and hidden files; the unseen files with their match counts, as many as fit; one suggested narrowing; and a `--more` cursor.
 - **Cut.** The rendering shows the first k items, where k is the **largest value such that every prefix of length ≤ k renders within T − f(T)**. The cost need not be additive: with `-A/-B`, adding one item can merge two context groups and remove a `--` separator. This definition still gives one well-defined k.
-- **Print order.** The rendering groups the chosen items by file.
+- **Print order** groups the chosen items by file.
 
 **Constants and freezing.**
 - S4 keeps k = 2 and the priors (1, 0.5, 0.25) **unchanged** from the shipped algorithm. It changes only the structure: no file cap, the footer rule, and the reveal-order cut. So all numeric constants were set before any public-trace mining.
@@ -345,10 +374,11 @@ The selector builds one deterministic **reveal order** over items. An item is on
 ### 5.2 Properties (prove each for this exact algorithm)
 
 - **Match exactness.** Every displayed match record is in M. Every displayed context record is a real source span at the revision, with clipping stated. The hidden match count equals |M| minus the matches shown. Omitted context is reported separately. Exact *matching* is a separate property from complete *presentation*: the output is incomplete by design, and the footer says so.
-- **Nested sets.** For budgets T ≤ T′, the items shown at T are a subset of those shown at T′. The proof uses three facts: the reveal order does not depend on the budget; excerpts do not depend on the budget; the item space T − f(T) does not decrease in T, and the cut is the largest all-prefixes-fit k. The same holds for line budgets.
+- **Nested sets.** In line mode the output at N lines is the first N lines of one fixed rendering, so for N ≤ N′ the shown lines are a prefix of those at N′, and print order is stable too. In token mode, for T ≤ T′, the items shown at T are a subset of those shown at T′. The proof uses three facts: the reveal order does not depend on the budget; excerpts do not depend on the budget; the item space T − f(T) does not decrease in T, and the cut is the largest all-prefixes-fit k.
+- **Coverage floor, line mode.** With no context lines, `head -N` shows one line from each of the top N − 1 files in admission order (one line goes to the summary header).
 - **Continuation stability.** `--more` returns the next items in the same reveal order. It never repeats or skips one.
 - **Coverage floor, in tokens.** Let c_i be the rendered cost of the first i phase-1 items. The sufficient condition is T − f(T) ≥ max over i ≤ j of c_i. Under that condition, each of the top j files in admission order has at least one item displayed.
-- **Not claimed:** that print order stays stable across budgets; that the hand-set priors are unbiased predictors of relevance; that budget use is maximal.
+- **Not claimed:** that print order stays stable across token budgets (in token mode, file grouping can insert lines above lines already shown); that the hand-set priors are unbiased predictors of relevance; that token-mode budget use is maximal.
 
 ### 5.3 Where each component can matter
 
@@ -370,11 +400,17 @@ An intent-conditioned prior: it drops the test penalty when the pattern or the p
 | ss-grep engine | native truncation | The effect of the backend alone |
 | ss-grep engine | ss-grep selector | The combined product |
 
-Formatting and budgets are equal in every cell. The ss-grep engine cells need an index per checkout, so they run on a stratified subset of about 300 calls.
+Formatting and budgets are equal in every cell. The ss-grep engine cells need an index per checkout, so they run on a stratified subset of about 300 calls, during the replay. **Optional for v1:** if indexing checkouts turns out expensive, the 2×2 moves to ISSTA, and v1 reports only the reference-backend rows.
 
 ## 6. Experiments
 
-**Design rule for v1.** Each call is replayed once. The replay writes the frozen record: the call, the full candidate set C, the visible output, the labels and the tier. E1–E4 and E7's overhead read only these records. Only the replay, the container sample, E3 and the 2×2 engine cells touch repositories.
+**Design rule for v1.** Each checkout is visited once. While it exists, every consumer that needs live files runs on it, in this order:
+1. the reference search, which writes the frozen record (the call, the full candidate set C, the visible output, the labels and the tier);
+2. the rival tools, with outputs and provenance saved;
+3. the ss-grep engine cells of the 2×2, on their subset;
+4. the definition spans for L1.
+
+Then the checkout is deleted. E1–E4 and E7's overhead read only the saved records. Outside the replay, only the container sample and E3 touch repositories.
 
 ### E0. Census (C1)
 
@@ -395,18 +431,18 @@ On all local trajectories (about 107k; reported by source, and by harness × mod
 
 The pilot delivers five outputs, at the headline budget:
 1. Eligibility and replay agreement: counts for each precondition and each tier; agreement over all uncut calls attempted, by size.
-2. Truncation-miss prevalence on all three bases, at record and file level, as reconstruction-based estimates with the sensitivity range.
-3. Recovered, newly lost and net outcomes against "as seen" and against round robin, for the shipped selector.
+2. The definition-level evidence-bearing rate (checked first; it sizes the pool), then truncation-miss prevalence on all three bases at definition, file and line level, as reconstruction-based estimates with the sensitivity range. Counts of distinct tasks and repositories for every rate.
+3. Recovered, newly lost and net outcomes against "as seen" and against round robin, for the shipped selector, at the agent's own N. These set the Gate B threshold (E4).
 4. The share of calls whose prefix reaches phase 2.
 5. An early label check on about 50 calls from the v1 audit.
 
-**Gate A** uses the evidence-bearing base at record level. If the truncation-miss rate is about 5% or below, report **"low observed prevalence"**. Do not call it "harmless": harm is a question for the agent experiments. The paper then centres on the census, the benchmark and the enumeration-order result. The yield check gives 10% at file level (4–22%), so both outcomes are still possible.
+**Gate A** uses the evidence-bearing base at definition level. If the truncation-miss rate is about 5% or below, report **"low observed prevalence"**. Do not call it "harmless": harm is a question for the agent experiments. The paper then centres on the census, the benchmark and the enumeration-order result. The yield check gives 19% at file level on SWE-rebench-V2 (5/26; 9–38%), so both outcomes are still possible at definition level.
 
 Write the abstract **after** this gate.
 
 ### E2. Truncation loss (C2)
 
-The full eligible set and every policy in §4, items 1–4: all three events, on all three rate bases; token and line budgets; L1 at record and file level, with the v1 audit subset; results by tier, by harness and by environment (clean checkout or container sample), with the sensitivity range.
+The full eligible set and every policy in §4, items 1–4: all three events, on all three rate bases; the agent's N (headline) and token budgets; L1 at definition, file and line level, with the v1 audit subset; results by tier, by harness and by environment (clean checkout or container sample), with the sensitivity range; and the **trajectory-level exposure rate**, as a lower bound.
 
 ### E3. Order dependence (C2)
 
@@ -415,7 +451,7 @@ The full eligible set and every policy in §4, items 1–4: all three events, on
 - tmpfs (on the box);
 - APFS (the Mac, from the main replay).
 
-Fifty random shuffles of C give an **upper bound**, reported only as that. The container overlay and ripgrep run-to-run order move to ISSTA.
+Fifty random shuffles of C are a **sensitivity experiment**: they show how much order can matter, but they need not include the most extreme order, so they are not an upper bound. The container overlay and ripgrep run-to-run order move to ISSTA.
 
 **What changes and what does not.** Native streaming truncation can change between these environments. Sorted-path truncation and content-based ranking cannot, by construction; their invariance is not a finding.
 
@@ -427,12 +463,12 @@ Fifty random shuffles of C give an **upper bound**, reported only as that. The c
 
 **Two populations,** reported side by side and never pooled:
 1. **Natural overflow.** Tiers O+ and O, at the headline budget.
-2. **Synthetic overflow.** About 3,000 tier-F calls, at imposed budgets of 25%, 50% and 75% of the full rendering, and at the as-seen budgets of comparable natural-overflow calls. Fidelity is complete here, and L3 is unbiased.
+2. **Synthetic overflow.** About 3,000 tier-F calls, at imposed line limits of 25%, 50% and 75% of the full output, and at the `head -N` values of comparable natural-overflow calls. Fidelity is complete here, and L3 has no truncation censoring.
 
-E4 runs offline on the frozen records: all arms at equal token budgets (primary) and equal line budgets; the 2×2 factorial on its subset; the ablations with the phase-2 diagnostic; results by intent stratum; budget utilization for each arm. Held-out runs once, at the milestone.
+E4 runs offline on the frozen records: all arms in grep's format at the agent's N (headline) and at equal token budgets (secondary); the 2×2 factorial on its subset; the ablations with the phase-2 diagnostic; results by intent stratum; budget utilization for each arm. Held-out runs once, at the milestone.
 
 **Gate B. Decision metric:** the paired net reduction in truncation-miss rate of the frozen selector against round robin, on held-out evidence-bearing overflowing calls, at the headline budget. Computed on natural overflow; it must agree in sign on synthetic overflow. Recovered and newly lost are always reported beside it.
-- **Threshold, pre-registered:** for example, a net reduction of at least 3 points, with the cluster-bootstrap interval excluding 0.
+- **Threshold, pre-registered:** a **relative** reduction of the round-robin miss rate, fixed from the dev pilot before any held-out replay (for example, at least 20% of the dev miss rate), with the cluster-bootstrap interval excluding 0. A fixed point threshold would mean different things at a 10% and a 25% base rate.
 - **Also required:** against "as seen", newly lost evidence stays within the pre-registered non-inferiority margin.
 - **If Gate B fails:** ship round robin as the default, and make the empirical discovery the centre of the paper.
 - **If Gate B passes:** the method contribution stands, together with its proven properties.
@@ -441,7 +477,7 @@ An internal dev result exists: on 154 overflow calls from our own traces, answer
 
 ### E5. Agent evidence (C5)
 
-**(a) Observational, $0 (v1).** The premise holds: most tasks have 10–25 trajectories.
+**(a) Observational, $0 (v1, optional).** Most tasks have 10–25 trajectories, but that does not guarantee comparable pairs. **Entry check:** after the dev replay, count tasks that have both a "miss" anchor and a "shown" anchor within the same model and harness. Build the analysis only if that count supports it; otherwise it moves to ISSTA.
 - **Anchor.** Each trajectory is anchored at its first eligible overflowing call. This removes the length confound.
 - **Groups.** Only evidence-bearing anchors qualify. Within a task, and stratified by model and harness, compare trajectories whose anchor was a truncation miss with those whose anchor displayed the L1 evidence.
 - **Measures, from the anchor on:** steps to the first opening of an L1 file, re-grep rate, and resolve rate. Match or adjust on the anchor's step index.
@@ -468,11 +504,11 @@ Edit files and switch branches between calls. Show by byte comparison that ss-gr
 ## 7. Product work
 
 In priority order. Items 1–2 are needed for v1; the rest are for ISSTA and ASE.
-1. **Two modes.** Raw mode: exact and complete, for scripts. Agent mode: budgeted, with a hard output limit; opt-in, and on by default only in agent hooks.
+1. **Two modes.** Raw mode: exact and complete, for scripts. Agent mode: the full reveal order in grep's format with the one-line summary first, so the agent's own `| head` cuts it (line mode, §5.1); a token budget only where a harness asks for one. Opt-in, and on by default only in agent hooks.
 2. **Selector library.** It takes normalized GNU grep records, `rg --json` or engine records, and builds the reveal order of §5.1. It ships as a CLI filter and a hook, so RTK, harnesses and other tools can adopt it without our index.
 3. **GNU grep compatibility adapter with passthrough.** Support basic-regex `\|`, `-E`, `-l`, `-c`, `-v` and stdin, in order of their census share. Match GNU exit codes and stderr exactly. Pass anything unsupported to the real grep unchanged. Publish the coverage percentage. (Today's front end accepts `-n -r -i -w -F -A -B -C --include --exclude`; confirm the gaps first.)
-4. **Token-aware rendering.** Clipping does not depend on the budget; context lines count against the budget; the footer reservation is f(T) = min(r, αT).
-5. **Provenance and continuation.** The §5.1 footer; `--more`, with the continuation guarantee.
+4. **Token-aware rendering (harness integration).** Clipping does not depend on the budget; context lines count against the budget; the footer reservation is f(T) = min(r, αT).
+5. **Provenance and continuation.** The summary header (line mode) and the footer (token mode); `--more`, with the continuation guarantee.
 6. **Role tags and intent controls.**
 7. **Freshness under edits and branch switches** (E6).
 8. **Native lane parity.** Every change that shapes output is ported to the native Rust lane in the same commit and verified with the shadow check (CLAUDE.md).
@@ -535,32 +571,46 @@ In priority order. Items 1–2 are needed for v1; the rest are for ISSTA and ASE
 - E3(a) order dependence on ext4 ×2, tmpfs and APFS;
 - E4 selector benchmark with Gate B (natural and synthetic overflow);
 - the v1 label audit (at least 100 calls, overlap double-annotated);
-- E5a observational analysis;
-- E7 overhead and the Mac/Linux table;
+- E7 selector overhead;
 - the selection-track release (smoke set and full set).
+
+**v1 optional, each behind its entry check:** E5a (comparable pair count); the backend 2×2 (cost of indexing checkouts); the cross-encoder and SWE-Pruner (CPU throughput on 50 calls); the Mac/Linux speed table; Signal Grep (half-day driver timebox).
+
 
 **When time runs short,** cut in this order:
 1. E5a.
 2. The Mac/Linux speed table (keep the overhead).
-3. SWE-Pruner and the cross-encoder (keep BM25).
-4. E3(b).
+3. The backend 2×2.
+4. SWE-Pruner and the cross-encoder (keep BM25).
+5. E3(b).
 
 The label audit stays.
 
-**Calendar time is not machine time.** The trace miner and the replay harness exist from the yield check, but they still need the record extractor, L1 mapping at record level, the tiers and the renderer. The selector library, its proofs, the headless rival drivers and about 10–15 hours of annotation are the long items. The machine work fits around the HNSW and MaxSim windows; replays never run during a timed run ([[feedback_no_tests_during_mac_bench_queue]]).
+**Calendar time is not machine time.** The trace parser and a first replay harness exist from the yield check. Still to build: the record extractor, definition-level L1, the tiers, the renderer, the selector library with its proofs, the RTK and Signal Grep drivers, and the scorer. Annotation needs about 10–15 hours. Writing needs about one week. The machine work fits around the HNSW and MaxSim windows; replays never run during a timed run ([[feedback_no_tests_during_mac_bench_queue]]).
+
+**Calendar (targets):**
+
+| By | Milestone |
+|---|---|
+| this week | Second annotator found. arXiv endorsement checked for cs (if no paper of the owner is on arXiv in cs yet, the first of the three papers to go unlocks it). Related work and the method section started; neither depends on results. |
+| about 1 Nov | Full dev replay, the E1 pilot and Gate A; the label audit started |
+| about 6 Nov | Pre-registration public (frozen selector, α, Gate B relative threshold, final split) |
+| about 13 Nov | Held-out replay and the one held-out run of E2–E4 |
+| mid-November | Writing week |
+| about 20–22 Nov | arXiv submission, a few days before 25 Nov, so a moderation hold still clears before ETH (30 Nov) |
 
 ## 13. Steps and gates
 
 | Step | Work | Machine time | Gate or output |
 |---|---|---|---|
 | S0 | Narrow literature check for the novelty sentence. Verify tokenix's grep mode, Claude Code `head_limit`, the Codex cut, SWE-agent's cap, the primary source for "agents don't paginate", and the AGENTS.md tool statistics (2602.11988). Check the benchmark name for collisions. | none | Final novelty sentence |
-| S1 | **Done in part (yield check, 62c80427):** trace parser, harness output formats, cwd tracking, premise tables. **Left:** validate the edit detector on 50 trajectories; run the parser on all local shards. | under 10 min | Census tables; edit-detector accuracy |
-| S2 | Replay harness, extended from `eval/grep-paper/mine/replay_sample.py`: record extraction, tiers F/O+/O/X, independent count checks, L1 mapping at record level, reference renderer and token counter, checkout deletion after use. Container gap sample on the box. | about 14 h (Mac) + 1–2 h (box) | Tier table; agreement by size; container gap |
-| S3 | **E1 pilot, 500 evidence-bearing dev calls**, shipped selector at a named commit. | minutes (offline) | **Gate A** |
-| S4 | **In parallel with S1–S3.** Reveal-order selector library: GNU, rg and engine inputs; footer rule; `--more`. Proofs. Signal Grep headless driver; RTK. | minutes | Property tests (nesting, continuation, phase-1 identity across divisor rules, footer monotonicity); native-lane parity |
-| S5 | Pre-registration: tagged commit + Zenodo DOI naming the frozen selector commit, α and the final split. | none | Public before any held-out replay |
-| S6 | E2, E3(a) on the box, E4 on dev, then held-out once. v1 label audit. | about 2 h (box) + a few hours (offline) | **Gate B** |
-| S7 | E5a; E7 overhead and the Mac/Linux table. | about half a day | v1 tables |
+| S1 | **Done in part (yield check, 62c80427):** trace parser, harness output formats, cwd tracking, premise tables, the inspected-repository list. **Left:** validate the edit detector on 50 trajectories; run the parser on all local shards. | under 10 min | Census tables; edit-detector accuracy |
+| S2 | Replay harness, extended from `mine/replay_sample.py`: record extraction, tiers F/O+/O/X, independent count checks, definition spans and L1, reference renderer and token counter; rivals and engine cells on the live checkout (§6 design rule); checkout deletion after use. **Dev repositories only.** Container gap sample on the box. | about 9 h (Mac, dev share) + 1–2 h (box) | Tier table; agreement by size; container gap; rival outputs |
+| S3 | **E1 pilot, 500 evidence-bearing dev calls**, shipped selector at a named commit. E5a pair count. Reranker throughput checks. | minutes (offline) | **Gate A**; definition-level pool size; Gate B relative threshold proposed |
+| S4 | **In parallel with S1–S3.** Reveal-order selector library: GNU, rg and engine inputs; line mode with the summary header; token mode with the footer; `--more`. Proofs. RTK driver; Signal Grep driver (half-day timebox). | minutes | Property tests (line-mode prefix, token-mode nesting, continuation, phase-1 identity across divisor rules, footer monotonicity); native-lane parity |
+| S5 | Pre-registration: tagged commit + Zenodo DOI naming the frozen selector commit, α, the Gate B relative threshold, and the final split (inspected repositories in dev). | none | Public before any held-out replay |
+| S6 | **Held-out replay** (same harness, about 5 h), then E2, E3(a) on the box, and E4: dev, then held-out once. v1 label audit. | about 5 h (Mac) + 2 h (box) + a few hours (offline) | **Gate B** |
+| S7 | E7 overhead; optional: E5a, the Mac/Linux table. | up to half a day | v1 tables |
 | S8 | Selection-track release (dataset card, DOI, CITATION.cff, baselines, scorer, licence fields) and arXiv v1. | none | The owner reads the draft |
 | S9 | ISSTA: continuation pilot (about $20, owner go), then a full run under an owner ceiling. L2. Scale-SWE with image HEAD. Chained greps. | API; box for images | Owner approval |
 | S10 | ASE: GNU adapter, end-to-end A/B (owner go), E6, replay track, full speed grid, upstream PRs. | — | Owner approval |
@@ -569,9 +619,10 @@ The label audit stays.
 
 1. The title and the benchmark name.
 2. Whether to target a non-archival ICSE workshop.
-3. The tokenizers for the token budget.
-4. **New:** whether v1 adds the Scale-SWE stratum (image HEAD for up to 200 tasks, about 100–200 GB transfer on the box, 2–4 hours), or leaves Scale-SWE to ISSTA.
-5. **New:** whether to run the $20 continuation pilot before v1.
+3. The tokenizers for the token budget (now secondary).
+4. Whether v1 adds the Scale-SWE stratum (image HEAD for up to 200 tasks, about 100–200 GB transfer on the box, 2–4 hours), or leaves Scale-SWE to ISSTA.
+5. Whether to run the $20 continuation pilot before v1.
 6. The cost ceilings and the continuation model for the ISSTA and ASE agent experiments.
-7. The second annotator for the label-audit overlap.
-8. Priority against the HNSW and MaxSim papers for machine time on the Mac and the box.
+7. **This week:** the second annotator for the label-audit overlap.
+8. **This week:** arXiv endorsement for cs, if needed.
+9. Priority against the HNSW and MaxSim papers for machine time on the Mac and the box.
