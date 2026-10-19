@@ -198,7 +198,7 @@ def grep_calls(row):
     golds = gold_files(row["metadata"])
     calls, first_edit_seen, step = [], False, 0
     pending, session_cwd = [], None
-    for m in msgs:
+    for mi, m in enumerate(msgs):
         if m["role"] == "assistant":
             pending = list(m.get("tool_calls") or [])
             continue
@@ -255,6 +255,7 @@ def grep_calls(row):
                 operand_is_gold = any(o.rstrip("/").endswith(g) for o in operands for g in golds)
                 calls.append({
                     "step": step,
+                    "msg_index": mi,
                     "tool": name,
                     "pre_edit": not first_edit_seen,
                     "searches_files": searches_files,
