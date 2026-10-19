@@ -1,0 +1,72 @@
+[
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 64,
+"efC": 800
+}
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 64,
+"efC": 800
+}
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 64,
+"efC": 800
+}
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 64,
+"efC": 800
+}
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 64,
+"efC": 800
+}
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 64,
+"efC": 800
+}
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"build_seed": 42,
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 64,
+"efC": 800
+}
+}
+]

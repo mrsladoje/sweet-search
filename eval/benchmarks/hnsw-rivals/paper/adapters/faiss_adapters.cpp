@@ -98,6 +98,8 @@ public:
 
     void set_search(const Params& p) override {
         ef_ = param_i(p, "ef", ef_); nprobe_ = param_i(p, "nprobe", nprobe_); refine_ = param_i(p, "refine", refine_);
+        // post hoc mechanism check: FAISS's counting top-k for the binary flat scan (default: binary heap)
+        if (auto f = dynamic_cast<faiss::IndexBinaryFlat*>(bin_.get())) f->use_heap = param_i(p, "use_heap", 1) != 0;
         apply();
     }
 
