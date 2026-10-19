@@ -722,6 +722,8 @@ pub struct HnswSearcher {
     query: Vec<u64>,
     batch: Vec<u32>,
     dists: Vec<u32>,
+    // Hamming distances computed since the last cascade_stage1 call (bench statistics only)
+    ndis: u64,
     all_ids: Vec<u32>,
     // Generation-stamped visited bytes: one byte per node, so neighboring
     // checks never share a word (no store-to-load chains), and no per-query
@@ -803,6 +805,7 @@ impl HnswSearcher {
             empty_level: Csr::empty(),
             query: vec![0u64; words],
             batch: Vec::new(),
+            ndis: 0,
             dists: Vec::new(),
             all_ids: Vec::new(),
             visited: AlignedBuf::zeroed(count as usize, huge),
@@ -1172,6 +1175,7 @@ impl HnswSearcher {
                 dists.resize(m, 0);
             }
             self.dist_batch(&batch[..m], &mut dists[..m]);
+            self.ndis += m as u64;
             if res.len() >= ef_us {
                 // The result heap is full, so its max only falls during this
                 // batch. A neighbor at or above the max at batch start would
@@ -1625,6 +1629,11 @@ impl HnswSearcher {
         stats[0] = visited as f64;
         stats[1] = n as f64;
         stats[2..7].copy_from_slice(&st);
+        // distances computed by this call's walk (0 for the scan); bench statistics
+        let nd = std::mem::take(&mut self.ndis) as f64;
+        if stats.len() > 7 {
+            stats[7] = nd;
+        }
         Ok(n as u32)
     }
 
