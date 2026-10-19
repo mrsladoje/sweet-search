@@ -16,20 +16,20 @@
 
 ### A.1 The decision in one paragraph
 
-Most machine time in v2 went to three items: rebuilding container environments, the paid agent experiments, and the full speed grid. None of the three is needed for the two contributions that carry the paper: the measurement of truncation loss (C2) and the benchmark (C3). So v3 **replays each grep call once on a clean checkout, freezes the full candidate set as records, and runs every later experiment offline on those records**. It uses SWE-rebench-V2 as the main task source, because its checkouts agree with the traces. The agent experiments and the full speed grid move to the ISSTA and ASE versions.
+Most machine time in v2 went to three items: rebuilding container environments, the paid agent experiments, and the full speed grid. None of the three is needed for the two contributions that carry the paper: the measurement of truncation loss (C2) and the benchmark (C3). So v3 **replays each grep call once on a clean checkout, freezes the full candidate set as records, and runs every later experiment offline on those records**. It uses SWE-rebench-V2 as the main task source, because its checkouts agree with the traces. The agent experiments with task outcomes and the full speed grid move to a later version.
 
 ### A.2 How the decision was made
 
 1. **Cost the v2 scope.** The money in v2 is almost all in the continuation experiment (about $150–400) and the end-to-end A/B (about $300–2,000). The v1 must-haves cost almost nothing in API spend. The time risk was engineering and machine time, not money.
 2. **Find what uses machine time.** A grep on a local checkout takes milliseconds. Download, environment setup and agent runs take the time. In v2 these were: container images for every replayed task (0.5–1.4 GB each), the ext4/overlay/APFS/ripgrep-R=10 grid for order dependence, the small LLM reranker, the full speed grid (ugrep, zoekt, BSD grep, git grep, Mac and Linux), and the agent experiments.
-3. **Keep what answers the research question.** The question is how much evidence the output interface hides, and whether a cheap selector keeps more of it at the same budget. The census, the truncation-loss measurement, the order-dependence result, the selector benchmark and the label audit answer it. None of them needs containers, agent runs or the full speed grid. What v1 cannot show is better agent performance or lower task cost; that stays future work (ISSTA and ASE).
+3. **Keep what answers the research question.** The question is how much evidence the output interface hides, and whether a cheap selector keeps more of it at the same budget. The census, the truncation-loss measurement, the order-dependence result, the selector benchmark and the label audit answer it. None of them needs containers, agent runs or the full speed grid. What v1 cannot show is better agent performance or lower task cost; that stays future work (a later version).
 4. **List the risks of the cut, then test them before committing.** Three risks could break "most of the value at 3 days":
    - clean checkouts could fail on exactly the large outputs that the paper is about;
    - a 5k-trajectory sample could give too few usable calls;
    - the ext4 order effect, which is the paper's hook, was not verified.
 5. **Run a half-day yield check** (`YIELD_CHECK.md`) that tests the three risks, then fix the scope from its numbers. §A.3 gives the results.
 
-The justification for the cut is that **the reduced study answers its evidence-selection question with much less work**. It makes no forecast of citations or of a share of "value". Reviewers at ISSTA will ask for causal agent evidence, which v1 does not have.
+The justification for the cut is that **the reduced study answers its evidence-selection question with much less work**. It makes no forecast of citations or of a share of "value". Reviewers will ask for causal agent evidence, which v1 has only in the search-only agent check.
 
 ### A.3 Evidence from the yield check
 
@@ -89,10 +89,10 @@ These rates are file level. The paper's primary L1 level is the definition (§3.
 | Environment | Task container where available | Clean checkout; 50-call container sample to measure the gap | Some setup-generated files (`build/`, `.egg-info`). The agreement rates, tier O+ and the sensitivity analysis cover this. |
 | Task sources | Scale-SWE + SWE-rebench-V2 | SWE-rebench-V2 main; Scale-SWE optional, with image HEAD | About 40% of the trajectories, unless the image-HEAD step runs |
 | Order dependence (E3) | ext4 ×2, container overlay, APFS, ripgrep R=10 | ext4 ×2, tmpfs, APFS | Overlay order; ripgrep run-to-run variance (rare in traces) |
-| Task-informed baselines | BM25, cross-encoder, small LLM reranker, SWE-Pruner, Squeez | BM25, one cross-encoder, SWE-Pruner if it runs on CPU | The LLM reranker and Squeez move to ISSTA |
+| Task-informed baselines | BM25, cross-encoder, small LLM reranker, SWE-Pruner, Squeez | BM25, one cross-encoder, SWE-Pruner if it runs on CPU | The LLM reranker and Squeez move to a later version |
 | Rival tools | Signal Grep, RTK, Rustygrep, tokenix | Signal Grep, RTK; Rustygrep and tokenix only if they run headless with no work | Two minor rivals |
-| Continuation experiment (E5b) | v1 pilot if ready | Replaced in v1 by the cheaper search-only agent check (E5d, about $15–40). The full continuation with task outcomes stays ISSTA. | Solved-task and $-per-solve evidence in v1 |
-| End-to-end A/B (E5c) | ISSTA/ASE | ASE | None for v1 |
+| Continuation experiment (E5b) | v1 pilot if ready | Replaced in v1 by the cheaper search-only agent check (E5d, about $15–40). The full continuation with task outcomes stays in a later version. | Solved-task and $-per-solve evidence in v1 |
+| End-to-end A/B (E5c) | later version | later version | None for v1 |
 | Speed (E7) | Full grid, Mac and Linux | Selector overhead + one Mac and Linux table against ripgrep | The ugrep, zoekt, BSD grep and git grep rows |
 | Chained greps | Excluded | Excluded; a yield lever for later | Half of the pool |
 
@@ -108,7 +108,9 @@ These rates are file level. The paper's primary L1 level is the definition (§3.
 | Order dependence: two ext4 images + tmpfs on about 1,000 evidence-bearing calls | Box | about 2 hours | the ext4 test took under 1 minute for 325 files |
 | Selector benchmark, ablations, rivals, BM25, cross-encoder | Mac, offline on frozen records | a few hours | no repository access |
 | Speed: overhead + Mac/Linux table | Mac + box | about half a day | — |
-| Agent retrieval check (E5d): about 1,200 resume runs and 600 fresh runs | Mac + DeepSeek API | a few hours, mostly API waiting; sandboxed commands on existing checkouts | pilot dry run; checkouts kept for the chosen states |
+| Ranking tuning round (§5.4) | Mac, offline on frozen dev records | under 2 hours for the whole grid | no repository access; minutes per setting |
+| Agent flag coverage: speed benchmarks of each new flag (§7 item 3) | Mac | about 1 hour | the existing ss-grep speed bench, run once per flag |
+| Agent retrieval check (E5d): about 1,200 resume runs and 600 fresh runs | Mac + DeepSeek API | about 6–10 hours with 8–10 parallel jobs; 60–90 hours if run one at a time, so the runner must run jobs in parallel | 2–3 minutes per run expected at maximum reasoning effort; the pilot measures it |
 | Optional: Scale-SWE image HEADs for up to 200 tasks | Box | 2–4 hours, about 100–200 GB transfer | 0.5 GB per image; pull and delete one at a time (box has about 24 GB free) |
 | **Total** | | **about 1.5–2 days; 2.5 with the Scale-SWE option** | |
 
@@ -132,6 +134,14 @@ Two reviews (ChatGPT, Claude web) approved the scope with changes. Adopted:
 | Calendar: a writing week, the second annotator found now, an early arXiv submission, and an endorsement check. | §12 |
 
 Not adopted: "v3 keeps the things that drive citations" (a forecast; see §A.2).
+
+### A.7 Changes on 2026-10-20: ranking tuning and agent flag coverage
+
+| Change | Why | Where |
+|---|---|---|
+| **A ranking tuning round on dev, before the freeze.** The shipped constants were set on our own traces only. Public traces come from other harnesses, models and repositories. One bounded round tunes the ranking (not speed) on the dev replay records, with cross-validation by repository. A fixed rule decides whether a tuned variant replaces the shipped one. | The shipped ranking may not be the best for the public workload, and the dev records make tuning cheap: offline, minutes per setting. Held-out stays closed until the freeze. | §5.4, §11, §12, §13 S3b |
+| **Agent flag coverage in v1.** Grep flags and pattern forms that agents use often, and that ss-grep does not support, are added to ss-grep. Each one is built for speed in the native lane. A flag is out of scope only if the agent prompt clearly documents an ss-grep equivalent. | The dev census shows common forms that ss-grep rejects today: basic-regex `\|` alternation in 34% of file-searching calls, `-l` in 7.5%, `-E` in 2.6%, `-c` in 1.9%. An agent that gets an error retries, which costs turns and tokens. | §7 item 3, §12, §13 S4b |
+| **Venue names removed** from the scope decisions. Work beyond v1 is "later version". The owner decides the venues. | Venue choice is not a factor in this plan. | throughout, §12 |
 
 ---
 
@@ -158,7 +168,7 @@ No published work measures what this cut costs coding agents. This paper does th
 | C2 | **Truncation loss.** How often the cut hides evidence that the full output contained, separated from retrieval misses. Includes the **enumeration-order** result: the same call shows different evidence on different machines. | Yes | A named, measured failure mode. It matters beyond ss-grep. |
 | C3 | **Benchmark.** The selection track holds frozen candidate records, labels and budgets; it needs no repository and no agent. Query-only and task-informed sub-tracks. The leaderboard starts with about ten baselines. | Yes (selection track) | Any selector, pruner or reranker can be evaluated in an afternoon. |
 | C4 | **Selectors.** Query-only selectors defined as one fixed reveal order plus a prefix cut, with proven properties, as a library usable on GNU grep or ripgrep output. A 2×2 factorial separates the selector's effect from the search backend's. | Yes | A drop-in method with guarantees. |
-| C5 | **Agent evidence.** A search-only agent check at real overflow states (v1, about $15–40), a $0 observational analysis (v1, optional), a continuation experiment with task outcomes (ISSTA) and a small end-to-end A/B (ASE). Each claim is scoped to its own population. | Search-only agent check | Links benchmark results to agent behaviour. |
+| C5 | **Agent evidence.** A search-only agent check at real overflow states (v1, about $15–40), a $0 observational analysis (v1, optional), a continuation experiment with task outcomes and a small end-to-end A/B (both later versions). Each claim is scoped to its own population. | Search-only agent check | Links benchmark results to agent behaviour. |
 
 Speed is not a contribution. An appendix reports measured selector overhead and one end-to-end table (E7).
 
@@ -178,7 +188,7 @@ Speed is not a contribution. An appendix reports measured selector overhead and 
 | RTK (rtk-ai/rtk, about 84k stars) | Hook that groups grep/rg output by file and trims long lines. | Arm, and a distribution channel (§10). |
 | Rustygrep | Token budgets; files ranked by match count. | Arm only if it runs headless with no extra work. |
 | tokenix | Rust CLI with hooks for Claude Code, Codex, OpenCode and Gemini; BM25 + vector + RRF ranking; an exact `grep` mode; budgeted repository packs. | Arm only if its grep mode shapes overflow (check in S0) and runs headless. |
-| pi-agentic-search | Ranks ripgrep matches using optional context; separates definitions, references and tests. | Task-informed arm, ISSTA. |
+| pi-agentic-search | Ranks ripgrep matches using optional context; separates definitions, references and tests. | Task-informed arm, later version. |
 
 **archex** (PyPI, Apache-2.0, v0.35) is a different category. It annotates the agent's grep, glob or `rg` result with one line for each indexed code unit that the hits fall in. It adds lines; it does not select among them. Mention it in related work only.
 
@@ -250,8 +260,8 @@ Rival documentation describes features, not measured results. The benchmark meas
 | `nvidia/Open-SWE-Traces`, Scale-SWE tasks | 42,772 trajectories in the local shards | Census only; replay only with image HEAD (§3.2) |
 | `nebius/SWE-rebench-V2` | 32,079 tasks; fields `base_commit`, `image_name` | Base commits and images for the main source |
 | `AweAI-Team/Scale-SWE` | 20,181 tasks; fields `parent_commit`, `image_url`, `workdir`, `pre_commands` | Task data for the optional stratum |
-| `nebius/SWE-rebench-openhands-trajectories` | 67k; CC-BY-4.0 | ISSTA: second teacher model |
-| `nvidia/SWE-Hero-openhands-trajectories` | 34k; CC-BY-4.0; no image field | ISSTA |
+| `nebius/SWE-rebench-openhands-trajectories` | 67k; CC-BY-4.0 | Later version: second teacher model |
+| `nvidia/SWE-Hero-openhands-trajectories` | 34k; CC-BY-4.0; no image field | Later version |
 | SWE-bench/experiments (public S3) | 119 Verified entries; no licence | Census aggregates only (frontier models); never redistributed |
 
 Harnesses in the main source: OpenHands, SWE-agent, mini-swe-agent. Models: Qwen3.5–3.8, MiniMax M2.5, DeepSeek-V4-Flash.
@@ -265,7 +275,7 @@ Harnesses in the main source: OpenHands, SWE-agent, mini-swe-agent. Models: Qwen
 **Preconditions.** A call is eligible only if all of these hold:
 1. It runs before the agent's first edit. The edit detector is validated on a hand-checked sample of 50 trajectories before the main replay. It treats `str_replace_editor` edits and shell writes (`sed -i`, `> file`, `tee`, `patch`, `git apply`, `open(..., 'w')`) as edits, and ignores writes under `/tmp`.
 2. It searches files: it is the first command of its pipeline, or it is fed by `find ... | xargs`.
-3. It is the only grep in its command. (Chained greps cannot be split from their combined output. This halves the pool; splitting them is an ISSTA lever.)
+3. It is the only grep in its command. (Chained greps cannot be split from their combined output. This halves the pool; splitting them is a lever for a later version.)
 4. Its paths resolve under `/testbed` or `/workspace/<dir>`. The cwd follows `cd` chains, the OpenHands working-directory line, and the persistent SWE-agent shell.
 5. The pipeline parses (here-document bodies removed) and the dialect is supported.
 
@@ -302,7 +312,7 @@ The yield check measured tier-O agreement at 96% for SWE-rebench-V2 cut calls (9
 - **v1 label audit (required).** A stratified audit of at least 100 calls, with two annotators on an overlap for agreement. It checks:
   1. whether the base-revision mapping of L1 is correct;
   2. whether the conclusions change when callers, tests and configuration also count as evidence.
-- **L2, audited evidence (about 300 calls).** ISSTA. Seeded with the context that independent successful trajectories of the same task used, as SWE-Explore does.
+- **L2, audited evidence (about 300 calls).** Later version. Seeded with the context that independent successful trajectories of the same task used, as SWE-Explore does.
 - **L3, next-opened file (behavioural).** Only on tier-F calls, where the agent saw everything. There it is a behavioural proxy **without truncation censoring**; position bias and the agent's own policy still shape it. So L3 is secondary, and only on the synthetic-overflow set.
 
 ### 3.4 Independence and splits
@@ -334,11 +344,11 @@ The repository is public. Before any held-out replay, publish a tagged commit wi
 **Rival tools,** run as real processes: Signal Grep and RTK; Rustygrep and tokenix only if they run headless with no extra work.
 - **They run on the live checkout.** These tools read files, repository structure or parsers themselves, so frozen records are not enough. They run during the replay, on the same checkout, before it is deleted. Their outputs are saved with provenance (tool version, command, checkout commit), and all later scoring is offline.
 - **Budget rule.** Each tool's native output is cut at the call's N lines (headline) and at T tokens (secondary). We also report each tool at its native size.
-- **Headless drivers.** RTK is a plain CLI. Signal Grep runs as a Pi extension or an MCP server; its MCP client driver is **timeboxed to half a day**. If it overruns, Signal Grep moves to ISSTA. A tool that cannot run is never replaced by a hand-written imitation presented as that tool; the frequency-order arm (item 6) is labelled as our own baseline.
+- **Headless drivers.** RTK is a plain CLI. Signal Grep runs as a Pi extension or an MCP server; its MCP client driver is **timeboxed to half a day**. If it overruns, Signal Grep moves to a later version. A tool that cannot run is never replaced by a hand-written imitation presented as that tool; the frequency-order arm (item 6) is labelled as our own baseline.
 
 **The ss-grep selector** (§5), frozen, with these ablations: no coverage floor; no declarations-first; no file-kind prior; no saturation; the divisor rule set to D'Hondt, Hamilton or Sainte-Laguë; the saturation constant k ∈ {1, 2, 4}.
 
-**Task-informed baselines** (separate sub-track): BM25 on the issue text (GrepRAG style); one cross-encoder reranker (RARG style) and SWE-Pruner, each only after its CPU throughput is measured on a 50-call batch and the full run fits the budget. These are **task-informed baselines, not upper bounds**. The small LLM reranker and Squeez move to ISSTA.
+**Task-informed baselines** (separate sub-track): BM25 on the issue text (GrepRAG style); one cross-encoder reranker (RARG style) and SWE-Pruner, each only after its CPU throughput is measured on a 50-call batch and the full run fits the budget. These are **task-informed baselines, not upper bounds**. The small LLM reranker and Squeez move to a later version.
 
 **Oracle.** It knows the L1 labels. It gives the ceiling.
 
@@ -359,7 +369,7 @@ The selector builds one deterministic **reveal order** over items. An item is on
 
 **The rendering, line mode (headline).** The selector prints the whole reveal order line by line, in grep's normal `path:line:text` format (context lines in grep's `path-line-text` form, `--` between groups). It does not cut. The agent's own `| head -N` makes the cut, so the agent sees the selector's N-line prefix. Every prefix is a good prefix, which is what the nested-set property guarantees (§5.2).
 - **Summary header.** The first line is a one-line summary, for example `# 1,312 matches in 183 files, ranked; full list: --raw`. A footer at the end never survives `| head`, so the summary goes first. Results are reported with and without this line.
-- **Print order** is the reveal order itself. Phase 1 shows one line from each file in turn, so files are interleaved rather than grouped. Whether interleaving hurts readability is a question for the continuation experiment (ISSTA).
+- **Print order** is the reveal order itself. Phase 1 shows one line from each file in turn, so files are interleaved rather than grouped. Whether interleaving hurts readability is a question for the continuation experiment (later version).
 
 **The rendering, token mode (secondary, harness integration).**
 - **Footer.** The footer gets a reservation f(T) = min(r, ⌊αT⌋), with α < 1. Here r is the full footer size, and α is fixed in the pre-registration (for example α = 0.15). The item space T − f(T) never decreases as T grows. The footer gives the exact number of hidden match records and hidden files; the unseen files with their match counts, as many as fit; one suggested narrowing; and a `--more` cursor.
@@ -367,8 +377,9 @@ The selector builds one deterministic **reveal order** over items. An item is on
 - **Print order** groups the chosen items by file.
 
 **Constants and freezing.**
-- S4 keeps k = 2 and the priors (1, 0.5, 0.25) **unchanged** from the shipped algorithm. It changes only the structure: no file cap, the footer rule, and the reveal-order cut. So all numeric constants were set before any public-trace mining.
-- The structure is designed while dev traces are already mined. So the accurate claim for the whole selector is **"frozen before any held-out replay"**. The paper states both facts.
+- S4 starts from k = 2 and the priors (1, 0.5, 0.25) of the shipped algorithm, and changes only the structure: no file cap, the footer rule, and the reveal-order cut. This is the **shipped selector**.
+- The tuning round (§5.4) may replace the constants or add signals, on dev records only. The winner of that round is the **frozen selector**. It is frozen before any held-out replay and named in the pre-registration.
+- So the accurate claim for the frozen selector is **"tuned on dev, frozen before any held-out replay"**. The paper reports the shipped selector beside it, so readers see what tuning added.
 
 **Implementation.** The library takes normalized source records from GNU grep (the main workload), from `rg --json`, or from the ss-grep engine.
 
@@ -388,9 +399,34 @@ The selector builds one deterministic **reveal order** over items. An item is on
   - Attribute the gains separately to file ranking, first-item (declaration) choice, and phase-2 apportionment.
 - **Prior weakness, tested openly.** A source file with 2 hits weighs 0.5; a test file can never reach 0.5; a generated file never outranks a source file with one hit. Report results by call intent (definition, call site, test, configuration, generated code) and run the prior-free ablation on every stratum.
 
-### 5.4 v2 arm (pre-registered, tuned on dev only)
+### 5.4 Ranking tuning round (dev only, before the freeze)
 
-An intent-conditioned prior: it drops the test penalty when the pattern or the path targets tests, and it puts declarations first only for definition-shaped patterns. Reported beside the frozen selector, never in its place.
+**Purpose.** The shipped constants were set on our own traces. This round checks whether a different ranking keeps more evidence on the public workload. It tunes ranking only. Speed is not tuned here; the speed work is done.
+
+**Data.** The evidence-bearing overflowing calls from the dev replay (about 1,700 expected), with their frozen full outputs and definition-level L1 labels. No repository access, no API, no held-out record.
+
+**Candidate list, fixed before the round starts:**
+1. The saturation constant k, on a small grid (1, 2, 4, 8).
+2. The file-kind priors for test and generated files, on a small grid.
+3. Declarations first: always, never, or only for definition-shaped patterns.
+4. The test prior conditioned on intent: no test penalty when the pattern or the path targets tests (the former v2 arm).
+5. Two new signals: the search term appears in the file path; the file's directory distance from the search root.
+6. One learned ranker: logistic regression on the features above, trained to put L1 files first. It is reported as its own arm whether it wins or not.
+
+**Protection against overfitting.**
+- Five-fold cross-validation grouped by repository inside dev. A setting is scored only on folds it was not fitted on.
+- The grid stays small: the list above, no further search after the results are seen.
+- The round is timeboxed to 3 working days. If it is not done by then, the shipped selector is frozen.
+
+**Decision rule, fixed now.**
+- The **primary score** is the out-of-fold truncation-miss rate at the agent's own N (headline budget), on evidence-bearing overflowing calls.
+- A tuned variant replaces the shipped selector only if it lowers that rate by **at least 2 percentage points**, and it does not raise the newly lost rate against the shipped selector by more than 1 point.
+- **Intent guard.** By call intent (definition, call site, test, configuration), no stratum with at least 50 calls may get worse by more than 3 points. This guards against a ranker that learns to drop callers and tests because L1 counts only fix files.
+- If several variants pass, the simplest one wins (fewest changed constants, then no learned model).
+
+**Outputs.** The frozen selector and its commit; a table of every candidate with its out-of-fold score; the shipped selector as a reported arm. Gate B's relative threshold is proposed from the frozen selector's out-of-fold dev results.
+
+**Product.** If a tuned variant wins, ss-grep adopts it. The JavaScript tool and the native lane change in the same commit, verified with the shadow check (CLAUDE.md).
 
 ### 5.5 Factorial attribution (2×2)
 
@@ -401,7 +437,7 @@ An intent-conditioned prior: it drops the test penalty when the pattern or the p
 | ss-grep engine | native truncation | The effect of the backend alone |
 | ss-grep engine | ss-grep selector | The combined product |
 
-Formatting and budgets are equal in every cell. The ss-grep engine cells need an index per checkout, so they run on a stratified subset of about 300 calls, during the replay. **Optional for v1:** if indexing checkouts turns out expensive, the 2×2 moves to ISSTA, and v1 reports only the reference-backend rows.
+Formatting and budgets are equal in every cell. The ss-grep engine cells need an index per checkout, so they run on a stratified subset of about 300 calls, during the replay. **Optional for v1:** if indexing checkouts turns out expensive, the 2×2 moves to a later version, and v1 reports only the reference-backend rows.
 
 ## 6. Experiments
 
@@ -452,7 +488,7 @@ The full eligible set and every policy in §4, items 1–4: all three events, on
 - tmpfs (on the box);
 - APFS (the Mac, from the main replay).
 
-Fifty random shuffles of C are a **sensitivity experiment**: they show how much order can matter, but they need not include the most extreme order, so they are not an upper bound. The container overlay and ripgrep run-to-run order move to ISSTA.
+Fifty random shuffles of C are a **sensitivity experiment**: they show how much order can matter, but they need not include the most extreme order, so they are not an upper bound. The container overlay and ripgrep run-to-run order move to a later version.
 
 **What changes and what does not.** Native streaming truncation can change between these environments. Sorted-path truncation and content-based ranking cannot, by construction; their invariance is not a finding.
 
@@ -478,7 +514,7 @@ An internal dev result exists: on 154 overflow calls from our own traces, answer
 
 ### E5. Agent evidence (C5)
 
-**(a) Observational, $0 (v1, optional).** Most tasks have 10–25 trajectories, but that does not guarantee comparable pairs. **Entry check:** after the dev replay, count tasks that have both a "miss" anchor and a "shown" anchor within the same model and harness. Build the analysis only if that count supports it; otherwise it moves to ISSTA.
+**(a) Observational, $0 (v1, optional).** Most tasks have 10–25 trajectories, but that does not guarantee comparable pairs. **Entry check:** after the dev replay, count tasks that have both a "miss" anchor and a "shown" anchor within the same model and harness. Build the analysis only if that count supports it; otherwise it moves to a later version.
 - **Anchor.** Each trajectory is anchored at its first eligible overflowing call. This removes the length confound.
 - **Groups.** Only evidence-bearing anchors qualify. Within a task, and stratified by model and harness, compare trajectories whose anchor was a truncation miss with those whose anchor displayed the L1 evidence.
 - **Measures, from the anchor on:** steps to the first opening of an L1 file, re-grep rate, and resolve rate. Match or adjust on the anchor's step index.
@@ -497,14 +533,14 @@ An internal dev result exists: on 154 overflow calls from our own traces, answer
 - **Measures.** Turns to the first contact with a fix file (in a command, a view or an output); whether the first edit target is a fix file; tokens (cache hit, miss, output) and dollars at DeepSeek's published rates. Main derived number: **dollars per correct localization**.
 - **Pilot ($5 hard cap in the runner).** Design 1: 10 states × 2 arms × 2 repeats = 40 runs. Design 2: 5 tasks × 2 arms × 2 repeats = 20 runs. Estimated $2–4 at peak prices, about half off-peak. The pilot checks the harness, the cost per run, and the share of runs that stop at an edit. It is not evidence.
 - **Main run, after the pilot and an owner go.** Design 1 on all qualifying dev states (about 300 after the full replay) × 2 arms × 2 repeats; design 2 on about 150 tasks. Estimated $15–40. Then the same on held-out states after the pre-registration, once.
-- **Claim it can support.** "At real overflow states, ranked grep output lets the agent reach the fix files in fewer turns and at lower cost." It does not support claims about solved tasks or dollars per solve; those stay ISSTA and ASE work.
+- **Claim it can support.** "At real overflow states, ranked grep output lets the agent reach the fix files in fewer turns and at lower cost." It does not support claims about solved tasks or dollars per solve; those stay later-version work.
 - **Limits.** Search-only runs stop at the first edit, so they say nothing about fixing. The sandbox lacks the task's dependencies, so runs that try to execute code see errors in both arms. Design 1 changes one response at states that the original policy reached.
 
-**(b) Continuation (ISSTA; paid, pilot first).** Save the agent state just before an overflowing grep response. Resume identical copies, each with a different presentation of the same C: the observed policy, round robin, the ss-grep selector, and the full output where it fits. Use an open-weight model through a direct API. Measures: the next file opened, steps to the first L1 file, repeated searches, tokens and billed cost, the outcome. Scope: the effect of changing one response at states the original policy reached. The $20 pilot can run before v1 with an owner go; it uses an API, not the Mac or the box.
+**(b) Continuation (later version; paid, pilot first).** Save the agent state just before an overflowing grep response. Resume identical copies, each with a different presentation of the same C: the observed policy, round robin, the ss-grep selector, and the full output where it fits. Use an open-weight model through a direct API. Measures: the next file opened, steps to the first L1 file, repeated searches, tokens and billed cost, the outcome. Scope: the effect of changing one response at states the original policy reached. The $20 pilot can run before v1 with an owner go; it uses an API, not the Mac or the box.
 
-**(c) End-to-end A/B (ASE; paid, last).** Arms: stock grep, the compatibility shim (§7), and ripgrep with a fixed cap. An overflow-enriched set picked with independent screening runs, plus a representative stratum. Primary endpoints: steps to the first L1 file, and billed cost per solved task. About 300 pairs with about 15% discordant outcomes detect about 5–6 points at 80% power.
+**(c) End-to-end A/B (later version; paid, last).** Arms: stock grep, the compatibility shim (§7), and ripgrep with a fixed cap. An overflow-enriched set picked with independent screening runs, plus a representative stratum. Primary endpoints: steps to the first L1 file, and billed cost per solved task. About 300 pairs with about 15% discordant outcomes detect about 5–6 points at 80% power.
 
-### E6. Freshness (ISSTA)
+### E6. Freshness (later version)
 
 Edit files and switch branches between calls. Show by byte comparison that ss-grep's records follow the working tree, against a fresh run of the reference tool.
 
@@ -516,14 +552,36 @@ Edit files and switch branches between calls. Show by byte comparison that ss-gr
 
 **Parity.** The match set must equal the reference tool's for each dialect. Publish the check.
 
-**ISSTA:** ugrep (with and without ugrep-indexer), zoekt, BSD grep and git grep.
+**Later version:** ugrep (with and without ugrep-indexer), zoekt, BSD grep and git grep.
 
 ## 7. Product work
 
-In priority order. Items 1–2 are needed for v1; the rest are for ISSTA and ASE.
+In priority order. Items 1–3 are needed for v1; the rest are for a later version.
 1. **Two modes.** Raw mode: exact and complete, for scripts. Agent mode: the full reveal order in grep's format with the one-line summary first, so the agent's own `| head` cuts it (line mode, §5.1); a token budget only where a harness asks for one. Opt-in, and on by default only in agent hooks.
 2. **Selector library.** It takes normalized GNU grep records, `rg --json` or engine records, and builds the reveal order of §5.1. It ships as a CLI filter and a hook, so RTK, harnesses and other tools can adopt it without our index.
-3. **GNU grep compatibility adapter with passthrough.** Support basic-regex `\|`, `-E`, `-l`, `-c`, `-v` and stdin, in order of their census share. Match GNU exit codes and stderr exactly. Pass anything unsupported to the real grep unchanged. Publish the coverage percentage. (Today's front end accepts `-n -r -i -w -F -A -B -C --include --exclude`; confirm the gaps first.)
+3. **Agent flag coverage (v1).** Add the grep flags and pattern forms that agents use often and that ss-grep does not support.
+   - **Census (dev calls of the yield-check sample, 38,382 file-searching grep calls):**
+
+     | Form | Share of calls | ss-grep today |
+     |---|---|---|
+     | `-n` | 76.8% | accepted (always on) |
+     | `-r` | 41.7% | accepted (always on) |
+     | basic-regex `\|` alternation in the pattern | 34.4% | to confirm; the Rust regex reads `\|` as a literal bar |
+     | `--include` | 17.0% | supported |
+     | `-A` | 14.0% | supported |
+     | `-l` (files with matches) | 7.5% | not supported |
+     | `-B` | 4.5% | supported |
+     | `-E` | 2.6% | not supported as a flag |
+     | `-i` | 2.0% | supported |
+     | `-c` (count) | 1.9% | not supported |
+     | `-o` (only matching) | 0.5% | not supported |
+     | `-v`, `--exclude-dir`, `-h`, `-P`, `-m`, `-a`, `-q`, `-L` | 0.3% or less each | `--exclude-dir` supported; the others not |
+
+     The full census on all local trajectories (E0) replaces these numbers.
+   - **Scope rule.** A form is in scope if at least 0.5% of file-searching calls use it, and the agent prompt does not clearly document an ss-grep equivalent that agents use instead (for example `-k` for `| head`). Below 0.5%, ss-grep passes the call to the real grep unchanged, so the agent never gets an error.
+   - **Semantics.** GNU grep behaviour for each form: the match set, exit codes, and the output format of `-l` and `-c`. In agent mode, `-l` output is ranked with the file order of §5.1. `-c` and `-o` output is not ranked.
+   - **Speed.** Each form is built in the native lane, not by a fallback to the JavaScript tool or to the real grep. `-l` and `-c` stop reading a file at the first match where the output allows it. Basic-regex translation happens once at parse time. Each form is measured with the existing ss-grep speed bench, and no existing case may get slower by more than the bench noise.
+   - **Parity.** The JavaScript tool and the native lane change in the same commit, verified with the shadow check (CLAUDE.md). Publish the coverage percentage: the share of census calls that ss-grep answers itself.
 4. **Token-aware rendering (harness integration).** Clipping does not depend on the budget; context lines count against the budget; the footer reservation is f(T) = min(r, αT).
 5. **Provenance and continuation.** The summary header (line mode) and the footer (token mode); `--more`, with the continuation guarantee.
 6. **Role tags and intent controls.**
@@ -534,7 +592,7 @@ In priority order. Items 1–2 are needed for v1; the rest are for ISSTA and ASE
 
 - **Name.** To be decided. Avoid "GrepCut" (a reviewer reports a public product under that name). Check GitHub, npm, PyPI and arXiv for collisions.
 - **Selection track (v1).** Frozen records in JSONL: (call, candidate source records, labels, budget, licence, task ID). A submission returns an ordered list of records. The scorer renders the list with the reference renderer and counts tokens with the fixed tokenizer. It runs locally, with no paid API and no clone. Records carry the SWE-rebench-V2 instance ID, so other work can join them to its own data.
-- **Replay track (ISSTA).** Pinned repositories, commits, container references and commands.
+- **Replay track (later version).** Pinned repositories, commits, container references and commands.
 - **Sub-tracks.** Query-only and task-informed. Each leaderboard row states its information constraint.
 - **Licence of code.** Records from permissively licensed repositories (MIT, Apache, BSD and similar) ship with their content. For all other repositories, records ship as (repository, commit, path, span) pointers, plus a fetch script. Each record carries a licence field. SWE-bench/experiments: aggregates only.
 - **Splits and refresh.** A smoke set of about 100 records, then the full set; releases are versioned. Held-out labels become public with arXiv v1, so a **refresh split** for v2 comes from newer trajectories, with its labels withheld until v2.
@@ -547,13 +605,13 @@ In priority order. Items 1–2 are needed for v1; the rest are for ISSTA and ASE
 - **Paired comparisons.** Compare policies on the same calls. Report recovered, newly lost and net results together.
 - **Multiplicity.** The primary comparisons are pre-registered and few: the selector against "as seen", and the selector against round robin, both on evidence-bearing overflowing calls at the headline budget. Everything else is labelled secondary.
 - **"Equal quality" claims.** They need a pre-registered non-inferiority margin.
-- **Variance across environments.** GNU grep: two ext4 filesystems, tmpfs and APFS. Agent runs (ISSTA): at least 2 repeats; the pilots size the main runs.
+- **Variance across environments.** GNU grep: two ext4 filesystems, tmpfs and APFS. Agent runs with task outcomes (later version): at least 2 repeats; the pilots size the main runs.
 
 ## 10. Impact and distribution
 
 - **Title.** "What Coding Agents Lose When Grep Output Is Truncated." Use "Grepmaxxing" only for the launch post.
 - **Usable without ss-grep.** Release the selection track, a selector library that works on GNU grep and ripgrep output, and adapters for existing tools.
-- **Upstream pull requests (ISSTA period).** SWE-agent (drop-all); Codex CLI (head-plus-tail); RTK (a ranking option). Each PR description carries benchmark numbers.
+- **Upstream pull requests (after v1).** SWE-agent (drop-all); Codex CLI (head-plus-tail); RTK (a ranking option). Each PR description carries benchmark numbers.
 - **External evaluations.** Give rival authors the smoke set before the release.
 - **Credibility.** Report held-out numbers only, with sample sizes and seeds. List where we lose. Make no SOTA claims ([[branding]]).
 
@@ -565,20 +623,13 @@ In priority order. Items 1–2 are needed for v1; the rest are for ISSTA and ASE
 - **Eligibility.** Chained greps (half of the multi-file pre-edit calls) are excluded. Check whether eligible calls differ in shape from the others, and report it.
 - **Model mix.** Open-weight models dominate the data. Frontier models grep less (lit-C §4, small sample). Report by model family, and include the SWE-bench/experiments aggregates.
 - **Labels.** L1 is one valid fix. The v1 audit tests the mapping and a broader notion of evidence.
-- **Own-tool bias.** The defences: the numeric constants were set before any public-trace mining, and the whole selector is frozen before any held-out replay; the pre-registration is public; held-out is split by repository; rivals run as real processes; the scorer is public; newly lost evidence is reported; our losses are published.
+- **Own-tool bias.** The defences: the shipped constants were set before any public-trace mining, any tuning used dev only, and the shipped selector is reported beside the frozen one; the whole selector is frozen before any held-out replay; the pre-registration is public; held-out is split by repository; rivals run as real processes; the scorer is public; newly lost evidence is reported; our losses are published.
 - **Speed.** It depends on a warm daemon and an index. State this in the first sentence of the appendix, and report the cold costs.
 
-## 12. Venues, dates and the cut order
+## 12. Dates and the cut order
 
-| Date | Venue | Scope |
-|---|---|---|
-| about 25 Nov 2026 | arXiv v1 | The must-haves below |
-| 11 Jan 2027 | ISSTA 2027 (GrepRAG appeared at ISSTA 2026) | v1 plus continuation, L2, Scale-SWE (with image HEAD), chained greps, overlay and ripgrep order, E6, full speed grid |
-| about Jan–Feb 2027 (estimate) | SIGIR 2027 full or resource track | Benchmark framing |
-| about 26 Mar 2027 (estimate) | ASE 2027 | Full paper, including the end-to-end A/B |
+arXiv v1 is the target, at about 25 Nov 2026, with the must-haves below. The owner decides the venues after v1. Work beyond v1 is listed as "later version".
 
-- **MSR Data Showcase (10 Nov):** skip it; too close.
-- **ICSE 2027 workshops (13 Nov):** only a **non-archival** one, because an archival workshop paper can conflict with the ISSTA submission.
 - **ETH (30 Nov) and EPFL (15 Dec):** no accepted paper can arrive before these deadlines. The application signal is the arXiv paper, the public benchmark and adoption.
 
 **v1 must-haves** (all inside the 3-day machine budget of §A.5):
@@ -588,6 +639,8 @@ In priority order. Items 1–2 are needed for v1; the rest are for ISSTA and ASE
 - E3(a) order dependence on ext4 ×2, tmpfs and APFS;
 - E4 selector benchmark with Gate B (natural and synthetic overflow);
 - the v1 label audit (at least 100 calls, overlap double-annotated);
+- the ranking tuning round on dev, with its decision rule (§5.4);
+- agent flag coverage in ss-grep for every in-scope form (§7 item 3);
 - E5d agent retrieval check, design 1 (resume), after the pilot and an owner go;
 - E7 selector overhead;
 - the selection-track release (smoke set and full set).
@@ -602,7 +655,7 @@ In priority order. Items 1–2 are needed for v1; the rest are for ISSTA and ASE
 4. SWE-Pruner and the cross-encoder (keep BM25).
 5. E3(b).
 
-The label audit stays.
+The label audit, the tuning round and the flag forms above 1% of calls stay. If the tuning round runs out of time, the shipped selector is frozen.
 
 **Calendar time is not machine time.** The trace parser and a first replay harness exist from the yield check. Still to build: the record extractor, definition-level L1, the tiers, the renderer, the selector library with its proofs, the RTK and Signal Grep drivers, and the scorer. Annotation needs about 10–15 hours. Writing needs about one week. The machine work fits around the HNSW and MaxSim windows; replays never run during a timed run ([[feedback_no_tests_during_mac_bench_queue]]).
 
@@ -611,7 +664,9 @@ The label audit stays.
 | By | Milestone |
 |---|---|
 | this week | Second annotator found. arXiv endorsement checked for cs (if no paper of the owner is on arXiv in cs yet, the first of the three papers to go unlocks it). Related work and the method section started; neither depends on results. |
+| this week to about 5 Nov | Agent flag coverage in ss-grep, in parallel with the replay work |
 | about 1 Nov | Full dev replay, the E1 pilot and Gate A; the label audit started |
+| about 2–5 Nov | Ranking tuning round on dev; selector frozen |
 | about 6 Nov | Pre-registration public (frozen selector, α, Gate B relative threshold, final split) |
 | about 13 Nov | Held-out replay and the one held-out run of E2–E4 |
 | mid-November | Writing week |
@@ -624,23 +679,24 @@ The label audit stays.
 | S0 | Narrow literature check for the novelty sentence. Verify tokenix's grep mode, Claude Code `head_limit`, the Codex cut, SWE-agent's cap, the primary source for "agents don't paginate", and the AGENTS.md tool statistics (2602.11988). Check the benchmark name for collisions. | none | Final novelty sentence |
 | S1 | **Done in part (yield check, 62c80427):** trace parser, harness output formats, cwd tracking, premise tables, the inspected-repository list. **Left:** validate the edit detector on 50 trajectories; run the parser on all local shards. | under 10 min | Census tables; edit-detector accuracy |
 | S2 | Replay harness, extended from `mine/replay_sample.py`: record extraction, tiers F/O+/O/X, independent count checks, definition spans and L1, reference renderer and token counter; rivals and engine cells on the live checkout (§6 design rule); checkout deletion after use. **Dev repositories only.** Container gap sample on the box. | about 9 h (Mac, dev share) + 1–2 h (box) | Tier table; agreement by size; container gap; rival outputs |
-| S3 | **E1 pilot, 500 evidence-bearing dev calls**, shipped selector at a named commit. E5a pair count. Reranker throughput checks. | minutes (offline) | **Gate A**; definition-level pool size; Gate B relative threshold proposed |
+| S3 | **E1 pilot, 500 evidence-bearing dev calls**, shipped selector at a named commit. E5a pair count. Reranker throughput checks. | minutes (offline) | **Gate A**; definition-level pool size |
+| S3b | **Ranking tuning round (§5.4)** on all dev evidence-bearing calls, cross-validated by repository; decision rule applied; product port if a variant wins. | under 2 h (offline) | Frozen selector; candidate table; Gate B relative threshold proposed |
 | S4 | **In parallel with S1–S3.** Reveal-order selector library: GNU, rg and engine inputs; line mode with the summary header; token mode with the footer; `--more`. Proofs. RTK driver; Signal Grep driver (half-day timebox). | minutes | Property tests (line-mode prefix, token-mode nesting, continuation, phase-1 identity across divisor rules, footer monotonicity); native-lane parity |
+| S4b | **In parallel with S1–S3.** Agent flag coverage (§7 item 3): census shares from S1, in-scope forms in the native lane and the JavaScript tool, passthrough below the threshold, shadow check, speed bench per form. | about 1 h (bench) | Coverage percentage; no speed regression |
 | S5 | Pre-registration: tagged commit + Zenodo DOI naming the frozen selector commit, α, the Gate B relative threshold, and the final split (inspected repositories in dev). | none | Public before any held-out replay |
 | S6 | **Held-out replay** (same harness, about 5 h), then E2, E3(a) on the box, and E4: dev, then held-out once. v1 label audit. | about 5 h (Mac) + 2 h (box) + a few hours (offline) | **Gate B** |
-| S7 | E5d agent check: $5 pilot (owner go), then design 1 and design 2 on dev, then held-out once after S5. E7 overhead; optional: E5a, the Mac/Linux table. | a few hours (API) + up to half a day | v1 tables; $ per correct localization |
+| S7 | E5d agent check: $5 pilot (owner go), then design 1 and design 2 on dev, then held-out once after S5. E7 overhead; optional: E5a, the Mac/Linux table. | 6–10 h (API, parallel jobs) + up to half a day | v1 tables; $ per correct localization |
 | S8 | Selection-track release (dataset card, DOI, CITATION.cff, baselines, scorer, licence fields) and arXiv v1. | none | The owner reads the draft |
-| S9 | ISSTA: continuation pilot (about $20, owner go), then a full run under an owner ceiling. L2. Scale-SWE with image HEAD. Chained greps. | API; box for images | Owner approval |
-| S10 | ASE: GNU adapter, end-to-end A/B (owner go), E6, replay track, full speed grid, upstream PRs. | — | Owner approval |
+| S9 | Later version: continuation pilot (about $20, owner go), then a full run under an owner ceiling. L2. Scale-SWE with image HEAD. Chained greps. | API; box for images | Owner approval |
+| S10 | Later version: end-to-end A/B (owner go), E6, replay track, full speed grid, upstream PRs. | — | Owner approval |
 
 ## 14. Owner decisions
 
 1. The title and the benchmark name.
-2. Whether to target a non-archival ICSE workshop.
-3. The tokenizers for the token budget (now secondary).
-4. Whether v1 adds the Scale-SWE stratum (image HEAD for up to 200 tasks, about 100–200 GB transfer on the box, 2–4 hours), or leaves Scale-SWE to ISSTA.
-5. The go for the $5 agent-check pilot (prepared, dry run done), and a ceiling for the main agent check (estimate $15–40).
-6. The cost ceilings and the continuation model for the ISSTA and ASE agent experiments.
-7. **This week:** the second annotator for the label-audit overlap.
-8. **This week:** arXiv endorsement for cs, if needed.
-9. Priority against the HNSW and MaxSim papers for machine time on the Mac and the box.
+2. The tokenizers for the token budget (now secondary).
+3. Whether v1 adds the Scale-SWE stratum (image HEAD for up to 200 tasks, about 100–200 GB transfer on the box, 2–4 hours), or leaves Scale-SWE to a later version.
+4. The go for the $5 agent-check pilot (prepared, dry run done), and a ceiling for the main agent check (estimate $15–40).
+5. The cost ceilings and the continuation model for the later agent experiments with task outcomes.
+6. **This week:** the second annotator for the label-audit overlap.
+7. **This week:** arXiv endorsement for cs, if needed.
+8. Priority against the HNSW and MaxSim papers for machine time on the Mac and the box.
