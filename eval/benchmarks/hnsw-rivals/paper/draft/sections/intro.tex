@@ -36,8 +36,9 @@ still misorders configurations in both directions (\S\ref{sec:results}).
 (\S\ref{sec:results}), and an equal-settings comparison of binary HNSW implementations on the same codes: our walk is
 \nm{post-eqb-min}--\nm{post-eqb-max} times faster than FAISS and USearch binary HNSW (\S\ref{sec:post}).
 \item \textbf{A confirmatory speed result}: in the replication our cascade was faster than the rival chosen on dev in
-\nm{rep-lat-pass} of \nm{rep-n} pre-registered tests, one of them only under the pre-registered page-fault rule; quality
-non-inferiority held on MS MARCO and not on CQADupStack
+\nm{rep-lat-pass} of \nm{rep-n} pre-registered tests, one of them only under the pre-registered page-fault rule, and all six
+again in a post hoc rerun with the index preloaded (\S\ref{sec:posthoc}); quality non-inferiority held on MS MARCO and not
+on CQADupStack
 (\S\ref{sec:replication}).
 \item \textbf{Where the cascade loses}, in the main text (\S\ref{sec:losses}), and the harness, frozen points and every
 record for others to check the results and add systems (\S\ref{sec:repro}).
