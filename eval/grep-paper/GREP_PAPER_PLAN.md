@@ -95,7 +95,7 @@ Rival documentation describes features, not measured results. The benchmark meas
 - **Budget.**
   - The **primary** budget is a token budget T on the complete serialized rendering. The tokenizer is fixed and named: o200k, plus the Claude tokenizer if available.
   - The **secondary** budget is a line budget N, for readability.
-  - The **headline** budget is the agent's own budget: the `head -N` it typed, or the harness cap that applied.
+  - The **headline** budget for a call is the **token count of its as-seen rendering**: what the `head -N` the agent typed, or the harness cap that applied, actually printed. Every policy then pays for its paths, headers and footer from the same tokens the agent received. The selector is reported with and without its footer at this budget.
 - **Policy.** A function from (call, C, budget) to the rendering.
   - Query-only policies see only the call.
   - Task-informed policies also see the issue text.
@@ -108,9 +108,10 @@ Rival documentation describes features, not measured results. The benchmark meas
   - **Recovered.** The baseline misses and the candidate shows the evidence.
   - **Newly lost.** The baseline shows the evidence and the candidate misses it.
   - **Net improvement.** Recovered minus newly lost, which equals the paired reduction in the truncation-miss rate.
-- **Rates.** Every rate is reported twice, never one without the other:
-  1. Among **eligible overflowing calls**, where C's full rendering exceeds the budget.
-  2. Across the **sampled workload**: all eligible calls.
+- **Rates.** Every rate is reported on three bases, always together:
+  1. **Evidence-bearing overflowing calls:** C's full rendering exceeds the budget, and C contains L1 evidence. This is the **primary** base. Gate A, the Gate B threshold and the E5a groups use it. Many greps look for callers, tests or configuration, not the edit target. Those calls cannot be truncation misses under L1, so including them would dilute the rate.
+  2. **Eligible overflowing calls:** C's full rendering exceeds the budget.
+  3. **The sampled workload:** all eligible calls.
 - **Budget utilization.** The share of the budget filled. The prefix cut can leave room unused when a later, shorter item would fit. This is the price of stable prefixes, and we report it.
 
 ## 3. Data, replay fidelity and labels
@@ -150,13 +151,24 @@ Rival documentation describes features, not measured results. The benchmark meas
 
 | Tier | Condition | What it supports |
 |---|---|---|
-| **F, full** | The stored output was **not cut**, and its match records equal the replayed M as **sets**. | Comparisons on the full output |
-| **O, observed** | The stored output was cut, and every stored match record is in the replayed M (subset, ignoring order). | Analyses that use only the observed records. Whether the complete original candidate set equals ours is **uncertain**. |
-| **X, excluded** | A stored match record is missing from the replayed M, or the replay fails. | Counted and reported, never used |
+| **F, full** | The stored output was **not cut**, and its records equal the replayed C (matches and context) as **sets**. | Comparisons on the full output, and the synthetic-overflow set (E4) |
+| **O+, observed and counted** | The stored output was cut, every stored record is in the replayed C, **and** an independent count from the same trajectory equals the replayed \|M\|. Sources for the count: the same pattern run with `\| wc -l` or `-c`, or a harness truncation notice that prints a total. | Historical truncation loss, with stronger support |
+| **O, observed** | The stored output was cut, and every stored record is in the replayed C (subset, ignoring order). No independent count exists. | Historical truncation loss, as a reconstruction-based estimate |
+| **X, excluded** | A stored record is missing from the replayed C, or the replay fails. | Counted and reported, never used |
 
-A matching prefix is **supporting evidence, not proof** that the filesystem was the same. Truncation-loss results on overflowing calls necessarily come from tier O, because a cut call cannot be tier F.
+A matching prefix is **supporting evidence, not proof** that the filesystem was the same. Truncation-loss results on naturally overflowing calls come from tiers O+ and O, because a cut call cannot be tier F. The paper calls them **reconstruction-based estimates**.
 
-To bound the uncertainty, use tier-F calls from the same repositories and environments. Their full-set agreement rate estimates how often the hidden part of a tier-O call is reconstructed correctly. Report that rate beside every tier-O number. Report all results by tier, and report the exclusions.
+**Replay agreement (a diagnostic, not a bound).**
+- Compute it over **every fully observed (uncut) call attempted**, before tiers are assigned. Disagreements and replay failures stay in the denominator, with their reasons listed.
+- Compare complete records C, context included.
+- Stratify by |M| and by file count. Uncut calls are small, and large outputs touch more setup-generated files (`build/`, `.egg-info`, vendored packages). So the overall rate does **not** bound the reliability of tier O.
+- Report the trend with size, and extrapolate only with that stated.
+
+**Sensitivity analysis.** Recompute the headline truncation-loss numbers under assumed reconstruction-error rates, for example 5%, 10% and 20% of hidden records wrong or missing. Label these rates as assumptions. The paper states whether its conclusions survive them.
+
+Where the task's container image exists (§3.2, precondition 4), most of this uncertainty goes away. Report results by tier and by environment type (container or clean checkout).
+
+**Internal versus historical validity.** The benchmark's selector comparisons stay valid on their own frozen candidate sets, even where the historical prevalence estimates are uncertain. The paper keeps the two claims apart.
 
 ### 3.3 Labels
 
@@ -167,7 +179,12 @@ To bound the uncertainty, use tier-F calls from the same repositories and enviro
 
   L1 is a localization proxy. It is not all useful evidence.
 - **L2, audited evidence (about 300 calls, stratified).** The annotator marks relevant definitions, callers, tests and configuration among the source records of C. The annotation is seeded with context that independent successful trajectories used on the same task, as SWE-Explore does. Two annotators label an overlap of about 100 calls to measure agreement; one annotator labels the rest. L2 tests whether the L1 conclusions hold for a broader notion of evidence.
-- **L3, next-opened file (behavioural).** The file the agent opened after the call. L3 has position bias, as clicks in web search do. Use it **only on tier-F calls**.
+- **L3, next-opened file (behavioural).** The file the agent opened after the call. L3 has position bias, as clicks in web search do. Use it **only on tier-F calls**, where the agent saw everything. With this rule, L3 evaluates selection only on the synthetic-overflow set (E4).
+- **v1 label audit (required).** A stratified audit of at least 100 calls, with two annotators on an overlap for agreement. It checks two things:
+  1. whether the base-revision mapping of L1 is correct;
+  2. whether the conclusions change when callers, tests and configuration also count as evidence (L2).
+
+  Before v1 drops this audit, it drops E5a, extra speed comparisons and extra rerankers.
 
 ### 3.4 Independence and splits
 
@@ -190,8 +207,8 @@ The repository is public. Before any held-out replay, publish a tagged commit wi
 **Truncation policies observed in the wild:**
 1. **As seen.** The output the agent actually saw.
 2. **Native streaming order + `head`.**
-   - ripgrep's parallel walk can change file order on every run, so we run it R = 10 times and report the mean and the spread.
-   - GNU `grep -r` prints in directory-listing order. That order depends on the filesystem: ext4 hashed directories are not in name order, APFS is different again. We run it on ext4 (Linux box) and on APFS (Mac).
+   - GNU `grep -r` prints in directory-listing order, which depends on the filesystem. The traces are almost all GNU grep, so this is the main case. We run it on the realistic filesystems of E3(a).
+   - ripgrep's parallel walk can change file order on every run. We run it R = 10 times and report the mean and the spread. `rg` is rare in the traces, so this is secondary.
 3. **Sorted path order + `head`** (`rg --sort path`, which turns off parallelism). A deterministic reference.
 4. **Harness policies:**
    - the Claude Code `head_limit` (verify the number in S0);
@@ -204,6 +221,8 @@ The repository is public. Before any held-out replay, publish a tagged commit wi
 6. **Frequency order.** Files sorted by match count, then cut with `head` (the Signal Grep ordering).
 
 **Rival tools,** run as real processes on the same calls: Signal Grep, RTK, Rustygrep, and tokenix (if it shapes output). pi-agentic-search goes in the task-informed sub-track.
+- **Budget rule.** Each tool applies its own internal limits, so equal budgets are not automatic. We take each tool's native output and cut it at T with the same longest-fitting-prefix rule as everything else (§5.1). We also report each tool at its native size, with its token count.
+- **Headless drivers.** Signal Grep runs as a Pi extension or an MCP server. S4 includes time to build a headless driver for it, and for any other tool without a CLI.
 
 **The ss-grep selector** (§5), frozen, with these ablations:
 - no coverage floor;
@@ -233,15 +252,20 @@ The selector builds one deterministic **reveal order** over items. An item is on
 4. **Order inside a file.** Declaration lines first, then the rest in line order.
 
 **The cut and the rendering:**
-- **Footer.** The footer has a **fixed token reservation**, taken from T before any items. Its content changes with the budget, but it is truncated to fit the reservation, so the space left for items never depends on how much is hidden. The footer gives:
+- **Footer.** The footer gets a reservation f(T) = min(r, ⌊αT⌋), with α < 1. Here r is the full footer size, and α is fixed in the pre-registration (for example α = 0.15). The item space T − f(T) never decreases as T grows, and that is all the nesting proof needs. Small budgets (`head -5`, `head -10`) get small footers, so the footer cannot take a third of the budget. The footer content is truncated to fit f(T). The space left for items depends only on T, never on how much is hidden. The footer gives:
   - the exact number of hidden match records and hidden files;
   - the unseen files with their match counts, as many as fit;
   - one suggested narrowing (`--include` or a subdirectory);
   - a `--more` cursor.
-- **Cut.** The rendering shows the first k items, where k is the **largest value such that every prefix of length ≤ k renders within T − footer**. The cost need not be additive. With `-A/-B`, adding one item can merge two context groups and remove a `--` separator, so the cumulative cost can fall. This definition still gives one well-defined k.
+- **Cut.** The rendering shows the first k items, where k is the **largest value such that every prefix of length ≤ k renders within T − f(T)**. The cost need not be additive. With `-A/-B`, adding one item can merge two context groups and remove a `--` separator, so the cumulative cost can fall. This definition still gives one well-defined k.
 - **Print order.** The rendering groups the chosen items by file.
 
 **The frozen selector** uses p(kind) only. An intent-conditioned prior is a separate v2 arm (§5.4).
+
+**Constants and freezing.**
+- S4 keeps k = 2 and the priors (1, 0.5, 0.25) **unchanged** from the shipped algorithm. It changes only the structure: no file cap, the footer rule, and the reveal-order cut. So all numeric constants were set before any public-trace mining.
+- The structure is designed in S4, while S1–S3 have already mined dev traces. So the accurate claim for the whole selector is **"frozen before any held-out replay"**.
+- The paper states both facts.
 
 **Implementation.** The library takes normalized source records from GNU grep (the main workload), from `rg --json`, or from the ss-grep engine.
 
@@ -252,11 +276,11 @@ The selector builds one deterministic **reveal order** over items. An item is on
 - **Nested sets.** For budgets T ≤ T′, the items shown at T are a subset of those shown at T′. The proof uses three facts:
   - the reveal order does not depend on the budget;
   - excerpts do not depend on the budget;
-  - the footer reservation is fixed, and the cut is the largest all-prefixes-fit k. As T grows, this k cannot decrease.
+  - the item space T − f(T) does not decrease in T, and the cut is the largest all-prefixes-fit k. So k cannot decrease as T grows.
 
   The same holds for line budgets.
 - **Continuation stability.** `--more` returns the next items in the same reveal order. It never repeats or skips one.
-- **Coverage floor, in tokens.** Let c_j be the rendered cost of the first j phase-1 items, plus the footer reservation. If T ≥ c_j, then each of the top j files by admission order has at least one displayed item.
+- **Coverage floor, in tokens.** Let c_i be the rendered cost of the first i phase-1 items. The costs need not increase with i, because rendering is not additive. The sufficient condition is T − f(T) ≥ max over i ≤ j of c_i. Under that condition, each of the top j files in admission order has at least one item displayed. Example: if the first prefix costs 101 tokens and the second costs 99, a 100-token item space shows nothing. The second prefix fitting does not help.
 - **Not claimed:**
   - That print order stays stable across budgets. File grouping can insert new lines above lines already shown.
   - That the hand-set priors are unbiased predictors of relevance. The benchmark tests them.
@@ -264,7 +288,7 @@ The selector builds one deterministic **reveal order** over items. An item is on
 
 ### 5.3 Where each component can matter
 
-- **Phase-2 diagnostic.** When there are more files than the budget can show, the prefix never leaves phase 1. Example: 200 matching files under a 50-line budget gives one line from each of the top 50 files, and the divisor rule never runs. On such calls the divisor-rule ablations must give **identical** outputs. This doubles as a correctness test. Results depend only on file ranking and first-item choice.
+- **Phase-2 diagnostic.** When the budget cannot hold one item from every file, the prefix never leaves phase 1. Example: 200 matching files and a budget of 50 single-line items, with no context lines, give one line from each of the top 50 files. The divisor rule never runs. Headers and context lines make the count of files shown smaller. On such calls the divisor-rule ablations must give **identical** outputs. This doubles as a correctness test. Results depend only on file ranking and first-item choice.
   - Report the **share of calls whose prefix reaches phase 2**, by budget.
   - Attribute the gains separately to file ranking, first-item (declaration) choice, and phase-2 apportionment.
   - Phase 1 may carry most of the benefit. If so, the paper says that file and line prioritization is the useful part.
@@ -314,40 +338,57 @@ Results are stratified by harness × model family × language.
 
 **Selector used.** The pilot uses **the shipped ss-grep algorithm at a named commit** (since 945a9664: weight × prior, one line per file first, then Sainte-Laguë, declarations first, with its file cap). The reveal-order library does not exist yet at this step. The frozen arm of the main study is the commit that the pre-registration names (S5).
 
-At the agent's own budget, compute:
-1. the overflow rate;
-2. the conditional truncation-miss rate (L1, tier O, together with the tier-F agreement rate);
-3. against "as seen": the recovered, newly lost and net results, for the shipped selector and for round robin.
+The pilot delivers five outputs, at the headline budget:
+1. **Eligibility and replay agreement.**
+   - Counts for each precondition and each tier.
+   - The replay-agreement rate over all fully observed calls attempted, stratified by size.
+2. **Truncation-miss prevalence** on all three bases, as reconstruction-based estimates. The reconstruction uncertainty and the sensitivity range are stated.
+3. **Recovered, newly lost and net outcomes** against "as seen" and against round robin, for the shipped selector.
+4. **The share of calls whose prefix reaches phase 2.**
+5. **A small audited check of label correctness**, about 50 calls from the v1 audit, done early.
 
-Also audit fidelity tiering and L1 mapping on this pilot.
-
-**Gate A.** If the conditional truncation-miss rate is about 5% or below, report **"low observed prevalence"**. Do not call it "harmless": harm is a question for the agent experiments. The paper then centres on the census, the benchmark and the enumeration-order result.
+**Gate A** uses the evidence-bearing base. If the truncation-miss rate among evidence-bearing overflowing calls is about 5% or below, report **"low observed prevalence"**. Do not call it "harmless": harm is a question for the agent experiments. The paper then centres on the census, the benchmark and the enumeration-order result.
 
 Write the abstract **after** this gate.
 
 ### E2. Truncation loss (C2)
 
 E2 covers the full eligible set and every policy in §4, items 1–4. It reports:
-- all three events, at both rate bases;
+- all three events, on all three rate bases;
 - token and line budgets;
 - L1 on all calls, L2 on the audited subset;
-- results by fidelity tier.
+- results by fidelity tier and environment type, as reconstruction-based estimates with the sensitivity range.
 
 ### E3. Order dependence (C2)
 
 Two separate questions:
 
-**(a) Enumeration sensitivity.** Hold C fixed and shuffle the file enumeration order: 50 random orders, plus the observed native orders from R = 10 ripgrep runs, plus GNU grep on ext4 and on APFS.
-- Native streaming truncation can change under these shuffles.
-- Sorted-path truncation and any content-based ranking do not change, by construction. Their invariance is not a finding.
-- **The finding:** the share of calls whose truncation-miss status is **decided by enumeration order** under the native policies. Also measured: how much evidence those policies lose or expose inconsistently.
-- **The hook:** "the same grep call shows different evidence on different runs and machines."
+**(a) Enumeration sensitivity across realistic environments.** The headline comes from orders that real machines produce:
+- GNU `grep -r` on **two separate ext4 images** (loopback files made with separate `mkfs` runs). The ext4 hashed directory order depends on a per-filesystem hash seed, so two ext4 machines can disagree. Verify this seed behaviour in S2 before relying on it.
+- GNU grep inside **the task's container**, on its overlay filesystem. This is the environment the trajectories actually ran in.
+- GNU grep on APFS (Mac).
+- ripgrep native order, R = 10 runs. This is secondary, because `rg` is rare in the traces.
+
+Fifty random shuffles of C give an **upper bound**, and the paper reports them only as that.
+
+**What changes and what does not.** Native streaming truncation can change between these environments. Sorted-path truncation and any content-based ranking cannot, by construction. Their invariance is not a finding.
+
+**The finding:** the share of evidence-bearing calls whose truncation-miss status differs between realistic environments. We also measure how much evidence the native policies expose inconsistently.
+
+**The hook:** "the same grep call shows different evidence on different machines."
 
 **(b) Dependence on alphabetical position.** Path sorting favours targets whose paths sort early.
 - Measure where gold targets fall in path order, and how that predicts visibility.
 - For a controlled test, apply a random bijection to directory and file names. The bijection keeps extensions, depth, test and generated markers, and labels. Re-measure the visibility of path-order truncation; changing the sort keys changes it.
 
 ### E4. Selector benchmark and Gate B (C3, C4)
+
+**Two populations.** They are reported side by side and never pooled.
+1. **Natural overflow.** Tiers O+ and O, at the headline budget. This population carries historical validity, but as reconstruction-based estimates.
+2. **Synthetic overflow.** Tier-F calls, at imposed budgets below each call's full size: for example 25%, 50% and 75% of the full rendering tokens, and the as-seen budgets of comparable natural-overflow calls.
+   - Fidelity is complete here, so no tier-O uncertainty applies.
+   - L3 is unbiased here, because the agent saw everything.
+   - It is a different population, with smaller outputs.
 
 E4 runs:
 - all arms at **equal token budgets** (primary) and at equal line budgets;
@@ -358,7 +399,7 @@ E4 runs:
 
 Held-out runs once, at the milestone.
 
-**Gate B. Decision metric:** the paired net reduction in truncation-miss rate of the frozen selector against round robin. This is recovered minus newly lost, on held-out, at the agent's own budget. Recovered and newly lost are always reported beside it.
+**Gate B. Decision metric:** the paired net reduction in truncation-miss rate of the frozen selector against round robin. This is recovered minus newly lost, on held-out evidence-bearing overflowing calls, at the headline budget. It is computed on natural overflow and must agree in sign on synthetic overflow. Recovered and newly lost are always reported beside it.
 - **Threshold, pre-registered:** for example, a net reduction of at least 3 points, with the cluster-bootstrap interval excluding 0.
 - **Also required:** against "as seen", newly lost evidence must stay within the pre-registered non-inferiority margin.
 - **If Gate B fails:** ship round robin as the default, and make the empirical discovery the centre of the paper.
@@ -372,7 +413,7 @@ An internal dev result exists: on 154 overflow calls from our own traces, answer
 
 Design:
 - **Anchor.** Each trajectory is anchored at its **first eligible overflowing call**. This removes the length confound: longer trajectories have more chances to hit a miss.
-- **Groups.** Within a task, and stratified by model and harness, compare trajectories where that anchor call was a truncation miss with those where it was not.
+- **Groups.** Only **evidence-bearing** anchors qualify. Within a task, and stratified by model and harness, compare trajectories whose anchor call was a truncation miss ("miss") with those whose anchor call displayed the L1 evidence ("shown"). Retrieval misses belong to neither group.
 - **Measures, from the anchor on:** steps to the first opening of an L1 file, re-grep rate, and resolve rate.
 - **Matching.** Match or adjust on the anchor's step index.
 
@@ -458,7 +499,7 @@ In priority order:
 4. **Token-aware rendering.**
    - Clipping long lines must not depend on the budget.
    - Context lines count against the budget.
-   - The footer has a fixed reservation.
+   - The footer reservation is f(T) = min(r, αT), so item space never shrinks as the budget grows.
 5. **Provenance and continuation.** The §5.1 footer; `--more`, with the continuation guarantee; follow-up per file.
 6. **Role tags and intent controls.** Each line carries a tag (definition, call, import, test), and the agent can filter by role.
 7. **Freshness under edits and branch switches** (E6).
@@ -499,7 +540,7 @@ In priority order:
 - **Multiplicity.** The primary comparisons are pre-registered and few:
   - the selector against "as seen";
   - the selector against round robin;
-  - both at the agent's own budget.
+  - both on evidence-bearing overflowing calls at the headline budget.
 
   Everything else is labelled secondary.
 - **"Equal quality" claims.** They need a pre-registered non-inferiority margin.
@@ -529,12 +570,12 @@ In priority order:
   - The replay measures counterfactual output.
   - E5b measures counterfactual continuations at states the original policy reached.
   - Neither measures whole-session adaptation.
-- **Replay fidelity.** Tiers, exclusions, the tier-F agreement rate as a bound for tier O, and whether eligible calls differ in shape from the rest.
+- **Replay fidelity.** Report the tiers and the exclusions, and the replay agreement over all fully observed calls, stratified by size. This agreement is a diagnostic, not a bound. Add the sensitivity analysis under assumed reconstruction-error rates. Check whether eligible calls differ in shape from the others. Historical prevalence comes from reconstruction-based estimates. The selector comparisons on frozen candidate sets do not depend on them.
 - **Model mix.** Open-weight models dominate the data. Frontier models grep less (lit-C §4, small sample). Report by model family, and include the SWE-bench/experiments subset.
 - **Labels.** L1 is one valid fix. L2 and L3 test robustness.
 - **Enriched populations.** E5c results hold for the enriched set. The representative stratum is reported separately.
 - **Own-tool bias.** The defences:
-  - the selector is frozen before mining;
+  - the numeric constants were set before any public-trace mining, and the whole selector is frozen before any held-out replay;
   - the pre-registration is public;
   - held-out is split by repository;
   - rivals run as real processes;
@@ -560,15 +601,22 @@ In priority order:
 
 | v1 must-haves | Deferred to the ISSTA version |
 |---|---|
-| E0 census | Full L2 audit (v1: the 100-call double-annotated overlap only, if time allows) |
-| E1 pilot with Gate A | Full E5b (v1: pilot only, if approved and ready) |
+| E0 census | Full L2 audit beyond the v1 audit |
+| E1 pilot with Gate A (five outputs) | Full E5b (v1: pilot only, if approved and ready) |
 | E2 truncation loss | E5c end-to-end A/B (it depends on the adapter) |
 | E3 order dependence | Replay track release |
-| E4 selector benchmark with Gate B | E6 freshness |
-| E5a observational (if the premise holds) | GNU compatibility adapter |
-| Selection-track release (smoke + full) | Full E7 grid (v1: overhead + Mac/Linux core table) |
+| E4 selector benchmark with Gate B (natural + synthetic overflow) | E6 freshness |
+| **v1 label audit** (at least 100 calls, stratified, overlap double-annotated) | GNU compatibility adapter |
+| E5a observational (if the premise holds) | Full E7 grid (v1: overhead + Mac/Linux core table) |
+| Selection-track release (smoke + full) | Task-informed rerankers beyond BM25 and one cross-encoder |
 
-**When time runs short,** cut from the bottom of the must-have column upward: E5a first, then the E3(b) controlled perturbation.
+**When time runs short,** cut in this order:
+1. E5a.
+2. Extra speed comparisons.
+3. Extra rerankers.
+4. The E3(b) controlled perturbation.
+
+The label audit stays.
 
 **Machine time.** The HNSW and MaxSim papers hold the Mac and the box in fixed windows. Replays use CPU. Schedule them outside those windows, and never during a timed run ([[feedback_no_tests_during_mac_bench_queue]]).
 
@@ -578,11 +626,11 @@ In priority order:
 |---|---|---|
 | S0 | Narrow literature check for the novelty sentence. Verify: tokenix's grep mode, Claude Code `head_limit`, the Codex cut, SWE-agent's cap, the primary source for "agents don't paginate", and the AGENTS.md tool statistics (2602.11988). Check the benchmark name for collisions. | Final novelty sentence |
 | S1 | Trace miner, edit detector, path rewriting, dialect parser (`eval/grep-paper/mine/`). E0 census on 5k trajectories. **Check trajectories per task** (the E5a premise) and container-image availability. | Coverage, eligibility and premise tables |
-| S2 | Replay harness: environments, order-independent fidelity tiers, source-record extraction, base-revision label mapping, reference renderer and token counter. Reuse `eval/grep-allocation-replay/`. | Tier audit on 100 calls |
-| S3 | **E1 pilot, 500 dev calls**, with the shipped selector at a named commit. | **Gate A**: abstract framing |
-| S4 | Reveal-order selector library: GNU, rg and engine inputs; fixed footer reservation; `--more`. Proofs written. Rivals installed as processes. | Property tests (nesting, continuation, phase-1 identity across divisor rules); native-lane parity |
-| S5 | Pre-registration: tagged commit + Zenodo DOI naming the frozen selector commit. Repository split. L2 guide. | Public before any held-out replay |
-| S6 | E2, E3, E4 on dev, then held-out once. L2 overlap annotation. | **Gate B**: net reduction against round robin |
+| S2 | Replay harness: environments (containers where available), order-independent fidelity tiers (F, O+, O, X), independent count checks, source-record extraction, base-revision label mapping, reference renderer and token counter. Verify the ext4 hash-seed behaviour. Reuse `eval/grep-allocation-replay/`. | Tier audit on 100 calls; replay agreement by size |
+| S3 | **E1 pilot, 500 dev calls**, with the shipped selector at a named commit. | **Gate A** (evidence-bearing base): abstract framing |
+| S4 | **Runs in parallel with S1–S3**, because it does not depend on the traces. Reveal-order selector library: GNU, rg and engine inputs; footer rule f(T) = min(r, αT); `--more`. k and the priors stay unchanged. Proofs written. Rivals installed, with headless drivers (Signal Grep). | Property tests (nesting, continuation, phase-1 identity across divisor rules, footer monotonicity); native-lane parity |
+| S5 | Pre-registration: tagged commit + Zenodo DOI naming the frozen selector commit and α. Repository split. L2 guide. | Public before any held-out replay |
+| S6 | E2, E3, E4 (natural and synthetic overflow) on dev, then held-out once. v1 label audit. | **Gate B**: net reduction against round robin |
 | S7 | E5a observational ($0); core E7 (overhead; Mac and Linux). | v1 tables |
 | S8 | Selection-track release (dataset card, DOI, CITATION.cff, baselines, scorer, licence fields) and arXiv v1. | The owner reads the draft |
 | S9 | E5b pilot (about $20, owner go), then a full run under an owner ceiling. Full L2. | Owner approval |
