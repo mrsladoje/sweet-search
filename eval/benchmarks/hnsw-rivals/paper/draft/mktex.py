@@ -5,7 +5,7 @@ import argparse, collections, json, math, os
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ap = argparse.ArgumentParser(); ap.add_argument('json'); ap.add_argument('--extra', help='JSON of extra numbers {key: value}'); ap.add_argument('--tails', help='tails_recall.py output'); ap.add_argument('--post', help='post_analyze.py output (post-freeze experiments)'); ap.add_argument('--rep', help='rep_analyze.py output (replication)'); ap.add_argument('--rep-describe', help='rep_describe.py output (replication, descriptive)')
+ap = argparse.ArgumentParser(); ap.add_argument('json'); ap.add_argument('--extra', help='JSON of extra numbers {key: value}'); ap.add_argument('--tails', help='tails_recall.py output'); ap.add_argument('--post', help='post_analyze.py output (post-freeze experiments)'); ap.add_argument('--rep', help='rep_analyze.py output (replication)'); ap.add_argument('--rep-describe', help='rep_describe.py output (replication, descriptive)'); ap.add_argument('--code-ablation', help='code_ablation.py output'); ap.add_argument('--floor', help='floor_analyze.py output'); ap.add_argument('--mech', help='mech_analyze.py output')
 a = ap.parse_args()
 J = json.load(open(a.json))
 TYPES = [t for t in ('intel', 'amd', 'arm', 'box', 'mac') if t in J['R']]
@@ -590,6 +590,9 @@ if a.rep:
         nums['rep-share-ours-cqa'] = f"{RD[('intel', 'cqadup')]['share_ours']:.4f}"; nums['rep-share-ours-cqa-lo'] = fl(RD[('intel', 'cqadup')]['share_ours_lower'])
         nums['rep-share-ours-msm'] = f"{RD[('intel', 'msmarco1m')]['share_ours']:.4f}"; nums['rep-share-ours-msm-lo'] = fl(RD[('intel', 'msmarco1m')]['share_ours_lower'])
     ok = [r for r in RJ if 'missing' not in r]
+    for r in RJ:
+        if 'ratio' in r:
+            nums[f"rep-ratio-{r['type']}-{r['set']}"] = f"{r['ratio']:.2f}"
     nums['rep-n'] = str(len(RJ)); nums['rep-lat-pass'] = str(sum(1 for r in ok if r.get('holm_latency')))
     nums['rep-q-pass'] = str(sum(1 for r in ok if r.get('holm_quality')))
     nums['rep-joint'] = str(sum(1 for r in ok if r.get('holm_latency') and r.get('holm_quality')))
@@ -604,6 +607,50 @@ if a.rep:
         nat = [r['native_share'] for r in ok if r.get('native_share')]
         if nat:
             nums['rep-native'] = f'{100 * float(np.median(nat)):.0f}'
+
+# ---- post hoc code ablation (code_ablation.py): cells meeting f = 0.99 by the bound, per code variant and budget
+if a.code_ablation:
+    CA = json.load(open(a.code_ablation)); V = ('sign512', 'sign768', 'rot512', 'rot768')
+    ncell = len({(r['set'], r['model']) for r in CA})
+    rows = []
+    for C in sorted({r['C'] for r in CA}):
+        cnt = {v: sum(1 for r in CA if r['C'] == C and r['variant'] == v and r['meets']) for v in V}
+        lo = {v: min(r['share'] for r in CA if r['C'] == C and r['variant'] == v) for v in V}
+        rows.append(f'{C} & ' + ' & '.join(f'{cnt[v]} ({lo[v]:.3f})' for v in V) + r' \\')
+        for v in V:
+            nums[f'ca-{v}-{C}'] = str(cnt[v])
+    nums['ca-cells'] = str(ncell)
+    open(os.path.join(HERE, 'tables', 'code-ablation.tex'), 'w').write('\n'.join(rows) + '\n')
+
+# ---- post hoc mechanism check (mech_analyze.py, the Mac)
+if a.mech:
+    MJ = json.load(open(a.mech)); K = {'heap/bucket fixed': 'hb-fixed', 'heap/bucket adaptive': 'hb-adapt', 'faiss/bucket fixed': 'fb',
+                                      'faiss/heap fixed': 'fh', 'flat heap/counting': 'flat-hc', 'flat heap/ours scan': 'flat-ho', 'flat counting/ours scan': 'flat-co'}
+    for k, tag in K.items():
+        v = list(MJ['ratios'][k].values())
+        nums[f'mech-{tag}'] = f"{MJ['gm'][k]:.2f}"; nums[f'mech-{tag}-min'] = f'{min(v):.2f}'; nums[f'mech-{tag}-max'] = f'{max(v):.2f}'
+    cols = ['fixed-bucket', 'fixed-heap', 'adaptive-bucket', 'adaptive-heap', 'faiss_bin_hnsw', 'ours_scan', 'flat-heap', 'flat-counting']
+    rows = []
+    for s_ in SETS:
+        if f'{s_}|fixed-bucket' in MJ['gen']:
+            rows.append(s_ + ' & ' + ' & '.join(f"{MJ['gen'][f'{s_}|{c}']:.0f}" if f'{s_}|{c}' in MJ['gen'] else '' for c in cols) + r' \\')
+    open(os.path.join(HERE, 'tables', 'mech.tex'), 'w').write('\n'.join(rows) + '\n')
+    nums['mech-share'] = f"{100 * math.log(MJ['gm']['heap/bucket fixed']) / math.log(MJ['gm']['faiss/bucket fixed']):.0f}"
+
+# ---- post hoc: CQADupStack dev efforts below the shared grid floor (floor_analyze.py)
+if a.floor and a.rep:
+    FJ = json.load(open(a.floor)); RJx = {(r['type'], r['set']): r for r in json.load(open(a.rep))}
+    W = ['no', 'one', 'two', 'three']; gains = {}
+    for t in ('intel', 'amd', 'arm'):
+        rv = RJx[(t, 'cqadup')]['rival']; g = FJ[t]['summary'].get(rv) or {}
+        gains[t] = g.get('gain') or 1.0
+        nums[f'floor-gain-{t}'] = f'{gains[t]:.2f}'
+        nums[f'floor-adj-{t}'] = f"{RJx[(t, 'cqadup')]['ratio'] / gains[t]:.2f}"
+        b = (g.get('best') or {}).get('point', {}).get('search', {})
+        nums[f'floor-best-{t}'] = str(b.get('ef', b.get('window', '')))
+    nums['floor-n-lower'] = W[sum(1 for t in gains if gains[t] > 1.0001)]
+    allg = [v['gain'] for t in FJ for f, v in FJ[t]['summary'].items() if v.get('gain') and not f.startswith('ours') and v['gain'] > 1.0001]
+    nums['floor-gain-min'] = f'{min(allg):.2f}'; nums['floor-gain-max'] = f'{max(allg):.2f}'
 
 # ---- protocol numbers
 fz = J['freeze']

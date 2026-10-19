@@ -43,7 +43,7 @@ cascade follows this recipe; it adds no new method. Our codes use the sign of th
 truncation suits models trained for nested dimensions, as in Matryoshka representations~\cite{kusupati2022matryoshka}; the
 model cards and papers of our three models~\cite{suresh2025cornstack,gunther2023jina2,xiao2024cpack} describe contrastive
 training and do not report nested-dimension training, so the truncation is a design choice of the product that this
-study does not justify. We did not compare it with 768-bit codes or with a random rotation before the sign.
+study does not justify. A post hoc check compares it with 768-bit codes and with a random rotation before the sign (\S\ref{sec:codeablation}).
 
 \paragraph{Why engines are not arms.} The engines above add a server process, a storage layer, inter-process
 communication and their own threading. In a single-thread, in-process latency comparison they would measure that
