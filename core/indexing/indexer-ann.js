@@ -177,7 +177,7 @@ export function decideHybridDispatcher({
   return { armed: true, reason: 'ok' };
 }
 
-function estimateLateInteractionTokens(text, maxLength = 2048) {
+export function estimateLateInteractionTokens(text, maxLength = 2048) {
   const charsPerToken = Number(process.env.SWEET_SEARCH_LI_CHARS_PER_TOKEN || 4);
   const batchingSafety = Number(process.env.SWEET_SEARCH_LI_BATCHING_SAFETY || 1.15);
   const est = Math.ceil((text.length / charsPerToken) * batchingSafety);
@@ -185,6 +185,19 @@ function estimateLateInteractionTokens(text, maxLength = 2048) {
 }
 
 function buildLateInteractionBatches(chunks, options = {}) {
+  const indexed = chunks.map((chunk) => {
+    const text = pickLiInput(chunk);
+    return { chunk, text, estTokens: estimateLateInteractionTokens(text, options.maxLength ?? 2_048) };
+  });
+  return planLateInteractionBatches(indexed, options).map((items) => ({ items }));
+}
+
+/**
+ * Pack items (each with `estTokens`) into encoder batches, shortest first, under the batch-size,
+ * token (memory) and attention (compute) budgets below. Returns arrays of the input items.
+ * Shared by the full build and the maintainer's per-file encode, so both pad the same way.
+ */
+export function planLateInteractionBatches(items, options = {}) {
   const batchSizeCap = Math.max(1, options.batchSize ?? 8);
   // Upper cap lets short-chunk batches grow past the baseline `batchSize`
   // when there's token-budget headroom. The baseline batchSize is tuned for
@@ -241,15 +254,7 @@ function buildLateInteractionBatches(chunks, options = {}) {
   } else {
     attentionBudget = Math.max(1, Math.floor(batchSizeCap / 2)) * maxLength * maxLength;
   }
-  const indexed = chunks.map((chunk) => {
-    const text = pickLiInput(chunk);
-    return {
-      chunk,
-      text,
-      estTokens: estimateLateInteractionTokens(text, maxLength),
-    };
-  });
-  indexed.sort((a, b) => a.estTokens - b.estTokens);
+  const indexed = [...items].sort((a, b) => a.estTokens - b.estTokens);
 
   const batches = [];
   let i = 0;
@@ -265,7 +270,7 @@ function buildLateInteractionBatches(chunks, options = {}) {
       if (candidateLongest * candidateLongest * candidateCount > attentionBudget) break;
       batchSize = candidateCount;
     }
-    batches.push({ items: indexed.slice(i, i + batchSize) });
+    batches.push(indexed.slice(i, i + batchSize));
     i += batchSize;
   }
 

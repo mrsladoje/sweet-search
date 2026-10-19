@@ -245,6 +245,7 @@ function fixedStringOrSymbol(options, symbolType) {
 
 export async function bareGrep(query, routing, options = {}) {
   await this?._refreshManifestPins?.({ reloadScope: 'grep' });
+  const pinnedEpoch = this?._readReconcileManifest?.()?.epoch ?? null;
   const regex = options.regex || query;
   const searchDir = this?.projectRoot || options.projectRoot || PROJECT_ROOT;
   const filterRoot = path.resolve(searchDir);
@@ -317,7 +318,14 @@ export async function bareGrep(query, routing, options = {}) {
   const fallback = await applyUnindexedFallback({
     searcher: this, regex, searchDir: filterRoot, options, matches: dialectRetry.matches, shapeResult,
   });
+  // A tick that published after the pin above may have indexed a file and removed it from the
+  // queue the fallback just read: neither saw it. Search once more on the new epoch.
+  if (fallback.matches.length === 0 && options._epochRetry !== true && pinnedEpoch != null
+      && (this?._readReconcileManifest?.()?.epoch ?? null) !== pinnedEpoch) {
+    return bareGrep.call(this, query, routing, { ...options, _epochRetry: true });
+  }
   let matches = fallback.matches;
+  const staleFallbackFiles = fallback.staleFiles || null;
   const globExcluded = globCounts?.get(matches) || null;
   const listTotals = cappedListTotals.get(matches) || null;
   matches.sort((a, b) =>
@@ -380,6 +388,7 @@ export async function bareGrep(query, routing, options = {}) {
         return entities.length >= GREP_LINE_CLASS_ENTITY_CAP ? [] : entities;
       },
       isFresh: (file) => {
+        if (staleFallbackFiles?.has(file)) return false;
         const f = indexFreshness(path.resolve(searchDir, file), manifest);
         return f.known && !f.stale;
       },

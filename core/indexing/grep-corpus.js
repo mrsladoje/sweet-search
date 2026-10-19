@@ -19,11 +19,11 @@
 import fs from 'node:fs/promises';
 import { lstatSync, readFileSync } from 'node:fs';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { Minimatch } from 'minimatch';
 
 import { SECRET_FILE_PATTERNS } from '../infrastructure/config/index.js';
-import { createAdmissionPolicy } from './admission-policy.js';
+import { createAdmissionPolicy, isSymlinkedRelUnder } from './admission-policy.js';
 import { fileLooksMinified } from './minified-detector.js';
 import { changedFilesTracker } from './changed-files-tracker.js';
 import {
@@ -203,45 +203,103 @@ export function listChangedGrepFiles(projectRoot, { limit = 2000 } = {}) {
   return files;
 }
 
-const PENDING_QUEUES = ['index-maintainer-queue.jsonl', 'index-maintainer-queue.processing.jsonl'];
+const PENDING_QUEUE = 'index-maintainer-queue.jsonl';
+const PENDING_PROCESSING = 'index-maintainer-queue.processing.jsonl';
+const PENDING_TTL_MS = 30_000;
+const pendingCache = new Map();
+
+function readQueuePaths(file) {
+  let raw;
+  try { raw = readFileSync(file, 'utf8'); } catch { return null; }
+  const out = [];
+  for (const line of raw.split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      const fp = JSON.parse(line).file_path;
+      if (typeof fp === 'string' && fp) out.push(fp);
+    } catch { /* a partial last line, or a malformed one */ }
+  }
+  return out;
+}
+
+function queueStamp(file) {
+  try {
+    const st = lstatSync(file);
+    return `${st.size}:${st.mtimeMs}`;
+  } catch {
+    return '-';
+  }
+}
+
+// Paths git ignores, from one `git check-ignore` call. Outside git, or on any
+// git failure, nothing counts as ignored (the path gates above still apply).
+function gitIgnoredSet(projectRoot, rels) {
+  if (rels.length === 0) return new Set();
+  const res = spawnSync('git', ['check-ignore', '-z', '--stdin'], {
+    cwd: projectRoot, input: rels.join('\0'), encoding: 'utf8', maxBuffer: 64 * 1024 * 1024,
+  });
+  if (res.status !== 0 || !res.stdout) return new Set();
+  return new Set(res.stdout.split('\0').filter(Boolean));
+}
 
 /**
- * Files queued for the maintainer but not yet reindexed. Their grams are stale or absent until
- * the maintainer reaches them, and a committed file is not in git's changed list, so a backlog
- * (a branch switch, a pull, a stopped maintainer) would answer "no matches" for code on disk.
- * Read on the zero-hit path only; the queues hold one JSON line per project-relative path.
+ * Files queued for the maintainer but not yet reindexed, newest first. Their grams are stale or
+ * absent until the maintainer reaches them, and a committed file is not in git's changed list,
+ * so a backlog (a branch switch, a pull, a stopped maintainer) would answer "no matches" for
+ * code on disk. Read on the zero-hit path only.
+ *
+ * Each path passes the grep-corpus gates rg would apply: inside the root with no symlinked
+ * component, a regular file, not gitignored. The validated list is cached on the queue files'
+ * size and mtime. `inScope` filters before `limit`, so a scoped search never loses its files
+ * to the cap.
  * @param {string} projectRoot
- * @param {{stateDir?: string, limit?: number}} [opts]
+ * @param {{stateDir?: string, limit?: number, inScope?: (rel: string) => boolean}} [opts]
  * @returns {string[]}
  */
-export function listPendingReindexFiles(projectRoot, { stateDir, limit = 2000 } = {}) {
+export function listPendingReindexFiles(projectRoot, { stateDir, limit = 2000, inScope = null } = {}) {
   const dir = stateDir || process.env.SWEET_SEARCH_STATE_DIR || path.join(projectRoot, '.sweet-search');
-  const seen = new Set();
-  for (const name of PENDING_QUEUES) {
-    let raw;
-    try { raw = readFileSync(path.join(dir, name), 'utf8'); } catch { continue; }
-    for (const line of raw.split('\n')) {
-      if (!line.trim()) continue;
-      let fp;
-      try { fp = JSON.parse(line).file_path; } catch { continue; }
-      if (typeof fp !== 'string' || !fp) continue;
-      const rel = normalizeRel(path.isAbsolute(fp) ? path.relative(projectRoot, fp) : fp);
-      if (rel && rel !== '..' && !rel.startsWith('../')) seen.add(rel);
+  const queueFile = path.join(dir, PENDING_QUEUE);
+  const processingFile = path.join(dir, PENDING_PROCESSING);
+  const key = `${projectRoot}\0${dir}`;
+  const stamp = `${queueStamp(queueFile)}|${queueStamp(processingFile)}`;
+  const now = Date.now();
+  let validated = null;
+  const hit = pendingCache.get(key);
+  if (hit && hit.stamp === stamp && now - hit.at < PENDING_TTL_MS) validated = hit.files;
+  if (!validated) {
+    // Queue first, then the processing file. If the processing file is gone, the maintainer may
+    // have appended its deferred tail and published between the two reads: read the queue again.
+    let queued = readQueuePaths(queueFile) || [];
+    const processing = readQueuePaths(processingFile);
+    if (processing === null) queued = readQueuePaths(queueFile) || queued;
+    const ordered = [...queued].reverse().concat([...(processing || [])].reverse());
+    const seen = new Set();
+    const candidates = [];
+    const ignores = loadIgnoreRegexes(projectRoot);
+    const linkMemo = new Map();
+    for (const fp of ordered) {
+      const rel = path.posix.normalize(normalizeRel(path.isAbsolute(fp) ? path.relative(projectRoot, fp) : fp));
+      if (!rel || rel === '.' || rel === '..' || rel.startsWith('../') || path.isAbsolute(rel) || seen.has(rel)) continue;
+      seen.add(rel);
+      if (!isGrepCorpusPath(rel, ignores)) continue;
+      if (isSymlinkedRelUnder(projectRoot, rel, linkMemo)) continue;
+      let stat = null;
+      try { stat = lstatSync(path.join(projectRoot, rel)); } catch { stat = null; }
+      if (isRegularGrepFile(stat)) candidates.push(rel);
     }
+    const ignored = gitIgnoredSet(projectRoot, candidates);
+    validated = candidates.filter((rel) => !ignored.has(rel));
+    pendingCache.set(key, { stamp, at: now, files: validated });
   }
-  if (seen.size === 0) return [];
-  const ignores = loadIgnoreRegexes(projectRoot);
   const files = [];
-  for (const rel of [...seen].sort()) {
+  for (const rel of validated) {
     if (files.length >= limit) break;
-    if (!isGrepCorpusPath(rel, ignores)) continue;
-    let stat = null;
-    try { stat = lstatSync(path.join(projectRoot, rel)); } catch { stat = null; }
-    if (isRegularGrepFile(stat)) files.push(rel);
+    if (!inScope || inScope(rel)) files.push(rel);
   }
   return files;
 }
 
 export function _resetChangedGrepFilesCache() {
   changedCache.clear();
+  pendingCache.clear();
 }

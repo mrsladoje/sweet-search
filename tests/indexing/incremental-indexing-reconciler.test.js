@@ -157,11 +157,11 @@ describe('Reconciler / tick lifecycle', () => {
     expect(snap.tick_ms).toBeGreaterThanOrEqual(5_000);
   });
 
-  it('uses the catch-up budget for a large backlog on an idle machine', async () => {
+  it('uses the catch-up budget for a large backlog when other processes leave the CPU idle', async () => {
     const dirty = Array.from({ length: 30 }, (_, i) => `f${i}.js`);
-    const run = async (cpuLoadAvg) => {
+    const run = async (otherCpuShare) => {
       let nowMs = 0;
-      const dir = path.join(stateDir, `load-${cpuLoadAvg}`);
+      const dir = path.join(stateDir, `share-${otherCpuShare}`);
       fs.mkdirSync(dir);
       const r = new Reconciler({
         stateDir: dir,
@@ -171,7 +171,7 @@ describe('Reconciler / tick lifecycle', () => {
           hashFile: async (file) => { nowMs += 1_000; return { file, contentUnchanged: false, chunks: [] }; },
         }),
         now: () => nowMs,
-        config: { filesPerTick: 50, cpuBudgetMs: 2_000, catchUpCpuBudgetMs: 8_000, cpuLoadAvg },
+        config: { filesPerTick: 50, cpuBudgetMs: 2_000, catchUpCpuBudgetMs: 8_000, otherCpuShare },
       });
       return r.tick();
     };
@@ -180,18 +180,55 @@ describe('Reconciler / tick lifecycle', () => {
     expect(idle.cpu_budget_total_ms).toBe(8_000);
     expect(idle.files_processed).toBe(8);
 
-    const busy = await run(0.9);
+    const busy = await run(0.7);
     expect(busy.cpu_budget_total_ms).toBe(2_000);
     expect(busy.files_processed).toBe(2);
+
+    const unknown = await run(undefined);
+    expect(unknown.cpu_budget_total_ms).toBe(2_000);
   });
 
-  it('effectiveCpuBudgetMs keeps the normal budget unless backlog and load allow catch-up', () => {
-    const cfg = { cpuBudgetMs: 2_000, catchUpCpuBudgetMs: 8_000, catchUpMinDirty: 20, catchUpMaxLoad: 0.8 };
-    expect(effectiveCpuBudgetMs({ ...cfg, cpuLoadAvg: 0.1 }, 20)).toBe(8_000);
-    expect(effectiveCpuBudgetMs({ ...cfg, cpuLoadAvg: 0.1 }, 19)).toBe(2_000);
-    expect(effectiveCpuBudgetMs({ ...cfg, cpuLoadAvg: 0.8 }, 100)).toBe(2_000);
+  it('effectiveCpuBudgetMs keeps the normal budget unless backlog and CPU share allow catch-up', () => {
+    const cfg = { cpuBudgetMs: 2_000, catchUpCpuBudgetMs: 8_000, catchUpMinDirty: 20, catchUpMaxOtherCpu: 0.5 };
+    expect(effectiveCpuBudgetMs({ ...cfg, otherCpuShare: 0.1 }, 20)).toBe(8_000);
+    expect(effectiveCpuBudgetMs({ ...cfg, otherCpuShare: 0.1 }, 19)).toBe(2_000);
+    expect(effectiveCpuBudgetMs({ ...cfg, otherCpuShare: 0.5 }, 100)).toBe(2_000);
     expect(effectiveCpuBudgetMs({ ...cfg }, 100)).toBe(2_000);
-    expect(effectiveCpuBudgetMs({ ...cfg, catchUpCpuBudgetMs: 0, cpuLoadAvg: 0 }, 100)).toBe(2_000);
+    expect(effectiveCpuBudgetMs({ ...cfg, catchUpCpuBudgetMs: 0, otherCpuShare: 0 }, 100)).toBe(2_000);
+  });
+
+  it('keeps budget defaults when the config carries undefined, NaN or negative values', () => {
+    const r = new Reconciler({
+      stateDir,
+      adapters: makeAdapter(),
+      config: {
+        cpuBudgetMs: Number.NaN, filesPerTick: undefined, catchUpCpuBudgetMs: -1,
+        catchUpMinDirty: undefined, catchUpMaxOtherCpu: Number.NaN, intervalMs: 0,
+      },
+    });
+    expect(r.config).toMatchObject({
+      cpuBudgetMs: 2_000, filesPerTick: 50, catchUpCpuBudgetMs: 8_000,
+      catchUpMinDirty: 20, catchUpMaxOtherCpu: 0.5, intervalMs: 60_000,
+    });
+  });
+
+  it('does not count content-unchanged files toward filesPerTick', async () => {
+    const dirty = ['u1.js', 'u2.js', 'u3.js', 'c1.js', 'c2.js'];
+    const unchanged = [];
+    const r = new Reconciler({
+      stateDir,
+      adapters: makeAdapter({
+        readDirtySet: async () => dirty,
+        requeueDirtyFiles: async () => {},
+        hashFile: async (file) => ({ file, contentUnchanged: file.startsWith('u'), chunks: [] }),
+        recordUnchangedFile: async (file) => { unchanged.push(file); },
+      }),
+      config: { filesPerTick: 2, cpuBudgetMs: 60_000 },
+    });
+    const snap = await r.tick();
+    expect(snap.content_unchanged).toBe(3);
+    expect(snap.files_processed).toBe(2);
+    expect(unchanged).toEqual(['u1.js', 'u2.js', 'u3.js']);
   });
 
   it('counts files whose content is unchanged separately', async () => {
@@ -543,5 +580,31 @@ describe('Reconciler / tick lifecycle', () => {
     expect(r.minLiveEpoch()).toBe(123);
     r.endRead(record);
     expect(r.minLiveEpoch()).toBeNull();
+  });
+});
+
+describe('production tick budget config', () => {
+  it('parses env budgets, caps catch-up at 4x a user budget, ignores malformed values', async () => {
+    const { tickBudgetConfig } = await import('../../core/incremental-indexing/application/production-reconciler.mjs');
+    expect(tickBudgetConfig({})).toEqual({ filesPerTick: undefined, cpuBudgetMs: undefined, catchUpCpuBudgetMs: undefined });
+    expect(tickBudgetConfig({ SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS: '500' }).catchUpCpuBudgetMs).toBe(2_000);
+    expect(tickBudgetConfig({ SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS: '500', SWEET_SEARCH_RECONCILE_CATCHUP_BUDGET_MS: '0' }).catchUpCpuBudgetMs).toBe(0);
+    expect(tickBudgetConfig({ SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS: 'abc', SWEET_SEARCH_RECONCILE_FILES_PER_TICK: '1e9x' }))
+      .toEqual({ filesPerTick: undefined, cpuBudgetMs: undefined, catchUpCpuBudgetMs: undefined });
+  });
+
+  it('sampleOtherCpuShare subtracts this process from system busy time', async () => {
+    const { sampleOtherCpuShare, _resetCpuSampleForTests } = await import('../../core/incremental-indexing/application/production-reconciler.mjs');
+    _resetCpuSampleForTests();
+    const core = (busy, idle) => ({ times: { user: busy, nice: 0, sys: 0, irq: 0, idle } });
+    let cpus = [core(0, 0), core(0, 0)];
+    let own = 0;
+    const opts = { cpus: () => cpus, cpuUsage: () => ({ user: own * 1000, system: 0 }) };
+    expect(sampleOtherCpuShare(opts)).toBeUndefined();
+    // 2 cores x 1000 ms window: 1200 ms busy, of which 1000 ms is this process.
+    cpus = [core(700, 300), core(500, 500)];
+    own = 1000;
+    expect(sampleOtherCpuShare(opts)).toBeCloseTo(0.1, 5);
+    _resetCpuSampleForTests();
   });
 });

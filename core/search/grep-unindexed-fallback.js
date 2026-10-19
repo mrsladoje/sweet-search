@@ -56,14 +56,18 @@ export async function applyUnindexedFallback({ searcher, regex, searchDir, optio
   const inFilter = scope ? grepFileFilterPredicate(scope, searchDir) : null;
   const inScope = (rel) => !inFilter || inFilter(rel);
   const { listChangedGrepFiles, listPendingReindexFiles } = await import('../indexing/grep-corpus.js');
-  const files = [...new Set([...listChangedGrepFiles(searchDir), ...listPendingReindexFiles(searchDir)])].filter(inScope);
+  const files = [...new Set([
+    ...listChangedGrepFiles(searchDir).filter(inScope),
+    ...listPendingReindexFiles(searchDir, { stateDir: searcher?._manifestStateDir, inScope }),
+  ])];
   const stats = { unindexedFallbackFiles: files.length, unindexedFallbackMatches: 0 };
   if (files.length > 0) {
     const found = await grepFiles(regex, searchDir, files, options.fixedString === true, options.caseInsensitive === true);
     if (found.length > 0) {
       const shaped = shapeResult({ indexedMatches: found, overlayMatches: [] });
       stats.unindexedFallbackMatches = shaped.length;
-      if (shaped.length > 0) return { matches: shaped, stats };
+      // The graph holds old (or no) entities for these files: line classes must not trust it.
+      if (shaped.length > 0) return { matches: shaped, stats, staleFiles: new Set(shaped.map((m) => m.file)) };
     }
   }
   // An explicit --in that still has no hits: say whether the grep index covers the scope, so

@@ -99,12 +99,12 @@ an ordinary file edit.
 - **No MRR regression** on GCSN dev set or any locked baseline probe pack.
   This is the gating quality criterion; any reconcile change that regresses
   aggregate MRR by more than the per-test noise floor is reverted.
-- **CPU budget bounded** by an adaptive cap. The default is roughly
-  `min(2, physical_cores / 4)` cores worth of wallclock per tick during
-  normal editing; bursts (branch switch, generated-code commit) tolerated
-  as one-time catch-up. The cap is recomputed at daemon start from
-  detected resources (§ 34) and may be overridden via
-  `SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS`.
+- **CPU budget bounded.** As built: 2 s of per-file work per tick
+  (`SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS`; tick setup is not counted), raised
+  to an 8 s catch-up budget while 20+ files are dirty and other processes
+  used under half the CPU since the last tick
+  (`SWEET_SEARCH_RECONCILE_CATCHUP_BUDGET_MS`). The interval tuner lengthens
+  the sleep after long ticks. The tier-based cap of § 34 was not built.
 - **All five indices kept in lock-step**: an observer must never see, for
   example, the trigram index showing a function that the LI index does not.
   Readers enforce this by loading a single published epoch manifest rather
@@ -2260,8 +2260,8 @@ detected hardware tier (see § 34). All can be overridden.
 |---|---|---|
 | `SWEET_SEARCH_RECONCILE_INTERVAL` | adaptive (15–300 s by tier; 60 s nominal) | Tick interval; min 15s, max 300s unless user-pinned |
 | `SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS` | `2000` | Soft cap on per-file work per tick (tick setup is not counted) |
-| `SWEET_SEARCH_RECONCILE_CATCHUP_BUDGET_MS` | `8000` | Per-file budget used instead when >= 20 files are dirty and load per core < 0.8; `0` disables |
-| `SWEET_SEARCH_RECONCILE_FILES_PER_TICK` | adaptive (10–200 by tier) | Hard cap on files processed per tick |
+| `SWEET_SEARCH_RECONCILE_CATCHUP_BUDGET_MS` | `8000` (4x the normal budget when only that is set) | Per-file budget used instead when >= 20 files are dirty and other processes used < 50% of the CPU since the last tick; `0` disables |
+| `SWEET_SEARCH_RECONCILE_FILES_PER_TICK` | `50` | Hard cap on files reindexed per tick (content-unchanged files do not count) |
 | `SWEET_SEARCH_RECONCILE_DEBUG` | `0` | Verbose per-file logging |
 | `SWEET_SEARCH_WATCH` | `1` where supported; `0` in WSL2/container defaults | Enable Rust notify watcher; polling remains the correctness backstop |
 | `SWEET_SEARCH_WATCH_DEBOUNCE_MS` | `200` | Watcher event coalescing window |
@@ -3034,6 +3034,8 @@ logged at startup and cached in `merkle-state.json::hw_tier` (informational;
 re-probed on next startup).
 
 ### 34.2 Adaptive defaults by tier
+
+> Not built. The reconciler uses fixed defaults (see the environment table and the CPU-budget bullet in § 2).
 
 | Parameter | low | mid | high | Notes |
 |---|---|---|---|---|

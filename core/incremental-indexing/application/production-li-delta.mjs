@@ -4,6 +4,7 @@ import path from 'node:path';
 import { LateInteractionIndex } from '../../ranking/late-interaction-index.js';
 import { encodeDocumentsCpu } from '../../ranking/late-interaction-model.js';
 import { recordEncode } from '../../indexing/inference-provenance.js';
+import { estimateLateInteractionTokens, planLateInteractionBatches } from '../../indexing/indexer-ann.js';
 import {
   openSegmentState,
   tombstoneDoc,
@@ -156,6 +157,11 @@ async function rewriteLegacyIndex(index, ops, liEncoder, pickLiInput, onProgress
   return { appended, tombstone };
 }
 
+// Background CPU encoding gains little from wide batches, so the maintainer
+// packs tighter than the full build: at most one max-length (2048-token) chunk
+// of attention work per call, and 4096 tokens of hidden state.
+const MAINTAINER_LI_BATCHING = Object.freeze({ tokenBudget: 4_096, attentionBudget: 2_048 * 2_048 });
+
 export async function applyLateInteractionDelta({
   indexPath,
   ops,
@@ -174,8 +180,17 @@ export async function applyLateInteractionDelta({
 
   const encodeRaw = liEncoder || ((texts) => encodeDocumentsCpu(texts));
   // Index provenance: the daemon's default LI encoder is ORT on CPU.
+  // One encoder call per file padded every chunk to the file's longest one: a
+  // 90 KB file's 88 chunks took 24 s and raised RSS from 1.2 to 7.7 GB. Pack
+  // the chunks under the full build's token and attention budgets instead
+  // (planLateInteractionBatches), and return the results in input order.
   const encode = async (texts) => {
-    const out = await encodeRaw(texts);
+    const out = new Array(texts.length);
+    const items = texts.map((text, i) => ({ i, text, estTokens: estimateLateInteractionTokens(text) }));
+    for (const batch of planLateInteractionBatches(items, MAINTAINER_LI_BATCHING)) {
+      const encoded = await encodeRaw(batch.map((item) => item.text));
+      batch.forEach((item, k) => { out[item.i] = encoded[k]; });
+    }
     recordEncode('li', liEncoder ? 'unknown' : 'ort/cpu', texts.length);
     return out;
   };
