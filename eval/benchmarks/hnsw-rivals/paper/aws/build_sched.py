@@ -203,6 +203,13 @@ todo.sort(key=lambda w: -w['est_kb'])
 
 def meminfo():
     m = {}
+    if not os.path.exists('/proc/meminfo'):  # macOS (laptop example): total from sysctl, free + inactive pages as available
+        import subprocess
+        tot = int(subprocess.run(['sysctl', '-n', 'hw.memsize'], capture_output=True, text=True).stdout) // 1024
+        vm = subprocess.run(['vm_stat'], capture_output=True, text=True).stdout
+        pg = int(vm.split('page size of ')[1].split()[0]) if 'page size of ' in vm else 16384
+        pages = {l.split(':')[0]: int(l.split(':')[1].strip().rstrip('.')) for l in vm.splitlines()[1:] if ':' in l and l.split(':')[1].strip().rstrip('.').isdigit()}
+        return {'MemTotal': tot, 'MemAvailable': (pages.get('Pages free', 0) + pages.get('Pages inactive', 0)) * pg // 1024}
     for l in open('/proc/meminfo'):
         k, v = l.split(':'); m[k] = int(v.split()[0])
     return m

@@ -1,0 +1,2270 @@
+[
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"variant": "sign512",
+"C": 100,
+"share": 0.9958922039144648,
+"lower": 0.9922867548820742,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"variant": "sign512",
+"C": 200,
+"share": 0.9981867831528274,
+"lower": 0.9958585984257484,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"variant": "sign512",
+"C": 400,
+"share": 0.9996298875530378,
+"lower": 0.9984907967304942,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"variant": "sign768",
+"C": 100,
+"share": 0.9997250200141794,
+"lower": 0.9983814927944172,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"variant": "sign768",
+"C": 200,
+"share": 1.0000660423697183,
+"lower": 0.999062254429651,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"variant": "sign768",
+"C": 400,
+"share": 1.0000908082583626,
+"lower": 0.9995710882048753,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"variant": "rot512",
+"C": 100,
+"share": 0.9994048324538494,
+"lower": 0.9982447174128093,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"variant": "rot512",
+"C": 200,
+"share": 0.9993969702669783,
+"lower": 0.998506996553305,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"variant": "rot512",
+"C": 400,
+"share": 0.9997731759087655,
+"lower": 0.999034459738949,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"variant": "rot768",
+"C": 100,
+"share": 0.9995929352747431,
+"lower": 0.9988237293801837,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"variant": "rot768",
+"C": 200,
+"share": 0.9997256096781947,
+"lower": 0.9991411527826235,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "CodeRankEmbed",
+"variant": "rot768",
+"C": 400,
+"share": 0.9999292403181591,
+"lower": 0.999307745455516,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "jina-v2-base-code",
+"variant": "sign512",
+"C": 100,
+"share": 0.9996073103366556,
+"lower": 0.9985214535656411,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "jina-v2-base-code",
+"variant": "sign512",
+"C": 200,
+"share": 0.9997622023459873,
+"lower": 0.9987460863289597,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "jina-v2-base-code",
+"variant": "sign512",
+"C": 400,
+"share": 0.999745216799272,
+"lower": 0.9987253266902403,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "jina-v2-base-code",
+"variant": "sign768",
+"C": 100,
+"share": 1.0000849277335762,
+"lower": 0.9994575855858282,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "jina-v2-base-code",
+"variant": "sign768",
+"C": 200,
+"share": 1.0,
+"lower": 0.9993812986854843,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "jina-v2-base-code",
+"variant": "sign768",
+"C": 400,
+"share": 1.0,
+"lower": 0.9993812986854843,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "jina-v2-base-code",
+"variant": "rot512",
+"C": 100,
+"share": 0.9994807275718495,
+"lower": 0.9982943055925176,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "jina-v2-base-code",
+"variant": "rot512",
+"C": 200,
+"share": 0.9996129721855607,
+"lower": 0.9985600123799764,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "jina-v2-base-code",
+"variant": "rot512",
+"C": 400,
+"share": 0.9996602890656958,
+"lower": 0.9986040461598954,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "jina-v2-base-code",
+"variant": "rot768",
+"C": 100,
+"share": 0.999604479412203,
+"lower": 0.9985116368061973,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "jina-v2-base-code",
+"variant": "rot768",
+"C": 200,
+"share": 0.999915072266424,
+"lower": 0.9992351932582537,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "jina-v2-base-code",
+"variant": "rot768",
+"C": 400,
+"share": 1.0,
+"lower": 0.9993812986854843,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "bge-base-en-v1.5",
+"variant": "sign512",
+"C": 100,
+"share": 0.9902988443045281,
+"lower": 0.9839539308626386,
+"meets": false
+},
+{
+"set": "gcsn",
+"model": "bge-base-en-v1.5",
+"variant": "sign512",
+"C": 200,
+"share": 0.9953717360909998,
+"lower": 0.99150536364592,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "bge-base-en-v1.5",
+"variant": "sign512",
+"C": 400,
+"share": 0.9990577214158084,
+"lower": 0.9969696951993989,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "bge-base-en-v1.5",
+"variant": "sign768",
+"C": 100,
+"share": 0.9994911156430152,
+"lower": 0.9976702663260868,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "bge-base-en-v1.5",
+"variant": "sign768",
+"C": 200,
+"share": 0.9999040646267406,
+"lower": 0.9986267818600796,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "bge-base-en-v1.5",
+"variant": "sign768",
+"C": 400,
+"share": 0.9999685457792592,
+"lower": 0.9988197049095746,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "bge-base-en-v1.5",
+"variant": "rot512",
+"C": 100,
+"share": 0.9909151223580421,
+"lower": 0.9826479219528805,
+"meets": false
+},
+{
+"set": "gcsn",
+"model": "bge-base-en-v1.5",
+"variant": "rot512",
+"C": 200,
+"share": 0.9957249220553177,
+"lower": 0.9899291891462585,
+"meets": false
+},
+{
+"set": "gcsn",
+"model": "bge-base-en-v1.5",
+"variant": "rot512",
+"C": 400,
+"share": 0.9976526164407168,
+"lower": 0.9943030473093938,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "bge-base-en-v1.5",
+"variant": "rot768",
+"C": 100,
+"share": 0.9971497982548749,
+"lower": 0.9932753207852362,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "bge-base-en-v1.5",
+"variant": "rot768",
+"C": 200,
+"share": 0.9983118070382414,
+"lower": 0.9953707901473046,
+"meets": true
+},
+{
+"set": "gcsn",
+"model": "bge-base-en-v1.5",
+"variant": "rot768",
+"C": 400,
+"share": 1.0000283087986668,
+"lower": 0.9989229068489365,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"variant": "sign512",
+"C": 100,
+"share": 0.9946392305728581,
+"lower": 0.9893327960629539,
+"meets": false
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"variant": "sign512",
+"C": 200,
+"share": 0.9973324094855393,
+"lower": 0.994329736603474,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"variant": "sign512",
+"C": 400,
+"share": 0.9978253859700011,
+"lower": 0.9951756159302863,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"variant": "sign768",
+"C": 100,
+"share": 0.9994430525199873,
+"lower": 0.9977774657000602,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"variant": "sign768",
+"C": 200,
+"share": 1.0001183463417684,
+"lower": 0.9994690586342284,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"variant": "sign768",
+"C": 400,
+"share": 1.0000503771589961,
+"lower": 0.9994245145335818,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"variant": "rot512",
+"C": 100,
+"share": 0.9983899300057354,
+"lower": 0.9961001138662644,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"variant": "rot512",
+"C": 200,
+"share": 0.9994058693788236,
+"lower": 0.9980244561270931,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"variant": "rot512",
+"C": 400,
+"share": 0.9996445611559717,
+"lower": 0.9986809378233078,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"variant": "rot768",
+"C": 100,
+"share": 0.9995586001307007,
+"lower": 0.9985530916267203,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"variant": "rot768",
+"C": 200,
+"share": 0.9997609084041296,
+"lower": 0.9990687131433835,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "CodeRankEmbed",
+"variant": "rot768",
+"C": 400,
+"share": 0.9998880507577865,
+"lower": 0.9991712797209124,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "jina-v2-base-code",
+"variant": "sign512",
+"C": 100,
+"share": 0.999917015309024,
+"lower": 0.998915761115362,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "jina-v2-base-code",
+"variant": "sign512",
+"C": 200,
+"share": 0.9998447649561844,
+"lower": 0.9989215912688374,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "jina-v2-base-code",
+"variant": "sign512",
+"C": 400,
+"share": 0.9998265991531847,
+"lower": 0.9988982742116802,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "jina-v2-base-code",
+"variant": "sign768",
+"C": 100,
+"share": 0.999318782387511,
+"lower": 0.9975807343732411,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "jina-v2-base-code",
+"variant": "sign768",
+"C": 200,
+"share": 1.0,
+"lower": 0.9992799923448754,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "jina-v2-base-code",
+"variant": "sign768",
+"C": 400,
+"share": 1.0,
+"lower": 0.9992799923448754,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "jina-v2-base-code",
+"variant": "rot512",
+"C": 100,
+"share": 0.9992205219076488,
+"lower": 0.9973475789636603,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "jina-v2-base-code",
+"variant": "rot512",
+"C": 200,
+"share": 0.9992768771828638,
+"lower": 0.9974874362446862,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "jina-v2-base-code",
+"variant": "rot512",
+"C": 400,
+"share": 0.9998389849279573,
+"lower": 0.9989080108266426,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "jina-v2-base-code",
+"variant": "rot768",
+"C": 100,
+"share": 0.9998135940896735,
+"lower": 0.9988215582362158,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "jina-v2-base-code",
+"variant": "rot768",
+"C": 200,
+"share": 1.0,
+"lower": 0.9992799923448754,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "jina-v2-base-code",
+"variant": "rot768",
+"C": 400,
+"share": 1.0,
+"lower": 0.9992799923448754,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "bge-base-en-v1.5",
+"variant": "sign512",
+"C": 100,
+"share": 0.9841501590284651,
+"lower": 0.9755234031620075,
+"meets": false
+},
+{
+"set": "d20k",
+"model": "bge-base-en-v1.5",
+"variant": "sign512",
+"C": 200,
+"share": 0.9931790856212285,
+"lower": 0.9880444971913813,
+"meets": false
+},
+{
+"set": "d20k",
+"model": "bge-base-en-v1.5",
+"variant": "sign512",
+"C": 400,
+"share": 0.9962122332537383,
+"lower": 0.9916390703026717,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "bge-base-en-v1.5",
+"variant": "sign768",
+"C": 100,
+"share": 0.9965224576683287,
+"lower": 0.9921636003913644,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "bge-base-en-v1.5",
+"variant": "sign768",
+"C": 200,
+"share": 1.0004339828957731,
+"lower": 0.9988396219702198,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "bge-base-en-v1.5",
+"variant": "sign768",
+"C": 400,
+"share": 1.0002087093315553,
+"lower": 0.9988941288131898,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "bge-base-en-v1.5",
+"variant": "rot512",
+"C": 100,
+"share": 0.9818214645479277,
+"lower": 0.9722355677152458,
+"meets": false
+},
+{
+"set": "d20k",
+"model": "bge-base-en-v1.5",
+"variant": "rot512",
+"C": 200,
+"share": 0.9914746260801952,
+"lower": 0.9838123471458389,
+"meets": false
+},
+{
+"set": "d20k",
+"model": "bge-base-en-v1.5",
+"variant": "rot512",
+"C": 400,
+"share": 0.9953397714561829,
+"lower": 0.9908080549244288,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "bge-base-en-v1.5",
+"variant": "rot768",
+"C": 100,
+"share": 0.9975645845347332,
+"lower": 0.9937543822623244,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "bge-base-en-v1.5",
+"variant": "rot768",
+"C": 200,
+"share": 0.9979379896653386,
+"lower": 0.9959432072209212,
+"meets": true
+},
+{
+"set": "d20k",
+"model": "bge-base-en-v1.5",
+"variant": "rot768",
+"C": 400,
+"share": 0.9995974891462865,
+"lower": 0.9979133455607866,
+"meets": true
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"variant": "sign512",
+"C": 100,
+"share": 0.981778549943532,
+"lower": 0.9698207505996242,
+"meets": false
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"variant": "sign512",
+"C": 200,
+"share": 0.9905695452359918,
+"lower": 0.9818658441983205,
+"meets": false
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"variant": "sign512",
+"C": 400,
+"share": 0.9972457816640763,
+"lower": 0.9922591661099059,
+"meets": true
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"variant": "sign768",
+"C": 100,
+"share": 0.9967349129496484,
+"lower": 0.9917012019042614,
+"meets": true
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"variant": "sign768",
+"C": 200,
+"share": 0.998384928045085,
+"lower": 0.9958505179621719,
+"meets": true
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"variant": "sign768",
+"C": 400,
+"share": 0.9987112969775582,
+"lower": 0.9967380545126969,
+"meets": true
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"variant": "rot512",
+"C": 100,
+"share": 0.9848668247028435,
+"lower": 0.9746157112396708,
+"meets": false
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"variant": "rot512",
+"C": 200,
+"share": 0.9960199762945735,
+"lower": 0.9893952048227125,
+"meets": false
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"variant": "rot512",
+"C": 400,
+"share": 0.9979460422001322,
+"lower": 0.9936124000276749,
+"meets": true
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"variant": "rot768",
+"C": 100,
+"share": 0.9988196207131754,
+"lower": 0.9943186257072492,
+"meets": true
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"variant": "rot768",
+"C": 200,
+"share": 0.9999783352528765,
+"lower": 0.9982723873712694,
+"meets": true
+},
+{
+"set": "advtest",
+"model": "CodeRankEmbed",
+"variant": "rot768",
+"C": 400,
+"share": 0.9992815690308731,
+"lower": 0.9982177939556753,
+"meets": true
+},
+{
+"set": "advtest",
+"model": "jina-v2-base-code",
+"variant": "sign512",
+"C": 100,
+"share": 1.0005491701428952,
+"lower": 0.9967730256223928,
+"meets": true
+},
+{
+"set": "advtest",
+"model": "jina-v2-base-code",
+"variant": "sign512",
+"C": 200,
+"share": 0.9998955282388097,
+"lower": 0.9981121918083045,
+"meets": true
+},
+{
+"set": "advtest",
+"model": "jina-v2-base-code",
+"variant": "sign512",
+"C": 400,
+"share": 0.999731886630573,
+"lower": 0.998702968061226,
+"meets": true
+},
+{
+"set": "advtest",
+"model": "jina-v2-base-code",
+"variant": "sign768",
+"C": 100,
+"share": 1.00079324576196,
+"lower": 0.9998517679765392,
+"meets": true
+},
+{
+"set": "advtest",
+"model": "jina-v2-base-code",
+"variant": "sign768",
+"C": 200,
+"share": 1.0000554717316057,
+"lower": 0.9993847937653472,
+"meets": true
+},
+{
+"set": "advtest",
+"model": "jina-v2-base-code",
+"variant": "sign768",
+"C": 400,
+"share": 1.0,
+"lower": 0.9993321353750628,
+"meets": true
+},
+{
+"set": "advtest",
+"model": "jina-v2-base-code",
+"variant": "rot512",
+"C": 100,
+"share": 0.9973678663353156,
+"lower": 0.9939806440637851,
+"meets": true
+},
+{
+"set": "advtest",
+"model": "jina-v2-base-code",
+"variant": "rot512",
+"C": 200,
+"share": 0.9993657732019763,
+"lower": 0.9978077255018343,
+"meets": true
+},
+{
+"set": "advtest",
+"model": "jina-v2-base-code",
+"variant": "rot512",
+"C": 400,
+"share": 0.9995756412532174,
+"lower": 0.9981456246209431,
+"meets": true
+},
+{
+"set": "advtest",
+"model": "jina-v2-base-code",
+"variant": "rot768",
+"C": 100,
+"share": 0.9997642451406763,
+"lower": 0.9981015252877133,
+"meets": true
+},
+{
+"set": "advtest",
+"model": "jina-v2-base-code",
+"variant": "rot768",
+"C": 200,
+"share": 1.0,
+"lower": 0.9993321353750628,
+"meets": true
+},
+{
+"set": "advtest",
+"model": "jina-v2-base-code",
+"variant": "rot768",
+"C": 400,
+"share": 1.0,
+"lower": 0.9993321353750628,
+"meets": true
+},
+{
+"set": "advtest",
+"model": "bge-base-en-v1.5",
+"variant": "sign512",
+"C": 100,
+"share": 0.9638857945140076,
+"lower": 0.9372169897541075,
+"meets": false
+},
+{
+"set": "advtest",
+"model": "bge-base-en-v1.5",
+"variant": "sign512",
+"C": 200,
+"share": 0.9838362084992274,
+"lower": 0.965318725859538,
+"meets": false
+},
+{
+"set": "advtest",
+"model": "bge-base-en-v1.5",
+"variant": "sign512",
+"C": 400,
+"share": 0.997904418271569,
+"lower": 0.9857026969646041,
+"meets": false
+},
+{
+"set": "advtest",
+"model": "bge-base-en-v1.5",
+"variant": "sign768",
+"C": 100,
+"share": 0.9812052048955405,
+"lower": 0.9644661840185494,
+"meets": false
+},
+{
+"set": "advtest",
+"model": "bge-base-en-v1.5",
+"variant": "sign768",
+"C": 200,
+"share": 0.9879039274681832,
+"lower": 0.9742615320204591,
+"meets": false
+},
+{
+"set": "advtest",
+"model": "bge-base-en-v1.5",
+"variant": "sign768",
+"C": 400,
+"share": 1.000623171571478,
+"lower": 0.9974276741719924,
+"meets": true
+},
+{
+"set": "advtest",
+"model": "bge-base-en-v1.5",
+"variant": "rot512",
+"C": 100,
+"share": 0.9603549847032944,
+"lower": 0.931115363707618,
+"meets": false
+},
+{
+"set": "advtest",
+"model": "bge-base-en-v1.5",
+"variant": "rot512",
+"C": 200,
+"share": 0.9769054697806405,
+"lower": 0.9531991758221329,
+"meets": false
+},
+{
+"set": "advtest",
+"model": "bge-base-en-v1.5",
+"variant": "rot512",
+"C": 400,
+"share": 0.9927822156649567,
+"lower": 0.9745884844140179,
+"meets": false
+},
+{
+"set": "advtest",
+"model": "bge-base-en-v1.5",
+"variant": "rot768",
+"C": 100,
+"share": 0.9939274235648091,
+"lower": 0.9757450053319096,
+"meets": false
+},
+{
+"set": "advtest",
+"model": "bge-base-en-v1.5",
+"variant": "rot768",
+"C": 200,
+"share": 0.9939378345457168,
+"lower": 0.981791300361261,
+"meets": false
+},
+{
+"set": "advtest",
+"model": "bge-base-en-v1.5",
+"variant": "rot768",
+"C": 400,
+"share": 0.9993128752600886,
+"lower": 0.9939082350115339,
+"meets": true
+},
+{
+"set": "fiqa",
+"model": "CodeRankEmbed",
+"variant": "sign512",
+"C": 100,
+"share": 0.9321289484986588,
+"lower": 0.8682320932840671,
+"meets": false
+},
+{
+"set": "fiqa",
+"model": "CodeRankEmbed",
+"variant": "sign512",
+"C": 200,
+"share": 0.970079996887492,
+"lower": 0.9308753533015472,
+"meets": false
+},
+{
+"set": "fiqa",
+"model": "CodeRankEmbed",
+"variant": "sign512",
+"C": 400,
+"share": 0.9819045418784088,
+"lower": 0.9636047411445671,
+"meets": false
+},
+{
+"set": "fiqa",
+"model": "CodeRankEmbed",
+"variant": "sign768",
+"C": 100,
+"share": 0.9877405599704049,
+"lower": 0.9541816863547548,
+"meets": false
+},
+{
+"set": "fiqa",
+"model": "CodeRankEmbed",
+"variant": "sign768",
+"C": 200,
+"share": 0.9942764368417769,
+"lower": 0.9806674532509883,
+"meets": false
+},
+{
+"set": "fiqa",
+"model": "CodeRankEmbed",
+"variant": "sign768",
+"C": 400,
+"share": 0.9984483147640828,
+"lower": 0.9947426893585082,
+"meets": true
+},
+{
+"set": "fiqa",
+"model": "CodeRankEmbed",
+"variant": "rot512",
+"C": 100,
+"share": 0.982537736770496,
+"lower": 0.9371214490761924,
+"meets": false
+},
+{
+"set": "fiqa",
+"model": "CodeRankEmbed",
+"variant": "rot512",
+"C": 200,
+"share": 0.9980380648208815,
+"lower": 0.9616697175284428,
+"meets": false
+},
+{
+"set": "fiqa",
+"model": "CodeRankEmbed",
+"variant": "rot512",
+"C": 400,
+"share": 1.0019227116401945,
+"lower": 0.9829275368139397,
+"meets": false
+},
+{
+"set": "fiqa",
+"model": "CodeRankEmbed",
+"variant": "rot768",
+"C": 100,
+"share": 0.9817454390039144,
+"lower": 0.9450423807344801,
+"meets": false
+},
+{
+"set": "fiqa",
+"model": "CodeRankEmbed",
+"variant": "rot768",
+"C": 200,
+"share": 0.980397354885069,
+"lower": 0.9484869302128576,
+"meets": false
+},
+{
+"set": "fiqa",
+"model": "CodeRankEmbed",
+"variant": "rot768",
+"C": 400,
+"share": 1.0001168649280534,
+"lower": 0.9986812490573943,
+"meets": true
+},
+{
+"set": "fiqa",
+"model": "jina-v2-base-code",
+"variant": "sign512",
+"C": 100,
+"share": 0.9878913628914933,
+"lower": 0.9682391377337937,
+"meets": false
+},
+{
+"set": "fiqa",
+"model": "jina-v2-base-code",
+"variant": "sign512",
+"C": 200,
+"share": 1.0013118249564115,
+"lower": 0.9982942557206557,
+"meets": true
+},
+{
+"set": "fiqa",
+"model": "jina-v2-base-code",
+"variant": "sign512",
+"C": 400,
+"share": 1.0003683622845332,
+"lower": 0.9978674271441353,
+"meets": true
+},
+{
+"set": "fiqa",
+"model": "jina-v2-base-code",
+"variant": "sign768",
+"C": 100,
+"share": 1.0026837837423141,
+"lower": 0.9992301174117013,
+"meets": true
+},
+{
+"set": "fiqa",
+"model": "jina-v2-base-code",
+"variant": "sign768",
+"C": 200,
+"share": 1.000943462671878,
+"lower": 0.9980457330979485,
+"meets": true
+},
+{
+"set": "fiqa",
+"model": "jina-v2-base-code",
+"variant": "sign768",
+"C": 400,
+"share": 1.0,
+"lower": 0.9976168384387164,
+"meets": true
+},
+{
+"set": "fiqa",
+"model": "jina-v2-base-code",
+"variant": "rot512",
+"C": 100,
+"share": 0.9859525083293712,
+"lower": 0.9581079093308901,
+"meets": false
+},
+{
+"set": "fiqa",
+"model": "jina-v2-base-code",
+"variant": "rot512",
+"C": 200,
+"share": 0.9970902406962813,
+"lower": 0.9777404957054033,
+"meets": false
+},
+{
+"set": "fiqa",
+"model": "jina-v2-base-code",
+"variant": "rot512",
+"C": 400,
+"share": 1.0016933256019314,
+"lower": 0.9983134623188851,
+"meets": true
+},
+{
+"set": "fiqa",
+"model": "jina-v2-base-code",
+"variant": "rot768",
+"C": 100,
+"share": 0.9996680207183694,
+"lower": 0.9873865945571915,
+"meets": false
+},
+{
+"set": "fiqa",
+"model": "jina-v2-base-code",
+"variant": "rot768",
+"C": 200,
+"share": 0.9965470877766345,
+"lower": 0.9849338907288712,
+"meets": false
+},
+{
+"set": "fiqa",
+"model": "jina-v2-base-code",
+"variant": "rot768",
+"C": 400,
+"share": 1.0003683622845332,
+"lower": 0.9978674271441353,
+"meets": true
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"variant": "sign512",
+"C": 100,
+"share": 0.9851564588681505,
+"lower": 0.9628659521682852,
+"meets": false
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"variant": "sign512",
+"C": 200,
+"share": 0.9877098814470031,
+"lower": 0.9712233137601709,
+"meets": false
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"variant": "sign512",
+"C": 400,
+"share": 0.9968614626211274,
+"lower": 0.9861995013533618,
+"meets": false
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"variant": "sign768",
+"C": 100,
+"share": 0.9925932907615469,
+"lower": 0.9777504840938315,
+"meets": false
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"variant": "sign768",
+"C": 200,
+"share": 0.9941129144751822,
+"lower": 0.9829659171842393,
+"meets": false
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"variant": "sign768",
+"C": 400,
+"share": 0.9959991047120635,
+"lower": 0.9888269797612635,
+"meets": false
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"variant": "rot512",
+"C": 100,
+"share": 0.9647921236917656,
+"lower": 0.9363574170124942,
+"meets": false
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"variant": "rot512",
+"C": 200,
+"share": 0.971785457542742,
+"lower": 0.9495639517653376,
+"meets": false
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"variant": "rot512",
+"C": 400,
+"share": 0.9843718326913071,
+"lower": 0.9644414166617544,
+"meets": false
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"variant": "rot768",
+"C": 100,
+"share": 0.9928775966209124,
+"lower": 0.9744425832685992,
+"meets": false
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"variant": "rot768",
+"C": 200,
+"share": 0.996735785163031,
+"lower": 0.982919376680316,
+"meets": false
+},
+{
+"set": "fiqa",
+"model": "bge-base-en-v1.5",
+"variant": "rot768",
+"C": 400,
+"share": 0.9985097055453545,
+"lower": 0.9920231021857239,
+"meets": true
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"variant": "sign512",
+"C": 100,
+"share": 0.9933674660144066,
+"lower": 0.9876106584997011,
+"meets": false
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"variant": "sign512",
+"C": 200,
+"share": 0.9958374915198092,
+"lower": 0.9916761081003274,
+"meets": true
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"variant": "sign512",
+"C": 400,
+"share": 0.9981293389089979,
+"lower": 0.9951156341252235,
+"meets": true
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"variant": "sign768",
+"C": 100,
+"share": 0.9972453495929927,
+"lower": 0.9939636018215863,
+"meets": true
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"variant": "sign768",
+"C": 200,
+"share": 0.998019546055697,
+"lower": 0.9952041502477628,
+"meets": true
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"variant": "sign768",
+"C": 400,
+"share": 0.999551208641555,
+"lower": 0.9982890654343205,
+"meets": true
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"variant": "rot512",
+"C": 100,
+"share": 0.9929868507896302,
+"lower": 0.9865293066550413,
+"meets": false
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"variant": "rot512",
+"C": 200,
+"share": 0.9964504493350946,
+"lower": 0.9924784380582614,
+"meets": true
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"variant": "rot512",
+"C": 400,
+"share": 0.9978802659789383,
+"lower": 0.9952934907316833,
+"meets": true
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"variant": "rot768",
+"C": 100,
+"share": 0.9991735212262003,
+"lower": 0.9967223950967595,
+"meets": true
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"variant": "rot768",
+"C": 200,
+"share": 1.000079259983621,
+"lower": 0.9988325219248856,
+"meets": true
+},
+{
+"set": "dall",
+"model": "CodeRankEmbed",
+"variant": "rot768",
+"C": 400,
+"share": 1.0000342971960787,
+"lower": 0.999326840994382,
+"meets": true
+},
+{
+"set": "dall",
+"model": "jina-v2-base-code",
+"variant": "sign512",
+"C": 100,
+"share": 0.9979336872486811,
+"lower": 0.994907956487288,
+"meets": true
+},
+{
+"set": "dall",
+"model": "jina-v2-base-code",
+"variant": "sign512",
+"C": 200,
+"share": 0.9982473006225346,
+"lower": 0.9953348238043443,
+"meets": true
+},
+{
+"set": "dall",
+"model": "jina-v2-base-code",
+"variant": "sign512",
+"C": 400,
+"share": 1.0001270166900367,
+"lower": 0.999194169419916,
+"meets": true
+},
+{
+"set": "dall",
+"model": "jina-v2-base-code",
+"variant": "sign768",
+"C": 100,
+"share": 0.9990200946077925,
+"lower": 0.996657345736952,
+"meets": true
+},
+{
+"set": "dall",
+"model": "jina-v2-base-code",
+"variant": "sign768",
+"C": 200,
+"share": 0.9989550585706258,
+"lower": 0.9965972971026018,
+"meets": true
+},
+{
+"set": "dall",
+"model": "jina-v2-base-code",
+"variant": "sign768",
+"C": 400,
+"share": 0.9994500308266452,
+"lower": 0.997640731072652,
+"meets": true
+},
+{
+"set": "dall",
+"model": "jina-v2-base-code",
+"variant": "rot512",
+"C": 100,
+"share": 0.9979701336185026,
+"lower": 0.9953089742146625,
+"meets": true
+},
+{
+"set": "dall",
+"model": "jina-v2-base-code",
+"variant": "rot512",
+"C": 200,
+"share": 0.9994578875291217,
+"lower": 0.9979975460034163,
+"meets": true
+},
+{
+"set": "dall",
+"model": "jina-v2-base-code",
+"variant": "rot512",
+"C": 400,
+"share": 0.9994408646737559,
+"lower": 0.9980516652195717,
+"meets": true
+},
+{
+"set": "dall",
+"model": "jina-v2-base-code",
+"variant": "rot768",
+"C": 100,
+"share": 0.9996929338782101,
+"lower": 0.9985293636519181,
+"meets": true
+},
+{
+"set": "dall",
+"model": "jina-v2-base-code",
+"variant": "rot768",
+"C": 200,
+"share": 1.0,
+"lower": 0.9990745947035563,
+"meets": true
+},
+{
+"set": "dall",
+"model": "jina-v2-base-code",
+"variant": "rot768",
+"C": 400,
+"share": 1.0,
+"lower": 0.9990745947035563,
+"meets": true
+},
+{
+"set": "dall",
+"model": "bge-base-en-v1.5",
+"variant": "sign512",
+"C": 100,
+"share": 0.9585570883797074,
+"lower": 0.9429655869188837,
+"meets": false
+},
+{
+"set": "dall",
+"model": "bge-base-en-v1.5",
+"variant": "sign512",
+"C": 200,
+"share": 0.9716511810376002,
+"lower": 0.9588427780233011,
+"meets": false
+},
+{
+"set": "dall",
+"model": "bge-base-en-v1.5",
+"variant": "sign512",
+"C": 400,
+"share": 0.9855419012792781,
+"lower": 0.977128585738862,
+"meets": false
+},
+{
+"set": "dall",
+"model": "bge-base-en-v1.5",
+"variant": "sign768",
+"C": 100,
+"share": 0.9841322020577588,
+"lower": 0.9756252341322529,
+"meets": false
+},
+{
+"set": "dall",
+"model": "bge-base-en-v1.5",
+"variant": "sign768",
+"C": 200,
+"share": 0.9918890726769272,
+"lower": 0.9859746307542872,
+"meets": false
+},
+{
+"set": "dall",
+"model": "bge-base-en-v1.5",
+"variant": "sign768",
+"C": 400,
+"share": 0.9955520973812599,
+"lower": 0.9915756312834489,
+"meets": true
+},
+{
+"set": "dall",
+"model": "bge-base-en-v1.5",
+"variant": "rot512",
+"C": 100,
+"share": 0.9451645541196299,
+"lower": 0.9269119113088973,
+"meets": false
+},
+{
+"set": "dall",
+"model": "bge-base-en-v1.5",
+"variant": "rot512",
+"C": 200,
+"share": 0.9666251946854938,
+"lower": 0.9534317379529206,
+"meets": false
+},
+{
+"set": "dall",
+"model": "bge-base-en-v1.5",
+"variant": "rot512",
+"C": 400,
+"share": 0.9818423220479935,
+"lower": 0.9721462957190591,
+"meets": false
+},
+{
+"set": "dall",
+"model": "bge-base-en-v1.5",
+"variant": "rot768",
+"C": 100,
+"share": 0.9795944797442228,
+"lower": 0.9674087988344412,
+"meets": false
+},
+{
+"set": "dall",
+"model": "bge-base-en-v1.5",
+"variant": "rot768",
+"C": 200,
+"share": 0.9909733817767851,
+"lower": 0.9849380442313305,
+"meets": false
+},
+{
+"set": "dall",
+"model": "bge-base-en-v1.5",
+"variant": "rot768",
+"C": 400,
+"share": 0.994425434639853,
+"lower": 0.9897818206284122,
+"meets": false
+},
+{
+"set": "quora",
+"model": "CodeRankEmbed",
+"variant": "sign512",
+"C": 100,
+"share": 0.9995948867792865,
+"lower": 0.9987275352021212,
+"meets": true
+},
+{
+"set": "quora",
+"model": "CodeRankEmbed",
+"variant": "sign512",
+"C": 200,
+"share": 0.9998726047536249,
+"lower": 0.999445825833735,
+"meets": true
+},
+{
+"set": "quora",
+"model": "CodeRankEmbed",
+"variant": "sign512",
+"C": 400,
+"share": 1.000074497756828,
+"lower": 0.9997741872356851,
+"meets": true
+},
+{
+"set": "quora",
+"model": "CodeRankEmbed",
+"variant": "sign768",
+"C": 100,
+"share": 0.9997630794261657,
+"lower": 0.9990263427069642,
+"meets": true
+},
+{
+"set": "quora",
+"model": "CodeRankEmbed",
+"variant": "sign768",
+"C": 200,
+"share": 1.0001188295032661,
+"lower": 0.9999639696628398,
+"meets": true
+},
+{
+"set": "quora",
+"model": "CodeRankEmbed",
+"variant": "sign768",
+"C": 400,
+"share": 1.0000986044042874,
+"lower": 0.9999488324499632,
+"meets": true
+},
+{
+"set": "quora",
+"model": "CodeRankEmbed",
+"variant": "rot512",
+"C": 100,
+"share": 0.999693181447347,
+"lower": 0.999061490079382,
+"meets": true
+},
+{
+"set": "quora",
+"model": "CodeRankEmbed",
+"variant": "rot512",
+"C": 200,
+"share": 1.0000223046216639,
+"lower": 0.9995972496402303,
+"meets": true
+},
+{
+"set": "quora",
+"model": "CodeRankEmbed",
+"variant": "rot512",
+"C": 400,
+"share": 1.0000053762127357,
+"lower": 0.999711173160797,
+"meets": true
+},
+{
+"set": "quora",
+"model": "CodeRankEmbed",
+"variant": "rot768",
+"C": 100,
+"share": 0.9999904696621672,
+"lower": 0.9995901695834456,
+"meets": true
+},
+{
+"set": "quora",
+"model": "CodeRankEmbed",
+"variant": "rot768",
+"C": 200,
+"share": 1.0000877195890636,
+"lower": 0.9997636168366152,
+"meets": true
+},
+{
+"set": "quora",
+"model": "CodeRankEmbed",
+"variant": "rot768",
+"C": 400,
+"share": 0.9999946810355689,
+"lower": 0.9997003262072143,
+"meets": true
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"variant": "sign512",
+"C": 100,
+"share": 0.9985589357363204,
+"lower": 0.9970805338341363,
+"meets": true
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"variant": "sign512",
+"C": 200,
+"share": 0.9986943158809384,
+"lower": 0.9975252215253592,
+"meets": true
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"variant": "sign512",
+"C": 400,
+"share": 0.9995516585733287,
+"lower": 0.9988984980177814,
+"meets": true
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"variant": "sign768",
+"C": 100,
+"share": 0.9991926359314699,
+"lower": 0.9984174040814373,
+"meets": true
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"variant": "sign768",
+"C": 200,
+"share": 0.9998433134726183,
+"lower": 0.9993877879589782,
+"meets": true
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"variant": "sign768",
+"C": 400,
+"share": 0.9998916753361293,
+"lower": 0.9995802832499284,
+"meets": true
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"variant": "rot512",
+"C": 100,
+"share": 0.9972635105518325,
+"lower": 0.9954653286005672,
+"meets": true
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"variant": "rot512",
+"C": 200,
+"share": 0.9985215195453409,
+"lower": 0.9971087878284998,
+"meets": true
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"variant": "rot512",
+"C": 400,
+"share": 0.9996126249472981,
+"lower": 0.9989788381489582,
+"meets": true
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"variant": "rot768",
+"C": 100,
+"share": 0.9995949455089492,
+"lower": 0.9985926148111196,
+"meets": true
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"variant": "rot768",
+"C": 200,
+"share": 1.0000093704469029,
+"lower": 0.9998339606602497,
+"meets": true
+},
+{
+"set": "quora",
+"model": "jina-v2-base-code",
+"variant": "rot768",
+"C": 400,
+"share": 1.0000063775829169,
+"lower": 0.9998306261034976,
+"meets": true
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"variant": "sign512",
+"C": 100,
+"share": 0.9996451704470465,
+"lower": 0.9991219511293671,
+"meets": true
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"variant": "sign512",
+"C": 200,
+"share": 0.999791833306379,
+"lower": 0.9994476561435276,
+"meets": true
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"variant": "sign512",
+"C": 400,
+"share": 0.999895839637091,
+"lower": 0.99959363944782,
+"meets": true
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"variant": "sign768",
+"C": 100,
+"share": 1.0000194591081841,
+"lower": 0.9999317057690621,
+"meets": true
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"variant": "sign768",
+"C": 200,
+"share": 1.000016632507333,
+"lower": 0.9999285719437069,
+"meets": true
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"variant": "sign768",
+"C": 400,
+"share": 1.000016632507333,
+"lower": 0.9999285719437069,
+"meets": true
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"variant": "rot512",
+"C": 100,
+"share": 0.9992048383342896,
+"lower": 0.9981336767629108,
+"meets": true
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"variant": "rot512",
+"C": 200,
+"share": 0.999648161863388,
+"lower": 0.9989098092730355,
+"meets": true
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"variant": "rot512",
+"C": 400,
+"share": 0.9997361601482562,
+"lower": 0.9991000044992506,
+"meets": true
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"variant": "rot768",
+"C": 100,
+"share": 1.0000577705131954,
+"lower": 0.9999501901406721,
+"meets": true
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"variant": "rot768",
+"C": 200,
+"share": 1.000016632507333,
+"lower": 0.9999285719437069,
+"meets": true
+},
+{
+"set": "quora",
+"model": "bge-base-en-v1.5",
+"variant": "rot768",
+"C": 400,
+"share": 1.000016632507333,
+"lower": 0.9999285719437069,
+"meets": true
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"variant": "sign512",
+"C": 100,
+"share": 0.9912506523135133,
+"lower": 0.9850263326164952,
+"meets": false
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"variant": "sign512",
+"C": 200,
+"share": 0.9942557309595886,
+"lower": 0.9887836360876907,
+"meets": false
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"variant": "sign512",
+"C": 400,
+"share": 0.9976587396475776,
+"lower": 0.9943367495887531,
+"meets": true
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"variant": "sign768",
+"C": 100,
+"share": 0.9968358094928721,
+"lower": 0.9927055856621164,
+"meets": true
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"variant": "sign768",
+"C": 200,
+"share": 0.999274522100457,
+"lower": 0.9960975636722672,
+"meets": true
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"variant": "sign768",
+"C": 400,
+"share": 1.0000168435996575,
+"lower": 0.9978726165633767,
+"meets": true
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"variant": "rot512",
+"C": 100,
+"share": 0.9922504402646247,
+"lower": 0.9843860153378878,
+"meets": false
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"variant": "rot512",
+"C": 200,
+"share": 0.9951685939053239,
+"lower": 0.9887399270540733,
+"meets": false
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"variant": "rot512",
+"C": 400,
+"share": 0.9975796348848992,
+"lower": 0.9937121965248704,
+"meets": true
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"variant": "rot768",
+"C": 100,
+"share": 0.9996880926277668,
+"lower": 0.9977056110322845,
+"meets": true
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"variant": "rot768",
+"C": 200,
+"share": 0.9999702229220335,
+"lower": 0.9981941774111113,
+"meets": true
+},
+{
+"set": "csn1m",
+"model": "CodeRankEmbed",
+"variant": "rot768",
+"C": 400,
+"share": 0.999815622739461,
+"lower": 0.9979213576676688,
+"meets": true
+},
+{
+"set": "csn1m",
+"model": "jina-v2-base-code",
+"variant": "sign512",
+"C": 100,
+"share": 0.9971459086735743,
+"lower": 0.9918334136148744,
+"meets": true
+},
+{
+"set": "csn1m",
+"model": "jina-v2-base-code",
+"variant": "sign512",
+"C": 200,
+"share": 0.9981693492476905,
+"lower": 0.9938157697326314,
+"meets": true
+},
+{
+"set": "csn1m",
+"model": "jina-v2-base-code",
+"variant": "sign512",
+"C": 400,
+"share": 0.999818996046394,
+"lower": 0.9973852366498408,
+"meets": true
+},
+{
+"set": "csn1m",
+"model": "jina-v2-base-code",
+"variant": "sign768",
+"C": 100,
+"share": 1.0000970600910641,
+"lower": 0.9977160127529107,
+"meets": true
+},
+{
+"set": "csn1m",
+"model": "jina-v2-base-code",
+"variant": "sign768",
+"C": 200,
+"share": 1.0,
+"lower": 0.9976799938128886,
+"meets": true
+},
+{
+"set": "csn1m",
+"model": "jina-v2-base-code",
+"variant": "sign768",
+"C": 400,
+"share": 1.0,
+"lower": 0.9976799938128886,
+"meets": true
+},
+{
+"set": "csn1m",
+"model": "jina-v2-base-code",
+"variant": "rot512",
+"C": 100,
+"share": 0.999180423092057,
+"lower": 0.9965848702720407,
+"meets": true
+},
+{
+"set": "csn1m",
+"model": "jina-v2-base-code",
+"variant": "rot512",
+"C": 200,
+"share": 1.0000266072064308,
+"lower": 0.9972908386598794,
+"meets": true
+},
+{
+"set": "csn1m",
+"model": "jina-v2-base-code",
+"variant": "rot512",
+"C": 400,
+"share": 0.9999546553242519,
+"lower": 0.9975844385102833,
+"meets": true
+},
+{
+"set": "csn1m",
+"model": "jina-v2-base-code",
+"variant": "rot768",
+"C": 100,
+"share": 0.9998523487417789,
+"lower": 0.9973255749119438,
+"meets": true
+},
+{
+"set": "csn1m",
+"model": "jina-v2-base-code",
+"variant": "rot768",
+"C": 200,
+"share": 0.9997526654050106,
+"lower": 0.9971918962550704,
+"meets": true
+},
+{
+"set": "csn1m",
+"model": "jina-v2-base-code",
+"variant": "rot768",
+"C": 400,
+"share": 1.000022484963181,
+"lower": 0.9977000760940358,
+"meets": true
+},
+{
+"set": "csn1m",
+"model": "bge-base-en-v1.5",
+"variant": "sign512",
+"C": 100,
+"share": 0.9719951702772092,
+"lower": 0.9533954664446278,
+"meets": false
+},
+{
+"set": "csn1m",
+"model": "bge-base-en-v1.5",
+"variant": "sign512",
+"C": 200,
+"share": 0.982749250482908,
+"lower": 0.9706532626562476,
+"meets": false
+},
+{
+"set": "csn1m",
+"model": "bge-base-en-v1.5",
+"variant": "sign512",
+"C": 400,
+"share": 0.9895439321480343,
+"lower": 0.9779149649152094,
+"meets": false
+},
+{
+"set": "csn1m",
+"model": "bge-base-en-v1.5",
+"variant": "sign768",
+"C": 100,
+"share": 0.9943954450894611,
+"lower": 0.9841957160415581,
+"meets": false
+},
+{
+"set": "csn1m",
+"model": "bge-base-en-v1.5",
+"variant": "sign768",
+"C": 200,
+"share": 0.9980638810309047,
+"lower": 0.9904935414033771,
+"meets": true
+},
+{
+"set": "csn1m",
+"model": "bge-base-en-v1.5",
+"variant": "sign768",
+"C": 400,
+"share": 0.9974114582866018,
+"lower": 0.9908341568581845,
+"meets": true
+},
+{
+"set": "csn1m",
+"model": "bge-base-en-v1.5",
+"variant": "rot512",
+"C": 100,
+"share": 0.9729161245832633,
+"lower": 0.9548133031897754,
+"meets": false
+},
+{
+"set": "csn1m",
+"model": "bge-base-en-v1.5",
+"variant": "rot512",
+"C": 200,
+"share": 0.984489258096643,
+"lower": 0.9720430081034933,
+"meets": false
+},
+{
+"set": "csn1m",
+"model": "bge-base-en-v1.5",
+"variant": "rot512",
+"C": 400,
+"share": 0.9928675710006422,
+"lower": 0.984713997671345,
+"meets": false
+},
+{
+"set": "csn1m",
+"model": "bge-base-en-v1.5",
+"variant": "rot768",
+"C": 100,
+"share": 0.994967756985986,
+"lower": 0.985335529678461,
+"meets": false
+},
+{
+"set": "csn1m",
+"model": "bge-base-en-v1.5",
+"variant": "rot768",
+"C": 200,
+"share": 1.0025962323547846,
+"lower": 0.9961127856104022,
+"meets": true
+},
+{
+"set": "csn1m",
+"model": "bge-base-en-v1.5",
+"variant": "rot768",
+"C": 400,
+"share": 1.0021950372291129,
+"lower": 0.997934604042283,
+"meets": true
+}
+]
