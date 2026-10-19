@@ -14,23 +14,31 @@ A run stops at the first edit attempt (its target is the run's localization answ
 `finish`, or at the turn cap. Commands run under sandbox-exec: no network, no writes outside
 /private/tmp, no reads under the home directory except the checkout and this code.
 
-Spending: every API call is checked against a ledger with a hard cap (--cap-usd). Without --live
-the runner makes no API call and prints what it would send.
+Spending: every API call reserves its worst-case cost in a ledger with a hard cap (--cap-usd) before
+it is sent, and settles the real cost after; the ledger is locked, so the cap holds with parallel
+jobs. Without --live the runner makes no API call and prints what it would send.
+
+Jobs (state x arm x repeat) are shuffled with seed 42 and run on --jobs threads. Each job has its own
+sandbox profile and cwd file. A cap hit or an API error stops every job at its next call.
 
 Usage:
   python agent_run.py --states FILE --design resume|fresh --n-states 10 --reps 2 --out DIR
-    [--turns 8] [--cap-usd 5] [--live]
+    [--turns 8] [--cap-usd 5] [--jobs 8] [--live]
 """
 
 import argparse
+import concurrent.futures
 import datetime as dt
+import itertools
 import json
 import os
 import random
 import re
 import subprocess
 import sys
+import threading
 import time
+import urllib.error
 import urllib.request
 
 import pyarrow.parquet as pq
@@ -63,19 +71,45 @@ def cost(usage, band):
     return (hit * p["hit"] + miss * p["miss"] + out * p["out"]) / 1e6
 
 
+class Stop(Exception):
+    """A cap hit or an API error: the job stops, and so does every other job at its next call."""
+
+
 class Ledger:
+    """Spent + reserved never exceeds the cap at reservation time. Shared by threads (locked) and by both
+    designs (the file)."""
+
     def __init__(self, path, cap):
         self.path, self.cap = path, cap
         self.spent = sum(json.loads(x)["usd"] for x in open(path)) if os.path.exists(path) else 0.0
+        self.reserved = 0.0
+        self.lock = threading.Lock()
+        self.halt = None  # reason, once a job hits the cap or an API error
 
-    def check(self, worst):
-        if self.spent + worst > self.cap:
-            raise SystemExit(f"cost cap: spent ${self.spent:.4f}, next call up to ${worst:.4f}, cap ${self.cap}")
+    def reserve(self, worst):
+        with self.lock:
+            if self.halt:
+                raise Stop(self.halt)
+            if self.spent + self.reserved + worst > self.cap:
+                self.halt = (f"cost cap: spent ${self.spent:.4f}, reserved ${self.reserved:.4f}, "
+                             f"next call up to ${worst:.4f}, cap ${self.cap}")
+                raise Stop(self.halt)
+            self.reserved += worst
 
-    def add(self, usd, meta):
-        self.spent += usd
-        with open(self.path, "a") as f:
-            f.write(json.dumps({"usd": usd, **meta}) + "\n")
+    def release(self, worst):
+        with self.lock:
+            self.reserved -= worst
+
+    def settle(self, worst, usd, meta):
+        with self.lock:
+            self.reserved -= worst
+            self.spent += usd
+            with open(self.path, "a") as f:
+                f.write(json.dumps({"usd": usd, **meta}) + "\n")
+
+    def stop_all(self, reason):
+        with self.lock:
+            self.halt = self.halt or reason
 
 
 def sandbox_profile(tree):
@@ -94,17 +128,22 @@ def sandbox_profile(tree):
 class Sandbox:
     """A persistent-cwd shell over one checkout, with /workspace/<dir> mapped to the tree."""
 
+    _ids = itertools.count()
+
     def __init__(self, tree, root, arm_grep):
         self.tree, self.root, self.cwd = tree, root, root
+        self.tag = f"{os.getpid()}-{next(Sandbox._ids)}"  # one profile and cwd file per job
         os.makedirs(TMP, exist_ok=True)
-        self.profile = os.path.join(TMP, f"profile-{os.getpid()}.sb")
+        self.profile = os.path.join(TMP, f"profile-{self.tag}.sb")
         open(self.profile, "w").write(sandbox_profile(tree))
         self.bin = os.path.join(TMP, "bin")
         os.makedirs(self.bin, exist_ok=True)
         for name in ("grep", "egrep", "fgrep"):
             link = os.path.join(self.bin, name)
-            if not os.path.exists(link):
+            try:
                 os.symlink(os.path.join(HERE, "grep_shim.py"), link)
+            except FileExistsError:
+                pass
         venv_py = os.path.expanduser("~/.ss-eval/grep-paper/venv/bin")
         self.env = {"PATH": f"{self.bin}:{venv_py}:/opt/homebrew/bin:/usr/bin:/bin", "HOME": TMP, "LANG": "C.UTF-8",
                     "GREP_ARM": arm_grep, "GREP_REAL": "/opt/homebrew/bin/ggrep", "GIT_PAGER": "cat", "PAGER": "cat"}
@@ -116,7 +155,7 @@ class Sandbox:
         return s.replace(self.tree, self.root)
 
     def bash(self, command, timeout=60):
-        cwd_file = os.path.join(TMP, f"cwd-{os.getpid()}")
+        cwd_file = os.path.join(TMP, f"cwd-{self.tag}")
         script = (f"cd {self.to_local(self.cwd)!r} 2>/dev/null || cd {self.tree!r}\n{self.to_local(command)}\n"
                   f"__rc=$?\npwd > {cwd_file!r}\nexit $__rc\n")
         try:
@@ -208,13 +247,31 @@ def touches_gold(text, golds):
 
 def call_api(messages, tools, max_tokens, ledger, meta, live):
     band = price_band()
-    approx_in = sum(len(json.dumps(m)) for m in messages) / 3.5
-    worst = (approx_in * PRICE[band]["miss"] + max_tokens * PRICE[band]["out"]) / 1e6
-    ledger.check(worst)
+    approx_in = sum(len(json.dumps(m)) for m in messages) / 2.5  # chars per token, on the low side
+    worst = (approx_in * PRICE["peak"]["miss"] + max_tokens * PRICE["peak"]["out"]) / 1e6
     body = {"model": MODEL, "messages": messages, "tools": tools, "max_tokens": max_tokens,
             "thinking": {"type": "enabled"}, "reasoning_effort": "max"}
     if not live:
+        ledger.reserve(worst)
+        ledger.release(worst)
         return None, {"dry_run": True, "approx_input_tokens": int(approx_in), "worst_usd": worst}
+    ledger.reserve(worst)
+    try:
+        resp = _post(body)
+    except Stop as e:
+        ledger.release(worst)
+        ledger.stop_all(str(e))
+        raise
+    except Exception as e:
+        ledger.release(worst)
+        ledger.stop_all(f"harness error: {e!r}"[:300])
+        raise Stop(f"harness error: {e!r}"[:300])
+    usd = cost(resp.get("usage", {}), band)
+    ledger.settle(worst, usd, meta | {"usage": resp.get("usage", {}), "band": band})
+    return resp, {"usd": usd, "usage": resp.get("usage", {})}
+
+
+def _post(body):
     req = urllib.request.Request(API, data=json.dumps(body).encode(), method="POST",
                                  headers={"Content-Type": "application/json",
                                           "Authorization": f"Bearer {os.environ['DEEPSEEK_API_KEY']}"})
@@ -227,15 +284,16 @@ def call_api(messages, tools, max_tokens, ledger, meta, live):
             if e.code == 429 or e.code >= 500:
                 time.sleep(2 ** attempt)
                 continue
-            raise SystemExit(f"API {e.code}: {e.read()[:300]}")
+            raise Stop(f"API {e.code}: {e.read()[:300]}")
+        except (urllib.error.URLError, TimeoutError, ConnectionError):
+            time.sleep(2 ** attempt)
+            continue
     else:
-        raise SystemExit("API retries exhausted")
-    usd = cost(resp.get("usage", {}), band)
-    ledger.add(usd, meta | {"usage": resp.get("usage", {}), "band": band})
-    return resp, {"usd": usd, "usage": resp.get("usage", {})}
+        raise Stop("API retries exhausted")
+    return resp
 
 
-def run_one(state, design, arm, rep, turns, ledger, live, log):
+def run_one(state, design, arm, rep, turns, ledger, live, log, log_lock):
     msgs, tools = load_trajectory(state)
     if design == "resume":
         anchor = state["msg_index"]
@@ -253,9 +311,13 @@ def run_one(state, design, arm, rep, turns, ledger, live, log):
     if design == "resume" and touches_gold(api_msgs[-1]["content"], golds):
         rec["first_gold_turn"] = 0
     for turn in range(1, turns + 1):
-        resp, info = call_api(api_msgs, tools, 16384, ledger,
-                              {"instance_id": state["instance_id"], "design": design, "arm": arm, "rep": rep,
-                               "turn": turn}, live)
+        try:
+            resp, info = call_api(api_msgs, tools, 16384, ledger,
+                                  {"instance_id": state["instance_id"], "design": design, "arm": arm, "rep": rep,
+                                   "turn": turn}, live)
+        except Stop as e:  # logged, but never analysed as a finished run
+            rec["stop"], rec["stop_detail"] = "aborted", str(e)
+            break
         if resp is None:
             rec["stop"] = "dry_run"
             rec["dry_run"] = info
@@ -305,8 +367,9 @@ def run_one(state, design, arm, rep, turns, ledger, live, log):
         if stop:
             break
     rec["edit_in_gold"] = bool(rec["edit_target"] and any(g in rec["edit_target"] for g in golds))
-    log.write(json.dumps(rec) + "\n")
-    log.flush()
+    with log_lock:
+        log.write(json.dumps(rec) + "\n")
+        log.flush()
     return rec
 
 
@@ -319,6 +382,7 @@ def main():
     ap.add_argument("--turns", type=int, default=8)
     ap.add_argument("--cap-usd", type=float, default=5.0)
     ap.add_argument("--out", required=True)
+    ap.add_argument("--jobs", type=int, default=8)
     ap.add_argument("--live", action="store_true")
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
@@ -334,13 +398,19 @@ def main():
     ledger = Ledger(os.path.join(a.out, "ledger.jsonl"), a.cap_usd)
     jobs = [(s, arm, rep) for s in states for arm in ("asseen", "ranked") for rep in range(a.reps)]
     random.Random(42).shuffle(jobs)  # interleave arms so time-of-day effects do not line up with an arm
-    with open(os.path.join(a.out, f"runs-{a.design}{'' if a.live else '-dry'}.jsonl"), "a") as log:
-        for s, arm, rep in jobs:
-            r = run_one(s, a.design, arm, rep, a.turns, ledger, a.live, log)
+    log_lock = threading.Lock()
+    with open(os.path.join(a.out, f"runs-{a.design}{'' if a.live else '-dry'}.jsonl"), "a") as log, \
+            concurrent.futures.ThreadPoolExecutor(max_workers=a.jobs) as pool:
+        futures = [pool.submit(run_one, s, a.design, arm, rep, a.turns, ledger, a.live, log, log_lock)
+                   for s, arm, rep in jobs]
+        for f in concurrent.futures.as_completed(futures):
+            r = f.result()
             print(json.dumps({k: r[k] for k in ("instance_id", "arm", "rep", "stop", "first_gold_turn", "edit_in_gold",
                                                 "usd")} | ({"dry": r["dry_run"]} if "dry_run" in r else {})),
                   file=sys.stderr, flush=True)
-    print(f"spent ${ledger.spent:.4f}", file=sys.stderr)
+    print(f"spent ${ledger.spent:.4f}" + (f"; stopped: {ledger.halt}" if ledger.halt else ""), file=sys.stderr)
+    if ledger.halt:
+        sys.exit(2)
 
 
 if __name__ == "__main__":
