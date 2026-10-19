@@ -53,7 +53,8 @@ false}, which our harness did not enable), while our scan selects them from a hi
 int8 scores are still computed and sorted, but no candidate is removed) takes a median \nm{screen-med} times as long as screening to $H = 100$ (10th--90th percentile
 \nm{screen-p10}--\nm{screen-p90} over \nm{screen-n} CPU--set--model--effort cells), and retained quality
 changes by \nm{screen-qmin} to \nm{screen-qmax}. This measures the cost of rescoring 400 instead
-of 100 vectors, not the cost of the int8 stage itself, which no arm removes.
+of 100 vectors, not the cost of the int8 stage itself, which no arm of the main study removes; a post hoc bypass
+measures it (\S\ref{sec:posthoc}).
 
 \begin{figure}[t]\centering
 \includegraphics[width=\textwidth]{figures/compA.pdf}

@@ -1,6 +1,6 @@
 \section{Post hoc checks on the replication sets}\label{sec:posthoc}
 
-After the reviews of draft 8 we ran four checks on the replication sets, held-out, with the replication's builds, frozen
+After the replication we ran four checks on the replication sets, held-out, with the replication's builds, frozen
 points, fault rule and instance types. They were planned and frozen with file hashes before they ran
 (\texttt{POSTHOCFREEZE.json}), but they come after the replication results and are descriptive.
 
@@ -11,7 +11,10 @@ option that reads the int8 rows and the float16 vectors into anonymous memory at
 plans, seeds and 6 fresh instances per CPU type, every job of ours preloaded. All \nm{pl-n} latency tests pass
 (Table~\ref{tab:preload}; ratios \nm{pl-min}--\nm{pl-max}, geometric mean \nm{pl-gm}), with all \nm{pl-blocks} blocks kept,
 \nm{pl-reruns} fault reruns and \nm{pl-dropped} dropped blocks. Preloading made our query \nm{pl-slow}\% slower (geometric mean) and
-gives up the lazy loading of \S\ref{sec:results}, but the speed result no longer depends on the fault rule. The quality
+gives up the lazy loading of \S\ref{sec:results}, but the speed result no longer depends on the fault rule. The option stays off by default:
+it reads about 2~GB at 1M vectors (int8 rows 0.5~GB, float16 vectors 1.5~GB) before the first query, where the
+mapped index loads lazily, and it keeps that memory
+anonymous and unreclaimable, where the mapping lets the operating system reclaim pages under memory pressure. The quality
 tests read the same lists and give the same results (\nm{pl-qpass} of \nm{pl-n}).
 
 \begin{table}[h]\centering\scriptsize
@@ -51,7 +54,7 @@ CPU & Set & Ours & Ours, bypass & Rival & Rival & Rival, bypass & Ratio & Retain
 \paragraph{Float16 refine for the rivals.} The refining dev-chosen rivals (FAISS HNSW-SQ8 on AMD, FAISS binary HNSW on
 Graviton) ran their frozen points with the float16 rows instead of the float32 originals in the refine step
 (\nm{f16-n} cases). Their time changed by a factor of \nm{f16-tmin}--\nm{f16-tmax} and their retained share by at most
-\nm{f16-qmax}: the refine representation does not explain the comparison (B) results.
+\nm{f16-qmax}: in these three cases the refine representation does not explain the comparison (B) results.
 
 \paragraph{Where FAISS binary HNSW spends its time.} On MS MARCO dev, with the same codes, $M = 64$ builds and a fixed
 $ef = 400$ (our walk without its adaptive rule), \texttt{perf stat} counted each process over the full dev split and over
@@ -61,14 +64,15 @@ FAISS (\nm{perf-ndis-ours} against \nm{perf-ndis-faiss} per query), so it does n
 misses and takes \nm{perf-cyc-x-intel}--\nm{perf-cyc-x-amd} times as many cycles; about 190 instructions per distance against
 50--75 for ours (ours includes its JavaScript call). \texttt{perf record} puts 35--52\% of FAISS's time in its per-candidate
 Hamming distance call, 17--23\% in the search loop and about 13--16\% in its heaps. Our walk filters visited nodes without
-branches, scores a whole neighbour list in one batch and keeps bucket queues (\S\ref{sec:post}); these choices, not fewer
-distances, account for the gap. A FAISS setting we did not find could close part of it; the counting top-$k$ of the flat
+branches, scores a whole neighbour list in one batch and keeps bucket queues (\S\ref{sec:post}); the counters are consistent with these choices, not with fewer distances, as the source
+of the gap; they do not measure the share of each choice. A FAISS setting we did not find could close part of it; the counting top-$k$ of the flat
 index (\S\ref{sec:post}) shows that defaults matter, and we will report any correction.
 
 \begin{table}[h]\centering\scriptsize
 \caption{Post hoc \texttt{perf stat} per query, MS MARCO 1M dev, same codes, $M = 64$, fixed $ef = 400$: Hamming distances
 computed, cycles and instructions (millions), branch misses (thousands), and instructions per distance. Ours includes its
-JavaScript call and the shared stages run in each harness.}\label{tab:perf}
+JavaScript call and its shared stages; FAISS ran with the ported SIMD shared path, so its counts are not inflated
+by the scalar rescoring.}\label{tab:perf}
 \begin{tabular}{llrrrrr}\toprule
 CPU & Walk & Distances & Cycles (M) & Instr. (M) & Br. misses (k) & Instr./distance\\\midrule
 \inputtable{tables/perf.tex}

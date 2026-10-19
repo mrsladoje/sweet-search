@@ -2,7 +2,7 @@
 
 The experiments in this section ran after the held-out run, on held-out queries, with the frozen builds
 and operating points and with harness changes that only add clocks and switches (Appendix~\ref{app:deviations}).
-They answer two questions that the main results leave open; they are not part of the pre-registered study.
+They answer three questions that the main results leave open (generator time, the binary code, slow rounds); they are not part of the pre-registered study.
 
 \subsection{Generator time alone}
 
@@ -31,13 +31,13 @@ budgets (\S\ref{sec:results}).
 walk keeps its candidate and result queues as one bucket per integer Hamming distance (0 to 512), so a push is $O(1)$
 and a pop amortised $O(1)$; FAISS and USearch keep binary heaps. Our exact scan selects the best $C$ from a histogram of
 the 513 possible distances, while FAISS binary flat keeps a binary heap of size $C$ by default (a counting variant
-exists, \texttt{use\_heap = false}). After the reviews of this draft we measured both on one machine, the Mac
+exists, \texttt{use\_heap = false}). After the replication we measured both on one machine, the Mac
 (held-out, $C = 400$, generator clock, 5 rounds, every set with one model per set kind; Table~\ref{tab:mech}). With
 binary heaps instead of buckets our walk takes \nm{mech-hb-fixed} times as long at fixed $ef$ (\nm{mech-hb-fixed-min}--\nm{mech-hb-fixed-max}
 over sets) and \nm{mech-hb-adapt} times with its adaptive rule. FAISS binary HNSW at the same build and $ef$ takes
 \nm{mech-fb} times as long as our walk with buckets and still \nm{mech-fh} times as long as our walk with heaps: the queues
-explain about \nm{mech-share}\% of the gap on a log scale, and the rest, which we did not locate, lies elsewhere (visited-set
-handling, neighbour-list layout and per-step overheads are candidates). For the flat scan, FAISS's counting top-$k$ is
+explain about \nm{mech-share}\% of the gap on a log scale, and the rest lies elsewhere; the hardware counters of
+\S\ref{sec:posthoc} point to instructions and branch misses per distance. For the flat scan, FAISS's counting top-$k$ is
 \nm{mech-flat-hc} times faster than its default heap, and our scan is still \nm{mech-flat-co} times faster than the counting
 variant. So the selection structure explains part of both gaps, and an implementation that keeps the default heap
 understates what FAISS binary flat can do; comparison (B) used the default.
@@ -91,7 +91,7 @@ CPU & Set & Model & Rival & Ratio & Slow & Native & Default\\\midrule
 \subsection{Which binary code?}\label{sec:codeablation}
 
 Our codes take the sign of the first 512 of 768 dimensions, and none of the three models reports training for nested
-dimensions (\S\ref{sec:related}). After the reviews of this draft we checked three alternatives, for quality only: the
+dimensions (\S\ref{sec:related}). After the replication we checked three alternatives, for quality only: the
 sign of all 768 dimensions, and the sign of the first 512 or all 768 dimensions after a random orthogonal rotation
 (seed 42). Stage 1 is an exact Hamming scan of the code (top $C$, ties to the lower vector id); every candidate is then
 rescored with the float32 cosine, so the code is the only difference. Table~\ref{tab:codeablation} counts the

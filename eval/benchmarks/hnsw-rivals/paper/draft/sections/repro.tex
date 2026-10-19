@@ -3,14 +3,16 @@
 Everything is in the repository~\cite{sweetsearch_repo} under \texttt{eval/benchmarks/hnsw-rivals/paper}: the harness, the
 adapters, the declared grids, the plans, the frozen operating points, the analysis scripts and two freeze records
 (\texttt{FREEZE.json} for the main study, tag \texttt{hnsw-rivals-freeze-2026-10-17-v2}; \texttt{REPFREEZE.json} for the
-replication, commits in \S\ref{sec:replication}). The release adds the vectors of every set and model, the splits, the
+replication, commits in \S\ref{sec:replication}; \texttt{POSTFREEZE.json}, \texttt{MECHFREEZE.json} and \texttt{POSTHOCFREEZE.json}
+for the later diagnostics). The release adds the vectors of every set and model, the splits, the
 ground truth, every held-out record with its retained lists, and the per-job timing files.
 
-\paragraph{One entry point.} \texttt{reproduce.sh DATA RESULTS REPDEV REPHO POST} checks both freeze records, runs every
-analysis script in order and builds this PDF:
+\paragraph{One entry point.} \texttt{reproduce.sh DATA RES} checks each of the five freeze records against the commit that
+wrote it, runs every analysis script in order (main study, post-freeze, replication and the post hoc checks of
+\S\ref{sec:posthoc}) and builds this PDF:
 
 \begin{small}\begin{verbatim}
-bash reproduce.sh DATA RESULTS REPDEV REPHO POST
+bash reproduce.sh DATA RES
 \end{verbatim}\end{small}
 
 \noindent It needs only the released files and a Python environment from the pinned lock file; it reruns no

@@ -108,7 +108,8 @@ library's own refine class. The rival timer also includes one conversion of the 
 int8 and float64 forms that comparison (A) needs, also for systems that do not use them; this adds a
 small fixed cost to every rival query, which we did not measure separately (the replication removes it,
 \S\ref{sec:replication}). The refine uses float32 originals, while our cascade rescores with float16 vectors; a float16
-refine for FAISS and a rescoring USearch int8 variant exist but were not in the grid. Our timed call, in turn, includes
+refine for FAISS and a rescoring USearch int8 variant exist but were not in the grid (a post hoc float16 refine check is in
+\S\ref{sec:posthoc}). Our timed call, in turn, includes
 JavaScript orchestration and metadata reads that the rivals do not do (\S\ref{sec:timing}). $k_v$ is fixed per set and model on dev: the smallest number of vectors at which the exact
 vector list holds 10 distinct documents for at least 99.9\% of dev queries (Quora systems return
 $k_v + 1$ for the self-match). It ranges from 10 (BEIR) to 143 (gcsn with bge-base-en-v1.5). Each family's dev grid sweeps its search effort
