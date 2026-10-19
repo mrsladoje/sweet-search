@@ -31,6 +31,7 @@ struct Corpus {
     int code_bytes = 64;  // 64 (512-bit codes) or 96 (768-bit, K4)
     const float* x = nullptr;
     const uint8_t* codes = nullptr;
+    const uint16_t* x16 = nullptr;  // post hoc (SS_FIX_REFINE_F16=1): refine with the float16 rows instead of x
 };
 
 struct Adapter {

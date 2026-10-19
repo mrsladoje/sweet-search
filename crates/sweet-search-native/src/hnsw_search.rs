@@ -29,6 +29,14 @@ unsafe impl<T: Copy + Sync> Sync for AlignedBuf<T> {}
 
 const HUGE_PAGE: usize = 2 << 20;
 
+/// SS_FIX_NO_INT8=1 (bench only): the cascade's int8 stage neither reads the
+/// int8 rows nor sorts (a true bypass, for comparison A's "no int8" arm).
+fn no_int8() -> bool {
+    use std::sync::OnceLock;
+    static ON: OnceLock<bool> = OnceLock::new();
+    *ON.get_or_init(|| std::env::var("SS_FIX_NO_INT8").map(|v| v == "1").unwrap_or(false))
+}
+
 fn huge_on() -> bool {
     std::env::var("SS_FIX_HNSW_HUGE").map(|v| v != "0").unwrap_or(true)
 }
@@ -1669,11 +1677,15 @@ impl HnswSearcher {
         let mut miss = std::mem::take(&mut self.int8_missing);
         sc.clear();
         miss.clear();
+        let no_int8 = no_int8();
         for &node in &pool {
             let node = node as usize;
             let is_stale = stale_ref.is_some_and(|b| node < stale_bits && b[node >> 3] & (1u8 << (node & 7)) != 0);
             if node >= rows || present[node] == 0 || is_stale {
                 miss.push(true);
+                sc.push(0.0);
+            } else if no_int8 {
+                miss.push(false);
                 sc.push(0.0);
             } else {
                 let p = slab.as_ptr().wrapping_add(node * dim);
@@ -1693,6 +1705,12 @@ impl HnswSearcher {
         let mut keys = std::mem::take(&mut self.int8_keys);
         keys.clear();
         for i in 0..count {
+            if no_int8 {
+                // SS_FIX_NO_INT8=1 (bench only): no int8 dot and no sort; the
+                // candidates go to the full stage in generator order.
+                keys.push(i as u64);
+                continue;
+            }
             let mut dot = 0i32;
             if !miss[i] {
                 let node = pool[i] as usize;
@@ -1702,7 +1720,9 @@ impl HnswSearcher {
             }
             keys.push(((i32::MAX as i64 - dot as i64) as u64) << 32 | i as u64);
         }
-        keys.sort_unstable();
+        if !no_int8 {
+            keys.sort_unstable();
+        }
         let mut rank = std::mem::take(&mut self.int8_rank);
         rank.clear();
         rank.extend(keys.iter().map(|&key| key as u32));
