@@ -19,8 +19,7 @@ CPU & Set & Model & Rival & Ours \us{} & Rival \us{} & Clusters & SE & Power & P
 \headlinetable{0.995}{0995}
 
 \begin{table}[h]\centering\scriptsize
-\caption{The fastest rival that meets $\fr = 0.99$ on held-out (point estimate), per cell of
-Table~\ref{tab:headline099}.}\label{tab:fastestrival}
+\caption{The rival in each cell of Table~\ref{tab:headline099}: the rival that was fastest on dev at $\fr = 0.99$.}\label{tab:fastestrival}
 \setlength{\tabcolsep}{3pt}
 \begin{tabular}{ll*{5}{l}}\toprule
 Set & Model & \inputtable{tables/headline-cols.tex}\\\midrule
@@ -30,10 +29,11 @@ Set & Model & \inputtable{tables/headline-cols.tex}\\\midrule
 
 \section{Comparison (A) on every CPU}\label{app:compA}
 
-Tables~\ref{tab:compA-amd}--\ref{tab:compA-mac} repeat Table~\ref{tab:compA-intel} for the other CPUs.
+Tables~\ref{tab:compA-intel}--\ref{tab:compA-mac} give comparison (A) per CPU.
 The full grid (every budget and both efforts, every set and model) is in \texttt{RESULTS-paper.md}
 in the release.
 
+\compAtable{intel}{Intel Xeon 6975P-C}
 \compAtable{amd}{AMD EPYC 9R45}
 \compAtable{arm}{Graviton4}
 \compAtable{box}{EPYC Milan (box)}
@@ -43,3 +43,25 @@ in the release.
 
 \memtable{quora}{Quora, bge-base-en-v1.5}
 \memtable{dall}{dall, CodeRankEmbed}
+
+\section{Tuning budget and build cost}\label{app:extra}
+
+\begin{table}[h]\centering\scriptsize
+\caption{Tuning budget: distinct comparison-(B) configurations per set and model in the dev sweep
+(including the widened IVF and ScaNN grids), per AWS CPU. Empty: the system does not run on that CPU.}\label{tab:tuning}
+\begin{tabular}{lrrr}\toprule
+System & Intel & AMD & Graviton\\\midrule
+\inputtable{tables/tuning.tex}
+\bottomrule\end{tabular}
+\end{table}
+
+\begin{table}[h]\centering\scriptsize
+\caption{Build cost at 1M vectors (csn1m, CodeRankEmbed), one row per family: the range over its
+build grid. Size is the index file only; the refining rivals also need the float32 originals at serving
+time (3.09~GB at 1M), while our 2.77~GB includes our float16 vector file. Builds ran under a memory-admission scheduler, several at a time, so wall times are
+indicative. Core-seconds = wall time $\times$ threads (an upper bound for the concurrent rival builds).}\label{tab:build}
+\begin{tabular}{lrrrrrr}\toprule
+Family & Builds & Wall s & Threads & Core-s & Size GB & Peak RSS GB\\\midrule
+\inputtable{tables/build.tex}
+\bottomrule\end{tabular}
+\end{table}

@@ -1,43 +1,119 @@
 \section{Pre-registered replication on untouched sets}\label{sec:replication}
 
-The main results are descriptive (\S\ref{sec:limits}, Appendix~\ref{app:deviations}). To test the speed claim
-once, we ran a replication on two sets that no earlier step used, with a corrected harness and rules written and
-committed before any replication data existed (\texttt{REPLICATION\_PLAN.md}); two independent pre-run reviews of
-the harness and the plan were applied before the first timing run.
+The main study is exploratory (\S\ref{sec:protocol}, Appendix~\ref{app:deviations}). To test its speed pattern once, we
+ran a replication on two sets that no earlier step used, with a corrected harness and rules written before any
+replication data existed. The plan, \texttt{REPLICATION\_PLAN.md}, was committed at \texttt{6e4f9c42} (2026-10-19, 00:06
+CEST) together with the analysis scripts; two independent pre-run reviews were applied to it before the first timing run
+(\texttt{804439f0}), and the git history records every change. The dev selections and held-out plans were frozen with
+file hashes in \texttt{REPFREEZE.json} before any held-out job of the CPU type ran (\texttt{74e8c4b5} for AMD,
+\texttt{4740606a} for Intel and Graviton). The held-out analysis (\texttt{rep\_analyze.py}) ran once, unchanged.
 
-\paragraph{Design.} CQADupStack (all 12 forums merged; 457,199 documents; 13,145 queries, split by forum) and an MS
-MARCO subsample of 1,000,000 passages (every passage judged for a dev query plus a seeded random sample; 6,980
-queries), embedded with bge-base-en-v1.5. One build per rival family (the build most often frozen for that family in
-the main study), every effort-type knob on the same 11-value grid as our stage-1 size, and our cascade only at
-configurations the product itself runs. Dev selection at $\fr = 0.99$ used the median of three timed rounds; the rival
-of each test is the rival fastest on dev. Rival timers compute only the query forms the family uses, each job
-pre-reads only the files it opens, and a job with more than 1,000 major page faults in its timed pass runs once more
-(invalid if it fails again). On held-out queries, each CPU type ran 6 fresh instances, each with 2 blocks that hold
-ours and every frozen rival point in a seeded random order. The latency test is a one-sided $t$-test over the 6
-instance means of log(rival / ours); the quality test is non-inferiority with a relative margin of 0.5\% of exact
-quality, bootstrapped jointly over queries; each family of 6 tests is Holm-corrected at 0.025; a set--CPU pair counts
-as ``faster at 99\% quality'' only if both tests pass.
+\subsection{Design}
 
-\paragraph{Results.} Table~\ref{tab:rep} gives the six pairs. The latency test passes in \nm{rep-lat-pass} of
-\nm{rep-n}, the quality test in \nm{rep-q-pass} of \nm{rep-n}, and both in \nm{rep-joint} of \nm{rep-n}. The
-geometric mean ratio over instances is \nm{rep-gm} (from \nm{rep-min} to \nm{rep-max}). \nm{rep-reruns} jobs were
-rerun by the fault rule and \nm{rep-dropped} blocks were dropped. At the 99th percentile the ratio is \nm{rep-p99};
-the native calls are \nm{rep-native}\% of our timed query.
+\paragraph{Sets.} \emph{CQADupStack}: all 12 BEIR forums merged into one corpus of 457,199 documents (ids prefixed by
+forum, relevance only within a forum), 13,145 queries split 60/40 (seed 42) \emph{within each forum}, so both splits hold
+every forum: 7,887 dev and 5,258 held-out queries. \emph{MS MARCO 1M}: every passage judged for any of the 6,980 BEIR dev
+queries (7,433 passages), plus a seeded uniform sample (Fisher--Yates, seed 42, over the sorted ids) of the other
+8,834,390 passages, 1,000,000 passages in all; the 6,980 queries split 4,188 dev and 2,792 held-out. One vector per
+document, embedded with bge-base-en-v1.5 (pinned revision); $k_v = 10$ on both sets. The plan applies the self-match rule
+of Quora to any query id that is also a corpus id. MS MARCO query and passage ids share one number range, so for 814 of
+the 6,980 queries the rule removed the passage whose id equals the query id, for every system and for exact search; none
+of these passages is relevant to its query, but the rule was meant for Quora and has no purpose here.
 
-The quality test separates the two sets. On MS MARCO 1M it passes on all three CPUs, so the joint claim (faster and
-not worse than the dev-chosen rival by more than 0.5\% of exact quality) holds there on every CPU. On CQADupStack it
-fails on all three CPUs: the mean difference to the rival is between $-0.0010$ and $0.0000$ nDCG@10, but its lower
-bound falls just below the margin of 0.0021, and both our point and the rival's meet $\fr = 0.99$ only by the point
-estimate, not by the bound. The latency advantage on CQADupStack is therefore shown, but quality non-inferiority at
-this margin is not; we do not claim it.
+\paragraph{Systems.} Ours: the production cascade (scan up to 150k vectors, walk above, so the walk runs on both sets),
+production build, only at stage-1 sizes the product itself runs (no bench-only override). Rivals: every family of the
+main study that runs on the CPU, one build each (the build most often frozen for that family in the main study), and
+every effort knob (ef, DiskANN $L$, SVS window) on the same 11-value grid as our stage-1 size, from 50 to 3,000. No build
+tuning on these sets for any system.
 
-\begin{table}[h]\centering\scriptsize
-\caption{Replication, held-out, $\fr = 0.99$ (pre-registered tests). Ratio: geometric mean over the 6 instances of
-rival / ours (paired bootstrap interval over instances). Latency: one-sided $t$-test, Holm over 6. Quality: mean of
-per-query nDCG@10 (ours $-$ rival) and the non-inferiority test at 0.5\% of exact quality, Holm over 6.}\label{tab:rep}
+\paragraph{Harness corrections.} Rival timers compute only the query forms the family uses; each job pre-reads only the
+files it opens; each plan file holds every system of one (set, round) and runs on one instance, in a seeded random order;
+and a job with more than 1,000 major page faults in its timed pass runs once more and is invalid if the rerun also exceeds
+1,000, in which case its block is dropped. The rule applies to every system alike.
+
+\paragraph{Selection and tests.} On dev, at $\fr = 0.99$, each system's point is its fastest configuration whose
+one-sided 97.5\% cluster-bootstrap bound of mean($Q_{\text{sys}} - 0.99\,Q_{\text{exact}}$) is at least 0, with latency the
+median of three dev rounds; the rival of each test is the rival fastest on dev. Held-out: each CPU type ran 6 fresh
+instances, each with 2 blocks. The latency test is a one-sided $t$-test (5 degrees of freedom) over the 6 instance means
+of log(rival / ours). The quality test is non-inferiority with a relative margin: $H_0$: mean($Q_{\text{ours}} -
+Q_{\text{rival}} + 0.005\,Q_{\text{exact}}) \le 0$, one-sided at 0.025, bootstrapped jointly over queries. Each family of 6
+tests is Holm-corrected at 0.025. A set--CPU pair counts as ``faster and not worse'' only if both tests pass. This joint
+claim is relative to the rival; whether a system keeps 99\% of exact quality is a separate, descriptive question.
+
+\begin{table}[t]\centering\scriptsize
+\caption{Replication: frozen points (dev, $\fr = 0.99$). Effort: stage-1 size $S_1$ for ours; ef, or SVS search window,
+for the rival. Dev latency is the median of three rounds.}\label{tab:rep-points}
 \setlength{\tabcolsep}{3pt}
-\begin{tabular}{lllrrrrrlrrl}\toprule
-CPU & Set & Rival & Inst. & Ours \us{} & Rival \us{} & Ratio & $p$ (lat.) & Holm & Mean diff & $p$ (qual.) & Holm\\\midrule
+\begin{tabular}{lllrlrr}\toprule
+CPU & Set & Rival (build) & Rival effort & Ours $S_1$ & Rival dev \us{} & Ours dev \us{}\\\midrule
+Intel & CQADupStack & SVS Vamana LVQ (degree 64) & window 50 & 200 & 237 & 164\\
+Intel & MS MARCO 1M & SVS Vamana LVQ (degree 64) & window 150 & 400 & 746 & 257\\
+AMD & CQADupStack & FAISS HNSW-SQ8 ($M$ 64, efC 800) & ef 50, refine 2 & 200 & 268 & 127\\
+AMD & MS MARCO 1M & FAISS HNSW-SQ8 ($M$ 64, efC 800) & ef 100, refine 2 & 400 & 544 & 190\\
+Graviton & CQADupStack & FAISS HNSW float32 ($M$ 64, efC 800) & ef 50 & 200 & 605 & 296\\
+Graviton & MS MARCO 1M & FAISS binary HNSW ($M$ 64, efC 800) & ef 300, refine 200 & 400 & 1038 & 425\\\bottomrule
+\end{tabular}
+\end{table}
+
+\paragraph{Frozen points.} Table~\ref{tab:rep-points} lists them. On MS MARCO our frozen point is the product's
+shipped default ($S_1 = 400$). On CQADupStack the rival's effort sits at the bottom of the shared grid in
+\nm{rep-gridmin} of 3 cases (ef or window 50): a lower effort, which the grid did not hold, could have qualified and been
+faster. Figure~\ref{fig:pareto} shows every dev configuration as a quality--latency curve per system.
+
+\begin{figure}[t]\centering
+\includegraphics[width=\textwidth]{figures/pareto.pdf}
+\caption{Replication, dev queries: for each system, the fastest dev configuration at or above each retained share of
+exact nDCG@10 (median of three dev rounds), from 0.95. Blue: ours; red: the rival chosen on dev; grey: the other rival
+families. Dotted: $\fr = 0.99$. Our curve starts at the product's stage-1 floor; the rivals' curves at the bottom of the
+shared effort grid.}\label{fig:pareto}
+\end{figure}
+
+\subsection{Results}
+
+\paragraph{Latency.} Table~\ref{tab:rep} gives the six pre-registered latency tests. All \nm{rep-lat-pass} pass after Holm;
+the geometric mean ratio over instances is \nm{rep-gm} (from \nm{rep-min} to \nm{rep-max}). At the 99th percentile the
+ratio is \nm{rep-p99}, so in the replication our tail is also shorter than the rival's. Our native calls take
+\nm{rep-native}\% of our timed query (median); the rest is JavaScript and metadata reads.
+
+\paragraph{The fault rule.} Every job that exceeded the fault limit was ours, on MS MARCO, where our memory-mapped files
+are largest: \nm{rep-reruns-w} timed jobs (and four native-clock jobs) ran again and passed on the rerun; \nm{rep-dropped-w}
+block was dropped (\nm{rep-sens-cell}, block 3: \nm{rep-sens-f1} and then \nm{rep-sens-f2} major faults in our timed
+pass). With that block put back, the AMD MS MARCO ratio falls to \nm{rep-sens-ratio} and the one-sided $p$ rises to
+\nm{rep-sens-p}, which would not pass. So that one pass depends on the pre-registered rule, which treats a job whose
+index was read from disk during timing as invalid for every system alike. Its result describes a server whose index stays
+in the page cache; \S\ref{sec:losses} discusses the other case.
+
+\begin{table}[t]\centering\scriptsize
+\caption{Replication, held-out, latency (pre-registered test). Inst.: instances; Blocks: blocks kept (2 per instance).
+Ours and Rival: median over blocks of the per-block median, \us{}. Ratio: geometric mean over instances of rival / ours,
+with a paired bootstrap interval over instances. $p$: one-sided $t$-test, 5 degrees of freedom; Holm over the 6 tests at
+0.025.}\label{tab:rep}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{llllrrrrrl}\toprule
+CPU & Set & Rival & Inst. & Blocks & Ours \us{} & Rival \us{} & Ratio & $p$ & Holm\\\midrule
 \inputtable{tables/rep.tex}
 \bottomrule\end{tabular}
 \end{table}
+
+\begin{table}[t]\centering\scriptsize
+\caption{Replication, held-out, quality. Exact: mean nDCG@10 of exact search. Retained: mean($Q_{\text{sys}}$) /
+mean($Q_{\text{exact}}$), with the one-sided 97.5\% bound of the selection rule on the same scale in brackets (at least 0.99
+means the point meets $\fr$ by the bound; descriptive, computed after the held-out run). Diff: mean of per-query
+($Q_{\text{ours}} - Q_{\text{rival}}$) and its one-sided 97.5\% lower bound. Margin: $-0.005$ mean($Q_{\text{exact}}$). $p$ and
+Holm: the pre-registered non-inferiority test.}\label{tab:rep-q}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{llrllrrrrl}\toprule
+CPU & Set & Exact & Retained, ours & Retained, rival & Diff & Lower & Margin & $p$ & Holm\\\midrule
+\inputtable{tables/rep-q.tex}
+\bottomrule\end{tabular}
+\end{table}
+
+\paragraph{Quality.} Table~\ref{tab:rep-q} separates three questions. \emph{Non-inferiority to the rival} (the
+pre-registered test) passes on MS MARCO on all three CPUs and fails on CQADupStack on all three: there the mean
+difference to the rival is between $-0.0010$ and $0.0000$ nDCG@10, but its lower bound falls just below the margin of
+0.0021. \emph{Retention against exact search} (descriptive): on MS MARCO our point keeps \nm{rep-share-ours-msm} of exact
+quality, with a bound of \nm{rep-share-ours-msm-lo}, so it meets 99\% by the bound; on CQADupStack it keeps
+\nm{rep-share-ours-cqa} by the point estimate, with a bound of \nm{rep-share-ours-cqa-lo}, so it does not meet 99\% by the
+bound, and neither does any of the three rivals. \emph{The joint claim} (faster and not worse than the rival by more than
+0.5\% of exact quality) holds in \nm{rep-joint} of \nm{rep-n} pairs, all on MS MARCO. On CQADupStack the speed advantage is
+shown, but at a retained quality that is not established at 99\%.

@@ -19,9 +19,14 @@ every frozen file. Held-out results come only from binaries built from that comm
 | `analyze.py` | held-out results → `RESULTS-paper.md` and a JSON of every reported value (written after the freeze) |
 | `merge_results.py` | merges per-CPU runs of `analyze.py --types` (Holm again over all primary comparisons) |
 | `mem_patch.py` | memory column from the result headers (for JSON written before the memory-field fix) |
+| `REPLICATION_PLAN.md` (one level up), `sets_rep.py`, `make_rep_plans.py`, `rep_select.py`, `rep_analyze.py` | pre-registered replication: sets, plans, dev selection, the frozen held-out tests (`REPFREEZE.json`) |
+| `rep_describe.py`, `rep_pareto.py`, `post_analyze.py` | descriptive additions written after the held-out runs (replication bounds and sensitivity, dev curves, post-freeze runs) |
+| `reproduce.sh` | one entry point: every table, number and figure from the released data and records |
 | `draft/` | the paper: `main.tex`, `sections/`, `mktex.py` (numbers and tables), `figures.py`, `refs.bib` |
 
 ## Rebuild every table and figure
+
+`bash reproduce.sh DATA RESULTS REPDEV REPHO POST` runs the steps below and the replication scripts in order.
 
 Needs the released data (`DATA`: sets, vectors, ground truth) and results (`RESULTS`: one folder per machine).
 

@@ -96,19 +96,24 @@ rescoring difference removed by this estimate. Generators: our walk, our
 scan, FAISS binary HNSW and binary flat, USearch b1, hnswlib and FAISS HNSW on float32, FAISS RaBitQ
 (flat and IVF), ScaNN and DiskANN.
 
-\subsection{Comparison (B): as shipped}
+\subsection{Comparison (B): library pipelines under the benchmark configuration}
 
-In comparison (B) each library uses its own search and returns its top $k_v$ vectors. Where a
+In comparison (B) each library uses its own search and returns its top $k_v$ vectors. This is not each library ``as
+shipped'': the refine step, the query conversion and our own timed call all depart from a production deployment, as
+listed next, and some departures favour one side and some the other. Where a
 configuration refines (FAISS binary and quantised indexes, USearch b1), the refine step is one routine
 of our harness for all of them: inner products with the float32 originals and a partial sort, not each
 library's own refine class. The rival timer also includes one conversion of the query into the binary,
 int8 and float64 forms that comparison (A) needs, also for systems that do not use them; this adds a
-small fixed cost to every rival query, which we did not measure separately. $k_v$ is fixed per set and model on dev: the smallest number of vectors at which the exact
+small fixed cost to every rival query, which we did not measure separately (the replication removes it,
+\S\ref{sec:replication}). The refine uses float32 originals, while our cascade rescores with float16 vectors; a float16
+refine for FAISS and a rescoring USearch int8 variant exist but were not in the grid. Our timed call, in turn, includes
+JavaScript orchestration and metadata reads that the rivals do not do (\S\ref{sec:timing}). $k_v$ is fixed per set and model on dev: the smallest number of vectors at which the exact
 vector list holds 10 distinct documents for at least 99.9\% of dev queries (Quora systems return
 $k_v + 1$ for the self-match). It ranges from 10 (BEIR) to 143 (gcsn with bge-base-en-v1.5). Each family's dev grid sweeps its search effort
 (and refine depth where it has one); the operating point at each fraction is the fastest point that
-meets it on dev (\S\ref{sec:protocol}). Comparison (B) answers the practical question: tuned on the
-same dev queries, how fast is each system at the same retained quality?
+meets it on dev (\S\ref{sec:protocol}). Comparison (B) asks: tuned on the same dev queries, how fast is each
+library's search at the same retained quality, inside this harness?
 
 \subsection{Memory, load and cold start}
 

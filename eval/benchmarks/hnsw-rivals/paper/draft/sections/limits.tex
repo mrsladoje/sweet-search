@@ -1,15 +1,18 @@
 \section{Limits}\label{sec:limits}
+\sloppy
 
-\paragraph{Sizes and dimensions.} The sets hold 7k to 1M vectors. We make no claim beyond 1M vectors. All vectors have 768 dimensions; our codes use the first 512. Other dimensions, and models
-whose leading dimensions carry less of the signal, can change the result.
+\paragraph{Sizes and dimensions.} The sets hold 7k to 1M vectors. We make no claim beyond 1M vectors. All vectors have 768 dimensions; our codes use the sign of the first 512, and
+none of the three models reports training for nested dimensions (\S\ref{sec:related}). We did not test 768-bit codes or a
+random rotation before the sign; either could change the small-budget results of comparison (A).
 
 \paragraph{Models and tasks.} Three embedding models, five code-search sets and two BEIR sets. The
 code-search results are exploratory for our system. Before this study, its production defaults (stage-1
 size, graph pruning, early stopping) were tuned on gcsn queries, including queries that are held-out
 here, with the earlier speed ratio against rivals as an acceptance check; dev and held-out code queries
 also share most source repositories (the bootstrap resamples repositories, which accounts for this
-inside a set but not across sets). The BEIR sets were not used in that tuning. The confirmatory part is
-the \nm{nconfirm} primary comparisons on Quora and FiQA with enough power.
+inside a set but not across sets). The BEIR sets were not used in that tuning. The confirmatory parts are the \nm{nconfirm} quality comparisons of the
+main study on Quora and FiQA and the replication on two BEIR text sets; no code set is in the replication, so no
+confirmatory claim covers code retrieval.
 
 \paragraph{Machines.} Every Linux machine is a virtual machine, so page sizes, frequency and
 neighbour load are not under our control. A/A runs measured this noise per machine and set $R$; the
@@ -20,8 +23,11 @@ on TLB behaviour. The Mac runs unpinned. The box and the Mac run a reduced grid.
 \paragraph{Single queries, single thread.} We time one query at a time on one core. Batched search,
 multi-threaded search and shared-index throughput are out of scope; several rivals (FAISS flat
 scans, IVF) gain more from batching than graph walks do. Our index build is single-threaded; the
-rival builds used the thread counts in Table~\ref{tab:build}. Build cost is indicative only
+rival builds used the thread counts in Table~\ref{tab:build} (Appendix~\ref{app:extra}). Build cost is indicative only
 (\S\ref{sec:systems}).
+
+\paragraph{Engines.} Search engines that ship binary quantisation with rescoring (Lucene and Elasticsearch BBQ,
+Qdrant, Weaviate) are not arms (\S\ref{sec:related}); Lucene BBQ is the closest relative of our cascade.
 
 \paragraph{Tested interfaces.} Each rival is used through the interface we wrapped: the C++ API for
 FAISS, hnswlib, USearch, DiskANN and SVS, and the Python binding for ScaNN. Another interface,
@@ -47,7 +53,8 @@ geometric means are not comparable with those of the AWS CPUs.
 freeze (\S\ref{sec:post}); tail latencies and recall@10 are computed from the held-out records
 (\S\ref{sec:results}). The plan also asked for variation between independent builds, isolated build-cost
 runs, the first 100 cold queries, the memory split into anonymous and file-backed pages with the
-huge-page backing, and dTLB counters; these did not run.
+huge-page backing, and dTLB counters; these did not run. No arm removes the int8 stage: the $H = C$ arm still
+computes and sorts the int8 scores, so the cost of the stage itself is not measured.
 
 \paragraph{Rival configurations.} The refining rivals rescore with float32 originals; ours uses float16
 vectors. A float16 refine for FAISS and a rescoring USearch int8 variant exist in the libraries but were

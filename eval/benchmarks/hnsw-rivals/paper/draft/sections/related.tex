@@ -1,51 +1,56 @@
 \section{Related work}\label{sec:related}
 
 \paragraph{ANN benchmarks.} ANN-Benchmarks~\cite{aumuller2020annbenchmarks} and the Big-ANN
-competitions~\cite{simhadri2022bigann21,simhadri2024bigann23} compare libraries by recall against exact
-neighbours and by throughput, at up to a billion vectors. Experimental studies of graph
-indexes~\cite{wang2021graphsurvey,azizi2025graphvector} compare many graph methods on vector
-datasets with the same recall metric. Our sets are much smaller (7k to 1M vectors) and our metric is
-different: the task quality of the final document ranking, as a fraction of exact search.
+competitions~\cite{simhadri2022bigann21,simhadri2024bigann23} compare libraries by recall against exact neighbours and
+by throughput, at up to a billion vectors. Experimental studies of graph indexes~\cite{wang2021graphsurvey,azizi2025graphvector}
+compare many graph methods with the same recall metric. Bang for the Buck~\cite{kuffo2025bang} compares vector search on
+cloud CPUs for cost and speed at fixed recall.
 
-\paragraph{Task-centric evaluation.} Iceberg~\cite{chen2026iceberg} argues that recall against exact
-neighbours can mislead and follows the loss from embedding to the end task. Recall What
-Matters~\cite{dimitropoulos2026recall} argues that Recall@$k$ forces more computation than the task
-needs and proposes a distance-based alternative without task labels. We share the starting point; we
-measure with the task's own labels and put the generators behind one shared rescoring step.
+\paragraph{Task-centric evaluation.} Iceberg~\cite{chen2026iceberg} argues that recall against exact neighbours can
+mislead and follows the loss from embedding to the end task. Recall What Matters~\cite{dimitropoulos2026recall} argues
+that Recall@$k$ forces more computation than the task needs and proposes a distance-based alternative without task
+labels. Lin~\cite{lin2025operational} compares HNSW and flat indexes, with and without quantisation, inside Lucene on
+BEIR, and reports indexing time, query speed and quality; earlier work argued that one general engine is enough for
+dense retrieval~\cite{xian2024lucene}. Table~\ref{tab:closest} sets our design next to these studies.
 
-\paragraph{HNSW against flat search.} Lin~\cite{lin2025operational} compares HNSW and flat indexes,
-with and without quantisation, inside Lucene on BEIR, and reports indexing time, query speed and
-quality; earlier work argued that one general engine is enough for dense
-retrieval~\cite{xian2024lucene}. We compare many libraries and a binary cascade, on code and BEIR sets,
-at matched retained quality. Bang for the Buck~\cite{kuffo2025bang} compares vector search on cloud
-CPUs for cost and speed at fixed recall; our five-CPU single-thread latency is a narrower, controlled
-form of the same hardware question.
+\begin{table}[t]\centering\scriptsize
+\caption{The closest studies and what this paper adds. ``Task'': quality measured with the task's relevance labels on the
+final document ranking.}\label{tab:closest}
+\begin{tabularx}{\textwidth}{p{3.1cm}p{2.3cm}X}\toprule
+Study & Quality target & Systems and setting\\\midrule
+ANN-Benchmarks, Big-ANN~\cite{aumuller2020annbenchmarks,simhadri2024bigann23} & recall & many libraries, throughput, up to $10^9$ vectors\\
+Bang for the Buck~\cite{kuffo2025bang} & recall & libraries on cloud CPUs, cost and speed\\
+Iceberg~\cite{chen2026iceberg} & task & task-level evaluation of vector search, from embedding to end task\\
+Lin~\cite{lin2025operational} & task & HNSW and flat indexes inside Lucene, BEIR\\
+This paper & task, fixed fraction of exact & up to 16 rival families from 6 libraries, behind one rescoring procedure and as library pipelines; single-query latency on 5 CPUs; dev-only selection, hashed freeze, pre-registered replication\\\bottomrule
+\end{tabularx}
+\end{table}
 
-\paragraph{Indexes and quantisation.} HNSW~\cite{malkov2020hnsw} is the base graph of our cascade
-and of FAISS HNSW, hnswlib and USearch. FAISS~\cite{johnson2021faissgpu,douze2024faiss} provides
-binary, scalar-quantised, product-quantised~\cite{jegou2011pq} and RaBitQ~\cite{gao2024rabitq,gao2025extrabitq}
-indexes. ScaNN~\cite{guo2020scann} uses anisotropic quantisation; SOAR~\cite{sun2023soar} adds spilled
-assignments. DiskANN~\cite{subramanya2019diskann} builds the Vamana graph; SVS adds LVQ and LeanVec
-compression to it~\cite{aguerrebere2023lvq,tepper2024leanvec}. Search-time methods such as
-CRouting~\cite{li2025crouting}, Ada-ef~\cite{zhang2026adaef}, DARTH~\cite{chatzakis2025darth} and
-VSAG~\cite{zhong2025vsag} improve the recall--speed curve of graph search; none of them targets a
-task-quality fraction, and we do not test them. Binary codes followed by a full-vector rerank
-appear in BPR~\cite{yamada2021bpr}, which learns the hash; our cascade quantises an existing
-embedding by sign and adds an int8 screen between the two stages. Binary codes with a rescoring step
-are also standard in deployed engines: Lucene and Elasticsearch BBQ~\cite{trent2024bbq}, Qdrant binary
-quantisation with rescoring~\cite{qdrant2026quantization} and Weaviate binary
-quantisation~\cite{weaviate2026bq}; the binary-then-int8 rescoring recipe was described for
-general embedding models in~\cite{shakir2024embeddingquant}. Our codes use the first 512 of 768
-dimensions, a truncation that suits models trained for nested dimensions as in Matryoshka
-representations~\cite{kusupati2022matryoshka}; we did not check how each of the three models was
-trained in this respect. We test libraries, not engines, so these systems are not
-arms of the comparison.
+\paragraph{Indexes and quantisation.} HNSW~\cite{malkov2020hnsw} is the base graph of our cascade and of FAISS HNSW,
+hnswlib and USearch. FAISS~\cite{johnson2021faissgpu,douze2024faiss} provides binary, scalar-quantised,
+product-quantised~\cite{jegou2011pq} and RaBitQ~\cite{gao2024rabitq,gao2025extrabitq} indexes. ScaNN~\cite{guo2020scann}
+uses anisotropic quantisation; SOAR~\cite{sun2023soar} adds spilled assignments. DiskANN~\cite{subramanya2019diskann}
+builds the Vamana graph; SVS adds LVQ and LeanVec compression to it~\cite{aguerrebere2023lvq,tepper2024leanvec}.
+Search-time methods such as CRouting~\cite{li2025crouting}, Ada-ef~\cite{zhang2026adaef}, DARTH~\cite{chatzakis2025darth}
+and VSAG~\cite{zhong2025vsag} improve the recall--speed curve of graph search; none of them targets a task-quality
+fraction, and we do not test them.
 
-\paragraph{Methodology.} We follow the advice on reporting performance
-experiments~\cite{hoefler2015scientific} and on measurement bias~\cite{mytkowicz2009wrongdata}, and the
-cloud-measurement guidance of~\cite{leitner2016patterns,uta2020bigdata}: repeated rounds on several
-instances, A/A runs to size $R$, and intervals for every ratio.
+\paragraph{Binary codes with rescoring.} Binary codes followed by a full-vector rerank appear in BPR~\cite{yamada2021bpr},
+which learns the hash. The binary-then-int8 rescoring recipe was described for general embedding models
+in~\cite{shakir2024embeddingquant}, and binary quantisation with rescoring is standard in engines: Lucene and
+Elasticsearch BBQ~\cite{trent2024bbq}, Qdrant~\cite{qdrant2026quantization} and Weaviate~\cite{weaviate2026bq}. Our
+cascade follows this recipe; it adds no new method. Our codes use the sign of the first 512 of 768 dimensions. That
+truncation suits models trained for nested dimensions, as in Matryoshka representations~\cite{kusupati2022matryoshka}; the
+model cards and papers of our three models~\cite{suresh2025cornstack,gunther2023jina2,xiao2024cpack} describe contrastive
+training and do not report nested-dimension training, so the truncation is a design choice of the product that this
+study does not justify. We did not compare it with 768-bit codes or with a random rotation before the sign.
 
-This study differs from the work above in what it holds fixed and what it measures: every generator
-feeds one shared rescoring procedure, quality is the task metric of the final document ranking as a
-fraction of exact search, with cluster-bootstrap bounds, and latency is single-query on five CPUs.
+\paragraph{Why engines are not arms.} The engines above add a server process, a storage layer, inter-process
+communication and their own threading. In a single-thread, in-process latency comparison they would measure that
+machinery more than the method. Lucene BBQ could be called in process through its Java API and is the closest
+production relative of our cascade; we did not include it, and its absence is a limitation of the comparison
+(\S\ref{sec:limits}).
+
+\paragraph{Methodology.} We follow the advice on reporting performance experiments~\cite{hoefler2015scientific} and on
+measurement bias~\cite{mytkowicz2009wrongdata}, and the cloud-measurement guidance of~\cite{leitner2016patterns,uta2020bigdata}:
+repeated rounds on several instances, A/A runs to size the number of rounds, and intervals for every ratio.

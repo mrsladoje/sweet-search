@@ -1,13 +1,14 @@
 \section{Conclusion}\label{sec:conclusion}
 
-Measured at a fixed fraction of task quality instead of a recall target, and with the rest of the
-pipeline held fixed, the binary scan and binary HNSW walk were the fastest candidate generators
-wherever they kept 99\% of exact quality, on five CPUs; part of that margin is our faster implementation of
-the shared steps, but per-stage clocks at equal graph settings confirm it for the generator alone; float32 graphs kept that quality at smaller
-candidate budgets for some model--set pairs. As shipped, the binary cascade was faster than the rival
-chosen on dev in most cells at 0.5M--1M vectors and slower than an exact binary scan in C++ on most code
-sets below about 20k vectors. Its costs are memory, a slow single-threaded build, a longer latency tail, and
-page-cache misses of its memory-mapped files under other I/O. A pre-registered replication on two untouched sets confirmed the speed advantage at 99\% of exact quality
-on all three cloud CPUs (\nm{rep-lat-pass} of \nm{rep-n} latency tests), and quality non-inferiority on MS MARCO but not on
-CQADupStack. These results hold for the tested sets, models and CPUs, within the declared quality margin; the released
-records let others check them and add systems.
+Held to a fixed fraction of the task quality of exact search, a binary cascade answered single queries on 0.5M--1M
+vectors faster than the rival chosen on dev, and this held in a pre-registered replication on two untouched sets:
+\nm{rep-lat-pass} of \nm{rep-n} latency tests passed on three cloud CPUs (\nm{rep-min}--\nm{rep-max} times). Quality
+non-inferiority to that rival held on MS MARCO and not on CQADupStack; on MS MARCO our point also kept 99\% of exact
+quality by the bound, on CQADupStack only by the point estimate. One of the six speed passes depends on the
+pre-registered page-fault rule. In the exploratory main study, an exact binary scan in FAISS was faster on code sets
+below about 20k vectors, float32 graphs kept 99\% of exact quality at smaller candidate budgets for some model--set
+pairs, and the cascade's costs were memory, a slow single-threaded build and page-cache misses of its memory-mapped
+files. On the same codes and graph settings our binary walk was \nm{post-eqb-min}--\nm{post-eqb-max} times faster than
+FAISS and USearch binary HNSW. Recall was a poor guide: operating points with recall@10 as low as \nm{rec-dist-min} kept
+99\% of exact task quality. These results hold for the tested sets, models and CPUs; the released records let others
+check them and add systems.

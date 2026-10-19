@@ -19,8 +19,23 @@ Graviton: the gap estimated in \S\ref{sec:results} is real and of that size.
 
 \paragraph{Generators at equal settings.} With the same graph build ($M = 64$), the same $ef$, our walk
 without its adaptive rule, early termination or huge pages, and the generator clock alone, the rival
-graph generators took \nm{post-eq-min} to \nm{post-eq-max} times as long as our walk (geometric mean
-\nm{post-eq-gm}, \nm{post-eq-n} comparisons; ours faster in \nm{post-eq-ours}). Table~\ref{tab:postgen}
+graph generators took longer than our walk in all \nm{post-eq-n} comparisons. The comparison that isolates the
+implementation is the one on the same codes: FAISS binary HNSW and USearch b1 walk graphs over the same 512-bit sign
+codes with Hamming distance, and took \nm{post-eqb-min} to \nm{post-eqb-max} times as long as our walk (geometric mean
+\nm{post-eqb-gm}, \nm{post-eqb-n} comparisons). hnswlib and FAISS HNSW walk the same kind of graph with 768-dimensional
+float32 distances and took \nm{post-eqf-min} to \nm{post-eqf-max} times as long (geometric mean \nm{post-eqf-gm}); that
+gap is mostly the cost of the distance function, not of the walk, and it buys candidates of higher quality at small
+budgets (\S\ref{sec:results}).
+
+\paragraph{Why the binary walk is faster: what the code shows.} We did not instrument distance evaluations or
+ablate parts of our walk, so the following is from reading the sources, not a measured decomposition. (1) Our walk
+keeps its candidate and result queues as one bucket per integer Hamming distance (0 to 512), so a push is $O(1)$ and a
+pop is amortised $O(1)$; FAISS and USearch keep binary heaps, about ten dependent steps per operation. (2) Our codes sit in
+one aligned array and each level's neighbour lists in one compressed sparse-row array. The Hamming distance itself is
+unlikely to explain the gap with FAISS, which also has a 64-byte specialisation. The
+same holds for the exact scan: our scan selects the best $C$ from a histogram of the 513 possible distances, while FAISS
+binary flat keeps a heap of size $C$ by default. A walk with heaps instead of buckets is a switch in our code and would
+measure the first point directly; it has not run. Table~\ref{tab:postgen}
 gives, per CPU and set, the generator time of the fastest of our configurations and of the fastest rival
 configuration among those whose retained quality is at least 99\%; by generator time alone, ours is the
 fastest in \nm{post-best-ours} of \nm{post-cells} cells.

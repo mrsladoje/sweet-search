@@ -1,0 +1,242 @@
+[
+ {
+  "type": "intel",
+  "set": "cqadup",
+  "rival": "svs_vamana_lvq",
+  "ours_point": {
+   "EF": 200,
+   "S1": 200,
+   "system": "ours_cascade"
+  },
+  "rival_point": {
+   "build_params": {
+    "degree": 64
+   },
+   "family": "svs_vamana_lvq",
+   "search": {
+    "window": 50
+   },
+   "system": "svs_vamana_lvq"
+  },
+  "q_exact": 0.41707538208606343,
+  "q_ours": 0.41330706085884183,
+  "share_ours": 0.9909648917460105,
+  "share_ours_lower": 0.9867239951246476,
+  "q_rival": 0.41435279041306045,
+  "share_rival": 0.993472183231277,
+  "share_rival_lower": 0.989988587691698,
+  "rival_effort": 50,
+  "rival_at_grid_min": true,
+  "sens_all_blocks": {
+   "instances": 6,
+   "ratio": 1.4475984518725553,
+   "t": 32.70884491013064,
+   "p": 2.50962227789694e-07
+  },
+  "dropped_detail": []
+ },
+ {
+  "type": "intel",
+  "set": "msmarco1m",
+  "rival": "svs_vamana_lvq",
+  "ours_point": {
+   "EF": 400,
+   "S1": 400,
+   "system": "ours_cascade"
+  },
+  "rival_point": {
+   "build_params": {
+    "degree": 64
+   },
+   "family": "svs_vamana_lvq",
+   "search": {
+    "window": 150
+   },
+   "system": "svs_vamana_lvq"
+  },
+  "q_exact": 0.7032720394568988,
+  "q_ours": 0.7019145278944916,
+  "share_ours": 0.9980697205544309,
+  "share_ours_lower": 0.9958990441285117,
+  "q_rival": 0.6997860845236958,
+  "share_rival": 0.9950432340010348,
+  "share_rival_lower": 0.9916154647680331,
+  "rival_effort": 150,
+  "rival_at_grid_min": false,
+  "sens_all_blocks": {
+   "instances": 6,
+   "ratio": 2.8139979243575266,
+   "t": 45.85585781284558,
+   "p": 4.6568196511787054e-08
+  },
+  "dropped_detail": []
+ },
+ {
+  "type": "amd",
+  "set": "cqadup",
+  "rival": "faiss_hnsw_sq8",
+  "ours_point": {
+   "EF": 200,
+   "S1": 200,
+   "system": "ours_cascade"
+  },
+  "rival_point": {
+   "build_params": {
+    "M": 64,
+    "efC": 800
+   },
+   "family": "faiss_hnsw_sq8",
+   "search": {
+    "ef": 50,
+    "refine": 2
+   },
+   "system": "faiss_hnsw_sq8"
+  },
+  "q_exact": 0.41707538208606343,
+  "q_ours": 0.41330706085884183,
+  "share_ours": 0.9909648917460105,
+  "share_ours_lower": 0.9867239951246476,
+  "q_rival": 0.41326274778760275,
+  "share_rival": 0.9908586445946744,
+  "share_rival_lower": 0.9866881567195032,
+  "rival_effort": 50,
+  "rival_at_grid_min": true,
+  "sens_all_blocks": {
+   "instances": 6,
+   "ratio": 2.1306039826665746,
+   "t": 238.2926998887327,
+   "p": 1.2349183225729976e-11
+  },
+  "dropped_detail": []
+ },
+ {
+  "type": "amd",
+  "set": "msmarco1m",
+  "rival": "faiss_hnsw_sq8",
+  "ours_point": {
+   "EF": 400,
+   "S1": 400,
+   "system": "ours_cascade"
+  },
+  "rival_point": {
+   "build_params": {
+    "M": 64,
+    "efC": 800
+   },
+   "family": "faiss_hnsw_sq8",
+   "search": {
+    "ef": 100,
+    "refine": 2
+   },
+   "system": "faiss_hnsw_sq8"
+  },
+  "q_exact": 0.7032720394568988,
+  "q_ours": 0.7019145278944916,
+  "share_ours": 0.9980697205544309,
+  "share_ours_lower": 0.9958990441285117,
+  "q_rival": 0.7013276796277024,
+  "share_rival": 0.9972352664117033,
+  "share_rival_lower": 0.9946409252916927,
+  "rival_effort": 100,
+  "rival_at_grid_min": false,
+  "sens_all_blocks": {
+   "instances": 6,
+   "ratio": 2.0037864567751447,
+   "t": 1.9947572348823852,
+   "p": 0.05131218803061273
+  },
+  "dropped_detail": [
+   {
+    "round": 3,
+    "machine": "hh-amd-i1",
+    "invalid": [
+     "ours"
+    ],
+    "faults": {
+     "ours": {
+      "first_run_majflt": 25355,
+      "rerun": true,
+      "second_run_majflt": 50264,
+      "invalid": true
+     },
+     "rival": {}
+    }
+   }
+  ]
+ },
+ {
+  "type": "arm",
+  "set": "cqadup",
+  "rival": "faiss_hnsw_flat",
+  "ours_point": {
+   "EF": 200,
+   "S1": 200,
+   "system": "ours_cascade"
+  },
+  "rival_point": {
+   "build_params": {
+    "M": 64,
+    "efC": 800
+   },
+   "family": "faiss_hnsw_flat",
+   "search": {
+    "ef": 50
+   },
+   "system": "faiss_hnsw_flat"
+  },
+  "q_exact": 0.41707538208606343,
+  "q_ours": 0.41330706085884183,
+  "share_ours": 0.9909648917460105,
+  "share_ours_lower": 0.9867239951246476,
+  "q_rival": 0.41338569486967636,
+  "share_rival": 0.9911534284331706,
+  "share_rival_lower": 0.9870033229620324,
+  "rival_effort": 50,
+  "rival_at_grid_min": true,
+  "sens_all_blocks": {
+   "instances": 6,
+   "ratio": 2.154177217878291,
+   "t": 43.89294527561138,
+   "p": 5.792793536831833e-08
+  },
+  "dropped_detail": []
+ },
+ {
+  "type": "arm",
+  "set": "msmarco1m",
+  "rival": "faiss_bin_hnsw",
+  "ours_point": {
+   "EF": 400,
+   "S1": 400,
+   "system": "ours_cascade"
+  },
+  "rival_point": {
+   "build_params": {
+    "M": 64,
+    "efC": 800
+   },
+   "family": "faiss_bin_hnsw",
+   "search": {
+    "ef": 300,
+    "refine": 200
+   },
+   "system": "faiss_bin_hnsw"
+  },
+  "q_exact": 0.7032720394568988,
+  "q_ours": 0.7019145278944916,
+  "share_ours": 0.9980697205544309,
+  "share_ours_lower": 0.9958990441285117,
+  "q_rival": 0.7001937011140165,
+  "share_rival": 0.9956228341663355,
+  "share_rival_lower": 0.9924189869954121,
+  "rival_effort": 300,
+  "rival_at_grid_min": false,
+  "sens_all_blocks": {
+   "instances": 6,
+   "ratio": 2.4314406698545015,
+   "t": 107.17406405658002,
+   "p": 6.705332963113719e-10
+  },
+  "dropped_detail": []
+ }
+]

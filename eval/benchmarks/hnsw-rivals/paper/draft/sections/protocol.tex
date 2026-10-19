@@ -70,8 +70,9 @@ cascade did not reach $\fr = 0.99$ there. Power at a true difference of 0 was es
 differences scaled to the held-out cluster count, and checked by simulation; it is
 \nm{powermin-a} to \nm{powermax} (analytic; \nm{powermin-s} lowest by simulation;
 Appendix~\ref{app:power}). As the plan requires, a pair with power below 0.8 is reported descriptively;
-Holm correction~\cite{holm1979simple} runs over the remaining \nm{nconfirm} confirmatory pairs. Latency
-ratios are reported with intervals but are descriptive.
+Holm correction~\cite{holm1979simple} runs over the remaining \nm{nconfirm} confirmatory pairs. In the main study
+only this quality test is confirmatory; latency ratios are reported with intervals but are descriptive. The confirmatory
+latency tests are those of the replication (\S\ref{sec:replication}).
 Code-set results are exploratory: their queries were examined in earlier work on the same system,
 and dev and held-out code queries share repositories.
 
@@ -99,7 +100,11 @@ cascade only, with both arms in one plan and so usually on one instance, so they
 instances. The reported latency of a point is the median over rounds of the per-round median
 per-query time. A ratio is the median over rounds of one system divided by that of the other; its 95\%
 interval is the 2.5th--97.5th percentile over 10,000 bootstrap resamples of the rounds of each system
-(seed 42). With 4 to 10 rounds the interval is coarse, and one slow round widens it (\S\ref{sec:losses}).
+(seed 42). With 4 to 10 rounds the interval is coarse, and one slow round widens it (\S\ref{sec:losses}); some
+intervals span almost two orders of magnitude and carry no information. The plan named the ratio of median latencies
+as the main statistic but did not fix how rounds combine. The first reporting script used the mean of the log round
+medians; we adopted the median over rounds \emph{after} the held-out results showed slow rounds of our cascade. The
+choice is post hoc, so \S\ref{sec:results} reports both, and every main-study latency ratio is exploratory.
 The A/A rule sized $R$ for the ratio of medians; on AMD the cap of 10 rounds left an expected
 half-width of about 2.3\%, above the 2\% target.
 
