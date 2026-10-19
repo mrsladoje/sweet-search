@@ -23,7 +23,8 @@
  * SWEET_SEARCH_INDEX_DEVICE=accelerator|cpu skips the test.
  */
 
-import { closeSync, existsSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 import { getOrtGraphCacheDir } from '../infrastructure/onnx-session-utils.js';
@@ -45,6 +46,18 @@ export const UNSTABLE_TTL_MS = 24 * 3600 * 1000;
 export const INDEX_DEVICE_CACHE_FILE = 'index-device.json';
 export const INDEX_DEVICE_LOCK_FILE = 'index-device.lock';
 export const PROBE_RESULT_PREFIX = 'INDEX_DEVICE_PROBE ';
+
+/** Per-child time limit; four children at most, so a test ends well inside LOCK_HARD_STALE_MS. */
+export const PROBE_CHILD_TIMEOUT_MS = 4 * 60 * 1000;
+
+/**
+ * A lock whose holder (or its test child) is alive is never taken over,
+ * except after this age: a test cannot run this long, so the pid was reused.
+ */
+export const LOCK_HARD_STALE_MS = 60 * 60 * 1000;
+
+/** A lock file with no readable holder (half-written) is taken over after this age. */
+const LOCK_UNREADABLE_STALE_MS = 30 * 1000;
 
 let _packageVersion;
 function packageVersion() {
@@ -71,6 +84,28 @@ export function indexDeviceOverride(env = process.env) {
 }
 
 /**
+ * Switches that split one index run over both devices (dense on ORT CPU, late
+ * interaction on the accelerator, or the reverse; or the hybrid dense mode).
+ * With one of them set, the accelerator side would hold ORT CPU and GPU models
+ * in one process, so the test does not run and the accelerator is kept.
+ */
+export function splitDeviceSwitches(env = process.env) {
+  return ['SWEET_SEARCH_EMBED_USE_CPU', 'SWEET_SEARCH_LI_USE_CPU', 'SWEET_SEARCH_EMBED_HYBRID']
+    .filter((name) => env[name] === '1');
+}
+
+// Environment settings that change what either encoder does per chunk
+// (lengths, batch and attention budgets, threads, quantisation, backends).
+const ENCODER_ENV = /^SWEET_SEARCH_(EMBED|LI_|LATE_INTERACTION|BATCHING|INDEXING_MAX_LENGTH|INTRA_OP|ORT_|COMPUTE_CORES|COREML|CUDA|NATIVE_INFERENCE|LOCAL_QUANTIZED|USE_OPENVINO|DISABLE_MEM_GUARD)/;
+
+/** Short hash of the encoder environment settings (sorted name=value pairs). */
+export function encoderEnvDigest(env = process.env) {
+  const pairs = Object.keys(env).filter((k) => ENCODER_ENV.test(k)).sort().map((k) => `${k}=${env[k]}`);
+  if (pairs.length === 0) return 'none';
+  return createHash('sha1').update(pairs.join('\n')).digest('hex').slice(0, 12);
+}
+
+/**
  * Cache key for one machine + setup. Pure; exported for tests. `setup` holds
  * the values that change what each device has to do, as the caller
  * resolved them (see model-pool.js::ensureIndexDeviceChoice).
@@ -78,6 +113,7 @@ export function indexDeviceOverride(env = process.env) {
 export function indexDeviceCacheKey({ hw = {}, setup = {}, env = process.env, version = packageVersion() }) {
   const chip = hw.brandString || hw.nvidiaGpu?.name || `${hw.platform}-${hw.arch}`;
   const lb = setup.liBatch || {};
+  const pool = setup.cpuPool ? `${setup.cpuPool.workers}x${setup.cpuPool.threadsPerWorker}` : 'inline';
   return [
     chip,
     hw.inferenceBackendPreference,
@@ -87,7 +123,8 @@ export function indexDeviceCacheKey({ hw = {}, setup = {}, env = process.env, ve
     `par=${setup.parallel ? 1 : 0}`,
     `thr=${setup.embeddingThreads ?? 'd'}/${setup.lateInteractionThreads ?? 'd'}`,
     `lib=${lb.batchSize ?? 'd'}/${lb.batchSizeUpperCap ?? 'd'}/${lb.tokenBudget ?? 'd'}/${lb.attentionBudget ?? 'd'}`,
-    `cpu=${env.SWEET_SEARCH_EMBED_USE_CPU === '1' ? 'e' : ''}${env.SWEET_SEARCH_LI_USE_CPU === '1' ? 'l' : ''}`,
+    `pool=${pool}`,
+    `env=${encoderEnvDigest(env)}`,
     setup.backgroundProfile ? 'bg' : 'fg',
     version,
   ].join('|');
@@ -149,6 +186,7 @@ export function readIndexDeviceChoice(key, { cacheDir, now = Date.now() } = {}) 
 export function writeIndexDeviceChoice(key, entry, { cacheDir, now = Date.now() } = {}) {
   try {
     const p = cachePath(cacheDir);
+    mkdirSync(path.dirname(p), { recursive: true });
     const entries = {};
     for (const [k, v] of Object.entries(readCache(cacheDir))) {
       if (isEntryFresh(v, now)) entries[k] = v;
@@ -173,36 +211,103 @@ function pidAlive(pid) {
   }
 }
 
+/** The lock file's holder and age, or null when there is no lock file. */
+function inspectLock(p, now) {
+  let ageMs;
+  try { ageMs = now - statSync(p).mtimeMs; } catch { return null; }
+  let holder = null;
+  try { holder = JSON.parse(readFileSync(p, 'utf8')); } catch { /* half-written */ }
+  return { holder: holder && typeof holder === 'object' ? holder : null, ageMs };
+}
+
+function isLockStale({ holder, ageMs }) {
+  if (!holder) return ageMs > LOCK_UNREADABLE_STALE_MS;
+  if (ageMs > LOCK_HARD_STALE_MS) return true;
+  return !pidAlive(holder.pid) && !pidAlive(holder.childPid);
+}
+
 /**
- * Take the machine-wide probe lock. Returns a release function, or null when
- * another live process holds it. A lock left by a dead process, or older than
- * `staleMs`, is taken over.
+ * Take the machine-wide probe lock. Returns one of:
+ *   { status: 'acquired', release(), setChildPid(pid) }
+ *   { status: 'busy' }         another live process holds it
+ *   { status: 'unavailable' }  the cache directory cannot be written
+ *
+ * The holder records its pid and the pid of its running test child, so a
+ * lock is taken over only when both are dead (a killed indexer's child can
+ * outlive it for a moment). Takeover runs under a second exclusive file and
+ * re-checks that the lock still holds the same stale holder, so two
+ * processes cannot both delete and re-create it.
  */
-export function tryAcquireProbeLock({ cacheDir, staleMs = 10 * 60 * 1000, now = Date.now() } = {}) {
-  const p = path.join(cacheDir ?? getOrtGraphCacheDir(), INDEX_DEVICE_LOCK_FILE);
+export function tryAcquireProbeLock({ cacheDir, now = Date.now() } = {}) {
+  const dir = cacheDir ?? getOrtGraphCacheDir();
+  const p = path.join(dir, INDEX_DEVICE_LOCK_FILE);
+  try {
+    mkdirSync(dir, { recursive: true });
+  } catch {
+    return { status: 'unavailable' };
+  }
+  const token = { pid: process.pid, nonce: randomUUID(), at: new Date(now).toISOString() };
+  const owns = () => {
+    try { return JSON.parse(readFileSync(p, 'utf8'))?.nonce === token.nonce; } catch { return false; }
+  };
+  const lock = {
+    status: 'acquired',
+    release() {
+      try { if (owns()) unlinkSync(p); } catch { /* already gone */ }
+    },
+    setChildPid(childPid) {
+      if (!owns()) return;
+      const tmp = `${p}.${process.pid}.tmp`;
+      try {
+        writeFileSync(tmp, JSON.stringify({ ...token, childPid }));
+        renameSync(tmp, p);
+      } catch { /* the parent pid alone still marks the lock as held */ }
+    },
+  };
+  const create = () => {
+    const fd = openSync(p, 'wx');
+    try { writeFileSync(fd, JSON.stringify(token)); } finally { closeSync(fd); }
+    return lock;
+  };
+
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const fd = openSync(p, 'wx');
-      writeFileSync(fd, JSON.stringify({ pid: process.pid, at: new Date(now).toISOString() }));
-      closeSync(fd);
-      return () => {
-        try {
-          const held = JSON.parse(readFileSync(p, 'utf8'));
-          if (held?.pid === process.pid) unlinkSync(p);
-        } catch { /* already gone */ }
-      };
+      return create();
     } catch (err) {
-      if (err?.code !== 'EEXIST') return null;
-      let holder = null;
-      try { holder = JSON.parse(readFileSync(p, 'utf8')); } catch { /* half-written or gone */ }
-      let age = 0;
-      try { age = now - statSync(p).mtimeMs; } catch { continue; }
-      const stale = age > staleMs || (holder && !pidAlive(holder.pid));
-      if (!stale) return null;
-      try { unlinkSync(p); } catch { /* another process took it over first */ }
+      if (err?.code !== 'EEXIST') return { status: 'unavailable' };
+    }
+    const seen = inspectLock(p, now);
+    if (!seen) continue; // released between our create and our look
+    if (!isLockStale(seen)) return { status: 'busy' };
+
+    const mutex = `${p}.takeover`;
+    try {
+      closeSync(openSync(mutex, 'wx'));
+    } catch (err) {
+      if (err?.code !== 'EEXIST') return { status: 'unavailable' };
+      // A takeover takes milliseconds; a mutex this old was left by a killed process.
+      const m = inspectLock(mutex, now);
+      if (m && m.ageMs > LOCK_UNREADABLE_STALE_MS) {
+        try { unlinkSync(mutex); } catch { /* another process cleared it */ }
+      }
+      return { status: 'busy' };
+    }
+    try {
+      const again = inspectLock(p, now);
+      if (again) {
+        if (again.holder?.nonce !== seen.holder?.nonce || !isLockStale(again)) return { status: 'busy' };
+        try { unlinkSync(p); } catch { /* gone */ }
+      }
+      try {
+        return create();
+      } catch (err) {
+        return { status: err?.code === 'EEXIST' ? 'busy' : 'unavailable' };
+      }
+    } finally {
+      try { unlinkSync(mutex); } catch { /* gone */ }
     }
   }
-  return null;
+  return { status: 'busy' };
 }
 
 /**
@@ -233,18 +338,25 @@ export function buildProbeTexts(count = 32) {
   return texts;
 }
 
+// Accelerator encoder labels (inference-provenance.js): native "<device>/<dtype>"
+// with device metal or cuda, optionally "coreml+" first. "cpu/f32" (candle on
+// CPU), "ort-…", "ort/cpu" and "model-server" are CPU encoders.
+const ACCELERATOR_LABEL = /^(coreml\+)?(metal|cuda)\//;
+const CPU_LABEL = /^(ort[-/]|cpu\/|model-server$)/;
+
 /**
  * For benchmark builds: a message when an index that should have been
- * written by the accelerator was written only by ORT (every recorded dense
- * and late-interaction encoder label is ORT or the model server), else null.
- * Indexes built before provenance was kept (no counts) pass.
+ * written by the accelerator has a tier (dense or late interaction) whose
+ * recorded encoders are all CPU encoders, else null. Labels that are neither
+ * ("unknown") do not fail the check. Indexes built before provenance was kept
+ * (no counts) pass.
  */
 export function acceleratorProvenanceProblem(manifest) {
-  const labels = [];
-  for (const tier of [manifest?.vectors?.encoders, manifest?.lateInteraction?.encoders]) {
-    for (const [label, n] of Object.entries(tier?.counts || {})) if (n > 0) labels.push(label);
+  const problems = [];
+  for (const [name, tier] of [['dense', manifest?.vectors?.encoders], ['late interaction', manifest?.lateInteraction?.encoders]]) {
+    const labels = Object.entries(tier?.counts || {}).filter(([, n]) => n > 0).map(([label]) => label);
+    if (labels.length === 0 || labels.some((l) => ACCELERATOR_LABEL.test(l))) continue;
+    if (labels.every((l) => CPU_LABEL.test(l))) problems.push(`${name} written by CPU encoders only (${labels.join(', ')})`);
   }
-  if (labels.length === 0) return null;
-  const cpuOnly = labels.every((l) => l.startsWith('ort-') || l === 'model-server');
-  return cpuOnly ? `index written by ORT CPU only (${labels.join(', ')}), expected the accelerator` : null;
+  return problems.length ? `${problems.join('; ')}, expected the accelerator` : null;
 }

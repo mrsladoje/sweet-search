@@ -2370,7 +2370,9 @@ async function spawnIndexer(files, options = {}) {
     const child = spawn(process.execPath, args, {
       cwd: PROJECT_ROOT,
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: process.env,
+      // Background maintenance never arms the GPU and never runs the
+      // index-device speed test, whatever the inherited environment says.
+      env: { ...process.env, SWEET_SEARCH_INDEX_DEVICE: 'cpu' },
     });
 
     let stdout = '';

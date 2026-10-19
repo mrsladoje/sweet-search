@@ -12,9 +12,14 @@
  * encodeDocuments dispatcher, the two models overlapped when the indexer runs
  * them in parallel, and the indexer's thread plan and ORT profile. Split-device
  * overrides (SWEET_SEARCH_EMBED_USE_CPU, SWEET_SEARCH_LI_USE_CPU) are
- * inherited, so the dispatchers apply them as indexing does. One difference
- * stays: a CPU index without parallel models can spread dense encoding over a
- * worker pool; the child encodes inline.
+ * never set here: the parent does not run the test when one is on. On the CPU
+ * side the child starts the dense worker pool when the indexer would
+ * (`cpuPool`). One difference stays: a run without parallel models can also
+ * spread late interaction over worker threads; the child encodes it inline,
+ * which can only make the CPU look slower (the accelerator is the default).
+ *
+ * The child exits when its stdin closes (the parent died) or at `deadlineMs`,
+ * so it never runs on without a parent.
  *
  * Input: JSON in argv[2]. Output: one stdout line
  * `INDEX_DEVICE_PROBE {"ms":…,"reps":[…],"chunks":…}` and exit 0.
@@ -22,8 +27,22 @@
 
 import { buildProbeTexts, PROBE_RESULT_PREFIX } from './index-device-choice.js';
 import { initIndexGpuPool, probeEncoders } from './model-pool.js';
+import { initEmbeddingPool, shutdownEmbeddingPool } from './indexer-pool.js';
 import { planLateInteractionBatches, estimateLateInteractionTokens } from './indexer-ann.js';
 import { LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
+
+function exitWhenOrphaned(deadlineMs) {
+  process.stdin.on('end', () => process.exit(3));
+  process.stdin.on('close', () => process.exit(3));
+  process.stdin.on('error', () => process.exit(3));
+  process.stdin.resume();
+  if (deadlineMs > 0) {
+    setTimeout(() => {
+      process.stderr.write(`index-device probe: deadline ${deadlineMs}ms passed\n`);
+      process.exit(4);
+    }, deadlineMs).unref();
+  }
+}
 
 async function main() {
   const opts = JSON.parse(process.argv[2] || '{}');
@@ -31,6 +50,8 @@ async function main() {
     device,
     includeLi = true,
     parallel = false,
+    cpuPool = null,
+    deadlineMs = 0,
     embeddingThreads = null,
     lateInteractionThreads = null,
     background = false,
@@ -39,8 +60,11 @@ async function main() {
     reps = 2,
   } = opts;
 
+  exitWhenOrphaned(deadlineMs);
   probeEncoders.configureRuntimes({ embeddingThreads, lateInteractionThreads, background });
-  if (device === 'accelerator') {
+  if (device === 'cpu' && cpuPool) {
+    await initEmbeddingPool({ workers: cpuPool.workers, threadsPerWorker: cpuPool.threadsPerWorker });
+  } else if (device === 'accelerator') {
     const diag = await initIndexGpuPool({ includeLi });
     if (diag.backend === 'ort-cpu' || diag.backend === 'unavailable') {
       throw new Error(`no accelerator to test (${diag.backend})`);
@@ -80,6 +104,7 @@ async function main() {
     times.push(performance.now() - t0);
   }
   const ms = Math.min(...times);
+  await shutdownEmbeddingPool();
   process.stdout.write(`\n${PROBE_RESULT_PREFIX}${JSON.stringify({ ms, reps: times, chunks })}\n`);
 }
 

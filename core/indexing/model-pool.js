@@ -48,6 +48,7 @@ import { EMBEDDING_CONFIG, LATE_INTERACTION_CONFIG } from '../infrastructure/con
 import { getCoremlCascadeResolvedDirs } from '../infrastructure/coreml-cascade.js';
 import {
   CPU_WIN_MARGIN,
+  PROBE_CHILD_TIMEOUT_MS,
   PROBE_RESULT_PREFIX,
   STABLE_TTL_MS,
   UNSTABLE_TTL_MS,
@@ -56,6 +57,7 @@ import {
   indexDeviceOverride,
   isCloseResult,
   readIndexDeviceChoice,
+  splitDeviceSwitches,
   tryAcquireProbeLock,
   writeIndexDeviceChoice,
 } from './index-device-choice.js';
@@ -171,23 +173,36 @@ const PROBE_CHILD = fileURLToPath(new URL('./index-device-probe-child.mjs', impo
 /**
  * Run one side of the test in a child process and wait for it to exit (see
  * index-device-probe-child.mjs). Resolves to the child's timing in ms.
+ *
+ * The child cannot outlive this process: it exits when its stdin pipe closes
+ * (the parent died, even by SIGKILL), it has its own deadline, and an exiting
+ * parent kills it. `onSpawn(pid)` lets the caller record the child in the
+ * probe lock.
  */
-export function runProbeChild(device, setup, { timeoutMs = 5 * 60 * 1000 } = {}) {
+export function runProbeChild(device, setup, { timeoutMs = PROBE_CHILD_TIMEOUT_MS, onSpawn } = {}) {
   return new Promise((resolve, reject) => {
     const env = { ...process.env, SWEET_SEARCH_INDEX_DEVICE: device };
     if (setup.includeLi && setup.liModel) env.SWEET_SEARCH_LATE_INTERACTION_MODEL = setup.liModel;
-    const child = spawn(process.execPath, [PROBE_CHILD, JSON.stringify({ ...setup, device })], {
+    const child = spawn(process.execPath, [PROBE_CHILD, JSON.stringify({ ...setup, device, deadlineMs: timeoutMs })], {
       env,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
     });
+    const killChild = () => { try { child.kill('SIGKILL'); } catch { /* gone */ } };
+    process.once('exit', killChild);
+    if (child.pid) onSpawn?.(child.pid);
     let out = '';
     let err = '';
     child.stdout.on('data', (d) => { out += d; });
     child.stderr.on('data', (d) => { err = (err + d).slice(-4000); });
-    const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
-    child.on('error', (e) => { clearTimeout(timer); reject(e); });
-    child.on('close', (code, signal) => {
+    child.stdin.on('error', () => { /* child exited first */ });
+    const timer = setTimeout(killChild, timeoutMs);
+    const done = () => {
       clearTimeout(timer);
+      process.removeListener('exit', killChild);
+    };
+    child.on('error', (e) => { done(); reject(e); });
+    child.on('close', (code, signal) => {
+      done();
       const line = out.split('\n').find((l) => l.startsWith(PROBE_RESULT_PREFIX));
       if (code === 0 && line) {
         try {
@@ -209,15 +224,16 @@ export function runProbeChild(device, setup, { timeoutMs = 5 * 60 * 1000 } = {})
  * time). After two runs it reports the CPU's slower time and the
  * accelerator's faster time, which leans to the accelerator.
  */
-export async function measureIndexDevices(setup, { runChild = runProbeChild } = {}) {
+export async function measureIndexDevices(setup, { runChild = runProbeChild, onSpawn } = {}) {
+  const run = (device) => runChild(device, setup, { onSpawn });
   const first = {
-    cpuMs: await runChild('cpu', setup),
-    acceleratorMs: await runChild('accelerator', setup),
+    cpuMs: await run('cpu'),
+    acceleratorMs: await run('accelerator'),
   };
   if (!isCloseResult(first)) return { ...first, runs: 1, stable: true };
   const second = {
-    acceleratorMs: await runChild('accelerator', setup),
-    cpuMs: await runChild('cpu', setup),
+    acceleratorMs: await run('accelerator'),
+    cpuMs: await run('cpu'),
   };
   const stable = decideIndexDevice(first) === decideIndexDevice(second);
   return {
@@ -243,7 +259,12 @@ function sleep(ms) {
  * pay for the test). The test runs under a machine-wide lock; a process that
  * finds the lock taken waits for the other's result, and keeps the
  * accelerator if none arrives in `lockWaitMs`. A failed test keeps the
- * accelerator and is not cached.
+ * accelerator and is not cached. So do a split-device switch (see
+ * splitDeviceSwitches) and a cache directory that cannot be written.
+ *
+ * `parallel` is the schedule the run will really use (dense and late
+ * interaction overlapped); `cpuPool` is the dense worker pool the run would
+ * use on the CPU, or null for inline encoding.
  *
  * @returns {Promise<{device: 'cpu'|'accelerator', source: string, cpuMs?: number, acceleratorMs?: number}>}
  */
@@ -251,6 +272,7 @@ export async function ensureIndexDeviceChoice({
   allowMeasure = false,
   includeLi = true,
   parallel = false,
+  cpuPool = null,
   embeddingThreads = null,
   lateInteractionThreads = null,
   liBatch = {},
@@ -268,6 +290,11 @@ export async function ensureIndexDeviceChoice({
     _indexDeviceChoice = override;
     return { device: override, source: 'env' };
   }
+  const split = splitDeviceSwitches();
+  if (split.length > 0) {
+    _indexDeviceChoice = null;
+    return { device: 'accelerator', source: 'split-device', switches: split };
+  }
 
   const hw = detectHardwareCapability();
   // Late interaction counts only when it is really on: a persisted
@@ -278,6 +305,7 @@ export async function ensureIndexDeviceChoice({
     includeLi: liOn,
     liModel,
     parallel: liOn && parallel,
+    cpuPool: cpuPool && cpuPool.workers > 1 ? { workers: cpuPool.workers, threadsPerWorker: cpuPool.threadsPerWorker } : null,
     embeddingThreads,
     lateInteractionThreads,
     liBatch,
@@ -304,13 +332,14 @@ export async function ensureIndexDeviceChoice({
   if (!_pendingChoices.has(key)) {
     _pendingChoices.set(key, (async () => {
       const deadline = Date.now() + lockWaitMs;
-      let release = tryAcquireProbeLock({ cacheDir });
-      while (!release) {
+      let lock = tryAcquireProbeLock({ cacheDir });
+      while (lock.status !== 'acquired') {
+        if (lock.status === 'unavailable') return { device: 'accelerator', source: 'cache-unwritable' };
         const other = readIndexDeviceChoice(key, { cacheDir });
         if (other) return { ...other, source: 'cached' };
         if (Date.now() >= deadline) return { device: 'accelerator', source: 'lock-busy' };
         await sleep(lockPollMs);
-        release = tryAcquireProbeLock({ cacheDir });
+        lock = tryAcquireProbeLock({ cacheDir });
       }
       try {
         // Another process may have finished the test while we waited.
@@ -318,7 +347,9 @@ export async function ensureIndexDeviceChoice({
         if (other) return { ...other, source: 'cached' };
         // No model of this process may stay resident while a child loads its own.
         await teardownAllModels();
-        const { cpuMs, acceleratorMs, runs, stable } = await measure(setup);
+        const { cpuMs, acceleratorMs, runs, stable } = await measure(setup, {
+          onSpawn: (pid) => lock.setChildPid(pid),
+        });
         const device = stable ? decideIndexDevice({ cpuMs, acceleratorMs }) : 'accelerator';
         const now = Date.now();
         const entry = {
@@ -336,12 +367,12 @@ export async function ensureIndexDeviceChoice({
       } catch (err) {
         return { device: 'accelerator', source: 'measure-failed', error: err?.message ?? String(err) };
       } finally {
-        release();
+        lock.release();
       }
     })().finally(() => _pendingChoices.delete(key)));
   }
   const result = await _pendingChoices.get(key);
-  _indexDeviceChoice = result.source === 'measure-failed' || result.source === 'lock-busy' ? null : result.device;
+  _indexDeviceChoice = ['measure-failed', 'lock-busy', 'cache-unwritable'].includes(result.source) ? null : result.device;
   return result;
 }
 

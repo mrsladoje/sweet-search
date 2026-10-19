@@ -4,7 +4,10 @@
 
 import path from 'path';
 import fs from 'fs/promises';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
+import { fileURLToPath } from 'url';
+
+import { benchIndexDevice } from './bench-index-device.mjs';
 
 /**
  * Run Sweet Search indexer on a corpus directory.
@@ -40,9 +43,8 @@ export async function indexCorpus(corpusDir, projectRoot, options = {}) {
     SWEET_SEARCH_PROJECT_ROOT: corpusDir,
     EMBEDDING_PROVIDER: process.env.EMBEDDING_PROVIDER || 'local',
     VOYAGEAI_API_KEY: '',
-    // Benchmark indexes are built on the accelerator, never by the index-device
-    // speed test (one test on a busy machine could move them to the CPU).
-    SWEET_SEARCH_INDEX_DEVICE: process.env.SWEET_SEARCH_INDEX_DEVICE || 'accelerator',
+    // Benchmark indexes are built on the accelerator (see bench-index-device.mjs).
+    SWEET_SEARCH_INDEX_DEVICE: benchIndexDevice(),
   };
   if (sqliteFastMode) {
     indexEnv.SWEET_SEARCH_SQLITE_FAST_MODE = '1';
@@ -93,9 +95,7 @@ export async function indexCorpus(corpusDir, projectRoot, options = {}) {
     await runIndexerPhase(indexer, args, corpusDir, indexEnv, 'index', { streamOutput });
   }
 
-  if (indexEnv.SWEET_SEARCH_INDEX_DEVICE === 'accelerator') {
-    await assertAcceleratorProvenance(corpusDir);
-  }
+  assertAcceleratorProvenance(corpusDir, indexEnv);
 
   const totalMs = Date.now() - start;
   const elapsed = parseFloat((totalMs / 1000).toFixed(1));
@@ -113,23 +113,17 @@ export async function indexCorpus(corpusDir, projectRoot, options = {}) {
 }
 
 /**
- * Refuse a benchmark index that an accelerator host wrote on ORT CPU only
- * (the accelerator pin did not hold). Hosts with no accelerator pass.
+ * Refuse a benchmark index that an accelerator host wrote with CPU encoders
+ * (the accelerator pin did not hold). Hosts with no accelerator pass. The
+ * check runs in a child process (check-index-provenance.mjs) so this process
+ * never loads core config before initSearch() picks the corpus.
  */
-async function assertAcceleratorProvenance(corpusDir) {
-  const { hasIndexAcceleratorHardware } = await import(new URL('../../core/indexing/model-pool.js', import.meta.url));
-  if (!hasIndexAcceleratorHardware()) return;
-  const { acceleratorProvenanceProblem } = await import(new URL('../../core/indexing/index-device-choice.js', import.meta.url));
-  let manifest;
-  try {
-    manifest = JSON.parse(await fs.readFile(path.join(corpusDir, '.sweet-search', 'reconcile-manifest.json'), 'utf8'));
-  } catch {
-    return; // no manifest (old layout): nothing recorded to check
-  }
-  const problem = acceleratorProvenanceProblem(manifest);
-  if (problem) {
-    throw new Error(`Benchmark index at ${corpusDir}: ${problem}. Set SWEET_SEARCH_INDEX_DEVICE=cpu to accept a CPU-built index.`);
-  }
+function assertAcceleratorProvenance(corpusDir, env) {
+  const script = fileURLToPath(new URL('./check-index-provenance.mjs', import.meta.url));
+  const r = spawnSync(process.execPath, [script, corpusDir], { env, encoding: 'utf8' });
+  if (r.status === 0) return;
+  const detail = (r.stderr || r.error?.message || `exit ${r.status}`).trim();
+  throw new Error(`Benchmark index at ${corpusDir}: ${detail}`);
 }
 
 /**

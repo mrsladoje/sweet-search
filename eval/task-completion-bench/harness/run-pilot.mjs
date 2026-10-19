@@ -41,6 +41,7 @@ import { admissionReport, loadBlocklist, vacuityBlocklist } from './task-admissi
 import { degenerationVerdict } from './degeneration-policy.mjs';
 import { WARMUP_ID, WARMUP_QUESTION, warmupEnabled, createWarmupGate, excludeWarmups, cacheFairness, cacheIsDeterministic, fairnessBanner } from './cache-warmup.mjs';
 import { SPAWN_LEDGER_ENV, spawnLedgerFile, reapSpawnLedger, reapSpawnLedgerSync, reapLedgerDir, allLedgerFiles, reapByOpenFiles } from './spawn-ledger-reap.mjs';
+import { benchIndexDevice } from '../../lib/bench-index-device.mjs';
 // HARNESS routes the agent loop through a REAL production coding agent (uncapped — runs
 // to completion) instead of the bare-API ReAct loop. All share grading/metrics + the
 // identical completion frame; native=vanilla agent, sweet=agent + M++ + ss-* on PATH.
@@ -330,7 +331,7 @@ function prepareGolden(t) {
   const idxTimeout = Number(process.env.GOLDEN_TIMEOUT_MS) || 5400000;
   try {
     execFileSync('node', [INDEXER, '--full', '--sqlite-fast', '--concurrency=1'],
-      { env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: gdir, SWEET_SEARCH_RECONCILE_V2: '0', SWEET_SEARCH_WATCH: '0', SWEET_SEARCH_INDEX_DEVICE: process.env.SWEET_SEARCH_INDEX_DEVICE || 'accelerator' }, stdio: 'ignore', timeout: idxTimeout });
+      { env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: gdir, SWEET_SEARCH_RECONCILE_V2: '0', SWEET_SEARCH_WATCH: '0', SWEET_SEARCH_INDEX_DEVICE: benchIndexDevice() }, stdio: 'ignore', timeout: idxTimeout });
   } catch (e) {
     // drop the partial/corrupt golden so a resume rebuilds it cleanly instead of
     // treating a half-written .sweet-search as a finished golden.

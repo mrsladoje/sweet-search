@@ -4,9 +4,11 @@ import { EventEmitter } from 'events';
 // Hoisted mocks (available to vi.mock factories)
 const mockSpawn = vi.hoisted(() => vi.fn());
 const mockUnlink = vi.hoisted(() => vi.fn());
+const mockSpawnSync = vi.hoisted(() => vi.fn());
 
 vi.mock('child_process', () => ({
   spawn: mockSpawn,
+  spawnSync: mockSpawnSync,
 }));
 
 vi.mock('fs/promises', () => ({
@@ -30,6 +32,7 @@ describe('indexCorpus', () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     mockSpawn.mockImplementation(() => createMockChild(0));
     mockUnlink.mockResolvedValue(undefined);
+    mockSpawnSync.mockReturnValue({ status: 0, stderr: '' });
   });
 
   afterEach(() => {
@@ -45,6 +48,21 @@ describe('indexCorpus', () => {
     expect(args).not.toContain('--graph-only');
     expect(args).not.toContain('--vectors-only');
     expect(mockUnlink).not.toHaveBeenCalled();
+  });
+
+  it('pins the accelerator and checks provenance in a child with the corpus env', async () => {
+    await indexCorpus('/corpus', '/project');
+    expect(mockSpawn.mock.calls[0][2].env.SWEET_SEARCH_INDEX_DEVICE).toBe('accelerator');
+    expect(mockSpawnSync).toHaveBeenCalledTimes(1);
+    const [, args, opts] = mockSpawnSync.mock.calls[0];
+    expect(args[0]).toMatch(/check-index-provenance\.mjs$/);
+    expect(args[1]).toBe('/corpus');
+    expect(opts.env.SWEET_SEARCH_PROJECT_ROOT).toBe('/corpus');
+  });
+
+  it('refuses an index the provenance check rejects', async () => {
+    mockSpawnSync.mockReturnValue({ status: 1, stderr: 'dense written by CPU encoders only (ort-q8/cpu), expected the accelerator\n' });
+    await expect(indexCorpus('/corpus', '/project')).rejects.toThrow(/CPU encoders only/);
   });
 
   it('two-phase mode spawns twice with correct flags', async () => {
