@@ -12,7 +12,9 @@ import {
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { runProductionReconcileTick } from '../../core/incremental-indexing/application/production-reconciler.mjs';
+import { runProductionReconcileTick, __testing as prodTesting } from '../../core/incremental-indexing/application/production-reconciler.mjs';
+import { scanDirtyAndEnqueue } from '../../core/incremental-indexing/application/dirty-scan.mjs';
+import { utimesSync } from 'node:fs';
 import { resolveLatestRecords } from '../../core/incremental-indexing/infrastructure/sparse-gram-delta.mjs';
 import { LateInteractionIndex } from '../../core/ranking/late-interaction-index.js';
 import { FloatVectorStore } from '../../core/vector-store/float-vector-store.js';
@@ -182,6 +184,46 @@ describe('production incremental Reconciler', () => {
       config: { filesPerTick: 10, cpuBudgetMs: 10_000 },
     });
   }
+
+  it('refreshes the merkle stat of a touched file so the next scan does not requeue it', async () => {
+    writeFileSync(sourceFile, 'export function touchedThing() { return 1; }\n');
+    enqueue(stateDir, 'src/sample.js');
+    expect((await tick()).files_processed).toBe(1);
+    const before = readJson(join(stateDir, 'merkle-state.json')).files['src/sample.js'];
+
+    const later = new Date(Date.now() + 60_000);
+    utimesSync(sourceFile, later, later);
+    expect((await scanDirtyAndEnqueue({ projectRoot, stateDir })).enqueued).toBe(1);
+    const second = await tick();
+    expect(second.content_unchanged).toBe(1);
+    expect(second.files_processed).toBe(0);
+
+    const after = readJson(join(stateDir, 'merkle-state.json')).files['src/sample.js'];
+    expect(after.mtime_ns).not.toBe(before.mtime_ns);
+    expect(after.hash).toBe(before.hash);
+    expect(after.chunkIds).toEqual(before.chunkIds);
+    expect(after.epoch).toBe(before.epoch);
+    expect((await scanDirtyAndEnqueue({ projectRoot, stateDir })).enqueued).toBe(0);
+  });
+
+  it('reads fresh queue hints newest first, ahead of requeued tails', async () => {
+    for (const f of ['a.js', 'b.js', 'c.js', 'd.js']) writeFileSync(join(projectRoot, 'src', f), `export const ${f[0]} = 1;\n`);
+    const line = (file_path, source) => `${JSON.stringify({ file_path, source })}\n`;
+    writeFileSync(join(stateDir, 'index-maintainer-queue.jsonl'),
+      line('src/a.js', 'requeue') + line('src/b.js', 'requeue') + line('src/c.js', 'watch') + line('src/d.js', 'scan') + line('src/a.js', 'watch'));
+    const adapter = new prodTesting.ProductionReconcileAdapter({ projectRoot, stateDir, modelInfo: MODEL_INFO, vectorEncoder, liEncoder, logger: silentLogger });
+    expect(await adapter.readDirtySet()).toEqual(['src/a.js', 'src/d.js', 'src/c.js', 'src/b.js']);
+  });
+
+  it('does not copy the processing queue into the queue after a failed tick', async () => {
+    writeFileSync(join(stateDir, 'index-maintainer-queue.processing.jsonl'), `${JSON.stringify({ file_path: 'src/x.js' })}\n`);
+    const adapter = new prodTesting.ProductionReconcileAdapter({ projectRoot, stateDir, modelInfo: MODEL_INFO, vectorEncoder, liEncoder, logger: silentLogger });
+    adapter.requeueDirtyFilesAfterFailure(['src/x.js']);
+    expect(existsSync(join(stateDir, 'index-maintainer-queue.jsonl'))).toBe(false);
+    unlinkSync(join(stateDir, 'index-maintainer-queue.processing.jsonl'));
+    adapter.requeueDirtyFilesAfterFailure(['src/x.js']);
+    expect(readFileSync(join(stateDir, 'index-maintainer-queue.jsonl'), 'utf8')).toContain('src/x.js');
+  });
 
   it('updates graph, vectors, binary HNSW, LI, sparse grams, manifest, and merkle state across add/update/delete', async () => {
     writeFileSync(sourceFile, [

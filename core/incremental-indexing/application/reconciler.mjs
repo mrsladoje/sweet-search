@@ -69,27 +69,33 @@ const DEFAULT_FILES_PER_TICK = 50;
 // Catch-up budget: with a real backlog and an idle machine, a 2 s budget lets
 // a tick index one file (one file costs ~1-10 s to encode), so the queue grows
 // faster than it drains. The interval tuner lengthens the sleep whenever a tick
-// takes over half of it, so the maintainer stays busy well under half the time
-// (Windows reports load 0, so there the backlog alone decides). The load limit
-// is the tuner's own CPU-pressure line (interval-autotune.mjs): the maintainer's
-// threads count toward the 1-minute load, so a lower limit would switch the
-// catch-up off as soon as it ran.
+// takes over half of it, so the encoder stays busy well under half the time.
+// The gate is the CPU share OTHER processes used since the last tick
+// (`otherCpuShare`, 0..1, measured by the caller). Unknown share (first tick of
+// a process, no sampler) keeps the normal budget. Load averages are not used:
+// they are 0 on Windows and include the maintainer's own encoder threads.
 const DEFAULT_CATCHUP_CPU_BUDGET_MS = 8_000;
 const DEFAULT_CATCHUP_MIN_DIRTY = 20;
-const DEFAULT_CATCHUP_MAX_LOAD = 0.8;
+const DEFAULT_CATCHUP_MAX_OTHER_CPU = 0.5;
 
 /**
  * Per-tick file budget in ms. Uses the catch-up budget only when the backlog is
- * large AND the per-core load is known and low; otherwise the normal budget.
+ * large AND other processes left the CPU mostly idle; otherwise the normal budget.
  */
 export function effectiveCpuBudgetMs(config, dirtyCount) {
   const base = config.cpuBudgetMs;
   const catchUp = config.catchUpCpuBudgetMs;
   if (!(catchUp > base)) return base;
   if (dirtyCount < config.catchUpMinDirty) return base;
-  const load = config.cpuLoadAvg;
-  if (!Number.isFinite(load) || load >= config.catchUpMaxLoad) return base;
+  const share = config.otherCpuShare;
+  if (!Number.isFinite(share) || share >= config.catchUpMaxOtherCpu) return base;
   return catchUp;
+}
+
+// A finite number >= min, or the default. Callers pass partial configs and env
+// strings parse to NaN; neither may switch a budget off.
+function finiteOr(value, fallback, min = 0) {
+  return Number.isFinite(value) && value >= min ? value : fallback;
 }
 
 const MANIFEST_TIER_KEYS = new Set([
@@ -181,15 +187,15 @@ export class Reconciler {
     this.projectRoot = projectRoot;
     this.adapters = adapters;
     this.config = {
-      intervalMs: config.intervalMs ?? DEFAULT_TICK_INTERVAL_MS,
-      cpuBudgetMs: config.cpuBudgetMs ?? DEFAULT_CPU_BUDGET_MS,
-      filesPerTick: config.filesPerTick ?? DEFAULT_FILES_PER_TICK,
-      catchUpCpuBudgetMs: config.catchUpCpuBudgetMs ?? DEFAULT_CATCHUP_CPU_BUDGET_MS,
-      catchUpMinDirty: config.catchUpMinDirty ?? DEFAULT_CATCHUP_MIN_DIRTY,
-      catchUpMaxLoad: config.catchUpMaxLoad ?? DEFAULT_CATCHUP_MAX_LOAD,
+      ...config,
+      intervalMs: finiteOr(config.intervalMs, DEFAULT_TICK_INTERVAL_MS, 1),
+      cpuBudgetMs: finiteOr(config.cpuBudgetMs, DEFAULT_CPU_BUDGET_MS),
+      filesPerTick: finiteOr(config.filesPerTick, DEFAULT_FILES_PER_TICK, 1),
+      catchUpCpuBudgetMs: finiteOr(config.catchUpCpuBudgetMs, DEFAULT_CATCHUP_CPU_BUDGET_MS),
+      catchUpMinDirty: finiteOr(config.catchUpMinDirty, DEFAULT_CATCHUP_MIN_DIRTY),
+      catchUpMaxOtherCpu: finiteOr(config.catchUpMaxOtherCpu, DEFAULT_CATCHUP_MAX_OTHER_CPU),
       autotuneInterval: config.autotuneInterval ?? false,
       pinnedIntervalMs: config.pinnedIntervalMs ?? false,
-      ...config,
     };
     this.now = now;
     this.logger = logger;
@@ -317,8 +323,10 @@ export class Reconciler {
       // at one file. tick_ms below stays the full wall clock for the tuner.
       const budgetStartedAt = this.now();
       for (; dirtyCursor < dirty.length; dirtyCursor += 1) {
+        // An unchanged file costs one hash, so it counts toward the time budget
+        // but not toward the file cap.
         const filesAttempted = counters._fields.files_processed + counters._fields.content_unchanged;
-        if (filesAttempted >= this.config.filesPerTick) break;
+        if (counters._fields.files_processed >= this.config.filesPerTick) break;
         if (filesAttempted > 0 && this.now() - budgetStartedAt >= cpuBudgetMs) break;
 
         const file = dirty[dirtyCursor];
@@ -327,6 +335,7 @@ export class Reconciler {
         this.progress('reconciler:file:hashed');
         if (hashes && hashes.contentUnchanged) {
           counters.observeContentUnchanged();
+          await this.adapters.recordUnchangedFile?.(file, hashes);
           continue;
         }
         const fileRes = await this._reconcileOneFile(file, epoch, hashes, tickCtx);
@@ -563,7 +572,8 @@ export class Reconciler {
       return;
     }
     try {
-      await this.adapters.requeueDirtyFiles(files);
+      if (this.adapters.requeueDirtyFilesAfterFailure) await this.adapters.requeueDirtyFilesAfterFailure(files);
+      else await this.adapters.requeueDirtyFiles(files);
     } catch (requeueErr) {
       this.logger.error?.(
         `[reconciler] failed to requeue ${files.length} dirty paths after tick failure ` +

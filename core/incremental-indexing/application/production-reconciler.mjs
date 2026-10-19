@@ -329,6 +329,63 @@ async function enrichChunksFromGraph(chunks, stateDir, tickCtx = null) {
   return chunks;
 }
 
+function envInt(env, name) {
+  const raw = env[name];
+  if (raw == null || String(raw).trim() === '') return undefined;
+  const n = Number(raw);
+  return Number.isInteger(n) ? n : undefined; // malformed → the reconciler default
+}
+
+/**
+ * Budget config from the environment. A user who lowered the normal budget but
+ * set no catch-up budget gets catch-up capped at 4x their budget, not the 8 s
+ * default.
+ */
+export function tickBudgetConfig(env = process.env) {
+  const filesPerTick = envInt(env, 'SWEET_SEARCH_RECONCILE_FILES_PER_TICK');
+  const cpuBudgetMs = envInt(env, 'SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS');
+  let catchUpCpuBudgetMs = envInt(env, 'SWEET_SEARCH_RECONCILE_CATCHUP_BUDGET_MS');
+  if (catchUpCpuBudgetMs === undefined && cpuBudgetMs !== undefined) catchUpCpuBudgetMs = Math.min(8_000, cpuBudgetMs * 4);
+  return { filesPerTick, cpuBudgetMs, catchUpCpuBudgetMs };
+}
+
+let lastCpuSample = null;
+
+/**
+ * Share of total CPU time that OTHER processes used since the previous call in
+ * this process (0..1): system busy time from os.cpus() minus this process's own
+ * process.cpuUsage(). The maintainer calls it once per tick, so the window is
+ * the last tick plus its sleep. The first call returns undefined (no window).
+ * Works on Windows, where os.loadavg() is always 0.
+ */
+export function sampleOtherCpuShare({ cpus = os.cpus, cpuUsage = process.cpuUsage } = {}) {
+  let sample = null;
+  try {
+    let busy = 0;
+    let total = 0;
+    for (const { times } of cpus()) {
+      const b = times.user + times.nice + times.sys + times.irq;
+      busy += b;
+      total += b + times.idle;
+    }
+    const own = cpuUsage();
+    sample = { busy, total, ownMs: (own.user + own.system) / 1000 };
+  } catch {
+    return undefined;
+  }
+  const prev = lastCpuSample;
+  lastCpuSample = sample;
+  if (!prev) return undefined;
+  const dTotal = sample.total - prev.total;
+  if (!(dTotal > 0)) return undefined;
+  const others = (sample.busy - prev.busy) - (sample.ownMs - prev.ownMs);
+  return Math.min(1, Math.max(0, others / dTotal));
+}
+
+export function _resetCpuSampleForTests() {
+  lastCpuSample = null;
+}
+
 export function createProductionReconciler(options = {}) {
   // Couple the batch + det-levels flags FIRST (before the adapter is built and
   // before any tier write), so binary-hnsw-index.js — which reads
@@ -360,10 +417,8 @@ export function createProductionReconciler(options = {}) {
     onProgress: options.onProgress,
     config: {
       filesPerTick: Number.parseInt(process.env.SWEET_SEARCH_RECONCILE_FILES_PER_TICK || '50', 10),
-      cpuBudgetMs: Number.parseInt(process.env.SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS || '2000', 10),
-      catchUpCpuBudgetMs: Number.parseInt(process.env.SWEET_SEARCH_RECONCILE_CATCHUP_BUDGET_MS || '8000', 10),
-      // The catch-up budget needs the load signal even with the autotune off.
-      cpuLoadAvg: os.loadavg()[0] / cpuCount,
+      ...tickBudgetConfig(process.env),
+      otherCpuShare: sampleOtherCpuShare(),
       ...autotuneConfig,
       ...(options.config || {}),
     },
@@ -409,6 +464,9 @@ class ProductionReconcileAdapter {
     this._liSkipFiles = new Set();
     this.hashes = new Map();
     this.touched = new Map();
+    // Content-unchanged files whose stat moved (checkout, touch, same-bytes
+    // rewrite): only the merkle stat is refreshed, or every scan requeues them.
+    this._statRefresh = new Map();
     // E.1: the active tick-scoped store context (null on the per-file path).
     this._tickCtx = null;
     // E.6: chunk-cutoff cache — loaded lazily at tick begin / first vector delta
@@ -451,6 +509,8 @@ class ProductionReconcileAdapter {
     const hooks = {
       readDirtySet: () => this.readDirtySet(),
       requeueDirtyFiles: (files) => this.requeueDirtyFiles(files),
+      requeueDirtyFilesAfterFailure: (files) => this.requeueDirtyFilesAfterFailure(files),
+      recordUnchangedFile: (file, hashes) => this.recordUnchangedFile(file, hashes),
       hashFile: (file) => this.hashFile(file),
       loadCurrentManifest: () => readManifest(this.stateDir),
       persistManifest: (manifest) => this.persistManifest(manifest),
@@ -794,9 +854,19 @@ class ProductionReconcileAdapter {
     if (!fs.existsSync(processing) && fs.existsSync(queue)) {
       fs.renameSync(queue, processing);
     }
+    // Fresh hints (watcher, scan, CLI) go first, newest first, so an edit made
+    // during a backlog is not stuck behind the tails earlier ticks requeued.
+    // Requeued tails keep their order after them.
+    const entries = readJsonl(processing);
+    const fresh = [];
+    const requeued = [];
+    for (let k = entries.length - 1; k >= 0; k--) {
+      (entries[k].source === 'requeue' ? requeued : fresh).push(entries[k]);
+    }
+    requeued.reverse();
     const rels = [];
     const seen = new Set();
-    for (const entry of readJsonl(processing)) {
+    for (const entry of [...fresh, ...requeued]) {
       const rel = relPath(this.projectRoot, entry.file_path || entry.path || entry.filePath || '');
       if (!rel || seen.has(rel)) continue;
       seen.add(rel);
@@ -865,7 +935,23 @@ class ProductionReconcileAdapter {
     if (!Array.isArray(files) || files.length === 0) return;
     fs.mkdirSync(this.stateDir, { recursive: true });
     const queue = path.join(this.stateDir, DIRTY_QUEUE);
-    for (const file of files) fs.appendFileSync(queue, JSON.stringify({ file_path: file.path || file, timestamp: Date.now(), source: 'requeue' }) + '\n');
+    const now = Date.now();
+    fs.appendFileSync(queue, files.map((file) => JSON.stringify({ file_path: file.path || file, timestamp: now, source: 'requeue' }) + '\n').join(''));
+  }
+
+  /**
+   * After a failed tick the processing queue is still on disk (only a publish
+   * removes it), and the next readDirtySet reads it again. Requeueing its files
+   * too would copy the whole list into the queue on every failure.
+   */
+  requeueDirtyFilesAfterFailure(files) {
+    if (fs.existsSync(path.join(this.stateDir, PROCESSING_QUEUE))) return;
+    this.requeueDirtyFiles(files);
+  }
+
+  recordUnchangedFile(file, hashes) {
+    const rel = typeof file === 'string' ? file : file.path;
+    if (hashes?.stat) this._statRefresh.set(rel, { hash: hashes.contentHash, stat: hashes.stat });
   }
 
   async hashFile(file) {
@@ -1494,6 +1580,13 @@ class ProductionReconcileAdapter {
     for (const [file, data] of this.touched.entries()) {
       if (data.hash?.deleted) delete merkle.files[file];
       else if (!gate || persisted.has(file)) merkle.files[file] = { hash: data.hash.contentHash, ...data.hash.stat, epoch: manifest.epoch, chunkIds: data.chunkIds || [] };
+    }
+    // Same content, new stat: keep hash, chunk ids and epoch; record the stat so
+    // the dirty scan stops requeueing the file. No tier holds stat data, so
+    // this needs no persisted-batch gate.
+    for (const [file, { hash, stat }] of this._statRefresh) {
+      const prev = merkle.files[file];
+      if (prev && prev.hash === hash && !this.touched.has(file)) merkle.files[file] = { ...prev, ...stat };
     }
     merkle.lastIndex = new Date().toISOString();
     merkle.epoch = manifest.epoch;

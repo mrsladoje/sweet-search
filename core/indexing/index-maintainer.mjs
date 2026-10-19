@@ -962,11 +962,14 @@ export async function runReconcileV2Tick(ctx) {
   // expensive full stat-walk is redundant on those ticks. When the watcher is
   // inactive `skipFullWalk` is never set ⇒ the walk runs every tick (today's
   // behavior, unchanged).
+  // One admission policy per tick: the scan and the reconciler's admission gate
+  // share its git listings instead of each running them over every tracked file.
+  let admissionPolicy;
   try {
     const { dirtyScanEnabled, scanDirtyAndEnqueue } = await import('../incremental-indexing/application/dirty-scan.mjs');
     if (dirtyScanEnabled() && !ctx.skipFullWalk) {
       const { createAdmissionPolicy } = await import('../indexing/admission-policy.js');
-      const admissionPolicy = createAdmissionPolicy({ projectRoot: ctx.projectRoot });
+      admissionPolicy = createAdmissionPolicy({ projectRoot: ctx.projectRoot });
       progress('dirty-scan:start');
       const scan = await scanDirtyAndEnqueue({ projectRoot: ctx.projectRoot, stateDir: ctx.stateDir, admissionPolicy, onProgress });
       progress('dirty-scan:done');
@@ -983,6 +986,7 @@ export async function runReconcileV2Tick(ctx) {
   const counters = await runProductionReconcileTick({
     projectRoot: ctx.projectRoot,
     stateDir: ctx.stateDir,
+    admissionPolicy,
     logger: {
       info: (msg) => log('INFO', msg),
       warn: (msg) => log('WARN', msg),
@@ -991,7 +995,7 @@ export async function runReconcileV2Tick(ctx) {
     onProgress,
   });
   progress('tick:done');
-  log('INFO', `Reconcile v2 tick complete: epoch=${counters.epoch}, processed=${counters.files_processed}, unchanged=${counters.content_unchanged}`);
+  log('INFO', `Reconcile v2 tick complete: epoch=${counters.epoch}, processed=${counters.files_processed}, unchanged=${counters.content_unchanged}, dirty=${counters.dirty_paths_seen}, deferred=${counters.dirty_paths_deferred}, budget=${counters.cpu_budget_used_ms}/${counters.cpu_budget_total_ms}ms, tick=${counters.tick_ms}ms`);
   return counters;
 }
 
