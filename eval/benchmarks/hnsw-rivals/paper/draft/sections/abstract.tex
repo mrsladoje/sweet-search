@@ -1,26 +1,16 @@
 \begin{abstract}
-In a pre-registered replication on two untouched sets (CQADupStack, 457k documents; MS MARCO, 1M passages) with a
-corrected harness, our binary cascade was faster than the rival chosen on dev in all \nm{rep-n} set--CPU tests (latency
-ratio \nm{rep-min}--\nm{rep-max}, Holm-corrected), and quality non-inferiority at 0.5\% of exact quality held on MS
-MARCO on all three CPUs but not on CQADupStack. The main study behind it is descriptive. We compare candidate generators for single-query dense retrieval on CPUs at a fixed fraction of the task
-quality of exact search, not at a recall target. Seven sets (code search and BEIR, 7k to 1M vectors),
-three 768-dimensional embedding models and five CPUs (Intel Granite Rapids, AMD Zen 5, AWS Graviton4,
-AMD Zen 3, Apple M3 Max) cover a binary HNSW cascade with an int8 screen and float16 rescoring, and
-indexes from FAISS, USearch, hnswlib, ScaNN, DiskANN and Intel SVS. Operating points are chosen on dev
-queries and frozen before a single held-out run. Under a common int8 screen and float16 rescoring
-(comparison A), whenever one of the cascade's binary generators keeps 99\% of exact quality it is the
-fastest generator that does, over every CPU, set, model and budget; part of that margin is the cascade's
-faster implementation of the shared steps, but post-freeze runs with per-stage clocks and equal graph
-settings confirm it for the generator alone (rival graph generators \nm{post-eq-min}--\nm{post-eq-max} times
-slower, geometric mean \nm{post-eq-gm}). At small candidate budgets, float32 graphs keep 99\% in some cells
-where the binary codes do not. As shipped (comparison B), against the
-rival that was fastest on dev at 99\% of exact quality, the cascade is faster on the 0.5M--1M sets in
-\nm{faster-large} of \nm{n-large} cells (geometric mean ratio \nm{gm-large}), mixed in between, and slower
-on most code sets below 22k vectors, where an exact binary scan in FAISS wins (geometric mean
-\nm{gm-small}). Quality non-inferiority at $\delta = \nm{delta}$ holds in \nm{nprimarypass} of
-\nm{nconfirm} confirmatory comparisons (Holm). The cascade uses more memory than most rivals at 1M,
-builds single-threaded for \nm{build-ours-h} hours, has a longer latency tail, and its memory-mapped files
-cause slow rounds when other I/O evicts them from the page cache, which no rival showed. Code-set results are exploratory, because our defaults were tuned earlier on the same code queries; the
-BEIR comparisons are the confirmatory part. Deviations from the pre-registered plan are listed. We
-release the harness, the frozen points and every held-out record.
+Approximate nearest-neighbour indexes are usually compared at a recall target, but applications see the task
+quality of the final ranking. We compare a binary cascade (512-bit sign codes, an HNSW walk or an exact scan, an int8
+screen and float16 rescoring) with indexes from FAISS, USearch, hnswlib, ScaNN, DiskANN and Intel SVS. Each system
+runs at the fastest configuration that keeps 99\% of the task quality of exact search, chosen on dev queries and
+frozen before any held-out run. An exploratory main study covers seven code and BEIR sets (7k to 1M vectors), three
+embedding models and five CPUs. It gives three findings. First, recall is a poor proxy for task quality: \nm{rec-dist-low}
+of our \nm{rec-dist-n} distinct operating points have recall@10 between \nm{rec-dist-min} and 0.9 and still keep 99\% of
+exact quality on held-out queries. Second, on the same
+512-bit codes at equal graph settings, our HNSW walk generates candidates \nm{post-eqb-min}--\nm{post-eqb-max} times
+faster than the binary HNSW of FAISS and USearch. Third, in a pre-registered replication on two untouched sets
+(CQADupStack, 457k documents; MS MARCO, 1M passages) on three cloud CPUs, the cascade was faster than the rival chosen on
+dev in all \nm{rep-n} tests (\nm{rep-min}--\nm{rep-max} times, Holm-corrected). Quality non-inferiority held on MS MARCO
+only. The cascade loses below about 20k vectors, uses more memory, builds slowly and is sensitive to page-cache
+eviction. We release the harness, the frozen configurations and every record.
 \end{abstract}

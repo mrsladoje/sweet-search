@@ -5,7 +5,7 @@ import argparse, collections, json, math, os
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ap = argparse.ArgumentParser(); ap.add_argument('json'); ap.add_argument('--extra', help='JSON of extra numbers {key: value}'); ap.add_argument('--tails', help='tails_recall.py output'); ap.add_argument('--post', help='post_analyze.py output (post-freeze experiments)'); ap.add_argument('--rep', help='rep_analyze.py output (replication)')
+ap = argparse.ArgumentParser(); ap.add_argument('json'); ap.add_argument('--extra', help='JSON of extra numbers {key: value}'); ap.add_argument('--tails', help='tails_recall.py output'); ap.add_argument('--post', help='post_analyze.py output (post-freeze experiments)'); ap.add_argument('--rep', help='rep_analyze.py output (replication)'); ap.add_argument('--rep-describe', help='rep_describe.py output (replication, descriptive)')
 a = ap.parse_args()
 J = json.load(open(a.json))
 TYPES = [t for t in ('intel', 'amd', 'arm', 'box', 'mac') if t in J['R']]
@@ -23,6 +23,16 @@ def tex(s):
 import sys
 sys.path.insert(0, os.path.join(HERE, '..'))
 from paperlib import ratio_ci, headline, dev_latency  # noqa: E402
+
+
+def pfmt(p):
+    """A p-value for a table: 4 decimals from 0.001 up, else m x 10^e (never 0.0000)."""
+    if p >= 0.001:
+        return f'{p:.4f}'
+    if p < 1.0001e-4 and p > 0.9999e-4:  # (0 + 1) / (10,000 + 1): no bootstrap resample at or below the margin
+        return '$<10^{-4}$'
+    m, e = f'{p:.1e}'.split('e')
+    return f'${m}\\times10^{{{int(e)}}}$'
 
 
 def cell(est, lo, hi):
@@ -93,7 +103,7 @@ for p in P:
     if p.get('missing'):
         rows.append(f"{TNAME[p['type']]} & {p['set']} & {MSHORT[p['model']]} & {tex(p['rival'])} & \\multicolumn{{5}}{{l}}{{no held-out record}} & fail \\\\"); continue
     rows.append(f"{TNAME[p['type']]} & {p['set']} & {MSHORT[p['model']]} & {tex(p['rival'])} & {cell(p['ratio'], p['lo'], p['hi'])} & "
-                f"{p['ours_meets']} ; {p['rival_meets']} & {p['mean_diff']:+.4f} & {p['lower']:+.4f} & {p['p']:.4f} & " + {True: 'pass', False: 'fail', None: 'descr.'}[p.get('holm_pass')] + " \\\\")
+                f"{p['ours_meets']} ; {p['rival_meets']} & {p['mean_diff']:+.4f} & {p['lower']:+.4f} & {pfmt(p['p'])} & " + {True: 'pass', False: 'fail', None: 'descr.'}[p.get('holm_pass')] + " \\\\")
 open(os.path.join(HERE, 'tables', 'primary.tex'), 'w').write('\n'.join(rows) + '\n')
 nums['nprimary'] = str(len(P)) if P else '15'
 nums['nprimarypass'] = str(sum(1 for p in P if p.get('holm_pass')))
@@ -236,7 +246,7 @@ for t in ('intel', 'amd', 'arm'):
         for j in json.load(open(f))['jobs']:
             if j.get('comparison') == 'B' and j.get('kind', 'timing') == 'timing':
                 tb[t][j['system']].add((j['set'], j['model'], json.dumps({x: j.get(x) for x in ('family', 'build_params', 'search', 'S1', 'EF')}, sort_keys=True)))
-syss = sorted({k for v in tb.values() for k in v}, key=lambda k: -len(tb['intel'].get(k, ())))
+syss = sorted({k for v in tb.values() for k in v}, key=lambda k: (-len(tb['intel'].get(k, ())), k))
 rows = []
 for k in syss:
     n = {t: len(tb[t].get(k, ())) for t in ('intel', 'amd', 'arm')}
@@ -457,6 +467,17 @@ if a.tails:
     nums['rec-ours-min'] = f'{ro[0]:.2f}'; nums['rec-ours-med'] = f'{ro[len(ro) // 2]:.2f}'
     nums['rec-riv-min'] = f'{rr[0]:.2f}'; nums['rec-riv-med'] = f'{rr[len(rr) // 2]:.2f}'
     nums['rec-ours-below09'] = str(sum(1 for x in ro if x < 0.9))
+    # the same operating point gives byte-identical lists on every CPU: count distinct (set, model, point) too
+    dp = {}
+    for (t, s_, m), v in pr.items():
+        if 'ours' in v and 'rival' in v:
+            rb = B.get((t, s_, m, 0.99), {}).get(v['ours']['system'])
+            if rb:
+                dp[(s_, m, json.dumps(rb.get('point'), sort_keys=True))] = (v['ours']['recall10'], rb['meets_point'])
+    lowd = [x for x in dp.values() if x[0] < 0.9]
+    nums['rec-dist-n'] = str(len(dp)); nums['rec-dist-low'] = str(len(lowd))
+    nums['rec-dist-low-meet'] = str(sum(1 for x in lowd if x[1]))
+    nums['rec-dist-min'] = f'{min(x[0] for x in dp.values()):.2f}'
 
 # ---- post-freeze experiments (post_analyze.py): generator-only times, shared-stage gap, slow rounds, (B) rerun
 if a.post:
@@ -492,6 +513,10 @@ if a.post:
         nums['post-eq-min'] = f'{min(v):.1f}'; nums['post-eq-max'] = f'{max(v):.1f}'
         nums['post-eq-gm'] = f'{math.exp(sum(math.log(x) for x in v) / len(v)):.1f}'; nums['post-eq-n'] = str(len(v))
         nums['post-eq-ours'] = str(sum(1 for x in v if x > 1))
+        for tag, fams in (('b', ('faiss_bin_hnsw', 'usearch_b1_rescore')), ('f', ('hnswlib_f32', 'faiss_hnsw_flat'))):
+            w = [x[3] for x in eq if x[2] in fams]
+            nums[f'post-eq{tag}-min'] = f'{min(w):.1f}'; nums[f'post-eq{tag}-max'] = f'{max(w):.1f}'
+            nums[f'post-eq{tag}-gm'] = f'{math.exp(sum(math.log(x) for x in w) / len(w)):.1f}'; nums[f'post-eq{tag}-n'] = str(len(w))
     nums['post-best-ours'] = str(best_ours); nums['post-cells'] = str(cells_pa)
     for t, (o_, r_) in gap.items():
         if o_ and r_:
@@ -541,10 +566,29 @@ if a.rep:
         if 'missing' in r:
             rows.append(f"{TNAME[r['type']]} & {SN[r['set']]} & {tex(r['rival'] or '')} & \\multicolumn{{8}}{{l}}{{{tex(r['missing'])}}} \\\\"); continue
         yn = lambda b: 'yes' if b else 'no'
-        rows.append(f"{TNAME[r['type']]} & {SN[r['set']]} & {tex(r['rival'])} & {r['instances']} & {r['ours_us']:.0f} & {r['rival_us']:.0f} & "
-                    f"{cell(r['ratio'], r['lo'], r['hi'])} & {r['p_latency']:.4f} & {'pass' if r.get('holm_latency') else 'fail'} & "
-                    f"{r['mean_diff']:+.4f} & {r['p_quality']:.4f} & {'pass' if r.get('holm_quality') else 'fail'} \\\\")
+        rows.append(f"{TNAME[r['type']]} & {SN[r['set']]} & {tex(r['rival'])} & {r['instances']} & {r['rounds']} & {r['ours_us']:.0f} & {r['rival_us']:.0f} & "
+                    f"{cell(r['ratio'], r['lo'], r['hi'])} & {pfmt(r['p_latency'])} & {'pass' if r.get('holm_latency') else 'fail'} \\\\")
     open(os.path.join(HERE, 'tables', 'rep.tex'), 'w').write('\n'.join(rows) + '\n')
+    RD = {(x['type'], x['set']): x for x in json.load(open(a.rep_describe))} if a.rep_describe else {}
+    fl = lambda x: f'{math.floor(x * 1e4) / 1e4:.4f}'  # lower bounds rounded down
+    rows = []
+    for r in RJ:
+        if 'missing' in r:
+            continue
+        d = RD.get((r['type'], r['set']))
+        sh = (lambda nm: f"{d['share_' + nm]:.4f} [{fl(d['share_' + nm + '_lower'])}]") if d else (lambda nm: '')
+        rows.append(f"{TNAME[r['type']]} & {SN[r['set']]} & {(d['q_exact'] if d else r['q_exact']):.4f} & {sh('ours')} & {sh('rival')} & "
+                    f"{r['mean_diff']:+.4f} & {r['lower']:+.4f} & {r['margin']:+.4f} & {pfmt(r['p_quality'])} & {'pass' if r.get('holm_quality') else 'fail'} \\\\")
+    open(os.path.join(HERE, 'tables', 'rep-q.tex'), 'w').write('\n'.join(rows) + '\n')
+    if RD:
+        sens = {k: v['sens_all_blocks'] for k, v in RD.items() if v['dropped_detail']}
+        for (t, s_), v in sens.items():
+            nums['rep-sens-cell'] = f"{TNAME[t]}, {SN[s_]}"; nums['rep-sens-ratio'] = f"{v['ratio']:.2f}"; nums['rep-sens-p'] = f"{v['p']:.3f}"
+            dd = RD[(t, s_)]['dropped_detail'][0]['faults']['ours']
+            nums['rep-sens-f1'] = f"{dd['first_run_majflt']:,}"; nums['rep-sens-f2'] = f"{dd['second_run_majflt']:,}"
+        nums['rep-gridmin'] = str(sum(1 for v in RD.values() if v['rival_at_grid_min']))
+        nums['rep-share-ours-cqa'] = f"{RD[('intel', 'cqadup')]['share_ours']:.4f}"; nums['rep-share-ours-cqa-lo'] = fl(RD[('intel', 'cqadup')]['share_ours_lower'])
+        nums['rep-share-ours-msm'] = f"{RD[('intel', 'msmarco1m')]['share_ours']:.4f}"; nums['rep-share-ours-msm-lo'] = fl(RD[('intel', 'msmarco1m')]['share_ours_lower'])
     ok = [r for r in RJ if 'missing' not in r]
     nums['rep-n'] = str(len(RJ)); nums['rep-lat-pass'] = str(sum(1 for r in ok if r.get('holm_latency')))
     nums['rep-q-pass'] = str(sum(1 for r in ok if r.get('holm_quality')))
@@ -554,6 +598,8 @@ if a.rep:
         v = [math.log(r['ratio']) for r in ok]
         nums['rep-gm'] = f'{math.exp(sum(v) / len(v)):.2f}'; nums['rep-min'] = f"{min(r['ratio'] for r in ok):.2f}"; nums['rep-max'] = f"{max(r['ratio'] for r in ok):.2f}"
         nums['rep-reruns'] = str(sum(r.get('fault_reruns', 0) for r in ok)); nums['rep-dropped'] = str(sum(len(r.get('dropped_rounds', [])) for r in ok))
+        W = ['no', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten']
+        nums['rep-reruns-w'] = W[int(nums['rep-reruns'])]; nums['rep-dropped-w'] = W[int(nums['rep-dropped'])]
         p99 = [math.log(r['rival_p99'] / r['ours_p99']) for r in ok]; nums['rep-p99'] = f'{math.exp(sum(p99) / len(p99)):.2f}'
         nat = [r['native_share'] for r in ok if r.get('native_share')]
         if nat:

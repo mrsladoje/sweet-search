@@ -26,6 +26,10 @@ Post-freeze experiments: stage clocks in (A), $M = 64$ rival graphs, our walk wi
 Replication: CQADupStack files taken from the MTEB copy on Hugging Face (revisions recorded), because the BEIR server was too slow & before any replication data & same BEIR data; \S\ref{sec:replication} \\
 Replication: plan amended after two pre-run reviews (instance as the unit, equal effort grids, fault rule on the timed pass, joint quality bootstrap, stratified CQADupStack split) & before any replication timing & \texttt{REPLICATION\_PLAN.md} history \\
 Replication: the first Intel and Graviton dev runs hit a 150-minute machine stop and were lost; the same dev jobs ran again in chunks; Intel and Graviton were selected and frozen after AMD & dev phase, before any Intel or Graviton held-out job & \S\ref{sec:replication} \\
+Replication: the first freeze commit for Intel and Graviton (\texttt{6199b3a4}) left out the held-out plan files; machines started on empty plans (and, after a cloud API error was read as ``no machines running'', on a second launch) ran no job and were stopped & before any Intel or Graviton held-out job & freeze record completed at \texttt{4740606a}; every held-out job ran from it \\
+Replication: the plan's self-match rule (meant for Quora) also applies to MS MARCO, whose query and passage ids share one number range; for 814 of 6,980 queries one passage is removed for every system and for exact search & in the plan & none of the removed passages is relevant to its query; \S\ref{sec:replication} \\
+Replication: retained-share bounds, the sensitivity with the dropped block and the dev quality--latency curves (\texttt{rep\_describe.py}, \texttt{rep\_pareto.py}) & after the held-out run & descriptive; the pre-registered tests are unchanged (\S\ref{sec:replication}) \\
+Main study: equal-settings ratios split by distance type; recall counted per distinct operating point & after external reviews of the draft & descriptive (\S\ref{sec:post}, \S\ref{sec:results}) \\
 Not run: two build seeds, isolated build-cost runs, first-100 cold queries, page-policy arms, dTLB counters & --- & \S\ref{sec:limits} \\\bottomrule
 \end{tabularx}
 \end{table}

@@ -10,7 +10,7 @@ Its 95\% interval comes from a bootstrap over rounds (\S\ref{sec:timing}).
 
 \subsection{Comparison (A): generators under a common rescoring procedure}
 
-\paragraph{One budget, one model per set kind.} Table~\ref{tab:compA-intel} and Figure~\ref{fig:compA}
+\paragraph{One budget, one model per set kind.} Figure~\ref{fig:compA} and Table~\ref{tab:compA-intel} (Appendix~\ref{app:compA})
 show the generators at $C = 400$, $H = 100$, each at its smaller declared effort, with CodeRankEmbed on
 the code sets and bge-base-en-v1.5 on the BEIR sets. Under the same int8 screen and the same float16
 rescoring, retained quality depends on the generator only through its 400 candidates. In this slice,
@@ -42,8 +42,12 @@ every CPU (the walk takes 1.2--1.6 times as long). On FiQA and dall the walk is 
 and the Mac (0.6--0.9 of the scan's time) and slower on Graviton (1.4 times); above 150k vectors only
 the walk runs. The rival binary graphs (FAISS binary HNSW, USearch b1) take 1.9--7.3 times as long as
 our walk at the same budget. This compares the generators as built and configured here (graph
-density, adaptive effort, page policy and shared-step speed all differ; \S\ref{sec:compA}), not graph
-search at equal effort.
+density, adaptive effort, page policy and shared-step speed all differ; \S\ref{sec:compA}); \S\ref{sec:post} compares
+them at equal settings. On the smallest set, FAISS binary flat takes 2.8 to 4.9 times as long as our scan for the same
+exact Hamming scan of the same codes (\S\ref{sec:post}). Reading the two sources shows one difference: FAISS's
+binary flat search keeps the best $C$ in a binary heap by default (a counting variant exists, \texttt{use\_heap =
+false}, which our harness did not enable), while our scan selects them from a histogram of the 513 possible distances.
+We did not measure how much of the gap this explains.
 
 \paragraph{The int8 screen.} With our walk at $C = 400$, rescoring all 400 candidates ($H = C$; the
 int8 scores are still computed and sorted, but no candidate is removed) takes a median \nm{screen-med} times as long as screening to $H = 100$ (10th--90th percentile
@@ -53,29 +57,31 @@ of 100 vectors, not the cost of the int8 stage itself, which no arm removes.
 
 \begin{figure}[t]\centering
 \includegraphics[width=\textwidth]{figures/compA.pdf}
-\caption{Comparison (A), held-out, per CPU: \us{} per query of each plotted generator plus the shared
-int8 screen and rescoring, at $C = 400$, $H = 100$, smaller declared effort, against corpus size,
-with CodeRankEmbed (code sets) and bge-base-en-v1.5 (BEIR sets). FAISS RaBitQ flat and IVF are in the
-tables only. Retained quality per cell is in Tables~\ref{tab:compA-intel}--\ref{tab:compA-mac}.}\label{fig:compA}
+\caption{Comparison (A), held-out, per CPU: \us{} per query of each generator plus the shared int8 screen and
+rescoring (each in its own implementation, \S\ref{sec:compA}), at $C = 400$, $H = 100$, smaller declared effort, with
+CodeRankEmbed (code sets) and bge-base-en-v1.5 (BEIR sets). One column per set, ordered by size; the sets differ in more
+than size, so the columns are not a scaling curve. ScaNN and the partition generators keep far less than 99\% of exact
+quality at this effort; retained quality per cell is in Tables~\ref{tab:compA-intel}--\ref{tab:compA-mac}. FAISS RaBitQ
+flat and IVF are in the tables only.}\label{fig:compA}
 \end{figure}
 
-\compAtable{intel}{Intel Xeon 6975P-C}
 
-\subsection{Comparison (B): as shipped, at the same retained quality}
+\subsection{Comparison (B): library pipelines at the same retained quality}
 
 Table~\ref{tab:headline099} compares our cascade with the rival that was fastest \emph{on dev} at
 $\fr = 0.99$, each at its frozen point; held-out data decide nothing about which rival is shown. The
 table marks where our point ($\dagger$) or the rival's ($\ddagger$) misses $\fr$ on held-out by its point
-estimate. Figure~\ref{fig:size} plots our cascade against corpus size. On these sets, the ratio
-in these data varies more between sets than between CPUs; set size is confounded with set, model and
-$k_v$, so we do not attribute the pattern to size alone.
+estimate. Figure~\ref{fig:size} shows the same points per set. The ratio varies more between sets than between
+CPUs; set size is confounded with set, model and $k_v$, so we do not attribute the pattern to size alone.
 
 \begin{itemize}\setlength{\itemsep}{1pt}
 \item \textbf{Large sets} (Quora, 523k vectors; csn1m, 1M): ours is faster in \nm{faster-large} of
 \nm{n-large} cells (whole interval above 1) and slower in \nm{slower-large}; ratios \nm{min-large} to
 \nm{max-large}, geometric mean \nm{gm-large}. The rivals here are graph indexes: FAISS HNSW (float32,
 SQ8, binary or RaBitQ codes), USearch b1, and SVS Vamana with LVQ or LeanVec on Intel. Several large-set
-intervals are wide because of slow rounds of our cascade (\S\ref{sec:losses}).
+intervals are wide because of slow rounds of our cascade (\S\ref{sec:losses}). With the mean of log round medians
+instead of the median over rounds, this geometric mean is \nm{sens-meanlog-large}, not \nm{gm-large} (see below); the
+replication (\S\ref{sec:replication}) is the test of this pattern.
 \item \textbf{Middle sets} (FiQA, 58k; dall, 140k): mixed. Ours is faster in \nm{faster-mid} of
 \nm{n-mid} cells and slower in \nm{slower-mid} (geometric mean \nm{gm-mid}).
 \item \textbf{Small code sets} (gcsn, d20k, AdvTest; 7k--22k): the rivals are faster in most cells. Ours
@@ -95,15 +101,16 @@ results showed slow rounds in our cascade (\S\ref{sec:losses}, Appendix~\ref{app
 mean of logs, the geometric means become \nm{sens-meanlog-large} on the large sets (ours faster by point
 estimate in \nm{sens-meanlog-large-wins} of \nm{sens-meanlog-large-n} cells), \nm{sens-meanlog-mid} on
 the middle sets, \nm{sens-meanlog-small} on the small sets and \nm{sens-meanlog-all} overall. The
-large-set advantage shrinks but remains; the difference comes from the slow rounds, which only our
-cascade has.
+large-set advantage is smaller under the statistic we first used; the difference comes from the slow rounds, which only
+our cascade has. We treat the main-study ratios as exploratory under either statistic.
 
 Over all CPUs and sets, the geometric mean of the ratio at $\fr = 0.99$ is \nm{gm-all-099}
 (\nm{gmn-all-099} cells, ours faster by point estimate in \nm{wins-all-099}); per CPU it is
 \nm{gm-intel-099} (Intel), \nm{gm-amd-099} (AMD), \nm{gm-arm-099} (Graviton), \nm{gm-box-099} (box,
 reduced grid) and \nm{gm-mac-099} (Mac, reduced grid). At $\fr = 0.995$ it is \nm{gm-all-0995}
 (Appendix~\ref{app:fractions}), but that mean leaves out the \nm{ours-nopoint-0995} cells where ours has
-no point and the \nm{ours-miss-0995} where ours misses $\fr$ on held-out (of \nm{cells-0995}); at
+no point, and it includes \nm{ours-miss-0995} cells where our point misses $\fr$ on held-out (of \nm{cells-0995}; the
+``both meet'' row of Table~\ref{tab:headline0995} excludes them); at
 $\fr = 0.99$ ours has no point in \nm{ours-nopoint-099} cells (FiQA with CodeRankEmbed). The four code sets gcsn, d20k, dall and csn1m share one query set, so
 their cells are four sizes of one test, not four independent tests; the geometric means are descriptive.
 On the AWS CPUs the large sets are mostly faster and the small code sets mostly slower, while some
@@ -113,19 +120,25 @@ middle cells change sign between CPUs (FiQA with bge: 0.88 on Intel, 0.69 on AMD
 
 \begin{figure}[t]\centering
 \includegraphics[width=\textwidth]{figures/size.pdf}
-\caption{Comparison (B), held-out, $\fr = 0.99$, per CPU: our cascade (blue), the rival that was fastest on dev
-at $\fr$ (red, dashed; Table~\ref{tab:headline099}) and exact float32 search (grey), against corpus size. Circles and squares: code sets with CodeRankEmbed and
-jina; triangles: BEIR sets with bge-base-en-v1.5.}\label{fig:size}
+\caption{Comparison (B), held-out, $\fr = 0.99$, per CPU: our cascade (filled blue), the rival that was fastest on
+dev at $\fr$ (open red; Table~\ref{tab:headline099}) and exact float32 search (grey). One column per set, ordered by
+size and not joined: the sets differ in data, queries, model and $k_v$, not only in size. Circle: CodeRankEmbed; square:
+jina-v2-base-code; triangle: bge-base-en-v1.5. The box and the Mac run a reduced grid.}\label{fig:size}
 \end{figure}
 
-\paragraph{Tail latency and recall.} For the same \nm{tail-n} pairs, the geometric mean of the rival-to-ours
-ratio is \nm{tail-p50} at the median query, \nm{tail-p95} at the 95th percentile and \nm{tail-p99} at the
-99th percentile (each the median over rounds of that round's percentile): our cascade's slowest queries
-are relatively slower than the rivals'. Recall@10 of the retained vectors against the exact top-10 vectors
-ranges from \nm{rec-ours-min} (median \nm{rec-ours-med}) for our points and from \nm{rec-riv-min} (median
-\nm{rec-riv-med}) for the rivals', although every point shown retains at least 99\% of exact task quality by
-its point estimate or is marked: \nm{rec-ours-below09} of our \nm{tail-n} points have recall@10 below 0.9.
-On these sets, vector recall understates the task quality that a cut at 10 documents keeps.
+\paragraph{Recall against task quality.} Recall@10 of the retained vectors against the exact top-10 vectors
+ranges from \nm{rec-ours-min} (median \nm{rec-ours-med}) for our points in Table~\ref{tab:headline099} and from
+\nm{rec-riv-min} (median \nm{rec-riv-med}) for the rivals'. Our result lists are byte-identical on every CPU, so the
+\nm{tail-n} CPU--set--model cells hold \nm{rec-dist-n} distinct operating points of ours. \nm{rec-dist-low} of them have
+recall@10 between \nm{rec-dist-min} and 0.9, and all \nm{rec-dist-low-meet} keep at least 99\% of exact task quality on
+held-out queries by the point estimate. A recall@10 target of 0.9 would have excluded them. Two effects can explain the
+gap (we did not measure their shares): several vectors map to one document, and a near neighbour that is not relevant can be replaced by another without
+changing MRR@10 or nDCG@10. All nine are code-set points, which are exploratory (\S\ref{sec:limits}).
+
+\paragraph{Tail latency.} For the same \nm{tail-n} pairs, the geometric mean of the rival-to-ours ratio is
+\nm{tail-p50} at the median query, \nm{tail-p95} at the 95th percentile and \nm{tail-p99} at the 99th percentile (each
+the median over rounds of that round's percentile): in the main study our cascade's slowest queries are relatively
+slower than the rivals'.
 
 \paragraph{Held-out re-test of the dev points.} Every frozen point met its fraction on dev with the
 one-sided 97.5\% bound. On held-out queries at $\fr = 0.99$, all \nm{ret-ours-n} of our points meet it by
@@ -136,18 +149,11 @@ on dev sits close to the boundary, so a fresh sample moves it either way; we rep
 not re-select.
 
 \paragraph{Tuning budget.} The dev selection gave each system its own declared grid
-(Table~\ref{tab:tuning}): up to \nm{tune-max} configurations per set and model for the graph families
+(Table~\ref{tab:tuning} in Appendix~\ref{app:extra}): up to \nm{tune-max} configurations per set and model for the graph families
 with refine, and \nm{tune-ours} for our cascade. Our production defaults were tuned earlier on the gcsn
 dev queries, outside this study.
 
-\begin{table}[t]\centering\scriptsize
-\caption{Tuning budget: distinct comparison-(B) configurations per set and model in the dev sweep
-(including the widened IVF and ScaNN grids), per AWS CPU. Empty: the system does not run on that CPU.}\label{tab:tuning}
-\begin{tabular}{lrrr}\toprule
-System & Intel & AMD & Graviton\\\midrule
-\inputtable{tables/tuning.tex}
-\bottomrule\end{tabular}
-\end{table}
+
 
 \paragraph{Hamming ties (dev only).} Sign codes produce many equal Hamming distances. On gcsn dev with
 CodeRankEmbed, the run of tied candidates crosses the stage-1 cut at $C = 400$ on 97.8\% of queries;
@@ -171,8 +177,8 @@ Intel and hnswlib on AMD), so they are not at matched quality. Because our resul
 rival's frozen configuration is often the same on two or three CPUs, some primary pairs repeat the same
 quality comparison (Quora with jina against FAISS binary HNSW on all three CPUs; Quora with CodeRankEmbed
 against USearch b1 on Intel and AMD); the family holds fewer distinct quality tests than pairs, and Holm
-over the pairs is conservative for them. The confirmatory test is about quality only; every latency
-statement in this paper is descriptive.
+over the pairs is conservative for them. In the main study the confirmatory test is about quality only, and its
+latency statements are descriptive; the confirmatory latency tests are in the replication (\S\ref{sec:replication}).
 
 \begin{table}[t]\centering\scriptsize
 \caption{Primary pairs (fixed on dev; $\fr = 0.99$, comparison B). Ratio: rival / our latency (median over
@@ -202,7 +208,7 @@ the rivals that refine with float32 originals use 3.0--3.6~GiB, and FAISS HNSW-S
 \nm{cold-ours-intel}~s on Intel against \nm{cold-rivalmin-intel}--\nm{cold-rivalmax-intel}~s for the
 rivals. The two measure different work: our index maps its int8 rows and float16 vectors lazily, so most
 of its reads fall on later queries, while the rivals read and normalise their float32 originals before the
-first query. We report the numbers but draw no conclusion from them. Table~\ref{tab:build} lists build cost at 1M: our build took
+first query. We report the numbers but draw no conclusion from them. Table~\ref{tab:build} (Appendix~\ref{app:extra}) lists build cost at 1M: our build took
 \nm{build-ours-s}~s (\nm{build-ours-h}~hours) of wall time on one thread with a peak of
 \nm{build-ours-peak}~GB, the longest wall time of any build (the longest rival build took
 \nm{build-rival-max-s}~s on 16 threads). In core-seconds, eight rival families exceed our build at
@@ -211,13 +217,4 @@ not the index.
 
 \memtable{csn1m}{csn1m, CodeRankEmbed}
 
-\begin{table}[t]\centering\scriptsize
-\caption{Build cost at 1M vectors (csn1m, CodeRankEmbed), one row per family: the range over its
-build grid. Size is the index file only; the refining rivals also need the float32 originals at serving
-time (3.09~GB at 1M), while our 2.77~GB includes our float16 vector file. Builds ran under a memory-admission scheduler, several at a time, so wall times are
-indicative. Core-seconds = wall time $\times$ threads (an upper bound for the concurrent rival builds).}\label{tab:build}
-\begin{tabular}{lrrrrrr}\toprule
-Family & Builds & Wall s & Threads & Core-s & Size GB & Peak RSS GB\\\midrule
-\inputtable{tables/build.tex}
-\bottomrule\end{tabular}
-\end{table}
+
