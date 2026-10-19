@@ -259,39 +259,25 @@ function edgeOnWarning() {
  * Recommend an LI model + rerank policy from a hardware capability snapshot.
  * Pure function — caller passes in detectHardwareCapability() output.
  *
- * Conservative: accuracy-first by default. Only recommends edge when the
- * machine is clearly RAM- or disk-constrained.
+ * Accuracy-first: the edge model costs about 2.7 MRR points (it turns
+ * search reranking off), so it is the default only on machines with 8 GB
+ * of RAM or less. Chip generation is not a reason: an M1 or M2 with 16 GB
+ * has room for the standard model (about 150 MB in INT8 for queries), and
+ * slow indexing on a small GPU is handled by the index-device speed test
+ * (core/indexing/index-device-choice.js), not by a weaker model.
  *
  * @param {object} hw - shape returned by detectHardwareCapability()
  * @returns {{ liModel: string, searchReranking: 'auto', reason: string }}
  */
 export function recommendInitDefaults(hw = {}) {
   const ramGB = Number(hw.totalMemGB ?? 0);
-  // Constrained heuristic (intentionally narrow — "accuracy-first unless
-  // hardware/disk clearly indicates constrained mode" per Phase 4 brief):
-  //   - RAM ≤ 8 GB                                  → edge
-  //   - Apple Silicon M1/M2 (older ANE)             → edge candidate
-  //   - everything else                              → standard
-  // The bench shows standard LI is the accuracy default; only flip when
-  // the constrained signal is unambiguous.
   const isLowRam = ramGB > 0 && ramGB <= 8;
-  const isOlderApple =
-    hw.appleSilicon && typeof hw.appleSilicon === 'object'
-      ? Number(hw.appleSilicon.generation ?? hw.appleSilicon.gen ?? 99) <= 2
-      : false;
 
   if (isLowRam) {
     return {
       liModel: LI_MODEL_EDGE,
       searchReranking: 'auto',
       reason: `constrained: RAM=${ramGB} GB (≤8) — edge LI for indexing, search rerank auto-disables on edge per Phase 3 bench`,
-    };
-  }
-  if (isOlderApple && ramGB > 0 && ramGB <= 16) {
-    return {
-      liModel: LI_MODEL_EDGE,
-      searchReranking: 'auto',
-      reason: `constrained: M1/M2 + RAM=${ramGB} GB — edge LI recommended for indexing speed + disk savings`,
     };
   }
   return {

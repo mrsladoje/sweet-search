@@ -19,6 +19,10 @@ export default defineConfig({
       // not leak in from the developer's shell either.
       SWEET_SEARCH_OC_CACHE_KEY: '',
       SWEET_SEARCH_OC_CACHE_SHARDS: '',
+      // Indexing tests keep the accelerator and never run the index-device speed
+      // test (core/indexing/index-device-choice.js): it takes ~20 s, and under
+      // a loaded test run it would cache a wrong result in ~/.cache/sweet-search.
+      SWEET_SEARCH_INDEX_DEVICE: 'accelerator',
     },
     // Kill fixture processes orphaned by timed-out tests, before a run starts
     // and again after it ends. A run that inherits the previous run's orphans

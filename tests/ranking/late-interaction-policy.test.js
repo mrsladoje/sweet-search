@@ -342,26 +342,16 @@ describe('recommendInitDefaults — hardware-aware defaults', () => {
     expect(rec.reason).toContain('constrained');
   });
 
-  it('recommends edge for M1/M2 + ≤16 GB RAM', () => {
-    const rec = recommendInitDefaults({
-      totalMemGB: 16,
-      appleSilicon: { generation: 1, family: 'M1' },
-    });
-    expect(rec.liModel).toBe(LI_MODEL_EDGE);
-
-    const rec2 = recommendInitDefaults({
-      totalMemGB: 16,
-      appleSilicon: { generation: 2, family: 'M2' },
-    });
-    expect(rec2.liModel).toBe(LI_MODEL_EDGE);
+  it('recommends standard for M1/M2 with 16 GB RAM (chip generation is not a reason for edge)', () => {
+    for (const appleSilicon of [{ generation: 1, family: 'M1' }, { generation: 2, family: 'M2' }]) {
+      const rec = recommendInitDefaults({ totalMemGB: 16, appleSilicon });
+      expect(rec.liModel).toBe(LI_MODEL_STANDARD);
+    }
   });
 
-  it('still recommends standard for M1/M2 with 32 GB+ RAM', () => {
-    const rec = recommendInitDefaults({
-      totalMemGB: 32,
-      appleSilicon: { generation: 2, family: 'M2 Max' },
-    });
-    expect(rec.liModel).toBe(LI_MODEL_STANDARD);
+  it('recommends edge for an M1 with 8 GB RAM', () => {
+    const rec = recommendInitDefaults({ totalMemGB: 8, appleSilicon: { generation: 1, family: 'M1' } });
+    expect(rec.liModel).toBe(LI_MODEL_EDGE);
   });
 
   it('falls through to standard when hardware data is missing', () => {
