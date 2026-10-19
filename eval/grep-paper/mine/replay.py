@@ -31,7 +31,9 @@ L1 labels (§3.3) from the gold patch, mapped at the base revision. Files the pa
   definition  the record's line lies in the innermost definition that encloses a changed line of a hunk.
               Spans: Python `ast` for .py; a brace matcher for C-family/JS/TS/Go/Rust/Java/PHP/...;
               an `end` matcher for Ruby; else no definition. A hunk outside any definition uses its own
-              line range (anchor). labels-dev.jsonl records the method of every hunk.
+              line range (anchor). labels-dev.jsonl records the method of every hunk, and
+              gold-files-dev.jsonl.gz keeps the base-revision text of every gold file, so the labels can
+              be recomputed offline (for example with tree-sitter or the ss-grep code graph).
 
 Usage:
   python replay.py --candidates FILE --tasks task_index.json --patches FILE --counts FILE --work DIR
@@ -123,6 +125,7 @@ DEF_BRACE = [
     re.compile(r"^\s*((public|private|protected|internal|static|final|abstract|override|virtual|async|synchronized"
                r"|open|suspend|inline|unsafe|pub(\([^)]*\))?|export|const|extern|default|operator|tailrec)\s+)*"
                r"(fn|func|fun|def|sub|function)\b"),
+    re.compile(r"^type\s+\w+(\[[^\]]*\])?\s+(struct|interface)\b"),
     re.compile(r"^\s*(export\s+)?(const|let|var)\s+[\w$]+\s*(:[^=]+)?=\s*(async\s*)?(\([^)]*\)|[\w$]+)\s*(:[^=]+)?=>"),
     re.compile(r"^\s*((public|private|protected|internal|static|final|abstract|override|virtual|async|synchronized"
                r"|readonly|extern|inline|constexpr|explicit|unsafe|get|set)\s+)*"
@@ -133,12 +136,38 @@ PY_DEF = re.compile(r"^(\s*)(async\s+def|def|class)\b")
 
 
 def _strip_code(text):
-    """Blank out string literals and comments so braces inside them are not counted (rough)."""
-    text = re.sub(r"/\*.*?\*/", lambda m: re.sub(r"[^\n]", " ", m.group(0)), text, flags=re.S)
-    text = re.sub(r"//[^\n]*", lambda m: " " * len(m.group(0)), text)
-    text = re.sub(r"\"(\\.|[^\"\\\n])*\"|'(\\.|[^'\\\n])*'|`(\\.|[^`\\])*`",
-                  lambda m: re.sub(r"[^\n]", " ", m.group(0)), text)
-    return text
+    """Blank out string literals and comments in one pass (newlines kept), so braces inside them are not
+    counted. A single quote opens a character literal only if it closes within 6 characters (Rust
+    lifetimes, apostrophes); `#` comments are not handled (brace languages only)."""
+    out, i, n = list(text), 0, len(text)
+    while i < n:
+        ch = text[i]
+        two = text[i:i + 2]
+        if two == "//":
+            j = text.find("\n", i)
+            j = n if j < 0 else j
+        elif two == "/*":
+            j = text.find("*/", i + 2)
+            j = n if j < 0 else j + 2
+        elif ch in "\"`":
+            j = i + 1
+            while j < n and text[j] != ch and (ch == "`" or text[j] != "\n"):
+                j += 2 if text[j] == "\\" else 1
+            j = min(n, j + 1)
+        elif ch == "'":
+            m = re.match(r"'(\\.[^']{0,4}|[^'\\\n])'", text[i:i + 8])
+            if not m:
+                i += 1
+                continue
+            j = i + m.end()
+        else:
+            i += 1
+            continue
+        for k in range(i, j):
+            if out[k] != "\n":
+                out[k] = " "
+        i = j
+    return "".join(out)
 
 
 def brace_spans(text):
@@ -239,8 +268,9 @@ def definition_spans(path, text):
     return [], "none"
 
 
-def gold_labels(patch, tree):
-    """Per gold file: removed lines, definition/anchor spans, and the method of each hunk."""
+def gold_labels(patch, tree, texts=None):
+    """Per gold file: removed lines, definition/anchor spans, and the method of each hunk. The base-revision
+    text of each gold file goes into `texts` (so the labels can be recomputed without a checkout)."""
     out = {}
     for path, f in parse_patch(patch).items():
         local = os.path.join(tree, path)
@@ -248,6 +278,8 @@ def gold_labels(patch, tree):
             text = open(local, encoding="utf-8", errors="replace").read()
         except OSError:
             text = None
+        if texts is not None:
+            texts[path] = text
         spans, method = (definition_spans(path, text) if text is not None else ([], "no-file"))
         ev, hunks = [], []
         for start, end, changed in f["hunks"]:
@@ -568,7 +600,7 @@ def main():
         cs = groups[g]
         tree, why = checkout(a.work, repo, commit)
         out = []
-        labels_by_inst = {}
+        labels_by_inst, texts_by_inst = {}, {}
         for c in cs:
             root, rwhy = call_root(c)
             if rwhy or why:
@@ -577,7 +609,9 @@ def main():
                            | {"tier": "X", "reason": rwhy or ("checkout: " + why)})
                 continue
             if c["instance_id"] not in labels_by_inst:
-                labels_by_inst[c["instance_id"]] = gold_labels(patches.get(c["instance_id"], ""), tree)
+                texts_by_inst[c["instance_id"]] = {}
+                labels_by_inst[c["instance_id"]] = gold_labels(patches.get(c["instance_id"], ""), tree,
+                                                               texts_by_inst[c["instance_id"]])
             try:
                 out.append(replay_call(c, root, tree, labels_by_inst[c["instance_id"]], count_obs, gver))
             except Exception as e:  # never lose the group for one call
@@ -593,6 +627,9 @@ def main():
             with open(lab_path, "a") as f:
                 for iid, lab in labels_by_inst.items():
                     f.write(json.dumps({"instance_id": iid, "commit": commit, "files": lab}) + "\n")
+            with gzip.open(os.path.join(a.out, "gold-files-dev.jsonl.gz"), "at") as f:
+                for iid, texts in texts_by_inst.items():
+                    f.write(json.dumps({"instance_id": iid, "repo": repo, "commit": commit, "files": texts}) + "\n")
             with open(done_path, "a") as f:
                 f.write(f"{repo}@{commit}\n")
             for r in out:
