@@ -1554,7 +1554,7 @@
   "package.json": "5a55cb1f22fb70ff1e699248c478d418535a14887c7a69390f6ae0fb8451f6d7"
  },
  "kind": "replication freeze",
- "note": "Written after the replication dev selection and before any replication held-out job.",
+ "note": "Written after the replication dev selection; rewritten after the Intel and Graviton dev rerun, before any Intel or Graviton held-out job (the AMD files are unchanged).",
  "plan": "eval/benchmarks/hnsw-rivals/REPLICATION_PLAN.md",
- "written_utc": "2026-10-19T06:27:18Z"
+ "written_utc": "2026-10-19T07:18:15Z"
 }
