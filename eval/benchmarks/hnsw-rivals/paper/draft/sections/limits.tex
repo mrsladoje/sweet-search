@@ -53,12 +53,13 @@ geometric means are not comparable with those of the AWS CPUs.
 freeze (\S\ref{sec:post}); tail latencies and recall@10 are computed from the held-out records
 (\S\ref{sec:results}). The plan also asked for variation between independent builds, isolated build-cost
 runs, the first 100 cold queries, the memory split into anonymous and file-backed pages with the
-huge-page backing, and dTLB counters; these did not run. No arm removes the int8 stage: the $H = C$ arm still
-computes and sorts the int8 scores, so the cost of the stage itself is not measured.
+huge-page backing, and dTLB counters; these did not run. In the main study no arm removes the int8 stage (the $H = C$ arm still
+computes and sorts the int8 scores); the post hoc bypass of \S\ref{sec:posthoc} measures it on the replication sets.
 
 \paragraph{Rival configurations.} The refining rivals rescore with float32 originals; ours uses float16
 vectors. A float16 refine for FAISS and a rescoring USearch int8 variant exist in the libraries but were
-not in the grid. Each index was built once, with one seed.
+not in the grid; a post hoc float16 refine of the three refining replication rivals changed their time by at most 3\%
+(\S\ref{sec:posthoc}), and the USearch int8 variant was not tested. Each index was built once, with one seed.
 
 \paragraph{The reporting scripts.} The reporting scripts (\texttt{analyze.py}, \texttt{merge\_results.py},
 \texttt{paperlib.py}, \texttt{mem\_patch.py}, \texttt{mktex.py}, \texttt{figures.py}) were written after

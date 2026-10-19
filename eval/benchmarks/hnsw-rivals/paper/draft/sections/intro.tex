@@ -19,7 +19,9 @@ tool is ours, so we treat the study as a test of our own design and fix its rule
 harness, six fresh instances per CPU type and one held-out look; it holds the paper's only confirmatory latency tests.
 (2) An \emph{exploratory main study} (\S\ref{sec:protocol}--\S\ref{sec:results}) on seven sets, three models and five
 CPUs, with dev-only selection and a hashed freeze, but with flaws found after the freeze (Appendix~\ref{app:deviations}).
-(3) \emph{Post-freeze diagnostics} (\S\ref{sec:post}) that isolate generator time and explain slow rounds.
+(3) \emph{Post-freeze diagnostics} (\S\ref{sec:post}) that isolate generator time and explain slow rounds, and post hoc
+checks on the replication sets (\S\ref{sec:posthoc}): the six tests with the index preloaded, common kernels, a true int8
+bypass and hardware counters.
 
 \paragraph{Contributions.}
 \begin{itemize}\setlength{\itemsep}{1pt}
