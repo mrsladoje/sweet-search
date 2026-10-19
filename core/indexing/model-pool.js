@@ -16,6 +16,9 @@
  *   5. warmupQueryCpuModels()  — load ORT CPU models + warmup forward passes
  */
 
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
 import { detectHardwareCapability } from '../infrastructure/hardware-capability.js';
 import {
   isNativeInferenceAvailable,
@@ -28,7 +31,7 @@ import {
 import {
   getLocalPipeline,
   callLocalModelCpu,
-  callLocalModelGpu,
+  callLocalModelBucketed,
   unloadLocalModel,
   configureLocalModelRuntime,
   isBackgroundOrtProfile,
@@ -36,18 +39,24 @@ import {
 import {
   getLateInteractionPipeline,
   encodeDocumentsCpu,
-  encodeDocumentsGpu,
+  encodeDocuments,
   unloadLateInteractionModel,
   configureLateInteractionRuntime,
 } from '../ranking/late-interaction-model.js';
 import { backgroundIntraOpThreads } from '../infrastructure/onnx-session-utils.js';
-import { LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
+import { EMBEDDING_CONFIG, LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
+import { getCoremlCascadeResolvedDirs } from '../infrastructure/coreml-cascade.js';
 import {
-  buildProbeTexts,
+  CPU_WIN_MARGIN,
+  PROBE_RESULT_PREFIX,
+  STABLE_TTL_MS,
+  UNSTABLE_TTL_MS,
   decideIndexDevice,
   indexDeviceCacheKey,
   indexDeviceOverride,
+  isCloseResult,
   readIndexDeviceChoice,
+  tryAcquireProbeLock,
   writeIndexDeviceChoice,
 } from './index-device-choice.js';
 
@@ -142,57 +151,87 @@ export function _resetIndexDeviceChoice() {
   _indexDeviceChoice = null;
 }
 
-async function timeEncodes({ embed, encodeLi, texts, batchSize }) {
-  // Warm up on a full batch first: Metal compiles pipelines per shape and ORT
-  // grows its arena on the first run; neither belongs in the timing.
-  const warm = texts.slice(0, batchSize);
-  await embed(warm);
-  if (encodeLi) await encodeLi(warm);
-  const t0 = performance.now();
-  for (let i = 0; i < texts.length; i += batchSize) {
-    const batch = texts.slice(i, i + batchSize);
-    await embed(batch);
-    if (encodeLi) await encodeLi(batch);
-  }
-  return performance.now() - t0;
+/**
+ * The indexer's own encode entry points and runtime setters, for the
+ * index-device test child (index-device-probe-child.mjs): dense through the
+ * bucketing dispatcher, late interaction through the encodeDocuments
+ * dispatcher — the same calls indexing makes.
+ */
+export const probeEncoders = Object.freeze({
+  embed: (texts) => callLocalModelBucketed(texts, {}),
+  encodeLi: (texts) => encodeDocuments(texts, {}),
+  configureRuntimes({ embeddingThreads = null, lateInteractionThreads = null, background = false } = {}) {
+    configureLocalModelRuntime({ intraOpThreads: embeddingThreads, ...(background ? { background: true } : {}) });
+    configureLateInteractionRuntime({ intraOpThreads: lateInteractionThreads, ...(background ? { background: true } : {}) });
+  },
+});
+
+const PROBE_CHILD = fileURLToPath(new URL('./index-device-probe-child.mjs', import.meta.url));
+
+/**
+ * Run one side of the test in a child process and wait for it to exit (see
+ * index-device-probe-child.mjs). Resolves to the child's timing in ms.
+ */
+export function runProbeChild(device, setup, { timeoutMs = 5 * 60 * 1000 } = {}) {
+  return new Promise((resolve, reject) => {
+    const env = { ...process.env, SWEET_SEARCH_INDEX_DEVICE: device };
+    if (setup.includeLi && setup.liModel) env.SWEET_SEARCH_LATE_INTERACTION_MODEL = setup.liModel;
+    const child = spawn(process.execPath, [PROBE_CHILD, JSON.stringify({ ...setup, device })], {
+      env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let out = '';
+    let err = '';
+    child.stdout.on('data', (d) => { out += d; });
+    child.stderr.on('data', (d) => { err = (err + d).slice(-4000); });
+    const timer = setTimeout(() => child.kill('SIGKILL'), timeoutMs);
+    child.on('error', (e) => { clearTimeout(timer); reject(e); });
+    child.on('close', (code, signal) => {
+      clearTimeout(timer);
+      const line = out.split('\n').find((l) => l.startsWith(PROBE_RESULT_PREFIX));
+      if (code === 0 && line) {
+        try {
+          const result = JSON.parse(line.slice(PROBE_RESULT_PREFIX.length));
+          if (result.ms > 0) return resolve(result.ms);
+        } catch { /* fall through */ }
+      }
+      const tail = err.trim().split('\n').slice(-3).join(' | ');
+      reject(new Error(`${device} probe ${signal ? `killed (${signal})` : `exited ${code}`}${tail ? `: ${tail}` : ''}`));
+    });
+  });
 }
 
 /**
- * Time the same chunks on ORT INT8 CPU and on the accelerator, one device at
- * a time (CPU and GPU models never coexist), and unload everything after.
- * The CPU side uses the indexer's own thread plan but runs inline, while the
- * real CPU index can use a worker pool — so the test leans to the
- * accelerator, which is the side we keep on a tie anyway.
+ * Time the same chunks on ORT INT8 CPU and on the accelerator, each in its
+ * own child process, one after the other. A result close to the margin is
+ * measured again in the opposite order; when the two runs disagree, the
+ * result is marked unstable (it keeps the accelerator, cached for a short
+ * time). After two runs it reports the CPU's slower time and the
+ * accelerator's faster time, which leans to the accelerator.
  */
-export async function measureIndexDevices({
-  includeLi = true,
-  embeddingThreads,
-  lateInteractionThreads,
-  texts = buildProbeTexts(32),
-  batchSize = 16,
-} = {}) {
-  await teardownAllModels();
-  if (embeddingThreads) configureLocalModelRuntime({ intraOpThreads: embeddingThreads });
-  if (lateInteractionThreads) configureLateInteractionRuntime({ intraOpThreads: lateInteractionThreads });
-  try {
-    const cpuMs = await timeEncodes({
-      embed: callLocalModelCpu,
-      encodeLi: includeLi ? encodeDocumentsCpu : null,
-      texts,
-      batchSize,
-    });
-    await teardownAllModels();
-    await initIndexGpuPool({ includeLi });
-    const acceleratorMs = await timeEncodes({
-      embed: callLocalModelGpu,
-      encodeLi: includeLi ? encodeDocumentsGpu : null,
-      texts,
-      batchSize,
-    });
-    return { cpuMs, acceleratorMs, chunks: texts.length };
-  } finally {
-    await teardownAllModels();
-  }
+export async function measureIndexDevices(setup, { runChild = runProbeChild } = {}) {
+  const first = {
+    cpuMs: await runChild('cpu', setup),
+    acceleratorMs: await runChild('accelerator', setup),
+  };
+  if (!isCloseResult(first)) return { ...first, runs: 1, stable: true };
+  const second = {
+    acceleratorMs: await runChild('accelerator', setup),
+    cpuMs: await runChild('cpu', setup),
+  };
+  const stable = decideIndexDevice(first) === decideIndexDevice(second);
+  return {
+    cpuMs: Math.max(first.cpuMs, second.cpuMs),
+    acceleratorMs: Math.min(first.acceleratorMs, second.acceleratorMs),
+    runs: 2,
+    stable,
+  };
+}
+
+const _pendingChoices = new Map();
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 /**
@@ -201,17 +240,24 @@ export async function measureIndexDevices({
  * accelerator → cpu; SWEET_SEARCH_INDEX_DEVICE override; cached result;
  * otherwise measure (only when `allowMeasure` — the caller passes true only
  * when it would arm the accelerator anyway, so small incremental runs never
- * pay for the test). A failed test keeps the accelerator and is not cached.
+ * pay for the test). The test runs under a machine-wide lock; a process that
+ * finds the lock taken waits for the other's result, and keeps the
+ * accelerator if none arrives in `lockWaitMs`. A failed test keeps the
+ * accelerator and is not cached.
  *
  * @returns {Promise<{device: 'cpu'|'accelerator', source: string, cpuMs?: number, acceleratorMs?: number}>}
  */
 export async function ensureIndexDeviceChoice({
   allowMeasure = false,
   includeLi = true,
-  embeddingThreads,
-  lateInteractionThreads,
+  parallel = false,
+  embeddingThreads = null,
+  lateInteractionThreads = null,
+  liBatch = {},
   measure = measureIndexDevices,
   cacheDir,
+  lockWaitMs = 3 * 60 * 1000,
+  lockPollMs = 1000,
 } = {}) {
   if (!hasIndexAcceleratorHardware()) {
     _indexDeviceChoice = null;
@@ -222,12 +268,28 @@ export async function ensureIndexDeviceChoice({
     _indexDeviceChoice = override;
     return { device: override, source: 'env' };
   }
-  const key = indexDeviceCacheKey({
-    hw: detectHardwareCapability(),
-    liModel: LATE_INTERACTION_CONFIG.model,
-    includeLi,
+
+  const hw = detectHardwareCapability();
+  // Late interaction counts only when it is really on: a persisted
+  // `--li-model none` disables it without the --no-late-interaction flag.
+  const liOn = includeLi && LATE_INTERACTION_CONFIG.enabled && !!LATE_INTERACTION_CONFIG.activeModel;
+  const liModel = liOn ? LATE_INTERACTION_CONFIG.model : null;
+  const setup = {
+    includeLi: liOn,
+    liModel,
+    parallel: liOn && parallel,
+    embeddingThreads,
+    lateInteractionThreads,
+    liBatch,
+    background: isBackgroundOrtProfile(),
     backgroundProfile: isBackgroundOrtProfile(),
-  });
+    embeddingModel: EMBEDDING_CONFIG.model,
+    cascadeStatus: hw.inferenceBackendPreference === 'coreml-cascade'
+      ? getCoremlCascadeResolvedDirs(liModel || 'lateon-code').status
+      : null,
+  };
+  const key = indexDeviceCacheKey({ hw, setup });
+
   const cached = readIndexDeviceChoice(key, { cacheDir });
   if (cached) {
     _indexDeviceChoice = cached.device;
@@ -237,23 +299,50 @@ export async function ensureIndexDeviceChoice({
     _indexDeviceChoice = null;
     return { device: 'accelerator', source: 'default' };
   }
-  try {
-    const { cpuMs, acceleratorMs, chunks } = await measure({ includeLi, embeddingThreads, lateInteractionThreads });
-    const device = decideIndexDevice({ cpuMs, acceleratorMs });
-    const entry = {
-      device,
-      cpuMs: Math.round(cpuMs),
-      acceleratorMs: Math.round(acceleratorMs),
-      chunks,
-      measuredAt: new Date().toISOString(),
-    };
-    writeIndexDeviceChoice(key, entry, { cacheDir });
-    _indexDeviceChoice = device;
-    return { ...entry, source: 'measured' };
-  } catch (err) {
-    _indexDeviceChoice = null;
-    return { device: 'accelerator', source: 'measure-failed', error: err?.message ?? String(err) };
+
+  // One test per key per process, even when callers overlap.
+  if (!_pendingChoices.has(key)) {
+    _pendingChoices.set(key, (async () => {
+      const deadline = Date.now() + lockWaitMs;
+      let release = tryAcquireProbeLock({ cacheDir });
+      while (!release) {
+        const other = readIndexDeviceChoice(key, { cacheDir });
+        if (other) return { ...other, source: 'cached' };
+        if (Date.now() >= deadline) return { device: 'accelerator', source: 'lock-busy' };
+        await sleep(lockPollMs);
+        release = tryAcquireProbeLock({ cacheDir });
+      }
+      try {
+        // Another process may have finished the test while we waited.
+        const other = readIndexDeviceChoice(key, { cacheDir });
+        if (other) return { ...other, source: 'cached' };
+        // No model of this process may stay resident while a child loads its own.
+        await teardownAllModels();
+        const { cpuMs, acceleratorMs, runs, stable } = await measure(setup);
+        const device = stable ? decideIndexDevice({ cpuMs, acceleratorMs }) : 'accelerator';
+        const now = Date.now();
+        const entry = {
+          device,
+          cpuMs: Math.round(cpuMs),
+          acceleratorMs: Math.round(acceleratorMs),
+          runs,
+          stable,
+          margin: CPU_WIN_MARGIN,
+          measuredAt: new Date(now).toISOString(),
+          expiresAt: new Date(now + (stable ? STABLE_TTL_MS : UNSTABLE_TTL_MS)).toISOString(),
+        };
+        writeIndexDeviceChoice(key, entry, { cacheDir });
+        return { ...entry, source: 'measured' };
+      } catch (err) {
+        return { device: 'accelerator', source: 'measure-failed', error: err?.message ?? String(err) };
+      } finally {
+        release();
+      }
+    })().finally(() => _pendingChoices.delete(key)));
   }
+  const result = await _pendingChoices.get(key);
+  _indexDeviceChoice = result.source === 'measure-failed' || result.source === 'lock-busy' ? null : result.device;
+  return result;
 }
 
 let _gpuDiag = null;

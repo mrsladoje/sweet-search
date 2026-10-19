@@ -330,7 +330,7 @@ function prepareGolden(t) {
   const idxTimeout = Number(process.env.GOLDEN_TIMEOUT_MS) || 5400000;
   try {
     execFileSync('node', [INDEXER, '--full', '--sqlite-fast', '--concurrency=1'],
-      { env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: gdir, SWEET_SEARCH_RECONCILE_V2: '0', SWEET_SEARCH_WATCH: '0' }, stdio: 'ignore', timeout: idxTimeout });
+      { env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: gdir, SWEET_SEARCH_RECONCILE_V2: '0', SWEET_SEARCH_WATCH: '0', SWEET_SEARCH_INDEX_DEVICE: process.env.SWEET_SEARCH_INDEX_DEVICE || 'accelerator' }, stdio: 'ignore', timeout: idxTimeout });
   } catch (e) {
     // drop the partial/corrupt golden so a resume rebuilds it cleanly instead of
     // treating a half-written .sweet-search as a finished golden.

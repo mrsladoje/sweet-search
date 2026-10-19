@@ -69,7 +69,7 @@ for (const repo of REPOS) {
     console.log(`  Indexing...`);
     const indexer = path.join(ROOT, 'core', 'indexing', 'index-codebase-v21.js');
     execSync(
-      `SWEET_SEARCH_PROJECT_ROOT="${repoDir}" node "${indexer}" --full --sqlite-fast`,
+      `SWEET_SEARCH_PROJECT_ROOT="${repoDir}" SWEET_SEARCH_INDEX_DEVICE="${process.env.SWEET_SEARCH_INDEX_DEVICE || 'accelerator'}" node "${indexer}" --full --sqlite-fast`,
       { stdio: 'inherit', timeout: 600000 }
     );
     console.log(`  Indexed`);
