@@ -10,6 +10,9 @@ import os from 'node:os';
 import path from 'node:path';
 
 import {
+  renderGrepFileList,
+  renderGrepFileCounts,
+  renderGrepOnlyMatching,
   applyGrepFileDiversity,
   allocateGrepBudget,
   allocateGrepLinesSainteLague,
@@ -1115,5 +1118,21 @@ describe('generated prior: lockfiles, API dumps, blob hit lines; copies collapse
     ])).not.toContain('same matching lines');
     // line numbers only (dropText): equal numbers are no evidence of a copy
     expect(renderGrepListing(rows.slice(0, 4), { dropText: true })).toEqual(['docs/git.md', '52', '54', 'web/docs/git.md', '54', '56']);
+  });
+});
+
+describe('grep output modes (-l, -c, -o)', () => {
+  const files = [{ file: 'src/b.rs', total: 1 }, { file: 'a.go', total: 12 }, { file: 'tests/t.py', total: 2 }];
+  it('-l prints paths in the given order and counts the files cut by k', () => {
+    expect(renderGrepFileList(files, 2)).toEqual(['src/b.rs', 'a.go', '# +1 more file (raise -k)']);
+    expect(renderGrepFileList(files, 20, 5)).toEqual(['src/b.rs', 'a.go', 'tests/t.py', '# +2 more files (raise -k)']);
+  });
+  it('-c prints path:count', () => {
+    expect(renderGrepFileCounts(files, 20)).toEqual(['src/b.rs:1', 'a.go:12', 'tests/t.py:2']);
+  });
+  it('-o prints line:match per match, no heading for a lone typed file', () => {
+    const rows = [{ file: 'a.go', line: 3, ms: ['New', 'Default'] }, { file: 'a.go', line: 9, ms: [] }];
+    expect(renderGrepOnlyMatching(rows, (r) => r.ms)).toEqual(['a.go', '3:New', '3:Default']);
+    expect(renderGrepOnlyMatching(rows, (r) => r.ms, { typed: ['a.go'] })).toEqual(['3:New', '3:Default']);
   });
 });
