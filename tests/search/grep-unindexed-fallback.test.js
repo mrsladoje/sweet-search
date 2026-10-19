@@ -73,6 +73,20 @@ describe('applyUnindexedFallback', () => {
     expect(out.matches).toEqual([expect.objectContaining({ file: 'src/clean.go', line: 2 })]);
   });
 
+  it('greps a committed file still waiting in the reindex queue', async () => {
+    write(root, 'src/orders.java', 'class Orders { void listOpenOrders() {} }\n');
+    git(root, 'add', '-A');
+    git(root, 'commit', '-q', '-m', 'add orders');
+    write(root, '.sweet-search/index-maintainer-queue.jsonl',
+      `${JSON.stringify({ file_path: 'src/orders.java', source: 'requeue' })}\n`
+      + `${JSON.stringify({ file_path: 'src/deleted.java', source: 'scan' })}\n`
+      + `${JSON.stringify({ file_path: '../outside.java', source: 'scan' })}\n`
+      + 'not json\n');
+    const out = await run({ regex: 'listOpenOrders' });
+    expect(out.matches).toEqual([expect.objectContaining({ file: 'src/orders.java', line: 1 })]);
+    expect(out.stats).toMatchObject({ unindexedFallbackFiles: 1, unindexedFallbackMatches: 1 });
+  });
+
   it('never re-searches clean files', async () => {
     const out = await run({ regex: 'Clean' });
     expect(out.matches).toEqual([]);
