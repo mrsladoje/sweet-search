@@ -46,8 +46,11 @@ training and do not report nested-dimension training, so the truncation is a des
 study does not justify. A post hoc check compares it with 768-bit codes and with a random rotation before the sign (\S\ref{sec:codeablation}).
 
 \paragraph{Why engines are not arms.} The engines above add a server process, a storage layer, inter-process
-communication and their own threading. In a single-thread, in-process latency comparison they would measure that
-machinery more than the method. Lucene BBQ could be called in process through its Java API and is the closest
+communication and their own threading. Our own timed call is not free of such machinery either: it includes JavaScript
+orchestration and metadata reads, and its native calls are only \nm{postb-native-min}--\nm{postb-native-max}\% of our time in the
+main study and \nm{rep-native}\% (median) in the replication (\S\ref{sec:post}, \S\ref{sec:replication}), so our numbers are
+conservative for the method. Engines would add network or inter-process round trips on top, which is why we compare
+libraries. Lucene BBQ could be called in process through its Java API and is the closest
 production relative of our cascade; we did not include it, and its absence is a limitation of the comparison
 (\S\ref{sec:limits}).
 

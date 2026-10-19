@@ -98,8 +98,8 @@ rescored with the float32 cosine, so the code is the only difference. Table~\ref
 \nm{ca-cells} set--model cells whose held-out retained quality meets $\fr = 0.99$ by the selection rule's bound. With
 768-bit codes, \nm{ca-sign768-100} cells meet it at $C = 100$, against \nm{ca-sign512-100} with our 512-bit codes, and
 \nm{ca-sign768-400} against \nm{ca-sign512-400} at $C = 400$; the gain is largest for bge-base-en-v1.5 on the code sets and
-for FiQA. A rotation before the 512-bit cut does not help (\nm{ca-rot512-100} cells at $C = 100$), so the loss comes from
-the dropped dimensions, not from their order. A 768-bit code costs 50\% more code memory and Hamming work per
+for FiQA. The tested random rotation before the 512-bit cut does not recover that benefit (\nm{ca-rot512-100} cells at
+$C = 100$); keeping all dimensions does. One rotation does not rule out a learned one. A 768-bit code costs 50\% more code memory and Hamming work per
 candidate; we did not time it. These results support the small-budget losses of comparison (A) (\S\ref{sec:losses}) and
 point to the first change we would test in the product.
 

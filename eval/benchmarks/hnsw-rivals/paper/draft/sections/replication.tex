@@ -3,7 +3,9 @@
 The main study is exploratory (\S\ref{sec:protocol}, Appendix~\ref{app:deviations}). To test its speed pattern once, we
 ran a replication on two sets that no earlier step used, with a corrected harness and rules written before any
 replication data existed. The plan, \texttt{REPLICATION\_PLAN.md}, was committed at \texttt{6e4f9c42} (2026-10-19, 00:06
-CEST) together with the analysis scripts; two independent pre-run reviews were applied to it before the first timing run
+CEST) together with the analysis scripts and was on the public GitHub repository by 00:18 CEST, five hours before the
+first replication timing job (05:26 CEST); the plan was not filed with an external registry, so the commit and push
+times are the record; two independent pre-run reviews were applied to it before the first timing run
 (\texttt{804439f0}), and the git history records every change. The dev selections and held-out plans were frozen with
 file hashes in \texttt{REPFREEZE.json} before any held-out job of the CPU type ran (\texttt{74e8c4b5} for AMD,
 \texttt{4740606a} for Intel and Graviton). The held-out analysis (\texttt{rep\_analyze.py}) ran once, unchanged.
@@ -18,7 +20,9 @@ queries (7,433 passages), plus a seeded uniform sample (Fisher--Yates, seed 42, 
 document, embedded with bge-base-en-v1.5 (pinned revision); $k_v = 10$ on both sets. The plan applies the self-match rule
 of Quora to any query id that is also a corpus id. MS MARCO query and passage ids share one number range, so for 814 of
 the 6,980 queries the rule removed the passage whose id equals the query id, for every system and for exact search; none
-of these passages is relevant to its query, but the rule was meant for Quora and has no purpose here.
+of these passages is relevant to its query, but the rule was meant for Quora and has no purpose here. A post hoc check
+with the rule off changes no top-10 list of any frozen point (\nm{sm-top10} of the held-out lists), no exact-search
+quality, no dev selection or rival, and no test result.
 
 \paragraph{Systems.} Ours: the production cascade (scan up to 150k vectors, walk above, so the walk runs on both sets),
 production build, only at stage-1 sizes the product itself runs (no bench-only override). Rivals: every family of the
@@ -81,13 +85,14 @@ the geometric mean ratio over instances is \nm{rep-gm} (from \nm{rep-min} to \nm
 ratio is \nm{rep-p99}, so in the replication our tail is also shorter than the rival's. Our native calls take
 \nm{rep-native}\% of our timed query (median); the rest is JavaScript and metadata reads.
 
-\paragraph{The fault rule.} Every job that exceeded the fault limit was ours, on MS MARCO, where our memory-mapped files
-are largest: \nm{rep-reruns-w} timed jobs (and four native-clock jobs) ran again and passed on the rerun; \nm{rep-dropped-w}
+\paragraph{The fault rule.} The rule is the same for every system in form, but in practice it only ever reran or dropped
+our jobs: every job that exceeded the fault limit was ours, on MS MARCO, where our memory-mapped files are largest: \nm{rep-reruns-w} timed jobs (and four native-clock jobs) ran again and passed on the rerun; \nm{rep-dropped-w}
 block was dropped (\nm{rep-sens-cell}, block 3: \nm{rep-sens-f1} and then \nm{rep-sens-f2} major faults in our timed
 pass). With that block put back, the AMD MS MARCO ratio falls to \nm{rep-sens-ratio} and the one-sided $p$ rises to
 \nm{rep-sens-p}, which would not pass. So that one pass depends on the pre-registered rule, which treats a job whose
 index was read from disk during timing as invalid for every system alike. Its result describes a server whose index stays
-in the page cache; \S\ref{sec:losses} discusses the other case.
+in the page cache. On a developer's laptop, where other programs evict pages, that condition often does not hold;
+\S\ref{sec:losses} discusses that case.
 
 \begin{table}[t]\centering\scriptsize
 \caption{Replication, held-out, latency (pre-registered test). Inst.: instances; Blocks: blocks kept (2 per instance).
@@ -115,9 +120,10 @@ CPU & Set & Exact & Retained, ours & Retained, rival & Diff & Lower & Margin & $
 \end{table}
 
 \paragraph{Quality.} Table~\ref{tab:rep-q} separates three questions. \emph{Non-inferiority to the rival} (the
-pre-registered test) passes on MS MARCO on all three CPUs and fails on CQADupStack on all three: there the mean
-difference to the rival is between $-0.0010$ and $0.0000$ nDCG@10, but its lower bound falls just below the margin of
-0.0021. \emph{Retention against exact search} (descriptive): on MS MARCO our point keeps \nm{rep-share-ours-msm} of exact
+pre-registered test) passes on MS MARCO on all three CPUs and fails on CQADupStack on all three. There the mean
+difference to the rival is between $-0.0010$ and $0.0000$ nDCG@10. On Intel and Graviton the lower bound falls below the
+margin of $-0.0021$; on AMD it is just above it (one-sided $p = 0.021$, below 0.025), and the test fails only after the
+Holm correction over the six tests. \emph{Retention against exact search} (descriptive): on MS MARCO our point keeps \nm{rep-share-ours-msm} of exact
 quality, with a bound of \nm{rep-share-ours-msm-lo}, so it meets 99\% by the bound; on CQADupStack it keeps
 \nm{rep-share-ours-cqa} by the point estimate, with a bound of \nm{rep-share-ours-cqa-lo}, so it does not meet 99\% by the
 bound, and neither does any of the three rivals. \emph{The joint claim} (faster and not worse than the rival by more than

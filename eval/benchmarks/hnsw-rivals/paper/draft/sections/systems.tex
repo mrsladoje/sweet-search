@@ -21,7 +21,7 @@ other candidate changes gave no gain and were dropped. Result lists on ARM are b
 In comparison (B) the production entry point runs with $k = k_v$ results and one knob: the stage-1
 candidate count $S_1$, with the walk's starting effort $ef = \max(S_1, 50)$. The grid includes values of
 $S_1$ below the product's own floor for $k$, $\min(400, 1.5\max(40, 10k))$, which a bench-only setting
-allows: \nm{ours-below-floor} of our \nm{ret-ours-n} frozen points at $\fr = 0.99$ use such a value, so they
+allows: \nm{ours-below-floor} of our \nm{ret-ours-n} frozen points at $\fr = 0.99$ (counted per CPU, set and model) use such a value, so they
 are configurations the shipped product does not run. The shipped default ($S_1 = 400$) has no row of its
 own. It runs in Node.js through a native addon; the timer
 is inside the same process, around the call, which includes the product's orchestration and metadata
@@ -70,7 +70,7 @@ Comparison (A) asks which candidate generator works best when everything after g
 same. Each generator returns its top $C$ vector ids. One shared C++ path then (1) scores all $C$
 with the int8 dot product and keeps the best $H$ (stable sort; ties keep the generator order), and
 (2) rescores those $H$ with the full float16 vectors in float64 and orders them. $H = C$ is the arm
-without the int8 screen. The budget grid is declared: $C \in \{100, 200, 400, 1000\}$,
+without int8 filtering (the int8 scores are still computed and sorted). The budget grid is declared: $C \in \{100, 200, 400, 1000\}$,
 $H \in \{50, 100\}$ with $C \ge H$, plus $H = C$. Every generator runs at two efforts per budget: the
 smallest effort that returns $C$ candidates ($ef = C$ for graphs) or, for partitions,
 $\lceil 3\,C\,n_{\text{list}}/n\rceil$ lists (about three times $C$ vectors probed), and twice that. The

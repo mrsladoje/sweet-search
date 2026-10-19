@@ -3,14 +3,15 @@ Approximate nearest-neighbour indexes are usually compared at a recall target, b
 quality of the final ranking. We compare a binary cascade (512-bit sign codes, an HNSW walk or an exact scan, an int8
 screen and float16 rescoring) with indexes from FAISS, USearch, hnswlib, ScaNN, DiskANN and Intel SVS. Each system
 runs at the fastest configuration that keeps 99\% of the task quality of exact search, chosen on dev queries and
-frozen before any held-out run. An exploratory main study covers seven code and BEIR sets (7k to 1M vectors), three
-embedding models and five CPUs. It gives three findings. First, recall is a poor proxy for task quality: \nm{rec-dist-low}
-of our \nm{rec-dist-n} distinct operating points have recall@10 between \nm{rec-dist-min} and 0.9 and still keep 99\% of
-exact quality on held-out queries. Second, on the same
-512-bit codes at equal graph settings, our HNSW walk generates candidates \nm{post-eqb-min}--\nm{post-eqb-max} times
-faster than the binary HNSW of FAISS and USearch. Third, in a pre-registered replication on two untouched sets
-(CQADupStack, 457k documents; MS MARCO, 1M passages) on three cloud CPUs, the cascade was faster than the rival chosen on
-dev in all \nm{rep-n} tests (\nm{rep-min}--\nm{rep-max} times, Holm-corrected). Quality non-inferiority held on MS MARCO
-only. The cascade loses below about 20k vectors, uses more memory, builds slowly and is sensitive to page-cache
-eviction. We release the harness, the frozen configurations and every record.
+frozen before any held-out run. In a pre-registered replication on two untouched sets (CQADupStack, 457k documents;
+MS MARCO, 1M passages) on three cloud CPUs, the cascade was faster than the rival chosen on dev in all \nm{rep-n}
+tests (\nm{rep-min}--\nm{rep-max} times, Holm-corrected). One of the six passes depends on the pre-registered rule
+that drops blocks with heavy page faulting, a rule that in practice dropped only our jobs. Quality non-inferiority held on
+MS MARCO only. An exploratory main study (seven code and BEIR sets, 7k to 1M vectors, three models, five CPUs) adds
+two findings. On the same 512-bit codes at equal graph settings, our HNSW walk generates candidates
+\nm{post-eqb-min}--\nm{post-eqb-max} times faster than the binary HNSW of FAISS and USearch. On the code sets, operating
+points with recall@10 as low as \nm{recdoc-min} keep 99\% of exact quality; on the replication sets recall stays above
+0.9 at that quality but still misjudges it in both directions. The cascade loses below about 20k vectors, uses more
+memory, builds slowly and depends on its index staying in the page cache. We release the harness, the frozen
+configurations and every record.
 \end{abstract}
