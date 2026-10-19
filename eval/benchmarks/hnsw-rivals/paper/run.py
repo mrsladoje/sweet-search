@@ -189,7 +189,17 @@ for j in plan['jobs']:
     for k, v in (j.get('options', {}).get('env') or {}).items():  # post-freeze: bench-only switches (SS_FIX_*), part of the key
         assert k.startswith(('SS_FIX_', 'SS_HNSW_')), k
         env[k] = str(v)
+    perf = j.get('options', {}).get('perf')  # post hoc profile (dev only): 'stat' counters or a 'record' profile
+    if perf == 'stat':
+        cmd = ['perf', 'stat', '-x', ',', '-o', path + '.perf.csv', '-e', 'task-clock,cycles,instructions,branch-misses,cache-references,'
+               'cache-misses,L1-dcache-loads,L1-dcache-load-misses,LLC-load-misses,dTLB-load-misses', '--'] + cmd
+    elif perf == 'record':
+        cmd = ['perf', 'record', '-q', '-F', '1999', '-o', path + '.perf.data', '--'] + cmd
     r = subprocess.run(cmd, capture_output=True, text=True, env=env)
+    if perf == 'record' and os.path.exists(path + '.perf.data'):
+        rep = subprocess.run(['perf', 'report', '-i', path + '.perf.data', '--stdio', '--no-children', '--sort', 'dso,symbol',
+                              '--percent-limit', '0.5'], capture_output=True, text=True)
+        open(path + '.perf.txt', 'w').write(rep.stdout); os.remove(path + '.perf.data')
     # Replication validity rule (REPLICATION_PLAN.md, every system alike): more than FAULT_LIMIT major page faults
     # between loading and the end of the timed pass make the job invalid; it runs once more, and the record of the
     # second run stands whatever its count (both counts are kept in the record).

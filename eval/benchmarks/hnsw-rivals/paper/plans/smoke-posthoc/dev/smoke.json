@@ -1,0 +1,180 @@
+{
+"step": "smoke-posthoc",
+"builds": [],
+"jobs": [
+{
+"set": "cqadup",
+"model": "bge-base-en-v1.5",
+"split": "dev",
+"build_seed": 42,
+"kind": "timing",
+"pagecache": "warm",
+"comparison": "A",
+"C": 400,
+"round": 0,
+"H": 100,
+"system": "ours_walk",
+"gen": "walk",
+"ef": 400,
+"options": {
+"limit": 200,
+"stages": 1,
+"env": {
+"SS_HNSW_PRELOAD": "1"
+}
+}
+},
+{
+"set": "cqadup",
+"model": "bge-base-en-v1.5",
+"split": "dev",
+"build_seed": 42,
+"kind": "timing",
+"pagecache": "warm",
+"comparison": "A",
+"C": 400,
+"round": 0,
+"H": 400,
+"system": "ours_walk",
+"gen": "walk",
+"ef": 400,
+"options": {
+"limit": 200,
+"stages": 1,
+"env": {
+"SS_HNSW_PRELOAD": "1",
+"SS_FIX_NO_INT8": "1"
+}
+}
+},
+{
+"set": "cqadup",
+"model": "bge-base-en-v1.5",
+"split": "dev",
+"build_seed": 42,
+"kind": "timing",
+"pagecache": "warm",
+"comparison": "A",
+"C": 400,
+"round": 0,
+"H": 100,
+"system": "faiss_bin_hnsw",
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"search": {
+"ef": 400
+},
+"options": {
+"limit": 200,
+"stages": 1,
+"env": {
+"SS_FIX_SHARED_SIMD": "1"
+}
+}
+},
+{
+"set": "cqadup",
+"model": "bge-base-en-v1.5",
+"split": "dev",
+"build_seed": 42,
+"kind": "timing",
+"pagecache": "warm",
+"comparison": "A",
+"C": 400,
+"round": 0,
+"H": 400,
+"system": "faiss_bin_hnsw",
+"family": "faiss_bin_hnsw",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"search": {
+"ef": 400
+},
+"options": {
+"limit": 200,
+"stages": 1,
+"env": {
+"SS_FIX_SHARED_SIMD": "1",
+"SS_FIX_NO_INT8": "1"
+}
+}
+},
+{
+"set": "cqadup",
+"model": "bge-base-en-v1.5",
+"split": "dev",
+"build_seed": 42,
+"kind": "timing",
+"pagecache": "warm",
+"comparison": "A",
+"C": 400,
+"round": 0,
+"H": 100,
+"system": "faiss_bin_flat",
+"family": "faiss_bin_flat",
+"build_params": {},
+"search": {
+"use_heap": 0
+},
+"options": {
+"limit": 200,
+"stages": 1,
+"env": {
+"SS_FIX_SHARED_SIMD": "1"
+}
+}
+},
+{
+"set": "cqadup",
+"model": "bge-base-en-v1.5",
+"split": "dev",
+"build_seed": 42,
+"kind": "timing",
+"pagecache": "warm",
+"comparison": "B",
+"kv": 10,
+"round": 0,
+"system": "faiss_hnsw_sq8",
+"family": "faiss_hnsw_sq8",
+"build_params": {
+"M": 64,
+"efC": 800
+},
+"search": {
+"ef": 50,
+"refine": 2
+},
+"options": {
+"limit": 200,
+"env": {
+"SS_FIX_REFINE_F16": "1"
+}
+}
+},
+{
+"set": "cqadup",
+"model": "bge-base-en-v1.5",
+"split": "dev",
+"build_seed": 42,
+"kind": "timing",
+"pagecache": "warm",
+"comparison": "B",
+"kv": 10,
+"round": 0,
+"system": "ours_cascade",
+"S1": 200,
+"EF": 200,
+"options": {
+"limit": 200,
+"env": {
+"SS_HNSW_PRELOAD": "1"
+}
+}
+}
+]
+}
