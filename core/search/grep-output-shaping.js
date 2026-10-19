@@ -931,6 +931,61 @@ const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
  * show (more files than -k, or past the engine's file bound), with up to three of them by name.
  * Null when every matching file shows.
  */
+// --- grep's output modes: -l, -c, -o -------------------------------------------------------
+
+/** The `# +N more files (raise -k)` line under a -l or -c listing cut at k files, or null. */
+function moreFilesLine(more) {
+  return more > 0 ? `# +${more} more ${more === 1 ? 'file' : 'files'} (raise -k)` : null;
+}
+
+/**
+ * ss-grep -l: the files with a match, one path per line, in the order given (the caller passes
+ * the selector's file order), at most k; then the count of files not listed (of `fileCount`).
+ */
+export function renderGrepFileList(files, k, fileCount = files.length) {
+  const out = files.slice(0, k).map((f) => f.file);
+  const more = moreFilesLine(fileCount - out.length);
+  if (more) out.push(more);
+  return out;
+}
+
+/**
+ * ss-grep -c: `path:count` per file with a match (count = matching lines, as grep -c counts),
+ * in the order given (the caller passes path order), at most k; then the count of files not
+ * listed (of `fileCount`). Files without a match are left out (grep -r -c prints them as `path:0`).
+ */
+export function renderGrepFileCounts(files, k, fileCount = files.length) {
+  const out = files.slice(0, k).map((f) => `${f.file}:${f.total}`);
+  const more = moreFilesLine(fileCount - out.length);
+  if (more) out.push(more);
+  return out;
+}
+
+/**
+ * ss-grep -o: each file's path (the PATH RULE of renderGrepListing for a typed --in file),
+ * then `line:match` for every non-empty match on each hit line, in order. `matchesOf(row)` is
+ * the row's matches; a row with none prints nothing.
+ */
+export function renderGrepOnlyMatching(rows, matchesOf, { typed = [] } = {}) {
+  const groups = new Map();
+  for (const row of rows || []) {
+    if (!groups.has(row.file)) groups.set(row.file, []);
+    groups.get(row.file).push(row);
+  }
+  const typedSet = new Set(typed);
+  const files = [...groups.keys()];
+  const out = [];
+  for (const [file, hits] of groups) {
+    const body = [];
+    for (const row of hits) for (const m of matchesOf(row)) body.push(`${row.line}:${m}`);
+    if (body.length === 0) continue;
+    const head = !typedSet.has(file) ? file : (files.length > 1 ? typedPathLabel(file, files) : '');
+    if (head) out.push(head);
+    out.push(...body);
+  }
+  return out;
+}
+
 export function renderGrepHiddenFiles(hidden) {
   if (!hidden || !(hidden.files > 0)) return null;
   const sample = Array.isArray(hidden.sample) && hidden.sample.length ? `: ${hidden.sample.join(', ')}` : '';

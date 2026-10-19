@@ -57,6 +57,10 @@ pub(crate) fn grep(call: &Call, file_root: &str, ctx: &mut Ctx) -> R<Answer> {
     if a.regex.is_empty() {
         return Err("usage");
     }
+    if a.files_with_matches || a.count || a.only_matching {
+        out.push_str(&output_mode(call, &a, file_root, ctx)?);
+        return Ok(Answer { stdout: out.replace('\u{FEFF}', ""), receipt_regex: (!a.fixed).then(|| a.regex.clone()) });
+    }
     let with_context = a.before > 0 || a.after > 0;
     let typed = typed_files(&a.in_paths, file_root);
     let missing = missing_scopes(&a.in_paths, file_root);
@@ -184,6 +188,78 @@ pub(crate) fn grep(call: &Call, file_root: &str, ctx: &mut Ctx) -> R<Answer> {
         return Err("zero shown");
     }
     Ok(Answer { stdout: out.replace('\u{FEFF}', ""), receipt_regex })
+}
+
+// -l and -c list at most this many files from the engine before the k cut (all of them).
+const GREP_FILE_MODE_MAX_FILES: usize = 100_000;
+
+/// grep's output modes: -l (files, selector order), -c (path:count, path order), -o (every match
+/// on the first k hit lines, path order). No context, no enrichment.
+// Mirrors: eval/agent-read-workflows/bin/_ss-helpers.mjs:cmdGrep (the -l / -c / -o block)
+fn output_mode(call: &Call, a: &adapt::Args, file_root: &str, ctx: &mut Ctx) -> R<String> {
+    if missing_scopes(&a.in_paths, file_root) {
+        return Err("missing scope");
+    }
+    let (file_filter, is_cwd_scope) = if !a.in_paths.is_empty() {
+        (Some(a.in_paths.clone()), false)
+    } else {
+        match adapt::cwd_grep_scope(&call.cwd, file_root, file_root)? {
+            Some(s) => (Some(vec![s]), true),
+            None => (None, false),
+        }
+    };
+    let file_mode = a.files_with_matches || a.count;
+    let bare = baregrep::bare_grep(ctx, &GrepOptions {
+        regex: a.regex.clone(),
+        max_matches: if file_mode { 0 } else { a.k },
+        per_file_cap: if file_mode { 1 } else { 0 },
+        max_files: if file_mode { GREP_FILE_MODE_MAX_FILES } else { 0 },
+        sat2: file_mode,
+        line_classes: false,
+        agent: false,
+        sibling_line: false,
+        file_filter,
+        cwd_scope: is_cwd_scope,
+        path_globs: a.globs.clone(),
+    })?;
+    let lines = if file_mode {
+        let summary = bare.summary.ok_or("no file summary")?;
+        let file_count = summary.files.len() + summary.hidden_file_count as usize;
+        if a.files_with_matches {
+            ss_grep_core::render::render_grep_file_list(&summary.files, a.k, file_count)
+        } else {
+            // [...files].sort((a, b) => a.file.localeCompare(b.file)) (stable, as V8's sort)
+            let mut files = summary.files.clone();
+            let mut failed = false;
+            files.sort_by(|x, y| {
+                adapt::locale_compare(&x.file, &y.file).unwrap_or_else(|| {
+                    failed = true;
+                    std::cmp::Ordering::Equal
+                })
+            });
+            if failed {
+                return Err("collation");
+            }
+            ss_grep_core::render::render_grep_file_counts(&files, a.k, file_count)
+        }
+    } else {
+        // grepOnlyMatchingTexts: the addon's grepOnlyMatching on each hit line.
+        let re = crate::native_grep::build_regex(&a.regex, adapt::has_ci_flag(&a.regex)).map_err(|_| "regex")?;
+        let rows: Vec<(String, u32, Vec<String>)> =
+            bare.rows.iter().map(|r| (r.file.clone(), r.line, crate::native_grep::only_matching(&re, &r.content))).collect();
+        let mut lines = ss_grep_core::render::render_grep_only_matching(&rows, &typed_files(&a.in_paths, file_root));
+        let cut = bare.total as i64 - bare.rows.len() as i64;
+        if cut > 0 {
+            lines.push(format!("# +{cut} more {} (raise -k)", if cut == 1 { "hit" } else { "hits" }));
+        }
+        lines
+    };
+    let mut out = String::new();
+    for l in lines {
+        out.push_str(&l);
+        out.push('\n');
+    }
+    Ok(out)
 }
 
 /// outsideScopeLine: the probe, else the exact unscoped search (files by weight, one hit kept

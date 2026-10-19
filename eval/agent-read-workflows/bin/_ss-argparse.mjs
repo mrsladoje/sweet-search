@@ -52,6 +52,82 @@ export function buildGrepPattern(pattern, { ignoreCase = false, wordBound = fals
   return p;
 }
 
+// grep without -E reads its pattern as a basic regex (BRE): `\|` `\(` `\)` `\{` `\}` `\+` `\?`
+// are operators and the bare `( ) { } + ?` are literal text. ss-grep patterns are extended
+// (Rust) regex, where `\|` is a literal pipe. Agents type `grep "def foo\|class Bar"` in a
+// third of their file searches, so a pattern that holds a `\|` and no bare `|` is read as
+// grep reads it: translated once, here, before the search. Each BRE operator loses its
+// backslash, each bare `( ) { } + ?` gains one, and a `*` that opens a branch (BRE: literal)
+// is escaped. Bracket expressions are copied unchanged. null = not BRE-shaped (no `\|`, a
+// bare `|`, an unclosed `[`, a trailing backslash): the pattern is used as typed.
+const BRE_OPERATOR_ESCAPES = '|(){}+?';
+const BRE_LITERAL_BARE = '(){}+?';
+export function translateBreAlternation(pattern) {
+  if (typeof pattern !== 'string' || !pattern.includes('\\|')) return null;
+  let out = '';
+  let alternation = false;
+  let branchStart = true; // at the start of the pattern, or right after `\(` / `\|` (or a leading `^`)
+  for (let i = 0; i < pattern.length; i++) {
+    const ch = pattern[i];
+    if (ch === '[') {
+      let j = i + 1;
+      if (pattern[j] === '^') j++;
+      if (pattern[j] === ']') j++;
+      while (j < pattern.length && pattern[j] !== ']') {
+        if (pattern[j] === '[' && (pattern[j + 1] === ':' || pattern[j + 1] === '.' || pattern[j + 1] === '=')) {
+          const close = pattern.indexOf(`${pattern[j + 1]}]`, j + 2);
+          if (close === -1) return null;
+          j = close + 2;
+          continue;
+        }
+        j++;
+      }
+      if (j >= pattern.length) return null;
+      out += pattern.slice(i, j + 1);
+      i = j;
+      branchStart = false;
+      continue;
+    }
+    if (ch === '\\') {
+      const next = pattern[i + 1];
+      if (next === undefined) return null;
+      i++;
+      if (BRE_OPERATOR_ESCAPES.includes(next)) {
+        out += next;
+        if (next === '|') alternation = true;
+        branchStart = next === '|' || next === '(';
+      } else {
+        out += ch + next;
+        branchStart = false;
+      }
+      continue;
+    }
+    if (ch === '|') return null;
+    if (BRE_LITERAL_BARE.includes(ch) || (ch === '*' && branchStart)) {
+      out += `\\${ch}`;
+      branchStart = false;
+      continue;
+    }
+    out += ch;
+    branchStart = branchStart && ch === '^';
+  }
+  return alternation ? out : null;
+}
+
+// grep options agents use in under 0.5% of their file searches. ss-grep answers from its index
+// and does not implement them; the first one before `--` is named in the usage error.
+const GREP_UNSUPPORTED = new Map([
+  ['-v', 'invert match'], ['--invert-match', 'invert match'], ['-h', 'no file names'], ['-P', 'Perl regex'],
+  ['--perl-regexp', 'Perl regex'], ['-m', 'max count'], ['--max-count', 'max count'], ['-a', 'binary as text'],
+  ['--text', 'binary as text'], ['-q', 'quiet'], ['--quiet', 'quiet'], ['--silent', 'quiet'],
+  ['-L', 'files without match'], ['--files-without-match', 'files without match'],
+]);
+export function unsupportedGrepOption(args) {
+  const sep = args.indexOf('--');
+  const flag = (sep === -1 ? args : args.slice(0, sep)).find((a) => GREP_UNSUPPORTED.has(a));
+  return flag ? { flag, what: GREP_UNSUPPORTED.get(flag) } : null;
+}
+
 // --- inert flags (always true for ss-*, safe to accept as no-ops) ------------
 // These never change which lines match: we always print file:line, always
 // search the whole index, never colourise. Stripping them lets reflexive grep
@@ -78,6 +154,9 @@ export function stripInertFlags(args) {
 export const VALUE_SHORTS = new Set(['k', 'A', 'B', 'C']);
 const CONTEXT_SHORTS = new Set(['A', 'B', 'C']);
 export const BOOL_SHORTS = new Set(['i', 'w', 'F']);
+// ss-grep also splits bundles of grep's output-mode flags and of the inert -r/-R/-n/-H
+// (`-rn`, `-rl`, `-rnE`, `-lc`), as grep's getopt does. Other ss-* tools keep BOOL_SHORTS.
+export const GREP_BOOL_SHORTS = new Set([...BOOL_SHORTS, 'l', 'c', 'o', 'E', 'r', 'R', 'n', 'H']);
 export const VALUE_LONGS = new Set([
   '--top', '--regex', '--mode', '--max-tokens',
   '--in', '--file', '--query', '--hint', '--depth', '--budget',
@@ -85,7 +164,7 @@ export const VALUE_LONGS = new Set([
   '--glob', '--include', '--exclude', '--exclude-dir',
 ]);
 
-export function normalizeArgs(args) {
+export function normalizeArgs(args, { boolShorts = BOOL_SHORTS } = {}) {
   const out = [];
   let positionalOnly = false;
   for (const tok of args) {
@@ -108,13 +187,13 @@ export function normalizeArgs(args) {
         if (!CONTEXT_SHORTS.has(first) || /^\d+$/.test(m[2])) { out.push('-' + first, m[2]); continue; }
         out.push(tok); continue;
       }
-      if (BOOL_SHORTS.has(first)) {
+      if (boolShorts.has(first)) {
         const chars = tok.slice(1);
         const expanded = [];
         let i = 0, ok = true;
         while (i < chars.length) {
           const ch = chars[i];
-          if (BOOL_SHORTS.has(ch)) { expanded.push('-' + ch); i++; }
+          if (boolShorts.has(ch)) { expanded.push('-' + ch); i++; }
           else if (VALUE_SHORTS.has(ch)) {                 // value short ends the bundle
             const val = chars.slice(i + 1);
             if (CONTEXT_SHORTS.has(ch) && val && !/^\d+$/.test(val)) { ok = false; break; }
