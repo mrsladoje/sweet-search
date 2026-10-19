@@ -25,7 +25,7 @@ import {
   resetLocalModelRuntime,
 } from '../embedding/embedding-local-model.js';
 import { isNativeInferenceAvailable } from '../infrastructure/native-inference.js';
-import { teardownAllModels, initIndexGpuPool, teardownIndexGpuPool, warmupQueryCpuModels, GPU_ARMING_MIN_FILES, isIndexAcceleratorAvailable } from './model-pool.js';
+import { teardownAllModels, initIndexGpuPool, teardownIndexGpuPool, warmupQueryCpuModels, GPU_ARMING_MIN_FILES, isIndexAcceleratorAvailable, hasIndexAcceleratorHardware, ensureIndexDeviceChoice } from './model-pool.js';
 import {
   configureLateInteractionRuntime,
   resetLateInteractionRuntime,
@@ -489,6 +489,32 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
   // a real accelerator) we lift the gate and let the pool run alongside
   // parallel LI. On a no-accelerator host LI is also on ORT CPU, so the gate
   // stays in force and pool + parallel LI take turns rather than contend.
+  // ── Index device: accelerator or ORT INT8 CPU, by a measured speed test ──
+  //
+  // Must run before the pool / parallel-LI decisions below: they read
+  // isIndexAcceleratorAvailable(), which honours this choice. The test runs
+  // once per machine + setup (cached), and only on a run that would arm the
+  // accelerator anyway (see index-device-choice.js).
+  if (!dryRun && filesToIndex.length > 0 && EMBEDDING_CONFIG.provider === 'local') {
+    const wouldArmAccelerator = hasIndexAcceleratorHardware()
+      && (fullReindex || filesToIndex.length >= GPU_ARMING_MIN_FILES);
+    const deviceChoice = await ensureIndexDeviceChoice({
+      allowMeasure: wouldArmAccelerator,
+      includeLi: !noLateInteraction,
+      embeddingThreads,
+      lateInteractionThreads,
+    });
+    if (deviceChoice.source === 'measured') {
+      log(
+        `Index device speed test (${deviceChoice.chunks} chunks): ORT CPU ${deviceChoice.cpuMs}ms, `
+        + `accelerator ${deviceChoice.acceleratorMs}ms → ${deviceChoice.device}`,
+        'dim',
+      );
+    } else if (deviceChoice.source === 'measure-failed') {
+      log(`Index device speed test failed (${deviceChoice.error}) — keeping the accelerator`, 'yellow');
+    }
+  }
+
   const forceEmbedCpu = process.env.SWEET_SEARCH_EMBED_USE_CPU === '1';
   const indexTimeEmbedIsCpu = !isNativeInferenceAvailable()
     || !isIndexAcceleratorAvailable()
@@ -598,7 +624,12 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
   } else if (!dryRun && filesToIndex.length > 0 && filesToIndex.length < GPU_ARMING_MIN_FILES) {
     log(`Small changeset (${filesToIndex.length} < ${GPU_ARMING_MIN_FILES} files) — using ORT CPU`, 'dim');
   } else if (!dryRun && filesToIndex.length > 0 && !isIndexAcceleratorAvailable()) {
-    log('No inference accelerator detected — indexing on ORT INT8 CPU', 'dim');
+    log(
+      hasIndexAcceleratorHardware()
+        ? 'ORT INT8 CPU is faster than the accelerator on this machine — indexing on ORT INT8 CPU'
+        : 'No inference accelerator detected — indexing on ORT INT8 CPU',
+      'dim',
+    );
   }
 
   try {

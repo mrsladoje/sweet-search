@@ -28,16 +28,28 @@ import {
 import {
   getLocalPipeline,
   callLocalModelCpu,
+  callLocalModelGpu,
   unloadLocalModel,
   configureLocalModelRuntime,
+  isBackgroundOrtProfile,
 } from '../embedding/embedding-local-model.js';
 import {
   getLateInteractionPipeline,
   encodeDocumentsCpu,
+  encodeDocumentsGpu,
   unloadLateInteractionModel,
   configureLateInteractionRuntime,
 } from '../ranking/late-interaction-model.js';
 import { backgroundIntraOpThreads } from '../infrastructure/onnx-session-utils.js';
+import { LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
+import {
+  buildProbeTexts,
+  decideIndexDevice,
+  indexDeviceCacheKey,
+  indexDeviceOverride,
+  readIndexDeviceChoice,
+  writeIndexDeviceChoice,
+} from './index-device-choice.js';
 
 /**
  * Small-changeset threshold. Incremental runs with fewer files than this use
@@ -96,18 +108,152 @@ export function armBackgroundOrtProfiles() {
 }
 
 /**
- * Whether this process can use an inference accelerator (Metal / CoreML
- * cascade / CUDA) for indexing. Requires both accelerator-capable hardware
- * and a loadable/enabled native addon. When false, indexing stays on the
- * optimized ORT INT8 CPU path and the GPU arm → teardown → CPU-rewarm
- * lifecycle is skipped entirely. Reads the cached hardware-capability
- * snapshot, so it's cheap to call repeatedly.
+ * Whether this host has an inference accelerator (Metal / CoreML cascade /
+ * CUDA) and a loadable native addon. Hardware only — it ignores the
+ * index-device speed test. Reads the cached hardware-capability snapshot.
  */
-export function isIndexAcceleratorAvailable() {
+export function hasIndexAcceleratorHardware() {
   if (!isNativeInferenceAvailable()) return false;
   return selectAcceleratorDeviceKind(
     detectHardwareCapability().inferenceBackendPreference,
   ) !== null;
+}
+
+// 'cpu' | 'accelerator' | null — set by ensureIndexDeviceChoice() for this
+// process. null = no choice made yet → the accelerator (if any) is used.
+let _indexDeviceChoice = null;
+
+/**
+ * Whether this process should index on the accelerator. False when there is
+ * no accelerator, OR when SWEET_SEARCH_INDEX_DEVICE=cpu, OR when the speed
+ * test (ensureIndexDeviceChoice) found ORT INT8 CPU clearly faster. When
+ * false, indexing stays on the optimized ORT INT8 CPU path and the GPU arm →
+ * teardown → CPU-rewarm lifecycle is skipped entirely.
+ */
+export function isIndexAcceleratorAvailable() {
+  if (!hasIndexAcceleratorHardware()) return false;
+  const override = indexDeviceOverride();
+  if (override) return override === 'accelerator';
+  return _indexDeviceChoice !== 'cpu';
+}
+
+/** Test hook: forget this process's index-device choice. */
+export function _resetIndexDeviceChoice() {
+  _indexDeviceChoice = null;
+}
+
+async function timeEncodes({ embed, encodeLi, texts, batchSize }) {
+  // Warm up on a full batch first: Metal compiles pipelines per shape and ORT
+  // grows its arena on the first run; neither belongs in the timing.
+  const warm = texts.slice(0, batchSize);
+  await embed(warm);
+  if (encodeLi) await encodeLi(warm);
+  const t0 = performance.now();
+  for (let i = 0; i < texts.length; i += batchSize) {
+    const batch = texts.slice(i, i + batchSize);
+    await embed(batch);
+    if (encodeLi) await encodeLi(batch);
+  }
+  return performance.now() - t0;
+}
+
+/**
+ * Time the same chunks on ORT INT8 CPU and on the accelerator, one device at
+ * a time (CPU and GPU models never coexist), and unload everything after.
+ * The CPU side uses the indexer's own thread plan but runs inline, while the
+ * real CPU index can use a worker pool — so the test leans to the
+ * accelerator, which is the side we keep on a tie anyway.
+ */
+export async function measureIndexDevices({
+  includeLi = true,
+  embeddingThreads,
+  lateInteractionThreads,
+  texts = buildProbeTexts(32),
+  batchSize = 16,
+} = {}) {
+  await teardownAllModels();
+  if (embeddingThreads) configureLocalModelRuntime({ intraOpThreads: embeddingThreads });
+  if (lateInteractionThreads) configureLateInteractionRuntime({ intraOpThreads: lateInteractionThreads });
+  try {
+    const cpuMs = await timeEncodes({
+      embed: callLocalModelCpu,
+      encodeLi: includeLi ? encodeDocumentsCpu : null,
+      texts,
+      batchSize,
+    });
+    await teardownAllModels();
+    await initIndexGpuPool({ includeLi });
+    const acceleratorMs = await timeEncodes({
+      embed: callLocalModelGpu,
+      encodeLi: includeLi ? encodeDocumentsGpu : null,
+      texts,
+      batchSize,
+    });
+    return { cpuMs, acceleratorMs, chunks: texts.length };
+  } finally {
+    await teardownAllModels();
+  }
+}
+
+/**
+ * Decide, once per machine + setup, whether indexing runs on the accelerator
+ * or on ORT INT8 CPU, and apply the choice to this process. Order: no
+ * accelerator → cpu; SWEET_SEARCH_INDEX_DEVICE override; cached result;
+ * otherwise measure (only when `allowMeasure` — the caller passes true only
+ * when it would arm the accelerator anyway, so small incremental runs never
+ * pay for the test). A failed test keeps the accelerator and is not cached.
+ *
+ * @returns {Promise<{device: 'cpu'|'accelerator', source: string, cpuMs?: number, acceleratorMs?: number}>}
+ */
+export async function ensureIndexDeviceChoice({
+  allowMeasure = false,
+  includeLi = true,
+  embeddingThreads,
+  lateInteractionThreads,
+  measure = measureIndexDevices,
+  cacheDir,
+} = {}) {
+  if (!hasIndexAcceleratorHardware()) {
+    _indexDeviceChoice = null;
+    return { device: 'cpu', source: 'no-accelerator' };
+  }
+  const override = indexDeviceOverride();
+  if (override) {
+    _indexDeviceChoice = override;
+    return { device: override, source: 'env' };
+  }
+  const key = indexDeviceCacheKey({
+    hw: detectHardwareCapability(),
+    liModel: LATE_INTERACTION_CONFIG.model,
+    includeLi,
+    backgroundProfile: isBackgroundOrtProfile(),
+  });
+  const cached = readIndexDeviceChoice(key, { cacheDir });
+  if (cached) {
+    _indexDeviceChoice = cached.device;
+    return { ...cached, source: 'cached' };
+  }
+  if (!allowMeasure) {
+    _indexDeviceChoice = null;
+    return { device: 'accelerator', source: 'default' };
+  }
+  try {
+    const { cpuMs, acceleratorMs, chunks } = await measure({ includeLi, embeddingThreads, lateInteractionThreads });
+    const device = decideIndexDevice({ cpuMs, acceleratorMs });
+    const entry = {
+      device,
+      cpuMs: Math.round(cpuMs),
+      acceleratorMs: Math.round(acceleratorMs),
+      chunks,
+      measuredAt: new Date().toISOString(),
+    };
+    writeIndexDeviceChoice(key, entry, { cacheDir });
+    _indexDeviceChoice = device;
+    return { ...entry, source: 'measured' };
+  } catch (err) {
+    _indexDeviceChoice = null;
+    return { device: 'accelerator', source: 'measure-failed', error: err?.message ?? String(err) };
+  }
 }
 
 let _gpuDiag = null;
