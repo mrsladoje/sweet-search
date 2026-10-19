@@ -12,6 +12,10 @@
 // belong to the runner, which never stops a held-out job list early.
 #include "adapter.h"
 #include "shared_rescore.h"
+#if __has_include(<faiss/impl/HNSW.h>)  // the FAISS binary links libfaiss; rivals5-ext (DiskANN, SVS) does not
+#include <faiss/impl/HNSW.h>
+#define PAPER_HNSW_STATS 1
+#endif
 #include <chrono>
 #include <cstdio>
 #include <fcntl.h>
@@ -267,6 +271,9 @@ static int cmd_query() {
     };
     if (!cold) { auto w = perm(warm.size(), 7); for (size_t i = 0; i < std::min<size_t>(500, warm.size()); i++) one(warm[w[i]]); }
     auto mem_timed = memory();  // replication: page faults of the timed pass alone = after - timed
+#ifdef PAPER_HNSW_STATS
+    faiss::hnsw_stats.reset();  // post hoc: FAISS HNSW distance computations of the timed pass
+#endif
     std::vector<int32_t> lv(nq * L, -1); std::vector<float> ls(nq * L, NAN); std::vector<int64_t> tns(nq, -1);
     std::vector<int64_t> sconv(stages ? nq : 0, -1), sgen(stages ? nq : 0, -1), srest(stages ? nq : 0, -1);
     size_t shortl = 0; int64_t first = -1;
@@ -299,7 +306,11 @@ static int cmd_query() {
       << ",\"timings_ns\":" << tj << stj << ",\"first_query_ns\":" << first << ",\"lists_sha256\":" << jstr(lsha) << ",\"short_lists\":" << shortl
       << ",\"memory\":{\"loaded\":" << jmap(mem_loaded) << ",\"timed\":" << jmap(mem_timed) << ",\"after\":" << jmap(mem_after) << "},\"keeps_originals\":" << (need_x ? "true" : "false")
       << ",\"load_s\":" << load_s << ",\"process_s\":" << std::chrono::duration<double>(clk::now() - tproc).count()
-      << ",\"info\":" << jmap(ad->info()) << "}\n";
+      << ",\"info\":" << jmap(ad->info())
+#ifdef PAPER_HNSW_STATS
+      << ",\"hnsw_stats\":{\"ndis\":" << faiss::hnsw_stats.ndis << ",\"nhops\":" << faiss::hnsw_stats.nhops << ",\"n1\":" << faiss::hnsw_stats.n1 << "}"
+#endif
+      << "}\n";
     o.close(); rename((stem + ".json.tmp").c_str(), (stem + ".json").c_str());
     std::vector<int64_t> st(tns); std::sort(st.begin(), st.end());
     printf("%s %s %s/%s/%s r%d nq=%zu short=%zu", fam.c_str(), comp.c_str(), set.c_str(), model.c_str(), split.c_str(), round, nq, shortl);

@@ -78,7 +78,8 @@ const idOf = new Map(vkeys.map((k, i) => [k, i]));
 const params = {};
 let L, searchOne;
 const dump = !!o.dump, dumpRows = [];
-const stages = !!o.stages, lastStage = [0, 0, 0, 0];  // post-freeze: per-query stage times in comparison A
+const stages = !!o.stages, lastStage = [0, 0, 0, 0];
+let lastVisited = 0, visitedSum = 0;  // post hoc: nodes whose distance the walk computed (comparison A)  // post-freeze: per-query stage times in comparison A
 let timedPass = false, curRow = -1;
 const inject = r => {
   const float = QF.slice(r * D, (r + 1) * D);
@@ -99,6 +100,7 @@ if (mode === 'A') {
     const c1 = stages ? process.hrtime.bigint() : 0n;
     const fused = idx.searchCascade(qcode, C, { queryFloat: float });
     if (!fused) throw new Error('native cascade unavailable');
+    lastVisited = fused.visitedNodes;
     const c2 = stages ? process.hrtime.bigint() : 0n;
     const st = fused.int8Stage(fused.count);
     const c3 = stages ? process.hrtime.bigint() : 0n;
@@ -196,6 +198,7 @@ for (const qi of order) {
   const ns = Number(process.hrtime.bigint() - s);
   timings[qi] = ns; if (firstNs === null) firstNs = ns; if (native) native[qi] = nativeNs;
   if (stageNs) for (let k = 0; k < 4; k++) stageNs[k][qi] = lastStage[k];
+  visitedSum += lastVisited;
   if (n < L) short++;
   if (testSleep) Atomics.wait(sleepCell, 0, 0, testSleep);  // test_harness.sh only: a job slow enough to kill mid-run
   for (let j = 0; j < L; j++) { lv[qi * L + j] = ids[j]; ls[qi * L + j] = scores[j]; }
@@ -214,6 +217,7 @@ const rec = {
   params, L, n_queries: nq, order_seed: 42 + round, warmup: o.cold ? 0 : Math.min(500, warm.length), cold: !!o.cold,
   timings_ns: timings, native_ns: native, first_query_ns: firstNs,
   ...(stageNs ? { stage_ns: { conv: stageNs[0], gen: stageNs[1], screen: stageNs[2], rescore: stageNs[3] } } : {}),
+  ...(mode === 'A' ? { visited_per_query: visitedSum / qrows.length } : {}),
   env_switches: Object.fromEntries(Object.entries(process.env).filter(([k]) => k.startsWith('SS_FIX_') || k.startsWith('SS_HNSW_'))),
   lists_sha256: sha(lists), short_lists: short,
   memory: { loaded: memLoaded, timed: memTimed, after: memAfter }, load_s: loadS, process_s: (performance.now() - t0) / 1000,
