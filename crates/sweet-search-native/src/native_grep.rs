@@ -245,6 +245,22 @@ impl FileContent {
 /// pathological regex compilation that could block the event loop.
 /// Bumped DFA size limits to match ripgrep's configuration — larger lazy DFA
 /// cache keeps states warm across files on each rayon thread.
+/// ss-grep -o: every non-empty match of `regex` in each text (the stored hit lines), in order.
+/// The JS tool calls it through the addon and the grep lane calls `only_matching` directly, so
+/// both print the same matches.
+#[napi]
+pub fn grep_only_matching(regex: String, texts: Vec<String>) -> Result<Vec<Vec<String>>> {
+    let re = build_regex(&regex, ss_grep_core::args::has_case_insensitive_regex_flag(&regex))?;
+    Ok(texts.iter().map(|t| only_matching(&re, t)).collect())
+}
+
+pub(crate) fn only_matching(re: &regex::bytes::Regex, text: &str) -> Vec<String> {
+    re.find_iter(text.as_bytes())
+        .filter(|m| !m.as_bytes().is_empty())
+        .map(|m| String::from_utf8_lossy(m.as_bytes()).into_owned())
+        .collect()
+}
+
 pub(crate) fn build_regex(pattern: &str, case_insensitive: bool) -> Result<regex::bytes::Regex> {
     // One ss-grep call compiles its pattern several times (gram search, residual paths, the
     // retries), and a `\w` pattern compiles the whole Unicode word class (~1 ms). A Regex is

@@ -114,6 +114,95 @@ pub fn build_grep_pattern(pattern: Option<&str>, ignore_case: bool, word_bound: 
     Some(p)
 }
 
+/// A pattern with a basic-regex alternation `\|` and no bare `|`, read as grep reads it: each
+/// BRE operator (`\|` `\(` `\)` `\{` `\}` `\+` `\?`) loses its backslash, each bare
+/// `( ) { } + ?` gains one, a `*` that opens a branch is escaped, bracket expressions are
+/// copied. None = not BRE-shaped (no `\|`, a bare `|`, an unclosed `[`, a trailing `\`).
+// Mirrors: eval/agent-read-workflows/bin/_ss-argparse.mjs:translateBreAlternation
+pub fn translate_bre_alternation(pattern: &str) -> Option<String> {
+    if !pattern.contains("\\|") {
+        return None;
+    }
+    // JS indexes UTF-16 units; every character the scan acts on is ASCII, so chars agree.
+    let p: Vec<char> = pattern.chars().collect();
+    let mut out = String::with_capacity(pattern.len() + 8);
+    let mut alternation = false;
+    let mut branch_start = true;
+    let mut i = 0;
+    while i < p.len() {
+        let ch = p[i];
+        if ch == '[' {
+            let mut j = i + 1;
+            if p.get(j) == Some(&'^') {
+                j += 1;
+            }
+            if p.get(j) == Some(&']') {
+                j += 1;
+            }
+            while j < p.len() && p[j] != ']' {
+                if p[j] == '[' && matches!(p.get(j + 1), Some(':') | Some('.') | Some('=')) {
+                    let kind = p[j + 1];
+                    // pattern.indexOf(`${kind}]`, j + 2)
+                    let mut close = None;
+                    let mut q = j + 2;
+                    while q + 1 < p.len() {
+                        if p[q] == kind && p[q + 1] == ']' {
+                            close = Some(q);
+                            break;
+                        }
+                        q += 1;
+                    }
+                    match close {
+                        None => return None,
+                        Some(c) => {
+                            j = c + 2;
+                            continue;
+                        }
+                    }
+                }
+                j += 1;
+            }
+            if j >= p.len() {
+                return None;
+            }
+            out.extend(&p[i..=j]);
+            i = j + 1;
+            branch_start = false;
+            continue;
+        }
+        if ch == '\\' {
+            let next = *p.get(i + 1)?;
+            i += 2;
+            if "|(){}+?".contains(next) {
+                out.push(next);
+                if next == '|' {
+                    alternation = true;
+                }
+                branch_start = next == '|' || next == '(';
+            } else {
+                out.push(ch);
+                out.push(next);
+                branch_start = false;
+            }
+            continue;
+        }
+        if ch == '|' {
+            return None;
+        }
+        if "(){}+?".contains(ch) || (ch == '*' && branch_start) {
+            out.push('\\');
+            out.push(ch);
+            branch_start = false;
+            i += 1;
+            continue;
+        }
+        out.push(ch);
+        branch_start = branch_start && ch == '^';
+        i += 1;
+    }
+    alternation.then_some(out)
+}
+
 const INERT_FLAGS: [&str; 10] = [
     "-n", "--line-number", "-H", "--with-filename", "--no-filename", "-r", "-R", "--recursive", "--color", "--colour",
 ];
@@ -133,6 +222,8 @@ pub fn strip_inert_flags(args: &mut Vec<String>) {
 const VALUE_SHORTS: [char; 4] = ['k', 'A', 'B', 'C'];
 const CONTEXT_SHORTS: [char; 3] = ['A', 'B', 'C'];
 const BOOL_SHORTS: [char; 3] = ['i', 'w', 'F'];
+/// ss-grep also splits bundles of grep's output-mode flags and of the inert -r/-R/-n/-H.
+pub const GREP_BOOL_SHORTS: [char; 11] = ['i', 'w', 'F', 'l', 'c', 'o', 'E', 'r', 'R', 'n', 'H'];
 const VALUE_LONGS: &[&str] = &[
     "--top", "--regex", "--mode", "--max-tokens", "--in", "--file", "--query", "--hint", "--depth", "--budget",
     "--after-context", "--before-context", "--context", "--glob", "--include", "--exclude", "--exclude-dir",
@@ -162,6 +253,12 @@ fn split_long_eq(tok: &str) -> Option<(&str, &str)> {
 /// bundles `-iw`, `-iwk5`.
 // Mirrors: eval/agent-read-workflows/bin/_ss-argparse.mjs:normalizeArgs
 pub fn normalize_args(args: &[String]) -> Vec<String> {
+    normalize_args_with(args, &BOOL_SHORTS)
+}
+
+/// normalizeArgs(args, { boolShorts }).
+// Mirrors: eval/agent-read-workflows/bin/_ss-argparse.mjs:normalizeArgs
+pub fn normalize_args_with(args: &[String], bool_shorts: &[char]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut positional_only = false;
     for tok in args {
@@ -195,14 +292,14 @@ pub fn normalize_args(args: &[String]) -> Vec<String> {
                 out.push(tok.clone());
                 continue;
             }
-            if BOOL_SHORTS.contains(&first) {
+            if bool_shorts.contains(&first) {
                 let chars = &tok[1..];
                 let mut expanded: Vec<String> = Vec::new();
                 let mut ok = true;
                 let mut i = 0usize; // byte index; every char consumed before `val` is ASCII
                 while i < chars.len() {
                     let ch = chars[i..].chars().next().unwrap_or('\0');
-                    if BOOL_SHORTS.contains(&ch) {
+                    if bool_shorts.contains(&ch) {
                         expanded.push(format!("-{ch}"));
                         i += 1;
                     } else if VALUE_SHORTS.contains(&ch) {
@@ -581,12 +678,30 @@ pub fn absorb_positional_paths(args: &mut Vec<String>, in_paths: &mut Vec<String
     }
 }
 
+const GREP_UNSUPPORTED: [&str; 14] = [
+    "-v", "--invert-match", "-h", "-P", "--perl-regexp", "-m", "--max-count", "-a", "--text", "-q", "--quiet", "--silent",
+    "-L", "--files-without-match",
+];
+
+/// The first grep option ss-grep does not implement, before `--`.
+// Mirrors: eval/agent-read-workflows/bin/_ss-argparse.mjs:unsupportedGrepOption
+pub fn unsupported_grep_option(args: &[String]) -> Option<&str> {
+    let end = index_of(args, "--").unwrap_or(args.len());
+    args[..end].iter().map(String::as_str).find(|a| GREP_UNSUPPORTED.contains(a))
+}
+
 /// ss-grep's parsed arguments (cmdGrep up to buildGrepPattern).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GrepArgs {
     pub ignore_case: bool,
     pub word_bound: bool,
     pub fixed_string: bool,
+    /// -E: no basic-regex reading of `\|`.
+    pub extended: bool,
+    /// -l, -c, -o (grep's output modes).
+    pub files_with_matches: bool,
+    pub count: bool,
+    pub only_matching: bool,
     pub k: u64,
     pub before: u64,
     pub after: u64,
@@ -615,10 +730,14 @@ pub fn parse_grep_args(args: &[String], probe: &dyn PathProbe, cwd: &str, file_r
     if !posix_is_absolute(cwd) || !posix_is_absolute(file_root) {
         return Err(Decline("cwd and file root must be absolute"));
     }
-    let mut args = normalize_args(args);
+    let mut args = normalize_args_with(args, &GREP_BOOL_SHORTS);
     let ignore_case = parse_bool_flag(&mut args, &["-i", "--ignore-case"]);
     let word_bound = parse_bool_flag(&mut args, &["-w", "--word-regexp"]);
     let fixed_string = parse_bool_flag(&mut args, &["-F", "--fixed-strings"]);
+    let extended = parse_bool_flag(&mut args, &["-E", "--extended-regexp"]);
+    let files_with_matches = parse_bool_flag(&mut args, &["-l", "--files-with-matches"]);
+    let count = parse_bool_flag(&mut args, &["-c", "--count"]);
+    let only_matching = parse_bool_flag(&mut args, &["-o", "--only-matching"]);
     let k = parse_positive_int_flag(&mut args, &["-k", "--top"], 20)?;
     let (before, after) = parse_context_flags(&mut args)?;
     let mut in_paths = parse_repeated_value_flag(&mut args, &["--in"])?;
@@ -637,17 +756,27 @@ pub fn parse_grep_args(args: &[String], probe: &dyn PathProbe, cwd: &str, file_r
     absorb_positional_paths(&mut args, &mut in_paths, &is_path);
     // resolveScopePaths
     let in_paths = dedupe(in_paths.iter().map(|p| resolve_cwd_path(p, cwd, file_root, probe)).collect());
+    // unsupportedGrepOption: a usage error
+    if unsupported_grep_option(&args).is_some() {
+        return Err(Decline("unsupported grep option"));
+    }
     // rejectExtraPositionals
     if !extra_positionals(&args).is_empty() {
         return Err(Decline("arguments not consumed"));
     }
     let raw_pattern = extract_positional(&args)?;
-    let regex = build_grep_pattern(raw_pattern.as_deref(), ignore_case, word_bound, fixed_string);
+    let translated = if fixed_string || extended { None } else { raw_pattern.as_deref().and_then(translate_bre_alternation) };
+    let searched = translated.as_deref().or(raw_pattern.as_deref());
+    let regex = build_grep_pattern(searched, ignore_case, word_bound, fixed_string);
     match (raw_pattern, regex) {
         (Some(raw_pattern), Some(regex)) if !regex.is_empty() => Ok(GrepArgs {
             ignore_case,
             word_bound,
             fixed_string,
+            extended,
+            files_with_matches,
+            count,
+            only_matching,
             k,
             before,
             after,

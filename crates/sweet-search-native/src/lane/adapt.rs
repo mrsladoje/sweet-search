@@ -34,6 +34,10 @@ impl ss_grep_core::paths::PathProbe for Fs {
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Args {
     pub fixed: bool,
+    /// -l, -c, -o.
+    pub files_with_matches: bool,
+    pub count: bool,
+    pub only_matching: bool,
     pub k: usize,
     pub before: usize,
     pub after: usize,
@@ -46,6 +50,9 @@ pub(crate) fn parse_args(args: &[String], cwd: &str, file_root: &str) -> R<Args>
     let a = ss_grep_core::args::parse_grep_args(args, &Fs, cwd, file_root).map_err(|d| d.0)?;
     Ok(Args {
         fixed: a.fixed_string,
+        files_with_matches: a.files_with_matches,
+        count: a.count,
+        only_matching: a.only_matching,
         k: a.k as usize,
         before: a.before as usize,
         after: a.after as usize,

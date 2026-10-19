@@ -13,6 +13,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   buildGrepPattern,
+  GREP_BOOL_SHORTS,
+  translateBreAlternation,
+  unsupportedGrepOption,
   normalizeArgs,
   looksLikeOption,
   absorbPositionalPaths,
@@ -590,5 +593,37 @@ describe('parseGlobFlags', () => {
     absorbPositionalPaths(args, inPaths, tok => tok === 'src' || tok === 'tests');
     expect(inPaths).toEqual(['src']);
     expect(args).toEqual(['Head']);
+  });
+});
+
+describe('grep agent forms (\\|, bundles, unsupported options)', () => {
+  it('reads a pattern with \\| and no bare | as grep basic regex', () => {
+    expect(translateBreAlternation('func New\\|func Default')).toBe('func New|func Default');
+    expect(translateBreAlternation('\\(a\\|b\\)\\{2\\}')).toBe('(a|b){2}');
+    // BRE: bare ( { + ? are literal, and a * that opens a branch is literal
+    expect(translateBreAlternation('foo(\\|bar+')).toBe('foo\\(|bar\\+');
+    expect(translateBreAlternation('*x\\|^*y')).toBe('\\*x|^\\*y');
+    // bracket expressions are copied unchanged
+    expect(translateBreAlternation('[|(]\\|[[:alpha:]]')).toBe('[|(]|[[:alpha:]]');
+  });
+
+  it('leaves every other pattern as typed', () => {
+    for (const p of ['plain', 'a|b\\|c', 'a\\', '\\\\|b', '[a\\|b', 'x\\.y']) {
+      expect(translateBreAlternation(p)).toBeNull();
+    }
+  });
+
+  it('splits grep bundles for ss-grep only', () => {
+    expect(normalizeArgs(['-rn', 'x'], { boolShorts: GREP_BOOL_SHORTS })).toEqual(['-r', '-n', 'x']);
+    expect(normalizeArgs(['-rlE', 'x'], { boolShorts: GREP_BOOL_SHORTS })).toEqual(['-r', '-l', '-E', 'x']);
+    expect(normalizeArgs(['-rnC2', 'x'], { boolShorts: GREP_BOOL_SHORTS })).toEqual(['-r', '-n', '-C', '2', 'x']);
+    expect(normalizeArgs(['-rv', 'x'], { boolShorts: GREP_BOOL_SHORTS })).toEqual(['-rv', 'x']);
+    expect(normalizeArgs(['-rn', 'x'])).toEqual(['-rn', 'x']);
+  });
+
+  it('names the first unsupported grep option before --', () => {
+    expect(unsupportedGrepOption(['x', '-m', '2'])).toEqual({ flag: '-m', what: 'max count' });
+    expect(unsupportedGrepOption(['--', '-v'])).toBeNull();
+    expect(unsupportedGrepOption(['x'])).toBeNull();
   });
 });

@@ -24,7 +24,7 @@ import {
   parseRepeatedValueFlag, extraPositionals,
   buildGrepPattern, stripInertFlags, normalizeArgs, extractPositional,
   parseLineRange, looksLikeOption, renderSufficiency, absorbPositionalPaths as absorbPositionalPathsPure,
-  parseContextFlags, parseGlobFlags,
+  parseContextFlags, parseGlobFlags, GREP_BOOL_SHORTS, translateBreAlternation, unsupportedGrepOption,
 } from './_ss-argparse.mjs';
 import {
   GREP_HIDDEN_HINT,
@@ -33,7 +33,11 @@ import {
   renderOutsideScopeLine,
   renderOutsideScopeProbeLine,
   renderGrepListing,
+  renderGrepFileList,
+  renderGrepFileCounts,
+  renderGrepOnlyMatching,
 } from '../../../core/search/grep-output-shaping.js';
+import { loadNativeAddon } from '../../../core/infrastructure/native-resolver.js';
 import { cwdGrepScope, resolveCwdGlob, resolveCwdPath } from '../../../core/search/cwd-paths.js';
 import { SEARCH_LOADING_WAIT_MS, searchNotReadyLine, callStartedMs } from '../../../core/agent-tools/tools.js';
 import { formatRouteMetadata } from '../../../core/search/search-format.js';
@@ -642,17 +646,36 @@ function writeRegexDialectHintAfterRepair(stats, repaired) {
 
 // --- subcommands ----------------------------------------------------------
 
-const GREP_USAGE = 'Usage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [--in <path>]... '
+const GREP_USAGE = 'Usage: ss-grep <regex> [-i|--ignore-case] [-w|--word-regexp] [-F|--fixed-strings] [-E] [-l|-c|-o] [--in <path>]... '
   + "[-g|--glob '<glob>']... [-k N] [-A N] [-B N] [-C N]\n"
-  + "  -g '*.h' searches only matching files; -g '!tests/**' excludes (exclusion wins). Also --include <glob>, --exclude <glob>, --exclude-dir <dir>.";
+  + "  -g '*.h' searches only matching files; -g '!tests/**' excludes (exclusion wins). Also --include <glob>, --exclude <glob>, --exclude-dir <dir>.\n"
+  + '  -l lists the files with a match (most relevant first), -c prints path:count, -o prints only the matched text; '
+  + '-k N caps the files (-l, -c) or hit lines (-o). Without -E or -F, a pattern with \\| and no | is grep basic regex.';
+// -l and -c list at most this many files from the engine before the k cut (all of them).
+const GREP_FILE_MODE_MAX_FILES = 100000;
+// ss-grep -o: every non-empty match of `rx` on each hit line, found by the native engine's own
+// regex (the lane calls the same function). Without that addon export: the stored first match.
+function grepOnlyMatchingTexts(rx, rows) {
+  const addon = loadNativeAddon({ validate: (m) => typeof m.grepOnlyMatching === 'function' })?.mod;
+  const lists = addon ? addon.grepOnlyMatching(rx, rows.map((r) => r.content ?? '')) : null;
+  const found = new Map();
+  rows.forEach((r, i) => found.set(r, lists ? lists[i] : (r.matchText ? [r.matchText] : [])));
+  return found;
+}
 // `fromFind`: ss-find's fallback when there is no late-interaction index. Its --in paths are
 // already resolved (resolving them again would re-apply the cwd), and ss-find has no implicit
 // cwd scope, so the fallback must not pick up ss-grep's.
 async function cmdGrep(rawArgs, { fromFind = false } = {}) {
-  const args = normalizeArgs(rawArgs);
+  const args = normalizeArgs(rawArgs, { boolShorts: GREP_BOOL_SHORTS });
   const ignoreCase = parseBoolFlag(args, ['-i', '--ignore-case']);
   const wordBound = parseBoolFlag(args, ['-w', '--word-regexp']);
   const fixedString = parseBoolFlag(args, ['-F', '--fixed-strings']);
+  // grep's -E (ss-grep patterns are extended regex already: it only turns off the basic-regex
+  // reading of `\|`), and the output modes -l / -c / -o. -l wins over -c, -c over -o, as in grep.
+  const extended = parseBoolFlag(args, ['-E', '--extended-regexp']);
+  const filesWithMatches = parseBoolFlag(args, ['-l', '--files-with-matches']);
+  const countLines = parseBoolFlag(args, ['-c', '--count']);
+  const onlyMatching = parseBoolFlag(args, ['-o', '--only-matching']);
   const k = readPositiveIntFlag(args, ['-k', '--top'], 20, GREP_USAGE);
   // grep's -A/-B/-C: native agents use them in ~13% of grep calls (an enum body in one
   // call). Rendered client-side from the agent's own files, in grep's own shape; with no
@@ -670,9 +693,12 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
   stripInertFlags(args);
   absorbPositionalPaths(args, inPaths);
   if (!fromFind) resolveScopePaths(inPaths);
+  const unsupported = unsupportedGrepOption(args);
+  if (unsupported) failUsage(`grep option "${unsupported.flag}" (${unsupported.what}) is not supported by ss-grep`, GREP_USAGE);
   rejectExtraPositionals(args, GREP_USAGE);
   const rawPattern = resolvePositional(args, GREP_USAGE);
-  const regex = buildGrepPattern(rawPattern, { ignoreCase, wordBound, fixedString });
+  const searched = (!fixedString && !extended && translateBreAlternation(rawPattern)) || rawPattern;
+  const regex = buildGrepPattern(searched, { ignoreCase, wordBound, fixedString });
   if (!regex) {
     process.stderr.write(GREP_USAGE + '\n');
     process.exit(2);
@@ -735,6 +761,71 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
   }
   // A5: a repaired pattern with zero hits must not read as a clean absence.
   const REPAIRED_NO_MATCH = '(no matches — note: the regex did not parse as written; check the escaping of ( [ { and run again)';
+
+  // grep's output modes (agents type -l in ~8% of file searches, -c in ~2%, -o in ~0.5%).
+  // -l / -c: every file with a match and its count of matching lines (one stored hit per file;
+  // the counts come from the scan), -l in the selector's file order (the weight that ranks the
+  // files of the listing below), -c in path order. -o: the first k hit lines in path order,
+  // each with every match on it. Context flags do not apply, and grep prints no enrichment
+  // (family, sibling line, interface hint, outside-scope line), so neither does this. Zero
+  // matches exit 1, as grep does.
+  if (filesWithMatches || countLines || onlyMatching) {
+    const fileMode = filesWithMatches || countLines;
+    const modeCwdScope = inPaths.length > 0 || fromFind ? null
+      : cwdGrepScope({ cwd: process.cwd(), fileRoot: FILE_ROOT, indexRoot: PROJECT_ROOT });
+    const modeOpts = {
+      mode: 'grep', contextLines: 0, _isAgentFormat: false, _siblingLine: false,
+      ...(fileMode
+        ? { maxMatches: 0, perFileCap: 1, maxFiles: GREP_FILE_MODE_MAX_FILES, grepFileOrder: 'weight',
+          ...(FIX.grepWeight ? { grepFileWeight: FIX.grepWeight } : {}) }
+        : { maxMatches: k }),
+      ...(inPaths.length > 0 ? { fileFilter: inPaths.length === 1 ? inPaths[0] : inPaths }
+        : modeCwdScope ? { fileFilter: modeCwdScope, _cwdScope: true } : {}),
+      ...globOpts,
+    };
+    const fetchMode = async (rx) => {
+      try {
+        return await queryWarmSearch(rx, { ...modeOpts, regex: rx, expand: false, rerank: false, useLateInteraction: false });
+      } catch {
+        const s = await getSweetSearch();
+        return await s.bareGrep(rx, null, { ...modeOpts, regex: rx });
+      }
+    };
+    const fetched = await fetchWithFixes(fetchMode, { scopeMissing: FIX.grepRetry && missingScopes(inPaths).length > 0 });
+    if (fetched.unparsable) exitUnparsable(fetched.usedRegex);
+    const { result, usedRegex, notes, repaired } = fetched;
+    if (!repaired) {
+      await recordAgentToolCall({
+        query: fixedString ? undefined : regex,
+        regex: fixedString ? undefined : regex,
+      });
+    }
+    for (const note of notes) process.stdout.write(`${note}\n`);
+    if (result.results.length === 0) {
+      const missing = missingScopes(inPaths);
+      if (missing.length) await exitScopeNotFound(missing);
+      const globNote = globExcludedNote(result.stats, globs);
+      process.stdout.write(`${globNote || (repaired ? REPAIRED_NO_MATCH : '(no matches)')}\n`);
+      if (!globNote) writeRegexDialectHintAfterRepair(result.stats, repaired);
+      process.exit(1);
+    }
+    let lines;
+    if (fileMode) {
+      const summary = result.fileSummary || { files: [], hiddenFileCount: 0 };
+      const fileCount = summary.files.length + (summary.hiddenFileCount || 0);
+      lines = filesWithMatches
+        ? renderGrepFileList(summary.files, k, fileCount)
+        : renderGrepFileCounts([...summary.files].sort((a, b) => a.file.localeCompare(b.file)), k, fileCount);
+    } else {
+      const matches = grepOnlyMatchingTexts(usedRegex, result.results);
+      lines = renderGrepOnlyMatching(result.results, (row) => matches.get(row), { typed: typedFiles(inPaths) });
+      const cut = (result.stats?.totalMatches ?? result.results.length) - result.results.length;
+      if (cut > 0) lines.push(`# +${cut} more ${cut === 1 ? 'hit' : 'hits'} (raise -k)`);
+    }
+    for (const line of lines) process.stdout.write(`${line}\n`);
+    writeRegexDialectHintAfterRepair(result.stats, repaired);
+    process.exit(0);
+  }
 
   // A scope that names a directory holds many files: it takes the weighted listing below, as
   // an unscoped grep does (r3h-tortoise-orm-03: `--in tortoise -k 15` printed files in path

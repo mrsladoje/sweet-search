@@ -6,7 +6,8 @@
 //!   matchTextIsRepeated, renderGrepLineLists, testFileQuota, typedPathLabel and the constants),
 //! - core/search/grep-output-shaping.js (renderGrepListing, renderGrepFileBody,
 //!   renderGrepHiddenFiles, GREP_HIDDEN_HINT, DOC_PATH_RE, fileInScopes,
-//!   isOutsideScopeSourceFile, renderOutsideScopeProbeLine, renderOutsideScopeLine).
+//!   isOutsideScopeSourceFile, renderOutsideScopeProbeLine, renderOutsideScopeLine, and the
+//!   -l / -c / -o renderers renderGrepFileList, renderGrepFileCounts, renderGrepOnlyMatching).
 //!
 //! Text is measured and cut in UTF-16 code units, as JS does.
 
@@ -602,5 +603,65 @@ pub fn render_grep_line_lists(files: &[SummaryFile], lines_by_file: &HashMap<Str
     out.extend(tst[..tst_n].iter().map(|f| row(f)));
     out.extend(tail(&src[src_n..], "non-test"));
     out.extend(tail(&tst[tst_n..], "test/spec/fixture"));
+    out
+}
+
+// --- grep's output modes: -l, -c, -o -------------------------------------------------------------
+
+// Mirrors: core/search/grep-output-shaping.js:moreFilesLine
+fn more_files_line(more: i64) -> Option<String> {
+    (more > 0).then(|| format!("# +{more} more {} (raise -k)", if more == 1 { "file" } else { "files" }))
+}
+
+// Mirrors: core/search/grep-output-shaping.js:renderGrepFileList
+/// ss-grep -l: one path per file, in the order given, at most k; then the files not listed.
+pub fn render_grep_file_list(files: &[SummaryFile], k: usize, file_count: usize) -> Vec<String> {
+    let mut out: Vec<String> = files.iter().take(k).map(|f| f.file.clone()).collect();
+    out.extend(more_files_line(file_count as i64 - out.len() as i64));
+    out
+}
+
+// Mirrors: core/search/grep-output-shaping.js:renderGrepFileCounts
+/// ss-grep -c: `path:count` per file, in the order given, at most k; then the files not listed.
+pub fn render_grep_file_counts(files: &[SummaryFile], k: usize, file_count: usize) -> Vec<String> {
+    let mut out: Vec<String> = files.iter().take(k).map(|f| format!("{}:{}", f.file, f.total)).collect();
+    out.extend(more_files_line(file_count as i64 - out.len() as i64));
+    out
+}
+
+// Mirrors: core/search/grep-output-shaping.js:renderGrepOnlyMatching
+/// ss-grep -o: each file's path (none for a lone typed file, a short label for typed files
+/// among others), then `line:match` per match. `rows` = (file, line, matches) in order.
+pub fn render_grep_only_matching(rows: &[(String, u32, Vec<String>)], typed: &[String]) -> Vec<String> {
+    let mut order: Vec<(&str, Vec<&(String, u32, Vec<String>)>)> = Vec::new();
+    let mut index: HashMap<&str, usize> = HashMap::new();
+    for row in rows {
+        match index.get(row.0.as_str()) {
+            Some(&at) => order[at].1.push(row),
+            None => {
+                index.insert(row.0.as_str(), order.len());
+                order.push((row.0.as_str(), vec![row]));
+            }
+        }
+    }
+    let files: Vec<String> = order.iter().map(|(f, _)| f.to_string()).collect();
+    let mut out = Vec::new();
+    for (file, hits) in &order {
+        let body: Vec<String> = hits.iter().flat_map(|(_, line, ms)| ms.iter().map(move |m| format!("{line}:{m}"))).collect();
+        if body.is_empty() {
+            continue;
+        }
+        let head = if !typed.iter().any(|t| t == file) {
+            file.to_string()
+        } else if files.len() > 1 {
+            typed_path_label(file, &files)
+        } else {
+            String::new()
+        };
+        if !head.is_empty() {
+            out.push(head);
+        }
+        out.extend(body);
+    }
     out
 }
