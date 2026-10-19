@@ -10,8 +10,11 @@ set -euo pipefail
 DATA=$1; RESULTS=$2; REPDEV=$3; REPHO=$4; POST=$5; PY=${6:-python3}
 H=$(cd "$(dirname "$0")" && pwd); W=$(mktemp -d)
 cd "$H"
-$PY -I freeze_check.py FREEZE.json ../../../.. | tail -1          # main-study frozen files (expect 1 known change, Appendix)
-$PY -I freeze_check.py REPFREEZE.json ../../../.. | tail -1       # replication frozen files
+# each freeze record is checked against the commit that wrote it (later commits add post hoc clocks and switches)
+for f in FREEZE.json POSTFREEZE.json REPFREEZE.json MECHFREEZE.json; do
+  c=$(git log -1 --format=%h -- "$f"); T=$(mktemp -d); git -C ../../../.. archive "$c" | tar -x -C "$T"
+  echo -n "$f @ $c: "; $PY -I freeze_check.py "$f" "$T" | tail -1; rm -rf "$T"
+done
 for t in intel amd arm box mac; do
   $PY -I analyze.py --data "$DATA" --results "$RESULTS" --shortlists shortlists --builds "$DATA/builds/shared" --types $t --out $W/R-$t.md --json $W/J-$t.json &
 done; wait
