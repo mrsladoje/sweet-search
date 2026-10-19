@@ -1,0 +1,8 @@
+{
+ "meta": {
+  "f": 0.99,
+  "machines": "hd-intel-*",
+  "rule": "REPLICATION_PLAN.md section 4",
+  "type": "intel"
+ }
+}
