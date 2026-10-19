@@ -501,7 +501,14 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
     const deviceChoice = await ensureIndexDeviceChoice({
       allowMeasure: wouldArmAccelerator,
       includeLi: !noLateInteraction,
-      parallel: shouldParallelLI,
+      // The streaming path encodes dense first, then late interaction; only
+      // the in-memory path overlaps them.
+      parallel: shouldParallelLI && !useStreaming,
+      // On the CPU the dense side runs in the worker pool when the run is not
+      // parallel (same rule as useEmbeddingPool below for an ORT index).
+      cpuPool: resourcePlan.useWorkerPool && !shouldParallelLI
+        ? { workers: resourcePlan.embeddingWorkers, threadsPerWorker: resourcePlan.threadsPerEmbeddingWorker }
+        : null,
       embeddingThreads,
       lateInteractionThreads,
       liBatch: {
@@ -522,6 +529,8 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
       log(`Index device speed test failed (${deviceChoice.error}) — keeping the accelerator`, 'yellow');
     } else if (deviceChoice.source === 'lock-busy') {
       log('Index device speed test busy in another process — keeping the accelerator for this run', 'yellow');
+    } else if (deviceChoice.source === 'cache-unwritable') {
+      log('Index device speed test skipped: cache directory not writable — keeping the accelerator', 'yellow');
     }
   }
 

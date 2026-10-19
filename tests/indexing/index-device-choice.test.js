@@ -31,6 +31,7 @@ vi.mock('../../core/infrastructure/native-inference.js', () => ({
 import {
   CPU_WIN_MARGIN,
   INDEX_DEVICE_LOCK_FILE,
+  LOCK_HARD_STALE_MS,
   acceleratorProvenanceProblem,
   buildProbeTexts,
   decideIndexDevice,
@@ -39,6 +40,7 @@ import {
   isCloseResult,
   isEntryFresh,
   readIndexDeviceChoice,
+  splitDeviceSwitches,
   tryAcquireProbeLock,
   writeIndexDeviceChoice,
 } from '../../core/indexing/index-device-choice.js';
@@ -105,9 +107,18 @@ describe('indexDeviceCacheKey', () => {
     ]) {
       expect(key(over)).not.toBe(k);
     }
-    expect(key({}, { SWEET_SEARCH_EMBED_USE_CPU: '1' })).not.toBe(k);
-    expect(key({}, { SWEET_SEARCH_LI_USE_CPU: '1' })).not.toBe(k);
+    expect(key({ cpuPool: { workers: 3, threadsPerWorker: 2 } })).not.toBe(k);
+    for (const env of [
+      { SWEET_SEARCH_EMBED_ATTENTION_BUDGET: '1000' }, { SWEET_SEARCH_LI_MAX_DOC_LENGTH: '1024' },
+      { SWEET_SEARCH_BATCHING_SAFETY: '1.3' }, { SWEET_SEARCH_EMBEDDING_WORKERS: '2' }, { SWEET_SEARCH_ORT_EXEC_MODE: 'parallel' },
+    ]) {
+      expect(key({}, env)).not.toBe(k);
+    }
     expect(indexDeviceCacheKey({ hw: M3, setup, env: {}, version: '1.0.1' })).not.toBe(k);
+  });
+
+  it('ignores settings that do not touch the encoders', () => {
+    expect(key({}, { SWEET_SEARCH_PROJECT_ROOT: '/x', SWEET_SEARCH_INDEX_DEVICE: 'cpu', HOME: '/h' })).toBe(key());
   });
 });
 
@@ -129,26 +140,58 @@ describe('cache file, expiry and lock', () => {
     expect(isEntryFresh({ device: 'cpu' })).toBe(false);
   });
 
-  it('gives the lock to one holder at a time and takes over a dead holder', () => {
-    const release = tryAcquireProbeLock({ cacheDir: dir });
-    expect(release).toBeTypeOf('function');
-    expect(tryAcquireProbeLock({ cacheDir: dir })).toBe(null);
-    release();
-    expect(existsSync(path.join(dir, INDEX_DEVICE_LOCK_FILE))).toBe(false);
+  const lockFile = () => path.join(dir, INDEX_DEVICE_LOCK_FILE);
+  const holder = () => JSON.parse(readFileSync(lockFile(), 'utf8'));
+  const DEAD = 2 ** 30;
 
-    writeFileSync(path.join(dir, INDEX_DEVICE_LOCK_FILE), JSON.stringify({ pid: 2 ** 30, at: 'x' }));
+  it('gives the lock to one holder at a time and takes over a dead holder', () => {
+    const lock = tryAcquireProbeLock({ cacheDir: dir });
+    expect(lock.status).toBe('acquired');
+    expect(tryAcquireProbeLock({ cacheDir: dir }).status).toBe('busy');
+    lock.release();
+    expect(existsSync(lockFile())).toBe(false);
+
+    writeFileSync(lockFile(), JSON.stringify({ pid: DEAD, nonce: 'x' }));
     const again = tryAcquireProbeLock({ cacheDir: dir });
-    expect(again).toBeTypeOf('function');
-    expect(JSON.parse(readFileSync(path.join(dir, INDEX_DEVICE_LOCK_FILE), 'utf8')).pid).toBe(process.pid);
-    again();
+    expect(again.status).toBe('acquired');
+    expect(holder().pid).toBe(process.pid);
+    expect(existsSync(`${lockFile()}.takeover`)).toBe(false);
+    again.release();
   });
 
-  it('takes over a lock older than staleMs even when its holder lives', () => {
-    writeFileSync(path.join(dir, INDEX_DEVICE_LOCK_FILE), JSON.stringify({ pid: process.ppid }));
-    expect(tryAcquireProbeLock({ cacheDir: dir })).toBe(null);
-    const release = tryAcquireProbeLock({ cacheDir: dir, now: Date.now() + 11 * 60 * 1000 });
-    expect(release).toBeTypeOf('function');
-    release();
+  it('never takes over a live holder before the hard limit, nor one whose test child lives', () => {
+    writeFileSync(lockFile(), JSON.stringify({ pid: process.ppid, nonce: 'x' }));
+    expect(tryAcquireProbeLock({ cacheDir: dir, now: Date.now() + 30 * 60 * 1000 }).status).toBe('busy');
+    expect(tryAcquireProbeLock({ cacheDir: dir, now: Date.now() + LOCK_HARD_STALE_MS + 1000 }).status).toBe('acquired');
+
+    writeFileSync(lockFile(), JSON.stringify({ pid: DEAD, childPid: process.ppid, nonce: 'y' }));
+    expect(tryAcquireProbeLock({ cacheDir: dir }).status).toBe('busy');
+  });
+
+  it('records the test child and releases only its own lock', () => {
+    const lock = tryAcquireProbeLock({ cacheDir: dir });
+    lock.setChildPid(4242);
+    expect(holder()).toMatchObject({ pid: process.pid, childPid: 4242 });
+    writeFileSync(lockFile(), JSON.stringify({ pid: process.ppid, nonce: 'someone-else' }));
+    lock.release();
+    expect(holder().nonce).toBe('someone-else');
+  });
+
+  it('leaves a takeover in progress to its owner', () => {
+    writeFileSync(lockFile(), JSON.stringify({ pid: DEAD, nonce: 'x' }));
+    writeFileSync(`${lockFile()}.takeover`, '');
+    expect(tryAcquireProbeLock({ cacheDir: dir }).status).toBe('busy');
+    expect(holder().nonce).toBe('x');
+    // A takeover file left by a killed process is cleared after a short time.
+    expect(tryAcquireProbeLock({ cacheDir: dir, now: Date.now() + 60_000 }).status).toBe('busy');
+    expect(existsSync(`${lockFile()}.takeover`)).toBe(false);
+    expect(tryAcquireProbeLock({ cacheDir: dir }).status).toBe('acquired');
+  });
+
+  it('reports a cache directory that cannot be written as unavailable, not busy', () => {
+    const file = path.join(dir, 'not-a-dir');
+    writeFileSync(file, '');
+    expect(tryAcquireProbeLock({ cacheDir: path.join(file, 'sub') }).status).toBe('unavailable');
   });
 });
 
@@ -164,17 +207,20 @@ describe('buildProbeTexts', () => {
 });
 
 describe('acceleratorProvenanceProblem', () => {
-  it('flags an index written by ORT only', () => {
-    const m = { vectors: { encoders: { counts: { 'ort-q8/cpu': 10 } } }, lateInteraction: { encoders: { counts: { 'ort-q8/cpu': 10 } } } };
-    expect(acceleratorProvenanceProblem(m)).toMatch(/ORT CPU only/);
+  // The labels each production encoder records (inference-provenance.js).
+  const m = (dense, li) => ({ vectors: { encoders: { counts: dense } }, lateInteraction: { encoders: { counts: li } } });
+
+  it('flags a tier written by CPU encoders only', () => {
+    expect(acceleratorProvenanceProblem(m({ 'ort-q8/cpu': 10 }, { 'ort/cpu': 10 }))).toMatch(/dense.*late interaction.*CPU encoders only/);
+    expect(acceleratorProvenanceProblem(m({ 'metal/bf16': 10 }, { 'ort/cpu': 10 }))).toMatch(/^late interaction/);
+    expect(acceleratorProvenanceProblem(m({ 'model-server': 10 }, { 'cuda/bf16': 10 }))).toMatch(/^dense/);
+    expect(acceleratorProvenanceProblem(m({ 'cpu/f32': 10 }, { 'coreml+metal/bf16': 10 }))).toMatch(/^dense/);
   });
 
-  it('passes accelerator, split-device and unrecorded indexes', () => {
-    expect(acceleratorProvenanceProblem({ vectors: { encoders: { counts: { 'coreml+metal/bf16': 10 } } } })).toBe(null);
-    expect(acceleratorProvenanceProblem({
-      vectors: { encoders: { counts: { 'ort-q8/cpu': 10 } } },
-      lateInteraction: { encoders: { counts: { 'metal/bf16': 10 } } },
-    })).toBe(null);
+  it('passes accelerator tiers, unknown labels and unrecorded indexes', () => {
+    expect(acceleratorProvenanceProblem(m({ 'coreml+metal/bf16': 10 }, { 'metal/bf16': 10 }))).toBe(null);
+    expect(acceleratorProvenanceProblem(m({ 'cuda/f32': 10, 'ort-q8/cpu': 2 }, { 'cuda/bf16': 10 }))).toBe(null);
+    expect(acceleratorProvenanceProblem(m({ unknown: 10 }, {}))).toBe(null);
     expect(acceleratorProvenanceProblem({})).toBe(null);
   });
 });
@@ -182,8 +228,10 @@ describe('acceleratorProvenanceProblem', () => {
 describe('measureIndexDevices', () => {
   it('runs each device once when the result is clear', async () => {
     const runChild = vi.fn(async (device) => (device === 'cpu' ? 3000 : 1000));
-    const r = await measureIndexDevices({}, { runChild });
+    const onSpawn = vi.fn();
+    const r = await measureIndexDevices({}, { runChild, onSpawn });
     expect(r).toMatchObject({ cpuMs: 3000, acceleratorMs: 1000, runs: 1, stable: true });
+    expect(runChild.mock.calls[0][2]).toEqual({ onSpawn });
     expect(runChild.mock.calls.map((c) => c[0])).toEqual(['cpu', 'accelerator']);
   });
 
@@ -318,6 +366,48 @@ describe('ensureIndexDeviceChoice', () => {
     expect(measure).toHaveBeenCalledTimes(2);
   });
 
+  it('skips the test with a split-device switch set', async () => {
+    expect(splitDeviceSwitches({ SWEET_SEARCH_EMBED_USE_CPU: '1', SWEET_SEARCH_LI_USE_CPU: '0' })).toEqual(['SWEET_SEARCH_EMBED_USE_CPU']);
+    const measure = vi.fn();
+    process.env.SWEET_SEARCH_LI_USE_CPU = '1';
+    try {
+      const r = await ensureIndexDeviceChoice(opts({ measure }));
+      expect(r).toMatchObject({ device: 'accelerator', source: 'split-device' });
+    } finally {
+      delete process.env.SWEET_SEARCH_LI_USE_CPU;
+    }
+    expect(measure).not.toHaveBeenCalled();
+  });
+
+  it('keeps the accelerator at once when the cache directory cannot be written', async () => {
+    const file = path.join(dir, 'not-a-dir');
+    writeFileSync(file, '');
+    const measure = vi.fn();
+    const t0 = Date.now();
+    const r = await ensureIndexDeviceChoice(opts({ measure, cacheDir: path.join(file, 'sub'), lockWaitMs: 60_000 }));
+    expect(r).toMatchObject({ device: 'accelerator', source: 'cache-unwritable' });
+    expect(Date.now() - t0).toBeLessThan(1000);
+    expect(measure).not.toHaveBeenCalled();
+  });
+
+  it('records each test child in the lock', async () => {
+    const measure = vi.fn(async (setup, { onSpawn }) => {
+      onSpawn(4242);
+      expect(JSON.parse(readFileSync(path.join(dir, INDEX_DEVICE_LOCK_FILE), 'utf8')).childPid).toBe(4242);
+      return { cpuMs: 3000, acceleratorMs: 1000, runs: 1, stable: true };
+    });
+    expect((await ensureIndexDeviceChoice(opts({ measure }))).source).toBe('measured');
+  });
+
+  it('passes the CPU worker pool plan to the test and keys on it', async () => {
+    const measure = vi.fn(async () => ({ cpuMs: 3000, acceleratorMs: 1000, runs: 1, stable: true }));
+    await ensureIndexDeviceChoice(opts({ measure, cpuPool: { workers: 3, threadsPerWorker: 2 } }));
+    expect(measure.mock.calls[0][0].cpuPool).toEqual({ workers: 3, threadsPerWorker: 2 });
+    _resetIndexDeviceChoice();
+    expect((await ensureIndexDeviceChoice(opts({ measure, cpuPool: null }))).source).toBe('measured');
+    expect(measure).toHaveBeenCalledTimes(2);
+  });
+
   it('obeys SWEET_SEARCH_INDEX_DEVICE without measuring', async () => {
     const measure = vi.fn();
     process.env.SWEET_SEARCH_INDEX_DEVICE = 'cpu';
@@ -333,5 +423,15 @@ describe('ensureIndexDeviceChoice', () => {
     const r = await ensureIndexDeviceChoice(opts({ measure }));
     expect(r).toMatchObject({ device: 'cpu', source: 'no-accelerator' });
     expect(measure).not.toHaveBeenCalled();
+  });
+});
+
+describe('benchIndexDevice (eval/lib/bench-index-device.mjs)', () => {
+  it('always pins benchmark indexes to the accelerator and refuses any other setting', async () => {
+    const { benchIndexDevice } = await import('../../eval/lib/bench-index-device.mjs');
+    expect(benchIndexDevice({})).toBe('accelerator');
+    expect(benchIndexDevice({ SWEET_SEARCH_INDEX_DEVICE: 'metal' })).toBe('accelerator');
+    expect(() => benchIndexDevice({ SWEET_SEARCH_INDEX_DEVICE: 'cpu' })).toThrow(/not allowed/);
+    expect(() => benchIndexDevice({ SWEET_SEARCH_INDEX_DEVICE: 'auto' })).toThrow(/not allowed/);
   });
 });
