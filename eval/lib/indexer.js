@@ -40,6 +40,9 @@ export async function indexCorpus(corpusDir, projectRoot, options = {}) {
     SWEET_SEARCH_PROJECT_ROOT: corpusDir,
     EMBEDDING_PROVIDER: process.env.EMBEDDING_PROVIDER || 'local',
     VOYAGEAI_API_KEY: '',
+    // Benchmark indexes are built on the accelerator, never by the index-device
+    // speed test (one test on a busy machine could move them to the CPU).
+    SWEET_SEARCH_INDEX_DEVICE: process.env.SWEET_SEARCH_INDEX_DEVICE || 'accelerator',
   };
   if (sqliteFastMode) {
     indexEnv.SWEET_SEARCH_SQLITE_FAST_MODE = '1';
@@ -90,6 +93,10 @@ export async function indexCorpus(corpusDir, projectRoot, options = {}) {
     await runIndexerPhase(indexer, args, corpusDir, indexEnv, 'index', { streamOutput });
   }
 
+  if (indexEnv.SWEET_SEARCH_INDEX_DEVICE === 'accelerator') {
+    await assertAcceleratorProvenance(corpusDir);
+  }
+
   const totalMs = Date.now() - start;
   const elapsed = parseFloat((totalMs / 1000).toFixed(1));
   console.log(`  Indexing completed in ${elapsed}s`);
@@ -103,6 +110,26 @@ export async function indexCorpus(corpusDir, projectRoot, options = {}) {
       vectorsPhase: vectorsPhaseMs,
     },
   };
+}
+
+/**
+ * Refuse a benchmark index that an accelerator host wrote on ORT CPU only
+ * (the accelerator pin did not hold). Hosts with no accelerator pass.
+ */
+async function assertAcceleratorProvenance(corpusDir) {
+  const { hasIndexAcceleratorHardware } = await import(new URL('../../core/indexing/model-pool.js', import.meta.url));
+  if (!hasIndexAcceleratorHardware()) return;
+  const { acceleratorProvenanceProblem } = await import(new URL('../../core/indexing/index-device-choice.js', import.meta.url));
+  let manifest;
+  try {
+    manifest = JSON.parse(await fs.readFile(path.join(corpusDir, '.sweet-search', 'reconcile-manifest.json'), 'utf8'));
+  } catch {
+    return; // no manifest (old layout): nothing recorded to check
+  }
+  const problem = acceleratorProvenanceProblem(manifest);
+  if (problem) {
+    throw new Error(`Benchmark index at ${corpusDir}: ${problem}. Set SWEET_SEARCH_INDEX_DEVICE=cpu to accept a CPU-built index.`);
+  }
 }
 
 /**

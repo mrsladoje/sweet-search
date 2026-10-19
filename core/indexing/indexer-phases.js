@@ -501,17 +501,27 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
     const deviceChoice = await ensureIndexDeviceChoice({
       allowMeasure: wouldArmAccelerator,
       includeLi: !noLateInteraction,
+      parallel: shouldParallelLI,
       embeddingThreads,
       lateInteractionThreads,
+      liBatch: {
+        batchSize: resourcePlan.lateInteractionBatchSize,
+        batchSizeUpperCap: resourcePlan.lateInteractionBatchSizeUpperCap,
+        tokenBudget: resourcePlan.lateInteractionTokenBudget,
+        attentionBudget: resourcePlan.lateInteractionAttentionBudget,
+      },
     });
     if (deviceChoice.source === 'measured') {
       log(
-        `Index device speed test (${deviceChoice.chunks} chunks): ORT CPU ${deviceChoice.cpuMs}ms, `
-        + `accelerator ${deviceChoice.acceleratorMs}ms → ${deviceChoice.device}`,
+        `Index device speed test: ORT CPU ${deviceChoice.cpuMs}ms, accelerator ${deviceChoice.acceleratorMs}ms`
+        + ` (${deviceChoice.runs} run${deviceChoice.runs > 1 ? 's' : ''}${deviceChoice.stable ? '' : ', runs disagree'})`
+        + ` → ${deviceChoice.device}`,
         'dim',
       );
     } else if (deviceChoice.source === 'measure-failed') {
       log(`Index device speed test failed (${deviceChoice.error}) — keeping the accelerator`, 'yellow');
+    } else if (deviceChoice.source === 'lock-busy') {
+      log('Index device speed test busy in another process — keeping the accelerator for this run', 'yellow');
     }
   }
 
