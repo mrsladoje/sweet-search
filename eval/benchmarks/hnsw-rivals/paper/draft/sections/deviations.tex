@@ -23,6 +23,9 @@ Primary pairs with dev power below 0.8 made descriptive (the plan's rule) & afte
 Comparison (A): the shared screen and rescoring are bit-identical in output but run in our SIMD kernels for ours and in a scalar C++ path for the rivals; rival graphs $M = 32$, ours $M = 64$ & design, before freeze & (A) ratios with the rescoring difference removed by estimate (\S\ref{sec:results}) \\
 Comparison (B): rival refine is one harness routine, not each library's own; the rival timer includes an unneeded query conversion & design, before freeze & \S\ref{sec:systems}; not measured separately \\
 Post-freeze experiments: stage clocks in (A), $M = 64$ rival graphs, our walk with fixed $ef$, page-fault counts, (B) rerun on Quora and csn1m with native-only clocks and the shipped default; harness changes add clocks and switches only (record \texttt{POSTFREEZE.json}) & after the held-out run & \S\ref{sec:post}, reported apart \\
+Replication: CQADupStack files taken from the MTEB copy on Hugging Face (revisions recorded), because the BEIR server was too slow & before any replication data & same BEIR data; \S\ref{sec:replication} \\
+Replication: plan amended after two pre-run reviews (instance as the unit, equal effort grids, fault rule on the timed pass, joint quality bootstrap, stratified CQADupStack split) & before any replication timing & \texttt{REPLICATION\_PLAN.md} history \\
+Replication: the first Intel and Graviton dev runs hit a 150-minute machine stop and were lost; the same dev jobs ran again in chunks; Intel and Graviton were selected and frozen after AMD & dev phase, before any Intel or Graviton held-out job & \S\ref{sec:replication} \\
 Not run: two build seeds, isolated build-cost runs, first-100 cold queries, page-policy arms, dTLB counters & --- & \S\ref{sec:limits} \\\bottomrule
 \end{tabularx}
 \end{table}
