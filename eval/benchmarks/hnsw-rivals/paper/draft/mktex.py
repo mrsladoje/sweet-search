@@ -5,7 +5,7 @@ import argparse, collections, json, math, os
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ap = argparse.ArgumentParser(); ap.add_argument('json'); ap.add_argument('--extra', help='JSON of extra numbers {key: value}'); ap.add_argument('--tails', help='tails_recall.py output'); ap.add_argument('--post', help='post_analyze.py output (post-freeze experiments)')
+ap = argparse.ArgumentParser(); ap.add_argument('json'); ap.add_argument('--extra', help='JSON of extra numbers {key: value}'); ap.add_argument('--tails', help='tails_recall.py output'); ap.add_argument('--post', help='post_analyze.py output (post-freeze experiments)'); ap.add_argument('--rep', help='rep_analyze.py output (replication)')
 a = ap.parse_args()
 J = json.load(open(a.json))
 TYPES = [t for t in ('intel', 'amd', 'arm', 'box', 'mac') if t in J['R']]
@@ -532,6 +532,32 @@ if a.post:
         nums['postb-native-min'] = f'{100 * min(nat):.0f}'; nums['postb-native-max'] = f'{100 * max(nat):.0f}'; nums['postb-native-med'] = f'{100 * float(np.median(nat)):.0f}'
     if dt:
         nums['postb-default-tmin'] = f'{min(dt):.1f}'; nums['postb-default-tmax'] = f'{max(dt):.1f}'; nums['postb-default-qmin'] = f'{min(dq):.4f}'
+
+# ---- replication (rep_analyze.py, pre-registered tests)
+if a.rep:
+    RJ = json.load(open(a.rep)); rows = []
+    SN = {'cqadup': 'CQADupStack', 'msmarco1m': 'MS MARCO 1M'}
+    for r in RJ:
+        if 'missing' in r:
+            rows.append(f"{TNAME[r['type']]} & {SN[r['set']]} & {tex(r['rival'] or '')} & \\multicolumn{{8}}{{l}}{{{tex(r['missing'])}}} \\\\"); continue
+        yn = lambda b: 'yes' if b else 'no'
+        rows.append(f"{TNAME[r['type']]} & {SN[r['set']]} & {tex(r['rival'])} & {r['instances']} & {r['ours_us']:.0f} & {r['rival_us']:.0f} & "
+                    f"{cell(r['ratio'], r['lo'], r['hi'])} & {r['p_latency']:.4f} & {'pass' if r.get('holm_latency') else 'fail'} & "
+                    f"{r['mean_diff']:+.4f} & {r['p_quality']:.4f} & {'pass' if r.get('holm_quality') else 'fail'} \\\\")
+    open(os.path.join(HERE, 'tables', 'rep.tex'), 'w').write('\n'.join(rows) + '\n')
+    ok = [r for r in RJ if 'missing' not in r]
+    nums['rep-n'] = str(len(RJ)); nums['rep-lat-pass'] = str(sum(1 for r in ok if r.get('holm_latency')))
+    nums['rep-q-pass'] = str(sum(1 for r in ok if r.get('holm_quality')))
+    nums['rep-joint'] = str(sum(1 for r in ok if r.get('holm_latency') and r.get('holm_quality')))
+    nums['rep-missing'] = str(len(RJ) - len(ok))
+    if ok:
+        v = [math.log(r['ratio']) for r in ok]
+        nums['rep-gm'] = f'{math.exp(sum(v) / len(v)):.2f}'; nums['rep-min'] = f"{min(r['ratio'] for r in ok):.2f}"; nums['rep-max'] = f"{max(r['ratio'] for r in ok):.2f}"
+        nums['rep-reruns'] = str(sum(r.get('fault_reruns', 0) for r in ok)); nums['rep-dropped'] = str(sum(len(r.get('dropped_rounds', [])) for r in ok))
+        p99 = [math.log(r['rival_p99'] / r['ours_p99']) for r in ok]; nums['rep-p99'] = f'{math.exp(sum(p99) / len(p99)):.2f}'
+        nat = [r['native_share'] for r in ok if r.get('native_share')]
+        if nat:
+            nums['rep-native'] = f'{100 * float(np.median(nat)):.0f}'
 
 # ---- protocol numbers
 fz = J['freeze']

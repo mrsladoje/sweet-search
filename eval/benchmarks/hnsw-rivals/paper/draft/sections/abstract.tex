@@ -1,5 +1,8 @@
 \begin{abstract}
-We compare candidate generators for single-query dense retrieval on CPUs at a fixed fraction of the task
+In a pre-registered replication on two untouched sets (CQADupStack, 457k documents; MS MARCO, 1M passages) with a
+corrected harness, our binary cascade was faster than the rival chosen on dev in all \nm{rep-n} set--CPU tests (latency
+ratio \nm{rep-min}--\nm{rep-max}, Holm-corrected), and quality non-inferiority at 0.5\% of exact quality held on MS
+MARCO on all three CPUs but not on CQADupStack. The main study behind it is descriptive. We compare candidate generators for single-query dense retrieval on CPUs at a fixed fraction of the task
 quality of exact search, not at a recall target. Seven sets (code search and BEIR, 7k to 1M vectors),
 three 768-dimensional embedding models and five CPUs (Intel Granite Rapids, AMD Zen 5, AWS Graviton4,
 AMD Zen 3, Apple M3 Max) cover a binary HNSW cascade with an int8 screen and float16 rescoring, and

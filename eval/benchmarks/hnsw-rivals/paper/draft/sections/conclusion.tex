@@ -7,5 +7,7 @@ the shared steps, but per-stage clocks at equal graph settings confirm it for th
 candidate budgets for some model--set pairs. As shipped, the binary cascade was faster than the rival
 chosen on dev in most cells at 0.5M--1M vectors and slower than an exact binary scan in C++ on most code
 sets below about 20k vectors. Its costs are memory, a slow single-threaded build, a longer latency tail, and
-page-cache misses of its memory-mapped files under other I/O. These results hold for the tested sets, models and CPUs, within the declared quality margin; the released
+page-cache misses of its memory-mapped files under other I/O. A pre-registered replication on two untouched sets confirmed the speed advantage at 99\% of exact quality
+on all three cloud CPUs (\nm{rep-lat-pass} of \nm{rep-n} latency tests), and quality non-inferiority on MS MARCO but not on
+CQADupStack. These results hold for the tested sets, models and CPUs, within the declared quality margin; the released
 records let others check them and add systems.

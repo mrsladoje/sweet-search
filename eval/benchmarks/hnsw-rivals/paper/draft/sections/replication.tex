@@ -1,0 +1,43 @@
+\section{Pre-registered replication on untouched sets}\label{sec:replication}
+
+The main results are descriptive (\S\ref{sec:limits}, Appendix~\ref{app:deviations}). To test the speed claim
+once, we ran a replication on two sets that no earlier step used, with a corrected harness and rules written and
+committed before any replication data existed (\texttt{REPLICATION\_PLAN.md}); two independent pre-run reviews of
+the harness and the plan were applied before the first timing run.
+
+\paragraph{Design.} CQADupStack (all 12 forums merged; 457,199 documents; 13,145 queries, split by forum) and an MS
+MARCO subsample of 1,000,000 passages (every passage judged for a dev query plus a seeded random sample; 6,980
+queries), embedded with bge-base-en-v1.5. One build per rival family (the build most often frozen for that family in
+the main study), every effort-type knob on the same 11-value grid as our stage-1 size, and our cascade only at
+configurations the product itself runs. Dev selection at $\fr = 0.99$ used the median of three timed rounds; the rival
+of each test is the rival fastest on dev. Rival timers compute only the query forms the family uses, each job
+pre-reads only the files it opens, and a job with more than 1,000 major page faults in its timed pass runs once more
+(invalid if it fails again). On held-out queries, each CPU type ran 6 fresh instances, each with 2 blocks that hold
+ours and every frozen rival point in a seeded random order. The latency test is a one-sided $t$-test over the 6
+instance means of log(rival / ours); the quality test is non-inferiority with a relative margin of 0.5\% of exact
+quality, bootstrapped jointly over queries; each family of 6 tests is Holm-corrected at 0.025; a set--CPU pair counts
+as ``faster at 99\% quality'' only if both tests pass.
+
+\paragraph{Results.} Table~\ref{tab:rep} gives the six pairs. The latency test passes in \nm{rep-lat-pass} of
+\nm{rep-n}, the quality test in \nm{rep-q-pass} of \nm{rep-n}, and both in \nm{rep-joint} of \nm{rep-n}. The
+geometric mean ratio over instances is \nm{rep-gm} (from \nm{rep-min} to \nm{rep-max}). \nm{rep-reruns} jobs were
+rerun by the fault rule and \nm{rep-dropped} blocks were dropped. At the 99th percentile the ratio is \nm{rep-p99};
+the native calls are \nm{rep-native}\% of our timed query.
+
+The quality test separates the two sets. On MS MARCO 1M it passes on all three CPUs, so the joint claim (faster and
+not worse than the dev-chosen rival by more than 0.5\% of exact quality) holds there on every CPU. On CQADupStack it
+fails on all three CPUs: the mean difference to the rival is between $-0.0010$ and $0.0000$ nDCG@10, but its lower
+bound falls just below the margin of 0.0021, and both our point and the rival's meet $\fr = 0.99$ only by the point
+estimate, not by the bound. The latency advantage on CQADupStack is therefore shown, but quality non-inferiority at
+this margin is not; we do not claim it.
+
+\begin{table}[h]\centering\scriptsize
+\caption{Replication, held-out, $\fr = 0.99$ (pre-registered tests). Ratio: geometric mean over the 6 instances of
+rival / ours (paired bootstrap interval over instances). Latency: one-sided $t$-test, Holm over 6. Quality: mean of
+per-query nDCG@10 (ours $-$ rival) and the non-inferiority test at 0.5\% of exact quality, Holm over 6.}\label{tab:rep}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{lllrrrrrlrrl}\toprule
+CPU & Set & Rival & Inst. & Ours \us{} & Rival \us{} & Ratio & $p$ (lat.) & Holm & Mean diff & $p$ (qual.) & Holm\\\midrule
+\inputtable{tables/rep.tex}
+\bottomrule\end{tabular}
+\end{table}
