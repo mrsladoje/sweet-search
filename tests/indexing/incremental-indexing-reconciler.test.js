@@ -13,7 +13,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { Reconciler } from '../../core/incremental-indexing/application/reconciler.mjs';
+import { Reconciler, effectiveCpuBudgetMs } from '../../core/incremental-indexing/application/reconciler.mjs';
 import {
   readManifest,
   writeManifest,
@@ -134,6 +134,64 @@ describe('Reconciler / tick lifecycle', () => {
     expect(snap.files_processed).toBe(1);
     expect(snap.dirty_paths_deferred).toBe(2);
     expect(requeued).toEqual(['b.js', 'c.js']);
+  });
+
+  it('does not charge tick setup to cpuBudgetMs', async () => {
+    const dirty = ['a.js', 'b.js', 'c.js'];
+    let nowMs = 0;
+    const adapter = makeAdapter({
+      readDirtySet: async () => { nowMs += 5_000; return dirty; },
+      hashFile: async (file) => { nowMs += 3; return { file, contentUnchanged: false, chunks: [] }; },
+    });
+    const r = new Reconciler({
+      stateDir,
+      adapters: adapter,
+      now: () => nowMs,
+      config: { filesPerTick: 10, cpuBudgetMs: 10 },
+    });
+
+    const snap = await r.tick();
+
+    expect(snap.files_processed).toBe(3);
+    expect(snap.dirty_paths_deferred).toBe(0);
+    expect(snap.tick_ms).toBeGreaterThanOrEqual(5_000);
+  });
+
+  it('uses the catch-up budget for a large backlog on an idle machine', async () => {
+    const dirty = Array.from({ length: 30 }, (_, i) => `f${i}.js`);
+    const run = async (cpuLoadAvg) => {
+      let nowMs = 0;
+      const dir = path.join(stateDir, `load-${cpuLoadAvg}`);
+      fs.mkdirSync(dir);
+      const r = new Reconciler({
+        stateDir: dir,
+        adapters: makeAdapter({
+          readDirtySet: async () => dirty,
+          requeueDirtyFiles: async () => {},
+          hashFile: async (file) => { nowMs += 1_000; return { file, contentUnchanged: false, chunks: [] }; },
+        }),
+        now: () => nowMs,
+        config: { filesPerTick: 50, cpuBudgetMs: 2_000, catchUpCpuBudgetMs: 8_000, cpuLoadAvg },
+      });
+      return r.tick();
+    };
+
+    const idle = await run(0.1);
+    expect(idle.cpu_budget_total_ms).toBe(8_000);
+    expect(idle.files_processed).toBe(8);
+
+    const busy = await run(0.9);
+    expect(busy.cpu_budget_total_ms).toBe(2_000);
+    expect(busy.files_processed).toBe(2);
+  });
+
+  it('effectiveCpuBudgetMs keeps the normal budget unless backlog and load allow catch-up', () => {
+    const cfg = { cpuBudgetMs: 2_000, catchUpCpuBudgetMs: 8_000, catchUpMinDirty: 20, catchUpMaxLoad: 0.8 };
+    expect(effectiveCpuBudgetMs({ ...cfg, cpuLoadAvg: 0.1 }, 20)).toBe(8_000);
+    expect(effectiveCpuBudgetMs({ ...cfg, cpuLoadAvg: 0.1 }, 19)).toBe(2_000);
+    expect(effectiveCpuBudgetMs({ ...cfg, cpuLoadAvg: 0.8 }, 100)).toBe(2_000);
+    expect(effectiveCpuBudgetMs({ ...cfg }, 100)).toBe(2_000);
+    expect(effectiveCpuBudgetMs({ ...cfg, catchUpCpuBudgetMs: 0, cpuLoadAvg: 0 }, 100)).toBe(2_000);
   });
 
   it('counts files whose content is unchanged separately', async () => {

@@ -66,6 +66,31 @@ import { verifyStamp, writeStamp, formatStampMismatch } from '../infrastructure/
 const DEFAULT_TICK_INTERVAL_MS = 60_000;
 const DEFAULT_CPU_BUDGET_MS = 2_000;
 const DEFAULT_FILES_PER_TICK = 50;
+// Catch-up budget: with a real backlog and an idle machine, a 2 s budget lets
+// a tick index one file (one file costs ~1-10 s to encode), so the queue grows
+// faster than it drains. The interval tuner lengthens the sleep whenever a tick
+// takes over half of it, so the maintainer stays busy well under half the time
+// (Windows reports load 0, so there the backlog alone decides). The load limit
+// is the tuner's own CPU-pressure line (interval-autotune.mjs): the maintainer's
+// threads count toward the 1-minute load, so a lower limit would switch the
+// catch-up off as soon as it ran.
+const DEFAULT_CATCHUP_CPU_BUDGET_MS = 8_000;
+const DEFAULT_CATCHUP_MIN_DIRTY = 20;
+const DEFAULT_CATCHUP_MAX_LOAD = 0.8;
+
+/**
+ * Per-tick file budget in ms. Uses the catch-up budget only when the backlog is
+ * large AND the per-core load is known and low; otherwise the normal budget.
+ */
+export function effectiveCpuBudgetMs(config, dirtyCount) {
+  const base = config.cpuBudgetMs;
+  const catchUp = config.catchUpCpuBudgetMs;
+  if (!(catchUp > base)) return base;
+  if (dirtyCount < config.catchUpMinDirty) return base;
+  const load = config.cpuLoadAvg;
+  if (!Number.isFinite(load) || load >= config.catchUpMaxLoad) return base;
+  return catchUp;
+}
 
 const MANIFEST_TIER_KEYS = new Set([
   'codeGraph',
@@ -159,6 +184,9 @@ export class Reconciler {
       intervalMs: config.intervalMs ?? DEFAULT_TICK_INTERVAL_MS,
       cpuBudgetMs: config.cpuBudgetMs ?? DEFAULT_CPU_BUDGET_MS,
       filesPerTick: config.filesPerTick ?? DEFAULT_FILES_PER_TICK,
+      catchUpCpuBudgetMs: config.catchUpCpuBudgetMs ?? DEFAULT_CATCHUP_CPU_BUDGET_MS,
+      catchUpMinDirty: config.catchUpMinDirty ?? DEFAULT_CATCHUP_MIN_DIRTY,
+      catchUpMaxLoad: config.catchUpMaxLoad ?? DEFAULT_CATCHUP_MAX_LOAD,
       autotuneInterval: config.autotuneInterval ?? false,
       pinnedIntervalMs: config.pinnedIntervalMs ?? false,
       ...config,
@@ -268,7 +296,8 @@ export class Reconciler {
       this.progress('reconciler:dirty-read');
       counters.set('dirty_paths_seen', dirty.length);
 
-      counters.set('cpu_budget_total_ms', this.config.cpuBudgetMs);
+      const cpuBudgetMs = effectiveCpuBudgetMs(this.config, dirty.length);
+      counters.set('cpu_budget_total_ms', cpuBudgetMs);
 
       // Lever E.1: open the tick-scoped store context once (load HNSW + float
       // store, open RW/RO connections) before the per-file loop. Threaded into
@@ -283,10 +312,14 @@ export class Reconciler {
       const manifestTiers = {};
       const filesProcessed = [];
 
+      // The budget covers per-file work only. Tick setup (queue read, store
+      // load) can alone exceed the budget, and counting it capped every tick
+      // at one file. tick_ms below stays the full wall clock for the tuner.
+      const budgetStartedAt = this.now();
       for (; dirtyCursor < dirty.length; dirtyCursor += 1) {
         const filesAttempted = counters._fields.files_processed + counters._fields.content_unchanged;
         if (filesAttempted >= this.config.filesPerTick) break;
-        if (filesAttempted > 0 && this.now() - startedAt >= this.config.cpuBudgetMs) break;
+        if (filesAttempted > 0 && this.now() - budgetStartedAt >= cpuBudgetMs) break;
 
         const file = dirty[dirtyCursor];
         this.progress('reconciler:file:start');
@@ -319,6 +352,7 @@ export class Reconciler {
           }
         }
       }
+      counters.set('cpu_budget_used_ms', this.now() - budgetStartedAt);
 
       const deferredFiles = dirty.slice(dirtyCursor);
       if (deferredFiles.length > 0) {

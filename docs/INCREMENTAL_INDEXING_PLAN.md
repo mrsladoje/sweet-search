@@ -2259,7 +2259,8 @@ detected hardware tier (see § 34). All can be overridden.
 | Variable | Default | Purpose |
 |---|---|---|
 | `SWEET_SEARCH_RECONCILE_INTERVAL` | adaptive (15–300 s by tier; 60 s nominal) | Tick interval; min 15s, max 300s unless user-pinned |
-| `SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS` | adaptive (~250 ms × physical_cores, capped at 4000) | Soft cap per tick |
+| `SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS` | `2000` | Soft cap on per-file work per tick (tick setup is not counted) |
+| `SWEET_SEARCH_RECONCILE_CATCHUP_BUDGET_MS` | `8000` | Per-file budget used instead when >= 20 files are dirty and load per core < 0.8; `0` disables |
 | `SWEET_SEARCH_RECONCILE_FILES_PER_TICK` | adaptive (10–200 by tier) | Hard cap on files processed per tick |
 | `SWEET_SEARCH_RECONCILE_DEBUG` | `0` | Verbose per-file logging |
 | `SWEET_SEARCH_WATCH` | `1` where supported; `0` in WSL2/container defaults | Enable Rust notify watcher; polling remains the correctness backstop |

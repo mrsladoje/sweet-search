@@ -7,6 +7,10 @@
  * are stale or absent. Re-running the whole search with `rg` would turn every true zero into a
  * slow zero, so on 0 hits only git's modified + untracked files are grepped: usually a handful,
  * listed by one `git ls-files` call. Outside git there is no such list and nothing is re-run.
+ *
+ * The files waiting in the maintainer's reindex queue are grepped too. A committed file the
+ * maintainer has not reached yet (after a branch switch, a pull, or while it was stopped) is not
+ * in git's changed list, and without this its stale grams answer "no matches".
  */
 
 import { nativeGrepFull } from '../infrastructure/native-sparse-gram.js';
@@ -51,8 +55,8 @@ export async function applyUnindexedFallback({ searcher, regex, searchDir, optio
   const scope = options.fileFilter;
   const inFilter = scope ? grepFileFilterPredicate(scope, searchDir) : null;
   const inScope = (rel) => !inFilter || inFilter(rel);
-  const { listChangedGrepFiles } = await import('../indexing/grep-corpus.js');
-  const files = listChangedGrepFiles(searchDir).filter(inScope);
+  const { listChangedGrepFiles, listPendingReindexFiles } = await import('../indexing/grep-corpus.js');
+  const files = [...new Set([...listChangedGrepFiles(searchDir), ...listPendingReindexFiles(searchDir)])].filter(inScope);
   const stats = { unindexedFallbackFiles: files.length, unindexedFallbackMatches: 0 };
   if (files.length > 0) {
     const found = await grepFiles(regex, searchDir, files, options.fixedString === true, options.caseInsensitive === true);

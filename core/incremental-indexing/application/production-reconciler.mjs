@@ -361,6 +361,9 @@ export function createProductionReconciler(options = {}) {
     config: {
       filesPerTick: Number.parseInt(process.env.SWEET_SEARCH_RECONCILE_FILES_PER_TICK || '50', 10),
       cpuBudgetMs: Number.parseInt(process.env.SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS || '2000', 10),
+      catchUpCpuBudgetMs: Number.parseInt(process.env.SWEET_SEARCH_RECONCILE_CATCHUP_BUDGET_MS || '8000', 10),
+      // The catch-up budget needs the load signal even with the autotune off.
+      cpuLoadAvg: os.loadavg()[0] / cpuCount,
       ...autotuneConfig,
       ...(options.config || {}),
     },

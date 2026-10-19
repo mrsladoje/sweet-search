@@ -397,7 +397,7 @@ describe('G2 E.6 chunk-cutoff integration', () => {
 describe('G2 A.4 autotune config', () => {
   afterEach(() => clearFlags());
 
-  it('flag explicitly off (=0) → autotune dormant (no signals injected)', () => {
+  it('flag explicitly off (=0) → autotune dormant (no backlog signal injected)', () => {
     // Autotune is DEFAULT-ON; the dormant path is exercised with an explicit '0'.
     clearFlags();
     process.env.SWEET_SEARCH_RECONCILE_AUTOTUNE = '0';
@@ -406,7 +406,9 @@ describe('G2 A.4 autotune config', () => {
     try {
       const r = createProductionReconciler({ projectRoot: dir, stateDir: join(dir, '.sweet-search'), modelInfo: MODEL_INFO });
       expect(r.config.autotuneInterval).toBe(false);
-      expect(r.config.cpuLoadAvg).toBeUndefined();
+      expect(r.config.maintenanceBacklog).toBeUndefined();
+      // The catch-up tick budget reads the load even with the autotune off.
+      expect(Number.isFinite(r.config.cpuLoadAvg)).toBe(true);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

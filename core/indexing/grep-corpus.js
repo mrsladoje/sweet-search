@@ -17,7 +17,7 @@
  */
 
 import fs from 'node:fs/promises';
-import { lstatSync } from 'node:fs';
+import { lstatSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { Minimatch } from 'minimatch';
@@ -200,6 +200,45 @@ export function listChangedGrepFiles(projectRoot, { limit = 2000 } = {}) {
     if (isRegularGrepFile(stat)) files.push(rel);
   }
   changedCache.set(projectRoot, { at: now, files });
+  return files;
+}
+
+const PENDING_QUEUES = ['index-maintainer-queue.jsonl', 'index-maintainer-queue.processing.jsonl'];
+
+/**
+ * Files queued for the maintainer but not yet reindexed. Their grams are stale or absent until
+ * the maintainer reaches them, and a committed file is not in git's changed list, so a backlog
+ * (a branch switch, a pull, a stopped maintainer) would answer "no matches" for code on disk.
+ * Read on the zero-hit path only; the queues hold one JSON line per project-relative path.
+ * @param {string} projectRoot
+ * @param {{stateDir?: string, limit?: number}} [opts]
+ * @returns {string[]}
+ */
+export function listPendingReindexFiles(projectRoot, { stateDir, limit = 2000 } = {}) {
+  const dir = stateDir || process.env.SWEET_SEARCH_STATE_DIR || path.join(projectRoot, '.sweet-search');
+  const seen = new Set();
+  for (const name of PENDING_QUEUES) {
+    let raw;
+    try { raw = readFileSync(path.join(dir, name), 'utf8'); } catch { continue; }
+    for (const line of raw.split('\n')) {
+      if (!line.trim()) continue;
+      let fp;
+      try { fp = JSON.parse(line).file_path; } catch { continue; }
+      if (typeof fp !== 'string' || !fp) continue;
+      const rel = normalizeRel(path.isAbsolute(fp) ? path.relative(projectRoot, fp) : fp);
+      if (rel && rel !== '..' && !rel.startsWith('../')) seen.add(rel);
+    }
+  }
+  if (seen.size === 0) return [];
+  const ignores = loadIgnoreRegexes(projectRoot);
+  const files = [];
+  for (const rel of [...seen].sort()) {
+    if (files.length >= limit) break;
+    if (!isGrepCorpusPath(rel, ignores)) continue;
+    let stat = null;
+    try { stat = lstatSync(path.join(projectRoot, rel)); } catch { stat = null; }
+    if (isRegularGrepFile(stat)) files.push(rel);
+  }
   return files;
 }
 
