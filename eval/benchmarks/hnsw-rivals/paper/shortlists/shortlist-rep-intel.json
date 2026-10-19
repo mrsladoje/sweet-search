@@ -1,8 +1,1122 @@
 {
+ "cqadup": {
+  "k_v": 10,
+  "n_dev": 7887,
+  "points": [
+   {
+    "build_params": {
+     "L": 200,
+     "R": 96,
+     "alpha": 1.2
+    },
+    "family": "diskann_vamana",
+    "search": {
+     "L": 100
+    },
+    "system": "diskann_vamana"
+   },
+   {
+    "build_params": {},
+    "family": "faiss_bin_flat",
+    "search": {
+     "refine": 200
+    },
+    "system": "faiss_bin_flat"
+   },
+   {
+    "build_params": {
+     "M": 64,
+     "efC": 800
+    },
+    "family": "faiss_bin_hnsw",
+    "search": {
+     "ef": 400,
+     "refine": 200
+    },
+    "system": "faiss_bin_hnsw"
+   },
+   {
+    "build_params": {
+     "M": 64,
+     "efC": 800
+    },
+    "family": "faiss_hnsw_flat",
+    "search": {
+     "ef": 50
+    },
+    "system": "faiss_hnsw_flat"
+   },
+   {
+    "build_params": {
+     "M": 64,
+     "efC": 800
+    },
+    "family": "faiss_hnsw_sq8",
+    "search": {
+     "ef": 50,
+     "refine": 2
+    },
+    "system": "faiss_hnsw_sq8"
+   },
+   {
+    "build_params": {
+     "nlist": 676
+    },
+    "family": "faiss_ivfpq_fs",
+    "search": {
+     "nprobe": 128,
+     "refine": 5
+    },
+    "system": "faiss_ivfpq_fs"
+   },
+   {
+    "build_params": {},
+    "family": "faiss_rabitq_flat",
+    "search": {
+     "refine": 5
+    },
+    "system": "faiss_rabitq_flat"
+   },
+   {
+    "build_params": {
+     "M": 64,
+     "efC": 200
+    },
+    "family": "faiss_rabitq_hnsw",
+    "search": {
+     "ef": 200,
+     "refine": 10
+    },
+    "system": "faiss_rabitq_hnsw"
+   },
+   {
+    "build_params": {
+     "nlist": 676
+    },
+    "family": "faiss_rabitq_ivf",
+    "search": {
+     "nprobe": 128,
+     "refine": 5
+    },
+    "system": "faiss_rabitq_ivf"
+   },
+   {
+    "build_params": {
+     "M": 64,
+     "efC": 200
+    },
+    "family": "hnswlib_f32",
+    "search": {
+     "ef": 100
+    },
+    "system": "hnswlib_f32"
+   },
+   {
+    "EF": 200,
+    "S1": 200,
+    "system": "ours_cascade"
+   },
+   {
+    "build_params": {
+     "leaves": 676,
+     "mode": "tree_ah",
+     "soar": 1
+    },
+    "family": "scann",
+    "search": {
+     "leaves_to_search": 67,
+     "reorder": 100
+    },
+    "system": "scann"
+   },
+   {
+    "build_params": {
+     "degree": 64
+    },
+    "family": "svs_vamana_leanvec",
+    "search": {
+     "window": 100
+    },
+    "system": "svs_vamana_leanvec"
+   },
+   {
+    "build_params": {
+     "degree": 64
+    },
+    "family": "svs_vamana_lvq",
+    "search": {
+     "window": 50
+    },
+    "system": "svs_vamana_lvq"
+   },
+   {
+    "build_params": {
+     "M": 32,
+     "efC": 800
+    },
+    "family": "usearch_b1_rescore",
+    "search": {
+     "ef": 1000,
+     "rescore": 200
+    },
+    "system": "usearch_b1_rescore"
+   },
+   {
+    "build_params": {
+     "M": 64,
+     "efC": 800
+    },
+    "family": "usearch_f16",
+    "search": {
+     "ef": 50
+    },
+    "system": "usearch_f16"
+   },
+   {
+    "build_params": {
+     "M": 32,
+     "efC": 800
+    },
+    "family": "usearch_i8",
+    "search": {
+     "ef": 100
+    },
+    "system": "usearch_i8"
+   }
+  ],
+  "q_exact": 0.4030785205183098,
+  "rival": "svs_vamana_lvq",
+  "selection": {
+   "diskann_vamana": {
+    "frozen": {
+     "latency_us": 1417.855,
+     "lower": 0.0025027508807972908,
+     "point": {
+      "build_params": {
+       "L": 200,
+       "R": 96,
+       "alpha": 1.2
+      },
+      "family": "diskann_vamana",
+      "search": {
+       "L": 100
+      },
+      "system": "diskann_vamana"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9979704173497351
+    },
+    "n_points": 11,
+    "qualifying": 10
+   },
+   "faiss_bin_flat": {
+    "frozen": {
+     "latency_us": 1275.018,
+     "lower": 0.0008316197790270767,
+     "point": {
+      "build_params": {},
+      "family": "faiss_bin_flat",
+      "search": {
+       "refine": 200
+      },
+      "system": "faiss_bin_flat"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9951628691699408
+    },
+    "n_points": 5,
+    "qualifying": 1
+   },
+   "faiss_bin_hnsw": {
+    "frozen": {
+     "latency_us": 1487.007,
+     "lower": 9.330284154853848e-05,
+     "point": {
+      "build_params": {
+       "M": 64,
+       "efC": 800
+      },
+      "family": "faiss_bin_hnsw",
+      "search": {
+       "ef": 400,
+       "refine": 200
+      },
+      "system": "faiss_bin_hnsw"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9935050763732016
+    },
+    "n_points": 22,
+    "qualifying": 6
+   },
+   "faiss_hnsw_flat": {
+    "frozen": {
+     "latency_us": 663.915,
+     "lower": 0.0019316067016223342,
+     "point": {
+      "build_params": {
+       "M": 64,
+       "efC": 800
+      },
+      "family": "faiss_hnsw_flat",
+      "search": {
+       "ef": 50
+      },
+      "system": "faiss_hnsw_flat"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9971650774081483
+    },
+    "n_points": 11,
+    "qualifying": 11
+   },
+   "faiss_hnsw_sq8": {
+    "frozen": {
+     "latency_us": 823.159,
+     "lower": 0.0019508033426543494,
+     "point": {
+      "build_params": {
+       "M": 64,
+       "efC": 800
+      },
+      "family": "faiss_hnsw_sq8",
+      "search": {
+       "ef": 50,
+       "refine": 2
+      },
+      "system": "faiss_hnsw_sq8"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9972117467749636
+    },
+    "n_points": 22,
+    "qualifying": 22
+   },
+   "faiss_ivfpq_fs": {
+    "frozen": {
+     "latency_us": 491.893,
+     "lower": 0.000641370619473823,
+     "point": {
+      "build_params": {
+       "nlist": 676
+      },
+      "family": "faiss_ivfpq_fs",
+      "search": {
+       "nprobe": 128,
+       "refine": 5
+      },
+      "system": "faiss_ivfpq_fs"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9942472686307052
+    },
+    "n_points": 22,
+    "qualifying": 8
+   },
+   "faiss_rabitq_flat": {
+    "frozen": {
+     "latency_us": 7874.722,
+     "lower": 0.0038935843010948932,
+     "point": {
+      "build_params": {},
+      "family": "faiss_rabitq_flat",
+      "search": {
+       "refine": 5
+      },
+      "system": "faiss_rabitq_flat"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 1.0005354949213616
+    },
+    "n_points": 5,
+    "qualifying": 4
+   },
+   "faiss_rabitq_hnsw": {
+    "frozen": {
+     "latency_us": 930.4,
+     "lower": 0.0005877615572672725,
+     "point": {
+      "build_params": {
+       "M": 64,
+       "efC": 200
+      },
+      "family": "faiss_rabitq_hnsw",
+      "search": {
+       "ef": 200,
+       "refine": 10
+      },
+      "system": "faiss_rabitq_hnsw"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9942995925315714
+    },
+    "n_points": 22,
+    "qualifying": 15
+   },
+   "faiss_rabitq_ivf": {
+    "frozen": {
+     "latency_us": 2320.892,
+     "lower": 0.0016708855381809737,
+     "point": {
+      "build_params": {
+       "nlist": 676
+      },
+      "family": "faiss_rabitq_ivf",
+      "search": {
+       "nprobe": 128,
+       "refine": 5
+      },
+      "system": "faiss_rabitq_ivf"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9962134680206668
+    },
+    "n_points": 22,
+    "qualifying": 8
+   },
+   "hnswlib_f32": {
+    "frozen": {
+     "latency_us": 847.959,
+     "lower": 0.001564108233229493,
+     "point": {
+      "build_params": {
+       "M": 64,
+       "efC": 200
+      },
+      "family": "hnswlib_f32",
+      "search": {
+       "ef": 100
+      },
+      "system": "hnswlib_f32"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9961786157187641
+    },
+    "n_points": 11,
+    "qualifying": 10
+   },
+   "ours_cascade": {
+    "frozen": {
+     "latency_us": 163.782,
+     "lower": 9.431394717950116e-05,
+     "point": {
+      "EF": 200,
+      "S1": 200,
+      "system": "ours_cascade"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.993640223241071
+    },
+    "n_points": 9,
+    "qualifying": 8
+   },
+   "scann": {
+    "frozen": {
+     "latency_us": 3434.079,
+     "lower": 0.0020905885305949287,
+     "point": {
+      "build_params": {
+       "leaves": 676,
+       "mode": "tree_ah",
+       "soar": 1
+      },
+      "family": "scann",
+      "search": {
+       "leaves_to_search": 67,
+       "reorder": 100
+      },
+      "system": "scann"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9972349699591243
+    },
+    "n_points": 12,
+    "qualifying": 8
+   },
+   "svs_vamana_leanvec": {
+    "frozen": {
+     "latency_us": 355.35,
+     "lower": 0.0020773899164588214,
+     "point": {
+      "build_params": {
+       "degree": 64
+      },
+      "family": "svs_vamana_leanvec",
+      "search": {
+       "window": 100
+      },
+      "system": "svs_vamana_leanvec"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9973540250611979
+    },
+    "n_points": 11,
+    "qualifying": 10
+   },
+   "svs_vamana_lvq": {
+    "frozen": {
+     "latency_us": 236.869,
+     "lower": 0.0005551571305575247,
+     "point": {
+      "build_params": {
+       "degree": 64
+      },
+      "family": "svs_vamana_lvq",
+      "search": {
+       "window": 50
+      },
+      "system": "svs_vamana_lvq"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9941173773138707
+    },
+    "n_points": 11,
+    "qualifying": 11
+   },
+   "usearch_b1_rescore": {
+    "frozen": {
+     "latency_us": 1866.715,
+     "lower": 1.7163904424198153e-05,
+     "point": {
+      "build_params": {
+       "M": 32,
+       "efC": 800
+      },
+      "family": "usearch_b1_rescore",
+      "search": {
+       "ef": 1000,
+       "rescore": 200
+      },
+      "system": "usearch_b1_rescore"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9933270972534058
+    },
+    "n_points": 22,
+    "qualifying": 4
+   },
+   "usearch_f16": {
+    "frozen": {
+     "latency_us": 1226.138,
+     "lower": 0.0015813273319009833,
+     "point": {
+      "build_params": {
+       "M": 64,
+       "efC": 800
+      },
+      "family": "usearch_f16",
+      "search": {
+       "ef": 50
+      },
+      "system": "usearch_f16"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.996302450131336
+    },
+    "n_points": 11,
+    "qualifying": 11
+   },
+   "usearch_i8": {
+    "frozen": {
+     "latency_us": 1268.129,
+     "lower": 0.00037982675843669186,
+     "point": {
+      "build_params": {
+       "M": 32,
+       "efC": 800
+      },
+      "family": "usearch_i8",
+      "search": {
+       "ef": 100
+      },
+      "system": "usearch_i8"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9943581116384338
+    },
+    "n_points": 11,
+    "qualifying": 10
+   }
+  }
+ },
  "meta": {
   "f": 0.99,
   "machines": "hd-intel-*",
   "rule": "REPLICATION_PLAN.md section 4",
   "type": "intel"
+ },
+ "msmarco1m": {
+  "k_v": 10,
+  "n_dev": 4188,
+  "points": [
+   {
+    "build_params": {
+     "L": 200,
+     "R": 96,
+     "alpha": 1.2
+    },
+    "family": "diskann_vamana",
+    "search": {
+     "L": 150
+    },
+    "system": "diskann_vamana"
+   },
+   {
+    "build_params": {},
+    "family": "faiss_bin_flat",
+    "search": {
+     "refine": 200
+    },
+    "system": "faiss_bin_flat"
+   },
+   {
+    "build_params": {
+     "M": 64,
+     "efC": 800
+    },
+    "family": "faiss_bin_hnsw",
+    "search": {
+     "ef": 300,
+     "refine": 200
+    },
+    "system": "faiss_bin_hnsw"
+   },
+   {
+    "build_params": {
+     "M": 64,
+     "efC": 800
+    },
+    "family": "faiss_hnsw_flat",
+    "search": {
+     "ef": 100
+    },
+    "system": "faiss_hnsw_flat"
+   },
+   {
+    "build_params": {
+     "M": 64,
+     "efC": 800
+    },
+    "family": "faiss_hnsw_sq8",
+    "search": {
+     "ef": 100,
+     "refine": 10
+    },
+    "system": "faiss_hnsw_sq8"
+   },
+   {
+    "build_params": {
+     "nlist": 1000
+    },
+    "family": "faiss_ivfpq_fs",
+    "search": {
+     "nprobe": 256,
+     "refine": 5
+    },
+    "system": "faiss_ivfpq_fs"
+   },
+   {
+    "build_params": {},
+    "family": "faiss_rabitq_flat",
+    "search": {
+     "refine": 5
+    },
+    "system": "faiss_rabitq_flat"
+   },
+   {
+    "build_params": {
+     "M": 64,
+     "efC": 200
+    },
+    "family": "faiss_rabitq_hnsw",
+    "search": {
+     "ef": 400,
+     "refine": 2
+    },
+    "system": "faiss_rabitq_hnsw"
+   },
+   {
+    "build_params": {
+     "nlist": 1000
+    },
+    "family": "faiss_rabitq_ivf",
+    "search": {
+     "nprobe": 256,
+     "refine": 20
+    },
+    "system": "faiss_rabitq_ivf"
+   },
+   {
+    "build_params": {
+     "M": 64,
+     "efC": 200
+    },
+    "family": "hnswlib_f32",
+    "search": {
+     "ef": 300
+    },
+    "system": "hnswlib_f32"
+   },
+   {
+    "EF": 400,
+    "S1": 400,
+    "system": "ours_cascade"
+   },
+   {
+    "build_params": {
+     "leaves": 1000,
+     "mode": "tree_ah",
+     "soar": 1
+    },
+    "family": "scann",
+    "search": {
+     "leaves_to_search": 100,
+     "reorder": 100
+    },
+    "system": "scann"
+   },
+   {
+    "build_params": {
+     "degree": 64
+    },
+    "family": "svs_vamana_leanvec",
+    "search": {
+     "window": 300
+    },
+    "system": "svs_vamana_leanvec"
+   },
+   {
+    "build_params": {
+     "degree": 64
+    },
+    "family": "svs_vamana_lvq",
+    "search": {
+     "window": 150
+    },
+    "system": "svs_vamana_lvq"
+   },
+   {
+    "build_params": {
+     "M": 32,
+     "efC": 800
+    },
+    "family": "usearch_b1_rescore",
+    "search": {
+     "ef": 1000,
+     "rescore": 200
+    },
+    "system": "usearch_b1_rescore"
+   },
+   {
+    "build_params": {
+     "M": 64,
+     "efC": 800
+    },
+    "family": "usearch_f16",
+    "search": {
+     "ef": 100
+    },
+    "system": "usearch_f16"
+   },
+   {
+    "build_params": {
+     "M": 32,
+     "efC": 800
+    },
+    "family": "usearch_i8",
+    "search": {
+     "ef": 300
+    },
+    "system": "usearch_i8"
+   }
+  ],
+  "q_exact": 0.7033811444606032,
+  "rival": "svs_vamana_lvq",
+  "selection": {
+   "diskann_vamana": {
+    "frozen": {
+     "latency_us": 1987.619,
+     "lower": 0.0007538111969090505,
+     "point": {
+      "build_params": {
+       "L": 200,
+       "R": 96,
+       "alpha": 1.2
+      },
+      "family": "diskann_vamana",
+      "search": {
+       "L": 150
+      },
+      "system": "diskann_vamana"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9939434541932138
+    },
+    "n_points": 11,
+    "qualifying": 9
+   },
+   "faiss_bin_flat": {
+    "frozen": {
+     "latency_us": 2554.1965,
+     "lower": 0.003214258523630882,
+     "point": {
+      "build_params": {},
+      "family": "faiss_bin_flat",
+      "search": {
+       "refine": 200
+      },
+      "system": "faiss_bin_flat"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9967331576054412
+    },
+    "n_points": 5,
+    "qualifying": 1
+   },
+   "faiss_bin_hnsw": {
+    "frozen": {
+     "latency_us": 891.176,
+     "lower": 0.00012460997895633288,
+     "point": {
+      "build_params": {
+       "M": 64,
+       "efC": 800
+      },
+      "family": "faiss_bin_hnsw",
+      "search": {
+       "ef": 300,
+       "refine": 200
+      },
+      "system": "faiss_bin_hnsw"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9932267549837837
+    },
+    "n_points": 22,
+    "qualifying": 7
+   },
+   "faiss_hnsw_flat": {
+    "frozen": {
+     "latency_us": 1130.8135,
+     "lower": 0.002989480623734379,
+     "point": {
+      "build_params": {
+       "M": 64,
+       "efC": 800
+      },
+      "family": "faiss_hnsw_flat",
+      "search": {
+       "ef": 100
+      },
+      "system": "faiss_hnsw_flat"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9965263735579045
+    },
+    "n_points": 11,
+    "qualifying": 10
+   },
+   "faiss_hnsw_sq8": {
+    "frozen": {
+     "latency_us": 1783.235,
+     "lower": 0.00266702175168362,
+     "point": {
+      "build_params": {
+       "M": 64,
+       "efC": 800
+      },
+      "family": "faiss_hnsw_sq8",
+      "search": {
+       "ef": 100,
+       "refine": 10
+      },
+      "system": "faiss_hnsw_sq8"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9961869026163129
+    },
+    "n_points": 22,
+    "qualifying": 20
+   },
+   "faiss_ivfpq_fs": {
+    "frozen": {
+     "latency_us": 1316.871,
+     "lower": 0.0010229115484115183,
+     "point": {
+      "build_params": {
+       "nlist": 1000
+      },
+      "family": "faiss_ivfpq_fs",
+      "search": {
+       "nprobe": 256,
+       "refine": 5
+      },
+      "system": "faiss_ivfpq_fs"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9943225642476552
+    },
+    "n_points": 22,
+    "qualifying": 6
+   },
+   "faiss_rabitq_flat": {
+    "frozen": {
+     "latency_us": 17453.3025,
+     "lower": 0.006908428457116637,
+     "point": {
+      "build_params": {},
+      "family": "faiss_rabitq_flat",
+      "search": {
+       "refine": 5
+      },
+      "system": "faiss_rabitq_flat"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 1.000228317955526
+    },
+    "n_points": 5,
+    "qualifying": 4
+   },
+   "faiss_rabitq_hnsw": {
+    "frozen": {
+     "latency_us": 1102.5035,
+     "lower": 0.0008695573393086692,
+     "point": {
+      "build_params": {
+       "M": 64,
+       "efC": 200
+      },
+      "family": "faiss_rabitq_hnsw",
+      "search": {
+       "ef": 400,
+       "refine": 2
+      },
+      "system": "faiss_rabitq_hnsw"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9942810322160677
+    },
+    "n_points": 22,
+    "qualifying": 12
+   },
+   "faiss_rabitq_ivf": {
+    "frozen": {
+     "latency_us": 5426.9785,
+     "lower": 0.0014221534430885268,
+     "point": {
+      "build_params": {
+       "nlist": 1000
+      },
+      "family": "faiss_rabitq_ivf",
+      "search": {
+       "nprobe": 256,
+       "refine": 20
+      },
+      "system": "faiss_rabitq_ivf"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9947755734158756
+    },
+    "n_points": 22,
+    "qualifying": 6
+   },
+   "hnswlib_f32": {
+    "frozen": {
+     "latency_us": 2163.199,
+     "lower": 0.0010115478235765791,
+     "point": {
+      "build_params": {
+       "M": 64,
+       "efC": 200
+      },
+      "family": "hnswlib_f32",
+      "search": {
+       "ef": 300
+      },
+      "system": "hnswlib_f32"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.994223014810207
+    },
+    "n_points": 11,
+    "qualifying": 7
+   },
+   "ours_cascade": {
+    "frozen": {
+     "latency_us": 256.928,
+     "lower": 0.0010448314284824598,
+     "point": {
+      "EF": 400,
+      "S1": 400,
+      "system": "ours_cascade"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9942574144912973
+    },
+    "n_points": 9,
+    "qualifying": 6
+   },
+   "scann": {
+    "frozen": {
+     "latency_us": 7100.559,
+     "lower": 0.0019877932841407763,
+     "point": {
+      "build_params": {
+       "leaves": 1000,
+       "mode": "tree_ah",
+       "soar": 1
+      },
+      "family": "scann",
+      "search": {
+       "leaves_to_search": 100,
+       "reorder": 100
+      },
+      "system": "scann"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9953566917907013
+    },
+    "n_points": 12,
+    "qualifying": 8
+   },
+   "svs_vamana_leanvec": {
+    "frozen": {
+     "latency_us": 913.2045,
+     "lower": 0.0014806576835659402,
+     "point": {
+      "build_params": {
+       "degree": 64
+      },
+      "family": "svs_vamana_leanvec",
+      "search": {
+       "window": 300
+      },
+      "system": "svs_vamana_leanvec"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9948344169526362
+    },
+    "n_points": 11,
+    "qualifying": 7
+   },
+   "svs_vamana_lvq": {
+    "frozen": {
+     "latency_us": 745.985,
+     "lower": 4.218176701837034e-05,
+     "point": {
+      "build_params": {
+       "degree": 64
+      },
+      "family": "svs_vamana_lvq",
+      "search": {
+       "window": 150
+      },
+      "system": "svs_vamana_lvq"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9930748989254301
+    },
+    "n_points": 11,
+    "qualifying": 9
+   },
+   "usearch_b1_rescore": {
+    "frozen": {
+     "latency_us": 1652.1175,
+     "lower": 0.00046790536075902136,
+     "point": {
+      "build_params": {
+       "M": 32,
+       "efC": 800
+      },
+      "family": "usearch_b1_rescore",
+      "search": {
+       "ef": 1000,
+       "rescore": 200
+      },
+      "system": "usearch_b1_rescore"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9936170405272672
+    },
+    "n_points": 22,
+    "qualifying": 4
+   },
+   "usearch_f16": {
+    "frozen": {
+     "latency_us": 2004.6365,
+     "lower": 0.0009713187884244688,
+     "point": {
+      "build_params": {
+       "M": 64,
+       "efC": 800
+      },
+      "family": "usearch_f16",
+      "search": {
+       "ef": 100
+      },
+      "system": "usearch_f16"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9941189058048024
+    },
+    "n_points": 11,
+    "qualifying": 10
+   },
+   "usearch_i8": {
+    "frozen": {
+     "latency_us": 2894.7665,
+     "lower": 0.0022520006611981727,
+     "point": {
+      "build_params": {
+       "M": 32,
+       "efC": 800
+      },
+      "family": "usearch_i8",
+      "search": {
+       "ef": 300
+      },
+      "system": "usearch_i8"
+     },
+     "qualifies": true,
+     "rounds": 3,
+     "share": 0.9962219961852511
+    },
+    "n_points": 11,
+    "qualifying": 7
+   }
+  }
  }
 }
