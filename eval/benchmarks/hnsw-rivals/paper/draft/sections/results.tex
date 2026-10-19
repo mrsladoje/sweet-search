@@ -47,7 +47,7 @@ them at equal settings. On the smallest set, FAISS binary flat takes 2.8 to 4.9 
 exact Hamming scan of the same codes (\S\ref{sec:post}). Reading the two sources shows one difference: FAISS's
 binary flat search keeps the best $C$ in a binary heap by default (a counting variant exists, \texttt{use\_heap =
 false}, which our harness did not enable), while our scan selects them from a histogram of the 513 possible distances.
-We did not measure how much of the gap this explains.
+\S\ref{sec:post} measures how much of the gap this explains.
 
 \paragraph{The int8 screen.} With our walk at $C = 400$, rescoring all 400 candidates ($H = C$; the
 int8 scores are still computed and sorted, but no candidate is removed) takes a median \nm{screen-med} times as long as screening to $H = 100$ (10th--90th percentile
@@ -133,7 +133,18 @@ ranges from \nm{rec-ours-min} (median \nm{rec-ours-med}) for our points in Table
 recall@10 between \nm{rec-dist-min} and 0.9, and all \nm{rec-dist-low-meet} keep at least 99\% of exact task quality on
 held-out queries by the point estimate. A recall@10 target of 0.9 would have excluded them. Two effects can explain the
 gap (we did not measure their shares): several vectors map to one document, and a near neighbour that is not relevant can be replaced by another without
-changing MRR@10 or nDCG@10. All nine are code-set points, which are exploratory (\S\ref{sec:limits}).
+changing MRR@10 or nDCG@10. Document-level recall@10 (the top-10 documents against the exact top-10 documents) gives the
+same picture: \nm{recdoc-low} of \nm{recdoc-n} points below 0.9, lowest \nm{recdoc-min}, so the vector-to-document mapping
+is not the cause. All nine are code-set points, which are exploratory (\S\ref{sec:limits}).
+
+The replication sets test this on fresh data with one vector per document and BEIR labels (post hoc, dev queries, every
+configuration of every system). There the effect is weaker. Of the configurations that meet $\fr = 0.99$
+(\nm{reprec-cqa-meet} of \nm{reprec-cqa-n} on CQADupStack, \nm{reprec-msm-meet} of \nm{reprec-msm-n} on MS MARCO), none has
+recall@10 below 0.9 (lowest \nm{reprec-cqa-min} and \nm{reprec-msm-min}). Recall still misjudges quality in both directions: a
+recall@10 target of 0.95 would exclude \nm{reprec-cqa-excl95} and \nm{reprec-msm-excl95} configurations that meet the quality
+target, and \nm{reprec-cqa-fail} and \nm{reprec-msm-fail} configurations with recall@10 of at least 0.9 miss it. A recall target
+is therefore not a reliable stand-in for a task-quality target, but the large recall gaps of the code sets do not
+replicate on these two sets.
 
 \paragraph{Tail latency.} For the same \nm{tail-n} pairs, the geometric mean of the rival-to-ours ratio is
 \nm{tail-p50} at the median query, \nm{tail-p95} at the 95th percentile and \nm{tail-p99} at the 99th percentile (each

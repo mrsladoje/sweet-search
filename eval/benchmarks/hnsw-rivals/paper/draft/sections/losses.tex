@@ -52,5 +52,6 @@ pre-read and were read back from disk during the timed pass. The median over rou
 \nm{slow-moved} of our points (all csn1m, in comparison A) at least half of the rounds are slow, and the
 reported median is then a slow value. In the replication the same effect made every fault-rule rerun, and
 the one dropped block, a job of ours on MS MARCO; with that block kept, one of the six latency tests would not pass
-(\S\ref{sec:replication}). Locking the index in memory, or reading it into anonymous memory, would remove the effect at
-the cost of a longer load and more anonymous memory; we did not test it.
+(\S\ref{sec:replication}). For a local tool on a developer's laptop, page-cache eviction is the normal case, not an edge case. Locking the index
+in memory, or reading it into anonymous memory, would remove the effect at the cost of a longer load and more anonymous
+memory; the product has no such option yet, and we did not test one.

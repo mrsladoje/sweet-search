@@ -26,15 +26,18 @@ CPUs, with dev-only selection and a hashed freeze, but with flaws found after th
 \item \textbf{A protocol for ANN comparisons at fixed task quality.} Each system runs at the fastest configuration that
 keeps a fraction $\fr$ of exact-search MRR@10 or nDCG@10, chosen on dev queries with a cluster-bootstrap bound and frozen,
 with file hashes, before held-out queries run; repeated rounds sized by A/A runs; and a pre-registered replication with
-the instance as the unit. To our knowledge, pre-registration is rare in ANN benchmarking.
-\item \textbf{Recall is a poor proxy.} \nm{rec-dist-low} of our \nm{rec-dist-n} distinct operating points have
-recall@10 between \nm{rec-dist-min} and 0.9 and still keep 99\% of exact task quality on held-out queries;
-a recall@10 target of 0.9 would have excluded these points (\S\ref{sec:results}).
+the instance as the unit. The replication plan and its analysis code were public
+on GitHub five hours before its first timing job. To our knowledge, pre-registration is rare in ANN benchmarking.
+\item \textbf{Recall against task quality.} On the code sets, \nm{rec-dist-low} of our \nm{rec-dist-n} distinct operating
+points have recall@10 between \nm{rec-dist-min} and 0.9, also at document level, and still keep 99\% of exact task
+quality; on the two replication sets no configuration that keeps 99\% falls below recall@10 = 0.9, but a recall target
+still misorders configurations in both directions (\S\ref{sec:results}).
 \item \textbf{A map of candidate generators} behind one shared rescoring procedure, from 7k to 1M vectors on five CPUs
 (\S\ref{sec:results}), and an equal-settings comparison of binary HNSW implementations on the same codes: our walk is
 \nm{post-eqb-min}--\nm{post-eqb-max} times faster than FAISS and USearch binary HNSW (\S\ref{sec:post}).
 \item \textbf{A confirmatory speed result}: in the replication our cascade was faster than the rival chosen on dev in
-\nm{rep-lat-pass} of \nm{rep-n} pre-registered tests; quality non-inferiority held on MS MARCO and not on CQADupStack
+\nm{rep-lat-pass} of \nm{rep-n} pre-registered tests, one of them only under the pre-registered page-fault rule; quality
+non-inferiority held on MS MARCO and not on CQADupStack
 (\S\ref{sec:replication}).
 \item \textbf{Where the cascade loses}, in the main text (\S\ref{sec:losses}), and the harness, frozen points and every
 record for others to check the results and add systems (\S\ref{sec:repro}).

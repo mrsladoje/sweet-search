@@ -1,0 +1,145 @@
+{
+ "n_selfmatch_queries": 814,
+ "dev_selection": [
+  {
+   "type": "intel",
+   "rival_old": "svs_vamana_lvq",
+   "rival_new": "svs_vamana_lvq",
+   "points_same": true
+  },
+  {
+   "type": "amd",
+   "rival_old": "faiss_hnsw_sq8",
+   "rival_new": "faiss_hnsw_sq8",
+   "points_same": true
+  },
+  {
+   "type": "arm",
+   "rival_old": "faiss_bin_hnsw",
+   "rival_new": "faiss_bin_hnsw",
+   "points_same": true
+  }
+ ],
+ "heldout": [
+  {
+   "type": "intel",
+   "q_exact": [
+    0.7032720394568988,
+    0.7032720394568988
+   ],
+   "mean_diff": [
+    0.0021284433707957026,
+    0.0021284433707957026
+   ],
+   "p_quality": [
+    9.999000099990002e-05,
+    9.999000099990002e-05
+   ],
+   "holm_quality": [
+    true,
+    true
+   ],
+   "ours_share": [
+    0.9980697205544309,
+    0.9980697205544309
+   ],
+   "rival_share": [
+    0.9950432340010348,
+    0.9950432340010348
+   ]
+  },
+  {
+   "type": "amd",
+   "q_exact": [
+    0.7032720394568988,
+    0.7032720394568988
+   ],
+   "mean_diff": [
+    0.0005868482667892732,
+    0.0005868482667892732
+   ],
+   "p_quality": [
+    0.00019998000199980003,
+    0.00019998000199980003
+   ],
+   "holm_quality": [
+    true,
+    true
+   ],
+   "ours_share": [
+    0.9980697205544309,
+    0.9980697205544309
+   ],
+   "rival_share": [
+    0.9972352664117033,
+    0.9972352664117033
+   ]
+  },
+  {
+   "type": "arm",
+   "q_exact": [
+    0.7032720394568988,
+    0.7032720394568988
+   ],
+   "mean_diff": [
+    0.0017208267804750886,
+    0.0017208267804750886
+   ],
+   "p_quality": [
+    9.999000099990002e-05,
+    9.999000099990002e-05
+   ],
+   "holm_quality": [
+    true,
+    true
+   ],
+   "ours_share": [
+    0.9980697205544309,
+    0.9980697205544309
+   ],
+   "rival_share": [
+    0.9956228341663355,
+    0.9956228341663355
+   ]
+  }
+ ],
+ "holm_quality_all_same": true,
+ "top10_changed": [
+  {
+   "type": "intel",
+   "system": "ours_cascade",
+   "changed_top10": 0,
+   "n": 2792
+  },
+  {
+   "type": "intel",
+   "system": "svs_vamana_lvq",
+   "changed_top10": 0,
+   "n": 2792
+  },
+  {
+   "type": "amd",
+   "system": "faiss_hnsw_sq8",
+   "changed_top10": 0,
+   "n": 2792
+  },
+  {
+   "type": "amd",
+   "system": "ours_cascade",
+   "changed_top10": 0,
+   "n": 2792
+  },
+  {
+   "type": "arm",
+   "system": "faiss_bin_hnsw",
+   "changed_top10": 0,
+   "n": 2792
+  },
+  {
+   "type": "arm",
+   "system": "ours_cascade",
+   "changed_top10": 0,
+   "n": 2792
+  }
+ ]
+}

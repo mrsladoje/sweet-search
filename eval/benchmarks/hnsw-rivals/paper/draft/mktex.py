@@ -5,7 +5,7 @@ import argparse, collections, json, math, os
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ap = argparse.ArgumentParser(); ap.add_argument('json'); ap.add_argument('--extra', help='JSON of extra numbers {key: value}'); ap.add_argument('--tails', help='tails_recall.py output'); ap.add_argument('--post', help='post_analyze.py output (post-freeze experiments)'); ap.add_argument('--rep', help='rep_analyze.py output (replication)'); ap.add_argument('--rep-describe', help='rep_describe.py output (replication, descriptive)'); ap.add_argument('--code-ablation', help='code_ablation.py output'); ap.add_argument('--floor', help='floor_analyze.py output'); ap.add_argument('--mech', help='mech_analyze.py output')
+ap = argparse.ArgumentParser(); ap.add_argument('json'); ap.add_argument('--extra', help='JSON of extra numbers {key: value}'); ap.add_argument('--tails', help='tails_recall.py output'); ap.add_argument('--post', help='post_analyze.py output (post-freeze experiments)'); ap.add_argument('--rep', help='rep_analyze.py output (replication)'); ap.add_argument('--rep-describe', help='rep_describe.py output (replication, descriptive)'); ap.add_argument('--code-ablation', help='code_ablation.py output'); ap.add_argument('--floor', help='floor_analyze.py output'); ap.add_argument('--mech', help='mech_analyze.py output'); ap.add_argument('--recall-doc', help='recall_doc.py output'); ap.add_argument('--selfmatch', help='rep_selfmatch.py output')
 a = ap.parse_args()
 J = json.load(open(a.json))
 TYPES = [t for t in ('intel', 'amd', 'arm', 'box', 'mac') if t in J['R']]
@@ -651,6 +651,23 @@ if a.floor and a.rep:
     nums['floor-n-lower'] = W[sum(1 for t in gains if gains[t] > 1.0001)]
     allg = [v['gain'] for t in FJ for f, v in FJ[t]['summary'].items() if v.get('gain') and not f.startswith('ours') and v['gain'] > 1.0001]
     nums['floor-gain-min'] = f'{min(allg):.2f}'; nums['floor-gain-max'] = f'{max(allg):.2f}'
+
+# ---- post hoc recall checks (recall_doc.py) and the MS MARCO self-match sensitivity (rep_selfmatch.py)
+if a.recall_doc:
+    RD2 = json.load(open(a.recall_doc)); mo = [x for x in RD2['main'] if x['role'] == 'ours']
+    nums['recdoc-n'] = str(len(mo)); nums['recdoc-low'] = str(sum(1 for x in mo if x['recall_doc'] < 0.9))
+    nums['recdoc-min'] = f"{min(x['recall_doc'] for x in mo):.2f}"
+    for s_, tag in (('cqadup', 'cqa'), ('msmarco1m', 'msm')):
+        x = [r for r in RD2['rep_dev'] if r['set'] == s_]; m_ = [r for r in x if r['meets']]
+        nums[f'reprec-{tag}-n'] = str(len(x)); nums[f'reprec-{tag}-meet'] = str(len(m_))
+        nums[f'reprec-{tag}-min'] = f"{min(r['recall_vec'] for r in m_):.2f}"
+        nums[f'reprec-{tag}-fail'] = str(sum(1 for r in x if r['recall_vec'] >= 0.9 and not r['meets']))
+        nums[f'reprec-{tag}-hi'] = str(sum(1 for r in x if r['recall_vec'] >= 0.9))
+        nums[f'reprec-{tag}-excl95'] = str(sum(1 for r in m_ if r['recall_vec'] < 0.95))
+if a.selfmatch:
+    SM = json.load(open(a.selfmatch))
+    nums['sm-n'] = f"{SM['n_selfmatch_queries']:,}"; nums['sm-top10'] = str(sum(x['changed_top10'] for x in SM['top10_changed']))
+    nums['sm-dev-same'] = 'yes' if all(x['points_same'] and x['rival_old'] == x['rival_new'] for x in SM['dev_selection']) else 'no'
 
 # ---- protocol numbers
 fz = J['freeze']
