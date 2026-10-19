@@ -91,7 +91,7 @@ These rates are file level. The paper's primary L1 level is the definition (§3.
 | Order dependence (E3) | ext4 ×2, container overlay, APFS, ripgrep R=10 | ext4 ×2, tmpfs, APFS | Overlay order; ripgrep run-to-run variance (rare in traces) |
 | Task-informed baselines | BM25, cross-encoder, small LLM reranker, SWE-Pruner, Squeez | BM25, one cross-encoder, SWE-Pruner if it runs on CPU | The LLM reranker and Squeez move to ISSTA |
 | Rival tools | Signal Grep, RTK, Rustygrep, tokenix | Signal Grep, RTK; Rustygrep and tokenix only if they run headless with no work | Two minor rivals |
-| Continuation experiment (E5b) | v1 pilot if ready | ISSTA. The $20 pilot can still run before v1; it uses an API, not local machines. | Causal agent evidence in v1 |
+| Continuation experiment (E5b) | v1 pilot if ready | Replaced in v1 by the cheaper search-only agent check (E5d, about $15–40). The full continuation with task outcomes stays ISSTA. | Solved-task and $-per-solve evidence in v1 |
 | End-to-end A/B (E5c) | ISSTA/ASE | ASE | None for v1 |
 | Speed (E7) | Full grid, Mac and Linux | Selector overhead + one Mac and Linux table against ripgrep | The ugrep, zoekt, BSD grep and git grep rows |
 | Chained greps | Excluded | Excluded; a yield lever for later | Half of the pool |
@@ -108,6 +108,7 @@ These rates are file level. The paper's primary L1 level is the definition (§3.
 | Order dependence: two ext4 images + tmpfs on about 1,000 evidence-bearing calls | Box | about 2 hours | the ext4 test took under 1 minute for 325 files |
 | Selector benchmark, ablations, rivals, BM25, cross-encoder | Mac, offline on frozen records | a few hours | no repository access |
 | Speed: overhead + Mac/Linux table | Mac + box | about half a day | — |
+| Agent retrieval check (E5d): about 1,200 resume runs and 600 fresh runs | Mac + DeepSeek API | a few hours, mostly API waiting; sandboxed commands on existing checkouts | pilot dry run; checkouts kept for the chosen states |
 | Optional: Scale-SWE image HEADs for up to 200 tasks | Box | 2–4 hours, about 100–200 GB transfer | 0.5 GB per image; pull and delete one at a time (box has about 24 GB free) |
 | **Total** | | **about 1.5–2 days; 2.5 with the Scale-SWE option** | |
 
@@ -157,7 +158,7 @@ No published work measures what this cut costs coding agents. This paper does th
 | C2 | **Truncation loss.** How often the cut hides evidence that the full output contained, separated from retrieval misses. Includes the **enumeration-order** result: the same call shows different evidence on different machines. | Yes | A named, measured failure mode. It matters beyond ss-grep. |
 | C3 | **Benchmark.** The selection track holds frozen candidate records, labels and budgets; it needs no repository and no agent. Query-only and task-informed sub-tracks. The leaderboard starts with about ten baselines. | Yes (selection track) | Any selector, pruner or reranker can be evaluated in an afternoon. |
 | C4 | **Selectors.** Query-only selectors defined as one fixed reveal order plus a prefix cut, with proven properties, as a library usable on GNU grep or ripgrep output. A 2×2 factorial separates the selector's effect from the search backend's. | Yes | A drop-in method with guarantees. |
-| C5 | **Agent evidence.** A $0 observational analysis anchored at the first overflow (v1). A continuation experiment (ISSTA) and a small end-to-end A/B (ASE). Each claim is scoped to its own population. | Observational only | Links benchmark results to agent behaviour. |
+| C5 | **Agent evidence.** A search-only agent check at real overflow states (v1, about $15–40), a $0 observational analysis (v1, optional), a continuation experiment with task outcomes (ISSTA) and a small end-to-end A/B (ASE). Each claim is scoped to its own population. | Search-only agent check | Links benchmark results to agent behaviour. |
 
 Speed is not a contribution. An appendix reports measured selector overhead and one end-to-end table (E7).
 
@@ -483,6 +484,22 @@ An internal dev result exists: on 154 overflow calls from our own traces, answer
 - **Measures, from the anchor on:** steps to the first opening of an L1 file, re-grep rate, and resolve rate. Match or adjust on the anchor's step index.
 - The comparison stays confounded, and the paper says so.
 
+**(d) Agent retrieval check (v1; about $15–40 in total, $5 pilot first, owner go).** Added 2026-10-19 after the owner asked for a small agent comparison at low time and cost. It borrows the task design of the tool-habits paper: **search-only runs**, with no Docker and no tests, graded against the gold patch, with hard turn caps. Code: `mine/agent_states.py`, `mine/agent_run.py`, `mine/ranker.py`, `mine/grep_shim.py`.
+
+- **Why not a random-task A/B.** In SWE-rebench-V2 traces, an eligible cut call that hides the fix file occurs about once per 100 trajectories (0.17 candidates per trajectory × 31% evidence-bearing × 19% hidden). A 200-task A/B would meet the problem about twice. Both designs below start where the problem occurs.
+- **Model and source.** DeepSeek-V4-Flash with OpenHands trajectories on SWE-rebench-V2, dev repositories only, so the resume model is the trace model. The API serves `deepseek-flash` today; the trace says `DeepSeek-V4-Flash-0731`. The paper states this version difference. Thinking on, reasoning effort max, as in the trace metadata. Direct DeepSeek API ([[feedback_deepseek_direct_api]]).
+- **States (fixed rule, before any run).** A call qualifies if it runs before the first edit, searches several files, is the only grep of its command, has the shape `[cd X &&] grep ... | head -N` with no context or count flags, was cut by that head, replays with every visible line found and a larger full output, and has a gold-patch file in the full output. Seed-42 order, one state per trajectory, never chosen by how the ranked order does. The first pass found 373 candidates and kept 40 states in 40 tasks and 39 repositories.
+- **Offline preview on those 40 states (file level, dev).** Native order showed a fix file in 33; ranked order in 39. Ranked recovered 6 and lost 0. This is a preview of the selector benchmark, not an agent result.
+- **Design 1, resume (primary).** Feed the trace up to the anchor grep. Arm *as seen*: the exact tool message from the trace. Arm *ranked*: the first N lines of the ranked full output, N being the agent's own `head -N`, with the trace's OpenHands footer. Later greps are plain GNU grep in both arms, so exactly one response differs. Cap: 8 turns.
+- **Design 2, fresh search-only (secondary).** Start from the trace's system prompt and issue. Every grep in the run goes through `grep_shim.py`: GNU grep in both arms, with ranked order in the *ranked* arm (multi-file searches without context or count flags). Cap: 15 turns.
+- **Stop rule.** The first edit attempt (its target is the run's localization answer), `finish`, or the turn cap.
+- **Environment.** The replay checkout, under `sandbox-exec`: no network, no writes outside `/private/tmp`, no reads under the home directory except the checkout and the harness code. Reads, `grep`, `find`, `git` and `python` work; edits and tests do not. OpenHands output format and its 30,000-character cap are reproduced.
+- **Measures.** Turns to the first contact with a fix file (in a command, a view or an output); whether the first edit target is a fix file; tokens (cache hit, miss, output) and dollars at DeepSeek's published rates. Main derived number: **dollars per correct localization**.
+- **Pilot ($5 hard cap in the runner).** Design 1: 10 states × 2 arms × 2 repeats = 40 runs. Design 2: 5 tasks × 2 arms × 2 repeats = 20 runs. Estimated $2–4 at peak prices, about half off-peak. The pilot checks the harness, the cost per run, and the share of runs that stop at an edit. It is not evidence.
+- **Main run, after the pilot and an owner go.** Design 1 on all qualifying dev states (about 300 after the full replay) × 2 arms × 2 repeats; design 2 on about 150 tasks. Estimated $15–40. Then the same on held-out states after the pre-registration, once.
+- **Claim it can support.** "At real overflow states, ranked grep output lets the agent reach the fix files in fewer turns and at lower cost." It does not support claims about solved tasks or dollars per solve; those stay ISSTA and ASE work.
+- **Limits.** Search-only runs stop at the first edit, so they say nothing about fixing. The sandbox lacks the task's dependencies, so runs that try to execute code see errors in both arms. Design 1 changes one response at states that the original policy reached.
+
 **(b) Continuation (ISSTA; paid, pilot first).** Save the agent state just before an overflowing grep response. Resume identical copies, each with a different presentation of the same C: the observed policy, round robin, the ss-grep selector, and the full output where it fits. Use an open-weight model through a direct API. Measures: the next file opened, steps to the first L1 file, repeated searches, tokens and billed cost, the outcome. Scope: the effect of changing one response at states the original policy reached. The $20 pilot can run before v1 with an owner go; it uses an API, not the Mac or the box.
 
 **(c) End-to-end A/B (ASE; paid, last).** Arms: stock grep, the compatibility shim (§7), and ripgrep with a fixed cap. An overflow-enriched set picked with independent screening runs, plus a representative stratum. Primary endpoints: steps to the first L1 file, and billed cost per solved task. About 300 pairs with about 15% discordant outcomes detect about 5–6 points at 80% power.
@@ -571,10 +588,11 @@ In priority order. Items 1–2 are needed for v1; the rest are for ISSTA and ASE
 - E3(a) order dependence on ext4 ×2, tmpfs and APFS;
 - E4 selector benchmark with Gate B (natural and synthetic overflow);
 - the v1 label audit (at least 100 calls, overlap double-annotated);
+- E5d agent retrieval check, design 1 (resume), after the pilot and an owner go;
 - E7 selector overhead;
 - the selection-track release (smoke set and full set).
 
-**v1 optional, each behind its entry check:** E5a (comparable pair count); the backend 2×2 (cost of indexing checkouts); the cross-encoder and SWE-Pruner (CPU throughput on 50 calls); the Mac/Linux speed table; Signal Grep (half-day driver timebox).
+**v1 optional, each behind its entry check:** E5d design 2 (fresh search-only runs; after design 1); E5a (comparable pair count); the backend 2×2 (cost of indexing checkouts); the cross-encoder and SWE-Pruner (CPU throughput on 50 calls); the Mac/Linux speed table; Signal Grep (half-day driver timebox).
 
 
 **When time runs short,** cut in this order:
@@ -610,7 +628,7 @@ The label audit stays.
 | S4 | **In parallel with S1–S3.** Reveal-order selector library: GNU, rg and engine inputs; line mode with the summary header; token mode with the footer; `--more`. Proofs. RTK driver; Signal Grep driver (half-day timebox). | minutes | Property tests (line-mode prefix, token-mode nesting, continuation, phase-1 identity across divisor rules, footer monotonicity); native-lane parity |
 | S5 | Pre-registration: tagged commit + Zenodo DOI naming the frozen selector commit, α, the Gate B relative threshold, and the final split (inspected repositories in dev). | none | Public before any held-out replay |
 | S6 | **Held-out replay** (same harness, about 5 h), then E2, E3(a) on the box, and E4: dev, then held-out once. v1 label audit. | about 5 h (Mac) + 2 h (box) + a few hours (offline) | **Gate B** |
-| S7 | E7 overhead; optional: E5a, the Mac/Linux table. | up to half a day | v1 tables |
+| S7 | E5d agent check: $5 pilot (owner go), then design 1 and design 2 on dev, then held-out once after S5. E7 overhead; optional: E5a, the Mac/Linux table. | a few hours (API) + up to half a day | v1 tables; $ per correct localization |
 | S8 | Selection-track release (dataset card, DOI, CITATION.cff, baselines, scorer, licence fields) and arXiv v1. | none | The owner reads the draft |
 | S9 | ISSTA: continuation pilot (about $20, owner go), then a full run under an owner ceiling. L2. Scale-SWE with image HEAD. Chained greps. | API; box for images | Owner approval |
 | S10 | ASE: GNU adapter, end-to-end A/B (owner go), E6, replay track, full speed grid, upstream PRs. | — | Owner approval |
@@ -621,7 +639,7 @@ The label audit stays.
 2. Whether to target a non-archival ICSE workshop.
 3. The tokenizers for the token budget (now secondary).
 4. Whether v1 adds the Scale-SWE stratum (image HEAD for up to 200 tasks, about 100–200 GB transfer on the box, 2–4 hours), or leaves Scale-SWE to ISSTA.
-5. Whether to run the $20 continuation pilot before v1.
+5. The go for the $5 agent-check pilot (prepared, dry run done), and a ceiling for the main agent check (estimate $15–40).
 6. The cost ceilings and the continuation model for the ISSTA and ASE agent experiments.
 7. **This week:** the second annotator for the label-audit overlap.
 8. **This week:** arXiv endorsement for cs, if needed.
