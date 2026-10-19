@@ -1,7 +1,8 @@
 //! The native ss-grep lane: the daemon answers `ss-grep` from a Rust thread, without running
 //! the JS tool, when it can print exactly the bytes the JS tool would
 //! (eval/agent-read-workflows/bin/_ss-helpers.mjs cmdGrep). Anything else is DECLINED and the
-//! native client sends the call to the JS route (POST /agent-tool) as before.
+//! native client sends the call to the JS route (POST /agent-tool) as before. That includes
+//! every call while the maintainer's reindex queue holds files (state.rs reindex_pending).
 //!
 //! Wire (Unix socket `<daemon socket>.grep`, one call per connection):
 //!   request   u32 BE length, then the /agent-tool JSON payload {v, tool, args, cwd, env, pid}
@@ -146,6 +147,9 @@ fn call(lane: &Lane, payload: &[u8]) -> Outcome {
     let manifest = lane.manifest();
     if !manifest.present {
         return Outcome::Decline("no manifest");
+    }
+    if state::reindex_pending(&lane.config.state_dir) {
+        return Outcome::Decline("reindex pending");
     }
     let Ok(mut guard) = lane.loaded.lock() else { return Outcome::Decline("lane lock") };
     let paths = match prepare(lane, &manifest, &mut guard) {

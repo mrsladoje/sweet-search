@@ -110,6 +110,41 @@ describe('applyUnindexedFallback', () => {
     expect(listPendingReindexFiles(root, { limit: 1, inScope: (r) => r.startsWith('z/') })).toEqual(['z/t.go']);
   });
 
+  it('lists fresh entries newest first, then requeued tails in queue order', async () => {
+    const line = (p, source) => `${JSON.stringify({ file_path: p, source })}\n`;
+    for (const p of ['r1.go', 'r2.go', 'f1.go', 'f2.go', 'p1.go']) write(root, p, 'x\n');
+    write(root, '.sweet-search/index-maintainer-queue.processing.jsonl', line('p1.go', 'scan') + line('r1.go', 'requeue'));
+    write(root, '.sweet-search/index-maintainer-queue.jsonl', line('r2.go', 'requeue') + line('f1.go', 'scan') + line('f2.go', 'watch'));
+    expect(listPendingReindexFiles(root)).toEqual(['f2.go', 'f1.go', 'p1.go', 'r1.go', 'r2.go']);
+  });
+
+  it('checks each cached path again on every call', async () => {
+    const outside = mkdtempSync(join(tmpdir(), 'ss-outside-'));
+    try {
+      write(root, 'src/a.go', 'x\n');
+      write(root, '.sweet-search/index-maintainer-queue.jsonl', `${JSON.stringify({ file_path: 'src/a.go' })}\n`);
+      expect(listPendingReindexFiles(root)).toEqual(['src/a.go']);
+      rmSync(join(root, 'src'), { recursive: true });
+      symlinkSync(outside, join(root, 'src'));
+      write(outside, 'a.go', 'x\n');
+      expect(listPendingReindexFiles(root)).toEqual([]);
+    } finally {
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  it('applies -g globs to queued files before the cap', async () => {
+    const line = (p) => `${JSON.stringify({ file_path: p })}\n`;
+    write(root, 'src/orders.java', 'class Orders { void listOpenOrders() {} }\n');
+    write(root, 'src/orders_test.go', 'x\n');
+    git(root, 'add', '-A');
+    git(root, 'commit', '-q', '-m', 'add');
+    write(root, '.sweet-search/index-maintainer-queue.jsonl', line('src/orders.java') + line('src/orders_test.go'));
+    const out = await run({ regex: 'listOpenOrders', options: { pathGlobs: ['*.java'] } });
+    expect(out.stats.unindexedFallbackFiles).toBe(1);
+    expect(out.matches).toEqual([expect.objectContaining({ file: 'src/orders.java' })]);
+  });
+
   it('drops queued paths through a symlinked directory, outside the root, or gitignored', async () => {
     const outside = mkdtempSync(join(tmpdir(), 'ss-outside-'));
     try {

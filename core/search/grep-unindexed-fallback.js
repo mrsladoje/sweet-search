@@ -11,10 +11,17 @@
  * The files waiting in the maintainer's reindex queue are grepped too. A committed file the
  * maintainer has not reached yet (after a branch switch, a pull, or while it was stopped) is not
  * in git's changed list, and without this its stale grams answer "no matches".
+ *
+ * Queued files are grepped when the indexed search has hits as well: the stale grams of a queued
+ * file can hide its new lines while other files match (the call sites are indexed, the new
+ * definition is not). Only queued files the indexed search did not return are read; a returned
+ * file was already read from disk. The native ss-grep lane declines while the queue is not
+ * empty (crates/sweet-search-native/src/lane/state.rs reindex_pending), so the JS answers.
  */
 
 import { nativeGrepFull } from '../infrastructure/native-sparse-gram.js';
 import { grepFileFilterPredicate } from './grep-output-shaping.js';
+import { compilePathGlobs } from './grep-path-globs.js';
 import { runRipgrepJson, normalizeSearchPath } from './search-pattern-ripgrep.js';
 import {
   ensureSparseGramIndex, getSparseGramAllFilesWithOverlay, hasCaseInsensitiveRegexFlag,
@@ -51,14 +58,23 @@ async function grepFiles(regex, searchDir, files, fixedString, caseInsensitive =
  * @returns {Promise<{matches: Array, stats: object | null}>}
  */
 export async function applyUnindexedFallback({ searcher, regex, searchDir, options, matches, shapeResult }) {
-  if (matches.length > 0 || options.unindexedFallback === false) return { matches, stats: null };
+  if (options.unindexedFallback === false) return { matches, stats: null };
   const scope = options.fileFilter;
   const inFilter = scope ? grepFileFilterPredicate(scope, searchDir) : null;
   const inScope = (rel) => !inFilter || inFilter(rel);
+  // The queue listing is capped, so it takes the -g globs too: the cap then counts only files
+  // the answer can show. A copy of bareGrep's compiled globs, so this one does not add to the
+  // directories its note lists. (Changed files are not capped; shapeResult applies the globs
+  // to their hits and counts what they remove.)
+  const globs = compilePathGlobs(options.pathGlobs);
+  const inQueueScope = globs ? (rel) => inScope(rel) && globs.matches(rel) : inScope;
   const { listChangedGrepFiles, listPendingReindexFiles } = await import('../indexing/grep-corpus.js');
+  if (matches.length > 0) {
+    return addQueuedFileMatches({ searcher, regex, searchDir, options, matches, shapeResult, inScope: inQueueScope, listPendingReindexFiles });
+  }
   const files = [...new Set([
     ...listChangedGrepFiles(searchDir).filter(inScope),
-    ...listPendingReindexFiles(searchDir, { stateDir: searcher?._manifestStateDir, inScope }),
+    ...listPendingReindexFiles(searchDir, { stateDir: searcher?._manifestStateDir, inScope: inQueueScope }),
   ])];
   const stats = { unindexedFallbackFiles: files.length, unindexedFallbackMatches: 0 };
   if (files.length > 0) {
@@ -78,4 +94,25 @@ export async function applyUnindexedFallback({ searcher, regex, searchDir, optio
     if (Array.isArray(indexed)) stats.scopeInGrepIndex = indexed.some(inScope);
   }
   return { matches, stats };
+}
+
+/**
+ * Hits in queued files the indexed search did not return. `extraMatches` are shaped (symbol,
+ * --in, -g) like the indexed ones; bareGrep merges them into its list. Nothing queued, or no
+ * hit = the result unchanged.
+ */
+async function addQueuedFileMatches({ searcher, regex, searchDir, options, matches, shapeResult, inScope, listPendingReindexFiles }) {
+  const pending = listPendingReindexFiles(searchDir, { stateDir: searcher?._manifestStateDir, inScope });
+  if (pending.length === 0) return { matches, stats: null };
+  const returned = new Set(matches.map((m) => m.file));
+  const files = pending.filter((file) => !returned.has(file));
+  if (files.length === 0) return { matches, stats: null };
+  const stats = { unindexedFallbackFiles: files.length, unindexedFallbackMatches: 0 };
+  const found = await grepFiles(regex, searchDir, files, options.fixedString === true, options.caseInsensitive === true);
+  if (found.length === 0) return { matches, stats };
+  const extraMatches = shapeResult({ indexedMatches: found, overlayMatches: [] })
+    .filter((m) => !returned.has(m.file));
+  stats.unindexedFallbackMatches = extraMatches.length;
+  if (extraMatches.length === 0) return { matches, stats };
+  return { matches, stats, extraMatches, staleFiles: new Set(extraMatches.map((m) => m.file)) };
 }

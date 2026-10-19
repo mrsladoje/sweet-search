@@ -224,6 +224,38 @@ function scopeCandidateResult(result, fileFilter, projectRoot, pathGlobs = null)
   };
 }
 
+/**
+ * The indexed list plus the hits of queued files it did not return (grep-unindexed-fallback.js).
+ * A capped list stays capped: a queued file keeps its first `perFileCap` hits and adds its full
+ * count to the totals.
+ */
+function mergeQueuedFileMatches(base, extra, perFileCap, globCounts) {
+  const totals = cappedListTotals.get(base);
+  let added = extra;
+  let mergedTotals = null;
+  if (totals) {
+    mergedTotals = new Map(totals);
+    const byFile = new Map();
+    for (const m of extra) {
+      if (!byFile.has(m.file)) byFile.set(m.file, []);
+      byFile.get(m.file).push(m);
+    }
+    added = [];
+    for (const [file, list] of byFile) {
+      list.sort((a, b) => a.line - b.line || (a.column || 0) - (b.column || 0));
+      mergedTotals.set(file, list.length);
+      added.push(...(perFileCap > 0 ? list.slice(0, perFileCap) : list));
+    }
+  }
+  const merged = [...base, ...added];
+  if (mergedTotals) cappedListTotals.set(merged, mergedTotals);
+  // The -g counts stay the indexed list's: a queued file whose stale grams matched was
+  // counted there already, and they are shown only when nothing is left (never after a merge).
+  const baseGlob = globCounts?.get(base);
+  if (baseGlob) globCounts.set(merged, baseGlob);
+  return merged;
+}
+
 /** True when two different paths next to each other in a sorted match list compare equal. */
 function hasCollatingNeighbours(sortedMatches) {
   for (let i = 1; i < sortedMatches.length; i++) {
@@ -245,7 +277,11 @@ function fixedStringOrSymbol(options, symbolType) {
 
 export async function bareGrep(query, routing, options = {}) {
   await this?._refreshManifestPins?.({ reloadScope: 'grep' });
-  const pinnedEpoch = this?._readReconcileManifest?.()?.epoch ?? null;
+  // The epoch the refresh pinned (what this search reads), not a second read of the file:
+  // a tick that publishes in between would make the two equal and hide the retry below.
+  const pinnedEpoch = Number.isInteger(this?.manifestEpoch)
+    ? this.manifestEpoch
+    : (this?._readReconcileManifest?.()?.epoch ?? null);
   const regex = options.regex || query;
   const searchDir = this?.projectRoot || options.projectRoot || PROJECT_ROOT;
   const filterRoot = path.resolve(searchDir);
@@ -320,11 +356,17 @@ export async function bareGrep(query, routing, options = {}) {
   });
   // A tick that published after the pin above may have indexed a file and removed it from the
   // queue the fallback just read: neither saw it. Search once more on the new epoch.
-  if (fallback.matches.length === 0 && options._epochRetry !== true && pinnedEpoch != null
-      && (this?._readReconcileManifest?.()?.epoch ?? null) !== pinnedEpoch) {
-    return bareGrep.call(this, query, routing, { ...options, _epochRetry: true });
+  if (fallback.matches.length === 0 && options._epochRetry !== true) {
+    const currentEpoch = this?._currentManifestEpoch
+      ? this._currentManifestEpoch()
+      : (this?._readReconcileManifest?.()?.epoch ?? null);
+    if (currentEpoch != null && currentEpoch !== pinnedEpoch) {
+      return bareGrep.call(this, query, routing, { ...options, _epochRetry: true });
+    }
   }
-  let matches = fallback.matches;
+  let matches = fallback.extraMatches
+    ? mergeQueuedFileMatches(fallback.matches, fallback.extraMatches, grepPerFileCap, globCounts)
+    : fallback.matches;
   const staleFallbackFiles = fallback.staleFiles || null;
   const globExcluded = globCounts?.get(matches) || null;
   const listTotals = cappedListTotals.get(matches) || null;
@@ -400,9 +442,15 @@ export async function bareGrep(query, routing, options = {}) {
   // globs: it is a grep with fewer files, not a drill-in. The family then names no member
   // from a file the globs excluded; the sibling line stays in the hit's own file.
   const unscopedShape = !options.fileFilter || options._cwdScope === true;
+  // Files the fallback read from disk (unindexed or queued) have old or no graph entities:
+  // they seed no family, join none, and get no sibling line.
+  const freshInGraph = (file) => !staleFallbackFiles?.has(file);
+  const familyResults = staleFallbackFiles ? results.filter((r) => freshInGraph(r.file)) : results;
+  const familyKeep = pathGlobs || staleFallbackFiles
+    ? { keepFile: (file) => typeof file === 'string' && freshInGraph(file) && (!pathGlobs || pathGlobs.matches(file)) }
+    : undefined;
   const familyManifest = options._isAgentFormat === true && unscopedShape
-    ? buildIndexedGrepFamilyManifest(results, this?.codeGraphRepo,
-      pathGlobs ? { keepFile: (file) => typeof file === 'string' && pathGlobs.matches(file) } : undefined)
+    ? buildIndexedGrepFamilyManifest(familyResults, this?.codeGraphRepo, familyKeep)
     : null;
   // One to three hits in one file: name the same-file identifier family WITH
   // code lines (the one enrichment a near-singleton grep can take; see
@@ -411,6 +459,7 @@ export async function bareGrep(query, routing, options = {}) {
       && options._siblingLine !== false // SS_SIBLING_LINE=0 opts out (client-side, travels as this option)
       && results.length >= 1 && results.length <= 3
       && results.every((result) => result.file === results[0].file)
+      && freshInGraph(results[0].file)
     ? buildSingletonSiblingLine(results, this?.codeGraphRepo, { regex, projectRoot: searchDir })
     : null;
 

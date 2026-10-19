@@ -456,6 +456,25 @@ export async function encodeDocumentsGpu(texts, options = {}) {
  * Used by the opt-in hybrid dispatcher (SWEET_SEARCH_LI_HYBRID=1) and as the
  * default fallback when the native GPU addon isn't available on the host.
  */
+/**
+ * Each document's token count as encodeDocumentsCpu feeds it to the model (doc prefix and
+ * special tokens included, truncated at maxDocLength), for planning batches by real length.
+ * A character estimate can be 3x short on symbol-heavy text. Null when the pipeline does not
+ * load.
+ */
+export async function countDocumentTokensCpu(texts) {
+  const pipeline = await getLateInteractionPipeline();
+  if (!pipeline) return null;
+  const { tokenizer, modelConfig } = pipeline;
+  return texts.map((text) => {
+    const tokenized = tokenizer(modelConfig.docPrefix + text, {
+      truncation: true,
+      max_length: modelConfig.maxDocLength,
+    });
+    return tokenized.input_ids.dims.at(-1);
+  });
+}
+
 export async function encodeDocumentsCpu(texts, options = {}) {
   const { poolFactor = 1, extendedSkiplist = false } = options;
 

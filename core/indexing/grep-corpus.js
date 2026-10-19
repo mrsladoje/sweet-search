@@ -208,15 +208,17 @@ const PENDING_PROCESSING = 'index-maintainer-queue.processing.jsonl';
 const PENDING_TTL_MS = 30_000;
 const pendingCache = new Map();
 
-function readQueuePaths(file) {
+// The queue's entries as { path, requeue }; null when the file does not exist.
+function readQueueEntries(file) {
   let raw;
   try { raw = readFileSync(file, 'utf8'); } catch { return null; }
   const out = [];
   for (const line of raw.split('\n')) {
     if (!line.trim()) continue;
     try {
-      const fp = JSON.parse(line).file_path;
-      if (typeof fp === 'string' && fp) out.push(fp);
+      const entry = JSON.parse(line);
+      const fp = entry.file_path;
+      if (typeof fp === 'string' && fp) out.push({ path: fp, requeue: entry.source === 'requeue' });
     } catch { /* a partial last line, or a malformed one */ }
   }
   return out;
@@ -243,15 +245,16 @@ function gitIgnoredSet(projectRoot, rels) {
 }
 
 /**
- * Files queued for the maintainer but not yet reindexed, newest first. Their grams are stale or
- * absent until the maintainer reaches them, and a committed file is not in git's changed list,
- * so a backlog (a branch switch, a pull, a stopped maintainer) would answer "no matches" for
- * code on disk. Read on the zero-hit path only.
+ * Files queued for the maintainer but not yet reindexed, in the order the maintainer takes them:
+ * fresh hints newest first, then requeued tails. Their grams are stale or absent until the
+ * maintainer reaches them, and a committed file is not in git's changed list, so a backlog (a
+ * branch switch, a pull, a stopped maintainer) would hide code on disk from ss-grep.
  *
  * Each path passes the grep-corpus gates rg would apply: inside the root with no symlinked
- * component, a regular file, not gitignored. The validated list is cached on the queue files'
- * size and mtime. `inScope` filters before `limit`, so a scoped search never loses its files
- * to the cap.
+ * component, a regular file, not gitignored. The parsed, path-checked and git-checked list is
+ * cached on the queue files' size and mtime; the file checks (symlinked component, regular
+ * file) run again on every call, so a path that changed since stays out. `inScope` filters
+ * before `limit`, so a scoped search never loses its files to the cap.
  * @param {string} projectRoot
  * @param {{stateDir?: string, limit?: number, inScope?: (rel: string) => boolean}} [opts]
  * @returns {string[]}
@@ -263,38 +266,43 @@ export function listPendingReindexFiles(projectRoot, { stateDir, limit = 2000, i
   const key = `${projectRoot}\0${dir}`;
   const stamp = `${queueStamp(queueFile)}|${queueStamp(processingFile)}`;
   const now = Date.now();
-  let validated = null;
+  let listed = null;
   const hit = pendingCache.get(key);
-  if (hit && hit.stamp === stamp && now - hit.at < PENDING_TTL_MS) validated = hit.files;
-  if (!validated) {
+  if (hit && hit.stamp === stamp && now - hit.at < PENDING_TTL_MS) listed = hit.files;
+  if (!listed) {
     // Queue first, then the processing file. If the processing file is gone, the maintainer may
     // have appended its deferred tail and published between the two reads: read the queue again.
-    let queued = readQueuePaths(queueFile) || [];
-    const processing = readQueuePaths(processingFile);
-    if (processing === null) queued = readQueuePaths(queueFile) || queued;
-    const ordered = [...queued].reverse().concat([...(processing || [])].reverse());
+    let queued = readQueueEntries(queueFile) || [];
+    const processing = readQueueEntries(processingFile);
+    if (processing === null) queued = readQueueEntries(queueFile) || queued;
+    // Oldest first: the processing batch, then what was queued after it.
+    const all = [...(processing || []), ...queued];
+    const fresh = all.filter((e) => !e.requeue).reverse();
+    const requeued = all.filter((e) => e.requeue);
     const seen = new Set();
     const candidates = [];
     const ignores = loadIgnoreRegexes(projectRoot);
     const linkMemo = new Map();
-    for (const fp of ordered) {
+    for (const { path: fp } of [...fresh, ...requeued]) {
       const rel = path.posix.normalize(normalizeRel(path.isAbsolute(fp) ? path.relative(projectRoot, fp) : fp));
       if (!rel || rel === '.' || rel === '..' || rel.startsWith('../') || path.isAbsolute(rel) || seen.has(rel)) continue;
       seen.add(rel);
-      if (!isGrepCorpusPath(rel, ignores)) continue;
-      if (isSymlinkedRelUnder(projectRoot, rel, linkMemo)) continue;
-      let stat = null;
-      try { stat = lstatSync(path.join(projectRoot, rel)); } catch { stat = null; }
-      if (isRegularGrepFile(stat)) candidates.push(rel);
+      // A path through a symlink also makes `git check-ignore` fail for the whole batch.
+      if (isGrepCorpusPath(rel, ignores) && !isSymlinkedRelUnder(projectRoot, rel, linkMemo)) candidates.push(rel);
     }
     const ignored = gitIgnoredSet(projectRoot, candidates);
-    validated = candidates.filter((rel) => !ignored.has(rel));
-    pendingCache.set(key, { stamp, at: now, files: validated });
+    listed = candidates.filter((rel) => !ignored.has(rel));
+    pendingCache.set(key, { stamp, at: now, files: listed });
   }
   const files = [];
-  for (const rel of validated) {
+  const linkMemo = new Map();
+  for (const rel of listed) {
     if (files.length >= limit) break;
-    if (!inScope || inScope(rel)) files.push(rel);
+    if (inScope && !inScope(rel)) continue;
+    if (isSymlinkedRelUnder(projectRoot, rel, linkMemo)) continue;
+    let stat = null;
+    try { stat = lstatSync(path.join(projectRoot, rel)); } catch { stat = null; }
+    if (isRegularGrepFile(stat)) files.push(rel);
   }
   return files;
 }

@@ -589,6 +589,9 @@ describe('production tick budget config', () => {
     expect(tickBudgetConfig({})).toEqual({ filesPerTick: undefined, cpuBudgetMs: undefined, catchUpCpuBudgetMs: undefined });
     expect(tickBudgetConfig({ SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS: '500' }).catchUpCpuBudgetMs).toBe(2_000);
     expect(tickBudgetConfig({ SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS: '500', SWEET_SEARCH_RECONCILE_CATCHUP_BUDGET_MS: '0' }).catchUpCpuBudgetMs).toBe(0);
+    expect(tickBudgetConfig({ SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS: '500', SWEET_SEARCH_RECONCILE_CATCHUP_BUDGET_MS: '-1' }).catchUpCpuBudgetMs).toBe(2_000);
+    expect(tickBudgetConfig({ SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS: '-5', SWEET_SEARCH_RECONCILE_FILES_PER_TICK: '0' }))
+      .toEqual({ filesPerTick: undefined, cpuBudgetMs: undefined, catchUpCpuBudgetMs: undefined });
     expect(tickBudgetConfig({ SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS: 'abc', SWEET_SEARCH_RECONCILE_FILES_PER_TICK: '1e9x' }))
       .toEqual({ filesPerTick: undefined, cpuBudgetMs: undefined, catchUpCpuBudgetMs: undefined });
   });

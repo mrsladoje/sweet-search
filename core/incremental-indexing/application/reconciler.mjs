@@ -442,7 +442,9 @@ export class Reconciler {
     } catch (err) {
       if (!manifestPublished && dirty.length > 0) {
         const filesToRequeue = deferredRequeued ? dirty.slice(0, dirtyCursor) : dirty;
-        if (filesToRequeue.length > 0) {
+        // With a deferred tail already requeued, call even for an empty head: the
+        // adapter may take that tail back out (it is still in the processing queue).
+        if (filesToRequeue.length > 0 || deferredRequeued) {
           await this._tryRequeueDirtyAfterFailure(filesToRequeue, err);
         }
       }
