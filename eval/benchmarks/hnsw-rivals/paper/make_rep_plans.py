@@ -107,7 +107,9 @@ for s in SETS:
                     js.append(job(s, 'dev', 'ours_cascade', r, kv, S1=S1, EF=max(S1, 50)))
             write(f'{s}--r{r}', f'rep-dev-{a.type}-{s}-r{r}', [], js, 1000 + r); nj += len(js)
     elif a.mode == 'heldout':
-        sl = json.load(open(os.path.join(HERE, 'shortlists', f'shortlist-rep-{a.type}.json')))[s]
+        sl = json.load(open(os.path.join(HERE, 'shortlists', f'shortlist-rep-{a.type}.json'))).get(s)
+        if not sl:
+            continue
         for r in range(2 * N_INST):
             js = []
             for p in sl['points']:
