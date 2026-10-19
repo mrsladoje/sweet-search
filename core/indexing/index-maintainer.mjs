@@ -1648,6 +1648,13 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
   // FOREGROUND profile. Verified ORT embeddings byte-identical. Set
   // SWEET_SEARCH_ORT_BACKGROUND=0 to keep even the maintainer on foreground.
   // Best-effort — never block startup on the embedding module.
+  // Open the other-process CPU window now: the first tick (often a respawn into a
+  // branch switch's backlog) then has a sample and may take the catch-up budget.
+  try {
+    const { sampleOtherCpuShare } = await import('../incremental-indexing/application/production-reconciler.mjs');
+    sampleOtherCpuShare();
+  } catch { /* best-effort: the first tick keeps the normal budget */ }
+
   if (process.env.SWEET_SEARCH_ORT_BACKGROUND !== '0') {
     try {
       // Arms BOTH resident CPU sessions (dense + late-interaction) — the LI

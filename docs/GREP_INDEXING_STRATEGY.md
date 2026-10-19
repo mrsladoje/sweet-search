@@ -447,6 +447,13 @@ previous commit).
 - **Zero-hit greps still take the JS route.** The lane declines them, because the JS tool then
   retries in a regex dialect or case-insensitively, greps unindexed files and explains the zero.
   A decline costs about 0.2-0.4 ms.
+- **Greps during a reindex backlog take the JS route.** Files in the maintainer's reindex queue
+  (after a branch switch, a pull, or a stopped maintainer) have stale or no grams. The JS tool
+  greps them on every call: on zero hits, and when the indexed search has hits, to add the queued
+  files it did not return (the new definition of an indexed call site). The lane declines every
+  call while the queue holds entries (`lane/state.rs` `reindex_pending`). On a 250 MB Python
+  repo with one queued file, the JS route added 15-20 ms per call (median of 25 calls, two
+  patterns, on a busy Mac).
 - **The client process sets the floor.** Starting the native client costs ~1.7 ms on the Mac
   (`/usr/bin/true`: ~1 ms; ripgrep `--version`: ~2 ms), before any search.
 - **A file-scoped grep pays for the outside-scope line:** it searches the whole repo once more

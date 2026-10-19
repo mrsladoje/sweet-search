@@ -10,7 +10,7 @@
  */
 
 import fs from 'fs/promises';
-import { existsSync } from 'fs';
+import { existsSync, readFileSync } from 'fs';
 import path from 'path';
 import { DB_PATHS, PERFORMANCE_TARGETS, LOGGING, BINARY_HNSW_CONFIG, HCGS_CONFIG, LATE_INTERACTION_CONFIG, EMBEDDING_CONFIG, SEISMIC_CONFIG, CASCADE_CONFIG, loadProjectConfig, shouldUseLocalReranker } from '../infrastructure/config/index.js';
 import { getGlobalLocalReranker } from '../ranking/local-reranker.js';
@@ -398,6 +398,19 @@ export class SweetSearch {
       const manifestPath = path.join(this._manifestStateDir, 'reconcile-manifest.json');
       const manifest = readJsonFileCachedIfExists(manifestPath);
       return Number.isInteger(manifest?.epoch) ? manifest : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * The published epoch on disk now, read past the per-call manifest cache (which can
+   * answer up to a few ms late). Null when there is no manifest.
+   */
+  _currentManifestEpoch() {
+    try {
+      const manifest = JSON.parse(readFileSync(path.join(this._manifestStateDir, 'reconcile-manifest.json'), 'utf8'));
+      return Number.isInteger(manifest?.epoch) ? manifest.epoch : null;
     } catch {
       return null;
     }

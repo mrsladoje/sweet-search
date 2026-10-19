@@ -329,11 +329,11 @@ async function enrichChunksFromGraph(chunks, stateDir, tickCtx = null) {
   return chunks;
 }
 
-function envInt(env, name) {
+function envInt(env, name, min = 1) {
   const raw = env[name];
   if (raw == null || String(raw).trim() === '') return undefined;
   const n = Number(raw);
-  return Number.isInteger(n) ? n : undefined; // malformed → the reconciler default
+  return Number.isInteger(n) && n >= min ? n : undefined; // malformed or below min → the reconciler default
 }
 
 /**
@@ -344,7 +344,8 @@ function envInt(env, name) {
 export function tickBudgetConfig(env = process.env) {
   const filesPerTick = envInt(env, 'SWEET_SEARCH_RECONCILE_FILES_PER_TICK');
   const cpuBudgetMs = envInt(env, 'SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS');
-  let catchUpCpuBudgetMs = envInt(env, 'SWEET_SEARCH_RECONCILE_CATCHUP_BUDGET_MS');
+  // 0 switches catch-up off; a negative value is malformed.
+  let catchUpCpuBudgetMs = envInt(env, 'SWEET_SEARCH_RECONCILE_CATCHUP_BUDGET_MS', 0);
   if (catchUpCpuBudgetMs === undefined && cpuBudgetMs !== undefined) catchUpCpuBudgetMs = Math.min(8_000, cpuBudgetMs * 4);
   return { filesPerTick, cpuBudgetMs, catchUpCpuBudgetMs };
 }
@@ -462,7 +463,6 @@ class ProductionReconcileAdapter {
     this._retireSet = new Set();
     this._tickAdmitted = [];
     this._liSkipFiles = new Set();
-    this.hashes = new Map();
     this.touched = new Map();
     // Content-unchanged files whose stat moved (checkout, touch, same-bytes
     // rewrite): only the merkle stat is refreshed, or every scan requeues them.
@@ -848,6 +848,7 @@ class ProductionReconcileAdapter {
   }
 
   async readDirtySet() {
+    this._requeued = [];
     fs.mkdirSync(this.stateDir, { recursive: true });
     const processing = path.join(this.stateDir, PROCESSING_QUEUE);
     const queue = path.join(this.stateDir, DIRTY_QUEUE);
@@ -856,12 +857,15 @@ class ProductionReconcileAdapter {
     }
     // Fresh hints (watcher, scan, CLI) go first, newest first, so an edit made
     // during a backlog is not stuck behind the tails earlier ticks requeued.
-    // Requeued tails keep their order after them.
+    // Requeued tails keep their order after them. The scan skips a path that is
+    // already queued, so a requeued file edited after it was queued counts as
+    // fresh here.
     const entries = readJsonl(processing);
     const fresh = [];
     const requeued = [];
     for (let k = entries.length - 1; k >= 0; k--) {
-      (entries[k].source === 'requeue' ? requeued : fresh).push(entries[k]);
+      const e = entries[k];
+      (e.source === 'requeue' && !this._editedSinceQueued(e) ? requeued : fresh).push(e);
     }
     requeued.reverse();
     const rels = [];
@@ -931,22 +935,62 @@ class ProductionReconcileAdapter {
     return files;
   }
 
+  _editedSinceQueued(entry) {
+    if (!Number.isFinite(entry.timestamp)) return false;
+    const rel = relPath(this.projectRoot, entry.file_path || entry.path || entry.filePath || '');
+    if (!rel) return false;
+    try {
+      return fs.statSync(path.join(this.projectRoot, rel)).mtimeMs > entry.timestamp;
+    } catch {
+      return false;
+    }
+  }
+
   requeueDirtyFiles(files) {
     if (!Array.isArray(files) || files.length === 0) return;
     fs.mkdirSync(this.stateDir, { recursive: true });
     const queue = path.join(this.stateDir, DIRTY_QUEUE);
     const now = Date.now();
-    fs.appendFileSync(queue, files.map((file) => JSON.stringify({ file_path: file.path || file, timestamp: now, source: 'requeue' }) + '\n').join(''));
+    const text = files.map((file) => JSON.stringify({ file_path: file.path || file, timestamp: now, source: 'requeue' }) + '\n').join('');
+    let offset = 0;
+    try { offset = fs.statSync(queue).size; } catch { offset = 0; }
+    fs.appendFileSync(queue, text);
+    (this._requeued ||= []).push({ offset, text });
   }
 
   /**
    * After a failed tick the processing queue is still on disk (only a publish
    * removes it), and the next readDirtySet reads it again. Requeueing its files
-   * too would copy the whole list into the queue on every failure.
+   * too would copy the whole list into the queue on every failure. The deferred
+   * tail this tick appended before it failed is in the processing queue as
+   * well: take it out again, or every failing tick adds one more copy.
    */
   requeueDirtyFilesAfterFailure(files) {
-    if (fs.existsSync(path.join(this.stateDir, PROCESSING_QUEUE))) return;
+    if (fs.existsSync(path.join(this.stateDir, PROCESSING_QUEUE))) {
+      this._dropRequeuedTail();
+      return;
+    }
     this.requeueDirtyFiles(files);
+  }
+
+  _dropRequeuedTail() {
+    const appends = this._requeued || [];
+    this._requeued = [];
+    if (appends.length === 0) return;
+    const queue = path.join(this.stateDir, DIRTY_QUEUE);
+    try {
+      let buf = fs.readFileSync(queue);
+      // Newest append first; remove only our own bytes, so lines another writer
+      // appended after them stay.
+      for (const { offset, text } of appends.reverse()) {
+        const tail = buf.subarray(offset).toString('utf8');
+        if (!tail.startsWith(text)) return;
+        buf = Buffer.concat([buf.subarray(0, offset), Buffer.from(tail.slice(text.length), 'utf8')]);
+      }
+      const tmp = `${queue}.tmp.${process.pid}`;
+      fs.writeFileSync(tmp, buf);
+      fs.renameSync(tmp, queue);
+    } catch { /* best-effort: readers dedupe repeated paths */ }
   }
 
   recordUnchangedFile(file, hashes) {
@@ -962,15 +1006,18 @@ class ProductionReconcileAdapter {
     // indexed file that became excluded/oversized/gitignored): retire it so all
     // tiers tombstone and the merkle entry is dropped.
     if (!fs.existsSync(abs) || this._retireSet.has(rel)) {
-      const h = { file: rel, deleted: true, contentHash: '', chunks: [] };
-      this.hashes.set(rel, h);
-      return h;
+      return { file: rel, deleted: true, contentHash: '', chunks: [] };
     }
+    // Stat BEFORE the read. The merkle stores this stat with the hash, and the
+    // next scan skips a file whose size and mtime match it. A write that lands
+    // after the stat leaves the file's stat different from the stored one, so
+    // the scan picks it up again; a stat taken after the read could pair the
+    // old content's hash with the new stat and hide the edit for good.
+    const stat = statTuple(abs);
     const content = fs.readFileSync(abs);
     const contentHash = contentHashSync(content);
-    const stat = statTuple(abs);
     const previous = merkle.files?.[rel];
-    const h = {
+    return {
       file: rel,
       absPath: abs,
       content: content.toString('utf8'),
@@ -978,8 +1025,6 @@ class ProductionReconcileAdapter {
       stat,
       contentUnchanged: previous?.hash === contentHash,
     };
-    this.hashes.set(rel, h);
-    return h;
   }
 
   /**

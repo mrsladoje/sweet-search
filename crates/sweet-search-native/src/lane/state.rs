@@ -89,6 +89,16 @@ pub(crate) fn read_manifest(state_dir: &str) -> Manifest {
     }
 }
 
+/// True when the maintainer's reindex queue (or the batch it is processing) holds entries.
+/// Their files can have stale grams, and the JS greps them on every ss-grep call
+/// (core/search/grep-unindexed-fallback.js), so the lane declines.
+pub(crate) fn reindex_pending(state_dir: &str) -> bool {
+    let dir = state_dir.trim_end_matches('/');
+    ["index-maintainer-queue.jsonl", "index-maintainer-queue.processing.jsonl"]
+        .iter()
+        .any(|name| std::fs::metadata(format!("{dir}/{name}")).map_or(false, |m| m.len() > 0))
+}
+
 /// The lane's loaded artifacts, kept across calls while their files stay the same.
 #[derive(Default)]
 pub(crate) struct Loaded {
@@ -127,5 +137,18 @@ mod tests {
         assert_eq!(parse_iso_ms("2026-10-12T20:52:04.658Z"), Some(1_791_838_324_658.0));
         assert_eq!(parse_iso_ms("2000-02-29T12:00:00Z"), Some(951_825_600_000.0));
         assert_eq!(parse_iso_ms("garbage"), None);
+    }
+
+    #[test]
+    fn a_queued_reindex_is_pending() {
+        let dir = std::env::temp_dir().join(format!("ss-lane-pending-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let d = dir.to_str().unwrap();
+        assert!(!reindex_pending(d));
+        std::fs::write(dir.join("index-maintainer-queue.jsonl"), b"").unwrap();
+        assert!(!reindex_pending(d));
+        std::fs::write(dir.join("index-maintainer-queue.processing.jsonl"), b"{\"file_path\":\"a.js\"}\n").unwrap();
+        assert!(reindex_pending(&format!("{d}/")));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

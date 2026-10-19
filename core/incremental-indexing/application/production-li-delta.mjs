@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { LateInteractionIndex } from '../../ranking/late-interaction-index.js';
-import { encodeDocumentsCpu } from '../../ranking/late-interaction-model.js';
+import { countDocumentTokensCpu, encodeDocumentsCpu } from '../../ranking/late-interaction-model.js';
 import { recordEncode } from '../../indexing/inference-provenance.js';
 import { estimateLateInteractionTokens, planLateInteractionBatches } from '../../indexing/indexer-ann.js';
 import {
@@ -184,9 +184,15 @@ export async function applyLateInteractionDelta({
   // 90 KB file's 88 chunks took 24 s and raised RSS from 1.2 to 7.7 GB. Pack
   // the chunks under the full build's token and attention budgets instead
   // (planLateInteractionBatches), and return the results in input order.
+  // Planned by real token counts (the default encoder's tokenizer): the character estimate
+  // can be 3x short on symbol-heavy text, and a batch it packs then pads past both budgets.
+  const countTokens = liEncoder ? null : countDocumentTokensCpu;
   const encode = async (texts) => {
     const out = new Array(texts.length);
-    const items = texts.map((text, i) => ({ i, text, estTokens: estimateLateInteractionTokens(text) }));
+    const counts = countTokens ? await countTokens(texts).catch(() => null) : null;
+    const items = texts.map((text, i) => ({
+      i, text, estTokens: counts?.[i] > 0 ? counts[i] : estimateLateInteractionTokens(text),
+    }));
     for (const batch of planLateInteractionBatches(items, MAINTAINER_LI_BATCHING)) {
       const encoded = await encodeRaw(batch.map((item) => item.text));
       batch.forEach((item, k) => { out[item.i] = encoded[k]; });

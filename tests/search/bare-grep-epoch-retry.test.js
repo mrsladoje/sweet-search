@@ -42,6 +42,24 @@ describe('bareGrep zero-hit epoch retry', () => {
     expect(out.results.map((r) => r.file)).toEqual(['src/a.go']);
   });
 
+  it('compares against the epoch the refresh pinned, not a later read of the manifest', async () => {
+    // The refresh pins epoch 1, then a tick publishes epoch 2 before bareGrep looks again.
+    let disk = 1;
+    const hit = { matches: [{ file: 'src/a.go', line: 1, matchText: 'Fresh', content: 'func Fresh() {}' }], candidateFiles: 1, totalFiles: 1, scannedFiles: 1 };
+    const empty = { matches: [], candidateFiles: 0, totalFiles: 1, scannedFiles: 1 };
+    const s = {
+      projectRoot: root,
+      sparseGramIndexPath: join(root, 'absent-sparse.idx'),
+      async _refreshManifestPins() { this.manifestEpoch = disk; disk = 2; },
+      _readReconcileManifest: () => ({ epoch: disk }),
+      _currentManifestEpoch: () => disk,
+    };
+    const search = vi.fn(() => (s.manifestEpoch === 1 ? empty : hit));
+    s.sparseGramIndex = { searchFull: search, searchLines: search, getAllFiles: () => ['src/a.go'] };
+    const out = await bareGrep.call(s, 'Fresh', null, {});
+    expect(out.results.map((r) => r.file)).toEqual(['src/a.go']);
+  });
+
   it('does not retry when the epoch did not move', async () => {
     const s = searcher({ bump: false });
     const out = await bareGrep.call(s, 'Fresh', null, {});

@@ -1,6 +1,8 @@
-import { afterEach, beforeEach, describe, expect, it, beforeAll, afterAll } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, beforeAll, afterAll, vi } from 'vitest';
+import fs from 'node:fs';
 import Database from 'better-sqlite3';
 import {
+  appendFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -206,6 +208,28 @@ describe('production incremental Reconciler', () => {
     expect((await scanDirtyAndEnqueue({ projectRoot, stateDir })).enqueued).toBe(0);
   });
 
+  it('stores the stat taken before the read, so a write during the read is seen by the next scan', async () => {
+    writeFileSync(sourceFile, 'export const v = 1;\n');
+    const adapter = new prodTesting.ProductionReconcileAdapter({ projectRoot, stateDir, modelInfo: MODEL_INFO, vectorEncoder, liEncoder, logger: silentLogger });
+    const realRead = fs.readFileSync;
+    const spy = vi.spyOn(fs, 'readFileSync').mockImplementation((file, ...rest) => {
+      const out = realRead(file, ...rest);
+      if (file === sourceFile) {
+        spy.mockRestore();
+        // Another writer lands right after the read: same size, a later mtime.
+        writeFileSync(sourceFile, 'export const v = 2;\n');
+        const later = new Date(Date.now() + 60_000);
+        utimesSync(sourceFile, later, later);
+      }
+      return out;
+    });
+    const h = await adapter.hashFile('src/sample.js');
+    spy.mockRestore();
+    expect(h.content).toBe('export const v = 1;\n');
+    const now = fs.statSync(sourceFile, { bigint: true });
+    expect(h.stat.mtime_ns).not.toBe(now.mtimeNs.toString());
+  });
+
   it('reads fresh queue hints newest first, ahead of requeued tails', async () => {
     for (const f of ['a.js', 'b.js', 'c.js', 'd.js']) writeFileSync(join(projectRoot, 'src', f), `export const ${f[0]} = 1;\n`);
     const line = (file_path, source) => `${JSON.stringify({ file_path, source })}\n`;
@@ -213,6 +237,20 @@ describe('production incremental Reconciler', () => {
       line('src/a.js', 'requeue') + line('src/b.js', 'requeue') + line('src/c.js', 'watch') + line('src/d.js', 'scan') + line('src/a.js', 'watch'));
     const adapter = new prodTesting.ProductionReconcileAdapter({ projectRoot, stateDir, modelInfo: MODEL_INFO, vectorEncoder, liEncoder, logger: silentLogger });
     expect(await adapter.readDirtySet()).toEqual(['src/a.js', 'src/d.js', 'src/c.js', 'src/b.js']);
+  });
+
+  it('takes a requeued file edited after it was queued as a fresh hint', async () => {
+    for (const f of ['a.js', 'b.js', 'c.js']) writeFileSync(join(projectRoot, 'src', f), `export const ${f[0]} = 1;\n`);
+    const queuedAt = Date.now() - 60_000;
+    const old = new Date(queuedAt - 60_000);
+    utimesSync(join(projectRoot, 'src', 'a.js'), old, old);
+    utimesSync(join(projectRoot, 'src', 'c.js'), old, old);
+    const line = (file_path, source) => `${JSON.stringify({ file_path, source, timestamp: queuedAt })}\n`;
+    writeFileSync(join(stateDir, 'index-maintainer-queue.jsonl'),
+      line('src/a.js', 'requeue') + line('src/b.js', 'requeue') + line('src/c.js', 'scan'));
+    const adapter = new prodTesting.ProductionReconcileAdapter({ projectRoot, stateDir, modelInfo: MODEL_INFO, vectorEncoder, liEncoder, logger: silentLogger });
+    // b.js was written after its requeue time (its mtime is now): it joins the fresh hints.
+    expect(await adapter.readDirtySet()).toEqual(['src/c.js', 'src/b.js', 'src/a.js']);
   });
 
   it('does not copy the processing queue into the queue after a failed tick', async () => {
@@ -223,6 +261,21 @@ describe('production incremental Reconciler', () => {
     unlinkSync(join(stateDir, 'index-maintainer-queue.processing.jsonl'));
     adapter.requeueDirtyFilesAfterFailure(['src/x.js']);
     expect(readFileSync(join(stateDir, 'index-maintainer-queue.jsonl'), 'utf8')).toContain('src/x.js');
+  });
+
+  it('takes the deferred tail it appended back out when the tick then fails', async () => {
+    writeFileSync(join(stateDir, 'index-maintainer-queue.processing.jsonl'),
+      ['src/a.js', 'src/b.js', 'src/c.js'].map((f) => `${JSON.stringify({ file_path: f })}\n`).join(''));
+    writeFileSync(join(stateDir, 'index-maintainer-queue.jsonl'), `${JSON.stringify({ file_path: 'src/new.js', source: 'scan' })}\n`);
+    const adapter = new prodTesting.ProductionReconcileAdapter({ projectRoot, stateDir, modelInfo: MODEL_INFO, vectorEncoder, liEncoder, logger: silentLogger });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      await adapter.readDirtySet();
+      adapter.requeueDirtyFiles(['src/b.js', 'src/c.js']);
+      appendFileSync(join(stateDir, 'index-maintainer-queue.jsonl'), `${JSON.stringify({ file_path: 'src/w.js', source: 'watch' })}\n`);
+      adapter.requeueDirtyFilesAfterFailure(['src/a.js']);
+    }
+    const lines = readFileSync(join(stateDir, 'index-maintainer-queue.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l).file_path);
+    expect(lines).toEqual(['src/new.js', 'src/w.js', 'src/w.js']);
   });
 
   it('updates graph, vectors, binary HNSW, LI, sparse grams, manifest, and merkle state across add/update/delete', async () => {
