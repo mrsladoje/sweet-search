@@ -11,8 +11,9 @@ stage, JavaScript orchestration and metadata reads (\S\ref{sec:timing}); which o
 established.
 
 \paragraph{Rival efforts at the grid floor.} In the replication, on CQADupStack, all three rivals were frozen at
-the lowest effort of the shared grid (ef or window 50). Their fastest qualifying point may lie below the grid, so the
-CQADupStack ratios may overstate our advantage.
+the lowest effort of the shared grid (ef or window 50). A post hoc dev sweep below the grid shows that effort 40 also
+qualifies for two of them and is about \nm{floor-gain-amd} times faster, so the pre-registered CQADupStack ratios on AMD
+and Graviton overstate our advantage by about that factor (\S\ref{sec:replication}); ours stays faster.
 
 \paragraph{Specific rivals at scale.} On Quora with bge-base-en-v1.5, SVS Vamana with LeanVec on Intel and
 FAISS binary HNSW on Graviton are faster than ours at $\fr = 0.99$. SVS (LVQ or LeanVec) is also faster on

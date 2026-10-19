@@ -1,0 +1,1652 @@
+{
+ "intel": {
+  "rows": [
+   {
+    "point": {
+     "search": {
+      "ef": 15,
+      "refine": 10
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 15,
+    "rounds": 3,
+    "latency_us": 403.774,
+    "share": 0.9710680097250273,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 10,
+      "refine": 10
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 10,
+    "rounds": 3,
+    "latency_us": 317.023,
+    "share": 0.9512700136249339,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "window": 50
+     },
+     "system": "svs_vamana_lvq"
+    },
+    "effort": 50,
+    "rounds": 3,
+    "latency_us": 226.387,
+    "share": 0.9941173773138707,
+    "qualifies": true
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 20,
+      "refine": 2
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 20,
+    "rounds": 3,
+    "latency_us": 400.737,
+    "share": 0.9844191670531136,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 30
+     },
+     "system": "faiss_hnsw_flat"
+    },
+    "effort": 30,
+    "rounds": 3,
+    "latency_us": 378.62,
+    "share": 0.992343638791096,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 30,
+      "refine": 10
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 30,
+    "rounds": 3,
+    "latency_us": 614.19,
+    "share": 0.9914835110617282,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 15
+     },
+     "system": "faiss_hnsw_flat"
+    },
+    "effort": 15,
+    "rounds": 3,
+    "latency_us": 227.946,
+    "share": 0.9710944514695848,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "window": 30
+     },
+     "system": "svs_vamana_lvq"
+    },
+    "effort": 30,
+    "rounds": 3,
+    "latency_us": 148.122,
+    "share": 0.9890747289390652,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 15
+     },
+     "system": "usearch_f16"
+    },
+    "effort": 15,
+    "rounds": 3,
+    "latency_us": 385.933,
+    "share": 0.9757413963543706,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "S1": 150,
+     "system": "ours_cascade"
+    },
+    "effort": 150,
+    "rounds": 3,
+    "latency_us": 143.239,
+    "share": 0.9902623459358395,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "window": 40
+     },
+     "system": "svs_vamana_lvq"
+    },
+    "effort": 40,
+    "rounds": 3,
+    "latency_us": 186.604,
+    "share": 0.9919353468293627,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "window": 10
+     },
+     "system": "svs_vamana_lvq"
+    },
+    "effort": 10,
+    "rounds": 3,
+    "latency_us": 62.016,
+    "share": 0.9627874413769254,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 25
+     },
+     "system": "usearch_f16"
+    },
+    "effort": 25,
+    "rounds": 3,
+    "latency_us": 554.685,
+    "share": 0.9886966382501514,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 10
+     },
+     "system": "usearch_f16"
+    },
+    "effort": 10,
+    "rounds": 3,
+    "latency_us": 290.843,
+    "share": 0.958393971405254,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 40
+     },
+     "system": "usearch_f16"
+    },
+    "effort": 40,
+    "rounds": 3,
+    "latency_us": 802.961,
+    "share": 0.9948797567422547,
+    "qualifies": true
+   },
+   {
+    "point": {
+     "search": {
+      "window": 25
+     },
+     "system": "svs_vamana_lvq"
+    },
+    "effort": 25,
+    "rounds": 3,
+    "latency_us": 126.77,
+    "share": 0.9864529343368854,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 50
+     },
+     "system": "usearch_f16"
+    },
+    "effort": 50,
+    "rounds": 3,
+    "latency_us": 960.266,
+    "share": 0.996302450131336,
+    "qualifies": true
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 15,
+      "refine": 2
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 15,
+    "rounds": 3,
+    "latency_us": 336.64,
+    "share": 0.9710680097250273,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "S1": 200,
+     "system": "ours_cascade"
+    },
+    "effort": 200,
+    "rounds": 3,
+    "latency_us": 162.602,
+    "share": 0.993640223241071,
+    "qualifies": true
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 50,
+      "refine": 10
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 50,
+    "rounds": 3,
+    "latency_us": 856.49,
+    "share": 0.9972117467749636,
+    "qualifies": true
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 50,
+      "refine": 2
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 50,
+    "rounds": 3,
+    "latency_us": 804.195,
+    "share": 0.9972117467749636,
+    "qualifies": true
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 50
+     },
+     "system": "faiss_hnsw_flat"
+    },
+    "effort": 50,
+    "rounds": 3,
+    "latency_us": 569.131,
+    "share": 0.9971650774081483,
+    "qualifies": true
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 25,
+      "refine": 10
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 25,
+    "rounds": 3,
+    "latency_us": 541.136,
+    "share": 0.987584709556245,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 20
+     },
+     "system": "faiss_hnsw_flat"
+    },
+    "effort": 20,
+    "rounds": 3,
+    "latency_us": 277.221,
+    "share": 0.9833256129725433,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "window": 20
+     },
+     "system": "svs_vamana_lvq"
+    },
+    "effort": 20,
+    "rounds": 3,
+    "latency_us": 105.847,
+    "share": 0.9816996375425368,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 40
+     },
+     "system": "faiss_hnsw_flat"
+    },
+    "effort": 40,
+    "rounds": 3,
+    "latency_us": 475.189,
+    "share": 0.9956999942881994,
+    "qualifies": true
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 10,
+      "refine": 2
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 10,
+    "rounds": 3,
+    "latency_us": 260.119,
+    "share": 0.9512700136249339,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 25,
+      "refine": 2
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 25,
+    "rounds": 3,
+    "latency_us": 480.158,
+    "share": 0.987584709556245,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 25
+     },
+     "system": "faiss_hnsw_flat"
+    },
+    "effort": 25,
+    "rounds": 3,
+    "latency_us": 334.446,
+    "share": 0.9880652056389749,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 40,
+      "refine": 2
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 40,
+    "rounds": 3,
+    "latency_us": 677.4,
+    "share": 0.9944731266337377,
+    "qualifies": true
+   },
+   {
+    "point": {
+     "search": {
+      "window": 15
+     },
+     "system": "svs_vamana_lvq"
+    },
+    "effort": 15,
+    "rounds": 3,
+    "latency_us": 84.123,
+    "share": 0.974035882976466,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 10
+     },
+     "system": "faiss_hnsw_flat"
+    },
+    "effort": 10,
+    "rounds": 3,
+    "latency_us": 177.648,
+    "share": 0.9504464031315262,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 30
+     },
+     "system": "usearch_f16"
+    },
+    "effort": 30,
+    "rounds": 3,
+    "latency_us": 635.136,
+    "share": 0.9930685553538569,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 30,
+      "refine": 2
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 30,
+    "rounds": 3,
+    "latency_us": 551.108,
+    "share": 0.9914835110617282,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 40,
+      "refine": 10
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 40,
+    "rounds": 3,
+    "latency_us": 741.154,
+    "share": 0.9944731266337377,
+    "qualifies": true
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 20,
+      "refine": 10
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 20,
+    "rounds": 3,
+    "latency_us": 492.853,
+    "share": 0.9844191670531136,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 20
+     },
+     "system": "usearch_f16"
+    },
+    "effort": 20,
+    "rounds": 3,
+    "latency_us": 468.482,
+    "share": 0.9817271706638461,
+    "qualifies": false
+   }
+  ],
+  "summary": {
+   "faiss_hnsw_flat": {
+    "best": {
+     "point": {
+      "search": {
+       "ef": 40
+      },
+      "system": "faiss_hnsw_flat"
+     },
+     "effort": 40,
+     "rounds": 3,
+     "latency_us": 475.189,
+     "share": 0.9956999942881994,
+     "qualifies": true
+    },
+    "at50": {
+     "point": {
+      "search": {
+       "ef": 50
+      },
+      "system": "faiss_hnsw_flat"
+     },
+     "effort": 50,
+     "rounds": 3,
+     "latency_us": 569.131,
+     "share": 0.9971650774081483,
+     "qualifies": true
+    },
+    "gain": 1.1976939701887037
+   },
+   "faiss_hnsw_sq8": {
+    "best": {
+     "point": {
+      "search": {
+       "ef": 40,
+       "refine": 2
+      },
+      "system": "faiss_hnsw_sq8"
+     },
+     "effort": 40,
+     "rounds": 3,
+     "latency_us": 677.4,
+     "share": 0.9944731266337377,
+     "qualifies": true
+    },
+    "at50": {
+     "point": {
+      "search": {
+       "ef": 50,
+       "refine": 2
+      },
+      "system": "faiss_hnsw_sq8"
+     },
+     "effort": 50,
+     "rounds": 3,
+     "latency_us": 804.195,
+     "share": 0.9972117467749636,
+     "qualifies": true
+    },
+    "gain": 1.1871789193976972
+   },
+   "ours_cascade": {
+    "best": {
+     "point": {
+      "S1": 200,
+      "system": "ours_cascade"
+     },
+     "effort": 200,
+     "rounds": 3,
+     "latency_us": 162.602,
+     "share": 0.993640223241071,
+     "qualifies": true
+    },
+    "at50": null,
+    "gain": null
+   },
+   "svs_vamana_lvq": {
+    "best": {
+     "point": {
+      "search": {
+       "window": 50
+      },
+      "system": "svs_vamana_lvq"
+     },
+     "effort": 50,
+     "rounds": 3,
+     "latency_us": 226.387,
+     "share": 0.9941173773138707,
+     "qualifies": true
+    },
+    "at50": {
+     "point": {
+      "search": {
+       "window": 50
+      },
+      "system": "svs_vamana_lvq"
+     },
+     "effort": 50,
+     "rounds": 3,
+     "latency_us": 226.387,
+     "share": 0.9941173773138707,
+     "qualifies": true
+    },
+    "gain": 1.0
+   },
+   "usearch_f16": {
+    "best": {
+     "point": {
+      "search": {
+       "ef": 40
+      },
+      "system": "usearch_f16"
+     },
+     "effort": 40,
+     "rounds": 3,
+     "latency_us": 802.961,
+     "share": 0.9948797567422547,
+     "qualifies": true
+    },
+    "at50": {
+     "point": {
+      "search": {
+       "ef": 50
+      },
+      "system": "usearch_f16"
+     },
+     "effort": 50,
+     "rounds": 3,
+     "latency_us": 960.266,
+     "share": 0.996302450131336,
+     "qualifies": true
+    },
+    "gain": 1.1959061523536012
+   }
+  }
+ },
+ "amd": {
+  "rows": [
+   {
+    "point": {
+     "search": {
+      "ef": 15,
+      "refine": 2
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 15,
+    "rounds": 3,
+    "latency_us": 115.181,
+    "share": 0.9710680097250273,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 10
+     },
+     "system": "faiss_hnsw_flat"
+    },
+    "effort": 10,
+    "rounds": 3,
+    "latency_us": 103.151,
+    "share": 0.9504464031315262,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 30
+     },
+     "system": "faiss_hnsw_flat"
+    },
+    "effort": 30,
+    "rounds": 3,
+    "latency_us": 215.402,
+    "share": 0.992343638791096,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 40,
+      "refine": 10
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 40,
+    "rounds": 3,
+    "latency_us": 269.003,
+    "share": 0.9944731266337377,
+    "qualifies": true
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 15
+     },
+     "system": "faiss_hnsw_flat"
+    },
+    "effort": 15,
+    "rounds": 3,
+    "latency_us": 131.741,
+    "share": 0.9710944514695848,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 15,
+      "refine": 10
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 15,
+    "rounds": 3,
+    "latency_us": 152.112,
+    "share": 0.9710680097250273,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 25
+     },
+     "system": "usearch_f16"
+    },
+    "effort": 25,
+    "rounds": 3,
+    "latency_us": 496.725,
+    "share": 0.9886966382501514,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 20
+     },
+     "system": "faiss_hnsw_flat"
+    },
+    "effort": 20,
+    "rounds": 3,
+    "latency_us": 159.182,
+    "share": 0.9833256129725433,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 10,
+      "refine": 10
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 10,
+    "rounds": 3,
+    "latency_us": 125.891,
+    "share": 0.9512700136249339,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 10
+     },
+     "system": "usearch_f16"
+    },
+    "effort": 10,
+    "rounds": 3,
+    "latency_us": 229.703,
+    "share": 0.958393971405254,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 50,
+      "refine": 10
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 50,
+    "rounds": 3,
+    "latency_us": 316.914,
+    "share": 0.9972117467749636,
+    "qualifies": true
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 50,
+      "refine": 2
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 50,
+    "rounds": 3,
+    "latency_us": 281.553,
+    "share": 0.9972117467749636,
+    "qualifies": true
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 20,
+      "refine": 10
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 20,
+    "rounds": 3,
+    "latency_us": 175.852,
+    "share": 0.9844191670531136,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "S1": 200,
+     "system": "ours_cascade"
+    },
+    "effort": 200,
+    "rounds": 3,
+    "latency_us": 130.652,
+    "share": 0.993640223241071,
+    "qualifies": true
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 50
+     },
+     "system": "faiss_hnsw_flat"
+    },
+    "effort": 50,
+    "rounds": 3,
+    "latency_us": 326.034,
+    "share": 0.9971650774081483,
+    "qualifies": true
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 25
+     },
+     "system": "faiss_hnsw_flat"
+    },
+    "effort": 25,
+    "rounds": 3,
+    "latency_us": 187.702,
+    "share": 0.9880652056389749,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "S1": 150,
+     "system": "ours_cascade"
+    },
+    "effort": 150,
+    "rounds": 3,
+    "latency_us": 115.391,
+    "share": 0.9902623459358395,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 25,
+      "refine": 10
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 25,
+    "rounds": 3,
+    "latency_us": 199.383,
+    "share": 0.987584709556245,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 15
+     },
+     "system": "usearch_f16"
+    },
+    "effort": 15,
+    "rounds": 3,
+    "latency_us": 346.053,
+    "share": 0.9757413963543706,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 30,
+      "refine": 10
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 30,
+    "rounds": 3,
+    "latency_us": 225.332,
+    "share": 0.9914835110617282,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 20
+     },
+     "system": "usearch_f16"
+    },
+    "effort": 20,
+    "rounds": 3,
+    "latency_us": 415.124,
+    "share": 0.9817271706638461,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 50
+     },
+     "system": "usearch_f16"
+    },
+    "effort": 50,
+    "rounds": 3,
+    "latency_us": 846.06,
+    "share": 0.996302450131336,
+    "qualifies": true
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 40,
+      "refine": 2
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 40,
+    "rounds": 3,
+    "latency_us": 233.422,
+    "share": 0.9944731266337377,
+    "qualifies": true
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 40
+     },
+     "system": "usearch_f16"
+    },
+    "effort": 40,
+    "rounds": 3,
+    "latency_us": 714.487,
+    "share": 0.9948797567422547,
+    "qualifies": true
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 30,
+      "refine": 2
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 30,
+    "rounds": 3,
+    "latency_us": 187.072,
+    "share": 0.9914835110617282,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 30
+     },
+     "system": "usearch_f16"
+    },
+    "effort": 30,
+    "rounds": 3,
+    "latency_us": 571.826,
+    "share": 0.9930685553538569,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 25,
+      "refine": 2
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 25,
+    "rounds": 3,
+    "latency_us": 163.942,
+    "share": 0.987584709556245,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 10,
+      "refine": 2
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 10,
+    "rounds": 3,
+    "latency_us": 90.891,
+    "share": 0.9512700136249339,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 40
+     },
+     "system": "faiss_hnsw_flat"
+    },
+    "effort": 40,
+    "rounds": 3,
+    "latency_us": 272.343,
+    "share": 0.9956999942881994,
+    "qualifies": true
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 20,
+      "refine": 2
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 20,
+    "rounds": 3,
+    "latency_us": 139.942,
+    "share": 0.9844191670531136,
+    "qualifies": false
+   }
+  ],
+  "summary": {
+   "faiss_hnsw_flat": {
+    "best": {
+     "point": {
+      "search": {
+       "ef": 40
+      },
+      "system": "faiss_hnsw_flat"
+     },
+     "effort": 40,
+     "rounds": 3,
+     "latency_us": 272.343,
+     "share": 0.9956999942881994,
+     "qualifies": true
+    },
+    "at50": {
+     "point": {
+      "search": {
+       "ef": 50
+      },
+      "system": "faiss_hnsw_flat"
+     },
+     "effort": 50,
+     "rounds": 3,
+     "latency_us": 326.034,
+     "share": 0.9971650774081483,
+     "qualifies": true
+    },
+    "gain": 1.19714477699078
+   },
+   "faiss_hnsw_sq8": {
+    "best": {
+     "point": {
+      "search": {
+       "ef": 40,
+       "refine": 2
+      },
+      "system": "faiss_hnsw_sq8"
+     },
+     "effort": 40,
+     "rounds": 3,
+     "latency_us": 233.422,
+     "share": 0.9944731266337377,
+     "qualifies": true
+    },
+    "at50": {
+     "point": {
+      "search": {
+       "ef": 50,
+       "refine": 2
+      },
+      "system": "faiss_hnsw_sq8"
+     },
+     "effort": 50,
+     "rounds": 3,
+     "latency_us": 281.553,
+     "share": 0.9972117467749636,
+     "qualifies": true
+    },
+    "gain": 1.2061973592891844
+   },
+   "ours_cascade": {
+    "best": {
+     "point": {
+      "S1": 200,
+      "system": "ours_cascade"
+     },
+     "effort": 200,
+     "rounds": 3,
+     "latency_us": 130.652,
+     "share": 0.993640223241071,
+     "qualifies": true
+    },
+    "at50": null,
+    "gain": null
+   },
+   "usearch_f16": {
+    "best": {
+     "point": {
+      "search": {
+       "ef": 40
+      },
+      "system": "usearch_f16"
+     },
+     "effort": 40,
+     "rounds": 3,
+     "latency_us": 714.487,
+     "share": 0.9948797567422547,
+     "qualifies": true
+    },
+    "at50": {
+     "point": {
+      "search": {
+       "ef": 50
+      },
+      "system": "usearch_f16"
+     },
+     "effort": 50,
+     "rounds": 3,
+     "latency_us": 846.06,
+     "share": 0.996302450131336,
+     "qualifies": true
+    },
+    "gain": 1.184150306443644
+   }
+  }
+ },
+ "arm": {
+  "rows": [
+   {
+    "point": {
+     "search": {
+      "ef": 20
+     },
+     "system": "faiss_hnsw_flat"
+    },
+    "effort": 20,
+    "rounds": 3,
+    "latency_us": 285.655,
+    "share": 0.9833256129725433,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 50
+     },
+     "system": "faiss_hnsw_flat"
+    },
+    "effort": 50,
+    "rounds": 3,
+    "latency_us": 576.246,
+    "share": 0.9971650774081483,
+    "qualifies": true
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 30,
+      "refine": 2
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 30,
+    "rounds": 3,
+    "latency_us": 570.547,
+    "share": 0.9914835110617282,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 30
+     },
+     "system": "faiss_hnsw_flat"
+    },
+    "effort": 30,
+    "rounds": 3,
+    "latency_us": 384.648,
+    "share": 0.992343638791096,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 10,
+      "refine": 2
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 10,
+    "rounds": 3,
+    "latency_us": 291.141,
+    "share": 0.9512700136249339,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 50,
+      "refine": 2
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 50,
+    "rounds": 3,
+    "latency_us": 838.409,
+    "share": 0.9972117467749636,
+    "qualifies": true
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 10
+     },
+     "system": "usearch_f16"
+    },
+    "effort": 10,
+    "rounds": 3,
+    "latency_us": 309.919,
+    "share": 0.958393971405254,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 10,
+      "refine": 10
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 10,
+    "rounds": 3,
+    "latency_us": 338.555,
+    "share": 0.9512700136249339,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 40
+     },
+     "system": "faiss_hnsw_flat"
+    },
+    "effort": 40,
+    "rounds": 3,
+    "latency_us": 480.924,
+    "share": 0.9956999942881994,
+    "qualifies": true
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 20,
+      "refine": 2
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 20,
+    "rounds": 3,
+    "latency_us": 428.803,
+    "share": 0.9844191670531136,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 30
+     },
+     "system": "usearch_f16"
+    },
+    "effort": 30,
+    "rounds": 3,
+    "latency_us": 655.251,
+    "share": 0.9930685553538569,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 25,
+      "refine": 10
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 25,
+    "rounds": 3,
+    "latency_us": 559.52,
+    "share": 0.987584709556245,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 10
+     },
+     "system": "faiss_hnsw_flat"
+    },
+    "effort": 10,
+    "rounds": 3,
+    "latency_us": 187.296,
+    "share": 0.9504464031315262,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "S1": 150,
+     "system": "ours_cascade"
+    },
+    "effort": 150,
+    "rounds": 3,
+    "latency_us": 212.584,
+    "share": 0.9902623459358395,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 25
+     },
+     "system": "faiss_hnsw_flat"
+    },
+    "effort": 25,
+    "rounds": 3,
+    "latency_us": 337.222,
+    "share": 0.9880652056389749,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 25
+     },
+     "system": "usearch_f16"
+    },
+    "effort": 25,
+    "rounds": 3,
+    "latency_us": 572.404,
+    "share": 0.9886966382501514,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 25,
+      "refine": 2
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 25,
+    "rounds": 3,
+    "latency_us": 501.34,
+    "share": 0.987584709556245,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 40
+     },
+     "system": "usearch_f16"
+    },
+    "effort": 40,
+    "rounds": 3,
+    "latency_us": 811.495,
+    "share": 0.9948797567422547,
+    "qualifies": true
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 15
+     },
+     "system": "usearch_f16"
+    },
+    "effort": 15,
+    "rounds": 3,
+    "latency_us": 397.549,
+    "share": 0.9757413963543706,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 50,
+      "refine": 10
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 50,
+    "rounds": 3,
+    "latency_us": 901.282,
+    "share": 0.9972117467749636,
+    "qualifies": true
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 50
+     },
+     "system": "usearch_f16"
+    },
+    "effort": 50,
+    "rounds": 3,
+    "latency_us": 973.87,
+    "share": 0.996302450131336,
+    "qualifies": true
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 15,
+      "refine": 2
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 15,
+    "rounds": 3,
+    "latency_us": 359.851,
+    "share": 0.9710680097250273,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 20
+     },
+     "system": "usearch_f16"
+    },
+    "effort": 20,
+    "rounds": 3,
+    "latency_us": 489.734,
+    "share": 0.9817271706638461,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 15,
+      "refine": 10
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 15,
+    "rounds": 3,
+    "latency_us": 414.585,
+    "share": 0.9710680097250273,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 20,
+      "refine": 10
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 20,
+    "rounds": 3,
+    "latency_us": 486.932,
+    "share": 0.9844191670531136,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "S1": 200,
+     "system": "ours_cascade"
+    },
+    "effort": 200,
+    "rounds": 3,
+    "latency_us": 242.886,
+    "share": 0.993640223241071,
+    "qualifies": true
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 30,
+      "refine": 10
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 30,
+    "rounds": 3,
+    "latency_us": 632.009,
+    "share": 0.9914835110617282,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 15
+     },
+     "system": "faiss_hnsw_flat"
+    },
+    "effort": 15,
+    "rounds": 3,
+    "latency_us": 235.239,
+    "share": 0.9710944514695848,
+    "qualifies": false
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 40,
+      "refine": 10
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 40,
+    "rounds": 3,
+    "latency_us": 775.306,
+    "share": 0.9944731266337377,
+    "qualifies": true
+   },
+   {
+    "point": {
+     "search": {
+      "ef": 40,
+      "refine": 2
+     },
+     "system": "faiss_hnsw_sq8"
+    },
+    "effort": 40,
+    "rounds": 3,
+    "latency_us": 703.984,
+    "share": 0.9944731266337377,
+    "qualifies": true
+   }
+  ],
+  "summary": {
+   "faiss_hnsw_flat": {
+    "best": {
+     "point": {
+      "search": {
+       "ef": 40
+      },
+      "system": "faiss_hnsw_flat"
+     },
+     "effort": 40,
+     "rounds": 3,
+     "latency_us": 480.924,
+     "share": 0.9956999942881994,
+     "qualifies": true
+    },
+    "at50": {
+     "point": {
+      "search": {
+       "ef": 50
+      },
+      "system": "faiss_hnsw_flat"
+     },
+     "effort": 50,
+     "rounds": 3,
+     "latency_us": 576.246,
+     "share": 0.9971650774081483,
+     "qualifies": true
+    },
+    "gain": 1.1982059535394367
+   },
+   "faiss_hnsw_sq8": {
+    "best": {
+     "point": {
+      "search": {
+       "ef": 40,
+       "refine": 2
+      },
+      "system": "faiss_hnsw_sq8"
+     },
+     "effort": 40,
+     "rounds": 3,
+     "latency_us": 703.984,
+     "share": 0.9944731266337377,
+     "qualifies": true
+    },
+    "at50": {
+     "point": {
+      "search": {
+       "ef": 50,
+       "refine": 2
+      },
+      "system": "faiss_hnsw_sq8"
+     },
+     "effort": 50,
+     "rounds": 3,
+     "latency_us": 838.409,
+     "share": 0.9972117467749636,
+     "qualifies": true
+    },
+    "gain": 1.1909489420214094
+   },
+   "ours_cascade": {
+    "best": {
+     "point": {
+      "S1": 200,
+      "system": "ours_cascade"
+     },
+     "effort": 200,
+     "rounds": 3,
+     "latency_us": 242.886,
+     "share": 0.993640223241071,
+     "qualifies": true
+    },
+    "at50": null,
+    "gain": null
+   },
+   "usearch_f16": {
+    "best": {
+     "point": {
+      "search": {
+       "ef": 40
+      },
+      "system": "usearch_f16"
+     },
+     "effort": 40,
+     "rounds": 3,
+     "latency_us": 811.495,
+     "share": 0.9948797567422547,
+     "qualifies": true
+    },
+    "at50": {
+     "point": {
+      "search": {
+       "ef": 50
+      },
+      "system": "usearch_f16"
+     },
+     "effort": 50,
+     "rounds": 3,
+     "latency_us": 973.87,
+     "share": 0.996302450131336,
+     "qualifies": true
+    },
+    "gain": 1.2000936543047092
+   }
+  }
+ }
+}

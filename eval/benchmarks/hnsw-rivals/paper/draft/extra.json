@@ -1,11 +1,16 @@
 {
-"repairjobs": "2,493",
-"hojobs": "103,392",
-"repairshare": "2.4\\%",
-"npowerlow": 2,
-"scann-ovh-intel": "1.8",
-"scann-ovh-amd": "1.7",
-"scann-ovh-arm": "2.7",
-"short-ours-B": "2.0",
-"short-riv-A": "0.012"
+ "repairjobs": "2,493",
+ "hojobs": "103,392",
+ "repairshare": "2.4\\%",
+ "npowerlow": 2,
+ "scann-ovh-intel": "1.8",
+ "scann-ovh-amd": "1.7",
+ "scann-ovh-arm": "2.7",
+ "short-ours-B": "2.0",
+ "short-riv-A": "0.012",
+ "laptop-s": "23",
+ "laptop-ours": "46",
+ "laptop-flat": "25",
+ "laptop-default": "85",
+ "laptop-exact": "326"
 }

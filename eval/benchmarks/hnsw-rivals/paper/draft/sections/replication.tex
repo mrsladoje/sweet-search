@@ -57,8 +57,14 @@ Graviton & MS MARCO 1M & FAISS binary HNSW ($M$ 64, efC 800) & ef 300, refine 20
 
 \paragraph{Frozen points.} Table~\ref{tab:rep-points} lists them. On MS MARCO our frozen point is the product's
 shipped default ($S_1 = 400$). On CQADupStack the rival's effort sits at the bottom of the shared grid in
-\nm{rep-gridmin} of 3 cases (ef or window 50): a lower effort, which the grid did not hold, could have qualified and been
-faster. Figure~\ref{fig:pareto} shows every dev configuration as a quality--latency curve per system.
+\nm{rep-gridmin} of 3 cases (ef or window 50). After the held-out run we swept the four rival families frozen at 50 below
+the grid on CQADupStack dev (efforts 10 to 50, three rounds on one fresh instance per CPU type, our frozen point in the
+same run). Effort 40 still meets $\fr = 0.99$ for the FAISS HNSW, HNSW-SQ8 and USearch float16 graphs and is
+\nm{floor-gain-min}--\nm{floor-gain-max} times faster than effort 50; effort 30 does not meet it; SVS LVQ has no qualifying
+window below 50. The dev-chosen rival would not change on any CPU. If the held-out ratio is divided by the dev gain of
+the rival, the CQADupStack ratio becomes \nm{floor-adj-amd} on AMD and \nm{floor-adj-arm} on Graviton (from
+\nm{rep-ratio-amd-cqadup} and \nm{rep-ratio-arm-cqadup}) and stays \nm{floor-adj-intel} on Intel. This adjustment is descriptive; the pre-registered tests
+use the frozen points. Figure~\ref{fig:pareto} shows every dev configuration as a quality--latency curve per system.
 
 \begin{figure}[t]\centering
 \includegraphics[width=\textwidth]{figures/pareto.pdf}

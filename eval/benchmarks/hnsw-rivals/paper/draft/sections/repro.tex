@@ -24,5 +24,10 @@ the dev plans; the selection and analysis scripts need no change. The FAISS adap
 
 \paragraph{Rerunning timings.} \texttt{aws/} holds the launch and run scripts for the cloud machines (account values in
 a file that is not in the repository), and \texttt{make\_local\_plans.py} makes plans for one local machine.
-\TODO{laptop example (gcsn, one model, ours and FAISS binary flat): measured run time on an M3 Max; archive DOI}
+\texttt{laptop\_example.sh DATA ROOT} is the smallest complete run: it builds our index, FAISS binary flat and exact
+search for gcsn with CodeRankEmbed, times them on dev queries in three rounds and prints latency and retained quality. On
+the M3 Max it took \nm{laptop-s}~s of wall time after the one-time build of the libraries and the addon; it reports
+\nm{laptop-flat}~\us{} per query for FAISS binary flat, \nm{laptop-ours}~\us{} for our frozen point, \nm{laptop-default}~\us{}
+for our shipped default and \nm{laptop-exact}~\us{} for exact search, the small-set pattern of \S\ref{sec:results}.
+\TODO{archive DOI}
 ussy

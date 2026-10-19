@@ -2,8 +2,8 @@
 \sloppy
 
 \paragraph{Sizes and dimensions.} The sets hold 7k to 1M vectors. We make no claim beyond 1M vectors. All vectors have 768 dimensions; our codes use the sign of the first 512, and
-none of the three models reports training for nested dimensions (\S\ref{sec:related}). We did not test 768-bit codes or a
-random rotation before the sign; either could change the small-budget results of comparison (A).
+none of the three models reports training for nested dimensions (\S\ref{sec:related}). A post hoc quality check (\S\ref{sec:codeablation})
+shows that 768-bit codes keep 99\% of exact quality at smaller budgets in more cells; we did not time them.
 
 \paragraph{Models and tasks.} Three embedding models, five code-search sets and two BEIR sets. The
 code-search results are exploratory for our system. Before this study, its production defaults (stage-1

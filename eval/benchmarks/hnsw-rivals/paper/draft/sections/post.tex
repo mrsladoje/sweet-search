@@ -27,26 +27,31 @@ float32 distances and took \nm{post-eqf-min} to \nm{post-eqf-max} times as long 
 gap is mostly the cost of the distance function, not of the walk, and it buys candidates of higher quality at small
 budgets (\S\ref{sec:results}).
 
-\paragraph{Why the binary walk is faster: what the code shows.} We did not instrument distance evaluations or
-ablate parts of our walk, so the following is from reading the sources, not a measured decomposition. (1) Our walk
-keeps its candidate and result queues as one bucket per integer Hamming distance (0 to 512), so a push is $O(1)$ and a
-pop is amortised $O(1)$; FAISS and USearch keep binary heaps, about ten dependent steps per operation. (2) Our codes sit in
-one aligned array and each level's neighbour lists in one compressed sparse-row array. The Hamming distance itself is
-unlikely to explain the gap with FAISS, which also has a 64-byte specialisation. The
-same holds for the exact scan: our scan selects the best $C$ from a histogram of the 513 possible distances, while FAISS
-binary flat keeps a heap of size $C$ by default. A walk with heaps instead of buckets is a switch in our code and would
-measure the first point directly; it has not run. Table~\ref{tab:postgen}
-gives, per CPU and set, the generator time of the fastest of our configurations and of the fastest rival
-configuration among those whose retained quality is at least 99\%; by generator time alone, ours is the
-fastest in \nm{post-best-ours} of \nm{post-cells} cells.
+\paragraph{Why the binary walk is faster.} Reading the sources shows two differences in the data structures. Our
+walk keeps its candidate and result queues as one bucket per integer Hamming distance (0 to 512), so a push is $O(1)$
+and a pop amortised $O(1)$; FAISS and USearch keep binary heaps. Our exact scan selects the best $C$ from a histogram of
+the 513 possible distances, while FAISS binary flat keeps a binary heap of size $C$ by default (a counting variant
+exists, \texttt{use\_heap = false}). After the reviews of this draft we measured both on one machine, the Mac
+(held-out, $C = 400$, generator clock, 5 rounds, every set with one model per set kind; Table~\ref{tab:mech}). With
+binary heaps instead of buckets our walk takes \nm{mech-hb-fixed} times as long at fixed $ef$ (\nm{mech-hb-fixed-min}--\nm{mech-hb-fixed-max}
+over sets) and \nm{mech-hb-adapt} times with its adaptive rule. FAISS binary HNSW at the same build and $ef$ takes
+\nm{mech-fb} times as long as our walk with buckets and still \nm{mech-fh} times as long as our walk with heaps: the queues
+explain about \nm{mech-share}\% of the gap on a log scale, and the rest, which we did not locate, lies elsewhere (visited-set
+handling, neighbour-list layout and per-step overheads are candidates). For the flat scan, FAISS's counting top-$k$ is
+\nm{mech-flat-hc} times faster than its default heap, and our scan is still \nm{mech-flat-co} times faster than the counting
+variant. So the selection structure explains part of both gaps, and an implementation that keeps the default heap
+understates what FAISS binary flat can do; comparison (B) used the default.
 
 \begin{table}[h]\centering\scriptsize
-\caption{Post-freeze (A), held-out, $C = 400$, $H = 100$: generator time alone (median over rounds of the
-per-round median, \us{}) of the fastest of our configurations and of the fastest rival configuration with
-retained quality $\ge 0.99$, and their ratio.}\label{tab:postgen}
-\begin{tabular}{llrlrr}\toprule
-CPU & Set & Ours \us{} & Rival & Rival \us{} & Ratio\\\midrule
-\inputtable{tables/post-gen.tex}
+\caption{Post hoc mechanism check on the Mac (Apple M3 Max), held-out, comparison (A) at $C = 400$, $H = 100$: generator
+time, \us{} per query (median over 5 rounds of the per-round median). Walk: our walk at $ef = 400$, fixed (no adaptive
+rule, no early stop, no huge pages) or adaptive, with bucket queues or binary heaps; FAISS binary HNSW at $M = 64$,
+efC 800, $ef = 400$. Scan: our scan; FAISS binary flat with its heap (default) or counting top-$k$.}\label{tab:mech}
+\setlength{\tabcolsep}{3pt}
+\begin{tabular}{l*{8}{r}}\toprule
+ & \multicolumn{4}{c}{Our walk} & FAISS & & \multicolumn{2}{c}{FAISS flat}\\
+Set & fixed, bucket & fixed, heap & adapt., bucket & adapt., heap & HNSW & Our scan & heap & counting\\\midrule
+\inputtable{tables/mech.tex}
 \bottomrule\end{tabular}
 \end{table}
 
@@ -80,5 +85,30 @@ shipped default ($S_1 = 400$) as time relative to our frozen point / retained qu
 \begin{tabular}{llllrrrl}\toprule
 CPU & Set & Model & Rival & Ratio & Slow & Native & Default\\\midrule
 \inputtable{tables/post-b.tex}
+\bottomrule\end{tabular}
+\end{table}
+
+\subsection{Which binary code?}\label{sec:codeablation}
+
+Our codes take the sign of the first 512 of 768 dimensions, and none of the three models reports training for nested
+dimensions (\S\ref{sec:related}). After the reviews of this draft we checked three alternatives, for quality only: the
+sign of all 768 dimensions, and the sign of the first 512 or all 768 dimensions after a random orthogonal rotation
+(seed 42). Stage 1 is an exact Hamming scan of the code (top $C$, ties to the lower vector id); every candidate is then
+rescored with the float32 cosine, so the code is the only difference. Table~\ref{tab:codeablation} counts the
+\nm{ca-cells} set--model cells whose held-out retained quality meets $\fr = 0.99$ by the selection rule's bound. With
+768-bit codes, \nm{ca-sign768-100} cells meet it at $C = 100$, against \nm{ca-sign512-100} with our 512-bit codes, and
+\nm{ca-sign768-400} against \nm{ca-sign512-400} at $C = 400$; the gain is largest for bge-base-en-v1.5 on the code sets and
+for FiQA. A rotation before the 512-bit cut does not help (\nm{ca-rot512-100} cells at $C = 100$), so the loss comes from
+the dropped dimensions, not from their order. A 768-bit code costs 50\% more code memory and Hamming work per
+candidate; we did not time it. These results support the small-budget losses of comparison (A) (\S\ref{sec:losses}) and
+point to the first change we would test in the product.
+
+\begin{table}[h]\centering\scriptsize
+\caption{Post hoc code ablation, held-out, exact Hamming scan then float32 rescoring of all $C$ candidates: cells (of
+\nm{ca-cells} set--model pairs) that meet $\fr = 0.99$ by the bound, and in brackets the lowest retained share over the
+cells.}\label{tab:codeablation}
+\begin{tabular}{rllll}\toprule
+$C$ & sign, first 512 (ours) & sign, all 768 & rotation, first 512 & rotation, all 768\\\midrule
+\inputtable{tables/code-ablation.tex}
 \bottomrule\end{tabular}
 \end{table}
