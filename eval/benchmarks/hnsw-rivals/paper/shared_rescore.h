@@ -135,36 +135,56 @@ inline void f16_widen(const uint16_t* src, float* dst, int n) {
     for (; i < n; i++) dst[i] = f16_to_f32(src[i]);
 }
 
-// f64 dots of nr widened rows (row r at w + r * FULL_D) with q: rows in groups, each row one sequential sum.
+// f64 dots of nr widened rows (row r at w + r * FULL_D) with q, 16 rows per pass as rescore.rs does (x86: 4 groups of
+// 4 rows in f64x4 lanes; ARM: 8 groups of 2 rows in f64x2 lanes), so independent accumulators hide the FMA latency;
+// each row is still one sequential sum over i. A short last pass repeats row 0 (results discarded).
 inline void f64_dots_simd(const float* w, size_t nr, const double* q, double* out) {
     size_t r = 0;
 #if defined(__AVX2__) && defined(__FMA__)
-    for (; r + 4 <= nr; r += 4) {
-        const float* p0 = w + r * FULL_D; const float *p1 = p0 + FULL_D, *p2 = p1 + FULL_D, *p3 = p2 + FULL_D;
-        __m256d acc = _mm256_setzero_pd();
+    constexpr int P = 4;
+    for (; r < nr; r += 4 * P) {
+        const float* ptr[P][4];
+        for (int p = 0; p < P; p++) for (int k = 0; k < 4; k++) { size_t rr = r + 4 * p + k; ptr[p][k] = w + (rr < nr ? rr : 0) * FULL_D; }
+        __m256d acc[P]; for (int p = 0; p < P; p++) acc[p] = _mm256_setzero_pd();
         for (int i = 0; i < FULL_D; i += 4) {
-            __m128 r0 = _mm_loadu_ps(p0 + i), r1 = _mm_loadu_ps(p1 + i), r2 = _mm_loadu_ps(p2 + i), r3 = _mm_loadu_ps(p3 + i);
-            __m128 t0 = _mm_unpacklo_ps(r0, r1), t1 = _mm_unpacklo_ps(r2, r3), t2 = _mm_unpackhi_ps(r0, r1), t3 = _mm_unpackhi_ps(r2, r3);
-            acc = _mm256_fmadd_pd(_mm256_cvtps_pd(_mm_movelh_ps(t0, t1)), _mm256_set1_pd(q[i]), acc);
-            acc = _mm256_fmadd_pd(_mm256_cvtps_pd(_mm_movehl_ps(t1, t0)), _mm256_set1_pd(q[i + 1]), acc);
-            acc = _mm256_fmadd_pd(_mm256_cvtps_pd(_mm_movelh_ps(t2, t3)), _mm256_set1_pd(q[i + 2]), acc);
-            acc = _mm256_fmadd_pd(_mm256_cvtps_pd(_mm_movehl_ps(t3, t2)), _mm256_set1_pd(q[i + 3]), acc);
+            __m256d q0 = _mm256_set1_pd(q[i]), q1 = _mm256_set1_pd(q[i + 1]), q2 = _mm256_set1_pd(q[i + 2]), q3 = _mm256_set1_pd(q[i + 3]);
+            for (int p = 0; p < P; p++) {
+                __m128 r0 = _mm_loadu_ps(ptr[p][0] + i), r1 = _mm_loadu_ps(ptr[p][1] + i), r2 = _mm_loadu_ps(ptr[p][2] + i), r3 = _mm_loadu_ps(ptr[p][3] + i);
+                __m128 t0 = _mm_unpacklo_ps(r0, r1), t1 = _mm_unpacklo_ps(r2, r3), t2 = _mm_unpackhi_ps(r0, r1), t3 = _mm_unpackhi_ps(r2, r3);
+                acc[p] = _mm256_fmadd_pd(_mm256_cvtps_pd(_mm_movelh_ps(t0, t1)), q0, acc[p]);
+                acc[p] = _mm256_fmadd_pd(_mm256_cvtps_pd(_mm_movehl_ps(t1, t0)), q1, acc[p]);
+                acc[p] = _mm256_fmadd_pd(_mm256_cvtps_pd(_mm_movelh_ps(t2, t3)), q2, acc[p]);
+                acc[p] = _mm256_fmadd_pd(_mm256_cvtps_pd(_mm_movehl_ps(t3, t2)), q3, acc[p]);
+            }
         }
-        _mm256_storeu_pd(out + r, acc);
+        double tmp[4 * P];
+        for (int p = 0; p < P; p++) _mm256_storeu_pd(tmp + 4 * p, acc[p]);
+        for (int k = 0; k < 4 * P && r + k < nr; k++) out[r + k] = tmp[k];
     }
 #elif defined(__ARM_NEON) && defined(__aarch64__)
-    for (; r + 2 <= nr; r += 2) {
-        const float* a = w + r * FULL_D; const float* b = a + FULL_D;
-        float64x2_t acc = vdupq_n_f64(0.0);
-        for (int i = 0; i < FULL_D; i += 4) {
-            float32x4_t x = vld1q_f32(a + i), y = vld1q_f32(b + i);
-            float32x4_t lo = vzip1q_f32(x, y), hi = vzip2q_f32(x, y);
-            acc = vfmaq_f64(acc, vcvt_f64_f32(vget_low_f32(lo)), vdupq_n_f64(q[i]));
-            acc = vfmaq_f64(acc, vcvt_high_f64_f32(lo), vdupq_n_f64(q[i + 1]));
-            acc = vfmaq_f64(acc, vcvt_f64_f32(vget_low_f32(hi)), vdupq_n_f64(q[i + 2]));
-            acc = vfmaq_f64(acc, vcvt_high_f64_f32(hi), vdupq_n_f64(q[i + 3]));
+    constexpr int P = 8;
+    for (; r < nr; r += 2 * P) {
+        const float* pa[P]; const float* pb[P];
+        for (int p = 0; p < P; p++) {
+            size_t ra = r + 2 * p, rb = ra + 1;
+            pa[p] = w + (ra < nr ? ra : 0) * FULL_D; pb[p] = w + (rb < nr ? rb : 0) * FULL_D;
         }
-        out[r] = vgetq_lane_f64(acc, 0); out[r + 1] = vgetq_lane_f64(acc, 1);
+        float64x2_t acc[P]; for (int p = 0; p < P; p++) acc[p] = vdupq_n_f64(0.0);
+        for (int i = 0; i < FULL_D; i += 4) {
+            float64x2_t q0 = vdupq_n_f64(q[i]), q1 = vdupq_n_f64(q[i + 1]), q2 = vdupq_n_f64(q[i + 2]), q3 = vdupq_n_f64(q[i + 3]);
+            for (int p = 0; p < P; p++) {
+                float32x4_t x = vld1q_f32(pa[p] + i), y = vld1q_f32(pb[p] + i);
+                float32x4_t lo = vzip1q_f32(x, y), hi = vzip2q_f32(x, y);
+                acc[p] = vfmaq_f64(acc[p], vcvt_f64_f32(vget_low_f32(lo)), q0);
+                acc[p] = vfmaq_f64(acc[p], vcvt_high_f64_f32(lo), q1);
+                acc[p] = vfmaq_f64(acc[p], vcvt_f64_f32(vget_low_f32(hi)), q2);
+                acc[p] = vfmaq_f64(acc[p], vcvt_high_f64_f32(hi), q3);
+            }
+        }
+        for (int p = 0; p < P; p++) {
+            if (r + 2 * p < nr) out[r + 2 * p] = vgetq_lane_f64(acc[p], 0);
+            if (r + 2 * p + 1 < nr) out[r + 2 * p + 1] = vgetq_lane_f64(acc[p], 1);
+        }
     }
 #endif
     for (; r < nr; r++) {
@@ -200,6 +220,7 @@ struct Shared {
         if (bypass8) {
             for (size_t i = 0; i < m; i++) keys[i] = uint64_t(i);  // generator order, no int8 work
         } else {
+            if (simd) for (size_t i = 0; i < m; i++) { const char* p = (const char*)(int8 + scr_ids[i] * w8); for (int o = 0; o < w8; o += 64) __builtin_prefetch(p + o); }
             for (size_t i = 0; i < m; i++) {
                 int32_t dot = simd ? int8_dot_simd(q.q8, int8 + scr_ids[i] * w8, w8) : int8_dot(q.q8, int8 + scr_ids[i] * w8, w8);
                 keys[i] = uint64_t(int64_t(INT32_MAX) - int64_t(dot)) << 32 | uint64_t(i);
@@ -212,6 +233,7 @@ struct Shared {
         double mn = INFINITY, mx = -INFINITY;
         if (simd) {
             wide.resize(h * FULL_D);
+            for (size_t j = 0; j < h; j++) { const char* p = (const char*)(f16 + scr_ids[keys[j] & 0xffffffffu] * FULL_D); for (int o = 0; o < FULL_D * 2; o += 64) __builtin_prefetch(p + o); }
             for (size_t j = 0; j < h; j++) f16_widen(f16 + scr_ids[keys[j] & 0xffffffffu] * FULL_D, wide.data() + j * FULL_D, FULL_D);
             f64_dots_simd(wide.data(), h, q.full64, full.data());
             for (size_t j = 0; j < h; j++) { mn = std::min(mn, full[j]); mx = std::max(mx, full[j]); }
