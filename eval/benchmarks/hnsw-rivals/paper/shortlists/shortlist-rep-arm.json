@@ -1,0 +1,8 @@
+{
+ "meta": {
+  "f": 0.99,
+  "machines": "hd-arm-*",
+  "rule": "REPLICATION_PLAN.md section 4",
+  "type": "arm"
+ }
+}
