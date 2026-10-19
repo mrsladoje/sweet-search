@@ -92,11 +92,11 @@ for t in a.types.split(','):
             lo = hi = None
         so, sr = stats.selection(boot, qo, qx, F), stats.selection(boot, qr, qx, F)
         pct = lambda rr, q: float(np.median([np.percentile(x[2]['timings_ns'], q) for x in rr])) / 1e3
-        flt = lambda rr: [int(x[2]['memory']['after'].get('majflt', 0)) - int(x[2]['memory']['loaded'].get('majflt', 0)) for x in rr]
+        flt = lambda rr: [int(x[2]['memory']['after'].get('majflt', 0)) - int((x[2]['memory'].get('timed') or x[2]['memory']['loaded']).get('majflt', 0)) for x in rr]
         nat = get(o_pt, 'native')
         dflt = get({'system': 'ours_cascade', 'S1': 400, 'EF': 400})
         row.update(rounds=len(rounds), instances=len(d), dropped_rounds=dropped, lists_identical=[sha_ok(O), sha_ok(Rv)], mean_log_ratio=float(d.mean()) if len(d) else float('nan'), t=tstat, p_latency=p_lat, ratio=est, lo=lo, hi=hi,
-                   ours_us=float(np.median(list(mo.values()))), rival_us=float(np.median(list(mr.values()))),
+                   ours_us=float(np.median([v[0] for v in mo.values()])), rival_us=float(np.median([v[0] for v in mr.values()])),
                    mean_diff=float(diff.mean()), lower=float(np.percentile(m, 100 * ALPHA)) + marg, margin=marg, p_quality=p_q,
                    ours_share=float(qo.mean() / qx.mean()), rival_share=float(qr.mean() / qx.mean()),
                    ours_meets=[bool(so['mean_d'] >= 0), bool(so['qualifies'])], rival_meets=[bool(sr['mean_d'] >= 0), bool(sr['qualifies'])],
