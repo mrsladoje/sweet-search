@@ -26,9 +26,43 @@ thread_local! {
     static WIDE: std::cell::RefCell<(Vec<f32>, Vec<u32>)> = const { std::cell::RefCell::new((Vec::new(), Vec::new())) };
 }
 
+/// SS_HNSW_PRELOAD=1: read the full-vector file and the int8 rows into
+/// anonymous memory at open instead of mapping them from the page cache, so
+/// other I/O cannot evict them (a longer open, the same resident size once
+/// every row has been touched). Default off: the mapping.
+pub(crate) fn preload() -> bool {
+    std::env::var("SS_HNSW_PRELOAD").map(|v| v == "1").unwrap_or(false)
+}
+
+/// The bytes of the file: a read-only mapping (default) or a heap copy (preload).
+enum Bytes {
+    Map(Mmap),
+    Heap(Vec<u64>, usize), // u64 words keep the u16 rows aligned; usize = byte length
+}
+
+impl std::ops::Deref for Bytes {
+    type Target = [u8];
+    fn deref(&self) -> &[u8] {
+        match self {
+            Bytes::Map(m) => m,
+            // SAFETY: the Vec holds at least `len` initialised bytes.
+            Bytes::Heap(v, len) => unsafe { std::slice::from_raw_parts(v.as_ptr() as *const u8, *len) },
+        }
+    }
+}
+
+fn read_heap(file: &mut File, len: usize) -> std::io::Result<Bytes> {
+    use std::io::Read;
+    let mut v = vec![0u64; len.div_ceil(8)];
+    // SAFETY: the Vec owns len.div_ceil(8) * 8 >= len bytes.
+    let buf = unsafe { std::slice::from_raw_parts_mut(v.as_mut_ptr() as *mut u8, len) };
+    file.read_exact(buf)?;
+    Ok(Bytes::Heap(v, len))
+}
+
 #[napi]
 pub struct FullVectorFile {
-    map: Mmap,
+    map: Bytes,
     dim: usize,
     rows: usize,
     generation: u32,
@@ -79,10 +113,15 @@ impl FullVectorFile {
 impl FullVectorFile {
     #[napi(constructor)]
     pub fn new(path: String) -> napi::Result<Self> {
-        let file = File::open(&path).map_err(|e| napi::Error::from_reason(format!("FullVectorFile: {path}: {e}")))?;
-        // SAFETY: the writer only appends; bytes inside the mapped length
-        // never change while it is mapped.
-        let map = unsafe { Mmap::map(&file) }.map_err(|e| napi::Error::from_reason(format!("FullVectorFile: mmap {path}: {e}")))?;
+        let mut file = File::open(&path).map_err(|e| napi::Error::from_reason(format!("FullVectorFile: {path}: {e}")))?;
+        let map = if preload() {
+            let len = file.metadata().map_err(|e| napi::Error::from_reason(format!("FullVectorFile: {path}: {e}")))?.len() as usize;
+            read_heap(&mut file, len).map_err(|e| napi::Error::from_reason(format!("FullVectorFile: read {path}: {e}")))?
+        } else {
+            // SAFETY: the writer only appends; bytes inside the mapped length
+            // never change while it is mapped.
+            Bytes::Map(unsafe { Mmap::map(&file) }.map_err(|e| napi::Error::from_reason(format!("FullVectorFile: mmap {path}: {e}")))?)
+        };
         if map.len() < HEADER || &map[..8] != MAGIC {
             return Err(napi::Error::from_reason(format!("FullVectorFile: bad header in {path}")));
         }
@@ -95,7 +134,9 @@ impl FullVectorFile {
         // Rows are read one at a time in random order: no read-ahead, so only
         // the pages of rows actually scored become resident.
         #[cfg(unix)]
-        let _ = map.advise(memmap2::Advice::Random);
+        if let Bytes::Map(m) = &map {
+            let _ = m.advise(memmap2::Advice::Random);
+        }
         Ok(Self { map, dim, rows, generation })
     }
 
@@ -140,6 +181,15 @@ pub fn map_file_section(env: Env, path: String, offset: f64, len: f64) -> napi::
     let len = len as usize;
     if len == 0 {
         return env.create_buffer(0).map(|b| b.into_raw());
+    }
+    if preload() {
+        // SS_HNSW_PRELOAD=1: a heap copy of the section (anonymous memory), not a mapping
+        use std::io::{Read, Seek, SeekFrom};
+        let mut file = File::open(&path).map_err(|e| napi::Error::from_reason(format!("map_file_section: {path}: {e}")))?;
+        let mut buf = vec![0u8; len];
+        file.seek(SeekFrom::Start(offset as u64)).and_then(|_| file.read_exact(&mut buf))
+            .map_err(|e| napi::Error::from_reason(format!("map_file_section: read {path}: {e}")))?;
+        return env.create_buffer_with_data(buf).map(|b| b.into_raw());
     }
     let file = File::open(&path).map_err(|e| napi::Error::from_reason(format!("map_file_section: {path}: {e}")))?;
     // SAFETY: a private mapping; the index file is replaced by rename, never

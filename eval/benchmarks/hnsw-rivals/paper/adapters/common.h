@@ -1,6 +1,7 @@
 // Helpers shared by the adapter sources (header only).
 #pragma once
 #include "../adapter.h"
+#include "../shared_rescore.h"
 #include <faiss/utils/distances.h>
 #include <sys/stat.h>
 #include <algorithm>
@@ -30,6 +31,14 @@ inline void need(const std::string& p) { if (!exists(p)) die("missing file " + p
 inline size_t rescore_ip(const Corpus& c, const float* q, const int64_t* cand, size_t nc, size_t k,
                          std::vector<std::pair<float, int64_t>>& tmp, int64_t* ids, float* scores) {
     tmp.clear();
+    if (c.x16) {  // post hoc: float16 refine (rows widened exactly to f32, then the same inner product)
+        thread_local std::vector<float> w(c.d);
+        for (size_t i = 0; i < nc; i++)
+            if (cand[i] >= 0) {
+                f16_widen(c.x16 + (size_t)cand[i] * c.d, w.data(), c.d);
+                tmp.push_back({faiss::fvec_inner_product(q, w.data(), c.d), cand[i]});
+            }
+    } else
     for (size_t i = 0; i < nc; i++)
         if (cand[i] >= 0) tmp.push_back({faiss::fvec_inner_product(q, c.x + (size_t)cand[i] * c.d, c.d), cand[i]});
     size_t m = std::min(k, tmp.size());

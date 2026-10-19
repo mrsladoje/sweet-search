@@ -215,6 +215,12 @@ static int cmd_query() {
     int w8 = (int)json_num(ex, "int8_width");
     bool need_x = param_i(sp, "refine", 0) > 0 || param_i(sp, "rescore", 0) > 0;
     if (need_x) { X = load_f32(emb + "/corpus.f32"); normalize(X.data(), c.n, FULL_D); c.x = X.data(); }
+    std::vector<uint16_t> X16;  // post hoc (SS_FIX_REFINE_F16=1): the float16 rows on the heap, for the refine step
+    if (need_x && getenv("SS_FIX_REFINE_F16") && std::string(getenv("SS_FIX_REFINE_F16")) == "1") {
+        std::string s16 = slurp(emb + "/export/f16.u16"); X16.resize(s16.size() / 2); memcpy(X16.data(), s16.data(), X16.size() * 2);
+        if (X16.size() != c.n * FULL_D) { fprintf(stderr, "f16.u16 rows differ from n\n"); return 1; }
+        c.x16 = X16.data();
+    }
     ad->load(dir, c, bp);
     ad->set_search(sp);
     Shared sh; Map m8, mf;
@@ -224,6 +230,9 @@ static int cmd_query() {
         if (!(C >= H && H >= 10)) { fprintf(stderr, "A needs C >= H >= 10\n"); return 2; }
         m8 = map_file(emb + "/export/int8.i8"); mf = map_file(emb + "/export/f16.u16");
         sh.w8 = w8; sh.int8 = (const int8_t*)m8.p; sh.f16 = (const uint16_t*)mf.p;
+        // post hoc arms (bench only): SIMD kernels in the shared path; a true int8 bypass
+        auto on = [](const char* e) { const char* v = getenv(e); return v && std::string(v) == "1"; };
+        sh.simd = on("SS_FIX_SHARED_SIMD"); sh.bypass8 = on("SS_FIX_NO_INT8");
         L = H;
     } else if (comp == "B") L = std::stoul(arg("kv"));
     else { fprintf(stderr, "--comparison A|B\n"); return 2; }
