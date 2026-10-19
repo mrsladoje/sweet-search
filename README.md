@@ -1251,7 +1251,7 @@ Compressed vectors make the index <i>~3× smaller</i>, with no measurable loss i
 - We vendor the upstream models (NomicBERT for embeddings, ModernBERT for late interaction) and replace **only the attention forward pass**.
 - **Why:** upstream attention builds the full attention matrix in every layer. On Metal, one batch took ~4.2 s, ~10% slower than the CPU path.
 - **Metal:** candle's fused SDPA kernel (ported from MLX).
-- **CUDA (Ampere+):** `candle-flash-attn` with variable-length packing. Candle's SDPA has no CUDA backend, and the naive BF16 fallback drifted (per-token cosine down to 0.69).
+- **CUDA (Ampere+):** `candle-flash-attn` with variable-length packing. Candle's SDPA has no CUDA backend. Volta and Turing use the standard attention path.
 - **CPU:** byte-for-byte upstream math, so the fallback is identical to upstream.
 
 #### 🔒 A silent GPU race, fixed
