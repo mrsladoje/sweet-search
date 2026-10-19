@@ -5,7 +5,7 @@ import argparse, collections, json, math, os
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ap = argparse.ArgumentParser(); ap.add_argument('json'); ap.add_argument('--extra', help='JSON of extra numbers {key: value}'); ap.add_argument('--tails', help='tails_recall.py output'); ap.add_argument('--post', help='post_analyze.py output (post-freeze experiments)'); ap.add_argument('--rep', help='rep_analyze.py output (replication)'); ap.add_argument('--rep-describe', help='rep_describe.py output (replication, descriptive)'); ap.add_argument('--code-ablation', help='code_ablation.py output'); ap.add_argument('--floor', help='floor_analyze.py output'); ap.add_argument('--mech', help='mech_analyze.py output'); ap.add_argument('--recall-doc', help='recall_doc.py output'); ap.add_argument('--selfmatch', help='rep_selfmatch.py output')
+ap = argparse.ArgumentParser(); ap.add_argument('json'); ap.add_argument('--extra', help='JSON of extra numbers {key: value}'); ap.add_argument('--tails', help='tails_recall.py output'); ap.add_argument('--post', help='post_analyze.py output (post-freeze experiments)'); ap.add_argument('--rep', help='rep_analyze.py output (replication)'); ap.add_argument('--rep-describe', help='rep_describe.py output (replication, descriptive)'); ap.add_argument('--code-ablation', help='code_ablation.py output'); ap.add_argument('--floor', help='floor_analyze.py output'); ap.add_argument('--mech', help='mech_analyze.py output'); ap.add_argument('--recall-doc', help='recall_doc.py output'); ap.add_argument('--selfmatch', help='rep_selfmatch.py output'); ap.add_argument('--preload', help='rep_analyze.py output of the preload rerun'); ap.add_argument('--strong', help='strong_analyze.py output')
 a = ap.parse_args()
 J = json.load(open(a.json))
 TYPES = [t for t in ('intel', 'amd', 'arm', 'box', 'mac') if t in J['R']]
@@ -668,6 +668,70 @@ if a.selfmatch:
     SM = json.load(open(a.selfmatch))
     nums['sm-n'] = f"{SM['n_selfmatch_queries']:,}"; nums['sm-top10'] = str(sum(x['changed_top10'] for x in SM['top10_changed']))
     nums['sm-dev-same'] = 'yes' if all(x['points_same'] and x['rival_old'] == x['rival_new'] for x in SM['dev_selection']) else 'no'
+
+# ---- post hoc: the six replication tests with the index preloaded (rep_analyze.py on the repp runs)
+if a.preload and a.rep:
+    PL = {(r['type'], r['set']): r for r in json.load(open(a.preload))}; R0 = {(r['type'], r['set']): r for r in json.load(open(a.rep))}
+    SN = {'cqadup': 'CQADupStack', 'msmarco1m': 'MS MARCO 1M'}; rows = []
+    for t in ('intel', 'amd', 'arm'):
+        for s_ in ('cqadup', 'msmarco1m'):
+            r, o = PL[(t, s_)], R0[(t, s_)]
+            rows.append(f"{TNAME[t]} & {SN[s_]} & {tex(r['rival'])} & {o['ratio']:.2f} & {r['rounds']} & {r['ours_us']:.0f} & {r['rival_us']:.0f} & {cell(r['ratio'], r['lo'], r['hi'])} & "
+                        f"{pfmt(r['p_latency'])} & {'pass' if r.get('holm_latency') else 'fail'} & {r.get('fault_reruns', 0)} \\\\")
+    open(os.path.join(HERE, 'tables', 'rep-preload.tex'), 'w').write('\n'.join(rows) + '\n')
+    v = list(PL.values())
+    nums['pl-pass'] = str(sum(1 for r in v if r.get('holm_latency'))); nums['pl-n'] = str(len(v))
+    nums['pl-min'] = f"{min(r['ratio'] for r in v):.2f}"; nums['pl-max'] = f"{max(r['ratio'] for r in v):.2f}"
+    nums['pl-gm'] = f"{math.exp(sum(math.log(r['ratio']) for r in v) / len(v)):.2f}"
+    nums['pl-reruns'] = str(sum(r.get('fault_reruns', 0) for r in v)); nums['pl-dropped'] = str(sum(len(r.get('dropped_rounds', [])) for r in v))
+    nums['pl-blocks'] = str(sum(r['rounds'] for r in v)); nums['pl-qpass'] = str(sum(1 for r in v if r.get('holm_quality')))
+    sl = [math.log(PL[k]['ours_us'] / R0[k]['ours_us']) for k in PL]
+    nums['pl-slow'] = f"{100 * (math.exp(sum(sl) / len(sl)) - 1):.0f}"
+# ---- post hoc: strongest settings (strong_analyze.py)
+if a.strong:
+    SJ = json.load(open(a.strong)); SN = {'cqadup': 'CQADupStack', 'msmarco1m': 'MS MARCO 1M'}; rows = []; nxt = []; shd = []
+    for t in ('intel', 'amd', 'arm'):
+        R_ = SJ[t]['rows']
+        for s_ in ('cqadup', 'msmarco1m'):
+            A_ = {(r['system'], r['arm']): r for r in R_ if r['set'] == s_ and r['comparison'] == 'A'}
+            o, ob = A_[('ours_walk', 'screen')], A_[('ours_walk', 'bypass')]
+            riv = sorted((r for (sy, arm), r in A_.items() if arm == 'screen' and not sy.startswith('ours') and r['share'] >= 0.99), key=lambda r: r['us'])
+            rb = riv[0]; rbb = A_[(rb['system'], 'bypass')]
+            nxt.append(rb['us'] / o['us']); shd.append(rb['shared'] / o['shared'])
+            rows.append(f"{TNAME[t]} & {SN[s_]} & {o['us']:.0f} ({o['gen']:.0f} + {o['shared']:.0f}) & {ob['us']:.0f} & {tex(rb['system'])} & {rb['us']:.0f} ({rb['gen']:.0f} + {rb['shared']:.0f}) & {rbb['us']:.0f} & {rb['us'] / o['us']:.1f} & {o['share']:.4f} ; {rb['share']:.4f} \\\\")
+    open(os.path.join(HERE, 'tables', 'strong-a.tex'), 'w').write('\n'.join(rows) + '\n')
+    dd = [(t, r['system'], r['set'], A2[(t, r['system'], r['set'], 'bypass')]['us'] - r['us']) for t in ('intel', 'amd', 'arm') for r in SJ[t]['rows']
+          for A2 in [{(t, x['system'], x['set'], x['arm']): x for x in SJ[t]['rows'] if x['comparison'] == 'A'}]
+          if r['comparison'] == 'A' and r['arm'] == 'screen' and (t, r['system'], r['set'], 'bypass') in A2]
+    do_ = [x[3] for x in dd if x[1].startswith('ours')]
+    nums['byp-ours-min'] = f'{min(do_):.0f}'; nums['byp-ours-max'] = f'{max(do_):.0f}'
+    nums['byp-slower'] = str(sum(1 for x in dd if x[3] > 0)); nums['byp-n'] = str(len(dd))
+    nums['st-next-min'] = f'{min(nxt):.1f}'; nums['st-next-max'] = f'{max(nxt):.1f}'
+    nums['st-shared-min'] = f'{min(shd):.2f}'; nums['st-shared-max'] = f'{max(shd):.2f}'
+    f16 = []
+    for t in ('amd', 'arm'):
+        R_ = SJ[t]['rows']
+        for s_ in ('cqadup', 'msmarco1m'):
+            b = {r['arm']: r for r in R_ if r['set'] == s_ and r['comparison'] == 'B' and not r['system'].startswith('ours')}
+            if 'f16' in b and 'f32' in b:
+                f16.append((b['f16']['us'] / b['f32']['us'], b['f16']['share'] - b['f32']['share']))
+    nums['f16-n'] = str(len(f16)); nums['f16-tmin'] = f'{min(x[0] for x in f16):.2f}'; nums['f16-tmax'] = f'{max(x[0] for x in f16):.2f}'
+    nums['f16-qmax'] = f'{max(abs(x[1]) for x in f16):.4f}'
+    rows = []
+    for t in ('intel', 'amd', 'arm'):
+        P_ = SJ[t]['perf']
+        for name, lab in (('ours_walk-fixed', 'ours, fixed $ef$'), ('faiss_bin_hnsw', 'FAISS binary HNSW')):
+            e = P_.get(name, {}); pq = e.get('per_query', {})
+            g = lambda k: pq.get(k)
+            rows.append(f"{TNAME[t]} & {lab} & {e.get('ndis', 0):,.0f} & {(g('cycles') or 0) / 1e6:.2f} & {(g('instructions') or 0) / 1e6:.2f} & {(g('branch-misses') or 0) / 1e3:.1f} & "
+                        + (f"{g('instructions') / e['ndis']:.0f}" if g('instructions') and e.get('ndis') else '') + r' \\')
+        po, pf = P_.get('ours_walk-fixed', {}), P_.get('faiss_bin_hnsw', {})
+        if po.get('per_query') and pf.get('per_query'):
+            nums[f'perf-ins-x-{t}'] = f"{pf['per_query']['instructions'] / po['per_query']['instructions']:.1f}"
+            nums[f'perf-cyc-x-{t}'] = f"{pf['per_query']['cycles'] / po['per_query']['cycles']:.1f}"
+            nums[f'perf-br-x-{t}'] = f"{pf['per_query']['branch-misses'] / po['per_query']['branch-misses']:.0f}"
+            nums['perf-ndis-ours'] = f"{po['ndis']:,.0f}"; nums['perf-ndis-faiss'] = f"{pf['ndis']:,.0f}"
+    open(os.path.join(HERE, 'tables', 'perf.tex'), 'w').write('\n'.join(rows) + '\n')
 
 # ---- protocol numbers
 fz = J['freeze']

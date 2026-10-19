@@ -92,7 +92,8 @@ $H = 1000$ at $C = 1000$, where the candidates are fixed, one rescored vector co
 addition, our walk uses a denser graph ($M = 64$ against 32), adapts its effort per query, and is the only
 process that asks for transparent huge pages. Comparison (A) therefore measures each generator
 \emph{with its own implementation of the shared steps}; \S\ref{sec:results} gives the ratios with the
-rescoring difference removed by this estimate. Generators: our walk, our
+rescoring difference removed by this estimate; a post hoc run on the replication sets with the same SIMD kernels on both
+sides measures it directly (\S\ref{sec:posthoc}). Generators: our walk, our
 scan, FAISS binary HNSW and binary flat, USearch b1, hnswlib and FAISS HNSW on float32, FAISS RaBitQ
 (flat and IVF), ScaNN and DiskANN.
 
