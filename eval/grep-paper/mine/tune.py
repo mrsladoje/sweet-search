@@ -465,22 +465,26 @@ def main():
     gate["sensitivity_as_seen_D"] = sens
     json.dump(gate, open(os.path.join(a.out, "gate_a.json"), "w"), indent=1)
 
-    # ---------------- tuning round (§5.4), definition level, no header
+    # ---------------- tuning round (§5.4), definition level; values chosen without the header,
+    # the same choices also scored with it (budget N-1)
     data = evb["D"]
     repos = sorted({c["rec"]["repo"] for c in data})
     random.Random(42).shuffle(repos)
     fold_of = {r: i % 5 for i, r in enumerate(repos)}
     folds = [[c for c in data if fold_of[c["rec"]["repo"]] == f] for f in range(5)]
 
-    def miss_vec(P, cs):
-        return [miss(c, shown_by(c, selector(c, P)[0], c["n"]), "D") for c in cs]
+    def miss_vec(P, cs, hdr=False):
+        return [miss(c, shown_by(c, selector(c, P)[0], max(c["n"] - 1, 0) if hdr else c["n"]), "D") for c in cs]
 
     shipped_vec = {id(c): m for c, m in zip(data, miss_vec(SHIPPED, data))}
+    shipped_hdr = sum(miss_vec(SHIPPED, data, True)) / len(data)
+    oof_hdr = {}
     results = []
     fixed_scores = {}
     for name, grid in families().items():
-        oof, chosen = {}, []
+        oof, chosen, oh = {}, [], {}
         cache = {i: miss_vec(P, data) for i, P in enumerate(grid)}
+        cache_h = {i: miss_vec(P, data, True) for i, P in enumerate(grid)}
         for i in cache:
             fixed_scores[(name, label(grid[i]))] = sum(cache[i]) / len(data)
         idx = {id(c): n for n, c in enumerate(data)}
@@ -490,16 +494,20 @@ def main():
             chosen.append(label(grid[best]))
             for c in folds[f]:
                 oof[id(c)] = cache[best][idx[id(c)]]
+                oh[id(c)] = cache_h[best][idx[id(c)]]
         results.append((name, oof, chosen))
+        oof_hdr[name] = sum(oh.values()) / len(data)
     # Learned ranker
-    oof, chosen = {}, []
+    oof, chosen, kh = {}, [], 0
     for f in range(5):
         train = [c for g in range(5) if g != f for c in folds[g]]
         score, model = train_lr(train)
         P = dict(SHIPPED, lr=score)
         for c, m in zip(folds[f], miss_vec(P, folds[f])):
             oof[id(c)] = m
+        kh += sum(miss_vec(P, folds[f], True))
         chosen.append("lr " + " ".join(f"{w:+.2f}" for w in model["w"]))
+    oof_hdr["6 learned ranker"] = kh / len(data)
     results.append(("6 learned ranker", oof, chosen))
 
     n = len(data)
@@ -518,10 +526,11 @@ def main():
         guard_ok = all(g["delta"] <= 0.03 for g in guard.values() if g["n"] >= 50)
         passes = (base_rate - rate) >= 0.02 and lost <= 0.01 and guard_ok
         table.append({"family": name, "oof_miss": rate, "delta_pp": 100 * (rate - base_rate),
+                      "oof_miss_header": oof_hdr[name],
                       "newly_lost": lost, "recovered": recov, "guard": guard, "guard_ok": guard_ok,
                       "passes": passes, "chosen_per_fold": chosen})
     json.dump({"n": n, "repos": len(repos), "tasks": len({c["rec"]["instance_id"] for c in data}),
-               "shipped_miss": base_rate, "strata": dict(strata), "families": table,
+               "shipped_miss": base_rate, "shipped_miss_header": shipped_hdr, "strata": dict(strata), "families": table,
                "fixed_settings": [{"family": k[0], "setting": k[1], "miss": v} for k, v in fixed_scores.items()]},
               open(os.path.join(a.out, "tuning.json"), "w"), indent=1)
     print(json.dumps({"gate": {k: gate[k] for k in ("tiers", "evidence_bearing_overflowing", "pilot_units",

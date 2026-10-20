@@ -77,4 +77,81 @@ one or two; 6: learned, last).
 
 ## Part 2. Results
 
-(Written after the round.)
+Run on 2026-10-20 at 02:18 CEST, harness 56d7c604, `mine/tune.py` (the header column was added after the
+first run, at 02:20 CEST; it scores the same chosen values with N−1 lines and does not change any choice).
+Output: `~/.ss-eval/grep-paper/tuning/tuning.json`.
+
+**Conclusion: no family passes the decision rule. The shipped selector stays the reference.** The best
+family (2, file-kind priors) lowers the out-of-fold miss rate by 0.43 points; the rule needs 2 points.
+The selector is not frozen by this round, and no product code changed.
+
+### Data actually used
+- 1,380 evidence-bearing overflowing calls at definition level (plan §5.4 expected about 1,700),
+  1,139 tasks, 516 dev repositories. One point is about 14 calls.
+- Selector check: the parameterized selector gives the same order as `mine/ranker.py` on 142 of 142
+  no-context calls with two or more files.
+- Intent strata: other 901, test 402, definition 37, call site 23, configuration 17. Only "other" and
+  "test" have 50 or more calls, so only they enter the intent guard.
+
+### Out-of-fold results (definition level)
+
+Shipped selector: **15.4%** truncation-miss without the header, 16.9% with it (213 and 233 of 1,380).
+
+| Family | OOF miss | OOF miss, header | Δ vs shipped (pp) | Newly lost (%) | Recovered (%) | Guard Δ (pp), strata ≥50 | Rule | Value chosen per fold |
+|---|---:|---:|---:|---:|---:|---|---|---|
+| 1 k | 15.5% | 17.0% | +0.07 | 0.14 | 0.07 | other +0.1, test +0.0 | fail | k=1.0; shipped; k=1.0; k=1.0; k=1.0 |
+| 2 priors | 15.0% | 16.4% | -0.43 | 0.00 | 0.43 | other -0.3, test -0.7 | fail | test=0.25, gen=0.1; test=0.25, gen=0.1; test=0.25, gen=0.1; test=0.25, gen=0.1; test=0.25, gen=0.1 |
+| 3 declarations | 15.4% | 16.9% | +0.00 | 0.00 | 0.00 | other +0.0, test +0.0 | fail | shipped; shipped; shipped; shipped; shipped |
+| 4 test intent | 15.4% | 16.9% | +0.00 | 0.00 | 0.00 | other +0.0, test +0.0 | fail | shipped; shipped; shipped; shipped; shipped |
+| 5a path term | 15.5% | 17.0% | +0.07 | 0.29 | 0.22 | other -0.1, test +0.2 | fail | shipped; path_boost=1.5; path_boost=1.5; path_boost=1.5; path_boost=1.5 |
+| 5b depth | 15.9% | 17.2% | +0.43 | 0.58 | 0.14 | other +0.6, test +0.2 | fail | shipped; depth_g=0.3; shipped; shipped; shipped |
+| 6 learned ranker | 15.7% | 17.0% | +0.29 | 1.67 | 1.38 | other +0.3, test +0.5 | fail | learned weights (5 fits) |
+
+### Every candidate value on all 1,380 calls (not out of fold; for reading only)
+
+| Family | Setting | Miss rate |
+|---|---|---:|
+| 1 k | shipped | 15.43% |
+| 1 k | k=1.0 | 15.36% |
+| 1 k | k=4.0 | 15.72% |
+| 1 k | k=8.0 | 15.72% |
+| 2 priors | shipped | 15.43% |
+| 2 priors | test=0.25, gen=0.1 | 15.00% |
+| 2 priors | test=0.25 | 15.00% |
+| 2 priors | test=0.25, gen=0.5 | 15.07% |
+| 2 priors | gen=0.1 | 15.43% |
+| 2 priors | gen=0.5 | 15.51% |
+| 2 priors | test=1.0, gen=0.1 | 17.32% |
+| 2 priors | test=1.0 | 17.32% |
+| 2 priors | test=1.0, gen=0.5 | 17.39% |
+| 3 declarations | shipped | 15.43% |
+| 3 declarations | decl=never | 16.52% |
+| 3 declarations | decl=defpattern | 16.45% |
+| 4 test intent | shipped | 15.43% |
+| 4 test intent | test_intent=True | 16.23% |
+| 5a path term | shipped | 15.43% |
+| 5a path term | path_boost=1.5 | 15.29% |
+| 5a path term | path_boost=2.0 | 15.36% |
+| 5b depth | shipped | 15.43% |
+| 5b depth | depth_g=0.1 | 15.80% |
+| 5b depth | depth_g=0.3 | 15.72% |
+
+
+"test=0.25" keeps the shipped generated prior (0.25); "gen=0.1" keeps the shipped test prior (0.5).
+
+### Reading
+- The constants are near a flat optimum. The largest in-sample gain of any single value is 0.43 points
+  (test prior 0.25). Each fold chose it, but the gain is far below the 2-point bar.
+- Changes that move test files up hurt: test prior 1.0 adds 1.9 points; the intent-conditioned test
+  prior (family 4) adds 0.8 points in sample, and no fold chose it.
+- Declarations first helps: "never" adds 1.1 points.
+- The learned ranker reorders the most calls (1.67% newly lost, 1.38% recovered) and nets a small loss.
+  Its largest standardized weights are on the file's share of the call's matches (about +0.46), test
+  files (about −0.52) and depth (about −0.2 to −0.3).
+- An oracle order misses 1 of 1,380 calls, so the budget almost always has room for the evidence. The
+  remaining 15% is an ordering problem that none of these features solves. I did not classify the
+  remaining misses tonight.
+
+### Not done in this round
+- No freeze, no pre-registration, no product port (owner decisions).
+- No held-out record was read.

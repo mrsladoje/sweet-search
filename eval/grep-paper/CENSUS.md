@@ -194,8 +194,12 @@ Base: 813,218 file-searching grep-family calls. A flag counts once per call; clu
 
 - **Coverage of ss-grep.** The flag-only estimate (99.1%) is an upper bound for the share of calls that
   ss-grep can answer itself on branch `grep-flag-coverage`. It does not check patterns, path forms,
-  pipelines or the `\|` reading rule. The exact share needs the branch's parser on the call argv; that is
-  open work.
+  pipelines or the `\|` reading rule.
+- **Parser check (exact argv, dev eligible calls).** `mine/coverage.mjs` runs the pure parse steps of
+  `cmdGrep` (`_ss-argparse.mjs`) on the argv of the 113,475 eligible dev grep calls. Main accepts 26,821
+  (23.6%); it rejects mostly flag bundles such as `-rn` (63,751 calls) and `-l` (18,256). Branch
+  `grep-flag-coverage` (85a63c6b) accepts 113,276 (99.8%). "Accepts" means no usage error; it does not
+  check the output. The shadow check on the branch covers the output (0 byte differences on 115 calls).
 - **Full-output size** and **the share of matching files that survive each cut** (the travelling figure)
   come from the replay (S2), not from the traces.
 - SWE-bench/experiments (frontier models) is not in this census yet.
