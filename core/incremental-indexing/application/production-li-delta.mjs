@@ -186,7 +186,8 @@ export async function applyLateInteractionDelta({
   // (planLateInteractionBatches), and return the results in input order.
   // Planned by real token counts (the default encoder's tokenizer): the character estimate
   // can be 3x short on symbol-heavy text, and a batch it packs then pads past both budgets.
-  const countTokens = liEncoder ? null : countDocumentTokensCpu;
+  // An injected encoder may bring its own counter (the maintainer's encoder process does).
+  const countTokens = liEncoder ? (liEncoder.countTokens ?? null) : countDocumentTokensCpu;
   const encode = async (texts) => {
     const out = new Array(texts.length);
     const counts = countTokens ? await countTokens(texts).catch(() => null) : null;
@@ -197,7 +198,7 @@ export async function applyLateInteractionDelta({
       const encoded = await encodeRaw(batch.map((item) => item.text));
       batch.forEach((item, k) => { out[item.i] = encoded[k]; });
     }
-    recordEncode('li', liEncoder ? 'unknown' : 'ort/cpu', texts.length);
+    recordEncode('li', liEncoder ? (liEncoder.provenanceLabel ?? 'unknown') : 'ort/cpu', texts.length);
     return out;
   };
   const existing = fs.existsSync(indexPath);
@@ -226,16 +227,10 @@ export async function applyLateInteractionDelta({
     // ceiling. The legacy single-file path is excluded: `rewriteLegacyIndex`
     // MUTATES `index.documents` and re-saves it, so it needs the full load.
     //
-    // SCOPE, stated so no soak gate is written against a bound this does not
-    // give: this removes the flatten from the RECONCILE tick only. The inline
-    // maintenance drain that runs immediately after every tick
-    // (`drainMaintenanceInline`, default-ON) still performs the identical full
-    // load inside `liSegmentHandler` and `mergeLiSegments`. Those two are
-    // single-segment compaction and segment merge, which are explicitly
-    // deferred (they are not byte-identical to today's compactor when a live
-    // document id exists in two segments). So a tick whose drain runs a
-    // `li_segment` or `li_segments` job still pays the ~1.5-1.7 GB peak, and
-    // any RSS soak must report drain ticks and non-drain ticks separately.
+    // The maintenance drain after a tick no longer flattens either:
+    // `liSegmentHandler` and `mergeLiSegments` read only the segments they
+    // rewrite (collectLiveDocs, li-segment-merge.mjs), with the full load's
+    // last-live-copy rule for a doc id present in two segments.
     const lean = !!segmented && positionsOnlyEnabled();
     index = new LateInteractionIndex({
       indexPath,

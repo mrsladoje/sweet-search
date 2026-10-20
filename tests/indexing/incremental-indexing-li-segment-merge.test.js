@@ -20,7 +20,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import {
-  mergeLiSegments, sweepQuarantine, sweepOrphanSegments, nextSegmentSeq,
+  mergeLiSegments, sweepQuarantine, sweepOrphanSegments, nextSegmentSeq, pickSegmentsToMerge,
 } from '../../core/incremental-indexing/infrastructure/li-segment-merge.mjs';
 import { readLiSegmentStats } from '../../core/incremental-indexing/infrastructure/maintenance-state-reader.mjs';
 import { LateInteractionIndex } from '../../core/ranking/late-interaction-index.js';
@@ -52,17 +52,21 @@ async function buildSegmented(stateDir, segmentDocCounts) {
   const segments = [];
   let docNum = 0;
   let total = 0;
+  // An entry is a doc count (fresh ids doc-<n>) or an explicit id list; every
+  // doc gets distinct token values, so the copy that survives can be told apart.
   for (let s = 0; s < segmentDocCounts.length; s += 1) {
     writer._currentSegment = new Map();
-    for (let d = 0; d < segmentDocCounts[s]; d += 1) {
+    const spec = segmentDocCounts[s];
+    const ids = Array.isArray(spec) ? spec : Array.from({ length: spec }, (_, d) => `doc-${docNum + d}`);
+    for (const id of ids) {
       const base = docNum * 4;
-      await writer.add(`doc-${docNum}`, [Float32Array.from([base + 1, base + 2, base + 3, base + 4])], { name: `n${docNum}` });
+      await writer.add(id, [Float32Array.from([base + 1, base + 2, base + 3, base + 4])], { name: `n${docNum}` });
       docNum += 1;
     }
     const segName = `segment-${String(s).padStart(4, '0')}.bin`;
     await writer._writeSegmentFile(path.join(segmentDir, segName), writer._currentSegment);
-    segments.push({ path: segName, count: segmentDocCounts[s] });
-    total += segmentDocCounts[s];
+    segments.push({ path: segName, count: ids.length });
+    total += ids.length;
   }
 
   const manifest = {
@@ -126,6 +130,68 @@ describe('mergeLiSegments', () => {
     expect(reloaded.tokenDim).toBe(4);
     expect(reloaded.modelId).toBe('test');
     for (let i = 0; i < 10; i += 1) expect(reloaded.documents.has(`doc-${i}`)).toBe(true);
+  });
+
+  it('reads only the small segments and keeps their docs byte for byte', async () => {
+    const { segmentDir, indexPath } = await buildSegmented(stateDir, [4, 2, 2]);
+    tombstone(segmentDir, 'segment-0001.bin', [0], 2);
+    const before = new LateInteractionIndex({ indexPath, loadExisting: true, modelId: 'test' });
+    await before.init();
+    const tokensOf = (idx, id) => Array.from(idx.documents.get(id).tokens);
+    const normsOf = (idx, id) => Array.from(idx.documents.get(id).tokenNorms);
+    const expected = ['doc-5', 'doc-6', 'doc-7'].map((id) => [id, tokensOf(before, id), normsOf(before, id)]);
+
+    const read = [];
+    const original = LateInteractionIndex.prototype._readSegmentFile;
+    LateInteractionIndex.prototype._readSegmentFile = function (segPath, skip) {
+      read.push(path.basename(segPath));
+      return original.call(this, segPath, skip);
+    };
+    let out;
+    try {
+      out = await mergeLiSegments(stateDir, { segmentSize: 3 });
+    } finally {
+      LateInteractionIndex.prototype._readSegmentFile = original;
+    }
+    expect(read.sort()).toEqual(['segment-0001.bin', 'segment-0002.bin']);
+    expect(out.keptDocs).toBe(3);
+
+    const after = new LateInteractionIndex({ indexPath, loadExisting: true, modelId: 'test' });
+    await after.init();
+    expect(after.documents.size).toBe(7);
+    expect(after.documents.has('doc-4')).toBe(false);
+    for (const [id, tokens, norms] of expected) {
+      expect(tokensOf(after, id)).toEqual(tokens);
+      expect(normsOf(after, id)).toEqual(norms);
+    }
+  });
+
+  it('keeps the same copy a full load keeps when a doc id is live in two segments', async () => {
+    // dup-a: in seg1 and seg2 (seg2 is later and wins). dup-b: in seg1 and the
+    // large seg3 that is not merged (seg3 wins, so seg1's copy is dropped).
+    const { indexPath } = await buildSegmented(stateDir, [['x0', 'x1', 'x2', 'x3', 'x4'], ['dup-a', 'dup-b'], ['dup-a', 'y'], ['dup-b', 'z0', 'z1', 'z2']]);
+    const full = new LateInteractionIndex({ indexPath, loadExisting: true, modelId: 'test' });
+    await full.init();
+    const tokens = (idx, id) => Array.from(idx.documents.get(id).tokens);
+    const want = Object.fromEntries([...full.documents.keys()].map((id) => [id, tokens(full, id)]));
+
+    const out = await mergeLiSegments(stateDir, { segmentSize: 4 });
+    expect(out.mergedFrom).toBe(2); // seg1 + seg2; seg3 holds 4 docs, not small
+    expect(out.keptDocs).toBe(2); // dup-a (seg2 copy) and y
+
+    const after = new LateInteractionIndex({ indexPath, loadExisting: true, modelId: 'test' });
+    await after.init();
+    expect([...after.documents.keys()].sort()).toEqual(Object.keys(want).sort());
+    for (const [id, t] of Object.entries(want)) expect(tokens(after, id)).toEqual(t);
+  });
+
+  it('picks small segments size-tiered so a large one is not rewritten for a few tiny ones', () => {
+    const seg = (count, i) => ({ path: `s${i}`, count });
+    const pick = (counts) => pickSegmentsToMerge(counts.map(seg)).map((s) => s.count).sort((a, b) => a - b);
+    expect(pick([5574, 5, 4, 5, 10, 1, 15, 106, 1])).toEqual([1, 1, 4, 5, 5, 10, 15, 106]);
+    expect(pick([5574, 1, 1])).toEqual([1, 1]);
+    expect(pick([5574, 900, 400, 300])).toEqual([300, 400, 900, 5574]);
+    expect(pick([3, 3, 3, 3])).toEqual([3, 3, 3, 3]);
   });
 
   it('drops tombstoned docs during the merge', async () => {

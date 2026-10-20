@@ -921,6 +921,18 @@ function createLifecycleProgress(lockFile) {
   };
 }
 
+// The encoders run in a child process that exits when idle (encoder-client.mjs),
+// so the maintainer holds no ONNX session between edits. One per process.
+let encoderClient;
+async function maintainerEncoders() {
+  if (encoderClient !== undefined) return encoderClient;
+  const { createEncoderClient, encoderProcessEnabled, encoderIdleMs } = await import('./encoder-client.mjs');
+  encoderClient = encoderProcessEnabled()
+    ? createEncoderClient({ idleMs: encoderIdleMs(), log: (level, msg) => log(level, msg) })
+    : null;
+  return encoderClient;
+}
+
 export async function runReconcileV2Tick(ctx) {
   const onProgress = typeof ctx.onProgress === 'function' ? ctx.onProgress : null;
   const progress = (phase) => { onProgress?.(phase); };
@@ -984,10 +996,12 @@ export async function runReconcileV2Tick(ctx) {
   }
 
   const { runProductionReconcileTick } = await import('../incremental-indexing/application/production-reconciler.mjs');
+  const encoders = await maintainerEncoders();
   const counters = await runProductionReconcileTick({
     projectRoot: ctx.projectRoot,
     stateDir: ctx.stateDir,
     admissionPolicy,
+    ...(encoders ? { vectorEncoder: encoders.dense, liEncoder: encoders.li } : {}),
     logger: {
       info: (msg) => log('INFO', msg),
       warn: (msg) => log('WARN', msg),
@@ -2068,6 +2082,7 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
     // below unlinks the O_EXCL lock so the next launchMaintainer respawns cleanly
     // (reconcile-before-serve via the new daemon's t=0 tick).
     await runBoundedTeardown('Local model unload', async () => {
+      encoderClient?.close();
       const { unloadLocalModel } = await import('../embedding/embedding-local-model.js');
       await unloadLocalModel();
     });
