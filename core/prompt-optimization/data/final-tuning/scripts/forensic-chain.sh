@@ -25,7 +25,7 @@ stop_ours() { for pid in $(pgrep -f "sweet-search-daemon|sweet-search-maintainer
     stop_ours; sleep 5
     for r in $(node -e "for (const x of require('$RB')) console.log(x.repo)"); do
       D="$MAIN/eval/repos/r3-$r"; echo "$(date '+%F %T') START index $r" >> "$L/forensic-chain.log"
-      ( cd "$D" && SWEET_SEARCH_PROJECT_ROOT="$D" node "$MAIN/core/indexing/index-codebase-v21.js" --full --verbose --concurrency=1 --sqlite-fast > "$L/index-r3b-$r.log" 2>&1 )
+      ( cd "$D" && SWEET_SEARCH_PROJECT_ROOT="$D" SWEET_SEARCH_INDEX_DEVICE=accelerator node "$MAIN/core/indexing/index-codebase-v21.js" --full --verbose --concurrency=1 --sqlite-fast > "$L/index-r3b-$r.log" 2>&1 )
       echo "$(date '+%F %T') END index $r rc=$? $(grep -m1 -o 'INDEXING COMPLETE.*' "$L/index-r3b-$r.log")" >> "$L/forensic-chain.log"
     done
     stop_ours

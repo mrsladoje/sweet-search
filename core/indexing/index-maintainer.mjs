@@ -60,6 +60,7 @@ import { applyPersistedLiModel } from '../infrastructure/init-config.js';
 // in the shutdown path can wedge.
 import { launchMaintainer } from './maintainer-launcher.mjs';
 import { recordSpawn } from '../infrastructure/spawn-ledger.js';
+import { maintainerIndexerEnv } from './index-device-choice.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -2372,7 +2373,7 @@ async function spawnIndexer(files, options = {}) {
       stdio: ['pipe', 'pipe', 'pipe'],
       // Background maintenance never arms the GPU and never runs the
       // index-device speed test, whatever the inherited environment says.
-      env: { ...process.env, SWEET_SEARCH_INDEX_DEVICE: 'cpu' },
+      env: maintainerIndexerEnv(process.env),
     });
 
     let stdout = '';

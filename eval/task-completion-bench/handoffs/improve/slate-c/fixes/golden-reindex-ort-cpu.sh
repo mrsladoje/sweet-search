@@ -26,6 +26,7 @@ for k in "${ORDER[@]}"; do
   SWEET_SEARCH_WATCH=0 \
   SWEET_SEARCH_NATIVE_INFERENCE=0 \
   SWEET_SEARCH_COREML_CASCADE=0 \
+  SWEET_SEARCH_INDEX_DEVICE=cpu \
     node "$REPO/core/indexing/index-codebase-v21.js" --full --sqlite-fast --concurrency=1 --verbose \
     > "$SP/idxlog/$k.log" 2>&1
   rc=$?

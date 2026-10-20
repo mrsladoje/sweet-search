@@ -47,6 +47,7 @@ import { backgroundIntraOpThreads } from '../infrastructure/onnx-session-utils.j
 import { EMBEDDING_CONFIG, LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
 import { getCoremlCascadeResolvedDirs } from '../infrastructure/coreml-cascade.js';
 import {
+  CPU_TTL_MS,
   CPU_WIN_MARGIN,
   PROBE_CHILD_TIMEOUT_MS,
   PROBE_RESULT_PREFIX,
@@ -179,11 +180,11 @@ const PROBE_CHILD = fileURLToPath(new URL('./index-device-probe-child.mjs', impo
  * parent kills it. `onSpawn(pid)` lets the caller record the child in the
  * probe lock.
  */
-export function runProbeChild(device, setup, { timeoutMs = PROBE_CHILD_TIMEOUT_MS, onSpawn } = {}) {
+export function runProbeChild(device, setup, { timeoutMs = PROBE_CHILD_TIMEOUT_MS, onSpawn, childPath = PROBE_CHILD } = {}) {
   return new Promise((resolve, reject) => {
     const env = { ...process.env, SWEET_SEARCH_INDEX_DEVICE: device };
     if (setup.includeLi && setup.liModel) env.SWEET_SEARCH_LATE_INTERACTION_MODEL = setup.liModel;
-    const child = spawn(process.execPath, [PROBE_CHILD, JSON.stringify({ ...setup, device, deadlineMs: timeoutMs })], {
+    const child = spawn(process.execPath, [childPath, JSON.stringify({ ...setup, device, deadlineMs: timeoutMs })], {
       env,
       stdio: ['pipe', 'pipe', 'pipe'],
     });
@@ -218,11 +219,14 @@ export function runProbeChild(device, setup, { timeoutMs = PROBE_CHILD_TIMEOUT_M
 
 /**
  * Time the same chunks on ORT INT8 CPU and on the accelerator, each in its
- * own child process, one after the other. A result close to the margin is
- * measured again in the opposite order; when the two runs disagree, the
- * result is marked unstable (it keeps the accelerator, cached for a short
- * time). After two runs it reports the CPU's slower time and the
- * accelerator's faster time, which leans to the accelerator.
+ * own child process, one after the other. A second run, in the opposite
+ * order, follows when the first result is close to the margin OR picks the
+ * CPU: other GPU work on the machine (another project indexing) or a hot
+ * chip can slow the accelerator side of one run, and a wrong "cpu" costs
+ * every core. When the two runs disagree, the result is marked unstable (it
+ * keeps the accelerator, cached for a short time). After two runs it reports
+ * the CPU's slower time and the accelerator's faster time, which leans to the
+ * accelerator.
  */
 export async function measureIndexDevices(setup, { runChild = runProbeChild, onSpawn } = {}) {
   const run = (device) => runChild(device, setup, { onSpawn });
@@ -230,7 +234,7 @@ export async function measureIndexDevices(setup, { runChild = runProbeChild, onS
     cpuMs: await run('cpu'),
     acceleratorMs: await run('accelerator'),
   };
-  if (!isCloseResult(first)) return { ...first, runs: 1, stable: true };
+  if (!isCloseResult(first) && decideIndexDevice(first) === 'accelerator') return { ...first, runs: 1, stable: true };
   const second = {
     acceleratorMs: await run('accelerator'),
     cpuMs: await run('cpu'),
@@ -242,6 +246,31 @@ export async function measureIndexDevices(setup, { runChild = runProbeChild, onS
     runs: 2,
     stable,
   };
+}
+
+/**
+ * Release `lock` if this process exits or is stopped by SIGINT / SIGTERM
+ * while the test runs (a `finally` does not run then). Returns the
+ * function that removes the handlers.
+ */
+function releaseLockOnExit(lock) {
+  const onExit = () => lock.release();
+  const onSignal = (signal) => {
+    lock.release();
+    remove();
+    // With no other handler, re-raise for the default action (the process
+    // ends); a handler of the indexer's own already got this signal.
+    if (process.listenerCount(signal) === 0) process.kill(process.pid, signal);
+  };
+  const remove = () => {
+    process.removeListener('exit', onExit);
+    process.removeListener('SIGINT', onSignal);
+    process.removeListener('SIGTERM', onSignal);
+  };
+  process.once('exit', onExit);
+  process.once('SIGINT', onSignal);
+  process.once('SIGTERM', onSignal);
+  return remove;
 }
 
 const _pendingChoices = new Map();
@@ -259,12 +288,12 @@ function sleep(ms) {
  * pay for the test). The test runs under a machine-wide lock; a process that
  * finds the lock taken waits for the other's result, and keeps the
  * accelerator if none arrives in `lockWaitMs`. A failed test keeps the
- * accelerator and is not cached. So do a split-device switch (see
- * splitDeviceSwitches) and a cache directory that cannot be written.
+ * accelerator and is cached as such for 1 day (so a slow or broken test is
+ * not paid on every run). A split-device switch (see splitDeviceSwitches) or
+ * a cache directory that cannot be written keeps the accelerator with no test.
  *
- * `parallel` is the schedule the run will really use (dense and late
- * interaction overlapped); `cpuPool` is the dense worker pool the run would
- * use on the CPU, or null for inline encoding.
+ * `parallel`, `cpuPool` and `cpuLiPool` are the schedule and the CPU worker
+ * pools the run will really use (index-device-choice.js::indexDeviceRunShape).
  *
  * @returns {Promise<{device: 'cpu'|'accelerator', source: string, cpuMs?: number, acceleratorMs?: number}>}
  */
@@ -273,6 +302,7 @@ export async function ensureIndexDeviceChoice({
   includeLi = true,
   parallel = false,
   cpuPool = null,
+  cpuLiPool = null,
   embeddingThreads = null,
   lateInteractionThreads = null,
   liBatch = {},
@@ -306,6 +336,9 @@ export async function ensureIndexDeviceChoice({
     liModel,
     parallel: liOn && parallel,
     cpuPool: cpuPool && cpuPool.workers > 1 ? { workers: cpuPool.workers, threadsPerWorker: cpuPool.threadsPerWorker } : null,
+    cpuLiPool: liOn && cpuLiPool && cpuLiPool.workers > 1
+      ? { workers: cpuLiPool.workers, threadsPerWorker: cpuLiPool.threadsPerWorker }
+      : null,
     embeddingThreads,
     lateInteractionThreads,
     liBatch,
@@ -320,8 +353,8 @@ export async function ensureIndexDeviceChoice({
 
   const cached = readIndexDeviceChoice(key, { cacheDir });
   if (cached) {
-    _indexDeviceChoice = cached.device;
-    return { ...cached, source: 'cached' };
+    _indexDeviceChoice = cached.failed ? null : cached.device;
+    return { ...cached, source: cached.failed ? 'cached-failure' : 'cached' };
   }
   if (!allowMeasure) {
     _indexDeviceChoice = null;
@@ -341,17 +374,32 @@ export async function ensureIndexDeviceChoice({
         await sleep(lockPollMs);
         lock = tryAcquireProbeLock({ cacheDir });
       }
+      const removeExitHandlers = releaseLockOnExit(lock);
       try {
         // Another process may have finished the test while we waited.
         const other = readIndexDeviceChoice(key, { cacheDir });
         if (other) return { ...other, source: 'cached' };
         // No model of this process may stay resident while a child loads its own.
         await teardownAllModels();
-        const { cpuMs, acceleratorMs, runs, stable } = await measure(setup, {
-          onSpawn: (pid) => lock.setChildPid(pid),
-        });
+        let measured;
+        try {
+          measured = await measure(setup, { onSpawn: (pid) => lock.setChildPid(pid) });
+        } catch (err) {
+          const now = Date.now();
+          const error = err?.message ?? String(err);
+          writeIndexDeviceChoice(key, {
+            device: 'accelerator',
+            failed: true,
+            error: error.slice(0, 500),
+            measuredAt: new Date(now).toISOString(),
+            expiresAt: new Date(now + UNSTABLE_TTL_MS).toISOString(),
+          }, { cacheDir });
+          return { device: 'accelerator', source: 'measure-failed', error };
+        }
+        const { cpuMs, acceleratorMs, runs, stable } = measured;
         const device = stable ? decideIndexDevice({ cpuMs, acceleratorMs }) : 'accelerator';
         const now = Date.now();
+        const ttl = !stable ? UNSTABLE_TTL_MS : device === 'cpu' ? CPU_TTL_MS : STABLE_TTL_MS;
         const entry = {
           device,
           cpuMs: Math.round(cpuMs),
@@ -360,13 +408,14 @@ export async function ensureIndexDeviceChoice({
           stable,
           margin: CPU_WIN_MARGIN,
           measuredAt: new Date(now).toISOString(),
-          expiresAt: new Date(now + (stable ? STABLE_TTL_MS : UNSTABLE_TTL_MS)).toISOString(),
+          expiresAt: new Date(now + ttl).toISOString(),
         };
         writeIndexDeviceChoice(key, entry, { cacheDir });
         return { ...entry, source: 'measured' };
       } catch (err) {
         return { device: 'accelerator', source: 'measure-failed', error: err?.message ?? String(err) };
       } finally {
+        removeExitHandlers();
         lock.release();
       }
     })().finally(() => _pendingChoices.delete(key)));

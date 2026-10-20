@@ -23,8 +23,10 @@
  * SWEET_SEARCH_INDEX_DEVICE=accelerator|cpu skips the test.
  */
 
+import { execFileSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import { closeSync, existsSync, linkSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 
 import { getOrtGraphCacheDir } from '../infrastructure/onnx-session-utils.js';
@@ -39,8 +41,14 @@ export const CPU_WIN_MARGIN = 1.2;
  */
 export const CLOSE_RATIO_BAND = [CPU_WIN_MARGIN / 1.5, CPU_WIN_MARGIN * 1.5];
 
-/** A stable result is reused for 30 days; one where the two runs disagreed, for 1 day. */
+/**
+ * How long a result is reused: "accelerator" (the default device) for 30
+ * days; "cpu" for 7 days, because a wrong "cpu" costs the user every core;
+ * a result whose two runs disagreed, or a test that failed, for 1 day (it
+ * keeps the accelerator and is not retried on every run).
+ */
 export const STABLE_TTL_MS = 30 * 24 * 3600 * 1000;
+export const CPU_TTL_MS = 7 * 24 * 3600 * 1000;
 export const UNSTABLE_TTL_MS = 24 * 3600 * 1000;
 
 export const INDEX_DEVICE_CACHE_FILE = 'index-device.json';
@@ -90,8 +98,50 @@ export function indexDeviceOverride(env = process.env) {
  * in one process, so the test does not run and the accelerator is kept.
  */
 export function splitDeviceSwitches(env = process.env) {
+  // The dispatchers read EMBED_HYBRID as 1/true/on and the *_USE_CPU switches
+  // as '1'; the wider parse here can only skip a test, never run one wrongly.
   return ['SWEET_SEARCH_EMBED_USE_CPU', 'SWEET_SEARCH_LI_USE_CPU', 'SWEET_SEARCH_EMBED_HYBRID']
-    .filter((name) => env[name] === '1');
+    .filter((name) => ['1', 'true', 'on'].includes((env[name] ?? '').trim().toLowerCase()));
+}
+
+/**
+ * Environment for an indexer that background maintenance starts: always ORT
+ * CPU, so it never arms the GPU and never runs the speed test, whatever the
+ * inherited environment says.
+ */
+export function maintainerIndexerEnv(env = process.env) {
+  return { ...env, SWEET_SEARCH_INDEX_DEVICE: 'cpu' };
+}
+
+/**
+ * The work schedule the test must copy, from the indexer's own plan
+ * (indexer-phases.js). `parallel`: dense and late interaction overlapped
+ * (the in-memory path only; the streaming path runs them one after the
+ * other). `cpuPool` / `cpuLiPool`: the worker pools an ORT CPU run would
+ * use (none when the models run in parallel).
+ */
+export function indexDeviceRunShape({
+  shouldParallelLI, useStreaming, resourcePlan = {}, lateInteractionWorkers = 1, lateInteractionWorkerThreads = 0,
+}) {
+  return {
+    parallel: !!shouldParallelLI && !useStreaming,
+    cpuPool: resourcePlan.useWorkerPool && !shouldParallelLI && resourcePlan.embeddingWorkers > 1
+      ? { workers: resourcePlan.embeddingWorkers, threadsPerWorker: resourcePlan.threadsPerEmbeddingWorker }
+      : null,
+    cpuLiPool: !shouldParallelLI && lateInteractionWorkers > 1 && lateInteractionWorkerThreads > 0
+      ? { workers: lateInteractionWorkers, threadsPerWorker: lateInteractionWorkerThreads }
+      : null,
+  };
+}
+
+function poolLabel(p) {
+  return p ? `${p.workers}x${p.threadsPerWorker}` : 'inline';
+}
+
+/** CPU model and logical core count of this host (the GPU comes from `hw`). */
+export function machineIdentity() {
+  const cpus = os.cpus();
+  return { cpuModel: cpus[0]?.model?.trim() || 'unknown-cpu', cores: os.availableParallelism?.() ?? cpus.length };
 }
 
 // Environment settings that change what either encoder does per chunk
@@ -110,12 +160,14 @@ export function encoderEnvDigest(env = process.env) {
  * the values that change what each device has to do, as the caller
  * resolved them (see model-pool.js::ensureIndexDeviceChoice).
  */
-export function indexDeviceCacheKey({ hw = {}, setup = {}, env = process.env, version = packageVersion() }) {
-  const chip = hw.brandString || hw.nvidiaGpu?.name || `${hw.platform}-${hw.arch}`;
+export function indexDeviceCacheKey({
+  hw = {}, setup = {}, env = process.env, version = packageVersion(), machine = machineIdentity(),
+}) {
+  const gpu = hw.nvidiaGpu?.name || hw.brandString || `${hw.platform}-${hw.arch}`;
   const lb = setup.liBatch || {};
-  const pool = setup.cpuPool ? `${setup.cpuPool.workers}x${setup.cpuPool.threadsPerWorker}` : 'inline';
   return [
-    chip,
+    `cpu=${machine.cpuModel}/${machine.cores}`,
+    `gpu=${gpu}`,
     hw.inferenceBackendPreference,
     `cascade=${setup.cascadeStatus ?? 'n/a'}`,
     `embed=${setup.embeddingModel ?? '?'}`,
@@ -123,7 +175,7 @@ export function indexDeviceCacheKey({ hw = {}, setup = {}, env = process.env, ve
     `par=${setup.parallel ? 1 : 0}`,
     `thr=${setup.embeddingThreads ?? 'd'}/${setup.lateInteractionThreads ?? 'd'}`,
     `lib=${lb.batchSize ?? 'd'}/${lb.batchSizeUpperCap ?? 'd'}/${lb.tokenBudget ?? 'd'}/${lb.attentionBudget ?? 'd'}`,
-    `pool=${pool}`,
+    `pool=${poolLabel(setup.cpuPool)}/${poolLabel(setup.cpuLiPool)}`,
     `env=${encoderEnvDigest(env)}`,
     setup.backgroundProfile ? 'bg' : 'fg',
     version,
@@ -211,6 +263,34 @@ function pidAlive(pid) {
   }
 }
 
+/** Start time (epoch ms) of a live process, or null when it cannot be read (e.g. Windows). */
+function processStartMs(pid) {
+  try {
+    const out = execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], {
+      env: { ...process.env, LC_ALL: 'C' }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 2000,
+    }).trim();
+    const t = Date.parse(out);
+    return Number.isFinite(t) ? t : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Whether `pid` is still the process that wrote `startedAt`. A live pid with
+ * a different start time was reused by another program: the holder is dead.
+ * `ps` gives whole seconds, so allow a few seconds of difference.
+ */
+function sameProcessAlive(pid, startedAt) {
+  if (!pidAlive(pid)) return false;
+  if (!Number.isFinite(startedAt)) return true;
+  const actual = processStartMs(pid);
+  return actual == null || Math.abs(actual - startedAt) < 5000;
+}
+
+/** This process's start time (epoch ms), as recorded in the lock. */
+const OWN_START_MS = Math.round(Date.now() - process.uptime() * 1000);
+
 /** The lock file's holder and age, or null when there is no lock file. */
 function inspectLock(p, now) {
   let ageMs;
@@ -223,7 +303,23 @@ function inspectLock(p, now) {
 function isLockStale({ holder, ageMs }) {
   if (!holder) return ageMs > LOCK_UNREADABLE_STALE_MS;
   if (ageMs > LOCK_HARD_STALE_MS) return true;
-  return !pidAlive(holder.pid) && !pidAlive(holder.childPid);
+  return !sameProcessAlive(holder.pid, holder.startedAt) && !sameProcessAlive(holder.childPid, holder.childStartedAt);
+}
+
+/**
+ * Remove a takeover file left by a killed process, but only the one we saw:
+ * move it aside (atomic), and if the moved file is a newer one (another
+ * process took the mutex in between), put it back.
+ */
+function clearDeadMutex(mutex, seenNonce) {
+  const aside = `${mutex}.${process.pid}.${randomUUID()}`;
+  try { renameSync(mutex, aside); } catch { return; }
+  let nonce = null;
+  try { nonce = readFileSync(aside, 'utf8').trim() || null; } catch { /* unreadable */ }
+  if (nonce !== seenNonce) {
+    try { linkSync(aside, mutex); } catch { /* a third process holds a new one */ }
+  }
+  try { unlinkSync(aside); } catch { /* gone */ }
 }
 
 /**
@@ -246,7 +342,7 @@ export function tryAcquireProbeLock({ cacheDir, now = Date.now() } = {}) {
   } catch {
     return { status: 'unavailable' };
   }
-  const token = { pid: process.pid, nonce: randomUUID(), at: new Date(now).toISOString() };
+  const token = { pid: process.pid, startedAt: OWN_START_MS, nonce: randomUUID(), at: new Date(now).toISOString() };
   const owns = () => {
     try { return JSON.parse(readFileSync(p, 'utf8'))?.nonce === token.nonce; } catch { return false; }
   };
@@ -259,7 +355,7 @@ export function tryAcquireProbeLock({ cacheDir, now = Date.now() } = {}) {
       if (!owns()) return;
       const tmp = `${p}.${process.pid}.tmp`;
       try {
-        writeFileSync(tmp, JSON.stringify({ ...token, childPid }));
+        writeFileSync(tmp, JSON.stringify({ ...token, childPid, childStartedAt: Date.now() }));
         renameSync(tmp, p);
       } catch { /* the parent pid alone still marks the lock as held */ }
     },
@@ -281,15 +377,20 @@ export function tryAcquireProbeLock({ cacheDir, now = Date.now() } = {}) {
     if (!isLockStale(seen)) return { status: 'busy' };
 
     const mutex = `${p}.takeover`;
+    const mutexNonce = randomUUID();
     try {
-      closeSync(openSync(mutex, 'wx'));
+      const fd = openSync(mutex, 'wx');
+      try { writeFileSync(fd, mutexNonce); } finally { closeSync(fd); }
     } catch (err) {
       if (err?.code !== 'EEXIST') return { status: 'unavailable' };
       // A takeover takes milliseconds; a mutex this old was left by a killed process.
-      const m = inspectLock(mutex, now);
-      if (m && m.ageMs > LOCK_UNREADABLE_STALE_MS) {
-        try { unlinkSync(mutex); } catch { /* another process cleared it */ }
-      }
+      let ageMs = 0;
+      let seenNonce = null;
+      try {
+        ageMs = now - statSync(mutex).mtimeMs;
+        seenNonce = readFileSync(mutex, 'utf8').trim() || null;
+      } catch { /* gone */ }
+      if (ageMs > LOCK_UNREADABLE_STALE_MS) clearDeadMutex(mutex, seenNonce);
       return { status: 'busy' };
     }
     try {
@@ -304,10 +405,29 @@ export function tryAcquireProbeLock({ cacheDir, now = Date.now() } = {}) {
         return { status: err?.code === 'EEXIST' ? 'busy' : 'unavailable' };
       }
     } finally {
-      try { unlinkSync(mutex); } catch { /* gone */ }
+      try {
+        if (readFileSync(mutex, 'utf8').trim() === mutexNonce) unlinkSync(mutex);
+      } catch { /* gone */ }
     }
   }
   return { status: 'busy' };
+}
+
+/**
+ * For the test child: exit when the parent dies (its stdin pipe closes, even
+ * after SIGKILL of the parent) or when `deadlineMs` passes.
+ */
+export function exitWhenOrphaned(deadlineMs, { exit = (code) => process.exit(code) } = {}) {
+  process.stdin.on('end', () => exit(3));
+  process.stdin.on('close', () => exit(3));
+  process.stdin.on('error', () => exit(3));
+  process.stdin.resume();
+  if (deadlineMs > 0) {
+    setTimeout(() => {
+      process.stderr.write(`index-device probe: deadline ${deadlineMs}ms passed\n`);
+      exit(4);
+    }, deadlineMs).unref();
+  }
 }
 
 /**

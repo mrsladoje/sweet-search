@@ -154,7 +154,7 @@ function workerEnvFor(repo) {
   if (!existsSync(path.join(repoDir, '.sweet-search/codebase.db'))) {
     throw new Error(
       `track-a: ${repo} not indexed (no .sweet-search/codebase.db). ` +
-      `Index with: SWEET_SEARCH_PROJECT_ROOT=${repoDir} ` +
+      `Index with: SWEET_SEARCH_PROJECT_ROOT=${repoDir} SWEET_SEARCH_INDEX_DEVICE=accelerator ` +
       `node core/indexing/index-codebase-v21.js --full --sqlite-fast`
     );
   }

@@ -333,7 +333,7 @@ if (skipModels) {
   execFileSync(NODE, [join(PACKAGE_ROOT, 'core', 'indexing', 'index-codebase-v21.js'), '--project-root', searchDir], {
     encoding: 'utf8',
     timeout: 60000,
-    env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: searchDir },
+    env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: searchDir, SWEET_SEARCH_INDEX_DEVICE: 'accelerator' },
     stdio: ['pipe', 'pipe', 'pipe'],
   });
   assert(existsSync(join(searchDir, '.sweet-search', 'codebase.db')), 'Index DB not created');
