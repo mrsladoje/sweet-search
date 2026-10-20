@@ -15,8 +15,9 @@ def main():
     ap.add_argument("--out", required=True)
     a = ap.parse_args()
     print("| Design | Arm | Runs | Aborted | $ / run (mean) | $ / run (max) | Turns / run | Stop reasons "
-          "| Fix file seen | … first after the start | Edit in a fix file |")
-    print("|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|")
+          "| Fix file at start | New fix file by grep (strict) | Turn of it (median) | Edit in a fix file "
+          "| Turns to edit (median) |")
+    print("|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|---:|---:|")
     total = 0.0
     errors = collections.Counter()
     for design in ("resume", "fresh"):
@@ -38,17 +39,20 @@ def main():
             rs = [r for r in by[arm] if r["stop"] != "aborted"]
             ab = len(by[arm]) - len(rs)
             if not rs:
-                print(f"| {design} | {arm} | 0 | {ab} | – | – | – | – | – | – | – |")
+                print(f"| {design} | {arm} | 0 | {ab} | – | – | – | – | – | – | – | – | – |")
                 continue
             usd = [r["usd"] for r in rs]
             stops = collections.Counter(r["stop"] for r in rs)
-            seen = sum(r["first_gold_turn"] is not None for r in rs)
-            later = sum((r["first_gold_turn"] or 0) > 0 for r in rs)
+            start = sum(bool(r.get("gold_at_start")) for r in rs)
+            new = [r["first_new_gold_grep_turn"] for r in rs if r.get("first_new_gold_grep_turn") is not None]
             edits = [r for r in rs if r["stop"] == "edit"]
+            et = [r["edit_turn"] for r in edits if r.get("edit_turn") is not None]
+            med = lambda xs: f"{statistics.median(xs):.0f}" if xs else "–"
             print(f"| {design} | {arm} | {len(rs)} | {ab} | {statistics.mean(usd):.4f} | {max(usd):.4f} "
                   f"| {statistics.mean(len(r['turns']) for r in rs):.1f} "
-                  f"| {', '.join(f'{k} {v}' for k, v in stops.most_common())} | {seen}/{len(rs)} | {later}/{len(rs)} "
-                  f"| {sum(r['edit_in_gold'] for r in edits)}/{len(edits)} |")
+                  f"| {', '.join(f'{k} {v}' for k, v in stops.most_common())} | {start}/{len(rs)} "
+                  f"| {len(new)}/{len(rs)} | {med(new)} | {sum(r['edit_in_gold'] for r in edits)}/{len(edits)} "
+                  f"| {med(et)} |")
     ledger = os.path.join(a.out, "ledger.jsonl")
     spent = sum(json.loads(x)["usd"] for x in open(ledger)) if os.path.exists(ledger) else 0.0
     print(f"\nLedger total: ${spent:.4f} (runs ${total:.4f}).")

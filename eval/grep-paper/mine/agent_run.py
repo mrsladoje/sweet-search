@@ -11,7 +11,11 @@ Design 2, fresh:   messages[:2] (system prompt and issue) from the same trajecto
                    in the run goes through grep_shim.py, native or ranked.
 
 A run stops at the first edit attempt (its target is the run's localization answer), at
-`finish`, or at the turn cap. Commands run under sandbox-exec: no network, no writes outside
+`finish`, or at the turn cap (default 100, a safety cap only: the agent should finish).
+
+Fix-file measures: first_gold_turn (loose: a gold path anywhere in a command, view or output) and
+first_new_gold_grep_turn (strict: a gold path that was not visible at the start, first seen in the
+output of a grep-family command). gold_at_start lists the gold paths visible at the start. Commands run under sandbox-exec: no network, no writes outside
 /private/tmp, no reads under the home directory except the checkout and this code.
 
 Spending: every API call reserves its worst-case cost in a ledger with a hard cap (--cap-usd) before
@@ -256,6 +260,9 @@ def touches_gold(text, golds):
     return [g for g in golds if g in text]
 
 
+GREP_CMD = re.compile(r"(?:^|[\s|;&(`/])(?:(?:e|f)?grep|rg|git\s+grep)(?=\s|$)")
+
+
 def call_api(messages, tools, max_tokens, ledger, meta, live):
     band = price_band()
     approx_in = sum(len(json.dumps(m)) for m in messages) / 2.5  # chars per token, on the low side
@@ -329,9 +336,11 @@ def run_one(state, design, arm, rep, turns, ledger, live, log, log_lock):
     box = Sandbox(state["tree"], state["root"], grep_arm)
     golds = state["gold"]
     rec = {"instance_id": state["instance_id"], "design": design, "arm": arm, "rep": rep, "turns": [],
-           "first_gold_turn": None, "edit_target": None, "stop": "turn_cap", "usd": 0.0}
+           "first_gold_turn": None, "first_new_gold_grep_turn": None, "edit_target": None, "edit_turn": None,
+           "stop": "turn_cap", "usd": 0.0}
     if design == "resume" and touches_gold(api_msgs[-1]["content"], golds):
         rec["first_gold_turn"] = 0
+    rec["gold_at_start"] = touches_gold(json.dumps(api_msgs), golds)
     for turn in range(1, turns + 1):
         try:
             resp, info = call_api(api_msgs, tools, 16384, ledger,
@@ -384,6 +393,12 @@ def run_one(state, design, arm, rep, turns, ledger, live, log, log_lock):
             hit = touches_gold(json.dumps(args) + result, golds)
             if hit and rec["first_gold_turn"] is None:
                 rec["first_gold_turn"] = turn
+            if (name == "execute_bash" and rec["first_new_gold_grep_turn"] is None
+                    and GREP_CMD.search(args.get("command", ""))
+                    and set(touches_gold(result, golds)) - set(rec["gold_at_start"])):
+                rec["first_new_gold_grep_turn"] = turn
+            if rec["stop"] == "edit" and rec["edit_turn"] is None:
+                rec["edit_turn"] = turn
             tlog["calls"].append({"name": name, "args": json.dumps(args)[:300], "gold_hit": hit})
             api_msgs.append({"role": "tool", "tool_call_id": c["id"], "content": result})
             if stop:
@@ -403,7 +418,7 @@ def main():
     ap.add_argument("--design", choices=["resume", "fresh"], required=True)
     ap.add_argument("--n-states", type=int, default=10)
     ap.add_argument("--reps", type=int, default=2)
-    ap.add_argument("--turns", type=int, default=8)
+    ap.add_argument("--turns", type=int, default=100)
     ap.add_argument("--cap-usd", type=float, default=5.0)
     ap.add_argument("--out", required=True)
     ap.add_argument("--jobs", type=int, default=8)
