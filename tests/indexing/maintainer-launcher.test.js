@@ -29,6 +29,8 @@ import {
   resolveStateDir,
   maintainerAlive,
   defaultMaintainerEntry,
+  maintainerNodeFlags,
+  _resetMaintainerNodeFlagsForTests,
 } from '../../core/indexing/maintainer-launcher.mjs';
 
 const FAKE_ENTRY = join(dirname(fileURLToPath(import.meta.url)), '..', 'fixtures', 'fake-daemon.mjs');
@@ -224,5 +226,36 @@ describe('launchMaintainer background-priority demotion (A.2/A.3)', () => {
     });
     expect(r.spawned).toBe(false);
     expect(applyBackgroundPriorityMock).not.toHaveBeenCalled();
+  });
+});
+
+describe('maintainerNodeFlags (Liftoff-only WebAssembly for the maintainer)', () => {
+  beforeEach(() => _resetMaintainerNodeFlagsForTests());
+  afterEach(() => _resetMaintainerNodeFlagsForTests());
+
+  it('adds --liftoff-only once a probe start succeeds, and probes once per process', () => {
+    let probes = 0;
+    const probe = (exe, args) => { probes += 1; expect(args).toEqual(['--liftoff-only', '-e', '0']); return { status: 0 }; };
+    expect(maintainerNodeFlags({}, { probe })).toEqual(['--liftoff-only']);
+    expect(maintainerNodeFlags({}, { probe })).toEqual(['--liftoff-only']);
+    expect(probes).toBe(1);
+  });
+
+  it('adds nothing when node rejects the flag, the probe throws, or it is switched off', () => {
+    expect(maintainerNodeFlags({}, { probe: () => ({ status: 9 }) })).toEqual([]);
+    _resetMaintainerNodeFlagsForTests();
+    expect(maintainerNodeFlags({}, { probe: () => { throw new Error('ENOENT'); } })).toEqual([]);
+    _resetMaintainerNodeFlagsForTests();
+    expect(maintainerNodeFlags({ SWEET_SEARCH_MAINTAINER_LIFTOFF_ONLY: '0' }, { probe: () => ({ status: 0 }) })).toEqual([]);
+  });
+
+  it('starts the real maintainer process with the flag on this node', async () => {
+    mkdirSync(stateDir, { recursive: true });
+    const entry = join(sandbox, 'entry.mjs');
+    writeFileSync(entry, "import { appendFileSync } from 'node:fs';\nappendFileSync(process.env.FAKE_DAEMON_MARKER, process.execArgv.join(' ') + '\\n');\n");
+    const r = launchMaintainer({ env: baseEnv(), cwd: sandbox, maintainerEntry: entry });
+    expect(r.spawned).toBe(true);
+    const lines = await waitForLines(marker, 1);
+    expect(lines[0]).toContain('--liftoff-only');
   });
 });
