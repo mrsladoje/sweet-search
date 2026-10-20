@@ -1,16 +1,16 @@
 # Grep paper — overnight report, 2026-10-20
 
-**Conclusion.** Tasks 1 to 5 are done. Task 0 (the $5 agent pilot) did not run: the DeepSeek balance
-stayed at −$0.01 at every check, and I spent $0. Gate A keeps the truncation-loss framing: the agent's own
+**Conclusion.** Tasks 0 to 5 are done. The $5 agent pilot ran through OpenRouter (owner instruction
+during the night, because the DeepSeek balance stayed at −$0.01) and cost $0.45 in total. Gate A keeps the truncation-loss framing: the agent's own
 cut hid all definition-level evidence in 28.6% of 500 evidence-bearing dev calls. The tuning round found no
 change that passes the rule, so the shipped selector stays the reference. All times are CEST.
 
 ## Owner items (decide in the morning)
 
-1. **DeepSeek top-up.** The pilot needs `is_available` true and at least $6. The balance was −$0.01 at
-   every check (00:38, then every 30 minutes until 02:38, the last check before this report). The pilot is
-   ready: `agent_run.py --jobs 4`, resume design then fresh design, commands in the handoff. The ledger
-   stops all jobs at $5 in total.
+1. **Agent pilot result (harness and cost check, not evidence).** See "Agent pilot" below. Two design
+   points need a decision before the main agent check: the turn caps (most runs stop at the cap), and the
+   fix-file measure (it saturates in the resume design). The DeepSeek account still shows −$0.01; a top-up
+   is only needed if you want DeepSeek's own endpoint.
 2. **Speed bench for the flag work, then merge.** Branch `grep-flag-coverage` (85a63c6b) is pushed and
    not merged. Run `~/.ss-eval/grep-e2e-bench/run-flags-morning.sh` in stages after the soaks end (load
    below 6). Merge rule: no existing query class slower than noise. Main got 6f1c3613 (lane state for
@@ -51,10 +51,36 @@ summary header 16.0%. Against the agent's real cut, the selector recovers 96 cal
 Uncut calls (diagnostic): 4,000 uncut dev calls (seed 42) were replayed 02:17–02:54. The replay
 prints exactly the visible output for 95.0% of them.
 
+## Agent pilot (task 0)
+
+Run 04:10–04:32 CEST through OpenRouter, model `deepseek/deepseek-v4-flash`, reasoning effort `xhigh`,
+fp8 or bf16 endpoints only (served by SiliconFlow and GMICloud, 301 calls each), `--jobs 4`. Ledger cap
+$4.99 ($5 minus a $0.0022 live test of the new provider code before the pilot). Commit 71095e49.
+This is a harness and cost check, not evidence. The wall time was affected by the Mac load.
+
+| Design | Arm | Runs | Aborted | $ / run (mean) | $ / run (max) | Turns / run | Stop reasons | Fix file seen | … first after the start | Edit in a fix file |
+|---|---|---:|---:|---:|---:|---:|---|---:|---:|---:|
+| resume (8 turns) | as seen | 20 | 0 | 0.0061 | 0.0131 | 7.6 | turn cap 18, edit 2 | 20/20 | 4/20 | 2/2 |
+| resume (8 turns) | ranked | 20 | 0 | 0.0061 | 0.0160 | 7.8 | turn cap 19, edit 1 | 20/20 | 0/20 | 0/1 |
+| fresh (15 turns) | as seen | 10 | 0 | 0.0104 | 0.0160 | 14.4 | turn cap 8, edit 2 | 10/10 | 10/10 | 1/2 |
+| fresh (15 turns) | ranked | 10 | 0 | 0.0096 | 0.0146 | 15.0 | turn cap 10 | 10/10 | 10/10 | 0/0 |
+
+- **Cost:** $0.45 for 60 runs (602 API calls). The ledger agrees with the sum of the runs. A run costs
+  $0.006 (resume) to $0.010 (fresh). At these prices the main agent check costs far less than the
+  $15–40 estimate, which used DeepSeek's own prices.
+- **Harness errors:** none aborted. One call named an unknown tool (`executBash`, a model typo); the
+  harness answered "Unknown tool" and the run went on.
+- **Turn caps:** 55 of 60 runs stopped at the turn cap. Only 5 runs reached an edit. The edit-based
+  outcome needs more turns.
+- **Fix-file measure:** "fix file seen" counts a gold path anywhere in the text. In the resume design every
+  run already shows a fix file at the start, so the measure says nothing there. It needs the stricter
+  rule (a fix file first seen in a grep output after the start).
+- Commands: `~/.ss-eval/grep-paper/agent/pilot/run-pilot.sh`. Summary: `mine/agent_report.py --out
+  ~/.ss-eval/grep-paper/agent/pilot`.
+
 ## Still running
 
-Nothing of mine runs now, apart from the balance watcher (every 30 minutes; it starts nothing, it only
-logs to `~/.ss-eval/grep-paper/agent/pilot/balance.log`).
+Nothing of mine runs now. I stopped the balance watcher at 04:10, when the pilot started on OpenRouter.
 
 ## Decisions I made alone
 
@@ -87,7 +113,8 @@ note about a MaxSim window (23:30–04:30 UTC) is from 15–16 October. I paused
 
 ## Skipped, and why
 
-- **Agent pilot (task 0):** no balance. $0 spent.
+- **Agent pilot on DeepSeek's own API:** no balance (−$0.01 at every check from 00:38 to 04:08). The pilot
+  ran on OpenRouter instead.
 - **Speed bench for the flag work:** the owner's soaks load the Mac (load 11–22 at 01:05, 59 at the peak).
   The bench waits for the morning.
 - **Rival tools in the replay:** RTK is not installed. The Signal Grep plugin is not installed and needs an
