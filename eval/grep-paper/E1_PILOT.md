@@ -122,7 +122,24 @@ The as-seen definition-level miss rate (28.6%, lower bound 23.9%) is far above a
 paper keeps the truncation-loss framing.** The pilot does not test harm; harm is a question for the agent
 experiments.
 
-## 5. Limits
+## 5. Replay agreement on uncut calls (a diagnostic)
+
+4,000 eligible uncut dev calls (seed 42), replayed 02:17–02:54 CEST. Tier F = the replay prints exactly
+the visible output.
+
+| Visible lines | Calls | F (agree) | X | Agreement |
+|---|---:|---:|---:|---:|
+| ≤10 | 3,284 | 3,118 | 166 | 94.9% |
+| 11–30 | 564 | 539 | 25 | 95.6% |
+| 31–100 | 145 | 135 | 10 | 93.1% |
+| 101–300 | 7 | 6 | 1 | 85.7% |
+| **All** | 4,000 | 3,798 | 202 | 95.0% |
+
+Tier X reasons: output differs 163; path outside the repository (Go module cache, site-packages, cargo
+registry, `/workspace`) 20; checkout failed 5. The uncut agreement (95.0%) is higher than the cut
+agreement (89.2%). I did not study the cause tonight.
+
+## 6. Limits
 
 - Dev only, SWE-rebench-V2 only. Scale-SWE needs the image HEAD (plan) and is not in this replay.
 - Definition spans are heuristic (Python `ast`; brace matcher for C-like languages; `end` for Ruby).
