@@ -20,6 +20,7 @@ import { wasmMaxSimF32, wasmMaxSimDequantPerToken, wasmMaxSimDequant4Bit, wasmMa
 import { fastRotate, generateSignVector, calibrateWUSH, wushRotate } from '../infrastructure/quantization.js';
 import { poolTokens } from './late-interaction-model.js';
 import { loadBitmap, isSet } from '../infrastructure/tombstone-bitmap-reader.js';
+import { nativeRescoreKernels } from '../infrastructure/native-rescore.js';
 
 // =============================================================================
 // CRC32 (IEEE 802.3 polynomial, used for SSLX segment footer checksum)
@@ -296,6 +297,28 @@ const LI_SEGMENT_MAGIC = 0x4C495345; // "LISE" = Late Interaction Segment (legac
 const SSLX_SEGMENT_MAGIC = 0x53534C58; // "SSLX" = Sweet Search Late indeX (v3 binary)
 const SSLX_VERSION = 3;
 const SSLX_HEADER_SIZE = 64;
+
+// SSLX segments are memory-mapped when the native addon can (mapFileSection):
+// token payloads stay views into the file's pages instead of a heap copy. Those
+// pages are clean and file-backed, so they do not count toward the process
+// footprint and the OS drops them under memory pressure. Safe because a segment
+// file is never rewritten in place (_writeSegmentFile writes a temp file and
+// renames it). SWEET_SEARCH_LI_MMAP=0 reads segments into the heap as before.
+const mappedSegmentBuffers = new WeakSet();
+function mapSegmentFile(segPath) {
+  if (process.env.SWEET_SEARCH_LI_MMAP === '0') return null;
+  const map = nativeRescoreKernels()?.mapFileSection;
+  if (typeof map !== 'function') return null;
+  try {
+    const size = statSync(segPath).size;
+    if (size < 8) return null;
+    const buf = map(segPath, 0, size);
+    mappedSegmentBuffers.add(buf.buffer);
+    return buf;
+  } catch {
+    return null;
+  }
+}
 const SSLX_DOC_ENTRY_SIZE = 20;
 
 // =============================================================================
@@ -870,7 +893,11 @@ export class LateInteractionIndex {
     const checksum = crc32(buf.subarray(0, totalSize - 4));
     buf.writeUInt32LE(checksum, totalSize - 4);
 
-    await fs.writeFile(segPath, buf);
+    // Temp file + rename: a reader may have the old file memory-mapped, and
+    // truncating a mapped file in place would crash it (SIGBUS).
+    const tmp = `${segPath}.tmp.${process.pid}`;
+    await fs.writeFile(tmp, buf);
+    await fs.rename(tmp, segPath);
   }
 
   /**
@@ -905,6 +932,9 @@ export class LateInteractionIndex {
     for (const doc of this.documents.values()) {
       if (!ArrayBuffer.isView(doc.tokens) || !doc.minArray || !doc.scaleArray || !doc.tokenNorms) continue;
       const buf = doc.tokens.buffer;
+      // Tokens viewed in a mapped segment stay there (copying them is what the
+      // mapping avoids); their f32 arrays already share one slab per segment.
+      if (mappedSegmentBuffers.has(buf)) continue;
       if (doc.minArray.buffer === buf && doc.scaleArray.buffer === buf && doc.tokenNorms.buffer === buf) continue;
       const need = FIELDS.reduce((sum, field) => sum + align4(doc[field].byteLength), 0);
       if (bytes + need > maxSlabBytes) flush();
@@ -924,6 +954,10 @@ export class LateInteractionIndex {
    * never copied.
    */
   async _readSegmentFile(segPath, skip = null) {
+    const mapped = mapSegmentFile(segPath);
+    if (mapped && mapped.readUInt32LE(0) === SSLX_SEGMENT_MAGIC) {
+      return this._readSegmentSSLX(mapped, segPath, skip, true);
+    }
     const buf = await fs.readFile(segPath);
     const magic = buf.readUInt32LE(0);
 
@@ -1088,7 +1122,7 @@ export class LateInteractionIndex {
    * Returns array of { id, tokens (Int8Array/Float32Array), numTokens, dim, min, scale, tokenNorms },
    * with `null` for docs where `skip(docIndex)` is true.
    */
-  _readSegmentSSLX(buf, segPath, skip = null) {
+  _readSegmentSSLX(buf, segPath, skip = null, mapped = false) {
     // Validate CRC32
     const storedCrc = buf.readUInt32LE(buf.length - 4);
     const computedCrc = crc32(buf.subarray(0, buf.length - 4));
@@ -1145,11 +1179,15 @@ export class LateInteractionIndex {
     // ArrayBuffer per segment instead of four per doc. Skipped docs are not copied.
     const align4 = (n) => (n + 3) & ~3;
     const payloadOf = (numTokens) => Math.ceil(numTokens * tokenDim * bytesPerDim);
+    // From a mapped file, byte-wide token payloads (int8 / 4-bit) are viewed in
+    // place; only the f32 arrays (which must be 4-byte aligned) are copied.
+    const viewTokens = mapped && isQuantized;
     let slabBytes = 0;
     for (let i = 0; i < numDocs; i++) {
       if (skip && skip(i)) continue;
       const { numTokens, isPerToken, hasPreNorms } = docEntries[i];
-      slabBytes += align4(payloadOf(numTokens)) + numTokens * 4 * (1 + (isPerToken ? 2 : 0) + (hasPreNorms ? 1 : 0));
+      slabBytes += (viewTokens ? 0 : align4(payloadOf(numTokens)))
+        + numTokens * 4 * (1 + (isPerToken ? 2 : 0) + (hasPreNorms ? 1 : 0));
     }
     const slab = new ArrayBuffer(slabBytes);
     const slabU8 = new Uint8Array(slab);
@@ -1169,9 +1207,15 @@ export class LateInteractionIndex {
       const tokenPayload = payloadOf(numTokens);
       let cursor = absOffset;
 
-      const tokAt = copyOut(cursor, tokenPayload);
-      const tokens = is4bit ? new Uint8Array(slab, tokAt, tokenPayload)
-        : (isInt8 ? new Int8Array(slab, tokAt, tokenPayload) : new Float32Array(slab, tokAt, tokenPayload / 4));
+      let tokens;
+      if (viewTokens) {
+        const at = buf.byteOffset + cursor;
+        tokens = is4bit ? new Uint8Array(buf.buffer, at, tokenPayload) : new Int8Array(buf.buffer, at, tokenPayload);
+      } else {
+        const tokAt = copyOut(cursor, tokenPayload);
+        tokens = is4bit ? new Uint8Array(slab, tokAt, tokenPayload)
+          : (isInt8 ? new Int8Array(slab, tokAt, tokenPayload) : new Float32Array(slab, tokAt, tokenPayload / 4));
+      }
       cursor += tokenPayload;
 
       // Per-token min/scale arrays (only for docs flagged as per-token)
