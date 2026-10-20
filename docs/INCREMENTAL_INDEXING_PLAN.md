@@ -2262,6 +2262,7 @@ detected hardware tier (see § 34). All can be overridden.
 | `SWEET_SEARCH_RECONCILE_INTERVAL` | adaptive (10–20 s; 10/15/20 s start by tier) | Sleep after a tick with no queued files left; min 10s, max 20s unless user-pinned |
 | `SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS` | `10000` | Soft cap on per-file work per tick (tick setup is not counted) |
 | `SWEET_SEARCH_MAINTAINER_ENCODER_PROCESS` | `1` | Run the dense + LI encoders in a child process (`sweet-search-encoder`); `0` keeps them in the maintainer |
+| `SWEET_SEARCH_LI_MMAP` | `1` | Memory-map sealed LI segments (token bytes stay file-backed, outside the process footprint); `0` reads them into the heap |
 | `SWEET_SEARCH_ENCODER_IDLE_MS` | `60000` | The encoder process exits after this long without a request; the next edit restarts it (~2-3 s model load) |
 | `SWEET_SEARCH_RECONCILE_FILES_PER_TICK` | `50` | Hard cap on files reindexed per tick (content-unchanged files do not count) |
 | `SWEET_SEARCH_RECONCILE_DEBUG` | `0` | Verbose per-file logging |
