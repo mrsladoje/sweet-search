@@ -35,7 +35,7 @@ import Database from 'better-sqlite3';
 import { BinaryHNSWIndex, binaryHnswIndexExists } from '../../vector-store/binary-hnsw-index.js';
 import { LateInteractionIndex } from '../../ranking/late-interaction-index.js';
 import { compactDeltaSegments, listDeltaSegments } from '../infrastructure/sparse-gram-delta.mjs';
-import { mergeLiSegments, LI_MERGE_GRACE_MS } from '../infrastructure/li-segment-merge.mjs';
+import { mergeLiSegments, collectLiveDocs, LI_MERGE_GRACE_MS } from '../infrastructure/li-segment-merge.mjs';
 import { runVectorGc } from '../infrastructure/vector-gc.mjs';
 import { runGraphGc } from '../infrastructure/graph-gc.mjs';
 import { minLiveEpoch } from '../infrastructure/reader-heartbeat.mjs';
@@ -269,30 +269,11 @@ export async function liSegmentHandler(job, { stateDir, onProgress = null }) {
     return { skipped: 'no-tombstones-after-bitmap-load', segmentId };
   }
 
-  // Open the index. The SSLX loader at `_loadSegmented` already drops
-  // tombstoned docs via the per-segment stale bitmap, so
-  // `index.documents` after init contains only LIVE entries. The
-  // already-quantized doc entries can be reused verbatim — we just need
-  // to rewrite the segment file with the surviving docs (in insertion
-  // order; `_docSegmentPositions` lets us recover that).
-  const index = new LateInteractionIndex({
-    indexPath: stubPath,
-    loadExisting: true,
-    modelId: manifest.modelId || null,
-  });
-  await index.init();
+  // Read this segment's LIVE docs (tombstoned docs dropped per the stale
+  // bitmap) in insertion order. The already-quantized entries are reused
+  // verbatim; only this segment is read, not the whole index.
+  const { index, collected: ordered } = await collectLiveDocs(stubPath, segmentDir, manifest, new Set([segmentPath]));
   progress('maintenance:li-segment:loaded');
-
-  const ordered = [];
-  let scannedDocs = 0;
-  for (const [docId, doc] of index.documents.entries()) {
-    const position = index._docSegmentPositions?.get(docId);
-    if (!position || position.segmentPath !== segmentPath) continue;
-    ordered.push({ docIndex: position.docIndex, docId, doc });
-    scannedDocs += 1;
-    if (scannedDocs % 1000 === 0) progress('maintenance:li-segment:scan');
-  }
-  ordered.sort((a, b) => a.docIndex - b.docIndex);
   const liveDocs = new Map();
   for (const { docId, doc } of ordered) liveDocs.set(docId, doc);
   const droppedDocs = tombstoned;

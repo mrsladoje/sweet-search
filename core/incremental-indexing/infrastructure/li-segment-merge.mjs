@@ -159,6 +159,69 @@ export function sweepOrphanSegments(segmentDir, manifest) {
 }
 
 /**
+ * Live docs of the segments in `segAbsPaths`, ordered by segment path then
+ * on-disk position, plus an index instance carrying the manifest's encoding
+ * parameters.
+ *
+ * Same result as a full load: a doc id live in several segments belongs to its
+ * last live copy in manifest order. A positions-only load (id tables only, no
+ * token data) finds those winners; then only the requested segments are read.
+ * A legacy format falls back to the full load.
+ */
+export async function collectLiveDocs(stubPath, segmentDir, manifest, segAbsPaths) {
+  const sslx = manifest.format === 'sslx-v3';
+  const index = new LateInteractionIndex({
+    indexPath: stubPath,
+    loadExisting: true,
+    positionsOnly: sslx,
+    modelId: manifest.modelId || null,
+  });
+  await index.init();
+  const winners = index._docSegmentPositions;
+  const collected = [];
+  if (sslx) {
+    for (const seg of manifest.segments) {
+      const segmentPath = path.join(segmentDir, seg.path);
+      if (!segAbsPaths.has(segmentPath)) continue;
+      for (const { id, entry, docIndex } of await index.readLiveSegmentDocs(segmentPath)) {
+        const won = winners.get(id);
+        if (won?.segmentPath !== segmentPath || won.docIndex !== docIndex) continue;
+        collected.push({ segmentPath, docIndex, docId: id, doc: entry });
+      }
+    }
+  } else {
+    for (const [docId, doc] of index.documents.entries()) {
+      const pos = winners.get(docId);
+      if (!pos || !segAbsPaths.has(pos.segmentPath)) continue;
+      collected.push({ segmentPath: pos.segmentPath, docIndex: pos.docIndex, docId, doc });
+    }
+  }
+  collected.sort((a, b) => (a.segmentPath < b.segmentPath ? -1 : a.segmentPath > b.segmentPath ? 1
+    : a.docIndex - b.docIndex));
+  return { index, collected };
+}
+
+/**
+ * Size-tiered pick of the small segments to merge: smallest first, and a
+ * segment joins only while it holds at most MERGE_GROWTH_FACTOR times the docs
+ * already picked. A large segment is then rewritten only once enough small ones
+ * add up to a real share of it, instead of on every merge (a 5.5k-doc segment
+ * used to be copied each time two 1-doc tick segments appeared).
+ */
+export const MERGE_GROWTH_FACTOR = 4;
+export function pickSegmentsToMerge(small) {
+  const sorted = [...small].sort((a, b) => a.count - b.count);
+  const picked = [];
+  let total = 0;
+  for (const seg of sorted) {
+    if (picked.length >= 2 && seg.count > total * MERGE_GROWTH_FACTOR) break;
+    picked.push(seg);
+    total += seg.count;
+  }
+  return picked;
+}
+
+/**
  * Merge small live LI segments into fewer larger segments.
  *
  * Pass `sweepOnly: true` to run ONLY the cheap housekeeping sweeps (orphan +
@@ -187,26 +250,19 @@ export async function mergeLiSegments(stateDir, opts = {}) {
     return { swept: true, orphansDeleted, quarantineDeleted, segmentCount: manifest.segments.length };
   }
 
-  const small = manifest.segments.filter((s) => Number.isFinite(s.count) && s.count < segmentSize);
+  const small = pickSegmentsToMerge(manifest.segments.filter((s) => Number.isFinite(s.count) && s.count < segmentSize));
   if (small.length < minSmall) {
     return { skipped: 'too-few-small-segments', orphansDeleted, quarantineDeleted, segmentCount: manifest.segments.length };
   }
-  const keptFull = manifest.segments.filter((s) => !(Number.isFinite(s.count) && s.count < segmentSize));
+  const pickedNames = new Set(small.map((s) => s.path));
+  const keptFull = manifest.segments.filter((s) => !pickedNames.has(s.path));
   const smallNames = new Set(small.map((s) => s.path));
   const smallAbs = new Set(small.map((s) => path.join(segmentDir, s.path)));
 
-  // Load the live docs (the loader drops tombstoned docs per the stale bitmap).
-  const index = new LateInteractionIndex({ indexPath: stubPath, loadExisting: true, modelId: manifest.modelId || null });
-  await index.init();
-
-  const collected = [];
-  for (const [docId, doc] of index.documents.entries()) {
-    const pos = index._docSegmentPositions?.get(docId);
-    if (!pos || !smallAbs.has(pos.segmentPath)) continue;
-    collected.push({ segmentPath: pos.segmentPath, docIndex: pos.docIndex, docId, doc });
-  }
-  collected.sort((a, b) => (a.segmentPath < b.segmentPath ? -1 : a.segmentPath > b.segmentPath ? 1
-    : a.docIndex - b.docIndex));
+  // Read the live docs of the small segments only (tombstoned docs dropped per
+  // the stale bitmap). Loading the whole index for this held every segment in
+  // memory: ~430 MB on a 14k-chunk repo, on every merge.
+  const { index, collected } = await collectLiveDocs(stubPath, segmentDir, manifest, smallAbs);
 
   // Writer used purely as the SSLX serializer (model/quant params copied verbatim).
   const writer = new LateInteractionIndex({

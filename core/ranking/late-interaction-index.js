@@ -2518,6 +2518,67 @@ export class LateInteractionIndex {
    * All segment data is loaded into memory at search init — same search semantics
    * as the legacy single-file format. Memory savings come from indexing time only.
    */
+  /**
+   * The live (not tombstoned) documents of ONE segment file, in on-disk order,
+   * as `documents` entries. Lets compaction read only the segments it rewrites
+   * instead of loading the whole index.
+   *
+   * @returns {Promise<Array<{id:string, entry:object, docIndex:number}>>}
+   */
+  async readLiveSegmentDocs(segPath) {
+    const staleBitmap = this._loadSegmentStaleBitmap(segPath);
+    const docs = await this._readSegmentFile(segPath, staleBitmap ? (docIndex) => isSet(staleBitmap, docIndex) : null);
+    const live = [];
+    for (let docIndex = 0; docIndex < docs.length; docIndex++) {
+      const doc = docs[docIndex];
+      if (staleBitmap && isSet(staleBitmap, docIndex)) {
+        continue;
+      }
+      // SSLX reader returns typed arrays directly; legacy LISE returns plain arrays
+      const tokens = (doc.tokens instanceof Int8Array || doc.tokens instanceof Float32Array || doc.tokens instanceof Uint8Array)
+        ? doc.tokens
+        : (this.useInt8 ? new Int8Array(doc.tokens) : new Float32Array(doc.tokens));
+
+      const entry = {
+        tokens,
+        numTokens: doc.numTokens,
+        dim: doc.dim,
+        metadata: doc.metadata,
+      };
+      if (doc.quantBits) entry.quantBits = doc.quantBits;
+
+      // Per-token quant (Phase 1/4) vs per-doc quant (legacy)
+      if (doc.minArray) {
+        entry.minArray = doc.minArray;
+        entry.scaleArray = doc.scaleArray;
+      } else {
+        entry.min = doc.min;
+        entry.scale = doc.scale;
+      }
+
+      // SSLX segments include persisted tokenNorms — skip expensive rebuild
+      if (doc.tokenNorms) entry.tokenNorms = doc.tokenNorms;
+      // CRA-6: Restore pre-normalization norms for token importance weighting
+      if (doc.preNorms) entry.preNorms = doc.preNorms;
+
+      live.push({ id: doc.id, entry, docIndex });
+    }
+    return live;
+  }
+
+  /** Copy the encoding parameters of a segmented manifest onto this instance. */
+  _applySegmentManifest(manifest) {
+    this.tokenDim = manifest.tokenDim;
+    this.matryoshkaDim = manifest.matryoshkaDim || 0;
+    this.maxTokens = manifest.maxTokens;
+    this.useInt8 = manifest.useInt8;
+    this.quantBits = manifest.quantBits || (manifest.useInt8 ? 8 : 32);
+    this.poolFactor = manifest.poolFactor || 1;
+    if (manifest.whtSeed !== undefined) this.whtSeed = manifest.whtSeed;
+    this.whtOrdering = manifest.whtOrdering || 'natural';
+    if (manifest.modelId) this.modelId = manifest.modelId;
+  }
+
   async _loadSegmented(segmentDir) {
     const manifestPath = path.join(segmentDir, 'manifest.json');
     const manifest = JSON.parse(await fs.readFile(manifestPath, 'utf-8'));
@@ -2530,15 +2591,7 @@ export class LateInteractionIndex {
       return;
     }
 
-    this.tokenDim = manifest.tokenDim;
-    this.matryoshkaDim = manifest.matryoshkaDim || 0;
-    this.maxTokens = manifest.maxTokens;
-    this.useInt8 = manifest.useInt8;
-    this.quantBits = manifest.quantBits || (manifest.useInt8 ? 8 : 32);
-    this.poolFactor = manifest.poolFactor || 1;
-    if (manifest.whtSeed !== undefined) this.whtSeed = manifest.whtSeed;
-    this.whtOrdering = manifest.whtOrdering || 'natural';
-    if (manifest.modelId) this.modelId = manifest.modelId;
+    this._applySegmentManifest(manifest);
 
     this.documents.clear();
     this._docSegmentPositions.clear();
@@ -2563,43 +2616,9 @@ export class LateInteractionIndex {
         continue;
       }
 
-      const staleBitmap = this._loadSegmentStaleBitmap(segPath);
-      const docs = await this._readSegmentFile(segPath, staleBitmap ? (docIndex) => isSet(staleBitmap, docIndex) : null);
-
-      for (let docIndex = 0; docIndex < docs.length; docIndex++) {
-        const doc = docs[docIndex];
-        if (staleBitmap && isSet(staleBitmap, docIndex)) {
-          continue;
-        }
-        // SSLX reader returns typed arrays directly; legacy LISE returns plain arrays
-        const tokens = (doc.tokens instanceof Int8Array || doc.tokens instanceof Float32Array || doc.tokens instanceof Uint8Array)
-          ? doc.tokens
-          : (this.useInt8 ? new Int8Array(doc.tokens) : new Float32Array(doc.tokens));
-
-        const entry = {
-          tokens,
-          numTokens: doc.numTokens,
-          dim: doc.dim,
-          metadata: doc.metadata,
-        };
-        if (doc.quantBits) entry.quantBits = doc.quantBits;
-
-        // Per-token quant (Phase 1/4) vs per-doc quant (legacy)
-        if (doc.minArray) {
-          entry.minArray = doc.minArray;
-          entry.scaleArray = doc.scaleArray;
-        } else {
-          entry.min = doc.min;
-          entry.scale = doc.scale;
-        }
-
-        // SSLX segments include persisted tokenNorms — skip expensive rebuild
-        if (doc.tokenNorms) entry.tokenNorms = doc.tokenNorms;
-        // CRA-6: Restore pre-normalization norms for token importance weighting
-        if (doc.preNorms) entry.preNorms = doc.preNorms;
-
-        this.documents.set(doc.id, entry);
-        this._docSegmentPositions.set(doc.id, { segmentPath: segPath, docIndex });
+      for (const { id, entry, docIndex } of await this.readLiveSegmentDocs(segPath)) {
+        this.documents.set(id, entry);
+        this._docSegmentPositions.set(id, { segmentPath: segPath, docIndex });
       }
     }
 

@@ -1311,11 +1311,12 @@ You never run a command.
 - **Fresh within seconds.** The daemon checks for edits every 10–20 s. An edit is indexed before any backlog file, and a backlog drains update after update with no pause.
 
 #### 🧠 Bounded memory
-The daemons show up in `ps` / Activity Monitor as `sweet-search-maintainer` and `sweet-search-daemon`.
-A maintainer holds roughly 2–3 GB, because the models stay loaded so updates are fast. Four independent limits keep it bounded:
+The daemons show up in `ps` / Activity Monitor as `sweet-search-maintainer`, `sweet-search-encoder` and `sweet-search-daemon`.
+A maintainer holds about 200 MB. The models live in a separate encoder process (1–2 GB while it encodes), which starts on the first edit and exits after 60 s with nothing to encode, so its memory goes back to the system. Five independent limits keep it bounded:
 
 | Limit | What it does | Default | Override |
 |-------|--------------|---------|----------|
+| Encoder process | Models load only while files are being encoded; the process exits when idle | 60 s idle | `SWEET_SEARCH_ENCODER_IDLE_MS` (`SWEET_SEARCH_MAINTAINER_ENCODER_PROCESS=0` keeps the models in the maintainer) |
 | Background ORT profile | Arena off, parked threads | on | `SWEET_SEARCH_ORT_BACKGROUND=0` |
 | Recycle ceiling | Past the line, the maintainer finishes its update, exits cleanly, and respawns on the next edit | clamp(25 % of RAM, 4 GiB, 8 GiB) | `SWEET_SEARCH_MAINTAINER_RSS_MAX_MB` (0 disables) |
 | Idle timeout | Unattended daemons shut down and respawn on demand | tier-aware | `SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS` / `SWEET_SEARCH_DAEMON_IDLE_TTL_MS` |
