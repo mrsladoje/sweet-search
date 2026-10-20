@@ -16,6 +16,8 @@ const label = labelIdx >= 0 ? args[labelIdx + 1] : (withPool ? 'with-pool' : 'ba
 const env = {
   ...process.env,
   SWEET_SEARCH_DISABLE_MEM_GUARD: '1', // 128GB machine
+  // Accelerator, never the index-device speed test (see eval/lib/bench-index-device.mjs).
+  SWEET_SEARCH_INDEX_DEVICE: 'accelerator',
 };
 
 if (withPool) {

@@ -61,6 +61,7 @@ for BS in "${BATCH_SIZES[@]}"; do
     SWEET_SEARCH_DATA_DIR="$DATA_DIR_NAME" \
     SWEET_SEARCH_INDEXER_BATCH_SIZE="$BS" \
     SWEET_SEARCH_PROVIDER=local \
+    SWEET_SEARCH_INDEX_DEVICE=accelerator \
     node "$INDEXER" --vectors-only --full --quiet 2>&1
   ) || true
   END_S=$(date +%s)

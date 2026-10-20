@@ -172,7 +172,7 @@ async function main() {
   const indexPath = path.join(PROJECT_ROOT, '.sweet-search');
   if (!existsSync(indexPath)) {
     console.error('\n  No .sweet-search/ index found. Run indexing first:');
-    console.error('    node core/indexing/index-codebase-v21.js');
+    console.error('    SWEET_SEARCH_INDEX_DEVICE=accelerator node core/indexing/index-codebase-v21.js');
     process.exit(2);
   }
 

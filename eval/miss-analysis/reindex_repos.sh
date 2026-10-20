@@ -16,7 +16,7 @@ for repo in fastify flask ripgrep; do
   echo "=== $repo ===" >> "$LOG"
   date >> "$LOG"
   pushd "$ROOT/eval/repos/$repo" > /dev/null
-  SWEET_SEARCH_PROJECT_ROOT="$PWD" EMBEDDING_PROVIDER=local \
+  SWEET_SEARCH_PROJECT_ROOT="$PWD" EMBEDDING_PROVIDER=local SWEET_SEARCH_INDEX_DEVICE=accelerator \
     node "$INDEXER" --full --sqlite-fast >> "$LOG" 2>&1
   popd > /dev/null
 done

@@ -102,6 +102,7 @@ for r in "${REPOS[@]}"; do
   lf="$LOGS/$r.log"; ledger="$FR_STATE/spawn-ledger/index-$ARM-$r"; rm -rf "$ledger"; mkdir -p "$ledger"
   t0=$(date +%s); log "$r: indexing → $lf"
   ( cd "$dst" && env -u SWEET_SEARCH_SERVER_ENTRY SWEET_SEARCH_PROJECT_ROOT="$dst" SWEET_SEARCH_VOCAB_AUTO_EXPAND=0 \
+      SWEET_SEARCH_INDEX_DEVICE=accelerator \
       SWEET_SEARCH_MAINTAINER_WATCH=0 SWEET_SEARCH_RUNTIME_DIR="$FR_STATE/rt-index-$ARM" SWEET_SEARCH_SPAWN_LEDGER_DIR="$ledger" \
       node "$CODE/core/indexing/index-codebase-v21.js" --full --sqlite-fast --verbose --concurrency=1 ) > "$lf" 2>&1
   rc=$?

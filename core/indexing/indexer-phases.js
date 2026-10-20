@@ -26,6 +26,7 @@ import {
 } from '../embedding/embedding-local-model.js';
 import { isNativeInferenceAvailable } from '../infrastructure/native-inference.js';
 import { teardownAllModels, initIndexGpuPool, teardownIndexGpuPool, warmupQueryCpuModels, GPU_ARMING_MIN_FILES, isIndexAcceleratorAvailable, hasIndexAcceleratorHardware, ensureIndexDeviceChoice } from './model-pool.js';
+import { indexDeviceRunShape } from './index-device-choice.js';
 import {
   configureLateInteractionRuntime,
   resetLateInteractionRuntime,
@@ -501,14 +502,10 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
     const deviceChoice = await ensureIndexDeviceChoice({
       allowMeasure: wouldArmAccelerator,
       includeLi: !noLateInteraction,
-      // The streaming path encodes dense first, then late interaction; only
-      // the in-memory path overlaps them.
-      parallel: shouldParallelLI && !useStreaming,
-      // On the CPU the dense side runs in the worker pool when the run is not
-      // parallel (same rule as useEmbeddingPool below for an ORT index).
-      cpuPool: resourcePlan.useWorkerPool && !shouldParallelLI
-        ? { workers: resourcePlan.embeddingWorkers, threadsPerWorker: resourcePlan.threadsPerEmbeddingWorker }
-        : null,
+      // The schedule and CPU worker pools this run will really use.
+      ...indexDeviceRunShape({
+        shouldParallelLI, useStreaming, resourcePlan, lateInteractionWorkers, lateInteractionWorkerThreads,
+      }),
       embeddingThreads,
       lateInteractionThreads,
       liBatch: {
@@ -526,7 +523,9 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
         'dim',
       );
     } else if (deviceChoice.source === 'measure-failed') {
-      log(`Index device speed test failed (${deviceChoice.error}) — keeping the accelerator`, 'yellow');
+      log(`Index device speed test failed (${deviceChoice.error}) — keeping the accelerator; next test after 1 day`, 'yellow');
+    } else if (deviceChoice.source === 'cached-failure') {
+      log(`Index device speed test failed earlier (${deviceChoice.error}) — keeping the accelerator until ${deviceChoice.expiresAt}`, 'dim');
     } else if (deviceChoice.source === 'lock-busy') {
       log('Index device speed test busy in another process — keeping the accelerator for this run', 'yellow');
     } else if (deviceChoice.source === 'cache-unwritable') {

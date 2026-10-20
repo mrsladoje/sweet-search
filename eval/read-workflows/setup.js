@@ -73,7 +73,7 @@ export function verifyRepoLayout(name) {
   if (!existsSync(codebaseDb)) {
     throw new Error(
       `repo "${name}" not indexed (no ${path.relative(REPO_ROOT, codebaseDb)})\n` +
-      `Run: SWEET_SEARCH_PROJECT_ROOT=${repoDir} node core/indexing/index-codebase-v21.js --full --sqlite-fast`,
+      `Run: SWEET_SEARCH_PROJECT_ROOT=${repoDir} SWEET_SEARCH_INDEX_DEVICE=accelerator node core/indexing/index-codebase-v21.js --full --sqlite-fast`,
     );
   }
   const liDb = path.join(sweetDir, 'codebase-late-interaction.db');

@@ -205,7 +205,8 @@ async function runCommand(command, args, options = {}) {
     const child = spawn(command, args, {
       cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, FORCE_COLOR: '0' },
+      // Benchmark indexes: accelerator, never the index-device speed test.
+      env: { ...process.env, FORCE_COLOR: '0', SWEET_SEARCH_INDEX_DEVICE: 'accelerator' },
     });
 
     let stdout = '';

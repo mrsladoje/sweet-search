@@ -34,6 +34,9 @@ import {
   LOCK_HARD_STALE_MS,
   acceleratorProvenanceProblem,
   buildProbeTexts,
+  indexDeviceRunShape,
+  maintainerIndexerEnv,
+  CPU_TTL_MS,
   decideIndexDevice,
   indexDeviceCacheKey,
   indexDeviceOverride,
@@ -48,6 +51,7 @@ import {
   ensureIndexDeviceChoice,
   isIndexAcceleratorAvailable,
   measureIndexDevices,
+  runProbeChild,
   _resetIndexDeviceChoice,
 } from '../../core/indexing/model-pool.js';
 import { LATE_INTERACTION_CONFIG } from '../../core/infrastructure/config/index.js';
@@ -95,11 +99,19 @@ describe('indexDeviceCacheKey', () => {
     includeLi: true, liModel: 'lateon-code', parallel: true, embeddingThreads: 6, lateInteractionThreads: 6,
     liBatch: { batchSize: 32 }, backgroundProfile: false, embeddingModel: 'm', cascadeStatus: 'armed',
   };
-  const key = (over = {}, env = {}) => indexDeviceCacheKey({ hw: M3, setup: { ...setup, ...over }, env, version: '1.0.0' });
+  const machine = { cpuModel: 'Apple M3', cores: 8 };
+  const key = (over = {}, env = {}, m = machine) => indexDeviceCacheKey({ hw: M3, setup: { ...setup, ...over }, env, version: '1.0.0', machine: m });
 
   it('changes with every value that changes the comparison', () => {
     const k = key();
-    expect(indexDeviceCacheKey({ hw: M1, setup, env: {}, version: '1.0.0' })).not.toBe(k);
+    expect(indexDeviceCacheKey({ hw: M1, setup, env: {}, version: '1.0.0', machine })).not.toBe(k);
+    expect(key({}, {}, { cpuModel: 'Apple M3', cores: 12 })).not.toBe(k);
+    expect(key({}, {}, { cpuModel: 'AMD EPYC', cores: 8 })).not.toBe(k);
+    const linux = (cpuModel) => indexDeviceCacheKey({
+      hw: { nvidiaGpu: { name: 'H100' }, platform: 'linux', arch: 'x64' }, setup, env: {}, version: '1', machine: { cpuModel, cores: 32 },
+    });
+    expect(linux('Xeon')).not.toBe(linux('EPYC'));
+    expect(key({ cpuLiPool: { workers: 2, threadsPerWorker: 4 } })).not.toBe(k);
     for (const over of [
       { cascadeStatus: 'disabled-by-env' }, { cascadeStatus: 'not-installed' }, { includeLi: false },
       { liModel: 'lateon-code-edge' }, { parallel: false }, { embeddingThreads: 4 }, { lateInteractionThreads: 4 },
@@ -114,7 +126,7 @@ describe('indexDeviceCacheKey', () => {
     ]) {
       expect(key({}, env)).not.toBe(k);
     }
-    expect(indexDeviceCacheKey({ hw: M3, setup, env: {}, version: '1.0.1' })).not.toBe(k);
+    expect(indexDeviceCacheKey({ hw: M3, setup, env: {}, version: '1.0.1', machine })).not.toBe(k);
   });
 
   it('ignores settings that do not touch the encoders', () => {
@@ -168,6 +180,11 @@ describe('cache file, expiry and lock', () => {
     expect(tryAcquireProbeLock({ cacheDir: dir }).status).toBe('busy');
   });
 
+  it('treats a live pid with a different start time as a reused pid (stale)', () => {
+    writeFileSync(lockFile(), JSON.stringify({ pid: process.ppid, startedAt: 1_000_000, nonce: 'x' }));
+    expect(tryAcquireProbeLock({ cacheDir: dir }).status).toBe('acquired');
+  });
+
   it('records the test child and releases only its own lock', () => {
     const lock = tryAcquireProbeLock({ cacheDir: dir });
     lock.setChildPid(4242);
@@ -179,13 +196,20 @@ describe('cache file, expiry and lock', () => {
 
   it('leaves a takeover in progress to its owner', () => {
     writeFileSync(lockFile(), JSON.stringify({ pid: DEAD, nonce: 'x' }));
-    writeFileSync(`${lockFile()}.takeover`, '');
+    writeFileSync(`${lockFile()}.takeover`, 'm1');
     expect(tryAcquireProbeLock({ cacheDir: dir }).status).toBe('busy');
     expect(holder().nonce).toBe('x');
     // A takeover file left by a killed process is cleared after a short time.
     expect(tryAcquireProbeLock({ cacheDir: dir, now: Date.now() + 60_000 }).status).toBe('busy');
     expect(existsSync(`${lockFile()}.takeover`)).toBe(false);
     expect(tryAcquireProbeLock({ cacheDir: dir }).status).toBe('acquired');
+  });
+
+  it('never clears a recent takeover file', () => {
+    writeFileSync(lockFile(), JSON.stringify({ pid: DEAD, nonce: 'x' }));
+    writeFileSync(`${lockFile()}.takeover`, 'm3');
+    expect(tryAcquireProbeLock({ cacheDir: dir }).status).toBe('busy');
+    expect(readFileSync(`${lockFile()}.takeover`, 'utf8')).toBe('m3');
   });
 
   it('reports a cache directory that cannot be written as unavailable, not busy', () => {
@@ -233,6 +257,19 @@ describe('measureIndexDevices', () => {
     expect(r).toMatchObject({ cpuMs: 3000, acceleratorMs: 1000, runs: 1, stable: true });
     expect(runChild.mock.calls[0][2]).toEqual({ onSpawn });
     expect(runChild.mock.calls.map((c) => c[0])).toEqual(['cpu', 'accelerator']);
+  });
+
+  it('always measures a CPU win a second time, in the opposite order', async () => {
+    const runChild = vi.fn(async (device) => (device === 'cpu' ? 1000 : 5000));
+    const r = await measureIndexDevices({}, { runChild });
+    expect(runChild.mock.calls.map((c) => c[0])).toEqual(['cpu', 'accelerator', 'accelerator', 'cpu']);
+    expect(r).toMatchObject({ runs: 2, stable: true });
+  });
+
+  it('marks a one-off CPU win (accelerator slowed by other GPU work) unstable', async () => {
+    const times = { cpu: [1000, 1000], accelerator: [5000, 600] };
+    const runChild = vi.fn(async (device) => times[device].shift());
+    expect((await measureIndexDevices({}, { runChild })).stable).toBe(false);
   });
 
   it('measures a close result again in the opposite order', async () => {
@@ -338,14 +375,36 @@ describe('ensureIndexDeviceChoice', () => {
     expect(measure).not.toHaveBeenCalled();
   });
 
-  it('keeps the accelerator and caches nothing when the test throws', async () => {
+  it('keeps the accelerator when the test throws, and does not retry it for a day', async () => {
     const measure = vi.fn(async () => { throw new Error('boom'); });
     const r = await ensureIndexDeviceChoice(opts({ measure }));
     expect(r).toMatchObject({ device: 'accelerator', source: 'measure-failed' });
     expect(isIndexAcceleratorAvailable()).toBe(true);
-    const again = await ensureIndexDeviceChoice(opts({ allowMeasure: false, measure }));
-    expect(again.source).toBe('default');
+    const again = await ensureIndexDeviceChoice(opts({ measure }));
+    expect(again).toMatchObject({ device: 'accelerator', source: 'cached-failure', error: 'boom' });
+    expect(measure).toHaveBeenCalledTimes(1);
+    expect(Date.parse(again.expiresAt) - Date.now()).toBeLessThan(2 * 86400e3);
+    expect(isIndexAcceleratorAvailable()).toBe(true);
     expect(existsSync(path.join(dir, INDEX_DEVICE_LOCK_FILE))).toBe(false);
+  });
+
+  it('keeps a CPU result for 7 days, not 30', async () => {
+    const measure = vi.fn(async () => ({ cpuMs: 1000, acceleratorMs: 2000, runs: 2, stable: true }));
+    const r = await ensureIndexDeviceChoice(opts({ measure }));
+    expect(r.device).toBe('cpu');
+    expect(Math.abs(Date.parse(r.expiresAt) - Date.now() - CPU_TTL_MS)).toBeLessThan(60_000);
+  });
+
+  it('removes its exit and signal handlers after the test', async () => {
+    const before = ['exit', 'SIGINT', 'SIGTERM'].map((e) => process.listenerCount(e));
+    let during;
+    const measure = vi.fn(async () => {
+      during = process.listenerCount('SIGINT');
+      return { cpuMs: 3000, acceleratorMs: 1000, runs: 1, stable: true };
+    });
+    await ensureIndexDeviceChoice(opts({ measure }));
+    expect(during).toBe(before[1] + 1);
+    expect(['exit', 'SIGINT', 'SIGTERM'].map((e) => process.listenerCount(e))).toEqual(before);
   });
 
   it('tests without late interaction when the LI model is disabled in config', async () => {
@@ -368,6 +427,10 @@ describe('ensureIndexDeviceChoice', () => {
 
   it('skips the test with a split-device switch set', async () => {
     expect(splitDeviceSwitches({ SWEET_SEARCH_EMBED_USE_CPU: '1', SWEET_SEARCH_LI_USE_CPU: '0' })).toEqual(['SWEET_SEARCH_EMBED_USE_CPU']);
+    for (const v of ['1', 'true', 'ON', ' on ']) {
+      expect(splitDeviceSwitches({ SWEET_SEARCH_EMBED_HYBRID: v })).toEqual(['SWEET_SEARCH_EMBED_HYBRID']);
+    }
+    expect(splitDeviceSwitches({ SWEET_SEARCH_EMBED_HYBRID: '0' })).toEqual([]);
     const measure = vi.fn();
     process.env.SWEET_SEARCH_LI_USE_CPU = '1';
     try {
@@ -434,4 +497,82 @@ describe('benchIndexDevice (eval/lib/bench-index-device.mjs)', () => {
     expect(() => benchIndexDevice({ SWEET_SEARCH_INDEX_DEVICE: 'cpu' })).toThrow(/not allowed/);
     expect(() => benchIndexDevice({ SWEET_SEARCH_INDEX_DEVICE: 'auto' })).toThrow(/not allowed/);
   });
+});
+
+describe('indexDeviceRunShape + maintainerIndexerEnv', () => {
+  const plan = { useWorkerPool: true, embeddingWorkers: 3, threadsPerEmbeddingWorker: 2 };
+
+  it('overlaps the models only on the in-memory path', () => {
+    expect(indexDeviceRunShape({ shouldParallelLI: true, useStreaming: false, resourcePlan: plan }).parallel).toBe(true);
+    expect(indexDeviceRunShape({ shouldParallelLI: true, useStreaming: true, resourcePlan: plan }).parallel).toBe(false);
+    expect(indexDeviceRunShape({ shouldParallelLI: false, useStreaming: false, resourcePlan: plan }).parallel).toBe(false);
+  });
+
+  it('uses the CPU worker pools only when the models do not run in parallel', () => {
+    const serial = indexDeviceRunShape({
+      shouldParallelLI: false, useStreaming: false, resourcePlan: plan, lateInteractionWorkers: 2, lateInteractionWorkerThreads: 4,
+    });
+    expect(serial.cpuPool).toEqual({ workers: 3, threadsPerWorker: 2 });
+    expect(serial.cpuLiPool).toEqual({ workers: 2, threadsPerWorker: 4 });
+    const par = indexDeviceRunShape({
+      shouldParallelLI: true, useStreaming: false, resourcePlan: plan, lateInteractionWorkers: 1, lateInteractionWorkerThreads: 4,
+    });
+    expect(par.cpuPool).toBe(null);
+    expect(par.cpuLiPool).toBe(null);
+    expect(indexDeviceRunShape({ shouldParallelLI: false, resourcePlan: { ...plan, useWorkerPool: false } }).cpuPool).toBe(null);
+  });
+
+  it('forces ORT CPU for maintainer-started indexers, whatever the environment says', () => {
+    expect(maintainerIndexerEnv({ SWEET_SEARCH_INDEX_DEVICE: 'accelerator', X: '1' })).toEqual({ SWEET_SEARCH_INDEX_DEVICE: 'cpu', X: '1' });
+  });
+});
+
+describe('runProbeChild (fake child scripts)', () => {
+  let dir;
+  beforeEach(() => { dir = mkdtempSync(path.join(tmpdir(), 'idx-child-')); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+  const script = (name, body) => {
+    const p = path.join(dir, name);
+    writeFileSync(p, body);
+    return p;
+  };
+
+  it('parses the result line and records the child pid', async () => {
+    const childPath = script('ok.mjs', 'process.stdout.write("noise\\nINDEX_DEVICE_PROBE {\\"ms\\":123}\\n");');
+    const onSpawn = vi.fn();
+    const before = process.listenerCount('exit');
+    expect(await runProbeChild('cpu', {}, { childPath, onSpawn })).toBe(123);
+    expect(onSpawn).toHaveBeenCalledWith(expect.any(Number));
+    expect(process.listenerCount('exit')).toBe(before);
+  });
+
+  it('rejects a non-zero exit with the end of stderr', async () => {
+    const childPath = script('fail.mjs', 'process.stderr.write("bad thing\\n"); process.exit(2);');
+    await expect(runProbeChild('cpu', {}, { childPath })).rejects.toThrow(/exited 2: bad thing/);
+  });
+
+  it('kills a child that runs past the time limit', async () => {
+    const childPath = script('hang.mjs', 'setInterval(() => {}, 1000);');
+    const before = process.listenerCount('exit');
+    await expect(runProbeChild('cpu', {}, { childPath, timeoutMs: 300 })).rejects.toThrow(/killed \(SIGKILL\)/);
+    expect(process.listenerCount('exit')).toBe(before);
+  });
+
+  it('a child with the orphan guard exits when its stdin closes, and at its deadline', async () => {
+    const guard = new URL('../../core/indexing/index-device-choice.js', import.meta.url).href;
+    const hang = script('guard.mjs', [
+      `import { exitWhenOrphaned } from '${guard}';`,
+      'const { deadlineMs } = JSON.parse(process.argv[2]);',
+      'exitWhenOrphaned(deadlineMs);',
+      'setInterval(() => {}, 1000);',
+    ].join('\n'));
+    const { spawn } = await import('node:child_process');
+    const child = spawn(process.execPath, [hang, JSON.stringify({ deadlineMs: 0 })], { stdio: ['pipe', 'ignore', 'ignore'] });
+    await new Promise((r) => setTimeout(r, 500));
+    child.stdin.end();
+    const code = await new Promise((r) => child.on('close', r));
+    expect(code).toBe(3);
+    const timed = spawn(process.execPath, [hang, JSON.stringify({ deadlineMs: 300 })], { stdio: ['pipe', 'ignore', 'ignore'] });
+    expect(await new Promise((r) => timed.on('close', r))).toBe(4); // stdin still open: the deadline ends it
+  }, 15_000);
 });

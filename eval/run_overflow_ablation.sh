@@ -76,6 +76,7 @@ for V in "${VARIANTS[@]}"; do
         SWEET_SEARCH_PROJECT_ROOT="$CORPUS" \
         EMBEDDING_PROVIDER=local \
         SWEET_SEARCH_SQLITE_FAST_MODE=1 \
+        SWEET_SEARCH_INDEX_DEVICE=accelerator \
         node "$ROOT/core/indexing/index-codebase-v21.js" --full \
     > "$OUT/$V.reindex.log" 2>&1
   )

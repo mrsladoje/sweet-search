@@ -18,7 +18,7 @@ REPOS=(${R3_REPOS:-jj dgraph tortoise-orm typedoc zipkin ocelot})
   for r in "${REPOS[@]}"; do
     D="$MAIN/eval/repos/r3-$r"
     echo "$(date '+%F %T') START $r ($D)" >> "$L/index-r3.log"
-    ( cd "$D" && SWEET_SEARCH_PROJECT_ROOT="$D" node "$MAIN/core/indexing/index-codebase-v21.js" --full --verbose --concurrency=1 --sqlite-fast > "$L/index-r3-$r.log" 2>&1 )
+    ( cd "$D" && SWEET_SEARCH_PROJECT_ROOT="$D" SWEET_SEARCH_INDEX_DEVICE=accelerator node "$MAIN/core/indexing/index-codebase-v21.js" --full --verbose --concurrency=1 --sqlite-fast > "$L/index-r3-$r.log" 2>&1 )
     rc=$?
     echo "$(date '+%F %T') END $r exit=$rc $(grep -m1 -o 'INDEXING COMPLETE.*' "$L/index-r3-$r.log")" >> "$L/index-r3.log"
     # Frozen benchmark index: no maintainer may ever change it (launchers start none for a paused index).
