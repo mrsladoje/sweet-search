@@ -1,10 +1,11 @@
 /**
  * Best-effort OS background-priority helper for the maintainer daemon child.
  *
- * Implements research-doc §4.A recommendations A.2 (macOS `taskpolicy -b`) and
- * A.3 (Linux `ionice -c3` + `chrt -b`): once the launcher has spawned the
- * detached maintainer, we ask the OS to treat that *child* as background work
- * (CPU + I/O throttle, E-core routing on Apple Silicon). This is purely a
+ * Implements research-doc §4.A recommendation A.3 (Linux `ionice -c3` +
+ * `chrt -b`): once the launcher has spawned the detached maintainer, we ask
+ * the OS to treat that *child* as background work (CPU + I/O throttle).
+ * macOS gets no spawn lever: `taskpolicy -b` (A.2) confines the child to the
+ * E-cores, which made indexing ~6x slower for more total CPU. This is purely a
  * scheduling hint — the indexed output is identical; only *when* the kernel
  * grants CPU/IO to the child changes.
  *
@@ -74,8 +75,12 @@ export function applyBackgroundPriority(pid) {
     const pidStr = String(pid);
     switch (process.platform) {
       case 'darwin':
-        // taskpolicy -b -p PID → background band: CPU + IOPOL_THROTTLE + E-cores.
-        spawnBestEffort('taskpolicy', ['-b', '-p', pidStr]);
+        // No spawn lever. `taskpolicy -b` pins the process to the E-cores: on an
+        // M3 Max one 109 KB file took 207 s and 416 CPU-s there against 33 s and
+        // 99 CPU-s at nice 19 with the same 3 threads, so it cost more energy
+        // AND left edits unindexed for minutes. The maintainer lowers its own
+        // nice value (os.setPriority), which yields every contended core to the
+        // foreground without leaving the P-cores.
         break;
       case 'linux':
         // ionice -c 3 → idle I/O class; chrt -b -p 0 → SCHED_BATCH (no root).

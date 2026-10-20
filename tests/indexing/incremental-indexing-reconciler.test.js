@@ -13,7 +13,7 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { Reconciler, effectiveCpuBudgetMs } from '../../core/incremental-indexing/application/reconciler.mjs';
+import { Reconciler } from '../../core/incremental-indexing/application/reconciler.mjs';
 import {
   readManifest,
   writeManifest,
@@ -157,44 +157,37 @@ describe('Reconciler / tick lifecycle', () => {
     expect(snap.tick_ms).toBeGreaterThanOrEqual(5_000);
   });
 
-  it('uses the catch-up budget for a large backlog when other processes leave the CPU idle', async () => {
-    const dirty = Array.from({ length: 30 }, (_, i) => `f${i}.js`);
-    const run = async (otherCpuShare) => {
-      let nowMs = 0;
-      const dir = path.join(stateDir, `share-${otherCpuShare}`);
-      fs.mkdirSync(dir);
-      const r = new Reconciler({
-        stateDir: dir,
-        adapters: makeAdapter({
-          readDirtySet: async () => dirty,
-          requeueDirtyFiles: async () => {},
-          hashFile: async (file) => { nowMs += 1_000; return { file, contentUnchanged: false, chunks: [] }; },
-        }),
-        now: () => nowMs,
-        config: { filesPerTick: 50, cpuBudgetMs: 2_000, catchUpCpuBudgetMs: 8_000, otherCpuShare },
-      });
-      return r.tick();
-    };
+  it('publishes fresh edits before it starts on requeued backlog files', async () => {
+    const encoded = [];
+    const requeued = [];
+    const r = new Reconciler({
+      stateDir,
+      adapters: makeAdapter({
+        readDirtySet: async () => ['new.js', 'edit.js', 'old1.js', 'old2.js'],
+        isFreshDirtyFile: (f) => f === 'new.js' || f === 'edit.js',
+        hashFile: async (file) => { encoded.push(file); return { file, contentUnchanged: false, chunks: [] }; },
+        requeueDirtyFiles: async (files) => { requeued.push(...files); },
+      }),
+      config: { filesPerTick: 50, cpuBudgetMs: 60_000 },
+    });
+    const snap = await r.tick();
+    expect(encoded).toEqual(['new.js', 'edit.js']);
+    expect(requeued).toEqual(['old1.js', 'old2.js']);
+    expect(snap.dirty_paths_deferred).toBe(2);
 
-    const idle = await run(0.1);
-    expect(idle.cpu_budget_total_ms).toBe(8_000);
-    expect(idle.files_processed).toBe(8);
-
-    const busy = await run(0.7);
-    expect(busy.cpu_budget_total_ms).toBe(2_000);
-    expect(busy.files_processed).toBe(2);
-
-    const unknown = await run(undefined);
-    expect(unknown.cpu_budget_total_ms).toBe(2_000);
-  });
-
-  it('effectiveCpuBudgetMs keeps the normal budget unless backlog and CPU share allow catch-up', () => {
-    const cfg = { cpuBudgetMs: 2_000, catchUpCpuBudgetMs: 8_000, catchUpMinDirty: 20, catchUpMaxOtherCpu: 0.5 };
-    expect(effectiveCpuBudgetMs({ ...cfg, otherCpuShare: 0.1 }, 20)).toBe(8_000);
-    expect(effectiveCpuBudgetMs({ ...cfg, otherCpuShare: 0.1 }, 19)).toBe(2_000);
-    expect(effectiveCpuBudgetMs({ ...cfg, otherCpuShare: 0.5 }, 100)).toBe(2_000);
-    expect(effectiveCpuBudgetMs({ ...cfg }, 100)).toBe(2_000);
-    expect(effectiveCpuBudgetMs({ ...cfg, catchUpCpuBudgetMs: 0, otherCpuShare: 0 }, 100)).toBe(2_000);
+    // With no fresh edit the backlog takes the whole budget.
+    encoded.length = 0;
+    const backlog = new Reconciler({
+      stateDir,
+      adapters: makeAdapter({
+        readDirtySet: async () => ['old1.js', 'old2.js'],
+        isFreshDirtyFile: () => false,
+        hashFile: async (file) => { encoded.push(file); return { file, contentUnchanged: false, chunks: [] }; },
+      }),
+      config: { filesPerTick: 50, cpuBudgetMs: 60_000 },
+    });
+    await backlog.tick();
+    expect(encoded).toEqual(['old1.js', 'old2.js']);
   });
 
   it('keeps budget defaults when the config carries undefined, NaN or negative values', () => {
@@ -202,13 +195,11 @@ describe('Reconciler / tick lifecycle', () => {
       stateDir,
       adapters: makeAdapter(),
       config: {
-        cpuBudgetMs: Number.NaN, filesPerTick: undefined, catchUpCpuBudgetMs: -1,
-        catchUpMinDirty: undefined, catchUpMaxOtherCpu: Number.NaN, intervalMs: 0,
+        cpuBudgetMs: Number.NaN, filesPerTick: undefined, intervalMs: 0,
       },
     });
     expect(r.config).toMatchObject({
-      cpuBudgetMs: 2_000, filesPerTick: 50, catchUpCpuBudgetMs: 8_000,
-      catchUpMinDirty: 20, catchUpMaxOtherCpu: 0.5, intervalMs: 60_000,
+      cpuBudgetMs: 10_000, filesPerTick: 50, intervalMs: 20_000,
     });
   });
 
@@ -584,30 +575,13 @@ describe('Reconciler / tick lifecycle', () => {
 });
 
 describe('production tick budget config', () => {
-  it('parses env budgets, caps catch-up at 4x a user budget, ignores malformed values', async () => {
+  it('parses env budgets and ignores malformed values', async () => {
     const { tickBudgetConfig } = await import('../../core/incremental-indexing/application/production-reconciler.mjs');
-    expect(tickBudgetConfig({})).toEqual({ filesPerTick: undefined, cpuBudgetMs: undefined, catchUpCpuBudgetMs: undefined });
-    expect(tickBudgetConfig({ SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS: '500' }).catchUpCpuBudgetMs).toBe(2_000);
-    expect(tickBudgetConfig({ SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS: '500', SWEET_SEARCH_RECONCILE_CATCHUP_BUDGET_MS: '0' }).catchUpCpuBudgetMs).toBe(0);
-    expect(tickBudgetConfig({ SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS: '500', SWEET_SEARCH_RECONCILE_CATCHUP_BUDGET_MS: '-1' }).catchUpCpuBudgetMs).toBe(2_000);
+    expect(tickBudgetConfig({})).toEqual({ filesPerTick: undefined, cpuBudgetMs: undefined });
+    expect(tickBudgetConfig({ SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS: '500' }).cpuBudgetMs).toBe(500);
     expect(tickBudgetConfig({ SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS: '-5', SWEET_SEARCH_RECONCILE_FILES_PER_TICK: '0' }))
-      .toEqual({ filesPerTick: undefined, cpuBudgetMs: undefined, catchUpCpuBudgetMs: undefined });
+      .toEqual({ filesPerTick: undefined, cpuBudgetMs: undefined });
     expect(tickBudgetConfig({ SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS: 'abc', SWEET_SEARCH_RECONCILE_FILES_PER_TICK: '1e9x' }))
-      .toEqual({ filesPerTick: undefined, cpuBudgetMs: undefined, catchUpCpuBudgetMs: undefined });
-  });
-
-  it('sampleOtherCpuShare subtracts this process from system busy time', async () => {
-    const { sampleOtherCpuShare, _resetCpuSampleForTests } = await import('../../core/incremental-indexing/application/production-reconciler.mjs');
-    _resetCpuSampleForTests();
-    const core = (busy, idle) => ({ times: { user: busy, nice: 0, sys: 0, irq: 0, idle } });
-    let cpus = [core(0, 0), core(0, 0)];
-    let own = 0;
-    const opts = { cpus: () => cpus, cpuUsage: () => ({ user: own * 1000, system: 0 }) };
-    expect(sampleOtherCpuShare(opts)).toBeUndefined();
-    // 2 cores x 1000 ms window: 1200 ms busy, of which 1000 ms is this process.
-    cpus = [core(700, 300), core(500, 500)];
-    own = 1000;
-    expect(sampleOtherCpuShare(opts)).toBeCloseTo(0.1, 5);
-    _resetCpuSampleForTests();
+      .toEqual({ filesPerTick: undefined, cpuBudgetMs: undefined });
   });
 });

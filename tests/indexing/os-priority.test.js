@@ -3,7 +3,7 @@
  * (core/indexing/os-priority.mjs) — research §4.A A.2/A.3.
  *
  * The helper is best-effort scheduling demotion of a *child* pid: it must emit
- * the correct platform command (macOS taskpolicy, Linux ionice+chrt), be a
+ * the correct platform command (Linux ionice+chrt; none on macOS), be a
  * no-op on other platforms, and NEVER throw — even when the underlying binary
  * is missing or an invalid pid is passed. Output of the index is unaffected;
  * only *when* the kernel grants CPU/IO changes.
@@ -67,15 +67,10 @@ afterEach(() => {
 });
 
 describe('applyBackgroundPriority — platform dispatch', () => {
-  it('macOS → taskpolicy -b -p PID', () => {
+  it('macOS → no spawn (taskpolicy -b would confine the maintainer to the E-cores)', () => {
     setPlatform('darwin');
     applyBackgroundPriority(4242);
-    expect(spawnMock).toHaveBeenCalledTimes(1);
-    expect(spawnMock).toHaveBeenCalledWith(
-      'taskpolicy',
-      ['-b', '-p', '4242'],
-      expect.objectContaining({ stdio: 'ignore' }),
-    );
+    expect(spawnMock).not.toHaveBeenCalled();
   });
 
   it('Linux → ionice -c 3 -p PID AND chrt -b -p 0 PID', () => {
@@ -103,12 +98,12 @@ describe('applyBackgroundPriority — platform dispatch', () => {
   });
 
   it('detaches and unrefs the helper so it never holds the caller open', () => {
-    setPlatform('darwin');
+    setPlatform('linux');
     const child = makeFakeChild();
     spawnMock.mockReturnValueOnce(child);
     applyBackgroundPriority(9);
     expect(spawnMock).toHaveBeenCalledWith(
-      'taskpolicy',
+      'ionice',
       expect.any(Array),
       expect.objectContaining({ stdio: 'ignore', detached: true }),
     );
@@ -120,9 +115,9 @@ describe('applyBackgroundPriority — platform dispatch', () => {
 
 describe('applyBackgroundPriority — never throws', () => {
   it('does not throw when the binary is missing (spawn throws synchronously)', () => {
-    setPlatform('darwin');
+    setPlatform('linux');
     spawnMock.mockImplementation(() => {
-      const err = new Error('spawn taskpolicy ENOENT');
+      const err = new Error('spawn ionice ENOENT');
       err.code = 'ENOENT';
       throw err;
     });

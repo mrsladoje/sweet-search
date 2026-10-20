@@ -1307,8 +1307,8 @@ You never run a command.
 - **Self-maintenance.** Per-tier health watermarks (tombstone fraction, stale-doc ratio, delta ratio) trigger low-priority compaction in a separate worker.
 
 #### 🪶 Light on your machine
-- **CPU only**, with at most 50 files and 2 s of CPU per update. The GPU stays free for full builds.
-- **Adaptive interval** between 15 s and 300 s, tuned from load average, churn, and backlog.
+- **CPU only, at low OS priority.** Your apps win every busy core. The GPU stays free for full builds.
+- **Fresh within seconds.** The daemon checks for edits every 10–20 s. An edit is indexed before any backlog file, and a backlog drains update after update with no pause.
 
 #### 🧠 Bounded memory
 The daemons show up in `ps` / Activity Monitor as `sweet-search-maintainer` and `sweet-search-daemon`.

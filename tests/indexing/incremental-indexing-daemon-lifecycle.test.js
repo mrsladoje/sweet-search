@@ -95,21 +95,21 @@ describe('A.4 / computeNextIntervalMs (the doubly-dead-trap guard)', () => {
 
   it('an overran tick GROWS the interval when the flag is ON', () => {
     const out = computeNextIntervalMs({
-      currentMs: 60_000,
-      counters: { tick_ms: 50_000, dirty_paths_seen: 5 }, // 83% of interval
+      currentMs: 15_000,
+      counters: { tick_ms: 12_000, dirty_paths_seen: 5 }, // 80% of interval
       maintenanceBacklog: 0,
       env: flagOn,
       loadavg: () => [0.5, 0.5, 0.5],
       cpuCount: () => 4,
     });
     expect(out.tuned).toBe(true);
-    expect(out.nextMs).toBeGreaterThan(60_000);
+    expect(out.nextMs).toBeGreaterThan(15_000);
     expect(out.reasons).toContain('last-tick-wallclock');
   });
 
   it('high CPU load loosens the interval (load-per-core signal)', () => {
     const out = computeNextIntervalMs({
-      currentMs: 60_000,
+      currentMs: 15_000,
       counters: { tick_ms: 200, dirty_paths_seen: 5 },
       maintenanceBacklog: 0,
       env: flagOn,
@@ -117,7 +117,7 @@ describe('A.4 / computeNextIntervalMs (the doubly-dead-trap guard)', () => {
       cpuCount: () => 4,
     });
     expect(out.reasons).toContain('cpu-pressure');
-    expect(out.nextMs).toBeGreaterThan(60_000);
+    expect(out.nextMs).toBeGreaterThan(15_000);
   });
 
   it('Windows fallback: os.loadavg() === [0,0,0] does NOT trip the loosen-under-load signal', () => {

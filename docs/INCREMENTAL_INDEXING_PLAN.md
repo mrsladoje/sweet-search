@@ -99,12 +99,13 @@ an ordinary file edit.
 - **No MRR regression** on GCSN dev set or any locked baseline probe pack.
   This is the gating quality criterion; any reconcile change that regresses
   aggregate MRR by more than the per-test noise floor is reverted.
-- **CPU budget bounded.** As built: 2 s of per-file work per tick
-  (`SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS`; tick setup is not counted), raised
-  to an 8 s catch-up budget while 20+ files are dirty and other processes
-  used under half the CPU since the last tick
-  (`SWEET_SEARCH_RECONCILE_CATCHUP_BUDGET_MS`). The interval tuner lengthens
-  the sleep after long ticks. The tier-based cap of § 34 was not built.
+- **Freshness first, CPU at low priority.** As built: 10 s of per-file work
+  per tick (`SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS`; tick setup is not
+  counted). While files stay queued the daemon starts the next tick at once;
+  otherwise it scans again within 10–20 s. The daemon runs at nice 19 with
+  2–6 ORT threads on the fast cores (no `taskpolicy -b`, which confined it to
+  the E-cores: ~6x slower for more total CPU), so the foreground wins every
+  contended core. The tier-based cap of § 34 was not built.
 - **All five indices kept in lock-step**: an observer must never see, for
   example, the trigram index showing a function that the LI index does not.
   Readers enforce this by loading a single published epoch manifest rather
@@ -2258,9 +2259,8 @@ detected hardware tier (see § 34). All can be overridden.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `SWEET_SEARCH_RECONCILE_INTERVAL` | adaptive (15–300 s by tier; 60 s nominal) | Tick interval; min 15s, max 300s unless user-pinned |
-| `SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS` | `2000` | Soft cap on per-file work per tick (tick setup is not counted) |
-| `SWEET_SEARCH_RECONCILE_CATCHUP_BUDGET_MS` | `8000` (4x the normal budget when only that is set) | Per-file budget used instead when >= 20 files are dirty and other processes used < 50% of the CPU since the last tick; `0` disables |
+| `SWEET_SEARCH_RECONCILE_INTERVAL` | adaptive (10–20 s; 10/15/20 s start by tier) | Sleep after a tick with no queued files left; min 10s, max 20s unless user-pinned |
+| `SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS` | `10000` | Soft cap on per-file work per tick (tick setup is not counted) |
 | `SWEET_SEARCH_RECONCILE_FILES_PER_TICK` | `50` | Hard cap on files reindexed per tick (content-unchanged files do not count) |
 | `SWEET_SEARCH_RECONCILE_DEBUG` | `0` | Verbose per-file logging |
 | `SWEET_SEARCH_WATCH` | `1` where supported; `0` in WSL2/container defaults | Enable Rust notify watcher; polling remains the correctness backstop |

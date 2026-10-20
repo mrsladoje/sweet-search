@@ -237,6 +237,9 @@ describe('production incremental Reconciler', () => {
       line('src/a.js', 'requeue') + line('src/b.js', 'requeue') + line('src/c.js', 'watch') + line('src/d.js', 'scan') + line('src/a.js', 'watch'));
     const adapter = new prodTesting.ProductionReconcileAdapter({ projectRoot, stateDir, modelInfo: MODEL_INFO, vectorEncoder, liEncoder, logger: silentLogger });
     expect(await adapter.readDirtySet()).toEqual(['src/a.js', 'src/d.js', 'src/c.js', 'src/b.js']);
+    // a.js is fresh: its newest hint is a watch event, though an older one was a requeue.
+    const fresh = adapter.adapters().isFreshDirtyFile;
+    expect(['src/a.js', 'src/b.js', 'src/c.js', 'src/d.js'].filter(fresh)).toEqual(['src/a.js', 'src/c.js', 'src/d.js']);
   });
 
   it('takes a requeued file edited after it was queued as a fresh hint', async () => {
