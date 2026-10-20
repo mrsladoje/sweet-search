@@ -23,7 +23,7 @@ sandbox profile and cwd file. A cap hit or an API error stops every job at its n
 
 Usage:
   python agent_run.py --states FILE --design resume|fresh --n-states 10 --reps 2 --out DIR
-    [--turns 8] [--cap-usd 5] [--jobs 8] [--live]
+    [--turns 8] [--cap-usd 5] [--jobs 8] [--provider openrouter|deepseek] [--live]
 """
 
 import argparse
@@ -47,9 +47,18 @@ from ranker import ranked
 from traces import SHELL_EDIT
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-API = "https://api.deepseek.com/v1/chat/completions"
-MODEL = "deepseek-v4-flash"  # routes to deepseek-flash (pricing page, 2026-10-19)
+# Provider of DeepSeek-V4-Flash. OpenRouter has no DeepSeek first-party endpoint (2026-10-20), so the
+# request is pinned to fp8 providers (no fp4); the cost is OpenRouter's own usage.cost.
+PROVIDERS = {
+    "deepseek": {"api": "https://api.deepseek.com/v1/chat/completions", "model": "deepseek-v4-flash",
+                 "key": "DEEPSEEK_API_KEY"},
+    "openrouter": {"api": "https://openrouter.ai/api/v1/chat/completions", "model": "deepseek/deepseek-v4-flash",
+                   "key": "OPENROUTER_API_KEY"},
+}
+PROVIDER = PROVIDERS["openrouter"] | {"name": "openrouter"}
 # USD per 1M tokens, deepseek-flash, from https://api-docs.deepseek.com/quick_start/pricing (2026-10-19).
+# The worst-case reservation always uses the DeepSeek peak price, which is above every fp8 OpenRouter
+# endpoint's price (2026-10-20).
 PRICE = {"peak": {"hit": 0.006, "miss": 0.30, "out": 1.20}, "offpeak": {"hit": 0.003, "miss": 0.15, "out": 0.60}}
 TMP = "/private/tmp/ssgrep-agent"
 OH_CAP = 30000  # OpenHands MAX_CMD_OUTPUT_SIZE
@@ -64,6 +73,8 @@ def price_band(now=None):
 
 
 def cost(usage, band):
+    if PROVIDER["name"] == "openrouter":
+        return float(usage.get("cost") or 0.0)
     p = PRICE[band]
     hit = usage.get("prompt_cache_hit_tokens", 0)
     miss = usage.get("prompt_cache_miss_tokens", usage.get("prompt_tokens", 0) - hit)
@@ -249,8 +260,14 @@ def call_api(messages, tools, max_tokens, ledger, meta, live):
     band = price_band()
     approx_in = sum(len(json.dumps(m)) for m in messages) / 2.5  # chars per token, on the low side
     worst = (approx_in * PRICE["peak"]["miss"] + max_tokens * PRICE["peak"]["out"]) / 1e6
-    body = {"model": MODEL, "messages": messages, "tools": tools, "max_tokens": max_tokens,
-            "thinking": {"type": "enabled"}, "reasoning_effort": "max"}
+    if PROVIDER["name"] == "openrouter":
+        msgs = [{("reasoning" if k == "reasoning_content" else k): v for k, v in m.items()} for m in messages]
+        body = {"model": PROVIDER["model"], "messages": msgs, "tools": tools, "max_tokens": max_tokens,
+                "reasoning": {"effort": "xhigh"}, "usage": {"include": True},
+                "provider": {"quantizations": ["fp8", "bf16"], "require_parameters": True}}
+    else:
+        body = {"model": PROVIDER["model"], "messages": messages, "tools": tools, "max_tokens": max_tokens,
+                "thinking": {"type": "enabled"}, "reasoning_effort": "max"}
     if not live:
         ledger.reserve(worst)
         ledger.release(worst)
@@ -267,14 +284,17 @@ def call_api(messages, tools, max_tokens, ledger, meta, live):
         ledger.stop_all(f"harness error: {e!r}"[:300])
         raise Stop(f"harness error: {e!r}"[:300])
     usd = cost(resp.get("usage", {}), band)
-    ledger.settle(worst, usd, meta | {"usage": resp.get("usage", {}), "band": band})
+    if PROVIDER["name"] == "openrouter" and resp.get("usage", {}).get("cost") is None:
+        usd = worst  # no cost reported: book the worst case
+    ledger.settle(worst, usd, meta | {"usage": resp.get("usage", {}), "band": band,
+                                      "provider": resp.get("provider", PROVIDER["name"])})
     return resp, {"usd": usd, "usage": resp.get("usage", {})}
 
 
 def _post(body):
-    req = urllib.request.Request(API, data=json.dumps(body).encode(), method="POST",
+    req = urllib.request.Request(PROVIDER["api"], data=json.dumps(body).encode(), method="POST",
                                  headers={"Content-Type": "application/json",
-                                          "Authorization": f"Bearer {os.environ['DEEPSEEK_API_KEY']}"})
+                                          "Authorization": f"Bearer {os.environ[PROVIDER['key']]}"})
     for attempt in range(6):
         try:
             with urllib.request.urlopen(req, timeout=600) as r:
@@ -290,6 +310,8 @@ def _post(body):
             continue
     else:
         raise Stop("API retries exhausted")
+    if resp.get("error") or not resp.get("choices"):
+        raise Stop(f"API error body: {json.dumps(resp.get('error', resp))[:300]}")
     return resp
 
 
@@ -324,6 +346,8 @@ def run_one(state, design, arm, rep, turns, ledger, live, log, log_lock):
             break
         rec["usd"] += info["usd"]
         msg = resp["choices"][0]["message"]
+        if msg.get("reasoning") and not msg.get("reasoning_content"):
+            msg["reasoning_content"] = msg["reasoning"]
         api_msgs.append({k: v for k, v in msg.items() if k in ("role", "content", "tool_calls", "reasoning_content")})
         calls = msg.get("tool_calls") or []
         tlog = {"turn": turn, "usage": info["usage"], "calls": []}
@@ -384,7 +408,10 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--jobs", type=int, default=8)
     ap.add_argument("--live", action="store_true")
+    ap.add_argument("--provider", choices=sorted(PROVIDERS), default="openrouter")
     a = ap.parse_args()
+    global PROVIDER
+    PROVIDER = PROVIDERS[a.provider] | {"name": a.provider}
     os.makedirs(a.out, exist_ok=True)
     states = [json.loads(x) for x in open(a.states)]
     if a.design == "fresh":  # one state per task is enough for a fresh run
