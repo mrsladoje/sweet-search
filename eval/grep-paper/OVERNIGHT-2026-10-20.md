@@ -78,6 +78,25 @@ This is a harness and cost check, not evidence. The wall time was affected by th
 - Commands: `~/.ss-eval/grep-paper/agent/pilot/run-pilot.sh`. Summary: `mine/agent_report.py --out
   ~/.ss-eval/grep-paper/agent/pilot`.
 
+## Check pilot with the owner's new settings (05:23–06:27 CEST)
+
+Turn cap 100, strict fix-file measure, OpenRouter (commit b932e17f). 5 states × 2 arms per design,
+20 runs, $0.90. Total agent spend tonight: $1.35 of the $5.
+
+| Design | Arm | Runs | $ / run | Turns / run | Stop | New fix file by grep (strict) | Edit in a fix file | Turns to edit (median) |
+|---|---|---:|---:|---:|---|---:|---:|---:|
+| resume | as seen | 5 | 0.042 | 32.8 | edit 5 | 1/5 | 1/5 | 29 |
+| resume | ranked | 5 | 0.040 | 32.2 | edit 5 | 0/5 | 2/5 | 26 |
+| fresh | as seen | 5 | 0.043 | 41.6 | edit 5 | 3/5 | 3/5 | 36 |
+| fresh | ranked | 5 | 0.055 | 37.0 | edit 5 | 4/5 | 3/5 | 23 |
+
+- Every run now ends at an edit; none hits the cap. A run costs about $0.04–0.06.
+- **Defect in the stop rule:** 9 of the 20 first edits are not an answer. Agents first write a reproduction
+  script (`reproduce.js`, `repro.ts`, `/tmp/test_regex.js`), and the shell edit detector also took
+  `/dev/null` and `&1;` as targets. Fix before any further run: stop only at an edit of an existing file of
+  the repository, answer other writes with "Editing is disabled" and let the run go on.
+- Two more tool-name typos by the model (`executable_bash`, `bash`); the harness answered "Unknown tool".
+
 ## Still running
 
 Nothing of mine runs now. I stopped the balance watcher at 04:10, when the pilot started on OpenRouter.
