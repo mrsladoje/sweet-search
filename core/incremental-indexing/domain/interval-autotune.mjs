@@ -1,8 +1,8 @@
 /**
  * Reconcile interval auto-tuning.
  *
- * Plan § 14.2.1 and § 34. Default tick interval is 60 s; we auto-tune
- * within `[15 s, 300 s]` based on:
+ * Plan § 14.2.1 and § 34. Default tick interval is 20 s; we auto-tune
+ * within `[10 s, 20 s]` based on:
  *   - dirty-set churn (more dirt → tighter interval),
  *   - last tick's wallclock (>50 % of interval → loosen interval),
  *   - CPU pressure (1-minute load average per core),
@@ -10,16 +10,21 @@
  *     watermarks can drain).
  *
  * The tuner is **rate-limited** so the interval never moves by more than
- * 50 % between ticks; otherwise a hash-collision spike could collapse the
- * interval to 15 s permanently and starve the encoder.
+ * 50 % between ticks.
+ *
+ * The 20 s ceiling keeps the freshness promise (an edit indexed within 30 s):
+ * the edit is picked up by the next tick, so no tuner signal may push the scan
+ * further out than that.
+ * The interval is the sleep AFTER a tick; while files wait in the queue the
+ * daemon skips it (index-maintainer.mjs), so it never throttles a backlog.
  *
  * Pin behaviour: when `SWEET_SEARCH_RECONCILE_INTERVAL` is set explicitly,
  * the tuner is bypassed entirely.
  */
 
-const MIN_MS = 15_000;
-const MAX_MS = 300_000;
-const NOMINAL_MS = 60_000;
+const MIN_MS = 10_000;
+const MAX_MS = 20_000;
+const NOMINAL_MS = 20_000;
 
 const TARGET_TICK_WALLCLOCK_FRACTION = 0.5;
 const MAX_RATIO_CHANGE_PER_TICK = 1.5;
@@ -33,8 +38,8 @@ const MAX_RATIO_CHANGE_PER_TICK = 1.5;
  * @param {number} input.dirtyAtTickStart   How many paths were dirty.
  * @param {number} input.cpuLoadAvg         OS 1-minute load average / physicalCores.
  * @param {number} input.maintenanceBacklog Pending jobs in the rebuild queue.
- * @param {number} [input.minMs=15000]
- * @param {number} [input.maxMs=300000]
+ * @param {number} [input.minMs=10000]
+ * @param {number} [input.maxMs=20000]
  * @returns {{nextMs:number, reasons:string[]}}
  */
 export function nextInterval(input) {
@@ -94,16 +99,11 @@ export function nextInterval(input) {
 /**
  * Hardware-aware tier table for the startup interval.
  *
- *   low   → CPU-only / low RAM / pre-M3 / no usable GPU             → 60 s
- *   mid   → "strong" machine (M3/M4 base or pro, mid-tier CUDA)     → 30 s
- *   high  → "very strong" workstation (Max/Ultra, strong CUDA + RAM) → 20 s
- *
- * 15 s remains the auto-tune floor (`MIN_MS`); we deliberately keep it OFF
- * the startup table because the soak (eval/results/incremental-soak/REPORT.md)
- * only validated 15 s on this machine and the tuner can drift up to 60 s
- * under CPU pressure anyway.
+ *   low   → CPU-only / low RAM / pre-M3 / no usable GPU             → 20 s
+ *   mid   → "strong" machine (M3/M4 base or pro, mid-tier CUDA)     → 15 s
+ *   high  → "very strong" workstation (Max/Ultra, strong CUDA + RAM) → 10 s
  */
-const TIER_TABLE = Object.freeze({ low: 60_000, mid: 30_000, high: 20_000 });
+const TIER_TABLE = Object.freeze({ low: 20_000, mid: 15_000, high: 10_000 });
 
 /**
  * Memory-tier table for the footprint levers (idle-TTL / RSS-budget soft cap) —
@@ -234,13 +234,16 @@ export function backstopWalkIntervalMs({ env = process.env } = {}) {
  * override would.
  */
 const PROFILE_TABLE = Object.freeze({
-  fresh: 20_000,
+  fresh: 10_000,
   balanced: null,
-  conservative: 60_000,
+  conservative: 20_000,
 });
 
+// An interval the user pins explicitly may sit above the 20 s tuner ceiling.
+const PINNED_MAX_MS = 300_000;
+
 function clampInterval(ms) {
-  return Math.min(Math.max(ms, MIN_MS), MAX_MS);
+  return Math.min(Math.max(ms, MIN_MS), PINNED_MAX_MS);
 }
 
 /**
@@ -284,8 +287,7 @@ export function tierForHardware(hw) {
  *   4. `tier` argument (low/mid/high) OR `hardware` descriptor resolved
  *      via `tierForHardware()`
  *
- * Values are clamped into `[MIN_MS, MAX_MS]`. 15 s stays the auto-tune
- * floor only; the startup table never picks it.
+ * Values are clamped into `[MIN_MS, PINNED_MAX_MS]`.
  *
  * @param {{
  *   tier?: 'low'|'mid'|'high',
@@ -322,10 +324,10 @@ export function startupInterval({ tier, env = process.env, hardware = null } = {
   }
   let resolvedTier = tier;
   if (!resolvedTier && hardware) resolvedTier = tierForHardware(hardware);
-  // Unknown / detection-failed hardware → the conservative `low` (60 s) tier.
+  // Unknown / detection-failed hardware → the conservative `low` (20 s) tier.
   // In production `resolveReconcileV2Interval` always threads a detected
   // descriptor, so this fallback only fires when detection threw or a caller
-  // passes neither tier nor hardware; 60 s is the safe default for a machine
+  // passes neither tier nor hardware; 20 s is the safe default for a machine
   // we know nothing about.
   if (!resolvedTier) resolvedTier = 'low';
   const intervalMs = TIER_TABLE[resolvedTier] ?? NOMINAL_MS;
@@ -371,7 +373,7 @@ export function reconcileEnablement(env = process.env) {
 }
 
 export const __testing = {
-  MIN_MS, MAX_MS, NOMINAL_MS,
+  MIN_MS, MAX_MS, NOMINAL_MS, PINNED_MAX_MS,
   TARGET_TICK_WALLCLOCK_FRACTION, MAX_RATIO_CHANGE_PER_TICK,
   TIER_TABLE, PROFILE_TABLE, MEMORY_TIER_TABLE,
   BACKSTOP_MIN_MS, BACKSTOP_MAX_MS, BACKSTOP_DEFAULT_MS,

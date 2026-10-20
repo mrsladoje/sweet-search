@@ -63,34 +63,14 @@ import { verifyStamp, writeStamp, formatStampMismatch } from '../infrastructure/
  * persists emitted jobs to the queue used by `maintenance-worker.mjs`.
  */
 
-const DEFAULT_TICK_INTERVAL_MS = 60_000;
-const DEFAULT_CPU_BUDGET_MS = 2_000;
+const DEFAULT_TICK_INTERVAL_MS = 20_000;
+// Per-file work per tick. The budget bounds how long a tick holds its batch
+// before publishing, so it is also the longest a fresh edit waits behind a
+// backlog tick (the queue is read fresh-first at the next one). The daemon runs
+// ticks back to back while files stay queued and yields to the foreground
+// through its nice value, so a bigger budget only amortizes tick setup.
+const DEFAULT_CPU_BUDGET_MS = 10_000;
 const DEFAULT_FILES_PER_TICK = 50;
-// Catch-up budget: with a real backlog and an idle machine, a 2 s budget lets
-// a tick index one file (one file costs ~1-10 s to encode), so the queue grows
-// faster than it drains. The interval tuner lengthens the sleep whenever a tick
-// takes over half of it, so the encoder stays busy well under half the time.
-// The gate is the CPU share OTHER processes used since the last tick
-// (`otherCpuShare`, 0..1, measured by the caller). Unknown share (first tick of
-// a process, no sampler) keeps the normal budget. Load averages are not used:
-// they are 0 on Windows and include the maintainer's own encoder threads.
-const DEFAULT_CATCHUP_CPU_BUDGET_MS = 8_000;
-const DEFAULT_CATCHUP_MIN_DIRTY = 20;
-const DEFAULT_CATCHUP_MAX_OTHER_CPU = 0.5;
-
-/**
- * Per-tick file budget in ms. Uses the catch-up budget only when the backlog is
- * large AND other processes left the CPU mostly idle; otherwise the normal budget.
- */
-export function effectiveCpuBudgetMs(config, dirtyCount) {
-  const base = config.cpuBudgetMs;
-  const catchUp = config.catchUpCpuBudgetMs;
-  if (!(catchUp > base)) return base;
-  if (dirtyCount < config.catchUpMinDirty) return base;
-  const share = config.otherCpuShare;
-  if (!Number.isFinite(share) || share >= config.catchUpMaxOtherCpu) return base;
-  return catchUp;
-}
 
 // A finite number >= min, or the default. Callers pass partial configs and env
 // strings parse to NaN; neither may switch a budget off.
@@ -191,9 +171,6 @@ export class Reconciler {
       intervalMs: finiteOr(config.intervalMs, DEFAULT_TICK_INTERVAL_MS, 1),
       cpuBudgetMs: finiteOr(config.cpuBudgetMs, DEFAULT_CPU_BUDGET_MS),
       filesPerTick: finiteOr(config.filesPerTick, DEFAULT_FILES_PER_TICK, 1),
-      catchUpCpuBudgetMs: finiteOr(config.catchUpCpuBudgetMs, DEFAULT_CATCHUP_CPU_BUDGET_MS),
-      catchUpMinDirty: finiteOr(config.catchUpMinDirty, DEFAULT_CATCHUP_MIN_DIRTY),
-      catchUpMaxOtherCpu: finiteOr(config.catchUpMaxOtherCpu, DEFAULT_CATCHUP_MAX_OTHER_CPU),
       autotuneInterval: config.autotuneInterval ?? false,
       pinnedIntervalMs: config.pinnedIntervalMs ?? false,
     };
@@ -302,7 +279,7 @@ export class Reconciler {
       this.progress('reconciler:dirty-read');
       counters.set('dirty_paths_seen', dirty.length);
 
-      const cpuBudgetMs = effectiveCpuBudgetMs(this.config, dirty.length);
+      const cpuBudgetMs = this.config.cpuBudgetMs;
       counters.set('cpu_budget_total_ms', cpuBudgetMs);
 
       // Lever E.1: open the tick-scoped store context once (load HNSW + float
@@ -322,12 +299,19 @@ export class Reconciler {
       // load) can alone exceed the budget, and counting it capped every tick
       // at one file. tick_ms below stays the full wall clock for the tuner.
       const budgetStartedAt = this.now();
+      // A tick that took fresh edits (watcher, scan, CLI) publishes once the
+      // last of them is done instead of starting on requeued backlog files, so
+      // an edit is searchable after its own encode, not after a big file.
+      const lastFresh = this.adapters.isFreshDirtyFile
+        ? dirty.findLastIndex((f) => this.adapters.isFreshDirtyFile(f))
+        : -1;
       for (; dirtyCursor < dirty.length; dirtyCursor += 1) {
         // An unchanged file costs one hash, so it counts toward the time budget
         // but not toward the file cap.
         const filesAttempted = counters._fields.files_processed + counters._fields.content_unchanged;
         if (counters._fields.files_processed >= this.config.filesPerTick) break;
         if (filesAttempted > 0 && this.now() - budgetStartedAt >= cpuBudgetMs) break;
+        if (lastFresh >= 0 && dirtyCursor > lastFresh) break;
 
         const file = dirty[dirtyCursor];
         this.progress('reconciler:file:start');

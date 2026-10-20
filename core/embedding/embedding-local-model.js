@@ -57,7 +57,7 @@ let localModelRuntimeConfig = {
   interOpThreads: null,
   executionMode: null,
   // G3: background/maintainer ORT profile. When truthy, buildLocalSessionOptions
-  // emits force_spinning_stop:'1' + arena-off + 2–4 intra-op threads instead of
+  // emits force_spinning_stop:'1' + arena-off + 2–6 intra-op threads instead of
   // the foreground allow_spinning:'1' + arena-on default. Set by the maintainer
   // daemon (G4) via configureLocalModelRuntime({ background: true }) before the
   // first encode (the session singleton is built once on first encode — setting
@@ -196,7 +196,7 @@ export function buildLocalSessionOptions(quantLabel = 'q8', coremlAvailable = fa
     ?? localModelRuntimeConfig.interOpThreads
     ?? parseInt(process.env.SWEET_SEARCH_ORT_INTER_OP_THREADS || '1', 10);
   // Foreground scales intra-op threads with the hardware (bestIntraOpThreads);
-  // the background/maintainer profile clamps to 2–4 so an idle-time reconcile
+  // the background/maintainer profile clamps to 2–6 so a reconcile
   // tick never spikes every P-core. An explicit intraOpThreads override (from
   // runtimeConfig or the daemon's configureLocalModelRuntime) still wins on
   // both paths so callers can pin a specific count.
@@ -226,8 +226,8 @@ export function buildLocalSessionOptions(quantLabel = 'q8', coremlAvailable = fa
     // background daemon. Honoured by onnxruntime-node via SessionOptions.extra
     // (verified by native-binding inspection of 1.24.3; self-checked at startup
     // in getLocalPipeline, which falls back to thread-count-only if rejected).
-    // NB: do NOT set intra_op_thread_affinities — no-op on macOS; E-core
-    // routing comes from process-level taskpolicy -b (G5), and RunOptions.extra
+    // NB: do NOT set intra_op_thread_affinities — no-op on macOS; the daemon
+    // yields to the foreground through its nice value, and RunOptions.extra
     // per-Run arena shrinkage is not wired in the Node binding (arena-off is the
     // only resident-memory lever here).
     sessionOptions.extra = {

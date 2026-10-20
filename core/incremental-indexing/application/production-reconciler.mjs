@@ -336,55 +336,11 @@ function envInt(env, name, min = 1) {
   return Number.isInteger(n) && n >= min ? n : undefined; // malformed or below min → the reconciler default
 }
 
-/**
- * Budget config from the environment. A user who lowered the normal budget but
- * set no catch-up budget gets catch-up capped at 4x their budget, not the 8 s
- * default.
- */
+/** Budget config from the environment; malformed values keep the reconciler defaults. */
 export function tickBudgetConfig(env = process.env) {
   const filesPerTick = envInt(env, 'SWEET_SEARCH_RECONCILE_FILES_PER_TICK');
   const cpuBudgetMs = envInt(env, 'SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS');
-  // 0 switches catch-up off; a negative value is malformed.
-  let catchUpCpuBudgetMs = envInt(env, 'SWEET_SEARCH_RECONCILE_CATCHUP_BUDGET_MS', 0);
-  if (catchUpCpuBudgetMs === undefined && cpuBudgetMs !== undefined) catchUpCpuBudgetMs = Math.min(8_000, cpuBudgetMs * 4);
-  return { filesPerTick, cpuBudgetMs, catchUpCpuBudgetMs };
-}
-
-let lastCpuSample = null;
-
-/**
- * Share of total CPU time that OTHER processes used since the previous call in
- * this process (0..1): system busy time from os.cpus() minus this process's own
- * process.cpuUsage(). The maintainer calls it once per tick, so the window is
- * the last tick plus its sleep. The first call returns undefined (no window).
- * Works on Windows, where os.loadavg() is always 0.
- */
-export function sampleOtherCpuShare({ cpus = os.cpus, cpuUsage = process.cpuUsage } = {}) {
-  let sample = null;
-  try {
-    let busy = 0;
-    let total = 0;
-    for (const { times } of cpus()) {
-      const b = times.user + times.nice + times.sys + times.irq;
-      busy += b;
-      total += b + times.idle;
-    }
-    const own = cpuUsage();
-    sample = { busy, total, ownMs: (own.user + own.system) / 1000 };
-  } catch {
-    return undefined;
-  }
-  const prev = lastCpuSample;
-  lastCpuSample = sample;
-  if (!prev) return undefined;
-  const dTotal = sample.total - prev.total;
-  if (!(dTotal > 0)) return undefined;
-  const others = (sample.busy - prev.busy) - (sample.ownMs - prev.ownMs);
-  return Math.min(1, Math.max(0, others / dTotal));
-}
-
-export function _resetCpuSampleForTests() {
-  lastCpuSample = null;
+  return { filesPerTick, cpuBudgetMs };
 }
 
 export function createProductionReconciler(options = {}) {
@@ -419,7 +375,6 @@ export function createProductionReconciler(options = {}) {
     config: {
       filesPerTick: Number.parseInt(process.env.SWEET_SEARCH_RECONCILE_FILES_PER_TICK || '50', 10),
       ...tickBudgetConfig(process.env),
-      otherCpuShare: sampleOtherCpuShare(),
       ...autotuneConfig,
       ...(options.config || {}),
     },
@@ -508,6 +463,7 @@ class ProductionReconcileAdapter {
   adapters() {
     const hooks = {
       readDirtySet: () => this.readDirtySet(),
+      isFreshDirtyFile: (file) => this._freshRels?.has(file) === true,
       requeueDirtyFiles: (files) => this.requeueDirtyFiles(files),
       requeueDirtyFilesAfterFailure: (files) => this.requeueDirtyFilesAfterFailure(files),
       recordUnchangedFile: (file, hashes) => this.recordUnchangedFile(file, hashes),
@@ -849,6 +805,7 @@ class ProductionReconcileAdapter {
 
   async readDirtySet() {
     this._requeued = [];
+    this._freshRels = new Set();
     fs.mkdirSync(this.stateDir, { recursive: true });
     const processing = path.join(this.stateDir, PROCESSING_QUEUE);
     const queue = path.join(this.stateDir, DIRTY_QUEUE);
@@ -870,11 +827,12 @@ class ProductionReconcileAdapter {
     requeued.reverse();
     const rels = [];
     const seen = new Set();
-    for (const entry of [...fresh, ...requeued]) {
+    for (const [k, entry] of [...fresh, ...requeued].entries()) {
       const rel = relPath(this.projectRoot, entry.file_path || entry.path || entry.filePath || '');
       if (!rel || seen.has(rel)) continue;
       seen.add(rel);
       rels.push(rel);
+      if (k < fresh.length) this._freshRels.add(rel);
     }
 
     // Admission rule 5: a path that is a symlink or runs through a symlinked
@@ -898,6 +856,7 @@ class ProductionReconcileAdapter {
       }
       seen.add(real);
       rels.push(real);
+      if (this._freshRels.has(rel)) this._freshRels.add(real);
     }
 
     // Second admission gate. A queued file that full indexing would skip is

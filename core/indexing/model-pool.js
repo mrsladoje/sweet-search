@@ -99,7 +99,7 @@ export function selectAcceleratorDeviceKind(pref) {
 /**
  * G3: arm the BACKGROUND/maintainer ORT profile for BOTH resident CPU
  * sessions — dense (embedding-local-model) and late-interaction. The profile
- * (force_spinning_stop + arena-off + 2–4 intra-op threads) prevents the two
+ * (force_spinning_stop + arena-off + 2–6 intra-op threads) prevents the two
  * resident-daemon pathologies: idle spinning workers (~a core of idle CPU)
  * and monotonic RSS from ORT arena extension (#25325; measured 354 × 128MB
  * ≈ 34GB after one edit-heavy day when the LI session was left on the

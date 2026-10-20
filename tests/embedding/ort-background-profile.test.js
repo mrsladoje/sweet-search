@@ -1,7 +1,7 @@
 // G3 — ORT background/maintainer profile.
 //
 // Verifies buildLocalSessionOptions emits the background-profile session
-// options (force_spinning_stop + arena-off + clamped 2–4 intra-op threads) ONLY
+// options (force_spinning_stop + arena-off + clamped 2–6 intra-op threads) ONLY
 // when the bg profile is active, and that the foreground/full-index path stays
 // byte-identical to the historical default. The bg profile must be a strict
 // no-op when the SWEET_SEARCH_ORT_BACKGROUND gate is off and no background flag
@@ -29,15 +29,11 @@ describe('backgroundIntraOpThreads', () => {
     delete process.env.SWEET_SEARCH_INTRA_OP_THREADS;
   });
 
-  it('clamps to the 2–4 range on a wide box', () => {
-    const n = backgroundIntraOpThreads({ logicalCores: 64 });
-    expect(n).toBe(4);
-  });
-
-  it('floors at 2 by default (on a box with >=2 cores)', () => {
-    const n = backgroundIntraOpThreads({ logicalCores: 8 });
-    expect(n).toBeGreaterThanOrEqual(2);
-    expect(n).toBeLessThanOrEqual(4);
+  it('uses the fast cores minus two, clamped to 2–6', () => {
+    expect(backgroundIntraOpThreads({ logicalCores: 64, pCores: 12 })).toBe(6);
+    expect(backgroundIntraOpThreads({ logicalCores: 12, pCores: 6 })).toBe(4);
+    expect(backgroundIntraOpThreads({ logicalCores: 8, pCores: 4 })).toBe(2);
+    expect(backgroundIntraOpThreads({ logicalCores: 16, pCores: null, computeCores: 8 })).toBe(6);
   });
 
   it('never requests more threads than exist on a tiny box', () => {
@@ -45,12 +41,12 @@ describe('backgroundIntraOpThreads', () => {
     expect(backgroundIntraOpThreads({ logicalCores: 2 })).toBe(2);
   });
 
-  it('honours the SWEET_SEARCH_INTRA_OP_THREADS override but still clamps to 2–4', () => {
+  it('honours the SWEET_SEARCH_INTRA_OP_THREADS override but still clamps to 2–6', () => {
     process.env.SWEET_SEARCH_INTRA_OP_THREADS = '3';
     expect(backgroundIntraOpThreads({ logicalCores: 32 })).toBe(3);
 
     process.env.SWEET_SEARCH_INTRA_OP_THREADS = '16';
-    expect(backgroundIntraOpThreads({ logicalCores: 32 })).toBe(4);
+    expect(backgroundIntraOpThreads({ logicalCores: 32 })).toBe(6);
 
     process.env.SWEET_SEARCH_INTRA_OP_THREADS = '1';
     // clamped up to the floor of 2 (box is wide enough)
@@ -140,8 +136,8 @@ describe('buildLocalSessionOptions — background path', () => {
     expect(opts.extra.session.intra_op).toBeUndefined();
     // arena OFF
     expect(opts.enableCpuMemArena).toBe(false);
-    // intra-op threads clamped into 2–4 (or floored to logical cores on tiny box)
-    const upper = Math.min(4, os.cpus().length);
+    // intra-op threads clamped into 2–6 (or floored to logical cores on tiny box)
+    const upper = Math.min(6, os.cpus().length);
     const lower = Math.min(2, upper);
     expect(opts.intraOpNumThreads).toBeGreaterThanOrEqual(lower);
     expect(opts.intraOpNumThreads).toBeLessThanOrEqual(upper);

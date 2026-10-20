@@ -1163,6 +1163,10 @@ const flagOn = (name) => process.env[name] === '1';
 // consume-half mirrors the reconciler config-half so the tuned interval is
 // actually applied to the sleep loop. Verified recall-neutral + soak == baseline.
 // Set to '0' to restore the fixed-interval sleep loop.
+// Pause between ticks while files are still queued: long enough to let signal
+// handlers and the lock refresh run, short enough not to slow the drain.
+const BACKLOG_TICK_GAP_MS = 250;
+
 export const reconcileAutotuneEnabled = (env = process.env) => env.SWEET_SEARCH_RECONCILE_AUTOTUNE !== '0';
 
 /**
@@ -1640,7 +1644,7 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
   // configuring after is a silent no-op (mirrors indexer-phases.js:491).
   //
   // MAINTAINER-SCOPED DEFAULT-ON (disable with SWEET_SEARCH_ORT_BACKGROUND=0):
-  // arm the background ORT profile (force_spinning_stop + arena-off + 2–4
+  // arm the background ORT profile (force_spinning_stop + arena-off + 2–6
   // intra-op threads) by default, but ONLY in this maintainer daemon process. We
   // arm it explicitly here via configureLocalModelRuntime({ background: true }),
   // which sets the process-local runtime config — it does NOT touch
@@ -1649,13 +1653,6 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
   // FOREGROUND profile. Verified ORT embeddings byte-identical. Set
   // SWEET_SEARCH_ORT_BACKGROUND=0 to keep even the maintainer on foreground.
   // Best-effort — never block startup on the embedding module.
-  // Open the other-process CPU window now: the first tick (often a respawn into a
-  // branch switch's backlog) then has a sample and may take the catch-up budget.
-  try {
-    const { sampleOtherCpuShare } = await import('../incremental-indexing/application/production-reconciler.mjs');
-    sampleOtherCpuShare();
-  } catch { /* best-effort: the first tick keeps the normal budget */ }
-
   if (process.env.SWEET_SEARCH_ORT_BACKGROUND !== '0') {
     try {
       // Arms BOTH resident CPU sessions (dense + late-interaction) — the LI
@@ -1869,6 +1866,10 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
       // Consume any pending watcher events for THIS tick (the queue already
       // holds them); clear so early-wake doesn't immediately re-fire post-sleep.
       watcherState.pendingEvents = false;
+      // Files the tick could not reach stay queued; the next tick starts at
+      // once instead of after the interval, so a backlog drains at the speed of
+      // the encoder and a fresh edit is never parked behind a sleep.
+      let backlogLeft = false;
       const pause = isReconcilePaused(ctx.stateDir);
       if (pause.paused) {
         // A paused index has nothing for this process to do, and the paused
@@ -1895,6 +1896,7 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
             backlog = readMaintenanceQueue(ctx.stateDir).length;
           } catch { backlog = 0; }
           const dirtySeen = Number(tickCounters?.dirty_paths_seen) || 0;
+          backlogLeft = (Number(tickCounters?.dirty_paths_deferred) || 0) > 0;
           if (!autotunePinned) {
             const tuned = computeNextIntervalMs({
               currentMs: intervalMs,
@@ -1979,7 +1981,7 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
       // (idle-TTL, signal, or D.5 RSS recycle) — exit promptly instead of
       // waiting out one more interval.
       if (shutdownRequested) break;
-      await sleepWithProgress(intervalMs, lock.lockFile, {
+      await sleepWithProgress(backlogLeft ? BACKLOG_TICK_GAP_MS : intervalMs, lock.lockFile, {
         // G6 early-wake: break the sleep the instant the watcher reports new
         // events so a fresh edit is reconciled without waiting out the interval.
         // No watcher ⇒ this is never truthy ⇒ today's full-interval sleep.

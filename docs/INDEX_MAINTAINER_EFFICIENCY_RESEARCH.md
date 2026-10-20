@@ -230,6 +230,8 @@ or Linux PSI) is a near-free CPU-contention win with code that already exists an
 **Recommendations (A):**
 1. `os.setPriority(PRIORITY_LOW)` at daemon startup — trivial baseline, all platforms.
 2. macOS: `taskpolicy -b -p $PID` helper spawn (no root, no native code) → I/O throttle + E-cores.
+   *Reverted 2026-10-20:* on an M3 Max the E-cores made one 109 KB file take 207 s and 416 CPU-s
+   against 33 s and 99 CPU-s at nice 19 (same 3 threads), so edits stayed unindexed for minutes.
 3. Linux: spawn `ionice -c 3 -p $PID` + `chrt -b -p 0 $PID` (no root).
 4. Wire `autotuneInterval:true` + a real `cpuLoadAvg`/PSI signal into the production reconciler config.
 5. Windows: thin N-API `PROCESS_MODE_BACKGROUND_BEGIN` shim with prebuilt binaries; fall back to `PRIORITY_LOW`.
