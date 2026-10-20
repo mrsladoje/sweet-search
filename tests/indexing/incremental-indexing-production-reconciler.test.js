@@ -5,6 +5,7 @@ import {
   appendFileSync,
   existsSync,
   mkdirSync,
+  symlinkSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
@@ -240,6 +241,66 @@ describe('production incremental Reconciler', () => {
     // a.js is fresh: its newest hint is a watch event, though an older one was a requeue.
     const fresh = adapter.adapters().isFreshDirtyFile;
     expect(['src/a.js', 'src/b.js', 'src/c.js', 'src/d.js'].filter(fresh)).toEqual(['src/a.js', 'src/c.js', 'src/d.js']);
+  });
+
+  it('quarantines a file after two failed ticks on unchanged content, and lets an edit back in', async () => {
+    for (const f of ['a.js', 'bad.js']) writeFileSync(join(projectRoot, 'src', f), `export const ${f[0]} = 1;\n`);
+    const queue = () => writeFileSync(join(stateDir, 'index-maintainer-queue.jsonl'),
+      ['src/a.js', 'src/bad.js'].map((file_path) => JSON.stringify({ file_path, source: 'scan' })).join('\n') + '\n');
+    const warnings = [];
+    const adapter = new prodTesting.ProductionReconcileAdapter({ projectRoot, stateDir, modelInfo: MODEL_INFO, vectorEncoder, liEncoder,
+      logger: { ...silentLogger, warn: (m) => warnings.push(m) } });
+    queue();
+    expect(await adapter.readDirtySet()).toEqual(['src/bad.js', 'src/a.js']);
+    adapter.recordFileFailure('src/bad.js', new Error('encoder process exited (code=null, signal=SIGKILL)'));
+    expect(await adapter.readDirtySet()).toEqual(['src/bad.js', 'src/a.js']);
+    adapter.recordFileFailure('src/bad.js', new Error('encoder process exited (code=null, signal=SIGKILL)'));
+    expect(warnings.join('\n')).toMatch(/src\/bad\.js failed 2 ticks in a row .*skipping it until it is edited/);
+    expect(await adapter.readDirtySet()).toEqual(['src/a.js']);
+
+    // An edit (new size) lifts the quarantine and clears the record.
+    writeFileSync(join(projectRoot, 'src', 'bad.js'), 'export const b = 22;\n');
+    expect(await adapter.readDirtySet()).toEqual(['src/bad.js', 'src/a.js']);
+    expect(JSON.parse(readFileSync(join(stateDir, 'index-maintainer-failures.json'), 'utf8'))).toEqual({});
+  });
+
+  it('puts the real file of a fresh edit made through a symlink ahead of the requeued backlog', async () => {
+    mkdirSync(join(projectRoot, 'real'), { recursive: true });
+    writeFileSync(join(projectRoot, 'real', 'x.js'), 'export const x = 1;\n');
+    writeFileSync(join(projectRoot, 'src', 'a.js'), 'export const a = 1;\n');
+    symlinkSync(join(projectRoot, 'real', 'x.js'), join(projectRoot, 'src', 'lnk.js'));
+    const line = (file_path, source) => `${JSON.stringify({ file_path, source })}\n`;
+    writeFileSync(join(stateDir, 'index-maintainer-queue.jsonl'), line('src/a.js', 'requeue') + line('src/lnk.js', 'watch'));
+    const adapter = new prodTesting.ProductionReconcileAdapter({ projectRoot, stateDir, modelInfo: MODEL_INFO, vectorEncoder, liEncoder, logger: silentLogger });
+    expect(await adapter.readDirtySet()).toEqual(['real/x.js', 'src/a.js']);
+    expect(adapter.adapters().isFreshDirtyFile('real/x.js')).toBe(true);
+  });
+
+  it('requeues a deferred file with its observation time, so an edit during the tick still goes first', async () => {
+    for (const f of ['a.js', 'b.js', 'c.js']) writeFileSync(join(projectRoot, 'src', f), `export const ${f[0]} = 1;\n`);
+    const observed = Date.now() - 60_000;
+    const old = new Date(observed - 60_000);
+    for (const f of ['a.js', 'b.js', 'c.js']) utimesSync(join(projectRoot, 'src', f), old, old);
+    const line = (file_path) => `${JSON.stringify({ file_path, source: 'requeue', timestamp: observed })}\n`;
+    writeFileSync(join(stateDir, 'index-maintainer-queue.jsonl'), line('src/a.js') + line('src/b.js') + line('src/c.js'));
+    const adapter = new prodTesting.ProductionReconcileAdapter({ projectRoot, stateDir, modelInfo: MODEL_INFO, vectorEncoder, liEncoder, logger: silentLogger });
+    expect(await adapter.readDirtySet()).toEqual(['src/a.js', 'src/b.js', 'src/c.js']);
+    // a.js is processed; c.js is edited while the tick runs; b.js and c.js are deferred.
+    writeFileSync(join(projectRoot, 'src', 'c.js'), 'export const c = 2;\n');
+    adapter.requeueDirtyFiles(['src/b.js', 'src/c.js']);
+    const requeued = readFileSync(join(stateDir, 'index-maintainer-queue.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l));
+    expect(requeued.map((e) => e.timestamp)).toEqual([observed, observed]);
+    unlinkSync(join(stateDir, 'index-maintainer-queue.processing.jsonl'));
+    expect(await adapter.readDirtySet()).toEqual(['src/c.js', 'src/b.js']);
+  });
+
+  it('rotates the metrics log once it passes its size cap', async () => {
+    const metrics = join(stateDir, 'reconcile-metrics.jsonl');
+    writeFileSync(metrics, 'x'.repeat(prodTesting.METRICS_ROTATE_BYTES + 1));
+    const adapter = new prodTesting.ProductionReconcileAdapter({ projectRoot, stateDir, modelInfo: MODEL_INFO, vectorEncoder, liEncoder, logger: silentLogger });
+    adapter.persistManifest({ epoch: 7, tiers: {} });
+    expect(readFileSync(`${metrics}.1`, 'utf8').length).toBe(prodTesting.METRICS_ROTATE_BYTES + 1);
+    expect(readFileSync(metrics, 'utf8').trim().split('\n').map((l) => JSON.parse(l).epoch)).toEqual([7]);
   });
 
   it('takes a requeued file edited after it was queued as a fresh hint', async () => {

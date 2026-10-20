@@ -506,3 +506,33 @@ describe('shouldRecycleForRss (pure decision)', () => {
     expect(shouldRecycleForRss({ ...base, uptimeMs: 600_000 }).recycle).toBe(true);
   });
 });
+
+describe('encoder children count toward their maintainer', () => {
+  it('adds the RSS of live child pids to the entry and the total', async () => {
+    const now = Date.now();
+    seedRegistry([
+      { pid: 21, kind: 'maintainer', startedAt: now, lastActivityMs: now, rss: 0, childPids: [31, 32] },
+      { pid: 22, kind: 'maintainer', startedAt: now, lastActivityMs: now, rss: 0 },
+    ]);
+    const rssOf = { 21: 200, 22: 300, 31: 1500, 32: 999 };
+    const r = await runEvictionTick({
+      env: onEnv('0.6'),
+      selfPid: 22,
+      totalMem: 16 * 1024 ** 3,
+      rssReader: async (pid) => rssOf[pid] ?? 0,
+      pressureReader: async () => null,
+      aliveProbe: (pid) => pid !== 32, // 32 already exited
+      signal: () => {},
+    });
+    expect(r.totalRss).toBe(200 + 1500 + 300);
+  });
+
+  it('records child pids on the registration', async () => {
+    const reg = await registerDaemon({ pid: 4242, stateDir: '/tmp/x', kind: 'maintainer', env: onEnv('0.6') });
+    await reg.setChildren([5151]);
+    expect(JSON.parse(readFileSync(registryFile, 'utf-8')).daemons['4242'].childPids).toEqual([5151]);
+    await reg.setChildren([]);
+    expect(JSON.parse(readFileSync(registryFile, 'utf-8')).daemons['4242'].childPids).toEqual([]);
+    await reg.unregister();
+  });
+});

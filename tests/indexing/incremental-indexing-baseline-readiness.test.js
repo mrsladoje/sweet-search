@@ -228,7 +228,7 @@ describe('runReconcileV2Tick baseline gate', () => {
 
     const result = await runReconcileV2Tick({ projectRoot, stateDir });
     expect(result.skipped).toBeFalsy();
-    expect(result.epoch).toBe(2); // bumped from baseline epoch 1
+    expect(result.epoch).toBe(1); // nothing dirty: the baseline epoch stays (no empty publish)
     expect(result.files_processed).toBe(0); // nothing changed
   });
 });

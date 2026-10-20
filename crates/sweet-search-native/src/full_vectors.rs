@@ -192,8 +192,18 @@ pub fn map_file_section(env: Env, path: String, offset: f64, len: f64) -> napi::
         return env.create_buffer_with_data(buf).map(|b| b.into_raw());
     }
     let file = File::open(&path).map_err(|e| napi::Error::from_reason(format!("map_file_section: {path}: {e}")))?;
+    // Check the section against the file actually opened: the caller measured
+    // the path earlier, and a rename in between can put a shorter file there.
+    // Mapping past its end would fault (SIGBUS) on the first read of the tail.
+    let size = file.metadata().map_err(|e| napi::Error::from_reason(format!("map_file_section: stat {path}: {e}")))?.len();
+    if offset < 0.0 || (offset as u64).checked_add(len as u64).map_or(true, |end| end > size) {
+        return Err(napi::Error::from_reason(format!(
+            "map_file_section: {path}: section {offset}+{len} is past the end of the file ({size} bytes)"
+        )));
+    }
     // SAFETY: a private mapping; the index file is replaced by rename, never
-    // rewritten in place, so the mapped bytes do not change under it.
+    // rewritten in place, so the mapped bytes do not change under it, and the
+    // section lies inside the opened file (checked above).
     let mut map = unsafe { memmap2::MmapOptions::new().offset(offset as u64).len(len).map_copy(&file) }
         .map_err(|e| napi::Error::from_reason(format!("map_file_section: mmap {path}: {e}")))?;
     // Rows are read in random order: no read-ahead.

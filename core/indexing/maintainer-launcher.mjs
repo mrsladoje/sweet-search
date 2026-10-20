@@ -29,7 +29,8 @@
  */
 
 import { spawn, spawnSync } from 'node:child_process';
-import { closeSync, constants as fsConstants, existsSync, linkSync, lstatSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeSync } from 'node:fs';
+import { closeSync, constants as fsConstants, existsSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync, writeSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { reconcileEnablement } from '../incremental-indexing/domain/interval-autotune.mjs';
@@ -92,16 +93,41 @@ const SUPERVISION_MIN_INTERVAL_MS = 15_000;
 // ~4 ms slower (10.3 -> 14.4 ms on 120 KB-2 KB JSX/JS) at ~60 MB instead of
 // ~630 MB. The flag must be on the command line (V8 reads it at start-up; not
 // allowed in NODE_OPTIONS), and node refuses to start on an unknown flag, so it
-// is used only after `node --liftoff-only -e 0` succeeds once per process.
+// is used only after `node --liftoff-only -e 0` succeeds. The answer is kept per
+// process and on disk per node binary + version, so the blocking probe runs
+// once per node install, not in every daemon that starts a maintainer.
 // SWEET_SEARCH_MAINTAINER_LIFTOFF_ONLY=0 drops it.
 let liftoffSupported;
-export function maintainerNodeFlags(env = process.env, { execPath = process.execPath, probe = spawnSync } = {}) {
+function liftoffCachePath(env) {
+  const base = env.XDG_CACHE_HOME || join(homedir(), '.cache');
+  return join(base, 'sweet-search', 'node-flags.json');
+}
+export function maintainerNodeFlags(env = process.env, { execPath = process.execPath, probe = spawnSync, cachePath = liftoffCachePath(env) } = {}) {
   if (env.SWEET_SEARCH_MAINTAINER_LIFTOFF_ONLY === '0') return [];
   if (liftoffSupported === undefined) {
-    try {
-      liftoffSupported = probe(execPath, ['--liftoff-only', '-e', '0'], { stdio: 'ignore', timeout: 10_000 }).status === 0;
-    } catch {
-      liftoffSupported = false;
+    const key = `${execPath}@${process.version}`;
+    let cached;
+    try { cached = JSON.parse(readFileSync(cachePath, 'utf-8'))[key]; } catch { cached = undefined; }
+    if (typeof cached === 'boolean') {
+      liftoffSupported = cached;
+    } else {
+      let status = null;
+      try {
+        status = probe(execPath, ['--liftoff-only', '-e', '0'], { stdio: 'ignore', timeout: 3_000 }).status;
+      } catch {
+        status = null;
+      }
+      liftoffSupported = status === 0;
+      // A timeout or signal under load (status null) is not an answer: no cache.
+      if (status !== null) try {
+        let all = {};
+        try { all = JSON.parse(readFileSync(cachePath, 'utf-8')); } catch { /* new file */ }
+        all[key] = liftoffSupported;
+        mkdirSync(dirname(cachePath), { recursive: true });
+        const tmp = `${cachePath}.tmp.${process.pid}`;
+        writeFileSync(tmp, JSON.stringify(all));
+        renameSync(tmp, cachePath);
+      } catch { /* cache is optional */ }
     }
   }
   return liftoffSupported ? ['--liftoff-only'] : [];

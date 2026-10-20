@@ -30,6 +30,39 @@ export const STALE_SIDECAR_EXT = '.stale.bin';
  *  "small" and a candidate for batch merge. */
 export const LI_SEGMENT_SIZE = 10_000;
 
+/**
+ * Step 2b: PROCESS-scoped verified-identity cache for the positions-only reader.
+ * segment path -> filesystem identity key of the last read whose whole-file
+ * CRC32 was verified.
+ *
+ * It must be process-scoped, not instance-scoped: the index maintainer builds a
+ * FRESH reconciler adapter for every tick, so an instance-scoped cache would be
+ * empty on every tick and every tick would re-checksum the whole segment set —
+ * which would make this step slower than what it replaces, not faster.
+ *
+ * `_loadSegmented` prunes the entries of a segment directory whose segments
+ * leave the manifest. The size cap below is the second bound, for a process
+ * that touches many short-lived index directories (test runs, multi-repo
+ * tooling). Clearing only costs one extra verified read per live segment.
+ */
+const identityCache = new Map();
+const SEGMENT_IDENTITY_CACHE_MAX = 4096;
+
+/** Test seam: drop all remembered segment identities. */
+export function resetSegmentIdentityCache() {
+  identityCache.clear();
+}
+
+/**
+ * The cache, for every positions-only reader in this process (the delta path
+ * and maintenance merges / compactions).
+ */
+export function segmentIdentityCache() {
+  if (identityCache.size > SEGMENT_IDENTITY_CACHE_MAX) identityCache.clear();
+  return identityCache;
+}
+
+
 function staleSidecarPath(segmentPath) {
   return segmentPath + STALE_SIDECAR_EXT;
 }

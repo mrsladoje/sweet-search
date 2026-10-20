@@ -410,9 +410,14 @@ export async function runEvictionTick({
     result.liveCount = live.length;
 
     // Sum RSS, stamping each entry so selectEvictionTargets sees fresh data.
+    // A maintainer's encoder child (childPids) counts toward its entry: the
+    // child holds the models, and evicting the maintainer stops it too.
     let total = 0;
     for (const entry of live) {
-      const rss = await rssReader(entry.pid);
+      let rss = await rssReader(entry.pid);
+      for (const child of Array.isArray(entry.childPids) ? entry.childPids : []) {
+        if (aliveProbe(child)) rss += await rssReader(child);
+      }
       entry.rss = rss;
       total += rss;
     }
@@ -480,7 +485,7 @@ let registeredCount = 0;
  * @returns {Promise<{ unregister: () => Promise<void>, touch: (ms?: number) => Promise<void> }>}
  */
 export async function registerDaemon({ pid = process.pid, stateDir = null, kind = 'unknown', env = process.env } = {}) {
-  const noop = { unregister: async () => {}, touch: async () => {} };
+  const noop = { unregister: async () => {}, touch: async () => {}, setChildren: async () => {} };
   try {
     if (!isEnabled(env)) return noop;
 
@@ -515,6 +520,17 @@ export async function registerDaemon({ pid = process.pid, stateDir = null, kind 
       }
     };
 
+    // The processes this daemon owns whose memory should count as its own.
+    const setChildren = async (pids = []) => {
+      try {
+        const daemons = await readRssRegistry(env);
+        if (daemons[String(pid)]) {
+          daemons[String(pid)].childPids = pids.filter((p) => Number.isInteger(p) && p > 0);
+          await writeRssRegistryAtomic(daemons, env);
+        }
+      } catch { /* best-effort */ }
+    };
+
     const touch = async (ms = Date.now()) => {
       try {
         const daemons = await readRssRegistry(env);
@@ -525,7 +541,7 @@ export async function registerDaemon({ pid = process.pid, stateDir = null, kind 
       } catch { /* best-effort */ }
     };
 
-    return { unregister, touch };
+    return { unregister, touch, setChildren };
   } catch {
     return noop; // never throw — a registration failure must not break startup
   }

@@ -924,11 +924,18 @@ function createLifecycleProgress(lockFile) {
 // The encoders run in a child process that exits when idle (encoder-client.mjs),
 // so the maintainer holds no ONNX session between edits. One per process.
 let encoderClient;
+// Set once the RSS registry knows this maintainer: the child's memory then
+// counts toward this maintainer's fleet entry.
+let encoderChildListener = null;
 async function maintainerEncoders() {
   if (encoderClient !== undefined) return encoderClient;
   const { createEncoderClient, encoderProcessEnabled, encoderIdleMs } = await import('./encoder-client.mjs');
   encoderClient = encoderProcessEnabled()
-    ? createEncoderClient({ idleMs: encoderIdleMs(), log: (level, msg) => log(level, msg) })
+    ? createEncoderClient({
+      idleMs: encoderIdleMs(),
+      log: (level, msg) => log(level, msg),
+      onChildChange: (pid) => encoderChildListener?.(pid),
+    })
     : null;
   return encoderClient;
 }
@@ -1735,6 +1742,8 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
     if (typeof mod.isEnabled === 'function' && mod.isEnabled()
         && typeof mod.registerDaemon === 'function') {
       rssRegistration = await mod.registerDaemon({ pid: process.pid, stateDir: ctx.stateDir, kind: 'maintainer' });
+      const registration = rssRegistration;
+      encoderChildListener = (pid) => { Promise.resolve(registration.setChildren?.(pid ? [pid] : [])).catch(() => {}); };
     }
     if (typeof mod.maintainerRssCeilingBytes === 'function') {
       rssCeiling = {

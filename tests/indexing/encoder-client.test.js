@@ -11,6 +11,7 @@ const FAKE_HOST = `
 process.on('message', (msg) => {
   const { id, op, texts } = msg;
   if (texts[0] === 'crash') process.exit(3);
+  if (texts[0] === 'hang') return;
   if (op === 'dense') {
     process.send({ id, progress: true });
     process.send({ id, ok: true, result: texts.map((t) => ({ embedding: Float32Array.from([t.length]) })),
@@ -18,7 +19,7 @@ process.on('message', (msg) => {
   } else if (op === 'count') {
     process.send({ id, ok: true, result: texts.map((t) => t.length), provenance: { dense: {}, li: {} }, rss: 1 });
   } else {
-    process.send({ id, ok: false, error: 'bad op' });
+    process.send({ id, ok: false, error: 'bad op', rss: texts[0] === 'fat' ? 1e12 : 1 });
   }
 });
 process.on('disconnect', () => process.exit(0));
@@ -54,6 +55,15 @@ describe('encoder client', () => {
     expect(c.spawns).toBe(1);
   });
 
+  it('announces the child pid on start and null once it is gone', async () => {
+    const seen = [];
+    const c = make({ idleMs: 50, onChildChange: (pid) => seen.push(pid) });
+    await c.dense(['a']);
+    const pid = c.pid;
+    for (let i = 0; i < 40 && seen.length < 2; i++) await new Promise((r) => setTimeout(r, 50));
+    expect(seen).toEqual([pid, null]);
+  });
+
   it('stops the child when idle and starts a new one on the next request', async () => {
     const c = make({ idleMs: 50 });
     await c.dense(['a']);
@@ -68,7 +78,7 @@ describe('encoder client', () => {
 
   it('fails the pending request when the child dies, then recovers', async () => {
     const c = make();
-    await expect(c.dense(['crash'])).rejects.toThrow(/encoder process exited/);
+    await expect(c.dense(['crash'])).rejects.toThrow(/encoder process (exited|disconnected)/);
     expect((await c.dense(['ok']))[0].embedding[0]).toBe(2);
     expect(c.spawns).toBe(2);
   });
@@ -79,6 +89,50 @@ describe('encoder client', () => {
     expect(c.pid).toBeNull();
     await c.dense(['x']);
     expect(c.spawns).toBe(2);
+  });
+
+  it('kills a child that goes silent on a request, then recovers', async () => {
+    const c = make({ requestTimeoutMs: 200 });
+    await c.dense(['warm']);
+    const hungPid = c.pid;
+    await expect(c.dense(['hang'])).rejects.toThrow(/timed out after 200 ms/);
+    expect(c.pid).toBeNull();
+    await new Promise((r) => setTimeout(r, 100));
+    expect(() => process.kill(hungPid, 0)).toThrow();
+    expect((await c.dense(['ok']))[0].embedding[0]).toBe(2);
+  });
+
+  it('kills the child at once on close, even mid-request', async () => {
+    const c = make();
+    await c.dense(['warm']);
+    const pid = c.pid;
+    const hung = c.dense(['hang']);
+    c.close();
+    await expect(hung).rejects.toThrow(/encoder process (exited|disconnected)/);
+    const gone = () => { try { process.kill(pid, 0); return false; } catch { return true; } };
+    for (let i = 0; i < 40 && !gone(); i++) await new Promise((r) => setTimeout(r, 50));
+    expect(gone()).toBe(true);
+  });
+
+  it('fails a request at once when the child cannot start', async () => {
+    const c = make({ execPath: path.join(os.tmpdir(), 'no-such-node-binary') });
+    const t = Date.now();
+    await expect(c.dense(['a'])).rejects.toThrow(/encoder process (error|exited|disconnected)/);
+    expect(Date.now() - t).toBeLessThan(5_000);
+  });
+
+  it('rejects with the progress callback\'s own error and drops the child', async () => {
+    const c = make();
+    const cancel = Object.assign(new Error('shutdown requested'), { name: 'MaintainerLifecycleAbort' });
+    await expect(c.dense(['a'], { onProgress: () => { throw cancel; } })).rejects.toBe(cancel);
+    expect(c.pid).toBeNull();
+    expect((await c.dense(['b']))[0].embedding[0]).toBe(1);
+  });
+
+  it('applies the RSS cap after an error reply too', async () => {
+    const c = make({ rssMaxBytes: 1e9 });
+    await expect(c.li(['fat'])).rejects.toThrow(/bad op/);
+    expect(c.pid).toBeNull();
   });
 
   it('rejects an error reply without killing the child', async () => {

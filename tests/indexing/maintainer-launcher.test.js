@@ -46,6 +46,7 @@ function baseEnv(overrides = {}) {
     FAKE_DAEMON_MARKER: marker,
     SWEET_SEARCH_RECONCILE_V2: '', // default-on unless a test overrides
     SWEET_SEARCH_PREWARM_VERBOSE: '',
+    XDG_CACHE_HOME: sandbox, // the node-flag probe cache stays in the sandbox
     ...overrides,
   };
 }
@@ -236,17 +237,31 @@ describe('maintainerNodeFlags (Liftoff-only WebAssembly for the maintainer)', ()
   it('adds --liftoff-only once a probe start succeeds, and probes once per process', () => {
     let probes = 0;
     const probe = (exe, args) => { probes += 1; expect(args).toEqual(['--liftoff-only', '-e', '0']); return { status: 0 }; };
-    expect(maintainerNodeFlags({}, { probe })).toEqual(['--liftoff-only']);
-    expect(maintainerNodeFlags({}, { probe })).toEqual(['--liftoff-only']);
+    const cachePath = join(sandbox, 'flags.json');
+    expect(maintainerNodeFlags({}, { probe, cachePath })).toEqual(['--liftoff-only']);
+    expect(maintainerNodeFlags({}, { probe, cachePath })).toEqual(['--liftoff-only']);
+    expect(probes).toBe(1);
+    // A new process reads the answer from disk instead of probing again.
+    _resetMaintainerNodeFlagsForTests();
+    expect(maintainerNodeFlags({}, { probe, cachePath })).toEqual(['--liftoff-only']);
     expect(probes).toBe(1);
   });
 
   it('adds nothing when node rejects the flag, the probe throws, or it is switched off', () => {
-    expect(maintainerNodeFlags({}, { probe: () => ({ status: 9 }) })).toEqual([]);
+    const cachePath = join(sandbox, 'flags.json');
+    expect(maintainerNodeFlags({}, { probe: () => ({ status: 9 }), cachePath })).toEqual([]);
     _resetMaintainerNodeFlagsForTests();
-    expect(maintainerNodeFlags({}, { probe: () => { throw new Error('ENOENT'); } })).toEqual([]);
+    expect(maintainerNodeFlags({}, { probe: () => { throw new Error('ENOENT'); }, cachePath: join(sandbox, 'f2.json') })).toEqual([]);
     _resetMaintainerNodeFlagsForTests();
-    expect(maintainerNodeFlags({ SWEET_SEARCH_MAINTAINER_LIFTOFF_ONLY: '0' }, { probe: () => ({ status: 0 }) })).toEqual([]);
+    expect(maintainerNodeFlags({ SWEET_SEARCH_MAINTAINER_LIFTOFF_ONLY: '0' }, { probe: () => ({ status: 0 }), cachePath: join(sandbox, 'f3.json') })).toEqual([]);
+  });
+
+  it('does not cache a probe that timed out', () => {
+    const cachePath = join(sandbox, 'flags.json');
+    expect(maintainerNodeFlags({}, { probe: () => ({ status: null, signal: 'SIGTERM' }), cachePath })).toEqual([]);
+    expect(existsSync(cachePath)).toBe(false);
+    _resetMaintainerNodeFlagsForTests();
+    expect(maintainerNodeFlags({}, { probe: () => ({ status: 0 }), cachePath })).toEqual(['--liftoff-only']);
   });
 
   it('starts the real maintainer process with the flag on this node', async () => {

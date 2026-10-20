@@ -106,6 +106,11 @@ an ordinary file edit.
   2–6 ORT threads on the fast cores (no `taskpolicy -b`, which confined it to
   the E-cores: ~6x slower for more total CPU), so the foreground wins every
   contended core. The tier-based cap of § 34 was not built.
+- **Idle ticks publish nothing.** A tick with an empty dirty set keeps the
+  current epoch (a new one makes every search daemon reload all artifacts on
+  its next query). A file that fails two ticks with unchanged content is
+  skipped until it is edited (`index-maintainer-failures.json`), so one bad
+  file cannot stall the queue.
 - **All five indices kept in lock-step**: an observer must never see, for
   example, the trigram index showing a function that the LI index does not.
   Readers enforce this by loading a single published epoch manifest rather

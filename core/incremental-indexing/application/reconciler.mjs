@@ -269,6 +269,7 @@ export class Reconciler {
     counters.set('epoch', epoch);
     let dirty = [];
     let dirtyCursor = 0;
+    let inFlightFile = null;
     let deferredRequeued = false;
     let manifestPublished = false;
     const batched = this._batchTierWritesEnabled();
@@ -278,6 +279,21 @@ export class Reconciler {
       dirty = await this.adapters.readDirtySet();
       this.progress('reconciler:dirty-read');
       counters.set('dirty_paths_seen', dirty.length);
+
+      // Nothing to reconcile: publish no epoch. Search daemons reload every
+      // artifact (HNSW, float store, LI segments) on their next query when the
+      // epoch moves, and an idle maintainer ticks every 10-20 s. Maintenance
+      // still gets its look (quarantine sweeps run on idle ticks). The first
+      // tick of a state dir still publishes, so readers have a manifest.
+      if (dirty.length === 0 && this.currentEpoch() > 0) {
+        await this.adapters.releaseEmptyTick?.();
+        const current = this.currentEpoch();
+        counters.set('epoch', current);
+        await this._scheduleMaintenance(current, counters, {}, []);
+        counters.set('tick_ms', this.now() - startedAt);
+        counters.set('ts', startedAt / 1000);
+        return counters.snapshot();
+      }
 
       const cpuBudgetMs = this.config.cpuBudgetMs;
       counters.set('cpu_budget_total_ms', cpuBudgetMs);
@@ -322,7 +338,9 @@ export class Reconciler {
           await this.adapters.recordUnchangedFile?.(file, hashes);
           continue;
         }
+        inFlightFile = file;
         const fileRes = await this._reconcileOneFile(file, epoch, hashes, tickCtx);
+        inFlightFile = null;
         this.progress('reconciler:file:done');
         filesProcessed.push({ file, ...fileRes });
         mergeManifestTiers(manifestTiers, fileRes?.manifestTiers);
@@ -424,6 +442,11 @@ export class Reconciler {
 
       return counters.snapshot();
     } catch (err) {
+      // Count the failure against the file in flight (not on shutdown), so a
+      // file that fails every tick is quarantined instead of stalling the queue.
+      if (inFlightFile && err?.name !== 'MaintainerLifecycleAbort') {
+        try { await this.adapters.recordFileFailure?.(inFlightFile, err); } catch { /* best-effort */ }
+      }
       if (!manifestPublished && dirty.length > 0) {
         const filesToRequeue = deferredRequeued ? dirty.slice(0, dirtyCursor) : dirty;
         // With a deferred tail already requeued, call even for an empty head: the
