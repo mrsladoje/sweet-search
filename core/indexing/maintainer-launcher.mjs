@@ -28,7 +28,7 @@
  *     is up).
  */
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { closeSync, constants as fsConstants, existsSync, linkSync, lstatSync, openSync, readFileSync, renameSync, statSync, unlinkSync, writeSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -86,6 +86,31 @@ const SUPERVISION_MIN_INTERVAL_MS = 15_000;
  * @param {NodeJS.ProcessEnv} env
  * @returns {boolean}
  */
+// V8's optimizing WebAssembly tier keeps ~570 MB after it compiles the
+// JavaScript/TSX tree-sitter grammars (the maintainer parses every edited JS
+// file for the graph and the chunker). Baseline (Liftoff) code parses a file
+// ~4 ms slower (10.3 -> 14.4 ms on 120 KB-2 KB JSX/JS) at ~60 MB instead of
+// ~630 MB. The flag must be on the command line (V8 reads it at start-up; not
+// allowed in NODE_OPTIONS), and node refuses to start on an unknown flag, so it
+// is used only after `node --liftoff-only -e 0` succeeds once per process.
+// SWEET_SEARCH_MAINTAINER_LIFTOFF_ONLY=0 drops it.
+let liftoffSupported;
+export function maintainerNodeFlags(env = process.env, { execPath = process.execPath, probe = spawnSync } = {}) {
+  if (env.SWEET_SEARCH_MAINTAINER_LIFTOFF_ONLY === '0') return [];
+  if (liftoffSupported === undefined) {
+    try {
+      liftoffSupported = probe(execPath, ['--liftoff-only', '-e', '0'], { stdio: 'ignore', timeout: 10_000 }).status === 0;
+    } catch {
+      liftoffSupported = false;
+    }
+  }
+  return liftoffSupported ? ['--liftoff-only'] : [];
+}
+
+export function _resetMaintainerNodeFlagsForTests() {
+  liftoffSupported = undefined;
+}
+
 function bgPriorityEnabled(env) {
   const raw = env.SWEET_SEARCH_MAINTAINER_BG_PRIORITY;
   if (raw == null || raw === '') return true; // default-on
@@ -262,7 +287,7 @@ export function launchMaintainer(options = {}) {
     return { spawned: false, reason: 'already-running', stateDir };
   }
 
-  const args = [maintainerEntry];
+  const args = [...maintainerNodeFlags(env), maintainerEntry];
   if (options.daemonPidFile) args.push(`--daemon-pid-file=${options.daemonPidFile}`);
   if (Number.isInteger(options.daemonPid) && options.daemonPid > 0) args.push(`--daemon-pid=${options.daemonPid}`);
 
