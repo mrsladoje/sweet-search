@@ -5,8 +5,12 @@ import path from 'node:path';
 
 import { LateInteractionIndex } from '../../core/ranking/late-interaction-index.js';
 import { nativeRescoreKernels } from '../../core/infrastructure/native-rescore.js';
+import { resolveNativeAddon } from '../../core/infrastructure/native-resolver.js';
 
 const hasMap = typeof nativeRescoreKernels()?.mapFileSection === 'function';
+// The section bounds check is newer than older prebuilt packages; test it only
+// on an addon built from this checkout's crate.
+const builtHere = hasMap && String(resolveNativeAddon() || '').includes(path.join('crates', 'sweet-search-native'));
 
 // Per-token int8 docs (the production layout) in one sealed SSLX segment.
 async function writeSegment(dir, n, offset = 0) {
@@ -64,5 +68,21 @@ describe.skipIf(!hasMap)('memory-mapped SSLX segments', () => {
     const after = await writer.readLiveSegmentDocs(seg);
     expect(Array.from(after[0].entry.tokens)).not.toEqual(oldTokens);
     expect(fs.readdirSync(dir).filter((f) => f.includes('.tmp.'))).toEqual([]);
+  });
+});
+
+describe.skipIf(!builtHere)('mapFileSection bounds', () => {
+  it('refuses a section past the end of the file it opened (a shorter file renamed over the path)', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-map-bounds-'));
+    try {
+      const f = path.join(dir, 'seg.bin');
+      fs.writeFileSync(f, Buffer.alloc(100, 7));
+      const map = nativeRescoreKernels().mapFileSection;
+      expect(map(f, 0, 100).length).toBe(100);
+      expect(() => map(f, 0, 101)).toThrow(/past the end of the file/);
+      expect(() => map(f, 90, 11)).toThrow(/past the end of the file/);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });

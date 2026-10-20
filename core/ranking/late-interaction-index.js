@@ -956,7 +956,12 @@ export class LateInteractionIndex {
   async _readSegmentFile(segPath, skip = null) {
     const mapped = mapSegmentFile(segPath);
     if (mapped && mapped.readUInt32LE(0) === SSLX_SEGMENT_MAGIC) {
-      return this._readSegmentSSLX(mapped, segPath, skip, true);
+      try {
+        return this._readSegmentSSLX(mapped, segPath, skip, true);
+      } catch {
+        // The path was replaced between measuring and mapping (the mapping then
+        // covers a prefix of a longer file and fails its CRC): read it whole.
+      }
     }
     const buf = await fs.readFile(segPath);
     const magic = buf.readUInt32LE(0);

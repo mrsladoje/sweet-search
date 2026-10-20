@@ -20,9 +20,10 @@ import os from 'node:os';
 import path from 'node:path';
 
 import {
-  mergeLiSegments, sweepQuarantine, sweepOrphanSegments, nextSegmentSeq, pickSegmentsToMerge,
+  mergeLiSegments, sweepQuarantine, sweepOrphanSegments, nextSegmentSeq, pickSegmentsToMerge, collectLiveDocs,
 } from '../../core/incremental-indexing/infrastructure/li-segment-merge.mjs';
 import { readLiSegmentStats } from '../../core/incremental-indexing/infrastructure/maintenance-state-reader.mjs';
+import { resetSegmentIdentityCache } from '../../core/incremental-indexing/infrastructure/li-segment-state.mjs';
 import { LateInteractionIndex } from '../../core/ranking/late-interaction-index.js';
 import {
   createBitmap, setBit, saveBitmap,
@@ -183,6 +184,25 @@ describe('mergeLiSegments', () => {
     await after.init();
     expect([...after.documents.keys()].sort()).toEqual(Object.keys(want).sort());
     for (const [id, t] of Object.entries(want)) expect(tokens(after, id)).toEqual(t);
+  });
+
+  it('verifies each unchanged segment once per process, not on every merge', async () => {
+    const { indexPath, segmentDir, manifest } = await buildSegmented(stateDir, [3, 2, 2]);
+    resetSegmentIdentityCache();
+    let verified = 0;
+    const original = LateInteractionIndex.prototype._readSegmentIdsVerified;
+    LateInteractionIndex.prototype._readSegmentIdsVerified = function (...a) { verified += 1; return original.apply(this, a); };
+    try {
+      const picked = new Set([path.join(segmentDir, 'segment-0001.bin'), path.join(segmentDir, 'segment-0002.bin')]);
+      const first = await collectLiveDocs(indexPath, segmentDir, manifest, picked);
+      expect(verified).toBe(3);
+      const second = await collectLiveDocs(indexPath, segmentDir, manifest, picked);
+      expect(verified).toBe(3);
+      expect(second.collected.map((d) => d.docId)).toEqual(first.collected.map((d) => d.docId));
+    } finally {
+      LateInteractionIndex.prototype._readSegmentIdsVerified = original;
+      resetSegmentIdentityCache();
+    }
   });
 
   it('picks small segments size-tiered so a large one is not rewritten for a few tiny ones', () => {

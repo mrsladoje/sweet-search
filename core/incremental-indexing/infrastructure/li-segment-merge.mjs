@@ -41,7 +41,7 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { LateInteractionIndex } from '../../ranking/late-interaction-index.js';
-import { STALE_SIDECAR_EXT, nextSegmentSeq, LI_SEGMENT_SIZE } from './li-segment-state.mjs';
+import { STALE_SIDECAR_EXT, nextSegmentSeq, LI_SEGMENT_SIZE, segmentIdentityCache } from './li-segment-state.mjs';
 
 export { nextSegmentSeq, LI_SEGMENT_SIZE };
 
@@ -174,6 +174,8 @@ export async function collectLiveDocs(stubPath, segmentDir, manifest, segAbsPath
     indexPath: stubPath,
     loadExisting: true,
     positionsOnly: sslx,
+    // Verified identities skip the whole-file CRC read of unchanged segments.
+    positionsCache: sslx ? segmentIdentityCache() : null,
     modelId: manifest.modelId || null,
   });
   await index.init();

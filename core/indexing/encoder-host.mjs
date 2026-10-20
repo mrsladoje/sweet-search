@@ -9,7 +9,7 @@
  *
  * Protocol (advanced IPC serialization, so typed arrays pass as-is):
  *   request  { id, op: 'dense' | 'li' | 'count', texts }
- *   reply    { id, ok: true, result, provenance, rss } | { id, ok: false, error }
+ *   reply    { id, ok: true, result, provenance, rss } | { id, ok: false, error, rss }
  *   progress { id, progress: true }   (dense encodes, per batch)
  */
 
@@ -43,7 +43,7 @@ process.on('message', async (msg) => {
     const result = await run(op, texts, id);
     send({ id, ok: true, result, provenance: takeProvenance(), rss: process.memoryUsage.rss() });
   } catch (err) {
-    send({ id, ok: false, error: String(err?.stack || err?.message || err) });
+    send({ id, ok: false, error: String(err?.stack || err?.message || err), rss: process.memoryUsage.rss() });
   }
 });
 

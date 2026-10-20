@@ -44,6 +44,14 @@ const DIRTY_QUEUE = 'index-maintainer-queue.jsonl';
 const PROCESSING_QUEUE = 'index-maintainer-queue.processing.jsonl';
 const MERKLE_STATE = 'merkle-state.json';
 const METRICS_FILE = 'reconcile-metrics.jsonl';
+// One line per published epoch; past this size the file moves to `.1` (the
+// previous `.1` is dropped). `reconcile status` reads only the last lines.
+const METRICS_ROTATE_BYTES = 4 * 1024 * 1024;
+// Files that failed a tick (encoder crash, parser blow-up): path -> { count,
+// size, mtimeMs, error }. Two failures on unchanged content quarantine the file
+// so one bad file cannot stall every later edit; an edit lifts it.
+const FILE_FAILURES = 'index-maintainer-failures.json';
+const QUARANTINE_AFTER_FAILURES = 2;
 
 // ---- G2 lever flags ----------------------------------------------------------
 // `flagOn` = strict opt-in (`'1'`), used by the levers that remain DEFAULT-OFF
@@ -463,6 +471,9 @@ class ProductionReconcileAdapter {
   adapters() {
     const hooks = {
       readDirtySet: () => this.readDirtySet(),
+      recordFileFailure: (file, err) => this.recordFileFailure(file, err),
+      // The queue held only inadmissible paths that were never indexed.
+      releaseEmptyTick: () => { try { fs.unlinkSync(path.join(this.stateDir, PROCESSING_QUEUE)); } catch {} },
       isFreshDirtyFile: (file) => this._freshRels?.has(file) === true,
       requeueDirtyFiles: (files) => this.requeueDirtyFiles(files),
       requeueDirtyFilesAfterFailure: (files) => this.requeueDirtyFilesAfterFailure(files),
@@ -818,6 +829,14 @@ class ProductionReconcileAdapter {
     // already queued, so a requeued file edited after it was queued counts as
     // fresh here.
     const entries = readJsonl(processing);
+    // When each path was last observed. A deferred file is requeued with this
+    // time, not the requeue time: an edit made during the tick must still read
+    // as newer than its queue entry (_editedSinceQueued) and go first.
+    this._observedAt = new Map();
+    for (const e of entries) {
+      const rel = relPath(this.projectRoot, e.file_path || e.path || e.filePath || '');
+      if (rel && Number.isFinite(e.timestamp)) this._observedAt.set(rel, Math.max(e.timestamp, this._observedAt.get(rel) ?? 0));
+    }
     const fresh = [];
     const requeued = [];
     for (let k = entries.length - 1; k >= 0; k--) {
@@ -825,7 +844,7 @@ class ProductionReconcileAdapter {
       (e.source === 'requeue' && !this._editedSinceQueued(e) ? requeued : fresh).push(e);
     }
     requeued.reverse();
-    const rels = [];
+    let rels = [];
     const seen = new Set();
     for (const [k, entry] of [...fresh, ...requeued].entries()) {
       const rel = relPath(this.projectRoot, entry.file_path || entry.path || entry.filePath || '');
@@ -840,8 +859,11 @@ class ProductionReconcileAdapter {
     // a previously indexed one is retired below. An edit made through such a
     // path changed the real file, so queue the real path when it is a regular
     // file inside the project root.
+    // The real path goes right after its source, so a fresh edit's real file
+    // stays ahead of the requeued backlog.
     const symlinkMemo = new Map();
     const symlinked = new Set();
+    const realAfter = new Map();
     const canProbe = typeof this.admission.isSymlinkedRel === 'function';
     for (let k = 0, n = canProbe ? rels.length : 0; k < n; k++) {
       const rel = rels[k];
@@ -855,9 +877,10 @@ class ProductionReconcileAdapter {
         continue;
       }
       seen.add(real);
-      rels.push(real);
+      realAfter.set(rel, real);
       if (this._freshRels.has(rel)) this._freshRels.add(real);
     }
+    if (realAfter.size > 0) rels = rels.flatMap((rel) => (realAfter.has(rel) ? [rel, realAfter.get(rel)] : [rel]));
 
     // Second admission gate. A queued file that full indexing would skip is
     // dropped if it was never indexed, and retired if it was (so the index
@@ -889,9 +912,58 @@ class ProductionReconcileAdapter {
       // else: never indexed and inadmissible → drop
     }
     this._retireSet = retire;
+    const live = this._dropQuarantined(files, retire);
     // Admitted this tick (new files included): the import resolver's file set.
-    this._tickAdmitted = files.filter((f) => !retire.has(f));
-    return files;
+    this._tickAdmitted = live.filter((f) => !retire.has(f));
+    return live;
+  }
+
+  _readFailures() {
+    return readJson(path.join(this.stateDir, FILE_FAILURES), {}) || {};
+  }
+
+  _statKey(rel) {
+    try {
+      const st = fs.statSync(path.join(this.projectRoot, rel));
+      return { size: st.size, mtimeMs: st.mtimeMs };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Drop quarantined files whose content has not changed since they failed. */
+  _dropQuarantined(files, retire) {
+    const failures = this._readFailures();
+    if (Object.keys(failures).length === 0) return files;
+    let changed = false;
+    const live = files.filter((rel) => {
+      const f = failures[rel];
+      if (!f || retire.has(rel)) return true;
+      const now = this._statKey(rel);
+      if (!now || now.size !== f.size || now.mtimeMs !== f.mtimeMs) {
+        delete failures[rel]; // edited since it failed: try again from zero
+        changed = true;
+        return true;
+      }
+      return f.count < QUARANTINE_AFTER_FAILURES;
+    });
+    if (changed) safeWriteJson(path.join(this.stateDir, FILE_FAILURES), failures);
+    return live;
+  }
+
+  /** A tick failed while this file was in flight. */
+  recordFileFailure(rel, err) {
+    const failures = this._readFailures();
+    const now = this._statKey(rel);
+    if (!now) return;
+    const prev = failures[rel];
+    const same = prev && prev.size === now.size && prev.mtimeMs === now.mtimeMs;
+    const count = same ? prev.count + 1 : 1;
+    failures[rel] = { ...now, count, error: String(err?.message ?? err).slice(0, 300), at: new Date().toISOString() };
+    safeWriteJson(path.join(this.stateDir, FILE_FAILURES), failures);
+    if (count === QUARANTINE_AFTER_FAILURES) {
+      this.logger?.warn?.(`[reconciler] ${rel} failed ${count} ticks in a row (${failures[rel].error}); skipping it until it is edited`);
+    }
   }
 
   _editedSinceQueued(entry) {
@@ -910,7 +982,10 @@ class ProductionReconcileAdapter {
     fs.mkdirSync(this.stateDir, { recursive: true });
     const queue = path.join(this.stateDir, DIRTY_QUEUE);
     const now = Date.now();
-    const text = files.map((file) => JSON.stringify({ file_path: file.path || file, timestamp: now, source: 'requeue' }) + '\n').join('');
+    const text = files.map((file) => {
+      const rel = file.path || file;
+      return JSON.stringify({ file_path: rel, timestamp: this._observedAt?.get(rel) ?? now, source: 'requeue' }) + '\n';
+    }).join('');
     let offset = 0;
     try { offset = fs.statSync(queue).size; } catch { offset = 0; }
     fs.appendFileSync(queue, text);
@@ -1581,7 +1656,10 @@ class ProductionReconcileAdapter {
     // re-reconciled next tick. Deletions always apply (no HNSW add to persist).
     const persisted = this._lastPersistedFiles;
     const gate = batchTierWritesEnabled() && persisted instanceof Set;
+    const failures = this._readFailures();
+    let failuresChanged = false;
     for (const [file, data] of this.touched.entries()) {
+      if (failures[file]) { delete failures[file]; failuresChanged = true; }
       if (data.hash?.deleted) delete merkle.files[file];
       else if (!gate || persisted.has(file)) merkle.files[file] = { hash: data.hash.contentHash, ...data.hash.stat, epoch: manifest.epoch, chunkIds: data.chunkIds || [] };
     }
@@ -1592,6 +1670,7 @@ class ProductionReconcileAdapter {
       const prev = merkle.files[file];
       if (prev && prev.hash === hash && !this.touched.has(file)) merkle.files[file] = { ...prev, ...stat };
     }
+    if (failuresChanged) safeWriteJson(path.join(this.stateDir, FILE_FAILURES), failures);
     merkle.lastIndex = new Date().toISOString();
     merkle.epoch = manifest.epoch;
     merkle.stats = { ...(merkle.stats || {}), totalFiles: Object.keys(merkle.files).length };
@@ -1605,12 +1684,17 @@ class ProductionReconcileAdapter {
       this._cutoffDirty = false;
     }
     try { fs.unlinkSync(path.join(this.stateDir, PROCESSING_QUEUE)); } catch {}
-    fs.appendFileSync(path.join(this.stateDir, METRICS_FILE), JSON.stringify({ ...manifest, ts: Date.now() / 1000, epoch: manifest.epoch }) + '\n');
+    const metricsPath = path.join(this.stateDir, METRICS_FILE);
+    try {
+      if (fs.statSync(metricsPath).size > METRICS_ROTATE_BYTES) fs.renameSync(metricsPath, `${metricsPath}.1`);
+    } catch { /* no file yet */ }
+    fs.appendFileSync(metricsPath, JSON.stringify({ ...manifest, ts: Date.now() / 1000, epoch: manifest.epoch }) + '\n');
   }
 }
 
 export const __testing = {
   ProductionReconcileAdapter,
+  METRICS_ROTATE_BYTES,
   sparseGramRecord,
   markBinaryStale,
   normalizeHnswDeterminismFlags,

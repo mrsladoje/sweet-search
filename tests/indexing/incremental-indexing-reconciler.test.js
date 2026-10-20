@@ -72,11 +72,55 @@ describe('Reconciler / tick lifecycle', () => {
   });
 
   it('monotonically advances the epoch across consecutive ticks', async () => {
-    const r = new Reconciler({ stateDir, adapters: makeAdapter() });
+    const r = new Reconciler({ stateDir, adapters: makeAdapter({ readDirtySet: async () => ['a.js'] }) });
     const a = await r.tick();
     const b = await r.tick();
     const c = await r.tick();
     expect([a.epoch, b.epoch, c.epoch]).toEqual([1, 2, 3]);
+  });
+
+  it('counts a failed tick against the file in flight, not on shutdown', async () => {
+    const failed = [];
+    const make = (err) => new Reconciler({
+      stateDir,
+      adapters: makeAdapter({
+        readDirtySet: async () => ['ok.js', 'bad.js', 'later.js'],
+        applyVectorDelta: async (file) => { if (file === 'bad.js') throw err; return { ops: {} }; },
+        recordFileFailure: (file, e) => failed.push([file, e.message]),
+        requeueDirtyFiles: async () => {},
+      }),
+      config: { filesPerTick: 50, cpuBudgetMs: 60_000 },
+    });
+    await expect(make(new Error('encoder process exited')).tick()).rejects.toThrow('encoder process exited');
+    expect(failed).toEqual([['bad.js', 'encoder process exited']]);
+    const abort = Object.assign(new Error('shutdown requested'), { name: 'MaintainerLifecycleAbort' });
+    await expect(make(abort).tick()).rejects.toThrow('shutdown requested');
+    expect(failed).toHaveLength(1);
+  });
+
+  it('publishes nothing on a tick with an empty dirty set once a manifest exists', async () => {
+    let dirty = ['a.js'];
+    let released = 0;
+    let published = 0;
+    const r = new Reconciler({
+      stateDir,
+      adapters: makeAdapter({
+        readDirtySet: async () => dirty,
+        releaseEmptyTick: () => { released += 1; },
+        persistManifest: (m) => { published += 1; writeManifest(stateDir, m); },
+        loadCurrentManifest: () => readManifest(stateDir),
+      }),
+    });
+    expect((await r.tick()).epoch).toBe(1);
+    dirty = [];
+    const idle = await r.tick();
+    const idle2 = await r.tick();
+    expect([idle.epoch, idle2.epoch]).toEqual([1, 1]);
+    expect(published).toBe(1);
+    expect(released).toBe(2);
+    expect(readManifest(stateDir).epoch).toBe(1);
+    dirty = ['b.js'];
+    expect((await r.tick()).epoch).toBe(2);
   });
 
   it('honors filesPerTick when more dirty files exist than budget', async () => {

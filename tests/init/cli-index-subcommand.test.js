@@ -292,7 +292,7 @@ describe('sweet-search reconcile/rebuild — CLI dispatcher', () => {
     const parsed = JSON.parse(r.stdout);
     expect(parsed.ok).toBe(true);
     expect(parsed.kind).toBe('tick');
-    expect(parsed.counters.epoch).toBe(2); // bumped from the seeded baseline epoch 1
+    expect(parsed.counters.epoch).toBe(1); // nothing dirty: the seeded epoch stays (no empty publish)
     expect(parsed.counters.dirty_paths_seen).toBe(0);
     expect(parsed.counters.files_processed).toBe(0);
     expect(existsSync(join(stateDir, 'reconcile-manifest.json'))).toBe(true);
@@ -329,7 +329,8 @@ describe('sweet-search reconcile/rebuild — CLI dispatcher', () => {
 
     expect(r.status).toBe(0);
     expect(r.stderr).toContain('SWEET_SEARCH_RECONCILE_V2 enabled');
-    expect(readFileSync(join(stateDir, 'reconcile-manifest.json'), 'utf-8')).toContain('"epoch": 2');
+    // Nothing dirty: the tick ran but published no new epoch.
+    expect(JSON.parse(readFileSync(join(stateDir, 'reconcile-manifest.json'), 'utf-8')).epoch).toBe(1);
     expect(existsSync(join(stateDir, 'index-maintainer-queue.processing.jsonl'))).toBe(false);
   });
 

@@ -10,35 +10,11 @@ import {
   tombstoneDoc,
   persistSegmentState,
   nextSegmentSeq,
+  segmentIdentityCache as defaultPositionsCache,
 } from '../infrastructure/li-segment-state.mjs';
 
-/**
- * Step 2b: PROCESS-scoped verified-identity cache for the positions-only reader.
- * segment path -> filesystem identity key of the last read whose whole-file
- * CRC32 was verified.
- *
- * It must be process-scoped, not instance-scoped: the index maintainer builds a
- * FRESH reconciler adapter for every tick, so an instance-scoped cache would be
- * empty on every tick and every tick would re-checksum the whole segment set —
- * which would make this step slower than what it replaces, not faster.
- *
- * `_loadSegmented` prunes the entries of a segment directory whose segments
- * leave the manifest. The size cap below is the second bound, for a process
- * that touches many short-lived index directories (test runs, multi-repo
- * tooling). Clearing only costs one extra verified read per live segment.
- */
-const segmentIdentityCache = new Map();
-const SEGMENT_IDENTITY_CACHE_MAX = 4096;
-
-/** Test seam: drop all remembered segment identities. */
-export function resetSegmentIdentityCache() {
-  segmentIdentityCache.clear();
-}
-
-function defaultPositionsCache() {
-  if (segmentIdentityCache.size > SEGMENT_IDENTITY_CACHE_MAX) segmentIdentityCache.clear();
-  return segmentIdentityCache;
-}
+// Test seam: drop all remembered segment identities.
+export { resetSegmentIdentityCache } from '../infrastructure/li-segment-state.mjs';
 
 /**
  * Step 2b kill switch — `SWEET_SEARCH_LI_POSITIONS_ONLY=0|off|false|no` puts the
