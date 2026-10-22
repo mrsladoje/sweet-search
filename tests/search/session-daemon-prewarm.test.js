@@ -50,6 +50,8 @@ function env(overrides = {}) {
     SWEET_SEARCH_PREWARM_PROBE_MS: '100',
     SWEET_SEARCH_PREWARM_PAGE_CACHE: '0',
     FAKE_DAEMON_MARKER: markerPath,
+    // The hook writes daemon.log under the project root: keep it out of this repo.
+    SWEET_SEARCH_PROJECT_ROOT: sandbox,
     ...overrides,
   };
 }
