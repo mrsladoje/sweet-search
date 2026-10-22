@@ -10,7 +10,6 @@
  *   H3: NL hash skip requires graph hash unchanged
  *   M1: MCP field mapping uses integer counts
  *   M2: community-detector uses stderr not stdout
- *   F3: computeNLContentHash function
  *   F8: detectScript + CJK tokenization
  *   F9: isSecretLike — word-level codeGraphNames exemption
  *   F12: Jaccard-based WSS clustering
@@ -224,32 +223,6 @@ describe('vocab-warmer enriched text format (H2/S1)', () => {
     expect(mod.warmHybrid).toBeDefined();
     expect(mod.warmFromCache).toBeDefined();
     expect(mod.runFullWarmup).toBeDefined();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// F3: computeNLContentHash
-// ---------------------------------------------------------------------------
-
-import { computeNLContentHash } from '../../core/vocabulary/index.js';
-
-describe('computeNLContentHash (F3)', () => {
-  it('returns hex string for empty communities', () => {
-    const hash = computeNLContentHash([], '/tmp/nonexistent');
-    expect(typeof hash).toBe('string');
-    expect(hash).toMatch(/^[a-f0-9]{64}$/);
-  });
-
-  it('returns same hash for same input', () => {
-    const h1 = computeNLContentHash([], '/tmp/nonexistent');
-    const h2 = computeNLContentHash([], '/tmp/nonexistent');
-    expect(h1).toBe(h2);
-  });
-
-  it('respects maxBytes option', () => {
-    const h1 = computeNLContentHash([], '/tmp', { maxBytes: 100 });
-    expect(typeof h1).toBe('string');
-    expect(h1.length).toBe(64);
   });
 });
 

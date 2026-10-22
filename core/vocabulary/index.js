@@ -26,7 +26,7 @@ export {
 } from './vocab-miner-extractors.js';
 
 export {
-  mineNLContent, computeNLContentHash, extractNLText, isSecretLike,
+  mineNLContent, extractNLText, isSecretLike,
   detectScript, tokenizeNL, extractBigrams, extractTrigrams,
   SECRET_PATTERNS, NL_MINING_TIMEOUT_MS,
 } from './vocab-miner-nl.js';

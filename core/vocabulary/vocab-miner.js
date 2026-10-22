@@ -32,7 +32,7 @@ import {
 } from './vocab-miner-extractors.js';
 
 import {
-  mineNLContent, computeNLContentHash, extractNLText, isSecretLike,
+  mineNLContent, extractNLText, isSecretLike,
   detectScript, tokenizeNL, extractBigrams, extractTrigrams,
   SECRET_PATTERNS, NL_MINING_TIMEOUT_MS,
 } from './vocab-miner-nl.js';
@@ -57,7 +57,7 @@ export {
 } from './vocab-miner-extractors.js';
 
 export {
-  mineNLContent, computeNLContentHash, extractNLText, isSecretLike,
+  mineNLContent, extractNLText, isSecretLike,
   detectScript, tokenizeNL, extractBigrams, extractTrigrams,
   SECRET_PATTERNS, NL_MINING_TIMEOUT_MS,
 } from './vocab-miner-nl.js';
@@ -488,7 +488,6 @@ export function mineGit(projectRoot, options = {}) {
  * @param {Array} [communities] - From detectCommunities()
  * @param {object} [options]
  * @param {boolean} [options.deep=false] - Include git mining
- * @param {boolean} [options.skipNL=false] - Skip NL mining
  * @returns {{ terms: Array<{term: string, score: number, source: string}>, pageRankScores: Map, communityPhrases: Array, totalFiles: number }}
  */
 export function mineAll(projectRoot, dbPath, communities, options = {}) {
@@ -529,7 +528,7 @@ export function mineAll(projectRoot, dbPath, communities, options = {}) {
   }
 
   // 4. Community NL mining
-  if (!options.skipNL && communities && communities.length > 0) {
+  if (communities && communities.length > 0) {
     const nl = mineNLContent(communities, root, { ...options, codeGraphNames });
     communityPhrases = nl.communityPhrases;
 

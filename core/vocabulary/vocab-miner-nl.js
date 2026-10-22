@@ -5,10 +5,8 @@
  * Includes secret detection, script detection, tokenization, and n-gram extraction.
  */
 
-import { readFileSync, existsSync, statSync } from 'fs';
+import { readFileSync, statSync } from 'fs';
 import { join, extname } from 'path';
-import { execFileSync } from 'child_process';
-import { createHash } from 'crypto';
 import { PROJECT_ROOT } from '../infrastructure/config/index.js';
 import { STOP_WORDS, splitIdentifier } from './vocab-miner-utils.js';
 
@@ -56,37 +54,43 @@ export function mineNLContent(communities, projectRoot, options = {}) {
     return { communityPhrases: [] };
   }
 
-  // Phase 1: Extract NL text per community
-  const communityTexts = []; // [{communityId, text}]
-
-  for (const comm of communities) {
-    if (Date.now() > deadline) break;
-
-    const texts = [];
-    const filesSeen = new Set();
-
-    for (const filePath of (comm.fileIds || [])) {
-      if (Date.now() > deadline) break;
-      if (filesSeen.has(filePath)) continue;
-      filesSeen.add(filePath);
-
-      const fullPath = filePath.startsWith('/') ? filePath : join(root, filePath);
-      try {
-        const stat = statSync(fullPath);
-        if (stat.size > maxFileSize) continue;
-        const content = readFileSync(fullPath, 'utf-8');
-        const nlText = extractNLText(content, extname(filePath), codeGraphNames);
-        if (nlText) texts.push(nlText);
-      } catch (err) {
-        if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
-        continue;
+  // Phase 1: Extract NL text per document. Communities that cover the same files
+  // (single entities of one file, most of them when few call edges resolve) make one
+  // document, under the first community's id: the same text counted once per entity
+  // would only raise every term's document frequency. Each file is read once.
+  const fileText = new Map();
+  const nlTextOf = (filePath) => {
+    if (fileText.has(filePath)) return fileText.get(filePath);
+    let nlText = null;
+    const fullPath = filePath.startsWith('/') ? filePath : join(root, filePath);
+    try {
+      if (statSync(fullPath).size <= maxFileSize) {
+        nlText = extractNLText(readFileSync(fullPath, 'utf-8'), extname(filePath), codeGraphNames) || null;
       }
+    } catch (err) {
+      if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
     }
+    fileText.set(filePath, nlText);
+    return nlText;
+  };
 
-    communityTexts.push({
-      communityId: comm.id,
-      text: texts.join(' '),
-    });
+  const docs = new Map(); // sorted file set -> communityId
+  for (const comm of communities) {
+    const files = [...new Set(comm.fileIds || [])].sort();
+    const key = files.join('\0');
+    if (!docs.has(key)) docs.set(key, { communityId: comm.id, files });
+  }
+
+  const communityTexts = []; // [{communityId, text}]
+  for (const { communityId, files } of docs.values()) {
+    if (Date.now() > deadline) break;
+    const texts = [];
+    for (const filePath of files) {
+      if (Date.now() > deadline) break;
+      const nlText = nlTextOf(filePath);
+      if (nlText) texts.push(nlText);
+    }
+    communityTexts.push({ communityId, text: texts.join(' ') });
   }
 
   // Phase 2: TF-IDF per community
@@ -125,12 +129,9 @@ export function mineNLContent(communities, projectRoot, options = {}) {
   const communityPhrases = [];
 
   for (let ci = 0; ci < communityTermFreqs.length; ci++) {
+    // No deadline here: the budget bounds the text read above, and scoring what was
+    // read is cheap. Dropping it would return no phrases whenever reading used the budget.
     const { communityId, tf, totalTokens } = communityTermFreqs[ci];
-    if (Date.now() > deadline) {
-      communityPhrases.push({ communityId, phrases: [], partial: true });
-      continue;
-    }
-
     if (totalTokens === 0) {
       communityPhrases.push({ communityId, phrases: [] });
       continue;
@@ -172,87 +173,6 @@ export function mineNLContent(communities, projectRoot, options = {}) {
 }
 
 // ---------------------------------------------------------------------------
-// NL Content Hash (F3: dual-hash freshness)
-// ---------------------------------------------------------------------------
-
-/**
- * Compute sha256 hash of NL content sources (comments, README, recent commits).
- * Used for incremental gating: only re-run NL phrase extraction when hash changes.
- *
- * @param {Array<{fileIds: string[]}>} communities - Communities with file paths
- * @param {string} [projectRoot]
- * @param {object} [options]
- * @param {number} [options.maxBytes=102400] - Max total text to hash (100KB)
- * @param {number} [options.maxCommits=200]
- * @param {number} [options.maxDays=30]
- * @returns {string} hex digest
- */
-export function computeNLContentHash(communities, projectRoot, options = {}) {
-  const root = projectRoot || PROJECT_ROOT;
-  const maxBytes = options.maxBytes ?? 102_400;
-  const hash = createHash('sha256');
-  let totalBytes = 0;
-
-  // Hash NL text from community files (comments, docstrings)
-  const seenFiles = new Set();
-  for (const comm of (communities || [])) {
-    for (const filePath of (comm.fileIds || [])) {
-      if (seenFiles.has(filePath) || totalBytes >= maxBytes) continue;
-      seenFiles.add(filePath);
-      const fullPath = filePath.startsWith('/') ? filePath : join(root, filePath);
-      try {
-        if (!existsSync(fullPath)) continue;
-        const stat = statSync(fullPath);
-        if (stat.size > 100_000) continue;
-        const content = readFileSync(fullPath, 'utf-8');
-        const nlText = extractNLText(content, extname(filePath));
-        if (nlText) {
-          const chunk = nlText.slice(0, maxBytes - totalBytes);
-          hash.update(chunk);
-          totalBytes += chunk.length;
-        }
-      } catch (err) {
-        if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
-        continue;
-      }
-    }
-  }
-
-  // Hash README content
-  for (const readme of ['README.md', 'README.rst', 'README.txt', 'README']) {
-    const readmePath = join(root, readme);
-    try {
-      if (existsSync(readmePath) && totalBytes < maxBytes) {
-        const content = readFileSync(readmePath, 'utf-8');
-        const chunk = content.slice(0, maxBytes - totalBytes);
-        hash.update(chunk);
-        totalBytes += chunk.length;
-      }
-    } catch (err) {
-      if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
-    }
-  }
-
-  // Hash recent commit messages (bounded)
-  try {
-    const maxCommits = options.maxCommits ?? 200;
-    const maxDays = options.maxDays ?? 30;
-    const log = execFileSync(
-      'git', ['log', '--format=%s', '-n', String(maxCommits), `--since=${maxDays} days ago`],
-      { cwd: root, encoding: 'utf-8', timeout: 5000 }
-    ).trim();
-    if (log && totalBytes < maxBytes) {
-      const chunk = log.slice(0, maxBytes - totalBytes);
-      hash.update(chunk);
-    }
-  } catch (err) {
-    if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
-  }
-
-  return hash.digest('hex');
-}
-
-// ---------------------------------------------------------------------------
 // NL Text Extraction
 // ---------------------------------------------------------------------------
 
@@ -270,7 +190,7 @@ export function extractNLText(content, ext, codeGraphNames) {
   let match;
   while ((match = lineCommentRe.exec(content))) {
     const text = match[1].trim();
-    if (text.length > 5 && !isSecretLike(text, codeGraphNames)) {
+    if (text.length > 5 && !isDirectiveComment(text) && !isSecretLike(text, codeGraphNames)) {
       texts.push(text);
     }
   }
@@ -281,12 +201,23 @@ export function extractNLText(content, ext, codeGraphNames) {
     const text = (match[1] || match[2] || match[3] || '')
       .replace(/^\s*\*\s?/gm, '') // strip leading * in JSDoc
       .trim();
-    if (text.length > 5 && !isSecretLike(text, codeGraphNames)) {
+    if (text.length > 5 && !isDirectiveComment(text) && !isSecretLike(text, codeGraphNames)) {
       texts.push(text);
     }
   }
 
   return texts.join(' ');
+}
+
+/**
+ * A comment for a tool, not a reader: a shebang (`#!/usr/bin/env node`) or one whose
+ * every word is joined by '-', ':' or '@' (`eslint-disable no-console`,
+ * `tslint:disable`, `@ts-ignore`). Judged by shape, so no list of tools to grow;
+ * "re-run the tests" has plain words and stays.
+ */
+export function isDirectiveComment(text) {
+  if (text.startsWith('!')) return true;
+  return text.split(/[\s,]+/).filter(Boolean).every((w) => /[-:@]/.test(w));
 }
 
 // ---------------------------------------------------------------------------
