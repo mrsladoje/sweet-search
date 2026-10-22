@@ -131,7 +131,11 @@ sweet-search index     # builds the index — GPU-accelerated where available
 sweet-search "where do we validate JWT tokens?"
 ```
 
-That's it. From then on, the index updates itself as you work.
+That's it. From then on, the index updates itself as you work. `sweet-search status` shows what is missing and the next command to run.
+
+> [!NOTE]
+> npm 11 or later can skip install scripts. If the install looks broken, run
+> `npm install -g sweet-search --allow-scripts=sweet-search,onnxruntime-node`.
 
 To uninstall 😢:
 
@@ -178,7 +182,8 @@ sweet-search uninstall --dry-run    # preview cleanup for the current repo
 - **opencode** — our guide, tested prompt and a tool-description plugin in `.opencode/`:
   - An existing `opencode.json` / `.jsonc` is edited in place, comments kept.
 - **Prewarm hook** (Claude Code, Codex): starts the search daemon when a session starts. Search works without it.
-- **What gets indexed:** `.gitignore` is respected; `node_modules`, build dirs, minified files and files over 1 MB are skipped; add extra rules in `.sweet-search-ignore`.
+- **Search daemon:** the first search starts it. Manage it with `sweet-search daemon start|status|stop|restart`.
+- **What gets indexed:** `.gitignore` is respected; `node_modules`, build dirs, minified files and files over 1 MB are skipped; add extra rules in `.sweet-search-ignore`. `ss-grep` also covers tracked vendored code, licenses and data files.
 
 ### MCP and other integrations
 
@@ -198,7 +203,7 @@ The CLI is the default contact surface. To also register the MCP server, run
 
 - **MCP server:** 8 tools (`search`, `trace`, `read`, `read-semantic`, `index`, `health`, `repo-map`, `vocab-prewarm`), 2 resources, 2 prompts. All search tools are declared read-only and idempotent.
 - **Repo maps for sub-agents:** the `repo-map` tool returns a PageRank-ranked symbol overview that fits any token budget, for briefing a delegated agent.
-- **Vocabulary prewarm:** `sweet-search prewarm-vocab` mines your repo's real identifiers, detects code communities (Leiden), and pre-warms all three search modes, so the first semantic query of a session is already cache-warm.
+- **Vocabulary prewarm:** the index mines your repo's real identifiers and detects code communities (Leiden), and the daemon keeps both current as the code changes. They pre-warm all three search modes, so the first semantic query of a session is already cache-warm.
 - **Committed files stay portable:** init never writes machine-specific absolute paths into committed settings files. All instruction injection is marker-delimited and reversible.
 
 ### Init flags
@@ -220,6 +225,8 @@ The CLI is the default contact surface. To also register the MCP server, run
 | `--codex` | Set up Codex only, in `.codex/`: guide, our base instructions, and the prewarm hook with its feature flag. |
 | `--opencode` | Set up opencode only, in `.opencode/`: guide, our prompt, tool-description plugin, grep and explore off. |
 | `--claude` | Include Claude Code together with `--codex` / `--opencode`. |
+| `--no-lean-harness` | Keep Claude Code's own system prompt and subagents; install only the rules file and output style. |
+| `--no-opencode-cache-key` | Skip the opencode cache-key plugin that lets new sessions reuse the cached prompt. |
 | `--codex-enable-global-hooks` | Advanced opt-in: also enable hooks in the user-level Codex config. |
 | `--no-claude` | Write nothing under `.claude/`; combine with `--agents` for AGENTS-only setup (`--codex` / `--opencode` already imply it unless `--claude` is set). |
 | `--gemini` | Also write `GEMINI.md` (sharing `AGENTS.md` when enabled). |
@@ -1283,14 +1290,14 @@ You never run a command.
 
 | ⏱️ **Always current** | 🎯 **Re-embeds only what changed** | ⚛️ **Never half-updated** |
 |:--|:--|:--|
-| Edits are usually searchable within ~20–60 s, up to 5 min under heavy load | One edited function means one chunk to the encoder, not the whole file | Every index switches to the new version in one atomic step |
+| A file watcher wakes the daemon on save, so an edit is usually searchable within seconds | One edited function means one chunk to the encoder, not the whole file | Every index switches to the new version in one atomic step |
 
 <details>
 <summary><b>Under the hood: how the daemon stays fast, safe, and light</b></summary>
 
 <br/>
 
-**By the numbers:** 6 indexes · 1 atomic manifest · ≤50 files and ≤2 s of CPU per update · 4 independent memory limits
+**By the numbers:** 6 indexes · 1 atomic manifest · ≤50 files and ≤10 s of CPU per update · 5 independent memory limits
 
 #### 🎯 Re-embed as little as possible
 - **Stable chunk IDs.** Each chunk's ID comes from its symbol and signature. An edit re-embeds only the function you touched, even when every line below it shifts.
@@ -1298,26 +1305,26 @@ You never run a command.
 
 #### ⚛️ Safe by construction
 - **One atomic switch.** Each update stages its writes, then publishes every index through one fsync-renamed manifest. A query pins one manifest, so it never sees a half-updated index.
-- **Baseline gate.** The daemon never builds the first index. It checks the full indexer's fingerprint first, and waits (`waiting_for_initial_index`) until one exists.
-- **One admission policy.** The full indexer and the daemon share one module that decides what gets indexed: include globs → deny list → `.sweet-search-ignore` → 1 MB cap → `git check-ignore`. The two paths cannot drift.
+- **Baseline gate.** The daemon never builds the first index. It checks the full indexer's fingerprint first, and waits until one exists. An index from an older sweet-search is never patched: updates pause and search tells you to rebuild it.
+- **One admission policy.** The full indexer and the daemon share one module that decides what gets indexed: include globs → deny list → `.sweet-search-ignore` → 1 MB cap → minified check → `git check-ignore`. The two paths cannot drift.
 - **Worktree-safe.** A worktree stamp and a single-writer lock stop two daemons from mixing index histories.
 
 #### 🧹 Stays clean over months
 - **Orphan sweep.** Deleted, newly ignored, and newly oversized files are tombstoned in every tier. The index converges to what a fresh full rebuild would produce.
-- **Self-maintenance.** Per-tier health watermarks (tombstone fraction, stale-doc ratio, delta ratio) trigger low-priority compaction in a separate worker.
+- **Self-maintenance.** Per-tier health watermarks (tombstone fraction, stale-doc ratio, delta ratio) trigger compaction between updates. Large rebuilds run in a child process while updates continue. Code communities and the search vocabulary are refreshed as the code graph changes.
 
 #### 🪶 Light on your machine
-- **CPU only, at low OS priority.** Your apps win every busy core. The GPU stays free for full builds.
-- **Fresh within seconds.** The daemon checks for edits every 10–20 s. An edit is indexed before any backlog file, and a backlog drains update after update with no pause.
+- **CPU only, below normal OS priority.** Your apps win every busy core. The GPU stays free for full builds.
+- **Fresh within seconds.** Edits go ahead of any backlog, and a backlog drains update after update with no pause. A full scan of the tree runs only at start, every 10 min as a backstop, and after a git or ignore-file change.
 
 #### 🧠 Bounded memory
-The daemons show up in `ps` / Activity Monitor as `sweet-search-maintainer`, `sweet-search-encoder` and `sweet-search-daemon`.
-A maintainer holds about 200 MB. The models live in a separate encoder process (1–2 GB while it encodes), which starts on the first edit and exits after 60 s with nothing to encode, so its memory goes back to the system. Five independent limits keep it bounded:
+The daemons show up in `ps` / Activity Monitor as `sweet-search-maintainer`, `sweet-search-encoder`, `sweet-search-daemon` and `sweet-search-query-encoder`.
+The models live in separate child processes that start on demand and exit when idle, so their memory goes back to the system. Five independent limits keep it bounded:
 
 | Limit | What it does | Default | Override |
 |-------|--------------|---------|----------|
-| Encoder process | Models load only while files are being encoded; the process exits when idle | 60 s idle | `SWEET_SEARCH_ENCODER_IDLE_MS` (`SWEET_SEARCH_MAINTAINER_ENCODER_PROCESS=0` keeps the models in the maintainer) |
-| Background ORT profile | Arena off, parked threads | on | `SWEET_SEARCH_ORT_BACKGROUND=0` |
+| Index encoder | Models load only while files are being encoded; the process exits when idle | 60 s idle, longer while you keep editing (up to 10 min) | `SWEET_SEARCH_ENCODER_IDLE_MS` / `SWEET_SEARCH_ENCODER_IDLE_MAX_MS` |
+| Query encoder | The search daemon's query models (~1 GB) run in their own process, which exits when idle | 15 min idle | `SWEET_SEARCH_QUERY_MODEL_IDLE_MS` |
 | Recycle ceiling | Past the line, the maintainer finishes its update, exits cleanly, and respawns on the next edit | clamp(25 % of RAM, 4 GiB, 8 GiB) | `SWEET_SEARCH_MAINTAINER_RSS_MAX_MB` (0 disables) |
 | Idle timeout | Unattended daemons shut down and respawn on demand | tier-aware | `SWEET_SEARCH_MAINTAINER_IDLE_TTL_MS` / `SWEET_SEARCH_DAEMON_IDLE_TTL_MS` |
 | Fleet budget | Across all repos, the longest-idle daemon is evicted when the total crosses a RAM-scaled budget | tier-aware | `SWEET_SEARCH_RSS_BUDGET_FRACTION` |
@@ -1326,10 +1333,11 @@ A recycle or eviction never touches the index. Every update publishes before the
 
 #### 🔍 Inspect or opt out
 - `sweet-search reconcile status` and `sweet-search reconcile inspect <path>` show what the daemon thinks, and why.
-- Turn it off with `SWEET_SEARCH_RECONCILE_V2=0`.
+- `sweet-search reconcile pause` / `resume` stops and restarts automatic updates.
+- Turn it off for good with `SWEET_SEARCH_RECONCILE_V2=0`.
 
 **Want a clean slate?** `sweet-search index --full` rebuilds from scratch at any time. After an
-upgrade that changes the models or chunking, we tell you to run `sweet-search index`, which then re-embeds everything.
+upgrade that changes the models, chunking or index format, search output tells you to rebuild.
 
 </details>
 
