@@ -958,8 +958,9 @@ class ProductionReconcileAdapter {
       // a full build never sees. Before any merkle state exists (a fresh
       // maintainer), the graph's live files plus a disk probe stand in.
       const merkle = this._merkleRead()?.files;
-      if (merkle && Object.keys(merkle).length > 0) {
-        const files = new Set(Object.keys(merkle));
+      const merkleFiles = merkle ? Object.keys(merkle) : [];
+      if (merkleFiles.length > 0) {
+        const files = new Set(merkleFiles);
         for (const f of this._retireSet || []) files.delete(f);
         for (const f of this._tickAdmitted || []) files.add(f);
         resolver = createImportResolver({ projectRoot: this.projectRoot, files, probeFs: false });
