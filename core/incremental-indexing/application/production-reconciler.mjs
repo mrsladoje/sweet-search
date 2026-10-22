@@ -7,7 +7,9 @@ import Database from 'better-sqlite3';
 import { Reconciler } from './reconciler.mjs';
 import { enqueueMaintenanceJob, readMaintenanceQueue } from './maintenance-worker.mjs';
 import { createAdmissionPolicy } from '../../indexing/admission-policy.js';
+import { filterGrepCorpusFiles } from '../../indexing/grep-corpus.js';
 import { applyIndexingChunkPolicy } from '../../indexing/indexing-file-policy.js';
+import { readGrepCorpusState, writeGrepCorpusState } from '../infrastructure/grep-corpus-state.mjs';
 import { contentHashSync } from '../infrastructure/hashing.mjs';
 import { readManifest, writeManifest } from '../infrastructure/manifest.mjs';
 import { annotateChunksForDelta, snapshotFileRows, diffChunks, applyDiff } from '../infrastructure/vector-delta-writer.mjs';
@@ -206,6 +208,8 @@ function readJsonl(filePath) {
     try { return [JSON.parse(line)]; } catch { return []; }
   });
 }
+
+const UTF8_STRICT = new TextDecoder('utf-8', { fatal: true });
 
 function statTuple(absPath) {
   const stat = fs.statSync(absPath, { bigint: true });
@@ -417,6 +421,13 @@ class ProductionReconcileAdapter {
     // readDirtySet → _retireSet → hashFile).
     this.admission = options.admissionPolicy || createAdmissionPolicy({ projectRoot: this.projectRoot });
     this._retireSet = new Set();
+    // Grep-only files (sparse-gram corpus, outside embedding admission): reconciled through
+    // the sparse-gram tier alone and recorded in grep-corpus-state.json, not the merkle.
+    // _grepKeep: retired embedding files that stay in the grep corpus (their sparse record
+    // keeps the content instead of deleting it). _grepTouched: rel -> {hash, stat} | null.
+    this._grepOnly = new Set();
+    this._grepKeep = new Set();
+    this._grepTouched = new Map();
     this._tickAdmitted = [];
     this._liSkipFiles = new Set();
     this.touched = new Map();
@@ -893,23 +904,52 @@ class ProductionReconcileAdapter {
     );
     this.progress('production:dirty-gitignore');
 
+    // Full discovery's content-shape skip: a minified or bundled file is dropped (retired
+    // when indexed). Only queued files are read, so this runs on new and changed files.
+    const minified = typeof this.admission.minifiedSet === 'function'
+      ? await this.admission.minifiedSet(info.filter((i) => i.exists && i.shapeOk && i.sizeOk && !gitignored.has(i.rel)).map((i) => i.rel))
+      : new Set();
+    const admittedOf = (i) => i.exists && i.shapeOk && i.sizeOk && !gitignored.has(i.rel) && !minified.has(i.rel);
+    // The grep corpus is wider than embedding admission: an inadmissible file it still
+    // holds is reconciled through the sparse-gram tier alone (or keeps its sparse content
+    // when an embedding file leaves admission), and a known grep-only file that left the
+    // corpus is deleted from it.
+    const grepKnown = readGrepCorpusState(this.stateDir).files;
+    const grepEligible = await this._grepEligible(
+      info.filter((i) => i.exists && !symlinked.has(i.rel) && !admittedOf(i)).map((i) => i.rel),
+    );
+    this._grepOnly = new Set();
+    this._grepEligibleSet = grepEligible;
+    this._grepKeep = new Set();
+    this._grepTouched = new Map();
     const files = [];
     const retire = new Set();
     for (const i of info) {
-      const admitted = i.exists && i.shapeOk && i.sizeOk && !gitignored.has(i.rel);
-      if (admitted) {
+      if (admittedOf(i)) {
         files.push(i.rel);
       } else if (merkle[i.rel]) {
         files.push(i.rel); // previously indexed → keep so hashFile retires it
         retire.add(i.rel);
+        if (grepEligible.has(i.rel)) this._grepKeep.add(i.rel);
+      } else if (grepEligible.has(i.rel) || grepKnown[i.rel]) {
+        files.push(i.rel);
+        this._grepOnly.add(i.rel);
       }
       // else: never indexed and inadmissible → drop
     }
     this._retireSet = retire;
     const live = this._dropQuarantined(files, retire);
     // Admitted this tick (new files included): the import resolver's file set.
-    this._tickAdmitted = live.filter((f) => !retire.has(f));
+    this._tickAdmitted = live.filter((f) => !retire.has(f) && !this._grepOnly.has(f));
     return live;
+  }
+
+  /** The `rels` (existing, not symlinked) the sparse-gram corpus admits (grep-corpus.js gates). */
+  async _grepEligible(rels) {
+    if (rels.length === 0) return new Set();
+    const kept = await filterGrepCorpusFiles(rels, { projectRoot: this.projectRoot, policy: this.admission });
+    const ignored = kept.length > 0 ? await this.admission.gitignoredSet(kept) : new Set();
+    return new Set(kept.filter((rel) => !ignored.has(rel)));
   }
 
   _readFailures() {
@@ -1023,18 +1063,56 @@ class ProductionReconcileAdapter {
 
   recordUnchangedFile(file, hashes) {
     const rel = typeof file === 'string' ? file : file.path;
-    if (hashes?.stat) this._statRefresh.set(rel, { hash: hashes.contentHash, stat: hashes.stat });
+    if (hashes?.grepOnly) this._grepTouched.set(rel, { hash: hashes.contentHash, stat: hashes.stat });
+    else if (hashes?.stat) this._statRefresh.set(rel, { hash: hashes.contentHash, stat: hashes.stat });
+  }
+
+  /**
+   * A grep-only file, for the reconciler's sparse-only path: a deletion when it is gone or
+   * left the corpus, else its content (unchanged when the recorded hash matches).
+   */
+  _hashGrepOnly(rel, abs) {
+    if (!fs.existsSync(abs) || !this._grepEligibleSet?.has(rel)) {
+      this._grepTouched.set(rel, null);
+      return { file: rel, sparseOnly: true, grepOnly: true, deleted: true, contentHash: '', gramOps: [{ file: rel, deleted: true }] };
+    }
+    const stat = statTuple(abs); // before the read, as in hashFile
+    const content = fs.readFileSync(abs);
+    // The native base builder drops a file that is not valid UTF-8 (binary): so does this.
+    // Its stat is still recorded, so the scan does not discover it again.
+    let text;
+    try { text = UTF8_STRICT.decode(content); } catch { text = null; }
+    if (text === null) {
+      this._grepTouched.set(rel, { hash: '', stat });
+      return { file: rel, sparseOnly: true, grepOnly: true, deleted: true, contentHash: '', gramOps: [{ file: rel, deleted: true }] };
+    }
+    const contentHash = contentHashSync(content);
+    const known = readGrepCorpusState(this.stateDir).files[rel];
+    const contentUnchanged = known?.hash === contentHash;
+    if (!contentUnchanged) this._grepTouched.set(rel, { hash: contentHash, stat });
+    return {
+      file: rel,
+      sparseOnly: true,
+      grepOnly: true,
+      contentHash,
+      stat,
+      contentUnchanged,
+      gramOps: [{ file: rel, deleted: false, content: text, contentHash }],
+    };
   }
 
   async hashFile(file) {
     const rel = typeof file === 'string' ? file : file.path;
     const abs = path.join(this.projectRoot, rel);
     const merkle = this._merkleRead() ?? { files: {} };
+    if (this._grepOnly.has(rel)) return this._hashGrepOnly(rel, abs);
     // Deleted on disk, or flagged inadmissible by readDirtySet (a previously
     // indexed file that became excluded/oversized/gitignored): retire it so all
-    // tiers tombstone and the merkle entry is dropped.
+    // tiers tombstone and the merkle entry is dropped. A retired file the grep
+    // corpus keeps carries its content for the sparse-gram record.
     if (!fs.existsSync(abs) || this._retireSet.has(rel)) {
-      return { file: rel, deleted: true, contentHash: '', chunks: [] };
+      const grep = this._grepKeep.has(rel) ? this._hashGrepOnly(rel, abs) : null;
+      return { file: rel, deleted: true, contentHash: '', chunks: [], ...(grep && !grep.deleted ? { grepKeep: grep } : {}) };
     }
     // Stat BEFORE the read. The merkle stores this stat with the hash, and the
     // next scan skips a file whose size and mtime match it. A write that lands
@@ -1301,7 +1379,10 @@ class ProductionReconcileAdapter {
         const tokenOps = [...retired];
         this._releaseDedupAliases(db, summary.retiredRows.map((r) => r.oldId), tokenOps, ctx);
         this.touched.set(rel, { ...(this.touched.get(rel) || {}), hash: hashes, chunkIds: [] });
-        return { ops: { vectors_delete: summary.retiredRows.length }, vectorOps: retired, tokenOps, gramOps: [{ file: rel, deleted: true }] };
+        // A retired file the grep corpus still holds keeps its sparse-gram content.
+        const keep = hashes.grepKeep;
+        if (keep) this._grepTouched.set(rel, { hash: keep.contentHash, stat: keep.stat });
+        return { ops: { vectors_delete: summary.retiredRows.length }, vectorOps: retired, tokenOps, gramOps: keep ? keep.gramOps : [{ file: rel, deleted: true }] };
       }
       const parsed = await new ASTChunker({ projectRoot: this.projectRoot }).parseFile(rel, hashes.content);
       this.progress('production:vector-parsed');
@@ -1669,6 +1750,24 @@ class ProductionReconcileAdapter {
     return readMaintenanceStateFromArtifacts(this.stateDir);
   }
 
+  /**
+   * Record this tick's grep-only files (their sparse-gram records are already appended) in
+   * grep-corpus-state.json; a file the embedding tiers now index leaves it.
+   */
+  _persistGrepCorpusState() {
+    const state = readGrepCorpusState(this.stateDir);
+    let changed = false;
+    for (const [file, entry] of this._grepTouched) {
+      if (entry) state.files[file] = { size: entry.stat.size, mtime_ns: entry.stat.mtime_ns, hash: entry.hash };
+      else delete state.files[file];
+      changed = true;
+    }
+    for (const file of this.touched.keys()) {
+      if (state.files[file] && !this._grepTouched.has(file)) { delete state.files[file]; changed = true; }
+    }
+    if (changed) writeGrepCorpusState(this.stateDir, state);
+  }
+
   persistManifest(manifest) {
     writeManifest(this.stateDir, manifest);
     const merklePath = path.join(this.stateDir, MERKLE_STATE);
@@ -1702,6 +1801,7 @@ class ProductionReconcileAdapter {
       if (prev && prev.hash === hash && !this.touched.has(file)) merkle.files[file] = { ...prev, ...stat };
     }
     if (failuresChanged) safeWriteJson(path.join(this.stateDir, FILE_FAILURES), failures);
+    this._persistGrepCorpusState();
     merkle.lastIndex = new Date().toISOString();
     merkle.epoch = manifest.epoch;
     merkle.stats = { ...(merkle.stats || {}), totalFiles: Object.keys(merkle.files).length };

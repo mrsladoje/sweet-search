@@ -83,7 +83,10 @@ describe('full discovery and the incremental walk', () => {
   it('admit the same files, none from inside an ignored directory', async () => {
     const full = (await discoverFiles({ projectRoot: root, silent: true })).sort();
     const res = await scanDirtyAndEnqueue({ projectRoot: root, stateDir });
-    expect([...res.files].sort()).toEqual(full);
+    // The scan also queues grep-only files (here .gitignore); compare the embedding set.
+    const policy = createAdmissionPolicy({ projectRoot: root });
+    expect([...res.files].filter((f) => policy.admitsShape(f)).sort()).toEqual(full);
+    expect(res.files.some((f) => f.startsWith('big/'))).toBe(false);
     expect(full).toContain('src/a.js');
     expect(full).toContain('.claude/rules.md');
     expect(full.some((f) => f.startsWith('big/'))).toBe(false);

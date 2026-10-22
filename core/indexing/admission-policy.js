@@ -43,6 +43,7 @@ import { Minimatch } from 'minimatch';
 import { loadProjectConfig } from '../infrastructure/config/index.js';
 import { buildPathFilter } from '../incremental-indexing/infrastructure/path-filter.mjs';
 import { getGitIgnoredPathSet, isGitignoreAllowlistedAgenticPath, toPosixPath } from './gitignore-filter.js';
+import { fileLooksMinified } from './minified-detector.js';
 
 const MM_OPTS = { dot: true, nocase: false };
 const DEFAULT_MAX_FILE_SIZE = 1 * 1024 * 1024;
@@ -348,6 +349,23 @@ export function createAdmissionPolicy({ projectRoot = process.cwd(), config, all
   }
 
   /**
+   * Content-shape gate (full discovery's minified/bundle skip, indexer-utils.js): the
+   * subset of `rels` that look minified or bundled. Reads each file's head, so callers
+   * pass only new or changed files. A `.gitattributes` force-admit passes; disabled with
+   * SS_INDEX_SKIP_MINIFIED=0, as in the full build.
+   */
+  async function minifiedSet(rels) {
+    const out = new Set();
+    if (process.env.SS_INDEX_SKIP_MINIFIED === '0') return out;
+    for (const rel of rels) {
+      const r = normalizeRel(rel);
+      if (!r || forceAdmit(r)) continue;
+      if (await fileLooksMinified(path.join(projectRoot, r), r)) out.add(r);
+    }
+    return out;
+  }
+
+  /**
    * Convenience for batch discovery: drop gitignored paths from `rels`.
    * Equivalent to full indexing's applyGitignoreAlignment over an already
    * shape+size filtered list.
@@ -373,6 +391,7 @@ export function createAdmissionPolicy({ projectRoot = process.cwd(), config, all
     trackedFiles,
     linguistAttr,
     forceAdmit,
+    minifiedSet,
     admitsShape,
     isOversizedAbs,
     isSymlinkedRel,
