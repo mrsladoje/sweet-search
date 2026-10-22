@@ -835,6 +835,42 @@ impl HnswSearcher {
         })
     }
 
+    /// Append `count` vectors (`slab`: `count * dim_bytes` bytes) as nodes with
+    /// no graph links: the index's delta rows. The exact scan and the cascade
+    /// read them like any node; the walk never reaches them (the caller scans
+    /// them itself), and `Csr::of` gives them empty lists on every level.
+    #[napi]
+    pub fn append(&mut self, slab: Uint8Array, count: u32) -> napi::Result<()> {
+        let dim = self.query.len() * 8;
+        let words = self.words;
+        let add = count as usize;
+        if add == 0 {
+            return Ok(());
+        }
+        let dim_bytes = slab.len() / add;
+        if dim_bytes == 0 || dim_bytes * add != slab.len() || dim_bytes.div_ceil(8) != words || dim_bytes > dim {
+            return Err(napi::Error::from_reason("HnswSearcher.append: slab is not count whole vectors of the index width"));
+        }
+        let old = self.count as usize;
+        let mut packed = AlignedBuf::<u64>::zeroed(words * (old + add), self.huge);
+        packed[..words * old].copy_from_slice(&self.slab[..words * old]);
+        for v in 0..add {
+            let src = &slab[v * dim_bytes..(v + 1) * dim_bytes];
+            for w in 0..words {
+                let mut b = [0u8; 8];
+                let end = ((w + 1) * 8).min(dim_bytes);
+                b[..end - w * 8].copy_from_slice(&src[w * 8..end]);
+                packed[(old + v) * words + w] = u64::from_le_bytes(b);
+            }
+        }
+        self.slab = packed;
+        let mut visited = AlignedBuf::<u8>::zeroed(old + add, self.huge);
+        visited[..old].copy_from_slice(&self.visited[..old]);
+        self.visited = visited;
+        self.count = (old + add) as u32;
+        Ok(())
+    }
+
     /// Install level `level` as CSR: neighbors of node i are
     /// `neighbors[offsets[i]..offsets[i+1]]`.
     #[napi]
