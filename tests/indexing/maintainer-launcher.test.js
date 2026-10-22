@@ -180,13 +180,15 @@ describe('launchMaintainer helpers', () => {
     expect(resolveStateDir({}, '/cwd')).toBe(join('/cwd', '.sweet-search'));
   });
 
-  it('maintainerAlive is false for absent / dead-pid locks', () => {
+  it('maintainerAlive is false for absent / dead-pid / stampless locks', () => {
     mkdirSync(stateDir, { recursive: true });
     expect(maintainerAlive(stateDir)).toBe(false); // no lock
-    writeFileSync(join(stateDir, 'index-maintainer.lock'), JSON.stringify({ pid: 2147483600 }), 'utf-8');
+    writeFileSync(join(stateDir, 'index-maintainer.lock'), JSON.stringify({ pid: 2147483600, timestamp: Date.now() }), 'utf-8');
     expect(maintainerAlive(stateDir)).toBe(false); // dead pid
     writeFileSync(join(stateDir, 'index-maintainer.lock'), JSON.stringify({ pid: process.pid }), 'utf-8');
-    expect(maintainerAlive(stateDir)).toBe(true); // live pid
+    expect(maintainerAlive(stateDir)).toBe(false); // live pid, no stamps
+    writeFileSync(join(stateDir, 'index-maintainer.lock'), JSON.stringify({ pid: process.pid, timestamp: Date.now() }), 'utf-8');
+    expect(maintainerAlive(stateDir)).toBe(true); // live pid, fresh heartbeat
   });
 
   it('defaultMaintainerEntry resolves to the sibling index-maintainer.mjs', () => {
