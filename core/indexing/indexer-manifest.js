@@ -1,5 +1,6 @@
 import path from 'path';
-import { DB_PATHS } from '../infrastructure/config/index.js';
+import { DB_PATHS, PROJECT_ROOT } from '../infrastructure/config/index.js';
+import { writeStamp } from '../incremental-indexing/infrastructure/worktree-stamp.mjs';
 import {
   buildNextManifest,
   readManifest,
@@ -65,5 +66,8 @@ export function publishIndexerManifest(options = {}) {
     applyProvenance(manifest, options.provenance.recorded, { replace: options.provenance.replace === true });
   }
   writeManifest(stateDir, manifest);
+  // This build is of this project root: a stamp from where the folder used to be (moved,
+  // renamed, copied) made the maintainer refuse every tick, even after a full rebuild.
+  writeStamp(stateDir, options.projectRoot || PROJECT_ROOT);
   return manifest;
 }
