@@ -173,6 +173,7 @@ export async function warmSemantic(hubEntities, communityPhrases, options = {}) 
   // Collect all texts to embed
   const textsToEmbed = [];
   const textLabels = []; // parallel array tracking origin
+  const hubTexts = new Map(); // term -> the enriched text embedded for it
 
   // Track A: Hub entity embeddings using enriched text format (F4)
   // Query entity metadata from code-graph.db for scope/type context
@@ -195,6 +196,7 @@ export async function warmSemantic(hubEntities, communityPhrases, options = {}) 
       }
       parts.push(term);
       const enrichedText = parts.join('\n');
+      hubTexts.set(term, enrichedText);
       textsToEmbed.push(enrichedText);
       textLabels.push('hub');
     }
@@ -275,6 +277,7 @@ export async function warmSemantic(hubEntities, communityPhrases, options = {}) 
     hnswTraversals,
     elapsedMs: Math.round(performance.now() - start),
     embeddings: embeddingMap,
+    hubTexts,
   };
 }
 

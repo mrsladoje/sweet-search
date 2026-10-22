@@ -151,6 +151,29 @@ describe('vocab_refresh job', () => {
     expect(readVocabState(stateDir)).toMatchObject({ graphEpoch: 6, vocabEpoch: 6, changedRows: 0, liveRelationships: edges.length - 3 });
   });
 
+  it('stores hub embeddings under their term in the identifiers file and reuses them by embedded text', async () => {
+    graphDb(join(stateDir, 'code-graph.db'), project());
+    const encoded = [];
+    const embed = async (texts) => { encoded.push(...texts); return texts.map((t) => Float32Array.from({ length: 8 }, (_, k) => (t.length + k) / 100)); };
+    const first = await vocabRefreshHandler({}, { stateDir, projectRoot: root, embed, wait: true });
+    expect(first.error).toBeUndefined();
+    // Hub texts are enriched ('# src/X.js\n# Defines: class X\nX'), so comparing them with
+    // the bare term put every hub in the seeds file and left warmFromCache no FTS5 terms.
+    const ids = JSON.parse(readFileSync(join(stateDir, 'vocab-identifiers.meta.json'), 'utf8'));
+    expect(ids.terms.length).toBeGreaterThan(0);
+    expect(ids.terms.every((t) => !t.includes('\n'))).toBe(true);
+    expect(ids.texts).toHaveLength(ids.terms.length);
+    ids.texts.forEach((text, i) => expect(text.endsWith(`\n${ids.terms[i]}`) || text === ids.terms[i]).toBe(true));
+    const seeds = JSON.parse(readFileSync(join(stateDir, 'vocab-semantic-seeds.meta.json'), 'utf8'));
+    expect(seeds.terms.some((t) => ids.texts.includes(t))).toBe(false);
+
+    // An unchanged graph encodes nothing: hubs are found again by their embedded text.
+    encoded.length = 0;
+    const again = await vocabRefreshHandler({}, { stateDir, projectRoot: root, embed, wait: true });
+    expect(again.encoded).toBe(0);
+    expect(encoded).toEqual([]);
+  });
+
   it('without an encoder rebuilds communities.json only', async () => {
     graphDb(join(stateDir, 'code-graph.db'), project());
     await vocabRefreshHandler({}, { stateDir, projectRoot: root, wait: true });

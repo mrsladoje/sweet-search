@@ -530,13 +530,6 @@ describe('mineAll', () => {
     expect(result.communityPhrases.length).toBeGreaterThan(0);
   });
 
-  it('skips NL mining when skipNL=true', () => {
-    loadGraph.mockReturnValueOnce({ entities: [], relationships: [] });
-    const communities = [{ id: 0, entityIds: [1], fileIds: ['src/App.js'] }];
-    const result = mineAll(tmpDir, '/fake/db', communities, { skipNL: true });
-    expect(result.communityPhrases).toEqual([]);
-  });
-
   it('includes git mining in deep mode', () => {
     execFileSync.mockImplementation((cmd, args) => {
       if (cmd === 'git' && args?.includes('--format=%s')) return 'add feature\n';

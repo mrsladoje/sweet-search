@@ -404,7 +404,6 @@ function _depthLabel(identifiers, phrases) {
  * @param {string} [vocabInfo.warmupType] - 'incremental' | 'full'
  * @param {number} [vocabInfo.newTerms]
  * @param {string} [vocabInfo.graphHash]
- * @param {string} [vocabInfo.nlHash]
  * @param {Array<{term: string, queryCount: number}>} [vocabInfo.topMisses=[]] - promotion candidates
  * @returns {string}
  */
@@ -438,9 +437,6 @@ export function formatStatsReport(metrics, communities = [], vocabInfo = {}) {
   // Hashes
   if (vocabInfo.graphHash) {
     lines.push(`Import graph hash:  ${vocabInfo.graphHash} (up to date)`);
-  }
-  if (vocabInfo.nlHash) {
-    lines.push(`NL content hash:    ${vocabInfo.nlHash} (up to date)`);
   }
 
   lines.push('');

@@ -25,7 +25,7 @@ import Database from 'better-sqlite3';
 import { PROJECT_ROOT, EMBEDDING_CONFIG } from '../infrastructure/config/index.js';
 import { applyReadPragmas } from '../infrastructure/db-utils.js';
 import { detectCommunities, computeGraphHash } from '../graph/community-detector.js';
-import { mineAll, computeNLContentHash } from './vocab-miner.js';
+import { mineAll } from './vocab-miner.js';
 import { rankAll } from './vocab-ranker.js';
 import { warmLexical, warmSemantic, warmHybrid } from './vocab-warmer.js';
 import { DATA_DIR, vocabArtifactPaths } from './vocab-constants.js';
@@ -244,28 +244,11 @@ export function computeVocabulary(options = {}) {
   }
   timing.communities = Math.round(performance.now() - commStart);
 
-  // Step 2: Mine terms (F3: check NL content hash for incremental gating).
-  // Only skip NL mining if BOTH graph hash AND NL hash are unchanged. If graph hash
-  // changed, communities were re-detected — NL content must be re-mined against the new
-  // community structure even if file contents haven't changed (different files per community).
-  let skipNLMining = false;
-  try {
-    const graphUnchanged = cached?.graphHash && cached.graphHash === graphHash;
-    if (graphUnchanged && cached.nlHash && communities.length > 0
-        && computeNLContentHash(communities, projectRoot) === cached.nlHash) {
-      skipNLMining = true;
-    }
-  } catch (err) {
-    debugCatch(err);
-  }
-
+  // Step 2: Mine terms
   const mineStart = performance.now();
   let minedResult;
   try {
-    minedResult = mineAll(projectRoot, dbPath, communities, {
-      deep: depth === 'deep',
-      skipNL: skipNLMining,
-    });
+    minedResult = mineAll(projectRoot, dbPath, communities, { deep: depth === 'deep' });
   } catch (err) {
     debugCatch(err);
     minedResult = { terms: [], pageRankScores: new Map(), communityPhrases: [] };
@@ -315,14 +298,6 @@ export function computeVocabulary(options = {}) {
     };
   });
 
-  // F3: NL content hash for incremental gating
-  let nlHash = '';
-  try {
-    nlHash = computeNLContentHash(communities, projectRoot);
-  } catch (err) {
-    debugCatch(err);
-  }
-
   const communitySizes = communities.map(c => [c.id, c.entityCount || c.entityIds?.length || 1]);
   return {
     ranked,
@@ -331,7 +306,6 @@ export function computeVocabulary(options = {}) {
     communitySizes,
     communitiesJson: JSON.stringify({
       graphHash,
-      nlHash,
       communities: enrichedCommunities,
       createdAt: new Date().toISOString(),
     }),
@@ -367,6 +341,7 @@ async function embedVocabulary(computed, { dbPath, hnswIndex, provider, embed } 
     );
     const map = semResult.embeddings || new Map();
     map.encoded = semResult.embeddingsGenerated ?? 0;
+    map.hubTexts = semResult.hubTexts || new Map();
     return map;
   } catch (err) {
     debugCatch(err);
@@ -414,17 +389,26 @@ function representativeQueries(ranked, communitySizes) {
 async function persistVocabulary(paths, computed, semanticEmbeddings, { graphEpoch }) {
   await fs.mkdir(path.dirname(paths.communities), { recursive: true });
   if (semanticEmbeddings.size > 0) {
-    // Split hub entities and phrases into separate bins
-    const hubTerms = new Set(computed.ranked.identifiers.filter(i => i.warm_mode === 'both').map(t => (typeof t === 'string' ? t : t.term)));
+    // Hub entities go to the identifiers bin under their term (warmFromCache runs the
+    // terms as FTS5 queries), with the enriched text that was embedded (the reuse key);
+    // phrases and their variants go to the seeds bin under their own text.
+    const hubTexts = semanticEmbeddings.hubTexts || new Map();
     const hubEmbeddings = new Map();
+    const hubEmbeddedTexts = [];
+    const hubTextSet = new Set();
+    for (const [term, text] of hubTexts) {
+      const emb = semanticEmbeddings.get(text);
+      if (!emb) continue;
+      hubEmbeddings.set(term, emb);
+      hubEmbeddedTexts.push(text);
+      hubTextSet.add(text);
+    }
     const phraseEmbeddings = new Map();
     for (const [text, emb] of semanticEmbeddings) {
-      // If text matches a hub entity term, put in identifiers bin
-      if (hubTerms.has(text)) hubEmbeddings.set(text, emb);
-      else phraseEmbeddings.set(text, emb);
+      if (!hubTextSet.has(text)) phraseEmbeddings.set(text, emb);
     }
     if (hubEmbeddings.size > 0) {
-      await saveBinaryArtifact(paths.identifiersBin, paths.identifiersMeta, hubEmbeddings);
+      await saveBinaryArtifact(paths.identifiersBin, paths.identifiersMeta, hubEmbeddings, { texts: hubEmbeddedTexts });
     }
     if (phraseEmbeddings.size > 0) {
       await saveBinaryArtifact(paths.semanticSeedsBin, paths.semanticSeedsMeta, phraseEmbeddings);
@@ -456,13 +440,15 @@ async function persistVocabulary(paths, computed, semanticEmbeddings, { graphEpo
  *   Header (32 bytes): "SSWV" magic, version(u32), dimension(u32), count(u32), 20 bytes padding
  *   Body: count * dimension * 4 bytes (Float32Array)
  *
- * Meta JSON: { version, dimension, termCount, terms: [...], createdAt }
+ * Meta JSON: { version, dimension, termCount, terms: [...], texts?: [...], createdAt }
+ * `texts[i]` is the text embedded for `terms[i]` when the two differ (hub entities).
  *
  * @param {string} binPath
  * @param {string} metaPath
  * @param {Map<string, Array<number>|Float32Array>} embeddingMap
+ * @param {{texts?: string[]}} [options]
  */
-export async function saveBinaryArtifact(binPath, metaPath, embeddingMap) {
+export async function saveBinaryArtifact(binPath, metaPath, embeddingMap, { texts = null } = {}) {
   const terms = [...embeddingMap.keys()];
   if (terms.length === 0) return;
 
@@ -498,6 +484,7 @@ export async function saveBinaryArtifact(binPath, metaPath, embeddingMap) {
     dimension,
     termCount: terms.length,
     terms,
+    ...(texts ? { texts } : {}),
     createdAt: new Date().toISOString(),
   }, null, 2));
 }
@@ -515,8 +502,9 @@ async function writeFileAtomic(filePath, data) {
 }
 
 /**
- * The embeddings stored in the identifier and seed artifacts, by text (empty when there are
- * none or they do not parse). Each is `dimension` floats, as saveBinaryArtifact wrote it.
+ * The embeddings stored in the identifier and seed artifacts, by embedded text (empty when
+ * there are none or they do not parse). Each is `dimension` floats, as saveBinaryArtifact
+ * wrote it.
  */
 export async function loadArtifactEmbeddings(paths) {
   const out = new Map();
@@ -526,11 +514,12 @@ export async function loadArtifactEmbeddings(paths) {
       const buf = await fs.readFile(binPath);
       const dim = buf.readUInt32LE(8);
       const count = buf.readUInt32LE(12);
-      if (buf.toString('latin1', 0, 4) !== 'SSWV' || dim !== meta.dimension || count !== meta.terms?.length) continue;
+      const keys = meta.texts ?? meta.terms;
+      if (buf.toString('latin1', 0, 4) !== 'SSWV' || dim !== meta.dimension || count !== keys?.length) continue;
       for (let i = 0; i < count; i++) {
         const emb = new Float32Array(dim);
         for (let j = 0; j < dim; j++) emb[j] = buf.readFloatLE(32 + (i * dim + j) * 4);
-        out.set(meta.terms[i], emb);
+        out.set(keys[i], emb);
       }
     } catch { /* no artifact */ }
   }
