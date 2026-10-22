@@ -40,6 +40,10 @@ const RELATIONSHIP_TYPE_WEIGHTS = {
  * @param {number} [opts.damping=0.85]
  * @param {number} [opts.maxIterations=50]
  * @param {number} [opts.convergence=1e-6]
+ * @param {Map<string, number>} [opts.initialScores] start from these scores (a previous
+ *   run's), renormalised to sum 1; nodes without one start at 1/n. Same fixed point and
+ *   tolerance as a cold start, in far fewer iterations after a small graph change.
+ * @param {{iterations?: number}} [opts.stats] receives the iteration count
  * @returns {Map<string, number>} entity ID → PageRank score (sums to ~1)
  */
 export function pageRankWeighted(weightedOutEdges, allNodes, opts = {}) {
@@ -71,9 +75,19 @@ export function pageRankWeighted(weightedOutEdges, allNodes, opts = {}) {
 
   let scores = new Map();
   const initScore = 1 / n;
-  for (const node of allNodes) scores.set(node, initScore);
+  const warm = opts.initialScores;
+  let total = 0;
+  for (const node of allNodes) {
+    const prior = warm?.get(node);
+    const v = prior > 0 ? prior : initScore;
+    scores.set(node, v);
+    total += v;
+  }
+  if (warm && total > 0) for (const [node, v] of scores) scores.set(node, v / total);
 
+  let iterations = 0;
   for (let iter = 0; iter < maxIter; iter++) {
+    iterations = iter + 1;
     let danglingMass = 0;
     for (const node of danglingNodes) danglingMass += scores.get(node);
     const danglingShare = damping * danglingMass / n;
@@ -93,6 +107,7 @@ export function pageRankWeighted(weightedOutEdges, allNodes, opts = {}) {
     scores = next;
     if (delta < convergence) break;
   }
+  if (opts.stats) opts.stats.iterations = iterations;
   return scores;
 }
 
@@ -178,11 +193,16 @@ export function populatePageRankColumn(db, opts = {}) {
   if (allNodes.size === 0) {
     return { entities: 0, iterations: 0, ms: Date.now() - started, written: 0 };
   }
-  let scores = pageRankWeighted(outEdges, allNodes, opts);
+  // The maintainer's refresh (onlyChanged) starts from the stored scores: after a small
+  // graph change the iteration converges in a few rounds instead of up to 50.
+  const stored = opts.onlyChanged
+    ? new Map(db.prepare('SELECT id, page_rank FROM entities WHERE page_rank IS NOT NULL').raw().all())
+    : null;
+  const stats = {};
+  let scores = pageRankWeighted(outEdges, allNodes, { ...opts, ...(stored ? { initialScores: stored } : {}), stats });
   if (opts.onlyChanged) {
-    // The maintainer's refresh: most scores barely move between passes, and rewriting all
-    // of them cost a WAL write per entity (7 MB per pass at 18k entities).
-    const stored = new Map(db.prepare('SELECT id, page_rank FROM entities WHERE page_rank IS NOT NULL').raw().all());
+    // Most scores barely move between passes, and rewriting all of them cost a WAL write
+    // per entity (7 MB per pass at 18k entities).
     scores = [...scores].filter(([id, score]) => {
       const old = stored.get(id);
       return old == null || Math.abs(score - old) > 1e-6 * Math.max(Math.abs(old), 1e-12);
@@ -207,7 +227,7 @@ export function populatePageRankColumn(db, opts = {}) {
     tx(buffer);
     written += buffer.length;
   }
-  return { entities: allNodes.size, iterations: -1, ms: Date.now() - started, written };
+  return { entities: allNodes.size, iterations: stats.iterations ?? -1, ms: Date.now() - started, written };
 }
 
 export const __TEST__ = { RELATIONSHIP_TYPE_WEIGHTS, DEFAULT_DAMPING };
