@@ -93,4 +93,58 @@ describe('SweetSearch._refreshManifestPins — warm hot-reload trigger', () => {
     expect(searcher._reloadManifestArtifacts).toHaveBeenCalledTimes(2);
     expect(searcher._artifactManifestEpoch).toBe(3);
   });
+
+  // A grep call reloads only the sparse grams. It recorded the new epoch for every artifact,
+  // so the next semantic search kept the old dense and LI indexes (found 2026-10-22).
+  it('reloads everything on a semantic search after a grep call saw the new epoch', async () => {
+    const searcher = makeSearcher();
+    searcher._grepArtifactEpoch = 1;
+
+    writeManifest(2);
+    await searcher._refreshManifestPins({ reloadScope: 'grep' });
+    expect(searcher._reloadManifestArtifacts).toHaveBeenLastCalledWith(expect.anything(), { reloadScope: 'grep' });
+    expect(searcher._artifactManifestEpoch).toBe(1);
+
+    await searcher._refreshManifestPins({ reloadScope: 'all' });
+    expect(searcher._reloadManifestArtifacts).toHaveBeenCalledTimes(2);
+    expect(searcher._reloadManifestArtifacts).toHaveBeenLastCalledWith(expect.anything(), { reloadScope: 'all' });
+    expect(searcher._artifactManifestEpoch).toBe(2);
+
+    await searcher._refreshManifestPins({ reloadScope: 'grep' });
+    expect(searcher._reloadManifestArtifacts).toHaveBeenCalledTimes(2);
+  });
+});
+
+// HNSW compaction rewrites the index file and clears its stale bitmap but publishes no epoch.
+describe('SweetSearch._refreshManifestPins — HNSW file rewritten at the same epoch', () => {
+  function hnswSearcher() {
+    const searcher = makeSearcher();
+    searcher.initialized = true;
+    searcher.hasBinaryHnswIndex = true;
+    searcher.use3Stage = true;
+    searcher._reloadBinaryHnsw = vi.fn(async () => {});
+    writeFileSync(join(stateDir, 'codebase-binary-hnsw.idx'), 'graph v1');
+    return searcher;
+  }
+
+  it('reloads the graph alone when the file changed', async () => {
+    const searcher = hnswSearcher();
+    searcher._binaryHnswIdentity = 'identity-at-load';
+    await searcher._refreshManifestPins();
+    expect(searcher._reloadBinaryHnsw).toHaveBeenCalledTimes(1);
+    expect(searcher._reloadManifestArtifacts).not.toHaveBeenCalled();
+  });
+
+  it('does not reload an unchanged file, nor on a grep call', async () => {
+    const searcher = hnswSearcher();
+    const { statSync } = await import('node:fs');
+    const st = statSync(join(stateDir, 'codebase-binary-hnsw.idx'), { bigint: true });
+    searcher._binaryHnswIdentity = `${st.ino}:${st.size}:${st.mtimeNs}`;
+    await searcher._refreshManifestPins();
+    expect(searcher._reloadBinaryHnsw).not.toHaveBeenCalled();
+
+    searcher._binaryHnswIdentity = 'identity-at-load';
+    await searcher._refreshManifestPins({ reloadScope: 'grep' });
+    expect(searcher._reloadBinaryHnsw).not.toHaveBeenCalled();
+  });
 });

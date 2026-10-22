@@ -110,8 +110,12 @@ export function pageRankWeighted(weightedOutEdges, allNodes, opts = {}) {
  * @returns {{ outEdges: Map<string, Map<string, number>>, allNodes: Set<string> }}
  */
 export function buildWeightedAdjacency(db) {
+  // A maintained graph keeps retired rows until GC; a full build has no epoch columns.
+  const hasColumn = (table, column) => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+  const liveEntity = hasColumn('entities', 'epoch_retired') ? 'AND epoch_retired IS NULL' : '';
+  const liveEdge = hasColumn('relationships', 'epoch_retired') ? 'AND epoch_retired IS NULL' : '';
   const allNodes = new Set();
-  for (const row of db.prepare('SELECT id FROM entities WHERE stale_since IS NULL').iterate()) {
+  for (const row of db.prepare(`SELECT id FROM entities WHERE stale_since IS NULL ${liveEntity}`).iterate()) {
     allNodes.add(row.id);
   }
   const outEdges = new Map();
@@ -119,7 +123,7 @@ export function buildWeightedAdjacency(db) {
     SELECT source_id, target_id, type, COALESCE(weight, 1.0) AS weight
     FROM relationships
     WHERE source_id IS NOT NULL AND target_id IS NOT NULL
-      AND type NOT IN ${TRACE_ONLY_TYPES_SQL}
+      AND type NOT IN ${TRACE_ONLY_TYPES_SQL} ${liveEdge}
   `);
   for (const row of stmt.iterate()) {
     if (!allNodes.has(row.source_id) || !allNodes.has(row.target_id)) continue;

@@ -9,6 +9,7 @@ import { runProductionReconcileTick } from '../../core/incremental-indexing/appl
 import { LateInteractionIndex } from '../../core/ranking/late-interaction-index.js';
 import { FloatVectorStore } from '../../core/vector-store/float-vector-store.js';
 import { readIndexIdsSync } from '../../core/vector-store/binary-hnsw-index.js';
+import { isSet, loadBitmap } from '../../core/incremental-indexing/infrastructure/tombstone-bitmap.mjs';
 
 // These tests cover the float-512 store, which is written only with
 // SS_FIX_FLOAT512=1 (off by default).
@@ -202,5 +203,84 @@ describe('crash-consistency: torn SQLite-committed row is re-added to HNSW + LI'
     const liIdx = new LateInteractionIndex({ indexPath: join(stateDir, 'codebase-late-interaction.db'), loadExisting: true });
     await liIdx.init();
     expect(liIdx.documents.size).toBe(liveIds.size);
+  });
+});
+
+// A full build writes its rows at epoch 0 and a merkle without an epoch. The first tick after
+// it treated those rows as torn, and its repair re-added the chunk the same tick had retired:
+// the edited file's old chunk stayed live in LI (found on a fixture repo, 2026-10-22).
+describe('first tick after a full build', () => {
+  let projectRoot;
+  let stateDir;
+  const rel = 'src/sample.js';
+
+  beforeEach(() => {
+    projectRoot = mkdtempSync(join(tmpdir(), 'ss-first-tick-'));
+    stateDir = join(projectRoot, '.sweet-search');
+    mkdirSync(join(projectRoot, 'src'), { recursive: true });
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(join(projectRoot, rel), 'export function alphaThing(input) {\n  return input.trim();\n}\n');
+  });
+  afterEach(() => { rmSync(projectRoot, { recursive: true, force: true }); });
+
+  async function tick() {
+    return runProductionReconcileTick({
+      projectRoot, stateDir, vectorEncoder, liEncoder, modelInfo: MODEL_INFO,
+      logger: silentLogger, config: { filesPerTick: 10, cpuBudgetMs: 10_000 },
+    });
+  }
+
+  // HNSW nodes not marked stale (a retired node stays in the graph until compaction).
+  function hnswLiveIds() {
+    const indexPath = join(stateDir, 'codebase-binary-hnsw.idx');
+    const { ids } = readIndexIdsSync(indexPath);
+    const stale = existsSync(`${indexPath}.stale.bin`) ? loadBitmap(`${indexPath}.stale.bin`) : null;
+    return new Set(ids.filter((id, node) => id != null && !(stale && isSet(stale, node))));
+  }
+
+  // Give the indexed state the shape a full build leaves: rows at epoch 0, no merkle epoch.
+  function asFullBuild() {
+    const db = new Database(join(stateDir, 'codebase.db'));
+    try { db.prepare('UPDATE vectors SET epoch_written = 0').run(); } finally { db.close(); }
+    const merklePath = join(stateDir, 'merkle-state.json');
+    const merkle = readJson(merklePath);
+    delete merkle.epoch;
+    writeFileSync(merklePath, JSON.stringify(merkle, null, 2));
+  }
+
+  it('keeps no retired chunk of an edited file in LI, HNSW or the float store', async () => {
+    enqueue(stateDir, rel);
+    await tick();
+    const before = liveVectorIds(stateDir);
+    asFullBuild();
+
+    writeFileSync(join(projectRoot, rel), 'export function alphaThing(input) {\n  return input.trim().toLowerCase();\n}\n');
+    enqueue(stateDir, rel);
+    await tick();
+
+    const live = liveVectorIds(stateDir);
+    expect([...live].some((id) => before.has(id))).toBe(false);
+    expect(await liDocIds(stateDir)).toEqual(live);
+    expect(hnswLiveIds()).toEqual(live);
+    expect(await floatStoreIds(stateDir)).toEqual(live);
+  });
+
+  it('does not re-add a torn row that the restart tick retires because the file changed', async () => {
+    enqueue(stateDir, rel);
+    await tick();
+    const before = liveVectorIds(stateDir);
+    // A tick that never published: its rows are newer than any merkle epoch.
+    unlinkSync(join(stateDir, 'merkle-state.json'));
+    rmSync(join(stateDir, 'reconcile-cutoff-cache.json'), { force: true });
+
+    writeFileSync(join(projectRoot, rel), 'export function alphaThing(input) {\n  return input.trim().toUpperCase();\n}\n');
+    enqueue(stateDir, rel);
+    await tick();
+
+    const live = liveVectorIds(stateDir);
+    expect([...live].some((id) => before.has(id))).toBe(false);
+    expect(await liDocIds(stateDir)).toEqual(live);
+    expect(hnswLiveIds()).toEqual(live);
+    expect(await floatStoreIds(stateDir)).toEqual(live);
   });
 });

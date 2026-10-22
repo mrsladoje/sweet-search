@@ -10,7 +10,7 @@
  */
 
 import fs from 'fs/promises';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, statSync } from 'fs';
 import path from 'path';
 import { DB_PATHS, PERFORMANCE_TARGETS, LOGGING, BINARY_HNSW_CONFIG, HCGS_CONFIG, LATE_INTERACTION_CONFIG, EMBEDDING_CONFIG, SEISMIC_CONFIG, CASCADE_CONFIG, loadProjectConfig, shouldUseLocalReranker } from '../infrastructure/config/index.js';
 import { getGlobalLocalReranker } from '../ranking/local-reranker.js';
@@ -102,6 +102,16 @@ function parseStructuralQuery(query) {
   }
   // No pattern matched — caller should fall back to hybrid
   return { structuralType: null, targetEntity: null };
+}
+
+// Identity of a file as loaded: a rewrite in place of the path (temp + rename) changes it.
+function fileIdentity(filePath) {
+  try {
+    const st = statSync(filePath, { bigint: true });
+    return `${st.ino}:${st.size}:${st.mtimeNs}`;
+  } catch {
+    return null;
+  }
 }
 
 export class SweetSearch {
@@ -203,7 +213,11 @@ export class SweetSearch {
     this.grepInitialized = false;
     this.initialized = false;
     this._lateInteractionOptions = { ...(options.lateInteractionOptions || {}) };
+    // The epoch each loaded artifact set is from: all of them (dense, LI, sparse grams), and
+    // the sparse grams alone, which a grep call reloads without the rest.
     this._artifactManifestEpoch = null;
+    this._grepArtifactEpoch = null;
+    this._binaryHnswIdentity = null;
   }
 
   _clearChunkLocationCache() {
@@ -227,7 +241,9 @@ export class SweetSearch {
     if (this.initialized) return;
     const start = Date.now();
 
-    this._syncManifestPaths(this._readReconcileManifest());
+    // Read before the loads: a publish during them then reloads on the next search.
+    const initManifest = this._readReconcileManifest();
+    this._syncManifestPaths(initManifest);
 
     this.hasGraphIndex = existsSync(this.graphDbPath);
     this.hasBinaryHnswIndex = binaryHnswIndexExists(this.binaryHnswPath);
@@ -241,6 +257,7 @@ export class SweetSearch {
 
     if (this.hasBinaryHnswIndex && this.use3Stage) {
       try {
+        this._binaryHnswIdentity = fileIdentity(this.binaryHnswPath);
         await this.binaryHnswIndex.load();
         const stats = this.binaryHnswIndex.getStats();
         this.log(`BinaryHNSW: Loaded ${stats.totalVectors} vectors (${stats.memorySizeMB} MB)`);
@@ -389,7 +406,8 @@ export class SweetSearch {
     }
 
     this.initialized = true;
-    this._artifactManifestEpoch = this._readReconcileManifest()?.epoch ?? null;
+    this._artifactManifestEpoch = initManifest?.epoch ?? null;
+    this._grepArtifactEpoch = this._artifactManifestEpoch;
     this.log(`SweetSearch: Initialized in ${Date.now() - start}ms`);
   }
 
@@ -502,21 +520,7 @@ export class SweetSearch {
       this.hasBinaryHnswIndex = binaryHnswIndexExists(this.binaryHnswPath);
     }
     if (!grepOnly && this.hasBinaryHnswIndex && this.use3Stage) {
-      try {
-        const nextBinary = new BinaryHNSWIndex({
-          indexPath: this.binaryHnswPath,
-          stalePath: this.binaryHnswIndex?.stalePath || `${this.binaryHnswPath}.stale.bin`,
-        });
-        await nextBinary.load();
-        this.binaryHnswIndex = nextBinary;
-        this.floatVectorStore = new FloatVectorStore();
-        if (semantic.float512StageEnabled()) {
-          await this.floatVectorStore.load(getFloatStorePath(this.binaryHnswPath));
-        }
-      } catch (err) {
-        this.log(`BinaryHNSW: Failed to reload after manifest publish: ${err.message}`);
-        this.hasBinaryHnswIndex = false;
-      }
+      await this._reloadBinaryHnsw();
     }
 
     if (!grepOnly) {
@@ -568,9 +572,32 @@ export class SweetSearch {
     }
   }
 
+  async _reloadBinaryHnsw() {
+    try {
+      const identity = fileIdentity(this.binaryHnswPath);
+      const nextBinary = new BinaryHNSWIndex({
+        indexPath: this.binaryHnswPath,
+        stalePath: this.binaryHnswIndex?.stalePath || `${this.binaryHnswPath}.stale.bin`,
+      });
+      await nextBinary.load();
+      this.binaryHnswIndex = nextBinary;
+      this._binaryHnswIdentity = identity;
+      this.floatVectorStore = new FloatVectorStore();
+      if (semantic.float512StageEnabled()) {
+        await this.floatVectorStore.load(getFloatStorePath(this.binaryHnswPath));
+      }
+    } catch (err) {
+      this.log(`BinaryHNSW: Failed to reload after manifest publish: ${err.message}`);
+      this.hasBinaryHnswIndex = false;
+    }
+  }
+
   async _refreshManifestPins(options = {}) {
     const manifest = this._readReconcileManifest();
-    const previousArtifactEpoch = this._artifactManifestEpoch;
+    // A grep call reloads only the sparse grams, so it must not mark the dense and LI
+    // indexes as current: a semantic search after it kept serving the old ones.
+    const grepOnly = options.reloadScope === 'grep';
+    const previousArtifactEpoch = grepOnly ? this._grepArtifactEpoch : this._artifactManifestEpoch;
     const previousCodebaseEpoch = this.codebaseRepo?.getManifestEpoch?.();
     const manifestEpoch = Number.isInteger(manifest?.epoch) ? manifest.epoch : null;
     const shouldReloadArtifacts = manifestEpoch !== null
@@ -590,9 +617,15 @@ export class SweetSearch {
       : (Number.isInteger(codebaseEpoch) ? codebaseEpoch : graphEpoch);
     if (shouldReloadArtifacts) {
       await this._reloadManifestArtifacts(manifest, options);
+    } else if (!grepOnly && this.initialized && this.hasBinaryHnswIndex && this.use3Stage
+      && this._binaryHnswIdentity && fileIdentity(this.binaryHnswPath) !== this._binaryHnswIdentity) {
+      // HNSW compaction rewrites the index and clears its stale bitmap without a new epoch.
+      // The loaded graph then read the cleared bitmap, and its retired nodes came back.
+      await this._reloadBinaryHnsw();
     }
     if (manifestEpoch !== null) {
-      this._artifactManifestEpoch = manifestEpoch;
+      this._grepArtifactEpoch = manifestEpoch;
+      if (!grepOnly) this._artifactManifestEpoch = manifestEpoch;
     }
   }
 
@@ -600,7 +633,8 @@ export class SweetSearch {
     if (this.grepInitialized || this.initialized) return;
     const start = Date.now();
 
-    this._syncManifestPaths(this._readReconcileManifest());
+    const initManifest = this._readReconcileManifest();
+    this._syncManifestPaths(initManifest);
     this.hasCodebaseIndex = existsSync(this.codebaseDbPath);
     this.hasSparseGramIndex = existsSync(this.sparseGramIndexPath);
     if (this.hasSparseGramIndex) {
@@ -625,7 +659,7 @@ export class SweetSearch {
     }
 
     this.grepInitialized = true;
-    this._artifactManifestEpoch = this._readReconcileManifest()?.epoch ?? null;
+    this._grepArtifactEpoch = initManifest?.epoch ?? null;
     this.log(`SweetSearch: Grep-only initialized in ${Date.now() - start}ms`);
   }
 

@@ -1117,7 +1117,7 @@ class ProductionReconcileAdapter {
       ownConn = true;
     }
     try {
-      const oldRows = prepareCached(db, 'SELECT rowid, id, name, logical_entity_id, signature_hash, type, signature, doc_comment, start_line, end_line, package, parent_class, parent_id FROM entities WHERE file_path = ? AND epoch_retired IS NULL').all(rel);
+      const oldRows = prepareCached(db, 'SELECT rowid, id, name, logical_entity_id, signature_hash, type, signature, doc_comment, start_line, end_line, package, parent_class, parent_id, page_rank FROM entities WHERE file_path = ? AND epoch_retired IS NULL').all(rel);
       const oldByLogical = new Map(oldRows.map((r) => [r.logical_entity_id || r.id, r]));
       const oldIds = oldRows.map((r) => r.id);
       const importResolver = this._importResolverFor(ctx, db);
@@ -1218,6 +1218,10 @@ class ProductionReconcileAdapter {
           if (!rewrite.has(e.id)) continue;
           const parent = parentOf.get(e.id);
           insertEntity(db, e, liveIdFor.get(e.id), epoch, hasFts, parent ? (liveIdFor.get(parent) ?? null) : null);
+          // The row keeps its last PageRank until the graph_pagerank job recomputes it:
+          // at 0, trace ranked every edited definition last.
+          const oldRank = oldByLogical.get(e.id)?.page_rank;
+          if (oldRank > 0) prepareCached(db, 'UPDATE entities SET page_rank = ? WHERE id = ?').run(oldRank, liveIdFor.get(e.id));
           upsert += 1;
         }
         insertRelationships(db, relationships, liveIdFor, epoch);
@@ -1454,7 +1458,9 @@ class ProductionReconcileAdapter {
           if (row.epoch_retired != null) continue;
           if (!Number.isInteger(row.epoch_written) || row.epoch_written <= publishedEpoch) continue;
           if (alreadyAdded.has(row.id)) continue; // written THIS tick already
-          const dbRow = db.prepare('SELECT id, embedding, metadata FROM vectors WHERE id = ?').get(row.id);
+          // `snap` predates applyDiff: a row this tick retired still reads as live there.
+          // Re-adding it put the old chunk back into LI, and the search could return it.
+          const dbRow = db.prepare('SELECT id, embedding, metadata FROM vectors WHERE id = ? AND epoch_retired IS NULL').get(row.id);
           if (!dbRow?.embedding) continue;
           vectorOps.push({ addId: dbRow.id, embedding: float32FromBuffer(dbRow.embedding), metadata: JSON.parse(dbRow.metadata || '{}') });
           const chunk = chunkByStructId.get(row.chunk_struct_id);
@@ -1604,13 +1610,16 @@ class ProductionReconcileAdapter {
   /**
    * Highest SUCCESSFULLY-published merkle epoch (the per-file crash-recovery
    * advance authority — see the torn-row repair in `applyVectorDelta`). Returns
-   * -1 when no merkle has been published yet, so any committed row counts as
+   * 0 when no tick has published yet, so any row a tick committed counts as
    * un-advanced. Best-effort + read-only.
    * @returns {number}
    */
   _publishedEpoch() {
     const merkle = this._merkleRead() ?? {};
-    return Number.isInteger(merkle?.epoch) ? merkle.epoch : -1;
+    // A full build writes its rows at epoch 0 and no merkle epoch; a tick writes at epoch 1 or
+    // later. So rows at epoch 0 are never torn, and the first tick after a build does not
+    // re-encode every reused chunk of the files it touches.
+    return Number.isInteger(merkle?.epoch) ? merkle.epoch : 0;
   }
 
   applySparseGramDelta(_file, ops, epoch) {

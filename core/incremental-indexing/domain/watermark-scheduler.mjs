@@ -32,6 +32,7 @@ export const DEFAULT_WATERMARKS = Object.freeze({
   retiredVectorRatio: 0.25,
   retiredGraphRowCount: 5000,
   retiredGraphRowRatio: 0.25,
+  pageRankIntervalMs: 120_000,
 });
 
 /**
@@ -58,6 +59,7 @@ export function loadWatermarkConfig(env = process.env) {
     retiredVectorRatio: num('SWEET_SEARCH_VECTOR_GC_RATIO_THRESHOLD', DEFAULT_WATERMARKS.retiredVectorRatio),
     retiredGraphRowCount: num('SWEET_SEARCH_GRAPH_GC_COUNT_THRESHOLD', DEFAULT_WATERMARKS.retiredGraphRowCount),
     retiredGraphRowRatio: num('SWEET_SEARCH_GRAPH_GC_RATIO_THRESHOLD', DEFAULT_WATERMARKS.retiredGraphRowRatio),
+    pageRankIntervalMs: num('SWEET_SEARCH_PAGERANK_INTERVAL_MS', DEFAULT_WATERMARKS.pageRankIntervalMs),
   };
 }
 
@@ -182,6 +184,18 @@ export function evaluateWatermarks(state, config = DEFAULT_WATERMARKS) {
         retiredRelationships: graph.retiredRelationships ?? 0,
         retiredEntityRatio: graph.retiredEntityRatio ?? 0,
       },
+    });
+  }
+  // PageRank: an entity the maintainer writes has no score until a pass recomputes it, and
+  // trace orders callers and callees by it. One pass per interval at most (225 ms on an
+  // 18.8k-entity graph).
+  const rank = state.graphRank || {};
+  const rankInterval = config.pageRankIntervalMs ?? DEFAULT_WATERMARKS.pageRankIntervalMs;
+  if ((rank.unrankedEntities ?? 0) > 0 && (rank.msSinceRun ?? Infinity) >= rankInterval) {
+    jobs.push({
+      tier: 'graph_pagerank',
+      reason: 'unranked_entities',
+      payload: { unrankedEntities: rank.unrankedEntities },
     });
   }
   return jobs;

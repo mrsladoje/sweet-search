@@ -101,36 +101,35 @@ async function appendGrowingSegment(indexPath, index, docs) {
   return docs.size;
 }
 
-async function rewriteLegacyIndex(index, ops, liEncoder, pickLiInput, onProgress = null) {
-  const progress = typeof onProgress === 'function'
-    ? (phase) => { onProgress(phase); }
-    : () => {};
-  let tombstone = 0;
-  for (const op of ops) {
-    if (op.retireId && index.documents.delete(op.retireId)) tombstone += 1;
+// Below LI_SEGMENT_SIZE documents the full build writes the whole index as one JSON file
+// (about 85 KB per document). The delta path loaded and rewrote all of it for every file
+// (167 MB and 1.6 s per file at 2,000 documents), and the daemon parsed it again on each
+// epoch. Move it to one sealed segment once; later deltas append segments. Atomic for a
+// reader: the segment and manifest land first, then the stub replaces the JSON by rename.
+async function convertLegacyToSegmented(indexPath, index) {
+  const segmentDir = `${indexPath}.segments`;
+  await fsp.mkdir(segmentDir, { recursive: true });
+  // No manifest names what a JSON index leaves here (an older segmented build).
+  for (const name of await fsp.readdir(segmentDir)) {
+    if (name.startsWith('segment-')) await fsp.rm(path.join(segmentDir, name), { force: true });
   }
-  const addOps = ops.filter((op) => op.addId && op.chunk);
-  const texts = addOps.map(({ chunk }) => pickLiInput(chunk));
-  progress('li:encode:start');
-  const tokens = texts.length > 0 ? await liEncoder(texts) : [];
-  progress('li:encode:done');
-  let appended = 0;
-  for (let i = 0; i < addOps.length; i += 1) {
-    if (!tokens[i] || tokens[i].length === 0) continue;
-    const { addId, chunk } = addOps[i];
-    await index.add(addId, tokens[i], {
-      file: chunk.file,
-      name: chunk.metadata?.symbol,
-      type: chunk.metadata?.chunk_type,
-      startLine: chunk.metadata?.line_start || null,
-      endLine: chunk.metadata?.line_end || null,
+  const manifest = manifestFromIndex(index);
+  if (index.documents.size > 0) {
+    const segName = 'segment-0000.bin';
+    await index._writeSegmentFile(path.join(segmentDir, segName), index.documents);
+    manifest.segments.push({ path: segName, count: index.documents.size });
+    manifest.nextSeq = 1;
+    manifest.totalDocuments = index.documents.size;
+  }
+  if (index._wushCalibration) {
+    await writeJsonAtomic(path.join(segmentDir, 'wush-calibration.json'), {
+      eigenVecs: Array.from(index._wushCalibration.eigenVecs),
+      invSqrtEigenVals: Array.from(index._wushCalibration.invSqrtEigenVals),
+      dim: index.tokenDim,
     });
-    appended += 1;
-    if (appended % 100 === 0) progress('li:legacy-add');
   }
-  await index.save();
-  progress('li:legacy-save');
-  return { appended, tombstone };
+  await writeJsonAtomic(path.join(segmentDir, 'manifest.json'), manifest);
+  await writeJsonAtomic(indexPath, { version: '3.0', format: 'segmented', segmentDir: path.basename(segmentDir) });
 }
 
 // Background CPU encoding gains little from wide batches, so the maintainer
@@ -179,15 +178,29 @@ export async function applyLateInteractionDelta({
   };
   const existing = fs.existsSync(indexPath);
   const segmented = existing ? segmentedState(indexPath) : null;
+  if (existing && !segmented) {
+    const legacy = new LateInteractionIndex({ indexPath, loadExisting: true });
+    await legacy.init();
+    // A JSON file that failed to load must not become an empty segmented index.
+    if (legacy._loadFailure) throw legacy._loadFailure;
+    // Built with another LI model: the loader keeps no documents and search does not score
+    // it, so leave it for the re-index rather than overwrite it with nothing.
+    if (legacy.modelMismatch) return { appended: 0, tombstone: 0 };
+    await convertLegacyToSegmented(indexPath, legacy);
+    progress('li:convert-segmented');
+    if (readerCache) {
+      readerCache.key = null;
+      readerCache.index = null;
+    }
+    return applyLateInteractionDelta({ indexPath, ops, liEncoder, pickLiInput, onProgress, readerCache, positionsCache });
+  }
 
   // E.1-LI reader cache: reuse the loaded read view across the tick's files.
-  // Only the SEGMENTED path is cacheable — everything the reader serves there
-  // (config fields, positions/counts of pre-tick docs) is immutable within a
-  // tick: per-file ops only reference the file's own pre-tick docs, appends
-  // go through appendGrowingSegment (which re-reads the manifest from disk),
-  // and tombstone sidecar state is opened fresh per call. The legacy path
-  // MUTATES the loaded index (rewriteLegacyIndex), so it always loads fresh
-  // and drops any cached reader.
+  // Everything the reader serves (config fields, positions/counts of pre-tick
+  // docs) is immutable within a tick: per-file ops only reference the file's
+  // own pre-tick docs, appends go through appendGrowingSegment (which re-reads
+  // the manifest from disk), and tombstone sidecar state is opened fresh per
+  // call. A new index (no file yet) is not cached.
   const cacheable = !!(readerCache && segmented);
   let index;
   if (cacheable && readerCache.index && readerCache.key === indexPath) {
@@ -200,8 +213,7 @@ export async function applyLateInteractionDelta({
     // `_segments[].count`). It never reads a token. Flattening every segment's
     // token slab into `documents` cost ~1.4 GB of fresh external allocation on
     // every working tick and produced the RSS peaks that tripped the recycle
-    // ceiling. The legacy single-file path is excluded: `rewriteLegacyIndex`
-    // MUTATES `index.documents` and re-saves it, so it needs the full load.
+    // ceiling.
     //
     // The maintenance drain after a tick no longer flattens either:
     // `liSegmentHandler` and `mergeLiSegments` read only the segments they
@@ -220,14 +232,6 @@ export async function applyLateInteractionDelta({
       readerCache.key = indexPath;
       readerCache.index = index;
     }
-  }
-
-  if (existing && !segmented) {
-    if (readerCache) {
-      readerCache.key = null;
-      readerCache.index = null;
-    }
-    return rewriteLegacyIndex(index, ops, encode, pickLiInput, progress);
   }
 
   let tombstone = 0;
