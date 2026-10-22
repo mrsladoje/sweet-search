@@ -241,10 +241,41 @@ export function readGraphGcState(stateDir) {
   }
 }
 
+/** Written by the graph_pagerank job: when it last recomputed PageRank. */
+export const PAGERANK_STATE = 'graph-pagerank-state.json';
+
+/**
+ * PageRank freshness for the graph_pagerank watermark. `unrankedEntities` = live entities
+ * with no score (PageRank gives every node a positive one, so 0 or NULL means a row the
+ * maintainer wrote after the last pass); `msSinceRun` = time since that pass (Infinity when
+ * none ran). Zeros when the DB or the column is absent.
+ */
+export function readGraphRankState(stateDir, now = Date.now()) {
+  const empty = { unrankedEntities: 0, msSinceRun: Infinity };
+  const dbPath = path.join(stateDir, 'code-graph.db');
+  if (!fs.existsSync(dbPath)) return empty;
+  const ranAt = readJson(path.join(stateDir, PAGERANK_STATE))?.ranAt;
+  const msSinceRun = Number.isFinite(ranAt) ? Math.max(0, now - ranAt) : Infinity;
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    const columns = db.prepare('PRAGMA table_info(entities)').all().map((c) => c.name);
+    if (!columns.includes('page_rank')) return empty;
+    const live = columns.includes('epoch_retired') ? 'AND epoch_retired IS NULL' : '';
+    const unrankedEntities = db.prepare(
+      `SELECT COUNT(*) AS n FROM entities WHERE stale_since IS NULL ${live} AND (page_rank IS NULL OR page_rank = 0)`,
+    ).get().n || 0;
+    return { unrankedEntities, msSinceRun };
+  } catch {
+    return empty;
+  } finally {
+    db.close();
+  }
+}
+
 /**
  * One-shot bundle for the reconciler adapter. Returns the full shape
  * `evaluateWatermarks` expects: `fts5 / sparseGram /
- * binaryHnsw / liSegments / liSegmentStats / vectors / graph`.
+ * binaryHnsw / liSegments / liSegmentStats / vectors / graph / graphRank`.
  */
 export function readMaintenanceState(stateDir) {
   return {
@@ -255,5 +286,6 @@ export function readMaintenanceState(stateDir) {
     liSegmentStats: readLiSegmentStats(stateDir),
     vectors: readVectorGcState(stateDir),
     graph: readGraphGcState(stateDir),
+    graphRank: readGraphRankState(stateDir),
   };
 }
