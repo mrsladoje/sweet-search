@@ -131,8 +131,7 @@ sweet-search index     # builds the index — GPU-accelerated where available
 sweet-search "where do we validate JWT tokens?"
 ```
 
-That's it. From then on, the index updates itself as you work. `sweet-search status` shows what is missing and the next command to run.
-
+That's it. From then on, the index updates itself as you work.
 To uninstall 😢:
 
 ```bash
