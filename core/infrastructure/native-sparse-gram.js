@@ -54,58 +54,11 @@ function buildFallbackWeights() {
   return _fallbackWeights;
 }
 
-function collectNormalizedSpans(text) {
-  const spans = [];
-  let current = [];
-  for (const char of String(text || '')) {
-    const code = normalizeAsciiCode(char.charCodeAt(0));
-    if (isSpanCode(code)) current.push(code);
-    else if (current.length >= MIN_SPAN_LEN) {
-      spans.push(current);
-      current = [];
-    } else current = [];
-  }
-  if (current.length >= MIN_SPAN_LEN) spans.push(current);
-  return spans;
-}
 
 function bytesToString(bytes) {
   return String.fromCharCode(...bytes);
 }
 
-function extractSparseGramsFromSpan(span, weights) {
-  if (span.length < MIN_SPAN_LEN) return [];
-  const pairWeights = [];
-  for (let i = 0; i < span.length - 1; i += 1) {
-    pairWeights.push(weights[pairIndex(span[i], span[i + 1])]);
-  }
-  const grams = [];
-  const seen = new Set();
-  for (let start = 0; start <= span.length - MIN_SPAN_LEN; start += 1) {
-    const maxEnd = Math.min(span.length, start + MAX_GRAM_LEN);
-    for (let end = start + MIN_SPAN_LEN; end <= maxEnd; end += 1) {
-      const first = pairWeights[start];
-      const last = pairWeights[end - 2];
-      let interiorMax = Number.NEGATIVE_INFINITY;
-      if (end - start > MIN_SPAN_LEN) {
-        for (let i = start + 1; i < end - 2; i += 1) {
-          interiorMax = Math.max(interiorMax, pairWeights[i]);
-        }
-      }
-      if (Math.min(first, last) > interiorMax) {
-        const gram = bytesToString(span.slice(start, end));
-        if (!seen.has(gram)) { seen.add(gram); grams.push(gram); }
-      }
-    }
-  }
-  if (grams.length === 0) {
-    for (let i = 0; i <= span.length - MIN_SPAN_LEN; i += 1) {
-      const gram = bytesToString(span.slice(i, i + MIN_SPAN_LEN));
-      if (!seen.has(gram)) { seen.add(gram); grams.push(gram); }
-    }
-  }
-  return grams;
-}
 
 function normalizeLiteral(literal) {
   const bytes = [];
@@ -238,14 +191,6 @@ function normalizeExtractionResult(result) {
   };
 }
 
-function fallbackSparseGramExtraction(content) {
-  const weights = buildFallbackWeights();
-  const grams = new Set();
-  for (const span of collectNormalizedSpans(content)) {
-    for (const gram of extractSparseGramsFromSpan(span, weights)) grams.add(gram);
-  }
-  return { weightsId: FALLBACK_WEIGHTS_ID, grams: [...grams].sort() };
-}
 
 function fallbackRequiredGrams(literals) {
   if (!Array.isArray(literals) || literals.length === 0) {
@@ -263,33 +208,23 @@ function fallbackRequiredGrams(literals) {
   return { eligible: true, grams: [...grams].sort(), weightsId: FALLBACK_WEIGHTS_ID };
 }
 
-export function extractSparseGramDeltaRecord({ indexPath, content }) {
+/**
+ * The sparse-gram delta record for `content`: the grams the base index (`index`, or the one
+ * at `indexPath`) holds for such content, with its weights id. Without a base, the addon's
+ * standalone extractor (the fallback weights a corpus-less base uses). Null without the
+ * native addon: no base can be read then either, and a record with other weights would be
+ * dropped by every reader (the overlay keeps only the base's weights id).
+ */
+export function extractSparseGramDeltaRecord({ indexPath, content, index = null }) {
   const addon = loadAddon();
-  if (addon) {
-    try {
-      if (indexPath && existsSync(indexPath)) {
-        const index = addon.NativeSparseGramIndex.load(indexPath);
-        const extractor = index.extractIndexGrams || index.extract_index_grams;
-        if (typeof extractor === 'function') return normalizeExtractionResult(extractor.call(index, content));
-        const stats = typeof index.getStats === 'function' ? index.getStats() : null;
-        if (stats?.usedFallbackWeights || stats?.used_fallback_weights) {
-          return fallbackSparseGramExtraction(content);
-        }
-        if (typeof stats?.weightsId === 'string' || typeof stats?.weights_id === 'string') {
-          return { weightsId: stats.weightsId || stats.weights_id, grams: [] };
-        }
-      }
-      if (typeof addon.extractSparseGramDelta === 'function') {
-        return normalizeExtractionResult(addon.extractSparseGramDelta(content));
-      }
-      if (typeof addon.extract_sparse_gram_delta === 'function') {
-        return normalizeExtractionResult(addon.extract_sparse_gram_delta(content));
-      }
-    } catch (err) {
-      if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] extractSparseGramDeltaRecord failed:', err.message);
-    }
+  if (!addon) return null;
+  try {
+    const base = index || (indexPath && existsSync(indexPath) ? addon.NativeSparseGramIndex.load(indexPath) : null);
+    return normalizeExtractionResult(base ? base.extractIndexGrams(content) : addon.extractSparseGramDelta(content));
+  } catch (err) {
+    if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] extractSparseGramDeltaRecord failed:', err.message);
+    return null;
   }
-  return fallbackSparseGramExtraction(content);
 }
 
 export function extractSparseGramRequiredGrams(sparseGramIndex, literals) {
