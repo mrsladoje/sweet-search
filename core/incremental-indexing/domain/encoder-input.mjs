@@ -215,6 +215,10 @@ export function chunkInputHashes(chunk, { includeDedup = true } = {}) {
       parent_type: meta.parent_type ?? null,
       signature: meta.signature ?? null,
       additional_symbols: meta.additional_symbols ?? null,
+      // The span: unchanged code moved by an edit above it must get a new row version
+      // (reusing its vectors), or search results and read-semantic keep the old lines.
+      line_start: meta.line_start ?? null,
+      line_end: meta.line_end ?? null,
       policy_embed: EMBED_TEXT_POLICY_VERSION,
       policy_li: LI_INPUT_POLICY_VERSION,
     })),

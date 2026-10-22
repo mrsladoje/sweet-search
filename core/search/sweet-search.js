@@ -104,6 +104,9 @@ function parseStructuralQuery(query) {
   return { structuralType: null, targetEntity: null };
 }
 
+// A replaced binary HNSW index is closed this long after the swap (longer than a search runs).
+const BINARY_HNSW_CLOSE_GRACE_MS = 120_000;
+
 // Identity of a file as loaded: a rewrite in place of the path (temp + rename) changes it.
 function fileIdentity(filePath) {
   try {
@@ -580,8 +583,15 @@ export class SweetSearch {
         stalePath: this.binaryHnswIndex?.stalePath || `${this.binaryHnswPath}.stale.bin`,
       });
       await nextBinary.load();
+      const previous = this.binaryHnswIndex;
       this.binaryHnswIndex = nextBinary;
       this._binaryHnswIdentity = identity;
+      // The old index holds its file open and reads graph sections from it lazily, so a
+      // search that started before the swap may still use it: close it after a grace
+      // period (each reload leaked one descriptor, and kept the replaced file on disk).
+      if (previous && previous !== nextBinary) {
+        setTimeout(() => { try { previous.close(); } catch { /* best-effort */ } }, BINARY_HNSW_CLOSE_GRACE_MS).unref();
+      }
       this.floatVectorStore = new FloatVectorStore();
       if (semantic.float512StageEnabled()) {
         await this.floatVectorStore.load(getFloatStorePath(this.binaryHnswPath));
@@ -1112,6 +1122,7 @@ export class SweetSearch {
 
   /** Close all connections */
   close() {
+    try { this.binaryHnswIndex?.close?.(); } catch { /* best-effort */ }
     this.graphSearch.close();
     this.codebaseRepo.close();
     this.codeGraphRepo.close();

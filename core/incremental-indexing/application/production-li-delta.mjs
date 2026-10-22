@@ -192,6 +192,26 @@ export async function applyLateInteractionDelta({
     }
   }
 
+  // Row versions (moved or re-texted code with the same LI input) copy the old doc's
+  // stored tokens: read only those docs from their segments, before the tombstones below.
+  const copied = new Map();
+  const copyBySegment = new Map();
+  for (const op of ops) {
+    if (!op.addId || !op.copyFromId) continue;
+    const position = index._docSegmentPositions.get(op.copyFromId);
+    if (!position) continue;
+    if (!copyBySegment.has(position.segmentPath)) copyBySegment.set(position.segmentPath, new Map());
+    copyBySegment.get(position.segmentPath).set(position.docIndex, op.addId);
+  }
+  for (const [segmentPath, wanted] of copyBySegment) {
+    const docs = await index._readSegmentFile(segmentPath, (docIndex) => !wanted.has(docIndex));
+    for (const [docIndex, addId] of wanted) {
+      const doc = docs[docIndex];
+      if (doc?.tokens) copied.set(addId, doc);
+    }
+  }
+  progress('li:copy');
+
   let tombstone = 0;
   const states = new Map();
   for (const op of ops) {
@@ -208,7 +228,7 @@ export async function applyLateInteractionDelta({
   for (const state of states.values()) persistSegmentState(state);
   progress('li:tombstone');
 
-  const addOps = ops.filter((op) => op.addId && op.chunk);
+  const addOps = ops.filter((op) => op.addId && op.chunk && !copied.has(op.addId));
   const texts = addOps.map(({ chunk }) => pickLiInput(chunk));
   progress('li:encode:start');
   const tokens = texts.length > 0 ? await encode(texts) : [];
@@ -225,6 +245,9 @@ export async function applyLateInteractionDelta({
     whtSeed: index.whtSeed,
     whtOrdering: index.whtOrdering,
     matryoshkaDim: index.matryoshkaDim,
+    // No automatic flush: it would write segment-0000 of the live directory over an
+    // existing segment, and appendGrowingSegment publishes only _currentSegment.
+    segmentSize: Number.MAX_SAFE_INTEGER,
   });
   await writer.init();
   progress('li:writer-init');
@@ -242,6 +265,14 @@ export async function applyLateInteractionDelta({
     if ((i + 1) % 100 === 0) progress('li:add');
   }
 
+  for (const [addId, doc] of copied) {
+    const entry = { tokens: doc.tokens, numTokens: doc.numTokens, dim: doc.dim, tokenNorms: doc.tokenNorms };
+    if (doc.quantBits) entry.quantBits = doc.quantBits;
+    if (doc.preNorms) entry.preNorms = doc.preNorms;
+    if (doc.minArray) { entry.minArray = doc.minArray; entry.scaleArray = doc.scaleArray; } else if (doc.min !== undefined) { entry.min = doc.min; entry.scale = doc.scale; }
+    writer.documents.set(addId, entry);
+    writer._currentSegment.set(addId, entry);
+  }
   const appended = await appendGrowingSegment(indexPath, writer, writer._currentSegment);
   progress('li:append-segment');
   return { appended, tombstone };

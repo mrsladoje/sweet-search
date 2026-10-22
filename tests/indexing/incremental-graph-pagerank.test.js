@@ -12,18 +12,19 @@ import { runProductionReconcileTick } from '../../core/incremental-indexing/appl
 // The maintainer wrote entities with page_rank 0 and never recomputed it: on a large maintained
 // index 5,516 of 18,816 live entities (29 %) had no score, and trace ranks callers by it.
 describe('graph_pagerank watermark', () => {
-  const rank = (unrankedEntities, msSinceRun) => ({ graphRank: { unrankedEntities, msSinceRun } });
+  const rank = (graphEpoch, rankedEpoch, msSinceRun) => ({ graphRank: { graphEpoch, rankedEpoch, msSinceRun } });
 
-  it('fires once the interval passed and some entity has no score', () => {
-    expect(evaluateWatermarks(rank(3, Infinity))).toEqual([
-      { tier: 'graph_pagerank', reason: 'unranked_entities', payload: { unrankedEntities: 3 } },
+  it('fires once the graph changed since the last pass and the interval passed', () => {
+    expect(evaluateWatermarks(rank(5, 0, Infinity))).toEqual([
+      { tier: 'graph_pagerank', reason: 'graph_changed', payload: { graphEpoch: 5, rankedEpoch: 0 } },
     ]);
-    expect(evaluateWatermarks(rank(3, DEFAULT_WATERMARKS.pageRankIntervalMs))).toHaveLength(1);
+    expect(evaluateWatermarks(rank(5, 4, DEFAULT_WATERMARKS.pageRankIntervalMs))).toHaveLength(1);
   });
 
-  it('waits out the interval, and does nothing when every entity has a score', () => {
-    expect(evaluateWatermarks(rank(3, DEFAULT_WATERMARKS.pageRankIntervalMs - 1))).toEqual([]);
-    expect(evaluateWatermarks(rank(0, Infinity))).toEqual([]);
+  it('waits out the interval, and does nothing when the graph did not change', () => {
+    expect(evaluateWatermarks(rank(5, 4, DEFAULT_WATERMARKS.pageRankIntervalMs - 1))).toEqual([]);
+    expect(evaluateWatermarks(rank(5, 5, Infinity))).toEqual([]);
+    expect(evaluateWatermarks(rank(0, 0, Infinity))).toEqual([]); // a full build ranked it
   });
 });
 
@@ -34,10 +35,10 @@ describe('graph_pagerank job', () => {
 
   function graph(rows, edges) {
     const db = new Database(join(stateDir, 'code-graph.db'));
-    db.exec(`CREATE TABLE entities (id TEXT PRIMARY KEY, stale_since INTEGER, epoch_retired INTEGER, page_rank REAL DEFAULT 0);
-             CREATE TABLE relationships (source_id TEXT, target_id TEXT, type TEXT, weight REAL, epoch_retired INTEGER);`);
-    for (const [id, retired, pr] of rows) db.prepare('INSERT INTO entities VALUES (?, ?, ?, ?)').run(id, retired, retired, pr);
-    for (const [s, t, retired] of edges) db.prepare("INSERT INTO relationships VALUES (?, ?, 'calls', 1, ?)").run(s, t, retired);
+    db.exec(`CREATE TABLE entities (id TEXT PRIMARY KEY, stale_since INTEGER, epoch_retired INTEGER, page_rank REAL DEFAULT 0, epoch_written INTEGER DEFAULT 0);
+             CREATE TABLE relationships (source_id TEXT, target_id TEXT, type TEXT, weight REAL, epoch_retired INTEGER, epoch_written INTEGER DEFAULT 0);`);
+    for (const [id, retired, pr] of rows) db.prepare('INSERT INTO entities (id, stale_since, epoch_retired, page_rank) VALUES (?, ?, ?, ?)').run(id, retired, retired, pr);
+    for (const [s, t, retired] of edges) db.prepare("INSERT INTO relationships (source_id, target_id, type, weight, epoch_retired) VALUES (?, ?, 'calls', 1, ?)").run(s, t, retired);
     return db;
   }
   const ranks = () => {
@@ -48,7 +49,7 @@ describe('graph_pagerank job', () => {
   it('scores the live graph, ignores retired rows, and records its run', () => {
     // a -> b is live; a -> c was retired, and so was entity old.
     graph([['a', null, 0], ['b', null, 0], ['c', null, 0], ['old', 5, 0]], [['a', 'b', null], ['a', 'c', 7], ['old', 'b', 5]]).close();
-    expect(readGraphRankState(stateDir)).toMatchObject({ unrankedEntities: 3, msSinceRun: Infinity });
+    expect(readGraphRankState(stateDir)).toMatchObject({ graphEpoch: 7, rankedEpoch: 0, msSinceRun: Infinity });
 
     graphPageRankHandler({}, { stateDir });
 
@@ -58,7 +59,7 @@ describe('graph_pagerank job', () => {
     expect(pr.b).toBeGreaterThan(pr.c); // only the live edge feeds b; the retired one adds nothing to c
     expect(existsSync(join(stateDir, PAGERANK_STATE))).toBe(true);
     const state = readGraphRankState(stateDir);
-    expect(state.unrankedEntities).toBe(0);
+    expect(state).toMatchObject({ graphEpoch: 7, rankedEpoch: 7 });
     expect(state.msSinceRun).toBeLessThan(DEFAULT_WATERMARKS.pageRankIntervalMs);
   });
 });

@@ -398,7 +398,7 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
     // metadata, so the id is the only source of the file. The suffix is stripped from the
     // right — NOT with `split(':')[0]`, which on Windows would split on the drive-letter
     // colon (`C:\...`) and lose most of the path (L8 fix).
-    const ID_SUFFIX_PATTERN = /:\d+-\d+:\d+(?:@e\d+(?:\.\d+)*)?$/;
+    const ID_SUFFIX_PATTERN = /:\d+-\d+:\d+(?:@e\d+(?:\.\d+)*)*$/;
     const fileFromId = (id) => {
       const m = ID_SUFFIX_PATTERN.exec(id);
       return m ? id.slice(0, m.index) : id;

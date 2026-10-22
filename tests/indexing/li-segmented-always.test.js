@@ -47,3 +47,32 @@ describe('LI index format', () => {
     expect(baselineStatus(stateDir).state).toBe('index_rebuild_required');
   });
 });
+
+// One file with more than a segment's worth of LI docs: the delta writer flushed them to
+// segment-0000 of the live directory (over an existing segment) and published none of them.
+describe('LI delta larger than one segment', () => {
+  let dir;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), 'ss-li-big-')); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  it('keeps the existing segment and publishes every added doc', async () => {
+    const { applyLateInteractionDelta } = await import('../../core/incremental-indexing/application/production-li-delta.mjs');
+    const indexPath = join(dir, 'codebase-late-interaction.db');
+    const index = new LateInteractionIndex({ indexPath, loadExisting: false, tokenDim: DIM, maxTokens: 64, useInt8: true, quantBits: 4, modelId: 'lateon-code' });
+    await index.init();
+    await index.add('keep', tokens(1), { file: 'keep.js' });
+    await index.save();
+
+    const n = 10_001;
+    const one = [tokens(2, 1)[0]];
+    const ops = Array.from({ length: n }, (_, i) => ({ addId: `big.js:${i}-${i}:${i}`, chunk: { file: 'big.js', metadata: {} } }));
+    const liEncoder = async (texts) => texts.map(() => one);
+    liEncoder.countTokens = async (texts) => texts.map(() => 1);
+    await applyLateInteractionDelta({ indexPath, ops, liEncoder, pickLiInput: () => 'x' });
+
+    const back = new LateInteractionIndex({ indexPath, loadExisting: true });
+    await back.init();
+    expect(back.documents.has('keep')).toBe(true);
+    expect(back.documents.size).toBe(n + 1);
+  }, 120_000);
+});

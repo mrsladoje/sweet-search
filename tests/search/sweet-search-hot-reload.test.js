@@ -148,3 +148,32 @@ describe('SweetSearch._refreshManifestPins — HNSW file rewritten at the same e
     expect(searcher._reloadBinaryHnsw).not.toHaveBeenCalled();
   });
 });
+
+// Each reload replaced the index without closing it: the old one keeps its file open (it reads
+// graph sections lazily), so every reload leaked a descriptor and kept the replaced file alive.
+describe('SweetSearch._reloadBinaryHnsw — closes the replaced index', () => {
+  it('closes the old index after the grace period, not during it', async () => {
+    const { buildHnswIndex } = await import('../../core/indexing/artifact-builder.js');
+    const indexPath = join(stateDir, 'codebase-binary-hnsw.idx');
+    const vec = (i) => Float32Array.from({ length: 768 }, (_, k) => Math.sin(i * 31 + k));
+    const { index } = await buildHnswIndex([0, 1, 2].map((i) => ({ id: `v${i}`, embedding: vec(i), metadata: {} })), { indexPath });
+    await index.save(indexPath);
+    index.close();
+
+    vi.useFakeTimers();
+    try {
+      const searcher = makeSearcher();
+      searcher.binaryHnswPath = indexPath;
+      const old = { close: vi.fn(), stalePath: `${indexPath}.stale.bin` };
+      searcher.binaryHnswIndex = old;
+      await searcher._reloadBinaryHnsw();
+      expect(searcher.binaryHnswIndex).not.toBe(old);
+      expect(old.close).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(120_000);
+      expect(old.close).toHaveBeenCalledTimes(1);
+      searcher.binaryHnswIndex.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
