@@ -803,6 +803,11 @@ export async function startServer() {
   // Dynamic import to avoid circular dependency
   const { default: SweetSearch } = await import('./sweet-search.js');
 
+  // The query models run in a child that exits after a long idle stretch, which is the
+  // only way to give their memory back (query-encoder.mjs).
+  const { startQueryEncoder } = await import('./query-encoder.mjs');
+  const queryEncoder = startQueryEncoder({ log: (level, msg) => console.log(`[Server] ${msg}`) });
+
   const searcher = new SweetSearch({ verbose: false });
   const initStartedAt = Date.now();
   let serverReady = false;
@@ -894,6 +899,7 @@ export async function startServer() {
     try { searcher.close(); } catch (err) {
       if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] searcher close: ${err?.message || err}\n`);
     }
+    try { queryEncoder.close(); } catch { /* the child exits with us anyway */ }
     try { await fs.unlink(pidFile); } catch (err) {
       if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
     }
@@ -951,6 +957,9 @@ export async function startServer() {
     // The native grep lane's answered calls go to the shown-span ledger before any other call
     // reads or writes it, so the ledger sees every call in order.
     if (req.method === 'POST' && (reqUrl === '/agent-tool' || reqUrl === '/agent-spans')) applyLaneReceipts();
+    // An agent at work: start the query models if they idled out, without waiting, so a
+    // semantic search after these calls does not pay the ~2 s model load.
+    if (reqUrl === '/agent-tool' || reqUrl.startsWith('/read?') || reqUrl.startsWith('/trace?')) queryEncoder.prewarm();
 
     if (req.method === 'POST' && reqUrl === '/agent-spans') {
       if (req.socket.remoteAddress) {

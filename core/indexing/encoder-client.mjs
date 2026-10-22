@@ -163,7 +163,7 @@ export function createEncoderClient(options = {}) {
     idleTimer.unref?.();
   }
 
-  function call(op, texts, onProgress) {
+  function call(op, texts, onProgress, options) {
     clearTimeout(idleTimer);
     if (!child) child = start();
     const c = child;
@@ -172,7 +172,7 @@ export function createEncoderClient(options = {}) {
       pending.set(id, { resolve, reject, onProgress, child: c });
       armSilence(c);
       try {
-        c.send({ id, op, texts }, (err) => {
+        c.send(options ? { id, op, texts, options } : { id, op, texts }, (err) => {
           if (err && pending.has(id)) {
             pending.delete(id);
             reject(err);
@@ -195,11 +195,14 @@ export function createEncoderClient(options = {}) {
   li.provenanceLabel = 'ort/cpu';
   /** Start the process and load both models without waiting (the first edit after idle). */
   const warm = () => { if (!child) call('warm', []).catch(() => {}); };
+  /** A request by op name, for the query role (see encoder-host.mjs). */
+  const request = (op, texts, options) => call(op, texts, undefined, options);
 
   return {
     dense,
     li,
     warm,
+    request,
     close: () => {
       clearTimeout(idleTimer);
       clearTimeout(silenceTimer);
