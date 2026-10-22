@@ -27,6 +27,7 @@ export { leidenCommunities } from './leiden-algorithm.js';
 const ENTITY_CUTOFF = 50_000;
 const RELATIONSHIP_CUTOFF = 200_000;
 const DEFAULT_TIMEOUT_MS = 2000;
+const LIVE_RELATIONSHIPS = `type != 'importsFile' AND type NOT IN ${TRACE_ONLY_TYPES_SQL} AND epoch_retired IS NULL`;
 
 // Relationship type weights for adjacency construction
 const REL_WEIGHTS = {
@@ -55,11 +56,12 @@ export function computeGraphHash(dbPath) {
   try {
     // `importsFile` edges (file → file, no entity target) and the trace-only
     // types (relationship-types.js) are excluded so communities and their
-    // hash stay what they were before those edges.
+    // hash stay what they were before those edges. Live rows only: the
+    // maintainer retires rows instead of deleting them.
     const rows = db.prepare(`
       SELECT source_id, target_id, type
       FROM relationships
-      WHERE type != 'importsFile' AND type NOT IN ${TRACE_ONLY_TYPES_SQL}
+      WHERE ${LIVE_RELATIONSHIPS}
       ORDER BY source_id, target_id, type
     `).all();
 
@@ -141,16 +143,20 @@ export function detectCommunities(dbPath, options = {}) {
   }
 
   try {
+    // Live rows in a fixed order: a maintained graph holds retired rows and stores rows
+    // in another order than a full build, and both must give the same communities.
     const entities = db.prepare(`
       SELECT id, name, type, file_path
       FROM entities
-      WHERE stale_since IS NULL
+      WHERE stale_since IS NULL AND epoch_retired IS NULL
+      ORDER BY id
     `).all();
 
     const relationships = db.prepare(`
       SELECT source_id, target_id, type
       FROM relationships
-      WHERE type != 'importsFile' AND type NOT IN ${TRACE_ONLY_TYPES_SQL}
+      WHERE ${LIVE_RELATIONSHIPS}
+      ORDER BY source_id, target_id, type
     `).all();
 
     // Hard cutoffs: fall back to directory grouping
@@ -160,6 +166,7 @@ export function detectCommunities(dbPath, options = {}) {
         communities: fallbackDirectoryGrouping(entities),
         graphHash,
         stale: false,
+        relationshipCount: relationships.length,
       };
     }
 
@@ -172,6 +179,8 @@ export function detectCommunities(dbPath, options = {}) {
       resolution: options.resolution,
       maxIterations: options.maxIterations,
       timeoutMs,
+      // Seeded: the same graph gives the same communities in every run (Math.random did not).
+      randomSeed: options.randomSeed ?? 42,
     });
     const elapsed = Date.now() - startTime;
     const stale = !converged && elapsed >= timeoutMs;
@@ -229,7 +238,7 @@ export function detectCommunities(dbPath, options = {}) {
     }
 
     const graphHash = computeGraphHashFromRows(relationships);
-    return { communities: finalCommunities, graphHash, stale };
+    return { communities: finalCommunities, graphHash, stale, relationshipCount: relationships.length };
   } finally {
     db.close();
   }

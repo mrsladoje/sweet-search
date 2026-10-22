@@ -51,7 +51,8 @@ import { startBackgroundBuild } from '../infrastructure/background-build.mjs';
 import { mergeLiSegments, collectLiveDocs, nextSegmentSeq, quarantineSegmentFiles, LI_MERGE_GRACE_MS } from '../infrastructure/li-segment-merge.mjs';
 import { runVectorGc } from '../infrastructure/vector-gc.mjs';
 import { runGraphGc } from '../infrastructure/graph-gc.mjs';
-import { PAGERANK_STATE, graphChangeEpoch } from '../infrastructure/maintenance-state-reader.mjs';
+import { PAGERANK_STATE, VOCAB_RUNNING, VOCAB_STATE, graphChangeEpoch } from '../infrastructure/maintenance-state-reader.mjs';
+import { refreshVocabulary } from '../../vocabulary/vocab-warmup-orchestrator.js';
 import { populatePageRankColumn } from '../../graph/structural-pagerank.js';
 import { minLiveEpoch } from '../infrastructure/reader-heartbeat.mjs';
 import { readManifest, writeManifest } from '../infrastructure/manifest.mjs';
@@ -481,6 +482,61 @@ export function graphPageRankHandler(job, { stateDir, onProgress = null }) {
 }
 
 /* ------------------------------------------------------------------ *
+ * vocab_refresh (communities + vocabulary artifacts)                  *
+ * ------------------------------------------------------------------ */
+
+let vocabRun = null;
+
+/**
+ * Rebuild communities.json and the vocabulary embedding artifacts from the live graph, as
+ * the full build's post-index warmup does (core/vocabulary refreshVocabulary). The run
+ * takes seconds on a large repo (mining, communities), so the handler starts it and
+ * returns: the heavy steps run in a worker thread and the maintainer keeps reconciling.
+ * The embeddings go through `embed` (the maintainer's encoder child); texts the current
+ * artifacts hold are reused. Every file is published by rename; readers read them whole
+ * from disk when they use them. Without an encoder only communities.json is rebuilt.
+ *
+ * While a run is in flight VOCAB_RUNNING names this process, so the watermark does not
+ * fire again. The graph epoch read before the run is recorded, so a change made during it
+ * counts toward the next one; a failed run records its time, so the interval paces retries.
+ * `wait`: resolve with the run's result (tests, a one-shot CLI).
+ */
+export async function vocabRefreshHandler(job, { stateDir, projectRoot = null, embed = null, onProgress = null, wait = false }) {
+  const progress = progressFn(onProgress);
+  if (vocabRun) return { skipped: 'running' };
+  const dbPath = path.join(stateDir, 'code-graph.db');
+  if (!fs.existsSync(dbPath)) return { skipped: 'no-graph' };
+  let graphEpoch = 0;
+  const db = new Database(dbPath, { readonly: true });
+  try { graphEpoch = graphChangeEpoch(db); } finally { db.close(); }
+  const root = projectRoot || process.env.SWEET_SEARCH_PROJECT_ROOT || path.dirname(stateDir);
+  const marker = path.join(stateDir, VOCAB_RUNNING);
+  fs.writeFileSync(marker, JSON.stringify({ pid: process.pid, startedAt: Date.now(), graphEpoch }));
+  vocabRun = refreshVocabulary({ projectRoot: root, stateDir, graphEpoch, ...(embed ? { embed } : {}) })
+    .then((result) => ({ tier: 'vocab_refresh', graphEpoch, ...result }))
+    .catch((err) => {
+      const statePath = path.join(stateDir, VOCAB_STATE);
+      let prev = {};
+      try { prev = JSON.parse(fs.readFileSync(statePath, 'utf8')); } catch { /* none */ }
+      try { fs.writeFileSync(statePath, JSON.stringify({ ...prev, ranAt: Date.now(), lastError: err?.message || String(err) })); } catch { /* best effort */ }
+      return { tier: 'vocab_refresh', graphEpoch, error: err?.message || String(err) };
+    })
+    .finally(() => {
+      safeUnlink(marker);
+      vocabRun = null;
+      progress('maintenance:vocab-refresh:done');
+    });
+  if (wait) return vocabRun;
+  progress('maintenance:vocab-refresh:started');
+  return { tier: 'vocab_refresh', started: true, graphEpoch };
+}
+
+/** The vocab_refresh run in flight, or null (shutdown and tests wait on it). */
+export function vocabRefreshInFlight() {
+  return vocabRun;
+}
+
+/* ------------------------------------------------------------------ *
  * Registry                                                            *
  * ------------------------------------------------------------------ */
 
@@ -490,7 +546,7 @@ export function graphPageRankHandler(job, { stateDir, onProgress = null }) {
  * (built-in to the same file as the worker); this returns the four
  * additional handlers and lets the caller merge them.
  */
-export function reclamationHandlers(stateDir) {
+export function reclamationHandlers(stateDir, { embed = null } = {}) {
   return {
     sparse_gram: (job, ctx = {}) => sparseGramHandler(job, { stateDir, onProgress: ctx.onProgress, config: loadWatermarkConfig() }),
     binary_hnsw: (job, ctx = {}) => binaryHnswHandler(job, { stateDir, onProgress: ctx.onProgress }),
@@ -499,5 +555,6 @@ export function reclamationHandlers(stateDir) {
     vector_gc: (job, ctx = {}) => vectorGcHandler(job, { stateDir, onProgress: ctx.onProgress }),
     graph_gc: (job, ctx = {}) => graphGcHandler(job, { stateDir, onProgress: ctx.onProgress }),
     graph_pagerank: (job, ctx = {}) => graphPageRankHandler(job, { stateDir, onProgress: ctx.onProgress }),
+    vocab_refresh: (job, ctx = {}) => vocabRefreshHandler(job, { stateDir, embed, onProgress: ctx.onProgress }),
   };
 }

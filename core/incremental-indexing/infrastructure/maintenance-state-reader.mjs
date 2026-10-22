@@ -24,6 +24,7 @@ import { EXACT_SCAN_MAX_VECTORS } from '../../vector-store/binary-hnsw-index.js'
 import { deltaSizeStats, pendingDeleteStats } from './sparse-gram-delta.mjs';
 import { evaluateSegmentRatios, LI_SEGMENT_SIZE } from './li-segment-state.mjs';
 import { fts5SegmentCount } from './sqlite-fts5.mjs';
+import { loadWatermarkConfig } from '../domain/watermark-scheduler.mjs';
 
 function readJson(filePath) {
   try { return JSON.parse(fs.readFileSync(filePath, 'utf-8')); } catch { return null; }
@@ -281,10 +282,65 @@ export function readGraphRankState(stateDir, now = Date.now()) {
   }
 }
 
+/** Written with the vocabulary artifacts (core/vocabulary/vocab-constants.js VOCAB_STATE_FILE). */
+export const VOCAB_STATE = 'vocab-refresh-state.json';
+/** Present while a vocab_refresh run is in flight: { pid, startedAt, graphEpoch }. */
+export const VOCAB_RUNNING = 'vocab-refresh.running';
+
+function pidAlive(pid) {
+  if (!Number.isInteger(pid) || pid <= 0) return false;
+  try { process.kill(pid, 0); return true; } catch (err) { return err?.code === 'EPERM'; }
+}
+
+/**
+ * Vocabulary freshness for the vocab_refresh watermark: `graphEpoch` (graphChangeEpoch),
+ * `vocabEpoch` (the graph epoch the artifacts were made from; 0 = the full build),
+ * `changedRows` (entity and relationship rows written or retired after vocabEpoch),
+ * `liveRelationships` at the last run, `msSinceRun`, and `running` (a run in flight in a
+ * live process). Every tick reads this, so the rows are counted only once the graph moved
+ * on and the interval passed, and each count stops at `countCap` (the job fires at that
+ * many rows anyway): a few index range steps, not a scan of every change since the last run.
+ * No artifacts at all: nothing to refresh.
+ */
+export function readVocabState(stateDir, now = Date.now(), { intervalMs = 0, countCap = Infinity } = {}) {
+  const empty = { graphEpoch: 0, vocabEpoch: 0, changedRows: 0, liveRelationships: null, msSinceRun: Infinity, running: false };
+  const dbPath = path.join(stateDir, 'code-graph.db');
+  const running = pidAlive(readJson(path.join(stateDir, VOCAB_RUNNING))?.pid);
+  if (!fs.existsSync(dbPath) || !fs.existsSync(path.join(stateDir, 'communities.json'))) return { ...empty, running };
+  const state = readJson(path.join(stateDir, VOCAB_STATE));
+  const vocabEpoch = Number.isInteger(state?.graphEpoch) ? state.graphEpoch : 0;
+  const msSinceRun = Number.isFinite(state?.ranAt) ? Math.max(0, now - state.ranAt) : Infinity;
+  const liveRelationships = Number.isInteger(state?.liveRelationships) ? state.liveRelationships : null;
+  const db = new Database(dbPath, { readonly: true });
+  try {
+    const graphEpoch = graphChangeEpoch(db);
+    let changedRows = 0;
+    if (graphEpoch > vocabEpoch && msSinceRun >= intervalMs && !running) {
+      const limit = Number.isFinite(countCap) ? ` LIMIT ${Math.max(1, Math.ceil(countCap))}` : '';
+      for (const table of ['entities', 'relationships']) {
+        for (const column of ['epoch_written', 'epoch_retired']) {
+          if (changedRows >= countCap) break;
+          changedRows += db.prepare(`SELECT COUNT(*) AS n FROM (SELECT 1 FROM ${table} WHERE ${column} > ?${limit})`).get(vocabEpoch).n;
+        }
+      }
+    }
+    return { graphEpoch, vocabEpoch, changedRows, liveRelationships, msSinceRun, running };
+  } catch {
+    return { ...empty, running };
+  } finally {
+    db.close();
+  }
+}
+
+function vocabReadOptions() {
+  const config = loadWatermarkConfig();
+  return { intervalMs: config.vocabIntervalMs, countCap: config.vocabChangeRows };
+}
+
 /**
  * One-shot bundle for the reconciler adapter. Returns the full shape
  * `evaluateWatermarks` expects: `fts5 / sparseGram /
- * binaryHnsw / liSegments / liSegmentStats / vectors / graph / graphRank`.
+ * binaryHnsw / liSegments / liSegmentStats / vectors / graph / graphRank / vocab`.
  */
 export function readMaintenanceState(stateDir) {
   return {
@@ -296,5 +352,6 @@ export function readMaintenanceState(stateDir) {
     vectors: readVectorGcState(stateDir),
     graph: readGraphGcState(stateDir),
     graphRank: readGraphRankState(stateDir),
+    vocab: readVocabState(stateDir, Date.now(), vocabReadOptions()),
   };
 }

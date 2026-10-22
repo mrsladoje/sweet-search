@@ -400,6 +400,8 @@ describe('warmFromCache', () => {
     fsPromises.writeFile.mockImplementation(writeImpl);
     fsReadFile.mockImplementation(readImpl);
     fsPromises.readFile.mockImplementation(readImpl);
+    const renameImpl = async (from, to) => { memfs.set(String(to), memfs.get(String(from))); memfs.delete(String(from)); };
+    fsPromises.rename.mockImplementation(renameImpl);
     existsSync.mockImplementation((filePath) => memfs.has(String(filePath)));
 
     const seeds = new Map([
@@ -452,8 +454,9 @@ describe('saveBinaryArtifact', () => {
     await saveBinaryArtifact('/tmp/test.bin', '/tmp/test.meta.json', embeddings);
 
     expect(writes.length).toBe(2);
-    const binWrite = writes.find(([p]) => p.endsWith('.bin'));
-    const metaWrite = writes.find(([p]) => p.endsWith('.json'));
+    // Each file is written to a temp path and renamed into place.
+    const binWrite = writes.find(([p]) => p.startsWith('/tmp/test.bin.'));
+    const metaWrite = writes.find(([p]) => p.startsWith('/tmp/test.meta.json.'));
     expect(binWrite).toBeDefined();
     expect(metaWrite).toBeDefined();
 

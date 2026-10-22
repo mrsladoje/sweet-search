@@ -158,11 +158,15 @@ export async function warmLexical(terms, dbPath) {
  * @param {object} [options] - { hnswIndex, dimension, provider, db }
  * @param {string} [options.provider] - Embedding provider override (passed to generateEmbeddings)
  * @param {import('better-sqlite3').Database} [options.db] - Pre-opened code-graph.db to reuse
+ * @param {(texts: string[]) => Promise<Array>} [options.embed] - Encoder to use instead of
+ *   generateEmbeddings (the maintainer passes its encoder child)
+ * @param {Map<string, ArrayLike<number>>} [options.reuse] - Embeddings already computed, by
+ *   text: only the other texts are encoded
  * @returns {Promise<{embeddingsGenerated: number, hnswTraversals: number, elapsedMs: number, embeddings: Map}>}
  */
 export async function warmSemantic(hubEntities, communityPhrases, options = {}) {
   const start = performance.now();
-  const { hnswIndex, dimension, provider, db } = options;
+  const { hnswIndex, dimension, provider, db, embed, reuse } = options;
   let embeddingsGenerated = 0;
   let hnswTraversals = 0;
 
@@ -217,13 +221,23 @@ export async function warmSemantic(hubEntities, communityPhrases, options = {}) 
     return { embeddingsGenerated: 0, hnswTraversals: 0, elapsedMs: Math.round(performance.now() - start) };
   }
 
-  // Generate embeddings (provider-agnostic via embedding-service)
+  // Generate embeddings (provider-agnostic via embedding-service), except the reused ones
   let allEmbeddings;
   try {
-    allEmbeddings = provider
-      ? await generateEmbeddings(textsToEmbed, provider)
-      : await generateEmbeddings(textsToEmbed);
-    embeddingsGenerated = allEmbeddings.length;
+    const missing = reuse ? [...new Set(textsToEmbed.filter((t) => !reuse.has(t)))] : textsToEmbed;
+    let fresh = [];
+    if (missing.length > 0) {
+      fresh = embed
+        ? await embed(missing)
+        : provider ? await generateEmbeddings(missing, provider) : await generateEmbeddings(missing);
+    }
+    embeddingsGenerated = fresh.length;
+    if (reuse) {
+      const byText = new Map(missing.map((t, i) => [t, fresh[i]]));
+      allEmbeddings = textsToEmbed.map((t) => reuse.get(t) ?? byText.get(t));
+    } else {
+      allEmbeddings = fresh;
+    }
   } catch (err) {
     return {
       embeddingsGenerated: 0,
@@ -476,9 +490,9 @@ export function _loadEntityMetadata(hubEntities, options = {}) {
                  COALESCE(p.id, 0)
              ) AS rn
            FROM entities e
-           LEFT JOIN relationships r ON r.source_id = e.id AND r.type IN ('childOf','memberOf','nestedIn')
-           LEFT JOIN entities p ON p.id = r.target_id
-           WHERE e.name IN (${placeholders})
+           LEFT JOIN relationships r ON r.source_id = e.id AND r.type IN ('childOf','memberOf','nestedIn') AND r.epoch_retired IS NULL
+           LEFT JOIN entities p ON p.id = r.target_id AND p.epoch_retired IS NULL
+           WHERE e.name IN (${placeholders}) AND e.epoch_retired IS NULL
          )
          SELECT name, type, file_path, parent_name, parent_type
          FROM ranked
