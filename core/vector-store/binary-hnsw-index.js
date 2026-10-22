@@ -32,8 +32,6 @@ import path from 'path';
 import { BINARY_HNSW_CONFIG, DB_PATHS } from '../infrastructure/config/index.js';
 import {
   floatToBinary, normalizedFloatToInt8, truncateForHNSW,
-  asymmetricDocEncode, asymmetricQueryEncode,
-  computeCentroid, generateSignVector,
 } from '../infrastructure/quantization.js';
 import { HammingSlab } from '../infrastructure/hamming-kernel.js';
 import { TypedMinHeap, TypedMaxHeap, VisitedList } from './binary-heap.js';
@@ -117,7 +115,7 @@ const PIPELINE_VERSION = 2;
 //     per level    present (length bytes: 1 = the node has a list there),
 //                  offsets ((count + 1) x u32, CSR over all nodes),
 //                  neighbors (links x u32)
-// The header holds the index fields, the asymmetric calibration, and every
+// The header holds the index fields and every
 // section's { off, len } relative to the data start (record sections also
 // list their chunk offsets).
 export { readIndexHeader, binaryHnswIndexExists } from './index-file-header.js';
@@ -392,10 +390,6 @@ export class BinaryHNSWIndex {
     this._candHeap = new TypedMinHeap(64);
     this._resHeap = new TypedMaxHeap(64);
 
-    // Asymmetric binary quantization calibration data
-    this.centroid = null;       // Float32Array — dataset centroid
-    this.signVector = null;     // Float32Array — random ±1 for WHT rotation
-    this.useAsymmetric = false; // Enabled after calibration
     this._staleBitmapCache = null;
     this._cleanBuild = false;
     // Full-vector file (full-vector-file.js): the writer is chosen at the
@@ -551,9 +545,6 @@ export class BinaryHNSWIndex {
     this.graph = [];
     this.entryPoint = -1;
     this.maxLevel = 0;
-    this.centroid = null;
-    this.signVector = null;
-    this.useAsymmetric = false;
     this.initialized = true;
     this._staleBitmapCache = null;
     this._cleanBuild = true;
@@ -1036,12 +1027,11 @@ export class BinaryHNSWIndex {
 
   /**
    * Search for k nearest neighbors.
-   * Supports asymmetric binary quantization.
    * Fix 7: Adaptive ef based on greedy descent quality.
    *
    * @param {Uint8Array|number[]} queryVector - Binary query vector (or float to convert)
    * @param {number} k - Number of results
-   * @param {object} opts - Optional { floatQuery: Float32Array } for asymmetric mode
+   * @param {object} opts - Optional search options
    * @returns {Promise<{results: Array, latency_us: number}>}
    */
   /**
@@ -1184,7 +1174,6 @@ export class BinaryHNSWIndex {
       total: this._liveVectorCount(staleBitmap),
       visitedNodes: visitedCount,
       adaptiveEf: ef,
-      useAsymmetric: this.useAsymmetric,
     };
     // Node index of each result, for int8ScoresForNodes. Non-enumerable so
     // the visible result shape is unchanged.
@@ -1213,11 +1202,6 @@ export class BinaryHNSWIndex {
       queryBinary = new Uint8Array(queryVector);
     }
 
-    // When asymmetric mode is active (future: 1024d+ providers), re-encode
-    // query binary through center→rotate→sign-bit for Hamming consistency.
-    if (this.useAsymmetric && opts.floatQuery) {
-      queryBinary = this.encodeDocument(opts.floatQuery);
-    }
     // Stage the query once: traversal distances become resident-slab calls.
     const nat = this._nativeSearcher();
     if (nat) nat.setQuery(queryBinary);
@@ -1248,7 +1232,7 @@ export class BinaryHNSWIndex {
       }
     }
 
-    // Level 0 search — pure Hamming, no asymmetric in the traversal loop
+    // Level 0 search — pure Hamming
     if (nat) return this._finishNativeSearch(nat, currentNode, ef, k, staleBitmap, start, opts.lazy === true);
 
     const searchResult = this.searchLayerQuery(currentNode, queryBinary, ef, 0);
@@ -1281,7 +1265,6 @@ export class BinaryHNSWIndex {
       total: this._liveVectorCount(staleBitmap),
       visitedNodes: searchResult.visitedCount,
       adaptiveEf: ef,
-      useAsymmetric: this.useAsymmetric,
     };
   }
 
@@ -1327,9 +1310,7 @@ export class BinaryHNSWIndex {
     } else {
       queryBinary = new Uint8Array(queryVector);
     }
-    if (this.useAsymmetric && opts.floatQuery) {
-      queryBinary = this.encodeDocument(opts.floatQuery);
-    } else if (opts.queryFloat && queryBinary.length !== this.dimension) {
+    if (opts.queryFloat && queryBinary.length !== this.dimension) {
       // An index whose codes use another prefix width than the configured one (K4).
       queryBinary = floatToBinary(truncateForHNSW(opts.queryFloat, this.floatDimension));
     }
@@ -1454,7 +1435,6 @@ export class BinaryHNSWIndex {
       total: live,
       visitedNodes: visitedCount,
       adaptiveEf: ef,
-      useAsymmetric: this.useAsymmetric,
       count: n,
       stats,
       queryInt8,
@@ -1580,7 +1560,6 @@ export class BinaryHNSWIndex {
   /**
    * Search layer for query vector.
    * Pure Hamming distance — heaps are integer-native, no float packing.
-   * Asymmetric rescoring happens in search() after candidates are returned.
    */
   searchLayerQuery(startNode, queryBinary, ef, level) {
     // Direct callers (outside search()) may pass their own query — stage it.
@@ -1682,40 +1661,6 @@ export class BinaryHNSWIndex {
       out[i] = { idx: sorted.keys[i], dist: sorted.vals[i] };
     }
     return { candidates: out, visitedCount };
-  }
-
-  /**
-   * Calibrate asymmetric quantization from float embeddings.
-   * Must be called once per index build, before adding vectors.
-   * Computes centroid and generates sign vector for WHT rotation.
-   */
-  calibrateAsymmetric(floatEmbeddings) {
-    if (!floatEmbeddings || floatEmbeddings.length === 0) return;
-    this.centroid = computeCentroid(floatEmbeddings);
-    this.signVector = generateSignVector(this.centroid.length);
-    this.useAsymmetric = true;
-  }
-
-  /**
-   * Encode a float embedding using the asymmetric pipeline (center→rotate→binarize).
-   * Falls back to simple sign-bit if not calibrated.
-   */
-  encodeDocument(floatEmbedding) {
-    if (this.useAsymmetric && this.centroid && this.signVector) {
-      return asymmetricDocEncode(floatEmbedding, this.centroid, this.signVector);
-    }
-    return floatToBinary(floatEmbedding);
-  }
-
-  /**
-   * Encode a query using the asymmetric pipeline (center→rotate→int4).
-   * Returns { int4, norm } for asymmetric distance, or null if not calibrated.
-   */
-  encodeQuery(floatEmbedding) {
-    if (this.useAsymmetric && this.centroid && this.signVector) {
-      return asymmetricQueryEncode(floatEmbedding, this.centroid, this.signVector);
-    }
-    return null;
   }
 
   /**
@@ -1958,10 +1903,6 @@ export class BinaryHNSWIndex {
       count: n,
       maxLevel: this.maxLevel,
       entryPoint: this.entryPoint,
-      useAsymmetric: this.useAsymmetric,
-      calibration: (this.useAsymmetric && this.centroid && this.signVector)
-        ? { centroid: Array.from(this.centroid), signVector: Array.from(this.signVector) }
-        : null,
       int8Dim,
       int8Count,
       levels,
@@ -1982,7 +1923,7 @@ export class BinaryHNSWIndex {
     }
     await fs.rename(indexPath + pidSuffix, indexPath);
 
-    console.log(`BinaryHNSW: Saved ${n} vectors to ${indexPath} (asymmetric=${this.useAsymmetric})`);
+    console.log(`BinaryHNSW: Saved ${n} vectors to ${indexPath}`);
   }
 
   /**
@@ -2029,9 +1970,6 @@ export class BinaryHNSWIndex {
       this.maxElements = header.maxElements ?? this.maxElements;
       this.maxLevel = header.maxLevel;
       this.entryPoint = header.entryPoint;
-      this.useAsymmetric = header.useAsymmetric || false;
-      this.centroid = this.useAsymmetric && header.calibration ? new Float32Array(header.calibration.centroid) : null;
-      this.signVector = this.useAsymmetric && header.calibration ? new Float32Array(header.calibration.signVector) : null;
 
       this._ids = readRecords(fd, dataStart, sec.ids, n);
       this._metas = readRecords(fd, dataStart, sec.metas, n);
@@ -2092,7 +2030,7 @@ export class BinaryHNSWIndex {
         bootLog(`BinaryHNSW: no full-vector file at ${indexPath}; the final rescore is off until a full rebuild`);
       }
       this.initialized = true;
-      bootLog(`BinaryHNSW: Loaded ${n} vectors from ${indexPath} (asymmetric=${this.useAsymmetric})`);
+      bootLog(`BinaryHNSW: Loaded ${n} vectors from ${indexPath}`);
     } finally {
       if (!keep) {
         if (this._file?.fd === fd) this._file = null;
