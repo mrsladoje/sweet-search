@@ -18,6 +18,7 @@ import { readFileSync, writeFileSync, unlinkSync, mkdirSync, openSync, closeSync
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
+import { setProcessTitle } from '../infrastructure/process-title.js';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import { startupInterval, tierForHardware, reconcileEnablement, nextInterval, backstopWalkIntervalMs, resolveMaintainerMemoryProfile } from '../incremental-indexing/domain/interval-autotune.mjs';
@@ -1689,7 +1690,7 @@ async function main() {
   // Name the resident daemon so ps/Activity Monitor shows what it is instead
   // of an anonymous `node`. Cosmetic-only: all liveness/takeover checks are
   // lock/pid-based, never command-line matching.
-  try { process.title = 'sweet-search-maintainer'; } catch { /* best-effort */ }
+  setProcessTitle('sweet-search-maintainer');
   // Bench-only pid ledger (no-op unless SWEET_SEARCH_SPAWN_LEDGER_DIR is set).
   recordSpawn({ pid: process.pid, role: 'maintainer-self' });
 

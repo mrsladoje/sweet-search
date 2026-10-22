@@ -7,6 +7,7 @@
 // Package-management commands (init) always run in JS.
 
 import { spawnSync } from 'node:child_process';
+import { setProcessTitle } from './infrastructure/process-title.js';
 
 const args = process.argv.slice(2);
 
@@ -99,7 +100,7 @@ if (args[0] === 'init') {
   // search modules are never retitled. Liveness checks are lock/pid-based,
   // never command-line matching, so this is cosmetic-only.
   if (args[0] === '--serve') {
-    try { process.title = 'sweet-search-daemon'; } catch { /* best-effort */ }
+    setProcessTitle('sweet-search-daemon');
     // Bench-only pid ledger (no-op unless SWEET_SEARCH_SPAWN_LEDGER_DIR is set).
     // Self-registration covers every spawner (JS shims, native CLI, prewarm hook).
     if (process.env.SWEET_SEARCH_SPAWN_LEDGER_DIR) {

@@ -23,11 +23,12 @@ import { callLocalModel, callLocalModelBucketed, getLocalPipeline } from '../emb
 import { takeProvenance } from './inference-provenance.js';
 import { applyPersistedLiModel } from '../infrastructure/init-config.js';
 import { armBackgroundOrtProfiles } from './model-pool.js';
+import { setProcessTitle } from '../infrastructure/process-title.js';
 
 // The search daemon's query models run here too (queryRole), at the daemon's own
 // priority and threads: a query waits on them, so no background profile.
 const queryRole = process.env.SWEET_SEARCH_ENCODER_ROLE === 'query';
-try { process.title = queryRole ? 'sweet-search-query-encoder' : 'sweet-search-encoder'; } catch { /* cosmetic */ }
+setProcessTitle(queryRole ? 'sweet-search-query-encoder' : 'sweet-search-encoder');
 
 const projectRoot = process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd();
 if (!queryRole) armBackgroundOrtProfiles();
