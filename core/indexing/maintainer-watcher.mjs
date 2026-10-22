@@ -37,6 +37,7 @@
  * drops it); a missed event is caught by the periodic backstop walk.
  */
 
+import { isGrepCorpusPath } from './grep-corpus.js';
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -56,7 +57,8 @@ const SNAPSHOT_FILE = 'maintainer-watch-snapshot.bin';
 // the OS never reports events under them (inotify watch budget + event volume).
 // The build-output dirs (build/dist/out/target) are NOT here: admission re-admits
 // a git-tracked file under them, so their events must reach `keepRel` (which
-// drops the untracked ones). The stateDir is prepended dynamically (it is the
+// drops the untracked ones). Nor are `vendor` and `coverage`: the grep corpus holds
+// their git-visible files (grep-corpus.js), and the maintainer keeps those current. The stateDir is prepended dynamically (it is the
 // event-storm guard, not a generic deny dir).
 const DEFAULT_DENY_DIRS = Object.freeze([
   'node_modules',
@@ -64,13 +66,11 @@ const DEFAULT_DENY_DIRS = Object.freeze([
   '.sweet-search',
   '.next',
   '.nuxt',
-  'vendor',
   '__pycache__',
   '.venv',
   'venv',
   '.cache',
   '.turbo',
-  'coverage',
   '.parcel-cache',
   '.svelte-kit',
   '.vercel',
@@ -305,8 +305,13 @@ function keepRel(rel, policy) {
   try {
     if (typeof policy.underIgnoredDirectory === 'function' && policy.underIgnoredDirectory(rel)) return false;
     if (typeof policy.isExcluded !== 'function' || !policy.isExcluded(rel)) return true;
-    return typeof policy.isBuildOutputOnly === 'function' && policy.isBuildOutputOnly(rel)
-      && typeof policy.trackedFiles === 'function' && policy.trackedFiles().has(rel);
+    if (typeof policy.isBuildOutputOnly === 'function' && policy.isBuildOutputOnly(rel)
+      && typeof policy.trackedFiles === 'function' && policy.trackedFiles().has(rel)) return true;
+    // Outside embedding admission but in the grep corpus (vendor/, coverage/, ...): the
+    // consumer reconciles it through the sparse-gram tier alone. Never under a natively
+    // ignored dir (node_modules, caches).
+    if (rel.split('/').some((seg) => DEFAULT_DENY_DIRS.includes(seg))) return false;
+    return isGrepCorpusPath(rel);
   } catch {
     return true;
   }
@@ -318,10 +323,8 @@ function walkDir(rel, policy) {
   if (!policy) return true;
   try {
     if (typeof policy.isIgnoredDirectory === 'function' && policy.isIgnoredDirectory(rel)) return false;
-    // A build-output dir may hold tracked files: descend, keepRel decides per file.
-    if (typeof policy.isExcluded === 'function' && policy.isExcluded(rel)) {
-      return typeof policy.isBuildOutputOnly === 'function' && policy.isBuildOutputOnly(rel);
-    }
+    // An excluded dir may hold tracked build output or grep-corpus files: descend,
+    // keepRel decides per file (a directory git ignores as a whole was dropped above).
   } catch { /* descend */ }
   return true;
 }
