@@ -60,7 +60,10 @@ function nativeHnswSearcherCtor() {
   if (_NativeHnswSearcher !== undefined) return _NativeHnswSearcher;
   _NativeHnswSearcher = null;
   if (process.env.SS_FIX_HNSW_NATIVE === '0') return null;
-  const res = loadNativeAddon({ validate: (m) => typeof m.HnswSearcher === 'function' });
+  // append: delta rows join the searcher's slab (an older addon lacks it; the JS path runs).
+  const res = loadNativeAddon({
+    validate: (m) => typeof m.HnswSearcher === 'function' && typeof m.HnswSearcher.prototype?.append === 'function',
+  });
   if (res) _NativeHnswSearcher = res.mod.HnswSearcher;
   return _NativeHnswSearcher;
 }
