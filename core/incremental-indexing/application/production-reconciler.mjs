@@ -424,6 +424,8 @@ class ProductionReconcileAdapter {
   constructor(options) {
     this.projectRoot = options.projectRoot;
     this.stateDir = options.stateDir;
+    // The reconciler's file cap, when the caller sets it (readDirtySet admits twice this).
+    this._filesPerTick = options.config?.filesPerTick ?? null;
     this.onProgress = typeof options.onProgress === 'function' ? options.onProgress : null;
     this.vectorEncoder = options.vectorEncoder || ((texts, progressOptions = {}) => getEmbeddings(texts, {
       useCache: false,
@@ -872,12 +874,30 @@ class ProductionReconcileAdapter {
     requeued.reverse();
     let rels = [];
     const seen = new Set();
+    const entryOf = new Map();
     for (const [k, entry] of [...fresh, ...requeued].entries()) {
       const rel = relPath(this.projectRoot, entry.file_path || entry.path || entry.filePath || '');
       if (!rel || seen.has(rel)) continue;
       seen.add(rel);
       rels.push(rel);
+      entryOf.set(rel, entry);
       if (k < fresh.length) this._freshRels.add(rel);
+    }
+
+    // Admit only what this tick can reach. Stat, symlink, gitignore and content checks on
+    // the whole queue made a backlog drain in O(backlog^2) (20k queued files: 12.6 s per
+    // tick for 50 processed). The rest goes back to the queue as it was (same entries, so
+    // fresh edits stay first); a failed tick takes it out again like its deferred tail.
+    const sliceLimit = this._dirtySliceLimit();
+    if (rels.length > sliceLimit) {
+      const tail = rels.slice(sliceLimit);
+      rels = rels.slice(0, sliceLimit);
+      const queueFile = path.join(this.stateDir, DIRTY_QUEUE);
+      const text = tail.map((rel) => `${JSON.stringify(entryOf.get(rel))}\n`).join('');
+      let offset = 0;
+      try { offset = fs.statSync(queueFile).size; } catch { offset = 0; }
+      fs.appendFileSync(queueFile, text);
+      this._requeued.push({ offset, text });
     }
 
     // Admission rule 5: a path that is a symlink or runs through a symlinked
@@ -963,6 +983,13 @@ class ProductionReconcileAdapter {
     // Admitted this tick (new files included): the import resolver's file set.
     this._tickAdmitted = live.filter((f) => !retire.has(f) && !this._grepOnly.has(f));
     return live;
+  }
+
+  /** Queue entries a tick admits: twice its file cap (unchanged files do not count toward it). */
+  _dirtySliceLimit() {
+    const perTick = this._filesPerTick
+      ?? Number.parseInt(process.env.SWEET_SEARCH_RECONCILE_FILES_PER_TICK || '50', 10);
+    return Math.max(1, perTick) * 2;
   }
 
   /** The `rels` (existing, not symlinked) the sparse-gram corpus admits (grep-corpus.js gates). */
