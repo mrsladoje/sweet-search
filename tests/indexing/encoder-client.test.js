@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { createEncoderClient, encoderIdleMs, encoderProcessEnabled } from '../../core/indexing/encoder-client.mjs';
+import { createEncoderClient, encoderIdleMs } from '../../core/indexing/encoder-client.mjs';
 import { takeProvenance } from '../../core/indexing/inference-provenance.js';
 
 // A stand-in for encoder-host.mjs: same protocol, no models.
@@ -157,9 +157,7 @@ describe('encoder client', () => {
 });
 
 describe('encoder client config', () => {
-  it('runs encoders in a child unless switched off; idle defaults to 60 s', () => {
-    expect(encoderProcessEnabled({})).toBe(true);
-    expect(encoderProcessEnabled({ SWEET_SEARCH_MAINTAINER_ENCODER_PROCESS: '0' })).toBe(false);
+  it('idle defaults to 60 s', () => {
     expect(encoderIdleMs({})).toBe(60_000);
     expect(encoderIdleMs({ SWEET_SEARCH_ENCODER_IDLE_MS: '5000' })).toBe(5_000);
     expect(encoderIdleMs({ SWEET_SEARCH_ENCODER_IDLE_MS: '-1' })).toBe(60_000);
