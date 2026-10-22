@@ -600,20 +600,19 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 
 | | |
 |---|---|
-| ⚔️ **Rivals** | FAISS · USearch · hnswlib, all in native C++ (also ScaNN and DiskANN on x86) |
-| ⚙️ **Rival configs** | Each at its fastest: f32, f16, SQ8, i8, IVF-PQ, RaBitQ, binary flat or binary HNSW + exact rescore<br>M 16 / 32 / 64 · efC 200 / 800 · efSearch up to 1024 · chosen on dev, frozen before held-out |
-| 🛡️ **AdvTest** | FAISS needs `2.2×` our time on the M3 Max (`162` vs `73` µs) and `1.3×` on x86 |
+| ⚔️ **Rivals** | FAISS · USearch · hnswlib, all in native C++ |
+| ⚙️ **Rival configs** | Each at its fastest: f32, f16, SQ8, i8, IVF-PQ, RaBitQ, binary<br>M 16–64 · efC 200/800 · efSearch up to 1024 · chosen on dev, frozen |
+| 🛡️ **AdvTest** | FAISS needs `2.2×` our time (`162` vs `73` µs) |
 | 🐢 **Exact quality** | Rivals reach it, given far more time (`6.7 ms` at 140k vectors) |
 | 🔍 **Search path** | Exact Hamming scan up to 150k vectors, HNSW walk above |
-| ⚡ **Binary walk** | `1.6–4.7×` faster than FAISS / USearch binary HNSW at equal graph settings |
+| ⚡ **Binary walk** | `1.6–4.7×` faster than FAISS / USearch binary HNSW, same graph |
 | 💾 **Index RAM** (140k vectors) | `297 MB` vs `517 MB–2.0 GB` for FAISS |
-| 🧪 **Queries** | 2,400 GCSN held-out (seed 42) + dev-repo distractors · 1,200 AdvTest held-out |
+| 🧪 **Queries** | 2,400 GCSN held-out (seed 42) + dev-repo distractors · 1,200 AdvTest |
 | 🖥️ **Hardware** | Apple M3 Max · x86 AMD EPYC (AVX2) |
 | 📐 **Method** | [eval/benchmarks/hnsw-rivals/paper](eval/benchmarks/hnsw-rivals/paper/README.md) |
 
 <br>
 
-<img src="assets/hnsw-time-to-quality-x86.svg" alt="Time each library needs to keep 99% of exact-search quality (nDCG@10) on x86 AMD EPYC, p50, 1 thread, held-out, and how many times slower than sweet-ANN; each rival is the fastest of its configs that keeps 99%. 6,918 vectors: sweet-ANN 70 µs, FAISS 96 µs (1.4x), USearch 130 µs (1.9x), hnswlib 118 µs (1.7x). 20k vectors: sweet-ANN 103 µs, FAISS 83 µs (0.81x), USearch 202 µs (2.0x), hnswlib 617 µs (6.0x). 140k vectors: sweet-ANN 360 µs, FAISS 368 µs (1.02x), USearch 1.93 ms (5.4x), hnswlib 1.65 ms (4.6x). AdvTest 21.7k: sweet-ANN 126 µs, FAISS 159 µs (1.3x), USearch 472 µs (3.8x), hnswlib 695 µs (5.5x)." width="100%" />
 <img src="assets/hnsw-scaling.svg" alt="Latency to keep 99% of exact-search quality as the index grows, log scales, Apple M3 Max. sweet-ANN: 44 µs, 60 µs, 213 µs, 285 µs at 6.9k, 20k, 140k, 1M vectors. Fastest rival: 82 µs (USearch), 57 µs (FAISS), 248 µs (FAISS), 1.42 ms (FAISS). At 1M sweet-ANN is 5.0 times faster than the fastest rival." width="100%" />
 <img src="assets/hnsw-speed-quality.svg" alt="Speed and quality at 140k vectors, Apple M3 Max. sweet-ANN: nDCG@10 78.7 in 213 µs. In the same time, the best rival, FAISS binary flat, reaches 78.0. To keep 99% of exact quality (78.3), rivals need 248 µs (FAISS binary flat, 78.6), 877 µs (USearch i8, 78.4), 2.17 ms (hnswlib, 78.9). Exact search quality 79.1 needs 6.73 ms (FAISS exact)." width="100%" />
 </details>
