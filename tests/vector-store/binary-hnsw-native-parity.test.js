@@ -132,7 +132,8 @@ describe.skipIf(!hasNative)('BinaryHNSWIndex native search parity', () => {
       const fileB = readIndexFileSync(join(dir, 'b.idx'));
       expect(fileB.graph).toEqual(fileA.graph);
       expect(fileB.nodes).toEqual(fileA.nodes);
-      expect({ ...fileB.header, savedAt: null }).toEqual({ ...fileA.header, savedAt: null });
+      // Every save is a new base (a new generation pairs it with its delta file).
+      expect({ ...fileB.header, savedAt: null, generation: null }).toEqual({ ...fileA.header, savedAt: null, generation: null });
       for (let i = 0; i < queries.length; i++) {
         expect((await loaded.search(queries[i], 20)).results.map((r) => r.id)).toEqual(before[i]);
       }
