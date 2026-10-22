@@ -1,19 +1,13 @@
 /**
- * G2 efficiency levers — reconciler batching (E.1), live HNSW (E.2), SQLite
- * pragmas (E.4), FTS5 budgeting (E.5), autotune-config (A.4).
+ * G2 efficiency levers — batched reconciler tick (E.1), SQLite pragmas (E.4),
+ * FTS5 budgeting (E.5), autotune-config (A.4). All are always on.
  *
- * Every lever has its own env flag, all default OFF. The cardinal invariant: with
- * EVERY flag off the reconciler is byte/behavior-identical to today (covered by
- * the existing suites). These tests exercise the flag-ON paths:
- *
- *   - E.1 byte-identical tick: two batched runs (E.1 + G1 deterministic levels)
- *     produce byte-identical canonical artifacts (the batched path is fully
- *     deterministic). Batched vs per-file is recall-equivalent (different
- *     insertion order) per the plan — not asserted byte-identical here.
+ *   - E.1 byte-identical tick: two batched runs produce byte-identical
+ *     canonical artifacts (the batched path is fully deterministic).
  *   - Crash-consistency: SIGKILL between the SQLite commit and the HNSW batch
  *     save → restart → live (queryable) state reconverges, with NO live SQLite
  *     vector row missing from the HNSW int8 (live) map.
- *   - E.5 FTS5 budget: page count scales with spare budget; optimize + truncate.
+ *   - E.5 FTS5 budget: page count scales with spare budget.
  *   - E.4 pragmas: byte-identical (cache/heap settings don't change output).
  */
 
@@ -229,8 +223,6 @@ describe('G2 crash-consistency (E.1 persist-before-advance)', () => {
     // finalize fsync, then restart and drain; assert every live codebase.db
     // vector row has an HNSW int8 (live) entry and the live id-set matches a
     // clean run's.
-    const env = { SWEET_SEARCH_RECONCILE_BATCH_TIER_WRITES: '1', SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS: '1' };
-    for (const [k, v] of Object.entries(env)) process.env[k] = v;
     const projectRoot = harness.materializeRepo();
     const stateDir = join(projectRoot, '.sweet-search');
     mkdirSync(stateDir, { recursive: true });

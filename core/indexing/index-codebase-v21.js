@@ -38,6 +38,7 @@ if (process.env.SWEET_SEARCH_UV_THREADPOOL_SIZE && !process.env.UV_THREADPOOL_SI
 }
 
 import { existsSync } from 'fs';
+import path from 'path';
 import { DB_PATHS, LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
 import { applyPersistedLiModel } from '../infrastructure/init-config.js';
 import { resolveRelationshipTargets } from '../graph/relationship-resolver.js';
@@ -66,6 +67,7 @@ import {
   updateIncrementalStatePhase, printSummaryPhase,
 } from './indexer-phases.js';
 import { establishEmptyBaseline } from './indexer-empty-baseline.js';
+import { removeDeadLegacyArtifacts } from './legacy-artifact-sweep.js';
 // =============================================================================
 // CLI ARGUMENT PARSING
 // =============================================================================
@@ -273,6 +275,10 @@ Output:
       log('\nIndex format changed since the last index — rebuilding from scratch (as --full).', 'yellow');
       if (configValidation?.details?.message) log(`  ${configValidation.details.message}`, 'dim');
     }
+  }
+  if (fullReindex && !dryRun) {
+    const removed = removeDeadLegacyArtifacts(path.dirname(DB_PATHS.codebase));
+    if (removed.length > 0 && verbose) log(`  Removed dead legacy artifacts: ${removed.join(', ')}`, 'dim');
   }
 
   try {
