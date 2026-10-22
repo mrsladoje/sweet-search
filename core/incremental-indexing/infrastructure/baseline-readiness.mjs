@@ -62,6 +62,9 @@ export const INDEX_REBUILD_REQUIRED = 'index_rebuild_required';
 /** Not-ready reason for a baseline whose config fingerprint does not match. */
 export const CONFIG_FINGERPRINT_MISMATCH = 'config-fingerprint-mismatch';
 
+/** Not-ready reason for an LI index the incremental path cannot append to. */
+export const LI_FORMAT_OUTDATED = 'li-format-outdated';
+
 const MERKLE_STATE = 'merkle-state.json';
 const DEFAULT_VECTORS_DB = 'codebase.db';
 
@@ -87,13 +90,30 @@ function hasConfigFingerprint(merkle) {
 }
 
 /**
+ * The incremental path appends LI segments, so the LI index must be segmented. A small
+ * index from before the full build always wrote segments is one JSON file: rebuild it.
+ * Reads only the head of the file (the stub names its format first).
+ */
+function liIndexOutdated(stateDir) {
+  let fd;
+  try { fd = fs.openSync(path.join(stateDir, 'codebase-late-interaction.db'), 'r'); } catch { return false; }
+  try {
+    const head = Buffer.alloc(256);
+    const n = fs.readSync(fd, head, 0, head.length, 0);
+    return !/"format"\s*:\s*"segmented"/.test(head.toString('utf8', 0, n));
+  } finally {
+    fs.closeSync(fd);
+  }
+}
+
+/**
  * Whether a complete baseline index exists for `stateDir`.
  *
  * @param {string} stateDir   The `.sweet-search` directory.
  * @returns {{ready: boolean, reason: string, changes?: Array}}
  *   `reason` is one of: `ready`, `no-state-dir`, `no-manifest`,
  *   `manifest-epoch-zero`, `no-merkle-state`, `no-config-fingerprint`,
- *   `config-fingerprint-mismatch`, `missing-vectors-db`. On a mismatch,
+ *   `config-fingerprint-mismatch`, `missing-vectors-db`, `li-format-outdated`. On a mismatch,
  *   `changes` lists each changed field ({field, label, previous, current}).
  */
 export function hasCompleteBaseIndex(stateDir) {
@@ -126,6 +146,9 @@ export function hasCompleteBaseIndex(stateDir) {
   if (!fs.existsSync(vectorsPath)) {
     return { ready: false, reason: 'missing-vectors-db' };
   }
+  if (liIndexOutdated(stateDir)) {
+    return { ready: false, reason: LI_FORMAT_OUTDATED };
+  }
 
   return { ready: true, reason: 'ready' };
 }
@@ -141,7 +164,8 @@ export function baselineStatus(stateDir) {
   const result = hasCompleteBaseIndex(stateDir);
   let state = 'indexed';
   if (!result.ready) {
-    state = result.reason === CONFIG_FINGERPRINT_MISMATCH ? INDEX_REBUILD_REQUIRED : WAITING_FOR_INITIAL_INDEX;
+    state = result.reason === CONFIG_FINGERPRINT_MISMATCH || result.reason === LI_FORMAT_OUTDATED
+      ? INDEX_REBUILD_REQUIRED : WAITING_FOR_INITIAL_INDEX;
   }
   return { ...result, state };
 }

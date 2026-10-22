@@ -137,6 +137,9 @@ export function formatBaselineNotice(baseline) {
   if (baseline?.reason === 'config-fingerprint-mismatch') {
     return formatIndexFormatNotice(baseline.changes || []);
   }
+  if (baseline?.reason === 'li-format-outdated') {
+    return 'index_rebuild_required (li-format-outdated) — run "sweet-search index --full"';
+  }
   return `waiting_for_initial_index (${baseline?.reason ?? 'no-baseline'}) — run "sweet-search index" first`;
 }
 

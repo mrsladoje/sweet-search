@@ -393,11 +393,12 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
   if (filesToRemove && filesToRemove.length > 0) {
     log(`Removing entries for ${filesToRemove.length} changed/deleted files...`, 'yellow');
 
-    // Chunk IDs are formatted `${file}:${lineStart}-${lineEnd}:${chunkIndex}`.
-    // The trailing `:N-N:N` suffix is stripped from the right — NOT with
-    // `split(':')[0]`, which on Windows would split on the drive-letter
+    // Chunk IDs are formatted `${file}:${lineStart}-${lineEnd}:${chunkIndex}`, and the
+    // maintainer's add `@e${epoch}.${i}` (and `.N` when taken). Segments store no doc
+    // metadata, so the id is the only source of the file. The suffix is stripped from the
+    // right — NOT with `split(':')[0]`, which on Windows would split on the drive-letter
     // colon (`C:\...`) and lose most of the path (L8 fix).
-    const ID_SUFFIX_PATTERN = /:\d+-\d+:\d+$/;
+    const ID_SUFFIX_PATTERN = /:\d+-\d+:\d+(?:@e\d+(?:\.\d+)*)?$/;
     const fileFromId = (id) => {
       const m = ID_SUFFIX_PATTERN.exec(id);
       return m ? id.slice(0, m.index) : id;

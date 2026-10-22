@@ -101,37 +101,6 @@ async function appendGrowingSegment(indexPath, index, docs) {
   return docs.size;
 }
 
-// Below LI_SEGMENT_SIZE documents the full build writes the whole index as one JSON file
-// (about 85 KB per document). The delta path loaded and rewrote all of it for every file
-// (167 MB and 1.6 s per file at 2,000 documents), and the daemon parsed it again on each
-// epoch. Move it to one sealed segment once; later deltas append segments. Atomic for a
-// reader: the segment and manifest land first, then the stub replaces the JSON by rename.
-async function convertLegacyToSegmented(indexPath, index) {
-  const segmentDir = `${indexPath}.segments`;
-  await fsp.mkdir(segmentDir, { recursive: true });
-  // No manifest names what a JSON index leaves here (an older segmented build).
-  for (const name of await fsp.readdir(segmentDir)) {
-    if (name.startsWith('segment-')) await fsp.rm(path.join(segmentDir, name), { force: true });
-  }
-  const manifest = manifestFromIndex(index);
-  if (index.documents.size > 0) {
-    const segName = 'segment-0000.bin';
-    await index._writeSegmentFile(path.join(segmentDir, segName), index.documents);
-    manifest.segments.push({ path: segName, count: index.documents.size });
-    manifest.nextSeq = 1;
-    manifest.totalDocuments = index.documents.size;
-  }
-  if (index._wushCalibration) {
-    await writeJsonAtomic(path.join(segmentDir, 'wush-calibration.json'), {
-      eigenVecs: Array.from(index._wushCalibration.eigenVecs),
-      invSqrtEigenVals: Array.from(index._wushCalibration.invSqrtEigenVals),
-      dim: index.tokenDim,
-    });
-  }
-  await writeJsonAtomic(path.join(segmentDir, 'manifest.json'), manifest);
-  await writeJsonAtomic(indexPath, { version: '3.0', format: 'segmented', segmentDir: path.basename(segmentDir) });
-}
-
 // Background CPU encoding gains little from wide batches, so the maintainer
 // packs tighter than the full build: at most one max-length (2048-token) chunk
 // of attention work per call, and 4096 tokens of hidden state.
@@ -178,21 +147,10 @@ export async function applyLateInteractionDelta({
   };
   const existing = fs.existsSync(indexPath);
   const segmented = existing ? segmentedState(indexPath) : null;
+  // The full build always writes segments; the baseline gate holds the maintainer off an
+  // older single-file index (LI_FORMAT_OUTDATED), so this is never reached in a tick.
   if (existing && !segmented) {
-    const legacy = new LateInteractionIndex({ indexPath, loadExisting: true });
-    await legacy.init();
-    // A JSON file that failed to load must not become an empty segmented index.
-    if (legacy._loadFailure) throw legacy._loadFailure;
-    // Built with another LI model: the loader keeps no documents and search does not score
-    // it, so leave it for the re-index rather than overwrite it with nothing.
-    if (legacy.modelMismatch) return { appended: 0, tombstone: 0 };
-    await convertLegacyToSegmented(indexPath, legacy);
-    progress('li:convert-segmented');
-    if (readerCache) {
-      readerCache.key = null;
-      readerCache.index = null;
-    }
-    return applyLateInteractionDelta({ indexPath, ops, liEncoder, pickLiInput, onProgress, readerCache, positionsCache });
+    throw new Error(`LI index is not segmented (${indexPath}); rebuild it with: sweet-search index --full`);
   }
 
   // E.1-LI reader cache: reuse the loaded read view across the tick's files.

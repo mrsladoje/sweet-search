@@ -83,9 +83,10 @@ describe('buildLateInteractionIndex', () => {
     expect(result.added).toBe(1);
     expect(result.documents).toBe(1);
 
-    const saved = JSON.parse(await fs.readFile(defaultLiPath, 'utf8'));
-    expect(saved.documents).toHaveLength(1);
-    expect(saved.documents[0].metadata.file).toBe('src/a.ts');
+    const { LateInteractionIndex } = await import('../../core/ranking/late-interaction-index.js');
+    const saved = new LateInteractionIndex({ indexPath: defaultLiPath, loadExisting: true });
+    await saved.init();
+    expect([...saved.documents.keys()]).toEqual(['src/a.ts:1-2:0']);
   });
 
   it('applies removals against an existing LI index', async () => {
@@ -112,8 +113,24 @@ describe('buildLateInteractionIndex', () => {
     expect(result.added).toBe(0);
     expect(result.documents).toBe(0);
 
-    const saved = JSON.parse(await fs.readFile(updatedPath, 'utf8'));
-    expect(saved.documents).toHaveLength(0);
+    // The staged save (the indexer renames the staging directory into place).
+    const staged = JSON.parse(await fs.readFile(`${updatedPath}-stage.segments/manifest.json`, 'utf8'));
+    expect(staged.totalDocuments).toBe(0);
+  });
+
+  // Segments carry no doc metadata, so the file comes from the id, and the maintainer's ids
+  // end in `@e<epoch>.<i>`: the old suffix pattern kept those docs after their file went.
+  it('removes docs the maintainer wrote (ids with an epoch suffix)', async () => {
+    const { buildLateInteractionIndex } = await import('../../core/indexing/indexer-ann.js');
+    await buildLateInteractionIndex([
+      { id: 'src/m.ts:1-2:0@e3.0', file: 'src/m.ts', text: 'const m = 1;', metadata: { symbol: 'm', chunk_type: 'code', line_start: 1, line_end: 2 } },
+      { id: 'src/m.ts:3-4:1@e3.1.2', file: 'src/m.ts', text: 'const n = 2;', metadata: { symbol: 'n', chunk_type: 'code', line_start: 3, line_end: 4 } },
+      { id: 'src/keep.ts:1-2:0', file: 'src/keep.ts', text: 'const k = 3;', metadata: { symbol: 'k', chunk_type: 'code', line_start: 1, line_end: 2 } },
+    ], false, [], { saveToPath: defaultLiPath });
+
+    const result = await buildLateInteractionIndex([], false, ['src/m.ts'], { loadFromPath: defaultLiPath, saveToPath: defaultLiPath });
+    expect(result.removed).toBe(2);
+    expect(result.documents).toBe(1);
   });
 
   it('buckets LI batches by estimated length to reduce padding waste', async () => {

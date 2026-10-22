@@ -52,6 +52,7 @@ import {
   WAITING_FOR_INITIAL_INDEX,
   INDEX_REBUILD_REQUIRED,
   CONFIG_FINGERPRINT_MISMATCH,
+  LI_FORMAT_OUTDATED,
 } from '../incremental-indexing/infrastructure/baseline-readiness.mjs';
 import { formatIndexFormatNotice } from '../incremental-indexing/infrastructure/staleness-display.mjs';
 import { applyPersistedLiModel } from '../infrastructure/init-config.js';
@@ -965,6 +966,10 @@ export async function runReconcileV2Tick(ctx) {
     if (baseline.reason === CONFIG_FINGERPRINT_MISMATCH) {
       log('WARN', `${formatIndexFormatNotice(baseline.changes)} — reconcile dormant`);
       return { skipped: true, reason: INDEX_REBUILD_REQUIRED, baseline: baseline.reason, changes: baseline.changes };
+    }
+    if (baseline.reason === LI_FORMAT_OUTDATED) {
+      log('WARN', 'late-interaction index is in the older single-file format; run "sweet-search index --full" — reconcile dormant');
+      return { skipped: true, reason: INDEX_REBUILD_REQUIRED, baseline: baseline.reason };
     }
     log('INFO', `${WAITING_FOR_INITIAL_INDEX}: no complete baseline yet (${baseline.reason}); run "sweet-search index" first — reconcile dormant`);
     return { skipped: true, reason: WAITING_FOR_INITIAL_INDEX, baseline: baseline.reason };
