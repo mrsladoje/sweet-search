@@ -164,10 +164,6 @@ async function atomicSwapLateInteractionIndex(stagedStubPath, finalStubPath) {
 
   await rmDirIfExists(bakSegDir);
   await rmDirIfExists(failedSegDir);
-
-  // Clean up any orphaned .tmp.segments left over from a pre-fix broken state
-  // (where the stub used to record an absolute path with `.tmp.segments`).
-  await rmDirIfExists(finalStubPath + '.tmp.segments');
 }
 
 /**

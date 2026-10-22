@@ -35,25 +35,19 @@ const plain = (doc) => ({
 
 describe.skipIf(!hasMap)('memory-mapped SSLX segments', () => {
   let dir;
-  let saved;
-  beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-li-mmap-')); saved = process.env.SWEET_SEARCH_LI_MMAP; });
-  afterEach(() => {
-    if (saved === undefined) delete process.env.SWEET_SEARCH_LI_MMAP; else process.env.SWEET_SEARCH_LI_MMAP = saved;
-    fs.rmSync(dir, { recursive: true, force: true });
-  });
+  beforeEach(() => { dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-li-mmap-')); });
+  afterEach(() => { fs.rmSync(dir, { recursive: true, force: true }); });
 
   it('reads the same docs as a heap read, with token bytes viewed in the mapped file', async () => {
     const { writer, seg } = await writeSegment(dir, 9);
-    process.env.SWEET_SEARCH_LI_MMAP = '0';
-    const heap = await writer.readLiveSegmentDocs(seg);
-    delete process.env.SWEET_SEARCH_LI_MMAP;
-    const mapped = await writer.readLiveSegmentDocs(seg);
-    expect(mapped.map((d) => [d.id, plain(d.entry)])).toEqual(heap.map((d) => [d.id, plain(d.entry)]));
+    const heap = writer._readSegmentSSLX(fs.readFileSync(seg), seg);
+    const mapped = await writer._readSegmentFile(seg);
+    expect(mapped.map(plain)).toEqual(heap.map(plain));
     // Mapped: tokens are a view over the whole file; the f32 arrays sit in a smaller slab.
-    const t = mapped[0].entry.tokens;
+    const t = mapped[0].tokens;
     expect(t.buffer.byteLength).toBe(fs.statSync(seg).size);
-    expect(mapped[0].entry.tokenNorms.buffer).not.toBe(t.buffer);
-    expect(heap[0].entry.tokens.buffer.byteLength).toBeLessThan(fs.statSync(seg).size);
+    expect(mapped[0].tokenNorms.buffer).not.toBe(t.buffer);
+    expect(heap[0].tokens.buffer.byteLength).toBeLessThan(fs.statSync(seg).size);
   });
 
   it('rewrites a segment by rename, so an existing mapping keeps the old bytes', async () => {

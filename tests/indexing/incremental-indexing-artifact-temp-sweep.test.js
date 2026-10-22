@@ -88,8 +88,7 @@ describe('artifact-temp-sweep', () => {
       expect(isScannableArtifactSubdir('codebase-sparse-grams.idx.deltas')).toBe(true);
       expect(isScannableArtifactSubdir('codebase-late-interaction.db.segments')).toBe(true);
     });
-    it('rejects self-heal / non-artifact dirs', () => {
-      expect(isScannableArtifactSubdir('codebase-late-interaction.db.tmp.segments')).toBe(false);
+    it('rejects non-artifact dirs', () => {
       expect(isScannableArtifactSubdir('readers')).toBe(false);
       expect(isScannableArtifactSubdir('whatever')).toBe(false);
     });
@@ -142,13 +141,6 @@ describe('artifact-temp-sweep', () => {
     expect(fs.existsSync(path.join(dir, 'codebase-sparse-grams.idx.deltas/12-0.ssgrmdelta'))).toBe(true);
     expect(fs.existsSync(path.join(dir, 'codebase-late-interaction.db.segments/manifest.json'))).toBe(true);
     expect(fs.existsSync(path.join(dir, 'codebase-late-interaction.db.segments/seg-001.sslx.compacting.tmp'))).toBe(false);
-  });
-
-  it('does NOT recurse into a *.tmp.segments self-heal directory', () => {
-    const inside = touch('codebase-late-interaction.db.tmp.segments/seg-000.sslx.compacting.tmp');
-    const summary = sweepStaleArtifactTemps(dir, { maxAgeMs: 0 });
-    expect(summary.removed).toBe(0);
-    expect(fs.existsSync(inside)).toBe(true);
   });
 
   it('honours the age gate via injected now', () => {

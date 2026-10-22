@@ -146,8 +146,9 @@ export function buildNextManifest(prev, delta) {
   if (!Number.isInteger(delta.epoch)) {
     throw new Error('buildNextManifest: delta.epoch must be an integer');
   }
+  // The tiers below and nothing else: copying `prev` whole carried retired keys forward on
+  // every epoch (the removed float HNSW's `hnsw` tier).
   const out = {
-    ...prev,
     epoch: delta.epoch,
     publishedAt: new Date().toISOString(),
   };
