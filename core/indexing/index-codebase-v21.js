@@ -211,10 +211,16 @@ Output:
   }
 
   // Keep the maintainer off the index while this run rewrites it; released on any exit.
+  // The run also claims the state dir for this project root (worktree stamp): a stamp
+  // from where the folder used to be stopped the maintainer, and a run that found
+  // nothing to rebuild never reached the publish that refreshes it.
   if (!dryRun && !showStats) {
     const { holdMaintainerForIndexRun, resolveStateDir } = await import('./maintainer-launcher.mjs');
-    const release = await holdMaintainerForIndexRun(resolveStateDir(process.env, process.cwd()));
+    const { writeStamp } = await import('../incremental-indexing/infrastructure/worktree-stamp.mjs');
+    const stateDir = resolveStateDir(process.env, process.cwd());
+    const release = await holdMaintainerForIndexRun(stateDir);
     process.once('exit', release);
+    if (existsSync(stateDir)) writeStamp(stateDir, process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd());
   }
 
   if (showStats) {
