@@ -466,14 +466,12 @@ let encoderClient;
 let encoderChildListener = null;
 async function maintainerEncoders() {
   if (encoderClient !== undefined) return encoderClient;
-  const { createEncoderClient, encoderProcessEnabled, encoderIdleMs } = await import('./encoder-client.mjs');
-  encoderClient = encoderProcessEnabled()
-    ? createEncoderClient({
-      idleMs: encoderIdleMs(),
-      log: (level, msg) => log(level, msg),
-      onChildChange: (pid) => encoderChildListener?.(pid),
-    })
-    : null;
+  const { createEncoderClient, encoderIdleMs } = await import('./encoder-client.mjs');
+  encoderClient = createEncoderClient({
+    idleMs: encoderIdleMs(),
+    log: (level, msg) => log(level, msg),
+    onChildChange: (pid) => encoderChildListener?.(pid),
+  });
   return encoderClient;
 }
 
@@ -548,13 +546,14 @@ export async function runReconcileV2Tick(ctx) {
   // A cold encoder process spent 2.4 s loading its models in sequence after the parse;
   // with work queued, load them now, alongside hashing, parsing and graph writes.
   try {
-    if (encoders && statSync(join(ctx.stateDir, 'index-maintainer-queue.jsonl')).size > 0) encoders.warm();
+    if (statSync(join(ctx.stateDir, 'index-maintainer-queue.jsonl')).size > 0) encoders.warm();
   } catch { /* no queue */ }
   const counters = await runProductionReconcileTick({
     projectRoot: ctx.projectRoot,
     stateDir: ctx.stateDir,
     admissionPolicy,
-    ...(encoders ? { vectorEncoder: encoders.dense, liEncoder: encoders.li } : {}),
+    vectorEncoder: encoders.dense,
+    liEncoder: encoders.li,
     logger: {
       info: (msg) => log('INFO', msg),
       warn: (msg) => log('WARN', msg),

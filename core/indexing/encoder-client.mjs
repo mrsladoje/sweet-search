@@ -27,11 +27,6 @@ export const DEFAULT_ENCODER_RSS_MAX_BYTES = 6 * 1024 ** 3;
 // most ~4k tokens; even 2 threads on a slow laptop finish it far sooner.
 export const DEFAULT_ENCODER_REQUEST_TIMEOUT_MS = 120_000;
 
-/** Child-process encoders unless SWEET_SEARCH_MAINTAINER_ENCODER_PROCESS=0. */
-export function encoderProcessEnabled(env = process.env) {
-  return env.SWEET_SEARCH_MAINTAINER_ENCODER_PROCESS !== '0';
-}
-
 export function encoderIdleMs(env = process.env) {
   const n = Number(env.SWEET_SEARCH_ENCODER_IDLE_MS);
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_ENCODER_IDLE_MS;
