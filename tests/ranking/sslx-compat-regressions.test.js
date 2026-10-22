@@ -98,119 +98,9 @@ describe('SSLX compatibility regressions', () => {
   // =========================================================================
   // Regression #2: Mixed per-doc + per-token quant in same segment
   // =========================================================================
-  it('#2: re-saving a mixed legacy/per-token corpus preserves scalar min/scale', async () => {
-    const LateInteractionIndex = await importLI();
-    const indexPath = path.join(tmpRoot, 'mixed.db');
-
-    // Build an index with per-token docs (current add() behavior)
-    const index = new LateInteractionIndex({
-      tokenDim: 4,
-      useInt8: true,
-      modelId: 'test',
-      indexPath,
-      segmentSize: 100,
-      whtSeed: 0,
-    });
-
-    await index.add('per-token-doc', [[0.5, 0.3, -0.2, 0.8], [0.1, -0.4, 0.6, 0.2]]);
-
-    // Manually inject a legacy per-doc quantized document (simulating load from old index)
-    const legacyTokens = new Int8Array([10, 20, -30, 40, 50, -60, 70, 80]);
-    index.documents.set('legacy-doc', {
-      tokens: legacyTokens,
-      numTokens: 2,
-      dim: 4,
-      min: -0.5,
-      scale: 0.004,
-      metadata: {},
-      tokenNorms: new Float32Array([1.0, 1.2]),
-    });
-
-    // Force segmented save
-    index._segmentSize = 2;
-    await index.save();
-
-    // Reload and verify
-    const reloaded = new LateInteractionIndex({
-      tokenDim: 4,
-      useInt8: true,
-      modelId: 'test',
-      indexPath,
-      segmentSize: 2,
-      whtSeed: 0,
-    });
-    await reloaded.init();
-
-    expect(reloaded.documents.size).toBe(2);
-
-    // Per-token doc must retain minArray/scaleArray
-    const ptDoc = reloaded.documents.get('per-token-doc');
-    expect(ptDoc.minArray).toBeDefined();
-    expect(ptDoc.scaleArray).toBeDefined();
-
-    // Legacy doc must retain scalar min/scale (NOT minArray)
-    const legDoc = reloaded.documents.get('legacy-doc');
-    expect(legDoc.minArray).toBeUndefined();
-    expect(legDoc.min).toBeCloseTo(-0.5, 5);
-    expect(legDoc.scale).toBeCloseTo(0.004, 5);
-
-    // Legacy token data must survive
-    for (let i = 0; i < legacyTokens.length; i++) {
-      expect(legDoc.tokens[i]).toBe(legacyTokens[i]);
-    }
-  });
-
   // =========================================================================
   // Regression #3: Legacy indexes without whtSeed must not get rotation
   // =========================================================================
-  it('#3: legacy v2.1 JSON index loads without rotation (whtSeed defaults to 0)', async () => {
-    const LateInteractionIndex = await importLI();
-    const indexPath = path.join(tmpRoot, 'legacy.db');
-
-    // Write a legacy v2.1 JSON index by hand (no whtSeed field)
-    const legacyIndex = {
-      version: '2.1',
-      modelId: 'test-model',
-      tokenDim: 4,
-      maxTokens: 512,
-      useInt8: true,
-      poolFactor: 1,
-      // NOTE: no whtSeed field — simulates a pre-Phase-2 index
-      documents: [
-        {
-          id: 'doc-0',
-          tokens: [10, 20, -30, 40, 50, -60, 70, -80],
-          numTokens: 2,
-          dim: 4,
-          min: -0.3,
-          scale: 0.005,
-          metadata: {},
-        },
-      ],
-    };
-
-    await fs.writeFile(indexPath, JSON.stringify(legacyIndex));
-
-    // Load it
-    const loaded = new LateInteractionIndex({
-      tokenDim: 4,
-      useInt8: true,
-      modelId: 'test-model',
-      indexPath,
-    });
-    await loaded.init();
-
-    // whtSeed must be 0 (no rotation), NOT the constructor default of 42
-    expect(loaded.whtSeed).toBe(0);
-    expect(loaded._signVector).toBeNull();
-    expect(loaded.documents.size).toBe(1);
-
-    // Doc must have the original scalar min/scale (loaded correctly)
-    const doc = loaded.documents.get('doc-0');
-    expect(doc.min).toBeCloseTo(-0.3, 5);
-    expect(doc.scale).toBeCloseTo(0.005, 5);
-  });
-
   it('#3: legacy segmented index without whtSeed loads without rotation', async () => {
     const LateInteractionIndex = await importLI();
     const indexPath = path.join(tmpRoot, 'legacy-seg.db');
@@ -343,42 +233,6 @@ describe('SSLX compatibility regressions', () => {
     // We just verify both produce real numbers; exact equality would be suspicious
     expect(isFinite(natScores[0].lateInteractionScore)).toBe(true);
     expect(isFinite(seqScores[0].lateInteractionScore)).toBe(true);
-  });
-
-  it('#4: legacy manifest without whtOrdering defaults to natural', async () => {
-    const LateInteractionIndex = await importLI();
-    const indexPath = path.join(tmpRoot, 'legacy-wht-ordering.db');
-    const segDir = indexPath + '.segments';
-
-    await fs.mkdir(segDir, { recursive: true });
-
-    // Simulate a pre-CRA-4 manifest: has whtSeed but NO whtOrdering field
-    const manifest = {
-      version: '3.0',
-      format: 'segmented',
-      modelId: 'test-model',
-      tokenDim: 8,
-      maxTokens: 512,
-      useInt8: true,
-      poolFactor: 1,
-      whtSeed: 42,
-      // NOTE: no whtOrdering field — simulates a pre-CRA-4 index
-      totalDocuments: 0,
-      segments: [],
-    };
-    await fs.writeFile(path.join(segDir, 'manifest.json'), JSON.stringify(manifest));
-    await fs.writeFile(indexPath, JSON.stringify({
-      version: '3.0', format: 'segmented', segmentDir: segDir,
-    }));
-
-    const loaded = new LateInteractionIndex({
-      tokenDim: 8, useInt8: true, modelId: 'test-model', indexPath,
-    });
-    await loaded.init();
-
-    // Must default to natural — NOT sequency
-    expect(loaded.whtSeed).toBe(42);
-    expect(loaded.whtOrdering).toBe('natural');
   });
 
   it('#3: scoring a legacy unrotated index produces correct results', async () => {

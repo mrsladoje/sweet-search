@@ -84,19 +84,30 @@ function readMerkleHead(stateDir) {
 }
 
 /**
- * The incremental path appends LI segments, so the LI index must be segmented. A small
- * index from before the full build always wrote segments is one JSON file: rebuild it.
- * Reads only the head of the file (the stub names its format first).
+ * The incremental path appends SSLX segments, and the LI reader reads nothing else: an index
+ * that is one JSON file, or whose segments are LISE (before SSLX v3), needs a rebuild. Reads
+ * the stub (under 1 KB) and, for a segmented index, its manifest.
  */
 function liIndexOutdated(stateDir) {
+  const stubPath = path.join(stateDir, 'codebase-late-interaction.db');
   let fd;
-  try { fd = fs.openSync(path.join(stateDir, 'codebase-late-interaction.db'), 'r'); } catch { return false; }
+  try { fd = fs.openSync(stubPath, 'r'); } catch { return false; }
+  let head;
   try {
-    const head = Buffer.alloc(256);
-    const n = fs.readSync(fd, head, 0, head.length, 0);
-    return !/"format"\s*:\s*"segmented"/.test(head.toString('utf8', 0, n));
+    const buf = Buffer.alloc(1024);
+    head = buf.toString('utf8', 0, fs.readSync(fd, buf, 0, buf.length, 0));
   } finally {
     fs.closeSync(fd);
+  }
+  let stub = null;
+  try { stub = JSON.parse(head); } catch { return true; } // a single-file index (or a torn stub)
+  if (stub?.format !== 'segmented' || typeof stub.segmentDir !== 'string') return true;
+  // Segments from before SSLX v3 (LISE): their manifest names no sslx-v3 format.
+  try {
+    const manifest = JSON.parse(fs.readFileSync(path.join(path.dirname(stubPath), stub.segmentDir, 'manifest.json'), 'utf8'));
+    return manifest.format !== 'sslx-v3';
+  } catch {
+    return false; // no manifest yet: not this gate's call
   }
 }
 

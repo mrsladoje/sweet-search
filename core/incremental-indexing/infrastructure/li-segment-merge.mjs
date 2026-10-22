@@ -177,33 +177,25 @@ export function sweepOrphanSegments(segmentDir, manifest) {
  * A legacy format falls back to the full load.
  */
 export async function collectLiveDocs(stubPath, segmentDir, manifest, segAbsPaths) {
-  const sslx = manifest.format === 'sslx-v3';
+  // positions-only init throws on an older format (LISE segments), so this reads SSLX only.
   const index = new LateInteractionIndex({
     indexPath: stubPath,
     loadExisting: true,
-    positionsOnly: sslx,
+    positionsOnly: true,
     // Verified identities skip the whole-file CRC read of unchanged segments.
-    positionsCache: sslx ? segmentIdentityCache() : null,
+    positionsCache: segmentIdentityCache(),
     modelId: manifest.modelId || null,
   });
   await index.init();
   const winners = index._docSegmentPositions;
   const collected = [];
-  if (sslx) {
-    for (const seg of manifest.segments) {
-      const segmentPath = path.join(segmentDir, seg.path);
-      if (!segAbsPaths.has(segmentPath)) continue;
-      for (const { id, entry, docIndex } of await index.readLiveSegmentDocs(segmentPath)) {
-        const won = winners.get(id);
-        if (won?.segmentPath !== segmentPath || won.docIndex !== docIndex) continue;
-        collected.push({ segmentPath, docIndex, docId: id, doc: entry });
-      }
-    }
-  } else {
-    for (const [docId, doc] of index.documents.entries()) {
-      const pos = winners.get(docId);
-      if (!pos || !segAbsPaths.has(pos.segmentPath)) continue;
-      collected.push({ segmentPath: pos.segmentPath, docIndex: pos.docIndex, docId, doc });
+  for (const seg of manifest.segments) {
+    const segmentPath = path.join(segmentDir, seg.path);
+    if (!segAbsPaths.has(segmentPath)) continue;
+    for (const { id, entry, docIndex } of await index.readLiveSegmentDocs(segmentPath)) {
+      const won = winners.get(id);
+      if (won?.segmentPath !== segmentPath || won.docIndex !== docIndex) continue;
+      collected.push({ segmentPath, docIndex, docId: id, doc: entry });
     }
   }
   collected.sort((a, b) => (a.segmentPath < b.segmentPath ? -1 : a.segmentPath > b.segmentPath ? 1

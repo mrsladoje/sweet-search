@@ -306,6 +306,8 @@ export class SweetSearch {
     if (this.hasLateInteractionIndex && this.useLateInteraction) {
       try {
         await this.lateInteractionIndex.init();
+        // An index in a removed format (it warned once): no LI rerank until a rebuild.
+        if (this.lateInteractionIndex.formatOutdated) throw this.lateInteractionIndex._loadFailure;
         const stats = this.lateInteractionIndex.getStats();
         this.log(`LateInteraction: Loaded ${stats.documents} documents (${stats.estimatedSizeMB} MB, ${stats.avgTokensPerDoc} avg tokens)`);
 
@@ -547,6 +549,7 @@ export class SweetSearch {
           nextLi._reuseFrom = previousLi;
         }
         await nextLi.init();
+        if (nextLi.formatOutdated) throw nextLi._loadFailure;
         this.lateInteractionIndex = nextLi;
         this._clearChunkLocationCache();
         const liManifest = {

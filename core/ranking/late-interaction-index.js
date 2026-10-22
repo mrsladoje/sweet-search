@@ -17,7 +17,7 @@ import readline from 'readline';
 import { crc32 as zlibCrc32 } from 'zlib';
 import path from 'path';
 import { DB_PATHS, LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
-import { wasmMaxSimF32, wasmMaxSimDequantPerToken, wasmMaxSimDequant4Bit, wasmMaxSimPrepareQuery, nativeMaxSimBatch, nativeMaxSimPacked, nativeMaxSimPrewarm, initWasm, isNativeMaxSimAvailable, isNativePerTokenAvailable, isNative4BitAvailable } from '../infrastructure/simd-distance.js';
+import { wasmMaxSimF32, wasmMaxSimDequantPerToken, wasmMaxSimDequant4Bit, wasmMaxSimPrepareQuery, nativeMaxSimPacked, nativeMaxSimPrewarm, initWasm, isNativePerTokenAvailable, isNative4BitAvailable } from '../infrastructure/simd-distance.js';
 import { fastRotate, generateSignVector, calibrateWUSH, wushRotate } from '../infrastructure/quantization.js';
 import { poolTokens } from './late-interaction-model.js';
 import { loadBitmap, isSet } from '../infrastructure/tombstone-bitmap-reader.js';
@@ -26,34 +26,6 @@ import { nativeRescoreKernels } from '../infrastructure/native-rescore.js';
 // CRC32 (IEEE 802.3) for the SSLX segment footer: zlib's native one. The JavaScript table
 // loop ran at ~430 MB/s, so a daemon reload of a 1.7 GB LI index spent ~4 s on it.
 const crc32 = (buf) => zlibCrc32(buf) >>> 0;
-
-/**
- * Quantize float32 to int8 for storage (per-document: single min/scale)
- */
-function quantizeToInt8(floatArray) {
-  let min = Infinity;
-  let max = -Infinity;
-  for (let i = 0; i < floatArray.length; i++) {
-    const v = floatArray[i];
-    if (v < min) min = v;
-    if (v > max) max = v;
-  }
-
-  if (max === min) {
-    const int8Array = new Int8Array(floatArray.length);
-    int8Array.fill(0);
-    return { data: int8Array, min, scale: 0 };
-  }
-
-  const scale = (max - min) / 255;
-
-  const int8Array = new Int8Array(floatArray.length);
-  for (let i = 0; i < floatArray.length; i++) {
-    int8Array[i] = Math.round((floatArray[i] - min) / scale) - 128;
-  }
-
-  return { data: int8Array, min, scale };
-}
 
 /**
  * Quantize float32 to int8 with per-token min/scale (Phase 1).
@@ -190,24 +162,6 @@ function dequantizeFromInt4PerToken(packed, minArray, scaleArray, numTokens, tok
 }
 
 /**
- * Dequantize int8 back to float32
- */
-function dequantizeFromInt8(int8Array, min, scale) {
-  const floatArray = new Float32Array(int8Array.length);
-
-  // Edge case: if scale is 0, all original values were equal to min
-  if (scale === 0) {
-    floatArray.fill(min);
-    return floatArray;
-  }
-
-  for (let i = 0; i < int8Array.length; i++) {
-    floatArray[i] = (int8Array[i] + 128) * scale + min;
-  }
-  return floatArray;
-}
-
-/**
  * Cosine similarity with pre-computed norms.
  * Avoids recomputing norms on every call (3x fewer FLOPs in inner loop).
  */
@@ -278,7 +232,16 @@ function voronoiPruneTokens(tokens, keepRatio) {
  * Late Interaction Index Class
  */
 const LI_SEGMENT_SIZE = 10_000;
-const LI_SEGMENT_MAGIC = 0x4C495345; // "LISE" = Late Interaction Segment (legacy)
+// Older on-disk formats this reader no longer reads: the single-file JSON index, LISE
+// (JSON-body) segments and per-document (scalar min/scale) quantized docs. An index in one of
+// them fails with this error code; the full reader then treats the LI tier as unavailable.
+export const LI_FORMAT_OUTDATED_CODE = 'LI_FORMAT_OUTDATED';
+function liFormatOutdated(what, where) {
+  const err = new Error(`late-interaction index is in an older format (${what}): ${where}; rebuild it with: sweet-search index --full`);
+  err.code = LI_FORMAT_OUTDATED_CODE;
+  return err;
+}
+const warnedOutdated = new Set();
 const SSLX_SEGMENT_MAGIC = 0x53534C58; // "SSLX" = Sweet Search Late indeX (v3 binary)
 const SSLX_VERSION = 3;
 const SSLX_HEADER_SIZE = 64;
@@ -959,10 +922,6 @@ export class LateInteractionIndex {
     if (magic === SSLX_SEGMENT_MAGIC) {
       return this._readSegmentSSLX(buf, segPath, skip);
     }
-    if (magic === LI_SEGMENT_MAGIC) {
-      const body = buf.subarray(64);
-      return JSON.parse(body.toString('utf-8'));
-    }
     throw new Error(`Invalid segment file (unknown magic 0x${magic.toString(16)}): ${segPath}`);
   }
 
@@ -1103,12 +1062,6 @@ export class LateInteractionIndex {
       if (!ids) throw new Error(`Invalid SSLX id table in ${segPath}: entry overruns the table`);
       return checkCount(ids);
     }
-    if (magic === LI_SEGMENT_MAGIC) {
-      // Legacy LISE segments are a JSON body with no prefix and no checksum;
-      // there is nothing cheaper to read than the whole document array.
-      const docs = JSON.parse(buf.subarray(64).toString('utf-8'));
-      return checkCount(docs.map((doc) => doc.id));
-    }
     throw new Error(`Invalid segment file (unknown magic 0x${magic.toString(16)}): ${segPath}`);
   }
 
@@ -1247,9 +1200,7 @@ export class LateInteractionIndex {
         doc.minArray = minArray;
         doc.scaleArray = scaleArray;
       } else if (isQuantized) {
-        // Float32 docs carry no min/scale: with them the scorer read the floats as int8.
-        doc.min = min;
-        doc.scale = scale;
+        throw liFormatOutdated('per-document quantization', segPath);
       }
 
       docs.push(doc);
@@ -1391,9 +1342,6 @@ export class LateInteractionIndex {
     } else if (this.useInt8 && doc.minArray) {
       // Per-token dequantize (Phase 1)
       tokens = this._dequantPerToken(doc);
-    } else if (this.useInt8 && doc.min !== undefined) {
-      // Per-document dequantize (legacy)
-      tokens = dequantizeFromInt8(doc.tokens, doc.min, doc.scale);
     } else {
       tokens = doc.tokens;
     }
@@ -1449,25 +1397,6 @@ export class LateInteractionIndex {
           }
         }
       }
-      flat = buf;
-    } else if (this.useInt8 && doc.min !== undefined) {
-      // Per-document dequantize (legacy) — pooled buffer
-      const size = doc.tokens.length;
-      if (!this._dequantBuf || this._dequantBuf.length < size) {
-        this._dequantBuf = new Float32Array(size);
-      }
-      const buf = this._dequantBuf;
-      const { min, scale } = doc;
-      if (scale === 0) {
-        buf.fill(min);
-      } else {
-        for (let i = 0; i < size; i++) {
-          buf[i] = (doc.tokens[i] + 128) * scale + min;
-        }
-      }
-      // SAFETY: Pooled buffer — caller MUST consume or copy contents before the
-      // next getTokensFlat() call, which overwrites this buffer. The native batch
-      // path (maxsim_batch) does not call getTokensFlat, so no aliasing risk there.
       flat = buf;
     } else {
       flat = doc.tokens instanceof Float32Array ? doc.tokens : new Float32Array(doc.tokens);
@@ -1944,7 +1873,7 @@ export class LateInteractionIndex {
     const lookupDocIdOf = (c) => this._resolveForRead(docIdOf(c));
 
     if (useFlatPath && !this.useTokenWeights) {
-      const groups = { bit4: [], perToken: [], perDoc: [] };
+      const groups = { bit4: [], perToken: [] };
       for (const candidate of toScore) {
         const lookupDocId = lookupDocIdOf(candidate);
         if (this.isDocumentTombstoned(lookupDocId)) continue;
@@ -1954,12 +1883,9 @@ export class LateInteractionIndex {
           groups.bit4.push({ candidate, doc });
         } else if (doc.minArray && doc.tokenNorms) {
           groups.perToken.push({ candidate, doc });
-        } else if (doc.min !== undefined) {
-          groups.perDoc.push({ candidate, doc });
         }
       }
 
-      const tokenBuf = doc => Buffer.from(doc.tokens.buffer, doc.tokens.byteOffset, doc.tokens.byteLength);
       const numQ = effectiveQueryTokens.length;
 
       // Score each group with its native kernel, collect results
@@ -1980,13 +1906,9 @@ export class LateInteractionIndex {
       };
 
       // Per-token docs go through the packed entry point (one descriptor array,
-      // no N-API object per candidate); legacy per-doc-quantized docs keep the
-      // object API.
+      // no N-API object per candidate).
       batchScore(groups.bit4, isNative4BitAvailable() ? docs => nativeMaxSimPacked(queryFlat, numQ, scoringDim, 4, docs) : null);
       batchScore(groups.perToken, isNativePerTokenAvailable() ? docs => nativeMaxSimPacked(queryFlat, numQ, scoringDim, 8, docs) : null);
-      batchScore(groups.perDoc, isNativeMaxSimAvailable()
-        ? docs => nativeMaxSimBatch(queryFlat, numQ, scoringDim, docs.map(doc => ({ tokens: tokenBuf(doc), numTokens: doc.numTokens, dim: doc.dim, min: doc.min, scale: doc.scale })))
-        : null);
     }
 
     // Tier 2 & 3: WASM fused dequant or JS fallback for candidates not scored natively.
@@ -2238,121 +2160,39 @@ export class LateInteractionIndex {
    */
   async load() {
     try {
+      // The index file is a small stub naming its segment directory. Anything else is the
+      // single-file JSON index an older full build wrote, which this reader does not read.
       const stat = await fs.stat(this.indexPath);
-
-      // Check if this is a segmented index (v3.0)
-      let state;
+      let state = null;
       if (stat.size < 1024) {
-        // Small file — likely a segment stub
-        const data = await fs.readFile(this.indexPath, 'utf-8');
-        state = JSON.parse(data);
-        if (state.format === 'segmented') {
-          // The stub stores segmentDir as a basename next to the stub (stage-and-swap safe).
-          const segDirAbs = path.resolve(path.dirname(this.indexPath), state.segmentDir);
-          await this._loadSegmented(segDirAbs);
-          // Positions-only readers must not load the alias sidecar: its orphan
-          // guard resolves each alias against `documents`, which is empty by
-          // construction here, so every alias would be dropped. The delta path
-          // never reads `aliasPointers`, and nothing it writes depends on them.
-          if (!this.positionsOnly) await this._loadAliasSidecar();
-          return;
-        }
+        try { state = JSON.parse(await fs.readFile(this.indexPath, 'utf-8')); } catch { state = null; }
       }
-
-      const useStreaming = stat.size > 256 * 1024 * 1024; // >256MB → stream
-
-      if (!state) {
-        if (useStreaming) {
-          state = await this._loadStreaming();
-        } else {
-          const data = await fs.readFile(this.indexPath, 'utf-8');
-          state = JSON.parse(data);
-        }
+      if (state?.format !== 'segmented' || typeof state.segmentDir !== 'string') {
+        throw liFormatOutdated('single-file index', this.indexPath);
       }
-
-      // Model consistency check (v2.0+)
-      if (state.modelId && this.modelId && state.modelId !== this.modelId) {
-        const indexDim = state.tokenDim;
-        const configDim = this.tokenDim;
-        console.warn(`[LateInteraction] Index built with ${state.modelId} (${indexDim}d) but config says ${this.modelId} (${configDim}d).`);
-        console.warn(`          Skipping late interaction scoring. Re-index to use the new model.`);
-        this.modelMismatch = true;
-        return;
-      }
-
-      this.tokenDim = state.tokenDim;
-      this.matryoshkaDim = state.matryoshkaDim || 0;
-      this.maxTokens = state.maxTokens;
-      this.useInt8 = state.useInt8;
-      this.quantBits = state.quantBits || (state.useInt8 ? 8 : 32);
-      this.poolFactor = state.poolFactor || 1;
-      if (state.whtSeed !== undefined) this.whtSeed = state.whtSeed;
-      this.whtOrdering = state.whtOrdering || 'natural';
-      if (state.modelId) this.modelId = state.modelId;
-
-      // Documents may already be loaded by streaming path
-      if (state.documents && !this._streamLoaded) {
-        this.documents.clear();
-        for (const doc of state.documents) {
-          // 4-bit docs store packed nibbles as unsigned bytes (0-255);
-          // int8 docs store signed values (-128..127); float32 uses f32.
-          const is4bit = doc.quantBits === 4;
-          const tokens = is4bit
-            ? new Uint8Array(doc.tokens)
-            : (this.useInt8 ? new Int8Array(doc.tokens) : new Float32Array(doc.tokens));
-
-          const entry = {
-            tokens,
-            numTokens: doc.numTokens,
-            dim: doc.dim,
-            metadata: doc.metadata,
-          };
-          if (is4bit) entry.quantBits = 4;
-          if (doc.tokenNorms) entry.tokenNorms = new Float32Array(doc.tokenNorms);
-          if (doc.preNorms) entry.preNorms = new Float32Array(doc.preNorms);
-
-          // Per-token quant (Phase 1/4) vs per-doc quant (legacy)
-          if (doc.minArray) {
-            entry.minArray = new Float32Array(doc.minArray);
-            entry.scaleArray = new Float32Array(doc.scaleArray);
-          } else {
-            entry.min = doc.min;
-            entry.scale = doc.scale;
-          }
-
-          this.documents.set(doc.id, entry);
-        }
-      }
-      this._streamLoaded = false;
-      // Detect per-token quant from first doc — O(1) vs scanning all docs
-      for (const doc of this.documents.values()) {
-        this._hasPerTokenQuant = !!doc.minArray;
-        break;
-      }
-
-      // Rebuild norms only for docs that don't have persisted norms
-      this._rebuildTokenNorms();
-      this._packDocsIntoSlabs();
-
-      // CRA-3: Load WUSH calibration for legacy single-file indexes
-      const wushPath = this.indexPath + '.wush-calibration.json';
-      if (existsSync(wushPath)) {
-        try {
-          const cal = JSON.parse(await fs.readFile(wushPath, 'utf-8'));
-          this._wushCalibration = {
-            eigenVecs: new Float64Array(cal.eigenVecs),
-            invSqrtEigenVals: new Float64Array(cal.invSqrtEigenVals),
-          };
-          this.wushCalibrate = true;
-        } catch { /* calibration missing or corrupt — fall back to bare WHT */ }
-      }
-
-      await this._loadAliasSidecar();
-
-      bootLog(`LateInteraction: Loaded ${this.documents.size} documents (model: ${this.modelId || 'legacy'}, ${this.tokenDim}d)${this.aliasPointers.size > 0 ? `, ${this.aliasPointers.size} aliases` : ''}`);
+      // The stub stores segmentDir as a basename next to the stub (stage-and-swap safe).
+      const segDirAbs = path.resolve(path.dirname(this.indexPath), state.segmentDir);
+      await this._loadSegmented(segDirAbs);
+      // Positions-only readers must not load the alias sidecar: its orphan
+      // guard resolves each alias against `documents`, which is empty by
+      // construction here, so every alias would be dropped. The delta path
+      // never reads `aliasPointers`, and nothing it writes depends on them.
+      if (!this.positionsOnly) await this._loadAliasSidecar();
     } catch (err) {
       if (err.code === 'ENOENT') {
         bootLog('LateInteraction: No existing index found');
+      } else if (err.code === LI_FORMAT_OUTDATED_CODE) {
+        // The LI tier is unavailable until a rebuild: search runs without the LI rerank,
+        // and positions-only readers (the maintainer's delta path) throw it from init().
+        this.formatOutdated = true;
+        this.documents.clear();
+        this._docSegmentPositions.clear();
+        this._segmentLoads.clear();
+        this._loadFailure = err;
+        if (!warnedOutdated.has(this.indexPath)) {
+          warnedOutdated.add(this.indexPath);
+          console.warn(`[LateInteraction] ${err.message}. Searching without late-interaction reranking.`);
+        }
       } else {
         // Recorded so `init()` can turn it into a hard error for the
         // positions-only (writer-side) reader. The full reader's behaviour is
@@ -2384,26 +2224,17 @@ export class LateInteractionIndex {
       if (staleBitmap && isSet(staleBitmap, docIndex)) {
         continue;
       }
-      // SSLX reader returns typed arrays directly; legacy LISE returns plain arrays
-      const tokens = (doc.tokens instanceof Int8Array || doc.tokens instanceof Float32Array || doc.tokens instanceof Uint8Array)
-        ? doc.tokens
-        : (this.useInt8 ? new Int8Array(doc.tokens) : new Float32Array(doc.tokens));
-
       const entry = {
-        tokens,
+        tokens: doc.tokens,
         numTokens: doc.numTokens,
         dim: doc.dim,
         metadata: doc.metadata,
       };
       if (doc.quantBits) entry.quantBits = doc.quantBits;
 
-      // Per-token quant (Phase 1/4) vs per-doc quant (legacy)
       if (doc.minArray) {
         entry.minArray = doc.minArray;
         entry.scaleArray = doc.scaleArray;
-      } else {
-        entry.min = doc.min;
-        entry.scale = doc.scale;
       }
 
       // SSLX segments include persisted tokenNorms — skip expensive rebuild
@@ -2471,6 +2302,8 @@ export class LateInteractionIndex {
       this.modelMismatch = true;
       return;
     }
+
+    if (manifest.format !== 'sslx-v3') throw liFormatOutdated('LISE segments', segmentDir);
 
     this._applySegmentManifest(manifest);
 
@@ -2545,175 +2378,6 @@ export class LateInteractionIndex {
   }
 
   /**
-   * Stream-parse a large LI index file.
-   *
-   * Strategy: read the file as a Buffer (no V8 string limit), find the
-   * `"documents":[` marker, then extract each document JSON object by
-   * tracking brace depth. Each document is parsed individually (small
-   * string, well under limits).
-   *
-   * @returns {Object} Header fields (version, modelId, tokenDim, etc.) — documents are loaded directly into this.documents
-   */
-  async _loadStreaming() {
-    const marker = Buffer.from('"documents":[');
-    const stream = createReadStream(this.indexPath, { highWaterMark: this.streamChunkSize });
-
-    let header = null;
-    let headerParts = [];
-    let pending = Buffer.alloc(0);
-    let docStart = -1;
-    let depth = 0;
-    let inString = false;
-    let escapeNext = false;
-    let docCount = 0;
-
-    this.documents.clear();
-
-    const parseDocument = (docBuf) => {
-      const doc = JSON.parse(docBuf.toString('utf-8'));
-      const is4bit = doc.quantBits === 4;
-      const tokens = is4bit
-        ? new Uint8Array(doc.tokens)
-        : (header.useInt8 ? new Int8Array(doc.tokens) : new Float32Array(doc.tokens));
-
-      const entry = {
-        tokens,
-        numTokens: doc.numTokens,
-        dim: doc.dim,
-        metadata: doc.metadata,
-      };
-      if (is4bit) entry.quantBits = 4;
-      if (doc.tokenNorms) entry.tokenNorms = new Float32Array(doc.tokenNorms);
-      if (doc.preNorms) entry.preNorms = new Float32Array(doc.preNorms);
-
-      if (doc.minArray) {
-        entry.minArray = new Float32Array(doc.minArray);
-        entry.scaleArray = new Float32Array(doc.scaleArray);
-      } else {
-        entry.min = doc.min;
-        entry.scale = doc.scale;
-      }
-
-      this.documents.set(doc.id, entry);
-
-      docCount++;
-      if (docCount % 5000 === 0) {
-        bootLog(`LateInteraction: Streaming load ${docCount} documents...`);
-      }
-    };
-
-    for await (const chunk of stream) {
-      pending = pending.length > 0 ? Buffer.concat([pending, chunk]) : chunk;
-
-      if (!header) {
-        const markerIdx = pending.indexOf(marker);
-        if (markerIdx === -1) {
-          const keep = Math.min(marker.length - 1, pending.length);
-          const flushLen = pending.length - keep;
-          if (flushLen > 0) {
-            headerParts.push(pending.subarray(0, flushLen));
-            pending = pending.subarray(flushLen);
-          }
-          continue;
-        }
-
-        headerParts.push(pending.subarray(0, markerIdx));
-        const headerStr = Buffer.concat(headerParts).toString('utf-8') + '"_":0}';
-        header = JSON.parse(headerStr);
-        headerParts = [];
-        pending = pending.subarray(markerIdx + marker.length);
-      }
-
-      let i = 0;
-      while (i < pending.length) {
-        const byte = pending[i];
-
-        if (docStart === -1) {
-          if (byte === 0x20 || byte === 0x0A || byte === 0x0D || byte === 0x09 || byte === 0x2C) {
-            i++;
-            continue;
-          }
-          if (byte === 0x5D) {
-            pending = Buffer.alloc(0);
-            i = pending.length;
-            break;
-          }
-          if (byte !== 0x7B) {
-            i++;
-            continue;
-          }
-
-          docStart = i;
-          depth = 1;
-          inString = false;
-          escapeNext = false;
-          i++;
-          continue;
-        }
-
-        if (inString) {
-          if (escapeNext) {
-            escapeNext = false;
-          } else if (byte === 0x5C) {
-            escapeNext = true;
-          } else if (byte === 0x22) {
-            inString = false;
-          }
-          i++;
-          continue;
-        }
-
-        if (byte === 0x22) {
-          inString = true;
-          i++;
-          continue;
-        }
-        if (byte === 0x7B) {
-          depth++;
-          i++;
-          continue;
-        }
-        if (byte === 0x7D) {
-          depth--;
-          i++;
-          if (depth === 0) {
-            parseDocument(pending.subarray(docStart, i));
-            pending = pending.subarray(i);
-            i = 0;
-            docStart = -1;
-          }
-          continue;
-        }
-
-        i++;
-      }
-
-      if (docStart >= 0) {
-        // Carry over incomplete document: slice from docStart so the opening
-        // '{' is at position 0. Reset parser state so the re-scan from the
-        // opening brace correctly re-establishes depth/string tracking.
-        pending = pending.subarray(docStart);
-        docStart = -1;
-        depth = 0;
-        inString = false;
-        escapeNext = false;
-      } else if (docStart === -1 && pending.length > 0) {
-        pending = Buffer.alloc(0);
-      }
-    }
-
-    if (!header) {
-      throw new Error('Invalid LI index format: no documents array');
-    }
-    if (pending.length > 0) {
-      throw new Error('Invalid LI index format: truncated document payload');
-    }
-
-    this._streamLoaded = true;
-    return header;
-  }
-
-  /**
    * Reconstruct per-token L2 norms for all loaded documents.
    * Called after load() since tokenNorms are not persisted in the index file.
    * @private
@@ -2728,8 +2392,6 @@ export class LateInteractionIndex {
         flat = dequantizeFromInt4PerToken(doc.tokens, doc.minArray, doc.scaleArray, doc.numTokens, doc.dim);
       } else if (this.useInt8 && doc.minArray) {
         flat = this._dequantPerToken(doc);
-      } else if (this.useInt8 && doc.min !== undefined) {
-        flat = dequantizeFromInt8(doc.tokens, doc.min, doc.scale);
       } else {
         flat = doc.tokens;
       }
