@@ -22,6 +22,8 @@ import { recordEncode } from './inference-provenance.js';
 const HOST = fileURLToPath(new URL('./encoder-host.mjs', import.meta.url));
 
 export const DEFAULT_ENCODER_IDLE_MS = 60_000;
+// Cap of the adaptive idle period (maxIdleMs): see armIdle.
+export const DEFAULT_ENCODER_IDLE_MAX_MS = 10 * 60_000;
 export const DEFAULT_ENCODER_RSS_MAX_BYTES = 6 * 1024 ** 3;
 // Longest silence from a busy child (no progress, no reply). One LI batch is at
 // most ~4k tokens; even 2 threads on a slow laptop finish it far sooner.
@@ -32,9 +34,15 @@ export function encoderIdleMs(env = process.env) {
   return Number.isFinite(n) && n > 0 ? n : DEFAULT_ENCODER_IDLE_MS;
 }
 
+export function encoderIdleMaxMs(env = process.env) {
+  const n = Number(env.SWEET_SEARCH_ENCODER_IDLE_MAX_MS);
+  return Number.isFinite(n) && n > 0 ? n : DEFAULT_ENCODER_IDLE_MAX_MS;
+}
+
 /**
  * @param {object} [options]
  * @param {number} [options.idleMs]
+ * @param {number} [options.maxIdleMs]  adaptive cap (default: idleMs, i.e. fixed)
  * @param {number} [options.rssMaxBytes]
  * @param {number} [options.requestTimeoutMs]
  * @param {NodeJS.ProcessEnv} [options.env]
@@ -45,6 +53,13 @@ export function encoderIdleMs(env = process.env) {
  */
 export function createEncoderClient(options = {}) {
   const idleMs = options.idleMs ?? DEFAULT_ENCODER_IDLE_MS;
+  const maxIdleMs = Math.max(idleMs, options.maxIdleMs ?? idleMs);
+  // Adaptive idle: a process needed again within maxIdleMs of its idle exit doubles the
+  // next idle period (up to maxIdleMs), so an editing session keeps the models loaded
+  // instead of paying a cold start (seconds, more under load) every minute. After a
+  // longer quiet spell it starts again from idleMs.
+  let currentIdleMs = idleMs;
+  let lastIdleExitAt = null;
   const rssMaxBytes = options.rssMaxBytes ?? DEFAULT_ENCODER_RSS_MAX_BYTES;
   const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_ENCODER_REQUEST_TIMEOUT_MS;
   // Silence allowed before a new child's first message (process start, module load).
@@ -109,6 +124,10 @@ export function createEncoderClient(options = {}) {
   }
 
   function start() {
+    const now = Date.now();
+    currentIdleMs = lastIdleExitAt !== null && now - lastIdleExitAt < maxIdleMs
+      ? Math.min(maxIdleMs, currentIdleMs * 2)
+      : idleMs;
     const c = fork(hostPath, [], {
       env,
       execPath,
@@ -167,7 +186,11 @@ export function createEncoderClient(options = {}) {
 
   function armIdle() {
     clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => { if (pending.size === 0) stop('idle'); }, idleMs);
+    idleTimer = setTimeout(() => {
+      if (pending.size !== 0) return;
+      lastIdleExitAt = Date.now();
+      stop('idle');
+    }, currentIdleMs);
     idleTimer.unref?.();
   }
 
@@ -219,5 +242,6 @@ export function createEncoderClient(options = {}) {
     },
     get pid() { return child?.pid ?? null; },
     get spawns() { return spawns; },
+    get idleMs() { return currentIdleMs; },
   };
 }

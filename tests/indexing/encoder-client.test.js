@@ -69,6 +69,24 @@ describe('encoder client', () => {
     expect(c.spawns).toBe(1);
   });
 
+  // A cold start (process + both models) cost seconds, 13 s under load, after every
+  // idle minute. A process needed again soon after its idle exit stays longer.
+  it('doubles the idle period when work returns soon after an idle exit, up to the cap', async () => {
+    const c = make({ idleMs: 40, maxIdleMs: 160 });
+    const exited = async () => { const t0 = Date.now(); while (c.pid !== null && Date.now() - t0 < 5_000) await new Promise((r) => setTimeout(r, 10)); };
+    await c.dense(['a']);
+    expect(c.idleMs).toBe(40);
+    await exited();
+    await c.dense(['a']);
+    expect(c.idleMs).toBe(80);
+    await exited();
+    await c.dense(['a']);
+    expect(c.idleMs).toBe(160);
+    await exited();
+    await c.dense(['a']);
+    expect(c.idleMs).toBe(160);
+  });
+
   it('announces the child pid on start and null once it is gone', async () => {
     const seen = [];
     const c = make({ idleMs: 50, onChildChange: (pid) => seen.push(pid) });

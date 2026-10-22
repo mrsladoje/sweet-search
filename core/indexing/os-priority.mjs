@@ -35,7 +35,7 @@
  *     maintainer daemon calls it on ITSELF, gated on
  *     `SWEET_SEARCH_MAINTAINER_NATIVE_PRIORITY==='1'` AND the addon being
  *     present. When the addon is absent (default), it returns `false` and the
- *     caller keeps its `os.setPriority(PRIORITY_LOW)` / spawn fallback.
+ *     caller keeps its `os.setPriority(PRIORITY_BELOW_NORMAL)` / spawn fallback.
  */
 
 import { spawn } from 'node:child_process';
@@ -83,8 +83,10 @@ export function applyBackgroundPriority(pid) {
         // foreground without leaving the P-cores.
         break;
       case 'linux':
-        // ionice -c 3 → idle I/O class; chrt -b -p 0 → SCHED_BATCH (no root).
-        spawnBestEffort('ionice', ['-c', '3', '-p', pidStr]);
+        // ionice -c 2 -n 7 → lowest best-effort I/O (the idle class -c 3 gets no I/O
+        // while anything else reads, so a 500 MB model load could stall indefinitely);
+        // chrt -b -p 0 → SCHED_BATCH (no root).
+        spawnBestEffort('ionice', ['-c', '2', '-n', '7', '-p', pidStr]);
         spawnBestEffort('chrt', ['-b', '-p', '0', pidStr]);
         break;
       default:
@@ -140,7 +142,7 @@ export function loadNativePriorityAddon() {
  *
  * Gated on `SWEET_SEARCH_MAINTAINER_NATIVE_PRIORITY==='1'` AND the addon being
  * loaded. When either is false this is a no-op returning `false`, so the caller
- * keeps its existing `os.setPriority(PRIORITY_LOW)` / spawn-based fallback
+ * keeps its existing `os.setPriority(PRIORITY_BELOW_NORMAL)` / spawn-based fallback
  * (default behavior, unchanged). Best-effort, NEVER throws.
  *
  * Caveats (documented in the addon): on Windows, BACKGROUND_BEGIN empties the
