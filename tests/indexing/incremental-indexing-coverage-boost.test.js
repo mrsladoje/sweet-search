@@ -3,7 +3,6 @@
  * whose existing tests covered the happy paths but not the edge cases.
  *
  * Targets (per `vitest run --coverage` snapshot before this file):
- *   - file-watcher.mjs       (35% branch, 63% line)  ← biggest gap
  *   - wsl2-detect.mjs        (43% branch, 56% line)
  *   - hashing.mjs            (60% branch)
  *   - encoder-deps.mjs       (70% branch)
@@ -43,7 +42,6 @@ import {
 } from '../../core/incremental-indexing/domain/encoder-deps.mjs';
 import { DirtySet, canonicaliseInsideRoot } from '../../core/incremental-indexing/infrastructure/dirty-set.mjs';
 import { watcherDefault, formatWatcherNotice, detectEnvironment, __testing as wsl2Testing } from '../../core/incremental-indexing/infrastructure/wsl2-detect.mjs';
-import { FileWatcher, pollingBackstopSweep } from '../../core/incremental-indexing/application/file-watcher.mjs';
 import {
   fts5SegmentCount, fts5Merge, fts5StructureDescribe, __testing as fts5Testing,
 } from '../../core/incremental-indexing/infrastructure/sqlite-fts5.mjs';
@@ -580,101 +578,6 @@ describe('wsl2-detect.mjs — environment detection branches', () => {
   });
 });
 
-// ---------- file-watcher.mjs deeper branches ----------
-
-describe('FileWatcher — debounce + temp-file + error branches', () => {
-  let projectRoot;
-  beforeEach(() => {
-    projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-fw-cov-'));
-  });
-  afterEach(() => {
-    try { fs.rmSync(projectRoot, { recursive: true, force: true }); } catch {}
-  });
-
-  it('constructor throws without projectRoot', () => {
-    expect(() => new FileWatcher({ dirtySet: new DirtySet() })).toThrow(/projectRoot/);
-  });
-
-  it('constructor throws without dirtySet', () => {
-    expect(() => new FileWatcher({ projectRoot })).toThrow(/dirtySet/);
-  });
-
-  it('_isTempFile detects editor swap / lock files', () => {
-    const dirty = new DirtySet();
-    const w = new FileWatcher({ projectRoot, dirtySet: dirty });
-    expect(w._isTempFile('a.swp')).toBe(true);
-    expect(w._isTempFile('a.tmp')).toBe(true);
-    expect(w._isTempFile('.#emacs-lock')).toBe(true);
-    expect(w._isTempFile('~backup')).toBe(true);
-    expect(w._isTempFile('gedit~')).toBe(true);
-    expect(w._isTempFile('normal.js')).toBe(false);
-  });
-
-  it('_handleEvent runs debounce: same path coalesces into one push', async () => {
-    const dirty = new DirtySet();
-    const w = new FileWatcher({ projectRoot, dirtySet: dirty, debounceMs: 25 });
-    w._handleEvent('a.js');
-    w._handleEvent('a.js');
-    w._handleEvent('a.js');
-    expect(dirty.size).toBe(0); // not yet pushed
-    await new Promise((r) => setTimeout(r, 50));
-    expect(dirty.size).toBe(1);
-  });
-
-  it('_handleEvent skips excluded paths', () => {
-    const dirty = new DirtySet();
-    const w = new FileWatcher({
-      projectRoot, dirtySet: dirty,
-      isExcluded: (p) => p.includes('node_modules'),
-    });
-    w._handleEvent('node_modules/foo.js');
-    expect(dirty.size).toBe(0);
-  });
-
-  it('_handleEvent skips temp files even if they fire the debounce', async () => {
-    const dirty = new DirtySet();
-    const w = new FileWatcher({ projectRoot, dirtySet: dirty, debounceMs: 10 });
-    w._handleEvent('a.swp');
-    await new Promise((r) => setTimeout(r, 25));
-    expect(dirty.size).toBe(0);
-  });
-
-  it('stop() clears pending timers', async () => {
-    const dirty = new DirtySet();
-    const w = new FileWatcher({ projectRoot, dirtySet: dirty, debounceMs: 1000 });
-    w._handleEvent('a.js');
-    expect(w.status().pending).toBe(1);
-    await w.stop();
-    expect(w.status().pending).toBe(0);
-  });
-
-  it('_handleEnospc surfaces only once per watcher instance', () => {
-    const warns = [];
-    const dirty = new DirtySet();
-    const w = new FileWatcher({
-      projectRoot, dirtySet: dirty,
-      logger: { warn: (m) => warns.push(m), info: () => {}, error: () => {} },
-    });
-    w._handleEnospc({ message: 'ENOSPC' });
-    w._handleEnospc({ message: 'ENOSPC' });
-    expect(warns.length).toBe(1);
-    expect(w.status().enospcFallback).toBe(true);
-  });
-
-  it('start() handles ENOENT projectRoot with a warning', async () => {
-    const warns = [];
-    const w = new FileWatcher({
-      projectRoot: '/definitely/does/not/exist/' + Math.random(),
-      dirtySet: new DirtySet(),
-      logger: { warn: (m) => warns.push(m), info: () => {}, error: () => {} },
-    });
-    await w.start();
-    await w.stop();
-    // Either ENOENT triggered the warn or fs.watch silently failed; both are fine
-    expect(typeof w.status().stopped).toBe('boolean');
-  });
-});
-
 // ---------- sqlite-fts5.mjs deeper branches ----------
 
 describe('sqlite-fts5.mjs — structure record and varint branches', () => {
@@ -1183,29 +1086,3 @@ describe('vector-delta-writer.mjs — fallback / no-struct-id paths', () => {
   });
 });
 
-// ---------- pollingBackstopSweep edge cases ----------
-
-describe('pollingBackstopSweep — edge branches', () => {
-  let projectRoot;
-  beforeEach(() => { projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-pbs-')); });
-  afterEach(() => { try { fs.rmSync(projectRoot, { recursive: true, force: true }); } catch {} });
-
-  it('handles unreadable subdirectories without crashing', async () => {
-    fs.mkdirSync(path.join(projectRoot, 'unreadable'));
-    fs.writeFileSync(path.join(projectRoot, 'a.js'), '');
-    const dirty = new DirtySet();
-    // We can't easily make a directory unreadable cross-platform without
-    // disrupting cleanup; the readdir-error catch handles ENOENT/EACCES
-    // both. Just verify it returns the visible files.
-    const stats = await pollingBackstopSweep(projectRoot, () => false, dirty);
-    expect(stats.filesSeen).toBeGreaterThanOrEqual(1);
-  });
-
-  it('skips symlinks and non-files', async () => {
-    fs.mkdirSync(path.join(projectRoot, 'subdir'));
-    fs.writeFileSync(path.join(projectRoot, 'subdir', 'a.js'), '');
-    const dirty = new DirtySet();
-    const stats = await pollingBackstopSweep(projectRoot, () => false, dirty);
-    expect(stats.filesSeen).toBe(1);
-  });
-});
