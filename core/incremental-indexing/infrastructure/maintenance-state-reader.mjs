@@ -250,8 +250,10 @@ export const PAGERANK_STATE = 'graph-pagerank-state.json';
  * epochs and computes PageRank itself.
  */
 export function graphChangeEpoch(db) {
+  // `IS NOT NULL` lets MAX(epoch_retired) read the partial index; without it SQLite scanned
+  // the whole table, twice per tick (11 ms on a 99k-edge graph, growing with the graph).
   const max = (table, column) => {
-    try { return db.prepare(`SELECT MAX(${column}) AS m FROM ${table}`).get().m || 0; } catch { return 0; }
+    try { return db.prepare(`SELECT MAX(${column}) AS m FROM ${table} WHERE ${column} IS NOT NULL`).get().m || 0; } catch { return 0; }
   };
   return Math.max(
     max('entities', 'epoch_written'), max('entities', 'epoch_retired'),

@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { evaluateWatermarks, DEFAULT_WATERMARKS } from '../../core/incremental-indexing/domain/watermark-scheduler.mjs';
-import { readGraphRankState, PAGERANK_STATE } from '../../core/incremental-indexing/infrastructure/maintenance-state-reader.mjs';
+import { readGraphRankState, PAGERANK_STATE, graphChangeEpoch } from '../../core/incremental-indexing/infrastructure/maintenance-state-reader.mjs';
 import { graphPageRankHandler } from '../../core/incremental-indexing/application/maintenance-handlers.mjs';
 import { runProductionReconcileTick } from '../../core/incremental-indexing/application/production-reconciler.mjs';
 import { createGraphSchema } from '../../core/graph/graph-extractor.js';
@@ -104,5 +104,25 @@ describe('re-written entity keeps its PageRank', () => {
     const second = liveRank();
     expect(second.id).not.toBe(first.id);
     expect(second.page_rank).toBe(0.25);
+  });
+});
+
+// Every tick reads graphChangeEpoch twice (PageRank and vocabulary freshness). MAX(epoch_retired)
+// without `IS NOT NULL` could not use the partial index and scanned the whole table.
+describe('graphChangeEpoch', () => {
+  it('reads every maximum from an index, never a table scan', () => {
+    const db = new Database(':memory:');
+    createGraphSchema(db);
+    db.prepare("INSERT INTO entities (id, name, type, file_path, epoch_written, epoch_retired) VALUES ('a', 'a', 'function', 'a.js', 3, 5)").run();
+    db.prepare("INSERT INTO relationships (source_id, target_id, target_name, type, epoch_written, epoch_retired) VALUES ('a', 'b', 'b', 'calls', 2, 7)").run();
+    const sqls = [];
+    const proxy = { prepare: (sql) => { sqls.push(sql); return db.prepare(sql); } };
+    expect(graphChangeEpoch(proxy)).toBe(7);
+    expect(sqls).toHaveLength(4);
+    for (const sql of sqls) {
+      const plan = db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all().map((r) => r.detail).join(' | ');
+      expect(plan, sql).toMatch(/USING (COVERING )?INDEX/);
+    }
+    db.close();
   });
 });
