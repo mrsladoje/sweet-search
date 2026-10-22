@@ -154,3 +154,38 @@ describe('populatePageRankColumn', () => {
     db.close();
   });
 });
+
+// The maintainer's PageRank refresh started from 1/n every pass (often all 50 iterations).
+// It now starts from the stored scores: after a small graph change it must take fewer
+// iterations and land at least as close to the converged fixed point as a cold start.
+describe('pageRankWeighted warm start', () => {
+  function graph(seed, n) {
+    let s = seed >>> 0;
+    const r = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+    const nodes = new Set(Array.from({ length: n }, (_, i) => `e${i}`));
+    const out = new Map();
+    for (let i = 0; i < n * 3; i++) {
+      const a = `e${Math.floor(r() * n)}`; const b = `e${Math.floor(r() * n)}`;
+      if (!out.has(a)) out.set(a, new Map());
+      out.get(a).set(b, (out.get(a).get(b) || 0) + 1 + Math.floor(r() * 3));
+    }
+    return { nodes, out };
+  }
+  const l1 = (a, b) => { let d = 0; for (const [k, v] of a) d += Math.abs(v - b.get(k)); return d; };
+
+  it('converges in fewer iterations to a result no further from the fixed point', () => {
+    const { nodes, out } = graph(7, 3000);
+    const before = pageRankWeighted(out, nodes);
+    // A small change: five new edges and one new node.
+    nodes.add('fresh');
+    for (let i = 0; i < 5; i++) out.set(`e${i * 13}`, new Map([...(out.get(`e${i * 13}`) || []), [`e${i * 29 + 1}`, 2], ['fresh', 1]]));
+    const ref = pageRankWeighted(out, nodes, { maxIterations: 2000, convergence: 1e-12 });
+    const coldStats = {};
+    const cold = pageRankWeighted(out, nodes, { stats: coldStats });
+    const warmStats = {};
+    const warm = pageRankWeighted(out, nodes, { initialScores: before, stats: warmStats });
+    expect(warmStats.iterations).toBeLessThan(coldStats.iterations);
+    expect(l1(warm, ref)).toBeLessThanOrEqual(l1(cold, ref) + 1e-9);
+    expect(l1(warm, ref)).toBeLessThan(1e-4);
+  });
+});
