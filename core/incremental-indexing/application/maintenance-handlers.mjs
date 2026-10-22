@@ -244,16 +244,10 @@ export async function binaryHnswHandler(job, { stateDir, onProgress = null }) {
     maxElements: existing.maxElements,
   });
   fresh.resetForBuild();
-  // When deterministic levels are enabled, the compacted graph must be
-  // reproducible: insert surviving ids in a FIXED sorted order so the
-  // rebuild is independent of the scan/encounter order above. Combined with
-  // levelForId() (gated by the same flag inside `add()`), this makes the
-  // compaction path agree byte-for-byte with batched/per-file builds.
-  // DEFAULT-ON (disable with SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS=0) →
-  // set the flag to '0' to preserve today's encounter-order insertion exactly.
-  const insertOrder = process.env.SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS !== '0'
-    ? [...live].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
-    : live;
+  // The compacted graph must be reproducible: insert surviving ids in a FIXED
+  // sorted order, independent of the scan order above. With levelForId() inside
+  // `add()`, the compaction agrees byte-for-byte with the batched tick.
+  const insertOrder = [...live].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   let added = 0;
   for (const v of insertOrder) {
     // Full vectors carry over from the old file (read one at a time, so the

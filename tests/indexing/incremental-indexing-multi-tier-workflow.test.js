@@ -44,7 +44,6 @@ import {
 } from '../../core/incremental-indexing/domain/watermark-scheduler.mjs';
 import {
   enqueueMaintenanceJob, readMaintenanceQueue, appendDeadLetter,
-  assertCpuOnlyEnvironment,
 } from '../../core/incremental-indexing/application/maintenance-worker.mjs';
 import {
   fts5SegmentCount, fts5Merge, fts5StructureDescribe, __testing as fts5Testing,
@@ -519,21 +518,6 @@ describe('Maintenance worker queue (plan § 10.2)', () => {
     expect(parsed.deadAt).toBeDefined();
   });
 
-  it('assertCpuOnlyEnvironment passes on a clean env', () => {
-    expect(() => assertCpuOnlyEnvironment({})).not.toThrow();
-  });
-
-  it('assertCpuOnlyEnvironment passes when GPU flag is CPU-equivalent', () => {
-    expect(() => assertCpuOnlyEnvironment({ SWEET_SEARCH_GPU: '0' })).not.toThrow();
-    expect(() => assertCpuOnlyEnvironment({ SWEET_SEARCH_GPU: 'cpu' })).not.toThrow();
-    expect(() => assertCpuOnlyEnvironment({ INDEX_GPU_BACKEND: 'OFF' })).not.toThrow();
-    expect(() => assertCpuOnlyEnvironment({ INDEX_GPU_BACKEND: 'False' })).not.toThrow();
-  });
-
-  it('assertCpuOnlyEnvironment refuses when GPU flag is armed', () => {
-    expect(() => assertCpuOnlyEnvironment({ SWEET_SEARCH_GPU: '1' })).toThrow(/CPU-only/);
-    expect(() => assertCpuOnlyEnvironment({ INDEX_GPU_BACKEND: 'metal' })).toThrow(/CPU-only/);
-  });
 });
 
 describe('FTS5 introspection (plan § 7.1.5)', () => {

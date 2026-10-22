@@ -19,7 +19,7 @@
  *
  * Usage (CLI):
  *   node eval/index-maintainer-determinism/run-harness.mjs               # baseline vs baseline
- *   node eval/index-maintainer-determinism/run-harness.mjs --candidate SWEET_SEARCH_RECONCILE_SQLITE_PRAGMAS=1
+ *   node eval/index-maintainer-determinism/run-harness.mjs --candidate SOME_FLAG=1
  *   node eval/index-maintainer-determinism/run-harness.mjs --kill-after-tick 2
  *
  * Programmatic:
@@ -170,56 +170,10 @@ function applyEditOps(projectRoot, step) {
  * when a new lever lands, add its flag here and the USER can sweep it.
  */
 export const CANDIDATE_FLAGS = Object.freeze([
-  'SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS',
-  'SWEET_SEARCH_RECONCILE_BATCH_TIER_WRITES',
-  'SWEET_SEARCH_RECONCILE_LIVE_HNSW',
-  'SWEET_SEARCH_RECONCILE_SQLITE_PRAGMAS',
-  'SWEET_SEARCH_RECONCILE_FTS5_BUDGET',
-  'SWEET_SEARCH_RECONCILE_FTS5_OPTIMIZE',
-  'SWEET_SEARCH_RECONCILE_INCR_VACUUM',
-  'SWEET_SEARCH_RECONCILE_CHUNK_CUTOFF',
-  'SWEET_SEARCH_RECONCILE_AUTOTUNE',
-]);
+  // Every lever this harness swept (batching, deterministic HNSW levels, SQLite
+  // pragmas, FTS5 budget, autotune, ...) is now the only code path.
+])
 
-/**
- * The HNSW level-assignment flag (FIX-B / Plan G1). Pinned ON by default in
- * EVERY child run of this harness — see `resolveEnvOverrides` below.
- */
-export const HNSW_DETERMINISM_FLAG = 'SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS';
-
-/**
- * Pin `SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS=1` into the env of BOTH the
- * baseline and candidate child runs unless the caller has already named the
- * flag in `envOverrides`.
- *
- * WHY this is required for a reliable control: the DEFAULT (flag-off) HNSW
- * level RNG is `getRandomLevel()` — an unseeded `Math.random()` drawn at insert
- * time (`binary-hnsw-index.js`), which `load()` never reseeds. Two otherwise
- * identical flags-off runs therefore consume the global RNG stream differently
- * and produce a structurally different `graphByLevel` / `entryPointId`, making
- * the "baseline-vs-baseline byte-identical" control FLAKY (~25–50% red on a
- * clean tree). FIX-B makes the index deterministic-by-id under this flag, so
- * pinning it ON removes the pre-existing RNG noise and isolates every surviving
- * byte-diff to the lever-under-test (the candidate flags in `envOverrides`).
- * It also makes the post-FIX-B batched==per-file claim verifiable here without
- * `entryPointId` ever being normalized away (it is a real comparison field in
- * `dump-artifacts.mjs`).
- *
- * Opt-OUT: a test that specifically exercises the RNG path passes the flag
- * itself in `envOverrides` — any value (including `'0'`, `''`, or `null` to
- * unset it) — and this helper leaves that explicit choice untouched.
- *
- * @param {object} envOverrides  caller-supplied flag overrides
- * @returns {object} a NEW object with the pin merged in (caller obj untouched)
- */
-export function resolveEnvOverrides(envOverrides = {}) {
-  // An explicit mention of the flag (even set to null/'' to unset) is honored
-  // verbatim so the RNG-path opt-out works.
-  if (Object.prototype.hasOwnProperty.call(envOverrides, HNSW_DETERMINISM_FLAG)) {
-    return { ...envOverrides };
-  }
-  return { ...envOverrides, [HNSW_DETERMINISM_FLAG]: '1' };
-}
 
 /** Snapshot + apply env overrides; returns a restore() that puts them back. */
 function withEnv(envOverrides = {}) {
@@ -249,7 +203,7 @@ function withEnv(envOverrides = {}) {
  *
  * @param {object} opts
  * @param {'baseline'|'candidate'} [opts.variant]   label only (env does the work)
- * @param {object} [opts.envOverrides]              candidate flags, e.g. { SWEET_SEARCH_RECONCILE_SQLITE_PRAGMAS: '1' }
+ * @param {object} [opts.envOverrides]              candidate flags, e.g. { SOME_FLAG: '1' }
  * @param {string} [opts.projectRoot]               reuse an existing materialized repo (crash-restart path)
  * @param {{tick:number}} [opts.stopAfterTick]      stop replaying after this many TICKS (0=baseline only)
  * @param {boolean} [opts.keepRepo]                 do not rm the temp repo (caller cleans up)
@@ -269,10 +223,8 @@ export async function runFixedSequence(opts = {}) {
   } = opts;
 
   // Import the reconciler lazily and AFTER env is set so any module-load-time
-  // flag reads see the candidate environment. The HNSW determinism flag is
-  // pinned ON (unless the caller opts out) so the byte-diff isolates the
-  // lever-under-test from the default level RNG — see `resolveEnvOverrides`.
-  const restore = withEnv(resolveEnvOverrides(envOverrides));
+  // flag reads see the candidate environment.
+  const restore = withEnv(envOverrides);
   let projectRoot = providedRoot;
   let createdRepo = false;
   try {
@@ -448,11 +400,8 @@ function readChildTickCount(stateDir) {
 
 async function childCrashMain(killTick, projectRoot, envJson) {
   const envOverrides = JSON.parse(envJson || '{}');
-  // Apply the SAME HNSW determinism pin the in-process restart + clean run use
-  // (`runFixedSequence` → `resolveEnvOverrides`), so the crashed child and the
-  // restart agree on level assignment and the crash-consistency diff reflects
-  // durability, not pre-existing RNG noise.
-  const restore = withEnv(resolveEnvOverrides(envOverrides));
+  // The same environment the in-process restart + clean run use.
+  const restore = withEnv(envOverrides);
   const stateDir = path.join(projectRoot, '.sweet-search');
   fs.mkdirSync(stateDir, { recursive: true });
 

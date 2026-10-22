@@ -212,37 +212,4 @@ export function fts5WatermarkBudgetPages({ remainingMs, maxPages = 500, minPages
   return Math.max(minPages, Math.min(maxPages, scaled));
 }
 
-/**
- * Run a full FTS5 `('optimize')` rewrite of one table, then immediately
- * `wal_checkpoint(TRUNCATE)` to flush the (potentially large) optimize
- * transaction out of the WAL and truncate it back to zero — guarding the
- * documented 256 MiB WAL-bloat alarm that is the reason `fts5Merge` itself
- * never calls optimize (see `fts5Merge` note above).
- *
- * Lever E.5 (`SWEET_SEARCH_RECONCILE_FTS5_OPTIMIZE`). The CALLER is responsible
- * for the gate: optimize must run ONLY on true-idle (consecutive empty ticks)
- * AND only when a table-size check says it is worth it. This helper does not
- * decide *when* — it just performs the optimize + checkpoint as one safe unit.
- *
- * `('optimize')` is a single-transaction rewrite: it merges every segment into
- * one. It is idempotent (a second call on an already-optimized table is a near
- * no-op) and output-equivalent to a fully-merged index — query results are
- * unchanged.
- *
- * @param {import('better-sqlite3').Database} db
- * @param {string} tableName  Name of the FTS5 virtual table (not the shadow).
- * @returns {{optimized: boolean}}
- */
-export function fts5Optimize(db, tableName) {
-  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(tableName)) {
-    throw new Error(`fts5Optimize: invalid table name ${tableName}`);
-  }
-  db.prepare(`INSERT INTO ${tableName}(${tableName}) VALUES('optimize')`).run();
-  // Flush + truncate the WAL the optimize transaction just grew. Best-effort:
-  // a checkpoint failure (e.g. an active reader) must not turn a successful
-  // optimize into a thrown error on the maintainer path.
-  try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch {}
-  return { optimized: true };
-}
-
 export const __testing = { readVarint, STRUCTURE_ROWID };

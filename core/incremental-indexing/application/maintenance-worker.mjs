@@ -1,98 +1,21 @@
-#!/usr/bin/env node
 /**
- * Maintenance worker entry point.
+ * Maintenance queue and its drain.
  *
- * Plan § 10.2, § 13 Phase 0, § 34.7: maintenance jobs (Float HNSW clean
- * replacement, Binary HNSW replacement, LI per-segment recompaction,
- * sparse-gram delta compaction, FTS5 watermark merges) run in a separate
- * process so they have predictable low-priority CPU scheduling and cannot
- * interfere with the daemon's event loop.
- *
- * **CPU-only assertion (mandatory).** This worker MUST NEVER arm the GPU.
- * The reconcile path inherits the ORT INT8 CPU encoder unconditionally
- * (plan § 3.1, § 34.7). Importing or invoking the GPU model pool from this
- * file is a hard error that surfaces in the dead-letter queue. The
- * assertions below trip if a future change accidentally pulls in the
- * `core/indexing/model-pool.js` GPU arming path or sets
- * `process.env.SWEET_SEARCH_GPU` / `INDEX_GPU_BACKEND` to a value other
- * than the CPU defaults.
- *
- * The worker drains `rebuild-queue.jsonl` (legacy filename retained per
- * plan § 13 Phase 0). Jobs are acknowledged only after their tier handler
- * succeeds; unknown tiers remain queued; repeated failures move to the
- * dead-letter file.
- *
- * Process model:
- *   - The daemon spawns this worker via `child_process.spawn` with
- *     `process.platform === 'win32' ? 'start /BELOW_NORMAL' : 'nice -n 10'`.
- *   - The worker polls the JSONL queue every 30 s (plan § 10.2 step 1).
- *   - On startup, the worker asserts CPU-only state and refuses to proceed
- *     otherwise.
+ * Maintenance jobs (binary HNSW replacement, LI segment recompaction and merges,
+ * sparse-gram compaction, FTS5 watermark merges, vector/graph GC, PageRank) are
+ * queued in `rebuild-queue.jsonl` by the reconciler's watermarks and drained
+ * inline by the maintainer daemon after a tick (index-maintainer.mjs
+ * drainMaintenanceInline), the single writer of the state dir. Jobs are
+ * acknowledged only after their tier handler succeeds; unknown tiers stay
+ * queued; repeated failures move to the dead-letter file.
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
 import Database from 'better-sqlite3';
-import { fts5Merge, fts5Optimize, fts5SegmentCount, fts5WatermarkBudgetPages } from '../infrastructure/sqlite-fts5.mjs';
+import { fts5Merge, fts5WatermarkBudgetPages } from '../infrastructure/sqlite-fts5.mjs';
 import { reclamationHandlers } from './maintenance-handlers.mjs';
-
-// SWEET_SEARCH_RECONCILE_FTS5_BUDGET is DEFAULT-ON (disable with =0): the
-// budget-derived merge scales page count down as the drain budget runs out so a
-// near-exhausted window makes a small step instead of one big overrun. Verified
-// recall-neutral + soak == baseline. Set to '0' for the legacy fixed 500-page
-// merge. SWEET_SEARCH_RECONCILE_FTS5_OPTIMIZE stays DEFAULT-OFF (heavy idle
-// compaction — strict opt-in).
-const fts5BudgetEnabled = () => process.env.SWEET_SEARCH_RECONCILE_FTS5_BUDGET !== '0';
-const fts5OptimizeEnabled = () => process.env.SWEET_SEARCH_RECONCILE_FTS5_OPTIMIZE === '1';
-// Minimum segment count below which an optimize is not worth its full rewrite.
-const FTS5_OPTIMIZE_MIN_SEGMENTS = Number.parseInt(process.env.SWEET_SEARCH_RECONCILE_FTS5_OPTIMIZE_MIN_SEGMENTS || '8', 10);
-
-const FORBIDDEN_GPU_FLAGS = [
-  'SWEET_SEARCH_GPU',          // sweet-search canonical knob
-  'INDEX_GPU_BACKEND',         // pre-existing flag in core/indexing
-];
-
-/**
- * Throw if any environment flag would arm the GPU in this process.
- * Plan § 3.1 / § 6.1 / § 34.7. The maintenance worker is part of the
- * reconcile context and therefore inherits the CPU-only constraint.
- *
- * @returns {void}
- */
-export function assertCpuOnlyEnvironment(env = process.env) {
-  for (const key of FORBIDDEN_GPU_FLAGS) {
-    const value = env[key];
-    if (!value) continue;
-    const normalised = String(value).toLowerCase();
-    if (normalised === '0' || normalised === 'false' || normalised === 'cpu' || normalised === 'off') continue;
-    throw new Error(
-      `maintenance-worker: ${key}=${value} is incompatible with the CPU-only ` +
-      `reconcile constraint (plan § 3.1 / § 34.7). Refusing to start.`,
-    );
-  }
-}
-
-/**
- * Refuse to load any module that arms the GPU. We do this by attaching a
- * one-shot listener to `process.emit('warning')` and a guard that re-asserts
- * after any dynamic import. Most importantly we never *statically* import
- * `core/indexing/model-pool.js`, `core/indexing/indexer-pool.js`, or any
- * inference adapter from this file. Per-tier work must be implemented by
- * CPU-only domain helpers.
- *
- * The runtime guard catches dependency drift: if a future helper imports
- * the GPU pool transitively, the `shouldArmGpu` symbol resolution will
- * surface in `process._linkedBinding` or as a missing-export error before
- * a job ever runs.
- *
- * @returns {void}
- */
-export function installGpuLoadGuard() {
-  // The current worker uses CPU-only maintenance handlers. This hook remains
-  // as the single place to add module-resolution guards if a future handler
-  // grows a transitive model dependency.
-}
 
 /**
  * The rebuild queue lives at `.sweet-search/rebuild-queue.jsonl` (legacy
@@ -244,45 +167,27 @@ export function defaultMaintenanceHandlers(stateDir) {
         ? [payload.tableName || payload.table]
         : ['entities_fts', 'entities_code_fts', 'entities_trigram'];
       // E.5: derive the merge page count from the budget remaining in the drain
-      // window. Off (default) → the original aggressive 500-page merge. On →
-      // scale pages down (floor 16) as the budget runs out so a near-exhausted
-      // drain still makes a small step rather than overrunning on one big merge.
-      // An explicit `payload.pages` always wins (operator override).
+      // window: pages scale down (floor 16) as the budget runs out, so a
+      // near-exhausted drain makes a small step rather than one big overrun. An
+      // explicit `payload.pages` always wins (operator override).
       const explicitPages = Number.isFinite(payload.pages) && payload.pages > 0 ? payload.pages : null;
-      const pages = explicitPages != null
-        ? explicitPages
-        : (fts5BudgetEnabled()
-            ? fts5WatermarkBudgetPages({ remainingMs: ctx.remainingBudgetMs })
-            : 500);
-      // E.5 idle-gated optimize: when the daemon enqueues an fts5 job with
-      // `payload.optimize:true` (signaling true-idle / consecutive empty ticks)
-      // AND the optimize flag is on, run the full `('optimize')` rewrite + an
-      // immediate wal_checkpoint(TRUNCATE) — but ONLY on tables above a size
-      // threshold (a tiny table doesn't need it). Off by default; the merge path
-      // is the steady-state behavior.
-      const wantOptimize = fts5OptimizeEnabled() && payload.optimize === true;
+      const pages = explicitPages ?? fts5WatermarkBudgetPages({ remainingMs: ctx.remainingBudgetMs });
       if (!fs.existsSync(dbPath)) throw new Error(`fts5 maintenance database not found: ${dbPath}`);
       const db = new Database(dbPath);
       try {
         const merged = [];
-        const optimized = [];
         for (const tableName of tableNames) {
           const exists = db.prepare(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?",
           ).get(tableName);
           if (!exists) continue;
-          if (wantOptimize && fts5SegmentCount(db, tableName) >= FTS5_OPTIMIZE_MIN_SEGMENTS) {
-            fts5Optimize(db, tableName);
-            optimized.push(tableName);
-          } else {
-            fts5Merge(db, tableName, pages);
-            merged.push(tableName);
-          }
+          fts5Merge(db, tableName, pages);
+          merged.push(tableName);
         }
-        if (merged.length === 0 && optimized.length === 0) {
+        if (merged.length === 0) {
           throw new Error(`fts5 maintenance found no FTS5 tables in ${dbPath}`);
         }
-        return { dbPath, tableNames: [...merged, ...optimized], pages, optimized };
+        return { dbPath, tableNames: merged, pages };
       } finally {
         db.close();
       }
@@ -380,38 +285,4 @@ export async function processMaintenanceQueue(stateDir, options = {}) {
   writeMaintenanceQueue(stateDir, remaining, appendedQueueTail(stateDir, snapshot.raw));
   summary.remaining = readMaintenanceQueue(stateDir).length;
   return summary;
-}
-
-async function main() {
-  assertCpuOnlyEnvironment();
-  installGpuLoadGuard();
-
-  const stateDir = process.env.SWEET_SEARCH_STATE_DIR
-    || path.resolve(process.cwd(), '.sweet-search');
-  const budgetRaw = Number.parseInt(process.env.SWEET_SEARCH_MAINTENANCE_BUDGET_MS || '', 10);
-  const drain = await processMaintenanceQueue(stateDir, {
-    handlers: defaultMaintenanceHandlers(stateDir),
-    maxJobs: Number.parseInt(process.env.SWEET_SEARCH_MAINTENANCE_MAX_JOBS || '50', 10),
-    budgetMs: Number.isFinite(budgetRaw) && budgetRaw > 0 ? budgetRaw : undefined,
-    maxAttempts: Number.parseInt(process.env.SWEET_SEARCH_MAINTENANCE_MAX_ATTEMPTS || '3', 10),
-  });
-  console.log(JSON.stringify({
-    worker: 'maintenance',
-    phase: 'queue-drain',
-    stateDir,
-    pendingJobs: drain.remaining,
-    drain,
-    cpuOnly: true,
-  }));
-  process.exit(0);
-}
-
-const invokedDirectly = process.argv[1]
-  && (process.argv[1] === new URL(import.meta.url).pathname
-      || process.argv[1].endsWith('/maintenance-worker.mjs'));
-if (invokedDirectly) {
-  main().catch((err) => {
-    console.error('[maintenance-worker]', err);
-    process.exit(1);
-  });
 }

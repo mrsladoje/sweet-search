@@ -33,8 +33,6 @@
  *     deletions; only the *enqueue* list is bounded by `maxEnqueue`.
  *   - De-dupes against paths already in the dirty/processing queues so repeated
  *     ticks before a slow reconcile don't pile up duplicates.
- *   - Opt-out: `SWEET_SEARCH_RECONCILE_SCAN=0|false|off` disables just the
- *     producer (the maintainer keeps consuming externally-enqueued hints).
  */
 
 import fs from 'node:fs';
@@ -77,14 +75,6 @@ export function _resetGrepDiscoveryMemo() {
   grepDiscoveryMemo.clear();
   grepRejectedMemo.clear();
   minifiedMemoByState.clear();
-}
-
-/** Is the autonomous scan producer enabled? Default-on; off-tokens disable it. */
-export function dirtyScanEnabled(env = process.env) {
-  const raw = env.SWEET_SEARCH_RECONCILE_SCAN;
-  if (raw == null || raw === '') return true;
-  const n = String(raw).trim().toLowerCase();
-  return !(n === '0' || n === 'false' || n === 'off');
 }
 
 function readMerkleFiles(stateDir) {

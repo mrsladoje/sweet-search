@@ -18,7 +18,7 @@ import { fts5Merge, fts5MergeBudgetPages } from '../infrastructure/sqlite-fts5.m
 import { openSegmentState, tombstoneDoc, persistSegmentState } from '../infrastructure/li-segment-state.mjs';
 import { chunkTextFtsWriter } from '../../indexing/chunk-text-fts.js';
 import { dropAliasPointersSync } from './production-li-delta.mjs';
-import { insertEntity, insertRelationships, resolveTouchedEdges, markBinaryStale, createStaleBatch, maintainFloatStore, flushFloatStore } from './production-reconciler-helpers.mjs';
+import { insertEntity, insertRelationships, resolveTouchedEdges, markBinaryStale, createStaleBatch, flushFloatStore } from './production-reconciler-helpers.mjs';
 import { resolveRowsScoped } from '../../graph/relationship-resolver.js';
 import { deriveOverrideEdges } from '../../graph/override-edges.js';
 import { FloatVectorStore, getFloatStorePath, float512StoreEnabled } from '../../vector-store/float-vector-store.js';
@@ -49,145 +49,22 @@ const FILE_FAILURES = 'index-maintainer-failures.json';
 const QUARANTINE_AFTER_FAILURES = 2;
 
 // ---- G2 lever flags ----------------------------------------------------------
-// `flagOn` = strict opt-in (`'1'`), used by the levers that remain DEFAULT-OFF
-// (a trade or unvalidated). `flagDefaultOn` = default-on (ON unless explicitly
-// '0'), used by the PROVEN-safe levers (recall-neutral / byte-identical / soak
-// == baseline). Disable any default-on lever with `=0`.
-const flagOn = (name) => process.env[name] === '1';
-const flagDefaultOn = (name) => process.env[name] !== '0';
-// DEFAULT-ON (verified safe): batch tier writes (byte-identical with det-levels),
-// SQLite memory pragmas (footprint-only), budget-derived FTS5 merge (CPU-budget
-// adaptive, recall-neutral). Disable with the matching env var = '0'.
-const batchTierWritesEnabled = () => flagDefaultOn('SWEET_SEARCH_RECONCILE_BATCH_TIER_WRITES');
-const sqlitePragmasEnabled = () => flagDefaultOn('SWEET_SEARCH_RECONCILE_SQLITE_PRAGMAS');
-const fts5BudgetEnabled = () => flagDefaultOn('SWEET_SEARCH_RECONCILE_FTS5_BUDGET');
-// DEFAULT-OFF (freshness trade — defers HNSW disk saves so on-disk lags the live
-// graph): keep strict opt-in.
-const liveHnswEnabled = () => flagOn('SWEET_SEARCH_RECONCILE_LIVE_HNSW');
-
-const BATCH_FLAG = 'SWEET_SEARCH_RECONCILE_BATCH_TIER_WRITES';
-const DET_LEVELS_FLAG = 'SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS';
-
-// One-time-warning latch so the forced-on notice is emitted ONCE per process,
-// not on every tick (createProductionReconciler runs per tick in the daemon).
-let _batchForcedDetLevelsWarned = false;
-
-/**
- * Couple the two HNSW-determinism levers so the batch lever can never silently
- * produce a non-byte-identical graph.
- *
- * E.1 batching (`SWEET_SEARCH_RECONCILE_BATCH_TIER_WRITES`) only yields a graph
- * byte-identical to the per-file / compaction paths when per-id deterministic
- * levels (`SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS`) are ON — see plan §0.5.
- * `binary-hnsw-index.js` reads the det-levels env var directly at insert time,
- * so running batch WITHOUT det-levels is a footgun: the batched tick draws the
- * global RNG in a different interleaving than a per-file run and the resulting
- * graph diverges. These two flags are coupled here.
- *
- * BOTH levers are now DEFAULT-ON (`!== '0'`). "batch effectively ON" therefore
- * means the batch flag is unset (default) OR '1' — i.e. `BATCH_FLAG !== '0'`.
- * In the normal case (both unset / default-on) det-levels is ALREADY effectively
- * ON, so this is a no-op; no env mutation is needed and binary-hnsw-index.js
- * sees det-levels on via its own `!== '0'` gate. The ONE case that must still
- * fail loudly is the explicit contradiction: batch effectively ON while
- * det-levels is EXPLICITLY '0'.
- *
- * Runs per tick from `createProductionReconciler` (which the daemon constructs
- * each tick), so the daemon is covered without touching index-maintainer.mjs.
- *
- *   - batch effectively ON + det-levels EXPLICITLY '0' → throw (explicit
- *     contradiction: byte-identity requested via batch, but levels forced
- *     non-deterministic).
- *   - batch effectively ON + det-levels default/unset/'1' → no-op (det-levels is
- *     default-on, so the batched graph already stays byte-identical).
- *   - batch EXPLICITLY OFF ('0') → no-op (the per-file path is taken; det-levels
- *     is independently meaningful and we never touch it).
- *
- * @param {{warn?:Function}} [logger]  optional logger (reserved; the default-on
- *   defaults make the force-on warning path unreachable, but the signature is
- *   preserved for callers + tests).
- */
-export function normalizeHnswDeterminismFlags(logger = null) {
-  void logger;
-  // batch is DEFAULT-ON: it is effectively OFF only when explicitly '0'.
-  if (process.env[BATCH_FLAG] === '0') return;
-  const det = process.env[DET_LEVELS_FLAG];
-  // det-levels is also DEFAULT-ON: only an EXPLICIT '0' is the contradiction.
-  if (det === '0') {
-    throw new Error(
-      `${BATCH_FLAG} is enabled (default-on) but requires ${DET_LEVELS_FLAG} to be `
-      + `ON for a byte-identical HNSW graph — ${DET_LEVELS_FLAG} is explicitly '0'. `
-      + `These are contradictory: batch tier writes only converge with the `
-      + `per-file and compaction build paths when per-id deterministic levels are `
-      + `enabled (see INDEX_MAINTAINER_EFFICIENCY_IMPLEMENTATION_PLAN §0.5). Either `
-      + `leave ${DET_LEVELS_FLAG} default-on (omit it or set it to '1') or disable `
-      + `the batch lever with ${BATCH_FLAG}=0.`,
-    );
-  }
-  // det-levels is default-on (unset) or explicitly '1' → already coupled
-  // correctly; no env mutation needed (binary-hnsw-index.js reads its own
-  // `!== '0'` gate). The legacy force-on warning latch is retained only to keep
-  // its symbol stable for any importer.
-  void _batchForcedDetLevelsWarned;
-}
-
-// E.2: deletion-fraction threshold + insert cadence for the live (daemon-scoped)
-// HNSW. Save to disk only on graceful shutdown, deletion-fraction >= this, or
-// every N inserts.
-const LIVE_HNSW_DELETION_FRACTION = Number.parseFloat(process.env.SWEET_SEARCH_RECONCILE_LIVE_HNSW_DELETE_FRAC || '0.15');
-const LIVE_HNSW_SAVE_EVERY_INSERTS = Number.parseInt(process.env.SWEET_SEARCH_RECONCILE_LIVE_HNSW_SAVE_EVERY || '2000', 10);
-
 /**
  * E.4 SQLite memory pragmas, applied AFTER `journal_mode=WAL; synchronous=NORMAL`
  * on a write connection. `cache_size=-32768` caps the per-connection page cache
  * at ~32 MiB. `soft_heap_limit` is process-global and is set ONCE at daemon
- * startup by G4 (index-maintainer) — NOT here — to avoid every connection
- * re-setting a process-wide knob. With E.1 these attach to the tick-scoped
- * connection so the cache is meaningful; without E.1 the per-file conn churn
- * makes them near no-ops (documented, not a bug).
- *
- * Gated on `SWEET_SEARCH_RECONCILE_SQLITE_PRAGMAS`; off ⇒ unchanged behavior.
+ * startup by index-maintainer — NOT here — to avoid every connection re-setting a
+ * process-wide knob.
  *
  * @param {import('better-sqlite3').Database} db
  * @param {{readonly?: boolean}} [opts]
  */
 function applyMemoryPragmas(db, { readonly = false } = {}) {
-  if (!sqlitePragmasEnabled()) return;
   try { db.pragma('cache_size = -32768'); } catch {}
   // mmap_size only on readonly maintainer conns (negligible benefit on the JS
   // side — the user search path is native Rust — but harmless; matches the doc).
   if (readonly) {
     try { db.pragma('mmap_size = 268435456'); } catch {}
-  }
-}
-
-/**
- * E.2: process-scoped (daemon-scoped) live store registry. The index-maintainer
- * daemon runs many ticks in one process, each constructing a fresh
- * `createProductionReconciler`; a module-level registry keyed by the resolved
- * state dir lets the resident HNSW + float store survive across those
- * per-tick adapter instances when `SWEET_SEARCH_RECONCILE_LIVE_HNSW` is on.
- *
- * Each entry: { index: BinaryHNSWIndex, floatStore: FloatVectorStore,
- *               insertsSinceSave, deletedCount, totalCount, dirty }
- */
-const liveStoreRegistry = new Map();
-
-/**
- * Release all live stores, saving any that are dirty. Called on graceful daemon
- * shutdown (G4 wires the call; exposed here for tests + the disposeTick path).
- */
-export async function shutdownLiveStores() {
-  for (const [key, entry] of liveStoreRegistry) {
-    try {
-      if (entry.dirty && entry.index) {
-        await entry.index.save(entry.indexPath);
-        if (entry.floatStore && entry.floatStore.loaded) {
-          await entry.floatStore.save(getFloatStorePath(entry.indexPath));
-        }
-      }
-    } catch { /* best-effort flush on shutdown */ }
-    liveStoreRegistry.delete(key);
   }
 }
 
@@ -311,21 +188,10 @@ function pickLiInput(chunk) {
   return chunk.li_greedy_text || chunk.embedding_text || chunk.li_text || chunk.text || chunk.content || '';
 }
 
-async function enrichChunksFromGraph(chunks, stateDir, tickCtx = null) {
-  const dbPath = path.join(stateDir, 'code-graph.db');
+async function enrichChunksFromGraph(chunks, stateDir, tickCtx) {
   if (chunks.length === 0) return chunks;
-  // E.1: reuse the tick-scoped readonly connection when batching; else open a
-  // per-file readonly connection exactly as before.
-  let db;
-  let ownConn = false;
-  if (tickCtx?.graphRoDb) {
-    db = tickCtx.graphRoDb;
-  } else {
-    if (!fs.existsSync(dbPath)) return chunks;
-    db = new Database(dbPath, { readonly: true });
-    applyMemoryPragmas(db, { readonly: true });
-    ownConn = true;
-  }
+  // E.1: the tick-scoped connection (it sees this tick's uncommitted graph rows).
+  const db = tickCtx.graphRoDb;
   try {
     const entityStmt = prepareCached(db, 'SELECT type, name, start_line, end_line FROM entities WHERE file_path = ? AND epoch_retired IS NULL ORDER BY start_line ASC');
     const fileEntityStmt = prepareCached(db, 'SELECT id FROM entities WHERE file_path = ? AND logical_entity_id = ? AND epoch_retired IS NULL ORDER BY epoch_written DESC LIMIT 1');
@@ -346,8 +212,6 @@ async function enrichChunksFromGraph(chunks, stateDir, tickCtx = null) {
     }
   } catch {
     return chunks;
-  } finally {
-    if (ownConn) db.close();
   }
   return chunks;
 }
@@ -367,29 +231,17 @@ export function tickBudgetConfig(env = process.env) {
 }
 
 export function createProductionReconciler(options = {}) {
-  // Couple the batch + det-levels flags FIRST (before the adapter is built and
-  // before any tier write), so binary-hnsw-index.js — which reads
-  // SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS at insert time — transparently sees
-  // the forced value whenever batch is on. Throws on the explicit contradiction
-  // (batch=1 + det-levels=0). See `normalizeHnswDeterminismFlags`.
-  normalizeHnswDeterminismFlags(options.logger);
   const projectRoot = path.resolve(options.projectRoot || process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd());
   const stateDir = path.resolve(options.stateDir || process.env.SWEET_SEARCH_STATE_DIR || path.join(projectRoot, '.sweet-search'));
   const adapter = new ProductionReconcileAdapter({ ...options, projectRoot, stateDir });
   // A.4-config: feed the interval-autotune a real load signal. This is ONLY the
-  // config half — the daemon (G4) reads the tuned interval back into its sleep
-  // loop. DEFAULT-ON (disable with SWEET_SEARCH_RECONCILE_AUTOTUNE=0): when off,
-  // `autotuneInterval` stays false and the reconciler never re-tunes (today's
-  // fixed-interval behavior). Verified recall-neutral + soak == baseline.
-  const autotuneOn = flagDefaultOn('SWEET_SEARCH_RECONCILE_AUTOTUNE');
+  // config half — the daemon reads the tuned interval back into its sleep loop.
   const cpuCount = Math.max(1, os.cpus().length);
-  const autotuneConfig = autotuneOn
-    ? {
-        autotuneInterval: true,
-        cpuLoadAvg: os.loadavg()[0] / cpuCount,
-        maintenanceBacklog: adapter.maintenanceBacklog(),
-      }
-    : {};
+  const autotuneConfig = {
+    autotuneInterval: true,
+    cpuLoadAvg: os.loadavg()[0] / cpuCount,
+    maintenanceBacklog: adapter.maintenanceBacklog(),
+  };
   return new Reconciler({
     projectRoot,
     stateDir,
@@ -511,28 +363,20 @@ class ProductionReconcileAdapter {
       applySparseGramDelta: (file, ops, epoch) => this.applySparseGramDelta(file, ops, epoch),
       readMaintenanceState: () => this.readMaintenanceState(),
       scheduleMaintenance: (job) => enqueueMaintenanceJob(this.stateDir, job),
+      // E.1 tick lifecycle: every tick writes its tiers through one tick context.
+      beginTick: (info) => this.beginTick(info),
+      finalizeTick: (ctx, info) => this.finalizeTick(ctx, info),
+      disposeTick: (ctx) => this.disposeTick(ctx),
     };
-    // E.1: expose the batch lifecycle hooks ONLY when the flag is on, so the
-    // reconciler's `_batchTierWritesEnabled()` gate (which checks for the hooks)
-    // stays false by default and the per-file path is taken verbatim.
-    if (batchTierWritesEnabled()) {
-      hooks.beginTick = (info) => this.beginTick(info);
-      hooks.finalizeTick = (ctx, info) => this.finalizeTick(ctx, info);
-      hooks.disposeTick = (ctx) => this.disposeTick(ctx);
-    }
     return hooks;
   }
 
-  // ---- E.1/E.2 tick-scoped store context -----------------------------------
+  // ---- E.1 tick-scoped store context ---------------------------------------
 
   /**
    * E.1: open the tick-scoped store context once at tick start. Opens RW
    * `codebase.db` + `code-graph.db`, a RO `code-graph.db` for enrichment, loads
-   * the binary HNSW + float store once.
-   *
-   * With E.2 (`SWEET_SEARCH_RECONCILE_LIVE_HNSW`) the HNSW + float store come
-   * from the daemon-scoped registry (loaded once, kept resident across ticks);
-   * otherwise they are loaded fresh and saved+closed at finalize.
+   * the binary HNSW + float store once (lazily), saved + closed at finalize.
    */
   async beginTick() {
     const codebaseDbPath = path.join(this.stateDir, 'codebase.db');
@@ -588,19 +432,11 @@ class ProductionReconcileAdapter {
       // idle tick (empty dirty set) never touches them, so eagerly loading them
       // every ~20 s was pure churn. They are materialised on first use through
       // `ctx.ensureStores()` — from `applyBinaryHNSWDelta` (a file actually has
-      // vector ops) and from `finalizeTick` (staged adds, or a resident live
-      // store that may be due for a deferred disk save).
+      // vector ops) and from `finalizeTick` (staged adds).
       index: null,
       floatStore: null,
       binaryVectorsBefore: 0,
       storesLoaded: false,
-      // `live` is resolved EAGERLY: it is an environment read, not a load. The
-      // finalize guard below tests `ctx.live` to decide whether a resident
-      // store may need flushing, so deferring it would make that guard circular
-      // (no stores loaded ⇒ no `live` ⇒ never flush) and strand a pending
-      // deferred disk save across idle ticks under
-      // SWEET_SEARCH_RECONCILE_LIVE_HNSW=1.
-      live: liveHnswEnabled(),
       // Accumulated across the tick:
       floatUpserts: [],
       floatRemoveIds: [],
@@ -614,25 +450,20 @@ class ProductionReconcileAdapter {
 
     // Step 2a: single-flight loader for the tick-scoped stores. Idempotent and
     // safe to call from anywhere in the tick; the first call pays the load, all
-    // later calls resolve on the same promise. Under E.2 (live HNSW) the
-    // resident registry entry usually satisfies it with no disk read at all.
+    // later calls resolve on the same promise.
     let storesPromise = null;
     const loadStores = async () => {
-      const live = ctx.live ? this._getLiveStore(ctx.indexPath) : null;
-      let index = live?.index || null;
-      let floatStore = live?.floatStore || null;
-      if (!index) {
-        index = new BinaryHNSWIndex({
-          indexPath: ctx.indexPath,
-          stalePath: `${ctx.indexPath}.stale.bin`,
-          floatDimension: this.modelInfo.hnswDimension,
-        });
-        try { await index.load(ctx.indexPath); } catch { await index.init(); }
-      }
+      const index = new BinaryHNSWIndex({
+        indexPath: ctx.indexPath,
+        stalePath: `${ctx.indexPath}.stale.bin`,
+        floatDimension: this.modelInfo.hnswDimension,
+      });
+      try { await index.load(ctx.indexPath); } catch { await index.init(); }
       ctx.index = index;
       // Captured BEFORE the float store loads, exactly as the eager path did.
       ctx.binaryVectorsBefore = index.idToIndex?.size ?? 0;
-      if (!floatStore && float512StoreEnabled()) {
+      let floatStore = null;
+      if (float512StoreEnabled()) {
         floatStore = new FloatVectorStore();
         try {
           await floatStore.loadOrInit(getFloatStorePath(ctx.indexPath), this.modelInfo.hnswDimension);
@@ -650,36 +481,10 @@ class ProductionReconcileAdapter {
   }
 
   /**
-   * E.2: fetch (or lazily create) the daemon-scoped resident store entry.
-   */
-  _getLiveStore(indexPath) {
-    let entry = liveStoreRegistry.get(indexPath);
-    if (!entry) {
-      entry = {
-        indexPath,
-        index: null,
-        floatStore: null,
-        insertsSinceSave: 0,
-        deletedCount: 0,
-        totalCount: 0,
-        dirty: false,
-        loadPromise: null,
-      };
-      liveStoreRegistry.set(indexPath, entry);
-    }
-    return entry;
-  }
-
-  /**
    * E.1 PERSIST-BEFORE-ADVANCE: save the batched HNSW + float store once, fsync,
    * then (per E.4) shrink_memory + wal_checkpoint(PASSIVE) on the tick-scoped
    * connections. Returns the set of files whose ops are now persisted so the
    * manifest publish only promotes those into the merkle.
-   *
-   * With E.2 the resident index is NOT saved every tick — only on a deletion
-   * fraction >= threshold, every N inserts, or graceful shutdown. The SQLite
-   * tiers always fsync here; the merkle then advances for files whose vector
-   * rows landed (HNSW reconverges from those rows on the next save / restart).
    */
   async finalizeTick(ctx) {
     if (!ctx) return { persistedFiles: new Set(), requeueFiles: [] };
@@ -714,49 +519,7 @@ class ProductionReconcileAdapter {
       }
       ctx.pendingAdds = [];
 
-      if (ctx.live) {
-        const entry = liveStoreRegistry.get(ctx.indexPath);
-        // Step 2a: run the resident-store bookkeeping when this tick actually
-        // opened the stores, OR when an earlier tick left a resident index in
-        // the registry (that index may carry a deferred, not-yet-saved delta
-        // and must still be re-evaluated for the save thresholds). When neither
-        // holds there is nothing resident and nothing staged, so the whole
-        // block is a no-op and the stores stay unloaded. `ensureStores()` costs
-        // no disk read in the resident case — it adopts `entry.index`.
-        if (entry && (ctx.storesLoaded || entry.index)) {
-          await ctx.ensureStores();
-          entry.index = ctx.index;
-          entry.floatStore = ctx.floatStore;
-          entry.insertsSinceSave += ctx.append;
-          entry.deletedCount += ctx.tombstone;
-          entry.totalCount = ctx.index.idToIndex?.size ?? entry.totalCount;
-          if (ctx.append > 0 || ctx.tombstone > 0) entry.dirty = true;
-          const denom = Math.max(1, entry.totalCount + entry.deletedCount);
-          const deletionFraction = entry.deletedCount / denom;
-          const shouldSave = deletionFraction >= LIVE_HNSW_DELETION_FRACTION
-            || entry.insertsSinceSave >= LIVE_HNSW_SAVE_EVERY_INSERTS;
-          if (shouldSave && entry.dirty) {
-            await ctx.index.save(ctx.indexPath);
-            await flushFloatStore({
-              binaryHnswPath: ctx.indexPath,
-              store: ctx.floatStore,
-              upserts: ctx.floatUpserts,
-              removeIds: ctx.floatRemoveIds,
-              binaryVectorsBefore: ctx.binaryVectorsBefore,
-              dimension: this.modelInfo.hnswDimension,
-            });
-            entry.insertsSinceSave = 0;
-            entry.deletedCount = 0;
-            entry.dirty = false;
-            hnswSaved = true;
-          } else if (ctx.floatStore && (ctx.floatUpserts.length || ctx.floatRemoveIds.length)) {
-            // Keep the float store's in-memory delta consistent with the live
-            // index even when we skip the disk save (so a later threshold save
-            // writes the full set).
-            ctx.floatStore.applyDelta({ upserts: ctx.floatUpserts, removeIds: ctx.floatRemoveIds });
-          }
-        }
-      } else if (ctx.append > 0 || ctx.tombstone > 0) {
+      if (ctx.append > 0 || ctx.tombstone > 0) {
         // Non-zero op counters imply `applyBinaryHNSWDelta` opened the stores.
         await ctx.ensureStores?.();
         await ctx.index.save(ctx.indexPath);
@@ -772,9 +535,8 @@ class ProductionReconcileAdapter {
         this.progress('production:float-store-maintained');
         hnswSaved = true;
       }
-      // PERSIST-BEFORE-ADVANCE: the HNSW + float batch has now fsynced (or was
-      // intentionally not due-to-save under E.2). COMMIT the SQLite tiers ONLY
-      // now, so a crash before this point rolled the SQLite writes back too.
+      // PERSIST-BEFORE-ADVANCE: the HNSW + float batch has now fsynced. COMMIT the
+      // SQLite tiers ONLY now, so a crash before this point rolled them back too.
       if (ctx.txOpen) {
         ctx.codebaseDb.exec('COMMIT');
         ctx.graphDb.exec('COMMIT');
@@ -801,10 +563,8 @@ class ProductionReconcileAdapter {
     // E.4: return cache to the OS + checkpoint the WAL, then close. Safe now that
     // the transaction is committed (a checkpoint inside a write tx is a no-op).
     try {
-      if (sqlitePragmasEnabled()) {
-        try { ctx.codebaseDb.pragma('shrink_memory'); } catch {}
-        try { ctx.graphDb.pragma('shrink_memory'); } catch {}
-      }
+      try { ctx.codebaseDb.pragma('shrink_memory'); } catch {}
+      try { ctx.graphDb.pragma('shrink_memory'); } catch {}
       try { ctx.codebaseDb.pragma('wal_checkpoint(PASSIVE)'); } catch {}
       try { ctx.graphDb.pragma('wal_checkpoint(PASSIVE)'); } catch {}
     } finally {
@@ -818,8 +578,7 @@ class ProductionReconcileAdapter {
   }
 
   /**
-   * Close the tick-scoped connections. Idempotent + best-effort. With E.2 the
-   * resident index/float store are NOT closed (they belong to the registry).
+   * Close the tick-scoped connections. Idempotent + best-effort.
    */
   async disposeTick(ctx) {
     if (!ctx) return;
@@ -1214,460 +973,373 @@ class ProductionReconcileAdapter {
     return resolver;
   }
 
-  async applyGraphDelta(file, hashes, epoch, ctx = null) {
+  async applyGraphDelta(file, hashes, epoch, ctx) {
     const rel = typeof file === 'string' ? file : file.path;
-    // E.1: reuse the tick-scoped RW connection (schema already ensured) instead
-    // of opening + migrating + closing a connection per file.
-    let db;
-    let hasFts;
-    let ownConn = false;
-    if (ctx?.graphDb) {
-      db = ctx.graphDb;
-      hasFts = ctx.graphHasFts;
-    } else {
-      const dbPath = path.join(this.stateDir, 'code-graph.db');
-      fs.mkdirSync(this.stateDir, { recursive: true });
-      db = new Database(dbPath);
-      db.pragma('journal_mode = WAL');
-      db.pragma('synchronous = NORMAL');
-      applyMemoryPragmas(db);
-      hasFts = createGraphSchema(db);
-      migrateEntitiesSchema(db);
-      migrateRelationshipsSchema(db);
-      ownConn = true;
-    }
-    try {
-      const oldRows = prepareCached(db, 'SELECT rowid, id, name, logical_entity_id, signature_hash, type, signature, doc_comment, start_line, end_line, package, parent_class, parent_id, page_rank FROM entities WHERE file_path = ? AND epoch_retired IS NULL').all(rel);
-      const oldByLogical = new Map(oldRows.map((r) => [r.logical_entity_id || r.id, r]));
-      const oldIds = oldRows.map((r) => r.id);
-      const importResolver = this._importResolverFor(ctx, db);
-      const extractor = new GraphExtractor(importResolver ? { importResolver } : undefined);
-      const parsed = hashes.deleted
-        ? { entities: [], relationships: [] }
-        : await extractor.extractFromFile(rel, hashes.content);
-      this.progress('production:graph-extracted');
-      const entities = [...(parsed.entities || [])];
-      const relationships = parsed.relationships || [];
-      const callSites = parsed.callSites || [];
-      // File-level edges keep the file's logical id as their source — the
-      // same id a full build writes. The file's node lives in the `files`
-      // table (file-nodes.js), never in `entities`: an entity row here made
-      // maintained graphs differ from fresh builds (PageRank, scope chains,
-      // symbol search) and gave file-level edges a per-epoch source id.
-      const fileLogicalId = graphEntityLogicalId(rel, 'file', path.basename(rel));
-      let upsert = 0;
-      let tombstone = 0;
-      let edgeResolution = null;
-      let overrideStats = null;
-      const liveIdFor = new Map();
-      const tx = db.transaction(() => {
-        const retireEntity = prepareCached(db, 'UPDATE entities SET epoch_retired = ?, stale_since = COALESCE(stale_since, ?) WHERE id = ? AND epoch_retired IS NULL');
-        const retireRel = oldIds.length > 0
-          ? db.prepare(`UPDATE relationships SET epoch_retired = ? WHERE source_id IN (${oldIds.map(() => '?').join(',')}) AND epoch_retired IS NULL`)
-          : null;
-        if (retireRel) retireRel.run(epoch, ...oldIds);
-        // A full build writes the file-level rows (`imports`, `importsFile`)
-        // under the file's logical id with no file entity row, so oldIds never
-        // lists it and those rows stayed live forever after an edit (a removed
-        // import kept its edge). Retire them with the rest of the file — and
-        // the file-level call sites (call_sites, call_lines) stored under the
-        // same id.
-        if (!oldIds.includes(fileLogicalId)) {
-          prepareCached(db, 'UPDATE relationships SET epoch_retired = ? WHERE source_id = ? AND epoch_retired IS NULL').run(epoch, fileLogicalId);
-          prepareCached(db, 'UPDATE call_sites SET epoch_retired = ? WHERE source_id = ? AND epoch_retired IS NULL').run(epoch, fileLogicalId);
-          prepareCached(db, 'UPDATE call_lines SET epoch_retired = ? WHERE source_id = ? AND epoch_retired IS NULL').run(epoch, fileLogicalId);
-        }
-        // The file's node: one live row while the file exists, retired on
-        // delete. Older maintained graphs also hold a `file` row in
-        // `entities`; it is in oldRows and retires below like any entity
-        // the new extraction no longer emits.
-        syncFileNode(db, rel, { epoch, deleted: !!hashes.deleted, node: parsed.file });
-        // A deleted file is no longer an import target of any other file.
-        if (hashes.deleted) {
-          prepareCached(db, "UPDATE relationships SET epoch_retired = ? WHERE type = 'importsFile' AND target_name = ? AND epoch_retired IS NULL").run(epoch, rel);
-        }
-        if (oldIds.length > 0) {
-          db.prepare(`UPDATE call_sites SET epoch_retired = ? WHERE source_id IN (${oldIds.map(() => '?').join(',')}) AND epoch_retired IS NULL`).run(epoch, ...oldIds);
-          db.prepare(`UPDATE call_lines SET epoch_retired = ? WHERE source_id IN (${oldIds.map(() => '?').join(',')}) AND epoch_retired IS NULL`).run(epoch, ...oldIds);
-        }
-        const retiredIds = [];
-        const nextLogical = new Set(entities.map((e) => e.id));
-        for (const row of oldRows) {
-          if (!nextLogical.has(row.logical_entity_id || row.id)) {
-            retireEntity.run(epoch, epoch, row.id);
-            retiredIds.push(row.id);
-            tombstone += 1;
-          }
-        }
-        // Keep a live row only when every stored column is unchanged,
-        // including its HCGS parent. Entity ids carry no line number
-        // (GraphExtractor.entityId), so a definition moved by an edit above
-        // it keeps its id; its row must still be re-written, or the
-        // maintained graph keeps stale lines that a fresh build does not
-        // have. A member's `parent_id` is its parent's stored row, so a
-        // re-written parent re-writes its kept members too.
-        const parentOf = entityParentIds(entities);
-        const oldLogicalOfRow = new Map(oldRows.map((r) => [r.id, r.logical_entity_id || r.id]));
-        const rewrite = new Set();
-        for (const e of entities) {
-          const old = oldByLogical.get(e.id);
-          const oldParent = old?.parent_id ? (oldLogicalOfRow.get(old.parent_id) ?? old.parent_id) : null;
-          if (!old || !sameEntityRow(old, e) || oldParent !== (parentOf.get(e.id) ?? null)) rewrite.add(e.id);
-        }
-        for (let grew = true; grew;) {
-          grew = false;
-          for (const e of entities) {
-            const parent = parentOf.get(e.id);
-            if (parent && !rewrite.has(e.id) && rewrite.has(parent)) { rewrite.add(e.id); grew = true; }
-          }
-        }
-        for (const e of entities) {
-          const old = oldByLogical.get(e.id);
-          if (!rewrite.has(e.id)) {
-            liveIdFor.set(e.id, old.id);
-            continue;
-          }
-          if (old) {
-            retireEntity.run(epoch, epoch, old.id);
-            retiredIds.push(old.id);
-            tombstone += 1;
-          }
-          liveIdFor.set(e.id, uniquePhysicalId(db, 'entities', `${e.id}@e${epoch}`));
-        }
-        for (const e of entities) {
-          if (!rewrite.has(e.id)) continue;
-          const parent = parentOf.get(e.id);
-          insertEntity(db, e, liveIdFor.get(e.id), epoch, hasFts, parent ? (liveIdFor.get(parent) ?? null) : null);
-          // The row keeps its last PageRank until the graph_pagerank job recomputes it:
-          // at 0, trace ranked every edited definition last.
-          const oldRank = oldByLogical.get(e.id)?.page_rank;
-          if (oldRank > 0) prepareCached(db, 'UPDATE entities SET page_rank = ? WHERE id = ?').run(oldRank, liveIdFor.get(e.id));
-          upsert += 1;
-        }
-        insertRelationships(db, relationships, liveIdFor, epoch);
-        insertCallSites(db, callSites, { epoch, idFor: liveIdFor });
-        // Resolve this write's edges (and edges into its definitions) with
-        // the full build's rules — otherwise maintained files keep
-        // target-less edges that readers can only match by name.
-        // Every name whose set of definitions changed in this write: names of
-        // definitions that disappeared or appeared (by logical id). A removed
-        // `Alpha.run` leaves one `run` (a full build now binds `x.run()` to
-        // it); a second `run` makes a bound call ambiguous again. A definition
-        // that only moved or changed keeps its logical id and changes no
-        // candidate set; edges into its old row are re-resolved through
-        // `retiredIds`.
-        const changedNames = new Set();
-        for (const r of oldRows) {
-          if (r.name && r.type !== 'file' && !nextLogical.has(r.logical_entity_id || r.id)) changedNames.add(r.name);
-        }
-        for (const e of entities) {
-          if (e.type !== 'file' && e.name && !oldByLogical.has(e.id)) changedNames.add(e.name);
-        }
-        const newNames = [...changedNames];
-        // The file's own edges (imports, top-level calls) have the file node
-        // as their source, which is in no liveIdFor entry: list it too, or
-        // they stay target-less while a full build resolves them.
-        edgeResolution = resolveTouchedEdges(db, {
-          epoch,
-          sourceIds: [...liveIdFor.values(), fileLogicalId],
-          retiredIds,
-          newNames,
-        }, resolveRowsScoped);
-        // Override edges follow the resolved extends/implements rows above.
-        // The batched tick derives them once at finalize (one tick-wide pass
-        // over the live graph); a per-file connection derives them here.
-        if (ctx?.graphDb) ctx.overridesEpoch = epoch;
-        else overrideStats = deriveOverridesSafely(db, epoch, this.logger);
-      });
-      tx();
-      this.progress('production:graph-written');
-      // E.5: budget-derived FTS5 merge. When the budget flag is off this is the
-      // fixed 16-page merge exactly as before; when on, a busy tick (elapsed >
-      // 1800ms) skips the merge to leave CPU for reconcile.
-      if (hasFts) {
-        const pages = fts5BudgetEnabled()
-          ? fts5MergeBudgetPages({ elapsedMs: ctx ? Date.now() - ctx.tickStartMs : 0 })
-          : 16;
-        if (pages != null) {
-          for (const table of ['entities_fts', 'entities_code_fts', 'entities_trigram']) try { fts5Merge(db, table, pages); } catch {}
+    // E.1: the tick-scoped RW connection (schema already ensured).
+    const db = ctx.graphDb;
+    const hasFts = ctx.graphHasFts;
+    const oldRows = prepareCached(db, 'SELECT rowid, id, name, logical_entity_id, signature_hash, type, signature, doc_comment, start_line, end_line, package, parent_class, parent_id, page_rank FROM entities WHERE file_path = ? AND epoch_retired IS NULL').all(rel);
+    const oldByLogical = new Map(oldRows.map((r) => [r.logical_entity_id || r.id, r]));
+    const oldIds = oldRows.map((r) => r.id);
+    const importResolver = this._importResolverFor(ctx, db);
+    const extractor = new GraphExtractor(importResolver ? { importResolver } : undefined);
+    const parsed = hashes.deleted
+      ? { entities: [], relationships: [] }
+      : await extractor.extractFromFile(rel, hashes.content);
+    this.progress('production:graph-extracted');
+    const entities = [...(parsed.entities || [])];
+    const relationships = parsed.relationships || [];
+    const callSites = parsed.callSites || [];
+    // File-level edges keep the file's logical id as their source — the
+    // same id a full build writes. The file's node lives in the `files`
+    // table (file-nodes.js), never in `entities`: an entity row here made
+    // maintained graphs differ from fresh builds (PageRank, scope chains,
+    // symbol search) and gave file-level edges a per-epoch source id.
+    const fileLogicalId = graphEntityLogicalId(rel, 'file', path.basename(rel));
+    let upsert = 0;
+    let tombstone = 0;
+    let edgeResolution = null;
+    let overrideStats = null;
+    const liveIdFor = new Map();
+    const tx = db.transaction(() => {
+      const retireEntity = prepareCached(db, 'UPDATE entities SET epoch_retired = ?, stale_since = COALESCE(stale_since, ?) WHERE id = ? AND epoch_retired IS NULL');
+      const retireRel = oldIds.length > 0
+        ? db.prepare(`UPDATE relationships SET epoch_retired = ? WHERE source_id IN (${oldIds.map(() => '?').join(',')}) AND epoch_retired IS NULL`)
+        : null;
+      if (retireRel) retireRel.run(epoch, ...oldIds);
+      // A full build writes the file-level rows (`imports`, `importsFile`)
+      // under the file's logical id with no file entity row, so oldIds never
+      // lists it and those rows stayed live forever after an edit (a removed
+      // import kept its edge). Retire them with the rest of the file — and
+      // the file-level call sites (call_sites, call_lines) stored under the
+      // same id.
+      if (!oldIds.includes(fileLogicalId)) {
+        prepareCached(db, 'UPDATE relationships SET epoch_retired = ? WHERE source_id = ? AND epoch_retired IS NULL').run(epoch, fileLogicalId);
+        prepareCached(db, 'UPDATE call_sites SET epoch_retired = ? WHERE source_id = ? AND epoch_retired IS NULL').run(epoch, fileLogicalId);
+        prepareCached(db, 'UPDATE call_lines SET epoch_retired = ? WHERE source_id = ? AND epoch_retired IS NULL').run(epoch, fileLogicalId);
+      }
+      // The file's node: one live row while the file exists, retired on
+      // delete. Older maintained graphs also hold a `file` row in
+      // `entities`; it is in oldRows and retires below like any entity
+      // the new extraction no longer emits.
+      syncFileNode(db, rel, { epoch, deleted: !!hashes.deleted, node: parsed.file });
+      // A deleted file is no longer an import target of any other file.
+      if (hashes.deleted) {
+        prepareCached(db, "UPDATE relationships SET epoch_retired = ? WHERE type = 'importsFile' AND target_name = ? AND epoch_retired IS NULL").run(epoch, rel);
+      }
+      if (oldIds.length > 0) {
+        db.prepare(`UPDATE call_sites SET epoch_retired = ? WHERE source_id IN (${oldIds.map(() => '?').join(',')}) AND epoch_retired IS NULL`).run(epoch, ...oldIds);
+        db.prepare(`UPDATE call_lines SET epoch_retired = ? WHERE source_id IN (${oldIds.map(() => '?').join(',')}) AND epoch_retired IS NULL`).run(epoch, ...oldIds);
+      }
+      const retiredIds = [];
+      const nextLogical = new Set(entities.map((e) => e.id));
+      for (const row of oldRows) {
+        if (!nextLogical.has(row.logical_entity_id || row.id)) {
+          retireEntity.run(epoch, epoch, row.id);
+          retiredIds.push(row.id);
+          tombstone += 1;
         }
       }
-      this.touched.set(rel, { ...(this.touched.get(rel) || {}), graphEntities: entities.length, graphEdgeResolution: edgeResolution, graphOverrides: overrideStats });
-      return { ops: { graph_upsert: upsert, graph_tombstone: tombstone }, manifest: { path: 'code-graph.db' } };
-    } finally {
-      if (ownConn) db.close();
+      // Keep a live row only when every stored column is unchanged,
+      // including its HCGS parent. Entity ids carry no line number
+      // (GraphExtractor.entityId), so a definition moved by an edit above
+      // it keeps its id; its row must still be re-written, or the
+      // maintained graph keeps stale lines that a fresh build does not
+      // have. A member's `parent_id` is its parent's stored row, so a
+      // re-written parent re-writes its kept members too.
+      const parentOf = entityParentIds(entities);
+      const oldLogicalOfRow = new Map(oldRows.map((r) => [r.id, r.logical_entity_id || r.id]));
+      const rewrite = new Set();
+      for (const e of entities) {
+        const old = oldByLogical.get(e.id);
+        const oldParent = old?.parent_id ? (oldLogicalOfRow.get(old.parent_id) ?? old.parent_id) : null;
+        if (!old || !sameEntityRow(old, e) || oldParent !== (parentOf.get(e.id) ?? null)) rewrite.add(e.id);
+      }
+      for (let grew = true; grew;) {
+        grew = false;
+        for (const e of entities) {
+          const parent = parentOf.get(e.id);
+          if (parent && !rewrite.has(e.id) && rewrite.has(parent)) { rewrite.add(e.id); grew = true; }
+        }
+      }
+      for (const e of entities) {
+        const old = oldByLogical.get(e.id);
+        if (!rewrite.has(e.id)) {
+          liveIdFor.set(e.id, old.id);
+          continue;
+        }
+        if (old) {
+          retireEntity.run(epoch, epoch, old.id);
+          retiredIds.push(old.id);
+          tombstone += 1;
+        }
+        liveIdFor.set(e.id, uniquePhysicalId(db, 'entities', `${e.id}@e${epoch}`));
+      }
+      for (const e of entities) {
+        if (!rewrite.has(e.id)) continue;
+        const parent = parentOf.get(e.id);
+        insertEntity(db, e, liveIdFor.get(e.id), epoch, hasFts, parent ? (liveIdFor.get(parent) ?? null) : null);
+        // The row keeps its last PageRank until the graph_pagerank job recomputes it:
+        // at 0, trace ranked every edited definition last.
+        const oldRank = oldByLogical.get(e.id)?.page_rank;
+        if (oldRank > 0) prepareCached(db, 'UPDATE entities SET page_rank = ? WHERE id = ?').run(oldRank, liveIdFor.get(e.id));
+        upsert += 1;
+      }
+      insertRelationships(db, relationships, liveIdFor, epoch);
+      insertCallSites(db, callSites, { epoch, idFor: liveIdFor });
+      // Resolve this write's edges (and edges into its definitions) with
+      // the full build's rules — otherwise maintained files keep
+      // target-less edges that readers can only match by name.
+      // Every name whose set of definitions changed in this write: names of
+      // definitions that disappeared or appeared (by logical id). A removed
+      // `Alpha.run` leaves one `run` (a full build now binds `x.run()` to
+      // it); a second `run` makes a bound call ambiguous again. A definition
+      // that only moved or changed keeps its logical id and changes no
+      // candidate set; edges into its old row are re-resolved through
+      // `retiredIds`.
+      const changedNames = new Set();
+      for (const r of oldRows) {
+        if (r.name && r.type !== 'file' && !nextLogical.has(r.logical_entity_id || r.id)) changedNames.add(r.name);
+      }
+      for (const e of entities) {
+        if (e.type !== 'file' && e.name && !oldByLogical.has(e.id)) changedNames.add(e.name);
+      }
+      const newNames = [...changedNames];
+      // The file's own edges (imports, top-level calls) have the file node
+      // as their source, which is in no liveIdFor entry: list it too, or
+      // they stay target-less while a full build resolves them.
+      edgeResolution = resolveTouchedEdges(db, {
+        epoch,
+        sourceIds: [...liveIdFor.values(), fileLogicalId],
+        retiredIds,
+        newNames,
+      }, resolveRowsScoped);
+      // Override edges follow the resolved extends/implements rows above; the
+      // tick derives them once at finalize (one tick-wide pass over the live graph).
+      ctx.overridesEpoch = epoch;
+    });
+    tx();
+    this.progress('production:graph-written');
+    // E.5: budget-derived FTS5 merge: a busy tick (elapsed > 1800ms) skips the
+    // merge to leave CPU for reconcile.
+    if (hasFts) {
+      const pages = fts5MergeBudgetPages({ elapsedMs: Date.now() - ctx.tickStartMs });
+      if (pages != null) {
+        for (const table of ['entities_fts', 'entities_code_fts', 'entities_trigram']) try { fts5Merge(db, table, pages); } catch {}
+      }
     }
+    this.touched.set(rel, { ...(this.touched.get(rel) || {}), graphEntities: entities.length, graphEdgeResolution: edgeResolution, graphOverrides: overrideStats });
+    return { ops: { graph_upsert: upsert, graph_tombstone: tombstone }, manifest: { path: 'code-graph.db' } };
   }
 
-  async applyVectorDelta(file, _chunks, hashes, epoch, ctx = null) {
+  async applyVectorDelta(file, _chunks, hashes, epoch, ctx) {
     const rel = typeof file === 'string' ? file : file.path;
-    // E.1: reuse the tick-scoped RW connection (schema already ensured).
-    let db;
-    let ownConn = false;
-    if (ctx?.codebaseDb) {
-      db = ctx.codebaseDb;
-    } else {
-      const dbPath = path.join(this.stateDir, 'codebase.db');
-      const existed = fs.existsSync(dbPath);
-      db = new Database(dbPath);
-      db.pragma('journal_mode = WAL');
-      db.pragma('synchronous = NORMAL');
-      applyMemoryPragmas(db);
-      existed ? ensureVectorSchema(db) : createVectorSchema(db);
-      ownConn = true;
-    }
+    // E.1: the tick-scoped RW connection (schema already ensured).
+    const db = ctx.codebaseDb;
     const vectorOps = [];
     let chunks = [];
-    try {
-      if (hashes.deleted) {
-        const snap = snapshotFileRows(db, rel);
-        const retire = db.transaction(() => applyDiff(db, rel, { toReuse: [], toEncode: [], toRetire: [...snap.values()].map((r) => ({ rowId: r.id, chunkStructId: r.chunk_struct_id })) }, epoch));
-        const summary = retire();
-        const retired = summary.retiredRows.map((r) => ({ retireId: r.oldId, file: rel }));
-        const tokenOps = [...retired];
-        this._releaseDedupAliases(db, summary.retiredRows.map((r) => r.oldId), tokenOps, ctx);
-        this.touched.set(rel, { ...(this.touched.get(rel) || {}), hash: hashes, chunkIds: [] });
-        // A retired file the grep corpus still holds keeps its sparse-gram content.
-        const keep = hashes.grepKeep;
-        if (keep) this._grepTouched.set(rel, { hash: keep.contentHash, stat: keep.stat });
-        return { ops: { vectors_delete: summary.retiredRows.length }, vectorOps: retired, tokenOps, gramOps: keep ? keep.gramOps : [{ file: rel, deleted: true }] };
-      }
-      const parsed = await new ASTChunker({ projectRoot: this.projectRoot }).parseFile(rel, hashes.content);
-      this.progress('production:vector-parsed');
-      chunks = await enrichChunksFromGraph(parsed.map((chunk, i) => ({ ...chunk, file: rel, id: `${rel}:${chunk.metadata?.line_start || 0}-${chunk.metadata?.line_end || chunk.metadata?.line_start || 0}:${i}` })), this.stateDir, ctx);
-      this.progress('production:vector-enriched');
-      // LI generated-content parity: decide ONCE, from the file's full chunk set
-      // (exactly like full indexing's per-file applyIndexingChunkPolicy), whether
-      // late interaction skips this file. Embeddings/graph/sparse still index it.
-      // Stored per-file so applyLIDelta drops adds even when only a non-first
-      // chunk changed and the @generated first chunk was hash-reused.
-      const liKept = applyIndexingChunkPolicy(chunks, { projectRoot: this.projectRoot }).kept;
-      const liSkip = chunks.length > 0 && liKept.length === 0;
-      if (liSkip) this._liSkipFiles.add(rel);
-      else this._liSkipFiles.delete(rel);
-      const liSkipBefore = (this._merkleRead() ?? { files: {} }).files?.[rel]?.liSkip === true;
-      const annotations = annotateChunksForDelta(chunks, rel);
+    if (hashes.deleted) {
       const snap = snapshotFileRows(db, rel);
-      const delta = diffChunks(chunks, annotations, snap);
-      const texts = delta.toEncode.map(({ chunk }) => chunk.embedding_text || `${rel}\n${chunk.text || chunk.content || ''}`);
-      const embeddings = texts.length > 0
-        ? (await this.vectorEncoder(texts, { onProgress: () => this.progress('production:vector-embedding') })).map((r) => r.embedding || r)
-        : [];
-      this.progress('production:vector-embedded');
-      const encodedChunks = delta.toEncode.map(({ chunk }, i) => ({ ...chunk, id: `${chunk.id}@e${epoch}.${i}` }));
-      const encodedAnnotations = delta.toEncode.map((x) => x.ann);
-      const tx = db.transaction(() => {
-        const summary = applyDiff(db, rel, delta, epoch);
-        if (encodedChunks.length > 0) {
-          const items = buildInsertItems(encodedChunks, embeddings, this.modelInfo, encodedAnnotations, { epochWritten: epoch });
-          insertVectorItems(db, items);
-        }
-        return summary;
-      });
-      const summary = tx();
-      this.progress('production:vector-written');
-      const retiredRows = [...summary.replacedRows, ...summary.retiredRows, ...summary.versionedRows];
-      for (const row of retiredRows) {
-        vectorOps.push({ retireId: row.oldId });
-      }
-      const newIds = [...encodedChunks.map((c) => c.id), ...summary.versionedRows.map((r) => r.newId)];
-      if (newIds.length > 0) {
-        const rows = db.prepare(`SELECT id, embedding, metadata FROM vectors WHERE id IN (${newIds.map(() => '?').join(',')})`).all(...newIds);
-        for (const row of rows) {
-          vectorOps.push({ addId: row.id, embedding: float32FromBuffer(row.embedding), metadata: JSON.parse(row.metadata || '{}') });
-        }
-      }
-      const tokenOps = retiredRows.map((row) => ({ retireId: row.oldId, file: rel }));
-      for (const chunk of encodedChunks) tokenOps.push({ addId: chunk.id, chunk });
-      this._releaseDedupAliases(db, retiredRows.map((row) => row.oldId), tokenOps, ctx);
-      // A row version has the same LI input as its old row: copy the stored LI doc
-      // (the delta encodes it only when the old doc is gone).
-      for (const row of summary.versionedRows) {
-        const reused = delta.toReuse.find((item) => item.ann?.chunkStructId === row.chunkStructId);
-        if (reused?.chunk) tokenOps.push({ addId: row.newId, chunk: reused.chunk, copyFromId: row.oldId });
-      }
-
-      // CRASH-CONSISTENCY (default per-file path durability). On this path the
-      // SQLite vector COMMIT above (`production:vector-written`) lands BEFORE the
-      // dependent tiers (HNSW, then LI) are persisted, in separate adapter calls
-      // with no shared transaction. A SIGKILL between them leaves the vector rows
-      // DURABLE in codebase.db while the HNSW node + LI doc were never written —
-      // and the merkle did NOT advance (persistManifest never ran). On the next
-      // tick the file is re-reconciled, but its committed rows now hash-MATCH an
-      // EXACT reuse in diffChunks → zero re-encode → zero add ops → the chunk is
-      // QUERYABLE via FTS/SQLite yet permanently MISSING from the HNSW vector
-      // index AND the LI index (a real correctness hole: vector / late-interaction
-      // search silently never return it). Verified by the determinism harness
-      // `--kill-after-tick 2`: live HNSW + LI diverge (the new gamma.js chunk).
-      //
-      // FIX (minimal persist-before-advance for the per-file path): the published
-      // merkle epoch is the advance authority — persistManifest only advances
-      // `merkle.epoch` AFTER a tick wrote its downstream tiers, so any LIVE vector
-      // row whose `epoch_written` exceeds the highest published merkle epoch was
-      // committed by a tick that never published: a torn post-crash row whose
-      // HNSW node / LI doc may be missing. Re-emit a repair op for each such row
-      // under its EXISTING id (so the recovered index is identical to a clean
-      // run, not a fresh re-encode id):
-      //   - HNSW: an ADD op. `index.add` on an already-present id updates in place
-      //     (no duplicate node, no graph mutation) → no-op when the node landed,
-      //     repair when it didn't.
-      //   - LI: a RETIRE+ADD pair. LI `add` appends to a fresh segment and is NOT
-      //     idempotent, so we tombstone any existing doc for the id first; the
-      //     add then yields exactly one live doc whether or not the doc had
-      //     landed. (Retiring a non-existent LI doc is a no-op.)
-      //
-      // The discriminator is exact and never fires on the happy path: a
-      // successful tick always advances `merkle.epoch` to the epoch it wrote its
-      // rows at, so on a non-crash tick every prior live row has
-      // `epoch_written <= merkle.epoch` and the rows written THIS tick are already
-      // in `newIds` (added above), never re-added here. Runs in BOTH the per-file
-      // and the E.1 batched path: the batched path never CREATES a torn row (its
-      // deferred COMMIT + merkle gating rolls a crashed batch back), but a LEGACY
-      // orphan from a pre-batched per-file crash can still exist on disk when the
-      // daemon later runs batched, so the repair must heal it under either mode.
-      // In the batched path the repair ops join `vectorOps`/`tokenOps`, flow
-      // through the tick-scoped adapters into `ctx.pendingAdds`, and are saved by
-      // `finalizeTick` — and `db` reads see the committed orphan (prior-tick) row.
-      // Byte-diff/behaviour on non-crash runs is UNCHANGED in both modes (no
-      // orphan ⇒ no-op; verified by the determinism harness control + sweeps).
-      const repairedIds = [];
-      if (snap.size > 0) {
-        const publishedEpoch = this._publishedEpoch();
-        const alreadyAdded = new Set(newIds);
-        const chunkByStructId = new Map();
-        for (let i = 0; i < chunks.length; i += 1) {
-          const sid = annotations[i]?.chunkStructId;
-          if (sid != null) chunkByStructId.set(sid, chunks[i]);
-        }
-        for (const row of snap.values()) {
-          if (row.epoch_retired != null) continue;
-          if (!Number.isInteger(row.epoch_written) || row.epoch_written <= publishedEpoch) continue;
-          if (alreadyAdded.has(row.id)) continue; // written THIS tick already
-          // `snap` predates applyDiff: a row this tick retired still reads as live there.
-          // Re-adding it put the old chunk back into LI, and the search could return it.
-          const dbRow = db.prepare('SELECT id, embedding, metadata FROM vectors WHERE id = ? AND epoch_retired IS NULL').get(row.id);
-          if (!dbRow?.embedding) continue;
-          vectorOps.push({ addId: dbRow.id, embedding: float32FromBuffer(dbRow.embedding), metadata: JSON.parse(dbRow.metadata || '{}') });
-          const chunk = chunkByStructId.get(row.chunk_struct_id);
-          if (chunk) {
-            tokenOps.push({ retireId: dbRow.id, file: rel });
-            tokenOps.push({ addId: dbRow.id, chunk });
-          }
-          // Record the repaired row in the merkle chunkIds so the file's recorded
-          // chunk set reflects the rows actually live after recovery (a torn add
-          // produced no `newIds`, so without this the merkle would advance with an
-          // empty chunkIds for a file that does have a live, now-indexed chunk).
-          repairedIds.push(dbRow.id);
-          this.progress('production:vector-crash-recovery');
-        }
-      }
-
-      const recordedChunkIds = repairedIds.length > 0 ? [...newIds, ...repairedIds] : newIds;
-      // The LI verdict flipped (a file became @generated, or stopped being): the chunks
-      // reused unchanged emit no LI op, so retire their docs (now skipped) or add them
-      // (no longer skipped), as a full build would have.
-      if (liSkip !== liSkipBefore) {
-        for (const item of delta.toReuse) {
-          if (item.metadataOnly || item.textOnly) continue;
-          tokenOps.push({ retireId: item.prevRow.id, file: rel });
-          if (!liSkip) tokenOps.push({ addId: item.prevRow.id, chunk: item.chunk });
-        }
-      }
-      this.touched.set(rel, { ...(this.touched.get(rel) || {}), hash: hashes, chunkIds: recordedChunkIds, content: hashes.content, liSkip });
-      if (ctx) ctx.persistedFiles.add(rel);
-      return {
-        ops: { vectors_upsert: newIds.length, vectors_delete: vectorOps.filter((o) => o.retireId).length },
-        chunksTotal: chunks.length,
-        chunksEncoded: encodedChunks.length,
-        chunksReused: delta.toReuse.length,
-        chunksMetadataDirty: delta.counters.metadata_dirty,
-        vectorOps,
-        tokenOps,
-        gramOps: [{ file: rel, deleted: false, content: hashes.content, contentHash: hashes.contentHash, symbolMask: fileSymbolMask(db, rel) }],
-        manifest: { path: 'codebase.db' },
-      };
-    } finally {
-      if (ownConn) db.close();
+      const retire = db.transaction(() => applyDiff(db, rel, { toReuse: [], toEncode: [], toRetire: [...snap.values()].map((r) => ({ rowId: r.id, chunkStructId: r.chunk_struct_id })) }, epoch));
+      const summary = retire();
+      const retired = summary.retiredRows.map((r) => ({ retireId: r.oldId, file: rel }));
+      const tokenOps = [...retired];
+      this._releaseDedupAliases(db, summary.retiredRows.map((r) => r.oldId), tokenOps, ctx);
+      this.touched.set(rel, { ...(this.touched.get(rel) || {}), hash: hashes, chunkIds: [] });
+      // A retired file the grep corpus still holds keeps its sparse-gram content.
+      const keep = hashes.grepKeep;
+      if (keep) this._grepTouched.set(rel, { hash: keep.contentHash, stat: keep.stat });
+      return { ops: { vectors_delete: summary.retiredRows.length }, vectorOps: retired, tokenOps, gramOps: keep ? keep.gramOps : [{ file: rel, deleted: true }] };
     }
+    const parsed = await new ASTChunker({ projectRoot: this.projectRoot }).parseFile(rel, hashes.content);
+    this.progress('production:vector-parsed');
+    chunks = await enrichChunksFromGraph(parsed.map((chunk, i) => ({ ...chunk, file: rel, id: `${rel}:${chunk.metadata?.line_start || 0}-${chunk.metadata?.line_end || chunk.metadata?.line_start || 0}:${i}` })), this.stateDir, ctx);
+    this.progress('production:vector-enriched');
+    // LI generated-content parity: decide ONCE, from the file's full chunk set
+    // (exactly like full indexing's per-file applyIndexingChunkPolicy), whether
+    // late interaction skips this file. Embeddings/graph/sparse still index it.
+    // Stored per-file so applyLIDelta drops adds even when only a non-first
+    // chunk changed and the @generated first chunk was hash-reused.
+    const liKept = applyIndexingChunkPolicy(chunks, { projectRoot: this.projectRoot }).kept;
+    const liSkip = chunks.length > 0 && liKept.length === 0;
+    if (liSkip) this._liSkipFiles.add(rel);
+    else this._liSkipFiles.delete(rel);
+    const liSkipBefore = (this._merkleRead() ?? { files: {} }).files?.[rel]?.liSkip === true;
+    const annotations = annotateChunksForDelta(chunks, rel);
+    const snap = snapshotFileRows(db, rel);
+    const delta = diffChunks(chunks, annotations, snap);
+    const texts = delta.toEncode.map(({ chunk }) => chunk.embedding_text || `${rel}\n${chunk.text || chunk.content || ''}`);
+    const embeddings = texts.length > 0
+      ? (await this.vectorEncoder(texts, { onProgress: () => this.progress('production:vector-embedding') })).map((r) => r.embedding || r)
+      : [];
+    this.progress('production:vector-embedded');
+    const encodedChunks = delta.toEncode.map(({ chunk }, i) => ({ ...chunk, id: `${chunk.id}@e${epoch}.${i}` }));
+    const encodedAnnotations = delta.toEncode.map((x) => x.ann);
+    const tx = db.transaction(() => {
+      const summary = applyDiff(db, rel, delta, epoch);
+      if (encodedChunks.length > 0) {
+        const items = buildInsertItems(encodedChunks, embeddings, this.modelInfo, encodedAnnotations, { epochWritten: epoch });
+        insertVectorItems(db, items);
+      }
+      return summary;
+    });
+    const summary = tx();
+    this.progress('production:vector-written');
+    const retiredRows = [...summary.replacedRows, ...summary.retiredRows, ...summary.versionedRows];
+    for (const row of retiredRows) {
+      vectorOps.push({ retireId: row.oldId });
+    }
+    const newIds = [...encodedChunks.map((c) => c.id), ...summary.versionedRows.map((r) => r.newId)];
+    if (newIds.length > 0) {
+      const rows = db.prepare(`SELECT id, embedding, metadata FROM vectors WHERE id IN (${newIds.map(() => '?').join(',')})`).all(...newIds);
+      for (const row of rows) {
+        vectorOps.push({ addId: row.id, embedding: float32FromBuffer(row.embedding), metadata: JSON.parse(row.metadata || '{}') });
+      }
+    }
+    const tokenOps = retiredRows.map((row) => ({ retireId: row.oldId, file: rel }));
+    for (const chunk of encodedChunks) tokenOps.push({ addId: chunk.id, chunk });
+    this._releaseDedupAliases(db, retiredRows.map((row) => row.oldId), tokenOps, ctx);
+    // A row version has the same LI input as its old row: copy the stored LI doc
+    // (the delta encodes it only when the old doc is gone).
+    for (const row of summary.versionedRows) {
+      const reused = delta.toReuse.find((item) => item.ann?.chunkStructId === row.chunkStructId);
+      if (reused?.chunk) tokenOps.push({ addId: row.newId, chunk: reused.chunk, copyFromId: row.oldId });
+    }
+
+    // CRASH-CONSISTENCY (default per-file path durability). On this path the
+    // SQLite vector COMMIT above (`production:vector-written`) lands BEFORE the
+    // dependent tiers (HNSW, then LI) are persisted, in separate adapter calls
+    // with no shared transaction. A SIGKILL between them leaves the vector rows
+    // DURABLE in codebase.db while the HNSW node + LI doc were never written —
+    // and the merkle did NOT advance (persistManifest never ran). On the next
+    // tick the file is re-reconciled, but its committed rows now hash-MATCH an
+    // EXACT reuse in diffChunks → zero re-encode → zero add ops → the chunk is
+    // QUERYABLE via FTS/SQLite yet permanently MISSING from the HNSW vector
+    // index AND the LI index (a real correctness hole: vector / late-interaction
+    // search silently never return it). Verified by the determinism harness
+    // `--kill-after-tick 2`: live HNSW + LI diverge (the new gamma.js chunk).
+    //
+    // FIX (minimal persist-before-advance for the per-file path): the published
+    // merkle epoch is the advance authority — persistManifest only advances
+    // `merkle.epoch` AFTER a tick wrote its downstream tiers, so any LIVE vector
+    // row whose `epoch_written` exceeds the highest published merkle epoch was
+    // committed by a tick that never published: a torn post-crash row whose
+    // HNSW node / LI doc may be missing. Re-emit a repair op for each such row
+    // under its EXISTING id (so the recovered index is identical to a clean
+    // run, not a fresh re-encode id):
+    //   - HNSW: an ADD op. `index.add` on an already-present id updates in place
+    //     (no duplicate node, no graph mutation) → no-op when the node landed,
+    //     repair when it didn't.
+    //   - LI: a RETIRE+ADD pair. LI `add` appends to a fresh segment and is NOT
+    //     idempotent, so we tombstone any existing doc for the id first; the
+    //     add then yields exactly one live doc whether or not the doc had
+    //     landed. (Retiring a non-existent LI doc is a no-op.)
+    //
+    // The discriminator is exact and never fires on the happy path: a
+    // successful tick always advances `merkle.epoch` to the epoch it wrote its
+    // rows at, so on a non-crash tick every prior live row has
+    // `epoch_written <= merkle.epoch` and the rows written THIS tick are already
+    // in `newIds` (added above), never re-added here. Runs in BOTH the per-file
+    // and the E.1 batched path: the batched path never CREATES a torn row (its
+    // deferred COMMIT + merkle gating rolls a crashed batch back), but a LEGACY
+    // orphan from a pre-batched per-file crash can still exist on disk when the
+    // daemon later runs batched, so the repair must heal it under either mode.
+    // In the batched path the repair ops join `vectorOps`/`tokenOps`, flow
+    // through the tick-scoped adapters into `ctx.pendingAdds`, and are saved by
+    // `finalizeTick` — and `db` reads see the committed orphan (prior-tick) row.
+    // Byte-diff/behaviour on non-crash runs is UNCHANGED in both modes (no
+    // orphan ⇒ no-op; verified by the determinism harness control + sweeps).
+    const repairedIds = [];
+    if (snap.size > 0) {
+      const publishedEpoch = this._publishedEpoch();
+      const alreadyAdded = new Set(newIds);
+      const chunkByStructId = new Map();
+      for (let i = 0; i < chunks.length; i += 1) {
+        const sid = annotations[i]?.chunkStructId;
+        if (sid != null) chunkByStructId.set(sid, chunks[i]);
+      }
+      for (const row of snap.values()) {
+        if (row.epoch_retired != null) continue;
+        if (!Number.isInteger(row.epoch_written) || row.epoch_written <= publishedEpoch) continue;
+        if (alreadyAdded.has(row.id)) continue; // written THIS tick already
+        // `snap` predates applyDiff: a row this tick retired still reads as live there.
+        // Re-adding it put the old chunk back into LI, and the search could return it.
+        const dbRow = db.prepare('SELECT id, embedding, metadata FROM vectors WHERE id = ? AND epoch_retired IS NULL').get(row.id);
+        if (!dbRow?.embedding) continue;
+        vectorOps.push({ addId: dbRow.id, embedding: float32FromBuffer(dbRow.embedding), metadata: JSON.parse(dbRow.metadata || '{}') });
+        const chunk = chunkByStructId.get(row.chunk_struct_id);
+        if (chunk) {
+          tokenOps.push({ retireId: dbRow.id, file: rel });
+          tokenOps.push({ addId: dbRow.id, chunk });
+        }
+        // Record the repaired row in the merkle chunkIds so the file's recorded
+        // chunk set reflects the rows actually live after recovery (a torn add
+        // produced no `newIds`, so without this the merkle would advance with an
+        // empty chunkIds for a file that does have a live, now-indexed chunk).
+        repairedIds.push(dbRow.id);
+        this.progress('production:vector-crash-recovery');
+      }
+    }
+
+    const recordedChunkIds = repairedIds.length > 0 ? [...newIds, ...repairedIds] : newIds;
+    // The LI verdict flipped (a file became @generated, or stopped being): the chunks
+    // reused unchanged emit no LI op, so retire their docs (now skipped) or add them
+    // (no longer skipped), as a full build would have.
+    if (liSkip !== liSkipBefore) {
+      for (const item of delta.toReuse) {
+        if (item.metadataOnly || item.textOnly) continue;
+        tokenOps.push({ retireId: item.prevRow.id, file: rel });
+        if (!liSkip) tokenOps.push({ addId: item.prevRow.id, chunk: item.chunk });
+      }
+    }
+    this.touched.set(rel, { ...(this.touched.get(rel) || {}), hash: hashes, chunkIds: recordedChunkIds, content: hashes.content, liSkip });
+    ctx.persistedFiles.add(rel);
+    return {
+      ops: { vectors_upsert: newIds.length, vectors_delete: vectorOps.filter((o) => o.retireId).length },
+      chunksTotal: chunks.length,
+      chunksEncoded: encodedChunks.length,
+      chunksReused: delta.toReuse.length,
+      chunksMetadataDirty: delta.counters.metadata_dirty,
+      vectorOps,
+      tokenOps,
+      gramOps: [{ file: rel, deleted: false, content: hashes.content, contentHash: hashes.contentHash, symbolMask: fileSymbolMask(db, rel) }],
+      manifest: { path: 'codebase.db' },
+    };
   }
 
-  async applyBinaryHNSWDelta(_file, ops, _epoch, ctx = null) {
+  async applyBinaryHNSWDelta(_file, ops, _epoch, ctx) {
     if (!Array.isArray(ops) || ops.length === 0) return { ops: { binary_hnsw_append: 0, binary_hnsw_tombstone: 0 } };
 
-    // E.1 batched path: reuse the resident index, apply tombstones in place, and
-    // ACCUMULATE the add ops onto the tick context. The actual `index.add()`
-    // insertions are deferred to finalizeTick, where they run sorted-by-id so
-    // the graph is reproducible (G1 byte-identity). We still report the per-file
-    // append/tombstone counts here for the tick counters.
-    // Step 2a: the batched path is selected by the PRESENCE of a tick context,
-    // not by an already-loaded index — `ctx.index` is now lazy and is null until
-    // the first file with vector ops asks for it. Keying the branch on
-    // `ctx.index` would have silently rerouted every tick to the per-file path
-    // (per-file HNSW saves, no persist-before-advance).
-    if (ctx && (ctx.ensureStores || ctx.index)) {
-      if (!ctx.index && ctx.ensureStores) await ctx.ensureStores();
-      const index = ctx.index;
-      let append = 0; let tombstone = 0;
-      // One bitmap load + one save+fsync per file's ops instead of per
-      // retired id; marks apply in op order with identical semantics.
-      // One batch for the tick, written in finalizeTick after the index save and the
-      // COMMIT. A per-file flush hid the old chunk from vector search before its
-      // replacement was saved, and after an aborted tick the marks outlived the rolled
-      // back rows (a file reverted meanwhile then stayed hidden).
-      const staleBatch = (ctx.staleBatch ??= createStaleBatch(index));
-      for (const op of ops) {
-        if (op.retireId) {
-          if (staleBatch.markStale(op.retireId)) tombstone += 1;
-          ctx.floatRemoveIds.push(op.retireId);
-        }
-        if (op.addId && op.embedding) {
-          // Stage the add; insertion happens in finalize (sorted by id).
-          ctx.pendingAdds = ctx.pendingAdds || [];
-          ctx.pendingAdds.push(op);
-          append += 1;
-        }
-      }
-      ctx.tombstone += tombstone;
-      // append is committed to ctx.append in finalize after the sorted inserts.
-      ctx.append += append;
-      return { ops: { binary_hnsw_append: append, binary_hnsw_tombstone: tombstone }, manifest: { path: 'codebase-binary-hnsw.idx' } };
-    }
-
-    // ---- Per-file path (flag off): exact current behavior. ----
-    const indexPath = path.join(this.stateDir, 'codebase-binary-hnsw.idx');
-    const index = new BinaryHNSWIndex({ indexPath, stalePath: `${indexPath}.stale.bin`, floatDimension: this.modelInfo.hnswDimension });
-    try { await index.load(indexPath); } catch { await index.init(); }
-    this.progress('production:binary-hnsw-loaded');
-    const binaryVectorsBefore = index.idToIndex?.size ?? 0;
+    // E.1: apply tombstones to the tick's index and ACCUMULATE the add ops onto the
+    // tick context. The `index.add()` insertions run in finalizeTick, sorted by id,
+    // so the graph is reproducible. The per-file counts still feed the tick counters.
+    // `ctx.index` is lazy: the first file with vector ops loads it.
+    if (!ctx.index) await ctx.ensureStores();
+    const index = ctx.index;
     let append = 0; let tombstone = 0;
-    const floatUpserts = [];
-    const floatRemoveIds = [];
-    // One bitmap load + one save+fsync for the whole op list instead of per
-    // retired id. Marks still apply inline in op order (adds never consult
-    // the bitmap), so retire-then-readd sequences behave exactly as before.
-    const staleBatch = createStaleBatch(index);
+    // One batch for the tick, written in finalizeTick after the index save and the
+    // COMMIT. A per-file flush hid the old chunk from vector search before its
+    // replacement was saved, and after an aborted tick the marks outlived the rolled
+    // back rows (a file reverted meanwhile then stayed hidden).
+    const staleBatch = (ctx.staleBatch ??= createStaleBatch(index));
     for (const op of ops) {
       if (op.retireId) {
         if (staleBatch.markStale(op.retireId)) tombstone += 1;
-        floatRemoveIds.push(op.retireId);
+        ctx.floatRemoveIds.push(op.retireId);
       }
       if (op.addId && op.embedding) {
-        const truncated = truncateForHNSW(op.embedding, this.modelInfo.hnswDimension);
-        await index.add(op.addId, floatToBinary(truncated), op.metadata || {}, normalizedFloatToInt8(truncated), op.embedding);
-        floatUpserts.push({ id: op.addId, vector: truncated });
+        // Stage the add; insertion happens in finalize (sorted by id).
+        ctx.pendingAdds.push(op);
         append += 1;
       }
-      if ((append + tombstone) > 0 && (append + tombstone) % 100 === 0) this.progress('production:binary-hnsw-loop');
     }
-    staleBatch.flush();
-    await index.save(indexPath);
-    this.progress('production:binary-hnsw-saved');
-    await maintainFloatStore(indexPath, { upserts: floatUpserts, removeIds: floatRemoveIds, binaryVectorsBefore, dimension: this.modelInfo.hnswDimension });
-    this.progress('production:float-store-maintained');
+    ctx.tombstone += tombstone;
+    // append is committed to ctx.append in finalize after the sorted inserts.
+    ctx.append += append;
     return { ops: { binary_hnsw_append: append, binary_hnsw_tombstone: tombstone }, manifest: { path: 'codebase-binary-hnsw.idx' } };
   }
 
-  async applyLIDelta(file, ops, ctx = null) {
+  async applyLIDelta(file, ops, ctx) {
     if (!Array.isArray(ops) || ops.length === 0) return { ops: { li_segment_append: 0, li_tombstone: 0 } };
     // LI generated-content parity: full indexing's buildLateInteractionIndex runs
     // applyIndexingChunkPolicy so @generated / config-excluded files never reach
@@ -1685,9 +1357,8 @@ class ProductionReconcileAdapter {
     // hundred-MB index) once per file; within one tick the reader view it
     // needs is stable (per-file ops only reference the file's own pre-tick
     // docs, appendGrowingSegment re-reads the manifest from disk, and segment
-    // compaction only runs in maintenance after the tick). Null ctx (per-file
-    // path) ⇒ fresh load per file, exactly as before.
-    const readerCache = ctx ? (ctx._liReaderCache ??= { key: null, index: null }) : null;
+    // compaction only runs in maintenance after the tick).
+    const readerCache = (ctx._liReaderCache ??= { key: null, index: null });
     const { appended, tombstone } = await applyLateInteractionDelta({
       indexPath: path.join(this.stateDir, 'codebase-late-interaction.db'),
       ops: filteredOps,
@@ -1695,8 +1366,8 @@ class ProductionReconcileAdapter {
       pickLiInput,
       onProgress: () => this.progress('production:li-delta'),
       readerCache,
-      deferredTombstones: ctx ? (ctx.liTombstones ??= []) : null,
-      deferredAppend: ctx ? (ctx.liAppend ??= { writer: null }) : null,
+      deferredTombstones: (ctx.liTombstones ??= []),
+      deferredAppend: (ctx.liAppend ??= { writer: null }),
     });
     return { ops: { li_segment_append: appended, li_tombstone: tombstone }, manifest: { path: 'codebase-late-interaction.db', segments: 'codebase-late-interaction.db.segments/manifest.json' } };
   }
@@ -1708,11 +1379,11 @@ class ProductionReconcileAdapter {
    *   - each live alias of a retired exemplar becomes an ordinary row: exemplarId cleared,
    *     its chunk FTS row written, the exemplar's LI doc copied under its id, its pointer
    *     dropped. Before, those aliases lost chunk BM25 and LI for good.
-   * Pointers are dropped after the COMMIT (finalizeTick); without a tick, at once.
+   * Pointers are dropped after the COMMIT (finalizeTick).
    */
   _releaseDedupAliases(db, retiredIds, tokenOps, ctx) {
     if (retiredIds.length === 0) return;
-    const drops = ctx ? (ctx.aliasDrops ??= new Set()) : new Set();
+    const drops = (ctx.aliasDrops ??= new Set());
     for (let i = 0; i < retiredIds.length; i += 500) {
       const ids = retiredIds.slice(i, i + 500);
       const marks = ids.map(() => '?').join(',');
@@ -1736,7 +1407,6 @@ class ProductionReconcileAdapter {
         drops.add(row.id);
       }
     }
-    if (!ctx && drops.size > 0) dropAliasPointersSync(path.join(this.stateDir, 'codebase-late-interaction.db'), drops);
   }
 
   /** Write the tick's LI tombstones (collected by applyLIDelta), after the COMMIT. */
@@ -1846,7 +1516,7 @@ class ProductionReconcileAdapter {
     // adds did not make the saved batch) is left at its prior merkle state and
     // re-reconciled next tick. Deletions always apply (no HNSW add to persist).
     const persisted = this._lastPersistedFiles;
-    const gate = batchTierWritesEnabled() && persisted instanceof Set;
+    const gate = persisted instanceof Set;
     const failures = this._readFailures();
     let failuresChanged = false;
     for (const [file, data] of this.touched.entries()) {
@@ -1885,8 +1555,4 @@ export const __testing = {
   METRICS_ROTATE_BYTES,
   sparseGramRecord,
   markBinaryStale,
-  normalizeHnswDeterminismFlags,
-  // Reset the one-time forced-on warning latch so each test case observes the
-  // warning independently.
-  _resetDetLevelsWarnLatch() { _batchForcedDetLevelsWarned = false; },
 };

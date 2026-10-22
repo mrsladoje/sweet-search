@@ -11,11 +11,9 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { Reconciler } from '../../core/incremental-indexing/application/reconciler.mjs';
 import {
   readManifest, writeManifest, zeroManifest, buildNextManifest,
@@ -24,9 +22,6 @@ import { DirtySet } from '../../core/incremental-indexing/infrastructure/dirty-s
 import { FileWatcher } from '../../core/incremental-indexing/application/file-watcher.mjs';
 import { contentHashSync, contentHash } from '../../core/incremental-indexing/infrastructure/hashing.mjs';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const WORKER_PATH = path.resolve(__dirname,
-  '../../core/incremental-indexing/application/maintenance-worker.mjs');
 
 describe('Reconciler — branch coverage gaps', () => {
   let stateDir;
@@ -209,59 +204,6 @@ describe('hashing.mjs — async backend resolution paths', () => {
     expect(hex('a'.repeat(16)).length).toBe(16);   // 16 bytes
     expect(hex('a'.repeat(32)).length).toBe(16);   // 32 bytes (block)
     expect(hex('a'.repeat(40)).length).toBe(16);   // multi-block + tail
-  });
-});
-
-describe('maintenance-worker — main() smoke test via child_process', () => {
-  let stateDir;
-  beforeEach(() => { stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-mw-main-')); });
-  afterEach(() => { try { fs.rmSync(stateDir, { recursive: true, force: true }); } catch {} });
-
-  it('worker exits cleanly with empty queue', () => {
-    fs.mkdirSync(stateDir, { recursive: true });
-    const r = spawnSync('node', [WORKER_PATH], {
-      env: { ...process.env, SWEET_SEARCH_STATE_DIR: stateDir },
-      encoding: 'utf-8',
-      timeout: 10_000,
-    });
-    expect(r.status).toBe(0);
-    const out = r.stdout.trim();
-    const parsed = JSON.parse(out);
-    expect(parsed.worker).toBe('maintenance');
-    expect(parsed.phase).toBe('queue-drain');
-    expect(parsed.cpuOnly).toBe(true);
-    expect(parsed.pendingJobs).toBe(0);
-    expect(parsed.drain.succeeded).toBe(0);
-  });
-
-  it('worker drains li_segment jobs against empty artifacts as no-op successes', () => {
-    fs.mkdirSync(stateDir, { recursive: true });
-    const qPath = path.join(stateDir, 'rebuild-queue.jsonl');
-    fs.writeFileSync(qPath,
-      JSON.stringify({ tier: 'li_segment', reason: 'r', epoch: 2, payload: { segmentId: 'segment-0000.bin' } }) + '\n',
-    );
-    const r = spawnSync('node', [WORKER_PATH], {
-      env: { ...process.env, SWEET_SEARCH_STATE_DIR: stateDir },
-      encoding: 'utf-8',
-      timeout: 10_000,
-    });
-    expect(r.status).toBe(0);
-    const parsed = JSON.parse(r.stdout.trim());
-    // li_segment has a real handler; without artifacts on disk it returns
-    // `{ skipped: 'no-li-index' }`, which the worker accounts as `succeeded`.
-    expect(parsed.pendingJobs).toBe(0);
-    expect(parsed.drain.succeeded).toBe(1);
-    expect(parsed.drain.deferred).toBe(0);
-  });
-
-  it('worker refuses to start with GPU env flag set', () => {
-    const r = spawnSync('node', [WORKER_PATH], {
-      env: { ...process.env, SWEET_SEARCH_GPU: '1', SWEET_SEARCH_STATE_DIR: stateDir },
-      encoding: 'utf-8',
-      timeout: 10_000,
-    });
-    expect(r.status).toBe(1);
-    expect(r.stderr).toMatch(/CPU-only|incompatible/);
   });
 });
 

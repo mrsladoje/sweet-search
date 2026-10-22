@@ -14,7 +14,6 @@ import os from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 import {
-  assertCpuOnlyEnvironment,
   enqueueMaintenanceJob,
   readMaintenanceQueue,
   appendDeadLetter,
@@ -24,26 +23,6 @@ import {
   QUEUE_FILENAME,
   DEAD_LETTER_FILENAME,
 } from '../../core/incremental-indexing/application/maintenance-worker.mjs';
-
-describe('maintenance-worker / CPU-only assertion', () => {
-  it('accepts an environment without GPU flags', () => {
-    expect(() => assertCpuOnlyEnvironment({})).not.toThrow();
-  });
-
-  it('treats explicit-off values as CPU-only', () => {
-    expect(() => assertCpuOnlyEnvironment({ SWEET_SEARCH_GPU: '0' })).not.toThrow();
-    expect(() => assertCpuOnlyEnvironment({ SWEET_SEARCH_GPU: 'false' })).not.toThrow();
-    expect(() => assertCpuOnlyEnvironment({ INDEX_GPU_BACKEND: 'off' })).not.toThrow();
-    expect(() => assertCpuOnlyEnvironment({ INDEX_GPU_BACKEND: 'cpu' })).not.toThrow();
-  });
-
-  it('refuses to start when any GPU flag is set', () => {
-    expect(() => assertCpuOnlyEnvironment({ SWEET_SEARCH_GPU: '1' }))
-      .toThrow(/CPU-only/);
-    expect(() => assertCpuOnlyEnvironment({ INDEX_GPU_BACKEND: 'metal' }))
-      .toThrow(/CPU-only/);
-  });
-});
 
 describe('maintenance-worker / queue', () => {
   let stateDir;

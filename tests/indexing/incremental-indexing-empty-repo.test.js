@@ -43,7 +43,6 @@ import { runProductionReconcileTick } from '../../core/incremental-indexing/appl
 import { createVectorSchema } from '../../core/indexing/indexer-build.js';
 import { truncateForHNSW } from '../../core/embedding/embedding-service.js';
 import { reconcileEnablement } from '../../core/incremental-indexing/domain/interval-autotune.mjs';
-import { dirtyScanEnabled } from '../../core/incremental-indexing/application/dirty-scan.mjs';
 import { launchMaintainer } from '../../core/indexing/maintainer-launcher.mjs';
 
 const CLI = fileURLToPath(new URL('../../core/cli.js', import.meta.url));
@@ -193,11 +192,6 @@ describe('reconcile-v2 opt-out', () => {
     expect(reconcileEnablement({ SWEET_SEARCH_RECONCILE_V2: 'false' }).enabled).toBe(false);
     expect(reconcileEnablement({ SWEET_SEARCH_RECONCILE_V2: 'off' }).enabled).toBe(false);
     expect(reconcileEnablement({}).enabled).toBe(true);
-  });
-
-  it('dirtyScanEnabled honors the SCAN opt-out independently', () => {
-    expect(dirtyScanEnabled({ SWEET_SEARCH_RECONCILE_SCAN: '0' })).toBe(false);
-    expect(dirtyScanEnabled({})).toBe(true);
   });
 
   it('launchMaintainer does not spawn when reconcile-v2 is opted out', () => {
