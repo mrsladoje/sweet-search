@@ -29,7 +29,6 @@
 import { performance } from 'node:perf_hooks';
 
 import {
-  reconcileV2Requested,
   resolveReconcileV2Interval,
   isReconcilePaused,
   drainMaintenanceInline,
@@ -120,10 +119,6 @@ async function runTick({ projectRoot, stateDir, vectorEncoder, liEncoder, useRea
 }
 
 async function main() {
-  if (!reconcileV2Requested(process.env)) {
-    logEvent({ phase: 'startup_error', error: 'SWEET_SEARCH_RECONCILE_V2 not set; refusing to run' });
-    process.exit(2);
-  }
   const projectRoot = process.env.SWEET_SEARCH_PROJECT_ROOT;
   const stateDir = process.env.SWEET_SEARCH_STATE_DIR;
   if (!projectRoot || !stateDir) {

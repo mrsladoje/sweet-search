@@ -312,7 +312,7 @@ describe('sweet-search reconcile/rebuild — CLI dispatcher', () => {
     expect(existsSync(join(stateDir, 'codebase.db'))).toBe(false);
   });
 
-  it('routes SWEET_SEARCH_RECONCILE_V2 maintainer --once through the production tick', () => {
+  it('routes maintainer --once through the production tick', () => {
     const { projectRoot, stateDir } = makeState();
     seedBaseline(stateDir);
     const maintainer = join(REPO_ROOT, 'core', 'indexing', 'index-maintainer.mjs');
@@ -321,14 +321,13 @@ describe('sweet-search reconcile/rebuild — CLI dispatcher', () => {
       timeout: 20_000,
       env: {
         ...process.env,
-        SWEET_SEARCH_RECONCILE_V2: '1',
         SWEET_SEARCH_PROJECT_ROOT: projectRoot,
         SWEET_SEARCH_STATE_DIR: stateDir,
       },
     });
 
     expect(r.status).toBe(0);
-    expect(r.stderr).toContain('SWEET_SEARCH_RECONCILE_V2 enabled');
+    expect(r.stderr).toContain('Starting index maintainer');
     // Nothing dirty: the tick ran but published no new epoch.
     expect(JSON.parse(readFileSync(join(stateDir, 'reconcile-manifest.json'), 'utf-8')).epoch).toBe(1);
     expect(existsSync(join(stateDir, 'index-maintainer-queue.processing.jsonl'))).toBe(false);
@@ -342,14 +341,13 @@ describe('sweet-search reconcile/rebuild — CLI dispatcher', () => {
       timeout: 20_000,
       env: {
         ...process.env,
-        SWEET_SEARCH_RECONCILE_V2: '1',
         SWEET_SEARCH_PROJECT_ROOT: projectRoot,
         SWEET_SEARCH_STATE_DIR: stateDir,
       },
     });
 
     expect(r.status).toBe(0);
-    expect(r.stderr).toContain('SWEET_SEARCH_RECONCILE_V2 enabled');
+    expect(r.stderr).toContain('Starting index maintainer');
     expect(r.stderr).toContain('waiting_for_initial_index');
     // The reconciler never became the first index builder.
     expect(existsSync(join(stateDir, 'reconcile-manifest.json'))).toBe(false);
