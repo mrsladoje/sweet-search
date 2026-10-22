@@ -82,11 +82,17 @@ function deltaSegmentPath(baseArtifactPath, epoch, seq) {
  * line of JSON. The reconciler is the single writer; appending is atomic
  * per call (single `fs.appendFileSync`).
  *
+ * `sync: false` skips the file and directory fsync: the caller syncs the
+ * returned segment (syncDeltaSegments) before it publishes a manifest that
+ * lists it, once per tick instead of once per file.
+ *
  * @param {string} baseArtifactPath  Path to the immutable base sparse-gram artifact.
  * @param {number} epoch
  * @param {object} record    `{ fileId, filePath, contentHash, deleted, symbolMask, weightsId, grams }`
+ * @param {{sync?: boolean}} [opts]
+ * @returns {string} the segment file written to
  */
-export function appendDeltaRecord(baseArtifactPath, epoch, record) {
+export function appendDeltaRecord(baseArtifactPath, epoch, record, { sync = true } = {}) {
   if (!Number.isInteger(epoch)) {
     throw new Error('appendDeltaRecord: epoch must be an integer');
   }
@@ -100,19 +106,27 @@ export function appendDeltaRecord(baseArtifactPath, epoch, record) {
   let seq = 0;
   while (retired.has(path.basename(deltaSegmentPath(baseArtifactPath, epoch, seq)))) seq += 1;
   const filePath = deltaSegmentPath(baseArtifactPath, epoch, seq);
-  const fd = fs.openSync(filePath, 'a');
-  try {
-    fs.writeSync(fd, JSON.stringify(record) + '\n');
-    fs.fsyncSync(fd);
-  } finally {
-    fs.closeSync(fd);
+  fs.appendFileSync(filePath, JSON.stringify(record) + '\n');
+  if (sync) syncDeltaSegments([filePath]);
+  return filePath;
+}
+
+/** fsync each segment, then their directories (best effort where a filesystem rejects it). */
+export function syncDeltaSegments(segmentPaths) {
+  const dirs = new Set();
+  for (const p of segmentPaths) {
+    const fd = fs.openSync(p, 'r');
+    try { fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    dirs.add(path.dirname(p));
   }
-  try {
-    const dirFd = fs.openSync(deltaDir, 'r');
-    try { fs.fsyncSync(dirFd); } finally { fs.closeSync(dirFd); }
-  } catch {
-    // Some test/container filesystems reject directory fsync; the data fsync
-    // above is the required durability boundary.
+  for (const dir of dirs) {
+    try {
+      const dirFd = fs.openSync(dir, 'r');
+      try { fs.fsyncSync(dirFd); } finally { fs.closeSync(dirFd); }
+    } catch {
+      // Some test/container filesystems reject directory fsync; the data fsync
+      // above is the required durability boundary.
+    }
   }
 }
 

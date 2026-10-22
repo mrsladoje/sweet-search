@@ -13,7 +13,7 @@ import { readGrepCorpusState, writeGrepCorpusState } from '../infrastructure/gre
 import { contentHashSync } from '../infrastructure/hashing.mjs';
 import { readManifest, writeManifest } from '../infrastructure/manifest.mjs';
 import { annotateChunksForDelta, snapshotFileRows, diffChunks, applyDiff } from '../infrastructure/vector-delta-writer.mjs';
-import { appendDeltaRecord, FALLBACK_WEIGHTS_ID, fileIdFor, listDeltaSegments } from '../infrastructure/sparse-gram-delta.mjs';
+import { appendDeltaRecord, FALLBACK_WEIGHTS_ID, fileIdFor, listDeltaSegments, syncDeltaSegments } from '../infrastructure/sparse-gram-delta.mjs';
 import { fts5Merge, fts5MergeBudgetPages } from '../infrastructure/sqlite-fts5.mjs';
 import { openSegmentState, tombstoneDoc, persistSegmentState } from '../infrastructure/li-segment-state.mjs';
 import { chunkTextFtsWriter } from '../../indexing/chunk-text-fts.js';
@@ -30,7 +30,7 @@ import { ASTChunker, JAVA_FAMILY } from '../../indexing/ast-chunker.js';
 import { getEmbeddings, getModelInfo } from '../../embedding/embedding-service.js';
 import { BinaryHNSWIndex } from '../../vector-store/binary-hnsw-index.js';
 import { floatToBinary, normalizedFloatToInt8, truncateForHNSW } from '../../infrastructure/quantization.js';
-import { extractSparseGramDeltaRecord } from '../../infrastructure/native-sparse-gram.js';
+import { extractSparseGramDeltaRecord, loadSparseGramIndex, resolveSparseSymbolMask } from '../../infrastructure/native-sparse-gram.js';
 import { migrateEntitiesSchema, migrateRelationshipsSchema } from '../infrastructure/schema-migrations.mjs';
 import { readMaintenanceState as readMaintenanceStateFromArtifacts } from '../infrastructure/maintenance-state-reader.mjs';
 import { prepareCached } from '../../infrastructure/db-utils.js';
@@ -250,16 +250,34 @@ function uniquePhysicalId(db, table, id) {
   return candidate;
 }
 
-function sparseGramRecord(basePath, content) {
-  const extracted = extractSparseGramDeltaRecord({ indexPath: basePath, content }) || { weightsId: FALLBACK_WEIGHTS_ID, grams: [] };
+// The sparse-gram record for `content` from the loaded base (`extractor.index`; without a
+// base, the addon's standalone extractor). Null without the native addon.
+function sparseGramRecord(extractor, content) {
+  const extracted = extractSparseGramDeltaRecord({ index: extractor.index, content });
+  if (!extracted) return null;
   return {
     weightsId: extracted.weightsId || FALLBACK_WEIGHTS_ID,
     grams: [...new Set(extracted.grams || [])].sort().map((gram) => [gram, 1]),
   };
 }
 
-function resolveLatestSparseWeightsId(basePath) {
-  return extractSparseGramDeltaRecord({ indexPath: basePath, content: '' })?.weightsId || null;
+// The sparse symbol mask of a file's live vector rows, as the full build derives it
+// (indexer-sparse-gram.js): a symbol-filtered grep then narrows on this file too.
+function fileSymbolMask(db, rel) {
+  let mask = 0;
+  for (const row of prepareCached(db, 'SELECT metadata FROM vectors WHERE file_path = ? AND epoch_retired IS NULL').iterate(rel)) {
+    try { mask |= resolveSparseSymbolMask(JSON.parse(row.metadata || '{}').type); } catch { /* malformed row */ }
+  }
+  return mask;
+}
+
+function fileIdentity(filePath) {
+  try {
+    const st = fs.statSync(filePath, { bigint: true });
+    return `${st.ino}:${st.size}:${st.mtimeNs}`;
+  } catch {
+    return null;
+  }
 }
 
 /** True when a live entity row stores exactly what a fresh extraction would. */
@@ -428,6 +446,9 @@ class ProductionReconcileAdapter {
     this._grepOnly = new Set();
     this._grepKeep = new Set();
     this._grepTouched = new Map();
+    // Delta segments appended without fsync this tick (persistManifest syncs them).
+    this._unsyncedDeltaSegments = new Set();
+    this._sparseBase = null;
     this._tickAdmitted = [];
     this._liSkipFiles = new Set();
     this.touched = new Map();
@@ -1535,7 +1556,7 @@ class ProductionReconcileAdapter {
         chunksMetadataDirty: delta.counters.metadata_dirty,
         vectorOps,
         tokenOps,
-        gramOps: [{ file: rel, deleted: false, content: hashes.content, contentHash: hashes.contentHash }],
+        gramOps: [{ file: rel, deleted: false, content: hashes.content, contentHash: hashes.contentHash, symbolMask: fileSymbolMask(db, rel) }],
         manifest: { path: 'codebase.db' },
       };
     } finally {
@@ -1722,28 +1743,42 @@ class ProductionReconcileAdapter {
   applySparseGramDelta(_file, ops, epoch) {
     if (!Array.isArray(ops) || ops.length === 0) return { ops: { sparse_gram_delta_upsert: 0 } };
     const base = path.join(this.stateDir, 'codebase-sparse-grams.idx');
+    const extractor = this._sparseExtractor(base);
     let count = 0;
     for (const op of ops) {
-      const record = op.deleted ? { weightsId: this.activeSparseWeightsId(base), grams: [] } : sparseGramRecord(base, op.content);
-      appendDeltaRecord(base, epoch, {
+      const record = op.deleted ? { weightsId: extractor.weightsId, grams: [] } : sparseGramRecord(extractor, op.content);
+      if (!record) continue; // no native addon: no reader could use the record
+      // No fsync per record: persistManifest syncs the touched segments once, before the
+      // manifest that lists them is published.
+      this._unsyncedDeltaSegments.add(appendDeltaRecord(base, epoch, {
         fileId: fileIdFor(op.file),
         filePath: op.file,
         contentHash: op.contentHash || '',
         deleted: !!op.deleted,
-        symbolMask: 0,
+        symbolMask: op.symbolMask || 0,
         weightsId: record.weightsId,
         grams: record.grams,
-      });
+      }, { sync: false }));
       count += 1;
       if (count % 100 === 0) this.progress('production:sparse-loop');
     }
     this.progress('production:sparse-done');
-    return { ops: { sparse_gram_delta_upsert: count }, manifest: { base: 'codebase-sparse-grams.idx', deltas: listDeltaSegments(base, { maxEpoch: epoch }).map((s) => relativeArtifact(this.stateDir, s.path)), weightsId: this.activeSparseWeightsId(base) } };
+    return { ops: { sparse_gram_delta_upsert: count }, manifest: { base: 'codebase-sparse-grams.idx', deltas: listDeltaSegments(base, { maxEpoch: epoch }).map((s) => relativeArtifact(this.stateDir, s.path)), weightsId: extractor.weightsId } };
   }
 
-  activeSparseWeightsId(base) {
-    const latest = resolveLatestSparseWeightsId(base);
-    return latest || readManifest(this.stateDir)?.sparseGram?.weightsId || FALLBACK_WEIGHTS_ID;
+  /**
+   * The loaded sparse-gram base and its weights id, kept while the base file is unchanged:
+   * the native load parses every gram (5-8 ms per load on a 140k-gram base), and each
+   * record and weights lookup loaded it again.
+   */
+  _sparseExtractor(base) {
+    const identity = fileIdentity(base);
+    if (this._sparseBase && this._sparseBase.identity === identity) return this._sparseBase;
+    const index = identity ? loadSparseGramIndex(base) : null;
+    const weightsId = (index ? extractSparseGramDeltaRecord({ index, content: '' })?.weightsId : null)
+      || readManifest(this.stateDir)?.sparseGram?.weightsId || FALLBACK_WEIGHTS_ID;
+    this._sparseBase = { identity, index, weightsId };
+    return this._sparseBase;
   }
 
   readMaintenanceState() {
@@ -1769,6 +1804,8 @@ class ProductionReconcileAdapter {
   }
 
   persistManifest(manifest) {
+    syncDeltaSegments([...this._unsyncedDeltaSegments]);
+    this._unsyncedDeltaSegments.clear();
     writeManifest(this.stateDir, manifest);
     const merklePath = path.join(this.stateDir, MERKLE_STATE);
     // The adapter's cached parse (invalidated below): a second parse of the whole file
