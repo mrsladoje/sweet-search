@@ -29,6 +29,8 @@ export function startQueryEncoder({ env = process.env, log = () => {}, hostPath,
     idleMs: queryModelIdleMs(env),
     env: { ...env, SWEET_SEARCH_ENCODER_ROLE: 'query' },
     log,
+    // Model loading logs to stdout; this process's stdout may be a protocol (MCP).
+    childStdout: 2,
     ...(hostPath ? { hostPath } : {}),
     ...(onChildChange ? { onChildChange } : {}),
   });
