@@ -163,21 +163,41 @@ export function appendDelta(deltaPath, generation, dimension, validEnd, encoded)
   }
 }
 
+// countDeltaRecords' walk so far, per path: the maintainer asks every tick, and the
+// file only grows within a generation.
+const countCache = new Map();
+
 /**
  * Number of complete records in the delta of a base of `generation` (0 without
- * one). Walks the length prefixes only: no checksum, no JSON.
+ * one). Walks the length prefixes only (no checksum, no JSON), from where the
+ * last call on the same file stopped.
  */
 export function countDeltaRecords(deltaPath, generation, dimension) {
-  let buf;
-  try { buf = fs.readFileSync(deltaPath); } catch { return 0; }
-  if (buf.length < DELTA_HEADER || !buf.subarray(0, 8).equals(DELTA_MAGIC)
-    || buf.readUInt32LE(8) !== (generation >>> 0) || buf.readUInt32LE(12) !== dimension) return 0;
-  let n = 0;
-  for (let at = DELTA_HEADER; at + 8 <= buf.length;) {
-    const len = buf.readUInt32LE(at);
-    if (len < 4 || at + 8 + len > buf.length) break;
-    at += 8 + len;
-    n += 1;
+  let fd;
+  try { fd = fs.openSync(deltaPath, 'r'); } catch { countCache.delete(deltaPath); return 0; }
+  try {
+    const st = fs.fstatSync(fd);
+    let c = countCache.get(deltaPath);
+    if (!c || c.ino !== st.ino || c.generation !== generation || c.dimension !== dimension || st.size < c.end) {
+      const head = Buffer.alloc(DELTA_HEADER);
+      if (st.size < DELTA_HEADER || fs.readSync(fd, head, 0, DELTA_HEADER, 0) !== DELTA_HEADER
+        || !head.subarray(0, 8).equals(DELTA_MAGIC) || head.readUInt32LE(8) !== (generation >>> 0)
+        || head.readUInt32LE(12) !== dimension) {
+        countCache.delete(deltaPath);
+        return 0;
+      }
+      c = { ino: st.ino, generation, dimension, end: DELTA_HEADER, count: 0 };
+      countCache.set(deltaPath, c);
+    }
+    const prefix = Buffer.alloc(8);
+    while (c.end + 8 <= st.size && fs.readSync(fd, prefix, 0, 8, c.end) === 8) {
+      const len = prefix.readUInt32LE(0);
+      if (len < 4 || c.end + 8 + len > st.size) break;
+      c.end += 8 + len;
+      c.count += 1;
+    }
+    return c.count;
+  } finally {
+    fs.closeSync(fd);
   }
-  return n;
 }

@@ -153,14 +153,19 @@ export function discardStagedCompaction(indexPath) {
 /**
  * Swap a staged base in (see the module comment). The nodes of the index from
  * `snapshotCount` on (delta rows added while the base was built) move to the
- * new base's delta; the stale marks are renumbered by id.
- * Returns { count, carriedDelta, stale }.
+ * new base's delta; the stale marks are renumbered by id. With `baseGeneration`
+ * (the base the build started from), a base replaced since discards the build.
+ * Returns { count, carriedDelta, stale } or { skipped: 'base-replaced' }.
  */
-export async function publishCompactedBase({ indexPath, stagedPath, snapshotCount }) {
+export async function publishCompactedBase({ indexPath, stagedPath, snapshotCount, baseGeneration = null }) {
   const current = new BinaryHNSWIndex({ indexPath });
   await current.load(indexPath);
   const paths = compactionPaths(indexPath);
   try {
+    if (baseGeneration !== null && current.generation !== baseGeneration) {
+      discardStagedCompaction(indexPath);
+      return { skipped: 'base-replaced' };
+    }
     const stagedHeader = readIndexHeader(stagedPath)?.header;
     if (!stagedHeader) throw new Error(`binary_hnsw: staged base missing: ${stagedPath}`);
     const stagedIds = readIndexIdsSync(stagedPath).ids;
@@ -236,5 +241,8 @@ export function startBackgroundCompaction({ indexPath, stateDir, snapshotCount }
   const job = startBackgroundBuild('binary_hnsw', { indexPath, stateDir, snapshotCount });
   job.indexPath = indexPath;
   job.snapshotCount = snapshotCount;
+  // The base the snapshot belongs to: a full build that replaced it meanwhile
+  // makes the result stale (publishCompactedBase then discards it).
+  job.baseGeneration = readIndexHeader(indexPath)?.header?.generation ?? null;
   return job;
 }

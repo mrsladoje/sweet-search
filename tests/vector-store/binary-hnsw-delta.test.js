@@ -5,7 +5,7 @@ import path from 'node:path';
 
 import { BinaryHNSWIndex } from '../../core/vector-store/binary-hnsw-index.js';
 import { buildHnswIndex } from '../../core/indexing/artifact-builder.js';
-import { deltaPathFor } from '../../core/vector-store/hnsw-delta-file.js';
+import { countDeltaRecords, deltaPathFor } from '../../core/vector-store/hnsw-delta-file.js';
 import { floatToBinary, normalizedFloatToInt8, truncateForHNSW } from '../../core/infrastructure/quantization.js';
 import { nativeRescoreKernels } from '../../core/infrastructure/native-rescore.js';
 
@@ -166,6 +166,35 @@ describe('binary HNSW delta file', () => {
     fs.renameSync(deltaPathFor(copy), deltaPathFor(p));
     expect(daemon.refreshDelta()).toBe(false);
     daemon.close();
+  });
+
+  it('counts delta records incrementally, and starts over for a new base', async () => {
+    const vs = vectors(70);
+    const p = await baseIndex(vs.slice(0, 40));
+    const w = new BinaryHNSWIndex({ indexPath: p });
+    await w.load(p);
+    const count = () => countDeltaRecords(deltaPathFor(p), w.generation, w.dimension);
+    expect(count()).toBe(0);
+    w.appendDelta(vs.slice(40, 50).map((v, i) => item(`v${40 + i}`, v)));
+    expect(count()).toBe(10);
+    w.appendDelta(vs.slice(50, 53).map((v, i) => item(`v${50 + i}`, v)));
+    expect(count()).toBe(13);
+    await w.save(p); // new generation, delta removed
+    expect(count()).toBe(0);
+    w.appendDelta(vs.slice(53, 55).map((v, i) => item(`v${53 + i}`, v)));
+    expect(count()).toBe(2);
+    // A compaction publish renames another base's delta over this one.
+    const q = path.join(dir, 'q.idx');
+    for (const ext of ['', '.fullvec.bin', '.fullvec.map']) if (fs.existsSync(p + ext)) fs.copyFileSync(p + ext, q + ext);
+    const other = new BinaryHNSWIndex({ indexPath: q });
+    await other.load(q);
+    await other.save(q);
+    other.appendDelta(vs.slice(55, 70).map((v, i) => item(`v${55 + i}`, v)));
+    fs.renameSync(deltaPathFor(q), deltaPathFor(p));
+    expect(countDeltaRecords(deltaPathFor(p), other.generation, other.dimension)).toBe(15);
+    expect(count()).toBe(0);
+    other.close();
+    w.close();
   });
 
   it('pairs a delta with its base: a new base drops the old delta', async () => {

@@ -192,6 +192,22 @@ describe('binary HNSW compaction', () => {
     await expectFindsEachLive([371, 399]);
   }, 60000);
 
+  it('discards a background build whose base a full build replaced meanwhile', async () => {
+    __hnswTesting.setGraphMin(100);
+    await setup(200, 230);
+    await tick(200, 230, [4]);
+    expect(await binaryHnswHandler({}, { stateDir })).toMatchObject({ requeue: true, background: 'started' });
+    // A full build writes a new base (new generation) while the child builds.
+    const { index } = await buildHnswIndex(vs.slice(0, 120).map((e, i) => ({ id: id(i), embedding: e, metadata: {} })), { indexPath });
+    await index.save(indexPath);
+    index.close();
+    const build = __hnswTesting.build();
+    for (let t = 0; t < 600 && !build.done; t++) await new Promise((r) => setTimeout(r, 50));
+    expect(await binaryHnswHandler({}, { stateDir })).toEqual({ skipped: 'base-replaced' });
+    expect((await visible()).size).toBe(120);
+    expect(leftovers()).toEqual([]);
+  }, 60000);
+
   it('rolls a publish forward after a crash between its renames', async () => {
     await setup(150, 190);
     await tick(150, 190, [10, 160]);
