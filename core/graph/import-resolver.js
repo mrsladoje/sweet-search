@@ -146,6 +146,20 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     }
   }
   const probe = probeFs ?? !files;
+  // Every repo path this resolver read (configs, directory listings, declaration
+  // sources) with its identity at the time: the maintainer keeps a resolver across
+  // ticks while the file set and all of these are unchanged (isCurrent).
+  const reads = new Map();
+  const identity = (rel) => {
+    try {
+      const st = fs.statSync(path.join(root, rel), { bigint: true });
+      return `${st.ino}:${st.size}:${st.mtimeNs}`;
+    } catch {
+      return null;
+    }
+  };
+  const noteRead = (rel) => { if (!reads.has(rel)) reads.set(rel, identity(rel)); };
+  const declarationsOf = (rel, family, parse) => { noteRead(rel); return cachedDeclarations(root, rel, family, parse); };
   const existsMemo = new Map();
   const dirMemo = new Map();
   const readMemo = new Map();
@@ -177,6 +191,7 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
   /** Read a repo file (config) once; null when missing/unreadable. */
   function readText(rel) {
     if (readMemo.has(rel)) return readMemo.get(rel);
+    noteRead(rel);
     let text = null;
     try { text = fs.readFileSync(path.join(root, rel), 'utf8'); } catch { text = null; }
     readMemo.set(rel, text);
@@ -1096,6 +1111,7 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
   /** Entry names of a repo directory (memoised); [] when missing. */
   function listDir(rel) {
     if (listMemo.has(rel)) return listMemo.get(rel);
+    noteRead(rel);
     let names = [];
     try { names = fs.readdirSync(path.join(root, rel)); } catch { names = []; }
     listMemo.set(rel, names);
@@ -1595,7 +1611,7 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     for (const f of fileSet) {
       if (!f.endsWith('.swift') || !f.startsWith(prefix)) continue;
       if (swiftTargetOf(f) !== target) continue;
-      const decls = cachedDeclarations(root, f, 'swift', (text) => braceDeclarations(stripNoise(text, 'swift')).decls);
+      const decls = declarationsOf(f, 'swift', (text) => braceDeclarations(stripNoise(text, 'swift')).decls);
       if (!decls) continue;
       for (const d of decls) addDecl(byName, d.name, f, d.kind, d);
     }
@@ -1616,7 +1632,7 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     const projectDirs = [...fileSet].filter((f) => f.endsWith('.csproj')).map(dirOf);
     for (const f of fileSet) {
       if (!f.endsWith('.cs')) continue;
-      const decl = cachedDeclarations(root, f, 'csharp', (text) => csharpDeclarations(stripNoise(text, 'csharp')));
+      const decl = declarationsOf(f, 'csharp', (text) => csharpDeclarations(stripNoise(text, 'csharp')));
       if (!decl) continue;
       for (const ns of decl.namespaces) namespaces.add(ns);
       for (const t of decl.types) {
@@ -1662,7 +1678,7 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     for (const f of fileSet) {
       const lang = JVM_LANG_OF_EXT[path.posix.extname(f)];
       if (!lang) continue;
-      const parsed = cachedDeclarations(root, f, lang, (text) => braceDeclarations(stripNoise(text, lang)));
+      const parsed = declarationsOf(f, lang, (text) => braceDeclarations(stripNoise(text, lang)));
       if (!parsed) continue;
       const { packages, decls } = parsed;
       const pkg = packageChain(packages).pop() || '';
@@ -1693,7 +1709,7 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     exIndexMemo = new Map(); // module -> [files]
     for (const f of fileSet) {
       if (!f.endsWith('.ex') && !f.endsWith('.exs')) continue;
-      const mods = cachedDeclarations(root, f, 'elixir', (text) => elixirModules(stripNoise(text, 'elixir')));
+      const mods = declarationsOf(f, 'elixir', (text) => elixirModules(stripNoise(text, 'elixir')));
       if (!mods) continue;
       for (const mod of mods) {
         const list = exIndexMemo.get(mod);
@@ -2093,7 +2109,28 @@ export function createImportResolver({ projectRoot, files = null, probeFs } = {}
     }
   }
 
-  return { resolve, implicitImports, isLocalNamespace, hasFile, goPackageDir, rustPathScope, root };
+  /**
+   * Would a fresh resolver over `fileList` give the same answers? True when the file set
+   * is the one this resolver was built with, it never probed the disk, and every path it
+   * read is unchanged.
+   */
+  function isCurrent(fileList) {
+    if (probe) return false;
+    const next = new Set();
+    for (const f of fileList) { const n = norm(String(f)); if (n) next.add(n); }
+    if (next.size !== fileSet.size) return false;
+    for (const f of next) if (!fileSet.has(f)) return false;
+    return readsCurrent();
+  }
+
+  /** Every path this resolver read is unchanged (callers that know the file set is the same). */
+  function readsCurrent() {
+    if (probe) return false;
+    for (const [rel, id] of reads) if (identity(rel) !== id) return false;
+    return true;
+  }
+
+  return { resolve, implicitImports, isLocalNamespace, hasFile, goPackageDir, rustPathScope, root, isCurrent, readsCurrent };
 }
 
 /**
