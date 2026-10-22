@@ -157,9 +157,10 @@ export function appendDeadLetter(stateDir, job, err) {
   fs.appendFileSync(defaultDeadLetterPath(stateDir), line);
 }
 
-export function defaultMaintenanceHandlers(stateDir) {
+/** `options.embed`: the dense encoder the vocab_refresh job uses (the maintainer's encoder child). */
+export function defaultMaintenanceHandlers(stateDir, options = {}) {
   return {
-    ...reclamationHandlers(stateDir),
+    ...reclamationHandlers(stateDir, options),
     fts5: async (job, ctx = {}) => {
       const payload = job?.payload || {};
       const dbPath = payload.dbPath || payload.databasePath || path.join(stateDir, payload.dbFile || 'code-graph.db');

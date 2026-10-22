@@ -38,6 +38,9 @@ export const DEFAULT_WATERMARKS = Object.freeze({
   retiredGraphRowCount: 5000,
   retiredGraphRowRatio: 0.25,
   pageRankIntervalMs: 120_000,
+  vocabChangeRatio: 0.05,
+  vocabChangeRows: 2000,
+  vocabIntervalMs: 600_000,
 });
 
 /**
@@ -65,6 +68,9 @@ export function loadWatermarkConfig(env = process.env) {
     retiredGraphRowCount: num('SWEET_SEARCH_GRAPH_GC_COUNT_THRESHOLD', DEFAULT_WATERMARKS.retiredGraphRowCount),
     retiredGraphRowRatio: num('SWEET_SEARCH_GRAPH_GC_RATIO_THRESHOLD', DEFAULT_WATERMARKS.retiredGraphRowRatio),
     pageRankIntervalMs: num('SWEET_SEARCH_PAGERANK_INTERVAL_MS', DEFAULT_WATERMARKS.pageRankIntervalMs),
+    vocabChangeRatio: num('SWEET_SEARCH_VOCAB_CHANGE_RATIO', DEFAULT_WATERMARKS.vocabChangeRatio),
+    vocabChangeRows: num('SWEET_SEARCH_VOCAB_CHANGE_ROWS', DEFAULT_WATERMARKS.vocabChangeRows),
+    vocabIntervalMs: num('SWEET_SEARCH_VOCAB_INTERVAL_MS', DEFAULT_WATERMARKS.vocabIntervalMs),
   };
 }
 
@@ -211,6 +217,23 @@ export function evaluateWatermarks(state, config = DEFAULT_WATERMARKS) {
       tier: 'graph_pagerank',
       reason: 'graph_changed',
       payload: { graphEpoch: rank.graphEpoch, rankedEpoch: rank.rankedEpoch ?? 0 },
+    });
+  }
+  // Vocabulary artifacts (communities.json, vocab-identifiers.*, vocab-semantic-seeds.*):
+  // rebuilt from the live graph once enough of it changed since they were made (changed
+  // rows against the live edge count of that run), at most once per interval: the run
+  // mines the repository and encodes the new hub and phrase texts.
+  const vocab = state.vocab || {};
+  const vocabChanged = vocab.changedRows ?? 0;
+  const vocabBase = Math.max(1, vocab.liveRelationships ?? 0);
+  const vocabOver = vocabChanged >= (config.vocabChangeRows ?? DEFAULT_WATERMARKS.vocabChangeRows)
+    || vocabChanged / vocabBase >= (config.vocabChangeRatio ?? DEFAULT_WATERMARKS.vocabChangeRatio);
+  if ((vocab.graphEpoch ?? 0) > (vocab.vocabEpoch ?? 0) && vocabOver && !vocab.running
+      && (vocab.msSinceRun ?? Infinity) >= (config.vocabIntervalMs ?? DEFAULT_WATERMARKS.vocabIntervalMs)) {
+    jobs.push({
+      tier: 'vocab_refresh',
+      reason: 'graph_changed',
+      payload: { graphEpoch: vocab.graphEpoch, vocabEpoch: vocab.vocabEpoch ?? 0, changedRows: vocabChanged },
     });
   }
   return jobs;

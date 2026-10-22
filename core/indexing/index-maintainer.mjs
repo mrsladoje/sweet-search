@@ -643,7 +643,10 @@ export async function drainMaintenanceInline(ctx) {
   }
   try {
     const summary = await processMaintenanceQueue(ctx.stateDir, {
-      handlers: defaultMaintenanceHandlers(ctx.stateDir),
+      // The vocab_refresh job encodes through the encoder child, started only if it runs.
+      handlers: defaultMaintenanceHandlers(ctx.stateDir, {
+        embed: async (texts) => (await maintainerEncoders()).dense(texts),
+      }),
       maxJobs: maintenanceInlineMaxJobs(env),
       budgetMs: maintenanceInlineBudgetMs(env),
       maxAttempts: maintenanceInlineMaxAttempts(env),

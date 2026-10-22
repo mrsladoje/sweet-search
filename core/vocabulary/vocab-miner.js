@@ -520,7 +520,7 @@ export function mineAll(projectRoot, dbPath, communities, options = {}) {
       const db = new Database(resolvedDbPath, { readonly: true, timeout: 3000 });
       applyReadPragmas(db);
       try {
-        const rows = db.prepare('SELECT DISTINCT name FROM entities').all();
+        const rows = db.prepare('SELECT DISTINCT name FROM entities WHERE epoch_retired IS NULL').all();
         codeGraphNames = new Set(rows.map(r => r.name));
       } finally { db.close(); }
     } catch (err) {
