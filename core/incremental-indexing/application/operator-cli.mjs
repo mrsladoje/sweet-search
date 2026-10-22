@@ -1,3 +1,4 @@
+import { openFileState } from '../infrastructure/file-state-store.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -293,7 +294,11 @@ function inspectPath(ctx, inputPath) {
   const dirty = dirtySnapshot(ctx.stateDir);
   const manifest = readManifest(ctx.stateDir);
   const merkle = readJson(path.join(ctx.stateDir, MERKLE_STATE)) || {};
-  const stored = merkle.files?.[relPath] || merkle.files?.[canonicalPath] || null;
+  let stored = null;
+  const store = openFileState(ctx.stateDir, { readonly: true });
+  if (store) {
+    try { stored = store.getFile(relPath); } finally { store.close(); }
+  }
   const currentStat = fileStatTuple(canonicalPath);
   let currentHash = null;
   if (currentStat && fs.existsSync(canonicalPath)) {

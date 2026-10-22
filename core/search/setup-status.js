@@ -79,7 +79,7 @@ function readMerkleStats(file) {
     const state = JSON.parse(readFileSync(file, 'utf8'));
     return {
       lastIndex: state.lastIndex || null,
-      files: state.stats?.totalFiles ?? Object.keys(state.files || {}).length,
+      files: state.stats?.totalFiles ?? null,
       chunks: state.stats?.totalChunks ?? null,
     };
   } catch {

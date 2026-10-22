@@ -3,7 +3,7 @@
  *
  * Earlier index formats wrote these files; nothing reads them now (the float
  * USearch HNSW, the JSON binary-HNSW sidecars, the dynamic vocabulary, the
- * reconcile cutoff cache). A full index deletes them so an old state dir does
+ * reconcile cutoff cache, the grep-only state now in file-state.db). A full index deletes them so an old state dir does
  * not keep them on disk forever.
  */
 
@@ -20,6 +20,7 @@ export const DEAD_LEGACY_ARTIFACTS = Object.freeze([
   'codebase-binary-hnsw.meta.json',
   'vocab-dynamic.json',
   'reconcile-cutoff-cache.json',
+  'grep-corpus-state.json',
 ]);
 
 /**

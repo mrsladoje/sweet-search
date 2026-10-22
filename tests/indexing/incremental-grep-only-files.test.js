@@ -17,6 +17,7 @@ import { runProductionReconcileTick } from '../../core/incremental-indexing/appl
 import { scanDirtyAndEnqueue, _resetGrepDiscoveryMemo } from '../../core/incremental-indexing/application/dirty-scan.mjs';
 import { resolveLatestRecords, fileIdFor } from '../../core/incremental-indexing/infrastructure/sparse-gram-delta.mjs';
 import { readGrepCorpusState, writeGrepCorpusState, grepStatEntry } from '../../core/incremental-indexing/infrastructure/grep-corpus-state.mjs';
+import { readIndexedFiles } from '../helpers/file-state.js';
 
 const MODEL_INFO = Object.freeze({ provider: 'test', model: 'fake', dimension: 8, hnswDimension: 8 });
 const vectorEncoder = async (texts) => texts.map((t, i) => Float32Array.from({ length: 8 }, (_, k) => ((t.length + i + k * 13) % 97) / 97));
@@ -75,7 +76,7 @@ describe('grep-only files', () => {
     expect(vectorRows('vendor/lib/cert.go')).toBe(0);
     expect(record('vendor/lib/cert.go')).toMatchObject({ deleted: false, filePath: 'vendor/lib/cert.go' });
     expect(readGrepCorpusState(stateDir).files['vendor/lib/cert.go']).toBeTruthy();
-    expect(JSON.parse(fs.readFileSync(path.join(stateDir, 'merkle-state.json'), 'utf8')).files['vendor/lib/cert.go']).toBeUndefined();
+    expect(readIndexedFiles(stateDir)['vendor/lib/cert.go']).toBeUndefined();
 
     // The scan sees the edit through the grep state (the embedding walk skips vendor/).
     write('vendor/lib/cert.go', 'package lib\n\nfunc IsPrecert() bool { return true }\n');

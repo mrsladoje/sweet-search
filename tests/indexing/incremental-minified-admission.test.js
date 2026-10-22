@@ -14,6 +14,7 @@ import { execFileSync } from 'node:child_process';
 
 import { runProductionReconcileTick } from '../../core/incremental-indexing/application/production-reconciler.mjs';
 import { scanDirtyAndEnqueue, _resetGrepDiscoveryMemo } from '../../core/incremental-indexing/application/dirty-scan.mjs';
+import { readIndexedFiles } from '../helpers/file-state.js';
 
 const MODEL_INFO = Object.freeze({ provider: 'test', model: 'fake', dimension: 8, hnswDimension: 8 });
 const vectorEncoder = async (texts) => texts.map((t, i) => Float32Array.from({ length: 8 }, (_, k) => ((t.length + i + k * 13) % 97) / 97));
@@ -69,6 +70,6 @@ describe('minified files in the maintainer', () => {
     fs.writeFileSync(path.join(stateDir, 'index-maintainer-queue.jsonl'), `${JSON.stringify({ file_path: 'src/app.js' })}\n`);
     await tick();
     expect(vectorRows('src/app.js')).toBe(0);
-    expect(JSON.parse(fs.readFileSync(path.join(stateDir, 'merkle-state.json'), 'utf8')).files['src/app.js']).toBeUndefined();
+    expect(readIndexedFiles(stateDir)['src/app.js']).toBeUndefined();
   });
 });

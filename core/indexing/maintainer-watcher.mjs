@@ -40,6 +40,7 @@
 import { isGrepCorpusPath } from './grep-corpus.js';
 import fs from 'node:fs';
 import path from 'node:path';
+import { openFileState } from '../incremental-indexing/infrastructure/file-state-store.mjs';
 
 // The dirty queue file name MUST match the dirty-scan producer + the reconcile
 // consumer (`dirty-scan.mjs` DIRTY_QUEUE). Kept as a literal here (rather than
@@ -85,7 +86,6 @@ const PROJECT_CONFIG_FILE = '.sweet-search.config.json';
 // its files queued. Past this many files the full walk is cheaper and bounded.
 let maxDirWalkFiles = 20_000;
 
-const MERKLE_STATE = 'merkle-state.json';
 
 // `.git` is denied as a watched subtree (above), but a branch switch / commit /
 // reset mutates these two files and must force a backstop walk (bursty churn is
@@ -355,20 +355,17 @@ function walkCreatedDir(abs, rel, ctx) {
   return out;
 }
 
-// merkle-state.json keys, re-read only when the file changes (it is MBs on a big
-// repo and only a delete event needs it).
-let merkleKeysCache = { key: null, keys: [] };
-function merkleKeys(stateDir) {
-  const file = path.join(stateDir, MERKLE_STATE);
-  let st;
-  try { st = fs.statSync(file); } catch { return []; }
-  const key = `${file}:${st.size}:${st.mtimeMs}`;
-  if (merkleKeysCache.key !== key) {
-    let keys = [];
-    try { keys = Object.keys(JSON.parse(fs.readFileSync(file, 'utf8')).files || {}); } catch { /* none */ }
-    merkleKeysCache = { key, keys };
+// Indexed files under a deleted path: one indexed range query on file-state.db.
+function indexedFilesUnder(stateDir, prefix) {
+  let store = null;
+  try {
+    store = openFileState(stateDir, { readonly: true });
+    return store ? store.filePathsUnder(prefix) : [];
+  } catch {
+    return [];
+  } finally {
+    store?.close();
   }
-  return merkleKeysCache.keys;
 }
 
 /**
@@ -420,7 +417,7 @@ function handleEvents(events, ctx) {
     // 4. Directories.
     if (ev.type === 'delete') {
       const prefix = `${rel}/`;
-      for (const key of merkleKeys(stateDir)) if (key.startsWith(prefix)) push(key);
+      for (const key of indexedFilesUnder(stateDir, prefix)) push(key);
     } else {
       let isDir = false;
       try { isDir = fs.statSync(abs).isDirectory(); } catch { /* vanished: let the consumer decide */ }

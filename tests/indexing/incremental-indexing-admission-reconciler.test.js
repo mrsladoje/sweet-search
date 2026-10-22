@@ -15,6 +15,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 import { runProductionReconcileTick } from '../../core/incremental-indexing/application/production-reconciler.mjs';
+import { readIndexedFiles } from '../helpers/file-state.js';
 
 const MODEL_INFO = Object.freeze({ provider: 'test', model: 'fake', dimension: 8, hnswDimension: 8 });
 const silentLogger = { info() {}, warn() {}, error() {} };
@@ -60,7 +61,7 @@ function liveGraphEntities(file) {
   });
 }
 function merkleFiles() {
-  try { return JSON.parse(fs.readFileSync(path.join(stateDir, 'merkle-state.json'), 'utf-8')).files || {}; } catch { return {}; }
+  return readIndexedFiles(stateDir);
 }
 function tick() {
   return runProductionReconcileTick({

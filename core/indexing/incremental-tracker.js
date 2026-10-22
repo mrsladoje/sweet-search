@@ -21,7 +21,9 @@
  * - Fast-path: skip content read if (size, mtime_ns, inode) match stored values
  * - 10-50x speedup for typical incremental checks when few/no files changed
  *
- * Storage: .sweet-search/merkle-state.json
+ * Storage: .sweet-search/merkle-state.json holds the header (version, config fingerprint,
+ * lastIndex, stats); the per-file map lives in file-state.db (file-state-store.mjs), so
+ * the maintainer reads and writes single rows instead of the whole map.
  */
 
 import fs from 'fs/promises';
@@ -29,6 +31,7 @@ import { existsSync, openSync, fsyncSync, closeSync } from 'fs';
 import path from 'path';
 import { DB_PATHS } from '../infrastructure/config/index.js';
 import { contentHashSync } from '../incremental-indexing/infrastructure/hashing.mjs';
+import { readFileStateObject, writeFileStateObject, fileStatePath } from '../incremental-indexing/infrastructure/file-state-store.mjs';
 import { STATE_VERSION, buildConfigFingerprint, validateConfigFingerprint, diffConfigFingerprint } from './config-fingerprint.js';
 
 const STATE_PATH = DB_PATHS.merkle;
@@ -138,6 +141,7 @@ async function loadState(silent = false) {
   try {
     const data = await fs.readFile(STATE_PATH, 'utf-8');
     const state = JSON.parse(data);
+    state.files = readFileStateObject(path.dirname(STATE_PATH));
 
     // Validate config fingerprint
     const configValidation = validateConfigFingerprint(state.config_fingerprint);
@@ -182,10 +186,13 @@ async function saveState(state) {
   state.config_fingerprint = buildConfigFingerprint();
 
   const tempPath = STATE_PATH + '.tmp';
-  const content = JSON.stringify(state); // No pretty-printing (M7)
+  const { files, ...header } = state;
+  const content = JSON.stringify(header); // No pretty-printing (M7)
 
   try {
     await fs.mkdir(path.dirname(STATE_PATH), { recursive: true });
+    // Rows first: the header (with its fingerprint) is what marks the state complete.
+    writeFileStateObject(path.dirname(STATE_PATH), files || {});
 
     // Write to temp file first
     await fs.writeFile(tempPath, content);
@@ -449,6 +456,7 @@ export async function updateState(currentHashes, stats = {}) {
  */
 export async function clearState() {
   try {
+    for (const suffix of ['', '-wal', '-shm']) await fs.rm(fileStatePath(path.dirname(STATE_PATH)) + suffix, { force: true });
     await fs.unlink(STATE_PATH);
     console.log('State cleared, next index will be full');
   } catch (err) {

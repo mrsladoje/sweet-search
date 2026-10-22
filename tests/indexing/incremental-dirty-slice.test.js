@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { runProductionReconcileTick, __testing } from '../../core/incremental-indexing/application/production-reconciler.mjs';
+import { readIndexedFiles } from '../helpers/file-state.js';
 
 const MODEL_INFO = Object.freeze({ provider: 'test', model: 'fake', dimension: 8, hnswDimension: 8 });
 const vectorEncoder = async (texts) => texts.map((t, i) => Float32Array.from({ length: 8 }, (_, k) => ((t.length + i + k * 13) % 97) / 97));
@@ -55,7 +56,7 @@ describe('readDirtySet slice', () => {
         logger: { info() {}, warn() {}, error() {} }, config: { filesPerTick: 5, cpuBudgetMs: 10_000 },
       });
     }
-    const merkle = JSON.parse(fs.readFileSync(path.join(stateDir, 'merkle-state.json'), 'utf8')).files;
+    const merkle = readIndexedFiles(stateDir);
     expect(rels.filter((rel) => !merkle[rel])).toEqual([]);
     expect(queueLines()).toEqual([]);
   });

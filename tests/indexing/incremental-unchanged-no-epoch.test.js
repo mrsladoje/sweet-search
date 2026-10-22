@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 import { runProductionReconcileTick } from '../../core/incremental-indexing/application/production-reconciler.mjs';
+import { readIndexedFiles } from '../helpers/file-state.js';
 
 // A tick whose files were all unchanged (a touch, a branch switched back) still published a
 // new epoch, and every search daemon reloaded every artifact for nothing. Now it publishes
@@ -33,7 +34,7 @@ describe('a tick with only unchanged files', () => {
     });
   }
   const epoch = () => JSON.parse(readFileSync(join(stateDir, 'reconcile-manifest.json'), 'utf8')).epoch;
-  const merkleEntry = () => JSON.parse(readFileSync(join(stateDir, 'merkle-state.json'), 'utf8')).files[rel];
+  const merkleEntry = () => readIndexedFiles(stateDir)[rel];
 
   it('publishes no epoch, and records the new stat', async () => {
     await tick();

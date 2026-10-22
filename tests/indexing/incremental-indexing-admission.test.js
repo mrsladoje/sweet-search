@@ -13,6 +13,7 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 import { scanDirtyAndEnqueue } from '../../core/incremental-indexing/application/dirty-scan.mjs';
+import { writeMerkleState } from '../helpers/file-state.js';
 
 let sandbox;
 let stateDir;
@@ -31,7 +32,7 @@ function statTuple(rel) {
   return { hash: 'h', size: s.size.toString(), mtime_ns: s.mtimeNs.toString(), inode: s.ino.toString() };
 }
 function writeMerkle(files) {
-  fs.writeFileSync(path.join(stateDir, 'merkle-state.json'), JSON.stringify({ version: '2.4', files }), 'utf-8');
+  writeMerkleState(stateDir, { version: '2.5', files });
 }
 function queuedPaths() {
   const f = path.join(stateDir, 'index-maintainer-queue.jsonl');

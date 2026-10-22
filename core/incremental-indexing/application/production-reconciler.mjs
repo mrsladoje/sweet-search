@@ -9,7 +9,8 @@ import { enqueueMaintenanceJob, readMaintenanceQueue } from './maintenance-worke
 import { createAdmissionPolicy } from '../../indexing/admission-policy.js';
 import { filterGrepCorpusFiles } from '../../indexing/grep-corpus.js';
 import { applyIndexingChunkPolicy } from '../../indexing/indexing-file-policy.js';
-import { readGrepCorpusState, writeGrepCorpusState } from '../infrastructure/grep-corpus-state.mjs';
+import { openFileState } from '../infrastructure/file-state-store.mjs';
+import { STATE_VERSION } from '../../indexing/config-fingerprint.js';
 import { contentHashSync } from '../infrastructure/hashing.mjs';
 import { readManifest, writeManifest } from '../infrastructure/manifest.mjs';
 import { annotateChunksForDelta, snapshotFileRows, diffChunks, applyDiff } from '../infrastructure/vector-delta-writer.mjs';
@@ -46,6 +47,48 @@ const METRICS_ROTATE_BYTES = 4 * 1024 * 1024;
 // size, mtimeMs, error }. Two failures on unchanged content quarantine the file
 // so one bad file cannot stall every later edit; an edit lifts it.
 const FILE_FAILURES = 'index-maintainer-failures.json';
+
+// Indexed file paths and the import resolver, kept across ticks by this process (the
+// maintainer runs a tick every few seconds; reading 100k paths and building the resolver
+// cost ~150 ms per tick). The path set is keyed by the header's lastIndex: this process's
+// own persist moves it forward and applies its adds and deletes (updateResidentIndexedFiles);
+// any other writer (a full build) leaves a lastIndex this process did not record.
+// `version` changes whenever the set's membership changes, so a resolver records the set it
+// was built from as (version, extra, missing) instead of comparing 100k paths each tick.
+const residentFileSets = new Map(); // stateDir -> { lastIndex, version, files: Set<string> }
+const residentResolvers = new Map(); // projectRoot -> { resolver, key }
+let residentVersionSeq = 0;
+
+function residentIndexedFiles(stateDir, header, load) {
+  const key = header?.lastIndex ?? null;
+  const hit = residentFileSets.get(stateDir);
+  if (hit && hit.lastIndex === key) return hit;
+  const entry = { lastIndex: key, version: ++residentVersionSeq, files: new Set(load()) };
+  residentFileSets.set(stateDir, entry);
+  return entry;
+}
+
+function updateResidentIndexedFiles(stateDir, projectRoot, previousLastIndex, nextLastIndex, added, removed) {
+  const hit = residentFileSets.get(stateDir);
+  if (!hit || hit.lastIndex !== previousLastIndex) { residentFileSets.delete(stateDir); return; }
+  const addedNew = [...new Set(added)].filter((f) => !hit.files.has(f)).sort();
+  const removedOld = [...new Set(removed)].filter((f) => hit.files.has(f)).sort();
+  hit.lastIndex = nextLastIndex;
+  if (addedNew.length === 0 && removedOld.length === 0) return;
+  const from = hit.version;
+  for (const f of addedNew) hit.files.add(f);
+  for (const f of removedOld) hit.files.delete(f);
+  hit.version = ++residentVersionSeq;
+  // A resolver built for exactly these extra and missing files now matches the new set.
+  const cached = residentResolvers.get(projectRoot);
+  if (cached && cached.key === `${from}\0${addedNew.join('\n')}\0${removedOld.join('\n')}`) cached.key = `${hit.version}\0\0`;
+}
+
+/** Test seam: forget the resident path sets and resolvers. */
+export function resetResidentState() {
+  residentFileSets.clear();
+  residentResolvers.clear();
+}
 const QUARANTINE_AFTER_FAILURES = 2;
 
 // ---- G2 lever flags ----------------------------------------------------------
@@ -311,23 +354,36 @@ class ProductionReconcileAdapter {
     this._statRefresh = new Map();
     // E.1: the active tick-scoped store context (null on the per-file path).
     this._tickCtx = null;
-    // merkle-state.json is written exactly once per tick (persistManifest);
-    // every other reader gets one shared parse. `undefined` = not read yet,
-    // `null` = missing/corrupt file.
-    this._merkleCache = undefined;
+    // merkle-state.json's header, read once (`undefined` = not read yet, `null` =
+    // missing/corrupt); the per-file rows are in file-state.db (_fileState).
+    this._headerCache = undefined;
+    this._fileStateStore = null;
   }
 
   /**
-   * Shared read of merkle-state.json — parsed once per adapter lifetime and
-   * invalidated by persistManifest (the only writer). All consumers treat the
-   * object as read-only.
+   * merkle-state.json's header (version, fingerprint, epoch, lastIndex, stats): small,
+   * read once per adapter and invalidated by the writes in persistManifest.
    * @returns {object|null}
    */
-  _merkleRead() {
-    if (this._merkleCache === undefined) {
-      this._merkleCache = readJson(path.join(this.stateDir, MERKLE_STATE), null);
+  _headerRead() {
+    if (this._headerCache === undefined) {
+      this._headerCache = readJson(path.join(this.stateDir, MERKLE_STATE), null);
     }
-    return this._merkleCache;
+    return this._headerCache;
+  }
+
+  /**
+   * The per-file state (file-state-store.mjs), opened once per adapter: a tick reads the
+   * rows of the files it handles and writes only the rows it changed.
+   */
+  _fileState() {
+    if (!this._fileStateStore) this._fileStateStore = openFileState(this.stateDir);
+    return this._fileStateStore;
+  }
+
+  _closeFileState() {
+    this._fileStateStore?.close();
+    this._fileStateStore = null;
   }
 
   progress(phase) {
@@ -582,6 +638,7 @@ class ProductionReconcileAdapter {
    * Close the tick-scoped connections. Idempotent + best-effort.
    */
   async disposeTick(ctx) {
+    this._closeFileState();
     if (!ctx) return;
     // Roll back an uncommitted tick transaction (crash/throw before finalize's
     // COMMIT) so the SQLite tiers are left at their prior consistent state.
@@ -692,7 +749,7 @@ class ProductionReconcileAdapter {
     // dropped if it was never indexed, and retired if it was (so the index
     // converges to a fresh full rebuild). Existence + shape + size are sync;
     // gitignore is ONE batched check over the admissible candidates.
-    const merkle = (this._merkleRead() ?? { files: {} }).files || {};
+    const store = this._fileState();
     const info = rels.map((rel) => {
       const abs = path.join(this.projectRoot, rel);
       const exists = fs.existsSync(abs);
@@ -715,7 +772,6 @@ class ProductionReconcileAdapter {
     // holds is reconciled through the sparse-gram tier alone (or keeps its sparse content
     // when an embedding file leaves admission), and a known grep-only file that left the
     // corpus is deleted from it.
-    const grepKnown = readGrepCorpusState(this.stateDir).files;
     const grepEligible = await this._grepEligible(
       info.filter((i) => i.exists && !symlinked.has(i.rel) && !admittedOf(i)).map((i) => i.rel),
     );
@@ -728,11 +784,11 @@ class ProductionReconcileAdapter {
     for (const i of info) {
       if (admittedOf(i)) {
         files.push(i.rel);
-      } else if (merkle[i.rel]) {
+      } else if (store.hasFile(i.rel)) {
         files.push(i.rel); // previously indexed → keep so hashFile retires it
         retire.add(i.rel);
         if (grepEligible.has(i.rel)) this._grepKeep.add(i.rel);
-      } else if (grepEligible.has(i.rel) || grepKnown[i.rel]) {
+      } else if (grepEligible.has(i.rel) || store.getGrep(i.rel)) {
         files.push(i.rel);
         this._grepOnly.add(i.rel);
       }
@@ -895,7 +951,7 @@ class ProductionReconcileAdapter {
       return { file: rel, sparseOnly: true, grepOnly: true, deleted: true, contentHash: '', gramOps: [{ file: rel, deleted: true }] };
     }
     const contentHash = contentHashSync(content);
-    const known = readGrepCorpusState(this.stateDir).files[rel];
+    const known = this._fileState().getGrep(rel);
     const contentUnchanged = known?.hash === contentHash;
     if (!contentUnchanged) this._grepTouched.set(rel, { hash: contentHash, stat });
     return {
@@ -912,7 +968,6 @@ class ProductionReconcileAdapter {
   async hashFile(file) {
     const rel = typeof file === 'string' ? file : file.path;
     const abs = path.join(this.projectRoot, rel);
-    const merkle = this._merkleRead() ?? { files: {} };
     if (this._grepOnly.has(rel)) return this._hashGrepOnly(rel, abs);
     // Deleted on disk, or flagged inadmissible by readDirtySet (a previously
     // indexed file that became excluded/oversized/gitignored): retire it so all
@@ -930,7 +985,7 @@ class ProductionReconcileAdapter {
     const stat = statTuple(abs);
     const content = fs.readFileSync(abs);
     const contentHash = contentHashSync(content);
-    const previous = merkle.files?.[rel];
+    const previous = this._fileState().getFile(rel);
     return {
       file: rel,
       absPath: abs,
@@ -952,18 +1007,30 @@ class ProductionReconcileAdapter {
     let resolver = null;
     try {
       // Resolve against the file set a full build resolves against: every
-      // indexed file (merkle-state.json) plus this tick's admitted files,
-      // minus this tick's retirements. A disk probe would also link
-      // gitignored / excluded / oversized files (generated code, dist/) that
-      // a full build never sees. Before any merkle state exists (a fresh
-      // maintainer), the graph's live files plus a disk probe stand in.
-      const merkle = this._merkleRead()?.files;
-      const merkleFiles = merkle ? Object.keys(merkle) : [];
-      if (merkleFiles.length > 0) {
-        const files = new Set(merkleFiles);
-        for (const f of this._retireSet || []) files.delete(f);
-        for (const f of this._tickAdmitted || []) files.add(f);
-        resolver = createImportResolver({ projectRoot: this.projectRoot, files, probeFs: false });
+      // indexed file plus this tick's admitted files, minus this tick's
+      // retirements. A disk probe would also link gitignored / excluded /
+      // oversized files (generated code, dist/) that a full build never sees.
+      // Before any file state exists (a fresh maintainer), the graph's live
+      // files plus a disk probe stand in.
+      const indexed = residentIndexedFiles(this.stateDir, this._headerRead(), () => this._fileState().filePaths());
+      if (indexed.files.size > 0) {
+        // Kept across ticks (building one cost 104 ms at 100k files): reused while its
+        // file set (the indexed set's version plus this tick's extra and missing files) and
+        // every file it read are unchanged, which an edit to an existing non-config file
+        // leaves true.
+        const extra = (this._tickAdmitted || []).filter((f) => !indexed.files.has(f)).sort();
+        const missing = [...(this._retireSet || [])].filter((f) => indexed.files.has(f)).sort();
+        const key = `${indexed.version}\0${extra.join('\n')}\0${missing.join('\n')}`;
+        const cached = residentResolvers.get(this.projectRoot);
+        if (cached && cached.key === key && cached.resolver.readsCurrent()) {
+          resolver = cached.resolver;
+        } else {
+          const files = new Set(indexed.files);
+          for (const f of missing) files.delete(f);
+          for (const f of extra) files.add(f);
+          resolver = createImportResolver({ projectRoot: this.projectRoot, files, probeFs: false });
+          residentResolvers.set(this.projectRoot, { resolver, key });
+        }
       } else {
         const files = prepareCached(db, 'SELECT DISTINCT file_path FROM entities WHERE epoch_retired IS NULL').pluck().all();
         resolver = createImportResolver({ projectRoot: this.projectRoot, files, probeFs: true });
@@ -1166,7 +1233,7 @@ class ProductionReconcileAdapter {
     const liSkip = chunks.length > 0 && liKept.length === 0;
     if (liSkip) this._liSkipFiles.add(rel);
     else this._liSkipFiles.delete(rel);
-    const liSkipBefore = (this._merkleRead() ?? { files: {} }).files?.[rel]?.liSkip === true;
+    const liSkipBefore = this._fileState().getFile(rel)?.liSkip === true;
     const annotations = annotateChunksForDelta(chunks, rel);
     const snap = snapshotFileRows(db, rel);
     const delta = diffChunks(chunks, annotations, snap);
@@ -1432,7 +1499,7 @@ class ProductionReconcileAdapter {
    * @returns {number}
    */
   _publishedEpoch() {
-    const merkle = this._merkleRead() ?? {};
+    const merkle = this._headerRead() ?? {};
     // A full build writes its rows at epoch 0 and no merkle epoch; a tick writes at epoch 1 or
     // later. So rows at epoch 0 are never torn, and the first tick after a build does not
     // re-encode every reused chunk of the files it touches.
@@ -1488,18 +1555,14 @@ class ProductionReconcileAdapter {
    * Record this tick's grep-only files (their sparse-gram records are already appended) in
    * grep-corpus-state.json; a file the embedding tiers now index leaves it.
    */
-  _persistGrepCorpusState() {
-    const state = readGrepCorpusState(this.stateDir);
-    let changed = false;
+  _persistGrepCorpusState(store) {
     for (const [file, entry] of this._grepTouched) {
-      if (entry) state.files[file] = { size: entry.stat.size, mtime_ns: entry.stat.mtime_ns, hash: entry.hash };
-      else delete state.files[file];
-      changed = true;
+      if (entry) store.putGrep(file, { size: entry.stat.size, mtime_ns: entry.stat.mtime_ns, hash: entry.hash });
+      else store.deleteGrep(file);
     }
     for (const file of this.touched.keys()) {
-      if (state.files[file] && !this._grepTouched.has(file)) { delete state.files[file]; changed = true; }
+      if (!this._grepTouched.has(file)) store.deleteGrep(file);
     }
-    if (changed) writeGrepCorpusState(this.stateDir, state);
   }
 
   /**
@@ -1508,18 +1571,15 @@ class ProductionReconcileAdapter {
    * or the dirty scan requeues those files forever.
    */
   persistUnchanged() {
-    if (this._statRefresh.size > 0) {
-      const merkle = this._merkleRead() ?? { version: '2.4', files: {}, stats: {} };
-      this._merkleCache = undefined;
-      merkle.files ||= {};
-      let changed = false;
+    const store = this._fileState();
+    store.transaction(() => {
       for (const [file, { hash, stat }] of this._statRefresh) {
-        const prev = merkle.files[file];
-        if (prev && prev.hash === hash) { merkle.files[file] = { ...prev, ...stat }; changed = true; }
+        const prev = store.getFile(file);
+        if (prev && prev.hash === hash) store.putFile(file, { ...prev, ...stat });
       }
-      if (changed) safeWriteJson(path.join(this.stateDir, MERKLE_STATE), merkle, { compact: true });
-    }
-    this._persistGrepCorpusState();
+      this._persistGrepCorpusState(store);
+    });
+    this._closeFileState();
     try { fs.unlinkSync(path.join(this.stateDir, PROCESSING_QUEUE)); } catch {}
   }
 
@@ -1528,42 +1588,56 @@ class ProductionReconcileAdapter {
     this._unsyncedDeltaSegments.clear();
     writeManifest(this.stateDir, manifest);
     const merklePath = path.join(this.stateDir, MERKLE_STATE);
-    // The adapter's cached parse (invalidated below): a second parse of the whole file
-    // cost 121 ms at 100k files.
-    const merkle = this._merkleRead() ?? { version: '2.4', files: {}, stats: {} };
-    this._merkleCache = undefined;
-    merkle.files ||= {};
-    // E.1 PERSIST-BEFORE-ADVANCE: when batching, promote a file into the merkle
+    const header = this._headerRead() ?? { version: STATE_VERSION, stats: {} };
+    this._headerCache = undefined;
+    // E.1 PERSIST-BEFORE-ADVANCE: when batching, promote a file into the file state
     // ONLY if its ops are in the persisted batch (recorded in finalizeTick). A
     // file touched this tick but absent from the persisted set (e.g. its HNSW
-    // adds did not make the saved batch) is left at its prior merkle state and
+    // adds did not make the saved batch) is left at its prior state and
     // re-reconciled next tick. Deletions always apply (no HNSW add to persist).
+    // Only the changed rows are written, in one transaction.
     const persisted = this._lastPersistedFiles;
     const gate = persisted instanceof Set;
     const failures = this._readFailures();
     let failuresChanged = false;
-    for (const [file, data] of this.touched.entries()) {
-      if (failures[file]) { delete failures[file]; failuresChanged = true; }
-      if (data.hash?.deleted) delete merkle.files[file];
-      else if (!gate || persisted.has(file)) {
-        merkle.files[file] = { hash: data.hash.contentHash, ...data.hash.stat, epoch: manifest.epoch, chunkIds: data.chunkIds || [] };
-        if (data.liSkip) merkle.files[file].liSkip = true;
+    const store = this._fileState();
+    const added = [];
+    const removed = [];
+    // A running count (header stats), not COUNT(*) over every row each tick.
+    let totalFiles = Number.isInteger(header.stats?.totalFiles) ? header.stats.totalFiles : null;
+    store.transaction(() => {
+      for (const [file, data] of this.touched.entries()) {
+        if (failures[file]) { delete failures[file]; failuresChanged = true; }
+        const existed = store.hasFile(file);
+        if (data.hash?.deleted) {
+          store.deleteFile(file);
+          removed.push(file);
+          if (existed && totalFiles !== null) totalFiles -= 1;
+        } else if (!gate || persisted.has(file)) {
+          store.putFile(file, { hash: data.hash.contentHash, ...data.hash.stat, epoch: manifest.epoch, chunkIds: data.chunkIds || [], liSkip: !!data.liSkip });
+          added.push(file);
+          if (!existed && totalFiles !== null) totalFiles += 1;
+        }
       }
-    }
-    // Same content, new stat: keep hash, chunk ids and epoch; record the stat so
-    // the dirty scan stops requeueing the file. No tier holds stat data, so
-    // this needs no persisted-batch gate.
-    for (const [file, { hash, stat }] of this._statRefresh) {
-      const prev = merkle.files[file];
-      if (prev && prev.hash === hash && !this.touched.has(file)) merkle.files[file] = { ...prev, ...stat };
-    }
+      // Same content, new stat: keep hash, chunk ids and epoch; record the stat so
+      // the dirty scan stops requeueing the file. No tier holds stat data, so
+      // this needs no persisted-batch gate.
+      for (const [file, { hash, stat }] of this._statRefresh) {
+        if (this.touched.has(file)) continue;
+        const prev = store.getFile(file);
+        if (prev && prev.hash === hash) store.putFile(file, { ...prev, ...stat });
+      }
+      this._persistGrepCorpusState(store);
+    });
+    if (totalFiles === null) totalFiles = store.fileCount();
+    this._closeFileState();
     if (failuresChanged) safeWriteJson(path.join(this.stateDir, FILE_FAILURES), failures);
-    this._persistGrepCorpusState();
-    merkle.lastIndex = new Date().toISOString();
-    merkle.epoch = manifest.epoch;
-    merkle.stats = { ...(merkle.stats || {}), totalFiles: Object.keys(merkle.files).length };
-    // Compact: pretty-printing doubled the bytes and the stringify time (55 MB at 100k files).
-    safeWriteJson(merklePath, merkle, { compact: true });
+    const previousLastIndex = header.lastIndex ?? null;
+    header.lastIndex = new Date().toISOString();
+    header.epoch = manifest.epoch;
+    header.stats = { ...(header.stats || {}), totalFiles };
+    safeWriteJson(merklePath, header, { compact: true });
+    updateResidentIndexedFiles(this.stateDir, this.projectRoot, previousLastIndex, header.lastIndex, added, removed);
     try { fs.unlinkSync(path.join(this.stateDir, PROCESSING_QUEUE)); } catch {}
     const metricsPath = path.join(this.stateDir, METRICS_FILE);
     try {
@@ -1578,4 +1652,5 @@ export const __testing = {
   METRICS_ROTATE_BYTES,
   sparseGramRecord,
   markBinaryStale,
+  residentResolvers,
 };

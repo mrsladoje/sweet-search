@@ -44,6 +44,7 @@ import { createVectorSchema } from '../../core/indexing/indexer-build.js';
 import { truncateForHNSW } from '../../core/embedding/embedding-service.js';
 import { reconcileEnablement } from '../../core/incremental-indexing/domain/interval-autotune.mjs';
 import { launchMaintainer } from '../../core/indexing/maintainer-launcher.mjs';
+import { readIndexedFiles, writeMerkleState } from '../helpers/file-state.js';
 
 const CLI = fileURLToPath(new URL('../../core/cli.js', import.meta.url));
 
@@ -101,7 +102,7 @@ describe('empty-repo full index produces a valid baseline (producer -> gate)', (
     expect(manifest.epoch).toBeGreaterThanOrEqual(1);
     const merkle = readJson(join(stateDir, 'merkle-state.json'));
     expect(merkle.config_fingerprint).toBeTruthy();
-    expect(Object.keys(merkle.files)).toEqual([]);
+    expect(Object.keys(readIndexedFiles(stateDir))).toEqual([]);
     expect(liveVectorCount(stateDir)).toBe(0);
 
     // These three constituents (manifest epoch >= 1 + merkle config_fingerprint +
@@ -119,9 +120,9 @@ describe('empty-repo full index produces a valid baseline (producer -> gate)', (
     const db = new Database(join(stateDir, 'codebase.db'));
     try { createVectorSchema(db); } finally { db.close(); }
     writeFileSync(join(stateDir, 'reconcile-manifest.json'), JSON.stringify({ epoch: 1, vectors: { path: 'codebase.db', epoch: 1 } }));
-    writeFileSync(join(stateDir, 'merkle-state.json'), JSON.stringify({
-      version: '2.4', files: { 'gone.js': { hash: 'x', epoch: 1 } }, config_fingerprint: { provider: 'test' }, stats: { totalFiles: 1 },
-    }));
+    writeMerkleState(stateDir, {
+      version: '2.5', files: { 'gone.js': { hash: 'x', epoch: 1 } }, config_fingerprint: { provider: 'test' }, stats: { totalFiles: 1 },
+    });
 
     execFileSync(process.execPath, [CLI, 'index', '--full', '--quiet'], {
       cwd: projectRoot,
@@ -130,7 +131,7 @@ describe('empty-repo full index produces a valid baseline (producer -> gate)', (
     });
 
     // Merkle still records the deleted file, so the maintainer can clean it up.
-    expect(Object.keys(readJson(join(stateDir, 'merkle-state.json')).files)).toEqual(['gone.js']);
+    expect(Object.keys(readIndexedFiles(stateDir))).toEqual(['gone.js']);
   }, 60_000);
 });
 

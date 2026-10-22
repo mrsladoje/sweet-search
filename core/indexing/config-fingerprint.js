@@ -30,7 +30,8 @@ import { DEFAULT_SPARSE_GRAM_WEIGHTS_ID } from '../incremental-indexing/infrastr
 import { describeFormatChanges } from '../incremental-indexing/infrastructure/staleness-display.mjs';
 import { CHUNKING_VERSION, ENRICHMENT_VERSION, SCHEMA_VERSION } from './index-format-versions.js';
 
-export const STATE_VERSION = '2.4';
+// 2.5: the per-file map moved out of merkle-state.json into file-state.db.
+export const STATE_VERSION = '2.5';
 
 // Quantization pipeline version — bump when changing the dense embedding
 // pipeline to invalidate all existing indexes. v2 = int8 quantized embeddings.
@@ -53,6 +54,7 @@ const FIELDS = [
   { key: 'enrichmentVersion', reason: 'enrichment_version_changed', label: 'enrichment version' },
   { key: 'schemaVersion', reason: 'schema_version_changed', label: 'index schema version' },
   { key: 'sparseGramWeightsId', reason: 'sparse_gram_weights_changed', label: 'sparse-gram weights' },
+  { key: 'version', reason: 'state_version_changed', label: 'index state format' },
 ];
 
 /**

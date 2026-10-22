@@ -36,6 +36,7 @@ import { runReconcileV2Tick } from '../../core/indexing/index-maintainer.mjs';
 import { handleIncrementalCli } from '../../core/incremental-indexing/application/operator-cli.mjs';
 import { createVectorSchema } from '../../core/indexing/indexer-build.js';
 import { buildConfigFingerprint } from '../../core/indexing/config-fingerprint.js';
+import { writeIndexedFiles } from '../helpers/file-state.js';
 
 // The `config_fingerprint` the full indexer's incremental-tracker writes for
 // the running configuration. Its presence distinguishes a real full index from
@@ -58,9 +59,10 @@ function writeManifestJson(stateDir, epoch, vectorsPath = 'codebase.db') {
 
 /** A merkle-state with a full-index `config_fingerprint` and the given files. */
 function writeMerkleState(stateDir, files = {}, { withFingerprint = true } = {}) {
-  const state = { version: '2.4', files, lastIndex: new Date().toISOString(), stats: { totalFiles: Object.keys(files).length } };
+  const state = { version: '2.5', lastIndex: new Date().toISOString(), stats: { totalFiles: Object.keys(files).length } };
   if (withFingerprint) state.config_fingerprint = FULL_INDEX_FINGERPRINT;
   writeJson(join(stateDir, 'merkle-state.json'), state);
+  writeIndexedFiles(stateDir, files);
 }
 
 /** A real (empty) SQLite vectors DB so readiness + maintenance reads succeed. */
