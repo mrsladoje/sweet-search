@@ -11,6 +11,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { CodeGraphRepository } from '../../core/infrastructure/code-graph-repository.js';
 import { allocateBudget, packageForAgent } from '../../core/search/context-expander.js';
+import { createGraphSchema } from '../../core/graph/graph-extractor.js';
 
 let root;
 let graph;
@@ -23,10 +24,8 @@ beforeAll(() => {
   }
   const dbPath = path.join(root, 'code-graph.db');
   const db = new Database(dbPath);
-  db.exec(`CREATE TABLE entities (
-    id TEXT PRIMARY KEY, name TEXT, type TEXT, file_path TEXT, start_line INTEGER, end_line INTEGER,
-    parent_class TEXT, stale_since INTEGER, epoch_written INTEGER, epoch_retired INTEGER, signature TEXT, code TEXT)`);
-  db.prepare('INSERT INTO entities VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, 1, NULL, NULL, NULL)').run('outer', 'outer', 'function', 'a.js', 1, 60);
+  createGraphSchema(db);
+  db.prepare('INSERT INTO entities (id, name, type, file_path, start_line, end_line, epoch_written) VALUES (?, ?, ?, ?, ?, ?, 1)').run('outer', 'outer', 'function', 'a.js', 1, 60);
   db.close();
   graph = new CodeGraphRepository(dbPath);
 });

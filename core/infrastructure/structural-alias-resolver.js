@@ -1,5 +1,5 @@
 import path from 'path';
-import { asTopLevelCaller, fileNodeId, fileNodeSourceSql, hasFilesTable } from './file-nodes.js';
+import { asTopLevelCaller, fileNodeId, fileNodeSourceSql } from './file-nodes.js';
 
 const ACTIVE = 'stale_since IS NULL';
 
@@ -94,7 +94,7 @@ function importingFiles(db, targetFile, entitySql, entityParams) {
     return null;
   }
   if (!hasEdges) return null;
-  const live = db.prepare('PRAGMA table_info(relationships)').all().some(c => c.name === 'epoch_retired') ? ' AND epoch_retired IS NULL' : '';
+  const live = ' AND epoch_retired IS NULL';
   const sources = db.prepare(`SELECT DISTINCT source_id FROM relationships WHERE type = 'importsFile' AND target_name = ?${live}`).all(targetFile)
     .map(r => r.source_id);
   if (sources.length === 0) return [];
@@ -102,12 +102,9 @@ function importingFiles(db, targetFile, entitySql, entityParams) {
   if (!byId) {
     byId = new Map();
     // The file-node table lists every indexed file, including importers that
-    // define no symbol (a barrel `index.ts`, a script); older graphs only
-    // have the entity table's files.
-    const fileSql = hasFilesTable(db)
-      ? `SELECT DISTINCT file_path FROM ${fileNodeSourceSql()} e WHERE ${entitySql} UNION SELECT DISTINCT file_path FROM entities WHERE ${entitySql} AND file_path IS NOT NULL`
-      : `SELECT DISTINCT file_path FROM entities WHERE ${entitySql} AND file_path IS NOT NULL`;
-    const fileParams = hasFilesTable(db) ? [...entityParams, ...entityParams] : entityParams;
+    // define no symbol (a barrel `index.ts`, a script).
+    const fileSql = `SELECT DISTINCT file_path FROM ${fileNodeSourceSql()} e WHERE ${entitySql} UNION SELECT DISTINCT file_path FROM entities WHERE ${entitySql} AND file_path IS NOT NULL`;
+    const fileParams = [...entityParams, ...entityParams];
     for (const { file_path: f } of db.prepare(fileSql).all(...fileParams)) {
       byId.set(fileNodeId(f), f);
     }
@@ -117,9 +114,9 @@ function importingFiles(db, targetFile, entitySql, entityParams) {
   const physical = db.prepare('SELECT file_path FROM entities WHERE id = ?');
   // The per-connection cache predates files indexed later by the maintainer
   // (a long-lived reader stays connected); their node is still in `files`.
-  const node = hasFilesTable(db) ? db.prepare('SELECT file_path FROM files WHERE id = ? LIMIT 1') : null;
+  const node = db.prepare('SELECT file_path FROM files WHERE id = ? LIMIT 1');
   for (const id of sources) {
-    const f = byId.get(id) || physical.get(id)?.file_path || node?.get(id)?.file_path;
+    const f = byId.get(id) || physical.get(id)?.file_path || node.get(id)?.file_path;
     if (f) out.add(f);
   }
   return [...out].sort().map(file_path => ({ file_path }));
@@ -243,11 +240,9 @@ export function findAliasCallers({
     LIMIT 1
   `);
   // An alias call in top-level code (a script body) is attributed to the
-  // file's node (infrastructure/file-nodes.js) when the graph has one.
-  const fileNodeAt = hasFilesTable(db)
-    ? db.prepare(`SELECT e.id, e.name, e.type, e.file_path, e.start_line, e.end_line, e.signature, e.summary, e.parent_class, e.package
-        FROM ${fileNodeSourceSql()} e WHERE ${entitySql} AND e.file_path = ? LIMIT 1`)
-    : null;
+  // file's node (infrastructure/file-nodes.js).
+  const fileNodeAt = db.prepare(`SELECT e.id, e.name, e.type, e.file_path, e.start_line, e.end_line, e.signature, e.summary, e.parent_class, e.package
+    FROM ${fileNodeSourceSql()} e WHERE ${entitySql} AND e.file_path = ? LIMIT 1`);
   const out = [];
   const seen = new Set();
   for (const { file_path: filePath } of files) {
@@ -273,7 +268,7 @@ export function findAliasCallers({
         if (inRanges(comments, match.index || 0)) continue;
         const line = lineAt(lineStarts, match.index || 0);
         let entity = entityAtLine.get(...entityParams, filePath, line, line);
-        if (!entity && fileNodeAt) {
+        if (!entity) {
           const node = fileNodeAt.get(...entityParams, filePath);
           if (node) entity = asTopLevelCaller(node, line);
         }

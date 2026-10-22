@@ -41,6 +41,7 @@ const TEST_HNSW_INDEX = path.join(TEST_DIR, 'test-binary-hnsw.idx');
 // The index is one file (header + node table + graph + int8 rows) — read it
 // through the canonical readers.
 import { readIndexHeader, readIndexIdsSync, readIndexFileSync } from '../../core/vector-store/binary-hnsw-index.js';
+import { createVectorSchema } from '../../core/indexing/indexer-build.js';
 
 // These tests cover the float-512 store, which is written only with
 // SS_FIX_FLOAT512=1 (off by default).
@@ -107,20 +108,7 @@ describe('Phase 5: Artifact Builder Contract', () => {
     db.pragma('journal_mode = DELETE');
 
     // Create schema matching real codebase.db
-    db.exec(`
-      CREATE TABLE IF NOT EXISTS vectors (
-        id TEXT PRIMARY KEY,
-        file_path TEXT NOT NULL,
-        embedding BLOB NOT NULL,
-        text TEXT,
-        metadata TEXT,
-        session_id TEXT,
-        tags TEXT,
-        created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        ${retired.size > 0 ? ', epoch_retired INTEGER' : ''}
-      )
-    `);
-    db.exec('CREATE INDEX IF NOT EXISTS idx_vectors_file_path ON vectors(file_path)');
+    createVectorSchema(db);
 
     // Insert synthetic vectors
     const stmt = db.prepare(retired.size > 0
@@ -495,15 +483,7 @@ describe('Phase 5: Artifact Builder Contract', () => {
       // Create empty database
       const emptyDbPath = path.join(TEST_DIR, 'empty.db');
       const db = new Database(emptyDbPath);
-      db.exec(`
-        CREATE TABLE vectors (
-          id TEXT PRIMARY KEY,
-          file_path TEXT NOT NULL,
-          embedding BLOB NOT NULL,
-          text TEXT,
-          metadata TEXT
-        )
-      `);
+      createVectorSchema(db);
       db.close();
 
       await expect(buildFromCodebaseDb(emptyDbPath, {
@@ -689,15 +669,7 @@ describe('Phase 5: Edge Cases', () => {
     } catch (e) {}
 
     const db = new Database(TEST_CODEBASE_DB);
-    db.exec(`
-      CREATE TABLE vectors (
-        id TEXT PRIMARY KEY,
-        file_path TEXT NOT NULL,
-        embedding BLOB NOT NULL,
-        text TEXT,
-        metadata TEXT
-      )
-    `);
+    createVectorSchema(db);
 
     const stmt = db.prepare(`
       INSERT INTO vectors (id, file_path, embedding, text, metadata)

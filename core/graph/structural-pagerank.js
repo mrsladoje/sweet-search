@@ -125,10 +125,9 @@ export function pageRankWeighted(weightedOutEdges, allNodes, opts = {}) {
  * @returns {{ outEdges: Map<string, Map<string, number>>, allNodes: Set<string> }}
  */
 export function buildWeightedAdjacency(db) {
-  // A maintained graph keeps retired rows until GC; a full build has no epoch columns.
-  const hasColumn = (table, column) => db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
-  const liveEntity = hasColumn('entities', 'epoch_retired') ? 'AND epoch_retired IS NULL' : '';
-  const liveEdge = hasColumn('relationships', 'epoch_retired') ? 'AND epoch_retired IS NULL' : '';
+  // Live rows only: a maintained graph keeps retired rows until GC.
+  const liveEntity = 'AND epoch_retired IS NULL';
+  const liveEdge = 'AND epoch_retired IS NULL';
   const allNodes = new Set();
   for (const row of db.prepare(`SELECT id FROM entities WHERE stale_since IS NULL ${liveEntity}`).iterate()) {
     allNodes.add(row.id);
@@ -157,28 +156,6 @@ export function buildWeightedAdjacency(db) {
 }
 
 /**
- * Ensure the `page_rank` REAL column exists on entities. Idempotent.
- * Older databases predate this column, so existing indexes auto-migrate.
- *
- * @param {import('better-sqlite3').Database} db - writable
- * @returns {boolean} true on success
- */
-export function ensurePageRankColumn(db) {
-  try {
-    const columns = db.prepare('PRAGMA table_info(entities)').all();
-    const has = columns.some(col => col.name === 'page_rank');
-    if (!has) {
-      db.exec('ALTER TABLE entities ADD COLUMN page_rank REAL DEFAULT 0');
-    }
-    db.exec('CREATE INDEX IF NOT EXISTS idx_entities_page_rank ON entities(page_rank) WHERE stale_since IS NULL');
-    return true;
-  } catch (err) {
-    if (err && /duplicate column/i.test(err.message)) return true;
-    return false;
-  }
-}
-
-/**
  * Compute weighted PageRank and persist it to the `page_rank` column.
  * Index-build calls this once after relationships are fully resolved.
  *
@@ -188,7 +165,6 @@ export function ensurePageRankColumn(db) {
  */
 export function populatePageRankColumn(db, opts = {}) {
   const started = Date.now();
-  ensurePageRankColumn(db);
   const { outEdges, allNodes } = buildWeightedAdjacency(db);
   if (allNodes.size === 0) {
     return { entities: 0, iterations: 0, ms: Date.now() - started, written: 0 };

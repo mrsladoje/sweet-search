@@ -8,7 +8,7 @@
  * BLOB; only changed payloads run through the encoder.
  *
  * This module is intentionally narrow:
- *   - It knows the vectors-table column layout (post `migrateVectorsSchema`).
+ *   - It knows the vectors-table column layout (`createVectorSchema`).
  *   - It does NOT call the encoder. The caller (reconcile application
  *     service) decides what to re-encode based on the diff result here.
  *   - It does NOT touch HNSW, LI, or sparse-gram artifacts; per-tier
@@ -286,26 +286,23 @@ function insertReusedRowVersion(db, filePath, chunk, ann, prevRow, epoch) {
   const source = db.prepare('SELECT * FROM vectors WHERE id = ?').get(prevRow.id);
   if (!source) return null;
 
-  const columns = db.prepare('PRAGMA table_info(vectors)').all().map((c) => c.name);
+  // The old row's columns, with the new version's identity, text, metadata and hashes.
+  const columns = Object.keys(source);
   const next = { ...source };
   next.id = uniqueVersionedId(db, prevRow.id, epoch);
-  if (columns.includes('file_path')) next.file_path = coalescePath(filePath, source.file_path);
-  if (columns.includes('text')) next.text = chunk?.content ?? chunk?.text ?? source.text ?? '';
-  if (columns.includes('metadata')) {
-    next.metadata = Object.hasOwn(chunk ?? {}, 'metadata')
-      ? JSON.stringify(vectorRowMetadata(filePath, chunk, source.metadata, source.file_path))
-      : source.metadata;
-  }
-  if (columns.includes('chunk_struct_id')) next.chunk_struct_id = ann.chunkStructId;
-  if (columns.includes('chunk_text_hash')) next.chunk_text_hash = ann.hashes.chunk_text_hash;
-  if (columns.includes('embedding_input_hash')) next.embedding_input_hash = ann.hashes.embedding_input_hash;
-  if (columns.includes('li_input_hash')) next.li_input_hash = ann.hashes.li_input_hash;
-  if (columns.includes('metadata_fingerprint')) next.metadata_fingerprint = ann.hashes.metadata_fingerprint;
-  if (columns.includes('logical_chunk_id')) {
-    next.logical_chunk_id = source.logical_chunk_id || ann.chunkStructId;
-  }
-  if (columns.includes('epoch_written')) next.epoch_written = epoch;
-  if (columns.includes('epoch_retired')) next.epoch_retired = null;
+  next.file_path = coalescePath(filePath, source.file_path);
+  next.text = chunk?.content ?? chunk?.text ?? source.text ?? '';
+  next.metadata = Object.hasOwn(chunk ?? {}, 'metadata')
+    ? JSON.stringify(vectorRowMetadata(filePath, chunk, source.metadata, source.file_path))
+    : source.metadata;
+  next.chunk_struct_id = ann.chunkStructId;
+  next.chunk_text_hash = ann.hashes.chunk_text_hash;
+  next.embedding_input_hash = ann.hashes.embedding_input_hash;
+  next.li_input_hash = ann.hashes.li_input_hash;
+  next.metadata_fingerprint = ann.hashes.metadata_fingerprint;
+  next.logical_chunk_id = source.logical_chunk_id || ann.chunkStructId;
+  next.epoch_written = epoch;
+  next.epoch_retired = null;
 
   const quoted = columns.map((c) => `"${c}"`).join(', ');
   const placeholders = columns.map(() => '?').join(', ');

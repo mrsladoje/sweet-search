@@ -80,16 +80,8 @@ function collectFileSymbolMasksFromDb(db, codeFiles, existingMasks = null) {
   return codeFiles.map((filePath) => masks.get(filePath) || 0);
 }
 
-function hasVectorColumn(db, column) {
-  try {
-    return db.prepare('PRAGMA table_info(vectors)').all().some((col) => col.name === column);
-  } catch (_err) {
-    return false;
-  }
-}
-
-function liveVectorSql(db) {
-  return hasVectorColumn(db, 'epoch_retired') ? 'epoch_retired IS NULL' : '1=1';
+function liveVectorSql() {
+  return 'epoch_retired IS NULL';
 }
 
 export async function buildSparseGramArtifact(allFiles, dryRun) {

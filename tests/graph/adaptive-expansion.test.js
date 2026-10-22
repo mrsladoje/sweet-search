@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Database from 'better-sqlite3';
 import { expandResults, applyTokenBudget, rerankExpanded } from '../../core/graph/index.js';
+import { createGraphSchema } from '../../core/graph/graph-extractor.js';
 
 /**
  * Create a test graph for adaptive 2-hop expansion.
@@ -22,28 +23,9 @@ import { expandResults, applyTokenBudget, rerankExpanded } from '../../core/grap
 function createAdaptiveTestDb() {
   const db = new Database(':memory:');
 
-  db.exec(`
-    CREATE TABLE entities (
-      id TEXT PRIMARY KEY,
-      file_path TEXT NOT NULL,
-      type TEXT NOT NULL,
-      name TEXT NOT NULL,
-      signature TEXT,
-      start_line INTEGER,
-      end_line INTEGER,
-      stale_since INTEGER DEFAULT NULL
-    )
-  `);
+  createGraphSchema(db);
 
-  db.exec(`
-    CREATE TABLE relationships (
-      source_id TEXT,
-      target_id TEXT,
-      target_name TEXT NOT NULL,
-      type TEXT NOT NULL,
-      weight REAL DEFAULT 1.0
-    )
-  `);
+  createGraphSchema(db);
 
   const insertEntity = db.prepare(
     'INSERT INTO entities (id, file_path, type, name, signature, start_line, end_line, stale_since) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
@@ -223,13 +205,10 @@ describe('adaptive graph expansion', () => {
 
     it('skips candidates below flow threshold', () => {
       const ftDb = new Database(':memory:');
-      ftDb.exec(`
-        CREATE TABLE entities (id TEXT PRIMARY KEY, file_path TEXT, type TEXT, name TEXT, signature TEXT, start_line INTEGER, end_line INTEGER, stale_since INTEGER);
-        CREATE TABLE relationships (source_id TEXT, target_id TEXT, target_name TEXT, type TEXT, weight REAL);
-      `);
+      createGraphSchema(ftDb);
 
-      const ie = ftDb.prepare('INSERT INTO entities VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-      const ir = ftDb.prepare('INSERT INTO relationships VALUES (?, ?, ?, ?, ?)');
+      const ie = ftDb.prepare('INSERT INTO entities (id, file_path, type, name, signature, start_line, end_line, stale_since) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+      const ir = ftDb.prepare('INSERT INTO relationships (source_id, target_id, target_name, type, weight) VALUES (?, ?, ?, ?, ?)');
 
       ie.run('seed', 'src/seed.js', 'class', 'Seed', 'class Seed', 1, 10, null);
       ie.run('hop1', 'src/hop1.js', 'class', 'Hop1', 'class Hop1', 1, 10, null);
@@ -438,10 +417,7 @@ describe('adaptive graph expansion', () => {
   describe('edge cases', () => {
     it('empty graph returns original results', () => {
       const emptyDb = new Database(':memory:');
-      emptyDb.exec(`
-        CREATE TABLE entities (id TEXT PRIMARY KEY, file_path TEXT, type TEXT, name TEXT, signature TEXT, start_line INTEGER, end_line INTEGER, stale_since INTEGER);
-        CREATE TABLE relationships (source_id TEXT, target_id TEXT, target_name TEXT, type TEXT, weight REAL);
-      `);
+      createGraphSchema(emptyDb);
 
       const results = [{ id: 'x', score: 10, file: 'src/x.js' }];
       const expanded = expandResults(emptyDb, results, {
@@ -456,14 +432,11 @@ describe('adaptive graph expansion', () => {
     it('no 2-hop candidates returns 1-hop results only', () => {
       // Create a DB where 1-hop neighbors have no outgoing edges
       const simpleDb = new Database(':memory:');
-      simpleDb.exec(`
-        CREATE TABLE entities (id TEXT PRIMARY KEY, file_path TEXT, type TEXT, name TEXT, signature TEXT, start_line INTEGER, end_line INTEGER, stale_since INTEGER);
-        CREATE TABLE relationships (source_id TEXT, target_id TEXT, target_name TEXT, type TEXT, weight REAL);
-      `);
+      createGraphSchema(simpleDb);
 
-      simpleDb.prepare('INSERT INTO entities VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run('p', 'src/p.js', 'class', 'P', 'class P', 1, 10, null);
-      simpleDb.prepare('INSERT INTO entities VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run('q', 'src/q.js', 'class', 'Q', 'class Q', 1, 10, null);
-      simpleDb.prepare('INSERT INTO relationships VALUES (?, ?, ?, ?, ?)').run('p', 'q', 'Q', 'imports', 1.0);
+      simpleDb.prepare('INSERT INTO entities (id, file_path, type, name, signature, start_line, end_line, stale_since) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run('p', 'src/p.js', 'class', 'P', 'class P', 1, 10, null);
+      simpleDb.prepare('INSERT INTO entities (id, file_path, type, name, signature, start_line, end_line, stale_since) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run('q', 'src/q.js', 'class', 'Q', 'class Q', 1, 10, null);
+      simpleDb.prepare('INSERT INTO relationships (source_id, target_id, target_name, type, weight) VALUES (?, ?, ?, ?, ?)').run('p', 'q', 'Q', 'imports', 1.0);
 
       const results = [{ id: 'p', score: 10, file: 'src/p.js', start_line: 1, end_line: 10 }];
       const expanded = expandResults(simpleDb, results, {
@@ -611,13 +584,10 @@ describe('adaptive graph expansion', () => {
     it('expanded results from expandResults are reranked', () => {
       // Build a DB where same-file expanded entity should rank above cross-file
       const rrDb = new Database(':memory:');
-      rrDb.exec(`
-        CREATE TABLE entities (id TEXT PRIMARY KEY, file_path TEXT, type TEXT, name TEXT, signature TEXT, start_line INTEGER, end_line INTEGER, stale_since INTEGER);
-        CREATE TABLE relationships (source_id TEXT, target_id TEXT, target_name TEXT, type TEXT, weight REAL);
-      `);
+      createGraphSchema(rrDb);
 
-      const ie = rrDb.prepare('INSERT INTO entities VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-      const ir = rrDb.prepare('INSERT INTO relationships VALUES (?, ?, ?, ?, ?)');
+      const ie = rrDb.prepare('INSERT INTO entities (id, file_path, type, name, signature, start_line, end_line, stale_since) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+      const ir = rrDb.prepare('INSERT INTO relationships (source_id, target_id, target_name, type, weight) VALUES (?, ?, ?, ?, ?)');
 
       // Seed entity in src/main.js
       ie.run('seed', 'src/main.js', 'class', 'Seed', 'class Seed', 1, 10, null);

@@ -53,7 +53,7 @@ import {
   readFilesFromStdin, discoverFiles,
 } from './indexer-utils.js';
 import {
-  buildCodeGraph, createVectorSchema, ensureVectorSchema,
+  buildCodeGraph, createVectorSchema,
   buildInsertItems, insertVectors, pipelinedEmbedAndInsert,
   buildVectorIndex,
 } from './indexer-build.js';
@@ -558,7 +558,6 @@ export {
   isQuietMode,
   setVerboseMode,
   createVectorSchema,
-  ensureVectorSchema,
   insertVectors,
   atomicSwapDatabase,
   isWalSafe,

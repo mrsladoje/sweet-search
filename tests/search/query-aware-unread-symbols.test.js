@@ -11,6 +11,7 @@ import {
 } from '../../core/search/search-read.js';
 import { AgentSpanLedger } from '../../core/search/agent-span-ledger.js';
 import { buildReadDaemonResponse } from '../../core/search/search-server.js';
+import { createVectorSchema } from '../../core/indexing/indexer-build.js';
 
 let projectRoot;
 
@@ -37,9 +38,9 @@ function writeScalametaShapedFixture() {
   mkdirSync(stateDir, { recursive: true });
   const db = new Database(path.join(stateDir, 'codebase.db'));
   try {
-    db.exec('CREATE TABLE vectors (id TEXT PRIMARY KEY, file_path TEXT, text TEXT, metadata TEXT)');
+    createVectorSchema(db);
     const insert = db.prepare(
-      'INSERT INTO vectors (id, file_path, text, metadata) VALUES (?, ?, ?, ?)',
+      'INSERT INTO vectors (id, file_path, embedding, text, metadata) VALUES (?, ?, zeroblob(0), ?, ?)',
     );
     for (let index = 0; index < 63; index++) {
       const symbol = index === 0

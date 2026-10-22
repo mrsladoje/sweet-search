@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeAll, afterAll, beforeEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { expandResults, rerankExpanded } from '../../core/graph/index.js';
+import { createGraphSchema } from '../../core/graph/graph-extractor.js';
 
 function cosine(a, b) {
   let dot = 0;
@@ -41,28 +42,9 @@ const mockCosineSimilarity = vi.fn((a, b) => cosine(a, b));
 function createTestDb() {
   const db = new Database(':memory:');
 
-  db.exec(`
-    CREATE TABLE entities (
-      id TEXT PRIMARY KEY,
-      file_path TEXT NOT NULL,
-      type TEXT NOT NULL,
-      name TEXT NOT NULL,
-      signature TEXT,
-      start_line INTEGER,
-      end_line INTEGER,
-      stale_since INTEGER DEFAULT NULL
-    )
-  `);
+  createGraphSchema(db);
 
-  db.exec(`
-    CREATE TABLE relationships (
-      source_id TEXT,
-      target_id TEXT,
-      target_name TEXT NOT NULL,
-      type TEXT NOT NULL,
-      weight REAL DEFAULT 1.0
-    )
-  `);
+  createGraphSchema(db);
 
   const insertEntity = db.prepare(
     'INSERT INTO entities (id, file_path, type, name, signature, start_line, end_line) VALUES (?, ?, ?, ?, ?, ?, ?)'
@@ -95,28 +77,9 @@ function createTestDb() {
 function createAsymmetricDb() {
   const db = new Database(':memory:');
 
-  db.exec(`
-    CREATE TABLE entities (
-      id TEXT PRIMARY KEY,
-      file_path TEXT NOT NULL,
-      type TEXT NOT NULL,
-      name TEXT NOT NULL,
-      signature TEXT,
-      start_line INTEGER,
-      end_line INTEGER,
-      stale_since INTEGER DEFAULT NULL
-    )
-  `);
+  createGraphSchema(db);
 
-  db.exec(`
-    CREATE TABLE relationships (
-      source_id TEXT,
-      target_id TEXT,
-      target_name TEXT NOT NULL,
-      type TEXT NOT NULL,
-      weight REAL DEFAULT 1.0
-    )
-  `);
+  createGraphSchema(db);
 
   const insertEntity = db.prepare(
     'INSERT INTO entities (id, file_path, type, name, signature, start_line, end_line) VALUES (?, ?, ?, ?, ?, ?, ?)'

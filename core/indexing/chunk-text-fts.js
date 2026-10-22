@@ -141,7 +141,7 @@ export function chunkTextFtsWriter(db) {
 
 /**
  * Create the table and its triggers when missing. Idempotent; called by
- * migrateVectorsSchema on every write session. The table is created only
+ * createVectorSchema on every write session. The table is created only
  * while `vectors` is empty (a new index): rows are indexed as they are
  * inserted, never filled in afterwards, so an index that has vector rows and
  * no table stays without one. Never throws: a database without FTS5 keeps

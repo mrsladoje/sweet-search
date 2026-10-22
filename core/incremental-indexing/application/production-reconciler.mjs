@@ -25,14 +25,13 @@ import { FloatVectorStore, getFloatStorePath, float512StoreEnabled } from '../..
 import { createGraphSchema, entityParentIds, GraphExtractor, insertCallSites } from '../../graph/graph-extractor.js';
 import { createImportResolver, importEdgesEnabled } from '../../graph/import-resolver.js';
 import { syncFileNode } from '../../infrastructure/file-nodes.js';
-import { createVectorSchema, ensureVectorSchema, buildInsertItems, insertVectorItems } from '../../indexing/indexer-build.js';
+import { createVectorSchema, buildInsertItems, insertVectorItems } from '../../indexing/indexer-build.js';
 import { ASTChunker, JAVA_FAMILY } from '../../indexing/ast-chunker.js';
 import { getEmbeddings, getModelInfo } from '../../embedding/embedding-service.js';
 import { BinaryHNSWIndex, binaryHnswIndexExists } from '../../vector-store/binary-hnsw-index.js';
 import { rollForwardHnswCompaction } from '../infrastructure/hnsw-compaction.mjs';
 import { floatToBinary, normalizedFloatToInt8, truncateForHNSW } from '../../infrastructure/quantization.js';
 import { extractSparseGramDeltaRecord, loadSparseGramIndex, resolveSparseSymbolMask } from '../../infrastructure/native-sparse-gram.js';
-import { migrateEntitiesSchema, migrateRelationshipsSchema } from '../infrastructure/schema-migrations.mjs';
 import { readMaintenanceState as readMaintenanceStateFromArtifacts } from '../infrastructure/maintenance-state-reader.mjs';
 import { prepareCached } from '../../infrastructure/db-utils.js';
 
@@ -113,7 +112,7 @@ function relativeArtifact(stateDir, filePath) {
  */
 function deriveOverridesSafely(db, epoch, logger) {
   try {
-    return deriveOverrideEdges(db, null, { epoch });
+    return deriveOverrideEdges(db, { epoch });
   } catch (err) {
     (logger || console).warn?.(`[reconciler] override edges not derived this tick: ${err?.message || err}`);
     return null;
@@ -386,20 +385,17 @@ class ProductionReconcileAdapter {
     const indexPath = path.join(this.stateDir, 'codebase-binary-hnsw.idx');
     fs.mkdirSync(this.stateDir, { recursive: true });
 
-    const codebaseExisted = fs.existsSync(codebaseDbPath);
     const codebaseDb = new Database(codebaseDbPath);
     codebaseDb.pragma('journal_mode = WAL');
     codebaseDb.pragma('synchronous = NORMAL');
     applyMemoryPragmas(codebaseDb);
-    codebaseExisted ? ensureVectorSchema(codebaseDb) : createVectorSchema(codebaseDb);
+    createVectorSchema(codebaseDb, { path: codebaseDbPath });
 
     const graphDb = new Database(graphDbPath);
     graphDb.pragma('journal_mode = WAL');
     graphDb.pragma('synchronous = NORMAL');
     applyMemoryPragmas(graphDb);
-    const graphHasFts = createGraphSchema(graphDb);
-    migrateEntitiesSchema(graphDb);
-    migrateRelationshipsSchema(graphDb);
+    const graphHasFts = createGraphSchema(graphDb, { path: graphDbPath });
 
     // Enrichment reads must observe THIS tick's graph writes. Because the
     // batched path defers the SQLite COMMIT to finalize (persist-before-advance,

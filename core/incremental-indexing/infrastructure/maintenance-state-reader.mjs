@@ -97,15 +97,11 @@ export function readBinaryHnswState(stateDir) {
   if (fs.existsSync(dbPath)) {
     const db = new Database(dbPath, { readonly: true });
     try {
-      const cols = db.prepare('PRAGMA table_info(vectors)').all().map((c) => c.name);
-      if (cols.includes('epoch_retired')) {
-        // total - retired: both counts use an index (the retired one is partial). COUNT(*)
-        // WHERE epoch_retired IS NULL scanned every row: 822 ms cold on 46k rows, every tick.
-        const all = db.prepare('SELECT COUNT(*) AS n FROM vectors').get().n || 0;
-        const retired = db.prepare('SELECT COUNT(*) AS n FROM vectors WHERE epoch_retired IS NOT NULL').get().n || 0;
-        const live = all - retired;
-        divergentDead = Math.max(0, total - live);
-      }
+      // total - retired: both counts use an index (the retired one is partial). COUNT(*)
+      // WHERE epoch_retired IS NULL scanned every row: 822 ms cold on 46k rows, every tick.
+      const all = db.prepare('SELECT COUNT(*) AS n FROM vectors').get().n || 0;
+      const retired = db.prepare('SELECT COUNT(*) AS n FROM vectors WHERE epoch_retired IS NOT NULL').get().n || 0;
+      divergentDead = Math.max(0, total - (all - retired));
     } catch { divergentDead = 0; } finally { db.close(); }
   }
   const dead = Math.max(markedDead, divergentDead);
@@ -195,8 +191,6 @@ export function readVectorGcState(stateDir) {
   if (!fs.existsSync(dbPath)) return empty;
   const db = new Database(dbPath, { readonly: true });
   try {
-    const cols = db.prepare('PRAGMA table_info(vectors)').all().map((c) => c.name);
-    if (!cols.includes('epoch_retired')) return empty;
     const total = db.prepare('SELECT COUNT(*) AS n FROM vectors').get().n || 0;
     const retired = db.prepare('SELECT COUNT(*) AS n FROM vectors WHERE epoch_retired IS NOT NULL').get().n || 0;
     return { retiredCount: retired, retiredRatio: total > 0 ? retired / total : 0, totalCount: total };
@@ -223,22 +217,12 @@ export function readGraphGcState(stateDir) {
   if (!fs.existsSync(dbPath)) return empty;
   const db = new Database(dbPath, { readonly: true });
   try {
-    const tableHas = (table, column) => {
-      try { return db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column); }
-      catch { return false; }
-    };
-    let retiredEntities = 0;
-    let totalEntities = 0;
-    if (tableHas('entities', 'epoch_retired')) {
-      totalEntities = db.prepare('SELECT COUNT(*) AS n FROM entities').get().n || 0;
-      retiredEntities = db.prepare('SELECT COUNT(*) AS n FROM entities WHERE epoch_retired IS NOT NULL').get().n || 0;
-    }
-    let retiredRelationships = 0;
-    if (tableHas('relationships', 'epoch_retired')) {
-      retiredRelationships = db.prepare('SELECT COUNT(*) AS n FROM relationships WHERE epoch_retired IS NOT NULL').get().n || 0;
-    }
+    const totalEntities = db.prepare('SELECT COUNT(*) AS n FROM entities').get().n || 0;
+    const retiredEntities = db.prepare('SELECT COUNT(*) AS n FROM entities WHERE epoch_retired IS NOT NULL').get().n || 0;
+    const retiredRelationships = db.prepare('SELECT COUNT(*) AS n FROM relationships WHERE epoch_retired IS NOT NULL').get().n || 0;
     let retiredSummaries = 0;
-    if (tableHas('hcgs_summary_metadata', 'epoch_retired')) {
+    // The HCGS summary sidecar exists only once summaries were generated.
+    if (db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='hcgs_summary_metadata'").get()) {
       retiredSummaries = db.prepare('SELECT COUNT(*) AS n FROM hcgs_summary_metadata WHERE epoch_retired IS NOT NULL').get().n || 0;
     }
     return {

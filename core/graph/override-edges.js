@@ -85,55 +85,30 @@ function langFamily(filePath) {
 }
 
 /**
- * True when the graph is epoch-versioned (the incremental maintainer's
- * schema): rows are retired, never deleted, so pinned readers keep the
- * snapshot they read.
- */
-function hasEpochColumns(db, table) {
-  try {
-    const cols = db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name);
-    return cols.includes('epoch_retired') && cols.includes('epoch_written');
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Derive `overrides` edges from the graph's current facts and write them.
  *
- * A fresh (full-build) graph: every `overrides` row is replaced (no
- * extractor emits them), so a re-run gives the same result.
- *
- * An epoch-versioned graph (incremental maintainer, or `--resolve-only` on a
- * maintained index): only LIVE entities and inheritance rows are read, and
- * the live `overrides` rows are diffed against the new set — a vanished edge
- * is retired at `epoch` (deleted when this epoch wrote it), a new edge is
- * inserted with `epoch_written = epoch`, an unchanged edge keeps its row.
- * Retired rows are never touched, so pinned readers keep their snapshot.
+ * Only LIVE entities and inheritance rows are read, and the live `overrides` rows are
+ * diffed against the new set — a vanished edge is retired at `epoch` (deleted when this
+ * epoch wrote it), a new edge is inserted with `epoch_written = epoch`, an unchanged edge
+ * keeps its row. Retired rows are never touched, so pinned readers keep their snapshot.
+ * The full build runs the same pass (epoch 0).
  *
  * SWEET_SEARCH_OVERRIDE_EDGES=0 disables (and leaves no live rows).
  *
  * @param {import('better-sqlite3').Database} db
- * @param {Array<object>|null} [entities] rows with id, name, type, file_path,
- *   parent_class, signature, start_line, end_line (the full resolver passes
- *   its own list; an epoch-versioned graph reads its live rows instead)
- * @param {{ epoch?: number }} [opts] the writing epoch on an epoch-versioned
- *   graph (default: the newest epoch_written in the graph)
+ * @param {{ epoch?: number }} [opts] the writing epoch (default: the newest epoch_written
+ *   in the graph)
  * @returns {{ edges: number, retired: number, ms: number }} edges = rows inserted
  */
-export function deriveOverrideEdges(db, entities = null, opts = {}) {
+export function deriveOverrideEdges(db, opts = {}) {
   const started = performance.now();
-  const versioned = hasEpochColumns(db, 'relationships');
-  const liveEntities = versioned && hasEpochColumns(db, 'entities');
-  const epoch = versioned
-    ? (opts.epoch ?? db.prepare('SELECT COALESCE(MAX(epoch_written), 0) AS e FROM relationships').get().e)
-    : null;
-  const write = (edges) => (versioned ? syncRows(db, edges, epoch) : replaceRows(db, edges));
+  const epoch = opts.epoch ?? db.prepare('SELECT COALESCE(MAX(epoch_written), 0) AS e FROM relationships').get().e;
+  const write = (edges) => syncRows(db, edges, epoch);
   if (process.env.SWEET_SEARCH_OVERRIDE_EDGES === '0') {
     const r = write([]);
     return { edges: 0, retired: r.retired, ms: Math.round(performance.now() - started) };
   }
-  const live = versioned ? 'AND epoch_retired IS NULL' : '';
+  const live = 'AND epoch_retired IS NULL';
   const inheritanceRows = db.prepare(`
     SELECT source_id, target_id, context_line FROM relationships
     WHERE type IN ('extends', 'implements') AND target_id IS NOT NULL AND source_id IS NOT NULL ${live}
@@ -144,9 +119,7 @@ export function deriveOverrideEdges(db, entities = null, opts = {}) {
   `).all().sort(compareEdgeRows);
   // A fixed input order (not rowid order), so a full build and a maintained
   // graph derive the same edges whatever order files were indexed in.
-  const rows = (!liveEntities && entities)
-    ? [...entities]
-    : readOverrideInputs(db, liveEntities ? 'AND epoch_retired IS NULL' : '', inheritanceRows, extensionRows);
+  const rows = readOverrideInputs(db, live, inheritanceRows, extensionRows);
   const edges = computeOverrideEdges(rows.sort(compareEntitiesForResolution), inheritanceRows, extensionRows);
   const r = write(edges);
   return { edges: r.inserted, retired: r.retired, ms: Math.round(performance.now() - started) };
@@ -188,23 +161,8 @@ function readOverrideInputs(db, liveSql, inheritanceRows, extensionRows) {
   return [...containers, ...byId.values()];
 }
 
-/** Full build: replace every `overrides` row. */
-function replaceRows(db, edges) {
-  const clear = db.prepare(`DELETE FROM relationships WHERE type = 'overrides'`);
-  const insert = db.prepare(`
-    INSERT OR IGNORE INTO relationships (source_id, target_id, target_name, type, weight, context_line)
-    VALUES (?, ?, ?, 'overrides', 1.0, ?)
-  `);
-  let inserted = 0;
-  db.transaction(() => {
-    clear.run();
-    for (const e of edges) inserted += insert.run(e.source, e.target, e.name, e.line).changes;
-  })();
-  return { inserted, retired: 0 };
-}
-
 /**
- * Epoch-versioned graph: diff the live `overrides` rows against `edges`.
+ * Diff the live `overrides` rows against `edges`.
  * Unchanged edges keep their row; a vanished edge is retired at `epoch`
  * (deleted when `epoch` itself wrote it); a new edge is inserted at `epoch`.
  */
@@ -217,17 +175,9 @@ function syncRows(db, edges, epoch) {
   `).all();
   const retire = db.prepare('UPDATE relationships SET epoch_retired = ? WHERE rowid = ?');
   const drop = db.prepare('DELETE FROM relationships WHERE rowid = ?');
-  let hasLogical = false;
-  try {
-    hasLogical = db.prepare('PRAGMA table_info(relationships)').all().some(c => c.name === 'logical_relationship_id');
-  } catch { /* plain schema */ }
-  const insert = db.prepare(hasLogical
-    ? `INSERT OR IGNORE INTO relationships
-       (source_id, target_id, target_name, type, weight, context_line, logical_relationship_id, epoch_written, epoch_retired)
-       VALUES (?, ?, ?, 'overrides', 1.0, ?, ?, ?, NULL)`
-    : `INSERT OR IGNORE INTO relationships
-       (source_id, target_id, target_name, type, weight, context_line, epoch_written, epoch_retired)
-       VALUES (?, ?, ?, 'overrides', 1.0, ?, ?, NULL)`);
+  const insert = db.prepare(`INSERT OR IGNORE INTO relationships
+    (source_id, target_id, target_name, type, weight, context_line, logical_relationship_id, epoch_written, epoch_retired)
+    VALUES (?, ?, ?, 'overrides', 1.0, ?, ?, ?, NULL)`);
   let inserted = 0;
   let retired = 0;
   db.transaction(() => {
@@ -244,10 +194,7 @@ function syncRows(db, edges, epoch) {
     }
     for (const [key, e] of wanted) {
       if (kept.has(key)) continue;
-      const args = hasLogical
-        ? [e.source, e.target, e.name, e.line, `${e.source}:overrides:${e.name}:${e.line ?? ''}`, epoch]
-        : [e.source, e.target, e.name, e.line, epoch];
-      inserted += insert.run(...args).changes;
+      inserted += insert.run(e.source, e.target, e.name, e.line, `${e.source}:overrides:${e.name}:${e.line ?? ''}`, epoch).changes;
     }
   })();
   return { inserted, retired };

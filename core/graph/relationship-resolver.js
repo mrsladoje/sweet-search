@@ -601,8 +601,8 @@ export function buildTypeHierarchy(db, { liveOnly = false } = {}) {
   const subs = new Map();
   let rows = [];
   try {
-    const live = liveOnly && hasColumn(db, 'relationships', 'epoch_retired') ? ' AND r.epoch_retired IS NULL' : '';
-    const entityLive = liveOnly && hasColumn(db, 'entities', 'epoch_retired') ? ' AND e.epoch_retired IS NULL' : '';
+    const live = liveOnly ? ' AND r.epoch_retired IS NULL' : '';
+    const entityLive = liveOnly ? ' AND e.epoch_retired IS NULL' : '';
     rows = db.prepare(`
       SELECT e.name AS sub, r.target_name AS base
       FROM relationships r JOIN entities e ON e.id = r.source_id
@@ -647,7 +647,7 @@ export function buildReceiverSpread(db, { liveOnly = false } = {}) {
     counts = new Map();
     let rows;
     try {
-      const live = liveOnly && hasColumn(db, 'relationships', 'epoch_retired') ? ' AND epoch_retired IS NULL' : '';
+      const live = liveOnly ? ' AND epoch_retired IS NULL' : '';
       rows = db.prepare(`SELECT DISTINCT target_name FROM relationships WHERE type = 'calls'${live}`).raw().iterate();
     } catch {
       return;
@@ -1252,14 +1252,6 @@ function queryChunked(db, sqlFor, values, extraParams = []) {
   return out;
 }
 
-function hasColumn(db, table, column) {
-  try {
-    return db.prepare(`PRAGMA table_info(${table})`).all().some(c => c.name === column);
-  } catch {
-    return false;
-  }
-}
-
 /** Every name a target name can be looked up by: itself and its path segments. */
 function targetNameKeys(targetName) {
   const keys = new Set();
@@ -1298,8 +1290,8 @@ export function resolveRowsScoped(db, rows, { liveOnly = true } = {}) {
   declaredTypeMemo.clear();
   if (subtypeTokensMemo.size > 50_000) subtypeTokensMemo.clear();
   if (supertypeTokensMemo.size > 50_000) supertypeTokensMemo.clear();
-  const entityLive = liveOnly && hasColumn(db, 'entities', 'epoch_retired') ? ' AND epoch_retired IS NULL' : '';
-  const relLive = liveOnly && hasColumn(db, 'relationships', 'epoch_retired') ? ' AND r.epoch_retired IS NULL' : '';
+  const entityLive = liveOnly ? ' AND epoch_retired IS NULL' : '';
+  const relLive = liveOnly ? ' AND r.epoch_retired IS NULL' : '';
 
   const keys = new Set();
   const sourceIds = new Set();
@@ -1483,7 +1475,7 @@ export function resolveRelationshipTargets(db) {
   resolveAll();
 
   // Trace-only `overrides` edges need the resolved inheritance above.
-  const overrideStats = deriveOverrideEdges(db, entities);
+  const overrideStats = deriveOverrideEdges(db);
   if (overrideStats.edges > 0) {
     console.log(`  ✓ Derived ${overrideStats.edges} override edges (${overrideStats.ms}ms)`);
   }

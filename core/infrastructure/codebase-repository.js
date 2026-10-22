@@ -9,6 +9,7 @@ import Database from 'better-sqlite3';
 import path from 'node:path';
 import { applyReadPragmas, assertInClauseSize } from './db-utils.js';
 import { readJsonFileCachedIfExists } from './cached-json-file.js';
+import { assertVectorSchema } from './index-schema.js';
 
 function readAdjacentManifest(dbPath) {
   try {
@@ -36,7 +37,6 @@ export class CodebaseRepository {
       ? resolveManifestVectorsPath(this._baseDbPath, manifest)
       : dbPath;
     this._db = null;
-    this._hasEpochVisibility = null;
     if (!this._explicitManifestEpoch) {
       this._syncAdjacentManifest();
     }
@@ -69,18 +69,16 @@ export class CodebaseRepository {
   _open() {
     this._syncAdjacentManifest();
     if (!this._db) {
-      this._db = new Database(this._dbPath, { readonly: true });
-      applyReadPragmas(this._db);
+      const db = new Database(this._dbPath, { readonly: true });
+      // An index from another schema version fails here with the rebuild instruction.
+      try { assertVectorSchema(db, this._dbPath); } catch (err) { db.close(); throw err; }
+      applyReadPragmas(db);
+      this._db = db;
     }
     return this._db;
   }
 
-  _visibility(db) {
-    if (this._hasEpochVisibility === null) {
-      const cols = db.prepare('PRAGMA table_info(vectors)').all().map((c) => c.name);
-      this._hasEpochVisibility = cols.includes('epoch_written') && cols.includes('epoch_retired');
-    }
-    if (!this._hasEpochVisibility) return { sql: '', params: [] };
+  _visibility() {
     if (this._manifestEpoch !== null) {
       return {
         sql: '(epoch_written IS NULL OR epoch_written <= ?) AND (epoch_retired IS NULL OR epoch_retired > ?)',
@@ -357,7 +355,6 @@ export class CodebaseRepository {
       this._db.close();
       this._db = null;
     }
-    this._hasEpochVisibility = null;
     this._hasChunkTextFts = undefined;
   }
 }

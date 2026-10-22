@@ -8,6 +8,7 @@ import { evaluateWatermarks, DEFAULT_WATERMARKS } from '../../core/incremental-i
 import { readGraphRankState, PAGERANK_STATE } from '../../core/incremental-indexing/infrastructure/maintenance-state-reader.mjs';
 import { graphPageRankHandler } from '../../core/incremental-indexing/application/maintenance-handlers.mjs';
 import { runProductionReconcileTick } from '../../core/incremental-indexing/application/production-reconciler.mjs';
+import { createGraphSchema } from '../../core/graph/graph-extractor.js';
 
 // The maintainer wrote entities with page_rank 0 and never recomputed it: on a large maintained
 // index 5,516 of 18,816 live entities (29 %) had no score, and trace ranks callers by it.
@@ -35,10 +36,9 @@ describe('graph_pagerank job', () => {
 
   function graph(rows, edges) {
     const db = new Database(join(stateDir, 'code-graph.db'));
-    db.exec(`CREATE TABLE entities (id TEXT PRIMARY KEY, stale_since INTEGER, epoch_retired INTEGER, page_rank REAL DEFAULT 0, epoch_written INTEGER DEFAULT 0);
-             CREATE TABLE relationships (source_id TEXT, target_id TEXT, type TEXT, weight REAL, epoch_retired INTEGER, epoch_written INTEGER DEFAULT 0);`);
-    for (const [id, retired, pr] of rows) db.prepare('INSERT INTO entities (id, stale_since, epoch_retired, page_rank) VALUES (?, ?, ?, ?)').run(id, retired, retired, pr);
-    for (const [s, t, retired] of edges) db.prepare("INSERT INTO relationships (source_id, target_id, type, weight, epoch_retired) VALUES (?, ?, 'calls', 1, ?)").run(s, t, retired);
+    createGraphSchema(db);
+    for (const [id, retired, pr] of rows) db.prepare("INSERT INTO entities (id, name, type, file_path, stale_since, epoch_retired, page_rank) VALUES (?, ?, 'function', 'a.js', ?, ?, ?)").run(id, id, retired, retired, pr);
+    for (const [s, t, retired] of edges) db.prepare("INSERT INTO relationships (source_id, target_id, target_name, type, weight, epoch_retired) VALUES (?, ?, ?, 'calls', 1, ?)").run(s, t, t, retired);
     return db;
   }
   const ranks = () => {

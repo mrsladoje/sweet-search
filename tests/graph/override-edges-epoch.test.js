@@ -19,15 +19,12 @@ let insertGraph;
 let resolveRelationshipTargets;
 let deriveOverrideEdges;
 let computeOverrideEdges;
-let migrateEntitiesSchema;
-let migrateRelationshipsSchema;
 let resetTreeSitterProvider;
 
 beforeAll(async () => {
   ({ GraphExtractor, createGraphSchema, insertGraph } = await import('../../core/graph/graph-extractor.js'));
   ({ resolveRelationshipTargets } = await import('../../core/graph/relationship-resolver.js'));
   ({ deriveOverrideEdges, computeOverrideEdges } = await import('../../core/graph/override-edges.js'));
-  ({ migrateEntitiesSchema, migrateRelationshipsSchema } = await import('../../core/incremental-indexing/infrastructure/schema-migrations.mjs'));
   ({ resetTreeSitterProvider } = await import('../../core/infrastructure/tree-sitter-provider.js'));
 });
 
@@ -57,8 +54,6 @@ async function buildVersioned() {
   }
   insertGraph(db, ents, rels, hasFts5, { syncFts: false });
   resolveRelationshipTargets(db);
-  migrateEntitiesSchema(db);
-  migrateRelationshipsSchema(db);
   return db;
 }
 
@@ -73,7 +68,7 @@ describe('override edges on an epoch-versioned graph', () => {
     const db = await buildVersioned();
     const before = db.prepare("SELECT rowid FROM relationships WHERE type = 'overrides' ORDER BY rowid").all();
     expect(before.length).toBe(2);
-    const stats = deriveOverrideEdges(db, null, { epoch: 5 });
+    const stats = deriveOverrideEdges(db, { epoch: 5 });
     expect(stats).toMatchObject({ edges: 0, retired: 0 });
     expect(db.prepare("SELECT rowid FROM relationships WHERE type = 'overrides' ORDER BY rowid").all()).toEqual(before);
     db.close();
@@ -88,7 +83,7 @@ describe('override edges on an epoch-versioned graph', () => {
                 VALUES ('walk@e7', 'src/Animal.kt', ?, 'walk', 'open fun walk(steps: Int) {}', 3, 3, ?, 7)`)
       .run(old.type, old.parent_class);
 
-    deriveOverrideEdges(db, null, { epoch: 7 });
+    deriveOverrideEdges(db, { epoch: 7 });
     const all = db.prepare(`SELECT target_id, epoch_written, epoch_retired FROM relationships
                             WHERE type = 'overrides' AND target_name LIKE '%walk' ORDER BY rowid`).all();
     expect(all).toEqual([
@@ -103,7 +98,7 @@ describe('override edges on an epoch-versioned graph', () => {
     const db = await buildVersioned();
     // Dog stops extending Animal at epoch 9 (the reconciler retires the row).
     db.prepare("UPDATE relationships SET epoch_retired = 9 WHERE type = 'extends'").run();
-    deriveOverrideEdges(db, null, { epoch: 9 });
+    deriveOverrideEdges(db, { epoch: 9 });
     expect(liveOverrides(db)).toEqual([]);
     // Retired rows stay for pinned readers.
     expect(db.prepare("SELECT COUNT(*) AS n FROM relationships WHERE type = 'overrides' AND epoch_retired = 9").get().n).toBe(2);

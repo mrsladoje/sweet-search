@@ -30,39 +30,16 @@ function _assertInClauseSize(n, label) {
   }
 }
 
-const _VISIBILITY_CACHE = new WeakMap();
-
 function _sqlAliasPrefix(alias = '') {
   if (!alias) return '';
   const normalized = String(alias).endsWith('.') ? String(alias).slice(0, -1) : String(alias);
   return normalized ? `${normalized}.` : '';
 }
 
-function _visibilityInfo(db) {
-  let cached = _VISIBILITY_CACHE.get(db);
-  if (cached) return cached;
-  const hasColumns = (table, columns) => {
-    try {
-      const names = new Set(db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name));
-      return columns.every((c) => names.has(c));
-    } catch {
-      return false;
-    }
-  };
-  cached = {
-    entities: hasColumns('entities', ['epoch_written', 'epoch_retired']),
-    relationships: hasColumns('relationships', ['epoch_written', 'epoch_retired']),
-  };
-  _VISIBILITY_CACHE.set(db, cached);
-  return cached;
-}
-
 function _entityVisibility(db, manifestEpoch, alias = '', options = {}) {
   const prefix = _sqlAliasPrefix(alias);
   let sql;
-  if (!_visibilityInfo(db).entities) {
-    sql = `${prefix}stale_since IS NULL`;
-  } else if (Number.isInteger(manifestEpoch)) {
+  if (Number.isInteger(manifestEpoch)) {
     sql = `(${prefix}epoch_written IS NULL OR ${prefix}epoch_written <= ?)
       AND (${prefix}epoch_retired IS NULL OR ${prefix}epoch_retired > ?)
       AND (${prefix}stale_since IS NULL OR (${prefix}epoch_retired IS NOT NULL AND ${prefix}epoch_retired > ?))`;
@@ -71,7 +48,7 @@ function _entityVisibility(db, manifestEpoch, alias = '', options = {}) {
   }
   return {
     sql: options.allowNullJoined ? `(${sql} OR ${prefix}id IS NULL)` : sql,
-    params: _visibilityInfo(db).entities && Number.isInteger(manifestEpoch)
+    params: Number.isInteger(manifestEpoch)
       ? [manifestEpoch, manifestEpoch, manifestEpoch]
       : [],
   };
@@ -86,7 +63,6 @@ const _TRACE_ONLY_TYPES_SQL = "('overrides','instantiates','typeRef','extensionO
 function _relationshipVisibility(db, manifestEpoch, alias = '') {
   const prefix = _sqlAliasPrefix(alias);
   const traceOnly = `${prefix}type NOT IN ${_TRACE_ONLY_TYPES_SQL}`;
-  if (!_visibilityInfo(db).relationships) return { sql: traceOnly, params: [] };
   if (Number.isInteger(manifestEpoch)) {
     return {
       sql: `(${prefix}epoch_written IS NULL OR ${prefix}epoch_written <= ?)

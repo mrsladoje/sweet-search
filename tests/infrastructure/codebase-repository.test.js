@@ -5,26 +5,19 @@ import os from 'os';
 import path from 'path';
 import { CodebaseRepository } from '../../core/infrastructure/codebase-repository.js';
 import { writeManifest, zeroManifest } from '../../core/incremental-indexing/infrastructure/manifest.mjs';
+import { createVectorSchema } from '../../core/indexing/indexer-build.js';
 
 // Helper: create a temp DB with the vectors schema and seed data
 function createTestDb(rows = []) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codebase-repo-test-'));
   const dbPath = path.join(tmpDir, 'codebase.db');
   const db = new Database(dbPath);
-  db.exec(`
-    CREATE TABLE vectors (
-      id TEXT PRIMARY KEY,
-      file_path TEXT NOT NULL,
-      embedding BLOB,
-      text TEXT,
-      metadata TEXT
-    )
-  `);
+  createVectorSchema(db);
   const insert = db.prepare(
     'INSERT INTO vectors (id, file_path, embedding, text, metadata) VALUES (?, ?, ?, ?, ?)'
   );
   for (const row of rows) {
-    insert.run(row.id, row.file_path, row.embedding ?? null, row.text ?? null, row.metadata ?? null);
+    insert.run(row.id, row.file_path, row.embedding ?? Buffer.alloc(0), row.text ?? null, row.metadata ?? null);
   }
   db.close();
   return { dbPath, tmpDir };
@@ -39,17 +32,7 @@ function createVisibilityDb(rows = []) {
 
 function writeVisibilityDb(dbPath, rows = []) {
   const db = new Database(dbPath);
-  db.exec(`
-    CREATE TABLE vectors (
-      id TEXT PRIMARY KEY,
-      file_path TEXT NOT NULL,
-      embedding BLOB,
-      text TEXT,
-      metadata TEXT,
-      epoch_written INTEGER,
-      epoch_retired INTEGER
-    )
-  `);
+  createVectorSchema(db);
   const insert = db.prepare(`
     INSERT INTO vectors (id, file_path, embedding, text, metadata, epoch_written, epoch_retired)
     VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -58,7 +41,7 @@ function writeVisibilityDb(dbPath, rows = []) {
     insert.run(
       row.id,
       row.file_path,
-      row.embedding ?? null,
+      row.embedding ?? Buffer.alloc(0),
       row.text ?? null,
       row.metadata ?? null,
       Object.hasOwn(row, 'epoch_written') ? row.epoch_written : 0,
@@ -196,20 +179,6 @@ describe('CodebaseRepository', () => {
       repo = new CodebaseRepository(dbPath);
 
       expect(repo.getEmbeddingsByIds([]).size).toBe(0);
-    });
-
-    it('skips rows with null embeddings', () => {
-      ({ dbPath, tmpDir } = createTestDb([
-        { id: 'v1', file_path: 'a.js', embedding: null },
-        { id: 'v2', file_path: 'b.js', embedding: makeEmbedding([9.0]) },
-      ]));
-      repo = new CodebaseRepository(dbPath);
-
-      const result = repo.getEmbeddingsByIds(['v1', 'v2']);
-
-      expect(result.size).toBe(1);
-      expect(result.has('v1')).toBe(false);
-      expect(result.has('v2')).toBe(true);
     });
 
     it('ignores IDs that do not exist in the table', () => {
@@ -426,17 +395,7 @@ describe('CodebaseRepository', () => {
 
       const replacement = path.join(tmpDir, 'replacement.db');
       const db = new Database(replacement);
-      db.exec(`
-        CREATE TABLE vectors (
-          id TEXT PRIMARY KEY,
-          file_path TEXT NOT NULL,
-          embedding BLOB,
-          text TEXT,
-          metadata TEXT,
-          epoch_written INTEGER,
-          epoch_retired INTEGER
-        )
-      `);
+      createVectorSchema(db);
       db.prepare(`
         INSERT INTO vectors (id, file_path, embedding, text, metadata, epoch_written, epoch_retired)
         VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -451,17 +410,6 @@ describe('CodebaseRepository', () => {
       expect([...repo.iterateVectors()].map((r) => r.id)).toEqual(['after-swap']);
     });
 
-    it('treats legacy rows with null epoch_written as visible when a manifest is pinned', () => {
-      const emb = makeEmbedding([1.0]);
-      ({ dbPath, tmpDir } = createVisibilityDb([
-        { id: 'legacy', file_path: 'a.js', embedding: emb, text: 'legacy', metadata: '{}', epoch_written: null, epoch_retired: null },
-        { id: 'future', file_path: 'a.js', embedding: emb, text: 'future', metadata: '{}', epoch_written: 7, epoch_retired: null },
-      ]));
-      repo = new CodebaseRepository(dbPath, { manifestEpoch: 3 });
-
-      expect([...repo.iterateVectors()].map((r) => r.id)).toEqual(['legacy']);
-      expect(repo.getChunksByFilePath('a.js').map((r) => r.id)).toEqual(['legacy']);
-    });
   });
 
   // -------------------------------------------------------------------------

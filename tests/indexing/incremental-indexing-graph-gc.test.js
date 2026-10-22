@@ -40,7 +40,6 @@ import { enqueueMaintenanceJob, readMaintenanceQueue } from '../../core/incremen
 import { writeManifest, zeroManifest, readManifest } from '../../core/incremental-indexing/infrastructure/manifest.mjs';
 import { beginRead, endRead, minLiveEpoch } from '../../core/incremental-indexing/infrastructure/reader-heartbeat.mjs';
 import { createGraphSchema } from '../../core/graph/graph-extractor.js';
-import { migrateEntitiesSchema, migrateRelationshipsSchema } from '../../core/incremental-indexing/infrastructure/schema-migrations.mjs';
 import { ensureHcgsSidecarSchema, recordSummary } from '../../core/incremental-indexing/infrastructure/hcgs-invalidation.mjs';
 import { insertEntity } from '../../core/incremental-indexing/application/production-reconciler-helpers.mjs';
 import { CodeGraphRepository } from '../../core/infrastructure/code-graph-repository.js';
@@ -55,12 +54,10 @@ function graphPath(stateDir) {
   return path.join(stateDir, 'code-graph.db');
 }
 
-/** Open the graph DB with the full production schema + epoch migrations. */
+/** Open the graph DB with the full production schema. */
 function openGraphDb(stateDir) {
   const db = new Database(graphPath(stateDir));
   const hasFts = createGraphSchema(db);
-  migrateEntitiesSchema(db);
-  migrateRelationshipsSchema(db);
   ensureHcgsSidecarSchema(db);
   return { db, hasFts };
 }
@@ -147,16 +144,6 @@ describe('graph-gc / pure batch pruners', () => {
     db.close();
     expect(second.deleted).toBe(30);
     expect(countWhere(stateDir, 'entities')).toBe(0);
-  });
-
-  it('pruneRetiredEntities skips safely when the epoch column is absent', () => {
-    // Base graph schema only — no epoch migration.
-    const db = new Database(graphPath(stateDir));
-    createGraphSchema(db);
-    const res = pruneRetiredEntities(db, 100);
-    db.close();
-    expect(res.skipped).toBe('no-epoch-column');
-    expect(res.deleted).toBe(0);
   });
 
   it('pruneRetiredGraphSummaries deletes retired summaries at/below frontier', () => {

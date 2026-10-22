@@ -12,6 +12,7 @@ import Database from 'better-sqlite3';
 import { existsSync, statSync } from 'fs';
 import { applyReadPragmas, prepareCached } from './db-utils.js';
 import { readAdjacentManifest, resolveManifestCodeGraphPath, sqlAliasPrefix } from './code-graph-visibility.js';
+import { assertGraphSchema } from './index-schema.js';
 import { callMemo } from '../agent-tools/virtual-process.js';
 
 // A connection's identity for callMemo keys.
@@ -39,8 +40,6 @@ export class CodeGraphRepository {
       ? resolveManifestCodeGraphPath(this._baseDbPath, manifest)
       : dbPath;
     this._db = null;
-    this._hasEntityEpochVisibility = null;
-    this._hasRelationshipEpochVisibility = null;
     if (!this._explicitManifestEpoch) {
       this._syncAdjacentManifest();
     }
@@ -81,31 +80,17 @@ export class CodeGraphRepository {
     this._syncAdjacentManifest();
     if (!this._db) {
       if (!existsSync(this._dbPath)) return null;
-      this._db = new Database(this._dbPath, { readonly: true });
-      applyReadPragmas(this._db);
+      const db = new Database(this._dbPath, { readonly: true });
+      // An index from another schema version fails here with the rebuild instruction.
+      try { assertGraphSchema(db, this._dbPath); } catch (err) { db.close(); throw err; }
+      applyReadPragmas(db);
+      this._db = db;
     }
     return this._db;
   }
 
-  _hasColumns(db, table, columns) {
-    const rows = prepareCached(db, `PRAGMA table_info(${table})`).all();
-    const names = new Set(rows.map((row) => row.name));
-    return columns.every((column) => names.has(column));
-  }
-
-  _ensureVisibilityInfo(db) {
-    if (this._hasEntityEpochVisibility === null) {
-      this._hasEntityEpochVisibility = this._hasColumns(db, 'entities', ['epoch_written', 'epoch_retired']);
-    }
-    if (this._hasRelationshipEpochVisibility === null) {
-      this._hasRelationshipEpochVisibility = this._hasColumns(db, 'relationships', ['epoch_written', 'epoch_retired']);
-    }
-  }
-
   _entityVisibilitySql(db, alias = '') {
-    this._ensureVisibilityInfo(db);
     const prefix = sqlAliasPrefix(alias);
-    if (!this._hasEntityEpochVisibility) return `${prefix}stale_since IS NULL`;
     if (this._manifestEpoch !== null) {
       return `(${prefix}epoch_written IS NULL OR ${prefix}epoch_written <= ?)
         AND (${prefix}epoch_retired IS NULL OR ${prefix}epoch_retired > ?)
@@ -115,14 +100,11 @@ export class CodeGraphRepository {
   }
 
   _entityVisibilityParams(db) {
-    this._ensureVisibilityInfo(db);
-    if (!this._hasEntityEpochVisibility || this._manifestEpoch === null) return [];
+    if (this._manifestEpoch === null) return [];
     return [this._manifestEpoch, this._manifestEpoch, this._manifestEpoch];
   }
 
   _relationshipVisibilitySql(db, alias = 'r') {
-    this._ensureVisibilityInfo(db);
-    if (!this._hasRelationshipEpochVisibility) return '1=1';
     const prefix = sqlAliasPrefix(alias);
     if (this._manifestEpoch !== null) {
       return `(${prefix}epoch_written IS NULL OR ${prefix}epoch_written <= ?)
@@ -132,8 +114,7 @@ export class CodeGraphRepository {
   }
 
   _relationshipVisibilityParams(db) {
-    this._ensureVisibilityInfo(db);
-    if (!this._hasRelationshipEpochVisibility || this._manifestEpoch === null) return [];
+    if (this._manifestEpoch === null) return [];
     return [this._manifestEpoch, this._manifestEpoch];
   }
 
@@ -1377,49 +1358,37 @@ export class CodeGraphRepository {
     const db = this._open();
     if (!db) return null;
     try {
-      if (this._hasColumns(db, 'entities', ['epoch_written', 'epoch_retired'])) {
-        const visible = prepareCached(db, `
-          SELECT 1 FROM entities
-          WHERE file_path = ? AND ${this._entityVisibilitySql(db)}
-          LIMIT 1
-        `).get(filePath, ...this._entityVisibilityParams(db));
-        if (visible) return { staleSince: null };
-
-        const staleSql = this._manifestEpoch !== null
-          ? `
-            SELECT stale_since
-            FROM entities
-            WHERE file_path = ?
-              AND stale_since IS NOT NULL
-              AND (epoch_written IS NULL OR epoch_written <= ?)
-              AND (epoch_retired IS NULL OR epoch_retired <= ?)
-            ORDER BY stale_since DESC
-            LIMIT 1
-          `
-          : `
-            SELECT stale_since
-            FROM entities
-            WHERE file_path = ?
-              AND stale_since IS NOT NULL
-            ORDER BY stale_since DESC
-            LIMIT 1
-          `;
-        const staleArgs = this._manifestEpoch !== null
-          ? [filePath, this._manifestEpoch, this._manifestEpoch]
-          : [filePath];
-        const staleRow = prepareCached(db, staleSql).get(...staleArgs);
-        return staleRow ? { staleSince: staleRow.stale_since || null } : null;
-      }
-      const row = prepareCached(db, `
-        SELECT stale_since, MIN(ROWID) as first_row
-        FROM entities
-        WHERE file_path = ?
+      const visible = prepareCached(db, `
+        SELECT 1 FROM entities
+        WHERE file_path = ? AND ${this._entityVisibilitySql(db)}
         LIMIT 1
-      `).get(filePath);
-      if (!row) return null;
-      return {
-        staleSince: row.stale_since || null,
-      };
+      `).get(filePath, ...this._entityVisibilityParams(db));
+      if (visible) return { staleSince: null };
+
+      const staleSql = this._manifestEpoch !== null
+        ? `
+          SELECT stale_since
+          FROM entities
+          WHERE file_path = ?
+            AND stale_since IS NOT NULL
+            AND (epoch_written IS NULL OR epoch_written <= ?)
+            AND (epoch_retired IS NULL OR epoch_retired <= ?)
+          ORDER BY stale_since DESC
+          LIMIT 1
+        `
+        : `
+          SELECT stale_since
+          FROM entities
+          WHERE file_path = ?
+            AND stale_since IS NOT NULL
+          ORDER BY stale_since DESC
+          LIMIT 1
+        `;
+      const staleArgs = this._manifestEpoch !== null
+        ? [filePath, this._manifestEpoch, this._manifestEpoch]
+        : [filePath];
+      const staleRow = prepareCached(db, staleSql).get(...staleArgs);
+      return staleRow ? { staleSince: staleRow.stale_since || null } : null;
     } catch {
       return null;
     }
@@ -1445,8 +1414,6 @@ export class CodeGraphRepository {
       this._db.close();
       this._db = null;
     }
-    this._hasEntityEpochVisibility = null;
-    this._hasRelationshipEpochVisibility = null;
     this._resetDerivedCaches();
   }
 }

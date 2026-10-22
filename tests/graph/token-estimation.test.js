@@ -6,6 +6,8 @@ import {
   computeTokenEstimates,
   expandResults,
 } from '../../core/graph/index.js';
+import { createGraphSchema } from '../../core/graph/graph-extractor.js';
+import { createVectorSchema } from '../../core/indexing/indexer-build.js';
 
 // =========================================================================
 // 1. estimateTokenCount (internal, tested via computeTokenEstimates)
@@ -64,11 +66,11 @@ describe('loadChunkTexts', () => {
 
   beforeAll(() => {
     db = new Database(':memory:');
+    createVectorSchema(db);
     db.exec(`
-      CREATE TABLE vectors (id TEXT PRIMARY KEY, text TEXT, embedding BLOB, metadata TEXT);
-      INSERT INTO vectors (id, text) VALUES ('v1', 'function hello() { return "hi"; }');
-      INSERT INTO vectors (id, text) VALUES ('v2', 'class Foo extends Bar { constructor() { super(); } }');
-      INSERT INTO vectors (id, text) VALUES ('v3', 'import os\ndef main():\n    print("hello")');
+      INSERT INTO vectors (id, file_path, embedding, text) VALUES ('v1', 'src/x', x'', 'function hello() { return "hi"; }');
+      INSERT INTO vectors (id, file_path, embedding, text) VALUES ('v2', 'src/x', x'', 'class Foo extends Bar { constructor() { super(); } }');
+      INSERT INTO vectors (id, file_path, embedding, text) VALUES ('v3', 'src/x', x'', 'import os\ndef main():\n    print("hello")');
     `);
   });
 
@@ -117,10 +119,10 @@ describe('computeTokenEstimates', () => {
 
   beforeAll(() => {
     codebaseDb = new Database(':memory:');
+    createVectorSchema(codebaseDb);
     codebaseDb.exec(`
-      CREATE TABLE vectors (id TEXT PRIMARY KEY, text TEXT, embedding BLOB, metadata TEXT);
-      INSERT INTO vectors (id, text) VALUES ('orig1', 'public class AuthService implements IAuth { private final DB db; public AuthService(DB db) { this.db = db; } }');
-      INSERT INTO vectors (id, text) VALUES ('orig2', 'def process(data):\n    result = transform(data)\n    return result');
+      INSERT INTO vectors (id, file_path, embedding, text) VALUES ('orig1', 'src/x', x'', 'public class AuthService implements IAuth { private final DB db; public AuthService(DB db) { this.db = db; } }');
+      INSERT INTO vectors (id, file_path, embedding, text) VALUES ('orig2', 'src/x', x'', 'def process(data):\n    result = transform(data)\n    return result');
     `);
   });
 
@@ -252,9 +254,7 @@ describe('applyTokenBudget with token estimates', () => {
 
   beforeAll(() => {
     codebaseDb = new Database(':memory:');
-    codebaseDb.exec(`
-      CREATE TABLE vectors (id TEXT PRIMARY KEY, text TEXT, embedding BLOB, metadata TEXT);
-    `);
+    createVectorSchema(codebaseDb);
     // Java chunk: many tokens (verbose)
     const javaText = 'public class AuthenticationServiceImpl implements IAuthenticationService { '
       + 'private final DatabaseConnection databaseConnection; '
@@ -266,11 +266,11 @@ describe('applyTokenBudget with token estimates', () => {
       + 'if (user == null) { throw new AuthenticationException("User not found"); } '
       + 'if (!user.checkPassword(password)) { throw new AuthenticationException("Invalid password"); } '
       + 'return tokenGenerator.generateToken(user); } }';
-    codebaseDb.prepare('INSERT INTO vectors (id, text) VALUES (?, ?)').run('java1', javaText);
+    codebaseDb.prepare("INSERT INTO vectors (id, file_path, embedding, text) VALUES (?, 'src/x', x'', ?)").run('java1', javaText);
 
     // Python chunk: fewer tokens (concise)
     const pythonText = 'def auth(u, p):\n    user = db.find(u)\n    if not user:\n        raise Error("nope")\n    return token(user)';
-    codebaseDb.prepare('INSERT INTO vectors (id, text) VALUES (?, ?)').run('python1', pythonText);
+    codebaseDb.prepare("INSERT INTO vectors (id, file_path, embedding, text) VALUES (?, 'src/x', x'', ?)").run('python1', pythonText);
   });
 
   afterAll(() => codebaseDb.close());
@@ -385,29 +385,19 @@ describe('expandResults threads codebaseDb and readFileLines', () => {
 
   beforeAll(() => {
     graphDb = new Database(':memory:');
-    graphDb.exec(`
-      CREATE TABLE entities (
-        id TEXT PRIMARY KEY, file_path TEXT NOT NULL, type TEXT NOT NULL,
-        name TEXT NOT NULL, signature TEXT, start_line INTEGER, end_line INTEGER,
-        stale_since INTEGER DEFAULT NULL
-      );
-      CREATE TABLE relationships (
-        source_id TEXT, target_id TEXT, target_name TEXT NOT NULL,
-        type TEXT NOT NULL, weight REAL DEFAULT 1.0
-      );
-    `);
+    createGraphSchema(graphDb);
 
-    const ie = graphDb.prepare('INSERT INTO entities VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-    const ir = graphDb.prepare('INSERT INTO relationships VALUES (?, ?, ?, ?, ?)');
+    const ie = graphDb.prepare('INSERT INTO entities (id, file_path, type, name, signature, start_line, end_line, stale_since) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    const ir = graphDb.prepare('INSERT INTO relationships (source_id, target_id, target_name, type, weight) VALUES (?, ?, ?, ?, ?)');
 
     ie.run('seed', 'src/seed.py', 'class', 'Seed', 'class Seed', 1, 20, null);
     ie.run('dep', 'src/dep.py', 'class', 'Dep', 'class Dep', 1, 15, null);
     ir.run('seed', 'dep', 'Dep', 'imports', 1.0);
 
     codebaseDb = new Database(':memory:');
+    createVectorSchema(codebaseDb);
     codebaseDb.exec(`
-      CREATE TABLE vectors (id TEXT PRIMARY KEY, text TEXT, embedding BLOB, metadata TEXT);
-      INSERT INTO vectors (id, text) VALUES ('seed', 'class Seed:\n    def __init__(self):\n        self.x = 1');
+      INSERT INTO vectors (id, file_path, embedding, text) VALUES ('seed', 'src/x', x'', 'class Seed:\n    def __init__(self):\n        self.x = 1');
     `);
   });
 

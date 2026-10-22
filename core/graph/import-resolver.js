@@ -2111,10 +2111,8 @@ export function buildFileImportMap(db, fileIdOf) {
   // A maintained graph keeps retired rows until GC (epoch_retired set) and
   // writes rows under the physical id of the file's entity row (`<id>@e<N>`);
   // a full build writes them under the logical id with no entity row.
-  const relCols = new Set(db.prepare('PRAGMA table_info(relationships)').all().map((c) => c.name));
-  const entCols = new Set(db.prepare('PRAGMA table_info(entities)').all().map((c) => c.name));
-  const liveRel = relCols.has('epoch_retired') ? ' AND epoch_retired IS NULL' : '';
-  const liveEnt = entCols.has('epoch_retired') ? ' AND epoch_retired IS NULL' : '';
+  const liveRel = ' AND epoch_retired IS NULL';
+  const liveEnt = ' AND epoch_retired IS NULL';
   const rows = db.prepare(`SELECT source_id, target_name FROM relationships WHERE type = 'importsFile'${liveRel}`).all();
   const idToFile = new Map();
   const paths = new Set(db.prepare('SELECT DISTINCT file_path FROM entities').pluck().all());

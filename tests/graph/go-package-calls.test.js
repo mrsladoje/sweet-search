@@ -302,30 +302,3 @@ describe('Go package-qualified calls', () => {
   });
 });
 
-describe('call-line reader on an older graph', () => {
-  it('a connected reader sees call_lines once a maintainer adds the table', async () => {
-    const g = await buildGraph({
-      'go.mod': [`module ${MODULE}`],
-      'a/a.go': ['package a', '', 'type S struct{}', '', 'func (s *S) Do() {', '}', '', 'func Run(s *S) {', '\ts.Do()', '\ts.Do()', '}'],
-    });
-    // A graph built before the table existed.
-    const writer = new Database(g.dbPath);
-    const lines = writer.prepare('SELECT source_id, target_name, context_line, epoch_written FROM call_lines').all();
-    expect(lines.map((r) => r.context_line).sort((a, b) => a - b)).toEqual([9, 10]);
-    writer.exec('DROP TABLE call_lines');
-    const repo = new StructuralContextRepository(g.dbPath, { BareCallResolver, projectRoot: g.root });
-    const run = writer.prepare("SELECT id FROM entities WHERE name = 'Run'").get();
-    const target = { id: run.id, name: 'Run' };
-    try {
-      expect(repo.getCallees(target).map((c) => c.contextLines)).toEqual([[9]]);
-      // An upgraded maintainer adds the table to the graph the reader holds open.
-      writer.exec('CREATE TABLE call_lines (source_id TEXT NOT NULL, target_name TEXT NOT NULL, context_line INTEGER, epoch_written INTEGER NOT NULL DEFAULT 0, epoch_retired INTEGER)');
-      const ins = writer.prepare('INSERT INTO call_lines (source_id, target_name, context_line, epoch_written) VALUES (?, ?, ?, ?)');
-      for (const r of lines) ins.run(r.source_id, r.target_name, r.context_line, r.epoch_written);
-      expect(repo.getCallees(target).map((c) => c.contextLines)).toEqual([[9, 10]]);
-    } finally {
-      repo.close?.();
-      writer.close();
-    }
-  });
-});

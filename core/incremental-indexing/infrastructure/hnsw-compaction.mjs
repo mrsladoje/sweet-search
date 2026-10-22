@@ -51,8 +51,6 @@ export function readLiveVectorIds(stateDir) {
   if (!fs.existsSync(dbPath)) return null;
   const db = new Database(dbPath, { readonly: true });
   try {
-    const cols = db.prepare('PRAGMA table_info(vectors)').all().map((c) => c.name);
-    if (!cols.includes('epoch_retired')) return null;
     return new Set(db.prepare('SELECT id FROM vectors WHERE epoch_retired IS NULL').raw().all().map((r) => r[0]));
   } catch {
     return null;

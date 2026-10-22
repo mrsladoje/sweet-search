@@ -8,18 +8,12 @@
 
 import { describe, it, expect, beforeEach } from 'vitest';
 import Database from 'better-sqlite3';
-import { migrateVectorsSchema } from '../../core/incremental-indexing/infrastructure/schema-migrations.mjs';
+import { createVectorSchema } from '../../core/indexing/indexer-build.js';
 import { injectTombstones, sweepTombstoneFractions, __testing } from '../../core/incremental-indexing/application/tombstone-injector.mjs';
 
 function makePopulatedDb(n) {
   const db = new Database(':memory:');
-  db.exec(`
-    CREATE TABLE vectors (
-      id TEXT PRIMARY KEY, file_path TEXT NOT NULL, embedding BLOB NOT NULL,
-      text TEXT, metadata TEXT, session_id TEXT, tags TEXT, created_at TEXT
-    )
-  `);
-  migrateVectorsSchema(db);
+  createVectorSchema(db);
   const ins = db.prepare(`
     INSERT INTO vectors (id, file_path, embedding, text, metadata, session_id, tags, created_at)
     VALUES (?, ?, ?, '', '{}', 'sess', '[]', '2026')

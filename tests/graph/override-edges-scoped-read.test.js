@@ -10,17 +10,11 @@ import Database from 'better-sqlite3';
 
 import { computeOverrideEdges, deriveOverrideEdges } from '../../core/graph/override-edges.js';
 import { compareEdgeRows, compareEntitiesForResolution } from '../../core/graph/entity-order.js';
+import { createGraphSchema } from '../../core/graph/graph-extractor.js';
 
 function rng(seed) {
   let s = seed >>> 0;
   return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32);
-}
-
-function schema(db) {
-  db.exec(`CREATE TABLE entities (id TEXT PRIMARY KEY, name TEXT, type TEXT, file_path TEXT, parent_class TEXT,
-             signature TEXT, start_line INTEGER, end_line INTEGER, epoch_written INTEGER DEFAULT 0, epoch_retired INTEGER);
-           CREATE TABLE relationships (source_id TEXT, target_id TEXT, target_name TEXT, type TEXT, weight REAL,
-             context_line INTEGER, epoch_written INTEGER DEFAULT 0, epoch_retired INTEGER);`);
 }
 
 function randomGraph(seed) {
@@ -78,7 +72,14 @@ function randomGraph(seed) {
     const t = pick(containers);
     if (r() < 0.5) rels.push({ source_id: c.id, target_id: t.id, type: 'extensionOf', context_line: c.line, retired: false });
   }
-  return { entities, rels };
+  const seen = new Set();
+  const unique = rels.filter((x) => {
+    const key = `${x.source_id}|${x.target_id}|${x.type}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  return { entities, rels: unique };
 }
 
 describe('override edges from the scoped read', () => {
@@ -87,10 +88,10 @@ describe('override edges from the scoped read', () => {
     for (let seed = 1; seed <= 40; seed++) {
       const { entities, rels } = randomGraph(seed);
       const db = new Database(':memory:');
-      schema(db);
-      const insE = db.prepare('INSERT INTO entities VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)');
+      createGraphSchema(db);
+      const insE = db.prepare('INSERT INTO entities (id, name, type, file_path, parent_class, signature, start_line, end_line, epoch_written, epoch_retired) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)');
       for (const e of entities) insE.run(e.id, e.name, e.type, e.file_path, e.parent_class, e.signature, e.start_line, e.end_line, e.retired ? 2 : null);
-      const insR = db.prepare('INSERT INTO relationships VALUES (?, ?, NULL, ?, 1, ?, 1, ?)');
+      const insR = db.prepare("INSERT INTO relationships (source_id, target_id, target_name, type, weight, context_line, epoch_written, epoch_retired) VALUES (?, ?, '', ?, 1, ?, 1, ?)");
       for (const x of rels) insR.run(x.source_id, x.target_id, x.type, x.context_line, x.retired ? 2 : null);
 
       const live = entities.filter((e) => !e.retired).map(({ retired, ...e }) => e).sort(compareEntitiesForResolution);
@@ -98,7 +99,7 @@ describe('override edges from the scoped read', () => {
       const ext = rels.filter((x) => !x.retired && x.type === 'extensionOf').map(({ source_id, context_line, target_id }) => ({ source_id, context_line, target_id })).sort(compareEdgeRows);
       const want = computeOverrideEdges(live, inh, ext).map((e) => `${e.source}|${e.target}|${e.name}|${e.line}`).sort();
 
-      deriveOverrideEdges(db, null, { epoch: 3 });
+      deriveOverrideEdges(db, { epoch: 3 });
       const got = db.prepare("SELECT source_id, target_id, target_name, context_line FROM relationships WHERE type = 'overrides' AND epoch_retired IS NULL")
         .all().map((x) => `${x.source_id}|${x.target_id}|${x.target_name}|${x.context_line}`).sort();
       expect(got, `seed ${seed}`).toEqual(want);

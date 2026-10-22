@@ -32,12 +32,9 @@ import {
   diffChunks,
   applyDiff,
 } from '../../core/incremental-indexing/infrastructure/vector-delta-writer.mjs';
-import {
-  migrateVectorsSchema,
-  migrateEntitiesSchema,
-  migrateRelationshipsSchema,
-  ensureEncoderDepsSchema,
-} from '../../core/incremental-indexing/infrastructure/schema-migrations.mjs';
+import { ensureEncoderDepsSchema } from '../../core/incremental-indexing/infrastructure/schema-migrations.mjs';
+import { createVectorSchema } from '../../core/indexing/indexer-build.js';
+import { createGraphSchema } from '../../core/graph/graph-extractor.js';
 import {
   collectChunkDependencies,
   persistDependencies,
@@ -51,46 +48,13 @@ import { readManifest, epochVisibilityPredicate } from '../../core/incremental-i
 
 function makeVectorsDb() {
   const db = new Database(':memory:');
-  db.exec(`
-    CREATE TABLE vectors (
-      id TEXT PRIMARY KEY,
-      file_path TEXT NOT NULL,
-      embedding BLOB NOT NULL,
-      text TEXT,
-      metadata TEXT,
-      session_id TEXT,
-      tags TEXT,
-      created_at TEXT
-    )
-  `);
-  migrateVectorsSchema(db);
+  createVectorSchema(db);
   return db;
 }
 
 function makeCodeGraphDb() {
   const db = new Database(':memory:');
-  db.exec(`
-    CREATE TABLE entities (
-      id TEXT PRIMARY KEY,
-      file_path TEXT NOT NULL,
-      type TEXT NOT NULL,
-      name TEXT NOT NULL,
-      signature_hash TEXT,
-      start_line INTEGER,
-      end_line INTEGER,
-      stale_since INTEGER
-    );
-    CREATE TABLE relationships (
-      id TEXT PRIMARY KEY,
-      source_entity_id TEXT NOT NULL,
-      target_entity_id TEXT,
-      target_name TEXT,
-      relationship_type TEXT NOT NULL,
-      file_path TEXT
-    );
-  `);
-  migrateEntitiesSchema(db);
-  migrateRelationshipsSchema(db);
+  createGraphSchema(db);
   ensureEncoderDepsSchema(db);
   return db;
 }

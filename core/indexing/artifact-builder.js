@@ -56,16 +56,7 @@ import { BinaryHNSWIndex, binaryHnswIndexExists, readIndexHeader } from '../vect
 import { truncateForHNSW, fisherYatesShuffle, normalizedFloatToInt8, floatToBinary } from '../infrastructure/quantization.js';
 import { FloatVectorStore, getFloatStorePath, float512StoreEnabled } from '../vector-store/float-vector-store.js';
 
-function hasVectorColumn(db, column) {
-  try {
-    return db.prepare('PRAGMA table_info(vectors)').all().some((col) => col.name === column);
-  } catch (_err) {
-    return false;
-  }
-}
-
 function liveVectorSql(db, alias = '') {
-  if (!hasVectorColumn(db, 'epoch_retired')) return '1=1';
   const prefix = alias ? `${alias}.` : '';
   return `${prefix}epoch_retired IS NULL`;
 }

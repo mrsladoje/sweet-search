@@ -12,6 +12,7 @@ import {
   relationshipVisibilitySql,
 } from '../../core/infrastructure/code-graph-visibility.js';
 import { writeManifest, zeroManifest } from '../../core/incremental-indexing/infrastructure/manifest.mjs';
+import { createGraphSchema } from '../../core/graph/graph-extractor.js';
 
 let tmpDirs = [];
 let repos = [];
@@ -30,32 +31,7 @@ function createGraphDb(options = {}) {
   tmpDirs.push(tmpDir);
   const dbPath = join(tmpDir, 'code-graph.db');
   const db = new Database(dbPath);
-  db.exec(`
-    CREATE TABLE entities (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      type TEXT NOT NULL,
-      file_path TEXT NOT NULL,
-      start_line INTEGER,
-      end_line INTEGER,
-      parent_class TEXT,
-      stale_since INTEGER,
-      epoch_written INTEGER,
-      epoch_retired INTEGER
-    );
-
-    CREATE TABLE relationships (
-      source_id TEXT,
-      target_id TEXT,
-      target_name TEXT,
-      type TEXT,
-      weight REAL DEFAULT 1.0,
-      context_line INTEGER,
-      full_import_path TEXT,
-      epoch_written INTEGER,
-      epoch_retired INTEGER
-    );
-  `);
+  createGraphSchema(db);
 
   const insertEntity = db.prepare(`
     INSERT INTO entities (
@@ -91,32 +67,7 @@ function createGraphDb(options = {}) {
 
 function writeSingleEntityGraphDb(dbPath, entity) {
   const db = new Database(dbPath);
-  db.exec(`
-    CREATE TABLE entities (
-      id TEXT PRIMARY KEY,
-      name TEXT NOT NULL,
-      type TEXT NOT NULL,
-      file_path TEXT NOT NULL,
-      start_line INTEGER,
-      end_line INTEGER,
-      parent_class TEXT,
-      stale_since INTEGER,
-      epoch_written INTEGER,
-      epoch_retired INTEGER
-    );
-
-    CREATE TABLE relationships (
-      source_id TEXT,
-      target_id TEXT,
-      target_name TEXT,
-      type TEXT,
-      weight REAL DEFAULT 1.0,
-      context_line INTEGER,
-      full_import_path TEXT,
-      epoch_written INTEGER,
-      epoch_retired INTEGER
-    );
-  `);
+  createGraphSchema(db);
   db.prepare(`
     INSERT INTO entities (
       id, name, type, file_path, start_line, end_line, parent_class,
@@ -244,7 +195,7 @@ describe('CodeGraphRepository epoch visibility', () => {
           source_id, target_id, target_name, type, weight, context_line,
           full_import_path, epoch_written, epoch_retired
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run('caller', 'widget-future', 'FutureWidget', 'calls', 99, 99, null, 3, null);
+      `).run('caller', 'widget-future', 'widgets.FutureWidget', 'calls', 99, 99, null, 3, null);
       db.prepare(`
         INSERT INTO relationships (
           source_id, target_id, target_name, type, weight, context_line,
@@ -338,19 +289,7 @@ describe('findAdjacentEntities (same-file span map)', () => {
     tmpDirs.push(tmpDir);
     const dbPath = join(tmpDir, 'code-graph.db');
     const db = new Database(dbPath);
-    db.exec(`
-      CREATE TABLE entities (
-        id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL,
-        file_path TEXT NOT NULL, start_line INTEGER, end_line INTEGER,
-        parent_class TEXT, stale_since INTEGER,
-        epoch_written INTEGER, epoch_retired INTEGER
-      );
-      CREATE TABLE relationships (
-        source_id TEXT, target_id TEXT, target_name TEXT, type TEXT,
-        weight REAL DEFAULT 1.0, context_line INTEGER, full_import_path TEXT,
-        epoch_written INTEGER, epoch_retired INTEGER
-      );
-    `);
+    createGraphSchema(db);
     const insert = db.prepare(`
       INSERT INTO entities (id, name, type, file_path, start_line, end_line,
         parent_class, stale_since, epoch_written, epoch_retired)
@@ -445,15 +384,7 @@ describe('findEntitiesAtLines (one scan per file)', () => {
     tmpDirs.push(tmpDir);
     const dbPath = join(tmpDir, 'code-graph.db');
     const db = new Database(dbPath);
-    db.exec(`
-      CREATE TABLE entities (
-        id TEXT PRIMARY KEY, name TEXT NOT NULL, type TEXT NOT NULL,
-        file_path TEXT NOT NULL, start_line INTEGER, end_line INTEGER,
-        parent_class TEXT, stale_since INTEGER,
-        epoch_written INTEGER, epoch_retired INTEGER
-      );
-      CREATE INDEX idx_entities_file ON entities(file_path);
-    `);
+    createGraphSchema(db);
     const insert = db.prepare(`
       INSERT INTO entities (id, name, type, file_path, start_line, end_line,
         parent_class, stale_since, epoch_written, epoch_retired)

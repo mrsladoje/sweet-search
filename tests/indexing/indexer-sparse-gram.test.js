@@ -7,21 +7,15 @@ import { __TEST__ as sparseGramTest } from '../../core/indexing/indexer-sparse-g
 import { SPARSE_SYMBOL_MASKS } from '../../core/infrastructure/native-sparse-gram.js';
 import { contentHashSync } from '../../core/incremental-indexing/infrastructure/hashing.mjs';
 import { FALLBACK_WEIGHTS_ID } from '../../core/incremental-indexing/infrastructure/sparse-gram-delta.mjs';
+import { createVectorSchema } from '../../core/indexing/indexer-build.js';
 
 function createVectorsDb({ withEpochRetired = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), 'ss-sparse-gram-'));
   const db = new Database(join(dir, 'codebase.db'));
-  db.exec(`
-    CREATE TABLE vectors (
-      id TEXT PRIMARY KEY,
-      file_path TEXT NOT NULL,
-      metadata TEXT
-      ${withEpochRetired ? ', epoch_retired INTEGER' : ''}
-    )
-  `);
+  createVectorSchema(db);
   const insert = db.prepare(withEpochRetired
-    ? 'INSERT INTO vectors (id, file_path, metadata, epoch_retired) VALUES (?, ?, ?, ?)'
-    : 'INSERT INTO vectors (id, file_path, metadata) VALUES (?, ?, ?)');
+    ? 'INSERT INTO vectors (id, file_path, embedding, metadata, epoch_retired) VALUES (?, ?, zeroblob(0), ?, ?)'
+    : 'INSERT INTO vectors (id, file_path, embedding, metadata) VALUES (?, ?, zeroblob(0), ?)');
   return { dir, db, insert };
 }
 

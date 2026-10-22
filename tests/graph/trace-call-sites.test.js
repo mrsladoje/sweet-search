@@ -194,14 +194,6 @@ describe('ss-trace shows every call site of a caller', () => {
     expect(byName['a.Two']).toEqual([5, 6]);
   });
 
-  it('a graph built before call_lines still traces (first line only for qualified calls)', async () => {
-    const graph = await buildGraph(GO_FILES, { dropCallLines: true });
-    const callers = trace(graph, 'Save', { filePath: 'worker/store.go' });
-    const caller = callers.sections.callers.items.find((x) => x.name === 'applyMutations');
-    expect(caller?.contextLines).toEqual([11]);
-    expect(formatStructuralContext(callers)).toContain('call@11');
-  });
-
   it('mergeCallSites folds items per (entity, relationship) and sorts the lines', () => {
     const merged = mergeCallSites([
       { id: 'a', relationship: 'calls', contextLine: 30 },

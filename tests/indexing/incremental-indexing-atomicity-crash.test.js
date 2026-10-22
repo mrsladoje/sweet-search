@@ -29,10 +29,8 @@ import {
   beginRead, endRead, liveReaders, minLiveEpoch,
   bootIdStub, isReaderAlive, READER_GRACE_MS,
 } from '../../core/incremental-indexing/infrastructure/reader-heartbeat.mjs';
-import {
-  applyReconcileSchemaMigrations, migrateVectorsSchema,
-  migrateEntitiesSchema, migrateRelationshipsSchema, ensureEncoderDepsSchema,
-} from '../../core/incremental-indexing/infrastructure/schema-migrations.mjs';
+import { ensureEncoderDepsSchema } from '../../core/incremental-indexing/infrastructure/schema-migrations.mjs';
+import { createVectorSchema } from '../../core/indexing/indexer-build.js';
 
 let stateDir;
 beforeEach(() => {
@@ -281,83 +279,7 @@ describe('Reader heartbeat + grace (plan § 8.1.1)', () => {
   });
 });
 
-describe('Schema migrations (plan § 7.1.6, § 7.2)', () => {
-  function makeDbWithTable(table, ddl) {
-    const db = new Database(':memory:');
-    db.exec(ddl);
-    return db;
-  }
-
-  it('migrateVectorsSchema is idempotent on an existing table', () => {
-    const db = makeDbWithTable('vectors', `
-      CREATE TABLE vectors (
-        id TEXT PRIMARY KEY,
-        file_path TEXT NOT NULL,
-        embedding BLOB NOT NULL,
-        text TEXT
-      );
-    `);
-    const first = migrateVectorsSchema(db);
-    expect(first.added.length).toBeGreaterThan(0);
-    const second = migrateVectorsSchema(db);
-    expect(second.added.length).toBe(0); // already there
-    db.close();
-  });
-
-  it('migrateVectorsSchema is a no-op on a missing table', () => {
-    const db = new Database(':memory:');
-    const r = migrateVectorsSchema(db);
-    expect(r.added).toEqual([]);
-    db.close();
-  });
-
-  it('migrateVectorsSchema adds every expected column', () => {
-    const db = makeDbWithTable('vectors', `
-      CREATE TABLE vectors (
-        id TEXT PRIMARY KEY,
-        file_path TEXT NOT NULL,
-        embedding BLOB NOT NULL
-      );
-    `);
-    const r = migrateVectorsSchema(db);
-    expect(r.added).toEqual(expect.arrayContaining([
-      'chunk_struct_id', 'chunk_text_hash', 'embedding_input_hash',
-      'li_input_hash', 'metadata_fingerprint', 'logical_chunk_id',
-      'epoch_written', 'epoch_retired',
-    ]));
-    db.close();
-  });
-
-  it('migrateEntitiesSchema adds visibility columns', () => {
-    const db = makeDbWithTable('entities', `
-      CREATE TABLE entities (id TEXT PRIMARY KEY, name TEXT);
-    `);
-    const r = migrateEntitiesSchema(db);
-    expect(r.added).toEqual(expect.arrayContaining(['logical_entity_id', 'epoch_written', 'epoch_retired']));
-    db.close();
-  });
-
-  it('migrateRelationshipsSchema adds visibility columns', () => {
-    const db = makeDbWithTable('relationships', `
-      CREATE TABLE relationships (id TEXT PRIMARY KEY, type TEXT);
-    `);
-    const r = migrateRelationshipsSchema(db);
-    expect(r.added).toEqual(expect.arrayContaining(['logical_relationship_id', 'epoch_written', 'epoch_retired']));
-    db.close();
-  });
-
-  it('migrateEntitiesSchema no-op on missing table', () => {
-    const db = new Database(':memory:');
-    expect(migrateEntitiesSchema(db).added).toEqual([]);
-    db.close();
-  });
-
-  it('migrateRelationshipsSchema no-op on missing table', () => {
-    const db = new Database(':memory:');
-    expect(migrateRelationshipsSchema(db).added).toEqual([]);
-    db.close();
-  });
-
+describe('Encoder dependency schema', () => {
   it('ensureEncoderDepsSchema is idempotent', () => {
     const db = new Database(':memory:');
     ensureEncoderDepsSchema(db);
@@ -368,61 +290,13 @@ describe('Schema migrations (plan § 7.1.6, § 7.2)', () => {
     expect(rows.length).toBe(1);
     db.close();
   });
-
-  it('applyReconcileSchemaMigrations runs all three migrations on the right DBs', () => {
-    const vectorsDb = new Database(':memory:');
-    vectorsDb.exec(`CREATE TABLE vectors (id TEXT PRIMARY KEY, file_path TEXT NOT NULL, embedding BLOB NOT NULL);`);
-    const codeGraphDb = new Database(':memory:');
-    codeGraphDb.exec(`
-      CREATE TABLE entities (id TEXT PRIMARY KEY, name TEXT);
-      CREATE TABLE relationships (id TEXT PRIMARY KEY, type TEXT);
-    `);
-    const res = applyReconcileSchemaMigrations({ codeGraph: codeGraphDb, vectors: vectorsDb });
-    expect(res.vectors.added.length).toBeGreaterThan(0);
-    expect(res.entities.added.length).toBeGreaterThan(0);
-    expect(res.relationships.added.length).toBeGreaterThan(0);
-    // encoder_input_dependencies table exists
-    const t = codeGraphDb.prepare(
-      `SELECT name FROM sqlite_master WHERE type='table' AND name='encoder_input_dependencies'`,
-    ).get();
-    expect(t).toBeTruthy();
-    vectorsDb.close();
-    codeGraphDb.close();
-  });
-
-  it('default values mean inserts without the new columns succeed (rollback safety)', () => {
-    const db = makeDbWithTable('vectors', `
-      CREATE TABLE vectors (
-        id TEXT PRIMARY KEY,
-        file_path TEXT NOT NULL,
-        embedding BLOB NOT NULL
-      );
-    `);
-    migrateVectorsSchema(db);
-    // Pre-migration write path (no struct_id, no epoch_*)
-    db.prepare(`INSERT INTO vectors (id, file_path, embedding) VALUES (?, ?, ?)`)
-      .run('old-write', 'src/a.js', Buffer.alloc(4));
-    const row = db.prepare(`SELECT chunk_struct_id, epoch_written, epoch_retired FROM vectors WHERE id = ?`)
-      .get('old-write');
-    expect(row.chunk_struct_id).toBe('');
-    expect(row.epoch_written).toBe(0);
-    expect(row.epoch_retired).toBeNull();
-    db.close();
-  });
 });
 
 describe('Strict MVCC query visibility (plan § 8.1.1)', () => {
   let db;
   beforeEach(() => {
     db = new Database(':memory:');
-    db.exec(`
-      CREATE TABLE vectors (
-        id TEXT PRIMARY KEY,
-        file_path TEXT NOT NULL,
-        embedding BLOB NOT NULL
-      );
-    `);
-    migrateVectorsSchema(db);
+    createVectorSchema(db);
   });
   afterEach(() => { try { db.close(); } catch {} });
 

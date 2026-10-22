@@ -24,6 +24,7 @@ import { readVectorGcState } from '../../core/incremental-indexing/infrastructur
 import { writeManifest, zeroManifest } from '../../core/incremental-indexing/infrastructure/manifest.mjs';
 import { beginRead, endRead, minLiveEpoch } from '../../core/incremental-indexing/infrastructure/reader-heartbeat.mjs';
 import { readManifest } from '../../core/incremental-indexing/infrastructure/manifest.mjs';
+import { createVectorSchema } from '../../core/indexing/indexer-build.js';
 
 function mkState() {
   return fs.mkdtempSync(path.join(os.tmpdir(), 'ss-vec-gc-'));
@@ -33,13 +34,8 @@ function mkState() {
 function makeVectorsDb(stateDir, rows) {
   const dbPath = path.join(stateDir, 'codebase.db');
   const db = new Database(dbPath);
-  db.exec(`
-    CREATE TABLE vectors (
-      id TEXT PRIMARY KEY, embedding BLOB, text TEXT, metadata TEXT,
-      file_path TEXT, epoch_written INTEGER, epoch_retired INTEGER
-    )
-  `);
-  const ins = db.prepare('INSERT INTO vectors (id, epoch_written, epoch_retired) VALUES (?, ?, ?)');
+  createVectorSchema(db);
+  const ins = db.prepare("INSERT INTO vectors (id, file_path, embedding, epoch_written, epoch_retired) VALUES (?, 'a.js', zeroblob(0), ?, ?)");
   for (const r of rows) ins.run(r.id, r.written ?? 0, r.retired ?? null);
   db.close();
   return dbPath;

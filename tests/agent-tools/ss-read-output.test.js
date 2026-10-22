@@ -19,6 +19,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { runInVirtualProcess } from '../../core/agent-tools/virtual-process.js';
 import { runAgentTool } from '../../eval/agent-read-workflows/bin/_ss-helpers.mjs';
 import { fenceBody, formatReadResults, readFile } from '../../core/search/search-read.js';
+import { createGraphSchema } from '../../core/graph/graph-extractor.js';
 
 const FILE = 'lib/pool.rb';
 const TOTAL = 60;
@@ -60,9 +61,7 @@ beforeAll(() => {
   }
   const graph = new Database(path.join(root, '.sweet-search', 'code-graph.db'));
   try {
-    graph.exec(`CREATE TABLE entities (id INTEGER PRIMARY KEY, name TEXT, type TEXT, file_path TEXT,
-      start_line INTEGER, end_line INTEGER, parent_class TEXT, signature TEXT, summary TEXT,
-      stale_since INTEGER DEFAULT NULL)`);
+    createGraphSchema(graph);
     const ins = graph.prepare('INSERT INTO entities (id, name, type, file_path, start_line, end_line, parent_class) VALUES (?, ?, ?, ?, ?, ?, ?)');
     ins.run(1, 'Pool', 'class', FILE, 1, 60, null);
     ins.run(2, 'hold', 'method', FILE, 10, 30, 'Pool');

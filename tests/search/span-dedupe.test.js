@@ -4,6 +4,7 @@ import { dedupeIdenticalSpans, displaySpan, takeDistinctSpans } from '../../core
 import { computeSpanSimilarity, applyFinalListMMR, hasRedundantPair, SPAN_MMR_WEIGHTS, CONTENT_MMR_WEIGHTS } from '../../core/ranking/mmr.js';
 import { shapeFinalList, finalMMRSettings, FINAL_MMR_WEIGHT_PRESETS } from '../../core/search/search-postprocess.js';
 import { applyPostRetrieval } from '../../core/search/index.js';
+import { createGraphSchema } from '../../core/graph/graph-extractor.js';
 
 // The r3h-dgraph-23 shape: the index splits movePredicate into sub-chunks and
 // every sub-chunk carries the enclosing symbol span (140-251).
@@ -225,15 +226,7 @@ describe('shapeFinalList', () => {
 
 function createGraphDb() {
   const db = new Database(':memory:');
-  db.exec(`
-    CREATE TABLE entities (
-      id TEXT PRIMARY KEY, file_path TEXT NOT NULL, type TEXT NOT NULL, name TEXT NOT NULL,
-      signature TEXT, start_line INTEGER, end_line INTEGER, stale_since INTEGER DEFAULT NULL
-    );
-    CREATE TABLE relationships (
-      source_id TEXT, target_id TEXT, target_name TEXT NOT NULL, type TEXT NOT NULL, weight REAL DEFAULT 1.0
-    );
-  `);
+  createGraphSchema(db);
   const ent = db.prepare('INSERT INTO entities (id, file_path, type, name, signature, start_line, end_line) VALUES (?, ?, ?, ?, ?, ?, ?)');
   const rel = db.prepare('INSERT INTO relationships (source_id, target_id, target_name, type, weight) VALUES (?, ?, ?, ?, ?)');
   ent.run('mp', 'src/tablet.go', 'method', 'movePredicate', 'func movePredicate()', 140, 251);
