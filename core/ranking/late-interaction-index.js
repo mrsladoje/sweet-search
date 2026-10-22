@@ -1256,7 +1256,8 @@ export class LateInteractionIndex {
       if (isPerToken) {
         doc.minArray = minArray;
         doc.scaleArray = scaleArray;
-      } else {
+      } else if (isQuantized) {
+        // Float32 docs carry no min/scale: with them the scorer read the floats as int8.
         doc.min = min;
         doc.scale = scale;
       }
@@ -2109,162 +2110,106 @@ export class LateInteractionIndex {
     // `this.documents.size`.
     const effectiveTotal = this.documents.size + this._evictedDocs;
 
-    // Use segmented format when the doc count exceeds one segment.
-    // Always rewrite ALL segments from this.documents (the authoritative
-    // state) — never reuse stale segment files from a previous load,
-    // because documents may have been removed since then.
-    const useSegmented = effectiveTotal >= this._segmentSize;
+    // Always the segmented SSLX format, at any size. Always rewrite ALL segments from
+    // this.documents (the authoritative state) — never reuse stale segment files from a
+    // previous load, because documents may have been removed since then. (Below one
+    // segment this wrote one JSON file, ~4x larger, that the incremental path rewrote
+    // in full for every edited file.)
+    if (!this._loadedExisting) {
+      if (this._currentSegment.size > 0) {
+        await this._flushSegment();
+      }
 
-    if (useSegmented) {
-      if (!this._loadedExisting) {
-        if (this._currentSegment.size > 0) {
-          await this._flushSegment();
-        }
+      const flushedCount = this._segments.reduce((sum, segment) => sum + segment.count, 0);
+      if (flushedCount === effectiveTotal && this._segments.length > 0) {
+        // Staging-aware segment directory. _segmentDir was pre-seeded by
+        // resetForSave() when staging; otherwise derive from indexPath.
+        const segDir = this._segmentDir || (this.indexPath + '.segments');
+        const manifest = {
+          version: '3.0',
+          format: 'sslx-v3',
+          modelId: this.modelId,
+          tokenDim: this.tokenDim,
+          matryoshkaDim: this.matryoshkaDim || 0,
+          maxTokens: this.maxTokens,
+          useInt8: this.useInt8,
+          quantBits: this.quantBits,
+          poolFactor: this.poolFactor,
+          whtSeed: this.whtSeed || 0,
+          whtOrdering: this.whtOrdering,
+          totalDocuments: effectiveTotal,
+          segments: this._segments.map((segment) => ({
+            path: path.basename(segment.path),
+            count: segment.count,
+          })),
+        };
 
-        const flushedCount = this._segments.reduce((sum, segment) => sum + segment.count, 0);
-        if (flushedCount === effectiveTotal && this._segments.length > 0) {
-          // Staging-aware segment directory. _segmentDir was pre-seeded by
-          // resetForSave() when staging; otherwise derive from indexPath.
-          const segDir = this._segmentDir || (this.indexPath + '.segments');
-          const manifest = {
-            version: '3.0',
-            format: 'sslx-v3',
-            modelId: this.modelId,
-            tokenDim: this.tokenDim,
-            matryoshkaDim: this.matryoshkaDim || 0,
-            maxTokens: this.maxTokens,
-            useInt8: this.useInt8,
-            quantBits: this.quantBits,
-            poolFactor: this.poolFactor,
-            whtSeed: this.whtSeed || 0,
-            whtOrdering: this.whtOrdering,
-            totalDocuments: effectiveTotal,
-            segments: this._segments.map((segment) => ({
-              path: path.basename(segment.path),
-              count: segment.count,
-            })),
+        await fs.writeFile(path.join(segDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
+        if (this._wushCalibration) {
+          const cal = {
+            eigenVecs: Array.from(this._wushCalibration.eigenVecs),
+            invSqrtEigenVals: Array.from(this._wushCalibration.invSqrtEigenVals),
+            dim: this.tokenDim,
           };
-
-          await fs.writeFile(path.join(segDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
-          if (this._wushCalibration) {
-            const cal = {
-              eigenVecs: Array.from(this._wushCalibration.eigenVecs),
-              invSqrtEigenVals: Array.from(this._wushCalibration.invSqrtEigenVals),
-              dim: this.tokenDim,
-            };
-            await fs.writeFile(path.join(segDir, 'wush-calibration.json'), JSON.stringify(cal));
-          }
-          // Stub stores segmentDir as a basename resolved relative to the
-          // stub's dirname on load. When staging, record the basename derived
-          // from _finalIndexPath so that after atomic promotion the stub
-          // points at {finalIndexPath}.segments without a rewrite.
-          const stubSegmentDirBasename = this._finalIndexPath
-            ? path.basename(this._finalIndexPath) + '.segments'
-            : path.basename(segDir);
-          await fs.writeFile(this.indexPath, JSON.stringify({
-            version: '3.0',
-            format: 'segmented',
-            segmentDir: stubSegmentDirBasename,
-          }));
-          this._segmentDir = segDir;
-          this._currentSegment = new Map();
-          await this._saveAliasSidecar();
-          if (process.env.DEBUG) console.log(`LateInteraction: Saved ${this.documents.size} documents across ${this._segments.length} segments`);
-          return;
+          await fs.writeFile(path.join(segDir, 'wush-calibration.json'), JSON.stringify(cal));
         }
+        // Stub stores segmentDir as a basename resolved relative to the
+        // stub's dirname on load. When staging, record the basename derived
+        // from _finalIndexPath so that after atomic promotion the stub
+        // points at {finalIndexPath}.segments without a rewrite.
+        const stubSegmentDirBasename = this._finalIndexPath
+          ? path.basename(this._finalIndexPath) + '.segments'
+          : path.basename(segDir);
+        await fs.writeFile(this.indexPath, JSON.stringify({
+          version: '3.0',
+          format: 'segmented',
+          segmentDir: stubSegmentDirBasename,
+        }));
+        this._segmentDir = segDir;
+        this._currentSegment = new Map();
+        await this._saveAliasSidecar();
+        if (process.env.DEBUG) console.log(`LateInteraction: Saved ${this.documents.size} documents across ${this._segments.length} segments`);
+        return;
       }
+    }
 
-      // Staging-aware segment directory (see resetForSave comment)
-      const segDir = this._segmentDir || (this.indexPath + '.segments');
-      await fs.mkdir(segDir, { recursive: true });
+    // Staging-aware segment directory (see resetForSave comment)
+    const segDir = this._segmentDir || (this.indexPath + '.segments');
+    await fs.mkdir(segDir, { recursive: true });
 
-      // Remove any old segment files in this directory
-      try {
-        const existing = await fs.readdir(segDir);
-        for (const f of existing) {
-          await fs.unlink(path.join(segDir, f));
-        }
-      } catch (_err) { /* dir may not exist yet */ }
-
-      // Write fresh segments from this.documents
-      const newSegments = [];
-      let batch = new Map();
-      let segIdx = 0;
-
-      for (const [id, doc] of this.documents) {
-        batch.set(id, doc);
-        if (batch.size >= this._segmentSize) {
-          const segPath = path.join(segDir, `segment-${String(segIdx).padStart(4, '0')}.bin`);
-          await this._writeSegmentFile(segPath, batch);
-          newSegments.push({ path: path.basename(segPath), count: batch.size });
-          batch = new Map();
-          segIdx++;
-        }
+    // Remove any old segment files in this directory
+    try {
+      const existing = await fs.readdir(segDir);
+      for (const f of existing) {
+        await fs.unlink(path.join(segDir, f));
       }
-      // Flush remainder
-      if (batch.size > 0) {
+    } catch (_err) { /* dir may not exist yet */ }
+
+    // Write fresh segments from this.documents
+    const newSegments = [];
+    let batch = new Map();
+    let segIdx = 0;
+
+    for (const [id, doc] of this.documents) {
+      batch.set(id, doc);
+      if (batch.size >= this._segmentSize) {
         const segPath = path.join(segDir, `segment-${String(segIdx).padStart(4, '0')}.bin`);
         await this._writeSegmentFile(segPath, batch);
         newSegments.push({ path: path.basename(segPath), count: batch.size });
+        batch = new Map();
+        segIdx++;
       }
-
-      const manifest = {
-        version: '3.0',
-        format: 'sslx-v3',
-        modelId: this.modelId,
-        tokenDim: this.tokenDim,
-        matryoshkaDim: this.matryoshkaDim || 0,
-        maxTokens: this.maxTokens,
-        useInt8: this.useInt8,
-        quantBits: this.quantBits,
-        poolFactor: this.poolFactor,
-        whtSeed: this.whtSeed || 0,
-        whtOrdering: this.whtOrdering,
-        totalDocuments: this.documents.size,
-        segments: newSegments,
-      };
-
-      await fs.writeFile(path.join(segDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
-
-      // CRA-3: Persist WUSH calibration alongside segments
-      if (this._wushCalibration) {
-        const cal = {
-          eigenVecs: Array.from(this._wushCalibration.eigenVecs),
-          invSqrtEigenVals: Array.from(this._wushCalibration.invSqrtEigenVals),
-          dim: this.tokenDim,
-        };
-        await fs.writeFile(path.join(segDir, 'wush-calibration.json'), JSON.stringify(cal));
-      }
-
-      // Write a stub at the main index path pointing to segments.
-      // segmentDir is stored as a basename relative to the stub's dirname so
-      // atomic stage-and-swap semantics work: when staging to {live}.tmp with
-      // segments at {live}.tmp-stage.segments, the stub records the POST-swap
-      // basename ({basename(finalIndexPath)}.segments) so no stub rewrite is
-      // needed when the caller atomically promotes both the stub and the
-      // segments directory.
-      const stubSegmentDirBasename = this._finalIndexPath
-        ? path.basename(this._finalIndexPath) + '.segments'
-        : path.basename(segDir);
-      await fs.writeFile(this.indexPath, JSON.stringify({
-        version: '3.0',
-        format: 'segmented',
-        segmentDir: stubSegmentDirBasename,
-      }));
-
-      // Update internal state to reflect fresh segments
-      this._segmentDir = segDir;
-      this._segments = newSegments.map(s => ({ path: path.join(segDir, s.path), count: s.count }));
-      this._currentSegment = new Map();
-
-      await this._saveAliasSidecar();
-      if (process.env.DEBUG) console.log(`LateInteraction: Saved ${this.documents.size} documents across ${newSegments.length} segments`);
-      return;
+    }
+    // Flush remainder
+    if (batch.size > 0) {
+      const segPath = path.join(segDir, `segment-${String(segIdx).padStart(4, '0')}.bin`);
+      await this._writeSegmentFile(segPath, batch);
+      newSegments.push({ path: path.basename(segPath), count: batch.size });
     }
 
-    // Legacy single-file save (for small indexes or when no add() was called)
-    const header = {
-      version: '2.1',
+    const manifest = {
+      version: '3.0',
+      format: 'sslx-v3',
       modelId: this.modelId,
       tokenDim: this.tokenDim,
       matryoshkaDim: this.matryoshkaDim || 0,
@@ -2274,71 +2219,45 @@ export class LateInteractionIndex {
       poolFactor: this.poolFactor,
       whtSeed: this.whtSeed || 0,
       whtOrdering: this.whtOrdering,
+      totalDocuments: this.documents.size,
+      segments: newSegments,
     };
 
-    let bytesWritten = 0;
+    await fs.writeFile(path.join(segDir, 'manifest.json'), JSON.stringify(manifest, null, 2));
 
-    await new Promise((resolve, reject) => {
-      const ws = createWriteStream(this.indexPath, { encoding: 'utf-8' });
-      ws.on('error', reject);
-
-      // Write header + opening array bracket
-      const headerStr = JSON.stringify(header).slice(0, -1) + ',"documents":[';
-      ws.write(headerStr);
-      bytesWritten += headerStr.length;
-
-      let first = true;
-      for (const [id, doc] of this.documents) {
-        const obj = {
-          id,
-          tokens: Array.from(doc.tokens),
-          numTokens: doc.numTokens,
-          dim: doc.dim,
-          metadata: doc.metadata,
-        };
-        if (doc.quantBits === 4) obj.quantBits = 4;
-        if (doc.tokenNorms) obj.tokenNorms = Array.from(doc.tokenNorms);
-        if (doc.preNorms) obj.preNorms = Array.from(doc.preNorms);
-        // Per-token quant (Phase 1/4) vs per-doc quant (legacy)
-        if (doc.minArray) {
-          obj.minArray = Array.from(doc.minArray);
-          obj.scaleArray = Array.from(doc.scaleArray);
-        } else {
-          obj.min = doc.min;
-          obj.scale = doc.scale;
-        }
-        const entry = JSON.stringify(obj);
-
-        const chunk = first ? entry : ',' + entry;
-        first = false;
-        ws.write(chunk);
-        bytesWritten += chunk.length;
-      }
-
-      ws.end(']}', () => {
-        bytesWritten += 2;
-        resolve();
-      });
-    });
-
-    // CRA-3: Persist WUSH calibration alongside legacy single-file index
+    // CRA-3: Persist WUSH calibration alongside segments
     if (this._wushCalibration) {
       const cal = {
         eigenVecs: Array.from(this._wushCalibration.eigenVecs),
         invSqrtEigenVals: Array.from(this._wushCalibration.invSqrtEigenVals),
         dim: this.tokenDim,
       };
-      const wushPath = this.indexPath + '.wush-calibration.json';
-      await fs.writeFile(wushPath, JSON.stringify(cal));
+      await fs.writeFile(path.join(segDir, 'wush-calibration.json'), JSON.stringify(cal));
     }
 
-    await this._saveAliasSidecar();
+    // Write a stub at the main index path pointing to segments.
+    // segmentDir is stored as a basename relative to the stub's dirname so
+    // atomic stage-and-swap semantics work: when staging to {live}.tmp with
+    // segments at {live}.tmp-stage.segments, the stub records the POST-swap
+    // basename ({basename(finalIndexPath)}.segments) so no stub rewrite is
+    // needed when the caller atomically promotes both the stub and the
+    // segments directory.
+    const stubSegmentDirBasename = this._finalIndexPath
+      ? path.basename(this._finalIndexPath) + '.segments'
+      : path.basename(segDir);
+    await fs.writeFile(this.indexPath, JSON.stringify({
+      version: '3.0',
+      format: 'segmented',
+      segmentDir: stubSegmentDirBasename,
+    }));
 
-    const sizeMB = (bytesWritten / 1024 / 1024).toFixed(2);
-    // DEBUG-only: this prints during the indexer's parallel embed+LI progress region;
-    // a direct write here moves the cursor and duplicates a bar. The indexer's
-    // "✓ Late interaction index built: N docs (X MB)" line already reports this.
-    if (process.env.DEBUG) console.log(`LateInteraction: Saved ${this.documents.size} documents (${sizeMB} MB)`);
+    // Update internal state to reflect fresh segments
+    this._segmentDir = segDir;
+    this._segments = newSegments.map(s => ({ path: path.join(segDir, s.path), count: s.count }));
+    this._currentSegment = new Map();
+
+    await this._saveAliasSidecar();
+    if (process.env.DEBUG) console.log(`LateInteraction: Saved ${this.documents.size} documents across ${newSegments.length} segments`);
   }
 
   /**

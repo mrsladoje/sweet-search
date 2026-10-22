@@ -121,7 +121,8 @@ export function nextStep(status) {
       : 'sweet-search init';
   }
   if (!index.ready) {
-    return index.reason === 'config-fingerprint-mismatch' ? 'sweet-search index --full' : 'sweet-search index';
+    return index.reason === 'config-fingerprint-mismatch' || index.reason === 'li-format-outdated'
+      ? 'sweet-search index --full' : 'sweet-search index';
   }
   if (server.state === 'failed') return 'sweet-search daemon restart';
   return null;
@@ -197,6 +198,7 @@ const INDEX_REASONS = {
   'no-config-fingerprint': 'no complete index yet (only part of it was built)',
   'config-fingerprint-mismatch': 'built by an older index format; it needs a full rebuild',
   'missing-vectors-db': 'the search database is missing',
+  'li-format-outdated': 'its late-interaction index is in an older single-file format; it needs a full rebuild',
 };
 
 const SERVER_STATES = {
