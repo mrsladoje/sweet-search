@@ -407,6 +407,12 @@ export class LateInteractionIndex {
     // last read whose whole-file CRC32 was verified. Supplied by the caller so
     // its lifetime (and its bound) is owned where the ticks are, not here.
     this._positionsCache = options.positionsCache instanceof Map ? options.positionsCache : null;
+    // Full load only: a previously loaded index of the same path. Its docs of every segment
+    // whose file and stale bitmap did not change are reused instead of read again (the
+    // daemon reloads on every epoch; most segments are unchanged between two).
+    this._reuseFrom = options.reuseFrom instanceof LateInteractionIndex ? options.reuseFrom : null;
+    // segment path -> { identity, staleIndices: docIndexes stale at load, live: [{id, docIndex, entry}] }
+    this._segmentLoads = new Map();
     // Set by `load()` when it swallows a non-ENOENT failure; `init()` rethrows
     // it for positions-only readers (see init()).
     this._loadFailure = null;
@@ -2410,6 +2416,37 @@ export class LateInteractionIndex {
     return live;
   }
 
+  /**
+   * A segment's live docs for a full load, recorded in `_segmentLoads`. Reuses the docs a
+   * `reuseFrom` index loaded from the same file (same identity), filtered by the current
+   * stale bitmap: tombstones only accumulate on a sealed segment, so the result equals a
+   * fresh read. Reads the file when it changed, or when a doc stale at the earlier load is
+   * live now (only a rewrite would do that, and rewrites change the identity).
+   */
+  async _liveSegmentDocsForLoad(segPath) {
+    const identity = segmentIdentity(segPath)?.key ?? null;
+    const prev = this._reuseFrom?._segmentLoads.get(segPath);
+    const bitmap = this._loadSegmentStaleBitmap(segPath);
+    let live;
+    let staleIndices;
+    if (identity && prev && prev.identity === identity
+      && prev.staleIndices.every((docIndex) => bitmap && isSet(bitmap, docIndex))) {
+      live = bitmap ? prev.live.filter(({ docIndex }) => !isSet(bitmap, docIndex)) : prev.live;
+      staleIndices = live.length === prev.live.length ? prev.staleIndices
+        : [...prev.staleIndices, ...prev.live.filter(({ docIndex }) => isSet(bitmap, docIndex)).map(({ docIndex }) => docIndex)];
+    } else {
+      live = await this.readLiveSegmentDocs(segPath);
+      staleIndices = [];
+      if (bitmap) {
+        for (let docIndex = 0; docIndex < bitmap.capacity; docIndex++) {
+          if (isSet(bitmap, docIndex)) staleIndices.push(docIndex);
+        }
+      }
+    }
+    this._segmentLoads.set(segPath, { identity, staleIndices, live });
+    return live;
+  }
+
   /** Copy the encoding parameters of a segmented manifest onto this instance. */
   _applySegmentManifest(manifest) {
     this.tokenDim = manifest.tokenDim;
@@ -2460,11 +2497,12 @@ export class LateInteractionIndex {
         continue;
       }
 
-      for (const { id, entry, docIndex } of await this.readLiveSegmentDocs(segPath)) {
+      for (const { id, entry, docIndex } of await this._liveSegmentDocsForLoad(segPath)) {
         this.documents.set(id, entry);
         this._docSegmentPositions.set(id, { segmentPath: segPath, docIndex });
       }
     }
+    this._reuseFrom = null;
 
     for (const doc of this.documents.values()) {
       this._hasPerTokenQuant = !!doc.minArray;

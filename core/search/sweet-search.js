@@ -541,6 +541,11 @@ export class SweetSearch {
     if (!grepOnly && this.hasLateInteractionIndex) {
       try {
         const nextLi = new LateInteractionIndex(this._lateInteractionOptions);
+        // Reuse the loaded docs of unchanged segments: an epoch usually adds one segment.
+        const previousLi = this.lateInteractionIndex;
+        if (previousLi?.initialized && !previousLi.positionsOnly && previousLi.indexPath === nextLi.indexPath) {
+          nextLi._reuseFrom = previousLi;
+        }
         await nextLi.init();
         this.lateInteractionIndex = nextLi;
         this._clearChunkLocationCache();
