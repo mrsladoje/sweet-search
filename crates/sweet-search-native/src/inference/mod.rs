@@ -273,18 +273,18 @@ pub(crate) fn cuda_compute_capability(device: &Device) -> f32 {
 /// preserved — the only precision loss is in storage, not compute, and it
 /// comes out below the MRR noise floor.
 ///
-/// F16 is still gated off because it destroys retrieval on this model:
-/// gencodesearchnet MRR collapses 82% → 64% (python 93.1% → 63.3%) purely
-/// from residual F16 noise compounding across 12 transformer layers. The
-/// per-token cosine against the FP32 reference is still ~0.9999 at F16, but
-/// small errors accumulate in the residual stream and flip enough top-K
-/// rankings to break retrieval. BF16 avoids this because it has F32's
-/// exponent range — rounding errors stay bounded.
+/// Metal F16 stays opt-in. In April it measured gencodesearchnet MRR 82% →
+/// 64% (python 93.1% → 63.3%), but that did not reproduce after the padding
+/// mask and rotary fixes: GCSN dev 87.02% (F16 embedding, F32 LI) vs 87.06%
+/// (BF16 embedding, F32 LI) on Metal, 2026-10-22.
 ///
 /// CUDA is model-specific:
-///   - NomicBERT embedding defaults to BF16 on Ampere+ (SM >= 8.0). Verified
-///     pooled cosine stays in the retrieval-safe band while indexing gets the
-///     Tensor Core / memory-bandwidth win.
+///   - NomicBERT embedding defaults to F16 on Ampere+ (SM >= 8.0). F16 and
+///     BF16 run at the same Tensor Core rate and move the same bytes, and F16
+///     came ~100x closer to the upstream reference on A4000, L4, H100 and
+///     RTX PRO 4000 (2026-10-19). The Metal F16 MRR collapse below did not
+///     reproduce for this model: GCSN dev 87.02% (F16) vs 87.06% (BF16) on
+///     Metal, 2026-10-22. SWEET_SEARCH_NATIVE_DTYPE=bf16 restores BF16.
 ///   - ModernBERT late interaction stays F32 by default, even when
 ///     SWEET_SEARCH_NATIVE_DTYPE=bf16 is set. The measurement that pinned it
 ///     (RTX 4090 BF16 per-token min ~0.70, mean ~0.974 against F32 CPU) was
@@ -342,7 +342,7 @@ pub(crate) fn optimal_dtype(device: &Device, model_kind: ModelKind) -> DType {
             ModelKind::Embedding => match global_dtype.as_str() {
                 "f16" | "fp16" | "float16" => DType::F16,
                 "bf16" | "bfloat16" => DType::BF16,
-                _ if cuda_compute_capability(device) >= 8.0 => DType::BF16,
+                _ if cuda_compute_capability(device) >= 8.0 => DType::F16,
                 _ => DType::F32,
             },
             ModelKind::LateInteraction => DType::F32,

@@ -481,7 +481,7 @@ Implemented in `crates/sweet-search-native/src/inference/mod.rs::optimal_dtype`.
 
 | Model | CUDA SM | Default dtype | Rationale |
 |---|---:|---|---|
-| NomicBERT embedding | ≥ 8.0 | **BF16** | Verified pooled-output parity is retrieval-safe on RTX 4090 while enabling Tensor Core / memory-bandwidth speedups. |
+| NomicBERT embedding | ≥ 8.0 | **F16** | Same Tensor Core rate and bytes as BF16, ~100x closer to the upstream reference (A4000, L4, H100, RTX PRO 4000); GCSN dev MRR equal to BF16 (Metal, 2026-10-22). |
 | NomicBERT embedding | < 8.0 or unknown | **F32** | No BF16 tensor cores, and older F16 paths are not quality-gated. |
 | ModernBERT late interaction | all | **F32** | BF16 valid-token parity is not retrieval-safe for per-token MaxSim vectors (min ≈ 0.70, mean ≈ 0.974 on RTX 4090), even after flash-attn and mask fixes. |
 
