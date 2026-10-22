@@ -8,6 +8,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { readGrepFiles } from '../helpers/file-state.js';
 
 let root;
 const saved = process.env.SWEET_SEARCH_PROJECT_ROOT;
@@ -38,7 +39,7 @@ describe('full build sparse-gram step', () => {
     if (!hasNativeSparseGramSupport()) return;
     await buildSparseGramArtifact(['src/a.js'], false);
 
-    const state = JSON.parse(readFileSync(join(root, '.sweet-search/grep-corpus-state.json'), 'utf8'));
+    const state = { files: readGrepFiles(join(root, '.sweet-search')) };
     expect(Object.keys(state.files)).toEqual(expect.arrayContaining(['vendor/lib/cert.go']));
     expect(state.files['src/a.js']).toBeUndefined();
     expect(existsSync(join(root, '.sweet-search/codebase-sparse-grams.idx.deltas'))).toBe(false);

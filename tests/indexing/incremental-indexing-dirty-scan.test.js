@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 import { scanDirtyAndEnqueue } from '../../core/incremental-indexing/application/dirty-scan.mjs';
+import { writeMerkleState } from '../helpers/file-state.js';
 
 let sandbox;
 let stateDir;
@@ -24,7 +25,7 @@ function statTuple(absPath) {
 }
 
 function writeMerkle(files) {
-  writeFileSync(join(stateDir, 'merkle-state.json'), JSON.stringify({ version: '2.4', files }), 'utf-8');
+  writeMerkleState(stateDir, { version: '2.5', files });
 }
 
 function queuedPaths() {

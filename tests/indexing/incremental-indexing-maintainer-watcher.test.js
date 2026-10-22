@@ -27,6 +27,7 @@ import { startWatcher, __testing } from '../../core/indexing/maintainer-watcher.
 import { createAdmissionPolicy } from '../../core/indexing/admission-policy.js';
 import { scanDirtyAndEnqueue } from '../../core/incremental-indexing/application/dirty-scan.mjs';
 import { createWatchWake, maintainerWatchEnabled } from '../../core/indexing/index-maintainer.mjs';
+import { writeMerkleState } from '../helpers/file-state.js';
 
 const QUEUE = 'index-maintainer-queue.jsonl';
 
@@ -65,7 +66,7 @@ describe('maintainer-watcher pure helpers', () => {
   it('queue-line shape matches the dirty-scan producer exactly (modulo source)', async () => {
     // Produce a reference line from the real dirty-scan producer.
     writeFileSync(join(sandbox, 'src/ref.js'), 'export const a = 1;\n', 'utf-8');
-    writeFileSync(join(stateDir, 'merkle-state.json'), JSON.stringify({ version: '2.4', files: {} }), 'utf-8');
+    writeMerkleState(stateDir, { version: '2.5', files: {} });
     await scanDirtyAndEnqueue({ projectRoot, stateDir });
     const ref = queueLines().find((l) => l.file_path === 'src/ref.js');
     expect(ref).toBeTruthy();
@@ -301,9 +302,9 @@ describe('maintainer-watcher directory and config events', () => {
   });
 
   it('a deleted directory queues every merkle file under it', () => {
-    writeFileSync(join(stateDir, 'merkle-state.json'), JSON.stringify({
+    writeMerkleState(stateDir, {
       files: { 'dirA/a.js': {}, 'dirA/sub/b.ts': {}, 'dirAB/c.js': {}, 'src/d.js': {} },
-    }));
+    });
     __testing.handleEvents([{ path: join(projectRoot, 'dirA'), type: 'delete' }], ctxFor(createAdmissionPolicy({ projectRoot })));
     expect(queueLines().map((l) => l.file_path).sort()).toEqual(['dirA', 'dirA/a.js', 'dirA/sub/b.ts']);
   });
@@ -388,7 +389,7 @@ describe('startWatcher directory rename (live)', () => {
     mkdirSync(join(projectRoot, 'dirA'), { recursive: true });
     writeFileSync(join(projectRoot, 'dirA/a.js'), 'a');
     writeFileSync(join(projectRoot, 'dirA/b.js'), 'b');
-    writeFileSync(join(stateDir, 'merkle-state.json'), JSON.stringify({ files: { 'dirA/a.js': {}, 'dirA/b.js': {} } }));
+    writeMerkleState(stateDir, { files: { 'dirA/a.js': {}, 'dirA/b.js': {} } });
     let woke = 0;
     handle = await startWatcher({ stateDir, projectRoot, admissionPolicy: createAdmissionPolicy({ projectRoot }), onEvent: () => { woke += 1; } });
     expect(handle).toBeTruthy();

@@ -23,6 +23,7 @@ import { resolveLatestRecords } from '../../core/incremental-indexing/infrastruc
 import { LateInteractionIndex } from '../../core/ranking/late-interaction-index.js';
 import { FloatVectorStore } from '../../core/vector-store/float-vector-store.js';
 import { readIndexFileSync, BinaryHNSWIndex } from '../../core/vector-store/binary-hnsw-index.js';
+import { readIndexedFiles } from '../helpers/file-state.js';
 
 // These tests cover the float-512 store, which is written only with
 // SS_FIX_FLOAT512=1 (off by default).
@@ -202,7 +203,7 @@ describe('production incremental Reconciler', () => {
     writeFileSync(sourceFile, 'export function touchedThing() { return 1; }\n');
     enqueue(stateDir, 'src/sample.js');
     expect((await tick()).files_processed).toBe(1);
-    const before = readJson(join(stateDir, 'merkle-state.json')).files['src/sample.js'];
+    const before = readIndexedFiles(stateDir)['src/sample.js'];
 
     const later = new Date(Date.now() + 60_000);
     utimesSync(sourceFile, later, later);
@@ -211,7 +212,7 @@ describe('production incremental Reconciler', () => {
     expect(second.content_unchanged).toBe(1);
     expect(second.files_processed).toBe(0);
 
-    const after = readJson(join(stateDir, 'merkle-state.json')).files['src/sample.js'];
+    const after = readIndexedFiles(stateDir)['src/sample.js'];
     expect(after.mtime_ns).not.toBe(before.mtime_ns);
     expect(after.hash).toBe(before.hash);
     expect(after.chunkIds).toEqual(before.chunkIds);
@@ -371,7 +372,7 @@ describe('production incremental Reconciler', () => {
 
     const manifest1 = readJson(join(stateDir, 'reconcile-manifest.json'));
     expect(manifest1.epoch).toBe(1);
-    expect(readJson(join(stateDir, 'merkle-state.json')).files['src/sample.js'].epoch).toBe(1);
+    expect(readIndexedFiles(stateDir)['src/sample.js'].epoch).toBe(1);
     expect(existsSync(join(stateDir, 'index-maintainer-queue.processing.jsonl'))).toBe(false);
 
     const live1 = vectorRows(stateDir).filter((row) => row.epoch_retired == null);
@@ -479,7 +480,7 @@ describe('production incremental Reconciler', () => {
     expect((await liDocumentIds(stateDir)).size).toBe(0);
     expect(existsSync(join(stateDir, 'codebase-late-interaction.db.segments', 'segment-0001.bin.stale.bin'))).toBe(true);
     expect(sparseLatest(stateDir)).toMatchObject({ filePath: 'src/sample.js', deleted: true });
-    expect(readJson(join(stateDir, 'merkle-state.json')).files['src/sample.js']).toBeUndefined();
+    expect(readIndexedFiles(stateDir)['src/sample.js']).toBeUndefined();
     expect(readdirSync(stateDir)).toContain('reconcile-metrics.jsonl');
   });
 

@@ -10,6 +10,7 @@ import { updateIncrementalStatePhase } from '../../core/indexing/indexer-phases.
 import { contentHashSync } from '../../core/incremental-indexing/infrastructure/hashing.mjs';
 import { readManifest } from '../../core/incremental-indexing/infrastructure/manifest.mjs';
 import { FALLBACK_WEIGHTS_ID } from '../../core/incremental-indexing/infrastructure/sparse-gram-delta.mjs';
+import { readIndexedFiles } from '../helpers/file-state.js';
 
 describe('indexer manifest publication', () => {
   let stateDir;
@@ -166,9 +167,7 @@ describe('indexer manifest publication', () => {
         manifestStateDir: path.join(projectRoot, '.sweet-search'),
       });
 
-      const state = JSON.parse(
-        fs.readFileSync(path.join(projectRoot, '.sweet-search', 'merkle-state.json'), 'utf-8'),
-      );
+      const state = { files: readIndexedFiles(path.join(projectRoot, '.sweet-search')) };
 
       expect(state.files[relativeFile]).toMatchObject({
         hash: contentHashSync(bytes),

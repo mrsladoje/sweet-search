@@ -23,6 +23,7 @@ import Database from 'better-sqlite3';
 import { contentHashSync } from '../../core/incremental-indexing/infrastructure/hashing.mjs';
 import { createVectorSchema } from '../../core/indexing/indexer-build.js';
 import { buildConfigFingerprint } from '../../core/indexing/config-fingerprint.js';
+import { writeMerkleState } from '../helpers/file-state.js';
 
 /**
  * Seed a complete baseline so a default-on reconcile tick is allowed to run.
@@ -195,7 +196,7 @@ describe('sweet-search reconcile/rebuild — CLI dispatcher', () => {
     writeFileSync(filePath, 'export const value = 1;\n');
     const oldStat = statSync(filePath, { bigint: true });
     const oldHash = contentHashSync(readFileSync(filePath));
-    writeFileSync(join(stateDir, 'merkle-state.json'), JSON.stringify({
+    writeMerkleState(stateDir, {
       lastIndex: '2026-05-17T00:00:00.000Z',
       files: {
         'src/a.js': {
@@ -205,7 +206,7 @@ describe('sweet-search reconcile/rebuild — CLI dispatcher', () => {
           inode: oldStat.ino.toString(),
         },
       },
-    }));
+    });
     writeFileSync(join(stateDir, 'reconcile-manifest.json'), JSON.stringify({ epoch: 3 }));
     writeFileSync(join(stateDir, 'index-maintainer-queue.jsonl'), JSON.stringify({
       file_path: 'src/a.js',

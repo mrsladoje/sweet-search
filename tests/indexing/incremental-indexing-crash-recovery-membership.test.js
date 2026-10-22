@@ -10,6 +10,7 @@ import { LateInteractionIndex } from '../../core/ranking/late-interaction-index.
 import { FloatVectorStore } from '../../core/vector-store/float-vector-store.js';
 import { readIndexIdsSync } from '../../core/vector-store/binary-hnsw-index.js';
 import { isSet, loadBitmap } from '../../core/incremental-indexing/infrastructure/tombstone-bitmap.mjs';
+import { readIndexedFiles, writeIndexedFiles } from '../helpers/file-state.js';
 
 // These tests cover the float-512 store, which is written only with
 // SS_FIX_FLOAT512=1 (off by default).
@@ -117,7 +118,7 @@ describe('crash-consistency: torn SQLite-committed row is re-added to HNSW + LI'
   function simulateCrashResidue() {
     for (const name of [
       'codebase-binary-hnsw.idx', 'codebase-binary-hnsw.stale.bin',
-      'codebase-float-vectors.bin', 'merkle-state.json',
+      'codebase-float-vectors.bin', 'merkle-state.json', 'file-state.db', 'file-state.db-wal', 'file-state.db-shm',
     ]) {
       try { unlinkSync(join(stateDir, name)); } catch { /* ok if absent */ }
     }
@@ -163,9 +164,9 @@ describe('crash-consistency: torn SQLite-committed row is re-added to HNSW + LI'
 
     // The merkle now records the file's chunk ids (a torn add produced no fresh
     // newIds; the repair still records the recovered ids).
-    const merkle = readJson(join(stateDir, 'merkle-state.json'));
-    expect(merkle.files[rel]).toBeTruthy();
-    expect(merkle.files[rel].chunkIds.length).toBe(liveAfter.size);
+    const files = readIndexedFiles(stateDir);
+    expect(files[rel]).toBeTruthy();
+    expect(files[rel].chunkIds.length).toBe(liveAfter.size);
   });
 
   it('non-crash re-tick (merkle intact) does NOT trigger the repair (no needless re-add)', async () => {
@@ -180,10 +181,8 @@ describe('crash-consistency: torn SQLite-committed row is re-added to HNSW + LI'
     // the file is processed again, but keep the merkle epoch intact (so prior
     // rows are NOT seen as torn) — mirrors a benign re-queue of an unchanged
     // file whose recorded hash drifted.
-    const merklePath = join(stateDir, 'merkle-state.json');
-    const merkle = readJson(merklePath);
-    merkle.files[rel].hash = 'stale-hash-force-reconcile';
-    writeFileSync(merklePath, JSON.stringify(merkle, null, 2));
+    const files = readIndexedFiles(stateDir);
+    writeIndexedFiles(stateDir, { ...files, [rel]: { ...files[rel], hash: 'stale-hash-force-reconcile' } });
 
     enqueue(stateDir, rel);
     await tick();

@@ -9,9 +9,9 @@
  *
  * This module is the missing autonomous producer. Once per tick (before the
  * consume step) it diffs the working tree against the reconciler's own
- * `merkle-state.json` baseline using a cheap stat comparison (size + mtime_ns,
+ * indexed-file state (file-state.db) using a cheap stat comparison (size + mtime_ns,
  * no hashing) and appends add / modify / delete hints to the same JSONL queue
- * the reconciler already drains. The reconciler then updates `merkle-state.json`
+ * the reconciler already drains. The reconciler then updates the file state
  * for the files it processes, so the next scan sees them as unchanged — the
  * queue does not grow without bound.
  *
@@ -41,10 +41,10 @@ import path from 'node:path';
 import { createAdmissionPolicy } from '../../indexing/admission-policy.js';
 import { filterGrepCorpusFiles, listGitVisibleFiles } from '../../indexing/grep-corpus.js';
 import { grepStatEntry, readGrepCorpusState } from '../infrastructure/grep-corpus-state.mjs';
+import { readFileStateObject } from '../infrastructure/file-state-store.mjs';
 
 const DIRTY_QUEUE = 'index-maintainer-queue.jsonl';
 const PROCESSING_QUEUE = 'index-maintainer-queue.processing.jsonl';
-const MERKLE_STATE = 'merkle-state.json';
 const DEFAULT_MAX_ENQUEUE = 5000;
 // New grep-only files are found through the VCS file list: on an index change (add,
 // commit, checkout) or, for new untracked files, at least this often.
@@ -77,10 +77,10 @@ export function _resetGrepDiscoveryMemo() {
   minifiedMemoByState.clear();
 }
 
+// The full walk compares every indexed file, so it reads every row of file-state.db.
 function readMerkleFiles(stateDir) {
   try {
-    const parsed = JSON.parse(fs.readFileSync(path.join(stateDir, MERKLE_STATE), 'utf8'));
-    return parsed && parsed.files && typeof parsed.files === 'object' ? parsed.files : {};
+    return readFileStateObject(stateDir);
   } catch {
     return {};
   }
