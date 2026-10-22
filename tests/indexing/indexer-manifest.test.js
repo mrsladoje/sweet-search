@@ -187,3 +187,27 @@ describe('indexer manifest publication', () => {
     }
   });
 });
+
+// The maintainer refuses a state dir stamped for another project root (worktree guard).
+// A full build never refreshed the stamp, so a moved, renamed or copied project kept the
+// old one and the maintainer failed every tick, even after `sweet-search index --full`.
+describe('publishIndexerManifest worktree stamp', () => {
+  it('stamps the state dir for the project root it built', async () => {
+    const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { readStamp, verifyStamp } = await import('../../core/incremental-indexing/infrastructure/worktree-stamp.mjs');
+    const root = mkdtempSync(join(tmpdir(), 'ss-stamp-'));
+    const stateDir = join(root, '.sweet-search');
+    try {
+      publishIndexerManifest({ stateDir, projectRoot: root });
+      writeFileSync(join(stateDir, 'worktree-stamp.json'), JSON.stringify({ projectRoot: '/somewhere/else', gitCommonDir: null }));
+      expect(verifyStamp(stateDir, root).ok).toBe(false);
+      publishIndexerManifest({ stateDir, projectRoot: root });
+      expect(readStamp(stateDir).projectRoot).toBe(root);
+      expect(verifyStamp(stateDir, root).ok).toBe(true);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
