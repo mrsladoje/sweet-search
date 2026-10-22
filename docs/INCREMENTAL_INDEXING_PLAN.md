@@ -2264,7 +2264,7 @@ detected hardware tier (see § 34). All can be overridden.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `SWEET_SEARCH_RECONCILE_INTERVAL` | adaptive (10–20 s; 10/15/20 s start by tier) | Sleep after a tick with no queued files left; min 10s, max 20s unless user-pinned |
+| `SWEET_SEARCH_RECONCILE_INTERVAL_MS` | adaptive (10–20 s; 10/15/20 s start by tier) | Sleep after a tick with no queued files left; min 10s, max 20s unless user-pinned |
 | `SWEET_SEARCH_RECONCILE_CPU_BUDGET_MS` | `10000` | Soft cap on per-file work per tick (tick setup is not counted) |
 | `SWEET_SEARCH_MAINTAINER_ENCODER_PROCESS` | `1` | Run the dense + LI encoders in a child process (`sweet-search-encoder`); `0` keeps them in the maintainer |
 | `SWEET_SEARCH_MAINTAINER_LIFTOFF_ONLY` | `1` | Start the maintainer with `--liftoff-only` (baseline WebAssembly only) when node accepts it: the optimizing tier kept ~570 MB after compiling the JS/TSX grammars; parsing is ~4 ms/file slower |

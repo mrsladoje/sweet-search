@@ -18,7 +18,7 @@
  * The interval is the sleep AFTER a tick; while files wait in the queue the
  * daemon skips it (index-maintainer.mjs), so it never throttles a backlog.
  *
- * Pin behaviour: when `SWEET_SEARCH_RECONCILE_INTERVAL` is set explicitly,
+ * Pin behaviour: when `SWEET_SEARCH_RECONCILE_INTERVAL_MS` is set explicitly,
  * the tuner is bypassed entirely.
  */
 
@@ -282,9 +282,8 @@ export function tierForHardware(hw) {
  *
  * Precedence (highest first):
  *   1. `SWEET_SEARCH_RECONCILE_INTERVAL_MS` (milliseconds)
- *   2. `SWEET_SEARCH_RECONCILE_INTERVAL`    (seconds — legacy semantics)
- *   3. `SWEET_SEARCH_RECONCILE_PROFILE` ∈ {fresh, balanced, conservative}
- *   4. `tier` argument (low/mid/high) OR `hardware` descriptor resolved
+ *   2. `SWEET_SEARCH_RECONCILE_PROFILE` ∈ {fresh, balanced, conservative}
+ *   3. `tier` argument (low/mid/high) OR `hardware` descriptor resolved
  *      via `tierForHardware()`
  *
  * Values are clamped into `[MIN_MS, PINNED_MAX_MS]`.
@@ -302,13 +301,6 @@ export function startupInterval({ tier, env = process.env, hardware = null } = {
     const ms = Number(rawMs);
     if (Number.isFinite(ms) && ms > 0) {
       return { intervalMs: clampInterval(ms), pinned: true, source: 'env-override-ms' };
-    }
-  }
-  const rawSec = env.SWEET_SEARCH_RECONCILE_INTERVAL;
-  if (rawSec !== undefined && rawSec !== '') {
-    const seconds = Number(rawSec);
-    if (Number.isFinite(seconds) && seconds > 0) {
-      return { intervalMs: clampInterval(seconds * 1000), pinned: true, source: 'env-override' };
     }
   }
   const rawProfile = env.SWEET_SEARCH_RECONCILE_PROFILE;

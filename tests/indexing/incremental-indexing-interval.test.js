@@ -21,7 +21,6 @@ describe('interval / startupInterval / env precedence', () => {
       tier: 'low',
       env: {
         SWEET_SEARCH_RECONCILE_INTERVAL_MS: '45000',
-        SWEET_SEARCH_RECONCILE_INTERVAL: '120',
         SWEET_SEARCH_RECONCILE_PROFILE: 'fresh',
       },
     });
@@ -30,27 +29,16 @@ describe('interval / startupInterval / env precedence', () => {
     expect(out.source).toBe('env-override-ms');
   });
 
-  it('falls back to SWEET_SEARCH_RECONCILE_INTERVAL (seconds) when _MS absent', () => {
-    const out = startupInterval({
-      tier: 'low',
-      env: {
-        SWEET_SEARCH_RECONCILE_INTERVAL: '120',
-        SWEET_SEARCH_RECONCILE_PROFILE: 'fresh',
-      },
-    });
-    expect(out.intervalMs).toBe(120_000);
-    expect(out.pinned).toBe(true);
-    expect(out.source).toBe('env-override');
+  it('ignores the old seconds spelling SWEET_SEARCH_RECONCILE_INTERVAL', () => {
+    const out = startupInterval({ tier: 'mid', env: { SWEET_SEARCH_RECONCILE_INTERVAL: '120' } });
+    expect(out.pinned).toBe(false);
+    expect(out.intervalMs).toBe(15_000);
   });
 
-  it('clamps _MS / SECONDS overrides into [10s, 300s]', () => {
+  it('clamps _MS overrides into [10s, 300s]', () => {
     expect(startupInterval({ tier: 'mid', env: { SWEET_SEARCH_RECONCILE_INTERVAL_MS: '500' } }).intervalMs)
       .toBe(10_000);
     expect(startupInterval({ tier: 'mid', env: { SWEET_SEARCH_RECONCILE_INTERVAL_MS: '999999' } }).intervalMs)
-      .toBe(300_000);
-    expect(startupInterval({ tier: 'mid', env: { SWEET_SEARCH_RECONCILE_INTERVAL: '5' } }).intervalMs)
-      .toBe(10_000);
-    expect(startupInterval({ tier: 'mid', env: { SWEET_SEARCH_RECONCILE_INTERVAL: '600' } }).intervalMs)
       .toBe(300_000);
   });
 
@@ -58,7 +46,6 @@ describe('interval / startupInterval / env precedence', () => {
     const out = startupInterval({
       tier: 'mid',
       env: {
-        SWEET_SEARCH_RECONCILE_INTERVAL: 'banana',
         SWEET_SEARCH_RECONCILE_INTERVAL_MS: 'forever',
       },
     });

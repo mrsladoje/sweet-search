@@ -20,7 +20,6 @@
  * - Stores { hash, size, mtime_ns, inode } per file instead of just hash
  * - Fast-path: skip content read if (size, mtime_ns, inode) match stored values
  * - 10-50x speedup for typical incremental checks when few/no files changed
- * - Backward compatible migration from v2.2 (hash-only format)
  *
  * Storage: .sweet-search/merkle-state.json
  */
@@ -78,25 +77,6 @@ async function getFileMetadata(filePath) {
   };
 }
 
-/**
- * Migrate legacy file entry (hash-only string) to new format
- * Used for backward compatibility with v2.2 state files
- * @param {string|Object} entry - Either a hash string (v2.2) or {hash, size, mtime_ns, inode?} object (v2.3)
- * @returns {Object|null} - Returns {hash, size, mtime_ns, inode?} or null if entry needs full check
- */
-function migrateFileEntry(entry) {
-  // v2.3 format: already an object with hash, size, mtime_ns
-  if (entry && typeof entry === 'object' && entry.hash) {
-    return entry;
-  }
-  // v2.2 format: just a hash string - return null to force content read
-  // The file will be re-hashed and stored in new format
-  if (typeof entry === 'string') {
-    return { hash: entry, size: null, mtime_ns: null };
-  }
-  return null;
-}
-
 function statFieldToBigIntString(value) {
   if (value === null || value === undefined) return null;
   try {
@@ -120,10 +100,7 @@ function statFieldToBigIntString(value) {
  * @returns {boolean} - True if metadata matches (file unchanged)
  */
 function metadataMatches(stored, current) {
-  // If stored entry lacks metadata (migrated from v2.2), force content read
-  if (stored.size === null || stored.mtime_ns === null) {
-    return false;
-  }
+  if (stored.size == null || stored.mtime_ns == null) return false;
   if (statFieldToBigIntString(stored.size) !== statFieldToBigIntString(current.size)) return false;
   if (statFieldToBigIntString(stored.mtime_ns) !== statFieldToBigIntString(current.mtime_ns)) return false;
   if (stored.inode == null || current.inode == null) return false;
@@ -361,7 +338,8 @@ export async function getChangedFiles(allFiles, projectRoot) {
         continue;
       }
 
-      const storedEntry = migrateFileEntry(state.files[file]);
+      const stored = state.files[file];
+      const storedEntry = stored && typeof stored === 'object' && stored.hash ? stored : null;
 
       // Fast-path check - if metadata matches, skip content read
       if (storedEntry && metadataMatches(storedEntry, metadata)) {
