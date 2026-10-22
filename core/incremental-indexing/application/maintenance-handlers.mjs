@@ -81,6 +81,10 @@ export const SPARSE_FOLD_INLINE_MAX_FILES = 2000;
 let sparseFold = null;
 let sparseInlineMaxFiles = SPARSE_FOLD_INLINE_MAX_FILES;
 
+function baseIdentity(p) {
+  try { const st = fs.statSync(p); return `${st.ino}:${st.size}:${st.mtimeMs}`; } catch { return null; }
+}
+
 /** Test seams: the inline-fold size, and the running background fold. */
 export const __sparseTesting = {
   setInlineMaxFiles(n) { sparseInlineMaxFiles = n; },
@@ -117,6 +121,11 @@ export async function sparseGramHandler(job, { stateDir, projectRoot = null, onP
       safeUnlink(`${base}.next`);
       throw built.error;
     }
+    if (baseIdentity(base) !== built.baseIdentity) {
+      // A full build replaced the base meanwhile: the fold is stale.
+      safeUnlink(built.result.stagedPath);
+      return { skipped: 'base-replaced' };
+    }
     const published = publishSparseGramFold({ base, stagedPath: built.result.stagedPath, segments: built.segments, projectRoot: built.projectRoot, weightsId: built.result.weightsId });
     result = { files: built.result.files, weightsId: built.result.weightsId, background: true, ...published };
     action = 'fold';
@@ -125,7 +134,7 @@ export async function sparseGramHandler(job, { stateDir, projectRoot = null, onP
     const fileCount = (getSparseGramAllFiles(loadSparseGramIndex(base)) || []).length;
     if (fileCount > sparseInlineMaxFiles) {
       sparseFold = startBackgroundBuild('sparse_gram', { stateDir, base, projectRoot: root, segments });
-      Object.assign(sparseFold, { base, segments, projectRoot: root });
+      Object.assign(sparseFold, { base, segments, projectRoot: root, baseIdentity: baseIdentity(base) });
       progress('maintenance:sparse-gram:background');
       return { requeue: true, background: 'started', files: fileCount };
     }
@@ -217,7 +226,10 @@ export async function binaryHnswHandler(job, { stateDir, onProgress = null }) {
       discardStagedCompaction(indexPath);
       throw built.error;
     }
-    const published = await publishCompactedBase({ indexPath, stagedPath: built.result.stagedPath, snapshotCount: built.result.snapshotCount });
+    const published = await publishCompactedBase({
+      indexPath, stagedPath: built.result.stagedPath, snapshotCount: built.result.snapshotCount, baseGeneration: built.baseGeneration,
+    });
+    if (published.skipped) return published;
     progress('maintenance:binary-hnsw:published');
     return { tier: 'binary_hnsw', graph: true, background: true, dropped: built.result.dropped, ...published };
   }
