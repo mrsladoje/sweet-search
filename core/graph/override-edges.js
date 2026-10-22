@@ -133,26 +133,59 @@ export function deriveOverrideEdges(db, entities = null, opts = {}) {
     const r = write([]);
     return { edges: 0, retired: r.retired, ms: Math.round(performance.now() - started) };
   }
+  const live = versioned ? 'AND epoch_retired IS NULL' : '';
+  const inheritanceRows = db.prepare(`
+    SELECT source_id, target_id, context_line FROM relationships
+    WHERE type IN ('extends', 'implements') AND target_id IS NOT NULL AND source_id IS NOT NULL ${live}
+  `).all().sort(compareEdgeRows);
+  const extensionRows = db.prepare(`
+    SELECT source_id, context_line, target_id FROM relationships
+    WHERE type = 'extensionOf' AND target_id IS NOT NULL ${live}
+  `).all().sort(compareEdgeRows);
   // A fixed input order (not rowid order), so a full build and a maintained
   // graph derive the same edges whatever order files were indexed in.
-  const rows = [...((!liveEntities && entities) || db.prepare(`
-    SELECT id, name, type, file_path, parent_class, signature, start_line, end_line FROM entities
-    ${liveEntities ? 'WHERE epoch_retired IS NULL' : ''}
-  `).all())].sort(compareEntitiesForResolution);
-  const live = versioned ? 'AND epoch_retired IS NULL' : '';
-  const edges = computeOverrideEdges(
-    rows,
-    db.prepare(`
-      SELECT source_id, target_id, context_line FROM relationships
-      WHERE type IN ('extends', 'implements') AND target_id IS NOT NULL AND source_id IS NOT NULL ${live}
-    `).all().sort(compareEdgeRows),
-    db.prepare(`
-      SELECT source_id, context_line, target_id FROM relationships
-      WHERE type = 'extensionOf' AND target_id IS NOT NULL ${live}
-    `).all().sort(compareEdgeRows),
-  );
+  const rows = (!liveEntities && entities)
+    ? [...entities]
+    : readOverrideInputs(db, liveEntities ? 'AND epoch_retired IS NULL' : '', inheritanceRows, extensionRows);
+  const edges = computeOverrideEdges(rows.sort(compareEntitiesForResolution), inheritanceRows, extensionRows);
   const r = write(edges);
   return { edges: r.inserted, retired: r.retired, ms: Math.round(performance.now() - started) };
+}
+
+const ENTITY_COLUMNS = 'id, name, type, file_path, parent_class, signature, start_line, end_line';
+
+/**
+ * The entity rows computeOverrideEdges can use, read from the graph: every container
+ * (types decide the groups), then only the methods an inheritance group can own (those
+ * in a file holding a relevant container, or whose parent_class names a relevant type).
+ * The result is the same as from all rows; reading every entity cost a full table read
+ * per maintainer tick (most rows are methods outside any inheritance).
+ */
+function readOverrideInputs(db, liveSql, inheritanceRows, extensionRows) {
+  const containerTypes = [...CONTAINER_TYPES];
+  const containers = db.prepare(`SELECT ${ENTITY_COLUMNS} FROM entities
+    WHERE type IN (${containerTypes.map(() => '?').join(',')}) ${liveSql}`).all(...containerTypes);
+  const g = groupInheritance(containers, inheritanceRows, extensionRows);
+  if (!g) return containers;
+  const names = new Set();
+  for (const key of g.relevant) {
+    const sep = key.indexOf('\u0000');
+    if (!key.startsWith('id\u0000') && sep >= 0) names.add(key.slice(sep + 1));
+  }
+  const methodTypes = [...METHOD_TYPES];
+  const byId = new Map();
+  const readChunks = (column, values) => {
+    const list = [...values];
+    for (let i = 0; i < list.length; i += 500) {
+      const part = list.slice(i, i + 500);
+      const sql = `SELECT ${ENTITY_COLUMNS} FROM entities
+        WHERE type IN (${methodTypes.map(() => '?').join(',')}) AND ${column} IN (${part.map(() => '?').join(',')}) ${liveSql}`;
+      for (const row of db.prepare(sql).all(...methodTypes, ...part)) byId.set(row.id, row);
+    }
+  };
+  readChunks('file_path', g.relevantFiles);
+  if (names.size > 0) readChunks('parent_class', names);
+  return [...containers, ...byId.values()];
 }
 
 /** Full build: replace every `overrides` row. */
@@ -233,99 +266,9 @@ function syncRows(db, edges, epoch) {
  * @returns {Array<{ source: string, target: string, name: string, line: number }>}
  */
 export function computeOverrideEdges(rows, inheritanceRows, extensionRows) {
-  // Per-file facts, computed once per path.
-  const fileFacts = new Map();
-  const factsOf = (filePath) => {
-    let f = fileFacts.get(filePath);
-    if (!f) {
-      const open = OPEN_TYPE_FILE.test(filePath || '');
-      f = { open, family: open ? langFamily(filePath) : '' };
-      fileFacts.set(filePath, f);
-    }
-    return f;
-  };
-
-  const byId = new Map();
-  const containersByFile = new Map();
-  const primaryCount = new Map(); // family\0name → count of primary declarations
-  for (const e of rows) {
-    byId.set(e.id, e);
-    if (!CONTAINER_TYPES.has(e.type) || e.start_line == null || e.end_line == null) continue;
-    let list = containersByFile.get(e.file_path);
-    if (!list) { list = []; containersByFile.set(e.file_path, list); }
-    list.push(e);
-    const f = factsOf(e.file_path);
-    if (f.open && !BLOCK_TYPES.has(e.type)) {
-      const k = `${f.family}\u0000${e.name}`;
-      primaryCount.set(k, (primaryCount.get(k) || 0) + 1);
-    }
-  }
-  // Sorted by start, ties by id: the result never depends on row order (the
-  // incremental graph's row order differs from a fresh build's).
-  for (const list of containersByFile.values()) {
-    list.sort((a, b) => a.start_line - b.start_line || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  }
-
-  // Group key of a type: an extension / impl block joins the ONE primary
-  // declaration of that name in its language family. Several primaries with
-  // one name (GRDB tests declare many `class Observer`) stay separate, so
-  // their bases never mix.
-  const nameKey = (filePath, name) => {
-    const f = factsOf(filePath);
-    if (!f.open) return null;
-    const k = `${f.family}\u0000${name}`;
-    return primaryCount.get(k) === 1 ? k : null;
-  };
-  const groupKeyCache = new Map();
-  const groupKey = (c) => {
-    let gk = groupKeyCache.get(c.id);
-    if (gk === undefined) {
-      const f = factsOf(c.file_path);
-      const k = `${f.family}\u0000${c.name}`;
-      gk = nameKey(c.file_path, c.name)
-        || (f.open && BLOCK_TYPES.has(c.type) && !primaryCount.has(k) ? k : `id\u0000${c.id}`);
-      groupKeyCache.set(c.id, gk);
-    }
-    return gk;
-  };
-
-  // Swift `extension X: P` rows: (source, line) → X's entity.
-  const extensionOf = new Map();
-  for (const r of extensionRows) {
-    extensionOf.set(`${r.source_id}\u0000${r.context_line}`, r.target_id);
-  }
-
-  // Resolved inheritance, lifted to groups.
-  const basesOfGroup = new Map(); // groupKey → Set(groupKey)
-  for (const r of inheritanceRows) {
-    let s = byId.get(r.source_id);
-    if (!s || !CONTAINER_TYPES.has(s.type)) {
-      const extended = extensionOf.get(`${r.source_id}\u0000${r.context_line}`);
-      s = extended ? byId.get(extended) : null;
-    }
-    const t = byId.get(r.target_id);
-    if (!s || !t || !CONTAINER_TYPES.has(s.type) || !CONTAINER_TYPES.has(t.type)) continue;
-    const sk = groupKey(s);
-    const tk = groupKey(t);
-    if (sk === tk) continue;
-    let set = basesOfGroup.get(sk);
-    if (!set) { set = new Set(); basesOfGroup.set(sk, set); }
-    set.add(tk);
-  }
-  if (basesOfGroup.size === 0) return [];
-
-  // Only types in the inheritance graph need their methods: files holding a
-  // container of such a type, or methods whose parent_class names one.
-  const relevant = new Set();
-  for (const [k, bases] of basesOfGroup) {
-    relevant.add(k);
-    for (const b of bases) relevant.add(b);
-  }
-  const relevantFiles = new Set();
-  for (const [filePath, list] of containersByFile) {
-    if (list.some(c => relevant.has(groupKey(c)))) relevantFiles.add(filePath);
-  }
-
+  const g = groupInheritance(rows, inheritanceRows, extensionRows);
+  if (!g) return [];
+  const { containersByFile, nameKey, groupKey, basesOfGroup, relevant, relevantFiles } = g;
   // Methods by owning group.
   const methodsByGroup = new Map(); // groupKey → Map(name → [method])
   for (const m of rows) {
@@ -424,6 +367,107 @@ export function computeOverrideEdges(rows, inheritanceRows, extensionRows) {
     }
   }
   return out;
+}
+
+/**
+ * The inheritance half of computeOverrideEdges: type groups, their resolved bases, and
+ * which groups / files take part. Reads only container rows of `rows` (methods are
+ * ignored here), so it can run on the containers alone. Null when no group has a base.
+ */
+function groupInheritance(rows, inheritanceRows, extensionRows) {
+  // Per-file facts, computed once per path.
+  const fileFacts = new Map();
+  const factsOf = (filePath) => {
+    let f = fileFacts.get(filePath);
+    if (!f) {
+      const open = OPEN_TYPE_FILE.test(filePath || '');
+      f = { open, family: open ? langFamily(filePath) : '' };
+      fileFacts.set(filePath, f);
+    }
+    return f;
+  };
+
+  const byId = new Map();
+  const containersByFile = new Map();
+  const primaryCount = new Map(); // family\0name → count of primary declarations
+  for (const e of rows) {
+    byId.set(e.id, e);
+    if (!CONTAINER_TYPES.has(e.type) || e.start_line == null || e.end_line == null) continue;
+    let list = containersByFile.get(e.file_path);
+    if (!list) { list = []; containersByFile.set(e.file_path, list); }
+    list.push(e);
+    const f = factsOf(e.file_path);
+    if (f.open && !BLOCK_TYPES.has(e.type)) {
+      const k = `${f.family}\u0000${e.name}`;
+      primaryCount.set(k, (primaryCount.get(k) || 0) + 1);
+    }
+  }
+  // Sorted by start, ties by id: the result never depends on row order (the
+  // incremental graph's row order differs from a fresh build's).
+  for (const list of containersByFile.values()) {
+    list.sort((a, b) => a.start_line - b.start_line || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  }
+
+  // Group key of a type: an extension / impl block joins the ONE primary
+  // declaration of that name in its language family. Several primaries with
+  // one name (GRDB tests declare many `class Observer`) stay separate, so
+  // their bases never mix.
+  const nameKey = (filePath, name) => {
+    const f = factsOf(filePath);
+    if (!f.open) return null;
+    const k = `${f.family}\u0000${name}`;
+    return primaryCount.get(k) === 1 ? k : null;
+  };
+  const groupKeyCache = new Map();
+  const groupKey = (c) => {
+    let gk = groupKeyCache.get(c.id);
+    if (gk === undefined) {
+      const f = factsOf(c.file_path);
+      const k = `${f.family}\u0000${c.name}`;
+      gk = nameKey(c.file_path, c.name)
+        || (f.open && BLOCK_TYPES.has(c.type) && !primaryCount.has(k) ? k : `id\u0000${c.id}`);
+      groupKeyCache.set(c.id, gk);
+    }
+    return gk;
+  };
+
+  // Swift `extension X: P` rows: (source, line) → X's entity.
+  const extensionOf = new Map();
+  for (const r of extensionRows) {
+    extensionOf.set(`${r.source_id}\u0000${r.context_line}`, r.target_id);
+  }
+
+  // Resolved inheritance, lifted to groups.
+  const basesOfGroup = new Map(); // groupKey → Set(groupKey)
+  for (const r of inheritanceRows) {
+    let s = byId.get(r.source_id);
+    if (!s || !CONTAINER_TYPES.has(s.type)) {
+      const extended = extensionOf.get(`${r.source_id}\u0000${r.context_line}`);
+      s = extended ? byId.get(extended) : null;
+    }
+    const t = byId.get(r.target_id);
+    if (!s || !t || !CONTAINER_TYPES.has(s.type) || !CONTAINER_TYPES.has(t.type)) continue;
+    const sk = groupKey(s);
+    const tk = groupKey(t);
+    if (sk === tk) continue;
+    let set = basesOfGroup.get(sk);
+    if (!set) { set = new Set(); basesOfGroup.set(sk, set); }
+    set.add(tk);
+  }
+  if (basesOfGroup.size === 0) return null;
+
+  // Only types in the inheritance graph need their methods: files holding a
+  // container of such a type, or methods whose parent_class names one.
+  const relevant = new Set();
+  for (const [k, bases] of basesOfGroup) {
+    relevant.add(k);
+    for (const b of bases) relevant.add(b);
+  }
+  const relevantFiles = new Set();
+  for (const [filePath, list] of containersByFile) {
+    if (list.some(c => relevant.has(groupKey(c)))) relevantFiles.add(filePath);
+  }
+  return { containersByFile, nameKey, groupKey, basesOfGroup, relevant, relevantFiles };
 }
 
 export default deriveOverrideEdges;
