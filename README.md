@@ -133,10 +133,6 @@ sweet-search "where do we validate JWT tokens?"
 
 That's it. From then on, the index updates itself as you work. `sweet-search status` shows what is missing and the next command to run.
 
-> [!NOTE]
-> npm 11 or later can skip install scripts. If the install looks broken, run
-> `npm install -g sweet-search --allow-scripts=sweet-search,onnxruntime-node`.
-
 To uninstall 😢:
 
 ```bash
