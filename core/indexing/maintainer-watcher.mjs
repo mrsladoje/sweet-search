@@ -19,11 +19,10 @@
  * admissionPolicy, onEvent, onOverflow})` contract G4 wired (and returns a
  * handle with a `.close()` method G4's `finally` calls).
  *
- * Gate: `SWEET_SEARCH_MAINTAINER_WATCH === '1'` (checked by G4 before this module
- * is imported). When the flag is off OR `@parcel/watcher` is unavailable,
- * `startWatcher` returns `null` and behavior is EXACTLY today's: G4 sees a falsy
- * handle, `watcherState.active` stays false, and the full per-tick walk remains
- * the sole producer.
+ * On by default (`SWEET_SEARCH_MAINTAINER_WATCH=0` turns it off). When
+ * `@parcel/watcher` is unavailable or cannot subscribe, `startWatcher` returns
+ * `null`: the maintainer logs it once and the full per-tick walk stays the
+ * producer.
  *
  * Highest-severity risk (event-storm guard): the daemon writes its own queue +
  * databases under the `.sweet-search` stateDir. Those writes must NEVER
@@ -52,22 +51,19 @@ const DIRTY_QUEUE = 'index-maintainer-queue.jsonl';
 // between the last clean shutdown and the next startup for gap-free freshness.
 const SNAPSHOT_FILE = 'maintainer-watch-snapshot.bin';
 
-// Mirror of `path-filter.mjs` DEFAULT_DENY_DIRS (that const is module-local and
-// not exported). These are scoped OUT of the native watch set so the OS never
-// even reports events under them (inotify-watch-budget + event-volume control on
-// Linux; FSEvents is O(1) regardless but the ignore still trims event volume).
-// `admissionPolicy.isExcluded` is the authoritative per-event deny check below;
-// this list only narrows what the kernel watches. The stateDir is prepended
-// dynamically (it is the event-storm guard, not a generic deny dir).
+// Mirror of `path-filter.mjs` DEFAULT_DENY_DIRS_HARD (module-local there): dirs
+// whose files are never admitted. They are scoped OUT of the native watch set so
+// the OS never reports events under them (inotify watch budget + event volume).
+// The build-output dirs (build/dist/out/target) are NOT here: admission re-admits
+// a git-tracked file under them, so their events must reach `keepRel` (which
+// drops the untracked ones). The stateDir is prepended dynamically (it is the
+// event-storm guard, not a generic deny dir).
 const DEFAULT_DENY_DIRS = Object.freeze([
   'node_modules',
   '.git',
   '.sweet-search',
-  'dist',
-  'build',
   '.next',
   '.nuxt',
-  'target',
   'vendor',
   '__pycache__',
   '.venv',
@@ -79,6 +75,17 @@ const DEFAULT_DENY_DIRS = Object.freeze([
   '.svelte-kit',
   '.vercel',
 ]);
+
+// A change to one of these changes what is admitted: the next tick runs the full
+// walk, and the watcher rebuilds its admission policy.
+const ADMISSION_CONFIG_NAMES = Object.freeze(['.gitignore', '.gitattributes', '.sweet-search-ignore']);
+const PROJECT_CONFIG_FILE = '.sweet-search.config.json';
+
+// A created directory (a rename into the tree, an unpacked archive) is walked and
+// its files queued. Past this many files the full walk is cheaper and bounded.
+let maxDirWalkFiles = 20_000;
+
+const MERKLE_STATE = 'merkle-state.json';
 
 // `.git` is denied as a watched subtree (above), but a branch switch / commit /
 // reset mutates these two files and must force a backstop walk (bursty churn is
@@ -180,7 +187,7 @@ async function loadParcelWatcher() {
  * @param {Function} [opts.onOverflow]     Force-backstop signal.
  * @returns {Promise<{close: () => Promise<void>} | null>}
  */
-export async function startWatcher({ stateDir, projectRoot, admissionPolicy, onEvent, onOverflow } = {}) {
+export async function startWatcher({ stateDir, projectRoot, admissionPolicy, createAdmissionPolicy = null, onEvent, onOverflow } = {}) {
   if (!projectRoot || !stateDir) return null;
 
   const watcher = await loadParcelWatcher();
@@ -194,7 +201,23 @@ export async function startWatcher({ stateDir, projectRoot, admissionPolicy, onE
   const stateDirPrefix = stateDirAbs.endsWith(path.sep) ? stateDirAbs : stateDirAbs + path.sep;
 
   const notify = typeof onEvent === 'function' ? onEvent : () => {};
-  const overflow = typeof onOverflow === 'function' ? onOverflow : () => {};
+  const overflowSignal = typeof onOverflow === 'function' ? onOverflow : () => {};
+  const overflow = () => { try { overflowSignal(); } catch { /* best-effort */ } };
+
+  // The policy memoises git listings (tracked files, ignored dirs) and the project
+  // config, so it is rebuilt after a git or config change.
+  let policy = admissionPolicy;
+  const refreshPolicy = async () => {
+    try {
+      const create = createAdmissionPolicy
+        || (await import('./admission-policy.js')).createAdmissionPolicy;
+      policy = create({ projectRoot });
+    } catch { /* keep the old policy; the full walk is authoritative */ }
+  };
+  const eventCtx = () => ({
+    rootAbs, stateDirPrefix, stateDir, admissionPolicy: policy, notify,
+    onConfigChange: () => { overflow(); void refreshPolicy(); },
+  });
 
   const snapshotPath = path.join(stateDirAbs, SNAPSHOT_FILE);
   const ignore = buildIgnore(rootAbs, stateDirAbs);
@@ -207,11 +230,11 @@ export async function startWatcher({ stateDir, projectRoot, admissionPolicy, onE
   try {
     if (fs.existsSync(snapshotPath)) {
       const sinceEvents = await watcher.getEventsSince(rootAbs, snapshotPath, subscribeOpts);
-      handleEvents(sinceEvents, { rootAbs, stateDirPrefix, stateDir, admissionPolicy, notify });
+      handleEvents(sinceEvents, eventCtx());
     }
   } catch {
     // A failed replay is non-fatal: force a backstop walk to cover the gap.
-    try { overflow(); } catch { /* best-effort */ }
+    overflow();
   }
 
   let subscription = null;
@@ -220,14 +243,14 @@ export async function startWatcher({ stateDir, projectRoot, admissionPolicy, onE
       // Native error / overflow (IN_Q_OVERFLOW, ERROR_NOTIFY_ENUM_DIR, …): we
       // cannot trust the event stream, so demand a full backstop walk.
       if (err) {
-        try { overflow(); } catch { /* best-effort */ }
+        overflow();
         return;
       }
       try {
-        handleEvents(events, { rootAbs, stateDirPrefix, stateDir, admissionPolicy, notify });
+        handleEvents(events, eventCtx());
       } catch {
         // A handler fault must never crash the daemon; fall back to backstop.
-        try { overflow(); } catch { /* best-effort */ }
+        overflow();
       }
     }, subscribeOpts);
   } catch {
@@ -243,7 +266,8 @@ export async function startWatcher({ stateDir, projectRoot, admissionPolicy, onE
   const gitTimer = setInterval(() => {
     try {
       if (gitChanged(gitDir, gitMtimes)) {
-        try { overflow(); } catch { /* best-effort */ }
+        overflow();
+        void refreshPolicy(); // the tracked set (build-output re-admission) moved
       }
     } catch { /* best-effort */ }
   }, GIT_POLL_INTERVAL_MS);
@@ -268,33 +292,115 @@ export async function startWatcher({ stateDir, projectRoot, admissionPolicy, onE
 }
 
 /**
+ * Should an event path become a queue candidate? Mirrors the walk's admission
+ * shape loosely (the consumer re-admits and hashes every file; over-admitting is
+ * harmless, under-admitting loses an edit until the backstop walk):
+ *   - drop a path under a directory git ignores as a whole;
+ *   - keep a path the deny-list does not exclude;
+ *   - keep a git-tracked file under a build-output dir (admission re-admits it).
+ * A policy fault keeps the path.
+ */
+function keepRel(rel, policy) {
+  if (!policy) return true;
+  try {
+    if (typeof policy.underIgnoredDirectory === 'function' && policy.underIgnoredDirectory(rel)) return false;
+    if (typeof policy.isExcluded !== 'function' || !policy.isExcluded(rel)) return true;
+    return typeof policy.isBuildOutputOnly === 'function' && policy.isBuildOutputOnly(rel)
+      && typeof policy.trackedFiles === 'function' && policy.trackedFiles().has(rel);
+  } catch {
+    return true;
+  }
+}
+
+/** Descend into this directory while walking a created subtree? */
+function walkDir(rel, policy) {
+  if (DEFAULT_DENY_DIRS.includes(path.posix.basename(rel))) return false;
+  if (!policy) return true;
+  try {
+    if (typeof policy.isIgnoredDirectory === 'function' && policy.isIgnoredDirectory(rel)) return false;
+    // A build-output dir may hold tracked files: descend, keepRel decides per file.
+    if (typeof policy.isExcluded === 'function' && policy.isExcluded(rel)) {
+      return typeof policy.isBuildOutputOnly === 'function' && policy.isBuildOutputOnly(rel);
+    }
+  } catch { /* descend */ }
+  return true;
+}
+
+/**
+ * Files under a created directory, as project-relative paths, or null when the
+ * subtree holds more than maxDirWalkFiles (the caller then asks for the full walk).
+ */
+function walkCreatedDir(abs, rel, ctx) {
+  const out = [];
+  const stack = [[abs, rel]];
+  while (stack.length > 0) {
+    const [dirAbs, dirRel] = stack.pop();
+    let entries;
+    try { entries = fs.readdirSync(dirAbs, { withFileTypes: true }); } catch { continue; }
+    for (const ent of entries) {
+      const childAbs = path.join(dirAbs, ent.name);
+      const childRel = `${dirRel}/${ent.name}`;
+      if (childAbs.startsWith(ctx.stateDirPrefix)) continue;
+      if (ent.isDirectory()) {
+        if (walkDir(childRel, ctx.admissionPolicy)) stack.push([childAbs, childRel]);
+      } else if (ent.isFile() && keepRel(childRel, ctx.admissionPolicy)) {
+        out.push(childRel);
+        if (out.length > maxDirWalkFiles) return null;
+      }
+    }
+  }
+  return out;
+}
+
+// merkle-state.json keys, re-read only when the file changes (it is MBs on a big
+// repo and only a delete event needs it).
+let merkleKeysCache = { key: null, keys: [] };
+function merkleKeys(stateDir) {
+  const file = path.join(stateDir, MERKLE_STATE);
+  let st;
+  try { st = fs.statSync(file); } catch { return []; }
+  const key = `${file}:${st.size}:${st.mtimeMs}`;
+  if (merkleKeysCache.key !== key) {
+    let keys = [];
+    try { keys = Object.keys(JSON.parse(fs.readFileSync(file, 'utf8')).files || {}); } catch { /* none */ }
+    merkleKeysCache = { key, keys };
+  }
+  return merkleKeysCache.keys;
+}
+
+/**
  * Process a batch of native events into queue lines. Pure of native concerns so
  * it is reused by both the live subscription and the `getEventsSince` replay.
  *
- * Filtering, in order:
+ * Per event, in order:
  *   1. event-storm guard — drop anything under the stateDir (defense in depth on
  *      top of the native `ignore`);
  *   2. relativise — drop anything outside the project root;
- *   3. directory guard — drop directory events. The dirty-scan producer only
- *      ever enqueues regular files (`ent.isFile()`, `dirty-scan.mjs:145`), so a
- *      bare `create`/`update` on a directory must NOT become a queue line.
- *      Deletes are kept (the path is gone, can't stat) — a deleted directory rel
- *      is harmless: it won't be a merkle-known file, so the consumer drops it,
- *      exactly as dirty-scan's delete branch only retires merkle-known paths;
- *   4. admission deny — drop excluded paths (node_modules, denied dirs/exts,
- *      `.sweet-search-ignore`) via `admissionPolicy.isExcluded`.
+ *   3. admission config — a `.gitignore` / `.gitattributes` /
+ *      `.sweet-search-ignore` / project config change calls `onConfigChange`
+ *      (full walk next tick + policy rebuild);
+ *   4. directories — a created directory (a rename into the tree arrives as a
+ *      create of the directory alone) queues every candidate file under it; a
+ *      deleted path queues itself plus every merkle file under it (a renamed-away
+ *      or deleted directory arrives as one delete);
+ *   5. candidate filter — `keepRel` (deny-list, ignored dirs, tracked build output).
  *
- * Note: this is NOT the final admit decision (no include-allowlist / size /
- * gitignore check). The consumer re-admits + content-hashes. We only need to keep
- * obviously-denied churn out of the queue; over-admitting is harmless.
+ * This is NOT the final admit decision: the consumer re-admits and hashes.
  *
  * @param {Array<{path:string,type:string}>} events
  * @param {object} ctx
  */
-function handleEvents(events, { rootAbs, stateDirPrefix, stateDir, admissionPolicy, notify }) {
+function handleEvents(events, ctx) {
+  const { rootAbs, stateDirPrefix, stateDir, admissionPolicy, notify } = ctx;
   if (!Array.isArray(events) || events.length === 0) return;
   const rels = [];
   const seen = new Set();
+  const push = (rel) => {
+    if (seen.has(rel)) return;
+    seen.add(rel);
+    rels.push(rel);
+  };
+  let fullWalk = false;
   for (const ev of events) {
     const abs = ev && ev.path;
     if (typeof abs !== 'string' || abs.length === 0) continue;
@@ -303,27 +409,34 @@ function handleEvents(events, { rootAbs, stateDirPrefix, stateDir, admissionPoli
     // 2. Relativise; drop paths outside the project root.
     const rel = toRel(abs, rootAbs);
     if (!rel) continue;
-    if (seen.has(rel)) continue;
-    // 3. Directory guard: only files become queue lines (match dirty-scan).
-    //    `delete` events have no on-disk path to stat; keep them (a deleted dir
-    //    rel is a harmless non-merkle no-op for the consumer).
-    if (ev.type !== 'delete') {
-      try {
-        if (fs.statSync(abs).isDirectory()) continue;
-      } catch {
-        // Vanished between event and stat (rapid churn): let the consumer decide.
-      }
+    // 3. Admission config.
+    if (rel === PROJECT_CONFIG_FILE || ADMISSION_CONFIG_NAMES.includes(path.posix.basename(rel))) {
+      fullWalk = true;
+      continue;
     }
-    // 4. Admission deny-list (cheap, sync, I/O-free).
-    try {
-      if (admissionPolicy && typeof admissionPolicy.isExcluded === 'function' && admissionPolicy.isExcluded(rel)) {
+    // 4. Directories.
+    if (ev.type === 'delete') {
+      const prefix = `${rel}/`;
+      for (const key of merkleKeys(stateDir)) if (key.startsWith(prefix)) push(key);
+    } else {
+      let isDir = false;
+      try { isDir = fs.statSync(abs).isDirectory(); } catch { /* vanished: let the consumer decide */ }
+      if (isDir) {
+        if (!walkDir(rel, admissionPolicy)) continue;
+        const files = walkCreatedDir(abs, rel, ctx);
+        if (files === null) {
+          fullWalk = true; // too large: the full walk covers it
+          continue;
+        }
+        for (const f of files) push(f);
         continue;
       }
-    } catch {
-      // A policy fault should not drop the event — let the consumer re-admit.
     }
-    seen.add(rel);
-    rels.push(rel);
+    // 5. Candidate filter.
+    if (keepRel(rel, admissionPolicy)) push(rel);
+  }
+  if (fullWalk && typeof ctx.onConfigChange === 'function') {
+    try { ctx.onConfigChange(); } catch { /* best-effort */ }
   }
   if (rels.length === 0) return;
   appendQueueLines(stateDir, rels);
@@ -389,6 +502,8 @@ export const __testing = {
   buildIgnore,
   appendQueueLines,
   handleEvents,
+  keepRel,
+  setMaxDirWalkFiles: (n) => { const prev = maxDirWalkFiles; maxDirWalkFiles = n; return prev; },
   gitChanged,
   primeGitMtimes,
   DIRTY_QUEUE,

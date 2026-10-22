@@ -1160,12 +1160,36 @@ export function wakeMaintainerSleep() {
   if (wake) wake();
 }
 
+/** The file watcher is on unless SWEET_SEARCH_MAINTAINER_WATCH=0. */
+export function maintainerWatchEnabled(env = process.env) {
+  return env.SWEET_SEARCH_MAINTAINER_WATCH !== '0';
+}
+
+// A burst of saves (an editor writing a temp file and renaming it, a formatter
+// touching several files) wakes the sleep once, this long after its first event.
+const WATCH_WAKE_DELAY_MS = 200;
+
+/**
+ * A trigger for watcher events: the first call ends the inter-tick sleep after
+ * `delayMs`, and calls within that window add nothing. Without it a watched edit
+ * waited out the whole 10-20 s interval: the pending-events flag was read only
+ * between sleep slices of up to 30 s.
+ */
+export function createWatchWake({ delayMs = WATCH_WAKE_DELAY_MS, wake = wakeMaintainerSleep } = {}) {
+  let timer = null;
+  return () => {
+    if (timer) return;
+    timer = setTimeout(() => { timer = null; wake(); }, delayMs);
+    timer.unref?.();
+  };
+}
+
 async function sleepWithProgress(totalMs, lockFile, opts = {}) {
   const deadline = Date.now() + totalMs;
-  // G6 watcher early-wake: when the watcher feeds the queue mid-sleep it sets a
-  // `pendingEvents` flag; the daemon breaks out of the sleep so the next tick
-  // reconciles fresh edits without waiting out the full interval. Off by default
-  // (no watcher → `wokenByWatcher` is never callable → behavior is today's).
+  // Watcher early-wake: when the watcher feeds the queue it sets a `pendingEvents`
+  // flag and (createWatchWake) ends the current slice, so the next tick
+  // reconciles fresh edits without waiting out the interval. Events that arrived
+  // during the previous tick end the sleep before it starts.
   const wokenByWatcher = typeof opts.wokenByWatcher === 'function' ? opts.wokenByWatcher : null;
   while (!shutdownRequested) {
     if (!stillOwnsLock(lockFile)) {
@@ -1699,33 +1723,30 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
     }
   }
 
-  // G6 watcher hook (integration seam; module + behavior owned by G6). When the
-  // module is absent or the flag is off, behavior is EXACTLY today: the per-tick
-  // full stat-walk in runReconcileV2Tick stays the sole dirty-set producer. The
-  // watcher (when active) feeds the queue from filesystem events, sets
-  // `watcherState.pendingEvents` for early-wake, and the producer block demotes
-  // the full walk to a periodic backstop.
+  // File watcher: the primary dirty-set producer. It feeds the queue from
+  // filesystem events and wakes the inter-tick sleep, and the producer block
+  // demotes the full stat-walk to a periodic backstop. Where it cannot start
+  // (no native binding, inotify watch limit), the full walk runs every tick.
   const watcherState = { active: false, pendingEvents: false, forceBackstopWalk: false, lastBackstopWalkMs: 0, handle: null };
   const backstopMs = backstopWalkIntervalMs().intervalMs;
-  if (process.env.SWEET_SEARCH_MAINTAINER_WATCH === '1') {
+  if (maintainerWatchEnabled()) {
+    const wake = createWatchWake();
     try {
       const mod = await import('./maintainer-watcher.mjs');
-      if (typeof mod.startWatcher === 'function') {
-        const { createAdmissionPolicy } = await import('../indexing/admission-policy.js');
-        const admissionPolicy = createAdmissionPolicy({ projectRoot: ctx.projectRoot });
-        watcherState.handle = await mod.startWatcher({
-          stateDir: ctx.stateDir,
-          projectRoot: ctx.projectRoot,
-          admissionPolicy,
-          onEvent: () => { watcherState.pendingEvents = true; },
-          onOverflow: () => { watcherState.forceBackstopWalk = true; watcherState.pendingEvents = true; },
-        });
-        watcherState.active = !!watcherState.handle;
-        if (watcherState.active) log('INFO', `Maintainer file watcher active (backstop walk every ${backstopMs}ms)`);
-      }
+      const { createAdmissionPolicy } = await import('../indexing/admission-policy.js');
+      watcherState.handle = await mod.startWatcher({
+        stateDir: ctx.stateDir,
+        projectRoot: ctx.projectRoot,
+        admissionPolicy: createAdmissionPolicy({ projectRoot: ctx.projectRoot }),
+        createAdmissionPolicy,
+        onEvent: () => { watcherState.pendingEvents = true; wake(); },
+        onOverflow: () => { watcherState.forceBackstopWalk = true; watcherState.pendingEvents = true; wake(); },
+      });
+      watcherState.active = !!watcherState.handle;
+      if (watcherState.active) log('INFO', `Maintainer file watcher active (backstop walk every ${backstopMs}ms)`);
+      else log('WARN', 'Maintainer file watcher could not start; the full walk runs every tick');
     } catch (err) {
-      // Module absent or failed → no-op; the full per-tick walk remains primary.
-      log('WARN', `Maintainer watcher unavailable (full per-tick walk remains primary): ${err?.message ?? err}`);
+      log('WARN', `Maintainer file watcher could not start (${err?.message ?? err}); the full walk runs every tick`);
     }
   }
 

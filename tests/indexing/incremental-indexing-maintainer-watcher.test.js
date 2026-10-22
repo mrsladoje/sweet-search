@@ -14,9 +14,10 @@
  *      onOverflow, and `.git/HEAD` changes force a backstop walk via onOverflow.
  */
 
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import {
-  existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, utimesSync,
+  existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync, utimesSync, renameSync,
 } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -25,6 +26,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { startWatcher, __testing } from '../../core/indexing/maintainer-watcher.mjs';
 import { createAdmissionPolicy } from '../../core/indexing/admission-policy.js';
 import { scanDirtyAndEnqueue } from '../../core/incremental-indexing/application/dirty-scan.mjs';
+import { createWatchWake, maintainerWatchEnabled } from '../../core/indexing/index-maintainer.mjs';
 
 const QUEUE = 'index-maintainer-queue.jsonl';
 
@@ -271,4 +273,127 @@ describe('startWatcher (live, native @parcel/watcher)', () => {
     await delay(2600);
     expect(overflowed).toBeGreaterThan(0);
   }, 10000);
+});
+
+// ---------------------------------------------------------------------------
+// 3. Default-on watcher: directory events, admission config, tracked build output,
+//    early wake (review round 4, F3-F5)
+// ---------------------------------------------------------------------------
+
+function ctxFor(admissionPolicy, extra = {}) {
+  return { rootAbs: projectRoot, stateDirPrefix: stateDir + '/', stateDir, admissionPolicy, notify: () => {}, ...extra };
+}
+
+describe('maintainer-watcher directory and config events', () => {
+  // A rename of dirA to dirB arrives as `delete dirA` + `create dirB` only: the
+  // create was dropped as a directory and the delete matched no merkle file, so both
+  // trees stayed wrong until the 10-minute backstop walk.
+  it('a created directory queues the candidate files under it', () => {
+    mkdirSync(join(projectRoot, 'dirB/sub'), { recursive: true });
+    mkdirSync(join(projectRoot, 'dirB/node_modules/pkg'), { recursive: true });
+    writeFileSync(join(projectRoot, 'dirB/a.js'), 'a');
+    writeFileSync(join(projectRoot, 'dirB/sub/b.ts'), 'b');
+    writeFileSync(join(projectRoot, 'dirB/node_modules/pkg/c.js'), 'c');
+    __testing.handleEvents([{ path: join(projectRoot, 'dirB'), type: 'create' }], ctxFor(createAdmissionPolicy({ projectRoot })));
+    expect(queueLines().map((l) => l.file_path).sort()).toEqual(['dirB/a.js', 'dirB/sub/b.ts']);
+  });
+
+  it('a deleted directory queues every merkle file under it', () => {
+    writeFileSync(join(stateDir, 'merkle-state.json'), JSON.stringify({
+      files: { 'dirA/a.js': {}, 'dirA/sub/b.ts': {}, 'dirAB/c.js': {}, 'src/d.js': {} },
+    }));
+    __testing.handleEvents([{ path: join(projectRoot, 'dirA'), type: 'delete' }], ctxFor(createAdmissionPolicy({ projectRoot })));
+    expect(queueLines().map((l) => l.file_path).sort()).toEqual(['dirA', 'dirA/a.js', 'dirA/sub/b.ts']);
+  });
+
+  it('an admission config change asks for the full walk and queues nothing', () => {
+    let configChanges = 0;
+    __testing.handleEvents([
+      { path: join(projectRoot, '.gitignore'), type: 'update' },
+      { path: join(projectRoot, 'src/.gitattributes'), type: 'create' },
+      { path: join(projectRoot, '.sweet-search.config.json'), type: 'update' },
+    ], ctxFor(createAdmissionPolicy({ projectRoot }), { onConfigChange: () => { configChanges += 1; } }));
+    expect(configChanges).toBe(1);
+    expect(queueLines()).toEqual([]);
+  });
+
+  // build/dist/out/target are re-admitted when git tracks the file; the watcher
+  // ignored them natively and denied them per event, so edits there waited for the backstop.
+  it('keeps a tracked file under a build-output dir and drops an untracked one', () => {
+    mkdirSync(join(projectRoot, 'build'), { recursive: true });
+    mkdirSync(join(projectRoot, 'dist'), { recursive: true });
+    writeFileSync(join(projectRoot, 'build/gen.js'), 'tracked');
+    writeFileSync(join(projectRoot, 'dist/out.js'), 'untracked');
+    execFileSync('git', ['init', '-q'], { cwd: projectRoot });
+    execFileSync('git', ['add', 'build/gen.js'], { cwd: projectRoot });
+    const policy = createAdmissionPolicy({ projectRoot });
+    __testing.handleEvents([
+      { path: join(projectRoot, 'build/gen.js'), type: 'update' },
+      { path: join(projectRoot, 'dist/out.js'), type: 'update' },
+    ], ctxFor(policy));
+    expect(queueLines().map((l) => l.file_path)).toEqual(['build/gen.js']);
+    expect(__testing.buildIgnore(projectRoot, stateDir)).not.toContain('build');
+  });
+
+  it('a created subtree past the walk cap asks for the full walk instead', () => {
+    mkdirSync(join(projectRoot, 'big'), { recursive: true });
+    for (let i = 0; i < 30; i++) writeFileSync(join(projectRoot, `big/f${i}.js`), 'x');
+    let configChanges = 0;
+    const saved = __testing.setMaxDirWalkFiles(10);
+    try {
+      __testing.handleEvents([{ path: join(projectRoot, 'big'), type: 'create' }],
+        ctxFor(createAdmissionPolicy({ projectRoot }), { onConfigChange: () => { configChanges += 1; } }));
+    } finally {
+      __testing.setMaxDirWalkFiles(saved);
+    }
+    expect(configChanges).toBe(1);
+    expect(queueLines()).toEqual([]);
+  });
+});
+
+describe('maintainer watcher wake', () => {
+  it('is on by default and off with SWEET_SEARCH_MAINTAINER_WATCH=0', () => {
+    expect(maintainerWatchEnabled({})).toBe(true);
+    expect(maintainerWatchEnabled({ SWEET_SEARCH_MAINTAINER_WATCH: '0' })).toBe(false);
+  });
+
+  it('a burst of events wakes the sleep once, after the delay', () => {
+    vi.useFakeTimers();
+    try {
+      let wakes = 0;
+      const trigger = createWatchWake({ delayMs: 200, wake: () => { wakes += 1; } });
+      trigger(); trigger(); trigger();
+      vi.advanceTimersByTime(199);
+      expect(wakes).toBe(0);
+      vi.advanceTimersByTime(1);
+      expect(wakes).toBe(1);
+      trigger();
+      vi.advanceTimersByTime(200);
+      expect(wakes).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('startWatcher directory rename (live)', () => {
+  let handle = null;
+  afterEach(async () => { if (handle) { await handle.close(); handle = null; } });
+
+  it('queues the new tree and the merkle files of the old one', async () => {
+    if (!(await parcelAvailable())) { expect(true).toBe(true); return; }
+    mkdirSync(join(projectRoot, 'dirA'), { recursive: true });
+    writeFileSync(join(projectRoot, 'dirA/a.js'), 'a');
+    writeFileSync(join(projectRoot, 'dirA/b.js'), 'b');
+    writeFileSync(join(stateDir, 'merkle-state.json'), JSON.stringify({ files: { 'dirA/a.js': {}, 'dirA/b.js': {} } }));
+    let woke = 0;
+    handle = await startWatcher({ stateDir, projectRoot, admissionPolicy: createAdmissionPolicy({ projectRoot }), onEvent: () => { woke += 1; } });
+    expect(handle).toBeTruthy();
+    await delay(300);
+    renameSync(join(projectRoot, 'dirA'), join(projectRoot, 'dirB'));
+    await delay(900);
+    const paths = new Set(queueLines().map((l) => l.file_path));
+    for (const p of ['dirA/a.js', 'dirA/b.js', 'dirB/a.js', 'dirB/b.js']) expect(paths.has(p)).toBe(true);
+    expect(woke).toBeGreaterThan(0);
+  });
 });
