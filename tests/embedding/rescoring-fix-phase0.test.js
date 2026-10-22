@@ -275,33 +275,6 @@ describe('Phase 0: Rescoring Fix Correctness', () => {
       expect(loaded.getStats().int8VectorCount).toBe(0);
     });
 
-    it('BinaryHNSWIndex.save drops stale calibration when replacement is symmetric', async () => {
-      const { BinaryHNSWIndex } = await import('../../core/vector-store/index.js');
-
-      const indexPath = path.join(TEST_DIR, 'binary-save-removes-calibration.idx');
-      const { readIndexHeader } = await import('../../core/vector-store/binary-hnsw-index.js');
-      const index = new BinaryHNSWIndex({
-        indexPath,
-        dimension: 1,
-        floatDimension: 8,
-        M: 2,
-        efSearch: 4,
-      });
-      index.resetForBuild();
-      index.useAsymmetric = true;
-      index.centroid = new Float32Array([1, 2, 3]);
-      index.signVector = new Float32Array([1, -1, 1]);
-      await index.add('old-doc', new Uint8Array([0]), {});
-      await index.save(indexPath);
-      expect(readIndexHeader(indexPath).header.calibration).toBeTruthy();
-
-      index.resetForBuild();
-      await index.add('fresh-doc', new Uint8Array([255]), {});
-      await index.save(indexPath);
-
-      expect(readIndexHeader(indexPath).header.calibration ?? null).toBeNull();
-    });
-
     it('BinaryHNSWIndex clean rebuild removes the stale bitmap of the replaced artifact', async () => {
       const { BinaryHNSWIndex } = await import('../../core/vector-store/index.js');
 

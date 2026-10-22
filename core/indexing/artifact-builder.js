@@ -320,41 +320,16 @@ export async function buildHnswIndex(items, options = {}) {
   // Truncate all embeddings once — reused for per-item encoding
   const truncated = items.map(item => truncateForHNSW(item.embedding, floatDimension));
 
-  // Asymmetric calibration (center→rotate→sign-bit) disabled.
-  // Tested at both 512d and 1024d (Voyage Code 3) — no quality improvement,
-  // slight regression. Plain sign-bit is optimal for this benchmark/task.
-  // index.calibrateAsymmetric(truncated);
-
-  // Build insertion order (index permutation keeps items↔embeddings paired)
-  const insertionOrder = BINARY_HNSW_CONFIG.insertionOrder || 'sequential';
+  // Shuffled insertion order (index permutation keeps items↔embeddings paired).
   const order = Array.from({ length: items.length }, (_, i) => i);
-  if (insertionOrder === 'shuffle') {
-    fisherYatesShuffle(order);
-  } else if (insertionOrder === 'diversity') {
-    const buckets = new Map();
-    for (let i = 0; i < items.length; i++) {
-      const dir = items[i].metadata?.file?.replace(/\/[^/]+$/, '') || '_unknown';
-      if (!buckets.has(dir)) buckets.set(dir, []);
-      buckets.get(dir).push(i);
-    }
-    const dirs = [...buckets.keys()];
-    fisherYatesShuffle(dirs);
-    order.length = 0;
-    let rem = items.length;
-    while (rem > 0) {
-      for (const dir of dirs) {
-        const b = buckets.get(dir);
-        if (b.length > 0) { order.push(b.shift()); rem--; }
-      }
-    }
-  }
+  fisherYatesShuffle(order);
 
   const startTime = performance.now();
   let processed = 0;
 
   for (const idx of order) {
     const item = items[idx];
-    const binary = index.encodeDocument(truncated[idx]);
+    const binary = floatToBinary(truncated[idx]);
 
     // Optionally include int8 for rescoring
     const int8 = includeInt8
@@ -381,8 +356,7 @@ export async function buildHnswIndex(items, options = {}) {
       floatDimension,
       M,
       efConstruction,
-      useAsymmetric: index.useAsymmetric,
-      insertionOrder,
+      insertionOrder: 'shuffle',
     },
   };
 }
@@ -418,57 +392,23 @@ async function buildHnswIndexFromDb(db, options = {}) {
 
   index.resetForBuild();
 
-  // Pre-compute insertion order in a temp table
-  const insertionOrder = BINARY_HNSW_CONFIG.insertionOrder || 'sequential';
-  let stmt;
-
-  if (insertionOrder !== 'sequential') {
-    db.exec('CREATE TEMP TABLE IF NOT EXISTS artifact_order (pos INTEGER PRIMARY KEY, vector_rowid INTEGER)');
-    db.exec('DELETE FROM artifact_order');
-
-    const rowidRows = db.prepare(`SELECT rowid FROM vectors WHERE ${vectorWhere} ORDER BY rowid`).all();
-    let indices = rowidRows.map((row) => row.rowid);
-
-    if (insertionOrder === 'shuffle') {
-      fisherYatesShuffle(indices);
-    } else if (insertionOrder === 'diversity') {
-      const rows = db.prepare(`SELECT rowid, metadata FROM vectors WHERE ${vectorWhere} ORDER BY rowid`).all();
-      const buckets = new Map();
-      for (const row of rows) {
-        let filePath = '_unknown';
-        try { filePath = JSON.parse(row.metadata)?.file || '_unknown'; } catch (_e) {}
-        const dir = filePath.replace(/\/[^/]+$/, '') || '_unknown';
-        if (!buckets.has(dir)) buckets.set(dir, []);
-        buckets.get(dir).push(row.rowid);
-      }
-      const dirs = [...buckets.keys()];
-      fisherYatesShuffle(dirs);
-      indices = [];
-      let rem = totalVectors;
-      while (rem > 0) {
-        for (const dir of dirs) {
-          const b = buckets.get(dir);
-          if (b.length > 0) { indices.push(b.shift()); rem--; }
-        }
-      }
+  // Shuffled insertion order, precomputed in a temp table.
+  db.exec('CREATE TEMP TABLE IF NOT EXISTS artifact_order (pos INTEGER PRIMARY KEY, vector_rowid INTEGER)');
+  db.exec('DELETE FROM artifact_order');
+  const indices = db.prepare(`SELECT rowid FROM vectors WHERE ${vectorWhere} ORDER BY rowid`).all().map((row) => row.rowid);
+  fisherYatesShuffle(indices);
+  const insertOrder = db.prepare('INSERT INTO artifact_order (pos, vector_rowid) VALUES (?, ?)');
+  db.transaction(() => {
+    for (let pos = 0; pos < indices.length; pos++) {
+      insertOrder.run(pos, indices[pos]);
     }
-
-    const insertOrder = db.prepare('INSERT INTO artifact_order (pos, vector_rowid) VALUES (?, ?)');
-    db.transaction(() => {
-      for (let pos = 0; pos < indices.length; pos++) {
-        insertOrder.run(pos, indices[pos]);
-      }
-    })();
-
-    stmt = db.prepare(`
-      SELECT v.id, v.embedding, v.metadata
-      FROM artifact_order o
-      JOIN vectors v ON v.rowid = o.vector_rowid
-      ORDER BY o.pos
-    `);
-  } else {
-    stmt = db.prepare(`SELECT id, embedding, metadata FROM vectors WHERE ${vectorWhere} ORDER BY rowid`);
-  }
+  })();
+  const stmt = db.prepare(`
+    SELECT v.id, v.embedding, v.metadata
+    FROM artifact_order o
+    JOIN vectors v ON v.rowid = o.vector_rowid
+    ORDER BY o.pos
+  `);
 
   const startTime = performance.now();
   let processed = 0;
@@ -476,7 +416,7 @@ async function buildHnswIndexFromDb(db, options = {}) {
   for (const row of stmt.iterate()) {
     const embedding = new Float32Array(row.embedding.buffer, row.embedding.byteOffset, row.embedding.length / 4);
     const truncated = truncateForHNSW(embedding, floatDimension);
-    const binary = index.encodeDocument(truncated);
+    const binary = floatToBinary(truncated);
     const int8 = includeInt8 ? quantizeToInt8(truncated) : null;
     const metadata = row.metadata ? JSON.parse(row.metadata) : {};
 
@@ -488,9 +428,7 @@ async function buildHnswIndexFromDb(db, options = {}) {
     }
   }
 
-  if (insertionOrder !== 'sequential') {
-    db.exec('DROP TABLE IF EXISTS temp.artifact_order');
-  }
+  db.exec('DROP TABLE IF EXISTS temp.artifact_order');
 
   const buildTime = performance.now() - startTime;
 
@@ -504,8 +442,7 @@ async function buildHnswIndexFromDb(db, options = {}) {
       floatDimension,
       M,
       efConstruction,
-      useAsymmetric: index.useAsymmetric,
-      insertionOrder,
+      insertionOrder: 'shuffle',
     },
   };
 }
@@ -634,9 +571,8 @@ export async function buildFromCodebaseDb(codebaseDbPath = DB_PATHS.codebase, op
 
   const Database = (await import('better-sqlite3')).default;
   const { applyReadPragmas } = await import('../infrastructure/db-utils.js');
-  const insertionOrder = BINARY_HNSW_CONFIG.insertionOrder || 'sequential';
-  // Non-sequential orders require temp tables → can't use readonly
-  const db = new Database(codebaseDbPath, insertionOrder === 'sequential' ? { readonly: true } : {});
+  // The shuffled insertion order uses a temp table, so the connection is not readonly.
+  const db = new Database(codebaseDbPath);
   applyReadPragmas(db);
 
   const totalVectors = db.prepare(`SELECT COUNT(*) as c FROM vectors WHERE ${liveVectorSql(db)}`).get().c;
@@ -753,7 +689,7 @@ export async function updateArtifacts(newItems, removedIds = [], options = {}) {
       const truncated = truncateForHNSW(item.embedding, floatDimension);
 
       // Asymmetric encode if calibrated, else plain sign-bit
-      const binary = hnswIndex.encodeDocument(truncated);
+      const binary = floatToBinary(truncated);
       const int8 = quantizeToInt8(truncated);
 
       // Add to HNSW index (int8 row stored with the node)

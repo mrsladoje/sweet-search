@@ -87,9 +87,6 @@ export const BINARY_HNSW_CONFIG = {
     },
   },
 
-  // Insertion order for graph quality ('sequential' | 'shuffle' | 'diversity')
-  insertionOrder: 'shuffle',
-
   // Adaptive early termination thresholds (Fix 4).
   // Tune via parameter sweep; values below are starting heuristics.
   earlyTermination: {
