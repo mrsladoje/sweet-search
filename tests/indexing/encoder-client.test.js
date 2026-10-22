@@ -106,7 +106,9 @@ describe('encoder client', () => {
   });
 
   it('kills a child that goes silent on a request, then recovers', async () => {
-    const c = make({ requestTimeoutMs: 200 });
+    // Start-up gets a long grace (a loaded host can take seconds to start a child); the
+    // 200 ms silence limit then applies to a child that is up and goes quiet mid-request.
+    const c = make({ requestTimeoutMs: 200, startupGraceMs: 60_000 });
     await c.dense(['warm']);
     const hungPid = c.pid;
     await expect(c.dense(['hang'])).rejects.toThrow(/timed out after 200 ms/);
@@ -114,6 +116,31 @@ describe('encoder client', () => {
     await new Promise((r) => setTimeout(r, 100));
     expect(() => process.kill(hungPid, 0)).toThrow();
     expect((await c.dense(['ok']))[0].embedding[0]).toBe(2);
+  }, 120_000);
+
+  // An MCP server searches in-process and speaks its protocol on stdout; model loading in
+  // the query child logs to stdout. childStdout: 2 sends the child's stdout to our stderr.
+  it('can send the child\'s stdout to this process\'s stderr', async () => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-encoder-client-'));
+    const hostPath = path.join(dir, 'host.mjs');
+    fs.writeFileSync(hostPath, `console.log('MODEL-LOAD-NOISE');\n${FAKE_HOST}`);
+    const script = path.join(dir, 'parent.mjs');
+    const clientUrl = new URL('../../core/indexing/encoder-client.mjs', import.meta.url).href;
+    fs.writeFileSync(script, `import { createEncoderClient } from '${clientUrl}';
+const c = createEncoderClient({ hostPath: '${hostPath}', childStdout: 2 });
+await c.dense(['ok']);
+c.close();
+process.stdout.write('PROTOCOL');`);
+    const { spawnSync } = await import('node:child_process');
+    const run = spawnSync(process.execPath, [script], { encoding: 'utf8', timeout: 60_000 });
+    expect(run.stdout).toBe('PROTOCOL');
+    expect(run.stderr).toContain('MODEL-LOAD-NOISE');
+  }, 90_000);
+
+  it('kills a new child that sends nothing within the start-up grace', async () => {
+    const c = make({ requestTimeoutMs: 100, startupGraceMs: 300 });
+    await expect(c.dense(['hang'])).rejects.toThrow(/timed out after 300 ms/);
+    expect(c.pid).toBeNull();
   });
 
   it('kills the child at once on close, even mid-request', async () => {

@@ -12,6 +12,7 @@ import { existsSync, statSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { launchMaintainer } from '../core/indexing/maintainer-launcher.mjs';
+import { startQueryEncoder } from '../core/search/query-encoder.mjs';
 import { resolveProjectRoot as resolveIndexedRoot } from '../core/search/server-identity.js';
 import {
   collectSemanticShownSpans,
@@ -447,8 +448,14 @@ server.prompt(
 // Graceful shutdown (F-18)
 // ---------------------------------------------------------------------------
 
+// Searches run in this process, so its query models run in an idle-exiting child (the
+// search daemon does the same, core/search/query-encoder.mjs): the child starts on the first
+// model request and exits after a long idle stretch, giving the models' memory back.
+let queryEncoder = null;
+
 function shutdown(signal) {
   console.error(`[sweet-search-mcp] ${signal} received, shutting down`);
+  try { queryEncoder?.close(); } catch { /* the child exits with us anyway */ }
   try { server.close(); } catch (err) {
     if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
   }
@@ -459,6 +466,7 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 async function main() {
+  queryEncoder = startQueryEncoder({ log: (level, msg) => console.error(`[sweet-search-mcp] ${msg}`) });
   const transport = new StdioServerTransport();
   await server.connect(transport);
   console.error(`[sweet-search-mcp] Server started (project: ${PROJECT_ROOT})`);

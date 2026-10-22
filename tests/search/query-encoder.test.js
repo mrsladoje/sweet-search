@@ -42,7 +42,7 @@ describe('query encoder child', () => {
     expect(flat(liViaChild)).toEqual(flat(li));
     expect(client.pid).toBeGreaterThan(0);
 
-    await new Promise((r) => setTimeout(r, 4000));
+    for (let i = 0; i < 300 && client.pid !== null; i++) await new Promise((r) => setTimeout(r, 100));
     expect(client.pid).toBeNull(); // idle: the process exited, its memory with it
     client.prewarm(); // an agent call before the search starts it again
     expect(client.pid).toBeGreaterThan(0);

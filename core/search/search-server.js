@@ -804,9 +804,21 @@ export async function startServer() {
   const { default: SweetSearch } = await import('./sweet-search.js');
 
   // The query models run in a child that exits after a long idle stretch, which is the
-  // only way to give their memory back (query-encoder.mjs).
+  // only way to give their memory back (query-encoder.mjs). The fleet memory budget
+  // (rss-budget.mjs) counts that child with this daemon, as it does the maintainer's
+  // encoder child.
+  let rssRegistration = null;
+  let queryChildPid = null;
+  const reportQueryChild = () => { rssRegistration?.setChildren(queryChildPid ? [queryChildPid] : []).catch(() => {}); };
   const { startQueryEncoder } = await import('./query-encoder.mjs');
-  const queryEncoder = startQueryEncoder({ log: (level, msg) => console.log(`[Server] ${msg}`) });
+  const queryEncoder = startQueryEncoder({
+    log: (level, msg) => console.log(`[Server] ${msg}`),
+    onChildChange: (pid) => { queryChildPid = pid; reportQueryChild(); },
+  });
+  import('../indexing/rss-budget.mjs')
+    .then((mod) => mod.registerDaemon({ pid: process.pid, stateDir: path.dirname(DB_PATHS.codebase), kind: 'search' }))
+    .then((registration) => { rssRegistration = registration; reportQueryChild(); })
+    .catch(() => { /* best-effort: an unregistered daemon is just not counted */ });
 
   const searcher = new SweetSearch({ verbose: false });
   const initStartedAt = Date.now();
@@ -900,6 +912,7 @@ export async function startServer() {
       if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] searcher close: ${err?.message || err}\n`);
     }
     try { queryEncoder.close(); } catch { /* the child exits with us anyway */ }
+    try { await rssRegistration?.unregister(); } catch { /* best-effort */ }
     try { await fs.unlink(pidFile); } catch (err) {
       if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
     }
@@ -1584,9 +1597,15 @@ export async function startServer() {
   // queried. (The separate LRU cap below is the only path that can stop an
   // active peer, and only via a newly-started peer within one registry-refresh
   // interval; see daemon-registry.js selectEvictionTargets.)
+  let rssTouchedAt = 0;
   idleTimer = setInterval(() => {
     const ttl = Number(process.env.SWEET_SEARCH_DAEMON_IDLE_TTL_MS ?? 1_200_000);
     const idleFor = Date.now() - lastActivityMs;
+    // The fleet budget sheds its longest-idle daemon first: keep this one's stamp current.
+    if (rssRegistration && lastActivityMs !== rssTouchedAt) {
+      rssTouchedAt = lastActivityMs;
+      rssRegistration.touch(lastActivityMs).catch(() => {});
+    }
     if (ttl > 0 && idleFor > ttl) {
       gracefulShutdown('idle-ttl');
       return;

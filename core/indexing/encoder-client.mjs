@@ -47,11 +47,17 @@ export function createEncoderClient(options = {}) {
   const idleMs = options.idleMs ?? DEFAULT_ENCODER_IDLE_MS;
   const rssMaxBytes = options.rssMaxBytes ?? DEFAULT_ENCODER_RSS_MAX_BYTES;
   const requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_ENCODER_REQUEST_TIMEOUT_MS;
+  // Silence allowed before a new child's first message (process start, module load).
+  // Defaults to the request timeout; never shorter than it.
+  const startupGraceMs = Math.max(requestTimeoutMs, options.startupGraceMs ?? requestTimeoutMs);
   const env = options.env ?? process.env;
   const log = options.log ?? (() => {});
   const hostPath = options.hostPath ?? HOST;
   const execPath = options.execPath ?? process.execPath;
   const onChildChange = options.onChildChange ?? (() => {});
+  // Where the child's stdout goes: inherited, or 2 = this process's stderr (an MCP server's
+  // stdout is its protocol channel, and model loading logs).
+  const childStdout = options.childStdout ?? 'inherit';
   const announce = (pid) => { try { onChildChange(pid); } catch { /* best-effort */ } };
   let child = null;
   let seq = 0;
@@ -67,13 +73,14 @@ export function createEncoderClient(options = {}) {
   function armSilence(c) {
     clearTimeout(silenceTimer);
     if (pending.size === 0) return;
+    const limitMs = c.spoke ? requestTimeoutMs : startupGraceMs;
     silenceTimer = setTimeout(() => {
       if (child !== c || pending.size === 0) return;
-      log('WARN', `Encoder process ${c.pid} sent nothing for ${requestTimeoutMs} ms; killing it`);
+      log('WARN', `Encoder process ${c.pid} sent nothing for ${limitMs} ms; killing it`);
       child = null;
       try { c.kill('SIGKILL'); } catch { /* gone */ }
-      failPending(c, `encoder process timed out after ${requestTimeoutMs} ms`);
-    }, requestTimeoutMs);
+      failPending(c, `encoder process timed out after ${limitMs} ms`);
+    }, limitMs);
     silenceTimer.unref?.();
   }
 
@@ -106,7 +113,7 @@ export function createEncoderClient(options = {}) {
       env,
       execPath,
       serialization: 'advanced',
-      stdio: ['ignore', 'inherit', 'inherit', 'ipc'],
+      stdio: ['ignore', childStdout, 'inherit', 'ipc'],
     });
     spawns += 1;
     // A dead or unreachable child fails its requests at once: node does not
@@ -117,6 +124,7 @@ export function createEncoderClient(options = {}) {
       failPending(c, reason);
     };
     c.on('message', (msg) => {
+      c.spoke = true;
       if (child === c) armSilence(c);
       const p = pending.get(msg?.id);
       if (!p) return;
