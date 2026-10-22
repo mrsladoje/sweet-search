@@ -62,7 +62,7 @@ describe('alias sidecar NDJSON roundtrip', () => {
     });
   });
 
-  it('still reads a legacy v1 monolithic sidecar', async () => {
+  it('loads nothing from a v1 monolithic sidecar (no longer written)', async () => {
     const idx = makeIndex();
     idx.documents.set('ex-1', { numTokens: 1 });
     const v1 = {
@@ -75,9 +75,7 @@ describe('alias sidecar NDJSON roundtrip', () => {
     };
     writeFileSync(idx._aliasSidecarPath(), JSON.stringify(v1));
     await idx._loadAliasSidecar();
-    // a-1 loads; a-2 is dropped by the orphan guard (exemplar not in documents).
-    expect(idx.aliasPointers.size).toBe(1);
-    expect(idx.aliasPointers.get('a-1')).toEqual({ exemplarId: 'ex-1', clusterId: 3, metadata: { file: 'x.js' } });
+    expect(idx.aliasPointers.size).toBe(0);
   });
 
   it('applies the orphan guard on v2 loads', async () => {

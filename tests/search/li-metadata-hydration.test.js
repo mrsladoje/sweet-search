@@ -38,19 +38,6 @@ describe('CodebaseRepository.getChunkMetaByIds', () => {
 });
 
 describe('LateInteractionIndex alias sidecar', () => {
-  it('falls back to the staged `<index>.tmp.aliases.json` name left by old rebuilds', async () => {
-    const indexPath = path.join(TMP, 'codebase-late-interaction.db');
-    writeFileSync(indexPath + '.tmp.aliases.json', [
-      JSON.stringify({ version: 2, count: 1 }),
-      JSON.stringify({ aliasId: 'a.md:1-3:0', exemplarId: 'b.md:1-3:0', clusterId: 'c1', metadata: { file: 'a.md', startLine: 1, endLine: 3 } }),
-    ].join('\n') + '\n');
-    const li = new LateInteractionIndex({ indexPath, loadExisting: false });
-    li.documents.set('b.md:1-3:0', {}); // orphan guard: the exemplar must exist
-    await li._loadAliasSidecar();
-    expect(li.aliasPointers.size).toBe(1);
-    expect(li.aliasPointers.get('a.md:1-3:0').exemplarId).toBe('b.md:1-3:0');
-  });
-
   it('prefers the canonical sidecar when both exist', async () => {
     const indexPath = path.join(TMP, 'codebase-late-interaction.db');
     const line = (id) => [JSON.stringify({ version: 2, count: 1 }), JSON.stringify({ aliasId: id, exemplarId: 'x:1-1:0', clusterId: 'c', metadata: {} })].join('\n') + '\n';

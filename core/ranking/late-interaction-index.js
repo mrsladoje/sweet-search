@@ -288,10 +288,9 @@ const SSLX_HEADER_SIZE = 64;
 // pages are clean and file-backed, so they do not count toward the process
 // footprint and the OS drops them under memory pressure. Safe because a segment
 // file is never rewritten in place (_writeSegmentFile writes a temp file and
-// renames it). SWEET_SEARCH_LI_MMAP=0 reads segments into the heap as before.
+// renames it). Without the native addon, segments are read into the heap.
 const mappedSegmentBuffers = new WeakSet();
 function mapSegmentFile(segPath) {
-  if (process.env.SWEET_SEARCH_LI_MMAP === '0') return null;
   const map = nativeRescoreKernels()?.mapFileSection;
   if (typeof map !== 'function') return null;
   try {
@@ -1320,21 +1319,10 @@ export class LateInteractionIndex {
   }
 
   async _loadAliasSidecar(indexPath = this.indexPath) {
-    let p = this._aliasSidecarPath(indexPath);
-    if (!existsSync(p)) {
-      // Stage-and-swap rebuilds wrote the sidecar under the STAGED stub name
-      // (`<index>.tmp.aliases.json`) and the swap renamed only the stub and the
-      // segments directory, so every shipped index loaded zero aliases. The
-      // swap now renames the sidecar too; this fallback heals indexes built
-      // before that fix without a re-index.
-      const staged = this._aliasSidecarPath(indexPath + '.tmp');
-      if (!existsSync(staged)) return;
-      p = staged;
-    }
+    const p = this._aliasSidecarPath(indexPath);
+    if (!existsSync(p)) return;
     // Streamed line-by-line so no single string approaches V8's ~512 MB
-    // ceiling. Two on-disk formats:
-    //   v1 — one JSON.stringify'd { version: 1, aliases: [...] } line
-    //   v2 — NDJSON: { version: 2, count } header, then one alias per line
+    // ceiling. NDJSON: a { version: 2, count } header, then one alias per line.
     //
     // The input stream is destroyed in `finally`: early returns abandon the
     // readline iterator, and rl.close() does NOT destroy its input — an
@@ -1353,16 +1341,6 @@ export class LateInteractionIndex {
         if (first) {
           first = false;
           const head = JSON.parse(line);
-          if (head && Array.isArray(head.aliases)) {
-            // v1 monolithic payload — the whole sidecar is this one line,
-            // so JSON.parse succeeding IS the integrity check (any
-            // truncation makes it unparseable).
-            for (const { aliasId, exemplarId, clusterId, metadata } of head.aliases) {
-              if (!this.documents.has(exemplarId)) continue; // orphan guard, see below
-              this.aliasPointers.set(aliasId, { exemplarId, clusterId, metadata: metadata || {} });
-            }
-            return;
-          }
           if (!head || head.version !== 2 || !Number.isFinite(head.count)) return;
           expected = head.count;
           continue;
@@ -2263,95 +2241,8 @@ export class LateInteractionIndex {
         const data = await fs.readFile(this.indexPath, 'utf-8');
         state = JSON.parse(data);
         if (state.format === 'segmented') {
-          // segmentDir may be stored as:
-          //   - basename (new format, stage-and-swap safe): "foo.db.segments"
-          //   - absolute path (legacy or pre-fix-state): "/abs/.../foo.db.segments"
-          //   - absolute path with .tmp suffix (pre-fix broken state):
-          //     "/abs/.../foo.db.tmp.segments" — self-heal by migrating the
-          //     orphaned directory to the canonical name and rewriting the stub.
-          let segDirAbs;
-          if (path.isAbsolute(state.segmentDir)) {
-            segDirAbs = state.segmentDir;
-          } else {
-            segDirAbs = path.join(path.dirname(this.indexPath), state.segmentDir);
-          }
-
-          // Self-heal: the pre-fix staged-save bug wrote an absolute
-          // segmentDir with the `.tmp.segments` suffix into the promoted
-          // stub. Detect that pattern and migrate the directory to the
-          // canonical {indexPath}.segments name so the stub can be rewritten
-          // as a stable basename. Race-safe: two concurrent processes may
-          // both reach this branch; fs.rename atomicity ensures only one
-          // succeeds, and we tolerate the loser's ENOENT / EEXIST.
-          const canonicalSegDir = this.indexPath + '.segments';
-          const maybeMigrate = async (from, to) => {
-            try {
-              await fs.rename(from, to);
-              return true;
-            } catch (err) {
-              // ENOENT: another process already migrated it (source gone).
-              // EEXIST / ENOTEMPTY: destination raced us (target populated).
-              // EPERM: atomic rename may fall through on some platforms;
-              //        treat as a best-effort miss and let downstream decide.
-              if (err && (err.code === 'ENOENT' || err.code === 'EEXIST'
-                || err.code === 'ENOTEMPTY' || err.code === 'EPERM')) {
-                return false;
-              }
-              throw err;
-            }
-          };
-
-          // Atomic stub rewrite via .tmp + rename, so a crash mid-heal cannot
-          // leave a truncated stub file.
-          const writeStubAtomic = async (stubContent) => {
-            const stubTmp = this.indexPath + '.selfheal.tmp';
-            await fs.writeFile(stubTmp, JSON.stringify(stubContent));
-            try {
-              await fs.rename(stubTmp, this.indexPath);
-            } catch (err) {
-              try { await fs.unlink(stubTmp); } catch (_e) { /* best effort */ }
-              throw err;
-            }
-          };
-
-          const looksLikeBrokenTmpState = segDirAbs !== canonicalSegDir
-            && segDirAbs.endsWith('.tmp.segments')
-            && path.dirname(segDirAbs) === path.dirname(canonicalSegDir);
-          if (looksLikeBrokenTmpState) {
-            if (existsSync(segDirAbs) && !existsSync(canonicalSegDir)) {
-              console.warn(`[LateInteraction] Self-heal: migrating orphaned ${path.basename(segDirAbs)} to ${path.basename(canonicalSegDir)}`);
-              await maybeMigrate(segDirAbs, canonicalSegDir);
-            }
-            // Only rewrite the stub if the canonical directory actually
-            // exists after the migration attempt. Otherwise we'd point
-            // a newly-rewritten stub at nothing and load would fail.
-            if (existsSync(canonicalSegDir)) {
-              await writeStubAtomic({
-                version: '3.0',
-                format: 'segmented',
-                segmentDir: path.basename(canonicalSegDir),
-              });
-              segDirAbs = canonicalSegDir;
-            }
-          }
-
-          // Second self-heal path: stub points at a non-existent segments dir
-          // but an orphaned `.tmp.segments` exists nearby — migrate in place.
-          if (!existsSync(segDirAbs)) {
-            const tmpSegDir = this.indexPath + '.tmp.segments';
-            if (existsSync(tmpSegDir) && !existsSync(canonicalSegDir)) {
-              console.warn(`[LateInteraction] Self-heal: migrating orphaned ${path.basename(tmpSegDir)} to ${path.basename(canonicalSegDir)}`);
-              await maybeMigrate(tmpSegDir, canonicalSegDir);
-              if (existsSync(canonicalSegDir)) {
-                await writeStubAtomic({
-                  version: '3.0',
-                  format: 'segmented',
-                  segmentDir: path.basename(canonicalSegDir),
-                });
-                segDirAbs = canonicalSegDir;
-              }
-            }
-          }
+          // The stub stores segmentDir as a basename next to the stub (stage-and-swap safe).
+          const segDirAbs = path.resolve(path.dirname(this.indexPath), state.segmentDir);
           await this._loadSegmented(segDirAbs);
           // Positions-only readers must not load the alias sidecar: its orphan
           // guard resolves each alias against `documents`, which is empty by

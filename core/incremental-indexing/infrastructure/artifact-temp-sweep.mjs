@@ -42,8 +42,7 @@
  *   - SQLite `-wal` / `-shm`, the dirty / processing / dead-letter queues,
  *     the lockfile, and reader heartbeats are never matched and never
  *     removed.
- *   - Directories are never removed; the LI self-heal owns `*.tmp.segments`
- *     directories, which this sweep refuses to recurse into.
+ *   - Directories are never removed.
  */
 
 import fs from 'node:fs';
@@ -82,16 +81,13 @@ export function isOrphanTempName(name) {
 
 /**
  * True for the canonical artifact subdirs that hold compaction temps
- * (sparse-gram `*.deltas`, LI `*.segments`). Orphan / self-heal directories
- * (those containing `.tmp.`) are skipped so the sweep never recurses into a
- * `*.tmp.segments` directory the LI self-heal is responsible for migrating.
+ * (sparse-gram `*.deltas`, LI `*.segments`).
  *
  * @param {string} name
  * @returns {boolean}
  */
 export function isScannableArtifactSubdir(name) {
   if (typeof name !== 'string') return false;
-  if (name.includes('.tmp.')) return false;
   return name.endsWith('.deltas') || name.endsWith('.segments');
 }
 
