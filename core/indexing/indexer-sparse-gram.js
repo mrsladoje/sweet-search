@@ -146,6 +146,9 @@ export async function buildSparseGramArtifact(allFiles, dryRun) {
   }
 }
 
+// The maintainer's base rebuild (maintenance-handlers.mjs) builds the same way.
+export { collectFileSymbolMasksFromDb, resolveSparseGramWeightsId };
+
 export const __TEST__ = {
   collectFileSymbolMasks,
   collectFileSymbolMasksFromDb,

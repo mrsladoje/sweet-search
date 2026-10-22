@@ -212,3 +212,26 @@ describe('SweetSearch._reloadManifestArtifacts — HNSW only when its file chang
     expect(searcher._reloadBinaryHnsw).toHaveBeenCalledTimes(1);
   });
 });
+
+// Sparse maintenance rebuilds the grep base in place at the same epoch and empties the
+// manifest's delta list: a searcher holding the old base then missed every file since.
+describe('SweetSearch._refreshManifestPins — sparse-gram base rebuilt at the same epoch', () => {
+  it('reloads the base on a grep call when its file changed, not otherwise', async () => {
+    const searcher = makeSearcher();
+    const basePath = join(stateDir, 'codebase-sparse-grams.idx');
+    writeFileSync(basePath, 'base v1');
+    searcher.sparseGramIndexPath = basePath;
+    searcher.sparseGramIndex = { old: true };
+    searcher._loadSparseGramBase = vi.fn(() => ({ fresh: true }));
+
+    const { statSync } = await import('node:fs');
+    const st = statSync(basePath, { bigint: true });
+    searcher._sparseGramIdentity = `${st.ino}:${st.size}:${st.mtimeNs}`;
+    await searcher._refreshManifestPins({ reloadScope: 'grep' });
+    expect(searcher._loadSparseGramBase).not.toHaveBeenCalled();
+
+    searcher._sparseGramIdentity = 'identity-at-load';
+    await searcher._refreshManifestPins({ reloadScope: 'grep' });
+    expect(searcher._loadSparseGramBase).toHaveBeenCalledTimes(1);
+  });
+});

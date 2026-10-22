@@ -128,14 +128,16 @@ export function evaluateWatermarks(state, config = DEFAULT_WATERMARKS) {
       },
     });
   }
+  // Past the size ratio the handler rebuilds the base (the deltas empty, so the job does
+  // not fire again on the next edit); past the segment count it merges; retired segments
+  // past their grace are deleted.
   const sparse = state.sparseGram || {};
-  if ((sparse.deltaSizeRatio ?? 0) > config.sparseDeltaRatio
-      || (sparse.deltaSegmentCount ?? 0) > config.sparseDeltaSegmentCount) {
+  const sparseRatioOver = (sparse.deltaSizeRatio ?? 0) > config.sparseDeltaRatio;
+  const sparseCountOver = (sparse.deltaSegmentCount ?? 0) > config.sparseDeltaSegmentCount;
+  if (sparseRatioOver || sparseCountOver || (sparse.retiredDue ?? 0) > 0) {
     jobs.push({
       tier: 'sparse_gram',
-      reason: (sparse.deltaSizeRatio ?? 0) > config.sparseDeltaRatio
-        ? 'delta_size_ratio'
-        : 'delta_segment_count',
+      reason: sparseRatioOver ? 'delta_size_ratio' : (sparseCountOver ? 'delta_segment_count' : 'retired_segments'),
       payload: {
         deltaSizeRatio: sparse.deltaSizeRatio ?? 0,
         deltaSegmentCount: sparse.deltaSegmentCount ?? 0,

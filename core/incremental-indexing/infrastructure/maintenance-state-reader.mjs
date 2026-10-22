@@ -19,7 +19,7 @@ import Database from 'better-sqlite3';
 
 import { loadBitmap, popcount } from './tombstone-bitmap.mjs';
 import { readIndexHeader } from '../../vector-store/index-file-header.js';
-import { deltaSizeStats } from './sparse-gram-delta.mjs';
+import { deltaSizeStats, pendingDeleteStats } from './sparse-gram-delta.mjs';
 import { evaluateSegmentRatios, LI_SEGMENT_SIZE } from './li-segment-state.mjs';
 import { fts5SegmentCount } from './sqlite-fts5.mjs';
 
@@ -55,10 +55,11 @@ export function readFts5State(stateDir) {
  */
 export function readSparseGramState(stateDir) {
   try {
-    const stats = deltaSizeStats(path.join(stateDir, 'codebase-sparse-grams.idx'));
-    return { deltaSizeRatio: stats.ratio, deltaSegmentCount: stats.deltaSegments };
+    const base = path.join(stateDir, 'codebase-sparse-grams.idx');
+    const stats = deltaSizeStats(base);
+    return { deltaSizeRatio: stats.ratio, deltaSegmentCount: stats.deltaSegments, retiredDue: pendingDeleteStats(base).due };
   } catch {
-    return { deltaSizeRatio: 0, deltaSegmentCount: 0 };
+    return { deltaSizeRatio: 0, deltaSegmentCount: 0, retiredDue: 0 };
   }
 }
 
