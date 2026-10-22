@@ -608,8 +608,7 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 | ⚡ **Binary walk** | `1.6–4.7×` faster than FAISS / USearch binary HNSW, same graph |
 | 💾 **Index RAM** (140k vectors) | `297 MB` vs `517 MB–2.0 GB` for FAISS |
 | 🧪 **Queries** | 2,400 GCSN held-out (seed 42) + dev-repo distractors · 1,200 AdvTest |
-| 🖥️ **Hardware** | Apple M3 Max · x86 AMD EPYC (AVX2) |
-| 📐 **Method** | [eval/benchmarks/hnsw-rivals/paper](eval/benchmarks/hnsw-rivals/paper/README.md) |
+| 📊 **All results** | [RESULTS-paper.md](eval/benchmarks/hnsw-rivals/paper/RESULTS-paper.md) |
 
 <br>
 
