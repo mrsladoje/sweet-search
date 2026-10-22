@@ -418,7 +418,7 @@ export function graphPageRankHandler(job, { stateDir, onProgress = null }) {
     db.pragma('busy_timeout = 5000');
     // Read first: a change made during the pass then triggers the next one.
     const graphEpoch = graphChangeEpoch(db);
-    const result = populatePageRankColumn(db);
+    const result = populatePageRankColumn(db, { onlyChanged: true });
     const statePath = path.join(stateDir, PAGERANK_STATE);
     fs.writeFileSync(`${statePath}.tmp`, JSON.stringify({ ranAt: Date.now(), graphEpoch, entities: result.entities }));
     fs.renameSync(`${statePath}.tmp`, statePath);

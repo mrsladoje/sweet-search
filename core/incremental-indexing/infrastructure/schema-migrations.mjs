@@ -113,6 +113,13 @@ export function migrateVectorsSchema(db) {
     'idx_vectors_logical',
     'CREATE INDEX IF NOT EXISTS idx_vectors_logical ON vectors(logical_chunk_id) WHERE logical_chunk_id != \'\'',
   );
+  // Dedup alias rows by exemplar: the maintainer converts the aliases of a retired
+  // exemplar into ordinary rows. Partial: only alias rows carry an exemplarId.
+  if (db.prepare('PRAGMA table_info(vectors)').all().some((c) => c.name === 'metadata')) createIndexIfMissing(
+    db,
+    'idx_vectors_alias_exemplar',
+    "CREATE INDEX IF NOT EXISTS idx_vectors_alias_exemplar ON vectors(json_extract(metadata, '$.exemplarId')) WHERE json_extract(metadata, '$.exemplarId') IS NOT NULL",
+  );
   // Chunk-text BM25 index (core/indexing/chunk-text-fts.js): created with a
   // new index; its triggers are ensured on every write session.
   ensureChunkTextFts(db);

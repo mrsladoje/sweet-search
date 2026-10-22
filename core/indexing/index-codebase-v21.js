@@ -208,6 +208,13 @@ Output:
     process.exit(0);
   }
 
+  // Keep the maintainer off the index while this run rewrites it; released on any exit.
+  if (!dryRun && !showStats) {
+    const { holdMaintainerForIndexRun, resolveStateDir } = await import('./maintainer-launcher.mjs');
+    const release = await holdMaintainerForIndexRun(resolveStateDir(process.env, process.cwd()));
+    process.once('exit', release);
+  }
+
   if (showStats) {
     const stats = await getIncrementalStats();
     log('\nIndexing Statistics:', 'bright');

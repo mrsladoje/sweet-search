@@ -14,6 +14,8 @@ import { annotateChunksForDelta, snapshotFileRows, diffChunks, applyDiff } from 
 import { appendDeltaRecord, FALLBACK_WEIGHTS_ID, fileIdFor, listDeltaSegments } from '../infrastructure/sparse-gram-delta.mjs';
 import { fts5Merge, fts5MergeBudgetPages } from '../infrastructure/sqlite-fts5.mjs';
 import { openSegmentState, tombstoneDoc, persistSegmentState } from '../infrastructure/li-segment-state.mjs';
+import { chunkTextFtsWriter } from '../../indexing/chunk-text-fts.js';
+import { dropAliasPointersSync } from './production-li-delta.mjs';
 import { insertEntity, insertRelationships, resolveTouchedEdges, markBinaryStale, createStaleBatch, maintainFloatStore, flushFloatStore } from './production-reconciler-helpers.mjs';
 import { resolveRowsScoped } from '../../graph/relationship-resolver.js';
 import { deriveOverrideEdges } from '../../graph/override-edges.js';
@@ -748,6 +750,7 @@ class ProductionReconcileAdapter {
       // divergence schedules the binary_hnsw compaction), never live rows hidden.
       ctx.staleBatch?.flush();
       await this._persistLiTombstones(ctx);
+      if (ctx.aliasDrops?.size) dropAliasPointersSync(path.join(this.stateDir, 'codebase-late-interaction.db'), ctx.aliasDrops);
       if (ctx.liAppend?.writer) {
         const { appendDeferredLiSegment } = await import('./production-li-delta.mjs');
         await appendDeferredLiSegment(path.join(this.stateDir, 'codebase-late-interaction.db'), ctx.liAppend);
@@ -1295,8 +1298,10 @@ class ProductionReconcileAdapter {
         const retire = db.transaction(() => applyDiff(db, rel, { toReuse: [], toEncode: [], toRetire: [...snap.values()].map((r) => ({ rowId: r.id, chunkStructId: r.chunk_struct_id })) }, epoch));
         const summary = retire();
         const retired = summary.retiredRows.map((r) => ({ retireId: r.oldId, file: rel }));
+        const tokenOps = [...retired];
+        this._releaseDedupAliases(db, summary.retiredRows.map((r) => r.oldId), tokenOps, ctx);
         this.touched.set(rel, { ...(this.touched.get(rel) || {}), hash: hashes, chunkIds: [] });
-        return { ops: { vectors_delete: summary.retiredRows.length }, vectorOps: retired, tokenOps: retired, gramOps: [{ file: rel, deleted: true }] };
+        return { ops: { vectors_delete: summary.retiredRows.length }, vectorOps: retired, tokenOps, gramOps: [{ file: rel, deleted: true }] };
       }
       const parsed = await new ASTChunker({ projectRoot: this.projectRoot }).parseFile(rel, hashes.content);
       this.progress('production:vector-parsed');
@@ -1308,8 +1313,10 @@ class ProductionReconcileAdapter {
       // Stored per-file so applyLIDelta drops adds even when only a non-first
       // chunk changed and the @generated first chunk was hash-reused.
       const liKept = applyIndexingChunkPolicy(chunks, { projectRoot: this.projectRoot }).kept;
-      if (chunks.length > 0 && liKept.length === 0) this._liSkipFiles.add(rel);
+      const liSkip = chunks.length > 0 && liKept.length === 0;
+      if (liSkip) this._liSkipFiles.add(rel);
       else this._liSkipFiles.delete(rel);
+      const liSkipBefore = (this._merkleRead() ?? { files: {} }).files?.[rel]?.liSkip === true;
       const annotations = annotateChunksForDelta(chunks, rel);
       const snap = snapshotFileRows(db, rel);
       const delta = diffChunks(chunks, annotations, snap);
@@ -1343,6 +1350,7 @@ class ProductionReconcileAdapter {
       }
       const tokenOps = retiredRows.map((row) => ({ retireId: row.oldId, file: rel }));
       for (const chunk of encodedChunks) tokenOps.push({ addId: chunk.id, chunk });
+      this._releaseDedupAliases(db, retiredRows.map((row) => row.oldId), tokenOps, ctx);
       // A row version has the same LI input as its old row: copy the stored LI doc
       // (the delta encodes it only when the old doc is gone).
       for (const row of summary.versionedRows) {
@@ -1426,7 +1434,17 @@ class ProductionReconcileAdapter {
       }
 
       const recordedChunkIds = repairedIds.length > 0 ? [...newIds, ...repairedIds] : newIds;
-      this.touched.set(rel, { ...(this.touched.get(rel) || {}), hash: hashes, chunkIds: recordedChunkIds, content: hashes.content });
+      // The LI verdict flipped (a file became @generated, or stopped being): the chunks
+      // reused unchanged emit no LI op, so retire their docs (now skipped) or add them
+      // (no longer skipped), as a full build would have.
+      if (liSkip !== liSkipBefore) {
+        for (const item of delta.toReuse) {
+          if (item.metadataOnly || item.textOnly) continue;
+          tokenOps.push({ retireId: item.prevRow.id, file: rel });
+          if (!liSkip) tokenOps.push({ addId: item.prevRow.id, chunk: item.chunk });
+        }
+      }
+      this.touched.set(rel, { ...(this.touched.get(rel) || {}), hash: hashes, chunkIds: recordedChunkIds, content: hashes.content, liSkip });
       if (ctx) ctx.persistedFiles.add(rel);
       return {
         ops: { vectors_upsert: newIds.length, vectors_delete: vectorOps.filter((o) => o.retireId).length },
@@ -1554,6 +1572,44 @@ class ProductionReconcileAdapter {
     return { ops: { li_segment_append: appended, li_tombstone: tombstone }, manifest: { path: 'codebase-late-interaction.db', segments: 'codebase-late-interaction.db.segments/manifest.json' } };
   }
 
+  /**
+   * Dedup aliases (full build): an alias row carries its exemplar's embedding, has no
+   * chunk FTS row and no LI doc (an LI pointer stands in). When the tick retires rows:
+   *   - a retired alias drops its LI pointer;
+   *   - each live alias of a retired exemplar becomes an ordinary row: exemplarId cleared,
+   *     its chunk FTS row written, the exemplar's LI doc copied under its id, its pointer
+   *     dropped. Before, those aliases lost chunk BM25 and LI for good.
+   * Pointers are dropped after the COMMIT (finalizeTick); without a tick, at once.
+   */
+  _releaseDedupAliases(db, retiredIds, tokenOps, ctx) {
+    if (retiredIds.length === 0) return;
+    const drops = ctx ? (ctx.aliasDrops ??= new Set()) : new Set();
+    for (let i = 0; i < retiredIds.length; i += 500) {
+      const ids = retiredIds.slice(i, i + 500);
+      const marks = ids.map(() => '?').join(',');
+      for (const row of db.prepare(`SELECT id FROM vectors WHERE id IN (${marks}) AND json_extract(metadata, '$.exemplarId') IS NOT NULL`).all(...ids)) {
+        drops.add(row.id);
+      }
+      const orphans = db.prepare(`SELECT rowid, id, text, metadata FROM vectors
+        WHERE json_extract(metadata, '$.exemplarId') IS NOT NULL AND json_extract(metadata, '$.exemplarId') IN (${marks})
+          AND epoch_retired IS NULL`).all(...ids);
+      if (orphans.length === 0) continue;
+      const writeFts = chunkTextFtsWriter(db);
+      const update = db.prepare('UPDATE vectors SET metadata = ? WHERE rowid = ?');
+      for (const row of orphans) {
+        const meta = JSON.parse(row.metadata || '{}');
+        const exemplarId = meta.exemplarId;
+        meta.exemplarId = null;
+        meta.isExemplar = true;
+        update.run(JSON.stringify(meta), row.rowid);
+        writeFts?.(row.rowid, row.text || '', meta);
+        tokenOps.push({ addId: row.id, copyFromId: exemplarId });
+        drops.add(row.id);
+      }
+    }
+    if (!ctx && drops.size > 0) dropAliasPointersSync(path.join(this.stateDir, 'codebase-late-interaction.db'), drops);
+  }
+
   /** Write the tick's LI tombstones (collected by applyLIDelta), after the COMMIT. */
   async _persistLiTombstones(ctx) {
     const marks = ctx?.liTombstones;
@@ -1633,7 +1689,10 @@ class ProductionReconcileAdapter {
     for (const [file, data] of this.touched.entries()) {
       if (failures[file]) { delete failures[file]; failuresChanged = true; }
       if (data.hash?.deleted) delete merkle.files[file];
-      else if (!gate || persisted.has(file)) merkle.files[file] = { hash: data.hash.contentHash, ...data.hash.stat, epoch: manifest.epoch, chunkIds: data.chunkIds || [] };
+      else if (!gate || persisted.has(file)) {
+        merkle.files[file] = { hash: data.hash.contentHash, ...data.hash.stat, epoch: manifest.epoch, chunkIds: data.chunkIds || [] };
+        if (data.liSkip) merkle.files[file].liSkip = true;
+      }
     }
     // Same content, new stat: keep hash, chunk ids and epoch; record the stat so
     // the dirty scan stops requeueing the file. No tier holds stat data, so
