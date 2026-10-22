@@ -486,7 +486,17 @@ let localPipeline = null;
 let isLoadingLocal = false;
 let loadPromise = null;
 
+// The search daemon runs its query models in a child process that exits when idle
+// (core/search/query-encoder.mjs): releasing an ORT session in-process gave back ~650 of
+// ~940 MB and leaked ~220 MB on each reload; process exit gives back all of it.
+// { warm(): Promise, run(op, texts, options): Promise } or null (run in this process).
+let _modelDelegate = null;
+export function setLocalModelDelegate(delegate) { _modelDelegate = delegate; }
+
+const withoutFunctions = (options) => Object.fromEntries(Object.entries(options || {}).filter(([, v]) => typeof v !== 'function'));
+
 export async function getLocalPipeline() {
+  if (_modelDelegate) { await _modelDelegate.warm(); return null; }
   if (localPipeline) return localPipeline;
   if (isLoadingLocal && loadPromise) return loadPromise;
 
@@ -611,6 +621,7 @@ export async function getLocalPipeline() {
  * Returns Float32Array subarray views from a per-batch pool (zero-copy downstream).
  */
 export async function callLocalModel(texts, options = {}) {
+  if (_modelDelegate) return _modelDelegate.run('local-model', texts, withoutFunctions(options));
   // Default dispatcher: pick the best path. Hybrid CPU+GPU dispatching is
   // done at callLocalModelBucketed (which sees the full batch list and can
   // run both encoders in parallel).
@@ -720,6 +731,7 @@ function localEncoderLabel() {
  * across workers for true CPU parallelism (Phase 2 integration).
  */
 export async function callLocalModelBucketed(texts, options = {}) {
+  if (_modelDelegate) return _modelDelegate.run('local-model-bucketed', texts, withoutFunctions(options));
   const maxLength = options.maxLength ?? INDEXING_MAX_LENGTH;
 
   const charPerToken = getCalibrationFactor();

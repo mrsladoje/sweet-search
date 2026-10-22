@@ -58,8 +58,14 @@ export function getLateInteractionTimings() {
  * Get the late interaction pipeline singleton (lazy-loaded).
  * Returns null if late interaction is disabled.
  */
+// The search daemon's query encoding runs in its query-encoder child (see
+// core/search/query-encoder.mjs): { warm(): Promise, liQuery(text): Promise } or null.
+let _queryDelegate = null;
+export function setLateInteractionQueryDelegate(delegate) { _queryDelegate = delegate; }
+
 export async function getLateInteractionPipeline() {
   if (!LATE_INTERACTION_CONFIG.enabled) return null;
+  if (_queryDelegate) { await _queryDelegate.warm(); return null; }
   if (lateInteractionPipeline) return lateInteractionPipeline;
   if (loadPromise) return loadPromise;
   loadPromise = loadModel();
@@ -308,6 +314,7 @@ async function loadModel() {
  */
 export async function encodeQuery(text) {
   if (!LATE_INTERACTION_CONFIG.enabled) return [];
+  if (_queryDelegate) return _queryDelegate.liQuery(text);
 
   // Native inference path: candle FP32 with Metal GPU
   if (isNativeInferenceAvailable() && isNativeLiModelLoaded()) {
