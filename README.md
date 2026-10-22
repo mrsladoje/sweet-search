@@ -16,6 +16,7 @@ Every coding agent today reaches for grep + Read by reflex. *sweet-search* chall
 [![node](https://img.shields.io/badge/node-%E2%89%A522-brightgreen)](package.json)
 [![platforms](https://img.shields.io/badge/platform-macOS%20%7C%20Linux-lightgrey)](#compatibility)
 [![inference](https://img.shields.io/badge/inference-100%25%20local-success)](#the-index)
+[![video](https://img.shields.io/badge/video-watch%20the%2040s%20film-red?logo=youtube&logoColor=white)](https://www.youtube.com/watch?v=lJzgXRQprs4)
 
 </div>
 
