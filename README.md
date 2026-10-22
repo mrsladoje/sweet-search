@@ -585,11 +585,11 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 
 <h3>🧠 <b>sweet-ANN vector search</b></h3>
 
-### 1.5–4.5× faster
+### Up to 5× faster
 
-<sub>to reach our MRR@10 on held-out GCSN, against the fastest rival at each index size · Apple M3 Max (1.3–3.5× on x86)</sub>
+<sub>to keep 99% of exact quality on held-out GCSN, against the fastest rival at each index size up to 1M vectors · Apple M3 Max (up to 1.4× on x86) · FAISS ties us at 20k (wins on x86)</sub>
 
-<img src="assets/hnsw-time-to-quality.svg" alt="Time each library needs to reach sweet-ANN MRR@10 on an Apple M3 Max, p50, 1 thread, and how many times slower than sweet-ANN; each rival is the fastest of its configs. 6,918 vectors: sweet-ANN 52 µs, FAISS 89 µs (1.7x), USearch 76 µs (1.5x), hnswlib 165 µs (3.2x). 20k vectors: sweet-ANN 103 µs, FAISS 190 µs (1.8x), USearch 168 µs (1.6x), hnswlib 499 µs (4.8x). 140k vectors: sweet-ANN 236 µs, FAISS 1.07 ms (4.5x), USearch 1.11 ms (4.7x), hnswlib 1.67 ms (7.1x). AdvTest 21.7k: sweet-ANN 111 µs, FAISS 208 µs (1.9x), USearch 108 µs (0.97x), hnswlib 534 µs (4.8x)." width="100%" />
+<img src="assets/hnsw-time-to-quality.svg" alt="Time each library needs to keep 99% of exact-search quality (nDCG@10) on Apple M3 Max, p50, 1 thread, held-out, and how many times slower than sweet-ANN; each rival is the fastest of its configs that keeps 99%. 6,918 vectors: sweet-ANN 44 µs, FAISS 99 µs (2.2x), USearch 82 µs (1.8x), hnswlib 119 µs (2.7x). 20k vectors: sweet-ANN 60 µs, FAISS 57 µs (0.96x), USearch 105 µs (1.8x), hnswlib 584 µs (9.7x). 140k vectors: sweet-ANN 213 µs, FAISS 248 µs (1.2x), USearch 877 µs (4.1x), hnswlib 2.17 ms (10.2x). AdvTest 21.7k: sweet-ANN 73 µs, FAISS 162 µs (2.2x), USearch 339 µs (4.6x), hnswlib 734 µs (10.0x)." width="100%" />
 
 <br>
 <br>
@@ -600,22 +600,22 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 
 | | |
 |---|---|
-| ⚔️ **Rivals** | FAISS · USearch · hnswlib, all in native C++ |
-| ⚙️ **Rival configs** | Each at its fastest: f32, SQ8 or i8 + exact rescore, binary cascade<br>Library defaults and our M64 / efC800 build budget · efSearch up to 2048 |
-| 🛡️ **AdvTest** (never tuned on) | USearch ties us on the M3 Max (`108` vs `111` µs) and wins on x86 |
-| 🐢 **Exact quality** | Rivals reach it, given far more time (`8.5 ms` at 140k vectors) |
+| ⚔️ **Rivals** | FAISS · USearch · hnswlib, all in native C++ (also ScaNN and DiskANN on x86) |
+| ⚙️ **Rival configs** | Each at its fastest: f32, f16, SQ8, i8, IVF-PQ, RaBitQ, binary flat or binary HNSW + exact rescore<br>M 16 / 32 / 64 · efC 200 / 800 · efSearch up to 1024 · chosen on dev, frozen before held-out |
+| 🛡️ **AdvTest** | FAISS needs `2.2×` our time on the M3 Max (`162` vs `73` µs) and `1.3×` on x86 |
+| 🐢 **Exact quality** | Rivals reach it, given far more time (`6.7 ms` at 140k vectors) |
 | 🔍 **Search path** | Exact Hamming scan up to 150k vectors, HNSW walk above |
-| ⚡ **Binary walk** | `5–8×` faster than FAISS / USearch binary HNSW |
-| 💾 **Index RAM** (157k vectors) | `197 MB` vs `541 MB` for FAISS |
-| 🧪 **Queries** | 2,400 GCSN held-out (seed 42) + dev-repo distractors · 3,000 AdvTest |
+| ⚡ **Binary walk** | `1.6–4.7×` faster than FAISS / USearch binary HNSW at equal graph settings |
+| 💾 **Index RAM** (140k vectors) | `297 MB` vs `517 MB–2.0 GB` for FAISS |
+| 🧪 **Queries** | 2,400 GCSN held-out (seed 42) + dev-repo distractors · 1,200 AdvTest held-out |
 | 🖥️ **Hardware** | Apple M3 Max · x86 AMD EPYC (AVX2) |
-| 📐 **Method** | [docs/HNSW_BENCHMARK.md](docs/HNSW_BENCHMARK.md) |
+| 📐 **Method** | [eval/benchmarks/hnsw-rivals/paper](eval/benchmarks/hnsw-rivals/paper/README.md) |
 
 <br>
 
-<img src="assets/hnsw-time-to-quality-x86.svg" alt="Time each library needs to reach sweet-ANN MRR@10 on an x86 AMD EPYC server, p50, 1 thread; each rival is the fastest of its configs. 6,918 vectors: sweet-ANN 81 µs, FAISS 109 µs (1.3x), USearch 118 µs (1.5x), hnswlib 163 µs (2.0x). 20k vectors: sweet-ANN 166 µs, FAISS 253 µs (1.5x), USearch 246 µs (1.5x), hnswlib 498 µs (3.0x). 140k vectors: sweet-ANN 482 µs, FAISS 1.88 ms (3.9x), USearch 3.37 ms (7.0x), hnswlib 1.67 ms (3.5x). AdvTest 21.7k: sweet-ANN 182 µs, FAISS 156 µs (0.86x), USearch 141 µs (0.77x), hnswlib 267 µs (1.5x)." width="100%" />
-<img src="assets/hnsw-scaling.svg" alt="Latency to reach sweet-ANN quality as the index grows, log scales, Apple M3 Max. sweet-ANN: 52 µs, 103 µs, 236 µs at 6.9k, 20k, 140k vectors. Fastest rival: 76 µs (USearch), 168 µs (USearch), 1.07 ms (FAISS). At 140k sweet-ANN is 4.5 times faster than the fastest rival." width="100%" />
-<img src="assets/hnsw-speed-quality.svg" alt="Speed and quality at 140k vectors, Apple M3 Max. sweet-ANN: MRR 78.5 in 236 µs. In the same time, the best rival, USearch b1 cascade, reaches 77.5. To reach 78.5, rivals need 1.07 ms (FAISS SQ8 + refine), 1.11 ms (USearch i8), 1.67 ms (hnswlib). Exact search quality 79.2 needs FAISS SQ8 + refine at 8.5 ms." width="100%" />
+<img src="assets/hnsw-time-to-quality-x86.svg" alt="Time each library needs to keep 99% of exact-search quality (nDCG@10) on x86 AMD EPYC, p50, 1 thread, held-out, and how many times slower than sweet-ANN; each rival is the fastest of its configs that keeps 99%. 6,918 vectors: sweet-ANN 70 µs, FAISS 96 µs (1.4x), USearch 130 µs (1.9x), hnswlib 118 µs (1.7x). 20k vectors: sweet-ANN 103 µs, FAISS 83 µs (0.81x), USearch 202 µs (2.0x), hnswlib 617 µs (6.0x). 140k vectors: sweet-ANN 360 µs, FAISS 368 µs (1.02x), USearch 1.93 ms (5.4x), hnswlib 1.65 ms (4.6x). AdvTest 21.7k: sweet-ANN 126 µs, FAISS 159 µs (1.3x), USearch 472 µs (3.8x), hnswlib 695 µs (5.5x)." width="100%" />
+<img src="assets/hnsw-scaling.svg" alt="Latency to keep 99% of exact-search quality as the index grows, log scales, Apple M3 Max. sweet-ANN: 44 µs, 60 µs, 213 µs, 285 µs at 6.9k, 20k, 140k, 1M vectors. Fastest rival: 82 µs (USearch), 57 µs (FAISS), 248 µs (FAISS), 1.42 ms (FAISS). At 1M sweet-ANN is 5.0 times faster than the fastest rival." width="100%" />
+<img src="assets/hnsw-speed-quality.svg" alt="Speed and quality at 140k vectors, Apple M3 Max. sweet-ANN: nDCG@10 78.7 in 213 µs. In the same time, the best rival, FAISS binary flat, reaches 78.0. To keep 99% of exact quality (78.3), rivals need 248 µs (FAISS binary flat, 78.6), 877 µs (USearch i8, 78.4), 2.17 ms (hnswlib, 78.9). Exact search quality 79.1 needs 6.73 ms (FAISS exact)." width="100%" />
 </details>
 
 <br>
@@ -645,15 +645,15 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 
 <h3>🧮 <b>Sweet MaxSim kernel</b></h3>
 
-### 1.4–6.9× faster
+### 1.4–7.3× faster
 
-<sub>4,389 held-out production calls · same top hit as exact math</sub>
+<sub>4,382 held-out production calls · same top hit as exact math</sub>
 
 | sweet faster than | M3 Max | x86 (EPYC) |
 |:--|--:|--:|
-| NumPy | **2.0–2.1×** | **1.4–1.6×** |
-| PyTorch | **4.2–6.6×** | **1.9–2.8×** |
-| maxsim-cpu | **6.5–6.9×** | **2.4–2.7×** |
+| NumPy | **1.7–2.1×** | **1.4–1.6×** |
+| PyTorch | **3.7–5.3×** | **1.9–2.8×** |
+| maxsim-cpu | **5.6–7.3×** | **2.4–2.7×** |
 
 <sub>× = geometric mean of per-call ratios · warm, all cores</sub><br>
 <sub>each rival at its fastest config · [where we lose](eval/maxsim-bench/RESULTS.md)</sub><br>
@@ -792,7 +792,7 @@ flowchart TD
 <br/>
 
 - 🧠 **A better vector graph for big repos.** Above 150k vectors, our own binary HNSW raised recall@200 from 80.6% to 86.5% and got about a third faster than our earlier version.
-- ⚡ **Native reranking.** The MaxSim math runs in Rust SIMD on all CPU cores, 1.4–6.9× faster than NumPy, PyTorch and maxsim-cpu.
+- ⚡ **Native reranking.** The MaxSim math runs in Rust SIMD on all CPU cores, 1.4–7.3× faster than NumPy, PyTorch and maxsim-cpu.
 - 📦 **A small index.** Token vectors are packed into 4 bits, which makes that index 3.4× smaller.
 - 🎛️ **Quality scores.** Each chunk is scored on test proximity, git recency, call-graph centrality, comments and complexity. Production code rises and old fixtures sink.
 - 🛟 **A reranker we switched off.** We built a cross-encoder too. It was 3× slower and did not beat MaxSim, so it ships disabled.
@@ -870,7 +870,7 @@ Also available as `sweet-search "<query>"` on the CLI and the `search` MCP tool.
 
 - Rust + SIMD, on all cores.
 - Code embeddings are stored at index time, so no model reads your code at query time.
-- 1.4–6.9× faster than NumPy, PyTorch and maxsim-cpu ([results](eval/maxsim-bench/RESULTS.md)).
+- 1.4–7.3× faster than NumPy, PyTorch and maxsim-cpu ([results](eval/maxsim-bench/RESULTS.md)).
 
 </td>
 </tr>
