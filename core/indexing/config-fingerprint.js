@@ -28,7 +28,7 @@ import { EMBEDDING_CONFIG, LATE_INTERACTION_CONFIG } from '../infrastructure/con
 import { HASH_ALGORITHM } from '../incremental-indexing/infrastructure/hash-algorithm.mjs';
 import { DEFAULT_SPARSE_GRAM_WEIGHTS_ID } from '../incremental-indexing/infrastructure/manifest.mjs';
 import { describeFormatChanges } from '../incremental-indexing/infrastructure/staleness-display.mjs';
-import { CHUNKING_VERSION, ENRICHMENT_VERSION } from './index-format-versions.js';
+import { CHUNKING_VERSION, ENRICHMENT_VERSION, SCHEMA_VERSION } from './index-format-versions.js';
 
 export const STATE_VERSION = '2.4';
 
@@ -51,6 +51,7 @@ const FIELDS = [
   { key: 'liQuantization', reason: 'li_quantization_changed', label: 'late-interaction quantization' },
   { key: 'chunkingVersion', reason: 'chunking_version_changed', label: 'chunking version' },
   { key: 'enrichmentVersion', reason: 'enrichment_version_changed', label: 'enrichment version' },
+  { key: 'schemaVersion', reason: 'schema_version_changed', label: 'index schema version' },
   { key: 'sparseGramWeightsId', reason: 'sparse_gram_weights_changed', label: 'sparse-gram weights' },
 ];
 
@@ -69,6 +70,7 @@ export function buildConfigFingerprint() {
     liQuantization: LATE_INTERACTION_CONFIG.enabled ? LATE_INTERACTION_CONFIG.quantization : null,
     chunkingVersion: CHUNKING_VERSION,
     enrichmentVersion: ENRICHMENT_VERSION,
+    schemaVersion: SCHEMA_VERSION,
     sparseGramWeightsId: DEFAULT_SPARSE_GRAM_WEIGHTS_ID,
     version: STATE_VERSION,
   };

@@ -34,6 +34,7 @@ import { CodeGraphRepository } from '../../core/infrastructure/code-graph-reposi
 import { runInVirtualProcess } from '../../core/agent-tools/virtual-process.js';
 import { buildAgentToolDaemonResponse } from '../../core/agent-tools/daemon-route.js';
 import { runAgentTool } from '../../eval/agent-read-workflows/bin/_ss-helpers.mjs';
+import { createGraphSchema } from '../../core/graph/graph-extractor.js';
 
 const FILES = {
   // indexed Go: comment and import first, then two declarations and their bodies
@@ -75,7 +76,7 @@ let grepCalls;
 
 function setEntities(rows) {
   db.prepare('DELETE FROM entities').run();
-  const insert = db.prepare('INSERT INTO entities VALUES (?, ?, ?, ?, ?, ?, NULL, ?, 1, NULL)');
+  const insert = db.prepare('INSERT INTO entities (id, name, type, file_path, start_line, end_line, parent_class, stale_since, epoch_written, epoch_retired) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, 1, NULL)');
   for (const [id, name, type, file, s, e, stale = null] of rows) insert.run(id, name, type, file, s, e, stale);
 }
 
@@ -99,14 +100,7 @@ beforeAll(() => {
   }
   dbPath = path.join(state, 'code-graph.db');
   db = new Database(dbPath);
-  db.exec(`
-    CREATE TABLE entities (
-      id TEXT PRIMARY KEY, name TEXT, type TEXT, file_path TEXT,
-      start_line INTEGER, end_line INTEGER, parent_class TEXT, stale_since INTEGER,
-      epoch_written INTEGER, epoch_retired INTEGER
-    );
-    CREATE INDEX idx_entities_file ON entities(file_path);
-  `);
+  createGraphSchema(db);
   const result = { matches, candidateFiles: 3, totalFiles: 3, scannedFiles: 3 };
   grepCalls = [];
   const graph = new CodeGraphRepository(dbPath);

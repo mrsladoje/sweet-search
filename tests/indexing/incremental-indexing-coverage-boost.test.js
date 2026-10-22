@@ -7,7 +7,6 @@
  *   - hashing.mjs            (60% branch)
  *   - encoder-deps.mjs       (70% branch)
  *   - encoder-input.mjs      (72% branch)
- *   - schema-migrations.mjs  (72% branch)
  *   - tombstone-injector.mjs (75% branch)
  *   - sparse-gram-delta.mjs  (76% branch)
  *   - sqlite-fts5.mjs        (76% branch)
@@ -55,11 +54,11 @@ import {
 import {
   injectTombstones, sweepTombstoneFractions, __testing as tombstoneTesting,
 } from '../../core/incremental-indexing/application/tombstone-injector.mjs';
-import { migrateVectorsSchema, migrateEntitiesSchema, migrateRelationshipsSchema } from '../../core/incremental-indexing/infrastructure/schema-migrations.mjs';
 import { ReconcileCounters } from '../../core/incremental-indexing/domain/reconcile-counters.mjs';
 import { renderStalenessLines, formatStalenessFooter } from '../../core/incremental-indexing/infrastructure/staleness-display.mjs';
 import { resizeBitmap, createBitmap, popcount, setBit, isSet, clearBit } from '../../core/incremental-indexing/infrastructure/tombstone-bitmap.mjs';
 import { applyDiff, snapshotFileRows, diffChunks, annotateChunksForDelta } from '../../core/incremental-indexing/infrastructure/vector-delta-writer.mjs';
+import { createVectorSchema } from '../../core/indexing/indexer-build.js';
 
 // ---------- hashing.mjs branches ----------
 
@@ -743,15 +742,7 @@ describe('maintenance-worker.mjs — env + queue branches', () => {
 describe('tombstone-injector.mjs — branches', () => {
   function setupDb(rows = 100) {
     const db = new Database(':memory:');
-    db.exec(`
-      CREATE TABLE vectors (
-        id TEXT PRIMARY KEY,
-        file_path TEXT NOT NULL,
-        embedding BLOB NOT NULL,
-        session_id TEXT,
-        epoch_retired INTEGER
-      );
-    `);
+    createVectorSchema(db);
     for (let i = 0; i < rows; i++) {
       db.prepare(`INSERT INTO vectors (id, file_path, embedding, session_id) VALUES (?, ?, ?, ?)`)
         .run(`v${i}`, 'src/a.js', Buffer.alloc(4), 'sess-1');
@@ -777,12 +768,7 @@ describe('tombstone-injector.mjs — branches', () => {
 
   it('returns zero-injection on empty corpus', () => {
     const db = new Database(':memory:');
-    db.exec(`
-      CREATE TABLE vectors (
-        id TEXT PRIMARY KEY, file_path TEXT NOT NULL, embedding BLOB NOT NULL,
-        session_id TEXT, epoch_retired INTEGER
-      );
-    `);
+    createVectorSchema(db);
     const r = injectTombstones({ db, fraction: 0.2, epoch: 1 });
     expect(r.injected).toBe(0);
     expect(r.fraction).toBe(0);
@@ -986,13 +972,7 @@ describe('reconcile-counters.mjs — branches', () => {
 describe('vector-delta-writer.mjs — fallback / no-struct-id paths', () => {
   function setupDb() {
     const db = new Database(':memory:');
-    db.exec(`
-      CREATE TABLE vectors (
-        id TEXT PRIMARY KEY, file_path TEXT NOT NULL, embedding BLOB NOT NULL,
-        text TEXT, metadata TEXT, session_id TEXT, tags TEXT, created_at TEXT
-      );
-    `);
-    migrateVectorsSchema(db);
+    createVectorSchema(db);
     return db;
   }
 

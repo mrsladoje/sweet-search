@@ -4,6 +4,8 @@ import { expandResults, applyTokenBudget, loadChunkTexts, computeTokenEstimates 
 import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync } from 'fs';
 import path from 'path';
 import os from 'os';
+import { createGraphSchema } from '../../core/graph/graph-extractor.js';
+import { createVectorSchema } from '../../core/indexing/indexer-build.js';
 
 /**
  * Integration tests for token estimation.
@@ -128,20 +130,10 @@ describe('token estimation integration', () => {
 
     // Create graph DB
     graphDb = new Database(':memory:');
-    graphDb.exec(`
-      CREATE TABLE entities (
-        id TEXT PRIMARY KEY, file_path TEXT NOT NULL, type TEXT NOT NULL,
-        name TEXT NOT NULL, signature TEXT, start_line INTEGER, end_line INTEGER,
-        stale_since INTEGER DEFAULT NULL
-      );
-      CREATE TABLE relationships (
-        source_id TEXT, target_id TEXT, target_name TEXT NOT NULL,
-        type TEXT NOT NULL, weight REAL DEFAULT 1.0
-      );
-    `);
+    createGraphSchema(graphDb);
 
-    const ie = graphDb.prepare('INSERT INTO entities VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
-    const ir = graphDb.prepare('INSERT INTO relationships VALUES (?, ?, ?, ?, ?)');
+    const ie = graphDb.prepare('INSERT INTO entities (id, file_path, type, name, signature, start_line, end_line, stale_since) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+    const ir = graphDb.prepare('INSERT INTO relationships (source_id, target_id, target_name, type, weight) VALUES (?, ?, ?, ?, ?)');
 
     // Java entity (seed)
     ie.run('java-auth', path.join(tmpDir, 'AuthService.java'), 'class', 'AuthService',
@@ -163,10 +155,8 @@ describe('token estimation integration', () => {
 
     // Create codebase DB with vector texts
     codebaseDb = new Database(':memory:');
-    codebaseDb.exec(`
-      CREATE TABLE vectors (id TEXT PRIMARY KEY, text TEXT, embedding BLOB, metadata TEXT);
-    `);
-    codebaseDb.prepare('INSERT INTO vectors (id, text) VALUES (?, ?)').run(
+    createVectorSchema(codebaseDb);
+    codebaseDb.prepare("INSERT INTO vectors (id, file_path, embedding, text) VALUES (?, 'src/x', x'', ?)").run(
       'java-auth', CODE_SAMPLES.java.text.join('\n')
     );
   });

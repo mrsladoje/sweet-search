@@ -25,6 +25,7 @@ import {
   loadGraph,
   createGraphSchema,
 } from '../../core/graph/index.js';
+import { createGraphSchema } from '../../core/graph/graph-extractor.js';
 
 // =============================================================================
 // PageRank Algorithm
@@ -298,35 +299,13 @@ describe('loadGraph epoch visibility', () => {
     const tmpDir = mkdtempSync(path.join(tmpdir(), 'repo-map-epoch-'));
     const dbPath = path.join(tmpDir, 'code-graph.db');
     const db = new Database(dbPath);
-    db.exec(`
-      CREATE TABLE entities (
-        id TEXT PRIMARY KEY,
-        file_path TEXT,
-        type TEXT,
-        name TEXT,
-        signature TEXT,
-        start_line INTEGER,
-        end_line INTEGER,
-        stale_since INTEGER,
-        epoch_written INTEGER,
-        epoch_retired INTEGER
-      );
-      CREATE TABLE relationships (
-        source_id TEXT,
-        target_id TEXT,
-        target_name TEXT,
-        type TEXT,
-        weight REAL,
-        epoch_written INTEGER,
-        epoch_retired INTEGER
-      );
-    `);
-    const ent = db.prepare('INSERT INTO entities VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    createGraphSchema(db);
+    const ent = db.prepare('INSERT INTO entities (id, file_path, type, name, signature, start_line, end_line, stale_since, epoch_written, epoch_retired) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     ent.run('caller', 'src/caller.js', 'function', 'Caller', 'function Caller()', 1, 5, null, 1, null);
     ent.run('old', 'src/old.js', 'function', 'Widget', 'function Widget()', 1, 5, 1111, 1, 3);
     ent.run('new', 'src/new.js', 'function', 'Widget', 'function Widget()', 1, 5, null, 3, null);
     ent.run('future', 'src/future.js', 'function', 'FutureWidget', 'function FutureWidget()', 1, 5, null, 7, null);
-    const rel = db.prepare('INSERT INTO relationships VALUES (?, ?, ?, ?, ?, ?, ?)');
+    const rel = db.prepare('INSERT INTO relationships (source_id, target_id, target_name, type, weight, epoch_written, epoch_retired) VALUES (?, ?, ?, ?, ?, ?, ?)');
     rel.run('caller', 'old', 'Widget', 'calls', 1, 1, 3);
     rel.run('caller', 'new', 'Widget', 'calls', 1, 3, null);
     rel.run('caller', 'future', 'FutureWidget', 'calls', 1, 7, null);
@@ -351,26 +330,8 @@ describe('loadGraph epoch visibility', () => {
     const manifestDbPath = path.join(tmpDir, 'code-graph-epoch-2.db');
     const createDb = (targetPath, id, filePath) => {
       const db = new Database(targetPath);
-      db.exec(`
-        CREATE TABLE entities (
-          id TEXT PRIMARY KEY,
-          file_path TEXT,
-          type TEXT,
-          name TEXT,
-          signature TEXT,
-          start_line INTEGER,
-          end_line INTEGER,
-          stale_since INTEGER
-        );
-        CREATE TABLE relationships (
-          source_id TEXT,
-          target_id TEXT,
-          target_name TEXT,
-          type TEXT,
-          weight REAL
-        );
-      `);
-      db.prepare('INSERT INTO entities VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      createGraphSchema(db);
+      db.prepare('INSERT INTO entities (id, file_path, type, name, signature, start_line, end_line, stale_since) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
         .run(id, filePath, 'function', id, `function ${id}()`, 1, 5, null);
       db.close();
     };
@@ -397,30 +358,8 @@ describe('loadGraph epoch visibility', () => {
     const pinnedDbPath = path.join(tmpDir, 'code-graph-pinned.db');
     const createDb = (targetPath, id) => {
       const db = new Database(targetPath);
-      db.exec(`
-        CREATE TABLE entities (
-          id TEXT PRIMARY KEY,
-          file_path TEXT,
-          type TEXT,
-          name TEXT,
-          signature TEXT,
-          start_line INTEGER,
-          end_line INTEGER,
-          stale_since INTEGER,
-          epoch_written INTEGER,
-          epoch_retired INTEGER
-        );
-        CREATE TABLE relationships (
-          source_id TEXT,
-          target_id TEXT,
-          target_name TEXT,
-          type TEXT,
-          weight REAL,
-          epoch_written INTEGER,
-          epoch_retired INTEGER
-        );
-      `);
-      db.prepare('INSERT INTO entities VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      createGraphSchema(db);
+      db.prepare('INSERT INTO entities (id, file_path, type, name, signature, start_line, end_line, stale_since, epoch_written, epoch_retired) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
         .run(id, `src/${id}.js`, 'function', id, `function ${id}()`, 1, 5, null, 3, null);
       db.close();
     };
@@ -444,34 +383,12 @@ describe('generateRepoMap epoch visibility', () => {
     const tmpDir = mkdtempSync(path.join(tmpdir(), 'repo-map-generate-epoch-'));
     const dbPath = path.join(tmpDir, 'code-graph.db');
     const db = new Database(dbPath);
-    db.exec(`
-      CREATE TABLE entities (
-        id TEXT PRIMARY KEY,
-        file_path TEXT,
-        type TEXT,
-        name TEXT,
-        signature TEXT,
-        start_line INTEGER,
-        end_line INTEGER,
-        stale_since INTEGER,
-        epoch_written INTEGER,
-        epoch_retired INTEGER
-      );
-      CREATE TABLE relationships (
-        source_id TEXT,
-        target_id TEXT,
-        target_name TEXT,
-        type TEXT,
-        weight REAL,
-        epoch_written INTEGER,
-        epoch_retired INTEGER
-      );
-    `);
-    const ent = db.prepare('INSERT INTO entities VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+    createGraphSchema(db);
+    const ent = db.prepare('INSERT INTO entities (id, file_path, type, name, signature, start_line, end_line, stale_since, epoch_written, epoch_retired) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
     ent.run('caller', 'src/caller.js', 'function', 'Caller', 'function Caller()', 1, 5, null, 1, null);
     ent.run('legacy', 'src/legacy.js', 'function', 'LegacyWidget', 'function LegacyWidget()', 1, 5, 1111, 1, 3);
     ent.run('current', 'src/current.js', 'function', 'CurrentWidget', 'function CurrentWidget()', 1, 5, null, 3, null);
-    const rel = db.prepare('INSERT INTO relationships VALUES (?, ?, ?, ?, ?, ?, ?)');
+    const rel = db.prepare('INSERT INTO relationships (source_id, target_id, target_name, type, weight, epoch_written, epoch_retired) VALUES (?, ?, ?, ?, ?, ?, ?)');
     rel.run('caller', 'legacy', 'LegacyWidget', 'calls', 1, 1, 3);
     rel.run('caller', 'current', 'CurrentWidget', 'calls', 1, 3, null);
     db.close();

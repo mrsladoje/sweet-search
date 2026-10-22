@@ -80,31 +80,17 @@ never returned) or a parse failure on the dirty set.
 3. On next start the daemon clears the stale lock automatically and
    enqueues a `crash_recovery` Float HNSW replacement (plan § 8.6).
 
-### 2.2 Daemon crash-loops on startup
+### 2.2 Daemon or search refuses the index (schema version)
 
-**Diagnose:** the most common cause is a `SQLITE_CONSTRAINT_NOTNULL`
-violation from an older daemon writing through the v3 schema. Plan §
-7.1.6 / § 7.2: every reconcile-owned column has a `DEFAULT` clause to
-prevent this, but if a fork drops the default a rollback can lock the
-daemon out.
+**Symptom:** `IndexSchemaError: The index at … has schema version N, this
+sweet-search needs M: rebuild it with: sweet-search index --full`, or
+`status` reports `index_rebuild_required` with `schema_version_changed`.
 
-**Fix:**
-1. Inspect `.sweet-search/codebase.db` columns:
-   ```bash
-   sqlite3 .sweet-search/codebase.db "PRAGMA table_info(vectors)"
-   ```
-   The reconcile-v2 columns must show `dflt_value = ''` or `0`.
-2. Re-apply the migration:
-   ```bash
-   node -e "
-     import('better-sqlite3').then(({default: Database}) => {
-       const db = new Database('.sweet-search/codebase.db');
-       import('./core/incremental-indexing/infrastructure/schema-migrations.mjs').then((m) => {
-         console.log(m.migrateVectorsSchema(db));
-       });
-     });
-   "
-   ```
+**Cause:** the index was built by a sweet-search with another index schema
+version (`SCHEMA_VERSION` in core/infrastructure/index-schema.js). There
+are no migrations: the full build creates the current schema.
+
+**Fix:** `sweet-search index --full`.
 
 ### 2.3 Search returns rows from the wrong epoch
 

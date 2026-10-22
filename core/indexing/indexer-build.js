@@ -17,8 +17,9 @@ import { getEmbeddings, getModelInfo } from '../embedding/embedding-service.js';
 import { configureJournalMode, checkpointWal, atomicSwapDatabase, log, logProgress } from './indexer-utils.js';
 import { assignStructuralIds } from '../incremental-indexing/domain/chunk-identity.mjs';
 import { chunkInputHashes } from '../incremental-indexing/domain/encoder-input.mjs';
-import { migrateVectorsSchema } from '../incremental-indexing/infrastructure/schema-migrations.mjs';
-import { chunkTextFtsWriter } from './chunk-text-fts.js';
+import { SCHEMA_VERSION } from './index-format-versions.js';
+import { IndexSchemaError, vectorSchemaVersion } from '../infrastructure/index-schema.js';
+import { chunkTextFtsWriter, ensureChunkTextFts } from './chunk-text-fts.js';
 
 // =============================================================================
 // CHUNK ENRICHMENT — scope chains + imports from code-graph.db
@@ -246,7 +247,16 @@ export async function buildCodeGraph(files, dryRun = false) {
 // PHASE 2: VECTOR EMBEDDINGS
 // =============================================================================
 
-export function createVectorSchema(db) {
+/**
+ * The vectors table in its final shape (no migrations), stamped with SCHEMA_VERSION in
+ * `PRAGMA user_version`. On an existing table with another version it throws
+ * IndexSchemaError: that index is rebuilt, never altered. Idempotent on a current one.
+ * Columns past created_at: chunk identity and encoder-input hashes (reuse decisions), and
+ * the epoch columns of the maintainer's row versioning (a full build writes epoch 0).
+ */
+export function createVectorSchema(db, { path: dbPath = 'codebase.db' } = {}) {
+  const existed = !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='vectors'").get();
+  if (existed && vectorSchemaVersion(db) !== SCHEMA_VERSION) throw new IndexSchemaError(dbPath, vectorSchemaVersion(db));
   db.exec(`
     CREATE TABLE IF NOT EXISTS vectors (
       id TEXT PRIMARY KEY,
@@ -256,43 +266,30 @@ export function createVectorSchema(db) {
       metadata TEXT,
       session_id TEXT,
       tags TEXT,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP
+      created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+      chunk_struct_id TEXT NOT NULL DEFAULT '',
+      chunk_text_hash TEXT NOT NULL DEFAULT '',
+      embedding_input_hash TEXT NOT NULL DEFAULT '',
+      li_input_hash TEXT NOT NULL DEFAULT '',
+      metadata_fingerprint TEXT NOT NULL DEFAULT '',
+      logical_chunk_id TEXT NOT NULL DEFAULT '',
+      epoch_written INTEGER NOT NULL DEFAULT 0,
+      epoch_retired INTEGER
     )
   `);
   db.exec('CREATE INDEX IF NOT EXISTS idx_vectors_session ON vectors(session_id)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_vectors_file_path ON vectors(file_path)');
-  migrateVectorsSchema(db);
-}
-
-export function ensureVectorSchema(db) {
-  const columns = db.prepare("PRAGMA table_info(vectors)").all();
-  const hasFilePath = columns.some(col => col.name === 'file_path');
-
-  if (!hasFilePath) {
-    log('  Migrating schema: adding file_path column...', 'dim');
-    db.exec('ALTER TABLE vectors ADD COLUMN file_path TEXT');
-
-    const rows = db.prepare('SELECT id, metadata FROM vectors').all();
-    const updateStmt = db.prepare('UPDATE vectors SET file_path = ? WHERE id = ?');
-
-    const migrate = db.transaction(() => {
-      for (const row of rows) {
-        try {
-          const metadata = JSON.parse(row.metadata || '{}');
-          if (metadata.file) {
-            updateStmt.run(metadata.file, row.id);
-          }
-        } catch (e) {
-          // Skip rows with invalid metadata
-        }
-      }
-    });
-    migrate();
-
-    db.exec('CREATE INDEX IF NOT EXISTS idx_vectors_file_path ON vectors(file_path)');
-    log('  Schema migration complete', 'dim');
-  }
-  migrateVectorsSchema(db);
+  db.exec("CREATE INDEX IF NOT EXISTS idx_vectors_struct ON vectors(chunk_struct_id) WHERE chunk_struct_id != ''");
+  db.exec('CREATE INDEX IF NOT EXISTS idx_vectors_epoch_written ON vectors(epoch_written)');
+  db.exec('CREATE INDEX IF NOT EXISTS idx_vectors_epoch_retired ON vectors(epoch_retired) WHERE epoch_retired IS NOT NULL');
+  db.exec("CREATE INDEX IF NOT EXISTS idx_vectors_logical ON vectors(logical_chunk_id) WHERE logical_chunk_id != ''");
+  // Dedup alias rows by exemplar: the maintainer converts the aliases of a retired
+  // exemplar into ordinary rows. Partial: only alias rows carry an exemplarId.
+  db.exec("CREATE INDEX IF NOT EXISTS idx_vectors_alias_exemplar ON vectors(json_extract(metadata, '$.exemplarId')) WHERE json_extract(metadata, '$.exemplarId') IS NOT NULL");
+  // Chunk-text BM25 index (core/indexing/chunk-text-fts.js): created with a new index;
+  // its triggers are ensured on every write session.
+  ensureChunkTextFts(db);
+  if (!existed) db.pragma(`user_version = ${SCHEMA_VERSION}`);
 }
 
 export function buildInsertItems(chunks, embeddings, modelInfo, annotations = null, options = {}) {
@@ -391,9 +388,7 @@ function annotateChunksForVectorInsert(chunks) {
   return annotations;
 }
 
-function vectorInsertColumns(db) {
-  const columns = new Set(db.prepare('PRAGMA table_info(vectors)').all().map((c) => c.name));
-  return [
+const VECTOR_INSERT_COLUMNS = Object.freeze([
     'id',
     'file_path',
     'embedding',
@@ -410,8 +405,7 @@ function vectorInsertColumns(db) {
     'logical_chunk_id',
     'epoch_written',
     'epoch_retired',
-  ].filter((column) => columns.has(column));
-}
+]);
 
 function vectorInsertValue(item, column) {
   switch (column) {
@@ -436,7 +430,7 @@ function vectorInsertValue(item, column) {
 }
 
 function prepareVectorInsert(db) {
-  const columns = vectorInsertColumns(db);
+  const columns = VECTOR_INSERT_COLUMNS;
   const quoted = columns.map((column) => `"${column}"`).join(', ');
   const placeholders = columns.map(() => '?').join(', ');
   const stmt = db.prepare(`INSERT OR REPLACE INTO vectors (${quoted}) VALUES (${placeholders})`);
@@ -851,7 +845,7 @@ export async function buildVectorIndex(files, dryRun = false, options = {}) {
       if (sqliteFastMode) log('SQLite fast-build mode enabled (benchmarking only)', 'yellow');
       else if (journalModeIncr === 'WAL') log('SQLite WAL mode enabled', 'dim');
 
-      ensureVectorSchema(db);
+      createVectorSchema(db, { path: DB_PATHS.codebase });
 
       previousCount = db.prepare('SELECT COUNT(*) as count FROM vectors').get().count;
 

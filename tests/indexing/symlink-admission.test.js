@@ -27,6 +27,7 @@ import { discoverFiles } from '../../core/indexing/indexer-utils.js';
 import { scanDirtyAndEnqueue } from '../../core/incremental-indexing/application/dirty-scan.mjs';
 import { runProductionReconcileTick } from '../../core/incremental-indexing/application/production-reconciler.mjs';
 import { createIndexCoverage, semanticTargetFor } from '../../core/search/index-coverage.js';
+import { createVectorSchema } from '../../core/indexing/indexer-build.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 let sandbox;   // holds the project root and an "outside" sibling dir
@@ -239,10 +240,7 @@ describe('not-indexed note for a symlinked path', () => {
   function makeIndex(indexedPaths) {
     fs.mkdirSync(path.join(root, '.sweet-search'), { recursive: true });
     const db = new Database(path.join(root, '.sweet-search', 'codebase.db'));
-    db.exec(`CREATE TABLE vectors (
-      id TEXT PRIMARY KEY, file_path TEXT NOT NULL, embedding BLOB NOT NULL,
-      text TEXT, metadata TEXT, session_id TEXT, tags TEXT,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP, epoch_retired INTEGER)`);
+    createVectorSchema(db);
     const ins = db.prepare('INSERT INTO vectors (id, file_path, embedding) VALUES (?, ?, ?)');
     indexedPaths.forEach((p, i) => ins.run(String(i), p, Buffer.alloc(1)));
     db.close();

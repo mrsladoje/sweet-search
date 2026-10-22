@@ -6,16 +6,13 @@
 import { describe, expect, it } from 'vitest';
 import Database from 'better-sqlite3';
 import { expandOneHop, expandSecondHop, expandResults } from '../../core/graph/graph-expansion.js';
+import { createGraphSchema } from '../../core/graph/graph-extractor.js';
 
 const EDGES = new Set(['imports', 'extends', 'implements', 'uses', 'calls']);
 
 function makeDb() {
   const db = new Database(':memory:');
-  db.exec(`
-    CREATE TABLE entities (id TEXT PRIMARY KEY, file_path TEXT NOT NULL, type TEXT NOT NULL, name TEXT NOT NULL,
-      signature TEXT, start_line INTEGER, end_line INTEGER, stale_since INTEGER DEFAULT NULL);
-    CREATE TABLE relationships (source_id TEXT, target_id TEXT, target_name TEXT NOT NULL, type TEXT NOT NULL, weight REAL DEFAULT 1.0);
-  `);
+  createGraphSchema(db);
   const ent = db.prepare('INSERT INTO entities (id, file_path, type, name, signature, start_line, end_line) VALUES (?, ?, ?, ?, ?, ?, ?)');
   const rel = db.prepare('INSERT INTO relationships (source_id, target_id, target_name, type) VALUES (?, ?, ?, ?)');
   ent.run('seed', 'src/lib.js', 'function', 'boot', 'function boot()', 1, 3);

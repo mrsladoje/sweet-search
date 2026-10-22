@@ -5,7 +5,6 @@
  * 1. Incremental runs preserve vectors for unchanged files
  * 2. Deleted file vectors are properly removed
  * 3. Full rebuild still produces a valid database
- * 4. Schema migration works correctly for old databases
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -13,58 +12,13 @@ import Database from 'better-sqlite3';
 import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createVectorSchema } from '../../core/indexing/indexer-build.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // Test database path
 const TEST_DB_PATH = path.join(__dirname, 'test-vectors.db');
-
-// Inline the schema functions to avoid import issues
-function createVectorSchema(db) {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS vectors (
-      id TEXT PRIMARY KEY,
-      file_path TEXT NOT NULL,
-      embedding BLOB NOT NULL,
-      text TEXT,
-      metadata TEXT,
-      session_id TEXT,
-      tags TEXT,
-      created_at TEXT DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-  db.exec('CREATE INDEX IF NOT EXISTS idx_vectors_session ON vectors(session_id)');
-  db.exec('CREATE INDEX IF NOT EXISTS idx_vectors_file_path ON vectors(file_path)');
-}
-
-function ensureVectorSchema(db) {
-  const columns = db.prepare("PRAGMA table_info(vectors)").all();
-  const hasFilePath = columns.some(col => col.name === 'file_path');
-
-  if (!hasFilePath) {
-    db.exec('ALTER TABLE vectors ADD COLUMN file_path TEXT');
-
-    const rows = db.prepare('SELECT id, metadata FROM vectors').all();
-    const updateStmt = db.prepare('UPDATE vectors SET file_path = ? WHERE id = ?');
-
-    const migrate = db.transaction(() => {
-      for (const row of rows) {
-        try {
-          const metadata = JSON.parse(row.metadata || '{}');
-          if (metadata.file) {
-            updateStmt.run(metadata.file, row.id);
-          }
-        } catch (e) {
-          // Skip rows with invalid metadata
-        }
-      }
-    });
-    migrate();
-
-    db.exec('CREATE INDEX IF NOT EXISTS idx_vectors_file_path ON vectors(file_path)');
-  }
-}
 
 function insertVectors(db, chunks, embeddings, modelInfo) {
   const stmt = db.prepare(`
@@ -191,56 +145,6 @@ describe('Incremental Vector Indexing', () => {
       const indexNames = indexes.map(i => i.name);
 
       expect(indexNames).toContain('idx_vectors_file_path');
-    });
-  });
-
-  describe('Schema Migration', () => {
-    it('should migrate old schema without file_path column', async () => {
-      // Close current db and create one with old schema
-      db.close();
-      try {
-        await fs.unlink(TEST_DB_PATH);
-      } catch (e) {}
-
-      // Create old schema (without file_path)
-      const oldDb = new Database(TEST_DB_PATH);
-      oldDb.exec(`
-        CREATE TABLE vectors (
-          id TEXT PRIMARY KEY,
-          embedding BLOB NOT NULL,
-          text TEXT,
-          metadata TEXT,
-          session_id TEXT,
-          tags TEXT,
-          created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        )
-      `);
-
-      // Insert a row with metadata containing file path
-      const embedding = Buffer.from(new Float32Array([1, 2, 3, 4]).buffer);
-      oldDb.prepare(`
-        INSERT INTO vectors (id, embedding, text, metadata)
-        VALUES (?, ?, ?, ?)
-      `).run(
-        'src/test.js:10',
-        embedding,
-        'test content',
-        JSON.stringify({ file: 'src/test.js', type: 'code' })
-      );
-
-      // Run migration
-      ensureVectorSchema(oldDb);
-
-      // Verify file_path column was added
-      const columns = oldDb.prepare("PRAGMA table_info(vectors)").all();
-      const hasFilePath = columns.some(c => c.name === 'file_path');
-      expect(hasFilePath).toBe(true);
-
-      // Verify file_path was populated from metadata
-      const row = oldDb.prepare('SELECT file_path FROM vectors WHERE id = ?').get('src/test.js:10');
-      expect(row.file_path).toBe('src/test.js');
-
-      oldDb.close();
     });
   });
 

@@ -20,8 +20,8 @@ describe('CodebaseRepository.getChunkMetaByIds', () => {
     const dir = path.join(TMP, '.sweet-search'); mkdirSync(dir, { recursive: true });
     const dbPath = path.join(dir, 'codebase.db');
     const db = new Database(dbPath);
-    db.exec('CREATE TABLE vectors (id TEXT PRIMARY KEY, file_path TEXT, text TEXT, metadata TEXT)');
-    db.prepare('INSERT INTO vectors VALUES (?, ?, ?, ?)').run(
+    createVectorSchema(db);
+    db.prepare('INSERT INTO vectors (id, file_path, embedding, text, metadata) VALUES (?, ?, zeroblob(0), ?, ?)').run(
       'moto/iam/models.py:325-345:14', 'moto/iam/models.py', 'class ManagedPolicy:',
       JSON.stringify({ symbol: 'ManagedPolicy', chunk_type: 'class', line_start: 325, line_end: 345 }),
     );
@@ -51,6 +51,7 @@ describe('LateInteractionIndex alias sidecar', () => {
 });
 
 import { mergeChunkLocationMaps } from '../../core/search/search-pattern-chunks.js';
+import { createVectorSchema } from '../../core/indexing/indexer-build.js';
 
 describe('mergeChunkLocationMaps', () => {
   it('unions spans by chunk id and rebuilds the running max', () => {

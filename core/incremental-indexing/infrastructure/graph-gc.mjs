@@ -61,14 +61,6 @@ function tableExists(db, name) {
   ).get(name);
 }
 
-function hasColumn(db, table, column) {
-  try {
-    return db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
-  } catch {
-    return false;
-  }
-}
-
 function normalizeBatchOpts(opts) {
   const batchSize = Number.isInteger(opts.batchSize) && opts.batchSize > 0
     ? opts.batchSize : DEFAULT_GRAPH_GC_BATCH;
@@ -91,9 +83,6 @@ function normalizeBatchOpts(opts) {
 export function pruneRetiredRelationships(db, frontier, opts = {}) {
   if (!Number.isInteger(frontier)) {
     throw new Error(`pruneRetiredRelationships: frontier must be an integer, got ${frontier}`);
-  }
-  if (!hasColumn(db, 'relationships', 'epoch_retired')) {
-    return { deleted: 0, batches: 0, hitCap: false, skipped: 'no-epoch-column' };
   }
   const { batchSize, maxRows } = normalizeBatchOpts(opts);
   const stmt = db.prepare(`
@@ -208,9 +197,6 @@ export function pruneRetiredEntities(db, frontier, opts = {}) {
   if (!Number.isInteger(frontier)) {
     throw new Error(`pruneRetiredEntities: frontier must be an integer, got ${frontier}`);
   }
-  if (!hasColumn(db, 'entities', 'epoch_retired')) {
-    return { deleted: 0, batches: 0, hitCap: false, ftsDeleted: 0, skipped: 'no-epoch-column' };
-  }
   const { batchSize, maxRows } = normalizeBatchOpts(opts);
   const hasFts = tableExists(db, 'entities_fts');
   const hasCodeFts = tableExists(db, 'entities_code_fts');
@@ -279,7 +265,7 @@ export function pruneRetiredGraphSummaries(db, frontier, opts = {}) {
   if (!Number.isInteger(frontier)) {
     throw new Error(`pruneRetiredGraphSummaries: frontier must be an integer, got ${frontier}`);
   }
-  if (!tableExists(db, 'hcgs_summary_metadata') || !hasColumn(db, 'hcgs_summary_metadata', 'epoch_retired')) {
+  if (!tableExists(db, 'hcgs_summary_metadata')) {
     return { deleted: 0, batches: 0, hitCap: false, skipped: 'no-summary-table' };
   }
   const { batchSize, maxRows } = normalizeBatchOpts(opts);

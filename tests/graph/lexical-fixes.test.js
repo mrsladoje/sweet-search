@@ -12,6 +12,7 @@ import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { GraphSearch, createGraphSchema, normalizeIdentifier, SCHEMA_VERSION } from '../../core/graph/index.js';
 import { insertGraph, rebuildGraphFts } from '../../core/graph/graph-extractor.js';
+import { createGraphFixtureSchema } from '../helpers/graph-fixture.js';
 
 // =============================================================================
 // SHARED TEST DATABASE
@@ -20,64 +21,7 @@ import { insertGraph, rebuildGraphFts } from '../../core/graph/graph-extractor.j
 function createLexicalTestDb(dbPath) {
   const db = new Database(dbPath);
 
-  db.exec(`
-    CREATE TABLE entities (
-      id INTEGER PRIMARY KEY,
-      name TEXT NOT NULL,
-      type TEXT NOT NULL,
-      file_path TEXT,
-      start_line INTEGER,
-      end_line INTEGER,
-      signature TEXT,
-      doc_comment TEXT,
-      summary TEXT,
-      package TEXT,
-      parent_class TEXT,
-      search_text TEXT,
-      name_alias TEXT,
-      stale_since INTEGER DEFAULT NULL
-    );
-
-    CREATE TABLE relationships (
-      source_id TEXT,
-      target_id TEXT,
-      target_name TEXT NOT NULL,
-      type TEXT NOT NULL,
-      weight REAL DEFAULT 1.0,
-      context_line INTEGER,
-      full_import_path TEXT,
-      is_static INTEGER DEFAULT 0,
-      is_wildcard INTEGER DEFAULT 0
-    );
-
-    -- Production-matching FTS5: name, name_alias, signature, doc_comment
-    CREATE VIRTUAL TABLE entities_fts USING fts5(
-      name,
-      name_alias,
-      signature,
-      doc_comment,
-      content='entities',
-      content_rowid='id',
-      tokenize='porter unicode61',
-      prefix='2 3 4'
-    );
-
-    -- Trigram FTS5 for fuzzy/substring matching
-    CREATE VIRTUAL TABLE entities_trigram USING fts5(
-      name,
-      signature,
-      content='entities',
-      content_rowid='id',
-      tokenize='trigram'
-    );
-
-    CREATE TRIGGER entities_ai AFTER INSERT ON entities BEGIN
-      INSERT INTO entities_fts(rowid, name, name_alias, signature, doc_comment)
-      VALUES (NEW.id, NEW.name, NEW.name_alias, NEW.signature, NEW.doc_comment);
-      INSERT INTO entities_trigram(rowid, name, signature)
-      VALUES (NEW.id, NEW.name, NEW.signature);
-    END;
-  `);
+  createGraphFixtureSchema(db);
 
   const insert = db.prepare(`
     INSERT INTO entities (id, name, type, file_path, start_line, end_line, signature, doc_comment, search_text, name_alias, stale_since)
@@ -85,124 +29,24 @@ function createLexicalTestDb(dbPath) {
   `);
 
   // Rich fixture set for lexical testing
-  insert.run(1, 'AuthService', 'class', 'src/auth/AuthService.java', 10, 200, 'public class AuthService', 'Authentication service', 'authservice authentication service', 'auth service authservice', null);
-  insert.run(2, 'UserService', 'class', 'src/user/UserService.java', 5, 150, 'public class UserService', 'User management service', 'userservice user management', 'user service userservice', null);
-  insert.run(3, 'getUserName', 'method', 'src/user/UserService.java', 20, 30, 'public String getUserName(int id)', 'Gets user name by id', 'getusername user name', 'get user name getusername', null);
-  insert.run(4, 'get_user_name', 'function', 'src/utils/helpers.py', 10, 20, 'def get_user_name(user_id)', 'Python helper for user name', 'get_user_name user name', 'get user name getusername', null);
-  insert.run(5, 'HTMLParser', 'class', 'src/parser/HTMLParser.ts', 1, 100, 'export class HTMLParser', 'Parses HTML documents', 'htmlparser html documents', 'html parser htmlparser', null);
-  insert.run(6, 'OAuth2Client', 'class', 'src/auth/OAuth2Client.ts', 1, 80, 'export class OAuth2Client', 'OAuth 2.0 client', 'oauth2client oauth client', 'oauth 2 client oauth2client', null);
-  insert.run(7, 'LoginController', 'class', 'src/auth/LoginController.java', 5, 120, 'public class LoginController', 'Handles auth login flow', 'logincontroller auth login', 'login controller logincontroller', null);
-  insert.run(8, 'MAX_RETRIES', 'constant', 'src/config/constants.ts', 3, 3, 'export const MAX_RETRIES = 3', 'Maximum retry count', 'max_retries maximum retry', 'max retries maxretries', null);
-  insert.run(9, 'configLoader', 'function', 'src/config/loader.js', 10, 50, 'function configLoader(path)', 'Loads configuration from file', 'configloader configuration file', 'config loader configloader', null);
-  insert.run(10, 'DatabaseConnection', 'class', 'src/db/DatabaseConnection.java', 1, 200, 'public class DatabaseConnection', 'Database connection pool', 'databaseconnection database connection pool', 'database connection databaseconnection', null);
+  insert.run('1', 'AuthService', 'class', 'src/auth/AuthService.java', 10, 200, 'public class AuthService', 'Authentication service', 'authservice authentication service', 'auth service authservice', null);
+  insert.run('2', 'UserService', 'class', 'src/user/UserService.java', 5, 150, 'public class UserService', 'User management service', 'userservice user management', 'user service userservice', null);
+  insert.run('3', 'getUserName', 'method', 'src/user/UserService.java', 20, 30, 'public String getUserName(int id)', 'Gets user name by id', 'getusername user name', 'get user name getusername', null);
+  insert.run('4', 'get_user_name', 'function', 'src/utils/helpers.py', 10, 20, 'def get_user_name(user_id)', 'Python helper for user name', 'get_user_name user name', 'get user name getusername', null);
+  insert.run('5', 'HTMLParser', 'class', 'src/parser/HTMLParser.ts', 1, 100, 'export class HTMLParser', 'Parses HTML documents', 'htmlparser html documents', 'html parser htmlparser', null);
+  insert.run('6', 'OAuth2Client', 'class', 'src/auth/OAuth2Client.ts', 1, 80, 'export class OAuth2Client', 'OAuth 2.0 client', 'oauth2client oauth client', 'oauth 2 client oauth2client', null);
+  insert.run('7', 'LoginController', 'class', 'src/auth/LoginController.java', 5, 120, 'public class LoginController', 'Handles auth login flow', 'logincontroller auth login', 'login controller logincontroller', null);
+  insert.run('8', 'MAX_RETRIES', 'constant', 'src/config/constants.ts', 3, 3, 'export const MAX_RETRIES = 3', 'Maximum retry count', 'max_retries maximum retry', 'max retries maxretries', null);
+  insert.run('9', 'configLoader', 'function', 'src/config/loader.js', 10, 50, 'function configLoader(path)', 'Loads configuration from file', 'configloader configuration file', 'config loader configloader', null);
+  insert.run('10', 'DatabaseConnection', 'class', 'src/db/DatabaseConnection.java', 1, 200, 'public class DatabaseConnection', 'Database connection pool', 'databaseconnection database connection pool', 'database connection databaseconnection', null);
   // Entity where search term only appears in doc_comment (for weight validation)
-  insert.run(11, 'HelperUtils', 'class', 'src/utils/HelperUtils.java', 1, 50, 'public class HelperUtils', 'Utility with auth helpers', 'helperutils utility auth helpers', 'helper utils helperutils', null);
+  insert.run('11', 'HelperUtils', 'class', 'src/utils/HelperUtils.java', 1, 50, 'public class HelperUtils', 'Utility with auth helpers', 'helperutils utility auth helpers', 'helper utils helperutils', null);
   // Stale entity (should never appear)
-  insert.run(12, 'OldAuthService', 'class', 'src/auth/OldAuthService.java', 1, 100, 'public class OldAuthService', 'Deprecated auth', 'oldauthservice deprecated auth', 'old auth service oldauthservice', 1704067200);
-  insert.run(13, 'SecurityManager', 'class', 'src/security/SecurityManager.java', 1, 75, 'public class SecurityManager', 'Handles Auth2FA login flow', 'securitymanager auth2fa login', 'security manager securitymanager', null);
+  insert.run('12', 'OldAuthService', 'class', 'src/auth/OldAuthService.java', 1, 100, 'public class OldAuthService', 'Deprecated auth', 'oldauthservice deprecated auth', 'old auth service oldauthservice', 1704067200);
+  insert.run('13', 'SecurityManager', 'class', 'src/security/SecurityManager.java', 1, 75, 'public class SecurityManager', 'Handles Auth2FA login flow', 'securitymanager auth2fa login', 'security manager securitymanager', null);
 
   return db;
 }
-
-// =============================================================================
-// SCHEMA MIGRATION: LEGACY FTS LAYOUTS
-// =============================================================================
-
-describe('Schema migration for lexical fixes', () => {
-  let testDir;
-
-  afterAll(() => {
-    if (testDir) {
-      rmSync(testDir, { recursive: true, force: true });
-    }
-  });
-
-  it('rebuilds legacy FTS tables, backfills aliases, and updates schema version', async () => {
-    testDir = mkdtempSync(join(tmpdir(), 'lexical-schema-'));
-    const dbPath = join(testDir, 'legacy.db');
-    const db = new Database(dbPath);
-
-    db.exec(`
-      CREATE TABLE entities (
-        id TEXT PRIMARY KEY,
-        file_path TEXT NOT NULL,
-        type TEXT NOT NULL,
-        name TEXT NOT NULL,
-        signature TEXT,
-        signature_hash TEXT,
-        doc_comment TEXT,
-        start_line INTEGER,
-        end_line INTEGER,
-        package TEXT,
-        parent_class TEXT,
-        search_text TEXT,
-        summary TEXT,
-        summary_embedding BLOB,
-        parent_id TEXT,
-        hierarchy_level INTEGER DEFAULT 0,
-        code TEXT,
-        stale_since INTEGER DEFAULT NULL
-      );
-
-      CREATE TABLE relationships (
-        source_id TEXT,
-        target_id TEXT,
-        target_name TEXT NOT NULL,
-        type TEXT NOT NULL,
-        weight REAL DEFAULT 1.0,
-        context_line INTEGER,
-        full_import_path TEXT,
-        is_static INTEGER DEFAULT 0,
-        is_wildcard INTEGER DEFAULT 0
-      );
-
-      CREATE VIRTUAL TABLE entities_fts USING fts5(
-        name,
-        signature,
-        doc_comment,
-        content='entities',
-        content_rowid='rowid',
-        tokenize='porter unicode61'
-      );
-    `);
-
-    db.prepare(`
-      INSERT INTO entities (id, file_path, type, name, signature, doc_comment, search_text, stale_since)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(
-      '1',
-      'src/user/UserService.java',
-      'class',
-      'UserService',
-      'public class UserService',
-      'User management service',
-      'userservice user service',
-      null
-    );
-
-    createGraphSchema(db);
-    db.exec(`INSERT INTO entities_fts(entities_fts) VALUES('rebuild')`);
-    db.exec(`INSERT INTO entities_trigram(entities_trigram) VALUES('rebuild')`);
-
-    const aliasRow = db.prepare(`SELECT name_alias FROM entities WHERE id = ?`).get('1');
-    const ftsSql = db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'entities_fts'`).get().sql;
-    const versionRow = db.prepare(`SELECT value FROM schema_meta WHERE key = 'version'`).get();
-
-    expect(aliasRow.name_alias).toBe('user service userservice');
-    expect(ftsSql).toContain('name_alias');
-    expect(ftsSql).toContain(`prefix='2 3 4'`);
-    expect(versionRow.value).toBe(String(SCHEMA_VERSION));
-
-    db.close();
-
-    const graphSearch = new GraphSearch(dbPath);
-    await graphSearch.init();
-    const { results } = await graphSearch.bm25Search('user service');
-    graphSearch.close();
-
-    expect(results.some(r => r.name === 'UserService')).toBe(true);
-  });
-});
 
 // =============================================================================
 // FIX 1: WEIGHTED BM25 / BM25F
@@ -236,9 +80,6 @@ describe('Fix 1: Weighted BM25 / BM25F', () => {
     }
   });
 
-  it('should detect 4-column FTS5 schema', () => {
-    expect(graphSearch._ftsColumnCount).toBe(4);
-  });
 });
 
 // =============================================================================
@@ -323,11 +164,15 @@ describe('Fix 3: FTS5 Error Logging Parity', () => {
   it('should log FTS5 errors in bm25Search', async () => {
     // Force an FTS5 error by breaking the prepared statement
     const origStmt = graphSearch._stmtFts5;
-    graphSearch._stmtFts5 = { all: () => { throw new Error('test FTS5 error'); } };
+    const origCodeStmt = graphSearch._stmtCodeFts;
+    const broken = { all: () => { throw new Error('test FTS5 error'); } };
+    graphSearch._stmtFts5 = broken;
+    graphSearch._stmtCodeFts = broken;
 
     logMessages.length = 0;
     const { results } = await graphSearch.bm25Search('test');
     graphSearch._stmtFts5 = origStmt;
+    graphSearch._stmtCodeFts = origCodeStmt;
 
     expect(logMessages.some(m => m.includes('[bm25Search]') && m.includes('FTS5'))).toBe(true);
   });

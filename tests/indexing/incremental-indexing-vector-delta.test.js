@@ -15,24 +15,12 @@ import {
   diffChunks,
   applyDiff,
 } from '../../core/incremental-indexing/infrastructure/vector-delta-writer.mjs';
-import { migrateVectorsSchema } from '../../core/incremental-indexing/infrastructure/schema-migrations.mjs';
+import { createVectorSchema } from '../../core/indexing/indexer-build.js';
 import { epochVisibilityPredicate } from '../../core/incremental-indexing/infrastructure/manifest.mjs';
 
 function makeDb() {
   const db = new Database(':memory:');
-  db.exec(`
-    CREATE TABLE vectors (
-      id TEXT PRIMARY KEY,
-      file_path TEXT NOT NULL,
-      embedding BLOB NOT NULL,
-      text TEXT,
-      metadata TEXT,
-      session_id TEXT,
-      tags TEXT,
-      created_at TEXT
-    )
-  `);
-  migrateVectorsSchema(db);
+  createVectorSchema(db);
   return db;
 }
 

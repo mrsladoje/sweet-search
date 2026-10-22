@@ -4,7 +4,6 @@
  * After incremental-indexing-coverage-boost.test.js landed, the remaining
  * uncovered branches concentrate in:
  *   - hashing.mjs            (alternate backend resolution, SHA-256 path)
- *   - schema-migrations.mjs  (idempotent re-run on entities/relationships)
  *   - worktree-stamp.mjs     (git-repo path)
  *   - wsl2-detect.mjs        (KUBERNETES / docker / wsl2 detection paths)
  *   - maintenance-worker.mjs (alternate input)
@@ -17,9 +16,6 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { contentHashSync, contentHash, __testing as hashingTesting } from '../../core/incremental-indexing/infrastructure/hashing.mjs';
-import {
-  migrateEntitiesSchema, migrateRelationshipsSchema, migrateVectorsSchema,
-} from '../../core/incremental-indexing/infrastructure/schema-migrations.mjs';
 import { gitCommonDir, verifyStamp, writeStamp } from '../../core/incremental-indexing/infrastructure/worktree-stamp.mjs';
 import { watcherDefault, __testing as wsl2Testing } from '../../core/incremental-indexing/infrastructure/wsl2-detect.mjs';
 
@@ -66,56 +62,6 @@ describe('hashing.mjs — backend resolution + sha256 fallback', () => {
       if (prev === undefined) delete process.env.SWEET_SEARCH_HASH_ALGORITHM;
       else process.env.SWEET_SEARCH_HASH_ALGORITHM = prev;
     }
-  });
-});
-
-describe('schema-migrations.mjs — idempotent re-runs on entities + relationships', () => {
-  function makeEntitiesDb() {
-    const db = new Database(':memory:');
-    db.exec(`CREATE TABLE entities (id TEXT PRIMARY KEY, name TEXT);`);
-    return db;
-  }
-
-  function makeRelationshipsDb() {
-    const db = new Database(':memory:');
-    db.exec(`CREATE TABLE relationships (id TEXT PRIMARY KEY, type TEXT);`);
-    return db;
-  }
-
-  it('migrateEntitiesSchema returns added=[] on second call', () => {
-    const db = makeEntitiesDb();
-    const first = migrateEntitiesSchema(db);
-    expect(first.added.length).toBeGreaterThan(0);
-    const second = migrateEntitiesSchema(db);
-    expect(second.added).toEqual([]);
-    db.close();
-  });
-
-  it('migrateRelationshipsSchema returns added=[] on second call', () => {
-    const db = makeRelationshipsDb();
-    const first = migrateRelationshipsSchema(db);
-    expect(first.added.length).toBeGreaterThan(0);
-    const second = migrateRelationshipsSchema(db);
-    expect(second.added).toEqual([]);
-    db.close();
-  });
-
-  it('migrateVectorsSchema is idempotent across many calls', () => {
-    const db = new Database(':memory:');
-    db.exec(`CREATE TABLE vectors (id TEXT PRIMARY KEY, file_path TEXT NOT NULL, embedding BLOB NOT NULL);`);
-    migrateVectorsSchema(db);
-    migrateVectorsSchema(db);
-    const result = migrateVectorsSchema(db);
-    expect(result.added).toEqual([]);
-    db.close();
-  });
-
-  it('PRAGMA table_info shows all new columns after migration', () => {
-    const db = makeEntitiesDb();
-    migrateEntitiesSchema(db);
-    const cols = db.prepare(`PRAGMA table_info(entities)`).all().map((c) => c.name);
-    expect(cols).toEqual(expect.arrayContaining(['logical_entity_id', 'epoch_written', 'epoch_retired']));
-    db.close();
   });
 });
 

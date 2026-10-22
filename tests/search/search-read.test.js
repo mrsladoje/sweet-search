@@ -28,6 +28,7 @@ import {
   __testing,
 } from '../../core/search/search-read.js';
 import { withPinnedRead, _flushLingeringPins } from '../../core/search/search-reader-pin.js';
+import { createVectorSchema } from '../../core/indexing/indexer-build.js';
 
 let TMP;
 
@@ -137,15 +138,8 @@ describe('readFile — single file', () => {
     mkdirSync(stateDir, { recursive: true });
     const db = new Database(path.join(stateDir, 'codebase.db'));
     try {
-      db.exec(`
-        CREATE TABLE vectors (
-          id TEXT PRIMARY KEY,
-          file_path TEXT,
-          text TEXT,
-          metadata TEXT
-        )
-      `);
-      db.prepare('INSERT INTO vectors (id, file_path, text, metadata) VALUES (?, ?, ?, ?)').run(
+      createVectorSchema(db);
+      db.prepare('INSERT INTO vectors (id, file_path, embedding, text, metadata) VALUES (?, ?, zeroblob(0), ?, ?)').run(
         'chunk-e',
         'src/e.js',
         'function e() { return 1; }',
@@ -189,17 +183,8 @@ describe('readFile — single file', () => {
     }));
     const db = new Database(path.join(nestedDir, 'codebase.db'));
     try {
-      db.exec(`
-        CREATE TABLE vectors (
-          id TEXT PRIMARY KEY,
-          file_path TEXT,
-          text TEXT,
-          metadata TEXT,
-          epoch_written INTEGER NOT NULL DEFAULT 0,
-          epoch_retired INTEGER
-        )
-      `);
-      db.prepare('INSERT INTO vectors (id, file_path, text, metadata, epoch_written) VALUES (?, ?, ?, ?, ?)').run(
+      createVectorSchema(db);
+      db.prepare('INSERT INTO vectors (id, file_path, embedding, text, metadata, epoch_written) VALUES (?, ?, zeroblob(0), ?, ?, ?)').run(
         'chunk-f',
         'src/f.js',
         'function f() { return 2; }',

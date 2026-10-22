@@ -15,6 +15,7 @@ import { join } from 'path';
 import { mkdtempSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { GraphSearch } from '../../core/graph/index.js';
+import { createGraphFixtureSchema } from '../helpers/graph-fixture.js';
 
 // =============================================================================
 // TEST FIXTURES
@@ -24,77 +25,7 @@ import { GraphSearch } from '../../core/graph/index.js';
  * Create test database with standard schema matching graph-search.js expectations
  */
 function createTestDatabase(dbPath) {
-  const db = new Database(dbPath);
-
-  // Create entities table (matches graph-extractor.js schema)
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS entities (
-      id INTEGER PRIMARY KEY,
-      name TEXT NOT NULL,
-      type TEXT NOT NULL,
-      file_path TEXT,
-      start_line INTEGER,
-      end_line INTEGER,
-      signature TEXT,
-      doc_comment TEXT,
-      summary TEXT,
-      package TEXT,
-      parent_class TEXT,
-      search_text TEXT,
-      name_alias TEXT,
-      stale_since INTEGER DEFAULT NULL
-    );
-
-    CREATE TABLE IF NOT EXISTS relationships (
-      id INTEGER PRIMARY KEY,
-      source_id INTEGER,
-      target_id INTEGER,
-      target_name TEXT,
-      type TEXT,
-      weight REAL DEFAULT 1.0,
-      context_line INTEGER,
-      full_import_path TEXT,
-      is_static INTEGER DEFAULT 0,
-      is_wildcard INTEGER DEFAULT 0
-    );
-
-    -- FTS5 index matching production schema: name, name_alias, signature, doc_comment
-    CREATE VIRTUAL TABLE IF NOT EXISTS entities_fts USING fts5(
-      name,
-      name_alias,
-      signature,
-      doc_comment,
-      content='entities',
-      content_rowid='id',
-      prefix='2 3 4'
-    );
-
-    -- Trigram FTS5 for fuzzy/substring matching
-    CREATE VIRTUAL TABLE IF NOT EXISTS entities_trigram USING fts5(
-      name,
-      signature,
-      content='entities',
-      content_rowid='id',
-      tokenize='trigram'
-    );
-
-    -- Triggers to keep FTS in sync
-    CREATE TRIGGER IF NOT EXISTS entities_ai AFTER INSERT ON entities BEGIN
-      INSERT INTO entities_fts(rowid, name, name_alias, signature, doc_comment)
-      VALUES (NEW.id, NEW.name, NEW.name_alias, NEW.signature, NEW.doc_comment);
-      INSERT INTO entities_trigram(rowid, name, signature)
-      VALUES (NEW.id, NEW.name, NEW.signature);
-    END;
-
-    CREATE TRIGGER IF NOT EXISTS entities_ad AFTER DELETE ON entities BEGIN
-      INSERT INTO entities_fts(entities_fts, rowid, name, name_alias, signature, doc_comment)
-      VALUES('delete', OLD.id, OLD.name, OLD.name_alias, OLD.signature, OLD.doc_comment);
-      INSERT INTO entities_trigram(entities_trigram, rowid, name, signature)
-      VALUES('delete', OLD.id, OLD.name, OLD.signature);
-    END;
-  `);
-
-  return db;
+  return createGraphFixtureSchema(new Database(dbPath));
 }
 
 /**
@@ -107,16 +38,16 @@ function insertTestEntities(db) {
   `);
 
   // Active entities (stale_since = NULL)
-  insertEntity.run(1, 'ActiveService', 'class', 'src/service/ActiveService.java', 10, 100, 'public class ActiveService', 'Active service for testing', 'ActiveService service testing', 'active service activeservice', null);
-  insertEntity.run(2, 'ActiveController', 'class', 'src/controller/ActiveController.java', 5, 80, 'public class ActiveController', 'Active controller', 'ActiveController controller', 'active controller activecontroller', null);
-  insertEntity.run(3, 'ActiveRepository', 'interface', 'src/repo/ActiveRepository.java', 1, 50, 'public interface ActiveRepository', 'Active repository', 'ActiveRepository repository', 'active repository activerepository', null);
-  insertEntity.run(4, 'activeMethod', 'method', 'src/service/ActiveService.java', 20, 30, 'public void activeMethod()', 'An active method', 'activeMethod method', 'active method activemethod', null);
+  insertEntity.run('1', 'ActiveService', 'class', 'src/service/ActiveService.java', 10, 100, 'public class ActiveService', 'Active service for testing', 'ActiveService service testing', 'active service activeservice', null);
+  insertEntity.run('2', 'ActiveController', 'class', 'src/controller/ActiveController.java', 5, 80, 'public class ActiveController', 'Active controller', 'ActiveController controller', 'active controller activecontroller', null);
+  insertEntity.run('3', 'ActiveRepository', 'interface', 'src/repo/ActiveRepository.java', 1, 50, 'public interface ActiveRepository', 'Active repository', 'ActiveRepository repository', 'active repository activerepository', null);
+  insertEntity.run('4', 'activeMethod', 'method', 'src/service/ActiveService.java', 20, 30, 'public void activeMethod()', 'An active method', 'activeMethod method', 'active method activemethod', null);
 
   // Stale entities (stale_since = timestamp)
   const staleTimestamp = 1704067200; // 2024-01-01 00:00:00 UTC
-  insertEntity.run(5, 'StaleService', 'class', 'src/service/StaleService.java', 10, 100, 'public class StaleService', 'Stale service', 'StaleService service', 'stale service staleservice', staleTimestamp);
-  insertEntity.run(6, 'StaleController', 'class', 'src/controller/StaleController.java', 5, 80, 'public class StaleController', 'Stale controller', 'StaleController controller', 'stale controller stalecontroller', staleTimestamp);
-  insertEntity.run(7, 'StaleRepository', 'interface', 'src/repo/StaleRepository.java', 1, 50, 'public interface StaleRepository', 'Stale repository', 'StaleRepository repository', 'stale repository stalerepository', staleTimestamp);
+  insertEntity.run('5', 'StaleService', 'class', 'src/service/StaleService.java', 10, 100, 'public class StaleService', 'Stale service', 'StaleService service', 'stale service staleservice', staleTimestamp);
+  insertEntity.run('6', 'StaleController', 'class', 'src/controller/StaleController.java', 5, 80, 'public class StaleController', 'Stale controller', 'StaleController controller', 'stale controller stalecontroller', staleTimestamp);
+  insertEntity.run('7', 'StaleRepository', 'interface', 'src/repo/StaleRepository.java', 1, 50, 'public interface StaleRepository', 'Stale repository', 'StaleRepository repository', 'stale repository stalerepository', staleTimestamp);
 }
 
 /**
@@ -129,26 +60,17 @@ function insertTestRelationships(db) {
   `);
 
   // Active -> Active relationships
-  insertRel.run(2, 1, 'ActiveService', 'calls', 1.0, 25); // ActiveController calls ActiveService
-  insertRel.run(1, 3, 'ActiveRepository', 'calls', 1.0, 50); // ActiveService calls ActiveRepository
+  insertRel.run('2', '1', 'ActiveService', 'calls', 1.0, 25); // ActiveController calls ActiveService
+  insertRel.run('1', '3', 'ActiveRepository', 'calls', 1.0, 50); // ActiveService calls ActiveRepository
 
   // Stale -> Active relationships (should be filtered in findCallers)
-  insertRel.run(5, 1, 'ActiveService', 'calls', 1.0, 30); // StaleService calls ActiveService
+  insertRel.run('5', '1', 'ActiveService', 'calls', 1.0, 30); // StaleService calls ActiveService
 
   // Active -> Stale relationships (should be filtered in findCallees)
-  insertRel.run(1, 5, 'StaleService', 'calls', 1.0, 60); // ActiveService calls StaleService
+  insertRel.run('1', '5', 'StaleService', 'calls', 1.0, 60); // ActiveService calls StaleService
 
   // Stale -> Stale relationships
-  insertRel.run(6, 5, 'StaleService', 'calls', 1.0, 40); // StaleController calls StaleService
-}
-
-function addEpochVisibilityColumns(db) {
-  db.exec(`
-    ALTER TABLE entities ADD COLUMN epoch_written INTEGER NOT NULL DEFAULT 0;
-    ALTER TABLE entities ADD COLUMN epoch_retired INTEGER;
-    ALTER TABLE relationships ADD COLUMN epoch_written INTEGER NOT NULL DEFAULT 0;
-    ALTER TABLE relationships ADD COLUMN epoch_retired INTEGER;
-  `);
+  insertRel.run('6', '5', 'StaleService', 'calls', 1.0, 40); // StaleController calls StaleService
 }
 
 function insertEpochVisibilityFixture(db) {
@@ -158,19 +80,19 @@ function insertEpochVisibilityFixture(db) {
       doc_comment, search_text, name_alias, stale_since, epoch_written, epoch_retired
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  insertEntity.run(10, 'PaymentService', 'class', 'src/old/payment.js', 1, 20, 'class PaymentService {}', 'old payment', 'PaymentService old payment', 'payment service', null, 1, 3);
-  insertEntity.run(11, 'PaymentService', 'class', 'src/new/payment.js', 1, 20, 'class PaymentService {}', 'new payment', 'PaymentService new payment', 'payment service', null, 3, null);
-  insertEntity.run(12, 'RemovedService', 'class', 'src/old/removed.js', 1, 20, 'class RemovedService {}', 'removed service', 'RemovedService', 'removed service', 1704067200, 1, 3);
-  insertEntity.run(13, 'FutureService', 'class', 'src/future/service.js', 1, 20, 'class FutureService {}', 'future service', 'FutureService', 'future service', null, 7, null);
-  insertEntity.run(20, 'Caller', 'class', 'src/caller.js', 1, 20, 'class Caller {}', 'caller', 'Caller payment', 'caller', null, 1, null);
+  insertEntity.run('10', 'PaymentService', 'class', 'src/old/payment.js', 1, 20, 'class PaymentService {}', 'old payment', 'PaymentService old payment', 'payment service', null, 1, 3);
+  insertEntity.run('11', 'PaymentService', 'class', 'src/new/payment.js', 1, 20, 'class PaymentService {}', 'new payment', 'PaymentService new payment', 'payment service', null, 3, null);
+  insertEntity.run('12', 'RemovedService', 'class', 'src/old/removed.js', 1, 20, 'class RemovedService {}', 'removed service', 'RemovedService', 'removed service', 1704067200, 1, 3);
+  insertEntity.run('13', 'FutureService', 'class', 'src/future/service.js', 1, 20, 'class FutureService {}', 'future service', 'FutureService', 'future service', null, 7, null);
+  insertEntity.run('20', 'Caller', 'class', 'src/caller.js', 1, 20, 'class Caller {}', 'caller', 'Caller payment', 'caller', null, 1, null);
 
   const insertRel = db.prepare(`
     INSERT INTO relationships (
       source_id, target_id, target_name, type, weight, context_line, epoch_written, epoch_retired
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  insertRel.run(20, 10, 'PaymentService', 'calls', 1.0, 7, 1, 3);
-  insertRel.run(20, 11, 'PaymentService', 'calls', 1.0, 8, 3, null);
+  insertRel.run('20', '10', 'PaymentService', 'calls', 1.0, 7, 1, 3);
+  insertRel.run('20', '11', 'PaymentService', 'calls', 1.0, 8, 3, null);
 }
 
 // =============================================================================
@@ -290,13 +212,13 @@ describe('GraphSearch - Stale Entry Filtering (C1)', () => {
 
   describe('getEntity - Stale Filtering', () => {
     it('should return null for stale entity ID', async () => {
-      const result = await graphSearch.getEntity(5); // StaleService ID
+      const result = await graphSearch.getEntity('5'); // StaleService ID
 
       expect(result).toBeNull();
     });
 
     it('should return entity for active entity ID', async () => {
-      const result = await graphSearch.getEntity(1); // ActiveService ID
+      const result = await graphSearch.getEntity('1'); // ActiveService ID
 
       expect(result).not.toBeNull();
       expect(result.name).toBe('ActiveService');
@@ -305,7 +227,7 @@ describe('GraphSearch - Stale Entry Filtering (C1)', () => {
 
   describe('getRelated - Stale Filtering', () => {
     it('should exclude stale entities from related results', async () => {
-      const results = await graphSearch.getRelated(1); // ActiveService
+      const results = await graphSearch.getRelated('1'); // ActiveService
 
       const names = results.map(r => r.name);
 
@@ -328,7 +250,6 @@ describe('GraphSearch - Reconcile Epoch Visibility', () => {
     testDir = mkdtempSync(join(tmpdir(), 'graph-search-epoch-'));
     dbPath = join(testDir, 'test-graph.db');
     const db = createTestDatabase(dbPath);
-    addEpochVisibilityColumns(db);
     insertEpochVisibilityFixture(db);
     db.close();
   });
@@ -349,8 +270,8 @@ describe('GraphSearch - Reconcile Epoch Visibility', () => {
     expect(results.map((r) => r.file)).toEqual(['src/old/payment.js']);
     expect((await graphSearch.searchByName('PaymentService')).map((r) => r.file_path)).toEqual(['src/old/payment.js']);
     expect((await graphSearch.searchByFile('payment.js')).map((r) => r.file_path)).toEqual(['src/old/payment.js']);
-    expect((await graphSearch.getEntity(10))?.file_path).toBe('src/old/payment.js');
-    expect(await graphSearch.getEntity(11)).toBeNull();
+    expect((await graphSearch.getEntity('10'))?.file_path).toBe('src/old/payment.js');
+    expect(await graphSearch.getEntity('11')).toBeNull();
     expect((await graphSearch.bm25Search('FutureService', 10)).results).toHaveLength(0);
   });
 
@@ -366,7 +287,6 @@ describe('GraphSearch - Reconcile Epoch Visibility', () => {
   it('opens the code graph path named by the adjacent reconcile manifest', async () => {
     const manifestDbPath = join(testDir, 'code-graph-epoch-5.db');
     const db = createTestDatabase(manifestDbPath);
-    addEpochVisibilityColumns(db);
     db.prepare(`
       INSERT INTO entities (
         id, name, type, file_path, start_line, end_line, signature,
@@ -404,7 +324,6 @@ describe('GraphSearch - Reconcile Epoch Visibility', () => {
   it('uses the manifest code graph path when an explicit epoch is supplied', async () => {
     const manifestDbPath = join(testDir, 'code-graph-epoch-5.db');
     const db = createTestDatabase(manifestDbPath);
-    addEpochVisibilityColumns(db);
     db.prepare(`
       INSERT INTO entities (
         id, name, type, file_path, start_line, end_line, signature,
@@ -473,26 +392,26 @@ describe('GraphSearch - Reconcile Epoch Visibility', () => {
     await graphSearch.init();
 
     const staleAtEpoch2 = await graphSearch.getStaleEntityIds();
-    expect(staleAtEpoch2.has(12)).toBe(false);
+    expect(staleAtEpoch2.has('12')).toBe(false);
     graphSearch.close();
 
     graphSearch = new GraphSearch(dbPath);
     await graphSearch.init();
     const staleNow = await graphSearch.getStaleEntityIds();
-    expect(staleNow.has(12)).toBe(true);
+    expect(staleNow.has('12')).toBe(true);
   });
 
   it('filters relationship expansion by entity and relationship epochs', async () => {
     graphSearch = new GraphSearch(dbPath, { manifestEpoch: 2 });
     await graphSearch.init();
 
-    const relatedAtEpoch2 = await graphSearch.getRelated(20);
+    const relatedAtEpoch2 = await graphSearch.getRelated('20');
     expect(relatedAtEpoch2.map((r) => r.file_path)).toEqual(['src/old/payment.js']);
     graphSearch.close();
 
     graphSearch = new GraphSearch(dbPath);
     await graphSearch.init();
-    const relatedNow = await graphSearch.getRelated(20);
+    const relatedNow = await graphSearch.getRelated('20');
     expect(relatedNow.map((r) => r.file_path)).toEqual(['src/new/payment.js']);
   });
 
@@ -504,12 +423,12 @@ describe('GraphSearch - Reconcile Epoch Visibility', () => {
           id, name, type, file_path, start_line, end_line, signature,
           doc_comment, search_text, name_alias, stale_since, epoch_written, epoch_retired
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(14, 'CollisionService', 'class', 'src/collision.js', 1, 20, 'class CollisionService {}', 'collision', 'CollisionService', 'collision service', null, 1, null);
+      `).run('14', 'CollisionService', 'class', 'src/collision.js', 1, 20, 'class CollisionService {}', 'collision', 'CollisionService', 'collision service', null, 1, null);
       db.prepare(`
         INSERT INTO relationships (
           source_id, target_id, target_name, type, weight, context_line, epoch_written, epoch_retired
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(20, 13, 'CollisionService', 'calls', 9.0, 9, 2, null);
+      `).run('20', '13', 'CollisionService', 'calls', 9.0, 9, 2, null);
     } finally {
       db.close();
     }
@@ -517,7 +436,7 @@ describe('GraphSearch - Reconcile Epoch Visibility', () => {
     graphSearch = new GraphSearch(dbPath, { manifestEpoch: 2 });
     await graphSearch.init();
 
-    const related = await graphSearch.getRelated(20);
+    const related = await graphSearch.getRelated('20');
     expect(related.map((r) => r.name)).not.toContain('CollisionService');
   });
 
@@ -533,8 +452,8 @@ describe('GraphSearch - Reconcile Epoch Visibility', () => {
         epoch_retired INTEGER
       ) WITHOUT ROWID
     `);
-    db.prepare('UPDATE entities SET summary = ? WHERE id = ?').run('stale old summary', 10);
-    db.prepare('UPDATE entities SET summary = ? WHERE id = ?').run('stale caller summary', 20);
+    db.prepare('UPDATE entities SET summary = ? WHERE id = ?').run('stale old summary', '10');
+    db.prepare('UPDATE entities SET summary = ? WHERE id = ?').run('stale caller summary', '20');
     db.prepare(`
       INSERT INTO hcgs_summary_metadata (
         entity_id, source_entity_ids, source_chunk_struct_ids, source_hashes, epoch_written, epoch_retired
@@ -554,14 +473,14 @@ describe('GraphSearch - Reconcile Epoch Visibility', () => {
     expect(byName.get('PaymentService')?.file_path).toBe('src/old/payment.js');
     expect(byName.get('PaymentService')?.summary).toBeNull();
 
-    const entity = await graphSearch.getEntity(10);
+    const entity = await graphSearch.getEntity('10');
     expect(entity?.summary).toBeNull();
 
-    const related = await graphSearch.getRelated(20);
-    expect(related.find((row) => row.id === 10)?.summary).toBeNull();
+    const related = await graphSearch.getRelated('20');
+    expect(related.find((row) => row.id === '10')?.summary).toBeNull();
 
-    expect((await graphSearch.searchByName('PaymentService')).find((row) => row.id === 10)?.summary).toBeNull();
-    expect((await graphSearch.searchByFile('old/payment.js')).find((row) => row.id === 10)?.summary).toBeNull();
+    expect((await graphSearch.searchByName('PaymentService')).find((row) => row.id === '10')?.summary).toBeNull();
+    expect((await graphSearch.searchByFile('old/payment.js')).find((row) => row.id === '10')?.summary).toBeNull();
 
     const callers = await graphSearch.findCallers('PaymentService');
     expect(callers.results.find((row) => row.name === 'Caller')?.summary).toBeNull();
@@ -569,8 +488,8 @@ describe('GraphSearch - Reconcile Epoch Visibility', () => {
     const impact = await graphSearch.findImpact('PaymentService', { maxDepth: 1 });
     expect(impact.results.find((row) => row.name === 'Caller')?.summary).toBeNull();
 
-    const expanded = await graphSearch.expandGraph([10], 1);
-    expect(expanded.find((row) => row.id === 10)?.summary).toBeNull();
+    const expanded = await graphSearch.expandGraph(['10'], 1);
+    expect(expanded.find((row) => row.id === '10')?.summary).toBeNull();
   });
 
   it('does not cache live HCGS summary visibility after sidecar retirement', async () => {
@@ -585,7 +504,7 @@ describe('GraphSearch - Reconcile Epoch Visibility', () => {
         epoch_retired INTEGER
       ) WITHOUT ROWID
     `);
-    db.prepare('UPDATE entities SET summary = ? WHERE id = ?').run('live summary', 11);
+    db.prepare('UPDATE entities SET summary = ? WHERE id = ?').run('live summary', '11');
     db.prepare(`
       INSERT INTO hcgs_summary_metadata (
         entity_id, source_entity_ids, source_chunk_struct_ids, source_hashes, epoch_written, epoch_retired
@@ -595,23 +514,23 @@ describe('GraphSearch - Reconcile Epoch Visibility', () => {
 
     graphSearch = new GraphSearch(dbPath);
     await graphSearch.init();
-    expect((await graphSearch.getEntity(11))?.summary).toBe('live summary');
+    expect((await graphSearch.getEntity('11'))?.summary).toBe('live summary');
 
     const writer = new Database(dbPath);
-    writer.prepare('UPDATE hcgs_summary_metadata SET epoch_retired = ? WHERE entity_id = ?').run(4, '11');
+    writer.prepare('UPDATE hcgs_summary_metadata SET epoch_retired = ? WHERE entity_id = ?').run('4', '11');
     writer.close();
 
-    expect((await graphSearch.getEntity(11))?.summary).toBeNull();
+    expect((await graphSearch.getEntity('11'))?.summary).toBeNull();
   });
 
   it('detects HCGS sidecar creation after a live reader has opened', async () => {
     const db = new Database(dbPath);
-    db.prepare('UPDATE entities SET summary = ? WHERE id = ?').run('pre-sidecar summary', 11);
+    db.prepare('UPDATE entities SET summary = ? WHERE id = ?').run('pre-sidecar summary', '11');
     db.close();
 
     graphSearch = new GraphSearch(dbPath);
     await graphSearch.init();
-    expect((await graphSearch.getEntity(11))?.summary).toBe('pre-sidecar summary');
+    expect((await graphSearch.getEntity('11'))?.summary).toBe('pre-sidecar summary');
 
     const writer = new Database(dbPath);
     writer.exec(`
@@ -631,7 +550,7 @@ describe('GraphSearch - Reconcile Epoch Visibility', () => {
     `).run('11', '[]', '[]', '{}', 3, 4);
     writer.close();
 
-    expect((await graphSearch.getEntity(11))?.summary).toBeNull();
+    expect((await graphSearch.getEntity('11'))?.summary).toBeNull();
   });
 });
 

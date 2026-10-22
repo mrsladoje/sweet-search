@@ -10,7 +10,7 @@ import { goPackagePrivateFrom, privateFrom, pythonPackageCallOnMethod, shouldTru
 import { fetchPageRank, fetchFrontierBackwardEdges, fetchFrontierForwardEdges } from './structural-graph-signals.js';
 import { CodeGraphReaderVisibility } from './code-graph-visibility.js';
 import { SITE_LINE_RELATIONSHIP_TYPES as SITE_LINE_TYPES, TRACE_ONLY_TYPES_SQL } from './relationship-types.js';
-import { asTopLevelCaller, fileNodeSourceSql, hasFilesTable, hasGraphColumn, hasGraphTable } from './file-nodes.js';
+import { asTopLevelCaller, fileNodeSourceSql } from './file-nodes.js';
 import { isTestLikePath } from './test-paths.js';
 import { GO_PACKAGE_PREFIX, RUST_PATH_PREFIX, UNRESOLVED_IMPORT_PREFIX } from './import-path-prefixes.js';
 import { RECEIVER_TYPE_PREFIX, signatureParamTypes } from './receiver-type-annotation.js';
@@ -249,8 +249,7 @@ export class StructuralContextRepository {
     const out = new Map();
     const ids = [...new Set((sourceIds || []).filter(Boolean))];
     if (ids.length === 0) return out;
-    if (!hasGraphTable(db, 'call_lines')) return out;
-    const relType = hasGraphColumn(db, 'call_lines', 'rel_type') ? 'cl.rel_type' : "'calls'";
+    const relType = 'cl.rel_type';
     const vis = this._relationshipSql(db, 'cl');
     for (let i = 0; i < ids.length; i += 500) {
       const part = ids.slice(i, i + 500);
@@ -482,7 +481,6 @@ export class StructuralContextRepository {
    */
   _callerRows(db, sqlFor, params, limit) {
     const rows = db.prepare(sqlFor('entities')).all(...params);
-    if (!hasFilesTable(db)) return rows;
     const top = db.prepare(sqlFor(fileNodeSourceSql())).all(...params).map(row => asTopLevelCaller(row));
     if (top.length === 0) return rows;
     return [...rows, ...top]

@@ -18,6 +18,7 @@ import {
   singleOwnerSet,
   buildTypeHierarchy,
 } from '../../core/graph/relationship-resolver.js';
+import { createGraphSchema } from '../../core/graph/graph-extractor.js';
 
 function ent(id, name, file, start, end, extra = {}) {
   return { id, name, type: 'function', file_path: file, start_line: start, end_line: end, parent_class: null, signature: '', ...extra };
@@ -135,10 +136,11 @@ describe('fluent chains', () => {
 describe('buildTypeHierarchy', () => {
   it('reads extends/implements edges by name, stripping qualifiers and generics', () => {
     const db = new Database(':memory:');
-    db.exec(`CREATE TABLE entities (id TEXT, name TEXT, type TEXT, file_path TEXT);
-      CREATE TABLE relationships (source_id TEXT, target_id TEXT, target_name TEXT, type TEXT);
-      INSERT INTO entities VALUES ('a','MultipartBody','class','x.kt'), ('b','Model','class','m.rb');
-      INSERT INTO relationships VALUES ('a', NULL, 'RequestBody', 'extends'), ('b', NULL, 'Sequel::Model<T>', 'extends');`);
+    createGraphSchema(db);
+    db.exec(`
+      INSERT INTO entities (id, name, type, file_path) VALUES ('a','MultipartBody','class','x.kt'), ('b','Model','class','m.rb');
+      INSERT INTO relationships (source_id, target_id, target_name, type) VALUES ('a', NULL, 'RequestBody', 'extends'), ('b', NULL, 'Sequel::Model<T>', 'extends');
+    `);
     const h = buildTypeHierarchy(db);
     expect([...h.supers.get('MultipartBody')]).toEqual(['RequestBody']);
     expect([...h.subs.get('RequestBody')]).toEqual(['MultipartBody']);

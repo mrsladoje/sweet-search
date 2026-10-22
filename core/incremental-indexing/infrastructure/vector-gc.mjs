@@ -118,8 +118,6 @@ export function runVectorGc(stateDir, deps = {}) {
 
   const db = new Database(dbPath);
   try {
-    const cols = db.prepare('PRAGMA table_info(vectors)').all().map((c) => c.name);
-    if (!cols.includes('epoch_retired')) return { skipped: 'no-epoch-column' };
     db.pragma('journal_mode = WAL');
     db.pragma('synchronous = NORMAL');
     const result = pruneRetiredVectors(db, frontier, deps);

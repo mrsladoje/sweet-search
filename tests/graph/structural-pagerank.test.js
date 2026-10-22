@@ -6,9 +6,9 @@ import { tmpdir } from 'node:os';
 import {
   pageRankWeighted,
   buildWeightedAdjacency,
-  ensurePageRankColumn,
   populatePageRankColumn,
 } from '../../core/graph/structural-pagerank.js';
+import { createGraphSchema } from '../../core/graph/graph-extractor.js';
 
 function buildHubSpokeGraph() {
   // 1=hub, 2..6=spokes; every spoke calls the hub once.
@@ -61,30 +61,15 @@ describe('buildWeightedAdjacency', () => {
   beforeEach(() => {
     dir = mkdtempSync(join(tmpdir(), 'ss-pr-'));
     db = new Database(join(dir, 'graph.db'));
-    db.exec(`
-      CREATE TABLE entities (
-        id TEXT PRIMARY KEY,
-        name TEXT,
-        type TEXT,
-        file_path TEXT,
-        stale_since INTEGER DEFAULT NULL
-      );
-      CREATE TABLE relationships (
-        source_id TEXT,
-        target_id TEXT,
-        target_name TEXT,
-        type TEXT,
-        weight REAL DEFAULT 1.0
-      );
-    `);
-    const ent = db.prepare('INSERT INTO entities (id, name, type) VALUES (?, ?, ?)');
+    createGraphSchema(db);
+    const ent = db.prepare("INSERT INTO entities (id, name, type, file_path) VALUES (?, ?, ?, 'a.js')");
     ent.run('hub', 'hub', 'function');
     ent.run('a', 'a', 'function');
     ent.run('b', 'b', 'function');
-    const rel = db.prepare('INSERT INTO relationships (source_id, target_id, type, weight) VALUES (?, ?, ?, ?)');
-    rel.run('a', 'hub', 'calls', 1.0);
-    rel.run('a', 'hub', 'calls', 1.0); // weight collapsed via summation
-    rel.run('b', 'hub', 'calls', 1.0);
+    const rel = db.prepare('INSERT INTO relationships (source_id, target_id, target_name, type, weight) VALUES (?, ?, ?, ?, ?)');
+    rel.run('a', 'hub', 'hub', 'calls', 1.0);
+    rel.run('a', 'hub', 'lib.hub', 'calls', 1.0); // weight collapsed via summation
+    rel.run('b', 'hub', 'hub', 'calls', 1.0);
   });
   afterEach(() => {
     db.close();
@@ -105,36 +90,20 @@ describe('populatePageRankColumn', () => {
     dir = mkdtempSync(join(tmpdir(), 'ss-pr2-'));
     dbPath = join(dir, 'graph.db');
     const db = new Database(dbPath);
-    db.exec(`
-      CREATE TABLE entities (
-        id TEXT PRIMARY KEY,
-        name TEXT,
-        type TEXT,
-        file_path TEXT,
-        stale_since INTEGER DEFAULT NULL
-      );
-      CREATE TABLE relationships (
-        source_id TEXT,
-        target_id TEXT,
-        target_name TEXT,
-        type TEXT,
-        weight REAL DEFAULT 1.0
-      );
-    `);
-    const ent = db.prepare('INSERT INTO entities (id, name, type) VALUES (?, ?, ?)');
+    createGraphSchema(db);
+    const ent = db.prepare("INSERT INTO entities (id, name, type, file_path) VALUES (?, ?, ?, 'a.js')");
     ent.run('hub', 'hub', 'function');
     ent.run('s1', 's1', 'function');
     ent.run('s2', 's2', 'function');
-    const rel = db.prepare('INSERT INTO relationships (source_id, target_id, type, weight) VALUES (?, ?, ?, ?)');
-    rel.run('s1', 'hub', 'calls', 1);
-    rel.run('s2', 'hub', 'calls', 1);
+    const rel = db.prepare('INSERT INTO relationships (source_id, target_id, target_name, type, weight) VALUES (?, ?, ?, ?, ?)');
+    rel.run('s1', 'hub', 'hub', 'calls', 1);
+    rel.run('s2', 'hub', 'hub', 'calls', 1);
     db.close();
   });
   afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-  it('adds the page_rank column and writes ordered scores', () => {
+  it('writes ordered scores', () => {
     const db = new Database(dbPath);
-    expect(ensurePageRankColumn(db)).toBe(true);
     const stats = populatePageRankColumn(db);
     expect(stats.entities).toBe(3);
     expect(stats.written).toBe(3);
@@ -145,12 +114,12 @@ describe('populatePageRankColumn', () => {
     db.close();
   });
 
-  it('is idempotent: a second run does not break or re-add the column', () => {
+  it('is idempotent: a second run writes the same scores', () => {
     const db = new Database(dbPath);
     populatePageRankColumn(db);
+    const first = db.prepare('SELECT id, page_rank FROM entities ORDER BY id').all();
     populatePageRankColumn(db);
-    const cols = db.prepare('PRAGMA table_info(entities)').all().map(c => c.name);
-    expect(cols.filter(n => n === 'page_rank').length).toBe(1);
+    expect(db.prepare('SELECT id, page_rank FROM entities ORDER BY id').all()).toEqual(first);
     db.close();
   });
 });

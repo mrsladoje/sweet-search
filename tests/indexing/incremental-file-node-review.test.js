@@ -2,9 +2,7 @@
 // a file node (imports, top-level calls) must RESOLVE the same in a maintained
 // graph as in a full build; files with no symbols, only top-level code, or no
 // content keep parity; a crash after the graph write is repaired by the next
-// tick; an older graph without the `files` table works in every reader and
-// shows top-level callers to a reader that was connected before the table
-// appeared; GC prunes retired file nodes.
+// tick; GC prunes retired file nodes.
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import Database from 'better-sqlite3';
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, unlinkSync, writeFileSync } from 'node:fs';
@@ -14,11 +12,9 @@ import { runProductionReconcileTick } from '../../core/incremental-indexing/appl
 import { GraphExtractor, createGraphSchema, insertGraph } from '../../core/graph/graph-extractor.js';
 import { resolveRelationshipTargets } from '../../core/graph/relationship-resolver.js';
 import { createImportResolver } from '../../core/graph/import-resolver.js';
-import { fileNodeId, hasFilesTable } from '../../core/infrastructure/index.js';
 import { pruneRetiredFileNodes } from '../../core/incremental-indexing/infrastructure/graph-gc.mjs';
 import { StructuralContextRepository } from '../../core/infrastructure/structural-context-repository.js';
 import { BareCallResolver } from '../../core/graph/index.js';
-import { GraphSearch } from '../../core/graph/graph-search.js';
 
 const MODEL_INFO = Object.freeze({ provider: 'test', model: 'fake-e2e', dimension: 8, hnswDimension: 8 });
 const silentLogger = { info() {}, warn() {}, error() {} };
@@ -199,43 +195,6 @@ describe('file nodes review: resolution parity, edge cases, old graphs', () => {
     expect(fileEdges(incDbPath, { live: true }).edges).toEqual(full.edges);
   });
 
-  it('an older full-build graph without `files` works, and a connected reader sees the table once a tick adds it', async () => {
-    write('src/lib.js', ['export function boot() { return 1; }']);
-    write('src/main.js', ["import * as lib from './lib.js';", 'lib.boot();', 'const app = { go() { return lib.boot(); } };']);
-    const files = ['src/lib.js', 'src/main.js'];
-    await fullBuild(files);
-    // Simulate a graph built before file nodes existed.
-    {
-      const db = new Database(fullDbPath);
-      db.exec('DROP TABLE files');
-      db.close();
-    }
-    const repo = new StructuralContextRepository(fullDbPath, { BareCallResolver, projectRoot });
-    const target = repo.findEntityCandidates('boot', { filePath: 'src/lib.js', limit: 5 }).find((c) => c.name === 'boot');
-    expect(target).toBeTruthy();
-    const before = [...repo.getCallers(target), ...repo.getBareCallers(target)].map((c) => c.name);
-    expect(before.includes('(top-level)')).toBe(false);
-    const search = new GraphSearch(fullDbPath);
-    const searchBefore = (await search.findCallers('boot')).results.map((r) => r.name);
-    expect(searchBefore.includes('(top-level)')).toBe(false);
-
-    // The maintainer (upgraded) adds the table to this graph while the
-    // reader stays connected.
-    {
-      const db = new Database(fullDbPath);
-      createGraphSchema(db);
-      db.prepare('INSERT INTO files (id, file_path, name, epoch_written, epoch_retired) VALUES (?, ?, ?, 0, NULL)')
-        .run(fileNodeId('src/main.js'), 'src/main.js', 'main.js');
-      db.close();
-    }
-    const after = [...repo.getCallers(target), ...repo.getBareCallers(target)].map((c) => `${c.name} call@${c.contextLine}`);
-    expect(after).toContain('(top-level) call@2');
-    repo.close();
-    const searchAfter = (await search.findCallers('boot')).results.map((r) => r.name);
-    expect(searchAfter).toContain('(top-level)');
-    search.close();
-  });
-
   it('ss-trace prints the top-level caller line in the default and the compact (A4) format', async () => {
     write('pkg/mod.py', ['def util():', '    return 1']);
     write('pkg/run.py', ['from pkg import mod', 'mod.util()']);
@@ -251,15 +210,6 @@ describe('file nodes review: resolution parity, edge cases, old graphs', () => {
     expect(full).toContain('(top-level) [file] pkg/job.py:3 call@3');
     expect(compact).toContain('pkg/run.py\n(top-level) @2');
     expect(compact).toContain('pkg/job.py\n(top-level) @3');
-  });
-
-  it('hasFilesTable re-checks a "no" after a schema change on the same connection', () => {
-    const db = new Database(':memory:');
-    expect(hasFilesTable(db)).toBe(false);
-    expect(hasFilesTable(db)).toBe(false);
-    db.exec('CREATE TABLE files (id TEXT, file_path TEXT, name TEXT, epoch_written INTEGER, epoch_retired INTEGER)');
-    expect(hasFilesTable(db)).toBe(true);
-    db.close();
   });
 
   it('graph GC prunes retired file nodes at or below the frontier, never live ones', async () => {

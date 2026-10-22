@@ -26,6 +26,7 @@ import { getEmbedding, getBinaryEmbedding, truncateForHNSW, int8CosineSimilarity
 import { FloatVectorStore, getFloatStorePath } from '../vector-store/float-vector-store.js';
 import { recordQueryTelemetry } from '../embedding/embedding-cache.js';
 import { CodebaseRepository } from '../infrastructure/codebase-repository.js';
+import { assertIndexSchemas } from '../infrastructure/index-schema.js';
 import { CodeGraphRepository } from '../infrastructure/code-graph-repository.js';
 import { readJsonFileCachedIfExists } from '../infrastructure/cached-json-file.js';
 import { loadSparseGramIndex } from '../infrastructure/native-sparse-gram.js';
@@ -267,6 +268,11 @@ export class SweetSearch {
     if (!this.hasGraphIndex && !this.hasCodebaseIndex) {
       throw new Error('No search indexes found. Run indexing first.');
     }
+    // An index from another schema version: the rebuild instruction, not a SQL error later.
+    assertIndexSchemas({
+      graphDbPath: this.hasGraphIndex ? this.graphDbPath : null,
+      codebaseDbPath: this.hasCodebaseIndex ? this.codebaseDbPath : null,
+    });
 
     if (this.hasBinaryHnswIndex && this.use3Stage) {
       try {

@@ -9,34 +9,23 @@ import {
   createSemanticEntityLookup,
   spanEntityNames,
 } from '../../core/search/semantic-also.js';
+import { createGraphSchema } from '../../core/graph/graph-extractor.js';
 
 const FILE = 'src/a.js';
 const dirs = [];
 const repos = [];
 const span = (startLine, endLine) => ({ startLine, endLine });
 
-function fixture({ epochColumns = true, epoch = null } = {}) {
+function fixture({ epoch = null } = {}) {
   const dir = mkdtempSync(path.join(tmpdir(), 'semantic-entity-lookup-'));
   dirs.push(dir);
   const dbPath = path.join(dir, 'code-graph.db');
   const db = new Database(dbPath);
-  db.exec(`
-    CREATE TABLE entities (
-      id TEXT PRIMARY KEY, name TEXT, type TEXT, file_path TEXT,
-      start_line INTEGER, end_line INTEGER, parent_class TEXT, stale_since INTEGER
-      ${epochColumns ? ', epoch_written INTEGER, epoch_retired INTEGER' : ''}
-    );
-    CREATE INDEX idx_entities_file ON entities(file_path);
-    CREATE INDEX idx_entities_active ON entities(id, name, type, file_path) WHERE stale_since IS NULL;
-    CREATE INDEX idx_entities_sig_hash ON entities(file_path, type, name);
-  `);
-  const insert = epochColumns
-    ? db.prepare('INSERT INTO entities VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    : db.prepare('INSERT INTO entities VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+  createGraphSchema(db);
+  const insert = db.prepare(`INSERT INTO entities (id, name, type, file_path, start_line, end_line, parent_class, stale_since, epoch_written, epoch_retired)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
   function add(id, name, type, start, end, opts = {}) {
-    const args = [id, name, type, opts.file ?? FILE, start, end, opts.parent ?? null, opts.stale ?? null];
-    if (epochColumns) args.push(opts.written ?? 1, opts.retired ?? null);
-    insert.run(...args);
+    insert.run(id, name ?? '', type, opts.file ?? FILE, start, end, opts.parent ?? null, opts.stale ?? null, opts.written ?? 1, opts.retired ?? null);
   }
   const manifest = (value, graphPath = 'code-graph.db') => writeFileSync(
     path.join(dir, 'reconcile-manifest.json'),
@@ -147,8 +136,8 @@ describe('request-local semantic entity lookup', () => {
     expect(lookup.findEntitiesInRange(FILE, 8797, 8799).map(e => e.id)).toEqual(['e2199']);
   });
 
-  it.each([true, false])('matches direct SQL and output helpers on seeded ranges (epoch columns: %s)', epochColumns => {
-    const { db, add, repo } = fixture({ epochColumns, epoch: epochColumns ? 4 : null });
+  it.each([4, null])('matches direct SQL and output helpers on seeded ranges (manifest epoch: %s)', epoch => {
+    const { db, add, repo } = fixture({ epoch });
     const next = random();
     const kinds = ['class', 'function', 'method', 'arrowFunction', 'variable', 'chunk'];
     db.transaction(() => {

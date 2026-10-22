@@ -7,6 +7,7 @@ import Database from 'better-sqlite3';
 import { detectCommunities } from '../../core/graph/index.js';
 import { mineAll, rankAll, warmLexical, warmFromCache, saveBinaryArtifact, ARTIFACT_PATHS } from '../../core/vocabulary/index.js';
 import { DB_PATHS } from '../../core/config.js';
+import { createGraphSchema } from '../../core/graph/graph-extractor.js';
 
 describe('vocab prewarm integration (real SQLite)', () => {
   it('runs mine -> detect -> rank -> warm -> persist -> load with a real DB', async () => {
@@ -25,25 +26,7 @@ describe('vocab prewarm integration (real SQLite)', () => {
     const dbPath = path.join(tmpRoot, 'code-graph.db');
     const db = new Database(dbPath);
     try {
-      db.exec(`
-        CREATE TABLE entities (
-          id INTEGER PRIMARY KEY,
-          name TEXT,
-          type TEXT,
-          file_path TEXT,
-          start_line INTEGER,
-          end_line INTEGER,
-          stale_since TEXT,
-          summary TEXT,
-          signature TEXT
-        );
-        CREATE TABLE relationships (
-          source_id INTEGER,
-          target_id INTEGER,
-          type TEXT
-        );
-        CREATE VIRTUAL TABLE entities_fts USING fts5(name);
-      `);
+      createGraphSchema(db);
 
       const insEnt = db.prepare(`
         INSERT INTO entities (id, name, type, file_path, start_line, end_line, stale_since, summary, signature)
@@ -53,7 +36,7 @@ describe('vocab prewarm integration (real SQLite)', () => {
       insEnt.run(2, 'UserService', 'class', 'src/user.js', 1, 20, 'User entry point', 'class UserService');
       insEnt.run(3, 'validateToken', 'function', 'src/auth.js', 5, 10, 'Token validator', 'function validateToken');
 
-      const insRel = db.prepare('INSERT INTO relationships (source_id, target_id, type) VALUES (?, ?, ?)');
+      const insRel = db.prepare("INSERT INTO relationships (source_id, target_id, target_name, type) VALUES (?, ?, '', ?)");
       insRel.run(1, 2, 'imports');
       insRel.run(1, 3, 'calls');
       insRel.run(2, 3, 'uses');

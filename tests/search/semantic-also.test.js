@@ -5,6 +5,8 @@ import path from 'node:path';
 import Database from 'better-sqlite3';
 import http from 'node:http';
 import { buildAgentToolDaemonResponse } from '../../core/agent-tools/daemon-route.js';
+import { createGraphSchema } from '../../core/graph/graph-extractor.js';
+import { createVectorSchema } from '../../core/indexing/indexer-build.js';
 
 const mockState = vi.hoisted(() => ({ rows: [] }));
 
@@ -323,8 +325,7 @@ function writeGraph(entities) {
   const dir = path.join(TMP, '.sweet-search');
   mkdirSync(dir, { recursive: true });
   const db = new Database(path.join(dir, 'code-graph.db'));
-  db.exec(`CREATE TABLE entities (id TEXT PRIMARY KEY, name TEXT, type TEXT, file_path TEXT,
-    start_line INTEGER, end_line INTEGER, parent_class TEXT, stale_since TEXT)`);
+  createGraphSchema(db);
   const ins = db.prepare('INSERT INTO entities (id, name, type, file_path, start_line, end_line, parent_class) VALUES (?,?,?,?,?,?,?)');
   for (const e of entities) ins.run(e.id, e.name, e.type, 'src/a.js', e.startLine, e.endLine, e.parentClass ?? null);
   db.close();
@@ -468,7 +469,8 @@ describe('warm-server path and in-process path agree', () => {
     writeFileSync(path.join(TMP, 'src/a.js'), lines.join('\n'));
     writeGraph(entities);
     const db = new Database(path.join(TMP, '.sweet-search/codebase.db'));
-    db.exec("CREATE TABLE vectors (file_path TEXT, epoch_retired INTEGER); INSERT INTO vectors VALUES ('src/a.js', NULL)");
+    createVectorSchema(db);
+    db.exec("INSERT INTO vectors (id, file_path, embedding) VALUES ('c', 'src/a.js', zeroblob(0))");
     db.close();
     const graph = getGraphRepoForProject(TMP);
     const open = vi.spyOn(graph, '_open');
@@ -604,7 +606,8 @@ describe('ss-* flag habits: -k and --in', () => {
     writeFileSync(path.join(TMP, 'src/a.js'), lines.join('\n'));
     writeGraph(entities);
     const db = new Database(path.join(TMP, '.sweet-search/codebase.db'));
-    db.exec("CREATE TABLE vectors (file_path TEXT, epoch_retired INTEGER); INSERT INTO vectors VALUES ('src/a.js', NULL)");
+    createVectorSchema(db);
+    db.exec("INSERT INTO vectors (id, file_path, embedding) VALUES ('c', 'src/a.js', zeroblob(0))");
     db.close();
   }
 

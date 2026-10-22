@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { runProductionReconcileTick } from '../../core/incremental-indexing/application/production-reconciler.mjs';
 import { pruneRetiredVectors } from '../../core/incremental-indexing/infrastructure/vector-gc.mjs';
-import { createVectorSchema, ensureVectorSchema, buildInsertItems, insertVectorItems } from '../../core/indexing/indexer-build.js';
+import { createVectorSchema, buildInsertItems, insertVectorItems } from '../../core/indexing/indexer-build.js';
 import { ASTChunker } from '../../core/indexing/ast-chunker.js';
 import { CodebaseRepository } from '../../core/infrastructure/codebase-repository.js';
 import {
@@ -228,7 +228,7 @@ describe('chunk-text FTS stays a function of the vectors table', () => {
     await tick([FILES[0]]);
     withDb((db) => {
       db.exec('DROP TRIGGER chunk_text_fts_vectors_bi; DROP TRIGGER chunk_text_fts_vectors_ad; DROP TRIGGER chunk_text_fts_vectors_au; DROP TABLE chunk_text_fts;');
-      ensureVectorSchema(db);
+      createVectorSchema(db);
       expect(db.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name LIKE 'chunk_text_fts%'").get().n).toBe(0);
     });
     write(FILES[0], ['package txn', '', 'func Abort() error {', '\treturn errors.New("mutation rejected")', '}']);

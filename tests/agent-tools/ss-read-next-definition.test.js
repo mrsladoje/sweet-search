@@ -12,6 +12,8 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { runInVirtualProcess } from '../../core/agent-tools/virtual-process.js';
 import { runAgentTool } from '../../eval/agent-read-workflows/bin/_ss-helpers.mjs';
+import { createGraphSchema } from '../../core/graph/graph-extractor.js';
+import { createVectorSchema } from '../../core/indexing/indexer-build.js';
 
 const FILE = 'src/Call.kt';
 const JFILE = 'src/Svc.java';
@@ -43,8 +45,8 @@ beforeAll(() => {
   writeFileSync(path.join(root, JFILE), JLINES.join('\n') + '\n');
   const db = new Database(path.join(root, '.sweet-search', 'codebase.db'));
   try {
-    db.exec('CREATE TABLE vectors (id TEXT PRIMARY KEY, file_path TEXT, text TEXT, metadata TEXT)');
-    const ins = db.prepare('INSERT INTO vectors (id, file_path, text, metadata) VALUES (?, ?, ?, ?)');
+    createVectorSchema(db);
+    const ins = db.prepare('INSERT INTO vectors (id, file_path, embedding, text, metadata) VALUES (?, ?, zeroblob(0), ?, ?)');
     const row = (id, symbol, a, b) => ins.run(id, FILE, '# x', JSON.stringify({ symbol, chunk_type: 'function', line_start: a, line_end: b, language: 'kotlin' }));
     row('c1', 'a', 5, 20);
     row('c2', 'callDone', 22, 40); // the chunk starts at the KDoc
@@ -58,16 +60,14 @@ beforeAll(() => {
   }
   const graph = new Database(path.join(root, '.sweet-search', 'code-graph.db'));
   try {
-    graph.exec(`CREATE TABLE entities (id INTEGER PRIMARY KEY, name TEXT, type TEXT, file_path TEXT,
-      start_line INTEGER, end_line INTEGER, parent_class TEXT, signature TEXT, summary TEXT,
-      stale_since INTEGER DEFAULT NULL)`);
+    createGraphSchema(graph);
     const ins = graph.prepare('INSERT INTO entities (id, name, type, file_path, start_line, end_line, parent_class) VALUES (?, ?, ?, ?, ?, ?, ?)');
-    ins.run(1, 'a', 'method', FILE, 5, 20, null);
-    ins.run(2, 'callDone', 'method', FILE, 26, 40, null); // the definition starts after the KDoc
-    for (let k = 1; k <= 6; k++) ins.run(2 + k, `z${k}`, 'method', FILE, 36 + 6 * k, 41 + 6 * k, null);
-    ins.run(20, 'a', 'method', JFILE, 1, 10, null);
-    ins.run(21, 'target', 'method', JFILE, 16, 30, null);
-    ins.run(22, 'tail', 'method', JFILE, 31, 60, null);
+    ins.run('1', 'a', 'method', FILE, 5, 20, null);
+    ins.run('2', 'callDone', 'method', FILE, 26, 40, null); // the definition starts after the KDoc
+    for (let k = 1; k <= 6; k++) ins.run(String(2 + k), `z${k}`, 'method', FILE, 36 + 6 * k, 41 + 6 * k, null);
+    ins.run('20', 'a', 'method', JFILE, 1, 10, null);
+    ins.run('21', 'target', 'method', JFILE, 16, 30, null);
+    ins.run('22', 'tail', 'method', JFILE, 31, 60, null);
   } finally {
     graph.close();
   }

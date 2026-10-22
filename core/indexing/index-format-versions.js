@@ -25,3 +25,6 @@
  */
 export const CHUNKING_VERSION = 2;
 export const ENRICHMENT_VERSION = 1;
+
+// The index schema version lives with its reader check (infrastructure may not import indexing).
+export { SCHEMA_VERSION } from '../infrastructure/index-schema.js';

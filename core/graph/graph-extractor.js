@@ -21,7 +21,8 @@ import { goImportName, scanImports, SCANNED_IMPORT_LANGUAGES, importLanguageFor 
 import { GO_PACKAGE_PREFIX, RUST_PATH_PREFIX, UNRESOLVED_IMPORT_PREFIX } from './import-resolver.js';
 import { annotateReceiverTypes } from './receiver-types.js';
 import { scanInstantiations, scanSignatureTypes, swiftExtensionTarget } from './type-usage-scanner.js';
-import { ensureFilesSchema, hasGraphColumn, insertFileNodes } from '../infrastructure/file-nodes.js';
+import { ensureFilesSchema, insertFileNodes } from '../infrastructure/file-nodes.js';
+import { assertGraphSchema } from '../infrastructure/index-schema.js';
 
 // Languages whose legacy `imports` rows are all module specifiers that the
 // statement scanner sees (so an unmatched row is a regex false positive).
@@ -30,9 +31,9 @@ const STATEMENT_COVERED_IMPORT_LANGUAGES = new Set([
   'java', 'kotlin', 'scala', 'groovy', 'dart',
 ]);
 
-// Schema version - increment when schema changes require full reindex
-// Users should run `/index-codebase --full` after upgrading
-export const SCHEMA_VERSION = 2;
+// Schema version of code-graph.db (and codebase.db): shared constant, no migrations.
+export { SCHEMA_VERSION } from '../infrastructure/index-schema.js';
+import { SCHEMA_VERSION } from '../infrastructure/index-schema.js';
 
 /**
  * Sentinel `end_line` clamp (2026-05-13). Lua-specific by design.
@@ -532,75 +533,7 @@ export function setSchemaVersion(db, version = SCHEMA_VERSION) {
   db.prepare('INSERT OR REPLACE INTO schema_meta (key, value) VALUES (?, ?)').run('version', String(version));
 }
 
-function getTableSql(db, tableName) {
-  const row = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name = ?").get(tableName);
-  return row?.sql || '';
-}
-
-function normalizeSql(sql) {
-  return sql.toLowerCase().replace(/\s+/g, ' ');
-}
-
-function hasExpectedEntitiesFtsSchema(sql) {
-  const normalized = normalizeSql(sql);
-  return normalized.includes('name_alias')
-    && normalized.includes("tokenize='porter unicode61'")
-    && normalized.includes("prefix='2 3 4'");
-}
-
-function hasExpectedTrigramSchema(sql) {
-  const normalized = normalizeSql(sql);
-  return normalized.includes("tokenize='trigram'")
-    && normalized.includes("content='entities'")
-    && normalized.includes("content_rowid='rowid'");
-}
-
-function backfillNameAliases(db) {
-  const rowsNeedingAlias = db.prepare(`
-    SELECT id, name
-    FROM entities
-    WHERE name IS NOT NULL
-      AND (name_alias IS NULL OR trim(name_alias) = '')
-  `).all();
-
-  if (rowsNeedingAlias.length === 0) {
-    return 0;
-  }
-
-  const updateAlias = db.prepare(`UPDATE entities SET name_alias = ? WHERE id = ?`);
-  const applyBackfill = db.transaction((rows) => {
-    for (const row of rows) {
-      updateAlias.run(normalizeIdentifier(row.name), row.id);
-    }
-  });
-
-  applyBackfill(rowsNeedingAlias);
-  return rowsNeedingAlias.length;
-}
-
 function ensureLexicalFtsSchema(db) {
-  const existingFtsSql = getTableSql(db, 'entities_fts');
-  const existingCodeFtsSql = getTableSql(db, 'entities_code_fts');
-  const existingTrigramSql = getTableSql(db, 'entities_trigram');
-  const needsRebuild = !existingFtsSql
-    || !existingTrigramSql
-    || !hasExpectedEntitiesFtsSchema(existingFtsSql)
-    || !hasExpectedTrigramSchema(existingTrigramSql)
-    || (existingCodeFtsSql && !hasExpectedEntitiesFtsSchema(existingCodeFtsSql));
-
-  if (needsRebuild) {
-    db.exec(`DROP TABLE IF EXISTS entities_fts`);
-    db.exec(`DROP TABLE IF EXISTS entities_code_fts`);
-    db.exec(`DROP TABLE IF EXISTS entities_trigram`);
-  }
-  // Tables (re)created below start empty. On a graph that already holds
-  // entities (an incremental tick opening an index built before
-  // entities_code_fts existed) they are refilled from the content table at
-  // once, so lexical search never runs on an empty index.
-  const created = needsRebuild
-    ? ['entities_fts', 'entities_code_fts', 'entities_trigram']
-    : (existingCodeFtsSql ? [] : ['entities_code_fts']);
-
   db.exec(`
     CREATE VIRTUAL TABLE IF NOT EXISTS entities_fts USING fts5(
       name,
@@ -640,15 +573,6 @@ function ensureLexicalFtsSchema(db) {
     )
   `);
 
-  if (created.length > 0 && db.prepare('SELECT 1 FROM entities LIMIT 1').get()) {
-    for (const table of created) {
-      // A content table without a column this FTS reads (a graph older than
-      // the entities migrations) cannot rebuild; the next full build will.
-      try { db.exec(`INSERT INTO ${table}(${table}) VALUES('rebuild')`); } catch { /* left empty */ }
-    }
-  }
-
-  return { rebuilt: needsRebuild || created.length > 0 };
 }
 
 // =============================================================================
@@ -3277,103 +3201,19 @@ export class GraphExtractor {
 // =============================================================================
 
 /**
- * Ensure stale_since column exists for soft-delete support.
- * Handles branch switching gracefully by marking entities as stale instead of deleting.
- * Files marked as stale can be pruned after 30 days.
- *
- * @param {import('better-sqlite3').Database} db
- * @returns {boolean} true if column exists or was added successfully
- */
-export function ensureStaleColumn(db) {
-  try {
-    // Check if column exists
-    const columns = db.prepare("PRAGMA table_info(entities)").all();
-    const hasStaleColumn = columns.some(c => c.name === 'stale_since');
-
-    if (!hasStaleColumn) {
-      console.log('[graph-extractor] Adding stale_since column for soft-delete support');
-      db.exec('ALTER TABLE entities ADD COLUMN stale_since INTEGER DEFAULT NULL');
-      // Create partial index for efficient stale entity queries
-      db.exec('CREATE INDEX IF NOT EXISTS idx_entities_stale ON entities(stale_since) WHERE stale_since IS NOT NULL');
-    }
-
-    // P1 FIX: Add covering index for active entities (stale_since IS NULL)
-    // The idx_entities_stale helps find stale entries, but queries filtering for
-    // active entries (WHERE stale_since IS NULL) need their own index
-    // This provides 5-20ms savings per query on active entity lookups
-    try {
-      db.exec(`
-        CREATE INDEX IF NOT EXISTS idx_entities_active
-        ON entities(id, name, type, file_path)
-        WHERE stale_since IS NULL
-      `);
-    } catch (e) {
-      // Index may already exist, ignore
-    }
-
-    return true;
-  } catch (err) {
-    if (err.message.includes('duplicate column')) {
-      return true; // Column already exists
-    }
-    console.error(`[graph-extractor] Failed to add stale_since column: ${err.message}`);
-    return false;
-  }
-}
-
-/**
- * Check if database schema is compatible with current version.
- * Stores version in a simple key-value table.
- * @param {import('better-sqlite3').Database} db
- * @returns {{compatible: boolean, dbVersion: number|null}}
- */
-export function checkSchemaVersion(db) {
-  try {
-    // Create metadata table if not exists
-    db.exec(`CREATE TABLE IF NOT EXISTS schema_meta (key TEXT PRIMARY KEY, value TEXT)`);
-
-    const row = db.prepare('SELECT value FROM schema_meta WHERE key = ?').get('version');
-    const dbVersion = row ? parseInt(row.value, 10) : null;
-
-    if (dbVersion === null) {
-      const existingTableCount = db.prepare(`
-        SELECT COUNT(*) AS count
-        FROM sqlite_master
-        WHERE type = 'table'
-          AND name NOT LIKE 'sqlite_%'
-          AND name != 'schema_meta'
-      `).get().count;
-
-      // Fresh databases can continue; pre-versioning databases must be migrated.
-      return { compatible: existingTableCount === 0, dbVersion: null };
-    }
-
-    if (dbVersion < SCHEMA_VERSION) {
-      console.warn(`⚠️  Schema version mismatch: DB has v${dbVersion}, code expects v${SCHEMA_VERSION}`);
-      console.warn(`   Run: /index-codebase --full (or node index-codebase-v21.js --full)`);
-      return { compatible: false, dbVersion };
-    }
-
-    return { compatible: true, dbVersion };
-  } catch (err) {
-    // If check fails, assume compatible and continue
-    return { compatible: true, dbVersion: null };
-  }
-}
-
-/**
  * Create code graph database schema
  * Uses better-sqlite3 (native SQLite binding with full FTS5 trigram support)
  */
-export function createGraphSchema(db) {
-  const versionStatus = checkSchemaVersion(db);
-  if (!versionStatus.compatible) {
-    console.log(`  Updating schema from ${versionStatus.dbVersion ?? 'unversioned'} to v${SCHEMA_VERSION}`);
+export function createGraphSchema(db, { path: dbPath = 'code-graph.db' } = {}) {
+  // An existing graph from another SCHEMA_VERSION is rebuilt, never altered.
+  if (db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='entities'").get()) {
+    assertGraphSchema(db, dbPath);
   }
-
-  // Entities table with HCGS summary support
-  // signature_hash added for collision-proof backup/restore of overloaded methods
-  // code column stores actual source code for HCGS summary generation
+  // One schema, created as is (no migrations: an index with another SCHEMA_VERSION is
+  // rebuilt). Rows carry their epoch: a full build writes 0, a maintainer tick its epoch;
+  // logical ids stay '' until the maintainer rewrites a row.
+  // code: source for HCGS summaries; signature_hash: backup/restore of overloads;
+  // stale_since: soft delete across branch switches; page_rank: trace's importance backstop.
   db.exec(`
     CREATE TABLE IF NOT EXISTS entities (
       id TEXT PRIMARY KEY,
@@ -3395,46 +3235,14 @@ export function createGraphSchema(db) {
       code TEXT,
       name_alias TEXT,
       stale_since INTEGER DEFAULT NULL,
-      page_rank REAL DEFAULT 0
+      page_rank REAL DEFAULT 0,
+      logical_entity_id TEXT NOT NULL DEFAULT '',
+      epoch_written INTEGER NOT NULL DEFAULT 0,
+      epoch_retired INTEGER
     )
   `);
 
-  // Migration: Add code column to existing tables that don't have it
-  try {
-    const columns = db.prepare("PRAGMA table_info(entities)").all();
-    const hasCodeColumn = columns.some(col => col.name === 'code');
-    if (!hasCodeColumn) {
-      db.exec('ALTER TABLE entities ADD COLUMN code TEXT');
-      console.log('  Migrated: added code column to entities table');
-    }
-    const hasAliasColumn = columns.some(col => col.name === 'name_alias');
-    if (!hasAliasColumn) {
-      db.exec('ALTER TABLE entities ADD COLUMN name_alias TEXT');
-      console.log('  Migrated: added name_alias column to entities table');
-    }
-    const hasPageRankColumn = columns.some(col => col.name === 'page_rank');
-    if (!hasPageRankColumn) {
-      db.exec('ALTER TABLE entities ADD COLUMN page_rank REAL DEFAULT 0');
-      console.log('  Migrated: added page_rank column to entities table');
-    }
-  } catch (err) {
-    // Ignore errors - column might already exist or table not created yet
-  }
-
-  const aliasBackfillCount = backfillNameAliases(db);
-  if (aliasBackfillCount > 0) {
-    console.log(`  Migrated: backfilled name_alias for ${aliasBackfillCount} entities`);
-  }
-
-  // Migration: Add stale_since column for soft-delete support
-  // Files marked as stale (removed from filesystem but kept in DB) can be pruned after 30 days
-  // This handles branch switches gracefully
-  // E4 FIX: Check return value and warn if migration failed
-  if (!ensureStaleColumn(db)) {
-    console.warn('[graph-extractor] WARN: Failed to add stale_since column - searches may include deleted files');
-  }
-
-  // Relationships table (source_id can be NULL for unresolved references)
+  // Relationships (source_id can be NULL for unresolved references)
   db.exec(`
     CREATE TABLE IF NOT EXISTS relationships (
       source_id TEXT,
@@ -3445,7 +3253,10 @@ export function createGraphSchema(db) {
       context_line INTEGER,
       full_import_path TEXT,
       is_static INTEGER DEFAULT 0,
-      is_wildcard INTEGER DEFAULT 0
+      is_wildcard INTEGER DEFAULT 0,
+      logical_relationship_id TEXT NOT NULL DEFAULT '',
+      epoch_written INTEGER NOT NULL DEFAULT 0,
+      epoch_retired INTEGER
     )
   `);
 
@@ -3453,9 +3264,9 @@ export function createGraphSchema(db) {
   // better-sqlite3 bundles SQLite 3.51.1 which has native FTS5 trigram support
   let hasFts5 = false;
   try {
-    const { rebuilt } = ensureLexicalFtsSchema(db);
+    ensureLexicalFtsSchema(db);
     hasFts5 = true;
-    console.log(rebuilt ? '  FTS5 schema rebuilt (porter + trigram)' : '  FTS5 enabled (porter + trigram)');
+    console.log('  FTS5 enabled (porter + trigram)');
   } catch (err) {
     console.log('  FTS5 not available:', err.message);
   }
@@ -3467,25 +3278,30 @@ export function createGraphSchema(db) {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_entities_search ON entities(search_text)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_entities_parent ON entities(parent_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_entities_level ON entities(hierarchy_level)`);
-  // Partial index for soft-delete queries: efficiently find stale entities
-  // Only indexes rows where stale_since IS NOT NULL (smaller index, faster lookups)
+  // Soft delete: find stale entities, and a covering index for the active ones
+  // (WHERE stale_since IS NULL: BM25, graph expansion, ...).
   db.exec(`CREATE INDEX IF NOT EXISTS idx_entities_stale ON entities(stale_since) WHERE stale_since IS NOT NULL`);
-  // P1 FIX: Covering index for active entity queries (WHERE stale_since IS NULL)
-  // Provides 5-20ms savings on all active entity lookups (BM25, graph expansion, etc.)
   db.exec(`CREATE INDEX IF NOT EXISTS idx_entities_active ON entities(id, name, type, file_path) WHERE stale_since IS NULL`);
   // Composite index for collision-proof backup/restore of overloaded methods
   db.exec(`CREATE INDEX IF NOT EXISTS idx_entities_sig_hash ON entities(file_path, type, name, signature_hash)`);
+  // Index supports `page_rank DESC` lookups for ss-trace ranking and ranking probes.
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_entities_page_rank ON entities(page_rank) WHERE stale_since IS NULL`);
+  // Epoch visibility (the maintainer retires rows instead of deleting them).
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_entities_logical ON entities(logical_entity_id) WHERE logical_entity_id != ''`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_entities_epoch_written ON entities(epoch_written)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_entities_epoch_retired ON entities(epoch_retired) WHERE epoch_retired IS NOT NULL`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_rel_source ON relationships(source_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_rel_target ON relationships(target_id)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_rel_target_name ON relationships(target_name)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_rel_type ON relationships(type)`);
-  // Unique constraint to prevent duplicate relationships (same source→target with same type)
-  // Allows NULL source_id (unresolved refs) by excluding them from uniqueness check
-  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_rel_unique ON relationships(source_id, target_id, type, target_name) WHERE source_id IS NOT NULL`);
+  // No duplicate edge (same source→target, type and name) among LIVE rows: a retired row
+  // sits next to its live successor. Unresolved refs (NULL source_id) are exempt.
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_rel_unique ON relationships(source_id, target_id, type, target_name) WHERE source_id IS NOT NULL AND epoch_retired IS NULL`);
   // Index on target_id for efficient reverse lookups ("what calls X")
   db.exec(`CREATE INDEX IF NOT EXISTS idx_rel_target_id ON relationships(target_id) WHERE target_id IS NOT NULL`);
-  // Index supports `page_rank DESC` lookups for ss-trace ranking and ranking probes.
-  db.exec(`CREATE INDEX IF NOT EXISTS idx_entities_page_rank ON entities(page_rank) WHERE stale_since IS NULL`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_rel_logical ON relationships(logical_relationship_id) WHERE logical_relationship_id != ''`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_rel_epoch_written ON relationships(epoch_written)`);
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_rel_epoch_retired ON relationships(epoch_retired) WHERE epoch_retired IS NOT NULL`);
   ensureCallSitesSchema(db);
   ensureFilesSchema(db);
 
@@ -3534,11 +3350,6 @@ export function ensureCallSitesSchema(db) {
       rel_type TEXT NOT NULL DEFAULT 'calls'
     )
   `);
-  // Graphs written before rel_type existed hold call lines only: the
-  // default labels them correctly.
-  if (!db.prepare('PRAGMA table_info(call_lines)').all().some((c) => c.name === 'rel_type')) {
-    db.exec("ALTER TABLE call_lines ADD COLUMN rel_type TEXT NOT NULL DEFAULT 'calls'");
-  }
   db.exec('CREATE INDEX IF NOT EXISTS idx_call_lines_source ON call_lines(source_id, target_name)');
   db.exec('CREATE INDEX IF NOT EXISTS idx_call_lines_retired ON call_lines(epoch_retired) WHERE epoch_retired IS NOT NULL');
 }
@@ -3550,8 +3361,7 @@ export function ensureCallSitesSchema(db) {
  * a (source, rel_type, target) pair seen on two or more lines: a single site
  * is already the relationship row's context_line, which readers fall back
  * to. A pair's sites all come from one file, so every batch holds whole
- * pairs. On a call_lines table without `rel_type` (a writer that skipped
- * ensureCallSitesSchema), only call lines are stored.
+ * pairs.
  */
 export function insertCallSites(db, callSites, { epoch = 0, idFor = null } = {}) {
   if (!callSites || callSites.length === 0) return 0;
@@ -3563,7 +3373,6 @@ export function insertCallSites(db, callSites, { epoch = 0, idFor = null } = {})
     const key = pairKey(c);
     pairSites.set(key, (pairSites.get(key) || 0) + 1);
   }
-  let typed;
   let qualified = null;
   let n = 0;
   for (const c of callSites) {
@@ -3571,14 +3380,8 @@ export function insertCallSites(db, callSites, { epoch = 0, idFor = null } = {})
     if (!source) continue;
     if (c.target_name) {
       if ((pairSites.get(pairKey(c)) || 0) < 2) continue;
-      typed ??= hasGraphColumn(db, 'call_lines', 'rel_type');
-      const relType = c.rel_type || 'calls';
-      if (!typed && relType !== 'calls') continue;
-      qualified ||= typed
-        ? db.prepare('INSERT INTO call_lines (source_id, target_name, context_line, epoch_written, epoch_retired, rel_type) VALUES (?, ?, ?, ?, NULL, ?)')
-        : db.prepare('INSERT INTO call_lines (source_id, target_name, context_line, epoch_written, epoch_retired) VALUES (?, ?, ?, ?, NULL)');
-      if (typed) qualified.run(source, c.target_name, c.context_line ?? null, epoch, relType);
-      else qualified.run(source, c.target_name, c.context_line ?? null, epoch);
+      qualified ||= db.prepare('INSERT INTO call_lines (source_id, target_name, context_line, epoch_written, epoch_retired, rel_type) VALUES (?, ?, ?, ?, NULL, ?)');
+      qualified.run(source, c.target_name, c.context_line ?? null, epoch, c.rel_type || 'calls');
       n++;
       continue;
     }

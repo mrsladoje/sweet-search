@@ -21,7 +21,8 @@ import { applyMMR, shouldApplyMMR } from '../ranking/mmr.js';
 import { SYMBOL_KIND_WEIGHTS, DEFINITION_TYPES } from '../infrastructure/constants.js';
 import { readAdjacentManifest, resolveManifestCodeGraphPath, sqlAliasPrefix } from '../infrastructure/code-graph-visibility.js';
 import { TRACE_ONLY_TYPES_SQL } from '../infrastructure/relationship-types.js';
-import { asTopLevelCaller, fileNodeSourceSql, hasFilesTable } from '../infrastructure/file-nodes.js';
+import { assertGraphSchema } from '../infrastructure/index-schema.js';
+import { asTopLevelCaller, fileNodeSourceSql } from '../infrastructure/file-nodes.js';
 
 // Entity doc comments (filled from the AST since 2026-10) take part in BM25
 // only for agent formats. GCSN dev: an ungated doc column cost MRR@10 86.92%
@@ -81,8 +82,6 @@ export class GraphSearch {
     this.hasFts5 = false;
     this.hasCodeFts = false;
     this.hasTrigram = false;
-    this._hasEntityEpochVisibility = false;
-    this._hasRelationshipEpochVisibility = false;
     this._hasHcgsSummaryMetadata = false;
     this._summaryVisibilityCache = new Map();
     if (!this._explicitManifestEpoch) {
@@ -127,6 +126,8 @@ export class GraphSearch {
     // Use better-sqlite3 for native FTS5 with trigram support
     const Database = (await import('better-sqlite3')).default;
     const db = new Database(this.dbPath, { readonly: true });
+    // An index from another schema version fails here with the rebuild instruction.
+    try { assertGraphSchema(db, this.dbPath); } catch (err) { db.close(); throw err; }
 
     try {
       applyReadPragmas(db, { tempStoreMemory: true });
@@ -147,33 +148,9 @@ export class GraphSearch {
         this.hasTrigram = false;
       }
 
-      const entityCols = db.prepare('PRAGMA table_info(entities)').all().map((c) => c.name);
-      this._hasEntityEpochVisibility = entityCols.includes('epoch_written')
-        && entityCols.includes('epoch_retired');
-      const relCols = db.prepare('PRAGMA table_info(relationships)').all().map((c) => c.name);
-      this._hasRelationshipEpochVisibility = relCols.includes('epoch_written')
-        && relCols.includes('epoch_retired');
       this._hasHcgsSummaryMetadata = !!db.prepare(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='hcgs_summary_metadata'",
       ).get();
-
-      // Detect FTS5 column count to warn about schema mismatches with old databases.
-      // The bm25() weights are positional — wrong column count produces wrong ranking.
-      if (this.hasFts5) {
-        try {
-          const ftsColInfo = db.prepare("SELECT * FROM entities_fts LIMIT 0").columns();
-          this._ftsColumnCount = ftsColInfo.length;
-          const expectedCols = 4; // name, name_alias, signature, doc_comment
-          if (this._ftsColumnCount !== expectedCols) {
-            console.warn(
-              `[GraphSearch] FTS5 schema mismatch: expected ${expectedCols} columns, found ${this._ftsColumnCount}. ` +
-              `BM25 weights will be misaligned. Run \`/index-codebase --full\` to rebuild.`
-            );
-          }
-        } catch {
-          // Non-fatal — continue with FTS5
-        }
-      }
 
       // Cache hot-path prepared statements (eliminates ~8-9µs per prepare() call)
       // Prepare failures on optional FTS paths should degrade to existing fallbacks.
@@ -290,9 +267,7 @@ export class GraphSearch {
   _entityVisibilitySql(alias = 'e', options = {}) {
     const prefix = sqlAliasPrefix(alias);
     let sql;
-    if (!this._hasEntityEpochVisibility) {
-      sql = `${prefix}stale_since IS NULL`;
-    } else if (this._manifestEpoch !== null) {
+    if (this._manifestEpoch !== null) {
       // For a pinned reader, a row retired after the pinned epoch remains
       // visible even if the compatibility stale_since flag has been set.
       sql = `(${prefix}epoch_written IS NULL OR ${prefix}epoch_written <= ?)
@@ -308,7 +283,7 @@ export class GraphSearch {
   }
 
   _entityVisibilityParams() {
-    if (!this._hasEntityEpochVisibility || this._manifestEpoch === null) return [];
+    if (this._manifestEpoch === null) return [];
     return [this._manifestEpoch, this._manifestEpoch, this._manifestEpoch];
   }
 
@@ -318,7 +293,6 @@ export class GraphSearch {
   _relationshipVisibilitySql(alias = 'r') {
     const prefix = sqlAliasPrefix(alias);
     const traceOnly = `${prefix}type NOT IN ${TRACE_ONLY_TYPES_SQL}`;
-    if (!this._hasRelationshipEpochVisibility) return traceOnly;
     if (this._manifestEpoch !== null) {
       return `(${prefix}epoch_written IS NULL OR ${prefix}epoch_written <= ?)
         AND (${prefix}epoch_retired IS NULL OR ${prefix}epoch_retired > ?)
@@ -328,7 +302,7 @@ export class GraphSearch {
   }
 
   _relationshipVisibilityParams() {
-    if (!this._hasRelationshipEpochVisibility || this._manifestEpoch === null) return [];
+    if (this._manifestEpoch === null) return [];
     return [this._manifestEpoch, this._manifestEpoch];
   }
 
@@ -645,7 +619,7 @@ export class GraphSearch {
     await this.init();
     const result = new Set();
     try {
-      const rows = this._hasEntityEpochVisibility && this._manifestEpoch !== null
+      const rows = this._manifestEpoch !== null
         ? this.db.prepare(`
             SELECT id FROM entities
             WHERE stale_since IS NOT NULL
@@ -655,7 +629,7 @@ export class GraphSearch {
         : this.db.prepare('SELECT id FROM entities WHERE stale_since IS NOT NULL').all();
       for (const row of rows) result.add(row.id);
     } catch {
-      // Column may not exist in older indexes
+      // Unreadable graph: no stale ids
     }
     return result;
   }
@@ -2185,13 +2159,11 @@ export class GraphSearch {
     let callers = callersFrom('entities');
     // Calls from top-level code have the file node as their source
     // (file-nodes.js): `(top-level)` rows at the call line.
-    if (hasFilesTable(this.db)) {
-      const top = callersFrom(fileNodeSourceSql()).map(row => asTopLevelCaller(row, row.call_line));
-      if (top.length > 0) {
-        callers = [...callers, ...top]
-          .sort((a, b) => String(a.file_path).localeCompare(String(b.file_path)) || ((a.call_line ?? 0) - (b.call_line ?? 0)))
-          .slice(0, limit);
-      }
+    const top = callersFrom(fileNodeSourceSql()).map(row => asTopLevelCaller(row, row.call_line));
+    if (top.length > 0) {
+      callers = [...callers, ...top]
+        .sort((a, b) => String(a.file_path).localeCompare(String(b.file_path)) || ((a.call_line ?? 0) - (b.call_line ?? 0)))
+        .slice(0, limit);
     }
 
     return {
@@ -2302,10 +2274,8 @@ export class GraphSearch {
     let frontier = [target.id];
     // Dependents in top-level code are the file's node (file-nodes.js). A
     // file node is a leaf here: nothing calls a script body.
-    const hasFiles = hasFilesTable(this.db);
     const withTopLevel = (run) => {
       const rows = run('entities');
-      if (!hasFiles) return rows;
       return [...rows, ...run(fileNodeSourceSql()).map(row => asTopLevelCaller(row, null))];
     };
 

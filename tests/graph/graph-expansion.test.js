@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import Database from 'better-sqlite3';
 import { expandResults, getExpansionStats } from '../../core/graph/index.js';
+import { createGraphSchema } from '../../core/graph/graph-extractor.js';
 
 /**
  * Create an in-memory SQLite database with test entities and relationships.
@@ -14,28 +15,9 @@ import { expandResults, getExpansionStats } from '../../core/graph/index.js';
 function createTestDb() {
   const db = new Database(':memory:');
 
-  db.exec(`
-    CREATE TABLE entities (
-      id TEXT PRIMARY KEY,
-      file_path TEXT NOT NULL,
-      type TEXT NOT NULL,
-      name TEXT NOT NULL,
-      signature TEXT,
-      start_line INTEGER,
-      end_line INTEGER,
-      stale_since INTEGER DEFAULT NULL
-    )
-  `);
+  createGraphSchema(db);
 
-  db.exec(`
-    CREATE TABLE relationships (
-      source_id TEXT,
-      target_id TEXT,
-      target_name TEXT NOT NULL,
-      type TEXT NOT NULL,
-      weight REAL DEFAULT 1.0
-    )
-  `);
+  createGraphSchema(db);
 
   const insertEntity = db.prepare(
     'INSERT INTO entities (id, file_path, type, name, signature, start_line, end_line, stale_since) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
@@ -147,10 +129,6 @@ describe('graph-expansion', () => {
       const epochDb = createTestDb();
       try {
         epochDb.exec(`
-          ALTER TABLE entities ADD COLUMN epoch_written INTEGER NOT NULL DEFAULT 0;
-          ALTER TABLE entities ADD COLUMN epoch_retired INTEGER;
-          ALTER TABLE relationships ADD COLUMN epoch_written INTEGER NOT NULL DEFAULT 0;
-          ALTER TABLE relationships ADD COLUMN epoch_retired INTEGER;
           UPDATE entities SET epoch_written = 1;
           UPDATE relationships SET epoch_written = 1;
           UPDATE entities SET epoch_retired = 3 WHERE id = 'b';

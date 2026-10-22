@@ -37,6 +37,7 @@ import {
   chunkedIn,
 } from '../../core/infrastructure/db-utils.js';
 import { __TEST__ as indexerAnnTest } from '../../core/indexing/indexer-ann.js';
+import { createVectorSchema } from '../../core/indexing/indexer-build.js';
 
 // Exact SQL template from indexer-ann.js incrementalUpdateHNSW().
 // Keeping this verbatim here means any future drift in the indexer is
@@ -54,16 +55,7 @@ function indexerQueryTemplate(db) {
 
 function createCodebaseDb({ fileCount, chunksPerFile = 1, withAliasNoise = true, withEpochRetired = false }) {
   const db = new Database(':memory:');
-  db.exec(`
-    CREATE TABLE vectors (
-      id TEXT PRIMARY KEY,
-      file_path TEXT NOT NULL,
-      embedding BLOB,
-      metadata TEXT
-      ${withEpochRetired ? ', epoch_retired INTEGER' : ''}
-    );
-    CREATE INDEX vectors_file_path_idx ON vectors(file_path);
-  `);
+  createVectorSchema(db);
 
   const insert = db.prepare(
     withEpochRetired

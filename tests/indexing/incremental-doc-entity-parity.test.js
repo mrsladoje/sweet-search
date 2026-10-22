@@ -169,27 +169,4 @@ describe('incremental graph keeps doc comments and Go var/const entities like a 
     expect(await search('errBusy')).toContain('errBusy');
   });
 
-  it('fills entities_code_fts at once when a graph built before it opens for an incremental tick', async () => {
-    write([
-      'package txn',
-      '',
-      '// Commit flushes the journal before returning.',
-      'func Commit() error {',
-      '\treturn nil',
-      '}',
-    ]);
-    await tick();
-    let db = new Database(graphPath());
-    try {
-      db.exec('DROP TABLE entities_code_fts'); // the pre-change schema
-      quiet(() => createGraphSchema(db));
-      const live = db.prepare('SELECT COUNT(*) AS n FROM entities').get().n;
-      expect(db.prepare('SELECT COUNT(*) AS n FROM entities_code_fts').get().n).toBe(live);
-      expect(db.prepare('SELECT COUNT(*) AS n FROM entities_fts').get().n).toBe(live);
-      assertFtsInSync(db);
-    } finally {
-      db.close();
-    }
-    expect(await search('Commit')).toContain('Commit');
-  });
 });

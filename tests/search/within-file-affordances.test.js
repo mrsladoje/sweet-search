@@ -26,6 +26,8 @@ import {
   renderUnreadAbove,
   __resetReadCachesForTests,
 } from '../../core/search/search-read.js';
+import { createGraphSchema } from '../../core/graph/graph-extractor.js';
+import { createVectorSchema } from '../../core/indexing/indexer-build.js';
 
 let TMP;
 
@@ -345,15 +347,8 @@ function writeBotanFixture() {
   mkdirSync(stateDir, { recursive: true });
   const db = new Database(path.join(stateDir, 'codebase.db'));
   try {
-    db.exec(`
-      CREATE TABLE vectors (
-        id TEXT PRIMARY KEY,
-        file_path TEXT,
-        text TEXT,
-        metadata TEXT
-      )
-    `);
-    const insert = db.prepare('INSERT INTO vectors (id, file_path, text, metadata) VALUES (?, ?, ?, ?)');
+    createVectorSchema(db);
+    const insert = db.prepare('INSERT INTO vectors (id, file_path, embedding, text, metadata) VALUES (?, ?, zeroblob(0), ?, ?)');
     const rows = [
       ['c1', 'matches_dn', 10, 160],
       ['c2', 'equal_length_compare', 170, 205],
@@ -442,8 +437,8 @@ describe('readFile unreadBelow', () => {
     mkdirSync(stateDir, { recursive: true });
     const db = new Database(path.join(stateDir, 'codebase.db'));
     try {
-      db.exec('CREATE TABLE vectors (id TEXT PRIMARY KEY, file_path TEXT, text TEXT, metadata TEXT)');
-      const insert = db.prepare('INSERT INTO vectors (id, file_path, text, metadata) VALUES (?, ?, ?, ?)');
+      createVectorSchema(db);
+      const insert = db.prepare('INSERT INTO vectors (id, file_path, embedding, text, metadata) VALUES (?, ?, zeroblob(0), ?, ?)');
       for (let i = 0; i < 8; i++) {
         insert.run(`s${i}`, 'many.js', '// x', JSON.stringify({
           symbol: `sym${i}`, chunk_type: 'function', line_start: 20 + i * 10, line_end: 25 + i * 10,
@@ -468,8 +463,8 @@ describe('readFile unreadBelow', () => {
     mkdirSync(stateDir, { recursive: true });
     const db = new Database(path.join(stateDir, 'codebase.db'));
     try {
-      db.exec('CREATE TABLE vectors (id TEXT PRIMARY KEY, file_path TEXT, text TEXT, metadata TEXT)');
-      db.prepare('INSERT INTO vectors (id, file_path, text, metadata) VALUES (?, ?, ?, ?)').run(
+      createVectorSchema(db);
+      db.prepare('INSERT INTO vectors (id, file_path, embedding, text, metadata) VALUES (?, ?, zeroblob(0), ?, ?)').run(
         't1', 'tiny.js', '// x', JSON.stringify({ symbol: 'tailFn', chunk_type: 'function', line_start: 20, line_end: 28 }),
       );
     } finally {
@@ -545,8 +540,8 @@ function writeSquashqlFixture() {
   mkdirSync(stateDir, { recursive: true });
   const db = new Database(path.join(stateDir, 'codebase.db'));
   try {
-    db.exec('CREATE TABLE vectors (id TEXT PRIMARY KEY, file_path TEXT, text TEXT, metadata TEXT)');
-    const insert = db.prepare('INSERT INTO vectors (id, file_path, text, metadata) VALUES (?, ?, ?, ?)');
+    createVectorSchema(db);
+    const insert = db.prepare('INSERT INTO vectors (id, file_path, embedding, text, metadata) VALUES (?, ?, zeroblob(0), ?, ?)');
     insert.run('c1', JAVA_FILE, '// x', JSON.stringify({ symbol: 'QueryResolver', chunk_type: 'method', line_start: 50, line_end: 60, language: 'java' }));
     insert.run('c2', JAVA_FILE, '// x', JSON.stringify({ symbol: 'toSubQuery', chunk_type: 'method', line_start: 191, line_end: 208, language: 'java' }));
     insert.run('c3', JAVA_FILE, '// x', JSON.stringify({ symbol: 'checkSubQuery', chunk_type: 'method', line_start: 210, line_end: 228, language: 'java' }));
@@ -556,9 +551,7 @@ function writeSquashqlFixture() {
   }
   const graph = new Database(path.join(stateDir, 'code-graph.db'));
   try {
-    graph.exec(`CREATE TABLE entities (id INTEGER PRIMARY KEY, name TEXT, type TEXT, file_path TEXT,
-      start_line INTEGER, end_line INTEGER, parent_class TEXT, signature TEXT, summary TEXT,
-      stale_since INTEGER DEFAULT NULL)`);
+    createGraphSchema(graph);
     const ins = graph.prepare('INSERT INTO entities (id, name, type, file_path, start_line, end_line, parent_class) VALUES (?, ?, ?, ?, ?, ?, ?)');
     ins.run(1, 'QueryResolver', 'class', JAVA_FILE, 10, 300, null);
     ins.run(2, 'subQueryMeasures', 'field', JAVA_FILE, 35, 35, 'QueryResolver');

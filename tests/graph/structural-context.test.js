@@ -7,6 +7,7 @@ import { StructuralContextBuilder, formatStructuralContext } from '../../core/gr
 import { callsiteHints } from '../../core/graph/structural-callsite-hints.js';
 import { extractHeaderContext } from '../../core/graph/structural-header-context.js';
 import { writeManifest, zeroManifest } from '../../core/incremental-indexing/infrastructure/manifest.mjs';
+import { createGraphSchema } from '../../core/graph/graph-extractor.js';
 
 function writeFileLines(root, file, lines) {
   const abs = join(root, file);
@@ -20,80 +21,53 @@ function filler(prefix, count) {
 
 function createGraphDb(dbPath) {
   const db = new Database(dbPath);
-  db.exec(`
-    CREATE TABLE entities (
-      id INTEGER PRIMARY KEY,
-      name TEXT NOT NULL,
-      type TEXT NOT NULL,
-      file_path TEXT,
-      start_line INTEGER,
-      end_line INTEGER,
-      signature TEXT,
-      doc_comment TEXT,
-      summary TEXT,
-      package TEXT,
-      parent_class TEXT,
-      search_text TEXT,
-      name_alias TEXT,
-      stale_since INTEGER DEFAULT NULL
-    );
-    CREATE TABLE relationships (
-      id INTEGER PRIMARY KEY,
-      source_id INTEGER,
-      target_id INTEGER,
-      target_name TEXT,
-      type TEXT,
-      weight REAL DEFAULT 1.0,
-      context_line INTEGER,
-      full_import_path TEXT
-    );
-  `);
+  createGraphSchema(db);
   const ent = db.prepare(`
     INSERT INTO entities
       (id, name, type, file_path, start_line, end_line, signature, summary, search_text, stale_since)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
   `);
-  ent.run(1, 'processOrder', 'function', 'src/order.js', 1, 16, 'export function processOrder(order) {', 'Coordinates validation and commit', '');
-  ent.run(2, 'handleSubmit', 'function', 'src/controller.js', 1, 14, 'export function handleSubmit(req) {', 'Controller submits an order', '');
-  ent.run(3, 'webhookHandler', 'function', 'src/webhook.js', 1, 9, 'export function webhookHandler(event) {', 'Webhook entry point', '');
-  ent.run(4, 'validateOrder', 'function', 'src/validator.js', 1, 8, 'export function validateOrder(order) {', 'Validates order', '');
-  ent.run(5, 'commitOrder', 'function', 'src/db.js', 1, 8, 'export function commitOrder(order) {', 'Persists order', '');
-  ent.run(6, 'dispatch', 'function', 'src/api.js', 1, 10, 'export function dispatch(req) {', 'Top-level API dispatch', '');
-  ent.run(7, 'processOrderSpec', 'function', 'tests/order.test.js', 1, 8, 'function processOrderSpec() {', 'Test caller', '');
-  ent.run(8, 'make_response', 'function', 'src/helpers.py', 1, 5, 'def make_response(*args):', 'Public response helper wrapper', '');
-  ent.run(9, 'make_response', 'method', 'src/app.py', 1, 9, 'def make_response(self, rv):', 'Converts return values into Response objects', '');
-  ent.run(10, 'validate', 'method', 'tests/schema.test.js', 1, 1, 'validate () { return true }', 'Fixture validator', '');
-  ent.run(11, 'validate', 'function', 'src/validation.js', 1, 4, 'function validate(request) {', 'Validates params body querystring headers', '');
-  ent.run(12, 'preValidationCallback', 'function', 'src/handle.js', 3, 5, 'function preValidationCallback(request) {', 'Calls imported validation alias', '');
-  ent.run(13, 'locate', 'function', 'src/lines.rs', 1, 3, 'pub(crate) fn locate() -> Match {', 'Computes line boundaries', '');
-  ent.run(14, 'find_candidate_line_fast', 'function', 'src/core.rs', 1, 4, 'fn find_candidate_line_fast() {', 'Calls namespaced locate', '');
-  ent.run(15, 'ErrorKind', 'enum', 'src/pcre2/error.rs', 1, 3, 'pub enum ErrorKind {', 'PCRE2 regex error', '');
-  ent.run(16, 'ErrorKind', 'enum', 'src/regex/error.rs', 1, 5, 'pub enum ErrorKind {', 'Regex parser variants', '');
-  ent.run(18, 'Abort', 'method', 'src/context.go', 3, 5, 'func (c *Context) Abort() {', 'Stops pending handlers', '');
-  ent.run(19, 'Legacy', 'class', 'src/legacy.js', 1, 13, 'function Legacy() {}', 'Legacy constructor', '');
-  ent.run(20, 'send', 'method', 'src/legacy.js', 7, 9, 'Legacy.prototype.send = function () {', 'Sends legacy response', '');
-  ent.run(21, 'helper', 'function', 'src/legacy.js', 11, 13, 'function helper() {', 'Legacy helper', '');
-  ent.run(22, 'flush', 'method', 'src/legacy.js', 3, 6, 'Legacy.prototype.flush = function () {', 'Flushes legacy response', '');
-  ent.run(23, 'render', 'method', 'tests/response.test.js', 1, 3, 'render: function () {', 'Test render helper', '');
-  ent.run(24, 'pageHandler', 'function', 'src/page.js', 1, 4, 'function pageHandler(req, res) {', 'Calls response render', '');
-  ent.run(25, 'renderSentinel', 'function', 'src/response.js', 7, 9, 'function renderSentinel() {', 'Keeps response file in graph', '');
+  ent.run('1', 'processOrder', 'function', 'src/order.js', 1, 16, 'export function processOrder(order) {', 'Coordinates validation and commit', '');
+  ent.run('2', 'handleSubmit', 'function', 'src/controller.js', 1, 14, 'export function handleSubmit(req) {', 'Controller submits an order', '');
+  ent.run('3', 'webhookHandler', 'function', 'src/webhook.js', 1, 9, 'export function webhookHandler(event) {', 'Webhook entry point', '');
+  ent.run('4', 'validateOrder', 'function', 'src/validator.js', 1, 8, 'export function validateOrder(order) {', 'Validates order', '');
+  ent.run('5', 'commitOrder', 'function', 'src/db.js', 1, 8, 'export function commitOrder(order) {', 'Persists order', '');
+  ent.run('6', 'dispatch', 'function', 'src/api.js', 1, 10, 'export function dispatch(req) {', 'Top-level API dispatch', '');
+  ent.run('7', 'processOrderSpec', 'function', 'tests/order.test.js', 1, 8, 'function processOrderSpec() {', 'Test caller', '');
+  ent.run('8', 'make_response', 'function', 'src/helpers.py', 1, 5, 'def make_response(*args):', 'Public response helper wrapper', '');
+  ent.run('9', 'make_response', 'method', 'src/app.py', 1, 9, 'def make_response(self, rv):', 'Converts return values into Response objects', '');
+  ent.run('10', 'validate', 'method', 'tests/schema.test.js', 1, 1, 'validate () { return true }', 'Fixture validator', '');
+  ent.run('11', 'validate', 'function', 'src/validation.js', 1, 4, 'function validate(request) {', 'Validates params body querystring headers', '');
+  ent.run('12', 'preValidationCallback', 'function', 'src/handle.js', 3, 5, 'function preValidationCallback(request) {', 'Calls imported validation alias', '');
+  ent.run('13', 'locate', 'function', 'src/lines.rs', 1, 3, 'pub(crate) fn locate() -> Match {', 'Computes line boundaries', '');
+  ent.run('14', 'find_candidate_line_fast', 'function', 'src/core.rs', 1, 4, 'fn find_candidate_line_fast() {', 'Calls namespaced locate', '');
+  ent.run('15', 'ErrorKind', 'enum', 'src/pcre2/error.rs', 1, 3, 'pub enum ErrorKind {', 'PCRE2 regex error', '');
+  ent.run('16', 'ErrorKind', 'enum', 'src/regex/error.rs', 1, 5, 'pub enum ErrorKind {', 'Regex parser variants', '');
+  ent.run('18', 'Abort', 'method', 'src/context.go', 3, 5, 'func (c *Context) Abort() {', 'Stops pending handlers', '');
+  ent.run('19', 'Legacy', 'class', 'src/legacy.js', 1, 13, 'function Legacy() {}', 'Legacy constructor', '');
+  ent.run('20', 'send', 'method', 'src/legacy.js', 7, 9, 'Legacy.prototype.send = function () {', 'Sends legacy response', '');
+  ent.run('21', 'helper', 'function', 'src/legacy.js', 11, 13, 'function helper() {', 'Legacy helper', '');
+  ent.run('22', 'flush', 'method', 'src/legacy.js', 3, 6, 'Legacy.prototype.flush = function () {', 'Flushes legacy response', '');
+  ent.run('23', 'render', 'method', 'tests/response.test.js', 1, 3, 'render: function () {', 'Test render helper', '');
+  ent.run('24', 'pageHandler', 'function', 'src/page.js', 1, 4, 'function pageHandler(req, res) {', 'Calls response render', '');
+  ent.run('25', 'renderSentinel', 'function', 'src/response.js', 7, 9, 'function renderSentinel() {', 'Keeps response file in graph', '');
   // Java field + method in one file (squashql-295 shape): the regex-only resolver
   // knows no Java declaration form, the entity table holds both.
-  ent.run(26, 'subQueryMeasures', 'field', 'src/QueryResolver.java', 3, 3, 'private final Map<Measure, CompiledMeasure> subQueryMeasures;', '', '');
-  ent.run(27, 'toSubQuery', 'method', 'src/QueryResolver.java', 5, 9, 'private DatabaseQuery toSubQuery(QueryDto subQuery) {', '', '');
+  ent.run('26', 'subQueryMeasures', 'field', 'src/QueryResolver.java', 3, 3, 'private final Map<Measure, CompiledMeasure> subQueryMeasures;', '', '');
+  ent.run('27', 'toSubQuery', 'method', 'src/QueryResolver.java', 5, 9, 'private DatabaseQuery toSubQuery(QueryDto subQuery) {', '', '');
 
   const rel = db.prepare(`
     INSERT INTO relationships (source_id, target_id, target_name, type, weight, context_line)
     VALUES (?, ?, ?, ?, ?, ?)
   `);
-  rel.run(2, 1, 'processOrder', 'calls', 1, 4);
-  rel.run(3, 1, 'processOrder', 'calls', 1, 4);
-  rel.run(7, 1, 'processOrder', 'calls', 1, 4);
-  rel.run(1, 4, 'validateOrder', 'calls', 1, 3);
-  rel.run(1, 5, 'commitOrder', 'calls', 1, 6);
-  rel.run(6, 2, 'handleSubmit', 'calls', 1, 5);
-  rel.run(8, 8, 'current_app.make_response', 'calls', 1, 4);
-  rel.run(24, null, 'res.render', 'calls', 1, 3);
+  rel.run('2', '1', 'processOrder', 'calls', 1, 4);
+  rel.run('3', '1', 'processOrder', 'calls', 1, 4);
+  rel.run('7', '1', 'processOrder', 'calls', 1, 4);
+  rel.run('1', '4', 'validateOrder', 'calls', 1, 3);
+  rel.run('1', '5', 'commitOrder', 'calls', 1, 6);
+  rel.run('6', '2', 'handleSubmit', 'calls', 1, 5);
+  rel.run('8', '8', 'current_app.make_response', 'calls', 1, 4);
+  rel.run('24', null, 'res.render', 'calls', 1, 3);
   db.close();
 }
 
@@ -107,57 +81,26 @@ function writeGraphManifest(root, epoch) {
 
 function createEpochGraphDb(dbPath) {
   const db = new Database(dbPath);
-  db.exec(`
-    CREATE TABLE entities (
-      id INTEGER PRIMARY KEY,
-      name TEXT NOT NULL,
-      type TEXT NOT NULL,
-      file_path TEXT,
-      start_line INTEGER,
-      end_line INTEGER,
-      signature TEXT,
-      doc_comment TEXT,
-      summary TEXT,
-      package TEXT,
-      parent_class TEXT,
-      search_text TEXT,
-      name_alias TEXT,
-      stale_since INTEGER DEFAULT NULL,
-      epoch_written INTEGER,
-      epoch_retired INTEGER
-    );
-    CREATE TABLE relationships (
-      id INTEGER PRIMARY KEY,
-      source_id INTEGER,
-      target_id INTEGER,
-      target_name TEXT,
-      type TEXT,
-      weight REAL DEFAULT 1.0,
-      context_line INTEGER,
-      full_import_path TEXT,
-      epoch_written INTEGER,
-      epoch_retired INTEGER
-    );
-  `);
+  createGraphSchema(db);
   const ent = db.prepare(`
     INSERT INTO entities
       (id, name, type, file_path, start_line, end_line, signature, summary, search_text, stale_since, epoch_written, epoch_retired)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  ent.run(1, 'Widget', 'function', 'src/old-widget.js', 1, 4, 'function Widget() {', 'Old widget', '', 1111, 1, 3);
-  ent.run(2, 'Widget', 'function', 'src/new-widget.js', 1, 4, 'function Widget() {', 'New widget', '', null, 3, null);
-  ent.run(3, 'Caller', 'function', 'src/caller.js', 1, 5, 'function Caller() {', 'Calls widget', '', null, 1, null);
-  ent.run(4, 'OldOnly', 'function', 'src/old-only.js', 1, 3, 'function OldOnly() {', 'Old callee', '', 2222, 1, 3);
-  ent.run(5, 'NewOnly', 'function', 'src/new-only.js', 1, 3, 'function NewOnly() {', 'New callee', '', null, 3, null);
+  ent.run('1', 'Widget', 'function', 'src/old-widget.js', 1, 4, 'function Widget() {', 'Old widget', '', 1111, 1, 3);
+  ent.run('2', 'Widget', 'function', 'src/new-widget.js', 1, 4, 'function Widget() {', 'New widget', '', null, 3, null);
+  ent.run('3', 'Caller', 'function', 'src/caller.js', 1, 5, 'function Caller() {', 'Calls widget', '', null, 1, null);
+  ent.run('4', 'OldOnly', 'function', 'src/old-only.js', 1, 3, 'function OldOnly() {', 'Old callee', '', 2222, 1, 3);
+  ent.run('5', 'NewOnly', 'function', 'src/new-only.js', 1, 3, 'function NewOnly() {', 'New callee', '', null, 3, null);
 
   const rel = db.prepare(`
     INSERT INTO relationships (source_id, target_id, target_name, type, weight, context_line, epoch_written, epoch_retired)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  rel.run(3, 1, 'Widget', 'calls', 1, 2, 1, 3);
-  rel.run(3, 2, 'Widget', 'calls', 1, 2, 3, null);
-  rel.run(1, 4, 'OldOnly', 'calls', 1, 2, 1, 3);
-  rel.run(2, 5, 'NewOnly', 'calls', 1, 2, 3, null);
+  rel.run('3', '1', 'Widget', 'calls', 1, 2, 1, 3);
+  rel.run('3', '2', 'Widget', 'calls', 1, 2, 3, null);
+  rel.run('1', '4', 'OldOnly', 'calls', 1, 2, 1, 3);
+  rel.run('2', '5', 'NewOnly', 'calls', 1, 2, 3, null);
   db.close();
 }
 
@@ -461,7 +404,7 @@ describe('StructuralContextBuilder', () => {
         epoch_retired INTEGER
       ) WITHOUT ROWID
     `);
-    db.prepare('UPDATE entities SET summary = ? WHERE id = ?').run('Live process summary', 1);
+    db.prepare('UPDATE entities SET summary = ? WHERE id = ?').run('Live process summary', '1');
     db.prepare(`
       INSERT INTO hcgs_summary_metadata (
         entity_id, source_entity_ids, source_chunk_struct_ids, source_hashes, epoch_written, epoch_retired
@@ -472,7 +415,7 @@ describe('StructuralContextBuilder', () => {
     expect(builder.build('processOrder', { tokenBudget: 4000 }).target.summary).toBe('Live process summary');
 
     const writer = new Database(dbPath);
-    writer.prepare('UPDATE hcgs_summary_metadata SET epoch_retired = ? WHERE entity_id = ?').run(2, '1');
+    writer.prepare('UPDATE hcgs_summary_metadata SET epoch_retired = ? WHERE entity_id = ?').run('2', '1');
     writer.close();
 
     expect(builder.build('processOrder', { tokenBudget: 4000 }).target.summary).toBe('');

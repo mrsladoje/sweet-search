@@ -12,18 +12,11 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import Database from 'better-sqlite3';
 import { createMockSearcher } from '../helpers/prototype-test-helper.js';
 import { handleSearch } from '../../mcp/tool-handlers.js';
+import { createGraphSchema } from '../../core/graph/graph-extractor.js';
 
 function createGraphDb(seedCount, neighboursPerSeed) {
   const db = new Database(':memory:');
-  db.exec(`
-    CREATE TABLE entities (
-      id TEXT PRIMARY KEY, file_path TEXT NOT NULL, type TEXT NOT NULL, name TEXT NOT NULL,
-      signature TEXT, start_line INTEGER, end_line INTEGER, stale_since INTEGER DEFAULT NULL
-    );
-    CREATE TABLE relationships (
-      source_id TEXT, target_id TEXT, target_name TEXT NOT NULL, type TEXT NOT NULL, weight REAL DEFAULT 1.0
-    );
-  `);
+  createGraphSchema(db);
   const insertEntity = db.prepare(
     'INSERT INTO entities (id, file_path, type, name, signature, start_line, end_line) VALUES (?, ?, ?, ?, ?, ?, ?)'
   );

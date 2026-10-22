@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { createIndexCoverage, REASONS, looksLikeBundle } from '../../core/search/index-coverage.js';
+import { createVectorSchema } from '../../core/indexing/indexer-build.js';
 
 const require = createRequire(import.meta.url);
 
@@ -22,10 +23,7 @@ function makeProject(indexedPaths) {
   mkdirSync(path.join(dir, '.sweet-search'), { recursive: true });
   const Database = require('better-sqlite3');
   const db = new Database(path.join(dir, '.sweet-search', 'codebase.db'));
-  db.exec(`CREATE TABLE vectors (
-    id TEXT PRIMARY KEY, file_path TEXT NOT NULL, embedding BLOB NOT NULL,
-    text TEXT, metadata TEXT, session_id TEXT, tags TEXT,
-    created_at TEXT DEFAULT CURRENT_TIMESTAMP, epoch_retired INTEGER)`);
+  createVectorSchema(db);
   const ins = db.prepare('INSERT INTO vectors (id, file_path, embedding, epoch_retired) VALUES (?, ?, ?, ?)');
   for (const [i, p] of indexedPaths.entries()) {
     const retired = p.startsWith('!') ? 7 : null;      // "!path" = a retired row

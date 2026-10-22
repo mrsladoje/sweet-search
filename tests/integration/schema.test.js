@@ -52,40 +52,9 @@ function createTestDb() {
  * Create a legacy schema (without `code` column) to test migration
  */
 function createLegacySchema(db) {
-  db.exec(`
-    CREATE TABLE entities (
-      id TEXT PRIMARY KEY,
-      file_path TEXT NOT NULL,
-      type TEXT NOT NULL,
-      name TEXT NOT NULL,
-      signature TEXT,
-      signature_hash TEXT,
-      doc_comment TEXT,
-      start_line INTEGER,
-      end_line INTEGER,
-      package TEXT,
-      parent_class TEXT,
-      search_text TEXT,
-      summary TEXT,
-      summary_embedding BLOB,
-      parent_id TEXT,
-      hierarchy_level INTEGER DEFAULT 0
-    )
-  `);
+  createGraphSchema(db);
 
-  db.exec(`
-    CREATE TABLE relationships (
-      source_id TEXT,
-      target_id TEXT,
-      target_name TEXT NOT NULL,
-      type TEXT NOT NULL,
-      weight REAL DEFAULT 1.0,
-      context_line INTEGER,
-      full_import_path TEXT,
-      is_static INTEGER DEFAULT 0,
-      is_wildcard INTEGER DEFAULT 0
-    )
-  `);
+  createGraphSchema(db);
 }
 
 /**
@@ -174,75 +143,6 @@ describe('createGraphSchema', () => {
 // =============================================================================
 // SCHEMA MIGRATION TESTS
 // =============================================================================
-
-describe('Schema Migration: code column', () => {
-  let db;
-
-  beforeEach(() => {
-    db = createTestDb();
-  });
-
-  afterEach(() => {
-    if (db) db.close();
-  });
-
-  it('should add code column to existing database without it', () => {
-    // Create legacy schema without code column
-    createLegacySchema(db);
-
-    // Verify code column is missing
-    let columns = getColumnNames(db, 'entities');
-    expect(columns).not.toContain('code');
-
-    // Run createGraphSchema which should migrate
-    createGraphSchema(db);
-
-    // Verify code column was added
-    columns = getColumnNames(db, 'entities');
-    expect(columns).toContain('code');
-  });
-
-  it('should preserve existing data during migration', () => {
-    // Create legacy schema
-    createLegacySchema(db);
-
-    // Insert test data
-    db.prepare(`
-      INSERT INTO entities (id, file_path, type, name)
-      VALUES (?, ?, ?, ?)
-    `).run('test-1', 'src/Test.java', 'class', 'TestClass');
-
-    // Migrate
-    createGraphSchema(db);
-
-    // Verify data preserved
-    const entity = db.prepare('SELECT * FROM entities WHERE id = ?').get('test-1');
-    expect(entity.name).toBe('TestClass');
-    expect(entity.file_path).toBe('src/Test.java');
-  });
-
-  it('should allow storing code after migration', () => {
-    createLegacySchema(db);
-    createGraphSchema(db);
-
-    // Insert with code
-    db.prepare(`
-      INSERT INTO entities (id, file_path, type, name, code)
-      VALUES (?, ?, ?, ?, ?)
-    `).run('test-1', 'src/Test.java', 'class', 'TestClass', 'public class TestClass {}');
-
-    const entity = db.prepare('SELECT code FROM entities WHERE id = ?').get('test-1');
-    expect(entity.code).toBe('public class TestClass {}');
-  });
-
-  it('should handle fresh database (no migration needed)', () => {
-    // Call createGraphSchema on empty database
-    expect(() => createGraphSchema(db)).not.toThrow();
-
-    const columns = getColumnNames(db, 'entities');
-    expect(columns).toContain('code');
-  });
-});
 
 // =============================================================================
 // ENTITY STORAGE TESTS
