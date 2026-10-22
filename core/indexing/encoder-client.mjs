@@ -198,10 +198,13 @@ export function createEncoderClient(options = {}) {
   const li = (texts) => call('li', texts);
   li.countTokens = (texts) => call('count', texts);
   li.provenanceLabel = 'ort/cpu';
+  /** Start the process and load both models without waiting (the first edit after idle). */
+  const warm = () => { if (!child) call('warm', []).catch(() => {}); };
 
   return {
     dense,
     li,
+    warm,
     close: () => {
       clearTimeout(idleTimer);
       clearTimeout(silenceTimer);

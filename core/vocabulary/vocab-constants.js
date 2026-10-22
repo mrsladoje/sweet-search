@@ -16,5 +16,4 @@ export const ARTIFACT_PATHS = {
   semanticSeedsBin: path.join(DATA_DIR, 'vocab-semantic-seeds.bin'),
   semanticSeedsMeta: path.join(DATA_DIR, 'vocab-semantic-seeds.meta.json'),
   communities: path.join(DATA_DIR, 'communities.json'),
-  dynamicVocab: path.join(DATA_DIR, 'vocab-dynamic.json'),
 };

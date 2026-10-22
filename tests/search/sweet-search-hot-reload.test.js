@@ -177,3 +177,38 @@ describe('SweetSearch._reloadBinaryHnsw — closes the replaced index', () => {
     }
   });
 });
+
+// A new epoch reloaded the HNSW index even when its file had not changed (a tick without
+// vector changes): the per-search stale-bitmap read already covers retirements.
+describe('SweetSearch._reloadManifestArtifacts — HNSW only when its file changed', () => {
+  it('skips an unchanged index file and reloads a changed one', async () => {
+    const searcher = new SweetSearch({
+      projectRoot: sandbox,
+      codebaseDbPath: join(stateDir, 'codebase.db'),
+      graphDbPath: join(stateDir, 'code-graph.db'),
+      binaryHnswPath: join(stateDir, 'codebase-binary-hnsw.idx'),
+      sparseGramIndexPath: join(stateDir, 'codebase-sparse-grams.idx'),
+    });
+    searcher._syncManifestPaths = () => {};
+    const { buildHnswIndex } = await import('../../core/indexing/artifact-builder.js');
+    const vec = (i) => Float32Array.from({ length: 768 }, (_, k) => Math.sin(i * 31 + k));
+    const { index } = await buildHnswIndex([0, 1].map((i) => ({ id: `v${i}`, embedding: vec(i), metadata: {} })), { indexPath: join(stateDir, 'codebase-binary-hnsw.idx') });
+    await index.save(join(stateDir, 'codebase-binary-hnsw.idx'));
+    index.close();
+    searcher.hasBinaryHnswIndex = true;
+    searcher.use3Stage = true;
+    searcher._reloadBinaryHnsw = vi.fn(async () => {});
+    const { statSync } = await import('node:fs');
+    const st = statSync(join(stateDir, 'codebase-binary-hnsw.idx'), { bigint: true });
+    searcher._binaryHnswIdentity = `${st.ino}:${st.size}:${st.mtimeNs}`;
+    searcher.binaryHnswPath = join(stateDir, 'codebase-binary-hnsw.idx');
+    searcher.lateInteractionIndex = { indexPath: join(stateDir, 'absent-li.db') };
+
+    await searcher._reloadManifestArtifacts({ epoch: 2 });
+    expect(searcher._reloadBinaryHnsw).not.toHaveBeenCalled();
+
+    searcher._binaryHnswIdentity = 'older';
+    await searcher._reloadManifestArtifacts({ epoch: 3 });
+    expect(searcher._reloadBinaryHnsw).toHaveBeenCalledTimes(1);
+  });
+});
