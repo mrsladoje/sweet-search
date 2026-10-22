@@ -59,7 +59,7 @@ import { applyPersistedLiModel } from '../infrastructure/init-config.js';
 // Static, not dynamic: the D.5 teardown watchdog must be able to hand off from
 // a synchronous callback, so the launcher has to be resolved before any await
 // in the shutdown path can wedge.
-import { launchMaintainer } from './maintainer-launcher.mjs';
+import { launchMaintainer, pauseHolds } from './maintainer-launcher.mjs';
 import { recordSpawn } from '../infrastructure/spawn-ledger.js';
 import { maintainerIndexerEnv } from './index-device-choice.js';
 
@@ -587,7 +587,7 @@ export function isReconcilePaused(stateDir = DATA_DIR) {
   try {
     const payload = JSON.parse(readFileSync(pauseFile, 'utf-8'));
     return {
-      paused: payload?.paused !== false,
+      paused: pauseHolds(payload),
       pausedAt: payload?.pausedAt || null,
       reason: payload?.reason || null,
       filePath: pauseFile,

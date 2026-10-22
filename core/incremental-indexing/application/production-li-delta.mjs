@@ -299,3 +299,31 @@ export async function appendDeferredLiSegment(indexPath, deferredAppend) {
   deferredAppend.writer = null;
   return appended;
 }
+
+/**
+ * Remove LI alias pointers (the `<index>.aliases.json` NDJSON sidecar the full build writes)
+ * whose alias id is in `aliasIds`. Rewritten through a temp file + rename; no-op without a
+ * sidecar or a match.
+ */
+export function dropAliasPointersSync(indexPath, aliasIds) {
+  const sidecar = `${indexPath}.aliases.json`;
+  let text;
+  try { text = fs.readFileSync(sidecar, 'utf8'); } catch { return 0; }
+  const lines = text.split('\n').filter(Boolean);
+  if (lines.length === 0) return 0;
+  const kept = [];
+  let dropped = 0;
+  for (const line of lines.slice(1)) {
+    let entry = null;
+    try { entry = JSON.parse(line); } catch { /* torn line: drop */ }
+    if (!entry || aliasIds.has(entry.aliasId)) { dropped += 1; continue; }
+    kept.push(line);
+  }
+  if (dropped === 0) return 0;
+  let header;
+  try { header = { ...JSON.parse(lines[0]), count: kept.length }; } catch { header = { version: 2, count: kept.length }; }
+  const tmp = `${sidecar}.tmp.${process.pid}`;
+  fs.writeFileSync(tmp, [JSON.stringify(header), ...kept].join('\n') + '\n');
+  fs.renameSync(tmp, sidecar);
+  return dropped;
+}

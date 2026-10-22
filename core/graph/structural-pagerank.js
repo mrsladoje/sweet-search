@@ -168,7 +168,7 @@ export function ensurePageRankColumn(db) {
  * Index-build calls this once after relationships are fully resolved.
  *
  * @param {import('better-sqlite3').Database} db - writable code-graph DB
- * @param {object} [opts]
+ * @param {object} [opts]  onlyChanged: write only scores that moved (relative 1e-6)
  * @returns {{ entities: number, iterations: number, ms: number, written: number }}
  */
 export function populatePageRankColumn(db, opts = {}) {
@@ -178,7 +178,16 @@ export function populatePageRankColumn(db, opts = {}) {
   if (allNodes.size === 0) {
     return { entities: 0, iterations: 0, ms: Date.now() - started, written: 0 };
   }
-  const scores = pageRankWeighted(outEdges, allNodes, opts);
+  let scores = pageRankWeighted(outEdges, allNodes, opts);
+  if (opts.onlyChanged) {
+    // The maintainer's refresh: most scores barely move between passes, and rewriting all
+    // of them cost a WAL write per entity (7 MB per pass at 18k entities).
+    const stored = new Map(db.prepare('SELECT id, page_rank FROM entities WHERE page_rank IS NOT NULL').raw().all());
+    scores = [...scores].filter(([id, score]) => {
+      const old = stored.get(id);
+      return old == null || Math.abs(score - old) > 1e-6 * Math.max(Math.abs(old), 1e-12);
+    });
+  }
   const update = db.prepare('UPDATE entities SET page_rank = ? WHERE id = ?');
   const batchSize = opts.batchSize ?? DEFAULT_BATCH_SIZE;
   const tx = db.transaction((rows) => {

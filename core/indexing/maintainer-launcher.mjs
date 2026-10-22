@@ -387,11 +387,60 @@ export function reconcilePaused(stateDir) {
   const pauseFile = join(stateDir, 'reconcile-pause.json');
   if (!existsSync(pauseFile)) return false;
   try {
-    return JSON.parse(readFileSync(pauseFile, 'utf-8'))?.paused !== false;
+    return pauseHolds(JSON.parse(readFileSync(pauseFile, 'utf-8')));
   } catch {
     // Unreadable pause state is not a reason to stop maintaining the index.
     return false;
   }
+}
+
+/**
+ * Does this pause payload hold? A pause written for one process (holderPid, the full
+ * index run) ends with that process, so a crashed `sweet-search index` cannot leave the
+ * index unmaintained for good.
+ */
+export function pauseHolds(payload) {
+  if (!payload || payload.paused === false) return false;
+  return !(payload.holderPid && !pidAlive(Number(payload.holderPid)));
+}
+
+const INDEX_RUN_STOP_TIMEOUT_MS = 60_000;
+
+/**
+ * Keep the maintainer off the index while a full `sweet-search index` rewrites it: both
+ * wrote merkle-state.json and the manifest, and a tick could commit into a code-graph.db
+ * the build had just replaced. Pauses (unless a pause already holds, e.g. a frozen
+ * benchmark index), stops a running maintainer (SIGTERM: it requeues and exits), and
+ * returns the release function, which removes only this run's own pause.
+ *
+ * @param {string} stateDir
+ * @returns {Promise<() => void>}
+ */
+export async function holdMaintainerForIndexRun(stateDir, { timeoutMs = INDEX_RUN_STOP_TIMEOUT_MS } = {}) {
+  const pauseFile = join(stateDir, 'reconcile-pause.json');
+  let ours = false;
+  if (!reconcilePaused(stateDir)) {
+    mkdirSync(stateDir, { recursive: true });
+    const tmp = `${pauseFile}.tmp.${process.pid}`;
+    writeFileSync(tmp, JSON.stringify({
+      paused: true, pausedAt: new Date().toISOString(), reason: 'sweet-search index is running', holderPid: process.pid,
+    }));
+    renameSync(tmp, pauseFile);
+    ours = true;
+  }
+  let pid = null;
+  try { pid = Number(JSON.parse(readFileSync(join(stateDir, MAINTAINER_LOCK_FILENAME), 'utf-8')).pid); } catch { /* none */ }
+  if (pid && pid !== process.pid && pidAlive(pid)) {
+    try { process.kill(pid, 'SIGTERM'); } catch { /* gone */ }
+    const deadline = Date.now() + timeoutMs;
+    while (pidAlive(pid) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 100));
+  }
+  return () => {
+    if (!ours) return;
+    try {
+      if (JSON.parse(readFileSync(pauseFile, 'utf-8'))?.holderPid === process.pid) unlinkSync(pauseFile);
+    } catch { /* already gone */ }
+  };
 }
 
 /**

@@ -421,6 +421,14 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
     ? parallelPhaseThreads
     : resourcePlan.threadsPerLateInteractionWorker;
   const stagedLateInteractionPath = DB_PATHS.lateInteraction + '.tmp';
+  if (!dryRun) {
+    // A build killed mid-way left its staging stub and segments; this build's flushes
+    // would land among them and the promote would carry the leftovers along.
+    await cleanupStagedLateInteractionIndex(stagedLateInteractionPath);
+    // A full rebuild without LI: the old LI index holds the old chunk ids, and search
+    // would keep serving it.
+    if (noLateInteraction && fullReindex) await invalidateLateInteractionIndex();
+  }
 
   // ── Bounded-memory streaming path for large full rebuilds ──
   //
