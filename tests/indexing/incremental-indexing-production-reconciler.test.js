@@ -18,10 +18,11 @@ import { join } from 'node:path';
 import { runProductionReconcileTick, __testing as prodTesting } from '../../core/incremental-indexing/application/production-reconciler.mjs';
 import { scanDirtyAndEnqueue } from '../../core/incremental-indexing/application/dirty-scan.mjs';
 import { utimesSync } from 'node:fs';
+import { isSet } from '../../core/infrastructure/tombstone-bitmap-reader.js';
 import { resolveLatestRecords } from '../../core/incremental-indexing/infrastructure/sparse-gram-delta.mjs';
 import { LateInteractionIndex } from '../../core/ranking/late-interaction-index.js';
 import { FloatVectorStore } from '../../core/vector-store/float-vector-store.js';
-import { readIndexFileSync } from '../../core/vector-store/binary-hnsw-index.js';
+import { readIndexFileSync, BinaryHNSWIndex } from '../../core/vector-store/binary-hnsw-index.js';
 
 // These tests cover the float-512 store, which is written only with
 // SS_FIX_FLOAT512=1 (off by default).
@@ -121,14 +122,23 @@ function liveFtsNames(stateDir, term) {
 }
 
 async function binaryArtifacts(stateDir) {
-  // The single index file holds the nodes and their int8 rows.
-  const file = readIndexFileSync(join(stateDir, 'codebase-binary-hnsw.idx'));
+  // The live nodes as search sees them: the index file, then its delta rows,
+  // minus the nodes the stale bitmap retires.
+  const indexPath = join(stateDir, 'codebase-binary-hnsw.idx');
+  const index = new BinaryHNSWIndex({ indexPath });
+  try { await index.load(indexPath); } catch { return { vectors: [], int8: {} }; }
+  const stale = index._loadStaleBitmap();
+  const vectors = [];
   const int8 = {};
-  for (const node of file?.nodes ?? []) if (node.int8) int8[node.id] = node.int8;
-  return {
-    vectors: (file?.nodes ?? []).map((node) => ({ id: node.id })),
-    int8,
-  };
+  for (let i = 0; i < index.size; i++) {
+    if (stale && isSet(stale, i)) continue;
+    const id = index.nodeId(i);
+    vectors.push({ id });
+    const row = index.nodeInt8(i);
+    if (row) int8[id] = Array.from(row);
+  }
+  index.close();
+  return { vectors, int8 };
 }
 
 async function floatStore(stateDir) {

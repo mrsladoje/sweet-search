@@ -35,16 +35,19 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 
-import { BinaryHNSWIndex, binaryHnswIndexExists } from '../../vector-store/binary-hnsw-index.js';
+import { BinaryHNSWIndex, EXACT_SCAN_MAX_VECTORS, binaryHnswIndexExists } from '../../vector-store/binary-hnsw-index.js';
+import {
+  buildCompactedBase, discardStagedCompaction, publishCompactedBase, readLiveVectorIds,
+  rollForwardHnswCompaction, startBackgroundCompaction,
+} from '../infrastructure/hnsw-compaction.mjs';
 import { LateInteractionIndex } from '../../ranking/late-interaction-index.js';
 import {
-  compactDeltaSegments, deltaSizeStats, listDeltaSegments, resolveLatestRecords,
-  retireDeltaSegments, sweepRetiredDeltaSegments,
+  compactDeltaSegments, deltaSizeStats, listDeltaSegments, sweepRetiredDeltaSegments,
 } from '../infrastructure/sparse-gram-delta.mjs';
 import { DEFAULT_WATERMARKS, loadWatermarkConfig } from '../domain/watermark-scheduler.mjs';
-import { buildSparseGramIndexArtifact, loadSparseGramIndex, getSparseGramAllFiles } from '../../infrastructure/native-sparse-gram.js';
-import { collectFileSymbolMasksFromDb, resolveSparseGramWeightsId } from '../../indexing/indexer-sparse-gram.js';
-import { GREP_MAX_FILE_SIZE } from '../../indexing/grep-corpus.js';
+import { loadSparseGramIndex, getSparseGramAllFiles } from '../../infrastructure/native-sparse-gram.js';
+import { buildSparseGramFold, publishSparseGramFold } from '../infrastructure/sparse-gram-fold.mjs';
+import { startBackgroundBuild } from '../infrastructure/background-build.mjs';
 import { mergeLiSegments, collectLiveDocs, nextSegmentSeq, quarantineSegmentFiles, LI_MERGE_GRACE_MS } from '../infrastructure/li-segment-merge.mjs';
 import { runVectorGc } from '../infrastructure/vector-gc.mjs';
 import { runGraphGc } from '../infrastructure/graph-gc.mjs';
@@ -72,11 +75,25 @@ function float32FromBuffer(buffer) {
  * sparse_gram                                                         *
  * ------------------------------------------------------------------ */
 
+// Files above which the fold runs in a child process (it reads every file); one at
+// a time per base.
+export const SPARSE_FOLD_INLINE_MAX_FILES = 2000;
+let sparseFold = null;
+let sparseInlineMaxFiles = SPARSE_FOLD_INLINE_MAX_FILES;
+
+/** Test seams: the inline-fold size, and the running background fold. */
+export const __sparseTesting = {
+  setInlineMaxFiles(n) { sparseInlineMaxFiles = n; },
+  fold: () => sparseFold,
+};
+
 /**
  * Sparse-gram maintenance:
  *   1. past the delta size ratio, rebuild the base from the corpus on disk and empty the
- *      deltas (foldSparseGramBase): merging deltas alone kept the ratio, so the job
- *      fired again on every tick and rewrote the whole delta each time;
+ *      deltas (sparse-gram-fold.mjs): merging deltas alone kept the ratio, so the job
+ *      fired again on every tick and rewrote the whole delta each time. Above
+ *      SPARSE_FOLD_INLINE_MAX_FILES the build runs in a child process across drains
+ *      (the job stays queued until it ends) while ticks continue;
  *   2. else past the segment count, merge the segments into one;
  *   3. publish: the manifest lists exactly the live segments (this also repairs a list
  *      that a failed publish left pointing at retired segments);
@@ -86,12 +103,35 @@ function float32FromBuffer(buffer) {
 export async function sparseGramHandler(job, { stateDir, projectRoot = null, onProgress = null, config = DEFAULT_WATERMARKS }) {
   const progress = progressFn(onProgress);
   const base = path.join(stateDir, 'codebase-sparse-grams.idx');
+  const root = projectRoot || process.env.SWEET_SEARCH_PROJECT_ROOT || path.dirname(stateDir);
   const stats = deltaSizeStats(base);
   let action = null;
   let result = {};
-  if (stats.ratio > (config.sparseDeltaRatio ?? DEFAULT_WATERMARKS.sparseDeltaRatio) && fs.existsSync(base)) {
-    const root = projectRoot || process.env.SWEET_SEARCH_PROJECT_ROOT || path.dirname(stateDir);
-    result = await foldSparseGramBase({ stateDir, base, projectRoot: root });
+  if (sparseFold?.base === base) {
+    // No merge while the build runs: the segments after its snapshot are the ones
+    // the publish re-extracts.
+    if (!sparseFold.done) return { requeue: true, background: 'building' };
+    const built = sparseFold;
+    sparseFold = null;
+    if (built.error) {
+      safeUnlink(`${base}.next`);
+      throw built.error;
+    }
+    const published = publishSparseGramFold({ base, stagedPath: built.result.stagedPath, segments: built.segments, projectRoot: built.projectRoot, weightsId: built.result.weightsId });
+    result = { files: built.result.files, weightsId: built.result.weightsId, background: true, ...published };
+    action = 'fold';
+  } else if (stats.ratio > (config.sparseDeltaRatio ?? DEFAULT_WATERMARKS.sparseDeltaRatio) && fs.existsSync(base)) {
+    const segments = listDeltaSegments(base).map((seg) => seg.path);
+    const fileCount = (getSparseGramAllFiles(loadSparseGramIndex(base)) || []).length;
+    if (fileCount > sparseInlineMaxFiles) {
+      sparseFold = startBackgroundBuild('sparse_gram', { stateDir, base, projectRoot: root, segments });
+      Object.assign(sparseFold, { base, segments, projectRoot: root });
+      progress('maintenance:sparse-gram:background');
+      return { requeue: true, background: 'started', files: fileCount };
+    }
+    const built = await buildSparseGramFold({ stateDir, base, projectRoot: root, segments });
+    const published = publishSparseGramFold({ base, stagedPath: built.stagedPath, segments, projectRoot: root, weightsId: built.weightsId });
+    result = { files: built.files, weightsId: built.weightsId, ...published };
     action = 'fold';
   } else if (stats.deltaSegments > (config.sparseDeltaSegmentCount ?? DEFAULT_WATERMARKS.sparseDeltaSegmentCount)) {
     const compacted = compactDeltaSegments(base, { dropTombstones: false });
@@ -140,132 +180,86 @@ export async function sparseGramHandler(job, { stateDir, projectRoot = null, onP
   };
 }
 
-/**
- * Rebuild the sparse-gram base: the base's files plus the files the deltas added, minus the
- * ones they deleted and the ones gone from disk, gram'd from disk with the full build's
- * builder and symbol masks. Published by rename over the base path (readers reload it by
- * file identity), then every delta segment is retired. Returns the new weights id.
- */
-async function foldSparseGramBase({ stateDir, base, projectRoot }) {
-  const files = new Set(getSparseGramAllFiles(loadSparseGramIndex(base)) || []);
-  for (const { record } of resolveLatestRecords(base).values()) {
-    if (!record.filePath) continue;
-    if (record.deleted) files.delete(record.filePath);
-    else files.add(record.filePath);
-  }
-  const kept = [...files].filter((rel) => {
-    try {
-      const st = fs.lstatSync(path.join(projectRoot, rel));
-      return st.isFile() && st.size > 0 && st.size <= GREP_MAX_FILE_SIZE;
-    } catch {
-      return false;
-    }
-  }).sort();
-  let masks = kept.map(() => 0);
-  const dbPath = path.join(stateDir, 'codebase.db');
-  if (fs.existsSync(dbPath)) {
-    const db = new Database(dbPath, { readonly: true });
-    try { masks = collectFileSymbolMasksFromDb(db, kept); } finally { db.close(); }
-  }
-  const segments = listDeltaSegments(base).map((seg) => seg.path);
-  const staged = `${base}.next`;
-  const built = buildSparseGramIndexArtifact({ projectRoot, files: kept, fileSymbolMasks: masks, outputPath: staged });
-  const weightsId = await resolveSparseGramWeightsId(built, staged);
-  fs.renameSync(staged, base);
-  retireDeltaSegments(base, segments);
-  return { files: kept.length, retiredSegments: segments.length, weightsId };
-}
-
 /* ------------------------------------------------------------------ *
  * binary_hnsw                                                         *
  * ------------------------------------------------------------------ */
 
-/**
- * Read the set of live vector ids from `codebase.db` (`epoch_retired IS NULL`).
- * `codebase.db` is the source of truth for vector liveness; the Binary-HNSW
- * stale bitmap is a derived query-time cache that can drift from it if a retire
- * op fails to reach the binary tier. Returns `null` when the DB / column is
- * unavailable so the caller can fall back to the stale bitmap.
- */
-function readLiveVectorIds(stateDir) {
-  const dbPath = path.join(stateDir, 'codebase.db');
-  if (!fs.existsSync(dbPath)) return null;
-  const db = new Database(dbPath, { readonly: true });
-  try {
-    const cols = db.prepare('PRAGMA table_info(vectors)').all().map((c) => c.name);
-    if (!cols.includes('epoch_retired')) return null;
-    return new Set(db.prepare('SELECT id FROM vectors WHERE epoch_retired IS NULL').all().map((r) => r.id));
-  } catch {
-    return null;
-  } finally {
-    db.close();
-  }
-}
+// The graph build of a large base runs in a child process across drains; one at a
+// time per index (this process is the index's single writer).
+let hnswBuild = null;
+// Live nodes above which the base keeps a graph (search walks it); tests lower it.
+let hnswGraphMin = EXACT_SCAN_MAX_VECTORS;
 
+/** Test seams: the graph threshold, and the running background build. */
+export const __hnswTesting = {
+  setGraphMin(n) { hnswGraphMin = n; },
+  build: () => hnswBuild,
+};
+
+/**
+ * Fold the delta rows into a new base and drop retired nodes (hnsw-compaction.mjs).
+ * Up to EXACT_SCAN_MAX_VECTORS live nodes the base is flat and built inline (no
+ * graph: search scans it). Above, a child process builds the graph from a snapshot
+ * while ticks continue; the job stays queued (`requeue`) until the build ends, and
+ * the drain after that publishes it.
+ */
 export async function binaryHnswHandler(job, { stateDir, onProgress = null }) {
   const progress = progressFn(onProgress);
   const indexPath = path.join(stateDir, 'codebase-binary-hnsw.idx');
+  rollForwardHnswCompaction(indexPath);
   if (!binaryHnswIndexExists(indexPath)) return { skipped: 'no-index' };
+
+  if (hnswBuild?.indexPath === indexPath) {
+    if (!hnswBuild.done) return { requeue: true, background: 'building' };
+    const built = hnswBuild;
+    hnswBuild = null;
+    if (built.error) {
+      discardStagedCompaction(indexPath);
+      throw built.error;
+    }
+    const published = await publishCompactedBase({ indexPath, stagedPath: built.result.stagedPath, snapshotCount: built.result.snapshotCount });
+    progress('maintenance:binary-hnsw:published');
+    return { tier: 'binary_hnsw', graph: true, background: true, dropped: built.result.dropped, ...published };
+  }
 
   const existing = new BinaryHNSWIndex({ indexPath });
   await existing.load(indexPath);
   progress('maintenance:binary-hnsw:loaded');
-
-  // Liveness authority is codebase.db (`vectors WHERE epoch_retired IS NULL`),
-  // NOT the binary stale bitmap. This makes binary reclamation self-healing: a
-  // vector retired in codebase.db is dropped here even if its binary stale bit
-  // was never set. Falls back to the stale bitmap only when codebase.db is
-  // unavailable.
+  let liveCount = 0;
+  let dropped = 0;
   const liveIds = readLiveVectorIds(stateDir);
-  const staleBitmap = existing._loadStaleBitmap();
-  const live = [];
+  const stale = existing._loadStaleBitmap();
   for (let i = 0; i < existing.size; i += 1) {
     const id = existing.nodeId(i);
-    const isStale = liveIds ? !liveIds.has(id) : (staleBitmap && isSet(staleBitmap, i));
-    if (isStale) continue;
-    const int8 = existing.nodeInt8(i) || null;
-    live.push({ id, binary: existing.nodeBinary(i), metadata: existing.nodeMetadata(i), int8, node: i });
-    if (i > 0 && i % 1000 === 0) progress('maintenance:binary-hnsw:scan');
+    if (liveIds ? !liveIds.has(id) : (stale && isSet(stale, i))) dropped += 1;
+    else liveCount += 1;
   }
-  const dropped = existing.size - live.length;
-  if (dropped === 0) {
+  const deltaCount = existing.deltaCount;
+  const hasGraph = !existing.graphless;
+  const total = existing.size;
+  existing.close();
+  const needsGraph = liveCount > hnswGraphMin;
+  if (dropped === 0 && deltaCount === 0 && (needsGraph ? hasGraph : true)) {
     return { skipped: 'no-stale-vectors', dropped: 0 };
   }
-
-  // Rebuild the index in memory and let `BinaryHNSWIndex.save()`
-  // publish it (one file, tmp + rename) so fresh readers never see a torn
-  // index.
-  const fresh = new BinaryHNSWIndex({
-    indexPath,
-    floatDimension: existing.floatDimension,
-    M: existing.M,
-    efConstruction: existing.efConstruction,
-    efSearch: existing.efSearch,
-    maxElements: existing.maxElements,
-  });
-  fresh.resetForBuild();
-  // The compacted graph must be reproducible: insert surviving ids in a FIXED
-  // sorted order, independent of the scan order above. With levelForId() inside
-  // `add()`, the compaction agrees byte-for-byte with the batched tick.
-  const insertOrder = [...live].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  let added = 0;
-  for (const v of insertOrder) {
-    // Full vectors carry over from the old file (read one at a time, so the
-    // compaction never holds them all).
-    await fresh.add(v.id, v.binary, v.metadata, v.int8, existing.fullVectorOf(v.node));
-    added += 1;
-    if (added % 500 === 0) progress('maintenance:binary-hnsw:add');
+  if (needsGraph) {
+    discardStagedCompaction(indexPath);
+    hnswBuild = startBackgroundCompaction({ indexPath, stateDir, snapshotCount: total });
+    progress('maintenance:binary-hnsw:background');
+    return { requeue: true, background: 'started', snapshotCount: total };
   }
-  fresh._cleanBuild = true;
-  await fresh.save(indexPath);
+  const built = await buildCompactedBase({ indexPath, stateDir, graph: false, onProgress: progress });
+  const published = await publishCompactedBase({ indexPath, stagedPath: built.stagedPath, snapshotCount: built.snapshotCount });
   progress('maintenance:binary-hnsw:saved');
-
   return {
     tier: 'binary_hnsw',
-    kept: live.length,
-    dropped,
+    graph: false,
+    kept: built.count,
+    dropped: built.dropped,
+    foldedDelta: deltaCount,
     staleBitmapCleared: true,
     atomicPublish: true,
+    ...published,
   };
 }
 

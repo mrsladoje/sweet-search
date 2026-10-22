@@ -312,12 +312,12 @@ describe('a tick that fails before its COMMIT', () => {
     writeFileSync(join(projectRoot, rel), 'export function alphaThing(input) {\n  return input.trim().toLowerCase();\n}\n');
     enqueue(stateDir, rel);
     const { BinaryHNSWIndex } = await import('../../core/vector-store/binary-hnsw-index.js');
-    const save = BinaryHNSWIndex.prototype.save;
-    BinaryHNSWIndex.prototype.save = async () => { throw new Error('disk full'); };
+    const appendDelta = BinaryHNSWIndex.prototype.appendDelta;
+    BinaryHNSWIndex.prototype.appendDelta = () => { throw new Error('disk full'); };
     try {
       await tick().catch(() => {});
     } finally {
-      BinaryHNSWIndex.prototype.save = save;
+      BinaryHNSWIndex.prototype.appendDelta = appendDelta;
     }
 
     expect(liveVectorIds(stateDir)).toEqual(live); // rolled back

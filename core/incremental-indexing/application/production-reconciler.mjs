@@ -28,7 +28,8 @@ import { syncFileNode } from '../../infrastructure/file-nodes.js';
 import { createVectorSchema, ensureVectorSchema, buildInsertItems, insertVectorItems } from '../../indexing/indexer-build.js';
 import { ASTChunker, JAVA_FAMILY } from '../../indexing/ast-chunker.js';
 import { getEmbeddings, getModelInfo } from '../../embedding/embedding-service.js';
-import { BinaryHNSWIndex } from '../../vector-store/binary-hnsw-index.js';
+import { BinaryHNSWIndex, binaryHnswIndexExists } from '../../vector-store/binary-hnsw-index.js';
+import { rollForwardHnswCompaction } from '../infrastructure/hnsw-compaction.mjs';
 import { floatToBinary, normalizedFloatToInt8, truncateForHNSW } from '../../infrastructure/quantization.js';
 import { extractSparseGramDeltaRecord, loadSparseGramIndex, resolveSparseSymbolMask } from '../../infrastructure/native-sparse-gram.js';
 import { migrateEntitiesSchema, migrateRelationshipsSchema } from '../infrastructure/schema-migrations.mjs';
@@ -453,6 +454,8 @@ class ProductionReconcileAdapter {
     // later calls resolve on the same promise.
     let storesPromise = null;
     const loadStores = async () => {
+      // A compaction publish a crash interrupted is finished before the index opens.
+      rollForwardHnswCompaction(ctx.indexPath);
       const index = new BinaryHNSWIndex({
         indexPath: ctx.indexPath,
         stalePath: `${ctx.indexPath}.stale.bin`,
@@ -497,33 +500,34 @@ class ProductionReconcileAdapter {
         ctx.overridesEpoch = null;
         this.progress('production:overrides-derived');
       }
-      // E.1: insert all staged adds into the resident index in a DETERMINISTIC
-      // order (sorted by id). Combined with G1's per-id deterministic levels and
-      // sorted-order compaction, this makes the batched graph reproducible and
-      // byte-identical across batch / rebuild / compaction construction paths.
+      // The staged adds go to the index's delta file (append-only, fsynced): no
+      // graph insert and no rewrite of the index file (121 MB per tick at 100k
+      // vectors). Search scans the delta rows; compaction folds them into a new
+      // base. Sorted by id, so the delta order is reproducible.
       const pending = ctx.pendingAdds || [];
       if (pending.length > 0) {
-        // Step 2a: staged adds imply `applyBinaryHNSWDelta` already opened the
-        // stores; this is the belt-and-braces no-op that keeps the invariant
-        // local rather than inherited.
+        // Staged adds imply `applyBinaryHNSWDelta` already opened the stores.
         await ctx.ensureStores?.();
         pending.sort((a, b) => (a.addId < b.addId ? -1 : a.addId > b.addId ? 1 : 0));
-        let done = 0;
-        for (const op of pending) {
+        const items = pending.map((op) => {
           const truncated = truncateForHNSW(op.embedding, this.modelInfo.hnswDimension);
-          await ctx.index.add(op.addId, floatToBinary(truncated), op.metadata || {}, normalizedFloatToInt8(truncated), op.embedding);
           ctx.floatUpserts.push({ id: op.addId, vector: truncated });
-          if ((++done) % 100 === 0) this.progress('production:binary-hnsw-loop');
+          return { id: op.addId, binary: floatToBinary(truncated), metadata: op.metadata || {}, int8: normalizedFloatToInt8(truncated), full: op.embedding };
+        });
+        if (binaryHnswIndexExists(ctx.indexPath)) {
+          ctx.index.appendDelta(items);
+        } else {
+          // No index file yet: write the first base, flat (search scans it).
+          for (const it of items) ctx.index.addFlat(it.id, it.binary, it.metadata, it.int8, it.full);
+          await ctx.index.save(ctx.indexPath);
         }
-        this.progress('production:binary-hnsw-batched');
+        this.progress('production:binary-hnsw-delta');
       }
       ctx.pendingAdds = [];
 
       if (ctx.append > 0 || ctx.tombstone > 0) {
         // Non-zero op counters imply `applyBinaryHNSWDelta` opened the stores.
         await ctx.ensureStores?.();
-        await ctx.index.save(ctx.indexPath);
-        this.progress('production:binary-hnsw-saved');
         await flushFloatStore({
           binaryHnswPath: ctx.indexPath,
           store: ctx.floatStore,
