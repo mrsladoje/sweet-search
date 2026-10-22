@@ -34,7 +34,7 @@
  *                                                flash-attn gate).
  *                                                See mod.rs::cuda_compute_capability
  *   SWEET_SEARCH_NATIVE_DTYPE=f32|bf16|f16       Global dtype preference.
- *                                                On CUDA, BF16 is used for
+ *                                                On CUDA, F16 is used for
  *                                                embeddings on Ampere+ but
  *                                                LI remains F32 for quality.
  *   SWEET_SEARCH_NATIVE_EMBED_DTYPE=f32|bf16|f16 Per-model diagnostic
