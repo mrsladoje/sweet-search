@@ -6,8 +6,9 @@
  *   sparse_gram: the folded sparse-gram base (sparse-gram-fold.mjs buildSparseGramFold)
  */
 import os from 'node:os';
+import { setProcessTitle } from '../../infrastructure/process-title.js';
 
-try { process.title = 'sweet-search-compaction'; } catch { /* cosmetic */ }
+setProcessTitle('sweet-search-compaction');
 try { os.setPriority(0, 19); } catch { /* not permitted */ }
 
 const { kind, args } = JSON.parse(process.argv[2] || '{}');
