@@ -17,7 +17,6 @@ import { describe, it, expect } from 'vitest';
 import os from 'node:os';
 
 import {
-  reconcileAutotuneEnabled,
   computeNextIntervalMs,
   maintainerIdleTtlMs,
   recordIdleTick,
@@ -45,44 +44,13 @@ describe('A.1 / os.setPriority background demotion smoke', () => {
 
 // ---- A.4 autotune-consume --------------------------------------------------
 
-describe('A.4 / reconcileAutotuneEnabled gate (DEFAULT-ON)', () => {
-  it('is ON by default (flag absent/empty)', () => {
-    // DEFAULT-ON: only an explicit '0' disables it.
-    expect(reconcileAutotuneEnabled({})).toBe(true);
-    expect(reconcileAutotuneEnabled({ SWEET_SEARCH_RECONCILE_AUTOTUNE: '' })).toBe(true);
-  });
-  it('only the explicit "0" token disables it', () => {
-    expect(reconcileAutotuneEnabled({ SWEET_SEARCH_RECONCILE_AUTOTUNE: '1' })).toBe(true);
-    expect(reconcileAutotuneEnabled({ SWEET_SEARCH_RECONCILE_AUTOTUNE: 'true' })).toBe(true);
-    expect(reconcileAutotuneEnabled({ SWEET_SEARCH_RECONCILE_AUTOTUNE: 'on' })).toBe(true);
-    expect(reconcileAutotuneEnabled({ SWEET_SEARCH_RECONCILE_AUTOTUNE: '0' })).toBe(false);
-  });
-});
-
 describe('A.4 / computeNextIntervalMs (the doubly-dead-trap guard)', () => {
-  const flagOn = { SWEET_SEARCH_RECONCILE_AUTOTUNE: '1' };
 
-  it('returns currentMs unchanged when the flag is explicitly OFF (=0, legacy behavior)', () => {
-    // Autotune is DEFAULT-ON, so the legacy fixed-interval path is exercised by
-    // explicitly disabling it with '0'.
-    const out = computeNextIntervalMs({
-      currentMs: 60_000,
-      counters: { tick_ms: 200, dirty_paths_seen: 500 },
-      maintenanceBacklog: 50,
-      env: { SWEET_SEARCH_RECONCILE_AUTOTUNE: '0' },
-      loadavg: () => [4, 4, 4],
-      cpuCount: () => 4,
-    });
-    expect(out.nextMs).toBe(60_000);
-    expect(out.tuned).toBe(false);
-  });
-
-  it('a busy dirty set SHRINKS the interval when the flag is ON (interval actually moves)', () => {
+  it('a busy dirty set SHRINKS the interval (interval actually moves)', () => {
     const out = computeNextIntervalMs({
       currentMs: 60_000,
       counters: { tick_ms: 200, dirty_paths_seen: 200 },
       maintenanceBacklog: 0,
-      env: flagOn,
       loadavg: () => [0.2, 0.2, 0.2],
       cpuCount: () => 8,
     });
@@ -93,12 +61,11 @@ describe('A.4 / computeNextIntervalMs (the doubly-dead-trap guard)', () => {
     expect(out.reasons).toContain('dirty-churn');
   });
 
-  it('an overran tick GROWS the interval when the flag is ON', () => {
+  it('an overran tick GROWS the interval', () => {
     const out = computeNextIntervalMs({
       currentMs: 15_000,
       counters: { tick_ms: 12_000, dirty_paths_seen: 5 }, // 80% of interval
       maintenanceBacklog: 0,
-      env: flagOn,
       loadavg: () => [0.5, 0.5, 0.5],
       cpuCount: () => 4,
     });
@@ -112,7 +79,6 @@ describe('A.4 / computeNextIntervalMs (the doubly-dead-trap guard)', () => {
       currentMs: 15_000,
       counters: { tick_ms: 200, dirty_paths_seen: 5 },
       maintenanceBacklog: 0,
-      env: flagOn,
       loadavg: () => [16, 16, 16], // 16 / 4 cores = 4.0 per core (> 0.8)
       cpuCount: () => 4,
     });
@@ -125,7 +91,6 @@ describe('A.4 / computeNextIntervalMs (the doubly-dead-trap guard)', () => {
       currentMs: 60_000,
       counters: { tick_ms: 200, dirty_paths_seen: 5 },
       maintenanceBacklog: 0,
-      env: flagOn,
       loadavg: () => [0, 0, 0], // Windows reports a flat zero load average
       cpuCount: () => 8,
     });
@@ -134,12 +99,11 @@ describe('A.4 / computeNextIntervalMs (the doubly-dead-trap guard)', () => {
     expect(out.reasons).not.toContain('cpu-pressure');
   });
 
-  it('a skipped (dormant/paused) tick leaves the interval untouched even with the flag on', () => {
+  it('a skipped (dormant/paused) tick leaves the interval untouched', () => {
     const out = computeNextIntervalMs({
       currentMs: 45_000,
       counters: { skipped: true },
       maintenanceBacklog: 0,
-      env: flagOn,
       loadavg: () => [0, 0, 0],
       cpuCount: () => 8,
     });
@@ -152,7 +116,6 @@ describe('A.4 / computeNextIntervalMs (the doubly-dead-trap guard)', () => {
       currentMs: 30_000,
       counters: null,
       maintenanceBacklog: 0,
-      env: flagOn,
     });
     expect(out.tuned).toBe(false);
     expect(out.nextMs).toBe(30_000);
@@ -163,7 +126,6 @@ describe('A.4 / computeNextIntervalMs (the doubly-dead-trap guard)', () => {
       currentMs: 60_000,
       counters: { tick_ms: 200, dirty_paths_seen: 5 },
       maintenanceBacklog: 0,
-      env: flagOn,
       loadavg: () => { throw new Error('no loadavg'); },
       cpuCount: () => { throw new Error('no cpus'); },
     })).not.toThrow();

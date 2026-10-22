@@ -16,22 +16,6 @@ import {
 // Test seam: drop all remembered segment identities.
 export { resetSegmentIdentityCache } from '../infrastructure/li-segment-state.mjs';
 
-/**
- * Step 2b kill switch — `SWEET_SEARCH_LI_POSITIONS_ONLY=0|off|false|no` puts the
- * delta path back on the HEAD full-token loader.
- *
- * This exists so proof obligation 4.2 ("replay a fixed dirty-file sequence with
- * the flags on and off; the artifacts must be byte-identical") can be executed
- * as a real two-arm replay rather than as two variants of the same new reader.
- * It is read once per delta call, off the query path.
- */
-function positionsOnlyEnabled(env = process.env) {
-  const raw = env.SWEET_SEARCH_LI_POSITIONS_ONLY;
-  if (raw == null || raw === '') return true; // default-on
-  const token = String(raw).trim().toLowerCase();
-  return !(token === '0' || token === 'off' || token === 'false' || token === 'no');
-}
-
 function readJson(filePath, fallback = null) {
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
@@ -179,7 +163,7 @@ export async function applyLateInteractionDelta({
     // `liSegmentHandler` and `mergeLiSegments` read only the segments they
     // rewrite (collectLiveDocs, li-segment-merge.mjs), with the full load's
     // last-live-copy rule for a doc id present in two segments.
-    const lean = !!segmented && positionsOnlyEnabled();
+    const lean = !!segmented;
     index = new LateInteractionIndex({
       indexPath,
       loadExisting: true,

@@ -34,9 +34,6 @@ import {
   runBaselineVsCandidate,
   runCrashConsistency,
   loadEditScript,
-  CANDIDATE_FLAGS,
-  HNSW_DETERMINISM_FLAG,
-  resolveEnvOverrides,
   __testing as harness,
 } from '../../eval/index-maintainer-determinism/run-harness.mjs';
 import {
@@ -94,13 +91,11 @@ describe('determinism harness — CONTROL (baseline-vs-baseline is empty)', () =
     expect(canonicalJson(a.dump)).toBe(canonicalJson(b.dump));
   }, 60_000);
 
-  // The control was FLAKY (~25–50% red on a clean tree) before the harness
-  // pinned SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS=1: the default level RNG
-  // (unseeded Math.random in getRandomLevel) made two flags-off runs diverge in
-  // `binaryHnsw.graphByLevel`/`entryPointId`. Three back-to-back runs caught the
-  // flake in-process most of the time; with the pin they MUST all agree. This is
-  // the regression guard for the flake itself, including the HNSW graph + entry
-  // point (which the dump compares as a real field, not normalized away).
+  // The control was FLAKY (~25–50% red on a clean tree) while HNSW levels came
+  // from an unseeded RNG: two runs diverged in `binaryHnsw.graphByLevel` /
+  // `entryPointId`. With levels taken from the id they MUST all agree. This is
+  // the regression guard, including the HNSW graph + entry point (which the dump
+  // compares as a real field, not normalized away).
   it('the control is STABLE across repeated runs (HNSW graph + entryPoint included)', async () => {
     const ref = await runFixedSequence({ variant: 'baseline' });
     for (let i = 0; i < 3; i += 1) {
@@ -113,36 +108,6 @@ describe('determinism harness — CONTROL (baseline-vs-baseline is empty)', () =
       expect(next.dump.binaryHnsw.meta.entryPointId).toBe(ref.dump.binaryHnsw.meta.entryPointId);
     }
   }, 120_000);
-});
-
-describe('determinism harness — HNSW level pin (the control-stability fix)', () => {
-  it('resolveEnvOverrides pins SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS=1 by default', () => {
-    expect(resolveEnvOverrides({})[HNSW_DETERMINISM_FLAG]).toBe('1');
-    // A candidate flag is preserved AND the pin is still added.
-    const merged = resolveEnvOverrides({ SWEET_SEARCH_RECONCILE_SQLITE_PRAGMAS: '1' });
-    expect(merged.SWEET_SEARCH_RECONCILE_SQLITE_PRAGMAS).toBe('1');
-    expect(merged[HNSW_DETERMINISM_FLAG]).toBe('1');
-  });
-
-  it('opt-out: an explicit flag value (incl. unset) is honored verbatim', () => {
-    // RNG-path tests pass the flag themselves to exercise getRandomLevel.
-    expect(resolveEnvOverrides({ [HNSW_DETERMINISM_FLAG]: '0' })[HNSW_DETERMINISM_FLAG]).toBe('0');
-    // null = explicitly unset (opt fully out of the pin).
-    expect(resolveEnvOverrides({ [HNSW_DETERMINISM_FLAG]: null })[HNSW_DETERMINISM_FLAG]).toBeNull();
-  });
-
-  it('does not mutate the caller-supplied overrides object', () => {
-    const input = {};
-    const out = resolveEnvOverrides(input);
-    expect(input).toEqual({});
-    expect(out).not.toBe(input);
-  });
-
-  it('a run pinned ON equals one with the flag explicitly set to 1 (no surprise)', async () => {
-    const pinned = await runFixedSequence({});
-    const explicit = await runFixedSequence({ envOverrides: { [HNSW_DETERMINISM_FLAG]: '1' } });
-    expect(byteDiff(pinned.dump, explicit.dump)).toBeNull();
-  }, 60_000);
 });
 
 describe('determinism harness — dumpers cover all five artifacts + merkle', () => {
@@ -256,11 +221,6 @@ describe('determinism harness — edit script + flags surface', () => {
     expect(script.baseFiles.length).toBe(3);
   });
 
-  it('lists every candidate efficiency flag so the USER can sweep flag-on vs flag-off', () => {
-    expect(CANDIDATE_FLAGS).toContain('SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS');
-    expect(CANDIDATE_FLAGS).toContain('SWEET_SEARCH_RECONCILE_BATCH_TIER_WRITES');
-    expect(CANDIDATE_FLAGS).toContain('SWEET_SEARCH_RECONCILE_SQLITE_PRAGMAS');
-  });
 });
 
 describe('dump-artifacts internals (unit)', () => {

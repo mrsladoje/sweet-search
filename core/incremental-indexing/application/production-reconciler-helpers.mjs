@@ -225,50 +225,15 @@ export function markBinaryStale(index, id) {
 }
 
 /**
- * Maintain the Stage 2.5 float vector store (`codebase-float-vectors.bin`) as a
- * sidecar of the binary HNSW index. The search runtime derives its path from
- * the binary HNSW path, loads/reloads the two together, and full indexing
- * builds them together — so the float store is conceptually part of the binary
- * HNSW tier, exactly like the int8 sidecar. Keeping it in lockstep here lets
- * reconcile-created docs get true float rescoring in Stage 2.5 instead of
- * falling back to SQLite.
- *
- * Skips when the store is absent but the binary HNSW already held vectors: a
- * store built from the delta alone would be missing every baseline doc and
- * would mis-score them. That abnormal state keeps the existing SQLite fallback
- * until a full rebuild restores the store.
- *
- * @param {string} binaryHnswPath
- * @param {object} delta
- * @param {Array<{id: string, vector: Float32Array}>} delta.upserts
- * @param {string[]} delta.removeIds
- * @param {number} delta.binaryVectorsBefore  Live binary-HNSW vectors before this delta.
- * @param {number} delta.dimension            hnswDimension to seed a fresh empty store.
- */
-export async function maintainFloatStore(binaryHnswPath, { upserts, removeIds, binaryVectorsBefore, dimension }) {
-  if (!float512StoreEnabled()) return;
-  if (upserts.length === 0 && removeIds.length === 0) return;
-  const floatStorePath = getFloatStorePath(binaryHnswPath);
-  if (!existsSync(floatStorePath) && binaryVectorsBefore > 0) return;
-  const store = new FloatVectorStore();
-  await store.loadOrInit(floatStorePath, dimension);
-  store.applyDelta({ upserts, removeIds });
-  await store.save(floatStorePath);
-}
-
-/**
- * Tick-finalize variant of `maintainFloatStore` for the batched path (lever
- * E.1). Instead of loading + saving the float store once per file, the
- * reconciler loads the store once at tick start, accumulates all of the tick's
- * float upserts/removes, and calls this once at tick finalize to apply them and
- * save.
+ * Maintain the Stage 2.5 float vector store (`codebase-float-vectors.bin`), the
+ * binary HNSW tier's float sidecar: the reconciler loads it once at tick start,
+ * accumulates the tick's float upserts/removes, and calls this once at tick
+ * finalize to apply them and save.
  *
  * `binaryVectorsBefore` is the live binary-HNSW vector count captured at TICK
- * START (before any of this tick's appends), preserving the same
- * "abnormal-state skip" semantics as the per-file path: if the float store is
- * absent but the binary HNSW already held vectors, a store built from the delta
- * alone would mis-score every baseline doc, so we skip until a full rebuild
- * restores it.
+ * START (before any of this tick's appends): if the float store is absent but the
+ * binary HNSW already held vectors, a store built from the delta alone would
+ * mis-score every baseline doc, so we skip until a full rebuild restores it.
  *
  * Returns `{ saved: boolean }` — `saved=false` means the delta was empty or the
  * store was skipped (no fsync happened), which the persist-before-advance gate

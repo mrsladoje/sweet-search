@@ -13,7 +13,7 @@ import {
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { scanDirtyAndEnqueue, dirtyScanEnabled } from '../../core/incremental-indexing/application/dirty-scan.mjs';
+import { scanDirtyAndEnqueue } from '../../core/incremental-indexing/application/dirty-scan.mjs';
 
 let sandbox;
 let stateDir;
@@ -122,10 +122,4 @@ describe('scanDirtyAndEnqueue', () => {
     expect(queuedPaths().filter((p) => p === 'src/dup.js')).toHaveLength(1);
   });
 
-  it('honours the SWEET_SEARCH_RECONCILE_SCAN opt-out token', () => {
-    expect(dirtyScanEnabled({})).toBe(true);
-    expect(dirtyScanEnabled({ SWEET_SEARCH_RECONCILE_SCAN: '0' })).toBe(false);
-    expect(dirtyScanEnabled({ SWEET_SEARCH_RECONCILE_SCAN: 'off' })).toBe(false);
-    expect(dirtyScanEnabled({ SWEET_SEARCH_RECONCILE_SCAN: '1' })).toBe(true);
-  });
 });

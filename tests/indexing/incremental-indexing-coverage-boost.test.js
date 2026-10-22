@@ -52,8 +52,7 @@ import {
 } from '../../core/incremental-indexing/infrastructure/sparse-gram-delta.mjs';
 import { gitCommonDir, readStamp, writeStamp, verifyStamp, formatStampMismatch, STAMP_FILENAME } from '../../core/incremental-indexing/infrastructure/worktree-stamp.mjs';
 import {
-  enqueueMaintenanceJob, readMaintenanceQueue, appendDeadLetter, assertCpuOnlyEnvironment,
-  installGpuLoadGuard,
+  enqueueMaintenanceJob, readMaintenanceQueue, appendDeadLetter,
 } from '../../core/incremental-indexing/application/maintenance-worker.mjs';
 import {
   injectTombstones, sweepTombstoneFractions, __testing as tombstoneTesting,
@@ -819,22 +818,6 @@ describe('maintenance-worker.mjs — env + queue branches', () => {
   let stateDir;
   beforeEach(() => { stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-mw-cov-')); });
   afterEach(() => { try { fs.rmSync(stateDir, { recursive: true, force: true }); } catch {} });
-
-  it('assertCpuOnlyEnvironment tolerates each cpu-equivalent value', () => {
-    for (const v of ['0', 'false', 'cpu', 'off', 'False', 'OFF']) {
-      expect(() => assertCpuOnlyEnvironment({ SWEET_SEARCH_GPU: v })).not.toThrow();
-    }
-  });
-
-  it('assertCpuOnlyEnvironment rejects any other flag value', () => {
-    for (const v of ['1', 'true', 'metal', 'cuda', 'gpu']) {
-      expect(() => assertCpuOnlyEnvironment({ SWEET_SEARCH_GPU: v })).toThrow();
-    }
-  });
-
-  it('installGpuLoadGuard is a no-op stub that does not throw', () => {
-    expect(() => installGpuLoadGuard()).not.toThrow();
-  });
 
   it('enqueueMaintenanceJob preserves caller-supplied createdAt', () => {
     enqueueMaintenanceJob(stateDir, {

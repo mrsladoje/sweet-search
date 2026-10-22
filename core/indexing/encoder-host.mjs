@@ -22,7 +22,7 @@ import { armBackgroundOrtProfiles } from './model-pool.js';
 try { process.title = 'sweet-search-encoder'; } catch { /* cosmetic */ }
 
 const projectRoot = process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd();
-if (process.env.SWEET_SEARCH_ORT_BACKGROUND !== '0') armBackgroundOrtProfiles();
+armBackgroundOrtProfiles();
 
 const send = (msg) => { try { process.send(msg); } catch { /* parent gone */ } };
 

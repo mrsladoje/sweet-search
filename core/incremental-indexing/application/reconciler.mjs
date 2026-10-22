@@ -182,23 +182,17 @@ export class Reconciler {
   }
 
   /**
-   * Lever E.1: batch per-tier writes per tick. When enabled, the reconciler
-   * opens a tick-scoped store context once at tick start (via the adapter's
-   * `beginTick` hook), threads it through every `apply*Delta`, and persists the
-   * batched HNSW + float artifacts once at tick finalize (via `finalizeTick`),
-   * BEFORE the manifest advances. Default off → exact current per-file behavior.
-   *
-   * The adapter must expose `beginTick`/`finalizeTick` for this to engage;
-   * absent those hooks, the per-file path is used regardless of the flag.
+   * Lever E.1: batch per-tier writes per tick. The reconciler opens a tick-scoped
+   * store context once at tick start (the adapter's `beginTick`), threads it
+   * through every `apply*Delta`, and persists the batched artifacts once at tick
+   * finalize (`finalizeTick`), BEFORE the manifest advances. The production
+   * adapter always has these hooks; an adapter without them (tests) gets the
+   * per-file calls with no context.
    *
    * @returns {boolean}
    */
   _batchTierWritesEnabled() {
-    // Default-ON (verified byte-identical with det-levels + crash-safe + soak==baseline);
-    // disable with SWEET_SEARCH_RECONCILE_BATCH_TIER_WRITES=0. Still requires the adapter
-    // to expose the tick hooks; absent those, the per-file path is used regardless.
-    return process.env.SWEET_SEARCH_RECONCILE_BATCH_TIER_WRITES !== '0'
-      && typeof this.adapters.beginTick === 'function'
+    return typeof this.adapters.beginTick === 'function'
       && typeof this.adapters.finalizeTick === 'function';
   }
 

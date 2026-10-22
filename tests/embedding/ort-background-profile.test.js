@@ -4,8 +4,7 @@
 // options (force_spinning_stop + arena-off + clamped 2–6 intra-op threads) ONLY
 // when the bg profile is active, and that the foreground/full-index path stays
 // byte-identical to the historical default. The bg profile must be a strict
-// no-op when the SWEET_SEARCH_ORT_BACKGROUND gate is off and no background flag
-// is configured.
+// no-op unless the maintainer configured it (configureLocalModelRuntime).
 
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import os from 'os';
@@ -18,7 +17,6 @@ import {
 import { backgroundIntraOpThreads } from '../../core/infrastructure/onnx-session-utils.js';
 
 function clearEnv() {
-  delete process.env.SWEET_SEARCH_ORT_BACKGROUND;
   delete process.env.SWEET_SEARCH_INTRA_OP_THREADS;
   delete process.env.SWEET_SEARCH_ORT_EXEC_MODE;
   delete process.env.SWEET_SEARCH_ORT_INTER_OP_THREADS;
@@ -68,11 +66,6 @@ describe('isBackgroundOrtProfile', () => {
     expect(isBackgroundOrtProfile()).toBe(false);
   });
 
-  it('turns ON via SWEET_SEARCH_ORT_BACKGROUND=1', () => {
-    process.env.SWEET_SEARCH_ORT_BACKGROUND = '1';
-    expect(isBackgroundOrtProfile()).toBe(true);
-  });
-
   it('turns ON via configureLocalModelRuntime({ background: true })', () => {
     configureLocalModelRuntime({ background: true });
     expect(isBackgroundOrtProfile()).toBe(true);
@@ -82,8 +75,8 @@ describe('isBackgroundOrtProfile', () => {
     expect(isBackgroundOrtProfile({ background: true })).toBe(true);
   });
 
-  it('explicit background:false wins over the env gate', () => {
-    process.env.SWEET_SEARCH_ORT_BACKGROUND = '1';
+  it('explicit background:false wins over the configured runtime', () => {
+    configureLocalModelRuntime({ background: true });
     expect(isBackgroundOrtProfile({ background: false })).toBe(false);
     configureLocalModelRuntime({ background: false });
     expect(isBackgroundOrtProfile()).toBe(false);
@@ -145,11 +138,6 @@ describe('buildLocalSessionOptions — background path', () => {
     expect(opts.enableMemPattern).toBe(true);
     expect(opts.graphOptimizationLevel).toBe('all');
   }
-
-  it('emits force_spinning_stop + arena-off via the env gate', () => {
-    process.env.SWEET_SEARCH_ORT_BACKGROUND = '1';
-    expectBackgroundShape(buildLocalSessionOptions('q8', false));
-  });
 
   it('emits force_spinning_stop + arena-off via configureLocalModelRuntime', () => {
     configureLocalModelRuntime({ background: true });

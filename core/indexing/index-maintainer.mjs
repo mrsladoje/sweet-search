@@ -527,8 +527,8 @@ export async function runReconcileV2Tick(ctx) {
   // share its git listings instead of each running them over every tracked file.
   let admissionPolicy;
   try {
-    const { dirtyScanEnabled, scanDirtyAndEnqueue } = await import('../incremental-indexing/application/dirty-scan.mjs');
-    if (dirtyScanEnabled() && !ctx.skipFullWalk) {
+    const { scanDirtyAndEnqueue } = await import('../incremental-indexing/application/dirty-scan.mjs');
+    if (!ctx.skipFullWalk) {
       const { createAdmissionPolicy } = await import('../indexing/admission-policy.js');
       admissionPolicy = createAdmissionPolicy({ projectRoot: ctx.projectRoot });
       progress('dirty-scan:start');
@@ -565,24 +565,6 @@ export async function runReconcileV2Tick(ctx) {
   progress('tick:done');
   log('INFO', `Reconcile v2 tick complete: epoch=${counters.epoch}, processed=${counters.files_processed}, unchanged=${counters.content_unchanged}, dirty=${counters.dirty_paths_seen}, deferred=${counters.dirty_paths_deferred}, budget=${counters.cpu_budget_used_ms}/${counters.cpu_budget_total_ms}ms, tick=${counters.tick_ms}ms`);
   return counters;
-}
-
-/**
- * Inline-drain decision for the reconcile daemon.
- *
- * Returns true unless the operator opts out via
- * `SWEET_SEARCH_MAINTENANCE_INLINE=0|false|off`. The daemon owns the only
- * `index-maintainer.lock` for this state dir, so a single inline drain
- * inside the daemon process is the simplest "no two workers racing"
- * topology — no child-process supervisor needed.
- *
- * @param {NodeJS.ProcessEnv} [env]
- */
-export function maintenanceInlineEnabled(env = process.env) {
-  const raw = env.SWEET_SEARCH_MAINTENANCE_INLINE;
-  if (raw == null || raw === '') return true;
-  const normalized = String(raw).trim().toLowerCase();
-  return normalized !== '0' && normalized !== 'false' && normalized !== 'off';
 }
 
 /**
@@ -638,9 +620,10 @@ function tmpSweepMaxAgeMs(env = process.env) {
 
 /**
  * Bounded inline drain of the maintenance queue, intended to be called
- * after a successful reconcile tick. Returns the drain summary, or
- * `{skipped: true, reason}` when inline mode is disabled or the worker
- * call throws (we never let maintenance failures crash the daemon).
+ * after a successful reconcile tick. The daemon owns the only
+ * `index-maintainer.lock` for this state dir, so draining inside it means no two
+ * writers race. Returns the drain summary, or `{skipped: true, reason}` when the
+ * worker call throws (maintenance failures never crash the daemon).
  *
  * Exported so tests and the daemon main loop call the same code path.
  *
@@ -649,9 +632,6 @@ function tmpSweepMaxAgeMs(env = process.env) {
 export async function drainMaintenanceInline(ctx) {
   const onProgress = typeof ctx.onProgress === 'function' ? ctx.onProgress : null;
   const env = ctx.env || process.env;
-  if (!maintenanceInlineEnabled(env)) {
-    return { skipped: true, reason: 'inline-disabled' };
-  }
   let processMaintenanceQueue;
   let defaultMaintenanceHandlers;
   try {
@@ -747,25 +727,18 @@ async function sleepWithProgress(totalMs, lockFile, opts = {}) {
   }
 }
 
-// SWEET_SEARCH_RECONCILE_AUTOTUNE is DEFAULT-ON (disable with =0): the daemon's
-// consume-half mirrors the reconciler config-half so the tuned interval is
-// actually applied to the sleep loop. Verified recall-neutral + soak == baseline.
-// Set to '0' to restore the fixed-interval sleep loop.
 // Pause between ticks while files are still queued: long enough to let signal
 // handlers and the lock refresh run, short enough not to slow the drain.
 const BACKLOG_TICK_GAP_MS = 250;
-
-export const reconcileAutotuneEnabled = (env = process.env) => env.SWEET_SEARCH_RECONCILE_AUTOTUNE !== '0';
 
 /**
  * A.4-consume: recompute the daemon's sleep interval from the just-finished
  * tick. The reconciler config-half (G2) only re-tunes an ephemeral per-tick
  * Reconciler instance, so the daemon MUST recompute the interval in its OWN
- * loop or the autotune is "doubly dead" (flag on but output disconnected).
+ * loop or the autotune has no effect.
  *
  * Pure + testable: takes the tick counters snapshot + a measured maintenance
- * backlog and returns the next interval. When the flag is off, returns
- * `currentMs` unchanged (today's behavior). When an explicit interval is pinned
+ * backlog and returns the next interval. When an explicit interval is pinned
  * via the startup env, the daemon never calls this (the resolver marked it
  * pinned). Windows: `os.loadavg()` returns `[0,0,0]`, so the per-core load is 0
  * and the loosen-under-load signal is naturally skipped (flat interval) — no
@@ -776,7 +749,6 @@ export const reconcileAutotuneEnabled = (env = process.env) => env.SWEET_SEARCH_
  * @param {number} args.currentMs            interval the just-finished tick used
  * @param {object|null} args.counters        runReconcileV2Tick return (snapshot)
  * @param {number} args.maintenanceBacklog   pending maintenance jobs
- * @param {NodeJS.ProcessEnv} [args.env]
  * @param {() => number[]} [args.loadavg]    injectable for tests
  * @param {() => number} [args.cpuCount]     injectable for tests
  * @returns {{ nextMs:number, tuned:boolean, reasons:string[] }}
@@ -785,13 +757,9 @@ export function computeNextIntervalMs({
   currentMs,
   counters,
   maintenanceBacklog,
-  env = process.env,
   loadavg = () => os.loadavg(),
   cpuCount = () => os.cpus().length,
 }) {
-  if (!reconcileAutotuneEnabled(env)) {
-    return { nextMs: currentMs, tuned: false, reasons: [] };
-  }
   // A skipped tick (dormant baseline / paused) has no usable signal — leave the
   // interval untouched rather than feed `nextInterval` zeros that would creep up.
   if (!counters || counters.skipped) {
@@ -1231,17 +1199,14 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
   // tick embeds. The ONNX session singleton is built once on first encode;
   // configuring after is a silent no-op (mirrors indexer-phases.js:491).
   //
-  // MAINTAINER-SCOPED DEFAULT-ON (disable with SWEET_SEARCH_ORT_BACKGROUND=0):
-  // arm the background ORT profile (force_spinning_stop + arena-off + 2–6
-  // intra-op threads) by default, but ONLY in this maintainer daemon process. We
+  // MAINTAINER-SCOPED: arm the background ORT profile (force_spinning_stop +
+  // arena-off + 2–6 intra-op threads), ONLY in this maintainer daemon process. We
   // arm it explicitly here via configureLocalModelRuntime({ background: true }),
-  // which sets the process-local runtime config — it does NOT touch
-  // buildLocalSessionOptions / isBackgroundOrtProfile's env fallback, so every
-  // OTHER process (the latency-critical search/query embedding path) stays on the
-  // FOREGROUND profile. Verified ORT embeddings byte-identical. Set
-  // SWEET_SEARCH_ORT_BACKGROUND=0 to keep even the maintainer on foreground.
-  // Best-effort — never block startup on the embedding module.
-  if (process.env.SWEET_SEARCH_ORT_BACKGROUND !== '0') {
+  // which sets the process-local runtime config, so every OTHER process (the
+  // latency-critical search/query embedding path) stays on the FOREGROUND
+  // profile. Verified ORT embeddings byte-identical. Best-effort — never block
+  // startup on the embedding module.
+  {
     try {
       // Arms BOTH resident CPU sessions (dense + late-interaction) — the LI
       // session previously stayed on the foreground profile (arena ON +

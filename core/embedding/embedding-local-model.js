@@ -84,17 +84,11 @@ export function resetLocalModelRuntime() {
 /**
  * Resolve whether the BACKGROUND/maintainer ORT profile is active.
  *
- * True when the daemon set `{ background: true }` via configureLocalModelRuntime
- * OR the SWEET_SEARCH_ORT_BACKGROUND=1 env gate is set. Default OFF: the
- * foreground/full-index path is unchanged. An explicit `background: false` in
- * the runtime config wins over the env gate (lets a query daemon force the
- * latency-critical foreground profile even under a global env flag).
+ * True when the maintainer set `{ background: true }` via configureLocalModelRuntime;
+ * every other process (search, full index) stays on the foreground profile.
  */
 export function isBackgroundOrtProfile(runtimeConfig = {}) {
-  const cfg = runtimeConfig.background ?? localModelRuntimeConfig.background;
-  if (cfg === true) return true;
-  if (cfg === false) return false;
-  return process.env.SWEET_SEARCH_ORT_BACKGROUND === '1';
+  return (runtimeConfig.background ?? localModelRuntimeConfig.background) === true;
 }
 
 export function isOpenVinoProviderAvailable() {

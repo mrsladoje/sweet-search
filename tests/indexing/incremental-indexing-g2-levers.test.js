@@ -29,7 +29,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import Database from 'better-sqlite3';
 
-import { runProductionReconcileTick, createProductionReconciler, shutdownLiveStores } from '../../core/incremental-indexing/application/production-reconciler.mjs';
+import { runProductionReconcileTick, createProductionReconciler } from '../../core/incremental-indexing/application/production-reconciler.mjs';
 import {
   runFixedSequence,
   __testing as harness,
@@ -39,10 +39,8 @@ import { ASTChunker } from '../../core/indexing/ast-chunker.js';
 import {
   fts5MergeBudgetPages,
   fts5WatermarkBudgetPages,
-  fts5Optimize,
 } from '../../core/incremental-indexing/infrastructure/sqlite-fts5.mjs';
-import { flushFloatStore, maintainFloatStore } from '../../core/incremental-indexing/application/production-reconciler-helpers.mjs';
-import { defaultMaintenanceHandlers } from '../../core/incremental-indexing/application/maintenance-worker.mjs';
+import { flushFloatStore } from '../../core/incremental-indexing/application/production-reconciler-helpers.mjs';
 import { FloatVectorStore, getFloatStorePath } from '../../core/vector-store/float-vector-store.js';
 
 // These tests cover the float-512 store, which is written only with
@@ -72,19 +70,6 @@ function makeEncoders() {
   };
 }
 
-const FLAG_KEYS = [
-  'SWEET_SEARCH_RECONCILE_BATCH_TIER_WRITES',
-  'SWEET_SEARCH_RECONCILE_LIVE_HNSW',
-  'SWEET_SEARCH_RECONCILE_SQLITE_PRAGMAS',
-  'SWEET_SEARCH_RECONCILE_FTS5_BUDGET',
-  'SWEET_SEARCH_RECONCILE_FTS5_OPTIMIZE',
-  'SWEET_SEARCH_RECONCILE_AUTOTUNE',
-  'SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS',
-];
-
-function clearFlags() {
-  for (const k of FLAG_KEYS) delete process.env[k];
-}
 
 describe('G2 FTS5 budget helpers (E.5)', () => {
   it('merge page budget: fast tick → small merge, busy tick → skip', () => {
@@ -102,75 +87,6 @@ describe('G2 FTS5 budget helpers (E.5)', () => {
     expect(fts5WatermarkBudgetPages({ remainingMs: -5 })).toBe(16);        // overrun → floor
   });
 
-  it('fts5Optimize merges to one segment and truncates the WAL (idle-gated)', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'g2-fts5-'));
-    try {
-      const db = new Database(join(dir, 'x.db'));
-      db.pragma('journal_mode = WAL');
-      db.exec("CREATE VIRTUAL TABLE docs USING fts5(body)");
-      const ins = db.prepare('INSERT INTO docs(body) VALUES (?)');
-      // Many tiny single-row inserts create many segments.
-      for (let i = 0; i < 50; i++) ins.run(`token${i} shared`);
-      const res = fts5Optimize(db, 'docs');
-      expect(res.optimized).toBe(true);
-      // Index still queryable + correct after optimize (output-equivalent).
-      const hits = db.prepare("SELECT count(*) AS n FROM docs WHERE docs MATCH 'shared'").get();
-      expect(hits.n).toBe(50);
-      db.close();
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it('fts5Optimize rejects an unsafe table name', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'g2-fts5b-'));
-    try {
-      const db = new Database(join(dir, 'x.db'));
-      expect(() => fts5Optimize(db, 'docs; DROP TABLE x')).toThrow(/invalid table name/);
-      db.close();
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it('fts5 handler optimizes only when the flag + idle payload + size threshold all hold', async () => {
-    const prevOptFlag = process.env.SWEET_SEARCH_RECONCILE_FTS5_OPTIMIZE;
-    // Build a fresh, segment-rich `entities_fts` table in a fresh state dir.
-    function freshDir() {
-      const dir = mkdtempSync(join(tmpdir(), 'g2-fts5opt-'));
-      const setup = new Database(join(dir, 'code-graph.db'));
-      setup.exec('CREATE VIRTUAL TABLE entities_fts USING fts5(name)');
-      const ins = setup.prepare('INSERT INTO entities_fts(name) VALUES (?)');
-      for (let i = 0; i < 40; i++) { setup.exec('BEGIN'); ins.run(`sym${i} shared`); setup.exec('COMMIT'); }
-      setup.close();
-      return dir;
-    }
-    const job = { tier: 'fts5', payload: { optimize: true, tableName: 'entities_fts' } };
-    const offDir = freshDir();
-    const onDir = freshDir();
-    try {
-      // Flag OFF + optimize payload → still a merge (no optimize).
-      delete process.env.SWEET_SEARCH_RECONCILE_FTS5_OPTIMIZE;
-      const offRes = await defaultMaintenanceHandlers(offDir).fts5(job, { stateDir: offDir, remainingBudgetMs: Infinity });
-      expect(offRes.optimized).toEqual([]);
-
-      // Flag ON + optimize payload + above-threshold table → optimize fires.
-      process.env.SWEET_SEARCH_RECONCILE_FTS5_OPTIMIZE = '1';
-      const onRes = await defaultMaintenanceHandlers(onDir).fts5(job, { stateDir: onDir, remainingBudgetMs: Infinity });
-      expect(onRes.optimized).toContain('entities_fts');
-
-      // Index still queryable + correct after optimize.
-      const verify = new Database(join(onDir, 'code-graph.db'), { readonly: true });
-      const n = verify.prepare("SELECT count(*) AS n FROM entities_fts WHERE entities_fts MATCH 'shared'").get().n;
-      expect(n).toBe(40);
-      verify.close();
-    } finally {
-      if (prevOptFlag === undefined) delete process.env.SWEET_SEARCH_RECONCILE_FTS5_OPTIMIZE;
-      else process.env.SWEET_SEARCH_RECONCILE_FTS5_OPTIMIZE = prevOptFlag;
-      rmSync(offDir, { recursive: true, force: true });
-      rmSync(onDir, { recursive: true, force: true });
-    }
-  });
 });
 
 describe('G2 flushFloatStore (E.1 tick-finalize)', () => {
@@ -204,7 +120,7 @@ describe('G2 flushFloatStore (E.1 tick-finalize)', () => {
 });
 
 describe('float-512 store off by default (SS_FIX_FLOAT512 unset)', () => {
-  it('flushFloatStore and maintainFloatStore write nothing', async () => {
+  it('flushFloatStore writes nothing', async () => {
     const dir = mkdtempSync(join(tmpdir(), 'g2-float-off-'));
     const saved = process.env.SS_FIX_FLOAT512;
     try {
@@ -215,8 +131,6 @@ describe('float-512 store off by default (SS_FIX_FLOAT512 unset)', () => {
       const r = await flushFloatStore({ binaryHnswPath: binPath, upserts, removeIds: [], binaryVectorsBefore: 0, dimension: 8 });
       expect(r.saved).toBe(false);
       expect(existsSync(floatPath)).toBe(false);
-      await maintainFloatStore(binPath, { upserts, removeIds: [], binaryVectorsBefore: 0, dimension: 8 });
-      expect(existsSync(floatPath)).toBe(false);
     } finally {
       if (saved === undefined) delete process.env.SS_FIX_FLOAT512; else process.env.SS_FIX_FLOAT512 = saved;
       rmSync(dir, { recursive: true, force: true });
@@ -226,43 +140,11 @@ describe('float-512 store off by default (SS_FIX_FLOAT512 unset)', () => {
 
 describe('G2 E.1 batched tick (byte-identical determinism)', () => {
   it('two batched runs with deterministic levels are byte-identical', async () => {
-    const env = {
-      SWEET_SEARCH_RECONCILE_BATCH_TIER_WRITES: '1',
-      SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS: '1',
-    };
-    const a = await runFixedSequence({ variant: 'a', envOverrides: env });
-    const b = await runFixedSequence({ variant: 'b', envOverrides: env });
+    const a = await runFixedSequence({ variant: 'a', envOverrides: {} });
+    const b = await runFixedSequence({ variant: 'b', envOverrides: {} });
     expect(byteDiff(a.dump, b.dump)).toBeNull();
   });
 
-  it('E.4 SQLite pragmas are byte-identical to the baseline (Tier-1)', async () => {
-    // Pin HNSW levels deterministically on BOTH sides so the comparison isolates
-    // the pragma change. (Without G1, the unseeded getRandomLevel() makes any two
-    // independent HNSW builds non-byte-identical — that is G1's concern, not
-    // E.4's. cache_size / shrink_memory provably do not change query output.)
-    const baseline = await runFixedSequence({ variant: 'baseline', envOverrides: { SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS: '1' } });
-    const candidate = await runFixedSequence({ variant: 'candidate', envOverrides: { SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS: '1', SWEET_SEARCH_RECONCILE_SQLITE_PRAGMAS: '1' } });
-    expect(byteDiff(baseline.dump, candidate.dump)).toBeNull();
-  });
-
-  it('E.1 batched produces the same live SQLite tiers as per-file', async () => {
-    // SQLite tiers (vectors/graph) are insertion-order-independent, so the live
-    // (queryable) SQLite state must match per-file exactly even though the HNSW
-    // graph topology may differ (different insertion order — recall-equivalent).
-    const base = await runFixedSequence({ variant: 'baseline', envOverrides: {}, liveOnly: true });
-    const batched = await runFixedSequence({
-      variant: 'batched',
-      envOverrides: { SWEET_SEARCH_RECONCILE_BATCH_TIER_WRITES: '1', SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS: '1' },
-      liveOnly: true,
-      normalizeEpochs: true,
-    });
-    const baseLive = { ...base.dump, binaryHnsw: null };
-    const batLive = { ...batched.dump, binaryHnsw: null };
-    // Re-run baseline with normalized epochs for a like-for-like compare.
-    const baseNorm = await runFixedSequence({ variant: 'baseline-n', envOverrides: {}, liveOnly: true, normalizeEpochs: true });
-    expect(byteDiff({ ...baseNorm.dump, binaryHnsw: null }, batLive)).toBeNull();
-    void baseLive;
-  });
 });
 
 // The E.6 whole-file cutoff cache is gone (it drifted from the index): the per-chunk diff
@@ -272,7 +154,6 @@ describe('unchanged chunks after a content change', () => {
   let stateDir;
 
   beforeEach(() => {
-    clearFlags();
     projectRoot = mkdtempSync(join(tmpdir(), 'g2-e6-'));
     stateDir = join(projectRoot, '.sweet-search');
     mkdirSync(join(projectRoot, 'src'), { recursive: true });
@@ -280,7 +161,6 @@ describe('unchanged chunks after a content change', () => {
   });
 
   afterEach(() => {
-    clearFlags();
     rmSync(projectRoot, { recursive: true, force: true });
   });
 
@@ -326,27 +206,8 @@ describe('unchanged chunks after a content change', () => {
 });
 
 describe('G2 A.4 autotune config', () => {
-  afterEach(() => clearFlags());
 
-  it('flag explicitly off (=0) → autotune dormant (no signals injected)', () => {
-    // Autotune is DEFAULT-ON; the dormant path is exercised with an explicit '0'.
-    clearFlags();
-    process.env.SWEET_SEARCH_RECONCILE_AUTOTUNE = '0';
-    const dir = mkdtempSync(join(tmpdir(), 'g2-at-'));
-    mkdirSync(join(dir, '.sweet-search'), { recursive: true });
-    try {
-      const r = createProductionReconciler({ projectRoot: dir, stateDir: join(dir, '.sweet-search'), modelInfo: MODEL_INFO });
-      expect(r.config.autotuneInterval).toBe(false);
-      expect(r.config.cpuLoadAvg).toBeUndefined();
-      expect(r.config.maintenanceBacklog).toBeUndefined();
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it('flag on (default / =1) → autotuneInterval true with real cpuLoadAvg + maintenanceBacklog', () => {
-    clearFlags();
-    process.env.SWEET_SEARCH_RECONCILE_AUTOTUNE = '1';
+  it('feeds autotuneInterval true with a real cpuLoadAvg + maintenanceBacklog', () => {
     const dir = mkdtempSync(join(tmpdir(), 'g2-at-'));
     mkdirSync(join(dir, '.sweet-search'), { recursive: true });
     try {
@@ -361,50 +222,6 @@ describe('G2 A.4 autotune config', () => {
   });
 });
 
-describe('G2 E.2 live HNSW registry', () => {
-  afterEach(async () => { clearFlags(); await shutdownLiveStores(); });
-
-  it('keeps the resident index across ticks and reconverges with per-file output', async () => {
-    clearFlags();
-    process.env.SWEET_SEARCH_RECONCILE_BATCH_TIER_WRITES = '1';
-    process.env.SWEET_SEARCH_RECONCILE_LIVE_HNSW = '1';
-    process.env.SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS = '1';
-    const projectRoot = mkdtempSync(join(tmpdir(), 'g2-live-'));
-    const stateDir = join(projectRoot, '.sweet-search');
-    mkdirSync(join(projectRoot, 'src'), { recursive: true });
-    mkdirSync(stateDir, { recursive: true });
-    const enc = makeEncoders();
-    const tickFor = (file) => {
-      writeFileSync(join(stateDir, 'index-maintainer-queue.jsonl'), `${JSON.stringify({ file_path: file })}\n`);
-      return runProductionReconcileTick({ projectRoot, stateDir, vectorEncoder: enc.vectorEncoder, liEncoder: enc.liEncoder, modelInfo: MODEL_INFO, logger: silent, config: { filesPerTick: 10, cpuBudgetMs: 10_000 } });
-    };
-    try {
-      writeFileSync(join(projectRoot, 'src', 'a.js'), 'export function alpha(x){ return x.trim(); }\n');
-      const t1 = await tickFor('src/a.js');
-      expect(t1.ops_per_tier.binary_hnsw_append).toBeGreaterThan(0);
-      writeFileSync(join(projectRoot, 'src', 'b.js'), 'export function beta(y){ return y * 2; }\n');
-      const t2 = await tickFor('src/b.js');
-      expect(t2.ops_per_tier.binary_hnsw_append).toBeGreaterThan(0);
-      // On graceful shutdown the resident index flushes; the on-disk live id-set
-      // must then contain every live SQLite vector row.
-      await shutdownLiveStores();
-      const db = new Database(join(stateDir, 'codebase.db'), { readonly: true });
-      const liveIds = db.prepare('SELECT id FROM vectors WHERE epoch_retired IS NULL').all().map((r) => r.id);
-      db.close();
-      const idx = await import('../../core/vector-store/binary-hnsw-index.js');
-      const index = new idx.BinaryHNSWIndex({ indexPath: join(stateDir, 'codebase-binary-hnsw.idx'), floatDimension: 8 });
-      await index.load(join(stateDir, 'codebase-binary-hnsw.idx'));
-      const hnswLive = new Set(index.idToIndex.keys());
-      for (const id of liveIds) expect(hnswLive.has(id)).toBe(true);
-      expect(liveIds.length).toBeGreaterThan(0);
-    } finally {
-      clearFlags();
-      await shutdownLiveStores();
-      rmSync(projectRoot, { recursive: true, force: true });
-    }
-  });
-});
-
 describe('G2 crash-consistency (E.1 persist-before-advance)', () => {
   it('SIGKILL between SQLite commit and HNSW batch-save → no live row missing from HNSW', async () => {
     // Self-contained crash flow: build a baseline, then in THIS process run a
@@ -412,7 +229,6 @@ describe('G2 crash-consistency (E.1 persist-before-advance)', () => {
     // finalize fsync, then restart and drain; assert every live codebase.db
     // vector row has an HNSW int8 (live) entry and the live id-set matches a
     // clean run's.
-    clearFlags();
     const env = { SWEET_SEARCH_RECONCILE_BATCH_TIER_WRITES: '1', SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS: '1' };
     for (const [k, v] of Object.entries(env)) process.env[k] = v;
     const projectRoot = harness.materializeRepo();
@@ -471,7 +287,6 @@ describe('G2 crash-consistency (E.1 persist-before-advance)', () => {
       }
       expect(liveIds.length).toBeGreaterThan(0);
     } finally {
-      clearFlags();
       rmSync(projectRoot, { recursive: true, force: true });
     }
   });

@@ -601,34 +601,14 @@ export class BinaryHNSWIndex {
   }
 
   /**
-   * Calculate random level for new node (exponential distribution).
-   *
-   * Draws from the global, unseeded Math.random() at insert time, so the
-   * level a node receives depends on insertion order / RNG-stream
-   * interleaving (per-file reload-and-insert vs. batched load-once-insert-all
-   * vs. compaction rebuild all consume the stream differently). This is the
-   * default path and is intentionally left unchanged. For an
-   * insertion-order-independent level, see `levelForId(id)` (gated on
-   * SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS).
-   */
-  getRandomLevel() {
-    const mL = 1 / Math.log(this.M);
-    let level = Math.floor(-Math.log(Math.random()) * mL);
-    return Math.min(level, 10); // Cap at 10 levels
-  }
-
-  /**
    * Deterministic level for a node id (insertion-order-independent).
    *
    * Pure function of the string id (FNV-1a 32-bit hash → uniform u∈(0,1])
-   * fed through the SAME exponential CDF as `getRandomLevel()`
-   * (`floor(-ln(u) * (1/ln(M)))`, capped at 10). Because the level depends
-   * only on the id (not on Math.random() or insertion order), batched,
-   * per-file, and compaction construction paths all assign the same node the
-   * same level — the prerequisite for a byte-identical graph.
-   *
-   * Used only when SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS === '1'; the default
-   * path (`getRandomLevel`) is unchanged.
+   * fed through the HNSW exponential level CDF (`floor(-ln(u) * (1/ln(M)))`,
+   * capped at 10). Because the level depends only on the id (not on an RNG or
+   * insertion order), the full build, the maintainer's batched tick and the
+   * compaction rebuild all assign the same node the same level — the
+   * prerequisite for a byte-identical graph.
    *
    * @param {string} id - node id (coerced to string)
    * @returns {number} level in [0, 10]
@@ -648,7 +628,7 @@ export class BinaryHNSWIndex {
     const u = (h + 1) / 4294967296; // 2^32
     const mL = 1 / Math.log(this.M);
     const level = Math.floor(-Math.log(u) * mL);
-    return Math.min(level, 10); // Cap at 10 levels (same as getRandomLevel)
+    return Math.min(level, 10); // Cap at 10 levels
   }
 
   /**
@@ -711,18 +691,9 @@ export class BinaryHNSWIndex {
 
     if (int8Vector) this._putInt8(idx, int8Vector);
 
-    // Add to HNSW graph.
-    // Gate: deterministic per-id levels are DEFAULT-ON (disable with
-    // SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS=0). When on, assign the level from a
-    // stable hash of the id (insertion-order-independent) so all construction
-    // paths (incremental add, end-of-tick batch, compaction rebuild) agree and
-    // the graph is reproducible. Verified recall-neutral on GCSN (+0.01pp MRR)
-    // and byte-identical via the determinism harness. Set the flag to '0' to
-    // restore the legacy random-level (insertion-order-dependent) path.
-    const level = process.env.SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS !== '0'
-      ? this.levelForId(id)
-      : this.getRandomLevel();
-    this.addToGraph(idx, level);
+    // Add to HNSW graph, at the level a stable hash of the id gives (insertion-
+    // order-independent), so every construction path builds the same graph.
+    this.addToGraph(idx, this.levelForId(id));
 
     return idx;
   }
@@ -806,22 +777,6 @@ export class BinaryHNSWIndex {
     }
 
     return selected;
-  }
-
-  /**
-   * Whether insertion-order-independent entry-point selection is active.
-   *
-   * Mirrors the gate on level assignment in `add()`. When ON, the entry
-   * point is chosen deterministically (min id at the max level) so batched,
-   * per-file, and compaction construction paths agree on `entryPoint` even
-   * when several nodes share the max level — the last byte-identity gap left
-   * by deterministic levels (E.1 entry-point divergence). DEFAULT-ON (disable
-   * with SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS=0) → mirrors the level-assignment
-   * gate in `add()`. Set the flag to '0' to restore today's
-   * first-inserted-at-max-level behavior.
-   */
-  _deterministicEntryPoint() {
-    return process.env.SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS !== '0';
   }
 
   /**
@@ -917,7 +872,7 @@ export class BinaryHNSWIndex {
     if (level > this.maxLevel) {
       this.entryPoint = idx;
       this.maxLevel = level;
-    } else if (level === this.maxLevel && this._deterministicEntryPoint()) {
+    } else if (level === this.maxLevel) {
       this.entryPoint = this._entryPointWinner(this.entryPoint, idx);
     }
   }

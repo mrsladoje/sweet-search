@@ -4,7 +4,7 @@
  *
  * Plan § 10.2 + soak REPORT § 9 item 2: the reconcile daemon coordinates
  * the maintenance worker by draining the rebuild queue inline after each
- * tick, gated by `SWEET_SEARCH_MAINTENANCE_INLINE`.
+ * tick.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -15,7 +15,6 @@ import Database from 'better-sqlite3';
 
 import {
   drainMaintenanceInline,
-  maintenanceInlineEnabled,
 } from '../../core/indexing/index-maintainer.mjs';
 import {
   enqueueMaintenanceJob,
@@ -24,39 +23,12 @@ import {
   DEAD_LETTER_FILENAME,
 } from '../../core/incremental-indexing/application/maintenance-worker.mjs';
 
-describe('drainMaintenanceInline / opt-out gate', () => {
-  it('default-enabled (no env set)', () => {
-    expect(maintenanceInlineEnabled({})).toBe(true);
-  });
-  it('honours SWEET_SEARCH_MAINTENANCE_INLINE=0/false/off', () => {
-    expect(maintenanceInlineEnabled({ SWEET_SEARCH_MAINTENANCE_INLINE: '0' })).toBe(false);
-    expect(maintenanceInlineEnabled({ SWEET_SEARCH_MAINTENANCE_INLINE: 'false' })).toBe(false);
-    expect(maintenanceInlineEnabled({ SWEET_SEARCH_MAINTENANCE_INLINE: 'off' })).toBe(false);
-  });
-  it('treats any other value as enabled', () => {
-    expect(maintenanceInlineEnabled({ SWEET_SEARCH_MAINTENANCE_INLINE: '1' })).toBe(true);
-    expect(maintenanceInlineEnabled({ SWEET_SEARCH_MAINTENANCE_INLINE: 'yes' })).toBe(true);
-  });
-});
-
 describe('drainMaintenanceInline / behaviour', () => {
   let stateDir;
   beforeEach(() => {
     stateDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-daemon-maint-'));
   });
   afterEach(() => fs.rmSync(stateDir, { recursive: true, force: true }));
-
-  it('skips when SWEET_SEARCH_MAINTENANCE_INLINE=0', async () => {
-    enqueueMaintenanceJob(stateDir, { tier: 'fts5', reason: 'x', epoch: 1, payload: {} });
-    const result = await drainMaintenanceInline({
-      stateDir,
-      env: { SWEET_SEARCH_MAINTENANCE_INLINE: '0' },
-    });
-    expect(result.skipped).toBe(true);
-    expect(result.reason).toBe('inline-disabled');
-    // Queue is untouched.
-    expect(readMaintenanceQueue(stateDir).length).toBe(1);
-  });
 
   it('drains a real fts5 job against an on-disk FTS5 table', async () => {
     const dbPath = path.join(stateDir, 'code-graph.db');
