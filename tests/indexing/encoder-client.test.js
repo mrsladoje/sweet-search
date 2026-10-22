@@ -16,6 +16,8 @@ process.on('message', (msg) => {
     process.send({ id, progress: true });
     process.send({ id, ok: true, result: texts.map((t) => ({ embedding: Float32Array.from([t.length]) })),
       provenance: { dense: { 'ort-q8/cpu': texts.length }, li: {} }, rss: texts[0] === 'fat' ? 1e12 : 1 });
+  } else if (op === 'warm') {
+    process.send({ id, ok: true, result: null, provenance: { dense: {}, li: {} }, rss: 1 });
   } else if (op === 'count') {
     process.send({ id, ok: true, result: texts.map((t) => t.length), provenance: { dense: {}, li: {} }, rss: 1 });
   } else {
@@ -52,6 +54,18 @@ describe('encoder client', () => {
     expect(takeProvenance().dense).toEqual({ 'ort-q8/cpu': 2 });
     expect(await c.li.countTokens(['abcd'])).toEqual([4]);
     expect(c.li.provenanceLabel).toBe('ort/cpu');
+    expect(c.spawns).toBe(1);
+  });
+
+  // The first edit after idle waited for the process start plus both model loads in
+  // sequence; warm() starts it early and later requests reuse that process.
+  it('warm() starts the process once, and requests reuse it', async () => {
+    const c = make();
+    c.warm();
+    expect(c.spawns).toBe(1);
+    expect(c.pid).toBeGreaterThan(0);
+    c.warm();
+    await c.dense(['ab']);
     expect(c.spawns).toBe(1);
   });
 

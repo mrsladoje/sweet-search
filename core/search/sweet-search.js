@@ -522,7 +522,10 @@ export class SweetSearch {
     if (!grepOnly) {
       this.hasBinaryHnswIndex = binaryHnswIndexExists(this.binaryHnswPath);
     }
-    if (!grepOnly && this.hasBinaryHnswIndex && this.use3Stage) {
+    // Only when the file changed: the stale bitmap is read per search anyway, and a tick
+    // without vector changes leaves the index file as it was.
+    if (!grepOnly && this.hasBinaryHnswIndex && this.use3Stage
+      && (!this._binaryHnswIdentity || fileIdentity(this.binaryHnswPath) !== this._binaryHnswIdentity)) {
       await this._reloadBinaryHnsw();
     }
 

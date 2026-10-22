@@ -308,15 +308,6 @@ async function _runFullWarmupInner(options, start, effectiveProvider) {
       createdAt: new Date().toISOString(),
     }));
 
-    // Persist vocab-dynamic.json (full ranked term list)
-    await fs.writeFile(ARTIFACT_PATHS.dynamicVocab, JSON.stringify({
-      identifiers: ranked.identifiers,
-      phrases: ranked.phrases,
-      stats: ranked.stats,
-      depth,
-      createdAt: new Date().toISOString(),
-    }));
-
     // Persist identifier embeddings as binary (if we generated any)
     if (semanticEmbeddings.size > 0) {
       // Split hub entities and phrases into separate bins

@@ -37,7 +37,7 @@
  * Started by: session-preheat.sh (alongside search infrastructure)
  */
 
-import { readFileSync, writeFileSync, existsSync, unlinkSync, renameSync, appendFileSync, mkdirSync, openSync, closeSync, constants, ftruncateSync, fsyncSync, writeSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, unlinkSync, renameSync, appendFileSync, mkdirSync, openSync, closeSync, constants, ftruncateSync, fsyncSync, writeSync, statSync } from 'node:fs';
 import fs from 'node:fs/promises';
 import { dirname, join, relative, isAbsolute, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1009,6 +1009,11 @@ export async function runReconcileV2Tick(ctx) {
 
   const { runProductionReconcileTick } = await import('../incremental-indexing/application/production-reconciler.mjs');
   const encoders = await maintainerEncoders();
+  // A cold encoder process spent 2.4 s loading its models in sequence after the parse;
+  // with work queued, load them now, alongside hashing, parsing and graph writes.
+  try {
+    if (encoders && statSync(join(ctx.stateDir, 'index-maintainer-queue.jsonl')).size > 0) encoders.warm();
+  } catch { /* no queue */ }
   const counters = await runProductionReconcileTick({
     projectRoot: ctx.projectRoot,
     stateDir: ctx.stateDir,

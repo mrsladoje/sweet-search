@@ -8,7 +8,7 @@
  * maintainer's environment and nice value.
  *
  * Protocol (advanced IPC serialization, so typed arrays pass as-is):
- *   request  { id, op: 'dense' | 'li' | 'count', texts }
+ *   request  { id, op: 'dense' | 'li' | 'count' | 'warm', texts }
  *   reply    { id, ok: true, result, provenance, rss } | { id, ok: false, error, rss }
  *   progress { id, progress: true }   (dense encodes, per batch)
  */
@@ -34,6 +34,12 @@ async function run(op, texts, id) {
   }
   if (op === 'li') return encodeDocumentsCpu(texts);
   if (op === 'count') return countDocumentTokensCpu(texts);
+  if (op === 'warm') {
+    // Load both models at once, while the maintainer is still hashing and parsing.
+    await Promise.all([getEmbeddings(['warm up'], { useCache: false }), encodeDocumentsCpu(['warm up'])]);
+    takeProvenance(); // not an encode of the index
+    return null;
+  }
   throw new Error(`unknown encoder op: ${op}`);
 }
 
