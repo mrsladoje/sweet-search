@@ -466,9 +466,10 @@ let encoderClient;
 let encoderChildListener = null;
 async function maintainerEncoders() {
   if (encoderClient !== undefined) return encoderClient;
-  const { createEncoderClient, encoderIdleMs } = await import('./encoder-client.mjs');
+  const { createEncoderClient, encoderIdleMs, encoderIdleMaxMs } = await import('./encoder-client.mjs');
   encoderClient = createEncoderClient({
     idleMs: encoderIdleMs(),
+    maxIdleMs: encoderIdleMaxMs(),
     log: (level, msg) => log(level, msg),
     onChildChange: (pid) => encoderChildListener?.(pid),
   });
@@ -1692,11 +1693,11 @@ async function main() {
   // Bench-only pid ledger (no-op unless SWEET_SEARCH_SPAWN_LEDGER_DIR is set).
   recordSpawn({ pid: process.pid, role: 'maintainer-self' });
 
-  // A.1 (Tier-1, UNGATED): demote the maintainer daemon to low OS priority so
-  // the foreground (editor / git / shell) never feels the background indexer's
-  // CPU. Identical index output — only *when* CPU is granted changes.
-  // Best-effort: a platform that rejects it must not crash the daemon.
-  try { os.setPriority(os.constants.priority.PRIORITY_LOW); } catch { /* best-effort */ }
+  // A.1: below-normal OS priority (nice 10; the encoder child inherits it), so the
+  // foreground (editor / git / shell) wins contended cores. Not the lowest (19): under
+  // a load average of 20 the encoder then took 11 s per model load and a cold edit
+  // 13 s to become searchable; freshness comes first. Best-effort.
+  try { os.setPriority(os.constants.priority.PRIORITY_BELOW_NORMAL); } catch { /* best-effort */ }
 
   // E.4 (global half): set the process-global SQLite `soft_heap_limit` ONCE,
   // before any tier connection opens. SQLite's `soft_heap_limit` is a

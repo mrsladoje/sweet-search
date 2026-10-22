@@ -80,7 +80,7 @@ describe('applyBackgroundPriority — platform dispatch', () => {
     expect(spawnMock).toHaveBeenNthCalledWith(
       1,
       'ionice',
-      ['-c', '3', '-p', '777'],
+      ['-c', '2', '-n', '7', '-p', '777'],
       expect.objectContaining({ stdio: 'ignore' }),
     );
     expect(spawnMock).toHaveBeenNthCalledWith(
