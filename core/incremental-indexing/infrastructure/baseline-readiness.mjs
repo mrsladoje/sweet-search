@@ -68,25 +68,19 @@ export const LI_FORMAT_OUTDATED = 'li-format-outdated';
 const MERKLE_STATE = 'merkle-state.json';
 const DEFAULT_VECTORS_DB = 'codebase.db';
 
-function readJsonSafe(filePath) {
+/** The first FINGERPRINT_PREFIX_BYTES of merkle-state.json, or null when it cannot be read. */
+function readMerkleHead(stateDir) {
+  let fd = null;
   try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    fd = fs.openSync(path.join(stateDir, MERKLE_STATE), 'r');
+    const buf = Buffer.alloc(FINGERPRINT_PREFIX_BYTES);
+    const n = fs.readSync(fd, buf, 0, buf.length, 0);
+    return n > 0 ? buf.toString('utf8', 0, n) : null;
   } catch {
     return null;
+  } finally {
+    if (fd !== null) { try { fs.closeSync(fd); } catch { /* ignore */ } }
   }
-}
-
-/**
- * Does the merkle state carry a `config_fingerprint`? The full indexer writes a
- * populated object; the reconciler never adds one. Accept either a non-empty
- * object or a non-empty string for forward/backward tolerance.
- */
-function hasConfigFingerprint(merkle) {
-  const fp = merkle ? merkle.config_fingerprint : null;
-  if (!fp) return false;
-  if (typeof fp === 'string') return fp.length > 0;
-  if (typeof fp === 'object') return Object.keys(fp).length > 0;
-  return false;
 }
 
 /**
@@ -129,14 +123,17 @@ export function hasCompleteBaseIndex(stateDir) {
     return { ready: false, reason: 'manifest-epoch-zero' };
   }
 
-  const merkle = readJsonSafe(path.join(stateDir, MERKLE_STATE));
-  if (!merkle) {
+  // The fingerprint sits in the head of merkle-state.json: read only that. The whole
+  // file (55 MB at 100k files) was parsed here on every maintainer tick.
+  const head = readMerkleHead(stateDir);
+  if (head === null) {
     return { ready: false, reason: 'no-merkle-state' };
   }
-  if (!hasConfigFingerprint(merkle)) {
+  const stored = extractFingerprint(head);
+  if (!stored || typeof stored !== 'object' || Object.keys(stored).length === 0) {
     return { ready: false, reason: 'no-config-fingerprint' };
   }
-  const fingerprint = validateConfigFingerprint(merkle.config_fingerprint);
+  const fingerprint = validateConfigFingerprint(stored);
   if (!fingerprint.valid) {
     return { ready: false, reason: CONFIG_FINGERPRINT_MISMATCH, changes: fingerprint.changes || [] };
   }

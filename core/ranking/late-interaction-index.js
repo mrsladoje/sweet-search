@@ -14,6 +14,7 @@ import fs from 'fs/promises';
 import { bootLog } from '../infrastructure/boot-log.js';
 import { existsSync, createWriteStream, createReadStream, statSync } from 'fs';
 import readline from 'readline';
+import { crc32 as zlibCrc32 } from 'zlib';
 import path from 'path';
 import { DB_PATHS, LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
 import { wasmMaxSimF32, wasmMaxSimDequantPerToken, wasmMaxSimDequant4Bit, wasmMaxSimPrepareQuery, nativeMaxSimBatch, nativeMaxSimPacked, nativeMaxSimPrewarm, initWasm, isNativeMaxSimAvailable, isNativePerTokenAvailable, isNative4BitAvailable } from '../infrastructure/simd-distance.js';
@@ -22,25 +23,9 @@ import { poolTokens } from './late-interaction-model.js';
 import { loadBitmap, isSet } from '../infrastructure/tombstone-bitmap-reader.js';
 import { nativeRescoreKernels } from '../infrastructure/native-rescore.js';
 
-// =============================================================================
-// CRC32 (IEEE 802.3 polynomial, used for SSLX segment footer checksum)
-// =============================================================================
-const CRC32_TABLE = new Uint32Array(256);
-{
-  for (let i = 0; i < 256; i++) {
-    let c = i;
-    for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
-    CRC32_TABLE[i] = c >>> 0;
-  }
-}
-
-function crc32(buf) {
-  let crc = 0xFFFFFFFF;
-  for (let i = 0; i < buf.length; i++) {
-    crc = CRC32_TABLE[(crc ^ buf[i]) & 0xFF] ^ (crc >>> 8);
-  }
-  return (crc ^ 0xFFFFFFFF) >>> 0;
-}
+// CRC32 (IEEE 802.3) for the SSLX segment footer: zlib's native one. The JavaScript table
+// loop ran at ~430 MB/s, so a daemon reload of a 1.7 GB LI index spent ~4 s on it.
+const crc32 = (buf) => zlibCrc32(buf) >>> 0;
 
 /**
  * Quantize float32 to int8 for storage (per-document: single min/scale)

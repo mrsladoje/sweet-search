@@ -12,7 +12,7 @@
 
 import fs from 'fs/promises';
 import { existsSync } from 'fs';
-import { spawn } from 'child_process';
+import { execFileSync, spawn } from 'child_process';
 import path from 'path';
 
 import { PROJECT_ROOT, AGENTIC_GITIGNORE_ALLOWLIST } from '../infrastructure/config/index.js';
@@ -123,6 +123,26 @@ async function findSymlinkDirs(paths, projectRoot) {
   return symlinkPrefixes;
 }
 
+// Below this many paths, listing the tracked files costs more than it saves.
+const TRACKED_FILTER_MIN_PATHS = 64;
+
+/** Git-tracked files of `projectRoot` (posix), or null when git cannot list them. */
+function listTrackedFiles(projectRoot) {
+  try {
+    const out = execFileSync('git', ['ls-files', '-z'], {
+      cwd: projectRoot, maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'],
+    });
+    return new Set(out.toString('utf8').split('\0').filter(Boolean));
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * @param {string[]} paths
+ * @param {{projectRoot?: string, silent?: boolean, tracked?: Set<string>}} [options]
+ *   tracked: the git-tracked files, when the caller has them already
+ */
 export async function getGitIgnoredPathSet(paths, options = {}) {
   const projectRoot = options.projectRoot || PROJECT_ROOT;
   const silent = options.silent ?? false;
@@ -130,6 +150,17 @@ export async function getGitIgnoredPathSet(paths, options = {}) {
 
   if (paths.length === 0) {
     return new Set();
+  }
+
+  // git never reports a tracked path as ignored, and `check-ignore` costs grow with the
+  // tracked-file count times the paths asked: 6 s for 30k tracked files, 70 s for 100k,
+  // on every maintainer tick. Ask only about the untracked ones.
+  if (paths.length >= TRACKED_FILTER_MIN_PATHS) {
+    const tracked = options.tracked || listTrackedFiles(projectRoot);
+    if (tracked && tracked.size > 0) {
+      paths = paths.filter((p) => !tracked.has(toPosixPath(p)));
+      if (paths.length === 0) return new Set();
+    }
   }
 
   const ignored = new Set();

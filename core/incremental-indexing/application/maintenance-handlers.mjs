@@ -35,7 +35,7 @@ import Database from 'better-sqlite3';
 import { BinaryHNSWIndex, binaryHnswIndexExists } from '../../vector-store/binary-hnsw-index.js';
 import { LateInteractionIndex } from '../../ranking/late-interaction-index.js';
 import { compactDeltaSegments, listDeltaSegments } from '../infrastructure/sparse-gram-delta.mjs';
-import { mergeLiSegments, collectLiveDocs, LI_MERGE_GRACE_MS } from '../infrastructure/li-segment-merge.mjs';
+import { mergeLiSegments, collectLiveDocs, nextSegmentSeq, quarantineSegmentFiles, LI_MERGE_GRACE_MS } from '../infrastructure/li-segment-merge.mjs';
 import { runVectorGc } from '../infrastructure/vector-gc.mjs';
 import { runGraphGc } from '../infrastructure/graph-gc.mjs';
 import { PAGERANK_STATE, graphChangeEpoch } from '../infrastructure/maintenance-state-reader.mjs';
@@ -299,24 +299,24 @@ export async function liSegmentHandler(job, { stateDir, onProgress = null }) {
   });
   await writer.init();
 
-  const tmpSegPath = segmentPath + '.compacting.tmp';
-  await writer._writeSegmentFile(tmpSegPath, liveDocs);
+  // A new segment name, not a rewrite in place: the stale bitmap is positional, and the
+  // compacted file renumbers its docs. Replacing the file and then resetting its bitmap
+  // left a window (and, after a crash, a lasting state) where the old bitmap hid the
+  // wrong docs. The old file and its bitmap stay for the quarantine grace (readers).
+  const seq = nextSegmentSeq(manifest);
+  const newName = `segment-${String(seq).padStart(4, '0')}.bin`;
+  await writer._writeSegmentFile(path.join(segmentDir, newName), liveDocs);
   progress('maintenance:li-segment:written');
-  // Atomic replace of the segment file.
-  fs.renameSync(tmpSegPath, segmentPath);
-  // Reset the segment's stale bitmap to a fresh, zero-tombstone bitmap
-  // sized for the new doc count.
-  safeUnlink(staleSidecar);
-  if (liveDocs.size > 0) {
-    saveBitmap(staleSidecar, createBitmap(Math.max(1, liveDocs.size)));
-  }
-
-  // Update the manifest entry's count atomically.
-  segmentEntry.count = liveDocs.size;
-  manifest.totalDocuments = manifest.segments.reduce((sum, s) => sum + (s?.count || 0), 0);
+  const nextManifest = {
+    ...manifest,
+    segments: manifest.segments.map((s) => (s?.path === segmentId ? { path: newName, count: liveDocs.size } : s)),
+    nextSeq: seq + 1,
+  };
+  nextManifest.totalDocuments = nextManifest.segments.reduce((sum, s) => sum + (s?.count || 0), 0);
   const tmpManifest = manifestPath + '.tmp';
-  fs.writeFileSync(tmpManifest, JSON.stringify(manifest, null, 2));
+  fs.writeFileSync(tmpManifest, JSON.stringify(nextManifest, null, 2));
   fs.renameSync(tmpManifest, manifestPath);
+  quarantineSegmentFiles(segmentDir, [segmentId, segmentId + '.stale.bin']);
 
   return {
     tier: 'li_segment',

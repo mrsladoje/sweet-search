@@ -2016,13 +2016,16 @@ export class BinaryHNSWIndex {
     const pidSuffix = `.tmp.${process.pid}`;
     await writeIndexFile(indexPath + pidSuffix, header, sections);
     await this._publishFullVectors(indexPath, pidSuffix);
-    await fs.rename(indexPath + pidSuffix, indexPath);
-
+    // A clean build renumbers the nodes, so the old stale bitmap must be gone before the new
+    // index lands: after a crash between the two, the old bitmap would hide live nodes of the
+    // new graph for good. The other order leaves retired nodes visible, which the next
+    // compaction (scheduled on codebase.db divergence) removes.
     if (this._cleanBuild) {
       await fs.rm(this._stalePathForIndex(indexPath), { force: true });
       this._staleBitmapCache = null;
       this._cleanBuild = false;
     }
+    await fs.rename(indexPath + pidSuffix, indexPath);
 
     console.log(`BinaryHNSW: Saved ${n} vectors to ${indexPath} (asymmetric=${this.useAsymmetric})`);
   }

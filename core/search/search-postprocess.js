@@ -8,7 +8,7 @@
  * so they work correctly when wired onto SweetSearch.prototype.
  */
 
-import { readFileSync } from 'fs';
+import { readFileSync, statSync } from 'fs';
 import path from 'path';
 import { SEISMIC_CONFIG, DB_PATHS } from '../infrastructure/config/index.js';
 import { expandResults } from '../graph/graph-expansion.js';
@@ -50,7 +50,11 @@ const FULL_VECTOR_RESCORE_WEIGHT = 0.80;
 // without env overrides — calibrated on GCSN dev/held-out (seed=42 splits).
 const FULL_VECTOR_LI_RESCORE_WEIGHT = 0.3;
 const FULL_VECTOR_EXACT_TEXT_WEIGHT = 0.20;
+// File text for query-text ranking, keyed by path and checked against the file's size and
+// mtime on each read (the daemon lives across edits: an unbounded, never-expiring map kept
+// ranking on text the file no longer had). Least recently used past the bound is dropped.
 const QUERY_TEXT_FILE_CACHE = new Map();
+const QUERY_TEXT_FILE_CACHE_MAX = 512;
 const QUERY_TEXT_STOPWORDS = new Set([
   'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'can', 'could',
   'did', 'do', 'does', 'for', 'from', 'how', 'i', 'in', 'into', 'is',
@@ -149,14 +153,24 @@ function readCandidateSpan(projectRoot, result) {
   if (!absPath) return '';
 
   const cacheKey = `${projectRoot}\0${file}`;
-  let content = QUERY_TEXT_FILE_CACHE.get(cacheKey);
-  if (content == null) {
+  let stat = null;
+  try { stat = statSync(absPath); } catch { /* gone: empty */ }
+  const version = stat ? `${stat.size}:${stat.mtimeMs}` : '';
+  const hit = QUERY_TEXT_FILE_CACHE.get(cacheKey);
+  let content;
+  if (hit && hit.version === version) {
+    content = hit.content;
+    QUERY_TEXT_FILE_CACHE.delete(cacheKey);
+  } else {
     try {
-      content = readFileSync(absPath, 'utf8');
+      content = stat ? readFileSync(absPath, 'utf8') : '';
     } catch {
       content = '';
     }
-    QUERY_TEXT_FILE_CACHE.set(cacheKey, content);
+  }
+  QUERY_TEXT_FILE_CACHE.set(cacheKey, { version, content });
+  if (QUERY_TEXT_FILE_CACHE.size > QUERY_TEXT_FILE_CACHE_MAX) {
+    QUERY_TEXT_FILE_CACHE.delete(QUERY_TEXT_FILE_CACHE.keys().next().value);
   }
   if (!content) return '';
 
@@ -1250,3 +1264,5 @@ export function buildMixedRerankPool(results, slot, expandedFraction = 0.4) {
     expandedQuotaUsed: topExpanded.length,
   };
 }
+
+export const __TEST__ = { readCandidateSpan };

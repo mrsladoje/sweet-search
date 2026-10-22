@@ -341,7 +341,7 @@ export function createAdmissionPolicy({ projectRoot = process.cwd(), config, all
       candidates.push(r);
     }
     if (candidates.length === 0) return out;
-    const ignored = await getGitIgnoredPathSet(candidates, { projectRoot, silent });
+    const ignored = await getGitIgnoredPathSet(candidates, { projectRoot, silent, tracked: trackedFiles() });
     if (!ignored) return out;
     for (const p of ignored) out.add(toPosixPath(p));
     return out;

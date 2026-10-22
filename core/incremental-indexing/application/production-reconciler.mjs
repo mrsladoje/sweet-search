@@ -13,19 +13,10 @@ import { readManifest, writeManifest } from '../infrastructure/manifest.mjs';
 import { annotateChunksForDelta, snapshotFileRows, diffChunks, applyDiff } from '../infrastructure/vector-delta-writer.mjs';
 import { appendDeltaRecord, FALLBACK_WEIGHTS_ID, fileIdFor, listDeltaSegments } from '../infrastructure/sparse-gram-delta.mjs';
 import { fts5Merge, fts5MergeBudgetPages } from '../infrastructure/sqlite-fts5.mjs';
+import { openSegmentState, tombstoneDoc, persistSegmentState } from '../infrastructure/li-segment-state.mjs';
 import { insertEntity, insertRelationships, resolveTouchedEdges, markBinaryStale, createStaleBatch, maintainFloatStore, flushFloatStore } from './production-reconciler-helpers.mjs';
 import { resolveRowsScoped } from '../../graph/relationship-resolver.js';
 import { deriveOverrideEdges } from '../../graph/override-edges.js';
-import {
-  chunkCutoffEnabled,
-  computeCutoffSignature,
-  signaturesMatch,
-  loadCutoffCache,
-  getFileSignature,
-  setFileSignature,
-  deleteFileSignature,
-  saveCutoffCache,
-} from '../domain/cutoff-cache.mjs';
 import { FloatVectorStore, getFloatStorePath, float512StoreEnabled } from '../../vector-store/float-vector-store.js';
 import { createGraphSchema, entityParentIds, GraphExtractor, insertCallSites } from '../../graph/graph-extractor.js';
 import { createImportResolver, importEdgesEnabled } from '../../graph/import-resolver.js';
@@ -219,10 +210,10 @@ function statTuple(absPath) {
   return { size: stat.size.toString(), mtime_ns: stat.mtimeNs.toString(), inode: stat.ino.toString() };
 }
 
-function safeWriteJson(filePath, payload) {
+function safeWriteJson(filePath, payload, { compact = false } = {}) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const tmp = `${filePath}.tmp.${process.pid}`;
-  fs.writeFileSync(tmp, JSON.stringify(payload, null, 2));
+  fs.writeFileSync(tmp, compact ? JSON.stringify(payload) : JSON.stringify(payload, null, 2));
   fs.renameSync(tmp, filePath);
 }
 
@@ -432,10 +423,6 @@ class ProductionReconcileAdapter {
     this._statRefresh = new Map();
     // E.1: the active tick-scoped store context (null on the per-file path).
     this._tickCtx = null;
-    // E.6: chunk-cutoff cache — loaded lazily at tick begin / first vector delta
-    // when the flag is on; null when disabled.
-    this._cutoffCache = null;
-    this._cutoffDirty = false;
     // merkle-state.json is written exactly once per tick (persistManifest);
     // every other reader gets one shared parse. `undefined` = not read yet,
     // `null` = missing/corrupt file.
@@ -505,7 +492,7 @@ class ProductionReconcileAdapter {
   /**
    * E.1: open the tick-scoped store context once at tick start. Opens RW
    * `codebase.db` + `code-graph.db`, a RO `code-graph.db` for enrichment, loads
-   * the binary HNSW + float store once, and primes the cutoff cache (E.6).
+   * the binary HNSW + float store once.
    *
    * With E.2 (`SWEET_SEARCH_RECONCILE_LIVE_HNSW`) the HNSW + float store come
    * from the daemon-scoped registry (loaded once, kept resident across ticks);
@@ -540,10 +527,6 @@ class ProductionReconcileAdapter {
     // writes — preserving per-file enrichment semantics inside one tick.
     const graphRoDb = graphDb;
 
-    if (chunkCutoffEnabled() && !this._cutoffCache) {
-      this._cutoffCache = loadCutoffCache(this.stateDir);
-      this._cutoffDirty = false;
-    }
 
     // E.1 PERSIST-BEFORE-ADVANCE: defer the SQLite COMMIT to finalizeTick. Open
     // an explicit outer transaction on each RW connection now; the per-file
@@ -760,6 +743,14 @@ class ProductionReconcileAdapter {
         ctx.codebaseDb.exec('COMMIT');
         ctx.graphDb.exec('COMMIT');
         ctx.txOpen = false;
+      }
+      // Tombstones last: a crash before this leaves retired rows visible (codebase.db
+      // divergence schedules the binary_hnsw compaction), never live rows hidden.
+      ctx.staleBatch?.flush();
+      await this._persistLiTombstones(ctx);
+      if (ctx.liAppend?.writer) {
+        const { appendDeferredLiSegment } = await import('./production-li-delta.mjs');
+        await appendDeferredLiSegment(path.join(this.stateDir, 'codebase-late-interaction.db'), ctx.liAppend);
       }
     } catch (err) {
       // HNSW save (or COMMIT) failed → roll back the SQLite tiers so nothing is
@@ -1305,57 +1296,12 @@ class ProductionReconcileAdapter {
         const summary = retire();
         const retired = summary.retiredRows.map((r) => ({ retireId: r.oldId, file: rel }));
         this.touched.set(rel, { ...(this.touched.get(rel) || {}), hash: hashes, chunkIds: [] });
-        // E.6: drop a deleted file's cutoff signature.
-        if (this._cutoffCache) { deleteFileSignature(this._cutoffCache, rel); this._cutoffDirty = true; }
         return { ops: { vectors_delete: summary.retiredRows.length }, vectorOps: retired, tokenOps: retired, gramOps: [{ file: rel, deleted: true }] };
       }
       const parsed = await new ASTChunker({ projectRoot: this.projectRoot }).parseFile(rel, hashes.content);
       this.progress('production:vector-parsed');
       chunks = await enrichChunksFromGraph(parsed.map((chunk, i) => ({ ...chunk, file: rel, id: `${rel}:${chunk.metadata?.line_start || 0}-${chunk.metadata?.line_end || chunk.metadata?.line_start || 0}:${i}` })), this.stateDir, ctx);
       this.progress('production:vector-enriched');
-      // E.6 chunk-hash early-cutoff. The signature is the per-chunk encoder-input
-      // hashes (embedding_input_hash + li_input_hash) computed from the ENRICHED
-      // chunks — so cross-file enrichment (scope/imports injected above) folds in.
-      // If the file changed on disk but produces byte-identical encoder inputs
-      // (comment-only / reformat edits, or a dependency change that does NOT
-      // alter this file's enriched text), the encode + all tier writes are
-      // skipped. CORRECTNESS GATE: keyed ONLY on encoder-input hashes, never on
-      // the file's own chunk_text_hash / contentUnchanged.
-      if (chunkCutoffEnabled()) {
-        if (!this._cutoffCache) { this._cutoffCache = loadCutoffCache(this.stateDir); this._cutoffDirty = false; }
-        const signature = computeCutoffSignature(chunks);
-        const previous = getFileSignature(this._cutoffCache, rel);
-        if (signaturesMatch(previous, signature)) {
-          this.progress('production:vector-cutoff-skip');
-          // Provisional touched entry: keep the file's existing chunkIds so the
-          // merkle hash advances (the encoder inputs are unchanged) without any
-          // tier write. The merkle still records the new content hash so the
-          // file is not re-queued forever.
-          const prevTouched = this.touched.get(rel) || {};
-          const prevChunkIds = (this._merkleRead() ?? { files: {} }).files?.[rel]?.chunkIds || prevTouched.chunkIds || [];
-          this.touched.set(rel, { ...prevTouched, hash: hashes, chunkIds: prevChunkIds, content: hashes.content });
-          if (ctx) ctx.persistedFiles.add(rel);
-          return {
-            ops: { vectors_upsert: 0, vectors_delete: 0 },
-            chunksTotal: chunks.length,
-            chunksEncoded: 0,
-            chunksReused: chunks.length,
-            chunksMetadataDirty: 0,
-            skipped: true,
-            vectorOps: [],
-            tokenOps: [],
-            // E.6 cutoff skips the EXPENSIVE encode + dense/HNSW/LI/graph tiers
-            // (encoder inputs are byte-identical), but sparse-grams are derived
-            // from RAW file content — a comment/reformat edit, or a change in an
-            // un-chunked region, leaves encoder inputs identical yet changes the
-            // raw content, so ss-grep/regex would go STALE if we dropped the
-            // sparse delta here. Always emit the content-derived sparse-gram delta
-            // on cutoff; the reconciler applies ONLY this tier when `skipped`.
-            gramOps: [{ file: rel, deleted: false, content: hashes.content, contentHash: hashes.contentHash }],
-            manifest: { path: 'codebase.db' },
-          };
-        }
-      }
       // LI generated-content parity: decide ONCE, from the file's full chunk set
       // (exactly like full indexing's per-file applyIndexingChunkPolicy), whether
       // late interaction skips this file. Embeddings/graph/sparse still index it.
@@ -1481,12 +1427,6 @@ class ProductionReconcileAdapter {
 
       const recordedChunkIds = repairedIds.length > 0 ? [...newIds, ...repairedIds] : newIds;
       this.touched.set(rel, { ...(this.touched.get(rel) || {}), hash: hashes, chunkIds: recordedChunkIds, content: hashes.content });
-      // E.6: record this file's new cutoff signature (encoder-input hashes of
-      // the enriched chunks) for next-tick comparison.
-      if (this._cutoffCache) {
-        setFileSignature(this._cutoffCache, rel, computeCutoffSignature(chunks));
-        this._cutoffDirty = true;
-      }
       if (ctx) ctx.persistedFiles.add(rel);
       return {
         ops: { vectors_upsert: newIds.length, vectors_delete: vectorOps.filter((o) => o.retireId).length },
@@ -1523,7 +1463,11 @@ class ProductionReconcileAdapter {
       let append = 0; let tombstone = 0;
       // One bitmap load + one save+fsync per file's ops instead of per
       // retired id; marks apply in op order with identical semantics.
-      const staleBatch = createStaleBatch(index);
+      // One batch for the tick, written in finalizeTick after the index save and the
+      // COMMIT. A per-file flush hid the old chunk from vector search before its
+      // replacement was saved, and after an aborted tick the marks outlived the rolled
+      // back rows (a file reverted meanwhile then stayed hidden).
+      const staleBatch = (ctx.staleBatch ??= createStaleBatch(index));
       for (const op of ops) {
         if (op.retireId) {
           if (staleBatch.markStale(op.retireId)) tombstone += 1;
@@ -1536,7 +1480,6 @@ class ProductionReconcileAdapter {
           append += 1;
         }
       }
-      staleBatch.flush();
       ctx.tombstone += tombstone;
       // append is committed to ctx.append in finalize after the sorted inserts.
       ctx.append += append;
@@ -1605,8 +1548,23 @@ class ProductionReconcileAdapter {
       pickLiInput,
       onProgress: () => this.progress('production:li-delta'),
       readerCache,
+      deferredTombstones: ctx ? (ctx.liTombstones ??= []) : null,
+      deferredAppend: ctx ? (ctx.liAppend ??= { writer: null }) : null,
     });
     return { ops: { li_segment_append: appended, li_tombstone: tombstone }, manifest: { path: 'codebase-late-interaction.db', segments: 'codebase-late-interaction.db.segments/manifest.json' } };
+  }
+
+  /** Write the tick's LI tombstones (collected by applyLIDelta), after the COMMIT. */
+  async _persistLiTombstones(ctx) {
+    const marks = ctx?.liTombstones;
+    if (!marks || marks.length === 0) return;
+    const states = new Map();
+    for (const { segmentPath, docIndex, docCount } of marks) {
+      if (!states.has(segmentPath)) states.set(segmentPath, openSegmentState(segmentPath, docCount));
+      tombstoneDoc(states.get(segmentPath), docIndex);
+    }
+    for (const state of states.values()) persistSegmentState(state);
+    ctx.liTombstones = [];
   }
 
   /**
@@ -1658,7 +1616,10 @@ class ProductionReconcileAdapter {
   persistManifest(manifest) {
     writeManifest(this.stateDir, manifest);
     const merklePath = path.join(this.stateDir, MERKLE_STATE);
-    const merkle = readJson(merklePath, { version: '2.4', files: {}, stats: {} });
+    // The adapter's cached parse (invalidated below): a second parse of the whole file
+    // cost 121 ms at 100k files.
+    const merkle = this._merkleRead() ?? { version: '2.4', files: {}, stats: {} };
+    this._merkleCache = undefined;
     merkle.files ||= {};
     // E.1 PERSIST-BEFORE-ADVANCE: when batching, promote a file into the merkle
     // ONLY if its ops are in the persisted batch (recorded in finalizeTick). A
@@ -1685,15 +1646,8 @@ class ProductionReconcileAdapter {
     merkle.lastIndex = new Date().toISOString();
     merkle.epoch = manifest.epoch;
     merkle.stats = { ...(merkle.stats || {}), totalFiles: Object.keys(merkle.files).length };
-    safeWriteJson(merklePath, merkle);
-    // Invalidate the shared read cache — this is the one merkle writer.
-    this._merkleCache = undefined;
-    // E.6: persist the updated chunk-cutoff cache once per tick (after the
-    // merkle advances). Best-effort; a failure only costs a redundant re-embed.
-    if (this._cutoffCache && this._cutoffDirty) {
-      saveCutoffCache(this.stateDir, this._cutoffCache);
-      this._cutoffDirty = false;
-    }
+    // Compact: pretty-printing doubled the bytes and the stringify time (55 MB at 100k files).
+    safeWriteJson(merklePath, merkle, { compact: true });
     try { fs.unlinkSync(path.join(this.stateDir, PROCESSING_QUEUE)); } catch {}
     const metricsPath = path.join(this.stateDir, METRICS_FILE);
     try {
