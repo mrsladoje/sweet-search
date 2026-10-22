@@ -104,6 +104,14 @@ function writeQuarantine(segmentDir, entries) {
   fs.writeFileSync(p, entries.map((e) => JSON.stringify(e)).join('\n') + '\n');
 }
 
+/** Queue segment files for deletion after the grace window (readers may still hold them). */
+export function quarantineSegmentFiles(segmentDir, paths, now = Date.now()) {
+  if (paths.length === 0) return;
+  const journal = readQuarantine(segmentDir);
+  journal.push({ retiredAtMs: now, paths });
+  writeQuarantine(segmentDir, journal);
+}
+
 /**
  * Physically delete quarantined segment files whose grace window elapsed.
  * Entries still inside the grace window are retained verbatim.

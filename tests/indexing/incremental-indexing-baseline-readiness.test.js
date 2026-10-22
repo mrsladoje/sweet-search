@@ -156,7 +156,8 @@ describe('hasCompleteBaseIndex', () => {
     writeManifestJson(stateDir, 1);
     writeFileSync(join(stateDir, 'merkle-state.json'), '{ broken', 'utf-8');
     writeEmptyVectorsDb(stateDir);
-    expect(hasCompleteBaseIndex(stateDir).reason).toBe('no-merkle-state');
+    // The gate reads only the head of the file for the fingerprint.
+    expect(hasCompleteBaseIndex(stateDir)).toEqual({ ready: false, reason: 'no-config-fingerprint' });
   });
 });
 

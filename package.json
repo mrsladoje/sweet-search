@@ -197,6 +197,6 @@
     "@sweet-search/native-linux-x64-gnu-cuda": "2.9.2"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.2.0"
   }
 }

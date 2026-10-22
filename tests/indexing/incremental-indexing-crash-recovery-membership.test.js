@@ -118,15 +118,6 @@ describe('crash-consistency: torn SQLite-committed row is re-added to HNSW + LI'
     for (const name of [
       'codebase-binary-hnsw.idx', 'codebase-binary-hnsw.stale.bin',
       'codebase-float-vectors.bin', 'merkle-state.json',
-      // The chunk-cutoff cache (lever E.6, now DEFAULT-ON) is persisted by
-      // persistManifest in the SAME step that advances the merkle (see
-      // production-reconciler.mjs:1219). A torn tick that never advanced the
-      // merkle therefore never wrote the cutoff cache for that tick either, so a
-      // faithful crash residue must drop it alongside the merkle. Otherwise a
-      // stale cutoff signature would short-circuit applyVectorDelta BEFORE the
-      // per-file torn-row repair — an inconsistent residue that cannot occur in
-      // production (cutoff cache + merkle co-persist atomically).
-      'reconcile-cutoff-cache.json',
     ]) {
       try { unlinkSync(join(stateDir, name)); } catch { /* ok if absent */ }
     }
@@ -271,7 +262,6 @@ describe('first tick after a full build', () => {
     const before = liveVectorIds(stateDir);
     // A tick that never published: its rows are newer than any merkle epoch.
     unlinkSync(join(stateDir, 'merkle-state.json'));
-    rmSync(join(stateDir, 'reconcile-cutoff-cache.json'), { force: true });
 
     writeFileSync(join(projectRoot, rel), 'export function alphaThing(input) {\n  return input.trim().toUpperCase();\n}\n');
     enqueue(stateDir, rel);
@@ -282,5 +272,56 @@ describe('first tick after a full build', () => {
     expect(await liDocIds(stateDir)).toEqual(live);
     expect(hnswLiveIds()).toEqual(live);
     expect(await floatStoreIds(stateDir)).toEqual(live);
+  });
+});
+
+// Tombstones were written per file during the tick, before the index save and the COMMIT.
+// When the tick then failed, SQLite rolled back but the marks stayed: the still-live rows
+// were hidden from vector and LI search (for good, if the file was reverted meanwhile).
+describe('a tick that fails before its COMMIT', () => {
+  let projectRoot;
+  let stateDir;
+  const rel = 'src/sample.js';
+  beforeEach(() => {
+    projectRoot = mkdtempSync(join(tmpdir(), 'ss-failed-tick-'));
+    stateDir = join(projectRoot, '.sweet-search');
+    mkdirSync(join(projectRoot, 'src'), { recursive: true });
+    mkdirSync(stateDir, { recursive: true });
+    writeFileSync(join(projectRoot, rel), 'export function alphaThing(input) {\n  return input.trim();\n}\n');
+  });
+  afterEach(() => { rmSync(projectRoot, { recursive: true, force: true }); });
+
+  async function tick() {
+    return runProductionReconcileTick({
+      projectRoot, stateDir, vectorEncoder, liEncoder, modelInfo: MODEL_INFO,
+      logger: silentLogger, config: { filesPerTick: 10, cpuBudgetMs: 10_000 },
+    });
+  }
+  function hnswLiveIds() {
+    const indexPath = join(stateDir, 'codebase-binary-hnsw.idx');
+    const { ids } = readIndexIdsSync(indexPath);
+    const stale = existsSync(`${indexPath}.stale.bin`) ? loadBitmap(`${indexPath}.stale.bin`) : null;
+    return new Set(ids.filter((id, node) => id != null && !(stale && isSet(stale, node))));
+  }
+
+  it('leaves no tombstone on rows that stayed live', async () => {
+    enqueue(stateDir, rel);
+    await tick();
+    const live = liveVectorIds(stateDir);
+
+    writeFileSync(join(projectRoot, rel), 'export function alphaThing(input) {\n  return input.trim().toLowerCase();\n}\n');
+    enqueue(stateDir, rel);
+    const { BinaryHNSWIndex } = await import('../../core/vector-store/binary-hnsw-index.js');
+    const save = BinaryHNSWIndex.prototype.save;
+    BinaryHNSWIndex.prototype.save = async () => { throw new Error('disk full'); };
+    try {
+      await tick().catch(() => {});
+    } finally {
+      BinaryHNSWIndex.prototype.save = save;
+    }
+
+    expect(liveVectorIds(stateDir)).toEqual(live); // rolled back
+    expect(hnswLiveIds()).toEqual(live);
+    expect(await liDocIds(stateDir)).toEqual(live);
   });
 });

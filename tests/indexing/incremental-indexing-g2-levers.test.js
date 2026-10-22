@@ -1,6 +1,6 @@
 /**
  * G2 efficiency levers — reconciler batching (E.1), live HNSW (E.2), SQLite
- * pragmas (E.4), FTS5 budgeting (E.5), chunk-cutoff (E.6), autotune-config (A.4).
+ * pragmas (E.4), FTS5 budgeting (E.5), autotune-config (A.4).
  *
  * Every lever has its own env flag, all default OFF. The cardinal invariant: with
  * EVERY flag off the reconciler is byte/behavior-identical to today (covered by
@@ -13,9 +13,6 @@
  *   - Crash-consistency: SIGKILL between the SQLite commit and the HNSW batch
  *     save → restart → live (queryable) state reconverges, with NO live SQLite
  *     vector row missing from the HNSW int8 (live) map.
- *   - E.6 dependency-change: the cutoff key folds cross-file enrichment, so a
- *     dependency-symbol change is NOT skipped; a content-changed-but-encoder-
- *     input-identical edit IS skipped.
  *   - E.5 FTS5 budget: page count scales with spare budget; optimize + truncate.
  *   - E.4 pragmas: byte-identical (cache/heap settings don't change output).
  */
@@ -39,16 +36,6 @@ import {
 } from '../../eval/index-maintainer-determinism/run-harness.mjs';
 import { byteDiff } from '../../eval/index-maintainer-determinism/dump-artifacts.mjs';
 import { ASTChunker } from '../../core/indexing/ast-chunker.js';
-import {
-  computeCutoffSignature,
-  signaturesMatch,
-  loadCutoffCache,
-  setFileSignature,
-  getFileSignature,
-  deleteFileSignature,
-  saveCutoffCache,
-  chunkCutoffEnabled,
-} from '../../core/incremental-indexing/domain/cutoff-cache.mjs';
 import {
   fts5MergeBudgetPages,
   fts5WatermarkBudgetPages,
@@ -91,7 +78,6 @@ const FLAG_KEYS = [
   'SWEET_SEARCH_RECONCILE_SQLITE_PRAGMAS',
   'SWEET_SEARCH_RECONCILE_FTS5_BUDGET',
   'SWEET_SEARCH_RECONCILE_FTS5_OPTIMIZE',
-  'SWEET_SEARCH_RECONCILE_CHUNK_CUTOFF',
   'SWEET_SEARCH_RECONCILE_AUTOTUNE',
   'SWEET_SEARCH_HNSW_DETERMINISTIC_LEVELS',
 ];
@@ -99,61 +85,6 @@ const FLAG_KEYS = [
 function clearFlags() {
   for (const k of FLAG_KEYS) delete process.env[k];
 }
-
-describe('G2 cutoff-cache domain (E.6)', () => {
-  it('the cutoff key folds cross-file enrichment (scope + imports)', () => {
-    // Same chunk text; only enrichment differs → DIFFERENT embedding-input hash.
-    // This is the structural correctness gate: a dependency-symbol change alters
-    // the dependent file's enriched embedding_text and therefore its key, so the
-    // dependent is never wrongly skipped.
-    const base = { text: 'function f(){ return 1; }', content: 'function f(){ return 1; }', metadata: { symbol: 'f', language: 'javascript' }, file: 'a.js', embedding_text: 'a.js\nfunction f(){ return 1; }' };
-    const enriched = { ...base };
-    delete enriched.embedding_text;
-    ASTChunker.enrichEmbeddingText(enriched, ['Outer'], ['./dep.js']);
-
-    const sigBase = computeCutoffSignature([base]);
-    const sigEnriched = computeCutoffSignature([enriched]);
-    expect(sigBase.embeddingInputHashes[0]).not.toBe(sigEnriched.embeddingInputHashes[0]);
-    expect(signaturesMatch(sigBase, sigEnriched)).toBe(false);
-  });
-
-  it('signaturesMatch requires the dense, li and row hash lists to match in order', () => {
-    const a = { embeddingInputHashes: ['x', 'y'], liInputHashes: ['p', 'q'], rowHashes: ['r', 's'] };
-    expect(signaturesMatch(a, { embeddingInputHashes: ['x', 'y'], liInputHashes: ['p', 'q'], rowHashes: ['r', 's'] })).toBe(true);
-    expect(signaturesMatch(a, { embeddingInputHashes: ['y', 'x'], liInputHashes: ['p', 'q'], rowHashes: ['r', 's'] })).toBe(false); // reorder
-    expect(signaturesMatch(a, { embeddingInputHashes: ['x', 'y'], liInputHashes: ['p', 'z'], rowHashes: ['r', 's'] })).toBe(false); // li differs
-    // Same encoder inputs, but chunk text or line span changed (comment edit, moved code).
-    expect(signaturesMatch(a, { embeddingInputHashes: ['x', 'y'], liInputHashes: ['p', 'q'], rowHashes: ['r', 't'] })).toBe(false);
-    expect(signaturesMatch(a, { embeddingInputHashes: ['x'], liInputHashes: ['p'], rowHashes: ['r'] })).toBe(false); // length
-    expect(signaturesMatch(null, a)).toBe(false);
-    // An emptied chunk set never matches → never skips a deletion/total rewrite.
-    expect(signaturesMatch({ embeddingInputHashes: [], liInputHashes: [], rowHashes: [] }, { embeddingInputHashes: [], liInputHashes: [], rowHashes: [] })).toBe(false);
-  });
-
-  it('persists, reads, and deletes per-file signatures atomically', () => {
-    const dir = mkdtempSync(join(tmpdir(), 'g2-cutoff-'));
-    try {
-      const cache = loadCutoffCache(dir);
-      expect(getFileSignature(cache, 'src/a.js')).toBeNull();
-      setFileSignature(cache, 'src/a.js', { embeddingInputHashes: ['h1'], liInputHashes: ['l1'] });
-      saveCutoffCache(dir, cache);
-      const reloaded = loadCutoffCache(dir);
-      expect(getFileSignature(reloaded, 'src/a.js')).toEqual({ embeddingInputHashes: ['h1'], liInputHashes: ['l1'] });
-      deleteFileSignature(reloaded, 'src/a.js');
-      saveCutoffCache(dir, reloaded);
-      expect(getFileSignature(loadCutoffCache(dir), 'src/a.js')).toBeNull();
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
-
-  it('chunkCutoffEnabled honors the env flag (DEFAULT-ON)', () => {
-    // DEFAULT-ON: unset/empty/'1' enable; only an explicit '0' disables.
-    expect(chunkCutoffEnabled({})).toBe(true);
-    expect(chunkCutoffEnabled({ SWEET_SEARCH_RECONCILE_CHUNK_CUTOFF: '1' })).toBe(true);
-    expect(chunkCutoffEnabled({ SWEET_SEARCH_RECONCILE_CHUNK_CUTOFF: '0' })).toBe(false);
-  });
-});
 
 describe('G2 FTS5 budget helpers (E.5)', () => {
   it('merge page budget: fast tick → small merge, busy tick → skip', () => {
@@ -334,13 +265,14 @@ describe('G2 E.1 batched tick (byte-identical determinism)', () => {
   });
 });
 
-describe('G2 E.6 chunk-cutoff integration', () => {
+// The E.6 whole-file cutoff cache is gone (it drifted from the index): the per-chunk diff
+// alone keeps an edit that leaves every chunk unchanged free of encodes and tier writes.
+describe('unchanged chunks after a content change', () => {
   let projectRoot;
   let stateDir;
 
   beforeEach(() => {
     clearFlags();
-    process.env.SWEET_SEARCH_RECONCILE_CHUNK_CUTOFF = '1';
     projectRoot = mkdtempSync(join(tmpdir(), 'g2-e6-'));
     stateDir = join(projectRoot, '.sweet-search');
     mkdirSync(join(projectRoot, 'src'), { recursive: true });
@@ -363,7 +295,7 @@ describe('G2 E.6 chunk-cutoff integration', () => {
     });
   }
 
-  it('skips a content-changed file whose encoder inputs are byte-identical', async () => {
+  it('re-encodes nothing for a content change outside every chunk', async () => {
     const enc = makeEncoders();
     writeFileSync(join(projectRoot, 'src', 'a.js'), 'export function alpha(x){\n  return x.trim();\n}\n');
     await tickFor('src/a.js', enc);
@@ -376,14 +308,11 @@ describe('G2 E.6 chunk-cutoff integration', () => {
     const t = await tickFor('src/a.js', enc);
     expect(enc.encoded.length - baseline).toBe(0); // no re-embed
     expect(t.ops_per_tier.vectors_upsert || 0).toBe(0); // no dense/HNSW/LI tier write
-    // BUT sparse-grams are derived from RAW content, not encoder inputs — the
-    // content DID change, so the sparse delta MUST still be emitted or ss-grep
-    // goes stale (the cutoff-skips-sparse regression Codex caught). The cutoff
-    // skips only the expensive encode/dense/LI/graph tiers, never sparse.
+    // Sparse grams come from the raw content, which did change: the delta must be emitted.
     expect(t.ops_per_tier.sparse_gram_delta_upsert || 0).toBeGreaterThan(0);
   });
 
-  it('does NOT skip when the chunk body actually changes', async () => {
+  it('re-encodes when the chunk body changes', async () => {
     const enc = makeEncoders();
     writeFileSync(join(projectRoot, 'src', 'a.js'), 'export function alpha(x){\n  return x.trim();\n}\n');
     await tickFor('src/a.js', enc);

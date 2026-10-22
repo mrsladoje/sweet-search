@@ -114,6 +114,8 @@ export async function applyLateInteractionDelta({
   onProgress = null,
   readerCache = null,
   positionsCache = null,
+  deferredTombstones = null,
+  deferredAppend = null,
 }) {
   const progress = typeof onProgress === 'function'
     ? (phase) => { onProgress(phase); }
@@ -212,18 +214,23 @@ export async function applyLateInteractionDelta({
   }
   progress('li:copy');
 
+  // With `deferredTombstones` (a tick) the marks are collected for the caller to write
+  // after its COMMIT: a mark written before it outlived a rolled-back tick and hid docs
+  // whose rows were still live.
   let tombstone = 0;
   const states = new Map();
   for (const op of ops) {
     if (!op.retireId) continue;
     const position = index._docSegmentPositions.get(op.retireId);
     if (!position) continue;
-    if (!states.has(position.segmentPath)) {
-      const docCount = index._segments.find((s) => s.path === position.segmentPath)?.count ?? position.docIndex + 1;
-      states.set(position.segmentPath, openSegmentState(position.segmentPath, docCount));
-    }
-    tombstoneDoc(states.get(position.segmentPath), position.docIndex);
+    const docCount = index._segments.find((s) => s.path === position.segmentPath)?.count ?? position.docIndex + 1;
     tombstone += 1;
+    if (deferredTombstones) {
+      deferredTombstones.push({ segmentPath: position.segmentPath, docIndex: position.docIndex, docCount });
+      continue;
+    }
+    if (!states.has(position.segmentPath)) states.set(position.segmentPath, openSegmentState(position.segmentPath, docCount));
+    tombstoneDoc(states.get(position.segmentPath), position.docIndex);
   }
   for (const state of states.values()) persistSegmentState(state);
   progress('li:tombstone');
@@ -233,7 +240,11 @@ export async function applyLateInteractionDelta({
   progress('li:encode:start');
   const tokens = texts.length > 0 ? await encode(texts) : [];
   progress('li:encode:done');
-  const writer = new LateInteractionIndex({
+  // With `deferredAppend` (a tick) one writer collects the tick's docs and the caller
+  // appends them as one segment after its COMMIT (appendDeferredLiSegment): a segment
+  // appended per file outlived a rolled-back tick as orphan docs, and made a small
+  // segment per file for the merges to collapse.
+  const writer = deferredAppend?.writer ?? new LateInteractionIndex({
     indexPath,
     loadExisting: false,
     tokenDim: index.tokenDim,
@@ -250,6 +261,7 @@ export async function applyLateInteractionDelta({
     segmentSize: Number.MAX_SAFE_INTEGER,
   });
   await writer.init();
+  if (deferredAppend) deferredAppend.writer = writer;
   progress('li:writer-init');
 
   for (let i = 0; i < addOps.length; i += 1) {
@@ -273,7 +285,17 @@ export async function applyLateInteractionDelta({
     writer.documents.set(addId, entry);
     writer._currentSegment.set(addId, entry);
   }
+  if (deferredAppend) return { appended: addOps.length + copied.size, tombstone };
   const appended = await appendGrowingSegment(indexPath, writer, writer._currentSegment);
   progress('li:append-segment');
   return { appended, tombstone };
+}
+
+/** Append the docs a tick collected through `deferredAppend` as one segment. */
+export async function appendDeferredLiSegment(indexPath, deferredAppend) {
+  const writer = deferredAppend?.writer;
+  if (!writer || writer._currentSegment.size === 0) return 0;
+  const appended = await appendGrowingSegment(indexPath, writer, writer._currentSegment);
+  deferredAppend.writer = null;
+  return appended;
 }

@@ -88,7 +88,11 @@ export function readBinaryHnswState(stateDir) {
     try {
       const cols = db.prepare('PRAGMA table_info(vectors)').all().map((c) => c.name);
       if (cols.includes('epoch_retired')) {
-        const live = db.prepare('SELECT COUNT(*) AS n FROM vectors WHERE epoch_retired IS NULL').get().n || 0;
+        // total - retired: both counts use an index (the retired one is partial). COUNT(*)
+        // WHERE epoch_retired IS NULL scanned every row: 822 ms cold on 46k rows, every tick.
+        const all = db.prepare('SELECT COUNT(*) AS n FROM vectors').get().n || 0;
+        const retired = db.prepare('SELECT COUNT(*) AS n FROM vectors WHERE epoch_retired IS NOT NULL').get().n || 0;
+        const live = all - retired;
         divergentDead = Math.max(0, total - live);
       }
     } catch { divergentDead = 0; } finally { db.close(); }

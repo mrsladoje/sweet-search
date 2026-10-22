@@ -5,7 +5,7 @@ with Claude Code, Codex, and other MCP-compatible tools.
 
 ## Prerequisites
 
-- Node.js >= 22.0.0
+- Node.js >= 22.2.0
 - Sweet Search installed (`npm install sweet-search`)
 
 ## Claude Code Setup

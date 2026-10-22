@@ -224,14 +224,14 @@ describe('liSegmentHandler', () => {
     expect(result.dropped).toBe(2);
     expect(result.staleBitmapCleared).toBe(true);
 
-    // Manifest count updated.
+    // The compacted docs go to a NEW segment with no bitmap: the old (positional) bitmap
+    // can never apply to the renumbered docs. The old file waits in quarantine for readers.
     const newManifest = JSON.parse(fs.readFileSync(path.join(segmentDir, 'manifest.json'), 'utf-8'));
-    expect(newManifest.segments[0].count).toBe(2);
+    expect(newManifest.segments).toEqual([{ path: 'segment-0001.bin', count: 2 }]);
     expect(newManifest.totalDocuments).toBe(2);
-
-    // Stale bitmap reset (or recreated empty).
-    const bm2 = loadBitmap(stalePath);
-    if (bm2) expect(popcount(bm2)).toBe(0);
+    expect(fs.existsSync(path.join(segmentDir, 'segment-0001.bin.stale.bin'))).toBe(false);
+    expect(fs.existsSync(segmentPath)).toBe(true);
+    expect(fs.readFileSync(path.join(segmentDir, 'pending-delete.jsonl'), 'utf-8')).toContain('segment-0000.bin');
 
     // Reload the index and confirm only doc-0 / doc-3 are present.
     // Pass matching modelId so the loader doesn't bail (fixture uses
