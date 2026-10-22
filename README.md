@@ -598,17 +598,17 @@ One question: ***how well does `ss-search` rank code on the standard academic su
 <summary><b>📈 Details and more benchmarks</b></summary>
 <br/>
 
-| | |
-|---|---|
-| ⚔️ **Rivals** | FAISS · USearch · hnswlib, all in native C++ |
-| ⚙️ **Rival configs** | Each at its fastest: f32, f16, SQ8, i8, IVF-PQ, RaBitQ, binary<br>M 16–64 · efC 200/800 · efSearch up to 1024 · chosen on dev, frozen |
-| 🛡️ **AdvTest** | FAISS needs `2.2×` our time (`162` vs `73` µs) |
-| 🐢 **Exact quality** | Rivals reach it, given far more time (`6.7 ms` at 140k vectors) |
-| 🔍 **Search path** | Exact Hamming scan up to 150k vectors, HNSW walk above |
-| ⚡ **Binary walk** | `1.6–4.7×` faster than FAISS / USearch binary HNSW, same graph |
-| 💾 **Index RAM** (140k vectors) | `297 MB` vs `517 MB–2.0 GB` for FAISS |
-| 🧪 **Queries** | 2,400 GCSN held-out (seed 42) + dev-repo distractors · 1,200 AdvTest |
-| 📊 **All results** | [RESULTS-paper.md](eval/benchmarks/hnsw-rivals/paper/RESULTS-paper.md) |
+<table>
+<tr><td valign="top"><b>⚔️&nbsp;Rivals</b></td><td>FAISS · USearch · hnswlib, all in native C++</td></tr>
+<tr><td valign="top"><b>⚙️&nbsp;Rival configs</b></td><td>Each at its fastest: f32, f16, SQ8, i8, IVF-PQ, RaBitQ, binary<br>M 16–64 · efC 200/800 · efSearch up to 1024 · chosen on dev, frozen</td></tr>
+<tr><td valign="top"><b>🛡️&nbsp;AdvTest</b></td><td>FAISS needs <code>2.2×</code> our time (<code>162</code> vs <code>73</code> µs)</td></tr>
+<tr><td valign="top"><b>🐢&nbsp;Exact quality</b></td><td>Rivals reach it, given far more time (<code>6.7 ms</code> at 140k vectors)</td></tr>
+<tr><td valign="top"><b>🔍&nbsp;Search path</b></td><td>Exact Hamming scan up to 150k vectors, HNSW walk above</td></tr>
+<tr><td valign="top"><b>⚡&nbsp;Binary walk</b></td><td><code>1.6–4.7×</code> faster than FAISS / USearch binary HNSW, same graph</td></tr>
+<tr><td valign="top"><b>💾&nbsp;Index RAM</b> (140k vectors)</td><td><code>297 MB</code> vs <code>517 MB–2.0 GB</code> for FAISS</td></tr>
+<tr><td valign="top"><b>🧪&nbsp;Queries</b></td><td>2,400 GCSN held-out (seed 42) + dev-repo distractors · 1,200 AdvTest</td></tr>
+<tr><td valign="top"><b>📊&nbsp;All results</b></td><td><a href="eval/benchmarks/hnsw-rivals/paper/RESULTS-paper.md">RESULTS-paper.md</a></td></tr>
+</table>
 
 <br>
 
