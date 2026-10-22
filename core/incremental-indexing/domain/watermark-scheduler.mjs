@@ -186,16 +186,16 @@ export function evaluateWatermarks(state, config = DEFAULT_WATERMARKS) {
       },
     });
   }
-  // PageRank: an entity the maintainer writes has no score until a pass recomputes it, and
-  // trace orders callers and callees by it. One pass per interval at most (225 ms on an
-  // 18.8k-entity graph).
+  // PageRank: trace orders callers and callees by it, and every graph change (a new entity,
+  // a deleted hub, a changed call edge) moves it. Recompute once the graph changed since the
+  // last pass, at most once per interval (225 ms on an 18.8k-entity graph).
   const rank = state.graphRank || {};
   const rankInterval = config.pageRankIntervalMs ?? DEFAULT_WATERMARKS.pageRankIntervalMs;
-  if ((rank.unrankedEntities ?? 0) > 0 && (rank.msSinceRun ?? Infinity) >= rankInterval) {
+  if ((rank.graphEpoch ?? 0) > (rank.rankedEpoch ?? 0) && (rank.msSinceRun ?? Infinity) >= rankInterval) {
     jobs.push({
       tier: 'graph_pagerank',
-      reason: 'unranked_entities',
-      payload: { unrankedEntities: rank.unrankedEntities },
+      reason: 'graph_changed',
+      payload: { graphEpoch: rank.graphEpoch, rankedEpoch: rank.rankedEpoch ?? 0 },
     });
   }
   return jobs;

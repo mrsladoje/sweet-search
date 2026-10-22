@@ -41,10 +41,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import { denseInputHash, liInputHash } from './encoder-input.mjs';
+import { chunkInputHashes, denseInputHash, liInputHash } from './encoder-input.mjs';
 
 export const CUTOFF_CACHE_FILENAME = 'reconcile-cutoff-cache.json';
-export const CUTOFF_CACHE_VERSION = 1;
+export const CUTOFF_CACHE_VERSION = 2;
 
 /**
  * @returns {boolean} whether the chunk-cutoff lever is enabled.
@@ -74,11 +74,18 @@ export function chunkCutoffEnabled(env = process.env) {
 export function computeCutoffSignature(chunks) {
   const embeddingInputHashes = [];
   const liInputHashes = [];
+  const rowHashes = [];
   for (const chunk of chunks || []) {
     embeddingInputHashes.push(denseInputHash(chunk));
     liInputHashes.push(liInputHash(chunk));
+    // Equal encoder inputs are not enough to skip the file: the stored rows also hold the
+    // chunk text (chunk BM25, displayed text) and the line span. A comment edit inside a
+    // body, or code moved by an edit above it, must reach the row-version path (which
+    // reuses the vectors) instead of being skipped.
+    const { chunk_text_hash: textHash, metadata_fingerprint: metaHash } = chunkInputHashes(chunk, { includeDedup: false });
+    rowHashes.push(`${textHash}:${metaHash}`);
   }
-  return { embeddingInputHashes, liInputHashes };
+  return { embeddingInputHashes, liInputHashes, rowHashes };
 }
 
 function arraysEqual(a, b) {
@@ -108,7 +115,8 @@ export function signaturesMatch(previous, current) {
   // that path must flow through the normal retire logic.
   if ((current.embeddingInputHashes?.length ?? 0) === 0) return false;
   return arraysEqual(previous.embeddingInputHashes, current.embeddingInputHashes)
-    && arraysEqual(previous.liInputHashes, current.liInputHashes);
+    && arraysEqual(previous.liInputHashes, current.liInputHashes)
+    && arraysEqual(previous.rowHashes, current.rowHashes);
 }
 
 function cachePath(stateDir) {

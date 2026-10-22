@@ -117,15 +117,17 @@ describe('G2 cutoff-cache domain (E.6)', () => {
     expect(signaturesMatch(sigBase, sigEnriched)).toBe(false);
   });
 
-  it('signaturesMatch requires both dense AND li hash lists to match in order', () => {
-    const a = { embeddingInputHashes: ['x', 'y'], liInputHashes: ['p', 'q'] };
-    expect(signaturesMatch(a, { embeddingInputHashes: ['x', 'y'], liInputHashes: ['p', 'q'] })).toBe(true);
-    expect(signaturesMatch(a, { embeddingInputHashes: ['y', 'x'], liInputHashes: ['p', 'q'] })).toBe(false); // reorder
-    expect(signaturesMatch(a, { embeddingInputHashes: ['x', 'y'], liInputHashes: ['p', 'z'] })).toBe(false); // li differs
-    expect(signaturesMatch(a, { embeddingInputHashes: ['x'], liInputHashes: ['p'] })).toBe(false); // length
+  it('signaturesMatch requires the dense, li and row hash lists to match in order', () => {
+    const a = { embeddingInputHashes: ['x', 'y'], liInputHashes: ['p', 'q'], rowHashes: ['r', 's'] };
+    expect(signaturesMatch(a, { embeddingInputHashes: ['x', 'y'], liInputHashes: ['p', 'q'], rowHashes: ['r', 's'] })).toBe(true);
+    expect(signaturesMatch(a, { embeddingInputHashes: ['y', 'x'], liInputHashes: ['p', 'q'], rowHashes: ['r', 's'] })).toBe(false); // reorder
+    expect(signaturesMatch(a, { embeddingInputHashes: ['x', 'y'], liInputHashes: ['p', 'z'], rowHashes: ['r', 's'] })).toBe(false); // li differs
+    // Same encoder inputs, but chunk text or line span changed (comment edit, moved code).
+    expect(signaturesMatch(a, { embeddingInputHashes: ['x', 'y'], liInputHashes: ['p', 'q'], rowHashes: ['r', 't'] })).toBe(false);
+    expect(signaturesMatch(a, { embeddingInputHashes: ['x'], liInputHashes: ['p'], rowHashes: ['r'] })).toBe(false); // length
     expect(signaturesMatch(null, a)).toBe(false);
     // An emptied chunk set never matches → never skips a deletion/total rewrite.
-    expect(signaturesMatch({ embeddingInputHashes: [], liInputHashes: [] }, { embeddingInputHashes: [], liInputHashes: [] })).toBe(false);
+    expect(signaturesMatch({ embeddingInputHashes: [], liInputHashes: [], rowHashes: [] }, { embeddingInputHashes: [], liInputHashes: [], rowHashes: [] })).toBe(false);
   });
 
   it('persists, reads, and deletes per-file signatures atomically', () => {

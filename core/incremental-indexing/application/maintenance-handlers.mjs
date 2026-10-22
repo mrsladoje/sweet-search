@@ -38,7 +38,7 @@ import { compactDeltaSegments, listDeltaSegments } from '../infrastructure/spars
 import { mergeLiSegments, collectLiveDocs, LI_MERGE_GRACE_MS } from '../infrastructure/li-segment-merge.mjs';
 import { runVectorGc } from '../infrastructure/vector-gc.mjs';
 import { runGraphGc } from '../infrastructure/graph-gc.mjs';
-import { PAGERANK_STATE } from '../infrastructure/maintenance-state-reader.mjs';
+import { PAGERANK_STATE, graphChangeEpoch } from '../infrastructure/maintenance-state-reader.mjs';
 import { populatePageRankColumn } from '../../graph/structural-pagerank.js';
 import { minLiveEpoch } from '../infrastructure/reader-heartbeat.mjs';
 import { readManifest, writeManifest } from '../infrastructure/manifest.mjs';
@@ -406,8 +406,8 @@ export function graphGcHandler(job, { stateDir, onProgress = null }) {
  * ------------------------------------------------------------------ */
 
 /**
- * Recompute PageRank over the live graph, as the full build does, and record the time
- * in PAGERANK_STATE for the watermark's interval. Scores change in place; no epoch.
+ * Recompute PageRank over the live graph, as the full build does, and record the time and
+ * the graph epoch it scored in PAGERANK_STATE. Scores change in place; no epoch.
  */
 export function graphPageRankHandler(job, { stateDir, onProgress = null }) {
   const progress = progressFn(onProgress);
@@ -416,9 +416,11 @@ export function graphPageRankHandler(job, { stateDir, onProgress = null }) {
   const db = new Database(dbPath);
   try {
     db.pragma('busy_timeout = 5000');
+    // Read first: a change made during the pass then triggers the next one.
+    const graphEpoch = graphChangeEpoch(db);
     const result = populatePageRankColumn(db);
     const statePath = path.join(stateDir, PAGERANK_STATE);
-    fs.writeFileSync(`${statePath}.tmp`, JSON.stringify({ ranAt: Date.now(), entities: result.entities }));
+    fs.writeFileSync(`${statePath}.tmp`, JSON.stringify({ ranAt: Date.now(), graphEpoch, entities: result.entities }));
     fs.renameSync(`${statePath}.tmp`, statePath);
     progress('maintenance:graph-pagerank:done');
     return { tier: 'graph_pagerank', ...result };

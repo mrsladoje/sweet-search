@@ -1397,9 +1397,11 @@ class ProductionReconcileAdapter {
       }
       const tokenOps = retiredRows.map((row) => ({ retireId: row.oldId, file: rel }));
       for (const chunk of encodedChunks) tokenOps.push({ addId: chunk.id, chunk });
+      // A row version has the same LI input as its old row: copy the stored LI doc
+      // (the delta encodes it only when the old doc is gone).
       for (const row of summary.versionedRows) {
         const reused = delta.toReuse.find((item) => item.ann?.chunkStructId === row.chunkStructId);
-        if (reused?.chunk) tokenOps.push({ addId: row.newId, chunk: reused.chunk });
+        if (reused?.chunk) tokenOps.push({ addId: row.newId, chunk: reused.chunk, copyFromId: row.oldId });
       }
 
       // CRASH-CONSISTENCY (default per-file path durability). On this path the

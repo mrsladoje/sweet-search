@@ -269,7 +269,10 @@ export function applyDiff(db, filePath, diff, epoch) {
   return summary;
 }
 
-function uniqueVersionedId(db, baseId, epoch) {
+function uniqueVersionedId(db, id, epoch) {
+  // Version from the base id, so suffixes never stack (`x@e2.0@e3`): readers recover the
+  // file from the id (LI segments store no metadata).
+  const baseId = id.replace(/(?:@e\d+(?:\.\d+)*)+$/, '');
   let candidate = `${baseId}@e${epoch}`;
   let suffix = 1;
   const exists = db.prepare('SELECT 1 FROM vectors WHERE id = ?');

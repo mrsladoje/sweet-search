@@ -241,30 +241,40 @@ export function readGraphGcState(stateDir) {
   }
 }
 
-/** Written by the graph_pagerank job: when it last recomputed PageRank. */
+/** Written by the graph_pagerank job: when it last ran and the graph epoch it scored. */
 export const PAGERANK_STATE = 'graph-pagerank-state.json';
 
 /**
- * PageRank freshness for the graph_pagerank watermark. `unrankedEntities` = live entities
- * with no score (PageRank gives every node a positive one, so 0 or NULL means a row the
- * maintainer wrote after the last pass); `msSinceRun` = time since that pass (Infinity when
- * none ran). Zeros when the DB or the column is absent.
+ * Newest epoch at which the live graph changed: the largest epoch_written or epoch_retired
+ * of any entity or relationship (four index lookups). 0 for a full build, which writes no
+ * epochs and computes PageRank itself.
+ */
+export function graphChangeEpoch(db) {
+  const max = (table, column) => {
+    try { return db.prepare(`SELECT MAX(${column}) AS m FROM ${table}`).get().m || 0; } catch { return 0; }
+  };
+  return Math.max(
+    max('entities', 'epoch_written'), max('entities', 'epoch_retired'),
+    max('relationships', 'epoch_written'), max('relationships', 'epoch_retired'),
+  );
+}
+
+/**
+ * PageRank freshness for the graph_pagerank watermark: `graphEpoch` (graphChangeEpoch),
+ * `rankedEpoch` (the graph epoch the last pass scored; 0 = the full build's), and
+ * `msSinceRun` (Infinity when no pass ran). An added entity, a deleted hub and a changed
+ * call edge all raise graphEpoch.
  */
 export function readGraphRankState(stateDir, now = Date.now()) {
-  const empty = { unrankedEntities: 0, msSinceRun: Infinity };
+  const empty = { graphEpoch: 0, rankedEpoch: 0, msSinceRun: Infinity };
   const dbPath = path.join(stateDir, 'code-graph.db');
   if (!fs.existsSync(dbPath)) return empty;
-  const ranAt = readJson(path.join(stateDir, PAGERANK_STATE))?.ranAt;
-  const msSinceRun = Number.isFinite(ranAt) ? Math.max(0, now - ranAt) : Infinity;
+  const state = readJson(path.join(stateDir, PAGERANK_STATE));
+  const msSinceRun = Number.isFinite(state?.ranAt) ? Math.max(0, now - state.ranAt) : Infinity;
+  const rankedEpoch = Number.isInteger(state?.graphEpoch) ? state.graphEpoch : 0;
   const db = new Database(dbPath, { readonly: true });
   try {
-    const columns = db.prepare('PRAGMA table_info(entities)').all().map((c) => c.name);
-    if (!columns.includes('page_rank')) return empty;
-    const live = columns.includes('epoch_retired') ? 'AND epoch_retired IS NULL' : '';
-    const unrankedEntities = db.prepare(
-      `SELECT COUNT(*) AS n FROM entities WHERE stale_since IS NULL ${live} AND (page_rank IS NULL OR page_rank = 0)`,
-    ).get().n || 0;
-    return { unrankedEntities, msSinceRun };
+    return { graphEpoch: graphChangeEpoch(db), rankedEpoch, msSinceRun };
   } catch {
     return empty;
   } finally {

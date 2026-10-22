@@ -125,11 +125,12 @@ describe('buildLateInteractionIndex', () => {
     await buildLateInteractionIndex([
       { id: 'src/m.ts:1-2:0@e3.0', file: 'src/m.ts', text: 'const m = 1;', metadata: { symbol: 'm', chunk_type: 'code', line_start: 1, line_end: 2 } },
       { id: 'src/m.ts:3-4:1@e3.1.2', file: 'src/m.ts', text: 'const n = 2;', metadata: { symbol: 'n', chunk_type: 'code', line_start: 3, line_end: 4 } },
+      { id: 'src/m.ts:5-6:2@e2.0@e3', file: 'src/m.ts', text: 'const o = 4;', metadata: { symbol: 'o', chunk_type: 'code', line_start: 5, line_end: 6 } },
       { id: 'src/keep.ts:1-2:0', file: 'src/keep.ts', text: 'const k = 3;', metadata: { symbol: 'k', chunk_type: 'code', line_start: 1, line_end: 2 } },
     ], false, [], { saveToPath: defaultLiPath });
 
     const result = await buildLateInteractionIndex([], false, ['src/m.ts'], { loadFromPath: defaultLiPath, saveToPath: defaultLiPath });
-    expect(result.removed).toBe(2);
+    expect(result.removed).toBe(3);
     expect(result.documents).toBe(1);
   });
 
