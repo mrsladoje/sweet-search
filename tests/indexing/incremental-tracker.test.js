@@ -227,7 +227,6 @@ describe('mtime/size/inode Fast-Path Logic', () => {
    */
   function canUseFastPath(storedEntry, currentStat) {
     if (!storedEntry) return false;
-    if (typeof storedEntry === 'string') return false; // v2.2 format - need migration
 
     const sizeMatches = BigInt(storedEntry.size) === BigInt(currentStat.size);
     const mtimeMatches = BigInt(storedEntry.mtime_ns) === BigInt(currentStat.mtime_ns);
@@ -280,12 +279,6 @@ describe('mtime/size/inode Fast-Path Logic', () => {
     expect(canUseFastPath(stored, current)).toBe(false);
   });
 
-  it('should NOT use fast-path for v2.2 format (string hash only)', () => {
-    const stored = 'abc123def456'; // v2.2 format
-    const current = { size: '1000', mtime_ns: '1735670400000000000', inode: '42' };
-
-    expect(canUseFastPath(stored, current)).toBe(false);
-  });
 });
 
 describe('Change Detection Logic', () => {
@@ -366,17 +359,12 @@ describe('Change Detection Logic', () => {
 
 describe('State Format Migration', () => {
   /**
-   * Checks if entry needs migration from v2.2 to v2.3
+   * Checks if an entry lacks the fast-path fields
    */
   function needsMigration(entry) {
-    if (typeof entry === 'string') return true; // v2.2 format
     if (!entry.size || !entry.mtime_ns || !entry.inode) return true; // Missing new fields
     return false;
   }
-
-  it('should detect v2.2 string format', () => {
-    expect(needsMigration('abc123def456')).toBe(true);
-  });
 
   it('should detect missing size field', () => {
     expect(needsMigration({ hash: 'abc', mtime_ns: '123' })).toBe(true);

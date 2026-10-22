@@ -103,8 +103,7 @@ The startup tick interval is chosen from the detected hardware tier:
 | high | Apple Max/Ultra, 16 GB+ CUDA | 20s |
 
 15s is the auto-tune floor (`MIN_MS`) only, never a startup default. Explicit
-overrides win: `SWEET_SEARCH_RECONCILE_INTERVAL_MS` (ms),
-`SWEET_SEARCH_RECONCILE_INTERVAL` (seconds), or `SWEET_SEARCH_RECONCILE_PROFILE`
+overrides win: `SWEET_SEARCH_RECONCILE_INTERVAL_MS` (ms) or `SWEET_SEARCH_RECONCILE_PROFILE`
 (`fresh` / `balanced` / `conservative`) — all clamped to `[15s, 300s]`. From the
 startup value the tuner adapts within the band based on dirty-set churn, tick
 wallclock, CPU pressure, and maintenance backlog, and never overlaps ticks.

@@ -309,9 +309,7 @@ function spawnDaemon({ stateDir, projectRoot, intervalSec, emit, forceMaintenanc
     SWEET_SEARCH_STATE_DIR: stateDir,
     // Daemon floor is 15s; surface it explicitly so the report records the
     // chosen value rather than autotune output.
-    SWEET_SEARCH_RECONCILE_INTERVAL: String(Math.max(15, intervalSec)),
-    // Inline maintenance drain is on by default; assert it.
-    SWEET_SEARCH_MAINTENANCE_INLINE: '1',
+    SWEET_SEARCH_RECONCILE_INTERVAL_MS: String(Math.max(15, intervalSec) * 1000),
   };
   if (realEncoder) env.SWEET_SEARCH_SOAK_REAL_ENCODER = '1';
   if (forceMaintenanceThresholds) {
