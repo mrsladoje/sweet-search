@@ -125,7 +125,9 @@ describe('maintainer-watcher pure helpers', () => {
       ],
       { rootAbs: projectRoot, stateDirPrefix: stateDir + '/', stateDir, admissionPolicy, notify: () => {} },
     );
-    expect(queueLines().map((l) => l.file_path)).toEqual(['src/keep.js']);
+    // dist/bundle.js is outside embedding admission but in the grep corpus (git-visible):
+    // queued for the consumer's sparse-only path. node_modules never is.
+    expect(queueLines().map((l) => l.file_path)).toEqual(['src/keep.js', 'dist/bundle.js']);
   });
 
   it('toRel drops paths outside the project root and normalises to POSIX', () => {
@@ -331,7 +333,8 @@ describe('maintainer-watcher directory and config events', () => {
       { path: join(projectRoot, 'build/gen.js'), type: 'update' },
       { path: join(projectRoot, 'dist/out.js'), type: 'update' },
     ], ctxFor(policy));
-    expect(queueLines().map((l) => l.file_path)).toEqual(['build/gen.js']);
+    // The untracked dist file is still a grep-corpus candidate (the consumer decides).
+    expect(queueLines().map((l) => l.file_path)).toEqual(['build/gen.js', 'dist/out.js']);
     expect(__testing.buildIgnore(projectRoot, stateDir)).not.toContain('build');
   });
 
@@ -395,5 +398,31 @@ describe('startWatcher directory rename (live)', () => {
     const paths = new Set(queueLines().map((l) => l.file_path));
     for (const p of ['dirA/a.js', 'dirA/b.js', 'dirB/a.js', 'dirB/b.js']) expect(paths.has(p)).toBe(true);
     expect(woke).toBeGreaterThan(0);
+  });
+});
+
+// The maintainer keeps grep-only files current (vendor/, LICENSE, ...), but the watcher
+// ignored vendor/ natively and dropped every excluded path: with the watcher on, a vendored
+// edit waited for the 10-minute backstop walk.
+describe('grep-corpus files outside embedding admission', () => {
+  let root;
+  let state;
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), 'ss-watch-grep-'));
+    state = join(root, '.sweet-search');
+    mkdirSync(join(root, 'vendor/lib'), { recursive: true });
+    mkdirSync(state, { recursive: true });
+    writeFileSync(join(root, 'vendor/lib/helper.go'), 'package lib\n');
+    execFileSync('git', ['init', '-q'], { cwd: root });
+    execFileSync('git', ['add', 'vendor/lib/helper.go'], { cwd: root });
+  });
+  afterEach(() => { rmSync(root, { recursive: true, force: true }); });
+
+  it('watches vendor/ and queues its files', () => {
+    expect(__testing.buildIgnore(root, state)).not.toContain('vendor');
+    __testing.handleEvents([{ path: join(root, 'vendor/lib/helper.go'), type: 'update' }],
+      { rootAbs: root, stateDirPrefix: state + '/', stateDir: state, admissionPolicy: createAdmissionPolicy({ projectRoot: root }), notify: () => {} });
+    const lines = readFileSync(join(state, 'index-maintainer-queue.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l).file_path);
+    expect(lines).toEqual(['vendor/lib/helper.go']);
   });
 });
