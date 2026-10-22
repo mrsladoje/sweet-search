@@ -18,7 +18,7 @@
  *                                          and runs pattern-mode queries
  *
  * The orchestrator drives mutations directly against the fixture filesystem
- * + the dirty queue (the same shape `file-watcher.mjs` would write), so the
+ * + the dirty queue (the same shape the maintainer watcher writes), so the
  * daemon picks them up on its next tick.
  *
  * Modes:

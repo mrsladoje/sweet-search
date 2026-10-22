@@ -3,11 +3,9 @@
  *
  * Targets:
  *   - reconciler.mjs (branch 79%) — manifest-pin path + tick error path
- *   - file-watcher.mjs (branch 75%) — start() error handling
  *   - hashing.mjs (branch 63%) — backend resolution branches
  *   - tombstone-bitmap.mjs (branch 96%) — final tail path
  *   - sparse-gram-delta.mjs (branch 95%) — name-match path
- *   - maintenance-worker main() — child-process spawn smoke test
  */
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
@@ -18,8 +16,6 @@ import { Reconciler } from '../../core/incremental-indexing/application/reconcil
 import {
   readManifest, writeManifest, zeroManifest, buildNextManifest,
 } from '../../core/incremental-indexing/infrastructure/manifest.mjs';
-import { DirtySet } from '../../core/incremental-indexing/infrastructure/dirty-set.mjs';
-import { FileWatcher } from '../../core/incremental-indexing/application/file-watcher.mjs';
 import { contentHashSync, contentHash } from '../../core/incremental-indexing/infrastructure/hashing.mjs';
 
 
@@ -122,45 +118,6 @@ describe('Reconciler — branch coverage gaps', () => {
     const originalInterval = r.config.intervalMs;
     await r.tick();
     expect(r.config.intervalMs).toBe(originalInterval);
-  });
-});
-
-describe('FileWatcher — start() additional branches', () => {
-  let projectRoot;
-  beforeEach(() => { projectRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-fw-deep-')); });
-  afterEach(() => { try { fs.rmSync(projectRoot, { recursive: true, force: true }); } catch {} });
-
-  it('start() and stop() can be called multiple times without throwing', async () => {
-    const dirty = new DirtySet();
-    const w = new FileWatcher({ projectRoot, dirtySet: dirty });
-    await w.start();
-    await w.stop();
-    await w.start();
-    await w.stop();
-    expect(w.status().stopped).toBe(true);
-  });
-
-  it('events after stop() are dropped', async () => {
-    const dirty = new DirtySet();
-    const w = new FileWatcher({ projectRoot, dirtySet: dirty, debounceMs: 10 });
-    await w.start();
-    await w.stop();
-    w._handleEvent('a.js'); // should be dropped because _stopped=true... actually it
-                            // still enqueues into _pending; the timer is the gate.
-    await new Promise((r) => setTimeout(r, 25));
-    expect(dirty.size).toBe(0);
-  });
-
-  it('_handleEvent ignores empty filename via guard in fs.watch caller', () => {
-    const dirty = new DirtySet();
-    const w = new FileWatcher({ projectRoot, dirtySet: dirty });
-    // Just verify the predicate doesn't crash on falsy values.
-    expect(() => {
-      // Mimic what the fs.watch callback would do.
-      const filename = '';
-      if (!filename || w._stopped) return;
-      w._handleEvent(filename);
-    }).not.toThrow();
   });
 });
 
