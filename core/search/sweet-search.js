@@ -454,9 +454,7 @@ export class SweetSearch {
   _manifestArtifactPaths(manifest) {
     if (!manifest) return {};
     let liIndexPath = null;
-    const liDescriptor = manifest.lateInteraction?.path
-      || manifest.lateInteraction?.indexPath
-      || manifest.lateInteraction?.manifest;
+    const liDescriptor = manifest.lateInteraction?.manifest;
     if (liDescriptor) {
       const resolved = this._resolveStatePath(liDescriptor);
       const segmentDir = path.dirname(resolved);

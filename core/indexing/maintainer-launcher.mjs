@@ -238,12 +238,12 @@ export function maintainerAlive(stateDir, nowMs = Date.now()) {
     const { pid } = parsed;
     if (!pidAlive(Number(pid))) return false;
 
-    // Legacy locks carry only `timestamp`; either field being fresh is enough,
-    // because a maintainer busy inside long work refreshes progress while its
-    // heartbeat timer lags, and vice versa.
+    // Either stamp being fresh is enough, because a maintainer busy inside long
+    // work refreshes progress while its heartbeat timer lags, and vice versa.
+    // A lock with neither stamp was not written by a maintainer: not alive.
     const stamps = [Number(parsed.timestamp), Number(parsed.progressTimestamp)]
       .filter((n) => Number.isFinite(n));
-    if (stamps.length === 0) return true;   // nothing to judge by; trust the pid
+    if (stamps.length === 0) return false;
     const newest = Math.max(...stamps);
     // A stamp in the future is a clock change, not evidence of death.
     const age = nowMs - newest;

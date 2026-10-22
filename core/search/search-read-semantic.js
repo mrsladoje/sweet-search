@@ -142,9 +142,7 @@ function _resolveStatePath(projectRoot, filePath) {
 }
 
 function _lateInteractionIndexPath(projectRoot, manifest) {
-  const descriptor = manifest?.lateInteraction?.path
-    || manifest?.lateInteraction?.indexPath
-    || manifest?.lateInteraction?.manifest;
+  const descriptor = manifest?.lateInteraction?.manifest;
   if (descriptor) {
     const resolved = _resolveStatePath(projectRoot, descriptor);
     const segmentDir = path.dirname(resolved);
