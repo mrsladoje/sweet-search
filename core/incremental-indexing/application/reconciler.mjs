@@ -390,6 +390,20 @@ export class Reconciler {
         }
       }
 
+      // Every file was unchanged (a touch, a branch switch back, a stat-only change): no
+      // tier changed, so publish no epoch (each one makes search daemons reload every
+      // artifact). The stat refresh still lands. The first tick of a state dir publishes.
+      if (counters._fields.files_processed === 0 && this.currentEpoch() > 0 && this.adapters.persistUnchanged) {
+        await this.adapters.persistUnchanged();
+        manifestPublished = true; // nothing to requeue on the way out
+        const current = this.currentEpoch();
+        counters.set('epoch', current);
+        await this._scheduleMaintenance(current, counters, tierOps, filesProcessed);
+        counters.set('tick_ms', this.now() - startedAt);
+        counters.set('ts', startedAt / 1000);
+        return counters.snapshot();
+      }
+
       // Publish the new manifest. Plan § 8.1 step 4: write to *.tmp,
       // fsync, atomic rename, fsync parent dir. `writeManifest` already
       // does that.

@@ -357,6 +357,7 @@ class ProductionReconcileAdapter {
       hashFile: (file) => this.hashFile(file),
       loadCurrentManifest: () => readManifest(this.stateDir),
       persistManifest: (manifest) => this.persistManifest(manifest),
+      persistUnchanged: () => this.persistUnchanged(),
       applyGraphDelta: (file, hashes, epoch, ctx) => this.applyGraphDelta(file, hashes, epoch, ctx),
       applyVectorDelta: (file, chunks, hashes, epoch, ctx) => this.applyVectorDelta(file, chunks, hashes, epoch, ctx),
       applyBinaryHNSWDelta: (file, ops, epoch, ctx) => this.applyBinaryHNSWDelta(file, ops, epoch, ctx),
@@ -1502,6 +1503,27 @@ class ProductionReconcileAdapter {
       if (state.files[file] && !this._grepTouched.has(file)) { delete state.files[file]; changed = true; }
     }
     if (changed) writeGrepCorpusState(this.stateDir, state);
+  }
+
+  /**
+   * A tick that found every file unchanged: no tier changed, so no epoch is published
+   * (the daemon would reload every artifact for nothing). The stat refresh still lands,
+   * or the dirty scan requeues those files forever.
+   */
+  persistUnchanged() {
+    if (this._statRefresh.size > 0) {
+      const merkle = this._merkleRead() ?? { version: '2.4', files: {}, stats: {} };
+      this._merkleCache = undefined;
+      merkle.files ||= {};
+      let changed = false;
+      for (const [file, { hash, stat }] of this._statRefresh) {
+        const prev = merkle.files[file];
+        if (prev && prev.hash === hash) { merkle.files[file] = { ...prev, ...stat }; changed = true; }
+      }
+      if (changed) safeWriteJson(path.join(this.stateDir, MERKLE_STATE), merkle, { compact: true });
+    }
+    this._persistGrepCorpusState();
+    try { fs.unlinkSync(path.join(this.stateDir, PROCESSING_QUEUE)); } catch {}
   }
 
   persistManifest(manifest) {
