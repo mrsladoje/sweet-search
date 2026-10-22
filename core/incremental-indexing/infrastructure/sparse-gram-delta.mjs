@@ -26,13 +26,16 @@
  *   2. If `deleted=true`, the file_id is excluded from postings entirely.
  *
  * The delta directory grows over time; the watermark scheduler
- * (`domain/watermark-scheduler.mjs`) triggers compaction when the
- * `delta_size_ratio` or `delta_segment_count` thresholds cross. Compaction
- * reads the latest delta record per file, merges with base postings for
- * unchanged files, and emits a new base under `*.next`.
+ * (`domain/watermark-scheduler.mjs`) triggers maintenance when the
+ * `delta_size_ratio` or `delta_segment_count` thresholds cross
+ * (maintenance-handlers.mjs sparseGramHandler): past the size ratio the base is
+ * rebuilt from the corpus on disk and the deltas emptied (a fold); past the
+ * segment count the segments are merged into one, latest record per file.
  *
- * Source-file retokenization for unchanged files is **forbidden** by plan
- * § 7.6: the compactor copies postings, it does not re-gram.
+ * Segments a fold or merge consumed are retired, not unlinked: they leave the
+ * writer's listing at once (listDeltaSegments, so no later merge or manifest
+ * reads them) but stay on disk for a grace period (PENDING_DELETE_FILE), because
+ * a reader may hold a manifest that still lists them.
  */
 
 import fs from 'node:fs';
@@ -42,6 +45,10 @@ import { DEFAULT_SPARSE_GRAM_WEIGHTS_ID } from './manifest.mjs';
 
 export const DELTA_DIR_SUFFIX = '.deltas';
 export const DELTA_FILE_EXT = '.ssgrmdelta';
+/** Retired segments awaiting deletion: `{ [segment file name]: retiredAtMs }`. */
+export const PENDING_DELETE_FILE = '.pending-delete.json';
+/** How long a retired segment stays on disk for readers holding an older manifest. */
+export const DELTA_DELETE_GRACE_MS = 60_000;
 /**
  * Versioned hardcoded common-code bigram-weight table. Plan § 7.6 empty-/
  * tiny-codebase bootstrap. The actual bigram weights live in the Rust
@@ -88,7 +95,11 @@ export function appendDeltaRecord(baseArtifactPath, epoch, record) {
   }
   const deltaDir = deltaDirFor(baseArtifactPath);
   fs.mkdirSync(deltaDir, { recursive: true });
-  const filePath = deltaSegmentPath(baseArtifactPath, epoch, 0);
+  // Never append to a retired segment: no reader or merge would see the record.
+  const retired = readPendingDeletes(baseArtifactPath);
+  let seq = 0;
+  while (retired.has(path.basename(deltaSegmentPath(baseArtifactPath, epoch, seq)))) seq += 1;
+  const filePath = deltaSegmentPath(baseArtifactPath, epoch, seq);
   const fd = fs.openSync(filePath, 'a');
   try {
     fs.writeSync(fd, JSON.stringify(record) + '\n');
@@ -116,9 +127,10 @@ export function listDeltaSegments(baseArtifactPath, opts = {}) {
   const dir = deltaDirFor(baseArtifactPath);
   if (!fs.existsSync(dir)) return [];
   const maxEpoch = Number.isInteger(opts.maxEpoch) ? opts.maxEpoch : Infinity;
+  const retired = readPendingDeletes(baseArtifactPath);
   const out = [];
   for (const name of fs.readdirSync(dir)) {
-    if (!name.endsWith(DELTA_FILE_EXT)) continue;
+    if (!name.endsWith(DELTA_FILE_EXT) || retired.has(name)) continue;
     const match = name.match(/^(\d+)-(\d+)\.ssgrmdelta$/);
     if (!match) continue;
     const epoch = Number(match[1]);
@@ -130,6 +142,63 @@ export function listDeltaSegments(baseArtifactPath, opts = {}) {
     });
   }
   return out.sort((a, b) => (a.epoch - b.epoch) || (a.seq - b.seq));
+}
+
+function pendingDeletePath(baseArtifactPath) {
+  return path.join(deltaDirFor(baseArtifactPath), PENDING_DELETE_FILE);
+}
+
+/** Retired segment names -> retirement time (ms). */
+export function readPendingDeletes(baseArtifactPath) {
+  try {
+    return new Map(Object.entries(JSON.parse(fs.readFileSync(pendingDeletePath(baseArtifactPath), 'utf8'))));
+  } catch {
+    return new Map();
+  }
+}
+
+function writePendingDeletes(baseArtifactPath, pending) {
+  const file = pendingDeletePath(baseArtifactPath);
+  if (pending.size === 0) {
+    try { fs.unlinkSync(file); } catch { /* none */ }
+    return;
+  }
+  const tmp = `${file}.tmp.${process.pid}`;
+  fs.writeFileSync(tmp, JSON.stringify(Object.fromEntries(pending)));
+  fs.renameSync(tmp, file);
+}
+
+/** Retire segments (absolute paths): out of the writer's listing now, deleted after the grace. */
+export function retireDeltaSegments(baseArtifactPath, segmentPaths, now = Date.now()) {
+  if (segmentPaths.length === 0) return;
+  const pending = readPendingDeletes(baseArtifactPath);
+  for (const p of segmentPaths) pending.set(path.basename(p), now);
+  writePendingDeletes(baseArtifactPath, pending);
+}
+
+/** Retired segments, and how many have passed the grace. */
+export function pendingDeleteStats(baseArtifactPath, { now = Date.now(), graceMs = DELTA_DELETE_GRACE_MS } = {}) {
+  const pending = readPendingDeletes(baseArtifactPath);
+  let due = 0;
+  for (const at of pending.values()) if (now - at >= graceMs) due += 1;
+  return { pending: pending.size, due };
+}
+
+/**
+ * Delete the retired segments past the grace, except the names in `keep` (a manifest still
+ * lists them); returns how many went.
+ */
+export function sweepRetiredDeltaSegments(baseArtifactPath, { now = Date.now(), graceMs = DELTA_DELETE_GRACE_MS, keep = null } = {}) {
+  const pending = readPendingDeletes(baseArtifactPath);
+  let removed = 0;
+  for (const [name, at] of pending) {
+    if (now - at < graceMs || keep?.has(name)) continue;
+    try { fs.unlinkSync(path.join(deltaDirFor(baseArtifactPath), name)); } catch { /* already gone */ }
+    pending.delete(name);
+    removed += 1;
+  }
+  if (removed > 0) writePendingDeletes(baseArtifactPath, pending);
+  return removed;
 }
 
 /**
@@ -190,39 +259,20 @@ export function deltaSizeStats(baseArtifactPath) {
 }
 
 /**
- * Compact the delta directory in place.
+ * Merge the listed delta segments into one: the latest record per fileId, in a new
+ * segment `{maxEpoch}-{seq}` with `seq > 0` (sorts after any `{maxEpoch}-0` the reconciler
+ * wrote; later ticks use higher epochs). Written as `*.compacting.tmp`, fsynced, renamed;
+ * the consumed segments are then retired (retireDeltaSegments), so a reader holding a
+ * manifest that lists them still finds them during the grace.
  *
- * Reads all delta segments, resolves the latest record per fileId, writes
- * a single new segment that supersedes them, and (by default) deletes the
- * segments the compaction consumed.
- *
- * Naming: the new segment uses `{maxEpoch}-{seq}` with `seq > 0` so it
- * sorts AFTER any existing `{maxEpoch}-0` segment the reconciler wrote.
- * Future reconcile ticks at epoch > maxEpoch keep monotonic ordering.
- *
- * Atomicity: write `*.compacting.tmp`, fsync, rename to the final name,
- * THEN delete the consumed segments. A crash between rename and delete
- * leaves the compacted file in place; the next round consumes everything
- * including the compacted file and resolves to the same records (the
- * compacted file's seq is highest, so its records win).
- *
- * `deferDelete: true` stages the compaction without unlinking consumed
- * segments — the caller is responsible for deleting `consumedSegmentPaths`
- * once it has published whatever derived state needs to change atomically
- * with the unlink (e.g. the reconcile manifest's `sparseGram.deltas`
- * list). Until the caller deletes them, every reader — including readers
- * pinning the OLD manifest's segments — still resolves every record.
- *
- * Deleted-file records (`deleted: true`) are preserved by default — they
- * suppress base postings at query time. Pass `{ dropTombstones: true }`
- * to discard them; only safe when the caller has confirmed the matching
- * fileId is gone from the base artifact too.
+ * Deleted-file records (`deleted: true`) are kept: they suppress base postings at query
+ * time. `{ dropTombstones: true }` discards them (only when the base no longer holds the
+ * file).
  *
  * @param {string} baseArtifactPath
- * @param {{dropTombstones?:boolean, deferDelete?:boolean}} [opts]
+ * @param {{dropTombstones?:boolean, now?:number}} [opts]
  * @returns {{
  *   compactedPath: string|null,
- *   consumedSegments: number,
  *   consumedSegmentPaths: string[],
  *   recordsWritten: number,
  *   tombstonedDropped: number,
@@ -231,12 +281,10 @@ export function deltaSizeStats(baseArtifactPath) {
  */
 export function compactDeltaSegments(baseArtifactPath, opts = {}) {
   const dropTombstones = !!opts.dropTombstones;
-  const deferDelete = !!opts.deferDelete;
   const segments = listDeltaSegments(baseArtifactPath);
   if (segments.length <= 1) {
     return {
       compactedPath: null,
-      consumedSegments: 0,
       consumedSegmentPaths: [],
       recordsWritten: 0,
       tombstonedDropped: 0,
@@ -295,20 +343,11 @@ export function compactDeltaSegments(baseArtifactPath, opts = {}) {
   const consumedSegmentPaths = segments
     .filter((seg) => seg.path !== targetPath)
     .map((seg) => seg.path);
-
-  let consumed = 0;
-  if (deferDelete) {
-    consumed = consumedSegmentPaths.length;
-  } else {
-    for (const segPath of consumedSegmentPaths) {
-      try { fs.unlinkSync(segPath); consumed += 1; } catch { /* tolerate concurrent deletion */ }
-    }
-  }
+  retireDeltaSegments(baseArtifactPath, consumedSegmentPaths, opts.now);
 
   return {
     compactedPath: targetPath,
-    consumedSegments: consumed,
-    consumedSegmentPaths: deferDelete ? consumedSegmentPaths : [],
+    consumedSegmentPaths,
     recordsWritten: latest.size,
     tombstonedDropped,
     skipped: null,

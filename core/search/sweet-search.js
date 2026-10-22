@@ -221,6 +221,16 @@ export class SweetSearch {
     this._artifactManifestEpoch = null;
     this._grepArtifactEpoch = null;
     this._binaryHnswIdentity = null;
+    this._sparseGramIdentity = null;
+  }
+
+  /** Load the sparse-gram base, recording the file identity it was read at. */
+  _loadSparseGramBase() {
+    const identity = fileIdentity(this.sparseGramIndexPath);
+    this.sparseGramIndex = loadSparseGramIndex(this.sparseGramIndexPath);
+    this._sparseGramLoadedPath = this.sparseGramIndex ? this.sparseGramIndexPath : null;
+    this._sparseGramIdentity = this.sparseGramIndex ? identity : null;
+    return this.sparseGramIndex;
   }
 
   _clearChunkLocationCache() {
@@ -362,9 +372,7 @@ export class SweetSearch {
 
     if (this.hasSparseGramIndex) {
       try {
-        this.sparseGramIndex = loadSparseGramIndex(this.sparseGramIndexPath);
-        if (this.sparseGramIndex) {
-          this._sparseGramLoadedPath = this.sparseGramIndexPath;
+        if (this._loadSparseGramBase()) {
           const stats = this.sparseGramIndex.getStats();
           this.log(
             `SparseGram: Loaded ${stats.grams} grams across ${stats.totalFiles} files ` +
@@ -564,8 +572,7 @@ export class SweetSearch {
     this.hasSparseGramIndex = existsSync(this.sparseGramIndexPath);
     if (this.hasSparseGramIndex) {
       try {
-        this.sparseGramIndex = loadSparseGramIndex(this.sparseGramIndexPath);
-        this._sparseGramLoadedPath = this.sparseGramIndex ? this.sparseGramIndexPath : null;
+        this._loadSparseGramBase();
       } catch (err) {
         this.log(`SparseGram: Failed to reload after manifest publish: ${err.message}`);
         this.hasSparseGramIndex = false;
@@ -636,6 +643,18 @@ export class SweetSearch {
       // The loaded graph then read the cleared bitmap, and its retired nodes came back.
       await this._reloadBinaryHnsw();
     }
+    if (!shouldReloadArtifacts && this.sparseGramIndex && this._sparseGramIdentity
+      && fileIdentity(this.sparseGramIndexPath) !== this._sparseGramIdentity) {
+      // Sparse maintenance rebuilds the base in place, at the same epoch, and empties the
+      // manifest's delta list: the old base without those deltas misses every file since.
+      try {
+        this._loadSparseGramBase();
+      } catch (err) {
+        this.log(`SparseGram: Failed to reload the rebuilt base: ${err.message}`);
+        this.sparseGramIndex = null;
+        this._sparseGramLoadedPath = null;
+      }
+    }
     if (manifestEpoch !== null) {
       this._grepArtifactEpoch = manifestEpoch;
       if (!grepOnly) this._artifactManifestEpoch = manifestEpoch;
@@ -652,9 +671,7 @@ export class SweetSearch {
     this.hasSparseGramIndex = existsSync(this.sparseGramIndexPath);
     if (this.hasSparseGramIndex) {
       try {
-        this.sparseGramIndex = loadSparseGramIndex(this.sparseGramIndexPath);
-        if (this.sparseGramIndex) {
-          this._sparseGramLoadedPath = this.sparseGramIndexPath;
+        if (this._loadSparseGramBase()) {
           const stats = this.sparseGramIndex.getStats();
           this.log(
             `SparseGram: Loaded ${stats.grams} grams across ${stats.totalFiles} files ` +

@@ -7,15 +7,18 @@
  * single-writer process, so on-disk artifacts have one writer at a time.
  *
  * Atomicity contract: per artifact-family, each handler writes its new
- * artifacts via a path that sorts later than the existing ones (sparse
- * gram), an explicit temp+rename (LI segments, HNSW meta/usearch/vectors),
- * or via the existing `*.next` clean-build flag (Binary HNSW). After a
- * successful publish the handler clears the tier's stale bitmap; on
- * failure the previous artifacts remain readable.
+ * artifacts via a path that sorts later than the existing ones (merged
+ * sparse-gram deltas), an explicit temp+rename (LI segments, the rebuilt
+ * sparse-gram base), or via the existing `*.next` clean-build flag (Binary
+ * HNSW). After a successful publish the handler clears the tier's stale
+ * bitmap; on failure the previous artifacts remain readable.
  *
  * Manifest semantics:
- *   - sparse_gram, LI segment: the reconcile manifest is unchanged. New
- *     artifacts replace old ones at canonical paths read fresh per query.
+ *   - sparse_gram: same epoch; the manifest's delta list drops the segments a
+ *     merge or base rebuild consumed (they stay on disk for a grace period), and
+ *     a rebuild sets the new weights id. Readers reload the base by file identity.
+ *   - LI segment: the reconcile manifest is unchanged. New artifacts replace
+ *     old ones at canonical paths read fresh per query.
  *   - Binary HNSW: canonical paths unchanged; the reconcile manifest
  *     stays at the current epoch. Cross-process readers that cache a
  *     binary HNSW index in memory MUST already invalidate on manifest
@@ -34,7 +37,14 @@ import Database from 'better-sqlite3';
 
 import { BinaryHNSWIndex, binaryHnswIndexExists } from '../../vector-store/binary-hnsw-index.js';
 import { LateInteractionIndex } from '../../ranking/late-interaction-index.js';
-import { compactDeltaSegments, listDeltaSegments } from '../infrastructure/sparse-gram-delta.mjs';
+import {
+  compactDeltaSegments, deltaSizeStats, listDeltaSegments, resolveLatestRecords,
+  retireDeltaSegments, sweepRetiredDeltaSegments,
+} from '../infrastructure/sparse-gram-delta.mjs';
+import { DEFAULT_WATERMARKS, loadWatermarkConfig } from '../domain/watermark-scheduler.mjs';
+import { buildSparseGramIndexArtifact, loadSparseGramIndex, getSparseGramAllFiles } from '../../infrastructure/native-sparse-gram.js';
+import { collectFileSymbolMasksFromDb, resolveSparseGramWeightsId } from '../../indexing/indexer-sparse-gram.js';
+import { GREP_MAX_FILE_SIZE } from '../../indexing/grep-corpus.js';
 import { mergeLiSegments, collectLiveDocs, nextSegmentSeq, quarantineSegmentFiles, LI_MERGE_GRACE_MS } from '../infrastructure/li-segment-merge.mjs';
 import { runVectorGc } from '../infrastructure/vector-gc.mjs';
 import { runGraphGc } from '../infrastructure/graph-gc.mjs';
@@ -62,67 +72,108 @@ function float32FromBuffer(buffer) {
  * sparse_gram                                                         *
  * ------------------------------------------------------------------ */
 
-export async function sparseGramHandler(job, { stateDir, onProgress = null }) {
+/**
+ * Sparse-gram maintenance:
+ *   1. past the delta size ratio, rebuild the base from the corpus on disk and empty the
+ *      deltas (foldSparseGramBase): merging deltas alone kept the ratio, so the job
+ *      fired again on every tick and rewrote the whole delta each time;
+ *   2. else past the segment count, merge the segments into one;
+ *   3. publish: the manifest lists exactly the live segments (this also repairs a list
+ *      that a failed publish left pointing at retired segments);
+ *   4. delete the retired segments past their grace, except any the manifest lists.
+ * Consumed segments stay on disk for readers holding an older manifest until then.
+ */
+export async function sparseGramHandler(job, { stateDir, projectRoot = null, onProgress = null, config = DEFAULT_WATERMARKS }) {
   const progress = progressFn(onProgress);
   const base = path.join(stateDir, 'codebase-sparse-grams.idx');
-  // Stage the compaction in deferred-delete mode. The compacted segment is
-  // already on disk via tmp+rename; the consumed old segments stay until
-  // we have rewritten the reconcile manifest (or confirmed nobody is
-  // pinning the old paths). This closes the microsecond window in which a
-  // cross-process reader holding the OLD manifest's `sparseGram.deltas`
-  // list could resolve `recordsResolved = 0` against deleted files.
-  const result = compactDeltaSegments(base, { dropTombstones: false, deferDelete: true });
-  progress('maintenance:sparse-gram:compacted');
-  if (result.skipped) {
-    return { skipped: result.skipped };
+  const stats = deltaSizeStats(base);
+  let action = null;
+  let result = {};
+  if (stats.ratio > (config.sparseDeltaRatio ?? DEFAULT_WATERMARKS.sparseDeltaRatio) && fs.existsSync(base)) {
+    const root = projectRoot || process.env.SWEET_SEARCH_PROJECT_ROOT || path.dirname(stateDir);
+    result = await foldSparseGramBase({ stateDir, base, projectRoot: root });
+    action = 'fold';
+  } else if (stats.deltaSegments > (config.sparseDeltaSegmentCount ?? DEFAULT_WATERMARKS.sparseDeltaSegmentCount)) {
+    const compacted = compactDeltaSegments(base, { dropTombstones: false });
+    if (!compacted.skipped) {
+      result = {
+        recordsWritten: compacted.recordsWritten,
+        consumedSegments: compacted.consumedSegmentPaths.length,
+        compactedPath: path.relative(stateDir, compacted.compactedPath).replace(/\\/g, '/'),
+      };
+      action = 'merge';
+    }
   }
+  if (action) progress(`maintenance:sparse-gram:${action}`);
 
-  const consumedSet = new Set(result.consumedSegmentPaths);
   let manifestUpdated = false;
   let manifestError = null;
-  let hadSparseGramPin = false;
+  let listed = null;
   try {
     const manifest = readManifest(stateDir);
     if (manifest?.sparseGram) {
-      hadSparseGramPin = true;
-      // Future-of-disk list: everything currently in the delta dir minus
-      // the segments we are about to unlink. In the steady state that is
-      // just the compacted segment; filtering keeps us correct if a
-      // reconcile tick somehow slipped in another segment between
-      // compaction and manifest write.
-      const remaining = listDeltaSegments(base).filter((seg) => !consumedSet.has(seg.path));
-      manifest.sparseGram.deltas = remaining.map((seg) =>
-        path.relative(stateDir, seg.path).replace(/\\/g, '/'),
-      );
-      writeManifest(stateDir, manifest);
-      manifestUpdated = true;
+      const live = listDeltaSegments(base).map((seg) => path.relative(stateDir, seg.path).replace(/\\/g, '/'));
+      const prev = Array.isArray(manifest.sparseGram.deltas) ? manifest.sparseGram.deltas : [];
+      const weightsChanged = !!result.weightsId && result.weightsId !== manifest.sparseGram.weightsId;
+      if (weightsChanged || prev.length !== live.length || prev.some((p, i) => p !== live[i])) {
+        manifest.sparseGram.deltas = live;
+        if (weightsChanged) manifest.sparseGram.weightsId = result.weightsId;
+        writeManifest(stateDir, manifest);
+        manifestUpdated = true;
+      }
+      listed = new Set(manifest.sparseGram.deltas.map((p) => path.basename(p)));
     }
   } catch (err) {
     manifestError = err?.message || String(err);
   }
-
-  // Publish gate. Only delete the old segments once the new manifest is
-  // live (or we know nobody is pinning the old paths). On a manifest write
-  // failure we leave the old segments in place; the next maintenance pass
-  // re-runs the compaction across both the leftover compacted file and
-  // the old segments, then re-attempts the manifest publish.
-  let unlinked = 0;
-  const safeToUnlink = manifestUpdated || !hadSparseGramPin;
-  if (safeToUnlink) {
-    for (const segPath of result.consumedSegmentPaths) {
-      try { fs.unlinkSync(segPath); unlinked += 1; } catch { /* tolerate concurrent deletion */ }
-      if (unlinked % 100 === 0) progress('maintenance:sparse-gram:unlink');
-    }
-  }
+  // Without a published list, keep every retired segment: the manifest may still name it.
+  const swept = manifestError ? 0 : sweepRetiredDeltaSegments(base, { keep: listed });
+  if (!action && !manifestUpdated && swept === 0) return { skipped: 'under-watermarks' };
 
   return {
     tier: 'sparse_gram',
-    consumedSegments: unlinked,
-    recordsWritten: result.recordsWritten,
-    compactedPath: path.relative(stateDir, result.compactedPath).replace(/\\/g, '/'),
+    ...(action ? { action } : {}),
+    sweptSegments: swept,
+    ...result,
     manifestUpdated,
     ...(manifestError ? { manifestError } : {}),
   };
+}
+
+/**
+ * Rebuild the sparse-gram base: the base's files plus the files the deltas added, minus the
+ * ones they deleted and the ones gone from disk, gram'd from disk with the full build's
+ * builder and symbol masks. Published by rename over the base path (readers reload it by
+ * file identity), then every delta segment is retired. Returns the new weights id.
+ */
+async function foldSparseGramBase({ stateDir, base, projectRoot }) {
+  const files = new Set(getSparseGramAllFiles(loadSparseGramIndex(base)) || []);
+  for (const { record } of resolveLatestRecords(base).values()) {
+    if (!record.filePath) continue;
+    if (record.deleted) files.delete(record.filePath);
+    else files.add(record.filePath);
+  }
+  const kept = [...files].filter((rel) => {
+    try {
+      const st = fs.lstatSync(path.join(projectRoot, rel));
+      return st.isFile() && st.size > 0 && st.size <= GREP_MAX_FILE_SIZE;
+    } catch {
+      return false;
+    }
+  }).sort();
+  let masks = kept.map(() => 0);
+  const dbPath = path.join(stateDir, 'codebase.db');
+  if (fs.existsSync(dbPath)) {
+    const db = new Database(dbPath, { readonly: true });
+    try { masks = collectFileSymbolMasksFromDb(db, kept); } finally { db.close(); }
+  }
+  const segments = listDeltaSegments(base).map((seg) => seg.path);
+  const staged = `${base}.next`;
+  const built = buildSparseGramIndexArtifact({ projectRoot, files: kept, fileSymbolMasks: masks, outputPath: staged });
+  const weightsId = await resolveSparseGramWeightsId(built, staged);
+  fs.renameSync(staged, base);
+  retireDeltaSegments(base, segments);
+  return { files: kept.length, retiredSegments: segments.length, weightsId };
 }
 
 /* ------------------------------------------------------------------ *
@@ -441,7 +492,7 @@ export function graphPageRankHandler(job, { stateDir, onProgress = null }) {
  */
 export function reclamationHandlers(stateDir) {
   return {
-    sparse_gram: (job, ctx = {}) => sparseGramHandler(job, { stateDir, onProgress: ctx.onProgress }),
+    sparse_gram: (job, ctx = {}) => sparseGramHandler(job, { stateDir, onProgress: ctx.onProgress, config: loadWatermarkConfig() }),
     binary_hnsw: (job, ctx = {}) => binaryHnswHandler(job, { stateDir, onProgress: ctx.onProgress }),
     li_segment: (job, ctx = {}) => liSegmentHandler(job, { stateDir, onProgress: ctx.onProgress }),
     li_segments: (job, ctx = {}) => liSegmentsHandler(job, { stateDir, onProgress: ctx.onProgress }),

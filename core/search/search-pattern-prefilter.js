@@ -620,6 +620,10 @@ export function ensureSparseGramIndex(searcher, options = {}) {
     searcher.sparseGramIndex = null;
     searcher._sparseGramLoadedPath = null;
   }
+  // The searcher's own loader records the file identity, so a rebuilt base reloads.
+  if (typeof searcher._loadSparseGramBase === 'function' && indexPath === searcher.sparseGramIndexPath) {
+    return searcher._loadSparseGramBase();
+  }
   const loaded = loadSparseGramIndex(indexPath);
   if (loaded) {
     searcher.sparseGramIndex = loaded;

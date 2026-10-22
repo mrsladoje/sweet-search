@@ -58,8 +58,8 @@ describe('sparseGramHandler', () => {
       fileId: 'aa', filePath: 'a.js', contentHash: 'h1', deleted: false,
       symbolMask: 0, weightsId: 'w1', grams: [['gr', 1]],
     });
-    const out = await sparseGramHandler({}, { stateDir });
-    expect(out.skipped).toBe('too-few-segments');
+    const out = await sparseGramHandler({}, { stateDir, config: { sparseDeltaRatio: 1, sparseDeltaSegmentCount: 1 } });
+    expect(out.skipped).toBe('under-watermarks');
   });
 
   it('compacts many deltas into one, last-record-wins per fileId', async () => {
@@ -71,7 +71,7 @@ describe('sparseGramHandler', () => {
 
     expect(listDeltaSegments(base).length).toBe(4);
 
-    const out = await sparseGramHandler({}, { stateDir });
+    const out = await sparseGramHandler({}, { stateDir, config: { sparseDeltaRatio: 1, sparseDeltaSegmentCount: 1 } });
     expect(out.skipped).toBeUndefined();
     expect(out.recordsWritten).toBe(3); // aa (latest), bb, cc (deleted preserved)
     expect(out.consumedSegments).toBe(4);
@@ -102,7 +102,7 @@ describe('sparseGramHandler', () => {
 
   it('returns skipped when the artifact directory is missing', async () => {
     const out = await sparseGramHandler({}, { stateDir });
-    expect(out.skipped).toBe('too-few-segments');
+    expect(out.skipped).toBe('under-watermarks');
   });
 });
 
@@ -301,7 +301,7 @@ describe('cross-process publish atomicity', () => {
     );
     writeManifest(stateDir, manifest);
 
-    const out = await sparseGramHandler({}, { stateDir });
+    const out = await sparseGramHandler({}, { stateDir, config: { sparseDeltaRatio: 1, sparseDeltaSegmentCount: 1 } });
     expect(out.skipped).toBeUndefined();
     expect(out.manifestUpdated).toBe(true);
 
@@ -350,7 +350,7 @@ describe('cross-process publish atomicity', () => {
 
     let out;
     try {
-      out = await sparseGramHandler({}, { stateDir });
+      out = await sparseGramHandler({}, { stateDir, config: { sparseDeltaRatio: 1, sparseDeltaSegmentCount: 1 } });
     } finally {
       fs.rmdirSync(tmpManifestBlocker);
     }
@@ -360,9 +360,10 @@ describe('cross-process publish atomicity', () => {
     expect(out.manifestUpdated).toBe(false);
     expect(out.manifestError).toBeTruthy();
 
-    // The compacted segment IS present (atomic temp+rename succeeded).
+    // The compacted segment IS present (atomic temp+rename succeeded); the consumed ones are
+    // retired (out of the writer's listing).
     const allSegs = listDeltaSegments(base);
-    expect(allSegs.length).toBe(4);
+    expect(allSegs.length).toBe(1);
 
     // ALL old segments are STILL on disk. This is the heart of the fix —
     // the publish-order window is closed.
@@ -402,23 +403,18 @@ describe('cross-process publish atomicity', () => {
 
     // Simulate the "crashed midway" state: compacted segment exists, old
     // segments still exist, manifest still references old segments.
-    const staged = compactDeltaSegments(base, { deferDelete: true });
+    const staged = compactDeltaSegments(base);
     expect(fs.existsSync(staged.compactedPath)).toBe(true);
     for (const p of segsBefore) expect(fs.existsSync(p)).toBe(true);
 
-    // Now re-run the handler — it must converge.
+    // Re-run the handler: under every watermark, it still republishes the live list.
     const out = await sparseGramHandler({}, { stateDir });
     expect(out.skipped).toBeUndefined();
     expect(out.manifestUpdated).toBe(true);
 
     const after = listDeltaSegments(base);
     expect(after.length).toBe(1);
-
-    // Old segments all gone.
-    for (const oldPath of segsBefore) expect(fs.existsSync(oldPath)).toBe(false);
-    // The first crashed-but-written compacted segment is also gone — it
-    // was consumed by the second compaction.
-    expect(fs.existsSync(staged.compactedPath)).toBe(false);
+    expect(after[0].path).toBe(staged.compactedPath);
 
     // Manifest now references the surviving compacted segment.
     const finalManifest = readManifest(stateDir);
@@ -429,6 +425,11 @@ describe('cross-process publish atomicity', () => {
     const { resolveLatestSparseGramDeltaRecords } = await import('../../core/infrastructure/sparse-gram-delta-reader.js');
     const records = resolveLatestSparseGramDeltaRecords(base, { segments: finalManifest.sparseGram.deltas.map((s) => path.join(stateDir, s)) });
     expect(records.size).toBe(3);
+
+    // The retired segments go once their grace has passed.
+    const { sweepRetiredDeltaSegments } = await import('../../core/incremental-indexing/infrastructure/sparse-gram-delta.mjs');
+    expect(sweepRetiredDeltaSegments(base, { now: Date.now() + 120_000 })).toBe(3);
+    for (const oldPath of segsBefore) expect(fs.existsSync(oldPath)).toBe(false);
   });
 
   it('BinaryHNSWIndex.load refuses an index file whose entry point is outside the node table', async () => {
