@@ -19,6 +19,8 @@ import Database from 'better-sqlite3';
 
 import { loadBitmap, popcount } from './tombstone-bitmap.mjs';
 import { readIndexHeader } from '../../vector-store/index-file-header.js';
+import { countDeltaRecords, deltaPathFor } from '../../vector-store/hnsw-delta-file.js';
+import { EXACT_SCAN_MAX_VECTORS } from '../../vector-store/binary-hnsw-index.js';
 import { deltaSizeStats, pendingDeleteStats } from './sparse-gram-delta.mjs';
 import { evaluateSegmentRatios, LI_SEGMENT_SIZE } from './li-segment-state.mjs';
 import { fts5SegmentCount } from './sqlite-fts5.mjs';
@@ -70,10 +72,18 @@ export function readSparseGramState(stateDir) {
  */
 export function readBinaryHnswState(stateDir) {
   const empty = { deadDocRatio: 0 };
-  const head = readIndexHeader(path.join(stateDir, 'codebase-binary-hnsw.idx'));
+  const indexPath = path.join(stateDir, 'codebase-binary-hnsw.idx');
+  const head = readIndexHeader(indexPath);
   if (!head) return empty;
-  const total = Number(head.header.count) || 0;
+  // Nodes = the base's plus its delta rows (the stale bitmap numbers both).
+  const baseCount = Number(head.header.count) || 0;
+  const deltaCount = countDeltaRecords(deltaPathFor(indexPath), head.header.generation ?? 0, head.header.dimension);
+  const total = baseCount + deltaCount;
   if (total <= 0) return empty;
+  const graphless = !(head.header.entryPoint >= 0);
+  // Above the exact-scan size a graph base is walked and its delta scanned on top.
+  const walked = !graphless && total > EXACT_SCAN_MAX_VECTORS;
+  const needsGraph = graphless && total > EXACT_SCAN_MAX_VECTORS;
   let bitmap = null;
   try { bitmap = loadBitmap(path.join(stateDir, 'codebase-binary-hnsw.idx.stale.bin')); } catch { bitmap = null; }
   const markedDead = bitmap ? popcount(bitmap) : 0;
@@ -104,7 +114,7 @@ export function readBinaryHnswState(stateDir) {
   // surfacing it lets the scheduler reclaim promptly instead of waiting for the
   // dead-doc ratio to cross its threshold from unrelated churn.
   const unexplainedDead = Math.max(0, divergentDead - markedDead);
-  return { deadDocRatio: dead / total, unexplainedDead };
+  return { deadDocRatio: dead / total, unexplainedDead, baseCount, deltaCount, walked, needsGraph };
 }
 
 /**

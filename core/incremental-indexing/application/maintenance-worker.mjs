@@ -259,7 +259,14 @@ export async function processMaintenanceQueue(stateDir, options = {}) {
       // E.5: surface the wall-clock budget remaining so budget-aware handlers
       // (fts5 merge) can scale their work to the spare window.
       const remainingBudgetMs = budgetMs === Infinity ? Infinity : Math.max(0, budgetMs - (clock() - startMs));
-      await handler(job, { stateDir, onProgress, remainingBudgetMs });
+      const result = await handler(job, { stateDir, onProgress, remainingBudgetMs });
+      if (result?.requeue) {
+        // Work continues in the background (a child process): keep the job for a
+        // later drain, without counting an attempt.
+        summary.deferred += 1;
+        remaining.push(job);
+        continue;
+      }
       onProgress(`maintenance:${job.tier || 'unknown'}:done`);
       summary.succeeded += 1;
     } catch (err) {

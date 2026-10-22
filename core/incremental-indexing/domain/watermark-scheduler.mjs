@@ -22,6 +22,11 @@
 
 export const DEFAULT_WATERMARKS = Object.freeze({
   binaryHnswDeadRatio: 0.30,
+  // Delta rows before a fold: a share of the base (scanned exactly up to the scan
+  // size; above it scanned on top of every walk, so kept smaller), at least the floor.
+  binaryHnswDeltaRatio: 0.10,
+  binaryHnswWalkedDeltaRatio: 0.02,
+  binaryHnswDeltaFloor: 2000,
   liSegmentStaleRatio: 0.20,
   liSmallSegmentCount: 16,
   liSegmentCount: 200,
@@ -88,11 +93,19 @@ export function evaluateWatermarks(state, config = DEFAULT_WATERMARKS) {
   // from codebase.db — a vector retired there but never stale-marked in the
   // binary index. The latter is reader-visible (the coarse index surfaces a
   // retired vector) and the handler is codebase.db-sourced, so heal promptly.
-  if ((binH.deadDocRatio ?? 0) > config.binaryHnswDeadRatio || (binH.unexplainedDead ?? 0) > 0) {
+  const deltaRatio = binH.walked
+    ? (config.binaryHnswWalkedDeltaRatio ?? DEFAULT_WATERMARKS.binaryHnswWalkedDeltaRatio)
+    : (config.binaryHnswDeltaRatio ?? DEFAULT_WATERMARKS.binaryHnswDeltaRatio);
+  const deltaLimit = Math.max(config.binaryHnswDeltaFloor ?? DEFAULT_WATERMARKS.binaryHnswDeltaFloor,
+    deltaRatio * (binH.baseCount ?? 0));
+  const deltaOver = (binH.deltaCount ?? 0) > deltaLimit;
+  if ((binH.deadDocRatio ?? 0) > config.binaryHnswDeadRatio || (binH.unexplainedDead ?? 0) > 0 || deltaOver || binH.needsGraph) {
     jobs.push({
       tier: 'binary_hnsw',
-      reason: (binH.unexplainedDead ?? 0) > 0 ? 'codebase_divergence' : 'dead_doc_ratio',
-      payload: { deadDocRatio: binH.deadDocRatio ?? 0, unexplainedDead: binH.unexplainedDead ?? 0 },
+      reason: (binH.unexplainedDead ?? 0) > 0 ? 'codebase_divergence'
+        : binH.needsGraph ? 'graph_needed'
+        : deltaOver ? 'delta_fold' : 'dead_doc_ratio',
+      payload: { deadDocRatio: binH.deadDocRatio ?? 0, unexplainedDead: binH.unexplainedDead ?? 0, deltaCount: binH.deltaCount ?? 0 },
     });
   }
   const liSegs = state.liSegments || [];
