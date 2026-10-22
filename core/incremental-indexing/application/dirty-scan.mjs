@@ -41,11 +41,43 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 import { createAdmissionPolicy } from '../../indexing/admission-policy.js';
+import { filterGrepCorpusFiles, listGitVisibleFiles } from '../../indexing/grep-corpus.js';
+import { grepStatEntry, readGrepCorpusState } from '../infrastructure/grep-corpus-state.mjs';
 
 const DIRTY_QUEUE = 'index-maintainer-queue.jsonl';
 const PROCESSING_QUEUE = 'index-maintainer-queue.processing.jsonl';
 const MERKLE_STATE = 'merkle-state.json';
 const DEFAULT_MAX_ENQUEUE = 5000;
+// New grep-only files are found through the VCS file list: on an index change (add,
+// commit, checkout) or, for new untracked files, at least this often.
+const GREP_DISCOVERY_MAX_AGE_MS = 60_000;
+const grepDiscoveryMemo = new Map(); // stateDir -> { at, vcsIndex }
+const grepRejectedMemo = new Map(); // stateDir -> Map(rel -> "size:mtime_ns")
+const minifiedMemoByState = new Map(); // stateDir -> Map(rel -> "size:mtime_ns")
+
+// The VCS index file's stat, or null (not a plain checkout: discovery then runs on age only).
+function vcsIndexStamp(projectRoot) {
+  try {
+    const st = fs.statSync(path.join(projectRoot, '.git', 'index'), { bigint: true });
+    return `${st.size}:${st.mtimeNs}`;
+  } catch {
+    return null;
+  }
+}
+
+function grepDiscoveryDue(projectRoot, stateDir, now) {
+  const stamp = vcsIndexStamp(projectRoot);
+  const prev = grepDiscoveryMemo.get(stateDir);
+  const due = !prev || now - prev.at >= GREP_DISCOVERY_MAX_AGE_MS || (stamp !== null && stamp !== prev.vcsIndex);
+  if (due) grepDiscoveryMemo.set(stateDir, { at: now, vcsIndex: stamp });
+  return due;
+}
+
+export function _resetGrepDiscoveryMemo() {
+  grepDiscoveryMemo.clear();
+  grepRejectedMemo.clear();
+  minifiedMemoByState.clear();
+}
 
 /** Is the autonomous scan producer enabled? Default-on; off-tokens disable it. */
 export function dirtyScanEnabled(env = process.env) {
@@ -174,7 +206,7 @@ export async function scanDirtyAndEnqueue({ projectRoot, stateDir, admissionPoli
       const changed = isNew
         ? true
         : (stat.size.toString() !== String(prev.size) || stat.mtimeNs.toString() !== String(prev.mtime_ns));
-      present.set(rel, { isNew, changed, shapeOk: true, sizeOk });
+      present.set(rel, { isNew, changed, shapeOk: true, sizeOk, statKey: `${stat.size}:${stat.mtimeNs}` });
     }
   }
 
@@ -201,9 +233,26 @@ export async function scanDirtyAndEnqueue({ projectRoot, stateDir, admissionPoli
     queued.add(rel);
   };
 
+  // A new file full discovery would skip as minified or bundled is not queued: the consumer
+  // would drop it on every tick. Changed indexed files are queued (the consumer retires one
+  // that became minified). A rejected file is read again only when its stat changes.
+  const minifiedMemo = minifiedMemoByState.get(stateDir) || new Map();
+  const newFiles = [];
+  for (const [rel, v] of present) {
+    if (!v.isNew || !v.shapeOk || !v.sizeOk || gitignored.has(rel) || queued.has(rel)) continue;
+    if (minifiedMemo.get(rel) === v.statKey) { v.minified = true; continue; }
+    newFiles.push(rel);
+  }
+  const minified = typeof policy.minifiedSet === 'function' ? await policy.minifiedSet(newFiles) : new Set();
+  for (const rel of minified) {
+    present.get(rel).minified = true;
+    minifiedMemo.set(rel, present.get(rel).statKey);
+  }
+  minifiedMemoByState.set(stateDir, minifiedMemo);
+
   for (const [rel, v] of present) {
     if (toEnqueue.length >= maxEnqueue) break;
-    const admitted = v.shapeOk && v.sizeOk && !gitignored.has(rel);
+    const admitted = v.shapeOk && v.sizeOk && !gitignored.has(rel) && !v.minified;
     if (admitted) {
       if (v.changed && !queued.has(rel)) {
         enqueue(rel);
@@ -227,6 +276,53 @@ export async function scanDirtyAndEnqueue({ projectRoot, stateDir, admissionPoli
       enqueue(rel);
       retired += 1;
     }
+  }
+
+  // 5. Grep-only files: in the sparse-gram corpus, outside embedding admission (vendor/,
+  //    LICENSE, *.csv ...), so the walk above never admits them. Known ones are stat'ed;
+  //    new ones come from the VCS file list (the walk does not descend denied directories).
+  //    The consumer decides grep-only versus embedding (readDirtySet).
+  const grepKnown = readGrepCorpusState(stateDir).files;
+  for (const [rel, prev] of Object.entries(grepKnown)) {
+    if (toEnqueue.length >= maxEnqueue) break;
+    if (queued.has(rel)) continue;
+    const now = grepStatEntry(path.join(projectRoot, rel));
+    if (!now) {
+      enqueue(rel);
+      deleted += 1;
+    } else if (now.size !== String(prev.size) || now.mtime_ns !== String(prev.mtime_ns)) {
+      enqueue(rel);
+      modified += 1;
+    }
+  }
+  if (toEnqueue.length < maxEnqueue && grepDiscoveryDue(projectRoot, stateDir, Date.now())) {
+    progress('dirty-scan:grep-discovery');
+    const embeddingAdmitted = (rel) => {
+      const v = present.get(rel);
+      return !!v && v.shapeOk && v.sizeOk && !gitignored.has(rel);
+    };
+    // Files the corpus gates rejected (empty, minified, too large, secret) stay rejected
+    // until their stat changes: the minified check reads the file.
+    const rejected = grepRejectedMemo.get(stateDir) || new Map();
+    const candidates = [];
+    for (const rel of listGitVisibleFiles(projectRoot) || []) {
+      if (grepKnown[rel] || merkle[rel] || queued.has(rel) || embeddingAdmitted(rel)) continue;
+      const stat = grepStatEntry(path.join(projectRoot, rel));
+      if (!stat) continue;
+      const key = `${stat.size}:${stat.mtime_ns}`;
+      if (rejected.get(rel) === key) continue;
+      candidates.push({ rel, key });
+    }
+    const kept = new Set(await filterGrepCorpusFiles(candidates.map((c) => c.rel), { projectRoot, policy }));
+    const nextRejected = new Map();
+    for (const { rel, key } of candidates) {
+      if (!kept.has(rel)) { nextRejected.set(rel, key); continue; }
+      if (toEnqueue.length >= maxEnqueue) continue;
+      enqueue(rel);
+      added += 1;
+    }
+    for (const [rel, key] of rejected) if (!nextRejected.has(rel) && !kept.has(rel)) nextRejected.set(rel, key);
+    grepRejectedMemo.set(stateDir, nextRejected);
   }
 
   if (toEnqueue.length === 0) {

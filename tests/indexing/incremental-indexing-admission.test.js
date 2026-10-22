@@ -87,7 +87,9 @@ describe('dirty-scan / admission of new files', () => {
     expect(q).toContain('keep.js');
     expect(q).not.toContain('ignored.js');
     expect(q).not.toContain('secrets/key.js');
-    expect(res.added).toBe(1);
+    // keep.js, and .gitignore as a grep-only file (git-visible, outside embedding admission).
+    expect(q).toContain('.gitignore');
+    expect(res.added).toBe(2);
   });
 });
 

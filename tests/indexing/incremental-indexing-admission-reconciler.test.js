@@ -89,7 +89,9 @@ describe('reconciler second admission gate', () => {
     enqueue('logo.png', 'data.parquet');
     const second = await tick();
 
-    expect(second.files_processed).toBe(0); // both dropped by the gate
+    // Both stay out of every embedding tier; as git-visible text they are grep-only files,
+    // which get sparse-gram records alone (incremental-grep-only-files.test.js).
+    expect(second.ops_per_tier?.vectors_upsert ?? 0).toBe(0);
     expect(liveVectorRows('logo.png')).toEqual([]);
     expect(liveVectorRows('data.parquet')).toEqual([]);
     expect(liveGraphEntities('data.parquet')).toEqual([]);

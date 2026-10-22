@@ -9,7 +9,8 @@ import {
   resolveSparseSymbolMask,
 } from '../infrastructure/native-sparse-gram.js';
 import { contentHash } from '../incremental-indexing/infrastructure/hashing.mjs';
-import { FALLBACK_WEIGHTS_ID } from '../incremental-indexing/infrastructure/sparse-gram-delta.mjs';
+import { DELTA_DIR_SUFFIX, FALLBACK_WEIGHTS_ID } from '../incremental-indexing/infrastructure/sparse-gram-delta.mjs';
+import { grepStatEntry, writeGrepCorpusState } from '../incremental-indexing/infrastructure/grep-corpus-state.mjs';
 import { atomicSwapDatabase, log } from './indexer-utils.js';
 import { discoverGrepCorpus } from './grep-corpus.js';
 
@@ -36,6 +37,17 @@ async function collectFileSymbolMasks(codeFiles) {
   }
 
   return codeFiles.map((filePath) => masks.get(filePath) || 0);
+}
+
+// The grep-only files (in the corpus, outside embedding admission) with their stat, so the
+// maintainer keeps them current (grep-corpus-state.mjs). Written after the base promotion.
+function recordGrepOnlyFiles(rels) {
+  const files = {};
+  for (const rel of rels) {
+    const stat = grepStatEntry(path.join(PROJECT_ROOT, rel));
+    if (stat) files[rel] = stat;
+  }
+  writeGrepCorpusState(path.dirname(DB_PATHS.sparseGramIndex), { files });
 }
 
 async function resolveSparseGramWeightsId(result, artifactPath) {
@@ -119,6 +131,10 @@ export async function buildSparseGramArtifact(allFiles, dryRun) {
     });
     const weightsId = await resolveSparseGramWeightsId(result, stagedPath);
     await atomicSwapDatabase(stagedPath, DB_PATHS.sparseGramIndex);
+    // The new base holds every file's current grams: delta records from before it would
+    // override them with older content (the maintainer lists the delta directory).
+    await fs.rm(DB_PATHS.sparseGramIndex + DELTA_DIR_SUFFIX, { recursive: true, force: true });
+    recordGrepOnlyFiles(grepFiles.slice(grepFiles.length - corpus.added));
     log(
       `Sparse gram artifact promoted (${result.filesIndexed} files, ${result.grams} grams, ${result.postings} postings)`,
       'green'

@@ -472,6 +472,17 @@ export class Reconciler {
     // when a tier has no work for this file. `tickCtx` is the lever-E.1
     // tick-scoped store context (null on the per-file path).
     const ops = {};
+    // A file only the grep corpus holds (adapter hashFile `sparseOnly`, with its gram ops):
+    // the sparse-gram tier alone.
+    if (hashes?.sparseOnly) {
+      const manifestTiers = {};
+      this.progress('reconciler:sparse:start');
+      const sg = await this.adapters.applySparseGramDelta?.(file, hashes.gramOps ?? [], epoch);
+      this.progress('reconciler:sparse:done');
+      collectManifestTier(manifestTiers, 'sparseGram', sg);
+      if (sg?.ops?.sparse_gram_delta_upsert != null) ops.sparse_gram_delta_upsert = sg.ops.sparse_gram_delta_upsert;
+      return { chunksTotal: 0, chunksEncoded: 0, chunksReused: 0, manifestTiers, ops };
+    }
     this.progress('reconciler:graph:start');
     const graph = await this.adapters.applyGraphDelta?.(file, hashes, epoch, tickCtx);
     this.progress('reconciler:graph:done');
