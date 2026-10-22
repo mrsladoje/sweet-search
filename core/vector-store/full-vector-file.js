@@ -281,6 +281,41 @@ export class FullVectorWriter {
     return true;
   }
 
+  /**
+   * Synchronous publish of a fresh writer (the maintainer's first delta rows of
+   * an index without the file): renames the staged data file into place and
+   * writes the map for `nodeCount` nodes. Rows past nodeCount stay unmapped;
+   * their owners record them.
+   */
+  publishSync(indexPath, nodeCount) {
+    const paths = fullVectorPaths(indexPath);
+    this._flush();
+    if (this.broken || this.rowsWithVector === 0) {
+      this.close();
+      fs.rmSync(this._tmpData(), { force: true });
+      return false;
+    }
+    if (this.fd !== null) fs.fsyncSync(this.fd);
+    this.close();
+    if (this.fresh) {
+      fs.renameSync(this._tmpData(), paths.data);
+      this.indexPath = indexPath;
+      this.fresh = false;
+    }
+    const map = Buffer.alloc(MAP_HEADER + nodeCount * 4);
+    MAP_MAGIC.copy(map, 0);
+    map.writeUInt32LE(this.generation, 8);
+    map.writeUInt32LE(nodeCount, 12);
+    for (let i = 0; i < nodeCount; i++) {
+      const r = this.nodeRow[i];
+      map.writeUInt32LE(r === undefined ? NO_ROW : r, MAP_HEADER + i * 4);
+    }
+    const tmp = `${paths.map}.tmp.${process.pid}`;
+    fs.writeFileSync(tmp, map);
+    fs.renameSync(tmp, paths.map);
+    return true;
+  }
+
   close() {
     if (this.fd !== null) {
       fs.closeSync(this.fd);

@@ -25,8 +25,8 @@
 import fs from 'fs/promises';
 import { bootLog } from '../infrastructure/boot-log.js';
 import {
-  existsSync, statSync,
-  openSync, readSync, closeSync, fstatSync,
+  existsSync, statSync, rmSync,
+  openSync, readSync, closeSync, fstatSync, fsyncSync,
 } from 'fs';
 import path from 'path';
 import { BINARY_HNSW_CONFIG, DB_PATHS } from '../infrastructure/config/index.js';
@@ -41,12 +41,15 @@ import { INDEX_MAGIC, alignUp, readHeaderFd, binaryHnswIndexExists } from './ind
 import { nativeRescoreKernels, scratchArray, scratchFloat64Query } from '../infrastructure/native-rescore.js';
 import {
   FullVectorWriter,
+  NO_ROW,
   closeFullVectors,
   fullDotScoresForNodes,
   openFullVectors,
   readFullVector,
   removeFullVectorFiles,
 } from './full-vector-file.js';
+import { appendDelta, deltaPathFor, encodeDeltaRecord, readDelta } from './hnsw-delta-file.js';
+import { randomInt } from 'crypto';
 
 // Native query path (crates/sweet-search-native/src/hnsw_search.rs): an exact
 // port of greedySearchQuery/searchLayerQuery over a CSR snapshot of the graph.
@@ -68,7 +71,7 @@ function nativeHnswSearcherCtor() {
 // a per-machine timing) keeps rankings the same on every machine: the scan is
 // faster than the walk up to 140k vectors on an M3 Max and ties it at 140k on
 // an x86 EPYC (AVX2), so the cap sits just above that.
-const EXACT_SCAN_MAX_VECTORS = 150000;
+export const EXACT_SCAN_MAX_VECTORS = 150000;
 // SS_FIX_HNSW_ADAPTIVE=0 (bench only): no early termination thresholds in the native walk.
 const NO_EARLY_STOP = [];
 
@@ -226,7 +229,7 @@ async function writeIndexFile(filePath, header, sections) {
 }
 
 /**
- * Tooling (soak probes): node ids of an index file and the ids that have an
+ * Tooling (soak probes): node ids of an index file (base, then delta) and the ids that have an
  * int8 row, or null when there is no format-3 file at `indexPath`.
  * @returns {{ ids: string[], int8Ids: string[] } | null}
  */
@@ -242,6 +245,12 @@ export function readIndexIdsSync(indexPath) {
     if (header.int8Dim > 0) {
       const present = readSection(fd, dataStart, header.sections.int8Present, Uint8Array);
       for (let i = 0; i < ids.length; i++) if (present[i]) int8Ids.push(ids[i]);
+    }
+    // Then the delta rows of this base, in node order (they follow the base nodes).
+    const delta = readDelta(deltaPathFor(indexPath), header.generation ?? 0, header.dimension);
+    for (const r of delta?.records ?? []) {
+      ids.push(r.id);
+      if (r.int8) int8Ids.push(r.id);
     }
     return { ids, int8Ids };
   } finally {
@@ -399,6 +408,15 @@ export class BinaryHNSWIndex {
     this._fullReader = null;
     this._fullDirty = false;
 
+    // The base (the index file) and its delta (hnsw-delta-file.js): nodes
+    // [0, _baseCount) come from the file, later ones from delta records and
+    // carry no graph links. `generation` pairs a delta file with its base.
+    this.generation = 0;
+    this._baseCount = 0;
+    this._delta = { end: 0, ino: null };
+    this._deltaFullRows = [];
+    this._deltaCodes = [];
+
     // The loaded index file, kept open while parts of it are not in memory
     // (the code slab, or a graph the exact scan never reads): { fd, dataStart,
     // codes, levels }. The fd keeps the loaded version readable after a newer
@@ -409,6 +427,20 @@ export class BinaryHNSWIndex {
   /** Number of nodes (stale ones included). */
   get size() {
     return this._ids.length;
+  }
+
+  /** Nodes that came from the delta file (no graph links). */
+  get deltaCount() {
+    return this._ids.length - this._baseCount;
+  }
+
+  /** True when the base has no graph (a flat compaction): search scans every node. */
+  get graphless() {
+    return this.entryPoint < 0;
+  }
+
+  get deltaPath() {
+    return deltaPathFor(this.indexPath);
   }
 
   /** Id of node i. */
@@ -433,11 +465,12 @@ export class BinaryHNSWIndex {
   _codes() {
     if (this._slab) return this._slab;
     const slab = new HammingSlab(this.dimension);
-    const n = this._ids.length;
+    const n = this._baseCount;
     if (n > 0) {
       const f = this._file;
       slab.fill(readSection(f.fd, f.dataStart, f.codes, Uint8Array), n);
     }
+    for (let i = 0; i < this._deltaCodes.length; i++) slab.set(n + i, this._deltaCodes[i]);
     this._slab = slab;
     this._releaseFile();
     return slab;
@@ -546,6 +579,10 @@ export class BinaryHNSWIndex {
     this.entryPoint = -1;
     this.maxLevel = 0;
     this.initialized = true;
+    this._baseCount = 0;
+    this._delta = { end: 0, ino: null };
+    this._deltaFullRows = [];
+    this._deltaCodes = [];
     this._staleBitmapCache = null;
     this._cleanBuild = true;
     this._fullWriter?.close();
@@ -587,6 +624,10 @@ export class BinaryHNSWIndex {
     this.entryPoint = -1;
     this.maxLevel = 0;
     this.initialized = true;
+    this._baseCount = 0;
+    this._delta = { end: 0, ino: null };
+    this._deltaFullRows = [];
+    this._deltaCodes = [];
 
     console.log(`BinaryHNSW: Initialized (${this.dimension} bytes, M=${this.M})`);
   }
@@ -672,6 +713,10 @@ export class BinaryHNSWIndex {
       return idx;
     }
 
+    // A graph insert links every node first: the delta rows (and, on a flat
+    // base, all nodes) carry no links, and a walk would never reach them.
+    this._linkUnlinked();
+
     // Add new vector.
     const idx = this._ids.length;
     slab.set(idx, binary);
@@ -685,8 +730,20 @@ export class BinaryHNSWIndex {
     // Add to HNSW graph, at the level a stable hash of the id gives (insertion-
     // order-independent), so every construction path builds the same graph.
     this.addToGraph(idx, this.levelForId(id));
+    this._baseCount = this._ids.length;
 
     return idx;
+  }
+
+  /** Link nodes without graph links into the graph (delta rows; all nodes of a flat base). */
+  _linkUnlinked() {
+    const from = this.entryPoint < 0 ? 0 : this._baseCount;
+    if (from >= this._ids.length) return;
+    this._codes();
+    for (let idx = from; idx < this._ids.length; idx++) this.addToGraph(idx, this.levelForId(this._ids[idx]));
+    this._baseCount = this._ids.length;
+    this._deltaCodes = [];
+    this._deltaFullRows = [];
   }
 
   /**
@@ -700,6 +757,175 @@ export class BinaryHNSWIndex {
   _putInt8(node, vec) {
     if (!this._int8) this._int8 = new Int8Rows(vec.length);
     this._int8.put(node, vec);
+  }
+
+  /**
+   * Add a node without linking it into the graph (a flat compaction: the base
+   * of an index search scans exactly). The index must hold no graph.
+   */
+  addFlat(id, binary, metadata = {}, int8Vector = null, fullVector = null) {
+    if (this.entryPoint >= 0) throw new Error('BinaryHNSW: addFlat on an index with a graph');
+    const slab = this._codes();
+    if (this._fullWriter === undefined) {
+      this._fullWriter = this._ids.length === 0 ? FullVectorWriter.fresh(this.indexPath)
+        : FullVectorWriter.resume(this.indexPath, this._ids.length);
+    }
+    this._fullDirty = true;
+    const idx = this._ids.length;
+    slab.set(idx, binary);
+    this._ids.push(id);
+    this._metas.push(metadata);
+    this.idToIndex.set(id, idx);
+    this._fullWriter?.put(idx, fullVector);
+    if (int8Vector) this._putInt8(idx, int8Vector);
+    return idx;
+  }
+
+  /**
+   * Append nodes from delta records (in memory only): ids, metadata, int8
+   * rows, codes (into the JS slab and the native searcher), full-vector rows.
+   */
+  _appendDeltaNodes(records) {
+    if (records.length === 0) return;
+    const dim = this.dimension;
+    const first = this._ids.length;
+    const codes = new Uint8Array(records.length * dim);
+    for (let i = 0; i < records.length; i++) {
+      const r = records[i];
+      const idx = first + i;
+      codes.set(r.code, i * dim);
+      this._ids.push(r.id);
+      this._metas.push(r.metadata);
+      this.idToIndex.set(r.id, idx);
+      if (r.int8) this._putInt8(idx, r.int8);
+      this._deltaFullRows.push(Number.isInteger(r.fullRow) && r.fullRow >= 0 ? r.fullRow : NO_ROW);
+      this._deltaCodes.push(r.code);
+      if (this._slab) this._slab.set(idx, r.code);
+    }
+    const nat = this._native;
+    if (nat && nat.n === first) {
+      nat.searcher.append(codes, records.length);
+      nat.n = first + records.length;
+    }
+    this._visitedList.ensureCapacity(this._ids.length);
+    this._extendFullReader();
+  }
+
+  /**
+   * Point the full-vector reader at the delta rows too: the base map covers the
+   * base nodes, and delta rows sit past them in the same append-only data file
+   * (reopened when a delta row lies beyond what it mapped).
+   */
+  _extendFullReader() {
+    const base = this._baseCount;
+    const rows = this._deltaFullRows;
+    let reader = this._fullReader;
+    if (!reader) {
+      if (rows.length === 0) return;
+      reader = openFullVectors(this.indexPath, base);
+      if (!reader) return;
+    }
+    let maxRow = -1;
+    for (const r of rows) if (r !== NO_ROW && r > maxRow) maxRow = r;
+    if (maxRow >= reader.fileRows) {
+      const fresh = openFullVectors(this.indexPath, base);
+      if (fresh) {
+        closeFullVectors(reader);
+        reader = fresh;
+      }
+    }
+    const all = new Uint32Array(base + rows.length);
+    all.set(reader.rows.subarray(0, Math.min(base, reader.rows.length)));
+    for (let i = 0; i < rows.length; i++) all[base + i] = rows[i];
+    reader.rows = all;
+    this._fullReader = reader;
+  }
+
+  /** Read this base's delta file (all of it, or the tail past what was read). */
+  _loadDelta(fromBytes = 0) {
+    const got = readDelta(this.deltaPath, this.generation, this.dimension, fromBytes);
+    if (!got) {
+      if (fromBytes === 0) this._delta = { end: 0, ino: null };
+      return got;
+    }
+    this._appendDeltaNodes(got.records);
+    this._delta = { end: got.end, ino: got.ino };
+    return got;
+  }
+
+  /**
+   * Pick up delta rows another process appended since this index was loaded
+   * (the search daemon after a maintainer tick). Reads only the new tail. False
+   * when the delta cannot be extended in place (a new base, or a file that
+   * shrank or was replaced): the caller then reloads the whole index.
+   */
+  refreshDelta() {
+    let st;
+    try { st = statSync(this.deltaPath, { throwIfNoEntry: false }); } catch { st = undefined; }
+    if (!st) return this._delta.end === 0;
+    if (this._delta.ino !== null && st.ino !== this._delta.ino) return false;
+    if (this._delta.end > 0 && st.size < this._delta.end) return false;
+    if (this._delta.end > 0 && st.size === this._delta.end) return true;
+    const got = this._loadDelta(this._delta.end);
+    return got !== null || this._delta.end === 0;
+  }
+
+  /**
+   * Maintainer: append vectors as delta records (fsynced) and as nodes in
+   * memory. Ids already live in the index are skipped. Full vectors go to the
+   * full-vector data file (append-only); the records hold their rows.
+   *
+   * @param {Array<{id: string, binary: Uint8Array, metadata?: object, int8?: Int8Array|null, full?: Float32Array|number[]|null}>} items
+   * @returns {number} nodes appended
+   */
+  appendDelta(items) {
+    const fresh = items.filter((it) => !this.idToIndex.has(it.id));
+    if (fresh.length === 0) return 0;
+    const first = this._ids.length;
+    const withFull = fresh.some((it) => it.full && it.full.length > 0);
+    let writer = null;
+    if (withFull) {
+      writer = FullVectorWriter.resume(this.indexPath, this._baseCount);
+      if (!writer && !this._fullReader) {
+        // No full-vector file yet (an index that started empty): start one whose
+        // map covers the base, so the delta rows have a file to live in.
+        writer = FullVectorWriter.fresh(this.indexPath);
+        writer._newFile = true;
+      }
+    }
+    const rows = new Array(fresh.length).fill(-1);
+    if (writer) {
+      for (let i = 0; i < fresh.length; i++) writer.put(first + i, fresh[i].full || null);
+      writer._flush();
+      if (writer._newFile) {
+        writer.publishSync(this.indexPath, this._baseCount);
+      } else if (writer.fd !== null) {
+        fsyncSync(writer.fd);
+      }
+      if (!writer.broken) {
+        for (let i = 0; i < fresh.length; i++) {
+          const r = writer.nodeRow[first + i];
+          rows[i] = r === undefined || r === NO_ROW ? -1 : r;
+        }
+      }
+      writer.close();
+    }
+    const dim = this.dimension;
+    const records = fresh.map((it, i) => ({
+      id: it.id,
+      metadata: it.metadata || {},
+      // At the index width, as the code slab stores it (zero-padded or cut).
+      code: it.binary.length === dim ? it.binary : (() => { const c = new Uint8Array(dim); c.set(it.binary.subarray(0, dim)); return c; })(),
+      int8: it.int8 || null,
+      fullRow: rows[i],
+    }));
+    const end = appendDelta(this.deltaPath, this.generation, this.dimension, this._delta.end,
+      records.map(encodeDeltaRecord));
+    let ino = null;
+    try { ino = statSync(this.deltaPath).ino; } catch { /* just written */ }
+    this._delta = { end, ino };
+    this._appendDeltaNodes(records);
+    return fresh.length;
   }
 
   /**
@@ -1110,6 +1336,53 @@ export class BinaryHNSWIndex {
   }
 
   /**
+   * Does search scan every node exactly? Always for a flat base (no graph);
+   * otherwise up to EXACT_SCAN_MAX_VECTORS nodes with the native searcher.
+   */
+  _scanMode(nat) {
+    if (this.entryPoint < 0) return true;
+    return !!nat && this._ids.length <= EXACT_SCAN_MAX_VECTORS && process.env.SS_FIX_HNSW_SCAN !== '0';
+  }
+
+  /**
+   * A walk reaches base nodes only: merge the live delta nodes, scored exactly
+   * with `distOf(node)`, into the walk's live candidates (ascending distance,
+   * equal distances in node order).
+   */
+  _mergeDelta(live, distOf, staleBitmap) {
+    const n = this._ids.length;
+    if (this._baseCount >= n) return live;
+    const nodes = [];
+    for (let i = this._baseCount; i < n; i++) {
+      if (staleBitmap && this._isIndexStale(i, staleBitmap)) continue;
+      nodes.push({ idx: i, dist: distOf(i) });
+    }
+    if (nodes.length === 0) return live;
+    nodes.sort((a, b) => a.dist - b.dist || a.idx - b.idx);
+    const idx = [];
+    const dist = [];
+    let i = 0;
+    let j = 0;
+    while (i < live.length || j < nodes.length) {
+      const takeLive = j >= nodes.length
+        || (i < live.length && (live.dist[i] < nodes[j].dist || (live.dist[i] === nodes[j].dist && live.idx[i] < nodes[j].idx)));
+      if (takeLive) { idx.push(live.idx[i]); dist.push(live.dist[i]); i++; } else { idx.push(nodes[j].idx); dist.push(nodes[j].dist); j++; }
+    }
+    return { idx, dist, length: idx.length };
+  }
+
+  /** Exact scan without the addon: live candidates over every node, ascending distance. */
+  _scanJs(staleBitmap) {
+    const out = [];
+    for (let i = 0; i < this._ids.length; i++) {
+      if (staleBitmap && this._isIndexStale(i, staleBitmap)) continue;
+      out.push({ idx: i, dist: this._distQ(i) });
+    }
+    out.sort((a, b) => a.dist - b.dist || a.idx - b.idx);
+    return out;
+  }
+
+  /**
    * Tail of search() on the native path: same stale filtering, retry and
    * result objects as the JS path, without the intermediate {idx, dist}
    * objects.
@@ -1118,7 +1391,7 @@ export class BinaryHNSWIndex {
     let out;
     let live;
     const total = this._ids.length;
-    if (total <= EXACT_SCAN_MAX_VECTORS && process.env.SS_FIX_HNSW_SCAN !== '0') {
+    if (this._scanMode(nat)) {
       // Small index: exact top-k over every vector beats the walk on time
       // and never misses a neighbor. Ask for k plus the stale count so k live
       // results remain after filtering.
@@ -1131,13 +1404,14 @@ export class BinaryHNSWIndex {
     out = this._nativeSearchLayer(nat, currentNode, ef, 0);
     const visitedCount = out[0];
     live = this._nativeLive(out, staleBitmap);
-    if (live.length < k && ef < this._ids.length) {
-      const retryEf = Math.min(this._ids.length, ef * 2);
+    if (live.length < k && ef < this._baseCount) {
+      const retryEf = Math.min(this._baseCount, ef * 2);
       if (retryEf > ef) {
         out = this._nativeSearchLayer(nat, currentNode, retryEf, 0);
         live = this._nativeLive(out, staleBitmap);
       }
     }
+    live = this._mergeDelta(live, (node) => nat.dist(node), staleBitmap);
     return this._nativeResults(live, visitedCount, ef, k, staleBitmap, start, lazy);
   }
 
@@ -1211,7 +1485,7 @@ export class BinaryHNSWIndex {
     const maxDist = this.dimension * 8;
     // The native exact scan (_finishNativeSearch) uses neither the entry node
     // nor ef, so only a walk descends the upper layers.
-    const scan = nat && this._ids.length <= EXACT_SCAN_MAX_VECTORS && process.env.SS_FIX_HNSW_SCAN !== '0';
+    const scan = this._scanMode(nat);
     if (!scan) {
       for (let l = this.maxLevel; l >= 1; l--) {
         currentNode = nat
@@ -1235,15 +1509,24 @@ export class BinaryHNSWIndex {
     // Level 0 search — pure Hamming
     if (nat) return this._finishNativeSearch(nat, currentNode, ef, k, staleBitmap, start, opts.lazy === true);
 
-    const searchResult = this.searchLayerQuery(currentNode, queryBinary, ef, 0);
-    let candidates = searchResult.candidates;
-
-    candidates = candidates.filter(c => !this._isIndexStale(c.idx, staleBitmap));
-    if (candidates.length < k && ef < this._ids.length) {
-      const retryEf = Math.min(this._ids.length, ef * 2);
-      if (retryEf > ef) {
-        const retry = this.searchLayerQuery(currentNode, queryBinary, retryEf, 0);
-        candidates = retry.candidates.filter(c => !this._isIndexStale(c.idx, staleBitmap));
+    let searchResult;
+    let candidates;
+    if (scan) {
+      candidates = this._scanJs(staleBitmap);
+      searchResult = { visitedCount: this._ids.length };
+    } else {
+      searchResult = this.searchLayerQuery(currentNode, queryBinary, ef, 0);
+      candidates = searchResult.candidates.filter(c => !this._isIndexStale(c.idx, staleBitmap));
+      if (candidates.length < k && ef < this._baseCount) {
+        const retryEf = Math.min(this._baseCount, ef * 2);
+        if (retryEf > ef) {
+          const retry = this.searchLayerQuery(currentNode, queryBinary, retryEf, 0);
+          candidates = retry.candidates.filter(c => !this._isIndexStale(c.idx, staleBitmap));
+        }
+      }
+      if (this.deltaCount > 0) {
+        const merged = this._mergeDelta({ idx: candidates.map((c) => c.idx), dist: candidates.map((c) => c.dist), length: candidates.length }, (node) => this._distQ(node), staleBitmap);
+        candidates = merged.idx.map((node, i) => ({ idx: node, dist: merged.dist[i] }));
       }
     }
 
@@ -1318,7 +1601,10 @@ export class BinaryHNSWIndex {
 
     const total = this._ids.length;
     const live = this._liveVectorCount(staleBitmap);
-    const scan = total <= EXACT_SCAN_MAX_VECTORS && process.env.SS_FIX_HNSW_SCAN !== '0';
+    const scan = this._scanMode(nat);
+    // The fused cascade walks the base only: with delta rows above the scan size,
+    // search() (walk + exact delta merge) answers instead.
+    if (!scan && this.deltaCount > 0) return null;
     const maxDist = this.dimension * 8;
     let currentNode = this.entryPoint;
     let ef = Math.max(this._oversampleTarget(k, staleBitmap), this.efSearch);
@@ -1866,6 +2152,8 @@ export class BinaryHNSWIndex {
    */
   async save(indexPath = this.indexPath) {
     await fs.mkdir(path.dirname(indexPath), { recursive: true });
+    // Delta nodes become base nodes: link them into the graph (a flat base stays flat).
+    if (this.entryPoint >= 0) this._linkUnlinked();
     const n = this._ids.length;
     const dim = this.dimension;
     const levelCount = this._graphFrozen ? this._graphFrozen.lengths.length : this._graphStore.length;
@@ -1906,6 +2194,8 @@ export class BinaryHNSWIndex {
       int8Dim,
       int8Count,
       levels,
+      // A new base: a delta file of any other generation no longer applies.
+      generation: randomInt(1, 0xffffffff),
       savedAt: new Date().toISOString(),
     };
 
@@ -1922,6 +2212,14 @@ export class BinaryHNSWIndex {
       this._cleanBuild = false;
     }
     await fs.rename(indexPath + pidSuffix, indexPath);
+    rmSync(deltaPathFor(indexPath), { force: true });
+    if (indexPath === this.indexPath) {
+      this.generation = header.generation;
+      this._baseCount = n;
+      this._delta = { end: 0, ino: null };
+      this._deltaFullRows = [];
+      this._deltaCodes = [];
+    }
 
     console.log(`BinaryHNSW: Saved ${n} vectors to ${indexPath}`);
   }
@@ -2029,8 +2327,14 @@ export class BinaryHNSWIndex {
       if (!this._fullReader && n > 0) {
         bootLog(`BinaryHNSW: no full-vector file at ${indexPath}; the final rescore is off until a full rebuild`);
       }
+      this.generation = header.generation ?? 0;
+      this._baseCount = n;
+      this._deltaFullRows = [];
+      this._deltaCodes = [];
+      this.indexPath = indexPath;
+      this._loadDelta();
       this.initialized = true;
-      bootLog(`BinaryHNSW: Loaded ${n} vectors from ${indexPath}`);
+      bootLog(`BinaryHNSW: Loaded ${n} vectors from ${indexPath}${this.deltaCount > 0 ? ` (+${this.deltaCount} delta)` : ''}`);
     } finally {
       if (!keep) {
         if (this._file?.fd === fd) this._file = null;
@@ -2102,6 +2406,11 @@ export class BinaryHNSWIndex {
     this.entryPoint = -1;
     this.maxLevel = 0;
     await fs.rm(this.stalePath, { force: true });
+    await fs.rm(this.deltaPath, { force: true });
+    this._baseCount = 0;
+    this._delta = { end: 0, ino: null };
+    this._deltaFullRows = [];
+    this._deltaCodes = [];
     this._staleBitmapCache = null;
     this._cleanBuild = false;
     this._fullWriter?.close();

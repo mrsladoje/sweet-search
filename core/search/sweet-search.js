@@ -530,12 +530,9 @@ export class SweetSearch {
     if (!grepOnly) {
       this.hasBinaryHnswIndex = binaryHnswIndexExists(this.binaryHnswPath);
     }
-    // Only when the file changed: the stale bitmap is read per search anyway, and a tick
-    // without vector changes leaves the index file as it was.
-    if (!grepOnly && this.hasBinaryHnswIndex && this.use3Stage
-      && (!this._binaryHnswIdentity || fileIdentity(this.binaryHnswPath) !== this._binaryHnswIdentity)) {
-      await this._reloadBinaryHnsw();
-    }
+    // The stale bitmap is read per search anyway; the index file changes only at a
+    // compaction or a full build, and a tick appends to its delta file.
+    if (!grepOnly && this.hasBinaryHnswIndex && this.use3Stage) await this._syncBinaryHnsw();
 
     if (!grepOnly) {
       this.hasLateInteractionIndex = existsSync(this.lateInteractionIndex.indexPath);
@@ -591,6 +588,19 @@ export class SweetSearch {
     }
   }
 
+  /**
+   * Bring the loaded binary HNSW up to its files: a changed index file (compaction,
+   * full build) reloads it; otherwise only the delta rows appended since are read.
+   */
+  async _syncBinaryHnsw() {
+    if (!this._binaryHnswIdentity || fileIdentity(this.binaryHnswPath) !== this._binaryHnswIdentity) {
+      await this._reloadBinaryHnsw();
+      return;
+    }
+    const index = this.binaryHnswIndex;
+    if (typeof index?.refreshDelta === 'function' && !index.refreshDelta()) await this._reloadBinaryHnsw();
+  }
+
   async _reloadBinaryHnsw() {
     try {
       const identity = fileIdentity(this.binaryHnswPath);
@@ -643,11 +653,10 @@ export class SweetSearch {
       : (Number.isInteger(codebaseEpoch) ? codebaseEpoch : graphEpoch);
     if (shouldReloadArtifacts) {
       await this._reloadManifestArtifacts(manifest, options);
-    } else if (!grepOnly && this.initialized && this.hasBinaryHnswIndex && this.use3Stage
-      && this._binaryHnswIdentity && fileIdentity(this.binaryHnswPath) !== this._binaryHnswIdentity) {
-      // HNSW compaction rewrites the index and clears its stale bitmap without a new epoch.
-      // The loaded graph then read the cleared bitmap, and its retired nodes came back.
-      await this._reloadBinaryHnsw();
+    } else if (!grepOnly && this.initialized && this.hasBinaryHnswIndex && this.use3Stage && this._binaryHnswIdentity) {
+      // HNSW compaction rewrites the index and clears its stale bitmap without a new epoch:
+      // the loaded graph then read the cleared bitmap, and its retired nodes came back.
+      await this._syncBinaryHnsw();
     }
     if (!shouldReloadArtifacts && this.sparseGramIndex && this._sparseGramIdentity
       && fileIdentity(this.sparseGramIndexPath) !== this._sparseGramIdentity) {
