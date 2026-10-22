@@ -160,7 +160,6 @@ Search options:
   --mode <mode>     auto (default), lexical, semantic, hybrid, pattern
   --top, -k <n>     Number of results (default: 10)
   --json            Output results as JSON
-  --cold            Run in this process (skip the search server)
   Run 'sweet-search "x" --help' for all search options.
 
 Setup and state:

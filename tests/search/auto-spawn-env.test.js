@@ -11,17 +11,28 @@ vi.mock('child_process', async (importOriginal) => ({
   spawn: (cmd, args, opts) => { spawns.push({ cmd, args, opts }); return { pid: 1, unref() {} }; },
 }));
 
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 const { autoSpawnServer } = await import('../../core/search/search-server.js');
 
 describe('autoSpawnServer', () => {
   it('drops the call start stamp and sets the heap flag', async () => {
     process.env.SWEET_SEARCH_CALL_STARTED_MS = '12345';
     process.env.SWEET_SEARCH_SOCKET_PATH = '/nonexistent/ss-auto-spawn-env.sock';
+    // autoSpawnServer writes daemon.log under the project root: keep it out of this repo.
+    const projectRoot = mkdtempSync(join(tmpdir(), 'ss-auto-spawn-'));
+    const savedRoot = process.env.SWEET_SEARCH_PROJECT_ROOT;
+    process.env.SWEET_SEARCH_PROJECT_ROOT = projectRoot;
     try {
       await autoSpawnServer({ quiet: true });
     } finally {
       delete process.env.SWEET_SEARCH_CALL_STARTED_MS;
       delete process.env.SWEET_SEARCH_SOCKET_PATH;
+      if (savedRoot === undefined) delete process.env.SWEET_SEARCH_PROJECT_ROOT;
+      else process.env.SWEET_SEARCH_PROJECT_ROOT = savedRoot;
+      rmSync(projectRoot, { recursive: true, force: true });
     }
     expect(spawns).toHaveLength(1);
     expect(spawns[0].opts.env.SWEET_SEARCH_CALL_STARTED_MS).toBeUndefined();
