@@ -439,7 +439,12 @@ describe('D-G. edge LI indexing + search + read-semantic + ColGrep (one shared c
       // model identity was persisted.
       const manifestPath = join(dataDir, 'codebase-late-interaction.db');
       expect(existsSync(manifestPath)).toBe(true);
-      const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+      let manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
+      // A segmented save (the accelerator build) leaves a pointer stub here;
+      // the model identity is in the segment manifest.
+      if (manifest.format === 'segmented') {
+        manifest = JSON.parse(readFileSync(join(dataDir, manifest.segmentDir, 'manifest.json'), 'utf-8'));
+      }
       expect(manifest.modelId).toBe('lateon-code-edge');
       expect(manifest.tokenDim).toBe(48);
     },
