@@ -915,11 +915,12 @@ export async function runUninstall(args) {
 
   // Confirmation (unless --force)
   if (!parsed.force && process.stdin.isTTY) {
-    process.stdout.write('Proceed? [y/N] ');
     const { createInterface } = await import('node:readline');
     const rl = createInterface({ input: process.stdin, output: process.stdout });
+    // readline must write the prompt itself: on a TTY it redraws its own
+    // (empty) prompt with cursor-to-column-1 + clear, erasing earlier text.
     const answer = await new Promise(resolve => {
-      rl.question('', a => { rl.close(); resolve(a.trim().toLowerCase()); });
+      rl.question('Proceed? [y/N] ', a => { rl.close(); resolve(a.trim().toLowerCase()); });
     });
     if (answer !== 'y' && answer !== 'yes') {
       console.log('Cancelled.');
