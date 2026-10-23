@@ -1,0 +1,39 @@
+name: Publish root package (JS-only patch)
+
+# A JS-only patch release: publishes the root sweet-search package alone,
+# with the native and bg-priority optionals pinned to an already-published
+# version. No native build, no CUDA, no smoke matrix — use it only when
+# nothing under crates/ or native/ changed since the last full release.
+on:
+  workflow_dispatch:
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Check the version is new and its optionals exist
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if npm view "sweet-search@$version" version >/dev/null 2>&1; then
+            echo "sweet-search@$version is already published"; exit 1
+          fi
+          node -e '
+            const deps = require("./package.json").optionalDependencies || {};
+            for (const [name, v] of Object.entries(deps)) console.log(`${name}@${v}`);
+          ' | while read -r spec; do
+            npm view "$spec" version >/dev/null || { echo "missing on npm: $spec"; exit 1; }
+          done
+
+      - name: Publish main package
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: 'false'
