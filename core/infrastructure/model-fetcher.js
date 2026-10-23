@@ -23,8 +23,15 @@ import { pipeline } from 'stream/promises';
 import { MODEL_DELIVERY_CONFIG } from './config/index.js';
 import { getModelEntry } from './model-registry.js';
 
+// Failed attempts in a row that made no progress before a download gives up.
 const MAX_RETRIES = 3;
+// Hard cap on attempts per file, even when each one makes some progress.
+const MAX_ATTEMPTS = 50;
 const RETRY_BASE_MS = 1000;
+// An attempt that receives no bytes for this long is aborted and resumed.
+const STALL_TIMEOUT_MS = 30_000;
+// Minimum time between two redraws of the progress line.
+const PROGRESS_REDRAW_MS = 200;
 
 // =============================================================================
 // VERIFICATION CACHE (H6 — avoid N-worker SHA256 stall)
@@ -252,6 +259,65 @@ export async function isCacheValid(filePath, expectedSize, expectedSha256) {
 }
 
 /**
+ * Turn an abort caused by the stall timer into a readable error. Other errors
+ * (and an abort from the caller's own signal) pass through unchanged.
+ */
+function stallError(err, controller, callerSignal, stallTimeoutMs) {
+  if (controller.signal.aborted && !callerSignal?.aborted) {
+    return new Error(`no data received for ${Math.round(stallTimeoutMs / 1000)} s`);
+  }
+  return err;
+}
+
+function formatDuration(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return '';
+  if (seconds < 60) return `${Math.ceil(seconds)} s`;
+  if (seconds < 3600) return `${Math.ceil(seconds / 60)} min`;
+  return `${(seconds / 3600).toFixed(1)} h`;
+}
+
+/**
+ * One status line per download. On a terminal it redraws in place (carriage
+ * return + clear to end of line) with size, percent, speed and time left; when
+ * stderr is not a terminal (logs, CI, agent shells) it prints the label once
+ * and the final size, the same two writes as before progress existed.
+ */
+export function createProgressLine(label, { stream = process.stderr, now = Date.now } = {}) {
+  const live = Boolean(stream.isTTY);
+  const startedAt = now();
+  let firstBytes = null;
+  let lastDraw = 0;
+  stream.write(label);
+
+  return {
+    update(downloaded, total) {
+      if (!live) return;
+      const t = now();
+      if (firstBytes === null) firstBytes = downloaded;
+      if (t - lastDraw < PROGRESS_REDRAW_MS) return;
+      lastDraw = t;
+      const mb = (n) => (n / 1024 / 1024).toFixed(1);
+      const elapsed = (t - startedAt) / 1000;
+      const rate = elapsed > 0 ? (downloaded - firstBytes) / elapsed : 0;
+      let text = `${mb(downloaded)}`;
+      if (total > 0) {
+        text += ` / ${mb(total)} MB (${Math.floor((downloaded / total) * 100)}%)`;
+      } else {
+        text += ' MB';
+      }
+      if (rate > 0) {
+        text += `, ${mb(rate)} MB/s`;
+        if (total > downloaded) text += `, ${formatDuration((total - downloaded) / rate)} left`;
+      }
+      stream.write(`\r${label} ${text}\x1b[K`);
+    },
+    finish(text) {
+      stream.write(live ? `\r${label} ${text}\x1b[K\n` : ` ${text}\n`);
+    },
+  };
+}
+
+/**
  * Download a single file from HuggingFace with retries, resumability, and atomic writes.
  *
  * @param {string} hfId - HuggingFace model ID (e.g. 'lightonai/LateOn-Code')
@@ -263,6 +329,7 @@ export async function isCacheValid(filePath, expectedSize, expectedSha256) {
  * @param {string} [options.hfEndpoint] - HuggingFace endpoint override
  * @param {function} [options.onProgress] - Progress callback(downloadedBytes, totalBytes)
  * @param {AbortSignal} [options.signal] - Abort signal
+ * @param {number} [options.stallTimeoutMs] - Abort and resume an attempt that receives no bytes for this long
  * @param {boolean} [options.allowDownload] - Explicit override for
  *   MODEL_DELIVERY_CONFIG.allowRuntimeModelDownload. When true, bypasses
  *   the config-based download gate. Used by `scripts/init.js` during its
@@ -313,13 +380,20 @@ export async function fetchModelFile(hfId, filePath, destDir, options = {}) {
 
   const url = `${hfEndpoint}/${hfId}/resolve/main/${filePath}`;
 
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+  const stallTimeoutMs = options.stallTimeoutMs ?? STALL_TIMEOUT_MS;
+  // Failed attempts in a row that added no bytes. An attempt that resumed and
+  // wrote more bytes resets it, so a slow, flaky link still finishes.
+  let failuresWithoutProgress = 0;
+
+  for (let attempt = 1; ; attempt++) {
+    let startByte = 0;
+    let downloaded = 0;
     try {
       // Check for partial download (resumability)
-      let startByte = 0;
       if (existsSync(tmpPath)) {
         startByte = statSync(tmpPath).size;
       }
+      downloaded = startByte;
 
       const headers = {};
       if (startByte > 0) {
@@ -333,45 +407,77 @@ export async function fetchModelFile(hfId, filePath, destDir, options = {}) {
         headers['Authorization'] = `Bearer ${hfToken}`;
       }
 
-      const resp = await fetch(url, { headers, signal });
+      // A stalled connection (no bytes for stallTimeoutMs) aborts this attempt;
+      // the next one resumes from the bytes already on disk.
+      const controller = new AbortController();
+      const forwardAbort = () => controller.abort(signal.reason);
+      signal?.addEventListener('abort', forwardAbort, { once: true });
+      let stallTimer = null;
+      const armStallTimer = () => {
+        clearTimeout(stallTimer);
+        stallTimer = setTimeout(() => controller.abort(), stallTimeoutMs);
+      };
 
-      if (resp.status === 416) {
-        // Range not satisfiable — file changed on server, restart
-        if (existsSync(tmpPath)) unlinkSync(tmpPath);
-        startByte = 0;
-        continue;
+      try {
+        armStallTimer();
+        let resp;
+        try {
+          resp = await fetch(url, { headers, signal: controller.signal });
+        } catch (err) {
+          throw stallError(err, controller, signal, stallTimeoutMs);
+        }
+
+        if (resp.status === 416) {
+          // Range not satisfiable — file changed on server, restart
+          if (existsSync(tmpPath)) unlinkSync(tmpPath);
+          continue;
+        }
+
+        if (!resp.ok && resp.status !== 206) {
+          throw new Error(`HTTP ${resp.status} downloading ${url}`);
+        }
+
+        const isResume = resp.status === 206;
+        if (!isResume) downloaded = 0;
+        const totalSize = expectedSize || parseInt(resp.headers.get('content-length') || '0', 10) + downloaded;
+
+        const progress = createProgressLine(`[ModelFetcher] ${isResume ? 'Resuming' : 'Downloading'} ${filePath} from ${hfId}...`);
+
+        const writeStream = createWriteStream(tmpPath, { flags: isResume ? 'a' : 'w' });
+        const streamDone = new Promise((resolve, reject) => {
+          writeStream.on('finish', resolve);
+          writeStream.on('error', reject);
+        });
+        const reader = resp.body.getReader();
+        try {
+          while (true) {
+            let chunk;
+            try {
+              chunk = await reader.read();
+            } catch (err) {
+              throw stallError(err, controller, signal, stallTimeoutMs);
+            }
+            if (chunk.done) break;
+            armStallTimer();
+            writeStream.write(Buffer.from(chunk.value));
+            downloaded += chunk.value.byteLength;
+            progress.update(downloaded, totalSize);
+            if (onProgress) onProgress(downloaded, totalSize);
+          }
+        } finally {
+          // Flush what arrived before a failure, so the next attempt's Range
+          // header starts at the real end of the partial file.
+          writeStream.end();
+          await streamDone;
+        }
+
+        progress.finish(`${(statSync(tmpPath).size / 1024 / 1024).toFixed(1)} MB`);
+      } finally {
+        clearTimeout(stallTimer);
+        signal?.removeEventListener('abort', forwardAbort);
       }
-
-      if (!resp.ok && resp.status !== 206) {
-        throw new Error(`HTTP ${resp.status} downloading ${url}`);
-      }
-
-      const totalSize = expectedSize || parseInt(resp.headers.get('content-length') || '0', 10) + startByte;
-      const isResume = resp.status === 206;
-
-      process.stderr.write(`[ModelFetcher] ${isResume ? 'Resuming' : 'Downloading'} ${filePath} from ${hfId}...`);
-
-      const writeStream = createWriteStream(tmpPath, { flags: isResume ? 'a' : 'w' });
-      const reader = resp.body.getReader();
-      let downloaded = startByte;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        writeStream.write(Buffer.from(value));
-        downloaded += value.byteLength;
-        if (onProgress) onProgress(downloaded, totalSize);
-      }
-
-      writeStream.end();
-      await new Promise((resolve, reject) => {
-        writeStream.on('finish', resolve);
-        writeStream.on('error', reject);
-      });
 
       const downloadedSize = statSync(tmpPath).size;
-      const sizeMB = (downloadedSize / 1024 / 1024).toFixed(1);
-      process.stderr.write(` ${sizeMB} MB\n`);
 
       // Verify size
       if (expectedSize && downloadedSize !== expectedSize) {
@@ -401,14 +507,19 @@ export async function fetchModelFile(hfId, filePath, destDir, options = {}) {
 
     } catch (err) {
       if (signal?.aborted) throw err;
-      if (attempt < MAX_RETRIES) {
-        const delay = RETRY_BASE_MS * Math.pow(2, attempt - 1);
+      failuresWithoutProgress = downloaded > startByte ? 1 : failuresWithoutProgress + 1;
+      if (failuresWithoutProgress < MAX_RETRIES && attempt < MAX_ATTEMPTS) {
+        const delay = RETRY_BASE_MS * Math.pow(2, failuresWithoutProgress - 1);
         process.stderr.write(`\n[ModelFetcher] Attempt ${attempt} failed: ${err.message}. Retrying in ${delay}ms...\n`);
         await new Promise(r => setTimeout(r, delay));
       } else {
-        // Clean up tmp on final failure
-        if (existsSync(tmpPath)) unlinkSync(tmpPath);
-        throw new Error(`[ModelFetcher] Failed to download ${hfId}/${filePath} after ${MAX_RETRIES} attempts: ${err.message}`);
+        // Keep the partial file: the next `sweet-search init` resumes from it.
+        // (A size or checksum mismatch already deleted it above.)
+        const kept = existsSync(tmpPath) ? statSync(tmpPath).size : 0;
+        const resumeNote = kept > 0
+          ? ` ${(kept / 1024 / 1024).toFixed(1)} MB kept; run \`sweet-search init\` again to resume.`
+          : '';
+        throw new Error(`[ModelFetcher] Failed to download ${hfId}/${filePath} after ${attempt} attempts: ${err.message}.${resumeNote}`);
       }
     }
   }
