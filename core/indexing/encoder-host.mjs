@@ -20,7 +20,7 @@
 import { getEmbeddings } from '../embedding/embedding-service.js';
 import { countDocumentTokensCpu, encodeDocumentsCpu, encodeQuery, getLateInteractionPipeline } from '../ranking/late-interaction-model.js';
 import { callLocalModel, callLocalModelBucketed, getLocalPipeline } from '../embedding/embedding-local-model.js';
-import { takeProvenance } from './inference-provenance.js';
+import { takeProvenance } from '../infrastructure/inference-provenance.js';
 import { applyPersistedLiModel } from '../infrastructure/init-config.js';
 import { armBackgroundOrtProfiles } from './model-pool.js';
 import { setProcessTitle } from '../infrastructure/process-title.js';

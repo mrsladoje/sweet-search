@@ -18,7 +18,7 @@ import { buildLateInteractionIndex, buildQuantizedArtifactsPhase } from './index
 import { buildSparseGramArtifact } from './indexer-sparse-gram.js';
 import { binaryHnswIndexExists } from '../vector-store/index-file-header.js';
 import { publishIndexerManifest } from './indexer-manifest.js';
-import { takeProvenance } from './inference-provenance.js';
+import { takeProvenance } from '../infrastructure/inference-provenance.js';
 import { contentHashSync } from '../incremental-indexing/infrastructure/hashing.mjs';
 import {
   configureLocalModelRuntime,
@@ -26,7 +26,7 @@ import {
 } from '../embedding/embedding-local-model.js';
 import { isNativeInferenceAvailable } from '../infrastructure/native-inference.js';
 import { teardownAllModels, initIndexGpuPool, teardownIndexGpuPool, warmupQueryCpuModels, GPU_ARMING_MIN_FILES, isIndexAcceleratorAvailable, hasIndexAcceleratorHardware, ensureIndexDeviceChoice } from './model-pool.js';
-import { indexDeviceRunShape } from './index-device-choice.js';
+import { indexDeviceOverride, indexDeviceRunShape } from './index-device-choice.js';
 import {
   configureLateInteractionRuntime,
   resetLateInteractionRuntime,
@@ -617,13 +617,14 @@ export async function buildVectorsAndArtifactsPhase(options = {}) {
   // warmup + teardown + CPU rewarm round-trip costs 5–15s on M3 class
   // hardware and would dwarf the actual work (<1s per file on CPU).
   // Full reindex always arms the GPU regardless of file count — but only
-  // when an accelerator exists.
+  // when an accelerator exists. So does SWEET_SEARCH_INDEX_DEVICE=accelerator
+  // (the benchmark pin): an explicit device request is never moved to the CPU.
   const shouldArmGpu = !dryRun
     && filesToIndex.length > 0
     && EMBEDDING_CONFIG.provider === 'local'
     && isNativeInferenceAvailable()
     && isIndexAcceleratorAvailable()
-    && (fullReindex || filesToIndex.length >= GPU_ARMING_MIN_FILES);
+    && (fullReindex || filesToIndex.length >= GPU_ARMING_MIN_FILES || indexDeviceOverride() === 'accelerator');
 
   if (shouldArmGpu) {
     try {

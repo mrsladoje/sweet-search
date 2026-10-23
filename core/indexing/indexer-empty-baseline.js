@@ -32,7 +32,7 @@ import { DB_PATHS } from '../infrastructure/config/index.js';
 import { createVectorSchema } from './indexer-build.js';
 import { createGraphSchema } from '../graph/graph-extractor.js';
 import { publishIndexerManifest } from './indexer-manifest.js';
-import { takeProvenance } from './inference-provenance.js';
+import { takeProvenance } from '../infrastructure/inference-provenance.js';
 import { updateState } from './incremental-tracker.js';
 import { log } from './indexer-utils.js';
 

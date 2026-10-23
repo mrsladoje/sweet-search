@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { callLocalModel, unloadLocalModel } from '../../core/embedding/embedding-local-model.js';
 import { encodeQuery, unloadLateInteractionModel } from '../../core/ranking/late-interaction-model.js';
 import { startQueryEncoder, stopQueryEncoder, queryModelIdleMs, DEFAULT_QUERY_MODEL_IDLE_MS } from '../../core/search/query-encoder.mjs';
+import { applyPersistedLiModel } from '../../core/infrastructure/init-config.js';
 
 // The daemon held both query models for life (~940 MB); an in-process release gave back
 // ~650 MB and leaked ~220 MB per reload. They now run in an idle-exiting child. Its output
@@ -26,6 +27,9 @@ describe('query encoder child', () => {
     const text = 'search_query: how is the invoice total computed';
     let local;
     let li;
+    // The child applies the project's persisted LI model (encoder-host.mjs), as
+    // SweetSearch does in the daemon; the in-process baseline must use the same one.
+    applyPersistedLiModel(process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd());
     try {
       local = await callLocalModel([text], { maxLength: 128 });
       li = await encodeQuery('how is the invoice total computed');

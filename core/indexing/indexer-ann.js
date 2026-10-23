@@ -13,7 +13,7 @@ import { buildFromCodebaseDb as buildQuantizedArtifacts, shouldSkipArtifactRebui
 import { log, logProgress } from './indexer-utils.js';
 import { JAVA_FAMILY } from './ast-chunker.js';
 import { isIndexAcceleratorAvailable } from './model-pool.js';
-import { recordEncode } from './inference-provenance.js';
+import { recordEncode } from '../infrastructure/inference-provenance.js';
 
 // Index provenance (inference-provenance.js): count each LI batch under the
 // encoder that produced it.

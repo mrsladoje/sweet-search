@@ -8,7 +8,7 @@ import {
   zeroManifest,
 } from '../incremental-indexing/infrastructure/manifest.mjs';
 import { FALLBACK_WEIGHTS_ID } from '../incremental-indexing/infrastructure/sparse-gram-delta.mjs';
-import { applyProvenance } from './inference-provenance.js';
+import { applyProvenance } from '../infrastructure/inference-provenance.js';
 
 function basename(filePath) {
   return path.basename(filePath);

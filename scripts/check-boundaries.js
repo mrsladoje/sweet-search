@@ -58,7 +58,10 @@ const EXCEPTIONS = [
   // (it imports unloadLateInteractionModel/getLateInteractionPipeline/
   // encodeDocumentsCpu from late-interaction-model.js to warm ORT CPU on
   // query arm-down — same build-time direction, legitimate addition).
-  { from: 'core/indexing/', to: 'ranking/', label: 'indexing → ranking (late-interaction build)', max: 7 },
+  // Raised to 8 on 2026-10-23 for `encoder-host.mjs`, the query encoder child
+  // (26d0ce7c): it encodes LI queries and documents with the same
+  // late-interaction-model.js helpers.
+  { from: 'core/indexing/', to: 'ranking/', label: 'indexing → ranking (late-interaction build)', max: 8 },
   // query-router-catboost imports trained model from core/training/query-router/ — declared build-time artifact dependency
   { from: 'core/query/', to: 'training/query-router/', label: 'query → training (CatBoost model artifact)', max: 2 },
   // prompt-optimization → search (barrel only): embedded-MCP cross-harness
