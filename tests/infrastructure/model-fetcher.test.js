@@ -1,8 +1,10 @@
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, afterEach, vi } from 'vitest';
+import { createServer } from 'http';
+import { createHash } from 'crypto';
 import { mkdtempSync, writeFileSync, readFileSync, existsSync, rmSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { computeFileHash, isCacheValid, fetchModelFile } from '../../core/infrastructure/model-fetcher.js';
+import { computeFileHash, isCacheValid, fetchModelFile, createProgressLine } from '../../core/infrastructure/model-fetcher.js';
 import { MODEL_DELIVERY_CONFIG } from '../../core/config.js';
 
 async function withTmpDir(fn) {
@@ -209,5 +211,128 @@ describe('ORT graph cache directory', () => {
     const mkdir = () => { throw Object.assign(new Error('disk full'), { code: 'ENOSPC' }); };
     expect(() => getOrtGraphCacheDir({ homeDir: '/home/u', tmpDir: '/tmp/x', mkdir })).toThrow('disk full');
     _resetOrtGraphCacheDir();
+  });
+});
+
+// A local stand-in for the HuggingFace resolve endpoint. `handler(req, res, body)`
+// decides each response; serveRange() answers a normal or Range request.
+async function withServer(handler, fn) {
+  const server = createServer((req, res) => handler(req, res));
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    return await fn(`http://127.0.0.1:${server.address().port}`);
+  } finally {
+    server.closeAllConnections();
+    await new Promise((resolve) => server.close(resolve));
+  }
+}
+
+function serveRange(req, res, body) {
+  const match = /bytes=(\d+)-/.exec(req.headers.range || '');
+  const start = match ? Number(match[1]) : 0;
+  res.writeHead(match ? 206 : 200, { 'content-length': body.length - start });
+  res.end(body.subarray(start));
+}
+
+describe('fetchModelFile downloads', () => {
+  const body = Buffer.alloc(256 * 1024, 7);
+  const sha256 = createHash('sha256').update(body).digest('hex');
+
+  afterEach(() => vi.restoreAllMocks());
+
+  it('downloads, verifies and renames the file', async () => {
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    await withTmpDir(async (dir) => {
+      await withServer((req, res) => serveRange(req, res, body), async (endpoint) => {
+        const path = await fetchModelFile('test/repo', 'model.bin', dir, {
+          sha256, expectedSize: body.length, hfEndpoint: endpoint, allowDownload: true,
+        });
+        expect(readFileSync(path).equals(body)).toBe(true);
+        expect(existsSync(`${path}.tmp`)).toBe(false);
+      });
+    });
+  });
+
+  it('aborts a stalled transfer and resumes from the bytes on disk', async () => {
+    vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const ranges = [];
+    let requests = 0;
+    const handler = (req, res) => {
+      ranges.push(req.headers.range || null);
+      if (++requests === 1) {
+        // Send the first half, then go silent without closing the socket.
+        res.writeHead(200, { 'content-length': body.length });
+        res.write(body.subarray(0, body.length / 2));
+        return;
+      }
+      serveRange(req, res, body);
+    };
+    await withTmpDir(async (dir) => {
+      await withServer(handler, async (endpoint) => {
+        const path = await fetchModelFile('test/repo', 'model.bin', dir, {
+          sha256, expectedSize: body.length, hfEndpoint: endpoint, allowDownload: true,
+          stallTimeoutMs: 300,
+        });
+        expect(readFileSync(path).equals(body)).toBe(true);
+      });
+    });
+    expect(ranges).toEqual([null, `bytes=${body.length / 2}-`]);
+  });
+
+  it('keeps the partial file after the last failed attempt', async () => {
+    const writes = [];
+    vi.spyOn(process.stderr, 'write').mockImplementation((s) => { writes.push(String(s)); return true; });
+    await withTmpDir(async (dir) => {
+      writeFileSync(join(dir, 'model.bin.tmp'), body.subarray(0, 1024));
+      await withServer((req, res) => { res.writeHead(503); res.end(); }, async (endpoint) => {
+        await expect(fetchModelFile('test/repo', 'model.bin', dir, {
+          sha256, expectedSize: body.length, hfEndpoint: endpoint, allowDownload: true,
+        })).rejects.toThrow(/after 3 attempts: HTTP 503.*kept; run `sweet-search init` again to resume/);
+      });
+      expect(readFileSync(join(dir, 'model.bin.tmp')).length).toBe(1024);
+    });
+  }, 15000);
+});
+
+describe('createProgressLine', () => {
+  function fakeStream(isTTY) {
+    const out = [];
+    return { out, stream: { isTTY, write: (s) => { out.push(s); return true; } } };
+  }
+
+  it('redraws one line in place on a terminal', () => {
+    const { out, stream } = fakeStream(true);
+    let t = 0;
+    const line = createProgressLine('[ModelFetcher] Downloading a.bin from x/y...', { stream, now: () => t });
+    for (let i = 1; i <= 10; i++) {
+      t = i * 1000;
+      line.update(i * 1024 * 1024, 10 * 1024 * 1024);
+    }
+    line.finish('10.0 MB');
+    const text = out.join('');
+    // One newline only, at the very end: every redraw returns to column 0.
+    expect(text.indexOf('\n')).toBe(text.length - 1);
+    expect(out.filter((s) => s.startsWith('\r')).length).toBe(11);
+    expect(out[5]).toBe('\r[ModelFetcher] Downloading a.bin from x/y... 5.0 / 10.0 MB (50%), 0.8 MB/s, 7 s left\x1b[K');
+  });
+
+  it('limits redraws to one per 200 ms', () => {
+    const { out, stream } = fakeStream(true);
+    let t = 0;
+    const line = createProgressLine('L', { stream, now: () => t });
+    for (let i = 1; i <= 100; i++) {
+      t = i * 10;
+      line.update(i, 100);
+    }
+    expect(out.length).toBe(1 + 5);
+  });
+
+  it('prints the label and final size only when not a terminal', () => {
+    const { out, stream } = fakeStream(false);
+    const line = createProgressLine('L', { stream });
+    line.update(1, 2);
+    line.update(2, 2);
+    line.finish('0.0 MB');
+    expect(out).toEqual(['L', ' 0.0 MB\n']);
   });
 });
