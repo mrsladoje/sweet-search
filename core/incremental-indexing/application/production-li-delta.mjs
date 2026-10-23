@@ -3,7 +3,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { LateInteractionIndex } from '../../ranking/late-interaction-index.js';
 import { countDocumentTokensCpu, encodeDocumentsCpu } from '../../ranking/late-interaction-model.js';
-import { recordEncode } from '../../indexing/inference-provenance.js';
+import { recordEncode } from '../../infrastructure/inference-provenance.js';
 import { estimateLateInteractionTokens, planLateInteractionBatches } from '../../indexing/indexer-ann.js';
 import {
   openSegmentState,

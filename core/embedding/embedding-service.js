@@ -10,7 +10,7 @@
 
 import { EMBEDDING_CONFIG, EMBEDDING_PROVIDERS } from '../infrastructure/config/index.js';
 import { bootLog } from '../infrastructure/boot-log.js';
-import { recordEncode } from '../indexing/inference-provenance.js';
+import { recordEncode } from '../infrastructure/inference-provenance.js';
 import { wasmHammingDistance, wasmInt8Cosine, wasmAsymmetricDistance, wasmInt8BatchDot, isWasmAvailable } from '../infrastructure/simd-distance.js';
 
 // --- Sub-module imports (no circular deps) ---

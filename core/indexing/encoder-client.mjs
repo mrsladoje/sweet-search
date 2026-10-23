@@ -17,7 +17,7 @@
 
 import { fork } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { recordEncode } from './inference-provenance.js';
+import { recordEncode } from '../infrastructure/inference-provenance.js';
 
 const HOST = fileURLToPath(new URL('./encoder-host.mjs', import.meta.url));
 

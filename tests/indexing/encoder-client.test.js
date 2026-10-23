@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { createEncoderClient, encoderIdleMs } from '../../core/indexing/encoder-client.mjs';
-import { takeProvenance } from '../../core/indexing/inference-provenance.js';
+import { takeProvenance } from '../../core/infrastructure/inference-provenance.js';
 
 // A stand-in for encoder-host.mjs: same protocol, no models.
 const FAKE_HOST = `

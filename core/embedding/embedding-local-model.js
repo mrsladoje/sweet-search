@@ -16,7 +16,7 @@ import { isAppleSilicon, isCoreMLProviderAvailable, shouldUseCoreML, getCoreMLEx
 import { createTokenizer } from '../infrastructure/native-tokenizer.js';
 import { initOrt, buildFeed } from '../infrastructure/ort-pipeline.js';
 import { isNativeInferenceAvailable, isNativeEmbeddingModelLoaded, nativeEmbed, getNativeEmbeddingBackend } from '../infrastructure/native-inference.js';
-import { recordEncode } from '../indexing/inference-provenance.js';
+import { recordEncode } from '../infrastructure/inference-provenance.js';
 
 // =============================================================================
 // SEQUENCE LENGTH CONSTANTS (L2: configurable via env)
@@ -709,7 +709,7 @@ export async function callLocalModelCpu(texts, options = {}) {
   return embeddings;
 }
 
-// Encoder labels for index provenance (core/indexing/inference-provenance.js).
+// Encoder labels for index provenance (core/infrastructure/inference-provenance.js).
 // The embed worker pool always runs the INT8 model on CPU (indexer-worker.js).
 const POOL_ENCODER_LABEL = 'ort-q8/cpu';
 

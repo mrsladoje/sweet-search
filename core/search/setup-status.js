@@ -15,7 +15,7 @@ import { loadInitConfig, resolveRuntimeLiModel } from '../infrastructure/init-co
 import { MODEL_REGISTRY } from '../infrastructure/model-registry.js';
 import { baselineStatus } from '../incremental-indexing/infrastructure/baseline-readiness.mjs';
 import { readManifest } from '../incremental-indexing/infrastructure/manifest.mjs';
-import { classifyProvenance, describeEncoders } from '../indexing/inference-provenance.js';
+import { classifyProvenance, describeEncoders } from '../infrastructure/inference-provenance.js';
 import { daemonLogPath } from './daemon-log.js';
 import { projectSocketPath } from './server-identity.js';
 

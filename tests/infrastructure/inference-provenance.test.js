@@ -6,7 +6,7 @@ import {
   describeEncoders,
   recordEncode,
   takeProvenance,
-} from '../../core/indexing/inference-provenance.js';
+} from '../../core/infrastructure/inference-provenance.js';
 
 describe('inference provenance', () => {
   beforeEach(() => {
