@@ -232,17 +232,23 @@ describe('acquireStateLock — progress-aware takeover (new schema)', () => {
 // Backwards-compatibility with legacy locks (no progressTimestamp field)
 // -----------------------------------------------------------------------------
 
-describe('acquireStateLock — legacy lockfile (no progressTimestamp) backwards-compat', () => {
-  it('REFUSES when legacy lock has fresh heartbeat (alive owner)', async () => {
+describe('acquireStateLock — lockfile without progressTimestamp', () => {
+  // Every lock this maintainer writes carries progressTimestamp; one without it
+  // shows no progress, so a live holder is SIGTERMed even with a fresh heartbeat.
+  // (The holder pid is a mocked fake: a real pid here would SIGTERM the test worker.)
+  it('SIGTERMs and steals when the lock has a fresh heartbeat but no progressTimestamp', async () => {
+    const FAKE_LIVE_PID = 1_234_570;
+    const sigTermSpy = vi.fn();
+    mockAlivePid(FAKE_LIVE_PID, sigTermSpy);
     writeLock({
-      pid: process.pid,
+      pid: FAKE_LIVE_PID,
       timestamp: Date.now(),
       startTime: null,
-      // no progressTimestamp — falls back to progressAge := heartbeatAge
     });
     const res = await acquireStateLock(stateDir);
-    expect(res.acquired).toBe(false);
-  });
+    expect(sigTermSpy).toHaveBeenCalledWith(FAKE_LIVE_PID, 'SIGTERM');
+    expect(res.acquired).toBe(true);
+  }, /* per-test timeout */ 10_000);
 
   it('SIGTERMs and steals when legacy lock has stale heartbeat (3-min fallback)', async () => {
     const FAKE_LIVE_PID = 1_234_569;
