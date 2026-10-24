@@ -428,6 +428,9 @@ The selector builds one deterministic **reveal order** over items. An item is on
 
 **Product.** If a tuned variant wins, ss-grep adopts it. The JavaScript tool and the native lane change in the same commit, verified with the shadow check (CLAUDE.md).
 
+**Future possibilities (not in this round, not tested).**
+- **Pure Sainte-Laguë, without the one-line-per-file first round** (owner idea, 2026-10-24). Today every file shows one line before any file shows a second, so a strong file's second hit waits behind the first line of every weak file. Under pure Sainte-Laguë (divisors 1, 3, 5, …), a file's second line comes before another file's first line when its weight is more than 3 times larger. With w = h/(h+2) × prior, this changes the order mainly for many-hit source files against test or generated files with few hits. A weak hint against it: frequency order, which piles lines into high-hit files, misses the most (39.2% on the pilot). The check is offline and costs $0 on the dev pool. It is outside the fixed candidate list, so a result is exploratory. It can replace the shipped selector only after its own round with rules fixed in advance.
+
 ### 5.5 Factorial attribution (2×2)
 
 | Backend | Selection | Shows |
