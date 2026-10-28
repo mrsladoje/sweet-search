@@ -719,6 +719,7 @@ const TRAILING_BLOCK_FILE = /\.(?:kt|kts|swift|rb|scala|groovy|gradle|ex|exs)$/i
 
 // Same-name definitions in the entity's file under the same owner (its overload set, minus itself).
 function overloadSiblings(repo, entity) {
+  if (typeof repo.findOverloadSiblings === 'function') return repo.findOverloadSiblings(entity);
   return (repo.findEntityCandidates?.(entity.name, { filePath: entity.filePath, limit: 12 }) || [])
     .filter((e) => e.id !== entity.id && e.name === entity.name && e.filePath === entity.filePath
       && (e.parentClass || null) === (entity.parentClass || null));

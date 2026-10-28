@@ -299,18 +299,56 @@ export class BareCallResolver {
     return out;
   }
 
-  /** Owner lookups + imports for the files involved. */
-  _index(entities) {
-    const files = new Set(entities.map(e => e.file_path).filter(Boolean));
-    const extra = [];
-    for (const part of chunks(files)) {
-      extra.push(...this.db.prepare(`
+  // Per-file reads, kept per resolver (one connection): one trace asks for the same
+  // files once per callee and once per member method of a type.
+
+  /** Owner and callable rows (and file nodes) of `files`. */
+  _hostsOf(files) {
+    this._hostsByFile ||= new Map();
+    const missing = [...files].filter(f => !this._hostsByFile.has(f));
+    for (const part of chunks(missing)) {
+      for (const f of part) this._hostsByFile.set(f, []);
+      const rows = this.db.prepare(`
         SELECT ${ENTITY_COLS} FROM entities e
         WHERE e.file_path IN (${part.map(() => '?').join(',')})
           AND (e.type IN (${HOST_TYPES.map(() => '?').join(',')}) OR e.type = 'file')
           AND ${this.entitySql('e')}
-      `).all(...part, ...HOST_TYPES, ...this.entityParams));
+      `).all(...part, ...HOST_TYPES, ...this.entityParams);
+      for (const row of rows) this._hostsByFile.get(row.file_path).push(row);
     }
+    return [...files].flatMap(f => this._hostsByFile.get(f));
+  }
+
+  /** Map file → Set of the files it imports (`importsFile` edges of its file node). */
+  _importsOf(files, hosts) {
+    this._importsByFile ||= new Map();
+    const fileIdToPath = new Map();
+    for (const f of files) if (!this._importsByFile.has(f)) fileIdToPath.set(fileNodeId(f), f);
+    for (const e of hosts) if (e.type === 'file' && !this._importsByFile.has(e.file_path)) fileIdToPath.set(e.id, e.file_path);
+    for (const part of chunks(fileIdToPath.keys())) {
+      const rows = this.db.prepare(`
+        SELECT r.source_id, r.target_name FROM relationships r
+        WHERE r.type = 'importsFile' AND r.source_id IN (${part.map(() => '?').join(',')}) AND ${this.relSql('r')}
+      `).all(...part, ...this.relParams);
+      for (const r of rows) {
+        const from = fileIdToPath.get(r.source_id);
+        if (!from) continue;
+        let set = this._importsByFile.get(from);
+        if (!set) { set = new Set(); this._importsByFile.set(from, set); }
+        set.add(r.target_name);
+      }
+    }
+    // A file without imports is known too: no second query for it.
+    for (const f of fileIdToPath.values()) if (!this._importsByFile.has(f)) this._importsByFile.set(f, null);
+    const out = new Map();
+    for (const f of files) { const set = this._importsByFile.get(f); if (set) out.set(f, set); }
+    return out;
+  }
+
+  /** Owner lookups + imports for the files involved. */
+  _index(entities) {
+    const files = new Set(entities.map(e => e.file_path).filter(Boolean));
+    const extra = this._hostsOf(files);
     const byRowid = new Map();
     for (const e of [...entities, ...extra]) if (!byRowid.has(e._rowid ?? e.id)) byRowid.set(e._rowid ?? e.id, e);
     // The resolver's fixed order (not rowid order): a maintained graph's
@@ -339,25 +377,10 @@ export class BareCallResolver {
       return host;
     };
 
-    const fileIdToPath = new Map();
-    for (const f of files) fileIdToPath.set(fileNodeId(f), f);
-    for (const e of extra) if (e.type === 'file') fileIdToPath.set(e.id, e.file_path);
-    const fileImports = new Map();
-    for (const part of chunks(fileIdToPath.keys())) {
-      const rows = this.db.prepare(`
-        SELECT r.source_id, r.target_name FROM relationships r
-        WHERE r.type = 'importsFile' AND r.source_id IN (${part.map(() => '?').join(',')}) AND ${this.relSql('r')}
-      `).all(...part, ...this.relParams);
-      for (const r of rows) {
-        const from = fileIdToPath.get(r.source_id);
-        if (!from) continue;
-        let set = fileImports.get(from);
-        if (!set) { set = new Set(); fileImports.set(from, set); }
-        set.add(r.target_name);
-      }
-    }
-    const hierarchy = buildTypeHierarchy(this.db, { liveOnly: true });
-    const receiverSpread = buildReceiverSpread(this.db, { liveOnly: true });
+    const fileImports = this._importsOf(files, extra);
+    // Table-wide reads, the same for every lookup: once per resolver (one connection).
+    const hierarchy = (this._hierarchy ||= buildTypeHierarchy(this.db, { liveOnly: true }));
+    const receiverSpread = (this._receiverSpread ||= buildReceiverSpread(this.db, { liveOnly: true }));
     // Elixir: modules each file imports (`imports` edges of its module entities).
     const moduleImports = new Map();
     const exFiles = [...files].filter(f => /\.exs?$/i.test(f));

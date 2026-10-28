@@ -22,6 +22,7 @@ import { GO_PACKAGE_PREFIX, RUST_PATH_PREFIX, UNRESOLVED_IMPORT_PREFIX } from '.
 import { annotateReceiverTypes } from './receiver-types.js';
 import { scanInstantiations, scanSignatureTypes, swiftExtensionTarget } from './type-usage-scanner.js';
 import { ensureFilesSchema, insertFileNodes } from '../infrastructure/file-nodes.js';
+import { ensureGraphNameIndexes } from '../infrastructure/graph-name-indexes.js';
 import { assertGraphSchema } from '../infrastructure/index-schema.js';
 
 // Languages whose legacy `imports` rows are all module specifiers that the
@@ -3302,6 +3303,9 @@ export function createGraphSchema(db, { path: dbPath = 'code-graph.db' } = {}) {
   db.exec(`CREATE INDEX IF NOT EXISTS idx_rel_logical ON relationships(logical_relationship_id) WHERE logical_relationship_id != ''`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_rel_epoch_written ON relationships(epoch_written)`);
   db.exec(`CREATE INDEX IF NOT EXISTS idx_rel_epoch_retired ON relationships(epoch_retired) WHERE epoch_retired IS NOT NULL`);
+  // ss-trace name lookups (lower(name), target-name head and tail): no schema change, so
+  // the maintainer adds them to an existing index on its next pass.
+  ensureGraphNameIndexes(db);
   ensureCallSitesSchema(db);
   ensureFilesSchema(db);
 
