@@ -1,6 +1,6 @@
 // Read-only persistence adapter for the unified structural trace surface.
 import Database from 'better-sqlite3';
-import { existsSync, readFileSync } from 'fs';
+import { existsSync, readFileSync, statSync } from 'fs';
 import path from 'path';
 import { applyReadPragmas } from './db-utils.js';
 import { findAliasCallers } from './structural-alias-resolver.js';
@@ -9,6 +9,7 @@ import { findAssignedMemberDefinitions, findSameFileDefinition } from './structu
 import { goPackagePrivateFrom, privateFrom, pythonPackageCallOnMethod, shouldTrustQualifiedResolution, trustedCallerEdge, trustedCalleeEdge } from './structural-qualified-resolution.js';
 import { fetchPageRank, fetchFrontierBackwardEdges, fetchFrontierForwardEdges } from './structural-graph-signals.js';
 import { CodeGraphReaderVisibility } from './code-graph-visibility.js';
+import { hasGraphNameIndexes, targetNameCandidateSql } from './graph-name-indexes.js';
 import { SITE_LINE_RELATIONSHIP_TYPES as SITE_LINE_TYPES, TRACE_ONLY_TYPES_SQL } from './relationship-types.js';
 import { asTopLevelCaller, fileNodeSourceSql } from './file-nodes.js';
 import { isTestLikePath } from './test-paths.js';
@@ -25,6 +26,8 @@ const MEMBER_CALLABLE_TYPES = new Set([
 // Entity types that can own methods (getMemberCallables' namesake count).
 const OWNER_TYPE_TYPES = new Set(['class', 'struct', 'interface', 'enum', 'trait', 'protocol', 'record', 'object', 'actor', 'type', 'module']);
 const likeEscape = (text) => String(text).replace(/[!%_]/g, (c) => `!${c}`);
+// getEntityCount per index file and manifest epoch (a daemon traces many times per epoch).
+const ENTITY_COUNTS = new Map();
 const lastSegment = (name) => String(name || '').split(/::|\.|#/).pop();
 
 // Entity types that own members: a call inside one belongs to its own
@@ -220,6 +223,9 @@ export class StructuralContextRepository {
       this.db.close();
       this.db = null;
     }
+    this._memberFiles = null;
+    this._membersByName = null;
+    this._nameIndexes = null;
     this._readerVisibility.reset();
   }
 
@@ -332,21 +338,61 @@ export class StructuralContextRepository {
       .sort((a, b) => Number(isTestPath(a.filePath)) - Number(isTestPath(b.filePath)))[0] || null;
   }
 
+  // The files the assigned-member scan reads: the first 120 paths, test and example
+  // trees last. Read once per connection, and in path order (the file index, stopped
+  // at 120) instead of a sort of every entity's path.
+  _assignedMemberFiles(db) {
+    if (this._memberFiles) return this._memberFiles;
+    const limit = 120;
+    const testTree = `(file_path LIKE '%/test/%' OR file_path LIKE 'test/%' OR file_path LIKE 'tests/%' OR file_path LIKE '%/examples/%' OR file_path LIKE 'examples/%')`;
+    const pick = (where, n) => db.prepare(`
+      SELECT DISTINCT file_path FROM entities
+      WHERE ${this._entitySql(db)} AND file_path IS NOT NULL AND ${where}
+      ORDER BY file_path
+      LIMIT ?
+    `).all(...this._entityParams(db), n).map(r => r.file_path);
+    const files = pick(`NOT ${testTree}`, limit);
+    if (files.length < limit) files.push(...pick(testTree, limit - files.length));
+    this._memberFiles = files;
+    return files;
+  }
+
   _findAssignedMemberDefinitions(symbol) {
     const db = this._open();
     if (!db || !symbol) return [];
-    const entitySql = this._entitySql(db);
+    this._membersByName ||= new Map();
+    let found = this._membersByName.get(symbol);
+    if (!found) {
+      found = findAssignedMemberDefinitions({
+        name: symbol,
+        files: this._assignedMemberFiles(db),
+        readFileRange: this.readFileRange.bind(this),
+      });
+      this._membersByName.set(symbol, found);
+    }
+    return found.map(m => ({ ...m }));
+  }
+
+  /**
+   * The overload set of `entity`: the same-named definitions in its file under the
+   * same owner, minus itself. ss-trace asks for it once per callee row, so it is one
+   * indexed lookup, not a candidate search.
+   */
+  findOverloadSiblings(entity) {
+    const db = this._open();
+    if (!db || !entity?.name || !entity.filePath) return [];
     const rows = db.prepare(`
-      SELECT DISTINCT file_path FROM entities
-      WHERE ${entitySql} AND file_path IS NOT NULL
-      ORDER BY CASE WHEN file_path LIKE '%/test/%' OR file_path LIKE 'test/%' OR file_path LIKE 'tests/%' OR file_path LIKE '%/examples/%' OR file_path LIKE 'examples/%' THEN 1 ELSE 0 END, file_path
-      LIMIT 120
-    `).all(...this._entityParams(db));
-    return findAssignedMemberDefinitions({
-      name: symbol,
-      files: rows.map(r => r.file_path),
-      readFileRange: this.readFileRange.bind(this),
-    });
+      SELECT id, name, type, file_path, start_line, end_line, signature,
+             summary, parent_class, package
+      FROM entities
+      WHERE ${this._entitySql(db)}
+        AND name = ? AND file_path = ?
+      ORDER BY start_line
+    `).all(...this._entityParams(db), entity.name, entity.filePath);
+    const owner = entity.parentClass || null;
+    return [...this._findAssignedMemberDefinitions(entity.name), ...rows.map(row => this._entityFromRow(row))]
+      .filter(e => e && e.id !== entity.id && e.name === entity.name && e.filePath === entity.filePath
+        && (e.parentClass || null) === owner);
   }
 
   findEntityCandidates(symbol, opts = {}) {
@@ -479,6 +525,22 @@ export class StructuralContextRepository {
    * call line as their span. Merged in the queries' own order
    * (weight DESC, file_path, context_line) and cut to `limit`.
    */
+  /**
+   * `AND r.rowid IN (…)`: the relationships a caller query of `ids` and `name` can match,
+   * found through indexes (graph-name-indexes.js). The query's own clauses still decide.
+   * Empty when the graph has no name indexes or the name is outside the head/tail split:
+   * the query then scans as before.
+   */
+  _callerCandidateClause(db, ids, name) {
+    if (this._nameIndexes == null) this._nameIndexes = hasGraphNameIndexes(db);
+    const byName = name ? targetNameCandidateSql(name) : null;
+    if (!this._nameIndexes || (name && !byName)) return { sql: '', params: [] };
+    return {
+      sql: `AND r.rowid IN (SELECT rowid FROM relationships WHERE target_id IN (${placeholders(ids)})${byName ? ` UNION ${byName.sql}` : ''})`,
+      params: [...ids, ...(byName ? byName.params : [])],
+    };
+  }
+
   _callerRows(db, sqlFor, params, limit) {
     const rows = db.prepare(sqlFor('entities')).all(...params);
     const top = db.prepare(sqlFor(fileNodeSourceSql())).all(...params).map(row => asTopLevelCaller(row));
@@ -593,6 +655,7 @@ export class StructuralContextRepository {
     ];
     const entitySql = this._entitySql(db, 'e');
     const relationshipSql = this._relationshipSql(db, 'r');
+    const candidates = this._callerCandidateClause(db, [target.id], target.name);
     const rows = this._callerRows(db, (source) => `
       SELECT DISTINCT
         e.id, e.name, e.type, e.file_path, e.start_line, e.end_line,
@@ -617,9 +680,10 @@ export class StructuralContextRepository {
             OR r.target_name LIKE ?
           ))
         )
+        ${candidates.sql}
       ORDER BY r.weight DESC, e.file_path, r.context_line
       LIMIT ?
-    `, [...types, ...this._entityParams(db), ...this._relationshipParams(db), target.id, target.id, ...patterns, limit], limit);
+    `, [...types, ...this._entityParams(db), ...this._relationshipParams(db), target.id, target.id, ...patterns, ...candidates.params, limit], limit);
     // `did_you_mean.as_ref()` names a value, not the function did_you_mean: `name.member` is a
     // use of the target only when the target is a type or module (a static member, a
     // constructor) or through `.call` / `.apply` / `.bind`.
@@ -1049,6 +1113,9 @@ export class StructuralContextRepository {
       : [];
     const entitySql = this._entitySql(db, 'e');
     const relationshipSql = this._relationshipSql(db, 'r');
+    const candidates = includeNamePattern
+      ? this._callerCandidateClause(db, ids, target.name)
+      : { sql: '', params: [] };
 
     const rows = this._callerRows(db, (source) => `
       SELECT DISTINCT
@@ -1063,9 +1130,10 @@ export class StructuralContextRepository {
         AND ${relationshipSql}
         AND r.type IN (${placeholders(types)})
         AND (r.target_id IN (${placeholders(ids)}) ${nameClause})
+        ${candidates.sql}
       ORDER BY r.weight DESC, e.file_path, r.context_line
       LIMIT ?
-    `, [...this._entityParams(db), ...this._relationshipParams(db), ...types, ...ids, ...nameParams, limit], limit);
+    `, [...this._entityParams(db), ...this._relationshipParams(db), ...types, ...ids, ...nameParams, ...candidates.params, limit], limit);
 
     // Rows admitted by the name-pattern clause (not by target_id) are subject
     // to the same receiver-compat gate as getCallers — otherwise the phantom
@@ -1343,8 +1411,21 @@ export class StructuralContextRepository {
   getEntityCount() {
     const db = this._open();
     if (!db) return 0;
-    return db.prepare(`SELECT COUNT(*) as n FROM entities WHERE ${this._entitySql(db)}`)
+    // At a manifest epoch the visible rows are fixed: a daemon counts them once per index
+    // file and epoch, not on every trace (a full scan of the entities).
+    const epoch = this._readerVisibility.state(db).manifestEpoch;
+    let key = null;
+    if (Number.isInteger(epoch)) {
+      try { key = `${this.dbPath}\0${statSync(this.dbPath).ino}\0${epoch}`; } catch { key = null; }
+    }
+    if (key && ENTITY_COUNTS.has(key)) return ENTITY_COUNTS.get(key);
+    const n = db.prepare(`SELECT COUNT(*) as n FROM entities WHERE ${this._entitySql(db)}`)
       .get(...this._entityParams(db))?.n || 0;
+    if (key) {
+      if (ENTITY_COUNTS.size >= 64) ENTITY_COUNTS.clear();
+      ENTITY_COUNTS.set(key, n);
+    }
+    return n;
   }
 
   readFileRange(filePath, startLine, endLine) {
