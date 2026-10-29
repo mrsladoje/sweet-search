@@ -395,6 +395,38 @@ export class StructuralContextRepository {
         && (e.parentClass || null) === owner);
   }
 
+  /** Definitions named `name` of an owner named `owner` in other files than `filePath` (C# partial classes). */
+  findOwnerNamesakes(name, owner, filePath, limit = 16) {
+    const db = this._open();
+    if (!db || !name || !owner) return [];
+    return db.prepare(`
+      SELECT id, name, type, file_path, start_line, end_line, signature,
+             summary, parent_class, package
+      FROM entities
+      WHERE ${this._entitySql(db)}
+        AND name = ? AND parent_class = ? AND file_path != ?
+      ORDER BY file_path, start_line
+      LIMIT ?
+    `).all(...this._entityParams(db), name, owner, filePath || '', limit).map(row => this._entityFromRow(row)).filter(Boolean);
+  }
+
+  /** Signatures of the callables (or, with `members`, the properties and fields) named `name` (of `owner`, when given). */
+  findCallableSignatures(name, owner = null, limit = 8, { members = false } = {}) {
+    const db = this._open();
+    if (!db || !name) return [];
+    try {
+      return db.prepare(`
+        SELECT signature FROM entities
+        WHERE ${this._entitySql(db)}
+          AND name = ? AND type IN (${members ? "'property', 'field', 'constant'" : "'method', 'function', 'constructor'"})
+          ${owner ? 'AND parent_class = ?' : ''}
+        LIMIT ?
+      `).all(...this._entityParams(db), name, ...(owner ? [owner] : []), limit).map(r => r.signature || '');
+    } catch {
+      return [];
+    }
+  }
+
   findEntityCandidates(symbol, opts = {}) {
     const db = this._open();
     const raw = String(symbol || '').trim();
