@@ -4,8 +4,10 @@
  * and a unit too large for one chunk splits into its parts. The units:
  *
  *   directive  `@model`, `@inject`, `<%@ Page %>`, ...
- *   code       `@{ }` blocks and `@if`/`@foreach`/... statements: their parts are the C#
- *              statements (C# grammar, on the view's C# projection) and the markup in them
+ *   code       `@{ }` blocks, `@if`/`@foreach`/... statements, multi-line `@expr`s and
+ *              `<% %>` code: their parts are the C# statements and branches (C# grammar, on
+ *              the view's C# projection) and the markup in them; a statement with no smaller
+ *              statement splits by the C# chunker (`new DataTablesModel { ... }` at its members)
  *   functions  `@functions { }`, `@code { }`, `<script runat="server">`, a .ashx/.asmx body:
  *              C# members, chunked by the C# chunker (methods, properties, nested classes)
  *   section    `@section Name { }`: its markup
@@ -14,7 +16,9 @@
  *   style      a `<style>`: its CSS rules
  *
  * Chunks hold whole lines and cover every line of the file. A unit with no parts that is
- * still too large (one long text block) splits at blank lines, else at line ends.
+ * still too large (one long text block) splits at blank lines, else at line ends. The 2000
+ * limit is soft: the short rows around a split unit (a comment line, a closing tag) join its
+ * chunks, and a single line longer than the limit is one chunk.
  */
 
 import { getTreeSitterProvider } from '../../infrastructure/tree-sitter-provider.js';
@@ -46,6 +50,7 @@ class ViewChunker {
     this.chunks = [];
     this.counter = 0;
     this.lineSplits = 0; // units split at line ends (no structure left): a statistic
+    this.splitWhere = [];
     this.className = viewClassName(filePath);
   }
 
@@ -68,7 +73,7 @@ class ViewChunker {
     const units = [];
     this.razorUnits(this.scan, units);
     await this.markupUnits(units);
-    const root = { s: 0, e: this.text.length, type: 'view', name: null, children: [] };
+    const root = { s: 0, e: this.text.length, type: 'view', name: this.className, children: [] };
     nest(root, units);
     toRows(this, root);
     try {
@@ -76,7 +81,11 @@ class ViewChunker {
     } finally {
       this._tree?.delete();
     }
-    return this.mergeSmall();
+    const chunks = this.mergeSmall();
+    // A statistic for the corpus checks: units that had no structure left (line splits).
+    Object.defineProperty(chunks, 'lineSplits', { value: this.lineSplits });
+    Object.defineProperty(chunks, 'splitWhere', { value: this.splitWhere });
+    return chunks;
   }
 
   // -- units ------------------------------------------------------------------------------------
@@ -86,6 +95,10 @@ class ViewChunker {
       if (c.kind === 'directive') out.push({ s: c.s, e: c.e, type: 'directive', name: directiveName(c), children: [] });
       else if (c.kind === 'block' || c.kind === 'control') {
         out.push({ s: c.s, e: c.e, type: 'code', name: null, children: [], razor: c });
+        for (const h of c.holes || []) this.razorUnits(h, out);
+      } else if (c.kind === 'nugget' || (c.kind === 'expr' && this.text.slice(c.s, c.e).includes('\n'))) {
+        // `@await Html.PartialAsync("Table", new DataTablesModel { ... })`, a `<% %>` block.
+        out.push({ s: c.s, e: c.e, type: 'code', name: exprName(this.text.slice(c.code[0], c.code[1])), children: [], razor: c });
         for (const h of c.holes || []) this.razorUnits(h, out);
       } else if (c.kind === 'members' || c.kind === 'csharp') {
         const type = c.kind === 'csharp' || c.name === 'script' || c.name === 'code' ? 'code' : 'functions';
@@ -116,7 +129,7 @@ class ViewChunker {
       blankRange(n.s, n.e);
       if (n.kind === 'members' || n.kind === 'csharp') return; // markup in methods stays with them
       for (const h of n.holes || []) {
-        if (h.kind !== 'markup' || h.template) continue;
+        if (h.kind !== 'markup') continue; // markup in the C#, templates (`@<div>`) included
         restore(h.s, h.e);
         for (const c of h.children || []) blankNode(c);
       }
@@ -136,6 +149,7 @@ class ViewChunker {
             if (type !== 'markup') {
               const raw = c.namedChildren.find((x) => x.type === 'raw_text');
               if (raw) unit.raw = [raw.startIndex, raw.endIndex];
+              if (raw && type === 'script') unit.additionalSymbols = scriptFunctionNames(this.text.slice(raw.startIndex, raw.endIndex));
             }
             out.push(unit);
           }
@@ -153,7 +167,9 @@ class ViewChunker {
     if (unit.members) return this.memberParts(unit);
     if (unit.type === 'script' && unit.raw) return this.scriptParts(unit);
     if (unit.type === 'style' && unit.raw) return this.styleParts(unit);
-    if (unit.razor) return this.codeParts(unit);
+    // A chunk of the C# chunker: its parts are the markup in it (a template), nothing below.
+    if (unit.csChunk) return unit.children || [];
+    if (unit.razor || unit.cs) return this.codeParts(unit);
     return unit.children;
   }
 
@@ -169,7 +185,10 @@ class ViewChunker {
     for (let r = r0; r <= r1; r++) lines[r] = projLines[r] ?? '';
     if (m.kind === 'members') {
       // `@functions {` / `<script runat="server">` row: the class opens there; it closes on the last row.
-      lines[r0] = `public partial class ${this.className} { ${r0 === this.rowOf(m.open) ? '' : lines[r0]}`;
+      // Code after `@code {` on its row stays (from the view's text: the projection row also
+      // holds the `}` that ends the render method there).
+      const rest = r0 === this.rowOf(m.open) ? this.text.slice(m.open + 1, this.lineStart[r0 + 1] ?? this.text.length).replace(/\n$/, '') : lines[r0];
+      lines[r0] = `public partial class ${this.className} { ${rest}`;
       lines[r1] = `${lines[r1]} }`;
     }
     const chunks = await this.provider.parseFileToChunks(lines.join('\n'), 'csharp', { maxChunkSize: this.max });
@@ -201,6 +220,18 @@ class ViewChunker {
     let from = this.rowOf(s);
     for (let i = s; i < e; i++) {
       const c = this.text[i];
+      // A brace in a CSS string or comment (`content: "}"`) is no rule end.
+      if (c === '/' && this.text[i + 1] === '*') {
+        const j = this.text.indexOf('*/', i + 2);
+        i = j < 0 ? e : j + 1;
+        continue;
+      }
+      if (c === '"' || c === "'") {
+        const j = this.text.indexOf(c, i + 1);
+        const nl = this.text.indexOf('\n', i + 1);
+        if (j > 0 && (nl < 0 || j < nl)) i = j;
+        continue;
+      }
       if (c === '{') depth++;
       else if (c === '}' && depth > 0 && --depth === 0) {
         const r = this.rowOf(i);
@@ -211,27 +242,53 @@ class ViewChunker {
     return parts;
   }
 
-  /** The C# statements of a code unit (C# grammar on the projection) and the markup in it. */
+  /**
+   * The parts of a code unit: its C# statements and branches (C# grammar on the projection),
+   * else the C# chunker's chunks of its rows; the markup in it nests into them.
+   */
   async codeParts(unit) {
     const tree = await this.csharpTree();
-    const parts = [];
-    if (tree) {
-      const node = statementAt(tree.rootNode, unit.cr0, unit.cr1);
-      if (node) {
-        const collect = (n) => {
-          for (let i = 0; i < n.namedChildCount; i++) {
-            const c = n.namedChild(i);
-            if (isStatement(c)) parts.push({ r0: c.startPosition.row, r1: c.endPosition.row, type: 'code', name: null, children: [] });
-            else collect(c);
-          }
-        };
-        collect(node);
-      }
-    }
+    let parts = [];
+    let node = unit.cs || null;
+    if (!node && tree) node = this.statementAt(unit.cr0 ?? unit.r0, unit.cr1 ?? unit.r1);
+    if (node) parts = csChildren(node);
+    if (parts.length === 0 && tree) parts = await this.csChunkParts(unit.cr0 ?? unit.r0, unit.cr1 ?? unit.r1, unit.name);
     // Markup and blocks inside, nested into the statements that hold them.
     const holder = { r0: unit.r0, r1: unit.r1, children: [] };
-    nestRows(holder, [...parts, ...unit.children]);
+    nestRows(holder, [...parts, ...(unit.children || [])]);
     return holder.children;
+  }
+
+  /** Rows r0..r1 of the projection (one statement, or `<% %>` code) by the C# chunker. */
+  async csChunkParts(r0, r1, name) {
+    const proj = await this.projection();
+    if (proj === null || r1 <= r0) return [];
+    const projLines = (this._projLines ||= proj.split('\n'));
+    const lines = this.lines.map(() => '');
+    for (let r = r0; r <= r1; r++) lines[r] = projLines[r] ?? '';
+    lines[r0] = `class __V { async void __R() { ${lines[r0]}`;
+    lines[r1] = `${lines[r1]} } }`;
+    const chunks = await this.provider.parseFileToChunks(lines.join('\n'), 'csharp', { maxChunkSize: this.max });
+    const own = (v) => (v && !/^__[VR]\b/.test(v) ? v : null);
+    return (chunks || []).filter((c) => c.endLine >= r0 && c.startLine <= r1).map((c) => ({
+      r0: Math.max(r0, c.startLine), r1: Math.min(r1, c.endLine), type: 'code',
+      name: own(c.name) || name || null, children: [],
+      parentSymbol: own(c.parentSymbol), parentType: own(c.parentSymbol) ? c.parentType : null,
+      csChunk: true,
+    }));
+  }
+
+  /** The C# block or statement on rows r0..r1: one walk of the tree, then by rows. */
+  statementAt(r0, r1) {
+    if (!this._byRows) {
+      this._byRows = new Map();
+      const walk = (n) => {
+        if (STATEMENT_HOLDERS.test(n.type)) this._byRows.set(`${n.startPosition.row}:${n.endPosition.row}`, n); // the deepest wins
+        for (let i = 0; i < n.namedChildCount; i++) walk(n.namedChild(i));
+      };
+      walk(this._tree.rootNode);
+    }
+    return this._byRows.get(`${r0}:${r1}`) || null;
   }
 
   async projection() {
@@ -256,16 +313,18 @@ class ViewChunker {
       return;
     }
     let parts = (await this.partsOf(unit)).filter((p) => p.r0 >= unit.r0 && p.r1 <= unit.r1);
-    // One part on all of the unit's rows: its parts are the unit's.
-    while (parts.length === 1 && parts[0].r0 === unit.r0 && parts[0].r1 === unit.r1 && !parts[0].leaf) {
+    // One part on all of the unit's rows: its parts are the unit's (the outer name stays).
+    let label = unit;
+    for (let hop = 0; hop < 32 && parts.length === 1 && parts[0].r0 === unit.r0 && parts[0].r1 === unit.r1 && !parts[0].leaf; hop++) {
+      if (!label.name && parts[0].name) label = parts[0];
       parts = (await this.partsOf(parts[0])).filter((p) => p.r0 >= unit.r0 && p.r1 <= unit.r1);
     }
     if (parts.length === 0 || depth > 64) {
-      this.splitLines(unit.r0, unit.r1, unit, parent);
+      this.splitLines(unit.r0, unit.r1, label, parent);
       return;
     }
-    const id = this.nextId();
-    const info = { chunkId: id, symbol: unit.name, type: unit.type, parent };
+    // The parts point to a virtual id of this unit, as the cAST chunker's parts do.
+    const info = { chunkId: this.nextId(), symbol: label.name, type: label.type, parent };
     // Groups: parts sharing a row are one group; the rows before a group join it, the rows
     // after the last group join the last one.
     const groups = [];
@@ -279,6 +338,13 @@ class ViewChunker {
       }
     }
     groups[groups.length - 1].tail = unit.r1;
+    // Closing rows after a group (`}`, `</div>`, `%>`) end that group, not open the next.
+    for (let i = 1; i < groups.length; i++) {
+      let r = groups[i].lead;
+      while (r < groups[i].r0 && CLOSER_ROW.test(this.lines[r])) r++;
+      groups[i].lead = r;
+      groups[i - 1].end = r - 1;
+    }
     let acc = null;
     const flush = () => {
       if (acc) this.push(acc.r0, acc.r1, acc.units, info);
@@ -286,7 +352,7 @@ class ViewChunker {
     };
     for (const g of groups) {
       const from = g.lead;
-      const to = g.tail ?? g.r1;
+      const to = g.tail ?? g.end ?? g.r1;
       if (this.rows(from, to) <= this.max) {
         if (acc && this.rows(acc.r0, to) <= this.max) {
           acc.r1 = to;
@@ -297,14 +363,21 @@ class ViewChunker {
         }
         continue;
       }
-      flush();
-      // Too large: the rows around the group (a comment line, a closing tag) join it when they
-      // are short, else they split on their own.
+      // Too large. A short pending chunk before it opens its first chunk instead of standing
+      // alone (a label half next to a large editor half).
       let r0 = g.r0;
       let r1 = g.r1;
-      if (from < g.r0) {
-        if (this.rows(from, g.r0 - 1) > this.max / 4) this.splitLines(from, g.r0 - 1, null, info);
-        else r0 = from;
+      let from2 = from;
+      if (acc && this.rows(acc.r0, g.r0 - 1) <= this.max / 4) {
+        from2 = acc.r0;
+        acc = null;
+      }
+      flush();
+      // The rows around the group (a comment line, a closing tag) join it when they are short,
+      // else they split on their own.
+      if (from2 < g.r0) {
+        if (this.rows(from2, g.r0 - 1) > this.max / 4) this.splitLines(from2, g.r0 - 1, null, info);
+        else r0 = from2;
       }
       const tailBig = to > g.r1 && this.rows(g.r1 + 1, to) > this.max / 4;
       if (to > g.r1 && !tailBig) r1 = to;
@@ -330,6 +403,10 @@ class ViewChunker {
 
   /** A unit with no parts, still too large: at blank lines, else at line ends. */
   splitLines(r0, r1, unit, parent) {
+    if (this.rows(r0, r1) > this.max) {
+      this.lineSplits++;
+      this.splitWhere.push({ r0, r1, type: unit?.type || null, rows: this.rows(r0, r1) });
+    }
     let start = r0;
     let lastBlank = -1;
     for (let r = r0; r <= r1; r++) {
@@ -342,50 +419,47 @@ class ViewChunker {
       if (this.lines[r].trim() === '') lastBlank = r;
     }
     if (start <= r1) this.push(start, r1, unit ? [unit] : [], parent);
-    this.lineSplits++;
   }
 
   /**
-   * A chunk of a few characters (the `</div>` after a split element) joins its neighbour when
-   * the two fit in one chunk.
+   * A short chunk (the `</div>` after a split element, a label half) joins its neighbour when
+   * the two fit in one chunk; a chunk of closing rows only always joins the one before.
    */
   mergeSmall() {
-    const SMALL = 120;
+    const SMALL = 300; // characters, whitespace collapsed
+    const small = (c) => c.text.replace(/\s+/g, ' ').length < SMALL;
+    const closers = (c) => c.text.split('\n').every((l) => CLOSER_ROW.test(l));
     const out = [];
-    const into = new Map(); // merged chunk id -> the chunk that holds it now
     const text = (c) => this.lines.slice(c.startLine, c.endLine + 1).join('\n').trim();
+    const absorb = (into, from) => {
+      if (!from.name || from.name === into.name) return;
+      if (!into.name) { into.name = from.name; return; }
+      into.additionalSymbols = [...new Set([...(into.additionalSymbols || []), from.name])];
+    };
     for (const c of this.chunks.sort((a, b) => a.startLine - b.startLine)) {
       const prev = out[out.length - 1];
-      if (prev && c.text.length < SMALL && this.rows(prev.startLine, c.endLine) <= this.max) {
+      const fits = prev && this.rows(prev.startLine, c.endLine) <= this.max;
+      if (prev && ((small(c) && fits) || (closers(c) && this.rows(prev.startLine, c.endLine) <= this.max * 1.25))) {
         prev.endLine = c.endLine;
         prev.text = text(prev);
-        into.set(c.chunkId, prev.chunkId);
+        absorb(prev, c);
         continue;
       }
-      if (prev && prev.text.length < SMALL && this.rows(prev.startLine, c.endLine) <= this.max) {
+      if (prev && small(prev) && fits) {
         c.startLine = prev.startLine;
         c.text = text(c);
-        into.set(prev.chunkId, c.chunkId);
+        absorb(c, prev);
         out[out.length - 1] = c;
         continue;
       }
       out.push(c);
     }
-    for (const c of out) if (into.has(c.parentChunkId)) c.parentChunkId = into.get(c.parentChunkId);
     return out;
   }
 
   push(r0, r1, units, parent) {
     const text = this.lines.slice(r0, r1 + 1).join('\n').trim();
     if (!text) return;
-    // The first chunk of a split unit carries the unit's id: its other chunks point to it.
-    let chunkId;
-    let parentChunkId = parent?.chunkId || null;
-    if (parent && !parent.taken) {
-      parent.taken = true;
-      chunkId = parent.chunkId;
-      parentChunkId = parent.parent?.chunkId || null;
-    }
     const named = units.filter((u) => u.name);
     const first = units.length === 1 ? units[0] : (named[0] || units[0] || null);
     const others = [...new Set(named.filter((u) => u !== first).map((u) => u.name))];
@@ -396,8 +470,8 @@ class ViewChunker {
       name: first?.name || null,
       startLine: r0,
       endLine: r1,
-      chunkId: chunkId || this.nextId(),
-      parentChunkId,
+      chunkId: this.nextId(),
+      parentChunkId: parent?.chunkId || null,
       parentSymbol: own ? units[0].parentSymbol : (parent?.symbol || null),
       parentType: own ? units[0].parentType : (parent?.symbol ? parent.type : null),
       signature: units.length === 1 ? units[0].signature || null : null,
@@ -412,13 +486,34 @@ class ViewChunker {
 
 // -- helpers ------------------------------------------------------------------------------------
 
+/** What names a directive's chunk: the model or base type, the route; not a variable. */
 function directiveName(d) {
   const v = String(d.value || '').replace(/;\s*$/, '');
   if (d.name === 'model' || d.name === 'inherits') return v || null;
-  if (d.name === 'inject') return v.split(/\s+/).pop() || null;
+  if (d.name === 'page') return v.replace(/^"|"$/g, '') || null;
   if (d.attrs?.inherits) return d.attrs.inherits;
   return null;
 }
+
+/** `Html.PartialAsync` for `await Html.PartialAsync("Table", ...)`, `DataTablesModel` for `new DataTablesModel {`. */
+function exprName(code) {
+  const m = String(code).match(/^\s*\(?\s*(?:await\s+)?(?:new\s+([A-Za-z_][\w.]*)|([A-Za-z_][\w.]*)\s*[(<])/);
+  return m ? (m[1] || m[2]) : null;
+}
+
+/** Named functions of a client script (`function f(`, `f = function`, `const f = (...) =>`). */
+function scriptFunctionNames(js) {
+  const names = new Set();
+  for (const m of js.matchAll(/\bfunction\s+([A-Za-z_$][\w$]*)\s*\(|\b([A-Za-z_$][\w$]*)\s*[:=]\s*(?:async\s+)?(?:function\b|\([^()]*\)\s*=>)/g)) {
+    names.add(m[1] || m[2]);
+    if (names.size >= 8) break;
+  }
+  return names.size ? [...names] : null;
+}
+
+// A row that only closes: `}`, `});`, `)`, `</div>`, `%>`, `<% } %>`, blank.
+// One character or token at a time: no nested quantifier (it backtracked exponentially on `});});...x`).
+const CLOSER_ROW = /^(?:[\s})\];,]|<\/[\w:.-]+\s*>|%>|<%\s*\}\s*%>|@\})*$/;
 
 /** An element's id, else its name or asp-for / asp-action: what a reader calls it. */
 function elementName(node) {
@@ -472,19 +567,36 @@ function toRows(chunker, unit) {
 }
 
 const STATEMENT_HOLDERS = /(_statement|^block|^switch_section|^else_clause|^catch_clause|^finally_clause)$/;
+// The branches of a statement: `{ }` of an if, `else ...`, `catch`, `finally`, `case`.
+const BRANCH_TYPES = new Set(['block', 'else_clause', 'catch_clause', 'finally_clause', 'switch_section']);
 
 function isStatement(n) {
   return /_statement$/.test(n.type) || n.type === 'switch_section' || n.type === 'local_function_statement';
 }
 
-/** The C# block or statement on rows r0..r1 (the projection keeps the view's rows). */
-function statementAt(root, r0, r1) {
-  let best = null;
+/**
+ * The C# parts directly below `node`: statements and branches, each a unit whose own parts are
+ * found the same way. The projection's one-line `_ = (...)` statements are expressions written
+ * by the markup (`@Model.Name` in a tag): the markup's parts, not the code's.
+ */
+function csChildren(node) {
+  const parts = [];
   const walk = (n) => {
-    if (n.startPosition.row > r1 || n.endPosition.row < r0) return;
-    if (n.startPosition.row === r0 && n.endPosition.row === r1 && STATEMENT_HOLDERS.test(n.type)) best = n;
-    for (let i = 0; i < n.namedChildCount; i++) walk(n.namedChild(i));
+    for (let i = 0; i < n.namedChildCount; i++) {
+      const c = n.namedChild(i);
+      const r0 = c.startPosition.row;
+      const r1 = c.endPosition.row;
+      // A statement's blocks (`if` and its `else`: both direct children in this grammar) are its
+      // parts; a block's parts are its statements.
+      const branch = BRANCH_TYPES.has(c.type) && !(n === node && node.type === 'block');
+      if (isStatement(c) || branch) {
+        if (c.type === 'expression_statement' && r0 === r1 && c.text.startsWith('_ = (')) continue;
+        parts.push({ r0, r1, type: 'code', name: null, children: [], cs: c });
+      } else {
+        walk(c);
+      }
+    }
   };
-  walk(root);
-  return best;
+  walk(node);
+  return parts;
 }

@@ -24,7 +24,7 @@ import { scanInstantiations, scanSignatureTypes, swiftExtensionTarget } from './
 import { ensureFilesSchema, insertFileNodes } from '../infrastructure/file-nodes.js';
 import { ensureGraphNameIndexes } from '../infrastructure/graph-name-indexes.js';
 import { assertGraphSchema } from '../infrastructure/index-schema.js';
-import { projectToCSharp, viewTemplateKind, VIEW_RENDER_METHOD_PREFIX } from '../infrastructure/view-templates.js';
+import { projectToCSharp, viewTemplateKind, VIEW_RENDER_METHOD_PREFIX, VIEW_SECTION_CALL } from '../infrastructure/view-templates.js';
 
 // Languages whose legacy `imports` rows are all module specifiers that the
 // statement scanner sees (so an unmatched row is a regex false positive).
@@ -1202,7 +1202,9 @@ export class GraphExtractor {
     // line (view-templates.js): its code gets the C# extraction. A view whose code is not C#
     // gets a file node only.
     const view = viewTemplateKind(filePath) !== null;
-    if (view) content = projectToCSharp(content, filePath) ?? '';
+    if (view) {
+      try { content = projectToCSharp(content, filePath) ?? ''; } catch { content = ''; } // pathological input: file node only
+    }
     let result;
     try {
       result = view && !content
@@ -1224,7 +1226,7 @@ export class GraphExtractor {
     if (result.relationships) {
       annotateReceiverTypes(languagePath, content, result.entities, result.relationships, { goPackages });
     }
-    if (view) this._foldViewRenderMethods(filePath, result);
+    if (view) this._foldViewRenderMethods(filePath, result, content);
     // Every extracted file has a graph node (file-nodes.js): the source of
     // its top-level edges. Same id as those edges' source_id, and the same
     // row from the full build and the incremental maintainer.
@@ -1410,37 +1412,69 @@ export class GraphExtractor {
    * The render methods of a projected view are no code of the user's: drop them; their edges
    * start at the view class. `DefineSection` is the projection's own call.
    */
-  _foldViewRenderMethods(filePath, result) {
+  _foldViewRenderMethods(filePath, result, projection = '') {
+    // Calls the projection writes itself: a section's `DefineSection("x", async () => {`.
+    const PROJECTION_CALLS = new Set([VIEW_SECTION_CALL, 'async']);
+    const renderName = new RegExp(`^${VIEW_RENDER_METHOD_PREFIX}\\d+$`);
     const fileId = this.makeId(filePath, 'file', path.basename(filePath));
+    // The line of the class header (after one line per using), and the fields it declares.
+    const projLines = projection.split('\n');
+    const headerLine = Math.max(1, projLines.findIndex((l) => l.includes('public partial class ')) + 1);
+    const headerText = String(projLines[headerLine - 1] || '').split(`${VIEW_RENDER_METHOD_PREFIX}0()`)[0];
+    const headerFields = new Set([...headerText.matchAll(/public [^;{]+? ([A-Za-z_]\w*);/g)].map((m) => m[1]));
     const render = new Set();
     const renderLines = [];
     result.entities = (result.entities || []).filter((e) => {
       // The header's fields (`@model T` -> Model, `@inject T x` -> x) type the view's calls;
       // as entities they would be one `Model` per view.
-      if (e.start_line === 1 && (e.type === 'field' || e.type === 'property')) return false;
-      if (!String(e.name || '').startsWith(VIEW_RENDER_METHOD_PREFIX)) return true;
+      if (e.start_line === headerLine && (e.type === 'field' || e.type === 'property') && headerFields.has(e.name)) return false;
+      if (!renderName.test(String(e.name || ''))) return true;
       render.add(e.id);
       renderLines.push([e.start_line, e.end_line]);
       return false;
     });
-    // The view class and the first render method both start on line 1, and an edge of the
-    // render code may be given to the class: by line, it is the render code's (line 1 holds
-    // the class's own `extends`).
-    const viewClassEntity = result.entities.find((e) => e.start_line === 1 && e.type === 'class');
+    // The view class and the first render method start on the header line, and an edge of the
+    // render code may be given to the class: by line, it is the render code's (the header line
+    // holds the class's own `extends`).
+    const viewClassEntity = result.entities.find((e) => e.start_line === headerLine && e.type === 'class');
     const viewClass = viewClassEntity?.id;
     // The class spans the whole file; as an entity it is its header line, or every search hit
-    // in the view would widen to the whole file.
-    if (viewClassEntity) viewClassEntity.end_line = 1;
-    const inRender = (line) => line > 1 && renderLines.some(([a, b]) => line >= a && line <= b);
+    // in the view would widen to the whole file. Its signature is the class line, without the
+    // projection's fields and render method.
+    if (viewClassEntity) {
+      viewClassEntity.end_line = viewClassEntity.start_line;
+      viewClassEntity.signature = (String(viewClassEntity.signature || '').split('{')[0].trim()) || viewClassEntity.signature;
+      // Local functions of the render code (`@{ void Row(Item i) { } }`) are the view class's.
+      for (const e of result.entities) {
+        if (e !== viewClassEntity && !e.parent_class && renderLines.some(([a, b]) => e.start_line >= a && e.end_line <= b)) {
+          e.parent_class = viewClassEntity.name;
+        }
+      }
+    }
+    const inRender = (line) => line > headerLine && renderLines.some(([a, b]) => line >= a && line <= b);
     // The render code runs in the view class: its edges start there (a bare `Save_Click()`
     // then resolves to the class's members and base class), else at the file node.
     const owner = viewClass || fileId;
     const fold = (rows) => (rows || [])
-      .filter((r) => r.target_name !== 'DefineSection' && r.callee_name !== 'DefineSection')
+      .filter((r) => !PROJECTION_CALLS.has(r.target_name) && !PROJECTION_CALLS.has(r.callee_name))
       .map((r) => (render.has(r.source_id) || (r.source_id === viewClass && inRender(r.context_line))
         ? { ...r, source_id: owner } : r));
     result.relationships = fold(result.relationships);
     if (result.callSites) result.callSites = fold(result.callSites);
+    // The class's id from its name, not its header line (the line holds view code too): an
+    // edit of that code keeps the class's id and its edges.
+    if (viewClassEntity) {
+      const stable = this.makeId(filePath, 'class', viewClassEntity.name);
+      const old = viewClassEntity.id;
+      if (stable !== old && !result.entities.some((e) => e.id === stable)) {
+        viewClassEntity.id = stable;
+        for (const r of result.relationships) {
+          if (r.source_id === old) r.source_id = stable;
+          if (r.target_id === old) r.target_id = stable;
+        }
+        for (const c of result.callSites || []) if (c.source_id === old) c.source_id = stable;
+      }
+    }
   }
 
   async _extractFromFileInner(filePath, content, langOverride = null) {

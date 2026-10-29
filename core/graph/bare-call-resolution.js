@@ -230,6 +230,12 @@ export function resolveBareCall(caller, candidates, index, info = null) {
       tier = ownerless.filter(c => sameFamily(languageOfPath(c.file_path)) && !FILE_PRIVATE_SIGNATURE.test(c.signature || ''));
     }
     if (tier.length === 0) continue;
+    // A view's call reaching several same-named definitions: its code-behind (`Default.aspx.cs`
+    // beside `Default.aspx`) and its own folder first.
+    if (tier.length > 1 && viewTemplateKind(caller.file_path)) {
+      const near = tier.filter(c => c.file_path === `${caller.file_path}.cs` || dirOf(c.file_path) === dirOf(caller.file_path));
+      if (near.length > 0) tier = near;
+    }
     const decision = asDecision(tier, ownerOf, preferNonTest) || [];
     // Several owners fit at the nearest scope: no edge, but `info` keeps who could be meant.
     if (decision.length === 0 && info) info.ambiguous = tier;
