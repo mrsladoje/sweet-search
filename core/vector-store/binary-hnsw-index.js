@@ -28,6 +28,7 @@ import {
   existsSync, statSync, rmSync,
   openSync, readSync, closeSync, fstatSync, fsyncSync,
 } from 'fs';
+import os from 'node:os';
 import path from 'path';
 import { BINARY_HNSW_CONFIG, DB_PATHS } from '../infrastructure/config/index.js';
 import {
@@ -66,6 +67,42 @@ function nativeHnswSearcherCtor() {
   });
   if (res) _NativeHnswSearcher = res.mod.HnswSearcher;
   return _NativeHnswSearcher;
+}
+
+let _nativeHnswBuild;
+/**
+ * The addon's graph builder (crates/sweet-search-native/src/hnsw_build.rs), or null: no addon,
+ * an older one, or SWEET_SEARCH_HNSW_NATIVE_BUILD=0. It gives the lists the addToGraph loop gives,
+ * on any number of threads.
+ */
+function nativeHnswBuild() {
+  if (['0', 'false', 'off', 'no'].includes(String(process.env.SWEET_SEARCH_HNSW_NATIVE_BUILD ?? '').toLowerCase())) return null;
+  if (_nativeHnswBuild !== undefined) return _nativeHnswBuild;
+  _nativeHnswBuild = null;
+  const res = loadNativeAddon({ validate: (m) => typeof m.buildBinaryHnsw === 'function' });
+  if (res) _nativeHnswBuild = res.mod.buildBinaryHnsw;
+  return _nativeHnswBuild;
+}
+
+/**
+ * Threads for a graph build: SWEET_SEARCH_HNSW_BUILD_THREADS, else one less than the cores, at
+ * most 8. Nodes commit in order, so one slow thread stalls the rest: on an M3 Max (12 performance
+ * + 4 efficiency cores) 400k nodes took 138 s on 8 threads and 435 s on 12.
+ */
+export function hnswBuildThreads(env = process.env) {
+  const n = Number(env.SWEET_SEARCH_HNSW_BUILD_THREADS);
+  if (Number.isInteger(n) && n >= 1) return n;
+  return Math.max(1, Math.min(8, (os.availableParallelism?.() ?? os.cpus().length) - 1));
+}
+
+/** rank[i]: position of String(ids[i]) in JS string order, equal ids by node (the entry-point tie-break). */
+function idRanks(ids) {
+  const keys = ids.map(String);
+  const order = Array.from(keys.keys());
+  order.sort((a, b) => (keys[a] < keys[b] ? -1 : keys[a] > keys[b] ? 1 : 0));
+  const rank = new Uint32Array(ids.length);
+  for (let r = 0; r < order.length; r++) rank[order[r]] = r;
+  return rank;
 }
 
 // At or below this many vectors, search() scans every binary vector exactly
@@ -736,6 +773,50 @@ export class BinaryHNSWIndex {
     this._baseCount = this._ids.length;
 
     return idx;
+  }
+
+  /**
+   * A build insert that leaves the linking to linkGraph(). An id seen before links the earlier
+   * nodes first, then addSync updates its node, as the sequential build does.
+   */
+  async addDeferred(id, binary, metadata = {}, int8Vector = null, fullVector = null) {
+    if (this.entryPoint < 0 && !this.idToIndex.has(id)) return this.addFlat(id, binary, metadata, int8Vector, fullVector);
+    if (this.entryPoint < 0) await this.linkGraph();
+    return this.addSync(id, binary, metadata, int8Vector, fullVector);
+  }
+
+  /**
+   * Link the nodes without links, in node order: the graph of addToGraph called for each node in
+   * turn. When nothing is linked yet the native builder does it on `threads` threads (the same
+   * lists); otherwise, or without the addon, the JS loop runs. `background` keeps the threads off
+   * the performance cores on macOS (maintenance work).
+   * Returns { native, threads, redos }.
+   */
+  async linkGraph({ threads = hnswBuildThreads(), background = false } = {}) {
+    const n = this._ids.length;
+    const build = nativeHnswBuild();
+    if (!build || this.entryPoint >= 0 || n < 2) {
+      this._linkUnlinked();
+      return { native: false, threads: 1, redos: 0 };
+    }
+    const dim = this.dimension;
+    const levels = new Uint8Array(n);
+    for (let i = 0; i < n; i++) levels[i] = this.levelForId(this._ids[i]);
+    const g = await build(this._codes().slab.subarray(0, n * dim), dim, levels, idRanks(this._ids),
+      this.M, this.efConstruction, threads, background);
+    this.graph = g.levels.map((lv) => {
+      const level = new Array(lv.len).fill(null);
+      for (let i = 0; i < lv.len; i++) {
+        if (lv.present[i]) level[i] = Array.from(lv.neighbors.subarray(lv.offsets[i], lv.offsets[i + 1]));
+      }
+      return level;
+    });
+    this.entryPoint = g.entryPoint;
+    this.maxLevel = g.maxLevel;
+    this._baseCount = n;
+    this._deltaCodes = [];
+    this._deltaFullRows = [];
+    return { native: true, threads: g.threads, redos: g.redos };
   }
 
   /** Link nodes without graph links into the graph (delta rows; all nodes of a flat base). */

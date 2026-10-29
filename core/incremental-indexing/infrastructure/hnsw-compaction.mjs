@@ -24,7 +24,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 
-import { BinaryHNSWIndex, readIndexIdsSync } from '../../vector-store/binary-hnsw-index.js';
+import { BinaryHNSWIndex, hnswBuildThreads, readIndexIdsSync } from '../../vector-store/binary-hnsw-index.js';
 import { readIndexHeader } from '../../vector-store/index-file-header.js';
 import { deltaHeader, deltaPathFor, encodeDeltaRecord } from '../../vector-store/hnsw-delta-file.js';
 import { FullVectorWriter, NO_ROW, fullVectorPaths } from '../../vector-store/full-vector-file.js';
@@ -97,10 +97,11 @@ export async function buildCompactedBase({ indexPath, stateDir, snapshotCount = 
       const int8 = existing.nodeInt8(v.node) || null;
       const full = existing.fullVectorOf(v.node);
       const meta = existing.nodeMetadata(v.node);
-      if (graph) fresh.addSync(v.id, binary, meta, int8, full);
-      else fresh.addFlat(v.id, new Uint8Array(binary), meta, int8 ? new Int8Array(int8) : null, full);
+      fresh.addFlat(v.id, new Uint8Array(binary), meta, int8 ? new Int8Array(int8) : null, full);
       if (++done % 1000 === 0) onProgress('maintenance:binary-hnsw:add');
     }
+    // Background work: a quarter of the cores (the lists do not depend on the thread count).
+    if (graph) await fresh.linkGraph({ threads: Math.max(1, Math.floor(hnswBuildThreads() / 4)), background: true });
     fresh._cleanBuild = true;
     await fresh.save(staged);
     fresh.close();

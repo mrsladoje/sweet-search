@@ -327,13 +327,16 @@ export async function buildHnswIndex(items, options = {}) {
       ? quantizeToInt8(int8Dimension === floatDimension ? truncated[idx] : truncateForHNSW(item.embedding, int8Dimension))
       : null;
 
-    await index.add(item.id, binary, item.metadata || {}, int8, item.embedding);
+    await index.addDeferred(item.id, binary, item.metadata || {}, int8, item.embedding);
 
     processed++;
-    if (onProgress && (processed % 500 === 0 || processed === items.length)) {
+    if (onProgress && processed % 500 === 0 && processed < items.length) {
       onProgress(processed, items.length);
     }
   }
+  // The graph: the lists the per-insert loop gives, built on every core (linkGraph).
+  const link = await index.linkGraph();
+  if (onProgress && items.length > 0) onProgress(items.length, items.length);
 
   const buildTime = performance.now() - startTime;
 
@@ -348,6 +351,8 @@ export async function buildHnswIndex(items, options = {}) {
       M,
       efConstruction,
       insertionOrder: 'shuffle',
+      linkThreads: link.threads,
+      linkRedos: link.redos,
     },
   };
 }
@@ -411,13 +416,15 @@ async function buildHnswIndexFromDb(db, options = {}) {
     const int8 = includeInt8 ? quantizeToInt8(truncated) : null;
     const metadata = row.metadata ? JSON.parse(row.metadata) : {};
 
-    await index.add(row.id, binary, metadata, int8, embedding);
+    await index.addDeferred(row.id, binary, metadata, int8, embedding);
 
     processed++;
-    if (onProgress && (processed % 500 === 0 || processed === totalVectors)) {
+    if (onProgress && processed % 500 === 0 && processed < totalVectors) {
       onProgress(processed, totalVectors);
     }
   }
+  const link = await index.linkGraph();
+  if (onProgress && totalVectors > 0) onProgress(totalVectors, totalVectors);
 
   db.exec('DROP TABLE IF EXISTS temp.artifact_order');
 
@@ -434,6 +441,8 @@ async function buildHnswIndexFromDb(db, options = {}) {
       M,
       efConstruction,
       insertionOrder: 'shuffle',
+      linkThreads: link.threads,
+      linkRedos: link.redos,
     },
   };
 }
