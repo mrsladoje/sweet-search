@@ -247,12 +247,17 @@ describe('review fixes', () => {
     expect(await parsesClean(cs)).toBe(true);
   });
 
-  it('stays fast on unclosed constructs', () => {
-    const t0 = performance.now();
-    scanRazor('@if (\n'.repeat(20000));
-    scanRazor(`<!-- ${'@{ x '.repeat(5000)} -->`);
-    scanAspNet(`<%@ ${'w'.repeat(100000)}`, 'P/x.aspx');
-    expect(performance.now() - t0).toBeLessThan(3000);
+  it('stays linear on unclosed constructs', () => {
+    // Scaling, not wall time (a loaded CI runner is slow, not quadratic): 4x the input
+    // must take well under 16x the time. The floor keeps timer noise out of small runs.
+    const time = (f) => { const t0 = performance.now(); f(); return performance.now() - t0; };
+    const ratio = (make, n) => {
+      const small = Math.max(time(() => make(n)), 20);
+      return time(() => make(n * 4)) / small;
+    };
+    expect(ratio((n) => scanRazor('@if (\n'.repeat(n)), 2500)).toBeLessThan(8);
+    expect(ratio((n) => scanRazor(`<!-- ${'@{ x '.repeat(n)} -->`), 5000)).toBeLessThan(8);
+    expect(ratio((n) => scanAspNet(`<%@ ${'w'.repeat(n)}`, 'P/x.aspx'), 100000)).toBeLessThan(8);
   });
 });
 
