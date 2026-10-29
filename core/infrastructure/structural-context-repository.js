@@ -396,7 +396,7 @@ export class StructuralContextRepository {
   }
 
   /** Definitions named `name` of an owner named `owner` in other files than `filePath` (C# partial classes). */
-  findOwnerNamesakes(name, owner, filePath, limit = 16) {
+  findOwnerNamesakes(name, owner, filePath, limit = 64) {
     const db = this._open();
     if (!db || !name || !owner) return [];
     return db.prepare(`
@@ -408,6 +408,32 @@ export class StructuralContextRepository {
       ORDER BY file_path, start_line
       LIMIT ?
     `).all(...this._entityParams(db), name, owner, filePath || '', limit).map(row => this._entityFromRow(row)).filter(Boolean);
+  }
+
+  /**
+   * The direct supertype names of the types named `name` (`extends` / `implements` edges,
+   * last name segment, no type arguments), or null when no type of that name is indexed.
+   */
+  findDirectSupertypes(name) {
+    const db = this._open();
+    if (!db || !name) return null;
+    try {
+      const types = db.prepare(`
+        SELECT id FROM entities
+        WHERE ${this._entitySql(db)} AND name = ?
+          AND type IN ('class', 'interface', 'struct', 'record', 'trait', 'protocol', 'enum', 'object')
+        LIMIT 16
+      `).all(...this._entityParams(db), name);
+      if (!types.length) return null;
+      const rows = db.prepare(`
+        SELECT r.target_name AS target_name FROM relationships r
+        WHERE r.source_id IN (${types.map(() => '?').join(',')}) AND r.type IN ('extends', 'implements')
+          AND ${this._relationshipSql(db, 'r')}
+      `).all(...types.map(t => t.id), ...this._relationshipParams(db));
+      return [...new Set(rows.map(r => String(r.target_name || '').replace(/<.*$/s, '').split(/\.|::/).pop().trim()).filter(Boolean))];
+    } catch {
+      return null;
+    }
   }
 
   /** Signatures of the callables (or, with `members`, the properties and fields) named `name` (of `owner`, when given). */

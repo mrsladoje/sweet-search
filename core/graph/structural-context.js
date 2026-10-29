@@ -18,7 +18,7 @@ import { declaredTypeIn } from './receiver-types.js';
 import { GENERIC_RECEIVER_SPREAD } from './relationship-resolver.js';
 import { isTraceOnlyRelationship } from '../infrastructure/relationship-types.js';
 import { isTestLikePath } from '../infrastructure/test-paths.js';
-import { STATIC_OVERLOAD_FILE, argumentType, callArguments, declaredParameters, listParts, memberSignatureType, overloadForArguments, overloadsTaking, parenBody, selectOverload, signatureReturnType, splitParameterList } from './trace-overloads.js';
+import { REBIND_FILE, STATIC_OVERLOAD_FILE, argumentType, callArguments, callReceiver, receiverFits, declaredParameters, memberSignatureType, overloadForArguments, overloadsCallable, overloadsTaking, typeHierarchy, selectOverload, signatureReturnType, splitParameterList } from './trace-overloads.js';
 const BUDGETS = { preview: 4000, full: 8000, xl: 12000 };
 const DEFAULT_MAX_DEPTH = 3;
 // Targets whose signature users (`typeRef`) ss-trace lists as callers, at
@@ -491,10 +491,15 @@ export function buildImpactPaths(repo, target, opts) {
   const seenPathIds = new Set();
 
   for (let depth = 1; depth <= maxDepth && paths.length < limit; depth++) {
-    const rows = repo.getReverseDependents([...frontier.keys()], target, {
+    let rows = repo.getReverseDependents([...frontier.keys()], target, {
       includeNamePattern: depth === 1,
       limit: limit * 3,
     });
+    const rebind = depth === 1 ? opts.overloadRebind : null;
+    if (rebind) {
+      rows = rows.filter(r => !(rebind.removed.has(r.id) && (r.targetId === target.id || r.targetId == null) && (!r.relationship || r.relationship === 'calls')));
+      for (const r of rebind.added) rows.push({ ...r, targetId: target.id, relationship: 'calls' });
+    }
     // Calls through the method a frontier node overrides or implements reach it by dispatch
     // (jj: cli code calls the trait method LockedWorkingCopy::snapshot, which
     // LockedLocalWorkingCopy::snapshot implements) — same rule as the callers section.
@@ -672,14 +677,10 @@ function addHintImpactPaths(paths, seen, repo, target, hintSites, limit, resolve
 
 // [min, max] arguments a definition's parameter list takes (defaults lower min; variadics: max ∞).
 function parameterRange(source, name) {
-  // `Write<T0, T1>(`: generic parameters between the name and the list.
-  const at = String(source || '').search(new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*(?:<[^()]*>)?\\s*\\(`));
-  if (at < 0) return null;
-  const body = parenBody(source, source.indexOf('(', at));
-  if (body == null) return null;
-  const params = listParts(body).filter((p) => p !== 'void');
+  const params = declaredParameters(source, name);
+  if (!params) return null;
   const variadic = params.some((p) => /\.\.\.|^\*|\bparams\b|vararg/.test(p));
-  const min = params.filter((p) => !/=/.test(p) && !/\.\.\.|^\*|\bparams\b|vararg/.test(p)).length;
+  const min = params.filter((p) => !/=(?!>)/.test(p) && !/\.\.\.|^\*|\bparams\b|vararg/.test(p)).length;
   return [min, variadic ? Infinity : params.length];
 }
 
@@ -706,12 +707,7 @@ const fitsRange = (r, n) => n >= r[0] && n <= r[1];
 
 // Argument count of the first `name(` call on `line` of `file` (null: no call, or a spread).
 function argumentCountAt(repo, file, line, name) {
-  const text = repo.readFileRange(file, line, line + 4) || '';
-  const m = new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\(`).exec(text);
-  if (!m) return null;
-  const body = parenBody(text, m.index + m[0].length - 1);
-  if (body == null || /\.\.\.|^\s*\*\w/.test(body)) return null; // spread: count unknown
-  return listParts(body).length;
+  return callArguments(repo.readFileRange(file, line, line + 4) || '', name)?.length ?? null;
 }
 
 function dropOtherOverloadCalls(repo, target, rows) {
@@ -742,56 +738,101 @@ function dropOtherOverloadCalls(repo, target, rows) {
 export function bindCalleeOverloads(repo, target, rows, types = null) {
   if (!target?.filePath || typeof repo.readFileRange !== 'function') return rows;
   if (TRAILING_BLOCK_FILE.test(target.filePath)) return rows;
-  return rows.map((row) => {
-    if ((row.relationship && row.relationship !== 'calls') || !row.name || !row.filePath) return row;
+  return rows.flatMap((row) => {
+    if ((row.relationship && row.relationship !== 'calls') || !row.name || !row.filePath) return [row];
     const lines = siteLines(row);
-    if (!lines.length) return row;
+    if (!lines.length) return [row];
     const siblings = types ? types.siblingsOf(row) : overloadSiblings(repo, row);
-    if (!siblings.length) return row;
-    const n = argumentCountAt(repo, target.filePath, lines[0], row.name);
-    if (n == null) return row;
-    let fitting = [row, ...siblings].filter((e) => {
-      const r = overloadRange(repo, e);
-      return !r || fitsRange(r, n);
-    }).sort((a, b) => (a === row ? -1 : b === row ? 1 : (a.startLine ?? 0) - (b.startLine ?? 0)));
-    if (!fitting.length) return row;
-    // Several take that many arguments: the argument types at the call pick one, when they can.
-    if (fitting.length > 1 && types && STATIC_OVERLOAD_FILE.test(target.filePath)) {
-      const argTypes = siteArgumentTypes(repo, target.filePath, lines[0], row.name, target.startLine, types.returnTypeOf);
-      const key = argTypes && overloadForArguments(argTypes, fitting.map((e) => ({ key: e.id, params: types.paramsOf(e) })), argTypes.names);
-      if (key) fitting = fitting.filter((e) => e.id === key);
-    }
-    const [chosen, ...rest] = fitting;
-    const bound = chosen === row ? row : {
-      ...chosen,
-      relationship: row.relationship, contextLine: row.contextLine, contextLines: row.contextLines, depth: row.depth,
+    if (!siblings.length) return [row];
+    // Each call line binds on its own: `M(1); M("x");` in one method calls two overloads.
+    const bindLine = (line) => {
+      const n = argumentCountAt(repo, target.filePath, line, row.name);
+      if (n == null) return null;
+      let fitting = [row, ...siblings].filter((e) => {
+        const r = overloadRange(repo, e);
+        return !r || fitsRange(r, n);
+      }).sort((a, b) => (a === row ? -1 : b === row ? 1 : (a.startLine ?? 0) - (b.startLine ?? 0)));
+      if (!fitting.length) return null;
+      // Several take that many arguments: the named arguments and `ref` / `out` (certain),
+      // then the argument types (with evidence), pick one when they can.
+      if (fitting.length > 1 && types && REBIND_FILE.test(target.filePath)) {
+        const argTypes = siteArgumentTypes(repo, target.filePath, line, row.name, target.startLine, types.returnTypeOf);
+        const called = argTypes && asCalledOn(fitting.map((e) => ({ key: e.id, params: types.paramsOf(e) })), argTypes.receiver, row.parentClass);
+        if (called) {
+          const callable = new Set(overloadsCallable(argTypes.length, called.filter((o) => o.params), argTypes.names, argTypes.mods).map((o) => o.key));
+          // Definitions whose list could not be read stay (nothing is known against them).
+          if (callable.size) fitting = fitting.filter((e) => callable.has(e.id) || !types.paramsOf(e));
+          const key = fitting.length > 1 && overloadForArguments(argTypes, called.filter((o) => fitting.some((e) => e.id === o.key)), argTypes.names, types.hierarchy, { mods: argTypes.mods });
+          if (key) fitting = fitting.filter((e) => e.id === key);
+        }
+      }
+      const [chosen, ...others] = fitting;
+      // `(or overloads 52, 519)` prints line numbers: only the chosen definition's file.
+      return { chosen, rest: others.filter((e) => e.filePath === chosen.filePath) };
     };
-    return rest.length ? { ...bound, overloads: rest.map((e) => e.startLine).sort((a, b) => a - b) } : bound;
+    const groups = new Map();
+    for (const line of lines) {
+      const bound = bindLine(line);
+      const key = bound ? `${bound.chosen.id}|${bound.rest.map((e) => e.id).join(',')}` : '';
+      if (!groups.has(key)) groups.set(key, { bound, lines: [] });
+      groups.get(key).lines.push(line);
+    }
+    const one = groups.size === 1;
+    return [...groups.values()].map(({ bound, lines: own }) => {
+      const sites = one ? {} : { contextLines: own, contextLine: own[0] };
+      if (!bound) return { ...row, ...sites };
+      const { chosen, rest } = bound;
+      const base = chosen === row ? { ...row, ...sites } : {
+        ...chosen,
+        relationship: row.relationship, contextLine: row.contextLine, contextLines: row.contextLines, depth: row.depth, ...sites,
+      };
+      const out = one && chosen === row && !rest.length ? row : base;
+      return rest.length ? { ...out, overloads: rest.map((e) => e.startLine).sort((a, b) => a - b) } : out;
+    });
   });
 }
 
 const argumentNames = (args) => args.map((a) => /^([A-Za-z_]\w*)\s*:(?!:)/.exec(a)?.[1] || null);
+const argumentMods = (args) => args.map((a) => /^(?:[A-Za-z_]\w*\s*:(?!:)\s*)?(ref|out|in)\s/.exec(a)?.[1] || null);
 
 // Argument types of the `name(` call on `line` of `file`, from the call text and the
 // caller's own lines up to it (its parameters and locals). Null: no call found there.
-// With `overloads`: null too when the count and names alone leave at most one of them.
-function siteArgumentTypes(repo, file, line, name, scopeStart, returnTypeOf, overloads = null) {
+// The array carries the call's `names`, `mods` (ref / out / in) and `receiver`.
+// With `overloads`: all types null when the count and names alone leave at most one of them
+// (a count is no type evidence). With `owner`: null when the receiver cannot reach the
+// owner's members (`Syntax.InternalSyntax.SyntaxFactory.IdentifierName(…)`).
+function siteArgumentTypes(repo, file, line, name, scopeStart, returnTypeOf, overloads = null, owner = null) {
   const text = repo.readFileRange(file, line, line + 4) || '';
   const args = callArguments(text, name);
   if (!args) return null;
-  if (overloads && overloadsTaking(args.length, overloads, argumentNames(args)).length <= 1) {
-    const types = args.map(() => null);
-    types.names = argumentNames(args);
-    return types;
-  }
   const from = scopeStart && scopeStart <= line ? Math.max(scopeStart, line - 400) : Math.max(1, line - 60);
-  const scope = repo.readFileRange(file, from, line) || text;
+  let scopeText = null;
+  const readScope = () => (scopeText ??= repo.readFileRange(file, from, line) || text);
+  const receiver = callReceiver(text, name);
+  if (owner && !receiverFits(receiver, owner.name, owner.namespace, readScope())) return null;
+  const blank = () => {
+    const types = args.map(() => null);
+    return Object.assign(types, { names: argumentNames(args), mods: argumentMods(args), receiver });
+  };
+  // `Get<int>(…)` only reaches generic overloads: not modelled, so nothing is known.
+  if (args.typeArguments) return blank();
+  if (overloads && overloadsTaking(args.length, overloads, argumentNames(args)).length <= 1) return blank();
+  const scope = readScope();
   const types = args.map((a) => argumentType(a, scope, 0, returnTypeOf));
-  types.names = argumentNames(args);
-  return types;
+  return Object.assign(types, { names: argumentNames(args), mods: argumentMods(args), receiver });
+}
+
+// An extension method called on a receiver (`repo.Store(o)`): its `this` parameter is the
+// receiver, not an argument.
+function asCalledOn(overloads, receiver, ownerName) {
+  if (!receiver || receiver === ownerName || receiver.endsWith(`.${ownerName}`)) return overloads;
+  return overloads.map((o) => (o.params?.length && /^\s*this\s/.test(o.params[0]) ? { ...o, params: o.params.slice(1) } : o));
 }
 
 const OVERLOAD_SIBLING_LIMIT = 8;
+// A call the target cannot take, though several other overloads can: off the target, bound to none.
+const NOT_TARGET = Symbol('not-target');
+const CALLABLE_TYPES = new Set(['method', 'function', 'constructor']);
 
 /**
  * Callers re-bound among the target's overloads by argument types. The graph binds a
@@ -801,30 +842,49 @@ const OVERLOAD_SIBLING_LIMIT = 8;
  * the target's rows lose the sites that fit another overload, and the sites stored on
  * another overload that fit the target join. Unknown types leave the graph's binding.
  */
-export function rebindOverloadCallers(repo, target, rows, types) {
+export function rebindOverloadCallers(repo, target, rows, types, admit = (list) => list) {
   if (!types || !target?.name || !target.filePath || typeof repo.readFileRange !== 'function') return rows;
-  if (!STATIC_OVERLOAD_FILE.test(target.filePath)) return rows;
-  const siblings = types.siblingsOf(target).slice(0, OVERLOAD_SIBLING_LIMIT);
+  if (!REBIND_FILE.test(target.filePath)) return rows;
+  // Every overload takes part in the choice; the callers of at most OVERLOAD_SIBLING_LIMIT are read.
+  const siblings = types.siblingsOf(target);
   if (!siblings.length) return rows;
   const overloads = [target, ...siblings].map((e) => ({ key: e.id, params: types.paramsOf(e) }));
   if (!overloads[0].params || overloads.filter((o) => o.params).length < 2) return rows;
+  const owner = target.parentClass ? { name: target.parentClass, namespace: types.namespaceOf?.(target.filePath) || '' } : null;
   const bindsTo = (row, line) => {
-    const argTypes = siteArgumentTypes(repo, row.filePath, line, target.name, row.startLine, types.returnTypeOf, overloads);
-    return argTypes ? overloadForArguments(argTypes, overloads, argTypes.names) : null;
+    const argTypes = siteArgumentTypes(repo, row.filePath, line, target.name, row.startLine, types.returnTypeOf, overloads, owner);
+    if (!argTypes) return null;
+    const called = asCalledOn(overloads, argTypes.receiver, target.parentClass);
+    // The shape rules are certain: a call the target cannot take, and exactly one overload
+    // can, is that overload's (`Create(g, additionalTexts: null)` is no `Create(params …)`).
+    // (Only when every overload's list was read: an unread one could take the call too.)
+    if (called.every((o) => o.params)) {
+      const callable = overloadsCallable(argTypes.length, called, argTypes.names, argTypes.mods);
+      if (callable.length === 1) return callable[0].key;
+      if (callable.length && !callable.some((o) => o.key === target.id)) return NOT_TARGET;
+    }
+    return overloadForArguments(argTypes, called, argTypes.names, types.hierarchy, { mods: argTypes.mods });
   };
+  const siblingIds = new Set(siblings.map((e) => e.id));
   let changed = false;
   const out = [];
   for (const row of rows) {
     const lines = siteLines(row);
     if ((row.relationship && row.relationship !== 'calls') || !row.filePath || !lines.length) { out.push(row); continue; }
-    const kept = lines.filter((l) => { const k = bindsTo(row, l); return k == null || k === target.id; });
+    // Unknown types keep the graph's binding: a row the graph bound to another overload
+    // (getCallers also returns those by name) is that overload's, not the target's.
+    const boundElsewhere = row.targetId && siblingIds.has(row.targetId);
+    const kept = lines.filter((l) => { const k = bindsTo(row, l); return k === target.id || (k == null && !boundElsewhere); });
     if (kept.length === lines.length) { out.push(row); continue; }
     changed = true;
     if (kept.length) out.push({ ...row, contextLines: kept, contextLine: kept[0] });
   }
-  for (const sibling of siblings) {
-    for (const row of types.callersOf(sibling)) {
+  for (const sibling of siblings.slice(0, OVERLOAD_SIBLING_LIMIT)) {
+    // The target's own trust rules apply (a name-only guess dropped for the target stays out).
+    for (const row of admit(types.callersOf(sibling), sibling)) {
       if ((row.relationship && row.relationship !== 'calls') || !row.filePath) continue;
+      // The target itself, bound to a sibling: a call of another method, not recursion.
+      if (row.id === target.id) continue;
       const moved = siteLines(row).filter((l) => bindsTo(row, l) === target.id);
       if (!moved.length) continue;
       changed = true;
@@ -894,14 +954,43 @@ export class StructuralContextBuilder {
     const key = entity.id ?? `${entity.filePath}:${entity.startLine}:${entity.name}`;
     if (this._siblingCache.has(key)) return this._siblingCache.get(key);
     let siblings = overloadSiblings(this.repo, entity);
-    if (/\.cs$/i.test(entity.filePath || '') && entity.parentClass && typeof this.repo.findOwnerNamesakes === 'function') {
+    // Only a class declared `partial` in both files, with the same type-parameter count:
+    // a nested `Enumerator` or `Builder` of another type has the same simple name.
+    const arity = /\.cs$/i.test(entity.filePath || '') && entity.parentClass ? this._partialArity(entity.filePath, entity.parentClass) : null;
+    if (arity != null && typeof this.repo.findOwnerNamesakes === 'function') {
       const ns = this._namespaceOf(entity.filePath);
       const partial = this.repo.findOwnerNamesakes(entity.name, entity.parentClass, entity.filePath)
-        .filter(e => /\.cs$/i.test(e.filePath) && this._namespaceOf(e.filePath) === ns);
+        .filter(e => /\.cs$/i.test(e.filePath) && CALLABLE_TYPES.has(e.type) && this._namespaceOf(e.filePath) === ns
+          && this._partialArity(e.filePath, entity.parentClass) === arity);
       if (partial.length) siblings = [...siblings, ...partial];
     }
     this._siblingCache.set(key, siblings);
     return siblings;
+  }
+
+  // `<type-parameter count>:<enclosing type>` of `partial class Owner<…>` in a file (null: no partial Owner there).
+  _partialArity(filePath, owner) {
+    if (!this._partialCache) this._partialCache = new Map();
+    const key = `${filePath}\u0000${owner}`;
+    if (!this._partialCache.has(key)) {
+      const lines = this.repo.readFileRange?.(filePath, 1, 100000) || '';
+      const esc = owner.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const m = new RegExp(`\\bpartial\\s+(?:(?:readonly|ref|sealed|abstract|static|unsafe|new|public|internal|private|protected|file)\\s+)*(?:class|struct|record(?:\\s+(?:class|struct))?|interface)\\s+${esc}\\b\\s*(<[^>]*>)?`).exec(lines);
+      let shape = null;
+      if (m) {
+        // The enclosing type too (`A.Factory` is no `B.Factory`): the nearest type declared
+        // before it with less indentation.
+        const lineStart = lines.lastIndexOf('\n', m.index) + 1;
+        const indent = /^[ \t]*/.exec(lines.slice(lineStart))[0].replace(/\t/g, '    ').length;
+        let outer = '';
+        for (const d of lines.slice(0, lineStart).matchAll(/^([ \t]*)(?:[\w\s]*\s)?(?:class|struct|record|interface)\s+(\w+)/gm)) {
+          if (d[1].replace(/\t/g, '    ').length < indent) outer = d[2];
+        }
+        shape = `${m[1] ? m[1].split(',').length : 0}:${outer}`;
+      }
+      this._partialCache.set(key, shape);
+    }
+    return this._partialCache.get(key);
   }
 
   _namespaceOf(filePath) {
@@ -932,12 +1021,43 @@ export class StructuralContextBuilder {
   _overloadTypes() {
     return this._types ??= {
       siblingsOf: (e) => this._overloadSiblings(e),
+      namespaceOf: (file) => this._namespaceOf(file),
+      hierarchy: typeof this.repo.findDirectSupertypes === 'function'
+        ? typeHierarchy((name) => this.repo.findDirectSupertypes(name))
+        : null,
       paramsOf: (e) => this._declaredParameters(e),
       returnTypeOf: (name, qualifier, opts) => this._returnTypeOf(name, qualifier, opts),
       // Stored edges only: bare calls bind by name and scope, which every overload of one
       // class shares, so an overload's bare callers are the target's own (already listed).
       callersOf: (e) => this.repo.getCallers(e, { limit: 160 }),
     };
+  }
+
+  /**
+   * The candidates for `Owner.Name(…)` ordered by the written list. The pool holds every
+   * definition of the written owner's name (a class can have more overloads than the
+   * candidate limit: roslyn SyntaxFactory.Literal has 27); with `--in`, a file where no
+   * definition takes the list falls back to the whole repository.
+   */
+  _selectWrittenOverload(lookupSymbol, written, candidates, options) {
+    const parts = lookupSymbol.split(/::|\./).filter(Boolean);
+    const name = parts[parts.length - 1];
+    const owner = parts.length > 1 ? parts[parts.length - 2] : null;
+    const pool = (list) => {
+      const extra = owner && typeof this.repo.findOwnerNamesakes === 'function'
+        ? this.repo.findOwnerNamesakes(name, owner, '', 200).filter(e => !options.filePath || e.filePath === options.filePath || e.filePath.includes(options.filePath))
+        : [];
+      const seen = new Set(list.map(c => c.id));
+      return [...list, ...extra.filter(e => !seen.has(e.id) && seen.add(e.id))];
+    };
+    const read = (c) => this._declaredParameters(c);
+    let selected = selectOverload(pool(candidates), written, read, owner);
+    if (!selected.matched && options.filePath) {
+      const wide = this.repo.findEntityCandidates(lookupSymbol, { queryHint: options.queryHint, limit: 12 });
+      const wider = selectOverload(pool(wide), written, read, owner);
+      if (wider.matched) selected = wider;
+    }
+    return selected;
   }
 
   _parameterText(entity) {
@@ -953,16 +1073,18 @@ export class StructuralContextBuilder {
     }
 
     // `Owner.Method(Type, Type)`: the name finds the definitions, the list picks the overload.
-    const { name: lookupSymbol, params: writtenParams } = splitParameterList(cleanSymbol);
+    const { name: lookupSymbol, params: written } = splitParameterList(cleanSymbol);
+    let writtenParams = written;
     let candidates = this.repo.findEntityCandidates(lookupSymbol, { filePath: options.filePath, queryHint: options.queryHint, limit: 12 });
     if (!candidates.length) return this._empty(cleanSymbol, 'not_found', started);
     let overloadQuery = null;
+    // `foo()` in a language without overloads is the function `foo`: the list is no choice.
+    if (writtenParams && !writtenParams.length && !STATIC_OVERLOAD_FILE.test(candidates[0]?.filePath || '')) writtenParams = null;
     if (writtenParams) {
-      const parts = lookupSymbol.split(/::|\./).filter(Boolean);
-      const owner = parts.length > 1 ? parts[parts.length - 2] : null;
-      const selected = selectOverload(candidates, writtenParams, (c) => this._declaredParameters(c), owner);
+      const selected = this._selectWrittenOverload(lookupSymbol, writtenParams, candidates, options);
       candidates = selected.candidates;
-      overloadQuery = { params: writtenParams, matched: selected.matched };
+      // `foo()` written for "the function foo": no note when nothing takes zero arguments.
+      overloadQuery = selected.matched || writtenParams.length ? { params: writtenParams, matched: selected.matched } : null;
     }
 
     const target = candidates[0];
@@ -1021,7 +1143,20 @@ export class StructuralContextBuilder {
     // A call whose argument count fits another overload of the target, not the target itself,
     // calls that overload (drogon newOptionsResponse calls newHttpResponse(a, b), the 2-argument
     // overload, not the 0-argument target).
-    const callersByType = rebindOverloadCallers(this.repo, target, callersRaw, this._overloadTypes());
+    const callersByType = rebindOverloadCallers(this.repo, target, callersRaw, this._overloadTypes(),
+      // A sibling's rows pass the rules they would pass in the sibling's own trace.
+      (rows, sibling) => dropNameOnlyCallers(rows, sibling, targetDefs));
+    // The impact tree starts from the same callers: a site moved to another overload is no
+    // caller of this one there either, and a site moved in from one is.
+    const overloadRebind = callersByType === callersRaw ? null : (() => {
+      const isCall = (x) => !x.relationship || x.relationship === 'calls';
+      const before = new Set(callersRaw.filter(isCall).map(x => x.id));
+      const after = new Set(callersByType.filter(isCall).map(x => x.id));
+      return {
+        removed: new Set([...before].filter(id => !after.has(id))),
+        added: callersByType.filter(x => isCall(x) && !before.has(x.id)),
+      };
+    })();
     const callersByArity = [...dropOtherOverloadCalls(this.repo, target, callersByType)];
     callersRaw.length = 0;
     callersRaw.push(...callersByArity);
@@ -1092,6 +1227,7 @@ export class StructuralContextBuilder {
       // Resolved callees (stored + scope-resolved bare calls) bind a hint
       // name to the definition the call actually reaches.
       resolvedCallees: calleesRaw.filter(x => x.relationship !== 'handoff'),
+      overloadRebind,
     });
     const ids = [
       target.id,
