@@ -3,7 +3,6 @@
  * whose existing tests covered the happy paths but not the edge cases.
  *
  * Targets (per `vitest run --coverage` snapshot before this file):
- *   - wsl2-detect.mjs        (43% branch, 56% line)
  *   - hashing.mjs            (60% branch)
  *   - encoder-deps.mjs       (70% branch)
  *   - encoder-input.mjs      (72% branch)
@@ -40,7 +39,6 @@ import {
   collectChunkDependencies, persistDependencies, dependentsOf, forgetFile,
 } from '../../core/incremental-indexing/domain/encoder-deps.mjs';
 import { DirtySet, canonicaliseInsideRoot } from '../../core/incremental-indexing/infrastructure/dirty-set.mjs';
-import { watcherDefault, formatWatcherNotice, detectEnvironment, __testing as wsl2Testing } from '../../core/incremental-indexing/infrastructure/wsl2-detect.mjs';
 import {
   fts5SegmentCount, fts5Merge, fts5StructureDescribe, __testing as fts5Testing,
 } from '../../core/incremental-indexing/infrastructure/sqlite-fts5.mjs';
@@ -520,60 +518,6 @@ describe('dirty-set.mjs — branches', () => {
   it('canonicaliseInsideRoot rejects non-string', () => {
     expect(canonicaliseInsideRoot('/tmp', null)).toBeNull();
     expect(canonicaliseInsideRoot('/tmp', 42)).toBeNull();
-  });
-});
-
-// ---------- wsl2-detect.mjs branches ----------
-
-describe('wsl2-detect.mjs — environment detection branches', () => {
-  it('detectEnvironment caches subsequent calls', () => {
-    wsl2Testing.resetCache();
-    const a = detectEnvironment();
-    const b = detectEnvironment();
-    expect(a).toBe(b);
-  });
-
-  it('detectInner returns expected shape', () => {
-    wsl2Testing.resetCache();
-    const r = wsl2Testing.detectInner();
-    expect(r).toHaveProperty('wsl2');
-    expect(r).toHaveProperty('docker');
-    expect(r).toHaveProperty('kubernetes');
-    expect(r).toHaveProperty('container');
-    expect(r).toHaveProperty('platform');
-    expect(typeof r.wsl2).toBe('boolean');
-  });
-
-  it('watcherDefault: KUBERNETES_SERVICE_HOST env triggers container default', () => {
-    wsl2Testing.resetCache();
-    const prev = process.env.KUBERNETES_SERVICE_HOST;
-    try {
-      process.env.KUBERNETES_SERVICE_HOST = 'k8s.example';
-      wsl2Testing.resetCache();
-      const d = watcherDefault({});
-      // On native macOS this will report 'native-os-watcher' because the
-      // cached detect snapshot was already taken in the test runner. But we
-      // *can* deterministically test the formatter.
-      expect(d.watcherEnabled).toBeTypeOf('boolean');
-    } finally {
-      if (prev === undefined) delete process.env.KUBERNETES_SERVICE_HOST;
-      else process.env.KUBERNETES_SERVICE_HOST = prev;
-    }
-  });
-
-  it('watcherDefault env-on with "true" / "on" aliases', () => {
-    expect(watcherDefault({ SWEET_SEARCH_WATCH: 'true' }).reason).toBe('env-override-on');
-    expect(watcherDefault({ SWEET_SEARCH_WATCH: 'on' }).reason).toBe('env-override-on');
-  });
-
-  it('watcherDefault env-off with "false" / "off" aliases', () => {
-    expect(watcherDefault({ SWEET_SEARCH_WATCH: 'false' }).reason).toBe('env-override-off');
-    expect(watcherDefault({ SWEET_SEARCH_WATCH: 'off' }).reason).toBe('env-override-off');
-  });
-
-  it('formatWatcherNotice formats both enabled / disabled', () => {
-    expect(formatWatcherNotice({ watcherEnabled: true, reason: 'r' })).toContain('on');
-    expect(formatWatcherNotice({ watcherEnabled: false, reason: 'r' })).toContain('off');
   });
 });
 

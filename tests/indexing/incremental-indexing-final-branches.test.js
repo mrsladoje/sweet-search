@@ -5,7 +5,6 @@
  * uncovered branches concentrate in:
  *   - hashing.mjs            (alternate backend resolution, SHA-256 path)
  *   - worktree-stamp.mjs     (git-repo path)
- *   - wsl2-detect.mjs        (KUBERNETES / docker / wsl2 detection paths)
  *   - maintenance-worker.mjs (alternate input)
  */
 
@@ -17,7 +16,6 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { contentHashSync, contentHash, __testing as hashingTesting } from '../../core/incremental-indexing/infrastructure/hashing.mjs';
 import { gitCommonDir, verifyStamp, writeStamp } from '../../core/incremental-indexing/infrastructure/worktree-stamp.mjs';
-import { watcherDefault, __testing as wsl2Testing } from '../../core/incremental-indexing/infrastructure/wsl2-detect.mjs';
 
 describe('hashing.mjs — backend resolution + sha256 fallback', () => {
   it('contentHash (async) is the same as contentHashSync after warm-up', async () => {
@@ -106,46 +104,6 @@ describe('worktree-stamp.mjs — git-aware paths', () => {
       // Restore so afterEach cleanup works
       fs.renameSync(newGit, path.join(repoDir, '.git'));
     }
-  });
-});
-
-describe('wsl2-detect.mjs — branches', () => {
-  it('formatWatcherNotice formats all reason strings safely', () => {
-    const { formatWatcherNotice } = wsl2Testing;
-    // formatWatcherNotice is exported, not in __testing. Use the public API.
-  });
-
-  it('watcherDefault on default macOS/Linux native produces a reason', () => {
-    wsl2Testing.resetCache();
-    const d = watcherDefault({});
-    expect(['native-os-watcher', 'wsl2-polling-default', 'container-polling-default', 'win32-polling-default'])
-      .toContain(d.reason.split(' ')[0] === 'wsl2-polling-default' ? 'wsl2-polling-default' : d.reason);
-  });
-
-  it('watcherDefault: explicit "1" / "true" / "on" all set env-override-on', () => {
-    for (const v of ['1', 'true', 'on']) {
-      const d = watcherDefault({ SWEET_SEARCH_WATCH: v });
-      expect(d.watcherEnabled).toBe(true);
-      expect(d.reason).toBe('env-override-on');
-    }
-  });
-
-  it('watcherDefault: explicit "0" / "false" / "off" all set env-override-off', () => {
-    for (const v of ['0', 'false', 'off']) {
-      const d = watcherDefault({ SWEET_SEARCH_WATCH: v });
-      expect(d.watcherEnabled).toBe(false);
-      expect(d.reason).toBe('env-override-off');
-    }
-  });
-
-  it('watcherDefault: container path triggers polling default', () => {
-    wsl2Testing.resetCache();
-    // We can't easily fabricate /.dockerenv on a test runner; instead test
-    // that an empty env falls through to detection — what matters is the
-    // branch coverage on the explicit / detection-based code paths.
-    const d = watcherDefault({});
-    expect(d).toHaveProperty('watcherEnabled');
-    expect(d).toHaveProperty('reason');
   });
 });
 

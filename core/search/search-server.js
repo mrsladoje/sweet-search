@@ -19,6 +19,8 @@ import { currentCall } from '../agent-tools/virtual-process.js';
 import { callRealpathNative } from '../infrastructure/call-fs.js';
 import { startGrepLane, stopGrepLane, grepLaneHandledCount, drainGrepLaneReceipts } from './grep-lane.js';
 import { beginPinnedRead, endPinnedRead } from './search-reader-pin.js';
+import { recordDaemonStart } from './daemon-starts.js';
+import { startWslKeepAlive } from './wsl-keepalive.js';
 import {
   AgentSpanLedger,
   applyReadOmissionDecisions,
@@ -877,6 +879,7 @@ export async function startServer() {
   };
   const laneStateDirOf = () => path.dirname(DB_PATHS.codebase);
   let shuttingDown = false;
+  let wslKeepAliveRef = null;
 
   // Close a server, letting in-flight requests finish but never letting an idle
   // keep-alive socket block exit (bounded grace, then resolve regardless).
@@ -912,6 +915,7 @@ export async function startServer() {
       if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] searcher close: ${err?.message || err}\n`);
     }
     try { queryEncoder.close(); } catch { /* the child exits with us anyway */ }
+    wslKeepAliveRef?.stop();
     try { await rssRegistration?.unregister(); } catch { /* best-effort */ }
     try { await fs.unlink(pidFile); } catch (err) {
       if (process.env.DEBUG_CATCHES) process.stderr.write(`[non-fatal] ${err?.message || err}\n`);
@@ -1547,6 +1551,8 @@ export async function startServer() {
   }, () => {});
   console.log(`[Server] Fast access: curl --unix-socket ${socketPath} "http://localhost/search?q=query"`);
 
+  // WSL: hold a session open while this daemon runs, so WSL does not stop it (wsl-keepalive.js).
+  wslKeepAliveRef = startWslKeepAlive({ log: (msg) => console.log(`[Server] ${msg}`) });
   console.log('[Server] Initializing indexes (one-time cost)...');
   (async () => {
     try {
@@ -1555,6 +1561,7 @@ export async function startServer() {
       serverReady = true;
       await fs.writeFile(pidFile, process.pid.toString(), { mode: 0o644 });
       console.log(`[Server] Indexes loaded in ${initTimeMs}ms`);
+      recordDaemonStart(laneStateDirOf(), { startedAt: initStartedAt, loadMs: initTimeMs, ok: true, pid: process.pid });
       // Keeps the zero-hit grep fallback's changed-file listing current from file events
       // (changed-files-tracker.js). SWEET_SEARCH_CHANGED_FILES_WATCH=0: list in full per call.
       if (!['0', 'false', 'off', 'no'].includes(String(process.env.SWEET_SEARCH_CHANGED_FILES_WATCH || '').toLowerCase())) {
@@ -1565,6 +1572,7 @@ export async function startServer() {
       initError = err;
       initTimeMs = Date.now() - initStartedAt;
       console.error(`[Server] Initialization failed after ${initTimeMs}ms: ${err?.message || err}`);
+      recordDaemonStart(laneStateDirOf(), { startedAt: initStartedAt, loadMs: initTimeMs, ok: false, pid: process.pid });
     }
   })();
 

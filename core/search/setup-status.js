@@ -17,6 +17,8 @@ import { baselineStatus } from '../incremental-indexing/infrastructure/baseline-
 import { readManifest } from '../incremental-indexing/infrastructure/manifest.mjs';
 import { classifyProvenance, describeEncoders } from '../infrastructure/inference-provenance.js';
 import { daemonLogPath } from './daemon-log.js';
+import { readDaemonStarts, summarizeDaemonStarts } from './daemon-starts.js';
+import { isWsl, keepAliveCommand } from './wsl-keepalive.js';
 import { projectSocketPath } from './server-identity.js';
 
 const PACKAGE_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -181,6 +183,10 @@ export async function collectSetupStatus({ env = process.env } = {}) {
     server: {
       state: serverState,
       pid: probe.health?.pid ?? null,
+      uptimeSec: probe.health?.uptimeSec ?? null,
+      loadMs: probe.health?.init?.elapsedMs ?? null,
+      starts: summarizeDaemonStarts(readDaemonStarts(stateDir)),
+      wsl: isWsl(env) ? { keepAlive: keepAliveCommand({ pid: 1, env }) !== null } : null,
       error: probe.health?.init?.error ?? null,
       socket: socketPath,
       log: daemonLogPath(projectRoot),
@@ -209,6 +215,18 @@ const SERVER_STATES = {
   'not-running': 'not running (it starts on the first search)',
   unknown: 'unknown',
 };
+
+/** Starts per day at which the status explains why the server started again. */
+const FREQUENT_STARTS = 3;
+
+export function formatDuration(ms) {
+  if (ms < 10_000) return `${(ms / 1000).toFixed(1)} s`;
+  const sec = Math.round(ms / 1000);
+  if (sec < 120) return `${sec} s`;
+  const min = Math.round(sec / 60);
+  if (min < 120) return `${min} min`;
+  return `${Math.floor(min / 60)} h ${min % 60} min`;
+}
 
 export function formatSetupStatus(s) {
   const yes = (v) => (v ? 'yes' : 'no');
@@ -248,6 +266,20 @@ export function formatSetupStatus(s) {
   }
   const pid = s.server.pid ? `, process id ${s.server.pid}` : '';
   lines.push(`Search server: ${SERVER_STATES[s.server.state] || s.server.state}${pid}`);
+  if (s.server.uptimeSec != null) lines.push(`  Running for: ${formatDuration(s.server.uptimeSec * 1000)}`);
+  if (s.server.loadMs != null && s.server.state === 'ready') lines.push(`  Index load time at its start: ${formatDuration(s.server.loadMs)}`);
+  const st = s.server.starts;
+  if (st?.startsLast24h > 0) {
+    const failed = st.failedLast24h ? `, ${st.failedLast24h} failed` : '';
+    const load = st.medianLoadMs != null
+      ? ` (index load: median ${formatDuration(st.medianLoadMs)}, slowest ${formatDuration(st.slowestLoadMs)})` : '';
+    lines.push(`  Starts in the last 24 hours: ${st.startsLast24h}${failed}${load}`);
+  }
+  if (s.server.wsl && st?.startsLast24h >= FREQUENT_STARTS) {
+    lines.push(s.server.wsl.keepAlive
+      ? '  Note: on WSL the server holds a session open while it runs, so WSL does not stop it. It still stops itself after 20 min without a query (SWEET_SEARCH_DAEMON_IDLE_TTL_MS).'
+      : '  Note: WSL stops the server when no terminal is open, and wsl.exe is not reachable to prevent it. Keep one terminal open, or enable WSL interop.');
+  }
   if (s.server.error) lines.push(`  Error: ${s.server.error}`);
   if (s.server.log) lines.push(`  Log: ${s.server.log}`);
   lines.push('');
