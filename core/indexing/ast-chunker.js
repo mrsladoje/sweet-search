@@ -357,7 +357,8 @@ export class ASTChunker {
     const view = viewTemplateKind(filePath);
     if (view) {
       const language = view === 'razor' ? 'razor' : 'aspnet';
-      const viewChunks = await chunkViewTemplate(filePath, content);
+      // Pathological input (nesting deeper than the stack): line windows, as an unknown file gets.
+      const viewChunks = await chunkViewTemplate(filePath, content).catch(() => null);
       if (viewChunks) {
         return viewChunks.map((chunk) => this.buildChunk(
           chunk.text, filePath, language, chunk.type, chunk.name, chunk.startLine, chunk.endLine,

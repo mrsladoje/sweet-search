@@ -62,10 +62,10 @@ describe('view chunks', () => {
     const chunks = await chunk('Views/Grid.cshtml', text);
     expect(covers(text, chunks)).toBe(true);
     // The class header takes the first methods; the later ones are method chunks of the view class.
-    expect(chunks.some((c) => c.metadata.chunk_type === 'class' && c.metadata.symbol === 'Grid_cshtml')).toBe(true);
+    expect(chunks.some((c) => c.metadata.chunk_type === 'class' && c.metadata.symbol === 'Views_Grid_cshtml')).toBe(true);
     const methodChunk = chunks.find((c) => c.metadata.chunk_type === 'method');
     expect(methodChunk.metadata.symbol).toMatch(/^Format\d+$/);
-    expect(methodChunk.metadata.parent_symbol).toBe('Grid_cshtml');
+    expect(methodChunk.metadata.parent_symbol).toBe('Views_Grid_cshtml');
     expect(chunks.some((c) => c.metadata.symbol?.startsWith('render'))).toBe(true);
     for (const c of chunks) expect(c.content.length).toBeLessThanOrEqual(2200);
   });
@@ -77,6 +77,14 @@ describe('view chunks', () => {
     expect(covers(text, chunks)).toBe(true);
     expect(chunks.length).toBeGreaterThan(1);
     for (const c of chunks) expect(c.content.length).toBeLessThanOrEqual(2000);
+  });
+
+  it('a CSS brace in a string or comment does not end a rule', async () => {
+    const rules = Array.from({ length: 40 }, (_, i) => `    .r${i}::after { content: "}"; /* } */ color: #${String(i).padStart(3, '0')}; margin: ${i}px ${i}px; }`).join('\n');
+    const text = `<style>\n${rules}\n</style>\n`;
+    const chunks = await chunk('Views/Css.cshtml', text);
+    expect(covers(text, chunks)).toBe(true);
+    for (const c of chunks) for (const line of c.content.split('\n').slice(1)) expect(line).not.toMatch(/^\s*color:/);
   });
 
   it('an ASP.NET page chunks its markup and server script', async () => {
@@ -96,13 +104,33 @@ describe('view graph', () => {
       + '@functions {\n    string Label() => Totals.Format(1);\n}\n';
     const ex = new GraphExtractor({ projectRoot: '/repo' });
     const r = await ex.extractFromFile('/repo/Views/Cart.cshtml', text);
-    expect(r.entities.map((e) => `${e.type} ${e.name}`)).toEqual(['class Cart_cshtml', 'method Label']);
+    expect(r.entities.map((e) => `${e.type} ${e.name}`)).toEqual(['class Views_Cart_cshtml', 'method Label']);
     const count = r.relationships.find((x) => x.target_name === 'cartService.CountAsync');
-    const viewClass = r.entities.find((e) => e.name === 'Cart_cshtml');
+    const viewClass = r.entities.find((e) => e.name === 'Views_Cart_cshtml');
     expect(viewClass).toMatchObject({ start_line: 1, end_line: 1 });
     expect(count).toMatchObject({ type: 'calls', context_line: 3, source_id: viewClass.id });
     const label = r.entities.find((e) => e.name === 'Label');
     expect(r.relationships.find((x) => x.target_name === 'Totals.Format')?.source_id).toBe(label.id);
+  });
+
+  it('keeps the base class with usings, and gives local functions the view class', async () => {
+    const text = '@using System.Linq\n@using Shop.Models\n@inherits ShopPage\n@{ void Row(int i) { Format(i); } }\n<p>@Row(1)</p>\n';
+    const ex = new GraphExtractor({ projectRoot: '/repo' });
+    const r = await ex.extractFromFile('/repo/Pages/Cart.razor', text);
+    expect(r.relationships.some((x) => x.type === 'extends' && x.target_name === 'ShopPage')).toBe(true);
+    const cls = r.entities.find((e) => e.type === 'class');
+    expect(cls).toMatchObject({ name: 'Cart', start_line: 3, end_line: 3 });
+    expect(cls.signature).not.toContain('__ViewRender');
+    expect(r.entities.find((e) => e.name === 'Row')?.parent_class).toBe('Cart');
+    expect(r.relationships.filter((x) => x.type === 'imports').length + (r.relationships.filter((x) => x.full_import_path).length)).toBeGreaterThan(0);
+  });
+
+  it('keeps a real member on the header line, and the class id across edits of that line', async () => {
+    const ex = new GraphExtractor({ projectRoot: '/repo' });
+    const a = await ex.extractFromFile('/repo/C/Counter.razor', '@code { public int Count { get; set; } void __ViewRenderHelper() { } }\n<p>@Foo()</p>\n');
+    expect(a.entities.map((e) => e.name)).toEqual(expect.arrayContaining(['Count', '__ViewRenderHelper']));
+    const b = await new GraphExtractor({ projectRoot: '/repo' }).extractFromFile('/repo/C/Counter.razor', '@code { public int Count { get; set; } void __ViewRenderHelper() { } }\n<p>@Bar()</p>\n');
+    expect(a.entities.find((e) => e.name === 'Counter').id).toBe(b.entities.find((e) => e.name === 'Counter').id);
   });
 
   it('links a page to its code-behind class and its event handlers', async () => {

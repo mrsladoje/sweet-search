@@ -82,8 +82,10 @@ export const CODE_FILE_EXTENSIONS = new Set([
  * Used with --type-add to define a custom 'code' type for ripgrep. Derived from
  * the same set so it stays in lockstep.
  */
+// ripgrep globs are case-sensitive: the capitalized spellings Windows repos use for views too.
+const RIPGREP_CASE_VARIANTS = ['CSHTML', 'Aspx', 'ASPX', 'Ascx', 'ASCX', 'Master', 'MASTER', 'Asax', 'ASAX', 'Ashx', 'ASHX', 'Asmx', 'ASMX', 'Svc', 'SVC'];
 export const RIPGREP_CODE_TYPE_GLOB =
-  `code:*.{${Array.from(CODE_FILE_EXTENSIONS).join(',')}}`;
+  `code:*.{${[...CODE_FILE_EXTENSIONS, ...RIPGREP_CASE_VARIANTS].join(',')}}`;
 
 /**
  * Sparse gram symbol type bitmasks.

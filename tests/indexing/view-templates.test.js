@@ -121,15 +121,13 @@ describe('projectToCSharp (Razor)', () => {
 
   it('gives the view class its directives and writes expressions as statements', () => {
     const cs = projectToCSharp(VIEW, 'Views/Order/List.cshtml');
-    const first = cs.split('\n')[0];
-    expect(first).toContain('using Nop.Services.Stores;');
-    expect(first).toContain('public partial class List_cshtml {');
-    expect(first).toContain('public OrderListModel Model;');
-    expect(first).toContain('public IStoreService storeService;');
     const lines = cs.split('\n');
+    // One using per line, then the class at a line start (the extractor reads them so).
+    expect(lines[0]).toBe('using Nop.Services.Stores;');
+    expect(lines[1]).toMatch(/^public partial class Order_List_cshtml \{ public OrderListModel Model; public IStoreService storeService;/);
     expect(lines[11]).toContain('_ = (Model.Title);');
     expect(lines.some((l) => l.includes('<h1>') || l.includes('mailto'))).toBe(false);
-    expect(cs).toContain('DefineSection("Scripts", async () => {');
+    expect(cs).toContain('__ViewSection("Scripts", async () => {');
     expect(cs).toContain('public string Label(int n) => n.ToString();');
   });
 
@@ -172,7 +170,8 @@ describe('ASP.NET pages', () => {
   it('projects the page class, its code across nuggets and its handlers', async () => {
     const cs = projectToCSharp(PAGE, 'Default.aspx');
     expect(cs.split('\n').length).toBe(PAGE.split('\n').length);
-    expect(cs.split('\n')[0]).toContain('using Shop.Models; public partial class Default_aspx : Shop._Default {');
+    expect(cs.split('\n')[0]).toBe('using Shop.Models;');
+    expect(cs.split('\n')[1]).toMatch(/^public partial class Default_aspx : Shop\._Default \{/);
     expect(cs).toContain('Save_Click(default, default);');
     expect(cs).toMatch(/if \(User\.IsAdmin\) \{[\s\S]*_ = \( Html\.Encode\(User\.Name\) \);[\s\S]*\}/);
     expect(cs).toContain('protected void Page_Load(object sender, EventArgs e) { Bind(); }');
@@ -188,11 +187,81 @@ describe('ASP.NET pages', () => {
   });
 });
 
+describe('review fixes', () => {
+  const lines = (s) => s.split('\n').length;
+
+  it('reads comments after directives, newlines in handler values, and verbatim quotes', async () => {
+    const a = '@inherits OwningComponentBase // scoped\n@using System.Text /* why */\n<p>@Name</p>\n';
+    const cs = projectToCSharp(a, 'C/A.razor');
+    expect(cs).toContain('public partial class A : OwningComponentBase {');
+    expect(await parsesClean(cs)).toBe(true);
+    const b = '<button @onclick="\n    Toggle\n">x</button>\n<p>@Name</p>\n';
+    expect(lines(projectToCSharp(b, 'C/B.razor'))).toBe(lines(b));
+    const c = '@{ var q = @"""" ; }\n<p>@Name</p>\n';
+    expect(projectToCSharp(c, 'V/C.cshtml').split('\n')[1]).toContain('_ = (Name);');
+  });
+
+  it('follows Razor on e-mail text, @model in components, and @x- in a value', () => {
+    expect(scanRazor('<i id="item_@Model.Id">').children.map((n) => n.kind)).toEqual(['expr']);
+    expect(scanRazor('a@b.com').children).toEqual([]);
+    expect(scanRazor('@model.Name\n').children[0].kind).toBe('expr');
+    const t = '<label for="@id-input" title="@storeName: News">';
+    expect(scanRazor(t).children.map((n) => codeOf(t, n))).toEqual(['id', 'storeName']);
+  });
+
+  it('reads @bind modifiers, component event parameters and asp-items as C#', () => {
+    const t = '<input @bind="v" @bind:event="oninput" @bind:after="Save" />\n<MudButton OnClick="Submit" Label="Go" />\n<select asp-items="Model.Stores"></select>\n';
+    const kinds = scanRazor(t).children.map((n) => `${n.kind}:${n.code ? codeOf(t, n) : ''}`);
+    expect(kinds).toEqual(expect.arrayContaining(['handler:Save', 'handler:Submit', 'expr:Model.Stores']));
+    expect(kinds.some((k) => k.endsWith(':oninput'))).toBe(false);
+  });
+
+  it('reads @await foreach, and ends a file whose last line is a comment', async () => {
+    const t = '@await foreach (var x in Items) { <p>@x</p> }\n<% // last';
+    expect(scanRazor(t).children[0]).toMatchObject({ kind: 'control', name: 'foreach' });
+    const cs = projectToCSharp('<% Bind(); // last', 'P/Last.aspx');
+    expect(await parsesClean(cs)).toBe(true);
+  });
+
+  it('reads lowercase and data-method handlers on server controls, not client ones', () => {
+    const t = '<asp:Button onclick="Go" OnClientClick="check()" runat="server" />\n<asp:GridView SelectMethod="GetItems" runat="server" />\n';
+    expect(scanAspNet(t, 'P/x.aspx').children.filter((n) => n.kind === 'handler').map((n) => codeOf(t, n))).toEqual(['Go', 'GetItems']);
+    expect(projectToCSharp('<%@ Language="VB" %>\n<% Dim x = 1 %>\n', 'P/Old.aspx')).toBeNull();
+  });
+
+  it('keeps verbatim identifiers in code and exact raw-text end tags', async () => {
+    const a = '@{\n    int @class = 0;\n    @class++;\n}\n<p>x</p>\n';
+    const cs = projectToCSharp(a, 'V/A.cshtml');
+    expect(cs).toContain('@class++;');
+    expect(await parsesClean(cs)).toBe(true);
+    const b = '@section Scripts {\n<script>\nconst t = "</scripture>}";\nGo();\n</script>\n}\n<p>@After</p>\n';
+    const section = scanRazor(b).children.find((n) => n.kind === 'section');
+    expect(b.slice(section.s, section.e).trim().endsWith('</script>\n}')).toBe(true);
+  });
+
+  it('projects @namespace, @attribute and typeparam constraints', async () => {
+    const t = '@namespace Shop.Admin\n@attribute [Authorize]\n@typeparam T where T : IEntity\n<p>@Item</p>\n';
+    const cs = projectToCSharp(t, 'C/Grid.razor');
+    expect(cs).toContain('namespace Shop.Admin;');
+    expect(cs).toMatch(/\[Authorize\] public partial class Grid<T> where T : IEntity \{/);
+    expect(await parsesClean(cs)).toBe(true);
+  });
+
+  it('stays fast on unclosed constructs', () => {
+    const t0 = performance.now();
+    scanRazor('@if (\n'.repeat(20000));
+    scanRazor(`<!-- ${'@{ x '.repeat(5000)} -->`);
+    scanAspNet(`<%@ ${'w'.repeat(100000)}`, 'P/x.aspx');
+    expect(performance.now() - t0).toBeLessThan(3000);
+  });
+});
+
 describe('names', () => {
   it('maps the view extensions and class names', () => {
     expect(['a.cshtml', 'B.razor', 'c.aspx', 'Site.Master', 'x.ashx'].map(viewTemplateKind)).toEqual(['razor', 'razor', 'aspnet', 'aspnet', 'aspnet']);
     expect(viewTemplateKind('x.cs')).toBeNull();
-    expect([viewClassName('Views/_Layout.cshtml'), viewClassName('Counter.razor'), viewClassName('Site.Master')])
-      .toEqual(['_Layout_cshtml', 'Counter', 'Site_Master']);
+    // By folder (two Default.aspx stay apart); a Blazor component by its file name.
+    expect([viewClassName('Views/_Layout.cshtml'), viewClassName('Components/Counter.razor'), viewClassName('Shop/Site.Master'), viewClassName('Admin/Default.aspx')])
+      .toEqual(['Views__Layout_cshtml', 'Counter', 'Shop_Site_Master', 'Admin_Default_aspx']);
   });
 });

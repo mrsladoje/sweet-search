@@ -159,8 +159,9 @@ export const FILE_PATTERNS = {
     '**/*.{coffee,litcoffee}',             // CoffeeScript
     // ── Held-out-2 coverage audit (2026-07): types that appear in the drawn set's
     //    gold or hidden-test patches and were discovered by nothing above ──
-    '**/*.{razor,cshtml}',                 // Razor: Blazor components, MVC / Razor Pages views
-    '**/*.{aspx,ascx,master,Master,asax,ashx,asmx,svc}', // ASP.NET pages, controls, master pages, handlers
+    '**/*.{razor,cshtml,CSHTML}',          // Razor: Blazor components, MVC / Razor Pages views
+    // ASP.NET pages, controls, master pages, handlers (Windows repos often spell them in caps)
+    '**/*.{aspx,Aspx,ASPX,ascx,Ascx,ASCX,master,Master,MASTER,asax,Asax,ASAX,ashx,Ashx,ASHX,asmx,Asmx,ASMX,svc,Svc,SVC}',
     '**/*.{jj,bnf,yy,y}',                  // parser/lexer grammars: JavaCC, Grammar-Kit, bison
     '**/*.scm',                            // tree-sitter queries / Scheme
     '**/*.jq',                             // jq programs

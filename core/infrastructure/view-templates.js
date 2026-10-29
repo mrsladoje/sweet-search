@@ -33,6 +33,8 @@ const ASPNET_CODE_FILE_EXTENSIONS = new Set(['.ashx', '.asmx']);
 // The render method of a projected view. Graph extraction drops it and moves its edges to
 // the file node: they are the view's own calls.
 export const VIEW_RENDER_METHOD_PREFIX = '__ViewRender';
+/** The projection's call that holds a section's code (graph extraction drops it). */
+export const VIEW_SECTION_CALL = '__ViewSection';
 
 /** 'razor' | 'aspnet' | null */
 export function viewTemplateKind(filePath) {
@@ -48,6 +50,7 @@ export function viewTemplateKind(filePath) {
 
 const isIdStart = (c) => c !== undefined && /[\p{L}_]/u.test(c);
 const isIdChar = (c) => c !== undefined && /[\p{L}\p{N}_]/u.test(c);
+const isAlnum = (c) => c !== undefined && /[\p{L}\p{N}]/u.test(c);
 const isWs = (c) => c === ' ' || c === '\t' || c === '\r' || c === '\n' || c === '﻿';
 
 function lineEnd(t, i, end) {
@@ -74,7 +77,8 @@ function skipCSharpLiteral(t, i, end) {
     while (t[j] === '$') { dollars++; j++; }
   }
   if (t[j] !== '"') return -1;
-  if (t.startsWith('"""', j)) {
+  // A raw string has no `@` (`@""""` is a verbatim string holding one quote).
+  if (!verbatim && t.startsWith('"""', j)) {
     let n = 0;
     while (t[j + n] === '"') n++;
     const close = t.indexOf('"'.repeat(n), j + n);
@@ -126,7 +130,10 @@ function skipInterpolationHole(t, k, end) {
   return end;
 }
 
-/** t[i] is ( [ or {: the index after its match (C# literals skipped), or -1. */
+/**
+ * t[i] is ( [ or {: the index after its match (C# literals skipped), or -1. `end` bounds the
+ * search: an unclosed `@if (` must not read the rest of the file once per `@if`.
+ */
 function matchBalanced(t, i, end) {
   const open = t[i];
   const close = open === '(' ? ')' : open === '[' ? ']' : '}';
@@ -181,6 +188,20 @@ const RAZOR_DIRECTIVES = new Set([
   'model', 'using', 'inject', 'inherits', 'implements', 'layout', 'page', 'namespace', 'attribute',
   'typeparam', 'addTagHelper', 'removeTagHelper', 'tagHelperPrefix', 'preservewhitespace', 'rendermode',
 ]);
+// C# reserved words: `@class` in code is a verbatim identifier (`int @class = 0; @class++;`),
+// unless an expression goes on from it (`@string.Format(...)`).
+const CSHARP_RESERVED = new Set([
+  'abstract', 'as', 'base', 'bool', 'break', 'byte', 'case', 'catch', 'char', 'checked', 'class', 'const',
+  'continue', 'decimal', 'default', 'delegate', 'double', 'else', 'enum', 'event', 'explicit', 'extern',
+  'false', 'finally', 'fixed', 'float', 'goto', 'implicit', 'in', 'int', 'interface', 'internal', 'is',
+  'long', 'namespace', 'new', 'null', 'object', 'operator', 'out', 'override', 'params', 'private',
+  'protected', 'public', 'readonly', 'ref', 'return', 'sbyte', 'sealed', 'short', 'sizeof', 'stackalloc',
+  'static', 'string', 'struct', 'this', 'throw', 'true', 'typeof', 'uint', 'ulong', 'unchecked', 'unsafe',
+  'ushort', 'virtual', 'void', 'volatile',
+]);
+// How far a control header `(...)` or an implicit expression's `(...)` may run: longer ones
+// are unclosed, and reading on would make the scan quadratic.
+const HEADER_SCAN_LIMIT = 8192;
 const VOID_ELEMENTS = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr']);
 const RAW_TEXT_ELEMENTS = new Set(['script', 'style']);
 
@@ -235,7 +256,7 @@ class RazorScanner {
       }
       if (c === '<') {
         if (raw !== null) {
-          if (t[i + 1] === '/' && t.slice(i + 2, i + 2 + raw.length).toLowerCase() === raw) {
+          if (t[i + 1] === '/' && t.slice(i + 2, i + 2 + raw.length).toLowerCase() === raw && !/[\w:.-]/.test(t[i + 2 + raw.length] ?? '')) {
             raw = null;
             continue; // the end tag: read again outside raw text (it may close stopTag)
           }
@@ -246,7 +267,7 @@ class RazorScanner {
           const j = t.indexOf('-->', i + 4);
           const stop = j < 0 ? this.n : j + 3;
           // Razor runs the @ transitions inside HTML comments too.
-          children.push(...this.transitionsIn(i + 4, stop));
+          for (const node of this.transitionsIn(i + 4, stop)) children.push(node);
           i = stop;
           continue;
         }
@@ -262,7 +283,7 @@ class RazorScanner {
         }
         if (isIdStart(t[i + 1])) {
           const tag = this.startTag(i);
-          children.push(...tag.children);
+          for (const node of tag.children) children.push(node);
           const lower = tag.name.toLowerCase();
           if (!tag.selfClosing && stopTag && lower === stopTag.toLowerCase() && !VOID_ELEMENTS.has(lower)) depth++;
           if (!tag.selfClosing && RAW_TEXT_ELEMENTS.has(lower)) raw = lower;
@@ -278,12 +299,19 @@ class RazorScanner {
   /** The @ transitions in [from, to) (HTML comment text). */
   transitionsIn(from, to) {
     const out = [];
-    for (let k = this.t.indexOf('@', from); k >= 0 && k < to; k = this.t.indexOf('@', k + 1)) {
-      const node = this.transition(k, false);
-      if (node && node.e <= to) {
-        out.push(node);
-        k = node.e - 1;
+    // Scan inside [from, to) only: an unclosed `@{` in a comment must not read the rest of the file.
+    const n = this.n;
+    this.n = to;
+    try {
+      for (let k = this.t.indexOf('@', from); k >= 0 && k < to; k = this.t.indexOf('@', k + 1)) {
+        const node = this.transition(k, false);
+        if (node && node.e <= to) {
+          out.push(node);
+          k = node.e - 1;
+        }
       }
+    } finally {
+      this.n = n;
     }
     return out;
   }
@@ -298,7 +326,8 @@ class RazorScanner {
     while (k < this.n) {
       const c = t[k];
       if (c === '@') {
-        const node = this.transition(k, true);
+        // Directive attributes (`@onclick=`) stand at an attribute's place, not in a value.
+        const node = this.transition(k, !quote);
         if (node) {
           children.push(node);
           k = node.e;
@@ -309,6 +338,7 @@ class RazorScanner {
       } else if (c === '"' || c === "'") {
         quote = c;
       } else if (c === '>') {
+        this.csharpAttributes(name, i, k, children);
         return { name, end: k + 1, selfClosing: t[k - 1] === '/', children };
       }
       k++;
@@ -316,11 +346,28 @@ class RazorScanner {
     return { name, end: this.n, selfClosing: true, children };
   }
 
+  /**
+   * Attribute values that are C# without an `@`: a component's event parameter
+   * (`<MudButton OnClick="Submit">`, `<EditForm OnValidSubmit="Save">`) and `asp-items`.
+   */
+  csharpAttributes(tagName, from, to, children) {
+    const component = /^[A-Z]/.test(tagName);
+    const tag = this.t.slice(from, to);
+    for (const m of tag.matchAll(/\s(On[A-Z]\w*|asp-items)\s*=\s*"([^"@][^"]*)"/g)) {
+      if (m[1] !== 'asp-items' && !component) continue;
+      const s = from + m.index + m[0].lastIndexOf(m[2]);
+      if (children.some((c) => c.s <= s && c.e > s)) continue;
+      children.push({ kind: m[1] === 'asp-items' ? 'expr' : 'handler', s, e: s + m[2].length, code: [s, s + m[2].length] });
+    }
+    children.sort((a, b) => a.s - b.s);
+  }
+
   /** The node of the @ transition at i, or null when the @ is text. */
   transition(i, inTag) {
     const t = this.t;
     const next = t[i + 1];
-    if (isIdChar(t[i - 1]) && isIdChar(next)) return null; // an e-mail address
+    // An e-mail address: a letter or digit on both sides (`item_@Model.Id` is an expression).
+    if (isAlnum(t[i - 1]) && isAlnum(next)) return null;
     if (next === '@') return { kind: 'escape', s: i, e: i + 2 };
     if (next === '*') {
       const j = t.indexOf('*@', i + 2);
@@ -362,11 +409,16 @@ class RazorScanner {
       const e = Math.min(this.n, body.end + 1);
       return { kind: 'members', s: i, e, name: word, code: [nextSig + 1, body.end], holes: body.holes, open: nextSig, close: body.end };
     }
-    if (RAZOR_DIRECTIVES.has(word) && !inTag && this._atLineStart(i)) {
+    if (RAZOR_DIRECTIVES.has(word) && !inTag && this._atLineStart(i) && /\s/.test(t[after] ?? '\n')) {
       const e = lineEnd(t, i, this.n);
       return { kind: 'directive', s: i, e, name: word, value: t.slice(after, e).trim() };
     }
     const holes = [];
+    if (word === 'await' && startsWithWord(t, nextSig, 'foreach')) {
+      // `@await foreach (var x in xs) { }`: the statement.
+      const node = this.control(i, 'foreach', nextSig + 'foreach'.length);
+      return { ...node, code: [i + 1, node.e] };
+    }
     if (word === 'await') {
       const start = skipWs(t, after, this.n);
       const e = isIdStart(t[start]) ? this.implicitEnd(start, holes) : after;
@@ -383,9 +435,9 @@ class RazorScanner {
     for (;;) {
       const c = t[k];
       if (c === '(' || c === '[') {
-        const m = this.balanced(k);
+        const m = this.balanced(k, k + HEADER_SCAN_LIMIT);
         if (m.end <= k) return k;
-        holes?.push(...m.holes);
+        for (const h of m.holes) holes?.push(h);
         k = m.end;
       } else if (c === '.' && isIdStart(t[k + 1])) {
         k += 1 + readIdent(t, k + 1).length;
@@ -405,28 +457,30 @@ class RazorScanner {
    * t[i] is ( or [: the index after its match, and the Razor templates in it (`@<li>...</li>`:
    * markup passed as an argument).
    */
-  balanced(i) {
+  balanced(i, limit = this.n) {
     const t = this.t;
     const open = t[i];
     const close = open === '(' ? ')' : ']';
     const holes = [];
     let depth = 0;
     let k = i;
-    while (k < this.n) {
+    const end = Math.min(this.n, limit);
+    while (k < end) {
       if (t[k] === '@' && t[k + 1] === '<' && isIdStart(t[k + 2])) {
         const hole = this.element(k + 1);
         holes.push({ ...hole, s: k, template: true });
         k = hole.e;
         continue;
       }
-      const lit = skipCSharpLiteral(t, k, this.n);
+      const lit = skipCSharpLiteral(t, k, end);
       if (lit >= 0) { k = lit; continue; }
       const c = t[k];
       if (c === open) depth++;
       else if (c === close && --depth === 0) return { end: k + 1, holes };
       k++;
     }
-    return { end: this.n, holes };
+    // Unclosed within the limit: the bracket is text (`@x(` with no `)`), not the rest of the file.
+    return { end: end < this.n ? i : this.n, holes: end < this.n ? [] : holes };
   }
 
   /** `@onclick="M"`, `@bind-Value="x"`, `@bind:event="oninput"` in a tag (Blazor). */
@@ -461,9 +515,11 @@ class RazorScanner {
     const close = t.indexOf(q, ve);
     const e = close < 0 ? this.n : close + 1;
     const value = [vs, Math.max(vs, ve)];
-    // A directive with a modifier (`@bind:event`) names a DOM event, not C#.
-    if (t.slice(after, k).includes(':')) return { kind: 'comment', s: i, e };
-    if (/^on/i.test(word)) return { kind: 'handler', s: i, e, code: value };
+    // `@bind:event`, `@bind:format`, `@bind:culture` take a string; `@bind:after` / `:set` a
+    // method; `:get` and `@onclick:preventDefault` a C# value.
+    const modifier = (t.slice(after, k).match(/:([\w-]+)$/) || [])[1];
+    if (modifier && ['event', 'format', 'culture'].includes(modifier)) return { kind: 'comment', s: i, e };
+    if (modifier === 'after' || modifier === 'set' || (!modifier && /^on/i.test(word))) return { kind: 'handler', s: i, e, code: value };
     return { kind: 'expr', s: i, e, code: value };
   }
 
@@ -476,13 +532,13 @@ class RazorScanner {
       const p = skipWsAndComments(t, at, this.n);
       if (t[p] !== '{') return -1;
       const body = this.code(p + 1);
-      holes.push(...body.holes);
+      for (const h of body.holes) holes.push(h);
       return Math.min(this.n, body.end + 1);
     };
     const paren = (at) => {
       const p = skipWsAndComments(t, at, this.n);
       if (t[p] !== '(') return -1;
-      return matchBalanced(t, p, this.n);
+      return matchBalanced(t, p, Math.min(this.n, p + HEADER_SCAN_LIMIT));
     };
     if (word !== 'do' && word !== 'try') {
       const p = paren(k);
@@ -572,7 +628,8 @@ class RazorScanner {
         // `new { @class = "x" }`: a verbatim identifier being assigned, not a transition.
         const after = skipWs(t, k + 1 + word.length, this.n);
         const assigned = t[after] === '=' && t[after + 1] !== '=';
-        if (!assigned) {
+        const verbatimId = CSHARP_RESERVED.has(word) && !['.', '(', '[', '?'].includes(t[k + 1 + word.length]);
+        if (!assigned && !verbatimId) {
           const node = this.transition(k, false);
           if (node) {
             holes.push(node);
@@ -622,7 +679,8 @@ class RazorScanner {
       return { kind: 'markup', s: i, e: tag.end, children: tag.children };
     }
     const body = this.markup(tag.end, { stopTag: tag.name, raw: RAW_TEXT_ELEMENTS.has(lower) ? lower : null });
-    return { kind: 'markup', s: i, e: body.end, children: [...tag.children, ...body.children] };
+    for (const node of body.children) tag.children.push(node);
+    return { kind: 'markup', s: i, e: body.end, children: tag.children };
   }
 }
 
@@ -679,8 +737,10 @@ export function scanAspNet(text, filePath = '') {
     const marker = t[open + 2];
     if (marker === '@') {
       const body = t.slice(open + 3, bodyEnd).trim();
-      const name = (body.match(/^[\w.]+/) || [''])[0];
-      children.push({ kind: 'directive', s: open, e, name, value: body, attrs: parseDirectiveAttributes(body.slice(name.length)) });
+      // `<%@ Language="VB" %>`: the directive name may be left out (then it is Page).
+      const word = (body.match(/^[\w.]+/) || [''])[0];
+      const name = /^\s*=/.test(body.slice(word.length)) ? '' : word;
+      children.push({ kind: 'directive', s: open, e, name, value: body, attrs: parseDirectiveAttributes(body.slice(name.length, name.length + 4096)) });
       if (codeFile) {
         // .ashx / .asmx: the file after its directive is C#.
         children.push({ kind: 'csharp', s: e, e: n, code: [e, n] });
@@ -701,9 +761,11 @@ export function scanAspNet(text, filePath = '') {
   // nuggets masked, so a tag with `<%# %>` in an attribute is still one tag.
   const masked = maskSpans(t, children);
   for (const m of masked.matchAll(/<[\w:.-]+\b[^<>]*\brunat\s*=\s*["']?server[^<>]*>/gi)) {
-    for (const a of m[0].matchAll(/\bOn\w+\s*=\s*(["'])([A-Za-z_]\w*)\1/g)) {
-      const at = m.index + a.index + a[0].lastIndexOf(a[2]);
-      children.push({ kind: 'handler', s: at, e: at + a[2].length, code: [at, at + a[2].length] });
+    // Event handlers (attribute names are case-insensitive; `OnClientClick` is browser script)
+    // and the model-binding methods of data controls.
+    for (const a of m[0].matchAll(/\b(on(?!client)\w+|(?:select|insert|update|delete)method)\s*=\s*(["'])([A-Za-z_]\w*)\2/gi)) {
+      const at = m.index + a.index + a[0].lastIndexOf(a[3]);
+      children.push({ kind: 'handler', s: at, e: at + a[3].length, code: [at, at + a[3].length] });
     }
   }
   children.sort((x, y) => x.s - y.s);
@@ -717,7 +779,10 @@ function serverScripts(t) {
   const re = /<script\b([^>]*)>/gi;
   for (let m = re.exec(t); m; m = re.exec(t)) {
     const bodyS = m.index + m[0].length;
-    const close = lower.indexOf('</script', bodyS);
+    const closeRe = /<\/script\s*>/gi;
+    closeRe.lastIndex = bodyS;
+    const closeMatch = closeRe.exec(t);
+    const close = closeMatch ? closeMatch.index : -1;
     const bodyE = close < 0 ? t.length : close;
     if (!/\brunat\s*=\s*["']?server/i.test(m[1])) {
       re.lastIndex = bodyE;
@@ -758,8 +823,13 @@ export function scanViewTemplate(text, filePath) {
 /** The class a view compiles to: `Counter` for Counter.razor, `List_cshtml`, `Default_aspx`. */
 export function viewClassName(filePath) {
   const ext = path.extname(String(filePath));
-  const base = path.basename(String(filePath), ext).replace(/[^A-Za-z0-9_]/g, '_') || 'View';
-  const name = ext.toLowerCase() === '.razor' ? base : `${base}_${ext.slice(1)}`;
+  const ident = (v) => String(v).replace(/[^A-Za-z0-9_]/g, '_');
+  const base = ident(path.basename(String(filePath), ext)) || 'View';
+  // A Blazor component's class is its file name. A page or MVC view compiles to a class named
+  // by its path (`Views_Order_List`): the folder keeps two `Default.aspx` apart.
+  const folder = path.basename(path.dirname(String(filePath)));
+  const dir = folder && folder !== '.' ? ident(folder) : '';
+  const name = ext.toLowerCase() === '.razor' ? base : `${dir ? `${dir}_` : ''}${base}_${ext.slice(1)}`;
   return /^[0-9]/.test(name) ? `_${name}` : name;
 }
 
@@ -785,10 +855,14 @@ export function projectToCSharp(text, filePath, scan = scanViewTemplate(text, fi
   const fields = [];
   const bases = [];
   let typeParams = [];
+  const constraints = [];
+  const attributes = [];
+  let namespace = null;
   const directives = [];
   collectDirectives(scan, directives);
   for (const d of directives) {
-    const v = (d.value || '').replace(/;\s*$/, '');
+    // `@inherits Base // why` takes C# comments after the directive.
+    const v = (d.value || '').replace(/\/\/.*$/, '').replace(/\/\*.*?\*\//g, '').trim().replace(/;\s*$/, '');
     if (kind === 'razor') {
       if (d.name === 'using') usings.push(`using ${v.replace(/;$/, '')};`);
       else if (d.name === 'model') fields.push(`public ${v} Model;`);
@@ -797,7 +871,12 @@ export function projectToCSharp(text, filePath, scan = scanViewTemplate(text, fi
         if (m) fields.push(`public ${m[1]} ${m[2]};`);
       } else if (d.name === 'inherits') bases.unshift(v);
       else if (d.name === 'implements') bases.push(v);
-      else if (d.name === 'typeparam') typeParams.push(v.split(/\s+/)[0]);
+      else if (d.name === 'typeparam') {
+        const [param, where] = v.split(/\s+where\s+/);
+        typeParams.push(param.trim());
+        if (where) constraints.push(`where ${where.trim()}`);
+      } else if (d.name === 'namespace') namespace = v;
+      else if (d.name === 'attribute') attributes.push(v);
     } else {
       const a = d.attrs || {};
       if (d.name.toLowerCase() === 'import' && a.namespace) usings.push(`using ${a.namespace};`);
@@ -857,9 +936,12 @@ export function projectToCSharp(text, filePath, scan = scanViewTemplate(text, fi
         break;
       case 'handler': {
         blank(node.code[0]);
-        const v = t.slice(node.code[0], node.code[1]).trim();
-        // A method name: the control calls it; any other value is an expression.
-        out.push(/^[A-Za-z_][\w.]*$/.test(v) ? `${v}(default, default);` : `_ = (${v});`);
+        const raw = t.slice(node.code[0], node.code[1]);
+        const v = raw.trim();
+        // A method name: the control calls it; any other value is an expression. The value's
+        // own line breaks stay (every later line keeps its number).
+        out.push(/^[A-Za-z_][\w.]*$/.test(v) ? `${v}(default, default);` : `_ = (${v.replace(/\n/g, ' ')});`);
+        out.push('\n'.repeat((raw.match(/\n/g) || []).length));
         pos = node.code[1];
         blank(node.e);
         break;
@@ -885,7 +967,7 @@ export function projectToCSharp(text, filePath, scan = scanViewTemplate(text, fi
         break;
       case 'section':
         blank(node.bodyS);
-        out.push(`DefineSection("${node.name}", async () => {`);
+        out.push(`${VIEW_SECTION_CALL}("${node.name}", async () => {`);
         emitMarkup({ children: node.children, e: node.bodyE });
         out.push('});');
         blank(node.e);
@@ -915,15 +997,30 @@ export function projectToCSharp(text, filePath, scan = scanViewTemplate(text, fi
   blank(t.length);
   const body = out.join('');
   const name = viewClassName(filePath) + (typeParams.length ? `<${typeParams.join(', ')}>` : '');
-  const head = [
-    ...usings,
-    `public partial class ${name}${bases.length ? ` : ${bases.join(', ')}` : ''} {`,
+  const classHead = [
+    `${attributes.join(' ')}${attributes.length ? ' ' : ''}public partial class ${name}${bases.length ? ` : ${bases.join(', ')}` : ''}${constraints.length ? ` ${constraints.join(' ')}` : ''} {`,
     ...fields,
     `async void ${VIEW_RENDER_METHOD_PREFIX}0() {`,
   ].join(' ');
-  // The header goes in front of line 1 and the closing braces after the last line: every
-  // line of the body keeps its number.
-  return `${head} ${body} } }`;
+  // The header takes the view's first lines, which are blank in the body (its directives):
+  // one using per line, then the class at the start of a line (the C# extractor reads `using`
+  // and `class X : Base` one per line, from the line start). Every line keeps its number.
+  const lines = body.split('\n');
+  let row = 0;
+  const extra = [];
+  // `@namespace N`: a file-scoped namespace, after the usings.
+  for (const u of namespace ? [...usings, `namespace ${namespace};`] : usings) {
+    if (row < lines.length - 1 && !lines[row].trim()) lines[row++] = u;
+    else extra.push(u);
+  }
+  // Usings with no blank line left: on the last using line, or in front of the class.
+  if (extra.length && row > 0) lines[row - 1] += ` ${extra.join(' ')}`;
+  const lead = extra.length && row === 0 ? `${extra.join(' ')} ` : '';
+  lines[row] = `${lead}${classHead} ${lines[row]}`;
+  // The closing braces after the last line: on a line of their own when it ends in a comment.
+  const last = lines.length - 1;
+  lines[last] = /\/\//.test(lines[last]) ? `${lines[last]}\n} }` : `${lines[last]} } }`;
+  return lines.join('\n');
 }
 
 function collectDirectives(node, out) {
