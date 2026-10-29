@@ -84,6 +84,7 @@
 import { collectAgentShownSpansIndexed, validAgentSessionId } from './agent-span-ledger.js';
 import { isTestLikePath } from '../infrastructure/test-paths.js';
 import { kindName, kindNameList } from './kind-words.js';
+import { STATIC_OVERLOAD_FILE } from '../graph/trace-overloads.js';
 
 const TRUE_VALUES = new Set(['1', 'true', 'on', 'yes']);
 const FALSE_VALUES = new Set(['0', 'false', 'off', 'no']);
@@ -1148,7 +1149,11 @@ function alternativesLine(result, label = (file) => file) {
   const more = (result.disambiguation || []).length - alts.length;
   const anyOwner = alts.some((a) => a.owner);
   const anyOtherFile = alts.some((a) => a.file !== t.filePath);
-  const pick = [anyOtherFile ? '--in <file>' : null, anyOwner ? 'Owner.name' : null, result.overloadQuery ? 'Name(Type)' : null].filter(Boolean).join(' or ');
+  // `Owner.name` picks only among other owners; `Name(Type)` picks among one owner's overloads.
+  const otherOwner = alts.some((a) => (a.owner || null) !== (t.parentClass || null));
+  const overloads = result.overloadQuery || (STATIC_OVERLOAD_FILE.test(t.filePath || '')
+    && alts.some((a) => a.name === t.name && a.file === t.filePath && (a.owner || null) === (t.parentClass || null)));
+  const pick = [anyOtherFile ? '--in <file>' : null, anyOwner && (otherOwner || !overloads) ? 'Owner.name' : null, overloads ? 'Name(Type)' : null].filter(Boolean).join(' or ');
   const list = alts.map((a) => {
     // With owners in the list, an ownerless definition names itself too: serde_json's free
     // `from_str 2709` read as a second line of `Number.from_str 1299, 2709`.
@@ -1269,7 +1274,10 @@ export function formatTraceCompact(result, { mode = null, inFile = null, notes =
  */
 export function alternativesAfterSwitch(original, chosenFile, chosenLine) {
   const t = original?.target;
-  const first = t ? [{ name: t.name, type: t.type, file: t.filePath, startLine: t.startLine }] : [];
+  const first = t ? [{
+    name: t.name, type: t.type, file: t.filePath, startLine: t.startLine,
+    ...(original.overloadQuery ? { owner: t.parentClass || null, params: original.overloadQuery.target || null } : {}),
+  }] : [];
   const rest = (original?.disambiguation || []).filter((a) => !(a.file === chosenFile && a.startLine === chosenLine));
   return [...first, ...rest];
 }
