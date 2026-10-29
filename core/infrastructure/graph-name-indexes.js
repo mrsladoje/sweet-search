@@ -17,6 +17,8 @@
  * scanning query when they do not.
  */
 
+import { lowerCamel } from './structural-context-utils.js';
+
 const SEP = `replace(target_name, ':', '.')`;
 
 export const TARGET_HEAD_SQL = `lower(substr(target_name, 1, instr(target_name, '.') - 1))`;
@@ -51,8 +53,11 @@ export function targetNameCandidateSql(name) {
   if (!name || /[.:]/.test(name)) return null;
   return {
     sql: `SELECT rowid FROM relationships WHERE target_name = ?
-      UNION SELECT rowid FROM relationships WHERE ${TARGET_HEAD_SQL} = ?
-      UNION SELECT rowid FROM relationships WHERE ${TARGET_TAIL_SQL} = ?`,
-    params: [name, name.toLowerCase(), name.toLowerCase()],
+      UNION SELECT rowid FROM relationships WHERE ${TARGET_HEAD_SQL} IN (lower(?), lower(?))
+      UNION SELECT rowid FROM relationships WHERE ${TARGET_TAIL_SQL} = lower(?)`,
+    // SQLite lower(), as in the index expressions: it folds ASCII only, like LIKE. JS
+    // toLowerCase() also folds `Ü`, and the indexes then missed `x.Ünïcode`. The head also
+    // takes the `lowerCamel.%` pattern, whose first letter JS lowercased (`ünïcode.y`).
+    params: [name, name, lowerCamel(name), name],
   };
 }

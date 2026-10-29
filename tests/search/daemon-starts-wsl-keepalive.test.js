@@ -80,7 +80,7 @@ describe('WSL keep-alive', () => {
     const cmd = keepAliveCommand({ pid: 4242, env: wslEnv, release: 'x', access: okFor('/mnt/c/WINDOWS/system32/wsl.exe') });
     expect(cmd.exe).toBe('/mnt/c/WINDOWS/system32/wsl.exe');
     expect(cmd.args).toEqual(['-d', 'Ubuntu', '--exec', 'sh', '-c',
-      `while kill -0 4242 2>/dev/null; do sleep ${KEEPALIVE_POLL_S}; done`]);
+      `while [ -d /proc/4242 ]; do sleep ${KEEPALIVE_POLL_S}; done`]);
   });
 
   it('does nothing off WSL, when turned off, without a distro name or without wsl.exe', () => {

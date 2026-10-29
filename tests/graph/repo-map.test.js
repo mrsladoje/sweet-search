@@ -25,7 +25,6 @@ import {
   loadGraph,
   createGraphSchema,
 } from '../../core/graph/index.js';
-import { createGraphSchema } from '../../core/graph/graph-extractor.js';
 
 // =============================================================================
 // PageRank Algorithm

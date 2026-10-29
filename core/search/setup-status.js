@@ -278,7 +278,7 @@ export function formatSetupStatus(s) {
   if (s.server.wsl && st?.startsLast24h >= FREQUENT_STARTS) {
     lines.push(s.server.wsl.keepAlive
       ? '  Note: on WSL the server holds a session open while it runs, so WSL does not stop it. It still stops itself after 20 min without a query (SWEET_SEARCH_DAEMON_IDLE_TTL_MS).'
-      : '  Note: WSL stops the server when no terminal is open, and wsl.exe is not reachable to prevent it. Keep one terminal open, or enable WSL interop.');
+      : '  Note: WSL stops the server when no terminal is open, and the keep-alive is off here (SWEET_SEARCH_WSL_KEEPALIVE=0, no WSL_DISTRO_NAME, or no wsl.exe through interop). Keep one terminal open.');
   }
   if (s.server.error) lines.push(`  Error: ${s.server.error}`);
   if (s.server.log) lines.push(`  Log: ${s.server.log}`);

@@ -3,7 +3,7 @@
 // often the daemon started again and how long each start took. Many starts in a day mean
 // something stops the daemon (on WSL: the distribution shuts down when no terminal is open).
 
-import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 export const DAEMON_STARTS_FILE = 'daemon-starts.jsonl';
@@ -17,7 +17,12 @@ export function recordDaemonStart(stateDir, entry) {
   try {
     appendFileSync(file, `${JSON.stringify(entry)}\n`);
     const lines = readFileSync(file, 'utf8').split('\n').filter(Boolean);
-    if (lines.length > KEEP_STARTS * 2) writeFileSync(file, `${lines.slice(-KEEP_STARTS).join('\n')}\n`);
+    if (lines.length > KEEP_STARTS * 2) {
+      // A new file, renamed over the old one: a reader never sees a half-written file.
+      const tmp = `${file}.${process.pid}.tmp`;
+      writeFileSync(tmp, `${lines.slice(-KEEP_STARTS).join('\n')}\n`);
+      renameSync(tmp, file);
+    }
   } catch { /* best-effort */ }
 }
 
