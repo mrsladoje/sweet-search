@@ -43,7 +43,9 @@ export function keepAliveCommand({ pid, env = process.env, release = os.release(
   if (!distro || !Number.isInteger(pid) || pid <= 0) return null;
   const exe = findWslExe(env, access);
   if (!exe) return null;
-  const loop = `while kill -0 ${pid} 2>/dev/null; do sleep ${KEEPALIVE_POLL_S}; done`;
+  // /proc, not `kill -0`: wsl.exe runs the loop as the distro's default user, and kill -0 on
+  // another user's process fails (EPERM), which ended the loop at once.
+  const loop = `while [ -d /proc/${pid} ]; do sleep ${KEEPALIVE_POLL_S}; done`;
   return { exe, args: ['-d', distro, '--exec', 'sh', '-c', loop] };
 }
 
