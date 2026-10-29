@@ -93,7 +93,8 @@ Options:
 Examples:
   sweet-search trace processOrder
   sweet-search trace validate --query "request validation order" --depth 2
-  sweet-search trace handleRequest --in lib/handle-request.js --json`);
+  sweet-search trace handleRequest --in lib/handle-request.js --json
+  sweet-search trace 'OrderService.Save(Order, bool)'   (one overload: parameter types or names)`);
     process.exit(opts.help ? 0 : 1);
   }
 

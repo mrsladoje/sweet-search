@@ -1148,14 +1148,26 @@ function alternativesLine(result, label = (file) => file) {
   const more = (result.disambiguation || []).length - alts.length;
   const anyOwner = alts.some((a) => a.owner);
   const anyOtherFile = alts.some((a) => a.file !== t.filePath);
-  const pick = [anyOtherFile ? '--in <file>' : null, anyOwner ? 'Owner.name' : null].filter(Boolean).join(' or ');
+  const pick = [anyOtherFile ? '--in <file>' : null, anyOwner ? 'Owner.name' : null, result.overloadQuery ? 'Name(Type)' : null].filter(Boolean).join(' or ');
   const list = alts.map((a) => {
     // With owners in the list, an ownerless definition names itself too: serde_json's free
     // `from_str 2709` read as a second line of `Number.from_str 1299, 2709`.
-    const name = a.owner ? `${a.owner}.${a.name} ` : (anyOwner && a.file === t.filePath ? `${a.name || t.name} ` : '');
+    // After `Name(Type)`, each overload prints its parameter list: the form that selects it.
+    const name = a.params
+      ? `${a.owner ? `${a.owner}.` : ''}${a.name || t.name}${a.params} `
+      : a.owner ? `${a.owner}.${a.name} ` : (anyOwner && a.file === t.filePath ? `${a.name || t.name} ` : '');
     return a.file === t.filePath ? `${name}${a.startLine}` : `${name}${label(a.file)}:${a.startLine}`;
   }).join(', ');
   return `# other definitions${pick ? ` (pick with ${pick})` : ''}: ${list}${more > 0 ? `, +${more} more` : ''}`;
+}
+
+/** After `Name(Type)`: the traced overload's parameter list, or that no definition takes that list. */
+function overloadLine(result) {
+  const q = result.overloadQuery;
+  if (!q) return null;
+  const t = result.target;
+  if (!q.matched) return `# no definition of ${t.name} takes (${q.params.join(', ')}); traced the first match`;
+  return q.target ? `# overload ${t.name}${q.target}` : null;
 }
 
 /**
@@ -1194,6 +1206,8 @@ export function formatTraceCompact(result, { mode = null, inFile = null, notes =
   };
   lines.push(sameFile ? `# lines ${lineRange(t.startLine, t.endLine)}` : `# ${t.filePath}:${lineRange(t.startLine, t.endLine)}`);
   for (const n of notes) lines.push(n);
+  const ov = overloadLine(result);
+  if (ov) lines.push(ov);
   const alt = alternativesLine(result, label);
   if (alt) lines.push(alt);
   if (show('callers') && provenance.sameFileFallback > 0 && provenance.stored === 0) {

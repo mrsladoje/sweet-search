@@ -1802,6 +1802,7 @@ const TRACE_USAGE =
   '       ss-trace <symbol> callers --in <defining file>\n' +
   '       ss-trace <symbol> callees\n' +
   '       ss-trace <symbol> impact\n' +
+  "       ss-trace 'Owner.Method(Type, Type)'   one overload, by parameter types or names\n" +
   'Mode word (optional, after the symbol): callers, callees or impact.';
 async function cmdTrace(rawArgs) {
   const args = normalizeArgs(rawArgs);
