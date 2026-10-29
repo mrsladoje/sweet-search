@@ -83,6 +83,12 @@ export function resolveAgentSearchRequest(rawFormat, agentRequested = false) {
   };
 }
 
+/** A /search call in grep mode: it needs only the grep part of the init (no models). */
+export function grepModeRequest(reqUrl) {
+  try { return new URL(reqUrl, 'http://localhost').searchParams.get('mode') === 'grep'; }
+  catch { return false; }
+}
+
 function canonicalProjectRoot(root) {
   const resolved = path.resolve(root || process.cwd());
   return callRealpathNative(resolved) ?? resolved;
@@ -825,6 +831,9 @@ export async function startServer() {
   const searcher = new SweetSearch({ verbose: false });
   const initStartedAt = Date.now();
   let serverReady = false;
+  // ss-grep's part of the init is done (sparse grams loaded): grep calls run from here on,
+  // before the models load (SweetSearch.init onGrepReady).
+  let grepReady = false;
   let initError = null;
   let initTimeMs = null;
 
@@ -836,10 +845,10 @@ export async function startServer() {
   // initError) turns that race into a short latency hit instead of a hard
   // failure. /read does NOT use this (it needs no indexes); /health is instant.
   const READINESS_WAIT_MS = 10_000;
-  const waitForServerReady = async (budgetMs = READINESS_WAIT_MS) => {
-    if (serverReady || initError) return;
+  const waitForServerReady = async (budgetMs = READINESS_WAIT_MS, ready = () => serverReady) => {
+    if (ready() || initError) return;
     const deadline = Date.now() + budgetMs;
-    while (!serverReady && !initError && Date.now() < deadline) {
+    while (!ready() && !initError && Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 50));
     }
   };
@@ -1014,6 +1023,7 @@ export async function startServer() {
           isUnixSocket: !req.socket.remoteAddress,
           searcher,
           isReady: () => serverReady,
+          isGrepReady: () => grepReady,
           isFailed: () => initError != null,
           waitForServerReady,
         });
@@ -1026,7 +1036,7 @@ export async function startServer() {
     } else if (req.method === 'GET' && reqUrl.startsWith('/search?')) {
       // Real query traffic — reset the idle-TTL clock (NOT /health or /stop).
       lastActivityMs = Date.now();
-      if (!serverReady) {
+      if (!serverReady && !(grepReady && grepModeRequest(reqUrl))) {
         const reason = initError?.message
           ? `Server initialization failed: ${initError.message}`
           : 'Server is starting, please retry';
@@ -1556,7 +1566,7 @@ export async function startServer() {
   console.log('[Server] Initializing indexes (one-time cost)...');
   (async () => {
     try {
-      await searcher.init();
+      await searcher.init({ onGrepReady: () => { grepReady = true; } });
       initTimeMs = Date.now() - initStartedAt;
       serverReady = true;
       await fs.writeFile(pidFile, process.pid.toString(), { mode: 0o644 });

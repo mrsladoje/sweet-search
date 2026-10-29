@@ -82,14 +82,16 @@ export function validateAgentToolPayload(payload) {
  * @param {boolean} deps.isUnixSocket
  * @param {object} deps.searcher                 the daemon's SweetSearch
  * @param {() => boolean} deps.isReady
+ * @param {() => boolean} [deps.isGrepReady]    the grep part of its init is done
  * @param {() => boolean} [deps.isFailed]       its index load failed
- * @param {() => Promise<void>} deps.waitForServerReady
+ * @param {(budgetMs, ready) => Promise<void>} deps.waitForServerReady  waits until ready()
  * @param {(sub, args, host) => Promise<void>} [deps.runTool]  test seam
  */
 export async function buildAgentToolDaemonResponse(payload, {
   isUnixSocket = false,
   searcher = null,
   isReady = () => false,
+  isGrepReady = () => false,
   isFailed = () => false,
   waitForServerReady = async () => {},
   runTool = null,
@@ -104,11 +106,13 @@ export async function buildAgentToolDaemonResponse(payload, {
     // sends the call to the in-process fallback, which would only wait again.
     // ss-search has no cold fallback worth having (the fallback would wait on this same
     // daemon), so it waits the ss-search budget and then answers with the retry line.
+    // ss-grep reads no model: it runs once the grep part of the init is done.
     const search = call.tool === 'agent-search';
+    const ready = call.tool === 'grep' ? () => isReady() || isGrepReady() : isReady;
     const started = callStartedMs(call.env);
     const budget = search ? Math.max(0, SEARCH_LOADING_WAIT_MS - (Date.now() - started)) : READY_WAIT_MS;
-    if (!isReady() && budget > 0) await waitForServerReady(budget);
-    if (!isReady()) {
+    if (!ready() && budget > 0) await waitForServerReady(budget, ready);
+    if (!ready()) {
       if (search && !isFailed()) {
         return json(200, { v: 1, code: 1, stdout: '', stderr: searchNotReadyLine(Math.round((Date.now() - started) / 1000)) });
       }

@@ -49,6 +49,39 @@ describe('/agent-tool', () => {
     expect(waited).toBe(1);
   });
 
+  it('runs ss-grep once the grep part of the init is done, before the models load', async () => {
+    const r = await buildAgentToolDaemonResponse(call({ tool: 'grep' }), deps({
+      isReady: () => false,
+      isGrepReady: () => true,
+      waitForServerReady: async () => { throw new Error('must not wait'); },
+      runTool: async () => { process.stdout.write('hits'); },
+    }));
+    expect(body(r).stdout).toBe('hits');
+    // ss-find and ss-semantic embed the query: they still wait for the full init.
+    for (const tool of ['find', 'semantic']) {
+      const waits = [];
+      const f = await buildAgentToolDaemonResponse(call({ tool }), deps({
+        isReady: () => false,
+        isGrepReady: () => true,
+        waitForServerReady: async (ms, ready) => { waits.push(ready()); },
+        runTool: async () => { throw new Error('must not run'); },
+      }));
+      expect(f.status).toBe(503);
+      expect(waits).toEqual([false]);
+    }
+  });
+
+  it('waits for the grep part of the init when ss-grep comes first', async () => {
+    let grepReady = false;
+    const r = await buildAgentToolDaemonResponse(call({ tool: 'grep' }), deps({
+      isReady: () => false,
+      isGrepReady: () => grepReady,
+      waitForServerReady: async (ms, ready) => { expect(ready()).toBe(false); grepReady = true; expect(ready()).toBe(true); },
+      runTool: async () => { process.stdout.write('hits'); },
+    }));
+    expect(body(r).stdout).toBe('hits');
+  });
+
   it('answers ss-search with one retry line when the indexes are still loading after 90 s', async () => {
     const waits = [];
     const r = await buildAgentToolDaemonResponse(call({ tool: 'agent-search' }), deps({
