@@ -13,6 +13,9 @@ import { BinaryHNSWIndex } from '../../core/vector-store/binary-hnsw-index.js';
 import { loadNativeAddon } from '../../core/infrastructure/native-resolver.js';
 
 const hasBuilder = !!loadNativeAddon({ validate: (m) => typeof m.buildBinaryHnsw === 'function' });
+// An addon without the builder is a stale build (rebuild with npm run build:native): fail, do not
+// skip, or the parity checks pass without running. No addon at all (a JS-only checkout): skip.
+const staleAddon = !hasBuilder && !!loadNativeAddon({});
 const dir = mkdtempSync(join(tmpdir(), 'ss-hnsw-par-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -61,6 +64,10 @@ function jsBuild(ids, codes, M, ef) {
   });
 }
 
+it('the addon, when present, has the graph builder', () => {
+  expect(staleAddon).toBe(false);
+});
+
 describe.skipIf(!hasBuilder)('native parallel HNSW build', () => {
   for (const [n, flips, M, ef] of [[1500, 3, 8, 32], [2500, 40, 6, 24], [400, 0, 4, 16]]) {
     it(`gives the JS lists (n=${n}, flips=${flips}, M=${M}, ef=${ef}) on 1, 3 and 8 threads`, async () => {
@@ -97,6 +104,16 @@ describe('deferred build inserts', () => {
       if (prev === undefined) delete process.env.SWEET_SEARCH_HNSW_NATIVE_BUILD;
       else process.env.SWEET_SEARCH_HNSW_NATIVE_BUILD = prev;
     }
+  });
+
+  it('a fractional efConstruction keeps the JS lists (the addon takes whole numbers)', async () => {
+    const codes = makeCodes(400, 11, 20);
+    const ids = codes.map((_, i) => `c${i}`);
+    const want = jsBuild(ids, codes, 8, 12.5);
+    const ix = fresh(8, 12.5);
+    for (let i = 0; i < ids.length; i++) await ix.addDeferred(ids[i], codes[i], {}, null, null);
+    expect((await ix.linkGraph()).native).toBe(false);
+    expect(lists(ix)).toEqual(want);
   });
 
   it('a repeated id links the earlier nodes first, as addSync does', async () => {

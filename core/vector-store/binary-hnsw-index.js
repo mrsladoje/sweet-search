@@ -91,7 +91,7 @@ function nativeHnswBuild() {
  */
 export function hnswBuildThreads(env = process.env) {
   const n = Number(env.SWEET_SEARCH_HNSW_BUILD_THREADS);
-  if (Number.isInteger(n) && n >= 1) return n;
+  if (Number.isInteger(n) && n >= 1) return Math.min(n, 64);
   return Math.max(1, Math.min(8, (os.availableParallelism?.() ?? os.cpus().length) - 1));
 }
 
@@ -722,16 +722,7 @@ export class BinaryHNSWIndex {
    * probe — avoids per-insert promise machinery on hot construction paths.
    */
   addSync(id, binaryVector, metadata = {}, int8Vector = null, fullVector = null) {
-    // Convert float to binary if needed
-    let binary;
-    if (binaryVector instanceof Uint8Array) {
-      binary = binaryVector;
-    } else if (Array.isArray(binaryVector) && binaryVector.length > this.dimension) {
-      // Assume it's a float vector, convert to binary
-      binary = floatToBinary(binaryVector.slice(0, this.floatDimension));
-    } else {
-      binary = new Uint8Array(binaryVector);
-    }
+    const binary = this._toBinary(binaryVector);
 
     const slab = this._codes();
     this._graphGen++;
@@ -775,11 +766,21 @@ export class BinaryHNSWIndex {
     return idx;
   }
 
+  /** A sign code as Uint8Array; a float vector (longer than the code) is converted. */
+  _toBinary(vector) {
+    if (vector instanceof Uint8Array) return vector;
+    if (Array.isArray(vector) && vector.length > this.dimension) return floatToBinary(vector.slice(0, this.floatDimension));
+    return new Uint8Array(vector);
+  }
+
   /**
    * A build insert that leaves the linking to linkGraph(). An id seen before links the earlier
    * nodes first, then addSync updates its node, as the sequential build does.
    */
-  async addDeferred(id, binary, metadata = {}, int8Vector = null, fullVector = null) {
+  async addDeferred(id, vector, metadata = {}, int8Vector = null, fullVector = null) {
+    // As add(): an index not reset for a build loads its file first (never overwrite it).
+    if (!this.initialized) await this.init();
+    const binary = this._toBinary(vector);
     if (this.entryPoint < 0 && !this.idToIndex.has(id)) return this.addFlat(id, binary, metadata, int8Vector, fullVector);
     if (this.entryPoint < 0) await this.linkGraph();
     return this.addSync(id, binary, metadata, int8Vector, fullVector);
@@ -795,15 +796,26 @@ export class BinaryHNSWIndex {
   async linkGraph({ threads = hnswBuildThreads(), background = false } = {}) {
     const n = this._ids.length;
     const build = nativeHnswBuild();
-    if (!build || this.entryPoint >= 0 || n < 2) {
+    // The addon takes whole numbers (u32): a fractional M or efConstruction, which the JS loop
+    // uses as it is, would give other lists.
+    const whole = (v) => Number.isInteger(v) && v >= 1 && v < 2 ** 32;
+    if (!build || this.entryPoint >= 0 || n < 2 || !whole(this.M) || !whole(this.efConstruction)) {
       this._linkUnlinked();
       return { native: false, threads: 1, redos: 0 };
     }
     const dim = this.dimension;
     const levels = new Uint8Array(n);
     for (let i = 0; i < n; i++) levels[i] = this.levelForId(this._ids[i]);
-    const g = await build(this._codes().slab.subarray(0, n * dim), dim, levels, idRanks(this._ids),
-      this.M, this.efConstruction, threads, background);
+    let g;
+    try {
+      g = await build(this._codes().slab.subarray(0, n * dim), dim, levels, idRanks(this._ids),
+        this.M, this.efConstruction, threads, background);
+    } catch (err) {
+      // The index is unchanged (still flat): the JS loop gives the same lists, only slower.
+      console.warn(`BinaryHNSW: native graph build failed, building in JS: ${err?.message || err}`);
+      this._linkUnlinked();
+      return { native: false, threads: 1, redos: 0 };
+    }
     this.graph = g.levels.map((lv) => {
       const level = new Array(lv.len).fill(null);
       for (let i = 0; i < lv.len; i++) {
