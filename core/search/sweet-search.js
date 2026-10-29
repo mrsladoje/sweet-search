@@ -309,6 +309,7 @@ export class SweetSearch {
       }
     }
 
+    let liPreheat = null;
     if (this.hasLateInteractionIndex && this.useLateInteraction) {
       try {
         await this.lateInteractionIndex.init();
@@ -353,9 +354,17 @@ export class SweetSearch {
           // Preheat LI ONNX inference model (~900ms cold start otherwise).
           // Only when we will actually rerank — saves cold-start cost when
           // policy resolves to off post-manifest-inspection.
+          // It runs while the embedding model loads (warmupEmbedding below): the two loads do
+          // not depend on each other, and a cold start then waits for the longer one only.
           const { encodeQuery } = await import('../ranking/late-interaction-model.js');
-          await encodeQuery('warmup');
-          this.log('LateInteraction: ONNX model preheated');
+          liPreheat = encodeQuery('warmup').then(
+            () => this.log('LateInteraction: ONNX model preheated'),
+            (err) => {
+              this.log(`LateInteraction: Failed to load: ${err.message}`);
+              this.hasLateInteractionIndex = false;
+              this.useLateInteraction = false;
+            },
+          );
         } else if (previouslyOn) {
           // We loaded the index because the constructor's tentative
           // resolution said on, but the manifest just told us otherwise —
@@ -397,7 +406,7 @@ export class SweetSearch {
       }
     }
 
-    await warmupEmbedding({ initVocabulary: true, initSemanticCache: true });
+    await Promise.all([warmupEmbedding({ initVocabulary: true, initSemanticCache: true }), liPreheat]);
 
     // Pre-build the call-graph ref-count index so the first search query
     // doesn't pay its 10-50 ms construction cost. This piggybacks on the
