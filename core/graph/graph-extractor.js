@@ -24,6 +24,7 @@ import { scanInstantiations, scanSignatureTypes, swiftExtensionTarget } from './
 import { ensureFilesSchema, insertFileNodes } from '../infrastructure/file-nodes.js';
 import { ensureGraphNameIndexes } from '../infrastructure/graph-name-indexes.js';
 import { assertGraphSchema } from '../infrastructure/index-schema.js';
+import { projectToCSharp, viewTemplateKind, VIEW_RENDER_METHOD_PREFIX } from '../infrastructure/view-templates.js';
 
 // Languages whose legacy `imports` rows are all module specifiers that the
 // statement scanner sees (so an unmatched row is a regex false positive).
@@ -1197,23 +1198,33 @@ export class GraphExtractor {
    */
   async extractFromFile(filePath, content) {
     this._idStates.set(filePath, new Map());
+    // A view (.cshtml, .razor, .aspx, ...) is read as the C# class it compiles to, line for
+    // line (view-templates.js): its code gets the C# extraction. A view whose code is not C#
+    // gets a file node only.
+    const view = viewTemplateKind(filePath) !== null;
+    if (view) content = projectToCSharp(content, filePath) ?? '';
     let result;
     try {
-      result = await this._extractFromFileInner(filePath, content);
+      result = view && !content
+        ? { entities: [], relationships: [] }
+        : await this._extractFromFileInner(filePath, content, view ? getLanguageByPath('x.cs') : null);
     } finally {
       this._idStates.delete(filePath);
     }
     this._ensureUniqueEntityIds(filePath, result);
+    // A view's imports and declared types are C#'s (its projection is C#).
+    const languagePath = view ? `${filePath}.cs` : filePath;
     let goPackages = null;
     if (this.importResolver && result.relationships) {
-      goPackages = this._appendResolvedImports(filePath, content, result.relationships);
+      goPackages = this._appendResolvedImports(filePath, content, result.relationships, languagePath);
     }
     // `b.write(x)` where the caller declares `WriteBuffer b`: the call row
     // carries the declared type (receiver-types.js) so resolution binds only
     // to that type's method, never to another type's `write` by name.
     if (result.relationships) {
-      annotateReceiverTypes(filePath, content, result.entities, result.relationships, { goPackages });
+      annotateReceiverTypes(languagePath, content, result.entities, result.relationships, { goPackages });
     }
+    if (view) this._foldViewRenderMethods(filePath, result);
     // Every extracted file has a graph node (file-nodes.js): the source of
     // its top-level edges. Same id as those edges' source_id, and the same
     // row from the full build and the incremental maintainer.
@@ -1276,8 +1287,8 @@ export class GraphExtractor {
    * Legacy target_name/type values are never changed: they feed the
    * embedding `# Uses:` line (ENRICHMENT_VERSION contract).
    */
-  _appendResolvedImports(filePath, content, relationships) {
-    const langInfo = resolveLanguage(filePath, content);
+  _appendResolvedImports(filePath, content, relationships, languagePath = filePath) {
+    const langInfo = resolveLanguage(languagePath, content);
     const language = langInfo?.id;
     if (language === 'json') {
       // package.json-style dependency rows name packages, never repo code.
@@ -1287,7 +1298,7 @@ export class GraphExtractor {
       return;
     }
     // .vue/.svelte/.astro are registry `html`; their scripts import like TS.
-    const importLanguage = importLanguageFor(filePath, language);
+    const importLanguage = importLanguageFor(languagePath, language);
     if (!importLanguage || !SCANNED_IMPORT_LANGUAGES.has(importLanguage)) return;
     let scanned;
     try { scanned = scanImports(content, importLanguage); } catch { return; }
@@ -1395,13 +1406,50 @@ export class GraphExtractor {
     return goPackages;
   }
 
-  async _extractFromFileInner(filePath, content) {
+  /**
+   * The render methods of a projected view are no code of the user's: drop them; their edges
+   * start at the view class. `DefineSection` is the projection's own call.
+   */
+  _foldViewRenderMethods(filePath, result) {
+    const fileId = this.makeId(filePath, 'file', path.basename(filePath));
+    const render = new Set();
+    const renderLines = [];
+    result.entities = (result.entities || []).filter((e) => {
+      // The header's fields (`@model T` -> Model, `@inject T x` -> x) type the view's calls;
+      // as entities they would be one `Model` per view.
+      if (e.start_line === 1 && (e.type === 'field' || e.type === 'property')) return false;
+      if (!String(e.name || '').startsWith(VIEW_RENDER_METHOD_PREFIX)) return true;
+      render.add(e.id);
+      renderLines.push([e.start_line, e.end_line]);
+      return false;
+    });
+    // The view class and the first render method both start on line 1, and an edge of the
+    // render code may be given to the class: by line, it is the render code's (line 1 holds
+    // the class's own `extends`).
+    const viewClassEntity = result.entities.find((e) => e.start_line === 1 && e.type === 'class');
+    const viewClass = viewClassEntity?.id;
+    // The class spans the whole file; as an entity it is its header line, or every search hit
+    // in the view would widen to the whole file.
+    if (viewClassEntity) viewClassEntity.end_line = 1;
+    const inRender = (line) => line > 1 && renderLines.some(([a, b]) => line >= a && line <= b);
+    // The render code runs in the view class: its edges start there (a bare `Save_Click()`
+    // then resolves to the class's members and base class), else at the file node.
+    const owner = viewClass || fileId;
+    const fold = (rows) => (rows || [])
+      .filter((r) => r.target_name !== 'DefineSection' && r.callee_name !== 'DefineSection')
+      .map((r) => (render.has(r.source_id) || (r.source_id === viewClass && inRender(r.context_line))
+        ? { ...r, source_id: owner } : r));
+    result.relationships = fold(result.relationships);
+    if (result.callSites) result.callSites = fold(result.callSites);
+  }
+
+  async _extractFromFileInner(filePath, content, langOverride = null) {
     this.currentFile = filePath;
     const lines = content.split('\n');
     // resolveLanguage handles per-file disambiguation of ambiguous extensions
     // (today: `.h` → c-vs-cpp) so header-only C++ libraries get parsed by
     // tree-sitter-cpp rather than tree-sitter-c.
-    const langInfo = resolveLanguage(filePath, content);
+    const langInfo = langOverride || resolveLanguage(filePath, content);
 
     if (!langInfo) {
       return { entities: [], relationships: [] };

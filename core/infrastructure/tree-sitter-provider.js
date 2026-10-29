@@ -58,6 +58,13 @@ const GRAMMAR_MAP = {
   rescript: 'tree-sitter-rescript',
 };
 
+// Grammars that parse() loads but that no file chunks or extracts with: the view chunker
+// (core/indexing/chunking/view-chunker.js) reads the markup of .cshtml/.aspx with html.
+// Not in GRAMMAR_MAP, so .html/.vue/.svelte files keep their chunking.
+const PARSE_ONLY_GRAMMARS = {
+  html: 'tree-sitter-html',
+};
+
 // Identifier node types — used to detect leaf-ident captures in extractSymbols()
 const IDENT_TYPES = new Set([
   'identifier', 'type_identifier', 'property_identifier', 'field_identifier',
@@ -1280,7 +1287,7 @@ export class TreeSitterProvider {
   async loadLanguage(languageId) {
     if (this._languages.has(languageId)) return this._languages.get(languageId);
 
-    const grammarName = GRAMMAR_MAP[languageId];
+    const grammarName = GRAMMAR_MAP[languageId] || PARSE_ONLY_GRAMMARS[languageId];
     if (!grammarName) return null;
 
     try {

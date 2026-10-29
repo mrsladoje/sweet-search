@@ -25,6 +25,7 @@
 
 import path from 'path';
 import { EXTENSION_MAP } from '../infrastructure/language-patterns/maps.js';
+import { viewTemplateKind } from '../infrastructure/view-templates.js';
 import { buildReceiverSpread, buildTypeHierarchy, createCallResolutionIndex, isTestPath } from './relationship-resolver.js';
 import { asTopLevelCaller, fileNodeId, fileNodeSourceSql } from '../infrastructure/file-nodes.js';
 import { compareEntitiesForResolution } from './entity-order.js';
@@ -88,6 +89,8 @@ export const BARE_CALLABLE_TYPES = new Set([
 ]);
 
 export function languageOfPath(filePath) {
+  // A view's code is C# (view-templates.js projects it to C# for the graph).
+  if (viewTemplateKind(filePath)) return 'csharp';
   const ext = path.extname(String(filePath || '')).toLowerCase();
   return EXTENSION_MAP[ext] || null;
 }

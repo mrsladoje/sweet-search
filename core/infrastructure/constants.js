@@ -65,7 +65,7 @@ const LEGACY_EXTRA_CODE_EXTENSIONS = ['ada', 'd', 'v'];
  * audit; `mod` covers go.mod, which FILE_PATTERNS has always discovered.
  */
 const EXTRA_GREPPABLE_CODE_EXTENSIONS = [
-  'razor', 'jj', 'bnf', 'yy', 'y', 'scm', 'jq', 'pkl', 'gleam', 'hylo',
+  'jj', 'bnf', 'yy', 'y', 'scm', 'jq', 'pkl', 'gleam', 'hylo',
   'snap', 'stderr', 'conf', 'config', 'adoc', 'scd', 'vtt', 'test', 'mod',
   'txtar', 'bsh', 'inc', 'fixed',
 ];

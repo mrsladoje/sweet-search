@@ -28,6 +28,11 @@ export const EXTENSION_MAP = {
   // C#
   '.cs': 'csharp',
 
+  // ASP.NET views: Razor, and pages with <% %> code (core/indexing/chunking/view-chunker.js)
+  '.cshtml': 'razor', '.razor': 'razor',
+  '.aspx': 'aspnet', '.ascx': 'aspnet', '.master': 'aspnet', '.asax': 'aspnet',
+  '.ashx': 'aspnet', '.asmx': 'aspnet', '.svc': 'aspnet',
+
   // PHP
   '.php': 'php',
 

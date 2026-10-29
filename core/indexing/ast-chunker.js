@@ -14,6 +14,8 @@ import fs from 'fs/promises';
 import { detectProjectBoundary } from '../infrastructure/project-detector.js';
 import { getLanguageByPath, resolveLanguage } from '../infrastructure/language-patterns.js';
 import { DocumentChunker } from './document-chunker.js';
+import { chunkViewTemplate } from './chunking/view-chunker.js';
+import { viewTemplateKind } from '../infrastructure/view-templates.js';
 
 // Index-format versions live in `./index-format-versions.js`. Bump
 // CHUNKING_VERSION there in the same diff as any change to chunk boundaries or
@@ -349,6 +351,26 @@ export class ASTChunker {
         this._docChunker = new DocumentChunker({ projectRoot: this.projectRoot });
       }
       return this._docChunker.parseFile(filePath, content);
+    }
+
+    // ASP.NET views (.cshtml, .razor, .aspx, ...): markup and C# chunked by their structure.
+    const view = viewTemplateKind(filePath);
+    if (view) {
+      const language = view === 'razor' ? 'razor' : 'aspnet';
+      const viewChunks = await chunkViewTemplate(filePath, content);
+      if (viewChunks) {
+        return viewChunks.map((chunk) => this.buildChunk(
+          chunk.text, filePath, language, chunk.type, chunk.name, chunk.startLine, chunk.endLine,
+          {
+            chunkId: chunk.chunkId,
+            parentChunkId: chunk.parentChunkId,
+            parentSymbol: chunk.parentSymbol,
+            parentType: chunk.parentType,
+            signature: chunk.signature,
+            additionalSymbols: chunk.additionalSymbols,
+          },
+        ));
+      }
     }
 
     // resolveLanguage handles per-file disambiguation of ambiguous extensions
