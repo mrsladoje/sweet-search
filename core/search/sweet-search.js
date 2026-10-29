@@ -251,7 +251,7 @@ export class SweetSearch {
   }
 
   /** Initialize all search components */
-  async init() {
+  async init({ onGrepReady } = {}) {
     if (this.initialized) return;
     const start = Date.now();
 
@@ -273,6 +273,31 @@ export class SweetSearch {
       graphDbPath: this.hasGraphIndex ? this.graphDbPath : null,
       codebaseDbPath: this.hasCodebaseIndex ? this.codebaseDbPath : null,
     });
+
+    if (this.hasSparseGramIndex) {
+      try {
+        if (this._loadSparseGramBase()) {
+          const stats = this.sparseGramIndex.getStats();
+          this.log(
+            `SparseGram: Loaded ${stats.grams} grams across ${stats.totalFiles} files ` +
+            `(${stats.postings} postings${stats.usedFallbackWeights ? ', fallback weights' : ''})`
+          );
+        } else {
+          this.hasSparseGramIndex = false;
+        }
+      } catch (err) {
+        this.log(`SparseGram: Failed to load: ${err.message}`);
+        this.hasSparseGramIndex = false;
+        this.sparseGramIndex = null;
+        this._sparseGramLoadedPath = null;
+      }
+    }
+
+    // ss-grep needs only the sparse grams and the databases: it can answer from here on, while
+    // the indexes and models below load (the grep-only state of initGrepOnly).
+    this.grepInitialized = true;
+    this._grepArtifactEpoch = initManifest?.epoch ?? null;
+    onGrepReady?.();
 
     if (this.hasBinaryHnswIndex && this.use3Stage) {
       try {
@@ -387,25 +412,6 @@ export class SweetSearch {
       );
     }
 
-    if (this.hasSparseGramIndex) {
-      try {
-        if (this._loadSparseGramBase()) {
-          const stats = this.sparseGramIndex.getStats();
-          this.log(
-            `SparseGram: Loaded ${stats.grams} grams across ${stats.totalFiles} files ` +
-            `(${stats.postings} postings${stats.usedFallbackWeights ? ', fallback weights' : ''})`
-          );
-        } else {
-          this.hasSparseGramIndex = false;
-        }
-      } catch (err) {
-        this.log(`SparseGram: Failed to load: ${err.message}`);
-        this.hasSparseGramIndex = false;
-        this.sparseGramIndex = null;
-        this._sparseGramLoadedPath = null;
-      }
-    }
-
     await Promise.all([warmupEmbedding({ initVocabulary: true, initSemanticCache: true }), liPreheat]);
 
     // Pre-build the call-graph ref-count index so the first search query
@@ -435,7 +441,6 @@ export class SweetSearch {
 
     this.initialized = true;
     this._artifactManifestEpoch = initManifest?.epoch ?? null;
-    this._grepArtifactEpoch = this._artifactManifestEpoch;
     this.log(`SweetSearch: Initialized in ${Date.now() - start}ms`);
   }
 

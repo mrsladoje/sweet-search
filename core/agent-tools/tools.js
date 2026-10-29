@@ -32,7 +32,8 @@ export const NODE_ENTRY_COMMANDS = Object.freeze({
 export const NATIVE_COMMANDS = Object.freeze([...Object.keys(AGENT_TOOLS), ...Object.keys(NODE_ENTRY_COMMANDS)]);
 
 // Subcommands that query the search engine. The daemon runs them only once its indexes
-// are loaded; ss-read and ss-trace open their own databases and run at once.
+// are loaded (ss-grep once its sparse grams are, before the models); ss-read and ss-trace
+// open their own databases and run at once.
 export const SEARCHER_SUBCOMMANDS = Object.freeze(new Set(['agent-search', 'grep', 'find', 'semantic']));
 
 // How long ss-search waits for a daemon that is still loading its indexes. Under the
