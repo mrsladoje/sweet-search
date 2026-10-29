@@ -351,6 +351,7 @@ export async function buildHnswIndex(items, options = {}) {
       M,
       efConstruction,
       insertionOrder: 'shuffle',
+      linkNative: link.native,
       linkThreads: link.threads,
       linkRedos: link.redos,
     },
@@ -441,6 +442,7 @@ async function buildHnswIndexFromDb(db, options = {}) {
       M,
       efConstruction,
       insertionOrder: 'shuffle',
+      linkNative: link.native,
       linkThreads: link.threads,
       linkRedos: link.redos,
     },
@@ -627,6 +629,9 @@ export async function buildFromCodebaseDb(codebaseDbPath = DB_PATHS.codebase, op
       vectorsPerSecond,
       // Keep inner build phase timing available for debugging/regression triage.
       indexBuildTimeMs: hnswBuildStats.buildTimeMs,
+      // The graph build: native on linkThreads threads, or the JS loop (linkNative false).
+      linkNative: hnswBuildStats.linkNative,
+      linkThreads: hnswBuildStats.linkThreads,
       path: hnswIndexPath,
       floatStorePath,
     },

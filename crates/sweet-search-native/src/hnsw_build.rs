@@ -107,16 +107,24 @@ fn hamming_neon(x: &[u64], y: &[u64]) -> u32 {
     // (their length is an even number of u64 words).
     unsafe {
         let (px, py) = (x.as_ptr() as *const u8, y.as_ptr() as *const u8);
-        let mut acc = vdupq_n_u16(0);
+        let bytes = x.len() * 8;
+        let mut total = 0u32;
         let mut c = 0;
-        while c < x.len() * 8 {
-            acc = vpadalq_u8(
-                acc,
-                vcntq_u8(veorq_u8(vld1q_u8(px.add(c)), vld1q_u8(py.add(c)))),
-            );
-            c += 16;
+        while c < bytes {
+            // A u16 lane gains at most 16 per 16-byte block: fold it into the total every 4095
+            // blocks, before it can wrap (codes of 64 KiB and more).
+            let end = bytes.min(c + 4095 * 16);
+            let mut acc = vdupq_n_u16(0);
+            while c < end {
+                acc = vpadalq_u8(
+                    acc,
+                    vcntq_u8(veorq_u8(vld1q_u8(px.add(c)), vld1q_u8(py.add(c)))),
+                );
+                c += 16;
+            }
+            total += vaddlvq_u16(acc);
         }
-        vaddlvq_u16(acc)
+        total
     }
 }
 
@@ -750,7 +758,16 @@ fn set_thread_qos(background: bool) {
         };
         libc::pthread_set_qos_class_self_np(class, 0);
     }
-    #[cfg(not(target_os = "macos"))]
+    // Linux: a nice value is per thread, so these threads do not inherit the nice 19 the
+    // compaction child set on its main thread. who = 0 is the calling thread.
+    #[cfg(target_os = "linux")]
+    if background {
+        // SAFETY: changes the nice value of the calling thread only.
+        unsafe {
+            libc::setpriority(libc::PRIO_PROCESS, 0, 19);
+        }
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     let _ = background;
 }
 
@@ -834,6 +851,8 @@ fn run_parallel(b: &Builder, n: usize, workers: usize, window: usize) -> Result<
     let next = AtomicUsize::new(0);
     let committed = AtomicUsize::new(0);
     let failed = AtomicUsize::new(0);
+    // A worker panicked (a bug): the build stops with an error, the JS loop then links instead.
+    let panicked = AtomicUsize::new(0);
     let gate = Gate {
         lock: Mutex::new(()),
         workers_cv: Condvar::new(),
@@ -862,10 +881,12 @@ fn run_parallel(b: &Builder, n: usize, workers: usize, window: usize) -> Result<
     let has_spec = |j: usize| matches!(ring[j % window].lock().unwrap().as_ref(), Some((sj, _)) if *sj as usize == j);
     std::thread::scope(|s| {
         for _ in 0..workers {
-            s.spawn(|| {
+            // A thread the OS refuses: fewer workers (the committing thread runs what no worker
+            // claimed), not a panic that leaves the spawned ones waiting.
+            let spawned = std::thread::Builder::new().spawn_scoped(s, || {
                 set_thread_qos(b.background);
                 let mut sc = Scratch::new(n);
-                loop {
+                let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| loop {
                     let j = next.fetch_add(1, Ordering::Relaxed);
                     if j >= n || failed.load(Ordering::SeqCst) != 0 {
                         break;
@@ -888,59 +909,96 @@ fn run_parallel(b: &Builder, n: usize, workers: usize, window: usize) -> Result<
                     let took = now_ns(&t0) - begin;
                     let avg = spec_ns.load(Ordering::Relaxed);
                     spec_ns.store(avg - avg / 32 + took / 32, Ordering::Relaxed);
-                    if j >= committed.load(Ordering::SeqCst) {
-                        *ring[j % window].lock().unwrap() = Some((j as u32, spec));
+                    {
+                        // Check and store under the slot lock, and never over a newer node: a
+                        // store late by a whole window (preempted after its check) replaced the
+                        // spec of node j + window, and the committing thread waited for it forever.
+                        let mut slot = ring[j % window].lock().unwrap();
+                        let newer = matches!(slot.as_ref(), Some((sj, _)) if *sj as usize > j);
+                        if !newer && j >= committed.load(Ordering::SeqCst) {
+                            *slot = Some((j as u32, spec));
+                        }
                     }
+                    gate.wake(&gate.committer_cv, &gate.committer_sleeping);
+                }));
+                if run.is_err() {
+                    panicked.store(1, Ordering::SeqCst);
                     gate.wake(&gate.committer_cv, &gate.committer_sleeping);
                 }
             });
+            if spawned.is_err() {
+                break;
+            }
         }
         set_thread_qos(b.background);
         let mut sc = Scratch::new(n);
-        for j in 0..n {
-            // The result of a worker when it is there, or close: a search that started less than
-            // half a mean search ago (or not at all) runs here at once instead, on the current
-            // graph (no check needed).
-            let mut spec = take_spec(j);
-            if spec.is_none() {
-                let in_flight = claimed[j % window].load(Ordering::SeqCst) == j as u64 + 1;
-                let half = spec_ns.load(Ordering::Relaxed) / 2;
-                if in_flight
-                    && now_ns(&t0).saturating_sub(started[j % window].load(Ordering::SeqCst))
-                        >= half
-                {
-                    gate.wait_until(&gate.committer_cv, &gate.committer_sleeping, || has_spec(j));
-                    spec = take_spec(j);
+        // A panic here must stop the workers too: the scope waits for them, and they wait for
+        // commits that would never come.
+        let commit_loop = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            for j in 0..n {
+                // The result of a worker when it is there, or close: a search that started less than
+                // half a mean search ago (or not at all) runs here at once instead, on the current
+                // graph (no check needed).
+                let mut spec = take_spec(j);
+                if spec.is_none() {
+                    let in_flight = claimed[j % window].load(Ordering::SeqCst) == j as u64 + 1;
+                    let half = spec_ns.load(Ordering::Relaxed) / 2;
+                    if in_flight
+                        && now_ns(&t0).saturating_sub(started[j % window].load(Ordering::SeqCst))
+                            >= half
+                    {
+                        gate.wait_until(&gate.committer_cv, &gate.committer_sleeping, || {
+                            has_spec(j) || panicked.load(Ordering::SeqCst) != 0
+                        });
+                        spec = take_spec(j);
+                    }
                 }
-            }
-            let spec = match spec {
-                Some(spec) if b.validate(j as u32, &spec) => {
-                    lead_f += grow / lead_f.max(1.0);
-                    spec
+                if panicked.load(Ordering::SeqCst) != 0 {
+                    failed.store(1, Ordering::SeqCst);
+                    committed.store(usize::MAX / 2, Ordering::SeqCst);
+                    gate.wake(&gate.workers_cv, &gate.sleeping_workers);
+                    result = Err(Error::from_reason(
+                        "buildBinaryHnsw: a worker thread panicked",
+                    ));
+                    break;
                 }
-                Some(_) => {
-                    redos += 1;
-                    lead_f *= shrink;
-                    b.speculate(j as u32, &mut sc)
+                let spec = match spec {
+                    Some(spec) if b.validate(j as u32, &spec) => {
+                        lead_f += grow / lead_f.max(1.0);
+                        spec
+                    }
+                    Some(_) => {
+                        redos += 1;
+                        lead_f *= shrink;
+                        b.speculate(j as u32, &mut sc)
+                    }
+                    None => {
+                        own += 1;
+                        lead_f += grow;
+                        b.speculate(j as u32, &mut sc)
+                    }
+                };
+                lead_f = lead_f.clamp(2f64.min(window as f64), window as f64);
+                lead.store(lead_f as usize, Ordering::SeqCst);
+                lead_sum += lead_f;
+                if let Err(e) = b.commit(j as u32, spec) {
+                    failed.store(1, Ordering::SeqCst);
+                    committed.store(usize::MAX / 2, Ordering::SeqCst);
+                    gate.wake(&gate.workers_cv, &gate.sleeping_workers);
+                    result = Err(e);
+                    break;
                 }
-                None => {
-                    own += 1;
-                    lead_f += grow;
-                    b.speculate(j as u32, &mut sc)
-                }
-            };
-            lead_f = lead_f.clamp(2f64.min(window as f64), window as f64);
-            lead.store(lead_f as usize, Ordering::SeqCst);
-            lead_sum += lead_f;
-            if let Err(e) = b.commit(j as u32, spec) {
-                failed.store(1, Ordering::SeqCst);
-                committed.store(usize::MAX / 2, Ordering::SeqCst);
+                committed.store(j + 1, Ordering::SeqCst);
                 gate.wake(&gate.workers_cv, &gate.sleeping_workers);
-                result = Err(e);
-                break;
             }
-            committed.store(j + 1, Ordering::SeqCst);
+        }));
+        if commit_loop.is_err() {
+            failed.store(1, Ordering::SeqCst);
+            committed.store(usize::MAX / 2, Ordering::SeqCst);
             gate.wake(&gate.workers_cv, &gate.sleeping_workers);
+            result = Err(Error::from_reason(
+                "buildBinaryHnsw: the committing thread panicked",
+            ));
         }
     });
     if std::env::var_os("SS_HNSW_BUILD_STATS").is_some() {
@@ -1045,7 +1103,10 @@ fn build(t: &BuildTask) -> Result<BuildOutput> {
     // On a thread of its own: the QoS class it sets must not stay on the libuv pool thread.
     let outcome = std::thread::scope(|s| {
         s.spawn(|| {
-            if workers == 0 || n < 2 {
+            // One worker gives no speedup (measured: 50k nodes, 1 thread 28.8 s, 2 threads 27.7 s
+            // at twice the CPU): the committing thread reaches each node while the worker has
+            // only started it, so it runs it itself.
+            if workers < 2 || n < 2 {
                 run_serial(&b, n)
             } else {
                 run_parallel(&b, n, workers, workers)
@@ -1088,7 +1149,11 @@ fn build(t: &BuildTask) -> Result<BuildOutput> {
         entry_point: if ep == NONE { -1 } else { ep as i32 },
         max_level: (entry & 0xffff_ffff) as u32,
         redos: outcome.redos,
-        threads: (workers + 1) as u32,
+        threads: if workers < 2 || n < 2 {
+            1
+        } else {
+            (workers + 1) as u32
+        },
     })
 }
 
@@ -1142,7 +1207,7 @@ pub fn build_binary_hnsw(
         rank: id_rank.to_vec(),
         m: m as usize,
         ef: ef_construction as usize,
-        threads: threads.max(1) as usize,
+        threads: threads.clamp(1, 64) as usize,
         background: background.unwrap_or(false),
     })
 }
@@ -1208,6 +1273,21 @@ mod tests {
                     "seed {seed} threads {threads}"
                 );
             }
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[test]
+    fn neon_distance_does_not_wrap_on_long_codes() {
+        // 4096 blocks of all-different bits: a u16 lane would wrap to 0.
+        for words in [2, 16, 8190, 8192, 8194, 20000] {
+            let x = vec![0u64; words];
+            let y = vec![u64::MAX; words];
+            assert_eq!(
+                hamming_neon(&x, &y),
+                hamming_scalar(&x, &y),
+                "words {words}"
+            );
         }
     }
 
