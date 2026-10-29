@@ -21,6 +21,7 @@ import { parseReceiverType, RECEIVER_TYPE_PREFIX, signatureParamTypes } from '..
 import { deriveOverrideEdges } from './override-edges.js';
 import { fileNodeId } from '../infrastructure/file-nodes.js';
 import { compareEntitiesForResolution } from './entity-order.js';
+import { viewTemplateKind } from '../infrastructure/view-templates.js';
 
 // Entities from config/data/markup files (YAML keys, pom.xml tags, Makefile
 // targets, TOML tables) are never the target of a code import. Name-based
@@ -444,6 +445,9 @@ export function createCallResolutionIndex(entities, { fileImports = null, hierar
     const hit = memo.get(entity.id);
     if (hit !== undefined) return hit;
     let owner = entity.parent_class || null;
+    // A view's class makes the view's render calls (graph-extractor _foldViewRenderMethods):
+    // they run in it, so a bare `Save_Click()` reaches its members and its base class's.
+    if (!owner && entity.type === 'class' && viewTemplateKind(entity.file_path)) owner = entity.name;
     if (!owner && entity.signature) {
       const g = GO_RECEIVER.exec(entity.signature);
       if (g) owner = g[1];
