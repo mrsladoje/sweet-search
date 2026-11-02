@@ -453,7 +453,7 @@ export async function bootstrapWorktreeIndex({ mainCheckout, worktree, log = () 
   const worktreesDir = path.join(mainState, WORKTREES_DIR);
   for (const dir of gcWorktreeIndexes(worktreesDir)) log(`removed the index of a removed worktree: ${dir}`);
 
-  const { holdMaintainerForIndexRun, reconcilePaused, launchMaintainer } = await import('./maintainer-launcher.mjs');
+  const { holdMaintainerForIndexRun, reconcilePaused, launchMaintainer, maintainerAlive } = await import('./maintainer-launcher.mjs');
   const finalDir = worktreeIndexDir(mainCheckout, worktree);
   const tmp = `${finalDir}.bootstrap-${process.pid}`;
   fs.rmSync(tmp, { recursive: true, force: true });
@@ -467,6 +467,7 @@ export async function bootstrapWorktreeIndex({ mainCheckout, worktree, log = () 
     if (reconcilePaused(mainState)) {
       throw Object.assign(new Error('the main checkout\'s index is paused (an index run or a frozen index)'), { retryAfterMs: 60_000 });
     }
+    const mainWasMaintained = maintainerAlive(mainState);
     const release = await holdMaintainerForIndexRun(mainState, { reason: 'a worktree index is being cloned' });
     try {
       mode = cloneIndexDir(mainState, tmp, { log });
@@ -475,6 +476,13 @@ export async function bootstrapWorktreeIndex({ mainCheckout, worktree, log = () 
       throw err;
     } finally {
       release();
+      // The hold stopped the main checkout's maintainer. Its daemon would start a new one
+      // only on the next query or supervision tick (up to a minute), and edits in the
+      // main checkout must not wait that long: start it again now.
+      if (mainWasMaintained && launch) {
+        const r = launchMaintainer({ cwd: mainCheckout, env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: mainCheckout } });
+        log(`main maintainer: ${r.reason}${r.pid ? ` (pid ${r.pid})` : ''}`);
+      }
     }
   } finally {
     unlock();
