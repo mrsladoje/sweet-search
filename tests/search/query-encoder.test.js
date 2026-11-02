@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 import { callLocalModel, unloadLocalModel } from '../../core/embedding/embedding-local-model.js';
 import { encodeQuery, unloadLateInteractionModel } from '../../core/ranking/late-interaction-model.js';
@@ -39,7 +42,7 @@ describe('query encoder child', () => {
     await unloadLocalModel();
     await unloadLateInteractionModel();
 
-    client = startQueryEncoder({ env: { ...process.env, SWEET_SEARCH_QUERY_MODEL_IDLE_MS: '1500' } });
+    client = startQueryEncoder({ env: { ...process.env, SWEET_SEARCH_QUERY_MODEL_IDLE_MS: '1500', SWEET_SEARCH_SHARED_QUERY_ENCODER: '0' } });
     const viaChild = await callLocalModel([text], { maxLength: 128 });
     const liViaChild = await encodeQuery('how is the invoice total computed');
     expect(flat(viaChild)).toEqual(flat(local));
@@ -54,3 +57,40 @@ describe('query encoder child', () => {
     expect(client.spawns).toBe(2);
   }, 120_000);
 });
+
+describe('shared query-model server', () => {
+  let client = null;
+  let runtimeDir = null;
+  afterEach(async () => {
+    stopQueryEncoder(client);
+    client = null;
+    if (runtimeDir) fs.rmSync(runtimeDir, { recursive: true, force: true });
+  });
+
+  it('gives the same vectors as the in-process models', async () => {
+    const text = 'search_query: how is the invoice total computed';
+    let local;
+    let li;
+    applyPersistedLiModel(process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd());
+    try {
+      local = await callLocalModel([text], { maxLength: 128 });
+      li = await encodeQuery('how is the invoice total computed');
+    } catch {
+      return; // models not installed on this machine
+    }
+    await unloadLocalModel();
+    await unloadLateInteractionModel();
+
+    // A short private runtime dir: the socket path must fit the platform limit.
+    runtimeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ssqe-'));
+    client = startQueryEncoder({ env: { ...process.env, SWEET_SEARCH_RUNTIME_DIR: runtimeDir, SWEET_SEARCH_QUERY_MODEL_IDLE_MS: '1500' } });
+    expect(client.socketPath).toContain(runtimeDir);
+    expect(flat(await callLocalModel([text], { maxLength: 128 }))).toEqual(flat(local));
+    expect(flat(await encodeQuery('how is the invoice total computed'))).toEqual(flat(li));
+    // The server stops on its own when idle; the next query starts a new one.
+    for (let i = 0; i < 300 && fs.existsSync(client.socketPath); i++) await new Promise((r) => setTimeout(r, 100));
+    expect(fs.existsSync(client.socketPath)).toBe(false);
+    expect(flat(await encodeQuery('how is the invoice total computed'))).toEqual(flat(li));
+  }, 120_000);
+});
+

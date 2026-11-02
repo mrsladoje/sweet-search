@@ -17,11 +17,7 @@
  *   progress { id, progress: true }   (dense encodes, per batch)
  */
 
-import { getEmbeddings } from '../embedding/embedding-service.js';
-import { countDocumentTokensCpu, encodeDocumentsCpu, encodeQuery, getLateInteractionPipeline } from '../ranking/late-interaction-model.js';
-import { callLocalModel, callLocalModelBucketed, getLocalPipeline } from '../embedding/embedding-local-model.js';
-import { takeProvenance } from '../infrastructure/inference-provenance.js';
-import { applyPersistedLiModel } from '../infrastructure/init-config.js';
+import { runEncoderOp, takeProvenance } from './encoder-ops.mjs';
 import { armBackgroundOrtProfiles } from './model-pool.js';
 import { setProcessTitle } from '../infrastructure/process-title.js';
 
@@ -35,34 +31,10 @@ if (!queryRole) armBackgroundOrtProfiles();
 
 const send = (msg) => { try { process.send(msg); } catch { /* parent gone */ } };
 
-async function run(op, texts, id, options = {}) {
-  // The maintainer re-applies the persisted LI model choice every tick; mirror it.
-  applyPersistedLiModel(projectRoot);
-  if (op === 'dense') {
-    return getEmbeddings(texts, { useCache: false, onProgress: () => send({ id, progress: true }) });
-  }
-  if (op === 'li') return encodeDocumentsCpu(texts);
-  if (op === 'count') return countDocumentTokensCpu(texts);
-  if (op === 'local-model') return callLocalModel(texts, options);
-  if (op === 'local-model-bucketed') return callLocalModelBucketed(texts, options);
-  if (op === 'li-query') return encodeQuery(texts[0]);
-  if (op === 'warm-query') {
-    await Promise.all([getLocalPipeline(), getLateInteractionPipeline()]);
-    return null;
-  }
-  if (op === 'warm') {
-    // Load both models at once, while the maintainer is still hashing and parsing.
-    await Promise.all([getEmbeddings(['warm up'], { useCache: false }), encodeDocumentsCpu(['warm up'])]);
-    takeProvenance(); // not an encode of the index
-    return null;
-  }
-  throw new Error(`unknown encoder op: ${op}`);
-}
-
 process.on('message', async (msg) => {
   const { id, op, texts, options } = msg || {};
   try {
-    const result = await run(op, texts, id, options);
+    const result = await runEncoderOp(op, texts, { projectRoot, options, onProgress: () => send({ id, progress: true }) });
     send({ id, ok: true, result, provenance: takeProvenance(), rss: process.memoryUsage.rss() });
   } catch (err) {
     send({ id, ok: false, error: String(err?.stack || err?.message || err), rss: process.memoryUsage.rss() });

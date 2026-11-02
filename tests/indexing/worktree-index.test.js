@@ -48,6 +48,7 @@ function makeMainIndex() {
   fs.writeFileSync(path.join(state, 'index-maintainer.log'), 'log');
   fs.writeFileSync(path.join(state, 'daemon.log'), 'log');
   fs.writeFileSync(path.join(state, 'worktree-stamp.json'), JSON.stringify({ projectRoot: main }));
+  fs.writeFileSync(path.join(state, 'reconcile-manifest.json'), JSON.stringify({ epoch: 3, publishedAt: '2020-01-01T00:00:00.000Z' }));
   fs.mkdirSync(path.join(state, 'readers'));
   fs.mkdirSync(path.join(state, 'worktrees', 'other-123'), { recursive: true });
   const store = openFileState(state);
@@ -151,6 +152,11 @@ describe('bootstrapWorktreeIndex', () => {
     expect(JSON.parse(fs.readFileSync(path.join(dir, 'worktree-stamp.json'), 'utf8')).projectRoot).toBe(wt);
     const queued = fs.readFileSync(path.join(dir, 'index-maintainer-queue.jsonl'), 'utf8').trim().split('\n').map((l) => JSON.parse(l).file_path);
     expect(queued).toEqual(['b.js']);
+    // Dated as of the newest unchanged worktree file, so unchanged files do not read as
+    // stale; the edited b.js is newer still.
+    const published = Date.parse(JSON.parse(fs.readFileSync(path.join(dir, 'reconcile-manifest.json'), 'utf8')).publishedAt);
+    expect(published).toBe(Math.floor(Math.max(...['a.js', 'LICENSE'].map((f) => fs.statSync(path.join(wt, f)).mtimeMs))));
+    expect(JSON.parse(fs.readFileSync(path.join(dir, 'reconcile-manifest.json'), 'utf8')).epoch).toBe(3);
     // The main index is untouched, and its maintainer is not left paused.
     expect(fs.existsSync(path.join(main, '.sweet-search', 'reconcile-pause.json'))).toBe(false);
     expect(fs.existsSync(path.join(main, '.sweet-search', 'index-maintainer-queue.jsonl'))).toBe(true);

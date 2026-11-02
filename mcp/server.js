@@ -14,6 +14,8 @@ import { fileURLToPath } from 'node:url';
 import { launchMaintainer } from '../core/indexing/maintainer-launcher.mjs';
 import { startQueryEncoder } from '../core/search/query-encoder.mjs';
 import { resolveProjectRoot as resolveIndexedRoot } from '../core/search/server-identity.js';
+import { resolveRoots } from '../core/search/worktree-roots.js';
+import { ensureWorktreeIndex } from '../core/indexing/worktree-index.mjs';
 import {
   collectSemanticShownSpans,
   exactRereadOmissionEnabled,
@@ -81,6 +83,28 @@ function resolveProjectRoot() {
 
   return root;
 }
+
+// A linked git worktree with no index of its own gets one, cloned from its main
+// checkout's (core/indexing/worktree-index.mjs), before the server picks its root: the
+// root is fixed for the server's life, and the walk up from a worktree inside its main
+// checkout (`<repo>/.claude/worktrees/x`) would otherwise land on the main checkout and
+// serve its files instead of the worktree's.
+async function prepareWorktreeIndex() {
+  if (process.argv.includes('--project-root') || process.env.SWEET_SEARCH_PROJECT_ROOT) return;
+  try {
+    const roots = resolveRoots({ cwd: process.cwd() });
+    if (!roots.split) return;
+    const ok = await ensureWorktreeIndex({
+      mainCheckout: roots.indexRoot,
+      worktree: roots.fileRoot,
+      log: (msg) => console.error(`[sweet-search-mcp] worktree index: ${msg}`),
+    });
+    if (ok) process.env.SWEET_SEARCH_PROJECT_ROOT = roots.fileRoot;
+  } catch (err) {
+    console.error(`[sweet-search-mcp] worktree index not prepared: ${err?.message || err}`);
+  }
+}
+await prepareWorktreeIndex();
 
 const PROJECT_ROOT = resolveProjectRoot();
 

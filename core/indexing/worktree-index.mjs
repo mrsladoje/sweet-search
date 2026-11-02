@@ -235,6 +235,7 @@ export async function rekeyFileState({ stateDir, worktree, mainCheckout }) {
   const store = openFileState(stateDir);
   const changed = [];
   let same = 0;
+  let newestSameMtimeNs = 0n;
   try {
     const fileUpdates = [];
     for (const [rel, entry] of store.iterateFiles()) {
@@ -247,6 +248,7 @@ export async function rekeyFileState({ stateDir, worktree, mainCheckout }) {
       if (hash !== null && hash === entry.hash) {
         fileUpdates.push([rel, { ...entry, ...stat }]);
         same += 1;
+        newestSameMtimeNs = BigInt(stat.mtime_ns) > newestSameMtimeNs ? BigInt(stat.mtime_ns) : newestSameMtimeNs;
       } else {
         changed.push(rel);
       }
@@ -271,6 +273,7 @@ export async function rekeyFileState({ stateDir, worktree, mainCheckout }) {
       if (reference && reference === hash) {
         grepUpdates.push([rel, { size: stat.size, mtime_ns: stat.mtime_ns, hash: typeof entry.hash === 'string' ? entry.hash : hash }]);
         same += 1;
+        newestSameMtimeNs = BigInt(stat.mtime_ns) > newestSameMtimeNs ? BigInt(stat.mtime_ns) : newestSameMtimeNs;
       } else {
         changed.push(rel);
       }
@@ -283,7 +286,40 @@ export async function rekeyFileState({ stateDir, worktree, mainCheckout }) {
   } finally {
     store.close();
   }
-  return { same, changed: [...new Set(changed)] };
+  return { same, changed: [...new Set(changed)], newestSameMtimeMs: Number(newestSameMtimeNs / 1_000_000n) };
+}
+
+/**
+ * Date the cloned index as of the worktree's unchanged files.
+ *
+ * Freshness is a time rule: a file modified after the index was published is stale
+ * (index-freshness.js on the manifest's publishedAt; context-expander.js checkStaleness on
+ * code-graph.db's mtime). Every file of a new worktree carries the checkout time, later
+ * than the main index, so every result read as stale (and ss-grep's line classes are
+ * gated on it). The re-key proved the unchanged files equal to what the index holds, so
+ * the index is as new as the newest of them. A file edited after the checkout is newer
+ * and stays stale until the maintainer indexes it; a file the branch itself changed is
+ * queued, grepped from disk until then (grep-corpus.js listPendingReindexFiles), and
+ * re-indexed within seconds.
+ */
+function dateIndexAs(stateDir, newestSameMtimeMs) {
+  if (!(newestSameMtimeMs > 0)) return;
+  const manifestPath = path.join(stateDir, 'reconcile-manifest.json');
+  const manifest = readJson(manifestPath);
+  if (manifest && typeof manifest === 'object') {
+    const was = Date.parse(manifest.publishedAt || '');
+    if (!Number.isFinite(was) || was < newestSameMtimeMs) {
+      manifest.publishedAt = new Date(newestSameMtimeMs).toISOString();
+      const tmp = `${manifestPath}.tmp.${process.pid}`;
+      fs.writeFileSync(tmp, `${JSON.stringify(manifest, null, 2)}\n`);
+      fs.renameSync(tmp, manifestPath);
+    }
+  }
+  const graph = path.join(stateDir, 'code-graph.db');
+  try {
+    const st = fs.statSync(graph);
+    if (st.mtimeMs < newestSameMtimeMs) fs.utimesSync(graph, st.atime, new Date(newestSameMtimeMs));
+  } catch { /* no code graph */ }
 }
 
 function writeQueue(stateDir, files) {
@@ -448,8 +484,9 @@ export async function bootstrapWorktreeIndex({ mainCheckout, worktree, log = () 
   try {
     const { writeStamp } = await import('../incremental-indexing/infrastructure/worktree-stamp.mjs');
     writeStamp(tmp, worktree);
-    const { same, changed } = await rekeyFileState({ stateDir: tmp, worktree, mainCheckout });
+    const { same, changed, newestSameMtimeMs } = await rekeyFileState({ stateDir: tmp, worktree, mainCheckout });
     writeQueue(tmp, changed);
+    dateIndexAs(tmp, newestSameMtimeMs);
     log(`file records: ${same} unchanged, ${changed.length} queued for re-indexing`);
     // A leftover index for this path (its worktree was removed and re-added, and the
     // clean-up has not run) is replaced: it describes other files.
@@ -470,6 +507,57 @@ export async function bootstrapWorktreeIndex({ mainCheckout, worktree, log = () 
   }
 }
 
+/**
+ * One bootstrap for one worktree at a time: take the worktree's claim, build, and record
+ * the outcome in the claim file (a failure holds off retries for a while). The background
+ * process runs this; so does the MCP server, which waits for it at start.
+ *
+ * @returns {Promise<'ready'|'skipped'|'busy'|'failed'>}  'busy': another process holds the claim
+ */
+export async function runWorktreeBootstrap({ mainCheckout, worktree, log: extraLog = null, launch = true }) {
+  const claim = bootstrapClaimPath(mainCheckout, worktree);
+  const logFile = path.join(mainCheckout, STATE_DIR_NAME, 'worktree-bootstrap.log');
+  const log = (msg) => {
+    try { fs.appendFileSync(logFile, `${new Date().toISOString()} [${process.pid}] ${worktree}: ${msg}\n`); } catch { /* best effort */ }
+    extraLog?.(msg);
+  };
+  if (!takeClaim(claim)) return 'busy';
+  try {
+    const r = await bootstrapWorktreeIndex({ mainCheckout, worktree, log, launch });
+    log(r.skipped ? `skipped: ${r.skipped}` : `ready in ${r.ms} ms`);
+    fs.rmSync(claim, { force: true });
+    return r.skipped ? 'skipped' : 'ready';
+  } catch (err) {
+    log(`failed: ${err?.stack || err}`);
+    const retryAfterMs = Number(err?.retryAfterMs) || RETRY_AFTER_MS;
+    try { fs.writeFileSync(claim, JSON.stringify({ status: 'failed', pid: process.pid, atMs: Date.now(), retryAfterMs, error: String(err?.message || err) })); } catch { /* best effort */ }
+    return 'failed';
+  }
+}
+
+/**
+ * Give the linked worktree its own index now, and wait for it (the MCP server, whose
+ * project root is fixed for its whole life). Never throws.
+ *
+ * @returns {Promise<boolean>} true when the worktree has an index of its own
+ */
+export async function ensureWorktreeIndex({ mainCheckout, worktree, env = process.env, waitMs = 120_000, log = null }) {
+  const indexed = () => fs.existsSync(path.join(worktree, STATE_DIR_NAME, INDEX_FILE));
+  if (indexed()) return true;
+  if (!worktreeIndexEnabled(env) || !fs.existsSync(path.join(mainCheckout, STATE_DIR_NAME, INDEX_FILE))) return false;
+  try {
+    const outcome = await runWorktreeBootstrap({ mainCheckout, worktree, log });
+    if (outcome === 'busy') {
+      // Another process is building it: wait for its link.
+      const deadline = Date.now() + waitMs;
+      while (!indexed() && bootstrapState(mainCheckout, worktree) === 'running' && Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    }
+  } catch { /* reported in the bootstrap log */ }
+  return indexed();
+}
+
 async function main() {
   const arg = (name) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) || '';
   const mainCheckout = arg('main');
@@ -478,26 +566,12 @@ async function main() {
     process.stderr.write('usage: worktree-index.mjs --main=<main checkout> --worktree=<worktree top>\n');
     process.exit(2);
   }
-  const claim = bootstrapClaimPath(mainCheckout, worktree);
-  const logFile = path.join(mainCheckout, STATE_DIR_NAME, 'worktree-bootstrap.log');
-  const log = (msg) => {
-    try { fs.appendFileSync(logFile, `${new Date().toISOString()} [${process.pid}] ${worktree}: ${msg}\n`); } catch { /* best effort */ }
-  };
-  if (!takeClaim(claim)) return;
   try {
     const { applyBackgroundPriority } = await import('./os-priority.mjs').catch(() => ({}));
     applyBackgroundPriority?.(process.pid);
   } catch { /* best effort */ }
-  try {
-    const r = await bootstrapWorktreeIndex({ mainCheckout, worktree, log });
-    log(r.skipped ? `skipped: ${r.skipped}` : `ready in ${r.ms} ms`);
-    fs.rmSync(claim, { force: true });
-  } catch (err) {
-    log(`failed: ${err?.stack || err}`);
-    const retryAfterMs = Number(err?.retryAfterMs) || RETRY_AFTER_MS;
-    try { fs.writeFileSync(claim, JSON.stringify({ status: 'failed', pid: process.pid, atMs: Date.now(), retryAfterMs, error: String(err?.message || err) })); } catch { /* best effort */ }
-    process.exitCode = 1;
-  }
+  const outcome = await runWorktreeBootstrap({ mainCheckout, worktree });
+  if (outcome === 'failed') process.exitCode = 1;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
