@@ -405,42 +405,78 @@ export function pauseHolds(payload) {
 }
 
 const INDEX_RUN_STOP_TIMEOUT_MS = 60_000;
+// How long a hold waits for another live holder's pause (a worktree clone, another index
+// run) to end before it goes on without owning the pause.
+const HOLDER_WAIT_MS = 10 * 60_000;
 
 /**
- * Keep the maintainer off the index while a full `sweet-search index` rewrites it: both
- * wrote merkle-state.json and the manifest, and a tick could commit into a code-graph.db
- * the build had just replaced. Pauses (unless a pause already holds, e.g. a frozen
+ * Keep the maintainer off the index while a full `sweet-search index` rewrites it (or a
+ * linked worktree's bootstrap copies it, core/indexing/worktree-index.mjs): both wrote
+ * merkle-state.json and the manifest, and a tick could commit into a code-graph.db the
+ * build had just replaced. Takes the pause (unless one already holds, e.g. a frozen
  * benchmark index), stops a running maintainer (SIGTERM: it requeues and exits), and
  * returns the release function, which removes only this run's own pause.
  *
+ * The pause is EXCLUSIVE between holders that name a process: it is created with one
+ * atomic link, and a pause another live process holds is waited for (up to
+ * `waitForHolderMs`), so an index run never rewrites the index under a worktree clone
+ * and a clone never copies one mid-rewrite. A pause with no holder process (a frozen
+ * benchmark index, `reconcile pause`) is respected as before but not owned.
+ * `release.ours` says whether this hold owns the pause.
+ *
  * @param {string} stateDir
- * @returns {Promise<() => void>}
+ * @returns {Promise<(() => void) & { ours: boolean }>}
  */
-export async function holdMaintainerForIndexRun(stateDir, { timeoutMs = INDEX_RUN_STOP_TIMEOUT_MS, reason = 'sweet-search index is running' } = {}) {
+export async function holdMaintainerForIndexRun(stateDir, {
+  timeoutMs = INDEX_RUN_STOP_TIMEOUT_MS, reason = 'sweet-search index is running', waitForHolderMs = HOLDER_WAIT_MS,
+} = {}) {
   const pauseFile = join(stateDir, 'reconcile-pause.json');
+  mkdirSync(stateDir, { recursive: true });
   let ours = false;
-  if (!reconcilePaused(stateDir)) {
-    mkdirSync(stateDir, { recursive: true });
+  const deadline = Date.now() + waitForHolderMs;
+  for (;;) {
     const tmp = `${pauseFile}.tmp.${process.pid}`;
     writeFileSync(tmp, JSON.stringify({
       paused: true, pausedAt: new Date().toISOString(), reason, holderPid: process.pid,
     }));
-    renameSync(tmp, pauseFile);
-    ours = true;
+    try {
+      linkSync(tmp, pauseFile);
+      ours = true;
+    } catch (err) {
+      if (err?.code !== 'EEXIST') throw err;
+    } finally {
+      try { unlinkSync(tmp); } catch { /* gone */ }
+    }
+    if (ours) break;
+    let payload = null;
+    try { payload = JSON.parse(readFileSync(pauseFile, 'utf-8')); } catch { payload = null; }
+    // Unreadable, resumed, or held by a process that is gone: not a pause. Replace it.
+    if (!payload || !pauseHolds(payload)) {
+      try { unlinkSync(pauseFile); } catch { /* raced */ }
+      continue;
+    }
+    const holder = Number(payload.holderPid);
+    if (holder && holder !== process.pid && Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 200));
+      continue;
+    }
+    break; // a pause with no holder process (frozen index), or the wait ran out
   }
   let pid = null;
   try { pid = Number(JSON.parse(readFileSync(join(stateDir, MAINTAINER_LOCK_FILENAME), 'utf-8')).pid); } catch { /* none */ }
   if (pid && pid !== process.pid && pidAlive(pid)) {
     try { process.kill(pid, 'SIGTERM'); } catch { /* gone */ }
-    const deadline = Date.now() + timeoutMs;
-    while (pidAlive(pid) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 100));
+    const stopDeadline = Date.now() + timeoutMs;
+    while (pidAlive(pid) && Date.now() < stopDeadline) await new Promise((r) => setTimeout(r, 100));
   }
-  return () => {
+  const release = () => {
     if (!ours) return;
     try {
       if (JSON.parse(readFileSync(pauseFile, 'utf-8'))?.holderPid === process.pid) unlinkSync(pauseFile);
     } catch { /* already gone */ }
   };
+  release.ours = ours;
+  return release;
 }
 
 /**

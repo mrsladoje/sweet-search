@@ -46,7 +46,7 @@ function dropSharedPin(key) {
   if (!shared) return;
   _sharedPins.delete(key);
   if (shared.timer) clearTimeout(shared.timer);
-  endRead(shared.stateDir, shared.record);
+  if (shared.record) endRead(shared.stateDir, shared.record);
 }
 
 /** Drop every heartbeat no read holds (tests; process exit drops all of them). */
@@ -54,16 +54,29 @@ export function _flushLingeringPins() {
   for (const [key, shared] of [..._sharedPins]) if (shared.refs === 0) dropSharedPin(key);
 }
 
+/**
+ * The pin is advisory: a state dir that is gone (a removed linked worktree's index, in
+ * the seconds before its daemon notices) gives no pin rather than a failed query.
+ */
+function advisoryBeginRead(stateDir, epoch, meta) {
+  try {
+    return beginRead(stateDir, epoch, meta || {});
+  } catch (err) {
+    if (err?.code === 'ENOENT') return null;
+    throw err;
+  }
+}
+
 function acquireSharedPin(stateDir, epoch, meta) {
   const key = `${stateDir}\0${epoch}`;
   let shared = _sharedPins.get(key);
   // The file can vanish under a pin (a rebuild that clears the state dir): write it again,
   // keeping the reads that hold it.
-  if (shared && !existsSync(shared.record.path)) {
-    shared.record = beginRead(stateDir, epoch, meta || {});
+  if (shared && shared.record && !existsSync(shared.record.path)) {
+    shared.record = advisoryBeginRead(stateDir, epoch, meta);
   }
   if (!shared) {
-    shared = { stateDir, record: beginRead(stateDir, epoch, meta || {}), refs: 0, timer: null };
+    shared = { stateDir, record: advisoryBeginRead(stateDir, epoch, meta), refs: 0, timer: null };
     _sharedPins.set(key, shared);
     if (!_exitHookInstalled) {
       _exitHookInstalled = true;

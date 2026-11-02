@@ -9,12 +9,15 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 
 import {
   bootstrapWorktreeIndex, gcWorktreeIndexes, isRuntimeFile, rekeyFileState, requestWorktreeIndex,
-  worktreeIndexDir, bootstrapState, bootstrapClaimPath,
+  worktreeIndexDir, bootstrapState, bootstrapClaimPath, isClonedEntry, indexDateMs, createExclusive,
 } from '../../core/indexing/worktree-index.mjs';
+import { holdMaintainerForIndexRun } from '../../core/indexing/maintainer-launcher.mjs';
+import { stateDirGone } from '../../core/indexing/index-maintainer.mjs';
+import { projectPidFile } from '../../core/search/server-identity.js';
 import { openFileState } from '../../core/incremental-indexing/infrastructure/file-state-store.mjs';
 import { contentHashSync } from '../../core/incremental-indexing/infrastructure/hashing.mjs';
 import { resolveRoots } from '../../core/search/worktree-roots.js';
@@ -155,7 +158,12 @@ describe('bootstrapWorktreeIndex', () => {
     // Dated as of the newest unchanged worktree file, so unchanged files do not read as
     // stale; the edited b.js is newer still.
     const published = Date.parse(JSON.parse(fs.readFileSync(path.join(dir, 'reconcile-manifest.json'), 'utf8')).publishedAt);
-    expect(published).toBe(Math.floor(Math.max(...['a.js', 'LICENSE'].map((f) => fs.statSync(path.join(wt, f)).mtimeMs))));
+    const ns = (f) => fs.statSync(path.join(wt, f), { bigint: true }).mtimeNs;
+    const newestSame = ns('a.js') > ns('LICENSE') ? ns('a.js') : ns('LICENSE');
+    expect(published).toBe(indexDateMs(newestSame, ns('b.js')));
+    // Unchanged files read fresh, the changed one stale (freshness: mtimeMs > publishedAt).
+    expect(fs.statSync(path.join(wt, 'a.js')).mtimeMs <= published).toBe(true);
+    expect(fs.statSync(path.join(wt, 'b.js')).mtimeMs > published).toBe(true);
     expect(JSON.parse(fs.readFileSync(path.join(dir, 'reconcile-manifest.json'), 'utf8')).epoch).toBe(3);
     // The main index is untouched, and its maintainer is not left paused.
     expect(fs.existsSync(path.join(main, '.sweet-search', 'reconcile-pause.json'))).toBe(false);
@@ -197,7 +205,7 @@ describe('gcWorktreeIndexes', () => {
     await bootstrapWorktreeIndex({ mainCheckout: main, worktree: wt, launch: false });
     const worktrees = path.join(main, '.sweet-search', 'worktrees');
     const dir = worktreeIndexDir(main, wt);
-    // other-123 has no stamp but is fresh: an unfinished bootstrap is given time.
+    // other-123 is not named by this module: never touched.
     expect(gcWorktreeIndexes(worktrees)).toEqual([]);
     git(main, 'worktree', 'remove', '--force', wt);
     expect(fs.existsSync(wt)).toBe(false);
@@ -205,9 +213,39 @@ describe('gcWorktreeIndexes', () => {
     expect(fs.existsSync(dir)).toBe(false);
   });
 
+  it('acts only inside a .sweet-search/worktrees folder, never on a repository', () => {
+    // Review finding (FATAL): the exit clean-up of a main checkout's maintainer ran on the
+    // repository root and deleted .git and src.
+    const repo = path.join(tmp, 'repo');
+    for (const d of ['.git', 'src', 'node_modules']) fs.mkdirSync(path.join(repo, d), { recursive: true });
+    const old = new Date(Date.now() - 3600_000);
+    for (const d of ['.git', 'src', 'node_modules']) fs.utimesSync(path.join(repo, d), old, old);
+    expect(gcWorktreeIndexes(repo)).toEqual([]);
+    expect(gcWorktreeIndexes(path.join(tmp, 'elsewhere', 'worktrees'))).toEqual([]);
+    for (const d of ['.git', 'src', 'node_modules']) expect(fs.existsSync(path.join(repo, d))).toBe(true);
+    // Inside a worktrees folder: an unstamped folder, and one not named by this module, stay.
+    const worktrees = path.join(tmp, 'm', '.sweet-search', 'worktrees');
+    const unstamped = path.join(worktrees, 'a-0123456789ab');
+    const foreign = path.join(worktrees, 'notes');
+    fs.mkdirSync(unstamped, { recursive: true });
+    fs.mkdirSync(foreign, { recursive: true });
+    fs.writeFileSync(path.join(foreign, 'worktree-stamp.json'), JSON.stringify({ projectRoot: path.join(tmp, 'gone') }));
+    fs.utimesSync(unstamped, old, old);
+    expect(gcWorktreeIndexes(worktrees, { nowMs: Date.now() + 3600_000 })).toEqual([]);
+  });
+
+  it('keeps a freshly stamped index whose worktree exists (published, link not made yet)', () => {
+    const worktrees = path.join(tmp, 'm', '.sweet-search', 'worktrees');
+    const dir = path.join(worktrees, 'wt-0123456789ab');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, 'worktree-stamp.json'), JSON.stringify({ projectRoot: wt, stampedAt: new Date().toISOString() }));
+    expect(gcWorktreeIndexes(worktrees)).toEqual([]);
+    expect(gcWorktreeIndexes(worktrees, { nowMs: Date.now() + 3600_000 })).toEqual([dir]);
+  });
+
   it('leaves an index a live maintainer still holds, unless that maintainer is the caller', () => {
-    const worktrees = path.join(tmp, 'wts');
-    const dir = path.join(worktrees, 'x-1');
+    const worktrees = path.join(tmp, 'm', '.sweet-search', 'worktrees');
+    const dir = path.join(worktrees, 'x-0123456789ab');
     fs.mkdirSync(dir, { recursive: true });
     fs.writeFileSync(path.join(dir, 'worktree-stamp.json'), JSON.stringify({ projectRoot: path.join(tmp, 'removed') }));
     fs.writeFileSync(path.join(dir, 'index-maintainer.lock'), JSON.stringify({ pid: process.pid }));
@@ -216,9 +254,9 @@ describe('gcWorktreeIndexes', () => {
   });
 
   it('deletes unfinished bootstrap folders of dead processes only', () => {
-    const worktrees = path.join(tmp, 'wts');
-    const dead = path.join(worktrees, 'x-1.bootstrap-99999999');
-    const live = path.join(worktrees, `x-2.bootstrap-${process.pid}`);
+    const worktrees = path.join(tmp, 'm', '.sweet-search', 'worktrees');
+    const dead = path.join(worktrees, 'x-0123456789ab.bootstrap-99999999');
+    const live = path.join(worktrees, `y-0123456789ab.bootstrap-${process.pid}`);
     fs.mkdirSync(dead, { recursive: true });
     fs.mkdirSync(live, { recursive: true });
     expect(gcWorktreeIndexes(worktrees)).toEqual([dead]);
@@ -250,4 +288,128 @@ describe('requestWorktreeIndex', () => {
     expect(fs.existsSync(path.join(wt, '.sweet-search', 'codebase.db'))).toBe(true);
     expect(requestWorktreeIndex({ mainCheckout: main, worktree: wt }).reason).toBe('indexed');
   }, 30_000);
+});
+
+describe('review fixes', () => {
+  it('clones index entries only: no runtime files, legacy artifacts or unknown folders', () => {
+    expect(isClonedEntry('codebase.db', false)).toBe(true);
+    expect(isClonedEntry('codebase-late-interaction.db.segments', true)).toBe(true);
+    expect(isClonedEntry('codebase-sparse-grams.idx.deltas', true)).toBe(true);
+    expect(isClonedEntry('grammars', true)).toBe(true);
+    expect(isClonedEntry('benchmarks', true)).toBe(false);
+    expect(isClonedEntry('readers', true)).toBe(false);
+    expect(isClonedEntry('codebase-hnsw.usearch', false)).toBe(false);
+    expect(isClonedEntry('index-maintainer.lock', false)).toBe(false);
+  });
+
+  it('dates the clone at or after every unchanged file and before every changed one', () => {
+    // Fractional milliseconds round up (a truncated date left the newest unchanged file stale).
+    expect(indexDateMs(1_000_750_000n, null)).toBe(1001);
+    // A changed file older than the newest unchanged one wins: it must read stale.
+    expect(indexDateMs(5_000_000_000n, 2_000_500_000n)).toBe(2000);
+    expect(indexDateMs(5_000_000_000n, 2_000_000_000n)).toBe(1999);
+    expect(indexDateMs(0n, 3_000_000_000n)).toBe(2999);
+    expect(indexDateMs(0n, null)).toBe(0);
+  });
+
+  it('creates claim files whole or not at all', () => {
+    const f = path.join(tmp, 'claim.json');
+    expect(createExclusive(f, '{"pid":1}')).toBe(true);
+    expect(createExclusive(f, '{"pid":2}')).toBe(false);
+    expect(fs.readFileSync(f, 'utf8')).toBe('{"pid":1}');
+    expect(fs.readdirSync(tmp).filter((n) => n.startsWith('claim.json.'))).toEqual([]);
+  });
+
+  it('an index run waits for a live clone\'s pause, and a clone sees a pause it does not own', async () => {
+    const state = path.join(tmp, 'state');
+    fs.mkdirSync(state);
+    const holder = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore' });
+    try {
+      fs.writeFileSync(path.join(state, 'reconcile-pause.json'), JSON.stringify({ paused: true, holderPid: holder.pid, reason: 'clone' }));
+      const t0 = Date.now();
+      const waited = await holdMaintainerForIndexRun(state, { waitForHolderMs: 400 });
+      expect(Date.now() - t0).toBeGreaterThanOrEqual(350);
+      expect(waited.ours).toBe(false);
+      waited();
+      // The clone's pause is still there: a hold that does not own it never removes it.
+      expect(JSON.parse(fs.readFileSync(path.join(state, 'reconcile-pause.json'), 'utf8')).holderPid).toBe(holder.pid);
+      holder.kill('SIGKILL');
+      await new Promise((r) => holder.once('exit', r));
+      const mine = await holdMaintainerForIndexRun(state, { waitForHolderMs: 400 });
+      expect(mine.ours).toBe(true);
+      expect(JSON.parse(fs.readFileSync(path.join(state, 'reconcile-pause.json'), 'utf8')).holderPid).toBe(process.pid);
+      mine();
+      expect(fs.existsSync(path.join(state, 'reconcile-pause.json'))).toBe(false);
+    } finally {
+      holder.kill('SIGKILL');
+    }
+  });
+
+  it('a frozen index pause (no holder process) is respected but not owned', async () => {
+    const state = path.join(tmp, 'state');
+    fs.mkdirSync(state);
+    fs.writeFileSync(path.join(state, 'reconcile-pause.json'), JSON.stringify({ paused: true, reason: 'frozen' }));
+    const r = await holdMaintainerForIndexRun(state, { waitForHolderMs: 100 });
+    expect(r.ours).toBe(false);
+    r();
+    expect(fs.existsSync(path.join(state, 'reconcile-pause.json'))).toBe(true);
+  });
+
+  it('the bootstrap refuses while a full index run holds the main index', async () => {
+    const state = makeMainIndex();
+    const holder = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore' });
+    try {
+      fs.writeFileSync(path.join(state, 'reconcile-pause.json'), JSON.stringify({ paused: true, holderPid: holder.pid }));
+      await expect(bootstrapWorktreeIndex({ mainCheckout: main, worktree: wt, launch: false })).rejects.toThrow(/paused/);
+      expect(fs.existsSync(path.join(wt, '.sweet-search'))).toBe(false);
+    } finally {
+      holder.kill('SIGKILL');
+    }
+  });
+
+  it('only a missing entry counts as a removed checkout', () => {
+    expect(stateDirGone(path.join(tmp, 'nope'), main)).toBe(true);
+    expect(stateDirGone(main, path.join(tmp, 'nope'))).toBe(true);
+    expect(stateDirGone(main, main)).toBe(false);
+  });
+
+  it('does not start a bootstrap for a worktree with a state dir of its own', () => {
+    makeMainIndex();
+    fs.mkdirSync(path.join(wt, '.sweet-search'));
+    expect(requestWorktreeIndex({ mainCheckout: main, worktree: wt }).reason).toBe('own-state-dir');
+  });
+
+  it('stops an earlier daemon of the worktree path, never the main checkout\'s', async () => {
+    makeMainIndex();
+    // A worktree nested in its main checkout, as Claude Code makes them.
+    const nested = path.join(main, '.claude', 'worktrees', 'n1');
+    git(main, 'worktree', 'add', '-q', nested, '-b', 'nested');
+    const sleeper = () => spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore' });
+    const mainDaemon = sleeper();
+    const oldDaemon = sleeper();
+    const mainPidFile = projectPidFile({ SWEET_SEARCH_PROJECT_ROOT: main }, main);
+    try {
+      fs.writeFileSync(mainPidFile, String(mainDaemon.pid));
+      // The pid file the nested worktree's own daemon would write once it has an index.
+      fs.mkdirSync(path.join(tmp, 'probe', '.sweet-search'), { recursive: true });
+      const nestedOwn = (() => {
+        fs.symlinkSync(path.join(tmp, 'probe', '.sweet-search'), path.join(nested, '.sweet-search'));
+        const f = projectPidFile({ SWEET_SEARCH_PROJECT_ROOT: nested }, nested);
+        fs.unlinkSync(path.join(nested, '.sweet-search'));
+        return f;
+      })();
+      expect(nestedOwn).not.toBe(mainPidFile);
+      fs.writeFileSync(nestedOwn, String(oldDaemon.pid));
+      await bootstrapWorktreeIndex({ mainCheckout: main, worktree: nested, launch: false });
+      await new Promise((r) => setTimeout(r, 200));
+      expect(mainDaemon.exitCode).toBe(null);
+      expect(mainDaemon.signalCode).toBe(null);
+      expect(oldDaemon.signalCode).toBe('SIGTERM');
+      fs.rmSync(nestedOwn, { force: true });
+    } finally {
+      fs.rmSync(mainPidFile, { force: true });
+      mainDaemon.kill('SIGKILL');
+      oldDaemon.kill('SIGKILL');
+    }
+  });
 });

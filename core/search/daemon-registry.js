@@ -99,7 +99,7 @@ export function registryTrustworthy(filePath) {
 }
 
 /** The containing directory must be ours and not writable by anyone else. */
-function dirTrustworthy(dirPath) {
+export function dirTrustworthy(dirPath) {
   try {
     const st = statSync(dirPath);
     if (!st.isDirectory()) return false;

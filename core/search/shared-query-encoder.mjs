@@ -24,7 +24,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { encodeFrame, createFrameReader } from './query-encoder-server.mjs';
-import { privateRuntimeDir } from './daemon-registry.js';
+import { dirTrustworthy, privateRuntimeDir } from './daemon-registry.js';
 import { readPersistedLiPolicy, resolveRuntimeLiModel } from '../infrastructure/init-config.js';
 import { recordSpawn } from '../infrastructure/spawn-ledger.js';
 
@@ -103,6 +103,9 @@ export function createSharedQueryEncoderClient({
   const socketPath = sharedSocketPath(key, env);
   if (!socketPath) return null;
   const runtimeDir = path.dirname(socketPath);
+  // The socket carries query text and returns the vectors search ranks with: only in a
+  // directory this user owns and nobody else can write (else a child of this daemon).
+  if (!dirTrustworthy(runtimeDir)) return null;
 
   let conn = null; // { socket, pending: Map }
   let opening = null; // one connect at a time: concurrent first requests share it

@@ -57,6 +57,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { DEAD_LEGACY_ARTIFACTS } from './legacy-artifact-sweep.js';
+import { projectPidFile, resolveProjectRoot } from '../search/server-identity.js';
+
 export const STATE_DIR_NAME = '.sweet-search';
 const INDEX_FILE = 'codebase.db';
 const QUEUE_FILE = 'index-maintainer-queue.jsonl';
@@ -83,6 +86,18 @@ export function isRuntimeFile(name) {
   if (RUNTIME_FILES.has(name)) return true;
   if (name.endsWith('-shm')) return true; // SQLite rebuilds the shared-memory index from the WAL
   return RUNTIME_PREFIXES.some((p) => name.startsWith(p));
+}
+
+const LEGACY = new Set(DEAD_LEGACY_ARTIFACTS);
+// The directories an index holds (LI segments, sparse-gram deltas, parser grammars).
+// Any other directory in a state dir is not index data (benchmark output, notes) and is
+// not cloned: on a plain copy it would cost disk for nothing.
+const INDEX_DIR = /(\.segments|\.deltas)$|^grammars$/;
+
+/** Is `name` (an entry of a state dir) part of the index a worktree needs? */
+export function isClonedEntry(name, isDirectory) {
+  if (isRuntimeFile(name) || LEGACY.has(name)) return false;
+  return !isDirectory || INDEX_DIR.test(name);
 }
 
 const pathKey = (worktree) => createHash('sha1').update(worktree).digest('hex').slice(0, 16);
@@ -137,6 +152,9 @@ export function requestWorktreeIndex({ mainCheckout, worktree, env = process.env
     if (!mainCheckout || !worktree || mainCheckout === worktree) return { started: false, reason: 'not-linked' };
     if (fs.existsSync(path.join(worktree, STATE_DIR_NAME, INDEX_FILE))) return { started: false, reason: 'indexed' };
     if (!fs.existsSync(path.join(mainCheckout, STATE_DIR_NAME, INDEX_FILE))) return { started: false, reason: 'no-main-index' };
+    // A state dir of the worktree's own with no index in it (an index run that stopped
+    // early): the bootstrap leaves it alone, so starting one would only repeat forever.
+    if (ownStateDir(worktree)) return { started: false, reason: 'own-state-dir' };
     const state = bootstrapState(mainCheckout, worktree);
     if (state) return { started: false, reason: state };
     const child = spawn(process.execPath, [entry, `--main=${mainCheckout}`, `--worktree=${worktree}`], {
@@ -153,21 +171,49 @@ export function requestWorktreeIndex({ mainCheckout, worktree, env = process.env
   }
 }
 
-/** Take the claim with O_EXCL; a stale or finished claim is replaced. */
+/**
+ * Create `file` holding `payload`, only if it does not exist. The content is written to a
+ * private name first and linked into place, so no reader ever sees the file empty or
+ * half-written (a reader that did took a live claim for an abandoned one).
+ * @returns {boolean} false when the file exists
+ */
+export function createExclusive(file, payload) {
+  const tmp = `${file}.${process.pid}.${Date.now()}.tmp`;
+  fs.writeFileSync(tmp, payload);
+  try {
+    fs.linkSync(tmp, file);
+    return true;
+  } catch (err) {
+    if (err?.code === 'EEXIST') return false;
+    throw err;
+  } finally {
+    try { fs.unlinkSync(tmp); } catch { /* gone */ }
+  }
+}
+
+// A lock or claim file that cannot be read is held if it is this young (a file another
+// tool wrote by hand, or a disk error): never take over what may be live.
+const UNREADABLE_HELD_MS = 60_000;
+
+function fileAgeMs(file) {
+  try { return Date.now() - fs.statSync(file).mtimeMs; } catch { return Infinity; }
+}
+
+function ownStateDir(worktree) {
+  try { return !fs.lstatSync(path.join(worktree, STATE_DIR_NAME)).isSymbolicLink(); } catch { return false; }
+}
+
+/** Take the claim; a stale or finished claim is replaced. */
 function takeClaim(file) {
   const payload = JSON.stringify({ status: 'running', pid: process.pid, atMs: Date.now() });
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      fs.writeFileSync(file, payload, { flag: 'wx' });
-      return true;
-    } catch (err) {
-      if (err?.code !== 'EEXIST') throw err;
-      const prev = readJson(file);
-      const age = Date.now() - Number(prev?.atMs || 0);
-      const live = prev?.status === 'running' && pidAlive(Number(prev.pid)) && age < CLAIM_STALE_MS;
-      if (live || (prev?.status === 'failed' && age < (Number(prev.retryAfterMs) || RETRY_AFTER_MS))) return false;
-      try { fs.unlinkSync(file); } catch { /* raced */ }
-    }
+    if (createExclusive(file, payload)) return true;
+    const prev = readJson(file);
+    if (!prev && fileAgeMs(file) < UNREADABLE_HELD_MS) return false;
+    const age = Date.now() - Number(prev?.atMs || 0);
+    const live = prev?.status === 'running' && pidAlive(Number(prev.pid)) && age < CLAIM_STALE_MS;
+    if (live || (prev?.status === 'failed' && age < (Number(prev.retryAfterMs) || RETRY_AFTER_MS))) return false;
+    try { fs.unlinkSync(file); } catch { /* raced */ }
   }
   return false;
 }
@@ -193,7 +239,9 @@ function run(cmd, args) {
  * @returns {'clone'|'copy'}
  */
 export function cloneIndexDir(src, dst, { platform = process.platform, log = () => {} } = {}) {
-  const entries = fs.readdirSync(src).filter((name) => !isRuntimeFile(name)).map((name) => path.join(src, name));
+  const entries = fs.readdirSync(src, { withFileTypes: true })
+    .filter((ent) => isClonedEntry(ent.name, ent.isDirectory()))
+    .map((ent) => path.join(src, ent.name));
   fs.mkdirSync(dst, { recursive: true });
   const target = `${dst}${path.sep}`;
   const clone = platform === 'darwin' ? run('cp', ['-cR', ...entries, target])
@@ -236,6 +284,14 @@ export async function rekeyFileState({ stateDir, worktree, mainCheckout }) {
   const changed = [];
   let same = 0;
   let newestSameMtimeNs = 0n;
+  let oldestChangedMtimeNs = null;
+  const noteChanged = (rel, stat) => {
+    changed.push(rel);
+    if (stat) {
+      const ns = BigInt(stat.mtime_ns);
+      if (oldestChangedMtimeNs === null || ns < oldestChangedMtimeNs) oldestChangedMtimeNs = ns;
+    }
+  };
   try {
     const fileUpdates = [];
     for (const [rel, entry] of store.iterateFiles()) {
@@ -250,7 +306,7 @@ export async function rekeyFileState({ stateDir, worktree, mainCheckout }) {
         same += 1;
         newestSameMtimeNs = BigInt(stat.mtime_ns) > newestSameMtimeNs ? BigInt(stat.mtime_ns) : newestSameMtimeNs;
       } else {
-        changed.push(rel);
+        noteChanged(rel, stat);
       }
     }
     const grepUpdates = [];
@@ -258,7 +314,7 @@ export async function rekeyFileState({ stateDir, worktree, mainCheckout }) {
       const stat = statOf(path.join(worktree, rel), { follow: false });
       if (!stat) continue;
       let content;
-      try { content = fs.readFileSync(path.join(worktree, rel)); } catch { changed.push(rel); continue; }
+      try { content = fs.readFileSync(path.join(worktree, rel)); } catch { noteChanged(rel, stat); continue; }
       const hash = contentHashSync(content);
       // The full build records grep-only files by stat alone (and a binary file with an
       // empty hash). Then the main checkout's file is the reference, if its stat is still
@@ -275,7 +331,7 @@ export async function rekeyFileState({ stateDir, worktree, mainCheckout }) {
         same += 1;
         newestSameMtimeNs = BigInt(stat.mtime_ns) > newestSameMtimeNs ? BigInt(stat.mtime_ns) : newestSameMtimeNs;
       } else {
-        changed.push(rel);
+        noteChanged(rel, stat);
       }
     }
     store.transaction(() => {
@@ -286,7 +342,27 @@ export async function rekeyFileState({ stateDir, worktree, mainCheckout }) {
   } finally {
     store.close();
   }
-  return { same, changed: [...new Set(changed)], newestSameMtimeMs: Number(newestSameMtimeNs / 1_000_000n) };
+  return { same, changed: [...new Set(changed)], publishedAtMs: indexDateMs(newestSameMtimeNs, oldestChangedMtimeNs) };
+}
+
+const ceilMs = (ns) => Number((ns + 999_999n) / 1_000_000n);
+
+/**
+ * The time to date the clone at (see dateIndexAs), in whole milliseconds as the manifest
+ * stores it, or 0 for "leave it". Freshness compares a file's fractional mtimeMs with it
+ * (stale when greater), so: at or after the newest unchanged file (rounded up, or that file
+ * itself reads stale), and strictly before the oldest changed one, which must read stale
+ * until the maintainer has indexed it. When both cannot hold, the changed file wins: an
+ * unchanged file that reads stale for a while is safe, a changed one that reads fresh
+ * shows the main checkout's chunks as current.
+ */
+export function indexDateMs(newestSameNs, oldestChangedNs) {
+  let t = newestSameNs > 0n ? ceilMs(newestSameNs) : 0;
+  if (oldestChangedNs !== null && oldestChangedNs !== undefined) {
+    const before = ceilMs(oldestChangedNs) - 1;
+    t = t > 0 ? Math.min(t, before) : before;
+  }
+  return t > 0 ? t : 0;
 }
 
 /**
@@ -297,28 +373,24 @@ export async function rekeyFileState({ stateDir, worktree, mainCheckout }) {
  * code-graph.db's mtime). Every file of a new worktree carries the checkout time, later
  * than the main index, so every result read as stale (and ss-grep's line classes are
  * gated on it). The re-key proved the unchanged files equal to what the index holds, so
- * the index is as new as the newest of them. A file edited after the checkout is newer
- * and stays stale until the maintainer indexes it; a file the branch itself changed is
- * queued, grepped from disk until then (grep-corpus.js listPendingReindexFiles), and
- * re-indexed within seconds.
+ * the index is as new as the newest of them, but never as new as the oldest changed file
+ * (indexDateMs): every changed file reads stale until the maintainer has indexed it and
+ * published, which dates the index anew.
  */
-function dateIndexAs(stateDir, newestSameMtimeMs) {
-  if (!(newestSameMtimeMs > 0)) return;
+function dateIndexAs(stateDir, publishedAtMs) {
+  if (!(publishedAtMs > 0)) return;
   const manifestPath = path.join(stateDir, 'reconcile-manifest.json');
   const manifest = readJson(manifestPath);
   if (manifest && typeof manifest === 'object') {
-    const was = Date.parse(manifest.publishedAt || '');
-    if (!Number.isFinite(was) || was < newestSameMtimeMs) {
-      manifest.publishedAt = new Date(newestSameMtimeMs).toISOString();
-      const tmp = `${manifestPath}.tmp.${process.pid}`;
-      fs.writeFileSync(tmp, `${JSON.stringify(manifest, null, 2)}\n`);
-      fs.renameSync(tmp, manifestPath);
-    }
+    manifest.publishedAt = new Date(publishedAtMs).toISOString();
+    const tmp = `${manifestPath}.tmp.${process.pid}`;
+    fs.writeFileSync(tmp, `${JSON.stringify(manifest, null, 2)}\n`);
+    fs.renameSync(tmp, manifestPath);
   }
   const graph = path.join(stateDir, 'code-graph.db');
   try {
     const st = fs.statSync(graph);
-    if (st.mtimeMs < newestSameMtimeMs) fs.utimesSync(graph, st.atime, new Date(newestSameMtimeMs));
+    fs.utimesSync(graph, st.atime, new Date(publishedAtMs));
   } catch { /* no code graph */ }
 }
 
@@ -367,38 +439,48 @@ function linkStateDir(worktree, target) {
   fs.renameSync(tmp, link);
 }
 
+/** Is `dir` a `<checkout>/.sweet-search/worktrees` folder (the only place GC may act)? */
+export function isWorktreesDir(dir) {
+  return path.basename(dir) === WORKTREES_DIR && path.basename(path.dirname(dir)) === STATE_DIR_NAME;
+}
+
+// The names this module gives: `<name>-<12 hex>` and `<that>.bootstrap-<pid>`.
+const OWN_INDEX_NAME = /^[A-Za-z0-9._-]{1,40}-[0-9a-f]{12}$/;
+const OWN_BOOTSTRAP_NAME = /^[A-Za-z0-9._-]{1,40}-[0-9a-f]{12}\.bootstrap-(\d+)$/;
+
 /**
  * Delete the worktree indexes whose worktree is gone: the stamped checkout no longer
- * exists, or its `.sweet-search` no longer leads here. An index a live maintainer still
- * holds is left for that maintainer to stop first (`selfPid` is the caller's own lock).
- * Also deletes unfinished bootstrap folders of dead processes. Never throws.
+ * exists, or its `.sweet-search` no longer leads here. Acts only inside a
+ * `.sweet-search/worktrees` folder and only on folders named the way this module names
+ * them; never on an unstamped folder. Keeps an index a live maintainer still holds
+ * (`selfPid` is the caller's own lock), and one stamped in the last half hour whose
+ * worktree still exists (a bootstrap between publish and link). Also deletes unfinished
+ * bootstrap folders of dead processes. Never throws.
  *
  * @returns {string[]} the folders deleted
  */
 export function gcWorktreeIndexes(worktreesDir, { selfPid = 0, nowMs = Date.now() } = {}) {
   const removed = [];
+  if (!isWorktreesDir(worktreesDir)) return removed;
   let names = [];
   try { names = fs.readdirSync(worktreesDir); } catch { return removed; }
   for (const name of names) {
     const dir = path.join(worktreesDir, name);
     try {
-      const tmp = /\.bootstrap-(\d+)$/.exec(name);
+      const tmp = OWN_BOOTSTRAP_NAME.exec(name);
       if (tmp) {
         if (!pidAlive(Number(tmp[1]))) { fs.rmSync(dir, { recursive: true, force: true }); removed.push(dir); }
         continue;
       }
+      if (!OWN_INDEX_NAME.test(name)) continue;
       const stamp = readJson(path.join(dir, 'worktree-stamp.json'));
       const root = stamp?.projectRoot;
+      if (!root) continue;
       let live = false;
-      if (root) {
-        try { live = fs.realpathSync(path.join(root, STATE_DIR_NAME)) === fs.realpathSync(dir); } catch { live = false; }
-      }
-      // A folder with no stamp is a bootstrap that never published: old enough, it goes.
-      if (!root) {
-        const age = nowMs - fs.statSync(dir).mtimeMs;
-        if (age < CLAIM_STALE_MS) continue;
-      }
+      try { live = fs.realpathSync(path.join(root, STATE_DIR_NAME)) === fs.realpathSync(dir); } catch { live = false; }
       if (live) continue;
+      const stampedMs = Date.parse(stamp.stampedAt || '');
+      if (fs.existsSync(root) && Number.isFinite(stampedMs) && nowMs - stampedMs < CLAIM_STALE_MS) continue;
       const lock = readJson(path.join(dir, 'index-maintainer.lock'));
       const holder = Number(lock?.pid);
       if (holder && holder !== selfPid && pidAlive(holder)) continue;
@@ -413,25 +495,67 @@ const CLONE_LOCK = 'worktree-bootstrap.lock';
 const CLONE_LOCK_WAIT_MS = 120_000;
 
 /** The per-main-index clone lock (O_EXCL; a dead holder's lock is taken over). */
-async function takeCloneLock(mainState) {
+async function takeCloneLock(mainState, waitMs = CLONE_LOCK_WAIT_MS) {
   const file = path.join(mainState, CLONE_LOCK);
-  const deadline = Date.now() + CLONE_LOCK_WAIT_MS;
+  const deadline = Date.now() + waitMs;
   for (;;) {
-    try {
-      fs.writeFileSync(file, JSON.stringify({ pid: process.pid, atMs: Date.now() }), { flag: 'wx' });
+    if (createExclusive(file, JSON.stringify({ pid: process.pid, atMs: Date.now() }))) {
       return () => {
         try { if (readJson(file)?.pid === process.pid) fs.unlinkSync(file); } catch { /* gone */ }
       };
-    } catch (err) {
-      if (err?.code !== 'EEXIST') throw err;
-      const holder = readJson(file);
-      if (!holder || !pidAlive(Number(holder.pid))) {
-        try { fs.unlinkSync(file); } catch { /* raced */ }
-        continue;
-      }
-      if (Date.now() > deadline) throw Object.assign(new Error('another worktree clone holds the lock'), { retryAfterMs: 30_000 });
-      await new Promise((r) => setTimeout(r, 100));
     }
+    const holder = readJson(file);
+    const held = holder ? pidAlive(Number(holder.pid)) : fileAgeMs(file) < UNREADABLE_HELD_MS;
+    if (!held) {
+      try { fs.unlinkSync(file); } catch { /* raced */ }
+      continue;
+    }
+    if (Date.now() > deadline) throw Object.assign(new Error('another worktree clone holds the lock'), { retryAfterMs: 30_000 });
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+
+/** A maintainer started for `root`, bound to that root's search daemon like every other launch. */
+function launchFor(launchMaintainer, root) {
+  const env = { ...process.env, SWEET_SEARCH_PROJECT_ROOT: root };
+  delete env.SWEET_SEARCH_PID_FILE;
+  delete env.SWEET_SEARCH_STATE_DIR;
+  // The maintainer stops once that daemon has been gone for its grace period; the
+  // daemon's first query starts a new one (index-maintainer.mjs DAEMON_ABSENT_GRACE_MS).
+  return launchMaintainer({ cwd: root, env, daemonPidFile: projectPidFile(env, root) });
+}
+
+/**
+ * A daemon still serving this worktree path is serving an earlier worktree's index (the
+ * worktree was removed and added again before that daemon noticed). Stop it: the next
+ * call starts one on the new index.
+ */
+function stopStaleDaemon(worktree, log) {
+  const env = { ...process.env, SWEET_SEARCH_PROJECT_ROOT: worktree };
+  delete env.SWEET_SEARCH_PID_FILE;
+  const pidFile = projectPidFile(env, worktree);
+  // Only the worktree's own daemon: never a pid file the walk resolved to another root.
+  let real = worktree;
+  try { real = fs.realpathSync(worktree); } catch { /* as given */ }
+  if (resolveProjectRoot(env, worktree) !== real) return;
+  let pid = 0;
+  try { pid = Number(fs.readFileSync(pidFile, 'utf8').trim()); } catch { return; }
+  if (pid > 0 && pid !== process.pid && pidAlive(pid)) {
+    try { process.kill(pid, 'SIGTERM'); log(`stopped the daemon of an earlier index at this path (pid ${pid})`); } catch { /* gone */ }
+  }
+}
+
+/** Can a symbolic link be made in the worktree? (Not on some WSL and Windows volumes.) */
+function canLink(worktree) {
+  const probe = path.join(worktree, `${STATE_DIR_NAME}.probe-${process.pid}`);
+  try {
+    fs.rmSync(probe, { force: true });
+    fs.symlinkSync('.', probe, 'dir');
+    return true;
+  } catch {
+    return false;
+  } finally {
+    try { fs.rmSync(probe, { force: true }); } catch { /* none */ }
   }
 }
 
@@ -439,16 +563,21 @@ async function takeCloneLock(mainState) {
  * Build the worktree's index from the main checkout's and link it in. Throws on failure;
  * leaves nothing behind when it does.
  *
+ * @param {object} opts
+ * @param {number} [opts.lockWaitMs]  how long to wait for another clone of this main index
  * @returns {Promise<{mode: 'clone'|'copy', same: number, changed: number, ms: number, dir: string}|{skipped: string}>}
  */
-export async function bootstrapWorktreeIndex({ mainCheckout, worktree, log = () => {}, launch = true }) {
+export async function bootstrapWorktreeIndex({ mainCheckout, worktree, log = () => {}, launch = true, lockWaitMs = CLONE_LOCK_WAIT_MS }) {
   const t0 = Date.now();
   const mainState = path.join(mainCheckout, STATE_DIR_NAME);
   if (fs.existsSync(path.join(worktree, STATE_DIR_NAME, INDEX_FILE))) return { skipped: 'indexed' };
   if (!fs.existsSync(path.join(mainState, INDEX_FILE))) return { skipped: 'no-main-index' };
-  try {
-    if (!fs.lstatSync(path.join(worktree, STATE_DIR_NAME)).isSymbolicLink()) return { skipped: 'own-state-dir' };
-  } catch { /* none: the usual case */ }
+  if (ownStateDir(worktree)) return { skipped: 'own-state-dir' };
+  // Cheap checks first: a worktree that cannot hold the link must not cost a copy and a
+  // stopped main maintainer, again on every retry.
+  if (!canLink(worktree)) {
+    throw Object.assign(new Error('cannot create a symbolic link in the worktree'), { retryAfterMs: 24 * 3600_000 });
+  }
 
   const worktreesDir = path.join(mainState, WORKTREES_DIR);
   for (const dir of gcWorktreeIndexes(worktreesDir)) log(`removed the index of a removed worktree: ${dir}`);
@@ -460,16 +589,18 @@ export async function bootstrapWorktreeIndex({ mainCheckout, worktree, log = () 
   let mode;
   // One clone at a time per main index: several sessions often start their worktrees
   // together, and each clone holds the main maintainer off the index.
-  const unlock = await takeCloneLock(mainState);
+  const unlock = await takeCloneLock(mainState, lockWaitMs);
   try {
     // A pause someone else holds (a full index run, a frozen benchmark index): the main
     // index is being rewritten or must not be touched. Try again on a later call.
-    if (reconcilePaused(mainState)) {
-      throw Object.assign(new Error('the main checkout\'s index is paused (an index run or a frozen index)'), { retryAfterMs: 60_000 });
-    }
+    const paused = () => Object.assign(new Error('the main checkout\'s index is paused (an index run or a frozen index)'), { retryAfterMs: 60_000 });
+    if (reconcilePaused(mainState)) throw paused();
     const mainWasMaintained = maintainerAlive(mainState);
-    const release = await holdMaintainerForIndexRun(mainState, { reason: 'a worktree index is being cloned' });
+    // The pause is exclusive (maintainer-launcher.mjs): a full index run that starts now
+    // waits for this copy, and one that won the race makes this hold not ours.
+    const release = await holdMaintainerForIndexRun(mainState, { reason: 'a worktree index is being cloned', waitForHolderMs: 2_000 });
     try {
+      if (!release.ours) throw paused();
       mode = cloneIndexDir(mainState, tmp, { log });
     } catch (err) {
       fs.rmSync(tmp, { recursive: true, force: true });
@@ -478,9 +609,10 @@ export async function bootstrapWorktreeIndex({ mainCheckout, worktree, log = () 
       release();
       // The hold stopped the main checkout's maintainer. Its daemon would start a new one
       // only on the next query or supervision tick (up to a minute), and edits in the
-      // main checkout must not wait that long: start it again now.
-      if (mainWasMaintained && launch) {
-        const r = launchMaintainer({ cwd: mainCheckout, env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: mainCheckout } });
+      // main checkout must not wait that long: start it again now, unless an index run
+      // took the index over in the meantime.
+      if (mainWasMaintained && launch && !reconcilePaused(mainState)) {
+        const r = launchFor(launchMaintainer, mainCheckout);
         log(`main maintainer: ${r.reason}${r.pid ? ` (pid ${r.pid})` : ''}`);
       }
     }
@@ -492,20 +624,26 @@ export async function bootstrapWorktreeIndex({ mainCheckout, worktree, log = () 
   try {
     const { writeStamp } = await import('../incremental-indexing/infrastructure/worktree-stamp.mjs');
     writeStamp(tmp, worktree);
-    const { same, changed, newestSameMtimeMs } = await rekeyFileState({ stateDir: tmp, worktree, mainCheckout });
+    const { same, changed, publishedAtMs } = await rekeyFileState({ stateDir: tmp, worktree, mainCheckout });
     writeQueue(tmp, changed);
-    dateIndexAs(tmp, newestSameMtimeMs);
+    dateIndexAs(tmp, publishedAtMs);
     log(`file records: ${same} unchanged, ${changed.length} queued for re-indexing`);
     // A leftover index for this path (its worktree was removed and re-added, and the
     // clean-up has not run) is replaced: it describes other files.
     const old = readJson(path.join(finalDir, 'index-maintainer.lock'));
     if (old?.pid && pidAlive(Number(old.pid))) throw new Error(`a maintainer still runs on ${finalDir}`);
-    fs.rmSync(finalDir, { recursive: true, force: true });
-    fs.renameSync(tmp, finalDir);
     ensureGitIgnoresLink(worktree, log);
+    // Link first, then publish with the rename: a published folder is never without its
+    // link, so a clean-up running in between cannot take it for an orphan.
+    // The leftover goes before the link exists, so no call is served by it meanwhile.
+    fs.rmSync(finalDir, { recursive: true, force: true });
     linkStateDir(worktree, finalDir);
+    fs.renameSync(tmp, finalDir);
+    // After the link resolves: the daemon pid file is found by walking up to the nearest
+    // index, which before the link is the main checkout's (and stopped the main daemon).
+    stopStaleDaemon(worktree, log);
     if (launch) {
-      const r = launchMaintainer({ cwd: worktree, env: { ...process.env, SWEET_SEARCH_PROJECT_ROOT: worktree } });
+      const r = launchFor(launchMaintainer, worktree);
       log(`maintainer: ${r.reason}${r.pid ? ` (pid ${r.pid})` : ''}`);
     }
     return { mode, same, changed: changed.length, ms: Date.now() - t0, dir: finalDir };
@@ -522,7 +660,7 @@ export async function bootstrapWorktreeIndex({ mainCheckout, worktree, log = () 
  *
  * @returns {Promise<'ready'|'skipped'|'busy'|'failed'>}  'busy': another process holds the claim
  */
-export async function runWorktreeBootstrap({ mainCheckout, worktree, log: extraLog = null, launch = true }) {
+export async function runWorktreeBootstrap({ mainCheckout, worktree, log: extraLog = null, launch = true, lockWaitMs }) {
   const claim = bootstrapClaimPath(mainCheckout, worktree);
   const logFile = path.join(mainCheckout, STATE_DIR_NAME, 'worktree-bootstrap.log');
   const log = (msg) => {
@@ -531,7 +669,7 @@ export async function runWorktreeBootstrap({ mainCheckout, worktree, log: extraL
   };
   if (!takeClaim(claim)) return 'busy';
   try {
-    const r = await bootstrapWorktreeIndex({ mainCheckout, worktree, log, launch });
+    const r = await bootstrapWorktreeIndex({ mainCheckout, worktree, log, launch, ...(lockWaitMs ? { lockWaitMs } : {}) });
     log(r.skipped ? `skipped: ${r.skipped}` : `ready in ${r.ms} ms`);
     fs.rmSync(claim, { force: true });
     return r.skipped ? 'skipped' : 'ready';
@@ -549,12 +687,12 @@ export async function runWorktreeBootstrap({ mainCheckout, worktree, log: extraL
  *
  * @returns {Promise<boolean>} true when the worktree has an index of its own
  */
-export async function ensureWorktreeIndex({ mainCheckout, worktree, env = process.env, waitMs = 120_000, log = null }) {
+export async function ensureWorktreeIndex({ mainCheckout, worktree, env = process.env, waitMs = 20_000, log = null }) {
   const indexed = () => fs.existsSync(path.join(worktree, STATE_DIR_NAME, INDEX_FILE));
   if (indexed()) return true;
   if (!worktreeIndexEnabled(env) || !fs.existsSync(path.join(mainCheckout, STATE_DIR_NAME, INDEX_FILE))) return false;
   try {
-    const outcome = await runWorktreeBootstrap({ mainCheckout, worktree, log });
+    const outcome = await runWorktreeBootstrap({ mainCheckout, worktree, log, lockWaitMs: waitMs });
     if (outcome === 'busy') {
       // Another process is building it: wait for its link.
       const deadline = Date.now() + waitMs;

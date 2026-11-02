@@ -9,7 +9,7 @@
  */
 
 import fs from 'fs/promises';
-import { existsSync } from 'fs';
+import { existsSync, statSync } from 'fs';
 import path from 'node:path';
 import { DB_PATHS, LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
 import { clearCache } from '../embedding/embedding-cache.js';
@@ -1616,8 +1616,13 @@ export async function startServer() {
   // active peer, and only via a newly-started peer within one registry-refresh
   // interval; see daemon-registry.js selectEvictionTargets.)
   let rssTouchedAt = 0;
-  // Only an index folder that was there and then vanished counts as removed.
-  const indexDirAtStart = existsSync(path.dirname(DB_PATHS.codebase));
+  // Only an index folder that was there and then vanished, or was replaced by another
+  // (a worktree removed and added again at the same path), counts as removed. The inode is
+  // the folder the link points to; only "no such entry" means gone.
+  const indexDirIno = (() => {
+    try { return statSync(path.dirname(DB_PATHS.codebase)).ino; } catch (err) { return err?.code === 'ENOENT' ? null : undefined; }
+  });
+  const indexDirAtStart = indexDirIno();
   idleTimer = setInterval(() => {
     const ttl = Number(process.env.SWEET_SEARCH_DAEMON_IDLE_TTL_MS ?? 1_200_000);
     const idleFor = Date.now() - lastActivityMs;
@@ -1632,7 +1637,8 @@ export async function startServer() {
     }
     // The index was deleted under this daemon: a removed linked worktree takes its
     // `.sweet-search/` with it. Nothing is left to serve.
-    if (indexDirAtStart && !existsSync(path.dirname(DB_PATHS.codebase))) {
+    const indexDirNow = indexDirAtStart ? indexDirIno() : undefined;
+    if (indexDirAtStart && indexDirNow !== undefined && indexDirNow !== indexDirAtStart) {
       gracefulShutdown('index-removed');
       return;
     }

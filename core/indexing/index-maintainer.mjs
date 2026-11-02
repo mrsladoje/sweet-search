@@ -15,7 +15,7 @@
  */
 
 import { readFileSync, writeFileSync, unlinkSync, mkdirSync, openSync, closeSync, constants, ftruncateSync, fsyncSync, writeSync, statSync, existsSync, realpathSync, lstatSync } from 'node:fs';
-import { dirname, join, relative, resolve } from 'node:path';
+import { basename, dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { setProcessTitle } from '../infrastructure/process-title.js';
@@ -165,9 +165,25 @@ export function isReconcilePaused(stateDir) {
   }
 }
 
+/** `<x>/.sweet-search/worktrees` (worktree-index.mjs isWorktreesDir, without the import). */
+function isWorktreesDirPath(dir) {
+  return basename(dir) === 'worktrees' && basename(dirname(dir)) === '.sweet-search';
+}
+
+/** Is `p` known to be missing? Only "no such entry" counts: an I/O error or a full file
+ * table must never read as a removed checkout. */
+function missing(p) {
+  try { statSync(p); return false; } catch (err) { return err?.code === 'ENOENT' || err?.code === 'ENOTDIR'; }
+}
+
 /** The index (or its checkout) was deleted under this process: a removed worktree. */
 export function stateDirGone(stateDir, projectRoot) {
-  return !existsSync(stateDir) || !existsSync(projectRoot);
+  return missing(stateDir) || missing(projectRoot);
+}
+
+/** A state dir that is a link with nothing behind it (a removed worktree's index). */
+function danglingLink(p) {
+  try { return lstatSync(p).isSymbolicLink() && missing(p); } catch { return false; }
 }
 
 export function reconcileV2Context(env = process.env) {
@@ -1174,6 +1190,13 @@ export function daemonGoneLongEnough(state, { live, nowMs, graceMs = DAEMON_ABSE
 
 async function runReconcileV2Main({ runOnce, merkleOnce }) {
   const ctx = reconcileV2Context();
+  // A maintainer that starts after its checkout was removed (a worktree removed while the
+  // bootstrap or a daemon was launching it) must not create anything: a recursive mkdir
+  // of `<worktree>/.sweet-search` would bring the removed worktree's directory back.
+  if (missing(ctx.projectRoot) || danglingLink(ctx.stateDirPath)) {
+    log('INFO', `Project root or its index link is gone (${ctx.stateDirPath}); not starting.`);
+    return;
+  }
   mkdirSync(ctx.stateDir, { recursive: true });
   if (runOnce || merkleOnce) {
     await runReconcileV2Tick(ctx);
@@ -1207,7 +1230,7 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
   let rootGone = false;
   try {
     const { gcWorktreeIndexes } = await import('./worktree-index.mjs');
-    for (const dir of gcWorktreeIndexes(join(ctx.stateDir, 'worktrees'))) log('INFO', `Removed the index of a removed worktree: ${dir}`);
+    for (const dir of gcWorktreeIndexes(join(ctx.stateDirPath || ctx.stateDir, 'worktrees'))) log('INFO', `Removed the index of a removed worktree: ${dir}`);
   } catch (err) {
     log('WARN', `Worktree index clean-up failed (continuing startup): ${err?.message ?? err}`);
   }
@@ -1670,7 +1693,10 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
     if (watchdog) clearTimeout(watchdog);
     releaseStateLock(lock.lockFile);
     log('INFO', 'Reconcile v2 shutdown complete');
-    if (rootGone) {
+    // Only a linked worktree's index (the state dir is a link into
+    // `<main>/.sweet-search/worktrees/`) is deleted with its worktree: never anything near a
+    // main checkout's index or an index kept elsewhere by SWEET_SEARCH_STATE_DIR.
+    if (rootGone && ctx.stateDir !== ctx.stateDirPath && isWorktreesDirPath(dirname(ctx.stateDir))) {
       // This was a linked worktree's index and the worktree is gone: delete the index
       // (this process's own pid does not count as a live holder).
       try {

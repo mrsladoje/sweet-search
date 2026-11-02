@@ -23,6 +23,7 @@
 import fs from 'node:fs';
 import net from 'node:net';
 import v8 from 'node:v8';
+import { fileURLToPath } from 'node:url';
 import { setProcessTitle } from '../infrastructure/process-title.js';
 
 export const MAX_FRAME_BYTES = 256 * 1024 * 1024;
@@ -69,9 +70,17 @@ async function main() {
   if (!socketPath) process.exit(2);
   setProcessTitle('sweet-search-query-encoder');
 
+  // One starting server per socket: two that probed an empty path at once would each
+  // remove the other's socket. The start lock is created atomically (write, then link);
+  // a lock whose holder is gone is taken over.
+  const startLock = `${socketPath}.start`;
+  if (!takeStartLock(startLock)) process.exit(0);
+  const dropStartLock = () => {
+    try { if (Number(fs.readFileSync(startLock, 'utf8')) === process.pid) fs.unlinkSync(startLock); } catch { /* gone */ }
+  };
   // Another server already answers: this one is not needed. A socket file nobody answers
   // on is left over from a server that died; take its place.
-  if (await socketAnswers(socketPath)) process.exit(0);
+  if (await socketAnswers(socketPath)) { dropStartLock(); process.exit(0); }
   try { fs.unlinkSync(socketPath); } catch { /* none */ }
 
   // SWEET_SEARCH_QUERY_ENCODER_OPS: a test seam (a module with the same runEncoderOp).
@@ -86,6 +95,7 @@ async function main() {
       const { id, op, texts, options } = msg || {};
       inflight += 1;
       lastActivity = Date.now();
+      registration?.touch(lastActivity).catch(() => {});
       let reply;
       try {
         reply = { id, ok: true, result: await runEncoderOp(op, texts, { projectRoot, options }) };
@@ -105,11 +115,15 @@ async function main() {
     conn.on('error', () => {});
   });
 
+  let socketIno = null; // the socket file this server bound
+  let registration = null; // the fleet memory budget's entry (rss-budget.mjs)
   function stop(reason) {
     if (stopping) return;
     stopping = true;
     server.close();
-    try { if (fs.existsSync(socketPath)) fs.unlinkSync(socketPath); } catch { /* gone */ }
+    // Only our own socket: a newer server may have taken the path over.
+    try { if (socketIno !== null && fs.statSync(socketPath).ino === socketIno) fs.unlinkSync(socketPath); } catch { /* gone */ }
+    registration?.unregister().catch(() => {});
     const finish = () => {
       if (inflight > 0) { setTimeout(finish, 50); return; }
       process.stderr.write(`[query-encoder-server] exiting: ${reason}\n`);
@@ -120,21 +134,29 @@ async function main() {
 
   server.on('error', (err) => {
     // Lost the race to another new server: it serves.
-    if (err?.code === 'EADDRINUSE') process.exit(0);
+    if (err?.code === 'EADDRINUSE') { dropStartLock(); process.exit(0); }
     process.stderr.write(`[query-encoder-server] ${err?.message || err}\n`);
     process.exit(1);
   });
   server.listen(socketPath, () => {
     try { fs.chmodSync(socketPath, 0o600); } catch { /* best effort */ }
+    try { socketIno = fs.statSync(socketPath).ino; } catch { /* checked again on stop */ }
+    dropStartLock();
+    // Counted in the fleet memory budget like the daemons it serves (the per-daemon child
+    // was counted as its daemon's child; this process belongs to no single daemon).
+    import('../indexing/rss-budget.mjs')
+      .then((mod) => mod.registerDaemon({ pid: process.pid, stateDir: null, kind: 'query-encoder' }))
+      .then((r) => { registration = r; if (stopping) r.unregister().catch(() => {}); })
+      .catch(() => { /* best effort: not counted */ });
   });
 
   const idleTimer = setInterval(() => {
     if (inflight === 0 && Date.now() - lastActivity > idleMs) stop('idle');
     // The socket file was removed or replaced (a newer server took over): leave.
-    else if (!stopping) {
-      try {
-        if (!fs.existsSync(socketPath)) stop('socket removed');
-      } catch { /* keep serving */ }
+    else if (!stopping && socketIno !== null) {
+      let ino = null;
+      try { ino = fs.statSync(socketPath).ino; } catch { ino = null; }
+      if (ino !== socketIno) stop('socket removed or replaced');
     }
   }, Math.min(10_000, Math.max(100, Math.floor(idleMs / 4))));
   idleTimer.unref?.();
@@ -142,6 +164,30 @@ async function main() {
   process.on('SIGINT', () => stop('SIGINT'));
 }
 
-if (process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(new URL(import.meta.url).pathname)) {
-  main();
+/** Create the start lock atomically, or take it over from a process that is gone. */
+function takeStartLock(file) {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const tmp = `${file}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, String(process.pid));
+    try {
+      fs.linkSync(tmp, file);
+      return true;
+    } catch (err) {
+      if (err?.code !== 'EEXIST') throw err;
+    } finally {
+      try { fs.unlinkSync(tmp); } catch { /* gone */ }
+    }
+    let holder = 0;
+    try { holder = Number(fs.readFileSync(file, 'utf8')); } catch { holder = 0; }
+    let alive = false;
+    try { process.kill(holder, 0); alive = holder > 0; } catch (err) { alive = err?.code === 'EPERM'; }
+    if (alive) return false;
+    try { fs.unlinkSync(file); } catch { /* raced */ }
+  }
+  return false;
 }
+
+const isMain = (() => {
+  try { return !!process.argv[1] && fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; }
+})();
+if (isMain) main();
