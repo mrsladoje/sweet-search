@@ -27,7 +27,8 @@ describe('Brand presence verification', () => {
   });
 
   it('MCP server name is sweet-search', () => {
-    const server = readFileSync(join(ROOT, 'mcp', 'server.js'), 'utf8');
+    // mcp/server.js prepares the project root, then loads the server itself (server-main.js).
+    const server = readFileSync(join(ROOT, 'mcp', 'server-main.js'), 'utf8');
     expect(server).toContain("name: 'sweet-search'");
   });
 
