@@ -121,8 +121,9 @@ function toRel(absPath, rootAbs) {
  * @param {string[]} rels  Project-relative POSIX paths.
  */
 function appendQueueLines(stateDir, rels) {
-  if (rels.length === 0) return;
-  fs.mkdirSync(stateDir, { recursive: true });
+  // Never re-create a missing state dir: it is gone because its checkout was removed
+  // (a linked worktree), and re-creating it would bring the checkout's directory back.
+  if (rels.length === 0 || !fs.existsSync(stateDir)) return;
   const now = Date.now();
   const iso = new Date(now).toISOString();
   const lines = rels
@@ -279,8 +280,7 @@ export async function startWatcher({ stateDir, projectRoot, admissionPolicy, cre
       // Persist the FSEvents snapshot OUTSIDE the watch tree (under the ignored
       // stateDir) for gap-free replay on next startup. Best-effort.
       try {
-        fs.mkdirSync(stateDirAbs, { recursive: true });
-        await watcher.writeSnapshot(rootAbs, snapshotPath, subscribeOpts);
+        if (fs.existsSync(stateDirAbs) && fs.existsSync(rootAbs)) await watcher.writeSnapshot(rootAbs, snapshotPath, subscribeOpts);
       } catch { /* best-effort */ }
       try {
         if (subscription && typeof subscription.unsubscribe === 'function') {

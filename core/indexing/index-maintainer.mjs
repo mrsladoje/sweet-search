@@ -14,7 +14,7 @@
  * Started by the search daemon / session hooks through maintainer-launcher.mjs.
  */
 
-import { readFileSync, writeFileSync, unlinkSync, mkdirSync, openSync, closeSync, constants, ftruncateSync, fsyncSync, writeSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, unlinkSync, mkdirSync, openSync, closeSync, constants, ftruncateSync, fsyncSync, writeSync, statSync, existsSync, realpathSync, lstatSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
@@ -165,10 +165,23 @@ export function isReconcilePaused(stateDir) {
   }
 }
 
-function reconcileV2Context(env = process.env) {
+/** The index (or its checkout) was deleted under this process: a removed worktree. */
+export function stateDirGone(stateDir, projectRoot) {
+  return !existsSync(stateDir) || !existsSync(projectRoot);
+}
+
+export function reconcileV2Context(env = process.env) {
   const projectRoot = resolve(env.SWEET_SEARCH_PROJECT_ROOT || PROJECT_ROOT);
-  const stateDir = resolve(env.SWEET_SEARCH_STATE_DIR || join(projectRoot, '.sweet-search'));
-  return { projectRoot, stateDir };
+  const stateDirPath = resolve(env.SWEET_SEARCH_STATE_DIR || join(projectRoot, '.sweet-search'));
+  // A linked worktree's `.sweet-search` is a link to its index next to the main index
+  // (worktree-index.mjs). Work in the real folder: when the worktree is removed, the
+  // link goes with it, and a write through the old path would re-create the worktree's
+  // directories (the watcher reports every deleted file).
+  let stateDir = stateDirPath;
+  try {
+    if (lstatSync(stateDirPath).isSymbolicLink()) stateDir = realpathSync(stateDirPath);
+  } catch { /* missing: as given */ }
+  return { projectRoot, stateDir, stateDirPath };
 }
 
 /**
@@ -1189,6 +1202,15 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
   } catch (err) {
     log('WARN', `Artifact temp sweep failed (continuing startup): ${err?.message ?? err}`);
   }
+  // Linked worktrees keep their indexes next to this one (worktree-index.mjs); delete the
+  // ones whose worktree was removed.
+  let rootGone = false;
+  try {
+    const { gcWorktreeIndexes } = await import('./worktree-index.mjs');
+    for (const dir of gcWorktreeIndexes(join(ctx.stateDir, 'worktrees'))) log('INFO', `Removed the index of a removed worktree: ${dir}`);
+  } catch (err) {
+    log('WARN', `Worktree index clean-up failed (continuing startup): ${err?.message ?? err}`);
+  }
 
   const resolved = resolveReconcileV2Interval();
   // A.4-consume: the sleep interval is now mutable so the autotune can move it
@@ -1426,6 +1448,16 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
       // once instead of after the interval, so a backlog drains at the speed of
       // the encoder and a fresh edit is never parked behind a sleep.
       let backlogLeft = false;
+      if (stateDirGone(ctx.stateDirPath || ctx.stateDir, ctx.projectRoot)) {
+        // The checkout was removed (`git worktree remove` deletes a worktree with its
+        // index inside it). Nothing is left to maintain, and a tick would re-create the
+        // deleted directory through its writes.
+        log('INFO', `Index state dir or project root is gone (${ctx.stateDir}); stopping.`);
+        rootGone = true;
+        stopRequested = true;
+        shutdownRequested = true;
+        break;
+      }
       const pause = isReconcilePaused(ctx.stateDir);
       if (pause.paused) {
         // A paused index has nothing for this process to do, and the paused
@@ -1638,6 +1670,14 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
     if (watchdog) clearTimeout(watchdog);
     releaseStateLock(lock.lockFile);
     log('INFO', 'Reconcile v2 shutdown complete');
+    if (rootGone) {
+      // This was a linked worktree's index and the worktree is gone: delete the index
+      // (this process's own pid does not count as a live holder).
+      try {
+        const { gcWorktreeIndexes } = await import('./worktree-index.mjs');
+        gcWorktreeIndexes(dirname(ctx.stateDir), { selfPid: process.pid });
+      } catch { /* the next maintainer start cleans up */ }
+    }
     // D.5 successor handoff. An RSS recycle is the ONE exit reason where the
     // work is NOT finished — the maintainer quits mid-backlog purely to hand
     // native (ORT arena / sqlite) memory back to the OS. Every other exit

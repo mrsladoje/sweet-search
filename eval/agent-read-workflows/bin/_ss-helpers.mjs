@@ -43,7 +43,8 @@ import { SEARCH_LOADING_WAIT_MS, searchNotReadyLine, callStartedMs } from '../..
 import { formatRouteMetadata } from '../../../core/search/search-format.js';
 import { createAdmissionPolicy } from '../../../core/indexing/admission-policy.js';
 import { createIndexCoverage, semanticTargetFor } from '../../../core/search/index-coverage.js';
-import { resolveRoots } from '../../../core/search/worktree-roots.js';
+import { resolveRoots, worktreeSplitNotice } from '../../../core/search/worktree-roots.js';
+import { requestWorktreeIndex } from '../../../core/indexing/worktree-index.mjs';
 import { callExistsSync, callStatSync } from '../../../core/infrastructure/call-fs.js';
 import { chainBoundary } from '../../../core/agent-tools/chain.js';
 import { fenceBody, numberCodeLines, lineGutterEnabled, interfaceCallsInRanges, renderInterfaceImpls } from '../../../core/search/search-read.js';
@@ -177,7 +178,14 @@ if (!callExistsSync(path.join(PROJECT_ROOT, '.sweet-search', 'codebase.db'))) {
 // written there would never reach the agent — and "never redirect silently" is the whole
 // requirement. One line, once per process, and only inside a linked worktree, so it costs
 // the benchmark nothing and costs a real worktree user one line.
-if (WORKTREE_SPLIT && ROOT_NOTICE) process.stdout.write(`${ROOT_NOTICE}\n`);
+//
+// A split is temporary: the first call starts the worktree's own index, cloned from the
+// main checkout's (core/indexing/worktree-index.mjs), and later calls find it first.
+if (WORKTREE_SPLIT) {
+  const boot = requestWorktreeIndex({ mainCheckout: PROJECT_ROOT, worktree: FILE_ROOT });
+  const building = boot.started || boot.reason === 'running';
+  process.stdout.write(`${building ? worktreeSplitNotice(PROJECT_ROOT, 'building') : ROOT_NOTICE}\n`);
+}
 // Before anything is recorded or searched: a daemon answers for its own repository only.
 host.assertProjectRoot?.(PROJECT_ROOT);
 process.env.SWEET_SEARCH_PROJECT_ROOT = PROJECT_ROOT;

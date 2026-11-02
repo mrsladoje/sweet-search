@@ -162,6 +162,24 @@ function lazyWorktree(roots, cwd) {
   });
 }
 
+/**
+ * The one line an agent sees while a linked worktree is served by the main checkout's
+ * index. `bootstrap` says whether this worktree's own index is on its way
+ * (core/indexing/worktree-index.mjs): 'building' when it is, anything else when it is not
+ * (switched off, failed, or no room on the disk). Either way the agent must know that
+ * text which exists only in this worktree may not be found, or it trusts a "no matches"
+ * for code it wrote itself.
+ */
+export function worktreeSplitNotice(mainCheckout, bootstrap) {
+  const head = `(linked git worktree: index from ${mainCheckout}, file contents from this worktree. `;
+  if (bootstrap === 'building') {
+    return `${head}This worktree's own index is being prepared and takes over within about a minute. `
+      + `Until then, text that exists only in this worktree may be missing from results.)`;
+  }
+  return `${head}Text that exists only in this worktree (its own edits and new files) is not searchable: `
+    + `use plain grep for those files.)`;
+}
+
 function linkedRoots(wt) {
   if (hasIndex(wt.mainCheckout)) {
     // Split, and SAY so. The caller prints `notice` once; a silent redirect is the failure
@@ -172,8 +190,7 @@ function linkedRoots(wt) {
       split: true,
       refusal: null,
       worktree: wt,
-      notice: `(linked git worktree: index from ${wt.mainCheckout}, file contents from this worktree. `
-        + `A result may name a file this worktree has since changed.)`,
+      notice: worktreeSplitNotice(wt.mainCheckout, 'none'),
     };
   }
   return {

@@ -87,7 +87,9 @@ export function bootIdStub() {
  */
 export function beginRead(stateDir, epoch, meta = {}) {
   const dir = heartbeatDir(stateDir);
-  fs.mkdirSync(dir, { recursive: true });
+  // Not recursive: a missing state dir means the index was removed (a linked worktree's
+  // goes with the worktree), and re-creating it would bring the worktree's folder back.
+  try { fs.mkdirSync(dir); } catch (err) { if (err?.code !== 'EEXIST') throw err; }
   const pid = process.pid;
   const bootId = bootIdStub();
   const readId = nextReadId();

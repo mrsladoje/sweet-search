@@ -416,14 +416,14 @@ const INDEX_RUN_STOP_TIMEOUT_MS = 60_000;
  * @param {string} stateDir
  * @returns {Promise<() => void>}
  */
-export async function holdMaintainerForIndexRun(stateDir, { timeoutMs = INDEX_RUN_STOP_TIMEOUT_MS } = {}) {
+export async function holdMaintainerForIndexRun(stateDir, { timeoutMs = INDEX_RUN_STOP_TIMEOUT_MS, reason = 'sweet-search index is running' } = {}) {
   const pauseFile = join(stateDir, 'reconcile-pause.json');
   let ours = false;
   if (!reconcilePaused(stateDir)) {
     mkdirSync(stateDir, { recursive: true });
     const tmp = `${pauseFile}.tmp.${process.pid}`;
     writeFileSync(tmp, JSON.stringify({
-      paused: true, pausedAt: new Date().toISOString(), reason: 'sweet-search index is running', holderPid: process.pid,
+      paused: true, pausedAt: new Date().toISOString(), reason, holderPid: process.pid,
     }));
     renameSync(tmp, pauseFile);
     ours = true;

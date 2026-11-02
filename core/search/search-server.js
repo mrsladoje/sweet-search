@@ -1616,6 +1616,8 @@ export async function startServer() {
   // active peer, and only via a newly-started peer within one registry-refresh
   // interval; see daemon-registry.js selectEvictionTargets.)
   let rssTouchedAt = 0;
+  // Only an index folder that was there and then vanished counts as removed.
+  const indexDirAtStart = existsSync(path.dirname(DB_PATHS.codebase));
   idleTimer = setInterval(() => {
     const ttl = Number(process.env.SWEET_SEARCH_DAEMON_IDLE_TTL_MS ?? 1_200_000);
     const idleFor = Date.now() - lastActivityMs;
@@ -1626,6 +1628,12 @@ export async function startServer() {
     }
     if (ttl > 0 && idleFor > ttl) {
       gracefulShutdown('idle-ttl');
+      return;
+    }
+    // The index was deleted under this daemon: a removed linked worktree takes its
+    // `.sweet-search/` with it. Nothing is left to serve.
+    if (indexDirAtStart && !existsSync(path.dirname(DB_PATHS.codebase))) {
+      gracefulShutdown('index-removed');
       return;
     }
     // Supervision backstop. The per-response hook covers the normal case; this
