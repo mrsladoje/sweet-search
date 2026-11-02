@@ -125,4 +125,23 @@ describe('shared server', () => {
     const second = await a.request('pid', []);
     expect(second).not.toBe(first);
   }, 20_000);
+
+  it('takes over a start lock left by a server that died, even when its pid is alive again', async () => {
+    const a = client();
+    // A lock older than a start can take, naming a live process (pid reuse): stale.
+    fs.writeFileSync(`${a.socketPath}.start`, String(process.pid));
+    const old = new Date(Date.now() - 120_000);
+    fs.utimesSync(`${a.socketPath}.start`, old, old);
+    expect(typeof (await a.request('pid', []))).toBe('number');
+  }, 20_000);
+
+  it('marks a server that never answers as unavailable (the daemon then uses its own child)', async () => {
+    const never = path.join(runtimeDir, 'never.mjs');
+    fs.writeFileSync(never, 'process.exit(0);\n');
+    const a = client({}, { serverPath: never, startupGraceMs: 300 });
+    const err = await a.request('pid', []).catch((e) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err.sharedUnavailable).toBe(true);
+  }, 20_000);
 });
+

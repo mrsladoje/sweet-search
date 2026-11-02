@@ -31,11 +31,12 @@ async function prepareWorktreeRoot() {
   let ok = false;
   try {
     // Bounded: an MCP client gives a server a limited time to answer its handshake.
+    // The bootstrap runs detached; its maintainer for the worktree follows this process.
     ok = await ensureWorktreeIndex({
       mainCheckout: roots.indexRoot,
       worktree: roots.fileRoot,
       waitMs: 20_000,
-      log: (msg) => console.error(`[sweet-search-mcp] worktree index: ${msg}`),
+      daemonPid: process.pid,
     });
   } catch { ok = false; }
   // Either way the root is the worktree: never fall back to the main checkout, whose
@@ -43,7 +44,7 @@ async function prepareWorktreeRoot() {
   process.env.SWEET_SEARCH_PROJECT_ROOT = roots.fileRoot;
   if (!ok) {
     console.error(`[sweet-search-mcp] ${worktreeSplitNotice(roots.indexRoot, 'none')}`);
-    console.error('[sweet-search-mcp] This worktree has no index of its own yet; search tools will report no index until the next start.');
+    console.error('[sweet-search-mcp] This worktree has no index of its own yet (see <main>/.sweet-search/worktree-bootstrap.log); search tools report no index until it is ready.');
   }
 }
 

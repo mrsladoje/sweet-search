@@ -40,7 +40,7 @@ import { readFile as readFileExact } from './search-read.js';
 import { withPinnedRead } from './search-reader-pin.js';
 import { emitToolIdentityAuto } from './cli-decoration.js';
 import { resolveCwdPath } from './cwd-paths.js';
-import { indexFreshness } from './index-freshness.js';
+import { indexFreshness, pendingReindexFiles } from './index-freshness.js';
 import { enforceExactCharBudget, exactFallbackSpan } from './semantic-span-budget.js';
 
 // Applies the user's persisted LI model exactly once per (projectRoot, env)
@@ -163,12 +163,15 @@ function _sourceStaleness(projectRoot, filePathRel, manifest = _readReconcileMan
     ? filePathRel
     : path.resolve(projectRoot, filePathRel);
   const freshness = indexFreshness(abs, manifest);
-  if (!freshness.known || !freshness.stale) return null;
+  // A file still in the maintainer's queue is stale whatever its mtime says.
+  const rel = path.relative(projectRoot, abs).split(path.sep).join('/');
+  const queued = !!manifest && pendingReindexFiles(_stateDirForProject(projectRoot)).has(rel);
+  if (!queued && (!freshness.known || !freshness.stale)) return null;
   return {
     stale: true,
     indexEpoch: manifest.epoch,
     indexPublishedAt: manifest.publishedAt,
-    sourceMtime: freshness.mtime.toISOString(),
+    sourceMtime: (freshness.mtime || new Date()).toISOString(),
     warning: 'source file is newer than the semantic index; spans were selected from stale index metadata and text was reread from disk',
   };
 }

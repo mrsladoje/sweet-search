@@ -27,6 +27,7 @@ import { capToFinalK } from './final-k.js';
 import { isSummaryOnly, isTestLikePath, shownCodeSpan } from './agent-output-fixes.js';
 import { statSync } from 'fs';
 import path from 'path';
+import { pendingReindexFiles } from './index-freshness.js';
 import { GO_PACKAGE_PREFIX, RUST_PATH_PREFIX, UNRESOLVED_IMPORT_PREFIX } from '../infrastructure/import-path-prefixes.js';
 import { RECEIVER_TYPE_PREFIX } from '../infrastructure/receiver-type-annotation.js';
 
@@ -742,6 +743,18 @@ export function checkStaleness(filePath, projectRoot, codeGraphRepo, cache = {})
 
     // If stale_since is set in the code graph, the file is definitively stale
     if (indexInfo?.staleSince) {
+      return { stale: true, indexedAt: null };
+    }
+
+    // A file still in the maintainer's queue is stale whatever its mtime says (a publish
+    // of an earlier part of the queue dates the index after it).
+    if (cache.pending === undefined) {
+      try {
+        cache.pending = projectRoot ? pendingReindexFiles(path.join(projectRoot, '.sweet-search')) : null;
+      } catch { cache.pending = null; }
+    }
+    const rel = path.isAbsolute(filePath) ? path.relative(projectRoot, filePath).split(path.sep).join('/') : filePath;
+    if (cache.pending?.has(rel)) {
       return { stale: true, indexedAt: null };
     }
 

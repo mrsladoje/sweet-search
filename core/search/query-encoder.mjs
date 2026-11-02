@@ -30,15 +30,7 @@ export function queryModelIdleMs(env = process.env) {
  * (close it on shutdown).
  */
 export function startQueryEncoder({ env = process.env, log = () => {}, hostPath, onChildChange, projectRoot } = {}) {
-  // One server for every daemon with the same model setup (shared-query-encoder.mjs);
-  // a child of this daemon when sharing is off or impossible here.
-  const shared = hostPath ? null : createSharedQueryEncoderClient({
-    projectRoot: projectRoot || env.SWEET_SEARCH_PROJECT_ROOT || process.cwd(),
-    env,
-    idleMs: queryModelIdleMs(env),
-    log,
-  });
-  const client = shared || createEncoderClient({
+  const ownChild = () => createEncoderClient({
     idleMs: queryModelIdleMs(env),
     env: { ...env, SWEET_SEARCH_ENCODER_ROLE: 'query' },
     log,
@@ -47,14 +39,52 @@ export function startQueryEncoder({ env = process.env, log = () => {}, hostPath,
     ...(hostPath ? { hostPath } : {}),
     ...(onChildChange ? { onChildChange } : {}),
   });
+  // One server for every daemon with the same model setup (shared-query-encoder.mjs);
+  // a child of this daemon when sharing is off or impossible here.
+  const shared = hostPath ? null : createSharedQueryEncoderClient({
+    projectRoot: projectRoot || env.SWEET_SEARCH_PROJECT_ROOT || process.cwd(),
+    env,
+    idleMs: queryModelIdleMs(env),
+    log,
+  });
+  if (!shared) {
+    const client = ownChild();
+    wireDelegates(client);
+    client.prewarm = () => { if (!client.pid) client.request('warm-query', []).catch(() => {}); };
+    return client;
+  }
+  // When the shared server cannot be reached at all (it never answers its socket), this
+  // daemon falls back to a child of its own for the rest of its life: a query must not
+  // fail because another process could not start.
+  let fallback = null;
+  const request = async (op, texts, options) => {
+    if (fallback) return fallback.request(op, texts, options);
+    try {
+      return await shared.request(op, texts, options);
+    } catch (err) {
+      if (!err?.sharedUnavailable) throw err;
+      log('WARN', `shared query-model server unavailable (${err.message}); using a model process of this daemon`);
+      shared.close();
+      fallback ??= ownChild();
+      return fallback.request(op, texts, options);
+    }
+  };
+  const client = {
+    request,
+    socketPath: shared.socketPath,
+    close() { shared.close(); fallback?.close(); },
+    get pid() { return fallback?.pid ?? null; },
+    // Cheap when the shared server has the models loaded.
+    prewarm() { request('warm-query', []).catch(() => {}); },
+  };
+  wireDelegates(client);
+  return client;
+}
+
+function wireDelegates(client) {
   const warm = () => client.request('warm-query', []);
   setLocalModelDelegate({ warm, run: (op, texts, options) => client.request(op, texts, options) });
   setLateInteractionQueryDelegate({ warm, liQuery: (text) => client.request('li-query', [text]) });
-  /** Start the process and load the models if it is not running; do not wait. */
-  client.prewarm = shared
-    ? () => { warm().catch(() => {}); } // cheap when the shared server has them loaded
-    : () => { if (!client.pid) warm().catch(() => {}); };
-  return client;
 }
 
 /** Back to in-process models (tests). */

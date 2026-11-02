@@ -429,38 +429,49 @@ const HOLDER_WAIT_MS = 10 * 60_000;
  */
 export async function holdMaintainerForIndexRun(stateDir, {
   timeoutMs = INDEX_RUN_STOP_TIMEOUT_MS, reason = 'sweet-search index is running', waitForHolderMs = HOLDER_WAIT_MS,
+  onWait = null,
 } = {}) {
   const pauseFile = join(stateDir, 'reconcile-pause.json');
   mkdirSync(stateDir, { recursive: true });
   let ours = false;
+  let blockedBy = null;
+  let announced = false;
   const deadline = Date.now() + waitForHolderMs;
-  for (;;) {
-    const tmp = `${pauseFile}.tmp.${process.pid}`;
-    writeFileSync(tmp, JSON.stringify({
-      paused: true, pausedAt: new Date().toISOString(), reason, holderPid: process.pid,
-    }));
-    try {
-      linkSync(tmp, pauseFile);
-      ours = true;
-    } catch (err) {
-      if (err?.code !== 'EEXIST') throw err;
-    } finally {
-      try { unlinkSync(tmp); } catch { /* gone */ }
+  const payload = JSON.stringify({ paused: true, pausedAt: new Date().toISOString(), reason, holderPid: process.pid });
+  // Written once, linked into place as often as needed: a temp file created and removed
+  // every poll would be listed and then miss in a worktree clone of this folder.
+  const tmp = `${pauseFile}.tmp.${process.pid}`;
+  writeFileSync(tmp, payload);
+  try {
+    for (;;) {
+      if (createPauseFile(pauseFile, tmp, payload)) { ours = true; break; }
+      let current = null;
+      try { current = JSON.parse(readFileSync(pauseFile, 'utf-8')); } catch { current = null; }
+      // Unreadable, resumed, or held by a process that is gone: not a pause. Remove that
+      // exact version (another process may be replacing it right now) and try again.
+      if (!current || !pauseHolds(current)) {
+        removeStalePause(pauseFile);
+        continue;
+      }
+      const holder = Number(current.holderPid);
+      if (holder && holder !== process.pid) {
+        if (Date.now() >= deadline) { blockedBy = { pid: holder, reason: current.reason || '' }; break; }
+        if (!announced) { announced = true; onWait?.({ pid: holder, reason: current.reason || '' }); }
+        await new Promise((r) => setTimeout(r, 200));
+        continue;
+      }
+      break; // a pause with no holder process (frozen index): respected, not owned
     }
-    if (ours) break;
-    let payload = null;
-    try { payload = JSON.parse(readFileSync(pauseFile, 'utf-8')); } catch { payload = null; }
-    // Unreadable, resumed, or held by a process that is gone: not a pause. Replace it.
-    if (!payload || !pauseHolds(payload)) {
-      try { unlinkSync(pauseFile); } catch { /* raced */ }
-      continue;
-    }
-    const holder = Number(payload.holderPid);
-    if (holder && holder !== process.pid && Date.now() < deadline) {
-      await new Promise((r) => setTimeout(r, 200));
-      continue;
-    }
-    break; // a pause with no holder process (frozen index), or the wait ran out
+  } finally {
+    try { unlinkSync(tmp); } catch { /* gone */ }
+  }
+  if (blockedBy) {
+    // Another live process still holds the index: do not stop its maintainer or touch
+    // anything; the caller decides (an index run fails with a message).
+    const release = () => {};
+    release.ours = false;
+    release.blockedBy = blockedBy;
+    return release;
   }
   let pid = null;
   try { pid = Number(JSON.parse(readFileSync(join(stateDir, MAINTAINER_LOCK_FILENAME), 'utf-8')).pid); } catch { /* none */ }
@@ -476,7 +487,48 @@ export async function holdMaintainerForIndexRun(stateDir, {
     } catch { /* already gone */ }
   };
   release.ours = ours;
+  release.blockedBy = null;
   return release;
+}
+
+/**
+ * Create the pause from `tmp` only if none exists: a hard link (atomic, whole content),
+ * or on a file system without hard links an O_EXCL create (a reader that meets it empty
+ * treats it as unreadable and retries; it never holds the index for long).
+ */
+function createPauseFile(pauseFile, tmp, payload) {
+  try {
+    linkSync(tmp, pauseFile);
+    return true;
+  } catch (err) {
+    if (err?.code === 'EEXIST') return false;
+    let fd;
+    try {
+      fd = openSync(pauseFile, 'wx');
+    } catch (e) {
+      if (e?.code === 'EEXIST') return false;
+      throw e;
+    }
+    try { writeSync(fd, payload); } finally { closeSync(fd); }
+    return true;
+  }
+}
+
+/**
+ * Remove a pause that does not hold, but only that version: it is moved to a private name
+ * first (one taker wins the move), judged there, and put back if it turned out to be a
+ * live pause someone created meanwhile. Reading and then unlinking the shared name could
+ * delete a new holder's pause and give two processes the index.
+ */
+function removeStalePause(pauseFile) {
+  const aside = `${pauseFile}.${process.pid}.${Date.now()}.stale`;
+  try { renameSync(pauseFile, aside); } catch { return; }
+  let current = null;
+  try { current = JSON.parse(readFileSync(aside, 'utf-8')); } catch { current = null; }
+  if (current && pauseHolds(current)) {
+    try { linkSync(aside, pauseFile); } catch { /* a newer pause holds the name */ }
+  }
+  try { unlinkSync(aside); } catch { /* gone */ }
 }
 
 /**

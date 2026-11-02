@@ -64,10 +64,15 @@ function resolveProjectRoot() {
   let root;
   if (rootFlagIdx !== -1 && args[rootFlagIdx + 1]) {
     root = args[rootFlagIdx + 1];
+  } else if (process.env.SWEET_SEARCH_PROJECT_ROOT) {
+    // As given, like the configuration (core/infrastructure/config/platform.js) and the
+    // ss-* tools' explicit root: a walk up from it would leave a linked worktree that
+    // mcp/server.js pinned (`<repo>/.claude/worktrees/x`) for the main checkout above it.
+    root = process.env.SWEET_SEARCH_PROJECT_ROOT;
   } else {
-    // SWEET_SEARCH_PROJECT_ROOT, else the nearest ancestor of the working directory
-    // holding a `.sweet-search/` index (the ss-* tools' rule), else the working
-    // directory: `.mcp.json` needs no path, so it stays portable when committed.
+    // The nearest ancestor of the working directory holding a `.sweet-search/` index
+    // (the ss-* tools' rule), else the working directory: `.mcp.json` needs no path, so
+    // it stays portable when committed.
     root = resolveIndexedRoot(process.env, process.cwd());
   }
 
@@ -167,6 +172,34 @@ const server = new McpServer({
     prompts: { listChanged: false },
   },
 });
+
+// ---------------------------------------------------------------------------
+// Maintainer supervision
+// ---------------------------------------------------------------------------
+
+// The search daemon re-checks its maintainer on every query; this server searches
+// in-process and has no such loop, so a maintainer that stopped (an RSS recycle that
+// could not hand off, a worktree clone that stopped the main checkout's maintainer)
+// stayed gone for the whole session. Each tool call checks, at most every 15 s: one
+// lock-file read when the maintainer runs.
+const SUPERVISE_EVERY_MS = 15_000;
+let lastSupervisedAt = 0;
+function superviseMaintainer() {
+  const now = Date.now();
+  if (now - lastSupervisedAt < SUPERVISE_EVERY_MS) return;
+  lastSupervisedAt = now;
+  try {
+    const result = launchMaintainer({ cwd: PROJECT_ROOT, daemonPid: process.pid });
+    if (result.spawned) console.error(`[sweet-search-mcp] incremental maintainer restarted (pid ${result.pid})`);
+  } catch { /* non-fatal; the next call tries again */ }
+}
+{
+  const register = server.registerTool.bind(server);
+  server.registerTool = (name, def, handler) => register(name, def, (...args) => {
+    superviseMaintainer();
+    return handler(...args);
+  });
+}
 
 // ---------------------------------------------------------------------------
 // Tools

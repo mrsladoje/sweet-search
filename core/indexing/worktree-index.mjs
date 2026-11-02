@@ -54,11 +54,12 @@
 import { spawnSync, spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
+import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { DEAD_LEGACY_ARTIFACTS } from './legacy-artifact-sweep.js';
-import { projectPidFile, resolveProjectRoot } from '../search/server-identity.js';
+import { projectPidFile, projectSocketPath, resolveProjectRoot } from '../search/server-identity.js';
 
 export const STATE_DIR_NAME = '.sweet-search';
 const INDEX_FILE = 'codebase.db';
@@ -84,6 +85,9 @@ const RUNTIME_PREFIXES = ['index-maintainer.log', 'daemon.log', 'query-telemetry
 
 export function isRuntimeFile(name) {
   if (RUNTIME_FILES.has(name)) return true;
+  // Staging temps (`*.tmp.<pid>`, `*.json.tmp`): written and removed by other processes
+  // while the clone lists the folder; one that vanishes mid-copy failed the whole copy.
+  if (/\.tmp(\.|$)/.test(name)) return true;
   if (name.endsWith('-shm')) return true; // SQLite rebuilds the shared-memory index from the WAL
   return RUNTIME_PREFIXES.some((p) => name.startsWith(p));
 }
@@ -146,7 +150,7 @@ export function bootstrapState(mainCheckout, worktree, nowMs = Date.now()) {
  *
  * @returns {{started: boolean, reason: string, pid?: number}}
  */
-export function requestWorktreeIndex({ mainCheckout, worktree, env = process.env, entry = fileURLToPath(import.meta.url) }) {
+export function requestWorktreeIndex({ mainCheckout, worktree, env = process.env, entry = fileURLToPath(import.meta.url), daemonPid = 0 }) {
   try {
     if (!worktreeIndexEnabled(env)) return { started: false, reason: 'disabled' };
     if (!mainCheckout || !worktree || mainCheckout === worktree) return { started: false, reason: 'not-linked' };
@@ -157,7 +161,9 @@ export function requestWorktreeIndex({ mainCheckout, worktree, env = process.env
     if (ownStateDir(worktree)) return { started: false, reason: 'own-state-dir' };
     const state = bootstrapState(mainCheckout, worktree);
     if (state) return { started: false, reason: state };
-    const child = spawn(process.execPath, [entry, `--main=${mainCheckout}`, `--worktree=${worktree}`], {
+    const args = [entry, `--main=${mainCheckout}`, `--worktree=${worktree}`];
+    if (daemonPid > 0) args.push(`--daemon-pid=${daemonPid}`);
+    const child = spawn(process.execPath, args, {
       detached: true,
       stdio: 'ignore',
       cwd: worktree,
@@ -185,10 +191,43 @@ export function createExclusive(file, payload) {
     return true;
   } catch (err) {
     if (err?.code === 'EEXIST') return false;
-    throw err;
+    // A file system without hard links (exFAT, FAT32, some network shares): O_EXCL create,
+    // then write. A reader can meet it empty for an instant; readers count a young
+    // unreadable file as held (UNREADABLE_HELD_MS), never as abandoned.
+    let fd;
+    try {
+      fd = fs.openSync(file, 'wx');
+    } catch (e) {
+      if (e?.code === 'EEXIST') return false;
+      throw e;
+    }
+    try { fs.writeSync(fd, payload); } finally { fs.closeSync(fd); }
+    return true;
   } finally {
     try { fs.unlinkSync(tmp); } catch { /* gone */ }
   }
+}
+
+/**
+ * Remove `file` only if it is still the stale one. Reading and then unlinking is a race:
+ * between the two another process can replace the stale file with its own live one, and
+ * the unlink would delete that (two owners). So the file is first moved to a private
+ * name, which takes exactly one version; it is judged there, and a live version is put
+ * back. `isStale(content, ageMs)` decides on the moved file's text (null when unreadable)
+ * and age (a rename keeps the mtime).
+ */
+export function removeIfStale(file, isStale) {
+  const aside = `${file}.${process.pid}.${Date.now()}.stale`;
+  try { fs.renameSync(file, aside); } catch { return; } // gone already: nothing to remove
+  let text = null;
+  try { text = fs.readFileSync(aside, 'utf8'); } catch { text = null; }
+  if (isStale(text, fileAgeMs(aside))) {
+    try { fs.unlinkSync(aside); } catch { /* gone */ }
+    return;
+  }
+  // Someone else's live file: put it back, unless a newer one is already in place.
+  try { fs.linkSync(aside, file); } catch { /* a newer file holds the name */ }
+  try { fs.unlinkSync(aside); } catch { /* gone */ }
 }
 
 // A lock or claim file that cannot be read is held if it is this young (a file another
@@ -203,17 +242,26 @@ function ownStateDir(worktree) {
   try { return !fs.lstatSync(path.join(worktree, STATE_DIR_NAME)).isSymbolicLink(); } catch { return false; }
 }
 
+/** Does a claim (parsed, or null when unreadable) still hold? */
+function claimHolds(prev, ageOfFileMs) {
+  if (!prev) return ageOfFileMs < UNREADABLE_HELD_MS;
+  const age = Date.now() - Number(prev.atMs || 0);
+  if (prev.status === 'running') return pidAlive(Number(prev.pid)) && age < CLAIM_STALE_MS;
+  if (prev.status === 'failed') return age < (Number(prev.retryAfterMs) || RETRY_AFTER_MS);
+  return false;
+}
+
 /** Take the claim; a stale or finished claim is replaced. */
 function takeClaim(file) {
   const payload = JSON.stringify({ status: 'running', pid: process.pid, atMs: Date.now() });
   for (let attempt = 0; attempt < 2; attempt += 1) {
     if (createExclusive(file, payload)) return true;
-    const prev = readJson(file);
-    if (!prev && fileAgeMs(file) < UNREADABLE_HELD_MS) return false;
-    const age = Date.now() - Number(prev?.atMs || 0);
-    const live = prev?.status === 'running' && pidAlive(Number(prev.pid)) && age < CLAIM_STALE_MS;
-    if (live || (prev?.status === 'failed' && age < (Number(prev.retryAfterMs) || RETRY_AFTER_MS))) return false;
-    try { fs.unlinkSync(file); } catch { /* raced */ }
+    if (claimHolds(readJson(file), fileAgeMs(file))) return false;
+    removeIfStale(file, (text, ageMs) => {
+      let prev = null;
+      try { prev = JSON.parse(text); } catch { prev = null; }
+      return !claimHolds(prev, ageMs);
+    });
   }
   return false;
 }
@@ -228,6 +276,27 @@ function dirBytes(dir) {
   return total;
 }
 
+const DEFAULT_PLAIN_COPY_MAX_MB = 1024;
+
+/** SWEET_SEARCH_WORKTREE_COPY_MAX_MB: the largest index copied without copy-on-write. */
+export function plainCopyMaxBytes(env = process.env) {
+  const mb = Number(env.SWEET_SEARCH_WORKTREE_COPY_MAX_MB);
+  return (env.SWEET_SEARCH_WORKTREE_COPY_MAX_MB !== undefined && Number.isFinite(mb) && mb >= 0 ? mb : DEFAULT_PLAIN_COPY_MAX_MB) * 1024 * 1024;
+}
+
+/** The file system type of the volume holding `p` on macOS ('apfs', 'hfs', ...), or ''. */
+function volumeType(p) {
+  const df = spawnSync('df', ['-P', p], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] });
+  const mountPoint = (df.stdout || '').trim().split('\n').pop()?.split(/\s+/).slice(5).join(' ');
+  if (!mountPoint) return '';
+  const mounts = spawnSync('mount', [], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).stdout || '';
+  for (const line of mounts.split('\n')) {
+    const m = / on (.+) \(([^,)]+)/.exec(line);
+    if (m && m[1] === mountPoint) return m[2];
+  }
+  return '';
+}
+
 function run(cmd, args) {
   const r = spawnSync(cmd, args, { stdio: ['ignore', 'ignore', 'pipe'], encoding: 'utf8' });
   return { ok: r.status === 0, err: (r.stderr || r.error?.message || '').trim() };
@@ -238,21 +307,30 @@ function run(cmd, args) {
  * `dst`, copy-on-write when the file system can.
  * @returns {'clone'|'copy'}
  */
-export function cloneIndexDir(src, dst, { platform = process.platform, log = () => {} } = {}) {
+export function cloneIndexDir(src, dst, { platform = process.platform, log = () => {}, env = process.env } = {}) {
   const entries = fs.readdirSync(src, { withFileTypes: true })
     .filter((ent) => isClonedEntry(ent.name, ent.isDirectory()))
     .map((ent) => path.join(src, ent.name));
   fs.mkdirSync(dst, { recursive: true });
   const target = `${dst}${path.sep}`;
-  const clone = platform === 'darwin' ? run('cp', ['-cR', ...entries, target])
+  // macOS `cp -c` quietly falls back to a full copy where clonefile is not supported, so
+  // it is used only on APFS; GNU `cp --reflink=always` fails instead of copying.
+  const clone = platform === 'darwin'
+    ? (volumeType(src) === 'apfs' ? run('cp', ['-cR', ...entries, target]) : { ok: false, err: 'not an APFS volume' })
     : platform === 'linux' ? run('cp', ['-R', '--reflink=always', ...entries, target])
       : { ok: false, err: 'no copy-on-write clone on this platform' };
   if (clone.ok) return 'clone';
-  log(`copy-on-write clone unavailable (${clone.err.split('\n')[0] || 'failed'}); checking room for a plain copy`);
+  log(`copy-on-write clone unavailable (${clone.err.split('\n')[0] || 'failed'}); checking a plain copy`);
   fs.rmSync(dst, { recursive: true, force: true });
   fs.mkdirSync(dst, { recursive: true });
   let need = 0;
   for (const e of entries) need += fs.statSync(e).isDirectory() ? dirBytes(e) : fs.statSync(e).size;
+  // The main maintainer is held off the index for the whole copy, so a plain copy must be
+  // short: larger indexes stay on the main checkout's index (the notice says so).
+  const maxBytes = plainCopyMaxBytes(env);
+  if (need > maxBytes) {
+    throw Object.assign(new Error(`index of ${need} bytes is over the plain-copy limit of ${maxBytes} (SWEET_SEARCH_WORKTREE_COPY_MAX_MB) and the volume cannot clone`), { retryAfterMs: 24 * 3600_000 });
+  }
   const st = fs.statfsSync(dst);
   const free = Number(st.bavail) * Number(st.bsize);
   if (free < need + MIN_FREE_AFTER_COPY_BYTES) {
@@ -507,7 +585,11 @@ async function takeCloneLock(mainState, waitMs = CLONE_LOCK_WAIT_MS) {
     const holder = readJson(file);
     const held = holder ? pidAlive(Number(holder.pid)) : fileAgeMs(file) < UNREADABLE_HELD_MS;
     if (!held) {
-      try { fs.unlinkSync(file); } catch { /* raced */ }
+      removeIfStale(file, (text, ageMs) => {
+        let h = null;
+        try { h = JSON.parse(text); } catch { h = null; }
+        return h ? !pidAlive(Number(h.pid)) : ageMs >= UNREADABLE_HELD_MS;
+      });
       continue;
     }
     if (Date.now() > deadline) throw Object.assign(new Error('another worktree clone holds the lock'), { retryAfterMs: 30_000 });
@@ -515,47 +597,76 @@ async function takeCloneLock(mainState, waitMs = CLONE_LOCK_WAIT_MS) {
   }
 }
 
-/** A maintainer started for `root`, bound to that root's search daemon like every other launch. */
-function launchFor(launchMaintainer, root) {
+function pidFileLive(pidFile) {
+  try { return pidAlive(Number(fs.readFileSync(pidFile, 'utf8').trim())); } catch { return false; }
+}
+
+/**
+ * Start a maintainer for `root`, bound like the launches the daemons make: to `daemonPid`
+ * when a process asked for one (the MCP server searches in-process and has no pid file),
+ * else to the root's search daemon when one is running. With neither it runs unbound,
+ * until its idle TTL: bound to a daemon that does not exist it would stop after two
+ * minutes, and an MCP-only session has nothing that starts it again.
+ */
+function launchFor(launchMaintainer, root, { daemonPid = 0 } = {}) {
   const env = { ...process.env, SWEET_SEARCH_PROJECT_ROOT: root };
   delete env.SWEET_SEARCH_PID_FILE;
   delete env.SWEET_SEARCH_STATE_DIR;
-  // The maintainer stops once that daemon has been gone for its grace period; the
-  // daemon's first query starts a new one (index-maintainer.mjs DAEMON_ABSENT_GRACE_MS).
-  return launchMaintainer({ cwd: root, env, daemonPidFile: projectPidFile(env, root) });
+  const pidFile = projectPidFile(env, root);
+  const binding = daemonPid > 0 && pidAlive(daemonPid) ? { daemonPid }
+    : pidFileLive(pidFile) ? { daemonPidFile: pidFile } : {};
+  return launchMaintainer({ cwd: root, env, ...binding });
+}
+
+/** GET `/stop` on a daemon's socket; resolves true when a daemon answered. */
+function stopDaemonAt(socketPath) {
+  return new Promise((resolve) => {
+    const req = http.request({ socketPath, path: '/stop', method: 'GET', timeout: 1_000 }, (res) => {
+      res.resume();
+      resolve(true);
+    });
+    req.on('error', () => resolve(false));
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+    req.end();
+  });
 }
 
 /**
  * A daemon still serving this worktree path is serving an earlier worktree's index (the
- * worktree was removed and added again before that daemon noticed). Stop it: the next
- * call starts one on the new index.
+ * worktree was removed and added again before that daemon noticed). Ask it to stop over
+ * its socket, as daemons are always stopped: a pid file can outlive its daemon and name
+ * an unrelated process by then. The next call starts a daemon on the new index.
  */
-function stopStaleDaemon(worktree, log) {
+async function stopStaleDaemon(worktree, log) {
   const env = { ...process.env, SWEET_SEARCH_PROJECT_ROOT: worktree };
   delete env.SWEET_SEARCH_PID_FILE;
-  const pidFile = projectPidFile(env, worktree);
-  // Only the worktree's own daemon: never a pid file the walk resolved to another root.
+  delete env.SWEET_SEARCH_SOCKET_PATH;
+  // Only the worktree's own daemon: never a socket the walk resolved to another root.
   let real = worktree;
   try { real = fs.realpathSync(worktree); } catch { /* as given */ }
   if (resolveProjectRoot(env, worktree) !== real) return;
-  let pid = 0;
-  try { pid = Number(fs.readFileSync(pidFile, 'utf8').trim()); } catch { return; }
-  if (pid > 0 && pid !== process.pid && pidAlive(pid)) {
-    try { process.kill(pid, 'SIGTERM'); log(`stopped the daemon of an earlier index at this path (pid ${pid})`); } catch { /* gone */ }
-  }
+  const socketPath = projectSocketPath(env, worktree);
+  if (!fs.existsSync(socketPath)) return;
+  if (await stopDaemonAt(socketPath)) log('asked the daemon of an earlier index at this path to stop');
 }
 
-/** Can a symbolic link be made in the worktree? (Not on some WSL and Windows volumes.) */
+/**
+ * Can a symbolic link be made in the worktree? (Not on some WSL and Windows volumes.)
+ * The probe is the link's own name, which git is told to ignore first, so a bootstrap
+ * killed mid-probe leaves nothing `git status` shows (and the next bootstrap replaces it).
+ */
 function canLink(worktree) {
-  const probe = path.join(worktree, `${STATE_DIR_NAME}.probe-${process.pid}`);
+  const probe = path.join(worktree, STATE_DIR_NAME);
+  let st = null;
+  try { st = fs.lstatSync(probe); } catch { /* none */ }
+  if (st) return st.isSymbolicLink(); // a link made here before (a real folder never gets here)
   try {
-    fs.rmSync(probe, { force: true });
     fs.symlinkSync('.', probe, 'dir');
     return true;
   } catch {
     return false;
   } finally {
-    try { fs.rmSync(probe, { force: true }); } catch { /* none */ }
+    try { if (fs.lstatSync(probe).isSymbolicLink()) fs.unlinkSync(probe); } catch { /* none */ }
   }
 }
 
@@ -567,7 +678,9 @@ function canLink(worktree) {
  * @param {number} [opts.lockWaitMs]  how long to wait for another clone of this main index
  * @returns {Promise<{mode: 'clone'|'copy', same: number, changed: number, ms: number, dir: string}|{skipped: string}>}
  */
-export async function bootstrapWorktreeIndex({ mainCheckout, worktree, log = () => {}, launch = true, lockWaitMs = CLONE_LOCK_WAIT_MS }) {
+export async function bootstrapWorktreeIndex({
+  mainCheckout, worktree, log = () => {}, launch = true, lockWaitMs = CLONE_LOCK_WAIT_MS, daemonPid = 0,
+}) {
   const t0 = Date.now();
   const mainState = path.join(mainCheckout, STATE_DIR_NAME);
   if (fs.existsSync(path.join(worktree, STATE_DIR_NAME, INDEX_FILE))) return { skipped: 'indexed' };
@@ -575,6 +688,8 @@ export async function bootstrapWorktreeIndex({ mainCheckout, worktree, log = () 
   if (ownStateDir(worktree)) return { skipped: 'own-state-dir' };
   // Cheap checks first: a worktree that cannot hold the link must not cost a copy and a
   // stopped main maintainer, again on every retry.
+  // git must ignore the link's name before the probe makes it.
+  ensureGitIgnoresLink(worktree, log);
   if (!canLink(worktree)) {
     throw Object.assign(new Error('cannot create a symbolic link in the worktree'), { retryAfterMs: 24 * 3600_000 });
   }
@@ -631,8 +746,10 @@ export async function bootstrapWorktreeIndex({ mainCheckout, worktree, log = () 
     // A leftover index for this path (its worktree was removed and re-added, and the
     // clean-up has not run) is replaced: it describes other files.
     const old = readJson(path.join(finalDir, 'index-maintainer.lock'));
-    if (old?.pid && pidAlive(Number(old.pid))) throw new Error(`a maintainer still runs on ${finalDir}`);
-    ensureGitIgnoresLink(worktree, log);
+    if (old?.pid && pidAlive(Number(old.pid))) {
+      // The earlier worktree's maintainer is still shutting down: try again soon.
+      throw Object.assign(new Error(`a maintainer still runs on ${finalDir}`), { retryAfterMs: 30_000 });
+    }
     // Link first, then publish with the rename: a published folder is never without its
     // link, so a clean-up running in between cannot take it for an orphan.
     // The leftover goes before the link exists, so no call is served by it meanwhile.
@@ -641,9 +758,9 @@ export async function bootstrapWorktreeIndex({ mainCheckout, worktree, log = () 
     fs.renameSync(tmp, finalDir);
     // After the link resolves: the daemon pid file is found by walking up to the nearest
     // index, which before the link is the main checkout's (and stopped the main daemon).
-    stopStaleDaemon(worktree, log);
+    await stopStaleDaemon(worktree, log);
     if (launch) {
-      const r = launchFor(launchMaintainer, worktree);
+      const r = launchFor(launchMaintainer, worktree, { daemonPid });
       log(`maintainer: ${r.reason}${r.pid ? ` (pid ${r.pid})` : ''}`);
     }
     return { mode, same, changed: changed.length, ms: Date.now() - t0, dir: finalDir };
@@ -660,16 +777,23 @@ export async function bootstrapWorktreeIndex({ mainCheckout, worktree, log = () 
  *
  * @returns {Promise<'ready'|'skipped'|'busy'|'failed'>}  'busy': another process holds the claim
  */
-export async function runWorktreeBootstrap({ mainCheckout, worktree, log: extraLog = null, launch = true, lockWaitMs }) {
+export async function runWorktreeBootstrap({ mainCheckout, worktree, log: extraLog = null, launch = true, lockWaitMs, daemonPid = 0 }) {
   const claim = bootstrapClaimPath(mainCheckout, worktree);
   const logFile = path.join(mainCheckout, STATE_DIR_NAME, 'worktree-bootstrap.log');
   const log = (msg) => {
     try { fs.appendFileSync(logFile, `${new Date().toISOString()} [${process.pid}] ${worktree}: ${msg}\n`); } catch { /* best effort */ }
     extraLog?.(msg);
   };
-  if (!takeClaim(claim)) return 'busy';
+  let claimed = false;
   try {
-    const r = await bootstrapWorktreeIndex({ mainCheckout, worktree, log, launch, ...(lockWaitMs ? { lockWaitMs } : {}) });
+    claimed = takeClaim(claim);
+  } catch (err) {
+    log(`failed: cannot write the claim ${claim}: ${err?.message || err}`);
+    return 'failed';
+  }
+  if (!claimed) return 'busy';
+  try {
+    const r = await bootstrapWorktreeIndex({ mainCheckout, worktree, log, launch, daemonPid, ...(lockWaitMs ? { lockWaitMs } : {}) });
     log(r.skipped ? `skipped: ${r.skipped}` : `ready in ${r.ms} ms`);
     fs.rmSync(claim, { force: true });
     return r.skipped ? 'skipped' : 'ready';
@@ -682,25 +806,30 @@ export async function runWorktreeBootstrap({ mainCheckout, worktree, log: extraL
 }
 
 /**
- * Give the linked worktree its own index now, and wait for it (the MCP server, whose
- * project root is fixed for its whole life). Never throws.
+ * Give the linked worktree its own index and wait for it, at most `waitMs` (the MCP
+ * server, whose project root is fixed for its whole life and whose client gives it a
+ * limited time to answer). The bootstrap runs in its own detached process, as for the
+ * ss-* tools: the wait is bounded whatever the copy and the re-key cost, and a client
+ * that gives up and kills this process cannot leave the main maintainer stopped.
+ * `daemonPid` binds the worktree's maintainer to this process. Never throws.
  *
  * @returns {Promise<boolean>} true when the worktree has an index of its own
  */
-export async function ensureWorktreeIndex({ mainCheckout, worktree, env = process.env, waitMs = 20_000, log = null }) {
+export async function ensureWorktreeIndex({ mainCheckout, worktree, env = process.env, waitMs = 20_000, daemonPid = 0 }) {
   const indexed = () => fs.existsSync(path.join(worktree, STATE_DIR_NAME, INDEX_FILE));
   if (indexed()) return true;
-  if (!worktreeIndexEnabled(env) || !fs.existsSync(path.join(mainCheckout, STATE_DIR_NAME, INDEX_FILE))) return false;
-  try {
-    const outcome = await runWorktreeBootstrap({ mainCheckout, worktree, log, lockWaitMs: waitMs });
-    if (outcome === 'busy') {
-      // Another process is building it: wait for its link.
-      const deadline = Date.now() + waitMs;
-      while (!indexed() && bootstrapState(mainCheckout, worktree) === 'running' && Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 100));
-      }
-    }
-  } catch { /* reported in the bootstrap log */ }
+  const r = requestWorktreeIndex({ mainCheckout, worktree, env, daemonPid });
+  if (!r.started && r.reason !== 'running') return indexed();
+  const deadline = Date.now() + waitMs;
+  // The child takes its claim a moment after the spawn: give it that moment before a
+  // missing claim means "done".
+  const graceUntil = Date.now() + 2_000;
+  while (!indexed() && Date.now() < deadline) {
+    const state = bootstrapState(mainCheckout, worktree);
+    if (state === 'failed-recently') break;
+    if (state !== 'running' && Date.now() > graceUntil) break;
+    await new Promise((res) => setTimeout(res, 100));
+  }
   return indexed();
 }
 
@@ -716,7 +845,8 @@ async function main() {
     const { applyBackgroundPriority } = await import('./os-priority.mjs').catch(() => ({}));
     applyBackgroundPriority?.(process.pid);
   } catch { /* best effort */ }
-  const outcome = await runWorktreeBootstrap({ mainCheckout, worktree });
+  const daemonPid = Number(arg('daemon-pid')) || 0;
+  const outcome = await runWorktreeBootstrap({ mainCheckout, worktree, daemonPid });
   if (outcome === 'failed') process.exitCode = 1;
 }
 

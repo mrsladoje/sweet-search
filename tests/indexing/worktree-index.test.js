@@ -14,10 +14,13 @@ import { execFileSync, spawn } from 'node:child_process';
 import {
   bootstrapWorktreeIndex, gcWorktreeIndexes, isRuntimeFile, rekeyFileState, requestWorktreeIndex,
   worktreeIndexDir, bootstrapState, bootstrapClaimPath, isClonedEntry, indexDateMs, createExclusive,
+  removeIfStale, cloneIndexDir, plainCopyMaxBytes, ensureWorktreeIndex,
 } from '../../core/indexing/worktree-index.mjs';
 import { holdMaintainerForIndexRun } from '../../core/indexing/maintainer-launcher.mjs';
 import { stateDirGone } from '../../core/indexing/index-maintainer.mjs';
-import { projectPidFile } from '../../core/search/server-identity.js';
+import { projectSocketPath } from '../../core/search/server-identity.js';
+import { pendingReindexFiles } from '../../core/search/index-freshness.js';
+import http from 'node:http';
 import { openFileState } from '../../core/incremental-indexing/infrastructure/file-state-store.mjs';
 import { contentHashSync } from '../../core/incremental-indexing/infrastructure/hashing.mjs';
 import { resolveRoots } from '../../core/search/worktree-roots.js';
@@ -379,37 +382,86 @@ describe('review fixes', () => {
     expect(requestWorktreeIndex({ mainCheckout: main, worktree: wt }).reason).toBe('own-state-dir');
   });
 
-  it('stops an earlier daemon of the worktree path, never the main checkout\'s', async () => {
+  it('asks an earlier daemon of the worktree path to stop over its socket, never the main checkout\'s', async () => {
     makeMainIndex();
     // A worktree nested in its main checkout, as Claude Code makes them.
     const nested = path.join(main, '.claude', 'worktrees', 'n1');
     git(main, 'worktree', 'add', '-q', nested, '-b', 'nested');
-    const sleeper = () => spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore' });
-    const mainDaemon = sleeper();
-    const oldDaemon = sleeper();
-    const mainPidFile = projectPidFile({ SWEET_SEARCH_PROJECT_ROOT: main }, main);
+    // The socket the nested worktree's own daemon listens on once it has an index.
+    fs.mkdirSync(path.join(tmp, 'probe', '.sweet-search'), { recursive: true });
+    fs.symlinkSync(path.join(tmp, 'probe', '.sweet-search'), path.join(nested, '.sweet-search'));
+    const nestedSock = projectSocketPath({ SWEET_SEARCH_PROJECT_ROOT: nested }, nested);
+    fs.unlinkSync(path.join(nested, '.sweet-search'));
+    const mainSock = projectSocketPath({ SWEET_SEARCH_PROJECT_ROOT: main }, main);
+    expect(nestedSock).not.toBe(mainSock);
+    const got = { main: [], nested: [] };
+    const daemon = (sock, key) => new Promise((resolve) => {
+      fs.rmSync(sock, { force: true });
+      const srv = http.createServer((req, res) => { got[key].push(req.url); res.end('ok'); });
+      srv.listen(sock, () => resolve(srv));
+    });
+    const servers = [await daemon(mainSock, 'main'), await daemon(nestedSock, 'nested')];
     try {
-      fs.writeFileSync(mainPidFile, String(mainDaemon.pid));
-      // The pid file the nested worktree's own daemon would write once it has an index.
-      fs.mkdirSync(path.join(tmp, 'probe', '.sweet-search'), { recursive: true });
-      const nestedOwn = (() => {
-        fs.symlinkSync(path.join(tmp, 'probe', '.sweet-search'), path.join(nested, '.sweet-search'));
-        const f = projectPidFile({ SWEET_SEARCH_PROJECT_ROOT: nested }, nested);
-        fs.unlinkSync(path.join(nested, '.sweet-search'));
-        return f;
-      })();
-      expect(nestedOwn).not.toBe(mainPidFile);
-      fs.writeFileSync(nestedOwn, String(oldDaemon.pid));
       await bootstrapWorktreeIndex({ mainCheckout: main, worktree: nested, launch: false });
-      await new Promise((r) => setTimeout(r, 200));
-      expect(mainDaemon.exitCode).toBe(null);
-      expect(mainDaemon.signalCode).toBe(null);
-      expect(oldDaemon.signalCode).toBe('SIGTERM');
-      fs.rmSync(nestedOwn, { force: true });
+      expect(got.nested).toEqual(['/stop']);
+      expect(got.main).toEqual([]);
     } finally {
-      fs.rmSync(mainPidFile, { force: true });
-      mainDaemon.kill('SIGKILL');
-      oldDaemon.kill('SIGKILL');
+      for (const srv of servers) await new Promise((r) => srv.close(r));
     }
+  });
+
+  it('removes a stale claim only as the version it judged', () => {
+    const f = path.join(tmp, 'lock.json');
+    fs.writeFileSync(f, '{"pid":99999999}');
+    removeIfStale(f, (text) => JSON.parse(text).pid === 99999999);
+    expect(fs.existsSync(f)).toBe(false);
+    // A live version (replaced meanwhile) is put back, not deleted.
+    fs.writeFileSync(f, `{"pid":${process.pid}}`);
+    removeIfStale(f, () => false);
+    expect(JSON.parse(fs.readFileSync(f, 'utf8')).pid).toBe(process.pid);
+    expect(fs.readdirSync(tmp).filter((n) => n.includes('.stale'))).toEqual([]);
+  });
+
+  it('copies without copy-on-write only up to the size limit', () => {
+    const state = makeMainIndex();
+    const dst = path.join(tmp, 'plain');
+    expect(() => cloneIndexDir(state, dst, { platform: 'win32', env: { SWEET_SEARCH_WORKTREE_COPY_MAX_MB: '0' } }))
+      .toThrow(/plain-copy limit/);
+    expect(cloneIndexDir(state, dst, { platform: 'win32', env: {} })).toBe('copy');
+    expect(fs.existsSync(path.join(dst, 'codebase.db'))).toBe(true);
+    expect(plainCopyMaxBytes({})).toBe(1024 * 1024 * 1024);
+  });
+
+  it('an index run blocked past its wait gets blockedBy and leaves no temp file', async () => {
+    const state = path.join(tmp, 'state2');
+    fs.mkdirSync(state);
+    const holder = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { stdio: 'ignore' });
+    try {
+      fs.writeFileSync(path.join(state, 'reconcile-pause.json'), JSON.stringify({ paused: true, holderPid: holder.pid, reason: 'clone' }));
+      let waited = null;
+      const r = await holdMaintainerForIndexRun(state, { waitForHolderMs: 300, onWait: (w) => { waited = w; } });
+      expect(r.ours).toBe(false);
+      expect(r.blockedBy).toEqual({ pid: holder.pid, reason: 'clone' });
+      expect(waited).toEqual({ pid: holder.pid, reason: 'clone' });
+      expect(fs.readdirSync(state).sort()).toEqual(['reconcile-pause.json']);
+    } finally {
+      holder.kill('SIGKILL');
+    }
+  });
+
+  it('lists the files still queued for the maintainer', () => {
+    const state = path.join(tmp, 'state3');
+    fs.mkdirSync(state);
+    expect(pendingReindexFiles(state).size).toBe(0);
+    fs.writeFileSync(path.join(state, 'index-maintainer-queue.jsonl'), '{"file_path":"a.js"}\n{"file_path":"./b/c.js"}\n{"bad');
+    fs.writeFileSync(path.join(state, 'index-maintainer-queue.processing.jsonl'), '{"file_path":"d.js"}\n');
+    expect([...pendingReindexFiles(state)].sort()).toEqual(['a.js', 'b/c.js', 'd.js']);
+  });
+
+  it('the MCP wait gives up within its bound and reports no index when switched off', async () => {
+    makeMainIndex();
+    const t0 = Date.now();
+    expect(await ensureWorktreeIndex({ mainCheckout: main, worktree: wt, env: { SWEET_SEARCH_WORKTREE_INDEX: '0' }, waitMs: 500 })).toBe(false);
+    expect(Date.now() - t0).toBeLessThan(1000);
   });
 });

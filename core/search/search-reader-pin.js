@@ -72,7 +72,7 @@ function acquireSharedPin(stateDir, epoch, meta) {
   let shared = _sharedPins.get(key);
   // The file can vanish under a pin (a rebuild that clears the state dir): write it again,
   // keeping the reads that hold it.
-  if (shared && shared.record && !existsSync(shared.record.path)) {
+  if (shared && (!shared.record || !existsSync(shared.record.path))) {
     shared.record = advisoryBeginRead(stateDir, epoch, meta);
   }
   if (!shared) {

@@ -1197,6 +1197,13 @@ async function runReconcileV2Main({ runOnce, merkleOnce }) {
     log('INFO', `Project root or its index link is gone (${ctx.stateDirPath}); not starting.`);
     return;
   }
+  // The resident maintainer only maintains an index that exists (launchMaintainer checks
+  // the same before it spawns). A state dir that vanished between that check and here is
+  // a removed worktree's link: creating it would put a real folder into the worktree.
+  if (!(runOnce || merkleOnce) && missing(ctx.stateDir)) {
+    log('INFO', `Index state dir is gone (${ctx.stateDirPath}); not starting.`);
+    return;
+  }
   mkdirSync(ctx.stateDir, { recursive: true });
   if (runOnce || merkleOnce) {
     await runReconcileV2Tick(ctx);

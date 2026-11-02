@@ -145,7 +145,9 @@ export function createSharedQueryEncoderClient({
       for (;;) {
         await new Promise((r) => setTimeout(r, 50));
         try { socket = await connectOnce(); break; } catch (err) {
-          if (Date.now() > deadline) throw new Error(`shared query-model server did not answer on ${socketPath}: ${err?.message || err}`);
+          if (Date.now() > deadline) {
+            throw Object.assign(new Error(`shared query-model server did not answer on ${socketPath}: ${err?.message || err}`), { sharedUnavailable: true });
+          }
         }
       }
     }

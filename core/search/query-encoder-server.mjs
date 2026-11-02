@@ -95,7 +95,11 @@ async function main() {
       const { id, op, texts, options } = msg || {};
       inflight += 1;
       lastActivity = Date.now();
-      registration?.touch(lastActivity).catch(() => {});
+      // The fleet registry is one shared file: refresh this entry at most every 30 s.
+      if (registration && lastActivity - lastTouch >= 30_000) {
+        lastTouch = lastActivity;
+        registration.touch(lastActivity).catch(() => {});
+      }
       let reply;
       try {
         reply = { id, ok: true, result: await runEncoderOp(op, texts, { projectRoot, options }) };
@@ -116,13 +120,17 @@ async function main() {
   });
 
   let socketIno = null; // the socket file this server bound
+  let lastTouch = 0;
   let registration = null; // the fleet memory budget's entry (rss-budget.mjs)
   function stop(reason) {
     if (stopping) return;
     stopping = true;
-    server.close();
-    // Only our own socket: a newer server may have taken the path over.
-    try { if (socketIno !== null && fs.statSync(socketPath).ino === socketIno) fs.unlinkSync(socketPath); } catch { /* gone */ }
+    // Closing a Unix-socket server makes Node remove the socket PATH, whatever file is
+    // there by then. A newer server may have taken the path over: then this one only stops
+    // answering and exits, and leaves the path alone.
+    let ownPath = false;
+    try { ownPath = socketIno !== null && fs.statSync(socketPath).ino === socketIno; } catch { ownPath = false; }
+    if (ownPath) server.close();
     registration?.unregister().catch(() => {});
     const finish = () => {
       if (inflight > 0) { setTimeout(finish, 50); return; }
@@ -164,7 +172,23 @@ async function main() {
   process.on('SIGINT', () => stop('SIGINT'));
 }
 
-/** Create the start lock atomically, or take it over from a process that is gone. */
+// A start takes well under this (bind happens before any model loads). An older start
+// lock is left by a server that died before listening; its pid may belong to another
+// process by now, so age decides, not the pid alone.
+const START_LOCK_STALE_MS = 60_000;
+
+function startLockHeld(text, ageMs) {
+  if (ageMs >= START_LOCK_STALE_MS) return false;
+  const holder = Number(text);
+  if (!(holder > 0)) return ageMs < 5_000; // being written (no hard links): young = held
+  try { process.kill(holder, 0); return true; } catch (err) { return err?.code === 'EPERM'; }
+}
+
+function ageOf(file) {
+  try { return Date.now() - fs.statSync(file).mtimeMs; } catch { return Infinity; }
+}
+
+/** Create the start lock atomically, or take it over when it is stale. */
 function takeStartLock(file) {
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const tmp = `${file}.${process.pid}.tmp`;
@@ -173,16 +197,32 @@ function takeStartLock(file) {
       fs.linkSync(tmp, file);
       return true;
     } catch (err) {
-      if (err?.code !== 'EEXIST') throw err;
+      if (err?.code !== 'EEXIST') {
+        // No hard links here: O_EXCL create.
+        try {
+          const fd = fs.openSync(file, 'wx');
+          try { fs.writeSync(fd, String(process.pid)); } finally { fs.closeSync(fd); }
+          return true;
+        } catch (e) {
+          if (e?.code !== 'EEXIST') throw e;
+        }
+      }
     } finally {
       try { fs.unlinkSync(tmp); } catch { /* gone */ }
     }
-    let holder = 0;
-    try { holder = Number(fs.readFileSync(file, 'utf8')); } catch { holder = 0; }
-    let alive = false;
-    try { process.kill(holder, 0); alive = holder > 0; } catch (err) { alive = err?.code === 'EPERM'; }
-    if (alive) return false;
-    try { fs.unlinkSync(file); } catch { /* raced */ }
+    let text = '';
+    try { text = fs.readFileSync(file, 'utf8'); } catch { text = ''; }
+    if (startLockHeld(text, ageOf(file))) return false;
+    // Remove that exact stale version: move it aside (one taker wins), judge it there, and
+    // put back a live lock someone created meanwhile.
+    const aside = `${file}.${process.pid}.stale`;
+    try { fs.renameSync(file, aside); } catch { continue; }
+    let asideText = '';
+    try { asideText = fs.readFileSync(aside, 'utf8'); } catch { asideText = ''; }
+    if (startLockHeld(asideText, ageOf(aside))) {
+      try { fs.linkSync(aside, file); } catch { /* a newer lock holds the name */ }
+    }
+    try { fs.unlinkSync(aside); } catch { /* gone */ }
   }
   return false;
 }

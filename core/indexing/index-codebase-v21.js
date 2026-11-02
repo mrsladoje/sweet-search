@@ -218,7 +218,16 @@ Output:
     const { holdMaintainerForIndexRun, resolveStateDir } = await import('./maintainer-launcher.mjs');
     const { writeStamp } = await import('../incremental-indexing/infrastructure/worktree-stamp.mjs');
     const stateDir = resolveStateDir(process.env, process.cwd());
-    const release = await holdMaintainerForIndexRun(stateDir);
+    const release = await holdMaintainerForIndexRun(stateDir, {
+      onWait: ({ pid, reason }) => log(`Waiting for another process to release the index (pid ${pid}${reason ? `: ${reason}` : ''})...`, 'dim'),
+    });
+    if (release.blockedBy) {
+      // Never rewrite an index another live process holds (a worktree clone copying it,
+      // another index run): fail with a message instead.
+      const { pid, reason } = release.blockedBy;
+      console.error(`The index is held by another process (pid ${pid}${reason ? `: ${reason}` : ''}). Try again when it has finished.`);
+      process.exit(1);
+    }
     process.once('exit', release);
     if (existsSync(stateDir)) writeStamp(stateDir, process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd());
   }
