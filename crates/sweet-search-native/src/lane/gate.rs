@@ -118,9 +118,10 @@ pub(crate) fn resolve_roots(call: &Call, root: &str) -> Result<String, &'static 
             return Err("outside root");
         }
     }
-    if std::fs::symlink_metadata(Path::new(root).join(".git")).map_or(false, |m| !m.is_dir()) {
-        return Err("root is a linked worktree");
-    }
+    // The root is this lane's own index root, so resolveRoots stops there unsplit, also
+    // when it is a linked worktree (core/indexing/worktree-index.mjs gives each worktree
+    // its own index): the JS walk meets the index before it asks whether the directory
+    // is a worktree's top.
     Ok(root.to_string())
 }
 
@@ -190,6 +191,24 @@ mod tests {
             assert!(env_allows(&call(&[(k, "0")], 7)).is_err(), "{k}");
         }
         assert!(env_allows(&call(&[("SWEET_SEARCH_CHAIN_LATER", "2")], 7)).is_err());
+    }
+
+    #[test]
+    fn a_linked_worktree_with_its_own_index_is_served_from_a_subdirectory() {
+        let base = std::env::temp_dir().join(format!("ss-lane-gate-{}", std::process::id()));
+        let wt = base.join("wt");
+        std::fs::create_dir_all(wt.join(".sweet-search")).unwrap();
+        std::fs::create_dir_all(wt.join("src").join("deep")).unwrap();
+        std::fs::write(wt.join(".sweet-search").join("codebase.db"), b"").unwrap();
+        std::fs::write(wt.join(".git"), b"gitdir: /elsewhere/.git/worktrees/wt\n").unwrap();
+        let root = realpath(wt.to_str().unwrap()).unwrap();
+        let mut c = call(&[], 1);
+        c.cwd = wt.join("src").join("deep").to_string_lossy().into_owned();
+        assert_eq!(resolve_roots(&c, &root), Ok(root.clone()));
+        // A nested checkout below the root is still the JS's to resolve.
+        std::fs::write(wt.join("src").join(".git"), b"gitdir: /other\n").unwrap();
+        assert_eq!(resolve_roots(&c, &root), Err("nested checkout"));
+        std::fs::remove_dir_all(&base).unwrap();
     }
 
     #[test]
