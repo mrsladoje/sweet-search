@@ -234,3 +234,6 @@ core/prompt-optimization/data/metric-forge/layerb/
 eval/task-completion-bench/analysis/
 eval/task-completion-bench/.DS_Store
 downloads/
+
+# Any cargo build dir under crates/ (target/, target-wt/, target-wt-test/, ...)
+crates/**/target*/
