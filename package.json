@@ -83,7 +83,6 @@
     "scripts/install-tool-enforcement.js",
     "scripts/hooks/",
     "core/training/query-router/features/",
-    "core/training/query-router/output/v45_router_d4.js",
     "core/training/query-router/output/v46_router_d4.js",
     "core/prompt-optimization/data/p7-final/",
     "eval/agent-read-workflows/bin/ss-search",

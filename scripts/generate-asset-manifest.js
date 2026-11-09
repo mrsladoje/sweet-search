@@ -15,7 +15,7 @@ const manifest = {
     wasmRouterBinary: 'crates/wasm-router/pkg/query_router_wasm_bg.wasm',
     maxsimWasm: 'core/infrastructure/maxsim.wasm',
     simdDistanceWasm: 'core/infrastructure/simd-distance.wasm',
-    catboostRouter: 'core/training/query-router/output/v45_router_d4.js',
+    catboostRouter: 'core/training/query-router/output/v46_router_d4.js',
     featureExtractor: 'core/training/query-router/features/extractor.js',
   },
   nativePackages: {
