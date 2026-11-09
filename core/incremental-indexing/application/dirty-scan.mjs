@@ -42,9 +42,8 @@ import { createAdmissionPolicy } from '../../indexing/admission-policy.js';
 import { filterGrepCorpusFiles, listGitVisibleFiles } from '../../indexing/grep-corpus.js';
 import { grepStatEntry, readGrepCorpusState } from '../infrastructure/grep-corpus-state.mjs';
 import { readFileStateObject } from '../infrastructure/file-state-store.mjs';
+import { DIRTY_QUEUE, PROCESSING_QUEUE } from '../infrastructure/state-files.mjs';
 
-const DIRTY_QUEUE = 'index-maintainer-queue.jsonl';
-const PROCESSING_QUEUE = 'index-maintainer-queue.processing.jsonl';
 const DEFAULT_MAX_ENQUEUE = 5000;
 // New grep-only files are found through the VCS file list: on an index change (add,
 // commit, checkout) or, for new untracked files, at least this often.

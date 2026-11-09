@@ -26,6 +26,7 @@ import {
 } from '../../infrastructure/native-sparse-gram.js';
 import { collectFileSymbolMasksFromDb, resolveSparseGramWeightsId } from '../../indexing/indexer-sparse-gram.js';
 import { GREP_MAX_FILE_SIZE } from '../../indexing/grep-corpus.js';
+import { CODEBASE_DB } from './state-files.mjs';
 
 /** Latest record per fileId over `segmentPaths`, in order (later wins). */
 function latestRecordsOf(segmentPaths) {
@@ -68,7 +69,7 @@ export async function buildSparseGramFold({ stateDir, base, projectRoot, segment
   }
   const kept = [...files].filter((rel) => readableFile(projectRoot, rel)).sort();
   let masks = kept.map(() => 0);
-  const dbPath = path.join(stateDir, 'codebase.db');
+  const dbPath = path.join(stateDir, CODEBASE_DB);
   if (fs.existsSync(dbPath)) {
     const db = new Database(dbPath, { readonly: true });
     try { masks = collectFileSymbolMasksFromDb(db, kept); } finally { db.close(); }

@@ -19,23 +19,17 @@ import { execFileSync, execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { getCoremlCascadeRoot, getCoremlCascadeState } from '../core/infrastructure/coreml-cascade.js';
-import { PREWARM_HOOK_COMMAND, readCreatedPaths } from './init.js';
-import { removeAgentInstructions } from './inject-agent-instructions.js';
-import { removeClaudeRules } from './write-claude-rules.js';
-import { removeClaudeSystemPrompt } from './install-claude-system-prompt.js';
-import { removeClaudeLeanHarness } from './install-claude-lean-harness.js';
-import { removeMcpServer } from './install-mcp-server.js';
-import { removeCodexHarness } from './install-codex-harness.js';
-import { removeOpencodeHarness } from './install-opencode-harness.js';
-import { removeToolEnforcement } from './install-tool-enforcement.js';
+import {
+  DATA_DIR_NAME, artifactsInPlanOrder, artifactsInRunOrder, readCreatedPaths, removeSweetIndexSkill,
+} from './install-artifacts.js';
+import { removeCodexSessionStartHook, removePrewarmSessionStartHook } from './hook-entries.js';
 import { projectSocketPath, projectPidFile } from '../core/search/server-identity.js';
 import { existingRegisteredRepos, unregisterRepos } from './repo-registry.js';
 import { planUserShimRemovals, removeUserShims } from './user-shims.js';
-import { detectProjectRoot, writeViaTmp } from './install-fs.js';
+import { detectProjectRoot } from './install-fs.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = join(__dirname, '..');
-const DATA_DIR_NAME = '.sweet-search';
 
 // ---------------------------------------------------------------------------
 // Argument parsing
@@ -274,180 +268,7 @@ export function stopRunningMaintainer({
   return result;
 }
 
-/**
- * Remove the sweet-search /sweet-index skill from `.claude/skills/sweet-index/`.
- * Only removes the directory we created — leaves `.claude/skills/` and `.claude/`
- * untouched even if they're empty afterwards, because the user may add other
- * skills/hooks/settings to `.claude/` over time and we don't own that root.
- *
- * Returns `{ status, detail, skillPath? }`:
- *   not-found  — directory absent (nothing to do)
- *   removed    — rm -rf on the sweet-index/ subtree succeeded
- *   dry-run    — found the directory but skipped the delete
- *   error      — rm failed (permissions, etc.); uninstall continues
- */
-export function removeSweetIndexSkill(projectRoot, { dryRun = false } = {}) {
-  const skillDir = join(projectRoot, '.claude', 'skills', 'sweet-index');
-  if (!existsSync(skillDir)) {
-    return { status: 'not-found', detail: 'no .claude/skills/sweet-index/' };
-  }
-  if (dryRun) {
-    return { status: 'dry-run', detail: skillDir, skillPath: skillDir };
-  }
-  try {
-    rmSync(skillDir, { recursive: true, force: true });
-    return { status: 'removed', detail: skillDir, skillPath: skillDir };
-  } catch (err) {
-    return { status: 'error', detail: err.message };
-  }
-}
-
-/**
- * Remove the sweet-search-owned SessionStart and SessionEnd entries from `.claude/settings.json`,
- * preserving every other hook, permission, and top-level key. Detection is
- * by command name (see PREWARM_HOOK_COMMAND) — only entries whose command
- * runs `sweet-search-hook` are removed.
- *
- * Returns `{ status, detail }`:
- *   not-found  — no settings.json, or no matching entry (nothing to do)
- *   removed    — entry spliced out and settings.json rewritten
- *   dry-run    — found a matching entry but skipped the write
- *   error      — non-fatal (settings.json unreadable, etc.); uninstall continues
- */
-export function removePrewarmSessionStartHook(projectRoot, { dryRun = false } = {}) {
-  const settingsPath = join(projectRoot, '.claude', 'settings.json');
-  if (!existsSync(settingsPath)) {
-    return { status: 'not-found', detail: 'no .claude/settings.json' };
-  }
-
-  let raw;
-  try {
-    raw = readFileSync(settingsPath, 'utf-8');
-  } catch (err) {
-    return { status: 'error', detail: `read failed: ${err.message}` };
-  }
-
-  let settings;
-  try {
-    settings = JSON.parse(raw);
-  } catch (err) {
-    return { status: 'error', detail: `settings.json is not valid JSON: ${err.message}` };
-  }
-
-  const changes = [];
-  for (const event of ['SessionStart', 'SessionEnd']) {
-    const groups = settings?.hooks?.[event];
-    if (!Array.isArray(groups)) continue;
-    const filtered = groups.filter((group) =>
-      !(Array.isArray(group?.hooks) &&
-        group.hooks.some((h) => typeof h?.command === 'string' && h.command.includes(PREWARM_HOOK_COMMAND)))
-    );
-    if (filtered.length !== groups.length) changes.push({ event, groups, filtered });
-  }
-
-  if (changes.length === 0) {
-    return { status: 'not-found', detail: 'no matching entry' };
-  }
-
-  const removedCount = changes.reduce((sum, change) => sum + change.groups.length - change.filtered.length, 0);
-
-  if (dryRun) {
-    return { status: 'dry-run', detail: `would remove ${removedCount} entries` };
-  }
-
-  for (const { event, filtered } of changes) {
-    if (filtered.length === 0) delete settings.hooks[event];
-    else settings.hooks[event] = filtered;
-  }
-  if (settings.hooks && Object.keys(settings.hooks).length === 0) {
-    delete settings.hooks;
-  }
-
-  try {
-    writeViaTmp(settingsPath, JSON.stringify(settings, null, 2) + '\n');
-  } catch (err) {
-    return { status: 'error', detail: `write failed: ${err.message}` };
-  }
-
-  return { status: 'removed', detail: `spliced out ${removedCount} entries` };
-}
-
-/**
- * Remove the Codex CLI SessionStart hook entry that `--codex` init wrote into
- * `.codex/hooks.json`. Mirrors `removePrewarmSessionStartHook`: only the
- * sweet-search-owned entry (matched by the launcher filename) is spliced out;
- * other events/entries are preserved. When our entry was the only content the
- * file is deleted rather than left as an empty shell. The `[features] hooks`
- * feature flag in config.toml is `removeCodexHarness`'s job: it goes only when
- * the Codex harness manifest shows init added it (it may be shared with other
- * tooling otherwise).
- *
- * Returns `{ status, detail }`:
- *   removed    — our entry was spliced out (file rewritten or deleted)
- *   not-found  — no .codex/hooks.json, no SessionStart, or no matching entry
- *   dry-run    — would remove (no write)
- *   error      — non-fatal (unreadable / invalid JSON / write failed)
- */
-export function removeCodexSessionStartHook(projectRoot, { dryRun = false } = {}) {
-  const hooksPath = join(projectRoot, '.codex', 'hooks.json');
-  if (!existsSync(hooksPath)) {
-    return { status: 'not-found', detail: 'no .codex/hooks.json' };
-  }
-
-  let raw;
-  try {
-    raw = readFileSync(hooksPath, 'utf-8');
-  } catch (err) {
-    return { status: 'error', detail: `read failed: ${err.message}` };
-  }
-
-  let doc;
-  try {
-    doc = JSON.parse(raw);
-  } catch (err) {
-    return { status: 'error', detail: `.codex/hooks.json is not valid JSON: ${err.message}` };
-  }
-
-  const sessionStart = doc?.hooks?.SessionStart;
-  if (!Array.isArray(sessionStart) || sessionStart.length === 0) {
-    return { status: 'not-found', detail: 'no SessionStart entries' };
-  }
-
-  const filtered = sessionStart.filter((group) =>
-    !(Array.isArray(group?.hooks) &&
-      group.hooks.some((h) => typeof h?.command === 'string' && h.command.includes(PREWARM_HOOK_COMMAND)))
-  );
-
-  if (filtered.length === sessionStart.length) {
-    return { status: 'not-found', detail: 'no matching entry' };
-  }
-
-  if (dryRun) {
-    return { status: 'dry-run', detail: `would remove ${sessionStart.length - filtered.length} entry` };
-  }
-
-  if (filtered.length === 0) {
-    delete doc.hooks.SessionStart;
-    if (doc.hooks && Object.keys(doc.hooks).length === 0) {
-      delete doc.hooks;
-    }
-  } else {
-    doc.hooks.SessionStart = filtered;
-  }
-
-  try {
-    if (doc && Object.keys(doc).length === 0) {
-      // Our hook was the only content — remove the file rather than leave `{}`.
-      unlinkSync(hooksPath);
-    } else {
-      writeViaTmp(hooksPath, JSON.stringify(doc, null, 2) + '\n');
-    }
-  } catch (err) {
-    return { status: 'error', detail: `write failed: ${err.message}` };
-  }
-
-  return { status: 'removed', detail: `spliced out ${sessionStart.length - filtered.length} entry` };
-}
+export { removeSweetIndexSkill, removePrewarmSessionStartHook, removeCodexSessionStartHook };
 
 // ---------------------------------------------------------------------------
 // Optional native package list (derived from package.json)
@@ -565,36 +386,9 @@ export function planProjectUninstall(projectRoot) {
     lines.push(`${DATA_DIR_NAME}/ (${formatBytes(size)})`);
   }
 
-  if (removePrewarmSessionStartHook(projectRoot, { dryRun: true }).status === 'dry-run') {
-    lines.push('daemon-prewarm SessionStart hook in .claude/settings.json');
-  }
-  if (removeSweetIndexSkill(projectRoot, { dryRun: true }).status === 'dry-run') {
-    lines.push('/sweet-index skill (.claude/skills/sweet-index/)');
-  }
-  // Agent-instruction files and the Claude project rule. The marker/sentinel
-  // contracts preserve user-authored content.
-  const agentInstructions = removeAgentInstructions({ projectRoot, dryRun: true });
-  const agentTargets = Object.entries(agentInstructions.harnesses ?? {})
-    .filter(([, v]) => v === 'dry-run').map(([k]) => k);
-  if (agentTargets.length > 0) lines.push(`agent-instruction marker blocks (${agentTargets.join(', ')})`);
-  if (removeClaudeRules({ projectRoot, dryRun: true }) === 'dry-run') {
-    lines.push('.claude/rules/sweet-search.md');
-  }
-  const systemPrompt = removeClaudeSystemPrompt({ projectRoot, dryRun: true });
-  if (systemPrompt.status === 'dry-run') lines.push(`Claude system-prompt output style (${systemPrompt.detail})`);
-  const lean = removeClaudeLeanHarness({ projectRoot, dryRun: true });
-  if (lean.status === 'dry-run') lines.push(`Claude lean harness (${lean.detail})`);
-  const enforcement = removeToolEnforcement({ projectRoot, dryRun: true });
-  if (enforcement.status === 'dry-run') lines.push(`tool-enforcement strict mode (${enforcement.detail})`);
-  if (removeCodexSessionStartHook(projectRoot, { dryRun: true }).status === 'dry-run') {
-    lines.push('Codex SessionStart hook (.codex/hooks.json)');
-  }
-  const codexHarness = removeCodexHarness({ projectRoot, dryRun: true });
-  if (codexHarness.status === 'dry-run') lines.push(`Codex harness (${codexHarness.detail})`);
-  const opencodeHarness = removeOpencodeHarness({ projectRoot, dryRun: true });
-  if (opencodeHarness.status === 'dry-run') lines.push(`opencode harness (${opencodeHarness.detail})`);
-  if (removeMcpServer({ projectRoot, dryRun: true }) === 'dry-run') {
-    lines.push('MCP server registration (.mcp.json — mcpServers.sweet-search)');
+  for (const artifact of artifactsInPlanOrder()) {
+    const result = artifact.remove(projectRoot, { dryRun: true });
+    if (result.status === 'dry-run') lines.push(artifact.planLabel(result));
   }
 
   // Read now: the record lives in .sweet-search/, which goes first.
@@ -674,76 +468,12 @@ function executeProjectUninstall(plan) {
     }
   }
 
-  const report = (result, { ok = ['removed'], label, keptWhen = [] }) => {
-    if (ok.includes(result.status)) {
-      console.log(`  Removed: ${label}${result.detail ? ` (${result.detail})` : ''}`);
-      removed++;
-    } else if (keptWhen.includes(result.status)) {
-      console.log(`  Kept: ${label} — ${result.detail}`);
-      kept++;
-    } else if (result.status === 'error') {
-      console.log(`  Failed to remove ${label}: ${result.detail}`);
-      kept++;
+  for (const artifact of artifactsInRunOrder()) {
+    for (const { text, count } of artifact.report(artifact.remove(projectRoot))) {
+      console.log(text);
+      if (count === 'removed') removed++;
+      else kept++;
     }
-  };
-
-  report(removeSweetIndexSkill(projectRoot), { label: '/sweet-index skill' });
-  report(removePrewarmSessionStartHook(projectRoot), { label: 'daemon-prewarm SessionStart hook' });
-  report(removeCodexSessionStartHook(projectRoot), { label: 'Codex SessionStart hook' });
-  // Only what the Codex / opencode harness manifests record as added and unchanged since
-  // (the config.toml hooks flag only when init added it). After the hook, so an emptied
-  // .codex/ directory can go too.
-  for (const [label, result] of [
-    ['Codex harness', removeCodexHarness({ projectRoot })],
-    ['opencode harness', removeOpencodeHarness({ projectRoot })],
-  ]) {
-    report(result, { label });
-    for (const k of result.kept ?? []) {
-      console.log(`  Kept: ${k}`);
-      kept++;
-    }
-  }
-
-  const agentInstructionsResult = removeAgentInstructions({ projectRoot });
-  for (const [harness, status] of Object.entries(agentInstructionsResult.harnesses)) {
-    if (status === 'removed') {
-      console.log(`  Removed: ${harness} agent-instruction block`);
-      removed++;
-    } else if (status === 'file-deleted') {
-      console.log(`  Removed: ${harness} agent-instruction file (wholly sweet-search-managed)`);
-      removed++;
-    }
-  }
-
-  const claudeRulesResult = removeClaudeRules({ projectRoot });
-  if (claudeRulesResult === 'removed') {
-    console.log('  Removed: .claude/rules/sweet-search.md');
-    removed++;
-  } else if (claudeRulesResult === 'preserved-user-file') {
-    console.log('  Kept: .claude/rules/sweet-search.md — no sweet-search sentinel (user-edited)');
-    kept++;
-  }
-
-  // Only removes the sentinel-tagged style, and clears outputStyle only when it
-  // still selects that owned style.
-  const systemPromptResult = removeClaudeSystemPrompt({ projectRoot });
-  report(systemPromptResult, { label: 'Claude system-prompt output style' });
-  if (systemPromptResult.status === 'not-found' && systemPromptResult.detail === 'output style is user-authored') {
-    console.log('  Kept: Claude output style — no sweet-search sentinel (user-authored)');
-    kept++;
-  }
-
-  // Only what the lean-harness manifest records as added and unchanged since.
-  report(removeClaudeLeanHarness({ projectRoot }), { label: 'Claude lean harness' });
-  report(removeToolEnforcement({ projectRoot }), { label: 'tool-enforcement' });
-
-  const mcpServerResult = removeMcpServer({ projectRoot });
-  if (mcpServerResult === 'removed') {
-    console.log('  Removed: MCP server registration (.mcp.json — mcpServers.sweet-search)');
-    removed++;
-  } else if (mcpServerResult === 'file-deleted') {
-    console.log('  Removed: .mcp.json (wholly sweet-search-managed)');
-    removed++;
   }
 
   // Last: what is left of the settings file and directories init created.

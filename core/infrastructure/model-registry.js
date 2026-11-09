@@ -10,6 +10,8 @@
  * Use scripts/verify-model-registry.js to regenerate/verify checksums.
  */
 
+import { isOnValue } from './env-flag.js';
+
 export const MODEL_REGISTRY = {
   'lateon-code': {
     hfId: 'lightonai/LateOn-Code',
@@ -181,16 +183,6 @@ export function isNativeAcceleratedModel(key) {
 }
 
 /**
- * Truthy env-flag parser. Matches the conventions used across the codebase:
- *   "1" / "true" / "on" / "yes" (case-insensitive) → true
- *   anything else / unset                           → false
- */
-function isEnvTruthy(name) {
-  const raw = (process.env[name] ?? '').trim().toLowerCase();
-  return raw === '1' || raw === 'true' || raw === 'on' || raw === 'yes';
-}
-
-/**
  * Check whether an opt-in model should be included given the current
  * environment. Opt-in entries declare a list of env vars; if ANY is
  * truthy, the model is pulled in. Entries without `optIn` are always
@@ -199,7 +191,7 @@ function isEnvTruthy(name) {
 export function isModelEnabled(entry) {
   if (!entry?.optIn) return true;
   const vars = entry.optIn.envVars ?? [];
-  return vars.some((v) => isEnvTruthy(v));
+  return vars.some((v) => isOnValue(process.env[v]));
 }
 
 /**

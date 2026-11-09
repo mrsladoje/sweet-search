@@ -66,6 +66,7 @@ import { applyExactEdits } from './harness-prompts/index.js';
 import { getPolicyBody } from './inject-agent-instructions.js';
 import { CLAUDE_RULES_POINTER } from './write-claude-rules.js';
 import { fileState, writeAtomic } from './install-fs.js';
+import { HOOK_FLAGS, hasOwnedHook, hookCommand } from './hook-entries.js';
 
 // The pointer text lives with the rules-file writer; re-exported here because the benchmark
 // runners import it from this module.
@@ -261,9 +262,8 @@ export const CLAUDE_LEAN_HARNESS_ENV = Object.freeze({
 // (scripts/hooks/session-title.mjs) sets a title from the first prompt instead. Only init installs
 // it (`titleHook`); the benchmark runners keep their settings unchanged. The command string is
 // the ownership marker.
-export const CLAUDE_LEAN_TITLE_HOOK_COMMAND = 'sweet-search-hook --session-title';
-const isTitleHookGroup = group => Array.isArray(group?.hooks)
-  && group.hooks.some(h => typeof h?.command === 'string' && h.command.includes(CLAUDE_LEAN_TITLE_HOOK_COMMAND));
+export const CLAUDE_LEAN_TITLE_HOOK_COMMAND = hookCommand(HOOK_FLAGS.sessionTitle);
+const isTitleHookGroup = group => hasOwnedHook(group, CLAUDE_LEAN_TITLE_HOOK_COMMAND);
 
 /** Add (`want`) or remove our UserPromptSubmit entry in `settings`. Returns true on a change. */
 function setTitleHook(settings, want) {

@@ -9,15 +9,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-const SPARSE_DELTA_DIR_SUFFIX = '.deltas';
-const SPARSE_DELTA_FILE_EXT = '.ssgrmdelta';
+export const DELTA_DIR_SUFFIX = '.deltas';
+export const DELTA_FILE_EXT = '.ssgrmdelta';
 
 function deltaDirFor(baseArtifactPath) {
-  return baseArtifactPath + SPARSE_DELTA_DIR_SUFFIX;
+  return baseArtifactPath + DELTA_DIR_SUFFIX;
 }
 
 function parseDeltaSegment(baseArtifactPath, segmentPath, maxEpoch) {
-  if (typeof segmentPath !== 'string' || !segmentPath.endsWith(SPARSE_DELTA_FILE_EXT)) return null;
+  if (typeof segmentPath !== 'string' || !segmentPath.endsWith(DELTA_FILE_EXT)) return null;
   const deltaRoot = path.resolve(deltaDirFor(baseArtifactPath));
   const resolved = path.isAbsolute(segmentPath)
     ? segmentPath

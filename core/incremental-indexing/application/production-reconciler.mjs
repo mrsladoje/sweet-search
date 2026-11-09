@@ -3,7 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 
-import { Reconciler } from './reconciler.mjs';
+import { DEFAULT_FILES_PER_TICK, Reconciler } from './reconciler.mjs';
+import { readJsonFile, writeJsonAtomicSync } from '../infrastructure/json-file.mjs';
 import { enqueueMaintenanceJob, readMaintenanceQueue } from './maintenance-worker.mjs';
 import { createAdmissionPolicy } from '../../indexing/admission-policy.js';
 import { filterGrepCorpusFiles } from '../../indexing/grep-corpus.js';
@@ -35,10 +36,8 @@ import { floatToBinary, normalizedFloatToInt8, truncateForHNSW } from '../../inf
 import { extractSparseGramDeltaRecord, loadSparseGramIndex, resolveSparseSymbolMask } from '../../infrastructure/native-sparse-gram.js';
 import { readMaintenanceState as readMaintenanceStateFromArtifacts } from '../infrastructure/maintenance-state-reader.mjs';
 import { prepareCached } from '../../infrastructure/db-utils.js';
+import { BINARY_HNSW_INDEX, CODEBASE_DB, CODE_GRAPH_DB, DIRTY_QUEUE, LI_STUB_DB, MERKLE_STATE, PROCESSING_QUEUE } from '../infrastructure/state-files.mjs';
 
-const DIRTY_QUEUE = 'index-maintainer-queue.jsonl';
-const PROCESSING_QUEUE = 'index-maintainer-queue.processing.jsonl';
-const MERKLE_STATE = 'merkle-state.json';
 const METRICS_FILE = 'reconcile-metrics.jsonl';
 // One line per published epoch; past this size the file moves to `.1` (the
 // previous `.1` is dropped). `reconcile status` reads only the last lines.
@@ -115,10 +114,6 @@ function relPath(projectRoot, filePath) {
   return rel && !rel.startsWith('../') && !path.isAbsolute(rel) ? rel : null;
 }
 
-function readJson(filePath, fallback = null) {
-  try { return JSON.parse(fs.readFileSync(filePath, 'utf8')); } catch { return fallback; }
-}
-
 function readJsonl(filePath) {
   if (!fs.existsSync(filePath)) return [];
   return fs.readFileSync(filePath, 'utf8').split('\n').flatMap((line) => {
@@ -132,13 +127,6 @@ const UTF8_STRICT = new TextDecoder('utf-8', { fatal: true });
 function statTuple(absPath) {
   const stat = fs.statSync(absPath, { bigint: true });
   return { size: stat.size.toString(), mtime_ns: stat.mtimeNs.toString(), inode: stat.ino.toString() };
-}
-
-function safeWriteJson(filePath, payload, { compact = false } = {}) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  const tmp = `${filePath}.tmp.${process.pid}`;
-  fs.writeFileSync(tmp, compact ? JSON.stringify(payload) : JSON.stringify(payload, null, 2));
-  fs.renameSync(tmp, filePath);
 }
 
 function relativeArtifact(stateDir, filePath) {
@@ -277,7 +265,6 @@ export function createProductionReconciler(options = {}) {
     adapters: adapter.adapters(),
     onProgress: options.onProgress,
     config: {
-      filesPerTick: Number.parseInt(process.env.SWEET_SEARCH_RECONCILE_FILES_PER_TICK || '50', 10),
       ...tickBudgetConfig(process.env),
       ...autotuneConfig,
       ...(options.config || {}),
@@ -353,7 +340,7 @@ class ProductionReconcileAdapter {
    */
   _headerRead() {
     if (this._headerCache === undefined) {
-      this._headerCache = readJson(path.join(this.stateDir, MERKLE_STATE), null);
+      this._headerCache = readJsonFile(path.join(this.stateDir, MERKLE_STATE), null);
     }
     return this._headerCache;
   }
@@ -420,9 +407,9 @@ class ProductionReconcileAdapter {
    * the binary HNSW + float store once (lazily), saved + closed at finalize.
    */
   async beginTick() {
-    const codebaseDbPath = path.join(this.stateDir, 'codebase.db');
-    const graphDbPath = path.join(this.stateDir, 'code-graph.db');
-    const indexPath = path.join(this.stateDir, 'codebase-binary-hnsw.idx');
+    const codebaseDbPath = path.join(this.stateDir, CODEBASE_DB);
+    const graphDbPath = path.join(this.stateDir, CODE_GRAPH_DB);
+    const indexPath = path.join(this.stateDir, BINARY_HNSW_INDEX);
     fs.mkdirSync(this.stateDir, { recursive: true });
 
     const codebaseDb = new Database(codebaseDbPath);
@@ -587,10 +574,10 @@ class ProductionReconcileAdapter {
       // divergence schedules the binary_hnsw compaction), never live rows hidden.
       ctx.staleBatch?.flush();
       await this._persistLiTombstones(ctx);
-      if (ctx.aliasDrops?.size) dropAliasPointersSync(path.join(this.stateDir, 'codebase-late-interaction.db'), ctx.aliasDrops);
+      if (ctx.aliasDrops?.size) dropAliasPointersSync(path.join(this.stateDir, LI_STUB_DB), ctx.aliasDrops);
       if (ctx.liAppend?.writer) {
         const { appendDeferredLiSegment } = await import('./production-li-delta.mjs');
-        await appendDeferredLiSegment(path.join(this.stateDir, 'codebase-late-interaction.db'), ctx.liAppend);
+        await appendDeferredLiSegment(path.join(this.stateDir, LI_STUB_DB), ctx.liAppend);
       }
     } catch (err) {
       // HNSW save (or COMMIT) failed → roll back the SQLite tiers so nothing is
@@ -788,7 +775,7 @@ class ProductionReconcileAdapter {
   /** Queue entries a tick admits: twice its file cap (unchanged files do not count toward it). */
   _dirtySliceLimit() {
     const perTick = this._filesPerTick
-      ?? Number.parseInt(process.env.SWEET_SEARCH_RECONCILE_FILES_PER_TICK || '50', 10);
+      ?? Number.parseInt(process.env.SWEET_SEARCH_RECONCILE_FILES_PER_TICK || String(DEFAULT_FILES_PER_TICK), 10);
     return Math.max(1, perTick) * 2;
   }
 
@@ -801,7 +788,7 @@ class ProductionReconcileAdapter {
   }
 
   _readFailures() {
-    return readJson(path.join(this.stateDir, FILE_FAILURES), {}) || {};
+    return readJsonFile(path.join(this.stateDir, FILE_FAILURES), {}) || {};
   }
 
   _statKey(rel) {
@@ -829,7 +816,7 @@ class ProductionReconcileAdapter {
       }
       return f.count < QUARANTINE_AFTER_FAILURES;
     });
-    if (changed) safeWriteJson(path.join(this.stateDir, FILE_FAILURES), failures);
+    if (changed) writeJsonAtomicSync(path.join(this.stateDir, FILE_FAILURES), failures);
     return live;
   }
 
@@ -842,7 +829,7 @@ class ProductionReconcileAdapter {
     const same = prev && prev.size === now.size && prev.mtimeMs === now.mtimeMs;
     const count = same ? prev.count + 1 : 1;
     failures[rel] = { ...now, count, error: String(err?.message ?? err).slice(0, 300), at: new Date().toISOString() };
-    safeWriteJson(path.join(this.stateDir, FILE_FAILURES), failures);
+    writeJsonAtomicSync(path.join(this.stateDir, FILE_FAILURES), failures);
     if (count === QUARANTINE_AFTER_FAILURES) {
       this.logger?.warn?.(`[reconciler] ${rel} failed ${count} ticks in a row (${failures[rel].error}); skipping it until it is edited`);
     }
@@ -1410,7 +1397,7 @@ class ProductionReconcileAdapter {
     // compaction only runs in maintenance after the tick).
     const readerCache = (ctx._liReaderCache ??= { key: null, index: null });
     const { appended, tombstone } = await applyLateInteractionDelta({
-      indexPath: path.join(this.stateDir, 'codebase-late-interaction.db'),
+      indexPath: path.join(this.stateDir, LI_STUB_DB),
       ops: filteredOps,
       liEncoder: this.liEncoder,
       pickLiInput,
@@ -1612,12 +1599,12 @@ class ProductionReconcileAdapter {
     });
     if (totalFiles === null) totalFiles = store.fileCount();
     this._closeFileState();
-    if (failuresChanged) safeWriteJson(path.join(this.stateDir, FILE_FAILURES), failures);
+    if (failuresChanged) writeJsonAtomicSync(path.join(this.stateDir, FILE_FAILURES), failures);
     const previousLastIndex = header.lastIndex ?? null;
     header.lastIndex = new Date().toISOString();
     header.epoch = manifest.epoch;
     header.stats = { ...(header.stats || {}), totalFiles };
-    safeWriteJson(merklePath, header, { compact: true });
+    writeJsonAtomicSync(merklePath, header, { compact: true });
     updateResidentIndexedFiles(this.stateDir, this.projectRoot, previousLastIndex, header.lastIndex, added, removed);
     try { fs.unlinkSync(path.join(this.stateDir, PROCESSING_QUEUE)); } catch {}
     const metricsPath = path.join(this.stateDir, METRICS_FILE);

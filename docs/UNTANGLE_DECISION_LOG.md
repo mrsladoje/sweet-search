@@ -383,3 +383,30 @@ Each fix lists the main problems it solves. The per-area files hold the rest.
 
 Four fresh read-only agents read the code again with this log and the constraints. 48 items remain (14 indexing,
 9 tools and search, 11 graph and infrastructure, 14 ranking and installers), most of them small copies.
+
+## Done: wave 4 (from the recheck; reports `docs/untangle/reports/w4-*.md`)
+
+- **Daemon client split**: `core/search/search-client.js` (437 lines) holds the functions that talk to a running daemon;
+  `search-server.js` (2,122 -> 1,715 lines) re-exports them. The client never imports the server. One declaration
+  changed: the server now calls `setInProcessSearch(...)` where it assigned a variable that the client functions read.
+- `tests/agent-tools/mirror-markers.test.js` checks that every `// Mirrors: <file>:<function>` marker in the Rust lane
+  names a JS file and function that exist.
+- `core/search/stage-timing.js` owns the profiling hooks (3 copies removed). Six files import `isTestLikePath` from its owner.
+- **One install list**: `scripts/install-artifacts.js` (`PROJECT_ARTIFACTS`, 11 entries) is read by the uninstall plan,
+  the uninstall run and the created-paths record; `uninstall.js` no longer imports `init.js`. `scripts/hook-entries.js`
+  owns the hook strings and the "is ours" check (8 copies). `tests/init/uninstall-order.test.js` pins both print orders
+  (it passed on the old code first).
+- **Indexing**: `state-files.mjs` owns the state-file names (11 files), `readReconcilePause` (3 readers -> 1),
+  `liveVectorSql` (3 -> 1), `json-file.mjs` (5 files), the watcher's deny list is built from `path-filter.mjs`,
+  `DOC_EXTENSIONS` has one owner, `PIPELINE_VERSION` / `STATE_VERSION` live in `index-format-versions.js`.
+- **Graph / infrastructure**: `isTestPath` (3 identical copies -> 1), shared `placeholders` / `clampLimit` /
+  `escapeRegExp`, a `guarded` helper for 11 pasted try/catch blocks in `native-sparse-gram.js`, `makeId` without the
+  options no caller passed.
+- **Order dependence removed**: `core/infrastructure/config/load-env.js` loads `.env`; `platform.js`, `ranking.js`,
+  `embedding.js`, `translation.js` import it first. Before, `ranking.js` and `translation.js` could read API keys
+  before the file was loaded when `native-inference.js` or `init-config.js` reached them first.
+- `QualityScorer` takes `repoMap` as a constructor option (the module-level setter still works; its removal needs one
+  edit in `core/search/sweet-search.js`).
+- Not shared, because the copies differ: the six state-dir resolvers (table in `reports/w4-indexing.md`).
+- Checked: `hashing.mjs` never uses its "native crate" backend (no Rust export `xxhash3_64` exists), so every setup
+  hashes with `@node-rs/xxhash` and the values agree.

@@ -56,6 +56,7 @@ import { readManifest, writeManifest } from '../infrastructure/manifest.mjs';
 import {
   loadBitmap, popcount, isSet,
 } from '../infrastructure/tombstone-bitmap.mjs';
+import { BINARY_HNSW_INDEX, CODE_GRAPH_DB, LI_STUB_DB } from '../infrastructure/state-files.mjs';
 
 function safeUnlink(p) { try { fs.unlinkSync(p); } catch { /* ok */ } }
 function progressFn(onProgress) {
@@ -199,7 +200,7 @@ export const __hnswTesting = {
  */
 export async function binaryHnswHandler(job, { stateDir, onProgress = null }) {
   const progress = progressFn(onProgress);
-  const indexPath = path.join(stateDir, 'codebase-binary-hnsw.idx');
+  const indexPath = path.join(stateDir, BINARY_HNSW_INDEX);
   rollForwardHnswCompaction(indexPath);
   if (!binaryHnswIndexExists(indexPath)) return { skipped: 'no-index' };
 
@@ -275,7 +276,7 @@ export async function liSegmentHandler(job, { stateDir, onProgress = null }) {
   if (!segmentId || typeof segmentId !== 'string') {
     throw new Error('li_segment: missing payload.segmentId');
   }
-  const stubPath = path.join(stateDir, 'codebase-late-interaction.db');
+  const stubPath = path.join(stateDir, LI_STUB_DB);
   if (!fs.existsSync(stubPath)) return { skipped: 'no-li-index' };
   let stub;
   try { stub = JSON.parse(fs.readFileSync(stubPath, 'utf-8')); } catch { return { skipped: 'corrupt-stub' }; }
@@ -418,7 +419,7 @@ function graphGcHandler(job, { stateDir, onProgress = null }) {
  */
 export function graphPageRankHandler(job, { stateDir, onProgress = null }) {
   const progress = progressFn(onProgress);
-  const dbPath = path.join(stateDir, 'code-graph.db');
+  const dbPath = path.join(stateDir, CODE_GRAPH_DB);
   if (!fs.existsSync(dbPath)) return { skipped: 'no-graph' };
   const db = new Database(dbPath);
   try {
@@ -455,7 +456,7 @@ let vocabRun = null;
 export async function vocabRefreshHandler(job, { stateDir, projectRoot = null, embed = null, onProgress = null, wait = false }) {
   const progress = progressFn(onProgress);
   if (vocabRun) return { skipped: 'running' };
-  const dbPath = path.join(stateDir, 'code-graph.db');
+  const dbPath = path.join(stateDir, CODE_GRAPH_DB);
   if (!fs.existsSync(dbPath)) return { skipped: 'no-graph' };
   let graphEpoch = 0;
   const db = new Database(dbPath, { readonly: true });

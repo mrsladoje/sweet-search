@@ -18,6 +18,7 @@ import { applyFinalListMMR, SPAN_MMR_WEIGHTS, CONTENT_MMR_WEIGHTS } from '../ran
 import { refrontPins } from './body-lexical.js';
 import { AGENT_FORMATS } from '../infrastructure/agent-format.js';
 import { hasAblation } from './ablations.js';
+import { __ptStart, __ptEnd } from './stage-timing.js';
 
 /**
  * Min-max normalize an array of scores to [0, 1].
@@ -57,19 +58,6 @@ const QUERY_TEXT_STOPWORDS = new Set([
   'it', 'of', 'on', 'or', 'should', 'the', 'to', 'was', 'were', 'what',
   'when', 'where', 'with', 'you', 'your',
 ]);
-
-// Per-stage profiling hooks. No-op unless `globalThis.__stageTimings` is set
-// by the profiler (scripts/profile-search-stages.mjs). Used to attribute the
-// "unaccounted" portion of post-retrieval wall time to specific sub-stages.
-function __ptStart() {
-  return globalThis.__stageTimings ? performance.now() : null;
-}
-function __ptEnd(stage, t0) {
-  if (t0 == null || !globalThis.__stageTimings) return;
-  const ms = performance.now() - t0;
-  const buf = globalThis.__stageTimings;
-  (buf[stage] = buf[stage] || []).push(ms);
-}
 
 function envNumber(name, fallback, min = 0, max = Infinity) {
   const value = process.env[name];

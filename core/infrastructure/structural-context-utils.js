@@ -46,6 +46,10 @@ export function isTestPath(filePath = '') {
   return /(^|\/)(__tests__|tests?|spec|fixtures|examples?|docs?)(\/|$)|[-_.](test|spec)\.[cm]?[jt]sx?$|_test\.go$/.test(filePath);
 }
 
+export function escapeRegExp(text) {
+  return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export function placeholders(values) {
   return values.map(() => '?').join(',');
 }

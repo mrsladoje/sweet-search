@@ -30,6 +30,7 @@ import { deltaHeader, deltaPathFor, encodeDeltaRecord } from '../../vector-store
 import { FullVectorWriter, NO_ROW, fullVectorPaths } from '../../vector-store/full-vector-file.js';
 import { createBitmap, isSet, saveBitmap, setBit } from './tombstone-bitmap.mjs';
 import { startBackgroundBuild } from './background-build.mjs';
+import { CODEBASE_DB } from './state-files.mjs';
 
 export function compactionPaths(indexPath) {
   const staged = path.join(path.dirname(indexPath), `${path.basename(indexPath, '.idx')}.compact.idx`);
@@ -47,7 +48,7 @@ export function compactionPaths(indexPath) {
  * when the database or the column is missing (the stale bitmap decides then).
  */
 export function readLiveVectorIds(stateDir) {
-  const dbPath = path.join(stateDir, 'codebase.db');
+  const dbPath = path.join(stateDir, CODEBASE_DB);
   if (!fs.existsSync(dbPath)) return null;
   const db = new Database(dbPath, { readonly: true });
   try {

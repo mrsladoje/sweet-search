@@ -52,6 +52,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { readManifest } from './manifest.mjs';
 import { validateConfigFingerprint } from '../../indexing/config-fingerprint.js';
+import { LI_STUB_DB, MERKLE_STATE } from './state-files.mjs';
 
 /** Status label surfaced in logs and `reconcile status` when no baseline exists. */
 export const WAITING_FOR_INITIAL_INDEX = 'waiting_for_initial_index';
@@ -65,7 +66,6 @@ export const CONFIG_FINGERPRINT_MISMATCH = 'config-fingerprint-mismatch';
 /** Not-ready reason for an LI index the incremental path cannot append to. */
 export const LI_FORMAT_OUTDATED = 'li-format-outdated';
 
-const MERKLE_STATE = 'merkle-state.json';
 const DEFAULT_VECTORS_DB = 'codebase.db';
 
 /** The first FINGERPRINT_PREFIX_BYTES of merkle-state.json, or null when it cannot be read. */
@@ -89,7 +89,7 @@ function readMerkleHead(stateDir) {
  * the stub (under 1 KB) and, for a segmented index, its manifest.
  */
 function liIndexOutdated(stateDir) {
-  const stubPath = path.join(stateDir, 'codebase-late-interaction.db');
+  const stubPath = path.join(stateDir, LI_STUB_DB);
   let fd;
   try { fd = fs.openSync(stubPath, 'r'); } catch { return false; }
   let head;

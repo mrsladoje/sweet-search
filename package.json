@@ -68,6 +68,8 @@
     "scripts/user-shims.js",
     "scripts/init.js",
     "scripts/install-fs.js",
+    "scripts/install-artifacts.js",
+    "scripts/hook-entries.js",
     "scripts/uninstall.js",
     "scripts/repo-registry.js",
     "scripts/verify-runtime.js",

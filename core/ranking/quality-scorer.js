@@ -8,7 +8,7 @@
  * estimate, and chunk size preference.
  *
  * Usage:
- *   const scorer = new QualityScorer({ dbPath });
+ *   const scorer = new QualityScorer({ dbPath, repoMap: { pageRank, loadGraph, buildAdjacency } });
  *   const scored = scorer.scoreResults(results);
  */
 
@@ -180,10 +180,18 @@ export class QualityScorer {
   constructor(options = {}) {
     this.dbPath = options.dbPath || DB_PATHS.codeGraph;
     this.weights = { ...FACTOR_WEIGHTS, ...options.weights };
+    // The repo-map functions (core/graph/repo-map.js) are passed in: ranking may not import graph.
+    this._repoMap = options.repoMap ?? null;
 
     this._pageRankScores = null;
     this._pageRankEntityMap = null;
     this._pageRankLoaded = false;
+  }
+
+  _repoMapFunctions() {
+    const repoMap = this._repoMap ?? _repoMapModule;
+    if (!repoMap) throw new Error('QualityScorer needs the repoMap option ({ pageRank, loadGraph, buildAdjacency })');
+    return repoMap;
   }
 
   /** Loaded lazily; cached for the lifetime of this scorer instance. */
@@ -194,7 +202,7 @@ export class QualityScorer {
     try {
       if (!existsSync(this.dbPath)) return;
 
-      const { loadGraph, buildAdjacency, pageRank } = require_repo_map();
+      const { loadGraph, buildAdjacency, pageRank } = this._repoMapFunctions();
       const graph = loadGraph(this.dbPath);
       if (!graph.entities.length) return;
 
@@ -297,17 +305,12 @@ export class QualityScorer {
   }
 }
 
+// Process-wide fallback for a scorer built without the `repoMap` option.
 let _repoMapModule = null;
 
-function require_repo_map() {
-  if (!_repoMapModule) {
-    throw new Error('_repoMapModule not set — call setRepoMapModule first');
-  }
-  return _repoMapModule;
-}
-
 /**
- * Injected to avoid a circular ESM import with repo-map. Called once from sweet-search.js at init time.
+ * @deprecated Pass `repoMap` to the QualityScorer constructor. Kept until core/search/sweet-search.js
+ * stops calling it.
  * @param {{ pageRank: Function, loadGraph: Function, buildAdjacency: Function }} mod
  */
 export function setRepoMapModule(mod) {

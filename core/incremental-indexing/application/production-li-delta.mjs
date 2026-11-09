@@ -13,24 +13,17 @@ import {
   segmentIdentityCache as defaultPositionsCache,
 } from '../infrastructure/li-segment-state.mjs';
 import { liWriterSettings } from '../infrastructure/li-segment-merge.mjs';
+import { readJsonFile, writeJsonAtomic } from '../infrastructure/json-file.mjs';
 
 // Test seam: drop all remembered segment identities.
 export { resetSegmentIdentityCache } from '../infrastructure/li-segment-state.mjs';
 
-function readJson(filePath, fallback = null) {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-  } catch {
-    return fallback;
-  }
-}
-
 function segmentedState(indexPath) {
-  const stub = readJson(indexPath);
+  const stub = readJsonFile(indexPath);
   if (stub?.format !== 'segmented' || !stub.segmentDir) return null;
   const segmentDir = path.resolve(path.dirname(indexPath), stub.segmentDir);
   const manifestPath = path.join(segmentDir, 'manifest.json');
-  const manifest = readJson(manifestPath);
+  const manifest = readJsonFile(manifestPath);
   if (!manifest || !Array.isArray(manifest.segments)) return null;
   return { segmentDir, manifestPath, manifest };
 }
@@ -52,13 +45,6 @@ function manifestFromIndex(index) {
     nextSeq: 0,
     segments: [],
   };
-}
-
-async function writeJsonAtomic(filePath, payload) {
-  await fsp.mkdir(path.dirname(filePath), { recursive: true });
-  const tmp = `${filePath}.tmp.${process.pid}`;
-  await fsp.writeFile(tmp, JSON.stringify(payload, null, 2));
-  await fsp.rename(tmp, filePath);
 }
 
 async function appendGrowingSegment(indexPath, index, docs) {

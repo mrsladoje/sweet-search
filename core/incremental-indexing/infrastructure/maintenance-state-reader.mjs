@@ -25,17 +25,15 @@ import { deltaSizeStats, pendingDeleteStats } from './sparse-gram-delta.mjs';
 import { evaluateSegmentRatios, LI_SEGMENT_SIZE } from './li-segment-state.mjs';
 import { fts5SegmentCount } from './sqlite-fts5.mjs';
 import { loadWatermarkConfig } from '../domain/watermark-scheduler.mjs';
-
-function readJson(filePath) {
-  try { return JSON.parse(fs.readFileSync(filePath, 'utf-8')); } catch { return null; }
-}
+import { readJsonFile } from './json-file.mjs';
+import { BINARY_HNSW_INDEX, CODEBASE_DB, CODE_GRAPH_DB, LI_STUB_DB } from './state-files.mjs';
 
 /**
  * FTS5: max segment count across the graph FTS tables. Returns 0 when
  * the graph DB is absent or the tables are unmigrated.
  */
 export function readFts5State(stateDir) {
-  const graph = path.join(stateDir, 'code-graph.db');
+  const graph = path.join(stateDir, CODE_GRAPH_DB);
   if (!fs.existsSync(graph)) return { segmentCount: 0 };
   const db = new Database(graph, { readonly: true });
   try {
@@ -73,7 +71,7 @@ export function readSparseGramState(stateDir) {
  */
 export function readBinaryHnswState(stateDir) {
   const empty = { deadDocRatio: 0 };
-  const indexPath = path.join(stateDir, 'codebase-binary-hnsw.idx');
+  const indexPath = path.join(stateDir, BINARY_HNSW_INDEX);
   const head = readIndexHeader(indexPath);
   if (!head) return empty;
   // Nodes = the base's plus its delta rows (the stale bitmap numbers both).
@@ -94,7 +92,7 @@ export function readBinaryHnswState(stateDir) {
   // binaryHnswHandler (codebase.db-sourced) is scheduled to reclaim it. Falls
   // back to the stale-bitmap popcount when codebase.db is unavailable.
   let divergentDead = 0;
-  const dbPath = path.join(stateDir, 'codebase.db');
+  const dbPath = path.join(stateDir, CODEBASE_DB);
   if (fs.existsSync(dbPath)) {
     const db = new Database(dbPath, { readonly: true });
     try {
@@ -120,14 +118,14 @@ export function readBinaryHnswState(stateDir) {
  * per segment. Legacy unsegmented indices (or missing manifest) return [].
  */
 export function readLiSegmentsState(stateDir) {
-  const stubPath = path.join(stateDir, 'codebase-late-interaction.db');
+  const stubPath = path.join(stateDir, LI_STUB_DB);
   if (!fs.existsSync(stubPath)) return [];
-  const stub = readJson(stubPath);
+  const stub = readJsonFile(stubPath);
   if (!stub || stub.format !== 'segmented' || !stub.segmentDir) return [];
   const segmentDir = path.resolve(stateDir, stub.segmentDir);
   const manifestPath = path.join(segmentDir, 'manifest.json');
   if (!fs.existsSync(manifestPath)) return [];
-  const manifest = readJson(manifestPath);
+  const manifest = readJsonFile(manifestPath);
   if (!manifest || !Array.isArray(manifest.segments)) return [];
   const docCounts = new Map();
   for (const seg of manifest.segments) {
@@ -150,14 +148,14 @@ export function readLiSegmentsState(stateDir) {
  */
 export function readLiSegmentStats(stateDir) {
   const empty = { segmentCount: 0, smallSegmentCount: 0, pendingDeleteFiles: 0 };
-  const stubPath = path.join(stateDir, 'codebase-late-interaction.db');
+  const stubPath = path.join(stateDir, LI_STUB_DB);
   if (!fs.existsSync(stubPath)) return empty;
-  const stub = readJson(stubPath);
+  const stub = readJsonFile(stubPath);
   if (!stub || stub.format !== 'segmented' || !stub.segmentDir) return empty;
   const segmentDir = path.resolve(stateDir, stub.segmentDir);
   const manifestPath = path.join(segmentDir, 'manifest.json');
   if (!fs.existsSync(manifestPath)) return empty;
-  const manifest = readJson(manifestPath);
+  const manifest = readJsonFile(manifestPath);
   if (!manifest || !Array.isArray(manifest.segments)) return empty;
   let small = 0;
   for (const seg of manifest.segments) {
@@ -188,7 +186,7 @@ export function readLiSegmentStats(stateDir) {
  */
 export function readVectorGcState(stateDir) {
   const empty = { retiredCount: 0, retiredRatio: 0, totalCount: 0 };
-  const dbPath = path.join(stateDir, 'codebase.db');
+  const dbPath = path.join(stateDir, CODEBASE_DB);
   if (!fs.existsSync(dbPath)) return empty;
   const db = new Database(dbPath, { readonly: true });
   try {
@@ -214,7 +212,7 @@ export function readGraphGcState(stateDir) {
     retiredEntities: 0, retiredRelationships: 0, retiredSummaries: 0,
     retiredRows: 0, totalEntities: 0, retiredEntityRatio: 0,
   };
-  const dbPath = path.join(stateDir, 'code-graph.db');
+  const dbPath = path.join(stateDir, CODE_GRAPH_DB);
   if (!fs.existsSync(dbPath)) return empty;
   const db = new Database(dbPath, { readonly: true });
   try {
@@ -269,9 +267,9 @@ export function graphChangeEpoch(db) {
  */
 export function readGraphRankState(stateDir, now = Date.now()) {
   const empty = { graphEpoch: 0, rankedEpoch: 0, msSinceRun: Infinity };
-  const dbPath = path.join(stateDir, 'code-graph.db');
+  const dbPath = path.join(stateDir, CODE_GRAPH_DB);
   if (!fs.existsSync(dbPath)) return empty;
-  const state = readJson(path.join(stateDir, PAGERANK_STATE));
+  const state = readJsonFile(path.join(stateDir, PAGERANK_STATE));
   const msSinceRun = Number.isFinite(state?.ranAt) ? Math.max(0, now - state.ranAt) : Infinity;
   const rankedEpoch = Number.isInteger(state?.graphEpoch) ? state.graphEpoch : 0;
   const db = new Database(dbPath, { readonly: true });
@@ -306,10 +304,10 @@ function pidAlive(pid) {
  */
 export function readVocabState(stateDir, now = Date.now(), { intervalMs = 0, countCap = Infinity } = {}) {
   const empty = { graphEpoch: 0, vocabEpoch: 0, changedRows: 0, liveRelationships: null, msSinceRun: Infinity, running: false };
-  const dbPath = path.join(stateDir, 'code-graph.db');
-  const running = pidAlive(readJson(path.join(stateDir, VOCAB_RUNNING))?.pid);
+  const dbPath = path.join(stateDir, CODE_GRAPH_DB);
+  const running = pidAlive(readJsonFile(path.join(stateDir, VOCAB_RUNNING))?.pid);
   if (!fs.existsSync(dbPath) || !fs.existsSync(path.join(stateDir, 'communities.json'))) return { ...empty, running };
-  const state = readJson(path.join(stateDir, VOCAB_STATE));
+  const state = readJsonFile(path.join(stateDir, VOCAB_STATE));
   const vocabEpoch = Number.isInteger(state?.graphEpoch) ? state.graphEpoch : 0;
   const msSinceRun = Number.isFinite(state?.ranAt) ? Math.max(0, now - state.ranAt) : Infinity;
   const liveRelationships = Number.isInteger(state?.liveRelationships) ? state.liveRelationships : null;

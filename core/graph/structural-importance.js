@@ -23,15 +23,13 @@
  * beat fixtures.
  */
 
+import { isTestPath } from '../infrastructure/structural-context-utils.js';
+
 const REL_WEIGHT = { calls: 1.0, uses: 0.72, implements: 0.88, extends: 0.84, overrides: 0.78 };
 const TYPE_WEIGHT = {
   class: 0.92, struct: 0.9, trait: 0.88, interface: 0.86, enum: 0.84,
   function: 0.84, method: 0.82, component: 0.78, type: 0.7, typeAlias: 0.68, external: 0.2,
 };
-
-export function isTestPath(filePath = '') {
-  return /(^|\/)(__tests__|tests?|spec|fixtures|examples?|docs?)(\/|$)|[-_.](test|spec)\.[cm]?[jt]sx?$|_test\.go$/.test(filePath);
-}
 
 export function isExported(entity) {
   const name = entity?.name || '';

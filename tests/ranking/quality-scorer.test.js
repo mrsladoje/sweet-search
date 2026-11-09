@@ -9,7 +9,6 @@ import {
   scoreRecency,
   clearRecencyCache,
   clearTestProximityCache,
-  setRepoMapModule,
 } from '../../core/ranking/index.js';
 
 // ---------------------------------------------------------------------------
@@ -401,9 +400,10 @@ describe('QualityScorer', () => {
         { source_id: '2', target_id: '1', type: 'calls' },
       ];
 
-      setRepoMapModule(makeMockRepoMap(entities, relationships));
-
-      const graphScorer = new QualityScorer({ dbPath: '/fake/code-graph.db' });
+      const graphScorer = new QualityScorer({
+        dbPath: '/fake/code-graph.db',
+        repoMap: makeMockRepoMap(entities, relationships),
+      });
       // Force _ensurePageRank to use our mock (existsSync returns true for .db)
       graphScorer._pageRankLoaded = false;
 

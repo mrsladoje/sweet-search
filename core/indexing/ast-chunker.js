@@ -13,7 +13,7 @@ import path from 'path';
 import fs from 'fs/promises';
 import { detectProjectBoundary } from '../infrastructure/project-detector.js';
 import { resolveLanguage } from '../infrastructure/language-patterns.js';
-import { DocumentChunker } from './document-chunker.js';
+import { DOC_EXTENSIONS, DocumentChunker } from './document-chunker.js';
 import { JAVA_FAMILY, normalizePathSlug } from './chunking/java-family.js';
 import { embedTextCap } from './chunk-embed-text.js';
 import { chunkViewTemplate } from './chunking/view-chunker.js';
@@ -301,7 +301,7 @@ export class ASTChunker {
 
   async parseFile(filePath, content) {
     const ext = path.extname(filePath).toLowerCase();
-    if (ext === '.md' || ext === '.mdx' || ext === '.rst' || ext === '.txt') {
+    if (DOC_EXTENSIONS.has(ext)) {
       if (!this._docChunker) {
         this._docChunker = new DocumentChunker({ projectRoot: this.projectRoot });
       }

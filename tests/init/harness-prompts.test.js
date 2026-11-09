@@ -151,7 +151,9 @@ describe('opencode: shipped prompt and tool edits = bench conflict3+todo3eff3k',
       mkdirSync(join(root, 'sub'));
       const { default: plugin } = await import(OPENCODE_TRIM_PLUGIN_SOURCE);
       await plugin({ worktree: join(root, 'sub') }, {});
-      for (let i = 0; i < 100 && !existsSync(marker); i++) await new Promise(r => setTimeout(r, 50));
+      // The shell creates the marker before `pwd` writes to it: wait for the content, not the file.
+      const written = () => existsSync(marker) && readFileSync(marker, 'utf8').endsWith('\n');
+      for (let i = 0; i < 100 && !written(); i++) await new Promise(r => setTimeout(r, 50));
       expect(readFileSync(marker, 'utf8')).toBe(`${join(root, 'sub')}\n`);
       const saved = process.env.SWEET_SEARCH_PREWARM;
       process.env.SWEET_SEARCH_PREWARM = '0';

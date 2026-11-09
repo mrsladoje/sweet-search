@@ -7,6 +7,8 @@ import { MarkdownChunker } from './chunking/markdown-chunker.js';
 import { PlainTextChunker } from './chunking/plaintext-chunker.js';
 import { recursiveSplit, buildDocChunk, hashContent } from './chunking/chunk-builder.js';
 
+export const DOC_EXTENSIONS = new Set(['.md', '.mdx', '.rst', '.txt']);
+
 /** Drop-in replacement for ASTChunker.parseGenericFile for document files. */
 export class DocumentChunker {
   constructor(options = {}) {
@@ -25,9 +27,6 @@ export class DocumentChunker {
         // MarkdownChunker handles both Markdown (#-headers) and RST
         // (underline-style headers) via internal dispatch on extension.
         return this.markdown.parseFile(filePath, content);
-
-      case '.txt':
-        return this.plaintext.parseFile(filePath, content);
 
       default:
         return this.plaintext.parseFile(filePath, content);

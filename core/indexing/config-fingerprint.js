@@ -28,14 +28,9 @@ import { EMBEDDING_CONFIG, LATE_INTERACTION_CONFIG } from '../infrastructure/con
 import { HASH_ALGORITHM } from '../incremental-indexing/infrastructure/hash-algorithm.mjs';
 import { DEFAULT_SPARSE_GRAM_WEIGHTS_ID } from '../incremental-indexing/infrastructure/manifest.mjs';
 import { describeFormatChanges } from '../incremental-indexing/infrastructure/staleness-display.mjs';
-import { CHUNKING_VERSION, ENRICHMENT_VERSION, SCHEMA_VERSION } from './index-format-versions.js';
+import { CHUNKING_VERSION, ENRICHMENT_VERSION, PIPELINE_VERSION, SCHEMA_VERSION, STATE_VERSION } from './index-format-versions.js';
 
-// 2.5: the per-file map moved out of merkle-state.json into file-state.db.
-export const STATE_VERSION = '2.5';
-
-// Quantization pipeline version — bump when changing the dense embedding
-// pipeline to invalidate all existing indexes. v2 = int8 quantized embeddings.
-const PIPELINE_VERSION = 2;
+export { STATE_VERSION };
 
 /**
  * Compared fields, in report order. `label` is the user-facing name; `reason`

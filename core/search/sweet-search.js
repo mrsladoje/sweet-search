@@ -41,6 +41,7 @@ import { isAgentFormat } from '../infrastructure/agent-format.js';
 import { hasAblation } from './ablations.js';
 
 import { beginPinnedRead, endPinnedRead } from './search-reader-pin.js';
+import { __ptStart, __ptEnd } from './stage-timing.js';
 
 export { ROUTE_ALPHAS } from './search-fusion.js';
 
@@ -52,18 +53,6 @@ const STRUCTURAL_PATTERNS = {
   implementations: /\b(?:(?:implementations?|implementers?|implementors?|subclasses?|subtypes?)\s+of|(?:classes?|types?)\s+(?:that\s+)?(?:implementing?|extending?)|(?:who|what)\s+(?:extends?|implements?))\s+(\w+)/i,
   impact: /\b(?:impact\s+of\s+(?:changing|modifying|refactoring|updating|deleting|removing|renaming|moving)|(?:what\s+)?depends?\s+on|(?:will|what)\s+breaks?\s+if\s+(?:I|we)\s+(?:change|modify|update|delete|remove)|affected\s+by\s+(?:changes?\s+to|modifying)?|(?:downstream|ripple)\s+effects?\s+of|what\s+needs?\s+to\s+change\s+if\s+(?:I|we)\s+(?:refactor|modify))\s+(\w+)/i,
 };
-
-// Per-stage profiling hooks. No-op unless `globalThis.__stageTimings` is set
-// by scripts/profile-search-stages.mjs.
-function __ptStart() {
-  return globalThis.__stageTimings ? performance.now() : null;
-}
-function __ptEnd(stage, t0) {
-  if (t0 == null || !globalThis.__stageTimings) return;
-  const ms = performance.now() - t0;
-  const buf = globalThis.__stageTimings;
-  (buf[stage] = buf[stage] || []).push(ms);
-}
 
 function parseStructuralQuery(query) {
   for (const [type, pattern] of Object.entries(STRUCTURAL_PATTERNS)) {

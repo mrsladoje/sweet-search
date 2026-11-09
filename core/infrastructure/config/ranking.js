@@ -1,3 +1,5 @@
+import './load-env.js';
+
 const VOYAGEAI_API_KEY = process.env.VOYAGEAI_API_KEY || '';
 const JINA_API_KEY = process.env.JINA_API_KEY || '';
 

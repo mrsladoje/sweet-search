@@ -35,7 +35,7 @@
  * drops it); a missed event is caught by the periodic backstop walk.
  */
 
-import { isGrepCorpusPath } from './grep-corpus.js';
+import { DEFAULT_DENY_DIRS_HARD, isGrepCorpusPath } from './grep-corpus.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import { openFileState } from '../incremental-indexing/infrastructure/file-state-store.mjs';
@@ -51,29 +51,14 @@ const DIRTY_QUEUE = 'index-maintainer-queue.jsonl';
 // between the last clean shutdown and the next startup for gap-free freshness.
 const SNAPSHOT_FILE = 'maintainer-watch-snapshot.bin';
 
-// Mirror of `path-filter.mjs` DEFAULT_DENY_DIRS_HARD (module-local there): dirs
-// whose files are never admitted. They are scoped OUT of the native watch set so
+// The hard deny dirs of `path-filter.mjs`: dirs whose files are never admitted. They are scoped OUT of the native watch set so
 // the OS never reports events under them (inotify watch budget + event volume).
 // The build-output dirs (build/dist/out/target) are NOT here: admission re-admits
 // a git-tracked file under them, so their events must reach `keepRel` (which
 // drops the untracked ones). Nor are `vendor` and `coverage`: the grep corpus holds
 // their git-visible files (grep-corpus.js), and the maintainer keeps those current. The stateDir is prepended dynamically (it is the
 // event-storm guard, not a generic deny dir).
-const DEFAULT_DENY_DIRS = Object.freeze([
-  'node_modules',
-  '.git',
-  '.sweet-search',
-  '.next',
-  '.nuxt',
-  '__pycache__',
-  '.venv',
-  'venv',
-  '.cache',
-  '.turbo',
-  '.parcel-cache',
-  '.svelte-kit',
-  '.vercel',
-]);
+const DEFAULT_DENY_DIRS = Object.freeze(DEFAULT_DENY_DIRS_HARD.filter((d) => d !== 'vendor' && d !== 'coverage'));
 
 // A change to one of these changes what is admitted: the next tick runs the full
 // walk, and the watcher rebuilds its admission policy.

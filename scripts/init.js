@@ -61,6 +61,10 @@ import { installToolEnforcement, removeToolEnforcement } from './install-tool-en
 import { isNativeInferenceAvailable } from '../core/infrastructure/native-inference.js';
 import { registerRepo } from './repo-registry.js';
 import { detectProjectRoot, writeViaTmp } from './install-fs.js';
+import {
+  CREATED_PATHS_FILE, DATA_DIR_NAME, TRACKED_CREATED_PATHS, readCreatedPaths, recordCreatedPaths, snapshotTrackedPaths,
+} from './install-artifacts.js';
+import { HOOK_BIN, hasOwnedHook, registerSessionHooks } from './hook-entries.js';
 import { linkNativeAgentTools } from './link-native-tools.js';
 import { detectSkippedPostinstall } from '../core/infrastructure/postinstall-check.js';
 import { agentPathDirs, installUserShims, whichOnPath } from './user-shims.js';
@@ -71,7 +75,6 @@ const PACKAGE_ROOT = join(__dirname, '..');
 
 // Every model in the registry belongs to the one install set, 'full'.
 const MODEL_SET = 'full';
-const DATA_DIR_NAME = '.sweet-search';
 
 // ---------------------------------------------------------------------------
 // Argument parsing
@@ -348,6 +351,7 @@ export function checkNodeVersion() {
 // ---------------------------------------------------------------------------
 
 export { detectProjectRoot };
+export { CREATED_PATHS_FILE, TRACKED_CREATED_PATHS, readCreatedPaths, recordCreatedPaths, snapshotTrackedPaths };
 
 // ---------------------------------------------------------------------------
 // Data directory
@@ -374,45 +378,6 @@ function maybeIgnoreDataDir(projectRoot) {
     const sep = content.length === 0 || content.endsWith('\n') ? '' : '\n';
     writeFileSync(gitignorePath, `${content}${sep}\n# Sweet Search local index\n${DATA_DIR_NAME}/\n`);
   } catch { /* best-effort — never block init on .gitignore */ }
-}
-
-// ---------------------------------------------------------------------------
-// Paths init created (so uninstall can remove what is left of them)
-// ---------------------------------------------------------------------------
-
-// Harness paths init may create. Recorded in .sweet-search/created-paths.json only
-// when THIS init created them (absent before, present after), so uninstall never
-// removes a directory or settings file the user had.
-export const CREATED_PATHS_FILE = 'created-paths.json';
-export const TRACKED_CREATED_PATHS = Object.freeze([
-  '.claude', '.claude/settings.json', '.claude/skills', '.claude/rules',
-  '.claude/agents', '.claude/output-styles', '.cursor', '.cursor/rules',
-]);
-
-/** The tracked paths that exist now. */
-export function snapshotTrackedPaths(projectRoot) {
-  return new Set(TRACKED_CREATED_PATHS.filter((rel) => existsSync(join(projectRoot, rel))));
-}
-
-/** The paths recorded by earlier inits. */
-export function readCreatedPaths(projectRoot) {
-  try {
-    const list = JSON.parse(readFileSync(join(projectRoot, DATA_DIR_NAME, CREATED_PATHS_FILE), 'utf-8'));
-    return Array.isArray(list) ? list.filter((rel) => TRACKED_CREATED_PATHS.includes(rel)) : [];
-  } catch {
-    return [];
-  }
-}
-
-/** Add the tracked paths that did not exist in `before` and exist now to the record. */
-export function recordCreatedPaths(projectRoot, before) {
-  try {
-    const created = new Set(readCreatedPaths(projectRoot));
-    for (const rel of snapshotTrackedPaths(projectRoot)) if (!before.has(rel)) created.add(rel);
-    if (created.size === 0) return;
-    const list = TRACKED_CREATED_PATHS.filter((rel) => created.has(rel));
-    writeFileSync(join(projectRoot, DATA_DIR_NAME, CREATED_PATHS_FILE), JSON.stringify(list, null, 2) + '\n', 'utf-8');
-  } catch { /* best-effort — uninstall then keeps what it cannot prove init created */ }
 }
 
 // ---------------------------------------------------------------------------
@@ -1147,18 +1112,12 @@ export function inspectDedupReadiness({ deep = false, skipped = false } = {}) {
 // Claude Code SessionStart daemon-prewarm hook
 // ---------------------------------------------------------------------------
 
-// The hook command is the `sweet-search-hook` command (core/agent-tools/tools.js
-// NODE_ENTRY_COMMANDS): the native binary runs the launcher with the node that
-// installed the package. No `node` (the harness may start without node on PATH)
-// and no path (settings files are often committed). Its name doubles as the
-// ownership marker: init and uninstall grep the command string for it.
-//
 // The hook spawns a detached search daemon at Claude Code SessionStart so the
 // user's first `sweet-search <query>` hits an already-warm daemon (~80ms
 // instead of ~2.5s cold). The earlier page-cache preheat
 // (`session-preheat-hook.mjs`) was measured to save ~0ms on query latency —
 // the daemon's own init warms the same pages anyway — and was replaced.
-export const PREWARM_HOOK_COMMAND = 'sweet-search-hook';
+export const PREWARM_HOOK_COMMAND = HOOK_BIN;
 
 /**
  * Register (or update) a SessionStart entry in `.claude/settings.json` that
@@ -1177,86 +1136,12 @@ export function registerPrewarmSessionStartHook({
   skipped = false,
 } = {}) {
   if (skipped) return { status: 'skipped', detail: '--skip-prewarm-hook flag' };
-
-  const command = `${PREWARM_HOOK_COMMAND} --agent-session-hook`;
-  const dropCommand = `${PREWARM_HOOK_COMMAND} --agent-session-drop`;
-
-  const settingsDir = join(projectRoot, '.claude');
-  const settingsPath = join(settingsDir, 'settings.json');
-
-  let settings = {};
-  if (existsSync(settingsPath)) {
-    try {
-      settings = JSON.parse(readFileSync(settingsPath, 'utf-8'));
-    } catch (err) {
-      return { status: 'error', detail: `existing settings.json is not valid JSON: ${err.message}` };
-    }
-  }
-
-  settings.hooks = settings.hooks || {};
-  const sessionStart = Array.isArray(settings.hooks.SessionStart) ? settings.hooks.SessionStart : [];
-
-  // Claude Code hook `timeout` is in seconds. A failed hook never blocks the
-  // session (`onFailure` defaults to "continue"). The launcher detaches and
-  // returns in well under a second.
-  const entry = {
-    matcher: 'startup|resume|clear|compact',
-    hooks: [
-      {
-        type: 'command',
-        command,
-        timeout: 10,
-      },
-    ],
-  };
-
-  // Find and replace any existing sweet-search-owned entry by command match.
-  const ownedIdx = sessionStart.findIndex((group) =>
-    Array.isArray(group?.hooks) &&
-    group.hooks.some((h) => typeof h?.command === 'string' && h.command.includes(PREWARM_HOOK_COMMAND))
-  );
-
-  if (ownedIdx >= 0) {
-    sessionStart[ownedIdx] = entry;
-  } else {
-    sessionStart.push(entry);
-  }
-  settings.hooks.SessionStart = sessionStart;
-
-  // Claude exposes a real SessionEnd event. Drop the bounded RAM receipt
-  // bucket immediately instead of waiting for daemon/session LRU eviction.
-  const sessionEnd = Array.isArray(settings.hooks.SessionEnd) ? settings.hooks.SessionEnd : [];
-  const endEntry = {
-    hooks: [
-      {
-        type: 'command',
-        command: dropCommand,
-        // SessionEnd hooks share a 1.5 s budget in Claude Code.
-        timeout: 2,
-      },
-    ],
-  };
-  const ownedEndIdx = sessionEnd.findIndex((group) =>
-    Array.isArray(group?.hooks) &&
-    group.hooks.some((h) => typeof h?.command === 'string'
-      && h.command.includes(PREWARM_HOOK_COMMAND)
-      && h.command.includes('--agent-session-drop'))
-  );
-  if (ownedEndIdx >= 0) sessionEnd[ownedEndIdx] = endEntry;
-  else sessionEnd.push(endEntry);
-  settings.hooks.SessionEnd = sessionEnd;
-
-  try {
-    mkdirSync(settingsDir, { recursive: true });
-    writeViaTmp(settingsPath, JSON.stringify(settings, null, 2) + '\n');
-  } catch (err) {
-    return { status: 'error', detail: err.message };
-  }
-
-  return {
-    status: 'registered',
-    detail: ownedIdx >= 0 ? 'updated existing entry' : 'added new entry',
-  };
+  return registerSessionHooks({
+    dir: join(projectRoot, '.claude'),
+    fileName: 'settings.json',
+    label: 'settings.json',
+    sessionEnd: true,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -1290,64 +1175,14 @@ export const CODEX_HOOKS_FILENAME = 'hooks.json';
  */
 export function registerCodexSessionStartHook({ projectRoot, skipped = false } = {}) {
   if (skipped) return { status: 'skipped', detail: '--skip-prewarm-hook flag' };
-
   // Codex runs hook commands with the *session* cwd, and per its hooks docs a
   // session "may be started from a subdirectory". The hook itself moves to the
   // project root (scripts/hooks/hook.mjs), so the command needs no shell syntax.
-  const command = `${PREWARM_HOOK_COMMAND} --agent-session-hook`;
-  const codexDir = join(projectRoot, '.codex');
-  const hooksPath = join(codexDir, CODEX_HOOKS_FILENAME);
-
-  let doc = {};
-  if (existsSync(hooksPath)) {
-    try {
-      doc = JSON.parse(readFileSync(hooksPath, 'utf-8'));
-    } catch (err) {
-      return { status: 'error', detail: `existing .codex/hooks.json is not valid JSON: ${err.message}` };
-    }
-  }
-
-  doc.hooks = doc.hooks || {};
-  const sessionStart = Array.isArray(doc.hooks.SessionStart) ? doc.hooks.SessionStart : [];
-
-  // Start/resume prewarm the daemon; clear/compact also reset shown-span
-  // receipts for the new context epoch.
-  // `timeout` is in seconds (per Codex's hooks docs); the launcher detaches and
-  // returns in well under a second, so a small budget is plenty.
-  const entry = {
-    matcher: 'startup|resume|clear|compact',
-    hooks: [
-      {
-        type: 'command',
-        command,
-        timeout: 10,
-      },
-    ],
-  };
-
-  const ownedIdx = sessionStart.findIndex((group) =>
-    Array.isArray(group?.hooks) &&
-    group.hooks.some((h) => typeof h?.command === 'string' && h.command.includes(PREWARM_HOOK_COMMAND))
-  );
-
-  if (ownedIdx >= 0) {
-    sessionStart[ownedIdx] = entry;
-  } else {
-    sessionStart.push(entry);
-  }
-  doc.hooks.SessionStart = sessionStart;
-
-  try {
-    mkdirSync(codexDir, { recursive: true });
-    writeViaTmp(hooksPath, JSON.stringify(doc, null, 2) + '\n');
-  } catch (err) {
-    return { status: 'error', detail: err.message };
-  }
-
-  return {
-    status: 'registered',
-    detail: ownedIdx >= 0 ? 'updated existing entry' : 'added new entry',
-  };
+  return registerSessionHooks({
+    dir: join(projectRoot, '.codex'),
+    fileName: CODEX_HOOKS_FILENAME,
+    label: '.codex/hooks.json',
+  });
 }
 
 // `ensureCodexHooksFeatureFlag` lives in install-codex-harness.js (the Codex harness manifest
@@ -1359,9 +1194,7 @@ export function hasCodexPrewarmHook(projectRoot) {
   try {
     const doc = JSON.parse(readFileSync(join(projectRoot, '.codex', CODEX_HOOKS_FILENAME), 'utf-8'));
     const groups = doc?.hooks?.SessionStart;
-    return Array.isArray(groups) && groups.some((group) =>
-      Array.isArray(group?.hooks)
-      && group.hooks.some((h) => typeof h?.command === 'string' && h.command.includes(PREWARM_HOOK_COMMAND)));
+    return Array.isArray(groups) && groups.some((group) => hasOwnedHook(group, HOOK_BIN));
   } catch {
     return false;
   }

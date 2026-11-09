@@ -30,6 +30,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
+import { CODEBASE_DB } from './state-files.mjs';
 
 const DEFAULT_GC_BATCH = 2000;
 const DEFAULT_GC_MAX_ROWS = 100_000;
@@ -94,7 +95,7 @@ export function pruneRetiredVectors(db, frontier, opts = {}) {
  * @returns {{deleted:number, frontier:number, hadReaders:boolean, batches:number, hitCap:boolean}|{skipped:string}}
  */
 export function runVectorGc(stateDir, deps = {}) {
-  const dbPath = deps.dbPath || path.join(stateDir, 'codebase.db');
+  const dbPath = deps.dbPath || path.join(stateDir, CODEBASE_DB);
   if (!fs.existsSync(dbPath)) return { skipped: 'no-vector-db' };
 
   const minLiveEpochFn = deps.minLiveEpoch;

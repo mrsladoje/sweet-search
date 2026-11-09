@@ -35,7 +35,7 @@ import { applyPersistedLiModel } from '../infrastructure/init-config.js';
 // Static, not dynamic: the teardown watchdog must be able to hand off from
 // a synchronous callback, so the launcher has to be resolved before any await
 // in the shutdown path can wedge.
-import { launchMaintainer, pauseHolds } from './maintainer-launcher.mjs';
+import { launchMaintainer, readReconcilePause } from './maintainer-launcher.mjs';
 import { recordSpawn } from '../infrastructure/spawn-ledger.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -121,21 +121,7 @@ function getProcessStartTime() {
 }
 
 export function isReconcilePaused(stateDir) {
-  const pauseFile = join(stateDir, 'reconcile-pause.json');
-  try {
-    const payload = JSON.parse(readFileSync(pauseFile, 'utf-8'));
-    return {
-      paused: pauseHolds(payload),
-      pausedAt: payload?.pausedAt || null,
-      reason: payload?.reason || null,
-      filePath: pauseFile,
-    };
-  } catch (err) {
-    if (err.code !== 'ENOENT') {
-      log('WARN', `Ignoring unreadable reconcile pause state: ${err.message}`);
-    }
-    return { paused: false, filePath: pauseFile };
-  }
+  return readReconcilePause(stateDir, (err) => log('WARN', `Ignoring unreadable reconcile pause state: ${err.message}`));
 }
 
 /** `<x>/.sweet-search/worktrees` (worktree-index.mjs isWorktreesDir, without the import). */

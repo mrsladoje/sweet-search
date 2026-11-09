@@ -19,14 +19,11 @@ import {
   enqueueMaintenanceJob,
   readMaintenanceQueue,
 } from './maintenance-worker.mjs';
+import { readJsonFile } from '../infrastructure/json-file.mjs';
+import { DIRTY_QUEUE, MAINTAINER_LOCK, MERKLE_STATE, PAUSE_FILE, PROCESSING_QUEUE } from '../infrastructure/state-files.mjs';
 
-const MAINTAINER_LOCK = 'index-maintainer.lock';
 
-const DIRTY_QUEUE = 'index-maintainer-queue.jsonl';
-const PROCESSING_QUEUE = 'index-maintainer-queue.processing.jsonl';
 const METRICS_FILE = 'reconcile-metrics.jsonl';
-const MERKLE_STATE = 'merkle-state.json';
-const PAUSE_FILE = 'reconcile-pause.json';
 
 const REBUILD_TIERS = new Map([
   ['hnsw', 'binary_hnsw'],
@@ -82,14 +79,6 @@ function context(opts) {
     opts.stateDir || process.env.SWEET_SEARCH_STATE_DIR || path.join(projectRoot, '.sweet-search'),
   );
   return { projectRoot, stateDir };
-}
-
-function readJson(filePath) {
-  try {
-    return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-  } catch {
-    return null;
-  }
 }
 
 function readJsonl(filePath) {
@@ -178,7 +167,7 @@ function reconcileConfigSnapshot(env = process.env) {
  */
 function lockSnapshot(stateDir) {
   const lockFile = path.join(stateDir, MAINTAINER_LOCK);
-  const payload = readJson(lockFile);
+  const payload = readJsonFile(lockFile);
   if (!payload || !Number.isInteger(payload.pid)) {
     return { present: false, filePath: lockFile };
   }
@@ -240,7 +229,7 @@ function statusSnapshot(ctx) {
 
 function pauseSnapshot(ctx) {
   const filePath = path.join(ctx.stateDir, PAUSE_FILE);
-  const payload = readJson(filePath);
+  const payload = readJsonFile(filePath);
   if (!payload) return { paused: false, filePath };
   return {
     paused: true,
@@ -292,7 +281,7 @@ function inspectPath(ctx, inputPath) {
   const relPath = normalizeRel(path.relative(ctx.projectRoot, canonicalPath));
   const dirty = dirtySnapshot(ctx.stateDir);
   const manifest = readManifest(ctx.stateDir);
-  const merkle = readJson(path.join(ctx.stateDir, MERKLE_STATE)) || {};
+  const merkle = readJsonFile(path.join(ctx.stateDir, MERKLE_STATE)) || {};
   let stored = null;
   const store = openFileState(ctx.stateDir, { readonly: true });
   if (store) {

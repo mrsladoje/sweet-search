@@ -1,4 +1,5 @@
 import { stripNonCode } from './structural-callsite-hints.js';
+import { isTestPath } from '../infrastructure/structural-context-utils.js';
 
 const STOP = new Set([
   'const', 'let', 'var', 'return', 'function', 'export', 'import', 'from', 'null', 'true', 'false',
@@ -59,10 +60,6 @@ function shortItem(x) {
 
 function shortPath(p) {
   return p.path.map(x => `${x.name}${x.filePath ? `@${x.filePath}:${x.startLine || '?'}` : '@external'}`).join(' -> ');
-}
-
-function isLowSignalPath(filePath = '') {
-  return /(^|\/)(__tests__|tests?|spec|fixtures|examples?|docs?)(\/|$)|[-_.](test|spec)\.[cm]?[jt]sx?$|_test\.go$/.test(filePath);
 }
 
 function preferProduction(items, isLowSignal) {
@@ -168,9 +165,9 @@ function relatedDefinitions(target, targetTerms, resolveTerm) {
 export function buildAnswerCues({ target, hint, callers, callees, impactPaths, resolveTerm }) {
   const targetTerms = rankedTerms(target, hint);
   const branches = branchTerms(targetTerms);
-  const cueCallers = preferProduction(callers, item => isLowSignalPath(item.filePath));
-  const cueCallees = preferProduction(callees, item => isLowSignalPath(item.filePath));
-  const cuePaths = preferProduction(impactPaths, path => (path.path || []).some(item => isLowSignalPath(item.filePath)));
+  const cueCallers = preferProduction(callers, item => isTestPath(item.filePath));
+  const cueCallees = preferProduction(callees, item => isTestPath(item.filePath));
+  const cuePaths = preferProduction(impactPaths, path => (path.path || []).some(item => isTestPath(item.filePath)));
   return {
     targetTerms,
     keySymbols: keySymbols(target, hint, cueCallers, cueCallees, cuePaths),

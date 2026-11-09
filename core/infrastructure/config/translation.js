@@ -2,6 +2,8 @@
  * Cerebras LLM Configuration — fast inference for HCGS and graph summary generation.
  */
 
+import './load-env.js';
+
 const CEREBRAS_API_KEY = process.env.CEREBRAS_API_KEY || '';
 
 // Reference: https://inference-docs.cerebras.ai/models/zai-glm-46

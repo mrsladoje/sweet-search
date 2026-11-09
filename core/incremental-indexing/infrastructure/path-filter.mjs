@@ -38,7 +38,7 @@ const BUILD_OUTPUT_DENY_DIRS = Object.freeze(['dist', 'build', 'out', 'target'])
 // past them the same way it sees past the deny-dirs.
 const BUILD_OUTPUT_GLOBS = Object.freeze(['**/build/**', '**/dist/**', '**/out/**', '**/target/**']);
 
-const DEFAULT_DENY_DIRS_HARD = Object.freeze([
+export const DEFAULT_DENY_DIRS_HARD = Object.freeze([
   'node_modules',
   '.git',
   '.sweet-search',

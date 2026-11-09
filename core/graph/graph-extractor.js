@@ -2978,28 +2978,15 @@ export class GraphExtractor {
   }
 
   /**
-   * Generate unique ID for an entity
-   *
-   * For collision-proof IDs (especially overloaded methods), include signature or line info.
-   * ID format: sha256(relativePath:type:name:disambiguator)[0:16]
+   * Generate unique ID for a file or view-class entity.
+   * ID format: sha256(relativePath:type:name)[0:16]
    *
    * @param {string} filePath - Absolute file path
-   * @param {object} [options] - Optional disambiguation info
-   * @param {string} [options.signature] - Method/function signature for overload disambiguation
-   * @param {number} [options.startLine] - Start line as fallback disambiguator
    * @returns {string} 16-char hex ID
    */
-  makeId(filePath, type, name, options = {}) {
+  makeId(filePath, type, name) {
     const relativePath = this.projectRoot ? path.relative(this.projectRoot, filePath) : filePath;
-
-    let disambiguator = '';
-    if (options.signature) {
-      disambiguator = createHash('sha256').update(options.signature).digest('hex').slice(0, 8);
-    } else if (options.startLine !== undefined) {
-      disambiguator = String(options.startLine);
-    }
-
-    return logicalEntityId(relativePath, type, disambiguator ? `${name}:${disambiguator}` : name);
+    return logicalEntityId(relativePath, type, name);
   }
 
   /**

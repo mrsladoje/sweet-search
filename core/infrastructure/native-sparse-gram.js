@@ -182,6 +182,15 @@ export function loadSparseGramIndex(indexPath) {
   return addon.NativeSparseGramIndex.load(indexPath);
 }
 
+function guarded(label, fn) {
+  try {
+    return fn();
+  } catch (err) {
+    if (process.env.SWEET_DEBUG) console.debug(`[native-sparse-gram] ${label} failed:`, err.message);
+    return null;
+  }
+}
+
 function normalizeExtractionResult(result) {
   if (!result || !Array.isArray(result.grams)) return null;
   return {
@@ -217,13 +226,10 @@ function fallbackRequiredGrams(literals) {
 export function extractSparseGramDeltaRecord({ indexPath, content, index = null }) {
   const addon = loadAddon();
   if (!addon) return null;
-  try {
+  return guarded('extractSparseGramDeltaRecord', () => {
     const base = index || (indexPath && existsSync(indexPath) ? addon.NativeSparseGramIndex.load(indexPath) : null);
     return normalizeExtractionResult(base ? base.extractIndexGrams(content) : addon.extractSparseGramDelta(content));
-  } catch (err) {
-    if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] extractSparseGramDeltaRecord failed:', err.message);
-    return null;
-  }
+  });
 }
 
 export function extractSparseGramRequiredGrams(sparseGramIndex, literals) {
@@ -258,12 +264,10 @@ export function extractRegexLiteralClauses(regex) {
 export function nativeGrepFilesWithMatches(pattern, projectRoot, files, caseInsensitive) {
   const addon = loadAddon();
   if (!addon?.nativeGrepFilesWithMatches) return null;
-  try {
+  // A throw (regex the engine cannot compile) returns null: the caller falls back to rg.
+  return guarded('nativeGrepFilesWithMatches', () => {
     return addon.nativeGrepFilesWithMatches(pattern, projectRoot, files, caseInsensitive || false);
-  } catch (err) {
-    if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] nativeGrepFilesWithMatches failed:', err.message);
-    return null; // Fall back to rg on regex incompatibility
-  }
+  });
 }
 
 /**
@@ -278,12 +282,9 @@ export function nativeGrepFilesWithMatches(pattern, projectRoot, files, caseInse
 export function nativeGrepFilesWithMatchesFixed(literals, projectRoot, files, caseInsensitive) {
   const addon = loadAddon();
   if (!addon?.nativeGrepFilesWithMatchesFixed) return null;
-  try {
+  return guarded('nativeGrepFilesWithMatchesFixed', () => {
     return addon.nativeGrepFilesWithMatchesFixed(literals, projectRoot, files, caseInsensitive || false);
-  } catch (err) {
-    if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] nativeGrepFilesWithMatchesFixed failed:', err.message);
-    return null;
-  }
+  });
 }
 
 /**
@@ -296,12 +297,9 @@ export function nativeGrepFilesWithMatchesFixed(literals, projectRoot, files, ca
 export function nativeGrepLines(pattern, projectRoot, files, caseInsensitive) {
   const addon = loadAddon();
   if (!addon?.nativeGrepLines) return null;
-  try {
+  return guarded('nativeGrepLines', () => {
     return addon.nativeGrepLines(pattern, projectRoot, files, caseInsensitive || false);
-  } catch (err) {
-    if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] nativeGrepLines failed:', err.message);
-    return null;
-  }
+  });
 }
 
 /**
@@ -321,15 +319,12 @@ export function nativeGrepLines(pattern, projectRoot, files, caseInsensitive) {
 export function nativeGrepFull(pattern, projectRoot, files, caseInsensitive, { perFileCap = 0, indexPaths = false } = {}) {
   const addon = loadAddon();
   if (!addon?.nativeGrepFull) return null;
-  try {
+  return guarded('nativeGrepFull', () => {
     if (addon.nativeGrepFullPacked) {
       return unpackFullResult(addon.nativeGrepFullPacked(pattern, projectRoot, files, caseInsensitive || false, perFileCap, indexPaths), perFileCap);
     }
     return addon.nativeGrepFull(pattern, projectRoot, files, caseInsensitive || false);
-  } catch (err) {
-    if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] nativeGrepFull failed:', err.message);
-    return null;
-  }
+  });
 }
 
 /**
@@ -376,15 +371,12 @@ export function nativeGrepWithFiles(pattern, projectRoot, files, caseInsensitive
   const addon = loadAddon();
   const fn = linesOnly ? addon?.nativeGrepLinesWithFiles : addon?.nativeGrepFullWithFiles;
   if (!fn) return null;
-  try {
+  return guarded('nativeGrepWithFiles', () => {
     if (!linesOnly && addon.nativeGrepFullWithFilesPacked) {
       return unpackFullResult(addon.nativeGrepFullWithFilesPacked(pattern, projectRoot, files, caseInsensitive || false, perFileCap, indexPaths), perFileCap);
     }
     return fn(pattern, projectRoot, files, caseInsensitive || false);
-  } catch (err) {
-    if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] nativeGrepWithFiles failed:', err.message);
-    return null;
-  }
+  });
 }
 
 /**
@@ -394,12 +386,9 @@ export function nativeGrepWithFiles(pattern, projectRoot, files, caseInsensitive
  */
 export function getSparseGramAllFiles(sparseGramIndex) {
   if (!sparseGramIndex?.getAllFiles) return null;
-  try {
+  return guarded('getSparseGramAllFiles', () => {
     return sparseGramIndex.getAllFiles();
-  } catch (err) {
-    if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] getSparseGramAllFiles failed:', err.message);
-    return null;
-  }
+  });
 }
 
 /**
@@ -414,7 +403,7 @@ export function getSparseGramAllFiles(sparseGramIndex) {
  */
 export function queryAndGrepLines(sparseGramIndex, clauses, regex, projectRoot, opts = {}) {
   if (!sparseGramIndex?.queryAndGrepLines) return null;
-  try {
+  return guarded('queryAndGrepLines', () => {
     return sparseGramIndex.queryAndGrepLines(
       clauses, regex, projectRoot,
       opts.maxGramCandidates ?? 0,
@@ -424,10 +413,7 @@ export function queryAndGrepLines(sparseGramIndex, clauses, regex, projectRoot, 
       opts.maxCandidateFiles ?? 100000,
       opts.maxCandidateRatio ?? 1.0,
     );
-  } catch (err) {
-    if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] queryAndGrepLines failed:', err.message);
-    return null;
-  }
+  });
 }
 
 /**
@@ -436,7 +422,7 @@ export function queryAndGrepLines(sparseGramIndex, clauses, regex, projectRoot, 
  */
 export function queryAndGrepFull(sparseGramIndex, clauses, regex, projectRoot, opts = {}) {
   if (!sparseGramIndex?.queryAndGrepFull) return null;
-  try {
+  return guarded('queryAndGrepFull', () => {
     return sparseGramIndex.queryAndGrepFull(
       clauses, regex, projectRoot,
       opts.maxGramCandidates ?? 0,
@@ -446,10 +432,7 @@ export function queryAndGrepFull(sparseGramIndex, clauses, regex, projectRoot, o
       opts.maxCandidateFiles ?? 100000,
       opts.maxCandidateRatio ?? 1.0,
     );
-  } catch (err) {
-    if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] queryAndGrepFull failed:', err.message);
-    return null;
-  }
+  });
 }
 
 /**
@@ -458,7 +441,7 @@ export function queryAndGrepFull(sparseGramIndex, clauses, regex, projectRoot, o
  */
 export function searchLines(sparseGramIndex, clauses, regex, projectRoot, opts = {}) {
   if (!sparseGramIndex?.searchLines) return null;
-  try {
+  return guarded('searchLines', () => {
     return sparseGramIndex.searchLines(
       clauses, regex, projectRoot,
       opts.maxGramCandidates ?? 0,
@@ -468,10 +451,7 @@ export function searchLines(sparseGramIndex, clauses, regex, projectRoot, opts =
       opts.maxCandidateFiles ?? 100000,
       opts.maxCandidateRatio ?? 1.0,
     );
-  } catch (err) {
-    if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] searchLines failed:', err.message);
-    return null;
-  }
+  });
 }
 
 /**
@@ -479,7 +459,7 @@ export function searchLines(sparseGramIndex, clauses, regex, projectRoot, opts =
  */
 export function searchFull(sparseGramIndex, clauses, regex, projectRoot, opts = {}) {
   if (!sparseGramIndex?.searchFull) return null;
-  try {
+  return guarded('searchFull', () => {
     const perFileCap = opts.perFileCap ?? 0;
     const search = typeof sparseGramIndex.searchFullPacked === 'function'
       ? (...args) => unpackFullResult(sparseGramIndex.searchFullPacked(...args, perFileCap), perFileCap)
@@ -493,8 +473,5 @@ export function searchFull(sparseGramIndex, clauses, regex, projectRoot, opts = 
       opts.maxCandidateFiles ?? 100000,
       opts.maxCandidateRatio ?? 1.0,
     );
-  } catch (err) {
-    if (process.env.SWEET_DEBUG) console.debug('[native-sparse-gram] searchFull failed:', err.message);
-    return null;
-  }
+  });
 }

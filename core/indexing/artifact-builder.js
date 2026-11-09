@@ -46,11 +46,7 @@ export const ARTIFACT_THRESHOLDS = {
 import { BinaryHNSWIndex, binaryHnswIndexExists, readIndexHeader } from '../vector-store/binary-hnsw-index.js';
 import { truncateForHNSW, fisherYatesShuffle, normalizedFloatToInt8, floatToBinary } from '../infrastructure/quantization.js';
 import { FloatVectorStore, getFloatStorePath, float512StoreEnabled } from '../vector-store/float-vector-store.js';
-
-function liveVectorSql(db, alias = '') {
-  const prefix = alias ? `${alias}.` : '';
-  return `${prefix}epoch_retired IS NULL`;
-}
+import { liveVectorSql } from './vector-visibility.js';
 
 
 async function loadArtifactState() {
@@ -302,7 +298,7 @@ async function buildHnswIndexFromDb(db, options = {}) {
   } = options;
 
   const dimension = options.dimension || Math.ceil(floatDimension / 8);
-  const vectorWhere = liveVectorSql(db);
+  const vectorWhere = liveVectorSql();
   const totalVectors = db.prepare(`SELECT COUNT(*) as c FROM vectors WHERE ${vectorWhere}`).get().c;
 
   const index = new BinaryHNSWIndex({
@@ -410,7 +406,7 @@ async function buildHnswIndexFromDb(db, options = {}) {
  * }>}
  */
 async function buildAndSaveFloatStoreFromDb(db, floatDimension, floatStorePath) {
-  const vectorWhere = liveVectorSql(db);
+  const vectorWhere = liveVectorSql();
   const totalVectors = db.prepare(`SELECT COUNT(*) as c FROM vectors WHERE ${vectorWhere}`).get().c;
   console.log(`Building float vector store (${totalVectors} vectors, ${floatDimension}d)...`);
   const floatStore = new FloatVectorStore();
@@ -451,7 +447,7 @@ export async function buildFromCodebaseDb(codebaseDbPath = DB_PATHS.codebase, op
   const db = new Database(codebaseDbPath);
   applyReadPragmas(db);
 
-  const totalVectors = db.prepare(`SELECT COUNT(*) as c FROM vectors WHERE ${liveVectorSql(db)}`).get().c;
+  const totalVectors = db.prepare(`SELECT COUNT(*) as c FROM vectors WHERE ${liveVectorSql()}`).get().c;
 
   console.log(`Found ${totalVectors} vectors`);
 

@@ -1,3 +1,4 @@
+import './load-env.js';
 import { DB_PATHS, detectIndexerProfile } from './platform.js';
 import { bootLog } from '../boot-log.js';
 import { resolveNativeAddon } from '../native-resolver.js';

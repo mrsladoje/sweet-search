@@ -70,7 +70,7 @@ const DEFAULT_TICK_INTERVAL_MS = 20_000;
 // ticks back to back while files stay queued and yields to the foreground
 // through its nice value, so a bigger budget only amortizes tick setup.
 const DEFAULT_CPU_BUDGET_MS = 10_000;
-const DEFAULT_FILES_PER_TICK = 50;
+export const DEFAULT_FILES_PER_TICK = 50;
 
 // A finite number >= min, or the default. Callers pass partial configs and env
 // strings parse to NaN; neither may switch a budget off.

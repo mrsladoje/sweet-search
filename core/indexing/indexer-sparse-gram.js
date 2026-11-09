@@ -13,6 +13,7 @@ import { DELTA_DIR_SUFFIX, FALLBACK_WEIGHTS_ID } from '../incremental-indexing/i
 import { grepStatEntry, writeGrepCorpusState } from '../incremental-indexing/infrastructure/grep-corpus-state.mjs';
 import { atomicSwapDatabase, log } from './indexer-utils.js';
 import { discoverGrepCorpus } from './grep-corpus.js';
+import { liveVectorSql } from './vector-visibility.js';
 
 async function unlinkIfExists(filePath) {
   try {
@@ -64,7 +65,7 @@ async function resolveSparseGramWeightsId(result, artifactPath) {
 
 function collectFileSymbolMasksFromDb(db, codeFiles, existingMasks = null) {
   const masks = existingMasks || new Map(codeFiles.map((filePath) => [filePath, 0]));
-  const liveSql = liveVectorSql(db);
+  const liveSql = liveVectorSql();
   const rows = db.prepare(`SELECT file_path, metadata FROM vectors WHERE ${liveSql}`).iterate();
   for (const row of rows) {
     if (!masks.has(row.file_path)) continue;
@@ -78,10 +79,6 @@ function collectFileSymbolMasksFromDb(db, codeFiles, existingMasks = null) {
     }
   }
   return codeFiles.map((filePath) => masks.get(filePath) || 0);
-}
-
-function liveVectorSql() {
-  return 'epoch_retired IS NULL';
 }
 
 export async function buildSparseGramArtifact(allFiles, dryRun) {
@@ -144,6 +141,5 @@ export { collectFileSymbolMasksFromDb, resolveSparseGramWeightsId };
 export const __TEST__ = {
   collectFileSymbolMasks,
   collectFileSymbolMasksFromDb,
-  liveVectorSql,
   resolveSparseGramWeightsId,
 };

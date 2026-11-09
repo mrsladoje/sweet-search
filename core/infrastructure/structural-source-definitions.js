@@ -1,6 +1,4 @@
-function escapeRegExp(text) {
-  return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+import { escapeRegExp } from './structural-context-utils.js';
 
 // After a declared name: another identifier and `(` means the name was a return type
 // (C/C++ `static void handle(`, `const int size(`), not the name being declared.

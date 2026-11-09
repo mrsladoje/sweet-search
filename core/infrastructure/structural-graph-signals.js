@@ -5,18 +5,10 @@
  * entity IDs and return primitive values; they hold no state.
  */
 
-function placeholders(values) {
-  return values.map(() => '?').join(',');
-}
+import { clampLimit, placeholders } from './structural-context-utils.js';
 
 function dropExternalIds(ids) {
   return [...new Set((ids || []).filter(id => id && !String(id).startsWith('external:')))];
-}
-
-function clampLimit(value, fallback, max) {
-  const n = Number.parseInt(value ?? fallback, 10);
-  if (!Number.isFinite(n) || n <= 0) return fallback;
-  return Math.max(1, Math.min(max, n));
 }
 
 const DEFAULT_REL_TYPES = ['calls', 'uses', 'implements', 'extends', 'overrides'];

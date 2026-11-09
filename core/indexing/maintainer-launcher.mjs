@@ -357,26 +357,38 @@ export function launchMaintainer(options = {}) {
 }
 
 /**
- * Is automatic reconcile work paused for this state dir?
- *
- * Mirrors `isReconcilePaused` in index-maintainer.mjs, deliberately reimplemented
- * as four lines rather than imported: importing it would pull the whole
- * maintainer module — tree-sitter grammars and all — into the search daemon,
- * which is the one process whose startup time users feel.
+ * Read the reconcile pause state of a state dir.
  *
  * Frozen benchmark indexes carry a pause file written when they are built
  * (`sweet-search reconcile pause --reason ...`): a background maintainer must
  * never change an index whose numbers are being compared.
+ *
+ * An unreadable file is not a reason to stop maintaining the index: it reads as
+ * not paused. `onUnreadable` hears about every read or parse error except a missing file.
+ *
+ * @param {string} stateDir
+ * @param {(err: Error) => void} [onUnreadable]
+ * @returns {{paused: boolean, pausedAt?: string|null, reason?: string|null, filePath: string}}
  */
-export function reconcilePaused(stateDir) {
-  const pauseFile = join(stateDir, 'reconcile-pause.json');
-  if (!existsSync(pauseFile)) return false;
+export function readReconcilePause(stateDir, onUnreadable) {
+  const filePath = join(stateDir, 'reconcile-pause.json');
   try {
-    return pauseHolds(JSON.parse(readFileSync(pauseFile, 'utf-8')));
-  } catch {
-    // Unreadable pause state is not a reason to stop maintaining the index.
-    return false;
+    const payload = JSON.parse(readFileSync(filePath, 'utf-8'));
+    return {
+      paused: pauseHolds(payload),
+      pausedAt: payload?.pausedAt || null,
+      reason: payload?.reason || null,
+      filePath,
+    };
+  } catch (err) {
+    if (err.code !== 'ENOENT' && onUnreadable) onUnreadable(err);
+    return { paused: false, filePath };
   }
+}
+
+/** Is automatic reconcile work paused for this state dir? */
+export function reconcilePaused(stateDir) {
+  return readReconcilePause(stateDir).paused;
 }
 
 /**

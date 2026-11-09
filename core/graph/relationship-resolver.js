@@ -1267,14 +1267,7 @@ function targetNameKeys(targetName) {
  */
 export function resolveRowsScoped(db, rows, { liveOnly = true } = {}) {
   if (!rows || rows.length === 0) return [];
-  // Per-run caches; a long-lived maintainer must not grow them without bound.
-  if (pathFactsCache.size > 50_000) pathFactsCache.clear();
-  if (nameKeyCache.size > 50_000) nameKeyCache.clear();
-  // Declared receiver types are keyed by entity id; an edit can change a
-  // signature under the same id, so they never outlive one run.
-  declaredTypeMemo.clear();
-  if (subtypeTokensMemo.size > 50_000) subtypeTokensMemo.clear();
-  if (supertypeTokensMemo.size > 50_000) supertypeTokensMemo.clear();
+  resetRunCaches({ bounded: true });
   const entityLive = liveOnly ? ' AND epoch_retired IS NULL' : '';
   const relLive = liveOnly ? ` AND ${liveRelationshipSql('r')}` : '';
 
@@ -1364,10 +1357,7 @@ function createWarningSampler(limit) {
  */
 export function resolveRelationshipTargets(db) {
   console.log('  Resolving relationship targets...');
-  pathFactsCache.clear();
-  nameKeyCache.clear();
-  declaredTypeMemo.clear();
-  projectMemo.clear();
+  resetRunCaches({ bounded: false });
 
   // Sorted, not rowid (= discovery) order: ties between equal candidates
   // must not depend on the order files were found.
@@ -1844,6 +1834,23 @@ export function isTestPath(filePath) {
 // paths per candidate was the cost). Cleared by resolveRelationshipTargets.
 const pathFactsCache = new Map();
 const nameKeyCache = new Map();
+
+// A full build starts every memo empty. A scoped run, in a long-lived
+// maintainer, only bounds the caches that stay valid between runs; declared
+// receiver types are keyed by entity id and an edit can change a signature
+// under the same id, so they never outlive one run.
+function resetRunCaches({ bounded }) {
+  const trim = (cache) => { if (!bounded || cache.size > 50_000) cache.clear(); };
+  trim(pathFactsCache);
+  trim(nameKeyCache);
+  declaredTypeMemo.clear();
+  if (bounded) {
+    trim(subtypeTokensMemo);
+    trim(supertypeTokensMemo);
+  } else {
+    projectMemo.clear();
+  }
+}
 
 function pathFacts(filePath) {
   let facts = pathFactsCache.get(filePath);

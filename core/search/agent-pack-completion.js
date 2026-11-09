@@ -11,7 +11,7 @@
 import path from 'node:path';
 import { readFileRange } from './search-pattern-chunks.js';
 import { containsToken, extractQueryEvidence, informativeSubtokens } from './query-sufficiency.js';
-import { isTestLikePath } from './agent-output-fixes.js';
+import { isTestLikePath } from '../infrastructure/test-paths.js';
 
 const MAX_BOUNDARY_GAP_LINES = 12;
 const MAX_IMMEDIATE_GAP_LINES = 3;

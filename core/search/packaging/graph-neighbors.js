@@ -5,7 +5,7 @@
 import path from 'path';
 import { rankingRelationshipTypes } from '../../infrastructure/relationship-types.js';
 import { trustedCalleeEdge } from '../../infrastructure/structural-qualified-resolution.js';
-import { isTestLikePath } from '../agent-output-fixes.js';
+import { isTestLikePath } from '../../infrastructure/test-paths.js';
 import { GO_PACKAGE_PREFIX, RUST_PATH_PREFIX, UNRESOLVED_IMPORT_PREFIX } from '../../infrastructure/import-path-prefixes.js';
 import { RECEIVER_TYPE_PREFIX } from '../../infrastructure/receiver-type-annotation.js';
 import { LANG_KEYWORDS } from './header-context.js';

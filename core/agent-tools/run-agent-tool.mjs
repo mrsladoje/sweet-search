@@ -61,6 +61,7 @@ import {
 import { formatAlsoLine, formatSpanHeading, nameContext, uncoveredCutRests } from '../search/semantic-also.js';
 import { omittedRangeLines } from '../search/semantic-span-budget.js';
 import { sendAgentSpanOperation } from '../search/agent-span-client.js';
+import { isTestLikePath } from '../infrastructure/test-paths.js';
 import {
   GREP_COUNTS_THRESHOLD,
   alreadyShownSessionId,
@@ -70,7 +71,6 @@ import {
   isRegexParseError,
   grepBroadHitMax,
   grepHitText,
-  isTestLikePath,
   matchTextIsRepeated,
   orderSourceBeforeTests,
   printedSpanCandidates,
@@ -116,7 +116,7 @@ function gutter(text, startLine) {
 // core/search/search-server.js, loaded once per process (an `await import()` per call costs ~10 µs).
 let searchServerModule = null;
 function loadSearchServerModule() {
-  searchServerModule ||= import(path.join(REPO_ROOT, 'core/search/search-server.js'))
+  searchServerModule ||= import(path.join(REPO_ROOT, 'core/search/search-client.js'))
     .catch((err) => { searchServerModule = null; throw err; });
   return searchServerModule;
 }
@@ -584,7 +584,7 @@ const SPAWN_RETRY_MS = 60_000;
 async function ensureWarmServerReady({ timeoutMs = SEARCH_LOADING_WAIT_MS, startedMs = Date.now(), intervalMs = 500 } = {}) {
   // Inside the daemon: it is the warm server, and it only takes a call once ready.
   if (host.getSearcher) return 'ready';
-  const { getServerHealth, isServerListening, autoSpawnServer } = await import(path.join(REPO_ROOT, 'core/search/search-server.js'));
+  const { getServerHealth, isServerListening, autoSpawnServer } = await import(path.join(REPO_ROOT, 'core/search/search-client.js'));
   const deadline = startedMs + timeoutMs;
   let spawns = 0;
   let lastSpawnAt = 0;
@@ -1550,7 +1550,7 @@ async function cmdAgentSearch(rawArgs) {
   // Budget-sweep experiment hook: per-request explicit budget (overrides the
   // auto-tier on the warm server; flows as the `budget` URL param).
   const envSearchBudget = Number(process.env.SS_SMOKE_SEARCH_BUDGET || '') || null;
-  const { queryServer } = await import(path.join(REPO_ROOT, 'core/search/search-server.js'));
+  const { queryServer } = await import(path.join(REPO_ROOT, 'core/search/search-client.js'));
   const response = await queryServer(query, {
     topK: k, mode, format, projectRoot: PROJECT_ROOT, trackAgentSpans: false,
     ...(envSearchBudget ? { tokenBudget: envSearchBudget } : {}),
@@ -1815,7 +1815,7 @@ async function cmdSemantic(rawArgs) {
   let r;
   try {
     if (await ensureWarmServerReady({ timeoutMs: 5000 }) !== 'ready') throw new Error('warm server is not ready');
-    const { queryReadSemanticServer } = await import(path.join(REPO_ROOT, 'core/search/search-server.js'));
+    const { queryReadSemanticServer } = await import(path.join(REPO_ROOT, 'core/search/search-client.js'));
     r = await queryReadSemanticServer({
       path: file, query, projectRoot: FILE_ROOT, maxChars: maxTokens * 4, wholeFileMaxChars,
       ...(topK ? { topK } : {}), ...rangeOpts,

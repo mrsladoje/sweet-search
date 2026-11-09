@@ -38,10 +38,11 @@
  */
 
 import fs from 'node:fs';
-import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { LateInteractionIndex } from '../../ranking/late-interaction-index.js';
+import { readJsonFile, writeJsonAtomic } from './json-file.mjs';
 import { STALE_SIDECAR_EXT, nextSegmentSeq, LI_SEGMENT_SIZE, segmentIdentityCache } from './li-segment-state.mjs';
+import { LI_STUB_DB } from './state-files.mjs';
 
 export { nextSegmentSeq, LI_SEGMENT_SIZE };
 
@@ -64,18 +65,8 @@ export function liWriterSettings(index) {
 }
 const QUARANTINE_FILE = 'pending-delete.jsonl';
 
-function readJson(filePath, fallback = null) {
-  try { return JSON.parse(fs.readFileSync(filePath, 'utf-8')); } catch { return fallback; }
-}
-
 function safeUnlink(filePath) {
   try { fs.unlinkSync(filePath); return true; } catch { return false; }
-}
-
-async function writeJsonAtomic(filePath, payload) {
-  const tmp = `${filePath}.tmp.${process.pid}`;
-  await fsp.writeFile(tmp, JSON.stringify(payload, null, 2));
-  await fsp.rename(tmp, filePath);
 }
 
 /**
@@ -83,13 +74,13 @@ async function writeJsonAtomic(filePath, payload) {
  * missing / corrupt indices (callers skip — nothing to merge).
  */
 function resolveSegmentedLayout(stateDir) {
-  const stubPath = path.join(stateDir, 'codebase-late-interaction.db');
+  const stubPath = path.join(stateDir, LI_STUB_DB);
   if (!fs.existsSync(stubPath)) return null;
-  const stub = readJson(stubPath);
+  const stub = readJsonFile(stubPath);
   if (!stub || stub.format !== 'segmented' || !stub.segmentDir) return null;
   const segmentDir = path.resolve(stateDir, stub.segmentDir);
   const manifestPath = path.join(segmentDir, 'manifest.json');
-  const manifest = readJson(manifestPath);
+  const manifest = readJsonFile(manifestPath);
   if (!manifest || !Array.isArray(manifest.segments)) return null;
   return { stubPath, segmentDir, manifestPath, manifest };
 }

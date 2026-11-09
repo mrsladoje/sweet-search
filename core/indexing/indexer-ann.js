@@ -7,6 +7,7 @@ import { log, logProgress } from './indexer-utils.js';
 import { chunkFilePath, pickLiInput } from './chunk-embed-text.js';
 import { isIndexAcceleratorAvailable } from './model-pool.js';
 import { recordEncode } from '../infrastructure/inference-provenance.js';
+import { liveVectorSql } from './vector-visibility.js';
 
 // Index provenance (inference-provenance.js): count each LI batch under the
 // encoder that produced it.
@@ -33,13 +34,8 @@ function aliasFilterSql(alias = '') {
   return `json_extract(${prefix}metadata, '$.exemplarId') IS NULL`;
 }
 
-function liveVectorSql(db, alias = '') {
-  const prefix = alias ? `${alias}.` : '';
-  return `${prefix}epoch_retired IS NULL`;
-}
-
 function vectorIndexWhere(db, alias = '') {
-  return `${aliasFilterSql(alias)} AND ${liveVectorSql(db, alias)}`;
+  return `${aliasFilterSql(alias)} AND ${liveVectorSql(alias)}`;
 }
 
 /**
@@ -630,7 +626,6 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
 export const __TEST__ = {
   chunkFilePath,
   vectorIndexWhere,
-  liveVectorSql,
 };
 
 export async function buildQuantizedArtifactsPhase(dryRun = false, options = {}) {

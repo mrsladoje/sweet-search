@@ -27,8 +27,10 @@ import { createAdmissionPolicy, isSymlinkedRelUnder } from './admission-policy.j
 import { fileLooksMinified } from './minified-detector.js';
 import { changedFilesTracker } from './changed-files-tracker.js';
 import {
-  DEFAULT_REPO_SIZE_CAP, loadIgnoreFile, patternToRegex,
+  DEFAULT_DENY_DIRS_HARD, DEFAULT_REPO_SIZE_CAP, loadIgnoreFile, patternToRegex,
 } from '../incremental-indexing/infrastructure/path-filter.mjs';
+
+export { DEFAULT_DENY_DIRS_HARD };
 
 export const GREP_MAX_FILE_SIZE = 10 * 1024 * 1024;
 

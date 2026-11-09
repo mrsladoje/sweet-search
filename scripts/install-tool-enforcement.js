@@ -23,8 +23,9 @@
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { writeViaTmp } from './install-fs.js';
+import { HOOK_FLAGS, hasOwnedHook, hookCommand, removeOwnedGroups, upsertOwnedGroup } from './hook-entries.js';
 
-export const READ_HINT_HOOK_COMMAND = 'sweet-search-hook --read-hint';
+export const READ_HINT_HOOK_COMMAND = hookCommand(HOOK_FLAGS.readHint);
 const GREP_DENY_VALUE = 'Grep';
 
 /**
@@ -130,20 +131,12 @@ function upsertSettings({
         { type: 'command', command: addPreToolUseHook.command, timeout: 5 },
       ],
     };
-    const ownedIdx = arr.findIndex(group =>
-      Array.isArray(group?.hooks)
-      && group.hooks.some(h => typeof h?.command === 'string' && h.command.includes(addPreToolUseHook.ownershipMarker)),
-    );
-    if (ownedIdx >= 0) arr[ownedIdx] = entry;
-    else arr.push(entry);
+    upsertOwnedGroup(arr, entry, addPreToolUseHook.ownershipMarker);
     settings.hooks.PreToolUse = arr;
   }
   if (removePreToolUseHook) {
     const arr = Array.isArray(settings?.hooks?.PreToolUse) ? settings.hooks.PreToolUse : [];
-    const next = arr.filter(group =>
-      !Array.isArray(group?.hooks)
-      || !group.hooks.some(h => typeof h?.command === 'string' && h.command.includes(removePreToolUseHook)),
-    );
+    const next = removeOwnedGroups(arr, removePreToolUseHook);
     if (next.length === 0) {
       if (settings.hooks) delete settings.hooks.PreToolUse;
     } else {
@@ -175,9 +168,6 @@ function settingsHasPreToolUseHook(settingsPath, ownershipMarker) {
   try {
     const settings = JSON.parse(readFileSync(settingsPath, 'utf8'));
     const arr = Array.isArray(settings?.hooks?.PreToolUse) ? settings.hooks.PreToolUse : [];
-    return arr.some(group =>
-      Array.isArray(group?.hooks)
-      && group.hooks.some(h => typeof h?.command === 'string' && h.command.includes(ownershipMarker)),
-    );
+    return arr.some(group => hasOwnedHook(group, ownershipMarker));
   } catch { return false; }
 }

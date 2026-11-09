@@ -3,7 +3,8 @@
  */
 
 import { informativeSubtokens } from '../query-sufficiency.js';
-import { isSummaryOnly, isTestLikePath } from '../agent-output-fixes.js';
+import { isTestLikePath } from '../../infrastructure/test-paths.js';
+import { isSummaryOnly } from '../agent-output-fixes.js';
 
 /** The entity the related rows hang off, by id (the expansion's label can be a member of it). */
 const SCOPE_ENTITY_TYPES = new Set(['namespace', 'module', 'package']);

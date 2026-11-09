@@ -33,7 +33,8 @@
 
 import { realpathSync } from 'node:fs';
 import path from 'node:path';
-import { grepHitText, isTestLikePath, typedPathLabel } from './agent-output-fixes.js';
+import { isTestLikePath } from '../infrastructure/test-paths.js';
+import { grepHitText, typedPathLabel } from './agent-output-fixes.js';
 import { allocateGrepLinesWithFirstLine, grepWeightKey } from './grep-allocation-rules.js';
 import { selectGrepLinesByClass } from './grep-line-classes.js';
 import { callExistsSync } from '../infrastructure/call-fs.js';

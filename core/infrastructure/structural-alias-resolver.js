@@ -1,12 +1,9 @@
 import path from 'path';
 import { liveRelationshipSql } from './code-graph-visibility.js';
 import { asTopLevelCaller, fileNodeId, fileNodeSourceSql } from './file-nodes.js';
+import { escapeRegExp } from './structural-context-utils.js';
 
 const ACTIVE = 'stale_since IS NULL';
-
-function escapeRegExp(text) {
-  return String(text).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
 
 function rowToEntity(row) {
   return {

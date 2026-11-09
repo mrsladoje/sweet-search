@@ -36,12 +36,7 @@ function loadAddon() {
  * Used by callers to decide whether to run the dedup phase or skip it cleanly.
  */
 export function isAvailable() {
-  const addon = loadAddon();
-  return !!(
-    addon &&
-    typeof addon.dedupFingerprintBatch === 'function' &&
-    typeof addon.dedupCluster === 'function'
-  );
+  return !!loadAddon();
 }
 
 export function getLoadError() {

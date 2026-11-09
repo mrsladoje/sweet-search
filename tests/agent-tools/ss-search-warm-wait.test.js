@@ -14,7 +14,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const spawned = vi.hoisted(() => ({ count: 0 }));
-vi.mock('../../core/search/search-server.js', async (importOriginal) => ({
+vi.mock('../../core/search/search-client.js', async (importOriginal) => ({
   ...(await importOriginal()),
   autoSpawnServer: async (opts) => { spawned.count++; spawned.quiet = opts?.quiet; return false; },
 }));
