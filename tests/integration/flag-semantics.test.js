@@ -372,15 +372,9 @@ describe('Flag behavior (integration)', () => {
   describe('--quiet --files-from-stdin output', () => {
     it('--quiet mode should allow JSON parsing (no junk)', () => {
       const lines = quietStdinResult.stdout.trim().split('\n').filter(l => l.trim());
-      if (lines.length > 0) {
-        const lastLine = lines[lines.length - 1];
-        try {
-          const parsed = JSON.parse(lastLine);
-          expect(parsed).toBeDefined();
-        } catch (e) {
-          expect(quietStdinResult.stdout.length).toBeLessThan(1000);
-        }
-      }
+      // Empty stdin: the single output line is the JSON result and nothing else.
+      expect(lines).toHaveLength(1);
+      expect(JSON.parse(lines[0])).toMatchObject({ success: true, filesProcessed: 0 });
     });
   });
 
@@ -389,7 +383,9 @@ describe('Flag behavior (integration)', () => {
   // -------------------------------------------------------------------------
   describe('Unknown flags', () => {
     it('should handle unknown flags gracefully in real process', () => {
-      expect(typeof unknownFlagResult.exitCode).toBe('number');
+      // An unknown flag is ignored: the dry run still completes and finds the fixture file.
+      expect(unknownFlagResult.exitCode).toBe(0);
+      expect(unknownFlagResult.stdout).toContain('Found 1 files to index');
     });
   });
 });

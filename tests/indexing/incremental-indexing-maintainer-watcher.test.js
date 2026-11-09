@@ -23,6 +23,17 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { setTimeout as delay } from 'node:timers/promises';
 
+// Wait for a condition instead of a fixed sleep: returns as soon as it holds,
+// and still allows a generous bound on a loaded machine.
+async function waitUntil(cond, timeoutMs = 8000) {
+  const end = Date.now() + timeoutMs;
+  while (Date.now() < end) {
+    if (cond()) return true;
+    await delay(25);
+  }
+  return cond();
+}
+
 import { startWatcher, __testing } from '../../core/indexing/maintainer-watcher.mjs';
 import { createAdmissionPolicy } from '../../core/indexing/admission-policy.js';
 import { scanDirtyAndEnqueue } from '../../core/incremental-indexing/application/dirty-scan.mjs';
@@ -216,7 +227,8 @@ describe('startWatcher (live, native @parcel/watcher)', () => {
     writeFileSync(join(sandbox, 'src/live.js'), 'export const a = 1;\n', 'utf-8');
     // A write under the stateDir must NEVER produce a queue line.
     writeFileSync(join(stateDir, 'index-maintainer-queue.processing.jsonl'), 'noise\n', 'utf-8');
-    await delay(700);
+    await waitUntil(() => queueLines().some((l) => l.source === 'watch' && l.file_path === 'src/live.js'));
+    await delay(100); // allow a stray stateDir event, if the bug existed, to land
 
     const fileLines = queueLines().filter((l) => l.source === 'watch');
     const paths = fileLines.map((l) => l.file_path);
@@ -267,13 +279,13 @@ describe('startWatcher (live, native @parcel/watcher)', () => {
       onOverflow: () => { overflowed += 1; },
     });
     expect(handle).toBeTruthy();
-    await delay(150);
     // Branch switch: rewrite HEAD with a bumped mtime.
     writeFileSync(join(gitDir, 'HEAD'), 'ref: refs/heads/feature\n');
     const future = Date.now() / 1000 + 5;
     utimesSync(join(gitDir, 'HEAD'), future, future);
-    // Git poll interval is 2s; wait long enough for one poll.
-    await delay(2600);
+    // The git poll interval (2 s) is a constant in the watcher; poll in real
+    // time until the first poll fires rather than sleeping past it.
+    await waitUntil(() => overflowed > 0, 6000);
     expect(overflowed).toBeGreaterThan(0);
   }, 10000);
 });
@@ -395,7 +407,10 @@ describe('startWatcher directory rename (live)', () => {
     expect(handle).toBeTruthy();
     await delay(300);
     renameSync(join(projectRoot, 'dirA'), join(projectRoot, 'dirB'));
-    await delay(900);
+    await waitUntil(() => {
+      const got = new Set(queueLines().map((l) => l.file_path));
+      return ['dirA/a.js', 'dirA/b.js', 'dirB/a.js', 'dirB/b.js'].every((p) => got.has(p));
+    });
     const paths = new Set(queueLines().map((l) => l.file_path));
     for (const p of ['dirA/a.js', 'dirA/b.js', 'dirB/a.js', 'dirB/b.js']) expect(paths.has(p)).toBe(true);
     expect(woke).toBeGreaterThan(0);

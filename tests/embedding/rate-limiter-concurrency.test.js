@@ -115,7 +115,9 @@ describe('TimeWindowRateLimiter', () => {
 
   it('should never exceed RPM in any 60-second window under concurrent load', async () => {
     const RPM = 10;
-    const TOTAL_REQUESTS = 25;
+    // 15 requests = one full window plus a remainder. The limiter polls at 1 ms
+    // inside a blocked window, so each extra virtual minute costs ~60k fake timers.
+    const TOTAL_REQUESTS = 15;
     const limiter = new TimeWindowRateLimiter(RPM, { maxPerSecond: RPM });
     const timestamps = [];
 
@@ -181,16 +183,17 @@ describe('TimeWindowRateLimiter', () => {
     const limiter = new TimeWindowRateLimiter(1, { maxPerSecond: 1 });
     const timestamps = [];
 
-    // Fire 3 requests concurrently
-    const promises = Array.from({ length: 3 }, () =>
+    // Fire 2 requests concurrently (the second must wait one full window)
+    const promises = Array.from({ length: 2 }, () =>
       limiter.acquire().then(() => timestamps.push(Date.now()))
     );
 
-    // Need enough virtual time for all 3 to complete (each needs its own 60s window).
-    await vi.advanceTimersByTimeAsync(180_000);
+    // Enough virtual time for both to complete (each needs its own 60s window).
+    await vi.advanceTimersByTimeAsync(130_000);
 
     await Promise.all(promises);
-    expect(timestamps).toHaveLength(3);
+    expect(timestamps).toHaveLength(2);
+    expect(timestamps[1] - timestamps[0]).toBeGreaterThanOrEqual(60_000);
 
     const sorted = timestamps.sort((a, b) => a - b);
     const maxInWindow = maxInAnyWindow(sorted);

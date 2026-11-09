@@ -36,6 +36,16 @@
  * (join(REPO_ROOT, 'tests', 'fixtures', ...)), so the absolute marker still
  * reaps this checkout's orphans and never another checkout's live ones.
  *
+ * ORPHANS AND OUR OWN, NOT A NEIGHBOUR'S. Two vitest runs in the SAME checkout
+ * (two agents, or a targeted run beside a full run) name the same fixture
+ * paths, so the path alone cannot tell this run's fixtures from the other
+ * run's live ones: each run SIGKILLed the other's fixtures at its start and
+ * at its end, and the other run's daemon tests failed about one time in
+ * three. A fixture is reaped only when its parent is gone (parent pid 1: the
+ * run that started it has ended or its spawner died) or when it descends
+ * from this vitest process. A fixture with a live parent in another run is
+ * left alone.
+ *
  * It deliberately does NOT touch `--serve` daemons or real index maintainers,
  * even though a timed-out test can orphan one of those too. A developer's own
  * working daemon has the same command line as a test's, and a teardown hook
@@ -69,19 +79,30 @@ export function fixtureMarkers(fixtureDir = FIXTURE_DIR) {
 }
 
 /**
- * The pids to reap from a `ps -axo pid=,command=` listing. A marker must be
- * a whole command-line argument (followed by a space or the line end), so
+ * The pids to reap from a `ps -axo pid=,ppid=,command=` listing. A marker must
+ * be a whole command-line argument (followed by a space or the line end), so
  * `<root>/tests/fixtures/a.mjs` never matches `<root>/tests/fixtures/a.mjs.bak`.
+ * Only orphans (parent pid 1) and descendants of `selfPid` qualify; see the header.
  */
 export function reapablePids(listing, markers, selfPid = process.pid) {
-  const pids = [];
+  const procs = new Map();
   for (const line of String(listing).split('\n')) {
-    if (!markers.some((m) => line.includes(`${m} `) || line.endsWith(m))) continue;
-    const pid = Number(line.trim().split(/\s+/)[0]);
+    const m = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line);
+    if (m) procs.set(Number(m[1]), { ppid: Number(m[2]), command: m[3] });
+  }
+  const descendsFromSelf = (pid) => {
+    for (let p = procs.get(pid)?.ppid, hops = 0; p && p !== 1 && hops < 64; p = procs.get(p)?.ppid, hops++) {
+      if (p === selfPid) return true;
+    }
+    return false;
+  };
+  const pids = [];
+  for (const [pid, { ppid, command }] of procs) {
+    if (!markers.some((mk) => command.includes(`${mk} `) || command.endsWith(mk))) continue;
     // Never signal ourselves, and never signal a whole process group: a
     // negative pid would reach the vitest runner itself.
-    if (!Number.isInteger(pid) || pid <= 0 || pid === selfPid) continue;
-    pids.push(pid);
+    if (pid <= 0 || pid === selfPid) continue;
+    if (ppid === 1 || descendsFromSelf(pid)) pids.push(pid);
   }
   return pids;
 }
@@ -93,7 +114,7 @@ function reap(phase) {
 
   let listing = '';
   try {
-    listing = execFileSync('ps', ['-axo', 'pid=,command='], { encoding: 'utf-8', timeout: 10_000 });
+    listing = execFileSync('ps', ['-axo', 'pid=,ppid=,command='], { encoding: 'utf-8', timeout: 10_000 });
   } catch {
     return 0;
   }

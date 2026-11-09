@@ -574,18 +574,6 @@ describe('also candidates are pointers, not shown spans', () => {
     const shown = collectSemanticShownSpans(r, { projectRoot: TMP });
     expect(shown.map(s => [s.startLine, s.endLine])).toEqual([[1, 5]]);
   });
-
-  it('cmdSemantic prints the line after the spans and never feeds it to the ledger calls', () => {
-    const src = readFileSync(path.join(import.meta.dirname, '../../core/agent-tools/run-agent-tool.mjs'), 'utf8');
-    const body = src.slice(src.indexOf('async function cmdSemantic'), src.indexOf('const TRACE_USAGE'));
-    expect(body).toContain('formatAlsoLine(r.alsoCandidates, named)');
-    expect(body).toContain('formatSpanHeading(span, named)');
-    expect(body.indexOf('formatAlsoLine(')).toBeGreaterThan(body.indexOf('formatSpanHeading('));
-    // The span ledger is recorded server-side; no `shown-full:` trailer is printed.
-    expect(body).not.toContain('renderShownFullTrailer(');
-    expect(body.match(/recordAgentToolCall\([^)]*\)/)[0]).not.toContain('also');
-    expect(body.match(/recordForAlreadyShown\(shownSpans/)).not.toBeNull();
-  });
 });
 
 // Agents pass `-k N` (and `--in <file>`) to every ss-* tool by habit; ss-semantic rejected `-k`
@@ -638,6 +626,18 @@ describe('ss-* flag habits: -k and --in', () => {
     const bad = await run('semantic', ['src/a.js', 'token', '-k', 'x']);
     expect(bad.code).toBe(2);
     expect(bad.stderr).toContain('-k must be an integer');
+  });
+
+  it('ss-semantic prints the also line after the spans and no shown-full trailer', async () => {
+    setupFourFunctions();
+    const out = await run('semantic', ['src/a.js', 'token', '--max-tokens', '20']);
+    expect(out.code).toBe(0);
+    const lines = out.stdout.split('\n');
+    const also = lines.findIndex(l => l.startsWith('# also: '));
+    const lastHeading = lines.map(l => /^## \d+-\d+/.test(l)).lastIndexOf(true);
+    expect(lastHeading).toBeGreaterThanOrEqual(0);
+    expect(also).toBeGreaterThan(lastHeading);
+    expect(out.stdout).not.toContain('shown-full:');
   });
 
   it('ss-semantic: -k reaches the warm daemon as topK', async () => {

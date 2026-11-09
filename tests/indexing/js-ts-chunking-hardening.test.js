@@ -119,10 +119,6 @@ describe('Phase 1: Chunker boundary detection', () => {
     expect('module.exports = {'.match(jsChunker.moduleExportObj)?.[1]).toBe('module.exports');
   });
 
-  it('JS chunker has moduleExportObj', () => {
-    expect(jsChunker.moduleExportObj).toBeDefined();
-  });
-
   it('TS chunker does not have moduleExportObj', () => {
     expect(tsChunker.moduleExportObj).toBeUndefined();
   });

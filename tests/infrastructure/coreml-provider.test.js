@@ -1,4 +1,5 @@
 import { describe, expect, it, afterEach, vi, beforeEach } from 'vitest';
+import os from 'os';
 
 import {
   isAppleSilicon,
@@ -7,20 +8,29 @@ import {
   _resetCoreMLCache,
 } from '../../core/infrastructure/coreml-provider.js';
 
+const REAL_PLATFORM = Object.getOwnPropertyDescriptor(process, 'platform');
+
+// Pretend to run on a given host, so the result does not depend on this machine.
+function fakeHost(platform, arch) {
+  Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+  vi.spyOn(os, 'arch').mockReturnValue(arch);
+}
+
 afterEach(() => {
+  Object.defineProperty(process, 'platform', REAL_PLATFORM);
   delete process.env.SWEET_SEARCH_USE_COREML;
   _resetCoreMLCache();
   vi.restoreAllMocks();
 });
 
 describe('isAppleSilicon', () => {
-  it('checks process.platform and os.arch', () => {
-    // Structural test: function returns a boolean derived from platform + arch
-    const result = isAppleSilicon();
-    expect(typeof result).toBe('boolean');
-    // On this machine it's deterministic — assert the actual value
-    const expected = process.platform === 'darwin' && process.arch === 'arm64';
-    expect(result).toBe(expected);
+  it('is true only for darwin on arm64', () => {
+    fakeHost('darwin', 'arm64');
+    expect(isAppleSilicon()).toBe(true);
+    fakeHost('darwin', 'x64');
+    expect(isAppleSilicon()).toBe(false);
+    fakeHost('linux', 'arm64');
+    expect(isAppleSilicon()).toBe(false);
   });
 });
 
@@ -40,36 +50,41 @@ describe('shouldUseCoreML', () => {
     for (const val of ['off', '0', 'false', 'OFF', '  off  ', ' FALSE ']) {
       it(`returns false when env is "${val}"`, () => {
         process.env.SWEET_SEARCH_USE_COREML = val;
+        fakeHost('darwin', 'arm64');
         expect(shouldUseCoreML(true)).toBe(false);
       });
     }
   });
 
   describe('env var parsing (on variants)', () => {
-    // These only return true on Apple Silicon — that's the correct behavior.
-    const isAS = process.platform === 'darwin' && process.arch === 'arm64';
     for (const val of ['on', '1', 'true', 'ON', '  on  ']) {
-      it(`returns ${isAS} when env is "${val}" with provider available`, () => {
+      it(`enables on Apple Silicon and not on Intel when env is "${val}" with provider available`, () => {
         process.env.SWEET_SEARCH_USE_COREML = val;
-        expect(shouldUseCoreML(true)).toBe(isAS);
+        fakeHost('darwin', 'arm64');
+        expect(shouldUseCoreML(true)).toBe(true);
+        fakeHost('darwin', 'x64');
+        expect(shouldUseCoreML(true)).toBe(false);
       });
     }
   });
 
   it('auto mode (unset env) enables on Apple Silicon with provider', () => {
     delete process.env.SWEET_SEARCH_USE_COREML;
-    const isAS = process.platform === 'darwin' && process.arch === 'arm64';
-    expect(shouldUseCoreML(true)).toBe(isAS);
+    fakeHost('darwin', 'arm64');
+    expect(shouldUseCoreML(true)).toBe(true);
+    fakeHost('linux', 'x64');
+    expect(shouldUseCoreML(true)).toBe(false);
   });
 
   it('auto mode with env="auto" behaves same as unset', () => {
     process.env.SWEET_SEARCH_USE_COREML = 'auto';
-    const isAS = process.platform === 'darwin' && process.arch === 'arm64';
-    expect(shouldUseCoreML(true)).toBe(isAS);
+    fakeHost('darwin', 'arm64');
+    expect(shouldUseCoreML(true)).toBe(true);
   });
 
   it('rejects unrecognized env values', () => {
     process.env.SWEET_SEARCH_USE_COREML = 'maybe';
+    fakeHost('darwin', 'arm64');
     expect(shouldUseCoreML(true)).toBe(false);
   });
 });

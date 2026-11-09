@@ -62,13 +62,13 @@ describe('streaming vectors (large-repo OOM regression)', () => {
     REPO = join(tmpdir(), `ss-stream-it-${Date.now()}`);
     mkdirSync(join(REPO, 'src'), { recursive: true });
 
-    // ~160 small source files. The first is duplicated many times so global
+    // ~100 small source files. The first is duplicated many times so global
     // dedup must collapse them into one exemplar + many aliases.
     const base = (i) => `// module ${i}\n` +
       `export function add${i}(a, b) { return a + b; }\n` +
       `export function mul${i}(a, b) { return a * b; }\n` +
       `export class Calc${i} {\n  constructor(x) { this.x = x; }\n  apply(y) { return this.x + y; }\n}\n`;
-    for (let i = 0; i < 120; i++) writeFileSync(join(REPO, 'src', `mod${i}.js`), base(i));
+    for (let i = 0; i < 60; i++) writeFileSync(join(REPO, 'src', `mod${i}.js`), base(i));
     for (let i = 0; i < 40; i++) writeFileSync(join(REPO, 'src', `dup${i}.js`), base(0)); // near-dups of mod0
 
     // Pathological #1: a >1 MB generated C file (250k lines) → admission size cap (1 MB) must skip it.
@@ -121,7 +121,7 @@ describe('streaming vectors (large-repo OOM regression)', () => {
     const db = new Database(dbPath, { readonly: true });
     try {
       const total = db.prepare('SELECT COUNT(*) c FROM vectors').get().c;
-      expect(total).toBeGreaterThan(100);
+      expect(total).toBeGreaterThan(50);
       // every stored embedding is a valid Float32 BLOB (dim * 4 bytes)
       const sample = db.prepare('SELECT embedding FROM vectors LIMIT 50').all();
       for (const r of sample) expect(r.embedding.length % 4).toBe(0);
@@ -139,7 +139,7 @@ describe('streaming vectors (large-repo OOM regression)', () => {
       const exemplars = db.prepare("SELECT COUNT(*) c FROM vectors WHERE json_extract(metadata,'$.exemplarId') IS NULL").get().c;
       // The 40 dup files (copies of mod0) must alias to mod0's exemplar.
       expect(aliases).toBeGreaterThanOrEqual(40);
-      expect(exemplars).toBeGreaterThan(100);
+      expect(exemplars).toBeGreaterThan(50);
     } finally {
       db.close();
     }

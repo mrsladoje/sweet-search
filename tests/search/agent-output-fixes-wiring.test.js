@@ -9,10 +9,13 @@
  *     handler (buildAgentSpanDaemonResponse), with the same call order as the wrapper;
  *   - the A5 regex repair, A7 imports dedupe, the compact sufficiency line, the A4 alternatives.
  */
-import { readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import Database from 'better-sqlite3';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { runInVirtualProcess } from '../../core/agent-tools/virtual-process.js';
+import { runAgentTool } from '../../core/agent-tools/run-agent-tool.mjs';
 
 import {
   ALREADY_SHOWN_MAX_RECORD_CHARS,
@@ -44,6 +47,16 @@ import { buildAgentSpanDaemonResponse } from '../../core/search/search-server.js
 import { translateBreToRustRegex } from '../../core/search/regex-dialect.js';
 
 const ROOT = '/repo';
+let root;
+let rootBase;
+beforeAll(() => {
+  rootBase = realpathSync(mkdtempSync(path.join(tmpdir(), 'ss-wiring-')));
+  root = path.join(rootBase, 'repo');
+  mkdirSync(path.join(root, '.sweet-search'), { recursive: true });
+  const db = new Database(path.join(root, '.sweet-search', 'codebase.db'));
+  try { db.exec('CREATE TABLE vectors (id TEXT PRIMARY KEY, file_path TEXT, text TEXT, metadata TEXT, epoch_retired INTEGER)'); } finally { db.close(); }
+});
+afterAll(() => { try { rmSync(rootBase, { recursive: true, force: true }); } catch { /* best effort */ } });
 const gutter = (code, startLine) => code.split('\n').map((l, i) => `${startLine + i}\t${l}`).join('\n');
 
 // ---- verbatim copies of the original loops (final-tuning, switches off) ------------------
@@ -479,23 +492,16 @@ describe('A4 alternatives after the switch to the non-test definition', () => {
   });
 });
 
-describe('wrapper source checks', () => {
-  const here = path.dirname(fileURLToPath(import.meta.url));
-  const src = readFileSync(path.join(here, '../../core/agent-tools/run-agent-tool.mjs'), 'utf8');
-
-  it('the ss-trace usage text has no bracketed or piped mode-word form', () => {
-    const usage = src.slice(src.indexOf('const TRACE_USAGE ='), src.indexOf('async function cmdTrace'));
-    expect(usage).toContain("ss-trace <symbol> callers --in <defining file>");
-    expect(usage).not.toMatch(/'[^']*callers\|callees[^']*'/);
-    expect(usage).not.toMatch(/'[^']*\[callers[^']*'/);
-  });
-
-  it('A3 never writes to the original ledger and no old switch name is left', () => {
-    expect(src).not.toMatch(/FIX\.bundleA/);
-    expect(src).not.toMatch(/THREAD_KEY/);
-    // recordAgentToolCall (the original ledger) has no sessionId override.
-    const rec = src.slice(src.indexOf('async function recordAgentToolCall'), src.indexOf('// Entry plan for the fixed'));
-    expect(rec).toContain('sessionId: AGENT_SESSION_ID');
-    expect(rec).not.toMatch(/sessionId\s*=/);
+describe('ss-trace usage text', () => {
+  it('has no bracketed or piped mode-word form', async () => {
+    const r = await runInVirtualProcess(
+      { env: { PATH: process.env.PATH || '', HOME: process.env.HOME || '', SWEET_SEARCH_PROJECT_ROOT: root }, cwd: root },
+      () => runAgentTool('trace', [], { getSearcher: () => ({ projectRoot: root, hasLateInteractionIndex: false }) }),
+    );
+    const usage = r.stderr.toString('utf8');
+    expect(r.code).toBe(2);
+    expect(usage).toContain('ss-trace <symbol> callers --in <defining file>');
+    expect(usage).not.toMatch(/callers\|callees/);
+    expect(usage).not.toMatch(/\[callers/);
   });
 });

@@ -18,6 +18,7 @@ import {
 } from '../../eval/agent-read-workflows/policies.js';
 import { auditRun } from '../../eval/agent-read-workflows/audit.js';
 import { SweetSearch } from '../../core/search/sweet-search.js';
+import { assertIndexSchemas, IndexSchemaError } from '../../core/infrastructure/index-schema.js';
 
 // ────────────────────────────────────────────────────────────────────────────
 // Policy/tool-rule wiring
@@ -327,9 +328,26 @@ describe('SS_ROUTE_META trailer extraction', () => {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '../..');
-const canaryReposReady = ['fastify', 'gin', 'ripgrep'].every(repo =>
-  existsSync(path.join(repoRoot, 'eval/repos', repo, '.sweet-search/codebase.db'))
-);
+// The benchmark indexes are frozen. The canaries run only when every repo index exists AND was
+// built with the schema version this checkout reads; otherwise the skip reason says which.
+function canarySkipReason() {
+  for (const repo of ['fastify', 'gin', 'ripgrep']) {
+    const data = path.join(repoRoot, 'eval/repos', repo, '.sweet-search');
+    if (!existsSync(path.join(data, 'codebase.db'))) return `${repo} index absent`;
+    try {
+      assertIndexSchemas({
+        graphDbPath: path.join(data, 'code-graph.db'),
+        codebaseDbPath: path.join(data, 'codebase.db'),
+      });
+    } catch (err) {
+      if (err instanceof IndexSchemaError) return `${repo} index built by another schema version (${err.message.replace(/^.*?(schema version \S+),.*$/, '$1')})`;
+      throw err;
+    }
+  }
+  return null;
+}
+const canarySkip = canarySkipReason();
+const canaryReposReady = canarySkip === null;
 
 async function searchRepo(repo, query) {
   const projectRoot = path.join(repoRoot, 'eval/repos', repo);
@@ -358,7 +376,7 @@ async function searchRepo(repo, query) {
   }
 }
 
-describe.skipIf(!canaryReposReady)('live retrieval canaries', () => {
+describe.skipIf(!canaryReposReady)(`live retrieval canaries${canarySkip ? ` (skipped: ${canarySkip})` : ''}`, () => {
   it('keeps prior failure chunks out of top-1', async () => {
     const canaries = [
       {

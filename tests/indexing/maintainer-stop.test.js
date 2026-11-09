@@ -141,10 +141,12 @@ describe('maintainer stop', () => {
     }
   }, 60_000);
 
-  it('a paused index stops a running maintainer', async () => {
-    child = startMaintainer([], { SWEET_SEARCH_RECONCILE_INTERVAL_MS: '200' });
-    await waitUntilSleeping(child);
+  // The interval is clamped to at least 10 s, so a pause written while the maintainer sleeps is
+  // only seen at the next tick. The pause is in place from the start instead: the first loop
+  // pass reads it, the same check that stops a running maintainer.
+  it('a paused index stops a maintainer', async () => {
     fs.writeFileSync(path.join(stateDir, 'reconcile-pause.json'), JSON.stringify({ paused: true, reason: 'frozen benchmark index' }));
+    child = startMaintainer();
     const { code } = await child.exited;
     expect(code).toBe(0);
     expect(child.output()).toMatch(/paused.*frozen benchmark index.*stopping/);

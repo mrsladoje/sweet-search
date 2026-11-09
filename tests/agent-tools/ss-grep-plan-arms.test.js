@@ -77,7 +77,10 @@ let grepCalls;
 function setEntities(rows) {
   db.prepare('DELETE FROM entities').run();
   const insert = db.prepare('INSERT INTO entities (id, name, type, file_path, start_line, end_line, parent_class, stale_since, epoch_written, epoch_retired) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, 1, NULL)');
-  for (const [id, name, type, file, s, e, stale = null] of rows) insert.run(id, name, type, file, s, e, stale);
+  // one transaction: thousands of autocommit inserts each wait for a disk sync
+  db.transaction(() => {
+    for (const [id, name, type, file, s, e, stale = null] of rows) insert.run(id, name, type, file, s, e, stale);
+  })();
 }
 
 beforeAll(() => {

@@ -18,7 +18,14 @@ describe.runIf(hasWatcher)('changed-files tracker', () => {
   const git = (...a) => execFileSync('git', a, { cwd: root, stdio: ['ignore', 'pipe', 'ignore'] }).toString();
   const write = (p, c = 'x\n') => { fs.mkdirSync(path.dirname(path.join(root, p)), { recursive: true }); fs.writeFileSync(path.join(root, p), c); };
   const full = () => git('ls-files', '-z', '--modified', '--others', '--exclude-standard').split('\0').filter(Boolean).sort();
-  const settle = () => new Promise((r) => setTimeout(r, 400));
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  // Give the watcher a moment to see the change, then wait until the listing agrees
+  // with git (up to 3 s) so a slow machine does not fail and a fast one does not wait.
+  const settle = async () => {
+    await sleep(100);
+    const t0 = Date.now();
+    while (Date.now() - t0 < 3000 && JSON.stringify(tracker.list().sort()) !== JSON.stringify(full())) await sleep(50);
+  };
 
   beforeAll(async () => {
     root = fs.mkdtempSync(path.join(os.tmpdir(), 'ss-tracker-'));

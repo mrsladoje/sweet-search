@@ -65,6 +65,8 @@ const skip = !nativeBinary || isPortInUse(9876) || skipForCI;
 let projectDir;
 let serverProcess;
 let warmSocketPath;
+let runtimeDir;
+let prevRuntimeDir;
 
 function cleanSocket(socketPath = SOCKET_PATH) {
   try { unlinkSync(socketPath); } catch { /* ignore */ }
@@ -110,6 +112,16 @@ function stopServer(socketPath = SOCKET_PATH) {
 beforeAll(async () => {
   if (skip) return;
 
+  // Private runtime dir: daemons this test starts register here, never in the user's own.
+  // Fixed name (short: the socket path must fit the platform limit). A daemon stopped at the
+  // end can re-create its empty registry dir a few seconds later, so the next run clears it here
+  // instead of leaving a new directory behind each time.
+  runtimeDir = '/tmp/ss-native-launcher-rt';
+  rmSync(runtimeDir, { recursive: true, force: true });
+  mkdirSync(runtimeDir, { mode: 0o700 });
+  prevRuntimeDir = process.env.SWEET_SEARCH_RUNTIME_DIR;
+  process.env.SWEET_SEARCH_RUNTIME_DIR = runtimeDir;
+
   // Create and index a temp project
   projectDir = mkdtempSync(join(tmpdir(), 'ss-native-launcher-'));
   warmSocketPath = join(tmpdir(), `sweet-search-warm-${process.pid}.sock`);
@@ -125,13 +137,22 @@ beforeAll(async () => {
     stdio: 'pipe',
   });
 
-  // Clean up any existing server
-  stopServer();
 }, INDEX_TIMEOUT_MS + 60000);
 
 afterAll(() => {
-  stopServer();
+  if (warmSocketPath) stopServer(warmSocketPath);
   if (warmSocketPath) cleanSocket(warmSocketPath);
+  if (runtimeDir) {
+    if (prevRuntimeDir === undefined) delete process.env.SWEET_SEARCH_RUNTIME_DIR;
+    else process.env.SWEET_SEARCH_RUNTIME_DIR = prevRuntimeDir;
+    // A daemon that was just stopped can re-create its registry dir on its way out:
+    // remove it until it stays gone for three checks in a row.
+    for (let quiet = 0, tries = 0; quiet < 3 && tries < 12; tries++) {
+      rmSync(runtimeDir, { recursive: true, force: true });
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 250);
+      quiet = existsSync(runtimeDir) ? 0 : quiet + 1;
+    }
+  }
   if (projectDir) rmSync(projectDir, { recursive: true, force: true });
 }, 30000);
 

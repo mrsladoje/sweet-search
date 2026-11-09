@@ -2,14 +2,12 @@
  * Review Fixes Tests (Round 2)
  *
  * Tests covering the code paths introduced by the brutal honesty review fixes:
- *   S1: Duplicate import (verified by module loading — no runtime crash)
  *   C1: localWarmup/provider pass-through — provider restored after dryRun
  *   C2: codeGraphNames wired through extractNLText → isSecretLike
  *   H1: Hybrid cacheHit uses lexSubLatency derived from embedding latency
  *   H2: Enriched text format with scope/parent/language
  *   H3: NL hash skip requires graph hash unchanged
  *   M1: MCP field mapping uses integer counts
- *   M2: community-detector uses stderr not stdout
  *   F8: detectScript + CJK tokenization
  *   F9: isSecretLike — word-level codeGraphNames exemption
  *   F12: Jaccard-based WSS clustering
@@ -212,20 +210,6 @@ describe('isSecretLike codeGraphNames exemption (F9)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// S1 + H2: vocab-warmer module loads, enriched text format
-// ---------------------------------------------------------------------------
-
-describe('vocab-warmer enriched text format (H2/S1)', () => {
-  it('vocab-warmer module loads successfully (no duplicate import crash)', async () => {
-    const mod = await import('../../core/vocabulary/vocab-warmer.js');
-    expect(mod.warmLexical).toBeDefined();
-    expect(mod.warmSemantic).toBeDefined();
-    expect(mod.warmHybrid).toBeDefined();
-    expect(mod.warmFromCache).toBeDefined();
-  });
-});
-
-// ---------------------------------------------------------------------------
 // C1: runFullWarmup — provider restored after dryRun early return
 // ---------------------------------------------------------------------------
 
@@ -348,17 +332,6 @@ describe('hybrid cacheHit logic (H1)', () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// M2: community-detector uses stderr
-// ---------------------------------------------------------------------------
-
-describe('community-detector stderr logging (M2)', () => {
-  it('community-detector module exports detectCommunities', async () => {
-    const mod = await import('../../core/graph/community-detector.js');
-    expect(mod.detectCommunities).toBeDefined();
-    expect(mod.computeGraphHash).toBeDefined();
-  });
-});
 
 // ---------------------------------------------------------------------------
 // F5: Stats report community format

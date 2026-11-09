@@ -1454,16 +1454,22 @@ describe('bareGrep', () => {
 
   it.skipIf(!rgAvailable)('returns empty grep results when no files match', async () => {
     const impossiblePattern = ['ZZZZ', 'UNLIKELY', 'MATCH', 'PATTERN', 'QXJ_7319'].join('__');
-    const result = await bareGrep.call(
-      { projectRoot: process.cwd(), sparseGramIndex: null },
-      impossiblePattern,
-      null,
-      { regex: impossiblePattern, maxMatches: 10 }
-    );
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'sweet-search-grep-empty-'));
+    try {
+      await fs.writeFile(path.join(tmpDir, 'a.js'), 'const x = 1;\n');
+      const result = await bareGrep.call(
+        { projectRoot: tmpDir, sparseGramIndex: null },
+        impossiblePattern,
+        null,
+        { regex: impossiblePattern, maxMatches: 10 }
+      );
 
-    expect(result.results).toEqual([]);
-    expect(result.stats.path).toBe('grep');
-    expect(result.stats.totalMatches).toBe(0);
+      expect(result.results).toEqual([]);
+      expect(result.stats.path).toBe('grep');
+      expect(result.stats.totalMatches).toBe(0);
+    } finally {
+      await fs.rm(tmpDir, { recursive: true, force: true });
+    }
   });
 
   it.skipIf(!rgAvailable)('matches raw ripgrep on the same corpus', async () => {

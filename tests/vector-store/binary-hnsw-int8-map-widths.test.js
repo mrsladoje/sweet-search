@@ -40,8 +40,7 @@ function vectors(n, d, seed = 7) {
 const hasMap = () => typeof nativeRescoreKernels()?.mapFileSection === 'function';
 
 describe('int8 rows from a mapping of the index file (K3)', () => {
-  it('maps the same rows a read gives, keeps writes private, and saves them', async () => {
-    if (!hasMap()) return;
+  it.skipIf(!hasMap())('maps the same rows a read gives, keeps writes private, and saves them (needs native mapFileSection)', async () => {
     const p = path.join(dir, 'a.idx');
     const vs = vectors(300, 768);
     const { index } = await buildHnswIndex(vs.map((e, i) => ({ id: `v${i}`, embedding: e, metadata: {} })), { indexPath: p });

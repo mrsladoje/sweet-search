@@ -2,7 +2,7 @@
  * Unit tests for scripts/verify-runtime.js
  */
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { join } from 'node:path';
 import {
   verifyRuntime,
@@ -73,32 +73,52 @@ describe('probeSqliteBinding', () => {
     expect(SQLITE_BINDING_REMEDY).toContain('npm install');
   });
 
-  // CI-skipped: GitHub runners do not run `sweet-search init` first and can
-  // have a partial ~/.cache/sweet-search/models directory from earlier jobs,
-  // which makes this full-model-set cache assertion nondeterministic. Local runs
-  // still exercise the real cached-model verification path when models exist.
-  it.skipIf(process.env.CI === 'true')('passes with the full model set cached', async () => {
-    // Skip when model cache does not exist (CI without pre-cached models)
-    const { existsSync } = await import('node:fs');
-    const { join: pathJoin } = await import('node:path');
-    const cacheRoot = pathJoin(process.env.HOME || '', '.cache', 'sweet-search', 'models');
-    if (!existsSync(pathJoin(cacheRoot, 'lightonai--LateOn-Code'))) {
-      return; // models not cached — skip
-    }
+  // Uses a fixture model cache (sparse files of the registry sizes) so the result
+  // does not depend on which models this machine has downloaded. The reranker is
+  // opt-in and is absent from a normal init, so the real cache cannot be relied on.
+  it('passes with the full model set cached', async () => {
+    const { mkdtempSync, mkdirSync, openSync, ftruncateSync, closeSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const cacheRoot = mkdtempSync(join(tmpdir(), 'verify-runtime-models-'));
+    const prevCache = process.env.SWEET_SEARCH_MODEL_CACHE;
+    process.env.SWEET_SEARCH_MODEL_CACHE = cacheRoot;
+    try {
+      vi.resetModules();
+      const fresh = await import('../../scripts/verify-runtime.js');
+      const { getModelEntry } = await import('../../core/infrastructure/index.js');
+      const modelKeys = ['lateon-code', 'lateon-code-edge', 'gte-reranker-modernbert-base', 'coderankembed-int8'];
+      for (const key of modelKeys) {
+        const entry = getModelEntry(key);
+        for (const file of entry.files) {
+          const dest = join(cacheRoot, entry.hfId.replace('/', '--'), file.path);
+          mkdirSync(join(dest, '..'), { recursive: true });
+          const fd = openSync(dest, 'w');
+          ftruncateSync(fd, file.sizeBytes || 0);
+          closeSync(fd);
+        }
+      }
 
-    const modelKeys = ['lateon-code', 'lateon-code-edge', 'gte-reranker-modernbert-base', 'coderankembed-int8'];
-    const result = await verifyRuntime({
-      modelKeys,
-      deep: false,
-      packageRoot: PACKAGE_ROOT,
-    });
+      const result = await fresh.verifyRuntime({ modelKeys, deep: false, packageRoot: PACKAGE_ROOT });
 
-    expect(result.passed).toBe(true);
-    // Model checks should all pass
-    const modelChecks = result.checks.filter(c => c.name.startsWith('model:'));
-    expect(modelChecks.length).toBeGreaterThan(0);
-    for (const check of modelChecks) {
-      expect(check.status).toBe('pass');
+      expect(result.checks.filter(c => c.status === 'fail')).toEqual([]);
+      expect(result.passed).toBe(true);
+      const modelChecks = result.checks.filter(c => c.name.startsWith('model:'));
+      expect(modelChecks.length).toBeGreaterThan(modelKeys.length);
+
+      // A wrong-size file must be reported, so the pass above is not vacuous.
+      const entry = getModelEntry('lateon-code');
+      const first = entry.files.find(f => f.sizeBytes);
+      const bad = join(cacheRoot, entry.hfId.replace('/', '--'), first.path);
+      const fd = openSync(bad, 'w');
+      ftruncateSync(fd, first.sizeBytes - 1);
+      closeSync(fd);
+      const broken = await fresh.verifyRuntime({ modelKeys: ['lateon-code'], deep: false, packageRoot: PACKAGE_ROOT });
+      expect(broken.passed).toBe(false);
+    } finally {
+      if (prevCache === undefined) delete process.env.SWEET_SEARCH_MODEL_CACHE;
+      else process.env.SWEET_SEARCH_MODEL_CACHE = prevCache;
+      vi.resetModules();
+      rmSync(cacheRoot, { recursive: true, force: true });
     }
   });
 

@@ -82,15 +82,11 @@ describe('sweet-search init (integration)', () => {
     expect(second.stdout).toContain('Sweet Search init complete');
   });
 
-  it('a plain init with cached models sets downloads disabled', () => {
-    // This test uses the global model cache — if models are not cached,
-    // it will attempt downloads. Guard for CI with an env var.
-    if (!process.env.SWEET_SEARCH_TEST_DOWNLOADS && !existsSync(
-      join(process.env.HOME || '', '.cache', 'sweet-search', 'models', 'lightonai--LateOn-Code')
-    )) {
-      return; // skip when models not cached and downloads not enabled
-    }
-
+  // Needs the real model cache (a plain init verifies the cached models) or
+  // permission to download them; absent both, there is nothing to exercise.
+  it.skipIf(!process.env.SWEET_SEARCH_TEST_DOWNLOADS && !existsSync(
+    join(process.env.HOME || '', '.cache', 'sweet-search', 'models', 'lightonai--LateOn-Code'),
+  ))('a plain init with cached models sets downloads disabled (needs cached models or SWEET_SEARCH_TEST_DOWNLOADS)', () => {
     const result = runInit([], tempDir);
     if (result.exitCode !== 0) {
       console.error(
@@ -104,16 +100,6 @@ describe('sweet-search init (integration)', () => {
     const configPath = join(tempDir, '.sweet-search', 'config.json');
     const config = JSON.parse(readFileSync(configPath, 'utf8'));
     expect(config.runtime.allowRuntimeModelDownload).toBe(false);
-  });
-
-  it('config bridge works from subdirectory', () => {
-    // Init at project root
-    const result = runInit(['--skip-models'], tempDir);
-    expect(result.exitCode).toBe(0);
-
-    // Verify config exists at project root
-    const configPath = join(tempDir, '.sweet-search', 'config.json');
-    expect(existsSync(configPath)).toBe(true);
   });
 
   // ── --mcp / --no-cli contact-surface flags (end-to-end) ───────────────────

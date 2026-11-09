@@ -2,92 +2,77 @@
  * Boundary Enforcement Tests — DDD Fix Plan Phase 3
  *
  * Verifies that domain boundaries are enforced:
- * - No forbidden cross-domain dependency direction violations
- * - Consumers use barrel imports, not internal files
- * - Checker catches known violations (negative test)
+ * - No forbidden cross-domain dependency direction violations in the real tree
+ * - Checker catches known violations (negative tests)
+ *
+ * The negative tests run the checker inside a throw-away mini tree (the checker
+ * scans `core/` relative to its working directory), so they never write into the
+ * live source tree that other test runs and tools read at the same time.
  */
-import { describe, it, expect, afterAll } from 'vitest';
-import { execSync } from 'child_process';
-import { writeFileSync, rmSync } from 'fs';
-import { join } from 'path';
+import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
-// Negative tests write temp files into live source tree (required because the
-// checker scans hardcoded core/ paths). Safety cleanup in afterAll.
-const TEMP_FILES = [
-  join('core', 'infrastructure', '__boundary_test_violation__.js'),
-  join('core', 'ranking', '__boundary_test_violation__.js'),
-  join('core', 'vocabulary', '__boundary_test_violation__.js'),
-];
+const ROOT = join(import.meta.dirname, '../..');
+const CHECKER = join(ROOT, 'scripts', 'check-boundaries.js');
 // The checker reads every source file once in-process and finishes in about a
 // second; the budget leaves room for a loaded machine.
-const CHECK_BOUNDARIES_TIMEOUT_MS = Number(process.env.SWEET_SEARCH_TEST_BOUNDARY_TIMEOUT_MS || 60000);
-afterAll(() => TEMP_FILES.forEach(f => rmSync(f, { force: true })));
+const TIMEOUT_MS = Number(process.env.SWEET_SEARCH_TEST_BOUNDARY_TIMEOUT_MS || 60000);
+
+function runChecker(cwd) {
+  const r = spawnSync(process.execPath, [CHECKER], { cwd, encoding: 'utf8', timeout: TIMEOUT_MS });
+  return { status: r.status, output: `${r.stdout || ''}${r.stderr || ''}` };
+}
 
 describe('DDD Boundary Enforcement', () => {
-  it('passes all boundary checks', () => {
-    const result = execSync('node scripts/check-boundaries.js 2>&1', {
-      encoding: 'utf8',
-      timeout: CHECK_BOUNDARIES_TIMEOUT_MS,
-    });
-    expect(result).toContain('All domain boundaries clean.');
-  }, CHECK_BOUNDARIES_TIMEOUT_MS + 5000);
+  it('passes all boundary checks on the real tree, with barrel-only enforcement active', () => {
+    const { output } = runChecker(ROOT);
+    expect(output).toContain('All domain boundaries clean.');
+    expect(output).toContain('barrel-only enforcement');
+  }, TIMEOUT_MS + 5000);
 
-  it('detects barrel-only enforcement is active', () => {
-    const result = execSync('node scripts/check-boundaries.js 2>&1', {
-      encoding: 'utf8',
-      timeout: CHECK_BOUNDARIES_TIMEOUT_MS,
-    });
-    expect(result).toContain('barrel-only enforcement');
-  }, CHECK_BOUNDARIES_TIMEOUT_MS + 5000);
-
-  it('catches infrastructure → domain violation', () => {
-    const tmpFile = TEMP_FILES[0];
-    try {
-      writeFileSync(tmpFile, "import { embed } from '../embedding/index.js';\n");
-      let output;
-      try {
-        output = execSync('node scripts/check-boundaries.js 2>&1', { encoding: 'utf8', timeout: CHECK_BOUNDARIES_TIMEOUT_MS });
-      } catch (err) {
-        output = err.stdout || err.message;
+  describe('negative cases (mini tree)', () => {
+    let tree;
+    beforeAll(() => {
+      tree = mkdtempSync(join(tmpdir(), 'ss-boundary-'));
+      for (const d of ['infrastructure', 'embedding', 'ranking', 'vocabulary', 'agent-tools']) {
+        mkdirSync(join(tree, 'core', d), { recursive: true });
       }
+    });
+    afterAll(() => rmSync(tree, { recursive: true, force: true }));
+
+    function violationFor(domain, source) {
+      const file = join(tree, 'core', domain, '__boundary_test_violation__.js');
+      writeFileSync(file, source);
+      try {
+        return runChecker(tree).output;
+      } finally {
+        rmSync(file, { force: true });
+      }
+    }
+
+    it('a clean mini tree reports no violation', () => {
+      expect(runChecker(tree).output).not.toContain('VIOLATION');
+    });
+
+    it('catches infrastructure → domain violation', () => {
+      const output = violationFor('infrastructure', "import { embed } from '../embedding/index.js';\n");
       expect(output).toContain('VIOLATION');
       expect(output).toContain('infrastructure');
-    } finally {
-      rmSync(tmpFile, { force: true });
-    }
-  }, CHECK_BOUNDARIES_TIMEOUT_MS + 5000);
+    });
 
-  it('catches ranking → embedding violation', () => {
-    const tmpFile = TEMP_FILES[1];
-    try {
-      writeFileSync(tmpFile, "import { embed } from '../embedding/index.js';\n");
-      let output;
-      try {
-        output = execSync('node scripts/check-boundaries.js 2>&1', { encoding: 'utf8', timeout: CHECK_BOUNDARIES_TIMEOUT_MS });
-      } catch (err) {
-        output = err.stdout || err.message;
-      }
+    it('catches ranking → embedding violation', () => {
+      const output = violationFor('ranking', "import { embed } from '../embedding/index.js';\n");
       expect(output).toContain('VIOLATION');
       expect(output).toContain('ranking');
-    } finally {
-      rmSync(tmpFile, { force: true });
-    }
-  }, CHECK_BOUNDARIES_TIMEOUT_MS + 5000);
+    });
 
-  it('catches vocabulary → agent-tools violation', () => {
-    const tmpFile = TEMP_FILES[2];
-    try {
-      writeFileSync(tmpFile, "import { runTool } from '../agent-tools/tools.js';\n");
-      let output;
-      try {
-        output = execSync('node scripts/check-boundaries.js 2>&1', { encoding: 'utf8', timeout: CHECK_BOUNDARIES_TIMEOUT_MS });
-      } catch (err) {
-        output = err.stdout || err.message;
-      }
+    it('catches vocabulary → agent-tools violation', () => {
+      const output = violationFor('vocabulary', "import { runTool } from '../agent-tools/tools.js';\n");
       expect(output).toContain('VIOLATION');
       expect(output).toContain('vocabulary');
-    } finally {
-      rmSync(tmpFile, { force: true });
-    }
-  }, CHECK_BOUNDARIES_TIMEOUT_MS + 5000);
+    });
+  });
 });

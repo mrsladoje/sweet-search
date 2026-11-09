@@ -333,3 +333,41 @@ Each fix lists the main problems it solves. The per-area files hold the rest.
 
 - Full suite on a quiet machine: 60 s and 62 s wall in two runs (9,464 tests). Before: one test
   (`boundary-enforcement`) spawned a 201 s script and starved the others.
+
+## Done: Tests step
+
+- Scope: 475 test files (all of `tests/` except `tests/unit/prompt-optimization/`, `tests/training/`). 53 files changed.
+  Rule: a test stays if a real regression makes it fail, and nothing else does. When unsure, the test stays.
+- Result: 9,428 tests, 0 failures in two full runs on a quiet machine (51 s and 61 s wall). A full run leaves no process.
+- The two failures that existed before the refactor are repaired:
+  - `tests/eval/agent-bench-policy.test.js` skips, with the reason in its name, when the frozen local benchmark index is
+    absent or has another schema version.
+  - `tests/integration/verify-runtime.test.js` builds its own model cache in a temp dir (it read this machine's cache)
+    and checks that a file one byte short fails.
+- Tests that acted on real state, now isolated: `incremental-tracker.test.js` (cleared and wrote this repository's
+  `.sweet-search/merkle-state.json` and file-state db on every run), `native-launcher.integration.test.js` (sent `/stop`
+  to the default socket), `boundary-enforcement.test.js` (wrote violation files into the live `core/` tree),
+  `search-pattern.test.js` (grepped the repository root).
+- Removed about 30 tests that could not fail or tested copies of the code (typeof-only checks, tests that swallowed
+  their own error, empty placeholders, a file that tested functions defined inside the test). Rewritten to behavior:
+  source-text tests of `run-agent-tool.mjs` (`semantic-also`, `cwd-paths`, `agent-output-fixes-wiring`), `llm-provider`,
+  `db-utils` pragmas, `coreml-provider`, `query-router-3class`.
+- Silent `return` skips became visible skips with the condition in the test name.
+- `tests/setup/reap-test-fixtures.js` now reaps only orphaned fixtures and fixtures of its own run. Two vitest runs in
+  one checkout no longer kill each other's fixtures (two agents hit this during the step).
+- Kept on purpose: native-vs-JS parity tests, ss-grep byte-contract tests, installer byte-contract tests,
+  `barrel-contracts.test.js`, policy tests over many files, `tests/embedding/embedding-perf.test.js` (opt-in benchmark).
+- `npm run test:changed` (`vitest run --changed`) for the edit loop.
+
+## Product seams that tests ask for (not done)
+
+1. `atomicSwapDatabase`: option for the retry delay (fixed 500 ms).
+2. Indexer phase runner: injectable `buildLateInteractionIndex` (`indexer-phases-wiring.test.js` reads source text).
+3. `maintainer-watcher.mjs`: injectable git poll interval (fixed 2,000 ms).
+4. `patternSearch`: take the sparse-gram index from the searcher (two tests read this repository's own index).
+5. An in-process `init` entry (three `tests/init` files start 20 to 40 `node core/cli.js` processes each).
+6. A way to wake a sleeping maintainer; an override for `WEDGED_KILL_GRACE_MS` (5 s).
+7. `model-fetcher`: option for `RETRY_BASE_MS`.
+8. `autoSpawnServer`: the fixed 5 s readiness wait and `SPAWN_CLAIM_TTL_MS`.
+- Product observation: `TimeWindowRateLimiter.acquire` (`core/embedding/embedding-remote.js`) polls every 1 ms while a
+  rate window is full.

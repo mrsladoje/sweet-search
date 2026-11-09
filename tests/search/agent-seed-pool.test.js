@@ -2,7 +2,7 @@
  * Agent formats seed max(k, AGENT_SEED_POOL_MIN) and keep the k-seed top-1 (final-k.js).
  */
 import { afterEach, describe, expect, it } from 'vitest';
-import { AGENT_SEED_POOL_MIN, DEFAULT_SEED_POOL_MIN, pinNarrowTop1, seedPoolSize } from '../../core/search/final-k.js';
+import { pinNarrowTop1, seedPoolSize } from '../../core/search/final-k.js';
 
 const saved = process.env.SWEET_SEARCH_SEED_POOL_MIN;
 afterEach(() => {
@@ -10,10 +10,8 @@ afterEach(() => {
 });
 
 describe('seedPoolSize', () => {
-  it('agent formats widen to AGENT_SEED_POOL_MIN; other callers keep k', () => {
+  it('agent formats widen to a 15-seed pool; other callers keep k', () => {
     delete process.env.SWEET_SEARCH_SEED_POOL_MIN;
-    expect(AGENT_SEED_POOL_MIN).toBe(15);
-    expect(DEFAULT_SEED_POOL_MIN).toBe(0);
     expect(seedPoolSize(5, { agentFormat: true })).toBe(15);
     expect(seedPoolSize(20, { agentFormat: true })).toBe(20);
     expect(seedPoolSize(5)).toBe(5);

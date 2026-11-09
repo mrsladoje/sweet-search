@@ -106,10 +106,16 @@ describe('stillOwnsLock', () => {
  */
 function mockAlivePid(fakePid, spy) {
   const origKill = process.kill.bind(process);
+  // The fake holder exits when it receives SIGTERM, as a healthy holder does:
+  // the takeover then finishes at once instead of waiting out the grace period.
+  let terminated = false;
   vi.spyOn(process, 'kill').mockImplementation((pid, signal) => {
     if (pid === fakePid) {
-      if (signal === 0) return true;
-      if (signal === 'SIGTERM') { spy(pid, signal); return true; }
+      if (signal === 0) {
+        if (terminated) throw Object.assign(new Error('ESRCH'), { code: 'ESRCH' });
+        return true;
+      }
+      if (signal === 'SIGTERM') { spy(pid, signal); terminated = true; return true; }
       return true;
     }
     return origKill(pid, signal);

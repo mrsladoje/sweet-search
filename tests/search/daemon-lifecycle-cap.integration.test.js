@@ -72,6 +72,7 @@ function startDaemon(extraEnv = {}) {
     SWEET_SEARCH_SOCKET_PATH: socketPath,
     SWEET_SEARCH_PID_FILE: pidFile,
     SWEET_SEARCH_PROJECT_ROOT: dir,
+    SWEET_SEARCH_RUNTIME_DIR: join(dir, 'runtime'),
     SWEET_SEARCH_RECONCILE_V2: '0',                 // no maintainer
     SWEET_SEARCH_TCP_PORT: '',                       // unix socket only
     SWEET_SEARCH_MAX_DAEMONS: '1',                   // the cap under test
@@ -128,7 +129,7 @@ describe('SWEET_SEARCH_MAX_DAEMONS LRU cap (end-to-end)', () => {
     // startedAt at registration, which is strictly newer than A's last
     // registryTouchSelf tick. This is the flag-(E) race, asserted as the
     // expected default-OFF behaviour — the newcomer wins, not the active peer.
-    const warm = Date.now() + 1000;
+    const warm = Date.now() + 400;
     while (Date.now() < warm) {
       await httpGet(a.socketPath, '/search?q=recently-active&k=1', { timeoutMs: 400 });
       await sleep(150);

@@ -31,15 +31,6 @@ const PHASES_SRC = fs.readFileSync(
 );
 
 describe('indexer-phases.js → buildLateInteractionIndex wiring', () => {
-  it('imports PROJECT_ROOT from the infrastructure config barrel', () => {
-    // Pre-condition for the projectRoot threading to work — if this
-    // import is missing, the test below passes vacuously.
-    expect(PHASES_SRC).toMatch(
-      /from\s+['"]\.\.\/infrastructure\/config\/index\.js['"]/
-    );
-    expect(PHASES_SRC).toMatch(/\bPROJECT_ROOT\b/);
-  });
-
   it('defines a buildLateInteraction factory that wraps buildLateInteractionIndex', () => {
     // This is the anchor point — if someone renames this factory, the
     // next two assertions won't apply to anything meaningful, and the

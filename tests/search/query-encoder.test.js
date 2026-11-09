@@ -13,6 +13,27 @@ import { applyPersistedLiModel } from '../../core/infrastructure/init-config.js'
 // must equal the in-process models' exactly.
 const flat = (rows) => rows.map((r) => Array.from(r));
 
+// The in-process vectors are the reference for both tests; load the models once for the file.
+// Null when the models are not installed on this machine (the tests then skip).
+let baseline;
+async function inProcessBaseline() {
+  if (baseline !== undefined) return baseline;
+  const text = 'search_query: how is the invoice total computed';
+  // The child applies the project's persisted LI model (encoder-host.mjs), as
+  // SweetSearch does in the daemon; the in-process baseline must use the same one.
+  applyPersistedLiModel(process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd());
+  try {
+    const local = await callLocalModel([text], { maxLength: 128 });
+    const li = await encodeQuery('how is the invoice total computed');
+    baseline = { text, local, li };
+  } catch {
+    baseline = null;
+  }
+  await unloadLocalModel();
+  await unloadLateInteractionModel();
+  return baseline;
+}
+
 describe('query encoder child', () => {
   let client = null;
   afterEach(async () => {
@@ -26,21 +47,10 @@ describe('query encoder child', () => {
     expect(queryModelIdleMs({ SWEET_SEARCH_QUERY_MODEL_IDLE_MS: '5000' })).toBe(5000);
   });
 
-  it('gives the same vectors as the in-process models, exits when idle and restarts', async () => {
-    const text = 'search_query: how is the invoice total computed';
-    let local;
-    let li;
-    // The child applies the project's persisted LI model (encoder-host.mjs), as
-    // SweetSearch does in the daemon; the in-process baseline must use the same one.
-    applyPersistedLiModel(process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd());
-    try {
-      local = await callLocalModel([text], { maxLength: 128 });
-      li = await encodeQuery('how is the invoice total computed');
-    } catch {
-      return; // models not installed on this machine
-    }
-    await unloadLocalModel();
-    await unloadLateInteractionModel();
+  it('gives the same vectors as the in-process models, exits when idle and restarts', async (ctx) => {
+    const base = await inProcessBaseline();
+    if (!base) return ctx.skip(); // models not installed on this machine
+    const { text, local, li } = base;
 
     client = startQueryEncoder({ env: { ...process.env, SWEET_SEARCH_QUERY_MODEL_IDLE_MS: '1500', SWEET_SEARCH_SHARED_QUERY_ENCODER: '0' } });
     const viaChild = await callLocalModel([text], { maxLength: 128 });
@@ -67,19 +77,10 @@ describe('shared query-model server', () => {
     if (runtimeDir) fs.rmSync(runtimeDir, { recursive: true, force: true });
   });
 
-  it('gives the same vectors as the in-process models', async () => {
-    const text = 'search_query: how is the invoice total computed';
-    let local;
-    let li;
-    applyPersistedLiModel(process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd());
-    try {
-      local = await callLocalModel([text], { maxLength: 128 });
-      li = await encodeQuery('how is the invoice total computed');
-    } catch {
-      return; // models not installed on this machine
-    }
-    await unloadLocalModel();
-    await unloadLateInteractionModel();
+  it('gives the same vectors as the in-process models', async (ctx) => {
+    const base = await inProcessBaseline();
+    if (!base) return ctx.skip(); // models not installed on this machine
+    const { text, local, li } = base;
 
     // A short private runtime dir: the socket path must fit the platform limit.
     runtimeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ssqe-'));

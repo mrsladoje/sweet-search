@@ -67,10 +67,20 @@ afterAll(() => {
   for (const m of Object.keys(savedConsole)) console[m] = savedConsole[m];
 });
 
+// Each baseline run replays the whole edit script (~1 s). The control tests
+// below only need independent baseline runs to compare, so they draw from one
+// memoized pool instead of each launching their own. Runs stay independent
+// (separate temp repos); only the number of replays shrinks.
+const baselineRuns = [];
+function nthBaselineRun(i) {
+  baselineRuns[i] ??= runFixedSequence({ variant: 'baseline' });
+  return baselineRuns[i];
+}
+
 describe('determinism harness — CONTROL (baseline-vs-baseline is empty)', () => {
   it('two identical runs (flags off) produce a byte-identical dump', async () => {
-    const a = await runFixedSequence({ variant: 'baseline' });
-    const b = await runFixedSequence({ variant: 'baseline' });
+    const a = await nthBaselineRun(0);
+    const b = await nthBaselineRun(1);
 
     // It replayed the full edit script: baseline build + 5 edits = 6 ticks.
     expect(a.ticksRun).toBe(6);
@@ -86,8 +96,8 @@ describe('determinism harness — CONTROL (baseline-vs-baseline is empty)', () =
   }, 60_000);
 
   it('canonical JSON of two identical runs is byte-for-byte equal', async () => {
-    const a = await runFixedSequence({});
-    const b = await runFixedSequence({});
+    const a = await nthBaselineRun(0);
+    const b = await nthBaselineRun(1);
     expect(canonicalJson(a.dump)).toBe(canonicalJson(b.dump));
   }, 60_000);
 
@@ -97,9 +107,9 @@ describe('determinism harness — CONTROL (baseline-vs-baseline is empty)', () =
   // the regression guard, including the HNSW graph + entry point (which the dump
   // compares as a real field, not normalized away).
   it('the control is STABLE across repeated runs (HNSW graph + entryPoint included)', async () => {
-    const ref = await runFixedSequence({ variant: 'baseline' });
-    for (let i = 0; i < 3; i += 1) {
-      const next = await runFixedSequence({ variant: 'baseline' });
+    const ref = await nthBaselineRun(0);
+    for (let i = 1; i <= 3; i += 1) {
+      const next = await nthBaselineRun(i);
       const diff = byteDiff(ref.dump, next.dump);
       expect(diff).toBeNull();
       // The HNSW graph + entryPoint are the load-bearing flake source; assert

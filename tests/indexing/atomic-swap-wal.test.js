@@ -62,6 +62,11 @@ describe('atomicSwapDatabase failures leave the old database in place', () => {
     fs.writeFileSync(tmpPath, 'new');
     return { finalPath, tmpPath };
   };
+  // The product waits 500 ms between busy retries; the delay itself is not what is checked.
+  const realSetTimeout = globalThis.setTimeout;
+  const skipRetryDelay = () => {
+    vi.spyOn(globalThis, 'setTimeout').mockImplementation((fn, _ms, ...a) => realSetTimeout(fn, 0, ...a));
+  };
   const failOn = (pred, code, times = Infinity) => {
     const real = fsp.rename.bind(fsp);
     let left = times;
@@ -73,6 +78,7 @@ describe('atomicSwapDatabase failures leave the old database in place', () => {
 
   it('a busy rename in the middle is undone and retried', async () => {
     const { finalPath, tmpPath } = setup();
+    skipRetryDelay();
     failOn((from) => from === tmpPath, 'EBUSY', 1);
     await atomicSwapDatabase(tmpPath, finalPath);
     expect(fs.readFileSync(finalPath, 'utf8')).toBe('new');
@@ -91,11 +97,12 @@ describe('atomicSwapDatabase failures leave the old database in place', () => {
 
   it('a busy sidecar on every attempt never loses the backup', async () => {
     const { finalPath, tmpPath } = setup();
+    skipRetryDelay();
     failOn((from) => from === `${finalPath}-wal`, 'EBUSY');
     await expect(atomicSwapDatabase(tmpPath, finalPath)).rejects.toThrow('EBUSY');
     expect(fs.readFileSync(finalPath, 'utf8')).toBe('old');
     expect(fs.readFileSync(`${finalPath}-wal`, 'utf8')).toBe('old-wal');
-  }, 10000);
+  });
 
   it('a backup whose WAL cannot be restored stays a whole backup (no split database)', async () => {
     const { finalPath, tmpPath } = setup();

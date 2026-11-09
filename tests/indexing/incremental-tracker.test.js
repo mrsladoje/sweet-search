@@ -11,11 +11,24 @@
  * Integration tests with real filesystem are in a separate describe block.
  */
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, afterAll, vi } from 'vitest';
 import { join } from 'path';
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, statSync } from 'fs';
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, existsSync, statSync, realpathSync } from 'fs';
 import { tmpdir } from 'os';
 import { contentHashSync, HASH_ALGORITHM } from '../../core/incremental-indexing/infrastructure/hashing.mjs';
+
+// The tracker keeps its state at DB_PATHS.merkle (<project root>/<data dir>/merkle-state.json).
+// Point the data dir at a private temp dir BEFORE the tracker loads, so these tests never
+// read, clear or write the repository's real .sweet-search state.
+const TRACKER_DATA_ROOT = vi.hoisted(() => {
+  const fs = process.getBuiltinModule('node:fs');
+  const os = process.getBuiltinModule('node:os');
+  const path = process.getBuiltinModule('node:path');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tracker-data-'));
+  process.env.SWEET_SEARCH_DATA_DIR = path.relative(process.cwd(), root);
+  return root;
+});
+afterAll(() => rmSync(TRACKER_DATA_ROOT, { recursive: true, force: true }));
 
 // =============================================================================
 // UNIT TESTS FOR ISOLATED LOGIC (no fs mocking needed)
@@ -431,7 +444,11 @@ describe('Incremental Tracker - Integration Tests', () => {
     // Save original env
     originalEnv = { ...process.env };
 
-    // Clear state before each test to ensure isolation
+    // Clear state before each test to ensure isolation. Refuse to touch anything outside the temp data dir.
+    const { DB_PATHS } = await import('../../core/infrastructure/config/index.js');
+    if (!DB_PATHS.merkle.startsWith(realpathSync(TRACKER_DATA_ROOT)) && !DB_PATHS.merkle.startsWith(TRACKER_DATA_ROOT)) {
+      throw new Error(`tracker state is not isolated: ${DB_PATHS.merkle}`);
+    }
     const tracker = await import('../../core/indexing/incremental-tracker.js');
     await tracker.clearState();
   });
@@ -659,17 +676,16 @@ describe('Missing vs Corrupt State Detection (E3)', () => {
   });
 
   it('should handle corrupt JSON gracefully', async () => {
-    // This tests the internal behavior - corrupt JSON should be caught
-    // and treated as "no previous state found"
+    const { DB_PATHS } = await import('../../core/infrastructure/config/index.js');
     const tracker = await import('../../core/indexing/incremental-tracker.js');
+    mkdirSync(join(DB_PATHS.merkle, '..'), { recursive: true });
+    writeFileSync(DB_PATHS.merkle, '{ not valid json');
 
-    // The validateCurrentState function exercises the loadState path
     const validation = await tracker.validateCurrentState();
 
-    // Should not throw, should return valid state info
-    expect(validation).toBeDefined();
-    expect(typeof validation.hasState).toBe('boolean');
-    expect(typeof validation.configValid).toBe('boolean');
+    // Corrupt state is treated as "no previous state", not as a crash.
+    expect(validation.hasState).toBe(false);
+    await tracker.clearState();
   });
 
   it('should detect provider config changes', async () => {

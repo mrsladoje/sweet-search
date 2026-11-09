@@ -4,15 +4,17 @@
  *
  * Real directories on disk (a temp tree), because the rule is about what exists where.
  */
-import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import Database from 'better-sqlite3';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 
 import { cwdGrepScope, cwdOffset, resolveCwdGlob, resolveCwdPath } from '../../core/search/cwd-paths.js';
 import { matchesGrepFileFilter } from '../../core/search/grep-output-shaping.js';
 import { compilePathGlobs } from '../../core/search/grep-path-globs.js';
+import { runInVirtualProcess } from '../../core/agent-tools/virtual-process.js';
+import { runAgentTool } from '../../core/agent-tools/run-agent-tool.mjs';
 
 let base;
 let root;       // the repository
@@ -163,31 +165,66 @@ describe('cwdGrepScope (ss-grep implicit scope)', () => {
   });
 });
 
-// The wrapper cannot be imported (it runs on import and needs a warm daemon), so its wiring is
-// checked in the source, as in agent-output-fixes-wiring.test.js.
-describe('ss-find → ss-grep fallback wiring (run-agent-tool.mjs)', () => {
-  const src = readFileSync(
-    path.join(path.dirname(fileURLToPath(import.meta.url)), '../../core/agent-tools/run-agent-tool.mjs'),
-    'utf8',
-  );
-  const cmdGrep = src.slice(src.indexOf('async function cmdGrep('), src.indexOf('async function cmdFind('));
-  const cmdFind = src.slice(src.indexOf('async function cmdFind('), src.indexOf('const READ_USAGE'));
+// ss-find without a late-interaction index falls back to ss-grep. Run the real wrapper with a
+// stub searcher that records what bareGrep is asked, so the behavior is checked, not the source.
+describe('ss-find → ss-grep fallback (run-agent-tool.mjs)', () => {
+  let fbase;
+  let froot;
+
+  beforeAll(() => {
+    fbase = realpathSync(mkdtempSync(path.join(tmpdir(), 'ss-find-fallback-')));
+    froot = path.join(fbase, 'repo');
+    mkdirSync(path.join(froot, '.sweet-search'), { recursive: true });
+    mkdirSync(path.join(froot, 'src'), { recursive: true });
+    writeFileSync(path.join(froot, 'src', 'a.js'), 'x\n');
+    const db = new Database(path.join(froot, '.sweet-search', 'codebase.db'));
+    try {
+      db.exec('CREATE TABLE vectors (id TEXT PRIMARY KEY, file_path TEXT, text TEXT, metadata TEXT, epoch_retired INTEGER)');
+    } finally {
+      db.close();
+    }
+  });
+
+  afterAll(() => {
+    try { rmSync(fbase, { recursive: true, force: true }); } catch { /* best effort */ }
+  });
+
+  async function run(tool, args, cwd) {
+    const calls = [];
+    const searcher = {
+      projectRoot: froot, hasLateInteractionIndex: false,
+      async bareGrep(pattern, _x, opts) { calls.push(opts); return { results: [], stats: { totalMatches: 0 } }; },
+    };
+    const env = {
+      PATH: process.env.PATH || '', HOME: process.env.HOME || '',
+      SWEET_SEARCH_PROJECT_ROOT: froot,
+      SWEET_SEARCH_SOCKET_PATH: path.join(fbase, 'no-daemon.sock'),
+      SWEET_SEARCH_RUNTIME_DIR: path.join(fbase, 'runtime'),
+    };
+    const r = await runInVirtualProcess({ env, cwd }, () => runAgentTool(tool, args, { getSearcher: () => searcher }));
+    return { code: r.code, out: r.stdout.toString('utf8'), err: r.stderr.toString('utf8'), calls };
+  }
 
   // Measured on a temp repo before the fix: from src/, ss-find with no --in fell back to
   // cmdGrep, picked up ss-grep's implicit cwd scope and printed 3 of the 6 hits.
-  it('the fallback tells cmdGrep it comes from ss-find, with its scopes and its globs', () => {
-    expect(cmdFind).toMatch(/return cmdGrep\(\[[^\]]*\.\.\.inPaths\.flatMap[^)]*\),\s*\.\.\.globs\.flatMap\(g => \['-g', g\]\)\],\s*\{ fromFind: true \}\)/);
+  it('from a subdirectory, ss-find with no --in searches the whole repository; ss-grep scopes to the cwd', async () => {
+    const find = await run('find', ['foo', '--regex', 'foo'], path.join(froot, 'src'));
+    expect(find.err).toContain('falling back to ss-grep');
+    expect(find.calls.length).toBeGreaterThan(0);
+    for (const o of find.calls) {
+      expect(o.fileFilter).toBeUndefined();
+      expect(o._cwdScope).toBeUndefined();
+    }
+    const grep = await run('grep', ['foo'], path.join(froot, 'src'));
+    expect(grep.calls.some((o) => o._cwdScope === true && o.fileFilter === path.join(froot, 'src'))).toBe(true);
   });
 
-  it('cmdGrep applies neither the implicit cwd scope nor a second cwd resolution for ss-find', () => {
-    expect(cmdGrep).toMatch(/if \(!fromFind\) resolveScopePaths\(inPaths\)/);
-    expect(cmdGrep).toMatch(/readGlobFlags\(args, GREP_USAGE, \{ resolve: !fromFind \}\)/);
-    expect(cmdGrep).toMatch(/const cwdScope = fromFind \? null\s*: cwdGrepScope\(/);
-  });
-
-  it('ss-find reports a missing --in scope the way ss-grep does (shared writer, exit 3)', () => {
-    expect(cmdFind).toMatch(/missingScopes\(inPaths\)[\s\S]{0,40}exitScopeNotFound\(missing\)/);
-    expect(cmdGrep).toMatch(/exitScopeNotFound\(missing\)/);
-    expect(src).toMatch(/function exitScopeNotFound\(missing\) \{[\s\S]*?process\.exit\(3\);/);
+  it('ss-find reports a missing --in scope the way ss-grep does (exit 3)', async () => {
+    const find = await run('find', ['foo', '--regex', 'foo', '--in', 'nope/missing.js'], froot);
+    const grep = await run('grep', ['foo', '--in', 'nope/missing.js'], froot);
+    expect(find.code).toBe(3);
+    expect(grep.code).toBe(3);
+    expect(find.out).toContain('scope not found: nope/missing.js');
+    expect(grep.out).toContain('scope not found: nope/missing.js');
   });
 });

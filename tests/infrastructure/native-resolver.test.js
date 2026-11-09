@@ -99,20 +99,20 @@ describe('native-resolver', () => {
   });
 
   describe('resolveNativeAddon', () => {
-    it('returns a string path or null', async () => {
-      const { resolveNativeAddon } = await loadResolver();
-      const result = resolveNativeAddon();
-      expect(result === null || typeof result === 'string').toBe(true);
-    });
+    it('prefers the local dev addon over the packages/ template addon', async () => {
+      const { resolveNativeAddon, getPlatformInfo } = await loadResolver();
+      const info = getPlatformInfo();
+      if (!info) return; // unsupported host: no addon name exists
 
-    it('finds the local dev addon on darwin-arm64', async () => {
-      const { resolveNativeAddon } = await loadResolver();
-      if (process.platform === 'darwin' && process.arch === 'arm64') {
-        const expected = join(ROOT, 'crates', 'sweet-search-native', 'sweet-search-native.darwin-arm64.node');
-        if (existsSync(expected)) {
-          expect(resolveNativeAddon()).toBe(expected);
-        }
-      }
+      withTempRoot((tempRoot) => {
+        const devAddon = join(tempRoot, 'crates', 'sweet-search-native',
+          `sweet-search-native.${info.platform}-${info.arch}${info.libc}.node`);
+        const packageAddon = join(tempRoot, 'packages',
+          `native-${info.platform}-${info.arch}${info.libc}`, 'sweet-search-native.node');
+        touch(devAddon);
+        touch(packageAddon);
+        expect(resolveNativeAddon({ rootDir: tempRoot })).toBe(devAddon);
+      });
     });
 
     it('returns null on unsupported platforms', async () => {
@@ -160,12 +160,6 @@ describe('native-resolver', () => {
   });
 
   describe('resolveNativeBinary', () => {
-    it('returns a string path or null', async () => {
-      const { resolveNativeBinary } = await loadResolver();
-      const result = resolveNativeBinary();
-      expect(result === null || typeof result === 'string').toBe(true);
-    });
-
     it('returns null on unsupported platforms', async () => {
       const { resolveNativeBinary } = await loadResolver();
       const origPlatform = process.platform;
@@ -242,23 +236,6 @@ describe('native-resolver', () => {
     });
   });
 
-  describe('resolution order', () => {
-    // CI-skipped: release jobs stage package-template binaries under
-    // packages/native-* without also creating a local dev build in
-    // crates/sweet-search-native, so this local-developer preference test is
-    // intentionally host-state-dependent.
-    it.skipIf(process.env.CI === 'true')('prefers local dev path over packages/ path for addon', async () => {
-      const { resolveNativeAddon } = await loadResolver();
-      if (process.platform === 'darwin' && process.arch === 'arm64') {
-        const result = resolveNativeAddon();
-        if (result !== null) {
-          // Should resolve to crates/sweet-search-native/ (local dev), not packages/
-          expect(result).toContain('sweet-search-native');
-          expect(result).not.toContain('packages');
-        }
-      }
-    });
-  });
 
   describe('CUDA package preference (Linux)', () => {
     // Simulate a Linux host by overriding process.platform / process.arch

@@ -72,10 +72,6 @@ describe('TypeScript extension mapping', () => {
 // =============================================================================
 
 describe('TypeScript registry config', () => {
-  it('typescript config exists in LANGUAGES', () => {
-    expect(tsConfig).toBeDefined();
-  });
-
   it('is brace-based (not indent)', () => {
     expect(tsConfig.indentBased).toBe(false);
   });

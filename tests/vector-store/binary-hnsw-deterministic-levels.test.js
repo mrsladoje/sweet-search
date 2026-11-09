@@ -86,12 +86,18 @@ describe('BinaryHNSWIndex.levelForId — purity', () => {
 
   it('always returns a level in [0, 10]', () => {
     const idx = mkIndex(64);
+    let min = Infinity;
+    let max = -Infinity;
+    let allInts = true;
     for (let i = 0; i < 20000; i += 1) {
       const lvl = idx.levelForId(`id-${i}`);
-      expect(lvl).toBeGreaterThanOrEqual(0);
-      expect(lvl).toBeLessThanOrEqual(10);
-      expect(Number.isInteger(lvl)).toBe(true);
+      if (lvl < min) min = lvl;
+      if (lvl > max) max = lvl;
+      if (!Number.isInteger(lvl)) allInts = false;
     }
+    expect(min).toBeGreaterThanOrEqual(0);
+    expect(max).toBeLessThanOrEqual(10);
+    expect(allInts).toBe(true);
   });
 });
 

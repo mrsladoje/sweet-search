@@ -1,5 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import Database from 'better-sqlite3';
+import { mkdtempSync, rmSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import {
   applyReadPragmas,
   SAFE_IN_CLAUSE_BATCH,
@@ -10,54 +13,36 @@ import {
 
 describe('db-utils', () => {
   describe('applyReadPragmas', () => {
-    it('should apply mmap_size and cache_size pragmas to a database handle', () => {
-      // Arrange
-      const db = { pragma: vi.fn() };
-
-      // Act
-      applyReadPragmas(db);
-
-      // Assert
-      expect(db.pragma).toHaveBeenCalledTimes(2);
-      expect(db.pragma).toHaveBeenCalledWith('mmap_size = 268435456');
-      expect(db.pragma).toHaveBeenCalledWith('cache_size = -20000');
+    // Behavior: the settings take effect on a real SQLite handle (read back with
+    // the same pragma), instead of asserting which pragma strings a mock received.
+    it('should set cache_size and mmap_size on a real database handle', () => {
+      const dir = mkdtempSync(join(tmpdir(), 'db-utils-pragma-'));
+      const db = new Database(join(dir, 'x.db'));
+      try {
+        applyReadPragmas(db);
+        expect(db.pragma('cache_size', { simple: true })).toBe(-20000);
+        expect(db.pragma('mmap_size', { simple: true })).toBe(268435456);
+      } finally {
+        db.close();
+        rmSync(dir, { recursive: true, force: true });
+      }
     });
 
-    it('should apply temp_store MEMORY pragma when tempStoreMemory option is true', () => {
-      // Arrange
-      const db = { pragma: vi.fn() };
-
-      // Act
-      applyReadPragmas(db, { tempStoreMemory: true });
-
-      // Assert
-      expect(db.pragma).toHaveBeenCalledTimes(3);
-      expect(db.pragma).toHaveBeenCalledWith('mmap_size = 268435456');
-      expect(db.pragma).toHaveBeenCalledWith('cache_size = -20000');
-      expect(db.pragma).toHaveBeenCalledWith('temp_store = MEMORY');
-    });
-
-    it('should NOT apply temp_store pragma when tempStoreMemory option is false', () => {
-      // Arrange
-      const db = { pragma: vi.fn() };
-
-      // Act
-      applyReadPragmas(db, { tempStoreMemory: false });
-
-      // Assert
-      expect(db.pragma).toHaveBeenCalledTimes(2);
-      expect(db.pragma).not.toHaveBeenCalledWith('temp_store = MEMORY');
-    });
-
-    it('should NOT apply temp_store pragma when options are omitted entirely', () => {
-      // Arrange
-      const db = { pragma: vi.fn() };
-
-      // Act
-      applyReadPragmas(db);
-
-      // Assert
-      expect(db.pragma).not.toHaveBeenCalledWith('temp_store = MEMORY');
+    it('should switch temp_store to MEMORY only when tempStoreMemory is true', () => {
+      const TEMP_STORE_MEMORY = 2;
+      const withOpt = new Database(':memory:');
+      const falseOpt = new Database(':memory:');
+      const omitted = new Database(':memory:');
+      try {
+        applyReadPragmas(withOpt, { tempStoreMemory: true });
+        applyReadPragmas(falseOpt, { tempStoreMemory: false });
+        applyReadPragmas(omitted);
+        expect(withOpt.pragma('temp_store', { simple: true })).toBe(TEMP_STORE_MEMORY);
+        expect(falseOpt.pragma('temp_store', { simple: true })).not.toBe(TEMP_STORE_MEMORY);
+        expect(omitted.pragma('temp_store', { simple: true })).not.toBe(TEMP_STORE_MEMORY);
+      } finally {
+        withOpt.close(); falseOpt.close(); omitted.close();
+      }
     });
 
     describe('error resilience', () => {

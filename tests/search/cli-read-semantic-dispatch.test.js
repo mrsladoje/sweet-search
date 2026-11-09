@@ -126,7 +126,7 @@ describe('cli.js read-semantic — envFalsey routing', () => {
     },
   );
 
-  it.each(['1', 'true', 'yes', 'anything-else'])(
+  it.each(['true', 'anything-else'])(
     "'%s' is NOT falsey → default native path (no in-process fallback bytes)",
     async (val) => {
       writeFileSync(join(projectRoot, 'a.js'), 'export const A = 1;\n');

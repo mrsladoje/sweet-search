@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 
 const ROOT = join(import.meta.dirname, '../..');
@@ -26,14 +27,15 @@ describe('Brand presence verification', () => {
     expect(notice).toContain('mrsladoje/sweet-search');
   });
 
-  it('MCP server name is sweet-search', () => {
-    // mcp/server.js prepares the project root, then loads the server itself (server-main.js).
-    const server = readFileSync(join(ROOT, 'mcp', 'server-main.js'), 'utf8');
-    expect(server).toContain("name: 'sweet-search'");
-  });
+  // The MCP server name is checked on the wire in mcp-server.test.js (serverInfo.name).
 
   it('data directory default is .sweet-search', () => {
-    const config = readFileSync(join(ROOT, 'core', 'config.js'), 'utf8');
-    expect(config).toContain("'.sweet-search'");
+    const env = { ...process.env };
+    delete env.SWEET_SEARCH_DATA_DIR;
+    const r = spawnSync(process.execPath, ['--input-type=module', '-e',
+      "import { DB_PATHS } from './core/config.js'; import path from 'node:path'; console.log(path.basename(path.dirname(DB_PATHS.codebase)));"],
+    { cwd: ROOT, env, encoding: 'utf8', timeout: 30000 });
+    expect(r.status, r.stderr).toBe(0);
+    expect(r.stdout.trim()).toBe('.sweet-search');
   });
 });

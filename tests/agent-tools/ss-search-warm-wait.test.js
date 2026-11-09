@@ -66,7 +66,7 @@ async function ssSearch(socketPath) {
 
 describe('ss-search and a daemon that is still loading', () => {
   it('waits past a "starting" daemon instead of refusing', async () => {
-    const socketPath = await fakeDaemon({ loadMs: 2500, silentWhileLoading: false });
+    const socketPath = await fakeDaemon({ loadMs: 1000, silentWhileLoading: false });
     const result = await ssSearch(socketPath);
     expect(result.stderr.toString()).not.toContain('warm server is not ready');
     expect(result.code, result.stderr.toString() + result.stdout.toString()).toBe(0);
@@ -74,7 +74,7 @@ describe('ss-search and a daemon that is still loading', () => {
   }, 20_000);
 
   it('does not spawn a second daemon while the first one is too busy to answer /health', async () => {
-    const socketPath = await fakeDaemon({ loadMs: 3500, silentWhileLoading: true });
+    const socketPath = await fakeDaemon({ loadMs: 1500, silentWhileLoading: true });
     const result = await ssSearch(socketPath);
     expect(result.stderr.toString()).not.toContain('warm server is not ready');
     expect(result.code, result.stderr.toString() + result.stdout.toString()).toBe(0);
@@ -109,7 +109,7 @@ describe('ss-search and a daemon that is still loading', () => {
   it('counts the budget from the start of the agent command', async () => {
     const socketPath = await fakeDaemon({ loadMs: 10 ** 9, silentWhileLoading: false });
     const env = { ...process.env, SWEET_SEARCH_SOCKET_PATH: socketPath, SWEET_SEARCH_PROJECT_ROOT: root,
-      SWEET_SEARCH_CALL_STARTED_MS: String(Date.now() - 89_000) };
+      SWEET_SEARCH_CALL_STARTED_MS: String(Date.now() - 89_700) };
     const result = await runInVirtualProcess({ env, cwd: root, pid: process.pid },
       () => runAgentTool('agent-search', ['settings panel']));
     expect(result.code).toBe(1);

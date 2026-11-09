@@ -112,13 +112,4 @@ describe('parseArgs (index-codebase-v21)', () => {
     const result = parseArgs([]);
     expect(result.lateInteractionExtendedSkiplist).toBe(false);
   });
-
-  it('uses process.argv when no argument is passed', () => {
-    // parseArgs(undefined) reads process.argv.slice(2)
-    // We can't easily control process.argv in a test, but we can verify
-    // it doesn't throw when called without arguments
-    const result = parseArgs();
-    expect(result).toBeDefined();
-    expect(typeof result.noLateInteraction).toBe('boolean');
-  });
 });

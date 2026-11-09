@@ -198,20 +198,3 @@ describe('warmup repo-isolation decision', () => {
     expect(d.ok).toBe(true);
   });
 });
-
-// ────────────────────────────────────────────────────────────────────────────
-// Layer 1: /health includes projectRoot fields
-// ────────────────────────────────────────────────────────────────────────────
-//
-// Importing search-server.js to assert the symbol contract — we're not
-// starting a real server here; a smoke run does that.
-
-describe('search-server module exports for repo isolation', () => {
-  it('exposes ensureDaemonForProjectRoot, getServerHealth, stopServer, waitForServerExit', async () => {
-    const mod = await import('../../core/search/search-server.js');
-    expect(typeof mod.ensureDaemonForProjectRoot).toBe('function');
-    expect(typeof mod.getServerHealth).toBe('function');
-    expect(typeof mod.stopServer).toBe('function');
-    expect(typeof mod.waitForServerExit).toBe('function');
-  });
-});

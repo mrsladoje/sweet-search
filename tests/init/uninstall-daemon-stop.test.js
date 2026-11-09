@@ -150,22 +150,6 @@ describe('stopRunningDaemon', () => {
       b.kill();
     }
   });
-
-  it('safe when projectRoot is omitted (SIGKILL fallback still runs)', () => {
-    // Without projectRoot, the graceful CLI attempt still runs against
-    // PACKAGE_ROOT's cli.js, but with no daemon listening on our sandbox
-    // socket it exits non-zero (caught). The SIGKILL fallback handles the
-    // dead PID and cleans the pid file either way — that's the invariant.
-    writeFileSync(pidFile, '2147483600', 'utf-8');
-
-    const result = stopRunningDaemon({ pidFile, socketPath });
-
-    // Whether the graceful CLI path is attempted depends on host daemon
-    // state and socket timing. The invariant for this unit test is that the
-    // PID-file fallback remains safe and cleans up without projectRoot.
-    expect(typeof result.gracefulAttempted).toBe('boolean');
-    expect(result.pidFileRemoved).toBe(true);
-  });
 });
 
 // -------------------------------------------------------------------------

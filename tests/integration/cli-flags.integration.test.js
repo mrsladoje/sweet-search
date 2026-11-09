@@ -283,30 +283,6 @@ describe('--files-from-stdin with --quiet (daemon mode)', () => {
 });
 
 // =============================================================================
-// Actual Targeted Indexing Test (SLOW - requires real indexing)
-// =============================================================================
-
-describe('Targeted Indexing (end-to-end)', () => {
-  // Skip by default since this requires real indexing infrastructure
-  // Enable with: npm test -- --grep="Targeted Indexing"
-
-  it.skip('should only re-embed specified files (requires full setup)', async () => {
-    const input = 'CLAUDE.md\n';
-
-    const result = await runIndexer(['--files-from-stdin', '--quiet'], input, {
-      timeout: 120000, // 2 minutes for real indexing
-    });
-
-    expect(result.exitCode).toBe(0);
-
-    const output = parseQuietOutput(result.stdout);
-    expect(output).not.toBeNull();
-    expect(output.success).toBe(true);
-    expect(output.mode).toBe('targeted');
-  });
-});
-
-// =============================================================================
 // Error Handling Tests
 // =============================================================================
 

@@ -75,7 +75,7 @@ describe('indexer resource planning', () => {
     expect(plan.lateInteractionTokenBudget).toBeGreaterThan(0);
   });
 
-  it.skipIf(!HOST_HAS_BIG_BUDGET)('configures larger arm64 machines with the same sequential model + bigger budget', () => {
+  it.skipIf(!HOST_HAS_BIG_BUDGET)('(needs a host with >= 8 logical cores) configures larger arm64 machines with the same sequential model + bigger budget', () => {
     const resources = detectResources({
       arch: 'arm64',
       logicalCores: 16,

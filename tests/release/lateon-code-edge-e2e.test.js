@@ -235,13 +235,6 @@ describe('B. ORT CPU edge encode', () => {
     60_000,
   );
 
-  it.skipIf(HAS_EDGE_ORT)(
-    'skipped: edge ORT model.onnx not in local cache (run init or sweet-search init first)',
-    () => {
-      // Visible skip with reproduction hint. Don't auto-download — a
-      // 68 MB download mid-test would surprise CI.
-    },
-  );
 });
 
 // ---------------------------------------------------------------------------
@@ -297,23 +290,6 @@ describe('C. native candle edge encode (M3+ / Linux+CUDA)', () => {
     120_000,
   );
 
-  it.skipIf(NATIVE_AVAILABLE)(
-    'skipped: native inference not available on this host (no Metal/CUDA)',
-    () => {
-      // Manual gate command for a CUDA host:
-      //   SWEET_SEARCH_LATE_INTERACTION_MODEL=lateon-code-edge \
-      //     node scripts/parity-cuda.js
-      //
-      // See section I below for the full CUDA release gate.
-    },
-  );
-  it.skipIf(HAS_EDGE_FP32 || !NATIVE_AVAILABLE)(
-    'skipped: edge FP32 backbone not in cache',
-    () => {
-      // Run `sweet-search init --li-model edge` (once that flag exists)
-      // OR manually: huggingface_hub download lightonai/LateOn-Code-edge
-    },
-  );
 });
 
 // ---------------------------------------------------------------------------
@@ -597,13 +573,6 @@ describe('D-G. edge LI indexing + search + read-semantic + ColGrep (one shared c
     },
   );
 
-  it.skipIf(RUN_INDEXER)(
-    `skipped: ${RUN_INDEXER_SKIP_REASON || 'indexer prerequisites not met'} — `
-    + 'run sweet-search init to fetch FP32 backbones',
-    () => {
-      // Nothing to assert; the message above documents the skip reason.
-    },
-  );
 });
 
 // ---------------------------------------------------------------------------
@@ -682,18 +651,6 @@ describe('H. CoreML cascade dispatch for edge', () => {
     },
   );
 
-  it.skipIf(cascadeEligible)(
-    'skipped: CoreML cascade not eligible on this host (need M3+ Apple Silicon)',
-    () => {
-      // Run on M3+ Mac to exercise. No way to fake — Apple's Neural
-      // Engine isn't available off platform.
-    },
-  );
-  it.skipIf(edgeCascadePresent || !cascadeEligible)(
-    'skipped: edge cascade artifacts not built locally — '
-    + 'run `node scripts/build-coreml-cascade.js --li-edge-only` to enable',
-    () => { /* skip with hint */ },
-  );
 });
 
 // ---------------------------------------------------------------------------
@@ -708,10 +665,6 @@ describe('I. CUDA release gate', () => {
   it('manual gate command is documented + pointing at existing parity-cuda.js', () => {
     const parityScript = join(PROJECT_ROOT, 'scripts', 'parity-cuda.js');
     expect(existsSync(parityScript)).toBe(true);
-    // Sanity: the script reads LATE_INTERACTION_CONFIG.model so it
-    // works for both standard and edge variants out of the box.
-    const src = readFileSync(parityScript, 'utf-8');
-    expect(src).toMatch(/loadNativeLiModelWithDevice/);
 
     // Manual command (DO NOT execute here — no CUDA on this host):
     //   SWEET_SEARCH_LATE_INTERACTION_MODEL=lateon-code-edge \

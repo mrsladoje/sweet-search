@@ -35,13 +35,9 @@ const builtBinary = candidates
   .find((p) => existsSync(p));
 
 describe.skipIf(!builtBinary)('bg-priority native addon (when built)', () => {
-  it('loads and exports setBackgroundMode', () => {
+  it('loads, exports setBackgroundMode, and setBackgroundMode(true)/(false) return a boolean and never throw', () => {
     const mod = require(builtBinary);
     expect(typeof mod.setBackgroundMode).toBe('function');
-  });
-
-  it('setBackgroundMode(true)/(false) return a boolean and never throw', () => {
-    const mod = require(builtBinary);
     let onResult;
     let offResult;
     expect(() => {

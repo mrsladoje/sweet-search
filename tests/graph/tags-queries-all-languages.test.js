@@ -82,7 +82,7 @@ describe('Phase 1: Query syntax validation', () => {
 
     it(`${lang} query parses without error against its grammar`, async () => {
       const language = await provider.loadLanguage(lang);
-      if (!language) return; // grammar not available
+      expect(language, `${lang} grammar must load`).toBeTruthy();
       let query;
       try {
         query = await provider._createQuery(language, TAGS_QUERIES[lang]);

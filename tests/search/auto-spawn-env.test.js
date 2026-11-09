@@ -26,8 +26,18 @@ describe('autoSpawnServer', () => {
     const savedRoot = process.env.SWEET_SEARCH_PROJECT_ROOT;
     process.env.SWEET_SEARCH_PROJECT_ROOT = projectRoot;
     try {
-      await autoSpawnServer({ quiet: true });
+      // autoSpawnServer polls for readiness with setTimeout for up to 5 s: a fake clock skips
+      // the wait; real I/O (the failed socket connects) still runs between the clock steps.
+      vi.useFakeTimers({ toFake: ['setTimeout'] });
+      let settled = false;
+      const run = autoSpawnServer({ quiet: true }).finally(() => { settled = true; });
+      while (!settled) {
+        await vi.advanceTimersByTimeAsync(100);
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+      await run;
     } finally {
+      vi.useRealTimers();
       delete process.env.SWEET_SEARCH_CALL_STARTED_MS;
       delete process.env.SWEET_SEARCH_SOCKET_PATH;
       if (savedRoot === undefined) delete process.env.SWEET_SEARCH_PROJECT_ROOT;
