@@ -27,15 +27,12 @@ import { DB_PATHS, HCGS_CONFIG } from '../infrastructure/config/index.js';
 import { floatToBinary } from '../infrastructure/quantization.js';
 import {
   generateSummary,
-  createSummaryPrompt,
-  generateWithRetry,
   generateStaticSummary,
   getSummaryProvider,
 } from '../infrastructure/llm-provider.js';
 import {
   getEntitiesNeedingSummary,
   storeSummariesBatch,
-  getChildSummaries as getChildSummariesFromDb,
   getSummaryStats,
 } from './summary-manager.js';
 

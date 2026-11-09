@@ -1062,7 +1062,7 @@ export class LateInteractionIndex {
 
     for (let i = 0; i < numDocs; i++) {
       if (skip && skip(i)) { docs.push(null); continue; }
-      const { tokenDataOffset, numTokens, min, scale, isPerToken, hasPreNorms } = docEntries[i];
+      const { tokenDataOffset, numTokens, isPerToken, hasPreNorms } = docEntries[i];
       const absOffset = slabStart + tokenDataOffset;
       // 4-bit: ceil(tokenDim/2) bytes per token; 8-bit: tokenDim; float32: tokenDim*4
       const tokenPayload = payloadOf(numTokens);
@@ -2138,7 +2138,6 @@ export class LateInteractionIndex {
     this._docSegmentPositions.clear();
     this._staleBitmapCache.clear();
 
-    const isSSLX = manifest.format === 'sslx-v3';
     const visitedSegments = this.positionsOnly && this._positionsCache ? new Set() : null;
 
     for (const seg of manifest.segments) {

@@ -16,7 +16,6 @@ import {
 import { detectHardwareCapability } from '../../infrastructure/hardware-capability.js';
 import {
   DEAD_LETTER_FILENAME,
-  QUEUE_FILENAME,
   enqueueMaintenanceJob,
   readMaintenanceQueue,
 } from './maintenance-worker.mjs';

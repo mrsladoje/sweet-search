@@ -371,3 +371,15 @@ Each fix lists the main problems it solves. The per-area files hold the rest.
 8. `autoSpawnServer`: the fixed 5 s readiness wait and `SPAWN_CLAIM_TTL_MS`.
 - Product observation: `TimeWindowRateLimiter.acquire` (`core/embedding/embedding-remote.js`) polls every 1 ms while a
   rate window is full.
+
+## Done: unused code
+
+- `export` removed from 150 names that no file in the repository mentions (tests and research included).
+- 125 unused identifiers removed from 58 product files: about 66 import names, 17 functions, 9 module constants,
+  36 locals (list in `docs/untangle/reports/unused.md`). Calls with an effect were kept; only the unused binding went.
+- `eslint.config.mjs` now has `no-unused-vars` as an error for product files, so the state holds.
+
+## Recheck (step 5): findings in `docs/untangle/findings/recheck-*.md`
+
+Four fresh read-only agents read the code again with this log and the constraints. 48 items remain (14 indexing,
+9 tools and search, 11 graph and infrastructure, 14 ranking and installers), most of them small copies.

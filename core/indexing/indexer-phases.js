@@ -3,9 +3,9 @@ import { existsSync } from 'fs';
 import path from 'path';
 
 import { DB_PATHS, PROJECT_ROOT, EMBEDDING_CONFIG, HCGS_CONFIG } from '../infrastructure/config/index.js';
-import { getChangedFiles, updateState, getStats as getIncrementalStats, updatePhaseProgress, markPhaseComplete, clearPhaseProgress } from './incremental-tracker.js';
+import { getChangedFiles, updateState, updatePhaseProgress, markPhaseComplete, clearPhaseProgress } from './incremental-tracker.js';
 import { backupSummaries, restoreSummaries, markForRegeneration } from '../graph/summary-manager.js';
-import { colors, log, logProgress, logError, discoverFiles, readFilesFromStdin, atomicSwapDatabase, shouldStreamVectors } from './indexer-utils.js';
+import { colors, log, discoverFiles, readFilesFromStdin, atomicSwapDatabase, shouldStreamVectors } from './indexer-utils.js';
 import { buildCodeGraph, buildVectorIndex, chunkFiles } from './indexer-build.js';
 import { runDedupPhase, formatDedupSummary } from './dedup/dedup-phase.js';
 import { DEDUP_CONFIG } from '../infrastructure/config/index.js';
@@ -216,7 +216,7 @@ export async function discoverFilesPhase(options = {}) {
 }
 
 export async function determineFilesToIndexPhase(options = {}) {
-  const { allFiles, stdinFiles, filesFromStdin, fullReindex, dryRun, quiet } = options;
+  const { allFiles, stdinFiles, filesFromStdin, fullReindex, dryRun } = options;
 
   let filesToIndex = allFiles;
   let incrementalInfo = null;

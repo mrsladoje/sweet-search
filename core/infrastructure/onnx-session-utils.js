@@ -65,7 +65,7 @@ export function getOptimizedGraphPath(modelId, suffix) {
  * Cached after first call.
  */
 let _cachedPCores = undefined;
-export function detectPerformanceCores() {
+function detectPerformanceCores() {
   if (_cachedPCores !== undefined) return _cachedPCores;
   _cachedPCores = null;
   if (process.platform !== 'darwin' || process.arch !== 'arm64') return _cachedPCores;

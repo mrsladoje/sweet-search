@@ -49,7 +49,7 @@ export function sharedQueryEncoderEnabled(env = process.env, platform = process.
 }
 
 /** The late-interaction model this checkout's queries use ('none' when off). */
-export function resolvedLiModel(projectRoot, env = process.env) {
+function resolvedLiModel(projectRoot, env = process.env) {
   let persisted = null;
   try { persisted = readPersistedLiPolicy(projectRoot).liModel ?? null; } catch { persisted = null; }
   const m = resolveRuntimeLiModel(persisted, env, 'lateon-code');

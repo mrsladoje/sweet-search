@@ -23,8 +23,8 @@
 import fs from 'fs';
 import { crc32 } from 'zlib';
 
-export const DELTA_MAGIC = Buffer.from('SSHNSWD1', 'ascii');
-export const DELTA_HEADER = 32;
+const DELTA_MAGIC = Buffer.from('SSHNSWD1', 'ascii');
+const DELTA_HEADER = 32;
 
 export function deltaPathFor(indexPath) {
   return `${indexPath}.delta`;
@@ -65,7 +65,7 @@ export function encodeDeltaRecord(rec) {
  * boundary) from byte `from`, up to the first incomplete or corrupt one.
  * Returns { records, end } (end: offset after the last good record).
  */
-export function parseDeltaRecords(buf, from, dimension) {
+function parseDeltaRecords(buf, from, dimension) {
   const records = [];
   let at = from;
   while (at + 8 <= buf.length) {

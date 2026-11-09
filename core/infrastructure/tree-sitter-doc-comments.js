@@ -96,7 +96,7 @@ function countNamedChildrenOfType(parent, type) {
  * The node whose leading comments document `node`: climbs through
  * single-declaration wrappers (see the two sets above).
  */
-export function docAnchorNode(node) {
+function docAnchorNode(node) {
   let cur = node;
   for (let depth = 0; depth < MAX_ANCHOR_CLIMB; depth++) {
     const parent = cur.parent;
@@ -141,7 +141,7 @@ function isFileHeader(node, content) {
 }
 
 /** Comment nodes directly above `anchor`, top to bottom. */
-export function leadingCommentNodes(anchor, content, languageId) {
+function leadingCommentNodes(anchor, content, languageId) {
   let boundaryRow = anchor.startPosition.row;
   // A first member can sit in a body node that starts exactly where it does
   // (tree-sitter-ruby `body_statement`); the member's comment is then the
@@ -203,7 +203,7 @@ function stripPythonString(raw) {
 }
 
 /** Python docstring of a function / class definition (or its decorated wrapper). */
-export function pythonDocstring(node, content) {
+function pythonDocstring(node, content) {
   let def = node;
   if (def.type === 'decorated_definition') {
     def = def.childForFieldName?.('definition') || def.namedChild(def.namedChildCount - 1);

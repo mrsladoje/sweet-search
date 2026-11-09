@@ -28,12 +28,12 @@ import { detectFileKind } from '../ranking/file-kind-ranking.js';
 import { isAgentFormat } from '../infrastructure/agent-format.js';
 import { hasAblation } from './ablations.js';
 
-export const DEFAULT_BODY_LEXICAL_MODE = 'pin';
+const DEFAULT_BODY_LEXICAL_MODE = 'pin';
 export const PIN_MIN_WORDS = 3;
 export const PIN_MAX = 3;
-export const PIN_MIN_COVERAGE = 0.8;
-export const PIN_CANDIDATES = 30;
-export const POOL_N = 10;
+const PIN_MIN_COVERAGE = 0.8;
+const PIN_CANDIDATES = 30;
+const POOL_N = 10;
 export const RRF_K = 60;
 
 function envInt(env, name, fallback, min, max) {
@@ -95,8 +95,8 @@ export function textWords(text) {
  * MAX_QUERY_GAP skipped query words (a runtime value pasted into the query).
  * Returns the number of query words matched.
  */
-export const MAX_DOC_GAP = 3;
-export const MAX_QUERY_GAP = 2;
+const MAX_DOC_GAP = 3;
+const MAX_QUERY_GAP = 2;
 export function alignedQueryWords(queryWords, docWords) {
   const n = queryWords.length;
   const m = docWords.length;

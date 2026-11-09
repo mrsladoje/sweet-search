@@ -25,7 +25,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 
-export const FILE_STATE_DB = 'file-state.db';
+const FILE_STATE_DB = 'file-state.db';
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS files (
@@ -65,10 +65,6 @@ function grepEntry(row) {
 
 export function fileStatePath(stateDir) {
   return path.join(stateDir, FILE_STATE_DB);
-}
-
-export function fileStateExists(stateDir) {
-  return fs.existsSync(fileStatePath(stateDir));
 }
 
 /**

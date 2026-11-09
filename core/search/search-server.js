@@ -8,7 +8,7 @@
  */
 
 import fs from 'fs/promises';
-import { existsSync, statSync } from 'fs';
+import { statSync } from 'fs';
 import path from 'node:path';
 import { DB_PATHS, LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
 import { clearCache } from '../embedding/embedding-cache.js';
@@ -61,8 +61,8 @@ const REQUEST_URL_PARSE_BASE = 'http://localhost:9876';
 // client's 600 s IO timeout).
 export const SEARCH_SERVER_TIMEOUT_MS = 30_000;
 // A backstop for a hung daemon, not a budget; matches the native client's IO timeout.
-export const QUERY_CLIENT_TIMEOUT_MS = 600_000;
-export const SEARCH_SERVER_MAX_URL_LENGTH = 16_384;
+const QUERY_CLIENT_TIMEOUT_MS = 600_000;
+const SEARCH_SERVER_MAX_URL_LENGTH = 16_384;
 export const SEARCH_SERVER_MAX_QUERY_LENGTH = 2_000;
 export const SEARCH_SERVER_MAX_READ_PATH_LENGTH = 8_192;
 const AGENT_SPAN_BODY_MAX_BYTES = 64 * 1024;
@@ -77,7 +77,7 @@ export function resolveAgentSearchRequest(rawFormat, agentRequested = false) {
 }
 
 /** A /search call in grep mode: it needs only the grep part of the init (no models). */
-export function grepModeRequest(reqUrl) {
+function grepModeRequest(reqUrl) {
   try { return new URL(reqUrl, 'http://localhost').searchParams.get('mode') === 'grep'; }
   catch { return false; }
 }
@@ -194,7 +194,7 @@ export function buildAgentSpanDaemonResponse(payload, {
   };
 }
 
-export async function readBoundedJsonBody(req, maxBytes = AGENT_SPAN_BODY_MAX_BYTES) {
+async function readBoundedJsonBody(req, maxBytes = AGENT_SPAN_BODY_MAX_BYTES) {
   const declared = Number(req.headers?.['content-length'] || 0);
   if (Number.isFinite(declared) && declared > maxBytes) {
     const err = new Error('Request body too large');
@@ -1952,7 +1952,7 @@ export async function sendStopToSocket(socketPath, { timeoutMs = 5000 } = {}) {
  * uses getServerHealth(), not isServerRunning(), because a failed/starting
  * daemon still owns the socket and must not be mistaken for "gone".
  */
-export async function waitForServerExit({ timeoutMs = 8000, intervalMs = 200 } = {}) {
+async function waitForServerExit({ timeoutMs = 8000, intervalMs = 200 } = {}) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (!(await getServerHealth({ timeoutMs: Math.max(1000, intervalMs) }))) return true;

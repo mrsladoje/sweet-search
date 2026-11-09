@@ -14,8 +14,6 @@
  * Disable via `ablations: new Set(['no-anchor-injection'])`.
  */
 
-import { extractNameHints } from '../ranking/file-kind-ranking.js';
-
 /**
  * Extract IDENTIFIER-shaped anchor names from a query.
  *

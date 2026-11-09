@@ -8,7 +8,7 @@
 import { openSync, readSync, closeSync } from 'fs';
 
 export const INDEX_MAGIC = Buffer.from('SSHNSW3\0', 'ascii');
-export const SECTION_ALIGN = 64;
+const SECTION_ALIGN = 64;
 
 export const alignUp = (x) => Math.ceil(x / SECTION_ALIGN) * SECTION_ALIGN;
 

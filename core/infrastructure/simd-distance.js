@@ -529,7 +529,7 @@ export function nativeMaxSimBatch(queryFlat, numQ, dim, candidates) {
  * @param {Array<{tokens: Buffer, numTokens: number, dim: number, minArray: Float32Array, scaleArray: Float32Array, tokenNorms: Float32Array}>} candidates
  * @returns {number[]|null}
  */
-export function nativeMaxSimBatchPerToken(queryFlat, numQ, dim, candidates) {
+function nativeMaxSimBatchPerToken(queryFlat, numQ, dim, candidates) {
   if (!nativeMaxsim?.maxsimScoreBatchPertoken) return null;
   return nativeMaxsim.maxsimScoreBatchPertoken(queryFlat, numQ, dim, candidates);
 }
@@ -542,7 +542,7 @@ export function nativeMaxSimBatchPerToken(queryFlat, numQ, dim, candidates) {
  * @param {Array<{tokens: Buffer, numTokens: number, dim: number, minArray: Float32Array, scaleArray: Float32Array, tokenNorms: Float32Array}>} candidates
  * @returns {number[]|null}
  */
-export function nativeMaxSimBatch4Bit(queryFlat, numQ, dim, candidates) {
+function nativeMaxSimBatch4Bit(queryFlat, numQ, dim, candidates) {
   if (!nativeMaxsim?.maxsimScoreBatch4Bit) return null;
   return nativeMaxsim.maxsimScoreBatch4Bit(queryFlat, numQ, dim, candidates);
 }

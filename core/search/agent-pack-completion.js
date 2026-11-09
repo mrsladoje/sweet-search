@@ -876,7 +876,7 @@ export function annotateEntrySymbols(results, codeGraphRepo) {
 // is never marked: two methods of one class are two answers (sequel TimedQueue hold/acquire).
 
 /** Longest member, in lines, that still counts as a bare declaration (a wrapped signature). */
-export const DECLARATION_MAX_LINES = 4;
+const DECLARATION_MAX_LINES = 4;
 const TYPE_KINDS = new Set(['class', 'interface', 'trait', 'struct', 'enum', 'impl', 'protocol', 'object', 'record', 'module', 'namespace', 'actor', 'extension']);
 
 /**

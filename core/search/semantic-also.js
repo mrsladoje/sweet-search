@@ -16,7 +16,7 @@
 import { kindNameList } from './kind-words.js';
 
 export const ALSO_MAX = 5;
-export const HEADER_SYMBOL_CAP = 4;
+const HEADER_SYMBOL_CAP = 4;
 /** Names per `# also:` place; the hidden code is where a name is worth its tokens. */
 export const ALSO_NAME_CAP = 5;
 
@@ -101,7 +101,7 @@ function unprintedStretch(a, b, printed, line) {
  * @param {Array<object>} spans - printed spans (truncation metadata included)
  * @returns {Array<object>} the chunk with startLine/endLine set to the unprinted part
  */
-export function alsoPieces(pool, spans) {
+function alsoPieces(pool, spans) {
   const printed = printedRanges(spans);
   const out = [];
   for (const c of pool || []) {
@@ -321,7 +321,7 @@ export function buildAlsoCandidates(pool, printedSpans, { file, graph = null, ma
 }
 
 /**
- * What one output has printed so far, for shortNames: `names` printed on their own, and the
+ * What one output has printed so far, for shortNamePairs: `names` printed on their own, and the
  * `parents` of the qualified names printed.
  */
 export function nameContext(names = [], kinds = {}) {
@@ -340,12 +340,8 @@ export function nameContext(names = [], kinds = {}) {
  *
  * @param {string[]} names
  * @param {{names: Set<string>, parents: Set<string>}} ctx - from nameContext() (updated)
+ * @returns {{name: string, full: string, type: string}[]} each printed name with its full name and index kind
  */
-function shortNames(names, ctx) {
-  return shortNamePairs(names, ctx).map((p) => p.name);
-}
-
-/** shortNames with each printed name's full name and index kind: `{name, full, type}`. */
 function shortNamePairs(names, ctx) {
   const out = [];
   const shorts = [];

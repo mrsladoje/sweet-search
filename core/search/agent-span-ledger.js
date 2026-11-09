@@ -13,14 +13,14 @@ import { CHAIN_PID_ENV, harnessKey, readProcInfo } from '../agent-tools/chain.js
 import { currentCall } from '../infrastructure/call-context.js';
 import { isOffValue, isOnValue } from '../infrastructure/env-flag.js';
 
-export const SHOWN_SPAN_TRAILER_ENV = 'SWEET_SEARCH_SHOWN_SPAN_TRAILER';
-export const EXACT_REREAD_OMISSION_ENV = 'SWEET_SEARCH_EXACT_REREAD_OMISSION';
-export const RECEIPT_TTL_CALLS = 30;
-export const OMISSION_WINDOW_CALLS = RECEIPT_TTL_CALLS;
-export const RECEIPTS_PER_SESSION = 64;
-export const MAX_LEDGER_SESSIONS = 32;
-export const QUERY_ANCHORS_PER_SESSION = 128;
-export const QUERY_SUBTOKENS_PER_SESSION = 64;
+const SHOWN_SPAN_TRAILER_ENV = 'SWEET_SEARCH_SHOWN_SPAN_TRAILER';
+const EXACT_REREAD_OMISSION_ENV = 'SWEET_SEARCH_EXACT_REREAD_OMISSION';
+const RECEIPT_TTL_CALLS = 30;
+const OMISSION_WINDOW_CALLS = RECEIPT_TTL_CALLS;
+const RECEIPTS_PER_SESSION = 64;
+const MAX_LEDGER_SESSIONS = 32;
+const QUERY_ANCHORS_PER_SESSION = 128;
+const QUERY_SUBTOKENS_PER_SESSION = 64;
 
 const MAX_SESSION_ID_CHARS = 256;
 const MAX_RECEIPT_PATH_CHARS = 4096;
@@ -126,7 +126,7 @@ export function hashShownLines(text) {
   return Buffer.concat(digests).toString('base64');
 }
 
-export function normalizeSpanFile(file, projectRoot = process.cwd()) {
+function normalizeSpanFile(file, projectRoot = process.cwd()) {
   if (typeof file !== 'string' || file.length === 0) return null;
   const root = path.resolve(projectRoot || process.cwd());
   const absolute = path.resolve(root, file);
@@ -309,7 +309,7 @@ export function applyReadOmissionDecisions(results, decisions) {
   return results;
 }
 
-export function validSpanReceipt(span) {
+function validSpanReceipt(span) {
   if (!(span
     && typeof span.file === 'string'
     && span.file.length > 0

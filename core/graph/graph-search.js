@@ -1708,7 +1708,6 @@ export class GraphSearch {
     await this.init();
 
     const { k = 10, limit = 20, skipBoosts = false, format } = options;
-    const queryNormalized = query.toLowerCase().replace(/[^a-z0-9]/g, '');
     const queryLower = query.toLowerCase();
     const start = Date.now();
 
@@ -1863,7 +1862,7 @@ export class GraphSearch {
 
   async findCallers(entityName, options = {}) {
     await this.init();
-    const { maxDepth = 2, limit = 50 } = options;
+    const { limit = 50 } = options;
 
     const target = this._resolveStructuralTarget(entityName);
 

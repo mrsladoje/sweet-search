@@ -15,7 +15,6 @@ import {
   sparseDeltaOverlayHasChanges, getSparseGramAllFilesWithOverlay, getSparseGramFilesUnder,
   hasCaseInsensitiveRegexFlag, nativeGrepFilesWithMatches,
   nativeGrepFilesWithMatchesFixed, nativeGrepLines, nativeGrepFull, nativeGrepWithFiles,
-  queryAndGrepLines, queryAndGrepFull,
   searchLines, searchFull, resolveSparseSymbolMask,
   sparseGramPathFilter, grepUnfilterablePaths, gramsProveNoMatch,
 } from './search-pattern-prefilter.js';
@@ -188,7 +187,6 @@ async function collectRegexMatches(searcher, regex, searchDir, options = {}) {
   // --- Unified search: single NAPI call handles gram narrowing + all-files fallback ---
   // Eligible when: not fixed-string, no globs, gram index loaded, grams do not prove absence.
   // Rust: gram narrowing → greps candidates if eligible, else all files. One NAPI crossing.
-  const useGramIndex = options.useGramIndex ?? options.gramIndex ?? true;
   const hasSparseDeltaOverlay = sparseDeltaOverlayHasChanges(searcher, options);
   // bareGrep's --in scope (`_grepScope`, the predicate it filters matches with afterwards). The
   // unified search cannot take it, so a scoped search reads only in-scope candidates below.

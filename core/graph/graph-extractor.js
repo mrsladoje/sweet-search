@@ -13,7 +13,7 @@
 import { createHash } from 'crypto';
 import path from 'path';
 import fs from 'fs/promises';
-import { GRAPH_CONFIG, DB_PATHS } from '../infrastructure/config/index.js';
+import { GRAPH_CONFIG } from '../infrastructure/config/index.js';
 import { getLanguageByPath, resolveLanguage } from '../infrastructure/language-patterns.js';
 import { getTreeSitterProvider, STATE_CAPTURE_LANGUAGES, STATE_ENTITY_TYPES } from '../infrastructure/tree-sitter-provider.js';
 import { CallSiteScanner, EXTRA_CALL_SCAN_LANGUAGES } from './call-site-scanner.js';
@@ -589,30 +589,6 @@ const JAVA_PATTERNS = {
   throw: /throw\s+new\s+(\w+)/g,
 
   package: /package\s+([\w.]+)\s*;/,
-};
-
-const JS_PATTERNS = {
-  function: /(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*\(/g,
-
-  arrowFunction: /(?:export\s+)?(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>/g,
-
-  class: /(?:export\s+)?class\s+(\w+)(?:\s+extends\s+(\w+))?/g,
-
-  component: /(?:export\s+)?(?:const|function)\s+([A-Z]\w+)\s*[=:]/g,
-
-  methodCall: /(\w+)\s*\.\s*(\w+)\s*\(/g,
-
-  import: /import\s+(?:{([^}]+)}|(\w+))\s+from\s+['"]([^'"]+)['"]/g,
-};
-
-const PROTO_PATTERNS = {
-  message: /message\s+(\w+)\s*\{/g,
-
-  service: /service\s+(\w+)\s*\{/g,
-
-  rpc: /rpc\s+(\w+)\s*\(\s*(\w+)\s*\)\s+returns\s+\(\s*(\w+)\s*\)/g,
-
-  enum: /enum\s+(\w+)\s*\{/g,
 };
 
 export const GENERIC_RELATIONSHIP_MAPPING = Object.freeze({

@@ -382,8 +382,7 @@ function _scoreLexical(chunks, queryTerms) {
   for (const c of chunks) {
     re.lastIndex = 0;
     let hits = 0;
-    let m;
-    while ((m = re.exec(c.exactText)) !== null) {
+    while (re.exec(c.exactText) !== null) {
       hits++;
       if (hits > 50) break; // cap runaway counters on huge chunks
     }

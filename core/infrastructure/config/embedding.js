@@ -255,10 +255,6 @@ export const EMBEDDING_CONFIG = {
   providers: EMBEDDING_PROVIDERS,
 };
 
-export function getActiveProvider() {
-  return activeProvider;
-}
-
 export function isVoyageAvailable() {
   return EMBEDDING_PROVIDERS.voyage.enabled;
 }

@@ -16,7 +16,6 @@ import {
   writeFileSync,
 } from 'fs';
 import { join } from 'path';
-import os from 'os';
 import { pipeline } from 'stream/promises';
 import { MODEL_DELIVERY_CONFIG } from './config/index.js';
 import { getModelEntry } from './model-registry.js';

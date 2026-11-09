@@ -19,7 +19,7 @@ import Database from 'better-sqlite3';
  */
 export const SCHEMA_VERSION = 3;
 
-export const INDEX_REBUILD_MESSAGE = 'rebuild it with: sweet-search index --full';
+const INDEX_REBUILD_MESSAGE = 'rebuild it with: sweet-search index --full';
 
 export class IndexSchemaError extends Error {
   constructor(dbPath, found) {
@@ -30,7 +30,7 @@ export class IndexSchemaError extends Error {
 }
 
 /** Version stored in code-graph.db (`schema_meta.version`), or null. */
-export function graphSchemaVersion(db) {
+function graphSchemaVersion(db) {
   try {
     const row = db.prepare("SELECT value FROM schema_meta WHERE key = 'version'").get();
     return row ? Number.parseInt(row.value, 10) : null;

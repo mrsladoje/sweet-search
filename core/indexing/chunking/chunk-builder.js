@@ -172,13 +172,4 @@ function recursiveSplit(text, maxSize, sepIdx = 0) {
   return result;
 }
 
-export {
-  MAX_CHUNK_SIZE,
-  MIN_CHUNK_SIZE,
-  MD_DEFAULTS,
-  TXT_DEFAULTS,
-  SEPARATOR_HIERARCHY,
-  hashContent,
-  buildDocChunk,
-  recursiveSplit,
-};
+export { MAX_CHUNK_SIZE, MD_DEFAULTS, TXT_DEFAULTS, hashContent, buildDocChunk, recursiveSplit };

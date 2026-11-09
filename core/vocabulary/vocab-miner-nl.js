@@ -8,7 +8,7 @@
 import { readFileSync, statSync } from 'fs';
 import { join, extname } from 'path';
 import { PROJECT_ROOT } from '../infrastructure/config/index.js';
-import { STOP_WORDS, splitIdentifier } from './vocab-miner-utils.js';
+import { STOP_WORDS } from './vocab-miner-utils.js';
 
 export const SECRET_PATTERNS = [
   /(?=[A-Za-z0-9+/]*[+/=])[A-Za-z0-9+/]{40,}={0,2}/,   // base64 > 40 chars with at least one +, /, or =

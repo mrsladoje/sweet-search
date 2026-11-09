@@ -30,7 +30,7 @@ export function rangeChars(fileText, lineOffsets, a, b) {
  * Lines that really exist. The reader's totalLines (and so a padded span's endLine) counts the
  * empty string after a final newline as one more line; a header must not name it.
  */
-export function realLineCount(fileText, lineOffsets) {
+function realLineCount(fileText, lineOffsets) {
   const n = lineOffsets.length;
   return n > 1 && lineOffsets[n - 1] === fileText.length ? n - 1 : n;
 }

@@ -338,7 +338,6 @@ export class MarkdownChunker {
   _splitLargeSection(content, filePath, title, hierarchy, frontmatter, lineStart, lineEnd, extraMeta, language = 'markdown') {
     const chunks = [];
     const blocks = this._identifyAtomicBlocks(content);
-    const totalLines = content.split('\n').length;
 
     for (const block of blocks) {
       if (block.type === 'code' || block.type === 'table') {

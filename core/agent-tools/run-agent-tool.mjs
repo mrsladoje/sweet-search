@@ -40,7 +40,6 @@ import { loadNativeAddon } from '../infrastructure/native-resolver.js';
 import { cwdGrepScope, resolveCwdGlob, resolveCwdPath } from '../search/cwd-paths.js';
 import { AGENT_TOOL_SUBCOMMANDS, SEARCH_LOADING_WAIT_MS, searchNotReadyLine, callStartedMs } from './tools.js';
 import { formatRouteMetadata } from '../search/search-format.js';
-import { createAdmissionPolicy } from '../indexing/admission-policy.js';
 import { createIndexCoverage, semanticTargetFor } from '../search/index-coverage.js';
 import { resolveRoots, worktreeSplitNotice } from '../search/worktree-roots.js';
 import { requestWorktreeIndex } from '../indexing/worktree-index.mjs';
@@ -965,7 +964,7 @@ async function cmdGrep(rawArgs, { fromFind = false } = {}) {
   };
   const fetched = await fetchWithFixes(fetchUnscoped);
   if (fetched.unparsable) exitUnparsable(fetched.usedRegex);
-  const { result, usedRegex, notes, repaired } = fetched;
+  const { result, notes, repaired } = fetched;
   const total = result.stats?.totalMatches ?? result.results.length;
   const fileSummary = result.fileSummary
     || { files: [], hiddenFileCount: 0, hiddenMatchCount: 0, hiddenSample: [] };

@@ -10,7 +10,7 @@
  */
 
 import { join } from 'path';
-import { RERANK_CONFIG, LOCAL_RERANKER_CONFIG, isVoyageAvailable, getVoyageApiKey, isJinaRerankerAvailable, getJinaRerankerApiKey, shouldUseLocalReranker } from '../infrastructure/config/index.js';
+import { RERANK_CONFIG, LOCAL_RERANKER_CONFIG, getVoyageApiKey, getJinaRerankerApiKey, shouldUseLocalReranker } from '../infrastructure/config/index.js';
 import { getGlobalLocalReranker } from './local-reranker.js';
 import { withOnnxMutex } from '../infrastructure/onnx-mutex.js';
 import { buildSessionOptions, warnIfGraphNotMaterialized } from '../infrastructure/onnx-session-utils.js';
@@ -615,7 +615,6 @@ Options:
         console.log(`Documents: ${documents.length}`);
 
         console.log('\n--- FlashRank (Local) ---');
-        const flashStart = Date.now();
         const flashResult = await reranker.flashRankReranker.rerank(query, documents, 5);
         console.log(`Latency: ${flashResult.latency_ms}ms`);
         console.log(`Model: ${flashResult.model}`);

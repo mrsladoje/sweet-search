@@ -74,7 +74,7 @@ export function detectAgentEnv(env = process.env) {
  *
  * @returns {string|null} the tty path if usable, else null
  */
-export function defaultProbeTty() {
+function defaultProbeTty() {
   try {
     const fd = openSync('/dev/tty', 'w');
     closeSync(fd);

@@ -21,8 +21,8 @@ import { lowerCamel } from './structural-context-utils.js';
 
 const SEP = `replace(target_name, ':', '.')`;
 
-export const TARGET_HEAD_SQL = `lower(substr(target_name, 1, instr(target_name, '.') - 1))`;
-export const TARGET_TAIL_SQL = `lower(substr(${SEP}, length(rtrim(${SEP}, replace(${SEP}, '.', ''))) + 1))`;
+const TARGET_HEAD_SQL = `lower(substr(target_name, 1, instr(target_name, '.') - 1))`;
+const TARGET_TAIL_SQL = `lower(substr(${SEP}, length(rtrim(${SEP}, replace(${SEP}, '.', ''))) + 1))`;
 
 export const GRAPH_NAME_INDEXES = {
   idx_entities_name_lower: 'ON entities(lower(name))',

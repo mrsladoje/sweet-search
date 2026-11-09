@@ -75,7 +75,6 @@ export async function createTokenizer(tokenizerJsonPath) {
 function createNativeWrapper(native) {
   const wrapper = function tokenizer(textOrTexts, opts = {}) {
     const {
-      padding = false,
       truncation = false,
       max_length = 512,
       add_special_tokens = true,

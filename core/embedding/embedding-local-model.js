@@ -36,7 +36,7 @@ export { bestIntraOpThreads };
 // set. Update if the local provider ever switches model.
 const LOCAL_EMBEDDING_HIDDEN_DIM = 768;
 
-export function isIntelCpu() {
+function isIntelCpu() {
   const model = os.cpus()?.[0]?.model || '';
   return model.toLowerCase().includes('intel');
 }
@@ -81,7 +81,7 @@ export function isBackgroundOrtProfile(runtimeConfig = {}) {
   return (runtimeConfig.background ?? localModelRuntimeConfig.background) === true;
 }
 
-export function isOpenVinoProviderAvailable() {
+function isOpenVinoProviderAvailable() {
   if (openVinoProviderAvailable !== null) return openVinoProviderAvailable;
 
   const candidateRoots = [
@@ -130,7 +130,7 @@ export function shouldUseOpenVino(openVinoAvailable = isOpenVinoProviderAvailabl
  * - quantized=true  → quantizedModel (INT8, ~132 MB, ~2× faster)
  * - quantized=false → model (FP32, ~522 MB, baseline)
  */
-export function resolveLocalModelName(quantized) {
+function resolveLocalModelName(quantized) {
   if (quantized && EMBEDDING_PROVIDERS.local.quantizedModel) {
     return EMBEDDING_PROVIDERS.local.quantizedModel;
   }
@@ -163,7 +163,7 @@ export function getOptimizedModelPath(quantLabel = 'q8') {
   return path.join(cacheDir, `coderankembed-optimized-ort${ortVersion}-${quantLabel}-${modelHash}.onnx`);
 }
 
-export function getCalibrationFactor() {
+function getCalibrationFactor() {
   return 4;
 }
 
@@ -247,7 +247,7 @@ export function buildLocalSessionOptions(quantLabel = 'q8', coremlAvailable = fa
  * managed model cache — the FP32 model (jalipalo/CodeRankEmbed-onnx) is not
  * in the registry. If explicitly set to false, warn and fall back to INT8.
  */
-export function resolveQuantizationMode() {
+function resolveQuantizationMode() {
   const raw = (process.env.SWEET_SEARCH_LOCAL_QUANTIZED ?? '').trim().toLowerCase();
   if (raw === '0' || raw === 'false') {
     console.warn('[L1] SWEET_SEARCH_LOCAL_QUANTIZED=false requested but FP32 model is not in managed cache. Using INT8.');
@@ -268,11 +268,11 @@ function resolveTokenizerPath() {
   return join(getModelCacheDir(entry.hfId), 'tokenizer.json');
 }
 
-export function maskIsActive(maskValue) {
+function maskIsActive(maskValue) {
   return typeof maskValue === 'bigint' ? maskValue !== 0n : maskValue !== 0;
 }
 
-export function l2NormalizeRowsInPlace(data, rows, cols) {
+function l2NormalizeRowsInPlace(data, rows, cols) {
   for (let r = 0; r < rows; r++) {
     const offset = r * cols;
     let normSq = 0;
@@ -706,7 +706,6 @@ export async function callLocalModelBucketed(texts, options = {}) {
     : totalMemGB > 8
       ? 2 * 1024 * 1024 * 1024
       : 512 * 1024 * 1024;
-  const memGuardHighWatermark = 0.85;
   const memGuardActive = !process.env.SWEET_SEARCH_DISABLE_MEM_GUARD && adaptiveMemCapBytes !== Infinity;
 
   const batches = [];

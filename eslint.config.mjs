@@ -30,6 +30,13 @@ const RULES = [
 
 export default [
   { ignores: ['node_modules/**', 'dist/**', '.sweet-search/**', '.agentic-qe/**'] },
+  {
+    files: ['core/**/*.js', 'core/**/*.mjs', 'mcp/**/*.js'],
+    ignores: ['core/prompt-optimization/**', 'core/training/**', 'core/vector-store/**'],
+    rules: {
+      'no-unused-vars': ['error', { args: 'none', caughtErrors: 'none', varsIgnorePattern: '^_' }],
+    },
+  },
   ...RULES.map(([files, prefixes, message]) => ({
     files,
     rules: {

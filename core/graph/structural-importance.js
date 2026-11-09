@@ -58,10 +58,6 @@ export function tokenize(text) {
 const NO_PPR = process.env.SWEET_SEARCH_TRACE_NO_PPR === '1';
 const NO_PR = process.env.SWEET_SEARCH_TRACE_NO_PR === '1';
 
-function getAblationFlags() {
-  return { noPpr: NO_PPR, noPr: NO_PR };
-}
-
 function hintScore(entity, hintTokens) {
   if (!hintTokens.length) return 0;
   const hay = `${entity.name} ${entity.type} ${entity.signature} ${entity.summary}`.toLowerCase();

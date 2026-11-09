@@ -30,11 +30,7 @@ import {
   extractNpmDeps, extractCargoDeps, extractGoDeps, extractPipDeps, extractPyprojectDeps,
 } from './vocab-miner-extractors.js';
 
-import {
-  mineNLContent, extractNLText, isSecretLike,
-  detectScript, tokenizeNL, extractBigrams, extractTrigrams,
-  SECRET_PATTERNS, NL_MINING_TIMEOUT_MS,
-} from './vocab-miner-nl.js';
+import { mineNLContent, tokenizeNL } from './vocab-miner-nl.js';
 
 // Prefer direct imports from leaf modules for new code:
 //   - ./vocab-miner-utils.js

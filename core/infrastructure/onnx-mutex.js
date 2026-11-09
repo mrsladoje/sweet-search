@@ -34,7 +34,7 @@ export async function withOnnxMutex(fn) {
 /**
  * Reset the mutex queue (for testing)
  */
-export function resetOnnxMutex() {
+function resetOnnxMutex() {
   _onnxQueue = Promise.resolve();
 }
 

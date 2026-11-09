@@ -11,13 +11,11 @@
  * - Documents:  [D] prefix, max 2048 tokens, skiplist filters punctuation tokens
  */
 
-import os from 'os';
 import { bootLog } from '../infrastructure/boot-log.js';
 import fs from 'fs';
-import path from 'path';
 import { join } from 'path';
 import { LATE_INTERACTION_CONFIG } from '../infrastructure/config/index.js';
-import { fetchModelFile, getModelCacheDir, resolveModelFile } from '../infrastructure/model-fetcher.js';
+import { fetchModelFile, getModelCacheDir } from '../infrastructure/model-fetcher.js';
 import { getModelEntry } from '../infrastructure/model-registry.js';
 import { createTokenizer } from '../infrastructure/native-tokenizer.js';
 import { isNativeInferenceAvailable, isNativeLiModelLoaded, nativeLiEncode, nativeLiEncodeTokenized, getNativeLiBackend } from '../infrastructure/native-inference.js';
@@ -496,7 +494,7 @@ function projectAndNormalizeBatch(hiddenTensor, projectionStages, attentionMask 
   let currentDim = hiddenDim;
   const maskData = attentionMask?.data || null;
 
-  for (const { weight, inDim, outDim } of projectionStages) {
+  for (const { weight, outDim } of projectionStages) {
     const projected = new Float32Array(batch * seqLen * outDim);
     for (let b = 0; b < batch; b++) {
       for (let s = 0; s < seqLen; s++) {

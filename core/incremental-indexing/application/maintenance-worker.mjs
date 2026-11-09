@@ -12,7 +12,6 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import process from 'node:process';
 import Database from 'better-sqlite3';
 import { fts5Merge, fts5WatermarkBudgetPages } from '../infrastructure/sqlite-fts5.mjs';
 import { reclamationHandlers } from './maintenance-handlers.mjs';

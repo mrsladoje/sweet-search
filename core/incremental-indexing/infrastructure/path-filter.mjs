@@ -31,12 +31,12 @@ import { loadProjectConfig } from '../../infrastructure/config/search.js';
 // admission policy re-admits any git-TRACKED file under them — tracked ⟹ not
 // gitignored ⟹ the repo means it as source, not generated output. Kept separate
 // from the hard deny-list so that re-admission can target exactly this set.
-export const BUILD_OUTPUT_DENY_DIRS = Object.freeze(['dist', 'build', 'out', 'target']);
+const BUILD_OUTPUT_DENY_DIRS = Object.freeze(['dist', 'build', 'out', 'target']);
 
 // The config-level exclude globs (search.js FILE_PATTERNS.exclude) that mirror
 // BUILD_OUTPUT_DENY_DIRS. Dropped from the "hard" filter so re-admission can see
 // past them the same way it sees past the deny-dirs.
-export const BUILD_OUTPUT_GLOBS = Object.freeze(['**/build/**', '**/dist/**', '**/out/**', '**/target/**']);
+const BUILD_OUTPUT_GLOBS = Object.freeze(['**/build/**', '**/dist/**', '**/out/**', '**/target/**']);
 
 const DEFAULT_DENY_DIRS_HARD = Object.freeze([
   'node_modules',
@@ -75,7 +75,7 @@ const DEFAULT_DENY_EXTS = Object.freeze([
 ]);
 
 export const DEFAULT_REPO_SIZE_CAP = 200_000;
-export const DEFAULT_REPO_SIZE_WARN_FRAC = 0.5;
+const DEFAULT_REPO_SIZE_WARN_FRAC = 0.5;
 
 /**
  * Parse a `.sweet-search-ignore` file. Format: gitignore-like, but we

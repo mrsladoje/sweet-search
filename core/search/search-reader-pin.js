@@ -10,7 +10,7 @@ function dataDirName() {
   return dir && dir !== '.' ? dir : '.sweet-search';
 }
 
-export function searchStateDir(projectRoot = process.cwd()) {
+function searchStateDir(projectRoot = process.cwd()) {
   const root = path.resolve(projectRoot || process.cwd());
   if (root === path.resolve(PROJECT_ROOT || process.cwd())) {
     return path.dirname(DB_PATHS.codebase);

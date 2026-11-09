@@ -39,7 +39,7 @@ export const CPU_WIN_MARGIN = 1.2;
  * to the margin; the test runs a second time, in the opposite order, and the
  * two runs must agree.
  */
-export const CLOSE_RATIO_BAND = [CPU_WIN_MARGIN / 1.5, CPU_WIN_MARGIN * 1.5];
+const CLOSE_RATIO_BAND = [CPU_WIN_MARGIN / 1.5, CPU_WIN_MARGIN * 1.5];
 
 /**
  * How long a result is reused: "accelerator" (the default device) for 30
@@ -51,7 +51,7 @@ export const STABLE_TTL_MS = 30 * 24 * 3600 * 1000;
 export const CPU_TTL_MS = 7 * 24 * 3600 * 1000;
 export const UNSTABLE_TTL_MS = 24 * 3600 * 1000;
 
-export const INDEX_DEVICE_CACHE_FILE = 'index-device.json';
+const INDEX_DEVICE_CACHE_FILE = 'index-device.json';
 export const INDEX_DEVICE_LOCK_FILE = 'index-device.lock';
 export const PROBE_RESULT_PREFIX = 'INDEX_DEVICE_PROBE ';
 
@@ -139,7 +139,7 @@ function poolLabel(p) {
 }
 
 /** CPU model and logical core count of this host (the GPU comes from `hw`). */
-export function machineIdentity() {
+function machineIdentity() {
   const cpus = os.cpus();
   return { cpuModel: cpus[0]?.model?.trim() || 'unknown-cpu', cores: os.availableParallelism?.() ?? cpus.length };
 }
@@ -149,7 +149,7 @@ export function machineIdentity() {
 const ENCODER_ENV = /^SWEET_SEARCH_(EMBED|LI_|LATE_INTERACTION|BATCHING|INDEXING_MAX_LENGTH|INTRA_OP|ORT_|COMPUTE_CORES|COREML|CUDA|NATIVE_INFERENCE|LOCAL_QUANTIZED|USE_OPENVINO|DISABLE_MEM_GUARD)/;
 
 /** Short hash of the encoder environment settings (sorted name=value pairs). */
-export function encoderEnvDigest(env = process.env) {
+function encoderEnvDigest(env = process.env) {
   const pairs = Object.keys(env).filter((k) => ENCODER_ENV.test(k)).sort().map((k) => `${k}=${env[k]}`);
   if (pairs.length === 0) return 'none';
   return createHash('sha1').update(pairs.join('\n')).digest('hex').slice(0, 12);

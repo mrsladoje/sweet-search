@@ -30,7 +30,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 // Header lengths are 32-bit BE; payloads are bounded by the same width.
-export const FRAME_HEADER_BYTES = 8; // 4 (header len) + 4 (payload len)
+const FRAME_HEADER_BYTES = 8; // 4 (header len) + 4 (payload len)
 export const PROTOCOL_VERSION = 1;
 
 /**

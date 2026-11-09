@@ -9,13 +9,12 @@
 import { EMBEDDING_CONFIG, EMBEDDING_PROVIDERS } from '../infrastructure/config/index.js';
 import { bootLog } from '../infrastructure/boot-log.js';
 import { recordEncode } from '../infrastructure/inference-provenance.js';
-import { wasmHammingDistance, wasmInt8Cosine, wasmAsymmetricDistance, wasmInt8BatchDot, isWasmAvailable } from '../infrastructure/simd-distance.js';
+import { wasmHammingDistance, wasmInt8Cosine, wasmInt8BatchDot, isWasmAvailable } from '../infrastructure/simd-distance.js';
 
 import {
   circuitBreaker,
   _providerCompressionSupport,
   looksLikeJson,
-  RateLimiter,
   TimeWindowRateLimiter,
   rateLimiters,
   timeWindowLimiters,
@@ -94,7 +93,6 @@ async function generateEmbedding(text, provider = EMBEDDING_CONFIG.provider, isQ
   }
 
   const rateLimit = config.rateLimit;
-  let lastError = null;
 
   for (let attempt = 0; attempt < (rateLimit?.maxRetries || 3); attempt++) {
     try {
@@ -124,7 +122,6 @@ async function generateEmbedding(text, provider = EMBEDDING_CONFIG.provider, isQ
       if (provider !== 'local') circuitBreaker.recordSuccess();
       return result;
     } catch (err) {
-      lastError = err;
       if (provider !== 'local') circuitBreaker.recordFailure();
       const delay = (rateLimit?.retryDelay || 1000) * Math.pow(rateLimit?.backoffMultiplier || 2, attempt);
       console.warn(`Embedding attempt ${attempt + 1} failed: ${err.message}, retrying in ${delay}ms`);
@@ -435,33 +432,6 @@ export { fisherYatesShuffle, floatToBinary, computeCentroid, generateSignVector,
 
 export function truncateForHNSW(embedding, targetDim = EMBEDDING_CONFIG.hnswDimension) {
   return _truncateForHNSW(embedding, targetDim);
-}
-
-/**
- * Asymmetric distance: 1-bit document vs 4-bit query.
- * Approximates squared distance via asymmetric dot product + correction.
- */
-export function asymmetricDistance(docBinary, queryInt4, queryNorm) {
-  if (isWasmAvailable()) {
-    // WASM version expects integer-scaled queryNorm
-    return wasmAsymmetricDistance(docBinary, queryInt4, Math.round(queryNorm));
-  }
-  let approxDot = 0;
-  const dim = queryInt4.length;
-  for (let byteIdx = 0; byteIdx < docBinary.length; byteIdx++) {
-    let byte = docBinary[byteIdx];
-    const baseIdx = byteIdx * 8;
-    for (let bit = 7; bit >= 0; bit--) {
-      const idx = baseIdx + (7 - bit);
-      if (idx >= dim) break;
-      if (byte & (1 << bit)) {
-        approxDot += queryInt4[idx];
-      } else {
-        approxDot -= queryInt4[idx];
-      }
-    }
-  }
-  return queryNorm - 2 * approxDot;
 }
 
 export { floatToInt8, normalizedFloatToInt8 };

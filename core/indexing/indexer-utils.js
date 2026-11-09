@@ -69,7 +69,6 @@ export const colors = {
 };
 
 let quietMode = false;
-let verboseMode = false;
 
 export function setQuietMode(enabled) {
   quietMode = enabled;
@@ -78,14 +77,6 @@ export function setQuietMode(enabled) {
 
 export function isQuietMode() {
   return quietMode;
-}
-
-export function setVerboseMode(enabled) {
-  verboseMode = enabled;
-}
-
-export function isVerboseMode() {
-  return verboseMode;
 }
 
 // Progress rendering: a live region of animated, in-place bars.

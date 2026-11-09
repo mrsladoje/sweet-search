@@ -43,7 +43,7 @@ function envFloat(name, fallback) {
 // Thresholds are parameterized (env-overridable for offline calibration
 // sweeps) — tuned on the task-level dev split of the full200 replay, never
 // hand-picked against held-out. See the design note for the discipline.
-export function sufficiencyThresholds() {
+function sufficiencyThresholds() {
   return {
     overlapStrong: envFloat('SS_SUFF_OVERLAP_STRONG', 0.6),
     overlapNone: envFloat('SS_SUFF_OVERLAP_NONE', 0.2),

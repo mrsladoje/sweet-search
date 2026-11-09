@@ -16,7 +16,7 @@ export async function initOrt() {
   return _ort;
 }
 
-export function getOrt() {
+function getOrt() {
   if (!_ort) throw new Error('[ort-pipeline] ORT not initialized. Call initOrt() first.');
   return _ort;
 }

@@ -9,8 +9,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export const SPARSE_DELTA_DIR_SUFFIX = '.deltas';
-export const SPARSE_DELTA_FILE_EXT = '.ssgrmdelta';
+const SPARSE_DELTA_DIR_SUFFIX = '.deltas';
+const SPARSE_DELTA_FILE_EXT = '.ssgrmdelta';
 
 function deltaDirFor(baseArtifactPath) {
   return baseArtifactPath + SPARSE_DELTA_DIR_SUFFIX;

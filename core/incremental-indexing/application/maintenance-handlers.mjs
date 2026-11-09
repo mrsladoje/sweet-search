@@ -54,7 +54,7 @@ import { populatePageRankColumn } from '../../graph/structural-pagerank.js';
 import { minLiveEpoch } from '../infrastructure/reader-heartbeat.mjs';
 import { readManifest, writeManifest } from '../infrastructure/manifest.mjs';
 import {
-  loadBitmap, popcount, isSet, createBitmap, saveBitmap,
+  loadBitmap, popcount, isSet,
 } from '../infrastructure/tombstone-bitmap.mjs';
 
 function safeUnlink(p) { try { fs.unlinkSync(p); } catch { /* ok */ } }
@@ -62,11 +62,6 @@ function progressFn(onProgress) {
   return typeof onProgress === 'function'
     ? (phase) => { onProgress(phase); }
     : () => {};
-}
-
-function float32FromBuffer(buffer) {
-  const view = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
-  return new Float32Array(view);
 }
 
 // Files above which the fold runs in a child process (it reads every file); one at
@@ -363,7 +358,7 @@ export async function liSegmentHandler(job, { stateDir, onProgress = null }) {
  * crash-safe — see `infrastructure/li-segment-merge.mjs`. Honors
  * `SWEET_SEARCH_LI_MERGE_GRACE_MS` for the quarantine grace window.
  */
-export async function liSegmentsHandler(job, { stateDir, onProgress = null }) {
+async function liSegmentsHandler(job, { stateDir, onProgress = null }) {
   const progress = progressFn(onProgress);
   const graceRaw = Number.parseInt(process.env.SWEET_SEARCH_LI_MERGE_GRACE_MS || '', 10);
   const graceMs = Number.isFinite(graceRaw) && graceRaw >= 0 ? graceRaw : LI_MERGE_GRACE_MS;
@@ -381,7 +376,7 @@ export async function liSegmentsHandler(job, { stateDir, onProgress = null }) {
  * size / per-run cap tunable via `SWEET_SEARCH_VECTOR_GC_BATCH` and
  * `SWEET_SEARCH_VECTOR_GC_MAX_ROWS`.
  */
-export function vectorGcHandler(job, { stateDir, onProgress = null }) {
+function vectorGcHandler(job, { stateDir, onProgress = null }) {
   const progress = progressFn(onProgress);
   const batchRaw = Number.parseInt(process.env.SWEET_SEARCH_VECTOR_GC_BATCH || '', 10);
   const maxRaw = Number.parseInt(process.env.SWEET_SEARCH_VECTOR_GC_MAX_ROWS || '', 10);
@@ -403,7 +398,7 @@ export function vectorGcHandler(job, { stateDir, onProgress = null }) {
  * per-run cap tunable via `SWEET_SEARCH_GRAPH_GC_BATCH` and
  * `SWEET_SEARCH_GRAPH_GC_MAX_ROWS`.
  */
-export function graphGcHandler(job, { stateDir, onProgress = null }) {
+function graphGcHandler(job, { stateDir, onProgress = null }) {
   const progress = progressFn(onProgress);
   const batchRaw = Number.parseInt(process.env.SWEET_SEARCH_GRAPH_GC_BATCH || '', 10);
   const maxRaw = Number.parseInt(process.env.SWEET_SEARCH_GRAPH_GC_MAX_ROWS || '', 10);

@@ -471,7 +471,7 @@ async function writeFileAtomic(filePath, data) {
  * there are none or they do not parse). Each is `dimension` floats, as saveBinaryArtifact
  * wrote it.
  */
-export async function loadArtifactEmbeddings(paths) {
+async function loadArtifactEmbeddings(paths) {
   const out = new Map();
   for (const [binPath, metaPath] of [[paths.identifiersBin, paths.identifiersMeta], [paths.semanticSeedsBin, paths.semanticSeedsMeta]]) {
     try {

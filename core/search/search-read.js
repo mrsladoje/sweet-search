@@ -645,7 +645,7 @@ function _sniffRemainderDefinitions(text, isCFamily) {
  * cheap mechanism rather than a proven lever. Consulted at RENDER time only,
  * in the wrapper's own process; the structured field is always computed.
  */
-export function unreadAboveEnabled() {
+function unreadAboveEnabled() {
   return process.env.SS_UNREAD_ABOVE !== '0';
 }
 
@@ -1537,7 +1537,7 @@ export const __testing = { projectRelative: _projectRelative, codebasePathForPro
 // The definitions named `spec` in one file, from the code graph: `name`, or `Owner.name`
 // (also `Owner::name`, `Owner#name`) to pick a member of one type. Exact-case matches win
 // over case-insensitive ones; file order. Each: { name, type, startLine, endLine, parentClass }.
-export function findSymbolSpans(projectRoot, filePath, spec) {
+function findSymbolSpans(projectRoot, filePath, spec) {
   const root = projectRoot || process.cwd();
   const filePathRel = _projectRelative(_resolvePath(filePath, root), root);
   const raw = String(spec || '').trim().replace(/\(\)$/, '');
@@ -1598,7 +1598,7 @@ export function leadingDocStart(lines, start, max = 40) {
 
 // The most lines `ss-read <file> <symbol>` serves; a longer definition is cut there and the
 // "below" trailer names what follows.
-export const SYMBOL_READ_MAX_LINES = 300;
+const SYMBOL_READ_MAX_LINES = 300;
 
 /**
  * The range `ss-read <file> <symbol>` serves: the first definition named `spec`, from the

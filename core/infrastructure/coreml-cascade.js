@@ -222,7 +222,7 @@ export function getCascadeSpec() {
 }
 
 /** Test-only helper to reset the memoized spec between test cases. */
-export function _resetCascadeSpecCache() {
+function _resetCascadeSpecCache() {
   _spec = null;
 }
 
@@ -535,7 +535,6 @@ export function getCoremlCascadeReport() {
       reason: state.reason,
     };
   }
-  const totalAdvertised = state.embedTotal + state.liTotal + state.liEdgeTotal;
   const totalPresent = state.embedPresent + state.liPresent + state.liEdgePresent;
   const liEdgeReportFragment = state.liEdgeTotal > 0
     ? ` + ${state.liEdgePresent}/${state.liEdgeTotal} LI-edge`

@@ -37,7 +37,7 @@ import { AGENT_TOOLS } from './tools.js';
 export const CHAIN_LATER_ENV = 'SWEET_SEARCH_CHAIN_LATER';
 /** The pid that stands for this call when a launcher process sits between it and the shell. */
 export const CHAIN_PID_ENV = 'SWEET_SEARCH_CHAIN_PID';
-export const CHAIN_TTL_MS = 30 * 60 * 1000;
+const CHAIN_TTL_MS = 30 * 60 * 1000;
 
 const SHELLS = new Set(['sh', 'bash', 'zsh', 'dash', 'ksh', 'mksh', 'ash', 'fish', 'tcsh', 'csh', 'busybox']);
 const ARG_CHARS = 10;
@@ -48,7 +48,7 @@ export function isShellName(comm) {
   return SHELLS.has(base);
 }
 
-export function defaultChainDir() {
+function defaultChainDir() {
   const uid = typeof process.getuid === 'function' ? process.getuid() : 0;
   return `/tmp/sweet-search-chain-${uid}`;
 }

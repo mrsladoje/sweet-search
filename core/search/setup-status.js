@@ -124,7 +124,7 @@ export function nextStep(status) {
   return null;
 }
 
-export async function collectSetupStatus({ env = process.env } = {}) {
+async function collectSetupStatus({ env = process.env } = {}) {
   const projectRoot = PROJECT_ROOT;
   const stateDir = path.dirname(DB_PATHS.merkle);
 

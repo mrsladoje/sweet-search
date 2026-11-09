@@ -1,5 +1,3 @@
-import Database from 'better-sqlite3';
-
 /**
  * Maximum number of bound parameters in a single SQLite statement.
  *
@@ -173,26 +171,3 @@ export function chunkedInExec(db, sqlTemplate, values) {
   return { changes: runBatches(items) };
 }
 
-/**
- * Warm the graph database page cache with lightweight queries.
- * Opens an ephemeral connection, touches FTS5/relationship/summary pages, closes.
- * Intentionally minimal — no heavy imports, no query infrastructure.
- *
- * @returns {{ summaries: number }}
- */
-export function warmGraphDbCache(dbPath) {
-  const db = new Database(dbPath, { readonly: true, timeout: 5000 });
-  applyReadPragmas(db);
-  try {
-    try { db.prepare('SELECT count(*) FROM entities_fts WHERE name MATCH "warmup"').get(); } catch { /* table may not exist */ }
-    try { db.prepare('SELECT count(*) FROM relationships').get(); } catch { /* table may not exist */ }
-    let summaries = 0;
-    try {
-      const row = db.prepare('SELECT count(*) as cnt FROM entities WHERE summary IS NOT NULL').get();
-      summaries = row?.cnt || 0;
-    } catch { /* column may not exist */ }
-    return { summaries };
-  } finally {
-    db.close();
-  }
-}

@@ -61,7 +61,6 @@ const QUERY_SCAFFOLD_STOPWORDS = new Set([
 const RRF_K = 60;
 
 const DEFAULT_PER_KEYWORD_LIMIT = 30;
-const DEFAULT_CONFIDENCE_FLOOR = 0.35;
 
 // RRF scores are tiny (~0.01-0.05). Map to a [base, base+range] band so
 // fallback candidates compete mid-pack without overwhelming a strong

@@ -9,7 +9,6 @@ import { DB_PATHS } from '../infrastructure/config/index.js';
 import { expandResults } from '../graph/graph-expansion.js';
 import { int8CosineSimilarity } from '../embedding/embedding-service.js';
 import { QualityScorer } from '../ranking/quality-scorer.js';
-import { classifyIntent, getIntentPolicy } from '../query/intent-router.js';
 import { applyFileKindRanking, applyResultDemotions, classifyFileKindIntent } from '../ranking/file-kind-ranking.js';
 import { recordQueryTelemetry } from '../embedding/embedding-cache.js';
 import { expandAliases } from './dedup/sibling-expander.js';
@@ -1107,7 +1106,7 @@ export function attachChunkIdsToExpanded(results, codebaseRepo, { adoptBorrowedS
 }
 
 /** An expanded entity of at most this many lines borrows its chunk's score (attachChunkIdsToExpanded). */
-export const BORROWED_SPAN_MAX_ENTITY_LINES = 3;
+const BORROWED_SPAN_MAX_ENTITY_LINES = 3;
 /** ...and takes the chunk's span only when the chunk is at most this long. */
 export const BORROWED_SPAN_MAX_CHUNK_LINES = 120;
 
@@ -1143,7 +1142,7 @@ function adoptChunkSpan(r, chunk) {
  * @param {number} [expandedFraction=0.4] - Fraction of pool reserved for expanded
  * @returns {{ topCandidates: Array, expandedQuotaUsed: number }}
  */
-export function buildMixedRerankPool(results, slot, expandedFraction = 0.4) {
+function buildMixedRerankPool(results, slot, expandedFraction = 0.4) {
   const EXPANDED_FRACTION = Math.max(0, Math.min(1, expandedFraction));
 
   const originals = results.filter(r => !r.is_expanded);

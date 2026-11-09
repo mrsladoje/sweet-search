@@ -61,18 +61,18 @@ import { fileURLToPath } from 'node:url';
 import { DEAD_LEGACY_ARTIFACTS } from './legacy-artifact-sweep.js';
 import { projectPidFile, projectSocketPath, resolveProjectRoot } from '../search/server-identity.js';
 
-export const STATE_DIR_NAME = '.sweet-search';
+const STATE_DIR_NAME = '.sweet-search';
 const INDEX_FILE = 'codebase.db';
 const QUEUE_FILE = 'index-maintainer-queue.jsonl';
 // A failed bootstrap is not retried on every call: once per this interval at most.
-export const RETRY_AFTER_MS = 10 * 60_000;
+const RETRY_AFTER_MS = 10 * 60_000;
 // A claim whose holder died, or that is older than this, no longer blocks a bootstrap.
 const CLAIM_STALE_MS = 30 * 60_000;
 // Without copy-on-write the copy must leave this much room on the disk, besides itself.
 const MIN_FREE_AFTER_COPY_BYTES = 2 * 1024 ** 3;
 
 // The linked worktrees' indexes, inside the main checkout's state dir.
-export const WORKTREES_DIR = 'worktrees';
+const WORKTREES_DIR = 'worktrees';
 // Runtime files of the main checkout's processes, and the other worktrees' indexes:
 // never carried into a worktree's index.
 const RUNTIME_FILES = new Set([
@@ -127,7 +127,7 @@ function readJson(file) {
 }
 
 /** SWEET_SEARCH_WORKTREE_INDEX=0 keeps every worktree on the main checkout's index. */
-export function worktreeIndexEnabled(env = process.env) {
+function worktreeIndexEnabled(env = process.env) {
   return env.SWEET_SEARCH_WORKTREE_INDEX !== '0';
 }
 
@@ -772,7 +772,7 @@ export async function bootstrapWorktreeIndex({
  *
  * @returns {Promise<'ready'|'skipped'|'busy'|'failed'>}  'busy': another process holds the claim
  */
-export async function runWorktreeBootstrap({ mainCheckout, worktree, log: extraLog = null, launch = true, lockWaitMs, daemonPid = 0 }) {
+async function runWorktreeBootstrap({ mainCheckout, worktree, log: extraLog = null, launch = true, lockWaitMs, daemonPid = 0 }) {
   const claim = bootstrapClaimPath(mainCheckout, worktree);
   const logFile = path.join(mainCheckout, STATE_DIR_NAME, 'worktree-bootstrap.log');
   const log = (msg) => {

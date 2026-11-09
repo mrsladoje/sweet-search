@@ -30,21 +30,6 @@ import { looksLikeStrictIdentifier, spellStem, splitIdentifierName } from './que
 // initial rollout. Promote to additional languages once probes confirm gain
 // on JS/TS with zero regressions on JS/TS + GCSN.
 
-const JSTS_LANGS = new Set(['javascript', 'typescript', 'tsx', 'jsx']);
-const JSTS_EXTENSIONS = new Set(['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.mts', '.cts']);
-
-function isJsTsResult(result) {
-  const meta = result?.metadata ?? {};
-  if (meta.language && JSTS_LANGS.has(meta.language)) return true;
-  // Expansion entities from graph-expansion.js carry no metadata.language;
-  // fall back to file-extension sniff so F9 can still process them.
-  const fp = result?.file_path || result?.file || meta.file || meta.path || result?.filePath || '';
-  if (!fp) return false;
-  const dot = fp.lastIndexOf('.');
-  if (dot < 0) return false;
-  return JSTS_EXTENSIONS.has(fp.slice(dot).toLowerCase());
-}
-
 /**
  * Split a camelCase/PascalCase/snake_case/kebab-case identifier into
  * lowercased sub-tokens. Filters out very short fragments.

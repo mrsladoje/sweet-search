@@ -15,7 +15,6 @@ import { capToFinalK } from './final-k.js';
 import { isTestLikePath } from './agent-output-fixes.js';
 import { readFileRange } from './search-pattern-chunks.js';
 import { annotateEntrySymbols, applyAgentPackCompletion, buildPackSiblingLine, shownSourceEndLine } from './agent-pack-completion.js';
-import path from 'path';
 import { resolveSubMode, AGENT_FULL_XL_TOKEN_BUDGET, AGENT_FULL_TOKEN_BUDGET, DEFAULT_TOKEN_BUDGET, computeBudgetSignals, selectAgentBudget, allocateBudget, estimateTokens, truncateToTokenCap, startAtNamedDefinition, compressToPreview } from './packaging/budget.js';
 import { computeConfidence, computeSufficiency } from './packaging/sufficiency.js';
 import { TEST_QUERY_RE, relatedSubjectEntity, RELATED_DEFAULT_ROWS, annotateContainerRowMembers } from './packaging/related-rows.js';

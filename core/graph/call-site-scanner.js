@@ -27,8 +27,6 @@
  * contain a comment token.
  */
 
-const QUOTE_DOUBLE = '"';
-
 // Member-access separators per language. `.` is NOT a call separator in PHP
 // (string concatenation: `$a . strtolower($b)`).
 const DEFAULT_SEPARATORS = ['.', '?.', '!.', '!!.'];

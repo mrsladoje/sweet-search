@@ -46,9 +46,9 @@ import { DEFAULT_SPARSE_GRAM_WEIGHTS_ID } from './manifest.mjs';
 export const DELTA_DIR_SUFFIX = '.deltas';
 export const DELTA_FILE_EXT = '.ssgrmdelta';
 /** Retired segments awaiting deletion: `{ [segment file name]: retiredAtMs }`. */
-export const PENDING_DELETE_FILE = '.pending-delete.json';
+const PENDING_DELETE_FILE = '.pending-delete.json';
 /** How long a retired segment stays on disk for readers holding an older manifest. */
-export const DELTA_DELETE_GRACE_MS = 60_000;
+const DELTA_DELETE_GRACE_MS = 60_000;
 /**
  * Versioned hardcoded common-code bigram-weight table. Plan § 7.6 empty-/
  * tiny-codebase bootstrap. The actual bigram weights live in the Rust
@@ -160,7 +160,7 @@ function pendingDeletePath(baseArtifactPath) {
 }
 
 /** Retired segment names -> retirement time (ms). */
-export function readPendingDeletes(baseArtifactPath) {
+function readPendingDeletes(baseArtifactPath) {
   try {
     return new Map(Object.entries(JSON.parse(fs.readFileSync(pendingDeletePath(baseArtifactPath), 'utf8'))));
   } catch {

@@ -110,7 +110,7 @@ function subSwitch(value, inherited) {
  * A1, A2 and A7 also in the daemon's agent text; SWEET_SEARCH_COMPACT_OUTPUT=0 (or false/off/no) restores the
  * previous output byte for byte. Any other value, or no value, keeps the default.
  */
-export const COMPACT_OUTPUT_ENV = 'SWEET_SEARCH_COMPACT_OUTPUT';
+const COMPACT_OUTPUT_ENV = 'SWEET_SEARCH_COMPACT_OUTPUT';
 
 /** True unless SWEET_SEARCH_COMPACT_OUTPUT is an explicit off value. */
 export function compactOutputDefault(env = process.env) {
@@ -172,7 +172,7 @@ export function resultRenderFixActive(flags, { find = false, alreadyShownActive 
  * Codex ss-read omission text and the query-aware ss-read trailers) sees exactly the same calls
  * with the switch on as with it off.
  */
-export const ALREADY_SHOWN_NAMESPACE = 'a3:';
+const ALREADY_SHOWN_NAMESPACE = 'a3:';
 
 export function alreadyShownSessionId(threadKey) {
   if (!threadKey) return null;

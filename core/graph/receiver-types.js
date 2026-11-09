@@ -494,7 +494,6 @@ function sameFileReturnTypes(entities, lines, filePath) {
   return out;
 }
 
-const SELF_CALL = '(?:this\\s*\\.|self\\s*\\.|cls\\s*\\.|Self::|\\$this\\s*->|self::|static::)';
 // The receiver's one binding as a whole-statement call: `<bind> name = [self.]callee(…)<end>`.
 function bindingPattern(lang, name, goRecv) {
   const n = name;

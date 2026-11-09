@@ -41,9 +41,7 @@
  * buildVectorsAndArtifactsPhase), so benchmark indexes are unaffected.
  */
 
-import { createHash } from 'crypto';
 import fs from 'fs/promises';
-import { existsSync } from 'fs';
 import path from 'path';
 
 import {

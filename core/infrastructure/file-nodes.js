@@ -32,7 +32,7 @@ import { createHash } from 'crypto';
 import path from 'path';
 
 /** Display name of a file node when it appears as a caller. */
-export const TOP_LEVEL_NAME = '(top-level)';
+const TOP_LEVEL_NAME = '(top-level)';
 
 /** Logical id of a graph entity: 16 hex chars of sha256 over `relPath:type:name`. */
 export function logicalEntityId(relPath, type, name) {
@@ -49,7 +49,7 @@ export function fileNodeId(relPath) {
 }
 
 /** The node row the extractor emits for one file. */
-export function fileNodeRow(relPath) {
+function fileNodeRow(relPath) {
   const p = String(relPath).replace(/\\/g, '/');
   return { id: fileNodeId(p), file_path: p, name: path.basename(p) };
 }

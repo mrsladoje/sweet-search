@@ -31,10 +31,6 @@ const HEADER_VERSION = 1;
 const HEADER_RESERVED = 64; // bytes reserved before payload (alignment)
 const BITS_PER_BYTE = 8;
 
-function payloadByteOffset() {
-  return HEADER_RESERVED;
-}
-
 function payloadByteLength(capacityBits) {
   const minBytes = Math.ceil(capacityBits / BITS_PER_BYTE);
   // Round up to 64-byte alignment so SIMD reads at the tail are safe.

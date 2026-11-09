@@ -1,10 +1,8 @@
 import { existsSync } from 'fs';
-import path from 'path';
 
-import { DB_PATHS, BINARY_HNSW_CONFIG } from '../infrastructure/config/index.js';
-import { chunkedIn } from '../infrastructure/db-utils.js';
+import { DB_PATHS } from '../infrastructure/config/index.js';
 import { LateInteractionIndex } from '../ranking/late-interaction-index.js';
-import { buildFromCodebaseDb as buildQuantizedArtifacts, shouldSkipArtifactRebuild, updateArtifactState, ARTIFACT_THRESHOLDS } from './artifact-builder.js';
+import { buildFromCodebaseDb as buildQuantizedArtifacts, shouldSkipArtifactRebuild, updateArtifactState } from './artifact-builder.js';
 import { log, logProgress } from './indexer-utils.js';
 import { chunkFilePath, pickLiInput } from './chunk-embed-text.js';
 import { isIndexAcceleratorAvailable } from './model-pool.js';
@@ -227,7 +225,6 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
   // time using the same loadProjectConfig() excludes; this pass adds the
   // LI-specific check globs can't do: content-based @generated markers.
   // Disable via SWEET_SEARCH_LI_SKIP_DISABLE=1.
-  let skippedSummary = null;
   if (!skipPolicyAlreadyApplied && Array.isArray(chunks) && chunks.length > 0) {
     const { applyIndexingChunkPolicy } = await import('./indexing-file-policy.js');
     const { kept, stats } = applyIndexingChunkPolicy(chunks, { projectRoot });
@@ -238,7 +235,6 @@ export async function buildLateInteractionIndex(chunks, dryRun = false, filesToR
       ].filter(Boolean).join(', ');
       log(`LI skip policy: dropped ${stats.totalSkipped} chunks across ${stats.skippedFiles} files (${breakdown}); kept ${kept.length} chunks across ${stats.keptFiles} files`, 'dim');
       chunks = kept;
-      skippedSummary = stats;
     }
   }
 

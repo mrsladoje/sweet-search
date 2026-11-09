@@ -14,10 +14,9 @@
  * Started by the search daemon / session hooks through maintainer-launcher.mjs.
  */
 
-import { readFileSync, writeFileSync, unlinkSync, mkdirSync, openSync, closeSync, constants, ftruncateSync, fsyncSync, writeSync, statSync, existsSync, realpathSync, lstatSync } from 'node:fs';
-import { basename, dirname, join, relative, resolve } from 'node:path';
+import { readFileSync, writeFileSync, unlinkSync, mkdirSync, openSync, closeSync, constants, ftruncateSync, fsyncSync, writeSync, statSync, realpathSync, lstatSync } from 'node:fs';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawn } from 'node:child_process';
 import { setProcessTitle } from '../infrastructure/process-title.js';
 import { randomUUID } from 'node:crypto';
 import os from 'node:os';
@@ -160,7 +159,7 @@ function danglingLink(p) {
   try { return lstatSync(p).isSymbolicLink() && missing(p); } catch { return false; }
 }
 
-export function reconcileV2Context(env = process.env) {
+function reconcileV2Context(env = process.env) {
   const projectRoot = resolve(env.SWEET_SEARCH_PROJECT_ROOT || PROJECT_ROOT);
   const stateDirPath = resolve(env.SWEET_SEARCH_STATE_DIR || join(projectRoot, '.sweet-search'));
   // A linked worktree's `.sweet-search` is a link to its index next to the main index
@@ -670,7 +669,7 @@ export async function drainMaintenanceInline(ctx) {
 let wakeSleep = null;
 
 /** End the current inter-tick sleep at once (no-op when not sleeping). */
-export function wakeMaintainerSleep() {
+function wakeMaintainerSleep() {
   const wake = wakeSleep;
   wakeSleep = null;
   if (wake) wake();

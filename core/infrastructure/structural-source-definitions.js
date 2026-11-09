@@ -98,7 +98,3 @@ export function findAssignedMemberDefinitions({ name, files, readFileRange, limi
   }
   return out;
 }
-
-export function findAssignedMemberDefinition(opts) {
-  return findAssignedMemberDefinitions(opts)[0] || null;
-}

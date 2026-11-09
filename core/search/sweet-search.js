@@ -6,30 +6,25 @@
  * the end of this file. The CLI is core/cli.js; the daemon is search-server.js.
  */
 
-import fs from 'fs/promises';
 import { existsSync, readFileSync, statSync } from 'fs';
 import path from 'path';
-import { DB_PATHS, PERFORMANCE_TARGETS, LOGGING, BINARY_HNSW_CONFIG, HCGS_CONFIG, LATE_INTERACTION_CONFIG, EMBEDDING_CONFIG, CASCADE_CONFIG, loadProjectConfig, shouldUseLocalReranker } from '../infrastructure/config/index.js';
+import { DB_PATHS, PERFORMANCE_TARGETS, LOGGING, BINARY_HNSW_CONFIG, HCGS_CONFIG, LATE_INTERACTION_CONFIG, CASCADE_CONFIG, loadProjectConfig, shouldUseLocalReranker } from '../infrastructure/config/index.js';
 import { getGlobalLocalReranker } from '../ranking/local-reranker.js';
 import { QueryRouter, routeQuery } from '../query/query-router.js';
 import { GraphSearch } from '../graph/graph-search.js';
-import { SYMBOL_KIND_WEIGHTS, DEFINITION_TYPES } from '../infrastructure/constants.js';
 import { BinaryHNSWIndex, binaryHnswIndexExists } from '../vector-store/binary-hnsw-index.js';
 import { Reranker } from '../ranking/flashrank.js';
 import { LateInteractionIndex } from '../ranking/late-interaction-index.js';
 import { resolveSearchRerankPolicy } from '../ranking/late-interaction-policy.js';
 import { applyPersistedLiModel, readPersistedLiPolicy } from '../infrastructure/index.js';
-import { getEmbedding, getBinaryEmbedding, truncateForHNSW, int8CosineSimilarity, warmup as warmupEmbedding, isWarm, registerAutoPersistOnExit } from '../embedding/embedding-service.js';
+import { warmup as warmupEmbedding } from '../embedding/embedding-service.js';
 import { FloatVectorStore, getFloatStorePath } from '../vector-store/float-vector-store.js';
-import { recordQueryTelemetry } from '../embedding/embedding-cache.js';
 import { CodebaseRepository } from '../infrastructure/codebase-repository.js';
 import { assertIndexSchemas } from '../infrastructure/index-schema.js';
 import { CodeGraphRepository } from '../infrastructure/code-graph-repository.js';
 import { readJsonFileCachedIfExists } from '../infrastructure/cached-json-file.js';
 import { loadSparseGramIndex } from '../infrastructure/native-sparse-gram.js';
-import { expandResults } from '../graph/graph-expansion.js';
-import { applyMMR, shouldApplyMMR, getLambdaForIntent, MMR_CONFIG } from '../ranking/mmr.js';
-import { QualityScorer, setRepoMapModule } from '../ranking/quality-scorer.js';
+import { setRepoMapModule } from '../ranking/quality-scorer.js';
 import { pageRank, loadGraph, buildAdjacency } from '../graph/repo-map.js';
 import { classifyIntent, getIntentPolicy } from '../query/intent-router.js';
 
@@ -704,9 +699,9 @@ export class SweetSearch {
   async search(query, options = {}) {
     const {
       k = 10, mode: requestedMode = 'auto', regex = '', expand = true, rerank = true,
-      fusion: fusionOpt = 'cc', useLateInteraction = this.useLateInteraction,
-      graphExpand = 'none', graphExpandOptions = {},
-      adaptiveHop2 = true, intent = 'none', qualityWeight = this.qualityWeight,
+      useLateInteraction = this.useLateInteraction,
+      graphExpand = 'none',
+      intent = 'none',
     } = options;
     const mode = requestedMode === 'grep' ? 'grep' : (regex ? 'pattern' : requestedMode);
 

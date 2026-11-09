@@ -236,7 +236,7 @@ function adaptiveStage2_5Pool(k, analysis, config) {
  * Uses `this` extensively.
  */
 export async function semanticSearch3Stage(query, options = {}) {
-  const { k = 10, rerank = true, useLateInteraction = this.useLateInteraction } = options;
+  const { k = 10, rerank = true } = options;
   const stats = { stages: {} };
   const adaptiveConfig = BINARY_HNSW_CONFIG.retrieval.adaptive || {};
 
@@ -604,7 +604,6 @@ export async function semanticSearch3Stage(query, options = {}) {
   let results = scoredCandidates;
   if (rerank && scoredCandidates.length > k && this.reranker.isAnyAvailable?.()) {
     try {
-      const stage3Start = performance.now();
       const topCandidates = scoredCandidates.slice(0, this.stage3Candidates);
 
       const documents = await this.loadDocumentContent(topCandidates);
@@ -766,7 +765,6 @@ export async function semanticSearchStandard(query, options = {}) {
   let results = candidates;
   if (rerank && candidates.length > k && this.reranker.isAnyAvailable?.()) {
     try {
-      const rerankStart = Date.now();
 
       const documents = await this.loadDocumentContent(candidates);
 

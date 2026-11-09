@@ -25,7 +25,7 @@ import path from 'path';
 import { DB_PATHS } from '../infrastructure/config/index.js';
 import { contentHashSync } from '../incremental-indexing/infrastructure/hashing.mjs';
 import { readFileStateObject, writeFileStateObject, fileStatePath } from '../incremental-indexing/infrastructure/file-state-store.mjs';
-import { STATE_VERSION, buildConfigFingerprint, validateConfigFingerprint, diffConfigFingerprint } from './config-fingerprint.js';
+import { STATE_VERSION, buildConfigFingerprint, validateConfigFingerprint } from './config-fingerprint.js';
 
 const STATE_PATH = DB_PATHS.merkle;
 
@@ -426,7 +426,7 @@ export async function validateCurrentState() {
  * Return the persisted tracker snapshot without emitting CLI-oriented logs.
  * Used by search-time overlays that need "changed since last index" state.
  */
-export async function getStateSnapshot() {
+async function getStateSnapshot() {
   const { state, configValidation } = await loadState(true);
   return {
     version: state.version,
@@ -455,24 +455,6 @@ export async function updatePhaseProgress(progress) {
     const fd = openSync(PROGRESS_PATH, 'r');
     try { fsyncSync(fd); } finally { closeSync(fd); }
   } catch (_err) { /* fsync not critical for progress file */ }
-}
-
-/**
- * Read per-phase progress. Returns null if no progress file or config fingerprint changed.
- */
-export async function getPhaseProgress() {
-  try {
-    const data = JSON.parse(await fs.readFile(PROGRESS_PATH, 'utf-8'));
-    // Stale progress (config changed) is discarded
-    if (!data.configFingerprint ||
-        diffConfigFingerprint(data.configFingerprint).length > 0 ||
-        data.configFingerprint.version !== STATE_VERSION) {
-      return null;
-    }
-    return data;
-  } catch (_err) {
-    return null;
-  }
 }
 
 export async function markPhaseComplete(phase) {

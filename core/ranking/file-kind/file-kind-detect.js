@@ -41,8 +41,6 @@ const TYPES_RE = /\.d\.ts$|(?:^|\/)types\//i;
 // for top-1 anyway. Re-evaluate if a future probe shows Makefile actually
 // poisoning a top-1 result.
 const ANCILLARY_RE = /(?:^|\/)\.(?:github|gitlab|circleci|vscode|cursor)\/|(?:^|\/)(?:package(?:-lock)?\.json|pnpm-lock\.yaml|yarn\.lock|Cargo\.lock|Gemfile\.lock|Dockerfile(?:\.[\w.-]+)?|Containerfile|\.dockerignore)$|\.(?:ya?ml|jsonc?|toml|ini|cfg|conf|lock|xml|csv|dockerfile)$/i;
-const DECLARATION_RE = /\b(function|class|struct|interface|enum|trait|fn\s+\w+|def\s+\w+|const\s+k[A-Z])\b|\btype\s+\w+\s*=/;
-const EXECUTABLE_DECLARATION_RE = /\b(function|class|struct|interface|enum|trait|fn\s+\w+|def\s+\w+|func\s+\w+)\b/;
 
 /**
  * Detect the file kind from a result path.

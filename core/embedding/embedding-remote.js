@@ -72,11 +72,11 @@ export const circuitBreaker = {
 
 export const _providerCompressionSupport = new Map();
 
-export function providerSupportsRequestCompression(provider) {
+function providerSupportsRequestCompression(provider) {
   return _providerCompressionSupport.get(provider) !== false;
 }
 
-export function markProviderNoCompression(provider) {
+function markProviderNoCompression(provider) {
   _providerCompressionSupport.set(provider, false);
 }
 
@@ -95,7 +95,7 @@ export function looksLikeJson(data) {
   return false;
 }
 
-export async function parseCompressedResponse({ body, statusCode, headers: resHeaders }) {
+async function parseCompressedResponse({ body, statusCode, headers: resHeaders }) {
   if (statusCode !== 200) {
     const error = await body.text();
     throw new Error(`API error: ${statusCode} - ${error}`);
@@ -124,7 +124,7 @@ export async function parseCompressedResponse({ body, statusCode, headers: resHe
   return JSON.parse(text);
 }
 
-export async function compressedApiRequest(pool, provider, apiPath, requestBody, apiKey) {
+async function compressedApiRequest(pool, provider, apiPath, requestBody, apiKey) {
   const jsonBody = JSON.stringify(requestBody);
 
   const headers = {
@@ -278,7 +278,7 @@ export class TimeWindowRateLimiter {
 
 let undiciPool = null;
 
-export async function getUndiciPool() {
+async function getUndiciPool() {
   if (undiciPool) return undiciPool;
 
   try {
@@ -292,26 +292,6 @@ export async function getUndiciPool() {
     return undiciPool;
   } catch {
     return null;
-  }
-}
-
-let httpsAgent = null;
-
-export async function getHttpsAgent() {
-  if (httpsAgent) return httpsAgent;
-
-  try {
-    const https = await import('https');
-    httpsAgent = new https.Agent({
-      keepAlive: true,
-      maxSockets: 10,
-      maxFreeSockets: 5,
-      timeout: 30000,
-      freeSocketTimeout: 15000,
-    });
-    return httpsAgent;
-  } catch {
-    return undefined;
   }
 }
 

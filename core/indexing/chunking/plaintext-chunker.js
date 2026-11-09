@@ -29,10 +29,6 @@ export class PlainTextChunker {
     const chunks = [];
     let charOffset = 0;
 
-    const lines = content.split('\n');
-    let lineIdx = 0;
-    let charInLine = 0;
-
     for (let i = 0; i < pieces.length; i++) {
       const piece = pieces[i];
       const trimmed = piece.trim();

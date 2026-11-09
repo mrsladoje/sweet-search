@@ -98,7 +98,7 @@ export const STYLE = (() => {
 // Colorless style — same geometry as STYLE but emits no ANSI escapes. Used when
 // the output policy keeps the banner but disables color (e.g. NO_COLOR set, or a
 // captured /dev/tty side-channel where we still want plain pixel art).
-export const PLAIN_STYLE = {
+const PLAIN_STYLE = {
   colors: STYLE.colors,
   fg: () => '',
   bg: () => '',
@@ -202,7 +202,7 @@ export function printStyledHeader(query, opts = {}) {
  * @param {(line?: string) => void} [opts.write]  line writer (default: stdout)
  * @param {Object} [opts.style]                   STYLE or PLAIN_STYLE
  */
-export function printStyledStats(stats, isWarm = false, opts = {}) {
+function printStyledStats(stats, isWarm = false, opts = {}) {
   const write = opts.write || _stdoutLine;
   const { colors, fg, reset } = opts.style || STYLE;
   const mode = stats.routing?.mode || stats.mode || 'auto';

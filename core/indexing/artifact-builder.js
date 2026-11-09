@@ -178,7 +178,7 @@ export function quantizeToBinary(float32Array) {
   return floatToBinary(float32Array);
 }
 
-export function batchQuantizeToInt8(embeddings) {
+function batchQuantizeToInt8(embeddings) {
   const int8Embeddings = embeddings.map(emb => quantizeToInt8(emb));
 
   return {
@@ -193,7 +193,7 @@ export function batchQuantizeToInt8(embeddings) {
   };
 }
 
-export function batchQuantizeToBinary(embeddings) {
+function batchQuantizeToBinary(embeddings) {
   const binaryEmbeddings = embeddings.map(emb => quantizeToBinary(emb));
 
   const floatDim = embeddings[0]?.length || 0;
@@ -693,7 +693,7 @@ Note: Int8 vectors are stored in .int8.json sidecar alongside HNSW index.
 
         console.log('\nInt8 quantization...');
         let start = performance.now();
-        const { int8Embeddings, stats: int8Stats } = batchQuantizeToInt8(vectors);
+        const { stats: int8Stats } = batchQuantizeToInt8(vectors);
         console.log(`  Time: ${(performance.now() - start).toFixed(2)}ms`);
         console.log(`  Compression: ${int8Stats.compressionRatio}x`);
         console.log(`  Original: ${(int8Stats.originalSizeBytes / 1024 / 1024).toFixed(2)} MB`);
@@ -701,7 +701,7 @@ Note: Int8 vectors are stored in .int8.json sidecar alongside HNSW index.
 
         console.log('\nBinary quantization...');
         start = performance.now();
-        const { binaryEmbeddings, stats: binaryStats } = batchQuantizeToBinary(vectors);
+        const { stats: binaryStats } = batchQuantizeToBinary(vectors);
         console.log(`  Time: ${(performance.now() - start).toFixed(2)}ms`);
         console.log(`  Compression: ${binaryStats.compressionRatio}x`);
         console.log(`  Original: ${(binaryStats.originalSizeBytes / 1024 / 1024).toFixed(2)} MB`);

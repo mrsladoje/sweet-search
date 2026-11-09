@@ -153,8 +153,6 @@ export function planAllocation(resources = detectResources()) {
     computeCores,
     availableCores,
     totalMemGB,
-    embeddingSessionRAM_MB,
-    liSessionRAM_MB,
     mainThreadRAM_MB,
     gpuTier = { tier: 0, variant: null, gpuCores: null },
   } = resources;

@@ -25,8 +25,8 @@
 
 import path from 'path';
 
-export const RAZOR_EXTENSIONS = ['.cshtml', '.razor'];
-export const ASPNET_EXTENSIONS = ['.aspx', '.ascx', '.master', '.asax', '.ashx', '.asmx', '.svc'];
+const RAZOR_EXTENSIONS = ['.cshtml', '.razor'];
+const ASPNET_EXTENSIONS = ['.aspx', '.ascx', '.master', '.asax', '.ashx', '.asmx', '.svc'];
 // Files whose body after the directive is C# (not markup).
 const ASPNET_CODE_FILE_EXTENSIONS = new Set(['.ashx', '.asmx']);
 
@@ -763,7 +763,6 @@ export function scanAspNet(text, filePath = '') {
 /** `<script runat="server">` elements, in order. */
 function serverScripts(t) {
   const out = [];
-  const lower = t.toLowerCase();
   const re = /<script\b([^>]*)>/gi;
   for (let m = re.exec(t); m; m = re.exec(t)) {
     const bodyS = m.index + m[0].length;

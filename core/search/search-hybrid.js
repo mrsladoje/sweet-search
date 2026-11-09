@@ -41,7 +41,7 @@ function envFloat(name, fallback, min = 0, max = 1) {
   return Number.isFinite(parsed) && parsed >= min && parsed <= max ? parsed : fallback;
 }
 
-export function rewriteImplementationQuery(query) {
+function rewriteImplementationQuery(query) {
   if (classifyFileKindIntent(query) !== 'implementation') return null;
   const stripped = String(query || '').trim().replace(QUERY_SCAFFOLD_RE, '').trim();
   if (!stripped) return null;

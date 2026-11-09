@@ -225,7 +225,7 @@ export const HARNESS_DEFAULT_FORM = Object.freeze(Object.fromEntries(
   Object.entries(HARNESS_PROFILE).map(([harness, p]) => [harness, p.form || MATCHER_FAMILY_FORM[p.family]]),
 ));
 
-export const MAX_ANCESTRY_DEPTH = 12;
+const MAX_ANCESTRY_DEPTH = 12;
 export const CACHE_MAX_AGE_MS = 12 * 60 * 60 * 1000;
 
 function truthy(v) {
@@ -299,7 +299,7 @@ function readProcessPs(pid) {
   return m ? { ppid: Number(m[1]), comm: '', args: m[2] } : null;
 }
 
-export function defaultReadProcess() {
+function defaultReadProcess() {
   return process.platform === 'linux' ? readProcessLinux : readProcessPs;
 }
 

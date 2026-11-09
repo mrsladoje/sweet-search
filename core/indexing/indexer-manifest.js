@@ -32,7 +32,7 @@ export function defaultIndexerManifestPaths() {
   };
 }
 
-export function defaultIndexerStateDir() {
+function defaultIndexerStateDir() {
   return path.dirname(DB_PATHS.codebase);
 }
 

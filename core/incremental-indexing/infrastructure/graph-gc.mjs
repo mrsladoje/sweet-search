@@ -52,8 +52,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Database from 'better-sqlite3';
 
-export const DEFAULT_GRAPH_GC_BATCH = 2000;
-export const DEFAULT_GRAPH_GC_MAX_ROWS = 100_000;
+const DEFAULT_GRAPH_GC_BATCH = 2000;
+const DEFAULT_GRAPH_GC_MAX_ROWS = 100_000;
 
 function tableExists(db, name) {
   return !!db.prepare(

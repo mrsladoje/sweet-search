@@ -257,11 +257,10 @@ Usage:
 
         console.log('\n--- Cold Start ---');
         const coldStart = Date.now();
-        const coldResult = await reranker.rerank(query, documents, 5);
+        await reranker.rerank(query, documents, 5);
         console.log(`Cold latency: ${Date.now() - coldStart}ms (includes model load)`);
 
         console.log('\n--- Warm Run ---');
-        const warmStart = Date.now();
         const warmResult = await reranker.rerank(query, documents, 5);
         console.log(`Warm latency: ${warmResult.latency_ms}ms`);
         console.log(`Model: ${warmResult.model}`);

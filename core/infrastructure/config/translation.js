@@ -3,8 +3,6 @@
  */
 
 const CEREBRAS_API_KEY = process.env.CEREBRAS_API_KEY || '';
-const GROQ_API_KEY = process.env.GROQ_API_KEY || '';
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 
 // Reference: https://inference-docs.cerebras.ai/models/zai-glm-46
 

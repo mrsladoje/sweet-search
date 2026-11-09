@@ -82,7 +82,7 @@ async function writeJsonAtomic(filePath, payload) {
  * Resolve the segmented LI layout from the stub. Returns null for legacy /
  * missing / corrupt indices (callers skip — nothing to merge).
  */
-export function resolveSegmentedLayout(stateDir) {
+function resolveSegmentedLayout(stateDir) {
   const stubPath = path.join(stateDir, 'codebase-late-interaction.db');
   if (!fs.existsSync(stubPath)) return null;
   const stub = readJson(stubPath);
@@ -225,7 +225,7 @@ export async function collectLiveDocs(stubPath, segmentDir, manifest, segAbsPath
  * add up to a real share of it, instead of on every merge (a 5.5k-doc segment
  * used to be copied each time two 1-doc tick segments appeared).
  */
-export const MERGE_GROWTH_FACTOR = 4;
+const MERGE_GROWTH_FACTOR = 4;
 export function pickSegmentsToMerge(small) {
   const sorted = [...small].sort((a, b) => a.count - b.count);
   const picked = [];

@@ -26,7 +26,7 @@ import v8 from 'node:v8';
 import { fileURLToPath } from 'node:url';
 import { setProcessTitle } from '../infrastructure/process-title.js';
 
-export const MAX_FRAME_BYTES = 256 * 1024 * 1024;
+const MAX_FRAME_BYTES = 256 * 1024 * 1024;
 
 export function encodeFrame(value) {
   const body = v8.serialize(value);
@@ -52,7 +52,7 @@ export function createFrameReader(onFrame) {
 }
 
 /** Is a server answering on `socketPath`? */
-export function socketAnswers(socketPath, timeoutMs = 500) {
+function socketAnswers(socketPath, timeoutMs = 500) {
   return new Promise((resolve) => {
     const s = net.connect(socketPath);
     const done = (v) => { clearTimeout(t); s.destroy(); resolve(v); };

@@ -105,7 +105,7 @@ async function handleRequestFrame(socket, header) {
  * supported: each connection gets its own decoder and requests are processed
  * as their frames complete. Robust to fragmentation and to client disconnects.
  */
-export function attachConnection(socket) {
+function attachConnection(socket) {
   socket.on('error', () => { /* client vanished — ignore, keep server up */ });
   const decoder = new FrameDecoder((header, _payload, err) => {
     if (err) {

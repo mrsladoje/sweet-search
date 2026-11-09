@@ -21,13 +21,13 @@ import { recordEncode } from '../infrastructure/inference-provenance.js';
 
 const HOST = fileURLToPath(new URL('./encoder-host.mjs', import.meta.url));
 
-export const DEFAULT_ENCODER_IDLE_MS = 60_000;
+const DEFAULT_ENCODER_IDLE_MS = 60_000;
 // Cap of the adaptive idle period (maxIdleMs): see armIdle.
-export const DEFAULT_ENCODER_IDLE_MAX_MS = 10 * 60_000;
-export const DEFAULT_ENCODER_RSS_MAX_BYTES = 6 * 1024 ** 3;
+const DEFAULT_ENCODER_IDLE_MAX_MS = 10 * 60_000;
+const DEFAULT_ENCODER_RSS_MAX_BYTES = 6 * 1024 ** 3;
 // Longest silence from a busy child (no progress, no reply). One LI batch is at
 // most ~4k tokens; even 2 threads on a slow laptop finish it far sooner.
-export const DEFAULT_ENCODER_REQUEST_TIMEOUT_MS = 120_000;
+const DEFAULT_ENCODER_REQUEST_TIMEOUT_MS = 120_000;
 
 export function encoderIdleMs(env = process.env) {
   const n = Number(env.SWEET_SEARCH_ENCODER_IDLE_MS);

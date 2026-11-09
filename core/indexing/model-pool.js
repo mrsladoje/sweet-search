@@ -524,7 +524,3 @@ export async function warmupQueryCpuModels() {
   _cpuDiag = { loadMs, warmMs, embedOk, liOk };
   return _cpuDiag;
 }
-
-export function getPoolDiagnostics() {
-  return { gpu: _gpuDiag, cpu: _cpuDiag };
-}

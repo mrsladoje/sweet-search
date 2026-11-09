@@ -15,14 +15,8 @@ const cache = new Map();
 const RECHECK_MS = 5;
 const lastChecked = new Map(); // path -> { at: performance.now(), missing }
 
-export function readJsonFileCached(filePath) {
-  const value = readJsonFileCachedIfExists(filePath);
-  // No file: the read that throws what readFileSync throws.
-  return value !== undefined ? value : parseCached(filePath, statSync(filePath, { bigint: true }));
-}
-
 /**
- * readJsonFileCached, but undefined (no exception) when the file does not
+ * Cached JSON read, undefined (no exception) when the file does not
  * exist. Hot callers that treat a missing file as "none" use this: a thrown
  * ENOENT costs several microseconds (the error and its stack) per call.
  */

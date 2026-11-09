@@ -28,7 +28,7 @@
  * update give the same rows.
  */
 
-export const CHUNK_TEXT_FTS_TABLE = 'chunk_text_fts';
+const CHUNK_TEXT_FTS_TABLE = 'chunk_text_fts';
 export const CHUNK_TEXT_FTS_MAX_CHARS = 2000;
 /** bm25() weights, in column order (body, subtokens). */
 export const CHUNK_TEXT_FTS_WEIGHTS = Object.freeze({ body: 1.0, subtokens: 0.5 });
@@ -53,7 +53,7 @@ const TRIGGERS = Object.freeze({
 });
 
 /** False when the operator turned the index off (SWEET_SEARCH_CHUNK_TEXT_FTS=0). */
-export function chunkTextFtsEnabled(env = process.env) {
+function chunkTextFtsEnabled(env = process.env) {
   const raw = env.SWEET_SEARCH_CHUNK_TEXT_FTS;
   return !(raw === '0' || raw === 'false' || raw === 'off');
 }
@@ -98,7 +98,7 @@ function tableExists(db, name) {
   return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type IN ('table','view') AND name = ?").get(name);
 }
 
-export function hasChunkTextFts(db) {
+function hasChunkTextFts(db) {
   try { return tableExists(db, CHUNK_TEXT_FTS_TABLE); } catch { return false; }
 }
 

@@ -12,7 +12,7 @@ import { createHash } from 'crypto';
 import path from 'path';
 import fs from 'fs/promises';
 import { detectProjectBoundary } from '../infrastructure/project-detector.js';
-import { getLanguageByPath, resolveLanguage } from '../infrastructure/language-patterns.js';
+import { resolveLanguage } from '../infrastructure/language-patterns.js';
 import { DocumentChunker } from './document-chunker.js';
 import { JAVA_FAMILY, normalizePathSlug } from './chunking/java-family.js';
 import { embedTextCap } from './chunk-embed-text.js';
@@ -89,7 +89,7 @@ function getEmbedTextVariant() {
 // these — every other language gets exactly the `current` output.
 const SIGNATURE_HELP_LANGUAGES = new Set(['ruby', 'php']);
 
-export function shouldRunEnrichment() {
+function shouldRunEnrichment() {
   return ENRICHMENT_VARIANTS.has(getEmbedTextVariant());
 }
 
@@ -821,7 +821,6 @@ export class ASTChunker {
     let segStart = 0;
     let segSize = 0;
     let childCounter = 0;
-    let braceDepth = 0;
     const stripState = { inBlockComment: false, inTemplateLiteral: false, interpolationDepth: 0 };
     const hasTemplateInterpolation = (language === 'javascript');
 
@@ -830,9 +829,6 @@ export class ASTChunker {
       const lineSize = line.length + 1; // +1 for newline
       const inBlockCommentAtStart = stripState.inBlockComment;
       const stripped = this._stripNonCode(line, stripState, comment, hasTemplateInterpolation);
-
-      braceDepth += (stripped.match(/{/g) || []).length;
-      braceDepth -= (stripped.match(/}/g) || []).length;
 
       // Check if this line is a sub-boundary (a new construct starting at depth >= 1).
       // Use the comment-stripped line so Javadoc `<pre>public class Foo {...}</pre>`

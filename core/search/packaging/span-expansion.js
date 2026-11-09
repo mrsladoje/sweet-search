@@ -478,15 +478,7 @@ export function expandBySyntax(fileCache, filePath, startLine, endLine, tokenCap
       blockEnd = i;
     }
   } else {
-    let braceDepth = 0;
     blockStart = chunkStartIdx;
-
-    for (let i = chunkStartIdx; i <= chunkEndIdx && i < lines.length; i++) {
-      for (const ch of lines[i]) {
-        if (ch === '{') braceDepth++;
-        else if (ch === '}') braceDepth--;
-      }
-    }
 
     // Find the enclosing function/class by scanning upward for a signature pattern.
     // This is more robust than pure brace-counting, which can be confused by

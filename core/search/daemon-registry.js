@@ -27,7 +27,7 @@
  */
 
 import fs from 'node:fs/promises';
-import { readFileSync, lstatSync, mkdirSync, statSync } from 'node:fs';
+import { lstatSync, mkdirSync, statSync } from 'node:fs';
 import { daemonRequest } from './daemon-client.js';
 import os from 'node:os';
 import path from 'node:path';
@@ -293,13 +293,3 @@ export function selectEvictionTargets(liveEntries, selfPid, count) {
     .slice(0, count);
 }
 
-/** Synchronous registry read (used only by diagnostics/tests). */
-export function readRegistrySync(env = process.env) {
-  try {
-    const parsed = JSON.parse(readFileSync(registryPath(env), 'utf-8'));
-    const daemons = parsed && typeof parsed === 'object' ? parsed.daemons : null;
-    return daemons && typeof daemons === 'object' ? daemons : {};
-  } catch {
-    return {};
-  }
-}

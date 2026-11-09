@@ -27,7 +27,7 @@ import { ARTIFACT_THRESHOLDS } from './artifact-builder.js';
 
 import {
   isWalSafe, configureJournalMode,
-  colors, setQuietMode, isQuietMode, setVerboseMode, log, logProgress, logError,
+  setQuietMode, isQuietMode, log, logError,
   atomicSwapDatabase,
   readFilesFromStdin, discoverFiles,
 } from './indexer-utils.js';
@@ -85,7 +85,6 @@ async function main() {
 
   if (verbose) {
     setQuietMode(false);
-    setVerboseMode(true);
   }
 
   // Animated banner (best-effort; interactive TTY only, never in CI / quiet / stdin-fed runs).
@@ -509,7 +508,6 @@ export {
   readFilesFromStdin,
   setQuietMode,
   isQuietMode,
-  setVerboseMode,
   createVectorSchema,
   insertVectors,
   atomicSwapDatabase,

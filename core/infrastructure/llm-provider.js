@@ -502,7 +502,7 @@ export async function generateSummary(prompt, options = {}) {
   }
 }
 
-export async function generateSummariesBatch(items, options = {}) {
+async function generateSummariesBatch(items, options = {}) {
   const provider = await getSummaryProvider({ preferLocal: options.preferLocal });
   const concurrency = provider.isLocal ? 1 : 5; // Limit concurrency for local providers
 
@@ -547,20 +547,7 @@ export function createSummaryPrompt(entity) {
   return prompt;
 }
 
-export {
-  generateWithGroq,
-  generateWithCerebras,
-  generateWithOllama,
-  generateWithTransformers,
-  generateStaticSummary,
-  isOllamaAvailable,
-  isTransformersAvailable,
-  providers,
-  GROQ_HCGS_CONFIG,
-  OLLAMA_CONFIG,
-  TRANSFORMERS_CONFIG,
-  RETRY_CONFIG,
-};
+export { generateStaticSummary, providers, RETRY_CONFIG };
 
 export default {
   getSummaryProvider,

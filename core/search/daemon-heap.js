@@ -18,7 +18,7 @@
 
 import os from 'node:os';
 
-export const DAEMON_HEAP_MIN_MB = 4096;
+const DAEMON_HEAP_MIN_MB = 4096;
 
 /** The memory the daemon may use: the cgroup limit when it is below physical RAM. */
 export function memoryLimitBytes({ constrained = process.constrainedMemory?.() ?? 0, total = os.totalmem() } = {}) {
