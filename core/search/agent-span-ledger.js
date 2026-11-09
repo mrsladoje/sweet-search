@@ -10,7 +10,7 @@ import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { extractQueryEvidence } from './query-sufficiency.js';
 import { CHAIN_PID_ENV, harnessKey, readProcInfo } from '../agent-tools/chain.js';
-import { currentCall } from '../agent-tools/virtual-process.js';
+import { currentCall } from '../infrastructure/call-context.js';
 
 export const SHOWN_SPAN_TRAILER_ENV = 'SWEET_SEARCH_SHOWN_SPAN_TRAILER';
 export const EXACT_REREAD_OMISSION_ENV = 'SWEET_SEARCH_EXACT_REREAD_OMISSION';

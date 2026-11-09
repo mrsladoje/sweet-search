@@ -3,7 +3,7 @@
 import http from 'node:http';
 import { projectSocketPath } from './server-identity.js';
 import { resolveAgentSessionId } from './agent-span-ledger.js';
-import { currentCall } from '../agent-tools/virtual-process.js';
+import { currentCall } from '../infrastructure/call-context.js';
 
 const MAX_BODY_BYTES = 64 * 1024;
 

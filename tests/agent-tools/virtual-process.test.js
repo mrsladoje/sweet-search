@@ -5,7 +5,8 @@
  */
 import { describe, it, expect } from 'vitest';
 import { execFileSync } from 'node:child_process';
-import { runInVirtualProcess, currentCall, callMemo, ExitSignal } from '../../core/agent-tools/virtual-process.js';
+import { runInVirtualProcess, ExitSignal } from '../../core/agent-tools/virtual-process.js';
+import { currentCall, callMemo } from '../../core/infrastructure/call-context.js';
 
 const tick = (ms) => new Promise((r) => setTimeout(r, ms));
 

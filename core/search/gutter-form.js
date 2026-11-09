@@ -181,7 +181,7 @@ import os from 'node:os';
 import { readFileSync, writeFileSync, renameSync, unlinkSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { currentCall } from '../agent-tools/virtual-process.js';
+import { currentCall } from '../infrastructure/call-context.js';
 
 export const GUTTER_FORMS = Object.freeze({
   tab: '\t',

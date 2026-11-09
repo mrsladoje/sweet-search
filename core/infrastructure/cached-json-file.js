@@ -8,7 +8,7 @@
  */
 
 import { readFileSync, statSync } from 'node:fs';
-import { currentCall } from '../agent-tools/virtual-process.js';
+import { currentCall } from './call-context.js';
 
 const MAX_FILES = 64;
 const cache = new Map();

@@ -50,7 +50,7 @@ export {
 } from './search-pattern-sparse-overlay.js';
 import { DB_PATHS } from '../infrastructure/config/index.js';
 import { resolveSearchSymbolFilter } from './search-pattern-chunks.js';
-import { callMemo } from '../agent-tools/virtual-process.js';
+import { callMemo } from '../infrastructure/call-context.js';
 
 // =============================================================================
 // Case-insensitive flag detection

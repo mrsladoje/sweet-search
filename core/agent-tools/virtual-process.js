@@ -25,9 +25,7 @@
  * paths execute one code path with one output contract.
  */
 
-import { AsyncLocalStorage } from 'node:async_hooks';
-
-const storage = new AsyncLocalStorage();
+import { callStorage as storage } from '../infrastructure/call-context.js';
 
 /** Thrown by process.exit inside a call; carries the exit code out of the tool code. */
 export class ExitSignal extends Error {
@@ -43,28 +41,6 @@ export class ExitSignal extends Error {
     this.name = 'ExitSignal';
     this.exitCode = code;
   }
-}
-
-/** The active call ({ env, cwd, pid, ... }) or null outside a call. */
-export function currentCall() {
-  return storage.getStore() ?? null;
-}
-
-/**
- * `compute()` once per call for `key`: a file-system fact a call asks for many times (the
- * reconcile manifest was stat'ed ~20 times per ss-grep call, the project root realpath'd ~6
- * times; each probe is several µs, ~10 µs on a Linux VM). One call sees one answer, as if it
- * had read the file system once when it started; the next call asks again. Outside a call
- * (MCP, the human CLI, the maintainer) nothing is kept. A throw is not kept.
- */
-export function callMemo(key, compute) {
-  const call = storage.getStore();
-  if (!call) return compute();
-  const memo = (call.memo ||= new Map());
-  if (memo.has(key)) return memo.get(key);
-  const value = compute();
-  memo.set(key, value);
-  return value;
 }
 
 let installed = null;

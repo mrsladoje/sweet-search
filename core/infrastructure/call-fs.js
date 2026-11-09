@@ -1,5 +1,5 @@
 /**
- * File-system probes answered once per ss-* call (callMemo in core/agent-tools/virtual-process.js).
+ * File-system probes answered once per ss-* call (callMemo in call-context.js).
  *
  * One ss-grep call asked the same questions many times: is the scope a file (4 times), where
  * is the project root really (6 realpaths), when was each matched file last changed (twice
@@ -9,7 +9,7 @@
  */
 
 import fs from 'node:fs';
-import { callMemo } from '../agent-tools/virtual-process.js';
+import { callMemo } from './call-context.js';
 
 /** fs.existsSync(p), once per call. */
 export function callExistsSync(p) {

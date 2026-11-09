@@ -15,7 +15,7 @@ import { DB_PATHS, LATE_INTERACTION_CONFIG } from '../infrastructure/config/inde
 import { clearCache } from '../embedding/embedding-cache.js';
 import { createSupervisionState, runSupervisionTick } from '../indexing/maintainer-launcher.mjs';
 import { projectSocketPath, projectPidFile, tcpPort, resolveProjectRoot } from './server-identity.js';
-import { currentCall } from '../agent-tools/virtual-process.js';
+import { currentCall } from '../infrastructure/call-context.js';
 import { callRealpathNative } from '../infrastructure/call-fs.js';
 import { startGrepLane, stopGrepLane, grepLaneHandledCount, drainGrepLaneReceipts } from './grep-lane.js';
 import { beginPinnedRead, endPinnedRead } from './search-reader-pin.js';

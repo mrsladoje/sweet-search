@@ -20,7 +20,7 @@ import {
   resolveManifestCodeGraphPath,
 } from './code-graph-visibility.js';
 import { assertGraphSchema } from './index-schema.js';
-import { callMemo } from '../agent-tools/virtual-process.js';
+import { callMemo } from './call-context.js';
 
 // A connection's identity for callMemo keys.
 const connectionIds = new WeakMap();
