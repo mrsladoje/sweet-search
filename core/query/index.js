@@ -8,14 +8,6 @@
 export { QueryRouter, routeQuery, extractFeatures } from './query-router.js';
 export { default as QueryRouterDefault } from './query-router.js';
 
-// ML Query Router (decision tree)
-export {
-  extractMLFeatures,
-  routeQueryML as routeQueryMLTree,
-  routeWithML,
-  ML_CONFIDENCE_THRESHOLD as ML_CONFIDENCE_THRESHOLD_TREE,
-} from './query-router-ml.js';
-export { default as QueryRouterML } from './query-router-ml.js';
 
 // CatBoost Query Router (with reject option)
 export {

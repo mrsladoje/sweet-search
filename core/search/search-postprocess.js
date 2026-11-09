@@ -10,7 +10,7 @@
 
 import { readFileSync, statSync } from 'fs';
 import path from 'path';
-import { SEISMIC_CONFIG, DB_PATHS } from '../infrastructure/config/index.js';
+import { DB_PATHS } from '../infrastructure/config/index.js';
 import { expandResults } from '../graph/graph-expansion.js';
 import { int8CosineSimilarity } from '../embedding/embedding-service.js';
 import { QualityScorer } from '../ranking/quality-scorer.js';
@@ -468,12 +468,11 @@ export function shapeFinalList(results, opts = {}) {
  *
  * This function encapsulates the post-search pipeline:
  * 1. Merge semantic stats into main stats
- * 2. SEISMIC sparse vector integration
- * 3. Graph expansion
- * 4. Translation fallback
- * 5. Quality scoring
- * 6. Intent policy application
- * 7. Telemetry recording
+ * 2. Graph expansion
+ * 3. Translation fallback
+ * 4. Quality scoring
+ * 5. Intent policy application
+ * 6. Telemetry recording
  *
  * Uses `this` extensively — must be wired onto prototype as _applyPostRetrieval.
  *
@@ -547,24 +546,6 @@ export async function applyPostRetrieval(results, query, options, searchContext)
   // Extract query embedding for query-dependent graph expansion scoring
   const queryInt8 = semanticStats?.queryInt8 || null;
 
-  // =========================================================================
-  // SEISMIC Sparse Vector Path (gated by SEISMIC_CONFIG.enabled)
-  // =========================================================================
-  // Prerequisites: sparse encoder (SPLADE or code-specific) not yet available.
-  // When enabled, will provide third retrieval pathway for learned sparse embeddings.
-  // See docs/AST_OPTIMIZATIONS.md #12 for architecture and integration plan.
-  if (SEISMIC_CONFIG.enabled && this._seismicIndex) {
-    try {
-      const sparseStart = Date.now();
-      // TODO: Generate sparse query embedding via encoder
-      // const sparseQuery = await sparseEncoder.encode(query);
-      // const sparseResults = this._seismicIndex.query(sparseQuery, k);
-      // results = reciprocalRankFuse(results, sparseResults, SEISMIC_CONFIG.weight);
-      stats.seismic = { enabled: true, latency_ms: Date.now() - sparseStart, status: 'awaiting_sparse_encoder' };
-    } catch (err) {
-      stats.seismic = { enabled: true, error: err.message };
-    }
-  }
 
   // =========================================================================
   // Graph Expansion (post-processing)

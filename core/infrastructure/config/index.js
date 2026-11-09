@@ -15,13 +15,11 @@ export * from './ranking.js';
 // Search patterns, routing, performance targets
 export * from './search.js';
 
-// Indexing profiles — detectIndexerProfile comes from platform.js (not re-exported
-// here from indexing.js to avoid ESM ambiguity with the platform.js export *)
 
 // Code graph config
 export * from './graph.js';
 
-// Vector store indices (HNSW, Binary HNSW, SEISMIC)
+// Vector store indices (HNSW, Binary HNSW)
 export * from './vector-store.js';
 
 // Cerebras LLM (used by llm-provider.js for graph/HCGS generation)
@@ -37,7 +35,7 @@ import { EMBEDDING_PROVIDERS, EMBEDDING_CONFIG, getActiveProvider, isVoyageAvail
 import { RERANK_CONFIG, LOCAL_RERANKER_CONFIG, shouldUseLocalReranker, isJinaRerankerAvailable, getJinaRerankerApiKey, CASCADE_CONFIG, LATE_INTERACTION_CONFIG } from './ranking.js';
 import { FILE_PATTERNS, AGENTIC_GITIGNORE_ALLOWLIST, ROUTING_CONFIG, PERFORMANCE_TARGETS, loadProjectConfig } from './search.js';
 import { GRAPH_CONFIG, HCGS_CONFIG } from './graph.js';
-import { HNSW_CONFIG, BINARY_HNSW_CONFIG, SEISMIC_CONFIG } from './vector-store.js';
+import { HNSW_CONFIG, BINARY_HNSW_CONFIG } from './vector-store.js';
 import { CEREBRAS_CONFIG, isCerebrasAvailable, getCerebrasModel } from './translation.js';
 import { DEDUP_CONFIG } from './dedup.js';
 
@@ -54,7 +52,7 @@ export default {
   LATE_INTERACTION_CONFIG,
   HNSW_CONFIG,
   BINARY_HNSW_CONFIG,
-  SEISMIC_CONFIG,
+
   GRAPH_CONFIG,
   HCGS_CONFIG,
   ROUTING_CONFIG,

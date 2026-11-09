@@ -33,16 +33,11 @@ export * from './indexer-utils.js';
 export { default as incrementalTracker } from './incremental-tracker.js';
 export * from './incremental-tracker.js';
 
-// Incremental parser (has default export)
-export { default as IncrementalParser } from './incremental-parser.js';
-export * from './incremental-parser.js';
 
 // Artifact builder (has default export)
 export { default as artifactBuilder } from './artifact-builder.js';
 export * from './artifact-builder.js';
 
-// Merkle tracker
-export * from './merkle-tracker.js';
 
 // Document chunker
 export * from './document-chunker.js';
@@ -79,8 +74,6 @@ export {
   chunkLooksGenerated,
 } from './indexing-file-policy.js';
 
-// Late-interaction compatibility export
-export { applyLiSkipPolicy } from './li-skip-policy.js';
 
 // Sparse-gram artifact builder (tier-1 grep acceleration)
 export { buildSparseGramArtifact } from './indexer-sparse-gram.js';

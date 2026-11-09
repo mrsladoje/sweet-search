@@ -398,12 +398,6 @@ export async function checkHealth({ getConfig, PROJECT_ROOT }) {
       }
     }
 
-    // SEISMIC sparse vector subsystem (separate from loop — uses 'disabled' semantics, not 'not_initialized')
-    const seismicEnabled = config.SEISMIC_CONFIG?.enabled ?? false;
-    subsystems['seismic'] = {
-      status: seismicEnabled ? 'ok' : 'not_initialized',
-      details: seismicEnabled ? '' : 'Disabled (awaiting sparse encoder)',
-    };
 
     try {
       if (existsSync(config.DB_PATHS.codeGraph)) {

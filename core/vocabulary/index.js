@@ -60,19 +60,6 @@ export {
   saveBinaryArtifact as saveBinaryArtifactOrchestrator,
 } from './vocab-warmup-orchestrator.js';
 
-// vocabulary-utils.js
-export {
-  default as vocabularyUtils,
-  BinaryVocabulary,
-  mineQueryLogs,
-  extractEntities,
-  generateAllTerms,
-  callVoyageAPI,
-  migrateJsonToBinary,
-  warmupFull,
-  warmupLearn,
-  getStats,
-} from './vocabulary-utils.js';
 
 // vocab-constants.js
 export {

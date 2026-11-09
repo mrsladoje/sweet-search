@@ -464,7 +464,7 @@ async function benchmarkHCGSGeneration(iterations = 5) {
   console.log('\n=== HCGS Generation Throughput ===');
 
   // Import required modules
-  const { buildSummaryPrompt, getTokenLimitForType, HIERARCHY_LEVELS } = await import('./hcgs-generator.js');
+  const { buildSummaryPrompt, getTokenLimitForType, HIERARCHY_LEVELS } = await import('../core/graph/hcgs-generator.js');
 
   const latencies = [];
 

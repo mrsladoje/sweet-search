@@ -64,7 +64,6 @@ const {
   mockComputeGraphHash,
   mockMineAll,
   mockRankAll,
-  mockBinaryVocabulary,
 } = vi.hoisted(() => ({
   mockGenerateEmbeddings: vi.fn(async (texts) =>
     texts.map(() => new Float32Array(256).fill(0.1))
@@ -96,7 +95,7 @@ const {
     ],
     stats: { totalIdentifiersMined: 2, totalPhrasesMined: 1 },
   })),
-  mockBinaryVocabulary: vi.fn(function () { return {}; }),
+
 }));
 
 // Mock embedding-service
@@ -127,9 +126,6 @@ vi.mock('../../core/vocabulary/vocab-miner.js', () => ({ mineAll: mockMineAll })
 vi.mock('../../core/vocab-ranker.js', () => ({ rankAll: mockRankAll }));
 vi.mock('../../core/vocabulary/vocab-ranker.js', () => ({ rankAll: mockRankAll }));
 
-// Mock vocabulary-utils with proper constructor function
-vi.mock('../../core/vocabulary-utils.js', () => ({ BinaryVocabulary: mockBinaryVocabulary }));
-vi.mock('../../core/vocabulary/vocabulary-utils.js', () => ({ BinaryVocabulary: mockBinaryVocabulary }));
 
 import {
   warmLexical,

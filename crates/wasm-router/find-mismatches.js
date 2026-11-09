@@ -8,7 +8,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 async function main() {
   const wasmPath = join(__dirname, 'pkg', 'query_router_wasm.js');
   const wasm = await import(wasmPath);
-  const { routeQueryCatBoostWithReject } = await import('../query-router-catboost.js');
+  const { routeQueryCatBoostWithReject } = await import('../../core/query/query-router-catboost.js');
 
   const querySetDir = join(__dirname, '..', 'evaluation', 'query-sets');
   const mismatches = [];

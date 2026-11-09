@@ -1,10 +1,10 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import {
-  applyLiSkipPolicy,
+  applyIndexingChunkPolicy as applyLiSkipPolicy,
   isExcludedByConfig,
   chunkLooksGenerated,
   _internals,
-} from '../../core/indexing/li-skip-policy.js';
+} from '../../core/indexing/indexing-file-policy.js';
 
 describe('li-skip-policy', () => {
   const cleanupEnv = () => {

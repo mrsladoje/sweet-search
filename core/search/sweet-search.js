@@ -12,7 +12,7 @@
 import fs from 'fs/promises';
 import { existsSync, readFileSync, statSync } from 'fs';
 import path from 'path';
-import { DB_PATHS, PERFORMANCE_TARGETS, LOGGING, BINARY_HNSW_CONFIG, HCGS_CONFIG, LATE_INTERACTION_CONFIG, EMBEDDING_CONFIG, SEISMIC_CONFIG, CASCADE_CONFIG, loadProjectConfig, shouldUseLocalReranker } from '../infrastructure/config/index.js';
+import { DB_PATHS, PERFORMANCE_TARGETS, LOGGING, BINARY_HNSW_CONFIG, HCGS_CONFIG, LATE_INTERACTION_CONFIG, EMBEDDING_CONFIG, CASCADE_CONFIG, loadProjectConfig, shouldUseLocalReranker } from '../infrastructure/config/index.js';
 import { getGlobalLocalReranker } from '../ranking/local-reranker.js';
 import { QueryRouter, routeQuery } from '../query/query-router.js';
 import { GraphSearch } from '../graph/graph-search.js';
@@ -189,8 +189,7 @@ export class SweetSearch {
     this.returnSummaryFirst = options.returnSummaryFirst ?? HCGS_CONFIG.returnSummaryFirst;
     this.summaryTokenBudget = options.summaryTokenBudget ?? HCGS_CONFIG.summaryTokenBudget;
     this.fullCodeTokenBudget = options.fullCodeTokenBudget ?? HCGS_CONFIG.fullCodeTokenBudget;
-    // SEISMIC sparse vector path (lazy-loaded when SEISMIC_CONFIG.enabled)
-    this._seismicIndex = null;
+
     // Direct-access float vector store for Stage 2.5 (replaces SQLite on hot path)
     this.floatVectorStore = new FloatVectorStore();
     this.qualityWeight = options.qualityWeight ?? 0;

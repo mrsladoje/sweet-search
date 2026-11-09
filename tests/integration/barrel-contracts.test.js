@@ -210,7 +210,7 @@ describe('Domain Barrel Contracts', () => {
       expect(m.runCli).toBeTypeOf('function');
       expect(m.startServer).toBeTypeOf('function');
       expect(m.queryServer).toBeTypeOf('function');
-      expect(m.warmSession).toBeTypeOf('function');
+
       expect(m.WarmupMetrics).toBeTypeOf('function');
     });
   });
@@ -220,7 +220,7 @@ describe('Domain Barrel Contracts', () => {
       const m = await import('../../core/vector-store/index.js');
       expect(m.BinaryHNSWIndex).toBeTypeOf('function');
       expect(m.FloatVectorStore).toBeTypeOf('function');
-      expect(m.SeismicIndex).toBeTypeOf('function');
+
       // SIMD distance functions
       expect(m.wasmHammingDistance).toBeTypeOf('function');
       expect(m.wasmInt8Cosine).toBeTypeOf('function');
@@ -228,7 +228,7 @@ describe('Domain Barrel Contracts', () => {
       // Heaps
       expect(m.TypedMinHeap).toBeTypeOf('function');
       expect(m.TypedMaxHeap).toBeTypeOf('function');
-      expect(m.TopKHeap).toBeTypeOf('function');
+
     });
   });
 
@@ -237,12 +237,12 @@ describe('Domain Barrel Contracts', () => {
       const m = await import('../../core/vocabulary/index.js');
       expect(m.vocabMiner).toBeDefined();
       expect(m.vocabWarmer).toBeDefined();
-      expect(m.BinaryVocabulary).toBeTypeOf('function');
+
       expect(m.splitIdentifier).toBeTypeOf('function');
       expect(m.STOP_WORDS).toBeDefined();
       expect(m.mineAll).toBeTypeOf('function');
       expect(m.rankAll).toBeTypeOf('function');
-      expect(m.warmupFull).toBeTypeOf('function');
+
     });
   });
 

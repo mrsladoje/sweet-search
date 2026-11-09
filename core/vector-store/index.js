@@ -1,7 +1,7 @@
 /**
  * Vector Store — barrel export for the vector-store bounded context.
  *
- * Public API: BinaryHNSWIndex, FloatVectorStore, SeismicIndex,
+ * Public API: BinaryHNSWIndex, FloatVectorStore,
  * SIMD distance functions, and typed binary heaps.
  */
 
@@ -11,8 +11,6 @@ export { BinaryHNSWIndex, createBinaryHNSWIndex } from './binary-hnsw-index.js';
 // --- Float vector store (Stage 2.5 rescoring) ---
 export { FloatVectorStore, getFloatStorePath, float512StoreEnabled } from './float-vector-store.js';
 
-// --- SEISMIC sparse vector index ---
-export { SeismicIndex, TopKHeap, Block, InvertedList, sparseDotProduct } from './seismic-index.js';
 
 // --- SIMD / WASM distance functions ---
 export {

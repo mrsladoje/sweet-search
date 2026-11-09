@@ -416,8 +416,8 @@ const EDGE_CASES = [
 async function loadModules() {
   const wasmPath = join(__dirname, 'pkg', 'query_router_wasm.js');
   const wasm = await import(wasmPath);
-  const { extractAllFeatures } = await import('../core/training/query-router/features/extractor.js');
-  const { routeQueryCatBoostWithReject } = await import('../query-router-catboost.js');
+  const { extractAllFeatures } = await import('../../core/training/query-router/features/extractor.js');
+  const { routeQueryCatBoostWithReject } = await import('../../core/query/query-router-catboost.js');
 
   return { wasm, extractAllFeatures, routeQueryCatBoostWithReject };
 }

@@ -30,7 +30,7 @@ async function main() {
   // Load modules
   const wasmPath = join(__dirname, 'pkg', 'query_router_wasm.js');
   const wasm = await import(wasmPath);
-  const { routeQueryCatBoostWithReject } = await import('../query-router-catboost.js');
+  const { routeQueryCatBoostWithReject } = await import('../../core/query/query-router-catboost.js');
 
   // Load all query sets
   const querySets = await loadQuerySets();

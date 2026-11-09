@@ -5,10 +5,9 @@
 // when Claude Code opens a new session.
 
 // Apply the user's persisted `runtime.li.model` from .sweet-search/config.json
-// BEFORE importing search-server (which transitively imports session-warmup,
-// which gates warmup steps on `LATE_INTERACTION_CONFIG.enabled` and triggers a
-// warmup search using `LATE_INTERACTION_CONFIG.model`). Without this, an
-// edge-only init still spawns a daemon that prewarms the standard model.
+// BEFORE importing search-server (its warmup reads `LATE_INTERACTION_CONFIG.model`
+// at load). Without this, an edge-only init still spawns a daemon that prewarms
+// the standard model.
 const projectRoot = process.env.SWEET_SEARCH_PROJECT_ROOT || process.cwd();
 const { applyPersistedLiModel } = await import('./infrastructure/init-config.js');
 applyPersistedLiModel(projectRoot);
